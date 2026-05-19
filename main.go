@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/pkg/lifecycle"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/router"
@@ -227,10 +228,42 @@ func main() {
 	// Log startup success message
 	common.LogStartupSuccess(startTime, port)
 
-	err = server.Run(":" + port)
-	if err != nil {
-		common.FatalLog("failed to start HTTP server: " + err.Error())
+	// 启动 HTTP server（异步），主协程等 SIGTERM/SIGINT 走优雅退出。
+	// 不再用 server.Run(...)：那个是阻塞调用 + 直接 ListenAndServe，
+	// 收到 SIGTERM 时 Go runtime 直接退进程，所有进行中请求被 reset、
+	// 批量扣费内存里还没 flush 的数据全部丢失（5/18 那次 bug 的二次伤害）。
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: server,
 	}
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	// 注意：这里收到 server 启动失败时只 SysError + return，不调 FatalLog/os.Exit。
+	// 否则 defer model.CloseDB() 等清理逻辑被跳过，反而坐实 graceful shutdown 失效。
+	if err := lifecycle.AwaitShutdown(serverErr); err != nil {
+		common.SysError("HTTP server failed: " + err.Error())
+		return
+	}
+
+	// Cloud Run 默认 termination grace period 是 10s（平台不可配）。
+	// 总预算 10s：HTTP shutdown 最多 8s + Wait flusher 最多 1s + 同步 flush ≈ ms 级，
+	// 留 ~1s 让 defer model.CloseDB() 跑。
+	// 注意：长流式响应（Claude 大输出可达 30-60s）会超过 8s timeout，超时后会被
+	// Cloud Run 在第 10s 强制 SIGKILL；目前没有 stream 中断的协作通道。
+	// 详见 TODO：长流式 graceful drain。
+	lifecycle.Graceful(srv, 8*time.Second, func() {
+		if common.BatchUpdateEnabled {
+			model.StopBatchUpdater()
+			model.WaitBatchUpdaterStopped(1 * time.Second)
+			model.FlushBatchUpdate() // 防 final flush 与 FlushBatchUpdate 之间有 addNewRecord 漏网
+		}
+	})
+	common.SysLog("shutdown complete")
 }
 
 func InjectUmamiAnalytics() {

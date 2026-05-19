@@ -47,6 +47,42 @@ The feature shipped with full unit-test coverage + production verification. Thes
 
 ---
 
+## batchUpdate deadlock fix + graceful shutdown — follow-ups
+
+Source: 2026-05-19 PR（修 batchUpdate goroutine 死锁 + 加优雅上下线，分支 `worktree-fix-batch-update-deadlock`）。
+
+线上 2026-05-18 09:04 UTC batchUpdate goroutine 卡在某条 MySQL UPDATE 上 30+ 小时不返回，~$277 漏扣。这次 PR 在 driver 层加 read/write timeout + flusher panic recover + 优雅上下线，让 bug 不再发生且重启时不丢内存数据。但有几条限制 / 边界条件留作后续：
+
+### 长流式响应在重启时被 SIGKILL 中断
+
+- [ ] **长流式响应（Claude 大输出 30-60s）在重启时会被 Cloud Run 第 10 秒强杀，客户端收到 connection reset。**
+  Cloud Run 默认 termination grace period 是 10s 且 v2 API 暂不支持配置（Google 平台硬限制）。我们用了 8s HTTP shutdown + 1s wait flusher + ms 级 sync flush，留 ~1s 给 defer model.CloseDB()。短请求完全无感，但长流式没办法在 8s 内自然结束。
+  - **方案 A（推荐，工程成本最低）**：让所有调用方客户端实现 connection-reset retry。Anthropic / OpenAI 官方 SDK 自带；自定义业务 client 需要补（典型 5-10 行）。
+  - **方案 B**：streaming-aware shutdown — 应用启动时建一个 `streamRootCtx`，所有 stream handler 监听它的 `Done()`，shutdown 时先 `cancelStreams()` + 短 sleep 让 stream 收尾再 `srv.Shutdown`。需要改所有 stream handler（每条写循环加 select-case），1 天工作量。Reviewer 之前提过 `srv.RegisterOnShutdown` 不适用此场景（per-conn 钩子），用 ctx propagation 是对的路径。
+  - **方案 C**：换 GKE 自管，可配 `terminationGracePeriodSeconds: 300` + `preStop` hook。月费 + 运维复杂度上升，不推荐。
+
+### Stream 中断协作通道（方案 B 的载体）
+
+- [ ] **`request ctx` 没有 propagation 到 upstream call**。当前 stream handler 拿 gin.Context 但不一定把 `r.Context().Done()` 透传到上游 HTTP client。即使有了 streamRootCtx，stream handler 不监听也没用。
+  - Fix：在 `relay/relay_adaptor.go` / `service/` 各 stream loop 里加 `select { case <-ctx.Done(): return; default: }`，或者让所有 stream copy 用 `ctx`-aware `io.Copy`-类。
+  - 这是方案 B 的前置条件。
+
+### 测试 hygiene 微调
+
+- [ ] **`gin.DefaultErrorWriter` 在 `model/dsn_defaults_test.go:92` 和 `model/batch_update_test.go:152` 的 capture 不 `t.Parallel()` 安全。** testify 默认串行所以现在不会出问题，但有人未来加 `t.Parallel()` 会引入 race。
+  - Fix：加 `// not Parallel-safe — captures global gin.DefaultErrorWriter` 注释；或者用 `LogWriterMu.Lock()` 包裹 swap。
+
+- [ ] **`lifecycle.Graceful` 当 server shutdown 失败时无可观测信号。**`pkg/lifecycle/lifecycle.go:57-59` 只 SysError 打日志，调用方拿不到 bool/error 区分 "clean shutdown" vs "forceful shutdown"。
+  - Fix：让 Graceful 返回 `error`，main.go 据此打不同日志（便于事后排查）。
+
+### 数据补偿（如需要）
+
+- [ ] **2026-05-18 09:04 UTC ~ 2026-05-19 08:37 UTC 漏扣约 $277（17572 条 consume log）**。需要从 logs 表反推回填 tokens / users / channels 三张表。看板数据本身基于 logs 表无影响（用户已确认）。是否补取决于"账面 vs 实际"容忍度。
+  - 已准备好 dry-run + UPDATE SQL（按 token_id / user_id / channel_id 三维度聚合），见 PR 讨论历史。
+  - 补偿前必须先重启服务（已完成），否则内存里堆积的扣费会继续干扰窗口边界。
+
+---
+
 ## How to use this file
 
 - Pick an item, file a PR, mark it `- [x]` in the same PR.
