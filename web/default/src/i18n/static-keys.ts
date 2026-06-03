@@ -426,6 +426,8 @@ export const STATIC_I18N_KEYS = [
   'Data management and log viewing',
   'Dashboard',
   'System data statistics',
+  'Codex Limits',
+  'View upstream quota limits for Codex channels',
   'Token Management',
   'API token management',
   'Usage Logs',
