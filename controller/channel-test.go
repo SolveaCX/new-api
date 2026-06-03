@@ -667,6 +667,38 @@ func shouldUseStreamForAutomaticChannelTest(channel *model.Channel) bool {
 	return channel != nil && channel.Type == constant.ChannelTypeCodex
 }
 
+func buildScheduledChannelTestDingTalkAlert(channel *model.Channel, err *types.NewAPIError, autoDisabled bool, now time.Time) service.DingTalkChannelAlert {
+	alert := service.DingTalkChannelAlert{
+		Error:        err,
+		AutoDisabled: autoDisabled,
+		Now:          now,
+	}
+	if channel == nil {
+		return alert
+	}
+	alert.ChannelID = channel.Id
+	alert.ChannelName = channel.Name
+	alert.ChannelTypeName = constant.GetChannelTypeName(channel.Type)
+	return alert
+}
+
+func shouldSendScheduledChannelTestDingTalkAlert(notify bool, err *types.NewAPIError) bool {
+	return !notify && err != nil
+}
+
+func shouldSkipScheduledChannelTestByType(notify bool, channelType int, setting *operation_setting.MonitorSetting) bool {
+	if notify || setting == nil {
+		return false
+	}
+	if lo.Contains(setting.AutoTestChannelIgnoredTypes, channelType) {
+		return true
+	}
+	if len(setting.AutoTestChannelAllowedTypes) == 0 {
+		return false
+	}
+	return !lo.Contains(setting.AutoTestChannelAllowedTypes, channelType)
+}
+
 func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	if len(jsonBytes) == 0 {
 		return ""
@@ -922,8 +954,12 @@ func testAllChannels(notify bool) error {
 			testAllChannelsLock.Unlock()
 		}()
 
+		dingTalkAlerts := make([]service.DingTalkChannelAlert, 0)
 		for _, channel := range channels {
 			if channel.Status == common.ChannelStatusManuallyDisabled {
+				continue
+			}
+			if shouldSkipScheduledChannelTestByType(notify, channel.Type, operation_setting.GetMonitorSetting()) {
 				continue
 			}
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
@@ -948,9 +984,16 @@ func testAllChannels(notify bool) error {
 				}
 			}
 
+			autoDisabled := false
 			// disable channel
 			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
+				autoDisabled = true
 				processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+			}
+
+			if shouldSendScheduledChannelTestDingTalkAlert(notify, newAPIError) {
+				alert := buildScheduledChannelTestDingTalkAlert(channel, newAPIError, autoDisabled, time.Now())
+				dingTalkAlerts = append(dingTalkAlerts, alert)
 			}
 
 			// enable channel
@@ -960,6 +1003,12 @@ func testAllChannels(notify bool) error {
 
 			channel.UpdateResponseTime(milliseconds)
 			time.Sleep(common.RequestInterval)
+		}
+
+		if len(dingTalkAlerts) > 0 {
+			if err := service.NotifyDingTalkChannelTestFailures(dingTalkAlerts); err != nil {
+				common.SysError("failed to send dingtalk channel test alert: " + err.Error())
+			}
 		}
 
 		if notify {
