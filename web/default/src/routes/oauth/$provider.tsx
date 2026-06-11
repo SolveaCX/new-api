@@ -28,6 +28,7 @@ import i18next from 'i18next'
 import { toast } from 'sonner'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 import { api, getSelf } from '@/lib/api'
+import { getAdsAttributionPayload } from '@/lib/analytics/attribution'
 import { trackAdsFunnelEvent, trackSignupConversion } from '@/lib/analytics/gtag'
 import { OAuthCallbackScreen } from '@/features/auth/components/oauth-callback-screen'
 import { OAUTH_BIND_STORAGE_KEY } from '@/features/auth/constants'
@@ -190,6 +191,7 @@ function OAuthCallback() {
       }
 
       try {
+        const adsAttribution = getAdsAttributionPayload()
         const config: OAuthRequestConfig = {
           params: {
             code: search.code,
@@ -198,6 +200,7 @@ function OAuthCallback() {
             // backend token exchange matches it even when the web frontend and
             // backend (ServerAddress) are on different domains.
             redirect_uri: `${window.location.origin}/oauth/${provider}`,
+            ads_attribution: adsAttribution || undefined,
           },
           skipBusinessError: true,
         }
