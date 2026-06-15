@@ -16,17 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export function normalizeOrigin(origin: string | undefined): string {
-  return origin?.trim().replace(/\/+$/, '') ?? ''
-}
+import { describe, expect, test } from 'bun:test'
+import { getOfficialWebsiteHref } from './origins'
 
-export const OFFICIAL_WEBSITE_ORIGIN = normalizeOrigin(
-  import.meta.env.VITE_OFFICIAL_WEBSITE_ORIGIN as string | undefined
-)
+describe('getOfficialWebsiteHref', () => {
+  test('uses the official website origin when configured', () => {
+    expect(getOfficialWebsiteHref('https://flatkey.ai', '/')).toBe(
+      'https://flatkey.ai'
+    )
+  })
 
-export function getOfficialWebsiteHref(
-  origin = OFFICIAL_WEBSITE_ORIGIN,
-  fallback = '/'
-): string {
-  return origin || fallback
-}
+  test('falls back when official website origin is not configured', () => {
+    expect(getOfficialWebsiteHref('', '/')).toBe('/')
+  })
+})

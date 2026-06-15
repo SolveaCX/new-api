@@ -26,6 +26,10 @@ import {
   localizePublicPath,
   stripPathLocale,
 } from '@/lib/public-locale'
+import {
+  getOfficialWebsiteHref,
+  OFFICIAL_WEBSITE_ORIGIN,
+} from '@/lib/origins'
 import { cn } from '@/lib/utils'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useSystemConfig } from '@/hooks/use-system-config'
@@ -72,7 +76,7 @@ export function PublicHeader(props: PublicHeaderProps) {
     showLanguageSwitcher = true,
     logo: customLogo,
     siteName: customSiteName,
-    homeUrl = '/',
+    homeUrl = getOfficialWebsiteHref(OFFICIAL_WEBSITE_ORIGIN, '/'),
     showAuthButtons = true,
     showNotifications = true,
   } = props
@@ -105,6 +109,27 @@ export function PublicHeader(props: PublicHeaderProps) {
   const localizedHomeUrl = isPublicWebsitePath(homeUrl)
     ? localizePublicPath(homeUrl, currentPublicLanguage)
     : homeUrl
+  const logoContent = (
+    <>
+      <div className='flex h-11 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-[1.02]'>
+        {loading ? (
+          <Skeleton className='h-9 w-32 rounded-full' />
+        ) : customLogo ? (
+          customLogo
+        ) : (
+          <HeaderLogo
+            src={systemLogo}
+            loading={loading}
+            logoLoaded={logoLoaded}
+            className='h-11'
+          />
+        )}
+      </div>
+      <span className='sr-only'>
+        {loading ? <Skeleton className='h-4 w-16' /> : displaySiteName}
+      </span>
+    </>
+  )
 
   const getLocalizedHref = useCallback(
     (href: string) => {
@@ -209,28 +234,21 @@ export function PublicHeader(props: PublicHeaderProps) {
             )}
           >
             {/* Logo */}
-            <Link
-              to={localizedHomeUrl}
-              className='group flex shrink-0 items-center gap-2.5'
-            >
-              <div className='flex h-11 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-[1.02]'>
-                {loading ? (
-                  <Skeleton className='h-9 w-32 rounded-full' />
-                ) : customLogo ? (
-                  customLogo
-                ) : (
-                  <HeaderLogo
-                    src={systemLogo}
-                    loading={loading}
-                    logoLoaded={logoLoaded}
-                    className='h-11'
-                  />
-                )}
-              </div>
-              <span className='sr-only'>
-                {loading ? <Skeleton className='h-4 w-16' /> : displaySiteName}
-              </span>
-            </Link>
+            {localizedHomeUrl.startsWith('http') ? (
+              <a
+                href={localizedHomeUrl}
+                className='group flex shrink-0 items-center gap-2.5'
+              >
+                {logoContent}
+              </a>
+            ) : (
+              <Link
+                to={localizedHomeUrl}
+                className='group flex shrink-0 items-center gap-2.5'
+              >
+                {logoContent}
+              </Link>
+            )}
 
             {/* Desktop nav */}
             <div className='hidden items-center gap-0.5 sm:flex'>

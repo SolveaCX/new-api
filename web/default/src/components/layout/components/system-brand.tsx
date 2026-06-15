@@ -16,9 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { getOfficialWebsiteHref } from '@/lib/origins'
 import { useStatus } from '@/hooks/use-status'
 import { FlatkeyBrandLogo } from '@/components/brand/flatkey-brand-logo'
 import {
@@ -55,8 +55,8 @@ export function SystemBrand(props: SystemBrandProps) {
 
   if (variant === 'inline') {
     return (
-      <Link
-        to='/'
+      <a
+        href={getOfficialWebsiteHref()}
         aria-label={t('Go to home')}
         className={cn(
           'text-foreground inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm font-medium transition-colors outline-none select-none',
@@ -67,7 +67,7 @@ export function SystemBrand(props: SystemBrandProps) {
           <FlatkeyBrandLogo alt={t('Logo')} className='h-9 scale-[0.88]' />
         </div>
         <span className='sr-only'>{name}</span>
-      </Link>
+      </a>
     )
   }
 

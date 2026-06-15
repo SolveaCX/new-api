@@ -6,9 +6,10 @@ import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { NotificationPopover } from "@/components/notification-popover";
 import { ThemeSwitch } from "@/components/theme-switch";
+import { getWebsiteSessionState } from "@/lib/auth-state";
 import { getCopy } from "@/lib/copy";
 import { type Locale, localizePath, stripLocale } from "@/lib/locales";
-import { consoleUrl } from "@/lib/origins";
+import { APP_CONSOLE_ORIGIN, consoleUrl } from "@/lib/origins";
 import { cn } from "@/lib/utils";
 
 const SIGN_IN_URL = consoleUrl("/sign-in");
@@ -23,6 +24,7 @@ export function SiteHeader(props: Props) {
   const copy = getCopy(props.locale);
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const navItems = [
     { href: "/", label: copy.nav.home, publicPath: true },
     { href: CONSOLE_URL, label: copy.nav.console, publicPath: false },
@@ -30,12 +32,28 @@ export function SiteHeader(props: Props) {
     { href: "/pricing", label: copy.nav.modelPricing, publicPath: true },
   ];
   const currentPath = stripLocale(props.pathname);
+  const authHref = authenticated ? CONSOLE_URL : SIGN_IN_URL;
+  const authLabel = authenticated ? copy.nav.console : copy.nav.signIn;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    getWebsiteSessionState(APP_CONSOLE_ORIGIN).then((state) => {
+      if (active) {
+        setAuthenticated(state.authenticated);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -93,9 +111,9 @@ export function SiteHeader(props: Props) {
               <div className="mx-1 h-4 w-px bg-border/40" />
               <a
                 className="flatkey-primary-cta inline-flex h-8 items-center justify-center rounded-lg px-3.5 text-xs font-medium transition-opacity hover:opacity-90 active:opacity-80"
-                href={SIGN_IN_URL}
+                href={authHref}
               >
-                {copy.nav.signIn}
+                {authLabel}
               </a>
             </div>
 
@@ -167,10 +185,10 @@ export function SiteHeader(props: Props) {
             style={{ transitionDelay: mobileOpen ? "250ms" : "0ms" }}
           >
             <a
-              href={SIGN_IN_URL}
+              href={authHref}
               className="flatkey-primary-cta inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80"
             >
-              {copy.nav.signIn}
+              {authLabel}
             </a>
           </div>
         </div>
