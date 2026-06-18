@@ -1,0 +1,90 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Playground Onboarding · 高保真</title>
+<style>
+:root{--bg:#0a0c12;--panel:#0e111b;--card:#141926;--card2:#1b2130;--line:#262d3d;--txt:#eaedf4;--mut:#828ca0;--vio:#8b5cf6;--fuc:#d946ef;--ind:#6366f1;--amb:#fbbf24;--grn:#34d399;--cy:#22d3ee}
+*{box-sizing:border-box;margin:0;padding:0}body{background:#06070c;color:var(--txt);font:14px/1.55 -apple-system,"PingFang SC",Segoe UI,sans-serif;padding:26px 20px;max-width:980px;margin:0 auto}
+h1{font-size:21px;font-weight:800}.sub{color:var(--mut);font-size:12.5px;margin:4px 0 8px}
+.flow{display:flex;gap:8px;align-items:center;color:var(--mut);font-size:12px;margin-bottom:18px;flex-wrap:wrap}
+.flow b{color:var(--txt)}.flow .a{color:var(--fuc)}
+/* 浏览器框 */
+.win{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
+.chrome{height:38px;background:#0a0d15;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px;padding:0 14px}
+.chrome i{width:10px;height:10px;border-radius:99px;background:#2b3346}.chrome .url{margin-left:12px;background:#11151f;border:1px solid var(--line);border-radius:7px;padding:4px 12px;font-size:11px;color:#8a93a6;flex:1;max-width:360px}
+/* 应用布局 */
+.app{display:flex;min-height:480px}
+.side{width:170px;background:#0b0e16;border-right:1px solid var(--line);padding:14px 10px;flex-shrink:0}
+.logo{font-weight:800;font-size:14px;padding:4px 8px 14px}.logo .d{color:var(--fuc)}
+.nav{display:flex;flex-direction:column;gap:2px}
+.ni{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:12.5px;color:#9aa3b5}
+.ni.on{background:var(--card);color:var(--txt);font-weight:600}
+.main{flex:1;display:flex;flex-direction:column;position:relative;background-image:radial-gradient(ellipse 70% 40% at 50% 0%,rgba(124,58,237,.08),transparent 70%)}
+/* 欢迎条 */
+.welcome{margin:14px 16px 0;background:linear-gradient(90deg,rgba(139,92,246,.14),rgba(217,70,239,.10));border:1px solid #34294f;border-radius:11px;padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:12.5px}
+.welcome .em{font-size:18px}.welcome b{color:var(--amb)}
+/* 顶部模型选择 */
+.pgtop{display:flex;align-items:center;gap:9px;padding:14px 16px 6px}
+.pill{background:var(--card2);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font-size:12px;color:#cdd3df;display:flex;align-items:center;gap:6px}
+.pill b{color:#a78bfa}.pill.free{color:var(--grn);border-color:#1f4538}
+/* 聊天 */
+.chat{flex:1;padding:8px 16px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 4px}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font-size:11.5px;color:#cbd2e0}
+.bub{max-width:78%;padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.5}
+.bub.me{background:var(--card2);margin-left:auto;border-bottom-right-radius:4px}
+.bub.ai{background:linear-gradient(180deg,#17122c,#120f20);border:1px solid #2d2152;border-bottom-left-radius:4px;color:#e9e4f7}
+.bub.ai .tag{font-size:10px;color:var(--grn);margin-bottom:3px;font-weight:600}
+/* aha 卡片 */
+.aha{margin:6px 0 0;background:var(--card);border:1px solid var(--amb);border-radius:13px;padding:15px 16px;background-image:linear-gradient(180deg,rgba(251,191,36,.08),transparent);position:relative}
+.aha .t{font-size:14.5px;font-weight:750;margin-bottom:3px}.aha .d{font-size:12px;color:#c2c9d6;margin-bottom:11px}
+.aha .btn{background:linear-gradient(90deg,var(--vio),var(--fuc));color:#fff;font-weight:700;font-size:13px;text-align:center;padding:9px;border-radius:9px}
+.aha .lk{text-align:center;color:#a78bfa;font-size:11.5px;margin-top:8px;text-decoration:underline;text-underline-offset:2px}
+/* 输入 */
+.inbar{margin:6px 16px 16px;display:flex;align-items:center;gap:9px;background:#0a0d15;border:1px solid var(--line);border-radius:12px;padding:10px 13px}
+.inbar .ph{color:var(--mut);font-size:12.5px;flex:1}.inbar .send{width:28px;height:28px;border-radius:8px;background:linear-gradient(90deg,var(--vio),var(--fuc));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+.notes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:18px}
+@media(max-width:760px){.notes{grid-template-columns:1fr}.side{display:none}}
+.note{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:13px 15px;font-size:12.5px;color:#cdd3df}.note .h{font-weight:700;color:var(--txt);margin-bottom:5px;font-size:13px}.note b{color:var(--cy)}
+</style></head><body>
+<h1>Playground Onboarding · 落地即体验(高保真效果)</h1>
+<div class="sub">新用户注册后看到的真实界面 · 目标:首次会话内跑通第一次调用 = 拉使用率</div>
+<div class="flow">注册成功 <span class="a">→</span> <b>直接落 Playground</b> <span class="a">→</span> 发首条消息(免 key,免配置) <span class="a">→</span> AI 真实回话 ✓(<b>request_count+1=激活</b>) <span class="a">→</span> 滑出「领 API Key」</div>
+
+<div class="win">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">🔒 router.flatkey.ai/playground?first=1</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="logo">flat<span class="d">key</span></div>
+      <div class="nav">
+        <div class="ni on">💬 Playground</div>
+        <div class="ni">🔑 API Keys</div>
+        <div class="ni">📊 用量</div>
+        <div class="ni">💳 钱包</div>
+        <div class="ni">🚀 Quickstart</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="welcome"><span class="em">👋</span><div>欢迎来到 flatkey!<b>试着发一条消息</b>,30 秒跑通你的第一次调用——无需建 key、无需配置。</div></div>
+      <div class="pgtop"><span class="pill">模型 <b>claude-haiku-4-5</b></span><span class="pill free">● 免配置 · 免费额度</span></div>
+      <div class="chat">
+        <div class="chips"><span class="chip">Hello!</span><span class="chip">用 Python 写个快排</span><span class="chip">解释一下 Transformer</span></div>
+        <div class="bub me">Hello!</div>
+        <div class="bub ai"><div class="tag">claude-haiku-4-5 · 已计入你的第一次调用 ✓</div>Hello! 👋 I'm running on flatkey — an OpenAI-compatible gateway. Ask me anything, or grab your API key to use me in your own code.</div>
+        <div class="aha">
+          <div class="t">⚡ 跑通了!把它用到你自己的代码里</div>
+          <div class="d">flatkey 兼容 OpenAI SDK——只改 base_url + key 就能用。立即领取你的 API Key(同款模型最高便宜 50%)。</div>
+          <div class="btn">领取我的 API Key →</div>
+          <div class="lk">或看 Quickstart:curl / Python / TypeScript 一键复制</div>
+        </div>
+      </div>
+      <div class="inbar"><span class="ph">输入消息…</span><span class="send">↑</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="note"><div class="h">为什么有效</div>广告来的是<b>开发者</b>,他们靠"成功调通一次"激活,不是点横幅。先让他<b>看到 AI 回话(aha)</b>,再要 key——而不是先给 $0.10 + 自助墙。</div>
+  <div class="note"><div class="h">为什么工程量小</div>后端已有 <b>/pg/chat/completions</b>(session 鉴权,免 key)+ plg 自然走 plg 组 + 调用<b>计入 request_count</b>。主要是前端:注册重定向 + 首跑态 + 「领 key」卡片。</div>
+  <div class="note"><div class="h">关键细节</div>首跑默认用<b>廉价模型</b>(haiku/flash),否则 $0.10 额度撑不住 opus 单条 → 首条失败毁掉 aha。这条 spec 里重点标了。</div>
+</div>
+<div style="text-align:center;color:var(--mut);font-size:11.5px;margin-top:20px">高保真原型 · 配套 spec: onboarding-playground-spec.md · 数据已证激活墙是当前最大失血点(3h +13 注册 / 0 激活)</div>
+</body></html>
