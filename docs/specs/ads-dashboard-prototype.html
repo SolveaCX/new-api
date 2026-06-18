@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>11agents · Ads Dashboard（方案A 转化漏斗优先）</title>
+<style>
+:root{--bg:#0a0c12;--card:#121622;--card2:#1a2030;--line:#252c3d;--txt:#e9ecf3;--mut:#828ca0;--vio:#8b5cf6;--fuc:#d946ef;--ind:#6366f1;--amb:#fbbf24;--grn:#34d399;--red:#f87171;--cy:#22d3ee}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,"PingFang SC",Segoe UI,sans-serif;padding:26px 22px;max-width:1140px;margin:0 auto}
+.top{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+h1{font-size:22px;font-weight:800;letter-spacing:-.4px}
+.top .meta{color:var(--mut);font-size:12.5px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:99px;background:var(--grn);margin-right:5px;vertical-align:middle}
+/* KPI strip */
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 15px}
+.kpi .n{font-size:24px;font-weight:750;letter-spacing:-.5px}
+.kpi .l{color:var(--mut);font-size:11.5px;margin-top:1px}
+.kpi .d{font-size:11px;margin-top:3px}
+.up{color:var(--grn)}.down{color:var(--red)}
+/* hero funnel */
+.sec{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:24px 0 12px;display:flex;align-items:center;gap:8px}
+.hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+.fwrap{display:flex;flex-direction:column;gap:14px}
+.stage{display:flex;align-items:center;gap:14px}
+.stage .barwrap{flex:1}
+.stage .head{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}
+.stage .head b{font-size:14px}
+.stage .bar{height:34px;border-radius:8px;background:#1d2434;overflow:hidden}
+.stage .bar>i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,var(--vio),var(--fuc));display:flex;align-items:center;padding-left:12px;font-weight:700;font-size:13px;color:#fff}
+.stage.dead .bar>i{background:linear-gradient(90deg,#7c3aed,#f87171)}
+.drop{min-width:96px;text-align:right;font-size:12px}
+.drop .pc{font-weight:750;font-size:15px;color:var(--red)}
+.drop .ll{color:var(--mut);font-size:10.5px}
+.cut{border-left:2px dashed var(--red);margin:-2px 0 -2px 6px;padding-left:10px;color:var(--red);font-size:11px}
+/* gacha suggestions */
+.gwrap{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.gc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;cursor:pointer;transition:.15s;position:relative}
+.gc:hover{border-color:#3a4257;transform:translateY(-2px)}
+.gc.sel{border-color:var(--amb);background:linear-gradient(180deg,rgba(251,191,36,.07),var(--card))}
+.gc .gt{font-size:15px;font-weight:750;margin-bottom:5px}
+.gc .gd{color:#c2c9d6;font-size:12.5px;line-height:1.5;flex:1}
+.gc .gm{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.chip{font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:99px;background:var(--card2);color:#aab2c2}
+.chip.imp{background:rgba(52,211,153,.14);color:var(--grn)}
+.chip.eff{background:rgba(34,211,238,.12);color:var(--cy)}
+.gc .pick{margin-top:12px;text-align:center;font-size:12px;font-weight:700;padding:7px;border-radius:9px;border:1px solid var(--line);color:var(--mut)}
+.gc.sel .pick{background:var(--amb);color:#1a1505;border-color:var(--amb)}
+.gnum{position:absolute;top:12px;right:14px;font-size:11px;color:#5a6275;font-weight:700}
+/* campaign table */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+.mini{height:6px;border-radius:99px;background:#1d2434;overflow:hidden;width:80px;display:inline-block;vertical-align:middle}
+.mini>i{display:block;height:100%;background:linear-gradient(90deg,var(--vio),var(--fuc))}
+.bad{color:var(--red)}.good{color:var(--grn)}
+.tcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 18px 10px}
+.foot{text-align:center;color:var(--mut);font-size:11.5px;margin-top:24px}
+</style></head><body>
+
+<div class="top">
+  <div><h1>Ads Dashboard · 转化漏斗优先</h1></div>
+  <div class="meta"><span class="dot"></span>router.flatkey.ai · 2026-06-18 · plg 已上线 · 仅外部口径</div>
+</div>
+
+<!-- ① 投放进度 KPI 带 -->
+<div class="kpis">
+  <div class="kpi"><div class="n">$136</div><div class="l">今日花费</div><div class="d up">累计 ~$1,034</div></div>
+  <div class="kpi"><div class="n">6,579</div><div class="l">今日曝光</div><div class="d">CTR 2.1%</div></div>
+  <div class="kpi"><div class="n">135</div><div class="l">今日点击</div><div class="d">CPC $1.01</div></div>
+  <div class="kpi"><div class="n">47</div><div class="l">今日注册</div><div class="d up">转化 90 累计</div></div>
+  <div class="kpi"><div class="n bad">$0</div><div class="l">外部充值</div><div class="d down">CAC 黑洞</div></div>
+</div>
+
+<!-- ② 转化漏斗（主视觉）-->
+<div class="sec">② 注册 → 使用 → 绑卡 转化漏斗 <span style="color:#5a6275;font-weight:400;text-transform:none;letter-spacing:0">（外部用户累计 · 红线=断点）</span></div>
+<div class="hero">
+  <div class="fwrap">
+    <div class="stage">
+      <div class="barwrap"><div class="head"><span>注册</span><b>226</b></div><div class="bar"><i style="width:100%">226 · 100%</i></div></div>
+      <div class="drop"><div class="pc" style="color:var(--mut)">基线</div><div class="ll">含 141 广告归因</div></div>
+    </div>
+    <div class="cut">▼ 94% 流失 —— 最致命的断点（绝大多数在 default 死组撞过 503）</div>
+    <div class="stage">
+      <div class="barwrap"><div class="head"><span>有使用记录（request_count&gt;0）</span><b>14</b></div><div class="bar"><i style="width:18%">14 · 6.2%</i></div></div>
+      <div class="drop"><div class="pc">▼94%</div><div class="ll">广告用户仅 1/141</div></div>
+    </div>
+    <div class="cut">▼ 100% 流失 —— 没人走到绑卡</div>
+    <div class="stage dead">
+      <div class="barwrap"><div class="head"><span>绑卡（stripe_card_bound）</span><b>0</b></div><div class="bar"><i style="width:4%"></i></div></div>
+      <div class="drop"><div class="pc">▼100%</div><div class="ll">外部付费 0</div></div>
+    </div>
+    <div class="stage dead">
+      <div class="barwrap"><div class="head"><span>付费 / 充值</span><b>0</b></div><div class="bar"><i style="width:3%"></i></div></div>
+      <div class="drop"><div class="pc">$0</div><div class="ll">内部参考 5/$10k</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ③ 每日优化建议 抽卡 -->
+<div class="sec">③ 今日投放优化 · 抽一张执行 <span style="color:#5a6275;font-weight:400;text-transform:none;letter-spacing:0">（系统按今日数据生成 3 条，点选采纳）</span></div>
+<div class="gwrap">
+  <div class="gc sel">
+    <div class="gnum">建议 1</div>
+    <div class="gt">召回 211 个死组老用户</div>
+    <div class="gd">default 组里 211 个广告用户在修复前撞过 503 已流失。现 default 已挂渠道——按语言批量发"再试一次 + 首充送 credit"，把已花的获客钱捞回来。</div>
+    <div class="gm"><span class="chip imp">影响 高</span><span class="chip eff">成本 低</span><span class="chip">复用召回邮件</span></div>
+    <div class="pick">✓ 已选中 · 采纳</div>
+  </div>
+  <div class="gc">
+    <div class="gnum">建议 2</div>
+    <div class="gt">砍 0 转化 campaign 预算</div>
+    <div class="gd">JP（$94/48 点击/0 转化）、EN（$68/0 转化）今日烧钱零产出。暂停或砍半，预算挪给 PT（77 转化）、ES-LATAM（11 转化）这两个出量的。</div>
+    <div class="gm"><span class="chip imp">影响 中</span><span class="chip eff">成本 0</span><span class="chip">立即生效</span></div>
+    <div class="pick">采纳</div>
+  </div>
+  <div class="gc">
+    <div class="gnum">建议 3</div>
+    <div class="gt">免费额度 $0.10 → $2</div>
+    <div class="gd">94% 注册→使用流失，$0.10 心理上=0，首调没底气。提到 $2 让首次调用无摩擦。防薅靠 plg 限廉价模型 + 绑卡才放大额 bonus。</div>
+    <div class="gm"><span class="chip imp">影响 高</span><span class="chip eff">成本 中</span><span class="chip">需改配置</span></div>
+    <div class="pick">采纳</div>
+  </div>
+</div>
+
+<!-- campaign 漏斗明细 -->
+<div class="sec" style="margin-top:24px">投放明细 · 按转化排序</div>
+<div class="tcard">
+  <table>
+    <tr><th>Campaign</th><th class="r">累计花费</th><th class="r">点击</th><th class="r">转化</th><th class="r">单转化成本</th><th>状态</th></tr>
+    <tr><td>flatkey-PT-Search</td><td class="r">$638.92</td><td class="r">423</td><td class="r good">77</td><td class="r">$8.3</td><td><span class="mini"><i style="width:100%"></i></span></td></tr>
+    <tr><td>flatkey-ES-LATAM</td><td class="r">$91.01</td><td class="r">130</td><td class="r good">11</td><td class="r">$8.3</td><td><span class="mini"><i style="width:40%"></i></span></td></tr>
+    <tr><td>flatkey-DE-Search</td><td class="r">$89.92</td><td class="r">50</td><td class="r">2</td><td class="r">$45</td><td><span class="mini"><i style="width:12%"></i></span></td></tr>
+    <tr><td>flatkey-JP-Search</td><td class="r bad">$94.11</td><td class="r">48</td><td class="r bad">0</td><td class="r bad">∞</td><td><span class="mini"><i style="width:0"></i></span></td></tr>
+    <tr><td>flatkey-EN-Search</td><td class="r bad">$68.01</td><td class="r">56</td><td class="r bad">0</td><td class="r bad">∞</td><td><span class="mini"><i style="width:0"></i></span></td></tr>
+    <tr><td>flatkey-IN-Search</td><td class="r">$16.91</td><td class="r">43</td><td class="r bad">0</td><td class="r bad">∞</td><td><span class="mini"><i style="width:0"></i></span></td></tr>
+    <tr><td>flatkey-SEA-Search</td><td class="r">$16.83</td><td class="r">41</td><td class="r bad">0</td><td class="r bad">∞</td><td><span class="mini"><i style="width:0"></i></span></td></tr>
+    <tr><td>flatkey-EmergingAF-Search</td><td class="r">$17.86</td><td class="r">22</td><td class="r bad">0</td><td class="r bad">∞</td><td><span class="mini"><i style="width:0"></i></span></td></tr>
+  </table>
+</div>
+
+<div class="foot">数据源 router.flatkey.ai admin API + Google Ads API · 漏斗按外部用户口径（排除内部账号）· 优化建议每日按当日数据重算 · 这是 11agents 平台内 ads 模块的高保真原型</div>
+</body></html>
