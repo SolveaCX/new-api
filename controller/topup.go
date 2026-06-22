@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -291,11 +292,80 @@ func visibleTopUpBonusForUser(c *gin.Context, bonus map[int]int64) map[int]int64
 	return visible
 }
 
-func configuredTopUpAmounts(requestAmount int64, group string) (int64, int64) {
+// stageWindowHit 表示用户当前命中的某个阶段 bonus(已在有效期窗口内)。
+type stageWindowHit struct {
+	Step   int
+	Amount int   // 阶段要求的充值档位(原始 USD)
+	Bonus  int64 // 阶段赠送额度(原始 USD,未归一化)
+}
+
+// resolveStageBonus 在用户命中的阶段中,选出本次充值金额可享的最高 bonus 阶段。
+// requestAmount: 本次充值金额(原始档位金额)。
+// 返回 (归一化后的本金, 归一化后的阶段 bonus, bonusTier=阶段档位金额);若无可享阶段返回 (0,0,0)。
+func resolveStageBonus(requestAmount int64, hits []stageWindowHit) (int64, int64, int) {
+	bestBonus := int64(-1)
+	bestTier := 0
+	for _, h := range hits {
+		// 充值金额需达到阶段要求档位
+		if requestAmount < int64(h.Amount) {
+			continue
+		}
+		if h.Bonus > bestBonus {
+			bestBonus = h.Bonus
+			bestTier = h.Amount
+		}
+	}
+	if bestBonus < 0 {
+		return 0, 0, 0
+	}
+	amount := normalizeTopUpAmount(requestAmount)
+	bonus := normalizeTopUpBonusAmount(bestBonus)
+	return amount, bonus, bestTier
+}
+
+// userStageWindowHits 查询用户当前在有效期窗口内的所有阶段 bonus。
+func userStageWindowHits(userId int) []stageWindowHit {
+	if userId <= 0 {
+		return nil
+	}
+	es := operation_setting.GetEmailSequenceSetting()
+	if len(es.StageBonus) == 0 {
+		return nil
+	}
+	var hits []stageWindowHit
+	for step, sb := range es.StageBonus {
+		if sb.Amount <= 0 || sb.Bonus <= 0 {
+			continue
+		}
+		window := int64(sb.WindowDays) * 24 * 3600
+		within, _, err := model.HasSentStepWithinWindow(userId, step, window)
+		if err != nil {
+			logger.LogError(context.Background(), fmt.Sprintf("stage bonus window check failed user=%d step=%d: %v", userId, step, err))
+			continue
+		}
+		if within {
+			hits = append(hits, stageWindowHit{Step: step, Amount: sb.Amount, Bonus: sb.Bonus})
+		}
+	}
+	return hits
+}
+
+// configuredTopUpAmounts 计算下单时的本金与赠送,以及 bonusTier(用于回调按档位限次裁决)。
+// 若用户处于召回阶段有效窗口内且本次充值达到阶段档位,用阶段 bonus 取代全局 bonus,
+// 并把 bonusTier 设为阶段档位金额(使限次表天然区分阶段档与普通档)。
+func configuredTopUpAmounts(userId int, requestAmount int64, group string) (int64, int64, int) {
+	// 阶段 bonus 优先(取代全局)
+	if hits := userStageWindowHits(userId); len(hits) > 0 {
+		amount, bonus, tier := resolveStageBonus(requestAmount, hits)
+		if bonus > 0 {
+			return amount, bonus, tier
+		}
+	}
+	// 回落全局逻辑
 	amount := normalizeTopUpAmount(requestAmount)
 	bonus := configuredTopUpBonusAmount(requestAmount, group)
 	// Amount 只存本金；赠送是否发放推迟到支付成功回调时按档位限次裁决。
-	return amount, bonus
+	return amount, bonus, int(requestAmount)
 }
 
 func GetEpayClient() *epay.Client {
@@ -381,7 +451,7 @@ func RequestEpay(c *gin.Context) {
 		return
 	}
 
-	amount, bonusAmount := configuredTopUpAmounts(req.Amount, group)
+	amount, bonusAmount, bonusTier := configuredTopUpAmounts(id, req.Amount, group)
 	if amount <= 0 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值数量无效"})
 		return
@@ -415,7 +485,7 @@ func RequestEpay(c *gin.Context) {
 		UserId:          id,
 		Amount:          amount,
 		BonusAmount:     bonusAmount,
-		BonusTier:       int(req.Amount),
+		BonusTier:       bonusTier,
 		Money:           payMoney,
 		TradeNo:         tradeNo,
 		PaymentMethod:   req.PaymentMethod,

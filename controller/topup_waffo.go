@@ -201,7 +201,7 @@ func RequestWaffoPay(c *gin.Context) {
 	// Store credited units, including any configured top-up bonus.
 
 	// 创建本地订单
-	amount, bonusAmount := configuredTopUpAmounts(req.Amount, group)
+	amount, bonusAmount, bonusTier := configuredTopUpAmounts(id, req.Amount, group)
 	if amount <= 0 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值数量无效"})
 		return
@@ -211,7 +211,7 @@ func RequestWaffoPay(c *gin.Context) {
 		UserId:          id,
 		Amount:          amount,
 		BonusAmount:     bonusAmount,
-		BonusTier:       int(req.Amount),
+		BonusTier:       bonusTier,
 		Money:           payMoney,
 		PaymentCurrency: getWaffoCurrency(),
 		TradeNo:         merchantOrderId,
