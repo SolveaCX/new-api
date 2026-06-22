@@ -90,9 +90,14 @@ func applyTopUpBonusInTx(tx *gorm.DB, topUp *TopUp, limit int) (int64, error) {
 }
 
 // StageBonusTierBase 是召回阶段 bonus 专用的 tier 命名空间基址。
-// 阶段 bonus 的 TopUp.BonusTier 编码为 StageBonusTierBase + step,与真实充值金额档位(通常 < 10000)
-// 不冲突,从而:(1) 不与普通档位共享限次计数器;(2) 不会因金额档位未配 AmountBonusLimit 而被
-// 当作"不限次"无限发放。每个阶段每用户在其窗口内固定最多领 1 次(见 topUpBonusLimitFor)。
+// 阶段 bonus 的 TopUp.BonusTier 编码为 StageBonusTierBase + step,与 USD/CNY 模式下的真实充值
+// 金额档位(通常 < 10000 美元)不冲突,从而:(1) 不与普通档位共享限次计数器;(2) 不会因金额档位
+// 未配 AmountBonusLimit 而被当作"不限次"无限发放。每个阶段每用户固定最多领 1 次(见 topUpBonusLimitFor)。
+//
+// 注意:TOKENS 展示模式下 req.Amount = 美元 × QuotaPerUnit,充值 >= $2 时 req.Amount 即 >= 1000000,
+// 会与本命名空间数值重叠。但这不造成资损——TOKENS 模式下普通 bonus 按美元 key 查 AmountBonus 必然
+// miss(bonus=0)、在 applyTopUpBonusInTx 提前返回,limit/tier 根本不参与;且本功能仅支持 USD/CNY
+// 展示模式(见 topUpBonusLimitFor 说明)。碰撞方向是"把不限次的普通档误限为 1 次"=少发,非超发。
 const StageBonusTierBase = 1000000
 
 // IsStageBonusTier 判断一个 BonusTier 是否属于召回阶段 bonus 命名空间。
