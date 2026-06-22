@@ -17,11 +17,10 @@ const (
 	EmailSeqStepE4 = 4 // D30 最高档 bonus
 )
 
-// 发送状态
+// 发送状态。当前仅写入 sent(record-then-send 模型,符合 spec "宁可漏发不可重复轰炸")。
+// skipped/failed 状态留待未来需要可观测/重试时再引入,届时一并加常量与状态机。
 const (
-	EmailSeqStatusSent    = "sent"
-	EmailSeqStatusSkipped = "skipped"
-	EmailSeqStatusFailed  = "failed"
+	EmailSeqStatusSent = "sent"
 )
 
 // UserEmailSequence 召回邮件发送去重表。
