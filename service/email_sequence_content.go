@@ -164,7 +164,7 @@ var emailTemplates = map[string]map[int]EmailTemplate{
 		},
 		3: {
 			Subject: "{{.SystemName}}：より大きなボーナスをご用意しています",
-			BodyHTML: `<p>まだご検討中ですか？特典をご用意しました。</p>
+			BodyHTML: `<p>まだご検討中ですか？ボーナスをご用意しました。</p>
 <p><strong>{{.BonusText}}</strong></p>
 <p><a href="{{.TopupLink}}">チャージしてボーナスを受け取る</a></p>
 <hr><p style="font-size:12px;color:#888"><a href="{{.UnsubscribeURL}}">配信停止</a></p>`,
