@@ -40,10 +40,11 @@ func TestConfiguredTopUpAmountsReturnsBaseAndBonusSeparately(t *testing.T) {
 	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
 	paymentSetting.AmountBonus = map[int]int64{20: 5}
 
-	amount, bonus := configuredTopUpAmounts(20)
+	amount, bonus, tier := configuredTopUpAmounts(0, 20)
 
 	require.Equal(t, int64(20), amount) // Amount 只存本金，赠送是否发放推迟到回调判次
 	require.Equal(t, int64(5), bonus)
+	require.Equal(t, 20, tier) // 无阶段命中时 tier = 充值金额
 }
 
 func TestTopUpBonusAmountNormalizesTokenDisplay(t *testing.T) {
@@ -103,4 +104,55 @@ func TestConfiguredBonusDoesNotChangeChannelPayMoney(t *testing.T) {
 	require.Equal(t, 20.0, getPaddlePayMoney(20, "default"))
 	require.Equal(t, 20.0, getWaffoPayMoney(20, "default"))
 	require.Equal(t, 20.0, getWaffoPancakePayMoney(20, "default"))
+}
+
+func TestResolveStageBonus_OverridesGlobal(t *testing.T) {
+	originalDisplayType := operation_setting.GetQuotaDisplayType()
+	t.Cleanup(func() {
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+	})
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
+
+	// 用户处于 E3 窗口内,充 50 享阶段档 ($50 送 $30)
+	amount, bonus, tier := resolveStageBonus(50, []stageWindowHit{{Step: 3, Amount: 50, Bonus: 30}})
+	require.Equal(t, int64(50), amount)
+	require.Equal(t, int64(30), bonus, "阶段 bonus 应取代全局")
+	require.Equal(t, 50, tier)
+}
+
+func TestResolveStageBonus_BelowThreshold(t *testing.T) {
+	originalDisplayType := operation_setting.GetQuotaDisplayType()
+	t.Cleanup(func() {
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+	})
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
+
+	// 阶段要求充 50,用户只充 20 → 不享阶段
+	_, bonus, tier := resolveStageBonus(20, []stageWindowHit{{Step: 3, Amount: 50, Bonus: 30}})
+	require.Equal(t, int64(0), bonus, "低于阶段档位不享阶段 bonus")
+	require.Equal(t, 0, tier)
+}
+
+func TestResolveStageBonus_PicksHighest(t *testing.T) {
+	originalDisplayType := operation_setting.GetQuotaDisplayType()
+	t.Cleanup(func() {
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+	})
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
+
+	// 同时命中 E3($50送$30) 和 E4($100送$80),充 $100 → 取最高 E4
+	hits := []stageWindowHit{
+		{Step: 3, Amount: 50, Bonus: 30},
+		{Step: 4, Amount: 100, Bonus: 80},
+	}
+	amount, bonus, tier := resolveStageBonus(100, hits)
+	require.Equal(t, int64(100), amount)
+	require.Equal(t, int64(80), bonus)
+	require.Equal(t, 100, tier)
+}
+
+func TestResolveStageBonus_NoHits(t *testing.T) {
+	_, bonus, tier := resolveStageBonus(50, nil)
+	require.Equal(t, int64(0), bonus)
+	require.Equal(t, 0, tier)
 }
