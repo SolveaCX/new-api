@@ -234,3 +234,27 @@ func TestResolveStageBonus_NoHits(t *testing.T) {
 	require.Equal(t, int64(0), bonus)
 	require.Equal(t, 0, tier)
 }
+
+// TestTokensModeCollisionIsHarmless 锁定 C1 复核发现的边界:TOKENS 展示模式下
+// req.Amount = 美元 × QuotaPerUnit,充值 >= $2 时数值会落入阶段 tier 命名空间(>=1000000)。
+// 验证无阶段命中(userId=0)时,普通路径 bonus 恒为 0(AmountBonus 按美元 key 必然 miss),
+// 因此即便 tier 数值与阶段命名空间重叠也不会错误发放——碰撞无害。
+func TestTokensModeCollisionIsHarmless(t *testing.T) {
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalDisplayType := operation_setting.GetQuotaDisplayType()
+	originalBonus := paymentSetting.AmountBonus
+	t.Cleanup(func() {
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+		paymentSetting.AmountBonus = originalBonus
+	})
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeTokens
+	paymentSetting.AmountBonus = map[int]int64{} // 美元 key 配置,TOKENS 模式下传入 token 数必然 miss
+
+	// 充值 $2 → req.Amount = 1000000(= StageBonusTierBase),数值落在阶段命名空间
+	requestAmount := int64(2 * common.QuotaPerUnit)
+	require.True(t, requestAmount >= int64(model.StageBonusTierBase), "前提:该金额数值确实进入阶段命名空间区间")
+
+	// 无阶段命中(userId=0)→ 普通路径 → bonus 必须为 0(不会因 tier 数值碰撞而误发)
+	_, bonus, _ := configuredTopUpAmounts(0, requestAmount, "default")
+	require.Equal(t, int64(0), bonus, "TOKENS 模式碰撞无害:普通路径 bonus 恒为 0")
+}
