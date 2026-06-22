@@ -301,10 +301,12 @@ type stageWindowHit struct {
 
 // resolveStageBonus 在用户命中的阶段中,选出本次充值金额可享的最高 bonus 阶段。
 // requestAmount: 本次充值金额(原始档位金额)。
-// 返回 (归一化后的本金, 归一化后的阶段 bonus, bonusTier=阶段档位金额);若无可享阶段返回 (0,0,0)。
+// 返回 (归一化后的本金, 归一化后的阶段 bonus, bonusTier=阶段专用 tier 编码);若无可享阶段返回 (0,0,0)。
+// bonusTier 用 model.StageBonusTier(step) 编码到独立命名空间,使回调侧限次固定为每阶段 1 次,
+// 既不与普通金额档位共享计数器,也不会因金额档位未配 AmountBonusLimit 而无限发放(C1 修复)。
 func resolveStageBonus(requestAmount int64, hits []stageWindowHit) (int64, int64, int) {
 	bestBonus := int64(-1)
-	bestTier := 0
+	bestStep := 0
 	for _, h := range hits {
 		// 充值金额需达到阶段要求档位
 		if requestAmount < int64(h.Amount) {
@@ -312,7 +314,7 @@ func resolveStageBonus(requestAmount int64, hits []stageWindowHit) (int64, int64
 		}
 		if h.Bonus > bestBonus {
 			bestBonus = h.Bonus
-			bestTier = h.Amount
+			bestStep = h.Step
 		}
 	}
 	if bestBonus < 0 {
@@ -320,7 +322,7 @@ func resolveStageBonus(requestAmount int64, hits []stageWindowHit) (int64, int64
 	}
 	amount := normalizeTopUpAmount(requestAmount)
 	bonus := normalizeTopUpBonusAmount(bestBonus)
-	return amount, bonus, bestTier
+	return amount, bonus, model.StageBonusTier(bestStep)
 }
 
 // userStageWindowHits 查询用户当前在有效期窗口内的所有阶段 bonus。
@@ -337,7 +339,11 @@ func userStageWindowHits(userId int) []stageWindowHit {
 		if sb.Amount <= 0 || sb.Bonus <= 0 {
 			continue
 		}
-		window := int64(sb.WindowDays) * 24 * 3600
+		windowDays := sb.WindowDays
+		if windowDays <= 0 {
+			windowDays = 7 // WindowDays 未配/非法时兜底 7 天,避免阶段 bonus 静默永不生效(I2)
+		}
+		window := int64(windowDays) * 24 * 3600
 		within, _, err := model.HasSentStepWithinWindow(userId, step, window)
 		if err != nil {
 			logger.LogError(context.Background(), fmt.Sprintf("stage bonus window check failed user=%d step=%d: %v", userId, step, err))
