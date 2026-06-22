@@ -72,6 +72,9 @@ func SetApiRouter(router *gin.Engine) {
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
 
+		// Email lifecycle unsubscribe (no auth, HMAC-signed token)
+		apiRouter.GET("/email/unsubscribe", middleware.CriticalRateLimit(), controller.HandleEmailUnsubscribe)
+
 		userRoute := apiRouter.Group("/user")
 		{
 			userRoute.POST("/register", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.TurnstileCheck(), controller.Register)
