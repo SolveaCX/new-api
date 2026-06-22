@@ -92,3 +92,11 @@ func SetUserEmailOptOut(userId int) error {
 	return DB.Model(&User{}).Where("id = ?", userId).
 		Update("email_opt_out", true).Error
 }
+
+// GetUsersRegisteredAfter 返回注册时间在 cutoff 之后的用户(召回邮件扫描用),最多 limit 个,按注册时间升序。
+func GetUsersRegisteredAfter(cutoff int64, limit int) ([]*User, error) {
+	var users []*User
+	err := DB.Where("created_at >= ?", cutoff).
+		Order("created_at asc").Limit(limit).Find(&users).Error
+	return users, err
+}
