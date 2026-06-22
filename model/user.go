@@ -61,6 +61,7 @@ type User struct {
 	StripeCardFingerprint string         `json:"stripe_card_fingerprint,omitempty" gorm:"type:varchar(64);column:stripe_card_fingerprint;index"`
 	CreatedAt             int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt           int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	EmailOptOut           bool           `json:"email_opt_out" gorm:"default:false;column:email_opt_out"` // opted out of lifecycle recall emails
 }
 
 func (user *User) ToBaseUser() *UserBase {
