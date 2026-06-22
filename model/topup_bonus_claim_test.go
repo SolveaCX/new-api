@@ -142,6 +142,71 @@ func TestApplyTopUpBonusZerosOutWhenOverLimit(t *testing.T) {
 	require.Equal(t, int64(0), tu2.BonusAmount)
 }
 
+// TestStageBonusTierLimitedToOnceEvenWithEmptyConfig 是 C1 回归测试:
+// 召回阶段 bonus 用独立 tier 命名空间(StageBonusTier),其限次固定为 1,
+// 绝不能因 AmountBonusLimit 为空(空 map 返回 0 = 不限次)而落入无限发放路径。
+func TestStageBonusTierLimitedToOnceEvenWithEmptyConfig(t *testing.T) {
+	setupBonusClaimTestDB(t)
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalLimit := paymentSetting.AmountBonusLimit
+	t.Cleanup(func() { paymentSetting.AmountBonusLimit = originalLimit })
+	// 故意把 AmountBonusLimit 置空 —— 模拟管理员只配了阶段 bonus 没配限次的情况。
+	paymentSetting.AmountBonusLimit = map[int]int{}
+
+	stageTier := StageBonusTier(3) // 阶段 E3 的专用 tier
+
+	// 校验:阶段 tier 的限次固定为 1,不受空 AmountBonusLimit 影响。
+	require.Equal(t, 1, topUpBonusLimitFor(stageTier), "阶段 tier 限次必须固定为 1")
+	// 对比:普通金额档位在空配置下确实返回 0(不限次),这正是 C1 的危险默认。
+	require.Equal(t, 0, topUpBonusLimitFor(50), "普通档位空配置返回 0(不限次)")
+
+	// 第一笔阶段充值:发放
+	tu1 := &TopUp{UserId: 50, BonusAmount: 30, BonusTier: stageTier, TradeNo: "stage-1"}
+	require.NoError(t, DB.Create(tu1).Error)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		extra, err := applyTopUpBonusInTx(tx, tu1, topUpBonusLimitFor(tu1.BonusTier))
+		require.NoError(t, err)
+		require.Equal(t, int64(30)*int64(common.QuotaPerUnit), extra, "首笔阶段 bonus 应发放")
+		return nil
+	}))
+
+	// 第二笔同阶段充值:必须不再发放(限次=1 已用满)
+	tu2 := &TopUp{UserId: 50, BonusAmount: 30, BonusTier: stageTier, TradeNo: "stage-2"}
+	require.NoError(t, DB.Create(tu2).Error)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		extra, err := applyTopUpBonusInTx(tx, tu2, topUpBonusLimitFor(tu2.BonusTier))
+		require.NoError(t, err)
+		require.Equal(t, int64(0), extra, "第二笔阶段 bonus 必须被限次拒绝,绝不无限领")
+		return nil
+	}))
+	require.Equal(t, int64(0), tu2.BonusAmount, "未发放时 BonusAmount 归零")
+}
+
+// TestStageBonusTierIsolatedFromAmountTier 验证阶段 tier 与普通金额档位不共享限次计数器,
+// 即使阶段金额与某真实档位金额相同(避免 review 指出的隐性耦合)。
+func TestStageBonusTierIsolatedFromAmountTier(t *testing.T) {
+	setupBonusClaimTestDB(t)
+
+	// 普通档位 50 领一次
+	tuNormal := &TopUp{UserId: 60, BonusAmount: 5, BonusTier: 50, TradeNo: "normal-50"}
+	require.NoError(t, DB.Create(tuNormal).Error)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		_, err := applyTopUpBonusInTx(tx, tuNormal, 1)
+		return err
+	}))
+
+	// 阶段 E3(假设也对应 $50)领一次 —— 应独立成功,不受普通 50 已领影响
+	stageTier := StageBonusTier(3)
+	tuStage := &TopUp{UserId: 60, BonusAmount: 30, BonusTier: stageTier, TradeNo: "stage-50"}
+	require.NoError(t, DB.Create(tuStage).Error)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		extra, err := applyTopUpBonusInTx(tx, tuStage, topUpBonusLimitFor(tuStage.BonusTier))
+		require.NoError(t, err)
+		require.Equal(t, int64(30)*int64(common.QuotaPerUnit), extra, "阶段 bonus 与普通档位独立计数,应发放")
+		return nil
+	}))
+}
+
 func TestGetTopUpBonusRemaining(t *testing.T) {
 	setupBonusClaimTestDB(t)
 	paymentSetting := operation_setting.GetPaymentSetting()

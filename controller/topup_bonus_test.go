@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/require"
@@ -117,7 +118,7 @@ func TestResolveStageBonus_OverridesGlobal(t *testing.T) {
 	amount, bonus, tier := resolveStageBonus(50, []stageWindowHit{{Step: 3, Amount: 50, Bonus: 30}})
 	require.Equal(t, int64(50), amount)
 	require.Equal(t, int64(30), bonus, "阶段 bonus 应取代全局")
-	require.Equal(t, 50, tier)
+	require.Equal(t, model.StageBonusTier(3), tier, "tier 用阶段专用命名空间编码")
 }
 
 func TestResolveStageBonus_BelowThreshold(t *testing.T) {
@@ -148,7 +149,7 @@ func TestResolveStageBonus_PicksHighest(t *testing.T) {
 	amount, bonus, tier := resolveStageBonus(100, hits)
 	require.Equal(t, int64(100), amount)
 	require.Equal(t, int64(80), bonus)
-	require.Equal(t, 100, tier)
+	require.Equal(t, model.StageBonusTier(4), tier, "取最高阶段 E4 的 tier 编码")
 }
 
 func TestResolveStageBonus_NoHits(t *testing.T) {
