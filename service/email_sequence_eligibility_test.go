@@ -17,6 +17,9 @@ func TestIsInternalUser(t *testing.T) {
 	// 用户名含 test
 	require.True(t, isInternalUser(&model.User{Email: "x@gmail.com", Username: "test_user", Group: "plg"}, domains))
 	require.True(t, isInternalUser(&model.User{Email: "x@gmail.com", Username: "QA_TEST", Group: "plg"}, domains), "大小写不敏感")
+	require.False(t, isInternalUser(&model.User{Email: "x@gmail.com", Username: "contest", Group: "plg"}, domains), "test 不能作为普通单词子串误杀")
+	require.False(t, isInternalUser(&model.User{Email: "x@gmail.com", Username: "protester", Group: "plg"}, domains), "test 不能作为普通单词子串误杀")
+	require.False(t, isInternalUser(&model.User{Email: "x@gmail.com", Username: "greatest", Group: "plg"}, domains), "test 不能作为普通单词子串误杀")
 	// 正常外部用户(plg 是正常组,不排除)
 	require.False(t, isInternalUser(&model.User{Email: "real@gmail.com", Username: "alice", Group: "plg"}, domains))
 	require.False(t, isInternalUser(&model.User{Email: "bob@company.com", Username: "bob", Group: "default"}, domains))

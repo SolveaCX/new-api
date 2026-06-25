@@ -84,14 +84,21 @@ func runEmailSequenceOnce() {
 		}
 	}
 	cutoff := common.GetTimestamp() - int64(maxDelayDays+2)*24*3600
-	users, err := model.GetUsersRegisteredAfter(cutoff, es.BatchLimit)
+	users, err := model.GetUsersRegisteredAfter(cutoff, 0)
 	if err != nil {
 		logger.LogError(ctx, "email sequence: scan users failed: "+err.Error())
 		return
 	}
 
+	sendLimit := es.BatchLimit
+	if sendLimit <= 0 {
+		sendLimit = 500
+	}
 	sentCount := 0
 	for _, u := range users {
+		if sentCount >= sendLimit {
+			break
+		}
 		step := dueStep(u.CreatedAt, es.StepDelayDays, common.GetTimestamp())
 		if step == 0 || !es.IsStepEnabled(step) {
 			continue
@@ -106,22 +113,33 @@ func runEmailSequenceOnce() {
 		// 已达成目标判定(E2 看 request_count;E3/E4 看是否已充值)
 		hasPaid := false
 		if step == model.EmailSeqStepE3 || step == model.EmailSeqStepE4 {
-			hasPaid, _ = model.HasSuccessfulTopUp(u.Id)
+			paid, ok := emailSequencePaidStatus(ctx, u.Id, model.HasSuccessfulTopUp)
+			if !ok {
+				continue
+			}
+			hasPaid = paid
 		}
 		if stepTargetMet(u, step, hasPaid) {
 			continue
 		}
 		// 单用户每日 1 封节流:今天已发过任意 step 则跳过
-		if sentToday, _ := model.HasSentAnyStepToday(u.Id); sentToday {
+		sentToday, ok := emailSequenceSentToday(ctx, u.Id, model.HasSentAnyStepToday)
+		if !ok {
+			continue
+		}
+		if sentToday {
 			continue
 		}
 
 		// 渲染 + 发送 + 落记录(幂等:先占记录再发)
-		if err := sendRecallEmail(u, step, es); err != nil {
+		sent, err := sendRecallEmail(u, step, es)
+		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("email sequence send failed user=%d step=%d: %v", u.Id, step, err))
 			continue
 		}
-		sentCount++
+		if sent {
+			sentCount++
+		}
 	}
 	if sentCount > 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("email sequence: sent %d emails", sentCount))
@@ -129,31 +147,64 @@ func runEmailSequenceOnce() {
 }
 
 // sendRecallEmail 渲染并发送一封召回邮件,幂等落记录。
-func sendRecallEmail(u *model.User, step int, es *operation_setting.EmailSequenceSetting) error {
+func sendRecallEmail(u *model.User, step int, es *operation_setting.EmailSequenceSetting) (bool, error) {
+	lang := normalizeEmailLang(model.GetUserLanguage(u.Id))
+	bonusText := buildBonusText(lang, step, es)
+	if emailSequenceStepRequiresBonus(step) && bonusText == "" {
+		return false, nil
+	}
+
 	// 幂等:先尝试占用 (user,step) 名额,占不到说明已发过
 	ok, err := model.RecordEmailSequenceSent(u.Id, step)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !ok {
-		return nil // 已发过,跳过
+		return false, nil // 已发过,跳过
 	}
 
-	lang := normalizeEmailLang(model.GetUserLanguage(u.Id))
 	origin := system_setting.ServerAddress
 	data := EmailRenderData{
 		SystemName:     common.SystemName,
 		SignUpLink:     withUTM(origin+"/sign-up?redirect=/keys", step),
 		QuickstartLink: withUTM(origin+"/quickstart", step),
 		TopupLink:      withUTM(origin+"/wallet", step),
-		BonusText:      buildBonusText(lang, step, es),
+		BonusText:      bonusText,
 		UnsubscribeURL: BuildUnsubscribeLink(origin, u.Id),
 	}
 	subject, body, err := RenderEmail(lang, step, data)
 	if err != nil {
-		return err
+		if cleanupErr := model.DeleteEmailSequenceSent(u.Id, step); cleanupErr != nil {
+			return false, fmt.Errorf("%w; release email sequence record failed: %v", err, cleanupErr)
+		}
+		return false, err
 	}
-	return common.SendEmail(subject, u.Email, body)
+	if err := common.SendEmail(subject, u.Email, body); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func emailSequenceStepRequiresBonus(step int) bool {
+	return step == model.EmailSeqStepE3 || step == model.EmailSeqStepE4
+}
+
+func emailSequencePaidStatus(ctx context.Context, userId int, check func(int) (bool, error)) (bool, bool) {
+	hasPaid, err := check(userId)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("email sequence: topup check failed user=%d: %v", userId, err))
+		return false, false
+	}
+	return hasPaid, true
+}
+
+func emailSequenceSentToday(ctx context.Context, userId int, check func(int) (bool, error)) (bool, bool) {
+	sentToday, err := check(userId)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("email sequence: sent-today check failed user=%d: %v", userId, err))
+		return false, false
+	}
+	return sentToday, true
 }
 
 // normalizeEmailLang 把用户语言归一化到支持的 5 语言,不支持回退 en。

@@ -27,7 +27,7 @@ const (
 // (UserId, Step) 唯一索引是幂等的硬保证:调度器重启/重复运行绝不重复发送同一 (user, step)。
 type UserEmailSequence struct {
 	Id     int    `json:"id" gorm:"primaryKey"`
-	UserId int    `json:"user_id" gorm:"uniqueIndex:idx_user_email_seq_user_step;index"`
+	UserId int    `json:"user_id" gorm:"uniqueIndex:idx_user_email_seq_user_step"`
 	Step   int    `json:"step" gorm:"uniqueIndex:idx_user_email_seq_user_step"`
 	Status string `json:"status" gorm:"type:varchar(16)"`
 	SentAt int64  `json:"sent_at" gorm:"bigint;index"`
@@ -48,6 +48,12 @@ func RecordEmailSequenceSent(userId, step int) (bool, error) {
 		return false, res.Error
 	}
 	return res.RowsAffected > 0, nil
+}
+
+// DeleteEmailSequenceSent releases a reserved send record after delivery fails so a later tick can retry.
+func DeleteEmailSequenceSent(userId, step int) error {
+	return DB.Where("user_id = ? AND step = ? AND status = ?", userId, step, EmailSeqStatusSent).
+		Delete(&UserEmailSequence{}).Error
 }
 
 // GetSentSteps 返回某用户已发送过的所有 step。
@@ -92,10 +98,15 @@ func SetUserEmailOptOut(userId int) error {
 		Update("email_opt_out", true).Error
 }
 
-// GetUsersRegisteredAfter 返回注册时间在 cutoff 之后的用户(召回邮件扫描用),最多 limit 个,按注册时间升序。
+// GetUsersRegisteredAfter 返回注册时间在 cutoff 之后的用户(召回邮件扫描用),按注册时间降序(优先扫描最新用户)。
+// limit > 0 时限制返回数量;limit <= 0 时返回全部匹配用户,用于调用方按实际发送数限流。
 func GetUsersRegisteredAfter(cutoff int64, limit int) ([]*User, error) {
 	var users []*User
-	err := DB.Where("created_at >= ?", cutoff).
-		Order("created_at asc").Limit(limit).Find(&users).Error
+	query := DB.Where("created_at >= ? AND email_opt_out = ?", cutoff, false).
+		Order("created_at desc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&users).Error
 	return users, err
 }

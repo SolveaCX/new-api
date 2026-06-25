@@ -229,6 +229,22 @@ func TestResolveStageBonus_PicksHighest(t *testing.T) {
 	require.Equal(t, model.StageBonusTier(4), tier, "取最高阶段 E4 的 tier 编码")
 }
 
+func TestResolveStageBonus_TiePrefersHigherStep(t *testing.T) {
+	originalDisplayType := operation_setting.GetQuotaDisplayType()
+	t.Cleanup(func() {
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+	})
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
+
+	hits := []stageWindowHit{
+		{Step: 3, Amount: 50, Bonus: 30},
+		{Step: 4, Amount: 50, Bonus: 30},
+	}
+	_, bonus, tier := resolveStageBonus(50, hits)
+	require.Equal(t, int64(30), bonus)
+	require.Equal(t, model.StageBonusTier(4), tier, "equal stage bonus must resolve deterministically to one tier")
+}
+
 func TestResolveStageBonus_NoHits(t *testing.T) {
 	_, bonus, tier := resolveStageBonus(50, nil)
 	require.Equal(t, int64(0), bonus)

@@ -2,7 +2,9 @@ package service
 
 import (
 	"bytes"
-	"html/template"
+	"fmt"
+	htmltemplate "html/template"
+	texttemplate "text/template"
 )
 
 // EmailTemplate 单封邮件的主题与正文模板。
@@ -194,10 +196,10 @@ func RenderEmail(lang string, step int, data EmailRenderData) (string, string, e
 	if !ok {
 		tpl, ok = getEmailTemplate(emailDefaultLang, step)
 		if !ok {
-			return "", "", nil
+			return "", "", fmt.Errorf("email template missing for lang=%s step=%d", lang, step)
 		}
 	}
-	subject, err := renderTemplateStr(tpl.Subject, data)
+	subject, err := renderSubjectStr(tpl.Subject, data)
 	if err != nil {
 		return "", "", err
 	}
@@ -209,7 +211,19 @@ func RenderEmail(lang string, step int, data EmailRenderData) (string, string, e
 }
 
 func renderTemplateStr(tplStr string, data EmailRenderData) (string, error) {
-	t, err := template.New("email").Parse(tplStr)
+	t, err := htmltemplate.New("email").Parse(tplStr)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func renderSubjectStr(tplStr string, data EmailRenderData) (string, error) {
+	t, err := texttemplate.New("email_subject").Parse(tplStr)
 	if err != nil {
 		return "", err
 	}

@@ -39,6 +39,11 @@ func TestStageBonusFor(t *testing.T) {
 	s.StageBonus = map[int]StageBonus{1: {Amount: 0, Bonus: 10}}
 	_, ok = s.StageBonusFor(1)
 	require.False(t, ok, "Amount<=0 应视为无效")
+
+	// Bonus<=0 也视为无效，避免邮件文案出现 get $0 free
+	s.StageBonus = map[int]StageBonus{3: {Amount: 50, Bonus: 0}}
+	_, ok = s.StageBonusFor(3)
+	require.False(t, ok, "Bonus<=0 应视为无效")
 }
 
 func TestIsStepEnabled_DefaultTrue(t *testing.T) {

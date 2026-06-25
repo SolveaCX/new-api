@@ -27,13 +27,21 @@ type EmailSequenceSetting struct {
 var stepDelayDefaults = map[int]int{1: 0, 2: 3, 3: 14, 4: 30}
 
 var emailSequenceSetting = EmailSequenceSetting{
-	StepDelayDays: map[int]int{1: 0, 2: 3, 3: 14, 4: 30},
+	StepDelayDays: cloneStepDelayDefaults(),
 	StepEnabled:   map[int]bool{1: true, 2: true, 3: true, 4: true},
 	StageBonus:    map[int]StageBonus{},
 	BatchLimit:    500,
 	InternalEmailDomains: []string{
 		"lockin.com", "voc.ai", "shulex", "solvea", "flatkey.ai", "quantumnous",
 	},
+}
+
+func cloneStepDelayDefaults() map[int]int {
+	out := make(map[int]int, len(stepDelayDefaults))
+	for step, days := range stepDelayDefaults {
+		out[step] = days
+	}
+	return out
 }
 
 func init() {
@@ -47,7 +55,7 @@ func GetEmailSequenceSetting() *EmailSequenceSetting {
 // StageBonusFor 返回某 step 配置的阶段 bonus(若有且有效)。
 func (s *EmailSequenceSetting) StageBonusFor(step int) (StageBonus, bool) {
 	b, ok := s.StageBonus[step]
-	if !ok || b.Amount <= 0 {
+	if !ok || b.Amount <= 0 || b.Bonus <= 0 {
 		return StageBonus{}, false
 	}
 	return b, true

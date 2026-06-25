@@ -27,6 +27,22 @@ func TestRenderEmailFallsBackToEn(t *testing.T) {
 	require.Contains(t, body, "TestAPI")
 }
 
+func TestRenderEmailSubjectUsesPlainTextEscaping(t *testing.T) {
+	data := EmailRenderData{SystemName: "Foo & Bar", QuickstartLink: "http://x/quickstart"}
+	subject, _, err := RenderEmail("en", 1, data)
+	require.NoError(t, err)
+	require.Contains(t, subject, "Foo & Bar")
+	require.NotContains(t, subject, "&amp;")
+}
+
+func TestRenderEmailErrorsWhenFallbackStepMissing(t *testing.T) {
+	data := EmailRenderData{SystemName: "TestAPI"}
+	subject, body, err := RenderEmail("de", 99, data)
+	require.Error(t, err)
+	require.Empty(t, subject)
+	require.Empty(t, body)
+}
+
 func TestRenderEmailInjectsBonus(t *testing.T) {
 	data := EmailRenderData{SystemName: "TestAPI", BonusText: "Top up $50 get $30 free", TopupLink: "http://x/wallet"}
 	_, body, err := RenderEmail("en", 3, data)

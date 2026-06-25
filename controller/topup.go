@@ -312,7 +312,7 @@ func resolveStageBonus(requestAmount int64, hits []stageWindowHit) (int64, int64
 		if requestAmount < int64(h.Amount) {
 			continue
 		}
-		if h.Bonus > bestBonus {
+		if h.Bonus > bestBonus || (h.Bonus == bestBonus && h.Step > bestStep) {
 			bestBonus = h.Bonus
 			bestStep = h.Step
 		}

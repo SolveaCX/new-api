@@ -78,3 +78,30 @@ func TestSetUserEmailOptOut(t *testing.T) {
 	require.NoError(t, DB.First(&reloaded, u.Id).Error)
 	require.True(t, reloaded.EmailOptOut, "退订后该列应为 true")
 }
+
+func TestGetUsersRegisteredAfterSkipsOptOutAndPrefersNewest(t *testing.T) {
+	setupEmailSeqTestDB(t)
+
+	users := []*User{
+		{Username: "old", Email: "old@example.com", AffCode: "aff-old", CreatedAt: 100},
+		{Username: "optout", Email: "optout@example.com", AffCode: "aff-optout", CreatedAt: 300, EmailOptOut: true},
+		{Username: "newest", Email: "newest@example.com", AffCode: "aff-newest", CreatedAt: 400},
+		{Username: "middle", Email: "middle@example.com", AffCode: "aff-middle", CreatedAt: 200},
+	}
+	for _, u := range users {
+		require.NoError(t, DB.Create(u).Error)
+	}
+
+	got, err := GetUsersRegisteredAfter(0, 2)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, "newest", got[0].Username)
+	require.Equal(t, "middle", got[1].Username)
+
+	all, err := GetUsersRegisteredAfter(0, 0)
+	require.NoError(t, err)
+	require.Len(t, all, 3)
+	require.Equal(t, "newest", all[0].Username)
+	require.Equal(t, "middle", all[1].Username)
+	require.Equal(t, "old", all[2].Username)
+}

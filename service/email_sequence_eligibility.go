@@ -2,15 +2,16 @@ package service
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
 
 // isInternalUser 判断是否内部账号(命中即不发召回邮件)。
-// 规则:用户名含 test;或邮箱域名属于内部白名单(子串匹配,覆盖 shulex/solvea 这类无 TLD 的写法)。
+// 规则:用户名包含独立 test token;或邮箱域名属于内部白名单(子串匹配,覆盖 shulex/solvea 这类无 TLD 的写法)。
 func isInternalUser(u *model.User, internalDomains []string) bool {
-	if strings.Contains(strings.ToLower(u.Username), "test") {
+	if isInternalTestUsername(u.Username) {
 		return true
 	}
 	email := strings.ToLower(u.Email)
@@ -24,6 +25,18 @@ func isInternalUser(u *model.User, internalDomains []string) bool {
 			continue
 		}
 		if strings.Contains(domain, strings.ToLower(d)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isInternalTestUsername(username string) bool {
+	parts := strings.FieldsFunc(strings.ToLower(username), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for _, part := range parts {
+		if part == "test" {
 			return true
 		}
 	}

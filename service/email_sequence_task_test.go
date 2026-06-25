@@ -1,12 +1,36 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
+	"github.com/glebarez/sqlite"
+
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func setupEmailSequenceServiceTestDB(t *testing.T) {
+	t.Helper()
+
+	originalDB := model.DB
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserEmailSequence{}))
+
+	model.DB = db
+	t.Cleanup(func() {
+		model.DB = originalDB
+	})
+}
 
 func TestDueStep(t *testing.T) {
 	delays := map[int]int{1: 0, 2: 3, 3: 14, 4: 30}
@@ -86,4 +110,116 @@ func TestBuildBonusText_NoStageReturnsEmpty(t *testing.T) {
 	require.Equal(t, "", buildBonusText("en", 2, es))
 	// E3 有 → 非空
 	require.Contains(t, buildBonusText("en", 3, es), "50")
+}
+
+func TestEmailSequencePaidStatusSkipsOnLookupError(t *testing.T) {
+	hasPaid, ok := emailSequencePaidStatus(context.Background(), 42, func(int) (bool, error) {
+		return false, errors.New("db down")
+	})
+	require.False(t, hasPaid)
+	require.False(t, ok)
+}
+
+func TestEmailSequenceSentTodaySkipsOnLookupError(t *testing.T) {
+	sentToday, ok := emailSequenceSentToday(context.Background(), 42, func(int) (bool, error) {
+		return false, errors.New("db down")
+	})
+	require.False(t, sentToday)
+	require.False(t, ok)
+}
+
+func TestSendRecallEmailKeepsRecordWhenDeliveryStatusIsAmbiguous(t *testing.T) {
+	setupEmailSequenceServiceTestDB(t)
+
+	originalSMTPFrom := common.SMTPFrom
+	originalSMTPAccount := common.SMTPAccount
+	t.Cleanup(func() {
+		common.SMTPFrom = originalSMTPFrom
+		common.SMTPAccount = originalSMTPAccount
+	})
+	common.SMTPFrom = "invalid-from"
+	common.SMTPAccount = "invalid-from"
+
+	u := &model.User{Username: "recall-fail", Email: "user@example.com", Status: common.UserStatusEnabled}
+	require.NoError(t, model.DB.Create(u).Error)
+
+	es := operation_setting.GetEmailSequenceSetting()
+	sent, err := sendRecallEmail(u, model.EmailSeqStepE1, es)
+	require.Error(t, err)
+	require.False(t, sent)
+
+	ok, err := model.RecordEmailSequenceSent(u.Id, model.EmailSeqStepE1)
+	require.NoError(t, err)
+	require.False(t, ok, "ambiguous delivery failure should keep the reservation to avoid duplicate recall emails")
+}
+
+func TestSendRecallEmailSkipsBonusStepWithoutBonusConfig(t *testing.T) {
+	setupEmailSequenceServiceTestDB(t)
+
+	originalSMTPFrom := common.SMTPFrom
+	originalSMTPAccount := common.SMTPAccount
+	t.Cleanup(func() {
+		common.SMTPFrom = originalSMTPFrom
+		common.SMTPAccount = originalSMTPAccount
+	})
+	common.SMTPFrom = "invalid-from"
+	common.SMTPAccount = "invalid-from"
+
+	es := operation_setting.GetEmailSequenceSetting()
+	originalStageBonus := es.StageBonus
+	t.Cleanup(func() {
+		es.StageBonus = originalStageBonus
+	})
+	es.StageBonus = map[int]operation_setting.StageBonus{}
+
+	u := &model.User{Username: "recall-no-bonus", Email: "user@example.com", Status: common.UserStatusEnabled}
+	require.NoError(t, model.DB.Create(u).Error)
+
+	sent, err := sendRecallEmail(u, model.EmailSeqStepE3, es)
+	require.NoError(t, err)
+	require.False(t, sent)
+
+	ok, err := model.RecordEmailSequenceSent(u.Id, model.EmailSeqStepE3)
+	require.NoError(t, err)
+	require.True(t, ok, "bonus-themed steps without a configured bonus should not consume the send record")
+}
+
+func TestSendRecallEmailReleasesRecordWhenRenderFails(t *testing.T) {
+	setupEmailSequenceServiceTestDB(t)
+
+	u := &model.User{Username: "recall-render-fail", Email: "user@example.com", Status: common.UserStatusEnabled}
+	require.NoError(t, model.DB.Create(u).Error)
+
+	es := operation_setting.GetEmailSequenceSetting()
+	sent, err := sendRecallEmail(u, 99, es)
+	require.Error(t, err)
+	require.False(t, sent)
+
+	ok, err := model.RecordEmailSequenceSent(u.Id, 99)
+	require.NoError(t, err)
+	require.True(t, ok, "render failure should not permanently consume the send record")
+}
+
+func TestSendRecallEmailAlreadyReservedReportsNoSend(t *testing.T) {
+	setupEmailSequenceServiceTestDB(t)
+
+	originalSMTPFrom := common.SMTPFrom
+	originalSMTPAccount := common.SMTPAccount
+	t.Cleanup(func() {
+		common.SMTPFrom = originalSMTPFrom
+		common.SMTPAccount = originalSMTPAccount
+	})
+	common.SMTPFrom = "invalid-from"
+	common.SMTPAccount = "invalid-from"
+
+	u := &model.User{Username: "recall-already-sent", Email: "user@example.com", Status: common.UserStatusEnabled}
+	require.NoError(t, model.DB.Create(u).Error)
+	ok, err := model.RecordEmailSequenceSent(u.Id, model.EmailSeqStepE1)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	es := operation_setting.GetEmailSequenceSetting()
+	sent, err := sendRecallEmail(u, model.EmailSeqStepE1, es)
+	require.NoError(t, err)
+	require.False(t, sent)
 }
