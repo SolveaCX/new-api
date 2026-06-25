@@ -22,6 +22,8 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+const OptionKeyPlaygroundDefaultModel = "PlaygroundDefaultModel"
+
 func AllOption() ([]*Option, error) {
 	var options []*Option
 	var err error
@@ -47,6 +49,7 @@ func InitOptionMap() {
 	common.OptionMap["WeChatAuthEnabled"] = strconv.FormatBool(common.WeChatAuthEnabled)
 	common.OptionMap["TurnstileCheckEnabled"] = strconv.FormatBool(common.TurnstileCheckEnabled)
 	common.OptionMap["RegisterEnabled"] = strconv.FormatBool(common.RegisterEnabled)
+	common.OptionMap["EmailSequenceEnabled"] = strconv.FormatBool(common.EmailSequenceEnabled)
 	common.OptionMap["AutomaticDisableChannelEnabled"] = strconv.FormatBool(common.AutomaticDisableChannelEnabled)
 	common.OptionMap["AutomaticEnableChannelEnabled"] = strconv.FormatBool(common.AutomaticEnableChannelEnabled)
 	common.OptionMap["LogConsumeEnabled"] = strconv.FormatBool(common.LogConsumeEnabled)
@@ -171,6 +174,7 @@ func InitOptionMap() {
 	common.OptionMap["DataExportInterval"] = strconv.Itoa(common.DataExportInterval)
 	common.OptionMap["DataExportDefaultTime"] = common.DataExportDefaultTime
 	common.OptionMap["DefaultCollapseSidebar"] = strconv.FormatBool(common.DefaultCollapseSidebar)
+	common.OptionMap[OptionKeyPlaygroundDefaultModel] = "gpt-4o"
 	common.OptionMap["MjNotifyEnabled"] = strconv.FormatBool(setting.MjNotifyEnabled)
 	common.OptionMap["MjAccountFilterEnabled"] = strconv.FormatBool(setting.MjAccountFilterEnabled)
 	common.OptionMap["MjModeClearEnabled"] = strconv.FormatBool(setting.MjModeClearEnabled)
@@ -329,6 +333,9 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if hasPaddleOptionKey(normalizedValues) {
 		setting.ApplyPaddleEnvOverrides()
 		syncPaddleOptionMap()
+	}
+	if pubErr := common.PublishConfigChanged(context.Background(), common.ConfigScopeOptions); pubErr != nil {
+		common.SysError("pubsub: failed to publish options change: " + pubErr.Error())
 	}
 	return nil
 }
@@ -530,6 +537,8 @@ func applyOptionMapValue(key string, value string) (err error) {
 			common.TurnstileCheckEnabled = boolValue
 		case "RegisterEnabled":
 			common.RegisterEnabled = boolValue
+		case "EmailSequenceEnabled":
+			common.EmailSequenceEnabled = boolValue
 		case "EmailDomainRestrictionEnabled":
 			common.EmailDomainRestrictionEnabled = boolValue
 		case "EmailAliasRestrictionEnabled":

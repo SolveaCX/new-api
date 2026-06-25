@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Script from "next/script";
-import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/locales";
-import "./globals.css";
+import type { ReactNode } from "react";
+import type { Locale } from "@/lib/locales";
 
 const GTM_ID = "GTM-5T5LPLSZ";
 
@@ -10,7 +9,9 @@ const GTM_ID = "GTM-5T5LPLSZ";
 const LIVECHAT_EMBED_SRC =
   "https://app.solvea.cx/api_v2/gpt/bots/livechat/embed.js?pid=1773&token=9454e15203254694a03d75fadbf9a6d4";
 
-export const metadata: Metadata = {
+export const ATTRIBUTION_COOKIE_SCRIPT = `(function(){try{var keep={aff:1,fbclid:1,gad_campaignid:1,gad_source:1,gbraid:1,gclid:1,lng:1,msclkid:1,ttclid:1,wbraid:1};var params=new URLSearchParams(window.location.search||"");var values={};params.forEach(function(value,key){if(!value)return;if(keep[key]||key.indexOf("utm_")===0||key.indexOf("hsa_")===0){values[key]=value;}});if(!Object.keys(values).length)return;values.landing_path=window.location.pathname||"/";values.captured_at=new Date().toISOString();var host=window.location.hostname;var attrs=["path=/","max-age=7776000","SameSite=Lax"];if(host==="flatkey.ai"||host.endsWith(".flatkey.ai"))attrs.push("domain=.flatkey.ai");if(window.location.protocol==="https:")attrs.push("Secure");document.cookie="flatkey_ads_attribution="+encodeURIComponent(JSON.stringify(values))+"; "+attrs.join("; ");}catch(e){}})();`;
+
+export const rootMetadata: Metadata = {
   applicationName: "flatkey.ai",
   title: {
     default: "flatkey.ai",
@@ -18,22 +19,17 @@ export const metadata: Metadata = {
   },
 };
 
-export function resolveHtmlLangFromPathname(pathname: string | null | undefined): Locale {
-  const firstSegment = pathname?.split("/").filter(Boolean)[0];
-  return isLocale(firstSegment) ? firstSegment : DEFAULT_LOCALE;
-}
+type RootDocumentProps = {
+  bodyStart?: ReactNode;
+  children: ReactNode;
+  lang: Locale;
+};
 
-export default async function RootLayout(
-  props: Readonly<{
-    children: React.ReactNode;
-  }>
-) {
-  const requestHeaders = await headers();
-  const pathname = requestHeaders.get("x-flatkey-pathname");
-
+export function RootDocument({ bodyStart, children, lang }: RootDocumentProps) {
   return (
-    <html lang={resolveHtmlLangFromPathname(pathname)}>
+    <html lang={lang} suppressHydrationWarning>
       <body>
+        {bodyStart}
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`
             (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
@@ -51,7 +47,7 @@ export default async function RootLayout(
             style={{ display: "none", visibility: "hidden" }}
           />
         </noscript>
-        {props.children}
+        {children}
         <Script
           id="solvea-livechat"
           src={LIVECHAT_EMBED_SRC}

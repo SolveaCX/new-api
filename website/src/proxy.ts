@@ -1,16 +1,18 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
+import { LANGUAGE_PREFERENCE_COOKIE, getLanguageRedirectPath } from "@/lib/language-routing";
 
 export function proxy(request: NextRequest) {
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-flatkey-pathname", request.nextUrl.pathname);
-
-  return NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
+  const redirectPath = getLanguageRedirectPath({
+    pathname: request.nextUrl.pathname,
+    method: request.method,
+    acceptLanguage: request.headers.get("accept-language"),
+    cookieLocale: request.cookies.get(LANGUAGE_PREFERENCE_COOKIE)?.value,
+    userAgent: request.headers.get("user-agent"),
   });
-}
 
-export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
-};
+  if (!redirectPath) return NextResponse.next();
+
+  const url = request.nextUrl.clone();
+  url.pathname = redirectPath;
+  return NextResponse.redirect(url, 307);
+}

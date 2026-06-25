@@ -80,9 +80,10 @@ func createRootAccountIfNeed() error {
 			Role:         common.RoleRootUser,
 			Status:       common.UserStatusEnabled,
 			DisplayName:  "Root User",
+			Group:        defaultUserGroup,
 			AccessToken:  nil,
 			Quota:        100000000,
-			IsEnterprise: true, // admins/root keep full group control; never default them to PLG
+			IsEnterprise: true, // deprecated compatibility field; group controls PLG behavior
 		}
 		DB.Create(&rootUser)
 	}
@@ -200,14 +201,6 @@ func InitDB() (err error) {
 		if err != nil {
 			return err
 		}
-		// One-time: mark legacy users enterprise so they keep group visibility post-PLG rollout.
-		// Fail fast on error: a swallowed failure leaves every legacy user is_enterprise=false,
-		// i.e. silently forced onto the plg group (their custom-group tokens get overridden).
-		// The option marker is only written inside a successful transaction, so a crash here is
-		// safe — the next startup retries the backfill.
-		if err := backfillEnterpriseFlag(); err != nil {
-			common.FatalLog("enterprise flag backfill failed: " + err.Error())
-		}
 		return nil
 	} else {
 		common.FatalLog(err)
@@ -296,6 +289,7 @@ func migrateDB() error {
 		&CodexModelGovernanceRecord{},
 		&CodexModelGovernanceProbeState{},
 		&CodexModelGovernanceAlertCooldownRecord{},
+		&UserEmailSequence{},
 	)
 	if err != nil {
 		return err
@@ -351,6 +345,7 @@ func migrateDBFast() error {
 		{&CodexModelGovernanceRecord{}, "CodexModelGovernanceRecord"},
 		{&CodexModelGovernanceProbeState{}, "CodexModelGovernanceProbeState"},
 		{&CodexModelGovernanceAlertCooldownRecord{}, "CodexModelGovernanceAlertCooldownRecord"},
+		{&UserEmailSequence{}, "UserEmailSequence"},
 	}
 	// GORM also migrates associations, so parallel AutoMigrate calls can race
 	// when related models share a table dependency.

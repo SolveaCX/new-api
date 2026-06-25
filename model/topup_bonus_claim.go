@@ -89,14 +89,41 @@ func applyTopUpBonusInTx(tx *gorm.DB, topUp *TopUp, limit int) (int64, error) {
 	return bonusQuota, nil
 }
 
-// topUpBonusLimitFor 读取某档位的每用户可享次数（0 = 不限）。
+// StageBonusTierBase 是召回阶段 bonus 专用的 tier 命名空间基址。
+// 阶段 bonus 的 TopUp.BonusTier 编码为 StageBonusTierBase + step,与 USD/CNY 模式下的真实充值
+// 金额档位(通常 < 10000 美元)不冲突,从而:(1) 不与普通档位共享限次计数器;(2) 不会因金额档位
+// 未配 AmountBonusLimit 而被当作"不限次"无限发放。每个阶段每用户固定最多领 1 次(见 topUpBonusLimitFor)。
 //
-// 限制：tier 来自下单时的 TopUp.BonusTier = int(req.Amount)。在 USD/CNY 展示模式下
-// req.Amount 即充值金额，与 AmountBonusLimit 的 key 同源，正确。但在 TOKENS 展示模式下
-// req.Amount 是 token 数（约 金额×QuotaPerUnit），与按金额配置的 key 量纲不匹配，查不到
-// 而返回 0（不限次）——TOKENS 模式下赠送本身也配不出（AmountBonus 同样按金额 key），故整体
+// 注意:TOKENS 展示模式下 req.Amount = 美元 × QuotaPerUnit,充值 >= $2 时 req.Amount 即 >= 1000000,
+// 会与本命名空间数值重叠。但这不造成资损——TOKENS 模式下普通 bonus 按美元 key 查 AmountBonus 必然
+// miss(bonus=0)、在 applyTopUpBonusInTx 提前返回,limit/tier 根本不参与;且本功能仅支持 USD/CNY
+// 展示模式(见 topUpBonusLimitFor 说明)。碰撞方向是"把不限次的普通档误限为 1 次"=少发,非超发。
+const StageBonusTierBase = 1000000
+
+// IsStageBonusTier 判断一个 BonusTier 是否属于召回阶段 bonus 命名空间。
+func IsStageBonusTier(tier int) bool {
+	return tier >= StageBonusTierBase
+}
+
+// StageBonusTier 把召回 step(1-4)编码为阶段 bonus 专用 tier。
+func StageBonusTier(step int) int {
+	return StageBonusTierBase + step
+}
+
+// topUpBonusLimitFor 读取某档位的每用户可享次数(0 = 不限)。
+//
+// 召回阶段 bonus(tier >= StageBonusTierBase):固定每用户每阶段最多 1 次,不查 AmountBonusLimit。
+// 这是 C1 修复的关键——阶段 bonus 绝不能因金额档位未配限次而落入"不限次"无限发放路径。
+//
+// 普通充值档位:tier 来自下单时的 TopUp.BonusTier = int(req.Amount)。在 USD/CNY 展示模式下
+// req.Amount 即充值金额,与 AmountBonusLimit 的 key 同源,正确。但在 TOKENS 展示模式下
+// req.Amount 是 token 数(约 金额×QuotaPerUnit),与按金额配置的 key 量纲不匹配,查不到
+// 而返回 0(不限次)——TOKENS 模式下赠送本身也配不出(AmountBonus 同样按金额 key),故整体
 // 不生效。本功能仅支持 USD/CNY 展示模式。
 func topUpBonusLimitFor(tier int) int {
+	if IsStageBonusTier(tier) {
+		return 1 // 召回阶段 bonus:每用户每阶段最多 1 次
+	}
 	return operation_setting.GetPaymentSetting().AmountBonusLimit[tier]
 }
 

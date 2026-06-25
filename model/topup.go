@@ -850,3 +850,12 @@ func isCompletedPaddleTopUp(tradeNo string, expectedUserId int, expectedGatewayT
 	}
 	return topUp.Status == common.TopUpStatusSuccess
 }
+
+// HasSuccessfulTopUp 判断用户是否有成功充值记录(用于召回邮件 E3/E4 抑制:已充值则跳过)。
+func HasSuccessfulTopUp(userId int) (bool, error) {
+	var count int64
+	err := DB.Model(&TopUp{}).
+		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Count(&count).Error
+	return count > 0, err
+}
