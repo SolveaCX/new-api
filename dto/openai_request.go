@@ -3,6 +3,7 @@ package dto
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -396,7 +397,7 @@ func (m *MediaContent) ToFileSource() types.FileSource {
 		if file == nil || file.FileData == "" {
 			return nil
 		}
-		return types.NewFileSourceFromData(file.FileData, "")
+		return types.NewFileSourceFromData(file.FileData, messageFileMimeType(file.FileName))
 	case ContentTypeVideoUrl:
 		video := m.GetVideoUrl()
 		if video == nil || video.Url == "" {
@@ -405,6 +406,28 @@ func (m *MediaContent) ToFileSource() types.FileSource {
 		return types.NewFileSourceFromData(video.Url, "")
 	}
 	return nil
+}
+
+func messageFileMimeType(fileName string) string {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileName)), ".")
+	switch ext {
+	case "pdf":
+		return "application/pdf"
+	case "txt", "md", "markdown", "csv", "json", "xml", "html", "htm":
+		return "text/plain"
+	case "jpg", "jpeg", "jfif":
+		return "image/jpeg"
+	case "png":
+		return "image/png"
+	case "gif":
+		return "image/gif"
+	case "heic":
+		return "image/heic"
+	case "heif":
+		return "image/heif"
+	default:
+		return ""
+	}
 }
 
 type MessageImageUrl struct {
