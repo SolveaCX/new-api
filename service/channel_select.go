@@ -1,7 +1,10 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"sort"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -18,6 +21,8 @@ type RetryParam struct {
 	Retry        *int
 	resetNextTry bool
 }
+
+var ErrChannelConcurrencyLimit = errors.New("channel concurrency limit exceeded")
 
 func (p *RetryParam) GetRetry() int {
 	if p.Retry == nil {
@@ -103,6 +108,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 		}
 
+		concurrencyLimited := false
 		for i := startGroupIndex; i < len(autoGroups); i++ {
 			autoGroup := autoGroups[i]
 			// Calculate priorityRetry for current group
@@ -115,7 +121,20 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry)
+			selectedRetry := priorityRetry
+			channel, selectedRetry, err = getRandomSatisfiedChannelWithConcurrency(param.Ctx, autoGroup, param.ModelName, priorityRetry)
+			if err != nil {
+				if errors.Is(err, ErrChannelConcurrencyLimit) {
+					concurrencyLimited = true
+					selectGroup = autoGroup
+					logger.LogDebug(param.Ctx, "All channels in group %s for model %s reached concurrency limit at priorityRetry %d, trying next group", autoGroup, param.ModelName, priorityRetry)
+					common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
+					common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupRetryIndex, 0)
+					param.SetRetry(0)
+					continue
+				}
+				return nil, autoGroup, err
+			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -128,6 +147,8 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 				param.SetRetry(0)
 				continue
 			}
+			param.SetRetry(selectedRetry)
+			priorityRetry = selectedRetry
 			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, autoGroup)
 			selectGroup = autoGroup
 			logger.LogDebug(param.Ctx, "Auto selected group: %s", autoGroup)
@@ -152,11 +173,137 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			break
 		}
+		if channel == nil && concurrencyLimited {
+			return nil, selectGroup, ErrChannelConcurrencyLimit
+		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry())
+		selectedRetry := param.GetRetry()
+		channel, selectedRetry, err = getRandomSatisfiedChannelWithConcurrency(param.Ctx, param.TokenGroup, param.ModelName, param.GetRetry())
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
+		param.SetRetry(selectedRetry)
 	}
 	return channel, selectGroup, nil
+}
+
+func getRandomSatisfiedChannelWithConcurrency(c *gin.Context, group string, modelName string, retry int) (*model.Channel, int, error) {
+	sawCandidates := false
+	var waitCandidate *model.Channel
+	waitCandidateRetry := retry
+	for priorityRetry := retry; ; priorityRetry++ {
+		candidates, err := model.GetSatisfiedChannelCandidates(group, modelName, priorityRetry)
+		if err != nil {
+			return nil, priorityRetry, err
+		}
+		if len(candidates) == 0 {
+			if sawCandidates && waitCandidate != nil {
+				ok, waitErr := AcquireChannelConcurrencyWithWaitForContext(c, waitCandidate)
+				if waitErr != nil {
+					if errors.Is(waitErr, ErrChannelConcurrencyLimit) {
+						return nil, waitCandidateRetry, ErrChannelConcurrencyLimit
+					}
+					return nil, waitCandidateRetry, fmt.Errorf("wait for channel concurrency for channel #%d failed: %w", waitCandidate.Id, waitErr)
+				}
+				if ok {
+					return waitCandidate, waitCandidateRetry, nil
+				}
+			}
+			if sawCandidates {
+				return nil, priorityRetry, ErrChannelConcurrencyLimit
+			}
+			return nil, priorityRetry, nil
+		}
+		sawCandidates = true
+
+		orderedCandidates, err := orderChannelCandidatesByConcurrencyLoad(c, candidates)
+		if err != nil {
+			return nil, priorityRetry, err
+		}
+		for _, channel := range orderedCandidates {
+			ok, err := AcquireChannelConcurrencyForContext(c, channel)
+			if err != nil {
+				return nil, priorityRetry, fmt.Errorf("acquire channel concurrency for channel #%d failed: %w", channel.Id, err)
+			}
+			if ok {
+				return channel, priorityRetry, nil
+			}
+			if waitCandidate == nil {
+				waitCandidate = channel
+				waitCandidateRetry = priorityRetry
+			}
+		}
+	}
+}
+
+type channelCandidateLoad struct {
+	channel *model.Channel
+	load    ChannelConcurrencyLoad
+}
+
+func orderChannelCandidatesByConcurrencyLoad(c *gin.Context, candidates []*model.Channel) ([]*model.Channel, error) {
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	loads, err := GetChannelConcurrencyLoads(ctx, candidates)
+	if err != nil {
+		return nil, err
+	}
+
+	loadedCandidates := make([]channelCandidateLoad, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == nil {
+			continue
+		}
+		load := loads[candidate.Id]
+		if load.CoolingDown {
+			continue
+		}
+		loadedCandidates = append(loadedCandidates, channelCandidateLoad{
+			channel: candidate,
+			load:    load,
+		})
+	}
+	sort.SliceStable(loadedCandidates, func(i, j int) bool {
+		if loadedCandidates[i].load.LoadRate == loadedCandidates[j].load.LoadRate {
+			return loadedCandidates[i].channel.GetPriority() > loadedCandidates[j].channel.GetPriority()
+		}
+		return loadedCandidates[i].load.LoadRate < loadedCandidates[j].load.LoadRate
+	})
+
+	ordered := make([]*model.Channel, 0, len(loadedCandidates))
+	for i := 0; i < len(loadedCandidates); {
+		j := i + 1
+		for j < len(loadedCandidates) && loadedCandidates[j].load.LoadRate == loadedCandidates[i].load.LoadRate {
+			j++
+		}
+
+		bucket := make([]*model.Channel, 0, j-i)
+		for _, candidate := range loadedCandidates[i:j] {
+			bucket = append(bucket, candidate.channel)
+		}
+		for len(bucket) > 0 {
+			channel, err := model.SelectWeightedRandomChannel(bucket)
+			if err != nil {
+				return nil, err
+			}
+			if channel == nil {
+				break
+			}
+			ordered = append(ordered, channel)
+			bucket = removeChannelCandidate(bucket, channel.Id)
+		}
+		i = j
+	}
+	return ordered, nil
+}
+
+func removeChannelCandidate(candidates []*model.Channel, channelID int) []*model.Channel {
+	for i, candidate := range candidates {
+		if candidate != nil && candidate.Id == channelID {
+			return append(candidates[:i], candidates[i+1:]...)
+		}
+	}
+	return candidates
 }

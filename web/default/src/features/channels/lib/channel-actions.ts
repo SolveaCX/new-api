@@ -39,6 +39,12 @@ import {
 import { CHANNEL_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import type { CopyChannelParams } from '../types'
 
+const CHANNEL_FIELD_LABELS: Record<string, string> = {
+  priority: 'Priority',
+  weight: 'Weight',
+  max_concurrency: 'Max Concurrency',
+}
+
 // ============================================================================
 // Query Keys
 // ============================================================================
@@ -155,10 +161,11 @@ export async function handleUpdateChannelField(
     if (response.success) {
       // Show success toast with field name
       const fieldLabel =
+        CHANNEL_FIELD_LABELS[fieldName] ??
         fieldName.charAt(0).toUpperCase() + fieldName.slice(1).toLowerCase()
       toast.success(
         i18next.t('{{field}} updated to {{value}}', {
-          field: fieldLabel,
+          field: i18next.t(fieldLabel),
           value,
         })
       )
