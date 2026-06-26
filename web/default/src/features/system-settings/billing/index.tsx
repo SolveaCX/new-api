@@ -80,6 +80,7 @@ const defaultBillingSettings: BillingSettings = {
   StripePriceId: '',
   StripePriceId20: '',
   StripePriceId200: '',
+  StripeTopUpPriceIds: '',
   StripeUnitPrice: 8.0,
   StripeMinTopUp: 1,
   StripePromotionCodesEnabled: false,
