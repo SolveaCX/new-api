@@ -13,7 +13,7 @@ import {
 import { PricingExplorer } from "@/components/pricing-explorer";
 import { FlatkeyTallyEmbed } from "@/components/flatkey-tally-embed";
 import type { Locale } from "@/lib/locales";
-import { SIGN_UP_URL } from "@/lib/pricing-links";
+import { SIGN_UP_URL, pricingCheckoutUrl } from "@/lib/pricing-links";
 
 type PricingPageProps = {
   locale: Locale;
@@ -496,7 +496,12 @@ export type PricingPlan = {
   badge?: string;
   discount?: string;
   featured: boolean;
-  action: "signup" | "contact";
+  action: "checkout" | "contact";
+  currency?: PricingCurrency;
+  amount?: number;
+  amountMinor?: number;
+  stripeLookupKey?: string;
+  checkoutUrl?: string;
   features: string[];
 };
 
@@ -593,7 +598,9 @@ export const LOCALIZED_TOP_UP_PRICES = {
   JPY: [1500, 3000, 30000],
 } as const;
 
-type PricingCurrency = keyof typeof LOCALIZED_TOP_UP_PRICES;
+export const TOP_UP_PACKAGE_AMOUNTS = [10, 20, 200] as const;
+
+export type PricingCurrency = keyof typeof LOCALIZED_TOP_UP_PRICES;
 
 function pricingCurrency(locale: Locale): PricingCurrency {
   if (locale === "pt") return "BRL";
@@ -612,6 +619,43 @@ function topUpPlanName(currency: PricingCurrency, index: number): string {
   return `Top up ${formatTopUpPrice(currency, index)}`;
 }
 
+function localizedTopUpAmount(currency: PricingCurrency, index: number): number {
+  return LOCALIZED_TOP_UP_PRICES[currency][index];
+}
+
+function topUpPackageAmount(index: number): number {
+  return TOP_UP_PACKAGE_AMOUNTS[index];
+}
+
+function topUpAmountMinor(currency: PricingCurrency, amount: number): number {
+  return currency === "JPY" ? amount : Math.round(amount * 100);
+}
+
+function stripeLookupKey(currency: PricingCurrency, amountMinor: number): string {
+  return `topup-${currency.toLowerCase()}-${amountMinor}`;
+}
+
+function checkoutPlanFields(currency: PricingCurrency, index: number) {
+  const displayAmount = localizedTopUpAmount(currency, index);
+  const amount = topUpPackageAmount(index);
+  const amountMinor = topUpAmountMinor(currency, displayAmount);
+  const lookupKey = stripeLookupKey(currency, amountMinor);
+
+  return {
+    action: "checkout" as const,
+    currency,
+    amount,
+    amountMinor,
+    stripeLookupKey: lookupKey,
+    checkoutUrl: pricingCheckoutUrl({
+      amount,
+      currency,
+      amountMinor,
+      stripeLookupKey: lookupKey,
+    }),
+  };
+}
+
 export function getPricingPlans(locale: Locale): PricingPlan[] {
   const copy = pricingCopy(locale);
   const currency = pricingCurrency(locale);
@@ -623,7 +667,7 @@ export function getPricingPlans(locale: Locale): PricingPlan[] {
       description: copy.selfServeDescription,
       cta: copy.getFreeApiKey,
       featured: false,
-      action: "signup",
+      ...checkoutPlanFields(currency, 0),
       features: [copy.trustSignals[0], copy.packageBullets[3], copy.packageBullets[4], copy.packageBullets[5]],
     },
     {
@@ -635,7 +679,7 @@ export function getPricingPlans(locale: Locale): PricingPlan[] {
       badge: "Most Popular",
       discount: "40% OFF",
       featured: true,
-      action: "signup",
+      ...checkoutPlanFields(currency, 1),
       features: [copy.packageBullets[2], copy.trustSignals[1], copy.trustSignals[2], copy.trustSignals[3]],
     },
     {
@@ -646,7 +690,7 @@ export function getPricingPlans(locale: Locale): PricingPlan[] {
       cta: copy.getFreeApiKey,
       discount: "50% OFF",
       featured: false,
-      action: "signup",
+      ...checkoutPlanFields(currency, 2),
       features: ["Highest prepaid value", copy.trustSignals[1], copy.trustSignals[2], copy.trustSignals[3]],
     },
     {
