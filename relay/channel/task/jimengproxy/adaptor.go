@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -47,10 +49,14 @@ type queryResponse struct {
 	SubmitID string `json:"submit_id"`
 	Status   string `json:"status"` // processing | completed | failed
 	FailCode int    `json:"fail_code"`
+	Error    any    `json:"error,omitempty"`
+	Message  string `json:"message,omitempty"`
 	Data     []struct {
 		URL string `json:"url"`
 	} `json:"data"`
 }
+
+const maxInputImages = 2
 
 // ============================
 // Adaptor implementation
@@ -70,7 +76,16 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError {
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	if hasSeedanceContent(c) {
+		if _, err := taskcommon.BindSeedanceRequest(c, info, constant.TaskActionGenerate); err != nil {
+			return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+		}
+		return validateAndStoreInputImages(c, info)
+	}
+	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+		return taskErr
+	}
+	return validateAndStoreInputImages(c, info)
 }
 
 // BuildRequestURL 提交任务: POST {baseURL}/v1/videos/submit
@@ -135,14 +150,14 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 
 	var sResp submitResponse
 	if err := common.Unmarshal(responseBody, &sResp); err != nil {
-		taskErr = service.TaskErrorWrapper(errors.Wrapf(err, "body: %s", responseBody), "unmarshal_response_body_failed", http.StatusInternalServerError)
+		taskErr = service.TaskErrorWrapper(errors.Wrap(err, "jimeng submit response was invalid"), "unmarshal_response_body_failed", http.StatusBadGateway)
 		return
 	}
 
 	// 提交成功必须拿到 submit_id;若上游即时拒绝(failed),视为提交失败,
 	// 避免白白进入轮询并占用预扣额。
 	if sResp.SubmitID == "" || sResp.Status == "failed" {
-		taskErr = service.TaskErrorWrapper(fmt.Errorf("submit task failed, body=%s", responseBody), "invalid_response", http.StatusBadGateway)
+		taskErr = service.TaskErrorWrapper(fmt.Errorf("jimeng submit task failed"), "invalid_response", http.StatusBadGateway)
 		return
 	}
 
@@ -192,11 +207,18 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	}
 
 	info := &relaycommon.TaskInfo{Code: 0}
-	switch qr.Status {
+	switch strings.ToLower(strings.TrimSpace(qr.Status)) {
 	case "completed":
+		url := strings.TrimSpace(resultURL(qr))
+		if url == "" {
+			info.Status = model.TaskStatusFailure
+			info.Progress = "100%"
+			info.Reason = "jimeng video generation completed without result url"
+			break
+		}
 		info.Status = model.TaskStatusSuccess
 		info.Progress = "100%"
-		info.Url = resultURL(qr)
+		info.Url = url
 	case "failed":
 		info.Status = model.TaskStatusFailure
 		info.Progress = "100%"
@@ -204,6 +226,10 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "processing":
 		info.Status = model.TaskStatusInProgress
 		info.Progress = "50%"
+	case "":
+		info.Status = model.TaskStatusFailure
+		info.Progress = "100%"
+		info.Reason = failReason(qr)
 	default:
 		// 未知状态:保持进行中,等待下一轮轮询。
 		info.Status = model.TaskStatusInProgress
@@ -215,7 +241,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 // resultURL 返回查询响应里的视频地址:取 data[0].url,无则 ""。
 func resultURL(qr queryResponse) string {
 	if len(qr.Data) > 0 {
-		return qr.Data[0].URL
+		return strings.TrimSpace(qr.Data[0].URL)
 	}
 	return ""
 }
@@ -224,7 +250,61 @@ func failReason(qr queryResponse) string {
 	if qr.FailCode != 0 {
 		return fmt.Sprintf("jimeng video generation failed, fail_code=%d", qr.FailCode)
 	}
+	if strings.TrimSpace(qr.Message) != "" || qr.Error != nil {
+		return "jimeng video query failed"
+	}
 	return "jimeng video generation failed"
+}
+
+func hasSeedanceContent(c *gin.Context) bool {
+	var raw map[string]any
+	if err := common.UnmarshalBodyReusable(c, &raw); err != nil {
+		return false
+	}
+	_, ok := raw["content"]
+	return ok
+}
+
+func validateAndStoreInputImages(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError {
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	if err := normalizeInputImages(&req); err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	relaycommon.StoreTaskRequest(c, info, constant.TaskActionGenerate, req)
+	return nil
+}
+
+func normalizeInputImages(req *relaycommon.TaskSubmitReq) error {
+	if len(req.Images) > maxInputImages {
+		return fmt.Errorf("jimeng proxy supports at most %d input images", maxInputImages)
+	}
+	images := make([]string, 0, len(req.Images))
+	for _, image := range req.Images {
+		trimmed := strings.TrimSpace(image)
+		if trimmed == "" {
+			return fmt.Errorf("image url must not be empty")
+		}
+		if err := validateImageURL(trimmed); err != nil {
+			return err
+		}
+		images = append(images, trimmed)
+	}
+	req.Images = images
+	return nil
+}
+
+func validateImageURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("image url is invalid")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("image url must use http or https")
+	}
+	return nil
 }
 
 func (a *TaskAdaptor) GetModelList() []string {
