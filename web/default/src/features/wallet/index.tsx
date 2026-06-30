@@ -48,7 +48,7 @@ import {
   PADDLE_ORDER_SEARCH_PARAM,
   PADDLE_TRANSACTION_SEARCH_PARAM,
 } from './constants'
-import { useTopupInfo, usePayment, useAffiliate, useRedemption } from './hooks'
+import { useTopupInfo, usePayment, useAffiliate } from './hooks'
 import {
   clearPaddleCheckoutUrlFallback,
   getInitialPresetTopupAmount,
@@ -126,7 +126,6 @@ export function Wallet(props: WalletProps) {
     number | null
   >(null)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
-  const [redemptionCode, setRedemptionCode] = useState('')
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
   const [paddleCheckoutNotice, setPaddleCheckoutNotice] =
     useState<PaddleCheckoutNotice | null>(null)
@@ -145,7 +144,6 @@ export function Wallet(props: WalletProps) {
     transferQuota,
     transferring,
   } = useAffiliate()
-  const { redeeming, redeemCode } = useRedemption()
 
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
@@ -624,17 +622,6 @@ export function Wallet(props: WalletProps) {
     }
   }
 
-  // Handle redemption
-  const handleRedeem = async () => {
-    if (!redemptionCode) return
-
-    const success = await redeemCode(redemptionCode)
-    if (success) {
-      setRedemptionCode('')
-      await fetchUser()
-    }
-  }
-
   // Handle transfer
   const handleTransfer = async (amount: number) => {
     const success = await transferQuota(amount)
@@ -685,11 +672,6 @@ export function Wallet(props: WalletProps) {
                   paymentLoadingAmount={
                     processing ? paymentLoadingAmount : null
                   }
-                  redemptionCode={redemptionCode}
-                  onRedemptionCodeChange={setRedemptionCode}
-                  onRedeem={handleRedeem}
-                  redeeming={redeeming}
-                  topupLink={topupInfo?.topup_link}
                   loading={topupLoading}
                 />
               </div>

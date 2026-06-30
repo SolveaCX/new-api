@@ -47,17 +47,13 @@ describe('RechargeFormCard', () => {
         onSelectPreset={() => undefined}
         onStripeTopUp={() => undefined}
         paymentLoadingAmount={null}
-        redemptionCode=''
-        onRedemptionCodeChange={() => undefined}
-        onRedeem={() => undefined}
-        redeeming={false}
       />
     )
 
     expect(html).toContain('Top-up Packages')
-    expect(html).toContain('$10 USD')
-    expect(html).toContain('$20 USD')
-    expect(html).toContain('$200 USD')
+    expect(html).toContain('$10')
+    expect(html).toContain('$20')
+    expect(html).toContain('$200')
     expect(html).toContain('Top up for $10')
     expect(html).toContain('Top up for $20')
     expect(html).toContain('Top up for $200')
@@ -69,15 +65,45 @@ describe('RechargeFormCard', () => {
     expect(html).toContain('50% OFF')
     expect(html).toContain('40X more usage than the official plan')
     expect(html).not.toContain(
+      'No contract required. Add balance, create a key, copy the base_url, and test your first request.'
+    )
+    expect(html).not.toContain(
       'Best first top-up for trying real API workloads with a clear discount.'
     )
     expect(html).not.toContain(
       'Best value for production testing, team workflows, and sustained model traffic.'
     )
+    expect(html).not.toContain('$10 USD')
+    expect(html).not.toContain('$20 USD')
+    expect(html).not.toContain('$200 USD')
     expect(html).not.toContain('Add Funds')
     expect(html).not.toContain('Choose an amount and payment method')
     expect(html).not.toContain('Need company invoice')
     expect(html).not.toContain('Order History')
     expect(html).not.toContain('Waffo Pix')
+  })
+
+  test('does not render redemption code entry on the wallet top-up card', () => {
+    const html = renderToStaticMarkup(
+      <RechargeFormCard
+        topupInfo={{
+          ...topupInfoWithStripe,
+          enable_redemption: true,
+          amount_options: [10, 20, 200],
+          topup_link: 'https://example.com/redeem',
+        }}
+        presetAmounts={[{ value: 10 }, { value: 20 }, { value: 200 }]}
+        selectedPreset={null}
+        onSelectPreset={() => undefined}
+        onStripeTopUp={() => undefined}
+        paymentLoadingAmount={null}
+      />
+    )
+
+    expect(html).not.toContain('Have a Code?')
+    expect(html).not.toContain('Enter your redemption code')
+    expect(html).not.toContain('Need a redemption code?')
+    expect(html).not.toContain('Redeem')
+    expect(html).not.toContain('https://example.com/redeem')
   })
 })
