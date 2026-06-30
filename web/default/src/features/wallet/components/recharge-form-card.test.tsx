@@ -60,19 +60,22 @@ describe('RechargeFormCard', () => {
     expect(html).not.toContain('Top Up')
     expect(html).toContain('Lowest entry to get started')
     expect(html).toContain('Most Popular')
-    expect(html).toContain('40% OFF')
+    expect(html).toContain('+5 free bonus')
     expect(html).toContain('3X more usage than the official plan')
-    expect(html).toContain('50% OFF')
+    expect(html).toContain('+100 free bonus')
     expect(html).toContain('40X more usage than the official plan')
-    expect(html).not.toContain(
+    expect(html).toContain(
       'No contract required. Add balance, create a key, copy the base_url, and test your first request.'
     )
-    expect(html).not.toContain(
+    expect(html).toContain(
       'Best first top-up for trying real API workloads with a clear discount.'
     )
-    expect(html).not.toContain(
+    expect(html).toContain(
       'Best value for production testing, team workflows, and sustained model traffic.'
     )
+    expect(html).not.toContain('40% OFF')
+    expect(html).not.toContain('50% OFF')
+    expect(html).not.toContain('100% OFF')
     expect(html).not.toContain('$10 USD')
     expect(html).not.toContain('$20 USD')
     expect(html).not.toContain('$200 USD')

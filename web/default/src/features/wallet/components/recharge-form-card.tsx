@@ -38,6 +38,7 @@ interface RechargeFormCardProps {
 
 type PlanCopy = {
   caption: string
+  description: string
   badge?: string
   discount?: string
   featured?: boolean
@@ -46,21 +47,28 @@ type PlanCopy = {
 const WEBSITE_PLAN_COPY_BY_AMOUNT: Record<number, PlanCopy> = {
   10: {
     caption: 'Lowest entry to get started',
+    description:
+      'No contract required. Add balance, create a key, copy the base_url, and test your first request.',
   },
   20: {
     caption: '3X more usage than the official plan',
+    description:
+      'Best first top-up for trying real API workloads with a clear discount.',
     badge: 'Most Popular',
-    discount: '40% OFF',
+    discount: '+5 free bonus',
     featured: true,
   },
   200: {
     caption: '40X more usage than the official plan',
-    discount: '50% OFF',
+    description:
+      'Best value for production testing, team workflows, and sustained model traffic.',
+    discount: '+100 free bonus',
   },
 }
 
 const DEFAULT_PLAN_COPY: PlanCopy = {
   caption: 'Prepaid balance for top AI models',
+  description: 'Choose a prepaid USD package and checkout with Stripe',
 }
 
 function getPlanCopy(amount: number): PlanCopy {
@@ -142,6 +150,9 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
                     {formatTopUpAmount(preset.value)}
                   </div>
                   <p className='text-sm font-medium'>{t(planCopy.caption)}</p>
+                  <p className='text-muted-foreground text-xs leading-5'>
+                    {t(planCopy.description)}
+                  </p>
                   {preset.bonus && preset.bonus > 0 ? (
                     <p className='text-xs font-semibold text-[#FF2D78]'>
                       {t('Get {{bonus}} free', {
