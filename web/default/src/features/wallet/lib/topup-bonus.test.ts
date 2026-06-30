@@ -26,6 +26,7 @@ import {
   isPresetTopupAmount,
   mergePresetAmounts,
   normalizeWalletCheckoutSearch,
+  shouldConsumeWalletCheckoutSearchParams,
   shouldRequireConfiguredTopupPackages,
 } from './payment'
 
@@ -121,6 +122,23 @@ describe('top-up bonus preset metadata', () => {
         presets
       )
     ).toBe(0)
+  })
+
+  test('consumes pricing CTA search params only after a valid package is applied', () => {
+    const checkoutSearch = normalizeWalletCheckoutSearch({
+      amount: '20',
+      currency: 'USD',
+      amount_minor: '2000',
+      stripe_lookup_key: 'topup-usd-2000',
+    })
+
+    expect(shouldConsumeWalletCheckoutSearchParams(checkoutSearch, 20)).toBe(
+      true
+    )
+    expect(shouldConsumeWalletCheckoutSearchParams(checkoutSearch, 0)).toBe(
+      false
+    )
+    expect(shouldConsumeWalletCheckoutSearchParams(undefined, 20)).toBe(false)
   })
 
   test('only accepts top-up amounts that match configured presets', () => {

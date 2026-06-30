@@ -5143,6 +5143,18 @@
     "Zero vendor lock-in": "Aucune dépendance fournisseur",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Top-up Packages": "Forfaits de recharge",
+    "Choose a prepaid USD package and checkout with Stripe": "Choisissez un forfait prépayé en USD et payez avec Stripe",
+    "3X more usage than the official plan": "3 fois plus d'utilisation que le forfait officiel",
+    "40X more usage than the official plan": "40 fois plus d'utilisation que le forfait officiel",
+    "Most Popular": "Le plus populaire",
+    "40% OFF": "-40 %",
+    "50% OFF": "-50 %",
+    "Stripe top-up is not enabled. Please contact administrator.": "La recharge Stripe n'est pas activée. Veuillez contacter l'administrateur.",
+    "Confirming your card binding...": "Confirmation de l'association de votre carte...",
+    "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Recharge réussie. Votre bonus est en cours de crédit. Actualisez dans un instant.",
+    "Recharge successful": "Recharge réussie",
+    "Top up for {{amount}}": "Recharger pour {{amount}}"
   }
 }

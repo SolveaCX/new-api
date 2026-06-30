@@ -5143,6 +5143,18 @@
     "Zero vendor lock-in": "Zero vendor lock-in",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Top-up Packages": "Top-up Packages",
+    "Choose a prepaid USD package and checkout with Stripe": "Choose a prepaid USD package and checkout with Stripe",
+    "3X more usage than the official plan": "3X more usage than the official plan",
+    "40X more usage than the official plan": "40X more usage than the official plan",
+    "Most Popular": "Most Popular",
+    "40% OFF": "40% OFF",
+    "50% OFF": "50% OFF",
+    "Stripe top-up is not enabled. Please contact administrator.": "Stripe top-up is not enabled. Please contact administrator.",
+    "Confirming your card binding...": "Confirming your card binding...",
+    "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Recharge successful. Your bonus is being credited. Refresh in a moment.",
+    "Recharge successful": "Recharge successful",
+    "Top up for {{amount}}": "Top up for {{amount}}"
   }
 }

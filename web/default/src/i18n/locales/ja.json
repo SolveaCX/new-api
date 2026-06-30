@@ -5143,6 +5143,18 @@
     "Zero vendor lock-in": "ベンダーロックインなし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Top-up Packages": "チャージパッケージ",
+    "Choose a prepaid USD package and checkout with Stripe": "USD のプリペイドパッケージを選び、Stripe で決済します",
+    "3X more usage than the official plan": "公式プランの 3 倍使えます",
+    "40X more usage than the official plan": "公式プランの 40 倍使えます",
+    "Most Popular": "一番人気",
+    "40% OFF": "40%割引",
+    "50% OFF": "50%割引",
+    "Stripe top-up is not enabled. Please contact administrator.": "Stripe チャージは有効になっていません。管理者にお問い合わせください。",
+    "Confirming your card binding...": "カード連携を確認しています...",
+    "Recharge successful. Your bonus is being credited. Refresh in a moment.": "チャージが完了しました。ボーナスを反映中です。しばらくしてから更新してください。",
+    "Recharge successful": "チャージ完了",
+    "Top up for {{amount}}": "{{amount}} をチャージ"
   }
 }

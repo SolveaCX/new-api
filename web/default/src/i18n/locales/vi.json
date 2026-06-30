@@ -5143,6 +5143,18 @@
     "Zero vendor lock-in": "Không bị khóa bởi nhà cung cấp",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Top-up Packages": "Gói nạp tiền",
+    "Choose a prepaid USD package and checkout with Stripe": "Chọn gói trả trước bằng USD và thanh toán qua Stripe",
+    "3X more usage than the official plan": "Mức sử dụng gấp 3 lần gói chính thức",
+    "40X more usage than the official plan": "Mức sử dụng gấp 40 lần gói chính thức",
+    "Most Popular": "Phổ biến nhất",
+    "40% OFF": "Giảm 40%",
+    "50% OFF": "Giảm 50%",
+    "Stripe top-up is not enabled. Please contact administrator.": "Nạp tiền qua Stripe chưa được bật. Vui lòng liên hệ quản trị viên.",
+    "Confirming your card binding...": "Đang xác nhận liên kết thẻ của bạn...",
+    "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Nạp tiền thành công. Tiền thưởng đang được cộng. Hãy làm mới sau ít phút.",
+    "Recharge successful": "Nạp tiền thành công",
+    "Top up for {{amount}}": "Nạp {{amount}}"
   }
 }

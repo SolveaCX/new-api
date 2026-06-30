@@ -279,6 +279,7 @@ export interface PaymentRequest {
 export interface PaymentOptions {
   invoiceRequested?: boolean
   invoiceProfile?: InvoiceProfile
+  stripeCurrency?: 'USD' | 'JPY' | 'BRL'
 }
 
 /**

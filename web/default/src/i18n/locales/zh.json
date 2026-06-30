@@ -5143,6 +5143,18 @@
     "Zero vendor lock-in": "零供应商锁定",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Top-up Packages": "充值套餐",
+    "Choose a prepaid USD package and checkout with Stripe": "选择美元预付套餐并通过 Stripe 结账",
+    "3X more usage than the official plan": "用量是官方方案的 3 倍",
+    "40X more usage than the official plan": "用量是官方方案的 40 倍",
+    "Most Popular": "最受欢迎",
+    "40% OFF": "6 折",
+    "50% OFF": "5 折",
+    "Stripe top-up is not enabled. Please contact administrator.": "Stripe 充值未启用，请联系管理员。",
+    "Confirming your card binding...": "正在确认你的银行卡绑定...",
+    "Recharge successful. Your bonus is being credited. Refresh in a moment.": "充值成功，赠送额度正在入账，请稍后刷新。",
+    "Recharge successful": "充值成功",
+    "Top up for {{amount}}": "充值 {{amount}}"
   }
 }

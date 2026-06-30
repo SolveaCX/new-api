@@ -526,6 +526,13 @@ export function getWalletCheckoutInitialTopupAmount(
   return amount
 }
 
+export function shouldConsumeWalletCheckoutSearchParams(
+  checkoutSearch: WalletCheckoutSearch | undefined,
+  checkoutInitialAmount: number
+): boolean {
+  return Boolean(checkoutSearch && checkoutInitialAmount > 0)
+}
+
 export function isPresetTopupAmount(
   amount: number,
   presetAmounts: PresetAmount[]

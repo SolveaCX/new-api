@@ -5143,6 +5143,18 @@
     "Zero vendor lock-in": "Без привязки к поставщику",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Top-up Packages": "Пакеты пополнения",
+    "Choose a prepaid USD package and checkout with Stripe": "Выберите предоплаченный пакет в USD и оплатите через Stripe",
+    "3X more usage than the official plan": "В 3 раза больше использования, чем в официальном плане",
+    "40X more usage than the official plan": "В 40 раз больше использования, чем в официальном плане",
+    "Most Popular": "Самый популярный",
+    "40% OFF": "Скидка 40 %",
+    "50% OFF": "Скидка 50 %",
+    "Stripe top-up is not enabled. Please contact administrator.": "Пополнение через Stripe не включено. Обратитесь к администратору.",
+    "Confirming your card binding...": "Подтверждаем привязку карты...",
+    "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Пополнение прошло успешно. Бонус зачисляется. Обновите страницу через несколько секунд.",
+    "Recharge successful": "Пополнение прошло успешно",
+    "Top up for {{amount}}": "Пополнить на {{amount}}"
   }
 }

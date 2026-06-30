@@ -53,15 +53,12 @@ func TestBuildStripeTopUpLineItemUsesConfiguredMultiCurrencyPrice(t *testing.T) 
 	require.Nil(t, lineItem.PriceData)
 }
 
-func TestBuildStripeCheckoutSessionParamsRespectsPromotionCodeSetting(t *testing.T) {
+func TestBuildStripeCheckoutSessionParamsAlwaysAllowsPromotionCodes(t *testing.T) {
 	originalPriceId := setting.StripePriceId
-	originalPromotionCodesEnabled := setting.StripePromotionCodesEnabled
 	t.Cleanup(func() {
 		setting.StripePriceId = originalPriceId
-		setting.StripePromotionCodesEnabled = originalPromotionCodesEnabled
 	})
 	setting.StripePriceId = "price_multi_currency"
-	setting.StripePromotionCodesEnabled = false
 
 	params := buildStripeCheckoutSessionParams(
 		"ref_123",
@@ -76,7 +73,7 @@ func TestBuildStripeCheckoutSessionParamsRespectsPromotionCodeSetting(t *testing
 	)
 
 	require.NotNil(t, params.AllowPromotionCodes)
-	require.False(t, *params.AllowPromotionCodes)
+	require.True(t, *params.AllowPromotionCodes)
 	require.Len(t, params.LineItems, 1)
 	require.NotNil(t, params.LineItems[0].Price)
 	require.Equal(t, setting.StripePriceId, *params.LineItems[0].Price)
@@ -94,9 +91,8 @@ func TestBuildStripeCheckoutSessionParamsRespectsPromotionCodeSetting(t *testing
 		true,
 	)
 	require.NotNil(t, params.AllowPromotionCodes)
-	require.False(t, *params.AllowPromotionCodes)
+	require.True(t, *params.AllowPromotionCodes)
 
-	setting.StripePromotionCodesEnabled = true
 	params = buildStripeCheckoutSessionParams(
 		"ref_123",
 		"",
