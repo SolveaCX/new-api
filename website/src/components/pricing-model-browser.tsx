@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -299,7 +300,19 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
             <ModelLogo iconKey={iconKey} fallback={initial} size={28} />
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-[15px] leading-tight font-black text-slate-950 dark:text-white">{model.model_name}</h3>
+            <h3 className="truncate text-[15px] leading-tight font-black text-slate-950 dark:text-white">
+              {model.model_slug ? (
+                <Link
+                  href={localizePath(`/models/${model.model_slug}`, props.locale)}
+                  onClick={(event) => event.stopPropagation()}
+                  className="hover:text-violet-700 dark:hover:text-violet-200"
+                >
+                  {model.model_name}
+                </Link>
+              ) : (
+                model.model_name
+              )}
+            </h3>
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
               {tokenBased ? (
                 <>

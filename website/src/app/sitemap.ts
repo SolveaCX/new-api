@@ -2,9 +2,11 @@ import type { MetadataRoute } from "next";
 import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
 import { LOCALES, type Locale, localizePath } from "@/lib/locales";
 import { getModelLandingPathnames } from "@/lib/model-landing";
-import { getPricingData, getTopVendors, getVendorName } from "@/lib/pricing";
+import { getPricingData } from "@/lib/pricing";
+import { buildPricingSeoIndex } from "@/lib/pricing-seo";
+import { SITE_ORIGIN } from "@/lib/seo";
 
-const base = "https://flatkey.ai";
+const base = SITE_ORIGIN;
 
 function entry(
   pathname: string,
@@ -93,13 +95,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       };
     });
   });
-  const pricingModels = pricing.models.map((model) => ({
-    ...model,
-    vendor_name: getVendorName(model, pricing.vendors),
-  }));
-  const vendorEntries = getTopVendors(pricingModels, 18).flatMap((vendor) =>
-    queryEntry("/models", `vendor=${encodeURIComponent(vendor)}`, 0.72, "daily")
+  const pricingIndex = buildPricingSeoIndex(pricing);
+  const vendorPricingEntries = pricingIndex.vendors.slice(0, 80).flatMap((vendor) =>
+    queryEntry("/pricing", `vendor=${encodeURIComponent(vendor.slug)}`, 0.72, "daily")
   );
+  const vendorPageEntries = pricingIndex.vendors.flatMap((vendor) => entry(`/vendors/${vendor.slug}`, 0.74, "daily"));
+  const modelPageEntries = pricingIndex.models.flatMap((model) => entry(`/models/${model.slug}`, 0.76, "daily"));
 
-  return [...staticEntries, ...modelLandingEntries, ...vendorEntries, ...categoryEntries, ...postEntries];
+  return [
+    ...staticEntries,
+    ...modelLandingEntries,
+    ...vendorPricingEntries,
+    ...vendorPageEntries,
+    ...modelPageEntries,
+    ...categoryEntries,
+    ...postEntries,
+  ];
 }

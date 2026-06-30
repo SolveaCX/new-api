@@ -14,6 +14,7 @@ import { PricingExplorer } from "@/components/pricing-explorer";
 import { FlatkeyTallyEmbed } from "@/components/flatkey-tally-embed";
 import type { Locale } from "@/lib/locales";
 import { SIGN_UP_URL, pricingCheckoutUrl } from "@/lib/pricing-links";
+import { buildPricingSeoIndex } from "@/lib/pricing-seo";
 
 type PricingPageProps = {
   locale: Locale;
@@ -1118,7 +1119,13 @@ export async function PricingPage(props: PricingPageProps) {
 
 export async function ModelsPage(props: PricingPageProps) {
   const pricing = await getPricingData();
-  const allModels = enrichVendorNames(pricing.models, pricing.vendors, pricing.groupRatio, pricing.usableGroup);
+  const seoIndex = buildPricingSeoIndex(pricing);
+  const allModels = enrichVendorNames(
+    seoIndex.models.map((entry) => entry.model),
+    seoIndex.vendors,
+    pricing.groupRatio,
+    pricing.usableGroup
+  );
   const copy = pricingCopy(props.locale);
 
   return (
@@ -1158,7 +1165,7 @@ export async function ModelsPage(props: PricingPageProps) {
           <PricingExplorer
             locale={props.locale}
             models={allModels}
-            vendors={pricing.vendors}
+            vendors={seoIndex.vendors}
             groupRatio={pricing.groupRatio}
             usableGroup={pricing.usableGroup}
             endpointMap={pricing.supportedEndpoint}
