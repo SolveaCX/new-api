@@ -36,7 +36,7 @@ describe("pricing page conversion copy", () => {
     ]);
     expect(plans[1]?.badge).toBe("Most Popular");
     expect(plans[1]?.discount).toBe("+5 free bonus");
-    expect(plans[2]?.discount).toBe("+100 bonus");
+    expect(plans[2]?.discount).toBe("+100 free bonus");
     expect(plans[1]?.discount).not.toBe("40% OFF");
     expect(plans[2]?.discount).not.toBe("50% OFF");
     expect(plans[3]?.name).toBe("Enterprise");

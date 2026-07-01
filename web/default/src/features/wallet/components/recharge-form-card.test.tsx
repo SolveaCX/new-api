@@ -68,7 +68,7 @@ describe('RechargeFormCard', () => {
     expect(html).toContain('Most Popular')
     expect(html).toContain('+5 free bonus')
     expect(html).toContain('3X more usage than the official plan')
-    expect(html).toContain('+100 bonus')
+    expect(html).toContain('+100 free bonus')
     expect(html).toContain('40X more usage than the official plan')
     expect(html).toContain('Prepaid balance, no surprise bill')
     expect(html).toContain('One API key for everything')

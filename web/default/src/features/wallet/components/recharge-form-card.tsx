@@ -112,7 +112,7 @@ const WEBSITE_PLAN_CARDS: PlanCopy[] = [
       'Enterprise-grade privacy',
       'One invoice across providers',
     ],
-    discount: '+100 bonus',
+    discount: '+100 free bonus',
   },
   {
     action: 'contact',
