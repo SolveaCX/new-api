@@ -54,16 +54,33 @@ describe('RechargeFormCard', () => {
     expect(html).toContain('$10')
     expect(html).toContain('$20')
     expect(html).toContain('$200')
+    expect(html).toContain('Enterprise')
+    expect(html).toContain('Custom')
     expect(html).toContain('Top up for $10')
     expect(html).toContain('Top up for $20')
     expect(html).toContain('Top up for $200')
+    expect(html).toContain('Contact Us')
     expect(html).not.toContain('Top Up')
+    expect(html).toContain('Top up $10')
+    expect(html).toContain('Top up $20')
+    expect(html).toContain('Top up $200')
     expect(html).toContain('Lowest entry to get started')
     expect(html).toContain('Most Popular')
     expect(html).toContain('+5 free bonus')
     expect(html).toContain('3X more usage than the official plan')
-    expect(html).toContain('+100 free bonus')
+    expect(html).toContain('+100 bonus')
     expect(html).toContain('40X more usage than the official plan')
+    expect(html).toContain('Prepaid balance, no surprise bill')
+    expect(html).toContain('One API key for everything')
+    expect(html).toContain('Zero vendor lock-in')
+    expect(html).toContain('Usage analytics and cost controls')
+    expect(html).toContain('Enterprise-grade privacy')
+    expect(html).toContain('One invoice across providers')
+    expect(html).toContain('Highest prepaid value')
+    expect(html).toContain('Custom usage, routing, and invoicing')
+    expect(html).toContain('Custom monthly usage')
+    expect(html).toContain('Team procurement support')
+    expect(html).toContain('Custom routing discounts')
     expect(html).toContain(
       'No contract required. Add balance, create a key, copy the base_url, and test your first request.'
     )
@@ -73,8 +90,18 @@ describe('RechargeFormCard', () => {
     expect(html).toContain(
       'Best value for production testing, team workflows, and sustained model traffic.'
     )
+    expect(html).toContain(
+      'For higher monthly usage, invoicing, team procurement, or custom routing discounts.'
+    )
     expect(html).not.toContain('40% OFF')
     expect(html).not.toContain('50% OFF')
+    expect(html).not.toContain('40% off')
+    expect(html).not.toContain('50% off')
+    expect(html).not.toContain('Custom pricing')
+    expect(html).not.toContain('Enterprise teams')
+    expect(html).not.toContain(
+      'Contact sales for higher monthly usage and greater discounts.'
+    )
     expect(html).not.toContain('100% OFF')
     expect(html).not.toContain('$10 USD')
     expect(html).not.toContain('$20 USD')

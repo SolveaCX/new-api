@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Loader2, WalletCards } from 'lucide-react'
+import { CheckCircle2, Loader2, Mail, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -36,44 +36,99 @@ interface RechargeFormCardProps {
   loading?: boolean
 }
 
-type PlanCopy = {
+type CheckoutPlanCopy = {
+  action: 'checkout'
+  amount: number
   caption: string
   description: string
+  features: string[]
+  name: string
+  price: string
   badge?: string
   discount?: string
   featured?: boolean
 }
 
-const WEBSITE_PLAN_COPY_BY_AMOUNT: Record<number, PlanCopy> = {
-  10: {
+type ContactPlanCopy = {
+  action: 'contact'
+  caption: string
+  description: string
+  features: string[]
+  name: string
+  price: string
+  amount?: never
+  badge?: never
+  discount?: never
+  featured?: never
+}
+
+type PlanCopy = CheckoutPlanCopy | ContactPlanCopy
+
+const WEBSITE_PLAN_CARDS: PlanCopy[] = [
+  {
+    action: 'checkout',
+    amount: 10,
+    price: '$10',
+    name: 'Top up {{price}}',
     caption: 'Lowest entry to get started',
     description:
       'No contract required. Add balance, create a key, copy the base_url, and test your first request.',
+    features: [
+      'Prepaid balance, no surprise bill',
+      'One API key for everything',
+      'Zero vendor lock-in',
+      'Usage analytics and cost controls',
+    ],
   },
-  20: {
+  {
+    action: 'checkout',
+    amount: 20,
+    price: '$20',
+    name: 'Top up {{price}}',
     caption: '3X more usage than the official plan',
     description:
       'Best first top-up for trying real API workloads with a clear discount.',
+    features: [
+      'Permanently 20-40% cheaper',
+      'Usage analytics and cost controls',
+      'Enterprise-grade privacy',
+      'One invoice across providers',
+    ],
     badge: 'Most Popular',
     discount: '+5 free bonus',
     featured: true,
   },
-  200: {
+  {
+    action: 'checkout',
+    amount: 200,
+    price: '$200',
+    name: 'Top up {{price}}',
     caption: '40X more usage than the official plan',
     description:
       'Best value for production testing, team workflows, and sustained model traffic.',
-    discount: '+100 free bonus',
+    features: [
+      'Highest prepaid value',
+      'Usage analytics and cost controls',
+      'Enterprise-grade privacy',
+      'One invoice across providers',
+    ],
+    discount: '+100 bonus',
   },
-}
-
-const DEFAULT_PLAN_COPY: PlanCopy = {
-  caption: 'Prepaid balance for top AI models',
-  description: 'Choose a prepaid USD package and checkout with Stripe',
-}
-
-function getPlanCopy(amount: number): PlanCopy {
-  return WEBSITE_PLAN_COPY_BY_AMOUNT[amount] || DEFAULT_PLAN_COPY
-}
+  {
+    action: 'contact',
+    price: 'Custom',
+    name: 'Enterprise',
+    caption: 'Custom usage, routing, and invoicing',
+    description:
+      'For higher monthly usage, invoicing, team procurement, or custom routing discounts.',
+    features: [
+      'Custom monthly usage',
+      'Team procurement support',
+      'Custom routing discounts',
+      'One invoice across providers',
+    ],
+  },
+]
 
 function formatTopUpAmount(amount: number): string {
   return `$${formatNumber(amount)}`
@@ -114,18 +169,28 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
       icon={<WalletCards className='h-4 w-4' />}
       contentClassName='space-y-4 sm:space-y-6'
     >
-      {stripeEnabled && props.presetAmounts.length > 0 ? (
-        <div className='grid gap-3 md:grid-cols-3'>
-          {props.presetAmounts.map((preset) => {
-            const planCopy = getPlanCopy(preset.value)
-            const selected = props.selectedPreset === preset.value
-            const loading = props.paymentLoadingAmount === preset.value
+      {stripeEnabled ? (
+        <div className='grid gap-3 lg:grid-cols-4'>
+          {WEBSITE_PLAN_CARDS.map((planCopy) => {
+            const preset =
+              planCopy.action === 'checkout'
+                ? props.presetAmounts.find(
+                    (candidate) => candidate.value === planCopy.amount
+                  ) || { value: planCopy.amount }
+                : null
+            const selected =
+              preset != null && props.selectedPreset === preset.value
+            const loading =
+              preset != null && props.paymentLoadingAmount === preset.value
+            const price = preset
+              ? formatTopUpAmount(preset.value)
+              : t(planCopy.price)
 
             return (
               <div
-                key={preset.value}
+                key={planCopy.amount ?? planCopy.name}
                 className={cn(
-                  'bg-background relative flex min-h-[236px] flex-col rounded-lg border p-4 transition-colors',
+                  'bg-background relative flex min-h-[440px] flex-col rounded-lg border p-4 transition-colors',
                   selected
                     ? 'border-foreground bg-foreground/[0.03]'
                     : 'border-border',
@@ -146,14 +211,17 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
                 </div>
 
                 <div className='space-y-2'>
+                  <h3 className='text-lg font-semibold tracking-normal'>
+                    {t(planCopy.name, { price })}
+                  </h3>
                   <div className='text-3xl font-semibold tracking-normal'>
-                    {formatTopUpAmount(preset.value)}
+                    {price}
                   </div>
                   <p className='text-sm font-medium'>{t(planCopy.caption)}</p>
                   <p className='text-muted-foreground text-xs leading-5'>
                     {t(planCopy.description)}
                   </p>
-                  {preset.bonus && preset.bonus > 0 ? (
+                  {preset?.bonus && preset.bonus > 0 ? (
                     <p className='text-xs font-semibold text-[#FF2D78]'>
                       {t('Get {{bonus}} free', {
                         bonus: formatTopUpAmount(preset.bonus),
@@ -162,18 +230,40 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
                   ) : null}
                 </div>
 
-                <Button
-                  className='mt-auto w-full'
-                  onClick={() => handleTopUpClick(preset)}
-                  disabled={!!props.paymentLoadingAmount}
-                >
-                  {loading ? (
-                    <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                  ) : null}
-                  {t('Top up for {{amount}}', {
-                    amount: `$${formatNumber(preset.value)}`,
-                  })}
-                </Button>
+                <div className='mt-5 space-y-3'>
+                  {planCopy.features.map((feature) => (
+                    <p
+                      key={feature}
+                      className='text-muted-foreground flex gap-2 text-xs leading-5'
+                    >
+                      <CheckCircle2 className='text-primary mt-0.5 h-4 w-4 shrink-0' />
+                      <span>{t(feature)}</span>
+                    </p>
+                  ))}
+                </div>
+
+                {preset ? (
+                  <Button
+                    className='mt-auto w-full'
+                    onClick={() => handleTopUpClick(preset)}
+                    disabled={!!props.paymentLoadingAmount}
+                  >
+                    {loading ? (
+                      <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                    ) : null}
+                    {t('Top up for {{amount}}', {
+                      amount: `$${formatNumber(preset.value)}`,
+                    })}
+                  </Button>
+                ) : (
+                  <a
+                    className='border-border bg-background hover:bg-muted mt-auto inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 text-sm font-medium transition-colors'
+                    href='mailto:support@flatkey.ai'
+                  >
+                    <Mail className='h-4 w-4' />
+                    {t('Contact Us')}
+                  </a>
+                )}
               </div>
             )
           })}
