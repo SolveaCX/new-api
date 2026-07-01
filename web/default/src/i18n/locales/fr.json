@@ -5170,6 +5170,21 @@
     "Confirming your card binding...": "Confirmation de l'association de votre carte...",
     "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Recharge réussie. Votre bonus est en cours de crédit. Actualisez dans un instant.",
     "Recharge successful": "Recharge réussie",
-    "Top up for {{amount}}": "Recharger pour {{amount}}"
+    "Top up for {{amount}}": "Recharger pour {{amount}}",
+    "Referral reward limit reached; no inviter reward granted": "Limite de récompenses de parrainage atteinte ; aucune récompense d'inviteur n'est accordée",
+    "No top-up packages available. Please contact administrator.": "Aucun forfait de recharge disponible. Veuillez contacter l'administrateur.",
+    "I confirm these recipients consented to receive Codex invite emails": "Je confirme que ces destinataires ont accepté de recevoir des e-mails d’invitation Codex",
+    "Disable selected users": "Désactiver les utilisateurs sélectionnés",
+    "Disable Selected Users?": "Désactiver les utilisateurs sélectionnés ?",
+    "Failed to disable {{count}} user(s)": "Échec de la désactivation de {{count}} utilisateur(s)",
+    "No selected users can be disabled": "Aucun utilisateur sélectionné ne peut être désactivé",
+    "Successfully disabled {{count}} user(s)": "{{count}} utilisateur(s) désactivé(s) avec succès",
+    "This will disable {{count}} selected user(s). Root, already disabled, and deleted users will be skipped.": "Cela désactivera {{count}} utilisateur(s) sélectionné(s). Les utilisateurs Root, déjà désactivés ou supprimés seront ignorés.",
+    "Batch edit selected channels": "Modifier en lot les canaux sélectionnés",
+    "Batch edit {{count}} selected channel(s)": "Modifier en lot {{count}} canal(aux) sélectionné(s)",
+    "{{count}} channel(s) updated": "{{count}} canal(aux) mis à jour",
+    "Leave empty to keep current": "Laisser vide pour conserver la valeur actuelle",
+    "Priority must be an integer": "La priorité doit être un nombre entier",
+    "Weight must be a non-negative integer": "Le poids doit être un nombre entier non négatif"
   }
 }

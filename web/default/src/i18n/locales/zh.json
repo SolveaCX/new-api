@@ -5170,6 +5170,21 @@
     "Confirming your card binding...": "正在确认你的银行卡绑定...",
     "Recharge successful. Your bonus is being credited. Refresh in a moment.": "充值成功，赠送额度正在入账，请稍后刷新。",
     "Recharge successful": "充值成功",
-    "Top up for {{amount}}": "充值 {{amount}}"
+    "Top up for {{amount}}": "充值 {{amount}}",
+    "Referral reward limit reached; no inviter reward granted": "已达到邀请奖励上限，不再获得邀请者奖励",
+    "No top-up packages available. Please contact administrator.": "暂无可用充值套餐。请联系管理员。",
+    "I confirm these recipients consented to receive Codex invite emails": "我确认这些收件人同意接收 Codex 邀请邮件",
+    "Disable selected users": "禁用选中的用户",
+    "Disable Selected Users?": "禁用选中的用户？",
+    "Failed to disable {{count}} user(s)": "{{count}} 个用户禁用失败",
+    "No selected users can be disabled": "选中的用户中没有可禁用的用户",
+    "Successfully disabled {{count}} user(s)": "成功禁用 {{count}} 个用户",
+    "This will disable {{count}} selected user(s). Root, already disabled, and deleted users will be skipped.": "将禁用 {{count}} 个选中的用户。Root、已禁用和已删除用户会被跳过。",
+    "Batch edit selected channels": "批量编辑选中渠道",
+    "Batch edit {{count}} selected channel(s)": "批量编辑 {{count}} 个选中渠道",
+    "{{count}} channel(s) updated": "已更新 {{count}} 个渠道",
+    "Leave empty to keep current": "留空保持原值",
+    "Priority must be an integer": "优先级必须是整数",
+    "Weight must be a non-negative integer": "权重必须是非负整数"
   }
 }

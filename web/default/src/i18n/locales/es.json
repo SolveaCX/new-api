@@ -5170,6 +5170,21 @@
     "Confirming your card binding...": "Confirmando la vinculación de tu tarjeta...",
     "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Recarga realizada correctamente. Tu bonificación se está acreditando. Actualiza en un momento.",
     "Recharge successful": "Recarga realizada correctamente",
-    "Top up for {{amount}}": "Recargar por {{amount}}"
+    "Top up for {{amount}}": "Recargar por {{amount}}",
+    "Referral reward limit reached; no inviter reward granted": "Se alcanzó el límite de recompensas por referido; no se concede recompensa al invitador",
+    "No top-up packages available. Please contact administrator.": "No hay paquetes de recarga disponibles. Contacta con el administrador.",
+    "I confirm these recipients consented to receive Codex invite emails": "Confirmo que estos destinatarios aceptaron recibir correos de invitación de Codex",
+    "Disable selected users": "Deshabilitar usuarios seleccionados",
+    "Disable Selected Users?": "¿Deshabilitar usuarios seleccionados?",
+    "Failed to disable {{count}} user(s)": "No se pudieron deshabilitar {{count}} usuario(s)",
+    "No selected users can be disabled": "No se puede deshabilitar ningún usuario seleccionado",
+    "Successfully disabled {{count}} user(s)": "{{count}} usuario(s) deshabilitado(s) correctamente",
+    "This will disable {{count}} selected user(s). Root, already disabled, and deleted users will be skipped.": "Esto deshabilitará {{count}} usuario(s) seleccionado(s). Se omitirán los usuarios Root, ya deshabilitados y eliminados.",
+    "Batch edit selected channels": "Editar en lote los canales seleccionados",
+    "Batch edit {{count}} selected channel(s)": "Editar en lote {{count}} canal(es) seleccionado(s)",
+    "{{count}} channel(s) updated": "{{count}} canal(es) actualizado(s)",
+    "Leave empty to keep current": "Dejar vacío para mantener el valor actual",
+    "Priority must be an integer": "La prioridad debe ser un número entero",
+    "Weight must be a non-negative integer": "El peso debe ser un número entero no negativo"
   }
 }

@@ -3,7 +3,10 @@ import i18n from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { initReactI18next } from 'react-i18next'
 import type { TopupInfo } from '../types'
-import { RechargeFormCard } from './recharge-form-card'
+import {
+  RechargeFormCard,
+  WalletEnterpriseContactContent,
+} from './recharge-form-card'
 
 const topupInfoWithStripe: TopupInfo = {
   enable_online_topup: false,
@@ -42,7 +45,11 @@ describe('RechargeFormCard', () => {
           ...topupInfoWithStripe,
           amount_options: [10, 20, 200],
         }}
-        presetAmounts={[{ value: 10 }, { value: 20 }, { value: 200 }]}
+        presetAmounts={[
+          { value: 10 },
+          { value: 20, bonus: 5 },
+          { value: 200, bonus: 100 },
+        ]}
         selectedPreset={null}
         onSelectPreset={() => undefined}
         onStripeTopUp={() => undefined}
@@ -60,15 +67,16 @@ describe('RechargeFormCard', () => {
     expect(html).toContain('Top up for $20')
     expect(html).toContain('Top up for $200')
     expect(html).toContain('Contact Us')
+    expect(html).not.toContain('mailto:support@flatkey.ai')
     expect(html).not.toContain('Top Up')
     expect(html).toContain('Top up $10')
     expect(html).toContain('Top up $20')
     expect(html).toContain('Top up $200')
     expect(html).toContain('Lowest entry to get started')
     expect(html).toContain('Most Popular')
-    expect(html).toContain('+5 free bonus')
+    expect(html).toContain('Get $5 free')
     expect(html).toContain('3X more usage than the official plan')
-    expect(html).toContain('+100 free bonus')
+    expect(html).toContain('Get $100 free')
     expect(html).toContain('40X more usage than the official plan')
     expect(html).toContain('Prepaid balance, no surprise bill')
     expect(html).toContain('One API key for everything')
@@ -103,6 +111,8 @@ describe('RechargeFormCard', () => {
       'Contact sales for higher monthly usage and greater discounts.'
     )
     expect(html).not.toContain('100% OFF')
+    expect(html).not.toContain('+5 free bonus')
+    expect(html).not.toContain('+100 free bonus')
     expect(html).not.toContain('$10 USD')
     expect(html).not.toContain('$20 USD')
     expect(html).not.toContain('$200 USD')
@@ -135,5 +145,36 @@ describe('RechargeFormCard', () => {
     expect(html).not.toContain('Need a redemption code?')
     expect(html).not.toContain('Redeem')
     expect(html).not.toContain('https://example.com/redeem')
+  })
+
+  test('renders only checkout packages configured by the backend presets', () => {
+    const html = renderToStaticMarkup(
+      <RechargeFormCard
+        topupInfo={{
+          ...topupInfoWithStripe,
+          amount_options: [20, 50],
+        }}
+        presetAmounts={[{ value: 20 }, { value: 50, bonus: 10 }]}
+        selectedPreset={null}
+        onSelectPreset={() => undefined}
+        onStripeTopUp={() => undefined}
+        paymentLoadingAmount={null}
+      />
+    )
+
+    expect(html).not.toContain('Top up for $10')
+    expect(html).toContain('Top up for $20')
+    expect(html).toContain('Top up for $50')
+    expect(html).not.toContain('Top up for $200')
+    expect(html).toContain('Get $10 free')
+  })
+
+  test('renders the website-style enterprise sales inquiry form content', () => {
+    const html = renderToStaticMarkup(<WalletEnterpriseContactContent />)
+
+    expect(html).toContain('Enterprise sales inquiry form')
+    expect(html).toContain('https://tally.so/embed/')
+    expect(html).toContain('For higher monthly usage')
+    expect(html).not.toContain('mailto:support@flatkey.ai')
   })
 })

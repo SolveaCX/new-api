@@ -5170,6 +5170,21 @@
     "Confirming your card binding...": "カード連携を確認しています...",
     "Recharge successful. Your bonus is being credited. Refresh in a moment.": "チャージが完了しました。ボーナスを反映中です。しばらくしてから更新してください。",
     "Recharge successful": "チャージ完了",
-    "Top up for {{amount}}": "{{amount}} をチャージ"
+    "Top up for {{amount}}": "{{amount}} をチャージ",
+    "Referral reward limit reached; no inviter reward granted": "招待報酬の上限に達したため、招待者報酬は付与されません",
+    "No top-up packages available. Please contact administrator.": "利用可能なチャージパッケージがありません。管理者にお問い合わせください。",
+    "I confirm these recipients consented to receive Codex invite emails": "これらの受信者が Codex 招待メールの受信に同意したことを確認します",
+    "Disable selected users": "選択したユーザーを無効化",
+    "Disable Selected Users?": "選択したユーザーを無効化しますか？",
+    "Failed to disable {{count}} user(s)": "{{count}} 人のユーザーを無効化できませんでした",
+    "No selected users can be disabled": "選択したユーザーに無効化できるユーザーはいません",
+    "Successfully disabled {{count}} user(s)": "{{count}} 人のユーザーを無効化しました",
+    "This will disable {{count}} selected user(s). Root, already disabled, and deleted users will be skipped.": "選択した {{count}} 人のユーザーを無効化します。Root、すでに無効なユーザー、削除済みユーザーはスキップされます。",
+    "Batch edit selected channels": "選択したチャネルを一括編集",
+    "Batch edit {{count}} selected channel(s)": "選択した {{count}} 件のチャネルを一括編集",
+    "{{count}} channel(s) updated": "{{count}} 件のチャネルを更新しました",
+    "Leave empty to keep current": "現在の値を維持する場合は空欄のまま",
+    "Priority must be an integer": "優先度は整数で入力してください",
+    "Weight must be a non-negative integer": "重みは 0 以上の整数で入力してください"
   }
 }

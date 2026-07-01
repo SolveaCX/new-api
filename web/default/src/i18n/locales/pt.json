@@ -5170,6 +5170,21 @@
     "Confirming your card binding...": "Confirmando o vínculo do seu cartão...",
     "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Recarga realizada com sucesso. Seu bônus está sendo creditado. Atualize em instantes.",
     "Recharge successful": "Recarga realizada com sucesso",
-    "Top up for {{amount}}": "Recarregar com {{amount}}"
+    "Top up for {{amount}}": "Recarregar com {{amount}}",
+    "Referral reward limit reached; no inviter reward granted": "Limite de recompensas por indicação atingido; nenhuma recompensa ao convidador foi concedida",
+    "No top-up packages available. Please contact administrator.": "Não há pacotes de recarga disponíveis. Entre em contato com o administrador.",
+    "I confirm these recipients consented to receive Codex invite emails": "Confirmo que estes destinatários consentiram em receber e-mails de convite do Codex",
+    "Disable selected users": "Desativar usuários selecionados",
+    "Disable Selected Users?": "Desativar usuários selecionados?",
+    "Failed to disable {{count}} user(s)": "Falha ao desativar {{count}} usuário(s)",
+    "No selected users can be disabled": "Nenhum usuário selecionado pode ser desativado",
+    "Successfully disabled {{count}} user(s)": "{{count}} usuário(s) desativado(s) com sucesso",
+    "This will disable {{count}} selected user(s). Root, already disabled, and deleted users will be skipped.": "Isso desativará {{count}} usuário(s) selecionado(s). Usuários Root, já desativados e excluídos serão ignorados.",
+    "Batch edit selected channels": "Editar em lote os canais selecionados",
+    "Batch edit {{count}} selected channel(s)": "Editar em lote {{count}} canal(is) selecionado(s)",
+    "{{count}} channel(s) updated": "{{count}} canal(is) atualizado(s)",
+    "Leave empty to keep current": "Deixe vazio para manter o valor atual",
+    "Priority must be an integer": "A prioridade deve ser um número inteiro",
+    "Weight must be a non-negative integer": "O peso deve ser um número inteiro não negativo"
   }
 }
