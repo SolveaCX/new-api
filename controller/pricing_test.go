@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +21,7 @@ func TestFilterPricingByUsableGroupsPrunesEnableGroups(t *testing.T) {
 		{ModelName: "all", EnableGroup: []string{"all"}},
 	}
 
-	filtered := filterPricingByUsableGroups(pricing, usableGroup)
+	filtered := service.FilterPricingByUsableGroups(pricing, usableGroup)
 
 	require.Len(t, filtered, 2)
 	require.Equal(t, "mixed", filtered[0].ModelName)

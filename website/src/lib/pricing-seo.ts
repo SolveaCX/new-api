@@ -1,7 +1,7 @@
 import type { Locale } from "@/lib/locales";
 import {
   getAvailableGroups,
-  getVendorName,
+  resolveVendorName,
   sortPricingModelsBySeries,
   type PricingData,
   type PricingModel,
@@ -104,11 +104,12 @@ export function buildPricingSeoIndex(pricing: PricingData): PricingSeoIndex {
   const enrichedModels = sortPricingModelsBySeries(
     pricing.models.map((model) => {
       const vendor = resolveVendor(model, vendorById, vendorByName);
+      const vendorName = vendor?.displayName ?? resolveVendorName(model, pricing.vendors);
       return {
         ...model,
         model_slug: buildModelSlug(model.model_name),
-        vendor_name: model.vendor_name ?? vendor?.displayName ?? getVendorName(model, pricing.vendors),
-        vendor_slug: vendor?.slug ?? slugifyAscii(model.vendor_name),
+        vendor_name: model.vendor_name ?? vendorName,
+        vendor_slug: vendor?.slug ?? slugifyAscii(vendorName),
         vendor_icon: model.vendor_icon ?? vendor?.icon,
         vendor_description: model.vendor_description ?? vendor?.description,
         group_ratio: model.group_ratio ?? pricing.groupRatio,
@@ -122,6 +123,7 @@ export function buildPricingSeoIndex(pricing: PricingData): PricingSeoIndex {
 
   for (const model of enrichedModels) {
     const vendor = resolveVendor(model, vendorById, vendorByName);
+    if (!vendor && !model.vendor_name) continue;
     const slug = uniqueSlug(buildModelSlug(model.model_name), usedModelSlugs.size, (candidate) => usedModelSlugs.has(candidate));
     usedModelSlugs.add(slug);
     const modelWithSlug = { ...model, model_slug: slug };
@@ -167,7 +169,10 @@ export function buildModelSeoTitle(entry: PricingSeoModel): string {
 }
 
 export function buildModelSeoDescription(entry: PricingSeoModel): string {
-  const vendorName = entry.vendor?.displayName ?? entry.model.vendor_name ?? "AI";
+  const vendorName = entry.vendor?.displayName ?? entry.model.vendor_name;
+  if (!vendorName) {
+    return `Use ${entry.model.model_name} through flatkey.ai with OpenAI-compatible access, transparent usage pricing, and one prepaid balance.`;
+  }
   return `Use ${entry.model.model_name} from ${vendorName} through flatkey.ai with OpenAI-compatible access, transparent usage pricing, and one prepaid balance.`;
 }
 

@@ -6,7 +6,7 @@ import {
   getModelLandingConfigs,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
-import { getPricingData, getVendorName } from "@/lib/pricing";
+import { getPricingData, resolveVendorName } from "@/lib/pricing";
 import { buildModelSeoDescription, buildModelSeoTitle, buildPricingSeoIndex } from "@/lib/pricing-seo";
 import { buildMetadata } from "@/lib/seo";
 
@@ -46,13 +46,13 @@ export default async function Page(props: Props) {
   const params = await props.params;
   const config = getModelLandingConfig(params.slug);
 
-  if (config) {
-    const pricing = await getPricingData();
-    const models = pricing.models.map((model) => ({
-      ...model,
-      vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
-    }));
+  const pricing = await getPricingData();
+  const models = pricing.models.map((model) => ({
+    ...model,
+    vendor_name: resolveVendorName(model, pricing.vendors),
+  }));
 
+  if (config) {
     return (
       <ModelLandingPage
         config={config}

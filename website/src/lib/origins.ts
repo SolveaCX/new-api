@@ -1,4 +1,5 @@
 const DEFAULT_APP_CONSOLE_ORIGIN = "https://console.flatkey.ai";
+const DEFAULT_ROUTER_ORIGIN = "https://router.flatkey.ai";
 const DEFAULT_SITE_ORIGIN = "https://flatkey.ai";
 
 export function normalizeOrigin(origin: string | undefined, fallback: string): string {
@@ -12,7 +13,15 @@ export const APP_CONSOLE_ORIGIN = normalizeOrigin(
   DEFAULT_APP_CONSOLE_ORIGIN
 );
 
-export const SITE_ORIGIN = normalizeOrigin(process.env.NEXT_PUBLIC_SITE_ORIGIN, DEFAULT_SITE_ORIGIN);
+export const ROUTER_ORIGIN = normalizeOrigin(
+  process.env.ROUTER_ORIGIN ?? process.env.NEXT_PUBLIC_ROUTER_ORIGIN,
+  DEFAULT_ROUTER_ORIGIN
+);
+
+export const SITE_ORIGIN = normalizeOrigin(
+  process.env.SITE_ORIGIN ?? process.env.NEXT_PUBLIC_SITE_ORIGIN,
+  DEFAULT_SITE_ORIGIN
+);
 
 export function buildConsoleUrl(pathname = "/", origin = APP_CONSOLE_ORIGIN, search = ""): string {
   const path = pathname.startsWith("/") ? pathname : `/${pathname}`;

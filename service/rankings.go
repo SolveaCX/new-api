@@ -18,6 +18,14 @@ const (
 	rankingMoverLimit       = 6
 	rankingOthersLabel      = "Others"
 	rankingUnknownVendor    = "Unknown"
+
+	websiteRankingModelLimit       = 20
+	websiteRankingVendorLimit      = 5
+	websiteRankingMoverLimit       = 4
+	websiteRankingMinimumTokens    = int64(100000)
+	websiteRankingMinimumShare     = 0.005
+	websiteRankingMinimumRankDelta = 2
+	websiteRankingGrowthBucketPct  = 5.0
 )
 
 type RankingsResponse struct {
@@ -29,27 +37,66 @@ type RankingsResponse struct {
 	VendorShareHistory VendorShareSeries  `json:"vendor_share_history"`
 }
 
+type WebsiteRankingsResponse struct {
+	Period      string                `json:"period"`
+	Models      []WebsiteRankedModel  `json:"models"`
+	Vendors     []WebsiteRankedVendor `json:"vendors"`
+	TopMovers   []WebsiteRankingMover `json:"top_movers"`
+	TopDroppers []WebsiteRankingMover `json:"top_droppers"`
+}
+
+type WebsiteRankedModel struct {
+	Rank       int      `json:"rank"`
+	ModelName  string   `json:"model_name"`
+	Vendor     string   `json:"vendor"`
+	VendorIcon string   `json:"vendor_icon,omitempty"`
+	Category   string   `json:"category"`
+	Share      float64  `json:"share"`
+	GrowthPct  *float64 `json:"growth_pct,omitempty"`
+}
+
+type WebsiteRankedVendor struct {
+	Rank        int      `json:"rank"`
+	Vendor      string   `json:"vendor"`
+	VendorIcon  string   `json:"vendor_icon,omitempty"`
+	Share       float64  `json:"share"`
+	GrowthPct   *float64 `json:"growth_pct,omitempty"`
+	ModelsCount int      `json:"models_count"`
+	TopModel    string   `json:"top_model,omitempty"`
+}
+
+type WebsiteRankingMover struct {
+	ModelName   string   `json:"model_name"`
+	Vendor      string   `json:"vendor"`
+	VendorIcon  string   `json:"vendor_icon,omitempty"`
+	RankDelta   int      `json:"rank_delta"`
+	CurrentRank int      `json:"current_rank"`
+	GrowthPct   *float64 `json:"growth_pct,omitempty"`
+}
+
 type RankedModel struct {
-	Rank         int     `json:"rank"`
-	PreviousRank *int    `json:"previous_rank,omitempty"`
-	ModelName    string  `json:"model_name"`
-	Vendor       string  `json:"vendor"`
-	VendorIcon   string  `json:"vendor_icon,omitempty"`
-	Category     string  `json:"category"`
-	TotalTokens  int64   `json:"total_tokens"`
-	Share        float64 `json:"share"`
-	GrowthPct    float64 `json:"growth_pct"`
+	Rank           int     `json:"rank"`
+	PreviousRank   *int    `json:"previous_rank,omitempty"`
+	ModelName      string  `json:"model_name"`
+	Vendor         string  `json:"vendor"`
+	VendorIcon     string  `json:"vendor_icon,omitempty"`
+	Category       string  `json:"category"`
+	TotalTokens    int64   `json:"total_tokens"`
+	PreviousTokens int64   `json:"-"`
+	Share          float64 `json:"share"`
+	GrowthPct      float64 `json:"growth_pct"`
 }
 
 type RankedVendor struct {
-	Rank        int     `json:"rank"`
-	Vendor      string  `json:"vendor"`
-	VendorIcon  string  `json:"vendor_icon,omitempty"`
-	TotalTokens int64   `json:"total_tokens"`
-	Share       float64 `json:"share"`
-	GrowthPct   float64 `json:"growth_pct"`
-	ModelsCount int     `json:"models_count"`
-	TopModel    string  `json:"top_model"`
+	Rank           int     `json:"rank"`
+	Vendor         string  `json:"vendor"`
+	VendorIcon     string  `json:"vendor_icon,omitempty"`
+	TotalTokens    int64   `json:"total_tokens"`
+	PreviousTokens int64   `json:"-"`
+	Share          float64 `json:"share"`
+	GrowthPct      float64 `json:"growth_pct"`
+	ModelsCount    int     `json:"models_count"`
+	TopModel       string  `json:"top_model"`
 }
 
 type RankingMover struct {
@@ -114,6 +161,17 @@ type rankingCacheItem struct {
 	data      *RankingsResponse
 }
 
+type websiteRankingCacheItem struct {
+	expiresAt time.Time
+	data      *WebsiteRankingsResponse
+}
+
+type rankingInflightCall struct {
+	done chan struct{}
+	data *RankingsResponse
+	err  error
+}
+
 type rankingModelMeta struct {
 	vendor     string
 	vendorIcon string
@@ -130,8 +188,11 @@ type vendorAggregate struct {
 }
 
 var (
-	rankingCacheMu sync.Mutex
-	rankingCache   = map[string]rankingCacheItem{}
+	rankingCacheMu            sync.Mutex
+	rankingCache              = map[string]rankingCacheItem{}
+	websiteRankingCache       = map[string]websiteRankingCacheItem{}
+	rankingInflight           = map[string]*rankingInflightCall{}
+	buildRankingsSnapshotFunc = buildRankingsSnapshot
 )
 
 func GetRankingsSnapshot(period string) (*RankingsResponse, error) {
@@ -146,10 +207,22 @@ func GetRankingsSnapshot(period string) (*RankingsResponse, error) {
 		rankingCacheMu.Unlock()
 		return item.data, nil
 	}
+	if call, ok := rankingInflight[config.id]; ok {
+		rankingCacheMu.Unlock()
+		<-call.done
+		return call.data, call.err
+	}
+	call := &rankingInflightCall{done: make(chan struct{})}
+	rankingInflight[config.id] = call
 	rankingCacheMu.Unlock()
 
-	data, err := buildRankingsSnapshot(config, now)
+	data, err := buildRankingsSnapshotFunc(config, now)
 	if err != nil {
+		rankingCacheMu.Lock()
+		call.err = err
+		delete(rankingInflight, config.id)
+		close(call.done)
+		rankingCacheMu.Unlock()
 		return nil, err
 	}
 
@@ -158,9 +231,266 @@ func GetRankingsSnapshot(period string) (*RankingsResponse, error) {
 		expiresAt: now.Add(rankingCacheTTL),
 		data:      data,
 	}
+	call.data = data
+	delete(rankingInflight, config.id)
+	close(call.done)
 	rankingCacheMu.Unlock()
 
 	return data, nil
+}
+
+func GetWebsiteRankingsSnapshot(period string) (*WebsiteRankingsResponse, error) {
+	config, err := websiteRankingConfig(period)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	rankingCacheMu.Lock()
+	if item, ok := websiteRankingCache[config.id]; ok && now.Before(item.expiresAt) {
+		rankingCacheMu.Unlock()
+		return item.data, nil
+	}
+	rankingCacheMu.Unlock()
+
+	data, err := GetRankingsSnapshot(config.id)
+	if err != nil {
+		return nil, err
+	}
+	publicData := buildWebsiteRankingsResponse(config.id, data)
+
+	rankingCacheMu.Lock()
+	websiteRankingCache[config.id] = websiteRankingCacheItem{
+		expiresAt: now.Add(rankingCacheTTL),
+		data:      publicData,
+	}
+	rankingCacheMu.Unlock()
+
+	return publicData, nil
+}
+
+func buildWebsiteRankingsResponse(period string, source *RankingsResponse) *WebsiteRankingsResponse {
+	return buildWebsiteRankingsResponseWithPublicModels(period, source, buildWebsitePublicModelSet())
+}
+
+func buildWebsiteRankingsResponseWithPublicModels(period string, source *RankingsResponse, publicModels map[string]struct{}) *WebsiteRankingsResponse {
+	if source == nil {
+		return &WebsiteRankingsResponse{Period: period}
+	}
+
+	out := &WebsiteRankingsResponse{
+		Period:      period,
+		Models:      make([]WebsiteRankedModel, 0, len(source.Models)),
+		Vendors:     make([]WebsiteRankedVendor, 0, len(source.Vendors)),
+		TopMovers:   make([]WebsiteRankingMover, 0, websiteRankingMoverLimit),
+		TopDroppers: make([]WebsiteRankingMover, 0, websiteRankingMoverLimit),
+	}
+
+	publicModelTotalTokens := sumPublicRankingModelTokens(source.Models, publicModels)
+	publicVendorTokens := publicRankingVendorTokens(source.Models, publicModels)
+	publicVendorPreviousTokens := publicRankingVendorPreviousTokens(source.Models, publicModels)
+	publicVendorModelCounts := publicRankingVendorModelCounts(source.Models, publicModels)
+	publicModelRows := make([]WebsiteRankedModel, 0, len(source.Models))
+	for _, item := range source.Models {
+		if !websiteRankingModelIsPublic(item, publicModels) {
+			continue
+		}
+		publicModelRows = append(publicModelRows, WebsiteRankedModel{
+			Rank:       len(publicModelRows) + 1,
+			ModelName:  item.ModelName,
+			Vendor:     item.Vendor,
+			VendorIcon: item.VendorIcon,
+			Category:   item.Category,
+			Share:      coarseWebsiteShare(rankingShare(item.TotalTokens, publicModelTotalTokens)),
+			GrowthPct:  websiteRankingGrowth(item.GrowthPct, item.TotalTokens, item.PreviousTokens),
+		})
+		if len(publicModelRows) >= websiteRankingModelLimit {
+			break
+		}
+	}
+	out.Models = publicModelRows
+
+	for _, item := range source.Vendors {
+		publicTokens := publicVendorTokens[item.Vendor]
+		publicPreviousTokens := publicVendorPreviousTokens[item.Vendor]
+		publicVendorShare := rankingShare(publicTokens, publicModelTotalTokens)
+		publicVendorGrowth := rankingGrowthPct(publicTokens, publicPreviousTokens)
+		if !websiteRankingVendorIsPublic(item, publicTokens, publicVendorShare) {
+			continue
+		}
+		out.Vendors = append(out.Vendors, WebsiteRankedVendor{
+			Rank:        len(out.Vendors) + 1,
+			Vendor:      item.Vendor,
+			VendorIcon:  item.VendorIcon,
+			Share:       coarseWebsiteShare(publicVendorShare),
+			GrowthPct:   websiteRankingGrowth(publicVendorGrowth, publicTokens, publicPreviousTokens),
+			ModelsCount: publicVendorModelCounts[item.Vendor],
+			TopModel:    "",
+		})
+		if len(out.Vendors) >= websiteRankingVendorLimit {
+			break
+		}
+	}
+
+	out.TopMovers, out.TopDroppers = buildWebsiteRankingMovers(source.Models, publicModels)
+	return out
+}
+
+func buildWebsitePublicModelSet() map[string]struct{} {
+	publicModels := make(map[string]struct{})
+	metaByModel := buildRankingModelMeta()
+	for _, pricing := range FilterPricingByUsableGroups(model.GetPricing(), GetUserUsableGroups("")) {
+		meta := metaByModel[pricing.ModelName]
+		if meta.vendor == "" || meta.vendor == rankingUnknownVendor {
+			continue
+		}
+		publicModels[pricing.ModelName] = struct{}{}
+	}
+	return publicModels
+}
+
+func sumPublicRankingModelTokens(models []RankedModel, publicModels map[string]struct{}) int64 {
+	total := int64(0)
+	for _, item := range models {
+		if !websiteRankingModelIsPublic(item, publicModels) {
+			continue
+		}
+		total += item.TotalTokens
+	}
+	return total
+}
+
+func publicRankingVendorTokens(models []RankedModel, publicModels map[string]struct{}) map[string]int64 {
+	tokens := make(map[string]int64)
+	for _, item := range models {
+		if !websiteRankingModelIsPublic(item, publicModels) {
+			continue
+		}
+		tokens[item.Vendor] += item.TotalTokens
+	}
+	return tokens
+}
+
+func publicRankingVendorPreviousTokens(models []RankedModel, publicModels map[string]struct{}) map[string]int64 {
+	tokens := make(map[string]int64)
+	for _, item := range models {
+		if !websiteRankingModelIsPublic(item, publicModels) {
+			continue
+		}
+		tokens[item.Vendor] += item.PreviousTokens
+	}
+	return tokens
+}
+
+func publicRankingVendorModelCounts(models []RankedModel, publicModels map[string]struct{}) map[string]int {
+	counts := make(map[string]int)
+	for _, item := range models {
+		if !websiteRankingModelIsPublic(item, publicModels) {
+			continue
+		}
+		counts[item.Vendor]++
+	}
+	return counts
+}
+
+func websiteRankingConfig(period string) (rankingPeriodConfig, error) {
+	switch period {
+	case "", "week":
+		return rankingConfig("week")
+	case "month":
+		return rankingConfig("month")
+	default:
+		return rankingPeriodConfig{}, fmt.Errorf("invalid public ranking period: %s", period)
+	}
+}
+
+func websiteRankingModelIsPublic(item RankedModel, publicModels map[string]struct{}) bool {
+	if _, ok := publicModels[item.ModelName]; !ok {
+		return false
+	}
+	if item.Vendor == "" || item.Vendor == rankingUnknownVendor {
+		return false
+	}
+	return item.TotalTokens >= websiteRankingMinimumTokens && item.Share >= websiteRankingMinimumShare
+}
+
+func websiteRankingVendorIsPublic(item RankedVendor, publicTokens int64, publicShare float64) bool {
+	if item.Vendor == "" || item.Vendor == rankingUnknownVendor {
+		return false
+	}
+	return publicTokens >= websiteRankingMinimumTokens && publicShare >= websiteRankingMinimumShare
+}
+
+func websiteRankingGrowth(growth float64, currentTokens int64, previousTokens int64) *float64 {
+	if currentTokens < websiteRankingMinimumTokens || previousTokens < websiteRankingMinimumTokens {
+		return nil
+	}
+	coarse := math.Round(growth/websiteRankingGrowthBucketPct) * websiteRankingGrowthBucketPct
+	if coarse > 200 {
+		coarse = 200
+	}
+	if coarse < -200 {
+		coarse = -200
+	}
+	return &coarse
+}
+
+func coarseWebsiteShare(share float64) float64 {
+	if share <= 0 {
+		return 0
+	}
+	return math.Round(share*100) / 100
+}
+
+func buildWebsiteRankingMovers(models []RankedModel, publicModels map[string]struct{}) ([]WebsiteRankingMover, []WebsiteRankingMover) {
+	movers := make([]WebsiteRankingMover, 0, websiteRankingMoverLimit)
+	droppers := make([]WebsiteRankingMover, 0, websiteRankingMoverLimit)
+	for _, item := range models {
+		if item.PreviousRank == nil || !websiteRankingModelIsPublic(item, publicModels) {
+			continue
+		}
+		delta := *item.PreviousRank - item.Rank
+		if absInt(delta) < websiteRankingMinimumRankDelta {
+			continue
+		}
+		growth := websiteRankingGrowth(item.GrowthPct, item.TotalTokens, item.PreviousTokens)
+		if growth == nil {
+			continue
+		}
+		row := WebsiteRankingMover{
+			ModelName:   item.ModelName,
+			Vendor:      item.Vendor,
+			VendorIcon:  item.VendorIcon,
+			RankDelta:   delta,
+			CurrentRank: item.Rank,
+			GrowthPct:   growth,
+		}
+		if delta > 0 {
+			movers = append(movers, row)
+		} else {
+			droppers = append(droppers, row)
+		}
+	}
+	sort.Slice(movers, func(i, j int) bool {
+		if movers[i].RankDelta == movers[j].RankDelta {
+			return growthValue(movers[i].GrowthPct) > growthValue(movers[j].GrowthPct)
+		}
+		return movers[i].RankDelta > movers[j].RankDelta
+	})
+	sort.Slice(droppers, func(i, j int) bool {
+		if droppers[i].RankDelta == droppers[j].RankDelta {
+			return growthValue(droppers[i].GrowthPct) < growthValue(droppers[j].GrowthPct)
+		}
+		return droppers[i].RankDelta < droppers[j].RankDelta
+	})
+	return limitWebsiteRankingMovers(movers, websiteRankingMoverLimit), limitWebsiteRankingMovers(droppers, websiteRankingMoverLimit)
+}
+
+func growthValue(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func rankingConfig(period string) (rankingPeriodConfig, error) {
@@ -276,15 +606,16 @@ func buildRankedModels(totals []model.RankingQuotaTotal, totalTokens int64, prev
 			growth = rankingGrowthPct(item.TotalTokens, previousTokens[item.ModelName])
 		}
 		rows = append(rows, RankedModel{
-			Rank:         idx + 1,
-			PreviousRank: previousRank,
-			ModelName:    item.ModelName,
-			Vendor:       modelMeta.vendor,
-			VendorIcon:   modelMeta.vendorIcon,
-			Category:     "all",
-			TotalTokens:  item.TotalTokens,
-			Share:        rankingShare(item.TotalTokens, totalTokens),
-			GrowthPct:    growth,
+			Rank:           idx + 1,
+			PreviousRank:   previousRank,
+			ModelName:      item.ModelName,
+			Vendor:         modelMeta.vendor,
+			VendorIcon:     modelMeta.vendorIcon,
+			Category:       "all",
+			TotalTokens:    item.TotalTokens,
+			PreviousTokens: previousTokens[item.ModelName],
+			Share:          rankingShare(item.TotalTokens, totalTokens),
+			GrowthPct:      growth,
 		})
 	}
 	return rows
@@ -318,13 +649,14 @@ func buildRankedVendors(currentTotals []model.RankingQuotaTotal, previousTotals 
 			growth = rankingGrowthPct(agg.totalTokens, agg.previousTokens)
 		}
 		rows = append(rows, RankedVendor{
-			Vendor:      agg.name,
-			VendorIcon:  agg.icon,
-			TotalTokens: agg.totalTokens,
-			Share:       rankingShare(agg.totalTokens, totalTokens),
-			GrowthPct:   growth,
-			ModelsCount: len(agg.models),
-			TopModel:    agg.topModel,
+			Vendor:         agg.name,
+			VendorIcon:     agg.icon,
+			TotalTokens:    agg.totalTokens,
+			PreviousTokens: agg.previousTokens,
+			Share:          rankingShare(agg.totalTokens, totalTokens),
+			GrowthPct:      growth,
+			ModelsCount:    len(agg.models),
+			TopModel:       agg.topModel,
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -589,6 +921,20 @@ func limitRankingMovers(rows []RankingMover, limit int) []RankingMover {
 		return rows
 	}
 	return rows[:limit]
+}
+
+func limitWebsiteRankingMovers(rows []WebsiteRankingMover, limit int) []WebsiteRankingMover {
+	if limit <= 0 || len(rows) <= limit {
+		return rows
+	}
+	return rows[:limit]
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func minInt(a int, b int) int {

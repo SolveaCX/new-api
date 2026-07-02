@@ -4,7 +4,7 @@ import { LOCALES, type Locale, localizePath } from "@/lib/locales";
 import { getModelLandingPathnames } from "@/lib/model-landing";
 import { getPricingData } from "@/lib/pricing";
 import { buildPricingSeoIndex } from "@/lib/pricing-seo";
-import { SITE_ORIGIN } from "@/lib/seo";
+import { SITE_ORIGIN } from "@/lib/origins";
 
 const base = SITE_ORIGIN;
 
@@ -63,7 +63,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/sla", 0.3, "yearly"),
     ...entry("/refund-policy", 0.3, "yearly"),
   ];
-  const modelLandingEntries = getModelLandingPathnames().flatMap((pathname) => entry(pathname, 0.82, "daily"));
   const categoryEntries = categories.flatMap((category) => entry(`/blog/category/${category.slug}`, 0.7, "weekly"));
   const postsBySlug = new Map<string, Partial<Record<Locale, { date?: string }>>>();
 
@@ -96,6 +95,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   });
   const pricingIndex = buildPricingSeoIndex(pricing);
+  const modelLandingEntries = getModelLandingPathnames().flatMap((pathname) => entry(pathname, 0.82, "daily"));
   const vendorPricingEntries = pricingIndex.vendors.slice(0, 80).flatMap((vendor) =>
     queryEntry("/pricing", `vendor=${encodeURIComponent(vendor.slug)}`, 0.72, "daily")
   );

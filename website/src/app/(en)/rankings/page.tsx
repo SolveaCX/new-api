@@ -1,15 +1,20 @@
-import { PublicPage } from "@/components/public-page";
-import { getPageContent } from "@/content/pages";
+import { RankingsPage, rankingsMetadataCopy } from "@/components/rankings-page";
+import { normalizeRankingPeriod, getWebsiteRankingsData } from "@/lib/rankings";
 import { buildMetadata } from "@/lib/seo";
 
-const content = getPageContent("rankings", "en");
+const metadataCopy = rankingsMetadataCopy("en");
 
 export const metadata = buildMetadata({
-  title: content.title,
-  description: content.description,
+  title: metadataCopy.title,
+  description: metadataCopy.description,
   pathname: "/rankings",
 });
 
-export default function Page() {
-  return <PublicPage locale="en" pageKey="rankings" pathname="/rankings" />;
+type Props = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
+
+export default async function Page(props: Props) {
+  const searchParams = await props.searchParams;
+  const period = normalizeRankingPeriod(searchParams?.period);
+  const rankings = await getWebsiteRankingsData(period);
+  return <RankingsPage locale="en" rankings={rankings} />;
 }

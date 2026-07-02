@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { DEFAULT_LOCALE, type Locale, localeAlternates, localizePath } from "./locales";
+import { SITE_ORIGIN as RESOLVED_SITE_ORIGIN } from "./origins";
 
-export const SITE_ORIGIN = "https://flatkey.ai";
+export const SITE_ORIGIN = RESOLVED_SITE_ORIGIN;
 export const SITE_NAME = "flatkey.ai";
 
 export type SeoInput = {
@@ -26,7 +27,7 @@ export function buildMetadata(input: SeoInput): Metadata {
     alternates: {
       canonical,
       languages: {
-        ...localeAlternates(input.pathname),
+        ...localeAlternates(input.pathname, SITE_ORIGIN),
         "x-default": `${SITE_ORIGIN}${localizePath(input.pathname, DEFAULT_LOCALE)}`,
       },
     },
