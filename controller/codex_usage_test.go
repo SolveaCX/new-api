@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 )
 
 func TestNewCodexLimitReportContextUsesSixtySecondDeadline(t *testing.T) {
@@ -84,6 +85,8 @@ func TestRunCodexLimitReportSkipsCacheRebuildWithoutRefreshes(t *testing.T) {
 // injected result without a retry or a key refresh.
 
 func TestCodexChannelUpstreamWithRefreshHappyPathNoRefresh(t *testing.T) {
+	service.InitHttpClient()
+
 	ch := &model.Channel{
 		Id:   1,
 		Type: constant.ChannelTypeCodex,
