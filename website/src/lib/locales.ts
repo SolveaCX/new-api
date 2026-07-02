@@ -42,9 +42,9 @@ export function stripLocale(pathname: string): string {
   return stripped === "/" ? "/" : stripped.replace(/\/+$/, "");
 }
 
-export function localeAlternates(pathname: string): Record<string, string> {
+export function localeAlternates(pathname: string, siteOrigin: string): Record<string, string> {
   const stripped = stripLocale(pathname);
   return Object.fromEntries(
-    LOCALES.map((locale) => [locale, `https://flatkey.ai${localizePath(stripped, locale)}`])
+    LOCALES.map((locale) => [locale, `${siteOrigin}${localizePath(stripped, locale)}`])
   );
 }

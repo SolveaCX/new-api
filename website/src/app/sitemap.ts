@@ -1,10 +1,12 @@
 import type { MetadataRoute } from "next";
 import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
 import { LOCALES, type Locale, localizePath } from "@/lib/locales";
+import { getIndexableModelDetailPathnames } from "@/lib/model-detail";
 import { getModelLandingPathnames } from "@/lib/model-landing";
-import { getPricingData, getTopVendors, getVendorName } from "@/lib/pricing";
+import { SITE_ORIGIN } from "@/lib/origins";
+import { getPricingData, getTopVendors, resolveVendorName } from "@/lib/pricing";
 
-const base = "https://flatkey.ai";
+const base = SITE_ORIGIN;
 
 function entry(
   pathname: string,
@@ -62,7 +64,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/sla", 0.3, "yearly"),
     ...entry("/refund-policy", 0.3, "yearly"),
   ];
-  const modelLandingEntries = getModelLandingPathnames().flatMap((pathname) => entry(pathname, 0.82, "daily"));
   const categoryEntries = categories.flatMap((category) => entry(`/blog/category/${category.slug}`, 0.7, "weekly"));
   const postsBySlug = new Map<string, Partial<Record<Locale, { date?: string }>>>();
 
@@ -96,8 +97,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   });
   const pricingModels = pricing.models.map((model) => ({
     ...model,
-    vendor_name: getVendorName(model, pricing.vendors),
+    vendor_name: resolveVendorName(model, pricing.vendors),
   }));
+  const modelPathnames = Array.from(
+    new Set([
+      ...getModelLandingPathnames(),
+      ...getIndexableModelDetailPathnames(pricingModels),
+    ])
+  );
+  const modelLandingEntries = modelPathnames.flatMap((pathname) => entry(pathname, 0.82, "daily"));
   const vendorEntries = getTopVendors(pricingModels, 18).flatMap((vendor) =>
     queryEntry("/models", `vendor=${encodeURIComponent(vendor)}`, 0.72, "daily")
   );

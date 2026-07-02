@@ -40,8 +40,8 @@ import {
   parseTags,
   type PricingModel,
 } from "@/lib/pricing";
-import { localizePath, type Locale } from "@/lib/locales";
-import { getModelLandingConfigForModel } from "@/lib/model-landing";
+import type { Locale } from "@/lib/locales";
+import { getIndexableModelDetailPathnames, getModelDetailPath, getModelDetailPathname } from "@/lib/model-detail";
 import { ROUTER_ORIGIN } from "@/lib/origins";
 import { cn } from "@/lib/utils";
 import {
@@ -201,6 +201,7 @@ export function PricingModelBrowser(props: PricingModelBrowserProps) {
     [props.models, selectedModelName]
   );
   const selectedSummary = selectedModel ? performanceSummary[selectedModel.model_name] : undefined;
+  const indexableDetailPathnames = useMemo(() => new Set(getIndexableModelDetailPathnames(props.models)), [props.models]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,6 +245,7 @@ export function PricingModelBrowser(props: PricingModelBrowserProps) {
             model={model}
             locale={props.locale}
             performance={performanceSummary[model.model_name]}
+            detailHref={indexableDetailPathnames.has(getModelDetailPathname(model)) ? getModelDetailPath(model, props.locale) : undefined}
             onSelect={() => handleSelect(model.model_name)}
           />
         ))}
@@ -264,15 +266,13 @@ export function PricingModelBrowser(props: PricingModelBrowserProps) {
   );
 }
 
-function ModelPriceCard(props: { model: PricingModel; locale: Locale; performance?: PerformanceSummary; onSelect: () => void }) {
+function ModelPriceCard(props: { model: PricingModel; locale: Locale; performance?: PerformanceSummary; detailHref?: string; onSelect: () => void }) {
   const model = props.model;
   const tokenBased = isTokenBasedModel(model);
   const endpoints = model.supported_endpoint_types ?? [];
   const tags = parseTags(model.tags);
   const initial = model.model_name.charAt(0).toUpperCase();
   const iconKey = model.icon || model.vendor_icon;
-  const landingConfig = getModelLandingConfigForModel(model.model_name);
-  const landingHref = landingConfig ? localizePath(`/models/${landingConfig.slug}`, props.locale) : null;
 
   const handleCopy = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -323,20 +323,29 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {props.performance ? <HealthBadge summary={props.performance} /> : null}
-          <span className="inline-flex items-center gap-1 rounded-full border border-violet-300/30 bg-white/55 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition-colors group-hover:bg-violet-500/10 group-hover:text-slate-950 dark:border-violet-300/20 dark:bg-white/[0.055] dark:text-slate-300 dark:group-hover:bg-violet-300/10 dark:group-hover:text-white">
-            Details
-            <ChevronRight className="size-3.5" aria-hidden="true" />
-          </span>
-          {landingHref ? (
+          {props.detailHref ? (
             <a
-              href={landingHref}
+              href={props.detailHref}
               onClick={(event) => event.stopPropagation()}
               onKeyDown={(event) => event.stopPropagation()}
-              className="inline-flex h-7 items-center rounded-full border border-emerald-300/40 bg-emerald-500/10 px-2.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-500/15 dark:border-emerald-300/25 dark:text-emerald-200 dark:hover:bg-emerald-300/15"
+              className="inline-flex items-center gap-1 rounded-full border border-violet-300/30 bg-white/55 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition-colors group-hover:bg-violet-500/10 group-hover:text-slate-950 dark:border-violet-300/20 dark:bg-white/[0.055] dark:text-slate-300 dark:group-hover:bg-violet-300/10 dark:group-hover:text-white"
             >
-              Landing
+              Details
+              <ChevronRight className="size-3.5" aria-hidden="true" />
             </a>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onSelect();
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-violet-300/30 bg-white/55 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition-colors group-hover:bg-violet-500/10 group-hover:text-slate-950 dark:border-violet-300/20 dark:bg-white/[0.055] dark:text-slate-300 dark:group-hover:bg-violet-300/10 dark:group-hover:text-white"
+            >
+              Details
+              <ChevronRight className="size-3.5" aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             onClick={handleCopy}

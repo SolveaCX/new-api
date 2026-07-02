@@ -141,7 +141,11 @@ export function sortPricingModelsBySeries(models: PricingModel[]): PricingModel[
 }
 
 export function getVendorName(model: PricingModel, vendors: PricingVendor[]): string {
-  return model.vendor_name ?? vendors.find((vendor) => vendor.id === model.vendor_id)?.name ?? "AI";
+  return resolveVendorName(model, vendors) ?? "AI";
+}
+
+export function resolveVendorName(model: PricingModel, vendors: PricingVendor[]): string | undefined {
+  return model.vendor_name ?? vendors.find((vendor) => vendor.id === model.vendor_id)?.name;
 }
 
 export function getTopVendors(models: PricingModel[], limit = 10): string[] {

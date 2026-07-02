@@ -1,6 +1,6 @@
 import sanitizeHtml from "sanitize-html";
 import { DEFAULT_LOCALE, localizePath, stripLocale, type Locale } from "@/lib/locales";
-import { APP_CONSOLE_ORIGIN } from "@/lib/origins";
+import { APP_CONSOLE_ORIGIN, SITE_ORIGIN } from "@/lib/origins";
 
 const API_BASE_URL = APP_CONSOLE_ORIGIN;
 const BLOGGER_API_URL = "https://blogger-api-5qjldqffdq-uc.a.run.app";
@@ -8,7 +8,6 @@ const BLOGGER_SITE_SLUG = "flatkey";
 const BLOGGER_ACCESS_KEY = process.env.BLOGGER_ACCESS_KEY?.trim() ?? "";
 const BLOG_REVALIDATE_SECONDS = 300;
 const BLOGGER_PAGE_SIZE = 100;
-const SITE_ORIGIN = "https://flatkey.ai";
 const INTERNAL_PUBLIC_PATH_PREFIXES = [
   "/about",
   "/blog",
@@ -328,7 +327,8 @@ export function rewriteBlogHref(href: string | undefined, locale: Locale = DEFAU
   try {
     const url = new URL(value, SITE_ORIGIN);
     const hostname = url.hostname.toLowerCase();
-    if (isAbsolute && hostname !== "flatkey.ai" && hostname !== "www.flatkey.ai") {
+    const siteHostname = new URL(SITE_ORIGIN).hostname.toLowerCase();
+    if (isAbsolute && hostname !== siteHostname && hostname !== "flatkey.ai" && hostname !== "www.flatkey.ai") {
       return value;
     }
 

@@ -4,7 +4,7 @@ import { SiteShell } from "@/components/site-shell";
 import { PricingPlansGrid } from "@/components/pricing-plans-grid";
 import {
   getPricingData,
-  getVendorName,
+  resolveVendorName,
   getAvailableGroups,
   type PricingModel,
   type PricingVendor,
@@ -1342,7 +1342,7 @@ function enrichVendorNames(
 ) {
   return models.map((model) => ({
     ...model,
-    vendor_name: getVendorName(model, vendors),
+    vendor_name: resolveVendorName(model, vendors),
     vendor_icon: model.vendor_icon ?? vendors.find((vendor) => vendor.id === model.vendor_id)?.icon,
     vendor_description: model.vendor_description ?? vendors.find((vendor) => vendor.id === model.vendor_id)?.description,
     group_ratio: model.group_ratio ?? groupRatio,
