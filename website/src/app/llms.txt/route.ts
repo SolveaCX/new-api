@@ -1,4 +1,5 @@
 import { getBlogCategories, getBlogPosts } from "@/lib/blog";
+import { SITE_ORIGIN } from "@/lib/origins";
 
 export async function GET() {
   const [posts, categories] = await Promise.all([getBlogPosts(), getBlogCategories()]);
@@ -9,24 +10,24 @@ export async function GET() {
     "",
     "## Core Pages",
     "",
-    "- Home: https://flatkey.ai/",
-    "- Model pricing: https://flatkey.ai/pricing",
-    "- Rankings: https://flatkey.ai/rankings",
-    "- Blog: https://flatkey.ai/blog",
-    "- Sitemap: https://flatkey.ai/sitemap.xml",
+    `- Home: ${SITE_ORIGIN}/`,
+    `- Model pricing: ${SITE_ORIGIN}/pricing`,
+    `- Rankings: ${SITE_ORIGIN}/rankings`,
+    `- Blog: ${SITE_ORIGIN}/blog`,
+    `- Sitemap: ${SITE_ORIGIN}/sitemap.xml`,
   ];
 
   if (categories.length > 0) {
     lines.push("", "## Blog Categories", "");
     for (const category of categories) {
-      lines.push(`- ${category.name}: https://flatkey.ai/blog/category/${category.slug}`);
+      lines.push(`- ${category.name}: ${SITE_ORIGIN}/blog/category/${category.slug}`);
     }
   }
 
   if (posts.list.length > 0) {
     lines.push("", "## Blog Articles", "");
     for (const post of posts.list) {
-      lines.push(`- ${post.title}: https://flatkey.ai/blog/${post.slug}${post.summary ? ` - ${post.summary}` : ""}`);
+      lines.push(`- ${post.title}: ${SITE_ORIGIN}/blog/${post.slug}${post.summary ? ` - ${post.summary}` : ""}`);
     }
   }
 

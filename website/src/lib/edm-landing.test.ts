@@ -51,4 +51,9 @@ describe("robots", () => {
     const route = robots();
     expect(route.rules[0].disallow).toContain("/lp/");
   });
+
+  test("uses the resolved site origin for the sitemap", () => {
+    const route = robots();
+    expect(route.sitemap).toBe("https://flatkey.ai/sitemap.xml");
+  });
 });
