@@ -40,7 +40,7 @@ describe("pricing SEO pages", () => {
     expect(html).toContain("model-square-page");
     expect(html).toContain("Compare OpenAI models on flatkey.ai");
     expect(html).toContain("/pricing?vendor=openai");
-    expect(html).toContain("/models/gpt-4o-mini");
+    expect(html).not.toContain("/models/gpt-4o-mini");
     expect(html).not.toContain("bg-[linear-gradient(180deg,#f7f4ff_0%,#ffffff_44%,#f3f8ff_100%)]");
   });
 

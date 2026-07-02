@@ -100,14 +100,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     queryEntry("/pricing", `vendor=${encodeURIComponent(vendor.slug)}`, 0.72, "daily")
   );
   const vendorPageEntries = pricingIndex.vendors.flatMap((vendor) => entry(`/vendors/${vendor.slug}`, 0.74, "daily"));
-  const modelPageEntries = pricingIndex.models.flatMap((model) => entry(`/models/${model.slug}`, 0.76, "daily"));
 
   return [
     ...staticEntries,
     ...modelLandingEntries,
     ...vendorPricingEntries,
     ...vendorPageEntries,
-    ...modelPageEntries,
     ...categoryEntries,
     ...postEntries,
   ];

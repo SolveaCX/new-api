@@ -42,6 +42,7 @@ import {
   type PricingModel,
 } from "@/lib/pricing";
 import { localizePath, type Locale } from "@/lib/locales";
+import { getModelLandingConfigForModel } from "@/lib/model-landing";
 import { ROUTER_ORIGIN } from "@/lib/origins";
 import { cn } from "@/lib/utils";
 import {
@@ -244,7 +245,7 @@ export function PricingModelBrowser(props: PricingModelBrowserProps) {
             model={model}
             locale={props.locale}
             performance={performanceSummary[model.model_name]}
-            detailHref={model.model_slug ? localizePath(`/models/${model.model_slug}`, props.locale) : undefined}
+            detailHref={modelLandingHref(model.model_name, props.locale)}
             onSelect={() => handleSelect(model.model_name)}
           />
         ))}
@@ -299,9 +300,9 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
           </div>
           <div className="min-w-0">
             <h3 className="truncate text-[15px] leading-tight font-black text-slate-950 dark:text-white">
-              {model.model_slug ? (
+              {props.detailHref ? (
                 <Link
-                  href={localizePath(`/models/${model.model_slug}`, props.locale)}
+                  href={props.detailHref}
                   onClick={(event) => event.stopPropagation()}
                   className="hover:text-violet-700 dark:hover:text-violet-200"
                 >
@@ -397,6 +398,11 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
       </div>
     </article>
   );
+}
+
+function modelLandingHref(modelName: string, locale: Locale): string | undefined {
+  const config = getModelLandingConfigForModel(modelName);
+  return config ? localizePath(`/models/${config.slug}`, locale) : undefined;
 }
 
 function ModelDetailsDrawer(props: {
