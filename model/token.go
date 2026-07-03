@@ -194,13 +194,13 @@ func ValidateUserToken(key string) (token *Token, err error) {
 	}
 	token, err = GetTokenByKey(key, false)
 	if err == nil {
-		if token.Status == common.TokenStatusExhausted {
+		if token.Status == common.TokenStatusExhausted && !token.UnlimitedQuota {
 			return token, ErrTokenExhausted
 		}
 		if token.Status == common.TokenStatusExpired {
 			return token, ErrTokenExpired
 		}
-		if token.Status != common.TokenStatusEnabled {
+		if token.Status != common.TokenStatusEnabled && !(token.Status == common.TokenStatusExhausted && token.UnlimitedQuota) {
 			return token, ErrTokenUnavailable
 		}
 		if token.ExpiredTime != -1 && token.ExpiredTime < common.GetTimestamp() {
