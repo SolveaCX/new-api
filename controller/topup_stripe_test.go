@@ -43,6 +43,33 @@ func TestStripeMinorUnitAmount(t *testing.T) {
 	require.Equal(t, int64(1235), amount)
 }
 
+func TestStripeTopUpAmountMinorCoversAllPackages(t *testing.T) {
+	cases := []struct {
+		currency string
+		amount   int64
+		minor    int64
+	}{
+		{"USD", 5, 500},
+		{"USD", 10, 1000},
+		{"USD", 20, 2000},
+		{"USD", 200, 20000},
+		{"JPY", 5, 750},
+		{"JPY", 10, 1500},
+		{"JPY", 20, 3000},
+		{"JPY", 200, 30000},
+		{"BRL", 5, 2490},
+		{"BRL", 10, 4990},
+		{"BRL", 20, 9990},
+		{"BRL", 200, 99000},
+	}
+	for _, tc := range cases {
+		require.Equal(t, tc.minor, stripeTopUpAmountMinor(tc.currency, tc.amount), "%s %d minor amount", tc.currency, tc.amount)
+	}
+
+	require.Equal(t, int64(700), stripeTopUpAmountMinor("USD", 7))
+	require.False(t, stripeTopUpCurrencySupported("EUR"))
+}
+
 func TestBuildStripeTopUpLineItemUsesConfiguredMultiCurrencyPrice(t *testing.T) {
 	lineItem := buildStripeTopUpLineItem("price_multi_currency", 20)
 

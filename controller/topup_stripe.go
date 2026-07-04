@@ -183,6 +183,8 @@ func stripeTopUpAmountMinor(currency string, packageAmount int64) int64 {
 		return packageAmount * 150
 	case "BRL":
 		switch packageAmount {
+		case 5:
+			return 2490
 		case 10:
 			return 4990
 		case 20:
