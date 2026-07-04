@@ -43,6 +43,37 @@ func TestStripeMinorUnitAmount(t *testing.T) {
 	require.Equal(t, int64(1235), amount)
 }
 
+func TestExpectedStripeTopUpAmountMinorCoversAllPackages(t *testing.T) {
+	cases := []struct {
+		currency string
+		amount   int64
+		minor    int64
+	}{
+		{"USD", 5, 500},
+		{"USD", 10, 1000},
+		{"USD", 20, 2000},
+		{"USD", 200, 20000},
+		{"JPY", 5, 750},
+		{"JPY", 10, 1500},
+		{"JPY", 20, 3000},
+		{"JPY", 200, 30000},
+		{"BRL", 5, 2490},
+		{"BRL", 10, 4990},
+		{"BRL", 20, 9990},
+		{"BRL", 200, 99000},
+	}
+	for _, tc := range cases {
+		minor, ok := expectedStripeTopUpAmountMinor(tc.currency, tc.amount)
+		require.True(t, ok, "%s %d should be a configured package", tc.currency, tc.amount)
+		require.Equal(t, tc.minor, minor, "%s %d minor amount", tc.currency, tc.amount)
+	}
+
+	_, ok := expectedStripeTopUpAmountMinor("USD", 7)
+	require.False(t, ok, "unconfigured package amount must be rejected")
+	_, ok = expectedStripeTopUpAmountMinor("EUR", 10)
+	require.False(t, ok, "unconfigured currency must be rejected")
+}
+
 func TestBuildStripeTopUpLineItemUsesConfiguredMultiCurrencyPrice(t *testing.T) {
 	lineItem := buildStripeTopUpLineItem("price_multi_currency", 20)
 

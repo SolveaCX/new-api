@@ -184,6 +184,8 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 	switch strings.ToUpper(strings.TrimSpace(currency)) {
 	case "USD":
 		switch packageAmount {
+		case 5:
+			return 500, true
 		case 10:
 			return 1000, true
 		case 20:
@@ -193,6 +195,8 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 		}
 	case "JPY":
 		switch packageAmount {
+		case 5:
+			return 750, true
 		case 10:
 			return 1500, true
 		case 20:
@@ -202,6 +206,8 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 		}
 	case "BRL":
 		switch packageAmount {
+		case 5:
+			return 2490, true
 		case 10:
 			return 4990, true
 		case 20:
