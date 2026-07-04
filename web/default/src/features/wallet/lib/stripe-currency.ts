@@ -38,3 +38,23 @@ export function normalizeStripeCheckoutCurrency(
     ? (normalized as StripeCheckoutCurrency)
     : undefined
 }
+
+// Stripe local payment methods are currency-gated (Pix requires BRL, Konbini
+// requires JPY), so a USD-only checkout hides them even when they are enabled
+// in the Stripe dashboard. Default the checkout currency from the UI language
+// when no explicit ?currency= override is present.
+export function getStripeCheckoutCurrencyForLanguage(
+  language: string | undefined
+): StripeCheckoutCurrency | undefined {
+  const normalized = language?.trim().toLowerCase()
+  if (!normalized) {
+    return undefined
+  }
+  if (normalized === 'ja' || normalized.startsWith('ja-')) {
+    return 'JPY'
+  }
+  if (normalized === 'pt' || normalized.startsWith('pt-')) {
+    return 'BRL'
+  }
+  return undefined
+}

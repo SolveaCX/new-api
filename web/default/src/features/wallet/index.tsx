@@ -55,6 +55,7 @@ import {
   getMinTopupAmount,
   getPaddleCheckoutUrlFallback,
   getWalletCheckoutInitialTopupAmount,
+  getStripeCheckoutCurrencyForLanguage,
   isPresetTopupAmount,
   normalizeStripeCheckoutCurrency,
   shouldConsumeWalletCheckoutSearchParams,
@@ -118,7 +119,7 @@ function waitForPaddleStatusPollInterval(): Promise<void> {
 }
 
 export function Wallet(props: WalletProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
   const [topupAmount, setTopupAmount] = useState(0)
@@ -618,9 +619,9 @@ export function Wallet(props: WalletProps) {
         return
       }
 
-      const checkoutCurrency = normalizeStripeCheckoutCurrency(
-        props.initialCheckoutSearch?.currency
-      )
+      const checkoutCurrency =
+        normalizeStripeCheckoutCurrency(props.initialCheckoutSearch?.currency) ??
+        getStripeCheckoutCurrencyForLanguage(i18n.language)
       const success = await processPayment(
         preset.value,
         'stripe',

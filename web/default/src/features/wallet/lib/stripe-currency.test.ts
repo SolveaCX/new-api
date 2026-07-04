@@ -17,7 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
-import { normalizeStripeCheckoutCurrency } from './stripe-currency'
+import {
+  getStripeCheckoutCurrencyForLanguage,
+  normalizeStripeCheckoutCurrency,
+} from './stripe-currency'
 
 describe('normalizeStripeCheckoutCurrency', () => {
   test('normalizes explicit checkout currency search params', () => {
@@ -26,5 +29,26 @@ describe('normalizeStripeCheckoutCurrency', () => {
     expect(normalizeStripeCheckoutCurrency('brl')).toBe('BRL')
     expect(normalizeStripeCheckoutCurrency('eur')).toBeUndefined()
     expect(normalizeStripeCheckoutCurrency(undefined)).toBeUndefined()
+  })
+})
+
+describe('getStripeCheckoutCurrencyForLanguage', () => {
+  test('maps Japanese and Portuguese UI languages to local currencies', () => {
+    expect(getStripeCheckoutCurrencyForLanguage('ja')).toBe('JPY')
+    expect(getStripeCheckoutCurrencyForLanguage('ja-JP')).toBe('JPY')
+    expect(getStripeCheckoutCurrencyForLanguage('pt')).toBe('BRL')
+    expect(getStripeCheckoutCurrencyForLanguage('pt-BR')).toBe('BRL')
+  })
+
+  test('leaves other languages on the default checkout currency', () => {
+    expect(getStripeCheckoutCurrencyForLanguage('en')).toBeUndefined()
+    expect(getStripeCheckoutCurrencyForLanguage('zh-CN')).toBeUndefined()
+    expect(getStripeCheckoutCurrencyForLanguage('')).toBeUndefined()
+    expect(getStripeCheckoutCurrencyForLanguage(undefined)).toBeUndefined()
+  })
+
+  test('does not treat languages merely prefixed with ja/pt as local', () => {
+    expect(getStripeCheckoutCurrencyForLanguage('jab')).toBeUndefined()
+    expect(getStripeCheckoutCurrencyForLanguage('pta')).toBeUndefined()
   })
 })
