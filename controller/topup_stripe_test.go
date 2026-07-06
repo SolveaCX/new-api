@@ -175,8 +175,8 @@ func TestResolveStripeTopUpCheckoutRejectsPriceAmountNotMatchingPackage(t *testi
 		paymentSetting.AmountOptions = originalAmountOptions
 		stripePriceAmountMinorForCheckoutCurrency = originalPriceAmount
 	})
-	setting.StripeTopUpPriceIds = `{"10":"price_multi_currency_10","20":"price_multi_currency_20","200":"price_multi_currency_200"}`
-	paymentSetting.AmountOptions = []int{10, 20, 200}
+	setting.StripeTopUpPriceIds = `{"5":"price_multi_currency_5","20":"price_multi_currency_20","200":"price_multi_currency_200"}`
+	paymentSetting.AmountOptions = []int{5, 20, 200}
 	stripePriceAmountMinorForCheckoutCurrency = func(priceId string, requestedCurrency string) (int64, error) {
 		require.Equal(t, "price_multi_currency_20", priceId)
 		require.Equal(t, "USD", requestedCurrency)
