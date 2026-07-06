@@ -17,6 +17,7 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/stripe/stripe-go/v81"
 	stripecoupon "github.com/stripe/stripe-go/v81/coupon"
+	stripeprice "github.com/stripe/stripe-go/v81/price"
 	stripepromotioncode "github.com/stripe/stripe-go/v81/promotioncode"
 )
 
@@ -25,15 +26,39 @@ const (
 	topUpRecallBatchSize    = 50
 	topUpRecallRefundDays   = 7
 	topUpRecallAmountOffUSD = int64(200)
+	topUpRecallMinimumUSD   = int64(500)
+	topUpRecallPackageUSD   = int64(5)
 )
 
 var (
 	topUpRecallOnce                 sync.Once
 	topUpRecallRunning              atomic.Bool
-	topUpRecallCouponCreator        = stripecoupon.New
-	topUpRecallPromotionCodeCreator = stripepromotioncode.New
+	topUpRecallCouponCreator        = createStripeTopUpRecallCoupon
+	topUpRecallPromotionCodeCreator = createStripeTopUpRecallPromotionCode
+	topUpRecallPriceGetter          = getStripeTopUpRecallPrice
 	topUpRecallEmailSender          = common.SendEmail
 )
+
+func createStripeTopUpRecallCoupon(params *stripe.CouponParams) (*stripe.Coupon, error) {
+	return stripecoupon.Client{
+		B:   stripe.GetBackend(stripe.APIBackend),
+		Key: strings.TrimSpace(setting.StripeApiSecret),
+	}.New(params)
+}
+
+func createStripeTopUpRecallPromotionCode(params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+	return stripepromotioncode.Client{
+		B:   stripe.GetBackend(stripe.APIBackend),
+		Key: strings.TrimSpace(setting.StripeApiSecret),
+	}.New(params)
+}
+
+func getStripeTopUpRecallPrice(priceId string, params *stripe.PriceParams) (*stripe.Price, error) {
+	return stripeprice.Client{
+		B:   stripe.GetBackend(stripe.APIBackend),
+		Key: strings.TrimSpace(setting.StripeApiSecret),
+	}.Get(priceId, params)
+}
 
 func StartTopUpRecallTask() {
 	topUpRecallOnce.Do(func() {
@@ -109,7 +134,6 @@ func createTopUpRecallPromotionCode(recall *model.TopUpRecall) (string, string, 
 		return "", "", errors.New("Stripe API secret is not configured")
 	}
 
-	stripe.Key = strings.TrimSpace(setting.StripeApiSecret)
 	code := buildTopUpRecallPromotionCode(recall)
 
 	couponParams := &stripe.CouponParams{
@@ -118,6 +142,15 @@ func createTopUpRecallPromotionCode(recall *model.TopUpRecall) (string, string, 
 		Duration:       stripe.String(string(stripe.CouponDurationOnce)),
 		MaxRedemptions: stripe.Int64(1),
 		Name:           stripe.String("$2 abandoned top-up recovery"),
+	}
+	productIds, err := topUpRecallCouponProductIds()
+	if err != nil {
+		return "", "", err
+	}
+	if len(productIds) > 0 {
+		couponParams.AppliesTo = &stripe.CouponAppliesToParams{
+			Products: stripe.StringSlice(productIds),
+		}
 	}
 	couponParams.AddMetadata("source", "topup_recall")
 	couponParams.AddMetadata("trade_no", recall.TradeNo)
@@ -135,6 +168,13 @@ func createTopUpRecallPromotionCode(recall *model.TopUpRecall) (string, string, 
 		Code:           stripe.String(code),
 		Coupon:         stripe.String(coupon.ID),
 		MaxRedemptions: stripe.Int64(1),
+		Restrictions: &stripe.PromotionCodeRestrictionsParams{
+			MinimumAmount:         stripe.Int64(topUpRecallMinimumUSD),
+			MinimumAmountCurrency: stripe.String(strings.ToLower(string(stripe.CurrencyUSD))),
+		},
+	}
+	if customerId := topUpRecallStripeCustomerId(recall.UserId); customerId != "" {
+		promotionCodeParams.Customer = stripe.String(customerId)
 	}
 	promotionCodeParams.AddMetadata("source", "topup_recall")
 	promotionCodeParams.AddMetadata("trade_no", recall.TradeNo)
@@ -149,6 +189,32 @@ func createTopUpRecallPromotionCode(recall *model.TopUpRecall) (string, string, 
 	}
 
 	return code, promotionCode.ID, nil
+}
+
+func topUpRecallCouponProductIds() ([]string, error) {
+	priceId := strings.TrimSpace(setting.StripeTopUpPriceIDForAmount(topUpRecallPackageUSD))
+	if priceId == "" {
+		return nil, errors.New("Stripe $5 top-up Price ID is not configured")
+	}
+	price, err := topUpRecallPriceGetter(priceId, nil)
+	if err != nil {
+		return nil, err
+	}
+	if price == nil || price.Product == nil || strings.TrimSpace(price.Product.ID) == "" {
+		return nil, errors.New("Stripe $5 top-up Price is missing product")
+	}
+	return []string{strings.TrimSpace(price.Product.ID)}, nil
+}
+
+func topUpRecallStripeCustomerId(userId int) string {
+	if userId == 0 {
+		return ""
+	}
+	user, err := model.GetUserById(userId, false)
+	if err != nil || user == nil {
+		return ""
+	}
+	return strings.TrimSpace(user.StripeCustomer)
 }
 
 func buildTopUpRecallPromotionCode(recall *model.TopUpRecall) string {

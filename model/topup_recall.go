@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -70,25 +71,56 @@ func GetEligibleTopUpRecallCandidates(now int64, limit int) ([]TopUpRecallCandid
 	}
 
 	candidates := make([]TopUpRecallCandidate, 0, limit)
+	validTopUps := make([]TopUp, 0, len(topUps))
+	userIds := make([]int, 0, len(topUps))
+	seenUserIds := map[int]struct{}{}
+	minCreateTime := int64(0)
 	for _, topUp := range topUps {
-		if len(candidates) >= limit {
-			break
-		}
 		if topUp.UserId == 0 || strings.TrimSpace(topUp.TradeNo) == "" {
 			continue
 		}
-		if hasTopUpRecallForUser(topUp.UserId) {
+		validTopUps = append(validTopUps, topUp)
+		if _, ok := seenUserIds[topUp.UserId]; !ok {
+			seenUserIds[topUp.UserId] = struct{}{}
+			userIds = append(userIds, topUp.UserId)
+		}
+		if minCreateTime == 0 || topUp.CreateTime < minCreateTime {
+			minCreateTime = topUp.CreateTime
+		}
+	}
+	if len(validTopUps) == 0 {
+		return candidates, nil
+	}
+
+	activeRecallUserIds, err := topUpRecallActiveUserIds(userIds)
+	if err != nil {
+		return nil, err
+	}
+	usersById, err := topUpRecallUsersById(userIds)
+	if err != nil {
+		return nil, err
+	}
+	successCreateTimesByUserId, err := successfulStripeTopUpCreateTimesByUserId(userIds, minCreateTime)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, topUp := range validTopUps {
+		if len(candidates) >= limit {
+			break
+		}
+		if activeRecallUserIds[topUp.UserId] {
 			continue
 		}
-		user := User{}
-		if err := DB.Select("id", "email", "setting").First(&user, "id = ?", topUp.UserId).Error; err != nil {
+		user, ok := usersById[topUp.UserId]
+		if !ok {
 			continue
 		}
 		email := strings.TrimSpace(user.Email)
 		if email == "" || isInternalTopUpRecallEmail(email) {
 			continue
 		}
-		if hasSuccessfulStripeTopUpAfter(topUp.UserId, topUp.CreateTime) {
+		if hasSuccessfulStripeTopUpCreateTimeAfter(successCreateTimesByUserId[topUp.UserId], topUp.CreateTime) {
 			continue
 		}
 		candidates = append(candidates, TopUpRecallCandidate{
@@ -114,6 +146,9 @@ func ReserveTopUpRecall(candidate TopUpRecallCandidate) (*TopUpRecall, bool, err
 	if candidate.UserId == 0 || tradeNo == "" || email == "" {
 		return nil, false, errors.New("invalid top-up recall candidate")
 	}
+	if hasSuccessfulStripeTopUpAfter(candidate.UserId, candidate.CreateTime) {
+		return nil, false, nil
+	}
 
 	recall := &TopUpRecall{
 		UserId:  candidate.UserId,
@@ -128,7 +163,7 @@ func ReserveTopUpRecall(candidate TopUpRecallCandidate) (*TopUpRecall, bool, err
 		return nil, false, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, false, nil
+		return reactivateFailedTopUpRecall(candidate, email, tradeNo)
 	}
 	return recall, true, nil
 }
@@ -160,12 +195,112 @@ func MarkTopUpRecallFailed(id int, err error) error {
 		}).Error
 }
 
-func hasTopUpRecallForUser(userId int) bool {
-	var count int64
-	if err := DB.Model(&TopUpRecall{}).Where("user_id = ?", userId).Limit(1).Count(&count).Error; err != nil {
-		return true
+func topUpRecallActiveStatuses() []string {
+	return []string{TopUpRecallStatusPending, TopUpRecallStatusSent}
+}
+
+func topUpRecallActiveUserIds(userIds []int) (map[int]bool, error) {
+	activeUserIds := map[int]bool{}
+	if len(userIds) == 0 {
+		return activeUserIds, nil
 	}
-	return count > 0
+	var recalls []TopUpRecall
+	err := DB.Select("user_id").
+		Where("user_id IN ? AND status IN ?", userIds, topUpRecallActiveStatuses()).
+		Find(&recalls).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, recall := range recalls {
+		activeUserIds[recall.UserId] = true
+	}
+	return activeUserIds, nil
+}
+
+func topUpRecallUsersById(userIds []int) (map[int]User, error) {
+	usersById := map[int]User{}
+	if len(userIds) == 0 {
+		return usersById, nil
+	}
+	var users []User
+	err := DB.Select("id", "email", "setting").
+		Where("id IN ?", userIds).
+		Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, user := range users {
+		usersById[user.Id] = user
+	}
+	return usersById, nil
+}
+
+func successfulStripeTopUpCreateTimesByUserId(userIds []int, minCreateTime int64) (map[int][]int64, error) {
+	createTimesByUserId := map[int][]int64{}
+	if len(userIds) == 0 {
+		return createTimesByUserId, nil
+	}
+	var topUps []TopUp
+	err := DB.Select("user_id", "create_time").
+		Where("user_id IN ? AND payment_provider = ? AND status = ? AND create_time > ?", userIds, PaymentProviderStripe, common.TopUpStatusSuccess, minCreateTime).
+		Find(&topUps).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, topUp := range topUps {
+		createTimesByUserId[topUp.UserId] = append(createTimesByUserId[topUp.UserId], topUp.CreateTime)
+	}
+	return createTimesByUserId, nil
+}
+
+func hasSuccessfulStripeTopUpCreateTimeAfter(createTimes []int64, createTime int64) bool {
+	for _, successCreateTime := range createTimes {
+		if successCreateTime > createTime {
+			return true
+		}
+	}
+	return false
+}
+
+func reactivateFailedTopUpRecall(candidate TopUpRecallCandidate, email string, tradeNo string) (*TopUpRecall, bool, error) {
+	recall := TopUpRecall{}
+	err := DB.Where("status = ? AND (user_id = ? OR trade_no = ?)", TopUpRecallStatusFailed, candidate.UserId, tradeNo).
+		First(&recall).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, err
+		}
+		return nil, false, nil
+	}
+
+	updates := map[string]any{
+		"trade_no":                 tradeNo,
+		"email":                    email,
+		"amount":                   candidate.Amount,
+		"status":                   TopUpRecallStatusPending,
+		"promotion_code":           "",
+		"stripe_promotion_code_id": "",
+		"error":                    "",
+		"sent_at":                  0,
+	}
+	result := DB.Model(&TopUpRecall{}).
+		Where("id = ? AND status = ?", recall.Id, TopUpRecallStatusFailed).
+		Updates(updates)
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, false, nil
+	}
+	recall.TradeNo = tradeNo
+	recall.Email = email
+	recall.Amount = candidate.Amount
+	recall.Status = TopUpRecallStatusPending
+	recall.PromotionCode = ""
+	recall.StripePromotionCodeId = ""
+	recall.Error = ""
+	recall.SentAt = 0
+	return &recall, true, nil
 }
 
 func hasSuccessfulStripeTopUpAfter(userId int, createTime int64) bool {
