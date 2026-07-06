@@ -20,8 +20,8 @@ var internalTopUpRecallEmailDomains = []string{"voc.ai", "solvea.cx", "qq.com"}
 
 type TopUpRecall struct {
 	Id                    int    `json:"id"`
-	UserId                int    `json:"user_id" gorm:"not null;uniqueIndex;index"`
-	TradeNo               string `json:"trade_no" gorm:"type:varchar(255);not null;uniqueIndex;index"`
+	UserId                int    `json:"user_id" gorm:"not null;uniqueIndex"`
+	TradeNo               string `json:"trade_no" gorm:"type:varchar(255);not null;uniqueIndex"`
 	Email                 string `json:"email" gorm:"type:varchar(255);not null;default:''"`
 	Amount                int64  `json:"amount" gorm:"not null;default:0"`
 	Status                string `json:"status" gorm:"type:varchar(32);not null;default:'pending';index"`

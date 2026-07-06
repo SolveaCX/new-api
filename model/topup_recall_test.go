@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 func setupTopUpRecallTestDB(t *testing.T, name string) *gorm.DB {
@@ -129,4 +131,21 @@ func TestMigrateDBFastCreatesTopUpRecallTable(t *testing.T) {
 
 	require.NoError(t, migrateDBFast())
 	require.True(t, db.Migrator().HasTable(&TopUpRecall{}))
+}
+
+func TestTopUpRecallUniqueIndexesDoNotDuplicateColumns(t *testing.T) {
+	parsed, err := schema.Parse(&TopUpRecall{}, &sync.Map{}, schema.NamingStrategy{})
+	require.NoError(t, err)
+
+	indexes := parsed.ParseIndexes()
+	for name, column := range map[string]string{
+		"idx_top_up_recalls_user_id":  "user_id",
+		"idx_top_up_recalls_trade_no": "trade_no",
+	} {
+		index, ok := indexes[name]
+		require.True(t, ok, "missing index %s", name)
+		require.Equal(t, "UNIQUE", index.Class)
+		require.Len(t, index.Fields, 1, "index %s must not repeat columns", name)
+		require.Equal(t, column, index.Fields[0].DBName)
+	}
 }
