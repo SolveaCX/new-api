@@ -129,7 +129,7 @@ func resolveStripeTopUpCheckout(req *StripePayRequest, normalizedAmount int64, g
 
 func stripeTopUpCurrencySupported(currency string) bool {
 	switch strings.ToUpper(strings.TrimSpace(currency)) {
-	case "USD", "JPY", "BRL":
+	case "USD", "JPY", "BRL", "INR":
 		return true
 	default:
 		return false
@@ -208,6 +208,15 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 			return 9990, true
 		case 200:
 			return 99000, true
+		}
+	case "INR":
+		switch packageAmount {
+		case 10:
+			return 89900, true
+		case 20:
+			return 179900, true
+		case 200:
+			return 1799000, true
 		}
 	}
 	return 0, false
