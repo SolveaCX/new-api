@@ -479,7 +479,17 @@ export function getLockedTopupAmountOptions(
   amountOptions: number[],
   _stripeTopupEnabled: boolean
 ): number[] {
-  return amountOptions.filter((amount) => Number.isFinite(amount) && amount > 0)
+  const seen = new Set<number>()
+  const normalized: number[] = []
+  for (const amountOption of amountOptions) {
+    const amount = amountOption === 10 ? 5 : amountOption
+    if (!Number.isFinite(amount) || amount <= 0 || seen.has(amount)) {
+      continue
+    }
+    seen.add(amount)
+    normalized.push(amount)
+  }
+  return normalized
 }
 
 export function getInitialPresetTopupAmount(

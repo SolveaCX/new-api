@@ -52,7 +52,7 @@ function getPromoDeadline(): number {
 // labels; only attach a specific discount/multiplier number when it is actually
 // backed by operation_setting (AmountDiscount/AmountBonus) for that amount —
 // otherwise the badge would promise a discount the backend won't deliver. The
-// $10 entry tier intentionally carries no numeric claim (low-friction entry).
+// $5 entry tier intentionally carries no numeric claim (low-friction entry).
 interface PromoTier {
   amount: number
   off?: string // e.g. "40% OFF" — omit if not config-backed
@@ -60,7 +60,7 @@ interface PromoTier {
   highlight?: boolean
 }
 const TIERS: PromoTier[] = [
-  { amount: 10 },
+  { amount: 5 },
   { amount: 20, off: '40% OFF', usage: '3X' },
   { amount: 200, off: '50% OFF', usage: '40X', highlight: true },
 ]

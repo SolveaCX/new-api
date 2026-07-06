@@ -749,7 +749,7 @@ export function PaymentSettingsSection({
           values.AmountOptions,
           values.StripeTopUpPriceIds,
           {
-            10: values.StripePriceId,
+            5: values.StripePriceId,
             20: values.StripePriceId20,
             200: values.StripePriceId200,
           }
@@ -816,7 +816,7 @@ export function PaymentSettingsSection({
           initialRef.current.AmountOptions,
           initialRef.current.StripeTopUpPriceIds,
           {
-            10: initialRef.current.StripePriceId,
+            5: initialRef.current.StripePriceId,
             20: initialRef.current.StripePriceId20,
             200: initialRef.current.StripePriceId200,
           }
@@ -1229,7 +1229,7 @@ export function PaymentSettingsSection({
         currentFormValues.AmountOptions,
         currentFormValues.StripeTopUpPriceIds,
         {
-          10: currentFormValues.StripePriceId,
+          5: currentFormValues.StripePriceId,
           20: currentFormValues.StripePriceId20,
           200: currentFormValues.StripePriceId200,
         }
@@ -1255,7 +1255,7 @@ export function PaymentSettingsSection({
       const legacyPriceIdFieldByAmount: Partial<
         Record<number, keyof PaymentFormValues>
       > = {
-        10: 'StripePriceId',
+        5: 'StripePriceId',
         20: 'StripePriceId20',
         200: 'StripePriceId200',
       }
@@ -1561,7 +1561,7 @@ export function PaymentSettingsSection({
                       ) : (
                         <Textarea
                           rows={4}
-                          placeholder='[10, 20, 50, 100]'
+                          placeholder='[5, 20, 50, 100]'
                           {...field}
                           onChange={(event) =>
                             field.onChange(event.target.value)

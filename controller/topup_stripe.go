@@ -265,7 +265,7 @@ func stripeTopUpPresetAmountConfigured(amount int64) bool {
 func stripeTopUpPresetAmounts() []int64 {
 	seen := map[int64]bool{}
 	amounts := make([]int64, 0, len(operation_setting.GetPaymentSetting().AmountOptions))
-	for _, amount := range operation_setting.GetPaymentSetting().AmountOptions {
+	for _, amount := range walletTopUpAmountOptions(operation_setting.GetPaymentSetting().AmountOptions) {
 		normalized := int64(amount)
 		if normalized <= 0 || seen[normalized] {
 			continue

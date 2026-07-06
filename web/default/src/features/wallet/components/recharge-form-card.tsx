@@ -74,9 +74,9 @@ const ENTRY_PACKAGE_FEATURES = [
 ]
 
 const WEBSITE_CHECKOUT_PLAN_COPY_BY_AMOUNT: Record<number, CheckoutPlanCopy> = {
-  10: {
+  5: {
     action: 'checkout',
-    amount: 10,
+    amount: 5,
     name: 'Top up {{price}}',
     caption: 'Lowest entry to get started',
     description:

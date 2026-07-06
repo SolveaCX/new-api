@@ -50,15 +50,12 @@ func TestExpectedStripeTopUpAmountMinorCoversAllPackages(t *testing.T) {
 		minor    int64
 	}{
 		{"USD", 5, 500},
-		{"USD", 10, 1000},
 		{"USD", 20, 2000},
 		{"USD", 200, 20000},
 		{"JPY", 5, 750},
-		{"JPY", 10, 1500},
 		{"JPY", 20, 3000},
 		{"JPY", 200, 30000},
 		{"BRL", 5, 2490},
-		{"BRL", 10, 4990},
 		{"BRL", 20, 9990},
 		{"BRL", 200, 99000},
 	}
@@ -100,14 +97,14 @@ func TestResolveStripeTopUpCheckoutUsesTierMultiCurrencyPrice(t *testing.T) {
 		paymentSetting.AmountOptions = originalAmountOptions
 		stripePriceAmountMinorForCheckoutCurrency = originalPriceAmount
 	})
-	setting.StripeTopUpPriceIds = `{"10":"price_multi_currency_10","20":"price_multi_currency_20","200":"price_multi_currency_200"}`
-	paymentSetting.AmountOptions = []int{10, 20, 200}
+	setting.StripeTopUpPriceIds = `{"5":"price_multi_currency_5","20":"price_multi_currency_20","200":"price_multi_currency_200"}`
+	paymentSetting.AmountOptions = []int{5, 20, 200}
 	checkedCurrencies := map[string]string{}
 	stripePriceAmountMinorForCheckoutCurrency = func(priceId string, requestedCurrency string) (int64, error) {
 		checkedCurrencies[priceId] = requestedCurrency
 		switch priceId + ":" + requestedCurrency {
-		case "price_multi_currency_10:JPY":
-			return 1500, nil
+		case "price_multi_currency_5:JPY":
+			return 750, nil
 		case "price_multi_currency_20:JPY":
 			return 3000, nil
 		case "price_multi_currency_200:USD":
@@ -120,16 +117,16 @@ func TestResolveStripeTopUpCheckoutUsesTierMultiCurrencyPrice(t *testing.T) {
 	}
 
 	checkout, err := resolveStripeTopUpCheckout(&StripePayRequest{
-		Amount:         10,
+		Amount:         5,
 		StripeCurrency: "jpy",
-	}, 10, "default")
+	}, 5, "default")
 	require.NoError(t, err)
-	require.Equal(t, "price_multi_currency_10", checkout.PriceId)
-	require.Equal(t, "JPY", checkedCurrencies["price_multi_currency_10"])
+	require.Equal(t, "price_multi_currency_5", checkout.PriceId)
+	require.Equal(t, "JPY", checkedCurrencies["price_multi_currency_5"])
 	require.Equal(t, int64(1), checkout.Quantity)
 	require.Equal(t, "JPY", checkout.PaymentCurrency)
-	require.Equal(t, int64(1500), checkout.AmountMinor)
-	require.Equal(t, 10.0, checkout.Money)
+	require.Equal(t, int64(750), checkout.AmountMinor)
+	require.Equal(t, 5.0, checkout.Money)
 
 	checkout, err = resolveStripeTopUpCheckout(&StripePayRequest{
 		Amount:         20,
@@ -212,20 +209,20 @@ func TestResolveStripeTopUpCheckoutReturnsPriceCurrencyValidationError(t *testin
 		paymentSetting.AmountOptions = originalAmountOptions
 		stripePriceAmountMinorForCheckoutCurrency = originalPriceAmount
 	})
-	setting.StripeTopUpPriceIds = `{"10":"price_multi_currency_10"}`
-	paymentSetting.AmountOptions = []int{10}
+	setting.StripeTopUpPriceIds = `{"5":"price_multi_currency_5"}`
+	paymentSetting.AmountOptions = []int{5}
 	stripePriceAmountMinorForCheckoutCurrency = func(priceId string, requestedCurrency string) (int64, error) {
-		require.Equal(t, "price_multi_currency_10", priceId)
+		require.Equal(t, "price_multi_currency_5", priceId)
 		require.Equal(t, "BRL", requestedCurrency)
-		return 0, errors.New("Stripe Price price_multi_currency_10 does not support BRL")
+		return 0, errors.New("Stripe Price price_multi_currency_5 does not support BRL")
 	}
 
 	_, err := resolveStripeTopUpCheckout(&StripePayRequest{
-		Amount:         10,
+		Amount:         5,
 		StripeCurrency: "brl",
-	}, 10, "default")
+	}, 5, "default")
 
-	require.EqualError(t, err, "Stripe Price price_multi_currency_10 does not support BRL")
+	require.EqualError(t, err, "Stripe Price price_multi_currency_5 does not support BRL")
 }
 
 func TestStripePriceSupportsCurrency(t *testing.T) {
@@ -323,15 +320,15 @@ func TestResolveStripeTopUpCheckoutRejectsUnsupportedPackageAmount(t *testing.T)
 		setting.StripeTopUpPriceIds = originalTopUpPriceIds
 		paymentSetting.AmountOptions = originalAmountOptions
 	})
-	setting.StripeTopUpPriceIds = `{"10":"price_usd_package"}`
-	paymentSetting.AmountOptions = []int{10}
+	setting.StripeTopUpPriceIds = `{"5":"price_usd_package"}`
+	paymentSetting.AmountOptions = []int{5}
 
 	_, err := resolveStripeTopUpCheckout(&StripePayRequest{
-		Amount:         15,
+		Amount:         10,
 		StripeCurrency: "USD",
-	}, 15, "default")
+	}, 10, "default")
 
-	require.EqualError(t, err, "Stripe checkout package requires one of configured preset amounts: 10 USD credits")
+	require.EqualError(t, err, "Stripe checkout package requires one of configured preset amounts: 5 USD credits")
 }
 
 func TestStripeCheckoutSessionKeepsAccountEmailVerbatim(t *testing.T) {
