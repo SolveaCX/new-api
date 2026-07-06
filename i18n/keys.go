@@ -324,10 +324,12 @@ const (
 
 // Email content messages (subject + HTML body, rendered with template data)
 const (
-	MsgEmailVerifySubject = "email.verification_subject"
-	MsgEmailVerifyContent = "email.verification_content"
-	MsgEmailResetSubject  = "email.password_reset_subject"
-	MsgEmailResetContent  = "email.password_reset_content"
+	MsgEmailVerifySubject      = "email.verification_subject"
+	MsgEmailVerifyContent      = "email.verification_content"
+	MsgEmailResetSubject       = "email.password_reset_subject"
+	MsgEmailResetContent       = "email.password_reset_content"
+	MsgEmailTopUpRecallSubject = "email.topup_recall_subject"
+	MsgEmailTopUpRecallContent = "email.topup_recall_content"
 )
 
 // User notification messages (quota warnings sent via email/webhook/bark/gotify).

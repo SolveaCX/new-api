@@ -64,6 +64,9 @@ const walletRechargeKeys = [
   'Contact Us',
   'Get {{bonus}} free',
   'Top up for {{amount}}',
+  'Unused balance? Full refund within 7 days, no questions asked.',
+  "Payment didn't work?",
+  "Email founder@flatkey.ai and we'll sort you out.",
   'No top-up packages available. Please contact administrator.',
   'Stripe top-up is not enabled. Please contact administrator.',
 ] as const
@@ -84,6 +87,9 @@ describe('wallet recharge i18n', () => {
     const newWalletKeys = [
       'Top-up Packages',
       'Choose a prepaid USD package and checkout with Stripe',
+      'Unused balance? Full refund within 7 days, no questions asked.',
+      "Payment didn't work?",
+      "Email founder@flatkey.ai and we'll sort you out.",
       'Custom usage, routing, and invoicing',
       'For higher monthly usage, invoicing, team procurement, or custom routing discounts.',
     ] as const
@@ -94,10 +100,9 @@ describe('wallet recharge i18n', () => {
       }
 
       for (const key of newWalletKeys) {
-        expect(
-          translations[key],
-          `${locale} should translate ${key}`
-        ).not.toBe(key)
+        expect(translations[key], `${locale} should translate ${key}`).not.toBe(
+          key
+        )
       }
     }
   })

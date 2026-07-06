@@ -292,6 +292,8 @@ email.verification_subject: "Verificação de E-mail {{.SystemName}}"
 email.verification_content: "<p>Olá, você está verificando seu e-mail para {{.SystemName}}.</p><p>Seu código de verificação é: <strong>{{.Code}}</strong></p><p>O código é válido por {{.Minutes}} minutos. Se não foi você, ignore este e-mail.</p>"
 email.password_reset_subject: "Redefinição de Senha {{.SystemName}}"
 email.password_reset_content: "<p>Olá, você está redefinindo a senha da sua conta {{.SystemName}}.</p><p>Clique <a href='{{.Link}}'>aqui</a> para redefinir sua senha.</p><p>Se o link não for clicável, copie o link a seguir para o seu navegador:<br> {{.Link}} </p><p>O link de redefinição é válido por {{.Minutes}} minutos. Se não foi você, ignore este e-mail.</p>"
+email.topup_recall_subject: "{{.SystemName}}: $2 de desconto no primeiro top-up"
+email.topup_recall_content: "<p>Olá, você deixou um top-up de {{.Amount}} incompleto.</p><p>Use o código único <strong>{{.Code}}</strong> no Stripe Checkout para ganhar $2 de desconto no próximo top-up.</p><p>Saldo não usado pode ser reembolsado em até {{.RefundDays}} dias, sem perguntas.</p><p>Conclua o top-up aqui: <a href='{{.Link}}'>{{.Link}}</a></p>"
 
 # User notification messages
 notify.quota_warning_title: "Sua cota está acabando"

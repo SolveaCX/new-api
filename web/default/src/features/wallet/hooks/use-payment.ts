@@ -80,11 +80,17 @@ function navigateToPaymentPage(url: string): void {
   toast.success(i18next.t('Redirecting to payment page...'))
 }
 
-function getStripeRedirectUrls(): { success_url: string; cancel_url: string } {
+export function getStripeRedirectUrls(): {
+  success_url: string
+  cancel_url: string
+} {
   return {
     success_url: new URL('/wallet?show_history=true', window.location.origin)
       .href,
-    cancel_url: new URL('/wallet', window.location.origin).href,
+    cancel_url: new URL(
+      '/wallet?payment_cancelled=stripe',
+      window.location.origin
+    ).href,
   }
 }
 

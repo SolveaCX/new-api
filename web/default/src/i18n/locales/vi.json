@@ -5166,6 +5166,10 @@
     "Custom routing discounts": "Giảm giá định tuyến tùy chỉnh",
     "Custom pricing": "Giá tùy chỉnh",
     "Contact Us": "Liên hệ",
+    "Unused balance? Full refund within 7 days, no questions asked.": "Số dư chưa dùng? Hoàn tiền đầy đủ trong 7 ngày, không cần lý do.",
+    "Payment didn't work?": "Thanh toán không thành công?",
+    "Email founder@flatkey.ai and we'll sort you out.": "Gửi email tới founder@flatkey.ai, chúng tôi sẽ xử lý.",
+
     "Stripe top-up is not enabled. Please contact administrator.": "Nạp tiền qua Stripe chưa được bật. Vui lòng liên hệ quản trị viên.",
     "Confirming your card binding...": "Đang xác nhận liên kết thẻ của bạn...",
     "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Nạp tiền thành công. Tiền thưởng đang được cộng. Hãy làm mới sau ít phút.",

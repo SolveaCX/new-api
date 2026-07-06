@@ -5166,6 +5166,10 @@
     "Custom routing discounts": "Индивидуальные скидки на маршрутизацию",
     "Custom pricing": "Индивидуальная цена",
     "Contact Us": "Связаться с нами",
+    "Unused balance? Full refund within 7 days, no questions asked.": "Неиспользованный баланс? Полный возврат в течение 7 дней без вопросов.",
+    "Payment didn't work?": "Платеж не прошел?",
+    "Email founder@flatkey.ai and we'll sort you out.": "Напишите на founder@flatkey.ai, и мы все исправим.",
+
     "Stripe top-up is not enabled. Please contact administrator.": "Пополнение через Stripe не включено. Обратитесь к администратору.",
     "Confirming your card binding...": "Подтверждаем привязку карты...",
     "Recharge successful. Your bonus is being credited. Refresh in a moment.": "Пополнение прошло успешно. Бонус зачисляется. Обновите страницу через несколько секунд.",

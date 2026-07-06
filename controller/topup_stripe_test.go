@@ -331,6 +331,27 @@ func TestStripeCheckoutSessionKeepsAccountEmailVerbatim(t *testing.T) {
 	require.Equal(t, "buyer+location_JP@example.com", *params.CustomerEmail)
 }
 
+func TestStripeCheckoutSessionShowsRefundPromise(t *testing.T) {
+	params := buildStripeCheckoutSessionParams(
+		"trade_refund",
+		"",
+		"buyer@example.com",
+		"price_123",
+		1,
+		"https://example.com/success",
+		"https://example.com/cancel",
+		false,
+		false,
+	)
+
+	require.NotNil(t, params.CustomText)
+	require.NotNil(t, params.CustomText.Submit)
+	require.NotNil(t, params.CustomText.Submit.Message)
+	require.Contains(t, *params.CustomText.Submit.Message, "Unused balance")
+	require.Contains(t, *params.CustomText.Submit.Message, "7 days")
+	require.Contains(t, *params.CustomText.Submit.Message, "no questions asked")
+}
+
 func TestStripePaymentSnapshotFromEventUsesCurrencyMinorUnits(t *testing.T) {
 	event := stripe.Event{Data: &stripe.EventData{Object: map[string]interface{}{
 		"amount_total": float64(12345),

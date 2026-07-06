@@ -72,6 +72,9 @@ describe('RechargeFormCard', () => {
     expect(html).toContain('Top up $10')
     expect(html).toContain('Top up $20')
     expect(html).toContain('Top up $200')
+    expect(html).toContain(
+      'Unused balance? Full refund within 7 days, no questions asked.'
+    )
     expect(html).toContain('Lowest entry to get started')
     expect(html).toContain('Most Popular')
     expect(html).toContain('Get $5 free')
@@ -121,6 +124,26 @@ describe('RechargeFormCard', () => {
     expect(html).not.toContain('Need company invoice')
     expect(html).not.toContain('Order History')
     expect(html).not.toContain('Waffo Pix')
+  })
+
+  test('shows the 7-day unused-balance refund promise', () => {
+    const html = renderToStaticMarkup(
+      <RechargeFormCard
+        topupInfo={{
+          ...topupInfoWithStripe,
+          amount_options: [5],
+        }}
+        presetAmounts={[{ value: 5 }]}
+        selectedPreset={null}
+        onSelectPreset={() => undefined}
+        onStripeTopUp={() => undefined}
+        paymentLoadingAmount={null}
+      />
+    )
+
+    expect(html).toContain(
+      'Unused balance? Full refund within 7 days, no questions asked.'
+    )
   })
 
   test('does not render redemption code entry on the wallet top-up card', () => {

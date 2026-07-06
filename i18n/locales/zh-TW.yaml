@@ -292,6 +292,8 @@ email.verification_subject: "{{.SystemName}}信箱驗證郵件"
 email.verification_content: "<p>您好，您正在進行{{.SystemName}}信箱驗證。</p><p>您的驗證碼為: <strong>{{.Code}}</strong></p><p>驗證碼 {{.Minutes}} 分鐘內有效，如果不是本人操作，請忽略。</p>"
 email.password_reset_subject: "{{.SystemName}}密碼重設"
 email.password_reset_content: "<p>您好，您正在進行{{.SystemName}}密碼重設。</p><p>點擊 <a href='{{.Link}}'>此處</a> 進行密碼重設。</p><p>如果連結無法點擊，請嘗試點擊下面的連結或將其複製到瀏覽器中開啟：<br> {{.Link}} </p><p>重設連結 {{.Minutes}} 分鐘內有效，如果不是本人操作，請忽略。</p>"
+email.topup_recall_subject: "{{.SystemName}}：首儲立減 $2"
+email.topup_recall_content: "<p>您好，您有一筆 {{.Amount}} 儲值尚未完成。</p><p>在 Stripe Checkout 使用一次性優惠碼 <strong>{{.Code}}</strong>，下次儲值立減 $2。</p><p>未使用餘額支援 {{.RefundDays}} 天內無理由退款。</p><p>繼續儲值：<a href='{{.Link}}'>{{.Link}}</a></p>"
 
 # User notification messages
 notify.quota_warning_title: "您的額度即將用盡"
