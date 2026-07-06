@@ -43,10 +43,10 @@ describe('RechargeFormCard', () => {
       <RechargeFormCard
         topupInfo={{
           ...topupInfoWithStripe,
-          amount_options: [10, 20, 200],
+          amount_options: [5, 20, 200],
         }}
         presetAmounts={[
-          { value: 10 },
+          { value: 5 },
           { value: 20, bonus: 5 },
           { value: 200, bonus: 100 },
         ]}
@@ -58,18 +58,18 @@ describe('RechargeFormCard', () => {
     )
 
     expect(html).toContain('Top-up Packages')
-    expect(html).toContain('$10')
+    expect(html).toContain('$5')
     expect(html).toContain('$20')
     expect(html).toContain('$200')
     expect(html).toContain('Enterprise')
     expect(html).toContain('Custom')
-    expect(html).toContain('Top up for $10')
+    expect(html).toContain('Top up for $5')
     expect(html).toContain('Top up for $20')
     expect(html).toContain('Top up for $200')
     expect(html).toContain('Contact Us')
     expect(html).not.toContain('mailto:support@flatkey.ai')
     expect(html).not.toContain('Top Up')
-    expect(html).toContain('Top up $10')
+    expect(html).toContain('Top up $5')
     expect(html).toContain('Top up $20')
     expect(html).toContain('Top up $200')
     expect(html).toContain(
@@ -116,6 +116,8 @@ describe('RechargeFormCard', () => {
     expect(html).not.toContain('100% OFF')
     expect(html).not.toContain('+5 free bonus')
     expect(html).not.toContain('+100 free bonus')
+    expect(html).not.toContain('Top up for $10')
+    expect(html).not.toContain('Top up $10')
     expect(html).not.toContain('$10 USD')
     expect(html).not.toContain('$20 USD')
     expect(html).not.toContain('$200 USD')
@@ -152,10 +154,10 @@ describe('RechargeFormCard', () => {
         topupInfo={{
           ...topupInfoWithStripe,
           enable_redemption: true,
-          amount_options: [10, 20, 200],
+          amount_options: [5, 20, 200],
           topup_link: 'https://example.com/redeem',
         }}
-        presetAmounts={[{ value: 10 }, { value: 20 }, { value: 200 }]}
+        presetAmounts={[{ value: 5 }, { value: 20 }, { value: 200 }]}
         selectedPreset={null}
         onSelectPreset={() => undefined}
         onStripeTopUp={() => undefined}

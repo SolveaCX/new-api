@@ -79,17 +79,13 @@ describe('top-up bonus preset metadata', () => {
 
   test('initializes top-up amount from the first configured preset', () => {
     expect(
-      getInitialPresetTopupAmount([
-        { value: 10 },
-        { value: 20 },
-        { value: 200 },
-      ])
-    ).toBe(10)
+      getInitialPresetTopupAmount([{ value: 5 }, { value: 20 }, { value: 200 }])
+    ).toBe(5)
     expect(getInitialPresetTopupAmount([])).toBe(0)
   })
 
   test('initializes top-up amount from a valid pricing CTA search package', () => {
-    const presets = [{ value: 10 }, { value: 20 }, { value: 200 }]
+    const presets = [{ value: 5 }, { value: 20 }, { value: 200 }]
     const checkoutSearch = normalizeWalletCheckoutSearch({
       amount: '20',
       currency: 'USD',
@@ -142,26 +138,26 @@ describe('top-up bonus preset metadata', () => {
   })
 
   test('only accepts top-up amounts that match configured presets', () => {
-    const presets = [{ value: 10 }, { value: 20 }, { value: 200 }]
+    const presets = [{ value: 5 }, { value: 20 }, { value: 200 }]
 
+    expect(isPresetTopupAmount(5, presets)).toBe(true)
     expect(isPresetTopupAmount(20, presets)).toBe(true)
+    expect(isPresetTopupAmount(10, presets)).toBe(false)
     expect(isPresetTopupAmount(15, presets)).toBe(false)
     expect(isPresetTopupAmount(0, presets)).toBe(false)
   })
 
-  test('locks Stripe top-up amount options to configured presets', () => {
-    expect(getLockedTopupAmountOptions([10, 20, 50], true)).toEqual([
-      10, 20, 50,
-    ])
+  test('locks top-up amount options to configured presets with the $5 entry tier', () => {
+    expect(getLockedTopupAmountOptions([10, 20, 50], true)).toEqual([5, 20, 50])
     expect(getLockedTopupAmountOptions([10, 20, 50], false)).toEqual([
-      10, 20, 50,
+      5, 20, 50,
     ])
   })
 
   test('drops invalid locked top-up amount options', () => {
     expect(
       getLockedTopupAmountOptions([10, 0, -1, Number.NaN, 20], true)
-    ).toEqual([10, 20])
+    ).toEqual([5, 20])
     expect(getLockedTopupAmountOptions([], true)).toEqual([])
   })
 

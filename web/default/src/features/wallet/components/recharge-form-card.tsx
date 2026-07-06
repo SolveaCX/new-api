@@ -74,8 +74,8 @@ type PlanCopy = CheckoutPlanCopy | ContactPlanCopy
 const WEBSITE_PLAN_CARDS: PlanCopy[] = [
   {
     action: 'checkout',
-    amount: 10,
-    price: '$10',
+    amount: 5,
+    price: '$5',
     name: 'Top up {{price}}',
     caption: 'Lowest entry to get started',
     description:

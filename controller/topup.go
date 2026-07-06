@@ -147,7 +147,7 @@ func GetTopUpInfo(c *gin.Context) {
 			}
 			return ""
 		}(),
-		"amount_options": operation_setting.GetPaymentSetting().AmountOptions,
+		"amount_options": walletTopUpAmountOptions(operation_setting.GetPaymentSetting().AmountOptions),
 		"discount":       operation_setting.GetPaymentSetting().AmountDiscount,
 		// 仅下发当前用户组可享的赠送档位，避免「看得到拿不到」（实际是否发放仍以支付回调时后端判定为准）。
 		"bonus":       visibleTopUpBonusForUser(c, operation_setting.GetPaymentSetting().AmountBonus),
@@ -163,6 +163,22 @@ func GetTopUpInfo(c *gin.Context) {
 		"topup_link": common.TopUpLink,
 	}
 	common.ApiSuccess(c, data)
+}
+
+func walletTopUpAmountOptions(amountOptions []int) []int {
+	seen := map[int]bool{}
+	normalized := make([]int, 0, len(amountOptions))
+	for _, amount := range amountOptions {
+		if amount == 10 {
+			amount = 5
+		}
+		if amount <= 0 || seen[amount] {
+			continue
+		}
+		seen[amount] = true
+		normalized = append(normalized, amount)
+	}
+	return normalized
 }
 
 func buildTopUpPayMethods(payMethods []map[string]string, enablePaddle bool) []map[string]string {

@@ -26,7 +26,7 @@ func StripeTopUpPriceIDForAmount(amount int64) string {
 	}
 
 	switch amount {
-	case 10:
+	case 5:
 		return strings.TrimSpace(StripePriceId)
 	case 20:
 		return strings.TrimSpace(StripePriceId20)
