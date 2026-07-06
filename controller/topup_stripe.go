@@ -1269,9 +1269,16 @@ func genStripeLink(referenceId string, customerId string, email string, checkout
 
 	// For onboarding promo top-ups, save the card while paying so it can be charged
 	// off-session later (postpaid auto-charge). Plain wallet top-ups don't save the card.
+	// Scoped to payment_method_options.card (not payment_intent_data.setup_future_usage):
+	// a top-level setup_future_usage makes Stripe hide every payment method that can't be
+	// saved for off-session reuse (Alipay/Pix/UPI/WeChat...), leaving card-only checkouts.
+	// Card payments still bind the card; local-method payments simply skip binding
+	// (backfillCardFingerprintFromTopUp tolerates the missing card).
 	if saveCard {
-		params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
-			SetupFutureUsage: stripe.String("off_session"),
+		params.PaymentMethodOptions = &stripe.CheckoutSessionPaymentMethodOptionsParams{
+			Card: &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
+				SetupFutureUsage: stripe.String("off_session"),
+			},
 		}
 	}
 
