@@ -292,6 +292,8 @@ email.verification_subject: "{{.SystemName}} Email Verification"
 email.verification_content: "<p>Hello, you are verifying your email for {{.SystemName}}.</p><p>Your verification code is: <strong>{{.Code}}</strong></p><p>The code is valid for {{.Minutes}} minutes. If this was not you, please ignore this email.</p>"
 email.password_reset_subject: "{{.SystemName}} Password Reset"
 email.password_reset_content: "<p>Hello, you are resetting the password for your {{.SystemName}} account.</p><p>Click <a href='{{.Link}}'>here</a> to reset your password.</p><p>If the link is not clickable, copy the following link into your browser:<br> {{.Link}} </p><p>The reset link is valid for {{.Minutes}} minutes. If this was not you, please ignore this email.</p>"
+email.topup_recall_subject: "{{.SystemName}}: $2 off your first top-up"
+email.topup_recall_content: "<p>Hello, you left a {{.Amount}} top-up unfinished.</p><p>Use one-time code <strong>{{.Code}}</strong> at Stripe Checkout to get $2 off your next top-up.</p><p>Unused balance is refundable within {{.RefundDays}} days, no questions asked.</p><p>Finish your top-up here: <a href='{{.Link}}'>{{.Link}}</a></p>"
 
 # User notification messages
 notify.quota_warning_title: "Your quota is running low"

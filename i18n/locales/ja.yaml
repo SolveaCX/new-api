@@ -5,6 +5,8 @@ email.verification_subject: "{{.SystemName}} メールアドレスの確認"
 email.verification_content: "<p>こんにちは。{{.SystemName}} のメールアドレスを確認しています。</p><p>確認コード: <strong>{{.Code}}</strong></p><p>このコードは {{.Minutes}} 分間有効です。心当たりがない場合は、このメールを無視してください。</p>"
 email.password_reset_subject: "{{.SystemName}} パスワードの再設定"
 email.password_reset_content: "<p>こんにちは。{{.SystemName}} アカウントのパスワードを再設定しています。</p><p><a href='{{.Link}}'>こちら</a>をクリックしてパスワードを再設定してください。</p><p>リンクをクリックできない場合は、次のリンクをブラウザにコピーしてください:<br> {{.Link}} </p><p>再設定リンクは {{.Minutes}} 分間有効です。心当たりがない場合は、このメールを無視してください。</p>"
+email.topup_recall_subject: "{{.SystemName}}：初回チャージが $2 オフ"
+email.topup_recall_content: "<p>こんにちは。{{.Amount}} のチャージが未完了です。</p><p>Stripe Checkout で一回限りのコード <strong>{{.Code}}</strong> を使うと、次回チャージが $2 オフになります。</p><p>未使用残高は {{.RefundDays}} 日以内なら理由を問わず返金できます。</p><p>こちらからチャージを完了してください: <a href='{{.Link}}'>{{.Link}}</a></p>"
 
 # User notification messages
 notify.quota_warning_title: "残高が間もなく不足します"

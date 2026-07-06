@@ -128,6 +128,10 @@ func GetUserPaddleTopUpByIdentifiers(userId int, tradeNo string, gatewayTradeNo 
 }
 
 func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, targetStatus string) error {
+	return UpdatePendingTopUpStatusWithCompleteTime(tradeNo, expectedPaymentProvider, targetStatus, 0)
+}
+
+func UpdatePendingTopUpStatusWithCompleteTime(tradeNo string, expectedPaymentProvider string, targetStatus string, completeTime int64) error {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
@@ -150,6 +154,9 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 		}
 
 		topUp.Status = targetStatus
+		if completeTime > 0 {
+			topUp.CompleteTime = completeTime
+		}
 		return tx.Save(topUp).Error
 	})
 }

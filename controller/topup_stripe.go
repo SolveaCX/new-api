@@ -989,7 +989,7 @@ func sessionExpired(ctx context.Context, event stripe.Event) {
 		return
 	}
 
-	err := model.UpdatePendingTopUpStatus(referenceId, model.PaymentProviderStripe, common.TopUpStatusExpired)
+	err := model.UpdatePendingTopUpStatusWithCompleteTime(referenceId, model.PaymentProviderStripe, common.TopUpStatusExpired, common.GetTimestamp())
 	if errors.Is(err, model.ErrTopUpNotFound) {
 		logger.LogWarn(ctx, fmt.Sprintf("Stripe 充值订单不存在，无法标记过期 trade_no=%s", referenceId))
 		return
@@ -1379,6 +1379,11 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 		},
 		Mode:                stripe.String(string(stripe.CheckoutSessionModePayment)),
 		AllowPromotionCodes: stripe.Bool(true),
+		CustomText: &stripe.CheckoutSessionCustomTextParams{
+			Submit: &stripe.CheckoutSessionCustomTextSubmitParams{
+				Message: stripe.String("Unused balance? Full refund within 7 days, no questions asked."),
+			},
+		},
 	}
 
 	if "" == customerId {

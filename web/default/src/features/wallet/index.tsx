@@ -69,6 +69,7 @@ interface WalletProps {
   initialPaddleTransactionId?: string
   initialCheckoutSearch?: WalletCheckoutSearch
   cardJustBound?: boolean
+  stripePaymentCancelled?: boolean
 }
 
 type PaddleCheckoutNotice = {
@@ -90,6 +91,7 @@ const WALLET_CHECKOUT_SEARCH_PARAMS = [
   'amount_minor',
   'stripe_lookup_key',
 ] as const
+const STRIPE_PAYMENT_CANCELLED_SEARCH_PARAM = 'payment_cancelled'
 
 function consumeWalletCheckoutSearchParams(): void {
   const url = new URL(window.location.href)
@@ -111,10 +113,33 @@ function consumeWalletCheckoutSearchParams(): void {
   }
 }
 
+function consumeStripePaymentCancelledSearchParam(): void {
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has(STRIPE_PAYMENT_CANCELLED_SEARCH_PARAM)) {
+    return
+  }
+
+  url.searchParams.delete(STRIPE_PAYMENT_CANCELLED_SEARCH_PARAM)
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 function waitForPaddleStatusPollInterval(): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, PADDLE_STATUS_POLL_INTERVAL_MS)
   })
+}
+
+export function StripeCancelFallbackNotice() {
+  const { t } = useTranslation()
+
+  return (
+    <Alert>
+      <AlertTitle>{t("Payment didn't work?")}</AlertTitle>
+      <AlertDescription>
+        {t("Email founder@flatkey.ai and we'll sort you out.")}
+      </AlertDescription>
+    </Alert>
+  )
 }
 
 export function Wallet(props: WalletProps) {
@@ -247,6 +272,12 @@ export function Wallet(props: WalletProps) {
   useEffect(() => {
     fetchUser()
   }, [fetchUser])
+
+  useEffect(() => {
+    if (props.stripePaymentCancelled) {
+      consumeStripePaymentCancelledSearchParam()
+    }
+  }, [props.stripePaymentCancelled])
 
   useEffect(() => {
     if (props.initialShowHistory) {
@@ -664,6 +695,9 @@ export function Wallet(props: WalletProps) {
                   {paddleCheckoutNotice.description}
                 </AlertDescription>
               </Alert>
+            ) : null}
+            {props.stripePaymentCancelled ? (
+              <StripeCancelFallbackNotice />
             ) : null}
 
             <WalletStatsCard user={user} loading={userLoading} />
