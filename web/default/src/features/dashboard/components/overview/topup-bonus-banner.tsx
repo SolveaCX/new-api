@@ -35,10 +35,10 @@ const LOW_BALANCE_QUOTA = 0.5 * QUOTA_PER_UNIT // < $0.50
 /**
  * Activation banner: catches the "trial running out → continue with Claude/GPT"
  * moment and converts it to a first top-up. The wedge is the cheaper-than-OpenRouter
- * angle: OpenRouter skims a 5.5% credit-purchase fee ($0.80 min), so $10 only loads
- * $9.45 there; here $10 lands in full (zero fee) plus a bonus. Shows only for
+ * angle: OpenRouter skims a 5.5% credit-purchase fee ($0.80 min), so $5 only loads
+ * $4.20 there; here $5 lands in full (zero fee) plus a bonus. Shows only for
  * low-balance users. NOTE: OpenRouter's fee is from their public pricing — re-verify
- * the 5.5% / $9.45 figures before each campaign as they can change.
+ * the 5.5% / $4.20 figures before each campaign as they can change.
  */
 export function TopupBonusBanner() {
   const { t } = useTranslation()
@@ -68,7 +68,7 @@ export function TopupBonusBanner() {
         </div>
         <div className='text-muted-foreground mt-0.5 text-[13px]'>
           <Trans
-            i18nKey='Top up $10 → the <z>full $10 lands, zero fee</z> + bonus. On OpenRouter, $10 only loads $9.45.'
+            i18nKey='Top up $5 → the <z>full $5 lands, zero fee</z> + bonus. On OpenRouter, $5 only loads $4.20.'
             components={{
               z: (
                 <b className='text-emerald-600 dark:text-emerald-400' />

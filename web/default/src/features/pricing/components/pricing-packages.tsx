@@ -55,7 +55,7 @@ export function PricingPackages() {
   const pricingHighlights = [
     {
       icon: DollarSign,
-      metric: '$10',
+      metric: '$5',
       label: t('minimum website package'),
     },
     {
@@ -91,7 +91,7 @@ export function PricingPackages() {
         </h2>
         <p className='text-muted-foreground mt-3 text-sm leading-7 md:whitespace-nowrap'>
           {t(
-            'Start from $10 to try leading models like GPT-5.1, Claude Opus 4.7, Gemini 3.5 Flash, DeepSeek V4, and more with one prepaid balance.'
+            'Start from $5 to try leading models like GPT-5.1, Claude Opus 4.7, Gemini 3.5 Flash, DeepSeek V4, and more with one prepaid balance.'
           )}
         </p>
         <div className='mt-4 flex flex-wrap gap-2'>
@@ -118,7 +118,7 @@ export function PricingPackages() {
           </div>
 
           <div className='mt-5 flex items-end gap-2'>
-            <span className='text-4xl font-bold tracking-tight'>$10</span>
+            <span className='text-4xl font-bold tracking-tight'>$5</span>
             <span className='text-muted-foreground pb-1 text-sm'>
               {t('starting package')}
               {t('，')}
