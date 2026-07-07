@@ -17,6 +17,8 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/stripe/stripe-go/v81"
 	stripecoupon "github.com/stripe/stripe-go/v81/coupon"
+	stripecustomer "github.com/stripe/stripe-go/v81/customer"
+	stripeprice "github.com/stripe/stripe-go/v81/price"
 	stripepromotioncode "github.com/stripe/stripe-go/v81/promotioncode"
 )
 
@@ -25,6 +27,9 @@ const (
 	topUpRecallBatchSize    = 50
 	topUpRecallRefundDays   = 7
 	topUpRecallAmountOffUSD = int64(200)
+	topUpRecallPackageUSD   = int64(5)
+	topUpRecallMinAmountUSD = int64(500)
+	topUpRecallPromoTTL     = 7 * 24 * time.Hour
 )
 
 var (
@@ -32,6 +37,8 @@ var (
 	topUpRecallRunning              atomic.Bool
 	topUpRecallCouponCreator        = createStripeTopUpRecallCoupon
 	topUpRecallPromotionCodeCreator = createStripeTopUpRecallPromotionCode
+	topUpRecallPriceGetter          = getStripeTopUpRecallPrice
+	topUpRecallCustomerCreator      = createStripeTopUpRecallCustomer
 	topUpRecallEmailSender          = common.SendEmail
 )
 
@@ -44,6 +51,20 @@ func createStripeTopUpRecallCoupon(params *stripe.CouponParams) (*stripe.Coupon,
 
 func createStripeTopUpRecallPromotionCode(params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
 	return stripepromotioncode.Client{
+		B:   stripe.GetBackend(stripe.APIBackend),
+		Key: strings.TrimSpace(setting.StripeApiSecret),
+	}.New(params)
+}
+
+func getStripeTopUpRecallPrice(priceId string, params *stripe.PriceParams) (*stripe.Price, error) {
+	return stripeprice.Client{
+		B:   stripe.GetBackend(stripe.APIBackend),
+		Key: strings.TrimSpace(setting.StripeApiSecret),
+	}.Get(priceId, params)
+}
+
+func createStripeTopUpRecallCustomer(params *stripe.CustomerParams) (*stripe.Customer, error) {
+	return stripecustomer.Client{
 		B:   stripe.GetBackend(stripe.APIBackend),
 		Key: strings.TrimSpace(setting.StripeApiSecret),
 	}.New(params)
@@ -124,13 +145,24 @@ func createTopUpRecallPromotionCode(recall *model.TopUpRecall) (string, string, 
 	}
 
 	code := buildTopUpRecallPromotionCode(recall)
+	productId, err := topUpRecallProductId()
+	if err != nil {
+		return "", "", err
+	}
+	customerId, err := ensureTopUpRecallStripeCustomer(recall.UserId)
+	if err != nil {
+		return "", "", err
+	}
+	expiresAt := time.Now().Add(topUpRecallPromoTTL).Unix()
 
 	couponParams := &stripe.CouponParams{
 		AmountOff:      stripe.Int64(topUpRecallAmountOffUSD),
+		AppliesTo:      &stripe.CouponAppliesToParams{Products: []*string{stripe.String(productId)}},
 		Currency:       stripe.String(strings.ToLower(string(stripe.CurrencyUSD))),
 		Duration:       stripe.String(string(stripe.CouponDurationOnce)),
 		MaxRedemptions: stripe.Int64(1),
 		Name:           stripe.String("$2 abandoned top-up recovery"),
+		RedeemBy:       stripe.Int64(expiresAt),
 	}
 	couponParams.AddMetadata("source", "topup_recall")
 	couponParams.AddMetadata("trade_no", recall.TradeNo)
@@ -147,10 +179,13 @@ func createTopUpRecallPromotionCode(recall *model.TopUpRecall) (string, string, 
 	promotionCodeParams := &stripe.PromotionCodeParams{
 		Code:           stripe.String(code),
 		Coupon:         stripe.String(coupon.ID),
+		Customer:       stripe.String(customerId),
+		ExpiresAt:      stripe.Int64(expiresAt),
 		MaxRedemptions: stripe.Int64(1),
-	}
-	if customerId := topUpRecallStripeCustomerId(recall.UserId); customerId != "" {
-		promotionCodeParams.Customer = stripe.String(customerId)
+		Restrictions: &stripe.PromotionCodeRestrictionsParams{
+			MinimumAmount:         stripe.Int64(topUpRecallMinAmountUSD),
+			MinimumAmountCurrency: stripe.String(strings.ToLower(string(stripe.CurrencyUSD))),
+		},
 	}
 	promotionCodeParams.AddMetadata("source", "topup_recall")
 	promotionCodeParams.AddMetadata("trade_no", recall.TradeNo)
@@ -167,15 +202,64 @@ func createTopUpRecallPromotionCode(recall *model.TopUpRecall) (string, string, 
 	return code, promotionCode.ID, nil
 }
 
-func topUpRecallStripeCustomerId(userId int) string {
+func topUpRecallProductId() (string, error) {
+	priceId := setting.StripeTopUpPriceIDForAmount(topUpRecallPackageUSD)
+	if strings.TrimSpace(priceId) == "" {
+		return "", fmt.Errorf("Stripe $%d top-up Price ID is not configured", topUpRecallPackageUSD)
+	}
+
+	params := &stripe.PriceParams{}
+	params.AddExpand("product")
+	price, err := topUpRecallPriceGetter(strings.TrimSpace(priceId), params)
+	if err != nil {
+		return "", err
+	}
+	if price == nil || price.Product == nil || strings.TrimSpace(price.Product.ID) == "" {
+		return "", fmt.Errorf("Stripe Price %s does not have a product", strings.TrimSpace(priceId))
+	}
+	return strings.TrimSpace(price.Product.ID), nil
+}
+
+func ensureTopUpRecallStripeCustomer(userId int) (string, error) {
 	if userId == 0 {
-		return ""
+		return "", errors.New("top-up recall user id is empty")
 	}
 	user, err := model.GetUserById(userId, false)
 	if err != nil || user == nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(user.StripeCustomer)
+	if customerId := strings.TrimSpace(user.StripeCustomer); customerId != "" {
+		return customerId, nil
+	}
+
+	params := topUpRecallCustomerParams(user)
+	params.SetIdempotencyKey(fmt.Sprintf("topup_recall_customer_%d", userId))
+	customer, err := topUpRecallCustomerCreator(params)
+	if err != nil {
+		return "", err
+	}
+	if customer == nil || strings.TrimSpace(customer.ID) == "" {
+		return "", errors.New("Stripe customer creation returned empty ID")
+	}
+	return model.SetUserStripeCustomerIfEmpty(userId, customer.ID)
+}
+
+func topUpRecallCustomerParams(user *model.User) *stripe.CustomerParams {
+	params := &stripe.CustomerParams{}
+	if user == nil {
+		return params
+	}
+	if email := strings.TrimSpace(user.Email); email != "" {
+		params.Email = stripe.String(email)
+	}
+	if name := strings.TrimSpace(user.DisplayName); name != "" {
+		params.Name = stripe.String(name)
+	} else if name := strings.TrimSpace(user.Username); name != "" {
+		params.Name = stripe.String(name)
+	}
+	params.AddMetadata("source", "topup_recall")
+	params.AddMetadata("user_id", fmt.Sprintf("%d", user.Id))
+	return params
 }
 
 func buildTopUpRecallPromotionCode(recall *model.TopUpRecall) string {

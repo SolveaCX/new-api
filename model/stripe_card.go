@@ -71,6 +71,41 @@ func SetStripeCardBound(userId int, customerId string, cardFingerprint string) e
 	return DB.Model(&User{}).Where("id = ?", userId).Updates(fields).Error
 }
 
+// SetUserStripeCustomerIfEmpty persists a Stripe customer for a user without
+// overwriting a customer concurrently saved by another payment flow.
+func SetUserStripeCustomerIfEmpty(userId int, customerId string) (string, error) {
+	customerId = strings.TrimSpace(customerId)
+	if userId <= 0 {
+		return "", errors.New("invalid user id")
+	}
+	if customerId == "" {
+		return "", errors.New("stripe customer is empty")
+	}
+
+	var savedCustomerId string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&User{}).
+			Where("id = ? AND (stripe_customer = ? OR stripe_customer IS NULL)", userId, "").
+			Update("stripe_customer", customerId).Error; err != nil {
+			return err
+		}
+
+		var user User
+		if err := tx.Select("stripe_customer").Where("id = ?", userId).First(&user).Error; err != nil {
+			return err
+		}
+		savedCustomerId = strings.TrimSpace(user.StripeCustomer)
+		if savedCustomerId == "" {
+			return errors.New("stripe customer was not persisted")
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return savedCustomerId, nil
+}
+
 // ClaimStripeCardFingerprint atomically consumes the one-time new-user-bonus eligibility for a
 // physical card (Stripe fingerprint) without granting any bonus. It is used by the paid
 // recharge-with-save-card flow: that flow gives the user a (purchased) deposit bonus instead of
