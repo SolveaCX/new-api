@@ -92,6 +92,29 @@ export interface OpsPaymentRow {
   repeat_usd: number
 }
 
+export interface OpsSignupRow {
+  user_id: number
+  username: string
+  display_name: string
+  email: string
+  signup_method: string
+  registered_at: number
+  campaign: string
+  keyword: string
+  lng: string
+  landing: string
+  referrer: string
+  last_ip: string
+  ip_country: string
+  requests: number
+  browsed: boolean
+  used_key: boolean
+  balance_usd: number
+  consumed_usd: number
+  paid_usd: number
+  last_active_at: number
+}
+
 export interface OpsReportData {
   generated_at: number
   days: number
@@ -104,6 +127,7 @@ export interface OpsReportData {
   total_paid_users: number
   total_paid_usd: number
   top_payers: OpsPayerRow[] | null
+  signups: OpsSignupRow[] | null
 }
 
 export type OpsStripePersonStatus = 'paid' | 'failed' | 'no_action' | 'setup'

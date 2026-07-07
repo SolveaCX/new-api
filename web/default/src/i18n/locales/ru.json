@@ -5274,5 +5274,8 @@
     "tried": "попыток",
     "Shown": "Показанные способы"
   },
-  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Достигнут лимит выборки Stripe — данные ниже усечены, а метрики занижены. Сузьте диапазон дней для полных цифр."
+  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Достигнут лимит выборки Stripe — данные ниже усечены, а метрики занижены. Сузьте диапазон дней для полных цифр.",
+  "Signup Detail": "Детали регистраций",
+  "Referrer": "Источник перехода",
+  "One row per registration in the selected window, newest first, with attribution and progress.": "По одной строке на каждую регистрацию за выбранный период, сначала новые, с атрибуцией и прогрессом."
 }

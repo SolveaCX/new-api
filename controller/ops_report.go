@@ -103,6 +103,31 @@ type opsPayerRow struct {
 	TopModels    []string `json:"top_models"`
 }
 
+// opsSignupRow is one registration inside the report window — who signed up,
+// where they came from, and how far they got.
+type opsSignupRow struct {
+	UserId       int     `json:"user_id"`
+	Username     string  `json:"username"`
+	DisplayName  string  `json:"display_name"`
+	Email        string  `json:"email"`
+	SignupMethod string  `json:"signup_method"`
+	RegisteredAt int64   `json:"registered_at"`
+	Campaign     string  `json:"campaign"`
+	Keyword      string  `json:"keyword"`
+	Lng          string  `json:"lng"`
+	Landing      string  `json:"landing"`
+	Referrer     string  `json:"referrer"`
+	LastIP       string  `json:"last_ip"`
+	IPCountry    string  `json:"ip_country"`
+	Requests     int     `json:"requests"`
+	Browsed      bool    `json:"browsed"`
+	UsedKey      bool    `json:"used_key"`
+	BalanceUSD   float64 `json:"balance_usd"`
+	ConsumedUSD  float64 `json:"consumed_usd"`
+	PaidUSD      float64 `json:"paid_usd"`
+	LastActiveAt int64   `json:"last_active_at"`
+}
+
 type opsPaymentRow struct {
 	Key       string  `json:"key"`
 	Intent    int     `json:"intent"`
@@ -126,6 +151,7 @@ type opsReportData struct {
 	TotalPaidUsers int              `json:"total_paid_users"`
 	TotalPaidUSD   float64          `json:"total_paid_usd"`
 	TopPayers      []opsPayerRow    `json:"top_payers"`
+	Signups        []opsSignupRow   `json:"signups"`
 }
 
 var (
@@ -286,7 +312,64 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 	report.KeywordFunnel = opsRollupKeywords(aggs, 50)
 	report.PaymentWeekly = opsRollupPayment(aggs)
 	report.TopPayers, report.TotalPaidUsers, report.TotalPaidUSD = opsTopPayers(aggs)
+	report.Signups = opsSignupRows(aggs, startTs)
 	return report, nil
+}
+
+// opsSignupRows lists every registration inside the window, newest first, with
+// attribution, last request IP, and progress markers. IPs are looked up only
+// for the window's registrations, so the query stays small.
+func opsSignupRows(aggs map[int]*opsUserAgg, startTs int64) []opsSignupRow {
+	ids := make([]int, 0, 256)
+	for _, a := range aggs {
+		if a.user.CreatedAt >= startTs {
+			ids = append(ids, a.user.Id)
+		}
+	}
+	ipByUser := map[int]string{}
+	if ips, err := model.GetOpsUsersLastIP(ids); err == nil {
+		for _, r := range ips {
+			ipByUser[r.UserId] = r.Ip
+		}
+	}
+	rows := make([]opsSignupRow, 0, len(ids))
+	for _, a := range aggs {
+		u := a.user
+		if u.CreatedAt < startTs {
+			continue
+		}
+		lastActive := u.LastLoginAt
+		if a.logStats != nil && a.logStats.LastRequestAt > lastActive {
+			lastActive = a.logStats.LastRequestAt
+		}
+		ip := ipByUser[u.Id]
+		rows = append(rows, opsSignupRow{
+			UserId:       u.Id,
+			Username:     u.Username,
+			DisplayName:  u.DisplayName,
+			Email:        u.Email,
+			SignupMethod: u.OauthKind,
+			RegisteredAt: u.CreatedAt,
+			Campaign:     a.campaign,
+			Keyword:      a.keyword,
+			Lng:          a.lng,
+			Landing:      a.landing,
+			Referrer:     a.referrer,
+			LastIP:       ip,
+			IPCountry:    opsIPCountry(ip),
+			Requests:     u.RequestCount,
+			Browsed:      a.realBrowse(),
+			UsedKey:      a.usedKey(),
+			BalanceUSD:   float64(u.Quota) / common.QuotaPerUnit,
+			ConsumedUSD:  float64(u.UsedQuota) / common.QuotaPerUnit,
+			PaidUSD:      a.paidUSD(),
+			LastActiveAt: lastActive,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].RegisteredAt > rows[j].RegisteredAt
+	})
+	return rows
 }
 
 func parseOpsAttribution(a *opsUserAgg) {

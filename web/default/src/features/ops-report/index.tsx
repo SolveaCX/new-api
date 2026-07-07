@@ -50,6 +50,7 @@ import type {
   OpsNameCount,
   OpsPayerRow,
   OpsPaymentRow,
+  OpsSignupRow,
   OpsStripePersonRow,
   OpsStripeReport,
 } from './types'
@@ -59,6 +60,7 @@ const DAY_OPTIONS = [7, 30, 60, 90]
 // keep the active tab in the URL hash so a refresh stays on the same tab
 const TAB_VALUES = [
   'registrations',
+  'signups',
   'campaigns',
   'funnel',
   'payment',
@@ -670,6 +672,111 @@ function DauTable({ rows }: { rows: OpsDauRow[] }) {
   )
 }
 
+function SignupsTable({ rows }: { rows: OpsSignupRow[] }) {
+  const { t, i18n } = useTranslation()
+  return (
+    <div className='overflow-x-auto'>
+      <Table className={TABLE_GRID}>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('Registered At')}</TableHead>
+            <TableHead>{t('User')}</TableHead>
+            <TableHead>{t('Campaign')}</TableHead>
+            <TableHead>{t('Keyword')}</TableHead>
+            <TableHead>{t('Languages')}</TableHead>
+            <TableHead>{t('Landing Pages')}</TableHead>
+            <TableHead>{t('Referrer')}</TableHead>
+            <TableHead>{t('Region')}</TableHead>
+            <TableHead>{t('Last IP')}</TableHead>
+            <TableHead>{t('Progress')}</TableHead>
+            <TableHead className='text-right'>{t('Requests')}</TableHead>
+            <TableHead className='text-right'>{t('Consumed')}</TableHead>
+            <TableHead className='text-right'>{t('Balance')}</TableHead>
+            <TableHead className='text-right'>{t('Paid Amount')}</TableHead>
+            <TableHead>{t('Last Active')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.user_id}>
+              <TableCell className='whitespace-nowrap'>
+                {formatTimestamp(row.registered_at)}
+              </TableCell>
+              <TableCell className='whitespace-nowrap'>
+                <div>
+                  {row.email || row.username}{' '}
+                  <span className='text-muted-foreground text-xs'>
+                    #{row.user_id}
+                  </span>
+                </div>
+                <div className='text-muted-foreground text-xs'>
+                  {[row.display_name || row.username, row.signup_method]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
+              </TableCell>
+              <TableCell className='whitespace-nowrap'>
+                {row.campaign || '-'}
+              </TableCell>
+              <TableCell className='max-w-40 truncate'>
+                {row.keyword || '-'}
+              </TableCell>
+              <TableCell>{row.lng || '-'}</TableCell>
+              <TableCell className='max-w-40 truncate'>
+                {row.landing || '-'}
+              </TableCell>
+              <TableCell className='max-w-40 truncate'>
+                {row.referrer || '-'}
+              </TableCell>
+              <TableCell className='whitespace-nowrap'>
+                {countryLabel(row.ip_country, i18n.language) || '-'}
+              </TableCell>
+              <TableCell className='whitespace-nowrap font-mono text-xs'>
+                {row.last_ip ? (
+                  <a
+                    href={`https://ipinfo.io/${row.last_ip}`}
+                    target='_blank'
+                    rel='noreferrer'
+                    className='underline decoration-dotted'
+                  >
+                    {row.last_ip}
+                  </a>
+                ) : (
+                  '-'
+                )}
+              </TableCell>
+              <TableCell className='whitespace-nowrap'>
+                <div className='flex flex-wrap gap-1'>
+                  {row.browsed && (
+                    <Badge variant='secondary'>{t('Real Browse')}</Badge>
+                  )}
+                  {row.used_key && (
+                    <Badge variant='secondary'>{t('Key Users')}</Badge>
+                  )}
+                  {row.paid_usd > 0 && (
+                    <Badge>{t('Paid Users')}</Badge>
+                  )}
+                </div>
+              </TableCell>
+              <TableCell className='text-right'>{row.requests}</TableCell>
+              <TableCell className='text-right'>
+                {usd(row.consumed_usd)}
+              </TableCell>
+              <TableCell className='text-right'>
+                {usd(row.balance_usd)}
+              </TableCell>
+              <TableCell className='text-right'>{usd(row.paid_usd)}</TableCell>
+              <TableCell className='whitespace-nowrap'>
+                {formatTimestamp(row.last_active_at)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
 function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
   const { t, i18n } = useTranslation()
   return (
@@ -851,6 +958,7 @@ export function OpsReport() {
                 <TabsTrigger value='registrations'>
                   {t('Daily Registrations')}
                 </TabsTrigger>
+                <TabsTrigger value='signups'>{t('Signup Detail')}</TabsTrigger>
                 <TabsTrigger value='campaigns'>{t('Ad Campaigns')}</TabsTrigger>
                 <TabsTrigger value='funnel'>
                   {t('Registration Funnel (Weekly)')}
@@ -885,6 +993,22 @@ export function OpsReport() {
                       yLabel={t('Registrations')}
                     />
                     <FunnelTable rows={report.daily} firstColumn={t('Date')} />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value='signups'>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{t('Signup Detail')}</CardTitle>
+                  </CardHeader>
+                  <CardContent className='space-y-4'>
+                    <p className='text-muted-foreground text-sm'>
+                      {t(
+                        'One row per registration in the selected window, newest first, with attribution and progress.'
+                      )}
+                    </p>
+                    <SignupsTable rows={report.signups ?? []} />
                   </CardContent>
                 </Card>
               </TabsContent>

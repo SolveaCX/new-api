@@ -5274,5 +5274,8 @@
     "tried": "thử",
     "Shown": "Phương thức hiển thị"
   },
-  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Đã đạt giới hạn truy xuất Stripe — dữ liệu bên dưới bị cắt bớt và các chỉ số bị thiếu hụt. Hãy thu hẹp phạm vi ngày để có số liệu đầy đủ."
+  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Đã đạt giới hạn truy xuất Stripe — dữ liệu bên dưới bị cắt bớt và các chỉ số bị thiếu hụt. Hãy thu hẹp phạm vi ngày để có số liệu đầy đủ.",
+  "Signup Detail": "Chi tiết đăng ký",
+  "Referrer": "Nguồn giới thiệu",
+  "One row per registration in the selected window, newest first, with attribution and progress.": "Mỗi lượt đăng ký trong khoảng thời gian đã chọn là một hàng, mới nhất trước, kèm nguồn và tiến độ."
 }

@@ -5274,5 +5274,8 @@
     "tried": "tentativas",
     "Shown": "Métodos exibidos"
   },
-  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Limite de busca do Stripe atingido — os dados abaixo estão truncados e as métricas subestimam. Reduza o intervalo de dias para números completos."
+  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Limite de busca do Stripe atingido — os dados abaixo estão truncados e as métricas subestimam. Reduza o intervalo de dias para números completos.",
+  "Signup Detail": "Detalhe de cadastros",
+  "Referrer": "Referenciador",
+  "One row per registration in the selected window, newest first, with attribution and progress.": "Uma linha por cadastro no período selecionado, do mais recente ao mais antigo, com atribuição e progresso."
 }

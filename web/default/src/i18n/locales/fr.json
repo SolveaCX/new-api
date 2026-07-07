@@ -5274,5 +5274,8 @@
     "tried": "essais",
     "Shown": "Méthodes affichées"
   },
-  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Limite de récupération Stripe atteinte — les données ci-dessous sont tronquées et les indicateurs sous-estimés. Réduisez la plage de jours pour des chiffres complets."
+  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Limite de récupération Stripe atteinte — les données ci-dessous sont tronquées et les indicateurs sous-estimés. Réduisez la plage de jours pour des chiffres complets.",
+  "Signup Detail": "Détail des inscriptions",
+  "Referrer": "Référent",
+  "One row per registration in the selected window, newest first, with attribution and progress.": "Une ligne par inscription sur la période sélectionnée, de la plus récente à la plus ancienne, avec attribution et progression."
 }

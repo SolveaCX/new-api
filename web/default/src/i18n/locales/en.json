@@ -5274,5 +5274,8 @@
     "tried": "tried",
     "Shown": "Shown"
   },
-  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers."
+  "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.": "Stripe fetch limit reached — data below is truncated and metrics undercount. Narrow the day range for complete numbers.",
+  "Signup Detail": "Signup Detail",
+  "Referrer": "Referrer",
+  "One row per registration in the selected window, newest first, with attribution and progress.": "One row per registration in the selected window, newest first, with attribution and progress."
 }
