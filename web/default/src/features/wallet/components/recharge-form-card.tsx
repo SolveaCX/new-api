@@ -74,9 +74,9 @@ const ENTRY_PACKAGE_FEATURES = [
 ]
 
 const WEBSITE_CHECKOUT_PLAN_COPY_BY_AMOUNT: Record<number, CheckoutPlanCopy> = {
-  10: {
+  5: {
     action: 'checkout',
-    amount: 10,
+    amount: 5,
     name: 'Top up {{price}}',
     caption: 'Lowest entry to get started',
     description:
@@ -243,105 +243,114 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
       contentClassName='space-y-4 sm:space-y-6'
     >
       {stripeEnabled && checkoutPresetAmounts.length > 0 ? (
-        <div className='grid gap-3 lg:grid-cols-4'>
-          {planCards.map((planCard) => {
-            const planCopy = planCard.planCopy
-            const preset = planCard.preset
-            const selected =
-              preset != null && props.selectedPreset === preset.value
-            const loading =
-              preset != null && props.paymentLoadingAmount === preset.value
-            const price =
-              planCard.preset != null
-                ? formatTopUpAmount(planCard.preset.value)
-                : t(planCard.planCopy.price)
+        <>
+          <Alert>
+            <AlertDescription>
+              {t(
+                'Unused balance? Full refund within 7 days, no questions asked.'
+              )}
+            </AlertDescription>
+          </Alert>
+          <div className='grid gap-3 lg:grid-cols-4'>
+            {planCards.map((planCard) => {
+              const planCopy = planCard.planCopy
+              const preset = planCard.preset
+              const selected =
+                preset != null && props.selectedPreset === preset.value
+              const loading =
+                preset != null && props.paymentLoadingAmount === preset.value
+              const price =
+                planCard.preset != null
+                  ? formatTopUpAmount(planCard.preset.value)
+                  : t(planCard.planCopy.price)
 
-            return (
-              <div
-                key={planCopy.amount ?? planCopy.name}
-                className={cn(
-                  'bg-background relative flex min-h-[440px] flex-col rounded-lg border p-4 transition-colors',
-                  selected
-                    ? 'border-foreground bg-foreground/[0.03]'
-                    : 'border-border',
-                  planCopy.featured && 'border-primary/60 shadow-sm'
-                )}
-              >
-                <div className='mb-3 flex min-h-6 items-center gap-2'>
-                  {planCopy.badge ? (
-                    <span className='bg-primary text-primary-foreground rounded-full px-2 py-0.5 text-[11px] font-semibold'>
-                      {t(planCopy.badge)}
-                    </span>
-                  ) : null}
-                </div>
-
-                <div className='space-y-2'>
-                  <h3 className='text-lg font-semibold tracking-normal'>
-                    {t(planCopy.name, { price })}
-                  </h3>
-                  <div className='text-3xl font-semibold tracking-normal'>
-                    {price}
-                  </div>
-                  <p className='text-sm font-medium'>{t(planCopy.caption)}</p>
-                  <p className='text-muted-foreground text-xs leading-5'>
-                    {t(planCopy.description)}
-                  </p>
-                  {preset?.bonus && preset.bonus > 0 ? (
-                    <p className='text-xs font-semibold text-[#FF2D78]'>
-                      {t('Get {{bonus}} free', {
-                        bonus: formatTopUpAmount(preset.bonus),
-                      })}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className='mt-5 space-y-3'>
-                  {planCopy.features.map((feature) => (
-                    <p
-                      key={feature}
-                      className='text-muted-foreground flex gap-2 text-xs leading-5'
-                    >
-                      <CheckCircle2 className='text-primary mt-0.5 h-4 w-4 shrink-0' />
-                      <span>{t(feature)}</span>
-                    </p>
-                  ))}
-                </div>
-
-                {preset ? (
-                  <Button
-                    className='mt-auto w-full'
-                    onClick={() => handleTopUpClick(preset)}
-                    disabled={!!props.paymentLoadingAmount}
-                  >
-                    {loading ? (
-                      <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+              return (
+                <div
+                  key={planCopy.amount ?? planCopy.name}
+                  className={cn(
+                    'bg-background relative flex min-h-[440px] flex-col rounded-lg border p-4 transition-colors',
+                    selected
+                      ? 'border-foreground bg-foreground/[0.03]'
+                      : 'border-border',
+                    planCopy.featured && 'border-primary/60 shadow-sm'
+                  )}
+                >
+                  <div className='mb-3 flex min-h-6 items-center gap-2'>
+                    {planCopy.badge ? (
+                      <span className='bg-primary text-primary-foreground rounded-full px-2 py-0.5 text-[11px] font-semibold'>
+                        {t(planCopy.badge)}
+                      </span>
                     ) : null}
-                    {t('Top up for {{amount}}', {
-                      amount: `$${formatNumber(preset.value)}`,
-                    })}
-                  </Button>
-                ) : (
-                  <Dialog>
-                    <DialogTrigger
-                      render={
-                        <Button
-                          variant='outline'
-                          className='mt-auto w-full'
-                        />
-                      }
+                  </div>
+
+                  <div className='space-y-2'>
+                    <h3 className='text-lg font-semibold tracking-normal'>
+                      {t(planCopy.name, { price })}
+                    </h3>
+                    <div className='text-3xl font-semibold tracking-normal'>
+                      {price}
+                    </div>
+                    <p className='text-sm font-medium'>{t(planCopy.caption)}</p>
+                    <p className='text-muted-foreground text-xs leading-5'>
+                      {t(planCopy.description)}
+                    </p>
+                    {preset?.bonus && preset.bonus > 0 ? (
+                      <p className='text-xs font-semibold text-[#FF2D78]'>
+                        {t('Get {{bonus}} free', {
+                          bonus: formatTopUpAmount(preset.bonus),
+                        })}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className='mt-5 space-y-3'>
+                    {planCopy.features.map((feature) => (
+                      <p
+                        key={feature}
+                        className='text-muted-foreground flex gap-2 text-xs leading-5'
+                      >
+                        <CheckCircle2 className='text-primary mt-0.5 h-4 w-4 shrink-0' />
+                        <span>{t(feature)}</span>
+                      </p>
+                    ))}
+                  </div>
+
+                  {preset ? (
+                    <Button
+                      className='mt-auto w-full'
+                      onClick={() => handleTopUpClick(preset)}
+                      disabled={!!props.paymentLoadingAmount}
                     >
-                      {t('Contact Us')}
-                      <ArrowRight className='h-4 w-4' />
-                    </DialogTrigger>
-                    <DialogContent className='max-h-[94dvh] overflow-y-auto sm:max-w-3xl lg:max-w-4xl'>
-                      <WalletEnterpriseContactContent />
-                    </DialogContent>
-                  </Dialog>
-                )}
-              </div>
-            )
-          })}
-        </div>
+                      {loading ? (
+                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                      ) : null}
+                      {t('Top up for {{amount}}', {
+                        amount: `$${formatNumber(preset.value)}`,
+                      })}
+                    </Button>
+                  ) : (
+                    <Dialog>
+                      <DialogTrigger
+                        render={
+                          <Button
+                            variant='outline'
+                            className='mt-auto w-full'
+                          />
+                        }
+                      >
+                        {t('Contact Us')}
+                        <ArrowRight className='h-4 w-4' />
+                      </DialogTrigger>
+                      <DialogContent className='max-h-[94dvh] overflow-y-auto sm:max-w-3xl lg:max-w-4xl'>
+                        <WalletEnterpriseContactContent />
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
       ) : (
         <Alert>
           <AlertDescription>

@@ -16,8 +16,10 @@ func TestEmailContentLocalized(t *testing.T) {
 	data := map[string]any{
 		"SystemName": "flatkey",
 		"Code":       "0b0442",
+		"Amount":     "$5",
 		"Minutes":    10,
 		"Link":       "https://flatkey.ai/user/reset?email=a@b.com&token=x",
+		"RefundDays": 7,
 	}
 
 	keys := []string{
@@ -25,6 +27,8 @@ func TestEmailContentLocalized(t *testing.T) {
 		MsgEmailVerifyContent,
 		MsgEmailResetSubject,
 		MsgEmailResetContent,
+		MsgEmailTopUpRecallSubject,
+		MsgEmailTopUpRecallContent,
 	}
 	langs := []string{LangEn, LangZhCN, LangZhTW, LangPt, LangEs, LangFr, LangRu, LangJa, LangVi}
 
@@ -75,6 +79,19 @@ func TestEmailContentLocalized(t *testing.T) {
 	}
 	if got := Translate(LangEn, MsgEmailResetContent, data); !strings.Contains(got, data["Link"].(string)) {
 		t.Errorf("reset content missing link: %s", got)
+	}
+	recallData := map[string]any{
+		"SystemName": "flatkey",
+		"Amount":     "$5",
+		"Code":       "SAVE2-ABC",
+		"Link":       "https://flatkey.ai/wallet",
+		"RefundDays": 7,
+	}
+	if got := Translate(LangEn, MsgEmailTopUpRecallSubject, recallData); !strings.Contains(got, "flatkey") {
+		t.Errorf("top-up recall subject missing SystemName: %s", got)
+	}
+	if got := Translate(LangEn, MsgEmailTopUpRecallContent, recallData); !strings.Contains(got, "SAVE2-ABC") || !strings.Contains(got, "$5") || !strings.Contains(got, recallData["Link"].(string)) {
+		t.Errorf("top-up recall content missing amount/code/link: %s", got)
 	}
 
 	// An unsupported language falls back to English, never to Chinese.

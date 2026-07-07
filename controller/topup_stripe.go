@@ -184,6 +184,8 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 	switch strings.ToUpper(strings.TrimSpace(currency)) {
 	case "USD":
 		switch packageAmount {
+		case 5:
+			return 500, true
 		case 10:
 			return 1000, true
 		case 20:
@@ -193,6 +195,8 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 		}
 	case "JPY":
 		switch packageAmount {
+		case 5:
+			return 750, true
 		case 10:
 			return 1500, true
 		case 20:
@@ -202,6 +206,8 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 		}
 	case "BRL":
 		switch packageAmount {
+		case 5:
+			return 2490, true
 		case 10:
 			return 4990, true
 		case 20:
@@ -259,7 +265,7 @@ func stripeTopUpPresetAmountConfigured(amount int64) bool {
 func stripeTopUpPresetAmounts() []int64 {
 	seen := map[int64]bool{}
 	amounts := make([]int64, 0, len(operation_setting.GetPaymentSetting().AmountOptions))
-	for _, amount := range operation_setting.GetPaymentSetting().AmountOptions {
+	for _, amount := range walletTopUpAmountOptions(operation_setting.GetPaymentSetting().AmountOptions) {
 		normalized := int64(amount)
 		if normalized <= 0 || seen[normalized] {
 			continue
@@ -1164,7 +1170,7 @@ func sessionExpired(ctx context.Context, event stripe.Event) {
 		return
 	}
 
-	err := model.UpdatePendingTopUpStatus(referenceId, model.PaymentProviderStripe, common.TopUpStatusExpired)
+	err := model.UpdatePendingTopUpStatusWithCompleteTime(referenceId, model.PaymentProviderStripe, common.TopUpStatusExpired, common.GetTimestamp())
 	if errors.Is(err, model.ErrTopUpNotFound) {
 		logger.LogWarn(ctx, fmt.Sprintf("Stripe 充值订单不存在，无法标记过期 trade_no=%s", referenceId))
 		return
@@ -1554,6 +1560,11 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 		},
 		Mode:                stripe.String(string(stripe.CheckoutSessionModePayment)),
 		AllowPromotionCodes: stripe.Bool(true),
+		CustomText: &stripe.CheckoutSessionCustomTextParams{
+			Submit: &stripe.CheckoutSessionCustomTextSubmitParams{
+				Message: stripe.String("Unused balance? Full refund within 7 days, no questions asked."),
+			},
+		},
 	}
 
 	if "" == customerId {

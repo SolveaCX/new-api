@@ -97,8 +97,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   en: {
     modelsDirectory: "Models Directory",
     modelPricing: "One API key for every top AI model",
-    description: "Top up $10, create an API key, and call GPT, Claude, Gemini, DeepSeek, image, audio, and video models from one OpenAI-compatible gateway.",
-    quickStartSteps: ["Top up $10", "Create an API key", "Call GPT, Claude, Gemini, DeepSeek, and video models"],
+    description: "Top up $5, create an API key, and call GPT, Claude, Gemini, DeepSeek, image, audio, and video models from one OpenAI-compatible gateway.",
+    quickStartSteps: ["Top up $5", "Create an API key", "Call GPT, Claude, Gemini, DeepSeek, and video models"],
     plansEyebrow: "Plans and top-up packages",
     plansTitle: "Start calling models in minutes, not after procurement",
     plansDescription: "Use one prepaid balance across model families. See live prices below, then start with a small top-up before scaling.",
@@ -151,8 +151,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   zh: {
     modelsDirectory: "模型目录",
     modelPricing: "一个 API 密钥调用所有主流 AI 模型",
-    description: "充值 $10，创建 API 密钥，即可通过一个 OpenAI 兼容网关调用 GPT、Claude、Gemini、DeepSeek、图像、音频和视频模型。",
-    quickStartSteps: ["充值 $10", "创建 API 密钥", "调用 GPT、Claude、Gemini、DeepSeek 和视频模型"],
+    description: "充值 $5，创建 API 密钥，即可通过一个 OpenAI 兼容网关调用 GPT、Claude、Gemini、DeepSeek、图像、音频和视频模型。",
+    quickStartSteps: ["充值 $5", "创建 API 密钥", "调用 GPT、Claude、Gemini、DeepSeek 和视频模型"],
     plansEyebrow: "套餐与充值包",
     plansTitle: "几分钟开始调用模型，不用先走采购",
     plansDescription: "一份预付余额覆盖多个模型家族。先看下方实时价格，再用小额充值测试，稳定后再扩量。",
@@ -196,8 +196,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   es: {
     modelsDirectory: "Directorio de modelos",
     modelPricing: "Una clave API para todos los modelos de IA líderes",
-    description: "Recarga $10, crea una clave API y llama a GPT, Claude, Gemini, DeepSeek, modelos de imagen, audio y vídeo desde una gateway compatible con OpenAI.",
-    quickStartSteps: ["Recarga $10", "Crea una clave API", "Llama a GPT, Claude, Gemini, DeepSeek y modelos de vídeo"],
+    description: "Recarga $5, crea una clave API y llama a GPT, Claude, Gemini, DeepSeek, modelos de imagen, audio y vídeo desde una gateway compatible con OpenAI.",
+    quickStartSteps: ["Recarga $5", "Crea una clave API", "Llama a GPT, Claude, Gemini, DeepSeek y modelos de vídeo"],
     plansEyebrow: "Planes y paquetes de recarga",
     plansTitle: "Empieza a llamar modelos en minutos, sin compras largas",
     plansDescription: "Usa un saldo prepago para varias familias de modelos. Revisa precios en vivo abajo y empieza con una recarga pequeña antes de escalar.",
@@ -241,8 +241,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   fr: {
     modelsDirectory: "Répertoire des modèles",
     modelPricing: "Une clé API pour tous les grands modèles IA",
-    description: "Rechargez 10 $, créez une clé API et appelez GPT, Claude, Gemini, DeepSeek, image, audio et vidéo depuis une gateway compatible OpenAI.",
-    quickStartSteps: ["Rechargez 10 $", "Créez une clé API", "Appelez GPT, Claude, Gemini, DeepSeek et les modèles vidéo"],
+    description: "Rechargez 5 $, créez une clé API et appelez GPT, Claude, Gemini, DeepSeek, image, audio et vidéo depuis une gateway compatible OpenAI.",
+    quickStartSteps: ["Rechargez 5 $", "Créez une clé API", "Appelez GPT, Claude, Gemini, DeepSeek et les modèles vidéo"],
     plansEyebrow: "Plans et recharges",
     plansTitle: "Appelez des modèles en quelques minutes, sans cycle d'achat",
     plansDescription: "Utilisez un solde prépayé pour plusieurs familles de modèles. Consultez les prix live ci-dessous, puis démarrez avec une petite recharge.",
@@ -286,8 +286,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   pt: {
     modelsDirectory: "Diretório de modelos",
     modelPricing: "Uma chave API para todos os principais modelos de IA",
-    description: "Recarregue $10, crie uma chave API e chame GPT, Claude, Gemini, DeepSeek, imagem, áudio e vídeo por um gateway compatível com OpenAI.",
-    quickStartSteps: ["Recarregue $10", "Crie uma chave API", "Chame GPT, Claude, Gemini, DeepSeek e modelos de vídeo"],
+    description: "Recarregue $5, crie uma chave API e chame GPT, Claude, Gemini, DeepSeek, imagem, áudio e vídeo por um gateway compatível com OpenAI.",
+    quickStartSteps: ["Recarregue $5", "Crie uma chave API", "Chame GPT, Claude, Gemini, DeepSeek e modelos de vídeo"],
     plansEyebrow: "Planos e pacotes de recarga",
     plansTitle: "Comece a chamar modelos em minutos, sem processo de compra",
     plansDescription: "Use um saldo pré-pago em várias famílias de modelos. Veja preços ao vivo abaixo e comece com uma pequena recarga antes de escalar.",
@@ -331,8 +331,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   ru: {
     modelsDirectory: "Каталог моделей",
     modelPricing: "Один API-ключ для всех ведущих AI-моделей",
-    description: "Пополните $10, создайте API-ключ и вызывайте GPT, Claude, Gemini, DeepSeek, image, audio и video модели через OpenAI-compatible gateway.",
-    quickStartSteps: ["Пополните $10", "Создайте API-ключ", "Вызывайте GPT, Claude, Gemini, DeepSeek и video модели"],
+    description: "Пополните $5, создайте API-ключ и вызывайте GPT, Claude, Gemini, DeepSeek, image, audio и video модели через OpenAI-compatible gateway.",
+    quickStartSteps: ["Пополните $5", "Создайте API-ключ", "Вызывайте GPT, Claude, Gemini, DeepSeek и video модели"],
     plansEyebrow: "Планы и пополнения",
     plansTitle: "Начните вызывать модели за минуты, без закупочного процесса",
     plansDescription: "Используйте один предоплаченный баланс для разных семейств моделей. Посмотрите live-цены ниже и начните с малого пополнения.",
@@ -376,8 +376,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   ja: {
     modelsDirectory: "モデルディレクトリ",
     modelPricing: "主要 AI モデルを 1 つの API キーで",
-    description: "$10 をチャージし、API キーを作成すれば、OpenAI 互換 gateway から GPT、Claude、Gemini、DeepSeek、画像、音声、動画モデルを呼び出せます。",
-    quickStartSteps: ["$10 をチャージ", "API キーを作成", "GPT、Claude、Gemini、DeepSeek、動画モデルを呼び出し"],
+    description: "$5 をチャージし、API キーを作成すれば、OpenAI 互換 gateway から GPT、Claude、Gemini、DeepSeek、画像、音声、動画モデルを呼び出せます。",
+    quickStartSteps: ["$5 をチャージ", "API キーを作成", "GPT、Claude、Gemini、DeepSeek、動画モデルを呼び出し"],
     plansEyebrow: "プランとチャージパッケージ",
     plansTitle: "調達を待たずに、数分でモデル呼び出しを開始",
     plansDescription: "1 つのプリペイド残高で複数のモデルファミリーを利用できます。下のライブ料金を見て、小額チャージから始められます。",
@@ -421,8 +421,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   vi: {
     modelsDirectory: "Danh mục mô hình",
     modelPricing: "Một khóa API cho mọi mô hình AI hàng đầu",
-    description: "Nạp $10, tạo khóa API và gọi GPT, Claude, Gemini, DeepSeek, hình ảnh, âm thanh và video qua gateway tương thích OpenAI.",
-    quickStartSteps: ["Nạp $10", "Tạo khóa API", "Gọi GPT, Claude, Gemini, DeepSeek và mô hình video"],
+    description: "Nạp $5, tạo khóa API và gọi GPT, Claude, Gemini, DeepSeek, hình ảnh, âm thanh và video qua gateway tương thích OpenAI.",
+    quickStartSteps: ["Nạp $5", "Tạo khóa API", "Gọi GPT, Claude, Gemini, DeepSeek và mô hình video"],
     plansEyebrow: "Gói và nạp tiền",
     plansTitle: "Bắt đầu gọi mô hình trong vài phút, không cần mua sắm phức tạp",
     plansDescription: "Dùng một số dư trả trước cho nhiều họ mô hình. Xem giá trực tiếp bên dưới, rồi bắt đầu bằng khoản nạp nhỏ trước khi mở rộng.",
@@ -466,8 +466,8 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
   de: {
     modelsDirectory: "Modellverzeichnis",
     modelPricing: "Ein API-Schlüssel für alle führenden AI-Modelle",
-    description: "Lade $10 auf, erstelle einen API-Schlüssel und rufe GPT, Claude, Gemini, DeepSeek, Bild-, Audio- und Videomodelle über ein OpenAI-kompatibles Gateway auf.",
-    quickStartSteps: ["$10 aufladen", "API-Schlüssel erstellen", "GPT, Claude, Gemini, DeepSeek und Videomodelle aufrufen"],
+    description: "Lade $5 auf, erstelle einen API-Schlüssel und rufe GPT, Claude, Gemini, DeepSeek, Bild-, Audio- und Videomodelle über ein OpenAI-kompatibles Gateway auf.",
+    quickStartSteps: ["$5 aufladen", "API-Schlüssel erstellen", "GPT, Claude, Gemini, DeepSeek und Videomodelle aufrufen"],
     plansEyebrow: "Pläne und Aufladepakete",
     plansTitle: "Modelle in Minuten aufrufen, ohne Beschaffungsprozess",
     plansDescription: "Nutze ein Prepaid-Guthaben für mehrere Modellfamilien. Prüfe Live-Preise unten und starte mit einer kleinen Aufladung.",
@@ -881,12 +881,12 @@ export function getPricingPageFaqs(locale: Locale): PricingFaq[] {
 }
 
 export const LOCALIZED_TOP_UP_PRICES = {
-  USD: [10, 20, 200],
-  BRL: [49.9, 99.9, 990],
-  JPY: [1500, 3000, 30000],
+  USD: [5, 20, 200],
+  BRL: [24.9, 99.9, 990],
+  JPY: [750, 3000, 30000],
 } as const;
 
-export const TOP_UP_PACKAGE_AMOUNTS = [10, 20, 200] as const;
+export const TOP_UP_PACKAGE_AMOUNTS = [5, 20, 200] as const;
 
 export type PricingCurrency = keyof typeof LOCALIZED_TOP_UP_PRICES;
 
@@ -1176,7 +1176,7 @@ export async function ModelsPage(props: PricingPageProps) {
 function PricingPackages(props: { locale: Locale }) {
   const copy = pricingCopy(props.locale);
   const highlights = [
-    [DollarSign, "$10", copy.minimumPackage],
+    [DollarSign, "$5", copy.minimumPackage],
     [Boxes, "100+", copy.modelsThroughBalance],
     [Wallet, "1", copy.sharedBalance],
     [Gauge, "3", copy.meteredTokenTypes],
@@ -1205,7 +1205,7 @@ function PricingPackages(props: { locale: Locale }) {
           <p className="text-muted-foreground text-xs font-medium tracking-widest uppercase">{copy.websitePackage}</p>
           <h3 className="mt-2 text-base font-semibold tracking-tight">{copy.prepaidBalanceTitle}</h3>
           <div className="mt-5 flex items-end gap-2">
-            <span className="text-4xl font-bold tracking-tight">$10</span>
+            <span className="text-4xl font-bold tracking-tight">$5</span>
             <span className="text-muted-foreground pb-1 text-sm">{copy.startingPackage}</span>
           </div>
           <div className="mt-5 space-y-3 text-sm">

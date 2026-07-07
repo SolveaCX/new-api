@@ -43,6 +43,7 @@ func TestMain(m *testing.M) {
 		&model.Log{},
 		&model.Channel{},
 		&model.TopUp{},
+		&model.TopUpRecall{},
 		&model.UserSubscription{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
@@ -57,20 +58,30 @@ func TestMain(m *testing.M) {
 
 func truncate(t *testing.T) {
 	t.Helper()
-	t.Cleanup(func() {
+	cleanup := func() {
 		model.DB.Exec("DELETE FROM tasks")
 		model.DB.Exec("DELETE FROM users")
 		model.DB.Exec("DELETE FROM tokens")
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM top_ups")
+		model.DB.Exec("DELETE FROM top_up_recalls")
 		model.DB.Exec("DELETE FROM user_subscriptions")
-	})
+	}
+	cleanup()
+	t.Cleanup(cleanup)
 }
 
 func seedUser(t *testing.T, id int, quota int) {
 	t.Helper()
-	user := &model.User{Id: id, Username: "test_user", Quota: quota, Status: common.UserStatusEnabled}
+	uniqueSuffix := time.Now().Format("150405.000000000")
+	user := &model.User{
+		Id:       id,
+		Username: "test_user_" + uniqueSuffix,
+		Quota:    quota,
+		Status:   common.UserStatusEnabled,
+		AffCode:  "task-billing-" + uniqueSuffix,
+	}
 	require.NoError(t, model.DB.Create(user).Error)
 }
 
