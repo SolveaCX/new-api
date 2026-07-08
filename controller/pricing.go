@@ -79,18 +79,34 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 	return filtered
 }
 
-func filterGroupModelRatioByUsableGroups(source map[string]map[string]float64, usableGroup map[string]string) map[string]map[string]float64 {
+func filterGroupModelRatioByUsableGroupsAndModels(source map[string]map[string]float64, usableGroup map[string]string, pricing []model.Pricing) map[string]map[string]float64 {
 	if len(source) == 0 || len(usableGroup) == 0 {
 		return map[string]map[string]float64{}
 	}
+	visibleModels := make(map[string]struct{}, len(pricing))
+	for _, item := range pricing {
+		if item.ModelName != "" {
+			visibleModels[item.ModelName] = struct{}{}
+			visibleModels[ratio_setting.FormatMatchingModelName(item.ModelName)] = struct{}{}
+		}
+	}
+	if len(visibleModels) == 0 {
+		return map[string]map[string]float64{}
+	}
+
 	filtered := make(map[string]map[string]float64)
 	for group, modelRatios := range source {
 		if _, ok := usableGroup[group]; !ok || len(modelRatios) == 0 {
 			continue
 		}
-		filtered[group] = make(map[string]float64, len(modelRatios))
+		groupRatios := make(map[string]float64, len(modelRatios))
 		for modelName, ratio := range modelRatios {
-			filtered[group][modelName] = ratio
+			if _, ok := visibleModels[modelName]; ok {
+				groupRatios[modelName] = ratio
+			}
+		}
+		if len(groupRatios) > 0 {
+			filtered[group] = groupRatios
 		}
 	}
 	return filtered
@@ -132,7 +148,7 @@ func GetPricing(c *gin.Context) {
 		"data":               pricing,
 		"vendors":            model.GetVendors(),
 		"group_ratio":        groupRatio,
-		"group_model_ratio":  filterGroupModelRatioByUsableGroups(ratio_setting.GetGroupModelRatioCopy(), usableGroup),
+		"group_model_ratio":  filterGroupModelRatioByUsableGroupsAndModels(ratio_setting.GetGroupModelRatioCopy(), usableGroup, pricing),
 		"usable_group":       usableGroup,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
 		"auto_groups":        service.GetUserAutoGroup(group),
@@ -190,6 +206,7 @@ func getCachedWebsitePricingJSON() ([]byte, error) {
 func buildWebsitePricingPayloadDefault() gin.H {
 	pricing := model.GetPricing()
 	usableGroup := service.GetUserUsableGroups("")
+	filteredPricing := filterPricingByUsableGroups(pricing, usableGroup)
 	groupRatio := map[string]float64{}
 	for group, ratio := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; ok {
@@ -199,10 +216,10 @@ func buildWebsitePricingPayloadDefault() gin.H {
 
 	return gin.H{
 		"success":            true,
-		"data":               filterPricingByUsableGroups(pricing, usableGroup),
+		"data":               filteredPricing,
 		"vendors":            model.GetVendors(),
 		"group_ratio":        groupRatio,
-		"group_model_ratio":  filterGroupModelRatioByUsableGroups(ratio_setting.GetGroupModelRatioCopy(), usableGroup),
+		"group_model_ratio":  filterGroupModelRatioByUsableGroupsAndModels(ratio_setting.GetGroupModelRatioCopy(), usableGroup, filteredPricing),
 		"usable_group":       usableGroup,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
 		"auto_groups":        service.GetUserAutoGroup(""),
