@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -20,9 +21,12 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const logRequestSampleRedactionVersion = "v1"
+const maxLogRequestSampleParamsBytes = 60 * 1024
+const maxLogRequestSamplePreviewBytes = 16 * 1024
 const redactedValue = "[redacted]"
 const droppedValue = "[dropped]"
 const truncatedSuffix = "...[truncated]"
@@ -31,7 +35,10 @@ const maxDepthValue = "[max_depth_exceeded]"
 const logRequestSampleAsyncQueueSize = 1024
 const logRequestSampleAsyncWorkers = 2
 const logRequestSampleInsertTimeout = 2 * time.Second
+const maxLogRequestSampleQueryPageSize = 100
 
+// TODO(product): define a retention or manual deletion policy for request
+// samples. They are intentionally not deleted by DeleteOldLog today.
 type LogRequestSample struct {
 	Id               int     `json:"id"`
 	LogId            int     `json:"log_id" gorm:"uniqueIndex;not null"`
@@ -46,6 +53,18 @@ type LogRequestSample struct {
 	RequestBodySize  int64   `json:"request_body_size" gorm:"default:0"`
 	SampleRate       float64 `json:"sample_rate" gorm:"default:0"`
 	RedactionVersion string  `json:"redaction_version" gorm:"type:varchar(32);default:''"`
+}
+
+type LogRequestSampleQuery struct {
+	LogId          int
+	UserId         int
+	TokenId        int
+	StartTimestamp int64
+	EndTimestamp   int64
+	ModelName      string
+	UserGroup      string
+	RequestPath    string
+	RequestId      string
 }
 
 var logRequestSampleRandomFloat = func() float64 {
@@ -87,10 +106,13 @@ func startLogRequestSampleAsyncWorkers() {
 
 func maybeRecordLogRequestSample(c *gin.Context, userId int, params RecordConsumeLogParams, log *Log) {
 	snapshot := operation_setting.GetLogRequestSamplingRuntimeSnapshot()
-	if !snapshot.Enabled {
+	if !snapshot.Enabled() {
 		return
 	}
 	if c == nil || c.Request == nil || log == nil || log.Id <= 0 {
+		return
+	}
+	if LOG_DB == nil {
 		return
 	}
 	if !common.GetContextKeyBool(c, constant.ContextKeyRequestSamplingEligible) {
@@ -102,17 +124,17 @@ func maybeRecordLogRequestSample(c *gin.Context, userId int, params RecordConsum
 		}
 	}
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-	if userGroup == "" || !snapshot.Groups[userGroup] {
+	if userGroup == "" || !snapshot.GroupEnabled(userGroup) {
 		return
 	}
 	requestPath := c.Request.URL.Path
-	if !isLogRequestSampleEligiblePath(snapshot, requestPath) {
+	if !snapshot.IsEligiblePath(requestPath) {
 		return
 	}
 	if isGeminiRequestSamplePath(requestPath) && !isGeminiTextRequestSamplePath(requestPath) {
 		return
 	}
-	if snapshot.SampleRate <= 0 || logRequestSampleRandomFloat() >= snapshot.SampleRate {
+	if snapshot.SampleRate() <= 0 || logRequestSampleRandomFloat() >= snapshot.SampleRate() {
 		return
 	}
 	if contentType := c.GetHeader("Content-Type"); contentType != "" && !strings.Contains(strings.ToLower(contentType), "application/json") {
@@ -124,7 +146,7 @@ func maybeRecordLogRequestSample(c *gin.Context, userId int, params RecordConsum
 		logger.LogError(c, "failed to get request body storage for sampling: "+err.Error())
 		return
 	}
-	if storage.Size() <= 0 || storage.Size() > snapshot.MaxBodyBytes {
+	if storage.Size() <= 0 || storage.Size() > snapshot.MaxBodyBytes() {
 		_, _ = storage.Seek(0, io.SeekStart)
 		return
 	}
@@ -151,7 +173,7 @@ func maybeRecordLogRequestSample(c *gin.Context, userId int, params RecordConsum
 		RequestPath:      requestPath,
 		RequestParams:    paramsJSON,
 		RequestBodySize:  storage.Size(),
-		SampleRate:       snapshot.SampleRate,
+		SampleRate:       snapshot.SampleRate(),
 		RedactionVersion: logRequestSampleRedactionVersion,
 	}
 	logRequestSampleAsyncRunner(func() {
@@ -163,33 +185,91 @@ func maybeRecordLogRequestSample(c *gin.Context, userId int, params RecordConsum
 	})
 }
 
-func isLogRequestSampleEligiblePath(snapshot operation_setting.LogRequestSamplingSnapshot, path string) bool {
-	if _, ok := snapshot.EligibleExactPaths[path]; ok {
-		return true
-	}
-	for _, prefix := range snapshot.EligiblePathPrefixes {
-		if strings.HasPrefix(path, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 func insertLogRequestSample(ctx context.Context, sample LogRequestSample) error {
 	if LOG_DB == nil {
 		return nil
 	}
-	err := LOG_DB.WithContext(ctx).Create(&sample).Error
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(strings.ToLower(err.Error()), "unique") {
-		return nil
-	}
-	return err
+	return LOG_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var log Log
+		query := tx.Select("id").Where("id = ?", sample.LogId)
+		if !isLogDBSQLite() {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.First(&log).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		err := tx.Create(&sample).Error
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return nil
+		}
+		return err
+	})
 }
 
-func sanitizeLogRequestSampleBody(body []byte, snapshot operation_setting.LogRequestSamplingSnapshot) (string, error) {
+func isLogDBSQLite() bool {
+	return common.LogSqlType == common.DatabaseTypeSQLite || (common.LogSqlType == "" && common.UsingSQLite)
+}
+
+func ListLogRequestSamples(query LogRequestSampleQuery, startIdx int, num int) ([]*LogRequestSample, int64, error) {
+	if LOG_DB == nil {
+		return nil, 0, nil
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if num <= 0 || num > maxLogRequestSampleQueryPageSize {
+		num = maxLogRequestSampleQueryPageSize
+	}
+	tx := LOG_DB.Model(&LogRequestSample{})
+	if query.LogId != 0 {
+		tx = tx.Where("log_id = ?", query.LogId)
+	}
+	if query.UserId != 0 {
+		tx = tx.Where("user_id = ?", query.UserId)
+	}
+	if query.TokenId != 0 {
+		tx = tx.Where("token_id = ?", query.TokenId)
+	}
+	if query.StartTimestamp != 0 {
+		tx = tx.Where("created_at >= ?", query.StartTimestamp)
+	}
+	if query.EndTimestamp != 0 {
+		tx = tx.Where("created_at <= ?", query.EndTimestamp)
+	}
+	if query.ModelName != "" {
+		tx = tx.Where("model_name = ?", query.ModelName)
+	}
+	if query.UserGroup != "" {
+		tx = tx.Where("user_group = ?", query.UserGroup)
+	}
+	if query.RequestPath != "" {
+		tx = tx.Where("request_path = ?", query.RequestPath)
+	}
+	if query.RequestId != "" {
+		tx = tx.Where("request_id = ?", query.RequestId)
+	}
+
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var samples []*LogRequestSample
+	err := tx.Order("created_at desc, id desc").Limit(num).Offset(startIdx).Find(&samples).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	return samples, total, nil
+}
+
+func sanitizeLogRequestSampleBody(body []byte, snapshot operation_setting.LogRequestSamplingRuntimeSnapshot) (string, error) {
 	var value interface{}
 	if err := common.Unmarshal(body, &value); err != nil {
 		return "", err
@@ -202,21 +282,52 @@ func sanitizeLogRequestSampleBody(body []byte, snapshot operation_setting.LogReq
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	return capLogRequestSampleParams(out)
 }
 
-func sanitizeLogRequestSampleValue(value interface{}, fieldName string, depth int, snapshot operation_setting.LogRequestSamplingSnapshot) (interface{}, error) {
-	if depth > snapshot.MaxJSONDepth {
+func capLogRequestSampleParams(out []byte) (string, error) {
+	if len(out) <= maxLogRequestSampleParamsBytes {
+		return string(out), nil
+	}
+	preview := string(out)
+	if len(preview) > maxLogRequestSamplePreviewBytes {
+		preview = preview[:maxLogRequestSamplePreviewBytes] + truncatedSuffix
+	}
+	capped, err := common.Marshal(map[string]interface{}{
+		"_truncated":       true,
+		"_sanitized_bytes": len(out),
+		"_preview":         preview,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(capped), nil
+}
+
+func sanitizeLogRequestSampleValue(value interface{}, fieldName string, depth int, snapshot operation_setting.LogRequestSamplingRuntimeSnapshot) (interface{}, error) {
+	if depth > snapshot.MaxJSONDepth() {
 		return maxDepthValue, nil
 	}
 	if isSensitiveSampleField(fieldName) {
 		return redactedValue, nil
 	}
+	if !snapshot.AllowTextContentStorage() && isTextContentSampleField(fieldName) {
+		return redactedValue, nil
+	}
 	switch typed := value.(type) {
 	case map[string]interface{}:
 		out := make(map[string]interface{}, len(typed))
+		parentSensitiveName := sensitiveNameValueObjectName(typed)
 		for key, child := range typed {
-			cleaned, err := sanitizeLogRequestSampleValue(child, key, depth+1, snapshot)
+			if isInlineBinaryPayloadField(fieldName, typed, key) {
+				out[key] = droppedValue
+				continue
+			}
+			childFieldName := joinLogRequestSampleFieldPath(fieldName, key)
+			if parentSensitiveName != "" && isNameValuePayloadField(key) {
+				childFieldName = parentSensitiveName
+			}
+			cleaned, err := sanitizeLogRequestSampleValue(child, childFieldName, depth+1, snapshot)
 			if err != nil {
 				return nil, err
 			}
@@ -240,8 +351,8 @@ func sanitizeLogRequestSampleValue(value interface{}, fieldName string, depth in
 	}
 }
 
-func sanitizeLogRequestSampleString(fieldName string, value string, snapshot operation_setting.LogRequestSamplingSnapshot) string {
-	if snapshot.DropBinaryPayloads && shouldDropLogRequestSampleString(fieldName, value) {
+func sanitizeLogRequestSampleString(fieldName string, value string, snapshot operation_setting.LogRequestSamplingRuntimeSnapshot) string {
+	if snapshot.DropBinaryPayloads() && shouldDropLogRequestSampleString(fieldName, value) {
 		return droppedValue
 	}
 	if isURLSampleField(fieldName) && urlLikePattern.MatchString(value) {
@@ -249,10 +360,28 @@ func sanitizeLogRequestSampleString(fieldName string, value string, snapshot ope
 	}
 	value = urlLikePattern.ReplaceAllString(value, redactedValue)
 	value = credentialLikePattern.ReplaceAllString(value, redactedValue)
-	if len(value) > snapshot.MaxStringBytes {
-		return value[:snapshot.MaxStringBytes] + truncatedSuffix
+	if len(value) > snapshot.MaxStringBytes() {
+		return truncateLogRequestSampleString(value, snapshot.MaxStringBytes()) + truncatedSuffix
 	}
 	return value
+}
+
+func truncateLogRequestSampleString(value string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := 0
+	for idx, r := range value {
+		next := idx + utf8.RuneLen(r)
+		if next > maxBytes {
+			break
+		}
+		end = next
+	}
+	return value[:end]
 }
 
 func isSensitiveSampleField(fieldName string) bool {
@@ -275,6 +404,7 @@ func isSensitiveSampleField(fieldName string) bool {
 		strings.HasSuffix(compactName, "privatekey") ||
 		strings.HasSuffix(compactName, "token") ||
 		strings.HasSuffix(compactName, "secret") ||
+		strings.HasSuffix(compactName, "password") ||
 		strings.HasSuffix(compactName, "authorization") ||
 		strings.HasSuffix(compactName, "cookie") ||
 		strings.HasSuffix(compactName, "session") ||
@@ -286,6 +416,7 @@ func isSensitiveSampleField(fieldName string) bool {
 		strings.HasSuffix(name, "_key") ||
 		strings.HasSuffix(name, "_token") ||
 		strings.HasSuffix(name, "_secret") ||
+		strings.HasSuffix(name, "_password") ||
 		strings.HasSuffix(name, "_authorization") ||
 		strings.HasSuffix(name, "_access_token") ||
 		strings.HasSuffix(name, "_refresh_token") ||
@@ -303,6 +434,101 @@ func isURLSampleField(fieldName string) bool {
 		name == "href" ||
 		strings.HasSuffix(name, "_url") ||
 		strings.HasSuffix(name, "_uri")
+}
+
+func isTextContentSampleField(fieldName string) bool {
+	name := strings.ToLower(strings.TrimSpace(fieldName))
+	if name == "" {
+		return false
+	}
+	name = strings.NewReplacer("-", "_", ".", "_").Replace(name)
+	compactName := strings.ReplaceAll(name, "_", "")
+	switch name {
+	case "messages", "message", "content", "contents", "input", "prompt", "prompts", "system", "instruction", "instructions", "text", "texts", "arguments", "argument", "metadata":
+		return true
+	}
+	return strings.HasSuffix(compactName, "message") ||
+		strings.HasSuffix(compactName, "messages") ||
+		strings.HasSuffix(compactName, "content") ||
+		strings.HasSuffix(compactName, "input") ||
+		strings.HasSuffix(compactName, "prompt") ||
+		strings.HasSuffix(compactName, "prompts") ||
+		strings.HasSuffix(compactName, "text") ||
+		strings.HasSuffix(compactName, "texts") ||
+		strings.HasSuffix(compactName, "system") ||
+		strings.HasSuffix(compactName, "instruction") ||
+		strings.HasSuffix(compactName, "instructions") ||
+		strings.HasSuffix(compactName, "arguments") ||
+		strings.HasSuffix(compactName, "argument") ||
+		strings.HasSuffix(compactName, "metadata")
+}
+
+func joinLogRequestSampleFieldPath(parent string, child string) string {
+	parent = strings.TrimSpace(parent)
+	child = strings.TrimSpace(child)
+	if parent == "" {
+		return child
+	}
+	if child == "" {
+		return parent
+	}
+	return parent + "." + child
+}
+
+func sensitiveNameValueObjectName(value map[string]interface{}) string {
+	for key, raw := range value {
+		normalizedKey := normalizeLogRequestSampleFieldName(key)
+		if normalizedKey != "name" && normalizedKey != "key" {
+			continue
+		}
+		name, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		if isSensitiveSampleField(name) {
+			return name
+		}
+	}
+	return ""
+}
+
+func isNameValuePayloadField(fieldName string) bool {
+	name := normalizeLogRequestSampleFieldName(fieldName)
+	return name == "value" || name == "values" || name == "data"
+}
+
+func normalizeLogRequestSampleFieldName(fieldName string) string {
+	return strings.ToLower(strings.NewReplacer("-", "_", ".", "_").Replace(strings.TrimSpace(fieldName)))
+}
+
+func isInlineBinaryPayloadField(parentFieldName string, parent map[string]interface{}, fieldName string) bool {
+	name := strings.ToLower(strings.TrimSpace(fieldName))
+	normalizedName := strings.ReplaceAll(strings.ReplaceAll(name, "-", "_"), ".", "_")
+	if normalizedName != "data" && normalizedName != "b64_json" && normalizedName != "base64" {
+		return false
+	}
+	parentName := strings.ToLower(strings.NewReplacer("-", "_", ".", "_").Replace(parentFieldName))
+	if strings.Contains(parentName, "inline_data") || strings.Contains(parentName, "inlinedata") {
+		return true
+	}
+	for _, key := range []string{"mime_type", "mimeType", "content_type", "contentType", "media_type", "mediaType", "type"} {
+		if value, ok := parent[key].(string); ok && isBinaryMimeLikeValue(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func isBinaryMimeLikeValue(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return strings.HasPrefix(value, "image/") ||
+		strings.HasPrefix(value, "audio/") ||
+		strings.HasPrefix(value, "video/") ||
+		strings.Contains(value, "octet-stream") ||
+		strings.Contains(value, "base64") ||
+		strings.Contains(value, "input_image") ||
+		strings.Contains(value, "input_audio") ||
+		strings.Contains(value, "input_file")
 }
 
 func shouldDropLogRequestSampleString(fieldName string, value string) bool {
@@ -339,50 +565,6 @@ func looksLikeBase64Blob(value string) bool {
 	return valid >= 512
 }
 
-func CleanupOldLogRequestSamples(targetTimestamp int64, limit int) (int64, error) {
-	return deleteOldLogRequestSamples(context.Background(), targetTimestamp, limit, 0)
-}
-
-func CleanupOldLogRequestSamplesWithContext(ctx context.Context, targetTimestamp int64, limit int, maxBatches int) (int64, error) {
-	return deleteOldLogRequestSamples(ctx, targetTimestamp, limit, maxBatches)
-}
-
-func CleanupOldLogRequestSamplesWithBatchLimit(targetTimestamp int64, limit int, maxBatches int) (int64, error) {
-	return deleteOldLogRequestSamples(context.Background(), targetTimestamp, limit, maxBatches)
-}
-
-func deleteOldLogRequestSamples(ctx context.Context, targetTimestamp int64, limit int, maxBatches int) (int64, error) {
-	if LOG_DB == nil {
-		return 0, nil
-	}
-	if limit <= 0 {
-		limit = 100
-	}
-	db := LOG_DB.WithContext(ctx)
-	var total int64
-	for batch := 0; maxBatches <= 0 || batch < maxBatches; batch++ {
-		if err := ctx.Err(); err != nil {
-			return total, err
-		}
-		var ids []int
-		if err := db.Model(&LogRequestSample{}).Where("created_at < ?", targetTimestamp).Order("id").Limit(limit).Pluck("id", &ids).Error; err != nil {
-			return total, err
-		}
-		if len(ids) == 0 {
-			return total, nil
-		}
-		result := db.Where("id IN ?", ids).Delete(&LogRequestSample{})
-		if result.Error != nil {
-			return total, result.Error
-		}
-		total += result.RowsAffected
-		if len(ids) < limit || result.RowsAffected < int64(limit) {
-			return total, nil
-		}
-	}
-	return total, nil
-}
-
 func isGeminiTextRequestSamplePath(path string) bool {
 	actionIndex := strings.LastIndex(path, ":")
 	if actionIndex < 0 || actionIndex == len(path)-1 {
@@ -394,17 +576,4 @@ func isGeminiTextRequestSamplePath(path string) bool {
 
 func isGeminiRequestSamplePath(path string) bool {
 	return strings.HasPrefix(path, "/v1beta/models/") || strings.HasPrefix(path, "/v1/models/")
-}
-
-func deleteLogRequestSamplesByLogIDs(tx *gorm.DB, ids []int) error {
-	if len(ids) == 0 || LOG_DB == nil {
-		return nil
-	}
-	if tx == nil {
-		tx = LOG_DB
-	}
-	if err := tx.Where("log_id IN ?", ids).Delete(&LogRequestSample{}).Error; err != nil {
-		return fmt.Errorf("delete log request samples: %w", err)
-	}
-	return nil
 }

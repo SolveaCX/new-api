@@ -1,12 +1,15 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -102,9 +105,15 @@ func TestRecordConsumeLogRequestSamplingDisabledDoesNotReadBody(t *testing.T) {
 func TestRecordConsumeLogRequestSamplingWritesRedactedSampleForEligiblePLG(t *testing.T) {
 	truncateTables(t)
 	configureRequestSamplingForTest(t, true, 1, []string{"plg"})
+	operation_setting.UpdateLogRequestSamplingSetting(func(setting *operation_setting.LogRequestSamplingSetting) {
+		setting.AllowTextContentStorage = true
+	})
 	body := strings.NewReader(`{
 		"model":"gpt-4o",
 		"messages":[{"role":"user","content":"hello"}],
+		"headers":[{"Name":"Authorization","Value":"opaque-token"}],
+		"inline_data":{"mime_type":"image/png","data":"QUJD"},
+		"inlineData":{"mimeType":"audio/wav","data":"REVG"},
 		"api_key":"sk-secret",
 		"x-api-key":"AIzaSyA000000000000000000000000000000",
 		"proxy-authorization":"Bearer plain-oauth-token-value",
@@ -113,6 +122,9 @@ func TestRecordConsumeLogRequestSamplingWritesRedactedSampleForEligiblePLG(t *te
 		"accessToken":"opaque-access-token",
 		"clientSecret":"plain-client-secret",
 		"privateKey":"plain-private-key",
+		"old_password":"plain-old-password",
+		"user_password":"plain-user-password",
+		"current-password":"plain-current-password",
 		"cookie":"sid=secret",
 		"session_id":"session-secret",
 		"service_credentials":"credential-secret",
@@ -160,10 +172,17 @@ func TestRecordConsumeLogRequestSamplingWritesRedactedSampleForEligiblePLG(t *te
 	require.Equal(t, "[redacted]", payload["accessToken"])
 	require.Equal(t, "[redacted]", payload["clientSecret"])
 	require.Equal(t, "[redacted]", payload["privateKey"])
+	require.Equal(t, "[redacted]", payload["old_password"])
+	require.Equal(t, "[redacted]", payload["user_password"])
+	require.Equal(t, "[redacted]", payload["current-password"])
 	require.Equal(t, "[redacted]", payload["cookie"])
 	require.Equal(t, "[redacted]", payload["session_id"])
 	require.Equal(t, "[redacted]", payload["service_credentials"])
 	require.Contains(t, sample.RequestParams, "hello")
+	require.NotContains(t, sample.RequestParams, "opaque-token")
+	require.NotContains(t, sample.RequestParams, `"data":"QUJD"`)
+	require.NotContains(t, sample.RequestParams, `"data":"REVG"`)
+	require.Contains(t, sample.RequestParams, `"data":"[dropped]"`)
 	require.NotContains(t, sample.RequestParams, "sk-secret")
 	require.NotContains(t, sample.RequestParams, "AIza")
 	require.NotContains(t, sample.RequestParams, "AKIA")
@@ -172,6 +191,9 @@ func TestRecordConsumeLogRequestSamplingWritesRedactedSampleForEligiblePLG(t *te
 	require.NotContains(t, sample.RequestParams, "opaque-access-token")
 	require.NotContains(t, sample.RequestParams, "plain-client-secret")
 	require.NotContains(t, sample.RequestParams, "plain-private-key")
+	require.NotContains(t, sample.RequestParams, "plain-old-password")
+	require.NotContains(t, sample.RequestParams, "plain-user-password")
+	require.NotContains(t, sample.RequestParams, "plain-current-password")
 	require.NotContains(t, sample.RequestParams, "sid=secret")
 	require.NotContains(t, sample.RequestParams, "session-secret")
 	require.NotContains(t, sample.RequestParams, "credential-secret")
@@ -182,6 +204,70 @@ func TestRecordConsumeLogRequestSamplingWritesRedactedSampleForEligiblePLG(t *te
 	require.NotContains(t, sample.RequestParams, "example.com")
 	require.NotContains(t, sample.RequestParams, "safe=ok")
 	require.NotContains(t, sample.RequestParams, "data:image/png;base64")
+}
+
+func TestRecordConsumeLogRequestSamplingCanRedactTextContent(t *testing.T) {
+	truncateTables(t)
+	configureRequestSamplingForTest(t, true, 1, []string{"plg"})
+	operation_setting.UpdateLogRequestSamplingSetting(func(setting *operation_setting.LogRequestSamplingSetting) {
+		setting.AllowTextContentStorage = false
+	})
+	body := strings.NewReader(`{
+		"model":"gpt-4o",
+		"messages":[{"role":"user","content":"private prompt"}],
+		"contents":[{"parts":[{"text":"private gemini text"}]}],
+		"parts":[{"text":"private nested text"}],
+		"data":[{"type":"input_text","text":"private data text"}],
+		"texts":"private texts",
+		"tool_calls":[{"function":{"arguments":"private tool args"}}],
+		"metadata":{"customer":"private metadata"},
+		"input":"private input",
+		"prompt":"private prompt field",
+		"temperature":0.2
+	}`)
+	c := newRequestSamplingContext("POST", "/v1/chat/completions", body)
+
+	RecordConsumeLog(c, 123, RecordConsumeLogParams{ModelName: "gpt-4o", Other: map[string]interface{}{}})
+
+	var sample LogRequestSample
+	require.NoError(t, LOG_DB.First(&sample).Error)
+	require.Contains(t, sample.RequestParams, `"messages":"[redacted]"`)
+	require.Contains(t, sample.RequestParams, `"contents":"[redacted]"`)
+	require.Contains(t, sample.RequestParams, `"arguments":"[redacted]"`)
+	require.Contains(t, sample.RequestParams, `"metadata":"[redacted]"`)
+	require.Contains(t, sample.RequestParams, `"input":"[redacted]"`)
+	require.Contains(t, sample.RequestParams, `"prompt":"[redacted]"`)
+	require.Contains(t, sample.RequestParams, `"texts":"[redacted]"`)
+	require.Contains(t, sample.RequestParams, `"temperature":0.2`)
+	require.NotContains(t, sample.RequestParams, "private prompt")
+	require.NotContains(t, sample.RequestParams, "private gemini text")
+	require.NotContains(t, sample.RequestParams, "private nested text")
+	require.NotContains(t, sample.RequestParams, "private data text")
+	require.NotContains(t, sample.RequestParams, "private texts")
+	require.NotContains(t, sample.RequestParams, "private input")
+	require.NotContains(t, sample.RequestParams, "private tool args")
+	require.NotContains(t, sample.RequestParams, "private metadata")
+}
+
+func TestSanitizeLogRequestSampleBodyCapsStoredJSON(t *testing.T) {
+	configureRequestSamplingForTest(t, true, 1, []string{"plg"})
+	operation_setting.UpdateLogRequestSamplingSetting(func(setting *operation_setting.LogRequestSamplingSetting) {
+		setting.AllowTextContentStorage = true
+		setting.MaxBodyBytes = operation_setting.MaxLogRequestSamplingBodyBytes
+		setting.MaxStringBytes = operation_setting.MaxLogRequestSamplingMaxStringBytes
+	})
+	snapshot := operation_setting.GetLogRequestSamplingRuntimeSnapshot()
+	parts := make([]string, 0, 80)
+	for i := 0; i < 80; i++ {
+		parts = append(parts, `"field`+strconv.Itoa(i)+`":"`+strings.Repeat(`\"`, 900)+`"`)
+	}
+	body := []byte(`{` + strings.Join(parts, ",") + `}`)
+
+	params, err := sanitizeLogRequestSampleBody(body, snapshot)
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(params), maxLogRequestSampleParamsBytes)
+	require.Contains(t, params, `"_truncated":true`)
+	require.Contains(t, params, `"_sanitized_bytes":`)
 }
 
 func TestRecordConsumeLogRequestSamplingSkipsNonMatchingGroupInvalidJSONAndViolationFee(t *testing.T) {
@@ -197,6 +283,10 @@ func TestRecordConsumeLogRequestSamplingSkipsNonMatchingGroupInvalidJSONAndViola
 
 	c = newRequestSamplingContext("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"content":"hi"}]}`))
 	RecordConsumeLog(c, 123, RecordConsumeLogParams{ModelName: "gpt-4o", Other: map[string]interface{}{"violation_fee": true}})
+
+	c = newRequestSamplingContext("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "text/plain")
+	RecordConsumeLog(c, 123, RecordConsumeLogParams{ModelName: "gpt-4o", Other: map[string]interface{}{}})
 
 	require.Equal(t, int64(0), countRequestSamples(t))
 }
@@ -239,37 +329,91 @@ func TestRecordConsumeLogRequestSamplingRestoresBodyPosition(t *testing.T) {
 	require.Equal(t, int64(0), pos)
 }
 
-func TestCleanupOldLogRequestSamplesDeletesSamplesOnly(t *testing.T) {
+func TestInsertLogRequestSampleSkipsMissingLog(t *testing.T) {
 	truncateTables(t)
-	now := time.Now().Unix()
-	require.NoError(t, LOG_DB.Create(&Log{Id: 1, CreatedAt: now, Type: LogTypeConsume}).Error)
-	require.NoError(t, LOG_DB.Create(&LogRequestSample{LogId: 1, CreatedAt: now - 100, RequestParams: `{}`}).Error)
-	require.NoError(t, LOG_DB.Create(&LogRequestSample{LogId: 2, CreatedAt: now, RequestParams: `{}`}).Error)
-
-	deleted, err := CleanupOldLogRequestSamples(now-10, 100)
+	err := insertLogRequestSample(context.Background(), LogRequestSample{
+		LogId:         999,
+		CreatedAt:     time.Now().Unix(),
+		RequestParams: `{}`,
+	})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), deleted)
-
-	var logCount int64
-	require.NoError(t, LOG_DB.Model(&Log{}).Count(&logCount).Error)
-	require.Equal(t, int64(1), logCount)
-	require.Equal(t, int64(1), countRequestSamples(t))
+	require.Equal(t, int64(0), countRequestSamples(t))
 }
 
-func TestCleanupOldLogRequestSamplesWithBatchLimitStopsAfterLimit(t *testing.T) {
+func TestListLogRequestSamplesFiltersAndOrders(t *testing.T) {
 	truncateTables(t)
-	now := time.Now().Unix()
-	for i := 1; i <= 5; i++ {
-		require.NoError(t, LOG_DB.Create(&LogRequestSample{LogId: i, CreatedAt: now - 100, RequestParams: `{}`}).Error)
+	samples := []LogRequestSample{
+		{LogId: 1, UserId: 100, CreatedAt: 100, ModelName: "gpt-4o", TokenId: 9, UserGroup: "plg", RequestPath: "/v1/chat/completions", RequestId: "req-a", RequestParams: `{"a":1}`},
+		{LogId: 2, UserId: 100, CreatedAt: 200, ModelName: "gpt-4o", TokenId: 9, UserGroup: "plg", RequestPath: "/v1/chat/completions", RequestId: "req-b", RequestParams: `{"b":2}`},
+		{LogId: 3, UserId: 200, CreatedAt: 300, ModelName: "claude-3-5-sonnet", TokenId: 10, UserGroup: "default", RequestPath: "/v1/messages", RequestId: "req-c", RequestParams: `{"c":3}`},
 	}
+	require.NoError(t, LOG_DB.Create(&samples).Error)
 
-	deleted, err := CleanupOldLogRequestSamplesWithBatchLimit(now-10, 2, 2)
+	items, total, err := ListLogRequestSamples(LogRequestSampleQuery{
+		UserId:         100,
+		StartTimestamp: 50,
+		EndTimestamp:   250,
+		ModelName:      "gpt-4o",
+		TokenId:        9,
+		UserGroup:      "plg",
+		RequestPath:    "/v1/chat/completions",
+	}, 0, 10)
 	require.NoError(t, err)
-	require.Equal(t, int64(4), deleted)
-	require.Equal(t, int64(1), countRequestSamples(t))
+	require.Equal(t, int64(2), total)
+	require.Len(t, items, 2)
+	require.Equal(t, 2, items[0].LogId)
+	require.Equal(t, 1, items[1].LogId)
+
+	items, total, err = ListLogRequestSamples(LogRequestSampleQuery{LogId: 1}, 0, 10)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	require.Equal(t, "req-a", items[0].RequestId)
+
+	items, total, err = ListLogRequestSamples(LogRequestSampleQuery{RequestId: "req-b"}, 0, 10)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	require.Equal(t, 2, items[0].LogId)
 }
 
-func TestDeleteOldLogDeletesMatchingRequestSamples(t *testing.T) {
+func TestListLogRequestSamplesClampsPagination(t *testing.T) {
+	truncateTables(t)
+	samples := make([]LogRequestSample, 0, 101)
+	for i := 1; i <= 101; i++ {
+		samples = append(samples, LogRequestSample{
+			LogId:         i,
+			UserId:        100,
+			CreatedAt:     int64(i),
+			RequestParams: `{}`,
+		})
+	}
+	require.NoError(t, LOG_DB.Create(&samples).Error)
+
+	items, total, err := ListLogRequestSamples(LogRequestSampleQuery{UserId: 100}, -50, -1)
+	require.NoError(t, err)
+	require.Equal(t, int64(101), total)
+	require.Len(t, items, 100)
+	require.Equal(t, 101, items[0].LogId)
+	require.Equal(t, 2, items[99].LogId)
+}
+
+func TestSanitizeLogRequestSampleStringTruncatesAtUTF8Boundary(t *testing.T) {
+	configureRequestSamplingForTest(t, true, 1, []string{"plg"})
+	operation_setting.UpdateLogRequestSamplingSetting(func(setting *operation_setting.LogRequestSamplingSetting) {
+		setting.AllowTextContentStorage = true
+		setting.MaxStringBytes = 5
+	})
+	snapshot := operation_setting.GetLogRequestSamplingRuntimeSnapshot()
+
+	got := sanitizeLogRequestSampleString("note", "你好🙂abc", snapshot)
+
+	require.True(t, utf8.ValidString(got), "truncated sample string must remain valid UTF-8: %q", got)
+	require.NotContains(t, got, "\uFFFD")
+	require.Equal(t, "你"+truncatedSuffix, got)
+}
+
+func TestDeleteOldLogLeavesRequestSamplesUntouched(t *testing.T) {
 	truncateTables(t)
 	require.NoError(t, LOG_DB.Create(&Log{Id: 1, CreatedAt: 100, Type: LogTypeConsume}).Error)
 	require.NoError(t, LOG_DB.Create(&Log{Id: 2, CreatedAt: 300, Type: LogTypeConsume}).Error)
@@ -282,6 +426,6 @@ func TestDeleteOldLogDeletesMatchingRequestSamples(t *testing.T) {
 
 	var oldSampleCount int64
 	require.NoError(t, LOG_DB.Model(&LogRequestSample{}).Where("log_id = ?", 1).Count(&oldSampleCount).Error)
-	require.Equal(t, int64(0), oldSampleCount)
-	require.Equal(t, int64(1), countRequestSamples(t))
+	require.Equal(t, int64(1), oldSampleCount)
+	require.Equal(t, int64(2), countRequestSamples(t))
 }

@@ -94,7 +94,7 @@ func SetRelayRouter(router *gin.Engine) {
 
 		// chat related routes
 		httpRouter.POST("/completions", func(c *gin.Context) {
-			controller.Relay(c, types.RelayFormatOpenAI)
+			relayWithRequestSamplingEligible(c, types.RelayFormatOpenAI)
 		})
 		httpRouter.POST("/chat/completions", func(c *gin.Context) {
 			relayWithRequestSamplingEligible(c, types.RelayFormatOpenAI)

@@ -707,23 +707,12 @@ func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64,
 		if len(ids) == 0 {
 			break
 		}
-		var rowsAffected int64
-		err := LOG_DB.Transaction(func(tx *gorm.DB) error {
-			if err := deleteLogRequestSamplesByLogIDs(tx, ids); err != nil {
-				return err
-			}
-			result := tx.Where("id IN ?", ids).Delete(&Log{})
-			if result.Error != nil {
-				return result.Error
-			}
-			rowsAffected = result.RowsAffected
-			return nil
-		})
-		if err != nil {
-			return total, err
+		result := LOG_DB.Where("id IN ?", ids).Delete(&Log{})
+		if result.Error != nil {
+			return total, result.Error
 		}
 
-		total += rowsAffected
+		total += result.RowsAffected
 
 		if len(ids) < limit {
 			break

@@ -3,7 +3,9 @@ package operation_setting
 import (
 	"math"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/setting/config"
 )
@@ -24,9 +26,6 @@ func TestDefaultLogRequestSamplingSetting(t *testing.T) {
 	if setting.MaxBodyBytes != 16384 {
 		t.Fatalf("max body bytes = %d, want 16384", setting.MaxBodyBytes)
 	}
-	if setting.RetentionDays != 14 {
-		t.Fatalf("retention days = %d, want 14", setting.RetentionDays)
-	}
 	if setting.MaxStringBytes != 4096 {
 		t.Fatalf("max string bytes = %d, want 4096", setting.MaxStringBytes)
 	}
@@ -36,8 +35,11 @@ func TestDefaultLogRequestSamplingSetting(t *testing.T) {
 	if !setting.DropBinaryPayloads {
 		t.Fatal("expected binary payloads to be dropped by default")
 	}
+	if setting.AllowTextContentStorage {
+		t.Fatal("expected text content storage to be disabled by default")
+	}
 
-	wantPaths := []string{"/v1/chat/completions", "/v1/responses", "/v1/responses/compact", "/v1/messages", "/v1/models/*", "/v1beta/models/*"}
+	wantPaths := []string{"/v1/completions", "/v1/chat/completions", "/v1/responses", "/v1/responses/compact", "/v1/messages", "/v1/models/*", "/v1beta/models/*"}
 	if !reflect.DeepEqual(setting.EligiblePaths, wantPaths) {
 		t.Fatalf("eligible paths = %v, want %v", setting.EligiblePaths, wantPaths)
 	}
@@ -51,7 +53,6 @@ func TestLogRequestSamplingSnapshotIsImmutableAndValidated(t *testing.T) {
 		"groups":           `[" plg ","enterprise",""]`,
 		"eligible_paths":   `["/v1/chat/completions","/v1beta/models/*",""]`,
 		"max_body_bytes":   "0",
-		"retention_days":   "-1",
 		"max_string_bytes": "0",
 		"max_json_depth":   "0",
 	})
@@ -72,16 +73,12 @@ func TestLogRequestSamplingSnapshotIsImmutableAndValidated(t *testing.T) {
 	if snapshot.MaxBodyBytes != 16384 {
 		t.Fatalf("max body bytes = %d, want default fallback", snapshot.MaxBodyBytes)
 	}
-	if snapshot.RetentionDays != 14 {
-		t.Fatalf("retention days = %d, want default fallback", snapshot.RetentionDays)
-	}
 	if snapshot.MaxStringBytes != 4096 {
 		t.Fatalf("max string bytes = %d, want default fallback", snapshot.MaxStringBytes)
 	}
 	if snapshot.MaxJSONDepth != 16 {
 		t.Fatalf("max json depth = %d, want default fallback", snapshot.MaxJSONDepth)
 	}
-
 	snapshot.Groups["plg"] = false
 	again := GetLogRequestSamplingSnapshot()
 	if !again.Groups["plg"] {
@@ -95,7 +92,6 @@ func TestLogRequestSamplingSnapshotRejectsNonFiniteRateAndClampsLimits(t *testin
 		setting.Enabled = true
 		setting.SampleRate = math.Inf(1)
 		setting.MaxBodyBytes = MaxLogRequestSamplingBodyBytes + 1
-		setting.RetentionDays = MaxLogRequestSamplingRetentionDays + 1
 		setting.MaxStringBytes = MaxLogRequestSamplingMaxStringBytes + 1
 		setting.MaxJSONDepth = MaxLogRequestSamplingMaxJSONDepth + 1
 	})
@@ -106,22 +102,56 @@ func TestLogRequestSamplingSnapshotRejectsNonFiniteRateAndClampsLimits(t *testin
 	if snapshot.MaxBodyBytes != MaxLogRequestSamplingBodyBytes {
 		t.Fatalf("max body bytes = %d, want cap %d", snapshot.MaxBodyBytes, MaxLogRequestSamplingBodyBytes)
 	}
-	if snapshot.RetentionDays != MaxLogRequestSamplingRetentionDays {
-		t.Fatalf("retention days = %d, want cap %d", snapshot.RetentionDays, MaxLogRequestSamplingRetentionDays)
-	}
 	if snapshot.MaxStringBytes != MaxLogRequestSamplingMaxStringBytes {
 		t.Fatalf("max string bytes = %d, want cap %d", snapshot.MaxStringBytes, MaxLogRequestSamplingMaxStringBytes)
 	}
 	if snapshot.MaxJSONDepth != MaxLogRequestSamplingMaxJSONDepth {
 		t.Fatalf("max json depth = %d, want cap %d", snapshot.MaxJSONDepth, MaxLogRequestSamplingMaxJSONDepth)
 	}
-
 	if err := UpdateLogRequestSamplingConfigFromMap(map[string]string{"sample_rate": "NaN"}); err != nil {
 		t.Fatalf("UpdateLogRequestSamplingConfigFromMap failed: %v", err)
 	}
 	snapshot = GetLogRequestSamplingSnapshot()
 	if snapshot.SampleRate != DefaultLogRequestSamplingRate {
 		t.Fatalf("NaN sample rate = %v, want default fallback", snapshot.SampleRate)
+	}
+}
+
+func TestLogRequestSamplingExplicitEmptyScopeDoesNotFallbackToDefaults(t *testing.T) {
+	resetLogRequestSamplingSettingForTest(t)
+	err := UpdateLogRequestSamplingConfigFromMap(map[string]string{
+		"groups":         `[]`,
+		"eligible_paths": `[]`,
+	})
+	if err != nil {
+		t.Fatalf("UpdateConfigFromMap failed: %v", err)
+	}
+
+	setting := GetLogRequestSamplingSetting()
+	if setting.Groups == nil || setting.EligiblePaths == nil {
+		t.Fatalf("explicit empty slices must be preserved, got groups=%v eligible_paths=%v", setting.Groups, setting.EligiblePaths)
+	}
+
+	snapshot := GetLogRequestSamplingSnapshot()
+	if len(snapshot.Groups) != 0 {
+		t.Fatalf("groups = %v, want explicit empty", snapshot.Groups)
+	}
+	if len(snapshot.EligiblePaths) != 0 {
+		t.Fatalf("eligible paths = %v, want explicit empty", snapshot.EligiblePaths)
+	}
+	if len(snapshot.EligibleExactPaths) != 0 {
+		t.Fatalf("eligible exact paths = %v, want explicit empty", snapshot.EligibleExactPaths)
+	}
+	if len(snapshot.EligiblePathPrefixes) != 0 {
+		t.Fatalf("eligible path prefixes = %v, want explicit empty", snapshot.EligiblePathPrefixes)
+	}
+
+	runtime := GetLogRequestSamplingRuntimeSnapshot()
+	if runtime.GroupEnabled("plg") {
+		t.Fatal("explicit empty groups must not match default plg")
+	}
+	if runtime.IsEligiblePath("/v1/chat/completions") {
+		t.Fatal("explicit empty eligible paths must not match default paths")
 	}
 }
 
@@ -141,6 +171,119 @@ func TestLogRequestSamplingGlobalConfigLoadRefreshesSnapshot(t *testing.T) {
 	}
 	if snapshot.SampleRate != 0.5 {
 		t.Fatalf("sample rate = %v, want 0.5", snapshot.SampleRate)
+	}
+}
+
+func TestUpdateLogRequestSamplingSettingAllowsReentrantReads(t *testing.T) {
+	resetLogRequestSamplingSettingForTest(t)
+
+	done := make(chan struct{})
+	go func() {
+		UpdateLogRequestSamplingSetting(func(setting *LogRequestSamplingSetting) {
+			_ = GetLogRequestSamplingSetting()
+			setting.Enabled = true
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("UpdateLogRequestSamplingSetting deadlocked when update callback read the setting")
+	}
+
+	if !GetLogRequestSamplingSnapshot().Enabled {
+		t.Fatal("expected setting update to be applied")
+	}
+}
+
+func TestUpdateLogRequestSamplingSettingDoesNotOverwriteConcurrentFieldChanges(t *testing.T) {
+	resetLogRequestSamplingSettingForTest(t)
+
+	updateStarted := make(chan struct{})
+	allowUpdate := make(chan struct{})
+	updateDone := make(chan struct{})
+	var updateCalls int32
+	go func() {
+		UpdateLogRequestSamplingSetting(func(setting *LogRequestSamplingSetting) {
+			if atomic.AddInt32(&updateCalls, 1) == 1 {
+				close(updateStarted)
+				<-allowUpdate
+			}
+			setting.Enabled = true
+		})
+		close(updateDone)
+	}()
+
+	select {
+	case <-updateStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first update did not start")
+	}
+
+	UpdateLogRequestSamplingSetting(func(setting *LogRequestSamplingSetting) {
+		setting.Groups = []string{"enterprise"}
+	})
+	close(allowUpdate)
+
+	select {
+	case <-updateDone:
+	case <-time.After(time.Second):
+		t.Fatal("first update did not finish")
+	}
+
+	setting := GetLogRequestSamplingSetting()
+	if !setting.Enabled {
+		t.Fatal("expected first update to enable sampling")
+	}
+	if !reflect.DeepEqual(setting.Groups, []string{"enterprise"}) {
+		t.Fatalf("groups = %v, want concurrent enterprise update to be preserved", setting.Groups)
+	}
+}
+
+func TestUpdateLogRequestSamplingSettingRetriesConcurrentSameFieldChanges(t *testing.T) {
+	resetLogRequestSamplingSettingForTest(t)
+
+	updateStarted := make(chan struct{})
+	allowUpdate := make(chan struct{})
+	updateDone := make(chan struct{})
+	var updateCalls int32
+
+	go func() {
+		UpdateLogRequestSamplingSetting(func(setting *LogRequestSamplingSetting) {
+			if atomic.AddInt32(&updateCalls, 1) == 1 {
+				close(updateStarted)
+				<-allowUpdate
+			}
+			setting.Groups = append(setting.Groups, "alpha")
+		})
+		close(updateDone)
+	}()
+
+	select {
+	case <-updateStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first update did not start")
+	}
+
+	UpdateLogRequestSamplingSetting(func(setting *LogRequestSamplingSetting) {
+		setting.Groups = append(setting.Groups, "beta")
+	})
+	close(allowUpdate)
+
+	select {
+	case <-updateDone:
+	case <-time.After(time.Second):
+		t.Fatal("first update did not finish")
+	}
+
+	setting := GetLogRequestSamplingSetting()
+	want := []string{"plg", "beta", "alpha"}
+	if !reflect.DeepEqual(setting.Groups, want) {
+		t.Fatalf("groups = %v, want %v", setting.Groups, want)
+	}
+	if got := atomic.LoadInt32(&updateCalls); got < 2 {
+		t.Fatalf("update callback calls = %d, want retry after concurrent write", got)
 	}
 }
 
