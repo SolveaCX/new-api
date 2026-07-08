@@ -12,15 +12,19 @@ import (
 
 // ConfigManager 统一管理所有配置
 type ConfigManager struct {
-	configs map[string]interface{}
-	mutex   sync.RWMutex
+	configs     map[string]interface{}
+	updateHooks map[string]func()
+	updateLocks map[string]sync.Locker
+	mutex       sync.RWMutex
 }
 
 var GlobalConfig = NewConfigManager()
 
 func NewConfigManager() *ConfigManager {
 	return &ConfigManager{
-		configs: make(map[string]interface{}),
+		configs:     make(map[string]interface{}),
+		updateHooks: make(map[string]func()),
+		updateLocks: make(map[string]sync.Locker),
 	}
 }
 
@@ -29,6 +33,30 @@ func (cm *ConfigManager) Register(name string, config interface{}) {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 	cm.configs[name] = config
+}
+
+// RegisterUpdateHook registers a callback that runs after LoadFromDB updates a
+// config module. It is useful for modules that publish derived runtime caches.
+func (cm *ConfigManager) RegisterUpdateHook(name string, hook func()) {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	if hook == nil {
+		delete(cm.updateHooks, name)
+		return
+	}
+	cm.updateHooks[name] = hook
+}
+
+// RegisterUpdateLock registers a module-level lock for direct reflective config
+// reads and writes performed by ConfigManager.
+func (cm *ConfigManager) RegisterUpdateLock(name string, lock sync.Locker) {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	if lock == nil {
+		delete(cm.updateLocks, name)
+		return
+	}
+	cm.updateLocks[name] = lock
 }
 
 // Get 获取指定配置模块
@@ -41,7 +69,7 @@ func (cm *ConfigManager) Get(name string) interface{} {
 // LoadFromDB 从数据库加载配置
 func (cm *ConfigManager) LoadFromDB(options map[string]string) error {
 	cm.mutex.Lock()
-	defer cm.mutex.Unlock()
+	var hooks []func()
 
 	for name, config := range cm.configs {
 		prefix := name + "."
@@ -57,11 +85,22 @@ func (cm *ConfigManager) LoadFromDB(options map[string]string) error {
 
 		// 如果找到配置项，则更新配置
 		if len(configMap) > 0 {
+			unlock := lockConfig(cm.updateLocks[name])
 			if err := updateConfigFromMap(config, configMap); err != nil {
+				unlock()
 				common.SysError("failed to update config " + name + ": " + err.Error())
 				continue
 			}
+			unlock()
+			if hook := cm.updateHooks[name]; hook != nil {
+				hooks = append(hooks, hook)
+			}
 		}
+	}
+	cm.mutex.Unlock()
+
+	for _, hook := range hooks {
+		hook()
 	}
 
 	return nil
@@ -73,7 +112,9 @@ func (cm *ConfigManager) SaveToDB(updateFunc func(key, value string) error) erro
 	defer cm.mutex.RUnlock()
 
 	for name, config := range cm.configs {
+		unlock := lockConfig(cm.updateLocks[name])
 		configMap, err := configToMap(config)
+		unlock()
 		if err != nil {
 			return err
 		}
@@ -87,6 +128,14 @@ func (cm *ConfigManager) SaveToDB(updateFunc func(key, value string) error) erro
 	}
 
 	return nil
+}
+
+func lockConfig(lock sync.Locker) func() {
+	if lock == nil {
+		return func() {}
+	}
+	lock.Lock()
+	return lock.Unlock
 }
 
 // 辅助函数：将配置对象转换为map
@@ -290,7 +339,9 @@ func (cm *ConfigManager) ExportAllConfigs() map[string]string {
 	result := make(map[string]string)
 
 	for name, cfg := range cm.configs {
+		unlock := lockConfig(cm.updateLocks[name])
 		configMap, err := ConfigToMap(cfg)
+		unlock()
 		if err != nil {
 			continue
 		}

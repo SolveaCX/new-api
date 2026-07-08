@@ -361,6 +361,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	} else {
+		maybeRecordLogRequestSample(c, userId, params, log)
 	}
 	if common.DataExportEnabled {
 		gopool.Go(func() {
@@ -698,14 +700,32 @@ func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64,
 			return total, ctx.Err()
 		}
 
-		result := LOG_DB.Where("created_at < ?", targetTimestamp).Limit(limit).Delete(&Log{})
-		if nil != result.Error {
-			return total, result.Error
+		var ids []int
+		if err := LOG_DB.Model(&Log{}).Where("created_at < ?", targetTimestamp).Order("id").Limit(limit).Pluck("id", &ids).Error; err != nil {
+			return total, err
+		}
+		if len(ids) == 0 {
+			break
+		}
+		var rowsAffected int64
+		err := LOG_DB.Transaction(func(tx *gorm.DB) error {
+			if err := deleteLogRequestSamplesByLogIDs(tx, ids); err != nil {
+				return err
+			}
+			result := tx.Where("id IN ?", ids).Delete(&Log{})
+			if result.Error != nil {
+				return result.Error
+			}
+			rowsAffected = result.RowsAffected
+			return nil
+		})
+		if err != nil {
+			return total, err
 		}
 
-		total += result.RowsAffected
+		total += rowsAffected
 
-		if result.RowsAffected < int64(limit) {
+		if len(ids) < limit {
 			break
 		}
 	}

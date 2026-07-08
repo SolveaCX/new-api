@@ -355,6 +355,9 @@ func validateAndNormalizeOptionValue(key string, value string) (string, error) {
 	if key == "payment_setting.amount_bonus_groups" {
 		return normalizeAmountBonusGroupsOptionValue(value)
 	}
+	if key == "app_console.origin" {
+		return system_setting.NormalizeAppConsoleOrigin(value)
+	}
 	if key == "QuotaForInviterMaxCount" {
 		maxCount, err := parseInviterRewardMaxCount(value)
 		if err != nil {
@@ -881,6 +884,11 @@ func handleConfigUpdate(key, value string) bool {
 
 	configName := parts[0]
 	configKey := parts[1]
+
+	if configName == "log_request_sampling" {
+		_ = operation_setting.UpdateLogRequestSamplingConfigFromMap(map[string]string{configKey: value})
+		return true
+	}
 
 	// 获取配置对象
 	cfg := config.GlobalConfig.Get(configName)

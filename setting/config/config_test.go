@@ -94,3 +94,29 @@ func TestUpdateConfigFromMap_ScalarFieldsUnchanged(t *testing.T) {
 		t.Errorf("Modes should be unchanged, got %v", cfg.Modes)
 	}
 }
+
+func TestConfigManagerLoadFromDBRunsUpdateHook(t *testing.T) {
+	type hookConfig struct {
+		Enabled bool `json:"enabled"`
+	}
+	manager := NewConfigManager()
+	cfg := &hookConfig{}
+	hookCalls := 0
+	manager.Register("hook_config", cfg)
+	manager.RegisterUpdateHook("hook_config", func() {
+		hookCalls++
+	})
+
+	err := manager.LoadFromDB(map[string]string{
+		"hook_config.enabled": "true",
+	})
+	if err != nil {
+		t.Fatalf("LoadFromDB failed: %v", err)
+	}
+	if !cfg.Enabled {
+		t.Fatal("expected config to be updated")
+	}
+	if hookCalls != 1 {
+		t.Fatalf("hook calls = %d, want 1", hookCalls)
+	}
+}
