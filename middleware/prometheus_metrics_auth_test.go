@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -74,5 +76,67 @@ func TestPrometheusMetricsTokenEqual(t *testing.T) {
 	}
 	if prometheusMetricsTokenEqual("secret", "much-longer-wrong-token") {
 		t.Fatal("different-length token should not match")
+	}
+}
+
+func TestPrometheusMetricsAuthFailureRateLimit(t *testing.T) {
+	origRedisEnabled := common.RedisEnabled
+	origRDB := common.RDB
+	common.RedisEnabled = false
+	common.RDB = nil
+	defer func() {
+		common.RedisEnabled = origRedisEnabled
+		common.RDB = origRDB
+	}()
+
+	t.Setenv(PrometheusMetricsTokenEnv, "secret")
+	t.Setenv("PROMETHEUS_METRICS_RATE_LIMIT", "1")
+	t.Setenv("PROMETHEUS_METRICS_RATE_LIMIT_DURATION", "60")
+	r := newPrometheusMetricsAuthEngine()
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("first invalid status = %d, want 401", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second invalid status = %d, want 429", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid scrape status = %d, want 200", rec.Code)
+	}
+}
+
+func TestPrometheusMetricsRateLimitClampsInvalidEnv(t *testing.T) {
+	origRedisEnabled := common.RedisEnabled
+	origRDB := common.RDB
+	common.RedisEnabled = false
+	common.RDB = nil
+	defer func() {
+		common.RedisEnabled = origRedisEnabled
+		common.RDB = origRDB
+	}()
+
+	t.Setenv(PrometheusMetricsTokenEnv, "secret")
+	t.Setenv("PROMETHEUS_METRICS_RATE_LIMIT", "0")
+	t.Setenv("PROMETHEUS_METRICS_RATE_LIMIT_DURATION", "-1")
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 }

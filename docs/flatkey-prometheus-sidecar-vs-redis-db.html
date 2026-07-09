@@ -280,14 +280,14 @@ sum by (model, channel_id) (
       </ul>
 
       <h3>Prometheus job 示例</h3>
-      <p>把下面这一段加到现有 Prometheus 的 <code>scrape_configs</code> 里。先验证 staging 时用 <code>staging-router.flatkey.ai</code>，正式上线再换成 <code>router.flatkey.ai</code>。</p>
+      <p>把下面这一段加到现有 Prometheus 的 <code>scrape_configs</code> 里。先验证 staging 时使用内部约定的 staging router 域名，正式上线再替换为生产 router 域名。</p>
       <pre><code>scrape_configs:
   - job_name: "flatkey-newapi-router"
     scheme: "https"
     metrics_path: "/metrics"
     scrape_interval: 30s
     static_configs:
-      - targets: ["staging-router.flatkey.ai:443"]
+      - targets: ["&lt;staging-router-domain&gt;:443"]
     authorization:
       type: "Bearer"
       credentials_file: "/etc/prometheus/secrets/flatkey_metrics_token"</code></pre>

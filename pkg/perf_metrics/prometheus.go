@@ -57,6 +57,9 @@ func BuildPrometheusText(ctx context.Context) (string, error) {
 	}
 
 	mergePrometheusPendingSnapshots(series)
+	if maxSeries := prometheusMaxSeriesPerScrape(); maxSeries > 0 && len(series) > maxSeries {
+		return "", fmt.Errorf("prometheus series limit exceeded: %d > %d", len(series), maxSeries)
+	}
 
 	var b strings.Builder
 	b.WriteString("# HELP newapi_perf_metrics_redis_available Whether Redis-backed metrics aggregation is available.\n")

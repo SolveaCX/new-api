@@ -2,7 +2,9 @@ package perfmetrics
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
@@ -228,8 +230,12 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		return err
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
-		for _, item := range prometheusDrained {
-			deleteEmptyPrometheusPendingBucket(item.rawKey, item.bucket)
+		if isDefinitelyUnappliedRedisFlushError(err) {
+			requeueDrainedRedisMetrics(redisDrained, prometheusDrained)
+		} else {
+			for _, item := range prometheusDrained {
+				deleteEmptyPrometheusPendingBucket(item.rawKey, item.bucket)
+			}
 		}
 		return err
 	}
@@ -249,6 +255,14 @@ func requeueDrainedRedisMetrics(redisDrained []drainedRedisBucket, prometheusDra
 	for _, item := range prometheusDrained {
 		item.bucket.addCounters(item.counter)
 	}
+}
+
+func isDefinitelyUnappliedRedisFlushError(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return opErr.Op == "dial"
+	}
+	return false
 }
 
 func deleteHistoricalRedisPendingBucket(rawKey any, key bucketKey, bucket *lockedBucket, activeBucket int64) {
