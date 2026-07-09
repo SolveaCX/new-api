@@ -2,6 +2,7 @@ package perfmetrics
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -157,4 +158,87 @@ func TestBuildPrometheusTextEscapesLabelValues(t *testing.T) {
 	text, err := BuildPrometheusText(context.Background())
 	require.NoError(t, err)
 	require.Contains(t, text, `model="gpt\"5\\mini\nv2"`)
+}
+
+func TestPrometheusCountersIsZeroChecksBuckets(t *testing.T) {
+	counter := prometheusCounters{}
+	require.True(t, counter.isZero())
+
+	counter.buckets[prometheusInfBucketIndex] = 1
+	require.False(t, counter.isZero())
+}
+
+func TestFlushRedisMetricsDeletesFlushedHistoricalBuckets(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setupMiniRedisForPerfMetrics(t)
+
+	key := bucketKey{
+		model:    "gpt-5",
+		group:    "default",
+		bucketTs: bucketStart(time.Now().Add(-time.Hour).Unix()),
+	}
+	bucket := &atomicBucket{}
+	bucket.add(Sample{Model: "gpt-5", Group: "default", LatencyMs: 100, Success: true})
+	redisPendingBuckets.Store(key, bucket)
+
+	require.NoError(t, flushRedisMetricsOnce(context.Background()))
+	require.Equal(t, 0, syncMapLen(redisPendingBuckets))
+}
+
+func TestFlushRedisMetricsSetsPrometheusSeriesTTL(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setupMiniRedisForPerfMetrics(t)
+
+	key := prometheusSeriesKey{model: "gpt-5", channelID: 7, status: "success"}
+	Record(Sample{
+		Model:     key.model,
+		Group:     "default",
+		ChannelID: key.channelID,
+		LatencyMs: 100,
+		Success:   true,
+	})
+
+	require.NoError(t, flushRedisMetricsOnce(context.Background()))
+
+	seriesTTL, err := common.RDB.TTL(context.Background(), prometheusSeriesSetKey).Result()
+	require.NoError(t, err)
+	require.Greater(t, seriesTTL, time.Duration(0))
+
+	hashTTL, err := common.RDB.TTL(context.Background(), prometheusRedisKey(key)).Result()
+	require.NoError(t, err)
+	require.Greater(t, hashTTL, time.Duration(0))
+}
+
+func TestBuildPrometheusTextPrunesStaleSeriesMembers(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setupMiniRedisForPerfMetrics(t)
+
+	member := encodePrometheusSeriesKey(prometheusSeriesKey{
+		model:     "deleted-model",
+		channelID: 9,
+		status:    "success",
+	})
+	require.NoError(t, common.RDB.SAdd(context.Background(), prometheusSeriesSetKey, member).Err())
+
+	_, err := BuildPrometheusText(context.Background())
+	require.NoError(t, err)
+
+	isMember, err := common.RDB.SIsMember(context.Background(), prometheusSeriesSetKey, member).Result()
+	require.NoError(t, err)
+	require.False(t, isMember)
+}
+
+func TestShouldRequeueRedisFlushError(t *testing.T) {
+	require.False(t, shouldRequeueRedisFlushError(context.DeadlineExceeded))
+	require.False(t, shouldRequeueRedisFlushError(context.Canceled))
+	require.True(t, shouldRequeueRedisFlushError(errors.New("wrongtype operation against a key holding the wrong kind of value")))
+}
+
+func syncMapLen(m sync.Map) int {
+	count := 0
+	m.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
 }

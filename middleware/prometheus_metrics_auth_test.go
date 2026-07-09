@@ -64,3 +64,15 @@ func TestPrometheusMetricsAuth(t *testing.T) {
 		}
 	})
 }
+
+func TestPrometheusMetricsTokenEqual(t *testing.T) {
+	if !prometheusMetricsTokenEqual("secret", "secret") {
+		t.Fatal("same token should match")
+	}
+	if prometheusMetricsTokenEqual("secret", "wrong") {
+		t.Fatal("different token should not match")
+	}
+	if prometheusMetricsTokenEqual("secret", "much-longer-wrong-token") {
+		t.Fatal("different-length token should not match")
+	}
+}

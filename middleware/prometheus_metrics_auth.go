@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
 	"strings"
@@ -21,7 +22,7 @@ func PrometheusMetricsAuth() gin.HandlerFunc {
 			return
 		}
 		got := prometheusMetricsBearer(c.GetHeader("Authorization"))
-		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+		if got == "" || !prometheusMetricsTokenEqual(want, got) {
 			c.String(http.StatusUnauthorized, "unauthorized")
 			c.Abort()
 			return
@@ -36,4 +37,10 @@ func prometheusMetricsBearer(header string) string {
 		return ""
 	}
 	return parts[1]
+}
+
+func prometheusMetricsTokenEqual(want string, got string) bool {
+	wantHash := sha256.Sum256([]byte(want))
+	gotHash := sha256.Sum256([]byte(got))
+	return subtle.ConstantTimeCompare(wantHash[:], gotHash[:]) == 1
 }

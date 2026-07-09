@@ -1,6 +1,9 @@
 package perfmetrics
 
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 type Store interface {
 	Record(sample Sample)
@@ -107,9 +110,10 @@ type prometheusCounters struct {
 }
 
 type prometheusAtomicBucket struct {
-	buckets [prometheusLatencyBucketCount]atomic.Int64
-	count   atomic.Int64
-	sumMs   atomic.Int64
+	mu      sync.Mutex
+	buckets [prometheusLatencyBucketCount]int64
+	count   int64
+	sumMs   int64
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -183,54 +187,65 @@ func (b *prometheusAtomicBucket) add(sample Sample) {
 	if latencyMs < 0 {
 		latencyMs = 0
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	for i, upperBoundMs := range prometheusLatencyBucketUpperBoundsMs {
 		if latencyMs <= upperBoundMs {
-			b.buckets[i].Add(1)
+			b.buckets[i]++
 		}
 	}
-	b.buckets[prometheusInfBucketIndex].Add(1)
-	b.count.Add(1)
-	b.sumMs.Add(latencyMs)
+	b.buckets[prometheusInfBucketIndex]++
+	b.count++
+	b.sumMs += latencyMs
 }
 
 func (b *prometheusAtomicBucket) snapshot() prometheusCounters {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	out := prometheusCounters{
-		count: b.count.Load(),
-		sumMs: b.sumMs.Load(),
-	}
-	for i := range out.buckets {
-		out.buckets[i] = b.buckets[i].Load()
+		buckets: b.buckets,
+		count:   b.count,
+		sumMs:   b.sumMs,
 	}
 	return out
 }
 
 func (b *prometheusAtomicBucket) drain() prometheusCounters {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	out := prometheusCounters{
-		count: b.count.Swap(0),
-		sumMs: b.sumMs.Swap(0),
+		buckets: b.buckets,
+		count:   b.count,
+		sumMs:   b.sumMs,
 	}
-	for i := range out.buckets {
-		out.buckets[i] = b.buckets[i].Swap(0)
-	}
+	b.buckets = [prometheusLatencyBucketCount]int64{}
+	b.count = 0
+	b.sumMs = 0
 	return out
 }
 
 func (b *prometheusAtomicBucket) addCounters(c prometheusCounters) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	for i, value := range c.buckets {
 		if value != 0 {
-			b.buckets[i].Add(value)
+			b.buckets[i] += value
 		}
 	}
-	if c.count != 0 {
-		b.count.Add(c.count)
-	}
-	if c.sumMs != 0 {
-		b.sumMs.Add(c.sumMs)
-	}
+	b.count += c.count
+	b.sumMs += c.sumMs
 }
 
 func (c prometheusCounters) isZero() bool {
-	return c.count == 0
+	if c.count != 0 || c.sumMs != 0 {
+		return false
+	}
+	for _, value := range c.buckets {
+		if value != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *prometheusCounters) add(other prometheusCounters) {

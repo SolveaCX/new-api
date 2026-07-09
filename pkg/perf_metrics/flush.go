@@ -2,7 +2,9 @@ package perfmetrics
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
@@ -94,6 +96,7 @@ func cleanupExpiredMetrics(retentionDays int) {
 }
 
 type drainedRedisBucket struct {
+	rawKey  any
 	key     bucketKey
 	bucket  *atomicBucket
 	counter counters
@@ -110,15 +113,19 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		return nil
 	}
 
+	activeBucket := bucketStart(time.Now().Unix())
 	redisDrained := make([]drainedRedisBucket, 0)
 	redisPendingBuckets.Range(func(key, value any) bool {
+		bucketKey := key.(bucketKey)
 		bucket := value.(*atomicBucket)
 		counter := bucket.drain()
 		if counter.requestCount == 0 {
+			deleteHistoricalRedisPendingBucket(key, bucketKey, bucket, activeBucket)
 			return true
 		}
 		redisDrained = append(redisDrained, drainedRedisBucket{
-			key:     key.(bucketKey),
+			rawKey:  key,
+			key:     bucketKey,
 			bucket:  bucket,
 			counter: counter,
 		})
@@ -173,6 +180,7 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		member := encodePrometheusSeriesKey(item.key)
 		redisKey := prometheusRedisKey(item.key)
 		pipe.SAdd(ctx, prometheusSeriesSetKey, member)
+		pipe.Expire(ctx, prometheusSeriesSetKey, prometheusRedisTTL)
 		pipe.HIncrBy(ctx, redisKey, prometheusCountField, item.counter.count)
 		if item.counter.sumMs != 0 {
 			pipe.HIncrBy(ctx, redisKey, prometheusSumMsField, item.counter.sumMs)
@@ -182,18 +190,45 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 				pipe.HIncrBy(ctx, redisKey, prometheusBucketField(i), value)
 			}
 		}
+		pipe.Expire(ctx, redisKey, prometheusRedisTTL)
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		for _, item := range redisDrained {
-			item.bucket.addCounters(item.counter)
-		}
-		for _, item := range prometheusDrained {
-			item.bucket.addCounters(item.counter)
+		if shouldRequeueRedisFlushError(err) {
+			for _, item := range redisDrained {
+				item.bucket.addCounters(item.counter)
+			}
+			for _, item := range prometheusDrained {
+				item.bucket.addCounters(item.counter)
+			}
 		}
 		return err
 	}
+	for _, item := range redisDrained {
+		deleteHistoricalRedisPendingBucket(item.rawKey, item.key, item.bucket, activeBucket)
+	}
 	return nil
+}
+
+func deleteHistoricalRedisPendingBucket(rawKey any, key bucketKey, bucket *atomicBucket, activeBucket int64) {
+	if key.bucketTs >= activeBucket || bucket.snapshot().requestCount != 0 {
+		return
+	}
+	redisPendingBuckets.Delete(rawKey)
+}
+
+func shouldRequeueRedisFlushError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return false
+	}
+	return true
 }
 
 func redisCounters(values map[string]string) counters {

@@ -8,8 +8,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/go-redis/redis/v8"
 )
 
 const (
@@ -20,6 +22,8 @@ const (
 	prometheusSeriesSetKey = "newapi:perf:prometheus:series"
 	prometheusCountField   = "count"
 	prometheusSumMsField   = "sum_ms"
+	prometheusRedisTTL     = 24 * time.Hour
+	prometheusScanCount    = 100
 )
 
 var prometheusLatencyBucketUpperBoundsMs = [prometheusFiniteBucketCount]int64{
@@ -39,23 +43,7 @@ func BuildPrometheusText(ctx context.Context) (string, error) {
 	redisAvailable := false
 
 	if common.RedisEnabled && common.RDB != nil {
-		members, err := common.RDB.SMembers(ctx, prometheusSeriesSetKey).Result()
-		if err == nil {
-			redisAvailable = true
-			for _, member := range members {
-				key, ok := decodePrometheusSeriesKey(member)
-				if !ok {
-					continue
-				}
-				values, err := common.RDB.HGetAll(ctx, prometheusRedisKey(key)).Result()
-				if err != nil || len(values) == 0 {
-					continue
-				}
-				current := series[key]
-				current.add(redisPrometheusCounters(values))
-				series[key] = current
-			}
-		}
+		redisAvailable = mergeRedisPrometheusSeries(ctx, series)
 	}
 
 	prometheusPendingBuckets.Range(func(key, value any) bool {
@@ -122,6 +110,76 @@ func BuildPrometheusText(ctx context.Context) (string, error) {
 	}
 
 	return b.String(), nil
+}
+
+func mergeRedisPrometheusSeries(ctx context.Context, series map[prometheusSeriesKey]prometheusCounters) bool {
+	cursor := uint64(0)
+	redisAvailable := true
+	staleMembers := make([]string, 0)
+	for {
+		members, nextCursor, err := common.RDB.SScan(ctx, prometheusSeriesSetKey, cursor, "", prometheusScanCount).Result()
+		if err != nil {
+			return false
+		}
+		if len(members) > 0 {
+			if ok := mergeRedisPrometheusSeriesBatch(ctx, members, series, &staleMembers); !ok {
+				redisAvailable = false
+				break
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	pruneStalePrometheusSeries(ctx, staleMembers)
+	return redisAvailable
+}
+
+func mergeRedisPrometheusSeriesBatch(ctx context.Context, members []string, series map[prometheusSeriesKey]prometheusCounters, staleMembers *[]string) bool {
+	keys := make([]prometheusSeriesKey, 0, len(members))
+	validMembers := make([]string, 0, len(members))
+	pipe := common.RDB.Pipeline()
+	cmds := make([]*redis.StringStringMapCmd, 0, len(members))
+	for _, member := range members {
+		key, ok := decodePrometheusSeriesKey(member)
+		if !ok {
+			*staleMembers = append(*staleMembers, member)
+			continue
+		}
+		keys = append(keys, key)
+		validMembers = append(validMembers, member)
+		cmds = append(cmds, pipe.HGetAll(ctx, prometheusRedisKey(key)))
+	}
+	if len(cmds) == 0 {
+		return true
+	}
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		return false
+	}
+	for i, cmd := range cmds {
+		values, err := cmd.Result()
+		if err != nil || len(values) == 0 {
+			*staleMembers = append(*staleMembers, validMembers[i])
+			continue
+		}
+		key := keys[i]
+		current := series[key]
+		current.add(redisPrometheusCounters(values))
+		series[key] = current
+	}
+	return true
+}
+
+func pruneStalePrometheusSeries(ctx context.Context, members []string) {
+	if len(members) == 0 {
+		return
+	}
+	pipe := common.RDB.Pipeline()
+	for _, member := range members {
+		pipe.SRem(ctx, prometheusSeriesSetKey, member)
+	}
+	_, _ = pipe.Exec(ctx)
 }
 
 func sortedPrometheusSeriesKeys(series map[prometheusSeriesKey]prometheusCounters) []prometheusSeriesKey {
