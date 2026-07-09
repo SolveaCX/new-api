@@ -701,7 +701,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (bool, error) {
 		return false, errors.New("充值失败，请稍后重试")
 	}
 
-	if quotaToAdd > 0 {
+	if credited {
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffo)
 		runInviteRewardPostCommitHooks(rewardResult)
 	}
@@ -777,7 +777,7 @@ func RechargeWaffoPancake(tradeNo string) (bool, error) {
 		return false, errors.New("充值失败，请稍后重试")
 	}
 
-	if quotaToAdd > 0 {
+	if credited {
 		RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money))
 		runInviteRewardPostCommitHooks(rewardResult)
 	}
@@ -904,7 +904,7 @@ func RechargePaddle(tradeNo string, expectedUserId int, expectedGatewayTradeNo s
 		return false, errors.New("充值失败，请稍后重试")
 	}
 
-	if quotaToAdd > 0 {
+	if credited {
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("Paddle充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodPaddle)
 		runInviteRewardPostCommitHooks(rewardResult)
 	}

@@ -151,7 +151,14 @@ func DiscordOAuth(c *gin.Context) {
 			} else {
 				user.DisplayName = "Discord User"
 			}
-			err := user.Insert(0)
+			if err := validateEmailDomainRestriction(user.Email); err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": err.Error(),
+				})
+				return
+			}
+			err := user.InsertWithRegistrationIP(0, c.ClientIP())
 			if err != nil {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,

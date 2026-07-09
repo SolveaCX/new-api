@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -138,7 +139,14 @@ func GitHubOAuth(c *gin.Context) {
 			} else {
 				user.DisplayName = "GitHub User"
 			}
-			user.Email = githubUser.Email
+			user.Email = strings.TrimSpace(githubUser.Email)
+			if err := validateEmailDomainRestriction(user.Email); err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": err.Error(),
+				})
+				return
+			}
 			user.Role = common.RoleCommonUser
 			user.Status = common.UserStatusEnabled
 			affCode := session.Get("aff")
@@ -147,7 +155,7 @@ func GitHubOAuth(c *gin.Context) {
 				inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
 			}
 
-			if err := user.Insert(inviterId); err != nil {
+			if err := user.InsertWithRegistrationIP(inviterId, c.ClientIP()); err != nil {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
 					"message": err.Error(),

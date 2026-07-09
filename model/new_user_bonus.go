@@ -1,6 +1,7 @@
 package model
 
 import (
+	"net/netip"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -19,17 +20,20 @@ type NewUserBonusClaim struct {
 }
 
 func normalizeRegistrationIP(registrationIP string) string {
-	return strings.TrimSpace(registrationIP)
+	registrationIP = strings.TrimSpace(registrationIP)
+	if registrationIP == "" {
+		return ""
+	}
+	addr, err := netip.ParseAddr(registrationIP)
+	if err != nil {
+		return registrationIP
+	}
+	return addr.Unmap().String()
 }
 
-func prepareLegacyNewUserBonus(user *User) {
-	if common.QuotaForNewUser <= 0 {
-		user.Quota = 0
-		user.NewUserBonusGiven = false
-		return
-	}
-	user.Quota = common.QuotaForNewUser
-	user.NewUserBonusGiven = true
+func prepareMissingRegistrationIPNewUserBonus(user *User) {
+	user.Quota = 0
+	user.NewUserBonusGiven = false
 }
 
 func claimRegistrationIPNewUserBonusInTx(tx *gorm.DB, user *User) error {

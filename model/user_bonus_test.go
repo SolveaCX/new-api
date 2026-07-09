@@ -83,14 +83,36 @@ func TestNewUserBonusLimitedToFirstTwoUsersPerRegistrationIP(t *testing.T) {
 	require.EqualValues(t, 2, claims)
 }
 
-func TestNewUserBonusWithoutRegistrationIPKeepsLegacyGrant(t *testing.T) {
+func TestNewUserBonusCanonicalizesEquivalentRegistrationIPs(t *testing.T) {
 	setupNewUserBonusModelTest(t)
 
-	user := &User{Username: "legacy_bonus_user", Password: "password123", Role: common.RoleCommonUser}
+	first := createRegistrationIPBonusUser(t, "ip_canonical_first", "::ffff:203.0.113.8")
+	second := createRegistrationIPBonusUser(t, "ip_canonical_second", "203.0.113.8")
+	third := createRegistrationIPBonusUser(t, "ip_canonical_third", " 203.0.113.8 ")
+
+	require.Equal(t, 777, first.Quota)
+	require.True(t, first.NewUserBonusGiven)
+	require.Equal(t, "203.0.113.8", first.RegistrationIP)
+
+	require.Equal(t, 777, second.Quota)
+	require.True(t, second.NewUserBonusGiven)
+
+	require.Zero(t, third.Quota)
+	require.False(t, third.NewUserBonusGiven)
+
+	var claims int64
+	require.NoError(t, DB.Model(&NewUserBonusClaim{}).Where("registration_ip = ?", "203.0.113.8").Count(&claims).Error)
+	require.EqualValues(t, 2, claims)
+}
+
+func TestNewUserBonusWithoutRegistrationIPDoesNotGrantSignupBonus(t *testing.T) {
+	setupNewUserBonusModelTest(t)
+
+	user := &User{Username: "missing_ip_bonus_user", Password: "password123", Role: common.RoleCommonUser}
 	require.NoError(t, user.Insert(0))
 	require.NoError(t, DB.First(user, "username = ?", user.Username).Error)
 
-	require.Equal(t, 777, user.Quota)
-	require.True(t, user.NewUserBonusGiven)
+	require.Zero(t, user.Quota)
+	require.False(t, user.NewUserBonusGiven)
 	require.Empty(t, user.RegistrationIP)
 }

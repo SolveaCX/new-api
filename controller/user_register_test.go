@@ -187,6 +187,49 @@ func TestRegisterRejectsEmailOutsideDomainWhitelist(t *testing.T) {
 	require.Zero(t, users)
 }
 
+func TestRegisterTrimsEmailBeforeDomainValidationAndPersistence(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+
+	originalRegisterEnabled := common.RegisterEnabled
+	originalPasswordRegisterEnabled := common.PasswordRegisterEnabled
+	originalEmailVerificationEnabled := common.EmailVerificationEnabled
+	originalEmailDomainRestrictionEnabled := common.EmailDomainRestrictionEnabled
+	originalEmailDomainWhitelist := append([]string(nil), common.EmailDomainWhitelist...)
+	originalGenerateDefaultToken := constant.GenerateDefaultToken
+	t.Cleanup(func() {
+		common.RegisterEnabled = originalRegisterEnabled
+		common.PasswordRegisterEnabled = originalPasswordRegisterEnabled
+		common.EmailVerificationEnabled = originalEmailVerificationEnabled
+		common.EmailDomainRestrictionEnabled = originalEmailDomainRestrictionEnabled
+		common.EmailDomainWhitelist = originalEmailDomainWhitelist
+		constant.GenerateDefaultToken = originalGenerateDefaultToken
+	})
+	common.RegisterEnabled = true
+	common.PasswordRegisterEnabled = true
+	common.EmailVerificationEnabled = false
+	common.EmailDomainRestrictionEnabled = true
+	common.EmailDomainWhitelist = []string{"allowed.example"}
+	constant.GenerateDefaultToken = false
+
+	body, err := common.Marshal(map[string]any{
+		"username": "trimmed-email-user",
+		"password": "password123",
+		"email":    " allowed@allowed.example ",
+	})
+	require.NoError(t, err)
+
+	recorder := performRegisterRequest(t, body)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload registerResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+
+	var user model.User
+	require.NoError(t, db.First(&user, "username = ?", "trimmed-email-user").Error)
+	require.Equal(t, "allowed@allowed.example", user.Email)
+}
+
 func TestRegisterDefaultTokenLimitDoesNotBlockRegistration(t *testing.T) {
 	require.NoError(t, backendI18n.Init())
 	db := setupModelListControllerTestDB(t)

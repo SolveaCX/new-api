@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -280,6 +281,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if !common.RegisterEnabled {
 		return nil, false, &OAuthRegistrationDisabledError{}
 	}
+	oauthUser.Email = strings.TrimSpace(oauthUser.Email)
 	if err := validateEmailDomainRestriction(oauthUser.Email); err != nil {
 		return nil, false, err
 	}

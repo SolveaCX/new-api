@@ -314,7 +314,7 @@ func CreateUserTokenWithInviteReward(userId int, token *Token, maxTokens int, tr
 		if err := createUserTokenInTx(tx, userId, token, maxTokens); err != nil {
 			return err
 		}
-		return validateInviteRewardTrigger(triggerType)
+		return validateTokenCreateInviteRewardTrigger(triggerType)
 	})
 	return err
 }
@@ -372,7 +372,7 @@ func EnsureInitialUserTokenWithInviteReward(userId int, token Token, maxTokens i
 		if err != nil || !created {
 			return err
 		}
-		return validateInviteRewardTrigger(triggerType)
+		return validateTokenCreateInviteRewardTrigger(triggerType)
 	})
 	if err != nil {
 		return nil, false, err

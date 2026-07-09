@@ -69,6 +69,22 @@ func validateInviteRewardTrigger(triggerType string) error {
 	}
 }
 
+func validateTokenCreateInviteRewardTrigger(triggerType string) error {
+	switch triggerType {
+	case InviteRewardTriggerManualTokenCreate, InviteRewardTriggerInitialTokenCreate:
+		return nil
+	default:
+		return fmt.Errorf("unsupported token invite reward trigger type: %s", triggerType)
+	}
+}
+
+func validateInviteRewardGrantTrigger(triggerType string) error {
+	if triggerType != InviteRewardTriggerTopUpSuccess {
+		return fmt.Errorf("invite reward grants require top-up success trigger: %s", triggerType)
+	}
+	return nil
+}
+
 func fixedInviteRewardQuota() int {
 	return int(defaultInviteRewardUSD * common.QuotaPerUnit)
 }
@@ -123,6 +139,9 @@ func tryGrantInviteRewardForTopUpInTx(tx *gorm.DB, inviteeId int, triggerTopUpId
 
 func tryGrantInviteRewardForTriggerInTx(tx *gorm.DB, inviteeId int, trigger inviteRewardTrigger) (inviteRewardGrantResult, error) {
 	if err := validateInviteRewardTrigger(trigger.triggerType); err != nil {
+		return inviteRewardGrantResult{}, err
+	}
+	if err := validateInviteRewardGrantTrigger(trigger.triggerType); err != nil {
 		return inviteRewardGrantResult{}, err
 	}
 

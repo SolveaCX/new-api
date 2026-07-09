@@ -486,7 +486,7 @@ func (user *User) insertWithTx(tx *gorm.DB, inviterId int, registrationIP string
 	}
 	user.RegistrationIP = normalizeRegistrationIP(registrationIP)
 	if user.RegistrationIP == "" {
-		prepareLegacyNewUserBonus(user)
+		prepareMissingRegistrationIPNewUserBonus(user)
 	} else {
 		user.Quota = 0
 		user.NewUserBonusGiven = false

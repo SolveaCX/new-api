@@ -221,6 +221,7 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
+	user.Email = strings.TrimSpace(user.Email)
 	if err := validateEmailDomainRestriction(user.Email); err != nil {
 		common.ApiError(c, err)
 		return
