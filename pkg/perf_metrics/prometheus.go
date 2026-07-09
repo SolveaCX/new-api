@@ -120,21 +120,19 @@ func mergeRedisPrometheusSeries(ctx context.Context, series map[prometheusSeries
 	cursor := uint64(0)
 	redisAvailable := true
 	staleMembers := make([]string, 0)
-	seen := 0
 	maxSeries := prometheusMaxSeriesPerScrape()
 	for {
 		members, nextCursor, err := common.RDB.SScan(ctx, prometheusSeriesSetKey, cursor, "", prometheusScanCount).Result()
 		if err != nil {
 			return false
 		}
-		seen += len(members)
-		if maxSeries > 0 && seen > maxSeries {
-			return false
-		}
 		if len(members) > 0 {
 			if ok := mergeRedisPrometheusSeriesBatch(ctx, members, series, &staleMembers); !ok {
 				redisAvailable = false
 				break
+			}
+			if maxSeries > 0 && len(series) > maxSeries {
+				return false
 			}
 		}
 		cursor = nextCursor

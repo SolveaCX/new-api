@@ -110,7 +110,13 @@ func PrometheusMetricsRateLimit() func(c *gin.Context) {
 	if duration <= 0 {
 		duration = 60
 	}
-	return rateLimitFactory(maxRequestNum, int64(duration), "PM")
+	if common.RedisEnabled && common.RDB == nil {
+		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+		return func(c *gin.Context) {
+			memoryRateLimiter(c, maxRequestNum, int64(duration), "PM_AUTH_FAIL")
+		}
+	}
+	return rateLimitFactory(maxRequestNum, int64(duration), "PM_AUTH_FAIL")
 }
 
 func CriticalRateLimit() func(c *gin.Context) {

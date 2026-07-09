@@ -14,6 +14,7 @@ import (
 const PrometheusMetricsTokenEnv = "PROMETHEUS_METRICS_TOKEN"
 
 func PrometheusMetricsAuth() gin.HandlerFunc {
+	authFailureRateLimit := PrometheusMetricsRateLimit()
 	return func(c *gin.Context) {
 		want := strings.TrimSpace(common.GetEnvOrDefaultString(PrometheusMetricsTokenEnv, ""))
 		if want == "" {
@@ -23,6 +24,10 @@ func PrometheusMetricsAuth() gin.HandlerFunc {
 		}
 		got := prometheusMetricsBearer(c.GetHeader("Authorization"))
 		if got == "" || !prometheusMetricsTokenEqual(want, got) {
+			authFailureRateLimit(c)
+			if c.IsAborted() {
+				return
+			}
 			c.String(http.StatusUnauthorized, "unauthorized")
 			c.Abort()
 			return
