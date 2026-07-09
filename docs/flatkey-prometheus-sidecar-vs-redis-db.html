@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flatkey Prometheus 监控方案对比</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #18202a;
+      --muted: #5d6978;
+      --line: #d9dee7;
+      --blue: #1d6fd1;
+      --green: #177245;
+      --red: #b42318;
+      --amber: #936000;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 36px 20px 56px;
+    }
+    header {
+      margin-bottom: 28px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      line-height: 1.2;
+    }
+    h2 {
+      margin: 32px 0 14px;
+      font-size: 22px;
+    }
+    h3 {
+      margin: 22px 0 10px;
+      font-size: 18px;
+    }
+    p {
+      margin: 8px 0;
+    }
+    .lead {
+      max-width: 820px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 22px 0 10px;
+    }
+    .box, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+    .box strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+    .box span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef2f7;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: 0; }
+    code {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #eef2f7;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    pre {
+      overflow-x: auto;
+      padding: 14px;
+      border-radius: 8px;
+      background: #101828;
+      color: #f8fafc;
+      font-size: 13px;
+    }
+    .ok { color: var(--green); font-weight: 650; }
+    .warn { color: var(--amber); font-weight: 650; }
+    .bad { color: var(--red); font-weight: 650; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .step {
+      min-height: 86px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfe;
+    }
+    .step b {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--blue);
+    }
+    ul { margin: 8px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    @media (max-width: 820px) {
+      h1 { font-size: 26px; }
+      .summary, .flow { grid-template-columns: 1fr; }
+      table { font-size: 14px; }
+      th, td { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Flatkey Prometheus 监控方案对比</h1>
+      <p class="lead">
+        目标是监控 Cloud Run 多实例下的模型请求耗时。核心难点不是 Grafana，
+        而是 Prometheus 必须拿到全服务的指标，不能只抓到某一个 Cloud Run 实例。
+      </p>
+    </header>
+
+    <div class="summary">
+      <div class="box">
+        <strong>推荐先做</strong>
+        <span>Redis + DB 聚合，AWS Prometheus 只抓一个 <code>/metrics</code>。</span>
+      </div>
+      <div class="box">
+        <strong>保留选择</strong>
+        <span>Google Managed Prometheus sidecar，用于后续需要实例级原生监控时。</span>
+      </div>
+      <div class="box">
+        <strong>避免方案</strong>
+        <span>直接从 AWS 抓 Cloud Run 公网域名的 <code>/metrics</code>，多实例下不准确。</span>
+      </div>
+    </div>
+
+    <h2>两个可行方案的差距</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>对比项</th>
+          <th>Google sidecar 方案</th>
+          <th>Redis + DB 聚合方案</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>数据采集方式</td>
+          <td>每个 Cloud Run 实例旁边跑 collector，抓本实例 localhost 指标。</td>
+          <td>每个实例先写本地内存，后台批量写 Redis；DB 存长期汇总。</td>
+        </tr>
+        <tr>
+          <td>多实例准确性</td>
+          <td><span class="ok">准确</span>，天然有实例维度。</td>
+          <td><span class="ok">整体准确</span>，通过 Redis 合并所有实例；实例级可用 heartbeat 补充。</td>
+        </tr>
+        <tr>
+          <td>能否看单实例</td>
+          <td><span class="ok">可以</span>，Prometheus 有 instance / revision 等标签。</td>
+          <td><span class="warn">不主打</span>，可记录实例心跳，但不做完整 per-instance histogram。</td>
+        </tr>
+        <tr>
+          <td>成本</td>
+          <td>按 Prometheus samples、sidecar CPU/内存、Cloud Run 实例数计费。</td>
+          <td>主要复用现有 Redis/DB；新增成本通常很小。</td>
+        </tr>
+        <tr>
+          <td>请求路径延迟</td>
+          <td>请求只更新本地指标，延迟很低。</td>
+          <td>请求只更新本地内存，后台批量 flush Redis，避免每次请求打 Redis。</td>
+        </tr>
+        <tr>
+          <td>Grafana 接入</td>
+          <td>Grafana 查 Google Managed Prometheus 或打通数据源。</td>
+          <td>继续用现有 AWS Prometheus/Grafana，只新增一个 scrape target。</td>
+        </tr>
+        <tr>
+          <td>故障影响</td>
+          <td>collector 或 Google Prometheus 异常会影响采集，但不影响业务请求。</td>
+          <td>Redis 异常会让新指标短时缺失；已被 Prometheus 抓走的历史仍保留。</td>
+        </tr>
+        <tr>
+          <td>适合阶段</td>
+          <td>适合成熟后做实例级、平台级、标准化监控。</td>
+          <td>适合现在先低成本验证模型耗时、错误率和请求量。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>本次实施范围</h2>
+    <section>
+      <h3>采集维度</h3>
+      <p>模型请求耗时使用 Prometheus histogram，维度控制在：</p>
+      <pre><code>model + channel_id + status</code></pre>
+      <p>这里故意不把 <code>api_key</code> 放进耗时 histogram，避免时间序列爆炸。</p>
+
+      <h3>数据流</h3>
+      <div class="flow">
+        <div class="step"><b>1. 请求结束</b>记录 model、channel、status、latency。</div>
+        <div class="step"><b>2. 本地聚合</b>只更新进程内 atomic counter。</div>
+        <div class="step"><b>3. 批量 flush</b>每几秒把增量写到 Redis。</div>
+        <div class="step"><b>4. /metrics</b>从 Redis 读全局聚合并输出 Prometheus 文本。</div>
+        <div class="step"><b>5. Grafana</b>Prometheus 抓取后用 PromQL 展示。</div>
+      </div>
+
+      <h3>DB 的用途</h3>
+      <p>
+        现有项目已经有 <code>perf_metrics</code> 表，负责长期小时级/分钟级汇总，
+        继续用于控制台、官网模型页和历史趋势。Prometheus 实时指标走 Redis，
+        DB 不承担每请求写入压力。
+      </p>
+    </section>
+
+    <h2>Grafana 查询示例</h2>
+    <section>
+      <p>按模型和渠道看 P95 耗时：</p>
+      <pre><code>histogram_quantile(
+  0.95,
+  sum by (le, model, channel_id) (
+    rate(newapi_model_request_duration_seconds_bucket[5m])
+  )
+)</code></pre>
+
+      <p>按模型看请求量：</p>
+      <pre><code>sum by (model) (
+  rate(newapi_model_requests_total[5m])
+)</code></pre>
+
+      <p>按模型和渠道看错误率：</p>
+      <pre><code>sum by (model, channel_id) (
+  rate(newapi_model_requests_total{status="error"}[5m])
+)
+/
+sum by (model, channel_id) (
+  rate(newapi_model_requests_total[5m])
+)</code></pre>
+    </section>
+
+    <h2>上线配置</h2>
+    <section>
+      <ul>
+        <li>需要配置 <code>PROMETHEUS_METRICS_TOKEN</code>，Prometheus 用 <code>Authorization: Bearer &lt;token&gt;</code> 抓取。</li>
+        <li>Redis 继续使用现有 <code>REDIS_CONN_STRING</code>。</li>
+        <li>建议 Redis flush 间隔先用默认 5 秒，Prometheus scrape 间隔 15 或 30 秒。</li>
+        <li>如果 Redis 不可用，<code>/metrics</code> 会暴露错误指标，Grafana 可以告警。</li>
+      </ul>
+
+      <h3>Prometheus job 示例</h3>
+      <p>把下面这一段加到现有 Prometheus 的 <code>scrape_configs</code> 里。先验证 staging 时用 <code>staging-router.flatkey.ai</code>，正式上线再换成 <code>router.flatkey.ai</code>。</p>
+      <pre><code>scrape_configs:
+  - job_name: "flatkey-newapi-router"
+    scheme: "https"
+    metrics_path: "/metrics"
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["staging-router.flatkey.ai"]
+    authorization:
+      type: "Bearer"
+      credentials: "替换成 PROMETHEUS_METRICS_TOKEN 的值"</code></pre>
+      <p>
+        token 不写在代码里，只放在 Cloud Run 环境变量和 Prometheus 配置里。
+        Prometheus 的 <code>authorization</code> 写法见
+        <a href="https://prometheus.io/docs/prometheus/latest/configuration/configuration/" target="_blank" rel="noreferrer">官方配置文档</a>。
+      </p>
+    </section>
+
+    <h2>结论</h2>
+    <section>
+      <p>
+        现在先做 Redis + DB 聚合是更合适的最小验证方案：低成本、对现有 Grafana 友好、
+        能解决 Cloud Run 多实例整体指标不准确的问题。等后面真的需要精细到每个实例的
+        CPU、内存、原生实例级 histogram，再考虑 Google Managed Prometheus sidecar。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

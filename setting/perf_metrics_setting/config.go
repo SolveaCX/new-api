@@ -3,17 +3,19 @@ package perf_metrics_setting
 import "github.com/QuantumNous/new-api/setting/config"
 
 type PerfMetricsSetting struct {
-	Enabled       bool   `json:"enabled"`
-	FlushInterval int    `json:"flush_interval"`
-	BucketTime    string `json:"bucket_time"`
-	RetentionDays int    `json:"retention_days"`
+	Enabled                   bool   `json:"enabled"`
+	FlushInterval             int    `json:"flush_interval"`
+	BucketTime                string `json:"bucket_time"`
+	RetentionDays             int    `json:"retention_days"`
+	RedisFlushIntervalSeconds int    `json:"redis_flush_interval_seconds"`
 }
 
 var perfMetricsSetting = PerfMetricsSetting{
-	Enabled:       true,
-	FlushInterval: 5,
-	BucketTime:    "hour",
-	RetentionDays: 0,
+	Enabled:                   true,
+	FlushInterval:             5,
+	BucketTime:                "hour",
+	RetentionDays:             0,
+	RedisFlushIntervalSeconds: 5,
 }
 
 func init() {
@@ -42,4 +44,11 @@ func GetFlushIntervalMinutes() int {
 		return 1
 	}
 	return perfMetricsSetting.FlushInterval
+}
+
+func GetRedisFlushIntervalSeconds() int {
+	if perfMetricsSetting.RedisFlushIntervalSeconds < 1 {
+		return 5
+	}
+	return perfMetricsSetting.RedisFlushIntervalSeconds
 }

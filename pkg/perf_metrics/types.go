@@ -10,6 +10,7 @@ type Store interface {
 type Sample struct {
 	Model        string
 	Group        string
+	ChannelID    int
 	LatencyMs    int64
 	TtftMs       int64
 	HasTtft      bool
@@ -73,6 +74,12 @@ type bucketKey struct {
 	bucketTs int64
 }
 
+type prometheusSeriesKey struct {
+	model     string
+	channelID int
+	status    string
+}
+
 type counters struct {
 	requestCount   int64
 	successCount   int64
@@ -91,6 +98,18 @@ type atomicBucket struct {
 	ttftCount      atomic.Int64
 	outputTokens   atomic.Int64
 	generationMs   atomic.Int64
+}
+
+type prometheusCounters struct {
+	buckets [prometheusLatencyBucketCount]int64
+	count   int64
+	sumMs   int64
+}
+
+type prometheusAtomicBucket struct {
+	buckets [prometheusLatencyBucketCount]atomic.Int64
+	count   atomic.Int64
+	sumMs   atomic.Int64
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -157,4 +176,67 @@ func (b *atomicBucket) addCounters(c counters) {
 	if c.generationMs != 0 {
 		b.generationMs.Add(c.generationMs)
 	}
+}
+
+func (b *prometheusAtomicBucket) add(sample Sample) {
+	latencyMs := sample.LatencyMs
+	if latencyMs < 0 {
+		latencyMs = 0
+	}
+	for i, upperBoundMs := range prometheusLatencyBucketUpperBoundsMs {
+		if latencyMs <= upperBoundMs {
+			b.buckets[i].Add(1)
+		}
+	}
+	b.buckets[prometheusInfBucketIndex].Add(1)
+	b.count.Add(1)
+	b.sumMs.Add(latencyMs)
+}
+
+func (b *prometheusAtomicBucket) snapshot() prometheusCounters {
+	out := prometheusCounters{
+		count: b.count.Load(),
+		sumMs: b.sumMs.Load(),
+	}
+	for i := range out.buckets {
+		out.buckets[i] = b.buckets[i].Load()
+	}
+	return out
+}
+
+func (b *prometheusAtomicBucket) drain() prometheusCounters {
+	out := prometheusCounters{
+		count: b.count.Swap(0),
+		sumMs: b.sumMs.Swap(0),
+	}
+	for i := range out.buckets {
+		out.buckets[i] = b.buckets[i].Swap(0)
+	}
+	return out
+}
+
+func (b *prometheusAtomicBucket) addCounters(c prometheusCounters) {
+	for i, value := range c.buckets {
+		if value != 0 {
+			b.buckets[i].Add(value)
+		}
+	}
+	if c.count != 0 {
+		b.count.Add(c.count)
+	}
+	if c.sumMs != 0 {
+		b.sumMs.Add(c.sumMs)
+	}
+}
+
+func (c prometheusCounters) isZero() bool {
+	return c.count == 0
+}
+
+func (c *prometheusCounters) add(other prometheusCounters) {
+	for i, value := range other.buckets {
+		c.buckets[i] += value
+	}
+	c.count += other.count
+	c.sumMs += other.sumMs
 }

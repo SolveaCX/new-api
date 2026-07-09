@@ -15,6 +15,8 @@ import (
 )
 
 var hotBuckets sync.Map
+var redisPendingBuckets sync.Map
+var prometheusPendingBuckets sync.Map
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
@@ -22,6 +24,7 @@ const seriesSchema = "dbcd0a3c01b55203"
 
 func Init() {
 	go flushLoop()
+	go redisFlushLoop()
 }
 
 func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
@@ -42,9 +45,14 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
+	channelID := 0
+	if info.ChannelMeta != nil {
+		channelID = info.ChannelId
+	}
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
+		ChannelID:    channelID,
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
@@ -73,7 +81,8 @@ func Record(sample Sample) {
 	}
 	actual, _ := hotBuckets.LoadOrStore(key, &atomicBucket{})
 	actual.(*atomicBucket).add(sample)
-	recordRedis(key, sample)
+	recordRedisPending(key, sample)
+	recordPrometheusPending(sample)
 }
 
 func Query(params QueryParams) (QueryResult, error) {
@@ -357,32 +366,32 @@ func avgTps(value counters) float64 {
 	return float64(value.outputTokens) / (float64(value.generationMs) / 1000)
 }
 
-func recordRedis(key bucketKey, sample Sample) {
+func recordRedisPending(key bucketKey, sample Sample) {
 	if !common.RedisEnabled || common.RDB == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	actual, _ := redisPendingBuckets.LoadOrStore(key, &atomicBucket{})
+	actual.(*atomicBucket).add(sample)
+}
 
-	redisKey := redisBucketKey(key)
-	pipe := common.RDB.TxPipeline()
-	pipe.HIncrBy(ctx, redisKey, "req", 1)
-	if sample.Success {
-		pipe.HIncrBy(ctx, redisKey, "ok", 1)
+func recordPrometheusPending(sample Sample) {
+	if sample.Model == "" {
+		return
 	}
-	if sample.LatencyMs > 0 {
-		pipe.HIncrBy(ctx, redisKey, "lat", sample.LatencyMs)
+	key := prometheusSeriesKey{
+		model:     sample.Model,
+		channelID: sample.ChannelID,
+		status:    prometheusStatus(sample.Success),
 	}
-	if sample.HasTtft && sample.TtftMs >= 0 {
-		pipe.HIncrBy(ctx, redisKey, "ttft", sample.TtftMs)
-		pipe.HIncrBy(ctx, redisKey, "ttft_n", 1)
+	actual, _ := prometheusPendingBuckets.LoadOrStore(key, &prometheusAtomicBucket{})
+	actual.(*prometheusAtomicBucket).add(sample)
+}
+
+func prometheusStatus(success bool) string {
+	if success {
+		return "success"
 	}
-	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
-		pipe.HIncrBy(ctx, redisKey, "out", sample.OutputTokens)
-		pipe.HIncrBy(ctx, redisKey, "gen_ms", sample.GenerationMs)
-	}
-	pipe.Expire(ctx, redisKey, time.Hour)
-	_, _ = pipe.Exec(ctx)
+	return "error"
 }
 
 func mergeRedisActiveBuckets(merged map[bucketKey]counters, params QueryParams, startTs int64, endTs int64) {

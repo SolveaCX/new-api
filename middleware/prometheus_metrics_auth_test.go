@@ -1,0 +1,66 @@
+package middleware
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
+
+func newPrometheusMetricsAuthEngine() *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/metrics", PrometheusMetricsAuth(), func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+	return r
+}
+
+func TestPrometheusMetricsAuth(t *testing.T) {
+	t.Run("503 when env not set", func(t *testing.T) {
+		os.Unsetenv(PrometheusMetricsTokenEnv)
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		rec := httptest.NewRecorder()
+		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("401 when token missing", func(t *testing.T) {
+		os.Setenv(PrometheusMetricsTokenEnv, "secret")
+		defer os.Unsetenv(PrometheusMetricsTokenEnv)
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		rec := httptest.NewRecorder()
+		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("401 when token wrong", func(t *testing.T) {
+		os.Setenv(PrometheusMetricsTokenEnv, "secret")
+		defer os.Unsetenv(PrometheusMetricsTokenEnv)
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.Header.Set("Authorization", "Bearer wrong")
+		rec := httptest.NewRecorder()
+		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("200 when Bearer token correct", func(t *testing.T) {
+		os.Setenv(PrometheusMetricsTokenEnv, "secret")
+		defer os.Unsetenv(PrometheusMetricsTokenEnv)
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		rec := httptest.NewRecorder()
+		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+	})
+}
