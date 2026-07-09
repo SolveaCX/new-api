@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/prommetrics"
 	"github.com/QuantumNous/new-api/relay"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -257,8 +258,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
+		statusCode := newAPIError.StatusCode
 		gopool.Go(func() {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
+			prommetrics.RecordRelaySample(relayInfo, false, statusCode, 0)
 		})
 	}
 }

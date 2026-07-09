@@ -169,6 +169,9 @@ jobs:
           APP_CONSOLE_ORIGIN: ${{ secrets.APP_CONSOLE_ORIGIN }}
           COOKIE_SESSION_DOMAIN: ${{ secrets.COOKIE_SESSION_DOMAIN }}
           SESSION_COOKIE_SECURE: ${{ secrets.SESSION_COOKIE_SECURE }}
+          PROMETHEUS_METRICS_ENABLED: ${{ secrets.PROMETHEUS_METRICS_TOKEN != '' && 'true' || 'false' }}
+          PROMETHEUS_METRICS_TOKEN: ${{ secrets.PROMETHEUS_METRICS_TOKEN }}
+          PROMETHEUS_METRICS_SERVICE_ROLE: router
         run: |
           set -euo pipefail
           revision_suffix="$(date -u +%Y%m%d-%H%M%S)-${{ needs.build.outputs.short_sha }}"
@@ -181,6 +184,7 @@ jobs:
             PADDLE_LIVE_API_KEY PADDLE_LIVE_CLIENT_TOKEN PADDLE_LIVE_WEBHOOK_SECRET \
             GA_MEASURE_PROTOCOL_API_SECRET GA_MESSUREMENT_ID \
             OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE \
+            PROMETHEUS_METRICS_ENABLED PROMETHEUS_METRICS_TOKEN PROMETHEUS_METRICS_SERVICE_ROLE \
             NODE_TYPE APP_ROLE; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then
