@@ -26,6 +26,7 @@ var labelNames = []string{
 type Recorder struct {
 	registry      *prometheus.Registry
 	serviceRole   string
+	scrapeInfo    *prometheus.GaugeVec
 	requests      *prometheus.CounterVec
 	latency       *prometheus.HistogramVec
 	ttft          *prometheus.HistogramVec
@@ -42,6 +43,10 @@ func NewRecorder(serviceRole string) *Recorder {
 	recorder := &Recorder{
 		registry:    prometheus.NewRegistry(),
 		serviceRole: serviceRole,
+		scrapeInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "flatkey_metrics_scrape_info",
+			Help: "Static gauge proving the Flatkey Prometheus scrape endpoint is enabled.",
+		}, []string{"service_role"}),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "flatkey_relay_requests_total",
 			Help: "Total Flatkey relay requests grouped by safe routing labels.",
@@ -62,11 +67,13 @@ func NewRecorder(serviceRole string) *Recorder {
 		}, labelNames),
 	}
 	recorder.registry.MustRegister(
+		recorder.scrapeInfo,
 		recorder.requests,
 		recorder.latency,
 		recorder.ttft,
 		recorder.outputTokens,
 	)
+	recorder.scrapeInfo.WithLabelValues(serviceRole).Set(1)
 	recorder.metricsHandle = promhttp.HandlerFor(recorder.registry, promhttp.HandlerOpts{})
 	return recorder
 }
