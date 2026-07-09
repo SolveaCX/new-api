@@ -367,8 +367,14 @@ func recordRedisPending(key bucketKey, sample Sample) {
 	if !common.RedisEnabled || common.RDB == nil {
 		return
 	}
-	actual, _ := redisPendingBuckets.LoadOrStore(key, &lockedBucket{})
-	actual.(*lockedBucket).add(sample)
+	for {
+		actual, _ := redisPendingBuckets.LoadOrStore(key, &lockedBucket{})
+		bucket := actual.(*lockedBucket)
+		if bucket.add(sample) {
+			return
+		}
+		redisPendingBuckets.CompareAndDelete(key, bucket)
+	}
 }
 
 func recordPrometheusPending(sample Sample) {

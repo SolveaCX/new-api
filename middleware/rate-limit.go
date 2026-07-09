@@ -101,6 +101,14 @@ func GlobalAPIRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+func PrometheusMetricsRateLimit() func(c *gin.Context) {
+	return rateLimitFactory(
+		common.GetEnvOrDefault("PROMETHEUS_METRICS_RATE_LIMIT", 60),
+		int64(common.GetEnvOrDefault("PROMETHEUS_METRICS_RATE_LIMIT_DURATION", 60)),
+		"PM",
+	)
+}
+
 func CriticalRateLimit() func(c *gin.Context) {
 	if common.CriticalRateLimitEnable {
 		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")

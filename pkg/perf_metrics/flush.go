@@ -230,6 +230,9 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		return err
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
+		for _, item := range redisDrained {
+			item.bucket.addCounters(item.counter)
+		}
 		clearPrometheusInflightCounters(prometheusDrained)
 		for _, item := range prometheusDrained {
 			deleteEmptyPrometheusPendingBucket(item.rawKey, item.bucket)
@@ -262,10 +265,12 @@ func clearPrometheusInflightCounters(prometheusDrained []drainedPrometheusBucket
 }
 
 func deleteHistoricalRedisPendingBucket(rawKey any, key bucketKey, bucket *lockedBucket, activeBucket int64) {
-	if key.bucketTs >= activeBucket || !bucket.snapshot().isZero() {
+	if key.bucketTs >= activeBucket {
 		return
 	}
-	redisPendingBuckets.Delete(rawKey)
+	if bucket.closeIfZero() {
+		redisPendingBuckets.CompareAndDelete(rawKey, bucket)
+	}
 }
 
 func redisCounters(values map[string]string) counters {

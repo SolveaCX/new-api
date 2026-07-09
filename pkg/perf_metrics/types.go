@@ -106,6 +106,7 @@ type atomicBucket struct {
 type lockedBucket struct {
 	mu      sync.Mutex
 	counter counters
+	closed  bool
 }
 
 type prometheusCounters struct {
@@ -193,10 +194,14 @@ func (b *atomicBucket) addCounters(c counters) {
 	}
 }
 
-func (b *lockedBucket) add(sample Sample) {
+func (b *lockedBucket) add(sample Sample) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return false
+	}
 	b.counter.addSample(sample)
+	return true
 }
 
 func (b *lockedBucket) snapshot() counters {
@@ -216,7 +221,20 @@ func (b *lockedBucket) drain() counters {
 func (b *lockedBucket) addCounters(c counters) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
 	b.counter.add(c)
+}
+
+func (b *lockedBucket) closeIfZero() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.counter.isZero() {
+		b.closed = true
+		return true
+	}
+	return false
 }
 
 func (c *counters) addSample(sample Sample) {

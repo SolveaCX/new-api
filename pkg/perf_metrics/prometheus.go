@@ -198,19 +198,26 @@ func pruneStalePrometheusSeries(ctx context.Context, members []string) {
 
 func mergePrometheusPendingSnapshots(series map[prometheusSeriesKey]prometheusCounters) {
 	prometheusPendingBuckets.Range(func(key, value any) bool {
-		seriesKey := key.(prometheusSeriesKey)
+		seriesKey := normalizePrometheusSeriesKey(key.(prometheusSeriesKey))
 		current := series[seriesKey]
 		current.add(value.(*prometheusAtomicBucket).snapshot())
 		series[seriesKey] = current
 		return true
 	})
 	prometheusInflightBuckets.Range(func(key, value any) bool {
-		seriesKey := key.(prometheusSeriesKey)
+		seriesKey := normalizePrometheusSeriesKey(key.(prometheusSeriesKey))
 		current := series[seriesKey]
 		current.add(value.(*prometheusInflightBucket).snapshot())
 		series[seriesKey] = current
 		return true
 	})
+}
+
+func normalizePrometheusSeriesKey(key prometheusSeriesKey) prometheusSeriesKey {
+	if !prometheusChannelLabelEnabled() {
+		key.channelID = 0
+	}
+	return key
 }
 
 func sortedPrometheusSeriesKeys(series map[prometheusSeriesKey]prometheusCounters) []prometheusSeriesKey {

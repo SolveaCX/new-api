@@ -11,7 +11,7 @@ func SetPrometheusMetricsRouter(router *gin.Engine) {
 	router.GET(
 		"/metrics",
 		middleware.RouteTag("prometheus_metrics"),
-		middleware.GlobalAPIRateLimit(),
+		middleware.PrometheusMetricsRateLimit(),
 		middleware.PrometheusMetricsAuth(),
 		controller.GetPrometheusMetrics,
 	)
