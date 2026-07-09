@@ -140,6 +140,40 @@ resource "google_secret_manager_secret" "blockrun_usage_summary_token" {
   depends_on = [module.apis]
 }
 
+// Custom RunMonitoring config for Google Managed Service for Prometheus.
+// Cloud Run sidecar's built-in default scrapes port 8080, but new-api serves
+// metrics on port 3000, so the router mounts this as /etc/rungmp/config.yaml.
+resource "google_secret_manager_secret" "prometheus_run_monitoring_config" {
+  project   = var.project_id
+  secret_id = "newapi-router-run-monitoring-config"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [module.apis]
+}
+
+resource "google_secret_manager_secret_version" "prometheus_run_monitoring_config" {
+  secret      = google_secret_manager_secret.prometheus_run_monitoring_config.id
+  secret_data = <<-EOT
+    apiVersion: monitoring.googleapis.com/v1beta
+    kind: RunMonitoring
+    metadata:
+      name: newapi-router
+    spec:
+      endpoints:
+      - port: 3000
+        path: /metrics
+        interval: 30s
+      targetLabels:
+        metadata:
+        - instance
+        - service
+        - revision
+  EOT
+}
+
 module "service_accounts" {
   source     = "../../modules/service-accounts"
   project_id = var.project_id
@@ -150,6 +184,7 @@ module "service_accounts" {
       google_secret_manager_secret.sql_dsn.secret_id,
       google_secret_manager_secret.redis_url.secret_id,
       google_secret_manager_secret.blockrun_usage_summary_token.secret_id,
+      google_secret_manager_secret.prometheus_run_monitoring_config.secret_id,
     ],
   )
 
@@ -241,10 +276,15 @@ module "cloud_run_router" {
   memory            = var.router_memory
   node_type         = "slave"
 
+  prometheus_sidecar_enabled  = true
+  prometheus_config_secret_id = google_secret_manager_secret.prometheus_run_monitoring_config.secret_id
+
   depends_on = [
     module.apis,
+    module.service_accounts,
     google_secret_manager_secret_version.sql_dsn,
     google_secret_manager_secret_version.redis_url,
+    google_secret_manager_secret_version.prometheus_run_monitoring_config,
   ]
 }
 

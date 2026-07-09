@@ -36,6 +36,36 @@ variable "memory" {
   default = "1Gi"
 }
 
+variable "prometheus_sidecar_enabled" {
+  type        = bool
+  description = "Attach the Google Managed Service for Prometheus Cloud Run sidecar."
+  default     = false
+}
+
+variable "prometheus_config_secret_id" {
+  type        = string
+  description = "Secret Manager secret ID containing the RunMonitoring config.yaml mounted at /etc/rungmp/config.yaml."
+  default     = ""
+}
+
+variable "prometheus_sidecar_image" {
+  type        = string
+  description = "Google Managed Service for Prometheus Cloud Run sidecar image."
+  default     = "us-docker.pkg.dev/cloud-ops-agents-artifacts/cloud-run-gmp-sidecar/cloud-run-gmp-sidecar:1.2.0"
+}
+
+variable "prometheus_sidecar_cpu" {
+  type        = string
+  description = "CPU limit for the Prometheus collector sidecar."
+  default     = "0.08"
+}
+
+variable "prometheus_sidecar_memory" {
+  type        = string
+  description = "Memory limit for the Prometheus collector sidecar."
+  default     = "256Mi"
+}
+
 variable "min_instances" {
   type    = number
   default = 2

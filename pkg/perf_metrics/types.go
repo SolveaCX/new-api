@@ -1,6 +1,10 @@
 package perfmetrics
 
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+	"time"
+)
 
 type Store interface {
 	Record(sample Sample)
@@ -10,6 +14,7 @@ type Store interface {
 type Sample struct {
 	Model        string
 	Group        string
+	ChannelID    int
 	LatencyMs    int64
 	TtftMs       int64
 	HasTtft      bool
@@ -73,6 +78,11 @@ type bucketKey struct {
 	bucketTs int64
 }
 
+type prometheusSeriesKey struct {
+	model  string
+	status string
+}
+
 type counters struct {
 	requestCount   int64
 	successCount   int64
@@ -91,6 +101,17 @@ type atomicBucket struct {
 	ttftCount      atomic.Int64
 	outputTokens   atomic.Int64
 	generationMs   atomic.Int64
+}
+
+type prometheusCounters struct {
+	count int64
+}
+
+type prometheusLockedBucket struct {
+	mu            sync.Mutex
+	count         int64
+	lastUpdatedAt int64
+	retired       bool
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -157,4 +178,86 @@ func (b *atomicBucket) addCounters(c counters) {
 	if c.generationMs != 0 {
 		b.generationMs.Add(c.generationMs)
 	}
+}
+
+func (c *counters) addSample(sample Sample) {
+	c.requestCount++
+	if sample.Success {
+		c.successCount++
+	}
+	if sample.LatencyMs > 0 {
+		c.totalLatencyMs += sample.LatencyMs
+	}
+	if sample.HasTtft && sample.TtftMs >= 0 {
+		c.ttftSumMs += sample.TtftMs
+		c.ttftCount++
+	}
+	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
+		c.outputTokens += sample.OutputTokens
+		c.generationMs += sample.GenerationMs
+	}
+}
+
+func (c *counters) add(other counters) {
+	c.requestCount += other.requestCount
+	c.successCount += other.successCount
+	c.totalLatencyMs += other.totalLatencyMs
+	c.ttftSumMs += other.ttftSumMs
+	c.ttftCount += other.ttftCount
+	c.outputTokens += other.outputTokens
+	c.generationMs += other.generationMs
+}
+
+func (c counters) isZero() bool {
+	return c.requestCount == 0 &&
+		c.successCount == 0 &&
+		c.totalLatencyMs == 0 &&
+		c.ttftSumMs == 0 &&
+		c.ttftCount == 0 &&
+		c.outputTokens == 0 &&
+		c.generationMs == 0
+}
+
+func (b *prometheusLockedBucket) add(sample Sample) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return false
+	}
+	b.count++
+	b.lastUpdatedAt = time.Now().UnixNano()
+	return true
+}
+
+func (b *prometheusLockedBucket) snapshot() prometheusCounters {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return prometheusCounters{}
+	}
+	out := prometheusCounters{
+		count: b.count,
+	}
+	return out
+}
+
+func (b *prometheusLockedBucket) retireIfIdle(cutoffUnixNano int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return true
+	}
+	if b.lastUpdatedAt == 0 || b.lastUpdatedAt >= cutoffUnixNano {
+		return false
+	}
+	b.retired = true
+	return true
+}
+
+func (c prometheusCounters) isZero() bool {
+	return c.count == 0
+}
+
+func (c *prometheusCounters) add(other prometheusCounters) {
+	c.count += other.count
 }

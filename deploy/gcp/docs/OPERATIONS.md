@@ -112,7 +112,7 @@ reason: AUTH_PERMISSION_DENIED on serviceusage.googleapis.com
 
 **Cause**: the CI service account `newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com` only has the three minimum roles needed for **app deploy** (`run.developer`, `artifactregistry.writer`, `iam.serviceAccountUser`). `terraform apply` does a full state refresh that reads every module's GCP state — needing read perms across serviceusage, IAM, secretmanager, compute, cloudsql, redis, monitoring, etc. Until those are granted, **infra apply via CI will never succeed**.
 
-**Update 2026-06-12: the PR plan step is affected too.** Run 27411650497 (PR #116) hit the same `AUTH_PERMISSION_DENIED` on serviceusage during refresh, yet the workflow concluded "success" and posted the error text as the PR plan comment. **Treat CI plan comments as untrusted** — always run `terraform plan` locally with Owner ADC before applying.
+**Update 2026-07-09: pull-request plans intentionally use `terraform plan -refresh=false`.** This avoids the deployer SA's refresh-time `AUTH_PERMISSION_DENIED` on serviceusage and other prod resources, but it only checks the desired Terraform diff against the current state file. **Treat CI plan comments as non-authoritative for live drift** — always run a refreshing `terraform plan` locally with Owner ADC before applying.
 
 **Workaround (works today, no Terraform drift)**: when the Terraform code on `main` is already merged with the desired state, just apply via `gcloud` using a user account with Owner / `roles/run.admin`. Terraform's `desired` and reality will reconverge — no drift, no refresh-only needed.
 

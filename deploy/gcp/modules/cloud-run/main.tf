@@ -17,6 +17,10 @@ resource "google_cloud_run_v2_service" "main" {
 
   template {
     service_account = var.runtime_sa_email
+    annotations = var.prometheus_sidecar_enabled ? {
+      "run.googleapis.com/container-dependencies" = "{\"collector\":[\"app\"]}"
+    } : null
+    execution_environment = var.prometheus_sidecar_enabled ? "EXECUTION_ENVIRONMENT_GEN2" : null
 
     scaling {
       min_instance_count = var.min_instances
@@ -41,7 +45,22 @@ resource "google_cloud_run_v2_service" "main" {
       }
     }
 
+    dynamic "volumes" {
+      for_each = var.prometheus_sidecar_enabled ? [1] : []
+      content {
+        name = "prometheus-config"
+        secret {
+          secret = var.prometheus_config_secret_id
+          items {
+            version = "latest"
+            path    = "config.yaml"
+          }
+        }
+      }
+    }
+
     containers {
+      name  = "app"
       image = var.image_uri
 
       resources {
@@ -214,6 +233,28 @@ resource "google_cloud_run_v2_service" "main" {
         }
       }
     }
+
+    dynamic "containers" {
+      for_each = var.prometheus_sidecar_enabled ? [1] : []
+      content {
+        name  = "collector"
+        image = var.prometheus_sidecar_image
+
+        resources {
+          limits = {
+            cpu    = var.prometheus_sidecar_cpu
+            memory = var.prometheus_sidecar_memory
+          }
+          cpu_idle          = false
+          startup_cpu_boost = false
+        }
+
+        volume_mounts {
+          name       = "prometheus-config"
+          mount_path = "/etc/rungmp"
+        }
+      }
+    }
   }
 
   traffic {
@@ -244,6 +285,11 @@ resource "google_cloud_run_v2_service" "main" {
       scaling,
       traffic,
     ]
+
+    precondition {
+      condition     = !var.prometheus_sidecar_enabled || var.prometheus_config_secret_id != ""
+      error_message = "prometheus_config_secret_id is required when prometheus_sidecar_enabled is true."
+    }
   }
 }
 
