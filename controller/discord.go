@@ -28,9 +28,10 @@ type DiscordResponse struct {
 }
 
 type DiscordUser struct {
-	UID  string `json:"id"`
-	ID   string `json:"username"`
-	Name string `json:"global_name"`
+	UID   string `json:"id"`
+	ID    string `json:"username"`
+	Name  string `json:"global_name"`
+	Email string `json:"email"`
 }
 
 func getDiscordUserInfoByCode(code string) (*DiscordUser, error) {
@@ -151,7 +152,15 @@ func DiscordOAuth(c *gin.Context) {
 			} else {
 				user.DisplayName = "Discord User"
 			}
-			err := user.Insert(0)
+			user.Email = strings.TrimSpace(discordUser.Email)
+			if err := validateEmailDomainRestriction(user.Email); err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": err.Error(),
+				})
+				return
+			}
+			err := user.InsertWithRegistrationIP(0, c.ClientIP())
 			if err != nil {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,

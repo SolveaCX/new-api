@@ -10,9 +10,11 @@ import (
 	backendI18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -120,4 +122,109 @@ func TestFindOrCreateOAuthUserPersistsExplicitCookieLanguage(t *testing.T) {
 	})
 
 	require.Equal(t, "ja", user.GetSetting().Language)
+}
+
+func TestFindOrCreateOAuthUserRejectsEmailOutsideDomainWhitelist(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+
+	originalRegisterEnabled := common.RegisterEnabled
+	originalEmailDomainRestrictionEnabled := common.EmailDomainRestrictionEnabled
+	originalEmailDomainWhitelist := append([]string(nil), common.EmailDomainWhitelist...)
+	t.Cleanup(func() {
+		common.RegisterEnabled = originalRegisterEnabled
+		common.EmailDomainRestrictionEnabled = originalEmailDomainRestrictionEnabled
+		common.EmailDomainWhitelist = originalEmailDomainWhitelist
+	})
+	common.RegisterEnabled = true
+	common.EmailDomainRestrictionEnabled = true
+	common.EmailDomainWhitelist = []string{"allowed.example"}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("oauth-domain-test"))))
+	router.GET("/oauth-domain-test", func(c *gin.Context) {
+		session := sessions.Default(c)
+		_, isNewUser, err := findOrCreateOAuthUser(c, oauthLanguageTestProvider{}, &oauth.OAuthUser{
+			ProviderUserID: "oauth-domain-blocked",
+			Username:       "oauth-domain-blocked",
+			DisplayName:    "OAuth Domain User",
+			Email:          "blocked@outside.example",
+			Extra:          map[string]any{},
+		}, session)
+		require.Error(t, err)
+		require.False(t, isNewUser)
+		c.Status(http.StatusNoContent)
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/oauth-domain-test", nil)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	var users int64
+	require.NoError(t, db.Model(&model.User{}).Where("email = ?", "blocked@outside.example").Count(&users).Error)
+	require.Zero(t, users)
+}
+
+func TestFindOrCreateOAuthUserReleasesRedisBonusClaimWhenBindingFails(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.CustomOAuthProvider{}, &model.UserOAuthBinding{}))
+
+	originalRegisterEnabled := common.RegisterEnabled
+	originalQuotaForNewUser := common.QuotaForNewUser
+	originalRedisEnabled := common.RedisEnabled
+	originalRDB := common.RDB
+	t.Cleanup(func() {
+		common.RegisterEnabled = originalRegisterEnabled
+		common.QuotaForNewUser = originalQuotaForNewUser
+		common.RedisEnabled = originalRedisEnabled
+		common.RDB = originalRDB
+	})
+	common.RegisterEnabled = true
+	common.QuotaForNewUser = 777
+
+	mr := miniredis.RunT(t)
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		require.NoError(t, common.RDB.Close())
+	})
+
+	provider := oauth.NewGenericOAuthProvider(&model.CustomOAuthProvider{
+		Id:      1,
+		Name:    "Rollback OAuth",
+		Slug:    "rollback-oauth",
+		Enabled: true,
+	})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("oauth-redis-rollback"))))
+	router.GET("/oauth-redis-rollback", func(c *gin.Context) {
+		session := sessions.Default(c)
+		_, isNewUser, err := findOrCreateOAuthUser(c, provider, &oauth.OAuthUser{
+			ProviderUserID: "",
+			Username:       "oauth-redis-rollback",
+			DisplayName:    "OAuth Redis Rollback",
+			Email:          "oauth-redis-rollback@example.com",
+			Extra:          map[string]any{},
+		}, session)
+		require.Error(t, err)
+		require.False(t, isNewUser)
+		c.Status(http.StatusNoContent)
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/oauth-redis-rollback", nil)
+	request.RemoteAddr = "203.0.113.50:12345"
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	var users int64
+	require.NoError(t, db.Model(&model.User{}).Where("email = ?", "oauth-redis-rollback@example.com").Count(&users).Error)
+	require.Zero(t, users)
+
+	keys, err := common.RDB.DBSize(context.Background()).Result()
+	require.NoError(t, err)
+	require.Zero(t, keys)
 }
