@@ -115,17 +115,12 @@ type prometheusCounters struct {
 	sumMs   int64
 }
 
-type prometheusAtomicBucket struct {
+type prometheusLockedBucket struct {
 	mu      sync.Mutex
 	buckets [prometheusLatencyBucketCount]int64
 	count   int64
 	sumMs   int64
 	closed  bool
-}
-
-type prometheusInflightBucket struct {
-	mu      sync.Mutex
-	counter prometheusCounters
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -275,7 +270,7 @@ func (c counters) isZero() bool {
 		c.generationMs == 0
 }
 
-func (b *prometheusAtomicBucket) add(sample Sample) bool {
+func (b *prometheusLockedBucket) add(sample Sample) bool {
 	latencyMs := sample.LatencyMs
 	if latencyMs < 0 {
 		latencyMs = 0
@@ -296,7 +291,7 @@ func (b *prometheusAtomicBucket) add(sample Sample) bool {
 	return true
 }
 
-func (b *prometheusAtomicBucket) snapshot() prometheusCounters {
+func (b *prometheusLockedBucket) snapshot() prometheusCounters {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	out := prometheusCounters{
@@ -307,7 +302,7 @@ func (b *prometheusAtomicBucket) snapshot() prometheusCounters {
 	return out
 }
 
-func (b *prometheusAtomicBucket) drain() prometheusCounters {
+func (b *prometheusLockedBucket) drain() prometheusCounters {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	out := prometheusCounters{
@@ -321,7 +316,7 @@ func (b *prometheusAtomicBucket) drain() prometheusCounters {
 	return out
 }
 
-func (b *prometheusAtomicBucket) addCounters(c prometheusCounters) {
+func (b *prometheusLockedBucket) addCounters(c prometheusCounters) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
@@ -356,7 +351,7 @@ func (c *prometheusCounters) add(other prometheusCounters) {
 	c.sumMs += other.sumMs
 }
 
-func deleteEmptyPrometheusPendingBucket(rawKey any, bucket *prometheusAtomicBucket) {
+func deleteEmptyPrometheusPendingBucket(rawKey any, bucket *prometheusLockedBucket) {
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()
 	if bucket.count != 0 || bucket.sumMs != 0 {
@@ -369,24 +364,4 @@ func deleteEmptyPrometheusPendingBucket(rawKey any, bucket *prometheusAtomicBuck
 	}
 	bucket.closed = true
 	prometheusPendingBuckets.CompareAndDelete(rawKey, bucket)
-}
-
-func (b *prometheusInflightBucket) add(counter prometheusCounters) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.counter.add(counter)
-}
-
-func (b *prometheusInflightBucket) snapshot() prometheusCounters {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.counter
-}
-
-func addPrometheusInflightCounter(key prometheusSeriesKey, counter prometheusCounters) {
-	if counter.isZero() {
-		return
-	}
-	actual, _ := prometheusInflightBuckets.LoadOrStore(key, &prometheusInflightBucket{})
-	actual.(*prometheusInflightBucket).add(counter)
 }

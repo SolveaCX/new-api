@@ -290,7 +290,7 @@ sum by (model, channel_id) (
       - targets: ["staging-router.flatkey.ai:443"]
     authorization:
       type: "Bearer"
-      credentials: "替换成 PROMETHEUS_METRICS_TOKEN 的值"</code></pre>
+      credentials_file: "/etc/prometheus/secrets/flatkey_metrics_token"</code></pre>
       <p>
         token 不写在代码里，只放在 Cloud Run 环境变量和 Prometheus 配置里。
         Prometheus 的 <code>authorization</code> 写法见

@@ -120,7 +120,7 @@ type drainedRedisBucket struct {
 type drainedPrometheusBucket struct {
 	rawKey  any
 	key     prometheusSeriesKey
-	bucket  *prometheusAtomicBucket
+	bucket  *prometheusLockedBucket
 	counter prometheusCounters
 }
 
@@ -156,7 +156,7 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		if len(prometheusDrained) >= maxRedisFlushBatchSize {
 			return false
 		}
-		bucket := value.(*prometheusAtomicBucket)
+		bucket := value.(*prometheusLockedBucket)
 		counter := bucket.drain()
 		if counter.isZero() {
 			deleteEmptyPrometheusPendingBucket(key, bucket)
@@ -202,7 +202,6 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 
 	seriesMembers := make([]interface{}, 0, len(prometheusDrained))
 	for _, item := range prometheusDrained {
-		addPrometheusInflightCounter(item.key, item.counter)
 		seriesMembers = append(seriesMembers, encodePrometheusSeriesKey(item.key))
 	}
 	if len(seriesMembers) > 0 {
@@ -226,20 +225,14 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 
 	if err := ctx.Err(); err != nil {
 		requeueDrainedRedisMetrics(redisDrained, prometheusDrained)
-		clearPrometheusInflightCounters(prometheusDrained)
 		return err
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
-		for _, item := range redisDrained {
-			item.bucket.addCounters(item.counter)
-		}
-		clearPrometheusInflightCounters(prometheusDrained)
 		for _, item := range prometheusDrained {
 			deleteEmptyPrometheusPendingBucket(item.rawKey, item.bucket)
 		}
 		return err
 	}
-	clearPrometheusInflightCounters(prometheusDrained)
 	for _, item := range redisDrained {
 		deleteHistoricalRedisPendingBucket(item.rawKey, item.key, item.bucket, activeBucket)
 	}
@@ -255,12 +248,6 @@ func requeueDrainedRedisMetrics(redisDrained []drainedRedisBucket, prometheusDra
 	}
 	for _, item := range prometheusDrained {
 		item.bucket.addCounters(item.counter)
-	}
-}
-
-func clearPrometheusInflightCounters(prometheusDrained []drainedPrometheusBucket) {
-	for _, item := range prometheusDrained {
-		prometheusInflightBuckets.Delete(item.key)
 	}
 }
 

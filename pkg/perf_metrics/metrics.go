@@ -17,7 +17,6 @@ import (
 var hotBuckets sync.Map
 var redisPendingBuckets sync.Map
 var prometheusPendingBuckets sync.Map
-var prometheusInflightBuckets sync.Map
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
@@ -391,8 +390,8 @@ func recordPrometheusPending(sample Sample) {
 		status:    prometheusStatus(sample.Success),
 	}
 	for {
-		actual, _ := prometheusPendingBuckets.LoadOrStore(key, &prometheusAtomicBucket{})
-		bucket := actual.(*prometheusAtomicBucket)
+		actual, _ := prometheusPendingBuckets.LoadOrStore(key, &prometheusLockedBucket{})
+		bucket := actual.(*prometheusLockedBucket)
 		if bucket.add(sample) {
 			return
 		}

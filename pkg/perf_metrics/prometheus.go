@@ -200,14 +200,7 @@ func mergePrometheusPendingSnapshots(series map[prometheusSeriesKey]prometheusCo
 	prometheusPendingBuckets.Range(func(key, value any) bool {
 		seriesKey := normalizePrometheusSeriesKey(key.(prometheusSeriesKey))
 		current := series[seriesKey]
-		current.add(value.(*prometheusAtomicBucket).snapshot())
-		series[seriesKey] = current
-		return true
-	})
-	prometheusInflightBuckets.Range(func(key, value any) bool {
-		seriesKey := normalizePrometheusSeriesKey(key.(prometheusSeriesKey))
-		current := series[seriesKey]
-		current.add(value.(*prometheusInflightBucket).snapshot())
+		current.add(value.(*prometheusLockedBucket).snapshot())
 		series[seriesKey] = current
 		return true
 	})

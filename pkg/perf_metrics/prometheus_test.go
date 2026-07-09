@@ -18,7 +18,6 @@ func resetPerfMetricsStateForTest(t *testing.T) {
 	hotBuckets = sync.Map{}
 	redisPendingBuckets = sync.Map{}
 	prometheusPendingBuckets = sync.Map{}
-	prometheusInflightBuckets = sync.Map{}
 }
 
 func setupMiniRedisForPerfMetrics(t *testing.T) {
@@ -281,25 +280,6 @@ func TestRedisExecErrorDoesNotRequeueAmbiguousFlush(t *testing.T) {
 
 	require.Error(t, flushRedisMetricsOnce(context.Background()))
 	require.Equal(t, 0, syncMapLen(prometheusPendingBuckets))
-	require.Equal(t, 0, syncMapLen(prometheusInflightBuckets))
-}
-
-func TestBuildPrometheusTextIncludesInflightFlushCounters(t *testing.T) {
-	resetPerfMetricsStateForTest(t)
-	disableRedisForPerfMetrics(t)
-
-	key := prometheusSeriesKey{model: "gpt-5", channelID: 7, status: "success"}
-	counter := prometheusCounters{
-		count: 1,
-		sumMs: 1200,
-	}
-	counter.buckets[prometheusInfBucketIndex] = 1
-	addPrometheusInflightCounter(key, counter)
-
-	text, err := BuildPrometheusText(context.Background())
-	require.NoError(t, err)
-	require.Contains(t, text, `newapi_model_request_duration_seconds_count{model="gpt-5",channel_id="7",status="success"} 1`)
-	require.Contains(t, text, `newapi_model_request_duration_seconds_sum{model="gpt-5",channel_id="7",status="success"} 1.200`)
 }
 
 func TestPrometheusSeriesKeyEncodingAcceptsDelimiterInModel(t *testing.T) {
