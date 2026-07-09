@@ -183,8 +183,14 @@ func fetchCardCountry(paymentIntentId string, customerId string) (string, error)
 	if paymentIntentId != "" {
 		piParams := &stripe.PaymentIntentParams{}
 		piParams.AddExpand("latest_charge")
-		if pi, err := stripepaymentintent.Get(paymentIntentId, piParams); err == nil &&
-			pi != nil && pi.LatestCharge != nil &&
+		pi, err := stripepaymentintent.Get(paymentIntentId, piParams)
+		if err != nil {
+			// Lookup failure is not "no country": don't fall through to the saved
+			// payment methods, which may be a different card than this payment —
+			// the best-effort caller simply skips the update.
+			return "", err
+		}
+		if pi != nil && pi.LatestCharge != nil &&
 			pi.LatestCharge.PaymentMethodDetails != nil &&
 			pi.LatestCharge.PaymentMethodDetails.Card != nil {
 			if cc := strings.ToUpper(strings.TrimSpace(pi.LatestCharge.PaymentMethodDetails.Card.Country)); cc != "" {

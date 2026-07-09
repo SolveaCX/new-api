@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v81"
@@ -898,12 +899,17 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 		// the card fingerprint for anti-abuse dedup.
 		backfillCardFingerprintFromTopUp(ctx, topUp, customerId, callerIp)
 		// Persist the card issuing country as the real payment geography for the
-		// ops report (best-effort, one Stripe fetch; never blocks fulfillment).
-		// Reads the charge's card country so non-save-card payments are covered too.
+		// ops report. Runs async so the Stripe fetch never extends the order-lock
+		// hold; the write is a single-column last-writer-wins analytics update,
+		// safe without the lock and under multi-node.
 		if topUp != nil {
-			if cc, ccErr := fetchCardCountry(event.GetObjectValue("payment_intent"), customerId); ccErr == nil && cc != "" {
-				model.UpdateUserPayCountry(topUp.UserId, cc)
-			}
+			paymentIntentId := event.GetObjectValue("payment_intent")
+			payerUserId := topUp.UserId
+			gopool.Go(func() {
+				if cc, ccErr := fetchCardCountry(paymentIntentId, customerId); ccErr == nil && cc != "" {
+					model.UpdateUserPayCountry(payerUserId, cc)
+				}
+			})
 		}
 	} else if topUp := model.GetTopUpByTradeNo(referenceId); topUp != nil && topUp.SaveCard &&
 		topUp.Status == common.TopUpStatusSuccess {

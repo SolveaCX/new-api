@@ -29,19 +29,25 @@ def sg(path, params=None):
     try:
         return json.loads(urllib.request.urlopen(req, timeout=30).read())
     except urllib.error.HTTPError as e:
-        return {"__err": e.code}
+        # Fail loudly: a swallowed auth/rate-limit error would masquerade as
+        # "no card country" and silently skip users.
+        body = e.read().decode("utf-8", errors="replace")[:200]
+        raise RuntimeError(f"Stripe API {path} failed: status={e.code} body={body}") from e
 
 def card_country(customer):
     # Prefer the charge's card country (covers non-save-card payments); fall back
     # to saved payment methods. Mirrors controller/stripe_card.go fetchCardCountry.
+    # Scans up to 100 charges / 100 saved PMs — far beyond any current payer's
+    # history (current payers have <20 charges); a genuinely-empty result after
+    # that scan is reported as "no card country" by the caller.
     if not customer:
         return ""
-    ch = sg("charges", {"customer": customer, "limit": 20})
+    ch = sg("charges", {"customer": customer, "limit": 100})
     for x in (ch.get("data") or []):
         cc = ((x.get("payment_method_details") or {}).get("card") or {}).get("country") or ""
         if cc:
             return cc.upper()
-    d = sg("payment_methods", {"customer": customer, "type": "card", "limit": 1})
+    d = sg("payment_methods", {"customer": customer, "type": "card", "limit": 100})
     for pm in (d.get("data") or []):
         cc = (pm.get("card") or {}).get("country") or ""
         if cc:
