@@ -169,15 +169,31 @@ func fetchCardFingerprint(customerId string) (string, error) {
 	return "", nil
 }
 
-// fetchCardCountry returns the ISO issuing country of the customer's first card
-// (analytics: real payment geography for the ops report), or "" when no card /
-// no country is available. A non-nil error means the lookup itself failed.
-func fetchCardCountry(customerId string) (string, error) {
-	if customerId == "" {
-		return "", nil
-	}
+// fetchCardCountry returns the ISO issuing country of the card used for a
+// payment (analytics: real payment geography for the ops report), or "" when
+// unavailable. It reads the charge behind paymentIntentId first — that country
+// is recorded on every successful charge regardless of whether the card was
+// saved — and only falls back to the customer's saved payment methods (which
+// are empty for non-save-card payments). A non-nil error means the lookup
+// itself failed.
+func fetchCardCountry(paymentIntentId string, customerId string) (string, error) {
 	if err := ensureStripeKey(); err != nil {
 		return "", err
+	}
+	if paymentIntentId != "" {
+		piParams := &stripe.PaymentIntentParams{}
+		piParams.AddExpand("latest_charge")
+		if pi, err := stripepaymentintent.Get(paymentIntentId, piParams); err == nil &&
+			pi != nil && pi.LatestCharge != nil &&
+			pi.LatestCharge.PaymentMethodDetails != nil &&
+			pi.LatestCharge.PaymentMethodDetails.Card != nil {
+			if cc := strings.ToUpper(strings.TrimSpace(pi.LatestCharge.PaymentMethodDetails.Card.Country)); cc != "" {
+				return cc, nil
+			}
+		}
+	}
+	if customerId == "" {
+		return "", nil
 	}
 	listParams := &stripe.PaymentMethodListParams{
 		Customer: stripe.String(customerId),

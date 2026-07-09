@@ -32,8 +32,15 @@ def sg(path, params=None):
         return {"__err": e.code}
 
 def card_country(customer):
+    # Prefer the charge's card country (covers non-save-card payments); fall back
+    # to saved payment methods. Mirrors controller/stripe_card.go fetchCardCountry.
     if not customer:
         return ""
+    ch = sg("charges", {"customer": customer, "limit": 20})
+    for x in (ch.get("data") or []):
+        cc = ((x.get("payment_method_details") or {}).get("card") or {}).get("country") or ""
+        if cc:
+            return cc.upper()
     d = sg("payment_methods", {"customer": customer, "type": "card", "limit": 1})
     for pm in (d.get("data") or []):
         cc = (pm.get("card") or {}).get("country") or ""

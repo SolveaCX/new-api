@@ -898,9 +898,10 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 		// the card fingerprint for anti-abuse dedup.
 		backfillCardFingerprintFromTopUp(ctx, topUp, customerId, callerIp)
 		// Persist the card issuing country as the real payment geography for the
-		// ops report (best-effort, one Stripe list call; never blocks fulfillment).
+		// ops report (best-effort, one Stripe fetch; never blocks fulfillment).
+		// Reads the charge's card country so non-save-card payments are covered too.
 		if topUp != nil {
-			if cc, ccErr := fetchCardCountry(customerId); ccErr == nil && cc != "" {
+			if cc, ccErr := fetchCardCountry(event.GetObjectValue("payment_intent"), customerId); ccErr == nil && cc != "" {
 				model.UpdateUserPayCountry(topUp.UserId, cc)
 			}
 		}
