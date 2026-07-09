@@ -45,12 +45,31 @@ return 1
 
 var channelConcurrencyAcquireScript = redis.NewScript(channelConcurrencyAcquireScriptSrc)
 
+var channelConcurrencyRenewScriptSrc = `
+local key = KEYS[1]
+local ttl = tonumber(ARGV[1])
+local token = ARGV[2]
+
+if not redis.call('ZSCORE', key, token) then
+	return 0
+end
+
+local redis_time = redis.call('TIME')
+local now = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
+redis.call('ZADD', key, now + ttl, token)
+redis.call('PEXPIRE', key, ttl)
+return 1
+`
+
+var channelConcurrencyRenewScript = redis.NewScript(channelConcurrencyRenewScriptSrc)
+
 type ChannelConcurrencyLease struct {
 	ChannelID int
 
-	token    string
-	useRedis bool
-	released atomic.Bool
+	token       string
+	useRedis    bool
+	renewCancel context.CancelFunc
+	released    atomic.Bool
 }
 
 type ChannelConcurrencyLoad struct {
@@ -62,12 +81,25 @@ type ChannelConcurrencyLoad struct {
 	LoadRate       float64
 }
 
+type channelConcurrencyWaitingLease struct {
+	channelID int
+	useRedis  bool
+	released  atomic.Bool
+}
+
 var (
 	channelConcurrencyMemoryMu        sync.Mutex
 	channelConcurrencyMemorySlots     = make(map[int]map[string]time.Time)
 	channelConcurrencyMemoryWaits     = make(map[int]int)
 	channelConcurrencyMemoryCooldowns = make(map[int]time.Time)
 	channelConcurrencyRequestPrefix   = common.GetUUID()
+	channelConcurrencyRenewInterval   = func(ttl time.Duration) time.Duration {
+		interval := ttl / 3
+		if interval < time.Second {
+			return time.Second
+		}
+		return interval
+	}
 )
 
 func TryAcquireChannelConcurrency(ctx context.Context, channel *model.Channel) (*ChannelConcurrencyLease, bool, error) {
@@ -93,16 +125,16 @@ func AcquireChannelConcurrencyWithWait(ctx context.Context, channel *model.Chann
 		ctx = context.Background()
 	}
 
-	waiting, err := incrementChannelConcurrencyWaiting(ctx, channel.Id, maxConcurrency)
+	waitingLease, waiting, err := acquireChannelConcurrencyWaiting(ctx, channel.Id)
 	if err != nil {
 		return nil, false, err
 	}
 	if waiting > operation_setting.GetChannelConcurrencyMaxWaiting(maxConcurrency) {
-		_ = decrementChannelConcurrencyWaiting(ctx, channel.Id)
+		releaseChannelConcurrencyWaitingLeaseWithLog(waitingLease, channel.Id)
 		return nil, false, ErrChannelConcurrencyLimit
 	}
 	defer func() {
-		_ = decrementChannelConcurrencyWaiting(context.Background(), channel.Id)
+		releaseChannelConcurrencyWaitingLeaseWithLog(waitingLease, channel.Id)
 	}()
 
 	waitCtx, cancel := context.WithTimeout(ctx, operation_setting.GetChannelConcurrencyWaitTimeout())
@@ -133,17 +165,17 @@ func tryAcquireChannelConcurrencyWithToken(ctx context.Context, channel *model.C
 		ctx = context.Background()
 	}
 
+	maxConcurrency := channel.GetMaxConcurrency()
+	if maxConcurrency <= 0 {
+		return nil, true, nil
+	}
+
 	coolingDown, err := isChannelConcurrencyCoolingDown(ctx, channel.Id)
 	if err != nil {
 		return nil, false, err
 	}
 	if coolingDown {
 		return nil, false, nil
-	}
-
-	maxConcurrency := channel.GetMaxConcurrency()
-	if maxConcurrency <= 0 {
-		return nil, true, nil
 	}
 
 	lease := &ChannelConcurrencyLease{
@@ -155,11 +187,11 @@ func tryAcquireChannelConcurrencyWithToken(ctx context.Context, channel *model.C
 	if lease.useRedis {
 		ok, err := acquireRedisChannelConcurrency(ctx, channel.Id, maxConcurrency, token)
 		if err != nil {
-			common.SysError(fmt.Sprintf("acquire channel concurrency in redis failed, fallback to memory: channel_id=%d, error=%s", channel.Id, err.Error()))
-			lease.useRedis = false
+			return nil, false, fmt.Errorf("acquire channel concurrency in redis failed for channel %d: %w", channel.Id, err)
 		} else if !ok {
 			return nil, false, nil
 		} else {
+			startChannelConcurrencyLeaseRenewal(lease)
 			return lease, true, nil
 		}
 	}
@@ -167,6 +199,7 @@ func tryAcquireChannelConcurrencyWithToken(ctx context.Context, channel *model.C
 	if !acquireMemoryChannelConcurrency(channel.Id, maxConcurrency, token) {
 		return nil, false, nil
 	}
+	startChannelConcurrencyLeaseRenewal(lease)
 	return lease, true, nil
 }
 
@@ -189,9 +222,12 @@ func GetChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel) 
 	}
 
 	if common.RedisEnabled && common.RDB != nil {
-		redisLoads, err := getRedisChannelConcurrencyLoads(ctx, loads)
+		redisLoads, err := getRedisChannelConcurrencyLoads(ctx, boundedChannelConcurrencyLoads(loads))
 		if err == nil {
-			return redisLoads, nil
+			for channelID, load := range redisLoads {
+				loads[channelID] = load
+			}
+			return loads, nil
 		}
 		common.SysError(fmt.Sprintf("get channel concurrency loads from redis failed, fallback to memory: %s", err.Error()))
 	}
@@ -262,12 +298,32 @@ func ReleaseChannelConcurrency(ctx context.Context, lease *ChannelConcurrencyLea
 
 	if lease.useRedis {
 		if common.RDB == nil {
-			return nil
+			lease.released.Store(false)
+			if lease.renewCancel != nil {
+				lease.renewCancel()
+			}
+			return fmt.Errorf("release channel concurrency in redis failed for channel %d: redis client is nil", lease.ChannelID)
 		}
-		return common.RDB.ZRem(ctx, channelConcurrencyRedisKey(lease.ChannelID), lease.token).Err()
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		err := common.RDB.ZRem(releaseCtx, channelConcurrencyRedisKey(lease.ChannelID), lease.token).Err()
+		if err != nil {
+			lease.released.Store(false)
+			if lease.renewCancel != nil {
+				lease.renewCancel()
+			}
+			return err
+		}
+		if lease.renewCancel != nil {
+			lease.renewCancel()
+		}
+		return nil
 	}
 
 	releaseMemoryChannelConcurrency(lease.ChannelID, lease.token)
+	if lease.renewCancel != nil {
+		lease.renewCancel()
+	}
 	return nil
 }
 
@@ -383,6 +439,65 @@ func acquireRedisChannelConcurrency(ctx context.Context, channelID int, maxConcu
 	return result == 1, nil
 }
 
+func startChannelConcurrencyLeaseRenewal(lease *ChannelConcurrencyLease) {
+	if lease == nil {
+		return
+	}
+	ttl := operation_setting.GetChannelConcurrencySlotTTL()
+	interval := channelConcurrencyRenewInterval(ttl)
+	if interval <= 0 || interval >= ttl {
+		interval = ttl / 3
+		if interval <= 0 {
+			interval = time.Second
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	lease.renewCancel = cancel
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if lease.released.Load() {
+					return
+				}
+				if lease.useRedis {
+					if common.RDB == nil {
+						continue
+					}
+					renewCtx, renewCancel := context.WithTimeout(context.Background(), 3*time.Second)
+					if ok, err := renewRedisChannelConcurrency(renewCtx, lease.ChannelID, lease.token); err != nil {
+						common.SysError(fmt.Sprintf("renew channel concurrency lease in redis failed: channel_id=%d, error=%s", lease.ChannelID, err.Error()))
+					} else if !ok {
+						renewCancel()
+						return
+					}
+					renewCancel()
+					continue
+				}
+				refreshMemoryChannelConcurrency(lease.ChannelID, lease.token)
+			}
+		}
+	}()
+}
+
+func renewRedisChannelConcurrency(ctx context.Context, channelID int, token string) (bool, error) {
+	result, err := channelConcurrencyRenewScript.Run(
+		ctx,
+		common.RDB,
+		[]string{channelConcurrencyRedisKey(channelID)},
+		operation_setting.GetChannelConcurrencySlotTTL().Milliseconds(),
+		token,
+	).Int()
+	if err != nil {
+		return false, fmt.Errorf("renew channel concurrency in redis failed: %w", err)
+	}
+	return result == 1, nil
+}
+
 func channelConcurrencyRedisKey(channelID int) string {
 	return fmt.Sprintf("new-api:channel_concurrency:%d", channelID)
 }
@@ -400,6 +515,11 @@ func newChannelConcurrencyToken() string {
 }
 
 func getRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]ChannelConcurrencyLoad) (map[int]ChannelConcurrencyLoad, error) {
+	initial = boundedChannelConcurrencyLoads(initial)
+	if len(initial) == 0 {
+		return map[int]ChannelConcurrencyLoad{}, nil
+	}
+
 	now := time.Now()
 	if redisNow, err := common.RDB.Time(ctx).Result(); err == nil {
 		now = redisNow
@@ -491,23 +611,53 @@ func releaseMemoryChannelConcurrency(channelID int, token string) {
 	}
 }
 
-func incrementChannelConcurrencyWaiting(ctx context.Context, channelID int, maxConcurrency int) (int, error) {
+func refreshMemoryChannelConcurrency(channelID int, token string) {
+	channelConcurrencyMemoryMu.Lock()
+	defer channelConcurrencyMemoryMu.Unlock()
+
+	slots := channelConcurrencyMemorySlots[channelID]
+	if slots == nil {
+		return
+	}
+	if _, ok := slots[token]; ok {
+		slots[token] = time.Now().Add(operation_setting.GetChannelConcurrencySlotTTL())
+	}
+}
+
+func acquireChannelConcurrencyWaiting(ctx context.Context, channelID int) (*channelConcurrencyWaitingLease, int, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	lease := &channelConcurrencyWaitingLease{
+		channelID: channelID,
+		useRedis:  common.RedisEnabled && common.RDB != nil,
 	}
 	if common.RedisEnabled && common.RDB != nil {
 		value, err := common.RDB.Incr(ctx, channelConcurrencyWaitingRedisKey(channelID)).Result()
 		if err == nil {
 			_ = common.RDB.Expire(ctx, channelConcurrencyWaitingRedisKey(channelID), operation_setting.GetChannelConcurrencyWaitTimeout()+time.Minute).Err()
-			return int(value), nil
+			return lease, int(value), nil
 		}
-		common.SysError(fmt.Sprintf("increment channel concurrency waiting in redis failed, fallback to memory: channel_id=%d, error=%s", channelID, err.Error()))
+		return nil, 0, fmt.Errorf("increment channel concurrency waiting in redis failed for channel %d: %w", channelID, err)
 	}
 
 	channelConcurrencyMemoryMu.Lock()
 	defer channelConcurrencyMemoryMu.Unlock()
 	channelConcurrencyMemoryWaits[channelID]++
-	return channelConcurrencyMemoryWaits[channelID], nil
+	return lease, channelConcurrencyMemoryWaits[channelID], nil
+}
+
+func releaseChannelConcurrencyWaitingLeaseWithLog(lease *channelConcurrencyWaitingLease, channelID int) {
+	releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer releaseCancel()
+	if err := lease.Release(releaseCtx); err != nil {
+		common.SysError(fmt.Sprintf("release channel concurrency waiting lease failed: channel_id=%d, error=%s", channelID, err.Error()))
+	}
+}
+
+func incrementChannelConcurrencyWaiting(ctx context.Context, channelID int, maxConcurrency int) (int, error) {
+	_, waiting, err := acquireChannelConcurrencyWaiting(ctx, channelID)
+	return waiting, err
 }
 
 func decrementChannelConcurrencyWaiting(ctx context.Context, channelID int) error {
@@ -536,6 +686,42 @@ func decrementChannelConcurrencyWaiting(ctx context.Context, channelID int) erro
 	return nil
 }
 
+func (lease *channelConcurrencyWaitingLease) Release(ctx context.Context) error {
+	if lease == nil {
+		return nil
+	}
+	if !lease.released.CompareAndSwap(false, true) {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if lease.useRedis {
+		if common.RDB == nil {
+			return nil
+		}
+		key := channelConcurrencyWaitingRedisKey(lease.channelID)
+		value, err := common.RDB.Decr(ctx, key).Result()
+		if err != nil {
+			lease.released.Store(false)
+			return fmt.Errorf("decrement channel concurrency waiting in redis failed for channel %d: %w", lease.channelID, err)
+		}
+		if value <= 0 {
+			_ = common.RDB.Del(ctx, key).Err()
+		}
+		return nil
+	}
+
+	channelConcurrencyMemoryMu.Lock()
+	defer channelConcurrencyMemoryMu.Unlock()
+	if channelConcurrencyMemoryWaits[lease.channelID] <= 1 {
+		delete(channelConcurrencyMemoryWaits, lease.channelID)
+		return nil
+	}
+	channelConcurrencyMemoryWaits[lease.channelID]--
+	return nil
+}
+
 func getMemoryChannelConcurrencyLoads(initial map[int]ChannelConcurrencyLoad) map[int]ChannelConcurrencyLoad {
 	channelConcurrencyMemoryMu.Lock()
 	defer channelConcurrencyMemoryMu.Unlock()
@@ -545,6 +731,10 @@ func getMemoryChannelConcurrencyLoads(initial map[int]ChannelConcurrencyLoad) ma
 
 	loads := make(map[int]ChannelConcurrencyLoad, len(initial))
 	for channelID, load := range initial {
+		if load.MaxConcurrency <= 0 {
+			loads[channelID] = load
+			continue
+		}
 		load.Active = len(channelConcurrencyMemorySlots[channelID])
 		load.Waiting = channelConcurrencyMemoryWaits[channelID]
 		if cooldownUntil, ok := channelConcurrencyMemoryCooldowns[channelID]; ok {
@@ -554,6 +744,16 @@ func getMemoryChannelConcurrencyLoads(initial map[int]ChannelConcurrencyLoad) ma
 		loads[channelID] = load
 	}
 	return loads
+}
+
+func boundedChannelConcurrencyLoads(loads map[int]ChannelConcurrencyLoad) map[int]ChannelConcurrencyLoad {
+	bounded := make(map[int]ChannelConcurrencyLoad, len(loads))
+	for channelID, load := range loads {
+		if load.MaxConcurrency > 0 {
+			bounded[channelID] = load
+		}
+	}
+	return bounded
 }
 
 func cleanupMemoryChannelConcurrencyLocked(now time.Time) {

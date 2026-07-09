@@ -1,10 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math/rand"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -60,6 +63,41 @@ func TestTryAcquireChannelConcurrencyUnlimitedDoesNotAllocateLease(t *testing.T)
 		require.True(t, ok)
 		require.Nil(t, lease)
 	}
+}
+
+func TestTryAcquireChannelConcurrencyUnlimitedDoesNotQueryRedis(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	hook := &redisCommandCounterHook{}
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RDB.AddHook(hook)
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+	restoreSetting := useChannelConcurrencySettingForTest(t, operation_setting.ChannelConcurrencySetting{
+		SlotTTLMinutes:       1,
+		WaitEnabled:          true,
+		WaitTimeoutMS:        5000,
+		WaitIntervalMS:       100,
+		CooldownEnabled:      true,
+		CooldownSeconds:      30,
+		MaxWaitingPerChannel: 1,
+	})
+	defer restoreSetting()
+
+	channel := &model.Channel{Id: 115, MaxConcurrency: 0}
+	lease, ok, err := TryAcquireChannelConcurrency(context.Background(), channel)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Nil(t, lease)
+	require.Empty(t, hook.Commands())
 }
 
 func TestTryAcquireChannelConcurrencyRedisLimit(t *testing.T) {
@@ -133,9 +171,9 @@ func TestChannelConcurrencyLoadsIncludeActiveWaitingAndCooldown(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.NotNil(t, lease)
-	t.Cleanup(func() {
+	defer func() {
 		require.NoError(t, ReleaseChannelConcurrency(ctx, lease))
-	})
+	}()
 
 	waiting, err := incrementChannelConcurrencyWaiting(ctx, channel.Id, channel.GetMaxConcurrency())
 	require.NoError(t, err)
@@ -156,6 +194,47 @@ func TestChannelConcurrencyLoadsIncludeActiveWaitingAndCooldown(t *testing.T) {
 	require.Equal(t, 1, load.Waiting)
 	require.True(t, load.CoolingDown)
 	require.InDelta(t, 0.5, load.LoadRate, 0.001)
+}
+
+func TestChannelConcurrencyLoadsSkipUnlimitedChannels(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	hook := &redisCommandCounterHook{}
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RDB.AddHook(hook)
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+	restoreSetting := useChannelConcurrencySettingForTest(t, operation_setting.ChannelConcurrencySetting{
+		SlotTTLMinutes:       1,
+		WaitEnabled:          true,
+		WaitTimeoutMS:        5000,
+		WaitIntervalMS:       100,
+		CooldownEnabled:      true,
+		CooldownSeconds:      30,
+		MaxWaitingPerChannel: 1,
+	})
+	defer restoreSetting()
+
+	channel := &model.Channel{Id: 116, MaxConcurrency: 0}
+	loads, err := GetChannelConcurrencyLoads(context.Background(), []*model.Channel{channel})
+	require.NoError(t, err)
+
+	load := loads[channel.Id]
+	require.Equal(t, channel.Id, load.ChannelID)
+	require.Equal(t, 0, load.MaxConcurrency)
+	require.Equal(t, 0, load.Active)
+	require.Equal(t, 0, load.Waiting)
+	require.False(t, load.CoolingDown)
+	require.Equal(t, 0.0, load.LoadRate)
+	require.Empty(t, hook.Commands())
 }
 
 func TestTryAcquireChannelConcurrencySkipsCoolingDownChannel(t *testing.T) {
@@ -184,15 +263,119 @@ func TestTryAcquireChannelConcurrencyFallsBackToMemoryWhenRedisFails(t *testing.
 	defer cancel()
 
 	lease, ok, err := TryAcquireChannelConcurrency(ctx, channel)
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.NotNil(t, lease)
-	require.False(t, lease.useRedis)
-	require.NoError(t, ReleaseChannelConcurrency(ctx, lease))
+	require.Error(t, err)
+	require.False(t, ok)
+	require.Nil(t, lease)
 }
 
 func TestChannelConcurrencyAcquireScriptUsesRedisTime(t *testing.T) {
 	require.Contains(t, channelConcurrencyAcquireScriptSrc, "redis.call('TIME')")
+}
+
+func TestRedisChannelConcurrencyLeaseRenewsWhileHeld(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+	restoreSetting := useChannelConcurrencySettingForTest(t, operation_setting.ChannelConcurrencySetting{
+		SlotTTLMinutes:       1,
+		WaitEnabled:          true,
+		WaitTimeoutMS:        5000,
+		WaitIntervalMS:       100,
+		CooldownEnabled:      true,
+		CooldownSeconds:      30,
+		MaxWaitingPerChannel: 1,
+	})
+	defer restoreSetting()
+	previousRenewInterval := channelConcurrencyRenewInterval
+	channelConcurrencyRenewInterval = func(time.Duration) time.Duration {
+		return 5 * time.Millisecond
+	}
+	t.Cleanup(func() {
+		channelConcurrencyRenewInterval = previousRenewInterval
+	})
+
+	channel := &model.Channel{Id: 111, MaxConcurrency: 1}
+	lease, ok, err := TryAcquireChannelConcurrency(context.Background(), channel)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, lease)
+	t.Cleanup(func() {
+		_ = ReleaseChannelConcurrency(context.Background(), lease)
+	})
+
+	key := channelConcurrencyRedisKey(channel.Id)
+	initialScore, err := common.RDB.ZScore(context.Background(), key, lease.token).Result()
+	require.NoError(t, err)
+
+	mr.FastForward(30 * time.Second)
+	require.Eventually(t, func() bool {
+		renewedScore, scoreErr := common.RDB.ZScore(context.Background(), key, lease.token).Result()
+		return scoreErr == nil && renewedScore > initialScore
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestRedisChannelConcurrencyLeaseRenewalContinuesUntilReleaseWhenAcquireContextCancels(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+	restoreSetting := useChannelConcurrencySettingForTest(t, operation_setting.ChannelConcurrencySetting{
+		SlotTTLMinutes:       1,
+		WaitEnabled:          true,
+		WaitTimeoutMS:        5000,
+		WaitIntervalMS:       100,
+		CooldownEnabled:      true,
+		CooldownSeconds:      30,
+		MaxWaitingPerChannel: 1,
+	})
+	defer restoreSetting()
+	previousRenewInterval := channelConcurrencyRenewInterval
+	channelConcurrencyRenewInterval = func(time.Duration) time.Duration {
+		return 5 * time.Millisecond
+	}
+	t.Cleanup(func() {
+		channelConcurrencyRenewInterval = previousRenewInterval
+	})
+
+	channel := &model.Channel{Id: 112, MaxConcurrency: 1}
+	acquireCtx, cancel := context.WithCancel(context.Background())
+	lease, ok, err := TryAcquireChannelConcurrency(acquireCtx, channel)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, lease)
+	t.Cleanup(func() {
+		_ = ReleaseChannelConcurrency(context.Background(), lease)
+	})
+
+	key := channelConcurrencyRedisKey(channel.Id)
+	initialScore, err := common.RDB.ZScore(context.Background(), key, lease.token).Result()
+	require.NoError(t, err)
+
+	cancel()
+	mr.FastForward(30 * time.Second)
+	require.Eventually(t, func() bool {
+		currentScore, scoreErr := common.RDB.ZScore(context.Background(), key, lease.token).Result()
+		return scoreErr == nil && currentScore > initialScore
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestAcquireChannelConcurrencyWithWaitAcquiresAfterRelease(t *testing.T) {
@@ -221,6 +404,68 @@ func TestAcquireChannelConcurrencyWithWaitAcquiresAfterRelease(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, lease)
 	require.NoError(t, ReleaseChannelConcurrency(ctx, lease))
+}
+
+func TestAcquireChannelConcurrencyWithWaitLeaseRenewsAfterWaitContextReturns(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+	restoreSetting := useChannelConcurrencySettingForTest(t, operation_setting.ChannelConcurrencySetting{
+		SlotTTLMinutes:       1,
+		WaitEnabled:          true,
+		WaitTimeoutMS:        5000,
+		WaitIntervalMS:       5,
+		CooldownEnabled:      true,
+		CooldownSeconds:      30,
+		MaxWaitingPerChannel: 1,
+	})
+	defer restoreSetting()
+	previousRenewInterval := channelConcurrencyRenewInterval
+	channelConcurrencyRenewInterval = func(time.Duration) time.Duration {
+		return 5 * time.Millisecond
+	}
+	t.Cleanup(func() {
+		channelConcurrencyRenewInterval = previousRenewInterval
+	})
+
+	channel := &model.Channel{Id: 114, MaxConcurrency: 1}
+	heldLease, ok, err := TryAcquireChannelConcurrency(context.Background(), channel)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, heldLease)
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_ = ReleaseChannelConcurrency(context.Background(), heldLease)
+	}()
+
+	lease, ok, err := AcquireChannelConcurrencyWithWait(context.Background(), channel)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, lease)
+	t.Cleanup(func() {
+		_ = ReleaseChannelConcurrency(context.Background(), lease)
+	})
+
+	key := channelConcurrencyRedisKey(channel.Id)
+	initialScore, err := common.RDB.ZScore(context.Background(), key, lease.token).Result()
+	require.NoError(t, err)
+
+	mr.FastForward(30 * time.Second)
+	require.Eventually(t, func() bool {
+		currentScore, scoreErr := common.RDB.ZScore(context.Background(), key, lease.token).Result()
+		return scoreErr == nil && currentScore > initialScore
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestAcquireChannelConcurrencyWithWaitReturnsFullWhenQueueFull(t *testing.T) {
@@ -281,6 +526,45 @@ func TestAcquireChannelConcurrencyWithWaitTimeoutDecrementsWaiting(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, 1, loads[channel.Id].Active)
 	require.Equal(t, 0, loads[channel.Id].Waiting)
+}
+
+func TestReleaseChannelConcurrencyWaitingLeaseWithLogRecordsFailure(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{
+		Addr:        "127.0.0.1:1",
+		DialTimeout: 10 * time.Millisecond,
+		ReadTimeout: 10 * time.Millisecond,
+	})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		resetChannelConcurrencyForTest()
+	})
+
+	var logBuffer bytes.Buffer
+	previousErrorWriter := gin.DefaultErrorWriter
+	common.LogWriterMu.Lock()
+	gin.DefaultErrorWriter = &logBuffer
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultErrorWriter = previousErrorWriter
+		common.LogWriterMu.Unlock()
+	})
+
+	lease := &channelConcurrencyWaitingLease{
+		channelID: 113,
+		useRedis:  true,
+	}
+	releaseChannelConcurrencyWaitingLeaseWithLog(lease, 113)
+
+	require.Contains(t, logBuffer.String(), "release channel concurrency waiting lease failed: channel_id=113")
+	require.False(t, lease.released.Load())
+	require.True(t, strings.Contains(logBuffer.String(), "decrement channel concurrency waiting in redis failed"))
 }
 
 func TestCacheGetRandomSatisfiedChannelPrefersLowerLoadChannel(t *testing.T) {
@@ -479,6 +763,41 @@ func TestCacheGetRandomSatisfiedChannelSkipsFullChannels(t *testing.T) {
 	require.Equal(t, fallbackChannel.Id, selected.Id)
 }
 
+type redisCommandCounterHook struct {
+	mu       sync.Mutex
+	commands []string
+}
+
+func (h *redisCommandCounterHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.commands = append(h.commands, strings.ToLower(cmd.Name()))
+	return ctx, nil
+}
+
+func (h *redisCommandCounterHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	return nil
+}
+
+func (h *redisCommandCounterHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, cmd := range cmds {
+		h.commands = append(h.commands, strings.ToLower(cmd.Name()))
+	}
+	return ctx, nil
+}
+
+func (h *redisCommandCounterHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	return nil
+}
+
+func (h *redisCommandCounterHook) Commands() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.commands...)
+}
+
 func useMemoryChannelConcurrencyForTest(t *testing.T) func() {
 	t.Helper()
 	prevRDB := common.RDB
@@ -529,14 +848,24 @@ func useFailingRedisChannelConcurrencyForTest(t *testing.T) func() {
 func useChannelConcurrencyWaitSettingForTest(t *testing.T, timeout time.Duration, interval time.Duration, maxWaiting int) func() {
 	t.Helper()
 	setting := operation_setting.GetChannelConcurrencySetting()
-	original := *setting
+	original := setting
 	setting.WaitEnabled = true
 	setting.WaitTimeoutMS = int(timeout / time.Millisecond)
 	setting.WaitIntervalMS = int(interval / time.Millisecond)
 	setting.MaxWaitingPerChannel = maxWaiting
 	setting.CooldownEnabled = true
+	operation_setting.SetChannelConcurrencySettingForTest(setting)
 	return func() {
-		*setting = original
+		operation_setting.SetChannelConcurrencySettingForTest(original)
+	}
+}
+
+func useChannelConcurrencySettingForTest(t *testing.T, setting operation_setting.ChannelConcurrencySetting) func() {
+	t.Helper()
+	original := operation_setting.GetChannelConcurrencySetting()
+	operation_setting.SetChannelConcurrencySettingForTest(setting)
+	return func() {
+		operation_setting.SetChannelConcurrencySettingForTest(original)
 	}
 }
 

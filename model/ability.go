@@ -72,7 +72,7 @@ func getPriority(group string, model string, retry int) (int, error) {
 	var priorities []int
 	err := DB.Model(&Ability{}).
 		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Where(abilityEnabledCondition(group, model)).
 		Order("priority DESC").              // 按优先级降序排序
 		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
 
@@ -88,6 +88,9 @@ func getPriority(group string, model string, retry int) (int, error) {
 
 	// 确定要使用的优先级
 	var priorityToUse int
+	if retry < 0 {
+		retry = 0
+	}
 	if retry >= len(priorities) {
 		// 如果重试次数大于优先级数，则使用最小的优先级
 		priorityToUse = priorities[len(priorities)-1]
@@ -97,15 +100,24 @@ func getPriority(group string, model string, retry int) (int, error) {
 	return priorityToUse, nil
 }
 
+func abilityEnabledCondition(group string, model string) map[string]interface{} {
+	return map[string]interface{}{
+		"group":   group,
+		"model":   model,
+		"enabled": true,
+	}
+}
+
 func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
-	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
+	condition := abilityEnabledCondition(group, model)
+	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(condition)
+	channelQuery := DB.Where(condition).Where("priority = (?)", maxPrioritySubQuery)
 	if retry != 0 {
 		priority, err := getPriority(group, model, retry)
 		if err != nil {
 			return nil, err
 		} else {
-			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
+			channelQuery = DB.Where(condition).Where("priority = ?", priority)
 		}
 	}
 
@@ -118,7 +130,7 @@ func GetChannelCandidates(group string, model string, retry int) ([]*Channel, er
 
 func GetChannelCandidatesWithFilter(group string, model string, retry int, filter ChannelFilter) ([]*Channel, error) {
 	var abilities []Ability
-	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+	err := DB.Where(abilityEnabledCondition(group, model)).
 		Order("priority DESC, weight DESC").
 		Find(&abilities).Error
 	if err != nil {
@@ -191,7 +203,7 @@ type abilityChannelCandidate struct {
 func GetChannelWithFilter(group string, model string, retry int, filter ChannelFilter) (*Channel, error) {
 	var abilities []Ability
 
-	channelQuery := DB.Where(&Ability{Group: group, Model: model, Enabled: true})
+	channelQuery := DB.Where(abilityEnabledCondition(group, model))
 	err := channelQuery.Order("priority DESC, weight DESC").Find(&abilities).Error
 	if err != nil {
 		return nil, err
@@ -265,6 +277,9 @@ func filterAbilityCandidatesByRetryWithClamp(candidates []abilityChannelCandidat
 		}
 		retry = len(sortedUniquePriorities) - 1
 	}
+	if retry < 0 {
+		retry = 0
+	}
 	targetPriority := sortedUniquePriorities[retry]
 
 	targetCandidates := make([]abilityChannelCandidate, 0, len(candidates))
@@ -288,23 +303,33 @@ func pickAbilityCandidateByWeight(candidates []abilityChannelCandidate) abilityC
 		return candidates[0]
 	}
 
-	sumWeight := 0
+	var sumWeight int64
 	for _, candidate := range candidates {
-		sumWeight += int(candidate.ability.Weight)
+		if uint64(candidate.ability.Weight) > uint64(maxInt64ForWeight) {
+			return candidates[len(candidates)-1]
+		}
+		weight := int64(candidate.ability.Weight)
+		if sumWeight > maxInt64ForWeight-weight {
+			return candidates[len(candidates)-1]
+		}
+		sumWeight += weight
 	}
 
-	smoothingFactor := 1
-	smoothingAdjustment := 0
+	var smoothingFactor int64 = 1
+	var smoothingAdjustment int64
 	if sumWeight == 0 {
-		sumWeight = len(candidates) * 100
+		sumWeight = int64(len(candidates)) * 100
 		smoothingAdjustment = 100
-	} else if sumWeight/len(candidates) < 10 {
+	} else if sumWeight/int64(len(candidates)) < 10 {
 		smoothingFactor = 100
 	}
+	if sumWeight > maxInt64ForWeight/smoothingFactor {
+		return candidates[len(candidates)-1]
+	}
 
-	randomWeight := rand.Intn(sumWeight * smoothingFactor)
+	randomWeight := rand.Int63n(sumWeight * smoothingFactor)
 	for _, candidate := range candidates {
-		randomWeight -= int(candidate.ability.Weight)*smoothingFactor + smoothingAdjustment
+		randomWeight -= int64(candidate.ability.Weight)*smoothingFactor + smoothingAdjustment
 		if randomWeight < 0 {
 			return candidate
 		}
