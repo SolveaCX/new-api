@@ -79,9 +79,8 @@ type bucketKey struct {
 }
 
 type prometheusSeriesKey struct {
-	model     string
-	channelID int
-	status    string
+	model  string
+	status string
 }
 
 type counters struct {
@@ -105,16 +104,12 @@ type atomicBucket struct {
 }
 
 type prometheusCounters struct {
-	buckets [prometheusLatencyBucketCount]int64
-	count   int64
-	sumMs   int64
+	count int64
 }
 
 type prometheusLockedBucket struct {
 	mu            sync.Mutex
-	buckets       [prometheusLatencyBucketCount]int64
 	count         int64
-	sumMs         int64
 	lastUpdatedAt int64
 	retired       bool
 }
@@ -224,23 +219,12 @@ func (c counters) isZero() bool {
 }
 
 func (b *prometheusLockedBucket) add(sample Sample) bool {
-	latencyMs := sample.LatencyMs
-	if latencyMs < 0 {
-		latencyMs = 0
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.retired {
 		return false
 	}
-	for i, upperBoundMs := range prometheusLatencyBucketUpperBoundsMs {
-		if latencyMs <= upperBoundMs {
-			b.buckets[i]++
-		}
-	}
-	b.buckets[prometheusInfBucketIndex]++
 	b.count++
-	b.sumMs += latencyMs
 	b.lastUpdatedAt = time.Now().UnixNano()
 	return true
 }
@@ -252,9 +236,7 @@ func (b *prometheusLockedBucket) snapshot() prometheusCounters {
 		return prometheusCounters{}
 	}
 	out := prometheusCounters{
-		buckets: b.buckets,
-		count:   b.count,
-		sumMs:   b.sumMs,
+		count: b.count,
 	}
 	return out
 }
@@ -273,21 +255,9 @@ func (b *prometheusLockedBucket) retireIfIdle(cutoffUnixNano int64) bool {
 }
 
 func (c prometheusCounters) isZero() bool {
-	if c.count != 0 || c.sumMs != 0 {
-		return false
-	}
-	for _, value := range c.buckets {
-		if value != 0 {
-			return false
-		}
-	}
-	return true
+	return c.count == 0
 }
 
 func (c *prometheusCounters) add(other prometheusCounters) {
-	for i, value := range other.buckets {
-		c.buckets[i] += value
-	}
 	c.count += other.count
-	c.sumMs += other.sumMs
 }

@@ -360,14 +360,9 @@ func recordPrometheusPending(sample Sample) {
 	if sample.Model == "" {
 		return
 	}
-	channelID := sample.ChannelID
-	if !prometheusChannelLabelEnabled() {
-		channelID = 0
-	}
 	key := prometheusSeriesKey{
-		model:     sample.Model,
-		channelID: channelID,
-		status:    prometheusStatus(sample.Success),
+		model:  sample.Model,
+		status: prometheusStatus(sample.Success),
 	}
 	for {
 		actual, _ := prometheusPendingBuckets.LoadOrStore(key, &prometheusLockedBucket{})

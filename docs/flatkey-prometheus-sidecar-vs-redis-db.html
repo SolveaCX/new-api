@@ -150,7 +150,7 @@
     <header>
       <h1>Flatkey Google 官方 Prometheus 监控方案</h1>
       <p class="lead">
-        目标是看清楚线上 <code>newapi-router</code> 多实例下的模型请求耗时、请求量和错误率。
+        目标是用最低成本看清楚线上 <code>newapi-router</code> 多实例下按模型分类的请求成功率。
         现在方案切换为 Google 官方的 Cloud Run Managed Service for Prometheus sidecar，
         不再让 AWS Prometheus 从公网随机抓某一个 Cloud Run 实例，也不再用 Redis 合并 Prometheus 指标。
       </p>
@@ -175,7 +175,7 @@
     <section>
       <div class="flow">
         <div class="step"><b>1. 请求进来</b>用户请求打到 Cloud Run 的 <code>newapi-router</code>。</div>
-        <div class="step"><b>2. 本地记录</b>Go 进程把 <code>model</code>、<code>channel_id</code>、<code>status</code>、耗时写到进程内 counter/histogram。</div>
+        <div class="step"><b>2. 本地记录</b>Go 进程只把 <code>model</code> 和 <code>status</code> 写到进程内 counter。</div>
         <div class="step"><b>3. sidecar 抓取</b>同一个 Cloud Run 实例里的 <code>collector</code> 抓 <code>localhost:3000/metrics</code>。</div>
         <div class="step"><b>4. Google 存储</b>Managed Prometheus 存每个实例的时间序列，并带上 Cloud Run 元数据标签。</div>
         <div class="step"><b>5. Grafana 展示</b>Grafana 用 PromQL 聚合，也可以按 <code>instance</code> / <code>revision</code> 下钻。</div>
@@ -207,7 +207,7 @@
         <tr>
           <td>单实例定位</td>
           <td><span class="ok">可以</span>，Google 会带 Cloud Run 的 <code>service</code>、<code>revision</code>、<code>instance</code> 等标签。</td>
-          <td><span class="warn">不适合</span>，它更像全局聚合，不天然保留每个实例的 histogram。</td>
+          <td><span class="warn">不适合</span>，它更像全局聚合，不天然保留每个实例的本地计数。</td>
         </tr>
         <tr>
           <td>写入压力</td>
@@ -230,7 +230,7 @@
     <h2>代码和配置变化</h2>
     <section>
       <ul>
-        <li><code>/metrics</code> 只输出当前 Cloud Run 实例进程内的 Prometheus counter/histogram。</li>
+        <li><code>/metrics</code> 只输出当前 Cloud Run 实例进程内按 <code>model,status</code> 聚合的 Prometheus counter。</li>
         <li>Prometheus 指标不再通过 Redis 跨实例合并，避免多实例合并和 Redis 写入压力。</li>
         <li>来自 <code>127.0.0.1</code> 或 <code>::1</code> 的 sidecar 本地抓取不需要 token。</li>
         <li>外部访问 <code>/metrics</code> 仍然要 <code>Authorization: Bearer &lt;token&gt;</code>，所以浏览器直接打开看到 401/503 是正常保护。</li>
@@ -257,51 +257,44 @@ spec:
 
     <h2>指标维度和费用控制</h2>
     <section>
-      <p>业务指标只放低基数标签：</p>
-      <pre><code>model + channel_id + status</code></pre>
+      <p>业务指标只放最低基数标签：</p>
+      <pre><code>model + status</code></pre>
       <p>
         不把 <code>api_key</code> 放进 Prometheus label。api key 数量会持续增长，放进去会让时间序列数量快速变大。
-        如果后续 <code>channel_id</code> 也太多，可以把 <code>PROMETHEUS_METRICS_CHANNEL_LABEL_ENABLED=false</code>
-        设到 router，先聚合到模型级别。
+        也不把 <code>channel_id</code> 放进 Prometheus label，因为当前只需要按模型看成功率。
+        耗时、渠道等更细的历史分析继续走 DB/控制台，不进入 Managed Prometheus。
       </p>
       <p>
         费用主要跟时间序列数量和 scrape 频率有关。粗略理解：
       </p>
-      <pre><code>活跃时间序列 ≈ 模型数 × 渠道数 × 状态数 × 实例数 × 每个 histogram/counter 产生的序列数</code></pre>
+      <pre><code>活跃业务时间序列 ≈ 模型数 × 状态数 × 实例数</code></pre>
       <p>
-        当前 histogram 有 bucket、sum、count，再加 request total counter，所以 <code>model</code> 和
-        <code>channel_id</code> 的组合越多，费用越容易上升。默认 30 秒抓一次，先看真实 series 数，再决定是否关闭 channel 维度。
+        当前只保留 <code>newapi_model_requests_total</code> 一个业务 counter，<code>status</code> 只有
+        <code>success</code> / <code>error</code>。如果有 20 个活跃模型、10 个实例，大约就是
+        <code>20 × 2 × 10 = 400</code> 条业务时间序列，再加 Google/sidecar 自带的少量元数据指标。
       </p>
     </section>
 
     <h2>Grafana 查询示例</h2>
     <section>
-      <p>看每个模型 P95 耗时：</p>
-      <pre><code>histogram_quantile(
-  0.95,
-  sum by (le, model) (
-    rate(newapi_model_request_duration_seconds_bucket[5m])
-  )
+      <p>看每个模型请求成功率：</p>
+      <pre><code>100 *
+sum by (model) (
+  rate(newapi_model_requests_total{status="success"}[5m])
+)
+/
+sum by (model) (
+  rate(newapi_model_requests_total[5m])
 )</code></pre>
 
-      <p>按模型和渠道看 P95 耗时：</p>
-      <pre><code>histogram_quantile(
-  0.95,
-  sum by (le, model, channel_id) (
-    rate(newapi_model_request_duration_seconds_bucket[5m])
-  )
-)</code></pre>
-
-      <p>看某个 Cloud Run 实例是否异常：</p>
-      <pre><code>histogram_quantile(
-  0.95,
-  sum by (le, instance, revision) (
-    rate(newapi_model_request_duration_seconds_bucket[5m])
-  )
-)</code></pre>
-
-      <p>看错误率：</p>
+      <p>看每个模型请求量：</p>
       <pre><code>sum by (model) (
+  rate(newapi_model_requests_total[5m])
+)</code></pre>
+
+      <p>如果要看错误率：</p>
+      <pre><code>100 *
+sum by (model) (
   rate(newapi_model_requests_total{status="error"}[5m])
 )
 /
@@ -317,7 +310,7 @@ sum by (model) (
         <li>对生产 GCP Terraform 执行 plan/apply，创建 RunMonitoring secret，并给 <code>newapi-router</code> 加 <code>collector</code> sidecar。</li>
         <li>执行一次生产 router deploy。原因是 Cloud Run revision 需要带上最新 app 镜像和 <code>/metrics</code> 逻辑。</li>
         <li>在 Grafana 里添加或使用 Google Managed Prometheus / Cloud Monitoring 数据源。</li>
-        <li>导入上面的 PromQL 面板，先观察 series 数、P95、错误率，再决定是否关闭 <code>channel_id</code> 标签。</li>
+        <li>导入上面的 PromQL 面板，先观察按模型成功率、请求量和 series 数。</li>
       </ol>
       <p class="warn">
         注意：只 apply Terraform 不够，还需要部署 router；只部署 router 也不够，还需要 Terraform 创建 sidecar。

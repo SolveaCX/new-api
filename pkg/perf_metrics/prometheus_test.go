@@ -30,7 +30,7 @@ func TestPrometheusMetricsAreKeptInLocalProcessMemory(t *testing.T) {
 	require.Equal(t, 1, syncMapLen(prometheusPendingBuckets))
 }
 
-func TestBuildPrometheusTextEmitsHistogramAndRequestCounters(t *testing.T) {
+func TestBuildPrometheusTextEmitsModelStatusRequestCountersOnly(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
 
 	Record(Sample{
@@ -43,7 +43,14 @@ func TestBuildPrometheusTextEmitsHistogramAndRequestCounters(t *testing.T) {
 	Record(Sample{
 		Model:     "gpt-5",
 		Group:     "default",
-		ChannelID: 7,
+		ChannelID: 8,
+		LatencyMs: 3200,
+		Success:   true,
+	})
+	Record(Sample{
+		Model:     "gpt-5",
+		Group:     "default",
+		ChannelID: 9,
 		LatencyMs: 4500,
 		Success:   false,
 	})
@@ -51,17 +58,16 @@ func TestBuildPrometheusTextEmitsHistogramAndRequestCounters(t *testing.T) {
 	text, err := BuildPrometheusText(context.Background())
 	require.NoError(t, err)
 
-	require.Contains(t, text, "# TYPE newapi_model_request_duration_seconds histogram")
-	require.Contains(t, text, `newapi_model_request_duration_seconds_bucket{model="gpt-5",channel_id="7",status="success",le="2"} 1`)
-	require.Contains(t, text, `newapi_model_request_duration_seconds_bucket{model="gpt-5",channel_id="7",status="error",le="5"} 1`)
-	require.Contains(t, text, `newapi_model_request_duration_seconds_sum{model="gpt-5",channel_id="7",status="success"} 1.200`)
-	require.Contains(t, text, `newapi_model_request_duration_seconds_count{model="gpt-5",channel_id="7",status="success"} 1`)
-	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",channel_id="7",status="success"} 1`)
-	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",channel_id="7",status="error"} 1`)
+	require.NotContains(t, text, "newapi_model_request_duration_seconds")
+	require.NotContains(t, text, "channel_id")
+	require.Contains(t, text, "# HELP newapi_perf_metrics_series Number of model/status series exposed by this endpoint.")
+	require.Contains(t, text, `newapi_perf_metrics_series 2`)
+	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",status="success"} 2`)
+	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",status="error"} 1`)
 	require.NotContains(t, text, "newapi_perf_metrics_redis_available")
 }
 
-func TestRecordRelaySampleUsesChannelIDLabel(t *testing.T) {
+func TestRecordRelaySampleUsesModelStatusLabels(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
 
 	RecordRelaySample(&relaycommon.RelayInfo{
@@ -76,7 +82,8 @@ func TestRecordRelaySampleUsesChannelIDLabel(t *testing.T) {
 	text, err := BuildPrometheusText(context.Background())
 	require.NoError(t, err)
 
-	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",channel_id="42",status="success"} 1`)
+	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",status="success"} 1`)
+	require.NotContains(t, text, "channel_id")
 }
 
 func TestBuildPrometheusTextEscapesLabelValues(t *testing.T) {
@@ -95,33 +102,15 @@ func TestBuildPrometheusTextEscapesLabelValues(t *testing.T) {
 	require.Contains(t, text, `model="gpt\"5\\mini\nv2"`)
 }
 
-func TestPrometheusCountersIsZeroChecksBuckets(t *testing.T) {
+func TestPrometheusCountersIsZeroChecksCount(t *testing.T) {
 	counter := prometheusCounters{}
 	require.True(t, counter.isZero())
 
-	counter.buckets[prometheusInfBucketIndex] = 1
+	counter.count = 1
 	require.False(t, counter.isZero())
 }
 
-func TestPrometheusChannelLabelCanBeDisabled(t *testing.T) {
-	resetPerfMetricsStateForTest(t)
-	t.Setenv(prometheusChannelLabelEnabledEnv, "false")
-
-	Record(Sample{
-		Model:     "gpt-5",
-		Group:     "default",
-		ChannelID: 7,
-		LatencyMs: 100,
-		Success:   true,
-	})
-
-	text, err := BuildPrometheusText(context.Background())
-	require.NoError(t, err)
-	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",channel_id="unknown",status="success"} 1`)
-	require.NotContains(t, text, `channel_id="7"`)
-}
-
-func TestPrometheusChannelLabelDisableCoalescesLocalSeries(t *testing.T) {
+func TestPrometheusModelStatusCoalescesChannelIDs(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
 
 	Record(Sample{
@@ -131,12 +120,18 @@ func TestPrometheusChannelLabelDisableCoalescesLocalSeries(t *testing.T) {
 		LatencyMs: 100,
 		Success:   true,
 	})
-	t.Setenv(prometheusChannelLabelEnabledEnv, "false")
+	Record(Sample{
+		Model:     "gpt-5",
+		Group:     "default",
+		ChannelID: 8,
+		LatencyMs: 100,
+		Success:   true,
+	})
 
 	text, err := BuildPrometheusText(context.Background())
 	require.NoError(t, err)
-	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",channel_id="unknown",status="success"} 1`)
-	require.NotContains(t, text, `channel_id="7"`)
+	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",status="success"} 2`)
+	require.NotContains(t, text, "channel_id")
 }
 
 func TestPrometheusSeriesScanLimitFailsClosed(t *testing.T) {
@@ -166,7 +161,7 @@ func TestPrometheusSeriesScanLimitFailsClosed(t *testing.T) {
 func TestBuildPrometheusTextPrunesIdleLocalSeries(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
 
-	staleKey := prometheusSeriesKey{model: "stale-model", channelID: 7, status: "success"}
+	staleKey := prometheusSeriesKey{model: "stale-model", status: "success"}
 	staleBucket := &prometheusLockedBucket{}
 	staleBucket.add(Sample{
 		Model:     "stale-model",
@@ -189,7 +184,7 @@ func TestBuildPrometheusTextPrunesIdleLocalSeries(t *testing.T) {
 
 	text, err := BuildPrometheusText(context.Background())
 	require.NoError(t, err)
-	require.Contains(t, text, `newapi_model_requests_total{model="active-model",channel_id="8",status="success"} 1`)
+	require.Contains(t, text, `newapi_model_requests_total{model="active-model",status="success"} 1`)
 	require.NotContains(t, text, "stale-model")
 
 	_, exists := prometheusPendingBuckets.Load(staleKey)
