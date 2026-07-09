@@ -378,13 +378,23 @@ func recordPrometheusPending(sample Sample) {
 	if sample.Model == "" {
 		return
 	}
+	channelID := sample.ChannelID
+	if !prometheusChannelLabelEnabled() {
+		channelID = 0
+	}
 	key := prometheusSeriesKey{
 		model:     sample.Model,
-		channelID: sample.ChannelID,
+		channelID: channelID,
 		status:    prometheusStatus(sample.Success),
 	}
-	actual, _ := prometheusPendingBuckets.LoadOrStore(key, &prometheusAtomicBucket{})
-	actual.(*prometheusAtomicBucket).add(sample)
+	for {
+		actual, _ := prometheusPendingBuckets.LoadOrStore(key, &prometheusAtomicBucket{})
+		bucket := actual.(*prometheusAtomicBucket)
+		if bucket.add(sample) {
+			return
+		}
+		prometheusPendingBuckets.CompareAndDelete(key, bucket)
+	}
 }
 
 func prometheusStatus(success bool) string {

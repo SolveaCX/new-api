@@ -2,9 +2,7 @@ package perfmetrics
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net"
 	"strconv"
 	"time"
 
@@ -103,6 +101,7 @@ type drainedRedisBucket struct {
 }
 
 type drainedPrometheusBucket struct {
+	rawKey  any
 	key     prometheusSeriesKey
 	bucket  *prometheusAtomicBucket
 	counter prometheusCounters
@@ -137,9 +136,11 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		bucket := value.(*prometheusAtomicBucket)
 		counter := bucket.drain()
 		if counter.isZero() {
+			deleteEmptyPrometheusPendingBucket(key, bucket)
 			return true
 		}
 		prometheusDrained = append(prometheusDrained, drainedPrometheusBucket{
+			rawKey:  key,
 			key:     key.(prometheusSeriesKey),
 			bucket:  bucket,
 			counter: counter,
@@ -194,18 +195,19 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		if shouldRequeueRedisFlushError(err) {
-			for _, item := range redisDrained {
-				item.bucket.addCounters(item.counter)
-			}
-			for _, item := range prometheusDrained {
-				item.bucket.addCounters(item.counter)
-			}
+		for _, item := range redisDrained {
+			item.bucket.addCounters(item.counter)
+		}
+		for _, item := range prometheusDrained {
+			item.bucket.addCounters(item.counter)
 		}
 		return err
 	}
 	for _, item := range redisDrained {
 		deleteHistoricalRedisPendingBucket(item.rawKey, item.key, item.bucket, activeBucket)
+	}
+	for _, item := range prometheusDrained {
+		deleteEmptyPrometheusPendingBucket(item.rawKey, item.bucket)
 	}
 	return nil
 }
@@ -215,20 +217,6 @@ func deleteHistoricalRedisPendingBucket(rawKey any, key bucketKey, bucket *atomi
 		return
 	}
 	redisPendingBuckets.Delete(rawKey)
-}
-
-func shouldRequeueRedisFlushError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return false
-	}
-	return true
 }
 
 func redisCounters(values map[string]string) counters {

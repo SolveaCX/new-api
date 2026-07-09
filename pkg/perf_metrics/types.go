@@ -114,6 +114,7 @@ type prometheusAtomicBucket struct {
 	buckets [prometheusLatencyBucketCount]int64
 	count   int64
 	sumMs   int64
+	closed  bool
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -182,13 +183,16 @@ func (b *atomicBucket) addCounters(c counters) {
 	}
 }
 
-func (b *prometheusAtomicBucket) add(sample Sample) {
+func (b *prometheusAtomicBucket) add(sample Sample) bool {
 	latencyMs := sample.LatencyMs
 	if latencyMs < 0 {
 		latencyMs = 0
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return false
+	}
 	for i, upperBoundMs := range prometheusLatencyBucketUpperBoundsMs {
 		if latencyMs <= upperBoundMs {
 			b.buckets[i]++
@@ -197,6 +201,7 @@ func (b *prometheusAtomicBucket) add(sample Sample) {
 	b.buckets[prometheusInfBucketIndex]++
 	b.count++
 	b.sumMs += latencyMs
+	return true
 }
 
 func (b *prometheusAtomicBucket) snapshot() prometheusCounters {
@@ -227,6 +232,9 @@ func (b *prometheusAtomicBucket) drain() prometheusCounters {
 func (b *prometheusAtomicBucket) addCounters(c prometheusCounters) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
 	for i, value := range c.buckets {
 		if value != 0 {
 			b.buckets[i] += value
@@ -254,4 +262,19 @@ func (c *prometheusCounters) add(other prometheusCounters) {
 	}
 	c.count += other.count
 	c.sumMs += other.sumMs
+}
+
+func deleteEmptyPrometheusPendingBucket(rawKey any, bucket *prometheusAtomicBucket) {
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
+	if bucket.count != 0 || bucket.sumMs != 0 {
+		return
+	}
+	for _, value := range bucket.buckets {
+		if value != 0 {
+			return
+		}
+	}
+	bucket.closed = true
+	prometheusPendingBuckets.CompareAndDelete(rawKey, bucket)
 }

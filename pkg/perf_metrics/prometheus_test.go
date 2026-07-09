@@ -2,7 +2,6 @@ package perfmetrics
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -185,6 +184,23 @@ func TestFlushRedisMetricsDeletesFlushedHistoricalBuckets(t *testing.T) {
 	require.Equal(t, 0, syncMapLen(redisPendingBuckets))
 }
 
+func TestFlushRedisMetricsDeletesFlushedPrometheusBuckets(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setupMiniRedisForPerfMetrics(t)
+
+	Record(Sample{
+		Model:     "gpt-5",
+		Group:     "default",
+		ChannelID: 7,
+		LatencyMs: 100,
+		Success:   true,
+	})
+	require.Equal(t, 1, syncMapLen(prometheusPendingBuckets))
+
+	require.NoError(t, flushRedisMetricsOnce(context.Background()))
+	require.Equal(t, 0, syncMapLen(prometheusPendingBuckets))
+}
+
 func TestFlushRedisMetricsSetsPrometheusSeriesTTL(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
 	setupMiniRedisForPerfMetrics(t)
@@ -228,10 +244,83 @@ func TestBuildPrometheusTextPrunesStaleSeriesMembers(t *testing.T) {
 	require.False(t, isMember)
 }
 
-func TestShouldRequeueRedisFlushError(t *testing.T) {
-	require.False(t, shouldRequeueRedisFlushError(context.DeadlineExceeded))
-	require.False(t, shouldRequeueRedisFlushError(context.Canceled))
-	require.True(t, shouldRequeueRedisFlushError(errors.New("wrongtype operation against a key holding the wrong kind of value")))
+func TestRedisFlushFailureRequeuesDrainedCounters(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setupMiniRedisForPerfMetrics(t)
+
+	Record(Sample{
+		Model:     "gpt-5",
+		Group:     "default",
+		ChannelID: 7,
+		LatencyMs: 100,
+		Success:   true,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.Error(t, flushRedisMetricsOnce(ctx))
+
+	text, err := BuildPrometheusText(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",channel_id="7",status="success"} 1`)
+}
+
+func TestPrometheusSeriesKeyEncodingAcceptsDelimiterInModel(t *testing.T) {
+	key := prometheusSeriesKey{
+		model:     "gpt\x1f5",
+		channelID: 7,
+		status:    "success",
+	}
+
+	decoded, ok := decodePrometheusSeriesKey(encodePrometheusSeriesKey(key))
+	require.True(t, ok)
+	require.Equal(t, key, decoded)
+}
+
+func TestPrometheusChannelLabelCanBeDisabled(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	disableRedisForPerfMetrics(t)
+	t.Setenv(prometheusChannelLabelEnabledEnv, "false")
+
+	Record(Sample{
+		Model:     "gpt-5",
+		Group:     "default",
+		ChannelID: 7,
+		LatencyMs: 100,
+		Success:   true,
+	})
+
+	text, err := BuildPrometheusText(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",channel_id="unknown",status="success"} 1`)
+	require.NotContains(t, text, `channel_id="7"`)
+}
+
+func TestPrometheusSeriesScanLimitFailsClosed(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setupMiniRedisForPerfMetrics(t)
+	t.Setenv(prometheusMaxSeriesPerScrapeEnv, "1")
+
+	Record(Sample{
+		Model:     "gpt-5",
+		Group:     "default",
+		ChannelID: 7,
+		LatencyMs: 100,
+		Success:   true,
+	})
+	Record(Sample{
+		Model:     "gpt-5-mini",
+		Group:     "default",
+		ChannelID: 8,
+		LatencyMs: 100,
+		Success:   true,
+	})
+	require.NoError(t, flushRedisMetricsOnce(context.Background()))
+
+	text, err := BuildPrometheusText(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, text, "newapi_perf_metrics_redis_available 0")
+	require.Contains(t, text, "newapi_perf_metrics_series 0")
 }
 
 func syncMapLen(m sync.Map) int {

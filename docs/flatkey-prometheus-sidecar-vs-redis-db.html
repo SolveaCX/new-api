@@ -274,6 +274,8 @@ sum by (model, channel_id) (
         <li>需要配置 <code>PROMETHEUS_METRICS_TOKEN</code>，Prometheus 用 <code>Authorization: Bearer &lt;token&gt;</code> 抓取。</li>
         <li>Redis 继续使用现有 <code>REDIS_CONN_STRING</code>。</li>
         <li>建议 Redis flush 间隔先用默认 5 秒，Prometheus scrape 间隔 15 或 30 秒。</li>
+        <li>默认保留 <code>channel_id</code> 标签；如果后续时间序列太多，可以把 <code>PROMETHEUS_METRICS_CHANNEL_LABEL_ENABLED=false</code> 聚合到模型级。</li>
+        <li><code>PROMETHEUS_MAX_SERIES_PER_SCRAPE</code> 默认 5000，超过时 <code>/metrics</code> 会标记 Redis 聚合不可用，避免单次抓取压垮 Redis。</li>
         <li>如果 Redis 不可用，<code>/metrics</code> 会暴露错误指标，Grafana 可以告警。</li>
       </ul>
 

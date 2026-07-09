@@ -24,6 +24,10 @@ const (
 	prometheusSumMsField   = "sum_ms"
 	prometheusRedisTTL     = 24 * time.Hour
 	prometheusScanCount    = 100
+
+	prometheusMaxSeriesPerScrapeEnv     = "PROMETHEUS_MAX_SERIES_PER_SCRAPE"
+	prometheusChannelLabelEnabledEnv    = "PROMETHEUS_METRICS_CHANNEL_LABEL_ENABLED"
+	defaultPrometheusMaxSeriesPerScrape = 5000
 )
 
 var prometheusLatencyBucketUpperBoundsMs = [prometheusFiniteBucketCount]int64{
@@ -43,7 +47,13 @@ func BuildPrometheusText(ctx context.Context) (string, error) {
 	redisAvailable := false
 
 	if common.RedisEnabled && common.RDB != nil {
-		redisAvailable = mergeRedisPrometheusSeries(ctx, series)
+		redisSeries := map[prometheusSeriesKey]prometheusCounters{}
+		redisAvailable = mergeRedisPrometheusSeries(ctx, redisSeries)
+		if redisAvailable {
+			for key, counter := range redisSeries {
+				series[key] = counter
+			}
+		}
 	}
 
 	prometheusPendingBuckets.Range(func(key, value any) bool {
@@ -116,9 +126,15 @@ func mergeRedisPrometheusSeries(ctx context.Context, series map[prometheusSeries
 	cursor := uint64(0)
 	redisAvailable := true
 	staleMembers := make([]string, 0)
+	seen := 0
+	maxSeries := prometheusMaxSeriesPerScrape()
 	for {
 		members, nextCursor, err := common.RDB.SScan(ctx, prometheusSeriesSetKey, cursor, "", prometheusScanCount).Result()
 		if err != nil {
+			return false
+		}
+		seen += len(members)
+		if maxSeries > 0 && seen > maxSeries {
 			return false
 		}
 		if len(members) > 0 {
@@ -244,15 +260,22 @@ func escapePrometheusLabelValue(value string) string {
 }
 
 func encodePrometheusSeriesKey(key prometheusSeriesKey) string {
-	return strings.Join([]string{
+	payload, err := common.Marshal([]string{
 		key.model,
 		strconv.Itoa(key.channelID),
 		key.status,
-	}, "\x1f")
+	})
+	if err != nil {
+		return strings.Join([]string{key.model, strconv.Itoa(key.channelID), key.status}, "\x1f")
+	}
+	return string(payload)
 }
 
 func decodePrometheusSeriesKey(value string) (prometheusSeriesKey, bool) {
-	parts := strings.Split(value, "\x1f")
+	parts, ok := decodeJSONPrometheusSeriesKey(value)
+	if !ok {
+		parts = strings.Split(value, "\x1f")
+	}
 	if len(parts) != 3 {
 		return prometheusSeriesKey{}, false
 	}
@@ -267,9 +290,28 @@ func decodePrometheusSeriesKey(value string) (prometheusSeriesKey, bool) {
 	}, true
 }
 
+func decodeJSONPrometheusSeriesKey(value string) ([]string, bool) {
+	if !strings.HasPrefix(value, "[") {
+		return nil, false
+	}
+	var parts []string
+	if err := common.Unmarshal([]byte(value), &parts); err != nil {
+		return nil, false
+	}
+	return parts, true
+}
+
 func prometheusRedisKey(key prometheusSeriesKey) string {
 	hash := sha1.Sum([]byte(encodePrometheusSeriesKey(key)))
 	return "newapi:perf:prometheus:" + hex.EncodeToString(hash[:])
+}
+
+func prometheusMaxSeriesPerScrape() int {
+	return common.GetEnvOrDefault(prometheusMaxSeriesPerScrapeEnv, defaultPrometheusMaxSeriesPerScrape)
+}
+
+func prometheusChannelLabelEnabled() bool {
+	return common.GetEnvOrDefaultBool(prometheusChannelLabelEnabledEnv, true)
 }
 
 func redisPrometheusCounters(values map[string]string) prometheusCounters {
