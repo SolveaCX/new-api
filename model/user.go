@@ -452,6 +452,7 @@ func (user *User) InsertWithRegistrationIP(inviterId int, registrationIP string)
 	if err := DB.Transaction(func(tx *gorm.DB) error {
 		return user.insertWithTx(tx, inviterId, registrationIP)
 	}); err != nil {
+		ReleaseRegistrationIPNewUserBonusRedisClaim(user)
 		return err
 	}
 

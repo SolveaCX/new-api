@@ -2,9 +2,12 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/glebarez/sqlite"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -18,6 +21,7 @@ func setupNewUserBonusModelTest(t *testing.T) {
 	originalUsingMySQL := common.UsingMySQL
 	originalUsingPostgreSQL := common.UsingPostgreSQL
 	originalRedisEnabled := common.RedisEnabled
+	originalRDB := common.RDB
 	originalQuotaForNewUser := common.QuotaForNewUser
 
 	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/new_user_bonus.db"), &gorm.Config{})
@@ -43,6 +47,7 @@ func setupNewUserBonusModelTest(t *testing.T) {
 		common.UsingMySQL = originalUsingMySQL
 		common.UsingPostgreSQL = originalUsingPostgreSQL
 		common.RedisEnabled = originalRedisEnabled
+		common.RDB = originalRDB
 		common.QuotaForNewUser = originalQuotaForNewUser
 	})
 }
@@ -103,6 +108,70 @@ func TestNewUserBonusCanonicalizesEquivalentRegistrationIPs(t *testing.T) {
 	var claims int64
 	require.NoError(t, DB.Model(&NewUserBonusClaim{}).Where("registration_ip = ?", "203.0.113.8").Count(&claims).Error)
 	require.EqualValues(t, 2, claims)
+}
+
+func TestNewUserBonusRegistrationIPLimitExpiresAfterSevenDays(t *testing.T) {
+	setupNewUserBonusModelTest(t)
+
+	first := createRegistrationIPBonusUser(t, "ip_week_first", "203.0.113.10")
+	second := createRegistrationIPBonusUser(t, "ip_week_second", "203.0.113.10")
+	third := createRegistrationIPBonusUser(t, "ip_week_third", "203.0.113.10")
+
+	require.Equal(t, 777, first.Quota)
+	require.Equal(t, 777, second.Quota)
+	require.Zero(t, third.Quota)
+
+	expiredAt := common.GetTimestamp() - int64(7*24*60*60) - 1
+	require.NoError(t, DB.Model(&NewUserBonusClaim{}).
+		Where("registration_ip = ?", "203.0.113.10").
+		Update("created_at", expiredAt).Error)
+
+	fourth := createRegistrationIPBonusUser(t, "ip_week_fourth", "203.0.113.10")
+	fifth := createRegistrationIPBonusUser(t, "ip_week_fifth", "203.0.113.10")
+	sixth := createRegistrationIPBonusUser(t, "ip_week_sixth", "203.0.113.10")
+
+	require.Equal(t, 777, fourth.Quota)
+	require.True(t, fourth.NewUserBonusGiven)
+	require.Equal(t, 777, fifth.Quota)
+	require.True(t, fifth.NewUserBonusGiven)
+	require.Zero(t, sixth.Quota)
+	require.False(t, sixth.NewUserBonusGiven)
+
+	var claims int64
+	require.NoError(t, DB.Model(&NewUserBonusClaim{}).Where("registration_ip = ?", "203.0.113.10").Count(&claims).Error)
+	require.EqualValues(t, 2, claims)
+}
+
+func TestNewUserBonusRegistrationIPLimitUsesRedisWindowWhenEnabled(t *testing.T) {
+	setupNewUserBonusModelTest(t)
+
+	mr := miniredis.RunT(t)
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		require.NoError(t, common.RDB.Close())
+	})
+
+	first := createRegistrationIPBonusUser(t, "ip_redis_first", "203.0.113.11")
+	second := createRegistrationIPBonusUser(t, "ip_redis_second", "203.0.113.11")
+	third := createRegistrationIPBonusUser(t, "ip_redis_third", "203.0.113.11")
+
+	require.Equal(t, 777, first.Quota)
+	require.Equal(t, 777, second.Quota)
+	require.Zero(t, third.Quota)
+
+	mr.FastForward(7*24*time.Hour + time.Second)
+
+	fourth := createRegistrationIPBonusUser(t, "ip_redis_fourth", "203.0.113.11")
+	fifth := createRegistrationIPBonusUser(t, "ip_redis_fifth", "203.0.113.11")
+	sixth := createRegistrationIPBonusUser(t, "ip_redis_sixth", "203.0.113.11")
+
+	require.Equal(t, 777, fourth.Quota)
+	require.True(t, fourth.NewUserBonusGiven)
+	require.Equal(t, 777, fifth.Quota)
+	require.True(t, fifth.NewUserBonusGiven)
+	require.Zero(t, sixth.Quota)
+	require.False(t, sixth.NewUserBonusGiven)
 }
 
 func TestNewUserBonusWithoutRegistrationIPDoesNotGrantSignupBonus(t *testing.T) {

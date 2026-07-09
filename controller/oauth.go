@@ -346,6 +346,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 			return nil
 		})
 		if err != nil {
+			model.ReleaseRegistrationIPNewUserBonusRedisClaim(user)
 			return nil, false, err
 		}
 
@@ -376,6 +377,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 			return nil
 		})
 		if err != nil {
+			model.ReleaseRegistrationIPNewUserBonusRedisClaim(user)
 			return nil, false, err
 		}
 
