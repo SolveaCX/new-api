@@ -104,6 +104,7 @@ const (
 	channelConcurrencyInitialWaitBackoff       = 100 * time.Millisecond
 	channelConcurrencyMaxWaitBackoff           = 2 * time.Second
 	channelConcurrencyWaitBackoffMultiplier    = 1.5
+	channelConcurrencyLoadFetchTimeout         = 3 * time.Second
 )
 
 var (
@@ -115,6 +116,7 @@ var (
 	channelConcurrencyLoadCacheTTL    = defaultChannelConcurrencyLoadBatchCacheTTL
 	channelConcurrencyLoadCacheMu     sync.RWMutex
 	channelConcurrencyLoadCache       = make(map[string]cachedChannelConcurrencyLoadBatch)
+	channelConcurrencyFreshLoadCache  = make(map[string]cachedChannelConcurrencyLoadBatch)
 	channelConcurrencyLoadGroup       singleflight.Group
 	channelConcurrencyRenewInterval   = func(ttl time.Duration) time.Duration {
 		interval := ttl / 3
@@ -237,14 +239,18 @@ func tryAcquireChannelConcurrencyWithToken(ctx context.Context, channel *model.C
 }
 
 func GetChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel) (map[int]ChannelConcurrencyLoad, error) {
-	return getChannelConcurrencyLoads(ctx, channels, false)
+	return getChannelConcurrencyLoads(ctx, channels, false, false)
 }
 
 func GetChannelConcurrencyLoadsFresh(ctx context.Context, channels []*model.Channel) (map[int]ChannelConcurrencyLoad, error) {
-	return getChannelConcurrencyLoads(ctx, channels, true)
+	return getChannelConcurrencyLoads(ctx, channels, true, false)
 }
 
-func getChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel, fresh bool) (map[int]ChannelConcurrencyLoad, error) {
+func getChannelConcurrencyLoadsFreshThrottled(ctx context.Context, channels []*model.Channel) (map[int]ChannelConcurrencyLoad, error) {
+	return getChannelConcurrencyLoads(ctx, channels, true, true)
+}
+
+func getChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel, fresh bool, throttledFresh bool) (map[int]ChannelConcurrencyLoad, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -266,7 +272,9 @@ func getChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel, 
 		boundedLoads := boundedChannelConcurrencyLoads(loads)
 		var redisLoads map[int]ChannelConcurrencyLoad
 		var err error
-		if fresh {
+		if fresh && throttledFresh {
+			redisLoads, err = getRedisChannelConcurrencyLoadsFreshThrottled(ctx, boundedLoads)
+		} else if fresh {
 			redisLoads, err = fetchRedisChannelConcurrencyLoads(ctx, boundedLoads)
 		} else {
 			redisLoads, err = getRedisChannelConcurrencyLoads(ctx, boundedLoads)
@@ -582,11 +590,54 @@ func getRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]Channe
 		if cached, ok := getCachedChannelConcurrencyLoads(key, now); ok {
 			return cached, nil
 		}
-		loads, fetchErr := fetchRedisChannelConcurrencyLoads(ctx, initial)
+		fetchCtx, cancel := context.WithTimeout(context.Background(), channelConcurrencyLoadFetchTimeout)
+		defer cancel()
+		loads, fetchErr := fetchRedisChannelConcurrencyLoads(fetchCtx, initial)
 		if fetchErr != nil {
 			return nil, fetchErr
 		}
 		storeCachedChannelConcurrencyLoads(key, loads, now.Add(channelConcurrencyLoadCacheTTL))
+		return cloneChannelConcurrencyLoadMap(loads), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	loads, _ := value.(map[int]ChannelConcurrencyLoad)
+	if loads == nil {
+		return map[int]ChannelConcurrencyLoad{}, nil
+	}
+	return cloneChannelConcurrencyLoadMap(loads), nil
+}
+
+func getRedisChannelConcurrencyLoadsFreshThrottled(ctx context.Context, initial map[int]ChannelConcurrencyLoad) (map[int]ChannelConcurrencyLoad, error) {
+	initial = boundedChannelConcurrencyLoads(initial)
+	if len(initial) == 0 {
+		return map[int]ChannelConcurrencyLoad{}, nil
+	}
+	if channelConcurrencyLoadCacheTTL <= 0 {
+		return fetchRedisChannelConcurrencyLoads(ctx, initial)
+	}
+
+	key := channelConcurrencyLoadBatchCacheKey(initial)
+	now := time.Now()
+	if cached, ok := getCachedFreshChannelConcurrencyLoads(key, now); ok {
+		return cached, nil
+	}
+
+	value, err, _ := channelConcurrencyLoadGroup.Do("fresh:"+key, func() (any, error) {
+		now := time.Now()
+		if cached, ok := getCachedFreshChannelConcurrencyLoads(key, now); ok {
+			return cached, nil
+		}
+		fetchCtx, cancel := context.WithTimeout(context.Background(), channelConcurrencyLoadFetchTimeout)
+		defer cancel()
+		loads, fetchErr := fetchRedisChannelConcurrencyLoads(fetchCtx, initial)
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		expiresAt := now.Add(channelConcurrencyLoadCacheTTL)
+		storeCachedFreshChannelConcurrencyLoads(key, loads, expiresAt)
+		storeCachedChannelConcurrencyLoads(key, loads, expiresAt)
 		return cloneChannelConcurrencyLoadMap(loads), nil
 	})
 	if err != nil {
@@ -676,6 +727,24 @@ func getCachedChannelConcurrencyLoads(key string, now time.Time) (map[int]Channe
 	return cloneChannelConcurrencyLoadMap(cached.loads), true
 }
 
+func getCachedFreshChannelConcurrencyLoads(key string, now time.Time) (map[int]ChannelConcurrencyLoad, bool) {
+	channelConcurrencyLoadCacheMu.RLock()
+	cached, ok := channelConcurrencyFreshLoadCache[key]
+	channelConcurrencyLoadCacheMu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	if !now.Before(cached.expiresAt) {
+		channelConcurrencyLoadCacheMu.Lock()
+		if current, exists := channelConcurrencyFreshLoadCache[key]; exists && !now.Before(current.expiresAt) {
+			delete(channelConcurrencyFreshLoadCache, key)
+		}
+		channelConcurrencyLoadCacheMu.Unlock()
+		return nil, false
+	}
+	return cloneChannelConcurrencyLoadMap(cached.loads), true
+}
+
 func storeCachedChannelConcurrencyLoads(key string, loads map[int]ChannelConcurrencyLoad, expiresAt time.Time) {
 	channelConcurrencyLoadCacheMu.Lock()
 	if channelConcurrencyLoadCache == nil {
@@ -696,6 +765,32 @@ func storeCachedChannelConcurrencyLoads(key string, loads map[int]ChannelConcurr
 		}
 	}
 	channelConcurrencyLoadCache[key] = cachedChannelConcurrencyLoadBatch{
+		loads:     cloneChannelConcurrencyLoadMap(loads),
+		expiresAt: expiresAt,
+	}
+	channelConcurrencyLoadCacheMu.Unlock()
+}
+
+func storeCachedFreshChannelConcurrencyLoads(key string, loads map[int]ChannelConcurrencyLoad, expiresAt time.Time) {
+	channelConcurrencyLoadCacheMu.Lock()
+	if channelConcurrencyFreshLoadCache == nil {
+		channelConcurrencyFreshLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
+	}
+	if len(channelConcurrencyFreshLoadCache) >= maxChannelConcurrencyLoadBatchCacheEntries {
+		now := time.Now()
+		for cacheKey, cached := range channelConcurrencyFreshLoadCache {
+			if !now.Before(cached.expiresAt) {
+				delete(channelConcurrencyFreshLoadCache, cacheKey)
+			}
+		}
+		for len(channelConcurrencyFreshLoadCache) >= maxChannelConcurrencyLoadBatchCacheEntries {
+			for cacheKey := range channelConcurrencyFreshLoadCache {
+				delete(channelConcurrencyFreshLoadCache, cacheKey)
+				break
+			}
+		}
+	}
+	channelConcurrencyFreshLoadCache[key] = cachedChannelConcurrencyLoadBatch{
 		loads:     cloneChannelConcurrencyLoadMap(loads),
 		expiresAt: expiresAt,
 	}
@@ -972,6 +1067,7 @@ func resetChannelConcurrencyForTest() {
 	channelConcurrencyMemoryCooldowns = make(map[int]time.Time)
 	channelConcurrencyLoadCacheMu.Lock()
 	channelConcurrencyLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
+	channelConcurrencyFreshLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
 	channelConcurrencyLoadCacheTTL = defaultChannelConcurrencyLoadBatchCacheTTL
 	channelConcurrencyLoadGroup = singleflight.Group{}
 	channelConcurrencyLoadCacheMu.Unlock()

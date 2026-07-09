@@ -335,7 +335,7 @@ func orderChannelCandidatesByConcurrencyLoad(c *gin.Context, candidates []*model
 
 	loadedCandidates, consideredCandidates, coolingDownCandidates := filterChannelCandidatesByConcurrencyLoad(candidates, loads)
 	if len(loadedCandidates) == 0 && consideredCandidates > 0 && coolingDownCandidates == consideredCandidates {
-		loads, err = GetChannelConcurrencyLoadsFresh(ctx, candidates)
+		loads, err = getChannelConcurrencyLoadsFreshThrottled(ctx, candidates)
 		if err != nil {
 			return nil, err
 		}
