@@ -26,8 +26,6 @@ const (
 
 	InviteRewardBlockReasonInviterMissing      = "inviter_missing"
 	InviteRewardBlockReasonInviterLimitReached = "inviter_limit_reached"
-
-	defaultInviteRewardUSD = 5
 )
 
 type InviteRewardEvent struct {
@@ -83,10 +81,6 @@ func validateInviteRewardGrantTrigger(triggerType string) error {
 		return fmt.Errorf("invite reward grants require top-up success trigger: %s", triggerType)
 	}
 	return nil
-}
-
-func fixedInviteRewardQuota() int {
-	return int(defaultInviteRewardUSD * common.QuotaPerUnit)
 }
 
 func TryGrantInviteRewardAfterTokenCreated(inviteeId int, triggerTokenId int, triggerType string) error {
@@ -186,8 +180,8 @@ func tryGrantInviteRewardForTriggerInTx(tx *gorm.DB, inviteeId int, trigger invi
 	result := inviteRewardGrantResult{
 		inviteeId:          invitee.Id,
 		inviterId:          invitee.InviterId,
-		inviterRewardQuota: fixedInviteRewardQuota(),
-		inviteeRewardQuota: fixedInviteRewardQuota(),
+		inviterRewardQuota: common.QuotaForInviter,
+		inviteeRewardQuota: common.QuotaForInvitee,
 	}
 	event := InviteRewardEvent{
 		InviteeId:          invitee.Id,
