@@ -56,13 +56,7 @@ func BuildPrometheusText(ctx context.Context) (string, error) {
 		}
 	}
 
-	prometheusPendingBuckets.Range(func(key, value any) bool {
-		seriesKey := key.(prometheusSeriesKey)
-		current := series[seriesKey]
-		current.add(value.(*prometheusAtomicBucket).snapshot())
-		series[seriesKey] = current
-		return true
-	})
+	mergePrometheusPendingSnapshots(series)
 
 	var b strings.Builder
 	b.WriteString("# HELP newapi_perf_metrics_redis_available Whether Redis-backed metrics aggregation is available.\n")
@@ -196,6 +190,23 @@ func pruneStalePrometheusSeries(ctx context.Context, members []string) {
 		pipe.SRem(ctx, prometheusSeriesSetKey, member)
 	}
 	_, _ = pipe.Exec(ctx)
+}
+
+func mergePrometheusPendingSnapshots(series map[prometheusSeriesKey]prometheusCounters) {
+	prometheusPendingBuckets.Range(func(key, value any) bool {
+		seriesKey := key.(prometheusSeriesKey)
+		current := series[seriesKey]
+		current.add(value.(*prometheusAtomicBucket).snapshot())
+		series[seriesKey] = current
+		return true
+	})
+	prometheusInflightBuckets.Range(func(key, value any) bool {
+		seriesKey := key.(prometheusSeriesKey)
+		current := series[seriesKey]
+		current.add(value.(*prometheusInflightBucket).snapshot())
+		series[seriesKey] = current
+		return true
+	})
 }
 
 func sortedPrometheusSeriesKeys(series map[prometheusSeriesKey]prometheusCounters) []prometheusSeriesKey {

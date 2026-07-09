@@ -287,7 +287,7 @@ sum by (model, channel_id) (
     metrics_path: "/metrics"
     scrape_interval: 30s
     static_configs:
-      - targets: ["staging-router.flatkey.ai"]
+      - targets: ["staging-router.flatkey.ai:443"]
     authorization:
       type: "Bearer"
       credentials: "替换成 PROMETHEUS_METRICS_TOKEN 的值"</code></pre>

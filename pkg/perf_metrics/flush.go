@@ -177,11 +177,18 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		pipe.Expire(ctx, redisKey, 2*time.Hour)
 	}
 
+	seriesMembers := make([]interface{}, 0, len(prometheusDrained))
 	for _, item := range prometheusDrained {
-		member := encodePrometheusSeriesKey(item.key)
-		redisKey := prometheusRedisKey(item.key)
-		pipe.SAdd(ctx, prometheusSeriesSetKey, member)
+		addPrometheusInflightCounter(item.key, item.counter)
+		seriesMembers = append(seriesMembers, encodePrometheusSeriesKey(item.key))
+	}
+	if len(seriesMembers) > 0 {
+		pipe.SAdd(ctx, prometheusSeriesSetKey, seriesMembers...)
 		pipe.Expire(ctx, prometheusSeriesSetKey, prometheusRedisTTL)
+	}
+
+	for _, item := range prometheusDrained {
+		redisKey := prometheusRedisKey(item.key)
 		pipe.HIncrBy(ctx, redisKey, prometheusCountField, item.counter.count)
 		if item.counter.sumMs != 0 {
 			pipe.HIncrBy(ctx, redisKey, prometheusSumMsField, item.counter.sumMs)
@@ -194,15 +201,19 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		pipe.Expire(ctx, redisKey, prometheusRedisTTL)
 	}
 
+	if err := ctx.Err(); err != nil {
+		requeueDrainedRedisMetrics(redisDrained, prometheusDrained)
+		clearPrometheusInflightCounters(prometheusDrained)
+		return err
+	}
 	if _, err := pipe.Exec(ctx); err != nil {
-		for _, item := range redisDrained {
-			item.bucket.addCounters(item.counter)
-		}
+		clearPrometheusInflightCounters(prometheusDrained)
 		for _, item := range prometheusDrained {
-			item.bucket.addCounters(item.counter)
+			deleteEmptyPrometheusPendingBucket(item.rawKey, item.bucket)
 		}
 		return err
 	}
+	clearPrometheusInflightCounters(prometheusDrained)
 	for _, item := range redisDrained {
 		deleteHistoricalRedisPendingBucket(item.rawKey, item.key, item.bucket, activeBucket)
 	}
@@ -210,6 +221,21 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 		deleteEmptyPrometheusPendingBucket(item.rawKey, item.bucket)
 	}
 	return nil
+}
+
+func requeueDrainedRedisMetrics(redisDrained []drainedRedisBucket, prometheusDrained []drainedPrometheusBucket) {
+	for _, item := range redisDrained {
+		item.bucket.addCounters(item.counter)
+	}
+	for _, item := range prometheusDrained {
+		item.bucket.addCounters(item.counter)
+	}
+}
+
+func clearPrometheusInflightCounters(prometheusDrained []drainedPrometheusBucket) {
+	for _, item := range prometheusDrained {
+		prometheusInflightBuckets.Delete(item.key)
+	}
 }
 
 func deleteHistoricalRedisPendingBucket(rawKey any, key bucketKey, bucket *atomicBucket, activeBucket int64) {

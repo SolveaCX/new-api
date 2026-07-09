@@ -117,6 +117,11 @@ type prometheusAtomicBucket struct {
 	closed  bool
 }
 
+type prometheusInflightBucket struct {
+	mu      sync.Mutex
+	counter prometheusCounters
+}
+
 func (b *atomicBucket) add(sample Sample) {
 	b.requestCount.Add(1)
 	if sample.Success {
@@ -277,4 +282,24 @@ func deleteEmptyPrometheusPendingBucket(rawKey any, bucket *prometheusAtomicBuck
 	}
 	bucket.closed = true
 	prometheusPendingBuckets.CompareAndDelete(rawKey, bucket)
+}
+
+func (b *prometheusInflightBucket) add(counter prometheusCounters) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.counter.add(counter)
+}
+
+func (b *prometheusInflightBucket) snapshot() prometheusCounters {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.counter
+}
+
+func addPrometheusInflightCounter(key prometheusSeriesKey, counter prometheusCounters) {
+	if counter.isZero() {
+		return
+	}
+	actual, _ := prometheusInflightBuckets.LoadOrStore(key, &prometheusInflightBucket{})
+	actual.(*prometheusInflightBucket).add(counter)
 }
