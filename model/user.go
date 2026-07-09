@@ -68,7 +68,16 @@ type User struct {
 	// Primary Accept-Language tag observed at the most recent login
 	// (e.g. "zh-CN"). Analytics-only: surfaced in the ops report to explain
 	// currency/locale mismatches; never used for authorization.
-	BrowserLang             string         `json:"browser_lang" gorm:"type:varchar(32);default:'';column:browser_lang"`
+	BrowserLang string `json:"browser_lang" gorm:"type:varchar(32);default:'';column:browser_lang"`
+	// Client IP observed at the most recent website login (console.flatkey.ai,
+	// behind Cloudflare → real personal-device IP). Analytics-only: this is the
+	// user's own machine, unlike the /v1 request IP which is usually their
+	// production server. Surfaced in the ops report as the real user location.
+	LastLoginIp string `json:"last_login_ip" gorm:"type:varchar(64);default:'';column:last_login_ip"`
+	// ISO country of the card used on the most recent successful Stripe payment
+	// (card issuing country). Analytics-only: the most reliable geography signal
+	// for paid users. Persisted at webhook fulfillment.
+	PayCountry string `json:"pay_country" gorm:"type:varchar(8);default:'';column:pay_country"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -1056,6 +1065,23 @@ func UpdateUserLastLoginAt(id int) {
 func UpdateUserBrowserLang(id int, lang string) {
 	if err := DB.Model(&User{}).Where("id = ?", id).Update("browser_lang", lang).Error; err != nil {
 		common.SysLog("failed to update user browser_lang: " + err.Error())
+	}
+}
+
+// UpdateUserLastLoginIp persists the client IP seen at login. Best-effort
+// analytics write (ops report real-location column), safe under multi-node:
+// last writer wins on a single column.
+func UpdateUserLastLoginIp(id int, ip string) {
+	if err := DB.Model(&User{}).Where("id = ?", id).Update("last_login_ip", ip).Error; err != nil {
+		common.SysLog("failed to update user last_login_ip: " + err.Error())
+	}
+}
+
+// UpdateUserPayCountry persists the card issuing country from a successful
+// Stripe payment. Best-effort analytics write, safe under multi-node.
+func UpdateUserPayCountry(id int, country string) {
+	if err := DB.Model(&User{}).Where("id = ?", id).Update("pay_country", country).Error; err != nil {
+		common.SysLog("failed to update user pay_country: " + err.Error())
 	}
 }
 

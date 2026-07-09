@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v81"
@@ -529,7 +530,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 					"credit_amount": normalizedAmount + bonusAmount,
 					// Only surface USD amounts: the displayed "$" figures are USD, so a
 					// non-USD Checkout (JPY/BRL/INR/…) would misrepresent the charge.
-					"show_amounts":  operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(checkout.PaymentCurrency, "USD"),
+					"show_amounts": operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(checkout.PaymentCurrency, "USD"),
 				},
 			},
 		})
@@ -897,6 +898,19 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 		// setting card_bound (local-method payments finish without saving one), and records
 		// the card fingerprint for anti-abuse dedup.
 		backfillCardFingerprintFromTopUp(ctx, topUp, customerId, callerIp)
+		// Persist the card issuing country as the real payment geography for the
+		// ops report. Runs async so the Stripe fetch never extends the order-lock
+		// hold; the write is a single-column last-writer-wins analytics update,
+		// safe without the lock and under multi-node.
+		if topUp != nil {
+			paymentIntentId := event.GetObjectValue("payment_intent")
+			payerUserId := topUp.UserId
+			gopool.Go(func() {
+				if cc, ccErr := fetchCardCountry(paymentIntentId, customerId); ccErr == nil && cc != "" {
+					model.UpdateUserPayCountry(payerUserId, cc)
+				}
+			})
+		}
 	} else if topUp := model.GetTopUpByTradeNo(referenceId); topUp != nil && topUp.SaveCard &&
 		topUp.Status == common.TopUpStatusSuccess {
 		// Webhook redelivery/replay of an already-fulfilled save-card order doubles as the

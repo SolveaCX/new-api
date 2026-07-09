@@ -814,6 +814,7 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
       <Table className={TABLE_GRID}>
         <TableHeader>
           <TableRow>
+            <TableHead>{t('First Paid At')}</TableHead>
             <TableHead>{t('User')}</TableHead>
             <TableHead>{t('Email')}</TableHead>
             <TableHead className='text-right'>{t('Paid Amount')}</TableHead>
@@ -825,19 +826,22 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
             <TableHead>{t('Landing Pages')}</TableHead>
             <TableHead>{t('Signup Method')}</TableHead>
             <TableHead>{t('Region')}</TableHead>
-            <TableHead>{t('Last IP')}</TableHead>
+            <TableHead>{t('Payment Country')}</TableHead>
+            <TableHead>{t('Login IP')}</TableHead>
             <TableHead className='text-right'>{t('Balance')}</TableHead>
             <TableHead className='text-right'>{t('Consumed')}</TableHead>
             <TableHead className='text-right'>{t('Requests')}</TableHead>
             <TableHead>{t('Top Models')}</TableHead>
             <TableHead>{t('Last Active')}</TableHead>
             <TableHead>{t('Registered At')}</TableHead>
-            <TableHead>{t('First Paid At')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.user_id}>
+              <TableCell className='whitespace-nowrap'>
+                {formatTimestamp(row.first_paid_at)}
+              </TableCell>
               <TableCell className='whitespace-nowrap'>
                 {row.display_name || row.username}{' '}
                 <span className='text-muted-foreground text-xs'>
@@ -873,6 +877,9 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
               <TableCell className='whitespace-nowrap'>
                 {countryLabel(row.ip_country, i18n.language) || '-'}
               </TableCell>
+              <TableCell className='whitespace-nowrap'>
+                {countryLabel(row.pay_country, i18n.language) || '-'}
+              </TableCell>
               <TableCell className='whitespace-nowrap font-mono text-xs'>
                 {row.last_ip ? (
                   <>
@@ -884,11 +891,6 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
                     >
                       {row.last_ip}
                     </a>
-                    {row.ip_country && row.ip_country !== '?' && (
-                      <span className='text-muted-foreground ml-1'>
-                        {row.ip_country}
-                      </span>
-                    )}
                   </>
                 ) : (
                   '-'
@@ -915,9 +917,6 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
               </TableCell>
               <TableCell className='whitespace-nowrap'>
                 {formatTimestamp(row.registered_at)}
-              </TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {formatTimestamp(row.first_paid_at)}
               </TableCell>
             </TableRow>
           ))}

@@ -146,6 +146,9 @@ func primaryAcceptLanguage(header string) string {
 // setup session & cookies and then return user info
 func setupLogin(user *model.User, c *gin.Context, isNewUser ...bool) {
 	model.UpdateUserLastLoginAt(user.Id)
+	if ip := c.ClientIP(); ip != "" && ip != user.LastLoginIp {
+		model.UpdateUserLastLoginIp(user.Id, ip)
+	}
 	if lang := primaryAcceptLanguage(c.GetHeader("Accept-Language")); lang != "" && lang != user.BrowserLang {
 		model.UpdateUserBrowserLang(user.Id, lang)
 	}

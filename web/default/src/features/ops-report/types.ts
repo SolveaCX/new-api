@@ -77,6 +77,7 @@ export interface OpsPayerRow {
   currencies: string[] | null
   last_ip: string
   ip_country: string
+  pay_country: string
   balance_usd: number
   consumed_usd: number
   requests: number
@@ -123,6 +124,7 @@ export interface OpsRegisteredUserRow {
   landing: string
   last_ip: string
   ip_country: string
+  pay_country: string
   balance_usd: number
   consumed_usd: number
   requests: number
