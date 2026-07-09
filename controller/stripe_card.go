@@ -169,6 +169,34 @@ func fetchCardFingerprint(customerId string) (string, error) {
 	return "", nil
 }
 
+// fetchCardCountry returns the ISO issuing country of the customer's first card
+// (analytics: real payment geography for the ops report), or "" when no card /
+// no country is available. A non-nil error means the lookup itself failed.
+func fetchCardCountry(customerId string) (string, error) {
+	if customerId == "" {
+		return "", nil
+	}
+	if err := ensureStripeKey(); err != nil {
+		return "", err
+	}
+	listParams := &stripe.PaymentMethodListParams{
+		Customer: stripe.String(customerId),
+		Type:     stripe.String(string(stripe.PaymentMethodTypeCard)),
+	}
+	listParams.Limit = stripe.Int64(1)
+	iter := stripepaymentmethod.List(listParams)
+	for iter.Next() {
+		pm := iter.PaymentMethod()
+		if pm != nil && pm.Card != nil {
+			return strings.ToUpper(strings.TrimSpace(pm.Card.Country)), nil
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
 // RemoveStripeCard detaches the user's saved card(s) and clears the bound flag.
 func RemoveStripeCard(c *gin.Context) {
 	id := c.GetInt("id")

@@ -36,14 +36,14 @@ import (
 // cross-node divergence is harmless.
 
 const (
-	opsReportCacheTTL    = 10 * time.Minute
-	opsAutoBrowseWindow  = 60  // seconds after signup treated as auto-fired playground call
-	opsAutoTokenWindow   = 120 // seconds after signup treated as auto-provisioned token
-	opsReportTopPayers   = 20
+	opsReportCacheTTL   = 10 * time.Minute
+	opsAutoBrowseWindow = 60  // seconds after signup treated as auto-fired playground call
+	opsAutoTokenWindow  = 120 // seconds after signup treated as auto-provisioned token
+	opsReportTopPayers  = 20
 	// registered-users detail rows shown in the ops report (newest first)
 	opsReportMaxRegisteredUsers = 200
-	opsReportMaxDays     = 180
-	opsReportDefaultDays = 30
+	opsReportMaxDays            = 180
+	opsReportDefaultDays        = 30
 )
 
 type opsFunnelRow struct {
@@ -105,6 +105,7 @@ type opsPayerRow struct {
 	Currencies   []string `json:"currencies"`
 	LastIP       string   `json:"last_ip"`
 	IPCountry    string   `json:"ip_country"`
+	PayCountry   string   `json:"pay_country"`
 	BalanceUSD   float64  `json:"balance_usd"`
 	ConsumedUSD  float64  `json:"consumed_usd"`
 	Requests     int      `json:"requests"`
@@ -153,6 +154,7 @@ type opsRegisteredUserRow struct {
 	Landing      string  `json:"landing"`
 	LastIP       string  `json:"last_ip"`
 	IPCountry    string  `json:"ip_country"`
+	PayCountry   string  `json:"pay_country"`
 	BalanceUSD   float64 `json:"balance_usd"`
 	ConsumedUSD  float64 `json:"consumed_usd"`
 	Requests     int     `json:"requests"`
@@ -228,6 +230,21 @@ func opsIPCountry(ip string) string {
 		return "?"
 	}
 	return country
+}
+
+// opsUserCountry resolves the best real-location signal for a user. Priority:
+// Stripe card issuing country (most reliable for payers) > geo of the website
+// login IP (a personal device) > "?". The /v1 request IP is deliberately NOT
+// used: paid users call the API from production servers, so its geo reflects
+// the datacenter, not the person.
+func opsUserCountry(u *model.OpsPlgUser) string {
+	if u.PayCountry != "" {
+		return u.PayCountry
+	}
+	if u.LastLoginIp != "" {
+		return opsIPCountry(u.LastLoginIp)
+	}
+	return "?"
 }
 
 func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
@@ -352,25 +369,17 @@ func opsRegisteredUsers(aggs map[int]*opsUserAgg) []opsRegisteredUserRow {
 			Requests:     a.user.RequestCount,
 			PaidUSD:      a.paidUSD(),
 			LastActiveAt: lastActive,
+			// Real user location: website login IP (personal device) + Stripe
+			// card country. NOT the /v1 request IP (production server) nor the
+			// topup-log IP (Stripe webhook server).
+			LastIP:     a.user.LastLoginIp,
+			IPCountry:  opsUserCountry(a.user),
+			PayCountry: a.user.PayCountry,
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].RegisteredAt > rows[j].RegisteredAt })
 	if len(rows) > opsReportMaxRegisteredUsers {
 		rows = rows[:opsReportMaxRegisteredUsers]
-	}
-	ids := make([]int, len(rows))
-	for i := range rows {
-		ids[i] = rows[i].UserId
-	}
-	if ips, err := model.GetOpsUsersLastIP(ids); err == nil {
-		byUser := map[int]string{}
-		for _, r := range ips {
-			byUser[r.UserId] = r.Ip
-		}
-		for i := range rows {
-			rows[i].LastIP = byUser[rows[i].UserId]
-			rows[i].IPCountry = opsIPCountry(rows[i].LastIP)
-		}
 	}
 	return rows
 }
@@ -814,6 +823,12 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 			ConsumedUSD:  float64(a.user.UsedQuota) / common.QuotaPerUnit,
 			Requests:     a.user.RequestCount,
 			LastActiveAt: lastActive,
+			// Real user location: website login IP + Stripe card country. NOT the
+			// /v1 request IP (production server) nor the topup-log IP (Stripe
+			// webhook server) — both misrepresented paid users as US.
+			LastIP:     a.user.LastLoginIp,
+			IPCountry:  opsUserCountry(a.user),
+			PayCountry: a.user.PayCountry,
 		})
 	}
 	count := len(payers)
@@ -821,20 +836,9 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 	if len(payers) > opsReportTopPayers {
 		payers = payers[:opsReportTopPayers]
 	}
-	// last IP / country resolved only for the displayed payers (<= 20 ids)
 	ids := make([]int, len(payers))
 	for i := range payers {
 		ids[i] = payers[i].UserId
-	}
-	if ips, err := model.GetOpsUsersLastIP(ids); err == nil {
-		byUser := map[int]string{}
-		for _, r := range ips {
-			byUser[r.UserId] = r.Ip
-		}
-		for i := range payers {
-			payers[i].LastIP = byUser[payers[i].UserId]
-			payers[i].IPCountry = opsIPCountry(payers[i].LastIP)
-		}
 	}
 	if usage, err := model.GetOpsUsersModelUsage(ids); err == nil {
 		type mc struct {

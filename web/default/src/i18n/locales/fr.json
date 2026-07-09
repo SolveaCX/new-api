@@ -5269,6 +5269,8 @@
     "Payment Currency": "Devise de paiement",
     "Signup Method": "Méthode d'inscription",
     "Last IP": "Dernière IP",
+    "Login IP": "IP de connexion",
+    "Payment Country": "Pays de paiement",
     "Registered At": "Inscrit le",
     "Last Active": "Dernière activité",
     "Attempts": "Tentatives",

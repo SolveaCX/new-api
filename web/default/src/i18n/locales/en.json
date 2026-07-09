@@ -5269,6 +5269,8 @@
     "Payment Currency": "Payment Currency",
     "Signup Method": "Signup Method",
     "Last IP": "Last IP",
+    "Login IP": "Login IP",
+    "Payment Country": "Payment Country",
     "Registered At": "Registered At",
     "Last Active": "Last Active",
     "Attempts": "Attempts",

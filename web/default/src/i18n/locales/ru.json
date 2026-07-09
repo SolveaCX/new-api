@@ -5269,6 +5269,8 @@
     "Payment Currency": "Валюта оплаты",
     "Signup Method": "Способ регистрации",
     "Last IP": "Последний IP",
+    "Login IP": "IP входа",
+    "Payment Country": "Страна платежа",
     "Registered At": "Дата регистрации",
     "Last Active": "Последняя активность",
     "Attempts": "Попытки",

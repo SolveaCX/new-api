@@ -5269,6 +5269,8 @@
     "Payment Currency": "支払通貨",
     "Signup Method": "登録方法",
     "Last IP": "最終IP",
+    "Login IP": "ログインIP",
+    "Payment Country": "支払国",
     "Registered At": "登録日時",
     "Last Active": "最終アクティブ",
     "Attempts": "試行",
