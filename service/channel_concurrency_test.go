@@ -287,6 +287,60 @@ func TestChannelConcurrencyLoadsUseShortTTLCache(t *testing.T) {
 	require.Empty(t, hook.Commands())
 }
 
+func TestChannelConcurrencyLoadsFreshBypassesShortTTLCache(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	hook := &redisCommandCounterHook{}
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RDB.AddHook(hook)
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+	restoreSetting := useChannelConcurrencySettingForTest(t, operation_setting.ChannelConcurrencySetting{
+		SlotTTLMinutes:       1,
+		WaitEnabled:          true,
+		WaitTimeoutMS:        5000,
+		WaitIntervalMS:       100,
+		CooldownEnabled:      true,
+		CooldownSeconds:      30,
+		MaxWaitingPerChannel: 1,
+	})
+	defer restoreSetting()
+
+	channel := &model.Channel{Id: 119, MaxConcurrency: 2}
+	first, err := GetChannelConcurrencyLoads(context.Background(), []*model.Channel{channel})
+	require.NoError(t, err)
+	require.Equal(t, 0, first[channel.Id].Active)
+
+	lease, ok, err := TryAcquireChannelConcurrency(context.Background(), channel)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, lease)
+	t.Cleanup(func() {
+		_ = ReleaseChannelConcurrency(context.Background(), lease)
+	})
+	hook.Reset()
+
+	fresh, err := GetChannelConcurrencyLoadsFresh(context.Background(), []*model.Channel{channel})
+	require.NoError(t, err)
+	require.Equal(t, 1, fresh[channel.Id].Active)
+	require.Contains(t, hook.Commands(), "time")
+	require.Contains(t, hook.Commands(), "zcard")
+
+	hook.Reset()
+	cached, err := GetChannelConcurrencyLoads(context.Background(), []*model.Channel{channel})
+	require.NoError(t, err)
+	require.Equal(t, 0, cached[channel.Id].Active)
+	require.Empty(t, hook.Commands())
+}
+
 func TestChannelConcurrencyLoadsCoalesceConcurrentRedisFetches(t *testing.T) {
 	resetChannelConcurrencyForTest()
 	mr := miniredis.RunT(t)
@@ -804,6 +858,59 @@ func TestCacheGetRandomSatisfiedChannelSkipsCoolingDownChannel(t *testing.T) {
 	require.Equal(t, "default", selectedGroup)
 	require.NotNil(t, selected)
 	require.Equal(t, fallbackChannel.Id, selected.Id)
+}
+
+func TestOrderChannelCandidatesRetriesFreshWhenCachedLoadsAreAllCoolingDown(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	hook := &redisCommandCounterHook{}
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RDB.AddHook(hook)
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+	restoreSetting := useChannelConcurrencySettingForTest(t, operation_setting.ChannelConcurrencySetting{
+		SlotTTLMinutes:       1,
+		WaitEnabled:          true,
+		WaitTimeoutMS:        5000,
+		WaitIntervalMS:       100,
+		CooldownEnabled:      true,
+		CooldownSeconds:      30,
+		MaxWaitingPerChannel: 1,
+	})
+	defer restoreSetting()
+
+	channel := &model.Channel{
+		Id:             305,
+		Type:           1,
+		Status:         common.ChannelStatusEnabled,
+		Name:           "stale-cooldown-channel",
+		Group:          "default",
+		Models:         "gpt-stale-cooldown",
+		MaxConcurrency: 2,
+	}
+	require.NoError(t, MarkChannelConcurrencyCooldown(context.Background(), channel.Id, time.Second, "test cooldown"))
+
+	loads, err := GetChannelConcurrencyLoads(context.Background(), []*model.Channel{channel})
+	require.NoError(t, err)
+	require.True(t, loads[channel.Id].CoolingDown)
+
+	require.NoError(t, common.RDB.Del(context.Background(), channelConcurrencyCooldownRedisKey(channel.Id)).Err())
+	hook.Reset()
+
+	ordered, err := orderChannelCandidatesByConcurrencyLoad(nil, []*model.Channel{channel})
+	require.NoError(t, err)
+	require.Len(t, ordered, 1)
+	require.Equal(t, channel.Id, ordered[0].Id)
+	require.Equal(t, 1, hook.CommandCount("time"))
+	require.Equal(t, 1, hook.CommandCount("zcard"))
 }
 
 func TestCacheGetRandomSatisfiedChannelSkipsFullChannels(t *testing.T) {

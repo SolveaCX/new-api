@@ -237,6 +237,14 @@ func tryAcquireChannelConcurrencyWithToken(ctx context.Context, channel *model.C
 }
 
 func GetChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel) (map[int]ChannelConcurrencyLoad, error) {
+	return getChannelConcurrencyLoads(ctx, channels, false)
+}
+
+func GetChannelConcurrencyLoadsFresh(ctx context.Context, channels []*model.Channel) (map[int]ChannelConcurrencyLoad, error) {
+	return getChannelConcurrencyLoads(ctx, channels, true)
+}
+
+func getChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel, fresh bool) (map[int]ChannelConcurrencyLoad, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -255,7 +263,14 @@ func GetChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel) 
 	}
 
 	if common.RedisEnabled && common.RDB != nil {
-		redisLoads, err := getRedisChannelConcurrencyLoads(ctx, boundedChannelConcurrencyLoads(loads))
+		boundedLoads := boundedChannelConcurrencyLoads(loads)
+		var redisLoads map[int]ChannelConcurrencyLoad
+		var err error
+		if fresh {
+			redisLoads, err = fetchRedisChannelConcurrencyLoads(ctx, boundedLoads)
+		} else {
+			redisLoads, err = getRedisChannelConcurrencyLoads(ctx, boundedLoads)
+		}
 		if err == nil {
 			for channelID, load := range redisLoads {
 				loads[channelID] = load

@@ -333,19 +333,13 @@ func orderChannelCandidatesByConcurrencyLoad(c *gin.Context, candidates []*model
 		return nil, err
 	}
 
-	loadedCandidates := make([]channelCandidateLoad, 0, len(candidates))
-	for _, candidate := range candidates {
-		if candidate == nil {
-			continue
+	loadedCandidates, consideredCandidates, coolingDownCandidates := filterChannelCandidatesByConcurrencyLoad(candidates, loads)
+	if len(loadedCandidates) == 0 && consideredCandidates > 0 && coolingDownCandidates == consideredCandidates {
+		loads, err = GetChannelConcurrencyLoadsFresh(ctx, candidates)
+		if err != nil {
+			return nil, err
 		}
-		load := loads[candidate.Id]
-		if load.CoolingDown {
-			continue
-		}
-		loadedCandidates = append(loadedCandidates, channelCandidateLoad{
-			channel: candidate,
-			load:    load,
-		})
+		loadedCandidates, _, _ = filterChannelCandidatesByConcurrencyLoad(candidates, loads)
 	}
 	sort.SliceStable(loadedCandidates, func(i, j int) bool {
 		if loadedCandidates[i].load.LoadRate == loadedCandidates[j].load.LoadRate {
@@ -379,6 +373,28 @@ func orderChannelCandidatesByConcurrencyLoad(c *gin.Context, candidates []*model
 		i = j
 	}
 	return ordered, nil
+}
+
+func filterChannelCandidatesByConcurrencyLoad(candidates []*model.Channel, loads map[int]ChannelConcurrencyLoad) ([]channelCandidateLoad, int, int) {
+	loadedCandidates := make([]channelCandidateLoad, 0, len(candidates))
+	consideredCandidates := 0
+	coolingDownCandidates := 0
+	for _, candidate := range candidates {
+		if candidate == nil {
+			continue
+		}
+		consideredCandidates++
+		load := loads[candidate.Id]
+		if load.CoolingDown {
+			coolingDownCandidates++
+			continue
+		}
+		loadedCandidates = append(loadedCandidates, channelCandidateLoad{
+			channel: candidate,
+			load:    load,
+		})
+	}
+	return loadedCandidates, consideredCandidates, coolingDownCandidates
 }
 
 func removeChannelCandidate(candidates []*model.Channel, channelID int) []*model.Channel {
