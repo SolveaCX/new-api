@@ -19,6 +19,7 @@ const (
 
 	InviteRewardTriggerManualTokenCreate  = "manual_token_create"
 	InviteRewardTriggerInitialTokenCreate = "initial_token_create"
+	InviteRewardTriggerTopUpSuccess       = "topup_success"
 
 	InviteRewardEventStatusGranted = "granted"
 	InviteRewardEventStatusBlocked = "blocked"
@@ -33,6 +34,7 @@ type InviteRewardEvent struct {
 	InviterId          int    `json:"inviter_id" gorm:"index"`
 	TriggerType        string `json:"trigger_type" gorm:"type:varchar(32);index"`
 	TriggerTokenId     int    `json:"trigger_token_id" gorm:"index"`
+	TriggerTopUpId     int    `json:"trigger_topup_id" gorm:"index;column:trigger_topup_id"`
 	InviterRewardQuota int    `json:"inviter_reward_quota" gorm:"default:0"`
 	InviteeRewardQuota int    `json:"invitee_reward_quota" gorm:"default:0"`
 	Status             string `json:"status" gorm:"type:varchar(16);index"`
@@ -50,13 +52,35 @@ type inviteRewardGrantResult struct {
 	reason             string
 }
 
+type inviteRewardTrigger struct {
+	triggerType    string
+	triggerTokenId int
+	triggerTopUpId int
+}
+
 func validateInviteRewardTrigger(triggerType string) error {
 	switch triggerType {
-	case InviteRewardTriggerManualTokenCreate, InviteRewardTriggerInitialTokenCreate:
+	case InviteRewardTriggerManualTokenCreate, InviteRewardTriggerInitialTokenCreate, InviteRewardTriggerTopUpSuccess:
 		return nil
 	default:
 		return fmt.Errorf("unsupported invite reward trigger type: %s", triggerType)
 	}
+}
+
+func validateTokenCreateInviteRewardTrigger(triggerType string) error {
+	switch triggerType {
+	case InviteRewardTriggerManualTokenCreate, InviteRewardTriggerInitialTokenCreate:
+		return nil
+	default:
+		return fmt.Errorf("unsupported token invite reward trigger type: %s", triggerType)
+	}
+}
+
+func validateInviteRewardGrantTrigger(triggerType string) error {
+	if triggerType != InviteRewardTriggerTopUpSuccess {
+		return fmt.Errorf("invite reward grants require top-up success trigger: %s", triggerType)
+	}
+	return nil
 }
 
 func TryGrantInviteRewardAfterTokenCreated(inviteeId int, triggerTokenId int, triggerType string) error {
@@ -77,7 +101,41 @@ func TryGrantInviteRewardAfterTokenCreated(inviteeId int, triggerTokenId int, tr
 }
 
 func tryGrantInviteRewardInTx(tx *gorm.DB, inviteeId int, triggerTokenId int, triggerType string) (inviteRewardGrantResult, error) {
-	if err := validateInviteRewardTrigger(triggerType); err != nil {
+	return tryGrantInviteRewardForTriggerInTx(tx, inviteeId, inviteRewardTrigger{
+		triggerType:    triggerType,
+		triggerTokenId: triggerTokenId,
+	})
+}
+
+func TryGrantInviteRewardAfterTopUpSucceeded(inviteeId int, triggerTopUpId int) error {
+	if inviteeId == 0 {
+		return errors.New("inviteeId 为空！")
+	}
+	var result inviteRewardGrantResult
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		result, err = tryGrantInviteRewardForTopUpInTx(tx, inviteeId, triggerTopUpId)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	runInviteRewardPostCommitHooks(result)
+	return nil
+}
+
+func tryGrantInviteRewardForTopUpInTx(tx *gorm.DB, inviteeId int, triggerTopUpId int) (inviteRewardGrantResult, error) {
+	return tryGrantInviteRewardForTriggerInTx(tx, inviteeId, inviteRewardTrigger{
+		triggerType:    InviteRewardTriggerTopUpSuccess,
+		triggerTopUpId: triggerTopUpId,
+	})
+}
+
+func tryGrantInviteRewardForTriggerInTx(tx *gorm.DB, inviteeId int, trigger inviteRewardTrigger) (inviteRewardGrantResult, error) {
+	if err := validateInviteRewardTrigger(trigger.triggerType); err != nil {
+		return inviteRewardGrantResult{}, err
+	}
+	if err := validateInviteRewardGrantTrigger(trigger.triggerType); err != nil {
 		return inviteRewardGrantResult{}, err
 	}
 
@@ -92,11 +150,21 @@ func tryGrantInviteRewardInTx(tx *gorm.DB, inviteeId int, triggerTokenId int, tr
 		return inviteRewardGrantResult{}, nil
 	}
 
-	var triggerToken Token
-	if err := tx.Select("id").
-		Where("id = ? AND user_id = ?", triggerTokenId, invitee.Id).
-		First(&triggerToken).Error; err != nil {
-		return inviteRewardGrantResult{}, err
+	switch trigger.triggerType {
+	case InviteRewardTriggerTopUpSuccess:
+		var triggerTopUp TopUp
+		if err := tx.Select("id").
+			Where("id = ? AND user_id = ? AND status = ?", trigger.triggerTopUpId, invitee.Id, common.TopUpStatusSuccess).
+			First(&triggerTopUp).Error; err != nil {
+			return inviteRewardGrantResult{}, err
+		}
+	default:
+		var triggerToken Token
+		if err := tx.Select("id").
+			Where("id = ? AND user_id = ?", trigger.triggerTokenId, invitee.Id).
+			First(&triggerToken).Error; err != nil {
+			return inviteRewardGrantResult{}, err
+		}
 	}
 
 	var inviter User
@@ -105,7 +173,7 @@ func tryGrantInviteRewardInTx(tx *gorm.DB, inviteeId int, triggerTokenId int, tr
 		Where("id = ?", invitee.InviterId).
 		First(&inviter).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return blockInviteRewardInTx(tx, invitee.Id, invitee.InviterId, triggerTokenId, triggerType, InviteRewardBlockReasonInviterMissing)
+			return blockInviteRewardForTriggerInTx(tx, invitee.Id, invitee.InviterId, trigger, InviteRewardBlockReasonInviterMissing)
 		}
 		return inviteRewardGrantResult{}, err
 	}
@@ -118,10 +186,11 @@ func tryGrantInviteRewardInTx(tx *gorm.DB, inviteeId int, triggerTokenId int, tr
 	event := InviteRewardEvent{
 		InviteeId:          invitee.Id,
 		InviterId:          invitee.InviterId,
-		TriggerType:        triggerType,
-		TriggerTokenId:     triggerTokenId,
+		TriggerType:        trigger.triggerType,
+		TriggerTokenId:     trigger.triggerTokenId,
+		TriggerTopUpId:     trigger.triggerTopUpId,
 		InviterRewardQuota: result.inviterRewardQuota,
-		InviteeRewardQuota: common.QuotaForInvitee,
+		InviteeRewardQuota: result.inviteeRewardQuota,
 		Status:             InviteRewardEventStatusGranted,
 		Reason:             result.reason,
 	}
@@ -138,10 +207,10 @@ func tryGrantInviteRewardInTx(tx *gorm.DB, inviteeId int, triggerTokenId int, tr
 		Update("aff_count", gorm.Expr("aff_count + ?", 1)).Error; err != nil {
 		return inviteRewardGrantResult{}, err
 	}
-	if common.QuotaForInvitee > 0 {
+	if result.inviteeRewardQuota > 0 {
 		if err := tx.Model(&User{}).
 			Where("id = ?", invitee.Id).
-			Update("quota", gorm.Expr("quota + ?", common.QuotaForInvitee)).Error; err != nil {
+			Update("quota", gorm.Expr("quota + ?", result.inviteeRewardQuota)).Error; err != nil {
 			return inviteRewardGrantResult{}, err
 		}
 	}
@@ -188,11 +257,19 @@ func tryGrantInviteRewardInTx(tx *gorm.DB, inviteeId int, triggerTokenId int, tr
 }
 
 func blockInviteRewardInTx(tx *gorm.DB, inviteeId int, inviterId int, triggerTokenId int, triggerType string, reason string) (inviteRewardGrantResult, error) {
+	return blockInviteRewardForTriggerInTx(tx, inviteeId, inviterId, inviteRewardTrigger{
+		triggerType:    triggerType,
+		triggerTokenId: triggerTokenId,
+	}, reason)
+}
+
+func blockInviteRewardForTriggerInTx(tx *gorm.DB, inviteeId int, inviterId int, trigger inviteRewardTrigger, reason string) (inviteRewardGrantResult, error) {
 	event := InviteRewardEvent{
 		InviteeId:      inviteeId,
 		InviterId:      inviterId,
-		TriggerType:    triggerType,
-		TriggerTokenId: triggerTokenId,
+		TriggerType:    trigger.triggerType,
+		TriggerTokenId: trigger.triggerTokenId,
+		TriggerTopUpId: trigger.triggerTopUpId,
 		Status:         InviteRewardEventStatusBlocked,
 		Reason:         reason,
 	}

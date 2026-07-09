@@ -169,6 +169,56 @@ func fetchCardFingerprint(customerId string) (string, error) {
 	return "", nil
 }
 
+// fetchCardCountry returns the ISO issuing country of the card used for a
+// payment (analytics: real payment geography for the ops report), or "" when
+// unavailable. It reads the charge behind paymentIntentId first — that country
+// is recorded on every successful charge regardless of whether the card was
+// saved — and only falls back to the customer's saved payment methods (which
+// are empty for non-save-card payments). A non-nil error means the lookup
+// itself failed.
+func fetchCardCountry(paymentIntentId string, customerId string) (string, error) {
+	if err := ensureStripeKey(); err != nil {
+		return "", err
+	}
+	if paymentIntentId != "" {
+		piParams := &stripe.PaymentIntentParams{}
+		piParams.AddExpand("latest_charge")
+		pi, err := stripepaymentintent.Get(paymentIntentId, piParams)
+		if err != nil {
+			// Lookup failure is not "no country": don't fall through to the saved
+			// payment methods, which may be a different card than this payment —
+			// the best-effort caller simply skips the update.
+			return "", err
+		}
+		if pi != nil && pi.LatestCharge != nil &&
+			pi.LatestCharge.PaymentMethodDetails != nil &&
+			pi.LatestCharge.PaymentMethodDetails.Card != nil {
+			if cc := strings.ToUpper(strings.TrimSpace(pi.LatestCharge.PaymentMethodDetails.Card.Country)); cc != "" {
+				return cc, nil
+			}
+		}
+	}
+	if customerId == "" {
+		return "", nil
+	}
+	listParams := &stripe.PaymentMethodListParams{
+		Customer: stripe.String(customerId),
+		Type:     stripe.String(string(stripe.PaymentMethodTypeCard)),
+	}
+	listParams.Limit = stripe.Int64(1)
+	iter := stripepaymentmethod.List(listParams)
+	for iter.Next() {
+		pm := iter.PaymentMethod()
+		if pm != nil && pm.Card != nil {
+			return strings.ToUpper(strings.TrimSpace(pm.Card.Country)), nil
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
 // RemoveStripeCard detaches the user's saved card(s) and clears the bound flag.
 func RemoveStripeCard(c *gin.Context) {
 	id := c.GetInt("id")

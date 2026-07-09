@@ -146,6 +146,9 @@ func primaryAcceptLanguage(header string) string {
 // setup session & cookies and then return user info
 func setupLogin(user *model.User, c *gin.Context, isNewUser ...bool) {
 	model.UpdateUserLastLoginAt(user.Id)
+	if ip := c.ClientIP(); ip != "" && ip != user.LastLoginIp {
+		model.UpdateUserLastLoginIp(user.Id, ip)
+	}
 	if lang := primaryAcceptLanguage(c.GetHeader("Accept-Language")); lang != "" && lang != user.BrowserLang {
 		model.UpdateUserBrowserLang(user.Id, lang)
 	}
@@ -218,6 +221,11 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
+	user.Email = strings.TrimSpace(user.Email)
+	if err := validateEmailDomainRestriction(user.Email); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if common.EmailVerificationEnabled {
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
@@ -251,10 +259,10 @@ func Register(c *gin.Context) {
 	if language, ok := dto.NormalizeUserLanguagePreference(i18n.GetLangFromContext(c)); ok {
 		cleanUser.SetSetting(dto.UserSetting{Language: language})
 	}
-	if common.EmailVerificationEnabled {
+	if common.EmailVerificationEnabled || common.EmailDomainRestrictionEnabled {
 		cleanUser.Email = user.Email
 	}
-	if err := cleanUser.Insert(inviterId); err != nil {
+	if err := cleanUser.InsertWithRegistrationIP(inviterId, c.ClientIP()); err != nil {
 		common.ApiError(c, err)
 		return
 	}

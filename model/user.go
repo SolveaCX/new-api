@@ -61,6 +61,7 @@ type User struct {
 	StripeCustomer          string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	StripeCardBound         bool           `json:"stripe_card_bound" gorm:"default:false;column:stripe_card_bound"`
 	NewUserBonusGiven       bool           `json:"new_user_bonus_given" gorm:"default:false;column:new_user_bonus_given"`
+	RegistrationIP          string         `json:"registration_ip,omitempty" gorm:"type:varchar(64);column:registration_ip;index"`
 	IsEnterprise            bool           `json:"is_enterprise" gorm:"default:false;column:is_enterprise"` // enterprise users retain the group concept; PLG (non-enterprise) users are forced to the plg group with groups hidden
 	StripeCardFingerprint   string         `json:"stripe_card_fingerprint,omitempty" gorm:"type:varchar(64);column:stripe_card_fingerprint;index"`
 	CreatedAt               int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
@@ -68,7 +69,16 @@ type User struct {
 	// Primary Accept-Language tag observed at the most recent login
 	// (e.g. "zh-CN"). Analytics-only: surfaced in the ops report to explain
 	// currency/locale mismatches; never used for authorization.
-	BrowserLang             string         `json:"browser_lang" gorm:"type:varchar(32);default:'';column:browser_lang"`
+	BrowserLang string `json:"browser_lang" gorm:"type:varchar(32);default:'';column:browser_lang"`
+	// Client IP observed at the most recent website login (console.flatkey.ai,
+	// behind Cloudflare → real personal-device IP). Analytics-only: this is the
+	// user's own machine, unlike the /v1 request IP which is usually their
+	// production server. Surfaced in the ops report as the real user location.
+	LastLoginIp string `json:"last_login_ip" gorm:"type:varchar(64);default:'';column:last_login_ip"`
+	// ISO country of the card used on the most recent successful Stripe payment
+	// (card issuing country). Analytics-only: the most reliable geography signal
+	// for paid users. Persisted at webhook fulfillment.
+	PayCountry string `json:"pay_country" gorm:"type:varchar(8);default:'';column:pay_country"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -435,6 +445,39 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 }
 
 func (user *User) Insert(inviterId int) error {
+	return user.InsertWithRegistrationIP(inviterId, "")
+}
+
+func (user *User) InsertWithRegistrationIP(inviterId int, registrationIP string) error {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		return user.insertWithTx(tx, inviterId, registrationIP)
+	}); err != nil {
+		ReleaseRegistrationIPNewUserBonusRedisClaim(user)
+		return err
+	}
+
+	// 用户创建成功后，根据角色初始化边栏配置
+	// 需要重新获取用户以确保有正确的ID和Role
+	var createdUser User
+	if err := DB.Where("username = ?", user.Username).First(&createdUser).Error; err == nil {
+		// 生成基于角色的默认边栏配置
+		defaultSidebarConfig := generateDefaultSidebarConfigForRole(createdUser.Role)
+		if defaultSidebarConfig != "" {
+			currentSetting := createdUser.GetSetting()
+			currentSetting.SidebarModules = defaultSidebarConfig
+			createdUser.SetSetting(currentSetting)
+			createdUser.Update(false)
+			common.SysLog(fmt.Sprintf("为新用户 %s (角色: %d) 初始化边栏配置", createdUser.Username, createdUser.Role))
+		}
+	}
+
+	if user.NewUserBonusGiven && user.Quota > 0 {
+		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(user.Quota)))
+	}
+	return nil
+}
+
+func (user *User) insertWithTx(tx *gorm.DB, inviterId int, registrationIP string) error {
 	var err error
 	if user.Password != "" {
 		user.Password, err = common.Password2Hash(user.Password)
@@ -442,7 +485,13 @@ func (user *User) Insert(inviterId int) error {
 			return err
 		}
 	}
-	user.Quota = common.QuotaForNewUser
+	user.RegistrationIP = normalizeRegistrationIP(registrationIP)
+	if user.RegistrationIP == "" {
+		prepareMissingRegistrationIPNewUserBonus(user)
+	} else {
+		user.Quota = 0
+		user.NewUserBonusGiven = false
+	}
 	// New common users default into the PLG group (groups hidden, forced plg).
 	// Admin/root users keep group controls, so an empty admin group becomes default.
 	if user.Group == "" {
@@ -469,71 +518,23 @@ func (user *User) Insert(inviterId int) error {
 		user.SetSetting(defaultSetting)
 	}
 
-	result := DB.Create(user)
+	result := tx.Create(user)
 	if result.Error != nil {
 		return result.Error
 	}
 
-	// 用户创建成功后，根据角色初始化边栏配置
-	// 需要重新获取用户以确保有正确的ID和Role
-	var createdUser User
-	if err := DB.Where("username = ?", user.Username).First(&createdUser).Error; err == nil {
-		// 生成基于角色的默认边栏配置
-		defaultSidebarConfig := generateDefaultSidebarConfigForRole(createdUser.Role)
-		if defaultSidebarConfig != "" {
-			currentSetting := createdUser.GetSetting()
-			currentSetting.SidebarModules = defaultSidebarConfig
-			createdUser.SetSetting(currentSetting)
-			createdUser.Update(false)
-			common.SysLog(fmt.Sprintf("为新用户 %s (角色: %d) 初始化边栏配置", createdUser.Username, createdUser.Role))
-		}
-	}
-
-	if common.QuotaForNewUser > 0 {
-		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
-	}
-	return nil
+	return claimRegistrationIPNewUserBonusInTx(tx, user)
 }
 
 // InsertWithTx inserts a new user within an existing transaction.
 // This is used for OAuth registration where user creation and binding need to be atomic.
 // Post-creation tasks (sidebar config, logs, inviter rewards) are handled after the transaction commits.
 func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
-	var err error
-	if user.Password != "" {
-		user.Password, err = common.Password2Hash(user.Password)
-		if err != nil {
-			return err
-		}
-	}
-	user.Quota = common.QuotaForNewUser
-	user.AffCode = common.GetRandomString(4)
-	user.InviterId = inviterId
-	user.setInviteRewardInitialStatus()
-	if user.Group == "" {
-		if user.Role >= common.RoleAdminUser {
-			user.Group = defaultUserGroup
-		} else {
-			user.Group = plgUserGroup
-		}
-	}
-	// Deprecated compatibility field: group is the source of truth (see Insert).
-	if user.Role >= common.RoleAdminUser {
-		user.IsEnterprise = true
-	}
+	return user.InsertWithTxAndRegistrationIP(tx, inviterId, "")
+}
 
-	// 初始化用户设置
-	if user.Setting == "" {
-		defaultSetting := dto.UserSetting{}
-		user.SetSetting(defaultSetting)
-	}
-
-	result := tx.Create(user)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	return nil
+func (user *User) InsertWithTxAndRegistrationIP(tx *gorm.DB, inviterId int, registrationIP string) error {
+	return user.insertWithTx(tx, inviterId, registrationIP)
 }
 
 // FinalizeOAuthUserCreation performs post-transaction tasks for OAuth user creation.
@@ -552,8 +553,8 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 		}
 	}
 
-	if common.QuotaForNewUser > 0 {
-		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
+	if user.NewUserBonusGiven && user.Quota > 0 {
+		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(user.Quota)))
 	}
 }
 
@@ -1056,6 +1057,23 @@ func UpdateUserLastLoginAt(id int) {
 func UpdateUserBrowserLang(id int, lang string) {
 	if err := DB.Model(&User{}).Where("id = ?", id).Update("browser_lang", lang).Error; err != nil {
 		common.SysLog("failed to update user browser_lang: " + err.Error())
+	}
+}
+
+// UpdateUserLastLoginIp persists the client IP seen at login. Best-effort
+// analytics write (ops report real-location column), safe under multi-node:
+// last writer wins on a single column.
+func UpdateUserLastLoginIp(id int, ip string) {
+	if err := DB.Model(&User{}).Where("id = ?", id).Update("last_login_ip", ip).Error; err != nil {
+		common.SysLog("failed to update user last_login_ip: " + err.Error())
+	}
+}
+
+// UpdateUserPayCountry persists the card issuing country from a successful
+// Stripe payment. Best-effort analytics write, safe under multi-node.
+func UpdateUserPayCountry(id int, country string) {
+	if err := DB.Model(&User{}).Where("id = ?", id).Update("pay_country", country).Error; err != nil {
+		common.SysLog("failed to update user pay_country: " + err.Error())
 	}
 }
 

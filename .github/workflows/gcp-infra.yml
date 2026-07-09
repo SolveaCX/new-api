@@ -44,7 +44,12 @@ jobs:
         id: plan
         run: |
           set -o pipefail
-          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "Pull-request plan uses -refresh=false because the CI deployer service account cannot refresh all production GCP resources." | tee plan.txt
+            terraform plan -refresh=false -input=false -no-color -out=tfplan | tee -a plan.txt
+          else
+            terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+          fi
 
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'

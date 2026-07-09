@@ -5274,6 +5274,8 @@
     "Payment Currency": "Tiền tệ thanh toán",
     "Signup Method": "Cách đăng ký",
     "Last IP": "IP gần nhất",
+    "Login IP": "IP đăng nhập",
+    "Payment Country": "Quốc gia thanh toán",
     "Registered At": "Đăng ký lúc",
     "Last Active": "Hoạt động gần nhất",
     "Attempts": "Lần thử",
