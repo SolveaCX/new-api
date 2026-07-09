@@ -7,19 +7,17 @@ import (
 )
 
 type PerfMetricsSetting struct {
-	Enabled                   bool   `json:"enabled"`
-	FlushInterval             int    `json:"flush_interval"`
-	BucketTime                string `json:"bucket_time"`
-	RetentionDays             int    `json:"retention_days"`
-	RedisFlushIntervalSeconds int    `json:"redis_flush_interval_seconds"`
+	Enabled       bool   `json:"enabled"`
+	FlushInterval int    `json:"flush_interval"`
+	BucketTime    string `json:"bucket_time"`
+	RetentionDays int    `json:"retention_days"`
 }
 
 var perfMetricsSetting = PerfMetricsSetting{
-	Enabled:                   true,
-	FlushInterval:             5,
-	BucketTime:                "hour",
-	RetentionDays:             0,
-	RedisFlushIntervalSeconds: 5,
+	Enabled:       true,
+	FlushInterval: 5,
+	BucketTime:    "hour",
+	RetentionDays: 0,
 }
 
 var perfMetricsSettingMu sync.RWMutex
@@ -57,13 +55,4 @@ func GetFlushIntervalMinutes() int {
 		return 1
 	}
 	return perfMetricsSetting.FlushInterval
-}
-
-func GetRedisFlushIntervalSeconds() int {
-	perfMetricsSettingMu.RLock()
-	defer perfMetricsSettingMu.RUnlock()
-	if perfMetricsSetting.RedisFlushIntervalSeconds < 1 {
-		return 5
-	}
-	return perfMetricsSetting.RedisFlushIntervalSeconds
 }

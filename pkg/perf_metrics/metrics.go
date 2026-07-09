@@ -1,21 +1,17 @@
 package perfmetrics
 
 import (
-	"context"
-	"fmt"
 	"math"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 )
 
 var hotBuckets sync.Map
-var redisPendingBuckets sync.Map
 var prometheusPendingBuckets sync.Map
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
@@ -24,7 +20,6 @@ const seriesSchema = "dbcd0a3c01b55203"
 
 func Init() {
 	go flushLoop()
-	go redisFlushLoop()
 }
 
 func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
@@ -77,7 +72,6 @@ func Record(sample Sample) {
 	}
 	actual, _ := hotBuckets.LoadOrStore(key, &atomicBucket{})
 	actual.(*atomicBucket).add(sample)
-	recordRedisPending(key, sample)
 	recordPrometheusPending(sample)
 }
 
@@ -362,20 +356,6 @@ func avgTps(value counters) float64 {
 	return float64(value.outputTokens) / (float64(value.generationMs) / 1000)
 }
 
-func recordRedisPending(key bucketKey, sample Sample) {
-	if !common.RedisEnabled || common.RDB == nil {
-		return
-	}
-	for {
-		actual, _ := redisPendingBuckets.LoadOrStore(key, &lockedBucket{})
-		bucket := actual.(*lockedBucket)
-		if bucket.add(sample) {
-			return
-		}
-		redisPendingBuckets.CompareAndDelete(key, bucket)
-	}
-}
-
 func recordPrometheusPending(sample Sample) {
 	if sample.Model == "" {
 		return
@@ -391,11 +371,10 @@ func recordPrometheusPending(sample Sample) {
 	}
 	for {
 		actual, _ := prometheusPendingBuckets.LoadOrStore(key, &prometheusLockedBucket{})
-		bucket := actual.(*prometheusLockedBucket)
-		if bucket.add(sample) {
+		if actual.(*prometheusLockedBucket).add(sample) {
 			return
 		}
-		prometheusPendingBuckets.CompareAndDelete(key, bucket)
+		prometheusPendingBuckets.CompareAndDelete(key, actual)
 	}
 }
 
@@ -404,26 +383,4 @@ func prometheusStatus(success bool) string {
 		return "success"
 	}
 	return "error"
-}
-
-func mergeRedisActiveBuckets(merged map[bucketKey]counters, params QueryParams, startTs int64, endTs int64) {
-	if !common.RedisEnabled || common.RDB == nil || params.Model == "" || params.Group == "" {
-		return
-	}
-	active := bucketStart(time.Now().Unix())
-	if active < startTs || active > endTs {
-		return
-	}
-	key := bucketKey{model: params.Model, group: params.Group, bucketTs: active}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	values, err := common.RDB.HGetAll(ctx, redisBucketKey(key)).Result()
-	if err != nil || len(values) == 0 {
-		return
-	}
-	mergeCounters(merged, key, redisCounters(values))
-}
-
-func redisBucketKey(key bucketKey) string {
-	return fmt.Sprintf("perf:%s:%s:%d", key.model, key.group, key.bucketTs)
 }

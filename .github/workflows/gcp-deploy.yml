@@ -193,14 +193,25 @@ jobs:
             env_args=(--update-env-vars="${env_vars[*]}")
             unset IFS
           fi
+          container_args=()
+          container_names="$(gcloud run services describe "${RUN_SERVICE}" \
+            --project="${PROJECT_ID}" --region="${REGION}" \
+            --format='value(template.containers[].name)')"
+          if printf '%s\n' "${container_names}" | tr ';[:space:]' '\n' | grep -qx "app"; then
+            container_args=(--container=app)
+            echo "Deploying image/env to named container: app"
+          else
+            echo "No app container name found; deploying as a single-container service."
+          fi
           gcloud run services update "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
-            --image="${{ needs.build.outputs.image_uri }}" \
             --revision-suffix="${revision_suffix}" \
             --no-traffic \
-            "${env_args[@]}" \
-            --quiet
+            --quiet \
+            "${container_args[@]}" \
+            --image="${{ needs.build.outputs.image_uri }}" \
+            "${env_args[@]}"
           new_rev="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
             --format='value(status.latestCreatedRevisionName)')"
@@ -327,14 +338,25 @@ jobs:
             env_args=(--update-env-vars="${env_vars[*]}")
             unset IFS
           fi
+          container_args=()
+          container_names="$(gcloud run services describe "${RUN_SERVICE}" \
+            --project="${PROJECT_ID}" --region="${REGION}" \
+            --format='value(template.containers[].name)')"
+          if printf '%s\n' "${container_names}" | tr ';[:space:]' '\n' | grep -qx "app"; then
+            container_args=(--container=app)
+            echo "Deploying image/env to named container: app"
+          else
+            echo "No app container name found; deploying as a single-container service."
+          fi
           gcloud run services update "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
-            --image="${{ needs.build.outputs.image_uri }}" \
             --revision-suffix="${revision_suffix}" \
             --no-traffic \
-            "${env_args[@]}" \
-            --quiet
+            --quiet \
+            "${container_args[@]}" \
+            --image="${{ needs.build.outputs.image_uri }}" \
+            "${env_args[@]}"
           new_rev="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
             --format='value(status.latestCreatedRevisionName)')"

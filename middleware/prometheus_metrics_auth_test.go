@@ -24,6 +24,7 @@ func TestPrometheusMetricsAuth(t *testing.T) {
 	t.Run("503 when env not set", func(t *testing.T) {
 		os.Unsetenv(PrometheusMetricsTokenEnv)
 		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "203.0.113.10:1234"
 		rec := httptest.NewRecorder()
 		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
 		if rec.Code != http.StatusServiceUnavailable {
@@ -31,10 +32,33 @@ func TestPrometheusMetricsAuth(t *testing.T) {
 		}
 	})
 
+	t.Run("200 when local sidecar scrapes without token", func(t *testing.T) {
+		os.Unsetenv(PrometheusMetricsTokenEnv)
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		rec := httptest.NewRecorder()
+		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("200 when IPv6 local sidecar scrapes without token", func(t *testing.T) {
+		os.Unsetenv(PrometheusMetricsTokenEnv)
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "[::1]:1234"
+		rec := httptest.NewRecorder()
+		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
 	t.Run("401 when token missing", func(t *testing.T) {
 		os.Setenv(PrometheusMetricsTokenEnv, "secret")
 		defer os.Unsetenv(PrometheusMetricsTokenEnv)
 		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "203.0.113.10:1234"
 		rec := httptest.NewRecorder()
 		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
 		if rec.Code != http.StatusUnauthorized {
@@ -46,6 +70,7 @@ func TestPrometheusMetricsAuth(t *testing.T) {
 		os.Setenv(PrometheusMetricsTokenEnv, "secret")
 		defer os.Unsetenv(PrometheusMetricsTokenEnv)
 		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "203.0.113.10:1234"
 		req.Header.Set("Authorization", "Bearer wrong")
 		rec := httptest.NewRecorder()
 		newPrometheusMetricsAuthEngine().ServeHTTP(rec, req)
@@ -95,7 +120,7 @@ func TestPrometheusMetricsAuthFailureRateLimit(t *testing.T) {
 	r := newPrometheusMetricsAuthEngine()
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	req.RemoteAddr = "203.0.113.10:1234"
+	req.RemoteAddr = "203.0.113.20:1234"
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -103,7 +128,7 @@ func TestPrometheusMetricsAuthFailureRateLimit(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	req.RemoteAddr = "203.0.113.10:1234"
+	req.RemoteAddr = "203.0.113.20:1234"
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusTooManyRequests {
@@ -111,7 +136,7 @@ func TestPrometheusMetricsAuthFailureRateLimit(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	req.RemoteAddr = "203.0.113.10:1234"
+	req.RemoteAddr = "203.0.113.20:1234"
 	req.Header.Set("Authorization", "Bearer secret")
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

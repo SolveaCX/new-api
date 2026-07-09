@@ -3,6 +3,7 @@ package perfmetrics
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type Store interface {
@@ -103,12 +104,6 @@ type atomicBucket struct {
 	generationMs   atomic.Int64
 }
 
-type lockedBucket struct {
-	mu      sync.Mutex
-	counter counters
-	closed  bool
-}
-
 type prometheusCounters struct {
 	buckets [prometheusLatencyBucketCount]int64
 	count   int64
@@ -116,11 +111,12 @@ type prometheusCounters struct {
 }
 
 type prometheusLockedBucket struct {
-	mu      sync.Mutex
-	buckets [prometheusLatencyBucketCount]int64
-	count   int64
-	sumMs   int64
-	closed  bool
+	mu            sync.Mutex
+	buckets       [prometheusLatencyBucketCount]int64
+	count         int64
+	sumMs         int64
+	lastUpdatedAt int64
+	retired       bool
 }
 
 func (b *atomicBucket) add(sample Sample) {
@@ -189,49 +185,6 @@ func (b *atomicBucket) addCounters(c counters) {
 	}
 }
 
-func (b *lockedBucket) add(sample Sample) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.closed {
-		return false
-	}
-	b.counter.addSample(sample)
-	return true
-}
-
-func (b *lockedBucket) snapshot() counters {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.counter
-}
-
-func (b *lockedBucket) drain() counters {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	out := b.counter
-	b.counter = counters{}
-	return out
-}
-
-func (b *lockedBucket) addCounters(c counters) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.closed {
-		return
-	}
-	b.counter.add(c)
-}
-
-func (b *lockedBucket) closeIfZero() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.counter.isZero() {
-		b.closed = true
-		return true
-	}
-	return false
-}
-
 func (c *counters) addSample(sample Sample) {
 	c.requestCount++
 	if sample.Success {
@@ -277,7 +230,7 @@ func (b *prometheusLockedBucket) add(sample Sample) bool {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.closed {
+	if b.retired {
 		return false
 	}
 	for i, upperBoundMs := range prometheusLatencyBucketUpperBoundsMs {
@@ -288,12 +241,16 @@ func (b *prometheusLockedBucket) add(sample Sample) bool {
 	b.buckets[prometheusInfBucketIndex]++
 	b.count++
 	b.sumMs += latencyMs
+	b.lastUpdatedAt = time.Now().UnixNano()
 	return true
 }
 
 func (b *prometheusLockedBucket) snapshot() prometheusCounters {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.retired {
+		return prometheusCounters{}
+	}
 	out := prometheusCounters{
 		buckets: b.buckets,
 		count:   b.count,
@@ -302,33 +259,17 @@ func (b *prometheusLockedBucket) snapshot() prometheusCounters {
 	return out
 }
 
-func (b *prometheusLockedBucket) drain() prometheusCounters {
+func (b *prometheusLockedBucket) retireIfIdle(cutoffUnixNano int64) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := prometheusCounters{
-		buckets: b.buckets,
-		count:   b.count,
-		sumMs:   b.sumMs,
+	if b.retired {
+		return true
 	}
-	b.buckets = [prometheusLatencyBucketCount]int64{}
-	b.count = 0
-	b.sumMs = 0
-	return out
-}
-
-func (b *prometheusLockedBucket) addCounters(c prometheusCounters) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.closed {
-		return
+	if b.lastUpdatedAt == 0 || b.lastUpdatedAt >= cutoffUnixNano {
+		return false
 	}
-	for i, value := range c.buckets {
-		if value != 0 {
-			b.buckets[i] += value
-		}
-	}
-	b.count += c.count
-	b.sumMs += c.sumMs
+	b.retired = true
+	return true
 }
 
 func (c prometheusCounters) isZero() bool {
@@ -349,19 +290,4 @@ func (c *prometheusCounters) add(other prometheusCounters) {
 	}
 	c.count += other.count
 	c.sumMs += other.sumMs
-}
-
-func deleteEmptyPrometheusPendingBucket(rawKey any, bucket *prometheusLockedBucket) {
-	bucket.mu.Lock()
-	defer bucket.mu.Unlock()
-	if bucket.count != 0 || bucket.sumMs != 0 {
-		return
-	}
-	for _, value := range bucket.buckets {
-		if value != 0 {
-			return
-		}
-	}
-	bucket.closed = true
-	prometheusPendingBuckets.CompareAndDelete(rawKey, bucket)
 }

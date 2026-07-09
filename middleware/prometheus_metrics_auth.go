@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"net"
 	"net/http"
 	"strings"
 
@@ -16,6 +17,10 @@ const PrometheusMetricsTokenEnv = "PROMETHEUS_METRICS_TOKEN"
 func PrometheusMetricsAuth() gin.HandlerFunc {
 	authFailureRateLimit := PrometheusMetricsRateLimit()
 	return func(c *gin.Context) {
+		if prometheusMetricsLocalScrape(c.Request.RemoteAddr) {
+			c.Next()
+			return
+		}
 		want := strings.TrimSpace(common.GetEnvOrDefaultString(PrometheusMetricsTokenEnv, ""))
 		if want == "" {
 			c.String(http.StatusServiceUnavailable, "prometheus metrics token not configured")
@@ -34,6 +39,15 @@ func PrometheusMetricsAuth() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func prometheusMetricsLocalScrape(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 func prometheusMetricsBearer(header string) string {
