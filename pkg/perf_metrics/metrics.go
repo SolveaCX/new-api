@@ -46,14 +46,10 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
-	channelID := 0
-	if info.ChannelMeta != nil {
-		channelID = info.ChannelId
-	}
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
-		ChannelID:    channelID,
+		ChannelID:    info.ChannelId,
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
@@ -371,8 +367,8 @@ func recordRedisPending(key bucketKey, sample Sample) {
 	if !common.RedisEnabled || common.RDB == nil {
 		return
 	}
-	actual, _ := redisPendingBuckets.LoadOrStore(key, &atomicBucket{})
-	actual.(*atomicBucket).add(sample)
+	actual, _ := redisPendingBuckets.LoadOrStore(key, &lockedBucket{})
+	actual.(*lockedBucket).add(sample)
 }
 
 func recordPrometheusPending(sample Sample) {

@@ -157,9 +157,13 @@ func mergeRedisPrometheusSeriesBatch(ctx context.Context, members []string, seri
 			*staleMembers = append(*staleMembers, member)
 			continue
 		}
+		redisKey := key
+		if !prometheusChannelLabelEnabled() {
+			key.channelID = 0
+		}
 		keys = append(keys, key)
 		validMembers = append(validMembers, member)
-		cmds = append(cmds, pipe.HGetAll(ctx, prometheusRedisKey(key)))
+		cmds = append(cmds, pipe.HGetAll(ctx, prometheusRedisKey(redisKey)))
 	}
 	if len(cmds) == 0 {
 		return true

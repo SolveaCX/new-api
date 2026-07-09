@@ -11,6 +11,8 @@ import (
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 )
 
+const maxRedisFlushBatchSize = 500
+
 func flushLoop() {
 	for {
 		interval := perf_metrics_setting.GetFlushIntervalMinutes()
@@ -27,16 +29,31 @@ func flushLoop() {
 func redisFlushLoop() {
 	for {
 		interval := perf_metrics_setting.GetRedisFlushIntervalSeconds()
-		time.Sleep(time.Duration(interval) * time.Second)
-		if !perf_metrics_setting.GetSetting().Enabled {
-			continue
+		ticker := time.NewTicker(time.Duration(interval) * time.Second)
+		for range ticker.C {
+			currentInterval := perf_metrics_setting.GetRedisFlushIntervalSeconds()
+			if currentInterval != interval {
+				ticker.Stop()
+				break
+			}
+			if !perf_metrics_setting.GetSetting().Enabled {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), redisFlushTimeout(currentInterval))
+			if err := flushRedisMetricsOnce(ctx); err != nil {
+				common.SysError("failed to flush redis perf metrics: " + err.Error())
+			}
+			cancel()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(interval)*time.Second)
-		if err := flushRedisMetricsOnce(ctx); err != nil {
-			common.SysError("failed to flush redis perf metrics: " + err.Error())
-		}
-		cancel()
 	}
+}
+
+func redisFlushTimeout(intervalSeconds int) time.Duration {
+	timeout := time.Duration(intervalSeconds) * time.Second
+	if timeout > 2*time.Second {
+		return 2 * time.Second
+	}
+	return timeout
 }
 
 func flushCompletedBuckets() {
@@ -96,7 +113,7 @@ func cleanupExpiredMetrics(retentionDays int) {
 type drainedRedisBucket struct {
 	rawKey  any
 	key     bucketKey
-	bucket  *atomicBucket
+	bucket  *lockedBucket
 	counter counters
 }
 
@@ -115,10 +132,13 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 	activeBucket := bucketStart(time.Now().Unix())
 	redisDrained := make([]drainedRedisBucket, 0)
 	redisPendingBuckets.Range(func(key, value any) bool {
+		if len(redisDrained) >= maxRedisFlushBatchSize {
+			return false
+		}
 		bucketKey := key.(bucketKey)
-		bucket := value.(*atomicBucket)
+		bucket := value.(*lockedBucket)
 		counter := bucket.drain()
-		if counter.requestCount == 0 {
+		if counter.isZero() {
 			deleteHistoricalRedisPendingBucket(key, bucketKey, bucket, activeBucket)
 			return true
 		}
@@ -133,6 +153,9 @@ func flushRedisMetricsOnce(ctx context.Context) error {
 
 	prometheusDrained := make([]drainedPrometheusBucket, 0)
 	prometheusPendingBuckets.Range(func(key, value any) bool {
+		if len(prometheusDrained) >= maxRedisFlushBatchSize {
+			return false
+		}
 		bucket := value.(*prometheusAtomicBucket)
 		counter := bucket.drain()
 		if counter.isZero() {
@@ -238,8 +261,8 @@ func clearPrometheusInflightCounters(prometheusDrained []drainedPrometheusBucket
 	}
 }
 
-func deleteHistoricalRedisPendingBucket(rawKey any, key bucketKey, bucket *atomicBucket, activeBucket int64) {
-	if key.bucketTs >= activeBucket || bucket.snapshot().requestCount != 0 {
+func deleteHistoricalRedisPendingBucket(rawKey any, key bucketKey, bucket *lockedBucket, activeBucket int64) {
+	if key.bucketTs >= activeBucket || !bucket.snapshot().isZero() {
 		return
 	}
 	redisPendingBuckets.Delete(rawKey)

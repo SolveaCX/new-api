@@ -103,6 +103,11 @@ type atomicBucket struct {
 	generationMs   atomic.Int64
 }
 
+type lockedBucket struct {
+	mu      sync.Mutex
+	counter counters
+}
+
 type prometheusCounters struct {
 	buckets [prometheusLatencyBucketCount]int64
 	count   int64
@@ -186,6 +191,70 @@ func (b *atomicBucket) addCounters(c counters) {
 	if c.generationMs != 0 {
 		b.generationMs.Add(c.generationMs)
 	}
+}
+
+func (b *lockedBucket) add(sample Sample) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.counter.addSample(sample)
+}
+
+func (b *lockedBucket) snapshot() counters {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.counter
+}
+
+func (b *lockedBucket) drain() counters {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := b.counter
+	b.counter = counters{}
+	return out
+}
+
+func (b *lockedBucket) addCounters(c counters) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.counter.add(c)
+}
+
+func (c *counters) addSample(sample Sample) {
+	c.requestCount++
+	if sample.Success {
+		c.successCount++
+	}
+	if sample.LatencyMs > 0 {
+		c.totalLatencyMs += sample.LatencyMs
+	}
+	if sample.HasTtft && sample.TtftMs >= 0 {
+		c.ttftSumMs += sample.TtftMs
+		c.ttftCount++
+	}
+	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
+		c.outputTokens += sample.OutputTokens
+		c.generationMs += sample.GenerationMs
+	}
+}
+
+func (c *counters) add(other counters) {
+	c.requestCount += other.requestCount
+	c.successCount += other.successCount
+	c.totalLatencyMs += other.totalLatencyMs
+	c.ttftSumMs += other.ttftSumMs
+	c.ttftCount += other.ttftCount
+	c.outputTokens += other.outputTokens
+	c.generationMs += other.generationMs
+}
+
+func (c counters) isZero() bool {
+	return c.requestCount == 0 &&
+		c.successCount == 0 &&
+		c.totalLatencyMs == 0 &&
+		c.ttftSumMs == 0 &&
+		c.ttftCount == 0 &&
+		c.outputTokens == 0 &&
+		c.generationMs == 0
 }
 
 func (b *prometheusAtomicBucket) add(sample Sample) bool {

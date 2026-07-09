@@ -177,7 +177,7 @@ func TestFlushRedisMetricsDeletesFlushedHistoricalBuckets(t *testing.T) {
 		group:    "default",
 		bucketTs: bucketStart(time.Now().Add(-time.Hour).Unix()),
 	}
-	bucket := &atomicBucket{}
+	bucket := &lockedBucket{}
 	bucket.add(Sample{Model: "gpt-5", Group: "default", LatencyMs: 100, Success: true})
 	redisPendingBuckets.Store(key, bucket)
 
@@ -326,6 +326,26 @@ func TestPrometheusChannelLabelCanBeDisabled(t *testing.T) {
 		LatencyMs: 100,
 		Success:   true,
 	})
+
+	text, err := BuildPrometheusText(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",channel_id="unknown",status="success"} 1`)
+	require.NotContains(t, text, `channel_id="7"`)
+}
+
+func TestPrometheusChannelLabelDisableCoalescesFlushedRedisSeries(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setupMiniRedisForPerfMetrics(t)
+
+	Record(Sample{
+		Model:     "gpt-5",
+		Group:     "default",
+		ChannelID: 7,
+		LatencyMs: 100,
+		Success:   true,
+	})
+	require.NoError(t, flushRedisMetricsOnce(context.Background()))
+	t.Setenv(prometheusChannelLabelEnabledEnv, "false")
 
 	text, err := BuildPrometheusText(context.Background())
 	require.NoError(t, err)
