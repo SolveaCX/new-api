@@ -89,6 +89,9 @@ func TestMetricsRouteAcceptsConfiguredBearerToken(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected correct metrics bearer token to return 200, got %d", rec.Code)
 	}
+	if !strings.Contains(rec.Body.String(), "flatkey_metrics_scrape_info") {
+		t.Fatalf("expected metrics body to include scrape info gauge, got:\n%s", rec.Body.String())
+	}
 	if !strings.Contains(rec.Body.String(), "flatkey_relay_requests_total") {
 		t.Fatalf("expected metrics body to include relay counter, got:\n%s", rec.Body.String())
 	}

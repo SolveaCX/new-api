@@ -28,6 +28,7 @@ func TestRecordRelaySampleExportsSafeRelayMetrics(t *testing.T) {
 
 	body := scrapeMetrics(t, recorder)
 	for _, want := range []string{
+		"flatkey_metrics_scrape_info",
 		"flatkey_relay_requests_total",
 		"flatkey_relay_latency_seconds_bucket",
 		"flatkey_relay_ttft_seconds_bucket",
