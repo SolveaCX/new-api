@@ -32,6 +32,7 @@ import {
   ShieldAlert,
   Ticket,
   User,
+  UserPlus,
   Users,
   Wallet,
 } from 'lucide-react'
@@ -106,6 +107,11 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            title: t('Invite'),
+            url: '/invite',
+            icon: UserPlus,
           },
           {
             title: t('Profile'),

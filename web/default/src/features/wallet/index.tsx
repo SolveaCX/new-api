@@ -38,10 +38,8 @@ import { TitledCard } from '@/components/ui/titled-card'
 import { SectionPageLayout } from '@/components/layout'
 import { getCardStatus } from '@/features/onboarding/api'
 import { getPaddleTopUpStatus, isApiSuccess } from './api'
-import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryPanel } from './components/dialogs/billing-history-dialog'
 import { StripeEmbeddedCheckoutDialog } from './components/dialogs/stripe-embedded-checkout-dialog'
-import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
@@ -49,7 +47,7 @@ import {
   PADDLE_ORDER_SEARCH_PARAM,
   PADDLE_TRANSACTION_SEARCH_PARAM,
 } from './constants'
-import { useTopupInfo, usePayment, useAffiliate } from './hooks'
+import { useTopupInfo, usePayment } from './hooks'
 import {
   clearPaddleCheckoutUrlFallback,
   getInitialPresetTopupAmount,
@@ -149,7 +147,6 @@ export function Wallet(props: WalletProps) {
   const [paymentLoadingAmount, setPaymentLoadingAmount] = useState<
     number | null
   >(null)
-  const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
   const [paddleCheckoutNotice, setPaddleCheckoutNotice] =
     useState<PaddleCheckoutNotice | null>(null)
@@ -168,14 +165,12 @@ export function Wallet(props: WalletProps) {
     setCheckoutCurrency(defaultCurrencyForRegion(topupInfo.client_region))
   }, [topupInfo?.client_region])
 
-  const { processing, processPayment, embeddedCheckout, closeEmbeddedCheckout } =
-    usePayment()
   const {
-    affiliateLink,
-    loading: affiliateLoading,
-    transferQuota,
-    transferring,
-  } = useAffiliate()
+    processing,
+    processPayment,
+    embeddedCheckout,
+    closeEmbeddedCheckout,
+  } = usePayment()
 
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
@@ -661,15 +656,6 @@ export function Wallet(props: WalletProps) {
     }
   }
 
-  // Handle transfer
-  const handleTransfer = async (amount: number) => {
-    const success = await transferQuota(amount)
-    if (success) {
-      await fetchUser()
-    }
-    return success
-  }
-
   const handleSubscriptionAvailabilityChange = useCallback(
     (available: boolean) => {
       setShowSubscriptionPanel(available)
@@ -742,16 +728,6 @@ export function Wallet(props: WalletProps) {
               />
             </div>
 
-            <AffiliateRewardsCard
-              user={user}
-              affiliateLink={affiliateLink}
-              onTransfer={() => setTransferDialogOpen(true)}
-              complianceConfirmed={
-                topupInfo?.payment_compliance_confirmed !== false
-              }
-              loading={affiliateLoading}
-            />
-
             <div id='wallet-billing-history' className='scroll-mt-4'>
               <TitledCard
                 title={t('Billing History')}
@@ -766,14 +742,6 @@ export function Wallet(props: WalletProps) {
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
-
-      <TransferDialog
-        open={transferDialogOpen}
-        onOpenChange={setTransferDialogOpen}
-        onConfirm={handleTransfer}
-        availableQuota={user?.aff_quota ?? 0}
-        transferring={transferring}
-      />
 
       <StripeEmbeddedCheckoutDialog
         session={embeddedCheckout}
