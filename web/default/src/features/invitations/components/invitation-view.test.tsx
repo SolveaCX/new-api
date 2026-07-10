@@ -23,7 +23,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { InvitationView } from '../index'
 import type { InvitationPageData } from '../types'
-import { isValidTransferAmount } from './transfer-dialog'
+import {
+  getTransferAmountValidationError,
+  isValidTransferAmount,
+} from './transfer-dialog'
 
 const testI18n = createInstance()
 
@@ -276,5 +279,14 @@ describe('transfer amount validation', () => {
     expect(isValidTransferAmount(499999, 500000, 1000000)).toBe(false)
     expect(isValidTransferAmount(1000001, 500000, 1000000)).toBe(false)
     expect(isValidTransferAmount(500000.5, 500000, 1000000)).toBe(false)
+  })
+
+  test('identifies an amount that exceeds the available rewards', () => {
+    expect(getTransferAmountValidationError(1000001, 500000, 1000000)).toBe(
+      'exceeds-available'
+    )
+    expect(
+      getTransferAmountValidationError(1000000, 500000, 1000000)
+    ).toBeNull()
   })
 })
