@@ -54,7 +54,7 @@ import {
   type NavBadgeVariant,
 } from '../types'
 import { ChatPresetsItem } from './chat-presets-item'
-import { getNavBadgeClassName } from './nav-badge'
+import { getNavBadgeClassName, getNavItemTitleClassName } from './nav-badge'
 
 /**
  * Sidebar navigation group component
@@ -148,7 +148,9 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
         render={<Link to={item.url} onClick={() => setOpenMobile(false)} />}
       >
         {item.icon && <item.icon className='shrink-0' />}
-        <span className='min-w-0 flex-1 truncate'>{item.title}</span>
+        <span className={getNavItemTitleClassName(item.badgeVariant)}>
+          {item.title}
+        </span>
         {item.badge && (
           <NavBadge variant={item.badgeVariant}>{item.badge}</NavBadge>
         )}
@@ -193,7 +195,9 @@ function SidebarMenuCollapsible({
         render={<SidebarMenuButton tooltip={item.title} />}
       >
         {item.icon && <item.icon className='shrink-0' />}
-        <span className='min-w-0 flex-1 truncate'>{item.title}</span>
+        <span className={getNavItemTitleClassName(item.badgeVariant)}>
+          {item.title}
+        </span>
         {item.badge && (
           <NavBadge variant={item.badgeVariant}>{item.badge}</NavBadge>
         )}
@@ -210,7 +214,11 @@ function SidebarMenuCollapsible({
                 }
               >
                 {subItem.icon && <subItem.icon className='shrink-0' />}
-                <span className='min-w-0 flex-1 truncate'>{subItem.title}</span>
+                <span
+                  className={getNavItemTitleClassName(subItem.badgeVariant)}
+                >
+                  {subItem.title}
+                </span>
                 {subItem.badge && (
                   <NavBadge variant={subItem.badgeVariant}>
                     {subItem.badge}
@@ -248,7 +256,9 @@ function SidebarMenuCollapsedDropdown({
           }
         >
           {item.icon && <item.icon className='shrink-0' />}
-          <span className='min-w-0 flex-1 truncate'>{item.title}</span>
+          <span className={getNavItemTitleClassName(item.badgeVariant)}>
+            {item.title}
+          </span>
           {item.badge && (
             <NavBadge variant={item.badgeVariant}>{item.badge}</NavBadge>
           )}

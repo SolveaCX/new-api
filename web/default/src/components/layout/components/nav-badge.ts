@@ -25,3 +25,9 @@ export function getNavBadgeClassName(variant: NavBadgeVariant) {
 
   return 'shrink-0 px-1 py-0 text-xs'
 }
+
+export function getNavItemTitleClassName(variant?: NavBadgeVariant) {
+  return variant === 'promotion'
+    ? 'min-w-0 shrink-0 truncate'
+    : 'min-w-0 flex-1 truncate'
+}
