@@ -19,8 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
-import { getSelf } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
+import { getSelf } from '@/lib/api'
 import {
   getAffiliateCode,
   getInvitations,
