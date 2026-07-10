@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
-import { getNavBadgeClassName } from './nav-badge'
+import { getNavBadgeClassName, getNavItemTitleClassName } from './nav-badge'
 
 describe('getNavBadgeClassName', () => {
   test('keeps red promotion badges compact and readable in dark mode', () => {
@@ -32,5 +32,12 @@ describe('getNavBadgeClassName', () => {
     expect(className).toContain('group-data-[collapsible=icon]:hidden')
     expect(classTokens).toContain('flex-1')
     expect(classTokens).not.toContain('shrink')
+  })
+
+  test('keeps the navigation title ahead of the promotion badge', () => {
+    const classTokens = getNavItemTitleClassName('promotion').split(' ')
+
+    expect(classTokens).toContain('shrink-0')
+    expect(classTokens).not.toContain('flex-1')
   })
 })
