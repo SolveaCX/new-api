@@ -39,7 +39,6 @@ const (
 	opsReportCacheTTL   = 10 * time.Minute
 	opsAutoBrowseWindow = 60  // seconds after signup treated as auto-fired playground call
 	opsAutoTokenWindow  = 120 // seconds after signup treated as auto-provisioned token
-	opsReportTopPayers  = 20
 	// registered-users detail rows shown in the ops report (newest first)
 	opsReportMaxRegisteredUsers = 200
 	opsReportMaxDays            = 180
@@ -838,9 +837,6 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		}
 		return payers[i].PaidUSD > payers[j].PaidUSD
 	})
-	if len(payers) > opsReportTopPayers {
-		payers = payers[:opsReportTopPayers]
-	}
 	ids := make([]int, len(payers))
 	for i := range payers {
 		ids[i] = payers[i].UserId

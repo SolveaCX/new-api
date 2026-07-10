@@ -1009,7 +1009,7 @@ export function OpsReport() {
                   {t('Active Users (Key Usage)')}
                 </TabsTrigger>
                 <TabsTrigger value='payers'>
-                  {t('Top Paying Customers')}
+                  {t('Paying Customers')}
                 </TabsTrigger>
               </TabsList>
 
@@ -1153,7 +1153,7 @@ export function OpsReport() {
                 <Card>
                   <CardHeader>
                     <CardTitle>
-                      {t('Top Paying Customers')}{' '}
+                      {t('Paying Customers')}{' '}
                       <span className='text-muted-foreground text-sm font-normal'>
                         {t('{{count}} paying users, {{amount}} total', {
                           count: report.total_paid_users,
