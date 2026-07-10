@@ -40,6 +40,7 @@ const localeTranslations = {
 const invitationKeys = [
   'Invite',
   'Invite & Earn',
+  'Earn More Credits!',
   'Total earned',
   'Available to transfer',
   'Successful referrals',
