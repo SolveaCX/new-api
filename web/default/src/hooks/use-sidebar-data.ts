@@ -36,6 +36,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
+import { type TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
 
@@ -45,9 +46,7 @@ import { type SidebarData } from '@/components/layout/types'
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
  */
-export function useSidebarData(): SidebarData {
-  const { t } = useTranslation()
-
+export function buildSidebarData(t: TFunction): SidebarData {
   return {
     navGroups: [
       {
@@ -112,6 +111,8 @@ export function useSidebarData(): SidebarData {
             title: t('Invite'),
             url: '/invite',
             icon: UserPlus,
+            badge: t('Earn More Credits!'),
+            badgeVariant: 'destructive',
           },
           {
             title: t('Profile'),
@@ -169,4 +170,10 @@ export function useSidebarData(): SidebarData {
       },
     ],
   }
+}
+
+export function useSidebarData(): SidebarData {
+  const { t } = useTranslation()
+
+  return buildSidebarData(t)
 }
