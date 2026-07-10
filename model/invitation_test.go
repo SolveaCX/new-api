@@ -206,6 +206,13 @@ func TestGetInvitationPage(t *testing.T) {
 			InviteRewardStatus: InviteRewardStatusBlocked,
 			CreatedAt:          400,
 		})
+		noneStatus := createInvitationTestUser(t, User{
+			Id:                 35,
+			Username:           "none-status",
+			InviterId:          inviter.Id,
+			InviteRewardStatus: InviteRewardStatusNone,
+			CreatedAt:          300,
+		})
 		require.NoError(t, DB.Create(&InviteRewardEvent{
 			InviteeId:          missingEvent.Id,
 			InviterId:          inviter.Id + 1,
@@ -216,7 +223,7 @@ func TestGetInvitationPage(t *testing.T) {
 
 		page, err := GetInvitationPage(inviter.Id, 0, 10)
 		require.NoError(t, err)
-		require.Len(t, page.Items, 4)
+		require.Len(t, page.Items, 5)
 		require.Equal(t, missingEvent.Id, page.Items[0].Id)
 		require.Equal(t, InviteRewardStatusGranted, page.Items[0].Status)
 		require.Zero(t, page.Items[0].RewardQuota)
@@ -229,6 +236,10 @@ func TestGetInvitationPage(t *testing.T) {
 		require.Equal(t, "unavailable", page.Items[2].Reason)
 		require.Equal(t, emptyBlockedReason.Id, page.Items[3].Id)
 		require.Equal(t, "unavailable", page.Items[3].Reason)
+		require.Equal(t, noneStatus.Id, page.Items[4].Id)
+		require.Equal(t, InviteRewardStatusBlocked, page.Items[4].Status)
+		require.Zero(t, page.Items[4].RewardQuota)
+		require.Equal(t, "unavailable", page.Items[4].Reason)
 
 		emptyPage, err := GetInvitationPage(999, 0, 10)
 		require.NoError(t, err)
