@@ -110,6 +110,17 @@ describe('InvitationView', () => {
 
     expect(html).toContain('No referrals yet')
     expect(html).toContain('Share your referral link to get started.')
+    expect(html).not.toContain('Previous')
+  })
+
+  test('lets users return from an empty later page', () => {
+    const html = renderView({
+      data: { ...fixture, items: [], page: 2 },
+      page: 2,
+    })
+
+    expect(html).toContain('No referrals yet')
+    expect(html).toContain('Previous')
   })
 
   test('renders a retry action when invitation records fail', () => {
@@ -117,6 +128,15 @@ describe('InvitationView', () => {
 
     expect(html).toContain('load your referrals.')
     expect(html).toContain('Retry')
+    expect(html).not.toContain('Previous')
+  })
+
+  test('lets users retry or return when a later page fails', () => {
+    const html = renderView({ data: null, error: true, page: 2 })
+
+    expect(html).toContain('load your referrals.')
+    expect(html).toContain('Retry')
+    expect(html).toContain('Previous')
   })
 
   test('keeps a limit-reached invitation granted with an explicit explanation', () => {
@@ -163,6 +183,13 @@ describe('InvitationView', () => {
     expect(html).toContain('data-slot="skeleton"')
     expect(html).not.toContain('a***@example.com')
     expect(html).not.toContain('No referrals yet')
+  })
+
+  test('uses local-only pagination links', () => {
+    const html = renderView()
+
+    expect(html).toContain('href="#"')
+    expect(html).not.toContain('?page=')
   })
 
   test('does not fabricate summary facts when invitation loading fails', () => {

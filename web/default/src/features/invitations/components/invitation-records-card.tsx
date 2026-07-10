@@ -92,9 +92,16 @@ export function InvitationRecordsCard({
               {t("We couldn't load your referrals.")}
             </p>
           </div>
-          <Button variant='outline' onClick={onRetry}>
-            {t('Retry')}
-          </Button>
+          <div className='flex gap-2'>
+            {page > 1 ? (
+              <Button variant='outline' onClick={() => onPageChange(page - 1)}>
+                {t('Previous')}
+              </Button>
+            ) : null}
+            <Button variant='outline' onClick={onRetry}>
+              {t('Retry')}
+            </Button>
+          </div>
         </div>
       ) : loading ? (
         <div className='space-y-3 p-4 sm:p-5'>
@@ -108,6 +115,15 @@ export function InvitationRecordsCard({
           <p className='text-muted-foreground mt-1 text-sm'>
             {t('Share your referral link to get started.')}
           </p>
+          {page > 1 ? (
+            <Button
+              variant='outline'
+              className='mt-3'
+              onClick={() => onPageChange(page - 1)}
+            >
+              {t('Previous')}
+            </Button>
+          ) : null}
         </div>
       ) : (
         <>
@@ -156,15 +172,12 @@ export function InvitationRecordsCard({
               <PaginationContent>
                 {page > 1 ? (
                   <PaginationItem>
-                    <PaginationPrevious
-                      href={`?page=${page - 1}`}
-                      onClick={navigate(page - 1)}
-                    />
+                    <PaginationPrevious href='#' onClick={navigate(page - 1)} />
                   </PaginationItem>
                 ) : null}
                 <PaginationItem>
                   <PaginationLink
-                    href={`?page=${page}`}
+                    href='#'
                     isActive
                     onClick={(event) => event.preventDefault()}
                   >
@@ -173,10 +186,7 @@ export function InvitationRecordsCard({
                 </PaginationItem>
                 {page < totalPages ? (
                   <PaginationItem>
-                    <PaginationNext
-                      href={`?page=${page + 1}`}
-                      onClick={navigate(page + 1)}
-                    />
+                    <PaginationNext href='#' onClick={navigate(page + 1)} />
                   </PaginationItem>
                 ) : null}
               </PaginationContent>
