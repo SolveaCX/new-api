@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -36,13 +37,18 @@ type invitationResponse struct {
 
 func getInvitationPagination(c *gin.Context) (int, int) {
 	page := defaultInvitationPage
+	canonicalPageValid := false
 	if rawPage, exists := c.GetQuery("page"); exists {
 		if parsedPage, err := strconv.Atoi(rawPage); err == nil && parsedPage > 0 {
 			page = parsedPage
+			canonicalPageValid = true
 		}
-	} else if rawPage, exists := c.GetQuery("p"); exists {
-		if parsedPage, err := strconv.Atoi(rawPage); err == nil && parsedPage > 0 {
-			page = parsedPage
+	}
+	if !canonicalPageValid {
+		if rawPage, exists := c.GetQuery("p"); exists {
+			if parsedPage, err := strconv.Atoi(rawPage); err == nil && parsedPage > 0 {
+				page = parsedPage
+			}
 		}
 	}
 
@@ -54,6 +60,9 @@ func getInvitationPagination(c *gin.Context) (int, int) {
 	}
 	if pageSize > maxInvitationPageSize {
 		pageSize = maxInvitationPageSize
+	}
+	if page-1 > math.MaxInt/pageSize {
+		page = defaultInvitationPage
 	}
 
 	return page, pageSize
