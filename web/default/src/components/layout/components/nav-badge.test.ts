@@ -17,24 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
-import { type TFunction } from 'i18next'
-import { buildSidebarData } from './use-sidebar-data'
+import { getNavBadgeClassName } from './nav-badge'
 
-const t = ((key: string) => key) as TFunction
+describe('getNavBadgeClassName', () => {
+  test('keeps red promotion badges compact and readable in dark mode', () => {
+    const className = getNavBadgeClassName('promotion')
 
-describe('buildSidebarData', () => {
-  test('highlights the invitation entry with localized credit copy', () => {
-    const personalGroup = buildSidebarData(t).navGroups.find(
-      (group) => group.id === 'personal'
-    )
-    const inviteItem = personalGroup?.items.find(
-      (item) => 'url' in item && item.url === '/invite'
-    )
-
-    expect(inviteItem).toMatchObject({
-      title: 'Invite',
-      badge: 'Earn More Credits!',
-      badgeVariant: 'promotion',
-    })
+    expect(className).toContain('bg-destructive')
+    expect(className).toContain('dark:bg-destructive')
+    expect(className).toContain('dark:text-background')
+    expect(className).toContain('max-w-28')
+    expect(className).toContain('truncate')
+    expect(className).toContain('group-data-[collapsible=icon]:hidden')
   })
 })

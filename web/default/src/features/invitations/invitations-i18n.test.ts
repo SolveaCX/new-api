@@ -171,6 +171,12 @@ describe('invitation i18n', () => {
     }
   })
 
+  test('keeps the sidebar promotion concise in every locale', () => {
+    for (const translations of Object.values(localeTranslations)) {
+      expect(translations['Earn More Credits!'].length).toBeLessThanOrEqual(22)
+    }
+  })
+
   test('does not retain obsolete API-key referral reward guidance', () => {
     for (const [locale, translations] of Object.entries(localeTranslations)) {
       expect(
