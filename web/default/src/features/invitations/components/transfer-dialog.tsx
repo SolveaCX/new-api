@@ -148,6 +148,7 @@ export function TransferDialog({
             value={amount}
             onChange={(event) => setAmount(Number(event.currentTarget.value))}
             min={minimum}
+            max={availableQuota}
             step={minimum}
             aria-invalid={!valid}
             aria-describedby={
