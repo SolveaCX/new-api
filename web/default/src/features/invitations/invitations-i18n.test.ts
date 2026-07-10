@@ -166,4 +166,14 @@ describe('invitation i18n', () => {
       }
     }
   })
+
+  test('Japanese anti-abuse copy identifies self-referrals explicitly', () => {
+    const antiAbuseCopy =
+      ja.translation[
+        'Self-referrals, duplicate accounts, and other abuse are prohibited. Rewards may be withheld or revoked.'
+      ]
+
+    expect(antiAbuseCopy).toContain('自己招待')
+    expect(antiAbuseCopy).not.toContain('自己紹介')
+  })
 })
