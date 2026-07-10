@@ -1,11 +1,13 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -57,6 +59,18 @@ type RegistrationDomainRiskResult struct {
 type RegistrationDomainReleaseResult struct {
 	Block         RegistrationDomainBlock `json:"block"`
 	RestoredUsers int64                   `json:"restored_users"`
+}
+
+type RegistrationDomainAffectedUser struct {
+	RegistrationDomainBlockUser
+	Username      string `json:"username"`
+	Email         string `json:"email"`
+	CurrentStatus int    `json:"current_status"`
+}
+
+type RegistrationDomainBlockDetail struct {
+	Block RegistrationDomainBlock          `json:"block"`
+	Users []RegistrationDomainAffectedUser `json:"users"`
 }
 
 func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string, policy RegistrationDomainRiskPolicy, afterCreate func(*gorm.DB) error) (RegistrationDomainRiskResult, error) {
@@ -189,9 +203,64 @@ func IsRegistrationDomainBlocked(domain string) (bool, error) {
 	return state.ActiveBlockID != 0, err
 }
 
+func GetRegistrationDomainBlocks(offset int, limit int) ([]RegistrationDomainBlock, int64, error) {
+	var total int64
+	if err := DB.Model(&RegistrationDomainBlock{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	blocks := make([]RegistrationDomainBlock, 0)
+	if err := DB.Order("blocked_at DESC, id DESC").Offset(offset).Limit(limit).Find(&blocks).Error; err != nil {
+		return nil, 0, err
+	}
+	for i := range blocks {
+		if err := DB.Model(&RegistrationDomainBlockUser{}).Where("block_id = ?", blocks[i].Id).Count(&blocks[i].AffectedUserCount).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+	return blocks, total, nil
+}
+
+func GetRegistrationDomainBlockDetail(blockID int) (RegistrationDomainBlockDetail, error) {
+	detail := RegistrationDomainBlockDetail{}
+	if err := DB.First(&detail.Block, blockID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return RegistrationDomainBlockDetail{}, ErrRegistrationDomainBlockNotFound
+		}
+		return RegistrationDomainBlockDetail{}, err
+	}
+	var affected []RegistrationDomainBlockUser
+	if err := DB.Where("block_id = ?", blockID).Order("id ASC").Find(&affected).Error; err != nil {
+		return RegistrationDomainBlockDetail{}, err
+	}
+	detail.Block.AffectedUserCount = int64(len(affected))
+	detail.Users = make([]RegistrationDomainAffectedUser, 0, len(affected))
+	for _, item := range affected {
+		user := User{}
+		if err := DB.Unscoped().Select("id", "username", "email", "status").First(&user, item.UserID).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return RegistrationDomainBlockDetail{}, err
+		}
+		detail.Users = append(detail.Users, RegistrationDomainAffectedUser{
+			RegistrationDomainBlockUser: item,
+			Username:                    user.Username,
+			Email:                       user.Email,
+			CurrentStatus:               user.Status,
+		})
+	}
+	return detail, nil
+}
+
 func ReleaseRegistrationDomainBlock(blockID int, adminID int, restoreUsers bool, releasedAt int64) (RegistrationDomainReleaseResult, error) {
+	return releaseRegistrationDomainBlock(blockID, adminID, restoreUsers, releasedAt, "")
+}
+
+func ReleaseRegistrationDomainBlockWithTrustedDomain(blockID int, adminID int, restoreUsers bool, releasedAt int64, trustedDomain string) (RegistrationDomainReleaseResult, error) {
+	return releaseRegistrationDomainBlock(blockID, adminID, restoreUsers, releasedAt, strings.ToLower(strings.TrimSpace(trustedDomain)))
+}
+
+func releaseRegistrationDomainBlock(blockID int, adminID int, restoreUsers bool, releasedAt int64, trustedDomain string) (RegistrationDomainReleaseResult, error) {
 	result := RegistrationDomainReleaseResult{}
 	var restoredIDs []int
+	trustedDomainsValue := ""
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var block RegistrationDomainBlock
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&block, blockID).Error; err != nil {
@@ -201,6 +270,38 @@ func ReleaseRegistrationDomainBlock(blockID int, adminID int, restoreUsers bool,
 			return err
 		}
 		result.Block = block
+		if trustedDomain != "" {
+			option := Option{Key: "registration_security.trusted_email_domains"}
+			if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
+				return err
+			}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", option.Key).Error; err != nil {
+				return err
+			}
+			trustedDomains := system_setting.GetRegistrationSecuritySettings().TrustedEmailDomains
+			if strings.TrimSpace(option.Value) != "" {
+				if err := common.UnmarshalJsonStr(option.Value, &trustedDomains); err != nil {
+					return err
+				}
+			}
+			cfg := system_setting.RegistrationSecuritySettings{
+				DomainRiskWindowHours: 24,
+				DomainRiskThreshold:   10,
+				TrustedEmailDomains:   append(trustedDomains, trustedDomain),
+			}
+			if err := cfg.NormalizeAndValidate(); err != nil {
+				return err
+			}
+			value, err := common.Marshal(cfg.TrustedEmailDomains)
+			if err != nil {
+				return err
+			}
+			trustedDomainsValue = string(value)
+			option.Value = trustedDomainsValue
+			if err := tx.Save(&option).Error; err != nil {
+				return err
+			}
+		}
 		if block.ReleasedAt != 0 {
 			return nil
 		}
@@ -243,6 +344,14 @@ func ReleaseRegistrationDomainBlock(blockID int, adminID int, restoreUsers bool,
 	}
 	for _, id := range restoredIDs {
 		_ = InvalidateUserCache(id)
+	}
+	if trustedDomainsValue != "" {
+		if err := applyOptionMapValue("registration_security.trusted_email_domains", trustedDomainsValue); err != nil {
+			return RegistrationDomainReleaseResult{}, err
+		}
+		if pubErr := common.PublishConfigChanged(context.Background(), common.ConfigScopeOptions); pubErr != nil {
+			common.SysError("pubsub: failed to publish options change: " + pubErr.Error())
+		}
 	}
 	return result, nil
 }

@@ -381,6 +381,40 @@ func validateAndNormalizeOptionValue(key string, value string) (string, error) {
 	if err := setting.ValidatePaddleOption(key, value); err != nil {
 		return "", err
 	}
+	if strings.HasPrefix(key, "registration_security.") {
+		configKey := strings.TrimPrefix(key, "registration_security.")
+		current := system_setting.GetRegistrationSecuritySettings()
+		cfg := current
+		if err := config.UpdateConfigFromMap(&cfg, map[string]string{configKey: value}); err != nil {
+			return "", err
+		}
+		if err := cfg.NormalizeAndValidate(); err != nil {
+			return "", err
+		}
+		if configKey == "trusted_email_domains" {
+			for _, domain := range cfg.TrustedEmailDomains {
+				if current.IsTrustedDomain(domain) {
+					continue
+				}
+				blocked, err := IsRegistrationDomainBlocked(domain)
+				if err != nil {
+					return "", err
+				}
+				if blocked {
+					return "", errors.New("release the active registration domain block before trusting this domain")
+				}
+			}
+		}
+		normalized, err := config.ConfigToMap(&cfg)
+		if err != nil {
+			return "", err
+		}
+		normalizedValue, ok := normalized[configKey]
+		if !ok {
+			return "", errors.New("unknown registration security option")
+		}
+		return normalizedValue, nil
+	}
 	if key == "payment_setting.amount_bonus" {
 		return normalizeAmountBonusOptionValue(value)
 	}

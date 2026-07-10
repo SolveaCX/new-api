@@ -246,6 +246,9 @@ type OptionsUpdateRequest struct {
 }
 
 func isBulkOptionUpdateKey(key string) bool {
+	if strings.HasPrefix(key, "registration_security.") {
+		return true
+	}
 	switch key {
 	case "SidebarModulesAdmin", model.OptionKeyPlaygroundDefaultModel:
 		return true
