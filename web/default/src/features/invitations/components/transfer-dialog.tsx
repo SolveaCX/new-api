@@ -27,6 +27,33 @@ interface TransferDialogProps {
   transferring: boolean
 }
 
+export type TransferAmountValidationError =
+  | 'invalid'
+  | 'below-minimum'
+  | 'exceeds-available'
+  | null
+
+// Exported for the focused boundary test; this remains pure UI-domain logic.
+// eslint-disable-next-line react-refresh/only-export-components
+export function getTransferAmountValidationError(
+  amount: number,
+  minimum: number,
+  maximum: number
+): TransferAmountValidationError {
+  if (
+    !Number.isFinite(amount) ||
+    !Number.isInteger(amount) ||
+    !Number.isFinite(minimum) ||
+    !Number.isFinite(maximum) ||
+    minimum <= 0
+  ) {
+    return 'invalid'
+  }
+  if (amount < minimum) return 'below-minimum'
+  if (amount > maximum) return 'exceeds-available'
+  return null
+}
+
 // Exported for the focused boundary test; this remains pure UI-domain logic.
 // eslint-disable-next-line react-refresh/only-export-components
 export function isValidTransferAmount(
@@ -34,15 +61,7 @@ export function isValidTransferAmount(
   minimum: number,
   maximum: number
 ): boolean {
-  return (
-    Number.isFinite(amount) &&
-    Number.isInteger(amount) &&
-    Number.isFinite(minimum) &&
-    Number.isFinite(maximum) &&
-    minimum > 0 &&
-    amount >= minimum &&
-    amount <= maximum
-  )
+  return getTransferAmountValidationError(amount, minimum, maximum) === null
 }
 
 export function TransferDialog({
@@ -61,7 +80,13 @@ export function TransferDialog({
       ? configuredQuotaPerUnit
       : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
   const [amount, setAmount] = useState(minimum)
-  const valid = isValidTransferAmount(amount, minimum, availableQuota)
+  const validationError = getTransferAmountValidationError(
+    amount,
+    minimum,
+    availableQuota
+  )
+  const valid = validationError === null
+  const exceedsAvailable = validationError === 'exceeds-available'
 
   useEffect(() => {
     if (open) {
@@ -123,14 +148,31 @@ export function TransferDialog({
             value={amount}
             onChange={(event) => setAmount(Number(event.currentTarget.value))}
             min={minimum}
-            max={availableQuota}
             step={minimum}
             aria-invalid={!valid}
+            aria-describedby={
+              exceedsAvailable
+                ? 'invitation-transfer-amount-error'
+                : 'invitation-transfer-amount-help'
+            }
             className='font-mono text-lg'
           />
-          <p className='text-muted-foreground text-xs'>
-            {t('Minimum:')} {formatQuota(minimum)}
-          </p>
+          {exceedsAvailable ? (
+            <p
+              id='invitation-transfer-amount-error'
+              role='alert'
+              className='text-destructive text-xs'
+            >
+              {t('Transfer amount cannot exceed available rewards.')}
+            </p>
+          ) : (
+            <p
+              id='invitation-transfer-amount-help'
+              className='text-muted-foreground text-xs'
+            >
+              {t('Minimum:')} {formatQuota(minimum)}
+            </p>
+          )}
         </div>
       </div>
     </Dialog>
