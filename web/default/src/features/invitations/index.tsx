@@ -24,6 +24,7 @@ export interface InvitationViewProps {
   data: InvitationPageData | null
   affiliateLink: string
   loading: boolean
+  recordsLoading: boolean
   affiliateLoading: boolean
   affiliateError: boolean
   error: boolean
@@ -38,6 +39,7 @@ export function InvitationView({
   data,
   affiliateLink,
   loading,
+  recordsLoading,
   affiliateLoading,
   affiliateError,
   error,
@@ -66,7 +68,7 @@ export function InvitationView({
       />
       <InvitationRecordsCard
         data={data}
-        loading={loading}
+        loading={loading || recordsLoading}
         error={error}
         page={page}
         onRetry={onRetry}
@@ -100,6 +102,7 @@ export function Invitations() {
           data={data}
           affiliateLink={affiliateLink}
           loading={invitationsQuery.isLoading}
+          recordsLoading={invitationsQuery.isPlaceholderData}
           affiliateLoading={codeQuery.isLoading}
           affiliateError={codeQuery.isError}
           error={invitationsQuery.isError}

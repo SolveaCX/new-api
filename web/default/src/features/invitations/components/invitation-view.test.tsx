@@ -63,6 +63,7 @@ function renderView(
         data={fixture}
         affiliateLink='https://console.example.com/sign-up?aff=ABCD'
         loading={false}
+        recordsLoading={false}
         affiliateLoading={false}
         affiliateError={false}
         error={false}
@@ -152,6 +153,16 @@ describe('InvitationView', () => {
     expect(html).not.toContain(
       'Referral reward transfer is disabled until the administrator confirms compliance terms.'
     )
+  })
+
+  test('keeps summary content while paginated records load', () => {
+    const html = renderView({ recordsLoading: true })
+
+    expect(html).toContain('Total earned')
+    expect(html).toContain('What are the current referral rewards?')
+    expect(html).toContain('data-slot="skeleton"')
+    expect(html).not.toContain('a***@example.com')
+    expect(html).not.toContain('No referrals yet')
   })
 
   test('does not fabricate summary facts when invitation loading fails', () => {
