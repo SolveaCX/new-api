@@ -109,7 +109,7 @@ export async function HomePage(props: Props) {
             </div>
 
             <div className="landing-animate-fade-up flex w-full justify-center opacity-0 lg:col-span-5 lg:justify-end" style={{ animationDelay: "260ms" }}>
-              <HomePriceCompare copy={home.compare} rows={flagships} />
+              <HomePriceCompare copy={home.compare} rows={flagships} moreHref={localizePath("/models", props.locale)} />
             </div>
           </div>
         </section>

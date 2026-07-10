@@ -7,7 +7,7 @@ import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { NotificationPopover } from "@/components/notification-popover";
 import { getCopy } from "@/lib/copy";
-import { type Locale, localizePath, stripLocale } from "@/lib/locales";
+import { type Locale, localizePath, stripLocale, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +18,7 @@ const useCaseItems = [
   { href: "/use-case/claude-code", label: "Claude Code" },
   { href: "/use-case/image-buddy", label: "Image Buddy" },
 ];
-const useCaseLabelByLocale: Record<Locale, string> = {
+const useCaseLabelByLocale: Record<Locale, string> =withIdFallback({
   en: "Use Case",
   zh: "使用场景",
   es: "Casos de uso",
@@ -28,7 +28,7 @@ const useCaseLabelByLocale: Record<Locale, string> = {
   ja: "ユースケース",
   vi: "Use case",
   de: "Anwendungsfälle",
-};
+});
 
 type Props = {
   locale: Locale;

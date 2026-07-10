@@ -1,4 +1,5 @@
 import { ArrowRight, Ban, Boxes, CheckCircle2, Code2, DollarSign, Gauge, KeyRound, Mail, Wallet } from "lucide-react";
+import { withIdFallback } from "@/lib/locales";
 import { SiteShell } from "@/components/site-shell";
 import { PricingPlansGrid } from "@/components/pricing-plans-grid";
 import {
@@ -89,7 +90,7 @@ type PricingPageLocalizedUiCopy = {
 
 type PricingPageCopy = PricingPageBaseCopy & PricingPageLocalizedUiCopy;
 
-const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
+const PRICING_COPY: Record<Locale, PricingPageBaseCopy> =withIdFallback({
   en: {
     modelsDirectory: "Models Directory",
     modelPricing: "One API key for every top AI model",
@@ -378,9 +379,9 @@ const PRICING_COPY: Record<Locale, PricingPageBaseCopy> = {
     seoParagraph3Middle: "und",
     seoParagraph3Suffix: "bieten crawlbare Einstiegspunkte für anbieterspezifische AI-Modellpreise.",
   },
-};
+});
 
-const PRICING_UI_COPY: Record<Locale, PricingPageLocalizedUiCopy> = {
+const PRICING_UI_COPY: Record<Locale, PricingPageLocalizedUiCopy> =withIdFallback({
   en: {
     pricingHeroTitle: "Every top-up earns bonus credit — up to 50% off",
     pricingHeroDescription: "Models are priced at 60–90% of the official list. Top up $200 and get $100 free — both discounts stack, as low as 50% of the official price. Bonus is credited instantly, forever.",
@@ -642,7 +643,7 @@ const PRICING_UI_COPY: Record<Locale, PricingPageLocalizedUiCopy> = {
     enterpriseContactTitle: "Vertrieb kontaktieren",
     enterpriseContactDescription: "Benötigst du höhere Monatsnutzung, Rechnungen, Team-Procurement oder individuelle Routing-Rabatte? Sende das Formular und wir melden uns.",
   },
-};
+});
 
 export function getPricingPageCopy(locale: Locale): PricingPageCopy {
   const baseCopy = PRICING_COPY[locale] ?? PRICING_COPY.en;
@@ -677,7 +678,7 @@ type PricingFaq = {
   answer: string;
 };
 
-const PRICING_FAQ_TITLE: Record<Locale, string> = {
+const PRICING_FAQ_TITLE: Record<Locale, string> =withIdFallback({
   en: "Pricing FAQ",
   zh: "定价常见问题",
   es: "Preguntas frecuentes sobre precios",
@@ -687,9 +688,9 @@ const PRICING_FAQ_TITLE: Record<Locale, string> = {
   ja: "料金 FAQ",
   vi: "FAQ về giá",
   de: "Preis-FAQ",
-};
+});
 
-const PRICING_FAQS: Record<Locale, PricingFaq[]> = {
+const PRICING_FAQS: Record<Locale, PricingFaq[]> =withIdFallback({
   en: [
     { question: "How does the top-up bonus work?", answer: "Every top-up earns bonus credit, forever: +$3 on $10, +$8 on $20, +$100 on $200. The bonus lands in your balance instantly and is spent like normal credit. Models are also priced at 60–90% of the official list — stacked with the bonus, as low as 50% of the official price." },
     { question: "Is this a monthly subscription?", answer: "No. The self-serve plans are prepaid top-ups. Balance is consumed only when API requests use models." },
@@ -753,7 +754,7 @@ const PRICING_FAQS: Record<Locale, PricingFaq[]> = {
     { question: "Kann ich sehen, wie Guthaben verbraucht wird?", answer: "Ja. Nutzung wird nach Modell, Token-Typ und Request-Logs gemessen, damit Teams Ausgaben prüfen und Kosten steuern können." },
     { question: "Wann sollte ich Enterprise wählen?", answer: "Enterprise passt für höhere Monatsnutzung, Rechnungsstellung, Procurement, eigene Routing-Rabatte oder Team-Kontrollen." },
   ],
-};
+});
 
 export function getPricingPageFaqs(locale: Locale): PricingFaq[] {
   return PRICING_FAQS[locale] ?? PRICING_FAQS.en;

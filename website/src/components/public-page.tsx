@@ -1,4 +1,5 @@
 import { LegalMarkdown, getLegalHeadings } from "@/components/legal-markdown";
+import { withIdFallback } from "@/lib/locales";
 import { SiteShell } from "@/components/site-shell";
 import { getPageContent, type PublicPageKey } from "@/content/pages";
 import type { Locale } from "@/lib/locales";
@@ -101,7 +102,7 @@ export function PublicPage(props: Props) {
   );
 }
 
-const PUBLIC_PAGE_COPY: Record<Locale, { lastUpdated: string; tableOfContents: string }> = {
+const PUBLIC_PAGE_COPY: Record<Locale, { lastUpdated: string; tableOfContents: string }> =withIdFallback({
   en: { lastUpdated: "Last updated", tableOfContents: "Table of contents" },
   zh: { lastUpdated: "最后更新", tableOfContents: "目录" },
   es: { lastUpdated: "Última actualización", tableOfContents: "Índice" },
@@ -111,7 +112,7 @@ const PUBLIC_PAGE_COPY: Record<Locale, { lastUpdated: string; tableOfContents: s
   ja: { lastUpdated: "最終更新", tableOfContents: "目次" },
   vi: { lastUpdated: "Cập nhật lần cuối", tableOfContents: "Mục lục" },
   de: { lastUpdated: "Zuletzt aktualisiert", tableOfContents: "Inhaltsverzeichnis" },
-};
+});
 
 function publicPageCopy(locale: Locale) {
   return PUBLIC_PAGE_COPY[locale] ?? PUBLIC_PAGE_COPY.en;

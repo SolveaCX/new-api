@@ -1,6 +1,6 @@
 export const DEFAULT_LOCALE = "en";
 
-export const LOCALES = ["en", "zh", "es", "fr", "pt", "ru", "ja", "vi", "de"] as const;
+export const LOCALES = ["en", "zh", "es", "fr", "pt", "ru", "ja", "vi", "de", "id"] as const;
 
 export type Locale = (typeof LOCALES)[number];
 
@@ -14,10 +14,21 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   ja: "日本語",
   vi: "Tiếng Việt",
   de: "Deutsch",
+  id: "Bahasa Indonesia",
 };
 
 export function isLocale(value: string | undefined): value is Locale {
   return LOCALES.some((locale) => locale === value);
+}
+
+// Fill the `id` (Bahasa Indonesia) locale with the English value when a copy map
+// hasn't been translated to Indonesian yet. Lets us ship the Indonesian homepage +
+// market landing first, while every other surface falls back to English until
+// translated. Pass a map that already covers `en`; `id` is optional.
+export function withIdFallback<T>(
+  map: Record<Exclude<Locale, "id">, T> & Partial<Record<"id", T>>
+): Record<Locale, T> {
+  return { ...map, id: map.id ?? map.en } as Record<Locale, T>;
 }
 
 export function resolveLocaleFromPathname(pathname: string | null | undefined): Locale {

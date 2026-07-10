@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BadgePercent } from "lucide-react";
 import { ModelLogo } from "@/components/pricing-model-browser";
 import type { HomeCopy } from "@/lib/home-copy";
@@ -6,6 +7,7 @@ import type { HomePricedModel } from "@/lib/home-models";
 type Props = {
   copy: HomeCopy["compare"];
   rows: HomePricedModel[];
+  moreHref: string;
 };
 
 // Hero visual: the two stacked discounts (per-model list at 60-90% of
@@ -43,7 +45,7 @@ export function HomePriceCompare(props: Props) {
         <span className="text-muted-foreground/70 pb-2 text-right text-[10px] font-bold tracking-[0.12em] uppercase">{props.copy.official}</span>
         <span className="pb-2 text-right text-[10px] font-bold tracking-[0.12em] text-violet-700 uppercase dark:text-violet-300">{props.copy.flatkey}</span>
         {props.rows.map((row) => (
-          <div key={row.name} className="col-span-3 grid grid-cols-subgrid items-center border-t border-violet-500/10 py-3">
+          <div key={row.name} className="col-span-3 grid grid-cols-subgrid items-center border-t border-violet-500/10 py-2">
             <div className="flex min-w-0 items-center gap-2.5">
               <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-violet-500/15 bg-violet-500/6">
                 <ModelLogo iconKey={row.iconKey} fallback={row.name.charAt(0).toUpperCase()} size={18} />
@@ -59,7 +61,13 @@ export function HomePriceCompare(props: Props) {
         ))}
       </div>
 
-      <p className="text-muted-foreground/80 mt-4 border-t border-violet-500/10 pt-3 text-[11px] leading-5">
+      <Link
+        href={props.moreHref}
+        className="mt-3 block border-t border-violet-500/10 pt-3 text-[12px] font-semibold text-violet-700 transition-colors hover:text-violet-500 dark:text-violet-300 dark:hover:text-violet-200"
+      >
+        {props.copy.more}
+      </Link>
+      <p className="text-muted-foreground/80 mt-2 text-[11px] leading-5">
         {props.copy.inputLabel} · {props.copy.save}
       </p>
     </div>

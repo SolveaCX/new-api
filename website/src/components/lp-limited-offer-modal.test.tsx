@@ -18,7 +18,8 @@ describe("LP limited offer modal helpers", () => {
       expect(OFFER_MODAL_COPY[locale].body.length).toBeGreaterThan(40);
     }
 
-    for (const locale of LOCALES.filter((item) => item !== "en")) {
+    // `id` is a staged locale: falls back to English until translated.
+    for (const locale of LOCALES.filter((item) => item !== "en" && item !== "id")) {
       expect(OFFER_MODAL_COPY[locale].timerLabel).not.toBe(OFFER_MODAL_COPY.en.timerLabel);
       expect(OFFER_MODAL_COPY[locale].body).not.toBe(OFFER_MODAL_COPY.en.body);
     }

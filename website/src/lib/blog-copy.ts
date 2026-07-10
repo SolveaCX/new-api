@@ -1,4 +1,5 @@
 import type { Locale } from "./locales";
+import { withIdFallback } from "@/lib/locales";
 
 export type BlogCopy = {
   title: string;
@@ -25,7 +26,7 @@ export type BlogCopy = {
   categoryFallbackDescription: string;
 };
 
-export const BLOG_COPY: Record<Locale, BlogCopy> = {
+export const BLOG_COPY: Record<Locale, BlogCopy> =withIdFallback({
   en: {
     title: "flatkey.ai Blog",
     description: "Insights, product notes, and implementation guides for teams building on AI APIs.",
@@ -242,7 +243,7 @@ export const BLOG_COPY: Record<Locale, BlogCopy> = {
     categoryTitle: "Blog-Kategorie: {{category}}",
     categoryFallbackDescription: "Durchsuche flatkey.ai-Blogartikel nach Kategorie.",
   },
-};
+});
 
 export function formatBlogCopy(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => String(values[key] ?? ""));
