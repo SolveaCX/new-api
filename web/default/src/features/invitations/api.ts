@@ -42,12 +42,24 @@ export async function getInvitations(
   const res = await api.get<InvitationPageResponse>(
     buildInvitationListPath(page, pageSize)
   )
-  return res.data
+  const response = res.data
+  const hasInvitationData =
+    response?.data !== null &&
+    typeof response?.data === 'object' &&
+    !Array.isArray(response.data)
+  if (response?.success !== true || !hasInvitationData) {
+    throw new Error(response?.message || 'Invalid invitations response')
+  }
+  return response
 }
 
 export async function getAffiliateCode(): Promise<AffiliateCodeResponse> {
   const res = await api.get<AffiliateCodeResponse>('/api/user/aff')
-  return res.data
+  const response = res.data
+  if (response?.success !== true || typeof response.data !== 'string') {
+    throw new Error(response?.message || 'Invalid affiliate code response')
+  }
+  return response
 }
 
 export async function transferAffiliateQuota(
@@ -56,7 +68,7 @@ export async function transferAffiliateQuota(
   const res = await api.post<AffiliateTransferResponse>(
     '/api/user/aff_transfer',
     { quota },
-    { skipBusinessError: true }
+    { skipBusinessError: true, skipErrorHandler: true }
   )
   return res.data
 }

@@ -16,7 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
@@ -27,6 +32,40 @@ import {
   transferAffiliateQuota,
 } from '../api'
 import { INVITATION_PAGE_SIZE } from '../types'
+
+class InvitationTransferBusinessError extends Error {}
+
+export function createInvitationTransferMutationOptions(
+  queryClient: QueryClient
+) {
+  return {
+    mutationFn: async (quota: number) => {
+      const response = await transferAffiliateQuota(quota)
+      if (response.success !== true) {
+        throw new InvitationTransferBusinessError(
+          response.message || i18next.t('Transfer failed')
+        )
+      }
+      return response
+    },
+    onSuccess: async () => {
+      const selfResponse = await getSelf().catch(() => null)
+      if (selfResponse?.data) {
+        useAuthStore.getState().auth.setUser(selfResponse.data)
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['invitations'] })
+      toast.success(i18next.t('Transfer successful'))
+    },
+    onError: (error: Error) => {
+      toast.error(
+        error instanceof InvitationTransferBusinessError
+          ? error.message
+          : i18next.t('Transfer failed')
+      )
+    },
+  }
+}
 
 export function useInvitations(page: number) {
   const queryClient = useQueryClient()
@@ -41,31 +80,9 @@ export function useInvitations(page: number) {
     queryFn: getAffiliateCode,
   })
 
-  const transferMutation = useMutation({
-    mutationFn: async (quota: number) => {
-      const response = await transferAffiliateQuota(quota)
-      if (response.success === false) {
-        throw new Error(response.message || i18next.t('Transfer failed'))
-      }
-      return response
-    },
-    onSuccess: async () => {
-      const selfResponse = await getSelf().catch(() => null)
-      if (selfResponse?.data) {
-        useAuthStore.getState().auth.setUser(selfResponse.data)
-      }
-
-      await queryClient.invalidateQueries({ queryKey: ['invitations'] })
-      toast.success(i18next.t('Transfer successful'))
-    },
-    onError: (error) => {
-      toast.error(
-        error instanceof Error && error.message
-          ? i18next.t(error.message)
-          : i18next.t('Transfer failed')
-      )
-    },
-  })
+  const transferMutation = useMutation(
+    createInvitationTransferMutationOptions(queryClient)
+  )
 
   return {
     invitationsQuery,
