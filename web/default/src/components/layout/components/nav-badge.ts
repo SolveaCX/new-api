@@ -16,25 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'bun:test'
-import { type TFunction } from 'i18next'
-import { buildSidebarData } from './use-sidebar-data'
+import { type NavBadgeVariant } from '../types'
 
-const t = ((key: string) => key) as TFunction
+export function getNavBadgeClassName(variant: NavBadgeVariant) {
+  if (variant === 'promotion') {
+    return 'bg-destructive text-destructive-foreground dark:bg-destructive dark:text-background group-data-[collapsible=icon]:hidden min-w-0 max-w-28 shrink truncate px-1 py-0 text-[10px] font-semibold tracking-tight'
+  }
 
-describe('buildSidebarData', () => {
-  test('highlights the invitation entry with localized credit copy', () => {
-    const personalGroup = buildSidebarData(t).navGroups.find(
-      (group) => group.id === 'personal'
-    )
-    const inviteItem = personalGroup?.items.find(
-      (item) => 'url' in item && item.url === '/invite'
-    )
-
-    expect(inviteItem).toMatchObject({
-      title: 'Invite',
-      badge: 'Earn More Credits!',
-      badgeVariant: 'promotion',
-    })
-  })
-})
+  return 'shrink-0 px-1 py-0 text-xs'
+}

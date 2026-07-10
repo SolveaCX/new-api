@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { type TFunction } from 'i18next'
 import {
   Activity,
   Box,
@@ -36,7 +37,6 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { type TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
 
@@ -112,7 +112,7 @@ export function buildSidebarData(t: TFunction): SidebarData {
             url: '/invite',
             icon: UserPlus,
             badge: t('Earn More Credits!'),
-            badgeVariant: 'destructive',
+            badgeVariant: 'promotion',
           },
           {
             title: t('Profile'),

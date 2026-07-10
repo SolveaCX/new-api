@@ -51,10 +51,10 @@ import {
   type NavChatPresets,
   type NavLink,
   type NavGroup as NavGroupProps,
+  type NavBadgeVariant,
 } from '../types'
 import { ChatPresetsItem } from './chat-presets-item'
-
-type NavBadgeVariant = 'default' | 'destructive'
+import { getNavBadgeClassName } from './nav-badge'
 
 /**
  * Sidebar navigation group component
@@ -122,14 +122,15 @@ function NavBadge({
 }) {
   return (
     <Badge
-      variant={variant}
-      className={
-        variant === 'destructive'
-          ? 'bg-destructive text-destructive-foreground dark:bg-destructive shrink-0 px-1 py-0 text-xs'
-          : 'shrink-0 px-1 py-0 text-xs'
-      }
+      variant={variant === 'promotion' ? 'destructive' : variant}
+      className={getNavBadgeClassName(variant)}
+      title={typeof children === 'string' ? children : undefined}
     >
-      {children}
+      {variant === 'promotion' ? (
+        <span className='truncate'>{children}</span>
+      ) : (
+        children
+      )}
     </Badge>
   )
 }
@@ -143,7 +144,7 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
     <SidebarMenuItem>
       <SidebarMenuButton
         isActive={checkIsActive(href, item)}
-        tooltip={item.title}
+        tooltip={item.badge ? `${item.title} — ${item.badge}` : item.title}
         render={<Link to={item.url} onClick={() => setOpenMobile(false)} />}
       >
         {item.icon && <item.icon className='shrink-0' />}
