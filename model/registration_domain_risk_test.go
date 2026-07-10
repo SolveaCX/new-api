@@ -166,6 +166,36 @@ func TestRegisterUserWithDomainRiskPersistsNormalizedDomainBelowThreshold(t *tes
 	require.Equal(t, "203.0.113.11", stored.RegistrationIP)
 }
 
+func TestRegisterUserWithDomainRiskNormalizesPrepopulatedEmailDomain(t *testing.T) {
+	setupRegistrationDomainRiskTest(t)
+	candidate := User{
+		Username: "prepopulated-domain", Password: "password123", Email: "user@mixed.example",
+		EmailDomain: " MIXED.Example ", Role: common.RoleCommonUser, Status: common.UserStatusEnabled,
+	}
+
+	_, err := RegisterUserWithDomainRisk(&candidate, 0, "203.0.113.18", RegistrationDomainRiskPolicy{Enabled: false}, nil)
+
+	require.NoError(t, err)
+	var stored User
+	require.NoError(t, DB.First(&stored, candidate.Id).Error)
+	require.Equal(t, "mixed.example", stored.EmailDomain)
+}
+
+func TestRegisterUserWithDomainRiskRejectsActiveBlockWhenThresholdPolicyDisabled(t *testing.T) {
+	setupRegistrationDomainRiskTest(t)
+	now := time.Now().Unix()
+	block := RegistrationDomainBlock{Domain: "trusted.example", WindowHours: 24, Threshold: 10, ObservedCount: 10, BlockedAt: now}
+	require.NoError(t, DB.Create(&block).Error)
+	require.NoError(t, DB.Create(&RegistrationDomainState{Domain: block.Domain, ActiveBlockID: block.Id}).Error)
+	candidate := User{Username: "trusted-but-blocked", Password: "password123", Email: "user@trusted.example", EmailDomain: "trusted.example", Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+
+	result, err := RegisterUserWithDomainRisk(&candidate, 0, "203.0.113.16", RegistrationDomainRiskPolicy{Enabled: false, Now: now}, nil)
+
+	require.ErrorIs(t, err, ErrRegistrationDomainBlocked)
+	require.Equal(t, block.Id, result.BlockID)
+	require.Zero(t, candidate.Id)
+}
+
 func TestRegisterUserWithDomainRiskBackfillsLegacyEmailDomains(t *testing.T) {
 	setupRegistrationDomainRiskTest(t)
 	now := time.Now().Unix()
@@ -184,6 +214,29 @@ func TestRegisterUserWithDomainRiskBackfillsLegacyEmailDomains(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, DB.First(&legacy, legacy.Id).Error)
 	require.Equal(t, "backfill.example", legacy.EmailDomain)
+}
+
+func TestRegisterUserWithDomainRiskBackfillsNullLegacyEmailDomains(t *testing.T) {
+	setupRegistrationDomainRiskTest(t)
+	now := time.Now().Unix()
+	legacy := User{
+		Username: "legacy-null-domain", AffCode: "legacy-null-domain-aff", Password: "hashed",
+		Email: "legacy@null-backfill.example", Status: common.UserStatusEnabled,
+		Role: common.RoleCommonUser, CreatedAt: now - 60,
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+	require.NoError(t, DB.Exec("UPDATE users SET email_domain = NULL WHERE id = ?", legacy.Id).Error)
+	candidate := User{Username: "null-backfill-allowed", Password: "password123", Email: "new@null-backfill.example", Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+
+	_, err := RegisterUserWithDomainRisk(&candidate, 0, "203.0.113.17", RegistrationDomainRiskPolicy{
+		Enabled: true, Window: 24 * time.Hour, Threshold: 3, Now: now,
+	}, nil)
+
+	require.NoError(t, err)
+	var emailDomain *string
+	require.NoError(t, DB.Model(&User{}).Select("email_domain").Where("id = ?", legacy.Id).Scan(&emailDomain).Error)
+	require.NotNil(t, emailDomain)
+	require.Equal(t, "null-backfill.example", *emailDomain)
 }
 
 func TestRegisterUserWithDomainRiskBoundsLegacyDomainBackfill(t *testing.T) {
@@ -249,6 +302,29 @@ func TestDisableRegistrationDomainUsersRecordsOnlySuccessfulTransitions(t *testi
 	require.NoError(t, DB.Where("block_id = ?", block.Id).Find(&affected).Error)
 	require.Len(t, affected, 1)
 	require.Equal(t, users[0].Id, affected[0].UserID)
+}
+
+func TestGetRegistrationDomainBlockDetailNormalizesNegativeOffset(t *testing.T) {
+	setupRegistrationDomainRiskTest(t)
+	now := time.Now().Unix()
+	users := seedDomainRiskUsers(t, "detail.example", 2, 0, now-60)
+	block := RegistrationDomainBlock{Domain: "detail.example", WindowHours: 24, Threshold: 2, ObservedCount: 2, BlockedAt: now}
+	require.NoError(t, DB.Create(&block).Error)
+	for _, user := range users {
+		require.NoError(t, DB.Create(&RegistrationDomainBlockUser{BlockID: block.Id, UserID: user.Id, DisabledAt: now}).Error)
+	}
+
+	detail, err := GetRegistrationDomainBlockDetail(block.Id, -2, 1)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, detail.UserPage)
+	require.Equal(t, 1, detail.UserPageSize)
+	require.Len(t, detail.Users, 1)
+	require.Equal(t, users[0].Id, detail.Users[0].UserID)
+
+	detail, err = GetRegistrationDomainBlockDetail(block.Id, 0, 101)
+	require.NoError(t, err)
+	require.Equal(t, 100, detail.UserPageSize)
 }
 
 func TestReleaseRegistrationDomainBlockRestoresOnlyAutomatedDisables(t *testing.T) {

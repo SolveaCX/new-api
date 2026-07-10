@@ -1,6 +1,7 @@
 package system_setting
 
 import (
+	"math"
 	"sync"
 	"testing"
 
@@ -36,6 +37,37 @@ func TestRegistrationSecurityNormalizeAndValidate(t *testing.T) {
 	cfg.DomainRiskWindowHours = 24
 	cfg.TrustedEmailDomains = []string{"not a domain"}
 	require.Error(t, cfg.NormalizeAndValidate())
+	cfg.TrustedEmailDomains = []string{"evil.example@example.com"}
+	require.Error(t, cfg.NormalizeAndValidate())
+	cfg.TrustedEmailDomains = nil
+	cfg.DomainRiskWindowHours = math.MaxInt
+	require.Error(t, cfg.NormalizeAndValidate())
+	cfg.DomainRiskWindowHours = 24
+	cfg.DomainRiskThreshold = math.MaxInt
+	require.Error(t, cfg.NormalizeAndValidate())
+}
+
+func TestRegistrationSecurityLoadFromDBRejectsOutOfRangeValues(t *testing.T) {
+	original := GetRegistrationSecuritySettings()
+	t.Cleanup(func() {
+		values, err := config.ConfigToMap(&original)
+		require.NoError(t, err)
+		require.NoError(t, UpdateRegistrationSecuritySettingsFromMap(values))
+	})
+	require.NoError(t, UpdateRegistrationSecuritySettingsFromMap(map[string]string{
+		"domain_risk_enabled":      "true",
+		"domain_risk_window_hours": "24",
+		"domain_risk_threshold":    "10",
+	}))
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"registration_security.domain_risk_window_hours": "721",
+	}))
+
+	cfg := GetRegistrationSecuritySettings()
+	require.True(t, cfg.DomainRiskEnabled)
+	require.Equal(t, 24, cfg.DomainRiskWindowHours)
+	require.Equal(t, 10, cfg.DomainRiskThreshold)
 }
 
 func TestRegistrationSecurityUpdatesExposeOnlyCompleteSnapshots(t *testing.T) {

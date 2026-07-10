@@ -16,9 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -41,6 +44,8 @@ type RegistrationRiskDetailDialogProps = {
   onOpenChange: (open: boolean) => void
 }
 
+const affectedUserPageSize = 20
+
 function getUserStatusLabel(
   status: number,
   t: (key: string) => string
@@ -55,15 +60,31 @@ export function RegistrationRiskDetailDialog(
   props: RegistrationRiskDetailDialogProps
 ) {
   const { t } = useTranslation()
+  const [userPage, setUserPage] = useState(1)
   const detailQuery = useQuery({
-    queryKey: ['registration-domain-risk', 'block', props.blockId],
-    queryFn: () => getRegistrationDomainBlock(props.blockId!),
+    queryKey: ['registration-domain-risk', 'block', props.blockId, userPage],
+    queryFn: () =>
+      getRegistrationDomainBlock(
+        props.blockId!,
+        userPage,
+        affectedUserPageSize
+      ),
     enabled: props.blockId != null,
   })
   const detail = detailQuery.data
+  const userPageCount = Math.max(
+    1,
+    Math.ceil((detail?.user_total ?? 0) / affectedUserPageSize)
+  )
 
   return (
-    <Dialog open={props.blockId != null} onOpenChange={props.onOpenChange}>
+    <Dialog
+      open={props.blockId != null}
+      onOpenChange={(open) => {
+        if (!open) setUserPage(1)
+        props.onOpenChange(open)
+      }}
+    >
       <DialogContent className='max-h-[85vh] overflow-y-auto sm:max-w-3xl'>
         <DialogHeader>
           <DialogTitle>{t('Registration domain incident')}</DialogTitle>
@@ -99,7 +120,7 @@ export function RegistrationRiskDetailDialog(
                 <span className='text-muted-foreground'>
                   {t('Affected users')}
                 </span>
-                <p className='font-medium'>{detail.users.length}</p>
+                <p className='font-medium'>{detail.user_total}</p>
               </div>
             </div>
             <Table>
@@ -128,6 +149,37 @@ export function RegistrationRiskDetailDialog(
                 ))}
               </TableBody>
             </Table>
+            {userPageCount > 1 && (
+              <div className='flex items-center justify-end gap-2'>
+                <Button
+                  type='button'
+                  size='icon-sm'
+                  variant='outline'
+                  title={t('Previous')}
+                  disabled={userPage <= 1}
+                  onClick={() => setUserPage((page) => Math.max(1, page - 1))}
+                >
+                  <ChevronLeft />
+                  <span className='sr-only'>{t('Previous')}</span>
+                </Button>
+                <span className='text-muted-foreground min-w-16 text-center text-xs tabular-nums'>
+                  {userPage} / {userPageCount}
+                </span>
+                <Button
+                  type='button'
+                  size='icon-sm'
+                  variant='outline'
+                  title={t('Next')}
+                  disabled={userPage >= userPageCount}
+                  onClick={() =>
+                    setUserPage((page) => Math.min(userPageCount, page + 1))
+                  }
+                >
+                  <ChevronRight />
+                  <span className='sr-only'>{t('Next')}</span>
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

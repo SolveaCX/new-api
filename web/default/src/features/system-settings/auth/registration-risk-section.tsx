@@ -58,10 +58,17 @@ import {
 import { RegistrationRiskDetailDialog } from './registration-risk-detail-dialog'
 import { RegistrationRiskIncidentTable } from './registration-risk-incident-table'
 
+const maxRegistrationDomainRiskWindowHours = 720
+const maxRegistrationDomainRiskThreshold = 10000
+
 const registrationRiskSchema = z.object({
   domainRiskEnabled: z.boolean(),
-  windowHours: z.number().int().min(1),
-  threshold: z.number().int().min(2),
+  windowHours: z
+    .number()
+    .int()
+    .min(1)
+    .max(maxRegistrationDomainRiskWindowHours),
+  threshold: z.number().int().min(2).max(maxRegistrationDomainRiskThreshold),
   trustedDomains: z.string(),
 })
 
@@ -181,6 +188,7 @@ export function RegistrationRiskSection(props: RegistrationRiskSectionProps) {
                   <Input
                     type='number'
                     min={1}
+                    max={maxRegistrationDomainRiskWindowHours}
                     value={field.value}
                     onChange={(event) =>
                       field.onChange(Number(event.target.value))
@@ -204,6 +212,7 @@ export function RegistrationRiskSection(props: RegistrationRiskSectionProps) {
                   <Input
                     type='number'
                     min={2}
+                    max={maxRegistrationDomainRiskThreshold}
                     value={field.value}
                     onChange={(event) =>
                       field.onChange(Number(event.target.value))
@@ -313,6 +322,7 @@ export function RegistrationRiskSection(props: RegistrationRiskSectionProps) {
       </div>
 
       <RegistrationRiskDetailDialog
+        key={selectedBlockId ?? 'closed'}
         blockId={selectedBlockId}
         onOpenChange={(open) => {
           if (!open) setSelectedBlockId(null)

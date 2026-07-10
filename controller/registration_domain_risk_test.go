@@ -64,7 +64,7 @@ func TestRegistrationDomainRiskAdminListAndDetail(t *testing.T) {
 	require.Len(t, listPayload.Data.Items, 1)
 	require.EqualValues(t, 2, listPayload.Data.Items[0].AffectedUserCount)
 
-	detailRecorder := performRegistrationDomainAdminRequest(t, http.MethodGet, "/api/registration-domain-risk/blocks/"+strconv.Itoa(incident.BlockID), nil, GetRegistrationDomainBlock, gin.Params{{Key: "id", Value: strconv.Itoa(incident.BlockID)}})
+	detailRecorder := performRegistrationDomainAdminRequest(t, http.MethodGet, "/api/registration-domain-risk/blocks/"+strconv.Itoa(incident.BlockID)+"?p=2&page_size=1", nil, GetRegistrationDomainBlock, gin.Params{{Key: "id", Value: strconv.Itoa(incident.BlockID)}})
 	var detailPayload struct {
 		Success bool                                `json:"success"`
 		Data    model.RegistrationDomainBlockDetail `json:"data"`
@@ -72,7 +72,23 @@ func TestRegistrationDomainRiskAdminListAndDetail(t *testing.T) {
 	require.NoError(t, common.Unmarshal(detailRecorder.Body.Bytes(), &detailPayload))
 	require.True(t, detailPayload.Success)
 	require.Equal(t, incident.BlockID, detailPayload.Data.Block.Id)
-	require.Len(t, detailPayload.Data.Users, 2)
+	require.Len(t, detailPayload.Data.Users, 1)
+	require.EqualValues(t, 2, detailPayload.Data.UserTotal)
+	require.Equal(t, 2, detailPayload.Data.UserPage)
+	require.Equal(t, 1, detailPayload.Data.UserPageSize)
+
+	negativePageSizeRecorder := performRegistrationDomainAdminRequest(t, http.MethodGet, "/api/registration-domain-risk/blocks/"+strconv.Itoa(incident.BlockID)+"?p=2&page_size=-1", nil, GetRegistrationDomainBlock, gin.Params{{Key: "id", Value: strconv.Itoa(incident.BlockID)}})
+	require.NoError(t, common.Unmarshal(negativePageSizeRecorder.Body.Bytes(), &detailPayload))
+	require.True(t, detailPayload.Success)
+	require.Equal(t, 2, detailPayload.Data.UserPage)
+	require.Equal(t, common.ItemsPerPage, detailPayload.Data.UserPageSize)
+
+	negativePageRecorder := performRegistrationDomainAdminRequest(t, http.MethodGet, "/api/registration-domain-risk/blocks/"+strconv.Itoa(incident.BlockID)+"?p=-1&page_size=1", nil, GetRegistrationDomainBlock, gin.Params{{Key: "id", Value: strconv.Itoa(incident.BlockID)}})
+	require.NoError(t, common.Unmarshal(negativePageRecorder.Body.Bytes(), &detailPayload))
+	require.True(t, detailPayload.Success)
+	require.Equal(t, 1, detailPayload.Data.UserPage)
+	require.Equal(t, 1, detailPayload.Data.UserPageSize)
+	require.Len(t, detailPayload.Data.Users, 1)
 }
 
 func TestRegistrationDomainRiskAdminReleaseRestoresAndTrusts(t *testing.T) {

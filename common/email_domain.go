@@ -11,8 +11,8 @@ var ErrInvalidEmailDomain = errors.New("invalid email domain")
 
 func NormalizeEmailDomain(email string) (string, error) {
 	email = strings.TrimSpace(email)
-	at := strings.LastIndexByte(email, '@')
-	if at <= 0 || at == len(email)-1 {
+	at := strings.IndexByte(email, '@')
+	if at <= 0 || at == len(email)-1 || strings.IndexByte(email[at+1:], '@') >= 0 {
 		return "", ErrInvalidEmailDomain
 	}
 	domain := strings.ToLower(strings.TrimSpace(email[at+1:]))

@@ -56,6 +56,9 @@ export type RegistrationDomainAffectedUser = {
 export type RegistrationDomainBlockDetail = {
   block: RegistrationDomainBlock
   users: RegistrationDomainAffectedUser[]
+  user_total: number
+  user_page: number
+  user_page_size: number
 }
 
 type ApiResponse<T> = {
@@ -143,9 +146,21 @@ export async function getRegistrationDomainBlocks(page = 1, pageSize = 20) {
   return unwrapRegistrationRiskResponse(response.data)
 }
 
-export async function getRegistrationDomainBlock(blockId: number) {
+export function buildRegistrationDomainBlockDetailUrl(
+  blockId: number,
+  page: number,
+  pageSize: number
+): string {
+  return `/api/registration-domain-risk/blocks/${blockId}?p=${page}&page_size=${pageSize}`
+}
+
+export async function getRegistrationDomainBlock(
+  blockId: number,
+  page: number,
+  pageSize: number
+) {
   const response = await api.get<ApiResponse<RegistrationDomainBlockDetail>>(
-    `/api/registration-domain-risk/blocks/${blockId}`
+    buildRegistrationDomainBlockDetailUrl(blockId, page, pageSize)
   )
   return unwrapRegistrationRiskResponse(response.data)
 }

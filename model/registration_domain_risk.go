@@ -61,7 +61,10 @@ type RegistrationDomainReleaseResult struct {
 	RestoredUsers int64                   `json:"restored_users"`
 }
 
-const registrationEmailDomainBackfillBatchSize = 500
+const (
+	registrationEmailDomainBackfillBatchSize = 500
+	registrationDomainBlockDetailMaxPageSize = 100
+)
 
 type RegistrationDomainAffectedUser struct {
 	RegistrationDomainBlockUser
@@ -71,8 +74,11 @@ type RegistrationDomainAffectedUser struct {
 }
 
 type RegistrationDomainBlockDetail struct {
-	Block RegistrationDomainBlock          `json:"block"`
-	Users []RegistrationDomainAffectedUser `json:"users"`
+	Block        RegistrationDomainBlock          `json:"block"`
+	Users        []RegistrationDomainAffectedUser `json:"users"`
+	UserTotal    int64                            `json:"user_total"`
+	UserPage     int                              `json:"user_page"`
+	UserPageSize int                              `json:"user_page_size"`
 }
 
 func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string, policy RegistrationDomainRiskPolicy, afterCreate func(*gorm.DB) error) (RegistrationDomainRiskResult, error) {
@@ -83,23 +89,32 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string
 		}
 		user.EmailDomain = domain
 	}
-	if !policy.Enabled || user.EmailDomain == "" {
+	if user.EmailDomain == "" {
 		err := insertRegisteredUser(user, inviterID, registrationIP, afterCreate)
 		if err != nil {
 			ReleaseRegistrationIPNewUserBonusRedisClaim(user)
 		}
 		return RegistrationDomainRiskResult{}, err
 	}
+	domain := strings.ToLower(strings.TrimSpace(user.EmailDomain))
+	if domain == "" {
+		user.EmailDomain = ""
+		err := insertRegisteredUser(user, inviterID, registrationIP, afterCreate)
+		if err != nil {
+			ReleaseRegistrationIPNewUserBonusRedisClaim(user)
+		}
+		return RegistrationDomainRiskResult{}, err
+	}
+	user.EmailDomain = domain
 	if policy.Now == 0 {
 		policy.Now = time.Now().Unix()
 	}
-	if user.CreatedAt == 0 {
+	if policy.Enabled && user.CreatedAt == 0 {
 		user.CreatedAt = policy.Now
 	}
-	if policy.Window <= 0 || policy.Threshold < 2 {
+	if policy.Enabled && (policy.Window <= 0 || policy.Threshold < 2) {
 		return RegistrationDomainRiskResult{}, errors.New("invalid registration domain risk policy")
 	}
-	domain := strings.ToLower(strings.TrimSpace(user.EmailDomain))
 	stateSeed := RegistrationDomainState{Domain: domain}
 	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&stateSeed).Error; err != nil {
 		return RegistrationDomainRiskResult{}, err
@@ -118,6 +133,9 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string
 		if state.ActiveBlockID != 0 {
 			result.BlockID = state.ActiveBlockID
 			return nil
+		}
+		if !policy.Enabled {
+			return insertRegisteredUserWithTx(tx, user, inviterID, registrationIP, afterCreate)
 		}
 		if err := backfillLegacyRegistrationEmailDomains(tx, domain); err != nil {
 			return err
@@ -221,13 +239,13 @@ func insertRegisteredUserWithTx(tx *gorm.DB, user *User, inviterID int, registra
 }
 
 func usersForEmailDomain(db *gorm.DB, domain string) *gorm.DB {
-	return db.Where("email_domain = ? OR (email_domain = '' AND LOWER(email) LIKE ?)", domain, "%@"+domain)
+	return db.Where("email_domain = ? OR (COALESCE(email_domain, '') = '' AND LOWER(email) LIKE ?)", domain, "%@"+domain)
 }
 
 func backfillLegacyRegistrationEmailDomains(tx *gorm.DB, domain string) error {
 	var userIDs []int
 	if err := tx.Model(&User{}).
-		Where("email_domain = '' AND LOWER(email) LIKE ?", "%@"+domain).
+		Where("COALESCE(email_domain, '') = '' AND LOWER(email) LIKE ?", "%@"+domain).
 		Limit(registrationEmailDomainBackfillBatchSize).
 		Pluck("id", &userIDs).Error; err != nil {
 		return err
@@ -236,7 +254,7 @@ func backfillLegacyRegistrationEmailDomains(tx *gorm.DB, domain string) error {
 		return nil
 	}
 	return tx.Model(&User{}).
-		Where("id IN ? AND email_domain = ''", userIDs).
+		Where("id IN ? AND COALESCE(email_domain, '') = ''", userIDs).
 		Update("email_domain", domain).Error
 }
 
@@ -266,25 +284,61 @@ func GetRegistrationDomainBlocks(offset int, limit int) ([]RegistrationDomainBlo
 	return blocks, total, nil
 }
 
-func GetRegistrationDomainBlockDetail(blockID int) (RegistrationDomainBlockDetail, error) {
-	detail := RegistrationDomainBlockDetail{}
-	if err := DB.First(&detail.Block, blockID).Error; err != nil {
+func GetRegistrationDomainBlock(blockID int) (RegistrationDomainBlock, error) {
+	block := RegistrationDomainBlock{}
+	if err := DB.First(&block, blockID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return RegistrationDomainBlockDetail{}, ErrRegistrationDomainBlockNotFound
+			return RegistrationDomainBlock{}, ErrRegistrationDomainBlockNotFound
 		}
+		return RegistrationDomainBlock{}, err
+	}
+	return block, nil
+}
+
+func GetRegistrationDomainBlockDetail(blockID int, offset int, limit int) (RegistrationDomainBlockDetail, error) {
+	block, err := GetRegistrationDomainBlock(blockID)
+	if err != nil {
 		return RegistrationDomainBlockDetail{}, err
 	}
+	if limit < 1 {
+		limit = common.ItemsPerPage
+	}
+	if limit > registrationDomainBlockDetailMaxPageSize {
+		limit = registrationDomainBlockDetailMaxPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	detail := RegistrationDomainBlockDetail{
+		Block:        block,
+		Users:        make([]RegistrationDomainAffectedUser, 0, limit),
+		UserPage:     offset/limit + 1,
+		UserPageSize: limit,
+	}
+	if err := DB.Model(&RegistrationDomainBlockUser{}).Where("block_id = ?", blockID).Count(&detail.UserTotal).Error; err != nil {
+		return RegistrationDomainBlockDetail{}, err
+	}
+	detail.Block.AffectedUserCount = detail.UserTotal
 	var affected []RegistrationDomainBlockUser
-	if err := DB.Where("block_id = ?", blockID).Order("id ASC").Find(&affected).Error; err != nil {
+	if err := DB.Where("block_id = ?", blockID).Order("id ASC").Offset(offset).Limit(limit).Find(&affected).Error; err != nil {
 		return RegistrationDomainBlockDetail{}, err
 	}
-	detail.Block.AffectedUserCount = int64(len(affected))
-	detail.Users = make([]RegistrationDomainAffectedUser, 0, len(affected))
+	userIDs := make([]int, 0, len(affected))
 	for _, item := range affected {
-		user := User{}
-		if err := DB.Unscoped().Select("id", "username", "email", "status").First(&user, item.UserID).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		userIDs = append(userIDs, item.UserID)
+	}
+	usersByID := make(map[int]User, len(userIDs))
+	if len(userIDs) > 0 {
+		var users []User
+		if err := DB.Unscoped().Select("id", "username", "email", "status").Where("id IN ?", userIDs).Find(&users).Error; err != nil {
 			return RegistrationDomainBlockDetail{}, err
 		}
+		for _, user := range users {
+			usersByID[user.Id] = user
+		}
+	}
+	for _, item := range affected {
+		user := usersByID[item.UserID]
 		detail.Users = append(detail.Users, RegistrationDomainAffectedUser{
 			RegistrationDomainBlockUser: item,
 			Username:                    user.Username,

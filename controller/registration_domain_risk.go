@@ -32,7 +32,16 @@ func GetRegistrationDomainBlock(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	detail, err := model.GetRegistrationDomainBlockDetail(blockID)
+	pageInfo := common.GetPageQuery(c)
+	page := pageInfo.GetPage()
+	if page < 1 {
+		page = 1
+	}
+	pageSize := pageInfo.GetPageSize()
+	if pageSize < 1 {
+		pageSize = common.ItemsPerPage
+	}
+	detail, err := model.GetRegistrationDomainBlockDetail(blockID, (page-1)*pageSize, pageSize)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -53,7 +62,7 @@ func ReleaseRegistrationDomainBlock(c *gin.Context) {
 	}
 
 	if request.AddTrustedDomain {
-		detail, err := model.GetRegistrationDomainBlockDetail(blockID)
+		block, err := model.GetRegistrationDomainBlock(blockID)
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -63,7 +72,7 @@ func ReleaseRegistrationDomainBlock(c *gin.Context) {
 			c.GetInt("id"),
 			request.RestoreUsers,
 			common.GetTimestamp(),
-			detail.Block.Domain,
+			block.Domain,
 		)
 		if err != nil {
 			common.ApiError(c, err)

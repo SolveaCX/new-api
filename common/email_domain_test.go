@@ -18,6 +18,7 @@ func TestNormalizeEmailDomain(t *testing.T) {
 		{name: "missing local part", email: "@example.com", wantErr: true},
 		{name: "missing domain", email: "user@", wantErr: true},
 		{name: "missing separator", email: "example.com", wantErr: true},
+		{name: "multiple separators", email: "user@evil.example@example.com", wantErr: true},
 		{name: "public suffix only", email: "user@com", wantErr: true},
 		{name: "rejects unicode domain", email: "user@例子.com", wantErr: true},
 	}

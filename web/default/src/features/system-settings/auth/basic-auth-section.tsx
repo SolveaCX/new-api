@@ -41,6 +41,10 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useResetForm } from '../hooks/use-reset-form'
 import { useUpdateOption } from '../hooks/use-update-option'
+import {
+  buildBasicAuthOptionUpdates,
+  type BasicAuthFormValues,
+} from './basic-auth-utils'
 
 const basicAuthSchema = z.object({
   PasswordLoginEnabled: z.boolean(),
@@ -50,29 +54,34 @@ const basicAuthSchema = z.object({
   EmailDomainRestrictionEnabled: z.boolean(),
   EmailAliasRestrictionEnabled: z.boolean(),
   EmailDomainWhitelist: z.string(),
-  'registration_security.reject_subdomain_email_domains': z.boolean(),
+  rejectSubdomainEmailDomains: z.boolean(),
 })
 
-type BasicAuthFormValues = z.infer<typeof basicAuthSchema>
-
 type BasicAuthSectionProps = {
-  defaultValues: BasicAuthFormValues
+  defaultValues: Omit<BasicAuthFormValues, 'rejectSubdomainEmailDomains'> & {
+    'registration_security.reject_subdomain_email_domains': boolean
+  }
 }
 
 export function BasicAuthSection({ defaultValues }: BasicAuthSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
 
-  const formDefaults = useMemo<BasicAuthFormValues>(
-    () => ({
-      ...defaultValues,
+  const formDefaults = useMemo<BasicAuthFormValues>(() => {
+    const {
+      'registration_security.reject_subdomain_email_domains':
+        rejectSubdomainEmailDomains,
+      ...basicDefaults
+    } = defaultValues
+    return {
+      ...basicDefaults,
       EmailDomainWhitelist: defaultValues.EmailDomainWhitelist.split(',')
         .map((domain) => domain.trim())
         .filter(Boolean)
         .join('\n'),
-    }),
-    [defaultValues]
-  )
+      rejectSubdomainEmailDomains,
+    }
+  }, [defaultValues])
 
   const form = useForm<BasicAuthFormValues>({
     resolver: zodResolver(basicAuthSchema),
@@ -82,25 +91,7 @@ export function BasicAuthSection({ defaultValues }: BasicAuthSectionProps) {
   useResetForm(form, formDefaults)
 
   const onSubmit = async (data: BasicAuthFormValues) => {
-    const updates: Array<{ key: string; value: string | boolean }> = []
-
-    Object.entries(data).forEach(([key, value]) => {
-      if (key === 'EmailDomainWhitelist') {
-        if (typeof value !== 'string') return
-        const domains = value
-          .split('\n')
-          .map((domain) => domain.trim())
-          .filter(Boolean)
-          .join(',')
-        if (domains !== defaultValues.EmailDomainWhitelist) {
-          updates.push({ key, value: domains })
-        }
-      } else if (value !== defaultValues[key as keyof typeof defaultValues]) {
-        updates.push({ key, value })
-      }
-    })
-
-    for (const update of updates) {
+    for (const update of buildBasicAuthOptionUpdates(formDefaults, data)) {
       await updateOption.mutateAsync(update)
     }
   }
@@ -264,7 +255,7 @@ export function BasicAuthSection({ defaultValues }: BasicAuthSectionProps) {
 
           <FormField
             control={form.control}
-            name='registration_security.reject_subdomain_email_domains'
+            name='rejectSubdomainEmailDomains'
             render={({ field }) => (
               <SettingsSwitchItem>
                 <SettingsSwitchContent>

@@ -23,6 +23,11 @@ var registrationSecuritySettings = RegistrationSecuritySettings{
 	DomainRiskThreshold:   10,
 }
 
+const (
+	MaxRegistrationDomainRiskWindowHours = 24 * 30
+	MaxRegistrationDomainRiskThreshold   = 10_000
+)
+
 var registrationSecuritySettingsMu sync.RWMutex
 
 func init() {
@@ -70,11 +75,11 @@ func UpdateRegistrationSecuritySettingsFromMap(values map[string]string) error {
 }
 
 func (s *RegistrationSecuritySettings) NormalizeAndValidate() error {
-	if s.DomainRiskWindowHours < 1 {
-		return fmt.Errorf("registration risk window must be at least 1 hour")
+	if s.DomainRiskWindowHours < 1 || s.DomainRiskWindowHours > MaxRegistrationDomainRiskWindowHours {
+		return fmt.Errorf("registration risk window must be between 1 and %d hours", MaxRegistrationDomainRiskWindowHours)
 	}
-	if s.DomainRiskThreshold < 2 {
-		return fmt.Errorf("registration risk threshold must be at least 2")
+	if s.DomainRiskThreshold < 2 || s.DomainRiskThreshold > MaxRegistrationDomainRiskThreshold {
+		return fmt.Errorf("registration risk threshold must be between 2 and %d", MaxRegistrationDomainRiskThreshold)
 	}
 	seen := make(map[string]struct{}, len(s.TrustedEmailDomains))
 	normalized := make([]string, 0, len(s.TrustedEmailDomains))

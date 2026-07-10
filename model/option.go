@@ -588,14 +588,13 @@ func applyOptionMapValue(key string, value string) (err error) {
 
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
-	common.OptionMap[key] = value
-
 	// 检查是否是模型配置 - 使用更规范的方式处理
 	handled, configErr := handleConfigUpdate(key, value)
 	if configErr != nil {
 		return configErr
 	}
 	if handled {
+		common.OptionMap[key] = value
 		return nil // 已由配置系统处理
 	}
 
@@ -953,10 +952,16 @@ func applyOptionMapValue(key string, value string) (err error) {
 		err = operation_setting.UpdatePayMethodsByJsonString(value)
 	case "WaffoPayMethods":
 		// WaffoPayMethods is read directly from OptionMap via setting.GetWaffoPayMethods().
-		// The value is already stored in OptionMap at the top of this function (line: common.OptionMap[key] = value).
-		// No additional in-memory variable to update.
+		// No additional in-memory variable needs updating.
 	}
-	return err
+	if err != nil {
+		if key == "GroupRatio" {
+			common.OptionMap[key] = ratio_setting.GroupRatio2JSONString()
+		}
+		return err
+	}
+	common.OptionMap[key] = value
+	return nil
 }
 
 // handleConfigUpdate 处理分层配置更新，返回是否已处理
@@ -965,6 +970,14 @@ func applyOptionMapValues(values map[string]string) error {
 	for key, value := range values {
 		if strings.HasPrefix(key, "registration_security.") {
 			registrationValues[strings.TrimPrefix(key, "registration_security.")] = value
+		}
+	}
+	for key, value := range values {
+		if strings.HasPrefix(key, "registration_security.") {
+			continue
+		}
+		if err := applyOptionMapValue(key, value); err != nil {
+			return err
 		}
 	}
 	if len(registrationValues) > 0 {
@@ -978,14 +991,6 @@ func applyOptionMapValues(values map[string]string) error {
 			}
 		}
 		common.OptionMapRWMutex.Unlock()
-	}
-	for key, value := range values {
-		if strings.HasPrefix(key, "registration_security.") {
-			continue
-		}
-		if err := applyOptionMapValue(key, value); err != nil {
-			return err
-		}
 	}
 	return nil
 }

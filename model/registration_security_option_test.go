@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/stretchr/testify/require"
 )
@@ -59,4 +60,50 @@ func TestUpdateOptionRejectsTrustingActivelyBlockedRegistrationDomain(t *testing
 	require.NoError(t, DB.Model(&Option{}).Where("key = ?", "registration_security.trusted_email_domains").Count(&count).Error)
 	require.Zero(t, count)
 	require.NotContains(t, common.OptionMap, "registration_security.trusted_email_domains")
+}
+
+func TestApplyOptionMapValuesStillAppliesUnrelatedOptionsWhenRegistrationConfigIsInvalid(t *testing.T) {
+	setupRegistrationSecurityOptionTest(t)
+	originalOptionMap := common.OptionMap
+	common.OptionMap = map[string]string{}
+	t.Cleanup(func() { common.OptionMap = originalOptionMap })
+
+	err := applyOptionMapValues(map[string]string{
+		"registration_security.domain_risk_threshold": "1",
+		"ocr_unrelated_option":                        "preserved",
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "preserved", common.OptionMap["ocr_unrelated_option"])
+}
+
+func TestApplyOptionMapValueRestoresPreviousValueWhenTypedConfigRejectsUpdate(t *testing.T) {
+	setupRegistrationSecurityOptionTest(t)
+	originalOptionMap := common.OptionMap
+	common.OptionMap = map[string]string{"registration_security.domain_risk_threshold": "10"}
+	t.Cleanup(func() { common.OptionMap = originalOptionMap })
+
+	err := applyOptionMapValue("registration_security.domain_risk_threshold", "1")
+
+	require.Error(t, err)
+	require.Equal(t, "10", common.OptionMap["registration_security.domain_risk_threshold"])
+}
+
+func TestApplyOptionMapValueRestoresPreviousValueWhenLegacyHandlerRejectsUpdate(t *testing.T) {
+	setupRegistrationSecurityOptionTest(t)
+	originalOptionMap := common.OptionMap
+	originalChats := setting.Chats
+	expectedChats := []map[string]string{{"existing": "https://example.com"}}
+	setting.Chats = expectedChats
+	common.OptionMap = map[string]string{"Chats": `[{"existing":"https://example.com"}]`}
+	t.Cleanup(func() {
+		common.OptionMap = originalOptionMap
+		setting.Chats = originalChats
+	})
+
+	err := applyOptionMapValue("Chats", "{")
+
+	require.Error(t, err)
+	require.Equal(t, `[{"existing":"https://example.com"}]`, common.OptionMap["Chats"])
+	require.Equal(t, expectedChats, setting.Chats)
 }

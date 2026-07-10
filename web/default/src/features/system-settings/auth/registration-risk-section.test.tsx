@@ -22,9 +22,11 @@ import i18n from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { initReactI18next } from 'react-i18next'
 import { BasicAuthSection } from './basic-auth-section'
+import { buildBasicAuthOptionUpdates } from './basic-auth-utils'
 import {
   buildRegistrationRiskOptionRequest,
   buildRegistrationRiskReleaseRequest,
+  buildRegistrationDomainBlockDetailUrl,
   unwrapRegistrationRiskResponse,
 } from './registration-risk-api'
 import { RegistrationRiskIncidentTable } from './registration-risk-incident-table'
@@ -95,6 +97,68 @@ describe('registration domain risk settings', () => {
     expect(subdomainIndex).toBeGreaterThan(whitelistIndex)
   })
 
+  test('serializes the subdomain switch to the flat server option key', () => {
+    const defaults = {
+      PasswordLoginEnabled: true,
+      PasswordRegisterEnabled: true,
+      EmailVerificationEnabled: false,
+      RegisterEnabled: true,
+      EmailDomainRestrictionEnabled: false,
+      EmailAliasRestrictionEnabled: false,
+      EmailDomainWhitelist: '',
+      rejectSubdomainEmailDomains: false,
+    }
+
+    expect(
+      buildBasicAuthOptionUpdates(defaults, {
+        ...defaults,
+        rejectSubdomainEmailDomains: true,
+      })
+    ).toContainEqual({
+      key: 'registration_security.reject_subdomain_email_domains',
+      value: true,
+    })
+  })
+
+  test('does not resubmit an unchanged multiline email whitelist', () => {
+    const defaults = {
+      PasswordLoginEnabled: true,
+      PasswordRegisterEnabled: true,
+      EmailVerificationEnabled: false,
+      RegisterEnabled: true,
+      EmailDomainRestrictionEnabled: false,
+      EmailAliasRestrictionEnabled: false,
+      EmailDomainWhitelist: 'example.com\ncompany.com',
+      rejectSubdomainEmailDomains: false,
+    }
+
+    expect(buildBasicAuthOptionUpdates(defaults, defaults)).toEqual([])
+  })
+
+  test('updates the email whitelist before enabling domain restriction', () => {
+    const defaults = {
+      PasswordLoginEnabled: true,
+      PasswordRegisterEnabled: true,
+      EmailVerificationEnabled: false,
+      RegisterEnabled: true,
+      EmailDomainRestrictionEnabled: false,
+      EmailAliasRestrictionEnabled: false,
+      EmailDomainWhitelist: '',
+      rejectSubdomainEmailDomains: false,
+    }
+
+    const updates = buildBasicAuthOptionUpdates(defaults, {
+      ...defaults,
+      EmailDomainRestrictionEnabled: true,
+      EmailDomainWhitelist: 'example.com',
+    })
+
+    expect(updates.map((update) => update.key)).toEqual([
+      'EmailDomainWhitelist',
+      'EmailDomainRestrictionEnabled',
+    ])
+  })
+
   test('renders active incident evidence needed for recovery', () => {
     const html = renderToStaticMarkup(
       <RegistrationRiskIncidentTable
@@ -147,5 +211,11 @@ describe('registration domain risk settings', () => {
         data: undefined,
       })
     ).toThrow('database unavailable')
+  })
+
+  test('builds a paginated affected-user detail request', () => {
+    expect(buildRegistrationDomainBlockDetailUrl(17, 3, 20)).toBe(
+      '/api/registration-domain-risk/blocks/17?p=3&page_size=20'
+    )
   })
 })
