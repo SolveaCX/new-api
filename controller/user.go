@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -222,8 +223,9 @@ func Register(c *gin.Context) {
 		return
 	}
 	user.Email = strings.TrimSpace(user.Email)
-	if err := validateEmailDomainRestriction(user.Email); err != nil {
-		common.ApiError(c, err)
+	emailDecision, err := evaluateRegistrationEmail(user.Email)
+	if err != nil {
+		respondRegistrationEmailError(c, err)
 		return
 	}
 	if common.EmailVerificationEnabled {
@@ -259,13 +261,16 @@ func Register(c *gin.Context) {
 	if language, ok := dto.NormalizeUserLanguagePreference(i18n.GetLangFromContext(c)); ok {
 		cleanUser.SetSetting(dto.UserSetting{Language: language})
 	}
-	if common.EmailVerificationEnabled || common.EmailDomainRestrictionEnabled {
+	registrationSecurity := system_setting.GetRegistrationSecuritySettings()
+	if common.EmailVerificationEnabled || common.EmailDomainRestrictionEnabled || registrationSecurity.DomainRiskEnabled || registrationSecurity.RejectSubdomainEmailDomains {
 		cleanUser.Email = user.Email
+		cleanUser.EmailDomain = emailDecision.Domain
 	}
-	if err := cleanUser.InsertWithRegistrationIP(inviterId, c.ClientIP()); err != nil {
-		common.ApiError(c, err)
+	if _, err := model.RegisterUserWithDomainRisk(&cleanUser, inviterId, c.ClientIP(), emailDecision.Policy, nil); err != nil {
+		respondRegistrationEmailError(c, err)
 		return
 	}
+	cleanUser.FinalizeOAuthUserCreation(inviterId)
 
 	// 获取插入后的用户ID
 	var insertedUser model.User

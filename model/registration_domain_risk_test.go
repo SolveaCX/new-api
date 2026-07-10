@@ -61,7 +61,7 @@ func TestRegisterUserWithDomainRiskThresholdBlocksAndDisables(t *testing.T) {
 	seedDomainRiskUsers(t, "farm.example", 9, 0, now-60)
 	candidate := User{Username: "trigger", Password: "password123", Email: "trigger@farm.example", EmailDomain: "farm.example", Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
 
-	result, err := RegisterUserWithDomainRisk(&candidate, 0, RegistrationDomainRiskPolicy{
+	result, err := RegisterUserWithDomainRisk(&candidate, 0, "203.0.113.10", RegistrationDomainRiskPolicy{
 		Enabled: true, Window: 24 * time.Hour, Threshold: 10, Now: now,
 	}, nil)
 
@@ -84,7 +84,7 @@ func TestRegisterUserWithDomainRiskPersistsNormalizedDomainBelowThreshold(t *tes
 	now := time.Now().Unix()
 	candidate := User{Username: "allowed", Password: "password123", Email: "Allowed@Example.COM", Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
 
-	result, err := RegisterUserWithDomainRisk(&candidate, 0, RegistrationDomainRiskPolicy{
+	result, err := RegisterUserWithDomainRisk(&candidate, 0, "203.0.113.11", RegistrationDomainRiskPolicy{
 		Enabled: true, Window: 24 * time.Hour, Threshold: 10, Now: now,
 	}, nil)
 
@@ -94,6 +94,7 @@ func TestRegisterUserWithDomainRiskPersistsNormalizedDomainBelowThreshold(t *tes
 	var stored User
 	require.NoError(t, DB.First(&stored, candidate.Id).Error)
 	require.Equal(t, "example.com", stored.EmailDomain)
+	require.Equal(t, "203.0.113.11", stored.RegistrationIP)
 }
 
 func TestReleaseRegistrationDomainBlockRestoresOnlyAutomatedDisables(t *testing.T) {
@@ -101,7 +102,7 @@ func TestReleaseRegistrationDomainBlockRestoresOnlyAutomatedDisables(t *testing.
 	now := time.Now().Unix()
 	users := seedDomainRiskUsers(t, "restore.example", 2, 1, now-60)
 	candidate := User{Username: "restore-trigger", Password: "password123", Email: "trigger@restore.example", EmailDomain: "restore.example", Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
-	result, err := RegisterUserWithDomainRisk(&candidate, 0, RegistrationDomainRiskPolicy{
+	result, err := RegisterUserWithDomainRisk(&candidate, 0, "203.0.113.12", RegistrationDomainRiskPolicy{
 		Enabled: true, Window: 24 * time.Hour, Threshold: 4, Now: now,
 	}, nil)
 	require.ErrorIs(t, err, ErrRegistrationDomainBlocked)

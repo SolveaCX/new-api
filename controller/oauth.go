@@ -146,6 +146,10 @@ func HandleOAuth(c *gin.Context) {
 	// 7. Find or create user
 	user, isNewUser, err := findOrCreateOAuthUser(c, provider, oauthUser, session)
 	if err != nil {
+		if _, ok := registrationEmailErrorKey(err); ok {
+			respondRegistrationEmailError(c, err)
+			return
+		}
 		switch err.(type) {
 		case *OAuthUserDeletedError:
 			common.ApiErrorI18n(c, i18n.MsgOAuthUserDeleted)
@@ -282,7 +286,8 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		return nil, false, &OAuthRegistrationDisabledError{}
 	}
 	oauthUser.Email = strings.TrimSpace(oauthUser.Email)
-	if err := validateEmailDomainRestriction(oauthUser.Email); err != nil {
+	emailDecision, err := evaluateRegistrationEmail(oauthUser.Email)
+	if err != nil {
 		return nil, false, err
 	}
 
@@ -307,6 +312,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 	if oauthUser.Email != "" {
 		user.Email = oauthUser.Email
+		user.EmailDomain = emailDecision.Domain
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
@@ -324,45 +330,20 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
 	}
 
-	// Use transaction to ensure user creation and OAuth binding are atomic
+	var afterCreate func(*gorm.DB) error
 	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
-		// Custom provider: create user and binding in a transaction
-		err := model.DB.Transaction(func(tx *gorm.DB) error {
-			// Create user
-			if err := user.InsertWithTxAndRegistrationIP(tx, inviterId, c.ClientIP()); err != nil {
-				return err
-			}
-
-			// Create OAuth binding
+		afterCreate = func(tx *gorm.DB) error {
 			binding := &model.UserOAuthBinding{
 				UserId:         user.Id,
 				ProviderId:     genericProvider.GetProviderId(),
 				ProviderUserId: oauthUser.ProviderUserID,
 			}
-			if err := model.CreateUserOAuthBindingWithTx(tx, binding); err != nil {
-				return err
-			}
-
-			return nil
-		})
-		if err != nil {
-			model.ReleaseRegistrationIPNewUserBonusRedisClaim(user)
-			return nil, false, err
+			return model.CreateUserOAuthBindingWithTx(tx, binding)
 		}
-
-		// Perform post-transaction tasks (logs, sidebar config, inviter rewards)
-		user.FinalizeOAuthUserCreation(inviterId)
 	} else {
-		// Built-in provider: create user and update provider ID in a transaction
-		err := model.DB.Transaction(func(tx *gorm.DB) error {
-			// Create user
-			if err := user.InsertWithTxAndRegistrationIP(tx, inviterId, c.ClientIP()); err != nil {
-				return err
-			}
-
-			// Set the provider user ID on the user model and update
+		afterCreate = func(tx *gorm.DB) error {
 			provider.SetProviderUserID(user, oauthUser.ProviderUserID)
-			if err := tx.Model(user).Updates(map[string]interface{}{
+			return tx.Model(user).Updates(map[string]any{
 				"github_id":   user.GitHubId,
 				"discord_id":  user.DiscordId,
 				"oidc_id":     user.OidcId,
@@ -370,20 +351,14 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 				"wechat_id":   user.WeChatId,
 				"telegram_id": user.TelegramId,
 				"google_id":   user.GoogleId,
-			}).Error; err != nil {
-				return err
-			}
-
-			return nil
-		})
-		if err != nil {
-			model.ReleaseRegistrationIPNewUserBonusRedisClaim(user)
-			return nil, false, err
+			}).Error
 		}
-
-		// Perform post-transaction tasks
-		user.FinalizeOAuthUserCreation(inviterId)
 	}
+
+	if _, err := model.RegisterUserWithDomainRisk(user, inviterId, c.ClientIP(), emailDecision.Policy, afterCreate); err != nil {
+		return nil, false, err
+	}
+	user.FinalizeOAuthUserCreation(inviterId)
 
 	gaClientID, _ := session.Get("ga_client_id").(string)
 	gaSessionID, _ := session.Get("ga_session_id").(string)

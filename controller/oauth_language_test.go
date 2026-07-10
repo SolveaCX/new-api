@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	backendI18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -227,4 +229,110 @@ func TestFindOrCreateOAuthUserReleasesRedisBonusClaimWhenBindingFails(t *testing
 	keys, err := common.RDB.DBSize(context.Background()).Result()
 	require.NoError(t, err)
 	require.Zero(t, keys)
+}
+
+func TestOAuthRegistrationRejectsSubdomainEmailDomain(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	originalRegisterEnabled := common.RegisterEnabled
+	t.Cleanup(func() { common.RegisterEnabled = originalRegisterEnabled })
+	common.RegisterEnabled = true
+	withRegistrationSecurityConfig(t, map[string]string{
+		"registration_security.domain_risk_enabled":            "false",
+		"registration_security.domain_risk_window_hours":       "24",
+		"registration_security.domain_risk_threshold":          "10",
+		"registration_security.trusted_email_domains":          "[]",
+		"registration_security.reject_subdomain_email_domains": "true",
+	})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("oauth-subdomain-test"))))
+	router.GET("/oauth-subdomain-test", func(c *gin.Context) {
+		user, isNewUser, err := findOrCreateOAuthUser(c, oauthLanguageTestProvider{}, &oauth.OAuthUser{
+			ProviderUserID: "oauth-subdomain",
+			Username:       "oauth-subdomain",
+			Email:          "user@mail.example.com",
+			Extra:          map[string]any{},
+		}, sessions.Default(c))
+		require.Nil(t, user)
+		require.False(t, isNewUser)
+		require.ErrorIs(t, err, service.ErrSubdomainEmailRegistrationRejected)
+		c.Status(http.StatusNoContent)
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/oauth-subdomain-test", nil))
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	var count int64
+	require.NoError(t, db.Model(&model.User{}).Where("github_id = ?", "oauth-subdomain").Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestOAuthRegistrationDomainThresholdRejectsNewUser(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	originalRegisterEnabled := common.RegisterEnabled
+	t.Cleanup(func() { common.RegisterEnabled = originalRegisterEnabled })
+	common.RegisterEnabled = true
+	withRegistrationSecurityConfig(t, map[string]string{
+		"registration_security.domain_risk_enabled":            "true",
+		"registration_security.domain_risk_window_hours":       "24",
+		"registration_security.domain_risk_threshold":          "2",
+		"registration_security.trusted_email_domains":          "[]",
+		"registration_security.reject_subdomain_email_domains": "false",
+	})
+	seed := model.User{Username: "oauth-seed", Email: "seed@oauth.example", EmailDomain: "oauth.example", Status: common.UserStatusEnabled, Role: common.RoleCommonUser}
+	require.NoError(t, db.Create(&seed).Error)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("oauth-threshold-test"))))
+	router.GET("/oauth-threshold-test", func(c *gin.Context) {
+		user, isNewUser, err := findOrCreateOAuthUser(c, oauthLanguageTestProvider{}, &oauth.OAuthUser{
+			ProviderUserID: "oauth-threshold",
+			Username:       "oauth-threshold",
+			Email:          "new@oauth.example",
+			Extra:          map[string]any{},
+		}, sessions.Default(c))
+		require.Nil(t, user)
+		require.False(t, isNewUser)
+		require.ErrorIs(t, err, model.ErrRegistrationDomainBlocked)
+		c.Status(http.StatusNoContent)
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/oauth-threshold-test", nil))
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	var count int64
+	require.NoError(t, db.Model(&model.User{}).Where("github_id = ?", "oauth-threshold").Count(&count).Error)
+	require.Zero(t, count)
+	require.NoError(t, db.First(&seed, seed.Id).Error)
+	require.Equal(t, common.UserStatusDisabled, seed.Status)
+}
+
+func TestOAuthExistingUserLoginBypassesRegistrationDomainBlock(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	existing := model.User{Username: "oauth-existing", GitHubId: "oauth-existing-id", Email: "user@blocked.example", EmailDomain: "blocked.example", Status: common.UserStatusEnabled, Role: common.RoleCommonUser}
+	require.NoError(t, db.Create(&existing).Error)
+	block := model.RegistrationDomainBlock{Domain: "blocked.example", WindowHours: 24, Threshold: 10, ObservedCount: 10, BlockedAt: time.Now().Unix()}
+	require.NoError(t, db.Create(&block).Error)
+	require.NoError(t, db.Create(&model.RegistrationDomainState{Domain: "blocked.example", ActiveBlockID: block.Id}).Error)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("oauth-existing-test"))))
+	router.GET("/oauth-existing-test", func(c *gin.Context) {
+		user, isNewUser, err := findOrCreateOAuthUser(c, oauthLanguageTestProvider{}, &oauth.OAuthUser{
+			ProviderUserID: "oauth-existing-id",
+			Email:          "user@blocked.example",
+			Extra:          map[string]any{},
+		}, sessions.Default(c))
+		require.NoError(t, err)
+		require.False(t, isNewUser)
+		require.Equal(t, existing.Id, user.Id)
+		c.Status(http.StatusNoContent)
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/oauth-existing-test", nil))
+	require.Equal(t, http.StatusNoContent, recorder.Code)
 }

@@ -59,7 +59,7 @@ type RegistrationDomainReleaseResult struct {
 	RestoredUsers int64                   `json:"restored_users"`
 }
 
-func RegisterUserWithDomainRisk(user *User, inviterID int, policy RegistrationDomainRiskPolicy, afterCreate func(*gorm.DB) error) (RegistrationDomainRiskResult, error) {
+func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string, policy RegistrationDomainRiskPolicy, afterCreate func(*gorm.DB) error) (RegistrationDomainRiskResult, error) {
 	if user.EmailDomain == "" && user.Email != "" {
 		domain, err := common.NormalizeEmailDomain(user.Email)
 		if err != nil {
@@ -68,7 +68,11 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, policy RegistrationDo
 		user.EmailDomain = domain
 	}
 	if !policy.Enabled || user.EmailDomain == "" {
-		return RegistrationDomainRiskResult{}, insertRegisteredUser(user, inviterID, afterCreate)
+		err := insertRegisteredUser(user, inviterID, registrationIP, afterCreate)
+		if err != nil {
+			ReleaseRegistrationIPNewUserBonusRedisClaim(user)
+		}
+		return RegistrationDomainRiskResult{}, err
 	}
 	if policy.Now == 0 {
 		policy.Now = time.Now().Unix()
@@ -106,7 +110,7 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, policy RegistrationDo
 			return err
 		}
 		if count+1 < int64(policy.Threshold) {
-			return insertRegisteredUserWithTx(tx, user, inviterID, afterCreate)
+			return insertRegisteredUserWithTx(tx, user, inviterID, registrationIP, afterCreate)
 		}
 		block := RegistrationDomainBlock{
 			Domain: domain, WindowHours: int(policy.Window / time.Hour), Threshold: policy.Threshold,
@@ -144,6 +148,7 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, policy RegistrationDo
 		return nil
 	})
 	if err != nil {
+		ReleaseRegistrationIPNewUserBonusRedisClaim(user)
 		return RegistrationDomainRiskResult{}, err
 	}
 	for _, id := range disabledIDs {
@@ -155,14 +160,14 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, policy RegistrationDo
 	return result, nil
 }
 
-func insertRegisteredUser(user *User, inviterID int, afterCreate func(*gorm.DB) error) error {
+func insertRegisteredUser(user *User, inviterID int, registrationIP string, afterCreate func(*gorm.DB) error) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		return insertRegisteredUserWithTx(tx, user, inviterID, afterCreate)
+		return insertRegisteredUserWithTx(tx, user, inviterID, registrationIP, afterCreate)
 	})
 }
 
-func insertRegisteredUserWithTx(tx *gorm.DB, user *User, inviterID int, afterCreate func(*gorm.DB) error) error {
-	if err := user.InsertWithTx(tx, inviterID); err != nil {
+func insertRegisteredUserWithTx(tx *gorm.DB, user *User, inviterID int, registrationIP string, afterCreate func(*gorm.DB) error) error {
+	if err := user.InsertWithTxAndRegistrationIP(tx, inviterID, registrationIP); err != nil {
 		return err
 	}
 	if afterCreate != nil {
