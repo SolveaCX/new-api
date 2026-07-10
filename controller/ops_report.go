@@ -832,7 +832,12 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		})
 	}
 	count := len(payers)
-	sort.Slice(payers, func(i, j int) bool { return payers[i].PaidUSD > payers[j].PaidUSD })
+	sort.Slice(payers, func(i, j int) bool {
+		if payers[i].FirstPaidAt != payers[j].FirstPaidAt {
+			return payers[i].FirstPaidAt > payers[j].FirstPaidAt
+		}
+		return payers[i].PaidUSD > payers[j].PaidUSD
+	})
 	if len(payers) > opsReportTopPayers {
 		payers = payers[:opsReportTopPayers]
 	}
