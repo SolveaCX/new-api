@@ -2,8 +2,10 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -50,6 +52,27 @@ func setupInvitationControllerTest(t *testing.T) (*gorm.DB, model.User) {
 	originalQuotaForInviterMaxCount := common.QuotaForInviterMaxCount
 	paymentSetting := operation_setting.GetPaymentSetting()
 	originalPaymentSetting := *paymentSetting
+	dbPath := t.TempDir() + "/invitation-controller.db"
+	var db *gorm.DB
+	t.Cleanup(func() {
+		if db != nil {
+			sqlDB, dbErr := db.DB()
+			if dbErr == nil {
+				_ = sqlDB.Close()
+			}
+		}
+		gin.SetMode(originalGinMode)
+		model.DB = originalDB
+		model.LOG_DB = originalLogDB
+		common.RedisEnabled = originalRedisEnabled
+		common.UsingSQLite = originalUsingSQLite
+		common.UsingMySQL = originalUsingMySQL
+		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.QuotaForInviter = originalQuotaForInviter
+		common.QuotaForInvitee = originalQuotaForInvitee
+		common.QuotaForInviterMaxCount = originalQuotaForInviterMaxCount
+		*paymentSetting = originalPaymentSetting
+	})
 
 	gin.SetMode(gin.TestMode)
 	common.RedisEnabled = false
@@ -62,7 +85,8 @@ func setupInvitationControllerTest(t *testing.T) (*gorm.DB, model.User) {
 	paymentSetting.ComplianceConfirmed = true
 	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
 
-	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/invitation-controller.db"), &gorm.Config{})
+	var err error
+	db, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.InviteRewardEvent{}))
 	model.DB = db
@@ -108,24 +132,6 @@ func setupInvitationControllerTest(t *testing.T) (*gorm.DB, model.User) {
 		InviteRewardStatus: model.InviteRewardStatusPending,
 		CreatedAt:          300,
 	}).Error)
-
-	t.Cleanup(func() {
-		sqlDB, dbErr := db.DB()
-		if dbErr == nil {
-			_ = sqlDB.Close()
-		}
-		gin.SetMode(originalGinMode)
-		model.DB = originalDB
-		model.LOG_DB = originalLogDB
-		common.RedisEnabled = originalRedisEnabled
-		common.UsingSQLite = originalUsingSQLite
-		common.UsingMySQL = originalUsingMySQL
-		common.UsingPostgreSQL = originalUsingPostgreSQL
-		common.QuotaForInviter = originalQuotaForInviter
-		common.QuotaForInvitee = originalQuotaForInvitee
-		common.QuotaForInviterMaxCount = originalQuotaForInviterMaxCount
-		*paymentSetting = originalPaymentSetting
-	})
 
 	return db, inviter
 }
@@ -180,8 +186,11 @@ func TestGetSelfInvitations(t *testing.T) {
 		_, inviter := setupInvitationControllerTest(t)
 		operation_setting.GetPaymentSetting().ComplianceConfirmed = false
 
-		_, response := performInvitationRequest(t, inviter.Id, "")
+		recorder, response := performInvitationRequest(t, inviter.Id, "")
 
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.True(t, response.Success)
+		require.Equal(t, 500, response.Data.Summary.InviterRewardQuota)
 		require.False(t, response.Data.Summary.TransferEnabled)
 	})
 
@@ -192,10 +201,11 @@ func TestGetSelfInvitations(t *testing.T) {
 			wantPage     int
 			wantPageSize int
 		}{
-			{name: "canonical page", query: "?page=2&page_size=5", wantPage: 2, wantPageSize: 5},
+			{name: "canonical page overrides legacy p", query: "?page=2&p=9&page_size=5", wantPage: 2, wantPageSize: 5},
 			{name: "legacy p fallback", query: "?p=3&page_size=7", wantPage: 3, wantPageSize: 7},
 			{name: "caps page size", query: "?page_size=999", wantPage: 1, wantPageSize: 100},
-			{name: "defaults invalid values", query: "?page=-2&p=4&page_size=-5", wantPage: 1, wantPageSize: 10},
+			{name: "invalid canonical page falls back to legacy p", query: "?page=-2&p=4&page_size=-5", wantPage: 4, wantPageSize: 10},
+			{name: "defaults invalid page values", query: "?page=invalid&p=-4", wantPage: 1, wantPageSize: 10},
 		}
 
 		for _, tt := range tests {
@@ -208,5 +218,18 @@ func TestGetSelfInvitations(t *testing.T) {
 				require.Equal(t, tt.wantPageSize, response.Data.PageSize, fmt.Sprintf("query %s", tt.query))
 			})
 		}
+	})
+
+	t.Run("normalizes page when offset would overflow", func(t *testing.T) {
+		_, inviter := setupInvitationControllerTest(t)
+		overflowingPage := math.MaxInt/maxInvitationPageSize + 2
+
+		recorder, response := performInvitationRequest(t, inviter.Id, "?page="+strconv.Itoa(overflowingPage)+"&page_size=100")
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.True(t, response.Success)
+		require.Equal(t, defaultInvitationPage, response.Data.Page)
+		require.Equal(t, maxInvitationPageSize, response.Data.PageSize)
+		require.Len(t, response.Data.Items, 1)
 	})
 }
