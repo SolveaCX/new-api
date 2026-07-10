@@ -466,7 +466,21 @@ func GenerateAccessToken(c *gin.Context) {
 }
 
 type TransferAffQuotaRequest struct {
-	Quota int `json:"quota" binding:"required"`
+	AmountUSD *float64 `json:"amount_usd"`
+	Quota     *int     `json:"quota"`
+}
+
+func (request TransferAffQuotaRequest) quotaToTransfer() (int, error) {
+	if request.AmountUSD != nil && request.Quota != nil {
+		return 0, errors.New("provide either amount_usd or quota, not both")
+	}
+	if request.AmountUSD != nil {
+		return invitationQuotaFromUSD(*request.AmountUSD)
+	}
+	if request.Quota != nil {
+		return *request.Quota, nil
+	}
+	return 0, errors.New("amount_usd is required")
 }
 
 func TransferAffQuota(c *gin.Context) {
@@ -485,7 +499,12 @@ func TransferAffQuota(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	err = user.TransferAffQuotaToQuota(tran.Quota)
+	quota, err := tran.quotaToTransfer()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	err = user.TransferAffQuotaToQuota(quota)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserTransferFailed, map[string]any{"Error": err.Error()})
 		return

@@ -9,91 +9,72 @@ License, or (at your option) any later version.
 import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import {
-  DEFAULT_CURRENCY_CONFIG,
-  useSystemConfigStore,
-} from '@/stores/system-config-store'
-import { formatQuota } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog } from '@/components/dialog'
+import { formatInvitationUSD } from '../lib/usd'
 
 interface TransferDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onConfirm: (amount: number) => Promise<boolean>
-  availableQuota: number
+  availableUSD: number
   transferring: boolean
 }
 
-export type TransferAmountValidationError =
-  | 'invalid'
-  | 'below-minimum'
-  | 'exceeds-available'
-  | null
+const MINIMUM_TRANSFER_USD = 1
 
-// Exported for the focused boundary test; this remains pure UI-domain logic.
 // eslint-disable-next-line react-refresh/only-export-components
-export function getTransferAmountValidationError(
-  amount: number,
-  minimum: number,
-  maximum: number
-): TransferAmountValidationError {
-  if (
-    !Number.isFinite(amount) ||
-    !Number.isInteger(amount) ||
-    !Number.isFinite(minimum) ||
-    !Number.isFinite(maximum) ||
-    minimum <= 0
-  ) {
-    return 'invalid'
+export function getTransferAmountInputConstraints(availableUSD: number) {
+  return {
+    min: MINIMUM_TRANSFER_USD,
+    max: availableUSD,
+    step: 'any' as const,
   }
-  if (amount < minimum) return 'below-minimum'
-  if (amount > maximum) return 'exceeds-available'
-  return null
 }
 
-// Exported for the focused boundary test; this remains pure UI-domain logic.
+// eslint-disable-next-line react-refresh/only-export-components
+export function clampTransferAmount(
+  amount: number,
+  availableUSD: number
+): number {
+  if (!Number.isFinite(amount) || !Number.isFinite(availableUSD)) return amount
+  return Math.min(amount, availableUSD)
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function isValidTransferAmount(
   amount: number,
-  minimum: number,
-  maximum: number
+  availableUSD: number
 ): boolean {
-  return getTransferAmountValidationError(amount, minimum, maximum) === null
+  return (
+    Number.isFinite(amount) &&
+    Number.isFinite(availableUSD) &&
+    amount >= MINIMUM_TRANSFER_USD &&
+    amount <= availableUSD
+  )
 }
 
 export function TransferDialog({
   open,
   onOpenChange,
   onConfirm,
-  availableQuota,
+  availableUSD,
   transferring,
 }: TransferDialogProps) {
   const { t } = useTranslation()
-  const configuredQuotaPerUnit = useSystemConfigStore(
-    (state) => state.config.currency.quotaPerUnit
+  const [amount, setAmount] = useState(
+    Math.min(MINIMUM_TRANSFER_USD, availableUSD)
   )
-  const minimum =
-    Number.isFinite(configuredQuotaPerUnit) && configuredQuotaPerUnit > 0
-      ? configuredQuotaPerUnit
-      : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
-  const [amount, setAmount] = useState(minimum)
-  const validationError = getTransferAmountValidationError(
-    amount,
-    minimum,
-    availableQuota
-  )
-  const valid = validationError === null
-  const exceedsAvailable = validationError === 'exceeds-available'
+  const valid = isValidTransferAmount(amount, availableUSD)
 
   useEffect(() => {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAmount(minimum)
+      setAmount(Math.min(MINIMUM_TRANSFER_USD, availableUSD))
     }
-  }, [minimum, open])
+  }, [availableUSD, open])
 
   const handleConfirm = async () => {
     if (!valid) return
@@ -135,45 +116,44 @@ export function TransferDialog({
             {t('Available Rewards')}
           </Label>
           <p className='text-2xl font-semibold tabular-nums'>
-            {formatQuota(availableQuota)}
+            {formatInvitationUSD(availableUSD)}
           </p>
         </div>
         <div className='space-y-2'>
           <Label htmlFor='invitation-transfer-amount'>
             {t('Transfer Amount')}
           </Label>
-          <Input
-            id='invitation-transfer-amount'
-            type='number'
-            value={amount}
-            onChange={(event) => setAmount(Number(event.currentTarget.value))}
-            min={minimum}
-            max={availableQuota}
-            step={minimum}
-            aria-invalid={!valid}
-            aria-describedby={
-              exceedsAvailable
-                ? 'invitation-transfer-amount-error'
-                : 'invitation-transfer-amount-help'
-            }
-            className='font-mono text-lg'
-          />
-          {exceedsAvailable ? (
-            <p
-              id='invitation-transfer-amount-error'
-              role='alert'
-              className='text-destructive text-xs'
+          <div className='relative'>
+            <span
+              aria-hidden='true'
+              className='text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 font-mono text-lg'
             >
-              {t('Transfer amount cannot exceed available rewards.')}
-            </p>
-          ) : (
-            <p
-              id='invitation-transfer-amount-help'
-              className='text-muted-foreground text-xs'
-            >
-              {t('Minimum:')} {formatQuota(minimum)}
-            </p>
-          )}
+              $
+            </span>
+            <Input
+              id='invitation-transfer-amount'
+              type='number'
+              value={amount}
+              onChange={(event) =>
+                setAmount(
+                  clampTransferAmount(
+                    Number(event.currentTarget.value),
+                    availableUSD
+                  )
+                )
+              }
+              {...getTransferAmountInputConstraints(availableUSD)}
+              aria-invalid={!valid}
+              aria-describedby='invitation-transfer-amount-help'
+              className='pl-7 font-mono text-lg'
+            />
+          </div>
+          <p
+            id='invitation-transfer-amount-help'
+            className='text-muted-foreground text-xs'
+          >
+            {t('Minimum:')} {formatInvitationUSD(MINIMUM_TRANSFER_USD)}
+          </p>
         </div>
       </div>
     </Dialog>

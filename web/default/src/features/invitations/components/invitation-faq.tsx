@@ -7,7 +7,6 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useTranslation } from 'react-i18next'
-import { formatQuota } from '@/lib/format'
 import {
   Accordion,
   AccordionContent,
@@ -16,6 +15,7 @@ import {
 } from '@/components/ui/accordion'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
+import { formatInvitationUSD } from '../lib/usd'
 import type { InvitationSummary } from '../types'
 
 interface InvitationFaqProps {
@@ -36,8 +36,8 @@ export function InvitationFaq({ summary }: InvitationFaqProps) {
     )
   }
 
-  const inviterReward = formatQuota(summary.inviter_reward_quota)
-  const inviteeReward = formatQuota(summary.invitee_reward_quota)
+  const inviterReward = formatInvitationUSD(summary.inviter_reward_usd)
+  const inviteeReward = formatInvitationUSD(summary.invitee_reward_usd)
   const limit = summary.inviter_reward_max_count
   const items = [
     {

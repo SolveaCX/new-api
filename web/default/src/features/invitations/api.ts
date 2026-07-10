@@ -62,12 +62,12 @@ export async function getAffiliateCode(): Promise<AffiliateCodeResponse> {
   return response
 }
 
-export async function transferAffiliateQuota(
-  quota: number
+export async function transferAffiliateUSD(
+  amountUSD: number
 ): Promise<AffiliateTransferResponse> {
   const res = await api.post<AffiliateTransferResponse>(
     '/api/user/aff_transfer',
-    { quota },
+    { amount_usd: amountUSD },
     { skipBusinessError: true, skipErrorHandler: true }
   )
   return res.data

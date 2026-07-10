@@ -27,11 +27,7 @@ import i18next from 'i18next'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { getSelf } from '@/lib/api'
-import {
-  getAffiliateCode,
-  getInvitations,
-  transferAffiliateQuota,
-} from '../api'
+import { getAffiliateCode, getInvitations, transferAffiliateUSD } from '../api'
 import { INVITATION_PAGE_SIZE } from '../types'
 
 class InvitationTransferBusinessError extends Error {}
@@ -48,8 +44,8 @@ export function createInvitationTransferMutationOptions(
   queryClient: QueryClient
 ) {
   return {
-    mutationFn: async (quota: number) => {
-      const response = await transferAffiliateQuota(quota)
+    mutationFn: async (amountUSD: number) => {
+      const response = await transferAffiliateUSD(amountUSD)
       if (response.success !== true) {
         throw new InvitationTransferBusinessError(
           response.message || i18next.t('Transfer failed')

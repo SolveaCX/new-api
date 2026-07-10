@@ -7,10 +7,10 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useTranslation } from 'react-i18next'
-import { formatQuota } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
+import { formatInvitationUSD } from '../lib/usd'
 import type { InvitationSummary } from '../types'
 
 interface RewardTransferCardProps {
@@ -25,9 +25,9 @@ export function RewardTransferCard({
   onOpen,
 }: RewardTransferCardProps) {
   const { t } = useTranslation()
-  const availableQuota = summary?.transferable_quota ?? 0
+  const availableUSD = summary?.transferable_usd ?? 0
   const transferEnabled = summary?.transfer_enabled === true
-  const canTransfer = transferEnabled && availableQuota > 0
+  const canTransfer = transferEnabled && availableUSD >= 1
   const pending = loading || summary === null
 
   return (
@@ -48,7 +48,7 @@ export function RewardTransferCard({
         <Skeleton className='h-8 w-32' />
       ) : (
         <p className='text-2xl font-semibold tabular-nums'>
-          {formatQuota(availableQuota)}
+          {formatInvitationUSD(availableUSD)}
         </p>
       )}
       {!pending && !transferEnabled ? (

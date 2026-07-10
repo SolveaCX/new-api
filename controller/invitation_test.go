@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -21,14 +22,14 @@ type invitationTestResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
 		Summary struct {
-			InviterRewardQuota    int   `json:"inviter_reward_quota"`
-			InviteeRewardQuota    int   `json:"invitee_reward_quota"`
-			InviterRewardMaxCount int   `json:"inviter_reward_max_count"`
-			HistoryQuota          int   `json:"history_quota"`
-			TransferableQuota     int   `json:"transferable_quota"`
-			GrantedCount          int   `json:"granted_count"`
-			PendingCount          int64 `json:"pending_count"`
-			TransferEnabled       bool  `json:"transfer_enabled"`
+			InviterRewardUSD      float64 `json:"inviter_reward_usd"`
+			InviteeRewardUSD      float64 `json:"invitee_reward_usd"`
+			InviterRewardMaxCount int     `json:"inviter_reward_max_count"`
+			HistoryUSD            float64 `json:"history_usd"`
+			TransferableUSD       float64 `json:"transferable_usd"`
+			GrantedCount          int     `json:"granted_count"`
+			PendingCount          int64   `json:"pending_count"`
+			TransferEnabled       bool    `json:"transfer_enabled"`
 		} `json:"summary"`
 		Items    []model.InvitationRecord `json:"items"`
 		Page     int                      `json:"page"`
@@ -50,6 +51,7 @@ func setupInvitationControllerTest(t *testing.T) (*gorm.DB, model.User) {
 	originalQuotaForInviter := common.QuotaForInviter
 	originalQuotaForInvitee := common.QuotaForInvitee
 	originalQuotaForInviterMaxCount := common.QuotaForInviterMaxCount
+	originalQuotaPerUnit := common.QuotaPerUnit
 	paymentSetting := operation_setting.GetPaymentSetting()
 	originalPaymentSetting := *paymentSetting
 	dbPath := t.TempDir() + "/invitation-controller.db"
@@ -71,6 +73,7 @@ func setupInvitationControllerTest(t *testing.T) (*gorm.DB, model.User) {
 		common.QuotaForInviter = originalQuotaForInviter
 		common.QuotaForInvitee = originalQuotaForInvitee
 		common.QuotaForInviterMaxCount = originalQuotaForInviterMaxCount
+		common.QuotaPerUnit = originalQuotaPerUnit
 		*paymentSetting = originalPaymentSetting
 	})
 
@@ -82,6 +85,7 @@ func setupInvitationControllerTest(t *testing.T) (*gorm.DB, model.User) {
 	common.QuotaForInviter = 500
 	common.QuotaForInvitee = 250
 	common.QuotaForInviterMaxCount = 10
+	common.QuotaPerUnit = 100
 	paymentSetting.ComplianceConfirmed = true
 	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
 
@@ -161,11 +165,11 @@ func TestGetSelfInvitations(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, recorder.Code)
 		require.True(t, response.Success)
-		require.Equal(t, 500, response.Data.Summary.InviterRewardQuota)
-		require.Equal(t, 250, response.Data.Summary.InviteeRewardQuota)
+		require.Equal(t, 5.0, response.Data.Summary.InviterRewardUSD)
+		require.Equal(t, 2.5, response.Data.Summary.InviteeRewardUSD)
 		require.Equal(t, 10, response.Data.Summary.InviterRewardMaxCount)
-		require.Equal(t, 900, response.Data.Summary.HistoryQuota)
-		require.Equal(t, 400, response.Data.Summary.TransferableQuota)
+		require.Equal(t, 9.0, response.Data.Summary.HistoryUSD)
+		require.Equal(t, 4.0, response.Data.Summary.TransferableUSD)
 		require.Equal(t, 2, response.Data.Summary.GrantedCount)
 		require.EqualValues(t, 1, response.Data.Summary.PendingCount)
 		require.True(t, response.Data.Summary.TransferEnabled)
@@ -190,8 +194,95 @@ func TestGetSelfInvitations(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, recorder.Code)
 		require.True(t, response.Success)
-		require.Equal(t, 500, response.Data.Summary.InviterRewardQuota)
+		require.Equal(t, 5.0, response.Data.Summary.InviterRewardUSD)
 		require.False(t, response.Data.Summary.TransferEnabled)
+	})
+
+	t.Run("accepts a USD amount and transfers the matching balance", func(t *testing.T) {
+		db, inviter := setupInvitationControllerTest(t)
+		recorder := httptest.NewRecorder()
+		router := gin.New()
+		router.Use(func(c *gin.Context) {
+			c.Set("id", inviter.Id)
+			c.Next()
+		})
+		router.POST("/api/user/aff_transfer", TransferAffQuota)
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/user/aff_transfer",
+			strings.NewReader(`{"amount_usd":2}`),
+		)
+		request.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(recorder, request)
+
+		var response struct {
+			Success bool `json:"success"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		require.True(t, response.Success, recorder.Body.String())
+		var refreshed model.User
+		require.NoError(t, db.First(&refreshed, inviter.Id).Error)
+		require.Equal(t, 200, refreshed.AffQuota)
+		require.Equal(t, 200, refreshed.Quota)
+	})
+
+	t.Run("rejects a USD amount below the one dollar minimum", func(t *testing.T) {
+		db, inviter := setupInvitationControllerTest(t)
+		recorder := httptest.NewRecorder()
+		router := gin.New()
+		router.Use(func(c *gin.Context) {
+			c.Set("id", inviter.Id)
+			c.Next()
+		})
+		router.POST("/api/user/aff_transfer", TransferAffQuota)
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/user/aff_transfer",
+			strings.NewReader(`{"amount_usd":0.999}`),
+		)
+		request.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(recorder, request)
+
+		var response struct {
+			Success bool `json:"success"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		require.False(t, response.Success, recorder.Body.String())
+		var refreshed model.User
+		require.NoError(t, db.First(&refreshed, inviter.Id).Error)
+		require.Equal(t, 400, refreshed.AffQuota)
+		require.Zero(t, refreshed.Quota)
+	})
+
+	t.Run("keeps the legacy raw quota request compatible", func(t *testing.T) {
+		db, inviter := setupInvitationControllerTest(t)
+		recorder := httptest.NewRecorder()
+		router := gin.New()
+		router.Use(func(c *gin.Context) {
+			c.Set("id", inviter.Id)
+			c.Next()
+		})
+		router.POST("/api/user/aff_transfer", TransferAffQuota)
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/user/aff_transfer",
+			strings.NewReader(`{"quota":200}`),
+		)
+		request.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(recorder, request)
+
+		var response struct {
+			Success bool `json:"success"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		require.True(t, response.Success, recorder.Body.String())
+		var refreshed model.User
+		require.NoError(t, db.First(&refreshed, inviter.Id).Error)
+		require.Equal(t, 200, refreshed.AffQuota)
+		require.Equal(t, 200, refreshed.Quota)
 	})
 
 	t.Run("normalizes focused pagination contract", func(t *testing.T) {
@@ -232,4 +323,18 @@ func TestGetSelfInvitations(t *testing.T) {
 		require.Equal(t, maxInvitationPageSize, response.Data.PageSize)
 		require.Len(t, response.Data.Items, 1)
 	})
+}
+
+func TestInvitationRecordsFromModelUsesUSD(t *testing.T) {
+	originalQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 100
+	t.Cleanup(func() { common.QuotaPerUnit = originalQuotaPerUnit })
+
+	records := invitationRecordsFromModel([]model.InvitationRecord{{
+		Id:          1,
+		RewardQuota: 250,
+	}})
+
+	require.Len(t, records, 1)
+	require.Equal(t, 2.5, records[0].RewardUSD)
 }

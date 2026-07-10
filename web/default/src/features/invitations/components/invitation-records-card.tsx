@@ -8,7 +8,7 @@ License, or (at your option) any later version.
 */
 import type { MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { formatQuota, formatTimestamp } from '@/lib/format'
+import { formatTimestamp } from '@/lib/format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,6 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { TitledCard } from '@/components/ui/titled-card'
+import { formatInvitationUSD } from '../lib/usd'
 import type {
   InvitationPageData,
   InvitationReason,
@@ -159,7 +160,7 @@ export function InvitationRecordsCard({
                       ) : null}
                     </TableCell>
                     <TableCell className='pr-4 text-right font-medium tabular-nums sm:pr-5'>
-                      {formatQuota(record.reward_quota)}
+                      {formatInvitationUSD(record.reward_usd)}
                     </TableCell>
                   </TableRow>
                 )

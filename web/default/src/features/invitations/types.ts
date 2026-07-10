@@ -32,16 +32,16 @@ export interface InvitationRecord {
   registered_at: number
   status: InvitationStatus
   granted_at: number
-  reward_quota: number
+  reward_usd: number
   reason: InvitationReason
 }
 
 export interface InvitationSummary {
-  inviter_reward_quota: number
-  invitee_reward_quota: number
+  inviter_reward_usd: number
+  invitee_reward_usd: number
   inviter_reward_max_count: number
-  history_quota: number
-  transferable_quota: number
+  history_usd: number
+  transferable_usd: number
   granted_count: number
   pending_count: number
   transfer_enabled: boolean
