@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -34,6 +35,14 @@ import {
 import { INVITATION_PAGE_SIZE } from '../types'
 
 class InvitationTransferBusinessError extends Error {}
+
+export function createInvitationQueryOptions(page: number) {
+  return {
+    queryKey: ['invitations', page],
+    queryFn: () => getInvitations(page, INVITATION_PAGE_SIZE),
+    placeholderData: keepPreviousData,
+  }
+}
 
 export function createInvitationTransferMutationOptions(
   queryClient: QueryClient
@@ -70,10 +79,7 @@ export function createInvitationTransferMutationOptions(
 export function useInvitations(page: number) {
   const queryClient = useQueryClient()
 
-  const invitationsQuery = useQuery({
-    queryKey: ['invitations', page],
-    queryFn: () => getInvitations(page, INVITATION_PAGE_SIZE),
-  })
+  const invitationsQuery = useQuery(createInvitationQueryOptions(page))
 
   const codeQuery = useQuery({
     queryKey: ['affiliate-code'],

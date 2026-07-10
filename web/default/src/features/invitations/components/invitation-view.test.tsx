@@ -143,6 +143,30 @@ describe('InvitationView', () => {
     expect(html).toContain('data-slot="skeleton"')
     expect(html).not.toContain('No referrals yet')
     expect(html).not.toContain('load your referrals.')
+    expect(html).not.toMatch(/>\$?0</)
+    expect(html).not.toContain(
+      'There is currently no limit on the number of referral rewards you can earn.'
+    )
+    expect(html).not.toContain('What are the current referral rewards?')
+    expect(html).not.toContain('Is there a referral reward limit?')
+    expect(html).not.toContain(
+      'Referral reward transfer is disabled until the administrator confirms compliance terms.'
+    )
+  })
+
+  test('does not fabricate summary facts when invitation loading fails', () => {
+    const html = renderView({ data: null, loading: false, error: true })
+
+    expect(html).toContain('data-slot="skeleton"')
+    expect(html).not.toMatch(/>\$?0</)
+    expect(html).not.toContain(
+      'There is currently no limit on the number of referral rewards you can earn.'
+    )
+    expect(html).not.toContain('What are the current referral rewards?')
+    expect(html).not.toContain('Is there a referral reward limit?')
+    expect(html).not.toContain(
+      'Referral reward transfer is disabled until the administrator confirms compliance terms.'
+    )
   })
 
   test('keeps records usable when only the referral link fails', () => {
@@ -151,9 +175,24 @@ describe('InvitationView', () => {
       affiliateError: true,
     })
 
-    expect(html).toContain('load your referrals.')
+    expect(html).toContain('Failed to load: Your Referral Link')
+    expect(html).not.toContain('load your referrals.')
     expect(html).toContain('a***@example.com')
     expect(html).not.toContain('Copy referral link')
+  })
+
+  test('renders accessible icon anchors for every share target', () => {
+    const html = renderView()
+
+    expect(html).toMatch(
+      /<a[^>]*aria-label="Share by email"[^>]*>\s*<svg[^>]*>/
+    )
+    expect(html).toMatch(
+      /<a[^>]*aria-label="Share on X"[^>]*target="_blank"[^>]*rel="noreferrer noopener"[^>]*>\s*<svg[^>]*>/
+    )
+    expect(html).toMatch(
+      /<a[^>]*aria-label="Share on LinkedIn"[^>]*target="_blank"[^>]*rel="noreferrer noopener"[^>]*>\s*<svg[^>]*>/
+    )
   })
 
   test('disables reward transfer when compliance is not confirmed', () => {
@@ -180,5 +219,6 @@ describe('transfer amount validation', () => {
     ).toBe(false)
     expect(isValidTransferAmount(499999, 500000, 1000000)).toBe(false)
     expect(isValidTransferAmount(1000001, 500000, 1000000)).toBe(false)
+    expect(isValidTransferAmount(500000.5, 500000, 1000000)).toBe(false)
   })
 })

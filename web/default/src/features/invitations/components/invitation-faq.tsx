@@ -14,6 +14,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
 import type { InvitationSummary } from '../types'
 
@@ -23,9 +24,21 @@ interface InvitationFaqProps {
 
 export function InvitationFaq({ summary }: InvitationFaqProps) {
   const { t } = useTranslation()
-  const inviterReward = formatQuota(summary?.inviter_reward_quota ?? 0)
-  const inviteeReward = formatQuota(summary?.invitee_reward_quota ?? 0)
-  const limit = summary?.inviter_reward_max_count ?? 0
+  if (summary === null) {
+    return (
+      <TitledCard title={t('FAQ')}>
+        <div className='space-y-3'>
+          <Skeleton className='h-9 w-full' />
+          <Skeleton className='h-9 w-full' />
+          <Skeleton className='h-9 w-full' />
+        </div>
+      </TitledCard>
+    )
+  }
+
+  const inviterReward = formatQuota(summary.inviter_reward_quota)
+  const inviteeReward = formatQuota(summary.invitee_reward_quota)
+  const limit = summary.inviter_reward_max_count
   const items = [
     {
       question: t('When are referral rewards granted?'),
