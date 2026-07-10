@@ -332,4 +332,3 @@ Invoke the repository code-review workflow on the final diff. Fix only verified 
 - [ ] **Step 6: Commit verification fixes if needed**
 
 Use a Lore commit explaining the verified risk. Do not create an empty commit.
-

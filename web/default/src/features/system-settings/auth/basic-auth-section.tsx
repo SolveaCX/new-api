@@ -50,6 +50,7 @@ const basicAuthSchema = z.object({
   EmailDomainRestrictionEnabled: z.boolean(),
   EmailAliasRestrictionEnabled: z.boolean(),
   EmailDomainWhitelist: z.string(),
+  'registration_security.reject_subdomain_email_domains': z.boolean(),
 })
 
 type BasicAuthFormValues = z.infer<typeof basicAuthSchema>
@@ -258,6 +259,29 @@ export function BasicAuthSection({ defaultValues }: BasicAuthSectionProps) {
                 </FormDescription>
                 <FormMessage />
               </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='registration_security.reject_subdomain_email_domains'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Reject Email Subdomains')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Reject registrations using subdomains such as mail.example.com'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
             )}
           />
         </SettingsForm>

@@ -61,6 +61,8 @@ type RegistrationDomainReleaseResult struct {
 	RestoredUsers int64                   `json:"restored_users"`
 }
 
+const registrationEmailDomainBackfillBatchSize = 500
+
 type RegistrationDomainAffectedUser struct {
 	RegistrationDomainBlockUser
 	Username      string `json:"username"`
@@ -91,6 +93,9 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string
 	if policy.Now == 0 {
 		policy.Now = time.Now().Unix()
 	}
+	if user.CreatedAt == 0 {
+		user.CreatedAt = policy.Now
+	}
 	if policy.Window <= 0 || policy.Threshold < 2 {
 		return RegistrationDomainRiskResult{}, errors.New("invalid registration domain risk policy")
 	}
@@ -114,13 +119,16 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string
 			result.BlockID = state.ActiveBlockID
 			return nil
 		}
+		if err := backfillLegacyRegistrationEmailDomains(tx, domain); err != nil {
+			return err
+		}
 		cutoff := policy.Now - int64(policy.Window/time.Second)
 		if state.CountingSince > cutoff {
 			cutoff = state.CountingSince
 		}
 		var count int64
 		if err := usersForEmailDomain(tx.Model(&User{}), domain).
-			Where("created_at >= ?", cutoff).Count(&count).Error; err != nil {
+			Where("created_at >= ? AND created_at <= ?", cutoff, policy.Now).Count(&count).Error; err != nil {
 			return err
 		}
 		if count+1 < int64(policy.Threshold) {
@@ -133,26 +141,11 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string
 		if err := tx.Create(&block).Error; err != nil {
 			return err
 		}
-		var users []User
-		if err := usersForEmailDomain(tx.Where("status = ?", common.UserStatusEnabled), domain).Find(&users).Error; err != nil {
-			return err
+		newDisabledIDs, disableErr := disableRegistrationDomainUsers(tx, block.Id, domain, policy.Now)
+		if disableErr != nil {
+			return disableErr
 		}
-		if len(users) > 0 {
-			affected := make([]RegistrationDomainBlockUser, 0, len(users))
-			ids := make([]int, 0, len(users))
-			for _, existing := range users {
-				ids = append(ids, existing.Id)
-				affected = append(affected, RegistrationDomainBlockUser{BlockID: block.Id, UserID: existing.Id, PriorStatus: existing.Status, DisabledAt: policy.Now})
-			}
-			disabledIDs = append(disabledIDs, ids...)
-			if err := tx.Create(&affected).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(&User{}).Where("id IN ? AND status = ?", ids, common.UserStatusEnabled).
-				Update("status", common.UserStatusDisabled).Error; err != nil {
-				return err
-			}
-		}
+		disabledIDs = newDisabledIDs
 		if err := tx.Model(&RegistrationDomainState{}).Where("domain = ?", domain).
 			Update("active_block_id", block.Id).Error; err != nil {
 			return err
@@ -166,12 +159,49 @@ func RegisterUserWithDomainRisk(user *User, inviterID int, registrationIP string
 		return RegistrationDomainRiskResult{}, err
 	}
 	for _, id := range disabledIDs {
-		_ = InvalidateUserCache(id)
+		if err := InvalidateUserCache(id); err != nil {
+			common.SysError("failed to invalidate registration-blocked user cache: " + err.Error())
+		}
 	}
 	if result.BlockID != 0 {
 		return result, ErrRegistrationDomainBlocked
 	}
 	return result, nil
+}
+
+func disableRegistrationDomainUsers(tx *gorm.DB, blockID int, domain string, disabledAt int64) ([]int, error) {
+	var users []User
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("status = ?", common.UserStatusEnabled)
+	if err := usersForEmailDomain(query, domain).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]int, 0, len(users))
+	for _, user := range users {
+		ids = append(ids, user.Id)
+	}
+	update := tx.Model(&User{}).Where("id IN ? AND status = ?", ids, common.UserStatusEnabled).
+		Update("status", common.UserStatusDisabled)
+	if update.Error != nil {
+		return nil, update.Error
+	}
+	if update.RowsAffected != int64(len(ids)) {
+		return nil, errors.New("registration domain user status changed concurrently")
+	}
+
+	affected := make([]RegistrationDomainBlockUser, 0, len(users))
+	for _, user := range users {
+		affected = append(affected, RegistrationDomainBlockUser{
+			BlockID: blockID, UserID: user.Id, PriorStatus: user.Status, DisabledAt: disabledAt,
+		})
+	}
+	if err := tx.Create(&affected).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func insertRegisteredUser(user *User, inviterID int, registrationIP string, afterCreate func(*gorm.DB) error) error {
@@ -192,6 +222,22 @@ func insertRegisteredUserWithTx(tx *gorm.DB, user *User, inviterID int, registra
 
 func usersForEmailDomain(db *gorm.DB, domain string) *gorm.DB {
 	return db.Where("email_domain = ? OR (email_domain = '' AND LOWER(email) LIKE ?)", domain, "%@"+domain)
+}
+
+func backfillLegacyRegistrationEmailDomains(tx *gorm.DB, domain string) error {
+	var userIDs []int
+	if err := tx.Model(&User{}).
+		Where("email_domain = '' AND LOWER(email) LIKE ?", "%@"+domain).
+		Limit(registrationEmailDomainBackfillBatchSize).
+		Pluck("id", &userIDs).Error; err != nil {
+		return err
+	}
+	if len(userIDs) == 0 {
+		return nil
+	}
+	return tx.Model(&User{}).
+		Where("id IN ? AND email_domain = ''", userIDs).
+		Update("email_domain", domain).Error
 }
 
 func IsRegistrationDomainBlocked(domain string) (bool, error) {
@@ -270,6 +316,9 @@ func releaseRegistrationDomainBlock(blockID int, adminID int, restoreUsers bool,
 			return err
 		}
 		result.Block = block
+		if block.ReleasedAt != 0 {
+			return nil
+		}
 		if trustedDomain != "" {
 			option := Option{Key: "registration_security.trusted_email_domains"}
 			if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
@@ -301,9 +350,6 @@ func releaseRegistrationDomainBlock(blockID int, adminID int, restoreUsers bool,
 			if err := tx.Save(&option).Error; err != nil {
 				return err
 			}
-		}
-		if block.ReleasedAt != 0 {
-			return nil
 		}
 		if restoreUsers {
 			var affected []RegistrationDomainBlockUser
@@ -343,7 +389,9 @@ func releaseRegistrationDomainBlock(blockID int, adminID int, restoreUsers bool,
 		return RegistrationDomainReleaseResult{}, err
 	}
 	for _, id := range restoredIDs {
-		_ = InvalidateUserCache(id)
+		if err := InvalidateUserCache(id); err != nil {
+			common.SysError("failed to invalidate registration-restored user cache: " + err.Error())
+		}
 	}
 	if trustedDomainsValue != "" {
 		if err := applyOptionMapValue("registration_security.trusted_email_domains", trustedDomainsValue); err != nil {

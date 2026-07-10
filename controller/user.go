@@ -18,7 +18,6 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -261,11 +260,8 @@ func Register(c *gin.Context) {
 	if language, ok := dto.NormalizeUserLanguagePreference(i18n.GetLangFromContext(c)); ok {
 		cleanUser.SetSetting(dto.UserSetting{Language: language})
 	}
-	registrationSecurity := system_setting.GetRegistrationSecuritySettings()
-	if common.EmailVerificationEnabled || common.EmailDomainRestrictionEnabled || registrationSecurity.DomainRiskEnabled || registrationSecurity.RejectSubdomainEmailDomains {
-		cleanUser.Email = user.Email
-		cleanUser.EmailDomain = emailDecision.Domain
-	}
+	cleanUser.Email = user.Email
+	cleanUser.EmailDomain = emailDecision.Domain
 	if _, err := model.RegisterUserWithDomainRisk(&cleanUser, inviterId, c.ClientIP(), emailDecision.Policy, nil); err != nil {
 		respondRegistrationEmailError(c, err)
 		return

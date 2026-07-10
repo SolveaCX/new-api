@@ -34,7 +34,7 @@ func EvaluateRegistrationEmail(email string, cfg system_setting.RegistrationSecu
 		return RegistrationEmailDecision{}, ErrSubdomainEmailRegistrationRejected
 	}
 	trusted := cfg.IsTrustedDomain(domain)
-	if !trusted && lookup != nil {
+	if lookup != nil {
 		blocked, err := lookup(domain)
 		if err != nil {
 			return RegistrationEmailDecision{}, err

@@ -240,11 +240,12 @@ func InitOptionMap() {
 
 func LoadOptionsFromDatabase() {
 	options, _ := AllOption()
+	optionValues := make(map[string]string, len(options))
 	for _, option := range options {
-		err := updateOptionMap(option.Key, option.Value)
-		if err != nil {
-			common.SysLog("failed to update option map: " + err.Error())
-		}
+		optionValues[option.Key] = option.Value
+	}
+	if err := applyOptionMapValues(optionValues); err != nil {
+		common.SysLog("failed to update option map: " + err.Error())
 	}
 	setting.ApplyPaddleEnvOverrides()
 	syncPaddleOptionMap()
@@ -362,10 +363,8 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if err != nil {
 		return err
 	}
-	for k, v := range normalizedValues {
-		if err := applyOptionMapValue(k, v); err != nil {
-			return err
-		}
+	if err := applyOptionMapValues(normalizedValues); err != nil {
+		return err
 	}
 	if hasPaddleOptionKey(normalizedValues) {
 		setting.ApplyPaddleEnvOverrides()
@@ -592,7 +591,11 @@ func applyOptionMapValue(key string, value string) (err error) {
 	common.OptionMap[key] = value
 
 	// 检查是否是模型配置 - 使用更规范的方式处理
-	if handleConfigUpdate(key, value) {
+	handled, configErr := handleConfigUpdate(key, value)
+	if configErr != nil {
+		return configErr
+	}
+	if handled {
 		return nil // 已由配置系统处理
 	}
 
@@ -957,10 +960,40 @@ func applyOptionMapValue(key string, value string) (err error) {
 }
 
 // handleConfigUpdate 处理分层配置更新，返回是否已处理
-func handleConfigUpdate(key, value string) bool {
+func applyOptionMapValues(values map[string]string) error {
+	registrationValues := make(map[string]string)
+	for key, value := range values {
+		if strings.HasPrefix(key, "registration_security.") {
+			registrationValues[strings.TrimPrefix(key, "registration_security.")] = value
+		}
+	}
+	if len(registrationValues) > 0 {
+		if err := system_setting.UpdateRegistrationSecuritySettingsFromMap(registrationValues); err != nil {
+			return err
+		}
+		common.OptionMapRWMutex.Lock()
+		for key, value := range values {
+			if strings.HasPrefix(key, "registration_security.") {
+				common.OptionMap[key] = value
+			}
+		}
+		common.OptionMapRWMutex.Unlock()
+	}
+	for key, value := range values {
+		if strings.HasPrefix(key, "registration_security.") {
+			continue
+		}
+		if err := applyOptionMapValue(key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func handleConfigUpdate(key, value string) (bool, error) {
 	parts := strings.SplitN(key, ".", 2)
 	if len(parts) != 2 {
-		return false // 不是分层配置
+		return false, nil // 不是分层配置
 	}
 
 	configName := parts[0]
@@ -968,20 +1001,26 @@ func handleConfigUpdate(key, value string) bool {
 
 	if configName == "log_request_sampling" {
 		_ = operation_setting.UpdateLogRequestSamplingConfigFromMap(map[string]string{configKey: value})
-		return true
+		return true, nil
+	}
+
+	if configName == "registration_security" {
+		return true, system_setting.UpdateRegistrationSecuritySettingsFromMap(map[string]string{configKey: value})
 	}
 
 	// 获取配置对象
 	cfg := config.GlobalConfig.Get(configName)
 	if cfg == nil {
-		return false // 未注册的配置
+		return false, nil // 未注册的配置
 	}
 
 	// 更新配置
 	configMap := map[string]string{
 		configKey: value,
 	}
-	config.UpdateConfigFromMap(cfg, configMap)
+	if err := config.UpdateConfigFromMap(cfg, configMap); err != nil {
+		return true, err
+	}
 
 	// 特定配置的后处理
 	if configName == "performance_setting" {
@@ -998,7 +1037,7 @@ func handleConfigUpdate(key, value string) bool {
 		system_setting.UpdateAndSyncTheme()
 	}
 
-	return true // 已处理
+	return true, nil // 已处理
 }
 
 func inferGroupRatioRenames(oldGroupRatio, newGroupRatio map[string]float64) map[string]string {

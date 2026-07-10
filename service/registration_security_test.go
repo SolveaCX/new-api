@@ -33,6 +33,21 @@ func TestRegistrationSecurityRejectsSubdomainAndActiveBlock(t *testing.T) {
 	require.ErrorIs(t, err, ErrRegistrationDomainUnavailable)
 }
 
+func TestRegistrationSecurityActiveBlockOverridesTrustedDomain(t *testing.T) {
+	cfg := system_setting.RegistrationSecuritySettings{
+		DomainRiskEnabled:     true,
+		DomainRiskWindowHours: 24,
+		DomainRiskThreshold:   10,
+		TrustedEmailDomains:   []string{"trusted.example"},
+	}
+
+	_, err := EvaluateRegistrationEmail("user@trusted.example", cfg, func(string) (bool, error) {
+		return true, nil
+	})
+
+	require.ErrorIs(t, err, ErrRegistrationDomainUnavailable)
+}
+
 func TestRegistrationSecurityAllowsEmailLessRegistrationWithoutCounting(t *testing.T) {
 	cfg := system_setting.RegistrationSecuritySettings{DomainRiskEnabled: true, DomainRiskWindowHours: 24, DomainRiskThreshold: 10}
 

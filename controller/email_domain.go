@@ -14,17 +14,19 @@ import (
 
 const emailDomainWhitelistErrorMessage = "The administrator has enabled the email domain name whitelist, and your email address is not allowed due to special symbols or it's not in the whitelist."
 
+var errEmailDomainWhitelistRejected = errors.New(emailDomainWhitelistErrorMessage)
+
 func validateEmailDomainRestriction(email string) error {
 	if !common.EmailDomainRestrictionEnabled {
 		return nil
 	}
 	email = strings.TrimSpace(email)
 	if err := common.Validate.Var(email, "required,email"); err != nil {
-		return errors.New(emailDomainWhitelistErrorMessage)
+		return errEmailDomainWhitelistRejected
 	}
 	parts := strings.Split(email, "@")
 	if len(parts) != 2 {
-		return errors.New(emailDomainWhitelistErrorMessage)
+		return errEmailDomainWhitelistRejected
 	}
 	domainPart := strings.ToLower(strings.TrimSpace(parts[1]))
 	for _, domain := range common.EmailDomainWhitelist {
@@ -32,7 +34,7 @@ func validateEmailDomainRestriction(email string) error {
 			return nil
 		}
 	}
-	return errors.New(emailDomainWhitelistErrorMessage)
+	return errEmailDomainWhitelistRejected
 }
 
 func evaluateRegistrationEmail(email string) (service.RegistrationEmailDecision, error) {
@@ -64,14 +66,23 @@ func respondRegistrationEmailError(c *gin.Context, err error) {
 		common.ApiErrorI18n(c, key)
 		return
 	}
-	common.ApiError(c, err)
+	if errors.Is(err, errEmailDomainWhitelistRejected) {
+		common.ApiError(c, err)
+		return
+	}
+	common.SysError("registration email policy failed: " + err.Error())
+	common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
 }
 
 func registrationEmailErrorMessage(c *gin.Context, err error) string {
 	if key, ok := registrationEmailErrorKey(err); ok {
 		return i18n.T(c, key)
 	}
-	return err.Error()
+	if errors.Is(err, errEmailDomainWhitelistRejected) {
+		return err.Error()
+	}
+	common.SysError("registration email policy failed: " + err.Error())
+	return i18n.T(c, i18n.MsgUserRegisterFailed)
 }
 
 func registerLegacyOAuthUser(c *gin.Context, user *model.User, inviterID int) error {

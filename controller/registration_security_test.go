@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	appI18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/gin-gonic/gin"
@@ -76,6 +78,52 @@ func TestRegisterRejectsSubdomainEmailDomain(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&model.User{}).Where("username = ?", "subdomain-user").Count(&count).Error)
 	require.Zero(t, count)
+}
+
+func TestRegisterPersistsEmailDomainWhenRiskControlsAreDisabled(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	configureRegistrationEndpointTest(t)
+	originalRestriction := common.EmailDomainRestrictionEnabled
+	common.EmailDomainRestrictionEnabled = false
+	t.Cleanup(func() { common.EmailDomainRestrictionEnabled = originalRestriction })
+	withRegistrationSecurityConfig(t, map[string]string{
+		"registration_security.domain_risk_enabled":            "false",
+		"registration_security.domain_risk_window_hours":       "24",
+		"registration_security.domain_risk_threshold":          "10",
+		"registration_security.trusted_email_domains":          "[]",
+		"registration_security.reject_subdomain_email_domains": "false",
+	})
+	body, err := common.Marshal(map[string]any{
+		"username": "email-domain-user",
+		"password": "password123",
+		"email":    "User@Example.COM",
+	})
+	require.NoError(t, err)
+
+	recorder := performRegisterRequest(t, body)
+
+	var payload struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+	var stored model.User
+	require.NoError(t, db.Where("username = ?", "email-domain-user").First(&stored).Error)
+	require.Equal(t, "User@Example.COM", stored.Email)
+	require.Equal(t, "example.com", stored.EmailDomain)
+}
+
+func TestRegistrationEmailInternalErrorsUseGenericPublicMessage(t *testing.T) {
+	require.NoError(t, appI18n.Init())
+	gin.SetMode(gin.TestMode)
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/user/register", nil)
+	internalErr := errors.New("SQLSTATE 08006 connection failure")
+
+	message := registrationEmailErrorMessage(context, internalErr)
+
+	require.NotContains(t, message, "SQLSTATE")
+	require.NotEmpty(t, message)
 }
 
 func TestRegisterDomainThresholdRejectsTriggeringAccount(t *testing.T) {

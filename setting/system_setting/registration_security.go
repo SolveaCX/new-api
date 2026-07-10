@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -22,14 +23,50 @@ var registrationSecuritySettings = RegistrationSecuritySettings{
 	DomainRiskThreshold:   10,
 }
 
+var registrationSecuritySettingsMu sync.RWMutex
+
 func init() {
 	config.GlobalConfig.Register("registration_security", &registrationSecuritySettings)
 }
 
 func GetRegistrationSecuritySettings() RegistrationSecuritySettings {
+	registrationSecuritySettingsMu.RLock()
+	defer registrationSecuritySettingsMu.RUnlock()
 	cfg := registrationSecuritySettings
 	cfg.TrustedEmailDomains = append([]string(nil), registrationSecuritySettings.TrustedEmailDomains...)
 	return cfg
+}
+
+func (s *RegistrationSecuritySettings) LockConfig() {
+	registrationSecuritySettingsMu.Lock()
+}
+
+func (s *RegistrationSecuritySettings) UnlockConfig() {
+	registrationSecuritySettingsMu.Unlock()
+}
+
+func (s *RegistrationSecuritySettings) RLockConfig() {
+	registrationSecuritySettingsMu.RLock()
+}
+
+func (s *RegistrationSecuritySettings) RUnlockConfig() {
+	registrationSecuritySettingsMu.RUnlock()
+}
+
+func UpdateRegistrationSecuritySettingsFromMap(values map[string]string) error {
+	registrationSecuritySettingsMu.Lock()
+	defer registrationSecuritySettingsMu.Unlock()
+
+	next := registrationSecuritySettings
+	next.TrustedEmailDomains = append([]string(nil), registrationSecuritySettings.TrustedEmailDomains...)
+	if err := config.UpdateConfigFromMap(&next, values); err != nil {
+		return err
+	}
+	if err := next.NormalizeAndValidate(); err != nil {
+		return err
+	}
+	registrationSecuritySettings = next
+	return nil
 }
 
 func (s *RegistrationSecuritySettings) NormalizeAndValidate() error {
