@@ -22,6 +22,7 @@ import { getNavBadgeClassName } from './nav-badge'
 describe('getNavBadgeClassName', () => {
   test('keeps red promotion badges compact and readable in dark mode', () => {
     const className = getNavBadgeClassName('promotion')
+    const classTokens = className.split(' ')
 
     expect(className).toContain('bg-destructive')
     expect(className).toContain('dark:bg-destructive')
@@ -29,5 +30,7 @@ describe('getNavBadgeClassName', () => {
     expect(className).toContain('max-w-28')
     expect(className).toContain('truncate')
     expect(className).toContain('group-data-[collapsible=icon]:hidden')
+    expect(classTokens).toContain('flex-1')
+    expect(classTokens).not.toContain('shrink')
   })
 })

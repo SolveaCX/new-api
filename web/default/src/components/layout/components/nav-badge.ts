@@ -20,7 +20,7 @@ import { type NavBadgeVariant } from '../types'
 
 export function getNavBadgeClassName(variant: NavBadgeVariant) {
   if (variant === 'promotion') {
-    return 'bg-destructive text-destructive-foreground dark:bg-destructive dark:text-background group-data-[collapsible=icon]:hidden min-w-0 max-w-28 shrink truncate px-1 py-0 text-[10px] font-semibold tracking-tight'
+    return 'bg-destructive text-destructive-foreground dark:bg-destructive dark:text-background group-data-[collapsible=icon]:hidden min-w-0 max-w-28 flex-1 truncate px-1 py-0 text-[10px] font-semibold tracking-tight'
   }
 
   return 'shrink-0 px-1 py-0 text-xs'
