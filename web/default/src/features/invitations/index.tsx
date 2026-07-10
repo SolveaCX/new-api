@@ -32,7 +32,7 @@ export interface InvitationViewProps {
   page: number
   onPageChange: (page: number) => void
   onRetry: () => void
-  onTransfer: (quota: number) => Promise<boolean>
+  onTransfer: (amountUSD: number) => Promise<boolean>
 }
 
 export function InvitationView({
@@ -79,7 +79,7 @@ export function InvitationView({
         open={transferOpen}
         onOpenChange={setTransferOpen}
         onConfirm={onTransfer}
-        availableQuota={summary?.transferable_quota ?? 0}
+        availableUSD={summary?.transferable_usd ?? 0}
         transferring={transferring}
       />
     </div>
@@ -110,9 +110,9 @@ export function Invitations() {
           page={page}
           onPageChange={setPage}
           onRetry={() => void invitationsQuery.refetch()}
-          onTransfer={async (quota) => {
+          onTransfer={async (amountUSD) => {
             try {
-              await transferMutation.mutateAsync(quota)
+              await transferMutation.mutateAsync(amountUSD)
               return true
             } catch {
               return false

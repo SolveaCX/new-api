@@ -7,9 +7,9 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useTranslation } from 'react-i18next'
-import { formatQuota } from '@/lib/format'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatInvitationUSD } from '../lib/usd'
 import type { InvitationSummary } from '../types'
 
 interface InvitationStatsProps {
@@ -23,11 +23,11 @@ export function InvitationStats({ summary, loading }: InvitationStatsProps) {
   const stats = [
     {
       label: t('Total earned'),
-      value: formatQuota(summary?.history_quota ?? 0),
+      value: formatInvitationUSD(summary?.history_usd ?? 0),
     },
     {
       label: t('Available to transfer'),
-      value: formatQuota(summary?.transferable_quota ?? 0),
+      value: formatInvitationUSD(summary?.transferable_usd ?? 0),
     },
     {
       label: t('Successful referrals'),

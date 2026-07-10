@@ -22,9 +22,11 @@ import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { InvitationView } from '../index'
+import { formatInvitationUSD } from '../lib/usd'
 import type { InvitationPageData } from '../types'
 import {
-  getTransferAmountValidationError,
+  clampTransferAmount,
+  getTransferAmountInputConstraints,
   isValidTransferAmount,
 } from './transfer-dialog'
 
@@ -32,11 +34,11 @@ const testI18n = createInstance()
 
 const fixture: InvitationPageData = {
   summary: {
-    inviter_reward_quota: 500000,
-    invitee_reward_quota: 250000,
+    inviter_reward_usd: 1,
+    invitee_reward_usd: 0.5,
     inviter_reward_max_count: 10,
-    history_quota: 1500000,
-    transferable_quota: 500000,
+    history_usd: 3,
+    transferable_usd: 1,
     granted_count: 3,
     pending_count: 2,
     transfer_enabled: true,
@@ -48,7 +50,7 @@ const fixture: InvitationPageData = {
       registered_at: 1783612800,
       status: 'granted',
       granted_at: 1783699200,
-      reward_quota: 500000,
+      reward_usd: 1,
       reason: '',
     },
     {
@@ -57,7 +59,7 @@ const fixture: InvitationPageData = {
       registered_at: 1783526400,
       status: 'pending',
       granted_at: 0,
-      reward_quota: 0,
+      reward_usd: 0,
       reason: '',
     },
   ],
@@ -116,6 +118,8 @@ describe('InvitationView', () => {
     expect(html).toContain('Your friend signs up')
     expect(html).toContain('first successful top-up')
     expect(html).toContain('Transfer Rewards')
+    expect(html).toContain('$3')
+    expect(html).toContain('$1')
     expect(html).toContain('Recent referrals')
     expect(html).toContain('a***@example.com')
     expect(html).toContain('Reward granted')
@@ -167,7 +171,7 @@ describe('InvitationView', () => {
         items: [
           {
             ...fixture.items[0],
-            reward_quota: 0,
+            reward_usd: 0,
             reason: 'inviter_limit_reached',
           },
         ],
@@ -270,23 +274,31 @@ describe('InvitationView', () => {
 })
 
 describe('transfer amount validation', () => {
-  test('accepts only finite amounts within the configured bounds', () => {
-    expect(isValidTransferAmount(500000, 500000, 1000000)).toBe(true)
-    expect(isValidTransferAmount(Number.NaN, 500000, 1000000)).toBe(false)
-    expect(
-      isValidTransferAmount(Number.POSITIVE_INFINITY, 500000, 1000000)
-    ).toBe(false)
-    expect(isValidTransferAmount(499999, 500000, 1000000)).toBe(false)
-    expect(isValidTransferAmount(1000001, 500000, 1000000)).toBe(false)
-    expect(isValidTransferAmount(500000.5, 500000, 1000000)).toBe(false)
+  test('accepts finite USD amounts between one dollar and the available amount', () => {
+    expect(isValidTransferAmount(1, 8)).toBe(true)
+    expect(isValidTransferAmount(8, 8)).toBe(true)
+    expect(isValidTransferAmount(Number.NaN, 8)).toBe(false)
+    expect(isValidTransferAmount(Number.POSITIVE_INFINITY, 8)).toBe(false)
+    expect(isValidTransferAmount(0.99, 8)).toBe(false)
+    expect(isValidTransferAmount(8.01, 8)).toBe(false)
   })
 
-  test('identifies an amount that exceeds the available rewards', () => {
-    expect(getTransferAmountValidationError(1000001, 500000, 1000000)).toBe(
-      'exceeds-available'
-    )
-    expect(
-      getTransferAmountValidationError(1000000, 500000, 1000000)
-    ).toBeNull()
+  test('replaces an over-limit USD input with the full available amount', () => {
+    expect(clampTransferAmount(9, 8)).toBe(8)
+    expect(clampTransferAmount(7, 8)).toBe(7)
+    expect(clampTransferAmount(2, 1.5)).toBe(1.5)
+  })
+
+  test('keeps sub-dollar USD precision visible instead of rounding across a boundary', () => {
+    expect(formatInvitationUSD(0.999)).toBe('$0.999')
+    expect(formatInvitationUSD(0.000002)).toBe('$0.000002')
+  })
+
+  test('allows decimal USD values without a native step mismatch', () => {
+    expect(getTransferAmountInputConstraints(1.5)).toEqual({
+      min: 1,
+      max: 1.5,
+      step: 'any',
+    })
   })
 })

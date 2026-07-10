@@ -66,7 +66,6 @@ const invitationKeys = [
   'Available Rewards',
   'Transfer Amount',
   'Minimum:',
-  'Transfer amount cannot exceed available rewards.',
   'Cancel',
   'Transfer',
   'Transfer successful',
