@@ -21,7 +21,11 @@ import {
   AxiosHeaders,
   type InternalAxiosRequestConfig,
 } from 'axios'
-import { MutationObserver, QueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  MutationObserver,
+  QueryClient,
+} from '@tanstack/react-query'
 import '@/i18n/config'
 import {
   afterEach,
@@ -36,7 +40,10 @@ import { toast } from 'sonner'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 import { api } from '@/lib/api'
 import type { AffiliateTransferResponse } from '../types'
-import { createInvitationTransferMutationOptions } from './use-invitations'
+import {
+  createInvitationQueryOptions,
+  createInvitationTransferMutationOptions,
+} from './use-invitations'
 
 const originalAdapter = api.defaults.adapter
 
@@ -175,5 +182,14 @@ describe('useInvitations transfer mutation', () => {
     expect(successToast).not.toHaveBeenCalled()
     expect(errorToast).toHaveBeenCalledTimes(1)
     expect(errorToast).toHaveBeenCalledWith('Transfer failed')
+  })
+})
+
+describe('invitation query options', () => {
+  it('retains the previous page while the next page loads', () => {
+    const options = createInvitationQueryOptions(2)
+
+    expect(options.queryKey).toEqual(['invitations', 2])
+    expect(options.placeholderData).toBe(keepPreviousData)
   })
 })

@@ -19,6 +19,7 @@ interface InvitationStatsProps {
 
 export function InvitationStats({ summary, loading }: InvitationStatsProps) {
   const { t } = useTranslation()
+  const pending = loading || summary === null
   const stats = [
     {
       label: t('Total earned'),
@@ -46,7 +47,7 @@ export function InvitationStats({ summary, loading }: InvitationStatsProps) {
             <p className='text-muted-foreground text-xs font-medium'>
               {stat.label}
             </p>
-            {loading ? (
+            {pending ? (
               <Skeleton className='mt-2 h-7 w-24' />
             ) : (
               <p className='mt-2 text-2xl font-semibold tabular-nums'>

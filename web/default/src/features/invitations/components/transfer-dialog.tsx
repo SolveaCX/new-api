@@ -36,6 +36,7 @@ export function isValidTransferAmount(
 ): boolean {
   return (
     Number.isFinite(amount) &&
+    Number.isInteger(amount) &&
     Number.isFinite(minimum) &&
     Number.isFinite(maximum) &&
     minimum > 0 &&

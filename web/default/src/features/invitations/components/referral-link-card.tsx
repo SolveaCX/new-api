@@ -6,6 +6,7 @@ it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
+import { BriefcaseBusiness, Mail, Share2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,7 +70,7 @@ export function ReferralLinkCard({
 
           {error ? (
             <p className='text-muted-foreground text-sm'>
-              {t("We couldn't load your referrals.")}
+              {t('Failed to load')}: {t('Your Referral Link')}
             </p>
           ) : null}
 
@@ -77,32 +78,46 @@ export function ReferralLinkCard({
             <div className='flex flex-wrap gap-2'>
               <Button
                 variant='outline'
-                size='sm'
-                render={<a href={links.email} />}
-              >
-                {t('Share by email')}
-              </Button>
-              <Button
-                variant='outline'
-                size='sm'
-                render={
-                  <a href={links.x} target='_blank' rel='noreferrer noopener' />
-                }
-              >
-                {t('Share on X')}
-              </Button>
-              <Button
-                variant='outline'
-                size='sm'
+                size='icon'
                 render={
                   <a
-                    href={links.linkedin}
+                    href={links.email}
+                    aria-label={t('Share by email')}
+                    title={t('Share by email')}
+                  />
+                }
+              >
+                <Mail aria-hidden='true' />
+              </Button>
+              <Button
+                variant='outline'
+                size='icon'
+                render={
+                  <a
+                    href={links.x}
+                    aria-label={t('Share on X')}
+                    title={t('Share on X')}
                     target='_blank'
                     rel='noreferrer noopener'
                   />
                 }
               >
-                {t('Share on LinkedIn')}
+                <Share2 aria-hidden='true' />
+              </Button>
+              <Button
+                variant='outline'
+                size='icon'
+                render={
+                  <a
+                    href={links.linkedin}
+                    aria-label={t('Share on LinkedIn')}
+                    title={t('Share on LinkedIn')}
+                    target='_blank'
+                    rel='noreferrer noopener'
+                  />
+                }
+              >
+                <BriefcaseBusiness aria-hidden='true' />
               </Button>
             </div>
           ) : null}

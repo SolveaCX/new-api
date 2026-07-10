@@ -28,6 +28,7 @@ export function RewardTransferCard({
   const availableQuota = summary?.transferable_quota ?? 0
   const transferEnabled = summary?.transfer_enabled === true
   const canTransfer = transferEnabled && availableQuota > 0
+  const pending = loading || summary === null
 
   return (
     <TitledCard
@@ -36,21 +37,21 @@ export function RewardTransferCard({
       action={
         <Button
           onClick={onOpen}
-          disabled={loading || !canTransfer}
+          disabled={pending || !canTransfer}
           className='w-full sm:w-auto'
         >
           {t('Transfer to Balance')}
         </Button>
       }
     >
-      {loading ? (
+      {pending ? (
         <Skeleton className='h-8 w-32' />
       ) : (
         <p className='text-2xl font-semibold tabular-nums'>
           {formatQuota(availableQuota)}
         </p>
       )}
-      {!loading && !transferEnabled ? (
+      {!pending && !transferEnabled ? (
         <p className='text-muted-foreground mt-2 text-sm'>
           {t(
             'Referral reward transfer is disabled until the administrator confirms compliance terms.'
