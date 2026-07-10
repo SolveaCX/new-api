@@ -27,9 +27,7 @@ describe('buildAffiliateLink', () => {
   })
 
   it('URL-encodes spaces and special characters in the affiliate code', () => {
-    expect(
-      buildAffiliateLink('code with /?&', 'https://console.example')
-    ).toBe(
+    expect(buildAffiliateLink('code with /?&', 'https://console.example')).toBe(
       'https://console.example/sign-up?aff=code%20with%20%2F%3F%26'
     )
   })
@@ -48,8 +46,7 @@ describe('buildAffiliateLink', () => {
 })
 
 describe('buildInvitationShareLinks', () => {
-  const invitationUrl =
-    'https://console.example/sign-up?aff=code%20with%20%26'
+  const invitationUrl = 'https://console.example/sign-up?aff=code%20with%20%26'
   const message = 'Join me & save / explore?'
 
   it('builds an encoded email share target', () => {
