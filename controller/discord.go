@@ -153,18 +153,11 @@ func DiscordOAuth(c *gin.Context) {
 				user.DisplayName = "Discord User"
 			}
 			user.Email = strings.TrimSpace(discordUser.Email)
-			if err := validateEmailDomainRestriction(user.Email); err != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"success": false,
-					"message": err.Error(),
-				})
-				return
-			}
-			err := user.InsertWithRegistrationIP(0, c.ClientIP())
+			err := registerLegacyOAuthUser(c, &user, 0)
 			if err != nil {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
-					"message": err.Error(),
+					"message": registrationEmailErrorMessage(c, err),
 				})
 				return
 			}

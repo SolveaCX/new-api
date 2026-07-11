@@ -39,6 +39,10 @@ type configReadLocker interface {
 	RUnlockConfig()
 }
 
+type normalizingConfig interface {
+	NormalizeAndValidate() error
+}
+
 func NewConfigManager() *ConfigManager {
 	return &ConfigManager{
 		configs:     make(map[string]interface{}),
@@ -138,7 +142,7 @@ func (cm *ConfigManager) LoadFromDB(options map[string]string) error {
 		err := func() error {
 			unlock := lockModuleForWrite(module.configModuleSnapshot)
 			defer unlock()
-			return updateConfigFromMap(module.config, module.configMap)
+			return updateRegisteredConfig(module.config, module.configMap)
 		}()
 		if err != nil {
 			common.SysError("failed to update config " + module.name + ": " + err.Error())
@@ -160,6 +164,34 @@ func (cm *ConfigManager) LoadFromDB(options map[string]string) error {
 		}(hook)
 	}
 
+	return nil
+}
+
+func updateRegisteredConfig(config interface{}, values map[string]string) error {
+	if _, ok := config.(normalizingConfig); !ok {
+		return updateConfigFromMap(config, values)
+	}
+
+	configValue := reflect.ValueOf(config)
+	if configValue.Kind() != reflect.Ptr || configValue.IsNil() || configValue.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("normalizing config must be a non-nil pointer to a struct")
+	}
+	next := reflect.New(configValue.Elem().Type())
+	serialized, err := common.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to clone normalizing config: %w", err)
+	}
+	if err := common.Unmarshal(serialized, next.Interface()); err != nil {
+		return fmt.Errorf("failed to clone normalizing config: %w", err)
+	}
+	if err := updateConfigFromMap(next.Interface(), values); err != nil {
+		return err
+	}
+	normalizer := next.Interface().(normalizingConfig)
+	if err := normalizer.NormalizeAndValidate(); err != nil {
+		return err
+	}
+	configValue.Elem().Set(next.Elem())
 	return nil
 }
 

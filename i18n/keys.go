@@ -117,6 +117,12 @@ const (
 	MsgUserQuotaChangeZero           = "user.quota_change_zero"
 )
 
+const (
+	MsgRegistrationEmailDomainInvalid      = "registration_email.domain_invalid"
+	MsgRegistrationEmailSubdomainRejected  = "registration_email.subdomain_rejected"
+	MsgRegistrationEmailDomainUnavailable  = "registration_email.domain_unavailable"
+)
+
 // Quota related messages
 const (
 	MsgQuotaNegative                  = "quota.negative"

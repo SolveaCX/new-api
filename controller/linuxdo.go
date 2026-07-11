@@ -235,17 +235,10 @@ func LinuxdoOAuth(c *gin.Context) {
 					inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
 				}
 
-				if err := validateEmailDomainRestriction(user.Email); err != nil {
+				if err := registerLegacyOAuthUser(c, &user, inviterId); err != nil {
 					c.JSON(http.StatusOK, gin.H{
 						"success": false,
-						"message": err.Error(),
-					})
-					return
-				}
-				if err := user.InsertWithRegistrationIP(inviterId, c.ClientIP()); err != nil {
-					c.JSON(http.StatusOK, gin.H{
-						"success": false,
-						"message": err.Error(),
+						"message": registrationEmailErrorMessage(c, err),
 					})
 					return
 				}

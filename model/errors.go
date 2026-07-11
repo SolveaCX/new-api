@@ -9,8 +9,10 @@ var (
 
 // User auth errors
 var (
-	ErrInvalidCredentials   = errors.New("invalid credentials")
-	ErrUserEmptyCredentials = errors.New("empty credentials")
+	ErrInvalidCredentials              = errors.New("invalid credentials")
+	ErrUserEmptyCredentials            = errors.New("empty credentials")
+	ErrRegistrationDomainBlocked       = errors.New("registration domain blocked")
+	ErrRegistrationDomainBlockNotFound = errors.New("registration domain block not found")
 )
 
 // Token auth errors
