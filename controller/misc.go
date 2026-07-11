@@ -267,11 +267,8 @@ func SendEmailVerification(c *gin.Context) {
 		return
 	}
 	localPart := parts[0]
-	if err := validateEmailDomainRestriction(email); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+	if _, err := evaluateRegistrationEmail(email); err != nil {
+		respondRegistrationEmailError(c, err)
 		return
 	}
 	if common.EmailAliasRestrictionEnabled {

@@ -105,6 +105,11 @@ export type AuthSettings = {
   EmailDomainRestrictionEnabled: boolean
   EmailAliasRestrictionEnabled: boolean
   EmailDomainWhitelist: string
+  'registration_security.reject_subdomain_email_domains': boolean
+  'registration_security.domain_risk_enabled': boolean
+  'registration_security.domain_risk_window_hours': number
+  'registration_security.domain_risk_threshold': number
+  'registration_security.trusted_email_domains': string[]
   GitHubOAuthEnabled: boolean
   GitHubClientId: string
   GitHubClientSecret: string

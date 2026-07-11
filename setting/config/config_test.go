@@ -1,10 +1,13 @@
 package config
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type testConfigWithMap struct {
@@ -34,6 +37,32 @@ type testConfigWithJSONFields struct {
 	Items  []string          `json:"items"`
 	Nested nestedJSONConfig  `json:"nested"`
 	Name   string            `json:"name"`
+}
+
+type mutatingNormalizingConfig struct {
+	Values []string `json:"values"`
+	Valid  bool     `json:"valid"`
+}
+
+func (c *mutatingNormalizingConfig) NormalizeAndValidate() error {
+	if len(c.Values) > 0 {
+		c.Values[0] = "mutated"
+	}
+	if !c.Valid {
+		return errors.New("invalid config")
+	}
+	return nil
+}
+
+func TestConfigManagerValidationFailureDoesNotMutateNestedState(t *testing.T) {
+	manager := NewConfigManager()
+	cfg := &mutatingNormalizingConfig{Values: []string{"original"}, Valid: true}
+	manager.Register("normalizing", cfg)
+
+	require.NoError(t, manager.LoadFromDB(map[string]string{"normalizing.valid": "false"}))
+
+	require.Equal(t, []string{"original"}, cfg.Values)
+	require.True(t, cfg.Valid)
 }
 
 func TestUpdateConfigFromMap_MapReplacement(t *testing.T) {
