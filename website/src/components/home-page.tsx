@@ -3,8 +3,8 @@ import Link from "next/link";
 import { ArrowRight, BadgeDollarSign, BarChart3, Check, KeyRound, Link2, Server, ShieldCheck } from "lucide-react";
 import { HomeHealthTrends } from "@/components/home-health-trends";
 import { HomeModelsTable } from "@/components/home-models-table";
+import { HomeModelCloud } from "@/components/home-model-cloud";
 import { HomeSupport } from "@/components/home-support";
-import { HomePriceCompare } from "@/components/home-price-compare";
 import { SiteShell } from "@/components/site-shell";
 import { getCopy } from "@/lib/copy";
 import { getHomeCopy, type HomeCopy } from "@/lib/home-copy";
@@ -109,7 +109,7 @@ export async function HomePage(props: Props) {
             </div>
 
             <div className="landing-animate-fade-up flex w-full justify-center opacity-0 lg:col-span-5 lg:justify-end" style={{ animationDelay: "260ms" }}>
-              <HomePriceCompare copy={home.compare} rows={flagships} moreHref={localizePath("/models", props.locale)} />
+              <HomeModelCloud copy={home.compare} moreHref={localizePath("/models", props.locale)} />
             </div>
           </div>
         </section>
