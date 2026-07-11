@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,7 +13,9 @@ import (
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func setupRegistrationDomainRiskTest(t *testing.T) {
@@ -33,6 +36,91 @@ func setupRegistrationDomainRiskTest(t *testing.T) {
 		LOG_DB = originalLogDB
 		common.RedisEnabled = originalRedis
 	})
+}
+
+type registrationDomainSQLRecorder struct {
+	entries []string
+}
+
+func (r *registrationDomainSQLRecorder) Printf(format string, args ...any) {
+	r.entries = append(r.entries, fmt.Sprintf(format, args...))
+}
+
+func TestReleaseRegistrationDomainBlockWithTrustedDomainQuotesOptionKeyForMySQL(t *testing.T) {
+	const optionKey = "registration_security.trusted_email_domains"
+
+	originalDB := DB
+	originalRedis := common.RedisEnabled
+	originalKeyCol := commonKeyCol
+	originalConfig := config.GlobalConfig.ExportAllConfigs()
+	savedRegistrationConfig := make(map[string]string)
+	for key, value := range originalConfig {
+		if strings.HasPrefix(key, "registration_security.") {
+			savedRegistrationConfig[key] = value
+		}
+	}
+	common.OptionMapRWMutex.Lock()
+	optionMapWasNil := common.OptionMap == nil
+	if optionMapWasNil {
+		common.OptionMap = make(map[string]string)
+	}
+	originalOptionValue, hadOriginalOptionValue := common.OptionMap[optionKey]
+	common.OptionMapRWMutex.Unlock()
+
+	sqliteDB, err := gorm.Open(sqlite.Open(t.TempDir()+"/registration-risk-mysql-dry-run.db"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := sqliteDB.DB()
+	require.NoError(t, err)
+	recorder := &registrationDomainSQLRecorder{}
+	mysqlDB, err := gorm.Open(mysql.New(mysql.Config{
+		Conn:                      sqlDB,
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{
+		DryRun:               true,
+		DisableAutomaticPing: true,
+		Logger: logger.New(recorder, logger.Config{
+			LogLevel: logger.Info,
+		}),
+	})
+	require.NoError(t, err)
+
+	DB = mysqlDB
+	common.RedisEnabled = false
+	commonKeyCol = "`key`"
+	t.Cleanup(func() {
+		DB = originalDB
+		common.RedisEnabled = originalRedis
+		commonKeyCol = originalKeyCol
+		require.NoError(t, config.GlobalConfig.LoadFromDB(savedRegistrationConfig))
+		common.OptionMapRWMutex.Lock()
+		if optionMapWasNil {
+			common.OptionMap = nil
+		} else if hadOriginalOptionValue {
+			common.OptionMap[optionKey] = originalOptionValue
+		} else {
+			delete(common.OptionMap, optionKey)
+		}
+		common.OptionMapRWMutex.Unlock()
+		require.NoError(t, sqlDB.Close())
+	})
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"registration_security.domain_risk_window_hours": "24",
+		"registration_security.domain_risk_threshold":    "10",
+		optionKey: "[]",
+	}))
+
+	_, err = ReleaseRegistrationDomainBlockWithTrustedDomain(1, 99, true, time.Now().Unix(), "dry-run.example")
+	require.NoError(t, err)
+	var optionLockQuery string
+	for _, query := range recorder.entries {
+		if strings.Contains(query, "FROM `options`") && strings.Contains(query, "FOR UPDATE") {
+			optionLockQuery = query
+			break
+		}
+	}
+	require.NotEmpty(t, optionLockQuery)
+	require.Contains(t, optionLockQuery, "WHERE `key` =")
+	require.NotContains(t, optionLockQuery, "WHERE key =")
 }
 
 func seedDomainRiskUsers(t *testing.T, domain string, enabled int, disabled int, createdAt int64) []User {
