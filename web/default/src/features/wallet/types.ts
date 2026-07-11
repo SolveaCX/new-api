@@ -58,8 +58,6 @@ export type StripePaymentResponse = ApiResponse<{
   /** Bonus banner data for the embedded checkout dialog */
   topup_summary?: StripeTopupSummary
 }>
-export type AffiliateCodeResponse = ApiResponse<string>
-export type AffiliateTransferResponse = ApiResponse
 export type CreemPaymentResponse = ApiResponse<{ checkout_url: string }>
 export type WaffoPaymentResponse = ApiResponse<
   { payment_url?: string } | string
@@ -344,14 +342,6 @@ export interface PaddlePaymentRequest {
 export interface AmountRequest {
   /** Topup amount to calculate */
   amount: number
-}
-
-/**
- * Affiliate quota transfer request
- */
-export interface AffiliateTransferRequest {
-  /** Quota amount to transfer */
-  quota: number
 }
 
 /**

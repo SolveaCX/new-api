@@ -16,12 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// ============================================================================
-// Wallet Library Exports
-// ============================================================================
+import { createFileRoute } from '@tanstack/react-router'
+import { Invitations } from '@/features/invitations'
 
-export * from './format'
-export * from './payment'
-export * from './stripe-currency'
-export * from './stripe-payment-request'
-export * from './ui'
+export const Route = createFileRoute('/_authenticated/invite/')({
+  component: Invitations,
+})

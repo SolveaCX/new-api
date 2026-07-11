@@ -16,12 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// ============================================================================
-// Wallet Library Exports
-// ============================================================================
+import { type NavBadgeVariant } from '../types'
 
-export * from './format'
-export * from './payment'
-export * from './stripe-currency'
-export * from './stripe-payment-request'
-export * from './ui'
+export function getNavBadgeClassName(variant: NavBadgeVariant) {
+  if (variant === 'promotion') {
+    return 'bg-destructive text-destructive-foreground dark:bg-destructive dark:text-background group-data-[collapsible=icon]:hidden min-w-0 max-w-28 flex-1 truncate px-1 py-0 text-[10px] font-semibold tracking-tight'
+  }
+
+  return 'shrink-0 px-1 py-0 text-xs'
+}
+
+export function getNavItemTitleClassName(variant?: NavBadgeVariant) {
+  return variant === 'promotion'
+    ? 'min-w-0 shrink-0 truncate'
+    : 'min-w-0 flex-1 truncate'
+}

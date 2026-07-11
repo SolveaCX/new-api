@@ -1392,8 +1392,13 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "amount_usd": {
+                    "type": "number",
+                    "description": "Referral reward amount in USD. Preferred by the invitation page."
+                  },
                   "quota": {
-                    "type": "integer"
+                    "type": "integer",
+                    "description": "Legacy raw quota amount retained for older clients."
                   }
                 }
               }

@@ -98,6 +98,7 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self", controller.GetSelf)
+				selfRoute.GET("/self/invitations", controller.GetSelfInvitations)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.PUT("/self", controller.UpdateSelf)
 				selfRoute.DELETE("/self", controller.DeleteSelf)

@@ -16,14 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// ============================================================================
-// Affiliate Functions
-// ============================================================================
+import { describe, expect, test } from 'bun:test'
+import { type TFunction } from 'i18next'
+import { buildSidebarData } from './use-sidebar-data'
 
-/**
- * Generate affiliate registration link
- */
-export function generateAffiliateLink(affCode: string): string {
-  if (typeof window === 'undefined') return ''
-  return `${window.location.origin}/sign-up?aff=${affCode}`
-}
+const t = ((key: string) => key) as TFunction
+
+describe('buildSidebarData', () => {
+  test('highlights the invitation entry with localized credit copy', () => {
+    const personalGroup = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'personal'
+    )
+    const inviteItem = personalGroup?.items.find(
+      (item) => 'url' in item && item.url === '/invite'
+    )
+
+    expect(inviteItem).toMatchObject({
+      title: 'Invite',
+      badge: 'Earn More Credits!',
+      badgeVariant: 'promotion',
+    })
+  })
+})
