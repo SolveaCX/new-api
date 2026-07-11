@@ -378,7 +378,7 @@ func releaseRegistrationDomainBlock(blockID int, adminID int, restoreUsers bool,
 			if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
 				return err
 			}
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", option.Key).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, commonKeyCol+" = ?", option.Key).Error; err != nil {
 				return err
 			}
 			trustedDomains := system_setting.GetRegistrationSecuritySettings().TrustedEmailDomains
