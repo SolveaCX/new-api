@@ -3,6 +3,7 @@ import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
 import { LOCALES, type Locale, localizePath } from "@/lib/locales";
 import { getModelLandingPathnames } from "@/lib/model-landing";
 import { modelPublicPath } from "@/lib/model-public";
+import { getSkagLandingPathnames } from "@/lib/skag-landing";
 import { getPricingData, getTopVendors, getVendorName } from "@/lib/pricing";
 
 const base = "https://flatkey.ai";
@@ -65,6 +66,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/refund-policy", 0.3, "yearly"),
   ];
   const modelLandingEntries = getModelLandingPathnames().flatMap((pathname) => entry(pathname, 0.82, "daily"));
+  // Paid-search SKAG landing pages are English-only (no /[locale] variants),
+  // so restrict their sitemap entries and alternates to en.
+  const skagLandingEntries = getSkagLandingPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly", ["en"]));
   // Every live model gets its own public page (/models/<name>); include them so
   // search engines discover the full catalog, not just the curated landings.
   const landingSlugs = new Set(getModelLandingPathnames().map((pathname) => pathname.replace(/^\/models\//, "")));
@@ -113,6 +117,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...staticEntries,
     ...modelLandingEntries,
+    ...skagLandingEntries,
     ...modelPublicEntries,
     ...vendorEntries,
     ...categoryEntries,
