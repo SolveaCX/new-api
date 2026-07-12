@@ -134,7 +134,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaSubtitle:
         "One OpenAI-compatible key, prepaid billing, and bonus credit on your first top-up. Sign up in under a minute.",
     },
-    coverage: "GPT, Claude, Gemini, DeepSeek, Seedance and 500+ other models",
+    coverage: "GPT, Claude, Gemini, DeepSeek and 40+ other live models",
     modalityChat: "chat and completion",
     modalityImage: "image-generation",
     unitInput: "per 1M input tokens",
@@ -204,7 +204,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaTitle: "立即用 {model} 开发",
       ctaSubtitle: "一把 OpenAI 兼容 Key、预付计费、首充赠额。不到一分钟完成注册。",
     },
-    coverage: "GPT、Claude、Gemini、DeepSeek、Seedance 等 500+ 模型",
+    coverage: "GPT、Claude、Gemini、DeepSeek 等 40+ 个在线模型",
     modalityChat: "对话与补全",
     modalityImage: "图像生成",
     unitInput: "/100 万 tokens",
@@ -275,7 +275,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaSubtitle:
         "Una clave compatible con OpenAI, facturación prepago y crédito de bonificación en tu primera recarga. Regístrate en menos de un minuto.",
     },
-    coverage: "GPT, Claude, Gemini, DeepSeek, Seedance y más de 500 modelos",
+    coverage: "GPT, Claude, Gemini, DeepSeek y 40+ modelos activos",
     modalityChat: "de chat y completado",
     modalityImage: "de generación de imágenes",
     unitInput: "por 1M de tokens de entrada",
@@ -346,7 +346,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaSubtitle:
         "Une clé compatible OpenAI, une facturation prépayée et un crédit bonus dès votre première recharge. Inscrivez-vous en moins d'une minute.",
     },
-    coverage: "GPT, Claude, Gemini, DeepSeek, Seedance et plus de 500 modèles",
+    coverage: "GPT, Claude, Gemini, DeepSeek et 40+ modèles actifs",
     modalityChat: "de chat et de complétion",
     modalityImage: "de génération d'images",
     unitInput: "par million de tokens en entrée",
@@ -417,7 +417,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaSubtitle:
         "Uma chave compatível com OpenAI, cobrança pré-paga e crédito de bônus na primeira recarga. Cadastre-se em menos de um minuto.",
     },
-    coverage: "GPT, Claude, Gemini, DeepSeek, Seedance e mais de 500 modelos",
+    coverage: "GPT, Claude, Gemini, DeepSeek e 40+ modelos ativos",
     modalityChat: "de chat e conclusão",
     modalityImage: "de geração de imagens",
     unitInput: "por 1M de tokens de entrada",
@@ -488,7 +488,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaSubtitle:
         "Один ключ, совместимый с OpenAI, предоплатная тарификация и бонус при первом пополнении. Регистрация меньше чем за минуту.",
     },
-    coverage: "GPT, Claude, Gemini, DeepSeek, Seedance и ещё 500+ моделей",
+    coverage: "GPT, Claude, Gemini, DeepSeek и ещё 40+ активных моделей",
     modalityChat: "для чата и завершений",
     modalityImage: "для генерации изображений",
     unitInput: "за 1М входных токенов",
@@ -558,7 +558,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaTitle: "{model} で開発を始める",
       ctaSubtitle: "OpenAI互換キー1本、前払い課金、初回チャージ特典。1分以内に登録できます。",
     },
-    coverage: "GPT、Claude、Gemini、DeepSeek、Seedance など500以上のモデル",
+    coverage: "GPT、Claude、Gemini、DeepSeek など40+の稼働中モデル",
     modalityChat: "チャット・補完",
     modalityImage: "画像生成",
     unitInput: "入力100万トークンあたり ",
@@ -629,7 +629,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaSubtitle:
         "Một key tương thích OpenAI, thanh toán trả trước và tín dụng thưởng cho lần nạp đầu. Đăng ký trong chưa đầy một phút.",
     },
-    coverage: "GPT, Claude, Gemini, DeepSeek, Seedance và hơn 500 mô hình khác",
+    coverage: "GPT, Claude, Gemini, DeepSeek và 40+ mô hình đang hoạt động",
     modalityChat: "trò chuyện và hoàn thành",
     modalityImage: "tạo ảnh",
     unitInput: "cho mỗi 1M token đầu vào",
@@ -700,7 +700,7 @@ const STR: Record<Locale, SeoStrings> = {
       ctaSubtitle:
         "Ein OpenAI-kompatibler Key, Prepaid-Abrechnung und Bonusguthaben bei der ersten Aufladung. Registrierung in unter einer Minute.",
     },
-    coverage: "GPT, Claude, Gemini, DeepSeek, Seedance und über 500 weitere Modelle",
+    coverage: "GPT, Claude, Gemini, DeepSeek und 40+ aktive Modelle",
     modalityChat: "Chat- und Completion-",
     modalityImage: "Bildgenerierungs-",
     unitInput: "pro 1M Eingabe-Tokens",

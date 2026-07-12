@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildModelExampleCurl,
+  classifyModelHealthStatus,
   classifyPublicModel,
   modelPublicPath,
   normalizeModelKey,
@@ -73,6 +74,19 @@ describe("model kind classification", () => {
     expect(classifyPublicModel(model({ model_name: "gpt-5.4" }))).toBe("chat");
     expect(classifyPublicModel(model({ model_name: "glm-5.2", supported_endpoint_types: ["anthropic"] }))).toBe("chat");
     expect(classifyPublicModel(model({ model_name: "mystery-model", supported_endpoint_types: [] }))).toBe("chat");
+  });
+});
+
+describe("model health status", () => {
+  test("treats healthy production success rates as operational", () => {
+    expect(classifyModelHealthStatus(99.33)).toBe("operational");
+    expect(classifyModelHealthStatus(96.8)).toBe("operational");
+  });
+
+  test("reserves degraded for material reliability failures", () => {
+    expect(classifyModelHealthStatus(94.99)).toBe("degraded");
+    expect(classifyModelHealthStatus(56.4)).toBe("degraded");
+    expect(classifyModelHealthStatus(undefined)).toBeNull();
   });
 });
 
