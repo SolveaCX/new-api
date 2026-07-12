@@ -252,15 +252,19 @@ export function ModelLandingPage({ config, locale, liveModels = [] }: Props) {
             </div>
             <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-7 text-zinc-700 dark:text-zinc-300">
               <span className="text-muted-foreground">{t("# Your existing OpenAI code:")}</span>
-              {"\n"}client = OpenAI(
+              {"\n"}from openai import OpenAI
+              {"\n\n"}client = OpenAI(
               {"\n"}{"  "}
               <span className="border-l-2 border-violet-600 bg-violet-500/[0.08] pl-2">
-                base_url=<span className="text-emerald-600">&quot;https://router.flatkey.ai/v1&quot;</span>
+                base_url=<span className="text-emerald-600">&quot;https://router.flatkey.ai/v1&quot;</span>,
               </span>
               {"\n"}{"  "}api_key=<span className="text-emerald-600">&quot;sk-flatkey-...&quot;</span>,
               {"\n"})
-              {"\n"}client.chat.completions.create(model=
-              <span className="text-emerald-600">&quot;{sdkExampleModelId}&quot;</span>, ...)
+              {"\n"}response = client.chat.completions.create(
+              {"\n"}{"  "}model=<span className="text-emerald-600">&quot;{sdkExampleModelId}&quot;</span>,
+              {"\n"}{"  "}messages=[{"{"}&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello&quot;{"}"}],
+              {"\n"})
+              {"\n"}print(response.choices[0].message.content)
             </pre>
           </div>
 
