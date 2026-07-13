@@ -99,10 +99,12 @@ return redis.call('DECR', key)
 type ChannelConcurrencyLease struct {
 	ChannelID int
 
-	token       string
-	useRedis    bool
-	renewCancel context.CancelFunc
-	released    atomic.Bool
+	token         string
+	useRedis      bool
+	renewCancel   context.CancelFunc
+	renewStopOnce sync.Once
+	releaseMu     sync.Mutex
+	released      atomic.Bool
 }
 
 type ChannelConcurrencyLoad struct {
@@ -152,6 +154,10 @@ var (
 		}
 		return interval
 	}
+	removeRedisChannelConcurrencySlot = func(ctx context.Context, channelID int, token string) error {
+		return common.RDB.ZRem(ctx, channelConcurrencyRedisKey(channelID), token).Err()
+	}
+	channelConcurrencyReleaseBackoffs = []time.Duration{25 * time.Millisecond, 75 * time.Millisecond}
 )
 
 func TryAcquireChannelConcurrency(ctx context.Context, channel *model.Channel) (*ChannelConcurrencyLease, bool, error) {
@@ -375,42 +381,70 @@ func ReleaseChannelConcurrency(ctx context.Context, lease *ChannelConcurrencyLea
 	if lease == nil {
 		return nil
 	}
-	if !lease.released.CompareAndSwap(false, true) {
+
+	lease.releaseMu.Lock()
+	defer lease.releaseMu.Unlock()
+	if lease.released.Load() {
 		return nil
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 
 	if lease.useRedis {
 		if common.RDB == nil {
-			lease.released.Store(false)
-			if lease.renewCancel != nil {
-				lease.renewCancel()
-			}
+			lease.stopRenewal()
 			return fmt.Errorf("release channel concurrency in redis failed for channel %d: redis client is nil", lease.ChannelID)
 		}
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		err := common.RDB.ZRem(releaseCtx, channelConcurrencyRedisKey(lease.ChannelID), lease.token).Err()
-		if err != nil {
-			lease.released.Store(false)
-			if lease.renewCancel != nil {
-				lease.renewCancel()
-			}
-			return err
+		if err := releaseRedisChannelConcurrencyWithRetry(releaseCtx, lease); err != nil {
+			lease.stopRenewal()
+			return fmt.Errorf("release channel concurrency in redis failed for channel %d: %w", lease.ChannelID, err)
 		}
-		if lease.renewCancel != nil {
-			lease.renewCancel()
-		}
+		lease.released.Store(true)
+		lease.stopRenewal()
 		return nil
 	}
 
 	releaseMemoryChannelConcurrency(lease.ChannelID, lease.token)
-	if lease.renewCancel != nil {
-		lease.renewCancel()
-	}
+	lease.released.Store(true)
+	lease.stopRenewal()
 	return nil
+}
+
+func releaseRedisChannelConcurrencyWithRetry(ctx context.Context, lease *ChannelConcurrencyLease) error {
+	var err error
+	for attempt := 0; attempt <= len(channelConcurrencyReleaseBackoffs); attempt++ {
+		err = removeRedisChannelConcurrencySlot(ctx, lease.ChannelID, lease.token)
+		if err == nil {
+			return nil
+		}
+		if attempt == len(channelConcurrencyReleaseBackoffs) {
+			break
+		}
+
+		backoff := channelConcurrencyReleaseBackoffs[attempt]
+		if backoff <= 0 {
+			continue
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+func (lease *ChannelConcurrencyLease) stopRenewal() {
+	if lease == nil {
+		return
+	}
+	lease.renewStopOnce.Do(func() {
+		if lease.renewCancel != nil {
+			lease.renewCancel()
+		}
+	})
 }
 
 func EnsureChannelConcurrencyForContext(c *gin.Context, channel *model.Channel) (bool, error) {
@@ -493,9 +527,11 @@ func ReleaseChannelConcurrencyForContext(c *gin.Context) error {
 	if lease == nil {
 		return nil
 	}
+	if err := ReleaseChannelConcurrency(context.Background(), lease); err != nil {
+		return err
+	}
 	c.Set(string(constant.ContextKeyChannelConcurrencyLease), nil)
-
-	return ReleaseChannelConcurrency(context.Background(), lease)
+	return nil
 }
 
 func getChannelConcurrencyLeaseForContext(c *gin.Context) *ChannelConcurrencyLease {
