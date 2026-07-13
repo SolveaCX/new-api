@@ -341,6 +341,52 @@ func TestStripeCheckoutSessionKeepsAccountEmailVerbatim(t *testing.T) {
 	require.Nil(t, params.AllowPromotionCodes, "promotion code field must stay hidden on checkout")
 }
 
+func TestStripeCheckoutSessionRequestsThreeDSecure(t *testing.T) {
+	params := buildStripeCheckoutSessionParams(
+		"trade_3ds",
+		"",
+		"buyer@example.com",
+		"price_123",
+		1,
+		"USD",
+		"https://example.com/success",
+		"https://example.com/cancel",
+		false,
+		false,
+		false,
+		"",
+	)
+
+	require.NotNil(t, params.PaymentMethodOptions, "card options must always be set for the 3DS request")
+	require.NotNil(t, params.PaymentMethodOptions.Card)
+	require.NotNil(t, params.PaymentMethodOptions.Card.RequestThreeDSecure)
+	require.Equal(t, "any", *params.PaymentMethodOptions.Card.RequestThreeDSecure)
+	require.Nil(t, params.PaymentMethodOptions.Card.SetupFutureUsage, "plain top-ups must not bind the card")
+
+	// saveCard top-ups keep the off-session binding alongside the 3DS request.
+	params = buildStripeCheckoutSessionParams(
+		"trade_3ds_save",
+		"",
+		"buyer@example.com",
+		"price_123",
+		1,
+		"USD",
+		"https://example.com/success",
+		"https://example.com/cancel",
+		false,
+		true,
+		false,
+		"",
+	)
+
+	require.NotNil(t, params.PaymentMethodOptions)
+	require.NotNil(t, params.PaymentMethodOptions.Card)
+	require.NotNil(t, params.PaymentMethodOptions.Card.RequestThreeDSecure)
+	require.Equal(t, "any", *params.PaymentMethodOptions.Card.RequestThreeDSecure)
+	require.NotNil(t, params.PaymentMethodOptions.Card.SetupFutureUsage)
+	require.Equal(t, "off_session", *params.PaymentMethodOptions.Card.SetupFutureUsage)
+}
+
 func TestStripeCheckoutSessionCarriesSubmitMessage(t *testing.T) {
 	params := buildStripeCheckoutSessionParams(
 		"trade_bonus",
