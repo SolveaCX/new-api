@@ -1540,21 +1540,6 @@ func genStripeLink(referenceId string, customerId string, email string, checkout
 
 	params := buildStripeCheckoutSessionParams(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, embedded, submitMessage)
 
-	// For onboarding promo top-ups, save the card while paying so it can be charged
-	// off-session later (postpaid auto-charge). Plain wallet top-ups don't save the card.
-	// Scoped to payment_method_options.card (not payment_intent_data.setup_future_usage):
-	// a top-level setup_future_usage makes Stripe hide every payment method that can't be
-	// saved for off-session reuse (Alipay/Pix/UPI/WeChat...), leaving card-only checkouts.
-	// Card payments still bind the card; local-method payments simply skip binding
-	// (backfillCardFingerprintFromTopUp tolerates the missing card).
-	if saveCard {
-		params.PaymentMethodOptions = &stripe.CheckoutSessionPaymentMethodOptionsParams{
-			Card: &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
-				SetupFutureUsage: stripe.String("off_session"),
-			},
-		}
-	}
-
 	result, err := session.New(params)
 	if err != nil {
 		return nil, err
@@ -1701,6 +1686,27 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 	// so the charge is attributable to the product they bought.
 	params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
 		StatementDescriptorSuffix: stripe.String("FLATKEY"),
+	}
+
+	// Ask issuers to run 3D Secure whenever the card is enrolled ("any"): card-testing
+	// bots holding stolen numbers can't pass the cardholder challenge, and liability for
+	// fraudulent-use disputes shifts to the issuer. Enrolled cards mostly clear through a
+	// frictionless flow, so legitimate friction stays minimal.
+	cardOptions := &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
+		RequestThreeDSecure: stripe.String(string(stripe.CheckoutSessionPaymentMethodOptionsCardRequestThreeDSecureAny)),
+	}
+	// For onboarding promo top-ups, save the card while paying so it can be charged
+	// off-session later (postpaid auto-charge). Plain wallet top-ups don't save the card.
+	// Scoped to payment_method_options.card (not payment_intent_data.setup_future_usage):
+	// a top-level setup_future_usage makes Stripe hide every payment method that can't be
+	// saved for off-session reuse (Alipay/Pix/UPI/WeChat...), leaving card-only checkouts.
+	// Card payments still bind the card; local-method payments simply skip binding
+	// (backfillCardFingerprintFromTopUp tolerates the missing card).
+	if saveCard {
+		cardOptions.SetupFutureUsage = stripe.String("off_session")
+	}
+	params.PaymentMethodOptions = &stripe.CheckoutSessionPaymentMethodOptionsParams{
+		Card: cardOptions,
 	}
 
 	if submitMessage != "" {

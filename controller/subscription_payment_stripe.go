@@ -125,6 +125,14 @@ func genStripeSubscriptionLink(referenceId string, customerId string, email stri
 			},
 		},
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		// Same 3DS posture as top-up checkouts (see buildStripeCheckoutSessionParams):
+		// request the cardholder challenge whenever the card is enrolled so stolen-card
+		// traffic can't open subscriptions, with issuer-side liability shift.
+		PaymentMethodOptions: &stripe.CheckoutSessionPaymentMethodOptionsParams{
+			Card: &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
+				RequestThreeDSecure: stripe.String(string(stripe.CheckoutSessionPaymentMethodOptionsCardRequestThreeDSecureAny)),
+			},
+		},
 	}
 
 	if "" == customerId {
