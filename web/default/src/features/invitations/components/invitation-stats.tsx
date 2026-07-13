@@ -21,6 +21,7 @@ interface InvitationStatsProps {
 export function InvitationStats(props: InvitationStatsProps) {
   const { t } = useTranslation()
   const pending = props.loading || props.summary === null
+  const hasPendingReferrals = (props.summary?.pending_count ?? 0) > 0
   const stats = [
     {
       label: t('Total earned'),
@@ -41,8 +42,10 @@ export function InvitationStats(props: InvitationStatsProps) {
     },
     {
       label: t('Status'),
-      value: t('Active'),
-      description: t('Tracking'),
+      value: hasPendingReferrals ? t('Active') : '--',
+      description: hasPendingReferrals
+        ? t('Tracking')
+        : t('Share your link to start earning'),
     },
   ]
 
