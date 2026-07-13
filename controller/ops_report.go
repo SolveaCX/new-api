@@ -93,6 +93,8 @@ type opsPayerRow struct {
 	Email        string   `json:"email"`
 	PaidUSD      float64  `json:"paid_usd"`
 	Orders       int      `json:"orders"`
+	RefundedUSD  float64  `json:"refunded_usd"`
+	RefundedCnt  int      `json:"refunded_cnt"`
 	FirstPaidAt  int64    `json:"first_paid_at"`
 	RegisteredAt int64    `json:"registered_at"`
 	Campaign     string   `json:"campaign"`
@@ -201,17 +203,18 @@ func GetOpsReport(c *gin.Context) {
 }
 
 type opsUserAgg struct {
-	user       *model.OpsPlgUser
-	logStats   *model.OpsUserLogStats
-	tokenStats *model.OpsUserTokenStats
-	campaign   string
-	keyword    string
-	lng        string
-	landing    string
-	referrer   string
-	matchType  string
-	paidOrders []*model.OpsTopUp
-	hasIntent  bool
+	user           *model.OpsPlgUser
+	logStats       *model.OpsUserLogStats
+	tokenStats     *model.OpsUserTokenStats
+	campaign       string
+	keyword        string
+	lng            string
+	landing        string
+	referrer       string
+	matchType      string
+	paidOrders     []*model.OpsTopUp
+	refundedOrders []*model.OpsTopUp
+	hasIntent      bool
 }
 
 // opsIPCountry resolves an IP to an ISO country code via the embedded iploc
@@ -298,6 +301,9 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 		}
 		if t.Status == common.TopUpStatusSuccess {
 			a.paidOrders = append(a.paidOrders, t)
+		}
+		if t.Status == common.TopUpStatusRefunded {
+			a.refundedOrders = append(a.refundedOrders, t)
 		}
 	}
 
@@ -781,14 +787,20 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 	var payers []opsPayerRow
 	total := 0.0
 	for _, a := range aggs {
-		if len(a.paidOrders) == 0 {
+		if len(a.paidOrders) == 0 && len(a.refundedOrders) == 0 {
 			continue
 		}
 		paid := a.paidUSD()
 		total += paid
+		refunded := 0.0
+		for _, t := range a.refundedOrders {
+			if usd, ok := opsTopUpUSD(t); ok {
+				refunded += usd
+			}
+		}
 		currencySet := map[string]bool{}
 		var currencies []string
-		for _, t := range a.paidOrders {
+		for _, t := range append(append([]*model.OpsTopUp(nil), a.paidOrders...), a.refundedOrders...) {
 			ccy := strings.ToUpper(t.PaymentCurrency)
 			if ccy == "" {
 				ccy = "USD"
@@ -802,6 +814,13 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		if a.logStats != nil && a.logStats.LastRequestAt > lastActive {
 			lastActive = a.logStats.LastRequestAt
 		}
+		// Refunded-only payers (e.g. fraud cleanup) keep their first charge time.
+		firstPaidAt := int64(0)
+		if len(a.paidOrders) > 0 {
+			firstPaidAt = a.paidOrders[0].CreateTime
+		} else if len(a.refundedOrders) > 0 {
+			firstPaidAt = a.refundedOrders[0].CreateTime
+		}
 		payers = append(payers, opsPayerRow{
 			UserId:       a.user.Id,
 			Username:     a.user.Username,
@@ -809,7 +828,9 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 			Email:        a.user.Email,
 			PaidUSD:      paid,
 			Orders:       len(a.paidOrders),
-			FirstPaidAt:  a.paidOrders[0].CreateTime,
+			RefundedUSD:  refunded,
+			RefundedCnt:  len(a.refundedOrders),
+			FirstPaidAt:  firstPaidAt,
 			RegisteredAt: a.user.CreatedAt,
 			Campaign:     a.campaign,
 			Keyword:      a.keyword,

@@ -5265,6 +5265,7 @@
     "Paying Customers": "付费客户",
     "Orders": "订单数",
     "First Paid At": "首次付费时间",
+    "Refunded": "已退款",
     "Generated at": "生成时间",
     "{{count}} days": "{{count}} 天",
     "{{count}} paying users, {{amount}} total": "共 {{count}} 个付费用户，合计 {{amount}}",
