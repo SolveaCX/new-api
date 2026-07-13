@@ -114,6 +114,57 @@ type prometheusLockedBucket struct {
 	retired       bool
 }
 
+type prometheusChannelAttemptKey struct {
+	status        string
+	errorCategory string
+}
+
+type prometheusChannelBucket struct {
+	mu                 sync.Mutex
+	channelName        string
+	attempts           map[prometheusChannelAttemptKey]int64
+	durationBuckets    []int64
+	durationSumSeconds float64
+	durationCount      int64
+	ttftSumSeconds     float64
+	ttftCount          int64
+	lastUpdatedAt      int64
+	retired            bool
+}
+
+type prometheusChannelSnapshot struct {
+	channelID          int
+	channelName        string
+	attempts           map[prometheusChannelAttemptKey]int64
+	durationBuckets    []int64
+	durationSumSeconds float64
+	durationCount      int64
+	ttftSumSeconds     float64
+	ttftCount          int64
+}
+
+type prometheusChannelModelKey struct {
+	channelID int
+	model     string
+}
+
+type prometheusChannelModelBucket struct {
+	mu            sync.Mutex
+	attempts      map[string]int64
+	inputTokens   int64
+	outputTokens  int64
+	lastUpdatedAt int64
+	retired       bool
+}
+
+type prometheusChannelModelSnapshot struct {
+	channelID    int
+	model        string
+	attempts     map[string]int64
+	inputTokens  int64
+	outputTokens int64
+}
+
 func (b *atomicBucket) add(sample Sample) {
 	b.requestCount.Add(1)
 	if sample.Success {
@@ -260,4 +311,161 @@ func (c prometheusCounters) isZero() bool {
 
 func (c *prometheusCounters) add(other prometheusCounters) {
 	c.count += other.count
+}
+
+func newPrometheusChannelBucket() *prometheusChannelBucket {
+	return &prometheusChannelBucket{
+		attempts:        make(map[prometheusChannelAttemptKey]int64),
+		durationBuckets: make([]int64, len(prometheusChannelDurationBucketsSeconds)),
+	}
+}
+
+func (b *prometheusChannelBucket) addAttempt(
+	channelName string,
+	status string,
+	errorCategory string,
+	durationSeconds float64,
+	ttftSeconds float64,
+	hasTtft bool,
+) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return false
+	}
+	b.channelName = channelName
+	b.attempts[prometheusChannelAttemptKey{status: status, errorCategory: errorCategory}]++
+	b.durationSumSeconds += durationSeconds
+	b.durationCount++
+	for i, upperBound := range prometheusChannelDurationBucketsSeconds {
+		if durationSeconds <= upperBound {
+			b.durationBuckets[i]++
+		}
+	}
+	if hasTtft {
+		b.ttftSumSeconds += ttftSeconds
+		b.ttftCount++
+	}
+	b.lastUpdatedAt = time.Now().UnixNano()
+	return true
+}
+
+func (b *prometheusChannelBucket) snapshot(channelID int) prometheusChannelSnapshot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return prometheusChannelSnapshot{}
+	}
+	attempts := make(map[prometheusChannelAttemptKey]int64, len(b.attempts))
+	for key, count := range b.attempts {
+		attempts[key] = count
+	}
+	return prometheusChannelSnapshot{
+		channelID:          channelID,
+		channelName:        b.channelName,
+		attempts:           attempts,
+		durationBuckets:    append([]int64(nil), b.durationBuckets...),
+		durationSumSeconds: b.durationSumSeconds,
+		durationCount:      b.durationCount,
+		ttftSumSeconds:     b.ttftSumSeconds,
+		ttftCount:          b.ttftCount,
+	}
+}
+
+func (b *prometheusChannelBucket) retireIfIdle(cutoffUnixNano int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return true
+	}
+	if b.lastUpdatedAt == 0 || b.lastUpdatedAt >= cutoffUnixNano {
+		return false
+	}
+	b.retired = true
+	return true
+}
+
+func (s prometheusChannelSnapshot) seriesCount() int {
+	if s.durationCount == 0 {
+		return 0
+	}
+	count := 1 + len(s.attempts) + len(prometheusChannelDurationBucketsSeconds) + 3
+	if s.ttftCount > 0 {
+		count += 2
+	}
+	return count
+}
+
+func newPrometheusChannelModelBucket() *prometheusChannelModelBucket {
+	return &prometheusChannelModelBucket{attempts: make(map[string]int64)}
+}
+
+func (b *prometheusChannelModelBucket) addAttempt(status string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return false
+	}
+	b.attempts[status]++
+	b.lastUpdatedAt = time.Now().UnixNano()
+	return true
+}
+
+func (b *prometheusChannelModelBucket) addTokens(inputTokens int64, outputTokens int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return false
+	}
+	if inputTokens > 0 {
+		b.inputTokens += inputTokens
+	}
+	if outputTokens > 0 {
+		b.outputTokens += outputTokens
+	}
+	b.lastUpdatedAt = time.Now().UnixNano()
+	return true
+}
+
+func (b *prometheusChannelModelBucket) snapshot(key prometheusChannelModelKey) prometheusChannelModelSnapshot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return prometheusChannelModelSnapshot{}
+	}
+	attempts := make(map[string]int64, len(b.attempts))
+	for status, count := range b.attempts {
+		attempts[status] = count
+	}
+	return prometheusChannelModelSnapshot{
+		channelID:    key.channelID,
+		model:        key.model,
+		attempts:     attempts,
+		inputTokens:  b.inputTokens,
+		outputTokens: b.outputTokens,
+	}
+}
+
+func (b *prometheusChannelModelBucket) retireIfIdle(cutoffUnixNano int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.retired {
+		return true
+	}
+	if b.lastUpdatedAt == 0 || b.lastUpdatedAt >= cutoffUnixNano {
+		return false
+	}
+	b.retired = true
+	return true
+}
+
+func (s prometheusChannelModelSnapshot) seriesCount() int {
+	count := len(s.attempts)
+	if s.inputTokens > 0 {
+		count++
+	}
+	if s.outputTokens > 0 {
+		count++
+	}
+	return count
 }
