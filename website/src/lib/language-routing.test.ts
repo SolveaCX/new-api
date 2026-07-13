@@ -52,6 +52,12 @@ describe("language routing", () => {
     expect(getLanguageRedirectPath({ pathname: "/install.sh", method: "GET", acceptLanguage: "ja" })).toBeNull();
   });
 
+  test("does not localize physical single-locale market routes", () => {
+    expect(getLanguageRedirectPath({ pathname: "/br", method: "GET", acceptLanguage: "pt-BR" })).toBeNull();
+    expect(getLanguageRedirectPath({ pathname: "/in", method: "GET", acceptLanguage: "hi-IN" })).toBeNull();
+    expect(getLanguageRedirectPath({ pathname: "/id-market", method: "GET", acceptLanguage: "id-ID" })).toBeNull();
+  });
+
   test("detects search and AI crawlers", () => {
     const bots = [
       "Googlebot/2.1",

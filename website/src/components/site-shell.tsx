@@ -6,6 +6,8 @@ import type { Locale } from "@/lib/locales";
 type Props = {
   locale: Locale;
   pathname: string;
+  /** Single-locale routes (market pages) have no localized siblings — the switcher would link to 404s. */
+  hideLanguageSwitcher?: boolean;
   children: ReactNode;
 };
 
@@ -18,6 +20,7 @@ export function SiteShell(props: Props) {
         locale={props.locale}
         pathname={props.pathname}
         languageCookieDomain={languageCookieDomain}
+        hideLanguageSwitcher={props.hideLanguageSwitcher}
       />
       <main>{props.children}</main>
       <SiteFooter locale={props.locale} />

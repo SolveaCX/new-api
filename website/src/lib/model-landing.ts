@@ -1,4 +1,5 @@
 import type { Locale } from "./locales";
+import { withIdFallback } from "@/lib/locales";
 import type { PricingModel } from "./pricing";
 
 export type ModelPriceRow = {
@@ -437,8 +438,10 @@ const en: Record<ModelLandingKey, string> = {
 
 // Non-English dictionaries may lag behind the union: modelLandingCopy falls
 // back to the English entry (then the key itself), so new keys only require
-// an English translation.
-const translations: Record<Locale, Partial<Record<ModelLandingKey, string>>> = {
+// an English translation. `id` falls back to English via withIdFallback.
+const translations: Record<Locale, Partial<Record<ModelLandingKey, string>>> = withIdFallback<
+  Partial<Record<ModelLandingKey, string>>
+>({
   en,
   zh: {
     "↓ Top up $200, get $300 — stretch your token budget 1.5×": "↓ 充 $200 到账 $300 —— token 预算多 50%",
@@ -912,7 +915,7 @@ const translations: Record<Locale, Partial<Record<ModelLandingKey, string>>> = {
     "Yes. Prepaid balance, usage analytics, and one invoice keep spend bounded.": "Ja. Prepaid-Guthaben, Nutzungsanalyse und eine Rechnung halten Kosten begrenzt.",
     "50% off": "50% Rabatt",
   },
-};
+});
 
 export function modelLandingCopy(locale: Locale, key: ModelLandingKey, vars: Record<string, string> = {}) {
   let value = translations[locale][key] ?? translations.en[key] ?? key;

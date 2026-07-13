@@ -1,4 +1,4 @@
-import type { Locale } from "./locales";
+import { type Locale, withIdFallback } from "./locales";
 import { BLOG_COPY, type BlogCopy } from "./blog-copy";
 
 type Copy = {
@@ -105,7 +105,7 @@ export type HomeTerminalCopy = Copy["home"]["terminal"];
 
 type BaseCopy = Omit<Copy, "blog">;
 
-const copies: Record<Locale, BaseCopy> = {
+const copies: Record<Locale, BaseCopy> = withIdFallback({
   en: {
     nav: {
       pricing: "Pricing",
@@ -1339,7 +1339,7 @@ const copies: Record<Locale, BaseCopy> = {
       projectAttributionSuffix: "AI-API-Gateway und Plattform für Modellbetrieb.",
     },
   },
-};
+});
 
 export function getCopy(locale: Locale): Copy {
   const resolvedLocale = copies[locale] ? locale : "en";

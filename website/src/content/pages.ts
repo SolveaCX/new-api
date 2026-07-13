@@ -1,4 +1,5 @@
 import type { Locale } from "@/lib/locales";
+import { withIdFallback } from "@/lib/locales";
 import { getDefaultLegalDocument, type LegalDocumentKind } from "./legal/default-documents";
 
 type PageContent = {
@@ -64,7 +65,7 @@ const generic: Record<string, Omit<PageContent, "eyebrow">> = {
 };
 
 
-const localizedPageCopy: Record<Locale, Record<keyof typeof generic, { title: string; description: string }>> = {
+const localizedPageCopy: Record<Locale, Record<keyof typeof generic, { title: string; description: string }>> =withIdFallback({
   en: {
     pricing: { title: "Transparent AI model pricing", description: "Compare model access, routing, and billing options for production AI workloads on flatkey.ai." },
     rankings: { title: "AI model rankings and market signals", description: "Explore model availability, usage trends, and operational signals for teams choosing production AI models." },
@@ -146,7 +147,7 @@ const localizedPageCopy: Record<Locale, Record<keyof typeof generic, { title: st
     sla: { title: "Service-Level-Agreement", description: "Prüfe Verfügbarkeitsumfang, Vorfallbehandlung, Wartung, Ausnahmen, Supportprozess und Abhilfemaßnahmen von flatkey.ai." },
     "refund-policy": { title: "Rückerstattungsrichtlinie", description: "Prüfe, wie flatkey.ai Rückerstattungsanspruch, ungenutztes Guthaben, verbrauchte API-Nutzung, Doppelbuchungen, Streitfälle, Steuern und Supportanfragen behandelt." },
   },
-};
+});
 
 const legalDocumentByPage: Partial<Record<keyof typeof generic, LegalDocumentKind>> = {
   terms: "terms",
@@ -163,7 +164,7 @@ function getMarkdownTitle(markdown: string): string | undefined {
     .trim();
 }
 
-const eyebrowByLocale: Record<Locale, string> = {
+const eyebrowByLocale: Record<Locale, string> =withIdFallback({
   en: "Official website",
   zh: "官方网站",
   es: "Sitio oficial",
@@ -173,7 +174,7 @@ const eyebrowByLocale: Record<Locale, string> = {
   ja: "公式サイト",
   vi: "Trang chính thức",
   de: "Offizielle Website",
-};
+});
 
 export type PublicPageKey = keyof typeof generic;
 

@@ -1,4 +1,5 @@
 import { modelIconKey } from "@/lib/home-models";
+import { withIdFallback } from "@/lib/locales";
 import type { Locale } from "@/lib/locales";
 import {
   discountedPriceUsd,
@@ -129,7 +130,7 @@ export type ModelPublicPriceRow = {
   discounted: string;
 };
 
-export const MODEL_PUBLIC_COPY: Record<Locale, ModelPublicCopy> = {
+export const MODEL_PUBLIC_COPY: Record<Locale, ModelPublicCopy> = withIdFallback({
   en: {
     successRate: "30-day success rate",
     stackedDiscount: "Stacked discount",
@@ -382,7 +383,7 @@ export const MODEL_PUBLIC_COPY: Record<Locale, ModelPublicCopy> = {
     noData: "Noch nicht genug Daten",
     backToModels: "Alle Modelle",
   },
-};
+});
 
 // Server-side view model for the public page. Strike-through = official
 // vendor price; hero = after both discount layers (best group ratio, then

@@ -3,7 +3,7 @@
 import { ArrowRight, BadgeCheck, Clock3, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import type { Locale } from "@/lib/locales";
+import { type Locale, withIdFallback } from "@/lib/locales";
 
 const OFFER_DELAY_MS = 5_000;
 const OFFER_DURATION_SECONDS = 10 * 60;
@@ -21,7 +21,7 @@ type OfferModalCopy = {
   reopenLabel: (countdown: string) => string;
 };
 
-export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> = {
+export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   en: {
     timerLabel: "Limited offer",
     title: "Recharge USD20, get USD5 bonus.",
@@ -130,7 +130,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> = {
     closeLabel: "Zeitlich begrenztes Angebot schließen",
     reopenLabel: (countdown) => `Zeitlich begrenztes Angebot erneut öffnen, ${countdown} verbleibend`,
   },
-};
+});
 
 export function shouldShowOfferModal(elapsedMs: number) {
   return elapsedMs >= OFFER_DELAY_MS;

@@ -7,7 +7,7 @@ import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { NotificationPopover } from "@/components/notification-popover";
 import { getCopy } from "@/lib/copy";
-import { type Locale, localizePath, stripLocale } from "@/lib/locales";
+import { type Locale, localizePath, stripLocale, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +18,7 @@ const useCaseItems = [
   { href: "/use-case/claude-code", label: "Claude Code" },
   { href: "/use-case/image-buddy", label: "Image Buddy" },
 ];
-const useCaseLabelByLocale: Record<Locale, string> = {
+const useCaseLabelByLocale: Record<Locale, string> =withIdFallback({
   en: "Use Case",
   zh: "使用场景",
   es: "Casos de uso",
@@ -28,12 +28,14 @@ const useCaseLabelByLocale: Record<Locale, string> = {
   ja: "ユースケース",
   vi: "Use case",
   de: "Anwendungsfälle",
-};
+});
 
 type Props = {
   locale: Locale;
   pathname: string;
   languageCookieDomain?: string;
+  /** Single-locale routes (market pages) have no localized siblings — the switcher would link to 404s. */
+  hideLanguageSwitcher?: boolean;
 };
 
 export function SiteHeader(props: Props) {
@@ -148,11 +150,13 @@ export function SiteHeader(props: Props) {
               </Link>
 
               <div className="mx-2 h-4 w-px bg-border/40" />
-              <LanguageSwitcher
-                locale={props.locale}
-                pathname={props.pathname}
-                cookieDomain={props.languageCookieDomain}
-              />
+              {!props.hideLanguageSwitcher && (
+                <LanguageSwitcher
+                  locale={props.locale}
+                  pathname={props.pathname}
+                  cookieDomain={props.languageCookieDomain}
+                />
+              )}
               <NotificationPopover locale={props.locale} />
               <div className="mx-1 h-4 w-px bg-border/40" />
               <a

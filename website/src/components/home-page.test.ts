@@ -35,13 +35,16 @@ describe("home model rows", () => {
     autoGroups: [],
   };
 
-  test("flagships pick one model per official family, skipping mini variants", () => {
+  test("flagships pick one model per vendor, skipping mini variants", () => {
     const rows = pickFlagshipModels(pricing);
-    expect(rows.map((row) => row.name)).toEqual(["gpt-5.4", "claude-opus-4-8", "claude-sonnet-5", "gemini-3-pro"]);
+    // One flagship per vendor (highest sane list price), spanning vendors so the
+    // card reads "many models". Anthropic collapses to its top model (opus, not
+    // opus + sonnet); mini/free/per-request variants are excluded.
+    expect(rows.map((row) => row.name)).toEqual(["gpt-5.4", "claude-opus-4-8", "gemini-3-pro"]);
   });
 
   test("struck price is official; green price stacks group discount and top-up bonus", () => {
-    const [gpt, opus, , gemini] = pickFlagshipModels(pricing);
+    const [gpt, opus, gemini] = pickFlagshipModels(pricing);
     // official = ratio × $2; discounted = official × best group ratio × 2/3
     expect(gpt.official).toBe("$5");
     expect(gpt.discounted).toBe("$2"); // 5 × 0.6 × 2/3 — the "as low as 50% off" case

@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
 import { LOCALES, type Locale, localizePath } from "@/lib/locales";
+import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingPathnames } from "@/lib/model-landing";
 import { modelPublicPath } from "@/lib/model-public";
 import { getSkagLandingPathnames } from "@/lib/skag-landing";
@@ -75,6 +76,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const modelPublicEntries = pricing.models
     .filter((model) => !landingSlugs.has(model.model_name))
     .flatMap((model) => entry(modelPublicPath(model.model_name), 0.6, "daily"));
+  // Market acquisition pages are single-locale (no i18n alternates by design).
+  const marketEntries = getMarketPathnames().map((pathname) => ({
+    url: `${base}${pathname}`,
+    lastModified: new Date(),
+    changeFrequency: "weekly" as const,
+    priority: 0.84,
+  }));
   const categoryEntries = categories.flatMap((category) => entry(`/blog/category/${category.slug}`, 0.7, "weekly"));
   const postsBySlug = new Map<string, Partial<Record<Locale, { date?: string }>>>();
 
@@ -116,6 +124,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return [
     ...staticEntries,
+    ...marketEntries,
     ...modelLandingEntries,
     ...skagLandingEntries,
     ...modelPublicEntries,

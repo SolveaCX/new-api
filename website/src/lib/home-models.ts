@@ -43,20 +43,46 @@ export function modelIconKey(modelName: string, vendor: string): string {
   return vendor.toLowerCase();
 }
 
-// Flagship picks for the hero price comparison, one per official family.
-const FLAGSHIP_PATTERNS: RegExp[] = [/^gpt-5/i, /^claude-opus/i, /^claude-sonnet/i, /^gemini-[\d.]+.*pro/i];
+// One flagship per vendor for the hero price-comparison card — spans Western +
+// Chinese vendors so it reads "many models", not just OpenAI/Anthropic. Vendor-
+// driven (not name-regex) so it stays robust as model names churn.
+const FLAGSHIP_VENDORS: Array<{ label: string; match: RegExp }> = [
+  { label: "OpenAI", match: /openai/i },
+  { label: "Anthropic", match: /anthropic|claude/i },
+  { label: "Google", match: /google|gemini/i },
+  { label: "DeepSeek", match: /deepseek/i },
+  { label: "Qwen", match: /qwen|alibaba|阿里|通义/i },
+  { label: "Zhipu", match: /zhipu|智谱|glm/i },
+  { label: "xAI", match: /xai|grok/i },
+];
 // Variants that never read as "the flagship" of a family.
-const NON_FLAGSHIP = /[-_.](mini|nano|lite|flash|haiku|preview|codex|image|audio|realtime|embedding)/i;
+const NON_FLAGSHIP =
+  /[-_.](mini|nano|lite|flash|haiku|preview|codex|image|audio|realtime|embedding|turbo|thinking|exp|deepsearch|tts|ocr)/i;
 
-export function pickFlagshipModels(data: PricingData, limit = 4): HomePricedModel[] {
+export function pickFlagshipModels(data: PricingData, limit = 7): HomePricedModel[] {
   const priced = pricedTokenModels(data);
   const rows: HomePricedModel[] = [];
-  for (const pattern of FLAGSHIP_PATTERNS) {
-    const candidates = priced
-      .filter((model) => pattern.test(model.model_name) && !NON_FLAGSHIP.test(model.model_name))
-      .sort((a, b) => b.model_name.localeCompare(a.model_name));
-    const pick = candidates[0];
-    if (pick) rows.push(toHomeRow(pick, data));
+  const seenVendors = new Set<string>();
+  for (const vendor of FLAGSHIP_VENDORS) {
+    const forVendor = priced.filter((model) => {
+      const name = model.vendor_name ?? getVendorName(model, data.vendors);
+      return vendor.match.test(name) || vendor.match.test(model.model_name);
+    });
+    if (forVendor.length === 0) continue;
+    // Prefer a "real" flagship (drop mini/lite/preview/etc), highest official
+    // price first — but ignore placeholder-priced outliers (some models carry a
+    // sentinel ~$75 list price). Fall back to any priced model from the vendor.
+    const SANE_MAX = 12; // official $/1M input; filters sentinel pricing
+    const clean = forVendor.filter((model) => !NON_FLAGSHIP.test(model.model_name));
+    const byPriceDesc = (a: PricingModel, b: PricingModel) => getOfficialPriceUsd(b) - getOfficialPriceUsd(a);
+    const flagship =
+      clean.filter((model) => getOfficialPriceUsd(model) <= SANE_MAX).sort(byPriceDesc)[0] ??
+      clean.sort(byPriceDesc)[0] ??
+      forVendor.filter((model) => getOfficialPriceUsd(model) <= SANE_MAX).sort(byPriceDesc)[0] ??
+      forVendor.sort(byPriceDesc)[0];
+    if (!flagship || seenVendors.has(vendor.label)) continue;
+    seenVendors.add(vendor.label);
+    rows.push(toHomeRow(flagship, data));
     if (rows.length >= limit) break;
   }
   return rows;

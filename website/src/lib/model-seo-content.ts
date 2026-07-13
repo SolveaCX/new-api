@@ -5,7 +5,7 @@
 // all 9 site locales; brand/technical tokens (flatkey.ai, OpenAI, GPT, Claude,
 // base_url, API) stay literal.
 
-import type { Locale } from "@/lib/locales";
+import { type Locale, withIdFallback } from "@/lib/locales";
 
 export type ModelSeoInput = {
   modelName: string;
@@ -114,7 +114,7 @@ export function buildModelFaq(v: ModelSeoInput, locale: Locale): Array<{ q: stri
   }));
 }
 
-const STR: Record<Locale, SeoStrings> = {
+const STR: Record<Locale, SeoStrings> = withIdFallback({
   en: {
     ui: {
       ctaSignUp: "Get your API key",
@@ -752,4 +752,4 @@ const STR: Record<Locale, SeoStrings> = {
       },
     ],
   },
-};
+});
