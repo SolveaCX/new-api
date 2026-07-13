@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEEPSEEK_CONFIG,
+  GEMINI_CONFIG,
   GLM_API_CONFIG,
   QWEN_CONFIG,
   getModelLandingConfig,
@@ -22,6 +23,15 @@ describe("model landing configuration", () => {
     }
   });
 
+  test("defines a paid-search landing page for the Gemini API", () => {
+    expect(getModelLandingConfig("gemini-api")).toBe(GEMINI_CONFIG);
+    expect(GEMINI_CONFIG.modelIds.length).toBeGreaterThanOrEqual(3);
+    expect(GEMINI_CONFIG.seo.title.toLowerCase()).toContain("gemini api");
+    expect(GEMINI_CONFIG.seo.title.toLowerCase()).toContain("openai-compatible");
+    expect(getModelLandingConfigForModel("gemini-2.5-pro")?.slug).toBe("gemini-api");
+    expect(getModelLandingConfigForModel("gemini-2.5-flash-preview")?.slug).toBe("gemini-api");
+  });
+
   test("resolves configured landing pages by slug", () => {
     expect(getModelLandingConfig("gpt-api")?.displayName).toBe("GPT-5");
     expect(getModelLandingConfig("missing-model")).toBeNull();
@@ -31,6 +41,7 @@ describe("model landing configuration", () => {
     expect(getModelLandingPathnames()).toEqual([
       "/models/claude-api",
       "/models/deepseek-api",
+      "/models/gemini-api",
       "/models/glm-api",
       "/models/gpt-api",
       "/models/qwen-api",
