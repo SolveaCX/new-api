@@ -15,7 +15,7 @@ export function MarketLandingPage({ slug }: Props) {
   const ctaUrl = getMarketLandingCtaUrl();
 
   return (
-    <SiteShell locale={locale} pathname={slug}>
+    <SiteShell locale={locale} pathname={slug} hideLanguageSwitcher>
       <div className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_28%,#ffffff_58%,#f4f1ff_100%)] text-slate-950 dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)] dark:text-white">
         {/* Hero */}
         <section className="relative border-b border-violet-500/10 pt-24 pb-20 dark:border-white/10 md:pt-32 md:pb-24">

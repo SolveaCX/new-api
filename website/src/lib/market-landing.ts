@@ -45,7 +45,7 @@ export type MarketLandingCopy = {
 
 export type MarketConfig = {
   slug: string; // route path, e.g. "/br"
-  locale: Locale; // which site locale renders this page (for SiteShell chrome + hreflang)
+  locale: Locale; // which site locale renders this page (SiteShell chrome only — metadata stays unlocalized)
   copy: MarketLandingCopy;
 };
 
@@ -342,6 +342,8 @@ export function getMarketMetadataInput(slug: string): SeoInput | undefined {
     title: cfg.copy.seo.title,
     description: cfg.copy.seo.description,
     pathname: cfg.slug,
-    locale: cfg.locale,
+    // Market pages are physical single-locale routes (/br, /in, /id-market) with
+    // no [locale] siblings — canonical must stay unprefixed and emit no hreflang.
+    unlocalized: true,
   };
 }

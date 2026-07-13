@@ -13,11 +13,17 @@ export type SeoInput = {
   noIndex?: boolean;
   /** Locales the page actually exists in. Defaults to all locales; pass ["en"] for English-only pages so hreflang never points at 404s. */
   locales?: readonly Locale[];
+  /**
+   * Physical single-locale routes (e.g. market pages /br, /id-market) that only
+   * exist at their literal pathname: canonical is the raw pathname (never
+   * locale-prefixed) and no hreflang alternates are emitted.
+   */
+  unlocalized?: boolean;
 };
 
 export function buildMetadata(input: SeoInput): Metadata {
   const locale = input.locale ?? DEFAULT_LOCALE;
-  const canonicalPath = localizePath(input.pathname, locale);
+  const canonicalPath = input.unlocalized ? input.pathname : localizePath(input.pathname, locale);
   const canonical = `${SITE_ORIGIN}${canonicalPath}`;
   const title = input.title;
 
@@ -27,14 +33,21 @@ export function buildMetadata(input: SeoInput): Metadata {
     metadataBase: new URL(SITE_ORIGIN),
     alternates: {
       canonical,
-      languages: {
-        ...(input.locales && input.locales.length < LOCALES.length
-          ? Object.fromEntries(
-              input.locales.map((altLocale) => [altLocale, `${SITE_ORIGIN}${localizePath(input.pathname, altLocale)}`])
-            )
-          : localeAlternates(input.pathname)),
-        "x-default": `${SITE_ORIGIN}${localizePath(input.pathname, DEFAULT_LOCALE)}`,
-      },
+      ...(input.unlocalized
+        ? {}
+        : {
+            languages: {
+              ...(input.locales && input.locales.length < LOCALES.length
+                ? Object.fromEntries(
+                    input.locales.map((altLocale) => [
+                      altLocale,
+                      `${SITE_ORIGIN}${localizePath(input.pathname, altLocale)}`,
+                    ])
+                  )
+                : localeAlternates(input.pathname)),
+              "x-default": `${SITE_ORIGIN}${localizePath(input.pathname, DEFAULT_LOCALE)}`,
+            },
+          }),
     },
     robots: input.noIndex
       ? { index: false, follow: false }

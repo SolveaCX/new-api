@@ -34,6 +34,8 @@ type Props = {
   locale: Locale;
   pathname: string;
   languageCookieDomain?: string;
+  /** Single-locale routes (market pages) have no localized siblings — the switcher would link to 404s. */
+  hideLanguageSwitcher?: boolean;
 };
 
 export function SiteHeader(props: Props) {
@@ -148,11 +150,13 @@ export function SiteHeader(props: Props) {
               </Link>
 
               <div className="mx-2 h-4 w-px bg-border/40" />
-              <LanguageSwitcher
-                locale={props.locale}
-                pathname={props.pathname}
-                cookieDomain={props.languageCookieDomain}
-              />
+              {!props.hideLanguageSwitcher && (
+                <LanguageSwitcher
+                  locale={props.locale}
+                  pathname={props.pathname}
+                  cookieDomain={props.languageCookieDomain}
+                />
+              )}
               <NotificationPopover locale={props.locale} />
               <div className="mx-1 h-4 w-px bg-border/40" />
               <a
