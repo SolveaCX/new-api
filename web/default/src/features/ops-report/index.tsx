@@ -403,13 +403,18 @@ function StripeStat({ label, value }: { label: string; value: string }) {
 function StripePersonStatus({ status }: { status: string }) {
   const { t } = useTranslation()
   const label = STRIPE_STATUS_LABELS[status] ?? status
-  const variant =
-    status === 'paid'
-      ? 'default'
-      : status === 'failed'
-        ? 'destructive'
-        : 'secondary'
-  return <Badge variant={variant}>{t(label)}</Badge>
+  if (status === 'paid') {
+    return (
+      <Badge className='border-transparent bg-green-600 text-white dark:bg-green-700'>
+        {t(label)}
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant={status === 'failed' ? 'destructive' : 'secondary'}>
+      {t(label)}
+    </Badge>
+  )
 }
 
 const shortTime = (timestamp: number): string => {
@@ -810,7 +815,9 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
   const { t, i18n } = useTranslation()
   return (
     <div className='overflow-x-auto'>
-      <Table className={TABLE_GRID}>
+      <Table
+        className={`${TABLE_GRID} text-xs [&_td]:px-2 [&_td]:py-1.5 [&_th]:px-2`}
+      >
         <TableHeader>
           <TableRow>
             <TableHead>{t('User')}</TableHead>
@@ -846,9 +853,9 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
                   </div>
                 </TableCell>
                 <TableCell className='whitespace-nowrap'>
-                  <div>{formatTimestamp(row.first_paid_at)}</div>
+                  <div>{shortTime(row.first_paid_at)}</div>
                   <div className='text-muted-foreground text-xs'>
-                    {t('Registrations')} {formatTimestamp(row.registered_at)}
+                    {t('Registrations')} {shortTime(row.registered_at)}
                   </div>
                 </TableCell>
                 <TableCell className='text-right whitespace-nowrap'>
@@ -907,13 +914,18 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
                     </span>
                   </div>
                   <div className='text-muted-foreground text-xs'>
-                    {row.requests} req · {formatTimestamp(row.last_active_at)}
+                    {row.requests} req · {shortTime(row.last_active_at)}
                   </div>
                 </TableCell>
-                <TableCell className='max-w-56'>
+                <TableCell className='max-w-44'>
                   <div className='flex flex-wrap gap-1'>
                     {(row.top_models ?? []).map((m) => (
-                      <Badge key={m} variant='secondary'>
+                      <Badge
+                        key={m}
+                        variant='secondary'
+                        className='max-w-40 truncate'
+                        title={m}
+                      >
                         {m}
                       </Badge>
                     ))}
