@@ -841,7 +841,22 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 	for i := range payers {
 		ids[i] = payers[i].UserId
 	}
-	if usage, err := model.GetOpsUsersModelUsage(ids); err == nil {
+	// Enrich in batches: payer list is unbounded now, keep each IN (...) small.
+	var usage []*model.OpsUserModelUsage
+	usageErr := error(nil)
+	for start := 0; start < len(ids); start += 500 {
+		end := start + 500
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch, err := model.GetOpsUsersModelUsage(ids[start:end])
+		if err != nil {
+			usageErr = err
+			break
+		}
+		usage = append(usage, batch...)
+	}
+	if usageErr == nil {
 		type mc struct {
 			name  string
 			count int
