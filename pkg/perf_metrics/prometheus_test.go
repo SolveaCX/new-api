@@ -83,6 +83,64 @@ func TestBuildPrometheusTextEmitsChannelHealthMetrics(t *testing.T) {
 	}
 }
 
+func TestRecordChannelMetricsRejectsAbnormalStreamSuccess(t *testing.T) {
+	tests := []struct {
+		name         string
+		endReason    relaycommon.StreamEndReason
+		wantStatus   string
+		wantCategory string
+	}{
+		{
+			name:         "client disconnect",
+			endReason:    relaycommon.StreamEndReasonClientGone,
+			wantStatus:   "client_cancel",
+			wantCategory: "client_cancel",
+		},
+		{
+			name:         "stream timeout",
+			endReason:    relaycommon.StreamEndReasonTimeout,
+			wantStatus:   "error",
+			wantCategory: "timeout",
+		},
+		{
+			name:         "first response timeout",
+			endReason:    relaycommon.StreamEndReasonFirstResponseTimeout,
+			wantStatus:   "error",
+			wantCategory: "timeout",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetPerfMetricsStateForTest(t)
+
+			startedAt := time.Now().Add(-time.Second)
+			streamStatus := relaycommon.NewStreamStatus()
+			streamStatus.SetEndReason(tt.endReason, nil)
+			info := &relaycommon.RelayInfo{
+				OriginModelName: "gpt-5",
+				StartTime:       startedAt,
+				IsStream:        true,
+				StreamStatus:    streamStatus,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelId: 42,
+				},
+			}
+
+			RecordChannelAttempt(info, 42, "primary", startedAt, nil)
+			RecordChannelTokens(info, 120, 30)
+
+			text, err := BuildPrometheusText(context.Background())
+			require.NoError(t, err)
+			require.Contains(t, text, `newapi_channel_attempts_total{channel_id="42",status="`+tt.wantStatus+`",error_category="`+tt.wantCategory+`"} 1`)
+			require.NotContains(t, text, `newapi_channel_attempts_total{channel_id="42",status="success"`)
+			require.NotContains(t, text, `newapi_channel_model_attempts_total{channel_id="42",model="gpt-5",status="success"}`)
+			require.NotContains(t, text, `newapi_channel_model_input_tokens_total{channel_id="42",model="gpt-5"}`)
+			require.NotContains(t, text, `newapi_channel_model_output_tokens_total{channel_id="42",model="gpt-5"}`)
+		})
+	}
+}
+
 func TestClassifyChannelError(t *testing.T) {
 	tests := []struct {
 		name         string

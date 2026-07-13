@@ -103,7 +103,7 @@ func RecordChannelAttempt(
 		}
 	}
 
-	status, errorCategory := classifyChannelError(relayErr)
+	status, errorCategory := classifyChannelAttempt(info, relayErr)
 	for {
 		actual, _ := prometheusChannelBuckets.LoadOrStore(channelID, newPrometheusChannelBucket())
 		if actual.(*prometheusChannelBucket).addAttempt(
@@ -132,6 +132,9 @@ func RecordChannelTokens(info *relaycommon.RelayInfo, inputTokens int64, outputT
 	if info.ChannelId <= 0 || info.OriginModelName == "" || (inputTokens <= 0 && outputTokens <= 0) {
 		return
 	}
+	if status, _ := classifyChannelAttempt(info, nil); status != "success" {
+		return
+	}
 
 	key := prometheusChannelModelKey{channelID: info.ChannelId, model: info.OriginModelName}
 	for {
@@ -141,6 +144,24 @@ func RecordChannelTokens(info *relaycommon.RelayInfo, inputTokens int64, outputT
 		}
 		prometheusChannelModelBuckets.CompareAndDelete(key, actual)
 	}
+}
+
+func classifyChannelAttempt(info *relaycommon.RelayInfo, relayErr *types.NewAPIError) (string, string) {
+	if relayErr != nil || info == nil || !info.IsStream || info.StreamStatus == nil {
+		return classifyChannelError(relayErr)
+	}
+
+	streamStatus := info.StreamStatus
+	switch streamStatus.EndReason {
+	case relaycommon.StreamEndReasonClientGone:
+		return "client_cancel", "client_cancel"
+	case relaycommon.StreamEndReasonTimeout, relaycommon.StreamEndReasonFirstResponseTimeout:
+		return "error", "timeout"
+	}
+	if !streamStatus.IsNormalEnd() || streamStatus.HasErrors() {
+		return "error", "other"
+	}
+	return "success", "none"
 }
 
 func recordPrometheusChannelModelAttempt(channelID int, modelName string, status string) {
