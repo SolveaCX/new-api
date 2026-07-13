@@ -112,7 +112,6 @@ type ChannelConcurrencyLoad struct {
 	MaxConcurrency int
 	Active         int
 	Waiting        int
-	CoolingDown    bool
 	LoadRate       float64
 }
 
@@ -137,17 +136,16 @@ const (
 )
 
 var (
-	channelConcurrencyMemoryMu        sync.Mutex
-	channelConcurrencyMemorySlots     = make(map[int]map[string]time.Time)
-	channelConcurrencyMemoryWaits     = make(map[int]int)
-	channelConcurrencyMemoryCooldowns = make(map[int]time.Time)
-	channelConcurrencyRequestPrefix   = common.GetUUID()
-	channelConcurrencyLoadCacheTTL    = defaultChannelConcurrencyLoadBatchCacheTTL
-	channelConcurrencyLoadCacheMu     sync.RWMutex
-	channelConcurrencyLoadCache       = make(map[string]cachedChannelConcurrencyLoadBatch)
-	channelConcurrencyFreshLoadCache  = make(map[string]cachedChannelConcurrencyLoadBatch)
-	channelConcurrencyLoadGroup       singleflight.Group
-	channelConcurrencyRenewInterval   = func(ttl time.Duration) time.Duration {
+	channelConcurrencyMemoryMu       sync.Mutex
+	channelConcurrencyMemorySlots    = make(map[int]map[string]time.Time)
+	channelConcurrencyMemoryWaits    = make(map[int]int)
+	channelConcurrencyRequestPrefix  = common.GetUUID()
+	channelConcurrencyLoadCacheTTL   = defaultChannelConcurrencyLoadBatchCacheTTL
+	channelConcurrencyLoadCacheMu    sync.RWMutex
+	channelConcurrencyLoadCache      = make(map[string]cachedChannelConcurrencyLoadBatch)
+	channelConcurrencyFreshLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
+	channelConcurrencyLoadGroup      singleflight.Group
+	channelConcurrencyRenewInterval  = func(ttl time.Duration) time.Duration {
 		interval := ttl / 3
 		if interval < time.Second {
 			return time.Second
@@ -241,7 +239,7 @@ func tryAcquireChannelConcurrencyWithToken(ctx context.Context, channel *model.C
 		return nil, true, nil
 	}
 
-	coolingDown, err := isChannelConcurrencyCoolingDown(ctx, channel.Id)
+	coolingDown, err := IsChannelConcurrencyCoolingDown(ctx, channel.Id)
 	if err != nil {
 		return nil, false, err
 	}
@@ -325,56 +323,6 @@ func getChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel, 
 	}
 
 	return getMemoryChannelConcurrencyLoads(loads), nil
-}
-
-func MarkChannelConcurrencyCooldown(ctx context.Context, channelID int, duration time.Duration, reason string) error {
-	if !operation_setting.IsChannelConcurrencyCooldownEnabled() {
-		return nil
-	}
-	if channelID <= 0 {
-		return fmt.Errorf("channel id is invalid")
-	}
-	if duration <= 0 {
-		duration = operation_setting.GetChannelConcurrencyCooldown()
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	if common.RedisEnabled && common.RDB != nil {
-		if err := common.RDB.Set(ctx, channelConcurrencyCooldownRedisKey(channelID), reason, duration).Err(); err == nil {
-			return nil
-		} else {
-			common.SysError(fmt.Sprintf("mark channel concurrency cooldown in redis failed, fallback to memory: channel_id=%d, error=%s", channelID, err.Error()))
-		}
-	}
-
-	channelConcurrencyMemoryMu.Lock()
-	defer channelConcurrencyMemoryMu.Unlock()
-	channelConcurrencyMemoryCooldowns[channelID] = time.Now().Add(duration)
-	return nil
-}
-
-func isChannelConcurrencyCoolingDown(ctx context.Context, channelID int) (bool, error) {
-	if !operation_setting.IsChannelConcurrencyCooldownEnabled() || channelID <= 0 {
-		return false, nil
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	if common.RedisEnabled && common.RDB != nil {
-		coolingDown, err := common.RDB.Exists(ctx, channelConcurrencyCooldownRedisKey(channelID)).Result()
-		if err == nil {
-			return coolingDown > 0, nil
-		}
-		common.SysError(fmt.Sprintf("check channel concurrency cooldown in redis failed, fallback to memory: channel_id=%d, error=%s", channelID, err.Error()))
-	}
-
-	channelConcurrencyMemoryMu.Lock()
-	defer channelConcurrencyMemoryMu.Unlock()
-	cooldownUntil, ok := channelConcurrencyMemoryCooldowns[channelID]
-	return ok && cooldownUntil.After(time.Now()), nil
 }
 
 func ReleaseChannelConcurrency(ctx context.Context, lease *ChannelConcurrencyLease) error {
@@ -628,10 +576,6 @@ func channelConcurrencyWaitingRedisKey(channelID int) string {
 	return fmt.Sprintf("new-api:channel_concurrency_wait:%d", channelID)
 }
 
-func channelConcurrencyCooldownRedisKey(channelID int) string {
-	return fmt.Sprintf("new-api:channel_concurrency_cooldown:%d", channelID)
-}
-
 func newChannelConcurrencyToken() string {
 	return channelConcurrencyRequestPrefix + ":" + common.GetUUID()
 }
@@ -730,10 +674,9 @@ func fetchRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]Chan
 	}
 
 	type loadCommands struct {
-		channelID   int
-		activeCmd   *redis.IntCmd
-		waitingCmd  *redis.StringCmd
-		cooldownCmd *redis.IntCmd
+		channelID  int
+		activeCmd  *redis.IntCmd
+		waitingCmd *redis.StringCmd
 	}
 
 	pipe := common.RDB.Pipeline()
@@ -742,10 +685,9 @@ func fetchRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]Chan
 		key := channelConcurrencyRedisKey(channelID)
 		pipe.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.UnixMilli(), 10))
 		commands = append(commands, loadCommands{
-			channelID:   channelID,
-			activeCmd:   pipe.ZCard(ctx, key),
-			waitingCmd:  pipe.Get(ctx, channelConcurrencyWaitingRedisKey(channelID)),
-			cooldownCmd: pipe.Exists(ctx, channelConcurrencyCooldownRedisKey(channelID)),
+			channelID:  channelID,
+			activeCmd:  pipe.ZCard(ctx, key),
+			waitingCmd: pipe.Get(ctx, channelConcurrencyWaitingRedisKey(channelID)),
 		})
 	}
 	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
@@ -765,9 +707,6 @@ func fetchRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]Chan
 			if waiting, parseErr := strconv.Atoi(waitingValue); parseErr == nil && waiting > 0 {
 				load.Waiting = waiting
 			}
-		}
-		if coolingDown, err := command.cooldownCmd.Result(); err == nil {
-			load.CoolingDown = coolingDown > 0
 		}
 		load.LoadRate = calculateChannelConcurrencyLoadRate(load.Active, load.Waiting, load.MaxConcurrency)
 		loads[command.channelID] = load
@@ -1092,9 +1031,6 @@ func getMemoryChannelConcurrencyLoads(initial map[int]ChannelConcurrencyLoad) ma
 		}
 		load.Active = len(channelConcurrencyMemorySlots[channelID])
 		load.Waiting = channelConcurrencyMemoryWaits[channelID]
-		if cooldownUntil, ok := channelConcurrencyMemoryCooldowns[channelID]; ok {
-			load.CoolingDown = cooldownUntil.After(now)
-		}
 		load.LoadRate = calculateChannelConcurrencyLoadRate(load.Active, load.Waiting, load.MaxConcurrency)
 		loads[channelID] = load
 	}
@@ -1120,11 +1056,6 @@ func cleanupMemoryChannelConcurrencyLocked(now time.Time) {
 		}
 		if len(slots) == 0 {
 			delete(channelConcurrencyMemorySlots, channelID)
-		}
-	}
-	for channelID, expiresAt := range channelConcurrencyMemoryCooldowns {
-		if !expiresAt.After(now) {
-			delete(channelConcurrencyMemoryCooldowns, channelID)
 		}
 	}
 }
@@ -1163,14 +1094,15 @@ func nextChannelConcurrencyWaitBackoff(current time.Duration, initial time.Durat
 
 func resetChannelConcurrencyForTest() {
 	channelConcurrencyMemoryMu.Lock()
-	defer channelConcurrencyMemoryMu.Unlock()
 	channelConcurrencyMemorySlots = make(map[int]map[string]time.Time)
 	channelConcurrencyMemoryWaits = make(map[int]int)
-	channelConcurrencyMemoryCooldowns = make(map[int]time.Time)
+	channelConcurrencyMemoryMu.Unlock()
+
 	channelConcurrencyLoadCacheMu.Lock()
 	channelConcurrencyLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
 	channelConcurrencyFreshLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
 	channelConcurrencyLoadCacheTTL = defaultChannelConcurrencyLoadBatchCacheTTL
 	channelConcurrencyLoadGroup = singleflight.Group{}
 	channelConcurrencyLoadCacheMu.Unlock()
+	resetChannelAvailabilityForTest()
 }

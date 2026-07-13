@@ -328,19 +328,17 @@ func orderChannelCandidatesByConcurrencyLoad(c *gin.Context, candidates []*model
 	if c != nil && c.Request != nil {
 		ctx = c.Request.Context()
 	}
-	loads, err := GetChannelConcurrencyLoads(ctx, candidates)
+	cooldowns, err := GetChannelConcurrencyCooldowns(ctx, candidates)
+	if err != nil {
+		return nil, err
+	}
+	availableCandidates := filterChannelCandidatesByAvailability(candidates, cooldowns)
+	loads, err := GetChannelConcurrencyLoads(ctx, availableCandidates)
 	if err != nil {
 		return nil, err
 	}
 
-	loadedCandidates, consideredCandidates, coolingDownCandidates := filterChannelCandidatesByConcurrencyLoad(candidates, loads)
-	if len(loadedCandidates) == 0 && consideredCandidates > 0 && coolingDownCandidates == consideredCandidates {
-		loads, err = getChannelConcurrencyLoadsFreshThrottled(ctx, candidates)
-		if err != nil {
-			return nil, err
-		}
-		loadedCandidates, _, _ = filterChannelCandidatesByConcurrencyLoad(candidates, loads)
-	}
+	loadedCandidates := channelCandidatesWithConcurrencyLoads(availableCandidates, loads)
 	sort.SliceStable(loadedCandidates, func(i, j int) bool {
 		if loadedCandidates[i].load.LoadRate == loadedCandidates[j].load.LoadRate {
 			return loadedCandidates[i].channel.GetPriority() > loadedCandidates[j].channel.GetPriority()
@@ -375,26 +373,29 @@ func orderChannelCandidatesByConcurrencyLoad(c *gin.Context, candidates []*model
 	return ordered, nil
 }
 
-func filterChannelCandidatesByConcurrencyLoad(candidates []*model.Channel, loads map[int]ChannelConcurrencyLoad) ([]channelCandidateLoad, int, int) {
+func filterChannelCandidatesByAvailability(candidates []*model.Channel, cooldowns map[int]bool) []*model.Channel {
+	available := make([]*model.Channel, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == nil || cooldowns[candidate.Id] {
+			continue
+		}
+		available = append(available, candidate)
+	}
+	return available
+}
+
+func channelCandidatesWithConcurrencyLoads(candidates []*model.Channel, loads map[int]ChannelConcurrencyLoad) []channelCandidateLoad {
 	loadedCandidates := make([]channelCandidateLoad, 0, len(candidates))
-	consideredCandidates := 0
-	coolingDownCandidates := 0
 	for _, candidate := range candidates {
 		if candidate == nil {
 			continue
 		}
-		consideredCandidates++
-		load := loads[candidate.Id]
-		if load.CoolingDown {
-			coolingDownCandidates++
-			continue
-		}
 		loadedCandidates = append(loadedCandidates, channelCandidateLoad{
 			channel: candidate,
-			load:    load,
+			load:    loads[candidate.Id],
 		})
 	}
-	return loadedCandidates, consideredCandidates, coolingDownCandidates
+	return loadedCandidates
 }
 
 func removeChannelCandidate(candidates []*model.Channel, channelID int) []*model.Channel {
