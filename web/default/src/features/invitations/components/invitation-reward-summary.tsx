@@ -47,15 +47,23 @@ export function InvitationRewardSummary(props: InvitationRewardSummaryProps) {
         { inviterReward, inviteeReward }
       )
 
-  const limitCopy =
-    props.summary.inviter_reward_max_count === 0
-      ? t(
-          'Unlimited rewards, credits never expire, and any email address is accepted.'
-        )
-      : t(
-          'Earn rewards for up to {{count}} successful referrals. Credits never expire, and any email address is accepted.',
-          { count: props.summary.inviter_reward_max_count }
-        )
+  const rewardLimit = props.summary.inviter_reward_max_count
+  let limitCopy: string
+  if (rewardLimit === 0) {
+    limitCopy = t(
+      'Unlimited rewards, credits never expire, and any email address is accepted.'
+    )
+  } else if (rewardLimit === 1) {
+    limitCopy = t(
+      'Earn rewards for up to {{count}} successful referral. Credits never expire, and any email address is accepted.',
+      { count: rewardLimit }
+    )
+  } else {
+    limitCopy = t(
+      'Earn rewards for up to {{count}} successful referrals. Credits never expire, and any email address is accepted.',
+      { count: rewardLimit }
+    )
+  }
 
   return (
     <p className='text-muted-foreground text-sm'>

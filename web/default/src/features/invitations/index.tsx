@@ -15,8 +15,6 @@ import { InvitationRewardSummary } from './components/invitation-reward-summary'
 import { InvitationStats } from './components/invitation-stats'
 import { ReferralLinkCard } from './components/referral-link-card'
 import { RewardStepsCard } from './components/reward-steps-card'
-import { RewardTransferCard } from './components/reward-transfer-card'
-import { TransferDialog } from './components/transfer-dialog'
 import { useInvitations } from './hooks/use-invitations'
 import { buildAffiliateLink } from './lib/share'
 import type { InvitationPageData } from './types'
@@ -29,11 +27,9 @@ export interface InvitationViewProps {
   affiliateLoading: boolean
   affiliateError: boolean
   error: boolean
-  transferring: boolean
   page: number
   onPageChange: (page: number) => void
   onRetry: () => void
-  onTransfer: (amountUSD: number) => Promise<boolean>
 }
 
 export function InvitationView({
@@ -44,13 +40,10 @@ export function InvitationView({
   affiliateLoading,
   affiliateError,
   error,
-  transferring,
   page,
   onPageChange,
   onRetry,
-  onTransfer,
 }: InvitationViewProps) {
-  const [transferOpen, setTransferOpen] = useState(false)
   const summary = data?.summary ?? null
 
   return (
@@ -58,18 +51,17 @@ export function InvitationView({
       {(loading || summary !== null) && (
         <InvitationRewardSummary summary={summary} />
       )}
-      <InvitationStats summary={summary} loading={loading} />
+      <InvitationStats
+        summary={summary}
+        registeredCount={data?.total ?? 0}
+        loading={loading}
+      />
       <ReferralLinkCard
         affiliateLink={affiliateLink}
         loading={affiliateLoading}
         error={affiliateError}
       />
-      <RewardStepsCard />
-      <RewardTransferCard
-        summary={summary}
-        loading={loading}
-        onOpen={() => setTransferOpen(true)}
-      />
+      {(loading || summary !== null) && <RewardStepsCard summary={summary} />}
       <InvitationRecordsCard
         data={data}
         loading={loading || recordsLoading}
@@ -79,13 +71,6 @@ export function InvitationView({
         onPageChange={onPageChange}
       />
       <InvitationFaq summary={summary} />
-      <TransferDialog
-        open={transferOpen}
-        onOpenChange={setTransferOpen}
-        onConfirm={onTransfer}
-        availableUSD={summary?.transferable_usd ?? 0}
-        transferring={transferring}
-      />
     </div>
   )
 }
@@ -93,7 +78,7 @@ export function InvitationView({
 export function Invitations() {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
-  const { invitationsQuery, codeQuery, transferMutation } = useInvitations(page)
+  const { invitationsQuery, codeQuery } = useInvitations(page)
   const data = invitationsQuery.data?.data ?? null
   const code = codeQuery.data?.data ?? ''
   const affiliateLink = buildAffiliateLink(code)
@@ -110,18 +95,9 @@ export function Invitations() {
           affiliateLoading={codeQuery.isLoading}
           affiliateError={codeQuery.isError}
           error={invitationsQuery.isError}
-          transferring={transferMutation.isPending}
           page={page}
           onPageChange={setPage}
           onRetry={() => void invitationsQuery.refetch()}
-          onTransfer={async (amountUSD) => {
-            try {
-              await transferMutation.mutateAsync(amountUSD)
-              return true
-            } catch {
-              return false
-            }
-          }}
         />
       </SectionPageLayout.Content>
     </SectionPageLayout>
