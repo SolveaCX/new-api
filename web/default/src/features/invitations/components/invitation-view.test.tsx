@@ -166,12 +166,43 @@ describe('InvitationView', () => {
 
   test('renders the empty invitation state', () => {
     const html = renderView({
-      data: { ...fixture, items: [], total: 0 },
+      data: {
+        ...fixture,
+        summary: {
+          ...fixture.summary,
+          pending_reward_usd: 0,
+          pending_count: 0,
+        },
+        items: [],
+        total: 0,
+      },
     })
 
     expect(html).toContain('No referrals yet')
     expect(html).toContain('Share your referral link to get started.')
+    expect(html).toContain('>--<')
+    expect(html).toContain('Share your link to start earning')
+    expect(html).not.toContain('Active')
+    expect(html).not.toContain('Tracking')
     expect(html).not.toContain('Previous')
+  })
+
+  test('returns the status card to the earning prompt after every referral is rewarded', () => {
+    const html = renderView({
+      data: {
+        ...fixture,
+        summary: {
+          ...fixture.summary,
+          pending_reward_usd: 0,
+          pending_count: 0,
+        },
+      },
+    })
+
+    expect(html).toContain('>--<')
+    expect(html).toContain('Share your link to start earning')
+    expect(html).not.toContain('Active')
+    expect(html).not.toContain('Tracking')
   })
 
   test('lets users return from an empty later page', () => {

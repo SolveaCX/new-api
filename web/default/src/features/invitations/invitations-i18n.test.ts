@@ -54,6 +54,7 @@ const invitationKeys = [
   '{{reward}} each after first top-up',
   'Active',
   'Tracking',
+  'Share your link to start earning',
   'Your Referral Link',
   'Share your referral link with friends. Referral rewards are processed after their first successful top-up.',
   'Copy referral link',

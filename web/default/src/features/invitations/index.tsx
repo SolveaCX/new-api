@@ -32,6 +32,14 @@ export interface InvitationViewProps {
   onRetry: () => void
 }
 
+export function InvitationPageTitle() {
+  const { t } = useTranslation()
+
+  return (
+    <span className='mx-auto block w-full max-w-7xl'>{t('Invite & Earn')}</span>
+  )
+}
+
 export function InvitationView({
   data,
   affiliateLink,
@@ -76,7 +84,6 @@ export function InvitationView({
 }
 
 export function Invitations() {
-  const { t } = useTranslation()
   const [page, setPage] = useState(1)
   const { invitationsQuery, codeQuery } = useInvitations(page)
   const data = invitationsQuery.data?.data ?? null
@@ -85,7 +92,9 @@ export function Invitations() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Invite & Earn')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>
+        <InvitationPageTitle />
+      </SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <InvitationView
           data={data}
