@@ -69,6 +69,33 @@ return 1
 
 var channelConcurrencyRenewScript = redis.NewScript(channelConcurrencyRenewScriptSrc)
 
+var channelConcurrencyWaitAcquireScript = redis.NewScript(`
+local key = KEYS[1]
+local ttl = tonumber(ARGV[1])
+local max_waiting = tonumber(ARGV[2])
+local current = tonumber(redis.call('GET', key) or '0')
+
+if current >= max_waiting then
+	return {0, current}
+end
+
+current = redis.call('INCR', key)
+redis.call('PEXPIRE', key, ttl)
+return {1, current}
+`)
+
+var channelConcurrencyWaitReleaseScript = redis.NewScript(`
+local key = KEYS[1]
+local current = tonumber(redis.call('GET', key) or '0')
+
+if current <= 1 then
+	redis.call('DEL', key)
+	return 0
+end
+
+return redis.call('DECR', key)
+`)
+
 type ChannelConcurrencyLease struct {
 	ChannelID int
 
@@ -150,12 +177,15 @@ func AcquireChannelConcurrencyWithWait(ctx context.Context, channel *model.Chann
 		ctx = context.Background()
 	}
 
-	waitingLease, waiting, err := acquireChannelConcurrencyWaiting(ctx, channel.Id)
+	waitingLease, admitted, _, err := acquireChannelConcurrencyWaiting(
+		ctx,
+		channel.Id,
+		operation_setting.GetChannelConcurrencyMaxWaiting(maxConcurrency),
+	)
 	if err != nil {
 		return nil, false, err
 	}
-	if waiting > operation_setting.GetChannelConcurrencyMaxWaiting(maxConcurrency) {
-		releaseChannelConcurrencyWaitingLeaseWithLog(waitingLease, channel.Id)
+	if !admitted {
 		return nil, false, ErrChannelConcurrencyLimit
 	}
 	defer func() {
@@ -877,27 +907,54 @@ func refreshMemoryChannelConcurrency(channelID int, token string) {
 	}
 }
 
-func acquireChannelConcurrencyWaiting(ctx context.Context, channelID int) (*channelConcurrencyWaitingLease, int, error) {
+func acquireChannelConcurrencyWaiting(ctx context.Context, channelID int, maxWaiting int) (*channelConcurrencyWaitingLease, bool, int, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if maxWaiting < 1 {
+		maxWaiting = 1
 	}
 	lease := &channelConcurrencyWaitingLease{
 		channelID: channelID,
 		useRedis:  common.RedisEnabled && common.RDB != nil,
 	}
-	if common.RedisEnabled && common.RDB != nil {
-		value, err := common.RDB.Incr(ctx, channelConcurrencyWaitingRedisKey(channelID)).Result()
-		if err == nil {
-			_ = common.RDB.Expire(ctx, channelConcurrencyWaitingRedisKey(channelID), operation_setting.GetChannelConcurrencyWaitTimeout()+time.Minute).Err()
-			return lease, int(value), nil
+	if lease.useRedis {
+		result, err := channelConcurrencyWaitAcquireScript.Run(
+			ctx,
+			common.RDB,
+			[]string{channelConcurrencyWaitingRedisKey(channelID)},
+			(operation_setting.GetChannelConcurrencyWaitTimeout() + time.Minute).Milliseconds(),
+			maxWaiting,
+		).Slice()
+		if err != nil {
+			return nil, false, 0, fmt.Errorf("admit channel concurrency waiter in redis for channel %d: %w", channelID, err)
 		}
-		return nil, 0, fmt.Errorf("increment channel concurrency waiting in redis failed for channel %d: %w", channelID, err)
+		if len(result) != 2 {
+			return nil, false, 0, fmt.Errorf("admit channel concurrency waiter in redis for channel %d returned %d values", channelID, len(result))
+		}
+		admitted, ok := result[0].(int64)
+		if !ok {
+			return nil, false, 0, fmt.Errorf("admit channel concurrency waiter in redis for channel %d returned invalid admission result %T", channelID, result[0])
+		}
+		count, ok := result[1].(int64)
+		if !ok {
+			return nil, false, 0, fmt.Errorf("admit channel concurrency waiter in redis for channel %d returned invalid count %T", channelID, result[1])
+		}
+		if admitted != 1 {
+			return nil, false, int(count), nil
+		}
+		return lease, true, int(count), nil
 	}
 
 	channelConcurrencyMemoryMu.Lock()
 	defer channelConcurrencyMemoryMu.Unlock()
-	channelConcurrencyMemoryWaits[channelID]++
-	return lease, channelConcurrencyMemoryWaits[channelID], nil
+	current := channelConcurrencyMemoryWaits[channelID]
+	if current >= maxWaiting {
+		return nil, false, current, nil
+	}
+	current++
+	channelConcurrencyMemoryWaits[channelID] = current
+	return lease, true, current, nil
 }
 
 func releaseChannelConcurrencyWaitingLeaseWithLog(lease *channelConcurrencyWaitingLease, channelID int) {
@@ -909,8 +966,18 @@ func releaseChannelConcurrencyWaitingLeaseWithLog(lease *channelConcurrencyWaiti
 }
 
 func incrementChannelConcurrencyWaiting(ctx context.Context, channelID int, maxConcurrency int) (int, error) {
-	_, waiting, err := acquireChannelConcurrencyWaiting(ctx, channelID)
-	return waiting, err
+	_, admitted, waiting, err := acquireChannelConcurrencyWaiting(
+		ctx,
+		channelID,
+		operation_setting.GetChannelConcurrencyMaxWaiting(maxConcurrency),
+	)
+	if err != nil {
+		return 0, err
+	}
+	if !admitted {
+		return waiting, ErrChannelConcurrencyLimit
+	}
+	return waiting, nil
 }
 
 func decrementChannelConcurrencyWaiting(ctx context.Context, channelID int) error {
@@ -918,15 +985,14 @@ func decrementChannelConcurrencyWaiting(ctx context.Context, channelID int) erro
 		ctx = context.Background()
 	}
 	if common.RedisEnabled && common.RDB != nil {
-		key := channelConcurrencyWaitingRedisKey(channelID)
-		value, err := common.RDB.Decr(ctx, key).Result()
-		if err == nil {
-			if value <= 0 {
-				_ = common.RDB.Del(ctx, key).Err()
-			}
-			return nil
+		if err := channelConcurrencyWaitReleaseScript.Run(
+			ctx,
+			common.RDB,
+			[]string{channelConcurrencyWaitingRedisKey(channelID)},
+		).Err(); err != nil {
+			return fmt.Errorf("decrement channel concurrency waiting in redis failed for channel %d: %w", channelID, err)
 		}
-		common.SysError(fmt.Sprintf("decrement channel concurrency waiting in redis failed, fallback to memory: channel_id=%d, error=%s", channelID, err.Error()))
+		return nil
 	}
 
 	channelConcurrencyMemoryMu.Lock()
@@ -951,16 +1017,16 @@ func (lease *channelConcurrencyWaitingLease) Release(ctx context.Context) error 
 	}
 	if lease.useRedis {
 		if common.RDB == nil {
-			return nil
+			lease.released.Store(false)
+			return fmt.Errorf("decrement channel concurrency waiting in redis failed for channel %d: redis client is unavailable", lease.channelID)
 		}
-		key := channelConcurrencyWaitingRedisKey(lease.channelID)
-		value, err := common.RDB.Decr(ctx, key).Result()
-		if err != nil {
+		if err := channelConcurrencyWaitReleaseScript.Run(
+			ctx,
+			common.RDB,
+			[]string{channelConcurrencyWaitingRedisKey(lease.channelID)},
+		).Err(); err != nil {
 			lease.released.Store(false)
 			return fmt.Errorf("decrement channel concurrency waiting in redis failed for channel %d: %w", lease.channelID, err)
-		}
-		if value <= 0 {
-			_ = common.RDB.Del(ctx, key).Err()
 		}
 		return nil
 	}
