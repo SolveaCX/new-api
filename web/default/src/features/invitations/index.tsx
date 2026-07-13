@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import { InvitationFaq } from './components/invitation-faq'
 import { InvitationRecordsCard } from './components/invitation-records-card'
+import { InvitationRewardSummary } from './components/invitation-reward-summary'
 import { InvitationStats } from './components/invitation-stats'
 import { ReferralLinkCard } from './components/referral-link-card'
 import { RewardStepsCard } from './components/reward-steps-card'
@@ -54,6 +55,9 @@ export function InvitationView({
 
   return (
     <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
+      {(loading || summary !== null) && (
+        <InvitationRewardSummary summary={summary} />
+      )}
       <InvitationStats summary={summary} loading={loading} />
       <ReferralLinkCard
         affiliateLink={affiliateLink}

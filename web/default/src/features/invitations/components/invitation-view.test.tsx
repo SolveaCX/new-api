@@ -128,6 +128,42 @@ describe('InvitationView', () => {
     expect(html).not.toContain('successfully calls the API')
   })
 
+  test('shows equal configured rewards and an unlimited configured referral count below the title', () => {
+    const html = renderView({
+      data: {
+        ...fixture,
+        summary: {
+          ...fixture.summary,
+          inviter_reward_usd: 20,
+          invitee_reward_usd: 20,
+          inviter_reward_max_count: 0,
+        },
+      },
+    })
+
+    expect(html).toContain('you both receive $20 in API credits')
+    expect(html).toContain('Unlimited rewards')
+  })
+
+  test('shows separate configured rewards and the configured referral limit', () => {
+    const html = renderView({
+      data: {
+        ...fixture,
+        summary: {
+          ...fixture.summary,
+          inviter_reward_usd: 20,
+          invitee_reward_usd: 10,
+          inviter_reward_max_count: 7,
+        },
+      },
+    })
+
+    expect(html).toContain('You receive $20')
+    expect(html).toContain('your friend receives $10 in API credits')
+    expect(html).toContain('up to 7 successful referrals')
+    expect(html).not.toContain('Unlimited rewards')
+  })
+
   test('renders the empty invitation state', () => {
     const html = renderView({
       data: { ...fixture, items: [], total: 0 },
@@ -187,12 +223,16 @@ describe('InvitationView', () => {
     const html = renderView({ data: null, loading: true })
 
     expect(html).toContain('data-slot="skeleton"')
+    expect(html).toContain('max-w-3xl')
     expect(html).not.toContain('No referrals yet')
     expect(html).not.toContain('load your referrals.')
     expect(html).not.toMatch(/>\$?0</)
     expect(html).not.toContain(
       'There is currently no limit on the number of referral rewards you can earn.'
     )
+    expect(html).not.toContain('you both receive')
+    expect(html).not.toContain('You receive')
+    expect(html).not.toContain('Unlimited rewards')
     expect(html).not.toContain('What are the current referral rewards?')
     expect(html).not.toContain('Is there a referral reward limit?')
     expect(html).not.toContain(
@@ -221,10 +261,14 @@ describe('InvitationView', () => {
     const html = renderView({ data: null, loading: false, error: true })
 
     expect(html).toContain('data-slot="skeleton"')
+    expect(html).not.toContain('max-w-3xl')
     expect(html).not.toMatch(/>\$?0</)
     expect(html).not.toContain(
       'There is currently no limit on the number of referral rewards you can earn.'
     )
+    expect(html).not.toContain('you both receive')
+    expect(html).not.toContain('You receive')
+    expect(html).not.toContain('Unlimited rewards')
     expect(html).not.toContain('What are the current referral rewards?')
     expect(html).not.toContain('Is there a referral reward limit?')
     expect(html).not.toContain(

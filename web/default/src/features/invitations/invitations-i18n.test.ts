@@ -40,6 +40,10 @@ const localeTranslations = {
 const invitationKeys = [
   'Invite',
   'Invite & Earn',
+  'Invite friends to sign up and complete their first top-up, and you both receive {{reward}} in API credits.',
+  'Invite friends to sign up and complete their first top-up. You receive {{inviterReward}} and your friend receives {{inviteeReward}} in API credits.',
+  'Unlimited rewards, credits never expire, and any email address is accepted.',
+  'Earn rewards for up to {{count}} successful referrals. Credits never expire, and any email address is accepted.',
   'Earn More Credits!',
   'Total earned',
   'Available to transfer',
@@ -129,6 +133,12 @@ describe('invitation i18n', () => {
 
   test('preserves interpolation placeholders in every locale', () => {
     const placeholderKeys = {
+      'Invite friends to sign up and complete their first top-up, and you both receive {{reward}} in API credits.':
+        ['{{reward}}'],
+      'Invite friends to sign up and complete their first top-up. You receive {{inviterReward}} and your friend receives {{inviteeReward}} in API credits.':
+        ['{{inviterReward}}', '{{inviteeReward}}'],
+      'Earn rewards for up to {{count}} successful referrals. Credits never expire, and any email address is accepted.':
+        ['{{count}}'],
       "The current configured rewards are {{inviterReward}} for you and {{inviteeReward}} for your friend. Rewards are processed after your friend's first successful top-up.":
         ['{{inviterReward}}', '{{inviteeReward}}'],
       'The maximum number of successful referrals you can earn rewards for is {{count}}. Friends invited after that can still receive their reward.':
