@@ -110,7 +110,7 @@ func TestChannelAvailabilityInFlightReadCannotOverwriteNewCooldown(t *testing.T)
 	}()
 
 	<-gate.reached
-	require.NoError(t, MarkChannelConcurrencyCooldown(context.Background(), channelID, time.Second, "new cooldown"))
+	require.NoError(t, MarkChannelConcurrencyCooldown(context.Background(), channelID, 20*time.Millisecond, "new cooldown"))
 	close(gate.release)
 
 	read := <-result
@@ -119,6 +119,11 @@ func TestChannelAvailabilityInFlightReadCannotOverwriteNewCooldown(t *testing.T)
 	coolingDown, err := IsChannelConcurrencyCoolingDown(context.Background(), channelID)
 	require.NoError(t, err)
 	require.True(t, coolingDown)
+	time.Sleep(30 * time.Millisecond)
+	mr.FastForward(30 * time.Millisecond)
+	coolingDown, err = IsChannelConcurrencyCoolingDown(context.Background(), channelID)
+	require.NoError(t, err)
+	require.False(t, coolingDown)
 }
 
 func TestChannelAvailabilityRefreshesExpiredCacheFromRedis(t *testing.T) {

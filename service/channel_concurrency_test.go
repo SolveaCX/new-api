@@ -989,9 +989,11 @@ func TestCacheGetRandomSatisfiedChannelSkipsFullChannels(t *testing.T) {
 }
 
 type redisCommandCounterHook struct {
-	mu            sync.Mutex
-	commands      []string
-	pipelineDelay time.Duration
+	mu                 sync.Mutex
+	commands           []string
+	pipelineDelay      time.Duration
+	activePipelines    int
+	maxActivePipelines int
 }
 
 func (h *redisCommandCounterHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
@@ -1006,6 +1008,12 @@ func (h *redisCommandCounterHook) AfterProcess(ctx context.Context, cmd redis.Cm
 }
 
 func (h *redisCommandCounterHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	h.mu.Lock()
+	h.activePipelines++
+	if h.activePipelines > h.maxActivePipelines {
+		h.maxActivePipelines = h.activePipelines
+	}
+	h.mu.Unlock()
 	if h.pipelineDelay > 0 {
 		time.Sleep(h.pipelineDelay)
 	}
@@ -1018,6 +1026,9 @@ func (h *redisCommandCounterHook) BeforeProcessPipeline(ctx context.Context, cmd
 }
 
 func (h *redisCommandCounterHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	h.mu.Lock()
+	h.activePipelines--
+	h.mu.Unlock()
 	return nil
 }
 
@@ -1043,6 +1054,12 @@ func (h *redisCommandCounterHook) CommandCount(name string) int {
 		}
 	}
 	return count
+}
+
+func (h *redisCommandCounterHook) MaxActivePipelines() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.maxActivePipelines
 }
 
 func useMemoryChannelConcurrencyForTest(t *testing.T) func() {

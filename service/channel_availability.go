@@ -127,33 +127,42 @@ func getChannelConcurrencyCooldownsByID(ctx context.Context, ids []int) (map[int
 			return cachedChannelAvailabilityValues(missing, fetchNow), nil
 		}
 
-		pipe := common.RDB.Pipeline()
-		commands := make(map[int]*redis.IntCmd, len(fetchIDs))
-		for _, channelID := range fetchIDs {
-			commands[channelID] = pipe.Exists(ctx, channelConcurrencyCooldownRedisKey(channelID))
-		}
-		if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		fetched := make(map[int]bool, len(fetchIDs))
+		if err := withChannelConcurrencyBatchFetchSlot(ctx, func() error {
+			pipe := common.RDB.Pipeline()
+			commands := make(map[int]*redis.IntCmd, len(fetchIDs))
+			for _, channelID := range fetchIDs {
+				commands[channelID] = pipe.Exists(ctx, channelConcurrencyCooldownRedisKey(channelID))
+			}
+			if _, execErr := pipe.Exec(ctx); execErr != nil && execErr != redis.Nil {
+				return execErr
+			}
+
+			cacheNow := time.Now()
+			expiresAt := cacheNow.Add(channelAvailabilityCacheTTL)
+			channelAvailabilityMu.Lock()
+			for channelID, command := range commands {
+				coolingDown := command.Val() > 0
+				entryExpiresAt := expiresAt
+				if cached, ok := channelAvailabilityCache[channelID]; ok &&
+					cached.coolingDown && cacheNow.Before(cached.expiresAt) && !coolingDown {
+					coolingDown = true
+					if cached.expiresAt.Before(entryExpiresAt) {
+						entryExpiresAt = cached.expiresAt
+					}
+				}
+				fetched[channelID] = coolingDown
+				channelAvailabilityCache[channelID] = cachedChannelAvailability{
+					coolingDown: coolingDown,
+					expiresAt:   entryExpiresAt,
+				}
+			}
+			channelAvailabilityMu.Unlock()
+			return nil
+		}); err != nil {
 			common.SysError(fmt.Sprintf("get channel cooldowns from redis failed: %s", err.Error()))
 			return nil, err
 		}
-
-		cacheNow := time.Now()
-		expiresAt := cacheNow.Add(channelAvailabilityCacheTTL)
-		fetched := make(map[int]bool, len(fetchIDs))
-		channelAvailabilityMu.Lock()
-		for channelID, command := range commands {
-			coolingDown := command.Val() > 0
-			if cached, ok := channelAvailabilityCache[channelID]; ok &&
-				cached.coolingDown && cacheNow.Before(cached.expiresAt) && !coolingDown {
-				coolingDown = true
-			}
-			fetched[channelID] = coolingDown
-			channelAvailabilityCache[channelID] = cachedChannelAvailability{
-				coolingDown: coolingDown,
-				expiresAt:   expiresAt,
-			}
-		}
-		channelAvailabilityMu.Unlock()
 		return fetched, nil
 	})
 

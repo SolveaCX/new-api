@@ -128,6 +128,7 @@ type cachedChannelConcurrencyLoadBatch struct {
 
 const (
 	defaultChannelConcurrencyLoadBatchCacheTTL = 200 * time.Millisecond
+	defaultChannelConcurrencyFreshLoadCacheTTL = 500 * time.Millisecond
 	maxChannelConcurrencyLoadBatchCacheEntries = 256
 	channelConcurrencyInitialWaitBackoff       = 100 * time.Millisecond
 	channelConcurrencyMaxWaitBackoff           = 2 * time.Second
@@ -136,16 +137,17 @@ const (
 )
 
 var (
-	channelConcurrencyMemoryMu       sync.Mutex
-	channelConcurrencyMemorySlots    = make(map[int]map[string]time.Time)
-	channelConcurrencyMemoryWaits    = make(map[int]int)
-	channelConcurrencyRequestPrefix  = common.GetUUID()
-	channelConcurrencyLoadCacheTTL   = defaultChannelConcurrencyLoadBatchCacheTTL
-	channelConcurrencyLoadCacheMu    sync.RWMutex
-	channelConcurrencyLoadCache      = make(map[string]cachedChannelConcurrencyLoadBatch)
-	channelConcurrencyFreshLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
-	channelConcurrencyLoadGroup      singleflight.Group
-	channelConcurrencyRenewInterval  = func(ttl time.Duration) time.Duration {
+	channelConcurrencyMemoryMu          sync.Mutex
+	channelConcurrencyMemorySlots       = make(map[int]map[string]time.Time)
+	channelConcurrencyMemoryWaits       = make(map[int]int)
+	channelConcurrencyRequestPrefix     = common.GetUUID()
+	channelConcurrencyLoadCacheTTL      = defaultChannelConcurrencyLoadBatchCacheTTL
+	channelConcurrencyFreshLoadCacheTTL = defaultChannelConcurrencyFreshLoadCacheTTL
+	channelConcurrencyLoadCacheMu       sync.RWMutex
+	channelConcurrencyLoadCache         = make(map[string]cachedChannelConcurrencyLoadBatch)
+	channelConcurrencyFreshLoadCache    = make(map[string]cachedChannelConcurrencyLoadBatch)
+	channelConcurrencyLoadGroup         singleflight.Group
+	channelConcurrencyRenewInterval     = func(ttl time.Duration) time.Duration {
 		interval := ttl / 3
 		if interval < time.Second {
 			return time.Second
@@ -156,7 +158,22 @@ var (
 		return common.RDB.ZRem(ctx, channelConcurrencyRedisKey(channelID), token).Err()
 	}
 	channelConcurrencyReleaseBackoffs = []time.Duration{25 * time.Millisecond, 75 * time.Millisecond}
+	channelConcurrencyBatchFetchSlots = make(chan struct{}, 2)
 )
+
+func withChannelConcurrencyBatchFetchSlot(ctx context.Context, fetch func() error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	slots := channelConcurrencyBatchFetchSlots
+	select {
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
+		return fetch()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 func TryAcquireChannelConcurrency(ctx context.Context, channel *model.Channel) (*ChannelConcurrencyLease, bool, error) {
 	return tryAcquireChannelConcurrencyWithToken(ctx, channel, newChannelConcurrencyToken())
@@ -624,7 +641,7 @@ func getRedisChannelConcurrencyLoadsFreshThrottled(ctx context.Context, initial 
 	if len(initial) == 0 {
 		return map[int]ChannelConcurrencyLoad{}, nil
 	}
-	if channelConcurrencyLoadCacheTTL <= 0 {
+	if channelConcurrencyFreshLoadCacheTTL <= 0 {
 		return fetchRedisChannelConcurrencyLoads(ctx, initial)
 	}
 
@@ -645,9 +662,8 @@ func getRedisChannelConcurrencyLoadsFreshThrottled(ctx context.Context, initial 
 		if fetchErr != nil {
 			return nil, fetchErr
 		}
-		expiresAt := now.Add(channelConcurrencyLoadCacheTTL)
-		storeCachedFreshChannelConcurrencyLoads(key, loads, expiresAt)
-		storeCachedChannelConcurrencyLoads(key, loads, expiresAt)
+		storeCachedFreshChannelConcurrencyLoads(key, loads, now.Add(channelConcurrencyFreshLoadCacheTTL))
+		storeCachedChannelConcurrencyLoads(key, loads, now.Add(channelConcurrencyLoadCacheTTL))
 		return cloneChannelConcurrencyLoadMap(loads), nil
 	})
 	if err != nil {
@@ -666,50 +682,56 @@ func fetchRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]Chan
 		return map[int]ChannelConcurrencyLoad{}, nil
 	}
 
-	now := time.Now()
-	if redisNow, err := common.RDB.Time(ctx).Result(); err == nil {
-		now = redisNow
-	} else {
-		return nil, err
-	}
-
-	type loadCommands struct {
-		channelID  int
-		activeCmd  *redis.IntCmd
-		waitingCmd *redis.StringCmd
-	}
-
-	pipe := common.RDB.Pipeline()
-	commands := make([]loadCommands, 0, len(initial))
-	for channelID := range initial {
-		key := channelConcurrencyRedisKey(channelID)
-		pipe.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.UnixMilli(), 10))
-		commands = append(commands, loadCommands{
-			channelID:  channelID,
-			activeCmd:  pipe.ZCard(ctx, key),
-			waitingCmd: pipe.Get(ctx, channelConcurrencyWaitingRedisKey(channelID)),
-		})
-	}
-	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
-		return nil, err
-	}
-
 	loads := make(map[int]ChannelConcurrencyLoad, len(initial))
-	for channelID, load := range initial {
-		loads[channelID] = load
-	}
-	for _, command := range commands {
-		load := loads[command.channelID]
-		if active, err := command.activeCmd.Result(); err == nil {
-			load.Active = int(active)
+	err := withChannelConcurrencyBatchFetchSlot(ctx, func() error {
+		now := time.Now()
+		if redisNow, timeErr := common.RDB.Time(ctx).Result(); timeErr == nil {
+			now = redisNow
+		} else {
+			return timeErr
 		}
-		if waitingValue, err := command.waitingCmd.Result(); err == nil {
-			if waiting, parseErr := strconv.Atoi(waitingValue); parseErr == nil && waiting > 0 {
-				load.Waiting = waiting
+
+		type loadCommands struct {
+			channelID  int
+			activeCmd  *redis.IntCmd
+			waitingCmd *redis.StringCmd
+		}
+
+		pipe := common.RDB.Pipeline()
+		commands := make([]loadCommands, 0, len(initial))
+		for channelID := range initial {
+			key := channelConcurrencyRedisKey(channelID)
+			pipe.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.UnixMilli(), 10))
+			commands = append(commands, loadCommands{
+				channelID:  channelID,
+				activeCmd:  pipe.ZCard(ctx, key),
+				waitingCmd: pipe.Get(ctx, channelConcurrencyWaitingRedisKey(channelID)),
+			})
+		}
+		if _, execErr := pipe.Exec(ctx); execErr != nil && execErr != redis.Nil {
+			return execErr
+		}
+
+		for channelID, load := range initial {
+			loads[channelID] = load
+		}
+		for _, command := range commands {
+			load := loads[command.channelID]
+			if active, activeErr := command.activeCmd.Result(); activeErr == nil {
+				load.Active = int(active)
 			}
+			if waitingValue, waitingErr := command.waitingCmd.Result(); waitingErr == nil {
+				if waiting, parseErr := strconv.Atoi(waitingValue); parseErr == nil && waiting > 0 {
+					load.Waiting = waiting
+				}
+			}
+			load.LoadRate = calculateChannelConcurrencyLoadRate(load.Active, load.Waiting, load.MaxConcurrency)
+			loads[command.channelID] = load
 		}
-		load.LoadRate = calculateChannelConcurrencyLoadRate(load.Active, load.Waiting, load.MaxConcurrency)
-		loads[command.channelID] = load
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return loads, nil
 }
@@ -1102,7 +1124,9 @@ func resetChannelConcurrencyForTest() {
 	channelConcurrencyLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
 	channelConcurrencyFreshLoadCache = make(map[string]cachedChannelConcurrencyLoadBatch)
 	channelConcurrencyLoadCacheTTL = defaultChannelConcurrencyLoadBatchCacheTTL
+	channelConcurrencyFreshLoadCacheTTL = defaultChannelConcurrencyFreshLoadCacheTTL
 	channelConcurrencyLoadGroup = singleflight.Group{}
+	channelConcurrencyBatchFetchSlots = make(chan struct{}, 2)
 	channelConcurrencyLoadCacheMu.Unlock()
 	resetChannelAvailabilityForTest()
 }
