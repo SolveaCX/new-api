@@ -4,6 +4,7 @@ import {
   buildBlogCategorySchema,
   buildBlogIndexSchema,
   buildHomepageSchema,
+  buildModelSchema,
   stringifyJsonLd,
 } from "./schema";
 
@@ -147,5 +148,41 @@ describe("blog structured data", () => {
 
   test("stringifies JSON-LD without raw closing script text", () => {
     expect(stringifyJsonLd({ value: "</script><script>alert(1)</script>" })).not.toContain("</script>");
+  });
+});
+
+describe("model structured data", () => {
+  test("builds merchant listing fields required for model product pages", () => {
+    const graph = buildModelSchema({
+      locale: "en",
+      modelName: "gpt-4o-mini",
+      vendorName: "OpenAI",
+      description: "GPT-4o mini through flatkey.ai.",
+      inputPriceUsd: 0.15,
+      pagePath: "/models/gpt-4o-mini",
+      faq: [{ q: "How is it billed?", a: "Usage is billed by token." }],
+    });
+
+    expect(graph["@graph"]).toContainEqual(
+      expect.objectContaining({
+        "@type": "Product",
+        image: "https://flatkey.ai/flatkey-mark.svg",
+        offers: expect.objectContaining({
+          "@type": "Offer",
+          hasMerchantReturnPolicy: expect.objectContaining({
+            "@type": "MerchantReturnPolicy",
+            returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
+          }),
+          shippingDetails: expect.objectContaining({
+            "@type": "OfferShippingDetails",
+            shippingRate: expect.objectContaining({
+              "@type": "MonetaryAmount",
+              value: 0,
+              currency: "USD",
+            }),
+          }),
+        }),
+      })
+    );
   });
 });
