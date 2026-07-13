@@ -41,10 +41,9 @@ export interface InvitationSummary {
   invitee_reward_usd: number
   inviter_reward_max_count: number
   history_usd: number
-  transferable_usd: number
+  pending_reward_usd: number
   granted_count: number
   pending_count: number
-  transfer_enabled: boolean
 }
 
 export interface InvitationPageData {
@@ -63,4 +62,3 @@ export interface ApiResponse<T = unknown> {
 
 export type InvitationPageResponse = ApiResponse<InvitationPageData>
 export type AffiliateCodeResponse = ApiResponse<string>
-export type AffiliateTransferResponse = ApiResponse

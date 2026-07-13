@@ -40,11 +40,21 @@ const localeTranslations = {
 const invitationKeys = [
   'Invite',
   'Invite & Earn',
+  'Invite friends to sign up and complete their first top-up, and you both receive {{reward}} in API credits.',
+  'Invite friends to sign up and complete their first top-up. You receive {{inviterReward}} and your friend receives {{inviteeReward}} in API credits.',
+  'Unlimited rewards, credits never expire, and any email address is accepted.',
+  'Earn rewards for up to {{count}} successful referral. Credits never expire, and any email address is accepted.',
+  'Earn rewards for up to {{count}} successful referrals. Credits never expire, and any email address is accepted.',
   'Earn More Credits!',
   'Total earned',
-  'Available to transfer',
-  'Successful referrals',
-  'Waiting for first top-up',
+  'Lifetime',
+  'Pending credits',
+  "Released after your friend's first top-up",
+  'Registered friends',
+  '{{reward}} each after first top-up',
+  'Active',
+  'Tracking',
+  'Share your link to start earning',
   'Your Referral Link',
   'Share your referral link with friends. Referral rewards are processed after their first successful top-up.',
   'Copy referral link',
@@ -55,21 +65,11 @@ const invitationKeys = [
   'How it works',
   'Share your referral link',
   'Send your unique referral link to a friend.',
-  'Your friend signs up',
-  'They create their account using your referral link.',
-  'Your friend completes their first successful top-up',
-  'NewAPI then processes the configured rewards for both accounts, subject to the referral reward limit.',
-  'Transfer Rewards',
-  'Move available referral rewards to your main balance.',
-  'Transfer to Balance',
-  'Referral reward transfer is disabled until the administrator confirms compliance terms.',
-  'Available Rewards',
-  'Transfer Amount',
-  'Minimum:',
-  'Cancel',
-  'Transfer',
-  'Transfer successful',
-  'Transfer failed',
+  'Your friend signs up and tops up',
+  'They create their account using your referral link and complete their first successful top-up.',
+  'Both receive {{reward}}',
+  'You receive {{inviterReward}}, your friend receives {{inviteeReward}}',
+  'Rewards are added automatically to both API balances and used for API requests.',
   'Recent referrals',
   'User',
   'Registered',
@@ -92,7 +92,7 @@ const invitationKeys = [
   'There is currently no limit on the number of referral rewards you can earn.',
   'The maximum number of successful referrals you can earn rewards for is {{count}}. Friends invited after that can still receive their reward.',
   'How do I use my referral rewards?',
-  'Transfer available referral rewards to your main balance, then use them for API requests.',
+  'Referral rewards are added automatically to your API balance and used for API requests.',
   'Which referrals appear here?',
   'This list shows active accounts registered through your referral link. Deleted accounts may not appear, so the rewards shown here may not add up to your lifetime earnings.',
   'What behavior is prohibited?',
@@ -129,6 +129,20 @@ describe('invitation i18n', () => {
 
   test('preserves interpolation placeholders in every locale', () => {
     const placeholderKeys = {
+      'Invite friends to sign up and complete their first top-up, and you both receive {{reward}} in API credits.':
+        ['{{reward}}'],
+      'Invite friends to sign up and complete their first top-up. You receive {{inviterReward}} and your friend receives {{inviteeReward}} in API credits.':
+        ['{{inviterReward}}', '{{inviteeReward}}'],
+      'Earn rewards for up to {{count}} successful referrals. Credits never expire, and any email address is accepted.':
+        ['{{count}}'],
+      'Earn rewards for up to {{count}} successful referral. Credits never expire, and any email address is accepted.':
+        ['{{count}}'],
+      '{{reward}} each after first top-up': ['{{reward}}'],
+      'Both receive {{reward}}': ['{{reward}}'],
+      'You receive {{inviterReward}}, your friend receives {{inviteeReward}}': [
+        '{{inviterReward}}',
+        '{{inviteeReward}}',
+      ],
       "The current configured rewards are {{inviterReward}} for you and {{inviteeReward}} for your friend. Rewards are processed after your friend's first successful top-up.":
         ['{{inviterReward}}', '{{inviteeReward}}'],
       'The maximum number of successful referrals you can earn rewards for is {{count}}. Friends invited after that can still receive their reward.':
@@ -155,7 +169,7 @@ describe('invitation i18n', () => {
         ['NewAPI'],
       'Referral rewards are granted only after your friend completes their first successful top-up. Registration, creating an API key, and making an API call do not grant a reward.':
         ['API'],
-      'Transfer available referral rewards to your main balance, then use them for API requests.':
+      'Referral rewards are added automatically to your API balance and used for API requests.':
         ['API'],
     } as const
 
@@ -186,6 +200,22 @@ describe('invitation i18n', () => {
         ),
         `${locale} should not contain obsolete referral reward guidance`
       ).toBe(false)
+    }
+  })
+
+  test('does not retain obsolete manual-transfer guidance', () => {
+    const obsoleteKeys = [
+      'Move available referral rewards to your main balance.',
+      'Transfer available referral rewards to your main balance, then use them for API requests.',
+    ]
+
+    for (const [locale, translations] of Object.entries(localeTranslations)) {
+      for (const key of obsoleteKeys) {
+        expect(
+          Object.prototype.hasOwnProperty.call(translations, key),
+          `${locale} should not contain obsolete transfer guidance`
+        ).toBe(false)
+      }
     }
   })
 

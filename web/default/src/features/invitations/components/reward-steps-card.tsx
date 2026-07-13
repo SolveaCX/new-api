@@ -7,23 +7,48 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useTranslation } from 'react-i18next'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
+import { formatInvitationUSD } from '../lib/usd'
+import type { InvitationSummary } from '../types'
 
-export function RewardStepsCard() {
+interface RewardStepsCardProps {
+  summary: InvitationSummary | null
+}
+
+export function RewardStepsCard(props: RewardStepsCardProps) {
   const { t } = useTranslation()
+  let rewardTitle: string | null = null
+  if (props.summary !== null) {
+    if (props.summary.inviter_reward_usd === props.summary.invitee_reward_usd) {
+      rewardTitle = t('Both receive {{reward}}', {
+        reward: formatInvitationUSD(props.summary.inviter_reward_usd),
+      })
+    } else {
+      rewardTitle = t(
+        'You receive {{inviterReward}}, your friend receives {{inviteeReward}}',
+        {
+          inviterReward: formatInvitationUSD(props.summary.inviter_reward_usd),
+          inviteeReward: formatInvitationUSD(props.summary.invitee_reward_usd),
+        }
+      )
+    }
+  }
   const steps = [
     {
       title: t('Share your referral link'),
       description: t('Send your unique referral link to a friend.'),
     },
     {
-      title: t('Your friend signs up'),
-      description: t('They create their account using your referral link.'),
+      title: t('Your friend signs up and tops up'),
+      description: t(
+        'They create their account using your referral link and complete their first successful top-up.'
+      ),
     },
     {
-      title: t('Your friend completes their first successful top-up'),
+      title: rewardTitle,
       description: t(
-        'NewAPI then processes the configured rewards for both accounts, subject to the referral reward limit.'
+        'Rewards are added automatically to both API balances and used for API requests.'
       ),
     },
   ]
@@ -32,12 +57,16 @@ export function RewardStepsCard() {
     <TitledCard title={t('How it works')}>
       <ol className='grid gap-4 md:grid-cols-3'>
         {steps.map((step, index) => (
-          <li key={step.title} className='flex min-w-0 gap-3'>
+          <li key={index} className='flex min-w-0 gap-3'>
             <span className='bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums'>
               {index + 1}
             </span>
             <div className='min-w-0'>
-              <h3 className='font-medium'>{step.title}</h3>
+              {step.title === null ? (
+                <Skeleton className='h-5 w-32' />
+              ) : (
+                <h3 className='font-medium'>{step.title}</h3>
+              )}
               <p className='text-muted-foreground mt-1 text-sm'>
                 {step.description}
               </p>

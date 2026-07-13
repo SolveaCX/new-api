@@ -22,6 +22,7 @@ type invitationSummary struct {
 	InviteeRewardUSD      float64 `json:"invitee_reward_usd"`
 	InviterRewardMaxCount int     `json:"inviter_reward_max_count"`
 	HistoryUSD            float64 `json:"history_usd"`
+	PendingRewardUSD      float64 `json:"pending_reward_usd"`
 	TransferableUSD       float64 `json:"transferable_usd"`
 	GrantedCount          int     `json:"granted_count"`
 	PendingCount          int64   `json:"pending_count"`
@@ -62,6 +63,25 @@ func invitationQuotaFromUSD(amountUSD float64) (int, error) {
 		return 0, errors.New("USD amount is too large")
 	}
 	return int(quota), nil
+}
+
+func invitationPendingRewardUSD(pendingCount int64, grantedCount int, maxCount int, rewardQuota int) float64 {
+	if pendingCount <= 0 || rewardQuota <= 0 {
+		return 0
+	}
+
+	eligibleCount := pendingCount
+	if maxCount > 0 {
+		remainingCount := maxCount - grantedCount
+		if remainingCount <= 0 {
+			return 0
+		}
+		if eligibleCount > int64(remainingCount) {
+			eligibleCount = int64(remainingCount)
+		}
+	}
+
+	return float64(eligibleCount) * invitationUSDFromQuota(rewardQuota)
 }
 
 func invitationRecordsFromModel(records []model.InvitationRecord) []invitationRecord {
@@ -115,7 +135,12 @@ func getInvitationPagination(c *gin.Context) (int, int) {
 
 func GetSelfInvitations(c *gin.Context) {
 	page, pageSize := getInvitationPagination(c)
-	user, err := model.GetUserById(c.GetInt("id"), true)
+	userId := c.GetInt("id")
+	if err := model.MigrateUserLegacyAffQuotaToQuota(userId); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user, err := model.GetUserById(userId, true)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -133,10 +158,16 @@ func GetSelfInvitations(c *gin.Context) {
 			InviteeRewardUSD:      invitationUSDFromQuota(common.QuotaForInvitee),
 			InviterRewardMaxCount: common.QuotaForInviterMaxCount,
 			HistoryUSD:            invitationUSDFromQuota(user.AffHistoryQuota),
-			TransferableUSD:       invitationUSDFromQuota(user.AffQuota),
-			GrantedCount:          user.AffCount,
-			PendingCount:          invitationPage.PendingCount,
-			TransferEnabled:       operation_setting.IsPaymentComplianceConfirmed(),
+			PendingRewardUSD: invitationPendingRewardUSD(
+				invitationPage.PendingCount,
+				user.AffCount,
+				common.QuotaForInviterMaxCount,
+				common.QuotaForInviter,
+			),
+			TransferableUSD: invitationUSDFromQuota(user.AffQuota),
+			GrantedCount:    user.AffCount,
+			PendingCount:    invitationPage.PendingCount,
+			TransferEnabled: operation_setting.IsPaymentComplianceConfirmed(),
 		},
 		Items:    invitationRecordsFromModel(invitationPage.Items),
 		Page:     page,

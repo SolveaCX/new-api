@@ -23,7 +23,6 @@ import {
   buildInvitationListPath,
   getAffiliateCode,
   getInvitations,
-  transferAffiliateUSD,
 } from './api'
 import type { InvitationPageData } from './types'
 
@@ -49,10 +48,9 @@ const invitationPage: InvitationPageData = {
     invitee_reward_usd: 50,
     inviter_reward_max_count: 10,
     history_usd: 200,
-    transferable_usd: 100,
+    pending_reward_usd: 100,
     granted_count: 2,
     pending_count: 1,
-    transfer_enabled: true,
   },
   items: [],
   page: 1,
@@ -65,26 +63,6 @@ describe('buildInvitationListPath', () => {
     expect(buildInvitationListPath(2, 10)).toBe(
       '/api/user/self/invitations?page=2&page_size=10'
     )
-  })
-})
-
-describe('transferAffiliateUSD', () => {
-  it('submits the entered USD amount without client-side currency conversion', async () => {
-    let requestBody: unknown
-    api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
-      requestBody = JSON.parse(String(config.data))
-      return {
-        data: { success: true },
-        status: 200,
-        statusText: 'OK',
-        headers: new AxiosHeaders(),
-        config,
-      }
-    }
-
-    await transferAffiliateUSD(8)
-
-    expect(requestBody).toEqual({ amount_usd: 8 })
   })
 })
 
