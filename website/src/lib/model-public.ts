@@ -74,6 +74,17 @@ export function classifyPublicModel(model: PricingModel): ModelPublicKind {
   return "chat";
 }
 
+export type ModelHealthStatus = "operational" | "degraded";
+
+// A model should only be labelled degraded when reliability is materially
+// below the production threshold. The previous 99.5% cutoff marked healthy
+// models such as DeepSeek (99.33%) and GLM (96.8%) as degraded, which
+// contradicted the page's own 30-day evidence.
+export function classifyModelHealthStatus(successRate?: number): ModelHealthStatus | null {
+  if (successRate == null || !Number.isFinite(successRate)) return null;
+  return successRate >= 95 ? "operational" : "degraded";
+}
+
 export type ModelPublicCopy = {
   successRate: string;
   stackedDiscount: string;

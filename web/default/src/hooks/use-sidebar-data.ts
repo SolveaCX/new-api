@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { type TFunction } from 'i18next'
 import {
   Activity,
   Box,
@@ -32,6 +33,7 @@ import {
   ShieldAlert,
   Ticket,
   User,
+  UserPlus,
   Users,
   Wallet,
 } from 'lucide-react'
@@ -44,9 +46,7 @@ import { type SidebarData } from '@/components/layout/types'
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
  */
-export function useSidebarData(): SidebarData {
-  const { t } = useTranslation()
-
+export function buildSidebarData(t: TFunction): SidebarData {
   return {
     navGroups: [
       {
@@ -108,6 +108,13 @@ export function useSidebarData(): SidebarData {
             icon: Wallet,
           },
           {
+            title: t('Invite'),
+            url: '/invite',
+            icon: UserPlus,
+            badge: t('Earn More Credits!'),
+            badgeVariant: 'promotion',
+          },
+          {
             title: t('Profile'),
             url: '/profile',
             icon: User,
@@ -163,4 +170,10 @@ export function useSidebarData(): SidebarData {
       },
     ],
   }
+}
+
+export function useSidebarData(): SidebarData {
+  const { t } = useTranslation()
+
+  return buildSidebarData(t)
 }

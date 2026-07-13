@@ -222,8 +222,9 @@ func Register(c *gin.Context) {
 		return
 	}
 	user.Email = strings.TrimSpace(user.Email)
-	if err := validateEmailDomainRestriction(user.Email); err != nil {
-		common.ApiError(c, err)
+	emailDecision, err := evaluateRegistrationEmail(user.Email)
+	if err != nil {
+		respondRegistrationEmailError(c, err)
 		return
 	}
 	if common.EmailVerificationEnabled {
@@ -259,13 +260,13 @@ func Register(c *gin.Context) {
 	if language, ok := dto.NormalizeUserLanguagePreference(i18n.GetLangFromContext(c)); ok {
 		cleanUser.SetSetting(dto.UserSetting{Language: language})
 	}
-	if common.EmailVerificationEnabled || common.EmailDomainRestrictionEnabled {
-		cleanUser.Email = user.Email
-	}
-	if err := cleanUser.InsertWithRegistrationIP(inviterId, c.ClientIP()); err != nil {
-		common.ApiError(c, err)
+	cleanUser.Email = user.Email
+	cleanUser.EmailDomain = emailDecision.Domain
+	if _, err := model.RegisterUserWithDomainRisk(&cleanUser, inviterId, c.ClientIP(), emailDecision.Policy, nil); err != nil {
+		respondRegistrationEmailError(c, err)
 		return
 	}
+	cleanUser.FinalizeOAuthUserCreation(inviterId)
 
 	// 获取插入后的用户ID
 	var insertedUser model.User
@@ -466,7 +467,21 @@ func GenerateAccessToken(c *gin.Context) {
 }
 
 type TransferAffQuotaRequest struct {
-	Quota int `json:"quota" binding:"required"`
+	AmountUSD *float64 `json:"amount_usd"`
+	Quota     *int     `json:"quota"`
+}
+
+func (request TransferAffQuotaRequest) quotaToTransfer() (int, error) {
+	if request.AmountUSD != nil && request.Quota != nil {
+		return 0, errors.New("provide either amount_usd or quota, not both")
+	}
+	if request.AmountUSD != nil {
+		return invitationQuotaFromUSD(*request.AmountUSD)
+	}
+	if request.Quota != nil {
+		return *request.Quota, nil
+	}
+	return 0, errors.New("amount_usd is required")
 }
 
 func TransferAffQuota(c *gin.Context) {
@@ -485,7 +500,12 @@ func TransferAffQuota(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	err = user.TransferAffQuotaToQuota(tran.Quota)
+	quota, err := tran.quotaToTransfer()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	err = user.TransferAffQuotaToQuota(quota)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserTransferFailed, map[string]any{"Error": err.Error()})
 		return

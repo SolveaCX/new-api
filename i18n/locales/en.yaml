@@ -104,6 +104,10 @@ user.telegram_not_bound: "This Telegram account is not bound"
 user.linux_do_id_empty: "Linux DO ID is empty!"
 user.quota_change_zero: "Quota change amount cannot be zero"
 
+registration_email.domain_invalid: "The email domain is invalid"
+registration_email.subdomain_rejected: "Registration with a subdomain email address is not allowed"
+registration_email.domain_unavailable: "Registration with this email domain is currently unavailable"
+
 # Quota messages
 quota.negative: "Quota cannot be negative!"
 quota.exceed_max: "Quota value exceeds valid range"

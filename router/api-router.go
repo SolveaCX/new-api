@@ -25,6 +25,13 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
+		registrationDomainRiskRoute := apiRouter.Group("/registration-domain-risk")
+		registrationDomainRiskRoute.Use(middleware.AdminAuth())
+		{
+			registrationDomainRiskRoute.GET("/blocks", controller.GetRegistrationDomainBlocks)
+			registrationDomainRiskRoute.GET("/blocks/:id", controller.GetRegistrationDomainBlock)
+			registrationDomainRiskRoute.POST("/blocks/:id/release", controller.ReleaseRegistrationDomainBlock)
+		}
 		apiRouter.GET("/notice", controller.GetNotice)
 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
@@ -91,6 +98,7 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self", controller.GetSelf)
+				selfRoute.GET("/self/invitations", controller.GetSelfInvitations)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.PUT("/self", controller.UpdateSelf)
 				selfRoute.DELETE("/self", controller.DeleteSelf)

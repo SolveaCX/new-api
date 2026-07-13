@@ -25,4 +25,9 @@ func SetUsageReconciliationRouter(router *gin.Engine) {
 	g.GET("/validation", controller.GetUsageValidation)
 	g.GET("/transactions", controller.GetUsageTransactions)
 	g.GET("/models", controller.GetUsageModels)
+	g.GET("/channels", controller.GetUsageChannels)
+	g.GET("/channel-summary", controller.GetChannelUsageSummary)
+	g.GET("/channel-validation", controller.GetChannelUsageValidation)
+	g.GET("/channel-transactions", controller.GetChannelUsageTransactions)
+	g.GET("/channel-models", controller.GetChannelUsageModels)
 }

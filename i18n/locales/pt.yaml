@@ -105,6 +105,10 @@ user.telegram_not_bound: "Esta conta do Telegram não está vinculada"
 user.linux_do_id_empty: "O ID do Linux DO está vazio!"
 user.quota_change_zero: "O valor de alteração da cota não pode ser zero"
 
+registration_email.domain_invalid: "O domínio do e-mail é inválido"
+registration_email.subdomain_rejected: "O registro com e-mail de subdomínio não é permitido"
+registration_email.domain_unavailable: "O registro com este domínio de e-mail está indisponível no momento"
+
 # Quota messages
 quota.negative: "A cota não pode ser negativa!"
 quota.exceed_max: "O valor da cota excede o intervalo válido"

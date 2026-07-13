@@ -105,6 +105,10 @@ user.telegram_not_bound: "該 Telegram 帳號未綁定"
 user.linux_do_id_empty: "Linux DO id 為空！"
 user.quota_change_zero: "額度變更量不能為0"
 
+registration_email.domain_invalid: "信箱網域無效"
+registration_email.subdomain_rejected: "暫不允許使用子網域信箱註冊"
+registration_email.domain_unavailable: "該信箱網域目前無法註冊"
+
 # Quota messages
 quota.negative: "額度不能為負數！"
 quota.exceed_max: "額度值超出有效範圍"

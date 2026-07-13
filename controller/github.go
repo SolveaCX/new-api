@@ -193,13 +193,6 @@ func GitHubOAuth(c *gin.Context) {
 				user.DisplayName = "GitHub User"
 			}
 			user.Email = strings.TrimSpace(githubUser.Email)
-			if err := validateEmailDomainRestriction(user.Email); err != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"success": false,
-					"message": err.Error(),
-				})
-				return
-			}
 			user.Role = common.RoleCommonUser
 			user.Status = common.UserStatusEnabled
 			affCode := session.Get("aff")
@@ -208,10 +201,10 @@ func GitHubOAuth(c *gin.Context) {
 				inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
 			}
 
-			if err := user.InsertWithRegistrationIP(inviterId, c.ClientIP()); err != nil {
+			if err := registerLegacyOAuthUser(c, &user, inviterId); err != nil {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
-					"message": err.Error(),
+					"message": registrationEmailErrorMessage(c, err),
 				})
 				return
 			}
