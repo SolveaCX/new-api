@@ -226,6 +226,13 @@ var (
 	DownloadRateLimitNum            = 10
 	DownloadRateLimitDuration int64 = 60
 
+	// Per-user payment rate limit (applies after authentication, keyed by user ID)
+	// Caps checkout-session creation to blunt card-testing attacks; normal users
+	// open 1-2 checkout sessions per top-up.
+	PaymentRateLimitEnable         = true
+	PaymentRateLimitNum            = 5
+	PaymentRateLimitDuration int64 = 10 * 60
+
 	// Per-user search rate limit (applies after authentication, keyed by user ID)
 	SearchRateLimitEnable         = true
 	SearchRateLimitNum            = 10
