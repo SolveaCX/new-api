@@ -6,7 +6,18 @@ const BOT_USER_AGENT_PATTERN =
   /googlebot|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|OAI-SearchBot|GPTBot|ChatGPT-User|ClaudeBot|Claude-User|Claude-SearchBot|claude-code|PerplexityBot|Perplexity-User/i;
 
 const IGNORED_PATH_PREFIXES = ["/_next", "/api", "/cdn-cgi", "/sign-in", "/sign-up", "/dashboard"];
-const IGNORED_EXACT_PATHS = ["/favicon.ico", "/robots.txt", "/sitemap.xml", "/llms.txt", "/install.sh", "/install.ps1"];
+const IGNORED_EXACT_PATHS = [
+  "/favicon.ico",
+  "/robots.txt",
+  "/sitemap.xml",
+  "/llms.txt",
+  "/install.sh",
+  "/install.ps1",
+  // These market pages are physical single-locale routes with no localized siblings.
+  "/br",
+  "/in",
+  "/id-market",
+];
 const PUBLIC_FILE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
 
 type LanguageRedirectInput = {
