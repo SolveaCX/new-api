@@ -26,6 +26,7 @@ type invitationTestResponse struct {
 			InviteeRewardUSD      float64 `json:"invitee_reward_usd"`
 			InviterRewardMaxCount int     `json:"inviter_reward_max_count"`
 			HistoryUSD            float64 `json:"history_usd"`
+			PendingRewardUSD      float64 `json:"pending_reward_usd"`
 			TransferableUSD       float64 `json:"transferable_usd"`
 			GrantedCount          int     `json:"granted_count"`
 			PendingCount          int64   `json:"pending_count"`
@@ -159,7 +160,7 @@ func performInvitationRequest(t *testing.T, inviterId int, query string) (*httpt
 
 func TestGetSelfInvitations(t *testing.T) {
 	t.Run("returns scoped privacy-safe summary and items", func(t *testing.T) {
-		_, inviter := setupInvitationControllerTest(t)
+		db, inviter := setupInvitationControllerTest(t)
 
 		recorder, response := performInvitationRequest(t, inviter.Id, "")
 
@@ -169,7 +170,8 @@ func TestGetSelfInvitations(t *testing.T) {
 		require.Equal(t, 2.5, response.Data.Summary.InviteeRewardUSD)
 		require.Equal(t, 10, response.Data.Summary.InviterRewardMaxCount)
 		require.Equal(t, 9.0, response.Data.Summary.HistoryUSD)
-		require.Equal(t, 4.0, response.Data.Summary.TransferableUSD)
+		require.Equal(t, 5.0, response.Data.Summary.PendingRewardUSD)
+		require.Zero(t, response.Data.Summary.TransferableUSD)
 		require.Equal(t, 2, response.Data.Summary.GrantedCount)
 		require.EqualValues(t, 1, response.Data.Summary.PendingCount)
 		require.True(t, response.Data.Summary.TransferEnabled)
@@ -184,6 +186,43 @@ func TestGetSelfInvitations(t *testing.T) {
 		require.NotContains(t, body, "pending-user")
 		require.NotContains(t, body, "other@example.com")
 		require.NotContains(t, body, "other-pending-user")
+
+		var refreshed model.User
+		require.NoError(t, db.First(&refreshed, inviter.Id).Error)
+		require.Equal(t, 400, refreshed.Quota)
+		require.Zero(t, refreshed.AffQuota)
+	})
+
+	t.Run("caps pending reward at remaining inviter slots", func(t *testing.T) {
+		db, inviter := setupInvitationControllerTest(t)
+		common.QuotaForInviterMaxCount = 3
+		for i := 0; i < 2; i++ {
+			require.NoError(t, db.Create(&model.User{
+				Username:           fmt.Sprintf("extra-pending-%d", i),
+				Password:           "password123",
+				AffCode:            fmt.Sprintf("extra-pending-code-%d", i),
+				InviterId:          inviter.Id,
+				InviteRewardStatus: model.InviteRewardStatusPending,
+				CreatedAt:          int64(400 + i),
+			}).Error)
+		}
+
+		recorder, response := performInvitationRequest(t, inviter.Id, "")
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.EqualValues(t, 3, response.Data.Summary.PendingCount)
+		require.Equal(t, 5.0, response.Data.Summary.PendingRewardUSD)
+	})
+
+	t.Run("returns no pending reward after inviter reaches the limit", func(t *testing.T) {
+		_, inviter := setupInvitationControllerTest(t)
+		common.QuotaForInviterMaxCount = inviter.AffCount
+
+		recorder, response := performInvitationRequest(t, inviter.Id, "")
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.EqualValues(t, 1, response.Data.Summary.PendingCount)
+		require.Zero(t, response.Data.Summary.PendingRewardUSD)
 	})
 
 	t.Run("disables transfer when payment compliance is not confirmed", func(t *testing.T) {

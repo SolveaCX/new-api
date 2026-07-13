@@ -14,28 +14,35 @@ import type { InvitationSummary } from '../types'
 
 interface InvitationStatsProps {
   summary: InvitationSummary | null
+  registeredCount: number
   loading: boolean
 }
 
-export function InvitationStats({ summary, loading }: InvitationStatsProps) {
+export function InvitationStats(props: InvitationStatsProps) {
   const { t } = useTranslation()
-  const pending = loading || summary === null
+  const pending = props.loading || props.summary === null
   const stats = [
     {
       label: t('Total earned'),
-      value: formatInvitationUSD(summary?.history_usd ?? 0),
+      value: formatInvitationUSD(props.summary?.history_usd ?? 0),
+      description: t('Lifetime'),
     },
     {
-      label: t('Available to transfer'),
-      value: formatInvitationUSD(summary?.transferable_usd ?? 0),
+      label: t('Pending credits'),
+      value: formatInvitationUSD(props.summary?.pending_reward_usd ?? 0),
+      description: t("Released after your friend's first top-up"),
     },
     {
-      label: t('Successful referrals'),
-      value: String(summary?.granted_count ?? 0),
+      label: t('Registered friends'),
+      value: String(props.registeredCount),
+      description: t('{{reward}} each after first top-up', {
+        reward: formatInvitationUSD(props.summary?.inviter_reward_usd ?? 0),
+      }),
     },
     {
-      label: t('Waiting for first top-up'),
-      value: String(summary?.pending_count ?? 0),
+      label: t('Status'),
+      value: t('Active'),
+      description: t('Tracking'),
     },
   ]
 
@@ -52,6 +59,11 @@ export function InvitationStats({ summary, loading }: InvitationStatsProps) {
             ) : (
               <p className='mt-2 text-2xl font-semibold tabular-nums'>
                 {stat.value}
+              </p>
+            )}
+            {!pending && (
+              <p className='text-muted-foreground mt-1 text-xs'>
+                {stat.description}
               </p>
             )}
           </CardContent>

@@ -68,7 +68,7 @@ export function InvitationFaq({ summary }: InvitationFaqProps) {
     {
       question: t('How do I use my referral rewards?'),
       answer: t(
-        'Transfer available referral rewards to your main balance, then use them for API requests.'
+        'Referral rewards are added automatically to your API balance and used for API requests.'
       ),
     },
     {

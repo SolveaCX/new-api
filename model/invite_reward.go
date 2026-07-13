@@ -6,7 +6,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -220,7 +219,7 @@ func tryGrantInviteRewardForTriggerInTx(tx *gorm.DB, inviteeId int, trigger invi
 			inviterRewardUpdate = inviterRewardUpdate.Where("aff_count <= ?", common.QuotaForInviterMaxCount)
 		}
 		inviterRewardUpdate = inviterRewardUpdate.Updates(map[string]any{
-			"aff_quota":   gorm.Expr("aff_quota + ?", result.inviterRewardQuota),
+			"quota":       gorm.Expr("quota + ?", result.inviterRewardQuota),
 			"aff_history": gorm.Expr("aff_history + ?", result.inviterRewardQuota),
 		})
 		if inviterRewardUpdate.Error != nil {
@@ -305,12 +304,14 @@ func runInviteRewardPostCommitHooks(result inviteRewardGrantResult) {
 	if !result.handled {
 		return
 	}
-	gopool.Go(func() {
-		_ = InvalidateUserCache(result.inviteeId)
-		if result.inviterId > 0 {
-			_ = InvalidateUserCache(result.inviterId)
+	if err := InvalidateUserCache(result.inviteeId); err != nil {
+		common.SysLog(fmt.Sprintf("failed to invalidate invitee %d cache after invite reward: %v", result.inviteeId, err))
+	}
+	if result.inviterId > 0 {
+		if err := InvalidateUserCache(result.inviterId); err != nil {
+			common.SysLog(fmt.Sprintf("failed to invalidate inviter %d cache after invite reward: %v", result.inviterId, err))
 		}
-	})
+	}
 	if result.blocked {
 		common.SysLog(fmt.Sprintf("invite reward blocked for invitee %d: %s", result.inviteeId, result.reason))
 		return

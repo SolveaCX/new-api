@@ -17,11 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import type {
-  AffiliateCodeResponse,
-  AffiliateTransferResponse,
-  InvitationPageResponse,
-} from './types'
+import type { AffiliateCodeResponse, InvitationPageResponse } from './types'
 
 export function buildInvitationListPath(
   page: number,
@@ -60,15 +56,4 @@ export async function getAffiliateCode(): Promise<AffiliateCodeResponse> {
     throw new Error(response?.message || 'Invalid affiliate code response')
   }
   return response
-}
-
-export async function transferAffiliateUSD(
-  amountUSD: number
-): Promise<AffiliateTransferResponse> {
-  const res = await api.post<AffiliateTransferResponse>(
-    '/api/user/aff_transfer',
-    { amount_usd: amountUSD },
-    { skipBusinessError: true, skipErrorHandler: true }
-  )
-  return res.data
 }

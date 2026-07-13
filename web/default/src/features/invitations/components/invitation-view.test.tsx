@@ -24,11 +24,6 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { InvitationView } from '../index'
 import { formatInvitationUSD } from '../lib/usd'
 import type { InvitationPageData } from '../types'
-import {
-  clampTransferAmount,
-  getTransferAmountInputConstraints,
-  isValidTransferAmount,
-} from './transfer-dialog'
 
 const testI18n = createInstance()
 
@@ -38,10 +33,9 @@ const fixture: InvitationPageData = {
     invitee_reward_usd: 0.5,
     inviter_reward_max_count: 10,
     history_usd: 3,
-    transferable_usd: 1,
+    pending_reward_usd: 2,
     granted_count: 3,
     pending_count: 2,
-    transfer_enabled: true,
   },
   items: [
     {
@@ -90,11 +84,9 @@ function renderView(
         affiliateLoading={false}
         affiliateError={false}
         error={false}
-        transferring={false}
         page={1}
         onPageChange={() => undefined}
         onRetry={() => undefined}
-        onTransfer={async () => true}
         {...overrides}
       />
     </I18nextProvider>
@@ -106,9 +98,9 @@ describe('InvitationView', () => {
     const html = renderView()
 
     expect(html).toContain('Total earned')
-    expect(html).toContain('Available to transfer')
-    expect(html).toContain('Successful referrals')
-    expect(html).toContain('Waiting for first top-up')
+    expect(html).toContain('Pending credits')
+    expect(html).toContain('Registered friends')
+    expect(html).toContain('Active')
     expect(html).toContain('Your Referral Link')
     expect(html).toContain('https://console.example.com/sign-up?aff=ABCD')
     expect(html).toContain('Share by email')
@@ -117,15 +109,21 @@ describe('InvitationView', () => {
     expect(html).toContain('Share your referral link')
     expect(html).toContain('Your friend signs up')
     expect(html).toContain('first successful top-up')
-    expect(html).toContain('Transfer Rewards')
+    expect(html).toContain('You receive $1, your friend receives $0.5')
+    expect(html).toContain(
+      'Rewards are added automatically to both API balances and used for API requests.'
+    )
     expect(html).toContain('$3')
-    expect(html).toContain('$1')
+    expect(html).toContain('$2')
+    expect(html).toContain('12')
     expect(html).toContain('Recent referrals')
     expect(html).toContain('a***@example.com')
     expect(html).toContain('Reward granted')
     expect(html).toContain('Awaiting top-up')
     expect(html).not.toContain('first API key')
     expect(html).not.toContain('successfully calls the API')
+    expect(html).not.toContain('Available to transfer')
+    expect(html).not.toContain('Transfer Rewards')
   })
 
   test('shows equal configured rewards and an unlimited configured referral count below the title', () => {
@@ -142,6 +140,7 @@ describe('InvitationView', () => {
     })
 
     expect(html).toContain('you both receive $20 in API credits')
+    expect(html).toContain('Both receive $20')
     expect(html).toContain('Unlimited rewards')
   })
 
@@ -160,6 +159,7 @@ describe('InvitationView', () => {
 
     expect(html).toContain('You receive $20')
     expect(html).toContain('your friend receives $10 in API credits')
+    expect(html).toContain('You receive $20, your friend receives $10')
     expect(html).toContain('up to 7 successful referrals')
     expect(html).not.toContain('Unlimited rewards')
   })
@@ -269,6 +269,8 @@ describe('InvitationView', () => {
     expect(html).not.toContain('you both receive')
     expect(html).not.toContain('You receive')
     expect(html).not.toContain('Unlimited rewards')
+    expect(html).not.toContain('How it works')
+    expect(html).not.toContain('Rewards are added automatically')
     expect(html).not.toContain('What are the current referral rewards?')
     expect(html).not.toContain('Is there a referral reward limit?')
     expect(html).not.toContain(
@@ -301,48 +303,11 @@ describe('InvitationView', () => {
       /<a[^>]*aria-label="Share on LinkedIn"[^>]*target="_blank"[^>]*rel="noreferrer noopener"[^>]*>\s*<svg[^>]*>/
     )
   })
-
-  test('disables reward transfer when compliance is not confirmed', () => {
-    const html = renderView({
-      data: {
-        ...fixture,
-        summary: { ...fixture.summary, transfer_enabled: false },
-      },
-    })
-
-    expect(html).toContain(
-      'Referral reward transfer is disabled until the administrator confirms compliance terms.'
-    )
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*Transfer to Balance/)
-  })
 })
 
-describe('transfer amount validation', () => {
-  test('accepts finite USD amounts between one dollar and the available amount', () => {
-    expect(isValidTransferAmount(1, 8)).toBe(true)
-    expect(isValidTransferAmount(8, 8)).toBe(true)
-    expect(isValidTransferAmount(Number.NaN, 8)).toBe(false)
-    expect(isValidTransferAmount(Number.POSITIVE_INFINITY, 8)).toBe(false)
-    expect(isValidTransferAmount(0.99, 8)).toBe(false)
-    expect(isValidTransferAmount(8.01, 8)).toBe(false)
-  })
-
-  test('replaces an over-limit USD input with the full available amount', () => {
-    expect(clampTransferAmount(9, 8)).toBe(8)
-    expect(clampTransferAmount(7, 8)).toBe(7)
-    expect(clampTransferAmount(2, 1.5)).toBe(1.5)
-  })
-
+describe('USD formatting', () => {
   test('keeps sub-dollar USD precision visible instead of rounding across a boundary', () => {
     expect(formatInvitationUSD(0.999)).toBe('$0.999')
     expect(formatInvitationUSD(0.000002)).toBe('$0.000002')
-  })
-
-  test('allows decimal USD values without a native step mismatch', () => {
-    expect(getTransferAmountInputConstraints(1.5)).toEqual({
-      min: 1,
-      max: 1.5,
-      step: 'any',
-    })
   })
 })
