@@ -44,6 +44,7 @@ import {
 } from './api'
 import type {
   OpsCampaignRow,
+  OpsDailyRow,
   OpsDauRow,
   OpsFunnelRow,
   OpsKeywordRow,
@@ -249,12 +250,24 @@ function FunnelCells({ row }: { row: OpsFunnelRow }) {
   )
 }
 
-function FunnelHeader({ firstColumn }: { firstColumn: string }) {
+function FunnelHeader({
+  firstColumn,
+  ads,
+}: {
+  firstColumn: string
+  ads?: boolean
+}) {
   const { t } = useTranslation()
   return (
     <TableHeader>
       <TableRow>
         <TableHead>{firstColumn}</TableHead>
+        {ads && (
+          <>
+            <TableHead className='text-right'>{t('Ad Spend')}</TableHead>
+            <TableHead className='text-right'>{t('Ad Clicks')}</TableHead>
+          </>
+        )}
         <TableHead className='text-right'>{t('Registrations')}</TableHead>
         <TableHead className='text-right'>{t('Real Browse')}</TableHead>
         <TableHead className='text-right'>{t('Manual Keys')}</TableHead>
@@ -283,6 +296,39 @@ function FunnelTable({
           {rows.map((row) => (
             <TableRow key={row.key}>
               <TableCell className='whitespace-nowrap'>{row.key}</TableCell>
+              <FunnelCells row={row} />
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+// Daily funnel table with the day's paid-ads totals (spend + clicks, all
+// campaigns) ahead of the registration funnel; the spend cell also shows CPC.
+function DailyFunnelTable({ rows }: { rows: OpsDailyRow[] }) {
+  const { t } = useTranslation()
+  return (
+    <div className='overflow-x-auto'>
+      <Table className={TABLE_GRID}>
+        <FunnelHeader firstColumn={t('Date')} ads />
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.key}>
+              <TableCell className='whitespace-nowrap'>{row.key}</TableCell>
+              <TableCell className='text-right whitespace-nowrap'>
+                {row.ads_cost_usd > 0 ? usd(row.ads_cost_usd) : '-'}
+                {row.ads_clicks > 0 && (
+                  <span className='text-muted-foreground text-xs'>
+                    {' '}
+                    (CPC {usd(row.ads_cost_usd / row.ads_clicks)})
+                  </span>
+                )}
+              </TableCell>
+              <TableCell className='text-right'>
+                {row.ads_clicks > 0 ? row.ads_clicks : '-'}
+              </TableCell>
               <FunnelCells row={row} />
             </TableRow>
           ))}
@@ -1028,7 +1074,7 @@ export function OpsReport() {
                         }))}
                       yLabel={t('Registrations')}
                     />
-                    <FunnelTable rows={report.daily} firstColumn={t('Date')} />
+                    <DailyFunnelTable rows={report.daily} />
                   </CardContent>
                 </Card>
               </TabsContent>

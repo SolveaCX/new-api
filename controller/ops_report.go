@@ -61,6 +61,16 @@ type opsFunnelRow struct {
 	CostUSD float64 `json:"cost_usd"`
 }
 
+// opsDailyRow is a funnel row for the daily table, prefixed with the day's
+// paid-ads totals (all campaigns) so spend/clicks line up with the
+// registrations they produced. Ads dates are the ads account timezone (US
+// Pacific), the same day bucketing as the funnel.
+type opsDailyRow struct {
+	opsFunnelRow
+	AdsCostUSD float64 `json:"ads_cost_usd"`
+	AdsClicks  int     `json:"ads_clicks"`
+}
+
 type opsNameCount struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
@@ -127,7 +137,7 @@ type opsReportData struct {
 	GeneratedAt    int64            `json:"generated_at"`
 	Days           int              `json:"days"`
 	DauScope       string           `json:"dau_scope"`
-	Daily          []opsFunnelRow   `json:"daily"`
+	Daily          []opsDailyRow    `json:"daily"`
 	WeeklyFunnel   []opsFunnelRow   `json:"weekly_funnel"`
 	CampaignFunnel []opsCampaignRow `json:"campaign_funnel"`
 	KeywordFunnel  []opsKeywordRow  `json:"keyword_funnel"`
@@ -322,12 +332,17 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 		}
 		report.Dau = opsRollupDau(keyDaily, dayStarts)
 	}
-	report.Daily = opsRollupFunnel(aggs, func(a *opsUserAgg) string {
+	dailyRows := opsRollupFunnel(aggs, func(a *opsUserAgg) string {
 		if a.user.CreatedAt < startTs {
 			return ""
 		}
 		return opsDay(a.user.CreatedAt)
 	}, true)
+	adsDaily, err := model.GetOpsAdsSpendDaily(opsDay(startTs))
+	if err != nil {
+		return nil, err
+	}
+	report.Daily = opsAttachAdsSpend(dailyRows, adsDaily)
 	report.WeeklyFunnel = opsRollupFunnel(aggs, func(a *opsUserAgg) string {
 		return opsWeek(a.user.CreatedAt)
 	}, true)
@@ -340,6 +355,42 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 	report.TopPayers, report.TotalPaidUsers, report.TotalPaidUSD = opsTopPayers(aggs)
 	report.RegisteredUsers = opsRegisteredUsers(aggs)
 	return report, nil
+}
+
+// opsAttachAdsSpend joins per-day ads totals onto the daily funnel rows by
+// date string (both are Pacific days). A day with spend but zero registrations
+// gets a zero funnel row so spend never silently disappears from the table;
+// tomorrow's ads dates (the ads account day can run ahead of a UTC server day)
+// are dropped along with any date outside the funnel window.
+func opsAttachAdsSpend(rows []opsFunnelRow, ads []*model.AdsSpendDaily) []opsDailyRow {
+	byDate := make(map[string]*model.AdsSpendDaily, len(ads))
+	for _, a := range ads {
+		byDate[a.Date] = a
+	}
+	daily := make([]opsDailyRow, 0, len(rows))
+	seen := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		dr := opsDailyRow{opsFunnelRow: row}
+		if a, ok := byDate[row.Key]; ok {
+			dr.AdsCostUSD = a.CostUSD
+			dr.AdsClicks = a.Clicks
+		}
+		seen[row.Key] = true
+		daily = append(daily, dr)
+	}
+	today := opsDay(time.Now().Unix())
+	for date, a := range byDate {
+		if seen[date] || date > today || (a.CostUSD == 0 && a.Clicks == 0) {
+			continue
+		}
+		daily = append(daily, opsDailyRow{
+			opsFunnelRow: opsFunnelRow{Key: date},
+			AdsCostUSD:   a.CostUSD,
+			AdsClicks:    a.Clicks,
+		})
+	}
+	sort.Slice(daily, func(i, j int) bool { return daily[i].Key > daily[j].Key })
+	return daily
 }
 
 // opsRegisteredUsers lists the newest registrations in the report window with

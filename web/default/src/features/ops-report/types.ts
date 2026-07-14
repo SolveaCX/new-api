@@ -35,6 +35,11 @@ export interface OpsFunnelRow {
   cost_usd: number
 }
 
+export interface OpsDailyRow extends OpsFunnelRow {
+  ads_cost_usd: number
+  ads_clicks: number
+}
+
 export interface OpsNameCount {
   name: string
   count: number
@@ -98,7 +103,7 @@ export interface OpsPaymentRow {
 export interface OpsReportData {
   generated_at: number
   days: number
-  daily: OpsFunnelRow[]
+  daily: OpsDailyRow[]
   weekly_funnel: OpsFunnelRow[]
   campaign_funnel: OpsCampaignRow[]
   keyword_funnel: OpsKeywordRow[] | null

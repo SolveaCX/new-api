@@ -295,6 +295,7 @@ func migrateDB() error {
 		&CodexModelGovernanceRecord{},
 		&CodexModelGovernanceProbeState{},
 		&CodexModelGovernanceAlertCooldownRecord{},
+		&AdsSpendDaily{},
 	)
 	if err != nil {
 		return err
