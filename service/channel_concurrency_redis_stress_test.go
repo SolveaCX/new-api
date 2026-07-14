@@ -139,6 +139,7 @@ func TestChannelConcurrencyRealRedisFiftyChannelPressure(t *testing.T) {
 	var selectionLatency channelConcurrencyStressLatency
 	active := make([]atomic.Int64, len(channels))
 	peakActive := make([]atomic.Int64, len(channels))
+	activeMu := make([]sync.Mutex, len(channels))
 
 	var wg sync.WaitGroup
 	for worker := 0; worker < workers; worker++ {
@@ -175,17 +176,21 @@ func TestChannelConcurrencyRealRedisFiftyChannelPressure(t *testing.T) {
 					continue
 				}
 
+				activeMu[channelIndex].Lock()
 				current := active[channelIndex].Add(1)
 				updateChannelConcurrencyStressMax(&peakActive[channelIndex], current)
 				if current > channelConcurrencyStressMaxSlots {
 					overAllocated.Add(1)
 				}
+				activeMu[channelIndex].Unlock()
 				time.Sleep(time.Duration(rng.Intn(3)+1) * time.Millisecond)
+				activeMu[channelIndex].Lock()
 				if err := ReleaseChannelConcurrency(context.Background(), lease); err != nil {
 					failures.Add(1)
 				} else {
 					active[channelIndex].Add(-1)
 				}
+				activeMu[channelIndex].Unlock()
 				operations.Add(1)
 			}
 		}(int64(worker + 1))
