@@ -525,6 +525,33 @@ func TestTryAcquireChannelConcurrencyFallsBackToMemoryWhenRedisFails(t *testing.
 	require.Nil(t, lease)
 }
 
+func TestTryAcquireChannelConcurrencyCleansSlotWhenRedisResultIsLost(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	resultLost := errors.New("redis acquire result lost")
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RDB.AddHook(&redisAfterEvalErrorHook{err: resultLost})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+
+	channel := &model.Channel{Id: 119, MaxConcurrency: 1}
+	lease, ok, err := TryAcquireChannelConcurrency(context.Background(), channel)
+	require.ErrorContains(t, err, resultLost.Error())
+	require.False(t, ok)
+	require.Nil(t, lease)
+	slotCount, countErr := common.RDB.ZCard(context.Background(), channelConcurrencyRedisKey(channel.Id)).Result()
+	require.NoError(t, countErr)
+	require.Zero(t, slotCount)
+}
+
 func TestChannelConcurrencyAcquireScriptUsesRedisTime(t *testing.T) {
 	require.Contains(t, channelConcurrencyAcquireScriptSrc, "redis.call('TIME')")
 }
@@ -1037,6 +1064,32 @@ type redisCommandCounterHook struct {
 	activePipelines     int
 	maxActivePipelines  int
 	maxPipelineCommands int
+}
+
+type redisAfterEvalErrorHook struct {
+	once sync.Once
+	err  error
+}
+
+func (h *redisAfterEvalErrorHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+
+func (h *redisAfterEvalErrorHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	if strings.EqualFold(cmd.Name(), "eval") {
+		var injected error
+		h.once.Do(func() { injected = h.err })
+		return injected
+	}
+	return nil
+}
+
+func (h *redisAfterEvalErrorHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+
+func (h *redisAfterEvalErrorHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	return nil
 }
 
 func (h *redisCommandCounterHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {

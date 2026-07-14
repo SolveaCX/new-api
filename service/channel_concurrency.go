@@ -135,6 +135,7 @@ const (
 	channelConcurrencyWaitBackoffMultiplier    = 1.5
 	channelConcurrencyLoadFetchTimeout         = 3 * time.Second
 	channelConcurrencyRedisReadBatchSize       = 50
+	channelConcurrencyAcquireCleanupTimeout    = 500 * time.Millisecond
 )
 
 var (
@@ -274,6 +275,12 @@ func tryAcquireChannelConcurrencyWithToken(ctx context.Context, channel *model.C
 	if lease.useRedis {
 		ok, err := acquireRedisChannelConcurrency(ctx, channel.Id, maxConcurrency, token)
 		if err != nil {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), channelConcurrencyAcquireCleanupTimeout)
+			cleanupErr := removeRedisChannelConcurrencySlot(cleanupCtx, channel.Id, token)
+			cleanupCancel()
+			if cleanupErr != nil {
+				return nil, false, fmt.Errorf("acquire channel concurrency in redis failed for channel %d: %w; uncertain slot cleanup failed: %v", channel.Id, err, cleanupErr)
+			}
 			return nil, false, fmt.Errorf("acquire channel concurrency in redis failed for channel %d: %w", channel.Id, err)
 		} else if !ok {
 			return nil, false, nil
