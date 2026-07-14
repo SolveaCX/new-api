@@ -134,6 +134,7 @@ const (
 	channelConcurrencyMaxWaitBackoff           = 2 * time.Second
 	channelConcurrencyWaitBackoffMultiplier    = 1.5
 	channelConcurrencyLoadFetchTimeout         = 3 * time.Second
+	channelConcurrencyRedisReadBatchSize       = 50
 )
 
 var (
@@ -335,6 +336,9 @@ func getChannelConcurrencyLoads(ctx context.Context, channels []*model.Channel, 
 				loads[channelID] = load
 			}
 			return loads, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		common.SysError(fmt.Sprintf("get channel concurrency loads from redis failed, fallback to memory: %s", err.Error()))
 	}
@@ -612,7 +616,7 @@ func getRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]Channe
 		return cached, nil
 	}
 
-	value, err, _ := channelConcurrencyLoadGroup.Do(key, func() (any, error) {
+	resultCh := channelConcurrencyLoadGroup.DoChan(key, func() (any, error) {
 		now := time.Now()
 		if cached, ok := getCachedChannelConcurrencyLoads(key, now); ok {
 			return cached, nil
@@ -626,14 +630,7 @@ func getRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]Channe
 		storeCachedChannelConcurrencyLoads(key, loads, now.Add(channelConcurrencyLoadCacheTTL))
 		return cloneChannelConcurrencyLoadMap(loads), nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	loads, _ := value.(map[int]ChannelConcurrencyLoad)
-	if loads == nil {
-		return map[int]ChannelConcurrencyLoad{}, nil
-	}
-	return cloneChannelConcurrencyLoadMap(loads), nil
+	return awaitChannelConcurrencyLoadResult(ctx, resultCh)
 }
 
 func getRedisChannelConcurrencyLoadsFreshThrottled(ctx context.Context, initial map[int]ChannelConcurrencyLoad) (map[int]ChannelConcurrencyLoad, error) {
@@ -651,7 +648,7 @@ func getRedisChannelConcurrencyLoadsFreshThrottled(ctx context.Context, initial 
 		return cached, nil
 	}
 
-	value, err, _ := channelConcurrencyLoadGroup.Do("fresh:"+key, func() (any, error) {
+	resultCh := channelConcurrencyLoadGroup.DoChan("fresh:"+key, func() (any, error) {
 		now := time.Now()
 		if cached, ok := getCachedFreshChannelConcurrencyLoads(key, now); ok {
 			return cached, nil
@@ -666,14 +663,26 @@ func getRedisChannelConcurrencyLoadsFreshThrottled(ctx context.Context, initial 
 		storeCachedChannelConcurrencyLoads(key, loads, now.Add(channelConcurrencyLoadCacheTTL))
 		return cloneChannelConcurrencyLoadMap(loads), nil
 	})
-	if err != nil {
-		return nil, err
+	return awaitChannelConcurrencyLoadResult(ctx, resultCh)
+}
+
+func awaitChannelConcurrencyLoadResult(ctx context.Context, resultCh <-chan singleflight.Result) (map[int]ChannelConcurrencyLoad, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	loads, _ := value.(map[int]ChannelConcurrencyLoad)
-	if loads == nil {
-		return map[int]ChannelConcurrencyLoad{}, nil
+	select {
+	case result := <-resultCh:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		loads, _ := result.Val.(map[int]ChannelConcurrencyLoad)
+		if loads == nil {
+			return map[int]ChannelConcurrencyLoad{}, nil
+		}
+		return cloneChannelConcurrencyLoadMap(loads), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	return cloneChannelConcurrencyLoadMap(loads), nil
 }
 
 func fetchRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]ChannelConcurrencyLoad) (map[int]ChannelConcurrencyLoad, error) {
@@ -697,36 +706,49 @@ func fetchRedisChannelConcurrencyLoads(ctx context.Context, initial map[int]Chan
 			waitingCmd *redis.StringCmd
 		}
 
-		pipe := common.RDB.Pipeline()
-		commands := make([]loadCommands, 0, len(initial))
-		for channelID := range initial {
-			key := channelConcurrencyRedisKey(channelID)
-			pipe.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.UnixMilli(), 10))
-			commands = append(commands, loadCommands{
-				channelID:  channelID,
-				activeCmd:  pipe.ZCard(ctx, key),
-				waitingCmd: pipe.Get(ctx, channelConcurrencyWaitingRedisKey(channelID)),
-			})
-		}
-		if _, execErr := pipe.Exec(ctx); execErr != nil && execErr != redis.Nil {
-			return execErr
-		}
-
 		for channelID, load := range initial {
 			loads[channelID] = load
 		}
-		for _, command := range commands {
-			load := loads[command.channelID]
-			if active, activeErr := command.activeCmd.Result(); activeErr == nil {
-				load.Active = int(active)
+
+		channelIDs := make([]int, 0, len(initial))
+		for channelID := range initial {
+			channelIDs = append(channelIDs, channelID)
+		}
+		sort.Ints(channelIDs)
+		for start := 0; start < len(channelIDs); start += channelConcurrencyRedisReadBatchSize {
+			end := start + channelConcurrencyRedisReadBatchSize
+			if end > len(channelIDs) {
+				end = len(channelIDs)
 			}
-			if waitingValue, waitingErr := command.waitingCmd.Result(); waitingErr == nil {
-				if waiting, parseErr := strconv.Atoi(waitingValue); parseErr == nil && waiting > 0 {
-					load.Waiting = waiting
+
+			pipe := common.RDB.Pipeline()
+			commands := make([]loadCommands, 0, end-start)
+			for _, channelID := range channelIDs[start:end] {
+				key := channelConcurrencyRedisKey(channelID)
+				pipe.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.UnixMilli(), 10))
+				commands = append(commands, loadCommands{
+					channelID:  channelID,
+					activeCmd:  pipe.ZCard(ctx, key),
+					waitingCmd: pipe.Get(ctx, channelConcurrencyWaitingRedisKey(channelID)),
+				})
+			}
+			if _, execErr := pipe.Exec(ctx); execErr != nil && execErr != redis.Nil {
+				return execErr
+			}
+
+			for _, command := range commands {
+				load := loads[command.channelID]
+				if active, activeErr := command.activeCmd.Result(); activeErr == nil {
+					load.Active = int(active)
 				}
+				if waitingValue, waitingErr := command.waitingCmd.Result(); waitingErr == nil {
+					if waiting, parseErr := strconv.Atoi(waitingValue); parseErr == nil && waiting > 0 {
+						load.Waiting = waiting
+					}
+				}
+				load.LoadRate = calculateChannelConcurrencyLoadRate(load.Active, load.Waiting, load.MaxConcurrency)
+				loads[command.channelID] = load
 			}
-			load.LoadRate = calculateChannelConcurrencyLoadRate(load.Active, load.Waiting, load.MaxConcurrency)
-			loads[command.channelID] = load
 		}
 		return nil
 	})

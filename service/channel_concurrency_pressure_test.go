@@ -130,6 +130,26 @@ func TestChannelSelectionNeverAttemptsMoreThanSevenCandidatesPerPass(t *testing.
 	require.Equal(t, 14, calls)
 }
 
+func TestChannelConcurrencyLoadFetchSplitsLargeCandidateSetsIntoBoundedPipelines(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	restore, hook := useCountedRedisChannelConcurrencyForTest(t, 0)
+	defer restore()
+
+	channels := make([]*model.Channel, 0, 125)
+	for i := 0; i < 125; i++ {
+		channels = append(channels, &model.Channel{Id: 915500 + i, MaxConcurrency: 2})
+	}
+
+	loads, err := GetChannelConcurrencyLoads(context.Background(), channels)
+	require.NoError(t, err)
+	require.Len(t, loads, 125)
+	require.Equal(t, 1, hook.CommandCount("time"))
+	require.Equal(t, 125, hook.CommandCount("zremrangebyscore"))
+	require.Equal(t, 125, hook.CommandCount("zcard"))
+	require.Equal(t, 125, hook.CommandCount("get"))
+	require.LessOrEqual(t, hook.MaxPipelineCommands(), 150)
+}
+
 func TestChannelSelectionOrdersPriorityBeforeLoadAndKeepsBucketsSeparate(t *testing.T) {
 	highPriority := int64(100)
 	lowPriority := int64(10)

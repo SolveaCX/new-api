@@ -63,6 +63,23 @@ func TestChannelAvailabilityCoalescesConcurrentFiftyChannelReads(t *testing.T) {
 	require.Equal(t, 50, hook.CommandCount("exists"))
 }
 
+func TestChannelAvailabilitySplitsLargeCandidateSetsIntoBoundedPipelines(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	restore, hook := useCountedRedisChannelConcurrencyForTest(t, 0)
+	defer restore()
+
+	channels := make([]*model.Channel, 0, 125)
+	for i := 0; i < 125; i++ {
+		channels = append(channels, &model.Channel{Id: 912000 + i, MaxConcurrency: 2})
+	}
+
+	coolingDown, err := GetChannelConcurrencyCooldowns(context.Background(), channels)
+	require.NoError(t, err)
+	require.Len(t, coolingDown, 125)
+	require.Equal(t, 125, hook.CommandCount("exists"))
+	require.LessOrEqual(t, hook.MaxPipelineCommands(), 50)
+}
+
 func TestChannelAvailabilityMarkPrimesPositiveCache(t *testing.T) {
 	resetChannelConcurrencyForTest()
 	restore, hook := useCountedRedisChannelConcurrencyForTest(t, 0)

@@ -129,35 +129,42 @@ func getChannelConcurrencyCooldownsByID(ctx context.Context, ids []int) (map[int
 
 		fetched := make(map[int]bool, len(fetchIDs))
 		if err := withChannelConcurrencyBatchFetchSlot(ctx, func() error {
-			pipe := common.RDB.Pipeline()
-			commands := make(map[int]*redis.IntCmd, len(fetchIDs))
-			for _, channelID := range fetchIDs {
-				commands[channelID] = pipe.Exists(ctx, channelConcurrencyCooldownRedisKey(channelID))
-			}
-			if _, execErr := pipe.Exec(ctx); execErr != nil && execErr != redis.Nil {
-				return execErr
-			}
+			for start := 0; start < len(fetchIDs); start += channelConcurrencyRedisReadBatchSize {
+				end := start + channelConcurrencyRedisReadBatchSize
+				if end > len(fetchIDs) {
+					end = len(fetchIDs)
+				}
 
-			cacheNow := time.Now()
-			expiresAt := cacheNow.Add(channelAvailabilityCacheTTL)
-			channelAvailabilityMu.Lock()
-			for channelID, command := range commands {
-				coolingDown := command.Val() > 0
-				entryExpiresAt := expiresAt
-				if cached, ok := channelAvailabilityCache[channelID]; ok &&
-					cached.coolingDown && cacheNow.Before(cached.expiresAt) && !coolingDown {
-					coolingDown = true
-					if cached.expiresAt.Before(entryExpiresAt) {
-						entryExpiresAt = cached.expiresAt
+				pipe := common.RDB.Pipeline()
+				commands := make(map[int]*redis.IntCmd, end-start)
+				for _, channelID := range fetchIDs[start:end] {
+					commands[channelID] = pipe.Exists(ctx, channelConcurrencyCooldownRedisKey(channelID))
+				}
+				if _, execErr := pipe.Exec(ctx); execErr != nil && execErr != redis.Nil {
+					return execErr
+				}
+
+				cacheNow := time.Now()
+				expiresAt := cacheNow.Add(channelAvailabilityCacheTTL)
+				channelAvailabilityMu.Lock()
+				for channelID, command := range commands {
+					coolingDown := command.Val() > 0
+					entryExpiresAt := expiresAt
+					if cached, ok := channelAvailabilityCache[channelID]; ok &&
+						cached.coolingDown && cacheNow.Before(cached.expiresAt) && !coolingDown {
+						coolingDown = true
+						if cached.expiresAt.Before(entryExpiresAt) {
+							entryExpiresAt = cached.expiresAt
+						}
+					}
+					fetched[channelID] = coolingDown
+					channelAvailabilityCache[channelID] = cachedChannelAvailability{
+						coolingDown: coolingDown,
+						expiresAt:   entryExpiresAt,
 					}
 				}
-				fetched[channelID] = coolingDown
-				channelAvailabilityCache[channelID] = cachedChannelAvailability{
-					coolingDown: coolingDown,
-					expiresAt:   entryExpiresAt,
-				}
+				channelAvailabilityMu.Unlock()
 			}
-			channelAvailabilityMu.Unlock()
 			return nil
 		}); err != nil {
 			common.SysError(fmt.Sprintf("get channel cooldowns from redis failed: %s", err.Error()))

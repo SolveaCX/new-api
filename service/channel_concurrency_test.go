@@ -391,7 +391,7 @@ func TestChannelConcurrencyLoadsCoalesceConcurrentRedisFetches(t *testing.T) {
 	require.Equal(t, 1, hook.CommandCount("zcard"))
 }
 
-func TestChannelConcurrencyLoadsSingleflightIgnoresCallerCancellation(t *testing.T) {
+func TestChannelConcurrencyLoadsCallerCancellationDoesNotCancelSharedFetch(t *testing.T) {
 	resetChannelConcurrencyForTest()
 	mr := miniredis.RunT(t)
 	hook := &redisCommandCounterHook{pipelineDelay: 100 * time.Millisecond}
@@ -432,10 +432,7 @@ func TestChannelConcurrencyLoadsSingleflightIgnoresCallerCancellation(t *testing
 	firstDone := make(chan error, 1)
 	go func() {
 		close(started)
-		loads, loadErr := GetChannelConcurrencyLoads(cancelledCtx, []*model.Channel{channel})
-		if loadErr == nil && loads[channel.Id].Active != 1 {
-			loadErr = errors.New("cancelled caller returned memory fallback load")
-		}
+		_, loadErr := GetChannelConcurrencyLoads(cancelledCtx, []*model.Channel{channel})
 		firstDone <- loadErr
 	}()
 	<-started
@@ -447,7 +444,52 @@ func TestChannelConcurrencyLoadsSingleflightIgnoresCallerCancellation(t *testing
 	second, err := GetChannelConcurrencyLoads(context.Background(), []*model.Channel{channel})
 	require.NoError(t, err)
 	require.Equal(t, 1, second[channel.Id].Active)
-	require.NoError(t, <-firstDone)
+	require.ErrorIs(t, <-firstDone, context.Canceled)
+	require.Equal(t, 1, hook.CommandCount("time"))
+	require.Equal(t, 1, hook.CommandCount("zcard"))
+}
+
+func TestFreshChannelConcurrencyLoadsCallerCancellationDoesNotCancelSharedFetch(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	hook := &redisCommandCounterHook{pipelineDelay: 100 * time.Millisecond}
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RDB.AddHook(hook)
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	})
+
+	channel := &model.Channel{Id: 121, MaxConcurrency: 2}
+	lease, ok, err := TryAcquireChannelConcurrency(context.Background(), channel)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, lease)
+	t.Cleanup(func() {
+		_ = ReleaseChannelConcurrency(context.Background(), lease)
+	})
+
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	firstDone := make(chan error, 1)
+	go func() {
+		_, loadErr := getChannelConcurrencyLoadsFreshThrottled(cancelledCtx, []*model.Channel{channel})
+		firstDone <- loadErr
+	}()
+	require.Eventually(t, func() bool {
+		return hook.CommandCount("time") == 1
+	}, time.Second, 5*time.Millisecond)
+	cancel()
+
+	second, err := getChannelConcurrencyLoadsFreshThrottled(context.Background(), []*model.Channel{channel})
+	require.NoError(t, err)
+	require.Equal(t, 1, second[channel.Id].Active)
+	require.ErrorIs(t, <-firstDone, context.Canceled)
 	require.Equal(t, 1, hook.CommandCount("time"))
 	require.Equal(t, 1, hook.CommandCount("zcard"))
 }
@@ -989,11 +1031,12 @@ func TestCacheGetRandomSatisfiedChannelSkipsFullChannels(t *testing.T) {
 }
 
 type redisCommandCounterHook struct {
-	mu                 sync.Mutex
-	commands           []string
-	pipelineDelay      time.Duration
-	activePipelines    int
-	maxActivePipelines int
+	mu                  sync.Mutex
+	commands            []string
+	pipelineDelay       time.Duration
+	activePipelines     int
+	maxActivePipelines  int
+	maxPipelineCommands int
 }
 
 func (h *redisCommandCounterHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
@@ -1012,6 +1055,9 @@ func (h *redisCommandCounterHook) BeforeProcessPipeline(ctx context.Context, cmd
 	h.activePipelines++
 	if h.activePipelines > h.maxActivePipelines {
 		h.maxActivePipelines = h.activePipelines
+	}
+	if len(cmds) > h.maxPipelineCommands {
+		h.maxPipelineCommands = len(cmds)
 	}
 	h.mu.Unlock()
 	if h.pipelineDelay > 0 {
@@ -1060,6 +1106,12 @@ func (h *redisCommandCounterHook) MaxActivePipelines() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.maxActivePipelines
+}
+
+func (h *redisCommandCounterHook) MaxPipelineCommands() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.maxPipelineCommands
 }
 
 func useMemoryChannelConcurrencyForTest(t *testing.T) func() {
