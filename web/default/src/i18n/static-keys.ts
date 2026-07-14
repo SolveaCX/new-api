@@ -548,4 +548,19 @@ export const STATIC_I18N_KEYS = [
   'Failed to load',
   'Expired at',
   'Cancelled at',
+
+  // Ops report — AdPilot board (dynamic status/severity/mode labels)
+  'adspilot_status_pending',
+  'adspilot_status_approved',
+  'adspilot_status_rejected',
+  'adspilot_status_executed',
+  'adspilot_status_failed',
+  'adspilot_severity_info',
+  'adspilot_severity_warn',
+  'adspilot_severity_alert',
+  'adspilot_mode_auto',
+  'adspilot_mode_approved',
+  'adspilot_action_done',
+  'adspilot_action_failed',
+  'adspilot_action_reverted',
 ] as const

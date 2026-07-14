@@ -37,11 +37,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { officialWebsiteUrl } from '@/lib/origins'
 import {
+  getOpsAdsReport,
   getOpsReport,
   getOpsStripeReport,
   opsReportQueryKeys,
   type OpsDauScope,
 } from './api'
+import { AdsPilotTab } from './ads-pilot-tab'
 import type {
   OpsCampaignRow,
   OpsDailyRow,
@@ -63,6 +65,7 @@ const TAB_VALUES = [
   'registrations',
   'users',
   'campaigns',
+  'ads',
   'funnel',
   'payment',
   'stripe',
@@ -999,6 +1002,16 @@ export function OpsReport() {
   })
   const stripeReport = stripeQuery.data?.data
 
+  // AdPilot board data is pushed to the DB by the ops machine; cheap to read
+  // but only needed on its own tab.
+  const adsQuery = useQuery({
+    queryKey: opsReportQueryKeys.ads(days),
+    queryFn: () => getOpsAdsReport(days),
+    enabled: tab === 'ads',
+    retry: false,
+  })
+  const adsReport = adsQuery.data?.data
+
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>
@@ -1042,6 +1055,7 @@ export function OpsReport() {
                   {t('Registered Users')}
                 </TabsTrigger>
                 <TabsTrigger value='campaigns'>{t('Ad Campaigns')}</TabsTrigger>
+                <TabsTrigger value='ads'>{t('Ads Automation')}</TabsTrigger>
                 <TabsTrigger value='funnel'>
                   {t('Registration Funnel (Weekly)')}
                 </TabsTrigger>
@@ -1114,6 +1128,22 @@ export function OpsReport() {
                     <KeywordTable rows={report.keyword_funnel ?? []} />
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value='ads'>
+                {adsQuery.isLoading ? (
+                  <Skeleton className='h-40 w-full' />
+                ) : adsReport ? (
+                  <AdsPilotTab report={adsReport} days={days} />
+                ) : (
+                  <Card>
+                    <CardContent className='text-muted-foreground pt-6 text-sm'>
+                      {adsQuery.isError
+                        ? t('Failed to load ads data.')
+                        : t('No ads data yet — waiting for the first pipeline push.')}
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
 
               <TabsContent value='funnel'>

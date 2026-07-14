@@ -17,7 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import type { ApiResponse, OpsReportData, OpsStripeReport } from './types'
+import type {
+  AdsPilotReport,
+  ApiResponse,
+  OpsReportData,
+  OpsStripeReport,
+} from './types'
 
 export type OpsDauScope = 'plg' | 'all'
 
@@ -26,6 +31,7 @@ export const opsReportQueryKeys = {
   report: (days: number, dauScope: OpsDauScope) =>
     [...opsReportQueryKeys.all, days, dauScope] as const,
   stripe: (days: number) => [...opsReportQueryKeys.all, 'stripe', days] as const,
+  ads: (days: number) => [...opsReportQueryKeys.all, 'ads', days] as const,
 }
 
 export async function getOpsReport(
@@ -44,5 +50,29 @@ export async function getOpsStripeReport(
   const res = await api.get('/api/data/ops_report_stripe', {
     params: { days },
   })
+  return res.data
+}
+
+export async function getOpsAdsReport(
+  days: number
+): Promise<ApiResponse<AdsPilotReport>> {
+  const res = await api.get('/api/data/ops_report_ads', {
+    params: { days },
+  })
+  return res.data
+}
+
+export async function decideAdsPilotProposal(
+  id: number,
+  decision: 'approve' | 'reject'
+): Promise<ApiResponse> {
+  const res = await api.post(`/api/ads_pilot/proposals/${id}/decide`, {
+    decision,
+  })
+  return res.data
+}
+
+export async function ackAdsPilotInsight(id: number): Promise<ApiResponse> {
+  const res = await api.post(`/api/ads_pilot/insights/${id}/ack`, {})
   return res.data
 }
