@@ -753,7 +753,7 @@ func TestRecallCampaignRecurringRunUsesDeterministicEventKey(t *testing.T) {
 	require.Equal(t, time.Date(2026, 7, 17, 1, 0, 0, 0, time.UTC).Unix(), stored.NextRunAt)
 }
 
-func TestRecallCampaignRecurringCompletesWhenNextRunReachesCouponRedeemBy(t *testing.T) {
+func TestRecallCampaignRecurringStopsSchedulingAfterLastValidRun(t *testing.T) {
 	db := setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)
 	now := time.Date(2026, 7, 16, 0, 30, 0, 0, time.UTC)
@@ -777,8 +777,15 @@ func TestRecallCampaignRecurringCompletesWhenNextRunReachesCouponRedeemBy(t *tes
 	require.Equal(t, 1, processed)
 	stored, err = model.GetRecallCampaignByID(campaign.Id)
 	require.NoError(t, err)
-	require.Equal(t, model.RecallCampaignCompleted, stored.Status)
+	require.Equal(t, model.RecallCampaignRunning, stored.Status)
 	require.Zero(t, stored.NextRunAt)
+	require.Zero(t, stored.CompletedAt)
+	var recipient model.RecallRecipient
+	require.NoError(t, db.First(&recipient).Error)
+	require.Equal(t, model.RecallRecipientQueued, recipient.State)
+	var message model.RecallMessage
+	require.NoError(t, db.First(&message).Error)
+	require.Equal(t, model.RecallMessageScheduled, message.State)
 }
 
 func TestRecallCampaignDueRunCompletesWhenCouponRedeemByAlreadyReached(t *testing.T) {
