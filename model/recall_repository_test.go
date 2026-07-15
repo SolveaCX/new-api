@@ -135,6 +135,92 @@ func TestRecallRepositoryCampaignCRUDAndConditionalTransition(t *testing.T) {
 	require.Equal(t, "updated draft", stored.Name)
 }
 
+func TestRecallRepositoryDraftUpdatePersistsZeroValuesAndPreservesImmutableFields(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("draft with values")
+	campaign.AudienceTemplate = "previous_template"
+	campaign.AudienceConfig = `{"days":90}`
+	campaign.ExecutionMode = "scheduled"
+	campaign.ScheduledAt = 101
+	campaign.RecurrenceConfig = `{"interval":"weekly"}`
+	campaign.NextRunAt = 202
+	campaign.CouponSource = "stripe"
+	campaign.StripeCouponId = "coupon_old"
+	campaign.DiscountConfig = `{"percent":25}`
+	campaign.ProductScope = `["pro"]`
+	campaign.PromotionValidSeconds = 303
+	campaign.EmailSequenceConfig = `[{"stage":1}]`
+	campaign.EnrollmentLimit = 404
+	campaign.WorkerConcurrency = 5
+	campaign.CreatedBy = 606
+	campaign.CreatedAt = 707
+	campaign.ActivatedAt = 808
+	campaign.CompletedAt = 909
+	require.NoError(t, CreateRecallCampaign(&campaign))
+
+	update := RecallCampaign{
+		Id:          campaign.Id,
+		Status:      RecallCampaignRunning,
+		CreatedBy:   999,
+		CreatedAt:   999,
+		ActivatedAt: 999,
+		CompletedAt: 999,
+	}
+	require.NoError(t, UpdateRecallCampaignDraft(&update))
+
+	stored, err := GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, campaign.Id, stored.Id)
+	require.Equal(t, RecallCampaignDraft, stored.Status)
+	require.Equal(t, 606, stored.CreatedBy)
+	require.Equal(t, int64(707), stored.CreatedAt)
+	require.Equal(t, int64(808), stored.ActivatedAt)
+	require.Equal(t, int64(909), stored.CompletedAt)
+	require.Empty(t, stored.Name)
+	require.Empty(t, stored.AudienceTemplate)
+	require.Empty(t, stored.AudienceConfig)
+	require.Empty(t, stored.ExecutionMode)
+	require.Zero(t, stored.ScheduledAt)
+	require.Empty(t, stored.RecurrenceConfig)
+	require.Zero(t, stored.NextRunAt)
+	require.Empty(t, stored.CouponSource)
+	require.Empty(t, stored.StripeCouponId)
+	require.Empty(t, stored.DiscountConfig)
+	require.Empty(t, stored.ProductScope)
+	require.Zero(t, stored.PromotionValidSeconds)
+	require.Empty(t, stored.EmailSequenceConfig)
+	require.Zero(t, stored.EnrollmentLimit)
+	require.Zero(t, stored.WorkerConcurrency)
+}
+
+func TestRecallRepositoryTransitionRejectsUnsafeMetadata(t *testing.T) {
+	for _, field := range []string{"id", "created_at", "created_by", "status"} {
+		t.Run(field, func(t *testing.T) {
+			setupRecallRepositoryTestDB(t)
+			campaign := newRecallRepositoryCampaign("protected transition")
+			campaign.CreatedBy = 41
+			campaign.CreatedAt = 42
+			require.NoError(t, CreateRecallCampaign(&campaign))
+
+			transitioned, err := TransitionRecallCampaign(
+				campaign.Id,
+				[]string{RecallCampaignDraft},
+				RecallCampaignScheduled,
+				map[string]any{field: 999},
+			)
+			require.Error(t, err)
+			require.False(t, transitioned)
+
+			stored, err := GetRecallCampaignByID(campaign.Id)
+			require.NoError(t, err)
+			require.Equal(t, RecallCampaignDraft, stored.Status)
+			require.Equal(t, 41, stored.CreatedBy)
+			require.Equal(t, int64(42), stored.CreatedAt)
+		})
+	}
+}
+
 func TestRecallRepositoryInsertAndListRecipients(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 

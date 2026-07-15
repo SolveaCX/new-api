@@ -636,7 +636,14 @@ func (user *User) ClearBinding(bindingType string) error {
 		return errors.New("invalid binding type")
 	}
 
-	if err := DB.Model(&User{}).Where("id = ?", user.Id).Update(column, "").Error; err != nil {
+	update := DB.Model(&User{}).Where("id = ?", user.Id)
+	var err error
+	if bindingType == "email" {
+		err = update.Updates(map[string]any{"email": "", "email_verified_at": 0}).Error
+	} else {
+		err = update.Update(column, "").Error
+	}
+	if err != nil {
 		return err
 	}
 
