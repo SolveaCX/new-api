@@ -1,5 +1,7 @@
 package model
 
+import "fmt"
+
 const (
 	RecallCampaignDraft     = "draft"
 	RecallCampaignScheduled = "scheduled"
@@ -49,21 +51,57 @@ func GetRecallCampaignByID(id int64) (*RecallCampaign, error) {
 func UpdateRecallCampaignDraft(campaign *RecallCampaign) error {
 	return DB.Model(&RecallCampaign{}).
 		Where("id = ? AND status = ?", campaign.Id, RecallCampaignDraft).
-		Omit("id", "status", "created_at", "activated_at", "completed_at").
-		Updates(campaign).Error
+		Updates(map[string]any{
+			"name":                    campaign.Name,
+			"audience_template":       campaign.AudienceTemplate,
+			"audience_config":         campaign.AudienceConfig,
+			"execution_mode":          campaign.ExecutionMode,
+			"scheduled_at":            campaign.ScheduledAt,
+			"recurrence_config":       campaign.RecurrenceConfig,
+			"next_run_at":             campaign.NextRunAt,
+			"coupon_source":           campaign.CouponSource,
+			"stripe_coupon_id":        campaign.StripeCouponId,
+			"discount_config":         campaign.DiscountConfig,
+			"product_scope":           campaign.ProductScope,
+			"promotion_valid_seconds": campaign.PromotionValidSeconds,
+			"email_sequence_config":   campaign.EmailSequenceConfig,
+			"enrollment_limit":        campaign.EnrollmentLimit,
+			"worker_concurrency":      campaign.WorkerConcurrency,
+		}).Error
 }
 
 func TransitionRecallCampaign(id int64, from []string, to string, fields map[string]any) (bool, error) {
-	if len(from) == 0 {
-		return false, nil
+	allowedFields := map[string]struct{}{
+		"scheduled_at":            {},
+		"recurrence_config":       {},
+		"next_run_at":             {},
+		"stripe_coupon_id":        {},
+		"discount_config":         {},
+		"product_scope":           {},
+		"promotion_valid_seconds": {},
+		"email_sequence_config":   {},
+		"enrollment_limit":        {},
+		"worker_concurrency":      {},
+		"activated_at":            {},
+		"completed_at":            {},
+		"updated_at":              {},
 	}
 	updates := make(map[string]any, len(fields)+1)
 	for key, value := range fields {
+		if _, ok := allowedFields[key]; !ok {
+			return false, fmt.Errorf("unsupported recall campaign transition field %q", key)
+		}
 		updates[key] = value
+	}
+	if len(from) == 0 {
+		return false, nil
 	}
 	updates["status"] = to
 	result := DB.Model(&RecallCampaign{}).
 		Where("id = ? AND status IN ?", id, from).
 		Updates(updates)
-	return result.RowsAffected == 1, result.Error
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
