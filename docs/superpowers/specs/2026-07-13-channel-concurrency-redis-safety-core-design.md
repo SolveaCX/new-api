@@ -1,7 +1,7 @@
 # Channel Concurrency Redis Safety Core Design
 
 Date: 2026-07-13
-Status: Approved design; written-spec review pending
+Status: Approved design; review amendments approved 2026-07-15
 Supersedes: `2026-06-17-sub2-style-channel-concurrency-design.md` for Redis failure policy and the phase-A implementation scope
 
 ## Decision
@@ -17,6 +17,16 @@ This phase keeps Redis as the multi-node source of truth and adds five safety bo
 5. A sub2-style acquire fan-out limit of seven candidates per pass so a saturated 50-channel pool cannot amplify every request into 50 serialized Redis acquire attempts.
 
 The fifth item is a necessary refinement to the originally approved phase-A scope. It borrows only sub2's default Top-K safety bound. It does not add sub2 scoring, EWMA, sticky sessions, model-level limits, or a background scheduler.
+
+## Approved Review Amendments (2026-07-15)
+
+The PR review identified three gaps that are now part of the approved design:
+
+1. Cooldown batch reads use detached, bounded shared work plus caller-specific cancellation. Redis read errors are returned to routing instead of being silently discarded, so one router cannot make an unreported process-local availability decision while Redis is configured as the shared source of truth.
+2. The cached selection pass reads one priority layer at a time. Lower-priority Redis load and cooldown state is not fetched when a higher-priority layer acquires successfully. The seven-acquire budget remains global for the pass, and the one fresh pass may reorder every candidate layer encountered after cached attempts fail.
+3. A rejected wait admission repairs a legacy or malformed waiting key only when `PTTL == -1`. Existing positive TTLs are never refreshed by rejection traffic.
+
+Two review suggestions are deliberately rejected. The one-second negative cooldown cache remains because deleting negative entries would put `EXISTS` on every healthy request. The seven-candidate attempt limit also remains because the fresh pass already reorders stale candidates outside the initial seven without reopening unbounded Redis write amplification.
 
 ## Production Constraints and Evidence
 
@@ -84,7 +94,8 @@ Own temporary channel availability:
 - batch cooldown reads;
 - a separate short local cache;
 - cache update/invalidation when this process marks a channel cooled down;
-- per-candidate-set `singleflight` coalescing.
+- per-candidate-set `singleflight` coalescing with detached bounded fetch contexts;
+- caller-specific cancellation and explicit Redis read error propagation.
 
 The default availability cache TTL is one second. Another node may therefore route to a newly cooled channel for at most approximately one second, which is acceptable because cooldown is advisory and slot acquisition remains authoritative for concurrency.
 
@@ -92,13 +103,12 @@ The default availability cache TTL is one second. Another node may therefore rou
 
 Own the scheduling flow:
 
-1. Obtain the model/group candidates using the existing database/cache rules.
-2. Batch-filter cooled-down candidates through the availability service.
-3. Read concurrency loads for the remaining candidates.
-4. Preserve load-rate ordering, priority ordering, and weighted tie-breaking.
-5. Attempt at most seven ordered candidates.
-6. If all attempts fail, perform at most one throttled fresh load read, rebuild the order, and attempt at most seven candidates again.
-7. If the fresh pass also fails, wait on one selected candidate using the existing five-second bounded wait behavior.
+1. Obtain the current priority layer using the existing database/cache rules.
+2. Batch-filter and load only that layer, preserving load-rate ordering and weighted tie-breaking.
+3. Spend from one seven-attempt budget shared by all cached priority layers.
+4. Query the next lower priority only after the current layer cannot acquire.
+5. If cached attempts across the encountered layers fail, perform at most one throttled fresh load read across all collected candidates, rebuild the priority-first order, and attempt at most seven candidates again.
+6. If the fresh pass also fails, wait on one selected candidate using the existing five-second bounded wait behavior.
 
 Unlimited channels remain eligible and do not touch Redis for load, cooldown, acquire, heartbeat, or release state.
 
@@ -111,7 +121,7 @@ One Lua script receives the waiting key, maximum waiting count, and TTL in milli
 It must:
 
 1. Read the current count, treating a missing key as zero.
-2. Return rejected without modifying Redis when `current >= maxWaiting`.
+2. When `current >= maxWaiting`, set `PEXPIRE` only if the existing key has `PTTL == -1`, then return rejected without changing the count.
 3. Otherwise increment the counter and set `PEXPIRE` in the same script.
 4. Return both the admission result and resulting count.
 
@@ -144,9 +154,9 @@ Redis release will:
 
 ### Cooldown Availability
 
-Cooldown reads leave the concurrency load pipeline. A stable candidate set uses a one-second batch cache and `singleflight`, so concurrent requests in one process share one Redis `EXISTS` pipeline.
+Cooldown reads leave the concurrency load pipeline. A stable candidate set uses a one-second batch cache and `singleflight`, so concurrent requests in one process share one Redis `EXISTS` pipeline. The shared fetch uses its own fixed deadline; each caller waits through its own context and may cancel without cancelling the work used by other callers.
 
-Marking cooldown writes the Redis key and immediately updates the local positive cache. Other processes observe it at their next one-second refresh. A cooldown lookup error is treated as "unknown, not confirmed cooling" and the channel may proceed to real slot acquisition; cooldown does not become a second fail-closed availability system.
+Marking cooldown writes the Redis key and immediately updates the local positive cache. Other processes observe it at their next one-second refresh. When Redis is enabled, a cooldown batch read error is returned to the routing caller. Redis-disabled deployments still use process-local cooldown state. Negative results remain cached for one second, retaining the documented bounded cross-node observation delay and avoiding a per-request `EXISTS` command.
 
 ### Load Snapshot
 
@@ -207,7 +217,7 @@ Per request, the normal success path adds one acquire script and one `ZREM`. The
 - Redis slot acquire error: fail closed and return an internal acquisition error. Do not fall back to process memory in a multi-node production path.
 - Redis wait admission error: fail closed. Do not create an untracked local waiter while Redis is the source of truth.
 - Redis load snapshot error: log and use the existing memory snapshot only for ordering; every actual Redis acquire remains authoritative.
-- Redis cooldown lookup error: treat cooldown as unknown and continue to actual acquire.
+- Redis cooldown lookup error: return the error to routing; do not silently substitute process-local state while Redis is enabled.
 - Redis release error: retain the request lease, stop heartbeat after bounded retries, log the failure, and rely on lease TTL only as the final safety net.
 - Batch-fetch semaphore timeout: treat it like a load snapshot error; it must not borrow all Redis pool connections or start an unbounded goroutine.
 - No user-facing response contains Redis keys, lease tokens, or supplier details.
@@ -245,6 +255,8 @@ Implementation begins with failing tests for each behavior group.
 - The concurrency load pipeline issues zero cooldown `EXISTS` commands.
 - Fifty-channel load fetch issues one `TIME`, 50 cleanup commands, 50 cardinality commands, and 50 waiting reads.
 - Concurrent availability lookups coalesce into one cooldown pipeline per process.
+- A cancelled caller returns promptly without cancelling the shared cooldown fetch.
+- A Redis cooldown read error is visible to routing rather than silently replaced by process-local state.
 - Local mark is visible immediately; remote-style cache refresh sees Redis state within the cache TTL.
 - Cooldown lookup failure does not bypass the Redis slot limit.
 
@@ -255,6 +267,7 @@ Implementation begins with failing tests for each behavior group.
 - Fresh requests for the same candidate set coalesce and respect the 500 ms minimum interval.
 - No selection performs more than seven acquire attempts per pass or fourteen before waiting.
 - A 50-channel all-full test proves the fan-out bound through Redis command counters.
+- A higher-priority success reads no lower-priority cooldown or load state.
 
 ### Pressure and Race Verification
 
@@ -281,10 +294,12 @@ Stop the rollout and roll back the router revision if any threshold is crossed. 
 ## Acceptance Criteria
 
 - Atomic wait scripts prevent over-admission, immortal counters, and negative counts.
+- Rejected wait traffic repairs only missing TTLs and never extends an existing positive TTL.
 - Redis release retries within a fixed deadline and never discards a failed lease from request context.
 - Cooldown is absent from the concurrency load pipeline and uses an independent one-second coalesced cache.
 - A 50-channel normal load miss executes exactly 151 logical Redis commands, down from 201.
 - One request executes no more than seven immediate and seven fresh-pass acquire scripts before waiting.
+- A cached success in a higher-priority layer performs no Redis snapshot work for lower-priority layers.
 - Fresh load is performed at most once per request and at most twice per second per candidate set per process.
 - At most two batch Redis fetches run concurrently per process, preserving pool capacity for acquire/release.
 - Redis acquire and wait failures remain fail-closed across multiple application nodes.
