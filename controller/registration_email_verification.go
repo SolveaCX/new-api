@@ -2,6 +2,7 @@ package controller
 
 import (
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -37,11 +38,9 @@ func registrationEmailGrantMatches(c *gin.Context, email string) bool {
 	return common.VerifyRegistrationEmailGrant(registrationEmailGrantFromSession(c), strings.TrimSpace(email))
 }
 
-func clearRegistrationEmailGrant(c *gin.Context) {
+func clearRegistrationEmailGrantSession(c *gin.Context) {
 	session := sessions.Default(c)
-	grant := registrationEmailGrantFromSession(c)
 	session.Delete(registrationEmailGrantSessionKey)
-	common.DeleteRegistrationEmailGrant(grant)
 }
 
 func ExchangeRegistrationEmailVerification(c *gin.Context) {
@@ -67,28 +66,27 @@ func ExchangeRegistrationEmailVerification(c *gin.Context) {
 		return
 	}
 
-	grant, err := common.RegisterRegistrationEmailGrant(email)
+	grant, grantTTL, ok, err := common.RegisterRegistrationEmailGrantForLink(request.Token, email)
 	if err != nil {
 		common.SysError("failed to create registration email grant: " + err.Error())
 		common.ApiErrorI18n(c, i18n.MsgEmailVerifyUnavailable)
 		return
 	}
-
-	session := sessions.Default(c)
-	previousGrant := registrationEmailGrantFromSession(c)
-	session.Set(registrationEmailGrantSessionKey, grant)
-	if err := session.Save(); err != nil {
-		common.DeleteRegistrationEmailGrant(grant)
-		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
+	if !ok {
+		common.ApiErrorI18n(c, i18n.MsgEmailVerifyLinkInvalid)
 		return
 	}
-	if previousGrant != "" && previousGrant != grant {
-		common.DeleteRegistrationEmailGrant(previousGrant)
+
+	session := sessions.Default(c)
+	session.Set(registrationEmailGrantSessionKey, grant)
+	if err := session.Save(); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
+		return
 	}
 
 	common.ApiSuccess(c, registrationEmailVerificationData{
 		Verified:  true,
-		ExpiresIn: common.VerificationValidMinutes * 60,
+		ExpiresIn: int((grantTTL + time.Second - 1) / time.Second),
 	})
 }
 
