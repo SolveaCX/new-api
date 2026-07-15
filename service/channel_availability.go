@@ -16,7 +16,10 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-const defaultChannelAvailabilityCacheTTL = time.Second
+const (
+	defaultChannelAvailabilityCacheTTL = time.Second
+	channelAvailabilityFetchTimeout    = 3 * time.Second
+)
 
 type cachedChannelAvailability struct {
 	coolingDown bool
@@ -120,7 +123,10 @@ func getChannelConcurrencyCooldownsByID(ctx context.Context, ids []int) (map[int
 
 	sort.Ints(missing)
 	key := channelAvailabilityBatchKey(missing)
-	value, _, _ := channelAvailabilityGroup.Do(key, func() (any, error) {
+	resultCh := channelAvailabilityGroup.DoChan(key, func() (any, error) {
+		fetchCtx, cancel := context.WithTimeout(context.Background(), channelAvailabilityFetchTimeout)
+		defer cancel()
+
 		fetchNow := time.Now()
 		fetchIDs := missingChannelAvailabilityIDs(missing, fetchNow)
 		if len(fetchIDs) == 0 {
@@ -128,7 +134,7 @@ func getChannelConcurrencyCooldownsByID(ctx context.Context, ids []int) (map[int
 		}
 
 		fetched := make(map[int]bool, len(fetchIDs))
-		if err := withChannelConcurrencyBatchFetchSlot(ctx, func() error {
+		if err := withChannelConcurrencyBatchFetchSlot(fetchCtx, func() error {
 			for start := 0; start < len(fetchIDs); start += channelConcurrencyRedisReadBatchSize {
 				end := start + channelConcurrencyRedisReadBatchSize
 				if end > len(fetchIDs) {
@@ -138,9 +144,9 @@ func getChannelConcurrencyCooldownsByID(ctx context.Context, ids []int) (map[int
 				pipe := common.RDB.Pipeline()
 				commands := make(map[int]*redis.IntCmd, end-start)
 				for _, channelID := range fetchIDs[start:end] {
-					commands[channelID] = pipe.Exists(ctx, channelConcurrencyCooldownRedisKey(channelID))
+					commands[channelID] = pipe.Exists(fetchCtx, channelConcurrencyCooldownRedisKey(channelID))
 				}
-				if _, execErr := pipe.Exec(ctx); execErr != nil && execErr != redis.Nil {
+				if _, execErr := pipe.Exec(fetchCtx); execErr != nil && execErr != redis.Nil {
 					return execErr
 				}
 
@@ -173,11 +179,12 @@ func getChannelConcurrencyCooldownsByID(ctx context.Context, ids []int) (map[int
 		return fetched, nil
 	})
 
-	fetched, ok := value.(map[int]bool)
-	if ok {
-		for channelID, coolingDown := range fetched {
-			result[channelID] = coolingDown
-		}
+	fetched, err := awaitChannelAvailabilityResult(ctx, resultCh)
+	if err != nil {
+		return result, err
+	}
+	for channelID, coolingDown := range fetched {
+		result[channelID] = coolingDown
 	}
 	for channelID, coolingDown := range cachedChannelAvailabilityValues(missing, time.Now()) {
 		result[channelID] = coolingDown
@@ -190,6 +197,25 @@ func getChannelConcurrencyCooldownsByID(ctx context.Context, ids []int) (map[int
 	}
 	mergeMemoryChannelCooldowns(result, remaining, time.Now())
 	return result, nil
+}
+
+func awaitChannelAvailabilityResult(ctx context.Context, resultCh <-chan singleflight.Result) (map[int]bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case result := <-resultCh:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		values, _ := result.Val.(map[int]bool)
+		if values == nil {
+			return map[int]bool{}, nil
+		}
+		return values, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func channelAvailabilityBatchKey(ids []int) string {

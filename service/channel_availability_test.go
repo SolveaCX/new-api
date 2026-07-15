@@ -63,6 +63,73 @@ func TestChannelAvailabilityCoalescesConcurrentFiftyChannelReads(t *testing.T) {
 	require.Equal(t, 50, hook.CommandCount("exists"))
 }
 
+func TestChannelAvailabilityPropagatesRedisReadError(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	restore := useFailingRedisChannelConcurrencyForTest(t)
+	defer restore()
+
+	channel := &model.Channel{Id: 913005, MaxConcurrency: 1}
+	_, err := GetChannelConcurrencyCooldowns(context.Background(), []*model.Channel{channel})
+	require.Error(t, err)
+}
+
+func TestChannelAvailabilityCallerCancellationDoesNotCancelSharedFetch(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	mr := miniredis.RunT(t)
+	gate := &redisAvailabilityContextGate{
+		reached: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RDB.AddHook(gate)
+	common.RedisEnabled = true
+	defer func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+		mr.Close()
+		resetChannelConcurrencyForTest()
+	}()
+
+	channel := &model.Channel{Id: 913006, MaxConcurrency: 1}
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := GetChannelConcurrencyCooldowns(cancelledCtx, []*model.Channel{channel})
+		firstDone <- err
+	}()
+	<-gate.reached
+
+	secondStarted := make(chan struct{})
+	secondDone := make(chan error, 1)
+	go func() {
+		close(secondStarted)
+		_, err := GetChannelConcurrencyCooldowns(context.Background(), []*model.Channel{channel})
+		secondDone <- err
+	}()
+	<-secondStarted
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	var firstErr error
+	timedOut := false
+	select {
+	case firstErr = <-firstDone:
+	case <-time.After(100 * time.Millisecond):
+		timedOut = true
+	}
+	close(gate.release)
+	if timedOut {
+		firstErr = <-firstDone
+	}
+	secondErr := <-secondDone
+	require.False(t, timedOut, "cancelled caller remained blocked on shared cooldown fetch")
+	require.ErrorIs(t, firstErr, context.Canceled)
+	require.NoError(t, secondErr)
+}
+
 func TestChannelAvailabilitySplitsLargeCandidateSetsIntoBoundedPipelines(t *testing.T) {
 	resetChannelConcurrencyForTest()
 	restore, hook := useCountedRedisChannelConcurrencyForTest(t, 0)
@@ -212,6 +279,30 @@ type redisAvailabilityPipelineGate struct {
 	once    sync.Once
 	reached chan struct{}
 	release chan struct{}
+}
+
+type redisAvailabilityContextGate struct {
+	once    sync.Once
+	reached chan struct{}
+	release chan struct{}
+}
+
+func (g *redisAvailabilityContextGate) BeforeProcess(ctx context.Context, _ redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+
+func (g *redisAvailabilityContextGate) AfterProcess(context.Context, redis.Cmder) error {
+	return nil
+}
+
+func (g *redisAvailabilityContextGate) BeforeProcessPipeline(ctx context.Context, _ []redis.Cmder) (context.Context, error) {
+	g.once.Do(func() { close(g.reached) })
+	<-g.release
+	return ctx, ctx.Err()
+}
+
+func (g *redisAvailabilityContextGate) AfterProcessPipeline(context.Context, []redis.Cmder) error {
+	return nil
 }
 
 func (g *redisAvailabilityPipelineGate) BeforeProcess(ctx context.Context, _ redis.Cmder) (context.Context, error) {

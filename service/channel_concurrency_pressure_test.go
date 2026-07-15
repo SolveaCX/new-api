@@ -109,6 +109,33 @@ func TestChannelSelectionFreshReorderFindsCandidateOutsideStaleTopSeven(t *testi
 	require.NoError(t, ReleaseChannelConcurrencyForContext(c))
 }
 
+func TestChannelSelectionDoesNotReadLowerPrioritiesAfterHigherPrioritySuccess(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	restoreRedis, hook := useCountedRedisChannelConcurrencyForTest(t, 0)
+	defer restoreRedis()
+	restoreDB := useChannelSelectionDBForTest(t)
+	defer restoreDB()
+
+	high := createChannelSelectionFixture(t, 916200, 2, 100, "gpt-lazy-priority")
+	for i := 0; i < 8; i++ {
+		createChannelSelectionFixture(t, 916210+i, 2, 10, "gpt-lazy-priority")
+	}
+	model.InitChannelCache()
+	hook.Reset()
+
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	selected, selectedRetry, err := getRandomSatisfiedChannelWithConcurrency(c, "default", "gpt-lazy-priority", 0)
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	require.Equal(t, high.Id, selected.Id)
+	require.Equal(t, 0, selectedRetry)
+	require.Equal(t, 1, hook.CommandCount("exists"))
+	require.Equal(t, 1, hook.CommandCount("zcard"))
+	require.Equal(t, 1, hook.CommandCount("get"))
+	require.NoError(t, ReleaseChannelConcurrencyForContext(c))
+}
+
 func TestChannelSelectionNeverAttemptsMoreThanSevenCandidatesPerPass(t *testing.T) {
 	plan := channelConcurrencySelectionPlan{attempts: make([]channelCandidateWithRetry, 50)}
 	for i := range plan.attempts {

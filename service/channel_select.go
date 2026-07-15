@@ -270,25 +270,65 @@ func channelSupportsOpenAIResponses(channelType int) bool {
 }
 
 func getRandomSatisfiedChannelWithConcurrency(c *gin.Context, group string, modelName string, retry int) (*model.Channel, int, error) {
-	candidates, exhaustedRetry, err := collectChannelConcurrencyCandidates(c, group, modelName, retry)
-	if err != nil {
-		return nil, exhaustedRetry, err
-	}
-	if len(candidates) == 0 {
-		return nil, exhaustedRetry, nil
+	if retry < 0 {
+		retry = 0
 	}
 
 	ctx := context.Background()
 	if c != nil && c.Request != nil {
 		ctx = c.Request.Context()
 	}
-	initialPlan, err := buildChannelConcurrencySelectionPlan(ctx, candidates, false)
-	if err != nil {
-		return nil, retry, err
+
+	filter := buildEndpointChannelFilter(c, modelName)
+	candidates := make([]channelCandidateWithRetry, 0)
+	remainingAttempts := channelConcurrencyAcquireCandidateLimit
+	exhaustedRetry := retry
+	var waitCandidate *channelCandidateWithRetry
+	for priorityRetry := retry; ; priorityRetry++ {
+		priorityChannels, err := model.GetSatisfiedChannelCandidatesWithFilter(group, modelName, priorityRetry, filter)
+		if err != nil {
+			return nil, priorityRetry, err
+		}
+		if len(priorityChannels) == 0 {
+			exhaustedRetry = priorityRetry
+			break
+		}
+
+		priorityCandidates := make([]channelCandidateWithRetry, 0, len(priorityChannels))
+		for _, channel := range priorityChannels {
+			if channel == nil {
+				continue
+			}
+			priorityCandidates = append(priorityCandidates, channelCandidateWithRetry{
+				channel: channel,
+				retry:   priorityRetry,
+			})
+		}
+		candidates = append(candidates, priorityCandidates...)
+		if len(priorityCandidates) == 0 || remainingAttempts == 0 {
+			continue
+		}
+
+		initialPlan, err := buildChannelConcurrencySelectionPlan(ctx, priorityCandidates, false)
+		if err != nil {
+			return nil, priorityRetry, err
+		}
+		selected, selectedRetry, priorityWaitCandidate, attemptsUsed, err := tryAcquireChannelSelectionPlanWithLimit(
+			c,
+			initialPlan,
+			AcquireChannelConcurrencyForContext,
+			remainingAttempts,
+		)
+		remainingAttempts -= attemptsUsed
+		if waitCandidate == nil && priorityWaitCandidate != nil {
+			waitCandidate = priorityWaitCandidate
+		}
+		if err != nil || selected != nil {
+			return selected, selectedRetry, err
+		}
 	}
-	selected, selectedRetry, waitCandidate, err := tryAcquireChannelSelectionPlan(c, initialPlan, AcquireChannelConcurrencyForContext)
-	if err != nil || selected != nil {
-		return selected, selectedRetry, err
+	if len(candidates) == 0 {
+		return nil, exhaustedRetry, nil
 	}
 
 	freshPlan, err := buildChannelConcurrencySelectionPlan(ctx, candidates, true)
@@ -333,32 +373,6 @@ type channelConcurrencySelectionPlan struct {
 }
 
 type channelConcurrencyAcquireFunc func(*gin.Context, *model.Channel) (bool, error)
-
-func collectChannelConcurrencyCandidates(c *gin.Context, group string, modelName string, retry int) ([]channelCandidateWithRetry, int, error) {
-	if retry < 0 {
-		retry = 0
-	}
-	candidates := make([]channelCandidateWithRetry, 0)
-	filter := buildEndpointChannelFilter(c, modelName)
-	for priorityRetry := retry; ; priorityRetry++ {
-		priorityCandidates, err := model.GetSatisfiedChannelCandidatesWithFilter(group, modelName, priorityRetry, filter)
-		if err != nil {
-			return nil, priorityRetry, err
-		}
-		if len(priorityCandidates) == 0 {
-			return candidates, priorityRetry, nil
-		}
-		for _, channel := range priorityCandidates {
-			if channel == nil {
-				continue
-			}
-			candidates = append(candidates, channelCandidateWithRetry{
-				channel: channel,
-				retry:   priorityRetry,
-			})
-		}
-	}
-}
 
 func buildChannelConcurrencySelectionPlan(ctx context.Context, candidates []channelCandidateWithRetry, fresh bool) (channelConcurrencySelectionPlan, error) {
 	channels := make([]*model.Channel, 0, len(candidates))
@@ -457,19 +471,32 @@ func orderChannelConcurrencyCandidates(candidates []channelCandidateWithRetry) (
 }
 
 func tryAcquireChannelSelectionPlan(c *gin.Context, plan channelConcurrencySelectionPlan, acquire channelConcurrencyAcquireFunc) (*model.Channel, int, *channelCandidateWithRetry, error) {
+	selected, selectedRetry, waitCandidate, _, err := tryAcquireChannelSelectionPlanWithLimit(
+		c,
+		plan,
+		acquire,
+		channelConcurrencyAcquireCandidateLimit,
+	)
+	return selected, selectedRetry, waitCandidate, err
+}
+
+func tryAcquireChannelSelectionPlanWithLimit(c *gin.Context, plan channelConcurrencySelectionPlan, acquire channelConcurrencyAcquireFunc, limit int) (*model.Channel, int, *channelCandidateWithRetry, int, error) {
 	waitCandidate := plan.waitCandidate
 	attemptCount := len(plan.attempts)
-	if attemptCount > channelConcurrencyAcquireCandidateLimit {
-		attemptCount = channelConcurrencyAcquireCandidateLimit
+	if limit < 0 {
+		limit = 0
+	}
+	if attemptCount > limit {
+		attemptCount = limit
 	}
 	for index := 0; index < attemptCount; index++ {
 		candidate := plan.attempts[index]
 		ok, err := acquire(c, candidate.channel)
 		if err != nil {
-			return nil, candidate.retry, waitCandidate, fmt.Errorf("acquire channel concurrency for channel #%d failed: %w", candidate.channel.Id, err)
+			return nil, candidate.retry, waitCandidate, index + 1, fmt.Errorf("acquire channel concurrency for channel #%d failed: %w", candidate.channel.Id, err)
 		}
 		if ok {
-			return candidate.channel, candidate.retry, waitCandidate, nil
+			return candidate.channel, candidate.retry, waitCandidate, index + 1, nil
 		}
 		if waitCandidate == nil && candidate.channel.GetMaxConcurrency() > 0 {
 			failedCandidate := candidate
@@ -477,9 +504,9 @@ func tryAcquireChannelSelectionPlan(c *gin.Context, plan channelConcurrencySelec
 		}
 	}
 	if waitCandidate != nil {
-		return nil, waitCandidate.retry, waitCandidate, nil
+		return nil, waitCandidate.retry, waitCandidate, attemptCount, nil
 	}
-	return nil, 0, nil, nil
+	return nil, 0, nil, attemptCount, nil
 }
 
 func removeChannelCandidate(candidates []*model.Channel, channelID int) []*model.Channel {

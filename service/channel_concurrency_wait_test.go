@@ -38,6 +38,26 @@ func TestChannelConcurrencyWaitAdmissionRejectsWithoutIncrement(t *testing.T) {
 	require.NoError(t, first.Release(ctx))
 }
 
+func TestChannelConcurrencyWaitAdmissionRepairsMissingTTLWhenFull(t *testing.T) {
+	resetChannelConcurrencyForTest()
+	restore := useRedisChannelConcurrencyForTest(t)
+	defer restore()
+
+	ctx := context.Background()
+	channelID := 910004
+	key := channelConcurrencyWaitingRedisKey(channelID)
+	require.NoError(t, common.RDB.Set(ctx, key, "1", 0).Err())
+
+	lease, admitted, count, err := acquireChannelConcurrencyWaiting(ctx, channelID, 1)
+	require.NoError(t, err)
+	require.False(t, admitted)
+	require.Nil(t, lease)
+	require.Equal(t, 1, count)
+	ttl, err := common.RDB.PTTL(ctx, key).Result()
+	require.NoError(t, err)
+	require.Greater(t, ttl, time.Duration(0))
+}
+
 func TestChannelConcurrencyWaitAdmissionNeverExceedsLimit(t *testing.T) {
 	resetChannelConcurrencyForTest()
 	restore := useRedisChannelConcurrencyForTest(t)

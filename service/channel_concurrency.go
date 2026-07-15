@@ -76,6 +76,9 @@ local max_waiting = tonumber(ARGV[2])
 local current = tonumber(redis.call('GET', key) or '0')
 
 if current >= max_waiting then
+	if redis.call('PTTL', key) == -1 and ttl > 0 then
+		redis.call('PEXPIRE', key, ttl)
+	end
 	return {0, current}
 end
 
