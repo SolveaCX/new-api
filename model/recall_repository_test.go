@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -174,6 +175,65 @@ func TestRecallRepositoryCampaignCRUDAndConditionalTransition(t *testing.T) {
 	require.Equal(t, "updated draft", stored.Name)
 }
 
+func TestRecallRepositoryDraftUpdateUsesConfigRevisionFence(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("revisioned draft")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	require.EqualValues(t, 1, campaign.ConfigRevision)
+
+	first := campaign
+	first.Name = "first edit"
+	second := campaign
+	second.Name = "stale edit"
+
+	won, err := UpdateRecallCampaignDraftWithContext(context.Background(), &first)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	won, err = UpdateRecallCampaignDraftWithContext(context.Background(), &second)
+	require.NoError(t, err)
+	require.False(t, won)
+
+	stored, err := GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, "first edit", stored.Name)
+	require.EqualValues(t, 2, stored.ConfigRevision)
+}
+
+func TestRecallRepositoryActiveEmailUpdateUsesConfigRevisionFence(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("revisioned email")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	transitioned, err := TransitionRecallCampaign(
+		campaign.Id,
+		[]string{RecallCampaignDraft},
+		RecallCampaignRunning,
+		nil,
+	)
+	require.NoError(t, err)
+	require.True(t, transitioned)
+
+	won, err := UpdateRecallCampaignEmailSequenceWithContext(
+		context.Background(), campaign.Id, campaign.ConfigRevision, "first email", `[{"version":2}]`,
+	)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	won, err = UpdateRecallCampaignEmailSequenceWithContext(
+		context.Background(), campaign.Id, campaign.ConfigRevision, "stale email", `[{"version":2,"stale":true}]`,
+	)
+	require.NoError(t, err)
+	require.False(t, won)
+
+	stored, err := GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, "first email", stored.Name)
+	require.Equal(t, `[{"version":2}]`, stored.EmailSequenceConfig)
+	require.EqualValues(t, 2, stored.ConfigRevision)
+}
+
 func TestRecallRepositoryDraftUpdatePersistsZeroValuesAndPreservesImmutableFields(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 
@@ -199,12 +259,13 @@ func TestRecallRepositoryDraftUpdatePersistsZeroValuesAndPreservesImmutableField
 	require.NoError(t, CreateRecallCampaign(&campaign))
 
 	update := RecallCampaign{
-		Id:          campaign.Id,
-		Status:      RecallCampaignRunning,
-		CreatedBy:   999,
-		CreatedAt:   999,
-		ActivatedAt: 999,
-		CompletedAt: 999,
+		Id:             campaign.Id,
+		ConfigRevision: campaign.ConfigRevision,
+		Status:         RecallCampaignRunning,
+		CreatedBy:      999,
+		CreatedAt:      999,
+		ActivatedAt:    999,
+		CompletedAt:    999,
 	}
 	require.NoError(t, UpdateRecallCampaignDraft(&update))
 
@@ -581,6 +642,58 @@ func TestRecallRunIdempotencyMixedRecipientConflictBindsMessagesByUser(t *testin
 	}
 	require.Equal(t, existing.UserId, messageUsers[`{"recipient":"existing"}`])
 	require.Equal(t, 452, messageUsers[`{"recipient":"new"}`])
+}
+
+func TestRecallRunIdempotencyCommitsLargeSnapshotsInBoundedBatches(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("large snapshot run")
+	campaign.Status = RecallCampaignScheduled
+	campaign.NextRunAt = 1_721_000_000
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	const total = 3000
+	recipients := make([]RecallRecipient, total)
+	messages := make([]RecallMessage, total)
+	for i := 0; i < total; i++ {
+		recipients[i] = RecallRecipient{
+			UserId:              i + 1,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "large@example.com",
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		}
+		messages[i] = RecallMessage{
+			StageNo:          1,
+			TemplateVersion:  1,
+			TemplateSnapshot: `{"subject":"large"}`,
+			State:            RecallMessageScheduled,
+		}
+	}
+	expectedNextRunAt := campaign.NextRunAt
+	committed, inserted, err := CommitRecallCampaignRun(
+		context.Background(),
+		campaign.Id,
+		[]string{RecallCampaignScheduled},
+		RecallCampaignRunning,
+		&expectedNextRunAt,
+		campaign.ConfigRevision,
+		map[string]any{"next_run_at": int64(0)},
+		recipients,
+		messages,
+		RecallEvent{EventType: "campaign_run", Source: "scheduler", SourceEventId: "large:run", EventData: `{}`},
+	)
+
+	require.NoError(t, err)
+	require.True(t, committed)
+	require.Equal(t, total, inserted)
+	for _, table := range []any{&RecallRecipient{}, &RecallMessage{}} {
+		var count int64
+		require.NoError(t, DB.Model(table).Count(&count).Error)
+		require.EqualValues(t, total, count)
+	}
+	var eventCount int64
+	require.NoError(t, DB.Model(&RecallEvent{}).Count(&eventCount).Error)
+	require.EqualValues(t, 1, eventCount)
 }
 
 func TestRecallRunIdempotencyRejectsAmbiguousMessageMapping(t *testing.T) {

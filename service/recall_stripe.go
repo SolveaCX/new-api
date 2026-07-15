@@ -380,14 +380,14 @@ func recallConfiguredTopUpPriceIDs() ([]string, error) {
 	return ids, nil
 }
 
-func (s *RecallStripeService) EnsureCoupon(ctx context.Context, campaignID int64, source string, existingID string, discount RecallDiscountConfig, products RecallResolvedProductScope, enrollmentLimit int) (*stripe.Coupon, RecallDiscountConfig, error) {
+func (s *RecallStripeService) EnsureCoupon(ctx context.Context, campaignID int64, configRevision int64, source string, existingID string, discount RecallDiscountConfig, products RecallResolvedProductScope, enrollmentLimit int) (*stripe.Coupon, RecallDiscountConfig, error) {
 	normalizedDiscount, err := normalizeRecallDiscount(discount)
 	if err != nil {
 		return nil, RecallDiscountConfig{}, err
 	}
 	switch strings.ToLower(strings.TrimSpace(source)) {
 	case "automatic":
-		params, buildErr := buildRecallCouponParams(ctx, campaignID, normalizedDiscount, products.ProductIDs, enrollmentLimit)
+		params, buildErr := buildRecallCouponParams(ctx, campaignID, configRevision, normalizedDiscount, products.ProductIDs, enrollmentLimit)
 		if buildErr != nil {
 			return nil, RecallDiscountConfig{}, buildErr
 		}
@@ -451,9 +451,12 @@ func normalizeRecallDiscount(discount RecallDiscountConfig) (RecallDiscountConfi
 	return discount, nil
 }
 
-func buildRecallCouponParams(ctx context.Context, campaignID int64, discount RecallDiscountConfig, productIDs []string, enrollmentLimit int) (*stripe.CouponParams, error) {
+func buildRecallCouponParams(ctx context.Context, campaignID int64, configRevision int64, discount RecallDiscountConfig, productIDs []string, enrollmentLimit int) (*stripe.CouponParams, error) {
 	if campaignID <= 0 {
 		return nil, recallStripePermanent("create Stripe Coupon", "campaign ID must be positive")
+	}
+	if configRevision <= 0 {
+		return nil, recallStripePermanent("create Stripe Coupon", "campaign config revision must be positive")
 	}
 	productIDs = normalizeRecallStripeIDs(productIDs)
 	if len(productIDs) == 0 {
@@ -486,7 +489,7 @@ func buildRecallCouponParams(ctx context.Context, campaignID int64, discount Rec
 	if enrollmentLimit > 0 {
 		params.MaxRedemptions = stripe.Int64(int64(enrollmentLimit))
 	}
-	params.SetIdempotencyKey("recall_coupon:" + strconv.FormatInt(campaignID, 10))
+	params.SetIdempotencyKey("recall_coupon:" + strconv.FormatInt(campaignID, 10) + ":" + strconv.FormatInt(configRevision, 10))
 	return params, nil
 }
 
