@@ -139,17 +139,6 @@ export async function sendEmailVerification(
   return res.data
 }
 
-export async function exchangeRegistrationEmailToken(
-  token: string
-): Promise<RegistrationEmailVerificationResponse> {
-  const res = await api.post<RegistrationEmailVerificationResponse>(
-    '/api/registration/email-verification/exchange',
-    { token },
-    { skipBusinessError: true }
-  )
-  return res.data
-}
-
 export async function getRegistrationEmailVerificationStatus(
   email: string
 ): Promise<RegistrationEmailVerificationResponse> {

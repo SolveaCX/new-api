@@ -21,10 +21,9 @@ import { Link } from '@tanstack/react-router'
 import { ArrowLeft, CircleAlert, CircleCheck, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import { exchangeRegistrationEmailToken } from '../../api'
 import { AuthLayout } from '../../auth-layout'
 import {
-  consumeRegistrationEmailVerificationToken,
+  consumeRegistrationEmailVerificationRequest,
   startRegistrationEmailVerificationEffect,
   type EmailVerificationScreenState,
 } from '../../lib/registration-email-verification'
@@ -92,20 +91,14 @@ export function EmailVerificationStatusContent(
 
 export function EmailVerificationScreen() {
   const { t } = useTranslation()
-  const [token] = useState(consumeRegistrationEmailVerificationToken)
+  const [request] = useState(consumeRegistrationEmailVerificationRequest)
   const [state, setState] = useState<EmailVerificationScreenState>(() =>
-    token ? 'verifying' : 'unavailable'
+    request ? 'verifying' : 'unavailable'
   )
 
   useEffect(() => {
-    return startRegistrationEmailVerificationEffect(
-      token,
-      {
-        exchangeToken: exchangeRegistrationEmailToken,
-      },
-      setState
-    )
-  }, [token])
+    return startRegistrationEmailVerificationEffect(request, setState)
+  }, [request])
 
   return (
     <AuthLayout>

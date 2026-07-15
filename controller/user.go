@@ -227,13 +227,15 @@ func Register(c *gin.Context) {
 		respondRegistrationEmailError(c, err)
 		return
 	}
+	verifiedByGrant := false
+	verifiedByCode := false
 	if common.EmailVerificationEnabled {
 		if user.Email == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
 		}
-		verifiedByGrant := registrationEmailGrantMatches(c, user.Email)
-		verifiedByCode := user.VerificationCode != "" && common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose)
+		verifiedByGrant = registrationEmailGrantMatches(c, user.Email)
+		verifiedByCode = user.VerificationCode != "" && common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose)
 		if !verifiedByGrant && user.VerificationCode == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
@@ -268,9 +270,25 @@ func Register(c *gin.Context) {
 	}
 	cleanUser.Email = user.Email
 	cleanUser.EmailDomain = emailDecision.Domain
+	registrationEmailGrant := ""
+	grantReserved := false
+	if common.EmailVerificationEnabled && verifiedByGrant {
+		registrationEmailGrant = registrationEmailGrantFromSession(c)
+		grantReserved = common.ReserveRegistrationEmailGrant(registrationEmailGrant, user.Email)
+		if !grantReserved && !verifiedByCode {
+			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+			return
+		}
+	}
 	if _, err := model.RegisterUserWithDomainRisk(&cleanUser, inviterId, c.ClientIP(), emailDecision.Policy, nil); err != nil {
+		if grantReserved {
+			common.RollbackRegistrationEmailGrantReservation(registrationEmailGrant, user.Email)
+		}
 		respondRegistrationEmailError(c, err)
 		return
+	}
+	if grantReserved {
+		common.CommitRegistrationEmailGrantReservation(registrationEmailGrant)
 	}
 	cleanUser.FinalizeOAuthUserCreation(inviterId)
 

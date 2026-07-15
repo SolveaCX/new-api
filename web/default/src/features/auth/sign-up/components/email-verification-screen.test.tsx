@@ -57,28 +57,18 @@ describe('EmailVerificationStatusContent', () => {
 })
 
 describe('resolveRegistrationEmailVerification', () => {
-  test('does not exchange a missing token', async () => {
-    let exchangeCalls = 0
-    const state = await resolveRegistrationEmailVerification(null, {
-      exchangeToken: async () => {
-        exchangeCalls += 1
-        return { success: true, message: '', data: { verified: true } }
-      },
-    })
-
+  test('rejects a missing bootstrap exchange', async () => {
+    const state = await resolveRegistrationEmailVerification(null)
     expect(state).toBe('unavailable')
-    expect(exchangeCalls).toBe(0)
   })
 
-  test('exchanges the bootstrapped token and maps success to verified', async () => {
+  test('maps the bootstrapped exchange response to verified', async () => {
     let finishExchange: ((value: unknown) => void) | undefined
     const exchangeResponse = new Promise((resolve) => {
       finishExchange = resolve
     })
 
-    const statePromise = resolveRegistrationEmailVerification('abc', {
-      exchangeToken: async () => exchangeResponse,
-    })
+    const statePromise = resolveRegistrationEmailVerification(exchangeResponse)
 
     finishExchange?.({
       success: true,
@@ -90,21 +80,13 @@ describe('resolveRegistrationEmailVerification', () => {
 
   test('maps business and network failures to unavailable', async () => {
     const businessFailure = await resolveRegistrationEmailVerification(
-      'expired',
-      {
-        exchangeToken: async () => ({
-          success: false,
-          message: 'expired',
-        }),
-      }
+      Promise.resolve({
+        success: false,
+        message: 'expired',
+      })
     )
     const networkFailure = await resolveRegistrationEmailVerification(
-      'network',
-      {
-        exchangeToken: async () => {
-          throw new Error('offline')
-        },
-      }
+      Promise.reject(new Error('offline'))
     )
 
     expect(businessFailure).toBe('unavailable')
@@ -112,28 +94,26 @@ describe('resolveRegistrationEmailVerification', () => {
   })
 
   test('lets the active StrictMode effect publish after the first cleanup', async () => {
-    const resolvers: Array<(value: unknown) => void> = []
+    let finishExchange: ((value: unknown) => void) | undefined
     const states: EmailVerificationScreenState[] = []
-    const dependencies = {
-      exchangeToken: () =>
-        new Promise((resolve) => {
-          resolvers.push(resolve)
-        }),
-    }
+    const exchangeResponse = new Promise((resolve) => {
+      finishExchange = resolve
+    })
 
     const cleanupFirst = startRegistrationEmailVerificationEffect(
-      'abc',
-      dependencies,
+      exchangeResponse,
       (state) => states.push(state)
     )
     cleanupFirst()
-    startRegistrationEmailVerificationEffect('abc', dependencies, (state) =>
+    startRegistrationEmailVerificationEffect(exchangeResponse, (state) =>
       states.push(state)
     )
 
-    for (const resolve of resolvers) {
-      resolve({ success: true, message: '', data: { verified: true } })
-    }
+    finishExchange?.({
+      success: true,
+      message: '',
+      data: { verified: true },
+    })
     await Promise.resolve()
     await Promise.resolve()
 
