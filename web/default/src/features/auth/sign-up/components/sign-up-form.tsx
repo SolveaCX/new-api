@@ -16,13 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { z } from 'zod'
 import { type FieldErrors, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2 } from 'lucide-react'
+import { CircleCheck, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { getAdsAttributionPayload } from '@/lib/analytics/attribution'
 import {
   trackAdsFunnelEvent,
   trackSignupConversion,
@@ -31,7 +32,6 @@ import {
 import { trackMixpanelEvent } from '@/lib/analytics/mixpanel'
 import { trackPixelsSignup } from '@/lib/analytics/pixels'
 import { trackYahooSignupConversion } from '@/lib/analytics/yahoo'
-import { getAdsAttributionPayload } from '@/lib/analytics/attribution'
 import { cn } from '@/lib/utils'
 import { useStatus } from '@/hooks/use-status'
 import { Button } from '@/components/ui/button'
@@ -48,16 +48,30 @@ import { Label } from '@/components/ui/label'
 import { Dialog } from '@/components/dialog'
 import { PasswordInput } from '@/components/password-input'
 import { Turnstile } from '@/components/turnstile'
-import { register, wechatLoginByCode } from '@/features/auth/api'
+import {
+  getRegistrationEmailVerificationStatus,
+  register,
+  wechatLoginByCode,
+} from '@/features/auth/api'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { registerFormSchema } from '@/features/auth/constants'
 import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
 import { useEmailVerification } from '@/features/auth/hooks/use-email-verification'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
+import { isRegistrationEmailVerified } from '@/features/auth/lib/registration-email-verification'
 import {
   getAffiliateCode,
   saveAffiliateCode,
 } from '@/features/auth/lib/storage'
+import {
+  canApplyEmailVerificationStatus,
+  clearVerificationForEmailChange,
+  createEmailVerificationState,
+  isVerificationCodeRequired,
+  isVerifiedEmail,
+  markEmailSent,
+  markEmailVerified,
+} from '@/features/auth/sign-up/lib/email-verification-state'
 
 export function SignUpForm({
   className,
@@ -70,6 +84,10 @@ export function SignUpForm({
   const [wechatCode, setWeChatCode] = useState('')
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
+  const [emailVerificationState, setEmailVerificationState] = useState(
+    createEmailVerificationState
+  )
+  const currentEmailRef = useRef('')
 
   const { status } = useStatus()
   const {
@@ -101,7 +119,17 @@ export function SignUpForm({
   })
 
   const emailValue = form.watch('email')
+  const normalizedEmailValue = emailValue?.trim() || ''
+  currentEmailRef.current = normalizedEmailValue
   const emailVerificationRequired = !!status?.email_verification
+  const emailVerified = isVerifiedEmail(
+    emailVerificationState,
+    normalizedEmailValue
+  )
+  const emailVerificationStatusTarget =
+    emailVerificationState.sentEmail === normalizedEmailValue
+      ? emailVerificationState.sentEmail
+      : ''
   const oauthRegisterEnabled =
     status?.oauth_register_enabled ??
     status?.data?.oauth_register_enabled ??
@@ -136,6 +164,62 @@ export function SignUpForm({
     }
   }, [])
 
+  useEffect(() => {
+    if (!emailVerificationRequired || !emailVerificationStatusTarget) return
+
+    let active = true
+    let latestRequest = 0
+
+    const refreshVerificationStatus = async () => {
+      const request = ++latestRequest
+
+      try {
+        const response = await getRegistrationEmailVerificationStatus(
+          emailVerificationStatusTarget
+        )
+        if (
+          !active ||
+          request !== latestRequest ||
+          currentEmailRef.current !== emailVerificationStatusTarget
+        ) {
+          return
+        }
+        if (!isRegistrationEmailVerified(response)) return
+
+        setEmailVerificationState((current) =>
+          canApplyEmailVerificationStatus(
+            current,
+            currentEmailRef.current,
+            emailVerificationStatusTarget
+          )
+            ? markEmailVerified(current, emailVerificationStatusTarget)
+            : current
+        )
+      } catch (_error) {
+        // The server remains authoritative; a later focus event can retry.
+      }
+    }
+
+    const handleFocus = () => {
+      void refreshVerificationStatus()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshVerificationStatus()
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      active = false
+      latestRequest += 1
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [emailVerificationRequired, emailVerificationStatusTarget])
+
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     trackAdsFunnelEvent('flatkey_signup_submit', {
       method: 'password',
@@ -151,7 +235,10 @@ export function SignUpForm({
         toast.error(t('Please enter your email'))
         return
       }
-      if (!verificationCode) {
+      if (
+        isVerificationCodeRequired(emailVerificationState, data.email) &&
+        !verificationCode
+      ) {
         trackAdsFunnelEvent('flatkey_signup_validation_error', {
           reason: 'missing_verification_code',
         })
@@ -223,9 +310,7 @@ export function SignUpForm({
     }
   }
 
-  function onInvalid(
-    errors: FieldErrors<z.infer<typeof registerFormSchema>>
-  ) {
+  function onInvalid(errors: FieldErrors<z.infer<typeof registerFormSchema>>) {
     const fields = Object.keys(errors).sort().join(',')
     trackAdsFunnelEvent('flatkey_signup_validation_error', {
       reason: 'form_invalid',
@@ -234,7 +319,11 @@ export function SignUpForm({
   }
 
   async function handleSendVerificationCode() {
-    await sendCode(emailValue || '')
+    const email = normalizedEmailValue
+    const sent = await sendCode(email)
+    if (!sent) return
+
+    setEmailVerificationState((current) => markEmailSent(current, email))
   }
 
   const handleOpenWeChatDialog = () => {
@@ -354,6 +443,16 @@ export function SignUpForm({
                       placeholder={t('name@example.com')}
                       type='email'
                       {...field}
+                      onChange={(event) => {
+                        currentEmailRef.current = event.target.value.trim()
+                        field.onChange(event)
+                        setEmailVerificationState((current) =>
+                          clearVerificationForEmailChange(
+                            current,
+                            event.target.value
+                          )
+                        )
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
@@ -362,35 +461,45 @@ export function SignUpForm({
             />
 
             {/* Verification Code Field */}
-            <div className='flex items-end gap-2'>
-              <div className='flex-1'>
-                <Input
-                  placeholder={t('Verification code')}
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
-                />
-              </div>
-              <Button
-                variant='outline'
-                type='button'
-                disabled={
-                  isLoading ||
-                  isSendingCode ||
-                  isActive ||
-                  !emailValue ||
-                  !turnstileReady
-                }
-                onClick={handleSendVerificationCode}
+            {emailVerified ? (
+              <div
+                className='flex h-10 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
+                role='status'
               >
-                {isActive ? (
-                  t('Resend ({{seconds}}s)', { seconds: secondsLeft })
-                ) : isSendingCode ? (
-                  <Loader2 className='h-4 w-4 animate-spin' />
-                ) : (
-                  t('Send code')
-                )}
-              </Button>
-            </div>
+                <CircleCheck className='h-4 w-4 shrink-0' aria-hidden='true' />
+                <span>{t('Email verified')}</span>
+              </div>
+            ) : (
+              <div className='flex items-end gap-2'>
+                <div className='flex-1'>
+                  <Input
+                    placeholder={t('Verification code')}
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                  />
+                </div>
+                <Button
+                  variant='outline'
+                  type='button'
+                  disabled={
+                    isLoading ||
+                    isSendingCode ||
+                    isActive ||
+                    !emailValue ||
+                    !turnstileReady
+                  }
+                  onClick={handleSendVerificationCode}
+                >
+                  {isActive ? (
+                    t('Resend ({{seconds}}s)', { seconds: secondsLeft })
+                  ) : isSendingCode ? (
+                    <Loader2 className='h-4 w-4 animate-spin' />
+                  ) : (
+                    t('Send code')
+                  )}
+                </Button>
+              </div>
+            )}
           </>
         )}
 
