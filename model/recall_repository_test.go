@@ -120,6 +120,7 @@ func TestRecallRepositoryCampaignCRUDAndConditionalTransition(t *testing.T) {
 
 	transitioned, err = TransitionRecallCampaign(campaign.Id, []string{RecallCampaignDraft}, RecallCampaignScheduled, map[string]any{
 		"scheduled_at": int64(1234),
+		"next_run_at":  int64(2345),
 	})
 	require.NoError(t, err)
 	require.True(t, transitioned)
@@ -127,6 +128,7 @@ func TestRecallRepositoryCampaignCRUDAndConditionalTransition(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, RecallCampaignScheduled, stored.Status)
 	require.Equal(t, int64(1234), stored.ScheduledAt)
+	require.Equal(t, int64(2345), stored.NextRunAt)
 
 	campaign.Name = "must not update after scheduling"
 	require.NoError(t, UpdateRecallCampaignDraft(&campaign))
@@ -183,7 +185,7 @@ func TestRecallRepositoryDraftUpdatePersistsZeroValuesAndPreservesImmutableField
 	require.Empty(t, stored.ExecutionMode)
 	require.Zero(t, stored.ScheduledAt)
 	require.Empty(t, stored.RecurrenceConfig)
-	require.Zero(t, stored.NextRunAt)
+	require.Equal(t, int64(202), stored.NextRunAt)
 	require.Empty(t, stored.CouponSource)
 	require.Empty(t, stored.StripeCouponId)
 	require.Empty(t, stored.DiscountConfig)
@@ -195,7 +197,7 @@ func TestRecallRepositoryDraftUpdatePersistsZeroValuesAndPreservesImmutableField
 }
 
 func TestRecallRepositoryTransitionRejectsUnsafeMetadata(t *testing.T) {
-	for _, field := range []string{"id", "created_at", "created_by", "status"} {
+	for _, field := range []string{"id", "created_at", "created_by", "status", "updated_at"} {
 		t.Run(field, func(t *testing.T) {
 			setupRecallRepositoryTestDB(t)
 			campaign := newRecallRepositoryCampaign("protected transition")
