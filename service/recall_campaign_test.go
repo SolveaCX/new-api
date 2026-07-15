@@ -703,8 +703,6 @@ func TestRecallCampaignAllEntryPointsRespectFeatureGate(t *testing.T) {
 	_, err = service.RunDueCampaigns(context.Background(), now, 10)
 	require.ErrorIs(t, err, ErrRecallDisabled)
 	require.True(t, errors.Is(err, ErrRecallDisabled))
-	_, err = service.ValidateStripe(context.Background(), validRecallCampaignDraft(now))
-	require.ErrorIs(t, err, ErrRecallDisabled)
 }
 
 func TestRecallCampaignRecurringEnrollmentLimitIsCampaignWide(t *testing.T) {

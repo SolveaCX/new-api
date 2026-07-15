@@ -150,17 +150,6 @@ func (s *RecallCampaignService) Preview(ctx context.Context, id int64, sampleSiz
 	return audiencePreview, stripePreview, nil
 }
 
-func (s *RecallCampaignService) ValidateStripe(ctx context.Context, draft RecallCampaignDraft) (RecallStripePreview, error) {
-	if err := recallCampaignGate(ctx); err != nil {
-		return RecallStripePreview{}, err
-	}
-	normalized, err := validateAndNormalizeRecallCampaignDraft(draft, s.now())
-	if err != nil {
-		return RecallStripePreview{}, err
-	}
-	return s.validateStripe(ctx, normalized)
-}
-
 func (s *RecallCampaignService) validateStripe(ctx context.Context, draft RecallCampaignDraft) (RecallStripePreview, error) {
 	resolved, err := s.stripe.ValidateAndResolveProducts(ctx, draft.Products)
 	if err != nil {
