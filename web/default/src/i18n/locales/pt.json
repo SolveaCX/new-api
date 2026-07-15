@@ -5411,6 +5411,13 @@
     "Which referrals appear here?": "Quais indicações aparecem aqui?",
     "This list shows active accounts registered through your referral link. Deleted accounts may not appear, so the rewards shown here may not add up to your lifetime earnings.": "Esta lista mostra as contas ativas cadastradas pelo seu link de indicação. Contas excluídas podem não aparecer, portanto as recompensas exibidas aqui podem não corresponder ao total acumulado.",
     "What behavior is prohibited?": "Quais comportamentos são proibidos?",
-    "Self-referrals, duplicate accounts, and other abuse are prohibited. Rewards may be withheld or revoked.": "É proibido indicar a si mesmo, criar contas duplicadas ou praticar outros abusos. As recompensas podem ser retidas ou revogadas."
+    "Self-referrals, duplicate accounts, and other abuse are prohibited. Rewards may be withheld or revoked.": "É proibido indicar a si mesmo, criar contas duplicadas ou praticar outros abusos. As recompensas podem ser retidas ou revogadas.",
+    "Verifying your email": "Verificando seu e-mail",
+    "Please wait while we confirm this verification link.": "Aguarde enquanto confirmamos este link de verificação.",
+    "Email verified": "E-mail verificado",
+    "Your email is verified. Return to registration to continue.": "Seu e-mail foi verificado. Volte ao cadastro para continuar.",
+    "Verification link unavailable": "Link de verificação indisponível",
+    "This verification link is invalid or expired. Use the code in your email or request a new message.": "Este link de verificação é inválido ou expirou. Use o código do e-mail ou solicite uma nova mensagem.",
+    "Back to registration": "Voltar ao cadastro"
   }
 }

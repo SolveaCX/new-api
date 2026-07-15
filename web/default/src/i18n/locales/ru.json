@@ -5411,6 +5411,13 @@
     "Which referrals appear here?": "Какие приглашения отображаются здесь?",
     "This list shows active accounts registered through your referral link. Deleted accounts may not appear, so the rewards shown here may not add up to your lifetime earnings.": "В списке показаны активные аккаунты, зарегистрированные по вашей реферальной ссылке. Удалённые аккаунты могут не отображаться, поэтому сумма видимых наград может отличаться от вашего общего заработка.",
     "What behavior is prohibited?": "Какие действия запрещены?",
-    "Self-referrals, duplicate accounts, and other abuse are prohibited. Rewards may be withheld or revoked.": "Самоприглашения, дублирующиеся аккаунты и другие злоупотребления запрещены. В выплате наград может быть отказано, а уже начисленные награды могут быть отозваны."
+    "Self-referrals, duplicate accounts, and other abuse are prohibited. Rewards may be withheld or revoked.": "Самоприглашения, дублирующиеся аккаунты и другие злоупотребления запрещены. В выплате наград может быть отказано, а уже начисленные награды могут быть отозваны.",
+    "Verifying your email": "Подтверждение электронной почты",
+    "Please wait while we confirm this verification link.": "Подождите, пока мы проверяем эту ссылку.",
+    "Email verified": "Почта подтверждена",
+    "Your email is verified. Return to registration to continue.": "Ваша почта подтверждена. Вернитесь к регистрации, чтобы продолжить.",
+    "Verification link unavailable": "Ссылка для подтверждения недоступна",
+    "This verification link is invalid or expired. Use the code in your email or request a new message.": "Ссылка недействительна или устарела. Используйте код из письма или запросите новое сообщение.",
+    "Back to registration": "Вернуться к регистрации"
   }
 }

@@ -5411,6 +5411,13 @@
     "Which referrals appear here?": "这里会显示哪些邀请记录？",
     "This list shows active accounts registered through your referral link. Deleted accounts may not appear, so the rewards shown here may not add up to your lifetime earnings.": "此列表显示通过您的邀请链接注册的有效账户。已删除的账户可能不会显示，因此这里的奖励合计可能与您的累计奖励不同。",
     "What behavior is prohibited?": "哪些行为被禁止？",
-    "Self-referrals, duplicate accounts, and other abuse are prohibited. Rewards may be withheld or revoked.": "禁止自我邀请、重复账户及其他滥用行为。相关奖励可能会被拒绝发放或撤回。"
+    "Self-referrals, duplicate accounts, and other abuse are prohibited. Rewards may be withheld or revoked.": "禁止自我邀请、重复账户及其他滥用行为。相关奖励可能会被拒绝发放或撤回。",
+    "Verifying your email": "正在验证您的邮箱",
+    "Please wait while we confirm this verification link.": "请稍候，我们正在确认此验证链接。",
+    "Email verified": "邮箱已验证",
+    "Your email is verified. Return to registration to continue.": "您的邮箱已验证。返回注册页面继续。",
+    "Verification link unavailable": "验证链接不可用",
+    "This verification link is invalid or expired. Use the code in your email or request a new message.": "此验证链接无效或已过期。请使用邮件中的验证码，或重新发送邮件。",
+    "Back to registration": "返回注册"
   }
 }
