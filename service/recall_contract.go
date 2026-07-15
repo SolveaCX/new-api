@@ -1,0 +1,93 @@
+package service
+
+type RecallCampaignDraft struct {
+	Name                  string               `json:"name"`
+	AudienceTemplate      string               `json:"audience_template"`
+	Audience              RecallAudienceConfig `json:"audience"`
+	ExecutionMode         string               `json:"execution_mode"`
+	Schedule              RecallScheduleConfig `json:"schedule"`
+	CouponSource          string               `json:"coupon_source"`
+	ExistingCouponID      string               `json:"existing_coupon_id"`
+	Discount              RecallDiscountConfig `json:"discount"`
+	Products              RecallProductScope   `json:"products"`
+	PromotionValidSeconds int64                `json:"promotion_valid_seconds"`
+	EnrollmentLimit       int                  `json:"enrollment_limit"`
+	WorkerConcurrency     int                  `json:"worker_concurrency"`
+	Emails                []RecallEmailStage   `json:"emails"`
+}
+
+type RecallAudienceConfig struct {
+	RegistrationAgeDays     int      `json:"registration_age_days"`
+	MinRequestCount         int      `json:"min_request_count"`
+	MaxQuota                int      `json:"max_quota"`
+	MinPaidAmount           float64  `json:"min_paid_amount"`
+	LastAPICallAgeDays      int      `json:"last_api_call_age_days"`
+	LastPaymentAgeDays      int      `json:"last_payment_age_days"`
+	SubscriptionExpiredDays int      `json:"subscription_expired_days"`
+	MinSubscriptionAmount   float64  `json:"min_subscription_amount"`
+	MinSubscriptionCount    int      `json:"min_subscription_count"`
+	PaymentProviders        []string `json:"payment_providers"`
+	Groups                  []string `json:"groups"`
+	GroupMode               string   `json:"group_mode"`
+	RequireVerifiedEmail    bool     `json:"require_verified_email"`
+}
+
+type RecallScheduleConfig struct {
+	ScheduledAt int64  `json:"scheduled_at"`
+	Timezone    string `json:"timezone"`
+	Frequency   string `json:"frequency"`
+	Weekday     int    `json:"weekday"`
+	Hour        int    `json:"hour"`
+	Minute      int    `json:"minute"`
+}
+
+type RecallDiscountConfig struct {
+	Type                  string  `json:"type"`
+	PercentOff            float64 `json:"percent_off"`
+	AmountOff             int64   `json:"amount_off"`
+	Currency              string  `json:"currency"`
+	MinimumAmount         int64   `json:"minimum_amount"`
+	MinimumAmountCurrency string  `json:"minimum_amount_currency"`
+	CouponRedeemBy        int64   `json:"coupon_redeem_by"`
+}
+
+type RecallProductScope struct {
+	TopUpPriceIDs        []string `json:"top_up_price_ids"`
+	SubscriptionPriceIDs []string `json:"subscription_price_ids"`
+}
+
+type RecallEmailStage struct {
+	StageNo         int                            `json:"stage_no"`
+	DelaySeconds    int64                          `json:"delay_seconds"`
+	TemplateVersion int                            `json:"template_version"`
+	Templates       map[string]RecallEmailTemplate `json:"templates"`
+}
+
+type RecallEmailTemplate struct {
+	Subject  string `json:"subject"`
+	BodyText string `json:"body_text"`
+}
+
+type RecallClaimView struct {
+	CampaignID          int64                `json:"campaign_id"`
+	RecipientID         int64                `json:"recipient_id"`
+	CampaignName        string               `json:"campaign_name"`
+	PromotionCodeMasked string               `json:"promotion_code_masked"`
+	ExpiresAt           int64                `json:"expires_at"`
+	Discount            RecallDiscountConfig `json:"discount"`
+	Products            RecallProductScope   `json:"products"`
+	Redeemed            bool                 `json:"redeemed"`
+}
+
+type RecallAudiencePreview struct {
+	EligibleTotal int64                     `json:"eligible_total"`
+	Sample        []RecallAudienceCandidate `json:"sample"`
+	Exclusions    map[string]int64          `json:"exclusions"`
+}
+
+type RecallAudienceCandidate struct {
+	UserID       int    `json:"user_id"`
+	EmailMasked  string `json:"email_masked"`
+	Language     string `json:"language"`
+	SnapshotJSON string `json:"-"`
+}

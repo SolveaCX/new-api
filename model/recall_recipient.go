@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -205,4 +206,166 @@ func MaskPromotionCode(code string) string {
 		return "........"
 	}
 	return code[:4] + "****" + code[len(code)-2:]
+}
+
+type RecallCandidateQuery struct {
+	Template              string
+	Now                   int64
+	RegistrationBefore    int64
+	LastPaymentBefore     int64
+	SubscriptionBefore    int64
+	MaxQuota              int
+	MinRequestCount       int
+	MinPaidAmount         float64
+	MinSubscriptionAmount float64
+	MinSubscriptionCount  int
+	PaymentProviders      []string
+	Groups                []string
+	GroupMode             string
+	AfterUserID           int
+	Limit                 int
+}
+
+type RecallCandidateFact struct {
+	User                  User
+	HasPayment            bool
+	PaidAmount            float64
+	LastPaymentAt         int64
+	SubscriptionAmount    float64
+	SubscriptionCount     int64
+	LastSubscriptionEndAt int64
+	HasActiveSubscription bool
+}
+
+type recallPaymentFactRow struct {
+	Id              int
+	UserId          int
+	Money           float64
+	PaymentProvider string
+	TradeNo         string
+	CreateTime      int64
+	CompleteTime    int64
+}
+
+func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact, error) {
+	facts := make([]RecallCandidateFact, 0)
+	if query.Limit <= 0 {
+		return facts, nil
+	}
+	var users []User
+	if err := DB.Where("id > ?", query.AfterUserID).
+		Order("id ASC").
+		Limit(query.Limit).
+		Find(&users).Error; err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return facts, nil
+	}
+
+	userIDs := make([]int, len(users))
+	facts = make([]RecallCandidateFact, len(users))
+	factByUserID := make(map[int]*RecallCandidateFact, len(users))
+	for i := range users {
+		userIDs[i] = users[i].Id
+		facts[i] = RecallCandidateFact{User: users[i]}
+		factByUserID[users[i].Id] = &facts[i]
+	}
+
+	providerFilter := query.Template != "first_purchase" && len(query.PaymentProviders) > 0
+	topupQuery := DB.Model(&TopUp{}).
+		Select("id", "user_id", "money", "payment_provider", "trade_no", "create_time", "complete_time").
+		Where("user_id IN ? AND status = ?", userIDs, common.TopUpStatusSuccess)
+	if providerFilter {
+		topupQuery = topupQuery.Where("payment_provider IN ?", query.PaymentProviders)
+	}
+	var topups []recallPaymentFactRow
+	if err := topupQuery.Find(&topups).Error; err != nil {
+		return nil, err
+	}
+
+	subscriptionOrderQuery := DB.Model(&SubscriptionOrder{}).
+		Select("id", "user_id", "money", "payment_provider", "trade_no", "create_time", "complete_time").
+		Where("user_id IN ? AND status = ?", userIDs, common.TopUpStatusSuccess)
+	if providerFilter {
+		subscriptionOrderQuery = subscriptionOrderQuery.Where("payment_provider IN ?", query.PaymentProviders)
+	}
+	var subscriptionOrders []recallPaymentFactRow
+	if err := subscriptionOrderQuery.Find(&subscriptionOrders).Error; err != nil {
+		return nil, err
+	}
+
+	seenPayments := make(map[int]map[string]struct{}, len(users))
+	addPayment := func(row recallPaymentFactRow, source string) {
+		fact := factByUserID[row.UserId]
+		if fact == nil {
+			return
+		}
+		fact.HasPayment = true
+		key := row.TradeNo
+		if key == "" {
+			key = fmt.Sprintf("%s:%d", source, row.Id)
+		}
+		if seenPayments[row.UserId] == nil {
+			seenPayments[row.UserId] = make(map[string]struct{})
+		}
+		if _, exists := seenPayments[row.UserId][key]; exists {
+			return
+		}
+		seenPayments[row.UserId][key] = struct{}{}
+		fact.PaidAmount += row.Money
+		paidAt := row.CompleteTime
+		if paidAt == 0 {
+			paidAt = row.CreateTime
+		}
+		if paidAt > fact.LastPaymentAt {
+			fact.LastPaymentAt = paidAt
+		}
+	}
+	for _, topup := range topups {
+		addPayment(topup, "topup")
+	}
+	for _, order := range subscriptionOrders {
+		addPayment(order, "subscription")
+		if fact := factByUserID[order.UserId]; fact != nil {
+			fact.SubscriptionAmount += order.Money
+		}
+	}
+
+	var subscriptions []UserSubscription
+	if err := DB.Where("user_id IN ?", userIDs).Find(&subscriptions).Error; err != nil {
+		return nil, err
+	}
+	for _, subscription := range subscriptions {
+		fact := factByUserID[subscription.UserId]
+		if fact == nil {
+			continue
+		}
+		fact.SubscriptionCount++
+		if subscription.EndTime > fact.LastSubscriptionEndAt {
+			fact.LastSubscriptionEndAt = subscription.EndTime
+		}
+		if subscription.Status == "active" && subscription.EndTime > query.Now {
+			fact.HasActiveSubscription = true
+		}
+	}
+	return facts, nil
+}
+
+func HasRecallPaymentAfter(userID int, after int64) (bool, error) {
+	var count int64
+	if err := DB.Model(&TopUp{}).
+		Where("user_id = ? AND status = ? AND (complete_time > ? OR (complete_time = 0 AND create_time > ?))", userID, common.TopUpStatusSuccess, after, after).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+	if err := DB.Model(&SubscriptionOrder{}).
+		Where("user_id = ? AND status = ? AND (complete_time > ? OR (complete_time = 0 AND create_time > ?))", userID, common.TopUpStatusSuccess, after, after).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
