@@ -91,3 +91,12 @@ type RecallAudienceCandidate struct {
 	Language     string `json:"language"`
 	SnapshotJSON string `json:"-"`
 }
+
+type RecallStripePreview struct {
+	CouponSource         string               `json:"coupon_source"`
+	CouponID             string               `json:"coupon_id"`
+	Discount             RecallDiscountConfig `json:"discount"`
+	TopUpPriceIDs        []string             `json:"topup_price_ids"`
+	SubscriptionPriceIDs []string             `json:"subscription_price_ids"`
+	ProductIDs           []string             `json:"product_ids"`
+}
