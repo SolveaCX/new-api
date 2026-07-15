@@ -519,6 +519,31 @@ func TestRecallAudienceCommonExclusionsApplyToEveryTemplate(t *testing.T) {
 	}
 }
 
+func TestRecallAudienceFirstPurchaseDefaultsToPLGGroup(t *testing.T) {
+	mainDB, _ := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	eligible := createRecallAudienceUser(t, mainDB, now, "first_purchase_plg", nil)
+	createRecallAudienceUser(t, mainDB, now, "first_purchase_default", func(user *model.User) {
+		user.Group = "default"
+	})
+	createRecallAudienceUser(t, mainDB, now, "first_purchase_admin", func(user *model.User) {
+		user.Group = "admin"
+	})
+
+	preview, err := NewRecallAudienceSelector().Preview(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "first_purchase",
+		Audience: RecallAudienceConfig{
+			RegistrationAgeDays: 7,
+			MinRequestCount:     5,
+			MaxQuota:            10,
+		},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, preview.EligibleTotal)
+	require.Equal(t, eligible.Id, preview.Sample[0].UserID)
+	require.EqualValues(t, 2, preview.Exclusions["group_filtered"])
+}
+
 func TestRecallAudienceGroupBlockModeExcludesMatchingGroups(t *testing.T) {
 	mainDB, _ := setupRecallAudienceTestDBs(t)
 	const now int64 = 2_000_000_000
