@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -55,6 +56,12 @@ type RecallRecipient struct {
 	UpdatedAt             int64   `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
+type RecallClaimRecord struct {
+	Recipient      RecallRecipient
+	Campaign       RecallCampaign
+	ClaimTokenHash string
+}
+
 func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
 	ids := make([]int64, 0)
 	if limit <= 0 {
@@ -96,6 +103,118 @@ func ReleaseRecallRecipientLease(id int64, owner string, expectedLeaseUntil int6
 			"lease_owner":      "",
 			"lease_expires_at": int64(0),
 		}).Error
+}
+
+func SetRecallMessageClaimHash(ctx context.Context, messageID int64, leaseOwner string, expectedLeaseUntil int64, claimHash string) (bool, error) {
+	updated := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var message RecallMessage
+		if err := tx.Select("recipient_id", "stage_no").
+			Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", messageID, RecallMessageLeased, leaseOwner, expectedLeaseUntil).
+			First(&message).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		result := tx.Model(&RecallMessage{}).
+			Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", messageID, RecallMessageLeased, leaseOwner, expectedLeaseUntil).
+			Update("claim_token_hash", claimHash)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		if message.StageNo == 1 {
+			if err := tx.Model(&RecallRecipient{}).
+				Where("id = ?", message.RecipientId).
+				Update("claim_token_hash", claimHash).Error; err != nil {
+				return err
+			}
+		}
+		updated = true
+		return nil
+	})
+	return updated, err
+}
+
+func FindRecallClaimByHashWithContext(ctx context.Context, claimHash string) (*RecallClaimRecord, bool, error) {
+	recipient := RecallRecipient{}
+	storedHash := ""
+	err := DB.WithContext(ctx).Where("claim_token_hash = ?", claimHash).First(&recipient).Error
+	if err == gorm.ErrRecordNotFound {
+		message := RecallMessage{}
+		if err := DB.WithContext(ctx).Where("claim_token_hash = ?", claimHash).First(&message).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, false, nil
+			}
+			return nil, false, err
+		}
+		if message.ClaimTokenHash != nil {
+			storedHash = *message.ClaimTokenHash
+		}
+		if err := DB.WithContext(ctx).First(&recipient, message.RecipientId).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, false, nil
+			}
+			return nil, false, err
+		}
+	} else if err != nil {
+		return nil, false, err
+	} else if recipient.ClaimTokenHash != nil {
+		storedHash = *recipient.ClaimTokenHash
+	}
+	campaign := RecallCampaign{}
+	if err := DB.WithContext(ctx).First(&campaign, recipient.CampaignId).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return &RecallClaimRecord{Recipient: recipient, Campaign: campaign, ClaimTokenHash: storedHash}, true, nil
+}
+
+func SetRecallMarketingOptOutWithContext(ctx context.Context, userID int, now int64) (bool, error) {
+	found := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		user := User{}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		found = true
+		setting := dto.UserSetting{}
+		if user.Setting != "" {
+			if err := common.Unmarshal([]byte(user.Setting), &setting); err != nil {
+				return err
+			}
+		}
+		setting.RecallMarketingOptOut = true
+		settingJSON, err := common.Marshal(setting)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&User{}).Where("id = ?", userID).Update("setting", string(settingJSON)).Error; err != nil {
+			return err
+		}
+		recipientIDs := tx.Model(&RecallRecipient{}).Select("id").Where("user_id = ?", userID)
+		return tx.Model(&RecallMessage{}).
+			Where("recipient_id IN (?) AND state IN ?", recipientIDs, []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased}).
+			Updates(map[string]any{
+				"state":            RecallMessageCancelled,
+				"lease_owner":      "",
+				"lease_expires_at": int64(0),
+				"failed_at":        now,
+				"last_error_code":  "user_opted_out",
+			}).Error
+	})
+	if err != nil || !found {
+		return found, err
+	}
+	return true, invalidateUserCache(userID)
 }
 
 func insertRecallRunEvent(tx *gorm.DB, runEvent *RecallEvent) *gorm.DB {

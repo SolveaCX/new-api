@@ -134,3 +134,29 @@ func CommitRecallCampaignRun(
 	}
 	return owned, int(inserted), nil
 }
+
+func RecordRecallClaimClickWithContext(ctx context.Context, recipientID int64, campaignID int64, clickedAt int64) error {
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&RecallRecipient{}).
+			Where("id = ? AND campaign_id = ? AND clicked_at = 0 AND converted_at = 0 AND state IN ?", recipientID, campaignID, []string{
+				RecallRecipientQueued,
+				RecallRecipientCustomerReady,
+				RecallRecipientCodeReady,
+				RecallRecipientContacting,
+			}).
+			Update("clicked_at", clickedAt)
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		event := RecallEvent{
+			CampaignId:    campaignID,
+			RecipientId:   recipientID,
+			EventType:     "observed_click",
+			Source:        "claim",
+			SourceEventId: fmt.Sprintf("recipient:%d", recipientID),
+			EventData:     `{}`,
+			CreatedAt:     clickedAt,
+		}
+		return insertRecallRunEvent(tx, &event).Error
+	})
+}
