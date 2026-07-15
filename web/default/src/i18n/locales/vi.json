@@ -5459,6 +5459,13 @@
     "adspilot_mode_approved": "Sau phê duyệt",
     "adspilot_action_done": "Hoàn tất",
     "adspilot_action_failed": "Thất bại",
-    "adspilot_action_reverted": "Đã hoàn tác"
+    "adspilot_action_reverted": "Đã hoàn tác",
+    "Verifying your email": "Đang xác minh email của bạn",
+    "Please wait while we confirm this verification link.": "Vui lòng chờ trong khi chúng tôi xác nhận liên kết này.",
+    "Email verified": "Email đã được xác minh",
+    "Your email is verified. Return to registration to continue.": "Email của bạn đã được xác minh. Quay lại trang đăng ký để tiếp tục.",
+    "Verification link unavailable": "Liên kết xác minh không khả dụng",
+    "This verification link is invalid or expired. Use the code in your email or request a new message.": "Liên kết này không hợp lệ hoặc đã hết hạn. Hãy dùng mã trong email hoặc yêu cầu gửi thư mới.",
+    "Back to registration": "Quay lại đăng ký"
   }
 }

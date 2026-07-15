@@ -2,6 +2,93 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script data-registration-email-verification-bootstrap>
+      ;(function (window) {
+        if (window.location.pathname !== '/sign-up/verify') return
+
+        var fragment = window.location.hash.slice(1)
+        var token = new URLSearchParams(fragment).get('token')
+        token = token && token.trim()
+        if (!token) return
+
+        window.history.replaceState(
+          window.history.state,
+          '',
+          window.location.pathname + window.location.search
+        )
+
+        var trustedFetch = window.fetch.bind(window)
+        var requestBody = JSON.stringify({ token: token })
+        var maxAttempts = 3
+        token = null
+
+        function failedExchange() {
+          return { success: false }
+        }
+
+        function shouldRetryResponse(status) {
+          return (
+            status === 429 || status >= 500 || (status >= 200 && status < 300)
+          )
+        }
+
+        function retryExchange(attempt) {
+          return new Promise(function (resolve) {
+            window.setTimeout(resolve, attempt * 200)
+          }).then(function () {
+            return exchange(attempt + 1)
+          })
+        }
+
+        function exchange(attempt) {
+          return trustedFetch('/api/registration/email-verification/exchange', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: requestBody,
+          }).then(
+            function (response) {
+              return response.json().then(
+                function (data) {
+                  if (response.ok) return data
+                  if (
+                    attempt < maxAttempts &&
+                    shouldRetryResponse(response.status)
+                  ) {
+                    return retryExchange(attempt)
+                  }
+                  return failedExchange()
+                },
+                function () {
+                  if (
+                    attempt < maxAttempts &&
+                    shouldRetryResponse(response.status)
+                  ) {
+                    return retryExchange(attempt)
+                  }
+                  return failedExchange()
+                }
+              )
+            },
+            function () {
+              if (attempt < maxAttempts) return retryExchange(attempt)
+              return failedExchange()
+            }
+          )
+        }
+
+        window.__registrationEmailVerificationRequest = exchange(1).then(
+          function (result) {
+            requestBody = null
+            return result
+          },
+          function () {
+            requestBody = null
+            return failedExchange()
+          }
+        )
+      })(window)
+    </script>
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=flatkey2" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=flatkey2" />
     <link
@@ -30,26 +117,26 @@
     <!--Google Analytics-->
     <!-- Google Tag Manager -->
     <script>
-      (function (w, d, s, l, i) {
-        w[l] = w[l] || [];
-        w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+      ;(function (w, d, s, l, i) {
+        w[l] = w[l] || []
+        w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' })
         var f = d.getElementsByTagName(s)[0],
           j = d.createElement(s),
-          dl = l != 'dataLayer' ? '&l=' + l : '';
-        j.async = true;
-        j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
-        f.parentNode.insertBefore(j, f);
-      })(window, document, 'script', 'dataLayer', 'GTM-NKH9LPX9');
-      (function (w, d, s, l, i) {
-        w[l] = w[l] || [];
-        w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+          dl = l != 'dataLayer' ? '&l=' + l : ''
+        j.async = true
+        j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl
+        f.parentNode.insertBefore(j, f)
+      })(window, document, 'script', 'dataLayer', 'GTM-NKH9LPX9')
+      ;(function (w, d, s, l, i) {
+        w[l] = w[l] || []
+        w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' })
         var f = d.getElementsByTagName(s)[0],
           j = d.createElement(s),
-          dl = l != 'dataLayer' ? '&l=' + l : '';
-        j.async = true;
-        j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
-        f.parentNode.insertBefore(j, f);
-      })(window, document, 'script', 'dataLayer', 'GTM-5T5LPLSZ');
+          dl = l != 'dataLayer' ? '&l=' + l : ''
+        j.async = true
+        j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl
+        f.parentNode.insertBefore(j, f)
+      })(window, document, 'script', 'dataLayer', 'GTM-5T5LPLSZ')
     </script>
     <!-- End Google Tag Manager -->
   </head>

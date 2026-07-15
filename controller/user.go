@@ -227,12 +227,20 @@ func Register(c *gin.Context) {
 		respondRegistrationEmailError(c, err)
 		return
 	}
+	verifiedByGrant := false
+	verifiedByCode := false
 	if common.EmailVerificationEnabled {
-		if user.Email == "" || user.VerificationCode == "" {
+		if user.Email == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
 		}
-		if !common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose) {
+		verifiedByGrant = registrationEmailGrantMatches(c, user.Email)
+		verifiedByCode = user.VerificationCode != "" && common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose)
+		if !verifiedByGrant && user.VerificationCode == "" {
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+			return
+		}
+		if !verifiedByGrant && !verifiedByCode {
 			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 			return
 		}
@@ -262,9 +270,26 @@ func Register(c *gin.Context) {
 	}
 	cleanUser.Email = user.Email
 	cleanUser.EmailDomain = emailDecision.Domain
+	registrationEmailGrant := ""
+	registrationEmailReservationOwner := ""
+	grantReserved := false
+	if common.EmailVerificationEnabled && verifiedByGrant {
+		registrationEmailGrant = registrationEmailGrantFromSession(c)
+		registrationEmailReservationOwner, grantReserved = common.ReserveRegistrationEmailGrant(registrationEmailGrant, user.Email)
+		if !grantReserved && !verifiedByCode {
+			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+			return
+		}
+	}
 	if _, err := model.RegisterUserWithDomainRisk(&cleanUser, inviterId, c.ClientIP(), emailDecision.Policy, nil); err != nil {
+		if grantReserved {
+			common.RollbackRegistrationEmailGrantReservation(registrationEmailGrant, user.Email, registrationEmailReservationOwner)
+		}
 		respondRegistrationEmailError(c, err)
 		return
+	}
+	if grantReserved {
+		common.CommitRegistrationEmailGrantReservation(registrationEmailGrant, user.Email, registrationEmailReservationOwner)
 	}
 	cleanUser.FinalizeOAuthUserCreation(inviterId)
 
@@ -309,6 +334,7 @@ func Register(c *gin.Context) {
 
 	gaClientID, gaSessionID := service.ResolveGAIdentifiers(c.Request, user.GAClientID, user.GASessionID)
 	sendSignUpSuccessGA(c.Request.Context(), insertedUser.Id, inviterId, "password", gaClientID, gaSessionID)
+	clearRegistrationEmailGrantSession(c)
 
 	// Auto-login the freshly registered user so they land directly in the console
 	// (e.g. the Playground onboarding) without having to sign in again. setupLogin

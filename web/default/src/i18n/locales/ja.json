@@ -5459,6 +5459,13 @@
     "adspilot_mode_approved": "承認後",
     "adspilot_action_done": "完了",
     "adspilot_action_failed": "失敗",
-    "adspilot_action_reverted": "取り消し済み"
+    "adspilot_action_reverted": "取り消し済み",
+    "Verifying your email": "メールアドレスを確認しています",
+    "Please wait while we confirm this verification link.": "確認リンクを処理しています。しばらくお待ちください。",
+    "Email verified": "メールアドレスを確認しました",
+    "Your email is verified. Return to registration to continue.": "メールアドレスを確認しました。登録画面に戻って続行してください。",
+    "Verification link unavailable": "確認リンクを利用できません",
+    "This verification link is invalid or expired. Use the code in your email or request a new message.": "このリンクは無効か期限切れです。メールの確認コードを使用するか、メールを再送してください。",
+    "Back to registration": "登録画面に戻る"
   }
 }

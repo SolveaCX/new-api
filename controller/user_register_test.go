@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -44,6 +45,26 @@ func performRegisterRequest(t *testing.T, body []byte, cookies ...*http.Cookie) 
 	router.ServeHTTP(recorder, request)
 
 	return recorder
+}
+
+func issueRegistrationEmailGrantCookie(t *testing.T, email string) (string, *http.Cookie) {
+	t.Helper()
+	grant, err := common.RegisterRegistrationEmailGrant(email)
+	require.NoError(t, err)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("register-session-test"))))
+	router.GET("/grant", func(c *gin.Context) {
+		session := sessions.Default(c)
+		session.Set(registrationEmailGrantSessionKey, grant)
+		require.NoError(t, session.Save())
+		c.Status(http.StatusNoContent)
+	})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/grant", nil))
+	require.NotEmpty(t, recorder.Result().Cookies())
+	return grant, recorder.Result().Cookies()[0]
 }
 
 func performWeChatAuthRequest(t *testing.T, code string) *httptest.ResponseRecorder {
@@ -138,6 +159,127 @@ func TestRegisterWithEmailVerificationAutoLogsInNewUser(t *testing.T) {
 	require.NotZero(t, payload.Data.ID)
 	require.Equal(t, "verified-user", payload.Data.Username)
 	require.True(t, payload.Data.IsNewUser)
+}
+
+func TestRegisterAcceptsMatchingRegistrationEmailGrantWithoutCode(t *testing.T) {
+	setupModelListControllerTestDB(t)
+	configureRegistrationEndpointTest(t)
+	common.EmailVerificationEnabled = true
+
+	grant, sessionCookie := issueRegistrationEmailGrantCookie(t, "grant-user@example.com")
+	body, err := common.Marshal(map[string]any{
+		"username": "grant-user",
+		"password": "password123",
+		"email":    " grant-user@example.com ",
+	})
+	require.NoError(t, err)
+
+	recorder := performRegisterRequest(t, body, sessionCookie)
+
+	var payload registerResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+	require.False(t, common.VerifyRegistrationEmailGrant(grant, "grant-user@example.com"))
+}
+
+func TestClearingOneSessionDoesNotRevokeAnotherSessionsSharedGrant(t *testing.T) {
+	grant, sessionCookie := issueRegistrationEmailGrantCookie(t, "shared-grant@example.com")
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("register-session-test"))))
+	router.POST("/clear-grant", func(c *gin.Context) {
+		clearRegistrationEmailGrantSession(c)
+		require.NoError(t, sessions.Default(c).Save())
+		c.Status(http.StatusNoContent)
+	})
+	request := httptest.NewRequest(http.MethodPost, "/clear-grant", nil)
+	request.AddCookie(sessionCookie)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	require.True(t, common.VerifyRegistrationEmailGrant(grant, "shared-grant@example.com"))
+}
+
+func TestRegisterRejectsRegistrationEmailGrantForDifferentEmail(t *testing.T) {
+	setupModelListControllerTestDB(t)
+	configureRegistrationEndpointTest(t)
+	common.EmailVerificationEnabled = true
+
+	grant, sessionCookie := issueRegistrationEmailGrantCookie(t, "first@example.com")
+	body, err := common.Marshal(map[string]any{
+		"username": "mismatched-grant-user",
+		"password": "password123",
+		"email":    "second@example.com",
+	})
+	require.NoError(t, err)
+
+	recorder := performRegisterRequest(t, body, sessionCookie)
+
+	var payload registerResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.False(t, payload.Success)
+	require.True(t, common.VerifyRegistrationEmailGrant(grant, "first@example.com"))
+}
+
+func TestRegisterRetainsMatchingGrantAfterAccountValidationFailure(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	configureRegistrationEndpointTest(t)
+	common.EmailVerificationEnabled = true
+	require.NoError(t, db.Create(&model.User{Username: "existing-user", Password: "password123", Email: "existing@example.com"}).Error)
+
+	grant, sessionCookie := issueRegistrationEmailGrantCookie(t, "retry@example.com")
+	body, err := common.Marshal(map[string]any{
+		"username": "existing-user",
+		"password": "password123",
+		"email":    "retry@example.com",
+	})
+	require.NoError(t, err)
+
+	recorder := performRegisterRequest(t, body, sessionCookie)
+
+	var payload registerResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.False(t, payload.Success)
+	require.True(t, common.VerifyRegistrationEmailGrant(grant, "retry@example.com"))
+}
+
+func TestRegisterRetainsMatchingGrantAfterDomainRiskRejection(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.RegistrationDomainState{}, &model.RegistrationDomainBlock{}, &model.RegistrationDomainBlockUser{}))
+	configureRegistrationEndpointTest(t)
+	common.EmailVerificationEnabled = true
+	withRegistrationSecurityConfig(t, map[string]string{
+		"registration_security.domain_risk_enabled":            "true",
+		"registration_security.domain_risk_window_hours":       "24",
+		"registration_security.domain_risk_threshold":          "2",
+		"registration_security.trusted_email_domains":          "[]",
+		"registration_security.reject_subdomain_email_domains": "false",
+	})
+	require.NoError(t, db.Create(&model.User{
+		Username:    "risk-seed",
+		Email:       "seed@retry-risk.example",
+		EmailDomain: "retry-risk.example",
+		Status:      common.UserStatusEnabled,
+		Role:        common.RoleCommonUser,
+		CreatedAt:   time.Now().Unix(),
+	}).Error)
+
+	grant, sessionCookie := issueRegistrationEmailGrantCookie(t, "retry@retry-risk.example")
+	body, err := common.Marshal(map[string]any{
+		"username": "risk-retry-user",
+		"password": "password123",
+		"email":    "retry@retry-risk.example",
+	})
+	require.NoError(t, err)
+
+	recorder := performRegisterRequest(t, body, sessionCookie)
+
+	var payload registerResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.False(t, payload.Success)
+	require.True(t, common.VerifyRegistrationEmailGrant(grant, "retry@retry-risk.example"))
 }
 
 func TestRegisterRejectsEmailOutsideDomainWhitelist(t *testing.T) {

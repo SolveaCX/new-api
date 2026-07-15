@@ -118,9 +118,9 @@ const (
 )
 
 const (
-	MsgRegistrationEmailDomainInvalid      = "registration_email.domain_invalid"
-	MsgRegistrationEmailSubdomainRejected  = "registration_email.subdomain_rejected"
-	MsgRegistrationEmailDomainUnavailable  = "registration_email.domain_unavailable"
+	MsgRegistrationEmailDomainInvalid     = "registration_email.domain_invalid"
+	MsgRegistrationEmailSubdomainRejected = "registration_email.subdomain_rejected"
+	MsgRegistrationEmailDomainUnavailable = "registration_email.domain_unavailable"
 )
 
 // Quota related messages
@@ -331,10 +331,19 @@ const (
 
 // Email content messages (subject + HTML body, rendered with template data)
 const (
-	MsgEmailVerifySubject = "email.verification_subject"
-	MsgEmailVerifyContent = "email.verification_content"
-	MsgEmailResetSubject  = "email.password_reset_subject"
-	MsgEmailResetContent  = "email.password_reset_content"
+	MsgEmailVerifySubject     = "email.verification_subject"
+	MsgEmailVerifyHeading     = "email.verification_heading"
+	MsgEmailVerifyContent     = "email.verification_content"
+	MsgEmailVerifyAction      = "email.verification_action"
+	MsgEmailVerifyAlternative = "email.verification_alternative"
+	MsgEmailVerifyCodeLabel   = "email.verification_code_label"
+	MsgEmailVerifyExpiry      = "email.verification_expiry"
+	MsgEmailVerifyIgnore      = "email.verification_ignore"
+	MsgEmailVerifyFooter      = "email.verification_footer"
+	MsgEmailVerifyLinkInvalid = "email.verification_link_invalid"
+	MsgEmailVerifyUnavailable = "email.verification_unavailable"
+	MsgEmailResetSubject      = "email.password_reset_subject"
+	MsgEmailResetContent      = "email.password_reset_content"
 )
 
 // User notification messages (quota warnings sent via email/webhook/bark/gotify).
