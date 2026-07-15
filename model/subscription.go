@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -359,6 +360,36 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64) in
 
 func GetSubscriptionPlanById(id int) (*SubscriptionPlan, error) {
 	return getSubscriptionPlanByIdTx(nil, id)
+}
+
+func ListRecallStripeSubscriptionPrices() ([]string, error) {
+	return ListRecallStripeSubscriptionPricesWithContext(context.Background())
+}
+
+func ListRecallStripeSubscriptionPricesWithContext(ctx context.Context) ([]string, error) {
+	var configured []string
+	if err := DB.WithContext(ctx).
+		Model(&SubscriptionPlan{}).
+		Where("enabled = ?", true).
+		Order("id ASC").
+		Pluck("stripe_price_id", &configured).Error; err != nil {
+		return nil, err
+	}
+
+	prices := make([]string, 0, len(configured))
+	seen := make(map[string]struct{}, len(configured))
+	for _, configuredPrice := range configured {
+		priceID := strings.TrimSpace(configuredPrice)
+		if priceID == "" {
+			continue
+		}
+		if _, exists := seen[priceID]; exists {
+			continue
+		}
+		seen[priceID] = struct{}{}
+		prices = append(prices, priceID)
+	}
+	return prices, nil
 }
 
 func getSubscriptionPlanByIdTx(tx *gorm.DB, id int) (*SubscriptionPlan, error) {
