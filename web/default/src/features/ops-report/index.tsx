@@ -164,7 +164,8 @@ function countryLabel(code: string, locale: string): string {
 }
 
 // All times in this report render in US Pacific Time to match the backend's
-// Pacific day bucketing (and the ads accounts' timezone).
+// Pacific day bucketing. (The Google Ads account itself is America/New_York;
+// its dates join the Pacific buckets with a 3-hour edge skew.)
 const REPORT_TZ = 'America/Los_Angeles'
 
 const formatTimestamp = (timestamp: number): string => {

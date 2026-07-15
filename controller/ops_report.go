@@ -63,8 +63,9 @@ type opsFunnelRow struct {
 
 // opsDailyRow is a funnel row for the daily table, prefixed with the day's
 // paid-ads totals (all campaigns) so spend/clicks line up with the
-// registrations they produced. Ads dates are the ads account timezone (US
-// Pacific), the same day bucketing as the funnel.
+// registrations they produced. Ads dates are the ads account timezone
+// (America/New_York), joined to the Pacific funnel days by date string —
+// a 3-hour edge skew day-level stats can tolerate.
 type opsDailyRow struct {
 	opsFunnelRow
 	AdsCostUSD float64 `json:"ads_cost_usd"`
@@ -338,6 +339,9 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 		}
 		return opsDay(a.user.CreatedAt)
 	}, true)
+	// Refresh ads spend from the Google Ads API when stale (no-op without
+	// creds; failures log and the report renders with the last synced rows).
+	opsSyncAdsSpend()
 	adsDaily, err := model.GetOpsAdsSpendDaily(opsDay(startTs))
 	if err != nil {
 		return nil, err

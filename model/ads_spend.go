@@ -1,14 +1,16 @@
 package model
 
+import "gorm.io/gorm/clause"
+
 // AdsSpendDaily holds one row per ads-account day: total paid-ads spend and
-// clicks across all campaigns. Dates are the ads account's timezone (US
-// Pacific), which matches the ops report's Pacific day bucketing, so rows join
-// the daily registration funnel by date string directly.
+// clicks across all campaigns. Dates are the ads account's timezone
+// (America/New_York), joined to the report's Pacific day buckets by date
+// string — a 3-hour edge skew day-level stats can tolerate.
 //
-// Rows are upserted from outside the app (the ops machine pushes Google Ads
-// daily totals after each sync — scripts/gads_push_prod.py in the flatkey ops
-// repo); the Go app only reads them. Read-only here, so no multi-node
-// coordination is needed.
+// Rows are synced by the app itself from the Google Ads REST API
+// (controller/ops_ads_sync.go) — no operator machine involved. Multi-node:
+// concurrent syncs upsert identical rows keyed by date, so no coordination is
+// needed.
 type AdsSpendDaily struct {
 	Date        string  `json:"date" gorm:"column:date;primaryKey;size:16"`
 	CostUSD     float64 `json:"cost_usd" gorm:"column:cost_usd"`
@@ -28,4 +30,24 @@ func GetOpsAdsSpendDaily(sinceDate string) ([]*AdsSpendDaily, error) {
 	var rows []*AdsSpendDaily
 	err := DB.Where("date >= ?", sinceDate).Find(&rows).Error
 	return rows, err
+}
+
+// GetOpsAdsSpendLastUpdated returns the newest updated_at across all rows
+// (0 when the table is empty), used as the sync freshness marker.
+func GetOpsAdsSpendLastUpdated() (int64, error) {
+	var last int64
+	err := DB.Model(&AdsSpendDaily{}).
+		Select("COALESCE(MAX(updated_at), 0)").Scan(&last).Error
+	return last, err
+}
+
+// UpsertAdsSpendDaily inserts or replaces per-day rows by date primary key.
+func UpsertAdsSpendDaily(rows []*AdsSpendDaily) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "date"}},
+		DoUpdates: clause.AssignmentColumns([]string{"cost_usd", "clicks", "impressions", "conversions", "updated_at"}),
+	}).Create(&rows).Error
 }
