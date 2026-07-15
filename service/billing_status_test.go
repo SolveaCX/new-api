@@ -358,7 +358,12 @@ func TestPreConsumeQuotaWalletErrorsIncludeTopUpHint(t *testing.T) {
 		require.Contains(t, apiErr.ToOpenAIError().Message, "https://console.flatkey.ai/wallet")
 	})
 
-	t.Run("missing allowlist keeps client-facing url masked", func(t *testing.T) {
+	// Contract change (see fix/topup-hint-self-origin): a domain-name console
+	// origin is our own deliberately-published address, so the top-up hint now
+	// survives sanitization even with no allowlist configured. The allowlist
+	// remains a force-allow for hosts the domain-name guard rejects (IPs);
+	// IP-literal origins staying masked is covered in quota_error_message_test.go.
+	t.Run("missing allowlist still preserves own-domain hint", func(t *testing.T) {
 		const userID = 10114
 		resetBillingStatusTables(t)
 		seedUser(t, userID, 0)
@@ -371,8 +376,7 @@ func TestPreConsumeQuotaWalletErrorsIncludeTopUpHint(t *testing.T) {
 		require.NotNil(t, apiErr)
 		require.Equal(t, types.ErrorCodeInsufficientUserQuota, apiErr.GetErrorCode())
 		require.Contains(t, apiErr.Error(), "https://console.flatkey.ai/wallet")
-		require.NotContains(t, apiErr.ToOpenAIError().Message, "https://console.flatkey.ai/wallet")
-		require.Contains(t, apiErr.ToOpenAIError().Message, "https://***.ai/***")
+		require.Contains(t, apiErr.ToOpenAIError().Message, "https://console.flatkey.ai/wallet")
 	})
 
 	t.Run("allowlisted host without scheme still preserves client-facing hint", func(t *testing.T) {
