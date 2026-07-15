@@ -164,6 +164,10 @@ const (
 )
 
 func FindRecentlyActiveRecallUserIDs(userIDs []int, since int64, batchSize int) (map[int]struct{}, error) {
+	return FindRecentlyActiveRecallUserIDsWithContext(context.Background(), userIDs, since, batchSize)
+}
+
+func FindRecentlyActiveRecallUserIDsWithContext(ctx context.Context, userIDs []int, since int64, batchSize int) (map[int]struct{}, error) {
 	active := make(map[int]struct{})
 	if len(userIDs) == 0 {
 		return active, nil
@@ -177,7 +181,7 @@ func FindRecentlyActiveRecallUserIDs(userIDs []int, since int64, batchSize int) 
 			end = len(userIDs)
 		}
 		var batchActive []int
-		if err := LOG_DB.Model(&Log{}).
+		if err := LOG_DB.WithContext(ctx).Model(&Log{}).
 			Where("type = ? AND created_at >= ? AND user_id IN ?", LogTypeConsume, since, userIDs[start:end]).
 			Distinct().
 			Pluck("user_id", &batchActive).Error; err != nil {

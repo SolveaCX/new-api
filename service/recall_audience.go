@@ -126,7 +126,7 @@ func (selector *RecallAudienceSelector) iterate(
 		if err := ctx.Err(); err != nil {
 			return exclusions, err
 		}
-		facts, err := model.ListRecallCandidateFacts(query)
+		facts, err := model.ListRecallCandidateFactsWithContext(ctx, query)
 		if err != nil {
 			return exclusions, err
 		}
@@ -159,7 +159,8 @@ func (selector *RecallAudienceSelector) iterate(
 			if err := ctx.Err(); err != nil {
 				return exclusions, err
 			}
-			recentlyActive, err = model.FindRecentlyActiveRecallUserIDs(
+			recentlyActive, err = model.FindRecentlyActiveRecallUserIDsWithContext(
+				ctx,
 				userIDs,
 				now-int64(draft.Audience.LastAPICallAgeDays)*recallDaySeconds,
 				selector.LogBatchSize,
@@ -359,5 +360,9 @@ func recallAudiencePrimaryLanguage(language string) string {
 	if language == "" {
 		return ""
 	}
-	return strings.FieldsFunc(language, func(r rune) bool { return r == '-' || r == '_' })[0]
+	parts := strings.FieldsFunc(language, func(r rune) bool { return r == '-' || r == '_' })
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[0]
 }

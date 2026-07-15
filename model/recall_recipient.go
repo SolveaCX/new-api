@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
@@ -248,12 +249,16 @@ type recallPaymentFactRow struct {
 }
 
 func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact, error) {
+	return ListRecallCandidateFactsWithContext(context.Background(), query)
+}
+
+func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandidateQuery) ([]RecallCandidateFact, error) {
 	facts := make([]RecallCandidateFact, 0)
 	if query.Limit <= 0 {
 		return facts, nil
 	}
 	var users []User
-	if err := DB.Where("id > ?", query.AfterUserID).
+	if err := DB.WithContext(ctx).Where("id > ?", query.AfterUserID).
 		Order("id ASC").
 		Limit(query.Limit).
 		Find(&users).Error; err != nil {
@@ -273,7 +278,7 @@ func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact
 	}
 
 	providerFilter := query.Template != "first_purchase" && len(query.PaymentProviders) > 0
-	topupQuery := DB.Model(&TopUp{}).
+	topupQuery := DB.WithContext(ctx).Model(&TopUp{}).
 		Select("id", "user_id", "money", "payment_provider", "trade_no", "create_time", "complete_time").
 		Where("user_id IN ? AND status = ?", userIDs, common.TopUpStatusSuccess)
 	if providerFilter {
@@ -284,7 +289,7 @@ func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact
 		return nil, err
 	}
 
-	subscriptionOrderQuery := DB.Model(&SubscriptionOrder{}).
+	subscriptionOrderQuery := DB.WithContext(ctx).Model(&SubscriptionOrder{}).
 		Select("id", "user_id", "money", "payment_provider", "trade_no", "create_time", "complete_time").
 		Where("user_id IN ? AND status = ?", userIDs, common.TopUpStatusSuccess)
 	if providerFilter {
@@ -302,6 +307,13 @@ func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact
 			return
 		}
 		fact.HasPayment = true
+		paidAt := row.CompleteTime
+		if paidAt == 0 {
+			paidAt = row.CreateTime
+		}
+		if paidAt > fact.LastPaymentAt {
+			fact.LastPaymentAt = paidAt
+		}
 		key := row.TradeNo
 		if key == "" {
 			key = fmt.Sprintf("%s:%d", source, row.Id)
@@ -314,13 +326,6 @@ func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact
 		}
 		seenPayments[row.UserId][key] = struct{}{}
 		fact.PaidAmount += row.Money
-		paidAt := row.CompleteTime
-		if paidAt == 0 {
-			paidAt = row.CreateTime
-		}
-		if paidAt > fact.LastPaymentAt {
-			fact.LastPaymentAt = paidAt
-		}
 	}
 	for _, topup := range topups {
 		addPayment(topup, "topup")
@@ -333,7 +338,7 @@ func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact
 	}
 
 	var subscriptions []UserSubscription
-	if err := DB.Where("user_id IN ?", userIDs).Find(&subscriptions).Error; err != nil {
+	if err := DB.WithContext(ctx).Where("user_id IN ?", userIDs).Find(&subscriptions).Error; err != nil {
 		return nil, err
 	}
 	for _, subscription := range subscriptions {
@@ -353,8 +358,12 @@ func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact
 }
 
 func HasRecallPaymentAfter(userID int, after int64) (bool, error) {
+	return HasRecallPaymentAfterWithContext(context.Background(), userID, after)
+}
+
+func HasRecallPaymentAfterWithContext(ctx context.Context, userID int, after int64) (bool, error) {
 	var count int64
-	if err := DB.Model(&TopUp{}).
+	if err := DB.WithContext(ctx).Model(&TopUp{}).
 		Where("user_id = ? AND status = ? AND (complete_time > ? OR (complete_time = 0 AND create_time > ?))", userID, common.TopUpStatusSuccess, after, after).
 		Count(&count).Error; err != nil {
 		return false, err
@@ -362,7 +371,7 @@ func HasRecallPaymentAfter(userID int, after int64) (bool, error) {
 	if count > 0 {
 		return true, nil
 	}
-	if err := DB.Model(&SubscriptionOrder{}).
+	if err := DB.WithContext(ctx).Model(&SubscriptionOrder{}).
 		Where("user_id = ? AND status = ? AND (complete_time > ? OR (complete_time = 0 AND create_time > ?))", userID, common.TopUpStatusSuccess, after, after).
 		Count(&count).Error; err != nil {
 		return false, err
