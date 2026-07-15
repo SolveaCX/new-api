@@ -294,7 +294,14 @@ custom_oauth.provider_id_field_invalid: "Não foi possível extrair o ID do usu�
 
 # Email content messages
 email.verification_subject: "Verificação de E-mail {{.SystemName}}"
-email.verification_content: "<p>Olá, você está verificando seu e-mail para {{.SystemName}}.</p><p>Seu código de verificação é: <strong>{{.Code}}</strong></p><p>O código é válido por {{.Minutes}} minutos. Se não foi você, ignore este e-mail.</p>"
+email.verification_heading: "Bem-vindo ao {{.SystemName}}"
+email.verification_content: "Confirme seu endereço de e-mail para concluir a criação da conta e começar a usar o {{.SystemName}}."
+email.verification_action: "Verificar e-mail"
+email.verification_alternative: "Ou insira este código de verificação"
+email.verification_code_label: "Código de verificação"
+email.verification_expiry: "Este link e código expiram em {{.Minutes}} minutos."
+email.verification_ignore: "Se você não solicitou este e-mail, pode ignorá-lo com segurança."
+email.verification_footer: "Enviado com segurança por {{.SystemName}}"
 email.password_reset_subject: "Redefinição de Senha {{.SystemName}}"
 email.password_reset_content: "<p>Olá, você está redefinindo a senha da sua conta {{.SystemName}}.</p><p>Clique <a href='{{.Link}}'>aqui</a> para redefinir sua senha.</p><p>Se o link não for clicável, copie o link a seguir para o seu navegador:<br> {{.Link}} </p><p>O link de redefinição é válido por {{.Minutes}} minutos. Se não foi você, ignore este e-mail.</p>"
 

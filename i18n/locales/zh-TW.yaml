@@ -293,8 +293,15 @@ custom_oauth.binding_not_found: "OAuth 綁定不存在"
 custom_oauth.provider_id_field_invalid: "無法從供應者響應中提取使用者 ID"
 
 # Email content messages
-email.verification_subject: "{{.SystemName}}信箱驗證郵件"
-email.verification_content: "<p>您好，您正在進行{{.SystemName}}信箱驗證。</p><p>您的驗證碼為: <strong>{{.Code}}</strong></p><p>驗證碼 {{.Minutes}} 分鐘內有效，如果不是本人操作，請忽略。</p>"
+email.verification_subject: "{{.SystemName}} 電子郵件驗證"
+email.verification_heading: "歡迎使用 {{.SystemName}}"
+email.verification_content: "確認您的電子郵件地址，完成帳戶建立並開始使用 {{.SystemName}}。"
+email.verification_action: "一鍵驗證電子郵件"
+email.verification_alternative: "或輸入以下驗證碼"
+email.verification_code_label: "驗證碼"
+email.verification_expiry: "此連結和驗證碼將在 {{.Minutes}} 分鐘後失效。"
+email.verification_ignore: "如果這不是您的操作，可以放心忽略此郵件。"
+email.verification_footer: "此郵件由 {{.SystemName}} 安全寄送"
 email.password_reset_subject: "{{.SystemName}}密碼重設"
 email.password_reset_content: "<p>您好，您正在進行{{.SystemName}}密碼重設。</p><p>點擊 <a href='{{.Link}}'>此處</a> 進行密碼重設。</p><p>如果連結無法點擊，請嘗試點擊下面的連結或將其複製到瀏覽器中開啟：<br> {{.Link}} </p><p>重設連結 {{.Minutes}} 分鐘內有效，如果不是本人操作，請忽略。</p>"
 
