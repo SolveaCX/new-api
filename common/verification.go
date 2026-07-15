@@ -135,7 +135,13 @@ func generateRegistrationEmailCredential() (string, error) {
 }
 
 func registrationEmailMemorySet(key, value string) {
-	registrationEmailVerificationMap[key] = verificationValue{code: value, time: time.Now()}
+	now := time.Now()
+	for existingKey, existingValue := range registrationEmailVerificationMap {
+		if now.Sub(existingValue.time) >= registrationEmailCredentialTTL() {
+			delete(registrationEmailVerificationMap, existingKey)
+		}
+	}
+	registrationEmailVerificationMap[key] = verificationValue{code: value, time: now}
 }
 
 func registrationEmailMemoryGet(key string) (string, bool) {

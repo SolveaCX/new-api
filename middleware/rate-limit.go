@@ -126,6 +126,10 @@ func CriticalRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+func RegistrationEmailVerificationStatusRateLimit() func(c *gin.Context) {
+	return rateLimitFactory(60, 20*60, "EVS")
+}
+
 func DownloadRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(common.DownloadRateLimitNum, common.DownloadRateLimitDuration, "DW")
 }

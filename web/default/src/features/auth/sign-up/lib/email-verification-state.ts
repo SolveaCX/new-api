@@ -51,6 +51,14 @@ export function markEmailVerified(
   return { ...state, verifiedEmail }
 }
 
+export function markEmailUnverified(
+  state: EmailVerificationState,
+  email: string
+): EmailVerificationState {
+  if (state.verifiedEmail !== normalizeEmail(email)) return state
+  return { ...state, verifiedEmail: '' }
+}
+
 export function canApplyEmailVerificationStatus(
   state: EmailVerificationState,
   currentEmail: string,

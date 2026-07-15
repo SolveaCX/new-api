@@ -2,6 +2,29 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script data-registration-email-verification-bootstrap>
+      ;(function (window) {
+        if (window.location.pathname !== '/sign-up/verify') return
+
+        var fragment = window.location.hash.slice(1)
+        var token = new URLSearchParams(fragment).get('token')
+        token = token && token.trim()
+        if (!token) return
+
+        window.history.replaceState(
+          window.history.state,
+          '',
+          window.location.pathname + window.location.search
+        )
+
+        var pendingToken = token
+        window.__consumeRegistrationEmailVerificationToken = function () {
+          var consumedToken = pendingToken
+          pendingToken = null
+          return consumedToken
+        }
+      })(window)
+    </script>
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=flatkey2" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=flatkey2" />
     <link

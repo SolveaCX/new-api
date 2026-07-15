@@ -21,11 +21,11 @@ import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import {
-  EmailVerificationStatusContent,
   resolveRegistrationEmailVerification,
   startRegistrationEmailVerificationEffect,
   type EmailVerificationScreenState,
-} from './email-verification-screen'
+} from '../../lib/registration-email-verification'
+import { EmailVerificationStatusContent } from './email-verification-screen'
 
 const testI18n = createInstance()
 
@@ -59,8 +59,7 @@ describe('EmailVerificationStatusContent', () => {
 describe('resolveRegistrationEmailVerification', () => {
   test('does not exchange a missing token', async () => {
     let exchangeCalls = 0
-    const state = await resolveRegistrationEmailVerification('', {
-      clearFragment: () => undefined,
+    const state = await resolveRegistrationEmailVerification(null, {
       exchangeToken: async () => {
         exchangeCalls += 1
         return { success: true, message: '', data: { verified: true } }
@@ -71,21 +70,16 @@ describe('resolveRegistrationEmailVerification', () => {
     expect(exchangeCalls).toBe(0)
   })
 
-  test('clears the fragment before a successful exchange resolves', async () => {
-    let fragmentCleared = false
+  test('exchanges the bootstrapped token and maps success to verified', async () => {
     let finishExchange: ((value: unknown) => void) | undefined
     const exchangeResponse = new Promise((resolve) => {
       finishExchange = resolve
     })
 
-    const statePromise = resolveRegistrationEmailVerification('#token=abc', {
-      clearFragment: () => {
-        fragmentCleared = true
-      },
+    const statePromise = resolveRegistrationEmailVerification('abc', {
       exchangeToken: async () => exchangeResponse,
     })
 
-    expect(fragmentCleared).toBe(true)
     finishExchange?.({
       success: true,
       message: '',
@@ -96,9 +90,8 @@ describe('resolveRegistrationEmailVerification', () => {
 
   test('maps business and network failures to unavailable', async () => {
     const businessFailure = await resolveRegistrationEmailVerification(
-      '#token=expired',
+      'expired',
       {
-        clearFragment: () => undefined,
         exchangeToken: async () => ({
           success: false,
           message: 'expired',
@@ -106,9 +99,8 @@ describe('resolveRegistrationEmailVerification', () => {
       }
     )
     const networkFailure = await resolveRegistrationEmailVerification(
-      '#token=network',
+      'network',
       {
-        clearFragment: () => undefined,
         exchangeToken: async () => {
           throw new Error('offline')
         },
@@ -123,7 +115,6 @@ describe('resolveRegistrationEmailVerification', () => {
     const resolvers: Array<(value: unknown) => void> = []
     const states: EmailVerificationScreenState[] = []
     const dependencies = {
-      clearFragment: () => undefined,
       exchangeToken: () =>
         new Promise((resolve) => {
           resolvers.push(resolve)
@@ -131,15 +122,13 @@ describe('resolveRegistrationEmailVerification', () => {
     }
 
     const cleanupFirst = startRegistrationEmailVerificationEffect(
-      '#token=abc',
+      'abc',
       dependencies,
       (state) => states.push(state)
     )
     cleanupFirst()
-    startRegistrationEmailVerificationEffect(
-      '#token=abc',
-      dependencies,
-      (state) => states.push(state)
+    startRegistrationEmailVerificationEffect('abc', dependencies, (state) =>
+      states.push(state)
     )
 
     for (const resolve of resolvers) {
