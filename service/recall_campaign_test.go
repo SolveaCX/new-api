@@ -1,0 +1,770 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
+	"github.com/stripe/stripe-go/v81"
+	"gorm.io/gorm"
+)
+
+func setupRecallCampaignTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/recall-campaign.db"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+
+	originalDB := model.DB
+	originalLogDB := model.LOG_DB
+	model.DB = db
+	model.LOG_DB = db
+	t.Cleanup(func() {
+		model.DB = originalDB
+		model.LOG_DB = originalLogDB
+		_ = sqlDB.Close()
+	})
+	require.NoError(t, db.AutoMigrate(
+		&model.User{},
+		&model.TopUp{},
+		&model.SubscriptionOrder{},
+		&model.SubscriptionPlan{},
+		&model.UserSubscription{},
+		&model.RecallCampaign{},
+		&model.RecallRecipient{},
+		&model.RecallMessage{},
+		&model.RecallEvent{},
+		&model.Log{},
+	))
+	return db
+}
+
+func setRecallCampaignEnabled(t *testing.T, enabled bool) {
+	t.Helper()
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"recall_campaign_setting.enabled":      boolString(enabled),
+		"recall_campaign_setting.batch_size":   "100",
+		"recall_campaign_setting.tick_seconds": "30",
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+			"recall_campaign_setting.enabled":      "false",
+			"recall_campaign_setting.batch_size":   "100",
+			"recall_campaign_setting.tick_seconds": "30",
+		}))
+	})
+}
+
+func boolString(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
+}
+
+func loadRecallCampaignEnabled(t *testing.T, enabled bool) {
+	t.Helper()
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"recall_campaign_setting.enabled":      boolString(enabled),
+		"recall_campaign_setting.batch_size":   "100",
+		"recall_campaign_setting.tick_seconds": "30",
+	}))
+}
+
+type recallCampaignStripeCalls struct {
+	createCoupon        int
+	getCoupon           int
+	createCustomer      int
+	getCustomer         int
+	createPromotionCode int
+	getPromotionCode    int
+	getPrice            int
+}
+
+func newRecallCampaignStripeService(t *testing.T, calls *recallCampaignStripeCalls) *RecallStripeService {
+	t.Helper()
+	originalTopUps := setting.StripeTopUpPriceIds
+	originalPrice := setting.StripePriceId
+	originalPrice20 := setting.StripePriceId20
+	originalPrice200 := setting.StripePriceId200
+	setting.StripeTopUpPriceIds = `{"10":"price_topup"}`
+	setting.StripePriceId = ""
+	setting.StripePriceId20 = ""
+	setting.StripePriceId200 = ""
+	t.Cleanup(func() {
+		setting.StripeTopUpPriceIds = originalTopUps
+		setting.StripePriceId = originalPrice
+		setting.StripePriceId20 = originalPrice20
+		setting.StripePriceId200 = originalPrice200
+	})
+	client := &recallStripeFakeClient{
+		createCouponFn: func(_ context.Context, params *stripe.CouponParams) (*stripe.Coupon, error) {
+			calls.createCoupon++
+			return &stripe.Coupon{
+				ID:         "coupon_recall",
+				Valid:      true,
+				Duration:   stripe.CouponDurationOnce,
+				PercentOff: *params.PercentOff,
+				AppliesTo:  &stripe.CouponAppliesTo{Products: []string{"prod_topup"}},
+			}, nil
+		},
+		getCouponFn: func(_ context.Context, id string) (*stripe.Coupon, error) {
+			calls.getCoupon++
+			return &stripe.Coupon{
+				ID:         id,
+				Valid:      true,
+				Duration:   stripe.CouponDurationOnce,
+				PercentOff: 20,
+				AppliesTo:  &stripe.CouponAppliesTo{Products: []string{"prod_topup"}},
+			}, nil
+		},
+		createCustomerFn: func(_ context.Context, _ *stripe.CustomerParams) (*stripe.Customer, error) {
+			calls.createCustomer++
+			return &stripe.Customer{ID: "cus_recall"}, nil
+		},
+		getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) {
+			calls.getCustomer++
+			return &stripe.Customer{ID: id}, nil
+		},
+		createPromotionCodeFn: func(_ context.Context, _ *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+			calls.createPromotionCode++
+			return &stripe.PromotionCode{ID: "promo_recall"}, nil
+		},
+		getPromotionCodeFn: func(_ context.Context, id string) (*stripe.PromotionCode, error) {
+			calls.getPromotionCode++
+			return &stripe.PromotionCode{ID: id}, nil
+		},
+		getPriceFn: func(_ context.Context, id string) (*stripe.Price, error) {
+			calls.getPrice++
+			return &stripe.Price{
+				ID:      id,
+				Active:  true,
+				Type:    stripe.PriceTypeOneTime,
+				Product: &stripe.Product{ID: "prod_topup"},
+			}, nil
+		},
+		getCheckoutSessionFn: func(_ context.Context, id string, _ ...string) (*stripe.CheckoutSession, error) {
+			return &stripe.CheckoutSession{ID: id}, nil
+		},
+	}
+	return NewRecallStripeService(client)
+}
+
+func createRecallCampaignEligibleUser(t *testing.T, db *gorm.DB, now time.Time, suffix string) model.User {
+	t.Helper()
+	return createRecallAudienceUser(t, db, now.Unix(), suffix, func(user *model.User) {
+		user.CreatedAt = now.Add(-30 * 24 * time.Hour).Unix()
+		user.RequestCount = 10
+		user.Quota = 0
+		user.Group = "plg"
+	})
+}
+
+func validRecallCampaignDraft(now time.Time) RecallCampaignDraft {
+	return RecallCampaignDraft{
+		Name:             "First purchase win-back",
+		AudienceTemplate: "first_purchase",
+		Audience: RecallAudienceConfig{
+			RegistrationAgeDays:  7,
+			MinRequestCount:      1,
+			MaxQuota:             100,
+			LastAPICallAgeDays:   3,
+			RequireVerifiedEmail: true,
+		},
+		ExecutionMode:         "manual",
+		CouponSource:          "automatic",
+		Discount:              RecallDiscountConfig{Type: "percent", PercentOff: 20},
+		Products:              RecallProductScope{TopUpPriceIDs: []string{"price_topup"}},
+		PromotionValidSeconds: 7 * 24 * 60 * 60,
+		EnrollmentLimit:       100,
+		WorkerConcurrency:     5,
+		Emails: []RecallEmailStage{{
+			StageNo:         1,
+			DelaySeconds:    0,
+			TemplateVersion: 99,
+			Templates: map[string]RecallEmailTemplate{
+				"en": {Subject: "Come back", BodyText: "A Stripe offer is waiting."},
+			},
+		}},
+		Schedule: RecallScheduleConfig{ScheduledAt: now.Add(time.Hour).Unix()},
+	}
+}
+
+func TestRecallCampaignSaveDraftValidatesAndNormalizes(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	service.now = func() time.Time { return now }
+
+	campaign, err := service.SaveDraft(context.Background(), 7, validRecallCampaignDraft(now))
+
+	require.NoError(t, err)
+	require.Equal(t, model.RecallCampaignDraft, campaign.Status)
+	require.Zero(t, campaign.ScheduledAt, "manual schedules are ignored")
+	var emails []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(campaign.EmailSequenceConfig), &emails))
+	require.Equal(t, 1, emails[0].TemplateVersion)
+}
+
+func TestRecallCampaignSaveDraftRejectsInvalidBoundaries(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	service.now = func() time.Time { return now }
+
+	tests := []struct {
+		name   string
+		mutate func(*RecallCampaignDraft)
+	}{
+		{name: "empty name", mutate: func(d *RecallCampaignDraft) { d.Name = " " }},
+		{name: "unknown audience", mutate: func(d *RecallCampaignDraft) { d.AudienceTemplate = "custom" }},
+		{name: "unknown group mode", mutate: func(d *RecallCampaignDraft) {
+			d.Audience.Groups = []string{"plg"}
+			d.Audience.GroupMode = "include"
+		}},
+		{name: "unknown execution mode", mutate: func(d *RecallCampaignDraft) { d.ExecutionMode = "cron" }},
+		{name: "unknown coupon source", mutate: func(d *RecallCampaignDraft) { d.CouponSource = "local" }},
+		{name: "unknown discount type", mutate: func(d *RecallCampaignDraft) { d.Discount.Type = "credit" }},
+		{name: "automatic coupon has existing id", mutate: func(d *RecallCampaignDraft) { d.ExistingCouponID = "coupon_existing" }},
+		{name: "existing coupon lacks id", mutate: func(d *RecallCampaignDraft) { d.CouponSource = "existing" }},
+		{name: "no prices", mutate: func(d *RecallCampaignDraft) { d.Products = RecallProductScope{} }},
+		{name: "zero validity", mutate: func(d *RecallCampaignDraft) { d.PromotionValidSeconds = 0 }},
+		{name: "zero enrollment", mutate: func(d *RecallCampaignDraft) { d.EnrollmentLimit = 0 }},
+		{name: "too much enrollment", mutate: func(d *RecallCampaignDraft) { d.EnrollmentLimit = 100001 }},
+		{name: "zero concurrency", mutate: func(d *RecallCampaignDraft) { d.WorkerConcurrency = 0 }},
+		{name: "too much concurrency", mutate: func(d *RecallCampaignDraft) { d.WorkerConcurrency = 21 }},
+		{name: "no email stages", mutate: func(d *RecallCampaignDraft) { d.Emails = nil }},
+		{name: "too many email stages", mutate: func(d *RecallCampaignDraft) {
+			d.Emails = append(d.Emails, d.Emails[0], d.Emails[0], d.Emails[0])
+		}},
+		{name: "duplicate stage number", mutate: func(d *RecallCampaignDraft) {
+			d.Emails = append(d.Emails, RecallEmailStage{StageNo: 1, DelaySeconds: 10, Templates: d.Emails[0].Templates})
+		}},
+		{name: "stage one delay", mutate: func(d *RecallCampaignDraft) { d.Emails[0].DelaySeconds = 1 }},
+		{name: "stage delay not increasing", mutate: func(d *RecallCampaignDraft) {
+			d.Emails = append(d.Emails, RecallEmailStage{StageNo: 2, DelaySeconds: 0, Templates: d.Emails[0].Templates})
+		}},
+		{name: "missing english", mutate: func(d *RecallCampaignDraft) {
+			d.Emails[0].Templates = map[string]RecallEmailTemplate{"zh": {Subject: "回来", BodyText: "优惠"}}
+		}},
+		{name: "empty english subject", mutate: func(d *RecallCampaignDraft) {
+			d.Emails[0].Templates["en"] = RecallEmailTemplate{BodyText: "body"}
+		}},
+		{name: "scheduled once is not future", mutate: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "scheduled_once"
+			d.Schedule.ScheduledAt = now.Unix()
+		}},
+		{name: "recurring invalid timezone", mutate: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "recurring"
+			d.Schedule = RecallScheduleConfig{Timezone: "Mars/Olympus", Frequency: "daily", Hour: 9}
+		}},
+		{name: "recurring invalid frequency", mutate: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "recurring"
+			d.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "monthly", Hour: 9}
+		}},
+		{name: "recurring invalid hour", mutate: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "recurring"
+			d.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 24}
+		}},
+		{name: "recurring invalid minute", mutate: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "recurring"
+			d.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9, Minute: 60}
+		}},
+		{name: "weekly invalid weekday", mutate: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "recurring"
+			d.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "weekly", Weekday: 7, Hour: 9}
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			draft := validRecallCampaignDraft(now)
+			tt.mutate(&draft)
+			_, err := service.SaveDraft(context.Background(), 7, draft)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestNextRecallRunUsesIANAWallClock(t *testing.T) {
+	after := time.Date(2026, 7, 15, 0, 30, 0, 0, time.UTC)
+
+	daily, err := NextRecallRun(after, RecallScheduleConfig{
+		Timezone:  "Asia/Shanghai",
+		Frequency: "daily",
+		Hour:      9,
+	})
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 7, 15, 1, 0, 0, 0, time.UTC), daily)
+
+	nextDay, err := NextRecallRun(daily, RecallScheduleConfig{
+		Timezone:  "Asia/Shanghai",
+		Frequency: "daily",
+		Hour:      9,
+	})
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 7, 16, 1, 0, 0, 0, time.UTC), nextDay)
+
+	weekly, err := NextRecallRun(after, RecallScheduleConfig{
+		Timezone:  "Asia/Shanghai",
+		Frequency: "weekly",
+		Weekday:   int(time.Friday),
+		Hour:      9,
+		Minute:    15,
+	})
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 7, 17, 1, 15, 0, 0, time.UTC), weekly)
+
+	beforeSpringForward := time.Date(2026, 3, 8, 5, 0, 0, 0, time.UTC)
+	missingWallClock, err := NextRecallRun(beforeSpringForward, RecallScheduleConfig{
+		Timezone:  "America/New_York",
+		Frequency: "daily",
+		Hour:      2,
+		Minute:    30,
+	})
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 3, 9, 6, 30, 0, 0, time.UTC), missingWallClock)
+}
+
+func TestNextRecallRunRejectsInvalidSchedule(t *testing.T) {
+	after := time.Date(2026, 7, 15, 0, 30, 0, 0, time.UTC)
+	for _, cfg := range []RecallScheduleConfig{
+		{Timezone: "", Frequency: "daily", Hour: 9},
+		{Timezone: "Local", Frequency: "daily", Hour: 9},
+		{Timezone: "Mars/Olympus", Frequency: "daily", Hour: 9},
+		{Timezone: "UTC", Frequency: "monthly", Hour: 9},
+		{Timezone: "UTC", Frequency: "daily", Hour: -1},
+		{Timezone: "UTC", Frequency: "daily", Minute: 60},
+		{Timezone: "UTC", Frequency: "weekly", Weekday: 7, Hour: 9},
+	} {
+		_, err := NextRecallRun(after, cfg)
+		require.Error(t, err, "%+v", cfg)
+	}
+}
+
+func TestRecallCampaignPreviewIsReadOnly(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	createRecallCampaignEligibleUser(t, db, now, "preview")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	calls := &recallCampaignStripeCalls{}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, calls))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	audience, stripePreview, err := service.Preview(context.Background(), campaign.Id, 5)
+
+	require.NoError(t, err)
+	require.EqualValues(t, 1, audience.EligibleTotal)
+	require.Equal(t, []string{"prod_topup"}, stripePreview.ProductIDs)
+	require.Equal(t, 1, calls.getPrice)
+	require.Zero(t, calls.createCoupon)
+	require.Zero(t, calls.createCustomer)
+	require.Zero(t, calls.createPromotionCode)
+	var recipientCount int64
+	var messageCount int64
+	require.NoError(t, db.Model(&model.RecallRecipient{}).Count(&recipientCount).Error)
+	require.NoError(t, db.Model(&model.RecallMessage{}).Count(&messageCount).Error)
+	require.Zero(t, recipientCount)
+	require.Zero(t, messageCount)
+}
+
+func TestRecallCampaignPreviewValidatesExistingCouponWithGET(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	createRecallCampaignEligibleUser(t, db, now, "existing-preview")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	draft.CouponSource = "existing"
+	draft.ExistingCouponID = "coupon_existing"
+	calls := &recallCampaignStripeCalls{}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, calls))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	_, preview, err := service.Preview(context.Background(), campaign.Id, 1)
+
+	require.NoError(t, err)
+	require.Equal(t, "coupon_existing", preview.CouponID)
+	require.Equal(t, 1, calls.getCoupon)
+	require.Zero(t, calls.createCoupon)
+}
+
+func TestRecallCampaignManualActivationSnapshotsOnce(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	createRecallCampaignEligibleUser(t, db, now, "manual")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	calls := &recallCampaignStripeCalls{}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, calls))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.RecallCampaignRunning, stored.Status)
+	require.Equal(t, "coupon_recall", stored.StripeCouponId)
+	require.Equal(t, 1, calls.createCoupon)
+	require.Zero(t, calls.createCustomer)
+	require.Zero(t, calls.createPromotionCode)
+	var recipients []model.RecallRecipient
+	require.NoError(t, db.Find(&recipients).Error)
+	require.Len(t, recipients, 1)
+	require.Equal(t, now.Add(time.Duration(draft.PromotionValidSeconds)*time.Second).Unix(), recipients[0].PromotionExpiresAt)
+	var messages []model.RecallMessage
+	require.NoError(t, db.Find(&messages).Error)
+	require.Len(t, messages, 1)
+	require.Equal(t, 1, messages[0].StageNo)
+	require.Equal(t, 1, messages[0].TemplateVersion)
+	require.Equal(t, now.Unix(), messages[0].ScheduledAt)
+	var events []model.RecallEvent
+	require.NoError(t, db.Find(&events).Error)
+	require.Len(t, events, 1)
+	require.Equal(t, fmt.Sprintf("manual:%d", campaign.Id), events[0].SourceEventId)
+}
+
+func TestRecallCampaignActivationUsesOneTimestamp(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	createRecallCampaignEligibleUser(t, db, now, "activation-time")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	clockCalls := 0
+	service.now = func() time.Time {
+		current := now.Add(time.Duration(clockCalls) * time.Second)
+		clockCalls++
+		return current
+	}
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+
+	require.Equal(t, 1, clockCalls)
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, now.Unix(), stored.ActivatedAt)
+	var recipient model.RecallRecipient
+	require.NoError(t, db.First(&recipient).Error)
+	require.Equal(t, now.Add(time.Duration(draft.PromotionValidSeconds)*time.Second).Unix(), recipient.PromotionExpiresAt)
+	var message model.RecallMessage
+	require.NoError(t, db.First(&message).Error)
+	require.Equal(t, now.Unix(), message.ScheduledAt)
+}
+
+func TestRecallCampaignScheduledOnceWaitsUntilDue(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	createRecallCampaignEligibleUser(t, db, now, "scheduled")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	draft.ExecutionMode = "scheduled_once"
+	draft.Schedule = RecallScheduleConfig{ScheduledAt: now.Add(time.Hour).Unix()}
+	calls := &recallCampaignStripeCalls{}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, calls))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+	require.NoError(t, service.Pause(context.Background(), 7, campaign.Id))
+	require.NoError(t, service.Resume(context.Background(), 7, campaign.Id))
+
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.RecallCampaignRunning, stored.Status)
+	processed, err := service.RunDueCampaigns(context.Background(), now.Add(59*time.Minute), 10)
+	require.NoError(t, err)
+	require.Zero(t, processed)
+	var count int64
+	require.NoError(t, db.Model(&model.RecallRecipient{}).Count(&count).Error)
+	require.Zero(t, count)
+
+	processed, err = service.RunDueCampaigns(context.Background(), now.Add(time.Hour), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	stored, err = model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.RecallCampaignRunning, stored.Status)
+	require.NoError(t, db.Model(&model.RecallRecipient{}).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+}
+
+func TestRecallCampaignRecurringRunUsesDeterministicEventKey(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 0, 30, 0, 0, time.UTC)
+	createRecallCampaignEligibleUser(t, db, now, "recurring")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	draft.ExecutionMode = "recurring"
+	draft.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9}
+	calls := &recallCampaignStripeCalls{}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, calls))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	firstRunAt := stored.NextRunAt
+	require.Equal(t, time.Date(2026, 7, 16, 1, 0, 0, 0, time.UTC).Unix(), firstRunAt)
+
+	processed, err := service.RunDueCampaigns(context.Background(), time.Unix(firstRunAt, 0), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	processed, err = service.RunDueCampaigns(context.Background(), time.Unix(firstRunAt, 0), 10)
+	require.NoError(t, err)
+	require.Zero(t, processed)
+
+	var recipientCount int64
+	var messageCount int64
+	require.NoError(t, db.Model(&model.RecallRecipient{}).Count(&recipientCount).Error)
+	require.NoError(t, db.Model(&model.RecallMessage{}).Count(&messageCount).Error)
+	require.EqualValues(t, 1, recipientCount)
+	require.EqualValues(t, 1, messageCount)
+	var event model.RecallEvent
+	require.NoError(t, db.First(&event).Error)
+	require.Equal(t, fmt.Sprintf("recurring:%d:%d", campaign.Id, firstRunAt), event.SourceEventId)
+	stored, err = model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.RecallCampaignRunning, stored.Status)
+	require.Equal(t, time.Date(2026, 7, 17, 1, 0, 0, 0, time.UTC).Unix(), stored.NextRunAt)
+}
+
+func TestRecallCampaignActivatedUpdateOnlyChangesFutureEmailVersion(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	createRecallCampaignEligibleUser(t, db, now, "update")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+
+	immutableChanges := []struct {
+		name   string
+		mutate func(*RecallCampaignDraft)
+	}{
+		{name: "audience", mutate: func(change *RecallCampaignDraft) { change.Audience.MaxQuota++ }},
+		{name: "coupon source and ID", mutate: func(change *RecallCampaignDraft) {
+			change.CouponSource = "existing"
+			change.ExistingCouponID = "coupon_existing"
+		}},
+		{name: "discount", mutate: func(change *RecallCampaignDraft) { change.Discount.PercentOff++ }},
+		{name: "product scope", mutate: func(change *RecallCampaignDraft) {
+			change.Products.TopUpPriceIDs = append(change.Products.TopUpPriceIDs, "price_other")
+		}},
+		{name: "promotion validity", mutate: func(change *RecallCampaignDraft) { change.PromotionValidSeconds++ }},
+	}
+	for _, testCase := range immutableChanges {
+		t.Run(testCase.name, func(t *testing.T) {
+			immutableChange := draft
+			testCase.mutate(&immutableChange)
+			_, err := service.UpdateDraft(context.Background(), 7, campaign.Id, immutableChange)
+			require.Error(t, err)
+		})
+	}
+
+	emailChange := draft
+	emailChange.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "New subject", BodyText: "New body"}
+	updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, emailChange)
+	require.NoError(t, err)
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	require.Equal(t, 2, stages[0].TemplateVersion)
+	var existingMessage model.RecallMessage
+	require.NoError(t, db.First(&existingMessage).Error)
+	require.Equal(t, 1, existingMessage.TemplateVersion)
+
+	emailChange.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "Third subject", BodyText: "Third body"}
+	updated, err = service.UpdateDraft(context.Background(), 7, campaign.Id, emailChange)
+	require.NoError(t, err)
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	require.Equal(t, 3, stages[0].TemplateVersion)
+}
+
+func TestRecallCampaignLifecycleIsConditionalIdempotentAndCancelPreservesCode(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	createRecallCampaignEligibleUser(t, db, now, "lifecycle")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+
+	require.NoError(t, service.Pause(context.Background(), 7, campaign.Id))
+	require.NoError(t, service.Pause(context.Background(), 7, campaign.Id))
+	require.NoError(t, service.Resume(context.Background(), 7, campaign.Id))
+	require.NoError(t, service.Resume(context.Background(), 7, campaign.Id))
+	var recipient model.RecallRecipient
+	require.NoError(t, db.First(&recipient).Error)
+	promotionID := "promo_keep"
+	require.NoError(t, db.Model(&recipient).Updates(map[string]any{
+		"stripe_promotion_code_id": promotionID,
+		"promotion_code":           "FKKEEPCODE",
+	}).Error)
+	require.NoError(t, db.Model(&model.RecallMessage{}).Where("recipient_id = ?", recipient.Id).Update("state", model.RecallMessageRetryWait).Error)
+	require.NoError(t, db.Create(&model.RecallMessage{
+		RecipientId:      recipient.Id,
+		StageNo:          2,
+		TemplateVersion:  1,
+		TemplateSnapshot: `{}`,
+		ScheduledAt:      now.Add(time.Hour).Unix(),
+		State:            model.RecallMessageScheduled,
+	}).Error)
+
+	require.NoError(t, service.Cancel(context.Background(), 7, campaign.Id))
+	require.NoError(t, service.Cancel(context.Background(), 7, campaign.Id))
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.RecallCampaignCancelled, stored.Status)
+	require.NoError(t, db.First(&recipient, recipient.Id).Error)
+	require.NotNil(t, recipient.StripePromotionCodeId)
+	require.Equal(t, promotionID, *recipient.StripePromotionCodeId)
+	require.Equal(t, "FKKEEPCODE", recipient.PromotionCode)
+	var messages []model.RecallMessage
+	require.NoError(t, db.Order("stage_no ASC").Find(&messages).Error)
+	require.Len(t, messages, 2)
+	require.Equal(t, model.RecallMessageCancelled, messages[0].State)
+	require.Equal(t, model.RecallMessageCancelled, messages[1].State)
+	require.Error(t, service.Resume(context.Background(), 7, campaign.Id))
+
+	completeDraft := validRecallCampaignDraft(now)
+	completeDraft.Name = "Complete me"
+	completeCampaign, err := service.SaveDraft(context.Background(), 7, completeDraft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, completeCampaign.Id))
+	require.NoError(t, service.Complete(context.Background(), 7, completeCampaign.Id))
+	require.NoError(t, service.Complete(context.Background(), 7, completeCampaign.Id))
+	completed, err := model.GetRecallCampaignByID(completeCampaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.RecallCampaignCompleted, completed.Status)
+}
+
+func TestRecallCampaignAllEntryPointsRespectFeatureGate(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, validRecallCampaignDraft(now))
+	require.NoError(t, err)
+	loadRecallCampaignEnabled(t, false)
+
+	_, err = service.SaveDraft(context.Background(), 7, validRecallCampaignDraft(now))
+	require.ErrorIs(t, err, ErrRecallDisabled)
+	_, err = service.UpdateDraft(context.Background(), 7, campaign.Id, validRecallCampaignDraft(now))
+	require.ErrorIs(t, err, ErrRecallDisabled)
+	_, _, err = service.Preview(context.Background(), campaign.Id, 1)
+	require.ErrorIs(t, err, ErrRecallDisabled)
+	for _, action := range []func(context.Context, int, int64) error{
+		service.Activate,
+		service.Pause,
+		service.Resume,
+		service.Cancel,
+		service.Complete,
+	} {
+		require.ErrorIs(t, action(context.Background(), 7, campaign.Id), ErrRecallDisabled)
+	}
+	_, err = service.RunDueCampaigns(context.Background(), now, 10)
+	require.ErrorIs(t, err, ErrRecallDisabled)
+	require.True(t, errors.Is(err, ErrRecallDisabled))
+	_, err = service.ValidateStripe(context.Background(), validRecallCampaignDraft(now))
+	require.ErrorIs(t, err, ErrRecallDisabled)
+}
+
+func TestRecallCampaignRecurringEnrollmentLimitIsCampaignWide(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 0, 30, 0, 0, time.UTC)
+	first := createRecallCampaignEligibleUser(t, db, now, "cap-first")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	draft.ExecutionMode = "recurring"
+	draft.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9}
+	draft.EnrollmentLimit = 1
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, 1, mustRunDueCampaigns(t, service, time.Unix(stored.NextRunAt, 0)))
+
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", first.Id).Update("status", common.UserStatusDisabled).Error)
+	createRecallCampaignEligibleUser(t, db, now.Add(time.Hour), "cap-second")
+	stored, err = model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.Equal(t, 1, mustRunDueCampaigns(t, service, time.Unix(stored.NextRunAt, 0)))
+
+	var recipientCount int64
+	require.NoError(t, db.Model(&model.RecallRecipient{}).Where("campaign_id = ?", campaign.Id).Count(&recipientCount).Error)
+	require.EqualValues(t, 1, recipientCount)
+}
+
+func mustRunDueCampaigns(t *testing.T, service *RecallCampaignService, now time.Time) int {
+	t.Helper()
+	processed, err := service.RunDueCampaigns(context.Background(), now, 10)
+	require.NoError(t, err)
+	return processed
+}
+
+func TestRecallCampaignMaintenanceTickDoesNoDatabaseWorkWhenDisabled(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, false)
+	var operations atomic.Int64
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register("recall_disabled_query", func(_ *gorm.DB) {
+		operations.Add(1)
+	}))
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("recall_disabled_create", func(_ *gorm.DB) {
+		operations.Add(1)
+	}))
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("recall_disabled_update", func(_ *gorm.DB) {
+		operations.Add(1)
+	}))
+
+	RunRecallMaintenanceTick(context.Background())
+
+	require.Zero(t, operations.Load())
+}
+
+func TestRecallCampaignRuntimeInitiallyContainsCampaigns(t *testing.T) {
+	runtime := GetRecallRuntime()
+	require.NotNil(t, runtime)
+	require.NotNil(t, runtime.Campaigns)
+}
