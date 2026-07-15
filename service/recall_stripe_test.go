@@ -27,6 +27,28 @@ type recallStripeFakeClient struct {
 	getCheckoutSessionFn  func(context.Context, string, ...string) (*stripe.CheckoutSession, error)
 }
 
+type recallStripeRecordingBackend struct {
+	stripe.Backend
+	keys []string
+}
+
+func (b *recallStripeRecordingBackend) Call(_ string, _ string, key string, _ stripe.ParamsContainer, result stripe.LastResponseSetter) error {
+	b.keys = append(b.keys, key)
+	switch typed := result.(type) {
+	case *stripe.Coupon:
+		typed.ID = "coupon_test"
+	case *stripe.Customer:
+		typed.ID = "cus_test"
+	case *stripe.PromotionCode:
+		typed.ID = "promo_test"
+	case *stripe.Price:
+		typed.ID = "price_test"
+	case *stripe.CheckoutSession:
+		typed.ID = "cs_test"
+	}
+	return nil
+}
+
 func (f *recallStripeFakeClient) CreateCoupon(ctx context.Context, params *stripe.CouponParams) (*stripe.Coupon, error) {
 	return f.createCouponFn(ctx, params)
 }
@@ -57,6 +79,46 @@ func (f *recallStripeFakeClient) GetPrice(ctx context.Context, id string) (*stri
 
 func (f *recallStripeFakeClient) GetCheckoutSession(ctx context.Context, id string, expand ...string) (*stripe.CheckoutSession, error) {
 	return f.getCheckoutSessionFn(ctx, id, expand...)
+}
+
+func TestStripeRecallClientUsesScopedKeyWithoutMutatingGlobal(t *testing.T) {
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalGlobalKey := stripe.Key
+	originalConfiguredKey := setting.StripeApiSecret
+	recordingBackend := &recallStripeRecordingBackend{}
+	stripe.SetBackend(stripe.APIBackend, recordingBackend)
+	stripe.Key = "global-sentinel"
+	setting.StripeApiSecret = "scoped-secret"
+	t.Cleanup(func() {
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		stripe.Key = originalGlobalKey
+		setting.StripeApiSecret = originalConfiguredKey
+	})
+
+	client := &StripeRecallClient{}
+	ctx := context.Background()
+	_, err := client.CreateCoupon(ctx, &stripe.CouponParams{})
+	require.NoError(t, err)
+	_, err = client.GetCoupon(ctx, "coupon_test")
+	require.NoError(t, err)
+	_, err = client.CreateCustomer(ctx, &stripe.CustomerParams{})
+	require.NoError(t, err)
+	_, err = client.GetCustomer(ctx, "cus_test")
+	require.NoError(t, err)
+	_, err = client.CreatePromotionCode(ctx, &stripe.PromotionCodeParams{})
+	require.NoError(t, err)
+	_, err = client.GetPromotionCode(ctx, "promo_test")
+	require.NoError(t, err)
+	_, err = client.GetPrice(ctx, "price_test")
+	require.NoError(t, err)
+	_, err = client.GetCheckoutSession(ctx, "cs_test", "line_items")
+	require.NoError(t, err)
+
+	require.Equal(t, "global-sentinel", stripe.Key)
+	require.Equal(t, []string{
+		"scoped-secret", "scoped-secret", "scoped-secret", "scoped-secret",
+		"scoped-secret", "scoped-secret", "scoped-secret", "scoped-secret",
+	}, recordingBackend.keys)
 }
 
 func TestRecallStripePercentCouponParams(t *testing.T) {
@@ -122,6 +184,27 @@ func TestRecallStripeFixedCouponParams(t *testing.T) {
 	require.Nil(t, captured.MaxRedemptions)
 }
 
+func TestRecallStripeDiscountRejectsMixedModes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		discount RecallDiscountConfig
+	}{
+		{name: "percent with amount off", discount: RecallDiscountConfig{Type: "percent", PercentOff: 20, AmountOff: 500}},
+		{name: "percent with currency", discount: RecallDiscountConfig{Type: "percent", PercentOff: 20, Currency: "usd"}},
+		{name: "fixed with percent off", discount: RecallDiscountConfig{Type: "fixed", PercentOff: 20, AmountOff: 500, Currency: "usd"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := normalizeRecallDiscount(tt.discount)
+			require.ErrorContains(t, err, "cannot set")
+			require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
+		})
+	}
+}
+
 func TestRecallStripeExistingCouponValidation(t *testing.T) {
 	t.Parallel()
 
@@ -158,6 +241,11 @@ func TestRecallStripeExistingCouponValidation(t *testing.T) {
 		{name: "invalid", coupon: func() *stripe.Coupon { c := validPercent(); c.Valid = false; return c }(), discount: RecallDiscountConfig{Type: "percent", PercentOff: 20}, products: []string{"prod_a", "prod_b"}, enrollment: 50, wantErr: "invalid"},
 		{name: "expired", coupon: func() *stripe.Coupon { c := validPercent(); c.RedeemBy = now - 1; return c }(), discount: RecallDiscountConfig{Type: "percent", PercentOff: 20}, products: []string{"prod_a", "prod_b"}, enrollment: 50, wantErr: "expired"},
 		{name: "wrong duration", coupon: func() *stripe.Coupon { c := validPercent(); c.Duration = stripe.CouponDurationForever; return c }(), discount: RecallDiscountConfig{Type: "percent", PercentOff: 20}, products: []string{"prod_a", "prod_b"}, enrollment: 50, wantErr: "duration"},
+		{name: "currency options", coupon: func() *stripe.Coupon {
+			c := validPercent()
+			c.CurrencyOptions = map[string]*stripe.CouponCurrencyOptions{"usd": {AmountOff: 500}}
+			return c
+		}(), discount: RecallDiscountConfig{Type: "percent", PercentOff: 20}, products: []string{"prod_a", "prod_b"}, enrollment: 50, wantErr: "currency options"},
 		{name: "wrong currency", coupon: func() *stripe.Coupon { c := validFixed(); c.Currency = stripe.CurrencyEUR; return c }(), discount: RecallDiscountConfig{Type: "fixed", AmountOff: 500, Currency: "usd"}, products: []string{"prod_a", "prod_b"}, enrollment: 50, wantErr: "currency"},
 		{name: "insufficient remaining capacity", coupon: func() *stripe.Coupon { c := validPercent(); c.MaxRedemptions = 59; return c }(), discount: RecallDiscountConfig{Type: "percent", PercentOff: 20}, products: []string{"prod_a", "prod_b"}, enrollment: 50, wantErr: "capacity"},
 		{name: "product mismatch", coupon: validPercent(), discount: RecallDiscountConfig{Type: "percent", PercentOff: 20}, products: []string{"prod_a"}, enrollment: 50, wantErr: "product"},
@@ -322,6 +410,87 @@ func TestRecallStripeRejectsProductScopeConflicts(t *testing.T) {
 	})
 }
 
+func TestRecallStripeUnselectedStaleConfiguredPrices(t *testing.T) {
+	t.Run("unrelated inactive configured price does not block", func(t *testing.T) {
+		setupRecallStripeDB(t)
+		setupRecallStripeSettings(t)
+		setting.StripeTopUpPriceIds = `{"10":"price_selected","20":"price_inactive"}`
+		prices := map[string]*stripe.Price{
+			"price_selected": recallStripePrice("price_selected", "prod_selected", stripe.PriceTypeOneTime),
+			"price_inactive": func() *stripe.Price {
+				price := recallStripePrice("price_inactive", "prod_other", stripe.PriceTypeOneTime)
+				price.Active = false
+				return price
+			}(),
+		}
+		client := &recallStripeFakeClient{getPriceFn: func(_ context.Context, id string) (*stripe.Price, error) { return prices[id], nil }}
+
+		resolved, err := NewRecallStripeService(client).ValidateAndResolveProducts(context.Background(), RecallProductScope{TopUpPriceIDs: []string{"price_selected"}})
+		require.NoError(t, err)
+		require.Equal(t, []string{"prod_selected"}, resolved.ProductIDs)
+	})
+
+	t.Run("shared inactive configured price still rejects", func(t *testing.T) {
+		setupRecallStripeDB(t)
+		setupRecallStripeSettings(t)
+		setting.StripeTopUpPriceIds = `{"10":"price_selected","20":"price_inactive"}`
+		prices := map[string]*stripe.Price{
+			"price_selected": recallStripePrice("price_selected", "prod_shared", stripe.PriceTypeOneTime),
+			"price_inactive": func() *stripe.Price {
+				price := recallStripePrice("price_inactive", "prod_shared", stripe.PriceTypeOneTime)
+				price.Active = false
+				return price
+			}(),
+		}
+		client := &recallStripeFakeClient{getPriceFn: func(_ context.Context, id string) (*stripe.Price, error) { return prices[id], nil }}
+
+		_, err := NewRecallStripeService(client).ValidateAndResolveProducts(context.Background(), RecallProductScope{TopUpPriceIDs: []string{"price_selected"}})
+		require.ErrorContains(t, err, "unselected configured price")
+	})
+}
+
+func TestRecallStripeLegacyTopUpCatalog(t *testing.T) {
+	t.Run("enumerates all legacy fields with trim and deduplication", func(t *testing.T) {
+		setupRecallStripeSettings(t)
+		setting.StripeTopUpPriceIds = ""
+		setting.StripePriceId = " price_10 "
+		setting.StripePriceId20 = "price_20"
+		setting.StripePriceId200 = "price_10"
+
+		configured, err := recallConfiguredTopUpPriceIDs()
+		require.NoError(t, err)
+		require.Equal(t, []string{"price_10", "price_20"}, configured)
+	})
+
+	t.Run("json map remains authoritative", func(t *testing.T) {
+		setupRecallStripeSettings(t)
+		setting.StripeTopUpPriceIds = `{"50":"price_map"}`
+		setting.StripePriceId = "price_legacy_10"
+		setting.StripePriceId20 = "price_legacy_20"
+		setting.StripePriceId200 = "price_legacy_200"
+
+		configured, err := recallConfiguredTopUpPriceIDs()
+		require.NoError(t, err)
+		require.Equal(t, []string{"price_map"}, configured)
+	})
+
+	t.Run("rejects selected legacy price sharing product with another legacy price", func(t *testing.T) {
+		setupRecallStripeDB(t)
+		setupRecallStripeSettings(t)
+		setting.StripeTopUpPriceIds = ""
+		setting.StripePriceId = "price_10"
+		setting.StripePriceId20 = "price_20"
+		prices := map[string]*stripe.Price{
+			"price_10": recallStripePrice("price_10", "prod_shared", stripe.PriceTypeOneTime),
+			"price_20": recallStripePrice("price_20", "prod_shared", stripe.PriceTypeOneTime),
+		}
+		client := &recallStripeFakeClient{getPriceFn: func(_ context.Context, id string) (*stripe.Price, error) { return prices[id], nil }}
+
+		_, err := NewRecallStripeService(client).ValidateAndResolveProducts(context.Background(), RecallProductScope{TopUpPriceIDs: []string{"price_10"}})
+		require.ErrorContains(t, err, "unselected configured price")
+	})
+}
+
 func TestRecallStripeEnsureCustomer(t *testing.T) {
 	t.Run("reuses non-deleted customer", func(t *testing.T) {
 		created := false
@@ -370,12 +539,32 @@ func TestRecallStripeEnsureCustomer(t *testing.T) {
 			require.Equal(t, "cus_new", customer.ID)
 			require.Len(t, captured, 2)
 			require.Same(t, captured[0], captured[1])
-			require.Equal(t, "user@example.com", *captured[0].Email)
-			require.Equal(t, "Ada", *captured[0].Name)
+			require.Nil(t, captured[0].Email)
+			require.Nil(t, captured[0].Name)
 			require.Equal(t, "7", captured[0].Metadata["flatkey_user_id"])
 			require.Equal(t, "recall_customer:7", *captured[0].IdempotencyKey)
 		})
 	}
+}
+
+func TestRecallStripeCustomerCreateParamsIgnoreMutableProfile(t *testing.T) {
+	var calls []*stripe.CustomerParams
+	client := &recallStripeFakeClient{createCustomerFn: func(_ context.Context, params *stripe.CustomerParams) (*stripe.Customer, error) {
+		calls = append(calls, params)
+		return &stripe.Customer{ID: "cus_7"}, nil
+	}}
+	service := NewRecallStripeService(client)
+
+	_, firstErr := service.EnsureCustomer(context.Background(), model.User{Id: 7, Email: "first@example.com", Username: "First", DisplayName: "First Display"})
+	_, secondErr := service.EnsureCustomer(context.Background(), model.User{Id: 7, Email: "second@example.com", Username: "Second", DisplayName: "Second Display"})
+	require.NoError(t, firstErr)
+	require.NoError(t, secondErr)
+	require.Len(t, calls, 2)
+	require.Equal(t, calls[0], calls[1])
+	require.Nil(t, calls[0].Email)
+	require.Nil(t, calls[0].Name)
+	require.Equal(t, map[string]string{"flatkey_user_id": "7"}, calls[0].Metadata)
+	require.Equal(t, "recall_customer:7", *calls[0].IdempotencyKey)
 }
 
 func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
@@ -500,7 +689,7 @@ func TestRecallStripeExistingPromotionIsReconciledWithoutCreate(t *testing.T) {
 		PromotionCode: "FKABC234", PromotionExpiresAt: 1_900_000_000,
 	}
 	existing := &stripe.PromotionCode{
-		ID: "promo_existing", Active: true, Code: "fkabc234", Coupon: &stripe.Coupon{ID: "coupon"}, Customer: &stripe.Customer{ID: "cus_3"},
+		ID: "promo_existing", Active: true, Code: "FKABC234", Coupon: &stripe.Coupon{ID: "coupon"}, Customer: &stripe.Customer{ID: "cus_3"},
 		ExpiresAt: 1_900_000_000, MaxRedemptions: 1, Restrictions: &stripe.PromotionCodeRestrictions{},
 	}
 	created := false
@@ -518,6 +707,53 @@ func TestRecallStripeExistingPromotionIsReconciledWithoutCreate(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, existing, promotion)
 	require.False(t, created)
+}
+
+func TestRecallStripeExistingPromotionRequiresExactRestrictions(t *testing.T) {
+	t.Parallel()
+
+	recipient := model.RecallRecipient{PromotionCode: "FKABC234"}
+	validPromotion := func() *stripe.PromotionCode {
+		return &stripe.PromotionCode{
+			ID: "promo_existing", Active: true, Code: "FKABC234", Coupon: &stripe.Coupon{ID: "coupon"}, Customer: &stripe.Customer{ID: "cus_3"},
+			ExpiresAt: 1_900_000_000, MaxRedemptions: 1,
+		}
+	}
+	tests := []struct {
+		name         string
+		restrictions *stripe.PromotionCodeRestrictions
+		discount     RecallDiscountConfig
+		remoteCode   string
+		wantErr      string
+	}{
+		{name: "no requested minimum rejects remote minimum", restrictions: &stripe.PromotionCodeRestrictions{MinimumAmount: 1000, MinimumAmountCurrency: stripe.CurrencyUSD}, wantErr: "minimum restriction"},
+		{name: "rejects first time transaction", restrictions: &stripe.PromotionCodeRestrictions{FirstTimeTransaction: true}, wantErr: "first-time"},
+		{name: "rejects currency options", restrictions: &stripe.PromotionCodeRestrictions{CurrencyOptions: map[string]*stripe.PromotionCodeRestrictionsCurrencyOptions{"usd": {MinimumAmount: 1000}}}, wantErr: "currency options"},
+		{name: "nonzero minimum requires exact amount", restrictions: &stripe.PromotionCodeRestrictions{MinimumAmount: 999, MinimumAmountCurrency: stripe.CurrencyUSD}, discount: RecallDiscountConfig{MinimumAmount: 1000, MinimumAmountCurrency: "usd"}, wantErr: "minimum restriction"},
+		{name: "nonzero minimum requires exact currency", restrictions: &stripe.PromotionCodeRestrictions{MinimumAmount: 1000, MinimumAmountCurrency: stripe.CurrencyEUR}, discount: RecallDiscountConfig{MinimumAmount: 1000, MinimumAmountCurrency: "usd"}, wantErr: "minimum restriction"},
+		{name: "nonzero minimum still rejects other restrictions", restrictions: &stripe.PromotionCodeRestrictions{MinimumAmount: 1000, MinimumAmountCurrency: stripe.CurrencyUSD, FirstTimeTransaction: true}, discount: RecallDiscountConfig{MinimumAmount: 1000, MinimumAmountCurrency: "usd"}, wantErr: "first-time"},
+		{name: "remote code must match canonical persisted code", restrictions: &stripe.PromotionCodeRestrictions{}, remoteCode: "fkabc234", wantErr: "code does not match"},
+		{name: "empty restrictions pass", restrictions: &stripe.PromotionCodeRestrictions{}},
+		{name: "nil restrictions pass"},
+		{name: "exact minimum passes", restrictions: &stripe.PromotionCodeRestrictions{MinimumAmount: 1000, MinimumAmountCurrency: stripe.CurrencyUSD}, discount: RecallDiscountConfig{MinimumAmount: 1000, MinimumAmountCurrency: "usd"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			existing := validPromotion()
+			existing.Restrictions = tt.restrictions
+			if tt.remoteCode != "" {
+				existing.Code = tt.remoteCode
+			}
+			err := validateExistingRecallPromotion(existing, recipient, "coupon", "cus_3", 1_900_000_000, tt.discount)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+			require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
+		})
+	}
 }
 
 func TestRecallStripePromotionRequiresPersistedBaseCode(t *testing.T) {
@@ -542,6 +778,65 @@ func TestRecallStripePromotionRequiresPersistedBaseCode(t *testing.T) {
 	require.Zero(t, generatorCalls)
 }
 
+func TestRecallStripePromotionRejectsNonCanonicalPersistedCode(t *testing.T) {
+	tests := []string{
+		" FKABC234",
+		"fkabc234",
+		"FKABC-234",
+		"FKABC0",
+		"FKABCO",
+		"FKABCI",
+		"FKABCl",
+		"FKABC1",
+	}
+	for _, persistedCode := range tests {
+		t.Run(persistedCode, func(t *testing.T) {
+			createCalls := 0
+			client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+				createCalls++
+				return &stripe.PromotionCode{ID: "promo_noncanonical", Code: *params.Code}, nil
+			}}
+			_, err := NewRecallStripeService(client).CreateRecipientPromotion(context.Background(), model.RecallCampaign{Id: 11}, model.RecallRecipient{
+				Id: 22, UserId: 7, StripeCustomerId: "cus_7", PromotionCode: persistedCode, PromotionExpiresAt: 1_900_000_000,
+			}, model.User{Id: 7}, &stripe.Coupon{ID: "coupon_11"}, RecallDiscountConfig{})
+			require.ErrorContains(t, err, "canonical")
+			require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
+			require.Zero(t, createCalls)
+		})
+	}
+}
+
+func TestRecallStripePromotionRequiresPersistedExpiryWithinCoupon(t *testing.T) {
+	now := time.Now().Unix()
+	tests := []struct {
+		name       string
+		campaign   model.RecallCampaign
+		expiresAt  int64
+		redeemBy   int64
+		wantErrMsg string
+	}{
+		{name: "missing persisted expiry", campaign: model.RecallCampaign{Id: 11, PromotionValidSeconds: 3600}, expiresAt: 0, wantErrMsg: "persisted promotion expiration"},
+		{name: "expired persisted expiry", campaign: model.RecallCampaign{Id: 11}, expiresAt: now - 1, wantErrMsg: "future"},
+		{name: "expiry exceeds coupon redeem by", campaign: model.RecallCampaign{Id: 11}, expiresAt: now + 3600, redeemBy: now + 1800, wantErrMsg: "redeem_by"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			createCalls := 0
+			client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+				createCalls++
+				return &stripe.PromotionCode{ID: "promo_unstable_expiry", Code: *params.Code}, nil
+			}}
+			_, err := NewRecallStripeService(client).CreateRecipientPromotion(context.Background(), tt.campaign, model.RecallRecipient{
+				Id: 22, UserId: 7, StripeCustomerId: "cus_7", PromotionCode: "FKSTABXE234", PromotionExpiresAt: tt.expiresAt,
+			}, model.User{Id: 7}, &stripe.Coupon{ID: "coupon_11", RedeemBy: tt.redeemBy}, RecallDiscountConfig{})
+			require.ErrorContains(t, err, tt.wantErrMsg)
+			require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
+			require.Zero(t, createCalls)
+		})
+	}
+}
+
 func TestRecallStripePromotionAttemptOneIsStableAcrossCalls(t *testing.T) {
 	var calls []*stripe.PromotionCodeParams
 	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
@@ -550,7 +845,7 @@ func TestRecallStripePromotionAttemptOneIsStableAcrossCalls(t *testing.T) {
 	}}
 	service := NewRecallStripeService(client)
 	recipient := model.RecallRecipient{
-		Id: 22, UserId: 7, StripeCustomerId: "cus_7", PromotionCode: "FKSTABLE234", PromotionExpiresAt: 1_900_000_000,
+		Id: 22, UserId: 7, StripeCustomerId: "cus_7", PromotionCode: "FKSTABXE234", PromotionExpiresAt: 1_900_000_000,
 	}
 
 	_, firstErr := service.CreateRecipientPromotion(context.Background(), model.RecallCampaign{Id: 11}, recipient, model.User{Id: 7}, &stripe.Coupon{ID: "coupon_11"}, RecallDiscountConfig{})
@@ -560,6 +855,7 @@ func TestRecallStripePromotionAttemptOneIsStableAcrossCalls(t *testing.T) {
 	require.Len(t, calls, 6)
 	require.Equal(t, *calls[0].Code, *calls[3].Code)
 	require.Equal(t, *calls[0].IdempotencyKey, *calls[3].IdempotencyKey)
+	require.Equal(t, *calls[0].ExpiresAt, *calls[3].ExpiresAt)
 	require.Equal(t, "recall_promotion:11:22:1", *calls[0].IdempotencyKey)
 }
 
@@ -610,6 +906,7 @@ func TestRecallStripeErrorClassification(t *testing.T) {
 		&stripe.Error{HTTPStatusCode: 500, Type: stripe.ErrorTypeAPI},
 		recallStripeTimeout{},
 		context.DeadlineExceeded,
+		context.Canceled,
 	}
 	for _, err := range retryable {
 		require.Equal(t, RecallStripeErrorRetryable, ClassifyRecallStripeError(err), err.Error())
@@ -626,6 +923,20 @@ func TestRecallStripeErrorClassification(t *testing.T) {
 	}
 
 	require.Equal(t, RecallStripeErrorUnknown, ClassifyRecallStripeError(errors.New("unclassified")))
+}
+
+func TestRecallStripeCanceledCreateIsRetryableWithoutLocalLoop(t *testing.T) {
+	createCalls := 0
+	client := &recallStripeFakeClient{createCustomerFn: func(context.Context, *stripe.CustomerParams) (*stripe.Customer, error) {
+		createCalls++
+		return nil, context.Canceled
+	}}
+
+	_, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{Id: 7})
+	require.Error(t, err)
+	require.Equal(t, RecallStripeErrorRetryable, ClassifyRecallStripeError(err))
+	require.True(t, IsRecallStripeRetryable(err))
+	require.Equal(t, 1, createCalls)
 }
 
 type recallStripeTimeout struct{}
@@ -666,11 +977,17 @@ func setupRecallStripeSettings(t *testing.T) {
 	t.Helper()
 	originalTopUps := setting.StripeTopUpPriceIds
 	originalPrice := setting.StripePriceId
+	originalPrice20 := setting.StripePriceId20
+	originalPrice200 := setting.StripePriceId200
 	setting.StripeTopUpPriceIds = ""
 	setting.StripePriceId = ""
+	setting.StripePriceId20 = ""
+	setting.StripePriceId200 = ""
 	t.Cleanup(func() {
 		setting.StripeTopUpPriceIds = originalTopUps
 		setting.StripePriceId = originalPrice
+		setting.StripePriceId20 = originalPrice20
+		setting.StripePriceId200 = originalPrice200
 	})
 }
 
