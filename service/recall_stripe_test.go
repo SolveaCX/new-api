@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -381,7 +380,7 @@ func TestRecallStripeEnsureCustomer(t *testing.T) {
 
 func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
 	campaign := model.RecallCampaign{Id: 11, PromotionValidSeconds: 3600}
-	recipient := model.RecallRecipient{Id: 22, UserId: 7, StripeCustomerId: "cus_7", PromotionExpiresAt: 1_900_000_000}
+	recipient := model.RecallRecipient{Id: 22, UserId: 7, StripeCustomerId: "cus_7", PromotionCode: "FKBASE234", PromotionExpiresAt: 1_900_000_000}
 	user := model.User{Id: 7, StripeCustomer: "cus_other"}
 	coupon := &stripe.Coupon{ID: "coupon_11", Valid: true}
 	discount := RecallDiscountConfig{MinimumAmount: 2500, MinimumAmountCurrency: " USD "}
@@ -394,8 +393,12 @@ func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
 		}}
 		service := NewRecallStripeService(client)
 		service.codeGenerator = func(int) (string, error) { return "O0Il1-abc234", nil }
+		generatedCode, err := service.GenerateRecipientPromotionCode()
+		require.NoError(t, err)
+		requestRecipient := recipient
+		requestRecipient.PromotionCode = generatedCode
 
-		promotion, err := service.CreateRecipientPromotion(context.Background(), campaign, recipient, user, coupon, discount)
+		promotion, err := service.CreateRecipientPromotion(context.Background(), campaign, requestRecipient, user, coupon, discount)
 		require.NoError(t, err)
 		require.Equal(t, "promo_11_22", promotion.ID)
 		require.Equal(t, "coupon_11", *captured.Coupon)
@@ -408,6 +411,7 @@ func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
 		require.Equal(t, "22", captured.Metadata["recall_recipient_id"])
 		require.Equal(t, "7", captured.Metadata["flatkey_user_id"])
 		require.Equal(t, "recall_promotion:11:22:1", *captured.IdempotencyKey)
+		require.Equal(t, generatedCode, *captured.Code)
 		require.True(t, strings.HasPrefix(*captured.Code, "FK"))
 		require.Regexp(t, regexp.MustCompile(`^[A-Za-z0-9]+$`), *captured.Code)
 		require.NotRegexp(t, regexp.MustCompile(`[0OIl1]`), strings.TrimPrefix(*captured.Code, "FK"))
@@ -422,9 +426,7 @@ func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
 			}
 			return &stripe.PromotionCode{ID: "promo_after_collision", Code: *params.Code}, nil
 		}}
-		generated := []string{"abc234", "def567"}
 		service := NewRecallStripeService(client)
-		service.codeGenerator = func(int) (string, error) { value := generated[0]; generated = generated[1:]; return value, nil }
 
 		_, err := service.CreateRecipientPromotion(context.Background(), campaign, recipient, user, coupon, discount)
 		require.NoError(t, err)
@@ -436,7 +438,6 @@ func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
 
 	t.Run("transient retry reuses parameters code and key", func(t *testing.T) {
 		var calls []*stripe.PromotionCodeParams
-		generatorCalls := 0
 		client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
 			calls = append(calls, params)
 			if len(calls) == 1 {
@@ -445,13 +446,14 @@ func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
 			return &stripe.PromotionCode{ID: "promo_after_timeout", Code: *params.Code}, nil
 		}}
 		service := NewRecallStripeService(client)
-		service.codeGenerator = func(int) (string, error) { generatorCalls++; return "abc234", nil }
+		generatorCalls := 0
+		service.codeGenerator = func(int) (string, error) { generatorCalls++; return "unused234", nil }
 
 		_, err := service.CreateRecipientPromotion(context.Background(), campaign, recipient, user, coupon, discount)
 		require.NoError(t, err)
 		require.Len(t, calls, 2)
 		require.Same(t, calls[0], calls[1])
-		require.Equal(t, 1, generatorCalls)
+		require.Zero(t, generatorCalls)
 		require.Equal(t, *calls[0].Code, *calls[1].Code)
 		require.Equal(t, *calls[0].IdempotencyKey, *calls[1].IdempotencyKey)
 	})
@@ -470,7 +472,6 @@ func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
 				return nil, tc.err
 			}}
 			service := NewRecallStripeService(client)
-			service.codeGenerator = func(int) (string, error) { return "abc234", nil }
 			_, err := service.CreateRecipientPromotion(context.Background(), campaign, recipient, user, coupon, discount)
 			require.Error(t, err)
 			require.Equal(t, 1, calls)
@@ -485,9 +486,8 @@ func TestRecallStripePromotionCollisionStopsAfterFiveCodes(t *testing.T) {
 		return nil, &stripe.Error{Type: stripe.ErrorTypeInvalidRequest, Param: "code", Msg: "promotion code must be unique among active codes"}
 	}}
 	service := NewRecallStripeService(client)
-	service.codeGenerator = func(int) (string, error) { return fmt.Sprintf("abc23%d", calls), nil }
 	_, err := service.CreateRecipientPromotion(context.Background(), model.RecallCampaign{Id: 1}, model.RecallRecipient{
-		Id: 2, UserId: 3, StripeCustomerId: "cus_3", PromotionExpiresAt: 1_900_000_000,
+		Id: 2, UserId: 3, StripeCustomerId: "cus_3", PromotionCode: "FKBASE234", PromotionExpiresAt: 1_900_000_000,
 	}, model.User{Id: 3}, &stripe.Coupon{ID: "coupon"}, RecallDiscountConfig{})
 	require.ErrorContains(t, err, "collision")
 	require.Equal(t, 5, calls)
@@ -518,6 +518,88 @@ func TestRecallStripeExistingPromotionIsReconciledWithoutCreate(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, existing, promotion)
 	require.False(t, created)
+}
+
+func TestRecallStripePromotionRequiresPersistedBaseCode(t *testing.T) {
+	createCalls := 0
+	client := &recallStripeFakeClient{createPromotionCodeFn: func(context.Context, *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+		createCalls++
+		return &stripe.PromotionCode{ID: "promo_unstable"}, nil
+	}}
+	service := NewRecallStripeService(client)
+	generatorCalls := 0
+	service.codeGenerator = func(int) (string, error) {
+		generatorCalls++
+		return "abc234", nil
+	}
+
+	_, err := service.CreateRecipientPromotion(context.Background(), model.RecallCampaign{Id: 1}, model.RecallRecipient{
+		Id: 2, UserId: 3, StripeCustomerId: "cus_3", PromotionExpiresAt: 1_900_000_000,
+	}, model.User{Id: 3}, &stripe.Coupon{ID: "coupon"}, RecallDiscountConfig{})
+	require.ErrorContains(t, err, "persisted promotion code")
+	require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
+	require.Zero(t, createCalls)
+	require.Zero(t, generatorCalls)
+}
+
+func TestRecallStripePromotionAttemptOneIsStableAcrossCalls(t *testing.T) {
+	var calls []*stripe.PromotionCodeParams
+	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+		calls = append(calls, params)
+		return nil, recallStripeTimeout{}
+	}}
+	service := NewRecallStripeService(client)
+	recipient := model.RecallRecipient{
+		Id: 22, UserId: 7, StripeCustomerId: "cus_7", PromotionCode: "FKSTABLE234", PromotionExpiresAt: 1_900_000_000,
+	}
+
+	_, firstErr := service.CreateRecipientPromotion(context.Background(), model.RecallCampaign{Id: 11}, recipient, model.User{Id: 7}, &stripe.Coupon{ID: "coupon_11"}, RecallDiscountConfig{})
+	_, secondErr := service.CreateRecipientPromotion(context.Background(), model.RecallCampaign{Id: 11}, recipient, model.User{Id: 7}, &stripe.Coupon{ID: "coupon_11"}, RecallDiscountConfig{})
+	require.Error(t, firstErr)
+	require.Error(t, secondErr)
+	require.Len(t, calls, 6)
+	require.Equal(t, *calls[0].Code, *calls[3].Code)
+	require.Equal(t, *calls[0].IdempotencyKey, *calls[3].IdempotencyKey)
+	require.Equal(t, "recall_promotion:11:22:1", *calls[0].IdempotencyKey)
+}
+
+func TestRecallStripePromotionAttemptAfterCollisionIsStableAcrossCalls(t *testing.T) {
+	var calls []*stripe.PromotionCodeParams
+	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+		calls = append(calls, params)
+		switch len(calls) {
+		case 1, 5:
+			return nil, &stripe.Error{Type: stripe.ErrorTypeInvalidRequest, Param: "code", Msg: "promotion code must be unique among active codes"}
+		case 2, 3, 4:
+			return nil, recallStripeTimeout{}
+		case 6:
+			return &stripe.PromotionCode{ID: "promo_stable_attempt_2", Code: *params.Code}, nil
+		default:
+			return nil, errors.New("unexpected Stripe create call")
+		}
+	}}
+	service := NewRecallStripeService(client)
+	generated := []string{"first234", "second567"}
+	service.codeGenerator = func(int) (string, error) {
+		value := generated[0]
+		generated = generated[1:]
+		return value, nil
+	}
+	recipient := model.RecallRecipient{
+		Id: 22, UserId: 7, StripeCustomerId: "cus_7", PromotionCode: "FKBASE234", PromotionExpiresAt: 1_900_000_000,
+	}
+
+	_, firstErr := service.CreateRecipientPromotion(context.Background(), model.RecallCampaign{Id: 11}, recipient, model.User{Id: 7}, &stripe.Coupon{ID: "coupon_11"}, RecallDiscountConfig{})
+	require.Error(t, firstErr)
+	require.True(t, IsRecallStripeRetryable(firstErr))
+	promotion, secondErr := service.CreateRecipientPromotion(context.Background(), model.RecallCampaign{Id: 11}, recipient, model.User{Id: 7}, &stripe.Coupon{ID: "coupon_11"}, RecallDiscountConfig{})
+	require.NoError(t, secondErr)
+	require.Equal(t, "promo_stable_attempt_2", promotion.ID)
+	require.Len(t, calls, 6)
+	require.NotEqual(t, *calls[0].Code, *calls[1].Code)
+	require.Equal(t, *calls[1].Code, *calls[5].Code)
+	require.Equal(t, *calls[1].IdempotencyKey, *calls[5].IdempotencyKey)
+	require.Equal(t, "recall_promotion:11:22:2", *calls[1].IdempotencyKey)
 }
 
 func TestRecallStripeErrorClassification(t *testing.T) {
