@@ -84,6 +84,13 @@ export interface ApiResponse {
   data?: unknown
 }
 
+export interface RegistrationEmailVerificationResponse extends ApiResponse {
+  data?: {
+    verified?: boolean
+    expires_in?: number
+  }
+}
+
 // ============================================================================
 // System Status
 // ============================================================================
