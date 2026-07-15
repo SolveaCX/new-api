@@ -14,6 +14,7 @@ import (
 
 type RecallRuntime struct {
 	Campaigns *RecallCampaignService
+	Claims    *RecallClaimService
 }
 
 var (
@@ -29,6 +30,7 @@ func GetRecallRuntime() *RecallRuntime {
 				NewRecallAudienceSelector(),
 				NewRecallStripeService(nil),
 			),
+			Claims: NewRecallClaimService(),
 		}
 	})
 	return recallRuntime

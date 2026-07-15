@@ -1,5 +1,10 @@
 package service
 
+const (
+	RecallPurchaseKindTopUp        = "topup"
+	RecallPurchaseKindSubscription = "subscription"
+)
+
 type RecallCampaignDraft struct {
 	Name                  string               `json:"name"`
 	AudienceTemplate      string               `json:"audience_template"`
