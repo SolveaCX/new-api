@@ -1,6 +1,10 @@
 package model
 
-import "gorm.io/gorm/clause"
+import (
+	"fmt"
+
+	"gorm.io/gorm/clause"
+)
 
 const (
 	RecallMessageScheduled = "scheduled"
@@ -41,7 +45,7 @@ func ListDueRecallMessageIDs(now int64, limit int) ([]int64, error) {
 	}
 	err := DB.Model(&RecallMessage{}).
 		Where(
-			"(state = ? AND scheduled_at <= ?) OR (state = ? AND next_attempt_at <= ?) OR (state = ? AND (lease_expires_at = 0 OR lease_expires_at < ?))",
+			"(state = ? AND scheduled_at <= ?) OR (state = ? AND next_attempt_at <= ?) OR (state = ? AND lease_expires_at < ?)",
 			RecallMessageScheduled,
 			now,
 			RecallMessageRetryWait,
@@ -57,11 +61,16 @@ func ListDueRecallMessageIDs(now int64, limit int) ([]int64, error) {
 
 func LeaseRecallMessage(id int64, owner string, now int64, leaseUntil int64) (bool, error) {
 	result := DB.Model(&RecallMessage{}).
-		Where("id = ? AND state IN ? AND (lease_expires_at = 0 OR lease_expires_at < ?)", id, []string{
+		Where(
+			"id = ? AND ((state = ? AND scheduled_at <= ?) OR (state = ? AND next_attempt_at <= ?) OR (state = ? AND lease_expires_at < ?))",
+			id,
 			RecallMessageScheduled,
+			now,
 			RecallMessageRetryWait,
+			now,
 			RecallMessageLeased,
-		}, now).
+			now,
+		).
 		Updates(map[string]any{
 			"state":            RecallMessageLeased,
 			"lease_owner":      owner,
@@ -73,16 +82,29 @@ func LeaseRecallMessage(id int64, owner string, now int64, leaseUntil int64) (bo
 	return result.RowsAffected == 1, nil
 }
 
-func CompleteRecallMessageLease(id int64, owner string, from string, to string, fields map[string]any) (bool, error) {
+func CompleteRecallMessageLease(id int64, owner string, expectedLeaseUntil int64, from string, to string, fields map[string]any) (bool, error) {
+	allowedFields := map[string]struct{}{
+		"accepted_at":         {},
+		"failed_at":           {},
+		"provider_message_id": {},
+		"claim_token_hash":    {},
+		"attempt_count":       {},
+		"next_attempt_at":     {},
+		"last_error_code":     {},
+		"last_error_message":  {},
+	}
 	updates := make(map[string]any, len(fields)+3)
 	for key, value := range fields {
+		if _, ok := allowedFields[key]; !ok {
+			return false, fmt.Errorf("unsupported recall message completion field %q", key)
+		}
 		updates[key] = value
 	}
 	updates["state"] = to
 	updates["lease_owner"] = ""
 	updates["lease_expires_at"] = int64(0)
 	result := DB.Model(&RecallMessage{}).
-		Where("id = ? AND lease_owner = ? AND state = ?", id, owner, from).
+		Where("id = ? AND lease_owner = ? AND lease_expires_at = ? AND state = ?", id, owner, expectedLeaseUntil, from).
 		Updates(updates)
 	if result.Error != nil {
 		return false, result.Error
