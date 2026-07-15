@@ -37,13 +37,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { officialWebsiteUrl } from '@/lib/origins'
 import {
+  getOpsAdsReport,
   getOpsReport,
   getOpsStripeReport,
   opsReportQueryKeys,
   type OpsDauScope,
 } from './api'
+import { AdsPilotTab } from './ads-pilot-tab'
 import type {
   OpsCampaignRow,
+  OpsDailyRow,
   OpsDauRow,
   OpsFunnelRow,
   OpsKeywordRow,
@@ -62,6 +65,7 @@ const TAB_VALUES = [
   'registrations',
   'users',
   'campaigns',
+  'ads',
   'funnel',
   'payment',
   'stripe',
@@ -160,7 +164,8 @@ function countryLabel(code: string, locale: string): string {
 }
 
 // All times in this report render in US Pacific Time to match the backend's
-// Pacific day bucketing (and the ads accounts' timezone).
+// Pacific day bucketing. (The Google Ads account itself is America/New_York;
+// its dates join the Pacific buckets with a 3-hour edge skew.)
 const REPORT_TZ = 'America/Los_Angeles'
 
 const formatTimestamp = (timestamp: number): string => {
@@ -249,12 +254,24 @@ function FunnelCells({ row }: { row: OpsFunnelRow }) {
   )
 }
 
-function FunnelHeader({ firstColumn }: { firstColumn: string }) {
+function FunnelHeader({
+  firstColumn,
+  ads,
+}: {
+  firstColumn: string
+  ads?: boolean
+}) {
   const { t } = useTranslation()
   return (
     <TableHeader>
       <TableRow>
         <TableHead>{firstColumn}</TableHead>
+        {ads && (
+          <>
+            <TableHead className='text-right'>{t('Ad Spend')}</TableHead>
+            <TableHead className='text-right'>{t('Ad Clicks')}</TableHead>
+          </>
+        )}
         <TableHead className='text-right'>{t('Registrations')}</TableHead>
         <TableHead className='text-right'>{t('Real Browse')}</TableHead>
         <TableHead className='text-right'>{t('Manual Keys')}</TableHead>
@@ -283,6 +300,39 @@ function FunnelTable({
           {rows.map((row) => (
             <TableRow key={row.key}>
               <TableCell className='whitespace-nowrap'>{row.key}</TableCell>
+              <FunnelCells row={row} />
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+// Daily funnel table with the day's paid-ads totals (spend + clicks, all
+// campaigns) ahead of the registration funnel; the spend cell also shows CPC.
+function DailyFunnelTable({ rows }: { rows: OpsDailyRow[] }) {
+  const { t } = useTranslation()
+  return (
+    <div className='overflow-x-auto'>
+      <Table className={TABLE_GRID}>
+        <FunnelHeader firstColumn={t('Date')} ads />
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.key}>
+              <TableCell className='whitespace-nowrap'>{row.key}</TableCell>
+              <TableCell className='text-right whitespace-nowrap'>
+                {row.ads_cost_usd > 0 ? usd(row.ads_cost_usd) : '-'}
+                {row.ads_clicks > 0 && (
+                  <span className='text-muted-foreground text-xs'>
+                    {' '}
+                    (CPC {usd(row.ads_cost_usd / row.ads_clicks)})
+                  </span>
+                )}
+              </TableCell>
+              <TableCell className='text-right'>
+                {row.ads_clicks > 0 ? row.ads_clicks : '-'}
+              </TableCell>
               <FunnelCells row={row} />
             </TableRow>
           ))}
@@ -953,6 +1003,16 @@ export function OpsReport() {
   })
   const stripeReport = stripeQuery.data?.data
 
+  // AdPilot board data is pushed to the DB by the ops machine; cheap to read
+  // but only needed on its own tab.
+  const adsQuery = useQuery({
+    queryKey: opsReportQueryKeys.ads(days),
+    queryFn: () => getOpsAdsReport(days),
+    enabled: tab === 'ads',
+    retry: false,
+  })
+  const adsReport = adsQuery.data?.data
+
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>
@@ -996,6 +1056,7 @@ export function OpsReport() {
                   {t('Registered Users')}
                 </TabsTrigger>
                 <TabsTrigger value='campaigns'>{t('Ad Campaigns')}</TabsTrigger>
+                <TabsTrigger value='ads'>{t('Ads Automation')}</TabsTrigger>
                 <TabsTrigger value='funnel'>
                   {t('Registration Funnel (Weekly)')}
                 </TabsTrigger>
@@ -1028,7 +1089,7 @@ export function OpsReport() {
                         }))}
                       yLabel={t('Registrations')}
                     />
-                    <FunnelTable rows={report.daily} firstColumn={t('Date')} />
+                    <DailyFunnelTable rows={report.daily} />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -1068,6 +1129,22 @@ export function OpsReport() {
                     <KeywordTable rows={report.keyword_funnel ?? []} />
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value='ads'>
+                {adsQuery.isLoading ? (
+                  <Skeleton className='h-40 w-full' />
+                ) : adsReport ? (
+                  <AdsPilotTab report={adsReport} days={days} />
+                ) : (
+                  <Card>
+                    <CardContent className='text-muted-foreground pt-6 text-sm'>
+                      {adsQuery.isError
+                        ? t('Failed to load ads data.')
+                        : t('No ads data yet — waiting for the first pipeline push.')}
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
 
               <TabsContent value='funnel'>
