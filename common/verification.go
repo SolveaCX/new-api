@@ -231,6 +231,9 @@ func RegisterRegistrationEmailLink(email string) (string, error) {
 
 	registrationEmailVerificationMutex.Lock()
 	defer registrationEmailVerificationMutex.Unlock()
+	if previousToken, ok := registrationEmailMemoryGet(currentKey); ok && previousToken != token {
+		delete(registrationEmailVerificationMap, registrationEmailLinkPrefix+previousToken)
+	}
 	if !registrationEmailMemorySetBatch(map[string]string{
 		linkKey:    email,
 		currentKey: token,
