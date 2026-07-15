@@ -134,9 +134,11 @@ func (AdsPilotMeta) TableName() string {
 	return "ads_pilot_meta"
 }
 
-func GetAdsPilotCampaignDaily(sinceDate string) ([]*AdsPilotCampaignDaily, error) {
+// Bounded on both ends so stray future-dated rows (a pipeline bug or prefill)
+// can never leak into the report window.
+func GetAdsPilotCampaignDaily(sinceDate, untilDate string) ([]*AdsPilotCampaignDaily, error) {
 	var rows []*AdsPilotCampaignDaily
-	err := DB.Where("date >= ?", sinceDate).Order("date").Find(&rows).Error
+	err := DB.Where("date >= ? AND date <= ?", sinceDate, untilDate).Order("date").Find(&rows).Error
 	return rows, err
 }
 

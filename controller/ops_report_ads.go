@@ -63,7 +63,7 @@ func GetOpsAdsPilotReport(c *gin.Context) {
 	now := time.Now()
 	since := opsDay(now.Unix() - int64(days-1)*86400)
 
-	daily, err := model.GetAdsPilotCampaignDaily(since)
+	daily, err := model.GetAdsPilotCampaignDaily(since, opsDay(now.Unix()))
 	if err != nil {
 		common.ApiError(c, err)
 		return

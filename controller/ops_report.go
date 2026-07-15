@@ -342,7 +342,10 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 	// Refresh ads spend from the Google Ads API when stale (no-op without
 	// creds; failures log and the report renders with the last synced rows).
 	opsSyncAdsSpend()
-	adsDaily, err := model.GetOpsAdsSpendDaily(opsDay(startTs))
+	// dayStarts[len-2] is the start of the window's last day (today); bounding
+	// the read to it keeps the join on the same window snapshot even when the
+	// request straddles a Pacific midnight.
+	adsDaily, err := model.GetOpsAdsSpendDaily(opsDay(startTs), opsDay(dayStarts[len(dayStarts)-2]))
 	if err != nil {
 		return nil, err
 	}
@@ -362,10 +365,10 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 }
 
 // opsAttachAdsSpend joins per-day ads totals onto the daily funnel rows by
-// date string (both are Pacific days). A day with spend but zero registrations
-// gets a zero funnel row so spend never silently disappears from the table;
-// tomorrow's ads dates (the ads account day can run ahead of a UTC server day)
-// are dropped along with any date outside the funnel window.
+// date string. Callers pass ads rows already bounded to the funnel window, so
+// no clock is read here — re-reading "today" could disagree with the window
+// snapshot across a Pacific midnight. A day with spend but zero registrations
+// gets a zero funnel row so spend never silently disappears from the table.
 func opsAttachAdsSpend(rows []opsFunnelRow, ads []*model.AdsSpendDaily) []opsDailyRow {
 	byDate := make(map[string]*model.AdsSpendDaily, len(ads))
 	for _, a := range ads {
@@ -382,9 +385,8 @@ func opsAttachAdsSpend(rows []opsFunnelRow, ads []*model.AdsSpendDaily) []opsDai
 		seen[row.Key] = true
 		daily = append(daily, dr)
 	}
-	today := opsDay(time.Now().Unix())
 	for date, a := range byDate {
-		if seen[date] || date > today || (a.CostUSD == 0 && a.Clicks == 0) {
+		if seen[date] || (a.CostUSD == 0 && a.Clicks == 0) {
 			continue
 		}
 		daily = append(daily, opsDailyRow{

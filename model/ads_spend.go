@@ -24,11 +24,12 @@ func (AdsSpendDaily) TableName() string {
 	return "ads_spend_daily"
 }
 
-// GetOpsAdsSpendDaily returns ads spend rows for dates >= sinceDate
-// (YYYY-MM-DD; lexicographic order equals date order).
-func GetOpsAdsSpendDaily(sinceDate string) ([]*AdsSpendDaily, error) {
+// GetOpsAdsSpendDaily returns ads spend rows for sinceDate <= date <=
+// untilDate (YYYY-MM-DD; lexicographic order equals date order). Bounded on
+// both ends so rows outside the report window never reach the join.
+func GetOpsAdsSpendDaily(sinceDate, untilDate string) ([]*AdsSpendDaily, error) {
 	var rows []*AdsSpendDaily
-	err := DB.Where("date >= ?", sinceDate).Find(&rows).Error
+	err := DB.Where("date >= ? AND date <= ?", sinceDate, untilDate).Find(&rows).Error
 	return rows, err
 }
 
