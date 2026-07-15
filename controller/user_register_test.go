@@ -182,6 +182,26 @@ func TestRegisterAcceptsMatchingRegistrationEmailGrantWithoutCode(t *testing.T) 
 	require.False(t, common.VerifyRegistrationEmailGrant(grant, "grant-user@example.com"))
 }
 
+func TestClearingOneSessionDoesNotRevokeAnotherSessionsSharedGrant(t *testing.T) {
+	grant, sessionCookie := issueRegistrationEmailGrantCookie(t, "shared-grant@example.com")
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("register-session-test"))))
+	router.POST("/clear-grant", func(c *gin.Context) {
+		clearRegistrationEmailGrantSession(c)
+		require.NoError(t, sessions.Default(c).Save())
+		c.Status(http.StatusNoContent)
+	})
+	request := httptest.NewRequest(http.MethodPost, "/clear-grant", nil)
+	request.AddCookie(sessionCookie)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	require.True(t, common.VerifyRegistrationEmailGrant(grant, "shared-grant@example.com"))
+}
+
 func TestRegisterRejectsRegistrationEmailGrantForDifferentEmail(t *testing.T) {
 	setupModelListControllerTestDB(t)
 	configureRegistrationEndpointTest(t)
