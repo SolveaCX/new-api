@@ -5,6 +5,12 @@ const (
 	RecallPurchaseKindSubscription = "subscription"
 )
 
+type RecallCheckoutDiscount struct {
+	PromotionCodeID string `json:"promotion_code_id"`
+	CampaignID      int64  `json:"campaign_id"`
+	RecipientID     int64  `json:"recipient_id"`
+}
+
 type RecallCampaignDraft struct {
 	Name                  string               `json:"name"`
 	AudienceTemplate      string               `json:"audience_template"`

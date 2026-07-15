@@ -17,7 +17,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/stripe/stripe-go/v81"
 )
 
 var (
@@ -133,7 +132,7 @@ func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, clai
 	return record, view, nil
 }
 
-func (s *RecallClaimService) BuildCheckoutDiscount(ctx context.Context, userID int, claim string, purchaseKind string, priceID string) (*stripe.CheckoutSessionDiscountParams, error) {
+func (s *RecallClaimService) BuildCheckoutDiscount(ctx context.Context, userID int, claim string, purchaseKind string, priceID string) (*RecallCheckoutDiscount, error) {
 	if strings.TrimSpace(claim) == "" {
 		return nil, nil
 	}
@@ -153,7 +152,11 @@ func (s *RecallClaimService) BuildCheckoutDiscount(ctx context.Context, userID i
 	if !containsRecallPriceID(allowedPrices, priceID) {
 		return nil, ErrRecallClaimWrongPrice
 	}
-	return &stripe.CheckoutSessionDiscountParams{PromotionCode: stripe.String(strings.TrimSpace(*record.Recipient.StripePromotionCodeId))}, nil
+	return &RecallCheckoutDiscount{
+		PromotionCodeID: strings.TrimSpace(*record.Recipient.StripePromotionCodeId),
+		CampaignID:      view.CampaignID,
+		RecipientID:     view.RecipientID,
+	}, nil
 }
 
 type recallUnsubscribePayload struct {
