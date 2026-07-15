@@ -23,6 +23,64 @@ export function getRegistrationEmailToken(hash: string): string | null {
   return token || null
 }
 
+declare global {
+  interface Window {
+    __consumeRegistrationEmailVerificationToken?: () => string | null
+  }
+}
+
+let bootstrappedRegistrationEmailToken: string | null | undefined
+
+export function consumeRegistrationEmailVerificationToken(): string | null {
+  if (bootstrappedRegistrationEmailToken !== undefined) {
+    return bootstrappedRegistrationEmailToken
+  }
+  if (typeof window === 'undefined') return null
+
+  bootstrappedRegistrationEmailToken =
+    window.__consumeRegistrationEmailVerificationToken?.() ?? null
+  return bootstrappedRegistrationEmailToken
+}
+
+export type EmailVerificationScreenState =
+  | 'verifying'
+  | 'verified'
+  | 'unavailable'
+
+type ResolveRegistrationEmailVerificationDependencies = {
+  exchangeToken: (token: string) => Promise<unknown>
+}
+
+export async function resolveRegistrationEmailVerification(
+  token: string | null,
+  dependencies: ResolveRegistrationEmailVerificationDependencies
+): Promise<EmailVerificationScreenState> {
+  if (!token) return 'unavailable'
+
+  try {
+    const response = await dependencies.exchangeToken(token)
+    return isRegistrationEmailVerified(response) ? 'verified' : 'unavailable'
+  } catch {
+    return 'unavailable'
+  }
+}
+
+export function startRegistrationEmailVerificationEffect(
+  token: string | null,
+  dependencies: ResolveRegistrationEmailVerificationDependencies,
+  onResolved: (state: EmailVerificationScreenState) => void
+): () => void {
+  let active = true
+  void resolveRegistrationEmailVerification(token, dependencies).then(
+    (nextState) => {
+      if (active) onResolved(nextState)
+    }
+  )
+  return () => {
+    active = false
+  }
+}
+
 export function isRegistrationEmailVerified(response: unknown): boolean {
   if (!response || typeof response !== 'object') return false
 

@@ -194,6 +194,28 @@ func TestRegistrationEmailGrantMemoryMatchesExactEmail(t *testing.T) {
 	}
 }
 
+func TestRegistrationEmailMemorySetReclaimsExpiredCredentials(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+
+	registrationEmailVerificationMutex.Lock()
+	registrationEmailVerificationMap["expired-unused-link"] = verificationValue{
+		code: "user@example.com",
+		time: time.Now().Add(-registrationEmailCredentialTTL() - time.Second),
+	}
+	registrationEmailMemorySet("fresh-grant", "user@example.com")
+	_, expiredStillStored := registrationEmailVerificationMap["expired-unused-link"]
+	_, freshStored := registrationEmailVerificationMap["fresh-grant"]
+	registrationEmailVerificationMutex.Unlock()
+
+	if expiredStillStored {
+		t.Fatal("expected an expired unreferenced credential to be reclaimed")
+	}
+	if !freshStored {
+		t.Fatal("expected the newly inserted credential to remain stored")
+	}
+}
+
 func TestRegistrationEmailLinkRedisCrossInstanceAndExpiry(t *testing.T) {
 	mr, cleanup := setupMiniredis(t)
 	defer cleanup()

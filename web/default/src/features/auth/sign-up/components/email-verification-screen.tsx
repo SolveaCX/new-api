@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, CircleAlert, CircleCheck, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -24,60 +24,13 @@ import { Button } from '@/components/ui/button'
 import { exchangeRegistrationEmailToken } from '../../api'
 import { AuthLayout } from '../../auth-layout'
 import {
-  getRegistrationEmailToken,
-  isRegistrationEmailVerified,
+  consumeRegistrationEmailVerificationToken,
+  startRegistrationEmailVerificationEffect,
+  type EmailVerificationScreenState,
 } from '../../lib/registration-email-verification'
-
-export type EmailVerificationScreenState =
-  | 'verifying'
-  | 'verified'
-  | 'unavailable'
-
-type ResolveRegistrationEmailVerificationDependencies = {
-  clearFragment: () => void
-  exchangeToken: (token: string) => Promise<unknown>
-}
 
 type EmailVerificationStatusContentProps = {
   state: EmailVerificationScreenState
-}
-
-export async function resolveRegistrationEmailVerification(
-  hash: string,
-  dependencies: ResolveRegistrationEmailVerificationDependencies
-): Promise<EmailVerificationScreenState> {
-  const token = getRegistrationEmailToken(hash)
-  if (!token) return 'unavailable'
-
-  dependencies.clearFragment()
-  try {
-    const response = await dependencies.exchangeToken(token)
-    return isRegistrationEmailVerified(response) ? 'verified' : 'unavailable'
-  } catch {
-    return 'unavailable'
-  }
-}
-
-export function startRegistrationEmailVerificationEffect(
-  hash: string,
-  dependencies: ResolveRegistrationEmailVerificationDependencies,
-  onResolved: (state: EmailVerificationScreenState) => void
-): () => void {
-  let active = true
-  void resolveRegistrationEmailVerification(hash, dependencies).then(
-    (nextState) => {
-      if (active) onResolved(nextState)
-    }
-  )
-  return () => {
-    active = false
-  }
-}
-
-function clearRegistrationEmailVerificationFragment() {
-  if (typeof window === 'undefined') return
-  const cleanUrl = `${window.location.pathname}${window.location.search}`
-  window.history.replaceState(window.history.state, '', cleanUrl)
 }
 
 export function EmailVerificationStatusContent(
@@ -139,23 +92,20 @@ export function EmailVerificationStatusContent(
 
 export function EmailVerificationScreen() {
   const { t } = useTranslation()
-  const initialHash = useRef(
-    typeof window === 'undefined' ? '' : window.location.hash
-  )
+  const [token] = useState(consumeRegistrationEmailVerificationToken)
   const [state, setState] = useState<EmailVerificationScreenState>(() =>
-    getRegistrationEmailToken(initialHash.current) ? 'verifying' : 'unavailable'
+    token ? 'verifying' : 'unavailable'
   )
 
   useEffect(() => {
     return startRegistrationEmailVerificationEffect(
-      initialHash.current,
+      token,
       {
-        clearFragment: clearRegistrationEmailVerificationFragment,
         exchangeToken: exchangeRegistrationEmailToken,
       },
       setState
     )
-  }, [])
+  }, [token])
 
   return (
     <AuthLayout>

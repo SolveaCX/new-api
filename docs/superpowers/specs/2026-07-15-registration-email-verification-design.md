@@ -1,7 +1,7 @@
 # Flatkey Registration Email Verification Design
 
-**Date:** 2026-07-15  
-**Status:** Approved direction, pending written-spec review  
+**Date:** 2026-07-15
+**Status:** Approved direction, pending written-spec review
 **Scope:** Registration verification email, one-click email verification, and registration-form acknowledgement
 
 ## Goal

@@ -72,6 +72,10 @@ import {
   markEmailSent,
   markEmailVerified,
 } from '@/features/auth/sign-up/lib/email-verification-state'
+import {
+  createEmailVerificationStatusRefresher,
+  refreshRegistrationEmailVerificationState,
+} from '@/features/auth/sign-up/lib/email-verification-status'
 
 export function SignUpForm({
   className,
@@ -165,47 +169,53 @@ export function SignUpForm({
   }, [])
 
   useEffect(() => {
-    if (!emailVerificationRequired || !emailVerificationStatusTarget) return
-
-    let active = true
-    let latestRequest = 0
-
-    const refreshVerificationStatus = async () => {
-      const request = ++latestRequest
-
-      try {
-        const response = await getRegistrationEmailVerificationStatus(
-          emailVerificationStatusTarget
-        )
-        if (
-          !active ||
-          request !== latestRequest ||
-          currentEmailRef.current !== emailVerificationStatusTarget
-        ) {
-          return
-        }
-        if (!isRegistrationEmailVerified(response)) return
-
-        setEmailVerificationState((current) =>
-          canApplyEmailVerificationStatus(
-            current,
-            currentEmailRef.current,
-            emailVerificationStatusTarget
-          )
-            ? markEmailVerified(current, emailVerificationStatusTarget)
-            : current
-        )
-      } catch (_error) {
-        // The server remains authoritative; a later focus event can retry.
-      }
+    if (
+      !emailVerificationRequired ||
+      !emailVerificationStatusTarget ||
+      emailVerified
+    ) {
+      return
     }
 
+    let active = true
+
+    const statusRefresher = createEmailVerificationStatusRefresher({
+      cooldownMs: 1_000,
+      now: Date.now,
+      refresh: async () => {
+        try {
+          const response = await getRegistrationEmailVerificationStatus(
+            emailVerificationStatusTarget
+          )
+          if (
+            !active ||
+            currentEmailRef.current !== emailVerificationStatusTarget
+          ) {
+            return
+          }
+          if (!isRegistrationEmailVerified(response)) return
+
+          setEmailVerificationState((current) =>
+            canApplyEmailVerificationStatus(
+              current,
+              currentEmailRef.current,
+              emailVerificationStatusTarget
+            )
+              ? markEmailVerified(current, emailVerificationStatusTarget)
+              : current
+          )
+        } catch (_error) {
+          // The server remains authoritative; a later focus event can retry.
+        }
+      },
+    })
+
     const handleFocus = () => {
-      void refreshVerificationStatus()
+      void statusRefresher.refresh()
     }
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        void refreshVerificationStatus()
+        void statusRefresher.refresh()
       }
     }
 
@@ -214,11 +224,11 @@ export function SignUpForm({
 
     return () => {
       active = false
-      latestRequest += 1
+      statusRefresher.stop()
       window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [emailVerificationRequired, emailVerificationStatusTarget])
+  }, [emailVerificationRequired, emailVerificationStatusTarget, emailVerified])
 
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     trackAdsFunnelEvent('flatkey_signup_submit', {
@@ -235,19 +245,33 @@ export function SignUpForm({
         toast.error(t('Please enter your email'))
         return
       }
-      if (
-        isVerificationCodeRequired(emailVerificationState, data.email) &&
-        !verificationCode
-      ) {
-        trackAdsFunnelEvent('flatkey_signup_validation_error', {
-          reason: 'missing_verification_code',
-        })
-        toast.error(t('Please enter the verification code'))
-        return
+      if (!verificationCode) {
+        setIsLoading(true)
+        let refreshedState = emailVerificationState
+        try {
+          refreshedState = await refreshRegistrationEmailVerificationState(
+            emailVerificationState,
+            data.email,
+            getRegistrationEmailVerificationStatus
+          )
+          setEmailVerificationState(refreshedState)
+        } catch (_error) {
+          // Fall through to the code requirement when status cannot be read.
+        }
+
+        if (isVerificationCodeRequired(refreshedState, data.email)) {
+          setIsLoading(false)
+          trackAdsFunnelEvent('flatkey_signup_validation_error', {
+            reason: 'missing_verification_code',
+          })
+          toast.error(t('Please enter the verification code'))
+          return
+        }
       }
     }
 
     if (!validateTurnstile()) {
+      setIsLoading(false)
       trackAdsFunnelEvent('flatkey_signup_validation_error', {
         reason: 'turnstile',
       })
