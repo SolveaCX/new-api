@@ -267,37 +267,141 @@ func RemoveStripeCard(c *gin.Context) {
 
 // --- Automatic off-session charging ---
 
-// autoChargeInFlight prevents concurrent auto-charges for the same user (e.g. a burst of
-// requests all crossing the threshold at once).
+// autoChargeInFlight prevents concurrent auto-charges for the same user on this node
+// (e.g. a burst of requests all crossing the threshold at once). Cross-node correctness
+// does NOT depend on it: the DB-side episode claim is the authoritative guard (Rule 11).
 var autoChargeInFlight sync.Map
 
 // autoChargeCooldownSeconds is the minimum gap between two automatic charges for one user,
-// guarding against repeated charges before the credited quota propagates.
+// guarding against repeated charges before the credited quota propagates. It is enforced
+// authoritatively inside model.ClaimStripeAutoTopUpEpisode (DB-side, cross-node); the
+// in-memory autoChargeLastAt map is only a cheap local pre-filter.
 const autoChargeCooldownSeconds int64 = 120
 
-// autoChargeLastAt tracks the last auto-charge time per user (unix seconds).
+// autoChargeLastAt tracks the last auto-charge attempt per user on this node (unix seconds).
 var autoChargeLastAt sync.Map
+
+// Stripe seams, replaceable in tests so no test ever hits the network.
+var (
+	stripeAutoChargeCreatePaymentIntent = func(params *stripe.PaymentIntentParams) (*stripe.PaymentIntent, error) {
+		return stripepaymentintent.New(params)
+	}
+	stripeAutoChargeFindPaymentMethod = findDefaultPaymentMethodId
+	stripeAutoChargeResolveCurrency   = resolveStripeCurrency
+)
 
 func init() {
 	// Register the controller-side implementation with the service hook.
 	service.TriggerStripeAutoCharge = performStripeAutoCharge
 }
 
-// performStripeAutoCharge charges the user's bound card off-session for the configured amount
-// and credits the resulting quota. It is invoked asynchronously from the relay hot path, so it
-// must never panic the caller; all failures are logged and left for the next trigger.
+// autoTopUpConfig is the effective auto top-up configuration for one user.
+type autoTopUpConfig struct {
+	ThresholdUSD int
+	AmountUSD    int
+	// UserOptIn is true when the config comes from the user's own opt-in setting
+	// (definitive card failures then disable that setting), false when it comes from
+	// the legacy operator-level StripeAutoCharge* options.
+	UserOptIn bool
+}
+
+// resolveAutoTopUpConfig returns the effective auto top-up config for the user.
+// Precedence: the user's own opt-in setting wins; otherwise the legacy global
+// auto-charge config applies when the operator enabled it. An opted-in user whose
+// stored values fail validation is treated as disabled (never silently re-priced).
+func resolveAutoTopUpConfig(user *model.User) (autoTopUpConfig, bool) {
+	if user == nil {
+		return autoTopUpConfig{}, false
+	}
+	userSetting := user.GetSetting()
+	if userSetting.AutoTopUpEnabled {
+		if setting.StripeAutoTopUpDailyMaxCharges <= 0 {
+			return autoTopUpConfig{}, false
+		}
+		if err := validateAutoTopUpParams(userSetting.AutoTopUpThresholdUSD, userSetting.AutoTopUpAmountUSD); err != nil {
+			logger.LogWarn(nil, fmt.Sprintf("Stripe 自动充值：用户配置无效，跳过 user_id=%d error=%q", user.Id, err.Error()))
+			return autoTopUpConfig{}, false
+		}
+		return autoTopUpConfig{
+			ThresholdUSD: userSetting.AutoTopUpThresholdUSD,
+			AmountUSD:    userSetting.AutoTopUpAmountUSD,
+			UserOptIn:    true,
+		}, true
+	}
+	if setting.StripeAutoChargeEnabled {
+		return autoTopUpConfig{
+			ThresholdUSD: setting.StripeAutoChargeThreshold,
+			AmountUSD:    setting.StripeAutoChargeAmount,
+		}, true
+	}
+	return autoTopUpConfig{}, false
+}
+
+// isDefinitiveAutoChargeCardFailure reports whether an off-session PaymentIntent error is
+// a definitive card problem (declined, expired, requires on-session authentication, ...)
+// rather than a transient API/network fault. Definitive failures disable the user's
+// opt-in so a dead card is not retried against Stripe on every exhaustion episode.
+func isDefinitiveAutoChargeCardFailure(err error) bool {
+	var stripeErr *stripe.Error
+	if !errors.As(err, &stripeErr) {
+		return false
+	}
+	if stripeErr.Type == stripe.ErrorTypeCard {
+		return true
+	}
+	switch stripeErr.Code {
+	case stripe.ErrorCodeAuthenticationRequired,
+		stripe.ErrorCodeCardDeclined,
+		stripe.ErrorCodeExpiredCard,
+		stripe.ErrorCodePaymentIntentAuthenticationFailure:
+		return true
+	}
+	return false
+}
+
+// handleStripeAutoChargeFailure records a user-visible failure log and, for definitive
+// card failures on the opt-in path, turns the user's auto top-up off (no tight retry
+// loops: the failed claim row already consumed a daily slot and arms the cooldown).
+func handleStripeAutoChargeFailure(userId int, cfg autoTopUpConfig, reason string, definitive bool) {
+	model.RecordStripeAutoChargeFailure(userId, cfg.AmountUSD, reason)
+	if !cfg.UserOptIn || !definitive {
+		return
+	}
+	changed, err := model.DisableUserAutoTopUpSetting(userId)
+	if err != nil {
+		logger.LogError(nil, fmt.Sprintf("Stripe 自动充值：停用用户自动充值失败 user_id=%d error=%q", userId, err.Error()))
+		return
+	}
+	if changed {
+		model.RecordLog(userId, model.LogTypeSystem, "自动充值已因扣款失败自动关闭，请检查或更新支付方式后在控制台重新开启。")
+		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动充值已自动停用 user_id=%d reason=%q", userId, reason))
+	}
+}
+
+// performStripeAutoCharge charges the user's bound card off-session for the configured
+// amount and credits the resulting quota. It is invoked asynchronously from the relay hot
+// path; all failures are logged and left for the next trigger. Off-session charges are
+// merchant-initiated transactions and therefore exempt from the 3DS requirement that the
+// on-session Checkout flow requests.
+//
+// Multi-node idempotency (Rule 11): before touching Stripe, the node must win a DB-side
+// episode claim (model.ClaimStripeAutoTopUpEpisode) — a pending top-up order whose
+// trade_no is deterministic per (user, UTC day, slot) and protected by the trade_no
+// unique index, with the daily cap and cooldown evaluated in the same claim. The Stripe
+// idempotency key is derived from that order's trade_no, so even a stripe-go internal
+// retry cannot double-charge one claim.
 func performStripeAutoCharge(userId int) {
-	if userId <= 0 || !setting.StripeAutoChargeEnabled {
+	if userId <= 0 {
 		return
 	}
 
-	// In-flight dedup: only one charge per user at a time.
+	// In-flight dedup: only one evaluation per user at a time on this node.
 	if _, loaded := autoChargeInFlight.LoadOrStore(userId, true); loaded {
 		return
 	}
 	defer autoChargeInFlight.Delete(userId)
 
-	// Cooldown: skip if we charged very recently.
+	// Local cooldown pre-filter: skip if this node attempted a charge very recently.
 	now := time.Now().Unix()
 	if last, ok := autoChargeLastAt.Load(userId); ok {
 		if lastAt, ok2 := last.(int64); ok2 && now-lastAt < autoChargeCooldownSeconds {
@@ -305,21 +409,25 @@ func performStripeAutoCharge(userId int) {
 		}
 	}
 
-	// Persistent cooldown (cross-instance / restart-safe): the in-memory guard above
-	// is lost on restart and not shared between replicas, so also check the DB for a
-	// recent auto-charge before billing the card again.
-	if recent, err := model.HasRecentStripeAutoCharge(userId, autoChargeCooldownSeconds); err != nil {
-		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动扣费：查询近期扣费记录失败，跳过本次以防重复扣款 user_id=%d error=%q", userId, err.Error()))
-		return
-	} else if recent {
-		return
-	}
-
 	user, err := model.GetUserById(userId, false)
 	if err != nil || user == nil {
 		return
 	}
+	cfg, enabled := resolveAutoTopUpConfig(user)
+	if !enabled {
+		return
+	}
 	if !user.StripeCardBound || strings.TrimSpace(user.StripeCustomer) == "" {
+		return
+	}
+
+	// Cross-format cooldown pre-filter (also covers legacy-format rows written by nodes
+	// still running the previous release during a rolling deploy).
+	if recent, err := model.HasRecentStripeAutoCharge(userId, autoChargeCooldownSeconds); err != nil {
+		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动充值：查询近期扣费记录失败，跳过本次以防重复扣款 user_id=%d error=%q", userId, err.Error()))
+		return
+	} else if recent {
+		autoChargeLastAt.Store(userId, now)
 		return
 	}
 
@@ -328,49 +436,60 @@ func performStripeAutoCharge(userId int) {
 	if err != nil {
 		return
 	}
-	threshold := setting.StripeAutoChargeThreshold * int(common.QuotaPerUnit)
+	threshold := cfg.ThresholdUSD * int(common.QuotaPerUnit)
 	if threshold <= 0 || freshQuota >= threshold {
 		return
 	}
-
-	amountUnits := setting.StripeAutoChargeAmount
+	amountUnits := cfg.AmountUSD
 	if amountUnits <= 0 {
 		return
 	}
 
 	if err := ensureStripeKey(); err != nil {
-		logger.LogError(nil, fmt.Sprintf("Stripe 自动扣费：密钥无效 user_id=%d error=%q", userId, err.Error()))
+		logger.LogError(nil, fmt.Sprintf("Stripe 自动充值：密钥无效 user_id=%d error=%q", userId, err.Error()))
 		return
 	}
 
 	// Resolve currency from the configured template price (same source as manual top-up).
-	currency := resolveStripeCurrency()
-
+	currency := stripeAutoChargeResolveCurrency()
 	money := float64(amountUnits) * setting.StripeUnitPrice
 	minorAmount, err := stripeMinorUnitAmount(money, currency)
 	if err != nil {
-		logger.LogError(nil, fmt.Sprintf("Stripe 自动扣费：金额换算失败 user_id=%d error=%q", userId, err.Error()))
+		logger.LogError(nil, fmt.Sprintf("Stripe 自动充值：金额换算失败 user_id=%d error=%q", userId, err.Error()))
 		return
 	}
 
-	// A unique key for this attempt window, used for the in-flight cooldown row's trade_no
-	// so concurrent failures don't collide on the unique index.
-	attemptKey := strconv.Itoa(userId) + "_" + strconv.FormatInt(now, 10)
-	// markFailedCooldown records a failed attempt to both the in-memory and the persistent
-	// (cross-instance / restart-safe) cooldown, so a declined/unusable card does not trigger
-	// a charge attempt on every relay request.
-	markFailedCooldown := func() {
-		autoChargeLastAt.Store(userId, time.Now().Unix())
-		model.RecordStripeAutoChargeAttempt(userId, amountUnits, attemptKey)
+	dailyCap := setting.StripeAutoTopUpDailyMaxCharges
+	if dailyCap <= 0 && !cfg.UserOptIn {
+		// The legacy global path predates the cap option; never let a misconfigured cap
+		// turn it into an unbounded charger — fall back to the shipped default.
+		dailyCap = 2
 	}
+	day := time.Now().UTC().Format("20060102")
+	order, claimed, err := model.ClaimStripeAutoTopUpEpisode(userId, day, dailyCap, autoChargeCooldownSeconds, amountUnits, money)
+	if err != nil {
+		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动充值：预占订单失败，跳过本次以防重复扣款 user_id=%d error=%q", userId, err.Error()))
+		return
+	}
+	if !claimed {
+		// Daily cap reached, cooling down, or a concurrent node owns this episode.
+		autoChargeLastAt.Store(userId, now)
+		return
+	}
+
+	autoChargeLastAt.Store(userId, time.Now().Unix())
 
 	// Find the customer's default card payment method.
 	customerId := strings.TrimSpace(user.StripeCustomer)
-	paymentMethodId := findDefaultPaymentMethodId(customerId)
+	paymentMethodId := stripeAutoChargeFindPaymentMethod(customerId)
 	if paymentMethodId == "" {
-		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动扣费：未找到可用支付方式 user_id=%d customer=%s", userId, customerId))
-		markFailedCooldown()
-		model.RecordStripeAutoChargeFailure(userId, amountUnits, "未找到可用的支付方式")
+		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动充值：未找到可用支付方式 user_id=%d customer=%s trade_no=%s", userId, customerId, order.TradeNo))
+		if err := model.MarkStripeAutoTopUpOrderFailed(order.TradeNo, ""); err != nil {
+			logger.LogError(nil, fmt.Sprintf("Stripe 自动充值：标记订单失败状态失败 trade_no=%s error=%q", order.TradeNo, err.Error()))
+		}
+		// No card on file is definitive for the opt-in path: without a payment method the
+		// next episode cannot succeed either.
+		handleStripeAutoChargeFailure(userId, cfg, "未找到可用的支付方式", true)
 		return
 	}
 
@@ -383,46 +502,52 @@ func performStripeAutoCharge(userId int) {
 		OffSession:    stripe.Bool(true),
 	}
 	params.Metadata = map[string]string{
-		"user_id": strconv.Itoa(userId),
-		"purpose": "auto_charge",
+		"user_id":  strconv.Itoa(userId),
+		"purpose":  "auto_topup",
+		"trade_no": order.TradeNo,
 	}
-	// Idempotency key guards against stripe-go retrying on a network error and double-charging.
-	// Scoped to the attempt window so a genuine later charge (new window) is not blocked.
-	params.SetIdempotencyKey("autocharge_" + attemptKey)
+	// Idempotency key derived from the claimed order id: a stripe-go internal retry (or a
+	// replay of this exact claim) can never produce a second charge.
+	params.SetIdempotencyKey("autotopup_" + order.TradeNo)
 
-	intent, err := stripepaymentintent.New(params)
+	intent, err := stripeAutoChargeCreatePaymentIntent(params)
 	if err != nil {
-		// Off-session failures (e.g. authentication_required / declined) are expected; log and bail.
-		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动扣费失败 user_id=%d amount_units=%d error=%q", userId, amountUnits, err.Error()))
-		markFailedCooldown()
-		model.RecordStripeAutoChargeFailure(userId, amountUnits, "扣款被拒绝或需要验证")
+		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动充值扣款失败 user_id=%d trade_no=%s amount_units=%d error=%q", userId, order.TradeNo, amountUnits, err.Error()))
+		if markErr := model.MarkStripeAutoTopUpOrderFailed(order.TradeNo, ""); markErr != nil {
+			logger.LogError(nil, fmt.Sprintf("Stripe 自动充值：标记订单失败状态失败 trade_no=%s error=%q", order.TradeNo, markErr.Error()))
+		}
+		handleStripeAutoChargeFailure(userId, cfg, "扣款被拒绝或需要验证", isDefinitiveAutoChargeCardFailure(err))
 		return
 	}
 	if intent == nil || intent.Status != stripe.PaymentIntentStatusSucceeded {
 		status := ""
+		gatewayTradeNo := ""
 		if intent != nil {
 			status = string(intent.Status)
+			gatewayTradeNo = intent.ID
 		}
-		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动扣费未成功 user_id=%d status=%s", userId, status))
-		markFailedCooldown()
-		model.RecordStripeAutoChargeFailure(userId, amountUnits, "扣款未完成")
+		logger.LogWarn(nil, fmt.Sprintf("Stripe 自动充值未成功 user_id=%d trade_no=%s status=%s", userId, order.TradeNo, status))
+		if markErr := model.MarkStripeAutoTopUpOrderFailed(order.TradeNo, gatewayTradeNo); markErr != nil {
+			logger.LogError(nil, fmt.Sprintf("Stripe 自动充值：标记订单失败状态失败 trade_no=%s error=%q", order.TradeNo, markErr.Error()))
+		}
+		// An off-session intent that did not reach succeeded (e.g. requires_action) cannot
+		// be completed without the cardholder present — definitive for the opt-in path.
+		handleStripeAutoChargeFailure(userId, cfg, "扣款未完成", true)
 		return
 	}
 
-	autoChargeLastAt.Store(userId, time.Now().Unix())
-
-	if err := model.CreditStripeAutoCharge(userId, amountUnits, money, intent.ID, common.GetIp()); err != nil {
-		// Money was captured but crediting failed. Persist a cooldown row so a restart can't
-		// re-charge this user within the window, and flag it for manual reconcile.
-		markFailedCooldown()
-		logger.LogError(nil, fmt.Sprintf("Stripe 自动扣费已扣款但充值入账失败 user_id=%d payment_intent=%s amount_units=%d error=%q", userId, intent.ID, amountUnits, err.Error()))
+	if err := model.CompleteStripeAutoTopUpOrder(order.TradeNo, intent.ID, common.GetIp()); err != nil {
+		// Money was captured but crediting failed. The claim row stays pending (its daily
+		// slot and cooldown remain armed, so no re-charge), and the PaymentIntent carries
+		// user_id + trade_no metadata for manual reconciliation.
+		logger.LogError(nil, fmt.Sprintf("Stripe 自动充值已扣款但额度入账失败 user_id=%d payment_intent=%s trade_no=%s amount_units=%d error=%q", userId, intent.ID, order.TradeNo, amountUnits, err.Error()))
 		model.RecordLog(userId, model.LogTypeSystem, fmt.Sprintf(
-			"自动扣费已成功扣款 $%d，但额度入账失败（支付单号 %s），我们将尽快为您处理，如未到账请联系客服。",
+			"自动充值已成功扣款 $%d，但额度入账失败（支付单号 %s），我们将尽快为您处理，如未到账请联系客服。",
 			amountUnits, intent.ID,
 		))
 		return
 	}
-	logger.LogInfo(nil, fmt.Sprintf("Stripe 自动扣费成功 user_id=%d payment_intent=%s amount_units=%d money=%.2f", userId, intent.ID, amountUnits, money))
+	logger.LogInfo(nil, fmt.Sprintf("Stripe 自动充值成功 user_id=%d payment_intent=%s trade_no=%s amount_units=%d money=%.2f", userId, intent.ID, order.TradeNo, amountUnits, money))
 }
 
 // findDefaultPaymentMethodId returns the customer's default card payment method id, falling

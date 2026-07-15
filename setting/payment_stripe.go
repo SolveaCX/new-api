@@ -79,3 +79,21 @@ var StripeAutoChargeAmount = 20
 // StripeNewUserBonusAmount is the USD amount (in topup units) granted once when a
 // user binds their first card.
 var StripeNewUserBonusAmount = 10
+
+// --- Per-user opt-in auto top-up ---
+
+// StripeAutoTopUpDailyMaxCharges is the hard server-side cap on automatic off-session
+// charges per user per UTC day. It applies to both the per-user opt-in path and the
+// legacy global auto-charge path. Setting it to 0 (or below) disables the per-user
+// auto top-up feature entirely (operator kill switch).
+var StripeAutoTopUpDailyMaxCharges = 2
+
+// Bounds for the per-user auto top-up settings. Values outside these bounds are
+// rejected when the user saves the setting and treated as "not opted in" at charge
+// time (defense in depth against hand-edited setting blobs).
+const (
+	StripeAutoTopUpThresholdMinUSD = 1
+	StripeAutoTopUpThresholdMaxUSD = 100
+	StripeAutoTopUpAmountMinUSD    = 5
+	StripeAutoTopUpAmountMaxUSD    = 1000
+)

@@ -122,6 +122,8 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/stripe/amount", controller.RequestStripeAmount)
 				selfRoute.GET("/stripe/card", controller.GetStripeCardStatus)
 				selfRoute.DELETE("/stripe/card", middleware.CriticalRateLimit(), controller.RemoveStripeCard)
+				selfRoute.GET("/stripe/auto_topup", controller.GetStripeAutoTopUpSetting)
+				selfRoute.PUT("/stripe/auto_topup", middleware.CriticalRateLimit(), controller.UpdateStripeAutoTopUpSetting)
 				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.RequestCreemPay)
 				selfRoute.POST("/waffo/amount", controller.RequestWaffoAmount)
 				selfRoute.POST("/waffo/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPay)

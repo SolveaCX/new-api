@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -108,34 +109,187 @@ func HasRecentStripeAutoCharge(userId int, windowSeconds int64) (bool, error) {
 	return count > 0, nil
 }
 
-// RecordStripeAutoChargeAttempt persists a failed/aborted auto-charge attempt as a
-// stripe_auto TopUp row (status=failed) so that HasRecentStripeAutoCharge treats it as a
-// recent charge and applies the cooldown. This stops a declined/unverifiable card from
-// triggering a charge attempt on every relay request (decline storm + log spam), and is
-// cross-instance / restart-safe. attemptKey makes the trade_no unique per attempt window.
+// stripeAutoTopUpTradeNo returns the deterministic trade_no for the seq-th automatic
+// top-up slot of a user on a given UTC day (day formatted as YYYYMMDD). Determinism
+// across nodes is the idempotency mechanism: concurrent nodes observing the same
+// exhaustion episode compute the same key and race on the trade_no unique index, so
+// exactly one insert — and therefore exactly one charge — wins (Rule 11).
+func stripeAutoTopUpTradeNo(userId int, day string, seq int) string {
+	return fmt.Sprintf("sauto_%d_%s_%d", userId, day, seq)
+}
+
+// ClaimStripeAutoTopUpEpisode atomically claims the next automatic top-up slot for a
+// user on the given UTC day, bounded by dailyCap slots per day and a minimum gap of
+// cooldownSeconds between consecutive slots. It returns (order, true) when THIS caller
+// won the claim and must perform the charge, and (nil, false) when the daily cap is
+// reached, the newest slot is too fresh (another charge just happened / is in flight),
+// or a concurrent node won the insert race.
 //
-// NOTE for revenue/top-up reporting: these rows are status=failed cooldown markers, NOT
-// revenue. Any report aggregating TopUp by payment_provider MUST filter on
-// status = success (the stripe_auto provider also carries these failed markers).
-func RecordStripeAutoChargeAttempt(userId int, amountUnits int, attemptKey string) {
-	if userId <= 0 {
-		return
+// Multi-node safety: the slot count and the newest slot's create_time are read in one
+// statement, and the insert targets slot[count] under the trade_no unique index. A
+// concurrent claimer either saw the same snapshot (same slot key → unique index picks
+// one winner) or a snapshot that already includes the winner's row (→ stopped by the
+// cooldown or the cap). There is no interleaving that yields two winners.
+//
+// NOTE for revenue/top-up reporting: claimed rows start as status=pending and may end
+// failed. Any report aggregating TopUp by payment_provider MUST filter on
+// status = success (the stripe_auto provider also carries pending/failed claim rows).
+func ClaimStripeAutoTopUpEpisode(userId int, day string, dailyCap int, cooldownSeconds int64, amountUnits int, money float64) (*TopUp, bool, error) {
+	day = strings.TrimSpace(day)
+	if userId <= 0 || dailyCap <= 0 || day == "" || amountUnits <= 0 {
+		return nil, false, nil
+	}
+	// Enumerate the (small) set of possible slot keys for the day. Exact-match IN keeps
+	// the query cross-DB safe and avoids LIKE wildcard pitfalls ("_" matches any char).
+	candidates := make([]string, 0, dailyCap)
+	for seq := 0; seq < dailyCap; seq++ {
+		candidates = append(candidates, stripeAutoTopUpTradeNo(userId, day, seq))
+	}
+	var snapshot struct {
+		Taken  int64
+		Latest sql.NullInt64
+	}
+	if err := DB.Model(&TopUp{}).
+		Select("COUNT(*) AS taken, MAX(create_time) AS latest").
+		Where("trade_no IN ?", candidates).
+		Scan(&snapshot).Error; err != nil {
+		return nil, false, err
+	}
+	if snapshot.Taken >= int64(dailyCap) {
+		return nil, false, nil
 	}
 	now := common.GetTimestamp()
+	if snapshot.Latest.Valid && now-snapshot.Latest.Int64 < cooldownSeconds {
+		return nil, false, nil
+	}
 	topUp := &TopUp{
 		UserId:          userId,
 		Amount:          int64(amountUnits),
-		TradeNo:         "autofail_" + strings.TrimSpace(attemptKey),
+		Money:           money,
+		TradeNo:         stripeAutoTopUpTradeNo(userId, day, int(snapshot.Taken)),
 		PaymentMethod:   PaymentMethodStripe,
 		PaymentProvider: PaymentProviderStripeAuto,
 		CreateTime:      now,
-		CompleteTime:    now,
-		Status:          common.TopUpStatusFailed,
+		Status:          common.TopUpStatusPending,
 	}
-	if err := DB.Create(topUp).Error; err != nil {
-		// A duplicate trade_no (same attempt key) is fine — the cooldown row already exists.
-		common.SysLog("failed to record stripe auto-charge attempt cooldown row: " + err.Error())
+	res := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(topUp)
+	if res.Error != nil {
+		return nil, false, res.Error
 	}
+	if res.RowsAffected == 0 {
+		// Another node claimed this slot concurrently — it owns the charge.
+		return nil, false, nil
+	}
+	return topUp, true, nil
+}
+
+// CompleteStripeAutoTopUpOrder marks a claimed auto top-up order as paid and credits
+// the user's quota, all within one transaction. Idempotent: completing an order that is
+// already successful is a no-op, so a duplicate call cannot credit quota twice.
+func CompleteStripeAutoTopUpOrder(tradeNo string, gatewayTradeNo string, callerIp string) error {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if tradeNo == "" {
+		return errors.New("missing auto top-up trade no")
+	}
+
+	refCol := "`trade_no`"
+	if common.UsingPostgreSQL {
+		refCol = `"trade_no"`
+	}
+
+	var creditedQuota int
+	var creditedUserId int
+	var creditedMoney float64
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTopUpNotFound
+			}
+			return err
+		}
+		if topUp.PaymentProvider != PaymentProviderStripeAuto {
+			return ErrPaymentMethodMismatch
+		}
+		if topUp.Status == common.TopUpStatusSuccess {
+			return nil
+		}
+		if topUp.Status != common.TopUpStatusPending {
+			return ErrTopUpStatusInvalid
+		}
+		quotaToAdd := int(topUp.Amount) * int(common.QuotaPerUnit)
+		if quotaToAdd <= 0 {
+			return errors.New("invalid auto top-up amount")
+		}
+		topUp.Status = common.TopUpStatusSuccess
+		topUp.CompleteTime = common.GetTimestamp()
+		if strings.TrimSpace(gatewayTradeNo) != "" {
+			topUp.GatewayTradeNo = strings.TrimSpace(gatewayTradeNo)
+		}
+		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).
+			Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
+			return err
+		}
+		creditedQuota = quotaToAdd
+		creditedUserId = topUp.UserId
+		creditedMoney = topUp.Money
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if creditedQuota > 0 {
+		if cacheErr := cacheIncrUserQuota(creditedUserId, int64(creditedQuota)); cacheErr != nil {
+			common.SysLog("failed to increase user quota cache after stripe auto top-up: " + cacheErr.Error())
+		}
+		RecordTopupLog(creditedUserId, fmt.Sprintf("自动充值成功，充值额度: %s，支付金额：%.2f", logger.FormatQuota(creditedQuota), creditedMoney), callerIp, PaymentMethodStripe, PaymentProviderStripeAuto)
+	}
+	return nil
+}
+
+// MarkStripeAutoTopUpOrderFailed transitions a pending auto top-up claim to failed.
+// The failed row deliberately keeps occupying its daily slot and remains the newest
+// slot for the cooldown check, so a declined card cannot be retried in a tight loop.
+func MarkStripeAutoTopUpOrderFailed(tradeNo string, gatewayTradeNo string) error {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if tradeNo == "" {
+		return errors.New("missing auto top-up trade no")
+	}
+	updates := map[string]interface{}{
+		"status":        common.TopUpStatusFailed,
+		"complete_time": common.GetTimestamp(),
+	}
+	if strings.TrimSpace(gatewayTradeNo) != "" {
+		updates["gateway_trade_no"] = strings.TrimSpace(gatewayTradeNo)
+	}
+	return DB.Model(&TopUp{}).
+		Where("trade_no = ? AND payment_provider = ? AND status = ?", tradeNo, PaymentProviderStripeAuto, common.TopUpStatusPending).
+		Updates(updates).Error
+}
+
+// DisableUserAutoTopUpSetting turns off the user's opt-in auto top-up flag (used after
+// a definitive card failure so a broken card is never retried against Stripe forever).
+// Returns true when the flag was actually flipped by this call.
+func DisableUserAutoTopUpSetting(userId int) (bool, error) {
+	if userId <= 0 {
+		return false, errors.New("invalid user id")
+	}
+	user, err := GetUserById(userId, true)
+	if err != nil {
+		return false, err
+	}
+	userSetting := user.GetSetting()
+	if !userSetting.AutoTopUpEnabled {
+		return false, nil
+	}
+	userSetting.AutoTopUpEnabled = false
+	if err := SaveUserSetting(userId, userSetting); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // RecordStripeAutoChargeFailure writes a user-visible system log entry when an automatic
@@ -151,46 +305,3 @@ func RecordStripeAutoChargeFailure(userId int, amountUnits int, reason string) {
 	))
 }
 
-// CreditStripeAutoCharge records a successful automatic off-session charge as a completed
-// TopUp order and credits the user's quota, all within one transaction. amountUnits is the
-// USD amount (in top-up units) charged; money is the exact amount billed; gatewayTradeNo is
-// the Stripe PaymentIntent id.
-func CreditStripeAutoCharge(userId int, amountUnits int, money float64, gatewayTradeNo string, callerIp string) error {
-	if userId <= 0 {
-		return errors.New("invalid user id")
-	}
-	quotaToAdd := amountUnits * int(common.QuotaPerUnit)
-	if quotaToAdd <= 0 {
-		return errors.New("invalid auto-charge amount")
-	}
-
-	tradeNo := "auto_" + strings.TrimSpace(gatewayTradeNo)
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		topUp := &TopUp{
-			UserId:          userId,
-			Amount:          int64(amountUnits),
-			Money:           money,
-			TradeNo:         tradeNo,
-			GatewayTradeNo:  strings.TrimSpace(gatewayTradeNo),
-			PaymentMethod:   PaymentMethodStripe,
-			PaymentProvider: PaymentProviderStripeAuto,
-			CreateTime:      common.GetTimestamp(),
-			CompleteTime:    common.GetTimestamp(),
-			Status:          common.TopUpStatusSuccess,
-		}
-		if err := tx.Create(topUp).Error; err != nil {
-			return err
-		}
-		return tx.Model(&User{}).Where("id = ?", userId).
-			Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error
-	})
-	if err != nil {
-		return err
-	}
-
-	if cacheErr := cacheIncrUserQuota(userId, int64(quotaToAdd)); cacheErr != nil {
-		common.SysLog("failed to increase user quota cache after stripe auto charge: " + cacheErr.Error())
-	}
-	RecordTopupLog(userId, fmt.Sprintf("自动扣费充值成功，充值金额: %s，支付金额：%.2f", logger.FormatQuota(quotaToAdd), money), callerIp, PaymentMethodStripe, PaymentProviderStripeAuto)
-	return nil
-}
