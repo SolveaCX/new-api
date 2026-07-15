@@ -26,6 +26,7 @@ import type {
   TwoFAPayload,
   RegisterPayload,
   ApiResponse,
+  RegistrationEmailVerificationResponse,
 } from './types'
 
 // ============================================================================
@@ -135,6 +136,28 @@ export async function sendEmailVerification(
   const res = await api.get('/api/verification', {
     params: { email, turnstile },
   })
+  return res.data
+}
+
+export async function exchangeRegistrationEmailToken(
+  token: string
+): Promise<RegistrationEmailVerificationResponse> {
+  const res = await api.post<RegistrationEmailVerificationResponse>(
+    '/api/registration/email-verification/exchange',
+    { token },
+    { skipBusinessError: true }
+  )
+  return res.data
+}
+
+export async function getRegistrationEmailVerificationStatus(
+  email: string
+): Promise<RegistrationEmailVerificationResponse> {
+  const res = await api.post<RegistrationEmailVerificationResponse>(
+    '/api/registration/email-verification/status',
+    { email },
+    { skipBusinessError: true }
+  )
   return res.data
 }
 
