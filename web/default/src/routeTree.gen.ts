@@ -79,6 +79,7 @@ import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenti
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
+import { Route as authSignUpVerifyRouteImport } from './routes/(auth)/sign-up.verify'
 import { Route as LocaleModelsGptApiRouteImport } from './routes/$locale/models/gpt-api'
 import { Route as LocaleModelsClaudeApiRouteImport } from './routes/$locale/models/claude-api'
 import { Route as LocaleBlogSlugRouteImport } from './routes/$locale/blog/$slug'
@@ -465,6 +466,11 @@ const authUserResetRoute = authUserResetRouteImport.update({
   path: '/user/reset',
   getParentRoute: () => authRouteRoute,
 } as any)
+const authSignUpVerifyRoute = authSignUpVerifyRouteImport.update({
+  id: '/verify',
+  path: '/verify',
+  getParentRoute: () => authSignUpRoute,
+} as any)
 const LocaleModelsGptApiRoute = LocaleModelsGptApiRouteImport.update({
   id: '/$locale/models/gpt-api',
   path: '/$locale/models/gpt-api',
@@ -598,7 +604,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof authRegisterRoute
   '/reset': typeof authResetRoute
   '/sign-in': typeof authSignInRoute
-  '/sign-up': typeof authSignUpRoute
+  '/sign-up': typeof authSignUpRouteWithChildren
   '/401': typeof errors401Route
   '/403': typeof errors403Route
   '/404': typeof errors404Route
@@ -621,6 +627,7 @@ export interface FileRoutesByFullPath {
   '/$locale/blog/$slug': typeof LocaleBlogSlugRoute
   '/$locale/models/claude-api': typeof LocaleModelsClaudeApiRoute
   '/$locale/models/gpt-api': typeof LocaleModelsGptApiRoute
+  '/sign-up/verify': typeof authSignUpVerifyRoute
   '/user/reset': typeof authUserResetRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
@@ -686,7 +693,7 @@ export interface FileRoutesByTo {
   '/register': typeof authRegisterRoute
   '/reset': typeof authResetRoute
   '/sign-in': typeof authSignInRoute
-  '/sign-up': typeof authSignUpRoute
+  '/sign-up': typeof authSignUpRouteWithChildren
   '/401': typeof errors401Route
   '/403': typeof errors403Route
   '/404': typeof errors404Route
@@ -709,6 +716,7 @@ export interface FileRoutesByTo {
   '/$locale/blog/$slug': typeof LocaleBlogSlugRoute
   '/$locale/models/claude-api': typeof LocaleModelsClaudeApiRoute
   '/$locale/models/gpt-api': typeof LocaleModelsGptApiRoute
+  '/sign-up/verify': typeof authSignUpVerifyRoute
   '/user/reset': typeof authUserResetRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
@@ -778,7 +786,7 @@ export interface FileRoutesById {
   '/(auth)/register': typeof authRegisterRoute
   '/(auth)/reset': typeof authResetRoute
   '/(auth)/sign-in': typeof authSignInRoute
-  '/(auth)/sign-up': typeof authSignUpRoute
+  '/(auth)/sign-up': typeof authSignUpRouteWithChildren
   '/(errors)/401': typeof errors401Route
   '/(errors)/403': typeof errors403Route
   '/(errors)/404': typeof errors404Route
@@ -801,6 +809,7 @@ export interface FileRoutesById {
   '/$locale/blog/$slug': typeof LocaleBlogSlugRoute
   '/$locale/models/claude-api': typeof LocaleModelsClaudeApiRoute
   '/$locale/models/gpt-api': typeof LocaleModelsGptApiRoute
+  '/(auth)/sign-up/verify': typeof authSignUpVerifyRoute
   '/(auth)/user/reset': typeof authUserResetRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
@@ -892,6 +901,7 @@ export interface FileRouteTypes {
     | '/$locale/blog/$slug'
     | '/$locale/models/claude-api'
     | '/$locale/models/gpt-api'
+    | '/sign-up/verify'
     | '/user/reset'
     | '/chat/$chatId'
     | '/dashboard/$section'
@@ -980,6 +990,7 @@ export interface FileRouteTypes {
     | '/$locale/blog/$slug'
     | '/$locale/models/claude-api'
     | '/$locale/models/gpt-api'
+    | '/sign-up/verify'
     | '/user/reset'
     | '/chat/$chatId'
     | '/dashboard/$section'
@@ -1071,6 +1082,7 @@ export interface FileRouteTypes {
     | '/$locale/blog/$slug'
     | '/$locale/models/claude-api'
     | '/$locale/models/gpt-api'
+    | '/(auth)/sign-up/verify'
     | '/(auth)/user/reset'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dashboard/$section'
@@ -1655,6 +1667,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof authUserResetRouteImport
       parentRoute: typeof authRouteRoute
     }
+    '/(auth)/sign-up/verify': {
+      id: '/(auth)/sign-up/verify'
+      path: '/verify'
+      fullPath: '/sign-up/verify'
+      preLoaderRoute: typeof authSignUpVerifyRouteImport
+      parentRoute: typeof authSignUpRoute
+    }
     '/$locale/models/gpt-api': {
       id: '/$locale/models/gpt-api'
       path: '/$locale/models/gpt-api'
@@ -1791,6 +1810,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface authSignUpRouteChildren {
+  authSignUpVerifyRoute: typeof authSignUpVerifyRoute
+}
+
+const authSignUpRouteChildren: authSignUpRouteChildren = {
+  authSignUpVerifyRoute: authSignUpVerifyRoute,
+}
+
+const authSignUpRouteWithChildren = authSignUpRoute._addFileChildren(
+  authSignUpRouteChildren,
+)
+
 interface authRouteRouteChildren {
   authForgotPasswordRoute: typeof authForgotPasswordRoute
   authOauthRoute: typeof authOauthRoute
@@ -1798,7 +1829,7 @@ interface authRouteRouteChildren {
   authRegisterRoute: typeof authRegisterRoute
   authResetRoute: typeof authResetRoute
   authSignInRoute: typeof authSignInRoute
-  authSignUpRoute: typeof authSignUpRoute
+  authSignUpRoute: typeof authSignUpRouteWithChildren
   authUserResetRoute: typeof authUserResetRoute
 }
 
@@ -1809,7 +1840,7 @@ const authRouteRouteChildren: authRouteRouteChildren = {
   authRegisterRoute: authRegisterRoute,
   authResetRoute: authResetRoute,
   authSignInRoute: authSignInRoute,
-  authSignUpRoute: authSignUpRoute,
+  authSignUpRoute: authSignUpRouteWithChildren,
   authUserResetRoute: authUserResetRoute,
 }
 

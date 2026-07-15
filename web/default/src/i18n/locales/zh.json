@@ -5459,6 +5459,13 @@
     "adspilot_mode_approved": "审批后执行",
     "adspilot_action_done": "已完成",
     "adspilot_action_failed": "失败",
-    "adspilot_action_reverted": "已回滚"
+    "adspilot_action_reverted": "已回滚",
+    "Verifying your email": "正在验证您的邮箱",
+    "Please wait while we confirm this verification link.": "请稍候，我们正在确认此验证链接。",
+    "Email verified": "邮箱已验证",
+    "Your email is verified. Return to registration to continue.": "您的邮箱已验证。返回注册页面继续。",
+    "Verification link unavailable": "验证链接不可用",
+    "This verification link is invalid or expired. Use the code in your email or request a new message.": "此验证链接无效或已过期。请使用邮件中的验证码，或重新发送邮件。",
+    "Back to registration": "返回注册"
   }
 }

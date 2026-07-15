@@ -5459,6 +5459,13 @@
     "adspilot_mode_approved": "Após aprovação",
     "adspilot_action_done": "Concluída",
     "adspilot_action_failed": "Falhou",
-    "adspilot_action_reverted": "Revertida"
+    "adspilot_action_reverted": "Revertida",
+    "Verifying your email": "Verificando seu e-mail",
+    "Please wait while we confirm this verification link.": "Aguarde enquanto confirmamos este link de verificação.",
+    "Email verified": "E-mail verificado",
+    "Your email is verified. Return to registration to continue.": "Seu e-mail foi verificado. Volte ao cadastro para continuar.",
+    "Verification link unavailable": "Link de verificação indisponível",
+    "This verification link is invalid or expired. Use the code in your email or request a new message.": "Este link de verificação é inválido ou expirou. Use o código do e-mail ou solicite uma nova mensagem.",
+    "Back to registration": "Voltar ao cadastro"
   }
 }
