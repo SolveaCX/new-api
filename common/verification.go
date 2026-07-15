@@ -2,6 +2,10 @@ package common
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,6 +30,15 @@ var verificationMutex sync.Mutex
 var verificationMap map[string]verificationValue
 var verificationMapMaxSize = 10
 var VerificationValidMinutes = 10
+
+const (
+	registrationEmailLinkPrefix    = "registration-email-link:"
+	registrationEmailCurrentPrefix = "registration-email-current:"
+	registrationEmailGrantPrefix   = "registration-email-grant:"
+)
+
+var registrationEmailVerificationMutex sync.Mutex
+var registrationEmailVerificationMap map[string]verificationValue
 
 func GenerateVerificationCode(length int) string {
 	code := uuid.New().String()
@@ -104,6 +117,221 @@ func DeleteKey(key string, purpose string) {
 	delete(verificationMap, purpose+key)
 }
 
+func registrationEmailCredentialTTL() time.Duration {
+	return time.Duration(VerificationValidMinutes) * time.Minute
+}
+
+func registrationEmailDigest(email string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(email)))
+	return hex.EncodeToString(digest[:])
+}
+
+func generateRegistrationEmailCredential() (string, error) {
+	random := make([]byte, 32)
+	if _, err := rand.Read(random); err != nil {
+		return "", fmt.Errorf("generate registration email credential: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(random), nil
+}
+
+func registrationEmailMemorySet(key, value string) {
+	registrationEmailVerificationMap[key] = verificationValue{code: value, time: time.Now()}
+}
+
+func registrationEmailMemoryGet(key string) (string, bool) {
+	value, ok := registrationEmailVerificationMap[key]
+	if !ok {
+		return "", false
+	}
+	if time.Since(value.time) >= registrationEmailCredentialTTL() {
+		delete(registrationEmailVerificationMap, key)
+		return "", false
+	}
+	return value.code, true
+}
+
+// RegisterRegistrationEmailLink stores an opaque email-link token. Redis
+// failures are returned instead of falling back to process memory because a
+// link sent from one production node must be resolvable by every other node.
+func RegisterRegistrationEmailLink(email string) (string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", errors.New("registration email is empty")
+	}
+	token, err := generateRegistrationEmailCredential()
+	if err != nil {
+		return "", err
+	}
+	currentKey := registrationEmailCurrentPrefix + registrationEmailDigest(email)
+	linkKey := registrationEmailLinkPrefix + token
+	if verificationRedisUsable() {
+		_, err = RDB.TxPipelined(context.Background(), func(pipe redis.Pipeliner) error {
+			pipe.Set(context.Background(), linkKey, email, registrationEmailCredentialTTL())
+			pipe.Set(context.Background(), currentKey, token, registrationEmailCredentialTTL())
+			return nil
+		})
+		if err != nil {
+			return "", fmt.Errorf("store registration email link in Redis: %w", err)
+		}
+		return token, nil
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	registrationEmailMemorySet(linkKey, email)
+	registrationEmailMemorySet(currentKey, token)
+	return token, nil
+}
+
+// ResolveRegistrationEmailLink validates a token without consuming it. This is
+// intentionally idempotent so link scanners and repeated clicks cannot burn a
+// user's verification link before it expires.
+func ResolveRegistrationEmailLink(token string) (string, bool, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", false, nil
+	}
+	linkKey := registrationEmailLinkPrefix + token
+	if verificationRedisUsable() {
+		email, err := RDB.Get(context.Background(), linkKey).Result()
+		if errors.Is(err, redis.Nil) {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("read registration email link from Redis: %w", err)
+		}
+		current, err := RDB.Get(context.Background(), registrationEmailCurrentPrefix+registrationEmailDigest(email)).Result()
+		if errors.Is(err, redis.Nil) {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("read current registration email link from Redis: %w", err)
+		}
+		if current != token {
+			return "", false, nil
+		}
+		return strings.TrimSpace(email), true, nil
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	email, ok := registrationEmailMemoryGet(linkKey)
+	if !ok {
+		return "", false, nil
+	}
+	current, ok := registrationEmailMemoryGet(registrationEmailCurrentPrefix + registrationEmailDigest(email))
+	if !ok || current != token {
+		return "", false, nil
+	}
+	return strings.TrimSpace(email), true, nil
+}
+
+func DeleteRegistrationEmailLink(token string) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return
+	}
+	linkKey := registrationEmailLinkPrefix + token
+	if verificationRedisUsable() {
+		email, err := RDB.Get(context.Background(), linkKey).Result()
+		if errors.Is(err, redis.Nil) {
+			return
+		}
+		if err != nil {
+			SysError("failed to read registration email link for deletion: " + err.Error())
+			return
+		}
+		currentKey := registrationEmailCurrentPrefix + registrationEmailDigest(email)
+		const deleteLinkScript = `
+local current = redis.call('GET', KEYS[2])
+redis.call('DEL', KEYS[1])
+if current == ARGV[1] then
+  redis.call('DEL', KEYS[2])
+end
+return 1`
+		if err := RDB.Eval(context.Background(), deleteLinkScript, []string{linkKey, currentKey}, token).Err(); err != nil {
+			SysError("failed to delete registration email link from Redis: " + err.Error())
+		}
+		return
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	email, ok := registrationEmailMemoryGet(linkKey)
+	delete(registrationEmailVerificationMap, linkKey)
+	if !ok {
+		return
+	}
+	currentKey := registrationEmailCurrentPrefix + registrationEmailDigest(email)
+	if current, ok := registrationEmailMemoryGet(currentKey); ok && current == token {
+		delete(registrationEmailVerificationMap, currentKey)
+	}
+}
+
+func RegisterRegistrationEmailGrant(email string) (string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", errors.New("registration email is empty")
+	}
+	grant, err := generateRegistrationEmailCredential()
+	if err != nil {
+		return "", err
+	}
+	grantKey := registrationEmailGrantPrefix + grant
+	if verificationRedisUsable() {
+		if err := RDB.Set(context.Background(), grantKey, email, registrationEmailCredentialTTL()).Err(); err != nil {
+			return "", fmt.Errorf("store registration email grant in Redis: %w", err)
+		}
+		return grant, nil
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	registrationEmailMemorySet(grantKey, email)
+	return grant, nil
+}
+
+func VerifyRegistrationEmailGrant(grant, email string) bool {
+	grant = strings.TrimSpace(grant)
+	email = strings.TrimSpace(email)
+	if grant == "" || email == "" {
+		return false
+	}
+	grantKey := registrationEmailGrantPrefix + grant
+	if verificationRedisUsable() {
+		storedEmail, err := RDB.Get(context.Background(), grantKey).Result()
+		if errors.Is(err, redis.Nil) {
+			return false
+		}
+		if err != nil {
+			SysError("failed to read registration email grant from Redis: " + err.Error())
+			return false
+		}
+		return strings.TrimSpace(storedEmail) == email
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	storedEmail, ok := registrationEmailMemoryGet(grantKey)
+	return ok && strings.TrimSpace(storedEmail) == email
+}
+
+func DeleteRegistrationEmailGrant(grant string) {
+	grant = strings.TrimSpace(grant)
+	if grant == "" {
+		return
+	}
+	grantKey := registrationEmailGrantPrefix + grant
+	if verificationRedisUsable() {
+		if err := RDB.Del(context.Background(), grantKey).Err(); err != nil {
+			SysError("failed to delete registration email grant from Redis: " + err.Error())
+		}
+	}
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	delete(registrationEmailVerificationMap, grantKey)
+}
+
 // no lock inside, so the caller must lock the verificationMap before calling!
 func removeExpiredPairs() {
 	now := time.Now()
@@ -118,4 +346,5 @@ func init() {
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	verificationMap = make(map[string]verificationValue)
+	registrationEmailVerificationMap = make(map[string]verificationValue)
 }

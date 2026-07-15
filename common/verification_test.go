@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
 )
@@ -9,6 +10,12 @@ func resetVerificationMap() {
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	verificationMap = make(map[string]verificationValue)
+}
+
+func resetRegistrationEmailVerificationStore() {
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	registrationEmailVerificationMap = make(map[string]verificationValue)
 }
 
 func withRedisDisabled(t *testing.T) {
@@ -127,5 +134,121 @@ func TestVerifyCodeWithKeyNilRDBFallsBackToMemory(t *testing.T) {
 	DeleteKey("a@b.com", EmailVerificationPurpose)
 	if VerifyCodeWithKey("a@b.com", "123456", EmailVerificationPurpose) {
 		t.Fatal("expected deleted code to fail")
+	}
+}
+
+func TestRegistrationEmailLinkMemoryReplacesPreviousToken(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+
+	first, err := RegisterRegistrationEmailLink("  user@example.com  ")
+	if err != nil {
+		t.Fatalf("register first link: %v", err)
+	}
+	second, err := RegisterRegistrationEmailLink("user@example.com")
+	if err != nil {
+		t.Fatalf("register second link: %v", err)
+	}
+	if first == second {
+		t.Fatal("expected independent random link tokens")
+	}
+
+	if _, ok, err := ResolveRegistrationEmailLink(first); err != nil || ok {
+		t.Fatalf("old link should be invalid after resend, ok=%t err=%v", ok, err)
+	}
+	email, ok, err := ResolveRegistrationEmailLink(second)
+	if err != nil {
+		t.Fatalf("resolve current link: %v", err)
+	}
+	if !ok || email != "user@example.com" {
+		t.Fatalf("resolve current link = (%q, %t), want trimmed email", email, ok)
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(second)
+	if err != nil {
+		t.Fatalf("token is not base64url: %v", err)
+	}
+	if len(decoded) != 32 {
+		t.Fatalf("token entropy bytes = %d, want 32", len(decoded))
+	}
+}
+
+func TestRegistrationEmailGrantMemoryMatchesExactEmail(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+
+	grant, err := RegisterRegistrationEmailGrant("  user@example.com  ")
+	if err != nil {
+		t.Fatalf("register grant: %v", err)
+	}
+	if !VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("expected matching trimmed email to verify")
+	}
+	if VerifyRegistrationEmailGrant(grant, "other@example.com") {
+		t.Fatal("grant must not verify a different email")
+	}
+
+	DeleteRegistrationEmailGrant(grant)
+	if VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("deleted grant must not verify")
+	}
+}
+
+func TestRegistrationEmailLinkRedisCrossInstanceAndExpiry(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+	resetRegistrationEmailVerificationStore()
+
+	token, err := RegisterRegistrationEmailLink("user@example.com")
+	if err != nil {
+		t.Fatalf("register link: %v", err)
+	}
+	resetRegistrationEmailVerificationStore()
+
+	email, ok, err := ResolveRegistrationEmailLink(token)
+	if err != nil {
+		t.Fatalf("resolve Redis link: %v", err)
+	}
+	if !ok || email != "user@example.com" {
+		t.Fatalf("resolve Redis link = (%q, %t), want stored email", email, ok)
+	}
+
+	mr.FastForward(time.Duration(VerificationValidMinutes)*time.Minute + time.Second)
+	if _, ok, err := ResolveRegistrationEmailLink(token); err != nil || ok {
+		t.Fatalf("expired Redis link should be invalid, ok=%t err=%v", ok, err)
+	}
+}
+
+func TestRegistrationEmailGrantRedisCrossInstance(t *testing.T) {
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+	resetRegistrationEmailVerificationStore()
+
+	grant, err := RegisterRegistrationEmailGrant("user@example.com")
+	if err != nil {
+		t.Fatalf("register grant: %v", err)
+	}
+	resetRegistrationEmailVerificationStore()
+
+	if !VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("expected Redis grant to verify on another instance")
+	}
+	DeleteRegistrationEmailGrant(grant)
+	if VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("deleted Redis grant must not verify")
+	}
+}
+
+func TestRegistrationEmailLinkRedisFailureFailsClosed(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+	resetRegistrationEmailVerificationStore()
+	mr.Close()
+
+	if _, err := RegisterRegistrationEmailLink("user@example.com"); err == nil {
+		t.Fatal("expected Redis write failure to fail closed")
+	}
+	if _, err := RegisterRegistrationEmailGrant("user@example.com"); err == nil {
+		t.Fatal("expected Redis grant write failure to fail closed")
 	}
 }
