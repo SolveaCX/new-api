@@ -293,8 +293,15 @@ custom_oauth.binding_not_found: "OAuth 绑定不存在"
 custom_oauth.provider_id_field_invalid: "无法从提供商响应中提取用户 ID"
 
 # Email content messages
-email.verification_subject: "{{.SystemName}}邮箱验证邮件"
-email.verification_content: "<p>您好，你正在进行{{.SystemName}}邮箱验证。</p><p>您的验证码为: <strong>{{.Code}}</strong></p><p>验证码 {{.Minutes}} 分钟内有效，如果不是本人操作，请忽略。</p>"
+email.verification_subject: "{{.SystemName}} 邮箱验证"
+email.verification_heading: "欢迎使用 {{.SystemName}}"
+email.verification_content: "确认您的邮箱地址，完成账户创建并开始使用 {{.SystemName}}。"
+email.verification_action: "一键验证邮箱"
+email.verification_alternative: "或输入以下验证码"
+email.verification_code_label: "验证码"
+email.verification_expiry: "此链接和验证码将在 {{.Minutes}} 分钟后失效。"
+email.verification_ignore: "如果这不是您的操作，可以放心忽略此邮件。"
+email.verification_footer: "此邮件由 {{.SystemName}} 安全发送"
 email.password_reset_subject: "{{.SystemName}}密码重置"
 email.password_reset_content: "<p>您好，你正在进行{{.SystemName}}密码重置。</p><p>点击 <a href='{{.Link}}'>此处</a> 进行密码重置。</p><p>如果链接无法点击，请尝试点击下面的链接或将其复制到浏览器中打开：<br> {{.Link}} </p><p>重置链接 {{.Minutes}} 分钟内有效，如果不是本人操作，请忽略。</p>"
 
