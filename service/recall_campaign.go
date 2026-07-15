@@ -474,19 +474,16 @@ func (s *RecallCampaignService) runDueCampaign(ctx context.Context, campaign *mo
 		}
 		expected := campaign.NextRunAt
 		runKey := fmt.Sprintf("recurring:%d:%d", campaign.Id, expected)
-		targetStatus := model.RecallCampaignRunning
 		fields := map[string]any{"next_run_at": next.Unix()}
 		if draft.Discount.CouponRedeemBy > 0 && next.Unix() >= draft.Discount.CouponRedeemBy {
-			targetStatus = model.RecallCampaignCompleted
 			fields["next_run_at"] = int64(0)
-			fields["completed_at"] = now.Unix()
 		}
 		return s.commitCampaignRun(
 			ctx,
 			campaign,
 			draft,
 			[]string{model.RecallCampaignScheduled, model.RecallCampaignRunning},
-			targetStatus,
+			model.RecallCampaignRunning,
 			&expected,
 			fields,
 			runKey,
