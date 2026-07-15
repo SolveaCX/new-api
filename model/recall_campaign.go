@@ -52,14 +52,14 @@ func UpdateRecallCampaignDraft(campaign *RecallCampaign) error {
 	return DB.Model(&RecallCampaign{}).
 		Where("id = ? AND status = ?", campaign.Id, RecallCampaignDraft).
 		Updates(map[string]any{
-			"name":                    campaign.Name,
-			"audience_template":       campaign.AudienceTemplate,
-			"audience_config":         campaign.AudienceConfig,
-			"execution_mode":          campaign.ExecutionMode,
-			"scheduled_at":            campaign.ScheduledAt,
-			"recurrence_config":       campaign.RecurrenceConfig,
-			"next_run_at":             campaign.NextRunAt,
-			"coupon_source":           campaign.CouponSource,
+			"name":              campaign.Name,
+			"audience_template": campaign.AudienceTemplate,
+			"audience_config":   campaign.AudienceConfig,
+			"execution_mode":    campaign.ExecutionMode,
+			"scheduled_at":      campaign.ScheduledAt,
+			"recurrence_config": campaign.RecurrenceConfig,
+			"coupon_source":     campaign.CouponSource,
+			// StripeCouponId persists draft existing_coupon_id; the draft status predicate blocks post-activation edits.
 			"stripe_coupon_id":        campaign.StripeCouponId,
 			"discount_config":         campaign.DiscountConfig,
 			"product_scope":           campaign.ProductScope,
@@ -84,7 +84,6 @@ func TransitionRecallCampaign(id int64, from []string, to string, fields map[str
 		"worker_concurrency":      {},
 		"activated_at":            {},
 		"completed_at":            {},
-		"updated_at":              {},
 	}
 	updates := make(map[string]any, len(fields)+1)
 	for key, value := range fields {
