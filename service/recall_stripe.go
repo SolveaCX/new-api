@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
@@ -218,6 +219,18 @@ func NewRecallStripeService(client RecallStripeClient) *RecallStripeService {
 		client = NewStripeRecallClient()
 	}
 	return &RecallStripeService{client: client, codeGenerator: common.GenerateRandomCharsKey}
+}
+
+func (s *RecallStripeService) GenerateRecipientPromotionCode() (string, error) {
+	raw, err := s.codeGenerator(12)
+	if err != nil {
+		return "", wrapRecallStripeError("generate Stripe Promotion Code", err)
+	}
+	code := normalizeRecallPromotionCode(raw)
+	if code == "FK" {
+		return "", recallStripePermanent("generate Stripe Promotion Code", "generated promotion code is empty")
+	}
+	return code, nil
 }
 
 func (s *RecallStripeService) ValidateAndResolveProducts(ctx context.Context, scope RecallProductScope) (RecallResolvedProductScope, error) {
@@ -596,6 +609,11 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 	if coupon == nil || strings.TrimSpace(coupon.ID) == "" {
 		return nil, recallStripePermanent("create Stripe Promotion Code", "Stripe Coupon is required")
 	}
+	baseCode := normalizeRecallPromotionCode(recipient.PromotionCode)
+	if baseCode == "FK" {
+		return nil, recallStripePermanent("create Stripe Promotion Code", "persisted promotion code is required before Stripe creation")
+	}
+	recipient.PromotionCode = baseCode
 	customerID := strings.TrimSpace(recipient.StripeCustomerId)
 	if customerID == "" {
 		customerID = strings.TrimSpace(user.StripeCustomer)
@@ -626,18 +644,10 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 		return existing, nil
 	}
 
-	stableCode := strings.TrimSpace(recipient.PromotionCode)
 	for attempt := 1; attempt <= 5; attempt++ {
-		code := stableCode
-		if code == "" || attempt > 1 {
-			generated, generateErr := s.codeGenerator(12)
-			if generateErr != nil {
-				return nil, wrapRecallStripeError("generate Stripe Promotion Code", generateErr)
-			}
-			code = normalizeRecallPromotionCode(generated)
-			if code == "FK" {
-				return nil, recallStripePermanent("generate Stripe Promotion Code", "generated promotion code is empty")
-			}
+		code := baseCode
+		if attempt > 1 {
+			code = deriveRecallPromotionCode(baseCode, campaign.Id, recipient.Id, attempt)
 		}
 		params := buildRecallPromotionParams(ctx, campaign.Id, recipient.Id, user.Id, attempt, coupon.ID, customerID, code, expiresAt, normalizedDiscount)
 		created, createErr := recallStripeCreateWithRetry("create Stripe Promotion Code", func() (*stripe.PromotionCode, error) {
@@ -650,7 +660,6 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 			return created, nil
 		}
 		if isRecallPromotionCodeCollision(createErr) {
-			stableCode = ""
 			continue
 		}
 		return nil, createErr
@@ -683,6 +692,10 @@ func buildRecallPromotionParams(ctx context.Context, campaignID int64, recipient
 }
 
 func normalizeRecallPromotionCode(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) >= 2 && strings.EqualFold(raw[:2], "FK") {
+		raw = raw[2:]
+	}
 	var normalized strings.Builder
 	normalized.WriteString("FK")
 	for _, char := range strings.ToUpper(raw) {
@@ -700,6 +713,18 @@ func normalizeRecallPromotionCode(raw string) string {
 		}
 	}
 	return normalized.String()
+}
+
+func deriveRecallPromotionCode(baseCode string, campaignID int64, recipientID int64, attempt int) string {
+	const safeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+	material := fmt.Sprintf("%s:%d:%d:%d", baseCode, campaignID, recipientID, attempt)
+	digest := sha256.Sum256([]byte(material))
+	var derived strings.Builder
+	derived.WriteString("FK")
+	for i := 0; i < 16; i++ {
+		derived.WriteByte(safeAlphabet[int(digest[i])%len(safeAlphabet)])
+	}
+	return derived.String()
 }
 
 func isRecallPromotionCodeCollision(err error) bool {
