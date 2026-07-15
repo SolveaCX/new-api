@@ -203,6 +203,27 @@ func TestRegistrationEmailLinkMemoryReplacesPreviousToken(t *testing.T) {
 	}
 }
 
+func TestRegistrationEmailLinkMemoryReclaimsSupersededTokens(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+	previousLimit := registrationEmailMemoryMaxSize
+	registrationEmailMemoryMaxSize = 3
+	t.Cleanup(func() { registrationEmailMemoryMaxSize = previousLimit })
+
+	for attempt := 0; attempt < 8; attempt++ {
+		if _, err := RegisterRegistrationEmailLink("user@example.com"); err != nil {
+			t.Fatalf("register replacement link %d: %v", attempt+1, err)
+		}
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	stored := len(registrationEmailVerificationMap)
+	registrationEmailVerificationMutex.Unlock()
+	if stored != 2 {
+		t.Fatalf("stored credentials = %d, want only current link and pointer", stored)
+	}
+}
+
 func TestRegistrationEmailLinkGrantMemoryIsIdempotent(t *testing.T) {
 	withRedisDisabled(t)
 	resetRegistrationEmailVerificationStore()
