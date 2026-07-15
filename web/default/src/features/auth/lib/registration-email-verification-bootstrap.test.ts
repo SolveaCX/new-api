@@ -31,10 +31,24 @@ type BootstrapWindow = {
     replaceState: (state: unknown, title: string, url: string) => void
   }
   __consumeRegistrationEmailVerificationToken?: () => string | null
+  __registrationEmailVerificationRequest?: Promise<unknown>
+  fetch: (
+    input: string,
+    init: {
+      body?: string
+      credentials?: string
+      headers?: unknown
+      method?: string
+    }
+  ) => Promise<{ json: () => Promise<unknown> }>
 }
 
 const indexHtml = readFileSync(
   new URL('../../../../index.html', import.meta.url),
+  'utf8'
+)
+const routeTreeSource = readFileSync(
+  new URL('../../../routeTree.gen.ts', import.meta.url),
   'utf8'
 )
 
@@ -62,8 +76,15 @@ describe('registration email verification bootstrap', () => {
     )
   })
 
-  test('scrubs the credential fragment and exposes it only once to the app', () => {
+  test('scrubs the credential fragment and starts exchange before third-party scripts', async () => {
     let replacedUrl = ''
+    const requests: Array<{ input: string; body?: string; method?: string }> =
+      []
+    const exchangeResponse = {
+      success: true,
+      message: '',
+      data: { verified: true },
+    }
     const window: BootstrapWindow = {
       location: {
         pathname: '/sign-up/verify',
@@ -76,12 +97,41 @@ describe('registration email verification bootstrap', () => {
           replacedUrl = url
         },
       },
+      fetch: async (input, init) => {
+        requests.push({ input, body: init.body, method: init.method })
+        return { json: async () => exchangeResponse }
+      },
     }
 
-    runInNewContext(getBootstrapScript(), { URLSearchParams, window })
+    runInNewContext(getBootstrapScript(), {
+      JSON,
+      Promise,
+      URLSearchParams,
+      window,
+    })
 
     expect(replacedUrl).toBe('/sign-up/verify?lng=en')
-    expect(window.__consumeRegistrationEmailVerificationToken?.()).toBe('a/b')
-    expect(window.__consumeRegistrationEmailVerificationToken?.()).toBeNull()
+    expect(window.__consumeRegistrationEmailVerificationToken).toBeUndefined()
+    expect(requests).toEqual([
+      {
+        input: '/api/registration/email-verification/exchange',
+        body: JSON.stringify({ token: 'a/b' }),
+        method: 'POST',
+      },
+    ])
+    expect(await window.__registrationEmailVerificationRequest).toEqual(
+      exchangeResponse
+    )
+  })
+
+  test('keeps the verification page independent from the sign-up form route', () => {
+    const routeDefinition = routeTreeSource.match(
+      /const authSignUpVerifyRoute = authSignUpVerifyRouteImport\.update\(\{[\s\S]*?\} as any\)/
+    )?.[0]
+
+    expect(routeDefinition).toContain('getParentRoute: () => authRouteRoute')
+    expect(routeDefinition).not.toContain(
+      'getParentRoute: () => authSignUpRoute'
+    )
   })
 })

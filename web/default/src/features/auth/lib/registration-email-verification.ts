@@ -16,30 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
-export function getRegistrationEmailToken(hash: string): string | null {
-  const fragment = hash.startsWith('#') ? hash.slice(1) : hash
-  const token = new URLSearchParams(fragment).get('token')?.trim()
-  return token || null
-}
-
 declare global {
   interface Window {
-    __consumeRegistrationEmailVerificationToken?: () => string | null
+    __registrationEmailVerificationRequest?: Promise<unknown>
   }
 }
 
-let bootstrappedRegistrationEmailToken: string | null | undefined
+let bootstrappedRegistrationEmailRequest: Promise<unknown> | null | undefined
 
-export function consumeRegistrationEmailVerificationToken(): string | null {
-  if (bootstrappedRegistrationEmailToken !== undefined) {
-    return bootstrappedRegistrationEmailToken
+export function consumeRegistrationEmailVerificationRequest(): Promise<unknown> | null {
+  if (bootstrappedRegistrationEmailRequest !== undefined) {
+    return bootstrappedRegistrationEmailRequest
   }
   if (typeof window === 'undefined') return null
 
-  bootstrappedRegistrationEmailToken =
-    window.__consumeRegistrationEmailVerificationToken?.() ?? null
-  return bootstrappedRegistrationEmailToken
+  bootstrappedRegistrationEmailRequest =
+    window.__registrationEmailVerificationRequest ?? null
+  delete window.__registrationEmailVerificationRequest
+  return bootstrappedRegistrationEmailRequest
 }
 
 export type EmailVerificationScreenState =
@@ -47,18 +41,13 @@ export type EmailVerificationScreenState =
   | 'verified'
   | 'unavailable'
 
-type ResolveRegistrationEmailVerificationDependencies = {
-  exchangeToken: (token: string) => Promise<unknown>
-}
-
 export async function resolveRegistrationEmailVerification(
-  token: string | null,
-  dependencies: ResolveRegistrationEmailVerificationDependencies
+  request: Promise<unknown> | null
 ): Promise<EmailVerificationScreenState> {
-  if (!token) return 'unavailable'
+  if (!request) return 'unavailable'
 
   try {
-    const response = await dependencies.exchangeToken(token)
+    const response = await request
     return isRegistrationEmailVerified(response) ? 'verified' : 'unavailable'
   } catch {
     return 'unavailable'
@@ -66,16 +55,13 @@ export async function resolveRegistrationEmailVerification(
 }
 
 export function startRegistrationEmailVerificationEffect(
-  token: string | null,
-  dependencies: ResolveRegistrationEmailVerificationDependencies,
+  request: Promise<unknown> | null,
   onResolved: (state: EmailVerificationScreenState) => void
 ): () => void {
   let active = true
-  void resolveRegistrationEmailVerification(token, dependencies).then(
-    (nextState) => {
-      if (active) onResolved(nextState)
-    }
-  )
+  void resolveRegistrationEmailVerification(request).then((nextState) => {
+    if (active) onResolved(nextState)
+  })
   return () => {
     active = false
   }

@@ -17,23 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
-import {
-  getRegistrationEmailToken,
-  isRegistrationEmailVerified,
-} from './registration-email-verification'
-
-describe('registration email verification token parsing', () => {
-  test('reads and decodes the token from the URL fragment', () => {
-    expect(getRegistrationEmailToken('#token=abc')).toBe('abc')
-    expect(getRegistrationEmailToken('#token=a%2Fb')).toBe('a/b')
-  })
-
-  test('rejects missing and empty token values', () => {
-    expect(getRegistrationEmailToken('#other=abc')).toBeNull()
-    expect(getRegistrationEmailToken('#token=')).toBeNull()
-    expect(getRegistrationEmailToken('')).toBeNull()
-  })
-})
+import { isRegistrationEmailVerified } from './registration-email-verification'
 
 describe('registration email verification response normalization', () => {
   test('accepts only an explicit successful verified response', () => {

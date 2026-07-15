@@ -2,6 +2,9 @@ package common
 
 import (
 	"encoding/base64"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -194,6 +197,81 @@ func TestRegistrationEmailGrantMemoryMatchesExactEmail(t *testing.T) {
 	}
 }
 
+func TestConsumeRegistrationEmailGrantMemoryIsAtomic(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+
+	grant, err := RegisterRegistrationEmailGrant("user@example.com")
+	if err != nil {
+		t.Fatalf("register grant: %v", err)
+	}
+
+	var successful int32
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if ConsumeRegistrationEmailGrant(grant, "user@example.com") {
+				atomic.AddInt32(&successful, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if successful != 1 {
+		t.Fatalf("successful grant consumptions = %d, want 1", successful)
+	}
+	if VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("consumed grant must not remain valid")
+	}
+}
+
+func TestRegistrationEmailGrantMemoryReservationRollsBack(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+
+	grant, err := RegisterRegistrationEmailGrant("user@example.com")
+	if err != nil {
+		t.Fatalf("register grant: %v", err)
+	}
+	if !ReserveRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("expected grant reservation to succeed")
+	}
+	if VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("reserved grant must not remain available")
+	}
+	if ReserveRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("concurrent grant reservation must fail")
+	}
+	if !RollbackRegistrationEmailGrantReservation(grant, "user@example.com") {
+		t.Fatal("expected grant reservation rollback to succeed")
+	}
+	if !VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("rolled back grant must be available for retry")
+	}
+}
+
+func TestRegistrationEmailMemorySetBoundsCredentialCount(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+
+	previousLimit := registrationEmailMemoryMaxSize
+	registrationEmailMemoryMaxSize = 3
+	t.Cleanup(func() { registrationEmailMemoryMaxSize = previousLimit })
+
+	registrationEmailVerificationMutex.Lock()
+	for index := range 4 {
+		registrationEmailMemorySet(fmt.Sprintf("credential-%d", index), "user@example.com")
+	}
+	stored := len(registrationEmailVerificationMap)
+	registrationEmailVerificationMutex.Unlock()
+
+	if stored != registrationEmailMemoryMaxSize {
+		t.Fatalf("stored credentials = %d, want %d", stored, registrationEmailMemoryMaxSize)
+	}
+}
+
 func TestRegistrationEmailMemorySetReclaimsExpiredCredentials(t *testing.T) {
 	withRedisDisabled(t)
 	resetRegistrationEmailVerificationStore()
@@ -258,6 +336,67 @@ func TestRegistrationEmailGrantRedisCrossInstance(t *testing.T) {
 	DeleteRegistrationEmailGrant(grant)
 	if VerifyRegistrationEmailGrant(grant, "user@example.com") {
 		t.Fatal("deleted Redis grant must not verify")
+	}
+}
+
+func TestConsumeRegistrationEmailGrantRedisIsAtomic(t *testing.T) {
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+	resetRegistrationEmailVerificationStore()
+
+	grant, err := RegisterRegistrationEmailGrant("user@example.com")
+	if err != nil {
+		t.Fatalf("register grant: %v", err)
+	}
+
+	var successful int32
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if ConsumeRegistrationEmailGrant(grant, "user@example.com") {
+				atomic.AddInt32(&successful, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if successful != 1 {
+		t.Fatalf("successful Redis grant consumptions = %d, want 1", successful)
+	}
+	if VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("consumed Redis grant must not remain valid")
+	}
+}
+
+func TestRegistrationEmailGrantRedisReservationRollsBackAndCommits(t *testing.T) {
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+	resetRegistrationEmailVerificationStore()
+
+	grant, err := RegisterRegistrationEmailGrant("user@example.com")
+	if err != nil {
+		t.Fatalf("register grant: %v", err)
+	}
+	if !ReserveRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("expected Redis grant reservation to succeed")
+	}
+	if !RollbackRegistrationEmailGrantReservation(grant, "user@example.com") {
+		t.Fatal("expected Redis grant reservation rollback to succeed")
+	}
+	if !VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("rolled back Redis grant must be available for retry")
+	}
+	if !ReserveRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("expected rolled back Redis grant to be reservable")
+	}
+	CommitRegistrationEmailGrantReservation(grant)
+	if VerifyRegistrationEmailGrant(grant, "user@example.com") {
+		t.Fatal("committed grant reservation must remain consumed")
+	}
+	if RollbackRegistrationEmailGrantReservation(grant, "user@example.com") {
+		t.Fatal("committed grant reservation must not roll back")
 	}
 }
 

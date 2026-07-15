@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import {
   canApplyEmailVerificationStatus,
   clearVerificationForEmailChange,
@@ -26,6 +27,11 @@ import {
   markEmailSent,
   markEmailVerified,
 } from './email-verification-state'
+
+const signUpFormSource = readFileSync(
+  new URL('../components/sign-up-form.tsx', import.meta.url),
+  'utf8'
+)
 
 describe('registration email verification state', () => {
   test('binds verified status to the exact trimmed email', () => {
@@ -50,6 +56,12 @@ describe('registration email verification state', () => {
       clearVerificationForEmailChange(verified, 'other@example.com')
         .verifiedEmail
     ).toBe('')
+  })
+
+  test('clears a stale verification code when the email changes', () => {
+    expect(signUpFormSource).toMatch(
+      /onChange=\{\(event\) => \{[\s\S]*?setVerificationCode\(''\)[\s\S]*?clearVerificationForEmailChange/
+    )
   })
 
   test('does not require a code for the matching verified email', () => {

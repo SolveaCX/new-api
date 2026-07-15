@@ -19,6 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute } from '@tanstack/react-router'
 import { EmailVerificationScreen } from '@/features/auth/sign-up/components/email-verification-screen'
 
-export const Route = createFileRoute('/(auth)/sign-up/verify')({
+export const Route = createFileRoute('/(auth)/sign-up_/verify')({
   component: EmailVerificationScreen,
 })

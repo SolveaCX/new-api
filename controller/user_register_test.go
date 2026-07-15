@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -222,6 +223,43 @@ func TestRegisterRetainsMatchingGrantAfterAccountValidationFailure(t *testing.T)
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
 	require.False(t, payload.Success)
 	require.True(t, common.VerifyRegistrationEmailGrant(grant, "retry@example.com"))
+}
+
+func TestRegisterRetainsMatchingGrantAfterDomainRiskRejection(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.RegistrationDomainState{}, &model.RegistrationDomainBlock{}, &model.RegistrationDomainBlockUser{}))
+	configureRegistrationEndpointTest(t)
+	common.EmailVerificationEnabled = true
+	withRegistrationSecurityConfig(t, map[string]string{
+		"registration_security.domain_risk_enabled":            "true",
+		"registration_security.domain_risk_window_hours":       "24",
+		"registration_security.domain_risk_threshold":          "2",
+		"registration_security.trusted_email_domains":          "[]",
+		"registration_security.reject_subdomain_email_domains": "false",
+	})
+	require.NoError(t, db.Create(&model.User{
+		Username:    "risk-seed",
+		Email:       "seed@retry-risk.example",
+		EmailDomain: "retry-risk.example",
+		Status:      common.UserStatusEnabled,
+		Role:        common.RoleCommonUser,
+		CreatedAt:   time.Now().Unix(),
+	}).Error)
+
+	grant, sessionCookie := issueRegistrationEmailGrantCookie(t, "retry@retry-risk.example")
+	body, err := common.Marshal(map[string]any{
+		"username": "risk-retry-user",
+		"password": "password123",
+		"email":    "retry@retry-risk.example",
+	})
+	require.NoError(t, err)
+
+	recorder := performRegisterRequest(t, body, sessionCookie)
+
+	var payload registerResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.False(t, payload.Success)
+	require.True(t, common.VerifyRegistrationEmailGrant(grant, "retry@retry-risk.example"))
 }
 
 func TestRegisterRejectsEmailOutsideDomainWhitelist(t *testing.T) {

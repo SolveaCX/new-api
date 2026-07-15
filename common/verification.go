@@ -35,10 +35,12 @@ const (
 	registrationEmailLinkPrefix    = "registration-email-link:"
 	registrationEmailCurrentPrefix = "registration-email-current:"
 	registrationEmailGrantPrefix   = "registration-email-grant:"
+	registrationEmailReservePrefix = "registration-email-reserve:"
 )
 
 var registrationEmailVerificationMutex sync.Mutex
 var registrationEmailVerificationMap map[string]verificationValue
+var registrationEmailMemoryMaxSize = 4096
 
 func GenerateVerificationCode(length int) string {
 	code := uuid.New().String()
@@ -139,6 +141,19 @@ func registrationEmailMemorySet(key, value string) {
 	for existingKey, existingValue := range registrationEmailVerificationMap {
 		if now.Sub(existingValue.time) >= registrationEmailCredentialTTL() {
 			delete(registrationEmailVerificationMap, existingKey)
+		}
+	}
+	if _, exists := registrationEmailVerificationMap[key]; !exists && len(registrationEmailVerificationMap) >= registrationEmailMemoryMaxSize {
+		oldestKey := ""
+		var oldestTime time.Time
+		for existingKey, existingValue := range registrationEmailVerificationMap {
+			if oldestKey == "" || existingValue.time.Before(oldestTime) {
+				oldestKey = existingKey
+				oldestTime = existingValue.time
+			}
+		}
+		if oldestKey != "" {
+			delete(registrationEmailVerificationMap, oldestKey)
 		}
 	}
 	registrationEmailVerificationMap[key] = verificationValue{code: value, time: now}
@@ -322,20 +337,126 @@ func VerifyRegistrationEmailGrant(grant, email string) bool {
 	return ok && strings.TrimSpace(storedEmail) == email
 }
 
+func ConsumeRegistrationEmailGrant(grant, email string) bool {
+	if !ReserveRegistrationEmailGrant(grant, email) {
+		return false
+	}
+	CommitRegistrationEmailGrantReservation(grant)
+	return true
+}
+
+func ReserveRegistrationEmailGrant(grant, email string) bool {
+	grant = strings.TrimSpace(grant)
+	email = strings.TrimSpace(email)
+	if grant == "" || email == "" {
+		return false
+	}
+	grantKey := registrationEmailGrantPrefix + grant
+	reserveKey := registrationEmailReservePrefix + grant
+	if verificationRedisUsable() {
+		const reserveGrantScript = `
+local stored = redis.call('GET', KEYS[1])
+if stored ~= ARGV[1] or redis.call('EXISTS', KEYS[2]) == 1 then
+  return 0
+end
+
+redis.call('RENAME', KEYS[1], KEYS[2])
+return 1`
+		reserved, err := RDB.Eval(context.Background(), reserveGrantScript, []string{grantKey, reserveKey}, email).Int()
+		if err != nil {
+			SysError("failed to reserve registration email grant in Redis: " + err.Error())
+			return false
+		}
+		return reserved == 1
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	if _, reserved := registrationEmailMemoryGet(reserveKey); reserved {
+		return false
+	}
+	storedEmail, ok := registrationEmailMemoryGet(grantKey)
+	if !ok || strings.TrimSpace(storedEmail) != email {
+		return false
+	}
+	reservedValue := registrationEmailVerificationMap[grantKey]
+	delete(registrationEmailVerificationMap, grantKey)
+	registrationEmailVerificationMap[reserveKey] = reservedValue
+	return true
+}
+
+func RollbackRegistrationEmailGrantReservation(grant, email string) bool {
+	grant = strings.TrimSpace(grant)
+	email = strings.TrimSpace(email)
+	if grant == "" || email == "" {
+		return false
+	}
+	grantKey := registrationEmailGrantPrefix + grant
+	reserveKey := registrationEmailReservePrefix + grant
+	if verificationRedisUsable() {
+		const rollbackGrantScript = `
+local stored = redis.call('GET', KEYS[1])
+if stored ~= ARGV[1] or redis.call('EXISTS', KEYS[2]) == 1 then
+  return 0
+end
+
+redis.call('RENAME', KEYS[1], KEYS[2])
+return 1`
+		rolledBack, err := RDB.Eval(context.Background(), rollbackGrantScript, []string{reserveKey, grantKey}, email).Int()
+		if err != nil {
+			SysError("failed to roll back registration email grant reservation in Redis: " + err.Error())
+			return false
+		}
+		return rolledBack == 1
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	if _, available := registrationEmailMemoryGet(grantKey); available {
+		return false
+	}
+	storedEmail, ok := registrationEmailMemoryGet(reserveKey)
+	if !ok || strings.TrimSpace(storedEmail) != email {
+		return false
+	}
+	reservedValue := registrationEmailVerificationMap[reserveKey]
+	delete(registrationEmailVerificationMap, reserveKey)
+	registrationEmailVerificationMap[grantKey] = reservedValue
+	return true
+}
+
+func CommitRegistrationEmailGrantReservation(grant string) {
+	grant = strings.TrimSpace(grant)
+	if grant == "" {
+		return
+	}
+	reserveKey := registrationEmailReservePrefix + grant
+	if verificationRedisUsable() {
+		if err := RDB.Del(context.Background(), reserveKey).Err(); err != nil {
+			SysError("failed to commit registration email grant reservation in Redis: " + err.Error())
+		}
+	}
+	registrationEmailVerificationMutex.Lock()
+	defer registrationEmailVerificationMutex.Unlock()
+	delete(registrationEmailVerificationMap, reserveKey)
+}
+
 func DeleteRegistrationEmailGrant(grant string) {
 	grant = strings.TrimSpace(grant)
 	if grant == "" {
 		return
 	}
 	grantKey := registrationEmailGrantPrefix + grant
+	reserveKey := registrationEmailReservePrefix + grant
 	if verificationRedisUsable() {
-		if err := RDB.Del(context.Background(), grantKey).Err(); err != nil {
+		if err := RDB.Del(context.Background(), grantKey, reserveKey).Err(); err != nil {
 			SysError("failed to delete registration email grant from Redis: " + err.Error())
 		}
 	}
 	registrationEmailVerificationMutex.Lock()
 	defer registrationEmailVerificationMutex.Unlock()
 	delete(registrationEmailVerificationMap, grantKey)
+	delete(registrationEmailVerificationMap, reserveKey)
 }
 
 // no lock inside, so the caller must lock the verificationMap before calling!

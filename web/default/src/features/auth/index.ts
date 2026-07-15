@@ -27,7 +27,6 @@ export {
   register,
   sendPasswordResetEmail,
   sendEmailVerification,
-  exchangeRegistrationEmailToken,
   getRegistrationEmailVerificationStatus,
   bindEmail,
   getOAuthState,
@@ -95,10 +94,7 @@ export {
   saveAffiliateCode,
 } from './lib/storage'
 
-export {
-  getRegistrationEmailToken,
-  isRegistrationEmailVerified,
-} from './lib/registration-email-verification'
+export { isRegistrationEmailVerified } from './lib/registration-email-verification'
 
 export {
   isValidOTP,

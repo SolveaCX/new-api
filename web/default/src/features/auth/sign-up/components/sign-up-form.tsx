@@ -470,6 +470,7 @@ export function SignUpForm({
                       onChange={(event) => {
                         currentEmailRef.current = event.target.value.trim()
                         field.onChange(event)
+                        setVerificationCode('')
                         setEmailVerificationState((current) =>
                           clearVerificationForEmailChange(
                             current,
