@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -125,13 +126,16 @@ func TestRecallAudienceContractsUseStableJSONNames(t *testing.T) {
 	}
 	raw, err := common.Marshal(draft)
 	require.NoError(t, err)
-	jsonText := string(raw)
-	for _, name := range []string{
-		`"audience_template"`, `"registration_age_days"`, `"scheduled_at"`,
-		`"percent_off"`, `"top_up_price_ids"`, `"body_text"`,
-	} {
-		require.True(t, strings.Contains(jsonText, name), "missing JSON field %s in %s", name, jsonText)
-	}
+	var draftJSON map[string]any
+	require.NoError(t, common.Unmarshal(raw, &draftJSON))
+	require.ElementsMatch(t, []string{
+		"name", "audience_template", "audience_config", "execution_mode", "schedule",
+		"coupon_source", "existing_coupon_id", "discount_config", "product_scope",
+		"promotion_valid_seconds", "enrollment_limit", "worker_concurrency", "email_sequence",
+	}, recallAudienceJSONKeys(draftJSON))
+	productScope, ok := draftJSON["product_scope"].(map[string]any)
+	require.True(t, ok)
+	require.ElementsMatch(t, []string{"topup_price_ids", "subscription_price_ids"}, recallAudienceJSONKeys(productScope))
 
 	candidateRaw, err := common.Marshal(RecallAudienceCandidate{UserID: 1, SnapshotJSON: `{"secret":true}`})
 	require.NoError(t, err)
@@ -139,7 +143,20 @@ func TestRecallAudienceContractsUseStableJSONNames(t *testing.T) {
 
 	claimRaw, err := common.Marshal(RecallClaimView{CampaignID: 1, RecipientID: 2})
 	require.NoError(t, err)
-	require.Contains(t, string(claimRaw), `"campaign_id":1`)
+	var claimJSON map[string]any
+	require.NoError(t, common.Unmarshal(claimRaw, &claimJSON))
+	require.ElementsMatch(t, []string{
+		"campaign_id", "recipient_id", "campaign_name", "promotion_code_masked",
+		"expires_at", "discount", "products", "redeemed",
+	}, recallAudienceJSONKeys(claimJSON))
+}
+
+func recallAudienceJSONKeys(value map[string]any) []string {
+	keys := make([]string, 0, len(value))
+	for key := range value {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func TestRecallAudienceFirstPurchaseUsesAllPaymentProvidersAndPreviewDoesNotWrite(t *testing.T) {
@@ -166,7 +183,7 @@ func TestRecallAudienceFirstPurchaseUsesAllPaymentProvidersAndPreviewDoesNotWrit
 			MinRequestCount:     5,
 			MaxQuota:            10,
 		},
-	}, 10, now)
+	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, preview.EligibleTotal)
 	require.Equal(t, []RecallAudienceCandidate{{
@@ -219,7 +236,7 @@ func TestRecallAudienceFirstPurchaseExcludesSuccessfulSubscriptionPayment(t *tes
 			MinRequestCount:     5,
 			MaxQuota:            10,
 		},
-	}, 10, now)
+	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.Zero(t, preview.EligibleTotal)
 	require.EqualValues(t, 1, preview.Exclusions["payment_exists"])
@@ -244,7 +261,7 @@ func TestRecallAudienceFirstPurchaseExcludesSuccessfulZeroValuePaymentWithoutTim
 			MinRequestCount:     5,
 			MaxQuota:            10,
 		},
-	}, 10, now)
+	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.Zero(t, preview.EligibleTotal)
 	require.EqualValues(t, 1, preview.Exclusions["payment_exists"])
@@ -276,7 +293,7 @@ func TestRecallAudienceLapsedPayerFiltersProviderAndRecentActivity(t *testing.T)
 			MaxQuota:           10,
 			PaymentProviders:   []string{model.PaymentProviderStripe},
 		},
-	}, 10, now)
+	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, preview.EligibleTotal)
 	require.Equal(t, eligible.Id, preview.Sample[0].UserID)
@@ -301,7 +318,7 @@ func TestRecallAudiencePaymentProviderFilterIgnoresSurroundingWhitespace(t *test
 			MaxQuota:           10,
 			PaymentProviders:   []string{"  " + model.PaymentProviderStripe + "  "},
 		},
-	}, 10, now)
+	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, preview.EligibleTotal)
 	require.Equal(t, eligible.Id, preview.Sample[0].UserID)
@@ -326,7 +343,7 @@ func TestRecallAudienceExpiredSubscriptionRequiresExpiredHistoryWithoutActiveSub
 			SubscriptionExpiredDays: 30,
 			MinSubscriptionCount:    1,
 		},
-	}, 10, now)
+	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, preview.EligibleTotal)
 	require.Equal(t, eligible.Id, preview.Sample[0].UserID)
@@ -339,14 +356,14 @@ func TestRecallAudienceSnapshotHonorsLimitAndKeepsFullEmail(t *testing.T) {
 	first := createRecallAudienceUser(t, mainDB, now, "snapshot_first", nil)
 	createRecallAudienceUser(t, mainDB, now, "snapshot_second", nil)
 
-	recipients, err := NewRecallAudienceSelector().Snapshot(context.Background(), RecallCampaignDraft{
+	recipients, _, err := NewRecallAudienceSelector().Snapshot(context.Background(), RecallCampaignDraft{
 		AudienceTemplate: "first_purchase",
 		Audience: RecallAudienceConfig{
 			RegistrationAgeDays: 7,
 			MinRequestCount:     5,
 			MaxQuota:            10,
 		},
-	}, 1, now)
+	}, 1, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.Len(t, recipients, 1)
 	require.Equal(t, first.Id, recipients[0].UserId)
@@ -362,6 +379,50 @@ func TestRecallAudienceSnapshotHonorsLimitAndKeepsFullEmail(t *testing.T) {
 	var recipientCount int64
 	require.NoError(t, mainDB.Model(&model.RecallRecipient{}).Count(&recipientCount).Error)
 	require.Zero(t, recipientCount, "Snapshot returns rows but must not persist them")
+}
+
+func TestRecallAudienceSnapshotLimitDoesNotTruncateExclusions(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		limit          int
+		recipientCount int
+	}{
+		{name: "positive limit", limit: 1, recipientCount: 1},
+		{name: "zero limit", limit: 0, recipientCount: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mainDB, logDB := setupRecallAudienceTestDBs(t)
+			const now int64 = 2_000_000_000
+			createRecallAudienceUser(t, mainDB, now, "snapshot_limit_eligible", nil)
+			createRecallAudienceUser(t, mainDB, now, "snapshot_limit_invalid", func(user *model.User) {
+				user.Email = "not-an-email"
+			})
+			optOutJSON, err := common.Marshal(dto.UserSetting{RecallMarketingOptOut: true})
+			require.NoError(t, err)
+			createRecallAudienceUser(t, mainDB, now, "snapshot_limit_opted_out", func(user *model.User) {
+				user.Setting = string(optOutJSON)
+			})
+			recent := createRecallAudienceUser(t, mainDB, now, "snapshot_limit_recent", nil)
+			require.NoError(t, logDB.Create(&model.Log{
+				UserId: recent.Id, Type: model.LogTypeConsume, CreatedAt: now - 60,
+			}).Error)
+
+			recipients, exclusions, err := NewRecallAudienceSelector().Snapshot(context.Background(), RecallCampaignDraft{
+				AudienceTemplate: "first_purchase",
+				Audience: RecallAudienceConfig{
+					RegistrationAgeDays: 7,
+					MinRequestCount:     5,
+					MaxQuota:            10,
+					LastAPICallAgeDays:  30,
+				},
+			}, test.limit, time.Unix(now, 0))
+			require.NoError(t, err)
+			require.Len(t, recipients, test.recipientCount)
+			require.EqualValues(t, 1, exclusions["invalid_email"])
+			require.EqualValues(t, 1, exclusions["opted_out"])
+			require.EqualValues(t, 1, exclusions["recent_api_activity"])
+		})
+	}
 }
 
 func TestRecallAudienceCommonExclusionsApplyToEveryTemplate(t *testing.T) {
@@ -422,7 +483,7 @@ func TestRecallAudienceCommonExclusionsApplyToEveryTemplate(t *testing.T) {
 			preview, err := NewRecallAudienceSelector().Preview(context.Background(), RecallCampaignDraft{
 				AudienceTemplate: template,
 				Audience:         cfg,
-			}, 20, now)
+			}, 20, time.Unix(now, 0))
 			require.NoError(t, err)
 			require.EqualValues(t, 1, preview.EligibleTotal)
 			require.EqualValues(t, 1, preview.Exclusions["disabled"])
@@ -452,7 +513,7 @@ func TestRecallAudienceGroupBlockModeExcludesMatchingGroups(t *testing.T) {
 			Groups:              []string{"blocked"},
 			GroupMode:           "block",
 		},
-	}, 10, now)
+	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, preview.EligibleTotal)
 	require.Equal(t, eligible.Id, preview.Sample[0].UserID)
@@ -528,7 +589,7 @@ func TestRecallAudienceExpiredSubscriptionFiltersAmountByPaymentProvider(t *test
 			MinSubscriptionCount:    1,
 			PaymentProviders:        []string{model.PaymentProviderStripe},
 		},
-	}, 10, now)
+	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, preview.EligibleTotal)
 	require.Equal(t, eligible.Id, preview.Sample[0].UserID)
@@ -590,13 +651,38 @@ func TestRecallAudiencePreviewAndSnapshotShareEligibilityAndLanguageFallback(t *
 	}
 	selector := NewRecallAudienceSelector()
 	selector.MainBatchSize = 1
-	preview, err := selector.Preview(context.Background(), draft, 10, now)
+	preview, err := selector.Preview(context.Background(), draft, 10, time.Unix(now, 0))
 	require.NoError(t, err)
-	recipients, err := selector.Snapshot(context.Background(), draft, 10, now)
+	recipients, _, err := selector.Snapshot(context.Background(), draft, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	require.Equal(t, []int{first.Id, second.Id}, []int{preview.Sample[0].UserID, preview.Sample[1].UserID})
 	require.Equal(t, []int{first.Id, second.Id}, []int{recipients[0].UserId, recipients[1].UserId})
 	require.Equal(t, "pt", preview.Sample[0].Language)
+	require.Equal(t, "en", preview.Sample[1].Language)
+}
+
+func TestRecallAudienceMalformedSettingFallsBackToBrowserAndDefaultLanguage(t *testing.T) {
+	mainDB, _ := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	browserFallback := createRecallAudienceUser(t, mainDB, now, "malformed_setting_browser", func(user *model.User) {
+		user.Setting = "{not-json"
+		user.BrowserLang = "fr-FR"
+	})
+	defaultFallback := createRecallAudienceUser(t, mainDB, now, "malformed_setting_default", func(user *model.User) {
+		user.Setting = "{not-json"
+		user.BrowserLang = ""
+	})
+
+	preview, err := NewRecallAudienceSelector().Preview(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "first_purchase",
+		Audience:         RecallAudienceConfig{RegistrationAgeDays: 7, MinRequestCount: 5, MaxQuota: 10},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	require.Equal(t, []int{browserFallback.Id, defaultFallback.Id}, []int{
+		preview.Sample[0].UserID,
+		preview.Sample[1].UserID,
+	})
+	require.Equal(t, "fr", preview.Sample[0].Language)
 	require.Equal(t, "en", preview.Sample[1].Language)
 }
 
@@ -605,15 +691,15 @@ func TestRecallAudienceHonorsCancellationAndRejectsInvalidBatchSizes(t *testing.
 	draft := RecallCampaignDraft{AudienceTemplate: "first_purchase"}
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := NewRecallAudienceSelector().Preview(cancelled, draft, 1, 2_000_000_000)
+	_, err := NewRecallAudienceSelector().Preview(cancelled, draft, 1, time.Unix(2_000_000_000, 0))
 	require.ErrorIs(t, err, context.Canceled)
 
 	selector := NewRecallAudienceSelector()
 	selector.MainBatchSize = 0
-	_, err = selector.Preview(context.Background(), draft, 1, 2_000_000_000)
+	_, err = selector.Preview(context.Background(), draft, 1, time.Unix(2_000_000_000, 0))
 	require.Error(t, err)
 	selector = NewRecallAudienceSelector()
 	selector.LogBatchSize = 0
-	_, err = selector.Preview(context.Background(), draft, 1, 2_000_000_000)
+	_, err = selector.Preview(context.Background(), draft, 1, time.Unix(2_000_000_000, 0))
 	require.Error(t, err)
 }

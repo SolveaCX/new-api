@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 )
 
@@ -66,7 +66,7 @@ func ValidateRecallAudience(template string, cfg RecallAudienceConfig) error {
 	return nil
 }
 
-func (selector *RecallAudienceSelector) Preview(ctx context.Context, draft RecallCampaignDraft, sampleSize int, now int64) (RecallAudiencePreview, error) {
+func (selector *RecallAudienceSelector) Preview(ctx context.Context, draft RecallCampaignDraft, sampleSize int, now time.Time) (RecallAudiencePreview, error) {
 	preview := RecallAudiencePreview{
 		Sample:     make([]RecallAudienceCandidate, 0),
 		Exclusions: newRecallAudienceExclusions(),
@@ -74,7 +74,7 @@ func (selector *RecallAudienceSelector) Preview(ctx context.Context, draft Recal
 	if sampleSize < 0 {
 		return preview, fmt.Errorf("recall audience sample size must not be negative")
 	}
-	exclusions, err := selector.iterate(ctx, draft, now, func(selection recallAudienceSelection) bool {
+	exclusions, err := selector.iterate(ctx, draft, now.Unix(), func(selection recallAudienceSelection) bool {
 		candidate := selection.Candidate
 		preview.EligibleTotal++
 		if len(preview.Sample) < sampleSize {
@@ -87,26 +87,25 @@ func (selector *RecallAudienceSelector) Preview(ctx context.Context, draft Recal
 	return preview, err
 }
 
-func (selector *RecallAudienceSelector) Snapshot(ctx context.Context, draft RecallCampaignDraft, limit int, now int64) ([]model.RecallRecipient, error) {
+func (selector *RecallAudienceSelector) Snapshot(ctx context.Context, draft RecallCampaignDraft, limit int, now time.Time) ([]model.RecallRecipient, map[string]int64, error) {
 	recipients := make([]model.RecallRecipient, 0)
 	if limit < 0 {
-		return nil, fmt.Errorf("recall audience snapshot limit must not be negative")
+		return nil, nil, fmt.Errorf("recall audience snapshot limit must not be negative")
 	}
-	if limit == 0 {
-		return recipients, nil
-	}
-	_, err := selector.iterate(ctx, draft, now, func(selection recallAudienceSelection) bool {
-		candidate := selection.Candidate
-		recipients = append(recipients, model.RecallRecipient{
-			UserId:              candidate.UserID,
-			EligibilitySnapshot: candidate.SnapshotJSON,
-			EmailSnapshot:       selection.Email,
-			LanguageSnapshot:    candidate.Language,
-			State:               model.RecallRecipientQueued,
-		})
-		return len(recipients) < limit
+	exclusions, err := selector.iterate(ctx, draft, now.Unix(), func(selection recallAudienceSelection) bool {
+		if len(recipients) < limit {
+			candidate := selection.Candidate
+			recipients = append(recipients, model.RecallRecipient{
+				UserId:              candidate.UserID,
+				EligibilitySnapshot: candidate.SnapshotJSON,
+				EmailSnapshot:       selection.Email,
+				LanguageSnapshot:    candidate.Language,
+				State:               model.RecallRecipientQueued,
+			})
+		}
+		return true
 	})
-	return recipients, err
+	return recipients, exclusions, err
 }
 
 func (selector *RecallAudienceSelector) iterate(
@@ -246,10 +245,7 @@ func recallAudienceCandidate(draft RecallCampaignDraft, fact model.RecallCandida
 	if !ok {
 		return recallAudienceSelection{}, "invalid_email", nil
 	}
-	setting, err := recallAudienceUserSetting(user.Setting)
-	if err != nil {
-		return recallAudienceSelection{}, "", fmt.Errorf("decode recall setting for user %d: %w", user.Id, err)
-	}
+	setting := user.GetSetting()
 	if setting.RecallMarketingOptOut {
 		return recallAudienceSelection{}, "opted_out", nil
 	}
@@ -329,17 +325,6 @@ func recallAudienceEmail(stored string) (string, bool) {
 		return "", false
 	}
 	return trimmed, true
-}
-
-func recallAudienceUserSetting(raw string) (dto.UserSetting, error) {
-	setting := dto.UserSetting{}
-	if strings.TrimSpace(raw) == "" {
-		return setting, nil
-	}
-	if err := common.Unmarshal([]byte(raw), &setting); err != nil {
-		return dto.UserSetting{}, err
-	}
-	return setting, nil
 }
 
 func recallAudienceGroupAllowed(userGroup string, groups []string, mode string) bool {

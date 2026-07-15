@@ -3,17 +3,17 @@ package service
 type RecallCampaignDraft struct {
 	Name                  string               `json:"name"`
 	AudienceTemplate      string               `json:"audience_template"`
-	Audience              RecallAudienceConfig `json:"audience"`
+	Audience              RecallAudienceConfig `json:"audience_config"`
 	ExecutionMode         string               `json:"execution_mode"`
 	Schedule              RecallScheduleConfig `json:"schedule"`
 	CouponSource          string               `json:"coupon_source"`
 	ExistingCouponID      string               `json:"existing_coupon_id"`
-	Discount              RecallDiscountConfig `json:"discount"`
-	Products              RecallProductScope   `json:"products"`
+	Discount              RecallDiscountConfig `json:"discount_config"`
+	Products              RecallProductScope   `json:"product_scope"`
 	PromotionValidSeconds int64                `json:"promotion_valid_seconds"`
 	EnrollmentLimit       int                  `json:"enrollment_limit"`
 	WorkerConcurrency     int                  `json:"worker_concurrency"`
-	Emails                []RecallEmailStage   `json:"emails"`
+	Emails                []RecallEmailStage   `json:"email_sequence"`
 }
 
 type RecallAudienceConfig struct {
@@ -52,7 +52,7 @@ type RecallDiscountConfig struct {
 }
 
 type RecallProductScope struct {
-	TopUpPriceIDs        []string `json:"top_up_price_ids"`
+	TopUpPriceIDs        []string `json:"topup_price_ids"`
 	SubscriptionPriceIDs []string `json:"subscription_price_ids"`
 }
 
