@@ -87,23 +87,33 @@ func LeaseRecallRecipient(id int64, owner string, now int64, leaseUntil int64) (
 	return result.RowsAffected == 1, nil
 }
 
-func ReleaseRecallRecipientLease(id int64, owner string) error {
+func ReleaseRecallRecipientLease(id int64, owner string, expectedLeaseUntil int64) error {
 	return DB.Model(&RecallRecipient{}).
-		Where("id = ? AND lease_owner = ?", id, owner).
+		Where("id = ? AND lease_owner = ? AND lease_expires_at = ?", id, owner, expectedLeaseUntil).
 		Updates(map[string]any{
 			"lease_owner":      "",
 			"lease_expires_at": int64(0),
 		}).Error
 }
 
+func insertRecallRunEvent(tx *gorm.DB, runEvent *RecallEvent) *gorm.DB {
+	if tx.Dialector.Name() == "mysql" {
+		// A duplicate INSERT IGNORE reports zero affected rows; unlike UPDATE, this ownership signal is not changed by clientFoundRows.
+		return tx.Clauses(clause.Insert{Modifier: "IGNORE"}).Create(runEvent)
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(runEvent)
+}
+
 func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallRecipient, messages []RecallMessage, runEvent RecallEvent) (int, error) {
 	alignedMessages := make([]bool, len(messages))
+	hasAlignedMessages := false
 	for i := range messages {
 		if messages[i].RecipientId == 0 {
 			if len(messages) != len(recipients) {
 				return 0, fmt.Errorf("cannot align %d recall messages with %d recipients", len(messages), len(recipients))
 			}
 			alignedMessages[i] = true
+			hasAlignedMessages = true
 		}
 	}
 	for i := range recipients {
@@ -114,7 +124,7 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 	inserted := int64(0)
 	ownedRun := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		eventResult := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&runEvent)
+		eventResult := insertRecallRunEvent(tx, &runEvent)
 		if eventResult.Error != nil {
 			return eventResult.Error
 		}
@@ -134,21 +144,31 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 			inserted = result.RowsAffected
 		}
 
-		for i, aligned := range alignedMessages {
-			if !aligned {
-				continue
+		if hasAlignedMessages {
+			userIDs := make([]int, len(recipients))
+			for i := range recipients {
+				userIDs[i] = recipients[i].UserId
 			}
-			recipientID := recipients[i].Id
-			if recipientID == 0 {
-				var stored RecallRecipient
-				if err := tx.Select("id").
-					Where("campaign_id = ? AND user_id = ?", campaignID, recipients[i].UserId).
-					First(&stored).Error; err != nil {
-					return err
+			var storedRecipients []RecallRecipient
+			if err := tx.Select("id", "user_id").
+				Where("campaign_id = ? AND user_id IN ?", campaignID, userIDs).
+				Find(&storedRecipients).Error; err != nil {
+				return err
+			}
+			recipientIDsByUserID := make(map[int]int64, len(storedRecipients))
+			for _, recipient := range storedRecipients {
+				recipientIDsByUserID[recipient.UserId] = recipient.Id
+			}
+			for i, aligned := range alignedMessages {
+				if !aligned {
+					continue
 				}
-				recipientID = stored.Id
+				recipientID, ok := recipientIDsByUserID[recipients[i].UserId]
+				if !ok {
+					return fmt.Errorf("recall recipient for campaign %d user %d was not persisted", campaignID, recipients[i].UserId)
+				}
+				messages[i].RecipientId = recipientID
 			}
-			messages[i].RecipientId = recipientID
 		}
 		if len(messages) == 0 {
 			return nil
