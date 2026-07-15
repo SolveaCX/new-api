@@ -224,11 +224,14 @@ func TestRecallClaimBuildCheckoutDiscountValidatesKindAndPrice(t *testing.T) {
 	topup, err := claimService.BuildCheckoutDiscount(context.Background(), fixture.recipient.UserId, fixture.claim, RecallPurchaseKindTopUp, "price_topup")
 	require.NoError(t, err)
 	require.NotNil(t, topup)
-	require.NotNil(t, topup.PromotionCode)
-	require.Equal(t, *fixture.recipient.StripePromotionCodeId, *topup.PromotionCode)
+	require.Equal(t, *fixture.recipient.StripePromotionCodeId, topup.PromotionCodeID)
+	require.Equal(t, fixture.campaign.Id, topup.CampaignID)
+	require.Equal(t, fixture.recipient.Id, topup.RecipientID)
 	subscription, err := claimService.BuildCheckoutDiscount(context.Background(), fixture.recipient.UserId, fixture.claim, RecallPurchaseKindSubscription, "price_subscription")
 	require.NoError(t, err)
-	require.Equal(t, *fixture.recipient.StripePromotionCodeId, *subscription.PromotionCode)
+	require.Equal(t, *fixture.recipient.StripePromotionCodeId, subscription.PromotionCodeID)
+	require.Equal(t, fixture.campaign.Id, subscription.CampaignID)
+	require.Equal(t, fixture.recipient.Id, subscription.RecipientID)
 
 	_, err = claimService.BuildCheckoutDiscount(context.Background(), fixture.recipient.UserId, fixture.claim, RecallPurchaseKindTopUp, "price_other")
 	require.ErrorIs(t, err, ErrRecallClaimWrongPrice)
@@ -267,6 +270,13 @@ func TestRecallClaimAPITypesDoNotExposeSecrets(t *testing.T) {
 	messageRaw, err := common.Marshal(model.RecallMessage{ClaimTokenHash: &hash})
 	require.NoError(t, err)
 	require.NotContains(t, string(messageRaw), hash)
+	checkoutRaw, err := common.Marshal(RecallCheckoutDiscount{PromotionCodeID: promotionID, CampaignID: 12, RecipientID: 34})
+	require.NoError(t, err)
+	var checkoutJSON map[string]any
+	require.NoError(t, common.Unmarshal(checkoutRaw, &checkoutJSON))
+	require.ElementsMatch(t, []string{"promotion_code_id", "campaign_id", "recipient_id"}, recallAudienceJSONKeys(checkoutJSON))
+	require.NotContains(t, string(checkoutRaw), "FKSECRET234")
+	require.NotContains(t, string(checkoutRaw), hash)
 }
 
 func TestRecallClaimSignedUnsubscribePreservesSettingsAndCancelsAllPendingMessages(t *testing.T) {
