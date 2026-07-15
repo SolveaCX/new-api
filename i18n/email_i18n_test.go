@@ -30,6 +30,8 @@ func TestEmailContentLocalized(t *testing.T) {
 		MsgEmailVerifyExpiry,
 		MsgEmailVerifyIgnore,
 		MsgEmailVerifyFooter,
+		MsgEmailVerifyLinkInvalid,
+		MsgEmailVerifyUnavailable,
 		MsgEmailResetSubject,
 		MsgEmailResetContent,
 	}
@@ -72,6 +74,8 @@ func TestEmailContentLocalized(t *testing.T) {
 		MsgEmailVerifyExpiry,
 		MsgEmailVerifyIgnore,
 		MsgEmailVerifyFooter,
+		MsgEmailVerifyLinkInvalid,
+		MsgEmailVerifyUnavailable,
 	}
 	for _, key := range verificationCopyKeys {
 		en := Translate(LangEn, key, data)

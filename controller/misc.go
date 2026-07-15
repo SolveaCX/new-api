@@ -250,7 +250,7 @@ func GetHomePageContent(c *gin.Context) {
 }
 
 func SendEmailVerification(c *gin.Context) {
-	email := c.Query("email")
+	email := strings.TrimSpace(c.Query("email"))
 	if err := common.Validate.Var(email, "required,email"); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -291,15 +291,43 @@ func SendEmailVerification(c *gin.Context) {
 	}
 	code := common.GenerateVerificationCode(6)
 	common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
+	linkToken, err := common.RegisterRegistrationEmailLink(email)
+	if err != nil {
+		common.DeleteKey(email, common.EmailVerificationPurpose)
+		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to create registration email link for %s: %s", email, err.Error()))
+		common.ApiErrorI18n(c, i18n.MsgEmailVerifyUnavailable)
+		return
+	}
 	tmplData := map[string]any{
 		"SystemName": common.SystemName,
-		"Code":       code,
 		"Minutes":    common.VerificationValidMinutes,
 	}
 	subject := i18n.T(c, i18n.MsgEmailVerifySubject, tmplData)
-	content := i18n.T(c, i18n.MsgEmailVerifyContent, tmplData)
-	err := common.SendEmail(subject, email, content)
+	content, err := common.RenderRegistrationVerificationEmail(common.RegistrationVerificationEmail{
+		Lang:            i18n.GetLangFromContext(c),
+		SystemName:      common.SystemName,
+		Heading:         i18n.T(c, i18n.MsgEmailVerifyHeading, tmplData),
+		Content:         i18n.T(c, i18n.MsgEmailVerifyContent, tmplData),
+		Action:          i18n.T(c, i18n.MsgEmailVerifyAction, tmplData),
+		Alternative:     i18n.T(c, i18n.MsgEmailVerifyAlternative, tmplData),
+		CodeLabel:       i18n.T(c, i18n.MsgEmailVerifyCodeLabel, tmplData),
+		Code:            code,
+		Expiry:          i18n.T(c, i18n.MsgEmailVerifyExpiry, tmplData),
+		IgnoreNotice:    i18n.T(c, i18n.MsgEmailVerifyIgnore, tmplData),
+		Footer:          i18n.T(c, i18n.MsgEmailVerifyFooter, tmplData),
+		VerificationURL: registrationEmailVerificationURL(linkToken),
+	})
 	if err != nil {
+		common.DeleteRegistrationEmailLink(linkToken)
+		common.DeleteKey(email, common.EmailVerificationPurpose)
+		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to render registration email for %s: %s", email, err.Error()))
+		common.ApiErrorI18n(c, i18n.MsgEmailVerifyUnavailable)
+		return
+	}
+	err = common.SendEmail(subject, email, content)
+	if err != nil {
+		common.DeleteRegistrationEmailLink(linkToken)
+		common.DeleteKey(email, common.EmailVerificationPurpose)
 		common.ApiError(c, err)
 		return
 	}

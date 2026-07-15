@@ -10,6 +10,8 @@ email.verification_code_label: "Code de vérification"
 email.verification_expiry: "Ce lien et ce code expirent dans {{.Minutes}} minutes."
 email.verification_ignore: "Si vous n’avez pas demandé cet e-mail, vous pouvez l’ignorer en toute sécurité."
 email.verification_footer: "Envoyé de manière sécurisée par {{.SystemName}}"
+email.verification_link_invalid: "Ce lien de vérification est invalide ou a expiré."
+email.verification_unavailable: "La vérification de l’adresse e-mail est temporairement indisponible. Réessayez."
 email.password_reset_subject: "Réinitialisation du mot de passe {{.SystemName}}"
 email.password_reset_content: "<p>Bonjour, vous réinitialisez le mot de passe de votre compte {{.SystemName}}.</p><p>Cliquez <a href='{{.Link}}'>ici</a> pour réinitialiser votre mot de passe.</p><p>Si le lien n'est pas cliquable, copiez le lien suivant dans votre navigateur :<br> {{.Link}} </p><p>Le lien de réinitialisation est valable pendant {{.Minutes}} minutes. Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer cet e-mail.</p>"
 

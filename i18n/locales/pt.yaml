@@ -302,6 +302,8 @@ email.verification_code_label: "Código de verificação"
 email.verification_expiry: "Este link e código expiram em {{.Minutes}} minutos."
 email.verification_ignore: "Se você não solicitou este e-mail, pode ignorá-lo com segurança."
 email.verification_footer: "Enviado com segurança por {{.SystemName}}"
+email.verification_link_invalid: "Este link de verificação é inválido ou expirou."
+email.verification_unavailable: "A verificação de e-mail está temporariamente indisponível. Tente novamente."
 email.password_reset_subject: "Redefinição de Senha {{.SystemName}}"
 email.password_reset_content: "<p>Olá, você está redefinindo a senha da sua conta {{.SystemName}}.</p><p>Clique <a href='{{.Link}}'>aqui</a> para redefinir sua senha.</p><p>Se o link não for clicável, copie o link a seguir para o seu navegador:<br> {{.Link}} </p><p>O link de redefinição é válido por {{.Minutes}} minutos. Se não foi você, ignore este e-mail.</p>"
 

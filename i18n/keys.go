@@ -340,6 +340,8 @@ const (
 	MsgEmailVerifyExpiry      = "email.verification_expiry"
 	MsgEmailVerifyIgnore      = "email.verification_ignore"
 	MsgEmailVerifyFooter      = "email.verification_footer"
+	MsgEmailVerifyLinkInvalid = "email.verification_link_invalid"
+	MsgEmailVerifyUnavailable = "email.verification_unavailable"
 	MsgEmailResetSubject      = "email.password_reset_subject"
 	MsgEmailResetContent      = "email.password_reset_content"
 )

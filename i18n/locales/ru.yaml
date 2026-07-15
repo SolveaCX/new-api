@@ -10,6 +10,8 @@ email.verification_code_label: "Код подтверждения"
 email.verification_expiry: "Ссылка и код действительны в течение {{.Minutes}} минут."
 email.verification_ignore: "Если вы не запрашивали это письмо, его можно безопасно проигнорировать."
 email.verification_footer: "Безопасно отправлено сервисом {{.SystemName}}"
+email.verification_link_invalid: "Ссылка для подтверждения недействительна или срок её действия истёк."
+email.verification_unavailable: "Подтверждение почты временно недоступно. Повторите попытку."
 email.password_reset_subject: "Сброс пароля {{.SystemName}}"
 email.password_reset_content: "<p>Здравствуйте! Вы сбрасываете пароль для своей учётной записи {{.SystemName}}.</p><p>Нажмите <a href='{{.Link}}'>здесь</a>, чтобы сбросить пароль.</p><p>Если ссылка не открывается, скопируйте её в браузер:<br> {{.Link}} </p><p>Ссылка для сброса действительна в течение {{.Minutes}} минут. Если это были не вы, проигнорируйте это письмо.</p>"
 
