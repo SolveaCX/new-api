@@ -50,6 +50,29 @@ func setupRecallAudienceTestDBs(t *testing.T) (*gorm.DB, *gorm.DB) {
 	return mainDB, logDB
 }
 
+func registerRecallAudienceContextProbe(t *testing.T, db *gorm.DB, table string) <-chan struct{} {
+	t.Helper()
+	entered := make(chan struct{}, 1)
+	callbackName := "recall_audience_context_" + table + "_" + strings.ReplaceAll(t.Name(), "/", "_")
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != table {
+			return
+		}
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-tx.Statement.Context.Done():
+			tx.AddError(tx.Statement.Context.Err())
+		case <-time.After(2 * time.Second):
+			tx.AddError(fmt.Errorf("timed out waiting for caller context cancellation on %s", table))
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
+	return entered
+}
+
 func createRecallAudienceUser(t *testing.T, db *gorm.DB, now int64, suffix string, overrides func(*model.User)) model.User {
 	t.Helper()
 	settingJSON, err := common.Marshal(dto.UserSetting{Language: "zh"})
@@ -564,6 +587,70 @@ func TestRecallAudienceLogLookupUsesOnlyLogDBAndHonorsBatchSize(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRecallAudienceMainQueryReceivesCallerContext(t *testing.T) {
+	mainDB, _ := setupRecallAudienceTestDBs(t)
+	entered := registerRecallAudienceContextProbe(t, mainDB, "users")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	result := make(chan error, 1)
+
+	go func() {
+		_, err := NewRecallAudienceSelector().Preview(ctx, RecallCampaignDraft{
+			AudienceTemplate: "first_purchase",
+		}, 1, time.Unix(2_000_000_000, 0))
+		result <- err
+	}()
+
+	select {
+	case <-entered:
+		cancel()
+	case <-time.After(2 * time.Second):
+		t.Fatal("main query callback was not entered")
+	}
+	select {
+	case err := <-result:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(3 * time.Second):
+		t.Fatal("main query did not return after caller cancellation")
+	}
+}
+
+func TestRecallAudienceLogQueryReceivesCallerContext(t *testing.T) {
+	mainDB, logDB := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	createRecallAudienceUser(t, mainDB, now, "log_context", nil)
+	entered := registerRecallAudienceContextProbe(t, logDB, "logs")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	result := make(chan error, 1)
+
+	go func() {
+		_, err := NewRecallAudienceSelector().Preview(ctx, RecallCampaignDraft{
+			AudienceTemplate: "first_purchase",
+			Audience: RecallAudienceConfig{
+				RegistrationAgeDays: 7,
+				MinRequestCount:     5,
+				MaxQuota:            10,
+				LastAPICallAgeDays:  30,
+			},
+		}, 1, time.Unix(now, 0))
+		result <- err
+	}()
+
+	select {
+	case <-entered:
+		cancel()
+	case <-time.After(2 * time.Second):
+		t.Fatal("log query callback was not entered")
+	}
+	select {
+	case err := <-result:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(3 * time.Second):
+		t.Fatal("log query did not return after caller cancellation")
+	}
+}
+
 func TestRecallAudienceExpiredSubscriptionFiltersAmountByPaymentProvider(t *testing.T) {
 	mainDB, _ := setupRecallAudienceTestDBs(t)
 	const now int64 = 2_000_000_000
@@ -615,6 +702,33 @@ func TestRecallAudiencePaymentFactsDeduplicateMirroredSubscriptionTopUp(t *testi
 	require.NoError(t, err)
 	require.Len(t, facts, 1)
 	require.Equal(t, 20.0, facts[0].PaidAmount)
+}
+
+func TestRecallAudienceMirroredPaymentUsesLatestCompletionTime(t *testing.T) {
+	mainDB, _ := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	user := createRecallAudienceUser(t, mainDB, now, "mirrored_latest_payment", nil)
+	require.NoError(t, mainDB.Create(&model.TopUp{
+		UserId: user.Id, Money: 20, TradeNo: "mirrored-latest-trade", PaymentProvider: model.PaymentProviderStripe,
+		CompleteTime: now - 60*86400, Status: common.TopUpStatusSuccess,
+	}).Error)
+	require.NoError(t, mainDB.Create(&model.SubscriptionOrder{
+		UserId: user.Id, Money: 20, TradeNo: "mirrored-latest-trade", PaymentProvider: model.PaymentProviderStripe,
+		CompleteTime: now - 86400, Status: common.TopUpStatusSuccess,
+	}).Error)
+
+	preview, err := NewRecallAudienceSelector().Preview(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "lapsed_payer",
+		Audience: RecallAudienceConfig{
+			MinPaidAmount:      10,
+			LastPaymentAgeDays: 30,
+			MaxQuota:           10,
+			PaymentProviders:   []string{model.PaymentProviderStripe},
+		},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	require.Zero(t, preview.EligibleTotal)
+	require.EqualValues(t, 1, preview.Exclusions["threshold_not_met"])
 }
 
 func TestRecallAudienceHasPaymentAfterFallsBackToCreateTime(t *testing.T) {
@@ -684,6 +798,42 @@ func TestRecallAudienceMalformedSettingFallsBackToBrowserAndDefaultLanguage(t *t
 	})
 	require.Equal(t, "fr", preview.Sample[0].Language)
 	require.Equal(t, "en", preview.Sample[1].Language)
+}
+
+func TestRecallAudienceSeparatorOnlySettingLanguageFallsBackToBrowserLanguage(t *testing.T) {
+	mainDB, _ := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	settingJSON, err := common.Marshal(dto.UserSetting{Language: "-"})
+	require.NoError(t, err)
+	user := createRecallAudienceUser(t, mainDB, now, "separator_setting_language", func(user *model.User) {
+		user.Setting = string(settingJSON)
+		user.BrowserLang = "ja-JP"
+	})
+
+	preview, err := NewRecallAudienceSelector().Preview(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "first_purchase",
+		Audience:         RecallAudienceConfig{RegistrationAgeDays: 7, MinRequestCount: 5, MaxQuota: 10},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	require.Equal(t, user.Id, preview.Sample[0].UserID)
+	require.Equal(t, "ja", preview.Sample[0].Language)
+}
+
+func TestRecallAudienceSeparatorOnlyBrowserLanguageFallsBackToEnglish(t *testing.T) {
+	mainDB, _ := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	user := createRecallAudienceUser(t, mainDB, now, "separator_browser_language", func(user *model.User) {
+		user.Setting = ""
+		user.BrowserLang = "__"
+	})
+
+	preview, err := NewRecallAudienceSelector().Preview(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "first_purchase",
+		Audience:         RecallAudienceConfig{RegistrationAgeDays: 7, MinRequestCount: 5, MaxQuota: 10},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	require.Equal(t, user.Id, preview.Sample[0].UserID)
+	require.Equal(t, "en", preview.Sample[0].Language)
 }
 
 func TestRecallAudienceHonorsCancellationAndRejectsInvalidBatchSizes(t *testing.T) {
