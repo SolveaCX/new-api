@@ -17,19 +17,76 @@
           window.location.pathname + window.location.search
         )
 
+        var trustedFetch = window.fetch.bind(window)
         var requestBody = JSON.stringify({ token: token })
+        var maxAttempts = 3
         token = null
-        window.__registrationEmailVerificationRequest = window
-          .fetch('/api/registration/email-verification/exchange', {
+
+        function failedExchange() {
+          return { success: false }
+        }
+
+        function shouldRetryResponse(status) {
+          return (
+            status === 429 || status >= 500 || (status >= 200 && status < 300)
+          )
+        }
+
+        function retryExchange(attempt) {
+          return new Promise(function (resolve) {
+            window.setTimeout(resolve, attempt * 200)
+          }).then(function () {
+            return exchange(attempt + 1)
+          })
+        }
+
+        function exchange(attempt) {
+          return trustedFetch('/api/registration/email-verification/exchange', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: requestBody,
-          })
-          .then(function (response) {
-            return response.json()
-          })
-        requestBody = null
+          }).then(
+            function (response) {
+              return response.json().then(
+                function (data) {
+                  if (response.ok) return data
+                  if (
+                    attempt < maxAttempts &&
+                    shouldRetryResponse(response.status)
+                  ) {
+                    return retryExchange(attempt)
+                  }
+                  return failedExchange()
+                },
+                function () {
+                  if (
+                    attempt < maxAttempts &&
+                    shouldRetryResponse(response.status)
+                  ) {
+                    return retryExchange(attempt)
+                  }
+                  return failedExchange()
+                }
+              )
+            },
+            function () {
+              if (attempt < maxAttempts) return retryExchange(attempt)
+              return failedExchange()
+            }
+          )
+        }
+
+        window.__registrationEmailVerificationRequest = exchange(1).then(
+          function (result) {
+            requestBody = null
+            return result
+          },
+          function () {
+            requestBody = null
+            return failedExchange()
+          }
+        )
       })(window)
     </script>
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=flatkey2" />

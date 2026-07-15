@@ -136,27 +136,30 @@ func generateRegistrationEmailCredential() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(random), nil
 }
 
-func registrationEmailMemorySet(key, value string) {
+func registrationEmailMemorySetBatch(values map[string]string) bool {
 	now := time.Now()
 	for existingKey, existingValue := range registrationEmailVerificationMap {
 		if now.Sub(existingValue.time) >= registrationEmailCredentialTTL() {
 			delete(registrationEmailVerificationMap, existingKey)
 		}
 	}
-	if _, exists := registrationEmailVerificationMap[key]; !exists && len(registrationEmailVerificationMap) >= registrationEmailMemoryMaxSize {
-		oldestKey := ""
-		var oldestTime time.Time
-		for existingKey, existingValue := range registrationEmailVerificationMap {
-			if oldestKey == "" || existingValue.time.Before(oldestTime) {
-				oldestKey = existingKey
-				oldestTime = existingValue.time
-			}
-		}
-		if oldestKey != "" {
-			delete(registrationEmailVerificationMap, oldestKey)
+	newEntryCount := 0
+	for key := range values {
+		if _, exists := registrationEmailVerificationMap[key]; !exists {
+			newEntryCount++
 		}
 	}
-	registrationEmailVerificationMap[key] = verificationValue{code: value, time: now}
+	if len(registrationEmailVerificationMap)+newEntryCount > registrationEmailMemoryMaxSize {
+		return false
+	}
+	for key, value := range values {
+		registrationEmailVerificationMap[key] = verificationValue{code: value, time: now}
+	}
+	return true
+}
+
+func registrationEmailMemorySet(key, value string) bool {
+	return registrationEmailMemorySetBatch(map[string]string{key: value})
 }
 
 func registrationEmailMemoryGet(key string) (string, bool) {
@@ -199,8 +202,12 @@ func RegisterRegistrationEmailLink(email string) (string, error) {
 
 	registrationEmailVerificationMutex.Lock()
 	defer registrationEmailVerificationMutex.Unlock()
-	registrationEmailMemorySet(linkKey, email)
-	registrationEmailMemorySet(currentKey, token)
+	if !registrationEmailMemorySetBatch(map[string]string{
+		linkKey:    email,
+		currentKey: token,
+	}) {
+		return "", errors.New("registration email verification store is full")
+	}
 	return token, nil
 }
 
@@ -308,7 +315,9 @@ func RegisterRegistrationEmailGrant(email string) (string, error) {
 
 	registrationEmailVerificationMutex.Lock()
 	defer registrationEmailVerificationMutex.Unlock()
-	registrationEmailMemorySet(grantKey, email)
+	if !registrationEmailMemorySet(grantKey, email) {
+		return "", errors.New("registration email verification store is full")
+	}
 	return grant, nil
 }
 
