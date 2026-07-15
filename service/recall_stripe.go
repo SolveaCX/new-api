@@ -1,0 +1,747 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/stripe/stripe-go/v81"
+	checkoutsession "github.com/stripe/stripe-go/v81/checkout/session"
+	"github.com/stripe/stripe-go/v81/coupon"
+	"github.com/stripe/stripe-go/v81/customer"
+	"github.com/stripe/stripe-go/v81/price"
+	"github.com/stripe/stripe-go/v81/promotioncode"
+)
+
+type RecallStripeClient interface {
+	CreateCoupon(context.Context, *stripe.CouponParams) (*stripe.Coupon, error)
+	GetCoupon(context.Context, string) (*stripe.Coupon, error)
+	CreateCustomer(context.Context, *stripe.CustomerParams) (*stripe.Customer, error)
+	GetCustomer(context.Context, string) (*stripe.Customer, error)
+	CreatePromotionCode(context.Context, *stripe.PromotionCodeParams) (*stripe.PromotionCode, error)
+	GetPromotionCode(context.Context, string) (*stripe.PromotionCode, error)
+	GetPrice(context.Context, string) (*stripe.Price, error)
+	GetCheckoutSession(context.Context, string, ...string) (*stripe.CheckoutSession, error)
+}
+
+type StripeRecallClient struct{}
+
+func NewStripeRecallClient() RecallStripeClient {
+	return &StripeRecallClient{}
+}
+
+func (c *StripeRecallClient) CreateCoupon(ctx context.Context, params *stripe.CouponParams) (*stripe.Coupon, error) {
+	if params == nil {
+		return nil, errors.New("Stripe coupon params are nil")
+	}
+	stripe.Key = setting.StripeApiSecret
+	params.Context = ctx
+	if params.IdempotencyKey != nil {
+		params.SetIdempotencyKey(*params.IdempotencyKey)
+	}
+	return coupon.New(params)
+}
+
+func (c *StripeRecallClient) GetCoupon(ctx context.Context, id string) (*stripe.Coupon, error) {
+	stripe.Key = setting.StripeApiSecret
+	params := &stripe.CouponParams{}
+	params.Context = ctx
+	return coupon.Get(id, params)
+}
+
+func (c *StripeRecallClient) CreateCustomer(ctx context.Context, params *stripe.CustomerParams) (*stripe.Customer, error) {
+	if params == nil {
+		return nil, errors.New("Stripe customer params are nil")
+	}
+	stripe.Key = setting.StripeApiSecret
+	params.Context = ctx
+	if params.IdempotencyKey != nil {
+		params.SetIdempotencyKey(*params.IdempotencyKey)
+	}
+	return customer.New(params)
+}
+
+func (c *StripeRecallClient) GetCustomer(ctx context.Context, id string) (*stripe.Customer, error) {
+	stripe.Key = setting.StripeApiSecret
+	params := &stripe.CustomerParams{}
+	params.Context = ctx
+	return customer.Get(id, params)
+}
+
+func (c *StripeRecallClient) CreatePromotionCode(ctx context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+	if params == nil {
+		return nil, errors.New("Stripe promotion code params are nil")
+	}
+	stripe.Key = setting.StripeApiSecret
+	params.Context = ctx
+	if params.IdempotencyKey != nil {
+		params.SetIdempotencyKey(*params.IdempotencyKey)
+	}
+	return promotioncode.New(params)
+}
+
+func (c *StripeRecallClient) GetPromotionCode(ctx context.Context, id string) (*stripe.PromotionCode, error) {
+	stripe.Key = setting.StripeApiSecret
+	params := &stripe.PromotionCodeParams{}
+	params.Context = ctx
+	return promotioncode.Get(id, params)
+}
+
+func (c *StripeRecallClient) GetPrice(ctx context.Context, id string) (*stripe.Price, error) {
+	stripe.Key = setting.StripeApiSecret
+	params := &stripe.PriceParams{}
+	params.Context = ctx
+	return price.Get(id, params)
+}
+
+func (c *StripeRecallClient) GetCheckoutSession(ctx context.Context, id string, expand ...string) (*stripe.CheckoutSession, error) {
+	stripe.Key = setting.StripeApiSecret
+	params := &stripe.CheckoutSessionParams{}
+	params.Context = ctx
+	for _, field := range expand {
+		params.AddExpand(field)
+	}
+	return checkoutsession.Get(id, params)
+}
+
+type RecallResolvedProductScope struct {
+	TopUpPriceIDs        []string `json:"topup_price_ids"`
+	SubscriptionPriceIDs []string `json:"subscription_price_ids"`
+	ProductIDs           []string `json:"product_ids"`
+}
+
+type RecallStripeErrorKind string
+
+const (
+	RecallStripeErrorUnknown   RecallStripeErrorKind = "unknown"
+	RecallStripeErrorRetryable RecallStripeErrorKind = "retryable"
+	RecallStripeErrorPermanent RecallStripeErrorKind = "permanent"
+)
+
+type RecallStripeError struct {
+	Kind RecallStripeErrorKind
+	Op   string
+	Err  error
+}
+
+func (e *RecallStripeError) Error() string {
+	if e.Op == "" {
+		return e.Err.Error()
+	}
+	return e.Op + ": " + e.Err.Error()
+}
+
+func (e *RecallStripeError) Unwrap() error {
+	return e.Err
+}
+
+func ClassifyRecallStripeError(err error) RecallStripeErrorKind {
+	if err == nil {
+		return RecallStripeErrorUnknown
+	}
+	var classified *RecallStripeError
+	if errors.As(err, &classified) {
+		return classified.Kind
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return RecallStripeErrorRetryable
+	}
+	if errors.Is(err, context.Canceled) {
+		return RecallStripeErrorPermanent
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) && (networkError.Timeout() || networkError.Temporary()) {
+		return RecallStripeErrorRetryable
+	}
+	var stripeError *stripe.Error
+	if errors.As(err, &stripeError) {
+		if stripeError.HTTPStatusCode == 429 || stripeError.HTTPStatusCode >= 500 || stripeError.Type == stripe.ErrorTypeAPI {
+			return RecallStripeErrorRetryable
+		}
+		if stripeError.Type == stripe.ErrorTypeInvalidRequest || stripeError.Code == stripe.ErrorCodeResourceMissing {
+			return RecallStripeErrorPermanent
+		}
+	}
+	return RecallStripeErrorUnknown
+}
+
+func IsRecallStripeRetryable(err error) bool {
+	return ClassifyRecallStripeError(err) == RecallStripeErrorRetryable
+}
+
+func recallStripePermanent(op string, format string, args ...any) error {
+	return &RecallStripeError{Kind: RecallStripeErrorPermanent, Op: op, Err: fmt.Errorf(format, args...)}
+}
+
+func wrapRecallStripeError(op string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var classified *RecallStripeError
+	if errors.As(err, &classified) {
+		return err
+	}
+	return &RecallStripeError{Kind: ClassifyRecallStripeError(err), Op: op, Err: err}
+}
+
+func recallStripeCreateWithRetry[T any](op string, create func() (*T, error)) (*T, error) {
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		result, err := create()
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if ClassifyRecallStripeError(err) == RecallStripeErrorPermanent || errors.Is(err, context.Canceled) {
+			break
+		}
+	}
+	return nil, wrapRecallStripeError(op, lastErr)
+}
+
+type RecallStripeService struct {
+	client        RecallStripeClient
+	codeGenerator func(int) (string, error)
+}
+
+func NewRecallStripeService(client RecallStripeClient) *RecallStripeService {
+	if client == nil {
+		client = NewStripeRecallClient()
+	}
+	return &RecallStripeService{client: client, codeGenerator: common.GenerateRandomCharsKey}
+}
+
+func (s *RecallStripeService) ValidateAndResolveProducts(ctx context.Context, scope RecallProductScope) (RecallResolvedProductScope, error) {
+	resolved := RecallResolvedProductScope{
+		TopUpPriceIDs:        normalizeRecallStripeIDs(scope.TopUpPriceIDs),
+		SubscriptionPriceIDs: normalizeRecallStripeIDs(scope.SubscriptionPriceIDs),
+	}
+	if len(resolved.TopUpPriceIDs)+len(resolved.SubscriptionPriceIDs) == 0 {
+		return RecallResolvedProductScope{}, recallStripePermanent("validate products", "at least one Stripe Price is required")
+	}
+
+	configuredTopUp, err := recallConfiguredTopUpPriceIDs()
+	if err != nil {
+		return RecallResolvedProductScope{}, err
+	}
+	configuredSubscription, err := model.ListRecallStripeSubscriptionPricesWithContext(ctx)
+	if err != nil {
+		return RecallResolvedProductScope{}, wrapRecallStripeError("list configured subscription prices", err)
+	}
+
+	priceCache := make(map[string]*stripe.Price)
+	loadPrice := func(priceID string) (*stripe.Price, error) {
+		if cached, ok := priceCache[priceID]; ok {
+			return cached, nil
+		}
+		stripePrice, getErr := s.client.GetPrice(ctx, priceID)
+		if getErr != nil {
+			return nil, wrapRecallStripeError("get Stripe Price "+priceID, getErr)
+		}
+		if stripePrice == nil {
+			return nil, recallStripePermanent("validate products", "Stripe Price %s is unavailable", priceID)
+		}
+		priceCache[priceID] = stripePrice
+		return stripePrice, nil
+	}
+	validatePrice := func(priceID string, expected stripe.PriceType) (*stripe.Price, error) {
+		stripePrice, loadErr := loadPrice(priceID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if stripePrice.Deleted {
+			return nil, recallStripePermanent("validate products", "Stripe Price %s is deleted", priceID)
+		}
+		if !stripePrice.Active {
+			return nil, recallStripePermanent("validate products", "Stripe Price %s is inactive", priceID)
+		}
+		if stripePrice.Type != expected {
+			return nil, recallStripePermanent("validate products", "Stripe Price %s must be %s", priceID, expected)
+		}
+		if stripePrice.Product == nil || strings.TrimSpace(stripePrice.Product.ID) == "" {
+			return nil, recallStripePermanent("validate products", "Stripe Price %s has no product ID", priceID)
+		}
+		return stripePrice, nil
+	}
+
+	selectedIDs := make(map[string]struct{}, len(resolved.TopUpPriceIDs)+len(resolved.SubscriptionPriceIDs))
+	selectedProductKinds := make(map[string]string)
+	seenProducts := make(map[string]struct{})
+	addSelected := func(priceID string, expected stripe.PriceType, kind string) error {
+		stripePrice, validateErr := validatePrice(priceID, expected)
+		if validateErr != nil {
+			return validateErr
+		}
+		productID := strings.TrimSpace(stripePrice.Product.ID)
+		if priorKind, exists := selectedProductKinds[productID]; exists && priorKind != kind {
+			return recallStripePermanent("validate products", "Stripe Product %s cannot be selected for both top-up and subscription Prices", productID)
+		}
+		selectedProductKinds[productID] = kind
+		selectedIDs[priceID] = struct{}{}
+		if _, exists := seenProducts[productID]; !exists {
+			seenProducts[productID] = struct{}{}
+			resolved.ProductIDs = append(resolved.ProductIDs, productID)
+		}
+		return nil
+	}
+	for _, priceID := range resolved.TopUpPriceIDs {
+		if err := addSelected(priceID, stripe.PriceTypeOneTime, "top-up"); err != nil {
+			return RecallResolvedProductScope{}, err
+		}
+	}
+	for _, priceID := range resolved.SubscriptionPriceIDs {
+		if err := addSelected(priceID, stripe.PriceTypeRecurring, "subscription"); err != nil {
+			return RecallResolvedProductScope{}, err
+		}
+	}
+
+	validateConfigured := func(priceIDs []string, expected stripe.PriceType) error {
+		for _, priceID := range priceIDs {
+			stripePrice, validateErr := validatePrice(priceID, expected)
+			if validateErr != nil {
+				return validateErr
+			}
+			productID := strings.TrimSpace(stripePrice.Product.ID)
+			if _, selectedProduct := selectedProductKinds[productID]; !selectedProduct {
+				continue
+			}
+			if _, selectedPrice := selectedIDs[priceID]; !selectedPrice {
+				return recallStripePermanent("validate products", "unselected configured price %s shares selected Stripe Product %s", priceID, productID)
+			}
+		}
+		return nil
+	}
+	if err := validateConfigured(configuredTopUp, stripe.PriceTypeOneTime); err != nil {
+		return RecallResolvedProductScope{}, err
+	}
+	if err := validateConfigured(configuredSubscription, stripe.PriceTypeRecurring); err != nil {
+		return RecallResolvedProductScope{}, err
+	}
+	return resolved, nil
+}
+
+func normalizeRecallStripeIDs(ids []string) []string {
+	normalized := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, rawID := range ids {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	return normalized
+}
+
+func recallConfiguredTopUpPriceIDs() ([]string, error) {
+	raw := strings.TrimSpace(setting.StripeTopUpPriceIds)
+	if raw == "" {
+		return normalizeRecallStripeIDs([]string{setting.StripePriceId}), nil
+	}
+	var configured map[string]string
+	if err := common.UnmarshalJsonStr(raw, &configured); err != nil {
+		return nil, recallStripePermanent("load configured top-up prices", "invalid StripeTopUpPriceIds: %v", err)
+	}
+	ids := make([]string, 0, len(configured))
+	for _, id := range configured {
+		ids = append(ids, id)
+	}
+	ids = normalizeRecallStripeIDs(ids)
+	sort.Strings(ids)
+	return ids, nil
+}
+
+func (s *RecallStripeService) EnsureCoupon(ctx context.Context, campaignID int64, source string, existingID string, discount RecallDiscountConfig, products RecallResolvedProductScope, enrollmentLimit int) (*stripe.Coupon, RecallDiscountConfig, error) {
+	normalizedDiscount, err := normalizeRecallDiscount(discount)
+	if err != nil {
+		return nil, RecallDiscountConfig{}, err
+	}
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "automatic":
+		params, buildErr := buildRecallCouponParams(ctx, campaignID, normalizedDiscount, products.ProductIDs, enrollmentLimit)
+		if buildErr != nil {
+			return nil, RecallDiscountConfig{}, buildErr
+		}
+		created, createErr := recallStripeCreateWithRetry("create Stripe Coupon", func() (*stripe.Coupon, error) {
+			return s.client.CreateCoupon(ctx, params)
+		})
+		if createErr != nil {
+			return nil, RecallDiscountConfig{}, createErr
+		}
+		if created == nil || strings.TrimSpace(created.ID) == "" {
+			return nil, RecallDiscountConfig{}, recallStripePermanent("create Stripe Coupon", "Stripe returned an empty Coupon")
+		}
+		return created, normalizedDiscount, nil
+	case "existing":
+		couponID := strings.TrimSpace(existingID)
+		if couponID == "" {
+			return nil, RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "existing coupon ID is required")
+		}
+		existing, getErr := s.client.GetCoupon(ctx, couponID)
+		if getErr != nil {
+			return nil, RecallDiscountConfig{}, wrapRecallStripeError("get Stripe Coupon", getErr)
+		}
+		normalized, validateErr := validateExistingRecallCoupon(existing, normalizedDiscount, products.ProductIDs, enrollmentLimit)
+		if validateErr != nil {
+			return nil, RecallDiscountConfig{}, validateErr
+		}
+		return existing, normalized, nil
+	default:
+		return nil, RecallDiscountConfig{}, recallStripePermanent("ensure Stripe Coupon", "unsupported coupon source %q", source)
+	}
+}
+
+func normalizeRecallDiscount(discount RecallDiscountConfig) (RecallDiscountConfig, error) {
+	discount.Type = strings.ToLower(strings.TrimSpace(discount.Type))
+	discount.Currency = strings.ToLower(strings.TrimSpace(discount.Currency))
+	discount.MinimumAmountCurrency = strings.ToLower(strings.TrimSpace(discount.MinimumAmountCurrency))
+	if discount.MinimumAmount > 0 && discount.MinimumAmountCurrency == "" {
+		return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "minimum amount currency is required")
+	}
+	if discount.Type == "" {
+		return discount, nil
+	}
+	switch discount.Type {
+	case "percent":
+		if discount.PercentOff <= 0 || discount.PercentOff > 100 {
+			return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "percent_off must be greater than zero and at most 100")
+		}
+	case "fixed":
+		if discount.AmountOff <= 0 || discount.Currency == "" {
+			return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "fixed discount requires amount_off and currency")
+		}
+	default:
+		return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "unsupported discount type %q", discount.Type)
+	}
+	return discount, nil
+}
+
+func buildRecallCouponParams(ctx context.Context, campaignID int64, discount RecallDiscountConfig, productIDs []string, enrollmentLimit int) (*stripe.CouponParams, error) {
+	if campaignID <= 0 {
+		return nil, recallStripePermanent("create Stripe Coupon", "campaign ID must be positive")
+	}
+	productIDs = normalizeRecallStripeIDs(productIDs)
+	if len(productIDs) == 0 {
+		return nil, recallStripePermanent("create Stripe Coupon", "at least one Stripe Product is required")
+	}
+	params := &stripe.CouponParams{
+		AppliesTo: &stripe.CouponAppliesToParams{},
+		Duration:  stripe.String(string(stripe.CouponDurationOnce)),
+		Metadata: map[string]string{
+			"recall_campaign_id": strconv.FormatInt(campaignID, 10),
+			"recall_source":      "automatic",
+		},
+	}
+	params.Context = ctx
+	for _, productID := range productIDs {
+		params.AppliesTo.Products = append(params.AppliesTo.Products, stripe.String(productID))
+	}
+	switch discount.Type {
+	case "percent":
+		params.PercentOff = stripe.Float64(discount.PercentOff)
+	case "fixed":
+		params.AmountOff = stripe.Int64(discount.AmountOff)
+		params.Currency = stripe.String(discount.Currency)
+	default:
+		return nil, recallStripePermanent("create Stripe Coupon", "automatic coupon requires a percent or fixed discount")
+	}
+	if discount.CouponRedeemBy > 0 {
+		params.RedeemBy = stripe.Int64(discount.CouponRedeemBy)
+	}
+	if enrollmentLimit > 0 {
+		params.MaxRedemptions = stripe.Int64(int64(enrollmentLimit))
+	}
+	params.SetIdempotencyKey("recall_coupon:" + strconv.FormatInt(campaignID, 10))
+	return params, nil
+}
+
+func validateExistingRecallCoupon(existing *stripe.Coupon, requested RecallDiscountConfig, productIDs []string, enrollmentLimit int) (RecallDiscountConfig, error) {
+	if existing == nil {
+		return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon is unavailable")
+	}
+	if existing.Deleted {
+		return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s is deleted", existing.ID)
+	}
+	if !existing.Valid {
+		return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s is invalid", existing.ID)
+	}
+	if existing.RedeemBy > 0 && existing.RedeemBy <= time.Now().Unix() {
+		return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s is expired", existing.ID)
+	}
+	if existing.Duration != stripe.CouponDurationOnce {
+		return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s duration must be once", existing.ID)
+	}
+	if existing.MaxRedemptions > 0 && existing.MaxRedemptions-existing.TimesRedeemed < int64(enrollmentLimit) {
+		return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s remaining redemption capacity is insufficient", existing.ID)
+	}
+	actualProducts := []string(nil)
+	if existing.AppliesTo != nil {
+		actualProducts = existing.AppliesTo.Products
+	}
+	if !sameRecallStripeIDs(actualProducts, productIDs) {
+		return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s product scope does not match", existing.ID)
+	}
+
+	normalized := requested
+	normalized.CouponRedeemBy = existing.RedeemBy
+	if existing.PercentOff > 0 && existing.AmountOff == 0 && existing.Currency == "" {
+		if requested.Type != "" && requested.Type != "percent" {
+			return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s discount type does not match", existing.ID)
+		}
+		if requested.PercentOff > 0 && requested.PercentOff != existing.PercentOff {
+			return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s percent_off does not match", existing.ID)
+		}
+		normalized.Type = "percent"
+		normalized.PercentOff = existing.PercentOff
+		normalized.AmountOff = 0
+		normalized.Currency = ""
+		return normalized, nil
+	}
+	if existing.AmountOff > 0 && existing.PercentOff == 0 && existing.Currency != "" {
+		currency := strings.ToLower(string(existing.Currency))
+		if requested.Type != "" && requested.Type != "fixed" {
+			return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s discount type does not match", existing.ID)
+		}
+		if requested.AmountOff > 0 && requested.AmountOff != existing.AmountOff {
+			return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s amount_off does not match", existing.ID)
+		}
+		if requested.Currency != "" && requested.Currency != currency {
+			return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s currency does not match", existing.ID)
+		}
+		normalized.Type = "fixed"
+		normalized.PercentOff = 0
+		normalized.AmountOff = existing.AmountOff
+		normalized.Currency = currency
+		return normalized, nil
+	}
+	return RecallDiscountConfig{}, recallStripePermanent("validate Stripe Coupon", "Stripe Coupon %s has an invalid discount", existing.ID)
+}
+
+func sameRecallStripeIDs(left []string, right []string) bool {
+	left = normalizeRecallStripeIDs(left)
+	right = normalizeRecallStripeIDs(right)
+	if len(left) != len(right) {
+		return false
+	}
+	sort.Strings(left)
+	sort.Strings(right)
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *RecallStripeService) EnsureCustomer(ctx context.Context, user model.User) (*stripe.Customer, error) {
+	if user.Id <= 0 {
+		return nil, recallStripePermanent("ensure Stripe Customer", "user ID must be positive")
+	}
+	existingID := strings.TrimSpace(user.StripeCustomer)
+	if existingID != "" {
+		existing, err := s.client.GetCustomer(ctx, existingID)
+		if err == nil && existing != nil && !existing.Deleted && strings.TrimSpace(existing.ID) != "" {
+			return existing, nil
+		}
+		if err != nil && !isRecallStripeMissing(err) {
+			return nil, wrapRecallStripeError("get Stripe Customer", err)
+		}
+	}
+
+	params := &stripe.CustomerParams{Metadata: map[string]string{"flatkey_user_id": strconv.Itoa(user.Id)}}
+	params.Context = ctx
+	if email := strings.TrimSpace(user.Email); email != "" {
+		params.Email = stripe.String(email)
+	}
+	if name := strings.TrimSpace(user.DisplayName); name != "" {
+		params.Name = stripe.String(name)
+	} else if name = strings.TrimSpace(user.Username); name != "" {
+		params.Name = stripe.String(name)
+	}
+	params.SetIdempotencyKey("recall_customer:" + strconv.Itoa(user.Id))
+	created, err := recallStripeCreateWithRetry("create Stripe Customer", func() (*stripe.Customer, error) {
+		return s.client.CreateCustomer(ctx, params)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if created == nil || created.Deleted || strings.TrimSpace(created.ID) == "" {
+		return nil, recallStripePermanent("create Stripe Customer", "Stripe returned an unavailable Customer")
+	}
+	return created, nil
+}
+
+func isRecallStripeMissing(err error) bool {
+	var stripeError *stripe.Error
+	return errors.As(err, &stripeError) && stripeError.Code == stripe.ErrorCodeResourceMissing
+}
+
+func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, campaign model.RecallCampaign, recipient model.RecallRecipient, user model.User, coupon *stripe.Coupon, discount RecallDiscountConfig) (*stripe.PromotionCode, error) {
+	if campaign.Id <= 0 || recipient.Id <= 0 || user.Id <= 0 {
+		return nil, recallStripePermanent("create Stripe Promotion Code", "campaign, recipient, and user IDs must be positive")
+	}
+	if coupon == nil || strings.TrimSpace(coupon.ID) == "" {
+		return nil, recallStripePermanent("create Stripe Promotion Code", "Stripe Coupon is required")
+	}
+	customerID := strings.TrimSpace(recipient.StripeCustomerId)
+	if customerID == "" {
+		customerID = strings.TrimSpace(user.StripeCustomer)
+	}
+	if customerID == "" {
+		return nil, recallStripePermanent("create Stripe Promotion Code", "Stripe Customer is required")
+	}
+	expiresAt := recipient.PromotionExpiresAt
+	if expiresAt <= 0 && campaign.PromotionValidSeconds > 0 {
+		expiresAt = time.Now().Unix() + campaign.PromotionValidSeconds
+	}
+	if expiresAt <= time.Now().Unix() {
+		return nil, recallStripePermanent("create Stripe Promotion Code", "promotion expiration must be in the future")
+	}
+	normalizedDiscount, err := normalizeRecallDiscount(discount)
+	if err != nil {
+		return nil, err
+	}
+
+	if recipient.StripePromotionCodeId != nil && strings.TrimSpace(*recipient.StripePromotionCodeId) != "" {
+		existing, getErr := s.client.GetPromotionCode(ctx, strings.TrimSpace(*recipient.StripePromotionCodeId))
+		if getErr != nil {
+			return nil, wrapRecallStripeError("get Stripe Promotion Code", getErr)
+		}
+		if reconcileErr := validateExistingRecallPromotion(existing, recipient, coupon.ID, customerID, expiresAt, normalizedDiscount); reconcileErr != nil {
+			return nil, reconcileErr
+		}
+		return existing, nil
+	}
+
+	stableCode := strings.TrimSpace(recipient.PromotionCode)
+	for attempt := 1; attempt <= 5; attempt++ {
+		code := stableCode
+		if code == "" || attempt > 1 {
+			generated, generateErr := s.codeGenerator(12)
+			if generateErr != nil {
+				return nil, wrapRecallStripeError("generate Stripe Promotion Code", generateErr)
+			}
+			code = normalizeRecallPromotionCode(generated)
+			if code == "FK" {
+				return nil, recallStripePermanent("generate Stripe Promotion Code", "generated promotion code is empty")
+			}
+		}
+		params := buildRecallPromotionParams(ctx, campaign.Id, recipient.Id, user.Id, attempt, coupon.ID, customerID, code, expiresAt, normalizedDiscount)
+		created, createErr := recallStripeCreateWithRetry("create Stripe Promotion Code", func() (*stripe.PromotionCode, error) {
+			return s.client.CreatePromotionCode(ctx, params)
+		})
+		if createErr == nil {
+			if created == nil || strings.TrimSpace(created.ID) == "" {
+				return nil, recallStripePermanent("create Stripe Promotion Code", "Stripe returned an empty Promotion Code")
+			}
+			return created, nil
+		}
+		if isRecallPromotionCodeCollision(createErr) {
+			stableCode = ""
+			continue
+		}
+		return nil, createErr
+	}
+	return nil, recallStripePermanent("create Stripe Promotion Code", "promotion code collision limit reached")
+}
+
+func buildRecallPromotionParams(ctx context.Context, campaignID int64, recipientID int64, userID int, attempt int, couponID string, customerID string, code string, expiresAt int64, discount RecallDiscountConfig) *stripe.PromotionCodeParams {
+	params := &stripe.PromotionCodeParams{
+		Coupon:         stripe.String(couponID),
+		Customer:       stripe.String(customerID),
+		Code:           stripe.String(code),
+		ExpiresAt:      stripe.Int64(expiresAt),
+		MaxRedemptions: stripe.Int64(1),
+		Metadata: map[string]string{
+			"recall_campaign_id":  strconv.FormatInt(campaignID, 10),
+			"recall_recipient_id": strconv.FormatInt(recipientID, 10),
+			"flatkey_user_id":     strconv.Itoa(userID),
+		},
+	}
+	params.Context = ctx
+	if discount.MinimumAmount > 0 {
+		params.Restrictions = &stripe.PromotionCodeRestrictionsParams{
+			MinimumAmount:         stripe.Int64(discount.MinimumAmount),
+			MinimumAmountCurrency: stripe.String(discount.MinimumAmountCurrency),
+		}
+	}
+	params.SetIdempotencyKey(fmt.Sprintf("recall_promotion:%d:%d:%d", campaignID, recipientID, attempt))
+	return params
+}
+
+func normalizeRecallPromotionCode(raw string) string {
+	var normalized strings.Builder
+	normalized.WriteString("FK")
+	for _, char := range strings.ToUpper(raw) {
+		switch {
+		case char >= 'A' && char <= 'Z':
+			if char == 'I' || char == 'L' || char == 'O' {
+				normalized.WriteByte('X')
+			} else {
+				normalized.WriteRune(char)
+			}
+		case char >= '2' && char <= '9':
+			normalized.WriteRune(char)
+		case char == '0' || char == '1':
+			normalized.WriteByte('X')
+		}
+	}
+	return normalized.String()
+}
+
+func isRecallPromotionCodeCollision(err error) bool {
+	var stripeError *stripe.Error
+	if !errors.As(err, &stripeError) || stripeError.Type != stripe.ErrorTypeInvalidRequest || !strings.EqualFold(strings.TrimSpace(stripeError.Param), "code") {
+		return false
+	}
+	detail := strings.ToLower(string(stripeError.Code) + " " + stripeError.Msg)
+	for _, marker := range []string{"unique", "duplicate", "already active", "already exists", "in use"} {
+		if strings.Contains(detail, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateExistingRecallPromotion(existing *stripe.PromotionCode, recipient model.RecallRecipient, couponID string, customerID string, expiresAt int64, discount RecallDiscountConfig) error {
+	if existing == nil {
+		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code is unavailable")
+	}
+	if !existing.Active {
+		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s is inactive", existing.ID)
+	}
+	if existing.Coupon == nil || existing.Coupon.ID != couponID {
+		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s coupon does not match", existing.ID)
+	}
+	if existing.Customer == nil || existing.Customer.ID != customerID {
+		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s customer does not match", existing.ID)
+	}
+	if existing.ExpiresAt != expiresAt {
+		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s expiration does not match", existing.ID)
+	}
+	if existing.MaxRedemptions != 1 || existing.TimesRedeemed >= 1 {
+		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s redemption state does not match", existing.ID)
+	}
+	if code := strings.TrimSpace(recipient.PromotionCode); code != "" && !strings.EqualFold(code, existing.Code) {
+		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s code does not match", existing.ID)
+	}
+	if discount.MinimumAmount > 0 {
+		if existing.Restrictions == nil || existing.Restrictions.MinimumAmount != discount.MinimumAmount || strings.ToLower(string(existing.Restrictions.MinimumAmountCurrency)) != discount.MinimumAmountCurrency {
+			return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s minimum restriction does not match", existing.ID)
+		}
+	}
+	return nil
+}
