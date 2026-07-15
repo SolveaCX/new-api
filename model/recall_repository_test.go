@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -13,13 +14,21 @@ func setupRecallRepositoryTestDB(t *testing.T) (*gorm.DB, *gorm.DB) {
 
 	originalDB := DB
 	originalLogDB := LOG_DB
-	mainDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"-main?mode=memory&cache=shared"), &gorm.Config{})
+	mainDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	logDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"-log?mode=memory&cache=shared"), &gorm.Config{})
+	mainSQLDB, err := mainDB.DB()
 	require.NoError(t, err)
+	mainSQLDB.SetMaxOpenConns(1)
+	logDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	logSQLDB, err := logDB.DB()
+	require.NoError(t, err)
+	logSQLDB.SetMaxOpenConns(1)
 	DB = mainDB
 	LOG_DB = logDB
 	t.Cleanup(func() {
+		_ = mainSQLDB.Close()
+		_ = logSQLDB.Close()
 		DB = originalDB
 		LOG_DB = originalLogDB
 	})
@@ -32,6 +41,33 @@ func setupRecallRepositoryTestDB(t *testing.T) (*gorm.DB, *gorm.DB) {
 		&RecallEvent{},
 	))
 	return mainDB, logDB
+}
+
+func setupRecallRepositoryFileDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	originalDB := DB
+	originalLogDB := LOG_DB
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/recall.db?_pragma=busy_timeout(5000)"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(4)
+	DB = db
+	LOG_DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+		LOG_DB = originalLogDB
+	})
+
+	require.NoError(t, DB.AutoMigrate(
+		&RecallCampaign{},
+		&RecallRecipient{},
+		&RecallMessage{},
+		&RecallEvent{},
+	))
+	return db
 }
 
 func newRecallRepositoryCampaign(name string) RecallCampaign {
@@ -234,11 +270,11 @@ func TestRecallRepositoryInsertAndListRecipients(t *testing.T) {
 	}
 	runEvent := RecallEvent{CampaignId: campaign.Id, EventType: "campaign_run", Source: "worker", SourceEventId: "run-1", EventData: `{}`}
 
-	inserted, err := InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, runEvent)
+	inserted, err := InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, nil, runEvent)
 	require.NoError(t, err)
 	require.Equal(t, 2, inserted)
 
-	inserted, err = InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, RecallEvent{
+	inserted, err = InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, nil, RecallEvent{
 		CampaignId: campaign.Id, EventType: "campaign_run", Source: "worker", SourceEventId: "run-2", EventData: `{}`,
 	})
 	require.NoError(t, err)
@@ -252,8 +288,8 @@ func TestRecallRepositoryInsertAndListRecipients(t *testing.T) {
 
 	inserted, err = InsertRecallRecipientsAndRunEvent(campaign.Id, []RecallRecipient{
 		{CampaignId: campaign.Id, UserId: 103, EligibilitySnapshot: `{}`, EmailSnapshot: "three@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
-	}, runEvent)
-	require.Error(t, err)
+	}, nil, runEvent)
+	require.NoError(t, err)
 	require.Zero(t, inserted)
 	_, total, err = ListRecallRecipients(campaign.Id, 0, 10)
 	require.NoError(t, err)
@@ -264,4 +300,305 @@ func TestRecallRepositoryMaskPromotionCode(t *testing.T) {
 	require.Equal(t, "ABCD****YZ", MaskPromotionCode("ABCDEFGHIJKLYZ"))
 	require.Equal(t, "........", MaskPromotionCode("ABCDEFGH"))
 	require.Equal(t, "........", MaskPromotionCode("short"))
+}
+
+func TestRecallLeaseMessageHasOneWinnerAndRecoversAfterExpiry(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	message := RecallMessage{
+		RecipientId:      101,
+		StageNo:          1,
+		TemplateSnapshot: `{}`,
+		ScheduledAt:      1_721_000_000,
+		State:            RecallMessageScheduled,
+	}
+	require.NoError(t, DB.Create(&message).Error)
+
+	now := int64(1_721_000_000)
+	won, err := LeaseRecallMessage(message.Id, "node-a", now, now+60)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	won, err = LeaseRecallMessage(message.Id, "node-b", now, now+60)
+	require.NoError(t, err)
+	require.False(t, won)
+
+	won, err = LeaseRecallMessage(message.Id, "node-b", now+61, now+121)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	var stored RecallMessage
+	require.NoError(t, DB.First(&stored, message.Id).Error)
+	require.Equal(t, RecallMessageLeased, stored.State)
+	require.Equal(t, "node-b", stored.LeaseOwner)
+	require.Equal(t, now+121, stored.LeaseExpiresAt)
+}
+
+func TestRecallLeaseRecipientHasExactlyOneConcurrentWinner(t *testing.T) {
+	setupRecallRepositoryFileDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          1,
+		UserId:              201,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "lease@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientQueued,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+
+	type leaseResult struct {
+		owner string
+		won   bool
+		err   error
+	}
+	start := make(chan struct{})
+	results := make(chan leaseResult, 2)
+	var workers sync.WaitGroup
+	for _, owner := range []string{"node-a", "node-b"} {
+		workers.Add(1)
+		go func(owner string) {
+			defer workers.Done()
+			<-start
+			won, err := LeaseRecallRecipient(recipient.Id, owner, 1_721_000_000, 1_721_000_060)
+			results <- leaseResult{owner: owner, won: won, err: err}
+		}(owner)
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+
+	winners := make([]string, 0, 1)
+	for result := range results {
+		require.NoError(t, result.err)
+		if result.won {
+			winners = append(winners, result.owner)
+		}
+	}
+	require.Len(t, winners, 1)
+
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, RecallRecipientQueued, stored.State, "a lease must not become durable workflow state")
+	require.Equal(t, winners[0], stored.LeaseOwner)
+
+	require.NoError(t, ReleaseRecallRecipientLease(recipient.Id, "not-the-owner"))
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, winners[0], stored.LeaseOwner)
+	require.NoError(t, ReleaseRecallRecipientLease(recipient.Id, winners[0]))
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Empty(t, stored.LeaseOwner)
+	require.Zero(t, stored.LeaseExpiresAt)
+}
+
+func TestRecallLeaseListsOnlyDueProvisioningAndMessageWork(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	now := int64(1_721_000_000)
+	recipients := []RecallRecipient{
+		{CampaignId: 1, UserId: 301, EligibilitySnapshot: `{}`, EmailSnapshot: "queued@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{CampaignId: 1, UserId: 302, EligibilitySnapshot: `{}`, EmailSnapshot: "customer@example.com", LanguageSnapshot: "en", State: RecallRecipientCustomerReady, LeaseOwner: "old", LeaseExpiresAt: now - 1},
+		{CampaignId: 1, UserId: 303, EligibilitySnapshot: `{}`, EmailSnapshot: "code@example.com", LanguageSnapshot: "en", State: RecallRecipientCodeReady, LeaseOwner: "live", LeaseExpiresAt: now + 1},
+		{CampaignId: 1, UserId: 304, EligibilitySnapshot: `{}`, EmailSnapshot: "contacting@example.com", LanguageSnapshot: "en", State: RecallRecipientContacting},
+		{CampaignId: 1, UserId: 305, EligibilitySnapshot: `{}`, EmailSnapshot: "terminal@example.com", LanguageSnapshot: "en", State: RecallRecipientConverted},
+	}
+	require.NoError(t, DB.Create(&recipients).Error)
+
+	recipientIDs, err := ListDueRecallRecipientIDs(now, 1)
+	require.NoError(t, err)
+	require.Equal(t, []int64{recipients[0].Id}, recipientIDs)
+	recipientIDs, err = ListDueRecallRecipientIDs(now, 10)
+	require.NoError(t, err)
+	require.Equal(t, []int64{recipients[0].Id, recipients[1].Id}, recipientIDs)
+
+	messages := []RecallMessage{
+		{RecipientId: recipients[0].Id, StageNo: 1, TemplateSnapshot: `{}`, ScheduledAt: now, State: RecallMessageScheduled},
+		{RecipientId: recipients[0].Id, StageNo: 2, TemplateSnapshot: `{}`, ScheduledAt: now + 1, State: RecallMessageScheduled},
+		{RecipientId: recipients[1].Id, StageNo: 1, TemplateSnapshot: `{}`, NextAttemptAt: now, State: RecallMessageRetryWait},
+		{RecipientId: recipients[1].Id, StageNo: 2, TemplateSnapshot: `{}`, NextAttemptAt: now + 1, State: RecallMessageRetryWait},
+		{RecipientId: recipients[2].Id, StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageLeased, LeaseOwner: "old", LeaseExpiresAt: now - 1},
+		{RecipientId: recipients[2].Id, StageNo: 2, TemplateSnapshot: `{}`, State: RecallMessageLeased, LeaseOwner: "live", LeaseExpiresAt: now + 1},
+		{RecipientId: recipients[3].Id, StageNo: 1, TemplateSnapshot: `{}`, ScheduledAt: now, State: RecallMessageAccepted},
+		{RecipientId: recipients[4].Id, StageNo: 1, TemplateSnapshot: `{}`, ScheduledAt: now, State: RecallMessageCancelled},
+	}
+	require.NoError(t, DB.Create(&messages).Error)
+
+	messageIDs, err := ListDueRecallMessageIDs(now, 2)
+	require.NoError(t, err)
+	require.Equal(t, []int64{messages[0].Id, messages[2].Id}, messageIDs)
+	messageIDs, err = ListDueRecallMessageIDs(now, 10)
+	require.NoError(t, err)
+	require.Equal(t, []int64{messages[0].Id, messages[2].Id, messages[4].Id}, messageIDs)
+}
+
+func TestRecallRunIdempotencyInsertsRecipientsMessagesAndEventOnce(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("idempotent run")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	recipients := []RecallRecipient{
+		{UserId: 401, EligibilitySnapshot: `{}`, EmailSnapshot: "one@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{UserId: 402, EligibilitySnapshot: `{}`, EmailSnapshot: "two@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+	}
+	messages := []RecallMessage{
+		{StageNo: 1, TemplateSnapshot: `{"subject":"one"}`, ScheduledAt: 1_721_000_000, State: RecallMessageScheduled},
+		{StageNo: 1, TemplateSnapshot: `{"subject":"two"}`, ScheduledAt: 1_721_000_000, State: RecallMessageScheduled},
+	}
+	runEvent := RecallEvent{
+		EventType:     "campaign_run",
+		Source:        "scheduler",
+		SourceEventId: "recurring:7:1721000000",
+		EventData:     `{}`,
+	}
+
+	inserted, err := InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, messages, runEvent)
+	require.NoError(t, err)
+	require.Equal(t, 2, inserted)
+	inserted, err = InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, messages, runEvent)
+	require.NoError(t, err)
+	require.Zero(t, inserted)
+
+	var storedRecipients []RecallRecipient
+	require.NoError(t, DB.Order("id ASC").Find(&storedRecipients).Error)
+	require.Len(t, storedRecipients, 2)
+	require.Equal(t, campaign.Id, storedRecipients[0].CampaignId)
+	require.Equal(t, campaign.Id, storedRecipients[1].CampaignId)
+	var storedMessages []RecallMessage
+	require.NoError(t, DB.Order("id ASC").Find(&storedMessages).Error)
+	require.Len(t, storedMessages, 2)
+	require.Equal(t, storedRecipients[0].Id, storedMessages[0].RecipientId)
+	require.Equal(t, storedRecipients[1].Id, storedMessages[1].RecipientId)
+	var eventCount int64
+	require.NoError(t, DB.Model(&RecallEvent{}).Count(&eventCount).Error)
+	require.Equal(t, int64(1), eventCount)
+}
+
+func TestRecallRunIdempotencyRejectsAmbiguousMessageMapping(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipients := []RecallRecipient{
+		{UserId: 501, EligibilitySnapshot: `{}`, EmailSnapshot: "one@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{UserId: 502, EligibilitySnapshot: `{}`, EmailSnapshot: "two@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+	}
+	messages := []RecallMessage{{StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageScheduled}}
+	runEvent := RecallEvent{EventType: "campaign_run", Source: "scheduler", SourceEventId: "recurring:8:1721000000", EventData: `{}`}
+
+	inserted, err := InsertRecallRecipientsAndRunEvent(8, recipients, messages, runEvent)
+	require.Error(t, err)
+	require.Zero(t, inserted)
+	for _, table := range []any{&RecallRecipient{}, &RecallMessage{}, &RecallEvent{}} {
+		var count int64
+		require.NoError(t, DB.Model(table).Count(&count).Error)
+		require.Zero(t, count)
+	}
+}
+
+func TestRecallRunIdempotencySchedulesNextStagesOnce(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	messages := []RecallMessage{
+		{RecipientId: 999, StageNo: 2, TemplateSnapshot: `{"stage":2}`, State: RecallMessageScheduled},
+		{StageNo: 3, TemplateSnapshot: `{"stage":3}`, State: RecallMessageScheduled},
+	}
+	require.NoError(t, ScheduleNextRecallStages(601, messages))
+	require.NoError(t, ScheduleNextRecallStages(601, messages))
+
+	var stored []RecallMessage
+	require.NoError(t, DB.Order("stage_no ASC").Find(&stored).Error)
+	require.Len(t, stored, 2)
+	require.Equal(t, 601, int(stored[0].RecipientId))
+	require.Equal(t, 601, int(stored[1].RecipientId))
+}
+
+func TestRecallTransitionCampaignRequiresExpectedState(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("conditional transition")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+
+	won, err := TransitionRecallCampaign(campaign.Id, []string{RecallCampaignRunning}, RecallCampaignPaused, nil)
+	require.NoError(t, err)
+	require.False(t, won)
+	won, err = TransitionRecallCampaign(campaign.Id, []string{RecallCampaignDraft}, RecallCampaignScheduled, map[string]any{"next_run_at": int64(701)})
+	require.NoError(t, err)
+	require.True(t, won)
+
+	var stored RecallCampaign
+	require.NoError(t, DB.First(&stored, campaign.Id).Error)
+	require.Equal(t, RecallCampaignScheduled, stored.Status)
+	require.Equal(t, int64(701), stored.NextRunAt)
+}
+
+func TestRecallTransitionMessageRequiresLeaseOwnerAndExactState(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	message := RecallMessage{RecipientId: 701, StageNo: 1, TemplateSnapshot: `{}`, ScheduledAt: 800, State: RecallMessageScheduled}
+	require.NoError(t, DB.Create(&message).Error)
+	won, err := LeaseRecallMessage(message.Id, "node-a", 800, 860)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	won, err = CompleteRecallMessageLease(message.Id, "node-b", RecallMessageLeased, RecallMessageAccepted, map[string]any{"accepted_at": int64(810)})
+	require.NoError(t, err)
+	require.False(t, won)
+	won, err = CompleteRecallMessageLease(message.Id, "node-a", RecallMessageScheduled, RecallMessageAccepted, map[string]any{"accepted_at": int64(810)})
+	require.NoError(t, err)
+	require.False(t, won)
+	won, err = CompleteRecallMessageLease(message.Id, "node-a", RecallMessageLeased, RecallMessageAccepted, map[string]any{
+		"accepted_at":         int64(810),
+		"provider_message_id": "provider-701",
+		"state":               RecallMessageFailed,
+		"lease_owner":         "must-be-cleared",
+		"lease_expires_at":    int64(999),
+	})
+	require.NoError(t, err)
+	require.True(t, won)
+
+	var stored RecallMessage
+	require.NoError(t, DB.First(&stored, message.Id).Error)
+	require.Equal(t, RecallMessageAccepted, stored.State)
+	require.Equal(t, int64(810), stored.AcceptedAt)
+	require.Equal(t, "provider-701", stored.ProviderMessageId)
+	require.Empty(t, stored.LeaseOwner)
+	require.Zero(t, stored.LeaseExpiresAt)
+}
+
+func TestRecallTransitionCancelsOnlyPendingMessages(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	states := []string{
+		RecallMessageScheduled,
+		RecallMessageRetryWait,
+		RecallMessageAccepted,
+		RecallMessageLeased,
+		RecallMessageUncertain,
+		RecallMessageFailed,
+		RecallMessageCancelled,
+	}
+	messages := make([]RecallMessage, 0, len(states))
+	for i, state := range states {
+		messages = append(messages, RecallMessage{
+			RecipientId:      801,
+			StageNo:          i + 1,
+			TemplateSnapshot: `{}`,
+			State:            state,
+		})
+	}
+	require.NoError(t, DB.Create(&messages).Error)
+
+	cancelled, err := CancelPendingRecallMessages(801, "recipient_converted", 900)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), cancelled)
+
+	var stored []RecallMessage
+	require.NoError(t, DB.Order("stage_no ASC").Find(&stored).Error)
+	require.Equal(t, RecallMessageCancelled, stored[0].State)
+	require.Equal(t, RecallMessageCancelled, stored[1].State)
+	for _, message := range stored[:2] {
+		require.Equal(t, "recipient_converted", message.LastErrorCode)
+		require.Equal(t, int64(900), message.FailedAt)
+	}
+	for i, state := range states[2:] {
+		require.Equal(t, state, stored[i+2].State)
+	}
 }

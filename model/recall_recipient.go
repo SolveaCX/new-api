@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -51,13 +53,77 @@ type RecallRecipient struct {
 	UpdatedAt             int64   `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallRecipient, runEvent RecallEvent) (int, error) {
-	inserted := int64(0)
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		if len(recipients) > 0 {
-			for i := range recipients {
-				recipients[i].CampaignId = campaignID
+func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
+	ids := make([]int64, 0)
+	if limit <= 0 {
+		return ids, nil
+	}
+	err := DB.Model(&RecallRecipient{}).
+		Where("state IN ? AND (lease_expires_at = 0 OR lease_expires_at < ?)", []string{
+			RecallRecipientQueued,
+			RecallRecipientCustomerReady,
+			RecallRecipientCodeReady,
+		}, now).
+		Order("id ASC").
+		Limit(limit).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
+func LeaseRecallRecipient(id int64, owner string, now int64, leaseUntil int64) (bool, error) {
+	result := DB.Model(&RecallRecipient{}).
+		Where("id = ? AND state IN ? AND (lease_expires_at = 0 OR lease_expires_at < ?)", id, []string{
+			RecallRecipientQueued,
+			RecallRecipientCustomerReady,
+			RecallRecipientCodeReady,
+		}, now).
+		Updates(map[string]any{
+			"lease_owner":      owner,
+			"lease_expires_at": leaseUntil,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func ReleaseRecallRecipientLease(id int64, owner string) error {
+	return DB.Model(&RecallRecipient{}).
+		Where("id = ? AND lease_owner = ?", id, owner).
+		Updates(map[string]any{
+			"lease_owner":      "",
+			"lease_expires_at": int64(0),
+		}).Error
+}
+
+func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallRecipient, messages []RecallMessage, runEvent RecallEvent) (int, error) {
+	alignedMessages := make([]bool, len(messages))
+	for i := range messages {
+		if messages[i].RecipientId == 0 {
+			if len(messages) != len(recipients) {
+				return 0, fmt.Errorf("cannot align %d recall messages with %d recipients", len(messages), len(recipients))
 			}
+			alignedMessages[i] = true
+		}
+	}
+	for i := range recipients {
+		recipients[i].CampaignId = campaignID
+	}
+	runEvent.CampaignId = campaignID
+
+	inserted := int64(0)
+	ownedRun := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		eventResult := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&runEvent)
+		if eventResult.Error != nil {
+			return eventResult.Error
+		}
+		if eventResult.RowsAffected == 0 {
+			return nil
+		}
+		ownedRun = true
+
+		if len(recipients) > 0 {
 			result := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "campaign_id"}, {Name: "user_id"}},
 				DoNothing: true,
@@ -67,11 +133,36 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 			}
 			inserted = result.RowsAffected
 		}
-		runEvent.CampaignId = campaignID
-		return tx.Create(&runEvent).Error
+
+		for i, aligned := range alignedMessages {
+			if !aligned {
+				continue
+			}
+			recipientID := recipients[i].Id
+			if recipientID == 0 {
+				var stored RecallRecipient
+				if err := tx.Select("id").
+					Where("campaign_id = ? AND user_id = ?", campaignID, recipients[i].UserId).
+					First(&stored).Error; err != nil {
+					return err
+				}
+				recipientID = stored.Id
+			}
+			messages[i].RecipientId = recipientID
+		}
+		if len(messages) == 0 {
+			return nil
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "recipient_id"}, {Name: "stage_no"}},
+			DoNothing: true,
+		}).Create(&messages).Error
 	})
 	if err != nil {
 		return 0, err
+	}
+	if !ownedRun {
+		return 0, nil
 	}
 	return int(inserted), nil
 }
