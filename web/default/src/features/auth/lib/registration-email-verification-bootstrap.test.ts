@@ -32,6 +32,7 @@ type BootstrapWindow = {
   }
   __consumeRegistrationEmailVerificationToken?: () => string | null
   __registrationEmailVerificationRequest?: Promise<unknown>
+  setTimeout?: (callback: () => void, delay: number) => number
   fetch: (
     input: string,
     init: {
@@ -40,7 +41,11 @@ type BootstrapWindow = {
       headers?: unknown
       method?: string
     }
-  ) => Promise<{ json: () => Promise<unknown> }>
+  ) => Promise<{
+    json: () => Promise<unknown>
+    ok: boolean
+    status: number
+  }>
 }
 
 const indexHtml = readFileSync(
@@ -99,7 +104,11 @@ describe('registration email verification bootstrap', () => {
       },
       fetch: async (input, init) => {
         requests.push({ input, body: init.body, method: init.method })
-        return { json: async () => exchangeResponse }
+        return {
+          json: async () => exchangeResponse,
+          ok: true,
+          status: 200,
+        }
       },
     }
 
@@ -122,6 +131,152 @@ describe('registration email verification bootstrap', () => {
     expect(await window.__registrationEmailVerificationRequest).toEqual(
       exchangeResponse
     )
+  })
+
+  test('retries transient network failures without re-exposing the token', async () => {
+    let attempts = 0
+    const exchangeResponse = {
+      success: true,
+      message: '',
+      data: { verified: true },
+    }
+    const window: BootstrapWindow = {
+      location: {
+        pathname: '/sign-up/verify',
+        search: '',
+        hash: '#token=retry-token',
+      },
+      history: {
+        state: null,
+        replaceState: () => {},
+      },
+      setTimeout: (callback) => {
+        callback()
+        return 0
+      },
+      fetch: async () => {
+        attempts += 1
+        if (attempts < 3) {
+          throw new Error('temporary network failure')
+        }
+        return {
+          json: async () => exchangeResponse,
+          ok: true,
+          status: 200,
+        }
+      },
+    }
+
+    runInNewContext(getBootstrapScript(), {
+      JSON,
+      Promise,
+      URLSearchParams,
+      window,
+    })
+
+    expect(await window.__registrationEmailVerificationRequest).toEqual(
+      exchangeResponse
+    )
+    expect(attempts).toBe(3)
+    expect(window.__consumeRegistrationEmailVerificationToken).toBeUndefined()
+  })
+
+  test('keeps retries on the fetch implementation captured before analytics load', async () => {
+    let trustedAttempts = 0
+    let instrumentedAttempts = 0
+    const exchangeResponse = {
+      success: true,
+      message: '',
+      data: { verified: true },
+    }
+    const window: BootstrapWindow = {
+      location: {
+        pathname: '/sign-up/verify',
+        search: '',
+        hash: '#token=private-retry-token',
+      },
+      history: {
+        state: null,
+        replaceState: () => {},
+      },
+      setTimeout: (callback) => {
+        window.fetch = async () => {
+          instrumentedAttempts += 1
+          return {
+            json: async () => exchangeResponse,
+            ok: true,
+            status: 200,
+          }
+        }
+        callback()
+        return 0
+      },
+      fetch: async () => {
+        trustedAttempts += 1
+        if (trustedAttempts === 1) {
+          throw new Error('temporary network failure')
+        }
+        return {
+          json: async () => exchangeResponse,
+          ok: true,
+          status: 200,
+        }
+      },
+    }
+
+    runInNewContext(getBootstrapScript(), {
+      JSON,
+      Promise,
+      URLSearchParams,
+      window,
+    })
+
+    expect(await window.__registrationEmailVerificationRequest).toEqual(
+      exchangeResponse
+    )
+    expect(trustedAttempts).toBe(2)
+    expect(instrumentedAttempts).toBe(0)
+  })
+
+  test('turns repeated non-JSON gateway failures into a structured result', async () => {
+    let attempts = 0
+    const window: BootstrapWindow = {
+      location: {
+        pathname: '/sign-up/verify',
+        search: '',
+        hash: '#token=gateway-token',
+      },
+      history: {
+        state: null,
+        replaceState: () => {},
+      },
+      setTimeout: (callback) => {
+        callback()
+        return 0
+      },
+      fetch: async () => {
+        attempts += 1
+        return {
+          json: async () => {
+            throw new Error('gateway returned HTML')
+          },
+          ok: false,
+          status: 502,
+        }
+      },
+    }
+
+    runInNewContext(getBootstrapScript(), {
+      JSON,
+      Promise,
+      URLSearchParams,
+      window,
+    })
+
+    expect(await window.__registrationEmailVerificationRequest).toEqual({
+      success: false,
+    })
+    expect(attempts).toBe(3)
   })
 
   test('keeps the verification page independent from the sign-up form route', () => {

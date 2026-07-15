@@ -272,6 +272,46 @@ func TestRegistrationEmailMemorySetBoundsCredentialCount(t *testing.T) {
 	}
 }
 
+func TestRegistrationEmailMemoryCapacityPreservesExistingGrant(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+
+	previousLimit := registrationEmailMemoryMaxSize
+	registrationEmailMemoryMaxSize = 1
+	t.Cleanup(func() { registrationEmailMemoryMaxSize = previousLimit })
+
+	grant, err := RegisterRegistrationEmailGrant("first@example.com")
+	if err != nil {
+		t.Fatalf("register first grant: %v", err)
+	}
+	if _, err := RegisterRegistrationEmailGrant("second@example.com"); err == nil {
+		t.Fatal("expected a full memory store to reject a new grant")
+	}
+	if !VerifyRegistrationEmailGrant(grant, "first@example.com") {
+		t.Fatal("expected the existing grant to remain valid after capacity rejection")
+	}
+}
+
+func TestRegistrationEmailMemoryCapacityRejectsLinkAtomically(t *testing.T) {
+	withRedisDisabled(t)
+	resetRegistrationEmailVerificationStore()
+
+	previousLimit := registrationEmailMemoryMaxSize
+	registrationEmailMemoryMaxSize = 1
+	t.Cleanup(func() { registrationEmailMemoryMaxSize = previousLimit })
+
+	if _, err := RegisterRegistrationEmailLink("user@example.com"); err == nil {
+		t.Fatal("expected a link requiring two entries to be rejected")
+	}
+
+	registrationEmailVerificationMutex.Lock()
+	stored := len(registrationEmailVerificationMap)
+	registrationEmailVerificationMutex.Unlock()
+	if stored != 0 {
+		t.Fatalf("stored credentials = %d, want no partial link state", stored)
+	}
+}
+
 func TestRegistrationEmailMemorySetReclaimsExpiredCredentials(t *testing.T) {
 	withRedisDisabled(t)
 	resetRegistrationEmailVerificationStore()
