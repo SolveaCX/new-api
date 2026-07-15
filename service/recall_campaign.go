@@ -16,6 +16,17 @@ import (
 
 var ErrRecallDisabled = errors.New("recall campaigns are disabled")
 
+type recallCampaignPermanentRunError struct {
+	err error
+}
+
+func (e *recallCampaignPermanentRunError) Error() string { return e.err.Error() }
+func (e *recallCampaignPermanentRunError) Unwrap() error { return e.err }
+
+func permanentRecallCampaignRunError(err error) error {
+	return &recallCampaignPermanentRunError{err: err}
+}
+
 type RecallCampaignService struct {
 	audience *RecallAudienceSelector
 	stripe   *RecallStripeService
@@ -82,6 +93,7 @@ func (s *RecallCampaignService) UpdateDraft(ctx context.Context, actorID int, id
 			return nil, err
 		}
 		updated.Id = stored.Id
+		updated.ConfigRevision = stored.ConfigRevision
 		won, err := model.UpdateRecallCampaignDraftWithContext(ctx, updated)
 		if err != nil {
 			return nil, err
@@ -114,7 +126,7 @@ func (s *RecallCampaignService) UpdateDraft(ctx context.Context, actorID int, id
 	if err != nil {
 		return nil, err
 	}
-	won, err := model.UpdateRecallCampaignEmailSequenceWithContext(ctx, id, normalized.Name, string(emailJSON))
+	won, err := model.UpdateRecallCampaignEmailSequenceWithContext(ctx, id, stored.ConfigRevision, normalized.Name, string(emailJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +178,7 @@ func (s *RecallCampaignService) validateStripe(ctx context.Context, draft Recall
 		coupon, discount, err := s.stripe.EnsureCoupon(
 			ctx,
 			1,
+			1,
 			draft.CouponSource,
 			draft.ExistingCouponID,
 			draft.Discount,
@@ -214,6 +227,7 @@ func (s *RecallCampaignService) Activate(ctx context.Context, actorID int, id in
 	coupon, discount, err := s.stripe.EnsureCoupon(
 		ctx,
 		campaign.Id,
+		campaign.ConfigRevision,
 		draft.CouponSource,
 		draft.ExistingCouponID,
 		draft.Discount,
@@ -224,6 +238,10 @@ func (s *RecallCampaignService) Activate(ctx context.Context, actorID int, id in
 		return err
 	}
 	draft.Discount = discount
+	if draft.ExecutionMode == "scheduled_once" && draft.Discount.CouponRedeemBy > 0 &&
+		draft.Schedule.ScheduledAt >= draft.Discount.CouponRedeemBy {
+		return fmt.Errorf("scheduled recall campaign must run before the Stripe Coupon redeem-by time")
+	}
 	fields, err := recallCampaignActivationFields(draft, coupon.ID, activationNow.Unix())
 	if err != nil {
 		return err
@@ -251,7 +269,7 @@ func (s *RecallCampaignService) Activate(ctx context.Context, actorID int, id in
 	case "scheduled_once":
 		fields["scheduled_at"] = draft.Schedule.ScheduledAt
 		fields["next_run_at"] = draft.Schedule.ScheduledAt
-		won, err := model.TransitionRecallCampaignWithContext(ctx, id, []string{model.RecallCampaignDraft}, model.RecallCampaignScheduled, fields)
+		won, err := model.TransitionRecallCampaignRevisionWithContext(ctx, id, []string{model.RecallCampaignDraft}, model.RecallCampaignScheduled, campaign.ConfigRevision, fields)
 		if err != nil {
 			return err
 		}
@@ -264,8 +282,11 @@ func (s *RecallCampaignService) Activate(ctx context.Context, actorID int, id in
 		if err != nil {
 			return err
 		}
+		if draft.Discount.CouponRedeemBy > 0 && nextRun.Unix() >= draft.Discount.CouponRedeemBy {
+			return fmt.Errorf("recurring recall campaign must first run before the Stripe Coupon redeem-by time")
+		}
 		fields["next_run_at"] = nextRun.Unix()
-		won, err := model.TransitionRecallCampaignWithContext(ctx, id, []string{model.RecallCampaignDraft}, model.RecallCampaignScheduled, fields)
+		won, err := model.TransitionRecallCampaignRevisionWithContext(ctx, id, []string{model.RecallCampaignDraft}, model.RecallCampaignScheduled, campaign.ConfigRevision, fields)
 		if err != nil {
 			return err
 		}
@@ -388,59 +409,92 @@ func (s *RecallCampaignService) RunDueCampaigns(ctx context.Context, now time.Ti
 		return 0, err
 	}
 	processed := 0
+	errs := make([]error, 0)
 	for i := range campaigns {
 		campaign := &campaigns[i]
-		draft, err := recallCampaignDraftFromModel(campaign)
+		committed, err := s.runDueCampaignSafely(ctx, campaign, now)
 		if err != nil {
-			return processed, err
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return processed, err
+			}
+			var permanent *recallCampaignPermanentRunError
+			if errors.As(err, &permanent) {
+				if _, completeErr := model.CompleteDueRecallCampaignWithContext(ctx, campaign.Id, campaign.NextRunAt, now.Unix()); completeErr != nil {
+					errs = append(errs, fmt.Errorf("complete invalid recall campaign %d: %w", campaign.Id, completeErr))
+				}
+			}
+			errs = append(errs, fmt.Errorf("run recall campaign %d: %w", campaign.Id, err))
+			continue
 		}
-		switch campaign.ExecutionMode {
-		case "scheduled_once":
-			runKey := fmt.Sprintf("scheduled_once:%d:%d", campaign.Id, campaign.ScheduledAt)
-			committed, err := s.commitCampaignRun(
-				ctx,
-				campaign,
-				draft,
-				[]string{model.RecallCampaignScheduled, model.RecallCampaignRunning},
-				model.RecallCampaignRunning,
-				nil,
-				map[string]any{"next_run_at": int64(0)},
-				runKey,
-				now,
-			)
-			if err != nil {
-				return processed, err
-			}
-			if committed {
-				processed++
-			}
-		case "recurring":
-			next, err := NextRecallRun(time.Unix(campaign.NextRunAt, 0), draft.Schedule)
-			if err != nil {
-				return processed, err
-			}
-			expected := campaign.NextRunAt
-			runKey := fmt.Sprintf("recurring:%d:%d", campaign.Id, expected)
-			committed, err := s.commitCampaignRun(
-				ctx,
-				campaign,
-				draft,
-				[]string{model.RecallCampaignScheduled, model.RecallCampaignRunning},
-				model.RecallCampaignRunning,
-				&expected,
-				map[string]any{"next_run_at": next.Unix()},
-				runKey,
-				now,
-			)
-			if err != nil {
-				return processed, err
-			}
-			if committed {
-				processed++
-			}
+		if committed {
+			processed++
 		}
 	}
-	return processed, nil
+	return processed, errors.Join(errs...)
+}
+
+func (s *RecallCampaignService) runDueCampaignSafely(ctx context.Context, campaign *model.RecallCampaign, now time.Time) (committed bool, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			committed = false
+			err = fmt.Errorf("panic while running campaign: %v", recovered)
+		}
+	}()
+	return s.runDueCampaign(ctx, campaign, now)
+}
+
+func (s *RecallCampaignService) runDueCampaign(ctx context.Context, campaign *model.RecallCampaign, now time.Time) (bool, error) {
+	draft, err := recallCampaignDraftFromModel(campaign)
+	if err != nil {
+		return false, permanentRecallCampaignRunError(err)
+	}
+	if draft.Discount.CouponRedeemBy > 0 && now.Unix() >= draft.Discount.CouponRedeemBy {
+		_, err := model.CompleteDueRecallCampaignWithContext(ctx, campaign.Id, campaign.NextRunAt, now.Unix())
+		return false, err
+	}
+	switch campaign.ExecutionMode {
+	case "scheduled_once":
+		expected := campaign.NextRunAt
+		runKey := fmt.Sprintf("scheduled_once:%d:%d", campaign.Id, campaign.ScheduledAt)
+		return s.commitCampaignRun(
+			ctx,
+			campaign,
+			draft,
+			[]string{model.RecallCampaignScheduled, model.RecallCampaignRunning},
+			model.RecallCampaignRunning,
+			&expected,
+			map[string]any{"next_run_at": int64(0)},
+			runKey,
+			now,
+		)
+	case "recurring":
+		next, err := NextRecallRun(time.Unix(campaign.NextRunAt, 0), draft.Schedule)
+		if err != nil {
+			return false, permanentRecallCampaignRunError(err)
+		}
+		expected := campaign.NextRunAt
+		runKey := fmt.Sprintf("recurring:%d:%d", campaign.Id, expected)
+		targetStatus := model.RecallCampaignRunning
+		fields := map[string]any{"next_run_at": next.Unix()}
+		if draft.Discount.CouponRedeemBy > 0 && next.Unix() >= draft.Discount.CouponRedeemBy {
+			targetStatus = model.RecallCampaignCompleted
+			fields["next_run_at"] = int64(0)
+			fields["completed_at"] = now.Unix()
+		}
+		return s.commitCampaignRun(
+			ctx,
+			campaign,
+			draft,
+			[]string{model.RecallCampaignScheduled, model.RecallCampaignRunning},
+			targetStatus,
+			&expected,
+			fields,
+			runKey,
+			now,
+		)
+	default:
+		return false, permanentRecallCampaignRunError(fmt.Errorf("unsupported due recall execution mode %q", campaign.ExecutionMode))
+	}
 }
 
 func (s *RecallCampaignService) commitCampaignRun(
@@ -467,7 +521,14 @@ func (s *RecallCampaignService) commitCampaignRun(
 			snapshotLimit = int(remaining)
 		}
 	}
-	recipients, exclusions, err := s.audience.Snapshot(ctx, draft, snapshotLimit, runAt)
+	var recipients []model.RecallRecipient
+	var exclusions map[string]int64
+	var err error
+	if campaign.ExecutionMode == "recurring" {
+		recipients, exclusions, err = s.snapshotRecurringAudience(ctx, campaign.Id, draft, snapshotLimit, runAt)
+	} else {
+		recipients, exclusions, err = s.audience.Snapshot(ctx, draft, snapshotLimit, runAt)
+	}
 	if err != nil {
 		return false, err
 	}
@@ -498,6 +559,7 @@ func (s *RecallCampaignService) commitCampaignRun(
 		from,
 		to,
 		expectedNextRunAt,
+		campaign.ConfigRevision,
 		fields,
 		recipients,
 		messages,
@@ -509,6 +571,35 @@ func (s *RecallCampaignService) commitCampaignRun(
 		},
 	)
 	return committed, err
+}
+
+func (s *RecallCampaignService) snapshotRecurringAudience(
+	ctx context.Context,
+	campaignID int64,
+	draft RecallCampaignDraft,
+	limit int,
+	runAt time.Time,
+) ([]model.RecallRecipient, map[string]int64, error) {
+	existing, err := model.ListRecallCampaignRecipientUserIDsWithContext(ctx, campaignID)
+	if err != nil {
+		return nil, nil, err
+	}
+	recipients := make([]model.RecallRecipient, 0, limit)
+	exclusions, err := s.audience.iterate(ctx, draft, runAt.Unix(), func(selection recallAudienceSelection) bool {
+		candidate := selection.Candidate
+		if _, enrolled := existing[candidate.UserID]; enrolled || len(recipients) >= limit {
+			return true
+		}
+		recipients = append(recipients, model.RecallRecipient{
+			UserId:              candidate.UserID,
+			EligibilitySnapshot: candidate.SnapshotJSON,
+			EmailSnapshot:       selection.Email,
+			LanguageSnapshot:    candidate.Language,
+			State:               model.RecallRecipientQueued,
+		})
+		return true
+	})
+	return recipients, exclusions, err
 }
 
 func initialRecallMessages(recipients []model.RecallRecipient, stage RecallEmailStage, runAt time.Time) ([]model.RecallMessage, error) {

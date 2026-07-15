@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -19,16 +20,21 @@ type RecallEvent struct {
 	CreatedAt     int64  `json:"created_at" gorm:"autoCreateTime;index"`
 }
 
+var errRecallRunNotOwned = errors.New("recall campaign run not owned")
+
+const recallRunBatchSize = 200
+
 // CommitRecallCampaignRun makes the campaign state change, idempotency event,
 // recipient snapshot, and initial message snapshot one database transaction.
-// expectedNextRunAt is nil for manual and one-time runs and is a fencing value
-// for recurring runs.
+// expectedNextRunAt is nil for manual runs and is a fencing value for scheduled
+// runs.
 func CommitRecallCampaignRun(
 	ctx context.Context,
 	campaignID int64,
 	from []string,
 	to string,
 	expectedNextRunAt *int64,
+	expectedConfigRevision int64,
 	fields map[string]any,
 	recipients []RecallRecipient,
 	messages []RecallMessage,
@@ -48,11 +54,11 @@ func CommitRecallCampaignRun(
 		recipients[i].CampaignId = campaignID
 	}
 	runEvent.CampaignId = campaignID
-	committed := false
+	owned := false
 	inserted := int64(0)
 	err = DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		campaignQuery := tx.Model(&RecallCampaign{}).
-			Where("id = ? AND status IN ?", campaignID, from)
+			Where("id = ? AND status IN ? AND config_revision = ?", campaignID, from, expectedConfigRevision)
 		if expectedNextRunAt != nil {
 			campaignQuery = campaignQuery.Where("next_run_at = ?", *expectedNextRunAt)
 		}
@@ -63,20 +69,20 @@ func CommitRecallCampaignRun(
 		if campaignResult.RowsAffected == 0 {
 			return nil
 		}
+		owned = true
 
 		eventResult := insertRecallRunEvent(tx, &runEvent)
 		if eventResult.Error != nil {
 			return eventResult.Error
 		}
-		committed = true
 		if eventResult.RowsAffected == 0 {
-			return nil
+			return errRecallRunNotOwned
 		}
 		if len(recipients) > 0 {
 			result := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "campaign_id"}, {Name: "user_id"}},
 				DoNothing: true,
-			}).Create(&recipients)
+			}).CreateInBatches(&recipients, recallRunBatchSize)
 			if result.Error != nil {
 				return result.Error
 			}
@@ -90,11 +96,19 @@ func CommitRecallCampaignRun(
 		for i := range recipients {
 			userIDs[i] = recipients[i].UserId
 		}
-		var storedRecipients []RecallRecipient
-		if err := tx.Select("id", "user_id").
-			Where("campaign_id = ? AND user_id IN ?", campaignID, userIDs).
-			Find(&storedRecipients).Error; err != nil {
-			return err
+		storedRecipients := make([]RecallRecipient, 0, len(userIDs))
+		for start := 0; start < len(userIDs); start += recallRunBatchSize {
+			end := start + recallRunBatchSize
+			if end > len(userIDs) {
+				end = len(userIDs)
+			}
+			var batch []RecallRecipient
+			if err := tx.Select("id", "user_id").
+				Where("campaign_id = ? AND user_id IN ?", campaignID, userIDs[start:end]).
+				Find(&batch).Error; err != nil {
+				return err
+			}
+			storedRecipients = append(storedRecipients, batch...)
 		}
 		recipientIDsByUserID := make(map[int]int64, len(storedRecipients))
 		for _, recipient := range storedRecipients {
@@ -110,7 +124,13 @@ func CommitRecallCampaignRun(
 		return tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "recipient_id"}, {Name: "stage_no"}},
 			DoNothing: true,
-		}).Create(&messages).Error
+		}).CreateInBatches(&messages, recallRunBatchSize).Error
 	})
-	return committed, int(inserted), err
+	if errors.Is(err, errRecallRunNotOwned) {
+		return false, 0, nil
+	}
+	if err != nil {
+		return false, 0, err
+	}
+	return owned, int(inserted), nil
 }

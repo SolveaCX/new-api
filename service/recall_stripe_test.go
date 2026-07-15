@@ -142,7 +142,7 @@ func TestRecallStripePercentCouponParams(t *testing.T) {
 		CouponRedeemBy: 1_900_000_000,
 	}
 
-	coupon, normalized, err := service.EnsureCoupon(context.Background(), 42, "automatic", "", discount, products, 50)
+	coupon, normalized, err := service.EnsureCoupon(context.Background(), 42, 1, "automatic", "", discount, products, 50)
 	require.NoError(t, err)
 	require.Equal(t, "coupon_recall", coupon.ID)
 	require.Equal(t, discount, normalized)
@@ -156,7 +156,7 @@ func TestRecallStripePercentCouponParams(t *testing.T) {
 	require.Equal(t, []*string{stripe.String("prod_topup")}, captured.AppliesTo.Products)
 	require.Equal(t, "42", captured.Metadata["recall_campaign_id"])
 	require.Equal(t, "automatic", captured.Metadata["recall_source"])
-	require.Equal(t, "recall_coupon:42", *captured.IdempotencyKey)
+	require.Equal(t, "recall_coupon:42:1", *captured.IdempotencyKey)
 }
 
 func TestRecallStripeFixedCouponParams(t *testing.T) {
@@ -172,7 +172,7 @@ func TestRecallStripeFixedCouponParams(t *testing.T) {
 	service := NewRecallStripeService(client)
 	discount := RecallDiscountConfig{Type: "fixed", AmountOff: 1200, Currency: " USD "}
 
-	_, normalized, err := service.EnsureCoupon(context.Background(), 43, "automatic", "", discount, RecallResolvedProductScope{
+	_, normalized, err := service.EnsureCoupon(context.Background(), 43, 1, "automatic", "", discount, RecallResolvedProductScope{
 		SubscriptionPriceIDs: []string{"price_subscription"},
 		ProductIDs:           []string{"prod_subscription"},
 	}, 0)
@@ -259,7 +259,7 @@ func TestRecallStripeExistingCouponValidation(t *testing.T) {
 					return tt.coupon, nil
 				},
 			}
-			_, _, err := NewRecallStripeService(client).EnsureCoupon(context.Background(), 42, "existing", "coupon_existing", tt.discount, RecallResolvedProductScope{ProductIDs: tt.products}, tt.enrollment)
+			_, _, err := NewRecallStripeService(client).EnsureCoupon(context.Background(), 42, 1, "existing", "coupon_existing", tt.discount, RecallResolvedProductScope{ProductIDs: tt.products}, tt.enrollment)
 			require.ErrorContains(t, err, tt.wantErr)
 			require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
 		})
@@ -269,7 +269,7 @@ func TestRecallStripeExistingCouponValidation(t *testing.T) {
 		coupon := validFixed()
 		coupon.MaxRedemptions = 0
 		client := &recallStripeFakeClient{getCouponFn: func(context.Context, string) (*stripe.Coupon, error) { return coupon, nil }}
-		resolved, normalized, err := NewRecallStripeService(client).EnsureCoupon(context.Background(), 42, "existing", "coupon_existing", RecallDiscountConfig{
+		resolved, normalized, err := NewRecallStripeService(client).EnsureCoupon(context.Background(), 42, 1, "existing", "coupon_existing", RecallDiscountConfig{
 			Type: "fixed", AmountOff: 500, Currency: "USD", MinimumAmount: 1000, MinimumAmountCurrency: "USD",
 		}, RecallResolvedProductScope{ProductIDs: []string{"prod_b", "prod_a"}}, 500)
 		require.NoError(t, err)

@@ -34,6 +34,7 @@ type RecallCampaign struct {
 	EmailSequenceConfig   string `json:"email_sequence_config" gorm:"type:text;not null"`
 	EnrollmentLimit       int    `json:"enrollment_limit"`
 	WorkerConcurrency     int    `json:"worker_concurrency"`
+	ConfigRevision        int64  `json:"config_revision" gorm:"not null;default:1"`
 	CreatedBy             int    `json:"created_by" gorm:"index"`
 	CreatedAt             int64  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt             int64  `json:"updated_at" gorm:"autoUpdateTime"`
@@ -68,7 +69,7 @@ func UpdateRecallCampaignDraft(campaign *RecallCampaign) error {
 
 func UpdateRecallCampaignDraftWithContext(ctx context.Context, campaign *RecallCampaign) (bool, error) {
 	result := DB.WithContext(ctx).Model(&RecallCampaign{}).
-		Where("id = ? AND status = ?", campaign.Id, RecallCampaignDraft).
+		Where("id = ? AND status = ? AND config_revision = ?", campaign.Id, RecallCampaignDraft, campaign.ConfigRevision).
 		Updates(map[string]any{
 			"name":              campaign.Name,
 			"audience_template": campaign.AudienceTemplate,
@@ -85,6 +86,7 @@ func UpdateRecallCampaignDraftWithContext(ctx context.Context, campaign *RecallC
 			"email_sequence_config":   campaign.EmailSequenceConfig,
 			"enrollment_limit":        campaign.EnrollmentLimit,
 			"worker_concurrency":      campaign.WorkerConcurrency,
+			"config_revision":         gorm.Expr("config_revision + ?", 1),
 		})
 	if result.Error != nil {
 		return false, result.Error
@@ -97,6 +99,14 @@ func TransitionRecallCampaign(id int64, from []string, to string, fields map[str
 }
 
 func TransitionRecallCampaignWithContext(ctx context.Context, id int64, from []string, to string, fields map[string]any) (bool, error) {
+	return transitionRecallCampaignWithContext(ctx, id, from, to, nil, fields)
+}
+
+func TransitionRecallCampaignRevisionWithContext(ctx context.Context, id int64, from []string, to string, expectedConfigRevision int64, fields map[string]any) (bool, error) {
+	return transitionRecallCampaignWithContext(ctx, id, from, to, &expectedConfigRevision, fields)
+}
+
+func transitionRecallCampaignWithContext(ctx context.Context, id int64, from []string, to string, expectedConfigRevision *int64, fields map[string]any) (bool, error) {
 	updates, err := recallCampaignTransitionUpdates(to, fields)
 	if err != nil {
 		return false, err
@@ -104,9 +114,12 @@ func TransitionRecallCampaignWithContext(ctx context.Context, id int64, from []s
 	if len(from) == 0 {
 		return false, nil
 	}
-	result := DB.WithContext(ctx).Model(&RecallCampaign{}).
-		Where("id = ? AND status IN ?", id, from).
-		Updates(updates)
+	query := DB.WithContext(ctx).Model(&RecallCampaign{}).
+		Where("id = ? AND status IN ?", id, from)
+	if expectedConfigRevision != nil {
+		query = query.Where("config_revision = ?", *expectedConfigRevision)
+	}
+	result := query.Updates(updates)
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -139,16 +152,17 @@ func recallCampaignTransitionUpdates(to string, fields map[string]any) (map[stri
 	return updates, nil
 }
 
-func UpdateRecallCampaignEmailSequenceWithContext(ctx context.Context, id int64, name string, emailSequence string) (bool, error) {
+func UpdateRecallCampaignEmailSequenceWithContext(ctx context.Context, id int64, expectedConfigRevision int64, name string, emailSequence string) (bool, error) {
 	result := DB.WithContext(ctx).Model(&RecallCampaign{}).
-		Where("id = ? AND status IN ?", id, []string{
+		Where("id = ? AND status IN ? AND config_revision = ?", id, []string{
 			RecallCampaignScheduled,
 			RecallCampaignRunning,
 			RecallCampaignPaused,
-		}).
+		}, expectedConfigRevision).
 		Updates(map[string]any{
 			"name":                  name,
 			"email_sequence_config": emailSequence,
+			"config_revision":       gorm.Expr("config_revision + ?", 1),
 		})
 	if result.Error != nil {
 		return false, result.Error
@@ -184,6 +198,38 @@ func CountRecallCampaignRecipientsWithContext(ctx context.Context, campaignID in
 		Where("campaign_id = ?", campaignID).
 		Count(&count).Error
 	return count, err
+}
+
+func ListRecallCampaignRecipientUserIDsWithContext(ctx context.Context, campaignID int64) (map[int]struct{}, error) {
+	userIDs := make([]int, 0)
+	if err := DB.WithContext(ctx).
+		Model(&RecallRecipient{}).
+		Where("campaign_id = ?", campaignID).
+		Pluck("user_id", &userIDs).Error; err != nil {
+		return nil, err
+	}
+	existing := make(map[int]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		existing[userID] = struct{}{}
+	}
+	return existing, nil
+}
+
+func CompleteDueRecallCampaignWithContext(ctx context.Context, id int64, expectedNextRunAt int64, completedAt int64) (bool, error) {
+	result := DB.WithContext(ctx).Model(&RecallCampaign{}).
+		Where("id = ? AND status IN ? AND next_run_at = ?", id, []string{
+			RecallCampaignScheduled,
+			RecallCampaignRunning,
+		}, expectedNextRunAt).
+		Updates(map[string]any{
+			"status":       RecallCampaignCompleted,
+			"next_run_at":  int64(0),
+			"completed_at": completedAt,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func CancelRecallCampaignWithContext(ctx context.Context, id int64, from []string, now int64, reasonCode string) (bool, error) {
