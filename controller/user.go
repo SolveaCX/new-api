@@ -228,11 +228,17 @@ func Register(c *gin.Context) {
 		return
 	}
 	if common.EmailVerificationEnabled {
-		if user.Email == "" || user.VerificationCode == "" {
+		if user.Email == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
 		}
-		if !common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose) {
+		verifiedByGrant := registrationEmailGrantMatches(c, user.Email)
+		verifiedByCode := user.VerificationCode != "" && common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose)
+		if !verifiedByGrant && user.VerificationCode == "" {
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+			return
+		}
+		if !verifiedByGrant && !verifiedByCode {
 			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 			return
 		}
@@ -309,6 +315,7 @@ func Register(c *gin.Context) {
 
 	gaClientID, gaSessionID := service.ResolveGAIdentifiers(c.Request, user.GAClientID, user.GASessionID)
 	sendSignUpSuccessGA(c.Request.Context(), insertedUser.Id, inviterId, "password", gaClientID, gaSessionID)
+	clearRegistrationEmailGrant(c)
 
 	// Auto-login the freshly registered user so they land directly in the console
 	// (e.g. the Playground onboarding) without having to sign in again. setupLogin

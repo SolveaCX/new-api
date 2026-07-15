@@ -302,6 +302,8 @@ email.verification_code_label: "驗證碼"
 email.verification_expiry: "此連結和驗證碼將在 {{.Minutes}} 分鐘後失效。"
 email.verification_ignore: "如果這不是您的操作，可以放心忽略此郵件。"
 email.verification_footer: "此郵件由 {{.SystemName}} 安全寄送"
+email.verification_link_invalid: "此驗證連結無效或已過期。"
+email.verification_unavailable: "電子郵件驗證暫時無法使用，請稍後再試。"
 email.password_reset_subject: "{{.SystemName}}密碼重設"
 email.password_reset_content: "<p>您好，您正在進行{{.SystemName}}密碼重設。</p><p>點擊 <a href='{{.Link}}'>此處</a> 進行密碼重設。</p><p>如果連結無法點擊，請嘗試點擊下面的連結或將其複製到瀏覽器中開啟：<br> {{.Link}} </p><p>重設連結 {{.Minutes}} 分鐘內有效，如果不是本人操作，請忽略。</p>"
 
