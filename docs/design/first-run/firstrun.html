@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>flatkey — First-run wizard (current design system)</title>
+<style>
+:root{--vio:#8b5cf6;--fuc:#d946ef;--ind:#6366f1;--ink:#0f172a;--mut:#64748b;--line:#e2e8f0;--bg:#f8fafc;--grn:#16a34a}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"SF Pro Text","Segoe UI",sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+.top{background:#fff;border-bottom:1px solid var(--line);padding:14px 32px;display:flex;align-items:center;gap:18px}
+.logo{font-weight:800;font-size:16px}.logo .k{color:var(--vio)}
+.crumb{font-size:12.5px;color:var(--mut)}
+.skip{margin-left:auto;font-size:13px;color:var(--mut);text-decoration:none}
+.skip b{color:var(--vio)}
+.wrap{max-width:1080px;margin:0 auto;padding:36px 32px 64px}
+h1{font-size:30px;letter-spacing:-1px;font-weight:800}
+h1 .grad{background:linear-gradient(90deg,var(--vio),var(--fuc),var(--ind));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--mut);font-size:14.5px;margin-top:6px}
+.prog{display:flex;gap:0;margin:28px 0 32px;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.p{flex:1;padding:13px 18px;font-size:13px;display:flex;gap:9px;align-items:center;border-right:1px solid var(--line)}
+.p:last-child{border-right:none}
+.p .dot{width:20px;height:20px;border-radius:999px;display:grid;place-items:center;font-size:11px;font-weight:800}
+.p.done .dot{background:#dcfce7;color:var(--grn)}
+.p.cur{background:linear-gradient(180deg,rgba(139,92,246,.08),transparent)}
+.p.cur .dot{background:linear-gradient(135deg,var(--vio),var(--fuc));color:#fff}
+.p.todo{color:#94a3b8}.p.todo .dot{background:#f1f5f9;color:#94a3b8}
+.grid{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+.card h3{font-size:15.5px;font-weight:800;margin-bottom:4px}
+.card .m{font-size:12.5px;color:var(--mut);margin-bottom:14px}
+.keyrow{display:flex;gap:10px;align-items:center;background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font:13px ui-monospace,Menlo,monospace}
+.keyrow .kv{color:var(--ink);letter-spacing:.2px}
+.keyrow button{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;color:var(--vio)}
+.credit{display:flex;gap:8px;align-items:baseline;margin-top:12px;font-size:13px;color:#334155}
+.credit b{font-size:16px;color:var(--grn)}
+.credit span{color:var(--mut);font-size:12px}
+.code{margin-top:16px;background:#0f172a;border-radius:12px;padding:16px 18px;font:12.5px/1.7 ui-monospace,Menlo,monospace;color:#e2e8f0;position:relative}
+.code .tabs{display:flex;gap:14px;margin-bottom:10px;font-size:11.5px;color:#94a3b8}
+.code .tabs b{color:#fff;border-bottom:2px solid var(--fuc);padding-bottom:3px}
+.code .c1{color:#a5b4fc}.code .c2{color:#86efac}.code .c3{color:#fda4af}
+.runbtn{position:absolute;right:14px;top:44px;background:linear-gradient(90deg,var(--vio),var(--fuc));color:#fff;border:none;border-radius:9px;padding:8px 16px;font-size:12.5px;font-weight:800;cursor:pointer}
+.resp{border:1px solid #bbf7d0;background:#f0fdf4;border-radius:16px;padding:22px 24px}
+.resp .okline{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;color:var(--grn)}
+.resp .okline .pulse{width:10px;height:10px;border-radius:999px;background:var(--grn);box-shadow:0 0 0 5px rgba(22,163,74,.15)}
+.resp .msg{margin:14px 0;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:13.5px;color:#334155;line-height:1.65}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font:11.5px ui-monospace,Menlo,monospace;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;color:#475569}
+.chip b{color:var(--ink)}
+.next{margin-top:14px;font-size:12.5px;color:var(--mut)}
+.tools{margin-top:22px}
+.tools h3{font-size:15.5px;font-weight:800;margin-bottom:12px}
+.tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.tool{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;font-size:13px;cursor:pointer;transition:.15s}
+.tool:hover{border-color:var(--vio);box-shadow:0 8px 26px rgba(139,92,246,.12)}
+.tool .ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:15px;margin-bottom:9px;background:linear-gradient(135deg,rgba(139,92,246,.14),rgba(217,70,239,.10));color:var(--vio);font-weight:800}
+.tool b{display:block;margin-bottom:3px}
+.tool span{color:var(--mut);font-size:11.5px}
+.note{position:fixed;bottom:14px;left:20px;font:11px ui-monospace,Menlo,monospace;color:#b6bdc9}
+</style></head><body>
+<div class="note">MOCKUP · 现行设计体系 · issue #406 屏2/2</div>
+<div class="top"><div class="logo">⚿ flat<span class="k">key</span></div><div class="crumb">console / first run</div><a class="skip" href="#">Skip — <b>I'll use the SDK →</b></a></div>
+<div class="wrap">
+  <h1>You're in. <span class="grad">Let's get your first response.</span></h1>
+  <p class="sub">Your key is ready and your free credit is loaded — run the call below without leaving this page.</p>
+
+  <div class="prog">
+    <div class="p done"><span class="dot">✓</span>Signed in</div>
+    <div class="p done"><span class="dot">✓</span>Key created</div>
+    <div class="p cur"><span class="dot">3</span><b>First call</b></div>
+    <div class="p todo"><span class="dot">4</span>Connect your tool</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Your API key</h3>
+      <p class="m">Created automatically for this account. The code below already includes it.</p>
+      <div class="keyrow"><span class="kv">sk-fk-a91x••••••••••••••••••••3kd2</span><button>Copy</button></div>
+      <div class="credit"><b>$2.00</b> free credit <span>≈ 2.6M deepseek tokens · no card required</span></div>
+      <div class="code">
+        <div class="tabs"><b>curl</b><span>Python</span><span>JavaScript</span><span>Cline</span><span>Cursor</span></div>
+        <button class="runbtn">▶ Run it here</button>
+        <span class="c1">curl</span> https://router.flatkey.ai/v1/chat/completions \<br>
+        &nbsp;&nbsp;-H <span class="c2">"Authorization: Bearer sk-fk-a91x…3kd2"</span> \<br>
+        &nbsp;&nbsp;-d <span class="c3">'{"model":"deepseek-chat","messages":[{"role":"user","content":"Say hello from flatkey"}]}'</span>
+      </div>
+    </div>
+    <div class="resp">
+      <div class="okline"><span class="pulse"></span>200 OK — your first response 🎉</div>
+      <div class="msg">Hello from flatkey! Your key works. You just called an official model through one gateway — 162 more are ready with the same key.</div>
+      <div class="chips"><span class="chip">latency <b>412ms</b></span><span class="chip">tokens <b>38</b></span><span class="chip">cost <b>$0.00002</b></span><span class="chip">✓ official API</span></div>
+      <p class="next">Step 4 unlocks below — connect the tool you actually work in.</p>
+    </div>
+  </div>
+
+  <div class="tools">
+    <h3>Connect your tool <span style="color:var(--mut);font-weight:400;font-size:12.5px">— paste-ready config, takes ~1 minute</span></h3>
+    <div class="tgrid">
+      <div class="tool"><span class="ic">⌘</span><b>Cline</b><span>paste base_url + key</span></div>
+      <div class="tool"><span class="ic">▮</span><b>Cursor</b><span>one-click deep link</span></div>
+      <div class="tool"><span class="ic">🍒</span><b>Cherry Studio</b><span>scan QR config</span></div>
+      <div class="tool"><span class="ic">◻</span><b>Chatbox</b><span>preset provider</span></div>
+    </div>
+  </div>
+</div>
+</body></html>

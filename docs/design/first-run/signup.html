@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>flatkey — Sign up (current design system)</title>
+<style>
+:root{--vio:#8b5cf6;--fuc:#d946ef;--ind:#6366f1;--ink:#0f172a;--mut:#64748b;--line:#e2e8f0;--bg:#ffffff}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"SF Pro Text","Segoe UI",sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+.split{display:grid;grid-template-columns:1.1fr 1fr;min-height:100vh}
+.left{position:relative;padding:88px 72px;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
+.glow{position:absolute;inset:0;z-index:0;opacity:.5;background:radial-gradient(ellipse 65% 55% at 40% 38%,rgba(139,92,246,.22),rgba(217,70,239,.10) 45%,transparent 75%)}
+.left>*{position:relative;z-index:1}
+.logo{font-weight:800;font-size:19px;letter-spacing:-.4px;margin-bottom:64px}
+.logo .k{color:var(--vio)}
+h1{font-size:46px;line-height:1.12;letter-spacing:-1.6px;font-weight:800;max-width:520px}
+h1 .grad{background:linear-gradient(90deg,var(--vio),var(--fuc),var(--ind));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{margin-top:18px;font-size:16.5px;color:var(--mut);max-width:460px;line-height:1.65}
+.steps{margin-top:44px;display:flex;flex-direction:column;gap:16px}
+.stp{display:flex;gap:14px;align-items:flex-start;font-size:14.5px;color:#334155}
+.stp .n{flex:none;width:26px;height:26px;border-radius:999px;background:linear-gradient(135deg,var(--vio),var(--fuc));color:#fff;display:grid;place-items:center;font-size:12.5px;font-weight:800}
+.stp b{display:block;font-size:14.5px;color:var(--ink)}
+.stp span{color:var(--mut);font-size:13px}
+.quote{margin-top:52px;border-left:3px solid var(--vio);padding:4px 18px;font-size:13.5px;color:#475569;max-width:440px;font-style:italic}
+.quote .who{display:block;margin-top:6px;font-style:normal;color:var(--mut);font-size:12px}
+.right{border-left:1px solid var(--line);display:flex;align-items:center;justify-content:center;padding:48px;background:#fafafa}
+.card{width:400px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:36px 34px;box-shadow:0 24px 64px rgba(15,23,42,.07)}
+.card h2{font-size:21px;letter-spacing:-.5px;font-weight:800}
+.card .hint{font-size:13px;color:var(--mut);margin:6px 0 26px}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;border-radius:12px;font-size:14.5px;font-weight:700;cursor:pointer;border:1px solid var(--line);background:#fff;margin-bottom:12px}
+.btn.g{background:var(--ink);color:#fff;border-color:var(--ink)}
+.btn .ico{width:18px;height:18px;border-radius:3px;display:inline-block}
+.g .ico{background:conic-gradient(from -45deg,#ea4335 110deg,#4285f4 90deg 180deg,#34a853 180deg 270deg,#fbbc05 270deg)}
+.gh .ico{background:#111;border-radius:999px}
+.or{display:flex;align-items:center;gap:12px;color:#94a3b8;font-size:11.5px;margin:18px 0;letter-spacing:.06em;text-transform:uppercase}
+.or:before,.or:after{content:"";flex:1;height:1px;background:var(--line)}
+.magic{display:flex;gap:8px}
+.magic input{flex:1;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px;color:var(--ink)}
+.magic input::placeholder{color:#94a3b8}
+.magic button{border:none;border-radius:12px;padding:0 18px;font-weight:700;font-size:13.5px;background:linear-gradient(90deg,var(--vio),var(--fuc));color:#fff;cursor:pointer}
+.more{margin-top:22px;text-align:center;font-size:12.5px;color:var(--mut)}
+.more a{color:var(--vio);text-decoration:none;font-weight:600}
+.fine{margin-top:18px;font-size:11px;color:#94a3b8;text-align:center;line-height:1.6}
+.badge{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(139,92,246,.35);color:var(--vio);border-radius:999px;padding:5px 14px;font-size:12px;font-weight:700;margin-bottom:22px;background:rgba(139,92,246,.06)}
+.note{position:absolute;top:16px;right:20px;font:11px ui-monospace,Menlo,monospace;color:#b6bdc9;z-index:2}
+</style></head><body>
+<div class="note">MOCKUP · 现行设计体系 · issue #406 屏1/2</div>
+<div class="split">
+  <div class="left"><div class="glow"></div>
+    <div class="logo">⚿ flat<span class="k">key</span></div>
+    <div><span class="badge">✦ Free credit on signup</span></div>
+    <h1>Start with free credit.<br><span class="grad">First response in 60 seconds.</span></h1>
+    <p class="sub">One key for every official model — GPT, Claude, Gemini, DeepSeek. No card required to start.</p>
+    <div class="steps">
+      <div class="stp"><span class="n">1</span><div><b>Sign in with Google</b><span>no forms, no passwords, no captcha</span></div></div>
+      <div class="stp"><span class="n">2</span><div><b>Your API key is created for you</b><span>free credit already loaded</span></div></div>
+      <div class="stp"><span class="n">3</span><div><b>Run your first call right in the browser</b><span>then connect Cline, Cursor or your SDK</span></div></div>
+    </div>
+    <div class="quote">"Troquei o base_url e tudo simplesmente funcionou. Paguei com Pix."<span class="who">— developer, São Paulo · via PT campaign</span></div>
+  </div>
+  <div class="right">
+    <div class="card">
+      <h2>Create your account</h2>
+      <p class="hint">30 seconds. No password needed.</p>
+      <button class="btn g"><span class="ico"></span>Continue with Google</button>
+      <button class="btn gh"><span class="ico"></span>Continue with GitHub</button>
+      <div class="or">or use a magic link</div>
+      <div class="magic"><input placeholder="you@company.com"><button>Send link</button></div>
+      <div class="more">Prefer a password? <a href="#">More options</a></div>
+      <div class="fine">By continuing you agree to the Terms &amp; Privacy Policy.<br>Enterprise procurement? <a href="#" style="color:var(--vio)">Talk to us</a></div>
+    </div>
+  </div>
+</div>
+</body></html>
