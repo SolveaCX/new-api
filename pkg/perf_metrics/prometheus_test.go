@@ -1047,7 +1047,8 @@ func TestRecordRelaySampleUsesModelStatusLabels(t *testing.T) {
 	text, err := BuildPrometheusText(context.Background())
 	require.NoError(t, err)
 
-	require.Contains(t, text, `newapi_model_requests_total{model="gpt-5",status="success"} 1`)
+	requirePrometheusSampleLine(t, text, `newapi_model_requests_total{model="gpt-5",status="success"} 1`)
+	requirePrometheusSampleLine(t, text, `newapi_model_request_duration_seconds_count{model="gpt-5"} 1`)
 	require.NotContains(t, text, "channel_id")
 }
 
