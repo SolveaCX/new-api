@@ -21,6 +21,7 @@ type Sample struct {
 	Success      bool
 	OutputTokens int64
 	GenerationMs int64
+	Availability AvailabilityOutcome
 }
 
 type QueryParams struct {
@@ -84,23 +85,27 @@ type prometheusSeriesKey struct {
 }
 
 type counters struct {
-	requestCount   int64
-	successCount   int64
-	totalLatencyMs int64
-	ttftSumMs      int64
-	ttftCount      int64
-	outputTokens   int64
-	generationMs   int64
+	requestCount              int64
+	successCount              int64
+	totalLatencyMs            int64
+	ttftSumMs                 int64
+	ttftCount                 int64
+	outputTokens              int64
+	generationMs              int64
+	availabilityEligibleCount int64
+	availabilitySuccessCount  int64
 }
 
 type atomicBucket struct {
-	requestCount   atomic.Int64
-	successCount   atomic.Int64
-	totalLatencyMs atomic.Int64
-	ttftSumMs      atomic.Int64
-	ttftCount      atomic.Int64
-	outputTokens   atomic.Int64
-	generationMs   atomic.Int64
+	requestCount              atomic.Int64
+	successCount              atomic.Int64
+	totalLatencyMs            atomic.Int64
+	ttftSumMs                 atomic.Int64
+	ttftCount                 atomic.Int64
+	outputTokens              atomic.Int64
+	generationMs              atomic.Int64
+	availabilityEligibleCount atomic.Int64
+	availabilitySuccessCount  atomic.Int64
 }
 
 type prometheusCounters struct {
@@ -181,29 +186,39 @@ func (b *atomicBucket) add(sample Sample) {
 		b.outputTokens.Add(sample.OutputTokens)
 		b.generationMs.Add(sample.GenerationMs)
 	}
+	if sample.Availability == AvailabilityEligibleFailure || sample.Availability == AvailabilityEligibleSuccess {
+		b.availabilityEligibleCount.Add(1)
+	}
+	if sample.Availability == AvailabilityEligibleSuccess {
+		b.availabilitySuccessCount.Add(1)
+	}
 }
 
 func (b *atomicBucket) snapshot() counters {
 	return counters{
-		requestCount:   b.requestCount.Load(),
-		successCount:   b.successCount.Load(),
-		totalLatencyMs: b.totalLatencyMs.Load(),
-		ttftSumMs:      b.ttftSumMs.Load(),
-		ttftCount:      b.ttftCount.Load(),
-		outputTokens:   b.outputTokens.Load(),
-		generationMs:   b.generationMs.Load(),
+		requestCount:              b.requestCount.Load(),
+		successCount:              b.successCount.Load(),
+		totalLatencyMs:            b.totalLatencyMs.Load(),
+		ttftSumMs:                 b.ttftSumMs.Load(),
+		ttftCount:                 b.ttftCount.Load(),
+		outputTokens:              b.outputTokens.Load(),
+		generationMs:              b.generationMs.Load(),
+		availabilityEligibleCount: b.availabilityEligibleCount.Load(),
+		availabilitySuccessCount:  b.availabilitySuccessCount.Load(),
 	}
 }
 
 func (b *atomicBucket) drain() counters {
 	return counters{
-		requestCount:   b.requestCount.Swap(0),
-		successCount:   b.successCount.Swap(0),
-		totalLatencyMs: b.totalLatencyMs.Swap(0),
-		ttftSumMs:      b.ttftSumMs.Swap(0),
-		ttftCount:      b.ttftCount.Swap(0),
-		outputTokens:   b.outputTokens.Swap(0),
-		generationMs:   b.generationMs.Swap(0),
+		requestCount:              b.requestCount.Swap(0),
+		successCount:              b.successCount.Swap(0),
+		totalLatencyMs:            b.totalLatencyMs.Swap(0),
+		ttftSumMs:                 b.ttftSumMs.Swap(0),
+		ttftCount:                 b.ttftCount.Swap(0),
+		outputTokens:              b.outputTokens.Swap(0),
+		generationMs:              b.generationMs.Swap(0),
+		availabilityEligibleCount: b.availabilityEligibleCount.Swap(0),
+		availabilitySuccessCount:  b.availabilitySuccessCount.Swap(0),
 	}
 }
 
@@ -229,6 +244,12 @@ func (b *atomicBucket) addCounters(c counters) {
 	if c.generationMs != 0 {
 		b.generationMs.Add(c.generationMs)
 	}
+	if c.availabilityEligibleCount != 0 {
+		b.availabilityEligibleCount.Add(c.availabilityEligibleCount)
+	}
+	if c.availabilitySuccessCount != 0 {
+		b.availabilitySuccessCount.Add(c.availabilitySuccessCount)
+	}
 }
 
 func (c *counters) addSample(sample Sample) {
@@ -247,6 +268,12 @@ func (c *counters) addSample(sample Sample) {
 		c.outputTokens += sample.OutputTokens
 		c.generationMs += sample.GenerationMs
 	}
+	if sample.Availability == AvailabilityEligibleFailure || sample.Availability == AvailabilityEligibleSuccess {
+		c.availabilityEligibleCount++
+	}
+	if sample.Availability == AvailabilityEligibleSuccess {
+		c.availabilitySuccessCount++
+	}
 }
 
 func (c *counters) add(other counters) {
@@ -257,6 +284,8 @@ func (c *counters) add(other counters) {
 	c.ttftCount += other.ttftCount
 	c.outputTokens += other.outputTokens
 	c.generationMs += other.generationMs
+	c.availabilityEligibleCount += other.availabilityEligibleCount
+	c.availabilitySuccessCount += other.availabilitySuccessCount
 }
 
 func (c counters) isZero() bool {
@@ -266,7 +295,9 @@ func (c counters) isZero() bool {
 		c.ttftSumMs == 0 &&
 		c.ttftCount == 0 &&
 		c.outputTokens == 0 &&
-		c.generationMs == 0
+		c.generationMs == 0 &&
+		c.availabilityEligibleCount == 0 &&
+		c.availabilitySuccessCount == 0
 }
 
 func (b *prometheusLockedBucket) add(sample Sample) bool {

@@ -56,6 +56,10 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if finalSuccess && info.IsStream && info.StreamStatus != nil {
 		finalSuccess = info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors()
 	}
+	availability := ClassifyAvailabilityOutcome(finalSuccess, relayErr)
+	if info.IsStream && info.StreamStatus != nil && info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {
+		availability = AvailabilityExcluded
+	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
 	ttftMs := int64(0)
@@ -81,6 +85,7 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		Success:      finalSuccess,
 		OutputTokens: outputTokens,
 		GenerationMs: generationMs,
+		Availability: availability,
 	})
 }
 
@@ -291,13 +296,15 @@ func Query(params QueryParams) (QueryResult, error) {
 			group:    row.Group,
 			bucketTs: row.BucketTs,
 		}, counters{
-			requestCount:   row.RequestCount,
-			successCount:   row.SuccessCount,
-			totalLatencyMs: row.TotalLatencyMs,
-			ttftSumMs:      row.TtftSumMs,
-			ttftCount:      row.TtftCount,
-			outputTokens:   row.OutputTokens,
-			generationMs:   row.GenerationMs,
+			requestCount:              row.RequestCount,
+			successCount:              row.SuccessCount,
+			totalLatencyMs:            row.TotalLatencyMs,
+			ttftSumMs:                 row.TtftSumMs,
+			ttftCount:                 row.TtftCount,
+			outputTokens:              row.OutputTokens,
+			generationMs:              row.GenerationMs,
+			availabilityEligibleCount: row.AvailabilityEligibleCount,
+			availabilitySuccessCount:  row.AvailabilitySuccessCount,
 		})
 	}
 
@@ -344,13 +351,15 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 	totals := map[string]counters{}
 	for _, row := range rows {
 		totals[row.ModelName] = counters{
-			requestCount:   row.RequestCount,
-			successCount:   row.SuccessCount,
-			totalLatencyMs: row.TotalLatencyMs,
-			ttftSumMs:      row.TtftSumMs,
-			ttftCount:      row.TtftCount,
-			outputTokens:   row.OutputTokens,
-			generationMs:   row.GenerationMs,
+			requestCount:              row.RequestCount,
+			successCount:              row.SuccessCount,
+			totalLatencyMs:            row.TotalLatencyMs,
+			ttftSumMs:                 row.TtftSumMs,
+			ttftCount:                 row.TtftCount,
+			outputTokens:              row.OutputTokens,
+			generationMs:              row.GenerationMs,
+			availabilityEligibleCount: row.AvailabilityEligibleCount,
+			availabilitySuccessCount:  row.AvailabilitySuccessCount,
 		}
 	}
 
