@@ -22,15 +22,43 @@ func BuildPrometheusText(_ context.Context) (string, error) {
 	mergePrometheusPendingSnapshots(series)
 	channelSnapshots := snapshotPrometheusChannels()
 	channelModelSnapshots := snapshotPrometheusChannelModels()
-	seriesCount := len(series)
+	modelPerformanceSnapshots := snapshotPrometheusModelPerformances(time.Now())
+	baseSeriesCount := len(series)
 	for _, snapshot := range channelSnapshots {
-		seriesCount += snapshot.seriesCount()
+		baseSeriesCount += snapshot.seriesCount()
 	}
 	for _, snapshot := range channelModelSnapshots {
-		seriesCount += snapshot.seriesCount()
+		baseSeriesCount += snapshot.seriesCount()
 	}
-	if maxSeries := prometheusMaxSeriesPerScrape(); maxSeries > 0 && seriesCount > maxSeries {
-		return "", fmt.Errorf("prometheus series limit exceeded: %d > %d", seriesCount, maxSeries)
+	maxSeries := prometheusMaxSeriesPerScrape()
+	if maxSeries > 0 && baseSeriesCount > maxSeries {
+		return "", fmt.Errorf("prometheus series limit exceeded: %d > %d", baseSeriesCount, maxSeries)
+	}
+
+	healthSeriesCount := 1 + len(modelDropReasons)
+	includeModelHealth := maxSeries <= 0 || maxSeries-baseSeriesCount >= healthSeriesCount
+	selectedModelPerformanceSnapshots := []prometheusModelPerformanceSnapshot(nil)
+	modelHealthDroppedSamples := map[string]int64(nil)
+	seriesCount := baseSeriesCount
+	remaining := 0
+	if includeModelHealth {
+		if maxSeries > 0 {
+			remaining = maxSeries - baseSeriesCount - healthSeriesCount
+		} else {
+			for _, snapshot := range modelPerformanceSnapshots {
+				remaining += snapshot.seriesCount()
+			}
+		}
+	}
+	selectedSnapshots, newlyDropped := selectPrometheusModelSnapshots(modelPerformanceSnapshots, remaining)
+	prometheusModelDroppedSamples.add(modelDropSeriesLimit, newlyDropped)
+	if includeModelHealth {
+		selectedModelPerformanceSnapshots = selectedSnapshots
+		modelHealthDroppedSamples = prometheusModelDroppedSamples.snapshot()
+		seriesCount += healthSeriesCount
+		for _, snapshot := range selectedModelPerformanceSnapshots {
+			seriesCount += snapshot.seriesCount()
+		}
 	}
 
 	var b strings.Builder
@@ -53,6 +81,10 @@ func BuildPrometheusText(_ context.Context) (string, error) {
 		b.WriteByte('\n')
 	}
 
+	if includeModelHealth {
+		writePrometheusModelPerformanceMetrics(&b, selectedModelPerformanceSnapshots)
+		writePrometheusModelHealthMetrics(&b, len(modelPerformanceSnapshots), modelHealthDroppedSamples)
+	}
 	writePrometheusChannelMetrics(&b, channelSnapshots)
 	writePrometheusChannelModelMetrics(&b, channelModelSnapshots)
 
@@ -68,8 +100,12 @@ func mergePrometheusPendingSnapshots(series map[prometheusSeriesKey]prometheusCo
 			return true
 		}
 		seriesKey := key.(prometheusSeriesKey)
+		snapshot := bucket.snapshot()
+		if snapshot.isZero() {
+			return true
+		}
 		current := series[seriesKey]
-		current.add(bucket.snapshot())
+		current.add(snapshot)
 		series[seriesKey] = current
 		return true
 	})
@@ -87,6 +123,149 @@ func sortedPrometheusSeriesKeys(series map[prometheusSeriesKey]prometheusCounter
 		return keys[i].status < keys[j].status
 	})
 	return keys
+}
+
+func writePrometheusHistogram(
+	b *strings.Builder,
+	metricName string,
+	model string,
+	upperBounds []float64,
+	bucketCounts []int64,
+	sum float64,
+	count int64,
+) {
+	for i, upperBound := range upperBounds {
+		b.WriteString(metricName)
+		b.WriteString(`_bucket{model="`)
+		b.WriteString(escapePrometheusLabelValue(model))
+		b.WriteString(`",le="`)
+		b.WriteString(formatPrometheusFloat(upperBound))
+		b.WriteString(`"} `)
+		b.WriteString(strconv.FormatInt(bucketCounts[i], 10))
+		b.WriteByte('\n')
+	}
+	b.WriteString(metricName)
+	b.WriteString(`_bucket{model="`)
+	b.WriteString(escapePrometheusLabelValue(model))
+	b.WriteString(`",le="+Inf"} `)
+	b.WriteString(strconv.FormatInt(count, 10))
+	b.WriteByte('\n')
+	b.WriteString(metricName)
+	b.WriteString(`_sum{model="`)
+	b.WriteString(escapePrometheusLabelValue(model))
+	b.WriteString(`"} `)
+	b.WriteString(formatPrometheusFloat(sum))
+	b.WriteByte('\n')
+	b.WriteString(metricName)
+	b.WriteString(`_count{model="`)
+	b.WriteString(escapePrometheusLabelValue(model))
+	b.WriteString(`"} `)
+	b.WriteString(strconv.FormatInt(count, 10))
+	b.WriteByte('\n')
+}
+
+func writePrometheusModelPerformanceMetrics(b *strings.Builder, snapshots []prometheusModelPerformanceSnapshot) {
+	hasLatency := false
+	hasTTFT := false
+	hasStreamSuccess := false
+	hasErrors := false
+	for _, snapshot := range snapshots {
+		hasLatency = hasLatency || snapshot.latencyCount > 0
+		hasTTFT = hasTTFT || snapshot.ttftCount > 0
+		hasStreamSuccess = hasStreamSuccess || snapshot.streamSuccess > 0
+		hasErrors = hasErrors || len(snapshot.errors) > 0
+	}
+
+	if hasLatency {
+		b.WriteString("# HELP newapi_model_request_duration_seconds Successful model request duration by model.\n")
+		b.WriteString("# TYPE newapi_model_request_duration_seconds histogram\n")
+		for _, snapshot := range snapshots {
+			if snapshot.latencyCount == 0 {
+				continue
+			}
+			writePrometheusHistogram(
+				b,
+				"newapi_model_request_duration_seconds",
+				snapshot.model,
+				prometheusModelLatencyBucketsSeconds,
+				snapshot.latencyBuckets,
+				snapshot.latencySumSeconds,
+				snapshot.latencyCount,
+			)
+		}
+	}
+
+	if hasTTFT {
+		b.WriteString("# HELP newapi_model_ttft_seconds Time to first token for successful streaming model requests.\n")
+		b.WriteString("# TYPE newapi_model_ttft_seconds histogram\n")
+		for _, snapshot := range snapshots {
+			if snapshot.ttftCount == 0 {
+				continue
+			}
+			writePrometheusHistogram(
+				b,
+				"newapi_model_ttft_seconds",
+				snapshot.model,
+				prometheusModelTTFTBucketsSeconds,
+				snapshot.ttftBuckets,
+				snapshot.ttftSumSeconds,
+				snapshot.ttftCount,
+			)
+		}
+	}
+
+	if hasStreamSuccess {
+		b.WriteString("# HELP newapi_model_stream_success_total Total successful streaming model requests.\n")
+		b.WriteString("# TYPE newapi_model_stream_success_total counter\n")
+		for _, snapshot := range snapshots {
+			if snapshot.streamSuccess == 0 {
+				continue
+			}
+			b.WriteString(`newapi_model_stream_success_total{model="`)
+			b.WriteString(escapePrometheusLabelValue(snapshot.model))
+			b.WriteString(`"} `)
+			b.WriteString(strconv.FormatInt(snapshot.streamSuccess, 10))
+			b.WriteByte('\n')
+		}
+	}
+
+	if hasErrors {
+		b.WriteString("# HELP newapi_model_errors_total Total final model request failures by error category.\n")
+		b.WriteString("# TYPE newapi_model_errors_total counter\n")
+		for _, snapshot := range snapshots {
+			categories := make([]string, 0, len(snapshot.errors))
+			for category := range snapshot.errors {
+				categories = append(categories, category)
+			}
+			sort.Strings(categories)
+			for _, category := range categories {
+				b.WriteString(`newapi_model_errors_total{model="`)
+				b.WriteString(escapePrometheusLabelValue(snapshot.model))
+				b.WriteString(`",error_category="`)
+				b.WriteString(escapePrometheusLabelValue(category))
+				b.WriteString(`"} `)
+				b.WriteString(strconv.FormatInt(snapshot.errors[category], 10))
+				b.WriteByte('\n')
+			}
+		}
+	}
+}
+
+func writePrometheusModelHealthMetrics(b *strings.Builder, activeModels int, droppedSamples map[string]int64) {
+	b.WriteString("# HELP newapi_model_histogram_active_models Number of active model performance metric groups.\n")
+	b.WriteString("# TYPE newapi_model_histogram_active_models gauge\n")
+	b.WriteString("newapi_model_histogram_active_models ")
+	b.WriteString(strconv.Itoa(activeModels))
+	b.WriteByte('\n')
+	b.WriteString("# HELP newapi_model_histogram_dropped_samples_total Total model histogram observations dropped before export.\n")
+	b.WriteString("# TYPE newapi_model_histogram_dropped_samples_total counter\n")
+	for _, reason := range modelDropReasons {
+		b.WriteString(`newapi_model_histogram_dropped_samples_total{reason="`)
+		b.WriteString(escapePrometheusLabelValue(reason))
+		b.WriteString(`"} `)
+		b.WriteString(strconv.FormatInt(droppedSamples[reason], 10))
+		b.WriteByte('\n')
+	}
 }
 
 func snapshotPrometheusChannels() []prometheusChannelSnapshot {

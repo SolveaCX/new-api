@@ -371,9 +371,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		Other:            other,
 	})
 	perfmetrics.RecordChannelTokens(relayInfo, int64(usage.PromptTokens), int64(usage.CompletionTokens))
-	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens))
-	})
+	perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens), nil)
 }
 
 // ErrInsufficientTokenQuota marks a genuine token-quota-exhausted condition
