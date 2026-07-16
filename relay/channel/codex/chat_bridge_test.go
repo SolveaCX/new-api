@@ -150,6 +150,7 @@ func TestRelayChatOverCodex_StreamPath_BasicText(t *testing.T) {
 	require.Nil(t, apiErr)
 
 	body := rec.Body.String()
+	assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
 	assert.Contains(t, body, `"role":"assistant"`)
 	assert.Contains(t, body, "Hello")
 	assert.Contains(t, body, "world")
@@ -180,8 +181,12 @@ func TestRelayChatOverCodex_StreamImmediateFailureDoesNotCommitSuccess(t *testin
 	require.NotNil(t, apiErr)
 	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
 	assert.False(t, c.Writer.Written())
+	assert.Empty(t, rec.Header().Get("Content-Type"))
 	assert.Empty(t, rec.Body.String())
 	require.IsType(t, &dto.Usage{}, usage)
+
+	c.JSON(apiErr.StatusCode, gin.H{"error": apiErr.ToOpenAIError()})
+	assert.Equal(t, "application/json; charset=utf-8", rec.Header().Get("Content-Type"))
 }
 
 func TestRelayChatOverCodex_StreamPartialTextThenFailureEmitsSSEError(t *testing.T) {
@@ -210,6 +215,7 @@ func TestRelayChatOverCodex_StreamPartialTextThenFailureEmitsSSEError(t *testing
 	require.NotNil(t, apiErr)
 	assert.True(t, types.IsSkipRetryError(apiErr))
 	body := rec.Body.String()
+	assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
 	assert.Contains(t, body, `"role":"assistant"`)
 	assert.Contains(t, body, "partial")
 	assert.Contains(t, body, `"error"`)
@@ -263,6 +269,7 @@ func TestRelayChatOverCodex_EOFBeforeTerminalReturnsBadGateway(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
 	assert.False(t, types.IsSkipRetryError(apiErr))
 	assert.False(t, c.Writer.Written())
+	assert.Empty(t, rec.Header().Get("Content-Type"))
 	assert.Empty(t, rec.Body.String())
 }
 
@@ -290,6 +297,7 @@ func TestRelayChatOverCodex_StreamPartialTextThenEOFEmitsSSEError(t *testing.T) 
 	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
 	assert.True(t, types.IsSkipRetryError(apiErr))
 	body := rec.Body.String()
+	assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
 	assert.Contains(t, body, `"role":"assistant"`)
 	assert.Contains(t, body, "partial")
 	assert.Contains(t, body, `"error"`)
@@ -315,6 +323,7 @@ func TestRelayChatOverCodex_ScannerErrorBeforeTerminalReturnsBadGateway(t *testi
 	require.NotNil(t, apiErr)
 	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
 	assert.False(t, c.Writer.Written())
+	assert.Empty(t, rec.Header().Get("Content-Type"))
 	assert.Empty(t, rec.Body.String())
 }
 

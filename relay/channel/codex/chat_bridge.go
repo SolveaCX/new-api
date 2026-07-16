@@ -161,6 +161,7 @@ func writeSSE(c *gin.Context, sse string) {
 	if c == nil || c.Writer == nil {
 		return
 	}
+	helper.SetEventStreamHeaders(c)
 	_, _ = c.Writer.WriteString(sse)
 	_ = helper.FlushWriter(c)
 }
@@ -261,9 +262,6 @@ func RelayChatOverCodex(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	var lastTerminal *apicompat.ResponsesResponse
 
 	streamToClient := info != nil && info.UserWantsStream
-	if streamToClient {
-		helper.SetEventStreamHeaders(c)
-	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
