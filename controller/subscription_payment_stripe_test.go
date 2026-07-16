@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -85,6 +86,22 @@ func TestSubscriptionStripeRecallPromotionCode(t *testing.T) {
 }
 
 func TestSubscriptionStripeWrongScopePromotionClaimStopsBeforeCheckout(t *testing.T) {
+	for _, tc := range []struct {
+		language string
+		message  string
+	}{
+		{language: "en", message: "This discount is invalid or no longer available for this purchase."},
+		{language: "zh-CN", message: "此优惠无效、已过期或不适用于本次购买。"},
+	} {
+		t.Run(tc.language, func(t *testing.T) {
+			testSubscriptionStripeWrongScopePromotionClaimStopsBeforeCheckout(t, tc.language, tc.message)
+		})
+	}
+}
+
+func testSubscriptionStripeWrongScopePromotionClaimStopsBeforeCheckout(t *testing.T, language string, expectedMessage string) {
+	t.Helper()
+	require.NoError(t, i18n.Init())
 	backend := setupSubscriptionStripeRecordingBackend(t)
 	setupSubscriptionRecallClaimDB(t)
 	confirmPaymentComplianceForTest(t)
@@ -151,12 +168,17 @@ func TestSubscriptionStripeWrongScopePromotionClaimStopsBeforeCheckout(t *testin
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/user/subscription/stripe/pay", bytes.NewReader(body))
 	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request.Header.Set("Accept-Language", language)
 	ctx.Set("id", userID)
 
 	SubscriptionRequestStripePay(ctx)
 
 	require.Empty(t, backend.params, "a wrong-scope recall claim must stop before Stripe Checkout creation")
-	require.Contains(t, recorder.Body.String(), "This discount is invalid or no longer available for this purchase")
+	responseBody := recorder.Body.String()
+	require.Contains(t, responseBody, `"message":"error"`)
+	require.Contains(t, responseBody, expectedMessage)
+	require.NotContains(t, responseBody, service.ErrRecallClaimWrongPrice.Error())
+	require.NotContains(t, responseBody, claim)
 }
 
 func setupSubscriptionRecallClaimDB(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -110,7 +111,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 			logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe subscription recall claim rejected user_id=%d trade_no=%s plan_id=%d error=%q", userId, referenceId, plan.Id, err.Error()))
 			order.Status = common.TopUpStatusFailed
 			_ = order.Update()
-			c.JSON(http.StatusOK, gin.H{"message": "error", "data": recallCheckoutUnavailableMessage})
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": i18n.T(c, i18n.MsgPaymentRecallClaimUnavailable)})
 			return
 		}
 	}

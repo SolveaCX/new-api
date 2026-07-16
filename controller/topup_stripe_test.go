@@ -15,6 +15,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -406,6 +407,22 @@ func TestStripeCheckoutSessionRecallPromotionCode(t *testing.T) {
 }
 
 func TestStripeCheckoutSessionWrongPricePromotionClaimStopsBeforeCheckout(t *testing.T) {
+	for _, tc := range []struct {
+		language string
+		message  string
+	}{
+		{language: "en", message: "This discount is invalid or no longer available for this purchase."},
+		{language: "zh-CN", message: "此优惠无效、已过期或不适用于本次购买。"},
+	} {
+		t.Run(tc.language, func(t *testing.T) {
+			testStripeCheckoutSessionWrongPricePromotionClaimStopsBeforeCheckout(t, tc.language, tc.message)
+		})
+	}
+}
+
+func testStripeCheckoutSessionWrongPricePromotionClaimStopsBeforeCheckout(t *testing.T, language string, expectedMessage string) {
+	t.Helper()
+	require.NoError(t, i18n.Init())
 	backend := setupSubscriptionStripeRecordingBackend(t)
 	setupStripeFulfillmentTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(
@@ -482,12 +499,17 @@ func TestStripeCheckoutSessionWrongPricePromotionClaimStopsBeforeCheckout(t *tes
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/user/stripe/pay", bytes.NewReader(body))
 	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request.Header.Set("Accept-Language", language)
 	ctx.Set("id", userID)
 
 	RequestStripePay(ctx)
 
 	require.Empty(t, backend.params, "a wrong-price recall claim must stop before Stripe Checkout creation")
-	require.Contains(t, recorder.Body.String(), recallCheckoutUnavailableMessage)
+	responseBody := recorder.Body.String()
+	require.Contains(t, responseBody, `"message":"error"`)
+	require.Contains(t, responseBody, expectedMessage)
+	require.NotContains(t, responseBody, service.ErrRecallClaimWrongPrice.Error())
+	require.NotContains(t, responseBody, claim)
 }
 
 func TestStripeCheckoutSessionRequestsThreeDSecure(t *testing.T) {
