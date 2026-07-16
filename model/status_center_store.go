@@ -67,6 +67,87 @@ func CommitStatusComponentWithFence(jobName string, holder string, fencingToken 
 	})
 }
 
+func CommitStatusEvaluationWithFence(jobName string, holder string, fencingToken int64, now int64, component *StatusComponent) error {
+	if component == nil || component.ID == 0 {
+		return errors.New("status component is nil")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateStatusJobFence(tx, jobName, holder, fencingToken, now); err != nil {
+			return err
+		}
+		return tx.Model(&StatusComponent{}).Where("id = ?", component.ID).Updates(map[string]any{
+			"observed_status":              component.ObservedStatus,
+			"effective_status":             component.EffectiveStatus,
+			"status_source":                component.StatusSource,
+			"last_evidence_at":             component.LastEvidenceAt,
+			"last_trustworthy_update_at":   component.LastTrustworthyUpdateAt,
+			"last_evaluated_at":            component.LastEvaluatedAt,
+			"coverage_micros":              component.CoverageMicros,
+			"consecutive_probe_failures":   component.ConsecutiveProbeFailures,
+			"consecutive_probe_successes":  component.ConsecutiveProbeSuccesses,
+			"consecutive_traffic_recovery": component.ConsecutiveTrafficRecovery,
+			"updated_at":                   component.UpdatedAt,
+		}).Error
+	})
+}
+
+func SyncStatusCatalogWithFence(jobName string, holder string, fencingToken int64, now int64, desired []StatusComponent) error {
+	if DB == nil {
+		return errors.New("database is not initialized")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var lease StatusJobLease
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", jobName).First(&lease).Error; err != nil {
+			return err
+		}
+		if lease.Holder != holder || lease.FencingToken != fencingToken || lease.ExpiresAt <= now {
+			return fmt.Errorf("status job lease is no longer owned")
+		}
+
+		activeModelKeys := make([]string, 0, len(desired))
+		for i := range desired {
+			next := desired[i]
+			if next.ComponentKey == "" || next.Slug == "" || next.Kind == "" {
+				return errors.New("invalid status catalog component")
+			}
+			if next.Kind == StatusComponentKindModel {
+				activeModelKeys = append(activeModelKeys, next.ComponentKey)
+			}
+
+			var existing StatusComponent
+			err := tx.Where("component_key = ?", next.ComponentKey).First(&existing).Error
+			switch {
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				if err := tx.Create(&next).Error; err != nil {
+					return err
+				}
+			case err != nil:
+				return err
+			default:
+				updates := map[string]any{
+					"display_name": next.DisplayName,
+					"model_name":   next.ModelName,
+					"capability":   next.Capability,
+					"lifecycle":    StatusLifecycleActive,
+					"updated_at":   now,
+				}
+				if err := tx.Model(&StatusComponent{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		retired := tx.Model(&StatusComponent{}).Where("kind = ?", StatusComponentKindModel)
+		if len(activeModelKeys) > 0 {
+			retired = retired.Where("component_key NOT IN ?", activeModelKeys)
+		}
+		return retired.Updates(map[string]any{
+			"lifecycle":  StatusLifecycleRetired,
+			"updated_at": now,
+		}).Error
+	})
+}
+
 func UpdateStatusComponentVersion(id int64, expectedVersion int64, updates map[string]any) (StatusComponent, error) {
 	if len(updates) == 0 {
 		return StatusComponent{}, errors.New("status component update is empty")
@@ -97,7 +178,98 @@ func UpsertStatusPeriod(period *StatusPeriod) error {
 	if period == nil || period.ComponentID == 0 || period.Granularity == "" {
 		return errors.New("invalid status period")
 	}
-	return DB.Clauses(clause.OnConflict{
+	return upsertStatusPeriod(DB, period)
+}
+
+func UpsertStatusPeriodWithFence(jobName string, holder string, fencingToken int64, now int64, period *StatusPeriod) error {
+	if period == nil || period.ComponentID == 0 || period.Granularity == "" {
+		return errors.New("invalid status period")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateStatusJobFence(tx, jobName, holder, fencingToken, now); err != nil {
+			return err
+		}
+		return upsertStatusPeriod(tx, period)
+	})
+}
+
+func CreateStatusProbeResultWithFence(jobName string, holder string, fencingToken int64, now int64, result *StatusProbeResult) error {
+	if result == nil || result.ComponentID == 0 {
+		return errors.New("invalid status probe result")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateStatusJobFence(tx, jobName, holder, fencingToken, now); err != nil {
+			return err
+		}
+		return tx.Create(result).Error
+	})
+}
+
+func ValidateStatusJobFence(jobName string, holder string, fencingToken int64, now int64) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return validateStatusJobFence(tx, jobName, holder, fencingToken, now)
+	})
+}
+
+func GetStatusComponents() ([]StatusComponent, error) {
+	var components []StatusComponent
+	err := DB.Order("kind DESC, model_name ASC").Find(&components).Error
+	return components, err
+}
+
+func GetLatestStatusProbeResults(componentIDs []int64, since int64) (map[int64]StatusProbeResult, error) {
+	results := make(map[int64]StatusProbeResult, len(componentIDs))
+	if len(componentIDs) == 0 {
+		return results, nil
+	}
+	var probes []StatusProbeResult
+	if err := DB.Where("component_id IN ? AND created_at >= ?", componentIDs, since).Order("created_at DESC, id DESC").Find(&probes).Error; err != nil {
+		return nil, err
+	}
+	for _, probe := range probes {
+		if _, ok := results[probe.ComponentID]; !ok {
+			results[probe.ComponentID] = probe
+		}
+	}
+	return results, nil
+}
+
+func GetStatusPeriodsInRange(granularity string, start int64, end int64) ([]StatusPeriod, error) {
+	var periods []StatusPeriod
+	err := DB.Where("granularity = ? AND period_start >= ? AND period_start < ?", granularity, start, end).
+		Order("component_id ASC, period_start ASC").Find(&periods).Error
+	return periods, err
+}
+
+func DeleteStatusHistoryWithFence(jobName string, holder string, fencingToken int64, now int64, rawCutoff int64, aggregateCutoff int64) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateStatusJobFence(tx, jobName, holder, fencingToken, now); err != nil {
+			return err
+		}
+		if err := tx.Where("created_at < ?", rawCutoff).Delete(&StatusProbeResult{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("granularity = ? AND period_start < ?", StatusGranularityFiveMinutes, rawCutoff).Delete(&StatusPeriod{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("granularity IN ? AND period_start < ?", []string{StatusGranularityHour, StatusGranularityDay}, aggregateCutoff).
+			Delete(&StatusPeriod{}).Error
+	})
+}
+
+func validateStatusJobFence(tx *gorm.DB, jobName string, holder string, fencingToken int64, now int64) error {
+	var lease StatusJobLease
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", jobName).First(&lease).Error; err != nil {
+		return err
+	}
+	if lease.Holder != holder || lease.FencingToken != fencingToken || lease.ExpiresAt <= now {
+		return fmt.Errorf("status job lease is no longer owned")
+	}
+	return nil
+}
+
+func upsertStatusPeriod(db *gorm.DB, period *StatusPeriod) error {
+	return db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "component_id"}, {Name: "granularity"}, {Name: "period_start"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"score_sum_micros", "known_bucket_count", "unknown_bucket_count", "maintenance_bucket_count",

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -32,6 +34,14 @@ type modelProbeOutcome struct {
 	Message    string
 	ChannelID  int
 }
+
+type modelAvailabilityProbeExecution struct {
+	Outcome                modelProbeOutcome
+	LatencyMs              int64
+	InvalidatePricingCache bool
+}
+
+type statusModelProbeAdapter struct{}
 
 var (
 	modelAvailabilityTaskOnce    sync.Once
@@ -342,23 +352,22 @@ func buildModelAvailabilityReason(outcome modelProbeOutcome) string {
 	}
 }
 
-func probeOneModelAvailability(modelName string, testUserID int) {
+func executeModelAvailabilityProbe(ctx context.Context, modelName string, testUserID int) modelAvailabilityProbeExecution {
+	startedAt := time.Now()
 	targets, err := model.GetModelAvailabilityProbeTargets(modelName)
 	if err != nil {
-		_ = saveModelAvailabilityProbeResult(modelName, modelProbeOutcome{
+		return modelAvailabilityProbeExecution{Outcome: modelProbeOutcome{
 			Class:      modelProbeUnknownFailure,
 			ReasonType: "probe_target_query_failed",
 			Message:    err.Error(),
-		})
-		return
+		}}
 	}
 	if len(targets) == 0 {
-		_ = saveModelAvailabilityProbeResult(modelName, modelProbeOutcome{
+		return modelAvailabilityProbeExecution{Outcome: modelProbeOutcome{
 			Class:      modelProbeUnknownFailure,
 			ReasonType: "no_available_channel",
 			Message:    "no enabled channel found for model",
-		})
-		return
+		}}
 	}
 
 	outcomes := make([]modelProbeOutcome, 0, len(targets))
@@ -383,23 +392,69 @@ func probeOneModelAvailability(modelName string, testUserID int) {
 			sawUntestable = true
 			continue
 		}
+		options.Context = ctx
 		result := testChannelWithOptions(channel, testUserID, modelName, endpointType, false, options)
 		if result.localErr == nil && result.newAPIError == nil {
-			_ = saveModelAvailabilityProbeResult(modelName, modelProbeOutcome{
-				Class: modelProbeAvailable,
-			})
-			model.InvalidatePricingCache()
-			return
+			return modelAvailabilityProbeExecution{
+				Outcome: modelProbeOutcome{
+					Class:     modelProbeAvailable,
+					ChannelID: target.ChannelID,
+				},
+				LatencyMs:              time.Since(startedAt).Milliseconds(),
+				InvalidatePricingCache: true,
+			}
 		}
 		outcome := classifyModelProbeError(result.localErr, result.newAPIError)
 		outcome.ChannelID = target.ChannelID
 		outcomes = append(outcomes, outcome)
 	}
-	final := summarizeModelProbeOutcomes(outcomes, sawUntestable)
-	if err := saveModelAvailabilityProbeResult(modelName, final); err != nil {
+	return modelAvailabilityProbeExecution{
+		Outcome:                summarizeModelProbeOutcomes(outcomes, sawUntestable),
+		LatencyMs:              time.Since(startedAt).Milliseconds(),
+		InvalidatePricingCache: true,
+	}
+}
+
+func probeOneModelAvailability(modelName string, testUserID int) {
+	execution := executeModelAvailabilityProbe(context.Background(), modelName, testUserID)
+	if err := saveModelAvailabilityProbeResult(modelName, execution.Outcome); err != nil {
 		common.SysError("failed to save model availability state: " + err.Error())
 	}
-	model.InvalidatePricingCache()
+	if execution.InvalidatePricingCache {
+		model.InvalidatePricingCache()
+	}
+}
+
+func NewStatusModelProbeAdapter() service.StatusProbeAdapter {
+	return statusModelProbeAdapter{}
+}
+
+func (statusModelProbeAdapter) ProbeStatusComponent(ctx context.Context, component model.StatusComponent) service.StatusProbeOutcome {
+	if component.Kind != model.StatusComponentKindModel || strings.TrimSpace(component.ModelName) == "" {
+		return service.StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "invalid_model_component"}
+	}
+	testUserID, err := resolveChannelTestUserID(nil)
+	if err != nil {
+		return service.StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "probe_user_unavailable"}
+	}
+	execution := executeModelAvailabilityProbe(ctx, component.ModelName, testUserID)
+	outcome := service.StatusProbeOutcome{
+		DiagnosticType: execution.Outcome.ReasonType,
+		LatencyMs:      execution.LatencyMs,
+	}
+	if execution.Outcome.ChannelID > 0 {
+		outcome.TargetRef = fmt.Sprintf("channel:%d", execution.Outcome.ChannelID)
+	}
+	switch execution.Outcome.Class {
+	case modelProbeAvailable:
+		outcome.Success = true
+		outcome.DiagnosticType = "ok"
+	case modelProbeTemporaryFailure, modelProbeOfficialUnsupported:
+		// These are trustworthy model failures. The scheduler applies hysteresis.
+	default:
+		outcome.MonitoringFault = true
+	}
+	return outcome
 }
 
 func summarizeModelProbeOutcomes(outcomes []modelProbeOutcome, sawUntestable bool) modelProbeOutcome {

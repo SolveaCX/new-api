@@ -159,6 +159,10 @@ func main() {
 	// Model official availability detection task
 	controller.StartModelAvailabilityDetectionTask()
 
+	// Native public status evaluation reuses the minimal model probe adapter.
+	service.SetStatusModelProbeAdapter(controller.NewStatusModelProbeAdapter())
+	service.StartStatusCenterTasks()
+
 	// Codex subscription model governance task
 	controller.StartCodexModelGovernanceTask()
 
