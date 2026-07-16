@@ -25,7 +25,7 @@
 .dside a.on{background:var(--violet-tint);color:var(--violet-deep);font-weight:650}
 .dside a span{font-family:var(--mono);font-size:9.5px;color:var(--ink3);margin-left:6px}
 .dmain{padding:44px 52px 90px;position:relative}
-.dhero h1{font-family:var(--disp);font-size:40px;letter-spacing:-1.6px;font-weight:700}
+.dhero h1{font-family:var(--disp);font-size:40px;letter-spacing:-1.6px;font-weight:600}
 .dhero p{color:var(--ink2);font-size:15.5px;margin-top:10px;max-width:640px;line-height:1.6}
 .dsearch{margin:24px 0 20px;display:flex;align-items:center;gap:12px;height:56px;border:1.5px solid var(--line);border-radius:14px;padding:0 20px;background:#fff;color:var(--ink3);font-size:15px}
 .dsearch b{margin-left:auto;font-family:var(--mono);font-size:11px;background:var(--paper2);border:1px solid var(--line);border-radius:6px;padding:3px 8px;color:var(--ink3);font-weight:500}
@@ -69,10 +69,27 @@ h2.dsec{font-family:var(--disp);font-size:24px;letter-spacing:-.7px;margin:8px 0
 .community .links{display:flex;gap:10px}
 .community .links a{font-size:13px;font-weight:650;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 16px;text-decoration:none;color:var(--ink)}
 .community .links a:hover{border-color:var(--violet);color:var(--violet-deep)}
+h2.sect{font-family:var(--disp);font-size:19px;letter-spacing:-.4px;margin:0 0 6px;font-weight:650;color:inherit;line-height:1.2}
 </style><!-- Google Tag Manager -->
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-5T5LPLSZ');</script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NKH9LPX9');</script>
 <!-- End Google Tag Manager -->
+<meta name="description" content="flatkey documentation — quickstart for the OpenAI-compatible and Anthropic-native router, tool integrations for Claude Code and Codex, model catalog, team governance and billing.">
+<link rel="canonical" href="https://flatkey.ai/docs.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="flatkey.ai">
+<meta property="og:title" content="flatkey — Docs">
+<meta property="og:description" content="flatkey documentation — quickstart for the OpenAI-compatible and Anthropic-native router, tool integrations for Claude Code and Codex, model catalog, team governance and billing.">
+<meta property="og:url" content="https://flatkey.ai/docs.html">
+<meta property="og:image" content="https://flatkey.ai/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@flatkey101">
+<meta name="twitter:title" content="flatkey — Docs">
+<meta name="twitter:description" content="flatkey documentation — quickstart for the OpenAI-compatible and Anthropic-native router, tool integrations for Claude Code and Codex, model catalog, team governance and billing.">
+<meta name="twitter:image" content="https://flatkey.ai/assets/og-image.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "name": "flatkey — Docs", "description": "flatkey documentation — quickstart for the OpenAI-compatible and Anthropic-native router, tool integrations for Claude Code and Codex, model catalog, team governance and billing.", "url": "https://flatkey.ai/docs.html"}</script>
 </head><body>
 <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5T5LPLSZ" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
@@ -80,7 +97,7 @@ h2.dsec{font-family:var(--disp);font-size:24px;letter-spacing:-.7px;margin:8px 0
 <div class="dbar">
   <a class="logo" href="index.html"><img src="assets/flatkey-mark.svg?v=3" alt="flatkey">flatkey<em>DOCS</em></a>
   <div class="dtabs"><a class="on" href="docs.html" data-i18n="d.tab1">Documentation</a><a href="#qs" data-i18n="d.tab2">API Reference</a><a href="#tools" data-i18n="d.tab3">Tool Integrations</a></div>
-  <div class="dext"><a href="status.html">Status</a><a href="#community" data-i18n="d.comm">Community</a><a class="btn black" style="padding:9px 16px;min-height:0;font-size:13px" href="login.html" data-i18n="d.getkey">Get a key →</a></div>
+  <div class="dext"><a href="playground.html">Playground</a><a href="models.html">Models</a><a href="topup.html">Pricing</a><a href="status.html">Status</a><a href="#community" data-i18n="d.comm">Community</a><a class="btn black" style="padding:9px 16px;min-height:0;font-size:13px" href="login.html" data-i18n="d.getkey">Get a key →</a></div>
 </div>
 
 <div class="dshell">
@@ -140,7 +157,7 @@ h2.dsec{font-family:var(--disp);font-size:24px;letter-spacing:-.7px;margin:8px 0
     </div>
 
     <div class="qs" id="qs">
-      <h3 data-i18n="d.qsh">Start with one call</h3>
+      <h2 class="sect" data-i18n="d.qsh">Start with one call</h2>
       <p data-i18n="d.qsp">Most users start here: create a key in the console, change the base_url, send a request. Three lines, no infrastructure.</p>
       <div class="qtabs" id="qtabs"><span class="on" data-l="python">Python</span><span data-l="js">JavaScript</span><span data-l="curl">cURL</span></div>
       <code id="qscode"></code>
@@ -151,7 +168,7 @@ h2.dsec{font-family:var(--disp);font-size:24px;letter-spacing:-.7px;margin:8px 0
     <div class="guides">
       <div class="task" id="codex">
         <span class="k" data-i18n="d.c1k">CODING AGENTS · CODEX CLI</span>
-        <h3 data-i18n="d.c1h">Connect Codex</h3>
+        <h2 class="sect" data-i18n="d.c1h">Connect Codex</h2>
         <ol>
           <li data-i18n="d.c1s1">One-liner: <span class="blk">curl -fsSL https://flatkey.ai/install.sh | bash</span> then pick <code>Codex CLI</code> when asked.</li>
           <li data-i18n="d.c1s2">Manual: in Codex choose <b>API key login</b>, base URL <code>https://router.flatkey.ai/v1</code>, paste your <code>sk-fk-…</code> key.</li>
@@ -160,7 +177,7 @@ h2.dsec{font-family:var(--disp);font-size:24px;letter-spacing:-.7px;margin:8px 0
       </div>
       <div class="task" id="anthropic">
         <span class="k" data-i18n="d.c2k">CODING AGENTS · ANTHROPIC PROTOCOL</span>
-        <h3 data-i18n="d.c2h">Connect Claude Code / Cline</h3>
+        <h2 class="sect" data-i18n="d.c2h">Connect Claude Code / Cline</h2>
         <ol>
           <li data-i18n="d.c2s1">Two environment variables:<span class="blk">export ANTHROPIC_BASE_URL=https://router.flatkey.ai
 export ANTHROPIC_API_KEY=sk-fk-…</span>Windows: <code>setx ANTHROPIC_BASE_URL …</code></li>
@@ -173,7 +190,7 @@ export ANTHROPIC_API_KEY=sk-fk-…</span>Windows: <code>setx ANTHROPIC_BASE_URL 
       </div>
       <div class="task" id="teams">
         <span class="k" data-i18n="d.c3k">TEAMS · KEYS, GROUPS &amp; QUOTAS</span>
-        <h3 data-i18n="d.c3h">One key per person, one cap per key</h3>
+        <h2 class="sect" data-i18n="d.c3h">One key per person, one cap per key</h2>
         <ol>
           <li data-i18n="d.c3s1">Create one key per teammate in <b>Console → API Keys</b>; set a monthly <code>cap</code> and optional model allowlist per key.</li>
           <li id="groups" data-i18n="d.c3s2"><b>Groups pick the routing pool, not the person</b>: <code>Standard</code> = aggregated official channels (default); <code>Economy</code> = lowest-cost dedicated line. A key belongs to one group and can be moved anytime.</li>
@@ -182,7 +199,7 @@ export ANTHROPIC_API_KEY=sk-fk-…</span>Windows: <code>setx ANTHROPIC_BASE_URL 
       </div>
       <div class="task" id="billing">
         <span class="k" data-i18n="d.c4k">BILLING · PRICES &amp; CACHE, IN PLAIN TERMS</span>
-        <h3 data-i18n="d.c4h">What each number means</h3>
+        <h2 class="sect" data-i18n="d.c4h">What each number means</h2>
         <table>
           <tr data-i18n="d.tblh"><th>PRICE</th><th>MEANING</th></tr>
           <tr><td>Input /M</td><td data-i18n="d.tbl1">per 1M prompt tokens sent</td></tr>
@@ -198,7 +215,7 @@ export ANTHROPIC_API_KEY=sk-fk-…</span>Windows: <code>setx ANTHROPIC_BASE_URL 
 
     <div class="community" id="community">
       <div>
-        <h3 data-i18n="d.cmh">Community</h3>
+        <h2 class="sect" data-i18n="d.cmh">Community</h2>
         <p data-i18n="d.cmp">Builders answering builders — routing configs, agent setups, model picks. The team reads everything; gateway-bench and the audit log are developed in the open.</p>
       </div>
       <div class="links">

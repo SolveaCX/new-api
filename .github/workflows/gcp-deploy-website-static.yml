@@ -139,6 +139,16 @@ jobs:
           # legacy skin must be injected into proxied pages
           curl -s -m 30 "$C/blog" | grep -q "legacy-skin.css" || { echo "legacy skin not injected"; exit 1; }
           curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/assets/legacy-skin.css" | grep -q 200 || exit 1
+          # v2 mark must override the legacy logo path (static file, not proxied)
+          curl -s -m 20 "$C/flatkey-mark.svg" | grep -qi "<svg" || { echo "mark override missing"; exit 1; }
+          # localized homepages + SEO heads
+          curl -s -m 20 "$C/zh" | grep -q 'lang="zh-CN"' || { echo "/zh not localized static"; exit 1; }
+          curl -s -m 20 "$C/zh" | grep -q 'canonical" href="https://flatkey.ai/zh"' || { echo "/zh canonical missing"; exit 1; }
+          curl -s -m 20 "$C/ja" | grep -q 'lang="ja"' || { echo "/ja not localized"; exit 1; }
+          curl -s -m 20 "$C/" | grep -q 'hreflang="zh-CN"' || { echo "hreflang cluster missing"; exit 1; }
+          curl -s -m 20 "$C/" | grep -q 'og:image' || { echo "og tags missing"; exit 1; }
+          curl -s -m 20 "$C/docs.html" | grep -q 'rel="canonical"' || { echo "docs canonical missing"; exit 1; }
+          curl -s -m 20 "$C/contact.html" | grep -q 'class="nav"' || { echo "contact nav missing"; exit 1; }
 
       - name: Shift traffic to latest
         run: |

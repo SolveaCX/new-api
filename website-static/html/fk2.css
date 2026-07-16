@@ -1,3 +1,4 @@
+@font-face{font-family:"Chivo Mono";src:url("assets/fonts/chivo-mono-latin.woff2") format("woff2");font-weight:300 700;font-style:normal;font-display:swap}
 @font-face{font-family:"Public Sans";src:url("assets/fonts/public-sans-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
 @font-face{font-family:"Space Grotesk";src:url("assets/fonts/space-grotesk-latin.woff2") format("woff2");font-weight:300 700;font-style:normal;font-display:swap}
 @font-face{font-family:"Inter";src:url("assets/fonts/inter-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
@@ -10,7 +11,7 @@
   --dark:#0A0A10; --dark2:#12121A; --dark-line:#FFFFFF1F; --dark-ink:#F5F5F2; --dark-ink3:#8E8E9C;
   --disp:"Public Sans","Inter",-apple-system,sans-serif;
   --sans:"Public Sans","Inter",-apple-system,sans-serif;
-  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --mono:"Chivo Mono",ui-monospace,"SF Mono",Menlo,monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -37,8 +38,8 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);-webkit-fo
 .pill.tint{background:var(--violet-tint);color:var(--violet-deep)}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
 h1.display,h2.display{font-family:var(--disp);text-wrap:balance}
-h1.display{font-size:64px;line-height:1.02;letter-spacing:-2.4px;font-weight:700}
-h2.display{font-size:38px;line-height:1.06;letter-spacing:-1.3px;font-weight:700}
+h1.display{font-size:64px;line-height:1.02;letter-spacing:-2.4px;font-weight:600}
+h2.display{font-size:38px;line-height:1.06;letter-spacing:-1.3px;font-weight:600}
 .sub{font-size:17.5px;line-height:1.6;color:var(--ink2);font-weight:450}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
@@ -221,7 +222,7 @@ body:has(.megafoot.slim) .stripe{margin-top:96px}
 .ctaWrap{max-width:1240px;margin:0 auto;padding:72px 40px}
 .ctaBanner{position:relative;border-radius:24px;overflow:hidden;background:radial-gradient(120% 160% at 50% -20%,#5B21B6 0%,#3B0FA0 45%,#2E1065 100%);padding:88px 60px;text-align:center}
 .ctaIn{position:relative;z-index:2;max-width:720px;margin:0 auto}
-.ctaBanner h2{font-family:var(--disp);font-size:52px;line-height:1.05;letter-spacing:-2px;font-weight:800;color:#fff;text-wrap:balance}
+.ctaBanner h2{font-family:var(--disp);font-size:52px;line-height:1.05;letter-spacing:-2px;font-weight:700;color:#fff;text-wrap:balance}
 .ctaBanner p{font-size:16.5px;color:#DDD3F9;margin:18px auto 30px;line-height:1.65;max-width:560px}
 .ctaBtns{display:flex;gap:12px;justify-content:center}
 .ctaBanner .btn.white{background:#fff;color:var(--ink);box-shadow:none}
