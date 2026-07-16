@@ -50,7 +50,7 @@ var registrationVerificationEmailTemplate = template.Must(template.New("registra
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td align="center" style="padding:0 0 28px;">
-                    <a class="email-action" href="{{.VerificationURL}}" style="display:inline-block;min-height:48px;padding:0 28px;border-radius:6px;background:#6d28d9;color:#ffffff;font-size:16px;font-weight:700;line-height:48px;text-align:center;text-decoration:none;">{{.Action}}</a>
+                    <a class="email-action" href="{{.VerificationURL}}" target="_blank" rel="noopener noreferrer" style="display:inline-block;min-height:48px;padding:0 28px;border-radius:6px;background:#6d28d9;color:#ffffff;font-size:16px;font-weight:700;line-height:48px;text-align:center;text-decoration:none;">{{.Action}}</a>
                   </td>
                 </tr>
               </table>

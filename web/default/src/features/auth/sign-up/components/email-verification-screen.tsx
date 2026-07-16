@@ -16,9 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, CircleAlert, CircleCheck, Loader2 } from 'lucide-react'
+import { ArrowLeft, CircleAlert, CircleCheck, Loader2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { AuthLayout } from '../../auth-layout'
@@ -27,13 +27,14 @@ import {
   startRegistrationEmailVerificationEffect,
   type EmailVerificationScreenState,
 } from '../../lib/registration-email-verification'
+import { publishRegistrationEmailVerified } from '../lib/registration-email-verification-channel'
 
-type EmailVerificationStatusContentProps = {
+type EmailVerificationStateProps = {
   state: EmailVerificationScreenState
 }
 
 export function EmailVerificationStatusContent(
-  props: EmailVerificationStatusContentProps
+  props: EmailVerificationStateProps
 ) {
   const { t } = useTranslation()
 
@@ -65,7 +66,9 @@ export function EmailVerificationStatusContent(
           {t('Email verified')}
         </h2>
         <p className='text-muted-foreground text-sm leading-6'>
-          {t('Your email is verified. Return to registration to continue.')}
+          {t(
+            'Your email is verified. Close this tab to continue registration.'
+          )}
         </p>
       </div>
     )
@@ -89,31 +92,71 @@ export function EmailVerificationStatusContent(
   )
 }
 
-export function EmailVerificationScreen() {
+export function EmailVerificationAction(props: EmailVerificationStateProps) {
   const { t } = useTranslation()
+
+  if (props.state === 'verifying') return null
+
+  if (props.state === 'verified') {
+    return (
+      <Button
+        type='button'
+        size='lg'
+        className='w-full sm:w-auto'
+        onClick={() => window.close()}
+      >
+        <X aria-hidden='true' />
+        {t('Close verification tab')}
+      </Button>
+    )
+  }
+
+  return (
+    <Button
+      size='lg'
+      className='w-full sm:w-auto'
+      render={<Link to='/sign-up' />}
+    >
+      <ArrowLeft aria-hidden='true' />
+      {t('Back to registration')}
+    </Button>
+  )
+}
+
+export function finishRegistrationEmailVerification(
+  notifyRegistrationTab: () => void = publishRegistrationEmailVerified,
+  closeVerificationTab: () => void = () => window.close()
+): void {
+  try {
+    notifyRegistrationTab()
+  } finally {
+    closeVerificationTab()
+  }
+}
+
+export function EmailVerificationScreen() {
   const [request] = useState(consumeRegistrationEmailVerificationRequest)
   const [state, setState] = useState<EmailVerificationScreenState>(() =>
     request ? 'verifying' : 'unavailable'
   )
+  const completionHandledRef = useRef(false)
 
   useEffect(() => {
     return startRegistrationEmailVerificationEffect(request, setState)
   }, [request])
 
+  useEffect(() => {
+    if (state !== 'verified' || completionHandledRef.current) return
+
+    completionHandledRef.current = true
+    finishRegistrationEmailVerification()
+  }, [state])
+
   return (
     <AuthLayout>
       <main className='mx-auto flex min-h-[300px] w-full max-w-sm flex-col items-center justify-center gap-7 py-6'>
         <EmailVerificationStatusContent state={state} />
-        {state !== 'verifying' && (
-          <Button
-            size='lg'
-            className='w-full sm:w-auto'
-            render={<Link to='/sign-up' />}
-          >
-            <ArrowLeft aria-hidden='true' />
-            {t('Back to registration')}
-          </Button>
-        )}
+        <EmailVerificationAction state={state} />
       </main>
     </AuthLayout>
   )

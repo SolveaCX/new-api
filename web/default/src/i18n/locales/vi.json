@@ -5415,9 +5415,10 @@
     "Verifying your email": "Đang xác minh email của bạn",
     "Please wait while we confirm this verification link.": "Vui lòng chờ trong khi chúng tôi xác nhận liên kết này.",
     "Email verified": "Email đã được xác minh",
-    "Your email is verified. Return to registration to continue.": "Email của bạn đã được xác minh. Quay lại trang đăng ký để tiếp tục.",
+    "Your email is verified. Close this tab to continue registration.": "Email của bạn đã được xác minh. Hãy đóng thẻ này để tiếp tục đăng ký.",
     "Verification link unavailable": "Liên kết xác minh không khả dụng",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "Liên kết này không hợp lệ hoặc đã hết hạn. Hãy dùng mã trong email hoặc yêu cầu gửi thư mới.",
-    "Back to registration": "Quay lại đăng ký"
+    "Back to registration": "Quay lại đăng ký",
+    "Close verification tab": "Đóng thẻ xác minh"
   }
 }

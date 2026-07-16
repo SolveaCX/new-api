@@ -5415,9 +5415,10 @@
     "Verifying your email": "Verificando seu e-mail",
     "Please wait while we confirm this verification link.": "Aguarde enquanto confirmamos este link de verificação.",
     "Email verified": "E-mail verificado",
-    "Your email is verified. Return to registration to continue.": "Seu e-mail foi verificado. Volte ao cadastro para continuar.",
+    "Your email is verified. Close this tab to continue registration.": "Seu e-mail foi verificado. Feche esta aba para continuar o cadastro.",
     "Verification link unavailable": "Link de verificação indisponível",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "Este link de verificação é inválido ou expirou. Use o código do e-mail ou solicite uma nova mensagem.",
-    "Back to registration": "Voltar ao cadastro"
+    "Back to registration": "Voltar ao cadastro",
+    "Close verification tab": "Fechar aba de verificação"
   }
 }

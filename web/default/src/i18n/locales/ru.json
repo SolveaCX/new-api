@@ -5415,9 +5415,10 @@
     "Verifying your email": "Подтверждение электронной почты",
     "Please wait while we confirm this verification link.": "Подождите, пока мы проверяем эту ссылку.",
     "Email verified": "Почта подтверждена",
-    "Your email is verified. Return to registration to continue.": "Ваша почта подтверждена. Вернитесь к регистрации, чтобы продолжить.",
+    "Your email is verified. Close this tab to continue registration.": "Ваш адрес электронной почты подтверждён. Закройте эту вкладку, чтобы продолжить регистрацию.",
     "Verification link unavailable": "Ссылка для подтверждения недоступна",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "Ссылка недействительна или устарела. Используйте код из письма или запросите новое сообщение.",
-    "Back to registration": "Вернуться к регистрации"
+    "Back to registration": "Вернуться к регистрации",
+    "Close verification tab": "Закрыть вкладку проверки"
   }
 }
