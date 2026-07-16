@@ -616,7 +616,7 @@ func (s *RecallStripeService) EnsureCustomer(ctx context.Context, user model.Use
 				return nil, recallStripePermanent("get Stripe Customer", "Stripe Customer response does not match requested Customer")
 			}
 			if !existing.Deleted {
-				return s.syncCustomerEmail(ctx, user, existing)
+				return existing, nil
 			}
 		}
 		if err != nil && !isRecallStripeMissing(err) {
@@ -639,7 +639,7 @@ func (s *RecallStripeService) EnsureCustomer(ctx context.Context, user model.Use
 	if created == nil || created.Deleted || strings.TrimSpace(created.ID) == "" {
 		return nil, recallStripePermanent("create Stripe Customer", "Stripe returned an unavailable Customer")
 	}
-	return s.syncCustomerEmail(ctx, user, created)
+	return created, nil
 }
 
 func (s *RecallStripeService) syncCustomerEmail(ctx context.Context, user model.User, customer *stripe.Customer) (*stripe.Customer, error) {
@@ -712,12 +712,16 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 	}
 
 	if recipient.StripePromotionCodeId != nil && strings.TrimSpace(*recipient.StripePromotionCodeId) != "" {
+		persistedPromotionID := strings.TrimSpace(*recipient.StripePromotionCodeId)
 		if err := s.beforeExternalCall(ctx); err != nil {
 			return nil, err
 		}
-		existing, getErr := s.client.GetPromotionCode(ctx, strings.TrimSpace(*recipient.StripePromotionCodeId))
+		existing, getErr := s.client.GetPromotionCode(ctx, persistedPromotionID)
 		if getErr != nil {
 			return nil, wrapRecallStripeError("get Stripe Promotion Code", getErr)
+		}
+		if existing == nil || strings.TrimSpace(existing.ID) != persistedPromotionID {
+			return nil, recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code response does not match requested Promotion Code")
 		}
 		if reconcileErr := validateExistingRecallPromotion(existing, recipient, coupon.ID, customerID, expiresAt, normalizedDiscount); reconcileErr != nil {
 			return nil, reconcileErr

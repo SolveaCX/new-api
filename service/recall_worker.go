@@ -20,6 +20,7 @@ import (
 const (
 	recallRecipientLeaseSeconds = int64(60)
 	recallRecipientRetrySeconds = int64(30)
+	recallRecipientScanPages    = 8
 )
 
 var (
@@ -28,10 +29,12 @@ var (
 )
 
 type RecallRecipientWorker struct {
-	stripe *RecallStripeService
-	claims *RecallClaimService
-	now    func() time.Time
-	owner  string
+	stripe      *RecallStripeService
+	claims      *RecallClaimService
+	now         func() time.Time
+	owner       string
+	scanGate    chan struct{}
+	scanAfterID int64
 }
 
 func NewRecallRecipientWorker(stripeService *RecallStripeService, claims *RecallClaimService, owner string) *RecallRecipientWorker {
@@ -42,10 +45,11 @@ func NewRecallRecipientWorker(stripeService *RecallStripeService, claims *Recall
 		claims = NewRecallClaimService()
 	}
 	return &RecallRecipientWorker{
-		stripe: stripeService,
-		claims: claims,
-		now:    time.Now,
-		owner:  strings.TrimSpace(owner),
+		stripe:   stripeService,
+		claims:   claims,
+		now:      time.Now,
+		owner:    strings.TrimSpace(owner),
+		scanGate: make(chan struct{}, 1),
 	}
 }
 
@@ -56,10 +60,70 @@ func (w *RecallRecipientWorker) RunBatch(ctx context.Context, limit int) (int, e
 	if w.owner == "" {
 		return 0, fmt.Errorf("recall recipient worker owner is required")
 	}
-	items, err := model.ListDueRecallRecipientWorkItems(w.now().Unix(), limit)
-	if err != nil {
-		return 0, err
+	select {
+	case w.scanGate <- struct{}{}:
+		defer func() { <-w.scanGate }()
+	case <-ctx.Done():
+		return 0, ctx.Err()
 	}
+	queryNow := w.now().Unix()
+	processed := 0
+	var firstErr error
+	afterID := w.scanAfterID
+	wrapped := afterID == 0
+	excludedCampaigns := make(map[int64]struct{})
+	for page := 0; page < recallRecipientScanPages && processed < limit; page++ {
+		if err := ctx.Err(); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			break
+		}
+		pageLimit := limit - processed
+		excludedCampaignIDs := make([]int64, 0, len(excludedCampaigns))
+		for campaignID := range excludedCampaigns {
+			excludedCampaignIDs = append(excludedCampaignIDs, campaignID)
+		}
+		items, err := model.ListDueRecallRecipientWorkItems(ctx, queryNow, afterID, pageLimit, excludedCampaignIDs)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			break
+		}
+		if len(items) == 0 {
+			if !wrapped && afterID > 0 {
+				afterID = 0
+				w.scanAfterID = 0
+				wrapped = true
+				continue
+			}
+			break
+		}
+		afterID = items[len(items)-1].Id
+		w.scanAfterID = afterID
+		pageProcessed, blockedCampaigns, pageErr := w.processRecallRecipientWorkItems(ctx, items)
+		processed += pageProcessed
+		for campaignID := range blockedCampaigns {
+			excludedCampaigns[campaignID] = struct{}{}
+		}
+		if firstErr == nil && pageErr != nil {
+			firstErr = pageErr
+		}
+		if len(items) < pageLimit && !wrapped && afterID > 0 && processed < limit {
+			afterID = 0
+			w.scanAfterID = 0
+			wrapped = true
+			continue
+		}
+		if len(items) < pageLimit {
+			break
+		}
+	}
+	return processed, firstErr
+}
+
+func (w *RecallRecipientWorker) processRecallRecipientWorkItems(ctx context.Context, items []model.RecallRecipientWorkItem) (int, map[int64]struct{}, error) {
 	limiters := make(map[int64]chan struct{}, len(items))
 	for _, item := range items {
 		if _, ok := limiters[item.CampaignId]; ok {
@@ -75,6 +139,8 @@ func (w *RecallRecipientWorker) RunBatch(ctx context.Context, limit int) (int, e
 	var processed atomic.Int64
 	var firstErr error
 	var errorMu sync.Mutex
+	blockedCampaigns := make(map[int64]struct{})
+	var blockedMu sync.Mutex
 	recordError := func(err error) {
 		if err == nil || errors.Is(err, ErrRecallRecipientLeaseLost) {
 			return
@@ -107,6 +173,9 @@ func (w *RecallRecipientWorker) RunBatch(ctx context.Context, limit int) (int, e
 				return
 			}
 			if !won {
+				blockedMu.Lock()
+				blockedCampaigns[item.CampaignId] = struct{}{}
+				blockedMu.Unlock()
 				return
 			}
 			processed.Add(1)
@@ -114,7 +183,7 @@ func (w *RecallRecipientWorker) RunBatch(ctx context.Context, limit int) (int, e
 		}()
 	}
 	workers.Wait()
-	return int(processed.Load()), firstErr
+	return int(processed.Load()), blockedCampaigns, firstErr
 }
 
 func (w *RecallRecipientWorker) ProcessLeased(ctx context.Context, recipientID int64) error {
@@ -165,7 +234,7 @@ func (w *RecallRecipientWorker) ensureRecipientCustomer(ctx context.Context, rec
 	if err != nil {
 		return recallStripePermanent("load recall user", "user %d is unavailable", recipient.UserId)
 	}
-	guardedStripe := w.guardedStripe(recipient.CampaignId)
+	guardedStripe := w.guardedStripeForRecipient(recipient)
 	var customer *stripe.Customer
 	for attempt := 0; attempt < 5; attempt++ {
 		customer, err = guardedStripe.EnsureCustomer(ctx, *user)
@@ -195,6 +264,9 @@ func (w *RecallRecipientWorker) ensureRecipientCustomer(ctx context.Context, rec
 	}
 	if !persisted {
 		return &RecallStripeError{Kind: RecallStripeErrorRetryable, Op: "persist Stripe Customer", Err: errors.New("recipient customer conflict")}
+	}
+	if _, err := guardedStripe.syncCustomerEmail(ctx, *user, customer); err != nil {
+		return err
 	}
 	won, err := model.AdvanceRecallRecipientLease(ctx, recipient.Id, w.owner, recipient.LeaseExpiresAt,
 		[]string{model.RecallRecipientQueued}, model.RecallRecipientCustomerReady,
@@ -320,6 +392,25 @@ func (w *RecallRecipientWorker) guardedStripe(campaignID int64) *RecallStripeSer
 	return w.stripe.withExternalCallGuard(func(ctx context.Context) error {
 		_, err := w.loadRunnableCampaign(ctx, campaignID)
 		return err
+	})
+}
+
+func (w *RecallRecipientWorker) guardedStripeForRecipient(recipient *model.RecallRecipient) *RecallStripeService {
+	return w.stripe.withExternalCallGuard(func(ctx context.Context) error {
+		if _, err := w.loadRunnableCampaign(ctx, recipient.CampaignId); err != nil {
+			return err
+		}
+		leased, err := model.GetRecallRecipientForLeaseWithContext(ctx, recipient.Id, w.owner)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRecallRecipientLeaseLost
+			}
+			return err
+		}
+		if leased.LeaseExpiresAt != recipient.LeaseExpiresAt {
+			return ErrRecallRecipientLeaseLost
+		}
+		return nil
 	})
 }
 

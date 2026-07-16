@@ -24,6 +24,21 @@ func TestRecallWorkerUserStripeCustomerConditionalWriteChoosesOneWinner(t *testi
 	require.Equal(t, "cus_a", stored.StripeCustomer)
 }
 
+func TestRecallWorkerUserStripeCustomerConditionalWriteClaimsLegacyNull(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	user := User{Username: "recall-customer-null", Password: "password", Email: "null@example.com"}
+	require.NoError(t, DB.Create(&user).Error)
+	require.NoError(t, DB.Exec("UPDATE users SET stripe_customer = NULL WHERE id = ?", user.Id).Error)
+
+	won, err := SetUserStripeCustomerIfEmptyOrMatchesWithContext(context.Background(), user.Id, "", "cus_legacy")
+	require.NoError(t, err)
+	require.True(t, won)
+
+	stored, err := GetUserByIdWithContext(context.Background(), user.Id)
+	require.NoError(t, err)
+	require.Equal(t, "cus_legacy", stored.StripeCustomer)
+}
+
 func TestRecallWorkerUserStripeCustomerConditionalWriteReplacesExpectedDeletedID(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 	user := User{Username: "recall-customer-replace", Password: "password", Email: "replace@example.com", StripeCustomer: "cus_deleted"}
