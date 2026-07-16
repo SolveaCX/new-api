@@ -66,14 +66,6 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 	return err
 }
 
-func snapshotRelayErrorForMetrics(relayErr *types.NewAPIError) *types.NewAPIError {
-	if relayErr == nil {
-		return nil
-	}
-	snapshot := *relayErr
-	return &snapshot
-}
-
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	requestId := c.GetString(common.RequestIdKey)
@@ -267,10 +259,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
-		finalRelayError := snapshotRelayErrorForMetrics(newAPIError)
-		gopool.Go(func() {
-			perfmetrics.RecordRelaySample(relayInfo, false, 0, finalRelayError)
-		})
+		perfmetrics.RecordRelaySample(relayInfo, false, 0, newAPIError)
 	}
 }
 

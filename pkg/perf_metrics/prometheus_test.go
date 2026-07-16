@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,11 +35,14 @@ func TestRecordRelaySampleCapturesSuccessfulModelLatencyAndTTFT(t *testing.T) {
 
 	now := time.Now()
 	startedAt := now.Add(-2 * time.Second)
+	streamStatus := relaycommon.NewStreamStatus()
+	streamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
 	RecordRelaySample(&relaycommon.RelayInfo{
 		OriginModelName:   "gpt-5",
 		StartTime:         startedAt,
 		FirstResponseTime: startedAt.Add(250 * time.Millisecond),
 		IsStream:          true,
+		StreamStatus:      streamStatus,
 		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: 42},
 	}, true, 12, nil)
 
@@ -50,6 +56,82 @@ func TestRecordRelaySampleCapturesSuccessfulModelLatencyAndTTFT(t *testing.T) {
 	require.EqualValues(t, 1, snapshot.ttftCount)
 	require.InDelta(t, 0.25, snapshot.ttftSumSeconds, 0.01)
 	require.Empty(t, snapshot.errors)
+}
+
+func TestRecordRelaySampleNormalizesAbnormalStreamOutcomes(t *testing.T) {
+	tests := []struct {
+		name          string
+		endReason     relaycommon.StreamEndReason
+		recordError   bool
+		errorCategory string
+	}{
+		{
+			name:          "client gone",
+			endReason:     relaycommon.StreamEndReasonClientGone,
+			errorCategory: "client_cancel",
+		},
+		{
+			name:          "stream timeout",
+			endReason:     relaycommon.StreamEndReasonTimeout,
+			errorCategory: "timeout",
+		},
+		{
+			name:          "first response timeout",
+			endReason:     relaycommon.StreamEndReasonFirstResponseTimeout,
+			errorCategory: "timeout",
+		},
+		{
+			name:          "soft stream error",
+			endReason:     relaycommon.StreamEndReasonDone,
+			recordError:   true,
+			errorCategory: "other",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetPerfMetricsStateForTest(t)
+
+			startedAt := time.Now().Add(-2 * time.Second)
+			streamStatus := relaycommon.NewStreamStatus()
+			streamStatus.SetEndReason(tt.endReason, nil)
+			if tt.recordError {
+				streamStatus.RecordError("upstream sent a malformed event")
+			}
+			RecordRelaySample(&relaycommon.RelayInfo{
+				OriginModelName:   "gpt-5",
+				StartTime:         startedAt,
+				FirstResponseTime: startedAt.Add(250 * time.Millisecond),
+				IsStream:          true,
+				StreamStatus:      streamStatus,
+				ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: 42},
+			}, true, 12, nil)
+
+			snapshots := snapshotPrometheusModelPerformances(time.Now())
+			require.Len(t, snapshots, 1)
+			snapshot := snapshots[0]
+			require.Equal(t, "gpt-5", snapshot.model)
+			require.Equal(t, map[string]int64{tt.errorCategory: 1}, snapshot.errors)
+			require.EqualValues(t, 0, snapshot.latencyCount)
+			require.Zero(t, snapshot.latencySumSeconds)
+			require.EqualValues(t, 0, snapshot.ttftCount)
+			require.Zero(t, snapshot.ttftSumSeconds)
+			require.EqualValues(t, 0, snapshot.streamSuccess)
+
+			text, err := BuildPrometheusText(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, []string{
+				"newapi_perf_metrics_series 7",
+				`newapi_model_requests_total{model="gpt-5",status="error"} 1`,
+				fmt.Sprintf(`newapi_model_errors_total{model="gpt-5",error_category="%s"} 1`, tt.errorCategory),
+				"newapi_model_histogram_active_models 1",
+				`newapi_model_histogram_dropped_samples_total{reason="model_limit"} 0`,
+				`newapi_model_histogram_dropped_samples_total{reason="invalid_latency"} 0`,
+				`newapi_model_histogram_dropped_samples_total{reason="invalid_ttft"} 0`,
+				`newapi_model_histogram_dropped_samples_total{reason="series_limit"} 0`,
+			}, prometheusSampleLines(text))
+		})
+	}
 }
 
 func TestRecordRelaySampleKeepsFinalFailureOutOfLatency(t *testing.T) {
@@ -386,6 +468,70 @@ func TestPrometheusModelSeriesBudgetKeepsCompleteTTFTCoverageGroups(t *testing.T
 	requirePrometheusSampleLine(t, text, `newapi_model_histogram_dropped_samples_total{reason="series_limit"} 2`)
 	requirePrometheusSampleLine(t, text, "newapi_perf_metrics_series 38")
 	requirePrometheusSeriesGaugeMatchesRenderedSamples(t, text)
+}
+
+func TestSelectPrometheusModelSnapshotsStopsAtFirstGroupThatExceedsBudget(t *testing.T) {
+	now := time.Now()
+	latencySeconds := 1.5
+	newestBucket := newPrometheusModelPerformanceBucket(now)
+	require.True(t, newestBucket.addSuccess(now, &latencySeconds, false, nil))
+	newestSnapshot, ok := newestBucket.snapshot("newest-latency-model")
+	require.True(t, ok)
+	require.Equal(t, 16, newestSnapshot.seriesCount())
+
+	olderBucket := newPrometheusModelPerformanceBucket(now.Add(-time.Minute))
+	require.True(t, olderBucket.addError(now.Add(-time.Minute), "other"))
+	olderSnapshot, ok := olderBucket.snapshot("older-error-model")
+	require.True(t, ok)
+	require.Equal(t, 1, olderSnapshot.seriesCount())
+
+	selected, dropped := selectPrometheusModelSnapshots(
+		[]prometheusModelPerformanceSnapshot{newestSnapshot, olderSnapshot},
+		15,
+	)
+	require.Empty(t, selected)
+	require.EqualValues(t, 1, dropped)
+}
+
+func TestPrometheusModelSeriesBudgetNeverBackfillsOlderSmallGroups(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	t.Setenv(prometheusMaxSeriesPerScrapeEnv, "20")
+
+	now := time.Now()
+	latencySeconds := 1.5
+	newestBucket := newPrometheusModelPerformanceBucket(now)
+	require.True(t, newestBucket.addSuccess(now, &latencySeconds, false, nil))
+	prometheusModelPerformanceBuckets.Store("newest-latency-model", newestBucket)
+
+	olderBucket := newPrometheusModelPerformanceBucket(now.Add(-time.Minute))
+	require.True(t, olderBucket.addError(now.Add(-time.Minute), "other"))
+	prometheusModelPerformanceBuckets.Store("older-error-model", olderBucket)
+
+	text, err := BuildPrometheusText(context.Background())
+	require.NoError(t, err)
+	require.NotContains(t, text, "newapi_model_request_duration_seconds")
+	require.NotContains(t, text, `newapi_model_errors_total{model="older-error-model"`)
+	requirePrometheusSampleLine(t, text, "newapi_model_histogram_active_models 2")
+	requirePrometheusSampleLine(t, text, `newapi_model_histogram_dropped_samples_total{reason="series_limit"} 1`)
+	requirePrometheusSampleLine(t, text, "newapi_perf_metrics_series 5")
+	requirePrometheusSeriesGaugeMatchesRenderedSamples(t, text)
+}
+
+func TestRecordRelaySampleProductionCallSitesAreSynchronous(t *testing.T) {
+	productionFiles := []string{
+		filepath.Join("..", "..", "controller", "relay.go"),
+		filepath.Join("..", "..", "service", "quota.go"),
+		filepath.Join("..", "..", "service", "text_quota.go"),
+	}
+	asyncCall := regexp.MustCompile(`(?s)gopool\.Go\(func\(\) \{.{0,256}perfmetrics\.RecordRelaySample\(`)
+	totalCalls := 0
+	for _, path := range productionFiles {
+		source, err := os.ReadFile(path)
+		require.NoError(t, err, path)
+		totalCalls += strings.Count(string(source), "perfmetrics.RecordRelaySample(")
+		require.False(t, asyncCall.Match(source), "%s wraps RecordRelaySample in gopool.Go", path)
+	}
+	require.Equal(t, 3, totalCalls)
 }
 
 func TestPrometheusModelSeriesLimitCountsOmittedObservationsOnce(t *testing.T) {

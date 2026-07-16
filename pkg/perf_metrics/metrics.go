@@ -52,6 +52,10 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if info == nil {
 		return
 	}
+	finalSuccess := success && relayErr == nil
+	if finalSuccess && info.IsStream && info.StreamStatus != nil {
+		finalSuccess = info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors()
+	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
 	ttftMs := int64(0)
@@ -66,7 +70,7 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
-	recordPrometheusModelPerformance(info, success, relayErr, now)
+	recordPrometheusModelPerformance(info, finalSuccess, relayErr, now)
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
@@ -74,7 +78,7 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
-		Success:      success,
+		Success:      finalSuccess,
 		OutputTokens: outputTokens,
 		GenerationMs: generationMs,
 	})

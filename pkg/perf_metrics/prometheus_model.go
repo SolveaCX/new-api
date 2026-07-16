@@ -277,9 +277,11 @@ func recordPrometheusModelPerformance(
 		category := "other"
 		if relayErr != nil {
 			_, category = classifyChannelError(relayErr)
-			if category == "none" {
-				category = "other"
-			}
+		} else {
+			_, category = classifyChannelAttempt(info, nil)
+		}
+		if category == "none" {
+			category = "other"
 		}
 		mutatePrometheusModelPerformance(info.OriginModelName, now, func(bucket *prometheusModelPerformanceBucket) bool {
 			return bucket.addError(now, category)
@@ -391,9 +393,10 @@ func selectPrometheusModelSnapshots(
 ) ([]prometheusModelPerformanceSnapshot, int64) {
 	selected := make([]prometheusModelPerformanceSnapshot, 0, len(snapshots))
 	var dropped int64
+	exhausted := false
 	for _, snapshot := range snapshots {
 		seriesCount := snapshot.seriesCount()
-		if seriesCount <= remaining {
+		if !exhausted && seriesCount <= remaining {
 			selected = append(selected, snapshot)
 			remaining -= seriesCount
 			if snapshot.bucket != nil {
@@ -401,6 +404,7 @@ func selectPrometheusModelSnapshots(
 			}
 			continue
 		}
+		exhausted = true
 		if snapshot.bucket != nil {
 			dropped += snapshot.bucket.markSeriesLimited(snapshot.latencyCount, snapshot.ttftCount)
 		}
