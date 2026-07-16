@@ -453,6 +453,63 @@ func TestRecallLeaseRecipientHasExactlyOneConcurrentWinner(t *testing.T) {
 	require.Zero(t, stored.LeaseExpiresAt)
 }
 
+func TestRecallCampaignCapacityLeaseSerializesDistinctRecipientsOnSQLite(t *testing.T) {
+	setupRecallRepositoryFileDB(t)
+
+	for iteration := 0; iteration < 20; iteration++ {
+		campaign := newRecallRepositoryCampaign("campaign capacity lease")
+		campaign.WorkerConcurrency = 1
+		require.NoError(t, DB.Create(&campaign).Error)
+		recipients := []RecallRecipient{
+			{
+				CampaignId: campaign.Id, UserId: iteration*2 + 1, EligibilitySnapshot: `{}`,
+				EmailSnapshot: "capacity-a@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued,
+			},
+			{
+				CampaignId: campaign.Id, UserId: iteration*2 + 2, EligibilitySnapshot: `{}`,
+				EmailSnapshot: "capacity-b@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued,
+			},
+		}
+		require.NoError(t, DB.Create(&recipients).Error)
+
+		type leaseResult struct {
+			won bool
+			err error
+		}
+		start := make(chan struct{})
+		results := make(chan leaseResult, len(recipients))
+		var workers sync.WaitGroup
+		for i := range recipients {
+			recipient := recipients[i]
+			owner := "node-a"
+			if i == 1 {
+				owner = "node-b"
+			}
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				<-start
+				won, err := TryLeaseRecallRecipientWithinCampaignCapacity(
+					context.Background(), recipient.Id, owner, 1_721_000_000, 1_721_000_060,
+				)
+				results <- leaseResult{won: won, err: err}
+			}()
+		}
+		close(start)
+		workers.Wait()
+		close(results)
+
+		winners := 0
+		for result := range results {
+			require.NoError(t, result.err)
+			if result.won {
+				winners++
+			}
+		}
+		require.Equal(t, 1, winners)
+	}
+}
+
 func TestRecallLeaseRecipientFencesSameOwnerReacquisition(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 
