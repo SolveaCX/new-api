@@ -16,6 +16,7 @@ type RecallRuntime struct {
 	Campaigns  *RecallCampaignService
 	Claims     *RecallClaimService
 	Recipients *RecallRecipientWorker
+	Emails     *RecallEmailWorker
 }
 
 var (
@@ -28,13 +29,16 @@ func GetRecallRuntime() *RecallRuntime {
 	recallRuntimeOnce.Do(func() {
 		stripeService := NewRecallStripeService(nil)
 		claims := NewRecallClaimService()
+		audience := NewRecallAudienceSelector()
+		owner := common.GetReplicaID()
 		recallRuntime = &RecallRuntime{
 			Campaigns: NewRecallCampaignService(
-				NewRecallAudienceSelector(),
+				audience,
 				stripeService,
 			),
 			Claims:     claims,
-			Recipients: NewRecallRecipientWorker(stripeService, claims, common.GetReplicaID()),
+			Recipients: NewRecallRecipientWorker(stripeService, claims, owner),
+			Emails:     NewRecallEmailWorker(common.SendEmailWithMessageID, audience, claims, owner),
 		}
 	})
 	return recallRuntime
@@ -73,5 +77,10 @@ func RunRecallMaintenanceTick(ctx context.Context) {
 	}
 	if _, err := runtime.Recipients.RunBatch(ctx, setting.BatchSize); err != nil {
 		logger.LogWarn(ctx, "recall recipient maintenance failed")
+	}
+	if runtime.Emails != nil {
+		if _, err := runtime.Emails.RunBatch(ctx, setting.BatchSize); err != nil {
+			logger.LogWarn(ctx, "recall email maintenance failed")
+		}
 	}
 }

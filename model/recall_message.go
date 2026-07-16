@@ -1,8 +1,11 @@
 package model
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -36,6 +39,13 @@ type RecallMessage struct {
 	LastErrorMessage  string  `json:"last_error_message" gorm:"type:varchar(512)"`
 	CreatedAt         int64   `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         int64   `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+type RecallEmailWorkItem struct {
+	Message   RecallMessage
+	Recipient RecallRecipient
+	Campaign  RecallCampaign
+	User      User
 }
 
 func ListDueRecallMessageIDs(now int64, limit int) ([]int64, error) {
@@ -106,6 +116,166 @@ func CompleteRecallMessageLease(id int64, owner string, expectedLeaseUntil int64
 	result := DB.Model(&RecallMessage{}).
 		Where("id = ? AND lease_owner = ? AND lease_expires_at = ? AND state = ?", id, owner, expectedLeaseUntil, from).
 		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func GetRecallEmailWorkItemForLeaseWithContext(ctx context.Context, id int64, owner string) (*RecallEmailWorkItem, error) {
+	item := &RecallEmailWorkItem{}
+	if err := DB.WithContext(ctx).
+		Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at > 0", id, RecallMessageLeased, owner).
+		First(&item.Message).Error; err != nil {
+		return nil, err
+	}
+	if err := DB.WithContext(ctx).First(&item.Recipient, item.Message.RecipientId).Error; err != nil {
+		return nil, err
+	}
+	if err := DB.WithContext(ctx).First(&item.Campaign, item.Recipient.CampaignId).Error; err != nil {
+		return nil, err
+	}
+	if err := DB.WithContext(ctx).First(&item.User, item.Recipient.UserId).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func EnsureRecallMessageProviderIDWithContext(ctx context.Context, id int64, owner string, expectedLeaseUntil int64, providerMessageID string) (string, bool, error) {
+	providerMessageID = strings.TrimSpace(providerMessageID)
+	if providerMessageID == "" {
+		return "", false, fmt.Errorf("recall email Message-ID must not be empty")
+	}
+	result := DB.WithContext(ctx).Model(&RecallMessage{}).
+		Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ? AND provider_message_id = ''", id, RecallMessageLeased, owner, expectedLeaseUntil).
+		Update("provider_message_id", providerMessageID)
+	if result.Error != nil {
+		return "", false, result.Error
+	}
+	if result.RowsAffected == 1 {
+		return providerMessageID, true, nil
+	}
+	var message RecallMessage
+	if err := DB.WithContext(ctx).
+		Select("provider_message_id").
+		Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, RecallMessageLeased, owner, expectedLeaseUntil).
+		First(&message).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if strings.TrimSpace(message.ProviderMessageId) == "" {
+		return "", false, nil
+	}
+	return message.ProviderMessageId, true, nil
+}
+
+func AcceptRecallMessageAndScheduleNextWithContext(ctx context.Context, id int64, owner string, expectedLeaseUntil int64, acceptedAt int64, next *RecallMessage) (bool, error) {
+	accepted := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var message RecallMessage
+		if err := tx.Select("recipient_id").
+			Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, RecallMessageLeased, owner, expectedLeaseUntil).
+			First(&message).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		result := tx.Model(&RecallMessage{}).
+			Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, RecallMessageLeased, owner, expectedLeaseUntil).
+			Updates(map[string]any{
+				"state":              RecallMessageAccepted,
+				"accepted_at":        acceptedAt,
+				"attempt_count":      gorm.Expr("attempt_count + ?", 1),
+				"next_attempt_at":    int64(0),
+				"lease_owner":        "",
+				"lease_expires_at":   int64(0),
+				"last_error_code":    "",
+				"last_error_message": "",
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		if err := tx.Model(&RecallRecipient{}).
+			Where("id = ?", message.RecipientId).
+			Updates(map[string]any{
+				"first_sent_at": gorm.Expr("CASE WHEN first_sent_at = 0 THEN ? ELSE first_sent_at END", acceptedAt),
+				"last_sent_at":  acceptedAt,
+			}).Error; err != nil {
+			return err
+		}
+		if next != nil {
+			next.RecipientId = message.RecipientId
+			next.State = RecallMessageScheduled
+			next.ClaimTokenHash = nil
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "recipient_id"}, {Name: "stage_no"}},
+				DoNothing: true,
+			}).Create(next).Error; err != nil {
+				return err
+			}
+		}
+		accepted = true
+		return nil
+	})
+	return accepted, err
+}
+
+func CancelRecallEmailFlowWithContext(ctx context.Context, id int64, recipientID int64, owner string, expectedLeaseUntil int64, reasonCode string, now int64) (bool, error) {
+	cancelled := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&RecallMessage{}).
+			Where("id = ? AND recipient_id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, recipientID, RecallMessageLeased, owner, expectedLeaseUntil).
+			Updates(map[string]any{
+				"state":              RecallMessageCancelled,
+				"lease_owner":        "",
+				"lease_expires_at":   int64(0),
+				"failed_at":          now,
+				"last_error_code":    reasonCode,
+				"last_error_message": "",
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		cancelled = true
+		return tx.Model(&RecallMessage{}).
+			Where("recipient_id = ? AND state IN ?", recipientID, []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased}).
+			Updates(map[string]any{
+				"state":              RecallMessageCancelled,
+				"lease_owner":        "",
+				"lease_expires_at":   int64(0),
+				"failed_at":          now,
+				"last_error_code":    reasonCode,
+				"last_error_message": "",
+			}).Error
+	})
+	return cancelled, err
+}
+
+func ManualRetryRecallMessageWithContext(ctx context.Context, id int64, acknowledgeUncertain bool, now int64) (bool, error) {
+	states := []string{RecallMessageFailed}
+	if acknowledgeUncertain {
+		states = append(states, RecallMessageUncertain)
+	}
+	result := DB.WithContext(ctx).Model(&RecallMessage{}).
+		Where("id = ? AND state IN ?", id, states).
+		Updates(map[string]any{
+			"state":              RecallMessageRetryWait,
+			"next_attempt_at":    now,
+			"failed_at":          int64(0),
+			"lease_owner":        "",
+			"lease_expires_at":   int64(0),
+			"last_error_code":    "",
+			"last_error_message": "",
+		})
 	if result.Error != nil {
 		return false, result.Error
 	}

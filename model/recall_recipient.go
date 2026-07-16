@@ -69,6 +69,12 @@ type RecallRecipientWorkItem struct {
 	WorkerConcurrency int   `gorm:"-"`
 }
 
+type RecallAPIActivityCheck struct {
+	MessageId int64
+	UserId    int
+	After     int64
+}
+
 func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
 	ids := make([]int64, 0)
 	if limit <= 0 {
@@ -778,4 +784,55 @@ func HasRecallPaymentAfterWithContext(ctx context.Context, userID int, after int
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx context.Context, checks []RecallAPIActivityCheck, batchSize int) (map[int64]struct{}, error) {
+	activeMessageIDs := make(map[int64]struct{})
+	if len(checks) == 0 {
+		return activeMessageIDs, nil
+	}
+	if batchSize <= 0 {
+		return nil, fmt.Errorf("recall log batch size must be positive")
+	}
+	type lastActivityRow struct {
+		UserId       int   `gorm:"column:user_id"`
+		LastActiveAt int64 `gorm:"column:last_active_at"`
+	}
+	for start := 0; start < len(checks); start += batchSize {
+		end := start + batchSize
+		if end > len(checks) {
+			end = len(checks)
+		}
+		batch := checks[start:end]
+		userIDs := make([]int, 0, len(batch))
+		seenUserIDs := make(map[int]struct{}, len(batch))
+		minimumAfter := batch[0].After
+		for _, check := range batch {
+			if check.After < minimumAfter {
+				minimumAfter = check.After
+			}
+			if _, seen := seenUserIDs[check.UserId]; !seen {
+				seenUserIDs[check.UserId] = struct{}{}
+				userIDs = append(userIDs, check.UserId)
+			}
+		}
+		var rows []lastActivityRow
+		if err := LOG_DB.WithContext(ctx).Model(&Log{}).
+			Select("user_id, MAX(created_at) AS last_active_at").
+			Where("type = ? AND created_at > ? AND user_id IN ?", LogTypeConsume, minimumAfter, userIDs).
+			Group("user_id").
+			Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		lastActivityByUserID := make(map[int]int64, len(rows))
+		for _, row := range rows {
+			lastActivityByUserID[row.UserId] = row.LastActiveAt
+		}
+		for _, check := range batch {
+			if lastActivityByUserID[check.UserId] > check.After {
+				activeMessageIDs[check.MessageId] = struct{}{}
+			}
+		}
+	}
+	return activeMessageIDs, nil
 }
