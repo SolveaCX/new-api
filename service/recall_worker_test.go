@@ -360,6 +360,118 @@ func TestRecallWorkerRunBatchHonorsPerCampaignConcurrency(t *testing.T) {
 	require.Equal(t, 1, peak[campaignB.Id])
 }
 
+func TestRecallWorkerRunBatchHonorsCampaignConcurrencyAcrossWorkers(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaign.Id).Update("worker_concurrency", 1).Error)
+
+	recipientIDs := make([]int64, 0, 2)
+	for i, code := range []string{"FKAAAA234", "FKBBBB234"} {
+		user := model.User{
+			Username:       fmt.Sprintf("recall-worker-node-cap-%d", i),
+			Password:       "password",
+			Email:          fmt.Sprintf("node-cap-%d@example.com", i),
+			AffCode:        fmt.Sprintf("worker-node-cap-%d", i),
+			StripeCustomer: fmt.Sprintf("cus_node_cap_%d", i),
+		}
+		require.NoError(t, model.DB.Create(&user).Error)
+		recipient := createRecallWorkerRecipient(t, campaign.Id, user.Id, model.RecallRecipientCustomerReady)
+		require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", recipient.Id).Updates(map[string]any{
+			"stripe_customer_id": user.StripeCustomer,
+			"promotion_code":     code,
+		}).Error)
+		recipientIDs = append(recipientIDs, recipient.Id)
+	}
+
+	started := make(chan int64, 2)
+	release := make(chan struct{})
+	var active atomic.Int32
+	var peak atomic.Int32
+	var createCalls atomic.Int32
+	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+		var recipientID int64
+		_, err := fmt.Sscan(params.Metadata["recall_recipient_id"], &recipientID)
+		require.NoError(t, err)
+		createCalls.Add(1)
+		current := active.Add(1)
+		for {
+			observed := peak.Load()
+			if current <= observed || peak.CompareAndSwap(observed, current) {
+				break
+			}
+		}
+		started <- recipientID
+		<-release
+		active.Add(-1)
+		return recallWorkerPromotionFromParams(fmt.Sprintf("promo_node_cap_%d", recipientID), params), nil
+	}}
+	workerA := newRecallWorkerForTest(client, "node-a")
+	workerB := newRecallWorkerForTest(client, "node-b")
+	type runResult struct {
+		processed int
+		err       error
+	}
+	firstDone := make(chan runResult, 1)
+	go func() {
+		processed, err := workerA.RunBatch(context.Background(), 1)
+		firstDone <- runResult{processed: processed, err: err}
+	}()
+	select {
+	case recipientID := <-started:
+		require.Equal(t, recipientIDs[0], recipientID)
+	case firstResult := <-firstDone:
+		require.NoError(t, firstResult.err)
+		t.Fatal("first worker finished before reaching the external call")
+	case <-time.After(2 * time.Second):
+		t.Fatal("first worker did not reach the external call")
+	}
+
+	secondDone := make(chan runResult, 1)
+	go func() {
+		processed, err := workerB.RunBatch(context.Background(), 2)
+		secondDone <- runResult{processed: processed, err: err}
+	}()
+	var secondResult runResult
+	secondFinished := false
+	secondStarted := false
+	select {
+	case <-started:
+		secondStarted = true
+	case secondResult = <-secondDone:
+		secondFinished = true
+	case <-time.After(2 * time.Second):
+		close(release)
+		firstResult := <-firstDone
+		require.NoError(t, firstResult.err)
+		t.Fatal("second worker did not finish or start an external call")
+	}
+	close(release)
+	firstResult := <-firstDone
+	require.NoError(t, firstResult.err)
+	require.Equal(t, 1, firstResult.processed)
+	if !secondFinished {
+		secondResult = <-secondDone
+	}
+	require.NoError(t, secondResult.err)
+	require.False(t, secondStarted, "campaign capacity must be shared across worker owners")
+	require.Zero(t, secondResult.processed)
+	require.Equal(t, int32(1), peak.Load())
+
+	processed, err := workerB.RunBatch(context.Background(), 2)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, int32(1), peak.Load())
+
+	var stored []model.RecallRecipient
+	require.NoError(t, model.DB.Where("id IN ?", recipientIDs).Order("id ASC").Find(&stored).Error)
+	require.Len(t, stored, 2)
+	require.NotNil(t, stored[0].StripePromotionCodeId)
+	require.NotNil(t, stored[1].StripePromotionCodeId)
+	require.NotEqual(t, *stored[0].StripePromotionCodeId, *stored[1].StripePromotionCodeId)
+	require.Equal(t, int32(2), createCalls.Load())
+}
+
 func TestRecallWorkerPersistsPromotionAfterLeaseLossWithoutAdvancing(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)

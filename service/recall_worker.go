@@ -101,7 +101,7 @@ func (w *RecallRecipientWorker) RunBatch(ctx context.Context, limit int) (int, e
 			}
 			now := w.now().Unix()
 			leaseUntil := now + recallRecipientLeaseSeconds
-			won, leaseErr := model.LeaseRecallRecipient(item.Id, w.owner, now, leaseUntil)
+			won, leaseErr := model.TryLeaseRecallRecipientWithinCampaignCapacity(ctx, item.Id, w.owner, now, leaseUntil)
 			if leaseErr != nil {
 				recordError(leaseErr)
 				return

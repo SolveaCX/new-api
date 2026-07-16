@@ -150,6 +150,59 @@ func LeaseRecallRecipient(id int64, owner string, now int64, leaseUntil int64) (
 	return result.RowsAffected == 1, nil
 }
 
+func TryLeaseRecallRecipientWithinCampaignCapacity(ctx context.Context, recipientID int64, owner string, now int64, leaseUntil int64) (bool, error) {
+	// Read the immutable routing key first so SQLite can acquire its write lock as the transaction's first statement.
+	var recipient RecallRecipient
+	if err := DB.WithContext(ctx).Select("campaign_id").First(&recipient, recipientID).Error; err != nil {
+		return false, err
+	}
+
+	leased := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// This portable no-op write serializes admissions for one campaign on SQLite, MySQL, and PostgreSQL.
+		if err := tx.Model(&RecallCampaign{}).
+			Where("id = ?", recipient.CampaignId).
+			UpdateColumn("id", gorm.Expr("id")).Error; err != nil {
+			return err
+		}
+
+		var campaign RecallCampaign
+		if err := tx.Select("worker_concurrency").First(&campaign, recipient.CampaignId).Error; err != nil {
+			return err
+		}
+		capacity := campaign.WorkerConcurrency
+		if capacity < 1 {
+			capacity = 1
+		}
+		var activeLeases int64
+		if err := tx.Model(&RecallRecipient{}).
+			Where("campaign_id = ? AND lease_owner <> '' AND lease_expires_at > ?", recipient.CampaignId, now).
+			Count(&activeLeases).Error; err != nil {
+			return err
+		}
+		if activeLeases >= int64(capacity) {
+			return nil
+		}
+
+		result := tx.Model(&RecallRecipient{}).
+			Where("id = ? AND campaign_id = ? AND state IN ? AND (lease_expires_at = 0 OR lease_expires_at < ?)", recipientID, recipient.CampaignId, []string{
+				RecallRecipientQueued,
+				RecallRecipientCustomerReady,
+				RecallRecipientCodeReady,
+			}, now).
+			Updates(map[string]any{
+				"lease_owner":      owner,
+				"lease_expires_at": leaseUntil,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		leased = result.RowsAffected == 1
+		return nil
+	})
+	return leased, err
+}
+
 func ReleaseRecallRecipientLease(id int64, owner string, expectedLeaseUntil int64) error {
 	return DB.Model(&RecallRecipient{}).
 		Where("id = ? AND lease_owner = ? AND lease_expires_at = ?", id, owner, expectedLeaseUntil).
