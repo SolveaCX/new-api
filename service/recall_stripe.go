@@ -27,6 +27,7 @@ type RecallStripeClient interface {
 	GetCoupon(context.Context, string) (*stripe.Coupon, error)
 	CreateCustomer(context.Context, *stripe.CustomerParams) (*stripe.Customer, error)
 	GetCustomer(context.Context, string) (*stripe.Customer, error)
+	UpdateCustomer(context.Context, string, *stripe.CustomerParams) (*stripe.Customer, error)
 	CreatePromotionCode(context.Context, *stripe.PromotionCodeParams) (*stripe.PromotionCode, error)
 	GetPromotionCode(context.Context, string) (*stripe.PromotionCode, error)
 	GetPrice(context.Context, string) (*stripe.Price, error)
@@ -75,6 +76,18 @@ func (c *StripeRecallClient) GetCustomer(ctx context.Context, id string) (*strip
 	params.Context = ctx
 	client := customer.Client{B: stripe.GetBackend(stripe.APIBackend), Key: setting.StripeApiSecret}
 	return client.Get(id, params)
+}
+
+func (c *StripeRecallClient) UpdateCustomer(ctx context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+	if params == nil {
+		return nil, errors.New("Stripe customer params are nil")
+	}
+	params.Context = ctx
+	if params.IdempotencyKey != nil {
+		params.SetIdempotencyKey(*params.IdempotencyKey)
+	}
+	client := customer.Client{B: stripe.GetBackend(stripe.APIBackend), Key: setting.StripeApiSecret}
+	return client.Update(id, params)
 }
 
 func (c *StripeRecallClient) CreatePromotionCode(ctx context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
@@ -210,8 +223,9 @@ func recallStripeCreateWithRetry[T any](op string, create func() (*T, error)) (*
 }
 
 type RecallStripeService struct {
-	client        RecallStripeClient
-	codeGenerator func(int) (string, error)
+	client            RecallStripeClient
+	codeGenerator     func(int) (string, error)
+	externalCallGuard func(context.Context) error
 }
 
 func NewRecallStripeService(client RecallStripeClient) *RecallStripeService {
@@ -219,6 +233,19 @@ func NewRecallStripeService(client RecallStripeClient) *RecallStripeService {
 		client = NewStripeRecallClient()
 	}
 	return &RecallStripeService{client: client, codeGenerator: common.GenerateRandomCharsKey}
+}
+
+func (s *RecallStripeService) withExternalCallGuard(guard func(context.Context) error) *RecallStripeService {
+	guarded := *s
+	guarded.externalCallGuard = guard
+	return &guarded
+}
+
+func (s *RecallStripeService) beforeExternalCall(ctx context.Context) error {
+	if s.externalCallGuard == nil {
+		return nil
+	}
+	return s.externalCallGuard(ctx)
 }
 
 func (s *RecallStripeService) GenerateRecipientPromotionCode() (string, error) {
@@ -580,9 +607,15 @@ func (s *RecallStripeService) EnsureCustomer(ctx context.Context, user model.Use
 	}
 	existingID := strings.TrimSpace(user.StripeCustomer)
 	if existingID != "" {
+		if err := s.beforeExternalCall(ctx); err != nil {
+			return nil, err
+		}
 		existing, err := s.client.GetCustomer(ctx, existingID)
-		if err == nil && existing != nil && !existing.Deleted && strings.TrimSpace(existing.ID) != "" {
-			return existing, nil
+		if err == nil && existing != nil && !existing.Deleted {
+			if strings.TrimSpace(existing.ID) != existingID {
+				return nil, recallStripePermanent("get Stripe Customer", "Stripe Customer response does not match requested Customer")
+			}
+			return s.syncCustomerEmail(ctx, user, existing)
 		}
 		if err != nil && !isRecallStripeMissing(err) {
 			return nil, wrapRecallStripeError("get Stripe Customer", err)
@@ -593,6 +626,9 @@ func (s *RecallStripeService) EnsureCustomer(ctx context.Context, user model.Use
 	params.Context = ctx
 	params.SetIdempotencyKey("recall_customer:" + strconv.Itoa(user.Id))
 	created, err := recallStripeCreateWithRetry("create Stripe Customer", func() (*stripe.Customer, error) {
+		if guardErr := s.beforeExternalCall(ctx); guardErr != nil {
+			return nil, guardErr
+		}
 		return s.client.CreateCustomer(ctx, params)
 	})
 	if err != nil {
@@ -601,7 +637,33 @@ func (s *RecallStripeService) EnsureCustomer(ctx context.Context, user model.Use
 	if created == nil || created.Deleted || strings.TrimSpace(created.ID) == "" {
 		return nil, recallStripePermanent("create Stripe Customer", "Stripe returned an unavailable Customer")
 	}
-	return created, nil
+	return s.syncCustomerEmail(ctx, user, created)
+}
+
+func (s *RecallStripeService) syncCustomerEmail(ctx context.Context, user model.User, customer *stripe.Customer) (*stripe.Customer, error) {
+	email := strings.TrimSpace(user.Email)
+	if email == "" {
+		return customer, nil
+	}
+	normalizedEmail := strings.ToLower(email)
+	emailHash := sha256.Sum256([]byte(normalizedEmail))
+	params := &stripe.CustomerParams{Email: stripe.String(email)}
+	params.Context = ctx
+	params.SetIdempotencyKey(fmt.Sprintf("recall_customer_email:v1:%d:%x", user.Id, emailHash))
+	customerID := strings.TrimSpace(customer.ID)
+	updated, err := recallStripeCreateWithRetry("update Stripe Customer email", func() (*stripe.Customer, error) {
+		if guardErr := s.beforeExternalCall(ctx); guardErr != nil {
+			return nil, guardErr
+		}
+		return s.client.UpdateCustomer(ctx, customerID, params)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil || updated.Deleted || strings.TrimSpace(updated.ID) != customerID {
+		return nil, recallStripePermanent("update Stripe Customer email", "Stripe returned an unavailable Customer")
+	}
+	return updated, nil
 }
 
 func isRecallStripeMissing(err error) bool {
@@ -648,6 +710,9 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 	}
 
 	if recipient.StripePromotionCodeId != nil && strings.TrimSpace(*recipient.StripePromotionCodeId) != "" {
+		if err := s.beforeExternalCall(ctx); err != nil {
+			return nil, err
+		}
 		existing, getErr := s.client.GetPromotionCode(ctx, strings.TrimSpace(*recipient.StripePromotionCodeId))
 		if getErr != nil {
 			return nil, wrapRecallStripeError("get Stripe Promotion Code", getErr)
@@ -665,6 +730,9 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 		}
 		params := buildRecallPromotionParams(ctx, campaign.Id, recipient.Id, user.Id, attempt, coupon.ID, customerID, code, expiresAt, normalizedDiscount)
 		created, createErr := recallStripeCreateWithRetry("create Stripe Promotion Code", func() (*stripe.PromotionCode, error) {
+			if guardErr := s.beforeExternalCall(ctx); guardErr != nil {
+				return nil, guardErr
+			}
 			return s.client.CreatePromotionCode(ctx, params)
 		})
 		if createErr == nil {
