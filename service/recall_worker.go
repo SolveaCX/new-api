@@ -150,7 +150,7 @@ func (w *RecallRecipientWorker) ProcessLeased(ctx context.Context, recipientID i
 		}
 
 		now := w.now().Unix()
-		won, err := model.LeaseRecallRecipient(recipient.Id, w.owner, now, now+recallRecipientLeaseSeconds)
+		won, err := model.TryLeaseRecallRecipientWithinCampaignCapacity(ctx, recipient.Id, w.owner, now, now+recallRecipientLeaseSeconds)
 		if err != nil {
 			return err
 		}
