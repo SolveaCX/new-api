@@ -144,6 +144,24 @@ func TestRecallEmailAcceptedTimestampUsesSMTPAcceptanceTime(t *testing.T) {
 	require.Equal(t, recallEmailTestNow+90+600, loadRecallEmailMessage(t, fixture.recipient.Id, 2).ScheduledAt)
 }
 
+func TestRecallEmailRechecksLeaseExpiryImmediatelyBeforeSending(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	nowCalls := 0
+	fixture.worker.now = func() time.Time {
+		nowCalls++
+		if nowCalls == 1 {
+			return time.Unix(recallEmailTestNow, 0).UTC()
+		}
+		return time.Unix(recallEmailTestNow+recallEmailLeaseSeconds, 0).UTC()
+	}
+
+	err := fixture.worker.ProcessLeased(context.Background(), fixture.message.Id)
+
+	require.ErrorIs(t, err, ErrRecallEmailLeaseLost)
+	require.Empty(t, *fixture.sent)
+	require.Equal(t, model.RecallMessageLeased, loadRecallEmailMessageByID(t, fixture.message.Id).State)
+}
+
 func TestRecallEmailLanguageUsesExactSnapshotThenFallsBackToEnglish(t *testing.T) {
 	tests := []struct {
 		language string
@@ -461,6 +479,84 @@ func TestRecallEmailRunBatchLeasesOnlyDueMessages(t *testing.T) {
 	require.Equal(t, 1, processed)
 	require.Equal(t, model.RecallMessageAccepted, loadRecallEmailMessageByID(t, fixture.message.Id).State)
 	require.Equal(t, model.RecallMessageScheduled, loadRecallEmailMessageByID(t, future.Id).State)
+}
+
+func TestRecallEmailRunBatchRefreshesStopInputsBeforeEachSend(t *testing.T) {
+	tests := []struct {
+		name       string
+		stopReason string
+		mutate     func(t *testing.T, fixture recallEmailFixture, secondUser model.User, secondRecipient model.RecallRecipient)
+	}{
+		{
+			name:       "campaign paused",
+			stopReason: "campaign_paused",
+			mutate: func(t *testing.T, fixture recallEmailFixture, _ model.User, _ model.RecallRecipient) {
+				require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", fixture.campaign.Id).Update("status", model.RecallCampaignPaused).Error)
+			},
+		},
+		{
+			name:       "user disabled",
+			stopReason: "user_disabled",
+			mutate: func(t *testing.T, _ recallEmailFixture, secondUser model.User, _ model.RecallRecipient) {
+				require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", secondUser.Id).Update("status", common.UserStatusDisabled).Error)
+			},
+		},
+		{
+			name:       "api activity after enrollment",
+			stopReason: "api_activity_after_enrollment",
+			mutate: func(t *testing.T, _ recallEmailFixture, secondUser model.User, secondRecipient model.RecallRecipient) {
+				require.NoError(t, model.LOG_DB.Create(&model.Log{UserId: secondUser.Id, Type: model.LogTypeConsume, CreatedAt: secondRecipient.CreatedAt + 1}).Error)
+			},
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newRecallEmailFixture(t, 1, nil)
+			require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Updates(map[string]any{
+				"state": model.RecallMessageScheduled, "lease_owner": "", "lease_expires_at": int64(0),
+			}).Error)
+
+			secondUser := fixture.user
+			secondUser.Id = 0
+			secondUser.Username = "recall-batch-second"
+			secondUser.Email = "batch-second@example.com"
+			secondUser.AffCode = "recall-batch-second"
+			require.NoError(t, model.DB.Create(&secondUser).Error)
+			secondRecipient := fixture.recipient
+			secondRecipient.Id = 0
+			secondRecipient.UserId = secondUser.Id
+			secondRecipient.EmailSnapshot = secondUser.Email
+			secondPromotionID := "promo_batch_second"
+			secondRecipient.StripePromotionCodeId = &secondPromotionID
+			require.NoError(t, model.DB.Create(&secondRecipient).Error)
+			secondMessage := fixture.message
+			secondMessage.Id = 0
+			secondMessage.RecipientId = secondRecipient.Id
+			secondMessage.State = model.RecallMessageScheduled
+			secondMessage.LeaseOwner = ""
+			secondMessage.LeaseExpiresAt = 0
+			require.NoError(t, model.DB.Create(&secondMessage).Error)
+
+			sent := 0
+			fixture.worker.sender = func(subject, receiver, content, messageID string) error {
+				sent++
+				if sent == 1 {
+					testCase.mutate(t, fixture, secondUser, secondRecipient)
+				}
+				return nil
+			}
+
+			processed, err := fixture.worker.RunBatch(context.Background(), 10)
+
+			require.NoError(t, err)
+			require.Equal(t, 2, processed)
+			require.Equal(t, 1, sent)
+			require.Equal(t, model.RecallMessageAccepted, loadRecallEmailMessageByID(t, fixture.message.Id).State)
+			secondStored := loadRecallEmailMessageByID(t, secondMessage.Id)
+			require.Equal(t, model.RecallMessageCancelled, secondStored.State)
+			require.Equal(t, testCase.stopReason, secondStored.LastErrorCode)
+		})
+	}
 }
 
 func newRecallEmailFixture(t *testing.T, stageCount int, sender RecallEmailSender) recallEmailFixture {
