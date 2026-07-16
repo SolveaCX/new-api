@@ -109,6 +109,7 @@ describe('registration email verification status refresh', () => {
     let removedFocusListener: (() => void) | undefined
     let removedVisibilityListener: (() => void) | undefined
     let unsubscribed = false
+    let focusRegistrationWindowCalls = 0
 
     const stop = startEmailVerificationStatusSync({
       cooldownMs: 1_000,
@@ -136,12 +137,16 @@ describe('registration email verification status refresh', () => {
         removedVisibilityListener = listener
       },
       isVisible: () => visible,
+      focusRegistrationWindow: () => {
+        focusRegistrationWindowCalls += 1
+      },
     })
 
     expect(calls).toBe(1)
     await Promise.resolve()
 
     completionListener?.()
+    expect(focusRegistrationWindowCalls).toBe(1)
     expect(calls).toBe(2)
 
     focusListener?.()
@@ -163,5 +168,34 @@ describe('registration email verification status refresh', () => {
     expect(unsubscribed).toBe(true)
     expect(removedFocusListener).toBe(focusListener)
     expect(removedVisibilityListener).toBe(visibilityListener)
+  })
+
+  test('still refreshes when the browser rejects the focus request', () => {
+    let calls = 0
+    let completionListener: (() => void) | undefined
+
+    startEmailVerificationStatusSync({
+      cooldownMs: 1_000,
+      now: () => 1_000,
+      refresh: async () => {
+        calls += 1
+      },
+      subscribe: (listener) => {
+        completionListener = listener
+        return () => undefined
+      },
+      addFocusListener: () => undefined,
+      removeFocusListener: () => undefined,
+      addVisibilityListener: () => undefined,
+      removeVisibilityListener: () => undefined,
+      isVisible: () => true,
+      focusRegistrationWindow: () => {
+        throw new Error('focus denied')
+      },
+    })
+
+    expect(calls).toBe(1)
+    expect(() => completionListener?.()).not.toThrow()
+    expect(calls).toBe(2)
   })
 })

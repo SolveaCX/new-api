@@ -225,6 +225,7 @@ export function SignUpForm({
         document.removeEventListener('visibilitychange', listener)
       },
       isVisible: () => document.visibilityState === 'visible',
+      focusRegistrationWindow: () => window.focus(),
     })
 
     return () => {
