@@ -8,6 +8,9 @@
 
   var DICTS = {
 "zh": {
+"md.early": "抢先体验",
+"md.soon": "即将上线",
+"md.usage": "按量计费",
 "ft.about": "关于我们",
 "sup.dc": "Discord 社区",
 "sup.dc.i": "开发者互相解答——团队全员每天在频道里",
@@ -29,7 +32,7 @@
 "ct.ph5": "你们在跑什么?(agent、RAG、编程工具…)",
 "ct.mail": "邮件 support@flatkey.ai",
 "ct.sent": "✓ 已发送,1 个工作日内回复。",
-"ft.slim": "© 2026 flatkey.ai · <u>条款</u> · <u>隐私</u> · <u>SLA</u> · <u>退款</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">条款</a> · <a href=\"privacy.html\">隐私</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">退款</a>",
 "mo.h2": "160+ 官方模型,价格全公开。",
 "mo.hlb": "<b>模型真实性,已审计。</b>",
 "mo.hlp": "每个模型逐小时对照官方 API 指纹探测,日志公开——那些悄悄换模型的『便宜网关』,正是便宜网关不可信的原因。",
@@ -317,6 +320,9 @@
 "aud.more": "+ 还有 12 个语音模型 →"
 },
 "es": {
+"md.early": "Acceso anticipado",
+"md.soon": "Próximamente",
+"md.usage": "Según uso",
 "ft.about": "Sobre nosotros",
 "sup.dc": "Comunidad de Discord",
 "sup.dc.i": "Builders respondiendo a builders — el equipo está en los canales a diario",
@@ -338,7 +344,7 @@
 "ct.ph5": "¿Qué están ejecutando? (agents, RAG, coding tools…)",
 "ct.mail": "Email support@flatkey.ai",
 "ct.sent": "✓ Enviado. Respondemos en 1 día hábil.",
-"ft.slim": "© 2026 flatkey.ai · <u>Términos</u> · <u>Privacidad</u> · <u>SLA</u> · <u>Reembolsos</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">Términos</a> · <a href=\"privacy.html\">Privacidad</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">Reembolsos</a>",
 "nav.status": "Estado",
 "mo.h2": "160+ modelos oficiales. Precios a la vista.",
 "mo.hlb": "<b>Autenticidad de modelos, auditada.</b>",
@@ -626,6 +632,9 @@
 "aud.more": "+ 12 modelos de audio más →"
 },
 "fr": {
+"md.early": "Accès anticipé",
+"md.soon": "Bientôt disponible",
+"md.usage": "À l'usage",
 "ft.about": "À propos",
 "sup.dc": "Communauté Discord",
 "sup.dc.i": "Des builders qui répondent aux builders — l'équipe est dans les canaux chaque jour",
@@ -647,7 +656,7 @@
 "ct.ph5": "Que faites-vous tourner ? (agents, RAG, coding tools…)",
 "ct.mail": "Email support@flatkey.ai",
 "ct.sent": "✓ Envoyé. Réponse sous 1 jour ouvré.",
-"ft.slim": "© 2026 flatkey.ai · <u>Conditions</u> · <u>Confidentialité</u> · <u>SLA</u> · <u>Remboursements</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">Conditions</a> · <a href=\"privacy.html\">Confidentialité</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">Remboursements</a>",
 "nav.status": "Statut",
 "mo.h2": "160+ modèles officiels. Prix affichés.",
 "mo.hlb": "<b>Authenticité des modèles, auditée.</b>",
@@ -935,6 +944,9 @@
 "aud.more": "+ 12 autres modèles audio →"
 },
 "pt": {
+"md.early": "Acesso antecipado",
+"md.soon": "Em breve",
+"md.usage": "Por uso",
 "ft.about": "Sobre nós",
 "sup.dc": "Comunidade no Discord",
 "sup.dc.i": "Builders respondendo builders — o time está nos canais todos os dias",
@@ -956,7 +968,7 @@
 "ct.ph5": "O que vocês rodam? (agents, RAG, coding tools…)",
 "ct.mail": "Email support@flatkey.ai",
 "ct.sent": "✓ Enviado. Respondemos em 1 dia útil.",
-"ft.slim": "© 2026 flatkey.ai · <u>Termos</u> · <u>Privacidade</u> · <u>SLA</u> · <u>Reembolsos</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">Termos</a> · <a href=\"privacy.html\">Privacidade</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">Reembolsos</a>",
 "nav.status": "Status",
 "mo.h2": "160+ modelos oficiais. Preços às claras.",
 "mo.hlb": "<b>Autenticidade de modelos, auditada.</b>",
@@ -1244,6 +1256,9 @@
 "aud.more": "+ mais 12 modelos de áudio →"
 },
 "ru": {
+"md.early": "Ранний доступ",
+"md.soon": "Скоро",
+"md.usage": "По использованию",
 "ft.about": "О нас",
 "sup.dc": "Discord-сообщество",
 "sup.dc.i": "Разработчики помогают разработчикам — команда в каналах каждый день",
@@ -1265,7 +1280,7 @@
 "ct.ph5": "Что вы запускаете? (agents, RAG, coding tools…)",
 "ct.mail": "Email support@flatkey.ai",
 "ct.sent": "✓ Отправлено. Ответим за 1 рабочий день.",
-"ft.slim": "© 2026 flatkey.ai · <u>Условия</u> · <u>Конфиденциальность</u> · <u>SLA</u> · <u>Возвраты</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">Условия</a> · <a href=\"privacy.html\">Конфиденциальность</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">Возвраты</a>",
 "nav.status": "Статус",
 "mo.h2": "160+ официальных моделей. Цены открыты.",
 "mo.hlb": "<b>Подлинность моделей — под аудитом.</b>",
@@ -1553,6 +1568,9 @@
 "aud.more": "+ ещё 12 аудиомоделей →"
 },
 "ja": {
+"md.early": "先行アクセス",
+"md.soon": "近日公開",
+"md.usage": "従量課金",
 "ft.about": "会社概要",
 "sup.dc": "Discord コミュニティ",
 "sup.dc.i": "ビルダー同士の助け合い——チームも毎日チャンネルにいます",
@@ -1574,7 +1592,7 @@
 "ct.ph5": "何を動かしていますか?(agent、RAG、コーディングツール…)",
 "ct.mail": "メール support@flatkey.ai",
 "ct.sent": "✓ 送信しました。1 営業日以内に返信します。",
-"ft.slim": "© 2026 flatkey.ai · <u>規約</u> · <u>プライバシー</u> · <u>SLA</u> · <u>返金</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">利用規約</a> · <a href=\"privacy.html\">プライバシー</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">返金</a>",
 "nav.status": "ステータス",
 "mo.h2": "160+ の公式モデル。価格はすべて公開。",
 "mo.hlb": "<b>モデルの真正性、監査済み。</b>",
@@ -1862,6 +1880,9 @@
 "aud.more": "+ さらに 12 の音声モデル →"
 },
 "vi": {
+"md.early": "Truy cập sớm",
+"md.soon": "Sắp ra mắt",
+"md.usage": "Theo mức dùng",
 "ft.about": "Về chúng tôi",
 "sup.dc": "Cộng đồng Discord",
 "sup.dc.i": "Builder giúp builder — đội ngũ có mặt trong kênh mỗi ngày",
@@ -1883,7 +1904,7 @@
 "ct.ph5": "Bạn đang chạy gì? (agents, RAG, coding tools…)",
 "ct.mail": "Email support@flatkey.ai",
 "ct.sent": "✓ Đã gửi. Phản hồi trong 1 ngày làm việc.",
-"ft.slim": "© 2026 flatkey.ai · <u>Điều khoản</u> · <u>Bảo mật</u> · <u>SLA</u> · <u>Hoàn tiền</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">Điều khoản</a> · <a href=\"privacy.html\">Quyền riêng tư</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">Hoàn tiền</a>",
 "nav.status": "Trạng thái",
 "mo.h2": "160+ mô hình chính thức. Giá công khai.",
 "mo.hlb": "<b>Tính xác thực mô hình, đã kiểm toán.</b>",
@@ -2171,6 +2192,9 @@
 "aud.more": "+ 12 mô hình âm thanh nữa →"
 },
 "de": {
+"md.early": "Früher Zugriff",
+"md.soon": "Demnächst",
+"md.usage": "Nutzungsbasiert",
 "ft.about": "Über uns",
 "sup.dc": "Discord-Community",
 "sup.dc.i": "Builder helfen Buildern — das Team ist täglich in den Channels",
@@ -2192,7 +2216,7 @@
 "ct.ph5": "Was betreiben Sie? (Agents, RAG, Coding-Tools…)",
 "ct.mail": "E-Mail support@flatkey.ai",
 "ct.sent": "✓ Gesendet. Antwort binnen 1 Werktag.",
-"ft.slim": "© 2026 flatkey.ai · <u>Bedingungen</u> · <u>Datenschutz</u> · <u>SLA</u> · <u>Rückerstattung</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">AGB</a> · <a href=\"privacy.html\">Datenschutz</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">Erstattung</a>",
 "nav.status": "Status",
 "mo.h2": "160+ offizielle Modelle. Preise offen.",
 "mo.hlb": "<b>Modell-Authentizität, auditiert.</b>",
@@ -2480,6 +2504,9 @@
 "aud.more": "+ 12 weitere Audiomodelle →"
 },
 "id": {
+"md.early": "Akses awal",
+"md.soon": "Segera hadir",
+"md.usage": "Berbasis pemakaian",
 "ft.about": "Tentang kami",
 "sup.dc": "Komunitas Discord",
 "sup.dc.i": "Builder menjawab builder — tim ada di channel setiap hari",
@@ -2501,7 +2528,7 @@
 "ct.ph5": "Apa yang Anda jalankan? (agents, RAG, coding tools…)",
 "ct.mail": "Email support@flatkey.ai",
 "ct.sent": "✓ Terkirim. Dibalas dalam 1 hari kerja.",
-"ft.slim": "© 2026 flatkey.ai · <u>Ketentuan</u> · <u>Privasi</u> · <u>SLA</u> · <u>Pengembalian</u>",
+"ft.slim": "© 2026 flatkey.ai · <a href=\"terms.html\">Ketentuan</a> · <a href=\"privacy.html\">Privasi</a> · <a href=\"legal-sla.html\">SLA</a> · <a href=\"refund-policy.html\">Pengembalian</a>",
 "nav.status": "Status",
 "mo.h2": "160+ model resmi. Harga terbuka.",
 "mo.hlb": "<b>Keaslian model, teraudit.</b>",
@@ -2857,6 +2884,13 @@
     });
     sel.addEventListener("change", function () {
       var p = location.pathname;
+      var LEGAL = { "terms.html": "terms", "privacy.html": "privacy", "refund-policy.html": "refund-policy", "legal-sla.html": "sla" };
+      var file = p.split("/").pop();
+      if (LEGAL[file] && sel.value !== "en") {
+        try { localStorage.setItem("fk-lang", sel.value); } catch (e) {}
+        location.href = "/" + sel.value + "/" + LEGAL[file];
+        return;
+      }
       if (p === "/" || p === "/index.html" || /^\/(zh|es|pt|fr|id|de|vi|ru|ja)\/?$/.test(p)) {
         try { localStorage.setItem("fk-lang", sel.value); } catch (e) {}
         location.href = sel.value === "en" ? "/" : "/" + sel.value;
