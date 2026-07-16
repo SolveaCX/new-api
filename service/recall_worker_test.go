@@ -116,7 +116,7 @@ func TestRecallWorkerReusesCustomerCreatesBoundPromotionAndSchedulesStageOne(t *
 	require.NoError(t, err)
 	require.Equal(t, 1, processed)
 	require.Zero(t, createCustomerCalls)
-	require.Equal(t, []string{"Current@Example.com"}, updateEmails)
+	require.Equal(t, []string{"current@example.com"}, updateEmails)
 	require.NotNil(t, promotionParams)
 	require.Equal(t, "cus_existing", *promotionParams.Customer)
 	require.Equal(t, "coupon_worker", *promotionParams.Coupon)
@@ -274,6 +274,92 @@ func TestRecallWorkerTwoWorkersCreateOnePromotion(t *testing.T) {
 	require.Equal(t, int32(1), createCalls.Load())
 }
 
+func TestRecallWorkerRunBatchHonorsPerCampaignConcurrency(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaignA := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	campaignB := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaignA.Id).Update("worker_concurrency", 2).Error)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaignB.Id).Update("worker_concurrency", 1).Error)
+
+	codes := []string{"FKAAAA234", "FKBBBB234", "FKCCCC234", "FKDDDD234", "FKEEEE234", "FKFFFF234"}
+	for i := range codes {
+		campaignID := campaignA.Id
+		if i >= 4 {
+			campaignID = campaignB.Id
+		}
+		user := model.User{
+			Username:       fmt.Sprintf("recall-worker-concurrency-%d", i),
+			Password:       "password",
+			Email:          fmt.Sprintf("concurrency-%d@example.com", i),
+			AffCode:        fmt.Sprintf("worker-concurrency-%d", i),
+			StripeCustomer: fmt.Sprintf("cus_concurrency_%d", i),
+		}
+		require.NoError(t, model.DB.Create(&user).Error)
+		recipient := createRecallWorkerRecipient(t, campaignID, user.Id, model.RecallRecipientCustomerReady)
+		require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", recipient.Id).Updates(map[string]any{
+			"stripe_customer_id": user.StripeCustomer,
+			"promotion_code":     codes[i],
+		}).Error)
+	}
+
+	started := make(chan int64, len(codes))
+	release := make(chan struct{})
+	active := map[int64]int{}
+	peak := map[int64]int{}
+	var concurrencyMu sync.Mutex
+	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+		var campaignID int64
+		_, err := fmt.Sscan(params.Metadata["recall_campaign_id"], &campaignID)
+		require.NoError(t, err)
+		concurrencyMu.Lock()
+		active[campaignID]++
+		if active[campaignID] > peak[campaignID] {
+			peak[campaignID] = active[campaignID]
+		}
+		concurrencyMu.Unlock()
+		started <- campaignID
+		<-release
+		concurrencyMu.Lock()
+		active[campaignID]--
+		concurrencyMu.Unlock()
+		return recallWorkerPromotionFromParams("promo_"+params.Metadata["recall_recipient_id"], params), nil
+	}}
+	worker := newRecallWorkerForTest(client, "node-a")
+	type runResult struct {
+		processed int
+		err       error
+	}
+	done := make(chan runResult, 1)
+	go func() {
+		processed, err := worker.RunBatch(context.Background(), len(codes))
+		done <- runResult{processed: processed, err: err}
+	}()
+
+	startedCount := 0
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for startedCount < 3 {
+		select {
+		case <-started:
+			startedCount++
+		case <-timer.C:
+			close(release)
+			result := <-done
+			require.NoError(t, result.err)
+			t.Fatalf("expected three concurrent Stripe calls across campaign caps, got %d", startedCount)
+		}
+	}
+	close(release)
+	result := <-done
+	require.NoError(t, result.err)
+	require.Equal(t, len(codes), result.processed)
+	concurrencyMu.Lock()
+	defer concurrencyMu.Unlock()
+	require.Equal(t, 2, peak[campaignA.Id])
+	require.Equal(t, 1, peak[campaignB.Id])
+}
+
 func TestRecallWorkerPersistsPromotionAfterLeaseLossWithoutAdvancing(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)
@@ -398,6 +484,42 @@ func TestRecallWorkerPermanentCustomerErrorFailsOnlyOneRecipient(t *testing.T) {
 	require.Equal(t, model.RecallRecipientContacting, goodStored.State)
 }
 
+func TestRecallWorkerPermanentPromotionErrorFailsOnlyOneRecipient(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	badUser := model.User{Username: "recall-worker-promo-bad", Password: "password", Email: "promo-bad@example.com", StripeCustomer: "cus_promo_bad", AffCode: "worker-promo-bad"}
+	goodUser := model.User{Username: "recall-worker-promo-good", Password: "password", Email: "promo-good@example.com", StripeCustomer: "cus_promo_good", AffCode: "worker-promo-good"}
+	require.NoError(t, model.DB.Create(&badUser).Error)
+	require.NoError(t, model.DB.Create(&goodUser).Error)
+	badRecipient := createRecallWorkerRecipient(t, campaign.Id, badUser.Id, model.RecallRecipientCustomerReady)
+	goodRecipient := createRecallWorkerRecipient(t, campaign.Id, goodUser.Id, model.RecallRecipientCustomerReady)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", badRecipient.Id).Updates(map[string]any{
+		"stripe_customer_id": badUser.StripeCustomer,
+		"promotion_code":     "FKBADP234",
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", goodRecipient.Id).Updates(map[string]any{
+		"stripe_customer_id": goodUser.StripeCustomer,
+		"promotion_code":     "FKGXXD234",
+	}).Error)
+	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+		if *params.Customer == badUser.StripeCustomer {
+			return nil, &stripe.Error{Type: stripe.ErrorTypeInvalidRequest, Param: "customer", Msg: "invalid customer"}
+		}
+		return recallWorkerPromotionFromParams("promo_good_sibling", params), nil
+	}}
+	worker := newRecallWorkerForTest(client, "node-a")
+
+	processed, err := worker.RunBatch(context.Background(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 2, processed)
+	var badStored, goodStored model.RecallRecipient
+	require.NoError(t, model.DB.First(&badStored, badRecipient.Id).Error)
+	require.NoError(t, model.DB.First(&goodStored, goodRecipient.Id).Error)
+	require.Equal(t, model.RecallRecipientFailed, badStored.State)
+	require.Equal(t, model.RecallRecipientContacting, goodStored.State)
+}
+
 func TestRecallWorkerPromotionCollisionStopsAfterFiveAndFailsRecipient(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)
@@ -446,6 +568,33 @@ func TestRecallWorkerPauseBetweenStripeCallsPreventsNextExternalCall(t *testing.
 	_, err := worker.RunBatch(context.Background(), 10)
 	require.NoError(t, err)
 	require.Zero(t, createCalls)
+	var stored model.RecallRecipient
+	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientQueued, stored.State)
+	require.Empty(t, stored.LeaseOwner)
+}
+
+func TestRecallWorkerCancelAfterLeasePreventsExternalCall(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	user := model.User{Username: "recall-worker-cancel", Password: "password", Email: "cancel@example.com", StripeCustomer: "cus_cancel"}
+	require.NoError(t, model.DB.Create(&user).Error)
+	recipient := createRecallWorkerRecipient(t, campaign.Id, user.Id, model.RecallRecipientQueued)
+	won, err := model.LeaseRecallRecipient(recipient.Id, "node-a", recallWorkerTestNow, recallWorkerTestNow+60)
+	require.NoError(t, err)
+	require.True(t, won)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaign.Id).Update("status", model.RecallCampaignCancelled).Error)
+
+	externalCalls := 0
+	client := &recallStripeFakeClient{getCustomerFn: func(context.Context, string) (*stripe.Customer, error) {
+		externalCalls++
+		return nil, &stripe.Error{Type: stripe.ErrorTypeInvalidRequest, Msg: "must not be called"}
+	}}
+	worker := newRecallWorkerForTest(client, "node-a")
+
+	require.NoError(t, worker.ProcessLeased(context.Background(), recipient.Id))
+	require.Zero(t, externalCalls)
 	var stored model.RecallRecipient
 	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
 	require.Equal(t, model.RecallRecipientQueued, stored.State)

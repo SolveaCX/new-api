@@ -611,11 +611,13 @@ func (s *RecallStripeService) EnsureCustomer(ctx context.Context, user model.Use
 			return nil, err
 		}
 		existing, err := s.client.GetCustomer(ctx, existingID)
-		if err == nil && existing != nil && !existing.Deleted {
+		if err == nil && existing != nil {
 			if strings.TrimSpace(existing.ID) != existingID {
 				return nil, recallStripePermanent("get Stripe Customer", "Stripe Customer response does not match requested Customer")
 			}
-			return s.syncCustomerEmail(ctx, user, existing)
+			if !existing.Deleted {
+				return s.syncCustomerEmail(ctx, user, existing)
+			}
 		}
 		if err != nil && !isRecallStripeMissing(err) {
 			return nil, wrapRecallStripeError("get Stripe Customer", err)
@@ -647,7 +649,7 @@ func (s *RecallStripeService) syncCustomerEmail(ctx context.Context, user model.
 	}
 	normalizedEmail := strings.ToLower(email)
 	emailHash := sha256.Sum256([]byte(normalizedEmail))
-	params := &stripe.CustomerParams{Email: stripe.String(email)}
+	params := &stripe.CustomerParams{Email: stripe.String(normalizedEmail)}
 	params.Context = ctx
 	params.SetIdempotencyKey(fmt.Sprintf("recall_customer_email:v1:%d:%x", user.Id, emailHash))
 	customerID := strings.TrimSpace(customer.ID)
