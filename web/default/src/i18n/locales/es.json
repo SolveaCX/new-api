@@ -5463,9 +5463,10 @@
     "Verifying your email": "Verificando tu correo",
     "Please wait while we confirm this verification link.": "Espera mientras confirmamos este enlace de verificación.",
     "Email verified": "Correo verificado",
-    "Your email is verified. Return to registration to continue.": "Tu correo está verificado. Vuelve al registro para continuar.",
+    "Your email is verified. Close this tab to continue registration.": "Tu correo electrónico está verificado. Cierra esta pestaña para continuar con el registro.",
     "Verification link unavailable": "Enlace de verificación no disponible",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "Este enlace no es válido o ha caducado. Usa el código del correo o solicita un mensaje nuevo.",
-    "Back to registration": "Volver al registro"
+    "Back to registration": "Volver al registro",
+    "Close verification tab": "Cerrar pestaña de verificación"
   }
 }

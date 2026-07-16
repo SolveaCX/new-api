@@ -73,9 +73,10 @@ import {
   markEmailVerified,
 } from '@/features/auth/sign-up/lib/email-verification-state'
 import {
-  createEmailVerificationStatusRefresher,
   refreshRegistrationEmailVerificationState,
+  startEmailVerificationStatusSync,
 } from '@/features/auth/sign-up/lib/email-verification-status'
+import { subscribeRegistrationEmailVerified } from '@/features/auth/sign-up/lib/registration-email-verification-channel'
 
 export function SignUpForm({
   className,
@@ -179,54 +180,56 @@ export function SignUpForm({
 
     let active = true
 
-    const statusRefresher = createEmailVerificationStatusRefresher({
-      cooldownMs: 1_000,
-      now: Date.now,
-      refresh: async () => {
-        try {
-          const response = await getRegistrationEmailVerificationStatus(
+    const refreshStatus = async () => {
+      try {
+        const response = await getRegistrationEmailVerificationStatus(
+          emailVerificationStatusTarget
+        )
+        if (
+          !active ||
+          currentEmailRef.current !== emailVerificationStatusTarget
+        ) {
+          return
+        }
+        if (!isRegistrationEmailVerified(response)) return
+
+        setEmailVerificationState((current) =>
+          canApplyEmailVerificationStatus(
+            current,
+            currentEmailRef.current,
             emailVerificationStatusTarget
           )
-          if (
-            !active ||
-            currentEmailRef.current !== emailVerificationStatusTarget
-          ) {
-            return
-          }
-          if (!isRegistrationEmailVerified(response)) return
-
-          setEmailVerificationState((current) =>
-            canApplyEmailVerificationStatus(
-              current,
-              currentEmailRef.current,
-              emailVerificationStatusTarget
-            )
-              ? markEmailVerified(current, emailVerificationStatusTarget)
-              : current
-          )
-        } catch (_error) {
-          // The server remains authoritative; a later focus event can retry.
-        }
-      },
-    })
-
-    const handleFocus = () => {
-      void statusRefresher.refresh()
-    }
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        void statusRefresher.refresh()
+            ? markEmailVerified(current, emailVerificationStatusTarget)
+            : current
+        )
+      } catch (_error) {
+        // The server remains authoritative; a later browser event can retry.
       }
     }
 
-    window.addEventListener('focus', handleFocus)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    const stopStatusSync = startEmailVerificationStatusSync({
+      cooldownMs: 1_000,
+      now: Date.now,
+      refresh: refreshStatus,
+      subscribe: subscribeRegistrationEmailVerified,
+      addFocusListener: (listener) => {
+        window.addEventListener('focus', listener)
+      },
+      removeFocusListener: (listener) => {
+        window.removeEventListener('focus', listener)
+      },
+      addVisibilityListener: (listener) => {
+        document.addEventListener('visibilitychange', listener)
+      },
+      removeVisibilityListener: (listener) => {
+        document.removeEventListener('visibilitychange', listener)
+      },
+      isVisible: () => document.visibilityState === 'visible',
+    })
 
     return () => {
       active = false
-      statusRefresher.stop()
-      window.removeEventListener('focus', handleFocus)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      stopStatusSync()
     }
   }, [emailVerificationRequired, emailVerificationStatusTarget, emailVerified])
 
