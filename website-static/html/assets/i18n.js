@@ -8,6 +8,10 @@
 
   var DICTS = {
 "zh": {
+"sup.dc": "Discord 社区",
+"sup.dc.i": "开发者互相解答——团队全员每天在频道里",
+"ct.dc": "加入 Discord 社区",
+"st.dc": "Discord",
 "ct.head": "在官方模型上扩张,<br>背后有真人兜底<span style=\"color:var(--violet-deep)\">。</span>",
 "ct.w1t": "对公付款 · 发票 48 小时",
 "ct.w1p": "对公转账、企业支付宝或银行卡。增值税专用发票每月 48 小时内自动开出。",
@@ -312,6 +316,10 @@
 "aud.more": "+ 还有 12 个语音模型 →"
 },
 "es": {
+"sup.dc": "Comunidad de Discord",
+"sup.dc.i": "Builders respondiendo a builders — el equipo está en los canales a diario",
+"ct.dc": "Únete a nuestro Discord",
+"st.dc": "Discord",
 "ct.head": "Escala en modelos oficiales,<br>con humanos de guardia<span style=\"color:var(--violet-deep)\">.</span>",
 "ct.w1t": "Pago corporativo · facturas en 48h",
 "ct.w1p": "Transferencia, Alipay corporativo o tarjeta. Factura fiscal en 48 horas, cada mes, automática.",
@@ -616,6 +624,10 @@
 "aud.more": "+ 12 modelos de audio más →"
 },
 "fr": {
+"sup.dc": "Communauté Discord",
+"sup.dc.i": "Des builders qui répondent aux builders — l'équipe est dans les canaux chaque jour",
+"ct.dc": "Rejoindre notre Discord",
+"st.dc": "Discord",
 "ct.head": "Scalez sur les modèles officiels,<br>avec des humains en ligne<span style=\"color:var(--violet-deep)\">.</span>",
 "ct.w1t": "Paiement entreprise · factures sous 48h",
 "ct.w1p": "Virement, Alipay entreprise ou carte. Facture fiscale sous 48 heures, chaque mois, automatiquement.",
@@ -920,6 +932,10 @@
 "aud.more": "+ 12 autres modèles audio →"
 },
 "pt": {
+"sup.dc": "Comunidade no Discord",
+"sup.dc.i": "Builders respondendo builders — o time está nos canais todos os dias",
+"ct.dc": "Entrar no nosso Discord",
+"st.dc": "Discord",
 "ct.head": "Escale em modelos oficiais,<br>com humanos de plantão<span style=\"color:var(--violet-deep)\">.</span>",
 "ct.w1t": "Pagamento corporativo · notas em 48h",
 "ct.w1p": "Transferência, Alipay corporativo ou cartão. Nota fiscal em 48 horas, todo mês, automática.",
@@ -1224,6 +1240,10 @@
 "aud.more": "+ mais 12 modelos de áudio →"
 },
 "ru": {
+"sup.dc": "Discord-сообщество",
+"sup.dc.i": "Разработчики помогают разработчикам — команда в каналах каждый день",
+"ct.dc": "Присоединиться к Discord",
+"st.dc": "Discord",
 "ct.head": "Масштабируйтесь на официальных моделях —<br>с людьми на связи<span style=\"color:var(--violet-deep)\">.</span>",
 "ct.w1t": "Оплата для юрлиц · счета за 48ч",
 "ct.w1p": "Банковский перевод, корпоративный Alipay или карта. Счёт-фактура за 48 часов, каждый месяц, автоматически.",
@@ -1528,6 +1548,10 @@
 "aud.more": "+ ещё 12 аудиомоделей →"
 },
 "ja": {
+"sup.dc": "Discord コミュニティ",
+"sup.dc.i": "ビルダー同士の助け合い——チームも毎日チャンネルにいます",
+"ct.dc": "Discord に参加",
+"st.dc": "Discord",
 "ct.head": "公式モデルでスケール。<br>人間のサポート付き<span style=\"color:var(--violet-deep)\">。</span>",
 "ct.w1t": "法人決済 · 請求書 48 時間",
 "ct.w1p": "銀行振込、法人 Alipay、カード対応。増値税専用発票を毎月 48 時間以内に自動発行。",
@@ -1832,6 +1856,10 @@
 "aud.more": "+ さらに 12 の音声モデル →"
 },
 "vi": {
+"sup.dc": "Cộng đồng Discord",
+"sup.dc.i": "Builder giúp builder — đội ngũ có mặt trong kênh mỗi ngày",
+"ct.dc": "Tham gia Discord",
+"st.dc": "Discord",
 "ct.head": "Mở rộng trên mô hình chính thức,<br>có con người trực chiến<span style=\"color:var(--violet-deep)\">.</span>",
 "ct.w1t": "Thanh toán doanh nghiệp · hóa đơn 48h",
 "ct.w1p": "Chuyển khoản, Alipay doanh nghiệp hoặc thẻ. Hóa đơn VAT trong 48 giờ, mỗi tháng, tự động.",
@@ -2136,6 +2164,10 @@
 "aud.more": "+ 12 mô hình âm thanh nữa →"
 },
 "de": {
+"sup.dc": "Discord-Community",
+"sup.dc.i": "Builder helfen Buildern — das Team ist täglich in den Channels",
+"ct.dc": "Unserem Discord beitreten",
+"st.dc": "Discord",
 "ct.head": "Skalieren Sie auf offiziellen Modellen —<br>mit Menschen in Rufbereitschaft<span style=\"color:var(--violet-deep)\">.</span>",
 "ct.w1t": "Firmenzahlung · Rechnungen in 48h",
 "ct.w1p": "Überweisung, Firmen-Alipay oder Karte. Steuerrechnung binnen 48 Stunden, jeden Monat, automatisch.",
@@ -2440,6 +2472,10 @@
 "aud.more": "+ 12 weitere Audiomodelle →"
 },
 "id": {
+"sup.dc": "Komunitas Discord",
+"sup.dc.i": "Builder menjawab builder — tim ada di channel setiap hari",
+"ct.dc": "Gabung Discord kami",
+"st.dc": "Discord",
 "ct.head": "Skalakan di model resmi,<br>dengan manusia yang siaga<span style=\"color:var(--violet-deep)\">.</span>",
 "ct.w1t": "Pembayaran korporat · faktur 48 jam",
 "ct.w1p": "Transfer bank, Alipay korporat, atau kartu. Faktur pajak dalam 48 jam, tiap bulan, otomatis.",
