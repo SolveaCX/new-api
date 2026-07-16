@@ -32,6 +32,8 @@ func TestRenderRegistrationVerificationEmailBuildsBrandWelcomeLayout(t *testing.
 		"max-width:600px",
 		"background:#6d28d9",
 		"min-height:48px",
+		`target="_blank"`,
+		`rel="noopener noreferrer"`,
 		"Welcome to Flatkey",
 		"Verify email",
 		"0b0442",

@@ -5463,9 +5463,10 @@
     "Verifying your email": "Verifying your email",
     "Please wait while we confirm this verification link.": "Please wait while we confirm this verification link.",
     "Email verified": "Email verified",
-    "Your email is verified. Return to registration to continue.": "Your email is verified. Return to registration to continue.",
+    "Your email is verified. Close this tab to continue registration.": "Your email is verified. Close this tab to continue registration.",
     "Verification link unavailable": "Verification link unavailable",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "This verification link is invalid or expired. Use the code in your email or request a new message.",
-    "Back to registration": "Back to registration"
+    "Back to registration": "Back to registration",
+    "Close verification tab": "Close verification tab"
   }
 }

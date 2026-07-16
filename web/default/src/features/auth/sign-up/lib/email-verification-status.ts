@@ -32,6 +32,16 @@ type EmailVerificationStatusRefresherOptions = {
   refresh: () => Promise<void>
 }
 
+type EmailVerificationStatusSyncOptions =
+  EmailVerificationStatusRefresherOptions & {
+    subscribe: (listener: () => void) => () => void
+    addFocusListener: (listener: () => void) => void
+    removeFocusListener: (listener: () => void) => void
+    addVisibilityListener: (listener: () => void) => void
+    removeVisibilityListener: (listener: () => void) => void
+    isVisible: () => boolean
+  }
+
 export async function refreshRegistrationEmailVerificationState(
   state: EmailVerificationState,
   email: string,
@@ -79,5 +89,31 @@ export function createEmailVerificationStatusRefresher(
     stop() {
       stopped = true
     },
+  }
+}
+
+export function startEmailVerificationStatusSync(
+  options: EmailVerificationStatusSyncOptions
+): () => void {
+  const statusRefresher = createEmailVerificationStatusRefresher(options)
+  const handleFocus = () => {
+    void statusRefresher.refresh()
+  }
+  const handleVisibilityChange = () => {
+    if (options.isVisible()) void statusRefresher.refresh()
+  }
+  const unsubscribe = options.subscribe(() => {
+    void options.refresh()
+  })
+
+  options.addFocusListener(handleFocus)
+  options.addVisibilityListener(handleVisibilityChange)
+  void statusRefresher.refresh()
+
+  return () => {
+    statusRefresher.stop()
+    unsubscribe()
+    options.removeFocusListener(handleFocus)
+    options.removeVisibilityListener(handleVisibilityChange)
   }
 }

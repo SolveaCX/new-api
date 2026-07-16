@@ -26,6 +26,7 @@ import {
 import {
   createEmailVerificationStatusRefresher,
   refreshRegistrationEmailVerificationState,
+  startEmailVerificationStatusSync,
 } from './email-verification-status'
 
 describe('registration email verification status refresh', () => {
@@ -96,5 +97,71 @@ describe('registration email verification status refresh', () => {
     now = 3_000
     await refresher.refresh()
     expect(calls).toBe(2)
+  })
+
+  test('refreshes on start and lets completion bypass browser-event cooldown', async () => {
+    let now = 1_000
+    let calls = 0
+    let visible = false
+    let focusListener: (() => void) | undefined
+    let visibilityListener: (() => void) | undefined
+    let completionListener: (() => void) | undefined
+    let removedFocusListener: (() => void) | undefined
+    let removedVisibilityListener: (() => void) | undefined
+    let unsubscribed = false
+
+    const stop = startEmailVerificationStatusSync({
+      cooldownMs: 1_000,
+      now: () => now,
+      refresh: async () => {
+        calls += 1
+      },
+      subscribe: (listener) => {
+        completionListener = listener
+        return () => {
+          completionListener = undefined
+          unsubscribed = true
+        }
+      },
+      addFocusListener: (listener) => {
+        focusListener = listener
+      },
+      removeFocusListener: (listener) => {
+        removedFocusListener = listener
+      },
+      addVisibilityListener: (listener) => {
+        visibilityListener = listener
+      },
+      removeVisibilityListener: (listener) => {
+        removedVisibilityListener = listener
+      },
+      isVisible: () => visible,
+    })
+
+    expect(calls).toBe(1)
+    await Promise.resolve()
+
+    completionListener?.()
+    expect(calls).toBe(2)
+
+    focusListener?.()
+    expect(calls).toBe(2)
+
+    now = 2_000
+    focusListener?.()
+    expect(calls).toBe(3)
+    await Promise.resolve()
+
+    now = 3_000
+    visibilityListener?.()
+    expect(calls).toBe(3)
+    visible = true
+    visibilityListener?.()
+    expect(calls).toBe(4)
+
+    stop()
+    expect(unsubscribed).toBe(true)
+    expect(removedFocusListener).toBe(focusListener)
+    expect(removedVisibilityListener).toBe(visibilityListener)
   })
 })

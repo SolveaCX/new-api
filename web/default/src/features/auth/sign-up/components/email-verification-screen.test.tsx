@@ -25,7 +25,11 @@ import {
   startRegistrationEmailVerificationEffect,
   type EmailVerificationScreenState,
 } from '../../lib/registration-email-verification'
-import { EmailVerificationStatusContent } from './email-verification-screen'
+import {
+  EmailVerificationAction,
+  EmailVerificationStatusContent,
+  finishRegistrationEmailVerification,
+} from './email-verification-screen'
 
 const testI18n = createInstance()
 
@@ -46,13 +50,60 @@ function renderState(state: EmailVerificationScreenState): string {
   )
 }
 
+function renderAction(state: EmailVerificationScreenState): string {
+  return renderToStaticMarkup(
+    <I18nextProvider i18n={testI18n}>
+      <EmailVerificationAction state={state} />
+    </I18nextProvider>
+  )
+}
+
 describe('EmailVerificationStatusContent', () => {
   test('renders progress, success, and unavailable states', () => {
     expect(renderState('verifying')).toContain('Verifying your email')
     expect(renderState('verified')).toContain('Email verified')
+    expect(renderState('verified')).toContain(
+      'Your email is verified. Close this tab to continue registration.'
+    )
     expect(renderState('unavailable')).toContain(
       'Verification link unavailable'
     )
+  })
+
+  test('offers a close-tab action after verification', () => {
+    const markup = renderAction('verified')
+
+    expect(markup).toContain('Close verification tab')
+    expect(markup).not.toContain('href=')
+  })
+})
+
+describe('finishRegistrationEmailVerification', () => {
+  test('notifies the registration tab before closing the verification tab', () => {
+    const calls: string[] = []
+
+    finishRegistrationEmailVerification(
+      () => calls.push('notify'),
+      () => calls.push('close')
+    )
+
+    expect(calls).toEqual(['notify', 'close'])
+  })
+
+  test('still closes the verification tab when notification throws', () => {
+    let closeCalls = 0
+
+    expect(() =>
+      finishRegistrationEmailVerification(
+        () => {
+          throw new Error('broadcast failed')
+        },
+        () => {
+          closeCalls += 1
+        }
+      )
+    ).toThrow('broadcast failed')
+    expect(closeCalls).toBe(1)
   })
 })
 
