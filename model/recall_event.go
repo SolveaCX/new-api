@@ -24,6 +24,15 @@ var errRecallRunNotOwned = errors.New("recall campaign run not owned")
 
 const recallRunBatchSize = 200
 
+type RecallClaimClickOutcome string
+
+const (
+	RecallClaimClickValid      RecallClaimClickOutcome = "valid"
+	RecallClaimClickConverted  RecallClaimClickOutcome = "converted"
+	RecallClaimClickSuppressed RecallClaimClickOutcome = "suppressed"
+	RecallClaimClickInactive   RecallClaimClickOutcome = "inactive"
+)
+
 // CommitRecallCampaignRun makes the campaign state change, idempotency event,
 // recipient snapshot, and initial message snapshot one database transaction.
 // expectedNextRunAt is nil for manual runs and is a fencing value for scheduled
@@ -135,18 +144,41 @@ func CommitRecallCampaignRun(
 	return owned, int(inserted), nil
 }
 
-func RecordRecallClaimClickWithContext(ctx context.Context, recipientID int64, campaignID int64, clickedAt int64) error {
-	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func RecordRecallClaimClickWithContext(ctx context.Context, recipientID int64, campaignID int64, clickedAt int64) (RecallClaimClickOutcome, error) {
+	outcome := RecallClaimClickInactive
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		recipient := RecallRecipient{}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND campaign_id = ?", recipientID, campaignID).
+			First(&recipient).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		outcome = recallClaimClickOutcome(recipient)
+		if outcome != RecallClaimClickValid || recipient.ClickedAt != 0 {
+			return nil
+		}
+
 		result := tx.Model(&RecallRecipient{}).
-			Where("id = ? AND campaign_id = ? AND clicked_at = 0 AND converted_at = 0 AND state IN ?", recipientID, campaignID, []string{
-				RecallRecipientQueued,
-				RecallRecipientCustomerReady,
-				RecallRecipientCodeReady,
-				RecallRecipientContacting,
-			}).
+			Where("id = ? AND campaign_id = ? AND clicked_at = 0 AND converted_at = 0 AND state IN ?", recipientID, campaignID, recallClaimActiveRecipientStates()).
 			Update("clicked_at", clickedAt)
-		if result.Error != nil || result.RowsAffected == 0 {
+		if result.Error != nil {
 			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND campaign_id = ?", recipientID, campaignID).
+				First(&recipient).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					outcome = RecallClaimClickInactive
+					return nil
+				}
+				return err
+			}
+			outcome = recallClaimClickOutcome(recipient)
+			return nil
 		}
 		event := RecallEvent{
 			CampaignId:    campaignID,
@@ -159,4 +191,29 @@ func RecordRecallClaimClickWithContext(ctx context.Context, recipientID int64, c
 		}
 		return insertRecallRunEvent(tx, &event).Error
 	})
+	return outcome, err
+}
+
+func recallClaimClickOutcome(recipient RecallRecipient) RecallClaimClickOutcome {
+	if recipient.ConvertedAt != 0 || recipient.State == RecallRecipientConverted {
+		return RecallClaimClickConverted
+	}
+	if recipient.State == RecallRecipientSuppressed {
+		return RecallClaimClickSuppressed
+	}
+	for _, state := range recallClaimActiveRecipientStates() {
+		if recipient.State == state {
+			return RecallClaimClickValid
+		}
+	}
+	return RecallClaimClickInactive
+}
+
+func recallClaimActiveRecipientStates() []string {
+	return []string{
+		RecallRecipientQueued,
+		RecallRecipientCustomerReady,
+		RecallRecipientCodeReady,
+		RecallRecipientContacting,
+	}
 }
