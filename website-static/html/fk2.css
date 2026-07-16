@@ -231,3 +231,6 @@ body:has(.megafoot.slim) .stripe{margin-top:96px}
 .showcase.art{background:radial-gradient(130% 170% at 60% -10%,#5B21B6 0%,#3B0FA0 42%,#22084F 100%)}
 .showcase.art .glow{position:absolute;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,#8B5CF64d,transparent 65%);left:-140px;top:-120px}
 .showcase.art .glow.g2{left:auto;right:-160px;top:auto;bottom:-140px;background:radial-gradient(circle,#67E8F933,transparent 65%)}
+
+.megafoot.slim .legal{pointer-events:auto;position:relative;z-index:5}
+.megafoot.slim .legal a{color:inherit;text-decoration:underline;text-underline-offset:2px}

@@ -149,6 +149,10 @@ jobs:
           curl -s -m 20 "$C/" | grep -q 'og:image' || { echo "og tags missing"; exit 1; }
           curl -s -m 20 "$C/docs.html" | grep -q 'rel="canonical"' || { echo "docs canonical missing"; exit 1; }
           curl -s -m 20 "$C/contact.html" | grep -q 'class="nav"' || { echo "contact nav missing"; exit 1; }
+          # slim footer legal links must be real anchors; assets must be version-busted
+          curl -s -m 20 "$C/terms.html" | grep -q 'href="legal-sla.html">' || { echo "footer legal links not anchors"; exit 1; }
+          curl -s -m 20 "$C/" | grep -q 'i18n.js?v=' || { echo "asset versioning missing"; exit 1; }
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$C/ja/terms"); [ "$code" = "200" ] || { echo "/ja/terms -> $code"; exit 1; }
 
       - name: Shift traffic to latest
         run: |
