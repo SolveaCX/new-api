@@ -1,0 +1,119 @@
+name: GCP Deploy Website Static (v2)
+
+# Deploys the static marketing site (website-static/) to Cloud Run newapi-web,
+# and guarantees the legacy Next.js site stays alive as newapi-website-legacy —
+# it serves the entire historical SEO surface (blog, model pages, locale routes,
+# landing pages, sitemap/robots) via nginx fallback proxy from the static site.
+# Deploy is gated by the "production" GitHub Environment — requires approval.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website-static/**"
+      - ".github/workflows/gcp-deploy-website-static.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID:  ${{ vars.GCP_PROJECT_ID }}
+  REGION:      ${{ vars.GCP_REGION }}
+  AR_REPO_URL: ${{ vars.GCP_AR_REPO_URL }}
+  RUN_SERVICE: ${{ vars.GCP_WEB_RUN_SERVICE }}   # newapi-web
+  LEGACY_SERVICE: newapi-website-legacy
+  # Pinned pre-redesign production image (rollback anchor newapi-web-memory-1gi-20260715-103546)
+  LEGACY_IMAGE_DIGEST: sha256:d6c4eac9b29556009f3d4133eb1cc5b7ba83211bdd82c08a5d0d129b8aa4c8c4
+  APP_CONSOLE_ORIGIN: ${{ vars.WEBSITE_APP_CONSOLE_ORIGIN }}
+  ROUTER_ORIGIN:      ${{ vars.WEBSITE_ROUTER_ORIGIN }}
+  SITE_ORIGIN:        ${{ vars.WEBSITE_SITE_ORIGIN }}
+  COOKIE_SESSION_DOMAIN: ${{ secrets.COOKIE_SESSION_DOMAIN || '.flatkey.ai' }}
+  BLOGGER_ACCESS_KEY: ${{ secrets.BLOGGER_ACCESS_KEY }}
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Ensure legacy SEO service exists
+        run: |
+          if gcloud run services describe "$LEGACY_SERVICE" --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1; then
+            echo "legacy service already running"
+            exit 0
+          fi
+          gcloud run deploy "$LEGACY_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --image "$AR_REPO_URL/website@$LEGACY_IMAGE_DIGEST" \
+            --port 4000 --memory 1Gi --cpu 1 --min-instances 1 --max-instances 4 \
+            --allow-unauthenticated \
+            --set-env-vars "NODE_ENV=production,TZ=UTC,APP_CONSOLE_ORIGIN=${APP_CONSOLE_ORIGIN},ROUTER_ORIGIN=${ROUTER_ORIGIN},SITE_ORIGIN=${SITE_ORIGIN},COOKIE_SESSION_DOMAIN=${COOKIE_SESSION_DOMAIN},BLOGGER_ACCESS_KEY=${BLOGGER_ACCESS_KEY}"
+
+      - name: Smoke test legacy SEO surface
+        run: |
+          L="https://newapi-website-legacy-5qjldqffdq-uw.a.run.app"
+          for p in blog zh models pricing gpt-api-alternative about sitemap.xml; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$L/$p")
+            echo "/$p -> $code"
+            case "$code" in 200|301|302|308) ;; *) exit 1 ;; esac
+          done
+
+      - name: Build image
+        run: |
+          short_sha="${GITHUB_SHA::12}"
+          IMAGE="$AR_REPO_URL/website-static:sha-$short_sha"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          gcloud builds submit website-static --project "$PROJECT_ID" --tag "$IMAGE" --timeout=600
+
+      - name: Deploy canary (no traffic)
+        run: |
+          gcloud run deploy "$RUN_SERVICE" --project "$PROJECT_ID" --region "$REGION" \
+            --image "$IMAGE" --no-traffic --tag canary --port 8080
+
+      - name: Smoke test canary
+        run: |
+          C="https://canary---newapi-web-5qjldqffdq-uw.a.run.app"
+          # new static pages
+          for p in "" login.html models.html docs.html topup.html sla.html install.sh llms.txt; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p")
+            echo "/$p -> $code"; [ "$code" = "200" ] || exit 1
+          done
+          curl -s -o /dev/null -w "%{http_code}" "$C/signup.html" | grep -q 301 || exit 1
+          # legacy SEO surface through the fallback proxy (must be 200, not redirect/404)
+          for p in blog zh models pricing gpt-api-alternative about rankings sitemap.xml robots.txt; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$C/$p")
+            echo "/$p -> $code"; [ "$code" = "200" ] || exit 1
+          done
+          # blog must NOT redirect to homepage anymore
+          loc=$(curl -s -o /dev/null -w "%{redirect_url}" -m 30 "$C/blog")
+          [ -z "$loc" ] || { echo "unexpected redirect: /blog -> $loc"; exit 1; }
+
+      - name: Shift traffic to latest
+        run: |
+          gcloud run services update-traffic "$RUN_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" --to-latest
+
+      - name: Fix stale liveness probe (4000 -> 8080)
+        continue-on-error: true
+        run: |
+          gcloud run services describe "$RUN_SERVICE" --project "$PROJECT_ID" --region "$REGION" --format export > /tmp/svc.yaml
+          if grep -q "port: 4000" /tmp/svc.yaml; then
+            sed -i 's/port: 4000/port: 8080/' /tmp/svc.yaml
+            gcloud run services replace /tmp/svc.yaml --project "$PROJECT_ID" --region "$REGION"
+            echo "liveness probe patched to 8080"
+          else
+            echo "probe already correct"
+          fi

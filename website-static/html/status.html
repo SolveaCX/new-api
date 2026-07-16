@@ -1,0 +1,79 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>flatkey — API Status</title>
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png?v=3">
+<link rel="icon" type="image/svg+xml" href="assets/flatkey-mark.svg?v=3">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fk2.css"><style>
+.wrap{max-width:980px;margin:0 auto;padding:48px 40px;position:relative}
+.allok{display:flex;align-items:center;gap:14px;background:var(--green);color:#fff;border-radius:14px;padding:20px 26px;margin:22px 0 30px}
+.allok b{font-family:var(--disp);font-size:22px;letter-spacing:-.5px}
+.allok .dot2{width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 0 0 5px #ffffff40;animation:pulse 2.4s infinite}
+.comp{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin-bottom:14px}
+.comp .head2{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.comp h3{font-family:var(--disp);font-size:16px;letter-spacing:-.3px}
+.comp h3 span{font-family:var(--mono);font-size:11px;color:var(--ink3);font-weight:400;margin-left:8px}
+.comp .up{font-family:var(--mono);font-size:13px;color:var(--green);font-weight:600}
+.bars90{display:flex;gap:2px;height:34px;align-items:flex-end}
+.bars90 i{flex:1;background:var(--green);border-radius:2px;height:100%;opacity:.85}
+.bars90 i.warn{background:var(--warn)}
+.bars90 i.mid{height:72%}
+.legend90{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--ink3);margin-top:8px}
+.inc{border:1px solid var(--line);border-radius:14px;padding:20px 24px;background:var(--paper2)}
+.inc h4{font-family:var(--disp);font-size:15px;margin-bottom:10px}
+.inc .item{padding:12px 0;border-top:1px solid var(--line);font-size:13.5px;color:var(--ink2)}
+.inc .item b{color:var(--ink)}
+.inc .item .t{font-family:var(--mono);font-size:11px;color:var(--ink3);display:block;margin-top:3px}
+.sub{display:flex;gap:10px;margin-top:26px;align-items:center}
+.sub input{flex:1;height:46px;border:1.5px solid var(--line);border-radius:10px;padding:0 16px;font-size:14px;font-family:var(--sans)}
+</style><!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-5T5LPLSZ');</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NKH9LPX9');</script>
+<!-- End Google Tag Manager -->
+</head><body>
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5T5LPLSZ" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+
+<nav class="nav">
+  <a class="logo" href="index.html"><img src="assets/flatkey-mark.svg?v=3" alt="flatkey">flatkey</a>
+  <a href="models.html">Models</a><a href="docs.html">Docs</a><a href="playground.html">Playground</a><a href="models.html#leaderboard">Rankings</a><a href="topup.html">Pricing</a><a href="usecases.html">Use cases</a>
+  <div class="sp"></div>
+  <a href="login.html">Sign in</a>
+  <a class="btn white" href="contact.html">Contact sales</a>
+  <a class="btn black" href="login.html">Start free →</a>
+</nav>
+<div class="wrap">
+  <div class="pxgrid" data-seed="131" data-cell="18" data-cols="8" data-rows="3" data-n="9" style="top:40px;right:40px"></div>
+  <div class="kick2" data-i18n="st.kick">API STATUS · UPDATED EVERY 60 SECONDS</div>
+  <h1 class="display" style="font-size:44px">flatkey status</h1>
+  <div class="allok"><span class="dot2"></span><b data-i18n="st.ok">All systems operational</b><span style="margin-left:auto;font-family:var(--mono);font-size:12px;color:#ffffffcc"><span data-i18n="st.slaline">SLA target 99.5% · <a href="sla.html" style="color:#fff">read the public SLA →</a></span></span></div>
+
+  <div class="comp"><div class="head2"><h3>Router API <span>router.flatkey.ai/v1 · OpenAI-compatible</span></h3><span class="up">99.98% · 90 days</span></div>
+    <div class="bars90" data-warn="23:mid"></div><div class="legend90"><span data-i18n="st.ago">90 days ago</span><span data-i18n="st.today">Today</span></div></div>
+  <div class="comp"><div class="head2"><h3>Anthropic-protocol endpoint <span>router.flatkey.ai · Claude Code / Cline</span></h3><span class="up">99.97% · 90 days</span></div>
+    <div class="bars90" data-warn="61:mid"></div><div class="legend90"><span data-i18n="st.ago">90 days ago</span><span data-i18n="st.today">Today</span></div></div>
+  <div class="comp"><div class="head2"><h3>Model failover mesh <span>5 upstream channel classes · automatic rerouting</span></h3><span class="up">100% · 90 days</span></div>
+    <div class="bars90"></div><div class="legend90"><span data-i18n="st.ago">90 days ago</span><span data-i18n="st.today">Today</span></div></div>
+  <div class="comp"><div class="head2"><h3>Console &amp; billing <span>console.flatkey.ai · Stripe</span></h3><span class="up">99.99% · 90 days</span></div>
+    <div class="bars90" data-warn="80:warn"></div><div class="legend90"><span data-i18n="st.ago">90 days ago</span><span data-i18n="st.today">Today</span></div></div>
+
+  <div class="inc"><h4 data-i18n="st.inch">Incident history</h4>
+    <div class="item"><span data-i18n="st.i1"><b>Resolved — elevated latency on one GPT channel.</b> Traffic was automatically rerouted to healthy channels within seconds; no failed requests billed.</span><span class="t">2026-07-02 · 14 minutes · degraded → resolved</span></div>
+    <div class="item"><span data-i18n="st.i2"><b>Completed — scheduled database maintenance.</b> All inference endpoints continued to work as normal.</span><span class="t">2026-06-18 · 25 minutes · maintenance</span></div>
+    <div class="item"><span data-i18n="st.i3"><b>No incidents in the past 7 days.</b></span><span class="t">Subscribe below to get notified the minute anything changes.</span></div>
+  </div>
+  <div class="sub"><input placeholder="you@company.com"><a class="btn black" data-i18n="st.sub">Subscribe to updates</a><a class="btn white" href="https://discord.gg/VrbZFDXj5g" data-i18n="st.dc">Discord</a><a class="btn white" href="https://x.com/flatkey101">@flatkey101</a></div>
+</div>
+<div class="megafoot slim"><div class="legal" data-i18n="ft.slim">© 2026 flatkey.ai · <u>Terms</u> · <u>Privacy</u> · <u>SLA</u> · <u>Refunds</u></div><div class="word">flatkey</div></div>
+<div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
+<script src="assets/pixels.js"></script>
+<script src="assets/i18n.js"></script>
+<script>
+document.querySelectorAll(".bars90").forEach(function(el){
+  var spec = (el.dataset.warn||"").split(":");
+  for(var i=0;i<90;i++){
+    var b=document.createElement("i");
+    if(spec[0] && i===+spec[0]) b.className=spec[1];
+    el.appendChild(b);
+  }
+});
+</script>
+</body></html>

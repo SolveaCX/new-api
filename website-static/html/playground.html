@@ -1,0 +1,105 @@
+<!doctype html><html><head><meta charset="utf-8"><title>flatkey v2 — Playground</title>
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png?v=3">
+<link rel="icon" type="image/svg+xml" href="assets/flatkey-mark.svg?v=3">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fk2.css"><style>
+.wrap{max-width:1560px;margin:0 auto;padding:36px 48px}
+.head{display:flex;align-items:center;gap:18px;margin-bottom:8px}
+.head h2{font-size:30px;letter-spacing:-1px;font-weight:800;font-family:var(--mono)}
+.tabs{display:flex;gap:26px;border-bottom:1.5px solid var(--line);margin:22px 0 26px;font-size:15px;font-weight:700}
+.tabs div{padding:12px 2px;color:var(--ink3)}
+.tabs .on{color:var(--ink);border-bottom:2.5px solid var(--violet)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.pane{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px}
+.msg{border-radius:12px;padding:14px 16px;font-size:14.5px;line-height:1.6;margin-bottom:12px}
+.msg.u{background:#F2F0FF}
+.msg.a{background:#F7F7F4;font-family:var(--mono);font-size:13.5px}
+.inp{display:flex;gap:12px;margin-top:16px}
+.inp input{flex:1;height:52px;border:1.5px solid var(--line);border-radius:12px;padding:0 18px;font-size:15px}
+.meta{display:flex;gap:22px;font-family:var(--mono);font-size:12.5px;color:var(--ink3);margin-top:14px}
+.code{background:#0F0F16;color:#D8D8E4;border-radius:14px;padding:22px;font-family:var(--mono);font-size:13.5px;line-height:1.85}
+.code .k{color:#9E8CFF}.code .s{color:#C8FF4D}.code .cm{color:#5A5A68}
+.lang{display:flex;gap:8px;margin-bottom:14px}
+.lang div{font-size:12.5px;font-weight:700;padding:6px 13px;border-radius:8px;background:#F1F1EE;color:var(--ink2)}
+.lang .on{background:var(--ink);color:#fff}
+.selrow{display:flex;gap:12px;align-items:center;margin:0 0 18px}
+.sel{border:1.5px solid var(--line);border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;background:#fff}
+</style><!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-5T5LPLSZ');</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NKH9LPX9');</script>
+<!-- End Google Tag Manager -->
+</head><body>
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5T5LPLSZ" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+
+<nav class="nav">
+  <a class="logo" href="index.html"><img src="assets/flatkey-mark.svg?v=3" alt="flatkey">flatkey</a>
+  <a href="models.html">Models</a><a href="docs.html">Docs</a><a href="playground.html" class="on">Playground</a><a href="models.html#leaderboard">Rankings</a><a href="topup.html">Pricing</a><a href="usecases.html">Use cases</a>
+  <div class="sp"></div>
+  <a href="login.html">Sign in</a>
+  <a class="btn white" href="contact.html">Contact sales</a>
+  <a class="btn black" href="login.html">Start free →</a>
+</nav>
+<div class="wrap">
+  <div class="head"><h2 id="mname">claude-opus-4-8</h2><span class="tag">official · anthropic</span><span class="pill" style="background:#EDFBEF;color:#15803D"><span class="dot"></span>healthy · 388ms p50</span><div style="flex:1"></div><span class="mono" style="font-size:13.5px;color:var(--ink3)">official <s>$25.00</s> → <b style="color:var(--violet-deep)">$13.33 /M out</b></span></div>
+  <div class="tabs"><div class="on">Playground</div><a href="docs.html#qs" style="padding:12px 2px;color:var(--ink3);text-decoration:none;font-weight:700">API</a><a href="topup.html" style="padding:12px 2px;color:var(--ink3);text-decoration:none;font-weight:700">Pricing &amp; limits</a><a href="models.html" style="padding:12px 2px;color:var(--ink3);text-decoration:none;font-weight:700">Health history</a><a href="models.html#leaderboard" style="padding:12px 2px;color:var(--ink3);text-decoration:none;font-weight:700">Compare</a></div>
+  <div class="grid">
+    <div class="pane">
+      <div class="selrow"><div class="sel mchip on" data-model="claude-opus-4-8">claude-opus-4-8</div><div class="sel mchip" data-model="seedance-2.5" style="border-color:#8B5CF666;color:var(--violet-deep)" title="video · $0.24/s">seedance-2.5</div><div class="sel mchip" data-model="flatkey-auto" style="border-color:#B5D64A;background:#FBFFEE" title="let flatkey pick the best official model per request">try flatkey-auto</div><div class="sel" id="streamchip" style="cursor:pointer">stream ✓</div><div style="flex:1"></div><a href="models.html" style="font-size:13px;font-weight:800;color:var(--violet-deep);text-decoration:none">⇄ side-by-side</a></div>
+      <div class="msg u">Write a haiku about API gateways.</div>
+      <div class="msg a">One key, many minds —<br>requests fan out through the dark,<br>tokens flow like rain.</div>
+      <div class="meta"><span>↳ 388ms first token</span><span>41 tokens</span><span>cost $0.00037</span><span style="color:var(--ok)">✓ served by official Anthropic API</span></div>
+      <div class="inp"><input placeholder="Ask anything — 3 free runs, no signup"><a class="btn primary big" href="login.html">Run ⏎</a></div>
+      <div style="margin-top:14px;font-size:13px;color:var(--ink3)">2 of 3 free runs left · <a href="login.html" style="color:var(--violet-deep);font-weight:700">Continue with Google</a> for $2 free credit — keeps your history</div>
+    </div>
+    <div class="pane">
+      <div class="lang" id="langs"><div class="on" data-l="python">Python</div><div data-l="js">JavaScript</div><div data-l="curl">cURL</div><div data-l="cline">Cline</div><div data-l="cursor">Cursor</div><div data-l="chatbox">Chatbox</div></div>
+      <div class="code" id="codebox"></div>
+      <div style="margin-top:16px;display:flex;gap:12px"><a class="btn dark" href="login.html" id="copybtn">Copy with my key</a><a class="btn ghost" href="docs.html#anthropic">Add to Cline in 1 click</a></div>
+    </div>
+  </div>
+</div>
+<div class="megafoot slim"><div class="legal" data-i18n="ft.slim">© 2026 flatkey.ai · <u>Terms</u> · <u>Privacy</u> · <u>SLA</u> · <u>Refunds</u></div><div class="word">flatkey</div></div>
+<div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
+<div class="pxgrid" data-seed="67" data-cell="18" data-cols="8" data-rows="3" data-n="9" style="top:100px;right:40px"></div>
+<script src="assets/pixels.js"></script>
+<script src="assets/i18n.js"></script>
+<script>
+(function(){
+  var model = "claude-opus-4-8";
+  var lang = "python";
+  var esc = function(t){return t.replace(/&/g,"&amp;").replace(/</g,"&lt;");};
+  var T = {
+    python: function(m){return '<span class="cm"># pip install openai — nothing flatkey-specific</span>\nfrom openai import OpenAI\n\nclient = OpenAI(\n  <span class="k">base_url</span>=<span class="s">"https://router.flatkey.ai/v1"</span>,\n  <span class="k">api_key</span>=<span class="s">"sk-fk-…"</span>, <span class="cm"># auto-fills after sign-in</span>\n)\n\nr = client.chat.completions.create(\n  <span class="k">model</span>=<span class="s">"'+m+'"</span>,\n  <span class="k">messages</span>=[{<span class="s">"role"</span>:<span class="s">"user"</span>,<span class="s">"content"</span>:<span class="s">"Hello"</span>}],\n)';},
+    js: function(m){return '<span class="cm">// npm i openai</span>\nimport OpenAI from <span class="s">"openai"</span>;\n\nconst client = new OpenAI({\n  <span class="k">baseURL</span>: <span class="s">"https://router.flatkey.ai/v1"</span>,\n  <span class="k">apiKey</span>: <span class="s">"sk-fk-…"</span>,\n});\n\nconst r = await client.chat.completions.create({\n  <span class="k">model</span>: <span class="s">"'+m+'"</span>,\n  <span class="k">messages</span>: [{ role: <span class="s">"user"</span>, content: <span class="s">"Hello"</span> }],\n});';},
+    curl: function(m){return 'curl https://router.flatkey.ai/v1/chat/completions \\\n  -H <span class="s">"Authorization: Bearer sk-fk-…"</span> \\\n  -H <span class="s">"Content-Type: application/json"</span> \\\n  -d <span class="s">\'{"model":"'+m+'","messages":[{"role":"user","content":"Hello"}]}\'</span>';},
+    cline: function(m){return '<span class="cm"># Cline → Settings → API Provider: Anthropic</span>\n<span class="k">Base URL</span>   <span class="s">https://router.flatkey.ai</span>\n<span class="k">API Key</span>    <span class="s">sk-fk-…</span>\n<span class="k">Model</span>      <span class="s">'+m+'</span>\n\n<span class="cm"># full guide → docs.html#anthropic</span>';},
+    cursor: function(m){return '<span class="cm"># Cursor → Settings → Models → OpenAI API</span>\n<span class="k">Override base URL</span>  <span class="s">https://router.flatkey.ai/v1</span>\n<span class="k">API Key</span>            <span class="s">sk-fk-…</span>\n<span class="k">Model</span>              <span class="s">'+m+'</span>';},
+    chatbox: function(m){return '<span class="cm"># Chatbox → 设置 → 模型提供方: OpenAI API 兼容</span>\n<span class="k">API 域名</span>   <span class="s">https://router.flatkey.ai</span>\n<span class="k">API 路径</span>   <span class="s">/v1/chat/completions</span>\n<span class="k">API 密钥</span>   <span class="s">sk-fk-…</span>\n<span class="k">模型</span>       <span class="s">'+m+'</span>';}
+  };
+  function render(){
+    document.getElementById("codebox").innerHTML = T[lang](model).replace(/\n/g,"<br>").replace(/  /g,"&nbsp;&nbsp;");
+    document.getElementById("mname").textContent = model;
+  }
+  document.querySelectorAll("#langs div").forEach(function(d){
+    d.style.cursor = "pointer";
+    d.addEventListener("click", function(){
+      document.querySelectorAll("#langs div").forEach(function(x){x.classList.remove("on");});
+      d.classList.add("on"); lang = d.dataset.l; render();
+    });
+  });
+  document.querySelectorAll(".mchip").forEach(function(d){
+    d.style.cursor = "pointer";
+    d.addEventListener("click", function(){
+      document.querySelectorAll(".mchip").forEach(function(x){x.classList.remove("on");x.style.boxShadow="";});
+      d.classList.add("on"); d.style.boxShadow = "0 0 0 2px var(--violet-hi)";
+      model = d.dataset.model; render();
+    });
+  });
+  var sc = document.getElementById("streamchip");
+  sc.addEventListener("click", function(){ sc.textContent = sc.textContent.indexOf("✓")>-1 ? "stream ✗" : "stream ✓"; });
+  render();
+})();
+</script>
+</body></html>
