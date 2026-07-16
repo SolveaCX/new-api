@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -21,6 +23,7 @@ type recallStripeFakeClient struct {
 	getCouponFn           func(context.Context, string) (*stripe.Coupon, error)
 	createCustomerFn      func(context.Context, *stripe.CustomerParams) (*stripe.Customer, error)
 	getCustomerFn         func(context.Context, string) (*stripe.Customer, error)
+	updateCustomerFn      func(context.Context, string, *stripe.CustomerParams) (*stripe.Customer, error)
 	createPromotionCodeFn func(context.Context, *stripe.PromotionCodeParams) (*stripe.PromotionCode, error)
 	getPromotionCodeFn    func(context.Context, string) (*stripe.PromotionCode, error)
 	getPriceFn            func(context.Context, string) (*stripe.Price, error)
@@ -65,6 +68,13 @@ func (f *recallStripeFakeClient) GetCustomer(ctx context.Context, id string) (*s
 	return f.getCustomerFn(ctx, id)
 }
 
+func (f *recallStripeFakeClient) UpdateCustomer(ctx context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+	if f.updateCustomerFn != nil {
+		return f.updateCustomerFn(ctx, id, params)
+	}
+	return &stripe.Customer{ID: id}, nil
+}
+
 func (f *recallStripeFakeClient) CreatePromotionCode(ctx context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
 	return f.createPromotionCodeFn(ctx, params)
 }
@@ -81,7 +91,7 @@ func (f *recallStripeFakeClient) GetCheckoutSession(ctx context.Context, id stri
 	return f.getCheckoutSessionFn(ctx, id, expand...)
 }
 
-func TestStripeRecallClientUsesScopedKeyWithoutMutatingGlobal(t *testing.T) {
+func TestRecallStripeClientUsesScopedKeyWithoutMutatingGlobal(t *testing.T) {
 	originalBackend := stripe.GetBackend(stripe.APIBackend)
 	originalGlobalKey := stripe.Key
 	originalConfiguredKey := setting.StripeApiSecret
@@ -105,6 +115,8 @@ func TestStripeRecallClientUsesScopedKeyWithoutMutatingGlobal(t *testing.T) {
 	require.NoError(t, err)
 	_, err = client.GetCustomer(ctx, "cus_test")
 	require.NoError(t, err)
+	_, err = client.UpdateCustomer(ctx, "cus_test", &stripe.CustomerParams{})
+	require.NoError(t, err)
 	_, err = client.CreatePromotionCode(ctx, &stripe.PromotionCodeParams{})
 	require.NoError(t, err)
 	_, err = client.GetPromotionCode(ctx, "promo_test")
@@ -118,6 +130,7 @@ func TestStripeRecallClientUsesScopedKeyWithoutMutatingGlobal(t *testing.T) {
 	require.Equal(t, []string{
 		"scoped-secret", "scoped-secret", "scoped-secret", "scoped-secret",
 		"scoped-secret", "scoped-secret", "scoped-secret", "scoped-secret",
+		"scoped-secret",
 	}, recordingBackend.keys)
 }
 
@@ -511,6 +524,25 @@ func TestRecallStripeEnsureCustomer(t *testing.T) {
 		require.False(t, created)
 	})
 
+	t.Run("rejects_mismatched_existing_customer", func(t *testing.T) {
+		created := false
+		client := &recallStripeFakeClient{
+			getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) {
+				require.Equal(t, "cus_expected", id)
+				return &stripe.Customer{ID: "cus_other"}, nil
+			},
+			createCustomerFn: func(context.Context, *stripe.CustomerParams) (*stripe.Customer, error) {
+				created = true
+				return nil, nil
+			},
+		}
+
+		_, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{Id: 7, StripeCustomer: "cus_expected"})
+		require.ErrorContains(t, err, "does not match")
+		require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
+		require.False(t, created)
+	})
+
 	for _, tc := range []struct {
 		name string
 		get  func(context.Context, string) (*stripe.Customer, error)
@@ -565,6 +597,128 @@ func TestRecallStripeCustomerCreateParamsIgnoreMutableProfile(t *testing.T) {
 	require.Nil(t, calls[0].Name)
 	require.Equal(t, map[string]string{"flatkey_user_id": "7"}, calls[0].Metadata)
 	require.Equal(t, "recall_customer:7", *calls[0].IdempotencyKey)
+}
+
+func TestRecallStripeCustomerEmailUpdateIsSeparateAndVersioned(t *testing.T) {
+	var created *stripe.CustomerParams
+	var updated *stripe.CustomerParams
+	client := &recallStripeFakeClient{
+		createCustomerFn: func(_ context.Context, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			created = params
+			return &stripe.Customer{ID: "cus_7"}, nil
+		},
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			require.Equal(t, "cus_7", id)
+			updated = params
+			return &stripe.Customer{ID: id, Email: *params.Email}, nil
+		},
+	}
+
+	customer, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{
+		Id: 7, Email: " Current@Example.COM ", Username: "mutable-name", DisplayName: "mutable-display",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "cus_7", customer.ID)
+	require.NotNil(t, created)
+	require.Nil(t, created.Email)
+	require.Nil(t, created.Name)
+	require.Nil(t, created.Description)
+	require.Equal(t, map[string]string{"flatkey_user_id": "7"}, created.Metadata)
+	require.Equal(t, "recall_customer:7", *created.IdempotencyKey)
+	require.NotNil(t, updated)
+	require.Equal(t, "Current@Example.COM", *updated.Email)
+	require.Nil(t, updated.Name)
+	require.Nil(t, updated.Description)
+	require.Empty(t, updated.Metadata)
+	normalizedHash := sha256.Sum256([]byte("current@example.com"))
+	require.Equal(t, "recall_customer_email:v1:7:"+fmt.Sprintf("%x", normalizedHash), *updated.IdempotencyKey)
+}
+
+func TestRecallStripeCustomerEmailUpdateKeyChangesOnlyWithNormalizedEmail(t *testing.T) {
+	keys := make([]string, 0, 3)
+	client := &recallStripeFakeClient{
+		getCustomerFn: func(context.Context, string) (*stripe.Customer, error) {
+			return &stripe.Customer{ID: "cus_7"}, nil
+		},
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			keys = append(keys, *params.IdempotencyKey)
+			return &stripe.Customer{ID: id, Email: *params.Email}, nil
+		},
+	}
+	service := NewRecallStripeService(client)
+
+	for _, email := range []string{" User@Example.com ", "user@example.COM", "changed@example.com"} {
+		_, err := service.EnsureCustomer(context.Background(), model.User{Id: 7, Email: email, StripeCustomer: "cus_7"})
+		require.NoError(t, err)
+	}
+	require.Len(t, keys, 3)
+	require.Equal(t, keys[0], keys[1])
+	require.NotEqual(t, keys[1], keys[2])
+}
+
+func TestRecallStripeCustomerEmailUpdateRetriesWithStableKey(t *testing.T) {
+	var calls []*stripe.CustomerParams
+	client := &recallStripeFakeClient{
+		getCustomerFn: func(context.Context, string) (*stripe.Customer, error) {
+			return &stripe.Customer{ID: "cus_7"}, nil
+		},
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			require.Equal(t, "cus_7", id)
+			calls = append(calls, params)
+			if len(calls) == 1 {
+				return nil, recallStripeTimeout{}
+			}
+			return &stripe.Customer{ID: id, Email: *params.Email}, nil
+		},
+	}
+
+	customer, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{
+		Id: 7, Email: " User@Example.com ", StripeCustomer: "cus_7",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "cus_7", customer.ID)
+	require.Len(t, calls, 2)
+	require.Same(t, calls[0], calls[1])
+	require.Equal(t, *calls[0].IdempotencyKey, *calls[1].IdempotencyKey)
+	normalizedHash := sha256.Sum256([]byte("user@example.com"))
+	require.Equal(t, "recall_customer_email:v1:7:"+fmt.Sprintf("%x", normalizedHash), *calls[0].IdempotencyKey)
+}
+
+func TestRecallStripeCustomerEmailUpdateRejectsMismatchedCustomer(t *testing.T) {
+	updateCalls := 0
+	client := &recallStripeFakeClient{
+		getCustomerFn: func(context.Context, string) (*stripe.Customer, error) {
+			return &stripe.Customer{ID: "cus_7"}, nil
+		},
+		updateCustomerFn: func(context.Context, string, *stripe.CustomerParams) (*stripe.Customer, error) {
+			updateCalls++
+			return &stripe.Customer{ID: "cus_other"}, nil
+		},
+	}
+
+	_, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{
+		Id: 7, Email: "user@example.com", StripeCustomer: "cus_7",
+	})
+	require.ErrorContains(t, err, "unavailable Customer")
+	require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
+	require.Equal(t, 1, updateCalls)
+}
+
+func TestRecallStripeCustomerBlankEmailDoesNotClearStripe(t *testing.T) {
+	updated := false
+	client := &recallStripeFakeClient{
+		getCustomerFn: func(context.Context, string) (*stripe.Customer, error) {
+			return &stripe.Customer{ID: "cus_7"}, nil
+		},
+		updateCustomerFn: func(context.Context, string, *stripe.CustomerParams) (*stripe.Customer, error) {
+			updated = true
+			return nil, nil
+		},
+	}
+
+	_, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{Id: 7, Email: "  ", StripeCustomer: "cus_7"})
+	require.NoError(t, err)
+	require.False(t, updated)
 }
 
 func TestRecallStripePromotionParamsAndRetries(t *testing.T) {

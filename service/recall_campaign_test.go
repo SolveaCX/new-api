@@ -453,10 +453,7 @@ func TestRecallCampaignManualActivationSnapshotsOnce(t *testing.T) {
 	require.Equal(t, now.Add(time.Duration(draft.PromotionValidSeconds)*time.Second).Unix(), recipients[0].PromotionExpiresAt)
 	var messages []model.RecallMessage
 	require.NoError(t, db.Find(&messages).Error)
-	require.Len(t, messages, 1)
-	require.Equal(t, 1, messages[0].StageNo)
-	require.Equal(t, 1, messages[0].TemplateVersion)
-	require.Equal(t, now.Unix(), messages[0].ScheduledAt)
+	require.Empty(t, messages, "stage one is scheduled only after the recipient reaches code_ready")
 	var events []model.RecallEvent
 	require.NoError(t, db.Find(&events).Error)
 	require.Len(t, events, 1)
@@ -490,9 +487,9 @@ func TestRecallCampaignActivationUsesOneTimestamp(t *testing.T) {
 	var recipient model.RecallRecipient
 	require.NoError(t, db.First(&recipient).Error)
 	require.Equal(t, now.Add(time.Duration(draft.PromotionValidSeconds)*time.Second).Unix(), recipient.PromotionExpiresAt)
-	var message model.RecallMessage
-	require.NoError(t, db.First(&message).Error)
-	require.Equal(t, now.Unix(), message.ScheduledAt)
+	var messageCount int64
+	require.NoError(t, db.Model(&model.RecallMessage{}).Count(&messageCount).Error)
+	require.Zero(t, messageCount)
 }
 
 func TestRecallCampaignActivationRejectsStaleConfigRevisionAndRetriesWithNewStripeKey(t *testing.T) {
@@ -743,7 +740,7 @@ func TestRecallCampaignRecurringRunUsesDeterministicEventKey(t *testing.T) {
 	require.NoError(t, db.Model(&model.RecallRecipient{}).Count(&recipientCount).Error)
 	require.NoError(t, db.Model(&model.RecallMessage{}).Count(&messageCount).Error)
 	require.EqualValues(t, 1, recipientCount)
-	require.EqualValues(t, 1, messageCount)
+	require.Zero(t, messageCount)
 	var event model.RecallEvent
 	require.NoError(t, db.First(&event).Error)
 	require.Equal(t, fmt.Sprintf("recurring:%d:%d", campaign.Id, firstRunAt), event.SourceEventId)
@@ -783,9 +780,9 @@ func TestRecallCampaignRecurringStopsSchedulingAfterLastValidRun(t *testing.T) {
 	var recipient model.RecallRecipient
 	require.NoError(t, db.First(&recipient).Error)
 	require.Equal(t, model.RecallRecipientQueued, recipient.State)
-	var message model.RecallMessage
-	require.NoError(t, db.First(&message).Error)
-	require.Equal(t, model.RecallMessageScheduled, message.State)
+	var messageCount int64
+	require.NoError(t, db.Model(&model.RecallMessage{}).Count(&messageCount).Error)
+	require.Zero(t, messageCount)
 }
 
 func TestRecallCampaignDueRunCompletesWhenCouponRedeemByAlreadyReached(t *testing.T) {
@@ -941,9 +938,9 @@ func TestRecallCampaignActivatedUpdateOnlyChangesFutureEmailVersion(t *testing.T
 	var stages []RecallEmailStage
 	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
 	require.Equal(t, 2, stages[0].TemplateVersion)
-	var existingMessage model.RecallMessage
-	require.NoError(t, db.First(&existingMessage).Error)
-	require.Equal(t, 1, existingMessage.TemplateVersion)
+	var messageCount int64
+	require.NoError(t, db.Model(&model.RecallMessage{}).Count(&messageCount).Error)
+	require.Zero(t, messageCount)
 
 	emailChange.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "Third subject", BodyText: "Third body"}
 	updated, err = service.UpdateDraft(context.Background(), 7, campaign.Id, emailChange)
@@ -1045,7 +1042,14 @@ func TestRecallCampaignLifecycleIsConditionalIdempotentAndCancelPreservesCode(t 
 		"stripe_promotion_code_id": promotionID,
 		"promotion_code":           "FKKEEPCODE",
 	}).Error)
-	require.NoError(t, db.Model(&model.RecallMessage{}).Where("recipient_id = ?", recipient.Id).Update("state", model.RecallMessageRetryWait).Error)
+	require.NoError(t, db.Create(&model.RecallMessage{
+		RecipientId:      recipient.Id,
+		StageNo:          1,
+		TemplateVersion:  1,
+		TemplateSnapshot: `{}`,
+		ScheduledAt:      now.Unix(),
+		State:            model.RecallMessageRetryWait,
+	}).Error)
 	require.NoError(t, db.Create(&model.RecallMessage{
 		RecipientId:      recipient.Id,
 		StageNo:          2,

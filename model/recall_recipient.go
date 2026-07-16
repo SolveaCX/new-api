@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -103,6 +104,174 @@ func ReleaseRecallRecipientLease(id int64, owner string, expectedLeaseUntil int6
 			"lease_owner":      "",
 			"lease_expires_at": int64(0),
 		}).Error
+}
+
+func GetRecallRecipientForLease(id int64, owner string) (*RecallRecipient, error) {
+	return GetRecallRecipientForLeaseWithContext(context.Background(), id, owner)
+}
+
+func GetRecallRecipientForLeaseWithContext(ctx context.Context, id int64, owner string) (*RecallRecipient, error) {
+	recipient := &RecallRecipient{}
+	if err := DB.WithContext(ctx).
+		Where("id = ? AND lease_owner = ? AND lease_expires_at > 0", id, owner).
+		First(recipient).Error; err != nil {
+		return nil, err
+	}
+	return recipient, nil
+}
+
+func AdvanceRecallRecipient(id int64, owner string, from []string, to string, fields map[string]any) (bool, error) {
+	recipient, err := GetRecallRecipientForLease(id, owner)
+	if err != nil {
+		return false, err
+	}
+	return AdvanceRecallRecipientLease(context.Background(), id, owner, recipient.LeaseExpiresAt, from, to, fields)
+}
+
+func AdvanceRecallRecipientLease(ctx context.Context, id int64, owner string, expectedLeaseUntil int64, from []string, to string, fields map[string]any) (bool, error) {
+	if len(from) == 0 {
+		return false, nil
+	}
+	allowedFields := map[string]struct{}{
+		"stripe_customer_id":       {},
+		"stripe_promotion_code_id": {},
+		"promotion_code":           {},
+		"promotion_expires_at":     {},
+		"last_error_code":          {},
+		"last_error_message":       {},
+	}
+	updates := make(map[string]any, len(fields)+3)
+	for key, value := range fields {
+		if _, ok := allowedFields[key]; !ok {
+			return false, fmt.Errorf("unsupported recall recipient completion field %q", key)
+		}
+		updates[key] = value
+	}
+	updates["state"] = to
+	updates["lease_owner"] = ""
+	updates["lease_expires_at"] = int64(0)
+	result := DB.WithContext(ctx).Model(&RecallRecipient{}).
+		Where("id = ? AND lease_owner = ? AND lease_expires_at = ? AND state IN ?", id, owner, expectedLeaseUntil, from).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func PersistRecallRecipientStripeCustomer(ctx context.Context, id int64, customerID string) (bool, error) {
+	customerID = strings.TrimSpace(customerID)
+	if customerID == "" {
+		return false, fmt.Errorf("Stripe Customer ID must not be empty")
+	}
+	result := DB.WithContext(ctx).Model(&RecallRecipient{}).
+		Where("id = ? AND (stripe_customer_id = '' OR stripe_customer_id = ?)", id, customerID).
+		Update("stripe_customer_id", customerID)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 1 {
+		return true, nil
+	}
+	var stored RecallRecipient
+	if err := DB.WithContext(ctx).Select("stripe_customer_id").First(&stored, id).Error; err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(stored.StripeCustomerId) == customerID, nil
+}
+
+func PrepareRecallRecipientPromotion(ctx context.Context, id int64, owner string, expectedLeaseUntil int64, code string) (bool, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return false, fmt.Errorf("promotion code must not be empty")
+	}
+	result := DB.WithContext(ctx).Model(&RecallRecipient{}).
+		Where("id = ? AND lease_owner = ? AND lease_expires_at = ? AND state = ? AND promotion_code = ''", id, owner, expectedLeaseUntil, RecallRecipientCustomerReady).
+		Update("promotion_code", code)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func PersistRecallRecipientPromotion(ctx context.Context, id int64, promotionID string, code string) (bool, error) {
+	promotionID = strings.TrimSpace(promotionID)
+	code = strings.TrimSpace(code)
+	if promotionID == "" || code == "" {
+		return false, fmt.Errorf("Stripe Promotion Code ID and code must not be empty")
+	}
+	result := DB.WithContext(ctx).Model(&RecallRecipient{}).
+		Where("id = ? AND (stripe_promotion_code_id IS NULL OR stripe_promotion_code_id = '' OR stripe_promotion_code_id = ?)", id, promotionID).
+		Updates(map[string]any{
+			"stripe_promotion_code_id": promotionID,
+			"promotion_code":           code,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 1 {
+		return true, nil
+	}
+	var stored RecallRecipient
+	if err := DB.WithContext(ctx).Select("stripe_promotion_code_id", "promotion_code").First(&stored, id).Error; err != nil {
+		return false, err
+	}
+	return stored.StripePromotionCodeId != nil && strings.TrimSpace(*stored.StripePromotionCodeId) == promotionID && stored.PromotionCode == code, nil
+}
+
+func DeferRecallRecipientLease(ctx context.Context, id int64, owner string, expectedLeaseUntil int64, retryAt int64, errorCode string) (bool, error) {
+	result := DB.WithContext(ctx).Model(&RecallRecipient{}).
+		Where("id = ? AND lease_owner = ? AND lease_expires_at = ? AND state IN ?", id, owner, expectedLeaseUntil, []string{
+			RecallRecipientQueued,
+			RecallRecipientCustomerReady,
+			RecallRecipientCodeReady,
+		}).
+		Updates(map[string]any{
+			"lease_owner":        "",
+			"lease_expires_at":   retryAt,
+			"last_error_code":    errorCode,
+			"last_error_message": "",
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func ScheduleRecallStageOneAndAdvance(ctx context.Context, recipientID int64, owner string, expectedLeaseUntil int64, message RecallMessage) (bool, error) {
+	if message.StageNo != 1 {
+		return false, fmt.Errorf("recall stage-one message must have stage number 1")
+	}
+	won := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&RecallRecipient{}).
+			Where("id = ? AND lease_owner = ? AND lease_expires_at = ? AND state = ?", recipientID, owner, expectedLeaseUntil, RecallRecipientCodeReady).
+			Updates(map[string]any{
+				"state":              RecallRecipientContacting,
+				"lease_owner":        "",
+				"lease_expires_at":   int64(0),
+				"last_error_code":    "",
+				"last_error_message": "",
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		message.RecipientId = recipientID
+		message.State = RecallMessageScheduled
+		message.ClaimTokenHash = nil
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "recipient_id"}, {Name: "stage_no"}},
+			DoNothing: true,
+		}).Create(&message).Error; err != nil {
+			return err
+		}
+		won = true
+		return nil
+	})
+	return won, err
 }
 
 func SetRecallMessageClaimHash(ctx context.Context, messageID int64, leaseOwner string, expectedLeaseUntil int64, claimHash string) (bool, error) {

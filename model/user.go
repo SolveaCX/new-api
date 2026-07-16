@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -372,6 +373,44 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 		err = DB.Omit("password").First(&user, "id = ?", id).Error
 	}
 	return &user, err
+}
+
+func GetUserByIdWithContext(ctx context.Context, id int) (*User, error) {
+	if id <= 0 {
+		return nil, errors.New("id is empty")
+	}
+	user := &User{}
+	if err := DB.WithContext(ctx).Omit("password").First(user, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+func SetUserStripeCustomerIfEmptyOrMatches(userID int, expected string, replacement string) (bool, error) {
+	return SetUserStripeCustomerIfEmptyOrMatchesWithContext(context.Background(), userID, expected, replacement)
+}
+
+func SetUserStripeCustomerIfEmptyOrMatchesWithContext(ctx context.Context, userID int, expected string, replacement string) (bool, error) {
+	if userID <= 0 {
+		return false, errors.New("user ID must be positive")
+	}
+	replacement = strings.TrimSpace(replacement)
+	if replacement == "" {
+		return false, errors.New("Stripe Customer ID must not be empty")
+	}
+	result := DB.WithContext(ctx).Model(&User{}).
+		Where("id = ? AND (stripe_customer = '' OR stripe_customer = ?)", userID, expected).
+		Update("stripe_customer", replacement)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return false, nil
+	}
+	if err := invalidateUserCache(userID); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 func GetUserIdByAffCode(affCode string) (int, error) {

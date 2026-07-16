@@ -536,10 +536,6 @@ func (s *RecallCampaignService) commitCampaignRun(
 	if expiresAt <= runAt.Unix() {
 		return false, fmt.Errorf("recall promotion expiry must be after its campaign run")
 	}
-	messages, err := initialRecallMessages(recipients, draft.Emails[0], runAt)
-	if err != nil {
-		return false, err
-	}
 	for i := range recipients {
 		recipients[i].PromotionExpiresAt = expiresAt
 	}
@@ -559,7 +555,7 @@ func (s *RecallCampaignService) commitCampaignRun(
 		campaign.ConfigRevision,
 		fields,
 		recipients,
-		messages,
+		nil,
 		model.RecallEvent{
 			EventType:     "campaign_run",
 			Source:        "scheduler",
@@ -597,24 +593,6 @@ func (s *RecallCampaignService) snapshotRecurringAudience(
 		return true
 	})
 	return recipients, exclusions, err
-}
-
-func initialRecallMessages(recipients []model.RecallRecipient, stage RecallEmailStage, runAt time.Time) ([]model.RecallMessage, error) {
-	templateJSON, err := common.Marshal(stage.Templates)
-	if err != nil {
-		return nil, err
-	}
-	messages := make([]model.RecallMessage, len(recipients))
-	for i := range recipients {
-		messages[i] = model.RecallMessage{
-			StageNo:          stage.StageNo,
-			TemplateVersion:  stage.TemplateVersion,
-			TemplateSnapshot: string(templateJSON),
-			ScheduledAt:      runAt.Add(time.Duration(stage.DelaySeconds) * time.Second).Unix(),
-			State:            model.RecallMessageScheduled,
-		}
-	}
-	return messages, nil
 }
 
 func recallCampaignActivationFields(draft RecallCampaignDraft, couponID string, activatedAt int64) (map[string]any, error) {
