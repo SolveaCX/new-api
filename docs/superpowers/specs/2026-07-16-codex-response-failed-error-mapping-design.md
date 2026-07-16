@@ -176,4 +176,3 @@ This guard is not Codex-specific: retrying or changing response format after byt
 - Router deploy: required. The change affects `/v1/chat/completions`, streaming behavior, provider error classification, retries, and billing refund paths.
 - Other deploy targets: staging should be validated first; no website, Terraform, Cloudflare, or database migration is involved.
 - Multi-node behavior: not relevant to correctness because all state is request-local and no cross-instance coordination is introduced.
-
