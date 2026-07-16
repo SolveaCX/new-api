@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /signup.html
+Disallow: /onboarding.html
+Disallow: /console.html
+Sitemap: https://flatkey.ai/sitemap.xml

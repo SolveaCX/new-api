@@ -1,0 +1,84 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>flatkey v2 — Console</title>
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png?v=3">
+<link rel="icon" type="image/svg+xml" href="assets/flatkey-mark.svg?v=3">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fk2.css"><style>
+body{background:var(--paper2);display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.side{background:#fff;border-right:1px solid var(--line);padding:22px 16px;display:flex;flex-direction:column;gap:4px}
+.side a{cursor:pointer;display:flex;gap:11px;align-items:center;padding:11px 14px;border-radius:10px;text-decoration:none;color:var(--ink2);font-size:14.5px;font-weight:650}
+.side a.on{background:#F1EEFF;color:var(--violet-deep)}
+.side .sec{font-size:11px;letter-spacing:1px;color:var(--ink3);font-weight:800;padding:18px 14px 6px}
+.main{padding:34px 40px}
+.top{display:flex;align-items:center;gap:16px;margin-bottom:28px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:22px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+.kpi span{font-size:12.5px;font-weight:750;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px}
+.kpi b{display:block;font-size:32px;letter-spacing:-1.2px;margin-top:8px;font-weight:800}
+.kpi small{font-size:12.5px;color:var(--ok);font-weight:700}
+.row{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px}
+.panel h4{font-size:14.5px;font-weight:800;margin-bottom:16px;display:flex;justify-content:space-between}
+.panel h4 span{color:var(--ink3);font-weight:650;font-size:12.5px}
+.legend{display:flex;gap:18px;font-size:12px;color:var(--ink3);font-weight:700;margin-top:10px}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px}
+.krow{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.krow:last-child{border:none}
+.krow code{font-family:var(--mono);background:#F4F4F1;border-radius:6px;padding:3px 9px;font-size:12px}
+.bal{background:linear-gradient(120deg,#14121F,#2A2152);border-radius:16px;color:#fff;padding:24px}
+.bal b{font-size:38px;letter-spacing:-1.5px;font-weight:800;display:block;margin:6px 0 2px}
+</style><!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-5T5LPLSZ');</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NKH9LPX9');</script>
+<!-- End Google Tag Manager -->
+</head><body>
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5T5LPLSZ" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+
+<div class="side">
+  <a class="logo" href="index.html" style="padding:8px 14px 20px"><img src="assets/flatkey-mark.svg" alt="">flatkey</a>
+  <a class="on" href="console.html">Overview</a><a>API Keys</a><a>Usage & Logs</a><a>Model Health</a><a href="playground.html">Playground</a>
+  <div class="sec">BILLING</div>
+  <a href="topup.html">Balance & Top-up</a><a>Invoices</a>
+  <div class="sec">SCALE</div>
+  <a>Rate limits</a><a>Team</a><a>Settings</a>
+  <div style="flex:1"></div>
+  <div class="panel" style="padding:16px;background:#FDFFF2;border-color:#E6F5C8"><p style="font-size:12.5px;line-height:1.6;font-weight:650">Refer a builder →<br>you both get <b>$10</b></p></div>
+</div>
+<div class="main">
+  <div class="top"><h2 style="font-size:26px;letter-spacing:-.8px;font-weight:800">Overview</h2><span class="pill" style="background:#EDFBEF;color:#15803D"><span class="dot"></span>All routes healthy</span><div style="flex:1"></div><a class="btn ghost">Docs</a><a class="btn primary" href="onboarding.html">+ New key</a></div>
+  <div class="kpis">
+    <div class="kpi"><span>Requests · 30d</span><b>128,441</b><small>▲ 34% vs prev</small></div>
+    <div class="kpi"><span>Tokens · 30d</span><b>96.2M</b><small>▲ 28%</small></div>
+    <div class="kpi"><span>Spend · 30d</span><b>$84.12</b><small style="color:var(--ink3)">saved $79.40 vs official</small></div>
+    <div class="kpi"><span>p50 latency</span><b>402ms</b><small>▲ healthy</small></div>
+  </div>
+  <div class="row">
+    <div class="panel">
+      <h4>Usage by model <span>30 days · hover for detail</span></h4>
+      <svg width="100%" height="210" viewBox="0 0 640 210" preserveAspectRatio="none">
+        <g fill="none" stroke-width="0">
+          <path d="M0,190 L0,150 C60,140 90,120 160,118 C240,116 280,90 360,86 C440,82 500,60 640,48 L640,190 Z" fill="#6D5CFF33"/>
+          <path d="M0,190 L0,168 C80,160 140,150 220,146 C320,141 420,128 640,108 L640,190 Z" fill="#C8FF4D66"/>
+          <path d="M0,190 L0,180 C120,176 260,170 400,164 C500,160 580,152 640,148 L640,190 Z" fill="#E8A15D66"/>
+        </g>
+        <path d="M0,150 C60,140 90,120 160,118 C240,116 280,90 360,86 C440,82 500,60 640,48" fill="none" stroke="#6D5CFF" stroke-width="2.5"/>
+      </svg>
+      <div class="legend"><span><i style="background:#6D5CFF"></i>gpt-5.5</span><span><i style="background:#A4CC3E"></i>deepseek-v4-flash</span><span><i style="background:#E8A15D"></i>claude-sonnet-4-6</span><span><i style="background:#8B5CF6"></i>seedance-2.5</span><span style="margin-left:auto">per-request logs →</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="bal"><span style="font-size:12.5px;font-weight:750;letter-spacing:.6px;color:#B9B3D6">BALANCE</span><b>$61.88</b><span style="font-size:12.5px;color:#B9B3D6">≈ 19 days at current burn · auto top-up OFF</span><div style="display:flex;gap:10px;margin-top:16px"><a class="btn lime" style="flex:1;justify-content:center" href="topup.html">Top up</a><a class="btn ghost ondark" style="flex:1;justify-content:center">Auto top-up</a></div></div>
+      <div class="panel"><h4>API keys <span>3 active</span></h4>
+        <div class="krow"><code>fk-live-8f3a…2e91</code> default <div style="flex:1"></div><span class="mono" style="color:var(--ink3)">2m ago</span></div>
+        <div class="krow"><code>fk-live-c119…77ab</code> cline-agent <div style="flex:1"></div><span class="mono" style="color:var(--ink3)">1h ago</span></div>
+        <div class="krow"><code>fk-live-40de…b0c2</code> prod <div style="flex:1"></div><span class="mono" style="color:var(--ink3)">3d ago</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="megafoot slim"><div class="legal" data-i18n="ft.slim" style="left:270px">Flatkey Labs, 2026 · <u>Terms</u> · <u>Privacy</u></div><div class="word">flatkey</div></div>
+<div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
+<div class="pxgrid" data-seed="73" data-cell="16" data-cols="7" data-rows="3" data-n="8" style="top:20px;right:36px;opacity:.55"></div>
+<script src="assets/pixels.js"></script>
+<script src="assets/i18n.js"></script>
+</body></html>

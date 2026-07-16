@@ -1,0 +1,132 @@
+<!doctype html><html><head><meta charset="utf-8"><title>flatkey v2 — Models</title>
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png?v=3">
+<link rel="icon" type="image/svg+xml" href="assets/flatkey-mark.svg?v=3">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fk2.css"><style>
+.wrap{max-width:1560px;margin:0 auto;padding:52px 48px}
+.search{display:flex;gap:14px;margin:26px 0 18px}
+.search input{flex:1;height:56px;border:1.5px solid var(--line);border-radius:14px;padding:0 22px;font-size:16.5px;background:#fff;color:var(--ink3)}
+.chips{display:flex;gap:10px;margin-bottom:30px;flex-wrap:wrap}
+.chip{padding:9px 16px;border-radius:999px;border:1.5px solid var(--line);font-size:13.5px;font-weight:700;color:var(--ink2);background:#fff}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.hl{background:linear-gradient(90deg,#F4F1FF,#FDFFF2);border:1.5px solid #E4DEFF;border-radius:18px;padding:20px 26px;display:flex;gap:34px;align-items:center;margin-bottom:34px}
+.hl b{font-size:15px}
+td .m b{display:block;font-size:15px;font-weight:750}
+td .m span{font-size:12.5px;color:var(--ink3);font-family:var(--mono)}
+.hbar{display:inline-flex;gap:2.5px}
+.hbar i{width:5px;height:16px;border-radius:2px;background:var(--ok);display:inline-block}
+.hbar i.w{background:var(--warn)}
+.off{font-family:var(--mono);color:var(--ink3);text-decoration:line-through;font-size:12.5px;display:block}
+.ours{font-family:var(--mono);font-weight:800;color:var(--violet-deep);font-size:14.5px}
+.try{font-size:13px;font-weight:800;color:var(--violet-deep);text-decoration:none}
+tr:hover td{background:#FBFAFF}
+table{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.1)}
+th{background:#fff}
+.wrap{padding:28px 48px 0}
+h2.display{font-size:40px;letter-spacing:-1.6px}
+.search{margin:20px 0 14px}
+.search input{height:48px;font-size:15px}
+.chips{margin-bottom:18px}
+.chip{padding:7px 14px;font-size:13px}
+.hl{padding:13px 22px;margin-bottom:20px}
+td{padding:9px 14px}
+</style><!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-5T5LPLSZ');</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NKH9LPX9');</script>
+<!-- End Google Tag Manager -->
+</head><body>
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5T5LPLSZ" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+
+<nav class="nav">
+  <a class="logo" href="index.html"><img src="assets/flatkey-mark.svg?v=3" alt="flatkey">flatkey</a>
+  <a href="models.html" class="on">Models</a><a href="docs.html">Docs</a><a href="playground.html">Playground</a><a href="models.html#leaderboard">Rankings</a><a href="topup.html">Pricing</a><a href="usecases.html">Use cases</a>
+  <div class="sp"></div>
+  <a href="login.html">Sign in</a>
+  <a class="btn white" href="contact.html">Contact sales</a>
+  <a class="btn black" href="login.html">Start free →</a>
+</nav>
+<div class="wrap">
+  <h2 class="display" data-i18n="mo.h2">160+ official models. Priced in the open.</h2>
+  <div class="search"><input id="msearch" data-i18n-ph="mo.search" placeholder="Search models, providers, capabilities…  ( ⌘K )"></div>
+  <div class="chips"><div class="chip on">All</div><div class="chip">Chat / Agents</div><div class="chip">Coding</div><div class="chip">Reasoning</div><div class="chip">Vision</div><div class="chip">Image · Video</div><div class="chip">Embeddings</div><div class="chip">≤ $1 / M tokens</div><div class="chip">China models</div></div>
+  <div class="hl"><div><b data-i18n="mo.hlb">Model authenticity, audited.</b><br><span style="font-size:13.5px;color:var(--ink2)" data-i18n="mo.hlp">Every model is probed hourly against its official API fingerprint. Public log — because "cheap gateways" that silently swap models are why you can't trust cheap gateways.</span></div><div style="flex:1"></div><a class="try" href="status.html" data-i18n="mo.hll">View audit log →</a></div>
+  <table>
+    <tr><th>Model</th><th>Provider</th><th>Health · 30d</th><th>Avg latency</th><th>Official</th><th>flatkey self-serve (after bonus)</th><th></th></tr>
+    <tr><td><div class="m"><b>gpt-5.5</b><span>openai</span></div></td><td class="mono">OpenAI</td><td><span class="ours" style="color:var(--green)">96.5%</span></td><td class="mono">3.90s</td><td><span class="off">$5.00/M</span></td><td><span class="ours">$2.00/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>claude-sonnet-4-6</b><span>anthropic</span></div></td><td class="mono">Anthropic</td><td><span class="ours" style="color:var(--green)">98.2%</span></td><td class="mono">4.23s</td><td><span class="off">$3.00/M</span></td><td><span class="ours">$1.60/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>gpt-5.4</b><span>openai</span></div></td><td class="mono">OpenAI</td><td><span class="ours" style="color:var(--green)">99.8%</span></td><td class="mono">2.94s</td><td><span class="off">$2.50/M</span></td><td><span class="ours">$1.00/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>claude-opus-4-8</b><span>anthropic</span></div></td><td class="mono">Anthropic</td><td><span class="ours" style="color:#B45309">93.8%</span></td><td class="mono">4.37s</td><td><span class="off">$5.00/M</span></td><td><span class="ours">$2.67/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr style="background:var(--violet-tint)"><td><div class="m"><b>seedance-2.5</b><span>bytedance · video · t2v + i2v</span></div></td><td class="mono">ByteDance</td><td><span class="ours" style="color:var(--green)">✓ verified</span></td><td class="mono">1080p</td><td><span class="off">—</span></td><td><span class="ours">$0.24/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>gpt-5.6-sol</b><span>openai</span></div></td><td class="mono">OpenAI</td><td><span class="ours" style="color:var(--green)">99.1%</span></td><td class="mono">13.89s</td><td><span class="off">$5.00/M</span></td><td><span class="ours">$2.00/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>gemini-3-flash-preview</b><span>google</span></div></td><td class="mono">Google</td><td><span class="ours" style="color:var(--green)">98.9%</span></td><td class="mono">9.38s</td><td><span class="off">$0.07/M</span></td><td><span class="ours">$0.037/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>gpt-5.4-mini</b><span>openai</span></div></td><td class="mono">OpenAI</td><td><span class="ours" style="color:var(--green)">99.7%</span></td><td class="mono">3.12s</td><td><span class="off">$0.75/M</span></td><td><span class="ours">$0.30/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>deepseek-v4-flash</b><span>deepseek</span></div></td><td class="mono">DeepSeek</td><td><span class="ours" style="color:var(--green)">99.4%</span></td><td class="mono">5.03s</td><td><span class="off">$0.14/M</span></td><td><span class="ours">$0.075/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>gemini-2.5-pro</b><span>google</span></div></td><td class="mono">Google</td><td><span class="ours" style="color:var(--green)">99.7%</span></td><td class="mono">16.74s</td><td><span class="off">$1.125/M</span></td><td><span class="ours">$0.60/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>glm-5.2</b><span>z.ai</span></div></td><td class="mono">Z.ai</td><td><span class="ours" style="color:var(--green)">96.6%</span></td><td class="mono">5.74s</td><td><span class="off">$1.40/M</span></td><td><span class="ours">$0.56/M</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+  </table>
+</div>
+
+
+<div class="wrap" style="padding-top:8px">
+  <h2 class="display" style="font-size:32px;margin:26px 0 6px" data-i18n="mo.vid">Video models · <span style="color:var(--violet)">Seedance 2.5 featured</span></h2>
+  <p style="font-size:13.5px;color:var(--ink3);margin-bottom:18px" data-i18n="mo.vidsub">Metered per second of generated video, same prepaid balance</p>
+  <table>
+    <tr><th>Model</th><th>Provider</th><th>Type</th><th>Resolution</th><th>flatkey</th><th></th></tr>
+    <tr style="background:#FBFAFF"><td><div class="m"><b>seedance-2.5</b><span>bytedance · FEATURED</span></div></td><td class="mono">ByteDance</td><td class="mono">t2v + i2v</td><td class="mono">1080p</td><td><span class="ours">$0.24/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>seedance-2.0-i2v</b><span>bytedance</span></div></td><td class="mono">ByteDance</td><td class="mono">i2v</td><td class="mono">720p</td><td><span class="ours">$0.15/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>veo-3.1</b><span>google</span></div></td><td class="mono">Google</td><td class="mono">t2v + audio</td><td class="mono">1080p</td><td><span class="ours">$0.40/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>sora-2</b><span>openai</span></div></td><td class="mono">OpenAI</td><td class="mono">t2v</td><td class="mono">1080p</td><td><span class="ours">$0.50/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>kling-2.5-pro</b><span>kuaishou</span></div></td><td class="mono">Kuaishou</td><td class="mono">i2v</td><td class="mono">1080p</td><td><span class="ours">$0.21/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>wan-2.7</b><span>alibaba</span></div></td><td class="mono">Alibaba</td><td class="mono">t2v</td><td class="mono">720p</td><td><span class="ours">$0.12/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>hailuo-02</b><span>minimax</span></div></td><td class="mono">MiniMax</td><td class="mono">i2v</td><td class="mono">1080p</td><td><span class="ours">$0.14/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>pixverse-v6</b><span>pixverse</span></div></td><td class="mono">PixVerse</td><td class="mono">t2v</td><td class="mono">1080p</td><td><span class="ours">$0.10/s</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+  </table>
+</div>
+<div class="wrap" style="padding-top:8px">
+  <h2 class="display" style="font-size:32px;margin:26px 0 6px" data-i18n="mo.aud">Audio models</h2>
+  <p style="font-size:13.5px;color:var(--ink3);margin-bottom:18px" data-i18n="mo.audsub">Realtime voice, TTS and transcription — per minute or per 1K characters</p>
+  <table>
+    <tr><th>Model</th><th>Provider</th><th>Type</th><th>flatkey</th><th></th></tr>
+    <tr><td><div class="m"><b>gpt-realtime</b><span>openai</span></div></td><td class="mono">OpenAI</td><td class="mono">speech ⇄ speech</td><td><span class="ours">$0.06/min</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>whisper-v4</b><span>openai</span></div></td><td class="mono">OpenAI</td><td class="mono">transcription</td><td><span class="ours">$0.003/min</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>elevenlabs-v3-turbo</b><span>elevenlabs</span></div></td><td class="mono">ElevenLabs</td><td class="mono">tts</td><td><span class="ours">$0.08/1K chars</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>minimax-speech-2.6</b><span>minimax</span></div></td><td class="mono">MiniMax</td><td class="mono">tts</td><td><span class="ours">$0.02/1K chars</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>cosyvoice-3</b><span>alibaba</span></div></td><td class="mono">Alibaba</td><td class="mono">tts</td><td><span class="ours">$0.01/1K chars</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>seed-tts-2</b><span>bytedance</span></div></td><td class="mono">ByteDance</td><td class="mono">tts</td><td><span class="ours">$0.015/1K chars</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+    <tr><td><div class="m"><b>gemini-3-audio</b><span>google</span></div></td><td class="mono">Google</td><td class="mono">native audio</td><td><span class="ours">$0.04/min</span></td><td><a class="try" href="playground.html">Try ↗</a></td></tr>
+  </table>
+</div>
+<div class="wrap" style="padding-top:8px">
+  <h2 class="display" id="leaderboard" style="font-size:32px;margin:26px 0 6px" data-i18n="mo.lb">LLM leaderboard · <span style="color:var(--violet)">19.9T tokens</span> this month</h2>
+  <p style="font-size:13.5px;color:var(--ink3);margin-bottom:18px" data-i18n="mo.lbsub">Usage index derived from real platform routing traffic · updated daily</p>
+  <div class="lb">
+    <div class="lbr"><span class="rk num">1</span><b>gpt-5.5</b><div class="track"><div class="fill" style="width:100%"></div></div><span class="amt">7.86T · 39.4%</span></div>
+    <div class="lbr"><span class="rk num">2</span><b>gpt-5.4-mini-fk-cx</b><div class="track"><div class="fill" style="width:81%"></div></div><span class="amt">6.38T · 32.0%</span></div>
+    <div class="lbr"><span class="rk num">3</span><b>gpt-5.4-mini-fk</b><div class="track"><div class="fill" style="width:17%"></div></div><span class="amt">1.37T · 6.9%</span></div>
+    <div class="lbr"><span class="rk num">4</span><b>gpt-4o-br</b><div class="track"><div class="fill" style="width:15%"></div></div><span class="amt">1.15T · 5.8%</span></div>
+    <div class="lbr"><span class="rk num">5</span><b>gpt-5.6-sol</b><div class="track"><div class="fill" style="width:12%"></div></div><span class="amt">947B · 4.8%</span></div>
+    <div class="lbr"><span class="rk num">6</span><b>deepseek-v4-flash</b><div class="track"><div class="fill" style="width:8%"></div></div><span class="amt">—</span></div>
+    <div class="lbr"><span class="rk num">7</span><b>glm-5.2</b><div class="track"><div class="fill" style="width:6%"></div></div><span class="amt">—</span></div>
+  </div>
+</div>
+<div class="megafoot slim"><div class="legal" data-i18n="ft.slim">© 2026 flatkey.ai · <u>Terms</u> · <u>Privacy</u> · <u>SLA</u> · <u>Refunds</u></div><div class="word">flatkey</div></div>
+<div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
+<div class="pxgrid" data-seed="61" data-cell="20" data-cols="9" data-rows="3" data-n="10" style="top:104px;right:44px"></div>
+<script src="assets/pixels.js"></script>
+<script src="assets/i18n.js"></script>
+<script>
+(function(){
+  var inp = document.getElementById("msearch");
+  if(!inp) return;
+  inp.addEventListener("input", function(){
+    var q = inp.value.trim().toLowerCase();
+    document.querySelectorAll("table tr").forEach(function(tr){
+      if(!tr.querySelector("td")) return;
+      tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) > -1 ? "" : "none";
+    });
+  });
+})();
+</script>
+</body></html>

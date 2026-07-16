@@ -1,0 +1,66 @@
+name: GCP Deploy Website Static (v2)
+
+# Deploys the static marketing site (website-static/) to Cloud Run newapi-web.
+# Replaces gcp-deploy-website.yml (legacy Next.js site, now retired).
+# Deploy is gated by the "production" GitHub Environment — requires Approval.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website-static/**"
+      - ".github/workflows/gcp-deploy-website-static.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID:  ${{ vars.GCP_PROJECT_ID }}
+  REGION:      ${{ vars.GCP_REGION }}
+  AR_REPO_URL: ${{ vars.GCP_AR_REPO_URL }}
+  RUN_SERVICE: ${{ vars.GCP_WEB_RUN_SERVICE }}   # newapi-web
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build image
+        run: |
+          short_sha="${GITHUB_SHA::12}"
+          IMAGE="$AR_REPO_URL/website-static:sha-$short_sha"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          gcloud builds submit website-static --project "$PROJECT_ID" --tag "$IMAGE" --timeout=600
+
+      - name: Deploy canary (no traffic)
+        run: |
+          gcloud run deploy "$RUN_SERVICE" --project "$PROJECT_ID" --region "$REGION" \
+            --image "$IMAGE" --no-traffic --tag canary --port 8080
+
+      - name: Smoke test canary
+        run: |
+          C="https://canary---newapi-web-5qjldqffdq-uw.a.run.app"
+          for p in "" login.html models.html docs.html topup.html sla.html install.sh llms.txt; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p")
+            echo "/$p -> $code"; [ "$code" = "200" ] || exit 1
+          done
+          curl -s -o /dev/null -w "%{http_code}" "$C/signup.html" | grep -q 301 || exit 1
+
+      - name: Shift traffic to latest
+        run: |
+          gcloud run services update-traffic "$RUN_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" --to-latest
