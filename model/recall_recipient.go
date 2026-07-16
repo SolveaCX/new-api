@@ -86,18 +86,25 @@ func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
 	return ids, err
 }
 
-func ListDueRecallRecipientWorkItems(now int64, limit int) ([]RecallRecipientWorkItem, error) {
+func ListDueRecallRecipientWorkItems(ctx context.Context, now int64, afterID int64, limit int, excludedCampaignIDs []int64) ([]RecallRecipientWorkItem, error) {
 	items := make([]RecallRecipientWorkItem, 0)
 	if limit <= 0 {
 		return items, nil
 	}
-	if err := DB.Model(&RecallRecipient{}).
+	query := DB.WithContext(ctx).Model(&RecallRecipient{}).
 		Select("id", "campaign_id").
 		Where("state IN ? AND (lease_expires_at = 0 OR lease_expires_at < ?)", []string{
 			RecallRecipientQueued,
 			RecallRecipientCustomerReady,
 			RecallRecipientCodeReady,
-		}, now).
+		}, now)
+	if afterID > 0 {
+		query = query.Where("id > ?", afterID)
+	}
+	if len(excludedCampaignIDs) > 0 {
+		query = query.Where("campaign_id NOT IN ?", excludedCampaignIDs)
+	}
+	if err := query.
 		Order("id ASC").
 		Limit(limit).
 		Scan(&items).Error; err != nil {
@@ -117,7 +124,7 @@ func ListDueRecallRecipientWorkItems(now int64, limit int) ([]RecallRecipientWor
 		campaignIDs = append(campaignIDs, item.CampaignId)
 	}
 	var campaigns []RecallCampaign
-	if err := DB.Model(&RecallCampaign{}).
+	if err := DB.WithContext(ctx).Model(&RecallCampaign{}).
 		Select("id", "worker_concurrency").
 		Where("id IN ?", campaignIDs).
 		Find(&campaigns).Error; err != nil {

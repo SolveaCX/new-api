@@ -399,7 +399,7 @@ func SetUserStripeCustomerIfEmptyOrMatchesWithContext(ctx context.Context, userI
 		return false, errors.New("Stripe Customer ID must not be empty")
 	}
 	result := DB.WithContext(ctx).Model(&User{}).
-		Where("id = ? AND (stripe_customer = '' OR stripe_customer = ?)", userID, expected).
+		Where("id = ? AND (stripe_customer IS NULL OR stripe_customer = '' OR stripe_customer = ?)", userID, expected).
 		Update("stripe_customer", replacement)
 	if result.Error != nil {
 		return false, result.Error

@@ -633,9 +633,11 @@ func TestRecallStripeCustomerEmailUpdateIsSeparateAndVersioned(t *testing.T) {
 		},
 	}
 
-	customer, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{
+	user := model.User{
 		Id: 7, Email: " Current@Example.COM ", Username: "mutable-name", DisplayName: "mutable-display",
-	})
+	}
+	service := NewRecallStripeService(client)
+	customer, err := service.EnsureCustomer(context.Background(), user)
 	require.NoError(t, err)
 	require.Equal(t, "cus_7", customer.ID)
 	require.NotNil(t, created)
@@ -644,6 +646,10 @@ func TestRecallStripeCustomerEmailUpdateIsSeparateAndVersioned(t *testing.T) {
 	require.Nil(t, created.Description)
 	require.Equal(t, map[string]string{"flatkey_user_id": "7"}, created.Metadata)
 	require.Equal(t, "recall_customer:7", *created.IdempotencyKey)
+	require.Nil(t, updated)
+	customer, err = service.syncCustomerEmail(context.Background(), user, customer)
+	require.NoError(t, err)
+	require.Equal(t, "cus_7", customer.ID)
 	require.NotNil(t, updated)
 	require.Equal(t, "current@example.com", *updated.Email)
 	require.Nil(t, updated.Name)
@@ -669,7 +675,10 @@ func TestRecallStripeCustomerEmailUpdateKeyChangesOnlyWithNormalizedEmail(t *tes
 	service := NewRecallStripeService(client)
 
 	for _, email := range []string{" User@Example.com ", "user@example.COM", "changed@example.com"} {
-		_, err := service.EnsureCustomer(context.Background(), model.User{Id: 7, Email: email, StripeCustomer: "cus_7"})
+		user := model.User{Id: 7, Email: email, StripeCustomer: "cus_7"}
+		customer, err := service.EnsureCustomer(context.Background(), user)
+		require.NoError(t, err)
+		_, err = service.syncCustomerEmail(context.Background(), user, customer)
 		require.NoError(t, err)
 	}
 	require.Len(t, keys, 3)
@@ -694,9 +703,13 @@ func TestRecallStripeCustomerEmailUpdateRetriesWithStableKey(t *testing.T) {
 		},
 	}
 
-	customer, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{
+	user := model.User{
 		Id: 7, Email: " User@Example.com ", StripeCustomer: "cus_7",
-	})
+	}
+	service := NewRecallStripeService(client)
+	customer, err := service.EnsureCustomer(context.Background(), user)
+	require.NoError(t, err)
+	customer, err = service.syncCustomerEmail(context.Background(), user, customer)
 	require.NoError(t, err)
 	require.Equal(t, "cus_7", customer.ID)
 	require.Len(t, calls, 2)
@@ -718,9 +731,13 @@ func TestRecallStripeCustomerEmailUpdateRejectsMismatchedCustomer(t *testing.T) 
 		},
 	}
 
-	_, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{
+	user := model.User{
 		Id: 7, Email: "user@example.com", StripeCustomer: "cus_7",
-	})
+	}
+	service := NewRecallStripeService(client)
+	customer, err := service.EnsureCustomer(context.Background(), user)
+	require.NoError(t, err)
+	_, err = service.syncCustomerEmail(context.Background(), user, customer)
 	require.ErrorContains(t, err, "unavailable Customer")
 	require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
 	require.Equal(t, 1, updateCalls)
@@ -738,7 +755,11 @@ func TestRecallStripeCustomerBlankEmailDoesNotClearStripe(t *testing.T) {
 		},
 	}
 
-	_, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{Id: 7, Email: "  ", StripeCustomer: "cus_7"})
+	user := model.User{Id: 7, Email: "  ", StripeCustomer: "cus_7"}
+	service := NewRecallStripeService(client)
+	customer, err := service.EnsureCustomer(context.Background(), user)
+	require.NoError(t, err)
+	_, err = service.syncCustomerEmail(context.Background(), user, customer)
 	require.NoError(t, err)
 	require.False(t, updated)
 }

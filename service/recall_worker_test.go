@@ -161,13 +161,13 @@ func TestRecallWorkerResolvesCompetingCustomerWinnerByReloadAndValidation(t *tes
 		},
 		createCustomerFn: func(_ context.Context, params *stripe.CustomerParams) (*stripe.Customer, error) {
 			createParams = append(createParams, params)
-			return &stripe.Customer{ID: "cus_created"}, nil
-		},
-		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
-			if id == "cus_created" && !injectedWinner {
+			if !injectedWinner {
 				injectedWinner = true
 				require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("stripe_customer", "cus_winner").Error)
 			}
+			return &stripe.Customer{ID: "cus_created"}, nil
+		},
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
 			return &stripe.Customer{ID: id, Email: *params.Email}, nil
 		},
 		createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
@@ -239,6 +239,42 @@ func TestRecallWorkerReconcilesExistingPromotionWithoutCreate(t *testing.T) {
 	require.Equal(t, model.RecallRecipientContacting, stored.State)
 }
 
+func TestRecallWorkerRejectsMismatchedPersistedPromotionID(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	user := model.User{Username: "recall-worker-promo-id-mismatch", Password: "password", Email: "promo-id@example.com", StripeCustomer: "cus_expected", AffCode: "promo-id-mismatch"}
+	require.NoError(t, model.DB.Create(&user).Error)
+	recipient := createRecallWorkerRecipient(t, campaign.Id, user.Id, model.RecallRecipientCustomerReady)
+	persistedPromotionID := "promo_expected"
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", recipient.Id).Updates(map[string]any{
+		"stripe_customer_id":       "cus_expected",
+		"stripe_promotion_code_id": persistedPromotionID,
+		"promotion_code":           "FKEXXST234",
+	}).Error)
+	client := &recallStripeFakeClient{
+		getPromotionCodeFn: func(_ context.Context, id string) (*stripe.PromotionCode, error) {
+			require.Equal(t, persistedPromotionID, id)
+			return &stripe.PromotionCode{
+				ID: "promo_other", Active: true, Code: "FKEXXST234", Coupon: &stripe.Coupon{ID: "coupon_worker"}, Customer: &stripe.Customer{ID: "cus_expected"},
+				ExpiresAt: 1_900_000_000, MaxRedemptions: 1,
+				Restrictions: &stripe.PromotionCodeRestrictions{MinimumAmount: 2500, MinimumAmountCurrency: stripe.CurrencyUSD},
+			}, nil
+		},
+	}
+	worker := newRecallWorkerForTest(client, "node-a")
+
+	processed, err := worker.RunBatch(context.Background(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	var stored model.RecallRecipient
+	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientFailed, stored.State)
+	require.Equal(t, "stripe_permanent", stored.LastErrorCode)
+	require.NotNil(t, stored.StripePromotionCodeId)
+	require.Equal(t, persistedPromotionID, *stored.StripePromotionCodeId)
+}
+
 func TestRecallWorkerTwoWorkersCreateOnePromotion(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)
@@ -251,11 +287,16 @@ func TestRecallWorkerTwoWorkersCreateOnePromotion(t *testing.T) {
 	}).Error)
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
+	t.Cleanup(func() { closeRecallWorkerTestSignal(release) })
 	var createCalls atomic.Int32
 	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
 		createCalls.Add(1)
 		started <- struct{}{}
-		<-release
+		select {
+		case <-release:
+		case <-time.After(2 * time.Second):
+			return nil, fmt.Errorf("timed out waiting to release promotion creation")
+		}
 		return recallWorkerPromotionFromParams("promo_race", params), nil
 	}}
 	workerA := newRecallWorkerForTest(client, "node-a")
@@ -265,13 +306,13 @@ func TestRecallWorkerTwoWorkersCreateOnePromotion(t *testing.T) {
 		_, err := workerA.RunBatch(context.Background(), 10)
 		errCh <- err
 	}()
-	<-started
+	receiveRecallWorkerTest(t, started, "promotion creation start")
 
 	processedB, err := workerB.RunBatch(context.Background(), 10)
 	require.NoError(t, err)
 	require.Zero(t, processedB)
-	close(release)
-	require.NoError(t, <-errCh)
+	closeRecallWorkerTestSignal(release)
+	require.NoError(t, receiveRecallWorkerTest(t, errCh, "first worker completion"))
 	require.Equal(t, int32(1), createCalls.Load())
 }
 
@@ -306,6 +347,7 @@ func TestRecallWorkerRunBatchHonorsPerCampaignConcurrency(t *testing.T) {
 
 	started := make(chan int64, len(codes))
 	release := make(chan struct{})
+	t.Cleanup(func() { closeRecallWorkerTestSignal(release) })
 	active := map[int64]int{}
 	peak := map[int64]int{}
 	var concurrencyMu sync.Mutex
@@ -320,7 +362,11 @@ func TestRecallWorkerRunBatchHonorsPerCampaignConcurrency(t *testing.T) {
 		}
 		concurrencyMu.Unlock()
 		started <- campaignID
-		<-release
+		select {
+		case <-release:
+		case <-time.After(2 * time.Second):
+			return nil, fmt.Errorf("timed out waiting to release campaign concurrency test")
+		}
 		concurrencyMu.Lock()
 		active[campaignID]--
 		concurrencyMu.Unlock()
@@ -345,20 +391,184 @@ func TestRecallWorkerRunBatchHonorsPerCampaignConcurrency(t *testing.T) {
 		case <-started:
 			startedCount++
 		case <-timer.C:
-			close(release)
-			result := <-done
+			closeRecallWorkerTestSignal(release)
+			result := receiveRecallWorkerTest(t, done, "campaign concurrency completion")
 			require.NoError(t, result.err)
 			t.Fatalf("expected three concurrent Stripe calls across campaign caps, got %d", startedCount)
 		}
 	}
-	close(release)
-	result := <-done
+	closeRecallWorkerTestSignal(release)
+	result := receiveRecallWorkerTest(t, done, "campaign concurrency completion")
 	require.NoError(t, result.err)
 	require.Equal(t, len(codes), result.processed)
 	concurrencyMu.Lock()
 	defer concurrencyMu.Unlock()
 	require.Equal(t, 2, peak[campaignA.Id])
 	require.Equal(t, 1, peak[campaignB.Id])
+}
+
+func TestRecallWorkerRunBatchScansPastFullCampaignForAvailableWork(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaignA := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaignA.Id).Update("worker_concurrency", 1).Error)
+	blockerUser := model.User{Username: "recall-worker-fair-blocker", Password: "password", Email: "blocker@example.com", AffCode: "fair-blocker"}
+	starvedUser := model.User{Username: "recall-worker-fair-a", Password: "password", Email: "a@example.com", AffCode: "fair-a"}
+	require.NoError(t, model.DB.Create(&blockerUser).Error)
+	require.NoError(t, model.DB.Create(&starvedUser).Error)
+	blocker := createRecallWorkerRecipient(t, campaignA.Id, blockerUser.Id, model.RecallRecipientQueued)
+	starved := createRecallWorkerRecipient(t, campaignA.Id, starvedUser.Id, model.RecallRecipientQueued)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", blocker.Id).Updates(map[string]any{
+		"lease_owner": "capacity-holder", "lease_expires_at": recallWorkerTestNow + recallRecipientLeaseSeconds,
+	}).Error)
+
+	campaignB := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaignB.Id).Update("worker_concurrency", 1).Error)
+	availableUser := model.User{Username: "recall-worker-fair-b", Password: "password", Email: "b@example.com", StripeCustomer: "cus_fair_b", AffCode: "fair-b"}
+	require.NoError(t, model.DB.Create(&availableUser).Error)
+	available := createRecallWorkerRecipient(t, campaignB.Id, availableUser.Id, model.RecallRecipientQueued)
+
+	client := &recallStripeFakeClient{
+		getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) {
+			require.Equal(t, "cus_fair_b", id)
+			return &stripe.Customer{ID: id}, nil
+		},
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			return &stripe.Customer{ID: id, Email: *params.Email}, nil
+		},
+		createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+			return recallWorkerPromotionFromParams("promo_fair_b", params), nil
+		},
+	}
+	worker := newRecallWorkerForTest(client, "node-a")
+
+	processed, err := worker.RunBatch(context.Background(), 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	var storedStarved, storedAvailable model.RecallRecipient
+	require.NoError(t, model.DB.First(&storedStarved, starved.Id).Error)
+	require.NoError(t, model.DB.First(&storedAvailable, available.Id).Error)
+	require.Equal(t, model.RecallRecipientQueued, storedStarved.State)
+	require.Equal(t, model.RecallRecipientContacting, storedAvailable.State)
+}
+
+func TestRecallWorkerRunBatchAdvancesBoundedScanAcrossTicks(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	for i := 0; i < recallRecipientScanPages; i++ {
+		campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+		require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaign.Id).Update("worker_concurrency", 1).Error)
+		blockerUser := model.User{
+			Username: fmt.Sprintf("recall-worker-cursor-blocker-%d", i), Password: "password", Email: fmt.Sprintf("blocker-%d@example.com", i), AffCode: fmt.Sprintf("cursor-blocker-%d", i),
+		}
+		dueUser := model.User{
+			Username: fmt.Sprintf("recall-worker-cursor-due-%d", i), Password: "password", Email: fmt.Sprintf("due-%d@example.com", i), AffCode: fmt.Sprintf("cursor-due-%d", i),
+		}
+		require.NoError(t, model.DB.Create(&blockerUser).Error)
+		require.NoError(t, model.DB.Create(&dueUser).Error)
+		blocker := createRecallWorkerRecipient(t, campaign.Id, blockerUser.Id, model.RecallRecipientQueued)
+		createRecallWorkerRecipient(t, campaign.Id, dueUser.Id, model.RecallRecipientQueued)
+		require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", blocker.Id).Updates(map[string]any{
+			"lease_owner": fmt.Sprintf("capacity-holder-%d", i), "lease_expires_at": recallWorkerTestNow + recallRecipientLeaseSeconds,
+		}).Error)
+	}
+
+	availableCampaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", availableCampaign.Id).Update("worker_concurrency", 1).Error)
+	availableUser := model.User{Username: "recall-worker-cursor-available", Password: "password", Email: "cursor-available@example.com", StripeCustomer: "cus_cursor_available", AffCode: "cursor-available"}
+	require.NoError(t, model.DB.Create(&availableUser).Error)
+	available := createRecallWorkerRecipient(t, availableCampaign.Id, availableUser.Id, model.RecallRecipientQueued)
+	client := &recallStripeFakeClient{
+		getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) {
+			require.Equal(t, "cus_cursor_available", id)
+			return &stripe.Customer{ID: id}, nil
+		},
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			return &stripe.Customer{ID: id, Email: *params.Email}, nil
+		},
+		createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+			return recallWorkerPromotionFromParams("promo_cursor_available", params), nil
+		},
+	}
+	worker := newRecallWorkerForTest(client, "node-a")
+
+	processed, err := worker.RunBatch(context.Background(), 1)
+	require.NoError(t, err)
+	require.Zero(t, processed)
+	processed, err = worker.RunBatch(context.Background(), 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	var stored model.RecallRecipient
+	require.NoError(t, model.DB.First(&stored, available.Id).Error)
+	require.Equal(t, model.RecallRecipientContacting, stored.State)
+}
+
+func TestRecallWorkerCanceledConcurrentBatchDoesNotWaitForActiveScan(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	user := model.User{Username: "recall-worker-scan-cancel", Password: "password", Email: "scan-cancel@example.com", StripeCustomer: "cus_scan_cancel", AffCode: "scan-cancel"}
+	require.NoError(t, model.DB.Create(&user).Error)
+	recipient := createRecallWorkerRecipient(t, campaign.Id, user.Id, model.RecallRecipientCustomerReady)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", recipient.Id).Updates(map[string]any{
+		"stripe_customer_id": "cus_scan_cancel", "promotion_code": "FKSCAN234",
+	}).Error)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+		started <- struct{}{}
+		select {
+		case <-release:
+			return recallWorkerPromotionFromParams("promo_scan_cancel", params), nil
+		case <-time.After(2 * time.Second):
+			return nil, fmt.Errorf("timed out waiting to release scan cancellation test")
+		}
+	}}
+	worker := newRecallWorkerForTest(client, "node-a")
+	activeDone := make(chan error, 1)
+	go func() {
+		_, err := worker.RunBatch(context.Background(), 1)
+		activeDone <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("active batch did not reach the external call")
+	}
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceledDone := make(chan error, 1)
+	go func() {
+		_, err := worker.RunBatch(canceledCtx, 1)
+		canceledDone <- err
+	}()
+	select {
+	case err := <-canceledDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(200 * time.Millisecond):
+		close(release)
+		select {
+		case <-activeDone:
+		case <-time.After(2 * time.Second):
+		}
+		t.Fatal("canceled batch waited for the active scan")
+	}
+	close(release)
+	select {
+	case err := <-activeDone:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("active batch did not finish after release")
+	}
 }
 
 func TestRecallWorkerRunBatchHonorsCampaignConcurrencyAcrossWorkers(t *testing.T) {
@@ -387,6 +597,7 @@ func TestRecallWorkerRunBatchHonorsCampaignConcurrencyAcrossWorkers(t *testing.T
 
 	started := make(chan int64, 2)
 	release := make(chan struct{})
+	t.Cleanup(func() { closeRecallWorkerTestSignal(release) })
 	var active atomic.Int32
 	var peak atomic.Int32
 	var createCalls atomic.Int32
@@ -403,7 +614,11 @@ func TestRecallWorkerRunBatchHonorsCampaignConcurrencyAcrossWorkers(t *testing.T
 			}
 		}
 		started <- recipientID
-		<-release
+		select {
+		case <-release:
+		case <-time.After(2 * time.Second):
+			return nil, fmt.Errorf("timed out waiting to release cross-worker concurrency test")
+		}
 		active.Add(-1)
 		return recallWorkerPromotionFromParams(fmt.Sprintf("promo_node_cap_%d", recipientID), params), nil
 	}}
@@ -442,17 +657,17 @@ func TestRecallWorkerRunBatchHonorsCampaignConcurrencyAcrossWorkers(t *testing.T
 	case secondResult = <-secondDone:
 		secondFinished = true
 	case <-time.After(2 * time.Second):
-		close(release)
-		firstResult := <-firstDone
+		closeRecallWorkerTestSignal(release)
+		firstResult := receiveRecallWorkerTest(t, firstDone, "first cross-worker completion")
 		require.NoError(t, firstResult.err)
 		t.Fatal("second worker did not finish or start an external call")
 	}
-	close(release)
-	firstResult := <-firstDone
+	closeRecallWorkerTestSignal(release)
+	firstResult := receiveRecallWorkerTest(t, firstDone, "first cross-worker completion")
 	require.NoError(t, firstResult.err)
 	require.Equal(t, 1, firstResult.processed)
 	if !secondFinished {
-		secondResult = <-secondDone
+		secondResult = receiveRecallWorkerTest(t, secondDone, "second cross-worker completion")
 	}
 	require.NoError(t, secondResult.err)
 	require.False(t, secondStarted, "campaign capacity must be shared across worker owners")
@@ -494,6 +709,7 @@ func TestRecallWorkerReacquiresCampaignCapacityBetweenStagesAcrossWorkers(t *tes
 
 	aAdvanced := make(chan struct{})
 	allowAContinue := make(chan struct{})
+	t.Cleanup(func() { closeRecallWorkerTestSignal(allowAContinue) })
 	callbackName := "recall_worker_pause_after_customer_stage"
 	var pauseOnce sync.Once
 	require.NoError(t, db.Callback().Update().After("gorm:commit_or_rollback_transaction").Register(callbackName, func(tx *gorm.DB) {
@@ -506,13 +722,18 @@ func TestRecallWorkerReacquiresCampaignCapacityBetweenStagesAcrossWorkers(t *tes
 		}
 		pauseOnce.Do(func() {
 			close(aAdvanced)
-			<-allowAContinue
+			select {
+			case <-allowAContinue:
+			case <-time.After(2 * time.Second):
+				tx.AddError(fmt.Errorf("timed out waiting to continue customer stage"))
+			}
 		})
 	}))
 
 	bCustomerStarted := make(chan struct{}, 1)
 	promotionStarted := make(chan int64, 2)
 	releaseExternal := make(chan struct{})
+	t.Cleanup(func() { closeRecallWorkerTestSignal(releaseExternal) })
 	var active atomic.Int32
 	var peak atomic.Int32
 	var createPromotionCalls atomic.Int32
@@ -531,7 +752,11 @@ func TestRecallWorkerReacquiresCampaignCapacityBetweenStagesAcrossWorkers(t *tes
 			userID := params.Metadata["flatkey_user_id"]
 			if userID == fmt.Sprint(userB.Id) {
 				bCustomerStarted <- struct{}{}
-				<-releaseExternal
+				select {
+				case <-releaseExternal:
+				case <-time.After(2 * time.Second):
+					return nil, fmt.Errorf("timed out waiting to release customer creation")
+				}
 			}
 			active.Add(-1)
 			return &stripe.Customer{ID: "cus_stage_" + userID}, nil
@@ -546,7 +771,11 @@ func TestRecallWorkerReacquiresCampaignCapacityBetweenStagesAcrossWorkers(t *tes
 			_, err := fmt.Sscan(params.Metadata["recall_recipient_id"], &recipientID)
 			require.NoError(t, err)
 			promotionStarted <- recipientID
-			<-releaseExternal
+			select {
+			case <-releaseExternal:
+			case <-time.After(2 * time.Second):
+				return nil, fmt.Errorf("timed out waiting to release promotion creation")
+			}
 			active.Add(-1)
 			return recallWorkerPromotionFromParams(fmt.Sprintf("promo_stage_%d", recipientID), params), nil
 		},
@@ -564,13 +793,13 @@ func TestRecallWorkerReacquiresCampaignCapacityBetweenStagesAcrossWorkers(t *tes
 	select {
 	case <-aAdvanced:
 	case err := <-aDone:
-		close(allowAContinue)
-		close(releaseExternal)
+		closeRecallWorkerTestSignal(allowAContinue)
+		closeRecallWorkerTestSignal(releaseExternal)
 		require.NoError(t, err)
 		t.Fatal("worker A finished before its customer-ready lease was released")
 	case <-time.After(2 * time.Second):
-		close(allowAContinue)
-		close(releaseExternal)
+		closeRecallWorkerTestSignal(allowAContinue)
+		closeRecallWorkerTestSignal(releaseExternal)
 		t.Fatal("worker A did not reach the committed customer-ready transition")
 	}
 
@@ -586,17 +815,17 @@ func TestRecallWorkerReacquiresCampaignCapacityBetweenStagesAcrossWorkers(t *tes
 	select {
 	case <-bCustomerStarted:
 	case result := <-bDone:
-		close(allowAContinue)
-		close(releaseExternal)
+		closeRecallWorkerTestSignal(allowAContinue)
+		closeRecallWorkerTestSignal(releaseExternal)
 		require.NoError(t, result.err)
 		t.Fatal("worker B finished before occupying campaign capacity")
 	case <-time.After(2 * time.Second):
-		close(allowAContinue)
-		close(releaseExternal)
+		closeRecallWorkerTestSignal(allowAContinue)
+		closeRecallWorkerTestSignal(releaseExternal)
 		t.Fatal("worker B did not occupy campaign capacity")
 	}
 
-	close(allowAContinue)
+	closeRecallWorkerTestSignal(allowAContinue)
 	var aErr error
 	aFinished := false
 	aPromotionStarted := false
@@ -606,15 +835,15 @@ func TestRecallWorkerReacquiresCampaignCapacityBetweenStagesAcrossWorkers(t *tes
 	case aErr = <-aDone:
 		aFinished = true
 	case <-time.After(2 * time.Second):
-		close(releaseExternal)
-		<-bDone
+		closeRecallWorkerTestSignal(releaseExternal)
+		receiveRecallWorkerTest(t, bDone, "worker B completion after stage timeout")
 		t.Fatal("worker A neither yielded capacity nor entered its next external call")
 	}
-	close(releaseExternal)
+	closeRecallWorkerTestSignal(releaseExternal)
 	if !aFinished {
-		aErr = <-aDone
+		aErr = receiveRecallWorkerTest(t, aDone, "worker A completion")
 	}
-	bResult := <-bDone
+	bResult := receiveRecallWorkerTest(t, bDone, "worker B completion")
 	require.False(t, aPromotionStarted, "worker A must not bypass worker B's campaign lease between stages")
 	require.ErrorIs(t, aErr, ErrRecallRecipientLeaseLost)
 	require.NoError(t, bResult.err)
@@ -673,6 +902,7 @@ func TestRecallWorkerPersistsCustomerAfterLeaseLossWithoutAdvancing(t *testing.T
 	user := model.User{Username: "recall-worker-customer-lease", Password: "password", Email: "customer-lease@example.com"}
 	require.NoError(t, model.DB.Create(&user).Error)
 	recipient := createRecallWorkerRecipient(t, campaign.Id, user.Id, model.RecallRecipientQueued)
+	updateCalls := 0
 	client := &recallStripeFakeClient{
 		createCustomerFn: func(context.Context, *stripe.CustomerParams) (*stripe.Customer, error) {
 			require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", recipient.Id).Updates(map[string]any{
@@ -681,6 +911,7 @@ func TestRecallWorkerPersistsCustomerAfterLeaseLossWithoutAdvancing(t *testing.T
 			return &stripe.Customer{ID: "cus_after_lease_loss"}, nil
 		},
 		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			updateCalls++
 			return &stripe.Customer{ID: id, Email: *params.Email}, nil
 		},
 	}
@@ -696,6 +927,66 @@ func TestRecallWorkerPersistsCustomerAfterLeaseLossWithoutAdvancing(t *testing.T
 	storedUser, err := model.GetUserByIdWithContext(context.Background(), user.Id)
 	require.NoError(t, err)
 	require.Equal(t, "cus_after_lease_loss", storedUser.StripeCustomer)
+	require.Zero(t, updateCalls)
+}
+
+func TestRecallWorkerPersistsCustomerBeforeRetryableEmailSyncFailure(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	user := model.User{Username: "recall-worker-customer-durable", Password: "password", Email: "durable@example.com"}
+	require.NoError(t, model.DB.Create(&user).Error)
+	recipient := createRecallWorkerRecipient(t, campaign.Id, user.Id, model.RecallRecipientQueued)
+
+	createCalls := 0
+	updateCalls := 0
+	updateSucceeds := false
+	client := &recallStripeFakeClient{
+		createCustomerFn: func(context.Context, *stripe.CustomerParams) (*stripe.Customer, error) {
+			createCalls++
+			return &stripe.Customer{ID: "cus_durable"}, nil
+		},
+		getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) {
+			require.Equal(t, "cus_durable", id)
+			return &stripe.Customer{ID: id}, nil
+		},
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			updateCalls++
+			if !updateSucceeds {
+				return nil, recallStripeTimeout{}
+			}
+			return &stripe.Customer{ID: id, Email: *params.Email}, nil
+		},
+		createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+			return recallWorkerPromotionFromParams("promo_durable", params), nil
+		},
+	}
+	worker := newRecallWorkerForTest(client, "node-a")
+
+	processed, err := worker.RunBatch(context.Background(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 1, createCalls)
+	require.Equal(t, 3, updateCalls)
+
+	storedUser, err := model.GetUserByIdWithContext(context.Background(), user.Id)
+	require.NoError(t, err)
+	require.Equal(t, "cus_durable", storedUser.StripeCustomer)
+	var storedRecipient model.RecallRecipient
+	require.NoError(t, model.DB.First(&storedRecipient, recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientQueued, storedRecipient.State)
+	require.Equal(t, "cus_durable", storedRecipient.StripeCustomerId)
+
+	updateSucceeds = true
+	worker.now = func() time.Time { return time.Unix(recallWorkerTestNow+recallRecipientRetrySeconds+1, 0).UTC() }
+	processed, err = worker.RunBatch(context.Background(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 1, createCalls)
+	require.Equal(t, 4, updateCalls)
+	require.NoError(t, model.DB.First(&storedRecipient, recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientContacting, storedRecipient.State)
+	require.Equal(t, "cus_durable", storedRecipient.StripeCustomerId)
 }
 
 func TestRecallWorkerTransientStripeErrorDefersOnlyRecipient(t *testing.T) {
@@ -1006,4 +1297,24 @@ func recallWorkerPromotionFromParams(id string, params *stripe.PromotionCodePara
 		}
 	}
 	return promotion
+}
+
+func receiveRecallWorkerTest[T any](t *testing.T, ch <-chan T, event string) T {
+	t.Helper()
+	select {
+	case value := <-ch:
+		return value
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", event)
+		var zero T
+		return zero
+	}
+}
+
+func closeRecallWorkerTestSignal(ch chan struct{}) {
+	select {
+	case <-ch:
+	default:
+		close(ch)
+	}
 }
