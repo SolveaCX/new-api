@@ -35,6 +35,8 @@ import (
 
 var stripeAdaptor = &StripeAdaptor{}
 
+const recallCheckoutUnavailableMessage = "This discount is invalid or no longer available for this purchase"
+
 // StripePayRequest represents a payment request for Stripe checkout.
 type StripePayRequest struct {
 	// Amount is the quantity of units to purchase.
@@ -44,6 +46,7 @@ type StripePayRequest struct {
 	// StripeCurrency opts into the supported Stripe top-up package flow.
 	// Stripe Checkout chooses presentment currency from customer location.
 	StripeCurrency string `json:"stripe_currency,omitempty"`
+	RecallClaim    string `json:"recall_claim,omitempty"`
 	// SuccessURL is the optional custom URL to redirect after successful payment.
 	// If empty, defaults to the server's console log page.
 	SuccessURL string `json:"success_url,omitempty"`
@@ -472,7 +475,28 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	embedded := strings.EqualFold(strings.TrimSpace(req.UIMode), "embedded") &&
 		strings.TrimSpace(setting.StripePublishableKey) != ""
 
-	checkoutSession, err := genStripeLink(referenceId, checkoutCustomerId, checkoutEmail, checkout, req.SuccessURL, req.CancelURL, invoiceRequested, req.SaveCard, embedded, stripeCheckoutSubmitMessage(normalizedAmount, bonusAmount))
+	var recallDiscount *service.RecallCheckoutDiscount
+	if strings.TrimSpace(req.RecallClaim) != "" {
+		recallDiscount, err = service.GetRecallRuntime().Claims.BuildCheckoutDiscount(
+			c.Request.Context(),
+			id,
+			req.RecallClaim,
+			service.RecallPurchaseKindTopUp,
+			checkout.PriceId,
+		)
+		if err != nil {
+			logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe top-up recall claim rejected user_id=%d trade_no=%s price_id=%s error=%q", id, referenceId, checkout.PriceId, err.Error()))
+			topUp.Status = common.TopUpStatusFailed
+			_ = topUp.Update()
+			if invoiceRequested {
+				_ = model.UpdatePaymentInvoiceStatus(referenceId, model.PaymentInvoiceStatusFailed)
+			}
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": recallCheckoutUnavailableMessage})
+			return
+		}
+	}
+
+	checkoutSession, err := genStripeLink(referenceId, checkoutCustomerId, checkoutEmail, checkout, req.SuccessURL, req.CancelURL, invoiceRequested, req.SaveCard, embedded, stripeCheckoutSubmitMessage(normalizedAmount, bonusAmount), recallDiscount)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建 Checkout Session 失败 user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
 		topUp.Status = common.TopUpStatusFailed
@@ -1520,7 +1544,7 @@ func ensureStripeCustomerTaxID(ctx context.Context, customerId string, fields mo
 //   - cancelURL: custom URL to redirect when payment is canceled (empty for default)
 //
 // Returns the checkout session URL or an error if the session creation fails.
-func genStripeLink(referenceId string, customerId string, email string, checkout *stripeTopUpCheckout, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, embedded bool, submitMessage string) (*stripe.CheckoutSession, error) {
+func genStripeLink(referenceId string, customerId string, email string, checkout *stripeTopUpCheckout, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, embedded bool, submitMessage string, recall *service.RecallCheckoutDiscount) (*stripe.CheckoutSession, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		return nil, fmt.Errorf("无效的Stripe API密钥")
 	}
@@ -1538,7 +1562,7 @@ func genStripeLink(referenceId string, customerId string, email string, checkout
 		cancelURL = consolePaymentReturnPath("/console/topup")
 	}
 
-	params := buildStripeCheckoutSessionParams(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, embedded, submitMessage)
+	params := buildStripeCheckoutSessionParams(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, embedded, submitMessage, recall)
 
 	result, err := session.New(params)
 	if err != nil {
@@ -1647,17 +1671,24 @@ func stripeCheckoutSubmitMessage(amount int64, bonusAmount int64) string {
 	return fmt.Sprintf("$%d in credits will be added to your account immediately after payment.", amount)
 }
 
-func buildStripeCheckoutSessionParams(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, embedded bool, submitMessage string) *stripe.CheckoutSessionParams {
-	// Promotion codes are deliberately NOT enabled: an empty "Add promotion code" field
-	// on a top-up checkout reads as "everyone else has a discount you don't", which
-	// undercuts the advertised top-up bonus. Bonuses are granted server-side after
-	// payment (configuredTopUpAmounts), not via Stripe coupons.
+func buildStripeCheckoutSessionParams(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, embedded bool, submitMessage string, recall *service.RecallCheckoutDiscount) *stripe.CheckoutSessionParams {
 	params := &stripe.CheckoutSessionParams{
 		ClientReferenceID: stripe.String(referenceId),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			buildStripeTopUpLineItem(priceId, quantity),
 		},
 		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+	}
+	if recall == nil {
+		params.AllowPromotionCodes = stripe.Bool(true)
+	} else {
+		params.Discounts = []*stripe.CheckoutSessionDiscountParams{{
+			PromotionCode: stripe.String(recall.PromotionCodeID),
+		}}
+		params.Metadata = map[string]string{
+			"recall_campaign_id":  strconv.FormatInt(recall.CampaignID, 10),
+			"recall_recipient_id": strconv.FormatInt(recall.RecipientID, 10),
+		}
 	}
 
 	if embedded {

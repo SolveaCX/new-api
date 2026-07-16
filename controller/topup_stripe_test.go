@@ -3,9 +3,12 @@ package controller
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,6 +38,16 @@ func TestNormalizeStripeTopUpAmountUsesDisplayTokens(t *testing.T) {
 
 	require.Equal(t, int64(2), normalizeStripeTopUpAmount(int64(2*common.QuotaPerUnit)))
 	require.Equal(t, int64(1), normalizeStripeTopUpAmount(1))
+}
+
+func TestStripePayRequestsBindRecallClaim(t *testing.T) {
+	var topUp StripePayRequest
+	require.NoError(t, common.Unmarshal([]byte(`{"amount":20,"recall_claim":"claim_topup"}`), &topUp))
+	require.Equal(t, "claim_topup", topUp.RecallClaim)
+
+	var subscription SubscriptionStripePayRequest
+	require.NoError(t, common.Unmarshal([]byte(`{"plan_id":7,"recall_claim":"claim_subscription"}`), &subscription))
+	require.Equal(t, "claim_subscription", subscription.RecallClaim)
 }
 
 func TestStripeMinorUnitAmount(t *testing.T) {
@@ -334,11 +347,147 @@ func TestStripeCheckoutSessionKeepsAccountEmailVerbatim(t *testing.T) {
 		false,
 		false,
 		"",
+		nil,
 	)
 
 	require.NotNil(t, params.CustomerEmail)
 	require.Equal(t, "buyer+location_JP@example.com", *params.CustomerEmail)
-	require.Nil(t, params.AllowPromotionCodes, "promotion code field must stay hidden on checkout")
+}
+
+func TestStripeCheckoutSessionOrdinaryPromotionCodes(t *testing.T) {
+	params := buildStripeCheckoutSessionParams(
+		"trade_ordinary_promotion",
+		"",
+		"buyer@example.com",
+		"price_123",
+		1,
+		"USD",
+		"https://example.com/success",
+		"https://example.com/cancel",
+		false,
+		false,
+		false,
+		"",
+		nil,
+	)
+
+	require.NotNil(t, params.AllowPromotionCodes)
+	require.True(t, *params.AllowPromotionCodes)
+	require.Empty(t, params.Discounts)
+}
+
+func TestStripeCheckoutSessionRecallPromotionCode(t *testing.T) {
+	params := buildStripeCheckoutSessionParams(
+		"trade_recall_promotion",
+		"",
+		"buyer@example.com",
+		"price_123",
+		1,
+		"USD",
+		"https://example.com/success",
+		"https://example.com/cancel",
+		false,
+		false,
+		false,
+		"",
+		&service.RecallCheckoutDiscount{
+			PromotionCodeID: "promo_recall",
+			CampaignID:      42,
+			RecipientID:     84,
+		},
+	)
+
+	require.Nil(t, params.AllowPromotionCodes)
+	require.Len(t, params.Discounts, 1)
+	require.NotNil(t, params.Discounts[0].PromotionCode)
+	require.Equal(t, "promo_recall", *params.Discounts[0].PromotionCode)
+	require.Equal(t, "42", params.Metadata["recall_campaign_id"])
+	require.Equal(t, "84", params.Metadata["recall_recipient_id"])
+}
+
+func TestStripeCheckoutSessionWrongPricePromotionClaimStopsBeforeCheckout(t *testing.T) {
+	backend := setupSubscriptionStripeRecordingBackend(t)
+	setupStripeFulfillmentTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(
+		&model.RecallCampaign{},
+		&model.RecallRecipient{},
+		&model.RecallMessage{},
+		&model.RecallEvent{},
+	))
+	enableRecallCampaignForControllerTest(t)
+
+	originalTopUpPriceIDs := setting.StripeTopUpPriceIds
+	originalDisplayType := operation_setting.GetQuotaDisplayType()
+	originalPriceAmountResolver := stripePriceAmountMinorForCheckoutCurrency
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalAmountOptions := append([]int(nil), paymentSetting.AmountOptions...)
+	setting.StripeTopUpPriceIds = `{"20":"price_topup"}`
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
+	paymentSetting.AmountOptions = []int{20}
+	stripePriceAmountMinorForCheckoutCurrency = func(string, string) (int64, error) {
+		return 2000, nil
+	}
+	t.Cleanup(func() {
+		setting.StripeTopUpPriceIds = originalTopUpPriceIDs
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+		paymentSetting.AmountOptions = originalAmountOptions
+		stripePriceAmountMinorForCheckoutCurrency = originalPriceAmountResolver
+	})
+
+	const userID = 720001
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       userID,
+		Username: "topup_recall_user",
+		Email:    "topup-recall@example.com",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	claim := strings.Repeat("t", 48)
+	claimDigest := sha256.Sum256([]byte(claim))
+	claimHash := fmt.Sprintf("%x", claimDigest)
+	campaign := model.RecallCampaign{
+		Name:                "other top-up price",
+		Status:              model.RecallCampaignRunning,
+		AudienceTemplate:    "first_purchase",
+		AudienceConfig:      `{}`,
+		ExecutionMode:       "manual",
+		CouponSource:        "automatic",
+		DiscountConfig:      `{"type":"percent","percent_off":20}`,
+		ProductScope:        `{"topup_price_ids":["price_other"],"subscription_price_ids":[]}`,
+		EmailSequenceConfig: `[]`,
+	}
+	require.NoError(t, model.DB.Create(&campaign).Error)
+	promotionCodeID := "promo_other_topup"
+	require.NoError(t, model.DB.Create(&model.RecallRecipient{
+		CampaignId:            campaign.Id,
+		UserId:                userID,
+		EligibilitySnapshot:   `{}`,
+		EmailSnapshot:         "topup-recall@example.com",
+		LanguageSnapshot:      "en",
+		State:                 model.RecallRecipientContacting,
+		StripePromotionCodeId: &promotionCodeID,
+		PromotionCode:         "FKOTHER234",
+		PromotionExpiresAt:    time.Now().Add(time.Hour).Unix(),
+		ClaimTokenHash:        &claimHash,
+	}).Error)
+
+	body, err := common.Marshal(StripePayRequest{
+		Amount:         20,
+		PaymentMethod:  model.PaymentMethodStripe,
+		StripeCurrency: "USD",
+		RecallClaim:    claim,
+	})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/user/stripe/pay", bytes.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("id", userID)
+
+	RequestStripePay(ctx)
+
+	require.Empty(t, backend.params, "a wrong-price recall claim must stop before Stripe Checkout creation")
+	require.Contains(t, recorder.Body.String(), recallCheckoutUnavailableMessage)
 }
 
 func TestStripeCheckoutSessionRequestsThreeDSecure(t *testing.T) {
@@ -355,6 +504,7 @@ func TestStripeCheckoutSessionRequestsThreeDSecure(t *testing.T) {
 		false,
 		false,
 		"",
+		nil,
 	)
 
 	require.NotNil(t, params.PaymentMethodOptions, "card options must always be set for the 3DS request")
@@ -377,6 +527,7 @@ func TestStripeCheckoutSessionRequestsThreeDSecure(t *testing.T) {
 		true,
 		false,
 		"",
+		nil,
 	)
 
 	require.NotNil(t, params.PaymentMethodOptions)
@@ -401,6 +552,7 @@ func TestStripeCheckoutSessionCarriesSubmitMessage(t *testing.T) {
 		false,
 		false,
 		"$27 in credits ($20 + $7 bonus) will be added to your account immediately after payment.",
+		nil,
 	)
 
 	require.NotNil(t, params.CustomText)
@@ -420,6 +572,7 @@ func TestStripeCheckoutSessionCarriesSubmitMessage(t *testing.T) {
 		false,
 		false,
 		"",
+		nil,
 	)
 	require.Nil(t, params.CustomText)
 }
@@ -438,6 +591,7 @@ func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 		false,
 		true,
 		"",
+		nil,
 	)
 
 	require.NotNil(t, params.UIMode)
@@ -460,6 +614,7 @@ func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 		false,
 		false,
 		"",
+		nil,
 	)
 	require.Nil(t, params.UIMode)
 	require.NotNil(t, params.SuccessURL)
@@ -480,6 +635,7 @@ func TestStripeCheckoutSessionPassesSelectedCurrency(t *testing.T) {
 		false,
 		false,
 		"",
+		nil,
 	)
 
 	require.NotNil(t, params.Currency, "non-USD selection must be sent to Stripe")
@@ -499,6 +655,7 @@ func TestStripeCheckoutSessionPassesSelectedCurrency(t *testing.T) {
 		false,
 		false,
 		"",
+		nil,
 	)
 	require.Nil(t, params.Currency)
 }
