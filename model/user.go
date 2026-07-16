@@ -14,6 +14,7 @@ import (
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const UserNameMaxLength = 20
@@ -577,6 +578,22 @@ func (user *User) Update(updatePassword bool) error {
 		}
 	}
 	newUser := *user
+	if newUser.Setting != "" {
+		err = DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(user, user.Id).Error; err != nil {
+				return err
+			}
+			newUser.Setting, err = preserveRecallMarketingOptOut(user.Setting, newUser.Setting)
+			if err != nil {
+				return err
+			}
+			return tx.Model(user).Updates(newUser).Error
+		})
+		if err != nil {
+			return err
+		}
+		return invalidateUserCache(user.Id)
+	}
 	DB.First(&user, user.Id)
 	if err = DB.Model(user).Updates(newUser).Error; err != nil {
 		return err
@@ -584,6 +601,23 @@ func (user *User) Update(updatePassword bool) error {
 
 	// Update cache
 	return updateUserCache(*user)
+}
+
+func preserveRecallMarketingOptOut(currentSetting string, pendingSetting string) (string, error) {
+	current := dto.UserSetting{}
+	if currentSetting == "" || json.Unmarshal([]byte(currentSetting), &current) != nil || !current.RecallMarketingOptOut {
+		return pendingSetting, nil
+	}
+	pending := dto.UserSetting{}
+	if err := json.Unmarshal([]byte(pendingSetting), &pending); err != nil {
+		return "", err
+	}
+	pending.RecallMarketingOptOut = true
+	settingJSON, err := json.Marshal(pending)
+	if err != nil {
+		return "", err
+	}
+	return string(settingJSON), nil
 }
 
 func (user *User) Edit(updatePassword bool) error {

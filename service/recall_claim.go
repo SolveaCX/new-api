@@ -116,8 +116,17 @@ func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, clai
 	if err := common.Unmarshal([]byte(record.Campaign.ProductScope), &products); err != nil {
 		return nil, nil, fmt.Errorf("%w: products", ErrRecallClaimInvalidConfig)
 	}
-	if err := model.RecordRecallClaimClickWithContext(ctx, record.Recipient.Id, record.Campaign.Id, s.now().Unix()); err != nil {
+	clickOutcome, err := model.RecordRecallClaimClickWithContext(ctx, record.Recipient.Id, record.Campaign.Id, s.now().Unix())
+	if err != nil {
 		return nil, nil, err
+	}
+	switch clickOutcome {
+	case model.RecallClaimClickConverted:
+		return nil, nil, ErrRecallClaimConverted
+	case model.RecallClaimClickSuppressed:
+		return nil, nil, ErrRecallClaimSuppressed
+	case model.RecallClaimClickInactive:
+		return nil, nil, ErrRecallClaimInactive
 	}
 	view := &RecallClaimView{
 		CampaignID:          record.Campaign.Id,
@@ -219,7 +228,11 @@ func recallClaimTokenHash(claim string) string {
 
 func activeRecallCampaignStatus(status string) bool {
 	switch status {
-	case model.RecallCampaignScheduled, model.RecallCampaignRunning, model.RecallCampaignPaused:
+	case model.RecallCampaignScheduled,
+		model.RecallCampaignRunning,
+		model.RecallCampaignPaused,
+		model.RecallCampaignCancelled,
+		model.RecallCampaignCompleted:
 		return true
 	default:
 		return false
