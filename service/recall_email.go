@@ -247,6 +247,48 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 	if err != nil {
 		return w.finishPreAcceptError(ctx, item, "render_invalid", false)
 	}
+	item, err = model.GetRecallEmailWorkItemForLeaseWithContext(ctx, item.Message.Id, w.owner)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrRecallEmailLeaseLost
+		}
+		return err
+	}
+	activeMessageIDs, err := model.FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx, []model.RecallAPIActivityCheck{{
+		MessageId: item.Message.Id,
+		UserId:    item.Recipient.UserId,
+		After:     item.Recipient.CreatedAt,
+	}}, w.audience.LogBatchSize)
+	if err != nil {
+		return err
+	}
+	_, recentlyActive = activeMessageIDs[item.Message.Id]
+	fenceNow := w.now().Unix()
+	stopReason, err = w.recallEmailStopReason(ctx, item, recentlyActive, fenceNow)
+	if err != nil {
+		return err
+	}
+	if stopReason != "" {
+		cancelled, err := model.CancelRecallEmailFlowWithContext(
+			ctx,
+			item.Message.Id,
+			item.Recipient.Id,
+			w.owner,
+			item.Message.LeaseExpiresAt,
+			stopReason,
+			fenceNow,
+		)
+		if err != nil {
+			return err
+		}
+		if !cancelled {
+			return ErrRecallEmailLeaseLost
+		}
+		return nil
+	}
+	if item.Message.LeaseExpiresAt <= w.now().Unix() {
+		return ErrRecallEmailLeaseLost
+	}
 	sending, err := model.MarkRecallMessageSendingWithContext(ctx, item.Message.Id, w.owner, item.Message.LeaseExpiresAt)
 	if err != nil {
 		return err
