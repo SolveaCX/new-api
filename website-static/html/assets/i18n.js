@@ -2855,7 +2855,15 @@
       o.value = p[0]; o.textContent = p[1];
       sel.appendChild(o);
     });
-    sel.addEventListener("change", function () { setLang(sel.value); });
+    sel.addEventListener("change", function () {
+      var p = location.pathname;
+      if (p === "/" || p === "/index.html" || /^\/(zh|es|pt|fr|id|de|vi|ru|ja)\/?$/.test(p)) {
+        try { localStorage.setItem("fk-lang", sel.value); } catch (e) {}
+        location.href = sel.value === "en" ? "/" : "/" + sel.value;
+        return;
+      }
+      setLang(sel.value);
+    });
     nav.insertBefore(sel, nav.querySelector("a.btn") || null);
     if (nav.classList.contains("dext")) sel.style.maxWidth = "110px";
   }

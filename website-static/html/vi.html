@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="vi"><script type="text/javascript" async="" src="https://www.googletagmanager.com/gtag/js?id=G-30RCEP2CVH&amp;cx=c&amp;gtm=4e67e0"></script><script async="" src="https://www.googletagmanager.com/gtm.js?id=GTM-NKH9LPX9"></script><script async="" src="https://www.googletagmanager.com/gtm.js?id=GTM-5T5LPLSZ"></script><head><meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>flatkey — More AI, Less Cost. Every official model, one key.</title>
+<link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-64.png?v=3">
+<link rel="icon" type="image/svg+xml" href="/assets/flatkey-mark.svg?v=3">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=3">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/fk2.css"><style>
+/* ---------- hero ---------- */
+.hero{background:linear-gradient(180deg,#FFFFFF 0%,#F7F5FD 100%);border-bottom:1px solid var(--line)}
+.heroGrid{max-width:1240px;margin:0 auto;padding:56px 40px 52px;display:grid;grid-template-columns:minmax(0,1fr) 560px;gap:48px;align-items:start}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;letter-spacing:.6px;color:var(--violet-deep);background:var(--violet-tint);border-radius:999px;padding:7px 14px;font-weight:600;margin-bottom:22px}
+.hero h1 .price{color:var(--violet)}
+.hero .sub{margin-top:18px;max-width:560px}
+.code{margin-top:26px;background:var(--dark);color:#E6E6EE;border-radius:10px;padding:15px 18px;font-family:var(--mono);font-size:13px;line-height:1.8;max-width:660px;white-space:pre-wrap}
+.code .k{color:#B7A3F0}.code .s{color:#86EFAC}
+.ctas{display:flex;gap:12px;margin-top:26px}
+.proofline{margin-top:22px;font-family:var(--mono);font-size:12px;color:var(--ink3);letter-spacing:.2px}
+.proofline b{color:var(--ink2);font-weight:600}
+/* live board — A 极简价格版 */
+.board{background:#fff;border:1px solid var(--line);border-radius:14px;padding:6px 0 4px;box-shadow:0 24px 60px -18px rgba(46,16,101,.18)}
+.board h4{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--ink3);display:flex;justify-content:space-between;font-weight:600;padding:14px 24px 10px}
+.board h4 .g{color:var(--green)}
+.brow{display:flex;align-items:baseline;gap:14px;padding:15px 24px;border-bottom:1px solid var(--line2)}
+.brow:last-of-type{border:none}
+.brow b{font-size:16px;font-weight:700;letter-spacing:-.3px;white-space:nowrap}
+.brow .prov{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.brow .hdot{width:7px;height:7px;border-radius:50%;background:var(--green);align-self:center;flex:none}
+.brow .pr{margin-left:auto;display:flex;align-items:baseline;gap:10px;white-space:nowrap}
+.brow s{font-family:var(--mono);font-size:12px;color:var(--ink3)}
+.brow .now{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--violet-deep);font-variant-numeric:tabular-nums}
+.brow .un{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.bauto{display:flex;align-items:center;gap:12px;background:var(--violet-tint);border-radius:10px;margin:2px 14px 6px;padding:13px 14px}
+.bauto .ico{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--violet-hi),var(--violet-deep));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:none}
+.bauto b{font-size:14.5px;color:var(--violet-deep)}
+.bauto .d{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.bauto .fee{margin-left:auto;font-family:var(--mono);font-size:12.5px;color:var(--violet-deep);font-weight:600;white-space:nowrap}
+.boardfoot{text-align:center;padding:10px 0 10px}
+.boardfoot a{color:var(--violet-deep);font-size:13px;font-weight:650;text-decoration:none}
+/* ---------- proof bar (新洞察价值点) ---------- */
+.proof{border-bottom:1px solid var(--line);background:#fff}
+.proofGrid{max-width:1240px;margin:0 auto;padding:0 40px;display:grid;grid-template-columns:repeat(4,1fr)}
+.proofGrid>div{padding:26px 28px 28px;border-left:1px solid var(--line)}
+.proofGrid>div:first-child{border-left:none;padding-left:0}
+.proofGrid h3{font-family:var(--disp);font-size:17px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
+.proofGrid h3 span{color:var(--violet)}
+.proofGrid p{font-size:13.5px;color:var(--ink2);line-height:1.55}
+.proofGrid .tagline{font-family:var(--mono);font-size:10.5px;letter-spacing:.8px;color:var(--ink3);text-transform:uppercase;display:block;margin-bottom:10px}
+/* ---------- comparison strip (Claude 5折) ---------- */
+.compare{background:var(--paper2);border-bottom:1px solid var(--line)}
+.compareIn{max-width:1240px;margin:0 auto;padding:64px 40px}
+.compareIn .head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:30px}
+.bars{display:flex;flex-direction:column;gap:13px;font-variant-numeric:tabular-nums}
+.bar{display:grid;grid-template-columns:150px 1fr 86px;gap:18px;align-items:center}
+.bar .who{font-size:14px;font-weight:600;color:var(--ink2);text-align:right}
+.bar .track{height:30px;border-radius:6px;background:var(--line2);position:relative}
+.bar .fill{position:absolute;inset:0 auto 0 0;border-radius:6px;background:#C9C9D2}
+.bar .amt{font-family:var(--mono);font-size:13.5px;color:var(--ink2)}
+.bar.fk .who{color:var(--violet-deep);font-weight:700}
+.bar.fk .fill{background:linear-gradient(90deg,var(--violet-hi),var(--violet-deep))}
+.bar.fk .amt{color:var(--violet-deep);font-weight:600}
+.footnote{margin-top:20px;font-size:13px;color:var(--ink3)}
+/* ---------- video sections ---------- */
+section.v{position:relative;min-height:92vh;overflow:hidden;display:flex;flex-direction:column;justify-content:center;color:#F4F4F0}
+section.v .in{position:relative;z-index:2;max-width:1240px;margin:0 auto;padding:90px 40px;width:100%}
+.bgv{position:absolute;inset:0;z-index:0}
+.shade{position:absolute;inset:0;z-index:1;background:linear-gradient(90deg,rgba(8,8,14,.9) 0%,rgba(8,8,14,.6) 48%,rgba(8,8,14,.2) 100%)}
+.kick{font-family:var(--mono);font-size:12.5px;letter-spacing:2.5px;color:#B7A3F0;margin-bottom:20px;font-weight:600}
+h2.big{font-family:var(--disp);font-size:72px;line-height:1;letter-spacing:-2.8px;font-weight:700;color:#fff;text-wrap:balance;max-width:900px}
+h2.big em{font-style:normal;color:var(--violet-hi)}
+p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:620px}
+.rows{margin-top:28px;display:flex;flex-direction:column;font-family:var(--mono);font-size:13px;max-width:740px;font-variant-numeric:tabular-nums}
+.rows>div{display:flex;gap:18px;align-items:center;padding:10px 2px;border-bottom:1px solid #ffffff1c;color:#A7D9BE}
+.rows .t{color:#6E6E78;width:56px}
+.rows b{color:#fff;font-weight:600}
+.rows .ok{margin-left:auto;color:#4ADE80}
+.vtag{position:absolute;left:40px;bottom:26px;z-index:3;font-family:var(--mono);font-size:11.5px;color:#8E8E9C;display:flex;gap:10px;align-items:center}
+.vtag .p{width:24px;height:24px;border-radius:50%;background:#ffffff1f;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px}
+.badges{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:30px;max-width:960px}
+.badge{border:1px solid #ffffff2e;border-radius:10px;padding:14px 16px;background:#ffffff0d;backdrop-filter:blur(4px)}
+.badge b{display:block;font-size:14px;font-weight:650;color:#fff;letter-spacing:-.2px}
+.badge span{display:block;font-size:11px;color:#9a9aa6;font-family:var(--mono);margin-top:4px;line-height:1.5}
+.radar{position:absolute;right:-120px;top:50%;transform:translateY(-50%);width:860px;height:860px;border-radius:50%;background:radial-gradient(circle,#1B1033 0%,#0E0A1C 45%,transparent 70%)}
+.radar i{position:absolute;inset:0;border-radius:50%;border:1px solid #8B5CF633}
+.radar i:nth-child(2){inset:105px}.radar i:nth-child(3){inset:210px}.radar i:nth-child(4){inset:315px}
+.sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#8B5CF640,transparent 70deg);animation:spin 6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.blip{position:absolute;width:8px;height:8px;border-radius:50%;background:#8B5CF6;box-shadow:0 0 12px #8B5CF6;animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+.ledger{position:absolute;inset:0;background:linear-gradient(180deg,#0A0A12,#0D0B18);overflow:hidden}
+.lcol{position:absolute;top:-40%;width:300px;font-family:var(--mono);font-size:11px;color:#7C5CF755;line-height:2.6;white-space:nowrap;animation:fall 16s linear infinite}
+@keyframes fall{to{transform:translateY(45%)}}
+.wall{position:absolute;inset:0;background:#08080E;display:flex;flex-direction:column;justify-content:center;gap:14px;overflow:hidden}
+.lane{display:flex;gap:14px;animation:slide 30s linear infinite;width:max-content}
+.lane.r{animation-direction:reverse}
+.tile{width:186px;height:100px;border-radius:10px;background:#121220;border:1px solid #ffffff12;padding:14px 16px;flex:none}
+.tile b{font-size:13.5px;color:#EDEDEF;display:block;font-weight:650;letter-spacing:-.2px}
+.tile span{font-family:var(--mono);font-size:10px;color:#77778A}
+.tile .pr{font-family:var(--mono);font-size:11px;color:#B7A3F0;margin-top:11px;display:block}
+@keyframes slide{to{transform:translateX(-50%)}}
+</style><!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-5T5LPLSZ');</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NKH9LPX9');</script>
+<!-- End Google Tag Manager -->
+<meta name="description" content="flatkey định tuyến lưu lượng của bạn đến API chính thức của GPT, Claude, Gemini, DeepSeek, GLM — và video Seedance 2.5 — qua một key: mô hình thật, không hạ cấp. Giá 60-90% niêm yết; cộng thưởng nạp, thấp nhất 50%. Đổi một dòng code, giữ nguyên SDK.">
+<link rel="canonical" href="https://flatkey.ai/vi">
+<link rel="alternate" hreflang="zh-CN" href="https://flatkey.ai/zh">
+<link rel="alternate" hreflang="es" href="https://flatkey.ai/es">
+<link rel="alternate" hreflang="fr" href="https://flatkey.ai/fr">
+<link rel="alternate" hreflang="pt" href="https://flatkey.ai/pt">
+<link rel="alternate" hreflang="ru" href="https://flatkey.ai/ru">
+<link rel="alternate" hreflang="ja" href="https://flatkey.ai/ja">
+<link rel="alternate" hreflang="vi" href="https://flatkey.ai/vi">
+<link rel="alternate" hreflang="de" href="https://flatkey.ai/de">
+<link rel="alternate" hreflang="id" href="https://flatkey.ai/id">
+<link rel="alternate" hreflang="en" href="https://flatkey.ai/">
+<link rel="alternate" hreflang="x-default" href="https://flatkey.ai/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="flatkey.ai">
+<meta property="og:title" content="flatkey — More AI, Less Cost. Every official model, one key.">
+<meta property="og:description" content="flatkey định tuyến lưu lượng của bạn đến API chính thức của GPT, Claude, Gemini, DeepSeek, GLM — và video Seedance 2.5 — qua một key: mô hình thật, không hạ cấp. Giá 60-90% niêm yết; cộng thưởng nạp, thấp nhất 50%. Đổi một dòng code, giữ nguyên SDK.">
+<meta property="og:url" content="https://flatkey.ai/vi">
+<meta property="og:image" content="https://flatkey.ai/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@flatkey101">
+<meta name="twitter:title" content="flatkey — More AI, Less Cost. Every official model, one key.">
+<meta name="twitter:description" content="flatkey định tuyến lưu lượng của bạn đến API chính thức của GPT, Claude, Gemini, DeepSeek, GLM — và video Seedance 2.5 — qua một key: mô hình thật, không hạ cấp. Giá 60-90% niêm yết; cộng thưởng nạp, thấp nhất 50%. Đổi một dòng code, giữ nguyên SDK.">
+<meta name="twitter:image" content="https://flatkey.ai/assets/og-image.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "Organization", "name": "flatkey.ai", "url": "https://flatkey.ai/", "logo": "https://flatkey.ai/assets/flatkey-mark.svg", "sameAs": ["https://x.com/flatkey101", "https://discord.gg/VrbZFDXj5g"], "contactPoint": {"@type": "ContactPoint", "email": "support@flatkey.ai", "contactType": "customer support"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebSite", "name": "flatkey.ai", "url": "https://flatkey.ai/"}</script>
+<script async="" src="https://analytics.ahrefs.com/analytics.js" data-key="xlrmP0/5CsabyJozoUI/dw"></script><style data-emotion="css" data-s=""></style><style id="monica-reading-highlight-style">
+        .monica-reading-highlight {
+          animation: fadeInOut 1.5s ease-in-out;
+        }
+
+        @keyframes fadeInOut {
+          0%, 100% { background-color: transparent; }
+          30%, 70% { background-color: rgba(2, 118, 255, 0.20); }
+        }
+      </style></head><body>
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5T5LPLSZ" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+
+
+<nav class="nav">
+  <a class="logo" href="/"><img src="/assets/flatkey-mark.svg?v=3" alt="flatkey">flatkey</a>
+  <a href="/models.html" data-i18n="nav.models" data-orig="Models">Mô hình</a><a href="/docs.html" data-i18n="nav.docs" data-orig="Docs">Tài liệu</a><a href="/playground.html" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/models.html#leaderboard" data-i18n="nav.rankings" data-orig="Rankings">Bảng xếp hạng</a><a href="/topup.html" data-i18n="nav.pricing" data-orig="Pricing">Giá</a><a href="/usecases.html" data-i18n="nav.usecases" data-orig="Use cases">Trường hợp dùng</a>
+  <div class="sp"></div>
+  <a href="/login.html" data-i18n="nav.signin" data-orig="Sign in">Đăng nhập</a>
+  <a class="btn white" href="/contact.html" data-i18n="nav.contact" data-orig="Contact sales">Liên hệ bán hàng</a>
+  <a class="btn black" href="/login.html" data-i18n="nav.start" data-orig="Start free →">Bắt đầu miễn phí →</a>
+</nav>
+
+<header class="hero">
+<div class="pxgrid" data-seed="11" data-cell="22" data-cols="16" data-rows="3" data-n="15" style="top: 0px; right: 30px; width: 352px; height: 66px;"></div>
+  <div class="heroGrid">
+    <div>
+      <span class="eyebrow" data-i18n="hero.eyebrow" data-orig="OFFICIAL APIS ONLY · VERIFIED HOURLY">CHỈ API CHÍNH THỨC · XÁC MINH MỖI GIỜ</span>
+      <h1 class="display" data-i18n="hero.h1" data-orig="Every official model.&lt;br&gt;One key.&lt;br&gt;&lt;span class=&quot;price&quot;&gt;More AI, less cost.&lt;/span&gt;">Mọi mô hình chính thức.<br>Một key duy nhất.<br><span class="price">More AI, less cost.</span></h1>
+      <p class="sub" data-i18n="hero.sub" data-orig="GPT, Claude, Gemini, DeepSeek, GLM — and Seedance 2.5 video — routed to the real, official endpoints with public per-model multipliers you can audit. Change one line, keep your SDK.">flatkey định tuyến lưu lượng của bạn đến API chính thức của GPT, Claude, Gemini, DeepSeek, GLM — và video Seedance 2.5 — qua một key: mô hình thật, không hạ cấp. Giá 60-90% niêm yết; cộng thưởng nạp, thấp nhất 50%. Đổi một dòng code, giữ nguyên SDK.</p>
+      <div class="code">gpt&nbsp;&nbsp;&nbsp; = OpenAI(<span class="k">base_url</span>=<span class="s">"https://router.flatkey.ai/v1"</span>, <span class="k">api_key</span>=<span class="s">"sk-fk-…"</span>)
+claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://router.flatkey.ai"</span>, <span class="k">api_key</span>=<span class="s">"sk-fk-…"</span>)</div>
+      <div class="ctas">
+        <a class="btn black big" href="/login.html" data-i18n="hero.cta1" data-orig="Start building — free $2 credit">Bắt đầu — tặng $2</a>
+        <a class="btn white big" href="/playground.html" data-i18n="hero.cta2" data-orig="Try in Playground, no signup">Dùng thử Playground không cần đăng ký</a>
+      </div>
+      <p class="proofline" data-i18n="hero.proof" data-orig="&lt;b class=&quot;num&quot;&gt;46B&lt;/b&gt; tokens/month · &lt;b class=&quot;num&quot;&gt;4K+&lt;/b&gt; paying users · &lt;b class=&quot;num&quot;&gt;100+&lt;/b&gt; enterprises in production · &lt;b class=&quot;num&quot;&gt;0&lt;/b&gt; model swaps — &lt;a href=&quot;#trust&quot; style=&quot;color:var(--violet-deep);font-weight:600&quot;&gt;public audit log ↗&lt;/a&gt;"><b class="num">46B</b> token/tháng · <b class="num">4K+</b> người dùng trả phí · <b class="num">100+</b> doanh nghiệp đang chạy · <b class="num">0</b> lần tráo mô hình — <a href="#trust" style="color:var(--violet-deep);font-weight:600">nhật ký kiểm toán công khai ↗</a></p>
+    </div>
+    <div>
+      <div class="board">
+        <h4>LIVE MODEL BOARD<span class="g">ALL VERIFIED HOURLY ✓ · REAL 30-DAY TRAFFIC</span></h4>
+        <div class="bauto"><div class="ico">A</div><div><b>flatkey-auto</b> <span class="d">picks the best official model per request</span></div><span class="fee">no routing fee</span></div>
+        <div class="brow"><b>gpt-5.5</b><span class="prov">openai</span><span class="hdot" title="96.5% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$2.00</span><span class="un">/M in</span></span></div>
+        <div class="brow"><b>claude-sonnet-4-6</b><span class="prov">anthropic</span><span class="hdot" title="98.2% success · 30-day real traffic"></span><span class="pr"><s>$3.00</s><span class="now">$1.60</span><span class="un">/M in</span></span></div>
+        <div class="brow"><b>gpt-5.4</b><span class="prov">openai</span><span class="hdot" title="99.8% success · 30-day real traffic"></span><span class="pr"><s>$2.50</s><span class="now">$1.00</span><span class="un">/M in</span></span></div>
+        <div class="brow"><b>claude-opus-4-8</b><span class="prov">anthropic</span><span class="hdot" title="93.8% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$2.67</span><span class="un">/M in</span></span></div>
+        <div class="brow"><b>deepseek-v4-flash</b><span class="prov">deepseek</span><span class="hdot" title="99.4% success · 30-day real traffic"></span><span class="pr"><s>$0.14</s><span class="now">$0.075</span><span class="un">/M in</span></span></div>
+        <div class="brow"><b>glm-5.2</b><span class="prov">z.ai</span><span class="hdot" title="96.6% success · 30-day real traffic"></span><span class="pr"><s>$1.40</s><span class="now">$0.56</span><span class="un">/M in</span></span></div>
+        <div class="brow" style="background:var(--violet-tint);border-radius:10px;margin:4px 14px 2px;padding-left:12px;padding-right:12px;border-bottom:none"><b>seedance-2.5</b><span class="prov">bytedance</span><span style="font-family:var(--mono);font-size:9.5px;background:#fff;color:var(--violet-deep);border-radius:999px;padding:2px 8px;font-weight:600">VIDEO · NEW</span><span class="hdot" title="verified hourly · official bytedance"></span><span class="pr"><span class="now">$0.24</span><span class="un">/s video</span></span></div>
+        <div class="boardfoot"><a href="/models.html" data-i18n="board.foot" data-orig="See all 160+ models &amp;amp; live health →">Xem 160+ mô hình &amp; tình trạng trực tiếp →</a></div>
+      </div>
+      </div>
+    </div>
+  
+</header>
+
+<section class="proof">
+<div class="pxgrid" data-seed="23" data-cell="16" data-cols="6" data-rows="4" data-n="9" style="top: 4px; right: 10px; width: 96px; height: 64px;"></div>
+  <div class="proofGrid">
+    <div>
+      <span class="tagline" data-i18n="proof.t1" data-orig="FREE START">KHỞI ĐẦU MIỄN PHÍ</span>
+      <h3 data-i18n="proof.h1" data-orig="$2 credit + &lt;span&gt;3 runs before signup&lt;/span&gt;">$2 tín dụng + <span>chạy 3 lần trước khi đăng ký</span></h3>
+      <p data-i18n="proof.p1" data-orig="Together and Segmind killed their free tiers; Novita is down to $0.50. flatkey still lets you run real models before you even sign in.">Together và Segmind đã bỏ gói miễn phí; Novita chỉ còn $0.50. flatkey cho bạn chạy mô hình thật trước cả khi đăng nhập.</p>
+    </div>
+    <div>
+      <span class="tagline" data-i18n="proof.t2" data-orig="SMART ROUTING">ĐỊNH TUYẾN THÔNG MINH</span>
+      <h3 data-i18n="proof.h2" data-orig="flatkey-auto, &lt;span&gt;no routing fee&lt;/span&gt;">flatkey-auto, <span>không phí định tuyến</span></h3>
+      <p data-i18n="proof.p2" data-orig="One model name; the gateway picks the best official model per request — task-aware, health-aware, always the lowest multiplier that meets quality.">Một tên mô hình; gateway tự chọn mô hình chính thức tốt nhất cho từng yêu cầu — hiểu tác vụ, hiểu tình trạng, luôn ở hệ số thấp nhất.</p>
+    </div>
+    <div>
+      <span class="tagline" data-i18n="proof.t3" data-orig="TRUST · ZERO QUANTIZATION">TIN CẬY · KHÔNG QUANTIZE</span>
+      <h3 data-i18n="proof.h3" data-orig="Official APIs, &lt;span&gt;audited hourly&lt;/span&gt;">API chính thức, <span>kiểm toán mỗi giờ</span></h3>
+      <p data-i18n="proof.p3" data-orig="No fp8 re-serves, no silent swaps. Every model probed against its official fingerprint, on a public log — 160+ models probed, every hour, on the record.">Không fp8 re-serve, không tráo đổi âm thầm. 160+ mô hình được đối chiếu dấu vân tay chính thức mỗi giờ, nhật ký công khai.</p>
+    </div>
+    <div>
+      <span class="tagline" data-i18n="proof.t4" data-orig="PAY LOCAL">THANH TOÁN NỘI TỆ</span>
+      <h3 data-i18n="proof.h4" data-orig="Pix, UPI, Alipay — &lt;span&gt;your currency&lt;/span&gt;">Pix, UPI, Alipay — <span>tiền tệ của bạn</span></h3>
+      <p data-i18n="proof.p4" data-orig="Prices in BRL, INR or CNY at checkout, 3DS-secured. Plus Anthropic-shaped API: point Claude Code or Cline at one base_url and go.">Giá theo BRL, INR hoặc CNY khi thanh toán, bảo mật 3DS. Thêm API tương thích Anthropic: trỏ Claude Code hoặc Cline vào một base_url là xong.</p>
+    </div>
+  </div>
+</section>
+
+<section class="compare">
+<div class="pxgrid" data-seed="31" data-cell="20" data-cols="10" data-rows="3" data-n="11" style="top: 2px; right: 36px; width: 200px; height: 60px;"></div>
+  <div class="compareIn">
+    <div class="head">
+      <h2 class="display" data-i18n="cmp.h2" data-orig="Claude at 53% of list.&lt;br&gt;Everyone else charges full price.">Claude ở mức 53% giá niêm yết.<br>Nơi khác tính đủ giá.</h2>
+      <p class="sub" style="max-width:380px" data-i18n="cmp.sub" data-orig="Claude Opus 4.8, $ per 1M input tokens after top-up bonus, measured across gateways on 2026-07-14.">Claude Opus 4.8, $ trên 1M token đầu vào sau thưởng nạp, đo ngày 2026-07-14.</p>
+    </div>
+    <div class="bars">
+      <div class="bar"><span class="who">Anthropic official</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="amt">$5.00</span></div>
+      <div class="bar"><span class="who">WaveSpeed</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="amt">$5.00</span></div>
+      <div class="bar"><span class="who">Replicate</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="amt">$5.00</span></div>
+      <div class="bar"><span class="who">Nonelinear</span><div class="track"><div class="fill" style="width:98%"></div></div><span class="amt">$4.90</span></div>
+      <div class="bar fk"><span class="who">flatkey</span><div class="track"><div class="fill" style="width:53%"></div></div><span class="amt">$2.67</span></div>
+    </div>
+    <p class="footnote" data-i18n="cmp.foot" data-orig="Together, Novita and Segmind don’t carry official Claude at all. flatkey self-serve: 60–90% of list, bonus stacks to an effective 50% — and enterprise interfaces price below self-serve.">Together, Novita và Segmind thậm chí không có Claude chính thức. flatkey: 60–90% giá niêm yết mọi mô hình, cộng thưởng còn thực tế 50%.</p>
+  </div>
+</section>
+
+<section class="rel" id="reliability">
+<div class="pxgrid" data-seed="139" data-cell="18" data-cols="8" data-rows="3" data-n="9" style="top: 20px; right: 38px; width: 144px; height: 54px;"></div>
+  <div class="relIn">
+    <div>
+      <div class="kick2" data-i18n="rel.kick" data-orig="RELIABILITY · SLA, IN WRITING">ĐỘ TIN CẬY · SLA BẰNG VĂN BẢN</div>
+      <h2 class="display" data-i18n="rel.h2" data-orig="Stability you can&lt;br&gt;hold us to.">Sự ổn định bạn có thể<br>bắt chúng tôi chịu trách nhiệm.</h2>
+      <p class="sub" style="margin-top:14px;max-width:440px" data-i18n="rel.p" data-orig="One request, five upstream channel classes. When a channel degrades, the router reroutes automatically — and the SLA is a public document, not a sales promise.">Một yêu cầu, năm lớp kênh thượng nguồn. Kênh nào suy giảm, router tự chuyển — và SLA là tài liệu công khai, không phải lời hứa bán hàng.</p>
+      <div class="relStats">
+        <div><b class="num">99.5%</b><span data-i18n="rel.s1" data-orig="signed SLA — &lt;a href=&quot;sla.html&quot; style=&quot;color:var(--violet-deep)&quot;&gt;public terms →&lt;/a&gt;">SLA ký kết — <a href="/sla.html" style="color:var(--violet-deep)">điều khoản công khai →</a></span></div>
+        <div><b class="num">5</b><span data-i18n="rel.s2" data-orig="channel classes, automatic failover">lớp kênh, failover tự động</span></div>
+        <div><b class="num">$0</b><span data-i18n="rel.s3" data-orig="balance consumed by flatkey-side errors">số dư tiêu bởi lỗi phía flatkey</span></div>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:24px"><a class="btn black big" href="/status.html" data-i18n="rel.cta1" data-orig="Live status →">Trạng thái trực tiếp →</a><a class="btn white big" href="/sla.html" data-i18n="rel.cta2" data-orig="SLA &amp;amp; service credits">SLA &amp; tín dụng</a></div>
+    </div>
+    <div class="relChart">
+      <div class="rcHead"><span data-i18n="rel.ct" data-orig="UPTIME · SINGLE CHANNEL VS FLATKEY MESH · LIVE">KHẢ DỤNG · KÊNH ĐƠN VS LƯỚI FLATKEY · LIVE</span><span class="pill mint"><span class="dot"></span>LIVE</span></div>
+      <svg viewBox="0 0 560 220" preserveAspectRatio="none">
+        <line x1="0" y1="30" x2="560" y2="30" stroke="#0B0B0F14"></line><line x1="0" y1="90" x2="560" y2="90" stroke="#0B0B0F14"></line><line x1="0" y1="150" x2="560" y2="150" stroke="#0B0B0F14"></line>
+        <path d="M0,34 L60,32 L90,36 L120,120 L150,140 L170,60 L220,38 L260,34 L300,110 L330,170 L360,150 L390,44 L440,36 L480,100 L510,60 L560,38" fill="none" stroke="#D97706" stroke-width="2.2" stroke-linejoin="round"></path>
+        <path d="M0,26 L80,24 L160,27 L240,24 L320,28 L400,24 L480,26 L560,24" fill="none" stroke="#15803D" stroke-width="2.8" stroke-linejoin="round"></path>
+        <text x="8" y="20" font-size="11" fill="#15803D" font-weight="700" font-family="monospace">flatkey mesh 99.98%</text>
+        <text x="300" y="196" font-size="11" fill="#D97706" font-weight="700" font-family="monospace">least stable single channel</text>
+      </svg>
+      <p class="rcCap" data-i18n="rel.cap" data-orig="When one upstream errors, the router recovers on the next-best official channel — you see one flat line.">Khi một thượng nguồn lỗi, router phục hồi trên kênh chính thức tốt nhất tiếp theo — bạn chỉ thấy một đường phẳng.</p>
+    </div>
+  </div>
+</section>
+
+<section class="why" id="why">
+<div class="pxgrid" data-seed="113" data-cell="18" data-cols="7" data-rows="4" data-n="9" style="bottom: 30px; left: 34px; width: 126px; height: 72px;"></div>
+  <div class="whyIn">
+    <div class="whyHead"><h2 class="display" style="font-size:56px" data-i18n="why.h2" data-orig="Why choose&lt;br&gt;flatkey?">Vì sao chọn<br>flatkey?</h2></div>
+    <div class="whyGrid">
+      <div class="wcard">
+        <h3 data-i18n="why.c1h" data-orig="As low as 50% of list">Thấp tới 50% giá niêm yết</h3>
+        <p data-i18n="why.c1p" data-orig="Models at 60–90% of list; the top-up bonus stacks to an effective 50%. One prepaid balance across every model.">Mô hình ở mức 60–90% niêm yết; thưởng nạp đưa về 50% thực tế. Một số dư trả trước cho mọi mô hình.</p>
+        <div class="mini">
+          <div class="mbar"><span>official</span><div class="mtrack"><div class="mfill" style="width:100%;background:#C9C9D2"></div></div><b>$5.00</b></div>
+          <div class="mbar"><span>flatkey</span><div class="mtrack"><div class="mfill" style="width:53%;background:linear-gradient(90deg,var(--violet-hi),var(--violet-deep))"></div></div><b style="color:var(--violet-deep)">$2.67</b></div>
+          <p class="mcap">claude-opus-4-8 · $/1M input tokens, after bonus</p>
+        </div>
+      </div>
+      <div class="wcard">
+        <h3 data-i18n="why.c2h" data-orig="Official endpoints, verified hourly">Endpoint chính thức, xác minh mỗi giờ</h3>
+        <p data-i18n="why.c2p" data-orig="Every request hits the real lab API — no fp8 re-serves, no silent swaps. 160+ models probed against official fingerprints, on a public log.">Mỗi yêu cầu chạm API thật của lab — không fp8 re-serve, không tráo đổi. 160+ mô hình đối chiếu dấu vân tay chính thức, nhật ký công khai.</p>
+        <div class="labs">
+          <div class="lab" style="background:#0E8A6C">G<span>OpenAI</span></div>
+          <div class="lab" style="background:#B45309">C<span>Anthropic</span></div>
+          <div class="lab" style="background:#2563EB">G<span>Google</span></div>
+          <div class="lab" style="background:#3B52D4">D<span>DeepSeek</span></div>
+          <div class="lab" style="background:var(--violet-deep)">Q<span>Alibaba</span></div>
+          <div class="lab" style="background:#0B0B0F">Z<span>Z.ai</span></div>
+        </div>
+      </div>
+      <div class="wcard dark">
+        <h3 data-i18n="why.c3h" data-orig="One SDK, every modality">Một SDK, mọi phương thức</h3>
+        <p data-i18n="why.c3p" data-orig="Text, video, audio and image behind the same OpenAI-compatible gateway — and an Anthropic-shaped API for Claude Code.">Văn bản, video, âm thanh, hình ảnh sau cùng một gateway tương thích OpenAI — kèm API dạng Anthropic cho Claude Code.</p>
+        <pre class="wcode">client = OpenAI(
+  base_url=<span>"https://router.flatkey.ai/v1"</span>)
+client.chat.completions.create(
+  model=<span>"seedance-2.5"</span>,
+  messages=[…])  <em># video, same SDK</em></pre>
+      </div>
+      <div class="wcard">
+        <h3 data-i18n="why.c4h" data-orig="Enterprise-grade governance">Quản trị cấp enterprise</h3>
+        <p data-i18n="why.c4p" data-orig="Tree-structured sub-keys with budgets and model allowlists, a per-request ledger API, invoices in 48h — on audited infrastructure.">Sub-key dạng cây với ngân sách và allowlist, API sổ cái theo yêu cầu, hóa đơn 48h — trên hạ tầng được kiểm toán.</p>
+        <div class="chips">
+          <span>Sub-key caps</span><span>Model allowlists</span><span>Ledger API</span><span>Invoices 48h</span><span>SOC 2 Type II</span><span>ISO 27001</span><span>GDPR</span><span>Zero retention</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="v" id="trust">
+  <div class="pxgrid" data-seed="41" data-cell="24" data-cols="12" data-rows="6" data-n="20" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right: 34px; top: 48px; z-index: 1; width: 288px; height: 144px;"></div>
+  <div class="bgv"><div class="radar"><i></i><i></i><i></i><i></i><div class="sweep"></div>
+    <div class="blip" style="left:32%;top:38%"></div><div class="blip" style="left:58%;top:26%;animation-delay:.7s"></div><div class="blip" style="left:47%;top:62%;animation-delay:1.3s"></div><div class="blip" style="left:70%;top:52%;animation-delay:.4s"></div>
+  </div></div>
+  <div class="shade"></div>
+  <div class="in">
+    <div class="kick" data-i18n="trust.kick" data-orig="TRUST · HOURLY MODEL-AUTHENTICITY PROBES">TIN CẬY · DÒ TÍNH XÁC THỰC MỖI GIỜ</div>
+    <h2 class="big" data-i18n="trust.h2" data-orig="0 model swaps. &lt;em&gt;Ever.&lt;/em&gt;&lt;br&gt;And we prove it.">0 lần tráo mô hình. <em>Mãi mãi.</em><br>Và chúng tôi chứng minh được.</h2>
+    <p class="d" data-i18n="trust.p" data-orig="Every hour, every model is probed against its official API fingerprint — logits, tokenizer, refusal shape. The log is public. Cheap gateways ask for trust; flatkey shows receipts.">Mỗi giờ, mỗi mô hình được đối chiếu với dấu vân tay API chính thức — logits, tokenizer, mẫu từ chối. Nhật ký công khai. Gateway giá rẻ xin niềm tin; flatkey đưa ra bằng chứng.</p>
+    <div class="rows">
+      <div><span class="t">14:00</span><b>claude-opus-4-8</b> fingerprint ✓ · official anthropic · 388ms<span class="ok">PASS</span></div>
+      <div><span class="t">14:00</span><b>gpt-5.5</b> fingerprint ✓ · official openai · 412ms<span class="ok">PASS</span></div>
+      <div><span class="t">14:00</span><b>glm-5.2</b> fingerprint ✓ · official zhipu · 241ms<span class="ok">PASS</span></div>
+      <div><span class="t">14:00</span><b>seedance-2.5</b> fingerprint ✓ · official bytedance · video<span class="ok">PASS</span></div>
+      <div><span class="t">13:00</span>160+ models probed hourly · 30-day log public<span class="ok">PASS</span></div>
+    </div>
+  </div>
+  <div class="vtag"><span class="p">▶</span>BACKGROUND VIDEO · hourly-probe radar · 12s loop</div>
+</section>
+
+<section class="v" id="compliance">
+  <div class="pxgrid" data-seed="43" data-cell="24" data-cols="12" data-rows="6" data-n="20" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right: 34px; bottom: 70px; z-index: 1; width: 288px; height: 144px;"></div>
+  <div class="bgv ledger">
+    <div class="lcol" style="left:56%">req_8f3a2e91 · in 1,204 tok · out 388 tok · cached 61% · $0.0041<br>req_c11977ab · in 640 tok · out 1,022 tok · cached 38% · $0.0009<br>req_40deb0c2 · in 8,441 tok · out 96 tok · cached 95% · $0.0002<br>invoice #2026-0714 · VAT · issued 48h<br>req_77ab40de · 3DS ✓ · stripe checkout · BRL R$55,00<br>audit_export.csv · 128,441 rows · sha256 ✓</div>
+    <div class="lcol" style="left:75%;animation-delay:-8s">subkey cline-agent · cap $50/mo · model allowlist ✓<br>subkey prod · cap $500/mo · alert 80% ✓<br>SLA 99.9% · failover 3-region · breaker 99.95%<br>gdpr export · user 1835 · 2.1MB · done<br>req_b0c240de · in 96 tok · out 2,048 tok · $0.0031</div>
+  </div>
+  <div class="shade"></div>
+  <div class="in">
+    <div class="kick" data-i18n="compl.kick" data-orig="COMPLIANCE · ENTERPRISE-GRADE AUDITABILITY">COMPLIANCE · KIỂM TOÁN CẤP DOANH NGHIỆP</div>
+    <h2 class="big" data-i18n="compl.h2" data-orig="Every token,&lt;br&gt;on the record&lt;em&gt;.&lt;/em&gt;">Mỗi token,<br>đều có sổ sách<em>.</em></h2>
+    <p class="d" data-i18n="compl.p" data-orig="Per-request ledger with input, output and cached tokens — exportable, API-accessible. Invoices in 48h (VAT fapiao supported), 3DS payments, sub-key caps and model allowlists for teams.">Sổ cái theo từng yêu cầu: token vào / ra / cache — xuất được, truy cập qua API. Hóa đơn trong 48h, thanh toán 3DS, hạn mức sub-key và danh sách mô hình cho phép.</p>
+    <div class="badges">
+      <div class="badge"><b class="num">99.5% SLA</b><span>multi-provider failover · signed</span></div>
+      <div class="badge"><b>3DS · Stripe</b><span>fraud-screened payments</span></div>
+      <div class="badge"><b>Invoices 48h</b><span>enterprise invoicing API</span></div>
+      <div class="badge"><b>Ledger API</b><span>every request, every token</span></div>
+      <div class="badge"><b>Sub-key governance</b><span>caps · allowlists · alerts</span></div>
+    </div>
+  </div>
+  <div class="vtag"><span class="p">▶</span>BACKGROUND VIDEO · live ledger stream · 15s loop</div>
+</section>
+
+<section class="v" id="models">
+  <div class="pxgrid" data-seed="47" data-cell="24" data-cols="10" data-rows="5" data-n="16" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right: 60px; bottom: 56px; z-index: 1; width: 240px; height: 120px;"></div>
+  <div class="bgv wall">
+    <div class="lane"><div class="tile"><b>gpt-5.5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 1M</span><span class="pr">$0.75/M · 60% of list</span></div><div class="tile"><b>claude-opus-4-8</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 500K</span><span class="pr">$2.50/M · 50% of list</span></div><div class="tile"><b>gemini-3.2-pro</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · google · 2M</span><span class="pr">$1.50/M</span></div><div class="tile"><b>deepseek-v4</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · deepseek · 256K</span><span class="pr">$0.17/M</span></div><div class="tile"><b>qwen3-max</b><span>alibaba</span><span class="pr">$0.72/M</span></div><div class="tile"><b>glm-5.2</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · zhipu · 200K</span><span class="pr">$0.36/M</span></div><div class="tile"><b>gpt-5.5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 1M</span><span class="pr">$0.75/M · 60% of list</span></div><div class="tile"><b>claude-opus-4-8</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 500K</span><span class="pr">$2.50/M · 50% of list</span></div><div class="tile"><b>gemini-3.2-pro</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · google · 2M</span><span class="pr">$1.50/M</span></div><div class="tile"><b>deepseek-v4</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · deepseek · 256K</span><span class="pr">$0.17/M</span></div><div class="tile"><b>qwen3-max</b><span>alibaba</span><span class="pr">$0.72/M</span></div><div class="tile"><b>glm-5.2</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · zhipu · 200K</span><span class="pr">$0.36/M</span></div></div>
+    <div class="lane r"><div class="tile" style="border-color:#8B5CF666"><b style="color:#B7A3F0">seedance-2.5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · bytedance · video</span><span class="pr">$0.24/s · t2v + i2v</span></div><div class="tile"><b>kimi-k3</b><span>moonshot</span><span class="pr">$0.55/M</span></div><div class="tile"><b>claude-sonnet-5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 1M</span><span class="pr">$1.80/M</span></div><div class="tile"><b>gpt-5.4-mini</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 400K</span><span class="pr">$0.30/M</span></div><div class="tile"><b>gemini-3-flash</b><span>google</span><span class="pr">$0.05/M</span></div><div class="tile"><b>doubao-seed-2</b><span>bytedance</span><span class="pr">$0.16/M</span></div><div class="tile"><b>ernie-5.1</b><span>baidu</span><span class="pr">$0.55/M</span></div><div class="tile" style="border-color:#8B5CF666"><b style="color:#B7A3F0">seedance-2.5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · bytedance · video</span><span class="pr">$0.24/s · t2v + i2v</span></div><div class="tile"><b>kimi-k3</b><span>moonshot</span><span class="pr">$0.55/M</span></div><div class="tile"><b>claude-sonnet-5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 1M</span><span class="pr">$1.80/M</span></div><div class="tile"><b>gpt-5.4-mini</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 400K</span><span class="pr">$0.30/M</span></div><div class="tile"><b>gemini-3-flash</b><span>google</span><span class="pr">$0.05/M</span></div><div class="tile"><b>doubao-seed-2</b><span>bytedance</span><span class="pr">$0.16/M</span></div><div class="tile"><b>ernie-5.1</b><span>baidu</span><span class="pr">$0.55/M</span></div></div>
+    <div class="lane"><div class="tile" style="border-color:#8B5CF666"><b style="color:#B7A3F0">flatkey-auto</b><span>routes itself</span><span class="pr">no routing fee</span></div><div class="tile"><b>minimax-m3</b><span>minimax</span><span class="pr">$0.18/M</span></div><div class="tile"><b>grok-4.2</b><span>xai</span><span class="pr">$1.80/M</span></div><div class="tile"><b>step-3.7-flash</b><span>stepfun</span><span class="pr">$0.16/M</span></div><div class="tile"><b>hunyuan-2.0</b><span>tencent</span><span class="pr">$0.40/M</span></div><div class="tile"><b>mimo-v2.5</b><span>xiaomi</span><span class="pr">$0.01/M</span></div><div class="tile" style="border-color:#8B5CF666"><b style="color:#B7A3F0">flatkey-auto</b><span>routes itself</span><span class="pr">no routing fee</span></div><div class="tile"><b>minimax-m3</b><span>minimax</span><span class="pr">$0.18/M</span></div><div class="tile"><b>grok-4.2</b><span>xai</span><span class="pr">$1.80/M</span></div><div class="tile"><b>step-3.7-flash</b><span>stepfun</span><span class="pr">$0.16/M</span></div><div class="tile"><b>hunyuan-2.0</b><span>tencent</span><span class="pr">$0.40/M</span></div><div class="tile"><b>mimo-v2.5</b><span>xiaomi</span><span class="pr">$0.01/M</span></div></div>
+  </div>
+  <div class="shade"></div>
+  <div class="in">
+    <div class="kick" data-i18n="mdl.kick" data-orig="MODELS · 160+ OFFICIAL MODELS, ONE KEY">MODELS · 160+ MÔ HÌNH CHÍNH THỨC, MỘT KEY</div>
+    <h2 class="big" data-i18n="mdl.h2" data-orig="Every frontier lab&lt;em&gt;.&lt;/em&gt;&lt;br&gt;One key.">Mọi phòng lab hàng đầu<em>.</em><br>Một key.</h2>
+    <p class="d" data-i18n="mdl.p" data-orig="OpenAI, Anthropic, Google, DeepSeek, Alibaba, Zhipu, Moonshot, ByteDance… new models live within 24h of official release — always the real endpoints, never quantized re-serves.">OpenAI, Anthropic, Google, DeepSeek, Alibaba, Zhipu, Moonshot, ByteDance… mô hình mới lên sóng trong 24h — luôn là endpoint thật, không quantize.</p>
+    
+  </div>
+  <div class="vtag"><span class="p">▶</span>BACKGROUND VIDEO · model wall marquee · 30s loop</div>
+</section>
+
+
+
+<section class="media" id="video">
+<div class="pxgrid" data-seed="103" data-cell="20" data-cols="10" data-rows="3" data-n="11" style="top: 14px; right: 36px; width: 200px; height: 60px;"></div>
+  <div class="mediaIn">
+    <div class="kick2" data-i18n="vid.kick" data-orig="VIDEO MODELS · SAME KEY, SAME BALANCE">MÔ HÌNH VIDEO · CÙNG KEY, CÙNG SỐ DƯ</div>
+    <h2 class="display" data-i18n="vid.h2" data-orig="Video generation, official endpoints.">Tạo video, endpoint chính thức.</h2>
+    <p class="sub" style="margin-top:12px;max-width:620px" data-i18n="vid.sub" data-orig="Text-to-video and image-to-video from every major lab — metered per second on the same prepaid balance as your text models.">Text-to-video và image-to-video từ mọi lab lớn — tính theo giây, chung số dư trả trước với mô hình văn bản.</p>
+    <div class="vgal">
+      <a class="vcard big" href="/playground.html">
+        <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.1.jpg" src="/assets/video/v1.1.mp4"></video>
+        <div class="vshade"></div>
+        <span class="fbadge" data-i18n="vid.badge" data-orig="FEATURED · NEW">NỔI BẬT · MỚI</span>
+        <div class="vmeta"><h3>Seedance 2.5<br>Image to Video</h3><p><span>bytedance · 1080p · t2v + i2v</span><i>$0.24/s</i></p></div>
+      </a>
+      <a class="vcard" href="/playground.html">
+        <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.2.jpg" src="/assets/video/v1.2.mp4"></video>
+        <div class="vshade"></div>
+        <div class="vmeta"><h3>Seedance 2.0<br>Image to Video</h3><p><span>bytedance · i2v</span><i>$0.15/s</i></p></div>
+      </a>
+      <a class="vcard" href="/playground.html">
+        <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.3.jpg" src="/assets/video/v1.3.mp4"></video>
+        <div class="vshade"></div>
+        <div class="vmeta"><h3>Veo 3.1<br>Text to Video</h3><p><span>google · t2v + audio</span><i>$0.40/s</i></p></div>
+      </a>
+    </div>
+    <div class="mgrid" style="margin-top:16px">
+      <div class="mcard"><b>sora-2</b><span>openai · t2v</span><i>$0.50/s</i></div>
+      <div class="mcard"><b>kling-2.5-pro</b><span>kuaishou · i2v</span><i>$0.21/s</i></div>
+      <div class="mcard"><b>wan-2.7</b><span>alibaba · t2v</span><i>$0.12/s</i></div>
+      <div class="mcard"><b>hailuo-02</b><span>minimax · i2v</span><i>$0.14/s</i></div>
+      <div class="mcard"><b>pixverse-v6</b><span>pixverse · t2v</span><i>$0.10/s</i></div>
+      <div class="mcard"><b>seedance-2.0-lite</b><span>bytedance · t2v</span><i>$0.08/s</i></div>
+      <div class="mcard"><b>ltx-2.3</b><span>lightricks · i2v</span><i>$0.06/s</i></div>
+      <div class="mcard more"><a href="/models.html" data-i18n="vid.more" data-orig="+ 20 more video models →">+ 20 mô hình video nữa →</a></div>
+    </div>
+  </div></section>
+
+<section class="media alt" id="audio">
+<div class="pxgrid" data-seed="107" data-cell="20" data-cols="9" data-rows="3" data-n="10" style="bottom: 16px; left: 36px; width: 180px; height: 60px;"></div>
+  <div class="mediaIn">
+    <div class="kick2" data-i18n="aud.kick" data-orig="AUDIO MODELS · VOICE IN, VOICE OUT">MÔ HÌNH ÂM THANH · GIỌNG VÀO, GIỌNG RA</div>
+    <h2 class="display" data-i18n="aud.h2" data-orig="Speech, on the record too.">Giọng nói, cũng có sổ sách.</h2>
+    <p class="sub" style="margin-top:12px;max-width:620px" data-i18n="aud.sub" data-orig="Realtime voice, TTS and transcription from the official labs — same key, same ledger, priced per minute or per million characters.">Giọng realtime, TTS và phiên âm từ các lab chính thức — cùng key, cùng sổ cái, tính theo phút hoặc triệu ký tự.</p>
+    <div class="mgrid five">
+      <div class="mcard"><b>gpt-realtime</b><span>openai · speech ⇄ speech</span><i>$0.06/min</i></div>
+      <div class="mcard"><b>whisper-v4</b><span>openai · transcription</span><i>$0.003/min</i></div>
+      <div class="mcard"><b>elevenlabs-v3-turbo</b><span>elevenlabs · tts</span><i>$0.08/1K chars</i></div>
+      <div class="mcard"><b>minimax-speech-2.6</b><span>minimax · tts</span><i>$0.02/1K chars</i></div>
+      <div class="mcard"><b>cosyvoice-3</b><span>alibaba · tts</span><i>$0.01/1K chars</i></div>
+      <div class="mcard"><b>seed-tts-2</b><span>bytedance · tts</span><i>$0.015/1K chars</i></div>
+      <div class="mcard"><b>gemini-3-audio</b><span>google · native audio</span><i>$0.04/min</i></div>
+      <div class="mcard more"><a href="/models.html" data-i18n="aud.more" data-orig="+ 12 more audio models →">+ 12 mô hình âm thanh nữa →</a></div>
+    </div>
+  </div>
+</section>
+
+
+<section class="loved" id="customers">
+<div class="pxgrid" data-seed="127" data-cell="18" data-cols="8" data-rows="3" data-n="9" style="top: 26px; right: 40px; width: 144px; height: 54px;"></div>
+  <div class="lovedIn">
+    <div class="tcard t1">
+      <div class="tlogo">Anker</div>
+      <p>“We route support and product-copy workloads across GPT and Claude through one flatkey balance. Same SDK we already had — roughly half the bill.”</p>
+      <div class="twho"><span class="av" style="background:linear-gradient(135deg,#0EA5E9,#1D4ED8)">A</span><span class="who2"><b>AI Platform Team</b><span>Anker Innovations</span></span></div>
+    </div>
+    <div class="tcard t2">
+      <div class="tlogo">Lockin</div>
+      <p>“The hourly authenticity probes ended the ‘is this the real model?’ debate. Procurement gets one invoice; engineers get official endpoints.”</p>
+      <div class="twho"><span class="av" style="background:linear-gradient(135deg,#F59E0B,#B45309)">L</span><span class="who2"><b>Smart-Home AI Lead</b><span>Lockin</span></span></div>
+    </div>
+    <h2 class="lovedH" data-i18n="lov.h2" data-orig="Built on flatkey,&lt;br&gt;loved by builders.">Xây trên flatkey,<br>được builder yêu thích.</h2>
+    <div class="tcard t3">
+      <div class="tlogo">iHealth</div>
+      <p>“Compliance was the blocker until flatkey: zero retention of request content, SOC 2 controls, and a per-request ledger. Our health-data reviews finally pass — and the bill dropped 47% in the first month.”</p>
+      <div class="twho"><span class="av" style="background:linear-gradient(135deg,#10B981,#047857)">iH</span><span class="who2"><b>Data &amp; AI Lead</b><span>iHealth Labs</span></span></div>
+    </div>
+  </div>
+</section>
+
+<section class="steps" id="how">
+<div class="pxgrid" data-seed="59" data-cell="18" data-cols="8" data-rows="3" data-n="9" style="top: 24px; right: 40px; width: 144px; height: 54px;"></div>
+  <div class="stepsIn">
+    <div class="kick2" data-i18n="steps.kick" data-orig="HOW IT FITS TOGETHER">3 BƯỚC TÍCH HỢP</div>
+    <h2 class="display" data-i18n="steps.h2" data-orig="From homepage to production calls.">Từ trang chủ đến cuộc gọi production.</h2>
+    <div class="stepGrid">
+      <div><span class="n num">1</span><h3 data-i18n="steps.h31" data-orig="Get one key">Lấy một key</h3><p data-i18n="steps.p1" data-orig="Create a flatkey account, open the console, and generate an API key for your app.">Tạo tài khoản flatkey, mở console và tạo API key cho ứng dụng.</p></div>
+      <div><span class="n num">2</span><h3 data-i18n="steps.h32" data-orig="Change the base URL">Đổi base URL</h3><p data-i18n="steps.p2" data-orig="Point your existing SDK — OpenAI or Anthropic protocol, GPT, Claude, Gemini alike — at &lt;code&gt;router.flatkey.ai&lt;/code&gt;. Nothing else changes.">Trỏ SDK hiện tại của bạn — giao thức OpenAI hoặc Anthropic, GPT, Claude hay Gemini đều được — vào <code>router.flatkey.ai</code>. Không phải đổi gì khác.</p></div>
+      <div><span class="n num">3</span><h3 data-i18n="steps.h33" data-orig="Monitor and optimize">Theo dõi &amp; tối ưu</h3><p data-i18n="steps.p3" data-orig="Review usage, cost, routing and errors from the same dashboard — per model, per token, per request.">Mức dùng, chi phí, định tuyến, lỗi trong cùng một bảng điều khiển — theo mô hình, token, yêu cầu.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="support" id="support">
+<div class="pxgrid" data-seed="97" data-cell="18" data-cols="7" data-rows="3" data-n="8" style="bottom: 20px; left: 40px; width: 126px; height: 54px;"></div>
+  <div class="supportIn">
+    <div>
+      <div class="kick2" data-i18n="sup.kick" data-orig="SUPPORT · HUMANS ON CALL">HỖ TRỢ · NGƯỜI THẬT TRỰC</div>
+      <h2 class="display" data-i18n="sup.h2" data-orig="Questions? Talk to us.">Có câu hỏi? Nói chuyện với chúng tôi.</h2>
+      <p class="sub" style="margin-top:14px;max-width:420px" data-i18n="sup.sub" data-orig="Integration, model choice, or billing — online support and usage consultation for everything on flatkey.">Tích hợp, chọn mô hình hay hóa đơn — hỗ trợ trực tuyến cho mọi dịch vụ trên flatkey.</p>
+    </div>
+    <div class="chGrid">
+      <a class="ch" href="https://discord.gg/VrbZFDXj5g" style="grid-column:1/-1;background:linear-gradient(120deg,#5865F2 0%,#4752C4 100%);border-color:transparent">
+        <b style="color:#fff" data-i18n="sup.dc" data-orig="Discord community">Cộng đồng Discord</b>
+        <span style="color:#E4E6FF">discord.gg/VrbZFDXj5g</span>
+        <i style="color:#C7CCFF" data-i18n="sup.dc.i" data-orig="Builders answering builders — the team is in the channels daily">Builder giúp builder — đội ngũ có mặt trong kênh mỗi ngày</i>
+      </a>
+      <a class="ch" href="mailto:support@flatkey.ai"><b data-i18n="sup.email" data-orig="Email">Email</b><span>support@flatkey.ai</span><i data-i18n="sup.email.i" data-orig="Reply within 1 business day">Trả lời trong 1 ngày làm việc</i></a>
+      <a class="ch" href="/contact.html"><b data-i18n="sup.chat" data-orig="Live chat">Chat trực tiếp</b><span data-i18n="sup.chat.s" data-orig="Start chatting →">Bắt đầu chat →</span><i data-i18n="sup.chat.i" data-orig="Fastest answer, on the site">Trả lời nhanh nhất</i></a>
+      <a class="ch" href="sms:+15705397112"><b data-i18n="sup.sms" data-orig="SMS">SMS</b><span>+1 (570) 539-7112</span><i data-i18n="sup.sms.i" data-orig="Text us, we text back">Nhắn tin, chúng tôi trả lời</i></a>
+      <a class="ch" href="https://x.com/flatkey101"><b data-i18n="sup.x" data-orig="X (Twitter)">X (Twitter)</b><span>@flatkey101</span><i data-i18n="sup.x.i" data-orig="Follow or DM">Theo dõi hoặc nhắn DM</i></a>
+    </div>
+  </div>
+</section>
+
+
+<section class="ctaWrap">
+  <div class="ctaBanner">
+    <div class="pxgrid" data-seed="163" data-cell="26" data-cols="9" data-rows="7" data-n="26" data-colors="#7C3AED,#A78BFA,#6D28D9" data-accent="#67E8F9" style="left: -30px; top: -20px; opacity: 0.9; width: 234px; height: 182px;"></div>
+    <div class="pxgrid" data-seed="167" data-cell="26" data-cols="9" data-rows="7" data-n="26" data-colors="#A78BFA,#C4B5FD,#7C3AED" data-accent="#67E8F9" style="right: -30px; bottom: -20px; opacity: 0.9; width: 234px; height: 182px;"></div>
+    <div class="ctaIn">
+      <h2 data-i18n="cta.h" data-orig="More AI, less cost —&lt;br&gt;on every official model">More AI, less cost —<br>trên mọi mô hình chính thức</h2>
+      <p data-i18n="cta.sub" data-orig="Whether you ship an agent today or route billions of tokens a month — one key, a signed SLA, and prices that drop as you grow.">Ra mắt agent hôm nay hay định tuyến hàng tỷ token mỗi tháng — một key, SLA ký kết, giá càng dùng càng giảm.</p>
+      <div class="ctaBtns"><a class="btn white big" href="/login.html" data-i18n="cta.b1" data-orig="Get started">Bắt đầu</a><a class="btn black big" href="/contact.html" data-i18n="cta.b2" data-orig="Contact Sales">Liên hệ sales</a></div>
+    </div>
+  </div>
+</section>
+
+<footer class="megafoot">
+<div class="pxgrid" data-seed="53" data-cell="20" data-cols="12" data-rows="4" data-n="14" style="top: 30px; right: 28px; width: 240px; height: 80px;"></div>
+  <div class="cols">
+    <div class="col brandcol">
+      <a class="logo" href="/"><img src="/assets/flatkey-mark.svg" alt="flatkey">flatkey</a>
+      <p data-i18n="ft.brand" data-orig="The official-model gateway. More AI, less cost — every frontier model behind one key, verified hourly.">Gateway mô hình chính thức. More AI, less cost — mọi mô hình hàng đầu sau một key, xác minh mỗi giờ.</p>
+    </div>
+    <div class="col"><h5 data-i18n="ft.product" data-orig="Product">Sản phẩm</h5><a href="/models.html" data-i18n="nav.models" data-orig="Models">Mô hình</a><a href="/playground.html" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/rankings" data-i18n="nav.rankings" data-orig="Rankings">Bảng xếp hạng</a><a href="/topup.html" data-i18n="nav.pricing" data-orig="Pricing">Giá</a><a href="/usecases.html" data-i18n="nav.usecases" data-orig="Use cases">Trường hợp dùng</a><a href="https://console.flatkey.ai/dashboard" data-i18n="ft.console" data-orig="Console ↗">Console ↗</a></div>
+    <div class="col"><h5 data-i18n="ft.dev" data-orig="Developers">Nhà phát triển</h5><a href="/docs.html" data-i18n="nav.docs" data-orig="Docs">Tài liệu</a><a href="/docs.html#community">gateway-bench</a><a href="/status.html" data-i18n="nav.status" data-orig="API status">Trạng thái</a><a href="https://docs.flatkey.ai/llms.txt">llms.txt</a><a href="/blog" data-i18n="nav.blog" data-orig="Blog ↗">Blog</a></div>
+    <div class="col"><h5 data-i18n="ft.company" data-orig="Company">Công ty</h5><a href="/contact.html" data-i18n="ft.contact" data-orig="Contact us">Liên hệ</a><a href="/about" data-i18n="ft.about" data-orig="About">Về chúng tôi</a><a href="/terms.html" data-i18n="ft.terms" data-orig="Terms of Service">Điều khoản dịch vụ</a><a href="/privacy.html" data-i18n="ft.privacy" data-orig="Privacy Policy">Chính sách bảo mật</a><a href="/sla.html" data-i18n="ft.sla" data-orig="Service Level Agreement">Thỏa thuận mức dịch vụ</a><a href="/refund-policy.html" data-i18n="ft.refund" data-orig="Refund Policy">Chính sách hoàn tiền</a></div>
+    <div class="col"><h5 data-i18n="ft.social" data-orig="Socials">Mạng xã hội</h5><a href="https://x.com/flatkey101">X @flatkey101</a><a href="mailto:support@flatkey.ai">support@flatkey.ai</a><a href="sms:+15705397112">+1 (570) 539-7112</a><a href="/docs.html#community">GitHub</a><a href="https://discord.gg/VrbZFDXj5g">Discord</a></div>
+  </div>
+  <div class="trustrow"><span data-i18n="ft.trusted" data-orig="TRUSTED &amp;amp; VERIFIED BY">ĐƯỢC CHỨNG NHẬN &amp; XÁC MINH BỞI</span>
+    <a href="https://www.cert-assure.com/serchresult.php?type=Management+System+Certification&amp;certificate=USA-SOC2-220513">SOC 2 Type II</a>
+    <a href="https://www.cert-assure.com/serchresult.php?type=Management+System+Certification&amp;certificate=USA-I-270513">ISO 27001</a>
+    <span class="b" data-i18n="ft.gdpr" data-orig="GDPR compliant">Tuân thủ GDPR</span>
+    <a href="https://www.vanta.com/integrations?built-by=Partner">Vanta monitored</a>
+    <span class="b" data-i18n="ft.zeroret" data-orig="Zero retention of request content">Không lưu nội dung yêu cầu</span>
+  </div>
+  <div class="bottom">
+    <div class="legal" data-i18n="ft.legal" data-orig="© 2026 flatkey.ai · VOC AI INC, San Jose, CA. All rights reserved. &lt;a href=&quot;terms.html&quot;&gt;Terms&lt;/a&gt; · &lt;a href=&quot;privacy.html&quot;&gt;Privacy&lt;/a&gt; · &lt;a href=&quot;legal-sla.html&quot;&gt;SLA&lt;/a&gt; · &lt;a href=&quot;refund-policy.html&quot;&gt;Refunds&lt;/a&gt;">© 2026 flatkey.ai · VOC AI INC (San Jose, CA). Bảo lưu mọi quyền. <a href="/terms.html">Điều khoản</a> · <a href="/privacy.html">Bảo mật</a> · <a href="legal-sla.html">SLA</a> · <a href="/refund-policy.html">Hoàn tiền</a></div>
+    <div class="word"><img src="/assets/flatkey-mark.svg" alt="">flatkey</div>
+  </div>
+</footer>
+<div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
+<script src="/assets/pixels.js"></script>
+<script>try{localStorage.setItem("fk-lang","vi")}catch(e){}</script>
+<script src="/assets/i18n.js"></script><script type="text/javascript" id="" charset="">var ahrefs_analytics_script=document.createElement("script");ahrefs_analytics_script.async=!0;ahrefs_analytics_script.src="https://analytics.ahrefs.com/analytics.js";ahrefs_analytics_script.setAttribute("data-key","xlrmP0/5CsabyJozoUI/dw");document.getElementsByTagName("head")[0].appendChild(ahrefs_analytics_script);</script><script id="" text="" charset="" type="text/javascript" src="https://s.yimg.jp/images/listing/tool/cv/ytag.js"></script>
+
+
+<script type="text/javascript" id="" charset="">window.yjDataLayer=window.yjDataLayer||[];function ytag(){yjDataLayer.push(arguments)}ytag({type:"ycl_cookie",config:{ycl_use_non_cookie_storage:!0}});</script><div id="monica-content-root" class="monica-widget" style="pointer-events: auto;"></div></body><seamless-flyout></seamless-flyout></html>
