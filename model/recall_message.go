@@ -134,10 +134,22 @@ func MarkRecallMessageSendingWithContext(ctx context.Context, id int64, owner st
 }
 
 func GetRecallEmailWorkItemForLeaseWithContext(ctx context.Context, id int64, owner string) (*RecallEmailWorkItem, error) {
+	return getRecallEmailWorkItemForLeaseWithContext(ctx, id, owner, 0, false)
+}
+
+func GetRecallEmailWorkItemForLeaseEpochWithContext(ctx context.Context, id int64, owner string, expectedLeaseUntil int64) (*RecallEmailWorkItem, error) {
+	return getRecallEmailWorkItemForLeaseWithContext(ctx, id, owner, expectedLeaseUntil, true)
+}
+
+func getRecallEmailWorkItemForLeaseWithContext(ctx context.Context, id int64, owner string, expectedLeaseUntil int64, exactEpoch bool) (*RecallEmailWorkItem, error) {
 	item := &RecallEmailWorkItem{}
-	if err := DB.WithContext(ctx).
-		Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at > 0", id, RecallMessageLeased, owner).
-		First(&item.Message).Error; err != nil {
+	messageQuery := DB.WithContext(ctx).Where("id = ? AND state = ? AND lease_owner = ?", id, RecallMessageLeased, owner)
+	if exactEpoch {
+		messageQuery = messageQuery.Where("lease_expires_at = ?", expectedLeaseUntil)
+	} else {
+		messageQuery = messageQuery.Where("lease_expires_at > 0")
+	}
+	if err := messageQuery.First(&item.Message).Error; err != nil {
 		return nil, err
 	}
 	if err := DB.WithContext(ctx).First(&item.Recipient, item.Message.RecipientId).Error; err != nil {

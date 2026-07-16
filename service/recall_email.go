@@ -153,8 +153,9 @@ func (w *RecallEmailWorker) ProcessLeased(ctx context.Context, messageID int64) 
 }
 
 func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.RecallEmailWorkItem, recentlyActive bool) error {
+	expectedLeaseUntil := item.Message.LeaseExpiresAt
 	now := w.now().Unix()
-	if item.Message.LeaseExpiresAt <= now {
+	if expectedLeaseUntil <= now {
 		return ErrRecallEmailLeaseLost
 	}
 	stopReason, err := w.recallEmailStopReason(ctx, item, recentlyActive, now)
@@ -167,7 +168,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 			item.Message.Id,
 			item.Recipient.Id,
 			w.owner,
-			item.Message.LeaseExpiresAt,
+			expectedLeaseUntil,
 			stopReason,
 			now,
 		)
@@ -191,7 +192,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 			ctx,
 			item.Message.Id,
 			w.owner,
-			item.Message.LeaseExpiresAt,
+			expectedLeaseUntil,
 			providerMessageID,
 		)
 		if err != nil {
@@ -209,7 +210,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		return w.finishPreAcceptError(ctx, item, "next_stage_invalid", false)
 	}
 
-	rawClaim, err := w.claims.IssueClaim(ctx, item.Message.Id, w.owner, item.Message.LeaseExpiresAt)
+	rawClaim, err := w.claims.IssueClaim(ctx, item.Message.Id, w.owner, expectedLeaseUntil)
 	if err != nil {
 		if errors.Is(err, ErrRecallClaimLeaseLost) {
 			return ErrRecallEmailLeaseLost
@@ -247,7 +248,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 	if err != nil {
 		return w.finishPreAcceptError(ctx, item, "render_invalid", false)
 	}
-	item, err = model.GetRecallEmailWorkItemForLeaseWithContext(ctx, item.Message.Id, w.owner)
+	item, err = model.GetRecallEmailWorkItemForLeaseEpochWithContext(ctx, item.Message.Id, w.owner, expectedLeaseUntil)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrRecallEmailLeaseLost
@@ -274,7 +275,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 			item.Message.Id,
 			item.Recipient.Id,
 			w.owner,
-			item.Message.LeaseExpiresAt,
+			expectedLeaseUntil,
 			stopReason,
 			fenceNow,
 		)
@@ -286,10 +287,10 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		}
 		return nil
 	}
-	if item.Message.LeaseExpiresAt <= w.now().Unix() {
+	if expectedLeaseUntil <= w.now().Unix() {
 		return ErrRecallEmailLeaseLost
 	}
-	sending, err := model.MarkRecallMessageSendingWithContext(ctx, item.Message.Id, w.owner, item.Message.LeaseExpiresAt)
+	sending, err := model.MarkRecallMessageSendingWithContext(ctx, item.Message.Id, w.owner, expectedLeaseUntil)
 	if err != nil {
 		return err
 	}
@@ -302,7 +303,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 			won, updateErr := model.CompleteRecallMessageLease(
 				item.Message.Id,
 				w.owner,
-				item.Message.LeaseExpiresAt,
+				expectedLeaseUntil,
 				model.RecallMessageSending,
 				model.RecallMessageUncertain,
 				map[string]any{
@@ -332,7 +333,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		ctx,
 		item.Message.Id,
 		w.owner,
-		item.Message.LeaseExpiresAt,
+		expectedLeaseUntil,
 		acceptedAt,
 		next,
 	)
