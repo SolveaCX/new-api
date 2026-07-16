@@ -8,6 +8,9 @@
 
   var DICTS = {
 "zh": {
+"md.early": "抢先体验",
+"md.soon": "即将上线",
+"md.usage": "按量计费",
 "ft.about": "关于我们",
 "sup.dc": "Discord 社区",
 "sup.dc.i": "开发者互相解答——团队全员每天在频道里",
@@ -317,6 +320,9 @@
 "aud.more": "+ 还有 12 个语音模型 →"
 },
 "es": {
+"md.early": "Acceso anticipado",
+"md.soon": "Próximamente",
+"md.usage": "Según uso",
 "ft.about": "Sobre nosotros",
 "sup.dc": "Comunidad de Discord",
 "sup.dc.i": "Builders respondiendo a builders — el equipo está en los canales a diario",
@@ -626,6 +632,9 @@
 "aud.more": "+ 12 modelos de audio más →"
 },
 "fr": {
+"md.early": "Accès anticipé",
+"md.soon": "Bientôt disponible",
+"md.usage": "À l'usage",
 "ft.about": "À propos",
 "sup.dc": "Communauté Discord",
 "sup.dc.i": "Des builders qui répondent aux builders — l'équipe est dans les canaux chaque jour",
@@ -935,6 +944,9 @@
 "aud.more": "+ 12 autres modèles audio →"
 },
 "pt": {
+"md.early": "Acesso antecipado",
+"md.soon": "Em breve",
+"md.usage": "Por uso",
 "ft.about": "Sobre nós",
 "sup.dc": "Comunidade no Discord",
 "sup.dc.i": "Builders respondendo builders — o time está nos canais todos os dias",
@@ -1244,6 +1256,9 @@
 "aud.more": "+ mais 12 modelos de áudio →"
 },
 "ru": {
+"md.early": "Ранний доступ",
+"md.soon": "Скоро",
+"md.usage": "По использованию",
 "ft.about": "О нас",
 "sup.dc": "Discord-сообщество",
 "sup.dc.i": "Разработчики помогают разработчикам — команда в каналах каждый день",
@@ -1553,6 +1568,9 @@
 "aud.more": "+ ещё 12 аудиомоделей →"
 },
 "ja": {
+"md.early": "先行アクセス",
+"md.soon": "近日公開",
+"md.usage": "従量課金",
 "ft.about": "会社概要",
 "sup.dc": "Discord コミュニティ",
 "sup.dc.i": "ビルダー同士の助け合い——チームも毎日チャンネルにいます",
@@ -1862,6 +1880,9 @@
 "aud.more": "+ さらに 12 の音声モデル →"
 },
 "vi": {
+"md.early": "Truy cập sớm",
+"md.soon": "Sắp ra mắt",
+"md.usage": "Theo mức dùng",
 "ft.about": "Về chúng tôi",
 "sup.dc": "Cộng đồng Discord",
 "sup.dc.i": "Builder giúp builder — đội ngũ có mặt trong kênh mỗi ngày",
@@ -2171,6 +2192,9 @@
 "aud.more": "+ 12 mô hình âm thanh nữa →"
 },
 "de": {
+"md.early": "Früher Zugriff",
+"md.soon": "Demnächst",
+"md.usage": "Nutzungsbasiert",
 "ft.about": "Über uns",
 "sup.dc": "Discord-Community",
 "sup.dc.i": "Builder helfen Buildern — das Team ist täglich in den Channels",
@@ -2480,6 +2504,9 @@
 "aud.more": "+ 12 weitere Audiomodelle →"
 },
 "id": {
+"md.early": "Akses awal",
+"md.soon": "Segera hadir",
+"md.usage": "Berbasis pemakaian",
 "ft.about": "Tentang kami",
 "sup.dc": "Komunitas Discord",
 "sup.dc.i": "Builder menjawab builder — tim ada di channel setiap hari",
