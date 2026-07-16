@@ -1,0 +1,14 @@
+/* legacy-skin — unify legacy Next.js pages (blog/locale/landing) with the v2 design system.
+   Injected by nginx sub_filter on proxied @legacy responses. Fonts + brand accents only;
+   layout, content and business logic untouched. */
+@font-face{font-family:"Public Sans";src:url("/assets/fonts/public-sans-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+html,body,p,a,h1,h2,h3,h4,h5,h6,span,div,li,dt,dd,th,td,label,button,input,select,textarea,blockquote,figcaption,small,strong,em,time,nav,header,footer,section,article{
+  font-family:"Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif !important;
+}
+pre,code,kbd,samp,pre *,code *{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace !important;
+}
+/* brand violet: pull legacy purples into the deep-violet band (#4C1D95–#7C3AED) */
+:root{--fk-violet:#4C1D95;--fk-violet-2:#7C3AED}
+a[class*="text-purple"],a[class*="text-violet"],[class*="text-purple-6"],[class*="text-violet-6"]{color:var(--fk-violet-2) !important}
+[class*="bg-purple-6"],[class*="bg-violet-6"]{background-color:var(--fk-violet-2) !important}

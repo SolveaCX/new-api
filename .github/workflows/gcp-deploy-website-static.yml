@@ -132,6 +132,13 @@ jobs:
           # blog must NOT redirect to homepage anymore
           loc=$(curl -s -o /dev/null -w "%{redirect_url}" -m 30 "$C/blog")
           [ -z "$loc" ] || { echo "unexpected redirect: /blog -> $loc"; exit 1; }
+          # merged sitemap: index + legacy inventory + v2 pages
+          curl -s -m 30 "$C/sitemap.xml" | grep -q "<sitemapindex" || { echo "sitemap index missing"; exit 1; }
+          curl -s -m 30 "$C/sitemap-site.xml" | grep -q "<urlset" || { echo "legacy sitemap proxy broken"; exit 1; }
+          curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/sitemap-v2.xml" | grep -q 200 || exit 1
+          # legacy skin must be injected into proxied pages
+          curl -s -m 30 "$C/blog" | grep -q "legacy-skin.css" || { echo "legacy skin not injected"; exit 1; }
+          curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/assets/legacy-skin.css" | grep -q 200 || exit 1
 
       - name: Shift traffic to latest
         run: |

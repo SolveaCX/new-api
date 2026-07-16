@@ -8,6 +8,7 @@
 
   var DICTS = {
 "zh": {
+"ft.about": "关于我们",
 "sup.dc": "Discord 社区",
 "sup.dc.i": "开发者互相解答——团队全员每天在频道里",
 "ct.dc": "加入 Discord 社区",
@@ -316,6 +317,7 @@
 "aud.more": "+ 还有 12 个语音模型 →"
 },
 "es": {
+"ft.about": "Sobre nosotros",
 "sup.dc": "Comunidad de Discord",
 "sup.dc.i": "Builders respondiendo a builders — el equipo está en los canales a diario",
 "ct.dc": "Únete a nuestro Discord",
@@ -624,6 +626,7 @@
 "aud.more": "+ 12 modelos de audio más →"
 },
 "fr": {
+"ft.about": "À propos",
 "sup.dc": "Communauté Discord",
 "sup.dc.i": "Des builders qui répondent aux builders — l'équipe est dans les canaux chaque jour",
 "ct.dc": "Rejoindre notre Discord",
@@ -932,6 +935,7 @@
 "aud.more": "+ 12 autres modèles audio →"
 },
 "pt": {
+"ft.about": "Sobre nós",
 "sup.dc": "Comunidade no Discord",
 "sup.dc.i": "Builders respondendo builders — o time está nos canais todos os dias",
 "ct.dc": "Entrar no nosso Discord",
@@ -1240,6 +1244,7 @@
 "aud.more": "+ mais 12 modelos de áudio →"
 },
 "ru": {
+"ft.about": "О нас",
 "sup.dc": "Discord-сообщество",
 "sup.dc.i": "Разработчики помогают разработчикам — команда в каналах каждый день",
 "ct.dc": "Присоединиться к Discord",
@@ -1548,6 +1553,7 @@
 "aud.more": "+ ещё 12 аудиомоделей →"
 },
 "ja": {
+"ft.about": "会社概要",
 "sup.dc": "Discord コミュニティ",
 "sup.dc.i": "ビルダー同士の助け合い——チームも毎日チャンネルにいます",
 "ct.dc": "Discord に参加",
@@ -1856,6 +1862,7 @@
 "aud.more": "+ さらに 12 の音声モデル →"
 },
 "vi": {
+"ft.about": "Về chúng tôi",
 "sup.dc": "Cộng đồng Discord",
 "sup.dc.i": "Builder giúp builder — đội ngũ có mặt trong kênh mỗi ngày",
 "ct.dc": "Tham gia Discord",
@@ -2164,6 +2171,7 @@
 "aud.more": "+ 12 mô hình âm thanh nữa →"
 },
 "de": {
+"ft.about": "Über uns",
 "sup.dc": "Discord-Community",
 "sup.dc.i": "Builder helfen Buildern — das Team ist täglich in den Channels",
 "ct.dc": "Unserem Discord beitreten",
@@ -2472,6 +2480,7 @@
 "aud.more": "+ 12 weitere Audiomodelle →"
 },
 "id": {
+"ft.about": "Tentang kami",
 "sup.dc": "Komunitas Discord",
 "sup.dc.i": "Builder menjawab builder — tim ada di channel setiap hari",
 "ct.dc": "Gabung Discord kami",
@@ -2785,7 +2794,7 @@
     "models.html": "nav.models", "playground.html": "nav.playground",
     "topup.html": "nav.pricing", "usecases.html": "nav.usecases",
     "signup.html": "nav.signin", "contact.html": "nav.contact",
-    "https://flatkey.ai/blog": "nav.blog", "docs.html": "nav.docs", "status.html": "nav.status", "sla.html": "nav.sla", "login.html": "nav.signin", "https://console.flatkey.ai/sign-in": "nav.signin", "https://console.flatkey.ai/sign-up?redirect=/keys": "nav.start"
+    "https://flatkey.ai/blog": "nav.blog", "/blog": "nav.blog", "/rankings": "nav.rankings", "/about": "ft.about", "docs.html": "nav.docs", "status.html": "nav.status", "sla.html": "nav.sla", "login.html": "nav.signin", "https://console.flatkey.ai/sign-in": "nav.signin", "https://console.flatkey.ai/sign-up?redirect=/keys": "nav.start"
   };
   function autoTag() {
     document.querySelectorAll(".nav a:not(.logo):not(.btn)").forEach(function (a) {
