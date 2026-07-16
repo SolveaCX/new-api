@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -34,8 +35,6 @@ import (
 )
 
 var stripeAdaptor = &StripeAdaptor{}
-
-const recallCheckoutUnavailableMessage = "This discount is invalid or no longer available for this purchase"
 
 // StripePayRequest represents a payment request for Stripe checkout.
 type StripePayRequest struct {
@@ -491,7 +490,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 			if invoiceRequested {
 				_ = model.UpdatePaymentInvoiceStatus(referenceId, model.PaymentInvoiceStatusFailed)
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "error", "data": recallCheckoutUnavailableMessage})
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": i18n.T(c, i18n.MsgPaymentRecallClaimUnavailable)})
 			return
 		}
 	}
