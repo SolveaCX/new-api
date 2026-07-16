@@ -40,6 +40,7 @@ type EmailVerificationStatusSyncOptions =
     addVisibilityListener: (listener: () => void) => void
     removeVisibilityListener: (listener: () => void) => void
     isVisible: () => boolean
+    focusRegistrationWindow: () => void
   }
 
 export async function refreshRegistrationEmailVerificationState(
@@ -103,6 +104,11 @@ export function startEmailVerificationStatusSync(
     if (options.isVisible()) void statusRefresher.refresh()
   }
   const unsubscribe = options.subscribe(() => {
+    try {
+      options.focusRegistrationWindow()
+    } catch (_error) {
+      // Browser focus policies are best-effort; verification still continues.
+    }
     void options.refresh()
   })
 
