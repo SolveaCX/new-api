@@ -131,6 +131,21 @@ type prometheusModelPerformanceSnapshot struct {
 	bucket        *prometheusModelPerformanceBucket
 }
 
+func (s prometheusModelPerformanceSnapshot) seriesCount() int {
+	count := 0
+	if s.latencyCount > 0 {
+		count += len(prometheusModelLatencyBucketsSeconds) + 3
+	}
+	if s.ttftCount > 0 {
+		count += len(prometheusModelTTFTBucketsSeconds) + 3
+	}
+	if s.streamSuccess > 0 {
+		count++
+	}
+	count += len(s.errors)
+	return count
+}
+
 func newPrometheusModelPerformanceBucket(now time.Time) *prometheusModelPerformanceBucket {
 	return &prometheusModelPerformanceBucket{
 		latencyBuckets: make([]int64, len(prometheusModelLatencyBucketsSeconds)),
@@ -202,6 +217,37 @@ func (b *prometheusModelPerformanceBucket) snapshot(model string) (prometheusMod
 		lastUpdatedAt:     b.lastUpdatedAt,
 		bucket:            b,
 	}, true
+}
+
+func (b *prometheusModelPerformanceBucket) markExported(latencyCount int64, ttftCount int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if latencyCount > b.lastReportedLatencyCount {
+		b.lastReportedLatencyCount = latencyCount
+	}
+	if ttftCount > b.lastReportedTTFTCount {
+		b.lastReportedTTFTCount = ttftCount
+	}
+}
+
+func (b *prometheusModelPerformanceBucket) markSeriesLimited(latencyCount int64, ttftCount int64) int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	droppedLatency := latencyCount - b.lastReportedLatencyCount
+	if droppedLatency < 0 {
+		droppedLatency = 0
+	}
+	droppedTTFT := ttftCount - b.lastReportedTTFTCount
+	if droppedTTFT < 0 {
+		droppedTTFT = 0
+	}
+	if latencyCount > b.lastReportedLatencyCount {
+		b.lastReportedLatencyCount = latencyCount
+	}
+	if ttftCount > b.lastReportedTTFTCount {
+		b.lastReportedTTFTCount = ttftCount
+	}
+	return droppedLatency + droppedTTFT
 }
 
 func (b *prometheusModelPerformanceBucket) retireIfIdle(cutoffUnixNano int64) bool {
@@ -337,6 +383,29 @@ func snapshotPrometheusModelPerformances(now time.Time) []prometheusModelPerform
 		return snapshots[i].model < snapshots[j].model
 	})
 	return snapshots
+}
+
+func selectPrometheusModelSnapshots(
+	snapshots []prometheusModelPerformanceSnapshot,
+	remaining int,
+) ([]prometheusModelPerformanceSnapshot, int64) {
+	selected := make([]prometheusModelPerformanceSnapshot, 0, len(snapshots))
+	var dropped int64
+	for _, snapshot := range snapshots {
+		seriesCount := snapshot.seriesCount()
+		if seriesCount <= remaining {
+			selected = append(selected, snapshot)
+			remaining -= seriesCount
+			if snapshot.bucket != nil {
+				snapshot.bucket.markExported(snapshot.latencyCount, snapshot.ttftCount)
+			}
+			continue
+		}
+		if snapshot.bucket != nil {
+			dropped += snapshot.bucket.markSeriesLimited(snapshot.latencyCount, snapshot.ttftCount)
+		}
+	}
+	return selected, dropped
 }
 
 func pruneIdlePrometheusModelPerformanceBuckets(now time.Time) {
