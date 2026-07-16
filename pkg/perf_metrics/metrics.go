@@ -20,6 +20,9 @@ var hotBuckets sync.Map
 var prometheusPendingBuckets sync.Map
 var prometheusChannelBuckets sync.Map
 var prometheusChannelModelBuckets sync.Map
+var prometheusModelPerformanceBuckets sync.Map
+var prometheusModelAdmissionMu sync.Mutex
+var prometheusModelDroppedSamples prometheusModelDropCounters
 
 var prometheusChannelDurationBucketsSeconds = []float64{
 	0.25,
@@ -45,7 +48,7 @@ func Init() {
 	go flushLoop()
 }
 
-func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
+func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64, relayErr *types.NewAPIError) {
 	if info == nil {
 		return
 	}
@@ -63,6 +66,7 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
+	recordPrometheusModelPerformance(info, success, relayErr, now)
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,

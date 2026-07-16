@@ -3,6 +3,7 @@ package perfmetrics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -20,6 +21,289 @@ func resetPerfMetricsStateForTest(t *testing.T) {
 	prometheusPendingBuckets = sync.Map{}
 	prometheusChannelBuckets = sync.Map{}
 	prometheusChannelModelBuckets = sync.Map{}
+	prometheusModelPerformanceBuckets = sync.Map{}
+	prometheusModelAdmissionMu = sync.Mutex{}
+	prometheusModelDroppedSamples = prometheusModelDropCounters{}
+}
+
+func TestRecordRelaySampleCapturesSuccessfulModelLatencyAndTTFT(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+
+	now := time.Now()
+	startedAt := now.Add(-2 * time.Second)
+	RecordRelaySample(&relaycommon.RelayInfo{
+		OriginModelName:   "gpt-5",
+		StartTime:         startedAt,
+		FirstResponseTime: startedAt.Add(250 * time.Millisecond),
+		IsStream:          true,
+		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: 42},
+	}, true, 12, nil)
+
+	snapshots := snapshotPrometheusModelPerformances(time.Now())
+	require.Len(t, snapshots, 1)
+	snapshot := snapshots[0]
+	require.Equal(t, "gpt-5", snapshot.model)
+	require.EqualValues(t, 1, snapshot.latencyCount)
+	require.InDelta(t, 2, snapshot.latencySumSeconds, 0.1)
+	require.EqualValues(t, 1, snapshot.streamSuccess)
+	require.EqualValues(t, 1, snapshot.ttftCount)
+	require.InDelta(t, 0.25, snapshot.ttftSumSeconds, 0.01)
+	require.Empty(t, snapshot.errors)
+}
+
+func TestRecordRelaySampleKeepsFinalFailureOutOfLatency(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+
+	RecordRelaySample(&relaycommon.RelayInfo{
+		OriginModelName: "gpt-5",
+		StartTime:       time.Now().Add(-time.Second),
+		IsStream:        true,
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 42},
+	}, false, 0, types.NewErrorWithStatusCode(
+		context.DeadlineExceeded,
+		types.ErrorCodeDoRequestFailed,
+		http.StatusGatewayTimeout,
+	))
+
+	snapshots := snapshotPrometheusModelPerformances(time.Now())
+	require.Len(t, snapshots, 1)
+	snapshot := snapshots[0]
+	require.Equal(t, map[string]int64{"timeout": 1}, snapshot.errors)
+	require.EqualValues(t, 0, snapshot.latencyCount)
+	require.Zero(t, snapshot.latencySumSeconds)
+	require.EqualValues(t, 0, snapshot.ttftCount)
+	require.Zero(t, snapshot.ttftSumSeconds)
+	require.EqualValues(t, 0, snapshot.streamSuccess)
+}
+
+func TestRecordRelaySampleCountsStreamWithoutFirstToken(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+
+	RecordRelaySample(&relaycommon.RelayInfo{
+		OriginModelName:   "gpt-5",
+		StartTime:         time.Now().Add(-2 * time.Second),
+		FirstResponseTime: time.Time{},
+		IsStream:          true,
+		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: 42},
+	}, true, 0, nil)
+
+	snapshots := snapshotPrometheusModelPerformances(time.Now())
+	require.Len(t, snapshots, 1)
+	require.EqualValues(t, 1, snapshots[0].latencyCount)
+	require.EqualValues(t, 1, snapshots[0].streamSuccess)
+	require.EqualValues(t, 0, snapshots[0].ttftCount)
+	require.Zero(t, snapshots[0].ttftSumSeconds)
+	require.Empty(t, snapshots[0].errors)
+	require.EqualValues(t, 0, prometheusModelDroppedSamples.snapshot()[modelDropInvalidTTFT])
+}
+
+func TestRecordRelaySampleCountsLegacySentinelAsMissingFirstToken(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+
+	startedAt := time.Now().Add(-2 * time.Second)
+	RecordRelaySample(&relaycommon.RelayInfo{
+		OriginModelName:   "gpt-5",
+		StartTime:         startedAt,
+		FirstResponseTime: startedAt.Add(-time.Second),
+		IsStream:          true,
+		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: 42},
+	}, true, 0, nil)
+
+	snapshots := snapshotPrometheusModelPerformances(time.Now())
+	require.Len(t, snapshots, 1)
+	require.EqualValues(t, 1, snapshots[0].latencyCount)
+	require.EqualValues(t, 1, snapshots[0].streamSuccess)
+	require.EqualValues(t, 0, snapshots[0].ttftCount)
+	require.Zero(t, snapshots[0].ttftSumSeconds)
+	require.Empty(t, snapshots[0].errors)
+	require.EqualValues(t, 0, prometheusModelDroppedSamples.snapshot()[modelDropInvalidTTFT])
+}
+
+func TestRecordRelaySampleRejectsInvalidTimestamps(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+
+	now := time.Now()
+	RecordRelaySample(&relaycommon.RelayInfo{
+		OriginModelName:   "gpt-5",
+		StartTime:         now.Add(time.Minute),
+		FirstResponseTime: now.Add(-time.Minute),
+		IsStream:          true,
+		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: 42},
+	}, true, 0, nil)
+
+	snapshots := snapshotPrometheusModelPerformances(time.Now())
+	require.Len(t, snapshots, 1)
+	require.EqualValues(t, 0, snapshots[0].latencyCount)
+	require.Zero(t, snapshots[0].latencySumSeconds)
+	require.EqualValues(t, 0, snapshots[0].ttftCount)
+	require.Zero(t, snapshots[0].ttftSumSeconds)
+	require.EqualValues(t, 1, snapshots[0].streamSuccess)
+	require.Empty(t, snapshots[0].errors)
+	dropped := prometheusModelDroppedSamples.snapshot()
+	require.EqualValues(t, 1, dropped[modelDropInvalidLatency])
+	require.EqualValues(t, 1, dropped[modelDropInvalidTTFT])
+}
+
+func TestRecordRelaySampleClassifiesNilFinalFailureAsOther(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+
+	RecordRelaySample(&relaycommon.RelayInfo{
+		OriginModelName: "gpt-5",
+		StartTime:       time.Now().Add(-time.Second),
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 42},
+	}, false, 0, nil)
+
+	snapshots := snapshotPrometheusModelPerformances(time.Now())
+	require.Len(t, snapshots, 1)
+	require.EqualValues(t, 1, snapshots[0].errors["other"])
+	require.NotContains(t, snapshots[0].errors, "none")
+}
+
+func TestRecordRelaySampleEnforcesConfigurableActiveModelLimit(t *testing.T) {
+	t.Run("rejects next active model", func(t *testing.T) {
+		resetPerfMetricsStateForTest(t)
+		t.Setenv(prometheusMaxModelHistogramModelsEnv, "1")
+
+		RecordRelaySample(&relaycommon.RelayInfo{OriginModelName: "gpt-5", StartTime: time.Now().Add(-time.Second), ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 42}}, true, 0, nil)
+		RecordRelaySample(&relaycommon.RelayInfo{OriginModelName: "gpt-5-mini", StartTime: time.Now().Add(-time.Second), ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 42}}, true, 0, nil)
+
+		snapshots := snapshotPrometheusModelPerformances(time.Now())
+		require.Len(t, snapshots, 1)
+		require.Equal(t, "gpt-5", snapshots[0].model)
+		require.EqualValues(t, 1, prometheusModelDroppedSamples.snapshot()[modelDropModelLimit])
+	})
+
+	t.Run("non-positive limit disables cap", func(t *testing.T) {
+		resetPerfMetricsStateForTest(t)
+		t.Setenv(prometheusMaxModelHistogramModelsEnv, "0")
+
+		RecordRelaySample(&relaycommon.RelayInfo{OriginModelName: "gpt-5", StartTime: time.Now().Add(-time.Second), ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 42}}, true, 0, nil)
+		RecordRelaySample(&relaycommon.RelayInfo{OriginModelName: "gpt-5-mini", StartTime: time.Now().Add(-time.Second), ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 42}}, true, 0, nil)
+
+		require.Len(t, snapshotPrometheusModelPerformances(time.Now()), 2)
+		require.EqualValues(t, 0, prometheusModelDroppedSamples.snapshot()[modelDropModelLimit])
+	})
+}
+
+func TestPrometheusModelAdmissionHonorsCapConcurrently(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	t.Setenv(prometheusMaxModelHistogramModelsEnv, "3")
+
+	const attempts = 64
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(attempts)
+	for i := 0; i < attempts; i++ {
+		go func(modelIndex int) {
+			defer wg.Done()
+			<-start
+			RecordRelaySample(&relaycommon.RelayInfo{
+				OriginModelName: fmt.Sprintf("model-%d", modelIndex),
+				StartTime:       time.Now().Add(-time.Second),
+				ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 42},
+			}, true, 0, nil)
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+
+	snapshots := snapshotPrometheusModelPerformances(time.Now())
+	require.LessOrEqual(t, len(snapshots), 3)
+	var admittedSamples int64
+	for _, snapshot := range snapshots {
+		admittedSamples += snapshot.latencyCount
+	}
+	droppedSamples := prometheusModelDroppedSamples.snapshot()[modelDropModelLimit]
+	require.EqualValues(t, attempts, admittedSamples+droppedSamples)
+}
+
+func TestPrometheusModelMutationRetriesAfterConcurrentRetirement(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+
+	now := time.Now()
+	retiredBucket := newPrometheusModelPerformanceBucket(now)
+	retiredBucket.mu.Lock()
+	retiredBucket.retired = true
+	retiredBucket.mu.Unlock()
+
+	loadCount := 0
+	var replacementBucket *prometheusModelPerformanceBucket
+	latencySeconds := 0.5
+	mutatePrometheusModelPerformanceWithLoader(
+		"gpt-5",
+		now,
+		func(model string, loadTime time.Time) (*prometheusModelPerformanceBucket, bool) {
+			loadCount++
+			if loadCount == 1 {
+				prometheusModelPerformanceBuckets.Store(model, retiredBucket)
+				return retiredBucket, true
+			}
+			bucket, admitted := loadOrCreatePrometheusModelBucket(model, loadTime)
+			replacementBucket = bucket
+			return bucket, admitted
+		},
+		func(bucket *prometheusModelPerformanceBucket) bool {
+			return bucket.addSuccess(now, &latencySeconds, false, nil)
+		},
+	)
+
+	require.Equal(t, 2, loadCount)
+	require.NotNil(t, replacementBucket)
+	require.NotSame(t, retiredBucket, replacementBucket)
+	replacementSnapshot, ok := replacementBucket.snapshot("gpt-5")
+	require.True(t, ok)
+	require.EqualValues(t, 1, replacementSnapshot.latencyCount)
+	require.InDelta(t, latencySeconds, replacementSnapshot.latencySumSeconds, 0.001)
+	retiredBucket.mu.Lock()
+	require.EqualValues(t, 0, retiredBucket.latencyCount)
+	retiredBucket.mu.Unlock()
+}
+
+func TestSnapshotPrometheusModelPerformanceRetiresIdleModels(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	t.Setenv(prometheusMaxModelHistogramModelsEnv, "1")
+
+	RecordRelaySample(&relaycommon.RelayInfo{
+		OriginModelName: "stale-model",
+		StartTime:       time.Now().Add(-time.Second),
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 42},
+	}, true, 0, nil)
+	value, ok := prometheusModelPerformanceBuckets.Load("stale-model")
+	require.True(t, ok)
+	staleBucket := value.(*prometheusModelPerformanceBucket)
+	staleBucket.mu.Lock()
+	staleBucket.lastUpdatedAt = time.Now().Add(-prometheusModelIdleRetention - time.Minute).UnixNano()
+	staleBucket.mu.Unlock()
+
+	require.Empty(t, snapshotPrometheusModelPerformances(time.Now()))
+	_, ok = prometheusModelPerformanceBuckets.Load("stale-model")
+	require.False(t, ok)
+
+	RecordRelaySample(&relaycommon.RelayInfo{
+		OriginModelName: "replacement-model",
+		StartTime:       time.Now().Add(-time.Second),
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 42},
+	}, true, 0, nil)
+	snapshots := snapshotPrometheusModelPerformances(time.Now())
+	require.Len(t, snapshots, 1)
+	require.Equal(t, "replacement-model", snapshots[0].model)
+	require.EqualValues(t, 0, prometheusModelDroppedSamples.snapshot()[modelDropModelLimit])
+}
+
+func TestPrometheusModelDropCountersUseFixedReasons(t *testing.T) {
+	var counters prometheusModelDropCounters
+	require.Equal(t, []string{modelDropModelLimit, modelDropInvalidLatency, modelDropInvalidTTFT, modelDropSeriesLimit}, modelDropReasons)
+
+	counters.add(modelDropModelLimit, 0)
+	counters.add(modelDropInvalidLatency, -1)
+	counters.add("unknown", 10)
+	require.EqualValues(t, 0, counters.snapshot()[modelDropModelLimit])
+	require.EqualValues(t, 0, counters.snapshot()[modelDropInvalidLatency])
+	require.NotContains(t, counters.snapshot(), "unknown")
+
+	counters.add(modelDropSeriesLimit, 2)
+	require.EqualValues(t, 2, counters.snapshot()[modelDropSeriesLimit])
 }
 
 func TestBuildPrometheusTextEmitsChannelHealthMetrics(t *testing.T) {
@@ -274,7 +558,7 @@ func TestRecordRelaySampleUsesModelStatusLabels(t *testing.T) {
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelId: 42,
 		},
-	}, true, 0)
+	}, true, 0, nil)
 
 	text, err := BuildPrometheusText(context.Background())
 	require.NoError(t, err)
