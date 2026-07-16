@@ -570,6 +570,7 @@ func TestRecallLeaseListsOnlyDueProvisioningAndMessageWork(t *testing.T) {
 		{RecipientId: recipients[2].Id, StageNo: 2, TemplateSnapshot: `{}`, State: RecallMessageLeased, LeaseOwner: "live", LeaseExpiresAt: now + 1},
 		{RecipientId: recipients[3].Id, StageNo: 1, TemplateSnapshot: `{}`, ScheduledAt: now, State: RecallMessageAccepted},
 		{RecipientId: recipients[4].Id, StageNo: 1, TemplateSnapshot: `{}`, ScheduledAt: now, State: RecallMessageCancelled},
+		{RecipientId: recipients[4].Id, StageNo: 2, TemplateSnapshot: `{}`, State: RecallMessageSending, LeaseOwner: "sender", LeaseExpiresAt: now - 1},
 	}
 	require.NoError(t, DB.Create(&messages).Error)
 
@@ -579,6 +580,9 @@ func TestRecallLeaseListsOnlyDueProvisioningAndMessageWork(t *testing.T) {
 	messageIDs, err = ListDueRecallMessageIDs(now, 10)
 	require.NoError(t, err)
 	require.Equal(t, []int64{messages[0].Id, messages[2].Id, messages[4].Id}, messageIDs)
+	won, err := LeaseRecallMessage(messages[8].Id, "new-sender", now, now+60)
+	require.NoError(t, err)
+	require.False(t, won)
 }
 
 func TestRecallLeaseMessageRejectsStaleListingAfterFutureRetryTransition(t *testing.T) {
@@ -958,14 +962,15 @@ func TestRecallTransitionMessageRejectsUnsupportedCompletionFieldsWithoutWrite(t
 	}
 }
 
-func TestRecallTransitionCancelsOnlyPendingMessages(t *testing.T) {
+func TestRecallTransitionCancelsAllUnsentMessagesAndClearsRetryMetadata(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 
 	states := []string{
 		RecallMessageScheduled,
 		RecallMessageRetryWait,
-		RecallMessageAccepted,
 		RecallMessageLeased,
+		RecallMessageSending,
+		RecallMessageAccepted,
 		RecallMessageUncertain,
 		RecallMessageFailed,
 		RecallMessageCancelled,
@@ -973,27 +978,62 @@ func TestRecallTransitionCancelsOnlyPendingMessages(t *testing.T) {
 	messages := make([]RecallMessage, 0, len(states))
 	for i, state := range states {
 		messages = append(messages, RecallMessage{
-			RecipientId:      801,
-			StageNo:          i + 1,
-			TemplateSnapshot: `{}`,
-			State:            state,
+			RecipientId:       801,
+			StageNo:           i + 1,
+			TemplateSnapshot:  `{}`,
+			State:             state,
+			NextAttemptAt:     850,
+			LeaseOwner:        "node-a",
+			LeaseExpiresAt:    875,
+			LastErrorMessage:  "stale",
+			ProviderMessageId: "provider-id",
 		})
 	}
 	require.NoError(t, DB.Create(&messages).Error)
 
 	cancelled, err := CancelPendingRecallMessages(801, "recipient_converted", 900)
 	require.NoError(t, err)
-	require.Equal(t, int64(2), cancelled)
+	require.Equal(t, int64(4), cancelled)
 
 	var stored []RecallMessage
 	require.NoError(t, DB.Order("stage_no ASC").Find(&stored).Error)
-	require.Equal(t, RecallMessageCancelled, stored[0].State)
-	require.Equal(t, RecallMessageCancelled, stored[1].State)
-	for _, message := range stored[:2] {
+	for _, message := range stored[:4] {
+		require.Equal(t, RecallMessageCancelled, message.State)
 		require.Equal(t, "recipient_converted", message.LastErrorCode)
 		require.Equal(t, int64(900), message.FailedAt)
+		require.Zero(t, message.NextAttemptAt)
+		require.Empty(t, message.LeaseOwner)
+		require.Zero(t, message.LeaseExpiresAt)
+		require.Empty(t, message.LastErrorMessage)
 	}
-	for i, state := range states[2:] {
-		require.Equal(t, state, stored[i+2].State)
+	for i, state := range states[4:] {
+		require.Equal(t, state, stored[i+4].State)
 	}
+}
+
+func TestRecallManualRetrySendingRequiresAcknowledgementAndExpiredLease(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	messages := []RecallMessage{
+		{RecipientId: 851, StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageSending, LeaseOwner: "active", LeaseExpiresAt: 1_000},
+		{RecipientId: 852, StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageSending, LeaseOwner: "expired", LeaseExpiresAt: 998},
+	}
+	require.NoError(t, DB.Create(&messages).Error)
+
+	won, err := ManualRetryRecallMessageWithContext(context.Background(), messages[0].Id, true, 999)
+	require.NoError(t, err)
+	require.False(t, won, "an active sender must remain fenced")
+	won, err = ManualRetryRecallMessageWithContext(context.Background(), messages[1].Id, false, 999)
+	require.NoError(t, err)
+	require.False(t, won, "an uncertain send requires explicit acknowledgement")
+	won, err = ManualRetryRecallMessageWithContext(context.Background(), messages[1].Id, true, 999)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	var retried RecallMessage
+	require.NoError(t, DB.First(&retried, messages[1].Id).Error)
+	require.Equal(t, RecallMessageRetryWait, retried.State)
+	require.Equal(t, int64(999), retried.NextAttemptAt)
+	require.Empty(t, retried.LeaseOwner)
+	require.Zero(t, retried.LeaseExpiresAt)
 }

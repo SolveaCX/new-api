@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 const recallEmailTestNow int64 = 1_784_179_200
@@ -236,9 +237,11 @@ func TestRecallEmailUncertainOutcomeIsNeverAutomaticallyRetried(t *testing.T) {
 	fixture := newRecallEmailFixture(t, 1, func(subject, receiver, content, messageID string) error {
 		return uncertainErr
 	})
+	require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Update("next_attempt_at", recallEmailTestNow-1).Error)
 	require.NoError(t, fixture.worker.ProcessLeased(context.Background(), fixture.message.Id))
 	stored := loadRecallEmailMessageByID(t, fixture.message.Id)
 	require.Equal(t, model.RecallMessageUncertain, stored.State)
+	require.Zero(t, stored.NextAttemptAt)
 	require.NotNil(t, stored.ClaimTokenHash)
 	preservedHash := *stored.ClaimTokenHash
 	due, err := model.ListDueRecallMessageIDs(recallEmailTestNow+24*3600, 10)
@@ -263,6 +266,100 @@ func TestRecallEmailUncertainOutcomeIsNeverAutomaticallyRetried(t *testing.T) {
 	won, err = model.ManualRetryRecallMessageWithContext(context.Background(), failed.Id, false, recallEmailTestNow+10)
 	require.NoError(t, err)
 	require.True(t, won)
+}
+
+func TestRecallEmailPostSMTPPersistenceFailureNeverBecomesDue(t *testing.T) {
+	tests := []struct {
+		name      string
+		senderErr func(t *testing.T) error
+	}{
+		{name: "accepted", senderErr: func(t *testing.T) error { return nil }},
+		{name: "uncertain", senderErr: newRecallEmailUncertainError},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			senderRan := false
+			fixture := newRecallEmailFixture(t, 1, func(subject, receiver, content, messageID string) error {
+				senderRan = true
+				installRecallEmailOutcomeUpdateFailure(t)
+				return testCase.senderErr(t)
+			})
+
+			err := fixture.worker.ProcessLeased(context.Background(), fixture.message.Id)
+			require.ErrorContains(t, err, "injected recall email outcome persistence failure")
+			require.True(t, senderRan)
+
+			due, err := model.ListDueRecallMessageIDs(recallEmailTestNow+recallEmailLeaseSeconds+1, 10)
+			require.NoError(t, err)
+			require.NotContains(t, due, fixture.message.Id, "SMTP already ran, so an expired lease must not make the message sendable again")
+			require.Equal(t, model.RecallMessageSending, loadRecallEmailMessageByID(t, fixture.message.Id).State)
+		})
+	}
+}
+
+func TestRecallEmailSenderCrashLeavesNonDueSendingMessage(t *testing.T) {
+	stateObservedBySender := ""
+	var fixture recallEmailFixture
+	fixture = newRecallEmailFixture(t, 1, func(subject, receiver, content, messageID string) error {
+		stateObservedBySender = loadRecallEmailMessageByID(t, fixture.message.Id).State
+		panic("simulated sender process crash")
+	})
+
+	require.PanicsWithValue(t, "simulated sender process crash", func() {
+		_ = fixture.worker.ProcessLeased(context.Background(), fixture.message.Id)
+	})
+	require.Equal(t, model.RecallMessageSending, stateObservedBySender)
+	due, err := model.ListDueRecallMessageIDs(recallEmailTestNow+recallEmailLeaseSeconds+1, 10)
+	require.NoError(t, err)
+	require.NotContains(t, due, fixture.message.Id)
+}
+
+func TestRecallEmailConcurrentCancellationFencesSendingOutcome(t *testing.T) {
+	tests := []struct {
+		name   string
+		cancel func(context.Context, recallEmailFixture) error
+	}{
+		{name: "global opt out", cancel: func(ctx context.Context, fixture recallEmailFixture) error {
+			found, err := model.SetRecallMarketingOptOutWithContext(ctx, fixture.user.Id, recallEmailTestNow+1)
+			if err != nil {
+				return err
+			}
+			if !found {
+				return errors.New("recall user disappeared during opt out")
+			}
+			return nil
+		}},
+		{name: "campaign cancellation", cancel: func(ctx context.Context, fixture recallEmailFixture) error {
+			cancelled, err := model.CancelRecallCampaignWithContext(ctx, fixture.campaign.Id, []string{model.RecallCampaignRunning}, recallEmailTestNow+1, "campaign_cancelled")
+			if err != nil {
+				return err
+			}
+			if !cancelled {
+				return errors.New("recall campaign was not cancelled")
+			}
+			return nil
+		}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			stateObservedBySender := ""
+			var fixture recallEmailFixture
+			fixture = newRecallEmailFixture(t, 1, func(subject, receiver, content, messageID string) error {
+				stateObservedBySender = loadRecallEmailMessageByID(t, fixture.message.Id).State
+				return testCase.cancel(context.Background(), fixture)
+			})
+			require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Update("next_attempt_at", recallEmailTestNow-1).Error)
+
+			err := fixture.worker.ProcessLeased(context.Background(), fixture.message.Id)
+			require.ErrorIs(t, err, ErrRecallEmailLeaseLost)
+			require.Equal(t, model.RecallMessageSending, stateObservedBySender)
+			stored := loadRecallEmailMessageByID(t, fixture.message.Id)
+			require.Equal(t, model.RecallMessageCancelled, stored.State)
+			require.Zero(t, stored.NextAttemptAt)
+			require.Empty(t, stored.LeaseOwner)
+			require.Zero(t, stored.LeaseExpiresAt)
+		})
+	}
 }
 
 func TestRecallEmailStopChecksCancelCurrentAndRemainingMessages(t *testing.T) {
@@ -303,9 +400,10 @@ func TestRecallEmailStopChecksCancelCurrentAndRemainingMessages(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			fixture := newRecallEmailFixture(t, 2, nil)
+			require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Update("next_attempt_at", recallEmailTestNow-1).Error)
 			remaining := model.RecallMessage{
 				RecipientId: fixture.recipient.Id, StageNo: 2, TemplateVersion: 12,
-				TemplateSnapshot: fixture.message.TemplateSnapshot, ScheduledAt: recallEmailTestNow + 600, State: model.RecallMessageScheduled,
+				TemplateSnapshot: fixture.message.TemplateSnapshot, ScheduledAt: recallEmailTestNow + 600, State: model.RecallMessageScheduled, NextAttemptAt: recallEmailTestNow + 700,
 			}
 			require.NoError(t, model.DB.Create(&remaining).Error)
 			testCase.mutate(t, fixture)
@@ -315,8 +413,11 @@ func TestRecallEmailStopChecksCancelCurrentAndRemainingMessages(t *testing.T) {
 			require.Empty(t, *fixture.sent)
 			current := loadRecallEmailMessageByID(t, fixture.message.Id)
 			require.Equal(t, model.RecallMessageCancelled, current.State)
+			require.Zero(t, current.NextAttemptAt)
 			require.Nil(t, current.ClaimTokenHash)
-			require.Equal(t, model.RecallMessageCancelled, loadRecallEmailMessageByID(t, remaining.Id).State)
+			remaining = loadRecallEmailMessageByID(t, remaining.Id)
+			require.Equal(t, model.RecallMessageCancelled, remaining.State)
+			require.Zero(t, remaining.NextAttemptAt)
 		})
 	}
 }
@@ -360,11 +461,6 @@ func TestRecallEmailRunBatchLeasesOnlyDueMessages(t *testing.T) {
 	require.Equal(t, 1, processed)
 	require.Equal(t, model.RecallMessageAccepted, loadRecallEmailMessageByID(t, fixture.message.Id).State)
 	require.Equal(t, model.RecallMessageScheduled, loadRecallEmailMessageByID(t, future.Id).State)
-}
-
-func TestRecallEmailRuntimeProvidesWorker(t *testing.T) {
-	runtime := GetRecallRuntime()
-	require.NotNil(t, runtime.Emails)
 }
 
 func newRecallEmailFixture(t *testing.T, stageCount int, sender RecallEmailSender) recallEmailFixture {
@@ -501,4 +597,18 @@ func newRecallEmailUncertainError(t *testing.T) error {
 	require.Error(t, err)
 	require.True(t, common.IsEmailSendUncertain(err))
 	return err
+}
+
+func installRecallEmailOutcomeUpdateFailure(t *testing.T) {
+	t.Helper()
+	callbackName := fmt.Sprintf("test:fail_recall_email_outcome_%p", t)
+	callbacks := model.DB.Callback().Update()
+	require.NoError(t, callbacks.Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Schema != nil && tx.Statement.Schema.Name == "RecallMessage" {
+			tx.AddError(errors.New("injected recall email outcome persistence failure"))
+		}
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, callbacks.Remove(callbackName))
+	})
 }

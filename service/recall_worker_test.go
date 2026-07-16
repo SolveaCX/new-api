@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ func TestRecallWorkerRuntimeUsesReplicaOwnerAndMaintenanceRunsRecipients(t *test
 	user := model.User{Username: "recall-worker-runtime", Password: "password", Email: "runtime@example.com", StripeCustomer: "cus_runtime"}
 	require.NoError(t, model.DB.Create(&user).Error)
 	recipient := createRecallWorkerRecipient(t, campaign.Id, user.Id, model.RecallRecipientQueued)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", recipient.Id).Update("created_at", recallWorkerTestNow-60).Error)
 	client := &recallStripeFakeClient{
 		getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) { return &stripe.Customer{ID: id}, nil },
 		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
@@ -57,6 +59,100 @@ func TestRecallWorkerRuntimeUsesReplicaOwnerAndMaintenanceRunsRecipients(t *test
 	var stored model.RecallRecipient
 	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
 	require.Equal(t, model.RecallRecipientContacting, stored.State)
+}
+
+func TestRecallMaintenanceRunsRecipientBeforeEmailInSameTick(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	setRecallEmailSMTPFrom(t, "mailer@notify.example.com")
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaign.Id).Update("next_run_at", int64(1_900_000_000)).Error)
+	user := model.User{Username: "recall-maintenance-sequence", Password: "password", Status: common.UserStatusEnabled, Email: "snapshot@example.com", EmailVerifiedAt: recallWorkerTestNow - 100, StripeCustomer: "cus_sequence"}
+	require.NoError(t, model.DB.Create(&user).Error)
+	recipient := createRecallWorkerRecipient(t, campaign.Id, user.Id, model.RecallRecipientQueued)
+	client := &recallStripeFakeClient{
+		getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) { return &stripe.Customer{ID: id}, nil },
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			return &stripe.Customer{ID: id, Email: *params.Email}, nil
+		},
+		createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+			return recallWorkerPromotionFromParams("promo_sequence", params), nil
+		},
+	}
+	stripeService := NewRecallStripeService(client)
+	stripeService.codeGenerator = func(int) (string, error) { return "WORKER234", nil }
+	claims := NewRecallClaimService()
+	audience := NewRecallAudienceSelector()
+	recipientWorker := NewRecallRecipientWorker(stripeService, claims, "maintenance-worker")
+	recipientWorker.now = func() time.Time { return time.Unix(recallWorkerTestNow, 0).UTC() }
+	sent := 0
+	emailWorker := NewRecallEmailWorker(func(subject, receiver, content, messageID string) error {
+		sent++
+		return nil
+	}, audience, claims, "maintenance-worker")
+	emailWorker.now = recipientWorker.now
+	setRecallRuntimeForTest(t, &RecallRuntime{
+		Campaigns:  NewRecallCampaignService(audience, stripeService),
+		Claims:     claims,
+		Recipients: recipientWorker,
+		Emails:     emailWorker,
+	})
+
+	RunRecallMaintenanceTick(context.Background())
+
+	require.Equal(t, 1, sent)
+	message := loadRecallEmailMessage(t, recipient.Id, 1)
+	require.Equal(t, model.RecallMessageAccepted, message.State)
+}
+
+func TestRecallMaintenanceRecipientErrorStillRunsEmailBatch(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	setRecallEmailSMTPFrom(t, "mailer@notify.example.com")
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	require.NoError(t, model.DB.Model(&model.RecallCampaign{}).Where("id = ?", campaign.Id).Update("next_run_at", int64(1_900_000_000)).Error)
+	failingUser := model.User{Username: "recall-maintenance-failure", Password: "password", Status: common.UserStatusEnabled, Email: "failure@example.com", EmailVerifiedAt: recallWorkerTestNow - 100, AffCode: "maintenance-failure"}
+	require.NoError(t, model.DB.Create(&failingUser).Error)
+	createRecallWorkerRecipient(t, campaign.Id, failingUser.Id, model.RecallRecipientQueued)
+	emailUser := model.User{Username: "recall-maintenance-email", Password: "password", Status: common.UserStatusEnabled, Email: "snapshot@example.com", EmailVerifiedAt: recallWorkerTestNow - 100, AffCode: "maintenance-email"}
+	require.NoError(t, model.DB.Create(&emailUser).Error)
+	emailRecipient := createRecallWorkerRecipient(t, campaign.Id, emailUser.Id, model.RecallRecipientContacting)
+	promotionID := "promo_existing"
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", emailRecipient.Id).Updates(map[string]any{
+		"stripe_promotion_code_id": promotionID,
+		"promotion_code":           "EXISTING123",
+		"promotion_expires_at":     int64(1_900_000_000),
+	}).Error)
+	stages := make([]RecallEmailStage, 0)
+	require.NoError(t, common.Unmarshal([]byte(campaign.EmailSequenceConfig), &stages))
+	templateSnapshot, err := common.Marshal(stages[0].Templates)
+	require.NoError(t, err)
+	message := model.RecallMessage{RecipientId: emailRecipient.Id, StageNo: 1, TemplateVersion: 1, TemplateSnapshot: string(templateSnapshot), ScheduledAt: recallWorkerTestNow, State: model.RecallMessageScheduled}
+	require.NoError(t, model.DB.Create(&message).Error)
+	stripeErr := errors.New("scripted recipient Stripe failure")
+	client := &recallStripeFakeClient{createCustomerFn: func(context.Context, *stripe.CustomerParams) (*stripe.Customer, error) { return nil, stripeErr }}
+	stripeService := NewRecallStripeService(client)
+	claims := NewRecallClaimService()
+	audience := NewRecallAudienceSelector()
+	recipientWorker := NewRecallRecipientWorker(stripeService, claims, "maintenance-worker")
+	recipientWorker.now = func() time.Time { return time.Unix(recallWorkerTestNow, 0).UTC() }
+	sent := 0
+	emailWorker := NewRecallEmailWorker(func(subject, receiver, content, messageID string) error {
+		sent++
+		return nil
+	}, audience, claims, "maintenance-worker")
+	emailWorker.now = recipientWorker.now
+	setRecallRuntimeForTest(t, &RecallRuntime{
+		Campaigns:  NewRecallCampaignService(audience, stripeService),
+		Claims:     claims,
+		Recipients: recipientWorker,
+		Emails:     emailWorker,
+	})
+
+	RunRecallMaintenanceTick(context.Background())
+
+	require.Equal(t, 1, sent)
+	require.Equal(t, model.RecallMessageAccepted, loadRecallEmailMessageByID(t, message.Id).State)
 }
 
 func TestRecallWorkerCampaignEnrollmentDefersStageOneUntilCodeReady(t *testing.T) {
@@ -1248,6 +1344,21 @@ func newRecallWorkerForTest(client RecallStripeClient, owner string) *RecallReci
 	worker := NewRecallRecipientWorker(stripeService, NewRecallClaimService(), owner)
 	worker.now = func() time.Time { return time.Unix(recallWorkerTestNow, 0).UTC() }
 	return worker
+}
+
+func setRecallRuntimeForTest(t *testing.T, runtime *RecallRuntime) {
+	t.Helper()
+	originalRuntime := recallRuntime
+	recallRuntime = runtime
+	recallRuntimeOnce = sync.Once{}
+	recallRuntimeOnce.Do(func() {})
+	t.Cleanup(func() {
+		recallRuntime = originalRuntime
+		recallRuntimeOnce = sync.Once{}
+		if originalRuntime != nil {
+			recallRuntimeOnce.Do(func() {})
+		}
+	})
 }
 
 type workerSecretTimeout string

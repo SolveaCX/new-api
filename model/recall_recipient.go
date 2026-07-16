@@ -490,13 +490,15 @@ func SetRecallMarketingOptOutWithContext(ctx context.Context, userID int, now in
 		}
 		recipientIDs := tx.Model(&RecallRecipient{}).Select("id").Where("user_id = ?", userID)
 		return tx.Model(&RecallMessage{}).
-			Where("recipient_id IN (?) AND state IN ?", recipientIDs, []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased}).
+			Where("recipient_id IN (?) AND state IN ?", recipientIDs, []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased, RecallMessageSending}).
 			Updates(map[string]any{
-				"state":            RecallMessageCancelled,
-				"lease_owner":      "",
-				"lease_expires_at": int64(0),
-				"failed_at":        now,
-				"last_error_code":  "user_opted_out",
+				"state":              RecallMessageCancelled,
+				"next_attempt_at":    int64(0),
+				"lease_owner":        "",
+				"lease_expires_at":   int64(0),
+				"failed_at":          now,
+				"last_error_code":    "user_opted_out",
+				"last_error_message": "",
 			}).Error
 	})
 	if err != nil || !found {
