@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -160,6 +161,65 @@ func TestRecallEmailRechecksLeaseExpiryImmediatelyBeforeSending(t *testing.T) {
 	require.ErrorIs(t, err, ErrRecallEmailLeaseLost)
 	require.Empty(t, *fixture.sent)
 	require.Equal(t, model.RecallMessageLeased, loadRecallEmailMessageByID(t, fixture.message.Id).State)
+}
+
+func TestRecallEmailSameOwnerReLeaseRejectsStaleClaimBody(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	originalLeaseUntil := fixture.message.LeaseExpiresAt
+	oldRawClaim := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 36))
+	newClaimHash := recallEmailHash("new-lease-claim")
+	workItemQueries := 0
+	reLeased := false
+	var callbackErr error
+	var newLeaseUntil int64
+	callbackName := "recall_email_same_owner_re_lease"
+	require.NoError(t, model.DB.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != "recall_messages" || len(tx.Statement.Selects) != 0 {
+			return
+		}
+		workItemQueries++
+		if workItemQueries != 2 || reLeased {
+			return
+		}
+		reLeased = true
+		*fixture.now = time.Unix(originalLeaseUntil+1, 0).UTC()
+		newLeaseUntil = fixture.now.Unix() + recallEmailLeaseSeconds
+		won, err := model.LeaseRecallMessage(fixture.message.Id, fixture.worker.owner, fixture.now.Unix(), newLeaseUntil)
+		if err != nil {
+			callbackErr = err
+			return
+		}
+		if !won {
+			callbackErr = fmt.Errorf("same-owner re-lease did not win")
+			return
+		}
+		updated, err := model.SetRecallMessageClaimHash(context.Background(), fixture.message.Id, fixture.worker.owner, newLeaseUntil, newClaimHash)
+		if err != nil {
+			callbackErr = err
+			return
+		}
+		if !updated {
+			callbackErr = fmt.Errorf("new lease claim hash was not stored")
+		}
+	}))
+	t.Cleanup(func() { _ = model.DB.Callback().Query().Remove(callbackName) })
+
+	err := fixture.worker.ProcessLeased(context.Background(), fixture.message.Id)
+
+	require.NoError(t, callbackErr)
+	require.True(t, reLeased)
+	stored := loadRecallEmailMessageByID(t, fixture.message.Id)
+	require.NotNil(t, stored.ClaimTokenHash)
+	require.Equal(t, newClaimHash, *stored.ClaimTokenHash)
+	if len(*fixture.sent) > 0 {
+		sentRawClaim := recallEmailRawClaim(t, (*fixture.sent)[0].htmlBody)
+		require.Equal(t, oldRawClaim, sentRawClaim)
+		require.NotEqual(t, *stored.ClaimTokenHash, recallEmailHash(sentRawClaim))
+	}
+	require.ErrorIs(t, err, ErrRecallEmailLeaseLost)
+	require.Empty(t, *fixture.sent)
+	require.Equal(t, model.RecallMessageLeased, stored.State)
+	require.Equal(t, newLeaseUntil, stored.LeaseExpiresAt)
 }
 
 func TestRecallEmailLanguageUsesExactSnapshotThenFallsBackToEnglish(t *testing.T) {
