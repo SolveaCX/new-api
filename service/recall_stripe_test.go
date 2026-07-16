@@ -543,6 +543,25 @@ func TestRecallStripeEnsureCustomer(t *testing.T) {
 		require.False(t, created)
 	})
 
+	t.Run("rejects_mismatched_deleted_customer", func(t *testing.T) {
+		created := false
+		client := &recallStripeFakeClient{
+			getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) {
+				require.Equal(t, "cus_expected", id)
+				return &stripe.Customer{ID: "cus_other", Deleted: true}, nil
+			},
+			createCustomerFn: func(context.Context, *stripe.CustomerParams) (*stripe.Customer, error) {
+				created = true
+				return &stripe.Customer{ID: "cus_new"}, nil
+			},
+		}
+
+		_, err := NewRecallStripeService(client).EnsureCustomer(context.Background(), model.User{Id: 7, StripeCustomer: "cus_expected"})
+		require.ErrorContains(t, err, "does not match")
+		require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
+		require.False(t, created)
+	})
+
 	for _, tc := range []struct {
 		name string
 		get  func(context.Context, string) (*stripe.Customer, error)
@@ -626,7 +645,7 @@ func TestRecallStripeCustomerEmailUpdateIsSeparateAndVersioned(t *testing.T) {
 	require.Equal(t, map[string]string{"flatkey_user_id": "7"}, created.Metadata)
 	require.Equal(t, "recall_customer:7", *created.IdempotencyKey)
 	require.NotNil(t, updated)
-	require.Equal(t, "Current@Example.COM", *updated.Email)
+	require.Equal(t, "current@example.com", *updated.Email)
 	require.Nil(t, updated.Name)
 	require.Nil(t, updated.Description)
 	require.Empty(t, updated.Metadata)
@@ -636,12 +655,14 @@ func TestRecallStripeCustomerEmailUpdateIsSeparateAndVersioned(t *testing.T) {
 
 func TestRecallStripeCustomerEmailUpdateKeyChangesOnlyWithNormalizedEmail(t *testing.T) {
 	keys := make([]string, 0, 3)
+	payloads := make([]string, 0, 3)
 	client := &recallStripeFakeClient{
 		getCustomerFn: func(context.Context, string) (*stripe.Customer, error) {
 			return &stripe.Customer{ID: "cus_7"}, nil
 		},
 		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
 			keys = append(keys, *params.IdempotencyKey)
+			payloads = append(payloads, *params.Email)
 			return &stripe.Customer{ID: id, Email: *params.Email}, nil
 		},
 	}
@@ -654,6 +675,7 @@ func TestRecallStripeCustomerEmailUpdateKeyChangesOnlyWithNormalizedEmail(t *tes
 	require.Len(t, keys, 3)
 	require.Equal(t, keys[0], keys[1])
 	require.NotEqual(t, keys[1], keys[2])
+	require.Equal(t, []string{"user@example.com", "user@example.com", "changed@example.com"}, payloads)
 }
 
 func TestRecallStripeCustomerEmailUpdateRetriesWithStableKey(t *testing.T) {

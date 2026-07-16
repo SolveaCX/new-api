@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -54,27 +56,65 @@ func (w *RecallRecipientWorker) RunBatch(ctx context.Context, limit int) (int, e
 	if w.owner == "" {
 		return 0, fmt.Errorf("recall recipient worker owner is required")
 	}
-	now := w.now().Unix()
-	ids, err := model.ListDueRecallRecipientIDs(now, limit)
+	items, err := model.ListDueRecallRecipientWorkItems(w.now().Unix(), limit)
 	if err != nil {
 		return 0, err
 	}
-	processed := 0
-	for _, recipientID := range ids {
-		leaseUntil := now + recallRecipientLeaseSeconds
-		won, leaseErr := model.LeaseRecallRecipient(recipientID, w.owner, now, leaseUntil)
-		if leaseErr != nil {
-			return processed, leaseErr
-		}
-		if !won {
+	limiters := make(map[int64]chan struct{}, len(items))
+	for _, item := range items {
+		if _, ok := limiters[item.CampaignId]; ok {
 			continue
 		}
-		processed++
-		if processErr := w.ProcessLeased(ctx, recipientID); processErr != nil && !errors.Is(processErr, ErrRecallRecipientLeaseLost) {
-			return processed, processErr
+		campaignLimit := item.WorkerConcurrency
+		if campaignLimit < 1 {
+			campaignLimit = 1
 		}
+		limiters[item.CampaignId] = make(chan struct{}, campaignLimit)
 	}
-	return processed, nil
+
+	var processed atomic.Int64
+	var firstErr error
+	var errorMu sync.Mutex
+	recordError := func(err error) {
+		if err == nil || errors.Is(err, ErrRecallRecipientLeaseLost) {
+			return
+		}
+		errorMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		errorMu.Unlock()
+	}
+	var workers sync.WaitGroup
+	for _, item := range items {
+		item := item
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			limiter := limiters[item.CampaignId]
+			select {
+			case limiter <- struct{}{}:
+				defer func() { <-limiter }()
+			case <-ctx.Done():
+				recordError(ctx.Err())
+				return
+			}
+			now := w.now().Unix()
+			leaseUntil := now + recallRecipientLeaseSeconds
+			won, leaseErr := model.LeaseRecallRecipient(item.Id, w.owner, now, leaseUntil)
+			if leaseErr != nil {
+				recordError(leaseErr)
+				return
+			}
+			if !won {
+				return
+			}
+			processed.Add(1)
+			recordError(w.ProcessLeased(ctx, item.Id))
+		}()
+	}
+	workers.Wait()
+	return int(processed.Load()), firstErr
 }
 
 func (w *RecallRecipientWorker) ProcessLeased(ctx context.Context, recipientID int64) error {

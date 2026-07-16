@@ -63,6 +63,12 @@ type RecallClaimRecord struct {
 	ClaimTokenHash string
 }
 
+type RecallRecipientWorkItem struct {
+	Id                int64 `gorm:"column:id"`
+	CampaignId        int64 `gorm:"column:campaign_id"`
+	WorkerConcurrency int   `gorm:"-"`
+}
+
 func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
 	ids := make([]int64, 0)
 	if limit <= 0 {
@@ -78,6 +84,53 @@ func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
 		Limit(limit).
 		Pluck("id", &ids).Error
 	return ids, err
+}
+
+func ListDueRecallRecipientWorkItems(now int64, limit int) ([]RecallRecipientWorkItem, error) {
+	items := make([]RecallRecipientWorkItem, 0)
+	if limit <= 0 {
+		return items, nil
+	}
+	if err := DB.Model(&RecallRecipient{}).
+		Select("id", "campaign_id").
+		Where("state IN ? AND (lease_expires_at = 0 OR lease_expires_at < ?)", []string{
+			RecallRecipientQueued,
+			RecallRecipientCustomerReady,
+			RecallRecipientCodeReady,
+		}, now).
+		Order("id ASC").
+		Limit(limit).
+		Scan(&items).Error; err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return items, nil
+	}
+
+	campaignIDs := make([]int64, 0, len(items))
+	seenCampaigns := make(map[int64]struct{}, len(items))
+	for _, item := range items {
+		if _, ok := seenCampaigns[item.CampaignId]; ok {
+			continue
+		}
+		seenCampaigns[item.CampaignId] = struct{}{}
+		campaignIDs = append(campaignIDs, item.CampaignId)
+	}
+	var campaigns []RecallCampaign
+	if err := DB.Model(&RecallCampaign{}).
+		Select("id", "worker_concurrency").
+		Where("id IN ?", campaignIDs).
+		Find(&campaigns).Error; err != nil {
+		return nil, err
+	}
+	concurrencyByCampaign := make(map[int64]int, len(campaigns))
+	for _, campaign := range campaigns {
+		concurrencyByCampaign[campaign.Id] = campaign.WorkerConcurrency
+	}
+	for i := range items {
+		items[i].WorkerConcurrency = concurrencyByCampaign[items[i].CampaignId]
+	}
+	return items, nil
 }
 
 func LeaseRecallRecipient(id int64, owner string, now int64, leaseUntil int64) (bool, error) {
