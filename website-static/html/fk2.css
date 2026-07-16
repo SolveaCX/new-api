@@ -39,7 +39,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);-webkit-fo
 .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
 h1.display,h2.display{font-family:var(--disp);text-wrap:balance}
 h1.display{font-size:64px;line-height:1.02;letter-spacing:-2.4px;font-weight:600}
-h2.display{font-size:38px;line-height:1.06;letter-spacing:-1.3px;font-weight:700}
+h2.display{font-size:38px;line-height:1.06;letter-spacing:-1.3px;font-weight:600}
 .sub{font-size:17.5px;line-height:1.6;color:var(--ink2);font-weight:450}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}

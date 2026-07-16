@@ -9,9 +9,10 @@ html,body,p,a,h1,h2,h3,h4,h5,h6,span,div,li,dt,dd,th,td,label,button,input,selec
 pre,code,kbd,samp,pre *,code *{
   font-family:"Chivo Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace !important;
 }
-/* fal-scale display: medium weight, tight tracking */
-h1{font-weight:650 !important;letter-spacing:-.035em !important}
-h2,h3{font-weight:650 !important;letter-spacing:-.02em !important}
+/* fal-scale display: medium weight, tight tracking (matches v2: h1 600 / h2 700 / h3 650) */
+h1{font-weight:600 !important;letter-spacing:-.035em !important}
+h2{font-weight:700 !important;letter-spacing:-.02em !important}
+h3{font-weight:650 !important;letter-spacing:-.02em !important}
 /* brand violet: pull legacy purples into the deep-violet band (#4C1D95–#7C3AED) */
 :root{--fk-violet:#4C1D95;--fk-violet-2:#7C3AED}
 a[class*="text-purple"],a[class*="text-violet"],[class*="text-purple-6"],[class*="text-violet-6"]{color:var(--fk-violet-2) !important}
@@ -19,7 +20,7 @@ a[class*="text-purple"],a[class*="text-violet"],[class*="text-purple-6"],[class*
 
 /* ===== nav bar: match v2 .nav (88px, full-width, ink links, 8px-radius buttons) ===== */
 header.fixed>div{max-width:100% !important;padding:0 20px !important}
-header.fixed nav{height:88px !important;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:1px solid #ECEAF3}
+header.fixed nav{min-height:88px;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:1px solid #ECEAF3}
 main{margin-top:24px}
 /* logo: bigger mark + ink wordmark (mark file itself is overridden to the v2 pixel key) */
 header.fixed nav a.group img{width:40px !important;height:40px !important}
