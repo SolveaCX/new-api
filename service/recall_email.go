@@ -247,6 +247,13 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 	if err != nil {
 		return w.finishPreAcceptError(ctx, item, "render_invalid", false)
 	}
+	sending, err := model.MarkRecallMessageSendingWithContext(ctx, item.Message.Id, w.owner, item.Message.LeaseExpiresAt)
+	if err != nil {
+		return err
+	}
+	if !sending {
+		return ErrRecallEmailLeaseLost
+	}
 
 	if err := w.sender(subject, item.Recipient.EmailSnapshot, htmlBody, providerMessageID); err != nil {
 		if common.IsEmailSendUncertain(err) {
@@ -254,10 +261,11 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 				item.Message.Id,
 				w.owner,
 				item.Message.LeaseExpiresAt,
-				model.RecallMessageLeased,
+				model.RecallMessageSending,
 				model.RecallMessageUncertain,
 				map[string]any{
 					"attempt_count":       item.Message.AttemptCount + 1,
+					"next_attempt_at":     int64(0),
 					"provider_message_id": providerMessageID,
 					"last_error_code":     "smtp_uncertain",
 					"last_error_message":  "",
@@ -271,7 +279,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 			}
 			return nil
 		}
-		return w.finishPreAcceptError(ctx, item, "smtp_definite", true)
+		return w.finishSendingError(ctx, item, "smtp_definite", true)
 	}
 	acceptedAt := w.now().Unix()
 	if next != nil && item.Recipient.FirstSentAt == 0 {
@@ -345,6 +353,14 @@ func (w *RecallEmailWorker) recallEmailStopReason(ctx context.Context, item *mod
 }
 
 func (w *RecallEmailWorker) finishPreAcceptError(ctx context.Context, item *model.RecallEmailWorkItem, errorCode string, retryable bool) error {
+	return w.finishError(ctx, item, model.RecallMessageLeased, errorCode, retryable)
+}
+
+func (w *RecallEmailWorker) finishSendingError(ctx context.Context, item *model.RecallEmailWorkItem, errorCode string, retryable bool) error {
+	return w.finishError(ctx, item, model.RecallMessageSending, errorCode, retryable)
+}
+
+func (w *RecallEmailWorker) finishError(ctx context.Context, item *model.RecallEmailWorkItem, from string, errorCode string, retryable bool) error {
 	attemptCount := item.Message.AttemptCount + 1
 	state := model.RecallMessageFailed
 	fields := map[string]any{
@@ -363,7 +379,7 @@ func (w *RecallEmailWorker) finishPreAcceptError(ctx context.Context, item *mode
 		item.Message.Id,
 		w.owner,
 		item.Message.LeaseExpiresAt,
-		model.RecallMessageLeased,
+		from,
 		state,
 		fields,
 	)

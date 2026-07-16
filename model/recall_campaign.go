@@ -255,11 +255,17 @@ func CancelRecallCampaignWithContext(ctx context.Context, id int64, from []strin
 			Where("recipient_id IN (?) AND state IN ?", recipientIDs, []string{
 				RecallMessageScheduled,
 				RecallMessageRetryWait,
+				RecallMessageLeased,
+				RecallMessageSending,
 			}).
 			Updates(map[string]any{
-				"state":           RecallMessageCancelled,
-				"last_error_code": reasonCode,
-				"failed_at":       now,
+				"state":              RecallMessageCancelled,
+				"next_attempt_at":    int64(0),
+				"lease_owner":        "",
+				"lease_expires_at":   int64(0),
+				"last_error_code":    reasonCode,
+				"last_error_message": "",
+				"failed_at":          now,
 			}).Error
 	})
 	return cancelled, err

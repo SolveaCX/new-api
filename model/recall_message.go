@@ -12,6 +12,7 @@ import (
 const (
 	RecallMessageScheduled = "scheduled"
 	RecallMessageLeased    = "leased"
+	RecallMessageSending   = "sending"
 	RecallMessageAccepted  = "accepted"
 	RecallMessageRetryWait = "retry_wait"
 	RecallMessageUncertain = "uncertain"
@@ -122,6 +123,16 @@ func CompleteRecallMessageLease(id int64, owner string, expectedLeaseUntil int64
 	return result.RowsAffected == 1, nil
 }
 
+func MarkRecallMessageSendingWithContext(ctx context.Context, id int64, owner string, expectedLeaseUntil int64) (bool, error) {
+	result := DB.WithContext(ctx).Model(&RecallMessage{}).
+		Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, RecallMessageLeased, owner, expectedLeaseUntil).
+		Update("state", RecallMessageSending)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func GetRecallEmailWorkItemForLeaseWithContext(ctx context.Context, id int64, owner string) (*RecallEmailWorkItem, error) {
 	item := &RecallEmailWorkItem{}
 	if err := DB.WithContext(ctx).
@@ -176,7 +187,7 @@ func AcceptRecallMessageAndScheduleNextWithContext(ctx context.Context, id int64
 	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var message RecallMessage
 		if err := tx.Select("recipient_id").
-			Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, RecallMessageLeased, owner, expectedLeaseUntil).
+			Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, RecallMessageSending, owner, expectedLeaseUntil).
 			First(&message).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return nil
@@ -184,7 +195,7 @@ func AcceptRecallMessageAndScheduleNextWithContext(ctx context.Context, id int64
 			return err
 		}
 		result := tx.Model(&RecallMessage{}).
-			Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, RecallMessageLeased, owner, expectedLeaseUntil).
+			Where("id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, RecallMessageSending, owner, expectedLeaseUntil).
 			Updates(map[string]any{
 				"state":              RecallMessageAccepted,
 				"accepted_at":        acceptedAt,
@@ -230,9 +241,10 @@ func CancelRecallEmailFlowWithContext(ctx context.Context, id int64, recipientID
 	cancelled := false
 	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&RecallMessage{}).
-			Where("id = ? AND recipient_id = ? AND state = ? AND lease_owner = ? AND lease_expires_at = ?", id, recipientID, RecallMessageLeased, owner, expectedLeaseUntil).
+			Where("id = ? AND recipient_id = ? AND state IN ? AND lease_owner = ? AND lease_expires_at = ?", id, recipientID, []string{RecallMessageLeased, RecallMessageSending}, owner, expectedLeaseUntil).
 			Updates(map[string]any{
 				"state":              RecallMessageCancelled,
+				"next_attempt_at":    int64(0),
 				"lease_owner":        "",
 				"lease_expires_at":   int64(0),
 				"failed_at":          now,
@@ -247,9 +259,10 @@ func CancelRecallEmailFlowWithContext(ctx context.Context, id int64, recipientID
 		}
 		cancelled = true
 		return tx.Model(&RecallMessage{}).
-			Where("recipient_id = ? AND state IN ?", recipientID, []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased}).
+			Where("recipient_id = ? AND state IN ?", recipientID, []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased, RecallMessageSending}).
 			Updates(map[string]any{
 				"state":              RecallMessageCancelled,
+				"next_attempt_at":    int64(0),
 				"lease_owner":        "",
 				"lease_expires_at":   int64(0),
 				"failed_at":          now,
@@ -261,21 +274,21 @@ func CancelRecallEmailFlowWithContext(ctx context.Context, id int64, recipientID
 }
 
 func ManualRetryRecallMessageWithContext(ctx context.Context, id int64, acknowledgeUncertain bool, now int64) (bool, error) {
-	states := []string{RecallMessageFailed}
+	query := DB.WithContext(ctx).Model(&RecallMessage{}).
+		Where("id = ? AND state = ?", id, RecallMessageFailed)
 	if acknowledgeUncertain {
-		states = append(states, RecallMessageUncertain)
+		query = DB.WithContext(ctx).Model(&RecallMessage{}).
+			Where("id = ? AND (state IN ? OR (state = ? AND lease_expires_at < ?))", id, []string{RecallMessageFailed, RecallMessageUncertain}, RecallMessageSending, now)
 	}
-	result := DB.WithContext(ctx).Model(&RecallMessage{}).
-		Where("id = ? AND state IN ?", id, states).
-		Updates(map[string]any{
-			"state":              RecallMessageRetryWait,
-			"next_attempt_at":    now,
-			"failed_at":          int64(0),
-			"lease_owner":        "",
-			"lease_expires_at":   int64(0),
-			"last_error_code":    "",
-			"last_error_message": "",
-		})
+	result := query.Updates(map[string]any{
+		"state":              RecallMessageRetryWait,
+		"next_attempt_at":    now,
+		"failed_at":          int64(0),
+		"lease_owner":        "",
+		"lease_expires_at":   int64(0),
+		"last_error_code":    "",
+		"last_error_message": "",
+	})
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -300,11 +313,17 @@ func CancelPendingRecallMessages(recipientID int64, reasonCode string, now int64
 		Where("recipient_id = ? AND state IN ?", recipientID, []string{
 			RecallMessageScheduled,
 			RecallMessageRetryWait,
+			RecallMessageLeased,
+			RecallMessageSending,
 		}).
 		Updates(map[string]any{
-			"state":           RecallMessageCancelled,
-			"last_error_code": reasonCode,
-			"failed_at":       now,
+			"state":              RecallMessageCancelled,
+			"next_attempt_at":    int64(0),
+			"lease_owner":        "",
+			"lease_expires_at":   int64(0),
+			"last_error_code":    reasonCode,
+			"last_error_message": "",
+			"failed_at":          now,
 		})
 	if result.Error != nil {
 		return 0, result.Error
