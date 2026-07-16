@@ -20,9 +20,6 @@ var hotBuckets sync.Map
 var prometheusPendingBuckets sync.Map
 var prometheusChannelBuckets sync.Map
 var prometheusChannelModelBuckets sync.Map
-var prometheusModelPerformanceBuckets sync.Map
-var prometheusModelAdmissionMu sync.Mutex
-var prometheusModelDroppedSamples prometheusModelDropCounters
 
 var prometheusChannelDurationBucketsSeconds = []float64{
 	0.25,
@@ -48,13 +45,9 @@ func Init() {
 	go flushLoop()
 }
 
-func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64, relayErr *types.NewAPIError) {
+func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
 	if info == nil {
 		return
-	}
-	finalSuccess := success && relayErr == nil
-	if finalSuccess && info.IsStream && info.StreamStatus != nil {
-		finalSuccess = info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors()
 	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
@@ -70,7 +63,6 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
-	recordPrometheusModelPerformance(info, finalSuccess, relayErr, now)
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
@@ -78,7 +70,7 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
-		Success:      finalSuccess,
+		Success:      success,
 		OutputTokens: outputTokens,
 		GenerationMs: generationMs,
 	})
