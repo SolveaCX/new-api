@@ -14,10 +14,19 @@ import (
 	"github.com/QuantumNous/new-api/pkg/apicompat"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func codexSSEHTTPResponse(body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
 
 func TestToCompatChatRequest_MapsBasicFields(t *testing.T) {
 	streamTrue := true
@@ -146,6 +155,167 @@ func TestRelayChatOverCodex_StreamPath_BasicText(t *testing.T) {
 	assert.Contains(t, body, "world")
 	assert.Contains(t, body, `"finish_reason":"stop"`)
 	assert.Contains(t, body, "[DONE]")
+}
+
+func TestRelayChatOverCodex_StreamImmediateFailureDoesNotCommitSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamSSE := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_failed","model":"gpt-5"}}`,
+		``,
+		`event: response.failed`,
+		`data: {"type":"response.failed","response":{"id":"resp_failed","status":"failed","error":{"code":"server_error","message":"upstream blew up"},"usage":{"input_tokens":5,"output_tokens":1}}}`,
+		``,
+	}, "\n")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	usage, apiErr := RelayChatOverCodex(c, &relaycommon.RelayInfo{
+		UserWantsStream: true,
+		IsStream:        true,
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5"},
+	}, codexSSEHTTPResponse(upstreamSSE))
+
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
+	assert.False(t, c.Writer.Written())
+	assert.Empty(t, rec.Body.String())
+	require.IsType(t, &dto.Usage{}, usage)
+}
+
+func TestRelayChatOverCodex_StreamPartialTextThenFailureEmitsSSEError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamSSE := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_failed","model":"gpt-5"}}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","output_index":0,"delta":"partial"}`,
+		``,
+		`event: response.failed`,
+		`data: {"type":"response.failed","response":{"id":"resp_failed","status":"failed","error":{"code":"server_error","message":"upstream blew up"}}}`,
+		``,
+	}, "\n")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	_, apiErr := RelayChatOverCodex(c, &relaycommon.RelayInfo{
+		UserWantsStream: true,
+		IsStream:        true,
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5"},
+	}, codexSSEHTTPResponse(upstreamSSE))
+
+	require.NotNil(t, apiErr)
+	assert.True(t, types.IsSkipRetryError(apiErr))
+	body := rec.Body.String()
+	assert.Contains(t, body, `"role":"assistant"`)
+	assert.Contains(t, body, "partial")
+	assert.Contains(t, body, `"error"`)
+	assert.Contains(t, body, `"code":"500"`)
+	assert.NotContains(t, body, `"content":"upstream blew up"`)
+	assert.NotContains(t, body, `"finish_reason":"content_filter"`)
+	assert.NotContains(t, body, `"finish_reason":"stop"`)
+	assert.NotContains(t, body, "[DONE]")
+}
+
+func TestRelayChatOverCodex_NonStreamFailureReturnsErrorWithoutChatBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamSSE := strings.Join([]string{
+		`event: response.failed`,
+		`data: {"type":"response.failed","response":{"id":"resp_failed","status":"failed","error":{"code":"server_error","message":"upstream blew up"}}}`,
+		``,
+	}, "\n")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	_, apiErr := RelayChatOverCodex(c, &relaycommon.RelayInfo{
+		UserWantsStream: false,
+		IsStream:        true,
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5"},
+	}, codexSSEHTTPResponse(upstreamSSE))
+
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
+	assert.Empty(t, rec.Body.String())
+}
+
+func TestRelayChatOverCodex_EOFBeforeTerminalReturnsBadGateway(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamSSE := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_truncated","model":"gpt-5"}}`,
+		``,
+	}, "\n")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	_, apiErr := RelayChatOverCodex(c, &relaycommon.RelayInfo{
+		UserWantsStream: true,
+		IsStream:        true,
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5"},
+	}, codexSSEHTTPResponse(upstreamSSE))
+
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+	assert.False(t, types.IsSkipRetryError(apiErr))
+	assert.False(t, c.Writer.Written())
+	assert.Empty(t, rec.Body.String())
+}
+
+func TestRelayChatOverCodex_StreamPartialTextThenEOFEmitsSSEError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamSSE := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_truncated","model":"gpt-5"}}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","output_index":0,"delta":"partial"}`,
+		``,
+	}, "\n")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	_, apiErr := RelayChatOverCodex(c, &relaycommon.RelayInfo{
+		UserWantsStream: true,
+		IsStream:        true,
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5"},
+	}, codexSSEHTTPResponse(upstreamSSE))
+
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+	assert.True(t, types.IsSkipRetryError(apiErr))
+	body := rec.Body.String()
+	assert.Contains(t, body, `"role":"assistant"`)
+	assert.Contains(t, body, "partial")
+	assert.Contains(t, body, `"error"`)
+	assert.Contains(t, body, `"code":"502"`)
+	assert.NotContains(t, body, `"finish_reason":"stop"`)
+	assert.NotContains(t, body, `"finish_reason":"content_filter"`)
+	assert.NotContains(t, body, "[DONE]")
+}
+
+func TestRelayChatOverCodex_ScannerErrorBeforeTerminalReturnsBadGateway(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamSSE := "data: " + strings.Repeat("x", 1024*1024+1)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	_, apiErr := RelayChatOverCodex(c, &relaycommon.RelayInfo{
+		UserWantsStream: true,
+		IsStream:        true,
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5"},
+	}, codexSSEHTTPResponse(upstreamSSE))
+
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+	assert.False(t, c.Writer.Written())
+	assert.Empty(t, rec.Body.String())
 }
 
 func TestRelayChatOverCodex_NonStream_AggregatesAndReturnsJSON(t *testing.T) {
@@ -315,10 +485,13 @@ func TestRelayChatOverCodex_Non200_PropagatesUpstreamError(t *testing.T) {
 func TestRelayChatOverCodex_NoUsageEvent_ReturnsNonNilZeroUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// upstream stream with deltas but no response.completed/usage
+	// Successful upstream stream with no usage payload.
 	upstreamSSE := strings.Join([]string{
 		`event: response.output_text.delta`,
 		`data: {"type":"response.output_text.delta","output_index":0,"delta":"hi"}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","response":{"id":"resp_1","status":"completed"}}`,
 		``,
 	}, "\n")
 	resp := &http.Response{
@@ -735,7 +908,7 @@ func TestRelayChatOverCodex_CapturesUsageFromFailedEvent(t *testing.T) {
 	usage, apiErr := RelayChatOverCodex(c, &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5"},
 	}, resp)
-	require.Nil(t, apiErr)
+	require.NotNil(t, apiErr)
 	dtoUsage, ok := usage.(*dto.Usage)
 	require.True(t, ok)
 	assert.Equal(t, 5, dtoUsage.PromptTokens)
