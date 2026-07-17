@@ -45,6 +45,19 @@ func QueryStatusComponents(filter StatusComponentFilter) ([]model.StatusComponen
 	return result, nil
 }
 
+func ProjectStatusComponentFreshness(components []model.StatusComponent, now int64, maxAge int64) []model.StatusComponent {
+	projected := make([]model.StatusComponent, 0, len(components))
+	for _, component := range components {
+		if component.EffectiveStatus != model.StatusMaintenance &&
+			(component.LastTrustworthyUpdateAt <= 0 || now-component.LastTrustworthyUpdateAt >= maxAge) {
+			component.EffectiveStatus = model.StatusUnknown
+			component.CoverageMicros = 0
+		}
+		projected = append(projected, component)
+	}
+	return projected
+}
+
 func GetStatusComponent(slug string) (model.StatusComponent, error) {
 	return model.GetStatusComponentBySlug(strings.TrimSpace(slug))
 }
@@ -64,12 +77,41 @@ func ListStatusIncidentRecords(kind string, publicOnly bool, limit int) ([]Statu
 		return nil, err
 	}
 	records := make([]StatusIncidentRecord, 0, len(incidents))
+	if len(incidents) == 0 {
+		return records, nil
+	}
+	incidentIDs := make([]int64, 0, len(incidents))
 	for _, incident := range incidents {
-		record, err := statusIncidentRecord(incident, publicOnly)
-		if err != nil {
-			return nil, err
+		incidentIDs = append(incidentIDs, incident.ID)
+	}
+	updates, err := model.GetStatusIncidentUpdatesForIncidentIDs(incidentIDs, publicOnly)
+	if err != nil {
+		return nil, err
+	}
+	associations, err := model.GetStatusIncidentComponentsForIncidentIDs(incidentIDs)
+	if err != nil {
+		return nil, err
+	}
+	updatesByIncident := make(map[int64][]model.StatusIncidentUpdate, len(incidents))
+	for _, update := range updates {
+		updatesByIncident[update.IncidentID] = append(updatesByIncident[update.IncidentID], update)
+	}
+	componentIDsByIncident := make(map[int64][]int64, len(incidents))
+	for _, association := range associations {
+		componentIDsByIncident[association.IncidentID] = append(componentIDsByIncident[association.IncidentID], association.ComponentID)
+	}
+	for _, incident := range incidents {
+		incidentUpdates := updatesByIncident[incident.ID]
+		if incidentUpdates == nil {
+			incidentUpdates = make([]model.StatusIncidentUpdate, 0)
 		}
-		records = append(records, record)
+		componentIDs := componentIDsByIncident[incident.ID]
+		if componentIDs == nil {
+			componentIDs = make([]int64, 0)
+		}
+		records = append(records, StatusIncidentRecord{
+			Incident: incident, Updates: incidentUpdates, ComponentIDs: componentIDs,
+		})
 	}
 	return records, nil
 }

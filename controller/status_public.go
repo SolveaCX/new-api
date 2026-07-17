@@ -71,14 +71,15 @@ type statusPublicIncident struct {
 }
 
 func GetPublicStatusSummary(c *gin.Context) {
-	now := statusGeneratedAt()
+	now := time.Now().Unix()
+	generatedAt := statusGeneratedAt(now)
 	components, err := service.QueryStatusComponents(service.StatusComponentFilter{})
 	if err != nil {
 		statusPublicError(c, http.StatusServiceUnavailable, errors.New("status data unavailable"))
 		return
 	}
 	publicComponents, honestComponents := publicStatusComponents(components, now)
-	metadata := publicStatusMetadata(honestComponents, now)
+	metadata := publicStatusMetadata(honestComponents, generatedAt)
 	overall := service.OverallStatus(honestComponents)
 	message := ""
 	if overall == service.OverallMonitoringIncomplete {
@@ -105,7 +106,8 @@ func GetPublicStatusComponents(c *gin.Context) {
 		statusPublicError(c, http.StatusServiceUnavailable, errors.New("status data unavailable"))
 		return
 	}
-	now := statusGeneratedAt()
+	now := time.Now().Unix()
+	generatedAt := statusGeneratedAt(now)
 	publicComponents, honestComponents := publicStatusComponents(components, now)
 	if publicStatusFilter != "" {
 		filteredPublic := make([]statusPublicComponent, 0, len(publicComponents))
@@ -123,7 +125,7 @@ func GetPublicStatusComponents(c *gin.Context) {
 	statusPublicSuccess(c, struct {
 		statusPublicMetadata
 		Components []statusPublicComponent `json:"components"`
-	}{publicStatusMetadata(honestComponents, now), publicComponents})
+	}{publicStatusMetadata(honestComponents, generatedAt), publicComponents})
 }
 
 func GetPublicStatusComponent(c *gin.Context) {
@@ -132,17 +134,19 @@ func GetPublicStatusComponent(c *gin.Context) {
 		statusPublicQueryError(c, err)
 		return
 	}
-	now := statusGeneratedAt()
+	now := time.Now().Unix()
+	generatedAt := statusGeneratedAt(now)
 	publicComponents, honestComponents := publicStatusComponents([]model.StatusComponent{component}, now)
 	statusPublicSuccess(c, struct {
 		statusPublicMetadata
 		Component statusPublicComponent `json:"component"`
-	}{publicStatusMetadata(honestComponents, now), publicComponents[0]})
+	}{publicStatusMetadata(honestComponents, generatedAt), publicComponents[0]})
 }
 
 func GetPublicStatusComponentHistory(c *gin.Context) {
 	rangeName := strings.TrimSpace(c.DefaultQuery("range", "24h"))
-	now := statusGeneratedAt()
+	now := time.Now().Unix()
+	generatedAt := statusGeneratedAt(now)
 	start, granularity, ok := statusHistoryRange(rangeName, now)
 	if !ok {
 		statusPublicError(c, http.StatusBadRequest, errors.New("range must be one of 24h, 7d, 30d, or 90d"))
@@ -164,7 +168,7 @@ func GetPublicStatusComponentHistory(c *gin.Context) {
 			MaintenanceCount: period.MaintenanceBucketCount,
 		})
 	}
-	metadata := publicStatusMetadata(honestComponents, now)
+	metadata := publicStatusMetadata(honestComponents, generatedAt)
 	metadata.Coverage = availability.CoverageMicros
 	statusPublicSuccess(c, struct {
 		statusPublicMetadata
@@ -300,15 +304,9 @@ func publicStatusIncident(record service.StatusIncidentRecord) statusPublicIncid
 
 func publicStatusComponents(components []model.StatusComponent, now int64) ([]statusPublicComponent, []model.StatusComponent) {
 	publicComponents := make([]statusPublicComponent, 0, len(components))
-	honestComponents := make([]model.StatusComponent, 0, len(components))
-	for _, component := range components {
-		honest := component
-		if component.EffectiveStatus != model.StatusMaintenance &&
-			(component.LastTrustworthyUpdateAt <= 0 || now-component.LastTrustworthyUpdateAt >= statusPublicEvidenceMaxAge) {
-			honest.EffectiveStatus = model.StatusUnknown
-			honest.CoverageMicros = 0
-		}
-		honestComponents = append(honestComponents, honest)
+	honestComponents := service.ProjectStatusComponentFreshness(components, now, statusPublicEvidenceMaxAge)
+	for index, component := range components {
+		honest := honestComponents[index]
 		publicComponents = append(publicComponents, statusPublicComponent{
 			ID: component.ID, Slug: component.Slug, Kind: component.Kind, DisplayName: component.DisplayName,
 			Capability: component.Capability, Lifecycle: component.Lifecycle, Status: honest.EffectiveStatus,
@@ -339,13 +337,14 @@ func publicStatusMetadata(components []model.StatusComponent, now int64) statusP
 }
 
 func currentPublicStatusMetadata() (statusPublicMetadata, error) {
-	now := statusGeneratedAt()
+	now := time.Now().Unix()
+	generatedAt := statusGeneratedAt(now)
 	components, err := service.QueryStatusComponents(service.StatusComponentFilter{})
 	if err != nil {
 		return statusPublicMetadata{}, err
 	}
 	_, honest := publicStatusComponents(components, now)
-	return publicStatusMetadata(honest, now), nil
+	return publicStatusMetadata(honest, generatedAt), nil
 }
 
 func statusComponentFilter(c *gin.Context) (service.StatusComponentFilter, error) {
@@ -443,7 +442,6 @@ func boundedStatusToken(token string) string {
 	return token
 }
 
-func statusGeneratedAt() int64 {
-	now := time.Now().Unix()
+func statusGeneratedAt(now int64) int64 {
 	return now - now%statusPublicCacheSeconds
 }

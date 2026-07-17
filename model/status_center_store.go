@@ -1367,11 +1367,34 @@ func GetStatusIncidentUpdates(incidentID int64, publishedOnly bool) ([]StatusInc
 	return updates, err
 }
 
+func GetStatusIncidentUpdatesForIncidentIDs(incidentIDs []int64, publishedOnly bool) ([]StatusIncidentUpdate, error) {
+	updates := make([]StatusIncidentUpdate, 0)
+	if len(incidentIDs) == 0 {
+		return updates, nil
+	}
+	query := DB.Where("incident_id IN ?", incidentIDs)
+	if publishedOnly {
+		query = query.Where("published = ?", true)
+	}
+	err := query.Order("incident_id ASC, created_at ASC, id ASC").Find(&updates).Error
+	return updates, err
+}
+
 func GetStatusIncidentComponentIDs(incidentID int64) ([]int64, error) {
 	var componentIDs []int64
 	err := DB.Model(&StatusIncidentComponent{}).Where("incident_id = ?", incidentID).
 		Order("component_id ASC").Pluck("component_id", &componentIDs).Error
 	return componentIDs, err
+}
+
+func GetStatusIncidentComponentsForIncidentIDs(incidentIDs []int64) ([]StatusIncidentComponent, error) {
+	associations := make([]StatusIncidentComponent, 0)
+	if len(incidentIDs) == 0 {
+		return associations, nil
+	}
+	err := DB.Where("incident_id IN ?", incidentIDs).
+		Order("incident_id ASC, component_id ASC").Find(&associations).Error
+	return associations, err
 }
 
 func GetStatusSettings(limit int) ([]StatusSetting, error) {
