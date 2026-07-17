@@ -2,7 +2,9 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -34,6 +36,30 @@ func statusAdminActor() StatusMutationActor {
 
 func statusRootActor(verified bool) StatusMutationActor {
 	return StatusMutationActor{ID: 1, Role: common.RoleRootUser, ActorType: "root", SecureVerified: verified}
+}
+
+type statusIncidentDraftAuditSnapshot struct {
+	Incident    *model.StatusIncident          `json:"incident"`
+	Draft       *model.StatusIncidentUpdate    `json:"draft"`
+	Association *model.StatusIncidentComponent `json:"component_association"`
+}
+
+type statusIncidentPublishAuditDestination struct {
+	Type    string `json:"type"`
+	ID      int64  `json:"id"`
+	EventID string `json:"event_id"`
+}
+
+type statusIncidentPublishAuditSnapshot struct {
+	Incident     model.StatusIncident                    `json:"incident"`
+	Update       *model.StatusIncidentUpdate             `json:"update"`
+	Destinations []statusIncidentPublishAuditDestination `json:"destinations"`
+}
+
+type statusMaintenanceAuditSnapshot struct {
+	Incident     *model.StatusIncident           `json:"incident"`
+	Draft        *model.StatusIncidentUpdate     `json:"draft"`
+	Associations []model.StatusIncidentComponent `json:"component_associations"`
 }
 
 func TestStatusIncidentAutomationCreatesAndUpdatesPrivateDraft(t *testing.T) {
@@ -78,6 +104,88 @@ func TestStatusIncidentAutomationCreatesAndUpdatesPrivateDraft(t *testing.T) {
 	var publishedCount int64
 	require.NoError(t, db.Model(&model.StatusIncidentUpdate{}).Where("published = ?", true).Count(&publishedCount).Error)
 	require.Zero(t, publishedCount)
+}
+
+func TestStatusIncidentAutomationRedactsCredentialsFromDraftAndAudit(t *testing.T) {
+	tests := []struct {
+		name     string
+		evidence string
+		secret   string
+	}{
+		{name: "authorization without space", evidence: "request failed Authorization:Bearer sentinel-auth-tight", secret: "sentinel-auth-tight"},
+		{name: "authorization with space", evidence: "request failed Authorization: Bearer sentinel-auth-spaced", secret: "sentinel-auth-spaced"},
+		{name: "secret colon", evidence: "request failed secret: sentinel-secret-colon", secret: "sentinel-secret-colon"},
+		{name: "token equals", evidence: "request failed token=sentinel-token-equals", secret: "sentinel-token-equals"},
+		{name: "api key header", evidence: "request failed x-api-key: sentinel-api-key", secret: "sentinel-api-key"},
+		{name: "access token", evidence: "request failed access_token=sentinel-access-token", secret: "sentinel-access-token"},
+		{name: "password", evidence: "request failed password: sentinel-password", secret: "sentinel-password"},
+		{name: "quoted fragment", evidence: `request failed "token=sentinel-quoted-fragment"`, secret: "sentinel-quoted-fragment"},
+		{name: "json object", evidence: `{"message":"request failed","token":"sentinel-json-object"}`, secret: "sentinel-json-object"},
+		{name: "nested json object", evidence: `{"message":"request failed","nested":{"Authorization":"Bearer sentinel-json-nested"}}`, secret: "sentinel-json-nested"},
+		{name: "json array", evidence: `[{"message":"request failed","x-api-key":"sentinel-json-array"}]`, secret: "sentinel-json-array"},
+		{name: "mixed case nested json key", evidence: `{"message":"request failed","nested":[{"PaSsWoRd":"sentinel-json-mixed-case"}]}`, secret: "sentinel-json-mixed-case"},
+		{name: "quoted sk token in json string", evidence: `{"message":"request failed sk-sentinel-json-string"}`, secret: "sk-sentinel-json-string"},
+		{name: "quoted sk token", evidence: `request failed "sk-sentinel-quoted-key"`, secret: "sk-sentinel-quoted-key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupStatusServiceTestDB(t)
+			component := createStatusIncidentTestComponent(t, model.StatusOperational)
+			result, err := ReconcileStatusIncidentAutomation(StatusIncidentAutomationInput{
+				ComponentID:            component.ID,
+				PreviousObservedStatus: model.StatusOperational,
+				ObservedStatus:         model.StatusOutage,
+				EvidenceSummary:        tt.evidence,
+				IdempotencyKey:         "credential-redaction-" + common.GetUUID(),
+				Now:                    2_500,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, result.Draft)
+			require.NotContains(t, result.Draft.Body, tt.secret)
+			require.Contains(t, result.Draft.Body, "request failed")
+
+			var audit model.StatusAuditEvent
+			require.NoError(t, db.Where("action = ?", "status.incident.draft.auto").First(&audit).Error)
+			require.NotContains(t, audit.AfterJSON, tt.secret)
+			require.Contains(t, audit.AfterJSON, "request failed")
+		})
+	}
+}
+
+func TestStatusIncidentEvidenceSanitizerPreservesUTF8WithinByteLimit(t *testing.T) {
+	sanitized := sanitizeStatusEvidence(strings.Repeat("a", 999) + "界")
+	require.LessOrEqual(t, len(sanitized), 1_000)
+	require.True(t, utf8.ValidString(sanitized), "sanitization must not split a multibyte rune")
+}
+
+func TestStatusIncidentAutomationAuditCapturesCompleteAggregate(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusOperational)
+	result, err := ReconcileStatusIncidentAutomation(StatusIncidentAutomationInput{
+		ComponentID: component.ID, PreviousObservedStatus: model.StatusOperational, ObservedStatus: model.StatusDegraded,
+		EvidenceSummary: "request failed safely", IdempotencyKey: "automation-audit-aggregate", Now: 2_600,
+	})
+	require.NoError(t, err)
+
+	var audit model.StatusAuditEvent
+	require.NoError(t, db.Where("action = ?", "status.incident.draft.auto").First(&audit).Error)
+	require.NotEqual(t, "null", audit.BeforeJSON)
+	var before statusIncidentDraftAuditSnapshot
+	var after statusIncidentDraftAuditSnapshot
+	require.NoError(t, common.Unmarshal([]byte(audit.BeforeJSON), &before))
+	require.NoError(t, common.Unmarshal([]byte(audit.AfterJSON), &after))
+	require.Nil(t, before.Incident)
+	require.Nil(t, before.Draft)
+	require.Nil(t, before.Association)
+	require.NotNil(t, after.Incident)
+	require.NotNil(t, after.Draft)
+	require.NotNil(t, after.Association)
+	require.Equal(t, result.Incident.ID, after.Incident.ID)
+	require.Equal(t, result.Draft.ID, after.Draft.ID)
+	require.NotZero(t, after.Association.ID)
+	require.Equal(t, result.Incident.ID, after.Association.IncidentID)
+	require.Equal(t, component.ID, after.Association.ComponentID)
 }
 
 func TestStatusIncidentAutomationIgnoresNonTransitions(t *testing.T) {
@@ -227,6 +335,46 @@ func TestStatusIncidentPublishAppendsUpdatesAndIdempotentDeliveries(t *testing.T
 	require.EqualValues(t, 3, second.Incident.Version)
 }
 
+func TestStatusIncidentPublishAuditCapturesUpdateAndSafeDestinations(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusOperational)
+	created, err := ReconcileStatusIncidentAutomation(StatusIncidentAutomationInput{
+		ComponentID: component.ID, PreviousObservedStatus: model.StatusOperational, ObservedStatus: model.StatusDegraded,
+		EvidenceSummary: "degraded traffic", IdempotencyKey: "publish-audit-aggregate", Now: 4_500,
+	})
+	require.NoError(t, err)
+
+	published, err := PublishStatusIncidentUpdate(StatusIncidentPublishInput{
+		IncidentID: created.Incident.ID, ExpectedVersion: created.Incident.Version, State: "monitoring",
+		Body: "Public evidence only.", EventID: "publish-audit-event",
+		Destinations: []StatusDeliveryDestination{{Type: model.StatusDestinationWebhook, ID: 41}, {Type: model.StatusDestinationEmail, ID: 42}},
+		Actor:        statusAdminActor(), Reason: "publish safe update", Now: 4_510,
+	})
+	require.NoError(t, err)
+
+	var audit model.StatusAuditEvent
+	require.NoError(t, db.Where("action = ?", "status.incident.publish").First(&audit).Error)
+	var before statusIncidentPublishAuditSnapshot
+	var after statusIncidentPublishAuditSnapshot
+	require.NoError(t, common.Unmarshal([]byte(audit.BeforeJSON), &before))
+	require.NoError(t, common.Unmarshal([]byte(audit.AfterJSON), &after))
+	require.Equal(t, "draft", before.Incident.Status)
+	require.Nil(t, before.Update)
+	require.Empty(t, before.Destinations)
+	require.Equal(t, published.Incident.ID, after.Incident.ID)
+	require.NotNil(t, after.Update)
+	require.Equal(t, published.Update.ID, after.Update.ID)
+	require.Equal(t, "monitoring", after.Update.State)
+	require.Equal(t, "Public evidence only.", after.Update.Body)
+	require.Equal(t, "publish-audit-event", after.Update.EventID)
+	require.Len(t, after.Destinations, 2)
+	require.ElementsMatch(t, []statusIncidentPublishAuditDestination{
+		{Type: model.StatusDestinationWebhook, ID: 41, EventID: statusDeliveryEventID("publish-audit-event", model.StatusDestinationWebhook, 41)},
+		{Type: model.StatusDestinationEmail, ID: 42, EventID: statusDeliveryEventID("publish-audit-event", model.StatusDestinationEmail, 42)},
+	}, after.Destinations)
+	require.NotContains(t, strings.ToLower(audit.AfterJSON), "payload")
+}
+
 func TestStatusIncidentPublishRollsBackWhenDeliveryInsertFails(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	component := createStatusIncidentTestComponent(t, model.StatusOperational)
@@ -365,6 +513,127 @@ func TestStatusMaintenancePublicationAuthorizesStartAndEndFallback(t *testing.T)
 		First(&fallback).Error)
 	require.Equal(t, "private", fallback.Visibility)
 	require.Equal(t, "draft", fallback.Status)
+}
+
+func TestStatusMaintenanceRejectsOverlappingComponentsBeforeCreatingRecords(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	firstComponent := createStatusIncidentTestComponent(t, model.StatusOperational)
+	secondComponent := createStatusIncidentTestComponent(t, model.StatusOperational)
+
+	first, err := CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "First maintenance", Body: "First planned window.", IdempotencyKey: "maintenance-overlap-first",
+		ComponentIDs:     []int64{secondComponent.ID, firstComponent.ID, secondComponent.ID},
+		ScheduledStartAt: 15_100, ScheduledEndAt: 15_200,
+		Actor: statusAdminActor(), Reason: "first planned work", Now: 15_000,
+	})
+	require.NoError(t, err)
+
+	var associations []model.StatusIncidentComponent
+	require.NoError(t, db.Where("incident_id = ?", first.ID).Order("id ASC").Find(&associations).Error)
+	require.Len(t, associations, 2)
+	require.Equal(t, []int64{firstComponent.ID, secondComponent.ID}, []int64{associations[0].ComponentID, associations[1].ComponentID})
+
+	_, err = CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "Overlapping maintenance", Body: "This must be rejected.", IdempotencyKey: "maintenance-overlap-second",
+		ComponentIDs: []int64{firstComponent.ID}, ScheduledStartAt: 15_150, ScheduledEndAt: 15_250,
+		Actor: statusAdminActor(), Reason: "overlapping planned work", Now: 15_010,
+	})
+	require.True(t, errors.Is(err, ErrStatusMaintenanceOverlap))
+
+	var incidentCount, draftCount, associationCount, auditCount int64
+	require.NoError(t, db.Model(&model.StatusIncident{}).Count(&incidentCount).Error)
+	require.NoError(t, db.Model(&model.StatusIncidentUpdate{}).Count(&draftCount).Error)
+	require.NoError(t, db.Model(&model.StatusIncidentComponent{}).Count(&associationCount).Error)
+	require.NoError(t, db.Model(&model.StatusAuditEvent{}).Count(&auditCount).Error)
+	require.EqualValues(t, 1, incidentCount)
+	require.EqualValues(t, 1, draftCount)
+	require.EqualValues(t, 2, associationCount)
+	require.EqualValues(t, 1, auditCount)
+
+	adjacent, err := CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "Adjacent maintenance", Body: "A non-overlapping boundary is allowed.", IdempotencyKey: "maintenance-overlap-adjacent",
+		ComponentIDs: []int64{firstComponent.ID}, ScheduledStartAt: 15_200, ScheduledEndAt: 15_300,
+		Actor: statusAdminActor(), Reason: "adjacent planned work", Now: 15_020,
+	})
+	require.NoError(t, err)
+	require.NotZero(t, adjacent.ID)
+}
+
+func TestStatusMaintenanceProgressPublishPreservesActiveTransition(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusOperational)
+	maintenance, err := CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "Progress maintenance", Body: "Planned work.", IdempotencyKey: "maintenance-progress",
+		ComponentIDs: []int64{component.ID}, ScheduledStartAt: 16_100, ScheduledEndAt: 16_300,
+		Actor: statusAdminActor(), Reason: "planned work", Now: 16_000,
+	})
+	require.NoError(t, err)
+	published, err := PublishStatusIncidentUpdate(StatusIncidentPublishInput{
+		IncidentID: maintenance.ID, ExpectedVersion: maintenance.Version, State: "identified",
+		Body: "Work is scheduled.", EventID: "maintenance-progress-initial", Actor: statusAdminActor(),
+		Reason: "publish maintenance", Now: 16_050,
+	})
+	require.NoError(t, err)
+	started, err := ReconcileStatusMaintenance(StatusMaintenanceTransitionInput{
+		IncidentID: maintenance.ID, ExpectedVersion: published.Incident.Version, Now: 16_100,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "monitoring", started.Status)
+	require.EqualValues(t, 16_100, started.StartedAt)
+
+	progress, err := PublishStatusIncidentUpdate(StatusIncidentPublishInput{
+		IncidentID: maintenance.ID, ExpectedVersion: started.Version, State: "monitoring",
+		Body: "Work is progressing normally.", EventID: "maintenance-progress-update", Actor: statusAdminActor(),
+		Reason: "publish progress", Now: 16_150,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "monitoring", progress.Incident.Status)
+	require.Equal(t, started.StartedAt, progress.Incident.StartedAt)
+
+	reconciled, err := ReconcileStatusMaintenance(StatusMaintenanceTransitionInput{
+		IncidentID: maintenance.ID, ExpectedVersion: progress.Incident.Version, Now: 16_160,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "monitoring", reconciled.Status)
+	require.Equal(t, progress.Incident.Version, reconciled.Version)
+
+	var startAuditCount, componentStartAuditCount int64
+	require.NoError(t, db.Model(&model.StatusAuditEvent{}).Where("action = ?", "status.maintenance.start").Count(&startAuditCount).Error)
+	require.NoError(t, db.Model(&model.StatusAuditEvent{}).Where("action = ?", "status.maintenance.component.start").Count(&componentStartAuditCount).Error)
+	require.EqualValues(t, 1, startAuditCount)
+	require.EqualValues(t, 1, componentStartAuditCount)
+}
+
+func TestStatusMaintenanceAuditCapturesDraftAndAssociations(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	firstComponent := createStatusIncidentTestComponent(t, model.StatusOperational)
+	secondComponent := createStatusIncidentTestComponent(t, model.StatusOperational)
+	maintenance, err := CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "Audited maintenance", Body: "Audited planned work.", IdempotencyKey: "maintenance-audit-aggregate",
+		ComponentIDs:     []int64{secondComponent.ID, firstComponent.ID, secondComponent.ID},
+		ScheduledStartAt: 17_100, ScheduledEndAt: 17_200,
+		Actor: statusAdminActor(), Reason: "audit planned work", Now: 17_000,
+	})
+	require.NoError(t, err)
+
+	var audit model.StatusAuditEvent
+	require.NoError(t, db.Where("action = ?", "status.maintenance.create").First(&audit).Error)
+	require.NotEqual(t, "null", audit.BeforeJSON)
+	var before statusMaintenanceAuditSnapshot
+	var after statusMaintenanceAuditSnapshot
+	require.NoError(t, common.Unmarshal([]byte(audit.BeforeJSON), &before))
+	require.NoError(t, common.Unmarshal([]byte(audit.AfterJSON), &after))
+	require.Nil(t, before.Incident)
+	require.Nil(t, before.Draft)
+	require.Empty(t, before.Associations)
+	require.NotNil(t, after.Incident)
+	require.NotNil(t, after.Draft)
+	require.Equal(t, maintenance.ID, after.Incident.ID)
+	require.Equal(t, maintenance.ID, after.Draft.IncidentID)
+	require.Len(t, after.Associations, 2)
+	require.NotZero(t, after.Associations[0].ID)
+	require.NotZero(t, after.Associations[1].ID)
+	require.Equal(t, []int64{firstComponent.ID, secondComponent.ID}, []int64{after.Associations[0].ComponentID, after.Associations[1].ComponentID})
 }
 
 func TestStatusMaintenanceMissedWindowDoesNotFabricateStartTimestamp(t *testing.T) {

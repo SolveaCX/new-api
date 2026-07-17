@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,6 +14,7 @@ import (
 var (
 	ErrStatusVersionConflict         = errors.New("status object version conflict")
 	ErrStatusMaintenanceNotPublished = errors.New("status maintenance is not published")
+	ErrStatusMaintenanceOverlap      = errors.New("status maintenance overlaps an existing window")
 )
 
 type StatusAuditMutation struct {
@@ -34,6 +36,12 @@ type StatusDeliveryDestinationMutation struct {
 	Type    string
 	ID      int64
 	EventID string
+}
+
+type statusDeliveryAuditDestination struct {
+	Type    string `json:"type"`
+	ID      int64  `json:"id"`
+	EventID string `json:"event_id"`
 }
 
 type StatusIncidentPublishMutation struct {
@@ -328,7 +336,11 @@ func PublishStatusIncidentUpdate(input StatusIncidentPublishMutation) (StatusInc
 
 		nextStatus := input.Update.State
 		if before.Kind == StatusIncidentKindMaintenance && input.Update.State != "resolved" {
-			nextStatus = "scheduled"
+			if before.Visibility == "public" {
+				nextStatus = before.Status
+			} else {
+				nextStatus = "scheduled"
+			}
 		}
 		updates := map[string]any{
 			"status":     nextStatus,
@@ -369,6 +381,7 @@ func PublishStatusIncidentUpdate(input StatusIncidentPublishMutation) (StatusInc
 		if err != nil {
 			return err
 		}
+		auditDestinations := make([]statusDeliveryAuditDestination, 0, len(input.Destinations))
 		for _, destination := range input.Destinations {
 			outbox := StatusDeliveryOutbox{
 				PublishedUpdateID: update.ID,
@@ -385,12 +398,25 @@ func PublishStatusIncidentUpdate(input StatusIncidentPublishMutation) (StatusInc
 			if err := tx.Create(&outbox).Error; err != nil {
 				return err
 			}
+			auditDestinations = append(auditDestinations, statusDeliveryAuditDestination{
+				Type: destination.Type, ID: destination.ID, EventID: destination.EventID,
+			})
 		}
 
 		if err := tx.First(&incident, input.IncidentID).Error; err != nil {
 			return err
 		}
-		return createStatusAuditEvent(tx, input.Audit, "incident", strconv.FormatInt(input.IncidentID, 10), before, incident)
+		beforeSnapshot := struct {
+			Incident     StatusIncident                   `json:"incident"`
+			Update       *StatusIncidentUpdate            `json:"update"`
+			Destinations []statusDeliveryAuditDestination `json:"destinations"`
+		}{Incident: before, Destinations: []statusDeliveryAuditDestination{}}
+		afterSnapshot := struct {
+			Incident     StatusIncident                   `json:"incident"`
+			Update       StatusIncidentUpdate             `json:"update"`
+			Destinations []statusDeliveryAuditDestination `json:"destinations"`
+		}{Incident: incident, Update: update, Destinations: auditDestinations}
+		return createStatusAuditEvent(tx, input.Audit, "incident", strconv.FormatInt(input.IncidentID, 10), beforeSnapshot, afterSnapshot)
 	})
 	return incident, update, err
 }
@@ -403,31 +429,70 @@ func CreateStatusMaintenanceDraft(input StatusMaintenanceDraftMutation) (StatusI
 		return StatusIncident{}, errors.New("invalid status maintenance draft")
 	}
 
+	componentIDs := append([]int64(nil), input.ComponentIDs...)
+	sort.Slice(componentIDs, func(i, j int) bool { return componentIDs[i] < componentIDs[j] })
+	deduplicated := componentIDs[:0]
+	for _, componentID := range componentIDs {
+		if len(deduplicated) == 0 || deduplicated[len(deduplicated)-1] != componentID {
+			deduplicated = append(deduplicated, componentID)
+		}
+	}
+	componentIDs = deduplicated
+
 	incident := input.Incident
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		var components []StatusComponent
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id IN ?", componentIDs).Order("id ASC").Find(&components).Error; err != nil {
+			return err
+		}
+		if len(components) != len(componentIDs) {
+			return gorm.ErrRecordNotFound
+		}
+
+		var overlapping StatusIncident
+		overlapResult := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Model(&StatusIncident{}).
+			Select("status_incidents.*").
+			Joins("JOIN status_incident_components ON status_incident_components.incident_id = status_incidents.id").
+			Where("status_incident_components.component_id IN ?", componentIDs).
+			Where("status_incidents.kind = ? AND status_incidents.status <> ?", StatusIncidentKindMaintenance, "resolved").
+			Where("status_incidents.scheduled_start_at < ? AND status_incidents.scheduled_end_at > ?", incident.ScheduledEndAt, incident.ScheduledStartAt).
+			Order("status_incidents.id ASC").Limit(1).Find(&overlapping)
+		if overlapResult.Error != nil {
+			return overlapResult.Error
+		}
+		if overlapResult.RowsAffected > 0 {
+			return ErrStatusMaintenanceOverlap
+		}
+
 		if err := tx.Create(&incident).Error; err != nil {
 			return err
 		}
-		seen := make(map[int64]struct{}, len(input.ComponentIDs))
-		for _, componentID := range input.ComponentIDs {
-			if _, ok := seen[componentID]; ok {
-				continue
-			}
-			seen[componentID] = struct{}{}
-			var component StatusComponent
-			if err := tx.First(&component, componentID).Error; err != nil {
+		associations := make([]StatusIncidentComponent, 0, len(componentIDs))
+		for _, componentID := range componentIDs {
+			association := StatusIncidentComponent{IncidentID: incident.ID, ComponentID: componentID}
+			if err := tx.Create(&association).Error; err != nil {
 				return err
 			}
-			if err := tx.Create(&StatusIncidentComponent{IncidentID: incident.ID, ComponentID: componentID}).Error; err != nil {
-				return err
-			}
+			associations = append(associations, association)
 		}
 		draft := input.Draft
 		draft.IncidentID = incident.ID
 		if err := tx.Create(&draft).Error; err != nil {
 			return err
 		}
-		return createStatusAuditEvent(tx, input.Audit, "maintenance", strconv.FormatInt(incident.ID, 10), nil, incident)
+		beforeSnapshot := struct {
+			Incident     *StatusIncident           `json:"incident"`
+			Draft        *StatusIncidentUpdate     `json:"draft"`
+			Associations []StatusIncidentComponent `json:"component_associations"`
+		}{Associations: []StatusIncidentComponent{}}
+		afterSnapshot := struct {
+			Incident     StatusIncident            `json:"incident"`
+			Draft        StatusIncidentUpdate      `json:"draft"`
+			Associations []StatusIncidentComponent `json:"component_associations"`
+		}{Incident: incident, Draft: draft, Associations: associations}
+		return createStatusAuditEvent(tx, input.Audit, "maintenance", strconv.FormatInt(incident.ID, 10), beforeSnapshot, afterSnapshot)
 	})
 	return incident, err
 }
@@ -800,9 +865,22 @@ func upsertStatusIncidentDraftTx(tx *gorm.DB, input StatusIncidentDraftMutation)
 		}
 	}
 
-	association := StatusIncidentComponent{IncidentID: incident.ID, ComponentID: input.ComponentID}
-	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&association).Error; err != nil {
+	var association StatusIncidentComponent
+	var beforeAssociation *StatusIncidentComponent
+	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("incident_id = ? AND component_id = ?", incident.ID, input.ComponentID).
+		First(&association).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		association = StatusIncidentComponent{IncidentID: incident.ID, ComponentID: input.ComponentID}
+		if err := tx.Create(&association).Error; err != nil {
+			return StatusIncident{}, StatusIncidentUpdate{}, err
+		}
+	case err != nil:
 		return StatusIncident{}, StatusIncidentUpdate{}, err
+	default:
+		copyBefore := association
+		beforeAssociation = &copyBefore
 	}
 
 	var draft StatusIncidentUpdate
@@ -835,13 +913,15 @@ func upsertStatusIncidentDraftTx(tx *gorm.DB, input StatusIncidentDraftMutation)
 	}
 
 	before := struct {
-		Incident *StatusIncident       `json:"incident"`
-		Draft    *StatusIncidentUpdate `json:"draft"`
-	}{Incident: beforeIncident, Draft: beforeDraft}
+		Incident    *StatusIncident          `json:"incident"`
+		Draft       *StatusIncidentUpdate    `json:"draft"`
+		Association *StatusIncidentComponent `json:"component_association"`
+	}{Incident: beforeIncident, Draft: beforeDraft, Association: beforeAssociation}
 	after := struct {
-		Incident StatusIncident       `json:"incident"`
-		Draft    StatusIncidentUpdate `json:"draft"`
-	}{Incident: incident, Draft: draft}
+		Incident    StatusIncident          `json:"incident"`
+		Draft       StatusIncidentUpdate    `json:"draft"`
+		Association StatusIncidentComponent `json:"component_association"`
+	}{Incident: incident, Draft: draft, Association: association}
 	if err := createStatusAuditEvent(tx, input.Audit, "incident", strconv.FormatInt(incident.ID, 10), before, after); err != nil {
 		return StatusIncident{}, StatusIncidentUpdate{}, err
 	}
