@@ -26,11 +26,14 @@ const (
 	statusDeliveryMaxRetrySeconds                  = int64(6 * 60 * 60)
 	statusDeliveryPermanentFailureSuspendThreshold = int64(3)
 	statusDeliveryDiscordDestinationID             = int64(1)
+	statusDiscordTestMaxPayloadBytes               = 512
 
 	StatusDeliveryResultDelivered = "delivered"
 	StatusDeliveryResultPermanent = "permanent"
 	StatusDeliveryResultRetry     = "retry"
 )
+
+var ErrStatusDiscordTestDeliveryFailed = errors.New("status Discord test delivery failed")
 
 type StatusEmailSender interface {
 	SendEmail(subject string, receiver string, content string) error
@@ -54,6 +57,11 @@ type StatusSubscriptionResponse struct {
 type StatusUnsubscribePreview struct {
 	Message        string `json:"message"`
 	CanUnsubscribe bool   `json:"can_unsubscribe"`
+}
+
+type StatusDiscordTestResult struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }
 
 type StatusDeliveryWorker struct {
@@ -224,7 +232,52 @@ func StatusDiscordEndpoint(keyring *StatusSecretKeyring) (string, error) {
 	return keyring.Decrypt(setting.Value)
 }
 
+func SendStatusDiscordTest(ctx context.Context, actor StatusMutationActor, keyring *StatusSecretKeyring, sender StatusWebhookSender, now int64) (StatusDiscordTestResult, error) {
+	actor, err := requireStatusAdmin(actor)
+	if err != nil {
+		return StatusDiscordTestResult{}, err
+	}
+	if actor.Role < common.RoleRootUser {
+		return StatusDiscordTestResult{}, ErrStatusRootRequired
+	}
+	if !actor.SecureVerified {
+		return StatusDiscordTestResult{}, ErrStatusSecureVerificationRequired
+	}
+	if keyring == nil || !keyring.Enabled() {
+		return StatusDiscordTestResult{}, ErrStatusSecretKeyringDisabled
+	}
+	if sender == nil || now <= 0 {
+		return StatusDiscordTestResult{}, errors.New("status Discord test sender is not configured")
+	}
+	endpoint, err := StatusDiscordEndpoint(keyring)
+	if err != nil {
+		return StatusDiscordTestResult{}, err
+	}
+	body, err := common.Marshal(struct {
+		Content string `json:"content"`
+	}{Content: "NewAPI status notification test"})
+	if err != nil {
+		return StatusDiscordTestResult{}, err
+	}
+	if len(body) > statusDiscordTestMaxPayloadBytes {
+		return StatusDiscordTestResult{}, errors.New("status Discord test payload is too large")
+	}
+	response, err := sender.Send(ctx, StatusWebhookRequest{
+		Endpoint: endpoint, EventID: "status.discord.test", Timestamp: now, Body: body,
+	})
+	if err != nil {
+		return StatusDiscordTestResult{Message: "Discord test delivery failed."}, fmt.Errorf("%w: transport failure", ErrStatusDiscordTestDeliveryFailed)
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return StatusDiscordTestResult{Message: "Discord test delivery failed."}, fmt.Errorf("%w: HTTP %d", ErrStatusDiscordTestDeliveryFailed, response.StatusCode)
+	}
+	return StatusDiscordTestResult{Success: true, Message: "Discord test delivery succeeded."}, nil
+}
+
 func ClassifyStatusDeliveryResult(statusCode int, deliveryErr error) string {
+	if statusCode >= http.StatusBadRequest && statusCode < http.StatusInternalServerError && statusCode != http.StatusTooManyRequests {
+		return StatusDeliveryResultPermanent
+	}
 	if deliveryErr != nil {
 		return StatusDeliveryResultRetry
 	}
@@ -234,7 +287,7 @@ func ClassifyStatusDeliveryResult(statusCode int, deliveryErr error) string {
 	if statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError || statusCode <= 0 {
 		return StatusDeliveryResultRetry
 	}
-	if statusCode >= http.StatusMultipleChoices && statusCode < http.StatusInternalServerError {
+	if statusCode >= http.StatusMultipleChoices && statusCode < http.StatusBadRequest {
 		return StatusDeliveryResultPermanent
 	}
 	return StatusDeliveryResultRetry
@@ -311,9 +364,19 @@ func (worker StatusDeliveryWorker) RunOnce(ctx context.Context, workerID string,
 			}
 			continue
 		}
-		if delivery.DestinationType == model.StatusDestinationEmail || delivery.DestinationType == model.StatusDestinationWebhook {
+		switch delivery.DestinationType {
+		case model.StatusDestinationEmail, model.StatusDestinationWebhook:
 			if recordErr := model.RecordStatusSubscriberDeliveryResult(
 				delivery.DestinationID,
+				classification == StatusDeliveryResultDelivered,
+				classification == StatusDeliveryResultPermanent,
+				statusDeliveryPermanentFailureSuspendThreshold,
+				now,
+			); recordErr != nil && firstPersistenceError == nil {
+				firstPersistenceError = recordErr
+			}
+		case model.StatusDestinationDiscord:
+			if _, recordErr := model.RecordStatusDiscordDeliveryResult(
 				classification == StatusDeliveryResultDelivered,
 				classification == StatusDeliveryResultPermanent,
 				statusDeliveryPermanentFailureSuspendThreshold,
@@ -380,6 +443,16 @@ func (worker StatusDeliveryWorker) deliver(ctx context.Context, delivery model.S
 		})
 		return response.StatusCode, err
 	case model.StatusDestinationDiscord:
+		if delivery.DestinationID != statusDeliveryDiscordDestinationID {
+			return http.StatusUnprocessableEntity, errors.New("unsupported status Discord destination")
+		}
+		state, err := model.GetStatusDiscordDeliveryState()
+		if err != nil {
+			return 0, err
+		}
+		if state.SuspendedAt > 0 {
+			return http.StatusGone, errors.New("status Discord destination is suspended")
+		}
 		if worker.Webhook == nil {
 			return 0, errors.New("status webhook sender is not configured")
 		}

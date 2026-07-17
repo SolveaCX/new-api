@@ -62,6 +62,7 @@ var statusWebhookDeniedPrefixes = mustStatusWebhookPrefixes(
 	"2001:db8::/32",
 	"2002::/16",
 	"fc00::/7",
+	"fec0::/10",
 	"fe80::/10",
 	"ff00::/8",
 )

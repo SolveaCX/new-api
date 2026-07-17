@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestStatusDeliveryTaskStartsOnlyWhenNotificationsAreEnabled(t *testing.T) {
@@ -210,6 +212,82 @@ func TestStatusSubscriptionDiscordEndpointIsEncryptedAndUsesOneGlobalSetting(t *
 	require.Equal(t, "https://discord.com/api/webhooks/2/token", endpoint)
 }
 
+func TestStatusSubscriptionDiscordTestDeliveryRequiresVerifiedRootAndConfiguration(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	keyring := statusSecretTestKeyring(t)
+	sender := &statusDeliveryWebhookRecorder{}
+
+	_, err := SendStatusDiscordTest(context.Background(), statusAdminActor(), keyring, sender, 65_000)
+	require.ErrorIs(t, err, ErrStatusRootRequired)
+	_, err = SendStatusDiscordTest(context.Background(), statusRootActor(false), keyring, sender, 65_000)
+	require.ErrorIs(t, err, ErrStatusSecureVerificationRequired)
+
+	disabled, err := ParseStatusSecretKeyring("", "")
+	require.NoError(t, err)
+	_, err = SendStatusDiscordTest(context.Background(), statusRootActor(true), disabled, sender, 65_000)
+	require.ErrorIs(t, err, ErrStatusSecretKeyringDisabled)
+	_, err = SendStatusDiscordTest(context.Background(), statusRootActor(true), keyring, nil, 65_000)
+	require.ErrorContains(t, err, "sender is not configured")
+	_, err = SendStatusDiscordTest(context.Background(), statusRootActor(true), keyring, sender, 65_000)
+	require.ErrorContains(t, err, "not configured")
+	require.Empty(t, sender.requests)
+}
+
+func TestStatusSubscriptionDiscordTestDeliveryUsesConfiguredSafeSenderWithoutReturningEndpoint(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	keyring := statusSecretTestKeyring(t)
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/1/token", keyring, 66_000)
+	require.NoError(t, err)
+	sender := &statusDeliveryWebhookRecorder{}
+
+	result, err := SendStatusDiscordTest(context.Background(), statusRootActor(true), keyring, sender, 66_001)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	require.Equal(t, "Discord test delivery succeeded.", result.Message)
+	require.Len(t, sender.requests, 1)
+	require.Equal(t, "https://discord.com/api/webhooks/1/token", sender.requests[0].Endpoint)
+	require.Equal(t, "status.discord.test", sender.requests[0].EventID)
+	require.LessOrEqual(t, len(sender.requests[0].Body), statusDiscordTestMaxPayloadBytes)
+	encoded, err := common.Marshal(result)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "discord.com")
+}
+
+func TestStatusSubscriptionDiscordTestDeliveryReportsNonSuccessAndTransportFailure(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	keyring := statusSecretTestKeyring(t)
+	endpoint := "https://discord.com/api/webhooks/1/token"
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, keyring, 67_000)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		sender *statusDeliveryWebhookRecorder
+	}{
+		{
+			name: "non 2xx",
+			sender: &statusDeliveryWebhookRecorder{results: map[string]StatusWebhookResponse{
+				endpoint: {StatusCode: http.StatusBadGateway},
+			}},
+		},
+		{
+			name: "transport error",
+			sender: &statusDeliveryWebhookRecorder{errors: map[string]error{
+				endpoint: context.DeadlineExceeded,
+			}},
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			result, err := SendStatusDiscordTest(context.Background(), statusRootActor(true), keyring, testCase.sender, 67_001)
+			require.ErrorIs(t, err, ErrStatusDiscordTestDeliveryFailed)
+			require.False(t, result.Success)
+			require.Contains(t, result.Message, "failed")
+			require.NotContains(t, err.Error(), endpoint)
+		})
+	}
+}
+
 func TestStatusDeliveryPortableClaimUsesCASAndExpiredLeaseCanBeReclaimed(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	outbox := model.StatusDeliveryOutbox{
@@ -238,7 +316,11 @@ func TestStatusDeliveryPortableClaimUsesCASAndExpiredLeaseCanBeReclaimed(t *test
 func TestStatusDeliveryClassifiesResultsAndBackoffWithJitter(t *testing.T) {
 	require.Equal(t, StatusDeliveryResultDelivered, ClassifyStatusDeliveryResult(http.StatusNoContent, nil))
 	require.Equal(t, StatusDeliveryResultPermanent, ClassifyStatusDeliveryResult(http.StatusBadRequest, nil))
+	require.Equal(t, StatusDeliveryResultPermanent, ClassifyStatusDeliveryResult(http.StatusNotFound, gorm.ErrRecordNotFound))
+	require.Equal(t, StatusDeliveryResultPermanent, ClassifyStatusDeliveryResult(http.StatusUnprocessableEntity, errors.New("invalid immutable payload")))
+	require.Equal(t, StatusDeliveryResultRetry, ClassifyStatusDeliveryResult(http.StatusTemporaryRedirect, errors.New("redirect blocked")))
 	require.Equal(t, StatusDeliveryResultRetry, ClassifyStatusDeliveryResult(http.StatusTooManyRequests, nil))
+	require.Equal(t, StatusDeliveryResultRetry, ClassifyStatusDeliveryResult(http.StatusTooManyRequests, errors.New("rate limited")))
 	require.Equal(t, StatusDeliveryResultRetry, ClassifyStatusDeliveryResult(http.StatusServiceUnavailable, nil))
 	require.Equal(t, StatusDeliveryResultRetry, ClassifyStatusDeliveryResult(0, context.DeadlineExceeded))
 	require.Equal(t, StatusDeliveryResultRetry, ClassifyStatusDeliveryResult(0, errors.New("network unavailable")))
@@ -248,6 +330,83 @@ func TestStatusDeliveryClassifiesResultsAndBackoffWithJitter(t *testing.T) {
 		return 7
 	}))
 	require.EqualValues(t, statusDeliveryMaxRetrySeconds, StatusDeliveryRetryDelay(99, func(int64) int64 { return statusDeliveryMaxRetrySeconds }))
+}
+
+func TestStatusDeliveryInternalPermanentFailuresAreDeadWithoutRetry(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*testing.T, *gorm.DB) (model.StatusDeliveryOutbox, StatusDeliveryWorker)
+	}{
+		{
+			name: "missing subscriber",
+			setup: func(t *testing.T, db *gorm.DB) (model.StatusDeliveryOutbox, StatusDeliveryWorker) {
+				delivery := model.StatusDeliveryOutbox{
+					PublishedUpdateID: 201, DestinationType: model.StatusDestinationWebhook, DestinationID: 999,
+					EventID: "missing-subscriber", Payload: `{"body":"test"}`, Status: model.StatusDeliveryPending,
+					NextAttemptAt: 100_000, Version: 1, CreatedAt: 100_000, UpdatedAt: 100_000,
+				}
+				require.NoError(t, db.Create(&delivery).Error)
+				return delivery, StatusDeliveryWorker{Keyring: statusSecretTestKeyring(t), Webhook: &statusDeliveryWebhookRecorder{}}
+			},
+		},
+		{
+			name: "inactive subscriber",
+			setup: func(t *testing.T, db *gorm.DB) (model.StatusDeliveryOutbox, StatusDeliveryWorker) {
+				subscriber := model.StatusSubscriber{Kind: model.StatusSubscriberKindEmail, IdentityHash: "inactive", DisplayAddress: "inactive@example.com", Status: model.StatusSubscriberPending}
+				require.NoError(t, db.Create(&subscriber).Error)
+				delivery := model.StatusDeliveryOutbox{
+					PublishedUpdateID: 202, DestinationType: model.StatusDestinationEmail, DestinationID: subscriber.ID,
+					EventID: "inactive-subscriber", Payload: `{"body":"test"}`, Status: model.StatusDeliveryPending,
+					NextAttemptAt: 100_000, Version: 1, CreatedAt: 100_000, UpdatedAt: 100_000,
+				}
+				require.NoError(t, db.Create(&delivery).Error)
+				return delivery, StatusDeliveryWorker{Email: &statusEmailRecorder{}}
+			},
+		},
+		{
+			name: "malformed immutable payload",
+			setup: func(t *testing.T, db *gorm.DB) (model.StatusDeliveryOutbox, StatusDeliveryWorker) {
+				subscriber := model.StatusSubscriber{Kind: model.StatusSubscriberKindEmail, IdentityHash: "malformed", DisplayAddress: "malformed@example.com", Status: model.StatusSubscriberActive}
+				require.NoError(t, db.Create(&subscriber).Error)
+				delivery := model.StatusDeliveryOutbox{
+					PublishedUpdateID: 203, DestinationType: model.StatusDestinationEmail, DestinationID: subscriber.ID,
+					EventID: "malformed-payload", Payload: "{", Status: model.StatusDeliveryPending,
+					NextAttemptAt: 100_000, Version: 1, CreatedAt: 100_000, UpdatedAt: 100_000,
+				}
+				require.NoError(t, db.Create(&delivery).Error)
+				return delivery, StatusDeliveryWorker{Email: &statusEmailRecorder{}}
+			},
+		},
+		{
+			name: "unsupported destination",
+			setup: func(t *testing.T, db *gorm.DB) (model.StatusDeliveryOutbox, StatusDeliveryWorker) {
+				delivery := model.StatusDeliveryOutbox{
+					PublishedUpdateID: 204, DestinationType: "unsupported", DestinationID: 1,
+					EventID: "unsupported-destination", Payload: `{"body":"test"}`, Status: model.StatusDeliveryPending,
+					NextAttemptAt: 100_000, Version: 1, CreatedAt: 100_000, UpdatedAt: 100_000,
+				}
+				require.NoError(t, db.Create(&delivery).Error)
+				return delivery, StatusDeliveryWorker{}
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := setupStatusServiceTestDB(t)
+			delivery, worker := testCase.setup(t, db)
+			worker.Now = func() int64 { return 100_000 }
+			worker.Jitter = func(int64) int64 { return 0 }
+			processed, err := worker.RunOnce(context.Background(), "worker-internal", 1)
+			require.NoError(t, err)
+			require.Equal(t, 1, processed)
+			var stored model.StatusDeliveryOutbox
+			require.NoError(t, db.First(&stored, delivery.ID).Error)
+			require.Equal(t, model.StatusDeliveryDead, stored.Status)
+			require.Zero(t, stored.NextAttemptAt)
+			require.EqualValues(t, 1, stored.Attempts)
+		})
+	}
 }
 
 type statusDeliveryWebhookRecorder struct {
@@ -339,4 +498,132 @@ func TestStatusDeliveryPermanentFailuresBecomeDeadAndSuspendDestination(t *testi
 	require.NoError(t, db.First(&subscriber, subscriber.ID).Error)
 	require.Equal(t, model.StatusSubscriberSuspended, subscriber.Status)
 	require.Equal(t, statusDeliveryPermanentFailureSuspendThreshold, subscriber.FailureCount)
+}
+
+type statusDiscordDeliveryStateSnapshot struct {
+	FailureCount int64 `json:"failure_count"`
+	SuspendedAt  int64 `json:"suspended_at"`
+}
+
+func loadStatusDiscordDeliveryStateSnapshot(t *testing.T) (statusDiscordDeliveryStateSnapshot, model.StatusSetting) {
+	t.Helper()
+	setting, found, err := model.GetStatusSetting("status.discord.delivery_state")
+	require.NoError(t, err)
+	require.True(t, found)
+	var state statusDiscordDeliveryStateSnapshot
+	require.NoError(t, common.UnmarshalJsonStr(setting.Value, &state))
+	return state, setting
+}
+
+func createStatusDiscordDelivery(t *testing.T, db *gorm.DB, publishedUpdateID int64, eventID string, now int64) model.StatusDeliveryOutbox {
+	t.Helper()
+	delivery := model.StatusDeliveryOutbox{
+		PublishedUpdateID: publishedUpdateID, DestinationType: model.StatusDestinationDiscord,
+		DestinationID: statusDeliveryDiscordDestinationID, EventID: eventID,
+		Payload: `{"body":"Discord update","state":"degraded"}`, Status: model.StatusDeliveryPending,
+		NextAttemptAt: now, Version: 1, CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, db.Create(&delivery).Error)
+	return delivery
+}
+
+func TestStatusDeliveryDiscordPermanentFailuresPersistSuspendAndDoNotBlockOtherDestinations(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	keyring := statusSecretTestKeyring(t)
+	discordEndpoint := "https://discord.com/api/webhooks/health/token"
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), discordEndpoint, keyring, 110_000)
+	require.NoError(t, err)
+	permanentSender := &statusDeliveryWebhookRecorder{results: map[string]StatusWebhookResponse{
+		discordEndpoint: {StatusCode: http.StatusGone},
+	}}
+
+	for attempt := int64(1); attempt <= statusDeliveryPermanentFailureSuspendThreshold; attempt++ {
+		now := 110_000 + attempt
+		createStatusDiscordDelivery(t, db, 300+attempt, fmt.Sprintf("discord-permanent-%d", attempt), now)
+		worker := StatusDeliveryWorker{Keyring: keyring, Webhook: permanentSender, Now: func() int64 { return now }}
+		processed, err := worker.RunOnce(context.Background(), fmt.Sprintf("worker-node-%d", attempt), 1)
+		require.NoError(t, err)
+		require.Equal(t, 1, processed)
+
+		state, setting := loadStatusDiscordDeliveryStateSnapshot(t)
+		require.Equal(t, attempt, state.FailureCount)
+		require.False(t, setting.Sensitive)
+		require.NotContains(t, setting.Value, discordEndpoint)
+		if attempt < statusDeliveryPermanentFailureSuspendThreshold {
+			require.Zero(t, state.SuspendedAt)
+		} else {
+			require.Equal(t, now, state.SuspendedAt)
+		}
+	}
+
+	emailSubscriber := model.StatusSubscriber{
+		Kind: model.StatusSubscriberKindEmail, IdentityHash: "discord-independent-email",
+		DisplayAddress: "status@example.com", Status: model.StatusSubscriberActive,
+	}
+	require.NoError(t, db.Create(&emailSubscriber).Error)
+	webhookEndpoint, err := keyring.Encrypt("https://independent.example.com/hook")
+	require.NoError(t, err)
+	webhookSecret, err := keyring.Encrypt("independent-secret")
+	require.NoError(t, err)
+	webhookSubscriber := model.StatusSubscriber{
+		Kind: model.StatusSubscriberKindWebhook, IdentityHash: "discord-independent-webhook",
+		EncryptedEndpoint: webhookEndpoint, EncryptedSigningSecret: webhookSecret, Status: model.StatusSubscriberActive,
+	}
+	require.NoError(t, db.Create(&webhookSubscriber).Error)
+	now := int64(110_010)
+	discordDelivery := createStatusDiscordDelivery(t, db, 310, "discord-suspended", now)
+	rows := []model.StatusDeliveryOutbox{
+		{PublishedUpdateID: 311, DestinationType: model.StatusDestinationEmail, DestinationID: emailSubscriber.ID, EventID: "email-independent", Payload: `{"body":"Email update","state":"degraded"}`, Status: model.StatusDeliveryPending, NextAttemptAt: now, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{PublishedUpdateID: 312, DestinationType: model.StatusDestinationWebhook, DestinationID: webhookSubscriber.ID, EventID: "webhook-independent", Payload: `{"body":"Webhook update","state":"degraded"}`, Status: model.StatusDeliveryPending, NextAttemptAt: now, Version: 1, CreatedAt: now, UpdatedAt: now},
+	}
+	require.NoError(t, db.Create(&rows).Error)
+	successSender := &statusDeliveryWebhookRecorder{}
+	emailSender := &statusEmailRecorder{}
+	worker := StatusDeliveryWorker{Keyring: keyring, Webhook: successSender, Email: emailSender, Now: func() int64 { return now }}
+	processed, err := worker.RunOnce(context.Background(), "worker-independent", 10)
+	require.NoError(t, err)
+	require.Equal(t, 3, processed)
+	require.Len(t, successSender.requests, 1)
+	require.Equal(t, "https://independent.example.com/hook", successSender.requests[0].Endpoint)
+	require.Len(t, emailSender.messages, 1)
+
+	var storedDiscord model.StatusDeliveryOutbox
+	require.NoError(t, db.First(&storedDiscord, discordDelivery.ID).Error)
+	require.Equal(t, model.StatusDeliveryDead, storedDiscord.Status)
+	state, _ := loadStatusDiscordDeliveryStateSnapshot(t)
+	require.Equal(t, statusDeliveryPermanentFailureSuspendThreshold, state.FailureCount)
+	for _, delivery := range rows {
+		var stored model.StatusDeliveryOutbox
+		require.NoError(t, db.First(&stored, delivery.ID).Error)
+		require.Equal(t, model.StatusDeliveryDelivered, stored.Status)
+	}
+}
+
+func TestStatusDeliveryDiscordSuccessResetsPersistedFailureState(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	keyring := statusSecretTestKeyring(t)
+	endpoint := "https://discord.com/api/webhooks/reset/token"
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, keyring, 120_000)
+	require.NoError(t, err)
+
+	createStatusDiscordDelivery(t, db, 320, "discord-failure-before-success", 120_001)
+	failureWorker := StatusDeliveryWorker{
+		Keyring: keyring,
+		Webhook: &statusDeliveryWebhookRecorder{results: map[string]StatusWebhookResponse{endpoint: {StatusCode: http.StatusGone}}},
+		Now:     func() int64 { return 120_001 },
+	}
+	processed, err := failureWorker.RunOnce(context.Background(), "worker-failure", 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	state, _ := loadStatusDiscordDeliveryStateSnapshot(t)
+	require.EqualValues(t, 1, state.FailureCount)
+
+	createStatusDiscordDelivery(t, db, 321, "discord-success-reset", 120_002)
+	successWorker := StatusDeliveryWorker{Keyring: keyring, Webhook: &statusDeliveryWebhookRecorder{}, Now: func() int64 { return 120_002 }}
+	processed, err = successWorker.RunOnce(context.Background(), "worker-success", 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	state, _ = loadStatusDiscordDeliveryStateSnapshot(t)
+	require.Zero(t, state.FailureCount)
+	require.Zero(t, state.SuspendedAt)
 }
