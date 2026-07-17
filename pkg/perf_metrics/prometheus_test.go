@@ -23,6 +23,8 @@ func resetPerfMetricsStateForTest(t *testing.T) {
 	t.Helper()
 	hotBuckets = sync.Map{}
 	availabilityHotBuckets = sync.Map{}
+	statusAvailabilityEnabled.Store(true)
+	availabilityLastCleanupAt.Store(0)
 	prometheusPendingBuckets = sync.Map{}
 	prometheusChannelBuckets = sync.Map{}
 	prometheusChannelModelBuckets = sync.Map{}
@@ -57,6 +59,39 @@ func TestRecordRelaySampleCapturesSuccessfulModelLatencyAndTTFT(t *testing.T) {
 	require.EqualValues(t, 1, snapshot.ttftCount)
 	require.InDelta(t, 0.25, snapshot.ttftSumSeconds, 0.01)
 	require.Empty(t, snapshot.errors)
+}
+
+func TestRecordRelaySampleSeparatesPerfAndAvailabilityCollectionSwitches(t *testing.T) {
+	tests := []struct {
+		name             string
+		genericEnabled   bool
+		statusEnabled    bool
+		wantPerfBuckets  int
+		wantAvailability int
+		wantPrometheus   int
+	}{
+		{name: "all storage disabled", wantPerfBuckets: 0, wantAvailability: 0, wantPrometheus: 0},
+		{name: "status availability only", statusEnabled: true, wantAvailability: 1},
+		{name: "generic perf only", genericEnabled: true, wantPerfBuckets: 1, wantPrometheus: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetPerfMetricsStateForTest(t)
+			setGenericPerfMetricsEnabledForTest(t, tt.genericEnabled)
+			statusAvailabilityEnabled.Store(tt.statusEnabled)
+
+			RecordRelaySample(&relaycommon.RelayInfo{
+				OriginModelName: "gpt-5",
+				StartTime:       time.Now().Add(-time.Second),
+				ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 42},
+			}, true, 12, nil)
+
+			require.Equal(t, tt.wantPerfBuckets, syncMapEntryCount(&hotBuckets))
+			require.Equal(t, tt.wantAvailability, syncMapEntryCount(&availabilityHotBuckets))
+			require.Equal(t, tt.wantPrometheus, syncMapEntryCount(&prometheusModelPerformanceBuckets))
+		})
+	}
 }
 
 func TestRecordRelaySampleNormalizesAbnormalStreamOutcomes(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
@@ -45,12 +46,15 @@ var prometheusChannelDurationBucketsSeconds = []float64{
 const seriesSchema = "dbcd0a3c01b55203"
 
 func Init() {
+	statusAvailabilityEnabled.Store(common.GetEnvOrDefaultBool("STATUS_CENTER_ENABLED", false))
 	go flushLoop()
-	go flushAvailabilityLoop()
+	if statusAvailabilityEnabled.Load() {
+		go flushAvailabilityLoop()
+	}
 }
 
 func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64, relayErr *types.NewAPIError) {
-	if info == nil {
+	if info == nil || (!perf_metrics_setting.GetSetting().Enabled && !statusAvailabilityEnabled.Load()) {
 		return
 	}
 	finalSuccess := success && relayErr == nil
@@ -241,7 +245,8 @@ func classifyChannelError(relayErr *types.NewAPIError) (string, string) {
 
 func Record(sample Sample) {
 	setting := perf_metrics_setting.GetSetting()
-	if !setting.Enabled || sample.Model == "" {
+	availabilityEnabled := statusAvailabilityEnabled.Load()
+	if (!setting.Enabled && !availabilityEnabled) || sample.Model == "" {
 		return
 	}
 	if sample.Group == "" {
@@ -250,7 +255,12 @@ func Record(sample Sample) {
 	if sample.LatencyMs < 0 {
 		sample.LatencyMs = 0
 	}
-	recordAvailabilityAt(sample, time.Now().Unix())
+	if availabilityEnabled {
+		recordAvailabilityAt(sample, time.Now().Unix())
+	}
+	if !setting.Enabled {
+		return
+	}
 
 	key := bucketKey{
 		model:    sample.Model,

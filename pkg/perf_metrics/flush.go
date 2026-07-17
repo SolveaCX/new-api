@@ -28,7 +28,7 @@ func flushAvailabilityLoop() {
 	ticker := time.NewTicker(availabilityFlushInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		if !perf_metrics_setting.GetSetting().Enabled {
+		if !statusAvailabilityEnabled.Load() {
 			continue
 		}
 		flushCompletedAvailabilityBuckets(time.Now().Unix())
@@ -56,13 +56,36 @@ func flushCompletedAvailabilityBuckets(now int64) {
 			EligibleCount: drained.eligible,
 			SuccessCount:  drained.success,
 		}); err != nil {
-			bucket.addCounters(drained)
+			if !bucket.addCounters(drained) {
+				common.SysError(fmt.Sprintf("failed to restore availability metric bucket model=%s group=%s bucket=%d after flush error", key.model, key.group, key.bucketTs))
+			}
 			common.SysError(fmt.Sprintf("failed to flush availability metric bucket model=%s group=%s bucket=%d: %s", key.model, key.group, key.bucketTs, err.Error()))
 			return true
 		}
 		deleteOldEmptyAvailabilityBucket(key, rawKey, bucket, now)
 		return true
 	})
+	cleanupExpiredAvailabilityMetrics(now)
+}
+
+func cleanupExpiredAvailabilityMetrics(now int64) {
+	if now <= 0 {
+		return
+	}
+	for {
+		lastCleanupAt := availabilityLastCleanupAt.Load()
+		if lastCleanupAt > 0 && now-lastCleanupAt < availabilityCleanupIntervalSeconds {
+			return
+		}
+		if !availabilityLastCleanupAt.CompareAndSwap(lastCleanupAt, now) {
+			continue
+		}
+		if err := model.DeletePerfMetricAvailabilityBefore(now - availabilityRetentionSeconds); err != nil {
+			availabilityLastCleanupAt.CompareAndSwap(now, lastCleanupAt)
+			common.SysError("failed to cleanup expired availability metrics: " + err.Error())
+		}
+		return
+	}
 }
 
 func deleteOldEmptyAvailabilityBucket(key availabilityBucketKey, rawKey any, bucket *atomicAvailabilityBucket, now int64) {
@@ -124,8 +147,5 @@ func cleanupExpiredMetrics(retentionDays int) {
 	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour).Unix()
 	if err := model.DeletePerfMetricsBefore(cutoff); err != nil {
 		common.SysError("failed to cleanup expired perf metrics: " + err.Error())
-	}
-	if err := model.DeletePerfMetricAvailabilityBefore(cutoff); err != nil {
-		common.SysError("failed to cleanup expired availability metrics: " + err.Error())
 	}
 }

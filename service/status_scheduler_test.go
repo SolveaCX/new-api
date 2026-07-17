@@ -305,6 +305,123 @@ func TestStatusSchedulerCompatibilityProbesNonPublicModelsWithoutDuplicatingPubl
 	require.Equal(t, model.ModelAvailabilityOfficialUnsupported, privateState.Status)
 }
 
+func TestStatusSchedulerLimitsModelProbesAndSharesBudgetWithCompatibility(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.ModelAvailabilityState{}))
+	currentTime := int64(1_000)
+	var routerProbeCalls int
+	modelProbeCalls := make([]string, 0, 2)
+	scheduler := &StatusScheduler{
+		Holder:           "node-a",
+		Now:              func() int64 { return currentTime },
+		ModelProbeBudget: 2,
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-public", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		CompatibilityModels: func() ([]string, error) {
+			return []string{"gpt-private-b", "gpt-private-a"}, nil
+		},
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			routerProbeCalls++
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, component model.StatusComponent) StatusProbeOutcome {
+			modelProbeCalls = append(modelProbeCalls, component.ModelName)
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		Availability: func(_ string, _ string, _ int64, _ int64, _ string, _ StatusProbeOutcome) error {
+			return nil
+		},
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), currentTime)
+	require.NoError(t, err)
+	require.True(t, ran)
+	require.Equal(t, 1, routerProbeCalls)
+	require.Equal(t, []string{"gpt-public", "gpt-private-a"}, modelProbeCalls)
+}
+
+func TestStatusSchedulerModelProbeBudgetEventuallyReachesLaterModelsAfterMonitoringFault(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	currentTime := int64(1_000)
+	modelProbeCalls := make([]string, 0, 3)
+	scheduler := &StatusScheduler{
+		Holder:           "node-a",
+		Now:              func() int64 { return currentTime },
+		ModelProbeBudget: 1,
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{
+				{ModelName: "a-monitoring-fault", EnableGroup: []string{"public"}},
+				{ModelName: "b-later", EnableGroup: []string{"public"}},
+				{ModelName: "c-later", EnableGroup: []string{"public"}},
+			}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, component model.StatusComponent) StatusProbeOutcome {
+			modelProbeCalls = append(modelProbeCalls, component.ModelName)
+			if component.ModelName == "a-monitoring-fault" {
+				return StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "probe_user_unavailable"}
+			}
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	for run, now := range []int64{1_000, 1_060, 1_120} {
+		currentTime = now
+		ran, err := scheduler.RunOnce(context.Background(), now)
+		require.NoError(t, err)
+		require.True(t, ran)
+		require.Len(t, modelProbeCalls, run+1)
+	}
+	require.Equal(t, []string{"a-monitoring-fault", "b-later", "c-later"}, modelProbeCalls)
+}
+
+func TestStatusSchedulerCompatibilityMonitoringFaultRotatesThroughBudgetedModels(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.ModelAvailabilityState{}))
+	currentTime := int64(1_020)
+	modelProbeCalls := make([]string, 0, 3)
+	rotationTimes := make([]int64, 0, 3)
+	scheduler := &StatusScheduler{
+		Holder:           "node-a",
+		Now:              func() int64 { return currentTime },
+		ModelProbeBudget: 1,
+		Pricing:          func() []model.Pricing { return nil },
+		UsableGroups:     func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:          func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		CompatibilityModels: func() ([]string, error) {
+			return []string{"a-private", "b-private", "c-private"}, nil
+		},
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, component model.StatusComponent) StatusProbeOutcome {
+			modelProbeCalls = append(modelProbeCalls, component.ModelName)
+			rotationTimes = append(rotationTimes, component.LastEvaluatedAt)
+			return StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "probe_user_unavailable"}
+		}),
+		Availability: func(_ string, _ string, _ int64, _ int64, _ string, _ StatusProbeOutcome) error {
+			return nil
+		},
+	}
+
+	for run, now := range []int64{1_020, 1_080, 1_140} {
+		currentTime = now
+		ran, err := scheduler.RunOnce(context.Background(), now)
+		require.NoError(t, err)
+		require.True(t, ran)
+		require.Len(t, modelProbeCalls, run+1)
+	}
+	require.Equal(t, []string{"c-private", "a-private", "b-private"}, modelProbeCalls)
+	require.Equal(t, []int64{1_020, 1_080, 1_140}, rotationTimes)
+}
+
 func TestStatusSchedulerSensitiveWritesRejectStaleFence(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	first := acquireStatusServiceLease(t, statusSchedulerJobName, "node-a", 100)
@@ -571,6 +688,116 @@ func TestStatusSchedulerBucketUsesAlignedWindowAndKeepsWorstStatus(t *testing.T)
 		require.EqualValues(t, 100, period.EligibleCount)
 		require.EqualValues(t, 100, period.SuccessCount)
 	})
+}
+
+func TestStatusSchedulerFiveMinutePeriodPreservesKnownEvidenceWithoutNewInput(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	lease := acquireStatusServiceLease(t, statusSchedulerJobName, "node-a", 1_000)
+	component := model.StatusComponent{
+		ComponentKey: "model:gpt-test", Slug: "gpt-test", Kind: model.StatusComponentKindModel,
+		ModelName: "gpt-test", DisplayName: "gpt-test", Lifecycle: model.StatusLifecycleActive, Version: 1,
+	}
+	require.NoError(t, db.Create(&component).Error)
+
+	require.NoError(t, writeStatusFiveMinutePeriodWithFence(statusSchedulerJobName, "node-a", lease.FencingToken, 1_000, &model.StatusPeriod{
+		ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600,
+		ScoreSumMicros: 1_000_000, KnownBucketCount: 1, WorstStatus: model.StatusOperational,
+		EligibleCount: 10, SuccessCount: 10,
+	}))
+	require.NoError(t, writeStatusFiveMinutePeriodWithFence(statusSchedulerJobName, "node-a", lease.FencingToken, 1_000, &model.StatusPeriod{
+		ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600,
+		UnknownBucketCount: 1, WorstStatus: model.StatusUnknown,
+	}))
+
+	var period model.StatusPeriod
+	require.NoError(t, db.Where("component_id = ? AND granularity = ? AND period_start = ?", component.ID, model.StatusGranularityFiveMinutes, 600).First(&period).Error)
+	require.EqualValues(t, 1, period.KnownBucketCount)
+	require.Zero(t, period.UnknownBucketCount)
+	require.EqualValues(t, 1_000_000, period.ScoreSumMicros)
+	require.EqualValues(t, 10, period.EligibleCount)
+	require.EqualValues(t, 10, period.SuccessCount)
+	require.Equal(t, model.StatusOperational, period.WorstStatus)
+}
+
+func TestStatusSchedulerFiveMinutePeriodAggregatesMultipleProbes(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	lease := acquireStatusServiceLease(t, statusSchedulerJobName, "node-a", 1_000)
+	component := model.StatusComponent{
+		ComponentKey: "model:gpt-test", Slug: "gpt-test", Kind: model.StatusComponentKindModel,
+		ModelName: "gpt-test", DisplayName: "gpt-test", Lifecycle: model.StatusLifecycleActive, Version: 1,
+	}
+	require.NoError(t, db.Create(&component).Error)
+
+	require.NoError(t, writeStatusFiveMinutePeriodWithFence(statusSchedulerJobName, "node-a", lease.FencingToken, 1_000, &model.StatusPeriod{
+		ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600,
+		ScoreSumMicros: 1_000_000, KnownBucketCount: 1, WorstStatus: model.StatusOperational, ProbeSuccessCount: 1,
+	}))
+	require.NoError(t, writeStatusFiveMinutePeriodWithFence(statusSchedulerJobName, "node-a", lease.FencingToken, 1_000, &model.StatusPeriod{
+		ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600,
+		KnownBucketCount: 1, WorstStatus: model.StatusDegraded, ProbeFailureCount: 1,
+	}))
+
+	var period model.StatusPeriod
+	require.NoError(t, db.Where("component_id = ? AND granularity = ? AND period_start = ?", component.ID, model.StatusGranularityFiveMinutes, 600).First(&period).Error)
+	require.EqualValues(t, 1, period.ProbeSuccessCount)
+	require.EqualValues(t, 1, period.ProbeFailureCount)
+	require.EqualValues(t, 1, period.KnownBucketCount)
+	require.Zero(t, period.UnknownBucketCount)
+	require.EqualValues(t, 500_000, period.ScoreSumMicros)
+	require.Equal(t, model.StatusDegraded, period.WorstStatus)
+}
+
+func TestStatusSchedulerFiveMinutePeriodReplacesCumulativeTrafficSummary(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	lease := acquireStatusServiceLease(t, statusSchedulerJobName, "node-a", 1_000)
+	component := model.StatusComponent{
+		ComponentKey: "model:gpt-test", Slug: "gpt-test", Kind: model.StatusComponentKindModel,
+		ModelName: "gpt-test", DisplayName: "gpt-test", Lifecycle: model.StatusLifecycleActive, Version: 1,
+	}
+	require.NoError(t, db.Create(&component).Error)
+
+	for _, period := range []model.StatusPeriod{
+		{ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600, ScoreSumMicros: 900_000, KnownBucketCount: 1, WorstStatus: model.StatusDegraded, EligibleCount: 10, SuccessCount: 9},
+		{ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600, ScoreSumMicros: 950_000, KnownBucketCount: 1, WorstStatus: model.StatusOperational, EligibleCount: 20, SuccessCount: 19},
+	} {
+		period := period
+		require.NoError(t, writeStatusFiveMinutePeriodWithFence(statusSchedulerJobName, "node-a", lease.FencingToken, 1_000, &period))
+	}
+
+	var period model.StatusPeriod
+	require.NoError(t, db.Where("component_id = ? AND granularity = ? AND period_start = ?", component.ID, model.StatusGranularityFiveMinutes, 600).First(&period).Error)
+	require.EqualValues(t, 20, period.EligibleCount)
+	require.EqualValues(t, 19, period.SuccessCount)
+	require.EqualValues(t, 950_000, period.ScoreSumMicros)
+	require.EqualValues(t, 1, period.KnownBucketCount)
+	require.Equal(t, model.StatusDegraded, period.WorstStatus)
+}
+
+func TestStatusSchedulerFiveMinutePeriodKeepsMaintenancePrecedence(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	lease := acquireStatusServiceLease(t, statusSchedulerJobName, "node-a", 1_000)
+	component := model.StatusComponent{
+		ComponentKey: "model:gpt-test", Slug: "gpt-test", Kind: model.StatusComponentKindModel,
+		ModelName: "gpt-test", DisplayName: "gpt-test", Lifecycle: model.StatusLifecycleActive, Version: 1,
+	}
+	require.NoError(t, db.Create(&component).Error)
+
+	for _, period := range []model.StatusPeriod{
+		{ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600, ScoreSumMicros: 1_000_000, KnownBucketCount: 1, WorstStatus: model.StatusOperational, ProbeSuccessCount: 1},
+		{ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600, MaintenanceBucketCount: 1, WorstStatus: model.StatusMaintenance},
+		{ComponentID: component.ID, Granularity: model.StatusGranularityFiveMinutes, PeriodStart: 600, KnownBucketCount: 1, WorstStatus: model.StatusDegraded, ProbeFailureCount: 1},
+	} {
+		period := period
+		require.NoError(t, writeStatusFiveMinutePeriodWithFence(statusSchedulerJobName, "node-a", lease.FencingToken, 1_000, &period))
+	}
+
+	var period model.StatusPeriod
+	require.NoError(t, db.Where("component_id = ? AND granularity = ? AND period_start = ?", component.ID, model.StatusGranularityFiveMinutes, 600).First(&period).Error)
+	require.EqualValues(t, 1, period.MaintenanceBucketCount)
+	require.Zero(t, period.KnownBucketCount)
+	require.Zero(t, period.UnknownBucketCount)
+	require.Zero(t, period.ScoreSumMicros)
+	require.Equal(t, model.StatusDegraded, period.WorstStatus)
 }
 
 func TestStatusSchedulerConsumesTrafficRecoveryBucketOnlyOnce(t *testing.T) {
