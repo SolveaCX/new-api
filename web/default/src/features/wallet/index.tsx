@@ -37,6 +37,7 @@ import {
 import { TitledCard } from '@/components/ui/titled-card'
 import { SectionPageLayout } from '@/components/layout'
 import { getCardStatus } from '@/features/onboarding/api'
+import { RecallClaimProvider } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import { getPaddleTopUpStatus, isApiSuccess } from './api'
 import { BillingHistoryPanel } from './components/dialogs/billing-history-dialog'
 import { StripeEmbeddedCheckoutDialog } from './components/dialogs/stripe-embedded-checkout-dialog'
@@ -63,13 +64,15 @@ import {
   type WalletCheckoutSearch,
 } from './lib'
 import { openPaddleCheckoutForTransaction } from './lib/paddle-checkout'
-import type { UserWalletData, PresetAmount } from './types'
+import { normalizeRecallClaim, validateRecallClaim } from './lib/recall-claim'
+import type { UserWalletData, PresetAmount, RecallClaimView } from './types'
 
 interface WalletProps {
   initialShowHistory?: boolean
   initialPaddleOrderId?: string
   initialPaddleTransactionId?: string
   initialCheckoutSearch?: WalletCheckoutSearch
+  initialRecallClaim?: string
   cardJustBound?: boolean
 }
 
@@ -83,6 +86,14 @@ type PaddleStatusPollParams = {
   transactionId?: string
   orderId?: string
 }
+
+type RecallClaimStatus =
+  | 'idle'
+  | 'loading'
+  | 'active'
+  | 'expired'
+  | 'invalid'
+  | 'unavailable'
 
 const PADDLE_STATUS_POLL_INTERVAL_MS = 2000
 const PADDLE_STATUS_POLL_ATTEMPTS = 15
@@ -121,6 +132,14 @@ function waitForPaddleStatusPollInterval(): Promise<void> {
 
 export function Wallet(props: WalletProps) {
   const { t } = useTranslation()
+  const [recallClaim] = useState(() =>
+    normalizeRecallClaim(props.initialRecallClaim)
+  )
+  const [recallClaimStatus, setRecallClaimStatus] = useState<RecallClaimStatus>(
+    recallClaim ? 'loading' : 'idle'
+  )
+  const [recallClaimView, setRecallClaimView] =
+    useState<RecallClaimView | null>(null)
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
   const [topupAmount, setTopupAmount] = useState(0)
@@ -272,6 +291,40 @@ export function Wallet(props: WalletProps) {
   useEffect(() => {
     fetchUser()
   }, [fetchUser])
+
+  useEffect(() => {
+    if (!recallClaim) {
+      return
+    }
+
+    let cancelled = false
+
+    void validateRecallClaim({ claim: recallClaim })
+      .then((response) => {
+        if (cancelled) {
+          return
+        }
+        if (response.success && response.data) {
+          setRecallClaimView(response.data)
+          setRecallClaimStatus('active')
+          return
+        }
+
+        const message = response.message?.toLowerCase() || ''
+        setRecallClaimStatus(
+          message.includes('expired') ? 'expired' : 'invalid'
+        )
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecallClaimStatus('unavailable')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [recallClaim])
 
   useEffect(() => {
     if (props.initialShowHistory) {
@@ -646,6 +699,11 @@ export function Wallet(props: WalletProps) {
       const success = await processPayment(preset.value, 'stripe', {
         stripeCurrency: checkoutCurrency,
         preferEmbeddedCheckout: true,
+        recallClaim:
+          recallClaimStatus === 'active' &&
+          recallClaimView?.products.topup_price_ids.length
+            ? recallClaim
+            : undefined,
       })
       if (success) {
         await fetchUser()
@@ -674,103 +732,200 @@ export function Wallet(props: WalletProps) {
     [closeEmbeddedCheckout]
   )
 
+  let recallDiscountLabel = ''
+  if (recallClaimView?.discount.percent_off) {
+    recallDiscountLabel = t('{{percent}}% off', {
+      percent: recallClaimView.discount.percent_off,
+    })
+  } else if (recallClaimView) {
+    recallDiscountLabel = t('{{amount}} {{currency}} off', {
+      amount: (recallClaimView.discount.amount_off / 100).toFixed(2),
+      currency: recallClaimView.discount.currency.toUpperCase(),
+    })
+  }
+  const recallEligibleProductLabel = recallClaimView
+    ? [
+        recallClaimView.products.topup_price_ids.length
+          ? t('eligible wallet top-up packages')
+          : '',
+        recallClaimView.products.subscription_price_ids.length
+          ? t('eligible subscription plans')
+          : '',
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : ''
+
   return (
-    <>
-      <SectionPageLayout>
-        <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
-        <SectionPageLayout.Content>
-          <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
-            {paddleCheckoutNotice ? (
-              <Alert variant={paddleCheckoutNotice.variant}>
-                <AlertTitle>{paddleCheckoutNotice.title}</AlertTitle>
-                <AlertDescription>
-                  {paddleCheckoutNotice.description}
-                </AlertDescription>
-              </Alert>
-            ) : null}
+    <RecallClaimProvider
+      claim={recallClaimStatus === 'active' ? recallClaim : undefined}
+      view={
+        recallClaimStatus === 'active'
+          ? recallClaimView || undefined
+          : undefined
+      }
+    >
+      <>
+        <SectionPageLayout>
+          <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
+          <SectionPageLayout.Content>
+            <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
+              {paddleCheckoutNotice ? (
+                <Alert variant={paddleCheckoutNotice.variant}>
+                  <AlertTitle>{paddleCheckoutNotice.title}</AlertTitle>
+                  <AlertDescription>
+                    {paddleCheckoutNotice.description}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
-            <WalletStatsCard user={user} loading={userLoading} />
+              {recallClaimStatus === 'loading' ? (
+                <Alert>
+                  <AlertTitle>{t('Checking your recall offer')}</AlertTitle>
+                  <AlertDescription>
+                    {t('Verifying this offer for your account...')}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
-            <div
-              className={
-                showSubscriptionPanel
-                  ? 'grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-start'
-                  : 'grid gap-4'
-              }
-            >
-              <div id='wallet-top-up-packages' className='scroll-mt-4'>
-                <RechargeFormCard
+              {recallClaimStatus === 'active' && recallClaimView ? (
+                <Alert>
+                  <AlertTitle>{recallClaimView.campaign_name}</AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      '{{discount}}. Applies to {{products}}. Expires {{expiresAt}}.',
+                      {
+                        discount: recallDiscountLabel,
+                        products: recallEligibleProductLabel,
+                        expiresAt: new Date(
+                          recallClaimView.expires_at * 1000
+                        ).toLocaleString(),
+                      }
+                    )}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {recallClaimStatus === 'expired' ? (
+                <Alert variant='destructive'>
+                  <AlertTitle>{t('This recall offer has expired')}</AlertTitle>
+                  <AlertDescription>
+                    {t('This discount can no longer be used.')}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {recallClaimStatus === 'invalid' ? (
+                <Alert variant='destructive'>
+                  <AlertTitle>{t('This recall offer is invalid')}</AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'This link cannot be used for your account or is no longer available.'
+                    )}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {recallClaimStatus === 'unavailable' ? (
+                <Alert variant='destructive'>
+                  <AlertTitle>
+                    {t('Unable to verify this recall offer')}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {t('Please refresh the page and try again.')}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              <WalletStatsCard user={user} loading={userLoading} />
+
+              <div
+                className={
+                  showSubscriptionPanel
+                    ? 'grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-start'
+                    : 'grid gap-4'
+                }
+              >
+                <div id='wallet-top-up-packages' className='scroll-mt-4'>
+                  <RechargeFormCard
+                    topupInfo={topupInfo}
+                    presetAmounts={presetAmounts}
+                    selectedPreset={selectedPreset}
+                    onSelectPreset={handleSelectPreset}
+                    onStripeTopUp={handleStripeTopUp}
+                    paymentLoadingAmount={
+                      processing ? paymentLoadingAmount : null
+                    }
+                    loading={topupLoading}
+                    checkoutCurrency={checkoutCurrency}
+                    onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
+                    showCurrencySelector={
+                      shouldShowCurrencySelector(topupInfo?.client_region) ||
+                      normalizeStripeCheckoutCurrency(
+                        props.initialCheckoutSearch?.currency
+                      ) != null
+                    }
+                  />
+                </div>
+
+                <SubscriptionPlansCard
                   topupInfo={topupInfo}
-                  presetAmounts={presetAmounts}
-                  selectedPreset={selectedPreset}
-                  onSelectPreset={handleSelectPreset}
-                  onStripeTopUp={handleStripeTopUp}
-                  paymentLoadingAmount={
-                    processing ? paymentLoadingAmount : null
-                  }
-                  loading={topupLoading}
-                  checkoutCurrency={checkoutCurrency}
-                  onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
-                  showCurrencySelector={
-                    shouldShowCurrencySelector(topupInfo?.client_region) ||
-                    normalizeStripeCheckoutCurrency(
-                      props.initialCheckoutSearch?.currency
-                    ) != null
-                  }
+                  onAvailabilityChange={handleSubscriptionAvailabilityChange}
+                  userQuota={user?.quota}
+                  onPurchaseSuccess={fetchUser}
                 />
               </div>
 
-              <SubscriptionPlansCard
-                topupInfo={topupInfo}
-                onAvailabilityChange={handleSubscriptionAvailabilityChange}
-                userQuota={user?.quota}
-                onPurchaseSuccess={fetchUser}
-              />
+              <div id='wallet-billing-history' className='scroll-mt-4'>
+                <TitledCard
+                  title={t('Billing History')}
+                  description={t(
+                    'View your topup transaction records and payment history'
+                  )}
+                  contentClassName='space-y-3'
+                >
+                  <BillingHistoryPanel scrollAreaClassName='max-h-none pr-0 sm:pr-0' />
+                </TitledCard>
+              </div>
             </div>
+          </SectionPageLayout.Content>
+        </SectionPageLayout>
 
-            <div id='wallet-billing-history' className='scroll-mt-4'>
-              <TitledCard
-                title={t('Billing History')}
-                description={t(
-                  'View your topup transaction records and payment history'
-                )}
-                contentClassName='space-y-3'
+        <StripeEmbeddedCheckoutDialog
+          session={embeddedCheckout}
+          onOpenChange={handleEmbeddedCheckoutOpenChange}
+        />
+
+        <Dialog
+          open={cardBoundDialogOpen}
+          onOpenChange={setCardBoundDialogOpen}
+        >
+          <DialogContent className='sm:max-w-md' showCloseButton>
+            <DialogHeader className='items-center text-center'>
+              <div className='bg-primary/10 mx-auto mb-2 flex size-14 items-center justify-center rounded-full'>
+                <PartyPopper
+                  className='text-primary size-7'
+                  aria-hidden='true'
+                />
+              </div>
+              <DialogTitle className='text-xl'>
+                {t('Recharge successful')}
+              </DialogTitle>
+              <DialogDescription>
+                {t('Your bonus has been credited to your wallet. Enjoy!')}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                className='w-full'
+                onClick={() => setCardBoundDialogOpen(false)}
               >
-                <BillingHistoryPanel scrollAreaClassName='max-h-none pr-0 sm:pr-0' />
-              </TitledCard>
-            </div>
-          </div>
-        </SectionPageLayout.Content>
-      </SectionPageLayout>
-
-      <StripeEmbeddedCheckoutDialog
-        session={embeddedCheckout}
-        onOpenChange={handleEmbeddedCheckoutOpenChange}
-      />
-
-      <Dialog open={cardBoundDialogOpen} onOpenChange={setCardBoundDialogOpen}>
-        <DialogContent className='sm:max-w-md' showCloseButton>
-          <DialogHeader className='items-center text-center'>
-            <div className='bg-primary/10 mx-auto mb-2 flex size-14 items-center justify-center rounded-full'>
-              <PartyPopper className='text-primary size-7' aria-hidden='true' />
-            </div>
-            <DialogTitle className='text-xl'>
-              {t('Recharge successful')}
-            </DialogTitle>
-            <DialogDescription>
-              {t('Your bonus has been credited to your wallet. Enjoy!')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              className='w-full'
-              onClick={() => setCardBoundDialogOpen(false)}
-            >
-              {t('Got it')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+                {t('Got it')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
+    </RecallClaimProvider>
   )
 }
