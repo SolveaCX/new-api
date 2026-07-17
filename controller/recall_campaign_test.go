@@ -426,6 +426,10 @@ func TestRecallCampaignReadsMaskCodesAndOmitClaimAndTemplateSecrets(t *testing.T
 		require.NotContains(t, response.Body.String(), "ABCDSECRETXYZ")
 		require.NotContains(t, response.Body.String(), claimHash)
 		require.NotContains(t, response.Body.String(), "template-body-secret")
+		require.NotContains(t, response.Body.String(), `"eligibility_snapshot"`)
+		require.NotContains(t, response.Body.String(), `"email_snapshot"`)
+		require.NotContains(t, response.Body.String(), `{"qualified":true}`)
+		require.NotContains(t, response.Body.String(), "masked@example.com")
 	}
 	require.Contains(t, responses[2].Body.String(), model.MaskPromotionCode(recipient.PromotionCode))
 }

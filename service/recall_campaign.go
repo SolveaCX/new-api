@@ -94,8 +94,6 @@ type RecallRecipientView struct {
 	Id                  int64               `json:"id"`
 	CampaignId          int64               `json:"campaign_id"`
 	UserId              int                 `json:"user_id"`
-	EligibilitySnapshot string              `json:"eligibility_snapshot"`
-	EmailSnapshot       string              `json:"email_snapshot"`
 	LanguageSnapshot    string              `json:"language_snapshot"`
 	State               string              `json:"state"`
 	StripeCustomerId    string              `json:"stripe_customer_id"`
@@ -442,8 +440,6 @@ func recallRecipientView(recipient model.RecallRecipient, messages []RecallMessa
 		Id:                  recipient.Id,
 		CampaignId:          recipient.CampaignId,
 		UserId:              recipient.UserId,
-		EligibilitySnapshot: recipient.EligibilitySnapshot,
-		EmailSnapshot:       recipient.EmailSnapshot,
 		LanguageSnapshot:    recipient.LanguageSnapshot,
 		State:               recipient.State,
 		StripeCustomerId:    recipient.StripeCustomerId,
@@ -540,15 +536,11 @@ func (s *RecallCampaignService) UpdateDraft(ctx context.Context, actorID int, id
 	if err != nil {
 		return nil, err
 	}
-	validationTime := s.now()
-	if stored.Status != model.RecallCampaignDraft {
-		validationTime = time.Unix(0, 0).UTC()
-	}
-	normalized, err := validateAndNormalizeRecallCampaignDraft(draft, validationTime)
-	if err != nil {
-		return nil, err
-	}
 	if stored.Status == model.RecallCampaignDraft {
+		normalized, err := validateAndNormalizeRecallCampaignDraft(draft, s.now())
+		if err != nil {
+			return nil, err
+		}
 		updated, err := recallCampaignModelFromDraft(normalized, stored.CreatedBy)
 		if err != nil {
 			return nil, err
@@ -572,14 +564,21 @@ func (s *RecallCampaignService) UpdateDraft(ctx context.Context, actorID int, id
 	if err != nil {
 		return nil, err
 	}
-	currentNormalized, err := validateAndNormalizeRecallCampaignDraft(current, time.Unix(0, 0).UTC())
-	if err != nil {
-		return nil, fmt.Errorf("stored recall campaign %d is invalid: %w", id, err)
-	}
-	if !reflect.DeepEqual(recallCampaignImmutableDraft(currentNormalized), recallCampaignImmutableDraft(normalized)) {
+	if !reflect.DeepEqual(recallCampaignImmutableDraft(current), recallCampaignImmutableDraft(draft)) {
 		return nil, fmt.Errorf("activated recall campaign configuration is immutable")
 	}
-	emails, err := incrementRecallEmailTemplateVersions(current.Emails, normalized.Emails)
+	if _, err := normalizeRecallEmailStages(current.Emails); err != nil {
+		return nil, fmt.Errorf("stored recall campaign %d email sequence is invalid: %w", id, err)
+	}
+	name := strings.TrimSpace(draft.Name)
+	if name == "" || len(name) > 128 {
+		return nil, fmt.Errorf("recall campaign name must contain 1 to 128 characters")
+	}
+	normalizedEmails, err := normalizeRecallEmailStages(draft.Emails)
+	if err != nil {
+		return nil, err
+	}
+	emails, err := incrementRecallEmailTemplateVersions(current.Emails, normalizedEmails)
 	if err != nil {
 		return nil, err
 	}
@@ -587,7 +586,7 @@ func (s *RecallCampaignService) UpdateDraft(ctx context.Context, actorID int, id
 	if err != nil {
 		return nil, err
 	}
-	won, err := model.UpdateRecallCampaignEmailSequenceWithContext(ctx, id, stored.ConfigRevision, normalized.Name, string(emailJSON))
+	won, err := model.UpdateRecallCampaignEmailSequenceWithContext(ctx, id, stored.ConfigRevision, name, string(emailJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -1388,6 +1387,29 @@ type recallImmutableEmailStage struct {
 }
 
 func recallCampaignImmutableDraft(draft RecallCampaignDraft) recallImmutableCampaignDraft {
+	draft.AudienceTemplate = strings.ToLower(strings.TrimSpace(draft.AudienceTemplate))
+	draft.Audience = normalizeRecallAudienceConfig(draft.Audience)
+	draft.ExecutionMode = strings.ToLower(strings.TrimSpace(draft.ExecutionMode))
+	switch draft.ExecutionMode {
+	case "manual":
+		draft.Schedule = RecallScheduleConfig{}
+	case "scheduled_once":
+		draft.Schedule = RecallScheduleConfig{ScheduledAt: draft.Schedule.ScheduledAt}
+	case "recurring":
+		draft.Schedule.ScheduledAt = 0
+		draft.Schedule.Timezone = strings.TrimSpace(draft.Schedule.Timezone)
+		draft.Schedule.Frequency = strings.ToLower(strings.TrimSpace(draft.Schedule.Frequency))
+		if draft.Schedule.Frequency == "daily" {
+			draft.Schedule.Weekday = 0
+		}
+	}
+	draft.CouponSource = strings.ToLower(strings.TrimSpace(draft.CouponSource))
+	draft.ExistingCouponID = strings.TrimSpace(draft.ExistingCouponID)
+	draft.Discount.Type = strings.ToLower(strings.TrimSpace(draft.Discount.Type))
+	draft.Discount.Currency = strings.ToLower(strings.TrimSpace(draft.Discount.Currency))
+	draft.Discount.MinimumAmountCurrency = strings.ToLower(strings.TrimSpace(draft.Discount.MinimumAmountCurrency))
+	draft.Products.TopUpPriceIDs = normalizeRecallStripeIDs(draft.Products.TopUpPriceIDs)
+	draft.Products.SubscriptionPriceIDs = normalizeRecallStripeIDs(draft.Products.SubscriptionPriceIDs)
 	emailStages := make([]recallImmutableEmailStage, len(draft.Emails))
 	for i, stage := range draft.Emails {
 		emailStages[i] = recallImmutableEmailStage{StageNo: stage.StageNo, DelaySeconds: stage.DelaySeconds}

@@ -17,7 +17,15 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useRecallCampaignMutations } from '../api'
-import { recallCampaignDraftSchema } from '../schemas'
+import {
+  normalizeRecallCouponSource,
+  normalizeRecallDiscountType,
+  removeRecallEmailStage,
+} from '../helpers'
+import {
+  recallCampaignActivatedUpdateSchema,
+  recallCampaignDraftSchema,
+} from '../schemas'
 import type { RecallCampaignDraft, RecallCampaignStatus } from '../types'
 
 const languages = ['en', 'zh', 'es', 'fr', 'pt', 'ru', 'ja', 'vi'] as const
@@ -135,8 +143,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const [activeLanguage, setActiveLanguage] =
     useState<(typeof languages)[number]>('en')
   const mutations = useRecallCampaignMutations(props.campaignId)
+  const updateSchema =
+    props.status && props.status !== 'draft'
+      ? recallCampaignActivatedUpdateSchema
+      : recallCampaignDraftSchema
   const form = useForm<RecallCampaignDraft>({
-    resolver: zodResolver(recallCampaignDraftSchema),
+    resolver: zodResolver(updateSchema),
     defaultValues: props.initialDraft ?? createRecallCampaignDefaults(),
   })
   const stages = useFieldArray({
@@ -186,6 +198,28 @@ export function CampaignEditor(props: CampaignEditorProps) {
       props.campaignId ? t('Campaign updated') : t('Campaign created')
     )
     props.onSaved?.(response.data.id)
+  }
+
+  const setCouponSource = (value: RecallCampaignDraft['coupon_source']) => {
+    const normalized = normalizeRecallCouponSource(form.getValues(), value)
+    form.setValue('coupon_source', normalized.coupon_source, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+    form.setValue('existing_coupon_id', normalized.existing_coupon_id, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+  }
+
+  const setDiscountType = (
+    value: RecallCampaignDraft['discount_config']['type']
+  ) => {
+    const normalized = normalizeRecallDiscountType(form.getValues(), value)
+    form.setValue('discount_config', normalized.discount_config, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
   }
 
   return (
@@ -335,10 +369,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
               value={couponSource}
               onValueChange={(value) =>
                 value &&
-                form.setValue(
-                  'coupon_source',
-                  value as RecallCampaignDraft['coupon_source']
-                )
+                setCouponSource(value as RecallCampaignDraft['coupon_source'])
               }
               items={[
                 { value: 'automatic', label: t('Automatic Coupon') },
@@ -376,8 +407,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
               value={discountType}
               onValueChange={(value) =>
                 value &&
-                form.setValue(
-                  'discount_config.type',
+                setDiscountType(
                   value as RecallCampaignDraft['discount_config']['type']
                 )
               }
@@ -737,7 +767,14 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   <Button
                     type='button'
                     variant='outline'
-                    onClick={() => stages.remove(index)}
+                    onClick={() =>
+                      stages.replace(
+                        removeRecallEmailStage(
+                          form.getValues('email_sequence'),
+                          index
+                        )
+                      )
+                    }
                   >
                     {t('Remove stage')}
                   </Button>

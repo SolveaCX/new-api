@@ -22,6 +22,7 @@ import {
   listRecallRecipients,
   recallCampaignKeys,
 } from '../api'
+import { getRecallPageCount, getRecallRecipientRetry } from '../helpers'
 import type {
   RecallCampaignAction,
   RecallCampaignStatus,
@@ -30,6 +31,8 @@ import type {
 import { CampaignActionDialog } from './campaign-action-dialog'
 import { CampaignEditor } from './campaign-editor'
 import { CampaignPreviewDialog } from './campaign-preview-dialog'
+
+const DETAIL_PAGE_SIZE = 100
 
 function formatTimestamp(value: number): string {
   return value > 0 ? new Date(value * 1000).toLocaleString() : '-'
@@ -52,6 +55,8 @@ interface CampaignDetailProps {
 export function CampaignDetail(props: CampaignDetailProps) {
   const { t } = useTranslation()
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [recipientPage, setRecipientPage] = useState(1)
+  const [eventPage, setEventPage] = useState(1)
   const [dialog, setDialog] = useState<{
     action: RecallCampaignAction | 'retry'
     recipientId?: number
@@ -62,12 +67,16 @@ export function CampaignDetail(props: CampaignDetailProps) {
     queryFn: () => getRecallCampaign(props.campaignId),
   })
   const recipientsQuery = useQuery({
-    queryKey: recallCampaignKeys.recipients(props.campaignId, 1),
-    queryFn: () => listRecallRecipients(props.campaignId, 1, 100),
+    queryKey: recallCampaignKeys.recipients(props.campaignId, recipientPage),
+    queryFn: () =>
+      listRecallRecipients(props.campaignId, recipientPage, DETAIL_PAGE_SIZE),
+    placeholderData: (previous) => previous,
   })
   const eventsQuery = useQuery({
-    queryKey: recallCampaignKeys.events(props.campaignId, 1),
-    queryFn: () => listRecallEvents(props.campaignId, 1, 100),
+    queryKey: recallCampaignKeys.events(props.campaignId, eventPage),
+    queryFn: () =>
+      listRecallEvents(props.campaignId, eventPage, DETAIL_PAGE_SIZE),
+    placeholderData: (previous) => previous,
   })
   const metricsQuery = useQuery({
     queryKey: recallCampaignKeys.metrics(props.campaignId),
@@ -77,6 +86,14 @@ export function CampaignDetail(props: CampaignDetailProps) {
   const recipients = recipientsQuery.data?.data?.items ?? []
   const events = eventsQuery.data?.data?.items ?? []
   const metrics = metricsQuery.data?.data
+  const recipientPageCount = getRecallPageCount(
+    recipientsQuery.data?.data?.total ?? 0,
+    DETAIL_PAGE_SIZE
+  )
+  const eventPageCount = getRecallPageCount(
+    eventsQuery.data?.data?.total ?? 0,
+    DETAIL_PAGE_SIZE
+  )
 
   const downloadExport = async () => {
     const blob = await exportRecallCampaign(props.campaignId)
@@ -89,12 +106,12 @@ export function CampaignDetail(props: CampaignDetailProps) {
   }
 
   const retryRecipient = (recipient: RecallRecipient) => {
+    const retry = getRecallRecipientRetry(recipient)
+    if (!retry.allowed) return
     setDialog({
       action: 'retry',
       recipientId: recipient.id,
-      uncertain: recipient.messages.some(
-        (message) => message.state === 'uncertain'
-      ),
+      uncertain: retry.acknowledgeUncertain,
     })
   }
 
@@ -280,18 +297,43 @@ export function CampaignDetail(props: CampaignDetailProps) {
                         ) : null}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          size='sm'
-                          variant='outline'
-                          onClick={() => retryRecipient(recipient)}
-                        >
-                          {t('Retry')}
-                        </Button>
+                        {getRecallRecipientRetry(recipient).allowed ? (
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            onClick={() => retryRecipient(recipient)}
+                          >
+                            {t('Retry')}
+                          </Button>
+                        ) : (
+                          '-'
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
+              <div className='mt-3 flex items-center justify-end gap-2'>
+                <span className='text-muted-foreground text-sm'>
+                  {recipientPage} / {recipientPageCount}
+                </span>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  disabled={recipientPage <= 1}
+                  onClick={() => setRecipientPage((page) => page - 1)}
+                >
+                  {t('Previous')}
+                </Button>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  disabled={recipientPage >= recipientPageCount}
+                  onClick={() => setRecipientPage((page) => page + 1)}
+                >
+                  {t('Next')}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -320,6 +362,27 @@ export function CampaignDetail(props: CampaignDetailProps) {
                   </li>
                 ))}
               </ol>
+              <div className='mt-3 flex items-center justify-end gap-2'>
+                <span className='text-muted-foreground text-sm'>
+                  {eventPage} / {eventPageCount}
+                </span>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  disabled={eventPage <= 1}
+                  onClick={() => setEventPage((page) => page - 1)}
+                >
+                  {t('Previous')}
+                </Button>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  disabled={eventPage >= eventPageCount}
+                  onClick={() => setEventPage((page) => page + 1)}
+                >
+                  {t('Next')}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
