@@ -54,6 +54,38 @@ func GetGroupEnabledModels(group string) []string {
 	return models
 }
 
+func GetAvailableModelsForGroups(groups []string) ([]string, error) {
+	normalizedGroups := make([]string, 0, len(groups))
+	seenGroups := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if _, exists := seenGroups[group]; exists {
+			continue
+		}
+		seenGroups[group] = struct{}{}
+		normalizedGroups = append(normalizedGroups, group)
+	}
+	if len(normalizedGroups) == 0 {
+		return []string{}, nil
+	}
+
+	var models []string
+	err := DB.Model(&Ability{}).
+		Joins("JOIN channels ON channels.id = abilities.channel_id").
+		Where("abilities.enabled = ? AND channels.status = ?", true, common.ChannelStatusEnabled).
+		Where("abilities."+commonGroupCol+" IN ?", normalizedGroups).
+		Distinct("abilities.model").
+		Order("abilities.model ASC").
+		Pluck("abilities.model", &models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
 func GetEnabledModels() []string {
 	var models []string
 	// Find distinct models
