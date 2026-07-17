@@ -532,6 +532,69 @@ func TestRecallAttributionReconcileBacksOffTransientHeadWithoutStarvingLaterOrde
 	require.Equal(t, 2, retryFetches, "completed examination must become terminal")
 }
 
+func TestRecallAttributionReconcileRetriesGenericInvalidRequest(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	_, recipient := createRecallAttributionRecipient(t, "promo_invalid_retry")
+	createRecallReconciliationTopUp(t, recipient.UserId, "trade_invalid_retry", "cs_invalid_retry", 1_700_000_100)
+
+	fetches := 0
+	client := &recallStripeFakeClient{getCheckoutSessionFn: func(_ context.Context, id string, _ ...string) (*stripe.CheckoutSession, error) {
+		fetches++
+		if fetches == 1 {
+			return nil, &stripe.Error{Type: stripe.ErrorTypeInvalidRequest, Param: "expand[]", Msg: "unsupported expansion"}
+		}
+		return &stripe.CheckoutSession{
+			ID: id, Created: 1_700_000_100, PaymentStatus: stripe.CheckoutSessionPaymentStatusPaid,
+			AmountTotal: 900, Currency: stripe.CurrencyUSD,
+			Discounts:    []*stripe.CheckoutSessionDiscount{{PromotionCode: &stripe.PromotionCode{ID: "promo_invalid_retry"}}},
+			TotalDetails: &stripe.CheckoutSessionTotalDetails{AmountDiscount: 100},
+		}, nil
+	}}
+	now := time.Unix(1_700_000_300, 0).UTC()
+	service := NewRecallAttributionService(client)
+	service.now = func() time.Time { return now }
+
+	processed, err := service.ReconcileBatch(context.Background(), 1)
+	require.Error(t, err)
+	require.Zero(t, processed)
+	require.Equal(t, 1, fetches)
+
+	now = now.Add(2 * time.Minute)
+	processed, err = service.ReconcileBatch(context.Background(), 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 2, fetches, "generic invalid_request must remain repairable after backoff")
+	stored := model.RecallRecipient{}
+	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientConverted, stored.State)
+}
+
+func TestRecallAttributionReconcileTerminalizesMissingCheckoutSession(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	_, recipient := createRecallAttributionRecipient(t, "promo_missing_session")
+	createRecallReconciliationTopUp(t, recipient.UserId, "trade_missing_session", "cs_missing_session", 1_700_000_100)
+
+	fetches := 0
+	client := &recallStripeFakeClient{getCheckoutSessionFn: func(context.Context, string, ...string) (*stripe.CheckoutSession, error) {
+		fetches++
+		return nil, recallStripeMissingError()
+	}}
+	now := time.Unix(1_700_000_300, 0).UTC()
+	service := NewRecallAttributionService(client)
+	service.now = func() time.Time { return now }
+
+	processed, err := service.ReconcileBatch(context.Background(), 1)
+	require.Error(t, err)
+	require.Zero(t, processed)
+	require.Equal(t, 1, fetches)
+
+	now = now.Add(24 * time.Hour)
+	processed, err = service.ReconcileBatch(context.Background(), 1)
+	require.NoError(t, err)
+	require.Zero(t, processed)
+	require.Equal(t, 1, fetches, "resource_missing must become terminal instead of churning forever")
+}
+
 func TestRecallAttributionReconcileLeasesCandidateAcrossConcurrentWorkers(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	_, recipient := createRecallAttributionRecipient(t, "promo_concurrent")

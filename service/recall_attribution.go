@@ -279,8 +279,8 @@ func (s *RecallAttributionService) ReconcileBatch(ctx context.Context, limit int
 				firstErr = wrappedErr
 			}
 			var progressErr error
-			if ClassifyRecallStripeError(wrappedErr) == RecallStripeErrorPermanent {
-				_, progressErr = model.CompleteRecallAttributionCandidateWithContext(ctx, candidate, lease, s.now().Unix(), "stripe_fetch_permanent")
+			if isRecallReconciliationMissingResource(wrappedErr) {
+				_, progressErr = model.CompleteRecallAttributionCandidateWithContext(ctx, candidate, lease, s.now().Unix(), "stripe_fetch_missing")
 			} else {
 				_, progressErr = model.RetryRecallAttributionCandidateWithContext(ctx, candidate, lease, recallAttributionNextAttemptAt(s.now(), lease.Attempt), "stripe_fetch_failed")
 			}
@@ -339,6 +339,11 @@ func (s *RecallAttributionService) ReconcileBatch(ctx context.Context, limit int
 		}
 	}
 	return processed, firstErr
+}
+
+func isRecallReconciliationMissingResource(err error) bool {
+	var stripeErr *stripe.Error
+	return errors.As(err, &stripeErr) && stripeErr.Code == stripe.ErrorCodeResourceMissing
 }
 
 func recallAttributionNextAttemptAt(now time.Time, attempt int) int64 {
