@@ -113,7 +113,7 @@ func GetRecallRecipientByClaimWithContext(ctx context.Context, userID int, campa
 	return &recipient, true, nil
 }
 
-func ListRecallAttributionCandidatesWithContext(ctx context.Context, limit int) ([]RecallAttributionCandidate, error) {
+func ListRecallAttributionCandidatesWithContext(ctx context.Context, nowUnix int64, limit int) ([]RecallAttributionCandidate, error) {
 	candidates := make([]RecallAttributionCandidate, 0)
 	if limit <= 0 {
 		return candidates, nil
@@ -197,10 +197,7 @@ func ListRecallAttributionCandidatesWithContext(ctx context.Context, limit int) 
 		}
 		return candidates[i].OrderCreatedAt < candidates[j].OrderCreatedAt
 	})
-	if len(candidates) > limit {
-		candidates = candidates[:limit]
-	}
-	return candidates, nil
+	return filterRecallAttributionCandidatesWithContext(ctx, candidates, nowUnix, limit)
 }
 
 func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
