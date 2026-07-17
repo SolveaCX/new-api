@@ -112,6 +112,16 @@ func GetRecallRecipientByClaimWithContext(ctx context.Context, userID int, campa
 	return &recipient, true, nil
 }
 
+func GetRecallRecipientByCampaignWithContext(ctx context.Context, campaignID int64, recipientID int64) (*RecallRecipient, error) {
+	recipient := &RecallRecipient{}
+	if err := DB.WithContext(ctx).
+		Where("id = ? AND campaign_id = ?", recipientID, campaignID).
+		First(recipient).Error; err != nil {
+		return nil, err
+	}
+	return recipient, nil
+}
+
 func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
 	ids := make([]int64, 0)
 	if limit <= 0 {
@@ -636,9 +646,16 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 }
 
 func ListRecallRecipients(campaignID int64, offset int, limit int) ([]RecallRecipient, int64, error) {
+	return ListRecallRecipientsWithContext(context.Background(), campaignID, offset, limit, "")
+}
+
+func ListRecallRecipientsWithContext(ctx context.Context, campaignID int64, offset int, limit int, state string) ([]RecallRecipient, int64, error) {
 	recipients := make([]RecallRecipient, 0)
 	var total int64
-	query := DB.Model(&RecallRecipient{}).Where("campaign_id = ?", campaignID)
+	query := DB.WithContext(ctx).Model(&RecallRecipient{}).Where("campaign_id = ?", campaignID)
+	if state != "" {
+		query = query.Where("state = ?", state)
+	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -646,6 +663,52 @@ func ListRecallRecipients(campaignID int64, offset int, limit int) ([]RecallReci
 		return nil, 0, err
 	}
 	return recipients, total, nil
+}
+
+func ManualRetryRecallRecipientAndAdminEventWithContext(ctx context.Context, campaignID int64, recipientID int64, expectedUpdatedAt int64, to string, event RecallEvent) (bool, error) {
+	if event.CampaignId != campaignID || event.RecipientId != recipientID {
+		return false, fmt.Errorf("recall recipient admin event target does not match recipient %d", recipientID)
+	}
+	if err := validateRecallAdminEvent(&event); err != nil {
+		return false, err
+	}
+	retried := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		won, err := manualRetryRecallRecipient(tx, campaignID, recipientID, expectedUpdatedAt, to)
+		if err != nil {
+			return err
+		}
+		if !won {
+			return nil
+		}
+		retried = true
+		return insertRequiredRecallAdminEvent(tx, &event)
+	})
+	if err != nil {
+		return false, err
+	}
+	return retried, nil
+}
+
+func manualRetryRecallRecipient(db *gorm.DB, campaignID int64, recipientID int64, expectedUpdatedAt int64, to string) (bool, error) {
+	switch to {
+	case RecallRecipientQueued, RecallRecipientCustomerReady, RecallRecipientCodeReady:
+	default:
+		return false, fmt.Errorf("unsupported recall recipient retry state %q", to)
+	}
+	result := db.Model(&RecallRecipient{}).
+		Where("id = ? AND campaign_id = ? AND state = ? AND updated_at = ?", recipientID, campaignID, RecallRecipientFailed, expectedUpdatedAt).
+		Updates(map[string]any{
+			"state":              to,
+			"lease_owner":        "",
+			"lease_expires_at":   int64(0),
+			"last_error_code":    "",
+			"last_error_message": "",
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func MaskPromotionCode(code string) string {

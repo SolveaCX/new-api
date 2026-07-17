@@ -62,6 +62,22 @@ func GetRecallCampaignByIDWithContext(ctx context.Context, id int64) (*RecallCam
 	return campaign, nil
 }
 
+func ListRecallCampaignsWithContext(ctx context.Context, status string, offset int, limit int) ([]RecallCampaign, int64, error) {
+	campaigns := make([]RecallCampaign, 0)
+	var total int64
+	query := DB.WithContext(ctx).Model(&RecallCampaign{})
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&campaigns).Error; err != nil {
+		return nil, 0, err
+	}
+	return campaigns, total, nil
+}
+
 func UpdateRecallCampaignDraft(campaign *RecallCampaign) error {
 	_, err := UpdateRecallCampaignDraftWithContext(context.Background(), campaign)
 	return err
@@ -107,6 +123,10 @@ func TransitionRecallCampaignRevisionWithContext(ctx context.Context, id int64, 
 }
 
 func transitionRecallCampaignWithContext(ctx context.Context, id int64, from []string, to string, expectedConfigRevision *int64, fields map[string]any) (bool, error) {
+	return transitionRecallCampaign(DB.WithContext(ctx), id, from, to, expectedConfigRevision, fields)
+}
+
+func transitionRecallCampaign(db *gorm.DB, id int64, from []string, to string, expectedConfigRevision *int64, fields map[string]any) (bool, error) {
 	updates, err := recallCampaignTransitionUpdates(to, fields)
 	if err != nil {
 		return false, err
@@ -114,7 +134,7 @@ func transitionRecallCampaignWithContext(ctx context.Context, id int64, from []s
 	if len(from) == 0 {
 		return false, nil
 	}
-	query := DB.WithContext(ctx).Model(&RecallCampaign{}).
+	query := db.Model(&RecallCampaign{}).
 		Where("id = ? AND status IN ?", id, from)
 	if expectedConfigRevision != nil {
 		query = query.Where("config_revision = ?", *expectedConfigRevision)
@@ -124,6 +144,31 @@ func transitionRecallCampaignWithContext(ctx context.Context, id int64, from []s
 		return false, result.Error
 	}
 	return result.RowsAffected == 1, nil
+}
+
+func TransitionRecallCampaignAndAdminEventWithContext(ctx context.Context, id int64, from []string, to string, fields map[string]any, event RecallEvent) (bool, error) {
+	if event.CampaignId != id || event.RecipientId != 0 {
+		return false, fmt.Errorf("recall campaign admin event target does not match campaign %d", id)
+	}
+	if err := validateRecallAdminEvent(&event); err != nil {
+		return false, err
+	}
+	transitioned := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		won, err := transitionRecallCampaign(tx, id, from, to, nil, fields)
+		if err != nil {
+			return err
+		}
+		if !won {
+			return nil
+		}
+		transitioned = true
+		return insertRequiredRecallAdminEvent(tx, &event)
+	})
+	if err != nil {
+		return false, err
+	}
+	return transitioned, nil
 }
 
 func recallCampaignTransitionUpdates(to string, fields map[string]any) (map[string]any, error) {
@@ -233,6 +278,20 @@ func CompleteDueRecallCampaignWithContext(ctx context.Context, id int64, expecte
 }
 
 func CancelRecallCampaignWithContext(ctx context.Context, id int64, from []string, now int64, reasonCode string) (bool, error) {
+	return cancelRecallCampaignWithContext(ctx, id, from, now, reasonCode, nil)
+}
+
+func CancelRecallCampaignAndAdminEventWithContext(ctx context.Context, id int64, from []string, now int64, reasonCode string, event RecallEvent) (bool, error) {
+	if event.CampaignId != id || event.RecipientId != 0 {
+		return false, fmt.Errorf("recall campaign admin event target does not match campaign %d", id)
+	}
+	if err := validateRecallAdminEvent(&event); err != nil {
+		return false, err
+	}
+	return cancelRecallCampaignWithContext(ctx, id, from, now, reasonCode, &event)
+}
+
+func cancelRecallCampaignWithContext(ctx context.Context, id int64, from []string, now int64, reasonCode string, event *RecallEvent) (bool, error) {
 	if len(from) == 0 {
 		return false, nil
 	}
@@ -251,7 +310,7 @@ func CancelRecallCampaignWithContext(ctx context.Context, id int64, from []strin
 		recipientIDs := tx.Model(&RecallRecipient{}).
 			Select("id").
 			Where("campaign_id = ?", id)
-		return tx.Model(&RecallMessage{}).
+		if err := tx.Model(&RecallMessage{}).
 			Where("recipient_id IN (?) AND state IN ?", recipientIDs, []string{
 				RecallMessageScheduled,
 				RecallMessageRetryWait,
@@ -266,7 +325,16 @@ func CancelRecallCampaignWithContext(ctx context.Context, id int64, from []strin
 				"last_error_code":    reasonCode,
 				"last_error_message": "",
 				"failed_at":          now,
-			}).Error
+			}).Error; err != nil {
+			return err
+		}
+		if event != nil {
+			return insertRequiredRecallAdminEvent(tx, event)
+		}
+		return nil
 	})
-	return cancelled, err
+	if err != nil {
+		return false, err
+	}
+	return cancelled, nil
 }

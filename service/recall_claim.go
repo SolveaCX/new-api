@@ -70,6 +70,31 @@ func (s *RecallClaimService) ValidateClaim(ctx context.Context, userID int, clai
 	return view, err
 }
 
+func (s *RecallClaimService) ValidateClaimForPurchase(ctx context.Context, userID int, claim string, purchaseKind string, priceID string) (*RecallClaimView, error) {
+	_, view, err := s.validateClaim(ctx, userID, claim)
+	if err != nil {
+		return nil, err
+	}
+	purchaseKind = strings.TrimSpace(purchaseKind)
+	priceID = strings.TrimSpace(priceID)
+	if purchaseKind == "" && priceID == "" {
+		return view, nil
+	}
+	var allowedPrices []string
+	switch purchaseKind {
+	case RecallPurchaseKindTopUp:
+		allowedPrices = view.Products.TopUpPriceIDs
+	case RecallPurchaseKindSubscription:
+		allowedPrices = view.Products.SubscriptionPriceIDs
+	default:
+		return nil, ErrRecallClaimPurchaseKind
+	}
+	if !containsRecallPriceID(allowedPrices, priceID) {
+		return nil, ErrRecallClaimWrongPrice
+	}
+	return view, nil
+}
+
 func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, claim string) (*model.RecallClaimRecord, *RecallClaimView, error) {
 	if !operation_setting.IsRecallCampaignEnabled() {
 		return nil, nil, ErrRecallDisabled
