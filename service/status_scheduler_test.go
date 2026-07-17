@@ -413,6 +413,88 @@ func TestStatusSchedulerRenewsLeaseAcrossSlowProbesAndReachesLaterModelsAndRollu
 	require.EqualValues(t, 3, countStatusPeriodsByGranularity(t, db, model.StatusGranularityDay))
 }
 
+func TestStatusSchedulerReleasesRenewedLeaseBeforeNextMinuteTick(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	require.NoError(t, db.Create(&model.StatusComponent{
+		ComponentKey: "router", Slug: "router", Kind: model.StatusComponentKindRouter,
+		DisplayName: "Router", Lifecycle: model.StatusLifecycleActive, Version: 1,
+	}).Error)
+	const startedAt = int64(10_000)
+	var renewals atomic.Int64
+	scheduler := &StatusScheduler{
+		Holder:             "node-a",
+		Now:                func() int64 { return startedAt },
+		LeaseSeconds:       statusSchedulerLeaseSeconds,
+		LeaseRenewInterval: 30 * time.Millisecond,
+		RenewLease: func(name string, holder string, fencingToken int64, _ int64, leaseSeconds int64) (bool, error) {
+			renewedAt := startedAt + renewals.Add(1)*20
+			return model.RenewStatusJobLease(name, holder, fencingToken, renewedAt, leaseSeconds)
+		},
+		Pricing:      func() []model.Pricing { return nil },
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			time.Sleep(80 * time.Millisecond)
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), startedAt)
+	require.NoError(t, err)
+	require.True(t, ran)
+	require.Positive(t, renewals.Load(), "the run must outlive at least one renewal interval")
+
+	next, acquired, err := model.AcquireStatusJobLease(statusSchedulerJobName, "node-b", startedAt+60, statusSchedulerLeaseSeconds)
+	require.NoError(t, err)
+	require.True(t, acquired, "the next fixed one-minute tick must not wait for the renewed lease to expire")
+	require.Equal(t, "node-b", next.Holder)
+}
+
+func TestStatusSchedulerStaleWorkerCannotReleaseSuccessorLease(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	require.NoError(t, db.Create(&model.StatusComponent{
+		ComponentKey: "router", Slug: "router", Kind: model.StatusComponentKindRouter,
+		DisplayName: "Router", Lifecycle: model.StatusLifecycleActive, Version: 1,
+	}).Error)
+	const startedAt = int64(10_000)
+	var (
+		successor        model.StatusJobLease
+		takeoverAcquired bool
+		takeoverErr      error
+	)
+	scheduler := &StatusScheduler{
+		Holder:             "node-a",
+		Now:                func() int64 { return startedAt },
+		LeaseSeconds:       2,
+		LeaseRenewInterval: 10 * time.Millisecond,
+		RenewLease: func(name string, _ string, _ int64, _ int64, leaseSeconds int64) (bool, error) {
+			successor, takeoverAcquired, takeoverErr = model.AcquireStatusJobLease(name, "node-b", startedAt+3, leaseSeconds)
+			return false, takeoverErr
+		},
+		Pricing:      func() []model.Pricing { return nil },
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(ctx context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			<-ctx.Done()
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), startedAt)
+	require.True(t, ran)
+	require.ErrorContains(t, err, "status job lease renewal lost")
+	require.NoError(t, takeoverErr)
+	require.True(t, takeoverAcquired)
+
+	var stored model.StatusJobLease
+	require.NoError(t, model.DB.First(&stored, "name = ?", statusSchedulerJobName).Error)
+	require.Equal(t, successor.Holder, stored.Holder)
+	require.Equal(t, successor.FencingToken, stored.FencingToken)
+	_, acquired, err := model.AcquireStatusJobLease(statusSchedulerJobName, "node-c", startedAt+4, 2)
+	require.NoError(t, err)
+	require.False(t, acquired, "a stale worker must not expire its successor's lease")
+}
+
 func TestStatusSchedulerLostLeaseRenewalStopsProbeWrites(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	scheduler := &StatusScheduler{

@@ -67,6 +67,22 @@ func RenewStatusJobLease(name string, holder string, fencingToken int64, now int
 	return result.RowsAffected == 1, result.Error
 }
 
+func ReleaseStatusJobLease(name string, holder string, fencingToken int64, now int64) (bool, error) {
+	if DB == nil {
+		return false, errors.New("database is not initialized")
+	}
+	if name == "" || holder == "" || fencingToken <= 0 {
+		return false, errors.New("invalid status job lease release")
+	}
+	result := DB.Model(&StatusJobLease{}).
+		Where("name = ? AND holder = ? AND fencing_token = ?", name, holder, fencingToken).
+		Updates(map[string]any{
+			"expires_at": now,
+			"updated_at": now,
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
 func CommitStatusComponentWithFence(jobName string, holder string, fencingToken int64, now int64, component *StatusComponent) error {
 	if component == nil {
 		return errors.New("status component is nil")
