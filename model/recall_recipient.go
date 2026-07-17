@@ -2,7 +2,9 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -73,6 +75,132 @@ type RecallAPIActivityCheck struct {
 	MessageId int64
 	UserId    int
 	After     int64
+}
+
+type RecallAttributionCandidate struct {
+	TradeNo           string
+	UserId            int
+	CheckoutSessionId string
+	OrderCreatedAt    int64
+	EnrolledAt        int64
+}
+
+func GetRecallRecipientByPromotionCodeWithContext(ctx context.Context, userID int, promotionCodeID string) (*RecallRecipient, bool, error) {
+	recipient := RecallRecipient{}
+	err := DB.WithContext(ctx).
+		Where("user_id = ? AND stripe_promotion_code_id = ?", userID, strings.TrimSpace(promotionCodeID)).
+		First(&recipient).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return &recipient, true, nil
+}
+
+func GetRecallRecipientByClaimWithContext(ctx context.Context, userID int, campaignID int64, recipientID int64) (*RecallRecipient, bool, error) {
+	recipient := RecallRecipient{}
+	err := DB.WithContext(ctx).
+		Where("id = ? AND campaign_id = ? AND user_id = ?", recipientID, campaignID, userID).
+		First(&recipient).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return &recipient, true, nil
+}
+
+func ListRecallAttributionCandidatesWithContext(ctx context.Context, limit int) ([]RecallAttributionCandidate, error) {
+	candidates := make([]RecallAttributionCandidate, 0)
+	if limit <= 0 {
+		return candidates, nil
+	}
+	var recipients []RecallRecipient
+	if err := DB.WithContext(ctx).
+		Select("user_id", "created_at").
+		Where("converted_at = 0 AND state IN ?", recallClaimActiveRecipientStates()).
+		Order("created_at ASC").
+		Find(&recipients).Error; err != nil {
+		return nil, err
+	}
+	if len(recipients) == 0 {
+		return candidates, nil
+	}
+	enrolledAtByUser := make(map[int]int64, len(recipients))
+	for _, recipient := range recipients {
+		if current, exists := enrolledAtByUser[recipient.UserId]; !exists || recipient.CreatedAt < current {
+			enrolledAtByUser[recipient.UserId] = recipient.CreatedAt
+		}
+	}
+	userIDs := make([]int, 0, len(enrolledAtByUser))
+	for userID := range enrolledAtByUser {
+		userIDs = append(userIDs, userID)
+	}
+
+	subscriptionOrders := make([]SubscriptionOrder, 0)
+	if err := DB.WithContext(ctx).
+		Where("user_id IN ? AND payment_provider = ? AND status = ?", userIDs, PaymentProviderStripe, common.TopUpStatusSuccess).
+		Order("create_time ASC, id ASC").
+		Find(&subscriptionOrders).Error; err != nil {
+		return nil, err
+	}
+	seenTradeNos := make(map[string]struct{}, len(subscriptionOrders))
+	for _, order := range subscriptionOrders {
+		enrolledAt := enrolledAtByUser[order.UserId]
+		if order.CreateTime < enrolledAt {
+			continue
+		}
+		sessionID := StripeCheckoutSessionIDFromProviderPayload(order.ProviderPayload)
+		if sessionID == "" {
+			continue
+		}
+		tradeNo := strings.TrimSpace(order.TradeNo)
+		seenTradeNos[tradeNo] = struct{}{}
+		candidates = append(candidates, RecallAttributionCandidate{
+			TradeNo: tradeNo, UserId: order.UserId, CheckoutSessionId: sessionID,
+			OrderCreatedAt: order.CreateTime, EnrolledAt: enrolledAt,
+		})
+	}
+
+	topUps := make([]TopUp, 0)
+	if err := DB.WithContext(ctx).
+		Where("user_id IN ? AND payment_provider = ? AND status = ?", userIDs, PaymentProviderStripe, common.TopUpStatusSuccess).
+		Order("create_time ASC, id ASC").
+		Find(&topUps).Error; err != nil {
+		return nil, err
+	}
+	for _, topUp := range topUps {
+		tradeNo := strings.TrimSpace(topUp.TradeNo)
+		if _, duplicateSubscription := seenTradeNos[tradeNo]; duplicateSubscription {
+			continue
+		}
+		enrolledAt := enrolledAtByUser[topUp.UserId]
+		if topUp.CreateTime < enrolledAt {
+			continue
+		}
+		sessionID := strings.TrimSpace(topUp.GatewayTradeNo)
+		if sessionID == "" {
+			continue
+		}
+		seenTradeNos[tradeNo] = struct{}{}
+		candidates = append(candidates, RecallAttributionCandidate{
+			TradeNo: tradeNo, UserId: topUp.UserId, CheckoutSessionId: sessionID,
+			OrderCreatedAt: topUp.CreateTime, EnrolledAt: enrolledAt,
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].OrderCreatedAt == candidates[j].OrderCreatedAt {
+			return candidates[i].TradeNo < candidates[j].TradeNo
+		}
+		return candidates[i].OrderCreatedAt < candidates[j].OrderCreatedAt
+	})
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates, nil
 }
 
 func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
