@@ -277,6 +277,8 @@ jobs:
       RUN_SERVICE: newapi-router
       NODE_TYPE: slave
       APP_ROLE: router
+      # Keep in sync with deploy/gcp/envs/prod/terraform.tfvars.
+      MAX_INSTANCES: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -351,6 +353,7 @@ jobs:
           gcloud run services update "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
+            --max-instances="${MAX_INSTANCES}" \
             --revision-suffix="${revision_suffix}" \
             --no-traffic \
             --quiet \

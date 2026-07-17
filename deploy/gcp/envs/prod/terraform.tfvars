@@ -72,7 +72,7 @@ console_domains_require_managed_cert = false
 // calls. Console starts smaller because it handles authenticated UI/API traffic
 // and is the high-frequency deploy target.
 router_min_instances  = 4
-router_max_instances  = 20
+router_max_instances  = 30
 router_concurrency    = 60
 router_memory         = "2Gi"
 console_min_instances = 1
