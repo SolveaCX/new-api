@@ -155,6 +155,52 @@ type statusChallengeSender struct {
 	statusCode int
 }
 
+type statusBlockingChallengeSender struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (sender *statusBlockingChallengeSender) Send(_ context.Context, request StatusWebhookRequest) (StatusWebhookResponse, error) {
+	close(sender.started)
+	<-sender.release
+	var challenge struct {
+		Challenge string `json:"challenge"`
+	}
+	if err := common.Unmarshal(request.Body, &challenge); err != nil {
+		return StatusWebhookResponse{}, err
+	}
+	body, err := common.Marshal(challenge)
+	return StatusWebhookResponse{StatusCode: http.StatusOK, Body: body}, err
+}
+
+type statusWebhookRegistrationOutcome struct {
+	result StatusWebhookRegistrationResult
+	err    error
+}
+
+type statusInterleavingChallengeSender struct {
+	nestedService StatusWebhookRegistrationService
+	endpoint      string
+	nestedStarted <-chan struct{}
+	nestedOutcome chan statusWebhookRegistrationOutcome
+}
+
+func (sender *statusInterleavingChallengeSender) Send(ctx context.Context, request StatusWebhookRequest) (StatusWebhookResponse, error) {
+	go func() {
+		result, err := sender.nestedService.Register(ctx, sender.endpoint, nil)
+		sender.nestedOutcome <- statusWebhookRegistrationOutcome{result: result, err: err}
+	}()
+	<-sender.nestedStarted
+	var challenge struct {
+		Challenge string `json:"challenge"`
+	}
+	if err := common.Unmarshal(request.Body, &challenge); err != nil {
+		return StatusWebhookResponse{}, err
+	}
+	body, err := common.Marshal(challenge)
+	return StatusWebhookResponse{StatusCode: http.StatusOK, Body: body}, err
+}
+
 func (sender *statusChallengeSender) Send(_ context.Context, request StatusWebhookRequest) (StatusWebhookResponse, error) {
 	sender.requests = append(sender.requests, request)
 	if sender.statusCode != 0 && sender.statusCode != http.StatusOK {
@@ -224,4 +270,45 @@ func TestStatusWebhookRegistrationLeavesDestinationPendingOnBadChallenge(t *test
 	var subscriber model.StatusSubscriber
 	require.NoError(t, db.Where("identity_hash = ?", HashStatusIdentity(model.StatusSubscriberKindWebhook, "https://hooks.example.com/bad")).First(&subscriber).Error)
 	require.Equal(t, model.StatusSubscriberPending, subscriber.Status)
+}
+
+func TestStatusWebhookRegistrationChallengeActivatesOnlyItsOwnGeneration(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	keyring := statusSecretTestKeyring(t)
+	endpoint := "https://hooks.example.com/interleaved"
+	blockingSender := &statusBlockingChallengeSender{started: make(chan struct{}), release: make(chan struct{})}
+	nestedService := StatusWebhookRegistrationService{
+		Keyring: keyring,
+		Sender:  blockingSender,
+		Now:     func() int64 { return 4_001 },
+	}
+	nestedOutcome := make(chan statusWebhookRegistrationOutcome, 1)
+	firstService := StatusWebhookRegistrationService{
+		Keyring: keyring,
+		Sender: &statusInterleavingChallengeSender{
+			nestedService: nestedService,
+			endpoint:      endpoint,
+			nestedStarted: blockingSender.started,
+			nestedOutcome: nestedOutcome,
+		},
+		Now: func() int64 { return 4_000 },
+	}
+
+	firstResult, firstErr := firstService.Register(context.Background(), endpoint, nil)
+	close(blockingSender.release)
+	second := <-nestedOutcome
+
+	require.ErrorIs(t, firstErr, ErrStatusWebhookChallengeFailed)
+	require.Empty(t, firstResult.SigningSecret)
+	require.NoError(t, second.err)
+	require.NotEmpty(t, second.result.SigningSecret)
+	require.NotEmpty(t, second.result.ManageToken)
+
+	var subscriber model.StatusSubscriber
+	require.NoError(t, db.First(&subscriber, second.result.SubscriberID).Error)
+	require.Equal(t, model.StatusSubscriberActive, subscriber.Status)
+	storedSecret, err := keyring.Decrypt(subscriber.EncryptedSigningSecret)
+	require.NoError(t, err)
+	require.Equal(t, second.result.SigningSecret, storedSecret)
+	require.True(t, VerifyStatusToken(subscriber.ManageTokenHash, second.result.ManageToken))
 }

@@ -91,13 +91,16 @@ type StatusSubscriberMutation struct {
 }
 
 type StatusDeliveryResultMutation struct {
-	ID              int64
-	LockToken       string
-	ExpectedVersion int64
-	Status          string
-	NextAttemptAt   int64
-	LastError       string
-	Now             int64
+	ID               int64
+	LockToken        string
+	ExpectedVersion  int64
+	DestinationType  string
+	DestinationID    int64
+	SuspendThreshold int64
+	Status           string
+	NextAttemptAt    int64
+	LastError        string
+	Now              int64
 }
 
 func CreateOrRefreshStatusSubscriber(input StatusSubscriberMutation) (StatusSubscriber, bool, error) {
@@ -166,15 +169,15 @@ func CreateOrRefreshStatusSubscriber(input StatusSubscriberMutation) (StatusSubs
 	return subscriber, shouldNotify, err
 }
 
-func ActivateStatusSubscriberChallenge(id int64, now int64) (bool, error) {
+func ActivateStatusSubscriberChallenge(id int64, challengeHash string, now int64) (bool, error) {
 	if DB == nil {
 		return false, errors.New("database is not initialized")
 	}
-	if id <= 0 || now <= 0 {
+	if id <= 0 || challengeHash == "" || now <= 0 {
 		return false, errors.New("invalid status subscriber activation")
 	}
 	result := DB.Model(&StatusSubscriber{}).
-		Where("id = ? AND status = ?", id, StatusSubscriberPending).
+		Where("id = ? AND status = ? AND verification_token_hash = ?", id, StatusSubscriberPending, challengeHash).
 		Updates(map[string]any{
 			"status":                  StatusSubscriberActive,
 			"verification_token_hash": "",
@@ -240,11 +243,17 @@ func RecordStatusSubscriberDeliveryResult(id int64, delivered bool, permanentFai
 	if DB == nil {
 		return errors.New("database is not initialized")
 	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return recordStatusSubscriberDeliveryResult(tx, id, delivered, permanentFailure, suspendThreshold, now)
+	})
+}
+
+func recordStatusSubscriberDeliveryResult(tx *gorm.DB, id int64, delivered bool, permanentFailure bool, suspendThreshold int64, now int64) error {
 	if id <= 0 {
 		return errors.New("invalid status subscriber delivery result")
 	}
 	if delivered {
-		return DB.Model(&StatusSubscriber{}).Where("id = ?", id).Updates(map[string]any{
+		return tx.Model(&StatusSubscriber{}).Where("id = ?", id).Updates(map[string]any{
 			"failure_count": 0,
 			"updated_at":    now,
 		}).Error
@@ -255,17 +264,15 @@ func RecordStatusSubscriberDeliveryResult(id int64, delivered bool, permanentFai
 	if suspendThreshold <= 0 {
 		suspendThreshold = 1
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&StatusSubscriber{}).Where("id = ?", id).Updates(map[string]any{
-			"failure_count": gorm.Expr("failure_count + 1"),
-			"updated_at":    now,
-		}).Error; err != nil {
-			return err
-		}
-		return tx.Model(&StatusSubscriber{}).
-			Where("id = ? AND failure_count >= ? AND status = ?", id, suspendThreshold, StatusSubscriberActive).
-			Updates(map[string]any{"status": StatusSubscriberSuspended, "suspended_at": now, "updated_at": now}).Error
-	})
+	if err := tx.Model(&StatusSubscriber{}).Where("id = ?", id).Updates(map[string]any{
+		"failure_count": gorm.Expr("failure_count + 1"),
+		"updated_at":    now,
+	}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&StatusSubscriber{}).
+		Where("id = ? AND failure_count >= ? AND status = ?", id, suspendThreshold, StatusSubscriberActive).
+		Updates(map[string]any{"status": StatusSubscriberSuspended, "suspended_at": now, "updated_at": now}).Error
 }
 
 func UpsertStatusSetting(setting StatusSetting) (StatusSetting, error) {
@@ -332,74 +339,84 @@ func RecordStatusDiscordDeliveryResult(delivered bool, permanentFailure bool, su
 	for {
 		var updated StatusDiscordDeliveryState
 		err := DB.Transaction(func(tx *gorm.DB) error {
-			var setting StatusSetting
-			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("key = ?", statusDiscordDeliveryStateSettingKey).
-				First(&setting).Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				if permanentFailure {
-					updated.FailureCount = 1
-					if updated.FailureCount >= suspendThreshold {
-						updated.SuspendedAt = now
-					}
-				}
-				value, marshalErr := common.Marshal(updated)
-				if marshalErr != nil {
-					return marshalErr
-				}
-				created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&StatusSetting{
-					Key: statusDiscordDeliveryStateSettingKey, Value: string(value), Sensitive: false,
-					Version: 1, UpdatedAt: now,
-				})
-				if created.Error != nil {
-					return created.Error
-				}
-				if created.RowsAffected == 0 {
-					return ErrStatusVersionConflict
-				}
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			updated, err = decodeStatusDiscordDeliveryState(setting.Value)
-			if err != nil {
-				return err
-			}
-			if delivered {
-				updated = StatusDiscordDeliveryState{}
-			} else {
-				if updated.SuspendedAt > 0 {
-					return nil
-				}
-				updated.FailureCount++
-				if updated.FailureCount >= suspendThreshold && updated.SuspendedAt == 0 {
-					updated.SuspendedAt = now
-				}
-			}
-			value, err := common.Marshal(updated)
-			if err != nil {
-				return err
-			}
-			result := tx.Model(&StatusSetting{}).
-				Where("key = ? AND version = ?", statusDiscordDeliveryStateSettingKey, setting.Version).
-				Updates(map[string]any{
-					"value": string(value), "sensitive": false,
-					"version": gorm.Expr("version + 1"), "updated_at": now,
-				})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
-				return ErrStatusVersionConflict
-			}
-			return nil
+			var err error
+			updated, err = recordStatusDiscordDeliveryResult(tx, delivered, permanentFailure, suspendThreshold, now)
+			return err
 		})
 		if errors.Is(err, ErrStatusVersionConflict) {
 			continue
 		}
-		return updated, err
+		if err != nil {
+			return StatusDiscordDeliveryState{}, err
+		}
+		return updated, nil
 	}
+}
+
+func recordStatusDiscordDeliveryResult(tx *gorm.DB, delivered bool, permanentFailure bool, suspendThreshold int64, now int64) (StatusDiscordDeliveryState, error) {
+	var updated StatusDiscordDeliveryState
+	var setting StatusSetting
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("key = ?", statusDiscordDeliveryStateSettingKey).
+		First(&setting).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if permanentFailure {
+			updated.FailureCount = 1
+			if updated.FailureCount >= suspendThreshold {
+				updated.SuspendedAt = now
+			}
+		}
+		value, marshalErr := common.Marshal(updated)
+		if marshalErr != nil {
+			return StatusDiscordDeliveryState{}, marshalErr
+		}
+		created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&StatusSetting{
+			Key: statusDiscordDeliveryStateSettingKey, Value: string(value), Sensitive: false,
+			Version: 1, UpdatedAt: now,
+		})
+		if created.Error != nil {
+			return StatusDiscordDeliveryState{}, created.Error
+		}
+		if created.RowsAffected == 0 {
+			return StatusDiscordDeliveryState{}, ErrStatusVersionConflict
+		}
+		return updated, nil
+	}
+	if err != nil {
+		return StatusDiscordDeliveryState{}, err
+	}
+	updated, err = decodeStatusDiscordDeliveryState(setting.Value)
+	if err != nil {
+		return StatusDiscordDeliveryState{}, err
+	}
+	if delivered {
+		updated = StatusDiscordDeliveryState{}
+	} else {
+		if updated.SuspendedAt > 0 {
+			return updated, nil
+		}
+		updated.FailureCount++
+		if updated.FailureCount >= suspendThreshold && updated.SuspendedAt == 0 {
+			updated.SuspendedAt = now
+		}
+	}
+	value, err := common.Marshal(updated)
+	if err != nil {
+		return StatusDiscordDeliveryState{}, err
+	}
+	result := tx.Model(&StatusSetting{}).
+		Where("key = ? AND version = ?", statusDiscordDeliveryStateSettingKey, setting.Version).
+		Updates(map[string]any{
+			"value": string(value), "sensitive": false,
+			"version": gorm.Expr("version + 1"), "updated_at": now,
+		})
+	if result.Error != nil {
+		return StatusDiscordDeliveryState{}, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return StatusDiscordDeliveryState{}, ErrStatusVersionConflict
+	}
+	return updated, nil
 }
 
 func decodeStatusDiscordDeliveryState(value string) (StatusDiscordDeliveryState, error) {
@@ -459,6 +476,22 @@ func ClaimStatusDeliveryOutbox(worker string, now int64, leaseSeconds int64, lim
 	return claimed, nil
 }
 
+func RenewStatusDeliveryOutboxLease(id int64, lockToken string, expectedVersion int64, now int64, leaseSeconds int64) (bool, error) {
+	if DB == nil {
+		return false, errors.New("database is not initialized")
+	}
+	if id <= 0 || lockToken == "" || expectedVersion <= 0 || now <= 0 || leaseSeconds <= 0 {
+		return false, errors.New("invalid status delivery lease renewal")
+	}
+	result := DB.Model(&StatusDeliveryOutbox{}).
+		Where("id = ? AND status = ? AND lock_token = ? AND version = ?", id, StatusDeliveryProcessing, lockToken, expectedVersion).
+		Updates(map[string]any{
+			"locked_until": now + leaseSeconds,
+			"updated_at":   now,
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
 func CompleteStatusDeliveryOutbox(input StatusDeliveryResultMutation) (bool, error) {
 	if DB == nil {
 		return false, errors.New("database is not initialized")
@@ -467,19 +500,55 @@ func CompleteStatusDeliveryOutbox(input StatusDeliveryResultMutation) (bool, err
 		(input.Status != StatusDeliveryPending && input.Status != StatusDeliveryDelivered && input.Status != StatusDeliveryDead) {
 		return false, errors.New("invalid status delivery result")
 	}
-	result := DB.Model(&StatusDeliveryOutbox{}).
-		Where("id = ? AND status = ? AND lock_token = ? AND version = ?", input.ID, StatusDeliveryProcessing, input.LockToken, input.ExpectedVersion).
-		Updates(map[string]any{
-			"status":          input.Status,
-			"lock_token":      "",
-			"locked_until":    0,
-			"attempts":        gorm.Expr("attempts + 1"),
-			"next_attempt_at": input.NextAttemptAt,
-			"last_error":      input.LastError,
-			"version":         gorm.Expr("version + 1"),
-			"updated_at":      input.Now,
+	for {
+		updated := false
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			result := tx.Model(&StatusDeliveryOutbox{}).
+				Where("id = ? AND status = ? AND lock_token = ? AND version = ?", input.ID, StatusDeliveryProcessing, input.LockToken, input.ExpectedVersion).
+				Updates(map[string]any{
+					"status":          input.Status,
+					"lock_token":      "",
+					"locked_until":    0,
+					"attempts":        gorm.Expr("attempts + 1"),
+					"next_attempt_at": input.NextAttemptAt,
+					"last_error":      input.LastError,
+					"version":         gorm.Expr("version + 1"),
+					"updated_at":      input.Now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return nil
+			}
+			updated = true
+			if input.Status == StatusDeliveryPending {
+				return nil
+			}
+			delivered := input.Status == StatusDeliveryDelivered
+			permanentFailure := input.Status == StatusDeliveryDead
+			switch input.DestinationType {
+			case StatusDestinationEmail, StatusDestinationWebhook:
+				return recordStatusSubscriberDeliveryResult(
+					tx, input.DestinationID, delivered, permanentFailure, input.SuspendThreshold, input.Now,
+				)
+			case StatusDestinationDiscord:
+				_, err := recordStatusDiscordDeliveryResult(
+					tx, delivered, permanentFailure, input.SuspendThreshold, input.Now,
+				)
+				return err
+			default:
+				return nil
+			}
 		})
-	return result.RowsAffected == 1, result.Error
+		if errors.Is(err, ErrStatusVersionConflict) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		return updated, nil
+	}
 }
 
 func normalizeStatusSubscriberComponentIDs(componentIDs []int64) ([]int64, error) {

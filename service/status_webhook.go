@@ -297,6 +297,7 @@ func (service StatusWebhookRegistrationService) Register(ctx context.Context, en
 			EncryptedEndpoint:      encryptedEndpoint,
 			EncryptedSigningSecret: encryptedSecret,
 			Status:                 model.StatusSubscriberPending,
+			VerificationTokenHash:  HashStatusToken(challenge),
 			ManageTokenHash:        HashStatusToken(manageToken),
 			CreatedAt:              now,
 			UpdatedAt:              now,
@@ -325,7 +326,7 @@ func (service StatusWebhookRegistrationService) Register(ctx context.Context, en
 	if err := common.Unmarshal(response.Body, &echo); err != nil || !VerifyStatusToken(HashStatusToken(challenge), echo.Challenge) {
 		return StatusWebhookRegistrationResult{}, ErrStatusWebhookChallengeFailed
 	}
-	activated, err := model.ActivateStatusSubscriberChallenge(subscriber.ID, now)
+	activated, err := model.ActivateStatusSubscriberChallenge(subscriber.ID, HashStatusToken(challenge), now)
 	if err != nil {
 		return StatusWebhookRegistrationResult{}, err
 	}
