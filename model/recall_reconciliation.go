@@ -38,19 +38,34 @@ type recallAttributionProgressData struct {
 }
 
 type recallAttributionCursor struct {
-	Phase          string `json:"phase"`
-	OrderCreatedAt int64  `json:"order_created_at"`
-	OrderId        int    `json:"order_id"`
+	Phase   string `json:"phase"`
+	OrderId int    `json:"order_id"`
 }
 
 type recallAttributionOrderRow struct {
 	Id                int    `gorm:"column:id"`
 	TradeNo           string `gorm:"column:trade_no"`
 	UserId            int    `gorm:"column:user_id"`
+	PaymentProvider   string `gorm:"column:payment_provider"`
+	Status            string `gorm:"column:status"`
 	ProviderPayload   string `gorm:"column:provider_payload"`
 	CheckoutSessionId string `gorm:"column:checkout_session_id"`
 	OrderCreatedAt    int64  `gorm:"column:order_created_at"`
-	EnrolledAt        int64  `gorm:"column:enrolled_at"`
+}
+
+type recallAttributionEnrollmentRow struct {
+	UserId     int   `gorm:"column:user_id"`
+	EnrolledAt int64 `gorm:"column:enrolled_at"`
+}
+
+type recallAttributionDuplicateSubscriptionRow struct {
+	TradeNo string `gorm:"column:trade_no"`
+	UserId  int    `gorm:"column:user_id"`
+}
+
+type recallAttributionOrderKey struct {
+	TradeNo string
+	UserId  int
 }
 
 // ListRecallAttributionCandidatesWithContext scans at most eight times the
@@ -75,7 +90,7 @@ func ListRecallAttributionCandidatesWithContext(ctx context.Context, nowUnix int
 	scanned := 0
 	wrapped := false
 	for scanned < scanBudget && len(candidates) < limit {
-		pageSize := min(limit, recallAttributionMaxPageSize, scanBudget-scanned)
+		pageSize := min(limit-len(candidates), recallAttributionMaxPageSize, scanBudget-scanned)
 		rows, err := listRecallAttributionOrderPageWithContext(ctx, cursor, pageSize)
 		if err != nil {
 			return nil, err
@@ -93,37 +108,17 @@ func ListRecallAttributionCandidatesWithContext(ctx context.Context, nowUnix int
 			continue
 		}
 		scanned += len(rows)
-		pageCandidates := make([]RecallAttributionCandidate, 0, len(rows))
-		candidateByRow := make([]RecallAttributionCandidate, len(rows))
-		hasCandidate := make([]bool, len(rows))
-		for i, row := range rows {
-			candidate, ok := recallAttributionCandidateFromOrderRow(row, cursor.Phase)
-			if !ok {
-				continue
-			}
-			candidateByRow[i] = candidate
-			hasCandidate[i] = true
-			pageCandidates = append(pageCandidates, candidate)
+		cursor.OrderId = rows[len(rows)-1].Id
+		pageCandidates, err := recallAttributionCandidatesFromOrderRowsWithContext(ctx, rows, cursor.Phase)
+		if err != nil {
+			return nil, err
 		}
 		eligible, err := filterRecallAttributionCandidatesWithContext(ctx, pageCandidates, nowUnix, len(pageCandidates))
 		if err != nil {
 			return nil, err
 		}
-		eligibleSourceEventIDs := make(map[string]struct{}, len(eligible))
 		for _, candidate := range eligible {
-			eligibleSourceEventIDs[recallAttributionSourceEventID(candidate)] = struct{}{}
-		}
-		for i, row := range rows {
-			cursor.OrderCreatedAt = row.OrderCreatedAt
-			cursor.OrderId = row.Id
-			if !hasCandidate[i] {
-				continue
-			}
-			candidate := candidateByRow[i]
 			sourceEventID := recallAttributionSourceEventID(candidate)
-			if _, ok := eligibleSourceEventIDs[sourceEventID]; !ok {
-				continue
-			}
 			if _, selected := selectedSourceEventIDs[sourceEventID]; selected {
 				continue
 			}
@@ -150,38 +145,21 @@ func listRecallAttributionOrderPageWithContext(ctx context.Context, cursor recal
 }
 
 func recallAttributionOrderPageQueryWithContext(ctx context.Context, db *gorm.DB, cursor recallAttributionCursor, limit int) *gorm.DB {
-	enrollmentForSelect := recallAttributionEnrollmentSubquery(ctx, db)
-	enrollmentForFilter := recallAttributionEnrollmentSubquery(ctx, db)
 	query := db.WithContext(ctx).
 		Table(recallAttributionOrderTable(cursor.Phase)+" AS recall_orders").
-		Where("recall_orders.payment_provider = ? AND recall_orders.status = ?", PaymentProviderStripe, common.TopUpStatusSuccess).
-		Where("(recall_orders.create_time > ?) OR (recall_orders.create_time = ? AND recall_orders.id > ?)", cursor.OrderCreatedAt, cursor.OrderCreatedAt, cursor.OrderId).
-		Where("recall_orders.create_time >= (?)", enrollmentForFilter).
-		Order("recall_orders.create_time ASC, recall_orders.id ASC").
-		Limit(limit)
+		Where("recall_orders.id > ?", cursor.OrderId).
+		Order("recall_orders.id ASC").
+		Limit(min(limit, recallAttributionMaxPageSize))
 	if cursor.Phase == recallAttributionPhaseSubscription {
 		query = query.Select(
-			"recall_orders.id, recall_orders.trade_no, recall_orders.user_id, recall_orders.provider_payload, recall_orders.create_time AS order_created_at, (?) AS enrolled_at",
-			enrollmentForSelect,
+			"recall_orders.id, recall_orders.trade_no, recall_orders.user_id, recall_orders.payment_provider, recall_orders.status, recall_orders.provider_payload, recall_orders.create_time AS order_created_at",
 		)
 	} else {
-		query = query.
-			Select(
-				"recall_orders.id, recall_orders.trade_no, recall_orders.user_id, recall_orders.gateway_trade_no AS checkout_session_id, recall_orders.create_time AS order_created_at, (?) AS enrolled_at",
-				enrollmentForSelect,
-			).
-			Joins("LEFT JOIN subscription_orders AS duplicate_subscription_orders ON duplicate_subscription_orders.trade_no = recall_orders.trade_no AND duplicate_subscription_orders.user_id = recall_orders.user_id AND duplicate_subscription_orders.payment_provider = ? AND duplicate_subscription_orders.status = ?", PaymentProviderStripe, common.TopUpStatusSuccess).
-			Where("duplicate_subscription_orders.id IS NULL")
+		query = query.Select(
+			"recall_orders.id, recall_orders.trade_no, recall_orders.user_id, recall_orders.payment_provider, recall_orders.status, recall_orders.gateway_trade_no AS checkout_session_id, recall_orders.create_time AS order_created_at",
+		)
 	}
 	return query
-}
-
-func recallAttributionEnrollmentSubquery(ctx context.Context, db *gorm.DB) *gorm.DB {
-	return db.WithContext(ctx).
-		Model(&RecallRecipient{}).
-		Select("MIN(recall_recipients.created_at)").
-		Where("recall_recipients.user_id = recall_orders.user_id").
-		Where("recall_recipients.converted_at = 0 AND recall_recipients.state IN ?", recallClaimActiveRecipientStates())
 }
 
 func recallAttributionOrderTable(phase string) string {
@@ -191,7 +169,104 @@ func recallAttributionOrderTable(phase string) string {
 	return "subscription_orders"
 }
 
-func recallAttributionCandidateFromOrderRow(row recallAttributionOrderRow, phase string) (RecallAttributionCandidate, bool) {
+func recallAttributionCandidatesFromOrderRowsWithContext(ctx context.Context, rows []recallAttributionOrderRow, phase string) ([]RecallAttributionCandidate, error) {
+	relevantRows := make([]recallAttributionOrderRow, 0, len(rows))
+	userIDs := make([]int, 0, len(rows))
+	seenUserIDs := make(map[int]struct{}, len(rows))
+	for _, row := range rows {
+		if row.PaymentProvider != PaymentProviderStripe || row.Status != common.TopUpStatusSuccess {
+			continue
+		}
+		relevantRows = append(relevantRows, row)
+		if _, seen := seenUserIDs[row.UserId]; !seen {
+			seenUserIDs[row.UserId] = struct{}{}
+			userIDs = append(userIDs, row.UserId)
+		}
+	}
+	if len(relevantRows) == 0 {
+		return []RecallAttributionCandidate{}, nil
+	}
+	enrolledAtByUser, err := recallAttributionEnrollmentByUserWithContext(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	duplicateSubscriptions := make(map[recallAttributionOrderKey]struct{})
+	if phase == recallAttributionPhaseTopUp {
+		tradeNos := make([]string, 0, len(relevantRows))
+		seenTradeNos := make(map[string]struct{}, len(relevantRows))
+		for _, row := range relevantRows {
+			if _, enrolled := enrolledAtByUser[row.UserId]; !enrolled {
+				continue
+			}
+			if _, seen := seenTradeNos[row.TradeNo]; !seen {
+				seenTradeNos[row.TradeNo] = struct{}{}
+				tradeNos = append(tradeNos, row.TradeNo)
+			}
+		}
+		duplicateSubscriptions, err = recallAttributionDuplicateSubscriptionsWithContext(ctx, tradeNos)
+		if err != nil {
+			return nil, err
+		}
+	}
+	candidates := make([]RecallAttributionCandidate, 0, len(relevantRows))
+	for _, row := range relevantRows {
+		enrolledAt, enrolled := enrolledAtByUser[row.UserId]
+		if !enrolled || row.OrderCreatedAt < enrolledAt {
+			continue
+		}
+		if _, duplicate := duplicateSubscriptions[recallAttributionOrderKey{TradeNo: strings.TrimSpace(row.TradeNo), UserId: row.UserId}]; duplicate {
+			continue
+		}
+		candidate, ok := recallAttributionCandidateFromOrderRow(row, phase, enrolledAt)
+		if ok {
+			candidates = append(candidates, candidate)
+		}
+	}
+	return candidates, nil
+}
+
+func recallAttributionEnrollmentByUserWithContext(ctx context.Context, userIDs []int) (map[int]int64, error) {
+	enrolledAtByUser := make(map[int]int64, len(userIDs))
+	if len(userIDs) == 0 {
+		return enrolledAtByUser, nil
+	}
+	rows := make([]recallAttributionEnrollmentRow, 0, len(userIDs))
+	err := DB.WithContext(ctx).
+		Model(&RecallRecipient{}).
+		Select("user_id, MIN(created_at) AS enrolled_at").
+		Where("converted_at = 0 AND state IN ? AND user_id IN ?", recallClaimActiveRecipientStates(), userIDs).
+		Group("user_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		enrolledAtByUser[row.UserId] = row.EnrolledAt
+	}
+	return enrolledAtByUser, nil
+}
+
+func recallAttributionDuplicateSubscriptionsWithContext(ctx context.Context, tradeNos []string) (map[recallAttributionOrderKey]struct{}, error) {
+	duplicates := make(map[recallAttributionOrderKey]struct{}, len(tradeNos))
+	if len(tradeNos) == 0 {
+		return duplicates, nil
+	}
+	rows := make([]recallAttributionDuplicateSubscriptionRow, 0, len(tradeNos))
+	err := DB.WithContext(ctx).
+		Model(&SubscriptionOrder{}).
+		Select("trade_no", "user_id").
+		Where("trade_no IN ? AND payment_provider = ? AND status = ?", tradeNos, PaymentProviderStripe, common.TopUpStatusSuccess).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		duplicates[recallAttributionOrderKey{TradeNo: strings.TrimSpace(row.TradeNo), UserId: row.UserId}] = struct{}{}
+	}
+	return duplicates, nil
+}
+
+func recallAttributionCandidateFromOrderRow(row recallAttributionOrderRow, phase string, enrolledAt int64) (RecallAttributionCandidate, bool) {
 	sessionID := strings.TrimSpace(row.CheckoutSessionId)
 	if phase == recallAttributionPhaseSubscription {
 		sessionID = StripeCheckoutSessionIDFromProviderPayload(row.ProviderPayload)
@@ -201,7 +276,7 @@ func recallAttributionCandidateFromOrderRow(row recallAttributionOrderRow, phase
 	}
 	return RecallAttributionCandidate{
 		TradeNo: strings.TrimSpace(row.TradeNo), UserId: row.UserId, CheckoutSessionId: sessionID,
-		OrderCreatedAt: row.OrderCreatedAt, EnrolledAt: row.EnrolledAt,
+		OrderCreatedAt: row.OrderCreatedAt, EnrolledAt: enrolledAt,
 	}, true
 }
 
