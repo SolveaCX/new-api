@@ -44,7 +44,7 @@ variable "cpu" {
 
 variable "memory" {
   type    = string
-  default = "512Mi"
+  default = "1Gi"
 }
 
 variable "min_instances" {
