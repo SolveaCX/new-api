@@ -101,6 +101,13 @@ func TestStatusWebhookRejectsEveryResolvedIPWhenAnyAddressIsPrivate(t *testing.T
 	require.Error(t, ValidateStatusWebhookEndpoint(context.Background(), "https://example.com/hook", resolver, nil))
 }
 
+func TestStatusWebhookIPv6SiteLocalIsDeniedWithoutBlockingGlobalOrMappedPublic(t *testing.T) {
+	require.False(t, statusWebhookIPIsPublic(net.ParseIP("fec0::1")))
+	require.True(t, statusWebhookIPIsPublic(net.ParseIP("2606:4700:4700::1111")))
+	require.True(t, statusWebhookIPIsPublic(net.ParseIP("::ffff:8.8.8.8")))
+	require.False(t, statusWebhookIPIsPublic(net.ParseIP("::ffff:127.0.0.1")))
+}
+
 func TestStatusWebhookDialRevalidatesDNSAndBlocksRebinding(t *testing.T) {
 	resolver := &statusWebhookStaticResolver{responses: [][]net.IPAddr{
 		{{IP: net.ParseIP("8.8.8.8")}},

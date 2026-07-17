@@ -19,6 +19,13 @@ var (
 	ErrStatusMaintenanceRequiresTransition = errors.New("active status maintenance must be resolved through its transition")
 )
 
+const statusDiscordDeliveryStateSettingKey = "status.discord.delivery_state"
+
+type StatusDiscordDeliveryState struct {
+	FailureCount int64 `json:"failure_count"`
+	SuspendedAt  int64 `json:"suspended_at"`
+}
+
 type StatusAuditMutation struct {
 	ActorID   int
 	ActorType string
@@ -298,6 +305,112 @@ func GetStatusSetting(key string) (StatusSetting, bool, error) {
 		return StatusSetting{}, false, nil
 	}
 	return setting, err == nil, err
+}
+
+func GetStatusDiscordDeliveryState() (StatusDiscordDeliveryState, error) {
+	setting, found, err := GetStatusSetting(statusDiscordDeliveryStateSettingKey)
+	if err != nil || !found {
+		return StatusDiscordDeliveryState{}, err
+	}
+	return decodeStatusDiscordDeliveryState(setting.Value)
+}
+
+func RecordStatusDiscordDeliveryResult(delivered bool, permanentFailure bool, suspendThreshold int64, now int64) (StatusDiscordDeliveryState, error) {
+	if DB == nil {
+		return StatusDiscordDeliveryState{}, errors.New("database is not initialized")
+	}
+	if now <= 0 {
+		return StatusDiscordDeliveryState{}, errors.New("invalid status Discord delivery result")
+	}
+	if !delivered && !permanentFailure {
+		return GetStatusDiscordDeliveryState()
+	}
+	if suspendThreshold <= 0 {
+		suspendThreshold = 1
+	}
+
+	for {
+		var updated StatusDiscordDeliveryState
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			var setting StatusSetting
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("key = ?", statusDiscordDeliveryStateSettingKey).
+				First(&setting).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if permanentFailure {
+					updated.FailureCount = 1
+					if updated.FailureCount >= suspendThreshold {
+						updated.SuspendedAt = now
+					}
+				}
+				value, marshalErr := common.Marshal(updated)
+				if marshalErr != nil {
+					return marshalErr
+				}
+				created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&StatusSetting{
+					Key: statusDiscordDeliveryStateSettingKey, Value: string(value), Sensitive: false,
+					Version: 1, UpdatedAt: now,
+				})
+				if created.Error != nil {
+					return created.Error
+				}
+				if created.RowsAffected == 0 {
+					return ErrStatusVersionConflict
+				}
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			updated, err = decodeStatusDiscordDeliveryState(setting.Value)
+			if err != nil {
+				return err
+			}
+			if delivered {
+				updated = StatusDiscordDeliveryState{}
+			} else {
+				if updated.SuspendedAt > 0 {
+					return nil
+				}
+				updated.FailureCount++
+				if updated.FailureCount >= suspendThreshold && updated.SuspendedAt == 0 {
+					updated.SuspendedAt = now
+				}
+			}
+			value, err := common.Marshal(updated)
+			if err != nil {
+				return err
+			}
+			result := tx.Model(&StatusSetting{}).
+				Where("key = ? AND version = ?", statusDiscordDeliveryStateSettingKey, setting.Version).
+				Updates(map[string]any{
+					"value": string(value), "sensitive": false,
+					"version": gorm.Expr("version + 1"), "updated_at": now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return ErrStatusVersionConflict
+			}
+			return nil
+		})
+		if errors.Is(err, ErrStatusVersionConflict) {
+			continue
+		}
+		return updated, err
+	}
+}
+
+func decodeStatusDiscordDeliveryState(value string) (StatusDiscordDeliveryState, error) {
+	var state StatusDiscordDeliveryState
+	if err := common.UnmarshalJsonStr(value, &state); err != nil {
+		return StatusDiscordDeliveryState{}, err
+	}
+	if state.FailureCount < 0 || state.SuspendedAt < 0 {
+		return StatusDiscordDeliveryState{}, errors.New("invalid status Discord delivery state")
+	}
+	return state, nil
 }
 
 func ClaimStatusDeliveryOutbox(worker string, now int64, leaseSeconds int64, limit int) ([]StatusDeliveryOutbox, error) {
