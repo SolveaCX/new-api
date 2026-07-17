@@ -8,15 +8,17 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/bytedance/gopkg/util/gopool"
 )
 
 type RecallRuntime struct {
-	Campaigns  *RecallCampaignService
-	Claims     *RecallClaimService
-	Recipients *RecallRecipientWorker
-	Emails     *RecallEmailWorker
+	Campaigns   *RecallCampaignService
+	Claims      *RecallClaimService
+	Recipients  *RecallRecipientWorker
+	Emails      *RecallEmailWorker
+	Attribution *RecallAttributionService
 }
 
 var (
@@ -27,7 +29,8 @@ var (
 
 func GetRecallRuntime() *RecallRuntime {
 	recallRuntimeOnce.Do(func() {
-		stripeService := NewRecallStripeService(nil)
+		stripeClient := NewStripeRecallClient()
+		stripeService := NewRecallStripeService(stripeClient)
 		claims := NewRecallClaimService()
 		audience := NewRecallAudienceSelector()
 		owner := common.GetReplicaID()
@@ -36,9 +39,10 @@ func GetRecallRuntime() *RecallRuntime {
 				audience,
 				stripeService,
 			),
-			Claims:     claims,
-			Recipients: NewRecallRecipientWorker(stripeService, claims, owner),
-			Emails:     NewRecallEmailWorker(common.SendEmailWithMessageID, audience, claims, owner),
+			Claims:      claims,
+			Recipients:  NewRecallRecipientWorker(stripeService, claims, owner),
+			Emails:      NewRecallEmailWorker(common.SendEmailWithMessageID, audience, claims, owner),
+			Attribution: NewRecallAttributionService(stripeClient),
 		}
 	})
 	return recallRuntime
@@ -81,6 +85,16 @@ func RunRecallMaintenanceTick(ctx context.Context) {
 	if runtime.Emails != nil {
 		if _, err := runtime.Emails.RunBatch(ctx, setting.BatchSize); err != nil {
 			logger.LogWarn(ctx, "recall email maintenance failed")
+		}
+	}
+	if runtime.Attribution != nil {
+		owned, err := model.TryInsertRecallReconciliationWindowWithContext(ctx, time.Now().UTC())
+		if err != nil {
+			logger.LogWarn(ctx, "recall attribution reconciliation scheduling failed")
+		} else if owned {
+			if _, err := runtime.Attribution.ReconcileBatch(ctx, setting.BatchSize); err != nil {
+				logger.LogWarn(ctx, "recall attribution reconciliation failed")
+			}
 		}
 	}
 }

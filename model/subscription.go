@@ -241,6 +241,16 @@ func GetSubscriptionOrderByTradeNo(tradeNo string) *SubscriptionOrder {
 	return &order
 }
 
+func StripeCheckoutSessionIDFromProviderPayload(providerPayload string) string {
+	var payload struct {
+		CheckoutSessionId string `json:"checkout_session_id"`
+	}
+	if err := common.Unmarshal([]byte(providerPayload), &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.CheckoutSessionId)
+}
+
 // User subscription instance
 type UserSubscription struct {
 	Id     int `json:"id"`
