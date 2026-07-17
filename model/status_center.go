@@ -54,6 +54,7 @@ type StatusComponent struct {
 	ConsecutiveProbeFailures   int64  `json:"-" gorm:"not null;default:0"`
 	ConsecutiveProbeSuccesses  int64  `json:"-" gorm:"not null;default:0"`
 	ConsecutiveTrafficRecovery int64  `json:"-" gorm:"not null;default:0"`
+	LastTrafficBucketStart     int64  `json:"-" gorm:"not null;default:0"`
 	OverrideStatus             string `json:"override_status,omitempty" gorm:"size:32;not null;default:''"`
 	OverrideReason             string `json:"override_reason,omitempty" gorm:"type:text"`
 	OverrideExpiresAt          int64  `json:"override_expires_at,omitempty" gorm:"not null;default:0;index"`

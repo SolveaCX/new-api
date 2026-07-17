@@ -65,12 +65,13 @@ func TestStatusEngineProbeFailureAndRecoveryHysteresis(t *testing.T) {
 
 func TestStatusEngineTrafficRecoveryRequiresTwoHealthyBuckets(t *testing.T) {
 	previous := statusComponent(model.StatusOutage)
-	first := EvaluateStatus(previous, StatusEvidence{Eligible: 1_000, Success: 999, LastTrustworthyAt: 2_000}, 2_000)
+	first := EvaluateStatus(previous, StatusEvidence{Eligible: 1_000, Success: 999, LastTrustworthyAt: 2_000, TrafficBucketStart: 1_800}, 2_000)
 	require.Equal(t, model.StatusOutage, first.Observed)
 	require.EqualValues(t, 1, first.ConsecutiveTrafficRecovery)
 
 	previous.ConsecutiveTrafficRecovery = first.ConsecutiveTrafficRecovery
-	second := EvaluateStatus(previous, StatusEvidence{Eligible: 1_000, Success: 1_000, LastTrustworthyAt: 2_300}, 2_300)
+	previous.LastTrafficBucketStart = first.LastTrafficBucketStart
+	second := EvaluateStatus(previous, StatusEvidence{Eligible: 1_000, Success: 1_000, LastTrustworthyAt: 2_300, TrafficBucketStart: 2_100}, 2_300)
 	require.Equal(t, model.StatusOperational, second.Observed)
 	require.EqualValues(t, 2, second.ConsecutiveTrafficRecovery)
 }

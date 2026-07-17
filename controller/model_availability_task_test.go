@@ -86,14 +86,20 @@ func TestWriteStatusModelAvailabilityKeepsLegacyFailureSemantics(t *testing.T) {
 	require.Equal(t, "temporary_upstream_failure", temporary.ReasonType)
 	require.Equal(t, 1, temporary.ConsecutiveFailures)
 
-	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", lease.FencingToken, 101, "unsupported-model", service.StatusProbeOutcome{DiagnosticType: "official_model_unsupported"}))
+	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", lease.FencingToken, 101, "traffic-model", service.StatusProbeOutcome{DiagnosticType: "traffic_failure"}))
+	trafficFailure, err := model.GetModelAvailabilityState("traffic-model")
+	require.NoError(t, err)
+	require.Equal(t, model.ModelAvailabilityTemporaryFailure, trafficFailure.Status)
+	require.Equal(t, "traffic_failure", trafficFailure.ReasonType)
+
+	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", lease.FencingToken, 102, "unsupported-model", service.StatusProbeOutcome{DiagnosticType: "official_model_unsupported"}))
 	candidate, err := model.GetModelAvailabilityState("unsupported-model")
 	require.NoError(t, err)
 	require.Equal(t, model.ModelAvailabilityUnknownFailure, candidate.Status)
 	require.Equal(t, "official_model_unsupported_candidate", candidate.ReasonType)
 	require.Equal(t, 1, candidate.ConsecutiveFailures)
 
-	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", lease.FencingToken, 102, "unsupported-model", service.StatusProbeOutcome{DiagnosticType: "official_model_unsupported"}))
+	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", lease.FencingToken, 103, "unsupported-model", service.StatusProbeOutcome{DiagnosticType: "official_model_unsupported"}))
 	unsupported, err := model.GetModelAvailabilityState("unsupported-model")
 	require.NoError(t, err)
 	require.Equal(t, model.ModelAvailabilityOfficialUnsupported, unsupported.Status)

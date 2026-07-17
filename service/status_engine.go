@@ -18,14 +18,15 @@ const (
 )
 
 type StatusEvidence struct {
-	Eligible          int64
-	Success           int64
-	ProbeSuccess      int64
-	ProbeFailure      int64
-	LastTrustworthyAt int64
-	MonitoringFault   bool
-	SignalConflict    bool
-	MaintenanceActive bool
+	Eligible           int64
+	Success            int64
+	ProbeSuccess       int64
+	ProbeFailure       int64
+	LastTrustworthyAt  int64
+	MonitoringFault    bool
+	SignalConflict     bool
+	MaintenanceActive  bool
+	TrafficBucketStart int64
 }
 
 type StatusTransition struct {
@@ -37,6 +38,7 @@ type StatusTransition struct {
 	ConsecutiveProbeFailures   int64
 	ConsecutiveProbeSuccesses  int64
 	ConsecutiveTrafficRecovery int64
+	LastTrafficBucketStart     int64
 }
 
 type StatusAvailability struct {
@@ -60,6 +62,7 @@ func EvaluateStatus(previous model.StatusComponent, evidence StatusEvidence, now
 		ConsecutiveProbeFailures:   previous.ConsecutiveProbeFailures,
 		ConsecutiveProbeSuccesses:  previous.ConsecutiveProbeSuccesses,
 		ConsecutiveTrafficRecovery: previous.ConsecutiveTrafficRecovery,
+		LastTrafficBucketStart:     previous.LastTrafficBucketStart,
 	}
 
 	if evidence.Eligible >= statusTrafficMinimumEligible {
@@ -69,6 +72,10 @@ func EvaluateStatus(previous model.StatusComponent, evidence StatusEvidence, now
 		transition.TrustworthyAt = trustworthyTime(evidence.LastTrustworthyAt, now)
 		transition.ConsecutiveProbeFailures = 0
 		transition.ConsecutiveProbeSuccesses = 0
+		newTrafficBucket := evidence.TrafficBucketStart > previous.LastTrafficBucketStart
+		if newTrafficBucket {
+			transition.LastTrafficBucketStart = evidence.TrafficBucketStart
+		}
 
 		switch {
 		case rate < statusOutageMicros:
@@ -78,9 +85,9 @@ func EvaluateStatus(previous model.StatusComponent, evidence StatusEvidence, now
 			transition.Observed = model.StatusDegraded
 			transition.ConsecutiveTrafficRecovery = 0
 		default:
-			if rate >= statusRecoveryMicros {
+			if rate >= statusRecoveryMicros && newTrafficBucket {
 				transition.ConsecutiveTrafficRecovery++
-			} else {
+			} else if rate < statusRecoveryMicros {
 				transition.ConsecutiveTrafficRecovery = 0
 			}
 			if isUnhealthyStatus(observed) && transition.ConsecutiveTrafficRecovery < 2 {
