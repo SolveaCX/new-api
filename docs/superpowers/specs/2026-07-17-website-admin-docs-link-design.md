@@ -50,9 +50,10 @@
   -> GET {APP_CONSOLE_ORIGIN}/api/status
   -> data.docs_link
   -> 官网服务端配置读取模块（60 秒缓存）
-  -> SiteShell 单次读取
+  -> 当前根 layout 单次读取
+  -> SiteConfigProvider 下传同一规范化值
      -> SiteHeader 顶部文档入口
-     -> SiteFooter 页脚文档入口
+     -> SiteFooter 页脚文档入口（包括不经过 SiteShell 的 EDM 页面）
 
 同一个 general_setting.docs_link
   -> 现有控制台顶部文档入口（保持现状）
@@ -81,18 +82,18 @@
 
 请求使用 3 秒超时，避免控制台服务异常拖慢整页渲染。超时、非 2xx、`success !== true`、响应形状错误或 JSON 解析失败时统一返回 `null`。
 
-### 6.2 `SiteShell`
+### 6.2 根 layout 与 `SiteConfigProvider`
 
-`SiteShell` 调整为异步 Server Component，在一次页面渲染中读取一次文档地址，并把同一个规范化值传给：
+英文和本地化根 layout 在服务端读取一次文档地址，并把同一个规范化值传给 `RootDocument`。`RootDocument` 通过轻量的 `SiteConfigProvider` 向所有页面外壳提供：
 
-- `SiteHeader.docsUrl`
-- `SiteFooter.docsUrl`
+- `SiteHeader` 顶部导航
+- `SiteFooter` 页脚链接
 
-这样顶部和页脚不会各自发起请求，也不会出现两个入口使用不同值的情况。
+这样顶部和页脚不会各自发起请求，也不会出现两个入口使用不同值的情况；同时覆盖直接使用 `SiteFooter`、不经过 `SiteShell` 的 EDM 落地页。
 
 ### 6.3 `SiteHeader`
 
-`SiteHeader` 在 `docsUrl` 非空时向现有 `navItems` 添加“文档”项：
+`SiteHeader` 从 `SiteConfigProvider` 读取 `docsUrl`，并在非空时向现有 `navItems` 添加“文档”项：
 
 - 桌面导航和移动导航复用同一个项目。
 - 导航顺序位于“模型”之后、“使用场景”之前。
@@ -104,13 +105,13 @@
 
 ### 6.4 `SiteFooter`
 
-`SiteFooter` 在 `docsUrl` 非空时增加“文档”链接，并与顶部使用完全相同的地址、新标签页行为和安全属性。入口放在底部版权链接行中，位于服务条款等法务链接之前。
+`SiteFooter` 从 `SiteConfigProvider` 读取 `docsUrl`，并在非空时增加“文档”链接。该链接与顶部使用完全相同的地址、新标签页行为和安全属性，入口放在底部版权链接行中，位于服务条款等法务链接之前。
 
 该链接不加入法务页面的 `localizePath()` 处理，因为目标由后台完整 URL 决定。`docsUrl` 为空时不渲染占位符或禁用状态。
 
 ### 6.5 国际化
 
-在官网 `copy.ts` 的导航文案中增加 `docs`，覆盖现有 9 种 locale：
+在官网 `copy.ts` 的导航文案中增加 `docs`，覆盖现有 10 种 locale：
 
 - en: Documentation
 - zh: 文档
@@ -121,6 +122,7 @@
 - ja: ドキュメント
 - vi: Tài liệu
 - de: Dokumentation
+- id: 当前按仓库的 staged locale 规则回退为英文 Documentation
 
 顶部和页脚复用同一个本地化标签来源，避免重复维护。
 
@@ -162,7 +164,7 @@
 2. 三个可见入口使用同一个 `href`。
 3. 所有入口包含 `target="_blank"` 与 `rel="noopener noreferrer"`。
 4. 地址为空时，顶部和页脚均不渲染文档入口。
-5. 9 种 locale 都包含非空的文档文案。
+5. 10 种 locale 都包含非空的文档文案。
 
 ### 9.3 工程验证
 
@@ -191,10 +193,10 @@
 | --- | --- |
 | 控制台状态接口异常拖慢官网 | 3 秒请求超时；失败返回 `null`，页面继续渲染 |
 | 后台误填危险协议 | 只接受 HTTP(S) |
-| 官网多个入口出现不同地址 | `SiteShell` 每次渲染只读取一次并下传同一个值 |
+| 官网多个入口出现不同地址 | 根 layout 每次渲染只读取一次，并通过 `SiteConfigProvider` 下传同一个值 |
 | 多个官网实例短时间显示不同配置 | 60 秒 revalidation，接受短暂最终一致 |
 | 后端响应结构变化 | 使用窄类型解析；形状不符时安全隐藏 |
-| 新增文案遗漏 locale | 扩展现有 copy 完整性测试覆盖全部 9 种语言 |
+| 新增文案遗漏 locale | 扩展现有 copy 完整性测试覆盖全部 10 种语言 |
 
 ## 12. 完成标准
 
