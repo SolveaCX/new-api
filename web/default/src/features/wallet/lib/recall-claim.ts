@@ -31,12 +31,27 @@ export function normalizeRecallClaim(value: unknown): string | undefined {
   return claim || undefined
 }
 
+export function removeRecallClaimFromSearch(search: string): string {
+  const searchParams = new URLSearchParams(search)
+  searchParams.delete('recall_claim')
+  const remainingSearch = searchParams.toString()
+  return remainingSearch ? `?${remainingSearch}` : ''
+}
+
+export function getTopupStripePriceId(
+  stripePriceIds: Record<number, string> | undefined,
+  amount: number
+): string | undefined {
+  return normalizeRecallClaim(stripePriceIds?.[amount])
+}
+
 export function isRecallPriceEligible(
   claim: RecallClaimView | null | undefined,
   priceId: string | undefined,
-  purchaseKind: RecallPurchaseKind
+  purchaseKind: RecallPurchaseKind,
+  nowSeconds = Math.floor(Date.now() / 1000)
 ): boolean {
-  if (!claim || !priceId) {
+  if (!claim || !priceId || claim.expires_at <= nowSeconds) {
     return false
   }
 

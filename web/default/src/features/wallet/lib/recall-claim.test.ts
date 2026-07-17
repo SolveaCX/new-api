@@ -18,7 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
 import type { RecallClaimView } from '../types'
-import { isRecallPriceEligible, normalizeRecallClaim } from './recall-claim'
+import {
+  getTopupStripePriceId,
+  isRecallPriceEligible,
+  normalizeRecallClaim,
+  removeRecallClaimFromSearch,
+} from './recall-claim'
 
 const claimView: RecallClaimView = {
   campaign_id: 17,
@@ -55,6 +60,32 @@ describe('normalizeRecallClaim', () => {
   })
 })
 
+describe('removeRecallClaimFromSearch', () => {
+  test('removes every recall claim while preserving unrelated parameters', () => {
+    expect(
+      removeRecallClaimFromSearch(
+        '?currency=USD&recall_claim=first&show_history=true&recall_claim=second'
+      )
+    ).toBe('?currency=USD&show_history=true')
+  })
+
+  test('returns an empty search when no other parameters remain', () => {
+    expect(removeRecallClaimFromSearch('?recall_claim=signed-secret')).toBe('')
+  })
+})
+
+describe('getTopupStripePriceId', () => {
+  test('returns the normalized Stripe Price ID for the selected amount', () => {
+    expect(getTopupStripePriceId({ 20: ' price_topup_20 ' }, 20)).toBe(
+      'price_topup_20'
+    )
+  })
+
+  test('returns undefined for unconfigured top-up amounts', () => {
+    expect(getTopupStripePriceId({ 20: 'price_topup_20' }, 200)).toBeUndefined()
+  })
+})
+
 describe('isRecallPriceEligible', () => {
   test('uses the top-up Stripe Price allowlist for top-ups', () => {
     expect(isRecallPriceEligible(claimView, 'price_topup_20', 'topup')).toBe(
@@ -80,5 +111,16 @@ describe('isRecallPriceEligible', () => {
 
   test('rejects a missing Stripe Price ID', () => {
     expect(isRecallPriceEligible(claimView, undefined, 'topup')).toBe(false)
+  })
+
+  test('rejects an otherwise eligible Stripe Price after claim expiry', () => {
+    expect(
+      isRecallPriceEligible(
+        claimView,
+        'price_subscription_monthly',
+        'subscription',
+        claimView.expires_at + 1
+      )
+    ).toBe(false)
   })
 })

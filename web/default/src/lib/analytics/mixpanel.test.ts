@@ -23,6 +23,7 @@ import {
   getMixpanelConsentStatus,
   grantMixpanelConsent,
   identifyMixpanelUser,
+  sanitizeMixpanelPageSearch,
   shouldEnableMixpanel,
 } from './mixpanel'
 
@@ -149,10 +150,7 @@ describe('mixpanel consent gate', () => {
           identify: () => undefined,
           people: {
             set: (
-              properties: Record<
-                string,
-                string | number | boolean | undefined
-              >
+              properties: Record<string, string | number | boolean | undefined>
             ) => {
               peopleProperties = properties
             },
@@ -177,5 +175,20 @@ describe('mixpanel consent gate', () => {
 
     assert.equal(peopleProperties.$email, 'alice@example.com')
     assert.equal(peopleProperties.email, 'alice@example.com')
+  })
+})
+
+describe('sanitizeMixpanelPageSearch', () => {
+  test('removes recall claims while retaining unrelated query parameters', () => {
+    assert.equal(
+      sanitizeMixpanelPageSearch(
+        '?recall_claim=signed-secret&show_history=true&currency=USD'
+      ),
+      '?show_history=true&currency=USD'
+    )
+  })
+
+  test('omits search when the recall claim was the only parameter', () => {
+    assert.equal(sanitizeMixpanelPageSearch('?recall_claim=signed-secret'), '')
   })
 })
