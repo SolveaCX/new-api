@@ -12,9 +12,10 @@ import (
 )
 
 var (
-	ErrStatusVersionConflict         = errors.New("status object version conflict")
-	ErrStatusMaintenanceNotPublished = errors.New("status maintenance is not published")
-	ErrStatusMaintenanceOverlap      = errors.New("status maintenance overlaps an existing window")
+	ErrStatusVersionConflict               = errors.New("status object version conflict")
+	ErrStatusMaintenanceNotPublished       = errors.New("status maintenance is not published")
+	ErrStatusMaintenanceOverlap            = errors.New("status maintenance overlaps an existing window")
+	ErrStatusMaintenanceRequiresTransition = errors.New("active status maintenance must be resolved through its transition")
 )
 
 type StatusAuditMutation struct {
@@ -333,6 +334,9 @@ func PublishStatusIncidentUpdate(input StatusIncidentPublishMutation) (StatusInc
 		if before.Version != input.ExpectedVersion {
 			return ErrStatusVersionConflict
 		}
+		if before.Kind == StatusIncidentKindMaintenance && before.Status == "monitoring" && input.Update.State == "resolved" {
+			return ErrStatusMaintenanceRequiresTransition
+		}
 
 		nextStatus := input.Update.State
 		if before.Kind == StatusIncidentKindMaintenance && input.Update.State != "resolved" {
@@ -507,6 +511,19 @@ func TransitionStatusMaintenance(input StatusMaintenanceTransitionMutation) (Sta
 
 	var incident StatusIncident
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		var componentIDs []int64
+		if err := tx.Model(&StatusIncidentComponent{}).
+			Where("incident_id = ?", input.IncidentID).
+			Order("component_id ASC").
+			Pluck("component_id", &componentIDs).Error; err != nil {
+			return err
+		}
+		var components []StatusComponent
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id IN ?", componentIDs).Order("id ASC").Find(&components).Error; err != nil {
+			return err
+		}
+
 		var before StatusIncident
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&before, input.IncidentID).Error; err != nil {
 			return err
@@ -552,12 +569,6 @@ func TransitionStatusMaintenance(input StatusMaintenanceTransitionMutation) (Sta
 			return ErrStatusVersionConflict
 		}
 
-		var components []StatusComponent
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Joins("JOIN status_incident_components sic ON sic.component_id = status_components.id").
-			Where("sic.incident_id = ?", before.ID).Order("status_components.id ASC").Find(&components).Error; err != nil {
-			return err
-		}
 		for _, componentBefore := range components {
 			componentUpdates := map[string]any{
 				"effective_status": StatusMaintenance,

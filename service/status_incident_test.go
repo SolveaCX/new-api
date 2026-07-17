@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func createStatusIncidentTestComponent(t *testing.T, observed string) model.StatusComponent {
@@ -125,6 +126,12 @@ func TestStatusIncidentAutomationRedactsCredentialsFromDraftAndAudit(t *testing.
 		{name: "json array", evidence: `[{"message":"request failed","x-api-key":"sentinel-json-array"}]`, secret: "sentinel-json-array"},
 		{name: "mixed case nested json key", evidence: `{"message":"request failed","nested":[{"PaSsWoRd":"sentinel-json-mixed-case"}]}`, secret: "sentinel-json-mixed-case"},
 		{name: "quoted sk token in json string", evidence: `{"message":"request failed sk-sentinel-json-string"}`, secret: "sk-sentinel-json-string"},
+		{name: "authorization in json message", evidence: `{"message":"request failed Authorization:Bearer sentinel-json-message-authorization"}`, secret: "sentinel-json-message-authorization"},
+		{name: "secret in json error", evidence: `{"error":"request failed secret: sentinel-json-error-secret"}`, secret: "sentinel-json-error-secret"},
+		{name: "token in json message", evidence: `{"message":"request failed token=sentinel-json-message-token"}`, secret: "sentinel-json-message-token"},
+		{name: "quoted authorization fragment in json string", evidence: `{"message":"request failed \"Authorization\":\"Bearer sentinel-json-quoted-authorization\""}`, secret: "sentinel-json-quoted-authorization"},
+		{name: "quoted token fragment in json string", evidence: `{"message":"request failed \"token\":\"sentinel-json-quoted-token\""}`, secret: "sentinel-json-quoted-token"},
+		{name: "scalar json string", evidence: `"request failed secret: sentinel-json-scalar"`, secret: "sentinel-json-scalar"},
 		{name: "quoted sk token", evidence: `request failed "sk-sentinel-quoted-key"`, secret: "sk-sentinel-quoted-key"},
 	}
 
@@ -602,6 +609,95 @@ func TestStatusMaintenanceProgressPublishPreservesActiveTransition(t *testing.T)
 	require.NoError(t, db.Model(&model.StatusAuditEvent{}).Where("action = ?", "status.maintenance.component.start").Count(&componentStartAuditCount).Error)
 	require.EqualValues(t, 1, startAuditCount)
 	require.EqualValues(t, 1, componentStartAuditCount)
+}
+
+func TestStatusMaintenanceRejectsGenericResolutionWhileActive(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusOperational)
+	maintenance, err := CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "Active maintenance", Body: "Planned work.", IdempotencyKey: "maintenance-active-resolution",
+		ComponentIDs: []int64{component.ID}, ScheduledStartAt: 16_600, ScheduledEndAt: 16_800,
+		Actor: statusAdminActor(), Reason: "planned work", Now: 16_500,
+	})
+	require.NoError(t, err)
+	published, err := PublishStatusIncidentUpdate(StatusIncidentPublishInput{
+		IncidentID: maintenance.ID, ExpectedVersion: maintenance.Version, State: "identified",
+		Body: "Work is scheduled.", EventID: "maintenance-active-resolution-published", Actor: statusAdminActor(),
+		Reason: "publish maintenance", Now: 16_550,
+	})
+	require.NoError(t, err)
+	started, err := ReconcileStatusMaintenance(StatusMaintenanceTransitionInput{
+		IncidentID: maintenance.ID, ExpectedVersion: published.Incident.Version, Now: 16_600,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "monitoring", started.Status)
+
+	var updateCountBefore, outboxCountBefore, auditCountBefore int64
+	require.NoError(t, db.Model(&model.StatusIncidentUpdate{}).Count(&updateCountBefore).Error)
+	require.NoError(t, db.Model(&model.StatusDeliveryOutbox{}).Count(&outboxCountBefore).Error)
+	require.NoError(t, db.Model(&model.StatusAuditEvent{}).Count(&auditCountBefore).Error)
+
+	_, err = PublishStatusIncidentUpdate(StatusIncidentPublishInput{
+		IncidentID: maintenance.ID, ExpectedVersion: started.Version, State: "resolved",
+		Body: "Work is complete.", EventID: "maintenance-active-resolution-generic",
+		Destinations: []StatusDeliveryDestination{{Type: model.StatusDestinationWebhook, ID: 71}},
+		Actor:        statusAdminActor(), Reason: "generic resolution must not bypass maintenance end", Now: 16_700,
+	})
+	require.ErrorIs(t, err, ErrStatusMaintenanceRequiresTransition)
+
+	var storedIncident model.StatusIncident
+	require.NoError(t, db.First(&storedIncident, maintenance.ID).Error)
+	require.Equal(t, "monitoring", storedIncident.Status)
+	require.Equal(t, started.Version, storedIncident.Version)
+	require.Zero(t, storedIncident.ResolvedAt)
+	var storedComponent model.StatusComponent
+	require.NoError(t, db.First(&storedComponent, component.ID).Error)
+	require.Equal(t, model.StatusMaintenance, storedComponent.EffectiveStatus)
+	require.Equal(t, "maintenance", storedComponent.StatusSource)
+
+	var updateCountAfter, outboxCountAfter, auditCountAfter int64
+	require.NoError(t, db.Model(&model.StatusIncidentUpdate{}).Count(&updateCountAfter).Error)
+	require.NoError(t, db.Model(&model.StatusDeliveryOutbox{}).Count(&outboxCountAfter).Error)
+	require.NoError(t, db.Model(&model.StatusAuditEvent{}).Count(&auditCountAfter).Error)
+	require.Equal(t, updateCountBefore, updateCountAfter)
+	require.Equal(t, outboxCountBefore, outboxCountAfter)
+	require.Equal(t, auditCountBefore, auditCountAfter)
+}
+
+func TestStatusMaintenanceTransitionLocksComponentsBeforeIncident(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusOperational)
+	maintenance, err := CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "Lock order maintenance", Body: "Planned work.", IdempotencyKey: "maintenance-lock-order",
+		ComponentIDs: []int64{component.ID}, ScheduledStartAt: 16_600, ScheduledEndAt: 16_700,
+		Actor: statusAdminActor(), Reason: "planned work", Now: 16_500,
+	})
+	require.NoError(t, err)
+	published, err := PublishStatusIncidentUpdate(StatusIncidentPublishInput{
+		IncidentID: maintenance.ID, ExpectedVersion: maintenance.Version, State: "identified",
+		Body: "Work is scheduled.", EventID: "maintenance-lock-order-published", Actor: statusAdminActor(),
+		Reason: "publish maintenance", Now: 16_550,
+	})
+	require.NoError(t, err)
+
+	queriedTables := make([]string, 0, 3)
+	const callbackName = "status-maintenance-transition-lock-order"
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == "status_components" || tx.Statement.Table == "status_incidents" {
+			queriedTables = append(queriedTables, tx.Statement.Table)
+		}
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, db.Callback().Query().Remove(callbackName))
+	})
+
+	_, err = ReconcileStatusMaintenance(StatusMaintenanceTransitionInput{
+		IncidentID: maintenance.ID, ExpectedVersion: published.Incident.Version, Now: 16_600,
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(queriedTables), 2)
+	require.Equal(t, []string{"status_components", "status_incidents"}, queriedTables[:2],
+		"maintenance create and transition must share the global components-then-incident lock order")
 }
 
 func TestStatusMaintenanceAuditCapturesDraftAndAssociations(t *testing.T) {

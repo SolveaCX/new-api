@@ -15,19 +15,20 @@ import (
 const statusForceGreenMaxSeconds = int64(60 * 60)
 
 var (
-	statusEvidenceAuthorizationPattern = regexp.MustCompile(`(?i)(\bauthorization\b\s*[:=]\s*(?:(?:bearer|basic|token)\s*)?)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
-	statusEvidenceCredentialPattern    = regexp.MustCompile(`(?i)(\b(?:secret|token|x-api-key|api[_-]?key|access[_-]?token|password)\b\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
+	statusEvidenceAuthorizationPattern = regexp.MustCompile(`(?i)(\bauthorization\b["']?\s*[:=]\s*(?:(?:bearer|basic|token)\s*)?)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
+	statusEvidenceCredentialPattern    = regexp.MustCompile(`(?i)(\b(?:secret|token|x-api-key|api[_-]?key|access[_-]?token|password)\b["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
 	statusEvidenceSecretKeyPattern     = regexp.MustCompile(`(?i)\bsk-[[:alnum:]][[:alnum:]_.-]*`)
 )
 
 var (
-	ErrStatusAdminRequired              = errors.New("status mutation requires an administrator")
-	ErrStatusRootRequired               = errors.New("force-green status override requires root authorization")
-	ErrStatusSecureVerificationRequired = errors.New("force-green status override requires secure verification")
-	ErrStatusForceGreenTooLong          = errors.New("force-green status override cannot exceed one hour")
-	ErrStatusInvalidMutation            = errors.New("invalid status mutation")
-	ErrStatusMaintenanceNotPublished    = model.ErrStatusMaintenanceNotPublished
-	ErrStatusMaintenanceOverlap         = model.ErrStatusMaintenanceOverlap
+	ErrStatusAdminRequired                 = errors.New("status mutation requires an administrator")
+	ErrStatusRootRequired                  = errors.New("force-green status override requires root authorization")
+	ErrStatusSecureVerificationRequired    = errors.New("force-green status override requires secure verification")
+	ErrStatusForceGreenTooLong             = errors.New("force-green status override cannot exceed one hour")
+	ErrStatusInvalidMutation               = errors.New("invalid status mutation")
+	ErrStatusMaintenanceNotPublished       = model.ErrStatusMaintenanceNotPublished
+	ErrStatusMaintenanceOverlap            = model.ErrStatusMaintenanceOverlap
+	ErrStatusMaintenanceRequiresTransition = model.ErrStatusMaintenanceRequiresTransition
 )
 
 type StatusMutationActor struct {
@@ -388,10 +389,14 @@ func sanitizeStatusEvidence(summary string) string {
 		}
 	}
 
-	sanitized := statusEvidenceAuthorizationPattern.ReplaceAllString(trimmed, "${1}[REDACTED]")
-	sanitized = statusEvidenceCredentialPattern.ReplaceAllString(sanitized, "${1}[REDACTED]")
-	sanitized = statusEvidenceSecretKeyPattern.ReplaceAllString(sanitized, "[REDACTED]")
+	sanitized := redactStatusEvidenceText(trimmed)
 	return truncateStatusEvidence(strings.Join(strings.Fields(sanitized), " "))
+}
+
+func redactStatusEvidenceText(value string) string {
+	redacted := statusEvidenceAuthorizationPattern.ReplaceAllString(value, "${1}[REDACTED]")
+	redacted = statusEvidenceCredentialPattern.ReplaceAllString(redacted, "${1}[REDACTED]")
+	return statusEvidenceSecretKeyPattern.ReplaceAllString(redacted, "[REDACTED]")
 }
 
 func redactStatusEvidenceJSON(value any) any {
@@ -409,7 +414,7 @@ func redactStatusEvidenceJSON(value any) any {
 			typed[i] = redactStatusEvidenceJSON(child)
 		}
 	case string:
-		return statusEvidenceSecretKeyPattern.ReplaceAllString(typed, "[REDACTED]")
+		return redactStatusEvidenceText(typed)
 	}
 	return value
 }
