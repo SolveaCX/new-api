@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
 import { type TFunction } from 'i18next'
+import { filterSidebarGroups } from './use-sidebar-config'
 import { buildSidebarData } from './use-sidebar-data'
 
 const t = ((key: string) => key) as TFunction
@@ -54,5 +55,44 @@ describe('buildSidebarData', () => {
       badge: 'Earn More Credits!',
       badgeVariant: 'promotion',
     })
+  })
+
+  test('shows Recall Campaigns by default', () => {
+    const admin = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'admin'
+    )
+    expect(
+      admin?.items.some(
+        (item) => 'url' in item && item.url === '/recall-campaigns'
+      )
+    ).toBe(true)
+  })
+
+  test('hides Recall Campaigns when the admin config disables it', () => {
+    const groups = filterSidebarGroups(
+      buildSidebarData(t).navGroups,
+      JSON.stringify({ admin: { enabled: true, recall_campaigns: false } }),
+      null
+    )
+    const admin = groups.find((group) => group.id === 'admin')
+    expect(
+      admin?.items.some(
+        (item) => 'url' in item && item.url === '/recall-campaigns'
+      )
+    ).toBe(false)
+  })
+
+  test('allows the user config to narrow Recall Campaigns visibility', () => {
+    const groups = filterSidebarGroups(
+      buildSidebarData(t).navGroups,
+      null,
+      JSON.stringify({ admin: { enabled: true, recall_campaigns: false } })
+    )
+    const admin = groups.find((group) => group.id === 'admin')
+    expect(
+      admin?.items.some(
+        (item) => 'url' in item && item.url === '/recall-campaigns'
+      )
+    ).toBe(false)
   })
 })
