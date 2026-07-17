@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -13,12 +15,19 @@ import (
 const statusForceGreenMaxSeconds = int64(60 * 60)
 
 var (
+	statusEvidenceAuthorizationPattern = regexp.MustCompile(`(?i)(\bauthorization\b\s*[:=]\s*(?:(?:bearer|basic|token)\s*)?)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
+	statusEvidenceCredentialPattern    = regexp.MustCompile(`(?i)(\b(?:secret|token|x-api-key|api[_-]?key|access[_-]?token|password)\b\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
+	statusEvidenceSecretKeyPattern     = regexp.MustCompile(`(?i)\bsk-[[:alnum:]][[:alnum:]_.-]*`)
+)
+
+var (
 	ErrStatusAdminRequired              = errors.New("status mutation requires an administrator")
 	ErrStatusRootRequired               = errors.New("force-green status override requires root authorization")
 	ErrStatusSecureVerificationRequired = errors.New("force-green status override requires secure verification")
 	ErrStatusForceGreenTooLong          = errors.New("force-green status override cannot exceed one hour")
 	ErrStatusInvalidMutation            = errors.New("invalid status mutation")
 	ErrStatusMaintenanceNotPublished    = model.ErrStatusMaintenanceNotPublished
+	ErrStatusMaintenanceOverlap         = model.ErrStatusMaintenanceOverlap
 )
 
 type StatusMutationActor struct {
@@ -366,32 +375,62 @@ func statusDeliveryEventID(eventID string, destinationType string, destinationID
 }
 
 func sanitizeStatusEvidence(summary string) string {
-	fields := strings.Fields(strings.TrimSpace(summary))
-	if len(fields) == 0 {
+	trimmed := strings.TrimSpace(strings.ToValidUTF8(summary, "�"))
+	if trimmed == "" {
 		return "No public-safe evidence detail was available."
 	}
-	for i := 0; i < len(fields); i++ {
-		lower := strings.ToLower(strings.Trim(fields[i], ",;"))
-		switch {
-		case strings.HasPrefix(lower, "sk-"):
-			fields[i] = "[REDACTED]"
-		case strings.Contains(lower, "authorization:") && i+2 < len(fields) && strings.EqualFold(fields[i+1], "Bearer"):
-			fields[i+2] = "[REDACTED]"
-		case strings.HasPrefix(lower, "token="), strings.HasPrefix(lower, "token:"),
-			strings.HasPrefix(lower, "secret="), strings.HasPrefix(lower, "secret:"),
-			strings.HasPrefix(lower, "password="), strings.HasPrefix(lower, "password:"),
-			strings.HasPrefix(lower, "api_key="), strings.HasPrefix(lower, "api-key="):
-			separator := strings.IndexAny(fields[i], "=:")
-			if separator >= 0 {
-				fields[i] = fields[i][:separator+1] + "[REDACTED]"
-			} else {
-				fields[i] = "[REDACTED]"
-			}
+
+	var document any
+	if err := common.Unmarshal([]byte(trimmed), &document); err == nil {
+		document = redactStatusEvidenceJSON(document)
+		if sanitized, err := common.Marshal(document); err == nil {
+			return truncateStatusEvidence(string(sanitized))
 		}
 	}
-	sanitized := strings.Join(fields, " ")
-	if len(sanitized) > 1_000 {
-		sanitized = sanitized[:1_000]
+
+	sanitized := statusEvidenceAuthorizationPattern.ReplaceAllString(trimmed, "${1}[REDACTED]")
+	sanitized = statusEvidenceCredentialPattern.ReplaceAllString(sanitized, "${1}[REDACTED]")
+	sanitized = statusEvidenceSecretKeyPattern.ReplaceAllString(sanitized, "[REDACTED]")
+	return truncateStatusEvidence(strings.Join(strings.Fields(sanitized), " "))
+}
+
+func redactStatusEvidenceJSON(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if isSensitiveStatusEvidenceKey(key) {
+				typed[key] = "[REDACTED]"
+				continue
+			}
+			typed[key] = redactStatusEvidenceJSON(child)
+		}
+	case []any:
+		for i, child := range typed {
+			typed[i] = redactStatusEvidenceJSON(child)
+		}
+	case string:
+		return statusEvidenceSecretKeyPattern.ReplaceAllString(typed, "[REDACTED]")
 	}
-	return sanitized
+	return value
+}
+
+func isSensitiveStatusEvidenceKey(key string) bool {
+	normalized := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(key)))
+	switch normalized {
+	case "authorization", "proxyauthorization", "secret", "clientsecret", "token", "accesstoken", "refreshtoken", "apikey", "xapikey", "password":
+		return true
+	default:
+		return false
+	}
+}
+
+func truncateStatusEvidence(summary string) string {
+	if len(summary) <= 1_000 {
+		return summary
+	}
+	boundary := 1_000
+	for boundary > 0 && !utf8.ValidString(summary[:boundary]) {
+		boundary--
+	}
+	return summary[:boundary]
 }
