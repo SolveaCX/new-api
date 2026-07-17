@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
+import { resumeMixpanelAfterRecallClaim } from '@/lib/analytics/mixpanel'
 import { trackTopupOnce } from '@/lib/analytics/topup-tracking'
 import { getSelf } from '@/lib/api'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -311,6 +312,7 @@ export function Wallet(props: WalletProps) {
       '',
       `${url.pathname}${sanitizedSearch}${url.hash}`
     )
+    resumeMixpanelAfterRecallClaim()
   }, [props.initialRecallClaim])
 
   useEffect(() => {

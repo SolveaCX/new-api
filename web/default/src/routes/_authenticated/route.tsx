@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
+import { suspendMixpanelForRecallClaim } from '@/lib/analytics/mixpanel'
 import { getSelf } from '@/lib/api'
 import { AuthenticatedLayout } from '@/components/layout'
 
@@ -26,6 +27,7 @@ let sessionVerified = false
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ location }) => {
+    suspendMixpanelForRecallClaim(location.href)
     const { auth } = useAuthStore.getState()
 
     // 如果本地没有用户信息，直接跳转登录页
