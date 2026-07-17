@@ -189,7 +189,8 @@ func UpdateAdminStatusSetting(c *gin.Context) {
 
 func ConfigureAdminStatusDiscord(c *gin.Context) {
 	var request struct {
-		Endpoint string `json:"endpoint"`
+		Endpoint        string `json:"endpoint"`
+		ExpectedVersion int64  `json:"expected_version"`
 	}
 	if err := decodeStatusAdminBody(c, &request); err != nil {
 		statusAdminDecodeError(c, err)
@@ -200,7 +201,9 @@ func ConfigureAdminStatusDiscord(c *gin.Context) {
 		statusAdminServiceError(c, err)
 		return
 	}
-	setting, err := service.ConfigureStatusDiscordEndpoint(statusAdminActor(c), request.Endpoint, keyring, time.Now().Unix())
+	setting, err := service.ConfigureStatusDiscordEndpoint(
+		statusAdminActor(c), request.Endpoint, request.ExpectedVersion, keyring, time.Now().Unix(),
+	)
 	if err != nil {
 		statusAdminServiceError(c, err)
 		return
