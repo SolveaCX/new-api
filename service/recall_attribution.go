@@ -62,6 +62,12 @@ type RecallAttributionService struct {
 	now    func() time.Time
 }
 
+const (
+	recallAttributionLeaseDuration = 15 * time.Minute
+	recallAttributionRetryBase     = time.Minute
+	recallAttributionRetryMax      = time.Hour
+)
+
 func NewRecallAttributionService(client RecallStripeClient) *RecallAttributionService {
 	if client == nil {
 		client = NewStripeRecallClient()
@@ -238,13 +244,29 @@ func (s *RecallAttributionService) ReconcileBatch(ctx context.Context, limit int
 	if s == nil || s.stripe == nil || limit <= 0 {
 		return 0, nil
 	}
-	candidates, err := model.ListRecallAttributionCandidatesWithContext(ctx, limit)
+	batchNow := s.now().Unix()
+	candidates, err := model.ListRecallAttributionCandidatesWithContext(ctx, batchNow, limit)
 	if err != nil {
 		return 0, err
 	}
 	processed := 0
 	var firstErr error
 	for _, candidate := range candidates {
+		lease, acquired, leaseErr := model.LeaseRecallAttributionCandidateWithContext(
+			ctx,
+			candidate,
+			batchNow,
+			batchNow+int64(recallAttributionLeaseDuration/time.Second),
+		)
+		if leaseErr != nil {
+			if firstErr == nil {
+				firstErr = leaseErr
+			}
+			continue
+		}
+		if !acquired {
+			continue
+		}
 		session, getErr := s.stripe.GetCheckoutSession(
 			ctx,
 			candidate.CheckoutSessionId,
@@ -252,8 +274,18 @@ func (s *RecallAttributionService) ReconcileBatch(ctx context.Context, limit int
 			"total_details.breakdown.discounts.discount.promotion_code",
 		)
 		if getErr != nil {
+			wrappedErr := wrapRecallStripeError("get Stripe Checkout Session for recall reconciliation", getErr)
 			if firstErr == nil {
-				firstErr = wrapRecallStripeError("get Stripe Checkout Session for recall reconciliation", getErr)
+				firstErr = wrappedErr
+			}
+			var progressErr error
+			if ClassifyRecallStripeError(wrappedErr) == RecallStripeErrorPermanent {
+				_, progressErr = model.CompleteRecallAttributionCandidateWithContext(ctx, candidate, lease, s.now().Unix(), "stripe_fetch_permanent")
+			} else {
+				_, progressErr = model.RetryRecallAttributionCandidateWithContext(ctx, candidate, lease, recallAttributionNextAttemptAt(s.now(), lease.Attempt), "stripe_fetch_failed")
+			}
+			if firstErr == nil && progressErr != nil {
+				firstErr = progressErr
 			}
 			continue
 		}
@@ -261,12 +293,21 @@ func (s *RecallAttributionService) ReconcileBatch(ctx context.Context, limit int
 			if firstErr == nil {
 				firstErr = errors.New("Stripe Checkout Session is unavailable for recall reconciliation")
 			}
+			if _, progressErr := model.RetryRecallAttributionCandidateWithContext(ctx, candidate, lease, recallAttributionNextAttemptAt(s.now(), lease.Attempt), "stripe_session_unavailable"); firstErr == nil && progressErr != nil {
+				firstErr = progressErr
+			}
 			continue
 		}
 		if session.PaymentStatus != stripe.CheckoutSessionPaymentStatusPaid && session.PaymentStatus != stripe.CheckoutSessionPaymentStatusNoPaymentRequired {
+			if _, progressErr := model.RetryRecallAttributionCandidateWithContext(ctx, candidate, lease, recallAttributionNextAttemptAt(s.now(), lease.Attempt), "stripe_payment_pending"); firstErr == nil && progressErr != nil {
+				firstErr = progressErr
+			}
 			continue
 		}
 		if session.Created > 0 && session.Created < candidate.EnrolledAt {
+			if _, progressErr := model.CompleteRecallAttributionCandidateWithContext(ctx, candidate, lease, s.now().Unix(), "session_before_enrollment"); firstErr == nil && progressErr != nil {
+				firstErr = progressErr
+			}
 			continue
 		}
 		fact := recallPaymentFactFromSession(session)
@@ -281,11 +322,34 @@ func (s *RecallAttributionService) ReconcileBatch(ctx context.Context, limit int
 			if firstErr == nil {
 				firstErr = attributeErr
 			}
+			if _, progressErr := model.RetryRecallAttributionCandidateWithContext(ctx, candidate, lease, recallAttributionNextAttemptAt(s.now(), lease.Attempt), "attribution_failed"); firstErr == nil && progressErr != nil {
+				firstErr = progressErr
+			}
 			continue
 		}
-		processed++
+		completed, progressErr := model.CompleteRecallAttributionCandidateWithContext(ctx, candidate, lease, s.now().Unix(), "examined")
+		if progressErr != nil {
+			if firstErr == nil {
+				firstErr = progressErr
+			}
+			continue
+		}
+		if completed {
+			processed++
+		}
 	}
 	return processed, firstErr
+}
+
+func recallAttributionNextAttemptAt(now time.Time, attempt int) int64 {
+	delay := recallAttributionRetryBase
+	for currentAttempt := 1; currentAttempt < attempt && delay < recallAttributionRetryMax; currentAttempt++ {
+		delay *= 2
+		if delay > recallAttributionRetryMax {
+			delay = recallAttributionRetryMax
+		}
+	}
+	return now.Add(delay).Unix()
 }
 
 func (s *RecallAttributionService) GetMetrics(ctx context.Context, campaignID int64) (RecallCampaignMetrics, error) {

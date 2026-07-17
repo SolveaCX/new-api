@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v81"
@@ -433,6 +435,188 @@ func TestRecallAttributionReconcileUsesOnlyRecoverableSuccessfulStripeOrders(t *
 	var subscriptions int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Count(&subscriptions).Error)
 	require.Zero(t, subscriptions, "reconciliation must never provision subscriptions")
+}
+
+func TestRecallAttributionReconcileAdvancesPastTerminalOrders(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	_, recipient := createRecallAttributionRecipient(t, "promo_repairable")
+	createRecallReconciliationTopUp(t, recipient.UserId, "trade_terminal_1", "cs_terminal_1", 1_700_000_100)
+	createRecallReconciliationTopUp(t, recipient.UserId, "trade_terminal_2", "cs_terminal_2", 1_700_000_110)
+	createRecallReconciliationTopUp(t, recipient.UserId, "trade_repairable", "cs_repairable", 1_700_000_120)
+
+	fetched := make([]string, 0, 3)
+	client := &recallStripeFakeClient{getCheckoutSessionFn: func(_ context.Context, id string, _ ...string) (*stripe.CheckoutSession, error) {
+		fetched = append(fetched, id)
+		session := &stripe.CheckoutSession{
+			ID: id, Created: 1_700_000_100, PaymentStatus: stripe.CheckoutSessionPaymentStatusPaid,
+			AmountTotal: 1000, Currency: stripe.CurrencyUSD, Discounts: []*stripe.CheckoutSessionDiscount{},
+			TotalDetails: &stripe.CheckoutSessionTotalDetails{Breakdown: &stripe.CheckoutSessionTotalDetailsBreakdown{}},
+		}
+		if id == "cs_repairable" {
+			session.Discounts = []*stripe.CheckoutSessionDiscount{{PromotionCode: &stripe.PromotionCode{ID: "promo_repairable"}}}
+			session.TotalDetails.AmountDiscount = 100
+		}
+		return session, nil
+	}}
+	service := NewRecallAttributionService(client)
+	service.now = func() time.Time { return time.Unix(1_700_000_300, 0).UTC() }
+
+	processed, err := service.ReconcileBatch(context.Background(), 2)
+	require.NoError(t, err)
+	require.Equal(t, 2, processed)
+	processed, err = service.ReconcileBatch(context.Background(), 2)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	require.Equal(t, []string{"cs_terminal_1", "cs_terminal_2", "cs_repairable"}, fetched)
+	stored := model.RecallRecipient{}
+	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientConverted, stored.State)
+	require.Equal(t, "trade_repairable", stored.ConversionTradeNo)
+}
+
+func TestRecallAttributionReconcileBacksOffTransientHeadWithoutStarvingLaterOrder(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	_, retryRecipient := createRecallAttributionRecipient(t, "promo_retry")
+	_, repairableRecipient := createRecallAttributionRecipient(t, "promo_later")
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", repairableRecipient.Id).Update("user_id", 9002).Error)
+	repairableRecipient.UserId = 9002
+	createRecallReconciliationTopUp(t, retryRecipient.UserId, "trade_retry", "cs_retry", 1_700_000_100)
+	createRecallReconciliationTopUp(t, repairableRecipient.UserId, "trade_later", "cs_later", 1_700_000_110)
+
+	retryFetches := 0
+	client := &recallStripeFakeClient{getCheckoutSessionFn: func(_ context.Context, id string, _ ...string) (*stripe.CheckoutSession, error) {
+		if id == "cs_retry" {
+			retryFetches++
+			if retryFetches == 1 {
+				return nil, context.DeadlineExceeded
+			}
+			return &stripe.CheckoutSession{
+				ID: id, Created: 1_700_000_100, PaymentStatus: stripe.CheckoutSessionPaymentStatusPaid,
+				AmountTotal: 1000, Currency: stripe.CurrencyUSD, Discounts: []*stripe.CheckoutSessionDiscount{},
+				TotalDetails: &stripe.CheckoutSessionTotalDetails{Breakdown: &stripe.CheckoutSessionTotalDetailsBreakdown{}},
+			}, nil
+		}
+		return &stripe.CheckoutSession{
+			ID: id, Created: 1_700_000_110, PaymentStatus: stripe.CheckoutSessionPaymentStatusPaid,
+			AmountTotal: 900, Currency: stripe.CurrencyUSD,
+			Discounts:    []*stripe.CheckoutSessionDiscount{{PromotionCode: &stripe.PromotionCode{ID: "promo_later"}}},
+			TotalDetails: &stripe.CheckoutSessionTotalDetails{AmountDiscount: 100},
+		}, nil
+	}}
+	now := time.Unix(1_700_000_300, 0).UTC()
+	service := NewRecallAttributionService(client)
+	service.now = func() time.Time { return now }
+
+	processed, err := service.ReconcileBatch(context.Background(), 1)
+	require.Error(t, err)
+	require.Zero(t, processed)
+	require.Equal(t, 1, retryFetches)
+
+	processed, err = service.ReconcileBatch(context.Background(), 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 1, retryFetches, "not-yet-due retry must not occupy the batch head")
+	stored := model.RecallRecipient{}
+	require.NoError(t, model.DB.First(&stored, repairableRecipient.Id).Error)
+	require.Equal(t, model.RecallRecipientConverted, stored.State)
+
+	now = now.Add(24 * time.Hour)
+	processed, err = service.ReconcileBatch(context.Background(), 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 2, retryFetches, "transient failure must become eligible after bounded backoff")
+	processed, err = service.ReconcileBatch(context.Background(), 1)
+	require.NoError(t, err)
+	require.Zero(t, processed)
+	require.Equal(t, 2, retryFetches, "completed examination must become terminal")
+}
+
+func TestRecallAttributionReconcileLeasesCandidateAcrossConcurrentWorkers(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	_, recipient := createRecallAttributionRecipient(t, "promo_concurrent")
+	createRecallReconciliationTopUp(t, recipient.UserId, "trade_concurrent", "cs_concurrent", 1_700_000_100)
+
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var fetches atomic.Int32
+	client := &recallStripeFakeClient{getCheckoutSessionFn: func(_ context.Context, id string, _ ...string) (*stripe.CheckoutSession, error) {
+		fetches.Add(1)
+		entered <- struct{}{}
+		<-release
+		return &stripe.CheckoutSession{
+			ID: id, Created: 1_700_000_100, PaymentStatus: stripe.CheckoutSessionPaymentStatusPaid,
+			AmountTotal: 1000, Currency: stripe.CurrencyUSD, Discounts: []*stripe.CheckoutSessionDiscount{},
+			TotalDetails: &stripe.CheckoutSessionTotalDetails{Breakdown: &stripe.CheckoutSessionTotalDetailsBreakdown{}},
+		}, nil
+	}}
+	serviceOne := NewRecallAttributionService(client)
+	serviceTwo := NewRecallAttributionService(client)
+	serviceOne.now = func() time.Time { return time.Unix(1_700_000_300, 0).UTC() }
+	serviceTwo.now = serviceOne.now
+
+	type reconcileResult struct {
+		processed int
+		err       error
+	}
+	done := make(chan reconcileResult, 2)
+	go func() {
+		processed, err := serviceOne.ReconcileBatch(context.Background(), 1)
+		done <- reconcileResult{processed: processed, err: err}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("first reconciliation did not reach Stripe fetch")
+	}
+	go func() {
+		processed, err := serviceTwo.ReconcileBatch(context.Background(), 1)
+		done <- reconcileResult{processed: processed, err: err}
+	}()
+
+	duplicateFetch := false
+	var earlyResult *reconcileResult
+	select {
+	case <-entered:
+		duplicateFetch = true
+	case result := <-done:
+		earlyResult = &result
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("overlapping reconciliation neither skipped nor fetched the leased candidate")
+	}
+	close(release)
+	results := make([]reconcileResult, 0, 2)
+	if earlyResult != nil {
+		results = append(results, *earlyResult)
+	}
+	for len(results) < 2 {
+		select {
+		case result := <-done:
+			results = append(results, result)
+		case <-time.After(2 * time.Second):
+			t.Fatal("reconciliation workers did not finish")
+		}
+	}
+
+	require.False(t, duplicateFetch, "an active database lease must prevent duplicate Stripe fetches")
+	require.Equal(t, int32(1), fetches.Load())
+	totalProcessed := 0
+	for _, result := range results {
+		require.NoError(t, result.err)
+		totalProcessed += result.processed
+	}
+	require.Equal(t, 1, totalProcessed)
+}
+
+func createRecallReconciliationTopUp(t *testing.T, userID int, tradeNo string, sessionID string, createdAt int64) {
+	t.Helper()
+	require.NoError(t, model.DB.Create(&model.TopUp{
+		UserId: userID, TradeNo: tradeNo, GatewayTradeNo: sessionID,
+		PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusSuccess,
+		CreateTime: createdAt, CompleteTime: createdAt + 1,
+	}).Error)
 }
 
 func TestRecallMaintenanceRunsAttributionOncePerUTCWindow(t *testing.T) {
