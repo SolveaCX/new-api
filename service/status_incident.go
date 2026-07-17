@@ -12,11 +12,17 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-const statusForceGreenMaxSeconds = int64(60 * 60)
+const (
+	statusForceGreenMaxSeconds                  = int64(60 * 60)
+	statusEvidenceAuthorizationLabelPattern     = `(?:authorization|proxy[-_ ]*authorization)`
+	statusEvidenceCredentialLabelPattern        = `(?:secret|client[-_ ]*secret|token|access[-_ ]*token|refresh[-_ ]*token|api[-_ ]*key|x[-_ ]*api[-_ ]*key|password)`
+	statusEvidenceSensitiveNormalizedKeyPattern = `(?:` + statusEvidenceAuthorizationLabelPattern + `|` + statusEvidenceCredentialLabelPattern + `)`
+)
 
 var (
-	statusEvidenceAuthorizationPattern = regexp.MustCompile(`(?i)(\bauthorization\b["']?\s*[:=]\s*(?:(?:bearer|basic|token)\s*)?)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
-	statusEvidenceCredentialPattern    = regexp.MustCompile(`(?i)(\b(?:secret|token|x-api-key|api[_-]?key|access[_-]?token|password)\b["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
+	statusEvidenceAuthorizationPattern = regexp.MustCompile(`(?i)(\b` + statusEvidenceAuthorizationLabelPattern + `\b["']?\s*[:=]\s*(?:(?:bearer|basic|token)\s*)?)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
+	statusEvidenceCredentialPattern    = regexp.MustCompile(`(?i)(\b` + statusEvidenceCredentialLabelPattern + `\b["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;"'}\]]+)`)
+	statusEvidenceSensitiveKeyPattern  = regexp.MustCompile(`(?i)^` + statusEvidenceSensitiveNormalizedKeyPattern + `$`)
 	statusEvidenceSecretKeyPattern     = regexp.MustCompile(`(?i)\bsk-[[:alnum:]][[:alnum:]_.-]*`)
 )
 
@@ -421,12 +427,7 @@ func redactStatusEvidenceJSON(value any) any {
 
 func isSensitiveStatusEvidenceKey(key string) bool {
 	normalized := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(key)))
-	switch normalized {
-	case "authorization", "proxyauthorization", "secret", "clientsecret", "token", "accesstoken", "refreshtoken", "apikey", "xapikey", "password":
-		return true
-	default:
-		return false
-	}
+	return statusEvidenceSensitiveKeyPattern.MatchString(normalized)
 }
 
 func truncateStatusEvidence(summary string) string {

@@ -132,6 +132,8 @@ func TestStatusIncidentAutomationRedactsCredentialsFromDraftAndAudit(t *testing.
 		{name: "quoted authorization fragment in json string", evidence: `{"message":"request failed \"Authorization\":\"Bearer sentinel-json-quoted-authorization\""}`, secret: "sentinel-json-quoted-authorization"},
 		{name: "quoted token fragment in json string", evidence: `{"message":"request failed \"token\":\"sentinel-json-quoted-token\""}`, secret: "sentinel-json-quoted-token"},
 		{name: "scalar json string", evidence: `"request failed secret: sentinel-json-scalar"`, secret: "sentinel-json-scalar"},
+		{name: "refresh token scalar json string", evidence: `"request failed refresh_token=rt-live-secret"`, secret: "rt-live-secret"},
+		{name: "quoted client secret fragment in json string", evidence: `{"message":"request failed \"client_secret\":\"cs-live-secret\""}`, secret: "cs-live-secret"},
 		{name: "quoted sk token", evidence: `request failed "sk-sentinel-quoted-key"`, secret: "sk-sentinel-quoted-key"},
 	}
 
