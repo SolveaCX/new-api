@@ -68,6 +68,11 @@ const (
 	recallAttributionRetryMax      = time.Hour
 )
 
+var recallAttributionCheckoutSessionExpansions = []string{
+	"discounts.promotion_code",
+	"total_details.breakdown.discounts.discount",
+}
+
 func NewRecallAttributionService(client RecallStripeClient) *RecallAttributionService {
 	if client == nil {
 		client = NewStripeRecallClient()
@@ -129,9 +134,9 @@ func recallPaymentFactFromSession(session *stripe.CheckoutSession) RecallPayment
 		}
 	}
 	amountDetailsLoaded := session.TotalDetails != nil
-	discountIdentityLoaded := session.Discounts != nil && (len(session.Discounts) == 0 || fact.PromotionCodeID != "")
-	if session.TotalDetails != nil && session.TotalDetails.Breakdown != nil {
-		discountIdentityLoaded = true
+	discountIdentityLoaded := recallCheckoutDiscountIdentityLoaded(session.Discounts)
+	if session.TotalDetails != nil && session.TotalDetails.Breakdown != nil && len(session.TotalDetails.Breakdown.Discounts) > 0 {
+		discountIdentityLoaded = recallBreakdownDiscountIdentityLoaded(session.TotalDetails.Breakdown.Discounts)
 	}
 	fact.discountDetailsLoaded = amountDetailsLoaded && discountIdentityLoaded
 	if session.Metadata != nil {
@@ -152,8 +157,7 @@ func (s *RecallAttributionService) Attribute(ctx context.Context, fact RecallPay
 		hydrated, err := s.stripe.GetCheckoutSession(
 			ctx,
 			strings.TrimSpace(fact.CheckoutSessionID),
-			"discounts.promotion_code",
-			"total_details.breakdown.discounts.discount.promotion_code",
+			recallAttributionCheckoutSessionExpansions...,
 		)
 		if err != nil {
 			return wrapRecallStripeError("get Stripe Checkout Session for recall attribution", err)
@@ -270,8 +274,7 @@ func (s *RecallAttributionService) ReconcileBatch(ctx context.Context, limit int
 		session, getErr := s.stripe.GetCheckoutSession(
 			ctx,
 			candidate.CheckoutSessionId,
-			"discounts.promotion_code",
-			"total_details.breakdown.discounts.discount.promotion_code",
+			recallAttributionCheckoutSessionExpansions...,
 		)
 		if getErr != nil {
 			wrappedErr := wrapRecallStripeError("get Stripe Checkout Session for recall reconciliation", getErr)
@@ -339,6 +342,38 @@ func (s *RecallAttributionService) ReconcileBatch(ctx context.Context, limit int
 		}
 	}
 	return processed, firstErr
+}
+
+func recallCheckoutDiscountIdentityLoaded(discounts []*stripe.CheckoutSessionDiscount) bool {
+	if discounts == nil {
+		return false
+	}
+	for _, discount := range discounts {
+		if discount == nil {
+			return false
+		}
+		if discount.PromotionCode != nil && strings.TrimSpace(discount.PromotionCode.ID) != "" {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func recallBreakdownDiscountIdentityLoaded(discounts []*stripe.CheckoutSessionTotalDetailsBreakdownDiscount) bool {
+	for _, breakdown := range discounts {
+		if breakdown == nil || breakdown.Discount == nil {
+			return false
+		}
+		if breakdown.Discount.PromotionCode != nil && strings.TrimSpace(breakdown.Discount.PromotionCode.ID) != "" {
+			continue
+		}
+		if breakdown.Discount.Coupon != nil && strings.TrimSpace(breakdown.Discount.Coupon.ID) != "" {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func isRecallReconciliationMissingResource(err error) bool {

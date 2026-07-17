@@ -244,10 +244,78 @@ func TestRecallAttributionFetchesExactDiscountExpansions(t *testing.T) {
 
 	require.Equal(t, []string{
 		"discounts.promotion_code",
-		"total_details.breakdown.discounts.discount.promotion_code",
+		"total_details.breakdown.discounts.discount",
 	}, gotExpansions)
 	stored := model.RecallRecipient{}
 	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, model.RecallConversionDirect, stored.ConversionKind)
+}
+
+func TestRecallPaymentFactReadsExpandedBreakdownDiscountIdentity(t *testing.T) {
+	tests := []struct {
+		name            string
+		discountJSON    string
+		promotionCodeID string
+	}{
+		{
+			name:            "promotion code expandable string",
+			discountJSON:    `{"id":"di_promotion","promotion_code":"promo_string"}`,
+			promotionCodeID: "promo_string",
+		},
+		{
+			name:         "coupon only discount",
+			discountJSON: `{"id":"di_coupon","coupon":{"id":"coupon_only"},"promotion_code":null}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw := fmt.Sprintf(`{
+				"id":"cs_breakdown_identity","amount_total":900,"currency":"usd","discounts":[],
+				"total_details":{"amount_discount":100,"breakdown":{"discounts":[{"amount":100,"discount":%s}]}},
+				"metadata":{}
+			}`, test.discountJSON)
+			fact, err := ParseRecallPayment(stripe.Event{ID: "evt_breakdown_identity", Data: &stripe.EventData{Raw: []byte(raw)}}, "trade_breakdown_identity", 7)
+
+			require.NoError(t, err)
+			require.Equal(t, test.promotionCodeID, fact.PromotionCodeID)
+			require.True(t, fact.discountDetailsLoaded)
+		})
+	}
+}
+
+func TestRecallAttributionHydratesIDOnlyBreakdownDiscount(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	_, recipient := createRecallAttributionRecipient(t, "promo_hydrated_breakdown")
+	fact, err := ParseRecallPayment(stripe.Event{ID: "evt_id_only_breakdown", Data: &stripe.EventData{Raw: []byte(`{
+		"id":"cs_id_only_breakdown","amount_total":1000,"currency":"usd","discounts":[],
+		"total_details":{"amount_discount":100,"breakdown":{"discounts":[{"amount":100,"discount":"di_unexpanded"}]}},
+		"metadata":{}
+	}`)}}, "trade_id_only_breakdown", recipient.UserId)
+	require.NoError(t, err)
+
+	var gotExpansions []string
+	client := &recallStripeFakeClient{getCheckoutSessionFn: func(_ context.Context, id string, expand ...string) (*stripe.CheckoutSession, error) {
+		gotExpansions = append([]string(nil), expand...)
+		return &stripe.CheckoutSession{
+			ID: id, AmountTotal: 900, Currency: stripe.CurrencyUSD, Discounts: []*stripe.CheckoutSessionDiscount{},
+			TotalDetails: &stripe.CheckoutSessionTotalDetails{
+				AmountDiscount: 100,
+				Breakdown: &stripe.CheckoutSessionTotalDetailsBreakdown{Discounts: []*stripe.CheckoutSessionTotalDetailsBreakdownDiscount{{
+					Amount:   100,
+					Discount: &stripe.Discount{ID: "di_unexpanded", PromotionCode: &stripe.PromotionCode{ID: "promo_hydrated_breakdown"}},
+				}}},
+			},
+		}, nil
+	}}
+
+	require.NoError(t, NewRecallAttributionService(client).Attribute(context.Background(), fact))
+	require.Equal(t, []string{
+		"discounts.promotion_code",
+		"total_details.breakdown.discounts.discount",
+	}, gotExpansions)
+	stored := model.RecallRecipient{}
+	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientConverted, stored.State)
 	require.Equal(t, model.RecallConversionDirect, stored.ConversionKind)
 }
 
