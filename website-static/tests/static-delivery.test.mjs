@@ -31,6 +31,10 @@ test("static HTML receives one shared configuration script and hidden pending li
     nginx,
     /sub_filter '<\/body>' '<script src="\/assets\/site-config\.js\?v=[^"]+"><\/script><\/body>';/,
   );
+  assert.match(
+    nginx,
+    /sub_filter 'fk2\.css\?v=716b' 'fk2\.css\?v=717a';/,
+  );
   for (const selector of [
     '.nav a[href="docs.html"]',
     '.nav a[href="/docs.html"]',
