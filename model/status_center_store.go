@@ -165,17 +165,24 @@ func CommitStatusEvaluationWithFence(jobName string, holder string, fencingToken
 		if err := validateStatusJobFence(tx, jobName, holder, fencingToken, now); err != nil {
 			return err
 		}
-		effectiveStatus := component.EffectiveStatus
-		statusSource := component.StatusSource
-		var persisted StatusComponent
-		if err := tx.Select("effective_status", "status_source").First(&persisted, component.ID).Error; err != nil {
+		var current StatusComponent
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, component.ID).Error; err != nil {
 			return err
 		}
-		if persisted.StatusSource == "maintenance" {
+		effectiveStatus := component.ObservedStatus
+		statusSource := component.StatusSource
+		if statusSource == "maintenance" || statusSource == "override" {
+			statusSource = "observed"
+		}
+		switch {
+		case current.StatusSource == "maintenance":
 			effectiveStatus = StatusMaintenance
 			statusSource = "maintenance"
+		case current.OverrideStatus != "" && current.OverrideExpiresAt > now:
+			effectiveStatus = current.OverrideStatus
+			statusSource = "override"
 		}
-		return tx.Model(&StatusComponent{}).Where("id = ?", component.ID).Updates(map[string]any{
+		result := tx.Model(&StatusComponent{}).Where("id = ? AND version = ?", component.ID, current.Version).Updates(map[string]any{
 			"observed_status":              component.ObservedStatus,
 			"effective_status":             effectiveStatus,
 			"status_source":                statusSource,
@@ -188,7 +195,15 @@ func CommitStatusEvaluationWithFence(jobName string, holder string, fencingToken
 			"consecutive_traffic_recovery": component.ConsecutiveTrafficRecovery,
 			"last_traffic_bucket_start":    component.LastTrafficBucketStart,
 			"updated_at":                   component.UpdatedAt,
-		}).Error
+			"version":                      gorm.Expr("version + 1"),
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrStatusVersionConflict
+		}
+		return nil
 	})
 }
 
@@ -447,7 +462,6 @@ func TransitionStatusMaintenance(input StatusMaintenanceTransitionMutation) (Sta
 		action := "status.maintenance.start"
 		incidentUpdates := map[string]any{
 			"status":     nextStatus,
-			"started_at": input.Now,
 			"updated_at": input.Now,
 			"version":    gorm.Expr("version + 1"),
 		}
@@ -456,6 +470,8 @@ func TransitionStatusMaintenance(input StatusMaintenanceTransitionMutation) (Sta
 			action = "status.maintenance.end"
 			incidentUpdates["status"] = nextStatus
 			incidentUpdates["resolved_at"] = input.Now
+		} else if before.StartedAt == 0 {
+			incidentUpdates["started_at"] = input.Now
 		}
 		if before.Status == nextStatus {
 			incident = before
@@ -472,7 +488,8 @@ func TransitionStatusMaintenance(input StatusMaintenanceTransitionMutation) (Sta
 		}
 
 		var components []StatusComponent
-		if err := tx.Joins("JOIN status_incident_components sic ON sic.component_id = status_components.id").
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Joins("JOIN status_incident_components sic ON sic.component_id = status_components.id").
 			Where("sic.incident_id = ?", before.ID).Order("status_components.id ASC").Find(&components).Error; err != nil {
 			return err
 		}
@@ -485,8 +502,13 @@ func TransitionStatusMaintenance(input StatusMaintenanceTransitionMutation) (Sta
 			}
 			componentAction := "status.maintenance.component.start"
 			if ending {
-				componentUpdates["effective_status"] = componentBefore.ObservedStatus
-				componentUpdates["status_source"] = "observed"
+				if componentBefore.OverrideStatus != "" && componentBefore.OverrideExpiresAt > input.Now {
+					componentUpdates["effective_status"] = componentBefore.OverrideStatus
+					componentUpdates["status_source"] = "override"
+				} else {
+					componentUpdates["effective_status"] = componentBefore.ObservedStatus
+					componentUpdates["status_source"] = "observed"
+				}
 				componentAction = "status.maintenance.component.end"
 			}
 			componentResult := tx.Model(&StatusComponent{}).
