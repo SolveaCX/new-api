@@ -307,6 +307,75 @@ func ManualRetryRecallMessageWithContext(ctx context.Context, id int64, acknowle
 	return result.RowsAffected == 1, nil
 }
 
+func ListRecallMessagesForRecipientIDsWithContext(ctx context.Context, recipientIDs []int64) ([]RecallMessage, error) {
+	messages := make([]RecallMessage, 0)
+	if len(recipientIDs) == 0 {
+		return messages, nil
+	}
+	if err := DB.WithContext(ctx).
+		Where("recipient_id IN ?", recipientIDs).
+		Order("recipient_id ASC").
+		Order("id DESC").
+		Find(&messages).Error; err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func ListRecallMessagesForRecipientWithContext(ctx context.Context, recipientID int64) ([]RecallMessage, error) {
+	return ListRecallMessagesForRecipientIDsWithContext(ctx, []int64{recipientID})
+}
+
+func ManualRetryRecallMessageAndAdminEventWithContext(ctx context.Context, id int64, expectedState string, expectedUpdatedAt int64, now int64, event RecallEvent) (bool, error) {
+	if event.CampaignId <= 0 || event.RecipientId <= 0 {
+		return false, fmt.Errorf("recall message admin event target is required")
+	}
+	if err := validateRecallAdminEvent(&event); err != nil {
+		return false, err
+	}
+	retried := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		won, err := manualRetryRecallMessageState(tx, id, event.RecipientId, expectedState, expectedUpdatedAt, now)
+		if err != nil {
+			return err
+		}
+		if !won {
+			return nil
+		}
+		retried = true
+		return insertRequiredRecallAdminEvent(tx, &event)
+	})
+	if err != nil {
+		return false, err
+	}
+	return retried, nil
+}
+
+func manualRetryRecallMessageState(db *gorm.DB, id int64, recipientID int64, expectedState string, expectedUpdatedAt int64, now int64) (bool, error) {
+	if expectedState != RecallMessageFailed && expectedState != RecallMessageUncertain {
+		return false, fmt.Errorf("recall message %d is not failed or uncertain", id)
+	}
+	query := db.Model(&RecallMessage{}).
+		Where("id = ? AND state = ? AND updated_at = ?", id, expectedState, expectedUpdatedAt)
+	if recipientID > 0 {
+		query = query.Where("recipient_id = ?", recipientID)
+	}
+	result := query.
+		Updates(map[string]any{
+			"state":              RecallMessageRetryWait,
+			"next_attempt_at":    now,
+			"failed_at":          int64(0),
+			"lease_owner":        "",
+			"lease_expires_at":   int64(0),
+			"last_error_code":    "",
+			"last_error_message": "",
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func ScheduleNextRecallStages(recipientID int64, messages []RecallMessage) error {
 	if len(messages) == 0 {
 		return nil

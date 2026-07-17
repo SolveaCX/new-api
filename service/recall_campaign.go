@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"reflect"
@@ -33,6 +36,78 @@ type RecallCampaignService struct {
 	now      func() time.Time
 }
 
+type RecallCampaignSummary struct {
+	Id                    int64  `json:"id"`
+	Name                  string `json:"name"`
+	Status                string `json:"status"`
+	AudienceTemplate      string `json:"audience_template"`
+	ExecutionMode         string `json:"execution_mode"`
+	ScheduledAt           int64  `json:"scheduled_at"`
+	NextRunAt             int64  `json:"next_run_at"`
+	CouponSource          string `json:"coupon_source"`
+	StripeCouponID        string `json:"stripe_coupon_id"`
+	PromotionValidSeconds int64  `json:"promotion_valid_seconds"`
+	EnrollmentLimit       int    `json:"enrollment_limit"`
+	WorkerConcurrency     int    `json:"worker_concurrency"`
+	ConfigRevision        int64  `json:"config_revision"`
+	CreatedBy             int    `json:"created_by"`
+	CreatedAt             int64  `json:"created_at"`
+	UpdatedAt             int64  `json:"updated_at"`
+	ActivatedAt           int64  `json:"activated_at"`
+	CompletedAt           int64  `json:"completed_at"`
+	RecipientTotal        int64  `json:"recipient_total"`
+}
+
+type RecallCampaignDetail struct {
+	RecallCampaignSummary
+	Draft RecallCampaignDraft `json:"draft"`
+}
+
+type RecallMessageView struct {
+	Id                int64  `json:"id"`
+	RecipientId       int64  `json:"recipient_id"`
+	StageNo           int    `json:"stage_no"`
+	TemplateVersion   int    `json:"template_version"`
+	ScheduledAt       int64  `json:"scheduled_at"`
+	State             string `json:"state"`
+	AttemptCount      int    `json:"attempt_count"`
+	NextAttemptAt     int64  `json:"next_attempt_at"`
+	ProviderMessageId string `json:"provider_message_id"`
+	AcceptedAt        int64  `json:"accepted_at"`
+	FailedAt          int64  `json:"failed_at"`
+	LastErrorCode     string `json:"last_error_code"`
+	LastErrorMessage  string `json:"last_error_message"`
+	CreatedAt         int64  `json:"created_at"`
+	UpdatedAt         int64  `json:"updated_at"`
+}
+
+type RecallRecipientView struct {
+	Id                  int64               `json:"id"`
+	CampaignId          int64               `json:"campaign_id"`
+	UserId              int                 `json:"user_id"`
+	EligibilitySnapshot string              `json:"eligibility_snapshot"`
+	EmailSnapshot       string              `json:"email_snapshot"`
+	LanguageSnapshot    string              `json:"language_snapshot"`
+	State               string              `json:"state"`
+	StripeCustomerId    string              `json:"stripe_customer_id"`
+	PromotionCodeMasked string              `json:"promotion_code_masked"`
+	PromotionExpiresAt  int64               `json:"promotion_expires_at"`
+	FirstSentAt         int64               `json:"first_sent_at"`
+	LastSentAt          int64               `json:"last_sent_at"`
+	ClickedAt           int64               `json:"clicked_at"`
+	ConvertedAt         int64               `json:"converted_at"`
+	ConversionKind      string              `json:"conversion_kind"`
+	ConversionTradeNo   string              `json:"conversion_trade_no"`
+	ConversionCurrency  string              `json:"conversion_currency"`
+	ConversionAmount    int64               `json:"conversion_amount"`
+	DiscountAmount      int64               `json:"discount_amount"`
+	LastErrorCode       string              `json:"last_error_code"`
+	LastErrorMessage    string              `json:"last_error_message"`
+	CreatedAt           int64               `json:"created_at"`
+	UpdatedAt           int64               `json:"updated_at"`
+	Messages            []RecallMessageView `json:"messages"`
+}
+
 func NewRecallCampaignService(audience *RecallAudienceSelector, stripeService *RecallStripeService) *RecallCampaignService {
 	if audience == nil {
 		audience = NewRecallAudienceSelector()
@@ -45,6 +120,333 @@ func NewRecallCampaignService(audience *RecallAudienceSelector, stripeService *R
 		stripe:   stripeService,
 		now:      time.Now,
 	}
+}
+
+func (s *RecallCampaignService) List(ctx context.Context, page *common.PageInfo, status string) ([]RecallCampaignSummary, int64, error) {
+	if page == nil {
+		return nil, 0, fmt.Errorf("recall campaign page is required")
+	}
+	campaigns, total, err := model.ListRecallCampaignsWithContext(ctx, strings.TrimSpace(status), page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		return nil, 0, err
+	}
+	summaries := make([]RecallCampaignSummary, 0, len(campaigns))
+	for i := range campaigns {
+		recipientTotal, err := model.CountRecallCampaignRecipientsWithContext(ctx, campaigns[i].Id)
+		if err != nil {
+			return nil, 0, err
+		}
+		summaries = append(summaries, recallCampaignSummary(campaigns[i], recipientTotal))
+	}
+	return summaries, total, nil
+}
+
+func (s *RecallCampaignService) GetDetail(ctx context.Context, id int64) (RecallCampaignDetail, error) {
+	if id <= 0 {
+		return RecallCampaignDetail{}, fmt.Errorf("recall campaign ID must be positive")
+	}
+	campaign, err := model.GetRecallCampaignByIDWithContext(ctx, id)
+	if err != nil {
+		return RecallCampaignDetail{}, err
+	}
+	draft, err := recallCampaignDraftFromModel(campaign)
+	if err != nil {
+		return RecallCampaignDetail{}, err
+	}
+	recipientTotal, err := model.CountRecallCampaignRecipientsWithContext(ctx, id)
+	if err != nil {
+		return RecallCampaignDetail{}, err
+	}
+	return RecallCampaignDetail{
+		RecallCampaignSummary: recallCampaignSummary(*campaign, recipientTotal),
+		Draft:                 draft,
+	}, nil
+}
+
+func (s *RecallCampaignService) ListRecipients(ctx context.Context, id int64, page *common.PageInfo, state string) ([]RecallRecipientView, int64, error) {
+	if id <= 0 || page == nil {
+		return nil, 0, fmt.Errorf("recall campaign ID and page are required")
+	}
+	recipients, total, err := model.ListRecallRecipientsWithContext(ctx, id, page.GetStartIdx(), page.GetPageSize(), strings.TrimSpace(state))
+	if err != nil {
+		return nil, 0, err
+	}
+	ids := make([]int64, len(recipients))
+	for i := range recipients {
+		ids[i] = recipients[i].Id
+	}
+	messages, err := model.ListRecallMessagesForRecipientIDsWithContext(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	messagesByRecipient := make(map[int64][]RecallMessageView, len(ids))
+	for i := range messages {
+		messagesByRecipient[messages[i].RecipientId] = append(messagesByRecipient[messages[i].RecipientId], recallMessageView(messages[i]))
+	}
+	views := make([]RecallRecipientView, 0, len(recipients))
+	for i := range recipients {
+		views = append(views, recallRecipientView(recipients[i], messagesByRecipient[recipients[i].Id]))
+	}
+	return views, total, nil
+}
+
+func (s *RecallCampaignService) ListEvents(ctx context.Context, id int64, page *common.PageInfo) ([]model.RecallEvent, int64, error) {
+	if id <= 0 || page == nil {
+		return nil, 0, fmt.Errorf("recall campaign ID and page are required")
+	}
+	return model.ListRecallEventsWithContext(ctx, id, page.GetStartIdx(), page.GetPageSize())
+}
+
+func (s *RecallCampaignService) RetryRecipient(ctx context.Context, actorID int, campaignID int64, recipientID int64, acknowledgeUncertain bool) error {
+	if err := recallCampaignGate(ctx); err != nil {
+		return err
+	}
+	if actorID <= 0 || campaignID <= 0 || recipientID <= 0 {
+		return fmt.Errorf("recall campaign actor, campaign, and recipient IDs must be positive")
+	}
+	recipient, err := model.GetRecallRecipientByCampaignWithContext(ctx, campaignID, recipientID)
+	if err != nil {
+		return err
+	}
+	if recipient.State == model.RecallRecipientFailed {
+		nextState := model.RecallRecipientQueued
+		if strings.TrimSpace(recipient.StripeCustomerId) != "" {
+			nextState = model.RecallRecipientCustomerReady
+		}
+		if recipient.StripePromotionCodeId != nil && strings.TrimSpace(*recipient.StripePromotionCodeId) != "" && strings.TrimSpace(recipient.PromotionCode) != "" {
+			nextState = model.RecallRecipientCodeReady
+		}
+		event := model.RecallEvent{
+			CampaignId:    campaignID,
+			RecipientId:   recipientID,
+			EventType:     "recipient_retry",
+			Source:        "admin",
+			SourceEventId: recallAdminSourceEventID(ctx, "retry", fmt.Sprintf("actor:%d:campaign:%d:recipient:%d:state:%s:updated:%d", actorID, campaignID, recipientID, recipient.State, recipient.UpdatedAt)),
+			EventData: recallAdminEventData(actorID, map[string]any{
+				"action":           "retry",
+				"target":           "recipient",
+				"previous_state":   recipient.State,
+				"previous_updated": recipient.UpdatedAt,
+				"next_state":       nextState,
+			}),
+			CreatedAt: s.now().Unix(),
+		}
+		won, err := model.ManualRetryRecallRecipientAndAdminEventWithContext(ctx, campaignID, recipientID, recipient.UpdatedAt, nextState, event)
+		if err != nil {
+			return err
+		}
+		if !won {
+			return fmt.Errorf("recall recipient %d is no longer failed", recipientID)
+		}
+		return nil
+	}
+
+	messages, err := model.ListRecallMessagesForRecipientWithContext(ctx, recipientID)
+	if err != nil {
+		return err
+	}
+	var selected *model.RecallMessage
+	for i := range messages {
+		if messages[i].State == model.RecallMessageFailed {
+			selected = &messages[i]
+			break
+		}
+	}
+	if selected == nil {
+		for i := range messages {
+			if messages[i].State == model.RecallMessageUncertain {
+				selected = &messages[i]
+				break
+			}
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("recall recipient %d has no failed message or failed recipient work", recipientID)
+	}
+	if selected.State == model.RecallMessageUncertain && !acknowledgeUncertain {
+		return fmt.Errorf("acknowledge_uncertain=true is required to retry uncertain recall message %d", selected.Id)
+	}
+	now := s.now().Unix()
+	event := model.RecallEvent{
+		CampaignId:    campaignID,
+		RecipientId:   recipientID,
+		EventType:     "recipient_retry",
+		Source:        "admin",
+		SourceEventId: recallAdminSourceEventID(ctx, "retry", fmt.Sprintf("actor:%d:campaign:%d:recipient:%d:message:%d:state:%s:attempt:%d:failed:%d:updated:%d", actorID, campaignID, recipientID, selected.Id, selected.State, selected.AttemptCount, selected.FailedAt, selected.UpdatedAt)),
+		EventData: recallAdminEventData(actorID, map[string]any{
+			"action":                 "retry",
+			"target":                 "message",
+			"message_id":             selected.Id,
+			"previous_state":         selected.State,
+			"previous_attempt_count": selected.AttemptCount,
+			"previous_failed_at":     selected.FailedAt,
+			"previous_updated":       selected.UpdatedAt,
+			"acknowledge_uncertain":  acknowledgeUncertain,
+		}),
+		CreatedAt: now,
+	}
+	won, err := model.ManualRetryRecallMessageAndAdminEventWithContext(ctx, selected.Id, selected.State, selected.UpdatedAt, now, event)
+	if err != nil {
+		return err
+	}
+	if !won {
+		return fmt.Errorf("recall message %d is no longer %s", selected.Id, selected.State)
+	}
+	return nil
+}
+
+func (s *RecallCampaignService) Export(ctx context.Context, id int64) ([]byte, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("recall campaign ID must be positive")
+	}
+	if _, err := model.GetRecallCampaignByIDWithContext(ctx, id); err != nil {
+		return nil, err
+	}
+	var buffer bytes.Buffer
+	writer := csv.NewWriter(&buffer)
+	if err := writer.Write([]string{"recipient_id", "user_id", "state", "promotion_code_masked", "conversion_kind", "currency", "conversion_amount", "discount_amount", "converted_at"}); err != nil {
+		return nil, err
+	}
+	const pageSize = 500
+	for offset := 0; ; offset += pageSize {
+		recipients, _, err := model.ListRecallRecipientsWithContext(ctx, id, offset, pageSize, "")
+		if err != nil {
+			return nil, err
+		}
+		for i := range recipients {
+			row := []string{
+				strconv.FormatInt(recipients[i].Id, 10),
+				strconv.Itoa(recipients[i].UserId),
+				recipients[i].State,
+				model.MaskPromotionCode(recipients[i].PromotionCode),
+				recipients[i].ConversionKind,
+				strings.ToUpper(strings.TrimSpace(recipients[i].ConversionCurrency)),
+				strconv.FormatInt(recipients[i].ConversionAmount, 10),
+				strconv.FormatInt(recipients[i].DiscountAmount, 10),
+				strconv.FormatInt(recipients[i].ConvertedAt, 10),
+			}
+			if err := writer.Write(row); err != nil {
+				return nil, err
+			}
+		}
+		if len(recipients) < pageSize {
+			break
+		}
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+func (s *RecallCampaignService) ValidateStripe(ctx context.Context, draft RecallCampaignDraft) (RecallStripePreview, error) {
+	if err := recallCampaignGate(ctx); err != nil {
+		return RecallStripePreview{}, err
+	}
+	normalized, err := validateAndNormalizeRecallCampaignDraft(draft, s.now())
+	if err != nil {
+		return RecallStripePreview{}, err
+	}
+	return s.validateStripe(ctx, normalized)
+}
+
+func recallCampaignSummary(campaign model.RecallCampaign, recipientTotal int64) RecallCampaignSummary {
+	return RecallCampaignSummary{
+		Id:                    campaign.Id,
+		Name:                  campaign.Name,
+		Status:                campaign.Status,
+		AudienceTemplate:      campaign.AudienceTemplate,
+		ExecutionMode:         campaign.ExecutionMode,
+		ScheduledAt:           campaign.ScheduledAt,
+		NextRunAt:             campaign.NextRunAt,
+		CouponSource:          campaign.CouponSource,
+		StripeCouponID:        campaign.StripeCouponId,
+		PromotionValidSeconds: campaign.PromotionValidSeconds,
+		EnrollmentLimit:       campaign.EnrollmentLimit,
+		WorkerConcurrency:     campaign.WorkerConcurrency,
+		ConfigRevision:        campaign.ConfigRevision,
+		CreatedBy:             campaign.CreatedBy,
+		CreatedAt:             campaign.CreatedAt,
+		UpdatedAt:             campaign.UpdatedAt,
+		ActivatedAt:           campaign.ActivatedAt,
+		CompletedAt:           campaign.CompletedAt,
+		RecipientTotal:        recipientTotal,
+	}
+}
+
+func recallRecipientView(recipient model.RecallRecipient, messages []RecallMessageView) RecallRecipientView {
+	if messages == nil {
+		messages = make([]RecallMessageView, 0)
+	}
+	return RecallRecipientView{
+		Id:                  recipient.Id,
+		CampaignId:          recipient.CampaignId,
+		UserId:              recipient.UserId,
+		EligibilitySnapshot: recipient.EligibilitySnapshot,
+		EmailSnapshot:       recipient.EmailSnapshot,
+		LanguageSnapshot:    recipient.LanguageSnapshot,
+		State:               recipient.State,
+		StripeCustomerId:    recipient.StripeCustomerId,
+		PromotionCodeMasked: model.MaskPromotionCode(recipient.PromotionCode),
+		PromotionExpiresAt:  recipient.PromotionExpiresAt,
+		FirstSentAt:         recipient.FirstSentAt,
+		LastSentAt:          recipient.LastSentAt,
+		ClickedAt:           recipient.ClickedAt,
+		ConvertedAt:         recipient.ConvertedAt,
+		ConversionKind:      recipient.ConversionKind,
+		ConversionTradeNo:   recipient.ConversionTradeNo,
+		ConversionCurrency:  strings.ToUpper(strings.TrimSpace(recipient.ConversionCurrency)),
+		ConversionAmount:    recipient.ConversionAmount,
+		DiscountAmount:      recipient.DiscountAmount,
+		LastErrorCode:       recipient.LastErrorCode,
+		LastErrorMessage:    recipient.LastErrorMessage,
+		CreatedAt:           recipient.CreatedAt,
+		UpdatedAt:           recipient.UpdatedAt,
+		Messages:            messages,
+	}
+}
+
+func recallMessageView(message model.RecallMessage) RecallMessageView {
+	return RecallMessageView{
+		Id:                message.Id,
+		RecipientId:       message.RecipientId,
+		StageNo:           message.StageNo,
+		TemplateVersion:   message.TemplateVersion,
+		ScheduledAt:       message.ScheduledAt,
+		State:             message.State,
+		AttemptCount:      message.AttemptCount,
+		NextAttemptAt:     message.NextAttemptAt,
+		ProviderMessageId: message.ProviderMessageId,
+		AcceptedAt:        message.AcceptedAt,
+		FailedAt:          message.FailedAt,
+		LastErrorCode:     message.LastErrorCode,
+		LastErrorMessage:  message.LastErrorMessage,
+		CreatedAt:         message.CreatedAt,
+		UpdatedAt:         message.UpdatedAt,
+	}
+}
+
+func recallAdminEventData(actorID int, fields map[string]any) string {
+	data := make(map[string]any, len(fields)+1)
+	data["actor_id"] = actorID
+	for key, value := range fields {
+		data[key] = value
+	}
+	payload, err := common.Marshal(data)
+	if err != nil {
+		return `{}`
+	}
+	return string(payload)
+}
+
+func recallAdminSourceEventID(ctx context.Context, action string, fallbackIdentity string) string {
+	identity := strings.TrimSpace(fallbackIdentity)
+	if requestID, ok := ctx.Value(common.RequestIdKey).(string); ok && strings.TrimSpace(requestID) != "" {
+		identity = strings.TrimSpace(requestID)
+	}
+	digest := sha256.Sum256([]byte(identity))
+	return fmt.Sprintf("admin:%s:%x", action, digest)
 }
 
 func (s *RecallCampaignService) SaveDraft(ctx context.Context, actorID int, draft RecallCampaignDraft) (*model.RecallCampaign, error) {
@@ -327,12 +729,24 @@ func (s *RecallCampaignService) Cancel(ctx context.Context, actorID int, id int6
 	if campaign.Status == model.RecallCampaignCompleted {
 		return fmt.Errorf("completed recall campaign %d cannot be cancelled", id)
 	}
-	won, err := model.CancelRecallCampaignWithContext(ctx, id, []string{
+	now := s.now().Unix()
+	event := model.RecallEvent{
+		CampaignId:    id,
+		EventType:     "campaign_cancelled",
+		Source:        "admin",
+		SourceEventId: recallAdminSourceEventID(ctx, "cancel", fmt.Sprintf("actor:%d:campaign:%d:state:%s:updated:%d", actorID, id, campaign.Status, campaign.UpdatedAt)),
+		EventData: recallAdminEventData(actorID, map[string]any{
+			"action":         "cancel",
+			"previous_state": campaign.Status,
+		}),
+		CreatedAt: now,
+	}
+	won, err := model.CancelRecallCampaignAndAdminEventWithContext(ctx, id, []string{
 		model.RecallCampaignDraft,
 		model.RecallCampaignScheduled,
 		model.RecallCampaignRunning,
 		model.RecallCampaignPaused,
-	}, s.now().Unix(), "campaign_cancelled")
+	}, now, "campaign_cancelled", event)
 	if err != nil {
 		return err
 	}
@@ -343,11 +757,43 @@ func (s *RecallCampaignService) Cancel(ctx context.Context, actorID int, id int6
 }
 
 func (s *RecallCampaignService) Complete(ctx context.Context, actorID int, id int64) error {
-	return s.transitionCampaign(ctx, actorID, id, []string{
-		model.RecallCampaignScheduled,
-		model.RecallCampaignRunning,
-		model.RecallCampaignPaused,
-	}, model.RecallCampaignCompleted, map[string]any{"completed_at": s.now().Unix()})
+	if err := recallCampaignGate(ctx); err != nil {
+		return err
+	}
+	if actorID <= 0 || id <= 0 {
+		return fmt.Errorf("recall campaign actor and campaign IDs must be positive")
+	}
+	campaign, err := model.GetRecallCampaignByIDWithContext(ctx, id)
+	if err != nil {
+		return err
+	}
+	if campaign.Status == model.RecallCampaignCompleted {
+		return nil
+	}
+	from := []string{model.RecallCampaignScheduled, model.RecallCampaignRunning, model.RecallCampaignPaused}
+	if !containsRecallCampaignStatus(from, campaign.Status) {
+		return fmt.Errorf("recall campaign %d cannot transition from %s to %s", id, campaign.Status, model.RecallCampaignCompleted)
+	}
+	now := s.now().Unix()
+	event := model.RecallEvent{
+		CampaignId:    id,
+		EventType:     "campaign_completed",
+		Source:        "admin",
+		SourceEventId: recallAdminSourceEventID(ctx, "complete", fmt.Sprintf("actor:%d:campaign:%d:state:%s:updated:%d", actorID, id, campaign.Status, campaign.UpdatedAt)),
+		EventData: recallAdminEventData(actorID, map[string]any{
+			"action":         "complete",
+			"previous_state": campaign.Status,
+		}),
+		CreatedAt: now,
+	}
+	won, err := model.TransitionRecallCampaignAndAdminEventWithContext(ctx, id, from, model.RecallCampaignCompleted, map[string]any{"completed_at": now}, event)
+	if err != nil {
+		return err
+	}
+	if !won {
+		return s.acceptRecallCampaignTargetState(ctx, id, model.RecallCampaignCompleted)
+	}
+	return nil
 }
 
 func (s *RecallCampaignService) transitionCampaign(ctx context.Context, actorID int, id int64, from []string, to string, fields map[string]any) error {

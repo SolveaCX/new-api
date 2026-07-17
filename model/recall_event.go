@@ -26,6 +26,7 @@ type RecallEvent struct {
 
 var errRecallRunNotOwned = errors.New("recall campaign run not owned")
 var errRecallConversionNotOwned = errors.New("recall conversion not owned")
+var errRecallAdminEventNotOwned = errors.New("recall admin audit event already exists")
 
 const recallRunBatchSize = 200
 
@@ -57,6 +58,46 @@ type RecallCurrencyMetricRow struct {
 	Count          int64
 	PaymentAmount  int64
 	DiscountAmount int64
+}
+
+func ListRecallEventsWithContext(ctx context.Context, campaignID int64, offset int, limit int) ([]RecallEvent, int64, error) {
+	events := make([]RecallEvent, 0)
+	var total int64
+	query := DB.WithContext(ctx).Model(&RecallEvent{}).Where("campaign_id = ?", campaignID)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&events).Error; err != nil {
+		return nil, 0, err
+	}
+	return events, total, nil
+}
+
+func validateRecallAdminEvent(event *RecallEvent) error {
+	if event == nil || event.Source != "admin" || strings.TrimSpace(event.SourceEventId) == "" {
+		return fmt.Errorf("recall admin event requires an admin source and source event ID")
+	}
+	if len(event.SourceEventId) > 160 {
+		return fmt.Errorf("recall admin source event ID exceeds 160 characters")
+	}
+	if strings.TrimSpace(event.EventType) == "" {
+		return fmt.Errorf("recall admin event type is required")
+	}
+	return nil
+}
+
+func insertRequiredRecallAdminEvent(tx *gorm.DB, event *RecallEvent) error {
+	if err := validateRecallAdminEvent(event); err != nil {
+		return err
+	}
+	result := insertRecallRunEvent(tx, event)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errRecallAdminEventNotOwned
+	}
+	return nil
 }
 
 const (
