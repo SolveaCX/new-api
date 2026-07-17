@@ -142,7 +142,7 @@ func (adapter statusRouterProbeAdapter) ProbeStatusComponent(ctx context.Context
 	return StatusProbeOutcome{Success: true, DiagnosticType: "ok", TargetRef: parsed.Host, LatencyMs: latencyMs}
 }
 
-func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool, error) {
+func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (ran bool, runErr error) {
 	if scheduler == nil || strings.TrimSpace(scheduler.Holder) == "" {
 		return false, errors.New("status scheduler holder is required")
 	}
@@ -155,7 +155,13 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 		ctx = context.Background()
 	}
 	runCtx, leaseKeeper := scheduler.startStatusLeaseKeeper(ctx, lease.FencingToken, leaseSeconds)
-	defer leaseKeeper.stopKeeping()
+	defer func() {
+		leaseKeeper.stopKeeping()
+		_, err := model.ReleaseStatusJobLease(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime())
+		if err != nil && runErr == nil {
+			runErr = fmt.Errorf("status job lease release failed: %w", err)
+		}
+	}()
 
 	pricing := []model.Pricing(nil)
 	if scheduler.Pricing != nil {
