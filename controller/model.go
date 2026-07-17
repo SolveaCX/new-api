@@ -315,6 +315,58 @@ func ListModels(c *gin.Context, modelType int) {
 	}
 }
 
+func AvailableModels(c *gin.Context) {
+	groups, err := getModelListGroups(c)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "get user group failed",
+		})
+		return
+	}
+
+	modelNames, err := model.GetAvailableModelsForGroups(groups.ownerGroups)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("GetAvailableModelsForGroups error: %v", err))
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "get available models failed",
+		})
+		return
+	}
+
+	if common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled) {
+		tokenModelLimit := map[string]bool{}
+		if value, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit); ok {
+			if limits, ok := value.(map[string]bool); ok {
+				tokenModelLimit = limits
+			}
+		}
+		filtered := make([]string, 0, len(modelNames))
+		for _, modelName := range modelNames {
+			if tokenModelLimit[modelName] {
+				filtered = append(filtered, modelName)
+			}
+		}
+		modelNames = filtered
+	}
+
+	ownerByModel := map[string]string{}
+	if len(groups.ownerGroups) > 0 {
+		ownerByModel = getPreferredModelOwners(modelNames, groups.ownerGroups)
+	}
+	availableModels := make([]dto.OpenAIModels, 0, len(modelNames))
+	for _, modelName := range modelNames {
+		availableModels = append(availableModels, buildOpenAIModel(modelName, ownerByModel))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    availableModels,
+		"object":  "list",
+	})
+}
+
 func ChannelListModels(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
