@@ -14,6 +14,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
 
@@ -271,6 +272,11 @@ func SendStatusDiscordTest(ctx context.Context, actor StatusMutationActor, keyri
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return StatusDiscordTestResult{Message: "Discord test delivery failed."}, fmt.Errorf("%w: HTTP %d", ErrStatusDiscordTestDeliveryFailed, response.StatusCode)
 	}
+	if _, err := model.RecordStatusDiscordDeliveryResult(
+		true, false, statusDeliveryPermanentFailureSuspendThreshold, now,
+	); err != nil {
+		return StatusDiscordTestResult{}, fmt.Errorf("persist status Discord test recovery: %w", err)
+	}
 	return StatusDiscordTestResult{Success: true, Message: "Discord test delivery succeeded."}, nil
 }
 
@@ -322,25 +328,36 @@ func StatusDeliveryRetryDelay(attempt int64, jitter func(max int64) int64) int64
 }
 
 func (worker StatusDeliveryWorker) RunOnce(ctx context.Context, workerID string, limit int) (int, error) {
-	now := time.Now().Unix()
-	if worker.Now != nil {
-		now = worker.Now()
-	}
 	leaseTTL := worker.LeaseTTL
 	if leaseTTL <= 0 {
 		leaseTTL = statusDeliveryClaimLeaseSeconds
 	}
-	deliveries, err := model.ClaimStatusDeliveryOutbox(workerID, now, leaseTTL, limit)
-	if err != nil {
-		return 0, err
+	if limit <= 0 {
+		return 0, errors.New("invalid status delivery limit")
 	}
+	processed := 0
 	var firstPersistenceError error
-	for _, delivery := range deliveries {
-		statusCode, deliveryErr := worker.deliver(ctx, delivery, now)
+	for processed < limit {
+		now := worker.deliveryNow()
+		deliveries, err := model.ClaimStatusDeliveryOutbox(workerID, now, leaseTTL, 1)
+		if err != nil {
+			return processed, err
+		}
+		if len(deliveries) == 0 {
+			break
+		}
+		delivery := deliveries[0]
+		processed++
+		statusCode, deliveryErr, leaseErr := worker.deliverWithLease(ctx, delivery, now, leaseTTL)
+		if leaseErr != nil && firstPersistenceError == nil {
+			firstPersistenceError = leaseErr
+		}
+		now = worker.deliveryNow()
 		classification := ClassifyStatusDeliveryResult(statusCode, deliveryErr)
 		result := model.StatusDeliveryResultMutation{
 			ID: delivery.ID, LockToken: delivery.LockToken, ExpectedVersion: delivery.Version,
-			Now: now,
+			DestinationType: delivery.DestinationType, DestinationID: delivery.DestinationID,
+			SuspendThreshold: statusDeliveryPermanentFailureSuspendThreshold, Now: now,
 		}
 		switch classification {
 		case StatusDeliveryResultDelivered:
@@ -364,29 +381,53 @@ func (worker StatusDeliveryWorker) RunOnce(ctx context.Context, workerID string,
 			}
 			continue
 		}
-		switch delivery.DestinationType {
-		case model.StatusDestinationEmail, model.StatusDestinationWebhook:
-			if recordErr := model.RecordStatusSubscriberDeliveryResult(
-				delivery.DestinationID,
-				classification == StatusDeliveryResultDelivered,
-				classification == StatusDeliveryResultPermanent,
-				statusDeliveryPermanentFailureSuspendThreshold,
-				now,
-			); recordErr != nil && firstPersistenceError == nil {
-				firstPersistenceError = recordErr
-			}
-		case model.StatusDestinationDiscord:
-			if _, recordErr := model.RecordStatusDiscordDeliveryResult(
-				classification == StatusDeliveryResultDelivered,
-				classification == StatusDeliveryResultPermanent,
-				statusDeliveryPermanentFailureSuspendThreshold,
-				now,
-			); recordErr != nil && firstPersistenceError == nil {
-				firstPersistenceError = recordErr
+	}
+	return processed, firstPersistenceError
+}
+
+func (worker StatusDeliveryWorker) deliveryNow() int64 {
+	if worker.Now != nil {
+		return worker.Now()
+	}
+	return time.Now().Unix()
+}
+
+func (worker StatusDeliveryWorker) deliverWithLease(ctx context.Context, delivery model.StatusDeliveryOutbox, now int64, leaseTTL int64) (int, error, error) {
+	stop := make(chan struct{})
+	done := make(chan error, 1)
+	renewalInterval := time.Duration(leaseTTL) * time.Second / 3
+	if renewalInterval <= 0 {
+		renewalInterval = time.Second
+	}
+	gopool.Go(func() {
+		ticker := time.NewTicker(renewalInterval)
+		defer ticker.Stop()
+		var firstRenewalError error
+		for {
+			select {
+			case <-stop:
+				done <- firstRenewalError
+				return
+			case <-ticker.C:
+				renewed, err := model.RenewStatusDeliveryOutboxLease(
+					delivery.ID, delivery.LockToken, delivery.Version, worker.deliveryNow(), leaseTTL,
+				)
+				if err != nil {
+					if firstRenewalError == nil {
+						firstRenewalError = err
+					}
+					continue
+				}
+				if !renewed {
+					done <- errors.New("status delivery lost its claim during outbound attempt")
+					return
+				}
 			}
 		}
-	}
-	return len(deliveries), firstPersistenceError
+	})
+	statusCode, deliveryErr := worker.deliver(ctx, delivery, now)
+	close(stop)
+	return statusCode, deliveryErr, <-done
 }
 
 func (worker StatusDeliveryWorker) deliver(ctx context.Context, delivery model.StatusDeliveryOutbox, now int64) (int, error) {
@@ -394,7 +435,10 @@ func (worker StatusDeliveryWorker) deliver(ctx context.Context, delivery model.S
 	case model.StatusDestinationEmail:
 		subscriber, err := model.GetStatusSubscriber(delivery.DestinationID)
 		if err != nil {
-			return http.StatusNotFound, err
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return http.StatusNotFound, err
+			}
+			return 0, err
 		}
 		if subscriber.Kind != model.StatusSubscriberKindEmail || subscriber.Status != model.StatusSubscriberActive {
 			return http.StatusGone, errors.New("status email destination is not active")

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -59,6 +60,42 @@ type statusEmailRecorder struct {
 func (sender *statusEmailRecorder) SendEmail(subject string, receiver string, content string) error {
 	sender.messages = append(sender.messages, statusEmailMessage{subject: subject, receiver: receiver, content: content})
 	return sender.err
+}
+
+type statusExpiringBatchEmailSender struct {
+	db               *gorm.DB
+	now              *atomic.Int64
+	firstEventID     string
+	otherWorker      StatusDeliveryWorker
+	messages         []statusEmailMessage
+	otherProcessed   int
+	otherWorkerError error
+}
+
+type statusBlockingEmailSender struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (sender *statusBlockingEmailSender) SendEmail(string, string, string) error {
+	close(sender.started)
+	<-sender.release
+	return nil
+}
+
+func (sender *statusExpiringBatchEmailSender) SendEmail(subject string, receiver string, content string) error {
+	sender.messages = append(sender.messages, statusEmailMessage{subject: subject, receiver: receiver, content: content})
+	if len(sender.messages) != 1 {
+		return nil
+	}
+	sender.now.Store(70_031)
+	if err := sender.db.Model(&model.StatusDeliveryOutbox{}).
+		Where("event_id = ?", sender.firstEventID).
+		Updates(map[string]any{"locked_until": 70_061, "updated_at": 70_031}).Error; err != nil {
+		return err
+	}
+	sender.otherProcessed, sender.otherWorkerError = sender.otherWorker.RunOnce(context.Background(), "worker-b", 1)
+	return sender.otherWorkerError
 }
 
 func statusTokenFromMessage(t *testing.T, content string, name string) string {
@@ -288,6 +325,39 @@ func TestStatusSubscriptionDiscordTestDeliveryReportsNonSuccessAndTransportFailu
 	}
 }
 
+func TestStatusSubscriptionSuccessfulDiscordTestClearsSuspensionButFailedTestDoesNot(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	keyring := statusSecretTestKeyring(t)
+	endpoint := "https://discord.com/api/webhooks/recovery/token"
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, keyring, 68_000)
+	require.NoError(t, err)
+	state, err := model.RecordStatusDiscordDeliveryResult(false, true, 1, 68_001)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, state.FailureCount)
+	require.EqualValues(t, 68_001, state.SuspendedAt)
+
+	failedSender := &statusDeliveryWebhookRecorder{results: map[string]StatusWebhookResponse{
+		endpoint: {StatusCode: http.StatusBadGateway},
+	}}
+	result, err := SendStatusDiscordTest(context.Background(), statusRootActor(true), keyring, failedSender, 68_002)
+	require.ErrorIs(t, err, ErrStatusDiscordTestDeliveryFailed)
+	require.False(t, result.Success)
+	state, err = model.GetStatusDiscordDeliveryState()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, state.FailureCount)
+	require.EqualValues(t, 68_001, state.SuspendedAt)
+
+	result, err = SendStatusDiscordTest(
+		context.Background(), statusRootActor(true), keyring, &statusDeliveryWebhookRecorder{}, 68_003,
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	state, err = model.GetStatusDiscordDeliveryState()
+	require.NoError(t, err)
+	require.Zero(t, state.FailureCount)
+	require.Zero(t, state.SuspendedAt)
+}
+
 func TestStatusDeliveryPortableClaimUsesCASAndExpiredLeaseCanBeReclaimed(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	outbox := model.StatusDeliveryOutbox{
@@ -313,6 +383,91 @@ func TestStatusDeliveryPortableClaimUsesCASAndExpiredLeaseCanBeReclaimed(t *test
 	require.Greater(t, reclaimed[0].Version, first[0].Version)
 }
 
+func TestStatusDeliveryClaimsEachRowFreshBeforeSequentialOutboundAttempts(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	subscriber := model.StatusSubscriber{
+		Kind: model.StatusSubscriberKindEmail, IdentityHash: "fresh-row-claim",
+		DisplayAddress: "status@example.com", Status: model.StatusSubscriberActive,
+	}
+	require.NoError(t, db.Create(&subscriber).Error)
+	rows := []model.StatusDeliveryOutbox{
+		{
+			PublishedUpdateID: 71, DestinationType: model.StatusDestinationEmail, DestinationID: subscriber.ID,
+			EventID: "fresh-row-first", Payload: `{"body":"first","state":"degraded"}`, Status: model.StatusDeliveryPending,
+			NextAttemptAt: 70_000, Version: 1, CreatedAt: 70_000, UpdatedAt: 70_000,
+		},
+		{
+			PublishedUpdateID: 72, DestinationType: model.StatusDestinationEmail, DestinationID: subscriber.ID,
+			EventID: "fresh-row-second", Payload: `{"body":"second","state":"degraded"}`, Status: model.StatusDeliveryPending,
+			NextAttemptAt: 70_000, Version: 1, CreatedAt: 70_000, UpdatedAt: 70_000,
+		},
+	}
+	require.NoError(t, db.Create(&rows).Error)
+
+	var now atomic.Int64
+	now.Store(70_000)
+	otherEmail := &statusEmailRecorder{}
+	sender := &statusExpiringBatchEmailSender{
+		db: db, now: &now, firstEventID: rows[0].EventID,
+		otherWorker: StatusDeliveryWorker{
+			Email: otherEmail, LeaseTTL: 30, Now: now.Load,
+		},
+	}
+	worker := StatusDeliveryWorker{Email: sender, LeaseTTL: 30, Now: now.Load}
+
+	processed, err := worker.RunOnce(context.Background(), "worker-a", 2)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 1, sender.otherProcessed)
+	require.Len(t, sender.messages, 1)
+	require.Len(t, otherEmail.messages, 1)
+	require.Equal(t, "status@example.com", sender.messages[0].receiver)
+	require.Equal(t, "status@example.com", otherEmail.messages[0].receiver)
+	var delivered int64
+	require.NoError(t, db.Model(&model.StatusDeliveryOutbox{}).Where("status = ?", model.StatusDeliveryDelivered).Count(&delivered).Error)
+	require.EqualValues(t, 2, delivered)
+}
+
+func TestStatusDeliveryRenewsLeaseWhileOutboundAttemptIsBlocked(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	subscriber := model.StatusSubscriber{
+		Kind: model.StatusSubscriberKindEmail, IdentityHash: "renew-blocked-attempt",
+		DisplayAddress: "blocked@example.com", Status: model.StatusSubscriberActive,
+	}
+	require.NoError(t, db.Create(&subscriber).Error)
+	delivery := model.StatusDeliveryOutbox{
+		PublishedUpdateID: 73, DestinationType: model.StatusDestinationEmail, DestinationID: subscriber.ID,
+		EventID: "renew-blocked-attempt", Payload: `{"body":"blocked","state":"degraded"}`, Status: model.StatusDeliveryPending,
+		NextAttemptAt: 80_000, Version: 1, CreatedAt: 80_000, UpdatedAt: 80_000,
+	}
+	require.NoError(t, db.Create(&delivery).Error)
+
+	var now atomic.Int64
+	now.Store(80_000)
+	sender := &statusBlockingEmailSender{started: make(chan struct{}), release: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		_, err := (StatusDeliveryWorker{Email: sender, LeaseTTL: 3, Now: now.Load}).RunOnce(context.Background(), "worker-renew", 1)
+		done <- err
+	}()
+	defer func() {
+		close(sender.release)
+		require.NoError(t, <-done)
+	}()
+
+	<-sender.started
+	now.Store(80_002)
+	require.Eventually(t, func() bool {
+		var stored model.StatusDeliveryOutbox
+		return db.First(&stored, delivery.ID).Error == nil && stored.LockedUntil >= 80_005
+	}, 3*time.Second, 10*time.Millisecond)
+
+	contended, err := model.ClaimStatusDeliveryOutbox("worker-other", 80_004, 3, 1)
+	require.NoError(t, err)
+	require.Empty(t, contended)
+}
+
 func TestStatusDeliveryClassifiesResultsAndBackoffWithJitter(t *testing.T) {
 	require.Equal(t, StatusDeliveryResultDelivered, ClassifyStatusDeliveryResult(http.StatusNoContent, nil))
 	require.Equal(t, StatusDeliveryResultPermanent, ClassifyStatusDeliveryResult(http.StatusBadRequest, nil))
@@ -330,6 +485,30 @@ func TestStatusDeliveryClassifiesResultsAndBackoffWithJitter(t *testing.T) {
 		return 7
 	}))
 	require.EqualValues(t, statusDeliveryMaxRetrySeconds, StatusDeliveryRetryDelay(99, func(int64) int64 { return statusDeliveryMaxRetrySeconds }))
+}
+
+func TestStatusDeliveryEmailDatabaseFailureRemainsRetryable(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	expectedErr := errors.New("subscriber database unavailable")
+	const callbackName = "status-email-subscriber-query-failure"
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "StatusSubscriber" {
+			tx.AddError(expectedErr)
+		}
+	}))
+	t.Cleanup(func() { require.NoError(t, db.Callback().Query().Remove(callbackName)) })
+
+	email := &statusEmailRecorder{}
+	statusCode, err := (StatusDeliveryWorker{Email: email}).deliver(context.Background(), model.StatusDeliveryOutbox{
+		DestinationType: model.StatusDestinationEmail,
+		DestinationID:   99,
+		Payload:         `{"body":"database failure","state":"degraded"}`,
+	}, 81_000)
+
+	require.ErrorIs(t, err, expectedErr)
+	require.Zero(t, statusCode)
+	require.Empty(t, email.messages)
+	require.Equal(t, StatusDeliveryResultRetry, ClassifyStatusDeliveryResult(statusCode, err))
 }
 
 func TestStatusDeliveryInternalPermanentFailuresAreDeadWithoutRetry(t *testing.T) {
@@ -498,6 +677,45 @@ func TestStatusDeliveryPermanentFailuresBecomeDeadAndSuspendDestination(t *testi
 	require.NoError(t, db.First(&subscriber, subscriber.ID).Error)
 	require.Equal(t, model.StatusSubscriberSuspended, subscriber.Status)
 	require.Equal(t, statusDeliveryPermanentFailureSuspendThreshold, subscriber.FailureCount)
+}
+
+func TestStatusDeliveryTerminalCompletionRollsBackWhenSubscriberHealthWriteFails(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	subscriber := model.StatusSubscriber{
+		Kind: model.StatusSubscriberKindEmail, IdentityHash: "atomic-subscriber-health",
+		DisplayAddress: "atomic@example.com", Status: model.StatusSubscriberActive, FailureCount: 2,
+	}
+	require.NoError(t, db.Create(&subscriber).Error)
+	delivery := model.StatusDeliveryOutbox{
+		PublishedUpdateID: 299, DestinationType: model.StatusDestinationEmail, DestinationID: subscriber.ID,
+		EventID: "atomic-subscriber-health", Payload: `{"body":"atomic","state":"degraded"}`, Status: model.StatusDeliveryPending,
+		NextAttemptAt: 109_000, Version: 1, CreatedAt: 109_000, UpdatedAt: 109_000,
+	}
+	require.NoError(t, db.Create(&delivery).Error)
+
+	expectedErr := errors.New("subscriber health write failed")
+	const callbackName = "status-subscriber-health-write-failure"
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "StatusSubscriber" {
+			tx.AddError(expectedErr)
+		}
+	}))
+	t.Cleanup(func() { require.NoError(t, db.Callback().Update().Remove(callbackName)) })
+
+	processed, err := (StatusDeliveryWorker{
+		Email: &statusEmailRecorder{}, Now: func() int64 { return 109_000 },
+	}).RunOnce(context.Background(), "worker-atomic-health", 1)
+
+	require.Equal(t, 1, processed)
+	require.ErrorIs(t, err, expectedErr)
+	var storedDelivery model.StatusDeliveryOutbox
+	require.NoError(t, db.First(&storedDelivery, delivery.ID).Error)
+	require.Equal(t, model.StatusDeliveryProcessing, storedDelivery.Status)
+	require.NotEmpty(t, storedDelivery.LockToken)
+	require.Zero(t, storedDelivery.Attempts)
+	var storedSubscriber model.StatusSubscriber
+	require.NoError(t, db.First(&storedSubscriber, subscriber.ID).Error)
+	require.EqualValues(t, 2, storedSubscriber.FailureCount)
 }
 
 type statusDiscordDeliveryStateSnapshot struct {
