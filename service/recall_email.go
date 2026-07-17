@@ -226,7 +226,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		return w.finishPreAcceptError(ctx, item, "template_invalid", false)
 	}
 	baseOrigin := strings.TrimRight(strings.TrimSpace(topUpBaseOrigin()), "/")
-	claimURL := baseOrigin + "/console/recall/claim?claim=" + url.QueryEscape(rawClaim)
+	claimURL := baseOrigin + "/console/topup?recall_claim=" + url.QueryEscape(rawClaim)
 	unsubscribeURL := baseOrigin + "/api/recall/unsubscribe?token=" + url.QueryEscape(unsubscribeToken)
 	productSummary, err := recallEmailProductSummary(item.Campaign.ProductScope)
 	if err != nil {

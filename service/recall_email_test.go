@@ -84,6 +84,7 @@ func TestRecallEmailAcceptedSchedulesVersionedStagesRelativeToFirstAcceptance(t 
 	firstSend := (*fixture.sent)[0]
 	require.Equal(t, "Return stage 1", firstSend.subject)
 	require.Equal(t, "snapshot@example.com", firstSend.receiver)
+	require.Contains(t, firstSend.htmlBody, "/console/topup?recall_claim=")
 	require.Equal(t, fmt.Sprintf("<recall-%d-1@notify.example.com>", fixture.recipient.Id), firstSend.messageID)
 	require.Contains(t, firstSend.htmlBody, model.MaskPromotionCode(fixture.recipient.PromotionCode))
 	require.NotContains(t, firstSend.htmlBody, fixture.recipient.PromotionCode)

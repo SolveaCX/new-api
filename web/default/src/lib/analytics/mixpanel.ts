@@ -31,6 +31,11 @@ type MixpanelClient = {
   }
   reset: () => void
   track: (eventName: string, properties?: MixpanelProperties) => void
+  set_config?: (
+    config: Record<string, string | number | boolean | undefined>
+  ) => void
+  start_session_recording?: () => void
+  stop_session_recording?: () => void
 }
 
 declare global {
@@ -51,6 +56,55 @@ const MIXPANEL_SCRIPT_SRC =
 
 let loaderPromise: Promise<boolean> | null = null
 let initialized = false
+
+export function containsRecallClaimInURL(rawURL: string, depth = 0): boolean {
+  if (!rawURL || depth > 2) return false
+
+  try {
+    const url = new URL(rawURL, 'https://console.invalid')
+    if (url.searchParams.has('recall_claim')) return true
+    if (
+      url.pathname.endsWith('/recall/claim') &&
+      url.searchParams.has('claim')
+    ) {
+      return true
+    }
+
+    return url.searchParams
+      .getAll('redirect')
+      .some((redirectURL) => containsRecallClaimInURL(redirectURL, depth + 1))
+  } catch {
+    return false
+  }
+}
+
+export function suspendMixpanelForRecallClaim(rawURL: string): void {
+  if (!containsRecallClaimInURL(rawURL) || typeof window === 'undefined') {
+    return
+  }
+
+  window.mixpanel?.set_config?.({
+    autocapture: false,
+    record_sessions_percent: 0,
+  })
+  window.mixpanel?.stop_session_recording?.()
+}
+
+export function resumeMixpanelAfterRecallClaim(): void {
+  if (
+    typeof window === 'undefined' ||
+    containsRecallClaimInURL(window.location?.href || '')
+  ) {
+    return
+  }
+
+  window.mixpanel?.set_config?.({
+    autocapture: true,
+    record_sessions_percent: 100,
+  })
+  window.mixpanel?.start_session_recording?.()
+  void ensureMixpanelLoaded()
+}
 
 function getCookieConsent(): MixpanelConsentStatus {
   if (typeof document === 'undefined') return 'unknown'
@@ -78,7 +132,14 @@ export function getMixpanelConsentStatus(): MixpanelConsentStatus {
 }
 
 export function shouldEnableMixpanel(): boolean {
-  return Boolean(MIXPANEL_TOKEN) && getMixpanelConsentStatus() === 'granted'
+  const hasRecallClaim =
+    typeof window !== 'undefined' &&
+    containsRecallClaimInURL(window.location?.href || '')
+  return (
+    Boolean(MIXPANEL_TOKEN) &&
+    !hasRecallClaim &&
+    getMixpanelConsentStatus() === 'granted'
+  )
 }
 
 function persistConsent(
