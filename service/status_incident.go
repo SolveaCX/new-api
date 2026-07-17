@@ -98,7 +98,8 @@ func ReconcileStatusIncidentAutomation(input StatusIncidentAutomationInput) (Sta
 		return StatusIncidentAutomationResult{}, ErrStatusInvalidMutation
 	}
 
-	unhealthy := input.ObservedStatus == model.StatusDegraded || input.ObservedStatus == model.StatusOutage
+	unhealthy := input.PreviousObservedStatus == model.StatusOperational &&
+		(input.ObservedStatus == model.StatusDegraded || input.ObservedStatus == model.StatusOutage)
 	recovered := isUnhealthyStatus(input.PreviousObservedStatus) && input.ObservedStatus == model.StatusOperational
 	if !unhealthy && !recovered {
 		return StatusIncidentAutomationResult{}, nil

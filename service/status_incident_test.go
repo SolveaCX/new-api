@@ -60,7 +60,7 @@ func TestStatusIncidentAutomationCreatesAndUpdatesPrivateDraft(t *testing.T) {
 
 	updated, err := ReconcileStatusIncidentAutomation(StatusIncidentAutomationInput{
 		ComponentID:            component.ID,
-		PreviousObservedStatus: model.StatusDegraded,
+		PreviousObservedStatus: model.StatusOperational,
 		ObservedStatus:         model.StatusOutage,
 		EvidenceSummary:        "probe and traffic signals confirm the outage",
 		IdempotencyKey:         "automatic:test-model:episode-1",
@@ -78,6 +78,42 @@ func TestStatusIncidentAutomationCreatesAndUpdatesPrivateDraft(t *testing.T) {
 	var publishedCount int64
 	require.NoError(t, db.Model(&model.StatusIncidentUpdate{}).Where("published = ?", true).Count(&publishedCount).Error)
 	require.Zero(t, publishedCount)
+}
+
+func TestStatusIncidentAutomationIgnoresNonTransitions(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusUnknown)
+	tests := []struct {
+		name     string
+		previous string
+		observed string
+	}{
+		{name: "repeated outage", previous: model.StatusOutage, observed: model.StatusOutage},
+		{name: "repeated degraded", previous: model.StatusDegraded, observed: model.StatusDegraded},
+		{name: "unknown to degraded", previous: model.StatusUnknown, observed: model.StatusDegraded},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ReconcileStatusIncidentAutomation(StatusIncidentAutomationInput{
+				ComponentID:            component.ID,
+				PreviousObservedStatus: tt.previous,
+				ObservedStatus:         tt.observed,
+				EvidenceSummary:        "must not create a draft",
+				IdempotencyKey:         "non-transition-" + common.GetUUID(),
+				Now:                    2_100 + int64(i),
+			})
+			require.NoError(t, err)
+			require.Nil(t, result.Incident)
+			require.Nil(t, result.Draft)
+		})
+	}
+
+	var incidentCount int64
+	require.NoError(t, db.Model(&model.StatusIncident{}).Count(&incidentCount).Error)
+	require.Zero(t, incidentCount)
+	var auditCount int64
+	require.NoError(t, db.Model(&model.StatusAuditEvent{}).Count(&auditCount).Error)
+	require.Zero(t, auditCount)
 }
 
 func TestStatusIncidentRecoverySuggestsResolutionWithoutEditingPublishedText(t *testing.T) {
@@ -291,27 +327,32 @@ func TestStatusMaintenancePublicationAuthorizesStartAndEndFallback(t *testing.T)
 	})
 	require.NoError(t, err)
 	require.Equal(t, "monitoring", started.Status)
+	require.EqualValues(t, 7_100, started.StartedAt)
 	var during model.StatusComponent
 	require.NoError(t, db.First(&during, component.ID).Error)
 	require.Equal(t, model.StatusOutage, during.ObservedStatus, "observed health must continue during maintenance")
 	require.Equal(t, model.StatusMaintenance, during.EffectiveStatus)
 	require.Equal(t, "maintenance", during.StatusSource)
 	lease := acquireStatusServiceLease(t, "maintenance-evaluation", "node-a", 7_110)
-	during.ObservedStatus = model.StatusDegraded
-	during.EffectiveStatus = model.StatusDegraded
-	during.StatusSource = "traffic"
-	during.UpdatedAt = 7_110
-	require.NoError(t, model.CommitStatusEvaluationWithFence("maintenance-evaluation", "node-a", lease.FencingToken, 7_110, &during))
+	staleEvaluation := component
+	staleEvaluation.ObservedStatus = model.StatusDegraded
+	staleEvaluation.EffectiveStatus = model.StatusDegraded
+	staleEvaluation.StatusSource = "traffic"
+	staleEvaluation.UpdatedAt = 7_110
+	versionBeforeEvaluation := during.Version
+	require.NoError(t, model.CommitStatusEvaluationWithFence("maintenance-evaluation", "node-a", lease.FencingToken, 7_110, &staleEvaluation))
 	require.NoError(t, db.First(&during, component.ID).Error)
 	require.Equal(t, model.StatusDegraded, during.ObservedStatus, "observed health must continue changing during maintenance")
 	require.Equal(t, model.StatusMaintenance, during.EffectiveStatus, "an evaluator write must not end published maintenance")
 	require.Equal(t, "maintenance", during.StatusSource)
+	require.EqualValues(t, versionBeforeEvaluation+1, during.Version, "fenced evaluation must advance the component version")
 
 	ended, err := ReconcileStatusMaintenance(StatusMaintenanceTransitionInput{
 		IncidentID: maintenance.ID, ExpectedVersion: started.Version, Now: 7_200,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "resolved", ended.Status)
+	require.Equal(t, started.StartedAt, ended.StartedAt, "maintenance end must preserve the actual start timestamp")
 	var after model.StatusComponent
 	require.NoError(t, db.First(&after, component.ID).Error)
 	require.Equal(t, model.StatusDegraded, after.ObservedStatus)
@@ -324,6 +365,76 @@ func TestStatusMaintenancePublicationAuthorizesStartAndEndFallback(t *testing.T)
 		First(&fallback).Error)
 	require.Equal(t, "private", fallback.Visibility)
 	require.Equal(t, "draft", fallback.Status)
+}
+
+func TestStatusMaintenanceMissedWindowDoesNotFabricateStartTimestamp(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusOperational)
+	maintenance, err := CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "Missed maintenance", Body: "Scheduled work.", IdempotencyKey: "maintenance:missed-window",
+		ComponentIDs: []int64{component.ID}, ScheduledStartAt: 12_100, ScheduledEndAt: 12_200,
+		Actor: statusAdminActor(), Reason: "planned work", Now: 12_000,
+	})
+	require.NoError(t, err)
+	published, err := PublishStatusIncidentUpdate(StatusIncidentPublishInput{
+		IncidentID: maintenance.ID, ExpectedVersion: maintenance.Version, State: "identified",
+		Body: "Scheduled work.", EventID: "maintenance-missed-published", Actor: statusAdminActor(),
+		Reason: "approve maintenance", Now: 12_050,
+	})
+	require.NoError(t, err)
+
+	ended, err := ReconcileStatusMaintenance(StatusMaintenanceTransitionInput{
+		IncidentID: maintenance.ID, ExpectedVersion: published.Incident.Version, Now: 12_300,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "resolved", ended.Status)
+	require.Zero(t, ended.StartedAt, "ending an unstarted window must not invent a start time")
+}
+
+func TestStatusMaintenanceEndRestoresUnexpiredOverrideBeforeObserved(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusOutage)
+	overridden, err := ApplyStatusOverride(StatusOverrideInput{
+		ComponentID: component.ID, ExpectedVersion: component.Version, Status: model.StatusUnknown,
+		Reason: "monitoring uncertainty", ExpiresAt: 13_500, Actor: statusAdminActor(), Now: 13_000,
+	})
+	require.NoError(t, err)
+
+	maintenance, err := CreateStatusMaintenanceDraft(StatusMaintenanceDraftInput{
+		Title: "Override precedence", Body: "Scheduled work.", IdempotencyKey: "maintenance:override-precedence",
+		ComponentIDs: []int64{component.ID}, ScheduledStartAt: 13_100, ScheduledEndAt: 13_200,
+		Actor: statusAdminActor(), Reason: "planned work", Now: 13_010,
+	})
+	require.NoError(t, err)
+	published, err := PublishStatusIncidentUpdate(StatusIncidentPublishInput{
+		IncidentID: maintenance.ID, ExpectedVersion: maintenance.Version, State: "identified",
+		Body: "Scheduled work.", EventID: "maintenance-override-published", Actor: statusAdminActor(),
+		Reason: "approve maintenance", Now: 13_050,
+	})
+	require.NoError(t, err)
+	started, err := ReconcileStatusMaintenance(StatusMaintenanceTransitionInput{
+		IncidentID: maintenance.ID, ExpectedVersion: published.Incident.Version, Now: 13_100,
+	})
+	require.NoError(t, err)
+
+	ended, err := ReconcileStatusMaintenance(StatusMaintenanceTransitionInput{
+		IncidentID: maintenance.ID, ExpectedVersion: started.Version, Now: 13_200,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "resolved", ended.Status)
+	var after model.StatusComponent
+	require.NoError(t, db.First(&after, component.ID).Error)
+	require.Equal(t, model.StatusOutage, after.ObservedStatus)
+	require.Equal(t, model.StatusUnknown, after.EffectiveStatus)
+	require.Equal(t, "override", after.StatusSource)
+	require.EqualValues(t, overridden.OverrideExpiresAt, after.OverrideExpiresAt)
+
+	var fallbackCount int64
+	require.NoError(t, db.Model(&model.StatusIncident{}).
+		Joins("JOIN status_incident_components sic ON sic.incident_id = status_incidents.id").
+		Where("sic.component_id = ? AND status_incidents.kind = ? AND status_incidents.automation_mode = ?", component.ID, model.StatusIncidentKindIncident, "automatic").
+		Count(&fallbackCount).Error)
+	require.EqualValues(t, 1, fallbackCount, "fallback drafting must use unhealthy observed status, not the override")
 }
 
 func TestStatusOverrideExpiresAndRestoresObservedStatus(t *testing.T) {
@@ -415,4 +526,38 @@ func TestStatusOverrideUsesOptimisticVersionAndAuditsBeforeAfter(t *testing.T) {
 	require.Empty(t, before.OverrideStatus)
 	require.Equal(t, model.StatusDegraded, after.EffectiveStatus)
 	require.Equal(t, model.StatusDegraded, after.OverrideStatus)
+}
+
+func TestStatusOverrideStaleEvaluatorPreservesOverrideAndAdvancesVersion(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	component := createStatusIncidentTestComponent(t, model.StatusOperational)
+	staleEvaluation := component
+	staleEvaluation.ObservedStatus = model.StatusOutage
+	staleEvaluation.EffectiveStatus = model.StatusOutage
+	staleEvaluation.StatusSource = "traffic"
+	staleEvaluation.LastEvaluatedAt = 14_100
+	staleEvaluation.UpdatedAt = 14_100
+
+	overridden, err := ApplyStatusOverride(StatusOverrideInput{
+		ComponentID: component.ID, ExpectedVersion: component.Version, Status: model.StatusUnknown,
+		Reason: "hold public status while investigating", ExpiresAt: 14_500, Actor: statusAdminActor(), Now: 14_000,
+	})
+	require.NoError(t, err)
+	lease := acquireStatusServiceLease(t, "stale-override-evaluation", "node-a", 14_100)
+	require.NoError(t, model.CommitStatusEvaluationWithFence(
+		"stale-override-evaluation", "node-a", lease.FencingToken, 14_100, &staleEvaluation,
+	))
+
+	var after model.StatusComponent
+	require.NoError(t, db.First(&after, component.ID).Error)
+	require.Equal(t, model.StatusOutage, after.ObservedStatus)
+	require.Equal(t, model.StatusUnknown, after.EffectiveStatus)
+	require.Equal(t, "override", after.StatusSource)
+	require.EqualValues(t, overridden.Version+1, after.Version)
+
+	_, err = ApplyStatusOverride(StatusOverrideInput{
+		ComponentID: component.ID, ExpectedVersion: overridden.Version, Status: model.StatusDegraded,
+		Reason: "stale administrator mutation", ExpiresAt: 14_600, Actor: statusAdminActor(), Now: 14_110,
+	})
+	require.True(t, errors.Is(err, model.ErrStatusVersionConflict), "the evaluator version advance must reject stale admin writes")
 }
