@@ -23,6 +23,8 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);-webkit-fo
 .nav a{color:var(--ink2);text-decoration:none;font-size:14.5px;font-weight:600;white-space:nowrap}
 .nav a:hover{color:var(--ink)}
 .nav a.on{color:var(--ink);font-weight:700}
+.nav a[href="docs.html"],.nav a[href="/docs.html"],
+.megafoot .col a[href="docs.html"],.megafoot .col a[href="/docs.html"]{display:none}
 .nav .sp{flex:1}
 .logo,.nav a.logo{display:flex;align-items:center;gap:13px;font-family:var(--disp);font-size:46px;font-weight:700;letter-spacing:-2.2px;color:var(--ink);text-decoration:none;line-height:1}
 .logo img{width:52px;height:52px;display:block}
