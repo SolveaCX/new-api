@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -142,6 +143,137 @@ func TestStatusComponentVersionConflict(t *testing.T) {
 
 	_, err = UpdateStatusComponentVersion(component.ID, 1, map[string]any{"display_name": "stale"})
 	require.True(t, errors.Is(err, ErrStatusVersionConflict))
+}
+
+func TestRetryDeadStatusDeliveryRequeuesAndReactivatesSubscriber(t *testing.T) {
+	db := setupStatusCenterStoreTest(t)
+	subscriber := StatusSubscriber{
+		Kind: StatusSubscriberKindWebhook, IdentityHash: "retry-webhook", Status: StatusSubscriberSuspended,
+		FailureCount: 3, SuspendedAt: 1_900, CreatedAt: 1_000, UpdatedAt: 1_900,
+	}
+	require.NoError(t, db.Create(&subscriber).Error)
+	delivery := StatusDeliveryOutbox{
+		PublishedUpdateID: 11, DestinationType: StatusDestinationWebhook, DestinationID: subscriber.ID,
+		EventID: "delivery-retry-webhook", Payload: `{"event":"preserved"}`, Status: StatusDeliveryDead,
+		LockToken: "stale-lock", LockedUntil: 9_999, Attempts: 3, NextAttemptAt: 8_888,
+		LastError: "endpoint gone", Version: 4, CreatedAt: 1_000, UpdatedAt: 1_900,
+	}
+	require.NoError(t, db.Create(&delivery).Error)
+
+	retried, err := RetryDeadStatusDelivery(StatusDeliveryRetryMutation{
+		ID: delivery.ID, ExpectedVersion: 4, Now: 2_000,
+		Audit: StatusAuditMutation{ActorID: 1, ActorType: "root", Action: "status.delivery.retry", Reason: "operator retry", CreatedAt: 2_000},
+	})
+	require.NoError(t, err)
+	require.Equal(t, StatusDeliveryPending, retried.Status)
+	require.EqualValues(t, 5, retried.Version)
+	require.Empty(t, retried.LockToken)
+	require.Zero(t, retried.LockedUntil)
+	require.EqualValues(t, 2_000, retried.NextAttemptAt)
+	require.Empty(t, retried.LastError)
+	require.EqualValues(t, 3, retried.Attempts)
+	require.Equal(t, delivery.PublishedUpdateID, retried.PublishedUpdateID)
+	require.Equal(t, delivery.DestinationType, retried.DestinationType)
+	require.Equal(t, delivery.DestinationID, retried.DestinationID)
+	require.Equal(t, delivery.EventID, retried.EventID)
+	require.Equal(t, delivery.Payload, retried.Payload)
+
+	require.NoError(t, db.First(&subscriber, subscriber.ID).Error)
+	require.Equal(t, StatusSubscriberActive, subscriber.Status)
+	require.Zero(t, subscriber.FailureCount)
+	require.Zero(t, subscriber.SuspendedAt)
+
+	var audit StatusAuditEvent
+	require.NoError(t, db.Where("action = ?", "status.delivery.retry").First(&audit).Error)
+	require.Equal(t, "delivery", audit.ObjectType)
+	require.Equal(t, strconv.FormatInt(delivery.ID, 10), audit.ObjectID)
+	require.Equal(t, "operator retry", audit.Reason)
+	require.NotContains(t, audit.BeforeJSON, delivery.Payload)
+	require.NotContains(t, audit.AfterJSON, delivery.Payload)
+	require.NotContains(t, audit.BeforeJSON, delivery.LastError)
+	require.NotContains(t, audit.AfterJSON, delivery.LastError)
+
+	_, err = RetryDeadStatusDelivery(StatusDeliveryRetryMutation{
+		ID: delivery.ID, ExpectedVersion: 4, Now: 2_001,
+		Audit: StatusAuditMutation{ActorID: 1, ActorType: "root", Action: "status.delivery.retry", Reason: "stale retry", CreatedAt: 2_001},
+	})
+	require.ErrorIs(t, err, ErrStatusVersionConflict)
+}
+
+func TestRetryDeadStatusDeliveryReactivatesDiscordState(t *testing.T) {
+	db := setupStatusCenterStoreTest(t)
+	require.NoError(t, db.Create(&StatusSetting{
+		Key: statusDiscordDeliveryStateSettingKey, Value: `{"failure_count":3,"suspended_at":1900}`,
+		Version: 2, UpdatedAt: 1_900,
+	}).Error)
+	delivery := StatusDeliveryOutbox{
+		PublishedUpdateID: 12, DestinationType: StatusDestinationDiscord, DestinationID: 0,
+		EventID: "delivery-retry-discord", Payload: `{"event":"preserved"}`, Status: StatusDeliveryDead,
+		LastError: "discord gone", Version: 2, CreatedAt: 1_000, UpdatedAt: 1_900,
+	}
+	require.NoError(t, db.Create(&delivery).Error)
+
+	_, err := RetryDeadStatusDelivery(StatusDeliveryRetryMutation{
+		ID: delivery.ID, ExpectedVersion: 2, Now: 2_000,
+		Audit: StatusAuditMutation{ActorID: 1, ActorType: "root", Action: "status.delivery.retry", Reason: "operator retry", CreatedAt: 2_000},
+	})
+	require.NoError(t, err)
+	state, err := GetStatusDiscordDeliveryState()
+	require.NoError(t, err)
+	require.Equal(t, StatusDiscordDeliveryState{}, state)
+}
+
+func TestRetryDeadStatusDeliveryRejectsUndeliverableDestinationAtomically(t *testing.T) {
+	db := setupStatusCenterStoreTest(t)
+	subscriber := StatusSubscriber{
+		Kind: StatusSubscriberKindEmail, IdentityHash: "retry-unsubscribed", Status: StatusSubscriberUnsubscribed,
+		FailureCount: 3, SuspendedAt: 1_900, CreatedAt: 1_000, UpdatedAt: 1_900,
+	}
+	require.NoError(t, db.Create(&subscriber).Error)
+	delivery := StatusDeliveryOutbox{
+		PublishedUpdateID: 13, DestinationType: StatusDestinationEmail, DestinationID: subscriber.ID,
+		EventID: "delivery-retry-unsubscribed", Payload: `{"event":"preserved"}`, Status: StatusDeliveryDead,
+		LastError: "failed", Version: 2, CreatedAt: 1_000, UpdatedAt: 1_900,
+	}
+	require.NoError(t, db.Create(&delivery).Error)
+
+	_, err := RetryDeadStatusDelivery(StatusDeliveryRetryMutation{
+		ID: delivery.ID, ExpectedVersion: 2, Now: 2_000,
+		Audit: StatusAuditMutation{ActorID: 1, ActorType: "root", Action: "status.delivery.retry", Reason: "operator retry", CreatedAt: 2_000},
+	})
+	require.ErrorIs(t, err, ErrStatusInvalidDeliveryMutation)
+
+	var stored StatusDeliveryOutbox
+	require.NoError(t, db.First(&stored, delivery.ID).Error)
+	require.Equal(t, StatusDeliveryDead, stored.Status)
+	require.EqualValues(t, 2, stored.Version)
+	require.Equal(t, "failed", stored.LastError)
+	require.NoError(t, db.First(&subscriber, subscriber.ID).Error)
+	require.Equal(t, StatusSubscriberUnsubscribed, subscriber.Status)
+	var audits int64
+	require.NoError(t, db.Model(&StatusAuditEvent{}).Where("action = ?", "status.delivery.retry").Count(&audits).Error)
+	require.Zero(t, audits)
+}
+
+func TestRetryDeadStatusDeliveryRejectsNonDeadDelivery(t *testing.T) {
+	db := setupStatusCenterStoreTest(t)
+	delivery := StatusDeliveryOutbox{
+		PublishedUpdateID: 14, DestinationType: StatusDestinationDiscord,
+		EventID: "delivery-retry-pending", Payload: `{"event":"preserved"}`, Status: StatusDeliveryPending,
+		Version: 2, CreatedAt: 1_000, UpdatedAt: 1_900,
+	}
+	require.NoError(t, db.Create(&delivery).Error)
+
+	_, err := RetryDeadStatusDelivery(StatusDeliveryRetryMutation{
+		ID: delivery.ID, ExpectedVersion: 2, Now: 2_000,
+		Audit: StatusAuditMutation{ActorID: 1, ActorType: "root", Action: "status.delivery.retry", Reason: "operator retry", CreatedAt: 2_000},
+	})
+	require.ErrorIs(t, err, ErrStatusInvalidDeliveryMutation)
+
+	var stored StatusDeliveryOutbox
+	require.NoError(t, db.First(&stored, delivery.ID).Error)
+	require.Equal(t, StatusDeliveryPending, stored.Status)
+	require.EqualValues(t, 2, stored.Version)
 }
 
 func TestUpsertStatusPeriodReplacesComputedAggregate(t *testing.T) {

@@ -118,6 +118,7 @@ func TestStatusAdminMaintenanceValidationAndReadSurfaces(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, invalidMaintenance.Code, invalidMaintenance.Body.String())
 
 	for _, path := range []string{
+		"/api/status/admin/components",
 		"/api/status/admin/incidents",
 		"/api/status/admin/maintenance",
 		"/api/status/admin/settings",
@@ -129,6 +130,77 @@ func TestStatusAdminMaintenanceValidationAndReadSurfaces(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.Code, "%s: %s", path, response.Body.String())
 		require.Equal(t, true, decodeStatusResponse(t, response)["success"], path)
 	}
+}
+
+func TestStatusAdminComponentsExposeNarrowVersionedProjection(t *testing.T) {
+	engine, db := setupStatusHTTPTest(t)
+	now := time.Now().Unix()
+	component := model.StatusComponent{
+		ComponentKey: "model:admin-version", Slug: "admin-version", Kind: model.StatusComponentKindModel,
+		ModelName: "internal-provider-model", DisplayName: "Admin Version", Capability: "text",
+		Lifecycle: model.StatusLifecycleActive, ObservedStatus: model.StatusDegraded, EffectiveStatus: model.StatusDegraded,
+		OverrideReason: "customer raw error", Version: 7, CreatedAt: now - 10, UpdatedAt: now,
+	}
+	require.NoError(t, db.Create(&component).Error)
+	adminCookie := statusAuthCookie(t, engine, common.RoleAdminUser, false)
+
+	response := performStatusAuthenticatedRequest(engine, http.MethodGet, "/api/status/admin/components", "", adminCookie)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	decoded := decodeStatusResponse(t, response)
+	components, ok := decoded["data"].([]any)
+	require.True(t, ok, response.Body.String())
+	require.Len(t, components, 1)
+	item := components[0].(map[string]any)
+	require.EqualValues(t, component.ID, item["id"])
+	require.EqualValues(t, 7, item["version"])
+	require.Equal(t, "Admin Version", item["display_name"])
+	require.Equal(t, model.StatusDegraded, item["status"])
+	require.EqualValues(t, component.CoverageMicros, item["coverage"])
+	for _, forbidden := range []string{"model_name", "component_key", "override_reason", "customer", "provider", "raw_error"} {
+		require.NotContains(t, response.Body.String(), forbidden)
+	}
+}
+
+func TestStatusAdminDeliveryRetryRequiresVerifiedRootAndReturnsConflictForStaleVersion(t *testing.T) {
+	engine, db := setupStatusHTTPTest(t)
+	now := time.Now().Unix()
+	subscriber := model.StatusSubscriber{
+		Kind: model.StatusSubscriberKindEmail, IdentityHash: "controller-retry", DisplayAddress: "r***@example.com",
+		Status: model.StatusSubscriberSuspended, FailureCount: 3, SuspendedAt: now - 100, CreatedAt: now - 200, UpdatedAt: now - 100,
+	}
+	require.NoError(t, db.Create(&subscriber).Error)
+	delivery := model.StatusDeliveryOutbox{
+		PublishedUpdateID: 31, DestinationType: model.StatusDestinationEmail, DestinationID: subscriber.ID,
+		EventID: "controller-retry", Payload: `{"event":"preserved"}`, Status: model.StatusDeliveryDead,
+		LastError: "failed", Version: 3, CreatedAt: now - 200, UpdatedAt: now - 100,
+	}
+	require.NoError(t, db.Create(&delivery).Error)
+	path := fmt.Sprintf("/api/status/admin/deliveries/%d/retry", delivery.ID)
+
+	adminCookie := statusAuthCookie(t, engine, common.RoleAdminUser, false)
+	admin := performStatusAuthenticatedRequest(engine, http.MethodPost, path, `{"expected_version":3,"reason":"operator retry"}`, adminCookie)
+	require.Equal(t, false, decodeStatusResponse(t, admin)["success"])
+
+	rootCookie := statusAuthCookie(t, engine, common.RoleRootUser, false)
+	unverified := performStatusAuthenticatedRequest(engine, http.MethodPost, path, `{"expected_version":3,"reason":"operator retry"}`, rootCookie)
+	require.Equal(t, http.StatusForbidden, unverified.Code, unverified.Body.String())
+
+	verifiedRootCookie := statusAuthCookie(t, engine, common.RoleRootUser, true)
+	retried := performStatusAuthenticatedRequest(engine, http.MethodPost, path, `{"expected_version":3,"reason":"operator retry"}`, verifiedRootCookie)
+	require.Equal(t, http.StatusOK, retried.Code, retried.Body.String())
+	require.Equal(t, model.StatusDeliveryPending, statusResponseData(t, retried)["status"])
+
+	stale := performStatusAuthenticatedRequest(engine, http.MethodPost, path, `{"expected_version":3,"reason":"operator retry"}`, verifiedRootCookie)
+	require.Equal(t, http.StatusConflict, stale.Code, stale.Body.String())
+	nonDead := performStatusAuthenticatedRequest(engine, http.MethodPost, path, `{"expected_version":4,"reason":"operator retry"}`, verifiedRootCookie)
+	require.Equal(t, http.StatusBadRequest, nonDead.Code, nonDead.Body.String())
+	emptyReason := performStatusAuthenticatedRequest(engine, http.MethodPost, path, `{"expected_version":4,"reason":"   "}`, verifiedRootCookie)
+	require.Equal(t, http.StatusBadRequest, emptyReason.Code, emptyReason.Body.String())
+
+	require.NoError(t, db.First(&subscriber, subscriber.ID).Error)
+	require.Equal(t, model.StatusSubscriberActive, subscriber.Status)
+	var audit model.StatusAuditEvent
+	require.NoError(t, db.Where("action = ?", "status.delivery.retry").First(&audit).Error)
 }
 
 func TestStatusAdminSettingMutationRejectsStaleVersionAndReservedDiscordKey(t *testing.T) {
