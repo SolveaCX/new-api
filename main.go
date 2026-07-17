@@ -161,6 +161,7 @@ func main() {
 
 	// Native public status evaluation reuses the minimal model probe adapter.
 	service.SetStatusModelProbeAdapter(controller.NewStatusModelProbeAdapter())
+	service.SetStatusModelAvailabilityWriter(controller.WriteStatusModelAvailability)
 	service.StartStatusCenterTasks()
 
 	// Codex subscription model governance task

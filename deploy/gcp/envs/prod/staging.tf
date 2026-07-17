@@ -323,6 +323,14 @@ resource "google_cloud_run_v2_service" "staging" {
         name  = "APP_CONSOLE_ORIGIN"
         value = var.staging_console_origin
       }
+      env {
+        name  = "ROUTER_ORIGIN"
+        value = var.staging_router_origin
+      }
+      env {
+        name  = "STATUS_CENTER_ENABLED"
+        value = "false"
+      }
       // Live staging env is owned by CI because env is lifecycle-ignored below; keep deploy workflows mirrored.
       env {
         name  = "COOKIE_SESSION_DOMAIN"

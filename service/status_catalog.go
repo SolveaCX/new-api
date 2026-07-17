@@ -11,7 +11,10 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-const statusCatalogJobName = "status-center-catalog"
+const (
+	statusCatalogJobName = "status-center-catalog"
+	WebsitePublicGroup   = "plg"
+)
 
 func FilterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string]string) []model.Pricing {
 	if len(pricing) == 0 {
@@ -35,7 +38,15 @@ func FilterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 }
 
 func GetWebsiteVisiblePricing() []model.Pricing {
-	return FilterPricingByUsableGroups(model.GetPricing(), GetUserUsableGroups(""))
+	return FilterWebsiteVisiblePricing(model.GetPricing())
+}
+
+func FilterWebsiteVisiblePricing(pricing []model.Pricing) []model.Pricing {
+	return FilterPricingByUsableGroups(pricing, WebsitePublicUsableGroups())
+}
+
+func WebsitePublicUsableGroups() map[string]string {
+	return map[string]string{WebsitePublicGroup: WebsitePublicGroup}
 }
 
 func SyncStatusCatalog(jobName string, holder string, fencingToken int64, now int64, pricing []model.Pricing, usableGroup map[string]string) error {

@@ -24,6 +24,7 @@ func TestStatusSchedulerCompetingWorkersOnlyLeaseOwnerCommits(t *testing.T) {
 	newScheduler := func(holder string) *StatusScheduler {
 		return &StatusScheduler{
 			Holder:       holder,
+			Now:          func() int64 { return 10_000 },
 			Pricing:      func() []model.Pricing { return nil },
 			UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
 			Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
@@ -68,6 +69,151 @@ func TestStatusSchedulerCompetingWorkersOnlyLeaseOwnerCommits(t *testing.T) {
 	require.EqualValues(t, 1, countStatusPeriodsByGranularity(t, db, model.StatusGranularityFiveMinutes))
 }
 
+func TestStatusSchedulerProbeIsConsumedOnlyOnce(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	var modelProbeCalls atomic.Int64
+	currentTime := int64(1_000)
+	scheduler := &StatusScheduler{
+		Holder: "node-a",
+		Now:    func() int64 { return currentTime },
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-test", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			modelProbeCalls.Add(1)
+			return StatusProbeOutcome{DiagnosticType: "upstream_failure"}
+		}),
+	}
+
+	for _, now := range []int64{1_000, 1_060, 1_120} {
+		currentTime = now
+		ran, err := scheduler.RunOnce(context.Background(), now)
+		require.NoError(t, err)
+		require.True(t, ran)
+	}
+
+	var component model.StatusComponent
+	require.NoError(t, db.Where("model_name = ?", "gpt-test").First(&component).Error)
+	require.EqualValues(t, 1, modelProbeCalls.Load())
+	require.EqualValues(t, 1, component.ConsecutiveProbeFailures)
+	require.EqualValues(t, 0, component.ConsecutiveProbeSuccesses)
+	require.Equal(t, model.StatusUnknown, component.ObservedStatus)
+	var probeCount int64
+	require.NoError(t, db.Model(&model.StatusProbeResult{}).Where("component_id = ?", component.ID).Count(&probeCount).Error)
+	require.EqualValues(t, 1, probeCount)
+}
+
+func TestStatusSchedulerProjectsHighTrafficModelSuccess(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	currentTime := int64(1_000)
+	type projection struct {
+		modelName string
+		outcome   StatusProbeOutcome
+	}
+	projections := make([]projection, 0, 1)
+	scheduler := &StatusScheduler{
+		Holder: "node-a",
+		Now:    func() int64 { return currentTime },
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-test", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic: func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) {
+			return []model.PerfMetricSummary{{ModelName: "gpt-test", AvailabilityEligibleCount: 20, AvailabilitySuccessCount: 20}}, nil
+		},
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			t.Fatal("high-traffic models must not run a synthetic probe")
+			return StatusProbeOutcome{}
+		}),
+		Availability: func(jobName string, holder string, fencingToken int64, now int64, modelName string, outcome StatusProbeOutcome) error {
+			require.Equal(t, statusSchedulerJobName, jobName)
+			require.Equal(t, "node-a", holder)
+			require.EqualValues(t, 1, fencingToken)
+			require.EqualValues(t, currentTime, now)
+			projections = append(projections, projection{modelName: modelName, outcome: outcome})
+			return nil
+		},
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), currentTime)
+	require.NoError(t, err)
+	require.True(t, ran)
+	require.Equal(t, []projection{{modelName: "gpt-test", outcome: StatusProbeOutcome{Success: true, DiagnosticType: "ok"}}}, projections)
+}
+
+func TestStatusSchedulerDoesNotProjectMonitoringFaults(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	currentTime := int64(1_000)
+	var projections atomic.Int64
+	scheduler := &StatusScheduler{
+		Holder: "node-a",
+		Now:    func() int64 { return currentTime },
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-test", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "probe_user_unavailable"}
+		}),
+		Availability: func(_ string, _ string, _ int64, _ int64, _ string, _ StatusProbeOutcome) error {
+			projections.Add(1)
+			return nil
+		},
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), currentTime)
+	require.NoError(t, err)
+	require.True(t, ran)
+	require.EqualValues(t, 0, projections.Load())
+}
+
+func TestStatusSchedulerProjectsTrustworthyFailureAfterPersistingProbe(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	currentTime := int64(1_000)
+	var projected []StatusProbeOutcome
+	scheduler := &StatusScheduler{
+		Holder: "node-a",
+		Now:    func() int64 { return currentTime },
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-test", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{DiagnosticType: "official_model_unsupported", TargetRef: "channel:7"}
+		}),
+		Availability: func(_ string, _ string, _ int64, _ int64, modelName string, outcome StatusProbeOutcome) error {
+			var component model.StatusComponent
+			require.NoError(t, db.Where("model_name = ?", modelName).First(&component).Error)
+			var probeCount int64
+			require.NoError(t, db.Model(&model.StatusProbeResult{}).Where("component_id = ?", component.ID).Count(&probeCount).Error)
+			require.EqualValues(t, 1, probeCount)
+			projected = append(projected, outcome)
+			return nil
+		},
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), currentTime)
+	require.NoError(t, err)
+	require.True(t, ran)
+	require.Equal(t, []StatusProbeOutcome{{DiagnosticType: "official_model_unsupported", TargetRef: "channel:7"}}, projected)
+}
+
 func TestStatusSchedulerSensitiveWritesRejectStaleFence(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	first := acquireStatusServiceLease(t, statusSchedulerJobName, "node-a", 100)
@@ -101,6 +247,103 @@ func TestStatusSchedulerSensitiveWritesRejectStaleFence(t *testing.T) {
 
 	require.EqualValues(t, 0, countRows(t, db, &model.StatusProbeResult{}))
 	require.EqualValues(t, 0, countRows(t, db, &model.StatusPeriod{}))
+}
+
+func TestStatusSchedulerLeaseExpiryRejectsLateWritesWithoutTakeover(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	currentTime := int64(2_000)
+	scheduler := &StatusScheduler{
+		Holder:       "node-a",
+		Now:          func() int64 { return currentTime },
+		Pricing:      func() []model.Pricing { return nil },
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic: func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) {
+			currentTime += statusSchedulerLeaseSeconds + 1
+			return nil, nil
+		},
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), 2_000)
+	require.True(t, ran)
+	require.ErrorContains(t, err, "status job lease is no longer owned")
+	require.EqualValues(t, 0, countRows(t, db, &model.StatusProbeResult{}))
+	require.EqualValues(t, 0, countRows(t, db, &model.StatusPeriod{}))
+	var lease model.StatusJobLease
+	require.NoError(t, db.Where("name = ?", statusSchedulerJobName).First(&lease).Error)
+	require.Equal(t, "node-a", lease.Holder)
+	require.EqualValues(t, 1, lease.FencingToken)
+}
+
+func TestStatusSchedulerBucketUsesAlignedWindowAndKeepsWorstStatus(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	currentTime := int64(610)
+	windows := make([][2]int64, 0, 3)
+	trafficCall := 0
+	scheduler := &StatusScheduler{
+		Holder: "node-a",
+		Now:    func() int64 { return currentTime },
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-test", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic: func(start int64, end int64, _ []string) ([]model.PerfMetricSummary, error) {
+			windows = append(windows, [2]int64{start, end})
+			trafficCall++
+			successes := int64(99)
+			if trafficCall > 1 {
+				successes = 100
+			}
+			return []model.PerfMetricSummary{{ModelName: "gpt-test", AvailabilityEligibleCount: 100, AvailabilitySuccessCount: successes}}, nil
+		},
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	for _, now := range []int64{610, 670, 730} {
+		currentTime = now
+		ran, err := scheduler.RunOnce(context.Background(), now)
+		require.NoError(t, err)
+		require.True(t, ran)
+	}
+
+	var component model.StatusComponent
+	require.NoError(t, db.Where("model_name = ?", "gpt-test").First(&component).Error)
+	var period model.StatusPeriod
+	require.NoError(t, db.Where("component_id = ? AND granularity = ?", component.ID, model.StatusGranularityFiveMinutes).First(&period).Error)
+	t.Run("aligned window", func(t *testing.T) {
+		require.Equal(t, [][2]int64{{300, 600}, {300, 600}, {300, 600}}, windows)
+		require.EqualValues(t, 300, period.PeriodStart)
+	})
+	t.Run("worst status", func(t *testing.T) {
+		require.Equal(t, model.StatusDegraded, period.WorstStatus)
+	})
+	t.Run("integer aggregates", func(t *testing.T) {
+		require.EqualValues(t, 1, period.KnownBucketCount)
+		require.EqualValues(t, 1_000_000, period.ScoreSumMicros)
+		require.EqualValues(t, 100, period.EligibleCount)
+		require.EqualValues(t, 100, period.SuccessCount)
+	})
+}
+
+func TestStatusSchedulerBucketReaderExcludesEndBoundary(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.PerfMetric{}))
+	require.NoError(t, db.Create(&[]model.PerfMetric{
+		{ModelName: "gpt-test", Group: "public", BucketTs: 300, RequestCount: 10, AvailabilityEligibleCount: 10, AvailabilitySuccessCount: 10},
+		{ModelName: "gpt-test", Group: "public", BucketTs: 599, RequestCount: 20, AvailabilityEligibleCount: 20, AvailabilitySuccessCount: 19},
+		{ModelName: "gpt-test", Group: "public", BucketTs: 600, RequestCount: 100, AvailabilityEligibleCount: 100},
+	}).Error)
+
+	summaries, err := readStatusTraffic(300, 600, []string{"public"})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	require.EqualValues(t, 30, summaries[0].RequestCount)
+	require.EqualValues(t, 30, summaries[0].AvailabilityEligibleCount)
+	require.EqualValues(t, 29, summaries[0].AvailabilitySuccessCount)
 }
 
 func TestStatusSchedulerRollupsAreIdempotent(t *testing.T) {
@@ -186,7 +429,8 @@ func TestStatusSchedulerStartStatusCenterTasksRequiresMasterAndEnabled(t *testin
 	})
 	statusCenterTaskOnce = &sync.Once{}
 	var launches atomic.Int64
-	statusCenterTaskLaunch = func() { launches.Add(1) }
+	statusCenterTaskLaunch = func(_ *StatusScheduler) { launches.Add(1) }
+	t.Setenv("ROUTER_ORIGIN", "https://router.flatkey.ai")
 
 	common.IsMasterNode = false
 	t.Setenv("STATUS_CENTER_ENABLED", "true")
@@ -198,6 +442,44 @@ func TestStatusSchedulerStartStatusCenterTasksRequiresMasterAndEnabled(t *testin
 	require.True(t, StartStatusCenterTasks())
 	require.False(t, StartStatusCenterTasks())
 	require.EqualValues(t, 1, launches.Load())
+}
+
+func TestStatusSchedulerStartRequiresValidRouterOriginBeforeConsumingOnce(t *testing.T) {
+	originalMaster := common.IsMasterNode
+	originalOnce := statusCenterTaskOnce
+	originalLaunch := statusCenterTaskLaunch
+	statusAvailabilityMu.RLock()
+	originalAvailability := statusAvailabilityWriter
+	statusAvailabilityMu.RUnlock()
+	t.Cleanup(func() {
+		common.IsMasterNode = originalMaster
+		statusCenterTaskOnce = originalOnce
+		statusCenterTaskLaunch = originalLaunch
+		statusAvailabilityMu.Lock()
+		statusAvailabilityWriter = originalAvailability
+		statusAvailabilityMu.Unlock()
+	})
+
+	common.IsMasterNode = true
+	statusCenterTaskOnce = &sync.Once{}
+	var launched []*StatusScheduler
+	statusCenterTaskLaunch = func(scheduler *StatusScheduler) { launched = append(launched, scheduler) }
+	SetStatusModelAvailabilityWriter(func(_ string, _ string, _ int64, _ int64, _ string, _ StatusProbeOutcome) error { return nil })
+	t.Setenv("STATUS_CENTER_ENABLED", "true")
+
+	t.Setenv("ROUTER_ORIGIN", "")
+	require.False(t, StartStatusCenterTasks())
+	t.Setenv("ROUTER_ORIGIN", "ftp://router.flatkey.ai")
+	require.False(t, StartStatusCenterTasks())
+	require.Empty(t, launched)
+
+	t.Setenv("ROUTER_ORIGIN", "https://router.flatkey.ai")
+	require.True(t, StartStatusCenterTasks())
+	require.Len(t, launched, 1)
+	adapter, ok := launched[0].RouterProbe.(statusRouterProbeAdapter)
+	require.True(t, ok)
+	require.Equal(t, "https://router.flatkey.ai", adapter.origin)
+	require.NotNil(t, launched[0].Availability)
 }
 
 func countRows(t *testing.T, db *gorm.DB, value any) int64 {

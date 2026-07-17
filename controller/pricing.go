@@ -23,6 +23,7 @@ var (
 		expiresAt time.Time
 	}{}
 	buildWebsitePricingPayload = buildWebsitePricingPayloadDefault
+	getWebsitePublicPricing    = model.GetPricing
 )
 
 func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string]string) []model.Pricing {
@@ -125,7 +126,7 @@ func GetWebsitePricing(c *gin.Context) {
 		}
 
 		body, err := common.Marshal(buildWebsitePublicGroupPricingPayload(
-			model.GetPricing(),
+			getWebsitePublicPricing(),
 			model.GetVendors(),
 			model.GetSupportedEndpointMap(),
 			service.GetUserAutoGroup(""),
@@ -228,7 +229,7 @@ func buildWebsitePublicGroupPricingPayload(
 
 	return gin.H{
 		"success":            true,
-		"data":               filterPricingByUsableGroups(pricing, usableGroup),
+		"data":               service.FilterWebsiteVisiblePricing(pricing),
 		"vendors":            vendors,
 		"group_ratio":        map[string]float64{group: ratio},
 		"usable_group":       usableGroup,

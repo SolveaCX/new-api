@@ -50,26 +50,38 @@ func (s *ModelAvailabilityState) normalize(now int64) {
 }
 
 func SaveModelAvailabilityState(next *ModelAvailabilityState) error {
+	return saveModelAvailabilityState(DB, next, common.GetTimestamp())
+}
+
+func SaveModelAvailabilityStateWithFence(jobName string, holder string, fencingToken int64, now int64, next *ModelAvailabilityState) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := validateStatusJobFence(tx, jobName, holder, fencingToken, now); err != nil {
+			return err
+		}
+		return saveModelAvailabilityState(tx, next, now)
+	})
+}
+
+func saveModelAvailabilityState(db *gorm.DB, next *ModelAvailabilityState, now int64) error {
 	if next == nil || strings.TrimSpace(next.ModelName) == "" {
 		return nil
 	}
-	now := common.GetTimestamp()
 	next.normalize(now)
 
 	var existing ModelAvailabilityState
-	err := DB.First(&existing, "model_name = ?", next.ModelName).Error
+	err := db.First(&existing, "model_name = ?", next.ModelName).Error
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		return DB.Create(next).Error
+		return db.Create(next).Error
 	}
 
 	if next.FirstDetectedAt == 0 {
 		next.FirstDetectedAt = existing.FirstDetectedAt
 	}
 	next.CreatedTime = existing.CreatedTime
-	return DB.Model(&ModelAvailabilityState{}).
+	return db.Model(&ModelAvailabilityState{}).
 		Where("model_name = ?", next.ModelName).
 		Select(
 			"status",

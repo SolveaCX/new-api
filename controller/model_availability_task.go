@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
+	"gorm.io/gorm"
 )
 
 const modelAvailabilityProbePrompt = "我发出'ping'命令，请你只回我'pong'"
@@ -44,7 +46,8 @@ type modelAvailabilityProbeExecution struct {
 type statusModelProbeAdapter struct{}
 
 var (
-	modelAvailabilityTaskOnce    sync.Once
+	modelAvailabilityTaskOnce    = &sync.Once{}
+	modelAvailabilityTaskLaunch  = launchModelAvailabilityDetectionTask
 	modelAvailabilityRunLock     sync.Mutex
 	modelAvailabilityRunInFlight bool
 )
@@ -298,6 +301,11 @@ func modelAvailabilityProbeConfig(modelName string, channelType int) (string, ch
 
 func saveModelAvailabilityProbeResult(modelName string, outcome modelProbeOutcome) error {
 	now := common.GetTimestamp()
+	existing, _ := model.GetModelAvailabilityState(modelName)
+	return model.SaveModelAvailabilityState(buildModelAvailabilityState(modelName, outcome, existing, now))
+}
+
+func buildModelAvailabilityState(modelName string, outcome modelProbeOutcome, existing *model.ModelAvailabilityState, now int64) *model.ModelAvailabilityState {
 	state := &model.ModelAvailabilityState{
 		ModelName:     modelName,
 		Status:        string(outcome.Class),
@@ -307,7 +315,6 @@ func saveModelAvailabilityProbeResult(modelName string, outcome modelProbeOutcom
 		LastCheckedAt: now,
 	}
 
-	existing, _ := model.GetModelAvailabilityState(modelName)
 	if outcome.Class == modelProbeAvailable {
 		state.Status = model.ModelAvailabilityAvailable
 		state.ReasonType = ""
@@ -316,7 +323,7 @@ func saveModelAvailabilityProbeResult(modelName string, outcome modelProbeOutcom
 		state.FirstDetectedAt = 0
 		state.LastSuccessAt = now
 		state.ConsecutiveFailures = 0
-		return model.SaveModelAvailabilityState(state)
+		return state
 	}
 
 	state.FirstDetectedAt = now
@@ -338,7 +345,7 @@ func saveModelAvailabilityProbeResult(modelName string, outcome modelProbeOutcom
 		state.ReasonType = "official_model_unsupported_candidate"
 	}
 
-	return model.SaveModelAvailabilityState(state)
+	return state
 }
 
 func buildModelAvailabilityReason(outcome modelProbeOutcome) string {
@@ -427,6 +434,35 @@ func probeOneModelAvailability(modelName string, testUserID int) {
 
 func NewStatusModelProbeAdapter() service.StatusProbeAdapter {
 	return statusModelProbeAdapter{}
+}
+
+func WriteStatusModelAvailability(jobName string, holder string, fencingToken int64, now int64, modelName string, outcome service.StatusProbeOutcome) error {
+	if outcome.MonitoringFault {
+		return nil
+	}
+	legacyOutcome := modelProbeOutcome{
+		Class:      modelProbeTemporaryFailure,
+		ReasonType: outcome.DiagnosticType,
+		Message:    outcome.DiagnosticType,
+	}
+	if outcome.Success {
+		legacyOutcome.Class = modelProbeAvailable
+		legacyOutcome.ReasonType = ""
+		legacyOutcome.Message = ""
+	} else if outcome.DiagnosticType == "official_model_unsupported" {
+		legacyOutcome.Class = modelProbeOfficialUnsupported
+	}
+	existing, err := model.GetModelAvailabilityState(modelName)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return model.SaveModelAvailabilityStateWithFence(
+		jobName,
+		holder,
+		fencingToken,
+		now,
+		buildModelAvailabilityState(modelName, legacyOutcome, existing, now),
+	)
 }
 
 func (statusModelProbeAdapter) ProbeStatusComponent(ctx context.Context, component model.StatusComponent) service.StatusProbeOutcome {
@@ -532,24 +568,31 @@ func tryRunModelAvailabilityDetection() {
 	runModelAvailabilityDetection()
 }
 
-func StartModelAvailabilityDetectionTask() {
-	if !common.IsMasterNode {
-		return
+func StartModelAvailabilityDetectionTask() bool {
+	if !common.IsMasterNode || common.GetEnvOrDefaultBool("STATUS_CENTER_ENABLED", false) {
+		return false
 	}
+	started := false
 	modelAvailabilityTaskOnce.Do(func() {
-		gopool.Go(func() {
-			for {
-				if !modelAvailabilityCheckEnabled() {
-					time.Sleep(time.Minute)
-					continue
-				}
-				next := nextModelAvailabilityRunAt(time.Now())
-				common.SysLog("next model availability detection scheduled at " + next.Format(time.RFC3339))
-				time.Sleep(time.Until(next))
-				if modelAvailabilityCheckEnabled() {
-					tryRunModelAvailabilityDetection()
-				}
+		started = true
+		modelAvailabilityTaskLaunch()
+	})
+	return started
+}
+
+func launchModelAvailabilityDetectionTask() {
+	gopool.Go(func() {
+		for {
+			if !modelAvailabilityCheckEnabled() {
+				time.Sleep(time.Minute)
+				continue
 			}
-		})
+			next := nextModelAvailabilityRunAt(time.Now())
+			common.SysLog("next model availability detection scheduled at " + next.Format(time.RFC3339))
+			time.Sleep(time.Until(next))
+			if modelAvailabilityCheckEnabled() {
+				tryRunModelAvailabilityDetection()
+			}
+		}
 	})
 }

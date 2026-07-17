@@ -32,6 +32,8 @@ env:
   STAGING_APP_CONSOLE_ORIGIN: ${{ vars.STAGING_APP_CONSOLE_ORIGIN || 'https://staging-console.flatkey.ai' }}
   STAGING_COOKIE_SESSION_DOMAIN: ${{ vars.STAGING_COOKIE_SESSION_DOMAIN || '' }}
   STAGING_SESSION_COOKIE_SECURE: ${{ vars.STAGING_SESSION_COOKIE_SECURE || 'true' }}
+  ROUTER_ORIGIN: https://staging-router.flatkey.ai
+  STATUS_CENTER_ENABLED: ${{ vars.STAGING_STATUS_CENTER_ENABLED || 'false' }}
 
 jobs:
   build:
@@ -144,6 +146,8 @@ jobs:
             "APP_CONSOLE_ORIGIN=${STAGING_APP_CONSOLE_ORIGIN}"
             "COOKIE_SESSION_DOMAIN=${effective_cookie_domain}"
             "SESSION_COOKIE_SECURE=${STAGING_SESSION_COOKIE_SECURE}"
+            "ROUTER_ORIGIN=${ROUTER_ORIGIN}"
+            "STATUS_CENTER_ENABLED=${STATUS_CENTER_ENABLED}"
           )
           IFS=,
           env_arg="${env_vars[*]}"
