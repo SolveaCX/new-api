@@ -5,6 +5,7 @@ type Copy = {
   nav: {
     pricing: string;
     modelPricing: string;
+    docs: string;
     home: string;
     console: string;
     rankings: string;
@@ -110,6 +111,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Pricing",
       modelPricing: "Models",
+      docs: "Documentation",
       home: "Home",
       console: "Console",
       rankings: "Rankings",
@@ -268,6 +270,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "价格",
       modelPricing: "模型",
+      docs: "文档",
       home: "主页",
       console: "控制台",
       rankings: "排行",
@@ -423,6 +426,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Precios",
       modelPricing: "Modelos",
+      docs: "Documentación",
       home: "Inicio",
       console: "Consola",
       rankings: "Rankings",
@@ -550,6 +554,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Tarifs",
       modelPricing: "Modèles",
+      docs: "Documentation",
       home: "Accueil",
       console: "Console",
       rankings: "Classements",
@@ -677,6 +682,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Preços",
       modelPricing: "Modelos",
+      docs: "Documentação",
       home: "Início",
       console: "Console",
       rankings: "Rankings",
@@ -804,6 +810,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Цены",
       modelPricing: "Модели",
+      docs: "Документация",
       home: "Главная",
       console: "Консоль",
       rankings: "Рейтинги",
@@ -931,6 +938,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "料金",
       modelPricing: "モデル",
+      docs: "ドキュメント",
       home: "ホーム",
       console: "コンソール",
       rankings: "ランキング",
@@ -1058,6 +1066,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Giá",
       modelPricing: "Mô hình",
+      docs: "Tài liệu",
       home: "Trang chủ",
       console: "Bảng điều khiển",
       rankings: "Xếp hạng",
@@ -1185,6 +1194,7 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Preise",
       modelPricing: "Modelle",
+      docs: "Dokumentation",
       home: "Startseite",
       console: "Konsole",
       rankings: "Rankings",

@@ -1,7 +1,10 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import { Fragment } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
+import { useSiteConfig } from "@/components/site-config-provider";
 import { getCopy } from "@/lib/copy";
 import { type Locale, localizePath } from "@/lib/locales";
 
@@ -132,7 +135,9 @@ function ProjectAttribution(props: { currentYear: number; locale: Locale }) {
 }
 
 export function SiteFooter(props: SiteFooterProps) {
-  const copy = getCopy(props.locale).footer;
+  const { docsUrl } = useSiteConfig();
+  const siteCopy = getCopy(props.locale);
+  const copy = siteCopy.footer;
   const currentYear = new Date().getFullYear();
 
   return (
@@ -158,6 +163,21 @@ export function SiteFooter(props: SiteFooterProps) {
             <span>
               &copy; {currentYear} flatkey.ai. {copy.defaultCopyright}
             </span>
+            {docsUrl ? (
+              <>
+                <span aria-hidden="true" className="text-muted-foreground/30">
+                  ·
+                </span>
+                <a
+                  href={docsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-foreground transition-colors duration-200"
+                >
+                  {siteCopy.nav.docs}
+                </a>
+              </>
+            ) : null}
             <LegalLinks locale={props.locale} leadingSeparator />
           </div>
           <ProjectAttribution currentYear={currentYear} locale={props.locale} />
