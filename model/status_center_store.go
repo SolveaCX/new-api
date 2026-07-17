@@ -302,6 +302,44 @@ func UpsertStatusSetting(setting StatusSetting) (StatusSetting, error) {
 	return setting, err
 }
 
+func UpdateStatusSettingVersion(setting StatusSetting, expectedVersion int64) (StatusSetting, error) {
+	if DB == nil {
+		return StatusSetting{}, errors.New("database is not initialized")
+	}
+	if setting.Key == "" || setting.UpdatedAt <= 0 || expectedVersion < 0 {
+		return StatusSetting{}, errors.New("invalid status setting")
+	}
+	if expectedVersion == 0 {
+		setting.Version = 1
+		if err := DB.Create(&setting).Error; err != nil {
+			if _, found, lookupErr := GetStatusSetting(setting.Key); lookupErr == nil && found {
+				return StatusSetting{}, ErrStatusVersionConflict
+			}
+			return StatusSetting{}, err
+		}
+		return setting, nil
+	}
+	result := DB.Model(&StatusSetting{}).
+		Where("key = ? AND version = ?", setting.Key, expectedVersion).
+		Updates(map[string]any{
+			"value":      setting.Value,
+			"sensitive":  setting.Sensitive,
+			"version":    gorm.Expr("version + 1"),
+			"updated_by": setting.UpdatedBy,
+			"updated_at": setting.UpdatedAt,
+		})
+	if result.Error != nil {
+		return StatusSetting{}, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return StatusSetting{}, ErrStatusVersionConflict
+	}
+	if err := DB.First(&setting, "key = ?", setting.Key).Error; err != nil {
+		return StatusSetting{}, err
+	}
+	return setting, nil
+}
+
 func GetStatusSetting(key string) (StatusSetting, bool, error) {
 	if DB == nil {
 		return StatusSetting{}, false, errors.New("database is not initialized")
@@ -1272,6 +1310,104 @@ func GetStatusComponents() ([]StatusComponent, error) {
 	var components []StatusComponent
 	err := DB.Order("kind DESC, model_name ASC").Find(&components).Error
 	return components, err
+}
+
+func GetStatusComponentBySlug(slug string) (StatusComponent, error) {
+	var component StatusComponent
+	err := DB.Where("slug = ?", slug).First(&component).Error
+	return component, err
+}
+
+func GetStatusPeriodsForComponentInRange(componentID int64, granularity string, start int64, end int64) ([]StatusPeriod, error) {
+	var periods []StatusPeriod
+	err := DB.Where("component_id = ? AND granularity = ? AND period_start >= ? AND period_start < ?", componentID, granularity, start, end).
+		Order("period_start ASC").Find(&periods).Error
+	return periods, err
+}
+
+func GetStatusIncidents(kind string, publicOnly bool, limit int) ([]StatusIncident, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	query := DB.Model(&StatusIncident{})
+	if kind != "" {
+		query = query.Where("kind = ?", kind)
+	}
+	if publicOnly {
+		query = query.Where("visibility = ? AND status <> ?", "public", "draft")
+	}
+	var incidents []StatusIncident
+	err := query.Order("updated_at DESC, id DESC").Limit(limit).Find(&incidents).Error
+	return incidents, err
+}
+
+func GetStatusIncidentByPublicID(publicID string, publicOnly bool) (StatusIncident, error) {
+	query := DB.Where("public_id = ?", publicID)
+	if publicOnly {
+		query = query.Where("visibility = ? AND status <> ?", "public", "draft")
+	}
+	var incident StatusIncident
+	err := query.First(&incident).Error
+	return incident, err
+}
+
+func GetStatusIncidentByID(id int64) (StatusIncident, error) {
+	var incident StatusIncident
+	err := DB.First(&incident, id).Error
+	return incident, err
+}
+
+func GetStatusIncidentUpdates(incidentID int64, publishedOnly bool) ([]StatusIncidentUpdate, error) {
+	query := DB.Where("incident_id = ?", incidentID)
+	if publishedOnly {
+		query = query.Where("published = ?", true)
+	}
+	var updates []StatusIncidentUpdate
+	err := query.Order("created_at ASC, id ASC").Find(&updates).Error
+	return updates, err
+}
+
+func GetStatusIncidentComponentIDs(incidentID int64) ([]int64, error) {
+	var componentIDs []int64
+	err := DB.Model(&StatusIncidentComponent{}).Where("incident_id = ?", incidentID).
+		Order("component_id ASC").Pluck("component_id", &componentIDs).Error
+	return componentIDs, err
+}
+
+func GetStatusSettings(limit int) ([]StatusSetting, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	var settings []StatusSetting
+	err := DB.Order("key ASC").Limit(limit).Find(&settings).Error
+	return settings, err
+}
+
+func GetStatusSubscribers(limit int) ([]StatusSubscriber, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	var subscribers []StatusSubscriber
+	err := DB.Order("updated_at DESC, id DESC").Limit(limit).Find(&subscribers).Error
+	return subscribers, err
+}
+
+func GetStatusDeliveries(limit int) ([]StatusDeliveryOutbox, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	var deliveries []StatusDeliveryOutbox
+	err := DB.Order("updated_at DESC, id DESC").Limit(limit).Find(&deliveries).Error
+	return deliveries, err
+}
+
+func GetStatusAuditEvents(limit int) ([]StatusAuditEvent, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	var events []StatusAuditEvent
+	err := DB.Order("created_at DESC, id DESC").Limit(limit).Find(&events).Error
+	return events, err
 }
 
 func GetLatestStatusProbeResults(componentIDs []int64, since int64) (map[int64]StatusProbeResult, error) {
