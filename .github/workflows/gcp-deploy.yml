@@ -132,6 +132,8 @@ jobs:
       RUN_SERVICE: newapi-console
       NODE_TYPE: master
       APP_ROLE: console
+      ROUTER_ORIGIN: https://router.flatkey.ai
+      STATUS_CENTER_ENABLED: ${{ vars.STATUS_CENTER_ENABLED || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -185,6 +187,7 @@ jobs:
             GA_MEASURE_PROTOCOL_API_SECRET GA_MESSUREMENT_ID \
             OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE \
             PROMETHEUS_METRICS_ENABLED PROMETHEUS_METRICS_TOKEN PROMETHEUS_METRICS_SERVICE_ROLE \
+            ROUTER_ORIGIN STATUS_CENTER_ENABLED \
             NODE_TYPE APP_ROLE; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then

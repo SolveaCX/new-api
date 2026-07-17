@@ -35,6 +35,8 @@ env:
   PROMETHEUS_METRICS_ENABLED: ${{ secrets.PROMETHEUS_METRICS_TOKEN != '' && 'true' || 'false' }}
   PROMETHEUS_METRICS_TOKEN: ${{ secrets.PROMETHEUS_METRICS_TOKEN }}
   PROMETHEUS_METRICS_SERVICE_ROLE: staging-router
+  ROUTER_ORIGIN: https://staging-router.flatkey.ai
+  STATUS_CENTER_ENABLED: ${{ vars.STAGING_STATUS_CENTER_ENABLED || 'false' }}
 
 jobs:
   build:
@@ -150,6 +152,8 @@ jobs:
             "PROMETHEUS_METRICS_ENABLED=${PROMETHEUS_METRICS_ENABLED}"
             "PROMETHEUS_METRICS_TOKEN=${PROMETHEUS_METRICS_TOKEN}"
             "PROMETHEUS_METRICS_SERVICE_ROLE=${PROMETHEUS_METRICS_SERVICE_ROLE}"
+            "ROUTER_ORIGIN=${ROUTER_ORIGIN}"
+            "STATUS_CENTER_ENABLED=${STATUS_CENTER_ENABLED}"
           )
           IFS=,
           env_arg="${env_vars[*]}"

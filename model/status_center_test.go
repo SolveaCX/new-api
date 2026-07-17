@@ -80,6 +80,34 @@ func TestStatusComponentCommitRejectsStaleFence(t *testing.T) {
 	require.NotEqual(t, "stale write", stored.DisplayName)
 }
 
+func TestModelAvailabilitySaveRejectsStaleStatusFence(t *testing.T) {
+	db := setupStatusCenterStoreTest(t)
+	require.NoError(t, db.AutoMigrate(&ModelAvailabilityState{}))
+	first, acquired, err := AcquireStatusJobLease("evaluate", "node-a", 100, 10)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	require.NoError(t, SaveModelAvailabilityStateWithFence("evaluate", "node-a", first.FencingToken, 100, &ModelAvailabilityState{
+		ModelName:     "gpt-test",
+		Status:        ModelAvailabilityAvailable,
+		LastCheckedAt: 100,
+	}))
+
+	_, acquired, err = AcquireStatusJobLease("evaluate", "node-b", 111, 10)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.Error(t, SaveModelAvailabilityStateWithFence("evaluate", "node-a", first.FencingToken, 111, &ModelAvailabilityState{
+		ModelName:     "gpt-test",
+		Status:        ModelAvailabilityTemporaryFailure,
+		LastCheckedAt: 111,
+	}))
+
+	var stored ModelAvailabilityState
+	require.NoError(t, db.First(&stored, "model_name = ?", "gpt-test").Error)
+	require.Equal(t, ModelAvailabilityAvailable, stored.Status)
+	require.EqualValues(t, 100, stored.LastCheckedAt)
+}
+
 func TestStatusComponentVersionConflict(t *testing.T) {
 	setupStatusCenterStoreTest(t)
 	component := StatusComponent{ComponentKey: "router", Slug: "router", Kind: StatusComponentKindRouter, Version: 1}

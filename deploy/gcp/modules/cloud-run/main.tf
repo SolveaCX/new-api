@@ -158,6 +158,21 @@ resource "google_cloud_run_v2_service" "main" {
         value = var.frontend_base_url
       }
 
+      dynamic "env" {
+        for_each = var.router_origin == "" ? [] : [var.router_origin]
+        content {
+          name  = "ROUTER_ORIGIN"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.router_origin == "" ? [] : [var.status_center_enabled]
+        content {
+          name  = "STATUS_CENTER_ENABLED"
+          value = tostring(env.value)
+        }
+      }
+
       // Rate limits — defaults (60/180s) are far too tight behind a load
       // balancer that funnels real client IPs through proxy headers. Until
       // Cloud Armor handles edge throttling, bump these so the admin SPA and

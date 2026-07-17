@@ -1,3 +1,5 @@
 package controller
 
-const websitePublicGroup = "plg"
+import "github.com/QuantumNous/new-api/service"
+
+const websitePublicGroup = service.WebsitePublicGroup

@@ -156,6 +156,18 @@ variable "frontend_base_url" {
   description = "Primary frontend URL used for OAuth callbacks and emails"
 }
 
+variable "router_origin" {
+  type        = string
+  description = "Public router origin used by master-only status probes. Empty disables the seed env entries."
+  default     = ""
+}
+
+variable "status_center_enabled" {
+  type        = bool
+  description = "Initial STATUS_CENTER_ENABLED value for newly created master services. Live env remains CI-owned."
+  default     = false
+}
+
 variable "custom_domains" {
   type        = list(string)
   description = "FQDNs to map to this Cloud Run service via Domain Mappings"

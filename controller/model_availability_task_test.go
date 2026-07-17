@@ -3,12 +3,103 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func TestStartModelAvailabilityDetectionTaskSkipsWhenStatusCenterEnabled(t *testing.T) {
+	originalMaster := common.IsMasterNode
+	originalOnce := modelAvailabilityTaskOnce
+	originalLaunch := modelAvailabilityTaskLaunch
+	t.Cleanup(func() {
+		common.IsMasterNode = originalMaster
+		modelAvailabilityTaskOnce = originalOnce
+		modelAvailabilityTaskLaunch = originalLaunch
+	})
+
+	common.IsMasterNode = true
+	modelAvailabilityTaskOnce = &sync.Once{}
+	var launches atomic.Int64
+	modelAvailabilityTaskLaunch = func() { launches.Add(1) }
+
+	t.Setenv("STATUS_CENTER_ENABLED", "true")
+	require.False(t, StartModelAvailabilityDetectionTask())
+	require.EqualValues(t, 0, launches.Load())
+
+	t.Setenv("STATUS_CENTER_ENABLED", "false")
+	require.True(t, StartModelAvailabilityDetectionTask())
+	require.False(t, StartModelAvailabilityDetectionTask())
+	require.EqualValues(t, 1, launches.Load())
+}
+
+func TestWriteStatusModelAvailabilityRejectsStaleSchedulerFence(t *testing.T) {
+	originalDB := model.DB
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(append(model.StatusCenterModels(), &model.ModelAvailabilityState{})...))
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+
+	first, acquired, err := model.AcquireStatusJobLease("status-center-scheduler", "node-a", 100, 10)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", first.FencingToken, 100, "gpt-test", service.StatusProbeOutcome{Success: true, DiagnosticType: "ok"}))
+
+	_, acquired, err = model.AcquireStatusJobLease("status-center-scheduler", "node-b", 111, 10)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.Error(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", first.FencingToken, 111, "gpt-test", service.StatusProbeOutcome{DiagnosticType: "temporary_upstream_failure"}))
+
+	state, err := model.GetModelAvailabilityState("gpt-test")
+	require.NoError(t, err)
+	require.NotNil(t, state)
+	require.Equal(t, model.ModelAvailabilityAvailable, state.Status)
+}
+
+func TestWriteStatusModelAvailabilityKeepsLegacyFailureSemantics(t *testing.T) {
+	originalDB := model.DB
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(append(model.StatusCenterModels(), &model.ModelAvailabilityState{})...))
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+	t.Setenv("MODEL_AVAILABILITY_OFFICIAL_UNSUPPORTED_THRESHOLD", "2")
+
+	lease, acquired, err := model.AcquireStatusJobLease("status-center-scheduler", "node-a", 100, 60)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", lease.FencingToken, 100, "temporary-model", service.StatusProbeOutcome{DiagnosticType: "temporary_upstream_failure"}))
+	temporary, err := model.GetModelAvailabilityState("temporary-model")
+	require.NoError(t, err)
+	require.Equal(t, model.ModelAvailabilityTemporaryFailure, temporary.Status)
+	require.Equal(t, "temporary_upstream_failure", temporary.ReasonType)
+	require.Equal(t, 1, temporary.ConsecutiveFailures)
+
+	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", lease.FencingToken, 101, "unsupported-model", service.StatusProbeOutcome{DiagnosticType: "official_model_unsupported"}))
+	candidate, err := model.GetModelAvailabilityState("unsupported-model")
+	require.NoError(t, err)
+	require.Equal(t, model.ModelAvailabilityUnknownFailure, candidate.Status)
+	require.Equal(t, "official_model_unsupported_candidate", candidate.ReasonType)
+	require.Equal(t, 1, candidate.ConsecutiveFailures)
+
+	require.NoError(t, WriteStatusModelAvailability("status-center-scheduler", "node-a", lease.FencingToken, 102, "unsupported-model", service.StatusProbeOutcome{DiagnosticType: "official_model_unsupported"}))
+	unsupported, err := model.GetModelAvailabilityState("unsupported-model")
+	require.NoError(t, err)
+	require.Equal(t, model.ModelAvailabilityOfficialUnsupported, unsupported.Status)
+	require.Equal(t, "official_model_unsupported", unsupported.ReasonType)
+	require.Equal(t, 2, unsupported.ConsecutiveFailures)
+}
 
 func TestClassifyModelProbeError(t *testing.T) {
 	tests := []struct {

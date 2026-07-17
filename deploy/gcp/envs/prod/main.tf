@@ -312,12 +312,14 @@ module "cloud_run_console" {
 
   usage_recon_token_secret_id = var.enable_usage_recon_token ? google_secret_manager_secret.blockrun_usage_summary_token.secret_id : ""
 
-  frontend_base_url = ""
-  custom_domains    = []
-  min_instances     = var.console_min_instances
-  max_instances     = var.console_max_instances
-  concurrency       = var.console_concurrency
-  node_type         = "master"
+  frontend_base_url     = ""
+  custom_domains        = []
+  min_instances         = var.console_min_instances
+  max_instances         = var.console_max_instances
+  concurrency           = var.console_concurrency
+  node_type             = "master"
+  router_origin         = "https://router.flatkey.ai"
+  status_center_enabled = false
 
   depends_on = [
     module.apis,

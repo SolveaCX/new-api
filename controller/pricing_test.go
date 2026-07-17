@@ -1,16 +1,22 @@
 package controller
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestFilterPricingByUsableGroupsPrunesEnableGroups(t *testing.T) {
@@ -205,6 +211,71 @@ func TestGetWebsitePricingFailsClosedWhenPublicGroupRatioMissing(t *testing.T) {
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.JSONEq(t, `{"success":false,"message":"public website group is not configured"}`, recorder.Body.String())
+}
+
+func TestWebsitePLGPricingMatchesActiveStatusCatalogModels(t *testing.T) {
+	originalDB := model.DB
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(model.StatusCenterModels()...))
+	model.DB = db
+
+	originalPricing := getWebsitePublicPricing
+	originalGroups := setting.UserUsableGroups2JSONString()
+	originalGroupRatio := ratio_setting.GroupRatio2JSONString()
+	t.Cleanup(func() {
+		model.DB = originalDB
+		getWebsitePublicPricing = originalPricing
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalGroups))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatio))
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"anonymous":"Anonymous"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"plg":0.9}`))
+
+	pricing := []model.Pricing{
+		{ModelName: "plg-model", EnableGroup: []string{"plg"}},
+		{ModelName: "all-model", EnableGroup: []string{"all"}},
+		{ModelName: "anonymous-only", EnableGroup: []string{"anonymous"}},
+		{ModelName: "enterprise-only", EnableGroup: []string{"enterprise"}},
+	}
+	getWebsitePublicPricing = func() []model.Pricing { return pricing }
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/website/pricing?group=plg", nil)
+	GetWebsitePricing(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var payload struct {
+		Data []model.Pricing `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	websiteModels := pricingModelNames(payload.Data)
+
+	lease, acquired, err := model.AcquireStatusJobLease("pricing-parity", "node-a", 1_000, 60)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	catalogPricing := service.FilterWebsiteVisiblePricing(pricing)
+	require.NoError(t, service.SyncStatusCatalog("pricing-parity", "node-a", lease.FencingToken, 1_000, catalogPricing, service.WebsitePublicUsableGroups()))
+
+	var components []model.StatusComponent
+	require.NoError(t, db.Where("kind = ? AND lifecycle = ?", model.StatusComponentKindModel, model.StatusLifecycleActive).Find(&components).Error)
+	catalogModels := make([]string, 0, len(components))
+	for _, component := range components {
+		catalogModels = append(catalogModels, component.ModelName)
+	}
+	sort.Strings(catalogModels)
+
+	require.Equal(t, websiteModels, catalogModels)
+}
+
+func pricingModelNames(pricing []model.Pricing) []string {
+	models := make([]string, 0, len(pricing))
+	for _, item := range pricing {
+		models = append(models, item.ModelName)
+	}
+	sort.Strings(models)
+	return models
 }
 
 func TestBuildWebsitePublicGroupPricingPayloadIncludesHiddenPLGOnly(t *testing.T) {

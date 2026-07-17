@@ -29,20 +29,27 @@ const (
 	statusRouterCanaryTimeout         = 10 * time.Second
 	statusRouterCanaryPath            = "/api/status"
 	statusSchedulerLoopInterval       = time.Minute
-	statusSchedulerTrafficWindow      = int64(5 * 60)
 	statusSchedulerProbeFreshness     = statusEvidenceMaxAgeSeconds
 	statusSchedulerCoverageFullMicros = int64(1_000_000)
 )
 
 type StatusTrafficReader func(start int64, end int64, groups []string) ([]model.PerfMetricSummary, error)
 
+type StatusModelAvailabilityWriter func(jobName string, holder string, fencingToken int64, now int64, modelName string, outcome StatusProbeOutcome) error
+
+func readStatusTraffic(start int64, end int64, groups []string) ([]model.PerfMetricSummary, error) {
+	return model.GetPerfMetricsSummaryAll(start, end-1, groups)
+}
+
 type StatusScheduler struct {
 	Holder       string
+	Now          func() int64
 	Pricing      func() []model.Pricing
 	UsableGroups func() map[string]string
 	Traffic      StatusTrafficReader
 	RouterProbe  StatusProbeAdapter
 	ModelProbe   StatusProbeAdapter
+	Availability StatusModelAvailabilityWriter
 }
 
 type statusHTTPClient interface {
@@ -61,6 +68,8 @@ var (
 	statusModelProbe       StatusProbeAdapter = StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
 		return StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "model_probe_not_configured"}
 	})
+	statusAvailabilityMu     sync.RWMutex
+	statusAvailabilityWriter StatusModelAvailabilityWriter
 )
 
 func SetStatusModelProbeAdapter(adapter StatusProbeAdapter) {
@@ -70,6 +79,15 @@ func SetStatusModelProbeAdapter(adapter StatusProbeAdapter) {
 	statusModelProbeMu.Lock()
 	statusModelProbe = adapter
 	statusModelProbeMu.Unlock()
+}
+
+func SetStatusModelAvailabilityWriter(writer StatusModelAvailabilityWriter) {
+	if writer == nil {
+		return
+	}
+	statusAvailabilityMu.Lock()
+	statusAvailabilityWriter = writer
+	statusAvailabilityMu.Unlock()
 }
 
 func NewStatusRouterProbeAdapter(origin string, client statusHTTPClient) StatusProbeAdapter {
@@ -124,7 +142,7 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 	if scheduler.UsableGroups != nil {
 		usableGroups = scheduler.UsableGroups()
 	}
-	if err := SyncStatusCatalog(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, now, pricing, usableGroups); err != nil {
+	if err := SyncStatusCatalog(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime(), pricing, usableGroups); err != nil {
 		return true, err
 	}
 	components, err := model.GetStatusComponents()
@@ -133,9 +151,10 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 	}
 
 	trafficByModel := make(map[string]model.PerfMetricSummary)
+	fiveMinuteStart, fiveMinuteEnd := statusFiveMinuteBounds(now)
 	if scheduler.Traffic != nil {
 		groups := sortedUsableGroupNames(usableGroups)
-		summaries, err := scheduler.Traffic(now-statusSchedulerTrafficWindow, now, groups)
+		summaries, err := scheduler.Traffic(fiveMinuteStart, fiveMinuteEnd, groups)
 		if err != nil {
 			return true, err
 		}
@@ -174,6 +193,7 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 			schedule.MonitoringFault = latestProbe.MonitoringFault
 		}
 		probeRan := false
+		var trustworthyProbe *StatusProbeOutcome
 		if StatusProbeDue(schedule, now) {
 			adapter := scheduler.ModelProbe
 			if component.Kind == model.StatusComponentKindRouter {
@@ -193,15 +213,18 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 				FencingToken:    lease.FencingToken,
 				CreatedAt:       now,
 			}
-			if err := persistStatusProbeWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, now, &latestProbe); err != nil {
+			if err := persistStatusProbeWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime(), &latestProbe); err != nil {
 				return true, err
 			}
 			hasProbe = true
 			probeRan = true
+			if !outcome.MonitoringFault && component.Kind == model.StatusComponentKindModel {
+				trustworthyProbe = &outcome
+			}
 			conflict = statusSignalsConflict(summary, latestProbe, true)
 		}
 
-		evidence := statusEvidenceForComponent(summary, latestProbe, hasProbe, conflict, now)
+		evidence := statusEvidenceForComponent(summary, latestProbe, hasProbe, probeRan, conflict, now)
 		transition := EvaluateStatus(component, evidence, now)
 		component.ObservedStatus = transition.Observed
 		component.EffectiveStatus = transition.Effective
@@ -219,19 +242,31 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 			component.LastEvidenceAt = now
 		}
 		component.UpdatedAt = now
-		if err := model.CommitStatusEvaluationWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, now, &component); err != nil {
+		if err := model.CommitStatusEvaluationWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime(), &component); err != nil {
 			return true, err
+		}
+		if component.Kind == model.StatusComponentKindModel && scheduler.Availability != nil {
+			availability := trustworthyProbe
+			if summary.AvailabilityEligibleCount >= statusTrafficMinimumEligible &&
+				ratioMicros(summary.AvailabilitySuccessCount, summary.AvailabilityEligibleCount) >= statusOperationalMicros {
+				availability = &StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+			}
+			if availability != nil {
+				if err := scheduler.Availability(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime(), component.ModelName, *availability); err != nil {
+					return true, err
+				}
+			}
 		}
 
-		period := statusFiveMinutePeriod(component, evidence, transition, now)
-		if err := writeStatusPeriodWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, now, &period); err != nil {
+		period := statusFiveMinutePeriod(component, evidence, transition, fiveMinuteStart, now)
+		if err := writeStatusFiveMinutePeriodWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime(), &period); err != nil {
 			return true, err
 		}
 	}
-	if err := rollupStatusPeriodsWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, now); err != nil {
+	if err := rollupStatusPeriodsWithClock(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, now, scheduler.currentTime); err != nil {
 		return true, err
 	}
-	if err := applyStatusRetentionWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, now); err != nil {
+	if err := applyStatusRetentionWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime()); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -245,8 +280,26 @@ func writeStatusPeriodWithFence(jobName string, holder string, fencingToken int6
 	return model.UpsertStatusPeriodWithFence(jobName, holder, fencingToken, now, period)
 }
 
+func writeStatusFiveMinutePeriodWithFence(jobName string, holder string, fencingToken int64, now int64, period *model.StatusPeriod) error {
+	existing, err := model.GetStatusPeriodsInRange(model.StatusGranularityFiveMinutes, period.PeriodStart, period.PeriodStart+1)
+	if err != nil {
+		return err
+	}
+	for _, current := range existing {
+		if current.ComponentID == period.ComponentID {
+			period.WorstStatus = worseStatus(current.WorstStatus, period.WorstStatus)
+			break
+		}
+	}
+	return writeStatusPeriodWithFence(jobName, holder, fencingToken, now, period)
+}
+
 func rollupStatusPeriodsWithFence(jobName string, holder string, fencingToken int64, now int64) error {
-	if err := model.ValidateStatusJobFence(jobName, holder, fencingToken, now); err != nil {
+	return rollupStatusPeriodsWithClock(jobName, holder, fencingToken, now, func() int64 { return now })
+}
+
+func rollupStatusPeriodsWithClock(jobName string, holder string, fencingToken int64, now int64, currentTime func() int64) error {
+	if err := model.ValidateStatusJobFence(jobName, holder, fencingToken, currentTime()); err != nil {
 		return err
 	}
 	hourStart := ((now - 1) / statusHourSeconds) * statusHourSeconds
@@ -256,7 +309,7 @@ func rollupStatusPeriodsWithFence(jobName string, holder string, fencingToken in
 	}
 	for _, period := range aggregateStatusPeriods(fiveMinutePeriods, model.StatusGranularityHour, hourStart, now) {
 		period := period
-		if err := writeStatusPeriodWithFence(jobName, holder, fencingToken, now, &period); err != nil {
+		if err := writeStatusPeriodWithFence(jobName, holder, fencingToken, currentTime(), &period); err != nil {
 			return err
 		}
 	}
@@ -268,11 +321,18 @@ func rollupStatusPeriodsWithFence(jobName string, holder string, fencingToken in
 	}
 	for _, period := range aggregateStatusPeriods(hourPeriods, model.StatusGranularityDay, dayStart, now) {
 		period := period
-		if err := writeStatusPeriodWithFence(jobName, holder, fencingToken, now, &period); err != nil {
+		if err := writeStatusPeriodWithFence(jobName, holder, fencingToken, currentTime(), &period); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (scheduler *StatusScheduler) currentTime() int64 {
+	if scheduler.Now != nil {
+		return scheduler.Now()
+	}
+	return model.GetDBTimestamp()
 }
 
 func applyStatusRetentionWithFence(jobName string, holder string, fencingToken int64, now int64) error {
@@ -286,7 +346,7 @@ func applyStatusRetentionWithFence(jobName string, holder string, fencingToken i
 	)
 }
 
-func statusEvidenceForComponent(summary model.PerfMetricSummary, probe model.StatusProbeResult, hasProbe bool, conflict bool, now int64) StatusEvidence {
+func statusEvidenceForComponent(summary model.PerfMetricSummary, probe model.StatusProbeResult, hasProbe bool, consumeProbe bool, conflict bool, now int64) StatusEvidence {
 	if summary.AvailabilityEligibleCount >= statusTrafficMinimumEligible {
 		return StatusEvidence{
 			Eligible:          summary.AvailabilityEligibleCount,
@@ -304,6 +364,10 @@ func statusEvidenceForComponent(summary model.PerfMetricSummary, probe model.Sta
 		TargetRef:       probe.TargetRef,
 		LatencyMs:       probe.LatencyMs,
 	}, probe.CreatedAt)
+	if !consumeProbe {
+		evidence.ProbeSuccess = 0
+		evidence.ProbeFailure = 0
+	}
 	evidence.SignalConflict = conflict
 	return evidence
 }
@@ -317,11 +381,11 @@ func statusSignalsConflict(summary model.PerfMetricSummary, probe model.StatusPr
 	return trafficHealthy != probe.Success
 }
 
-func statusFiveMinutePeriod(component model.StatusComponent, evidence StatusEvidence, transition StatusTransition, now int64) model.StatusPeriod {
+func statusFiveMinutePeriod(component model.StatusComponent, evidence StatusEvidence, transition StatusTransition, periodStart int64, now int64) model.StatusPeriod {
 	period := model.StatusPeriod{
 		ComponentID:       component.ID,
 		Granularity:       model.StatusGranularityFiveMinutes,
-		PeriodStart:       (now / statusFiveMinuteSeconds) * statusFiveMinuteSeconds,
+		PeriodStart:       periodStart,
 		WorstStatus:       transition.Effective,
 		EligibleCount:     evidence.Eligible,
 		SuccessCount:      evidence.Success,
@@ -339,6 +403,11 @@ func statusFiveMinutePeriod(component model.StatusComponent, evidence StatusEvid
 		period.KnownBucketCount = 1
 	}
 	return period
+}
+
+func statusFiveMinuteBounds(now int64) (int64, int64) {
+	end := (now / statusFiveMinuteSeconds) * statusFiveMinuteSeconds
+	return end - statusFiveMinuteSeconds, end
 }
 
 func aggregateStatusPeriods(source []model.StatusPeriod, granularity string, periodStart int64, now int64) []model.StatusPeriod {
@@ -400,24 +469,46 @@ func StartStatusCenterTasks() bool {
 	if !common.IsMasterNode || !common.GetEnvOrDefaultBool("STATUS_CENTER_ENABLED", false) {
 		return false
 	}
+	routerOrigin, err := validateStatusRouterOrigin(common.GetEnvOrDefaultString("ROUTER_ORIGIN", ""))
+	if err != nil {
+		common.SysError("status center scheduler not started: " + err.Error())
+		return false
+	}
 	started := false
+	scheduler := newStatusCenterScheduler(routerOrigin)
 	statusCenterTaskOnce.Do(func() {
 		started = true
-		statusCenterTaskLaunch()
+		statusCenterTaskLaunch(scheduler)
 	})
 	return started
 }
 
-func launchStatusCenterTasks() {
+func validateStatusRouterOrigin(origin string) (string, error) {
+	origin = strings.TrimSpace(origin)
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", errors.New("ROUTER_ORIGIN must be an absolute http(s) origin")
+	}
+	if parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("ROUTER_ORIGIN must not include credentials, a path, query, or fragment")
+	}
+	return strings.TrimRight(origin, "/"), nil
+}
+
+func newStatusCenterScheduler(routerOrigin string) *StatusScheduler {
+	return &StatusScheduler{
+		Holder:       statusSchedulerHolder(),
+		Pricing:      GetWebsiteVisiblePricing,
+		UsableGroups: WebsitePublicUsableGroups,
+		Traffic:      readStatusTraffic,
+		RouterProbe:  NewStatusRouterProbeAdapter(routerOrigin, GetHttpClient()),
+		ModelProbe:   configuredStatusModelProbe(),
+		Availability: configuredStatusModelAvailabilityWriter(),
+	}
+}
+
+func launchStatusCenterTasks(scheduler *StatusScheduler) {
 	gopool.Go(func() {
-		scheduler := &StatusScheduler{
-			Holder:       statusSchedulerHolder(),
-			Pricing:      model.GetPricing,
-			UsableGroups: func() map[string]string { return GetUserUsableGroups("") },
-			Traffic:      model.GetPerfMetricsSummaryAll,
-			RouterProbe:  NewStatusRouterProbeAdapter(common.GetEnvOrDefaultString("ROUTER_ORIGIN", ""), GetHttpClient()),
-			ModelProbe:   configuredStatusModelProbe(),
-		}
 		run := func() {
 			if _, err := scheduler.RunOnce(context.Background(), model.GetDBTimestamp()); err != nil {
 				common.SysError("status center scheduler failed: " + err.Error())
@@ -430,6 +521,12 @@ func launchStatusCenterTasks() {
 			run()
 		}
 	})
+}
+
+func configuredStatusModelAvailabilityWriter() StatusModelAvailabilityWriter {
+	statusAvailabilityMu.RLock()
+	defer statusAvailabilityMu.RUnlock()
+	return statusAvailabilityWriter
 }
 
 func configuredStatusModelProbe() StatusProbeAdapter {
