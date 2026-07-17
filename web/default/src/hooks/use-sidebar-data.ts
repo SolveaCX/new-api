@@ -173,6 +173,11 @@ export function buildSidebarData(
             icon: CalendarRange,
           },
           {
+            title: t('statusCenter.title'),
+            url: '/status-center',
+            icon: Activity,
+          },
+          {
             title: t('Redemption Codes'),
             url: '/redemption-codes',
             icon: Ticket,
