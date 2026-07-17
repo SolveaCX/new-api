@@ -577,12 +577,8 @@ func CommitStatusComponentWithFence(jobName string, holder string, fencingToken 
 		return errors.New("status component is nil")
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var lease StatusJobLease
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", jobName).First(&lease).Error; err != nil {
+		if err := validateStatusJobFence(tx, jobName, holder, fencingToken, now); err != nil {
 			return err
-		}
-		if lease.Holder != holder || lease.FencingToken != fencingToken || lease.ExpiresAt <= now {
-			return fmt.Errorf("status job lease is no longer owned")
 		}
 		return tx.Save(component).Error
 	})
@@ -643,12 +639,8 @@ func SyncStatusCatalogWithFence(jobName string, holder string, fencingToken int6
 		return errors.New("database is not initialized")
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var lease StatusJobLease
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", jobName).First(&lease).Error; err != nil {
+		if err := validateStatusJobFence(tx, jobName, holder, fencingToken, now); err != nil {
 			return err
-		}
-		if lease.Holder != holder || lease.FencingToken != fencingToken || lease.ExpiresAt <= now {
-			return fmt.Errorf("status job lease is no longer owned")
 		}
 
 		activeModelKeys := make([]string, 0, len(desired))
@@ -1384,6 +1376,20 @@ func createStatusAuditEvent(tx *gorm.DB, input StatusAuditMutation, objectType s
 }
 
 func validateStatusJobFence(tx *gorm.DB, jobName string, holder string, fencingToken int64, now int64) error {
+	if tx.Dialector.Name() == "sqlite" {
+		// SQLite ignores FOR UPDATE. Make the fence check the transaction's first write so
+		// a concurrent lease renewal cannot force a later read-to-write lock upgrade.
+		result := tx.Model(&StatusJobLease{}).
+			Where("name = ? AND holder = ? AND fencing_token = ? AND expires_at > ?", jobName, holder, fencingToken, now).
+			UpdateColumn("fencing_token", gorm.Expr("fencing_token"))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("status job lease is no longer owned")
+		}
+		return nil
+	}
 	var lease StatusJobLease
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", jobName).First(&lease).Error; err != nil {
 		return err
