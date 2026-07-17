@@ -1,13 +1,20 @@
 package perfmetrics
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 )
 
-const availabilityBucketSeconds = int64(5 * 60)
+const (
+	availabilityBucketSeconds          = int64(5 * 60)
+	availabilityRetentionSeconds       = int64(7 * 24 * 60 * 60)
+	availabilityCleanupIntervalSeconds = int64(60 * 60)
+)
 
 var availabilityHotBuckets sync.Map
+var statusAvailabilityEnabled atomic.Bool
+var availabilityLastCleanupAt atomic.Int64
 
 type availabilityBucketKey struct {
 	model    string
@@ -21,40 +28,67 @@ type availabilityCounters struct {
 }
 
 type atomicAvailabilityBucket struct {
-	eligible atomic.Int64
-	success  atomic.Int64
+	counts atomic.Uint64
 }
 
 func (bucket *atomicAvailabilityBucket) add(outcome AvailabilityOutcome) {
 	if outcome != AvailabilityEligibleFailure && outcome != AvailabilityEligibleSuccess {
 		return
 	}
-	bucket.eligible.Add(1)
+	counters := availabilityCounters{eligible: 1}
 	if outcome == AvailabilityEligibleSuccess {
-		bucket.success.Add(1)
+		counters.success = 1
 	}
+	bucket.addCounters(counters)
 }
 
 func (bucket *atomicAvailabilityBucket) snapshot() availabilityCounters {
-	return availabilityCounters{
-		eligible: bucket.eligible.Load(),
-		success:  bucket.success.Load(),
-	}
+	return unpackAvailabilityCounters(bucket.counts.Load())
 }
 
 func (bucket *atomicAvailabilityBucket) drain() availabilityCounters {
-	return availabilityCounters{
-		eligible: bucket.eligible.Swap(0),
-		success:  bucket.success.Swap(0),
+	return unpackAvailabilityCounters(bucket.counts.Swap(0))
+}
+
+func (bucket *atomicAvailabilityBucket) addCounters(counters availabilityCounters) bool {
+	if counters.eligible == 0 && counters.success == 0 {
+		return true
+	}
+	if !validAvailabilityCounters(counters) {
+		return false
+	}
+	for {
+		currentWord := bucket.counts.Load()
+		current := unpackAvailabilityCounters(currentWord)
+		if counters.eligible > math.MaxUint32-current.eligible || counters.success > math.MaxUint32-current.success {
+			return false
+		}
+		next := availabilityCounters{
+			eligible: current.eligible + counters.eligible,
+			success:  current.success + counters.success,
+		}
+		if !validAvailabilityCounters(next) {
+			return false
+		}
+		if bucket.counts.CompareAndSwap(currentWord, packAvailabilityCounters(next)) {
+			return true
+		}
 	}
 }
 
-func (bucket *atomicAvailabilityBucket) addCounters(counters availabilityCounters) {
-	if counters.eligible != 0 {
-		bucket.eligible.Add(counters.eligible)
-	}
-	if counters.success != 0 {
-		bucket.success.Add(counters.success)
+func validAvailabilityCounters(counters availabilityCounters) bool {
+	return counters.eligible >= 0 && counters.success >= 0 && counters.success <= counters.eligible &&
+		counters.eligible <= math.MaxUint32 && counters.success <= math.MaxUint32
+}
+
+func packAvailabilityCounters(counters availabilityCounters) uint64 {
+	return uint64(uint32(counters.eligible))<<32 | uint64(uint32(counters.success))
+}
+
+func unpackAvailabilityCounters(value uint64) availabilityCounters {
+	return availabilityCounters{
+		eligible: int64(value >> 32),
+		success:  int64(value & math.MaxUint32),
 	}
 }
 

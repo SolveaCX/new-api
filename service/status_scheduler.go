@@ -33,6 +33,7 @@ const (
 	statusSchedulerProbeFreshness     = statusEvidenceMaxAgeSeconds
 	statusSchedulerCoverageFullMicros = int64(1_000_000)
 	statusAvailabilityFlushGrace      = int64(10)
+	statusDefaultModelProbeBudget     = 10
 )
 
 type StatusTrafficReader func(start int64, end int64, groups []string) ([]model.PerfMetricSummary, error)
@@ -57,6 +58,7 @@ type StatusScheduler struct {
 	CompatibilityModels func() ([]string, error)
 	RouterProbe         StatusProbeAdapter
 	ModelProbe          StatusProbeAdapter
+	ModelProbeBudget    int
 	Availability        StatusModelAvailabilityWriter
 }
 
@@ -204,6 +206,7 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (ran b
 	if err != nil {
 		return true, err
 	}
+	selectedModelProbes := selectDueStatusModelProbes(components, trafficByModel, latestProbes, now, scheduler.modelProbeBudget())
 
 	for i := range components {
 		if err := leaseKeeper.renewalError(); err != nil {
@@ -229,7 +232,11 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (ran b
 		}
 		probeRan := false
 		var trustworthyProbe *StatusProbeOutcome
-		if StatusProbeDue(schedule, now) {
+		probeDue := StatusProbeDue(schedule, now)
+		if component.Kind == model.StatusComponentKindModel {
+			_, probeDue = selectedModelProbes[component.ID]
+		}
+		if probeDue {
 			adapter := scheduler.ModelProbe
 			if component.Kind == model.StatusComponentKindRouter {
 				adapter = scheduler.RouterProbe
@@ -308,7 +315,8 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (ran b
 			return true, err
 		}
 	}
-	if err := scheduler.runCompatibilityProbes(runCtx, leaseKeeper, components, lease.FencingToken, now); err != nil {
+	remainingModelProbeBudget := scheduler.modelProbeBudget() - len(selectedModelProbes)
+	if err := scheduler.runCompatibilityProbes(runCtx, leaseKeeper, components, lease.FencingToken, now, remainingModelProbeBudget); err != nil {
 		return true, err
 	}
 	if err := leaseKeeper.renewalError(); err != nil {
@@ -326,8 +334,52 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (ran b
 	return true, nil
 }
 
-func (scheduler *StatusScheduler) runCompatibilityProbes(ctx context.Context, leaseKeeper *statusLeaseKeeper, components []model.StatusComponent, fencingToken int64, now int64) error {
-	if scheduler.CompatibilityModels == nil || scheduler.ModelProbe == nil || scheduler.Availability == nil {
+func selectDueStatusModelProbes(components []model.StatusComponent, trafficByModel map[string]model.PerfMetricSummary, latestProbes map[int64]model.StatusProbeResult, now int64, budget int) map[int64]struct{} {
+	type candidate struct {
+		componentID int64
+		modelName   string
+		lastProbeAt int64
+	}
+	candidates := make([]candidate, 0, len(components))
+	for _, component := range components {
+		if component.Kind != model.StatusComponentKindModel || component.Lifecycle != model.StatusLifecycleActive {
+			continue
+		}
+		summary := trafficByModel[component.ModelName]
+		latestProbe, hasProbe := latestProbes[component.ID]
+		schedule := StatusProbeSchedule{
+			Kind:            component.Kind,
+			Lifecycle:       component.Lifecycle,
+			EffectiveStatus: component.EffectiveStatus,
+			EligibleCount:   summary.AvailabilityEligibleCount,
+			SignalConflict:  statusSignalsConflict(summary, latestProbe, hasProbe),
+		}
+		if hasProbe {
+			schedule.LastProbeAt = latestProbe.CreatedAt
+			schedule.MonitoringFault = latestProbe.MonitoringFault
+		}
+		if StatusProbeDue(schedule, now) {
+			candidates = append(candidates, candidate{componentID: component.ID, modelName: component.ModelName, lastProbeAt: schedule.LastProbeAt})
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].lastProbeAt != candidates[j].lastProbeAt {
+			return candidates[i].lastProbeAt < candidates[j].lastProbeAt
+		}
+		return candidates[i].modelName < candidates[j].modelName
+	})
+	if budget > len(candidates) {
+		budget = len(candidates)
+	}
+	selected := make(map[int64]struct{}, budget)
+	for i := 0; i < budget; i++ {
+		selected[candidates[i].componentID] = struct{}{}
+	}
+	return selected
+}
+
+func (scheduler *StatusScheduler) runCompatibilityProbes(ctx context.Context, leaseKeeper *statusLeaseKeeper, components []model.StatusComponent, fencingToken int64, now int64, budget int) error {
+	if budget <= 0 || scheduler.CompatibilityModels == nil || scheduler.ModelProbe == nil || scheduler.Availability == nil {
 		return nil
 	}
 	modelNames, err := scheduler.CompatibilityModels()
@@ -364,18 +416,30 @@ func (scheduler *StatusScheduler) runCompatibilityProbes(ctx context.Context, le
 	if err != nil {
 		return err
 	}
-	for _, modelName := range compatibilityModels {
+	probeSlotSeconds := int64(statusSchedulerLoopInterval / time.Second)
+	start := int((now / probeSlotSeconds) % int64(len(compatibilityModels)))
+	if start < 0 {
+		start += len(compatibilityModels)
+	}
+	probesRun := 0
+	for offset := 0; offset < len(compatibilityModels); offset++ {
+		modelName := compatibilityModels[(start+offset)%len(compatibilityModels)]
 		if err := leaseKeeper.renewalError(); err != nil {
 			return err
 		}
 		if state, ok := states[modelName]; ok && now-state.LastCheckedAt < statusIdleProbeIntervalSeconds {
 			continue
 		}
+		if probesRun >= budget {
+			break
+		}
 		outcome := scheduler.ModelProbe.ProbeStatusComponent(ctx, model.StatusComponent{
-			Kind:      model.StatusComponentKindModel,
-			ModelName: modelName,
-			Lifecycle: model.StatusLifecycleActive,
+			Kind:            model.StatusComponentKindModel,
+			ModelName:       modelName,
+			Lifecycle:       model.StatusLifecycleActive,
+			LastEvaluatedAt: now,
 		})
+		probesRun++
 		if err := leaseKeeper.renewalError(); err != nil {
 			return err
 		}
@@ -387,6 +451,13 @@ func (scheduler *StatusScheduler) runCompatibilityProbes(ctx context.Context, le
 		}
 	}
 	return nil
+}
+
+func (scheduler *StatusScheduler) modelProbeBudget() int {
+	if scheduler.ModelProbeBudget > 0 {
+		return scheduler.ModelProbeBudget
+	}
+	return statusDefaultModelProbeBudget
 }
 
 func (scheduler *StatusScheduler) statusLeaseSeconds() int64 {
@@ -475,11 +546,46 @@ func writeStatusFiveMinutePeriodWithFence(jobName string, holder string, fencing
 	}
 	for _, current := range existing {
 		if current.ComponentID == period.ComponentID {
-			period.WorstStatus = worseStatus(current.WorstStatus, period.WorstStatus)
+			*period = mergeStatusFiveMinutePeriod(current, *period)
 			break
 		}
 	}
 	return writeStatusPeriodWithFence(jobName, holder, fencingToken, now, period)
+}
+
+func mergeStatusFiveMinutePeriod(current model.StatusPeriod, next model.StatusPeriod) model.StatusPeriod {
+	current.UpdatedAt = next.UpdatedAt
+	if next.EligibleCount == 0 && next.ProbeSuccessCount == 0 && next.ProbeFailureCount == 0 && next.MaintenanceBucketCount == 0 {
+		return current
+	}
+	current.WorstStatus = worseStatus(current.WorstStatus, next.WorstStatus)
+
+	if next.EligibleCount > 0 {
+		// The traffic reader returns cumulative totals for the fixed bucket.
+		current.EligibleCount = next.EligibleCount
+		current.SuccessCount = next.SuccessCount
+	}
+	current.ProbeSuccessCount += next.ProbeSuccessCount
+	current.ProbeFailureCount += next.ProbeFailureCount
+
+	if current.MaintenanceBucketCount > 0 || next.MaintenanceBucketCount > 0 {
+		current.ScoreSumMicros = 0
+		current.KnownBucketCount = 0
+		current.UnknownBucketCount = 0
+		current.MaintenanceBucketCount = 1
+		return current
+	}
+
+	current.MaintenanceBucketCount = 0
+	current.UnknownBucketCount = 0
+	current.KnownBucketCount = 1
+	if current.EligibleCount > 0 {
+		current.ScoreSumMicros = ratioMicros(current.SuccessCount, current.EligibleCount)
+		return current
+	}
+	probeCount := current.ProbeSuccessCount + current.ProbeFailureCount
+	current.ScoreSumMicros = ratioMicros(current.ProbeSuccessCount, probeCount)
+	return current
 }
 
 func rollupStatusPeriodsWithFence(jobName string, holder string, fencingToken int64, now int64) error {

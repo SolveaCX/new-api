@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -41,6 +45,44 @@ func TestClassifyAvailabilityOutcome(t *testing.T) {
 			require.Equal(t, tt.want, ClassifyAvailabilityOutcome(tt.success, tt.err))
 		})
 	}
+}
+
+func TestAtomicAvailabilityBucketKeepsSuccessPairedWithEligibleAcrossDrain(t *testing.T) {
+	var bucket atomicAvailabilityBucket
+	addReady := make(chan struct{})
+	continueSuccessfulAdd := make(chan struct{})
+	addDone := make(chan struct{})
+
+	go func() {
+		close(addReady)
+		<-continueSuccessfulAdd
+		bucket.add(AvailabilityEligibleSuccess)
+		close(addDone)
+	}()
+
+	// This drain occupies the interleaving point that used to split eligible
+	// from success. The packed add now linearizes wholly before or after it.
+	<-addReady
+	first := bucket.drain()
+	close(continueSuccessfulAdd)
+	<-addDone
+	second := bucket.drain()
+
+	require.LessOrEqual(t, first.success, first.eligible)
+	require.LessOrEqual(t, second.success, second.eligible)
+}
+
+func TestAtomicAvailabilityBucketRejectsInvalidOrOverflowingRestore(t *testing.T) {
+	var bucket atomicAvailabilityBucket
+	require.False(t, bucket.addCounters(availabilityCounters{eligible: 1, success: 2}))
+	require.True(t, bucket.addCounters(availabilityCounters{eligible: 1<<32 - 1, success: 1<<32 - 1}))
+	require.False(t, bucket.addCounters(availabilityCounters{eligible: 1, success: 1}))
+	require.Equal(t, availabilityCounters{eligible: 1<<32 - 1, success: 1<<32 - 1}, bucket.snapshot())
+}
+
+func TestAvailabilityCountersPackRoundTrip(t *testing.T) {
+	counters := availabilityCounters{eligible: 42, success: 39}
+	require.Equal(t, counters, unpackAvailabilityCounters(packAvailabilityCounters(counters)))
 }
 
 func TestRecordRelaySampleCountsAvailabilityOnce(t *testing.T) {
@@ -111,4 +153,81 @@ func TestAvailabilitySignalUsesFixedFiveMinuteBucketsAndFlushesOnce(t *testing.T
 	require.Len(t, summaries, 1)
 	require.EqualValues(t, 2, summaries[0].AvailabilityEligibleCount)
 	require.EqualValues(t, 1, summaries[0].AvailabilitySuccessCount)
+}
+
+func TestAvailabilityCollectionRunsWhenGenericPerfMetricsAreDisabled(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setGenericPerfMetricsEnabledForTest(t, false)
+	statusAvailabilityEnabled.Store(true)
+
+	Record(Sample{Model: "gpt-5", Group: "default", Availability: AvailabilityEligibleSuccess})
+
+	require.Equal(t, 1, syncMapEntryCount(&availabilityHotBuckets))
+	require.Zero(t, syncMapEntryCount(&hotBuckets))
+}
+
+func TestAvailabilityCollectionDoesNoWorkWhenStatusCenterIsDisabled(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	setGenericPerfMetricsEnabledForTest(t, true)
+	statusAvailabilityEnabled.Store(false)
+
+	Record(Sample{Model: "gpt-5", Group: "default", Availability: AvailabilityEligibleSuccess})
+
+	require.Zero(t, syncMapEntryCount(&availabilityHotBuckets))
+	require.Equal(t, 1, syncMapEntryCount(&hotBuckets))
+}
+
+func TestAvailabilityCleanupUsesFixedSevenDayRetentionAndBoundedCadence(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	originalDB := model.DB
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.PerfMetricAvailability{}))
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+
+	now := int64(10 * 24 * 60 * 60)
+	cutoff := now - availabilityRetentionSeconds
+	require.NoError(t, db.Create(&[]model.PerfMetricAvailability{
+		{ModelName: "old", Group: "default", BucketTs: cutoff - 1, EligibleCount: 1},
+		{ModelName: "kept", Group: "default", BucketTs: cutoff + availabilityCleanupIntervalSeconds, EligibleCount: 1},
+	}).Error)
+
+	flushCompletedAvailabilityBuckets(now)
+	require.EqualValues(t, 1, countAvailabilityRows(t, db))
+
+	require.NoError(t, db.Create(&model.PerfMetricAvailability{ModelName: "old-again", Group: "default", BucketTs: cutoff - 2, EligibleCount: 1}).Error)
+	flushCompletedAvailabilityBuckets(now + availabilityCleanupIntervalSeconds - 1)
+	require.EqualValues(t, 2, countAvailabilityRows(t, db), "cleanup must not run on every five-second flush")
+	flushCompletedAvailabilityBuckets(now + availabilityCleanupIntervalSeconds)
+	require.EqualValues(t, 1, countAvailabilityRows(t, db))
+}
+
+func setGenericPerfMetricsEnabledForTest(t *testing.T, enabled bool) {
+	t.Helper()
+	previous := perf_metrics_setting.GetSetting().Enabled
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+			"perf_metrics_setting.enabled": strconv.FormatBool(previous),
+		}))
+	})
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"perf_metrics_setting.enabled": strconv.FormatBool(enabled),
+	}))
+}
+
+func syncMapEntryCount(values *sync.Map) int {
+	count := 0
+	values.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
+}
+
+func countAvailabilityRows(t *testing.T, db *gorm.DB) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, db.Model(&model.PerfMetricAvailability{}).Count(&count).Error)
+	return count
 }

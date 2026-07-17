@@ -281,6 +281,7 @@ jobs:
       APP_ROLE: router
       # Keep in sync with deploy/gcp/envs/prod/terraform.tfvars.
       MAX_INSTANCES: 30
+      STATUS_CENTER_ENABLED: ${{ vars.STATUS_CENTER_ENABLED || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -329,7 +330,7 @@ jobs:
             PADDLE_LIVE_PRODUCT_ID PADDLE_LIVE_CURRENCY PADDLE_LIVE_UNIT_PRICE PADDLE_LIVE_MIN_TOPUP \
             PADDLE_LIVE_API_KEY PADDLE_LIVE_CLIENT_TOKEN PADDLE_LIVE_WEBHOOK_SECRET \
             GA_MEASURE_PROTOCOL_API_SECRET GA_MESSUREMENT_ID \
-            OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE \
+            OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE STATUS_CENTER_ENABLED \
             NODE_TYPE APP_ROLE; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then

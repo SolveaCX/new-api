@@ -21,6 +21,12 @@ import (
 
 const modelAvailabilityProbePrompt = "我发出'ping'命令，请你只回我'pong'"
 
+const (
+	statusModelAvailabilityProbeTargetLimit    = 2
+	statusModelAvailabilityProbeTimeout        = 15 * time.Second
+	statusModelAvailabilityProbeRotationPeriod = int64(15 * time.Minute / time.Second)
+)
+
 type modelProbeClass string
 
 const (
@@ -41,6 +47,12 @@ type modelAvailabilityProbeExecution struct {
 	Outcome                modelProbeOutcome
 	LatencyMs              int64
 	InvalidatePricingCache bool
+}
+
+type modelAvailabilityProbePolicy struct {
+	TargetLimit    int
+	RotationCursor int64
+	Timeout        time.Duration
 }
 
 type statusModelProbeAdapter struct{}
@@ -360,6 +372,18 @@ func buildModelAvailabilityReason(outcome modelProbeOutcome) string {
 }
 
 func executeModelAvailabilityProbe(ctx context.Context, modelName string, testUserID int) modelAvailabilityProbeExecution {
+	return executeModelAvailabilityProbeWithPolicy(ctx, modelName, testUserID, modelAvailabilityProbePolicy{})
+}
+
+func executeModelAvailabilityProbeWithPolicy(ctx context.Context, modelName string, testUserID int, policy modelAvailabilityProbePolicy) modelAvailabilityProbeExecution {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if policy.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, policy.Timeout)
+		defer cancel()
+	}
 	startedAt := time.Now()
 	targets, err := model.GetModelAvailabilityProbeTargets(modelName)
 	if err != nil {
@@ -375,6 +399,9 @@ func executeModelAvailabilityProbe(ctx context.Context, modelName string, testUs
 			ReasonType: "no_available_channel",
 			Message:    "no enabled channel found for model",
 		}}
+	}
+	if policy.TargetLimit > 0 {
+		targets = selectStatusModelAvailabilityProbeTargets(targets, policy.TargetLimit, policy.RotationCursor)
 	}
 
 	outcomes := make([]modelProbeOutcome, 0, len(targets))
@@ -419,6 +446,32 @@ func executeModelAvailabilityProbe(ctx context.Context, modelName string, testUs
 		Outcome:                summarizeModelProbeOutcomes(outcomes, sawUntestable),
 		LatencyMs:              time.Since(startedAt).Milliseconds(),
 		InvalidatePricingCache: true,
+	}
+}
+
+func selectStatusModelAvailabilityProbeTargets(targets []model.ModelAvailabilityProbeTarget, limit int, cursor int64) []model.ModelAvailabilityProbeTarget {
+	if len(targets) == 0 || limit <= 0 {
+		return nil
+	}
+	if limit > len(targets) {
+		limit = len(targets)
+	}
+	start := int(cursor % int64(len(targets)))
+	if start < 0 {
+		start += len(targets)
+	}
+	selected := make([]model.ModelAvailabilityProbeTarget, 0, limit)
+	for offset := 0; offset < limit; offset++ {
+		selected = append(selected, targets[(start+offset)%len(targets)])
+	}
+	return selected
+}
+
+func statusModelAvailabilityProbePolicy(component model.StatusComponent) modelAvailabilityProbePolicy {
+	return modelAvailabilityProbePolicy{
+		TargetLimit:    statusModelAvailabilityProbeTargetLimit,
+		RotationCursor: component.LastEvaluatedAt / statusModelAvailabilityProbeRotationPeriod,
+		Timeout:        statusModelAvailabilityProbeTimeout,
 	}
 }
 
@@ -473,7 +526,7 @@ func (statusModelProbeAdapter) ProbeStatusComponent(ctx context.Context, compone
 	if err != nil {
 		return service.StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "probe_user_unavailable"}
 	}
-	execution := executeModelAvailabilityProbe(ctx, component.ModelName, testUserID)
+	execution := executeModelAvailabilityProbeWithPolicy(ctx, component.ModelName, testUserID, statusModelAvailabilityProbePolicy(component))
 	outcome := service.StatusProbeOutcome{
 		DiagnosticType: execution.Outcome.ReasonType,
 		LatencyMs:      execution.LatencyMs,

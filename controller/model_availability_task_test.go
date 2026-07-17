@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -209,4 +210,26 @@ func TestSummarizeModelProbeOutcomesKeepsUntestableProviderAvailable(t *testing.
 	}, true)
 
 	require.Equal(t, modelProbeAvailable, outcome.Class)
+}
+
+func TestSelectStatusModelAvailabilityProbeTargetsLimitsAndRotates(t *testing.T) {
+	targets := []model.ModelAvailabilityProbeTarget{
+		{ModelName: "gpt-test", ChannelID: 11},
+		{ModelName: "gpt-test", ChannelID: 22},
+		{ModelName: "gpt-test", ChannelID: 33},
+		{ModelName: "gpt-test", ChannelID: 44},
+	}
+
+	require.Equal(t, []model.ModelAvailabilityProbeTarget{targets[0], targets[1]}, selectStatusModelAvailabilityProbeTargets(targets, 2, 0))
+	require.Equal(t, []model.ModelAvailabilityProbeTarget{targets[1], targets[2]}, selectStatusModelAvailabilityProbeTargets(targets, 2, 1))
+	require.Equal(t, []model.ModelAvailabilityProbeTarget{targets[3], targets[0]}, selectStatusModelAvailabilityProbeTargets(targets, 2, 3))
+	require.Equal(t, []model.ModelAvailabilityProbeTarget{targets[0], targets[1], targets[2], targets[3]}, targets)
+}
+
+func TestStatusModelAvailabilityProbePolicyUsesBoundedRotatingTargets(t *testing.T) {
+	policy := statusModelAvailabilityProbePolicy(model.StatusComponent{LastEvaluatedAt: 1_800})
+
+	require.Equal(t, 2, policy.TargetLimit)
+	require.Equal(t, 15*time.Second, policy.Timeout)
+	require.EqualValues(t, 2, policy.RotationCursor)
 }
