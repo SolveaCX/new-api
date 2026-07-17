@@ -26,6 +26,12 @@ type listModelsResponse struct {
 	Object  string             `json:"object"`
 }
 
+type availableModelsResponse struct {
+	Success bool               `json:"success"`
+	Data    []dto.OpenAIModels `json:"data"`
+	Object  string             `json:"object"`
+}
+
 func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -168,6 +174,22 @@ func decodeListModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder)
 	return ids
 }
 
+func decodeAvailableModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder) map[string]struct{} {
+	t.Helper()
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload availableModelsResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+	require.Equal(t, "list", payload.Object)
+
+	ids := make(map[string]struct{}, len(payload.Data))
+	for _, item := range payload.Data {
+		ids[item.Id] = struct{}{}
+	}
+	return ids
+}
+
 func pricingByModelName(pricings []model.Pricing) map[string]model.Pricing {
 	byName := make(map[string]model.Pricing, len(pricings))
 	for _, pricing := range pricings {
@@ -263,4 +285,52 @@ func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
 	require.NotContains(t, ids, "zz-token-tiered-empty-expr-model")
 	require.NotContains(t, ids, "zz-token-tiered-missing-expr-model")
 	require.NotContains(t, ids, "zz-token-unpriced-model")
+}
+
+func TestAvailableModelsFiltersTokenLimitsByUsableGroupChannels(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	priority := int64(0)
+	weight := uint(100)
+	require.NoError(t, db.Create(&model.Channel{
+		Id:       91001,
+		Type:     constant.ChannelTypeOpenAI,
+		Status:   common.ChannelStatusEnabled,
+		Models:   "gpt-5.5",
+		Group:    "default",
+		Priority: &priority,
+		Weight:   &weight,
+	}).Error)
+	require.NoError(t, db.Create(&model.Channel{
+		Id:       91002,
+		Type:     constant.ChannelTypeOpenAI,
+		Status:   common.ChannelStatusManuallyDisabled,
+		Models:   "seedance2",
+		Group:    "default",
+		Priority: &priority,
+		Weight:   &weight,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "gpt-5.5", ChannelId: 91001, Enabled: true, Priority: &priority, Weight: weight},
+		{Group: "default", Model: "seedance2", ChannelId: 91002, Enabled: true, Priority: &priority, Weight: weight},
+		{Group: "other", Model: "gpt-5", ChannelId: 91001, Enabled: true, Priority: &priority, Weight: weight},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/available_models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+	common.SetContextKey(ctx, constant.ContextKeyTokenGroup, "default")
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimitEnabled, true)
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimit, map[string]bool{
+		"gpt-5.5":   true,
+		"seedance2": true,
+		"gpt-5":     true,
+	})
+
+	AvailableModels(ctx)
+
+	ids := decodeAvailableModelsResponse(t, recorder)
+	require.Contains(t, ids, "gpt-5.5")
+	require.NotContains(t, ids, "seedance2")
+	require.NotContains(t, ids, "gpt-5")
 }
