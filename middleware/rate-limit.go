@@ -217,6 +217,17 @@ func userRedisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, key
 	}
 }
 
+// PaymentRateLimit returns a per-user rate limiter for checkout/payment
+// endpoints. Keyed by user ID (not IP) so proxy rotation cannot reset the
+// counter; card-testing bots open checkout sessions far faster than any
+// real user tops up.
+func PaymentRateLimit() func(c *gin.Context) {
+	if !common.PaymentRateLimitEnable {
+		return defNext
+	}
+	return userRateLimitFactory(common.PaymentRateLimitNum, common.PaymentRateLimitDuration, "PY")
+}
+
 // SearchRateLimit returns a per-user rate limiter for search endpoints.
 // Configurable via SEARCH_RATE_LIMIT_ENABLE / SEARCH_RATE_LIMIT / SEARCH_RATE_LIMIT_DURATION.
 func SearchRateLimit() func(c *gin.Context) {
