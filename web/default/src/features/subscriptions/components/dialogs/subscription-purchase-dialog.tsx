@@ -42,7 +42,10 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Dialog } from '@/components/dialog'
 import { GroupBadge } from '@/components/group-badge'
-import { isRecallPriceEligible } from '@/features/wallet/lib/recall-claim'
+import {
+  isRecallPriceEligible,
+  validateRecallClaim,
+} from '@/features/wallet/lib/recall-claim'
 import type { RecallClaimView } from '@/features/wallet/types'
 import {
   paySubscriptionStripe,
@@ -150,11 +153,23 @@ export function SubscriptionPurchaseDialog(props: Props) {
   const handlePayStripe = async () => {
     setPaying(true)
     try {
+      let validatedRecallClaim: string | undefined
+      if (recallPlanEligible && recallClaim.claim && plan.stripe_price_id) {
+        const validation = await validateRecallClaim({
+          claim: recallClaim.claim,
+          price_id: plan.stripe_price_id,
+          purchase_kind: 'subscription',
+        })
+        if (!validation.success || !validation.data) {
+          toast.error(validation.message || t('Recall offer is unavailable'))
+          return
+        }
+        validatedRecallClaim = recallClaim.claim
+      }
+
       const res = await paySubscriptionStripe({
         plan_id: plan.id,
-        ...(recallPlanEligible && recallClaim.claim
-          ? { recall_claim: recallClaim.claim }
-          : {}),
+        ...(validatedRecallClaim ? { recall_claim: validatedRecallClaim } : {}),
       })
       if (res.message === 'success' && res.data?.pay_link) {
         window.open(res.data.pay_link, '_blank')

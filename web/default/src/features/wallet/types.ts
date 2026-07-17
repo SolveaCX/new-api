@@ -239,6 +239,8 @@ export interface TopupInfo {
   stripe_min_topup: number
   /** Preset amount options */
   amount_options: number[]
+  /** Stripe Price IDs keyed by top-up amount */
+  stripe_price_ids?: Record<number, string>
   /** Discount rates by amount */
   discount: Record<number, number>
   /** Bonus amounts by selected recharge amount */

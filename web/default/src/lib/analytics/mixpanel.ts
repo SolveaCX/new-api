@@ -18,10 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { AuthUser } from '@/stores/auth-store'
 
-type MixpanelProperties = Record<
-  string,
-  string | number | boolean | undefined
->
+type MixpanelProperties = Record<string, string | number | boolean | undefined>
 
 type MixpanelClient = {
   init: (
@@ -84,7 +81,9 @@ export function shouldEnableMixpanel(): boolean {
   return Boolean(MIXPANEL_TOKEN) && getMixpanelConsentStatus() === 'granted'
 }
 
-function persistConsent(status: Exclude<MixpanelConsentStatus, 'unknown'>): void {
+function persistConsent(
+  status: Exclude<MixpanelConsentStatus, 'unknown'>
+): void {
   if (typeof window === 'undefined') return
   window.localStorage?.setItem(MIXPANEL_CONSENT_KEY, status)
 
@@ -154,15 +153,24 @@ export function trackMixpanelEvent(
   })
 }
 
-export function trackMixpanelPageView(
-  pathname: string,
-  search = ''
-): void {
+export function trackMixpanelPageView(pathname: string, search = ''): void {
+  const sanitizedSearch = sanitizeMixpanelPageSearch(search)
   trackMixpanelEvent('page_viewed', {
     path: pathname,
-    ...(search ? { search } : {}),
+    ...(sanitizedSearch ? { search: sanitizedSearch } : {}),
     product_surface: 'console',
   })
+}
+
+export function sanitizeMixpanelPageSearch(search: string): string {
+  if (!search) {
+    return ''
+  }
+
+  const searchParams = new URLSearchParams(search)
+  searchParams.delete('recall_claim')
+  const sanitizedSearch = searchParams.toString()
+  return sanitizedSearch ? `?${sanitizedSearch}` : ''
 }
 
 export function identifyMixpanelUser(user: AuthUser | null | undefined): void {
