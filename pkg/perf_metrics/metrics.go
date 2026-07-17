@@ -46,6 +46,7 @@ const seriesSchema = "dbcd0a3c01b55203"
 
 func Init() {
 	go flushLoop()
+	go flushAvailabilityLoop()
 }
 
 func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64, relayErr *types.NewAPIError) {
@@ -249,6 +250,7 @@ func Record(sample Sample) {
 	if sample.LatencyMs < 0 {
 		sample.LatencyMs = 0
 	}
+	recordAvailabilityAt(sample, time.Now().Unix())
 
 	key := bucketKey{
 		model:    sample.Model,

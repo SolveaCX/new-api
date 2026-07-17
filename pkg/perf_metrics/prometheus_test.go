@@ -22,6 +22,7 @@ import (
 func resetPerfMetricsStateForTest(t *testing.T) {
 	t.Helper()
 	hotBuckets = sync.Map{}
+	availabilityHotBuckets = sync.Map{}
 	prometheusPendingBuckets = sync.Map{}
 	prometheusChannelBuckets = sync.Map{}
 	prometheusChannelModelBuckets = sync.Map{}

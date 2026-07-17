@@ -60,6 +60,28 @@ func TestStatusJobLeaseTakeoverIncrementsFence(t *testing.T) {
 	require.EqualValues(t, 2, taken.FencingToken)
 }
 
+func TestStatusJobLeaseRenewalUsesCurrentFence(t *testing.T) {
+	setupStatusCenterStoreTest(t)
+	first, acquired, err := AcquireStatusJobLease("evaluate", "node-a", 100, 10)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	renewed, err := RenewStatusJobLease("evaluate", "node-a", first.FencingToken, 105, 10)
+	require.NoError(t, err)
+	require.True(t, renewed)
+	var lease StatusJobLease
+	require.NoError(t, DB.First(&lease, "name = ?", "evaluate").Error)
+	require.EqualValues(t, first.FencingToken, lease.FencingToken)
+	require.EqualValues(t, 115, lease.ExpiresAt)
+
+	_, acquired, err = AcquireStatusJobLease("evaluate", "node-b", 116, 10)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	renewed, err = RenewStatusJobLease("evaluate", "node-a", first.FencingToken, 116, 10)
+	require.NoError(t, err)
+	require.False(t, renewed)
+}
+
 func TestStatusComponentCommitRejectsStaleFence(t *testing.T) {
 	setupStatusCenterStoreTest(t)
 	first, acquired, err := AcquireStatusJobLease("evaluate", "node-a", 100, 10)

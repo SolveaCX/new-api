@@ -7,9 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestClassifyAvailabilityOutcome(t *testing.T) {
@@ -80,4 +83,32 @@ func TestRecordRelaySampleExcludesClientGoneFromAvailability(t *testing.T) {
 	})
 	require.Zero(t, snapshot.availabilityEligibleCount)
 	require.Zero(t, snapshot.availabilitySuccessCount)
+}
+
+func TestAvailabilitySignalUsesFixedFiveMinuteBucketsAndFlushesOnce(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	originalDB := model.DB
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.PerfMetricAvailability{}))
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+
+	recordAvailabilityAt(Sample{Model: "gpt-5", Group: "default", Availability: AvailabilityEligibleFailure}, 301)
+	recordAvailabilityAt(Sample{Model: "gpt-5", Group: "default", Availability: AvailabilityEligibleSuccess}, 599)
+
+	var bucketStarts []int64
+	availabilityHotBuckets.Range(func(key, _ any) bool {
+		bucketStarts = append(bucketStarts, key.(availabilityBucketKey).bucketTs)
+		return true
+	})
+	require.Equal(t, []int64{300}, bucketStarts)
+
+	flushCompletedAvailabilityBuckets(600)
+	flushCompletedAvailabilityBuckets(600)
+	summaries, err := model.GetPerfMetricAvailabilitySummaryAll(300, 599, []string{"default"})
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	require.EqualValues(t, 2, summaries[0].AvailabilityEligibleCount)
+	require.EqualValues(t, 1, summaries[0].AvailabilitySuccessCount)
 }

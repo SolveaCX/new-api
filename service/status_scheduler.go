@@ -29,27 +29,35 @@ const (
 	statusRouterCanaryTimeout         = 10 * time.Second
 	statusRouterCanaryPath            = "/api/status"
 	statusSchedulerLoopInterval       = time.Minute
+	statusSchedulerLeaseRenewInterval = 20 * time.Second
 	statusSchedulerProbeFreshness     = statusEvidenceMaxAgeSeconds
 	statusSchedulerCoverageFullMicros = int64(1_000_000)
+	statusAvailabilityFlushGrace      = int64(10)
 )
 
 type StatusTrafficReader func(start int64, end int64, groups []string) ([]model.PerfMetricSummary, error)
 
 type StatusModelAvailabilityWriter func(jobName string, holder string, fencingToken int64, now int64, modelName string, outcome StatusProbeOutcome) error
 
+type StatusLeaseRenewer func(name string, holder string, fencingToken int64, now int64, leaseSeconds int64) (bool, error)
+
 func readStatusTraffic(start int64, end int64, groups []string) ([]model.PerfMetricSummary, error) {
-	return model.GetPerfMetricsSummaryAll(start, end-1, groups)
+	return model.GetPerfMetricAvailabilitySummaryAll(start, end-1, groups)
 }
 
 type StatusScheduler struct {
-	Holder       string
-	Now          func() int64
-	Pricing      func() []model.Pricing
-	UsableGroups func() map[string]string
-	Traffic      StatusTrafficReader
-	RouterProbe  StatusProbeAdapter
-	ModelProbe   StatusProbeAdapter
-	Availability StatusModelAvailabilityWriter
+	Holder              string
+	Now                 func() int64
+	LeaseSeconds        int64
+	LeaseRenewInterval  time.Duration
+	RenewLease          StatusLeaseRenewer
+	Pricing             func() []model.Pricing
+	UsableGroups        func() map[string]string
+	Traffic             StatusTrafficReader
+	CompatibilityModels func() ([]string, error)
+	RouterProbe         StatusProbeAdapter
+	ModelProbe          StatusProbeAdapter
+	Availability        StatusModelAvailabilityWriter
 }
 
 type statusHTTPClient interface {
@@ -59,6 +67,15 @@ type statusHTTPClient interface {
 type statusRouterProbeAdapter struct {
 	origin string
 	client statusHTTPClient
+}
+
+type statusLeaseKeeper struct {
+	cancel   context.CancelFunc
+	stop     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
+	errMu    sync.RWMutex
+	err      error
 }
 
 var (
@@ -129,10 +146,16 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 	if scheduler == nil || strings.TrimSpace(scheduler.Holder) == "" {
 		return false, errors.New("status scheduler holder is required")
 	}
-	lease, acquired, err := model.AcquireStatusJobLease(statusSchedulerJobName, scheduler.Holder, now, statusSchedulerLeaseSeconds)
+	leaseSeconds := scheduler.statusLeaseSeconds()
+	lease, acquired, err := model.AcquireStatusJobLease(statusSchedulerJobName, scheduler.Holder, now, leaseSeconds)
 	if err != nil || !acquired {
 		return false, err
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runCtx, leaseKeeper := scheduler.startStatusLeaseKeeper(ctx, lease.FencingToken, leaseSeconds)
+	defer leaseKeeper.stopKeeping()
 
 	pricing := []model.Pricing(nil)
 	if scheduler.Pricing != nil {
@@ -145,13 +168,16 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 	if err := SyncStatusCatalog(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime(), pricing, usableGroups); err != nil {
 		return true, err
 	}
+	if err := leaseKeeper.renewalError(); err != nil {
+		return true, err
+	}
 	components, err := model.GetStatusComponents()
 	if err != nil {
 		return true, err
 	}
 
 	trafficByModel := make(map[string]model.PerfMetricSummary)
-	fiveMinuteStart, fiveMinuteEnd := statusFiveMinuteBounds(now)
+	fiveMinuteStart, fiveMinuteEnd := statusFiveMinuteBounds(now - statusAvailabilityFlushGrace)
 	if scheduler.Traffic != nil {
 		groups := sortedUsableGroupNames(usableGroups)
 		summaries, err := scheduler.Traffic(fiveMinuteStart, fiveMinuteEnd, groups)
@@ -174,6 +200,9 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 	}
 
 	for i := range components {
+		if err := leaseKeeper.renewalError(); err != nil {
+			return true, err
+		}
 		component := components[i]
 		if component.Lifecycle != model.StatusLifecycleActive {
 			continue
@@ -201,7 +230,10 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 			}
 			outcome := StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "probe_not_configured"}
 			if adapter != nil {
-				outcome = adapter.ProbeStatusComponent(ctx, component)
+				outcome = adapter.ProbeStatusComponent(runCtx, component)
+			}
+			if err := leaseKeeper.renewalError(); err != nil {
+				return true, err
 			}
 			latestProbe = model.StatusProbeResult{
 				ComponentID:     component.ID,
@@ -224,7 +256,7 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 			conflict = statusSignalsConflict(summary, latestProbe, true)
 		}
 
-		evidence := statusEvidenceForComponent(summary, latestProbe, hasProbe, probeRan, conflict, now)
+		evidence := statusEvidenceForComponent(summary, latestProbe, hasProbe, probeRan, conflict, fiveMinuteStart, now)
 		transition := EvaluateStatus(component, evidence, now)
 		component.ObservedStatus = transition.Observed
 		component.EffectiveStatus = transition.Effective
@@ -234,6 +266,7 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 		component.ConsecutiveProbeFailures = transition.ConsecutiveProbeFailures
 		component.ConsecutiveProbeSuccesses = transition.ConsecutiveProbeSuccesses
 		component.ConsecutiveTrafficRecovery = transition.ConsecutiveTrafficRecovery
+		component.LastTrafficBucketStart = transition.LastTrafficBucketStart
 		component.CoverageMicros = 0
 		if transition.ScoreMicros != nil {
 			component.CoverageMicros = statusSchedulerCoverageFullMicros
@@ -242,14 +275,20 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 			component.LastEvidenceAt = now
 		}
 		component.UpdatedAt = now
+		if err := leaseKeeper.renewalError(); err != nil {
+			return true, err
+		}
 		if err := model.CommitStatusEvaluationWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime(), &component); err != nil {
 			return true, err
 		}
 		if component.Kind == model.StatusComponentKindModel && scheduler.Availability != nil {
 			availability := trustworthyProbe
-			if summary.AvailabilityEligibleCount >= statusTrafficMinimumEligible &&
-				ratioMicros(summary.AvailabilitySuccessCount, summary.AvailabilityEligibleCount) >= statusOperationalMicros {
-				availability = &StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+			if summary.AvailabilityEligibleCount >= statusTrafficMinimumEligible {
+				if ratioMicros(summary.AvailabilitySuccessCount, summary.AvailabilityEligibleCount) >= statusOperationalMicros {
+					availability = &StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+				} else {
+					availability = &StatusProbeOutcome{DiagnosticType: "traffic_failure"}
+				}
 			}
 			if availability != nil {
 				if err := scheduler.Availability(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime(), component.ModelName, *availability); err != nil {
@@ -263,13 +302,156 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (bool,
 			return true, err
 		}
 	}
-	if err := rollupStatusPeriodsWithClock(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, now, scheduler.currentTime); err != nil {
+	if err := scheduler.runCompatibilityProbes(runCtx, leaseKeeper, components, lease.FencingToken, now); err != nil {
+		return true, err
+	}
+	if err := leaseKeeper.renewalError(); err != nil {
+		return true, err
+	}
+	if err := rollupStatusPeriodsForFiveMinuteWithClock(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, fiveMinuteStart, now, scheduler.currentTime); err != nil {
+		return true, err
+	}
+	if err := leaseKeeper.renewalError(); err != nil {
 		return true, err
 	}
 	if err := applyStatusRetentionWithFence(statusSchedulerJobName, scheduler.Holder, lease.FencingToken, scheduler.currentTime()); err != nil {
 		return true, err
 	}
 	return true, nil
+}
+
+func (scheduler *StatusScheduler) runCompatibilityProbes(ctx context.Context, leaseKeeper *statusLeaseKeeper, components []model.StatusComponent, fencingToken int64, now int64) error {
+	if scheduler.CompatibilityModels == nil || scheduler.ModelProbe == nil || scheduler.Availability == nil {
+		return nil
+	}
+	modelNames, err := scheduler.CompatibilityModels()
+	if err != nil {
+		return err
+	}
+	publicModels := make(map[string]struct{}, len(components))
+	for _, component := range components {
+		if component.Kind == model.StatusComponentKindModel && component.Lifecycle == model.StatusLifecycleActive {
+			publicModels[component.ModelName] = struct{}{}
+		}
+	}
+	unique := make(map[string]struct{}, len(modelNames))
+	compatibilityModels := make([]string, 0, len(modelNames))
+	for _, modelName := range modelNames {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" {
+			continue
+		}
+		if _, public := publicModels[modelName]; public {
+			continue
+		}
+		if _, exists := unique[modelName]; exists {
+			continue
+		}
+		unique[modelName] = struct{}{}
+		compatibilityModels = append(compatibilityModels, modelName)
+	}
+	if len(compatibilityModels) == 0 {
+		return nil
+	}
+	sort.Strings(compatibilityModels)
+	states, err := model.GetModelAvailabilityStateMap(compatibilityModels)
+	if err != nil {
+		return err
+	}
+	for _, modelName := range compatibilityModels {
+		if err := leaseKeeper.renewalError(); err != nil {
+			return err
+		}
+		if state, ok := states[modelName]; ok && now-state.LastCheckedAt < statusIdleProbeIntervalSeconds {
+			continue
+		}
+		outcome := scheduler.ModelProbe.ProbeStatusComponent(ctx, model.StatusComponent{
+			Kind:      model.StatusComponentKindModel,
+			ModelName: modelName,
+			Lifecycle: model.StatusLifecycleActive,
+		})
+		if err := leaseKeeper.renewalError(); err != nil {
+			return err
+		}
+		if outcome.MonitoringFault {
+			continue
+		}
+		if err := scheduler.Availability(statusSchedulerJobName, scheduler.Holder, fencingToken, scheduler.currentTime(), modelName, outcome); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (scheduler *StatusScheduler) statusLeaseSeconds() int64 {
+	if scheduler.LeaseSeconds > 0 {
+		return scheduler.LeaseSeconds
+	}
+	return statusSchedulerLeaseSeconds
+}
+
+func (scheduler *StatusScheduler) statusLeaseRenewInterval() time.Duration {
+	if scheduler.LeaseRenewInterval > 0 {
+		return scheduler.LeaseRenewInterval
+	}
+	return statusSchedulerLeaseRenewInterval
+}
+
+func (scheduler *StatusScheduler) statusLeaseRenewer() StatusLeaseRenewer {
+	if scheduler.RenewLease != nil {
+		return scheduler.RenewLease
+	}
+	return model.RenewStatusJobLease
+}
+
+func (scheduler *StatusScheduler) startStatusLeaseKeeper(ctx context.Context, fencingToken int64, leaseSeconds int64) (context.Context, *statusLeaseKeeper) {
+	runCtx, cancel := context.WithCancel(ctx)
+	keeper := &statusLeaseKeeper{
+		cancel: cancel,
+		stop:   make(chan struct{}),
+		done:   make(chan struct{}),
+	}
+	go func() {
+		defer close(keeper.done)
+		ticker := time.NewTicker(scheduler.statusLeaseRenewInterval())
+		defer ticker.Stop()
+		for {
+			select {
+			case <-keeper.stop:
+				return
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				renewed, err := scheduler.statusLeaseRenewer()(statusSchedulerJobName, scheduler.Holder, fencingToken, scheduler.currentTime(), leaseSeconds)
+				if err != nil || !renewed {
+					keeper.errMu.Lock()
+					if err != nil {
+						keeper.err = fmt.Errorf("status job lease renewal lost: %w", err)
+					} else {
+						keeper.err = errors.New("status job lease renewal lost")
+					}
+					keeper.errMu.Unlock()
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return runCtx, keeper
+}
+
+func (keeper *statusLeaseKeeper) renewalError() error {
+	keeper.errMu.RLock()
+	defer keeper.errMu.RUnlock()
+	return keeper.err
+}
+
+func (keeper *statusLeaseKeeper) stopKeeping() {
+	keeper.stopOnce.Do(func() {
+		close(keeper.stop)
+		keeper.cancel()
+	})
+	<-keeper.done
 }
 
 func persistStatusProbeWithFence(jobName string, holder string, fencingToken int64, now int64, result *model.StatusProbeResult) error {
@@ -299,10 +481,15 @@ func rollupStatusPeriodsWithFence(jobName string, holder string, fencingToken in
 }
 
 func rollupStatusPeriodsWithClock(jobName string, holder string, fencingToken int64, now int64, currentTime func() int64) error {
+	fiveMinuteStart, _ := statusFiveMinuteBounds(now - statusAvailabilityFlushGrace)
+	return rollupStatusPeriodsForFiveMinuteWithClock(jobName, holder, fencingToken, fiveMinuteStart, now, currentTime)
+}
+
+func rollupStatusPeriodsForFiveMinuteWithClock(jobName string, holder string, fencingToken int64, fiveMinuteStart int64, now int64, currentTime func() int64) error {
 	if err := model.ValidateStatusJobFence(jobName, holder, fencingToken, currentTime()); err != nil {
 		return err
 	}
-	hourStart := ((now - 1) / statusHourSeconds) * statusHourSeconds
+	hourStart := (fiveMinuteStart / statusHourSeconds) * statusHourSeconds
 	fiveMinutePeriods, err := model.GetStatusPeriodsInRange(model.StatusGranularityFiveMinutes, hourStart, hourStart+statusHourSeconds)
 	if err != nil {
 		return err
@@ -314,7 +501,7 @@ func rollupStatusPeriodsWithClock(jobName string, holder string, fencingToken in
 		}
 	}
 
-	dayStart := ((now - 1) / statusDaySeconds) * statusDaySeconds
+	dayStart := (fiveMinuteStart / statusDaySeconds) * statusDaySeconds
 	hourPeriods, err := model.GetStatusPeriodsInRange(model.StatusGranularityHour, dayStart, dayStart+statusDaySeconds)
 	if err != nil {
 		return err
@@ -346,12 +533,13 @@ func applyStatusRetentionWithFence(jobName string, holder string, fencingToken i
 	)
 }
 
-func statusEvidenceForComponent(summary model.PerfMetricSummary, probe model.StatusProbeResult, hasProbe bool, consumeProbe bool, conflict bool, now int64) StatusEvidence {
+func statusEvidenceForComponent(summary model.PerfMetricSummary, probe model.StatusProbeResult, hasProbe bool, consumeProbe bool, conflict bool, trafficBucketStart int64, now int64) StatusEvidence {
 	if summary.AvailabilityEligibleCount >= statusTrafficMinimumEligible {
 		return StatusEvidence{
-			Eligible:          summary.AvailabilityEligibleCount,
-			Success:           summary.AvailabilitySuccessCount,
-			LastTrustworthyAt: now,
+			Eligible:           summary.AvailabilityEligibleCount,
+			Success:            summary.AvailabilitySuccessCount,
+			LastTrustworthyAt:  now,
+			TrafficBucketStart: trafficBucketStart,
 		}
 	}
 	if !hasProbe || now-probe.CreatedAt >= statusSchedulerProbeFreshness {
@@ -497,13 +685,14 @@ func validateStatusRouterOrigin(origin string) (string, error) {
 
 func newStatusCenterScheduler(routerOrigin string) *StatusScheduler {
 	return &StatusScheduler{
-		Holder:       statusSchedulerHolder(),
-		Pricing:      GetWebsiteVisiblePricing,
-		UsableGroups: WebsitePublicUsableGroups,
-		Traffic:      readStatusTraffic,
-		RouterProbe:  NewStatusRouterProbeAdapter(routerOrigin, GetHttpClient()),
-		ModelProbe:   configuredStatusModelProbe(),
-		Availability: configuredStatusModelAvailabilityWriter(),
+		Holder:              statusSchedulerHolder(),
+		Pricing:             GetWebsiteVisiblePricing,
+		UsableGroups:        WebsitePublicUsableGroups,
+		Traffic:             readStatusTraffic,
+		CompatibilityModels: model.GetModelAvailabilityProbeModelNames,
+		RouterProbe:         NewStatusRouterProbeAdapter(routerOrigin, GetHttpClient()),
+		ModelProbe:          configuredStatusModelProbe(),
+		Availability:        configuredStatusModelAvailabilityWriter(),
 	}
 }
 

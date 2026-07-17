@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -149,6 +151,39 @@ func TestStatusSchedulerProjectsHighTrafficModelSuccess(t *testing.T) {
 	require.Equal(t, []projection{{modelName: "gpt-test", outcome: StatusProbeOutcome{Success: true, DiagnosticType: "ok"}}}, projections)
 }
 
+func TestStatusSchedulerProjectsHighTrafficModelFailureAsTemporaryEvidence(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	currentTime := int64(1_000)
+	var projected []StatusProbeOutcome
+	scheduler := &StatusScheduler{
+		Holder: "node-a",
+		Now:    func() int64 { return currentTime },
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-test", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic: func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) {
+			return []model.PerfMetricSummary{{ModelName: "gpt-test", AvailabilityEligibleCount: 20, AvailabilitySuccessCount: 18}}, nil
+		},
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			t.Fatal("high-traffic models must not run a synthetic probe")
+			return StatusProbeOutcome{}
+		}),
+		Availability: func(_ string, _ string, _ int64, _ int64, _ string, outcome StatusProbeOutcome) error {
+			projected = append(projected, outcome)
+			return nil
+		},
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), currentTime)
+	require.NoError(t, err)
+	require.True(t, ran)
+	require.Equal(t, []StatusProbeOutcome{{DiagnosticType: "traffic_failure"}}, projected)
+}
+
 func TestStatusSchedulerDoesNotProjectMonitoringFaults(t *testing.T) {
 	setupStatusServiceTestDB(t)
 	currentTime := int64(1_000)
@@ -214,6 +249,62 @@ func TestStatusSchedulerProjectsTrustworthyFailureAfterPersistingProbe(t *testin
 	require.Equal(t, []StatusProbeOutcome{{DiagnosticType: "official_model_unsupported", TargetRef: "channel:7"}}, projected)
 }
 
+func TestStatusSchedulerCompatibilityProbesNonPublicModelsWithoutDuplicatingPublicModels(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.ModelAvailabilityState{}))
+	currentTime := int64(1_000)
+	probeCalls := make(map[string]int)
+	scheduler := &StatusScheduler{
+		Holder: "node-a",
+		Now:    func() int64 { return currentTime },
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-public", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		CompatibilityModels: func() ([]string, error) {
+			return []string{"gpt-private", "gpt-public", "gpt-private"}, nil
+		},
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, component model.StatusComponent) StatusProbeOutcome {
+			probeCalls[component.ModelName]++
+			return StatusProbeOutcome{DiagnosticType: "official_model_unsupported"}
+		}),
+		Availability: func(jobName string, holder string, fencingToken int64, now int64, modelName string, outcome StatusProbeOutcome) error {
+			status := model.ModelAvailabilityOfficialUnsupported
+			if outcome.Success {
+				status = model.ModelAvailabilityAvailable
+			}
+			return model.SaveModelAvailabilityStateWithFence(jobName, holder, fencingToken, now, &model.ModelAvailabilityState{
+				ModelName:     modelName,
+				Status:        status,
+				ReasonType:    outcome.DiagnosticType,
+				LastCheckedAt: now,
+			})
+		},
+	}
+
+	for _, now := range []int64{1_000, 1_060} {
+		currentTime = now
+		ran, err := scheduler.RunOnce(context.Background(), now)
+		require.NoError(t, err)
+		require.True(t, ran)
+	}
+
+	models := make([]string, 0, len(probeCalls))
+	for modelName := range probeCalls {
+		models = append(models, modelName)
+	}
+	sort.Strings(models)
+	require.Equal(t, []string{"gpt-private", "gpt-public"}, models)
+	require.Equal(t, map[string]int{"gpt-private": 1, "gpt-public": 1}, probeCalls)
+	privateState, err := model.GetModelAvailabilityState("gpt-private")
+	require.NoError(t, err)
+	require.Equal(t, model.ModelAvailabilityOfficialUnsupported, privateState.Status)
+}
+
 func TestStatusSchedulerSensitiveWritesRejectStaleFence(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	first := acquireStatusServiceLease(t, statusSchedulerJobName, "node-a", 100)
@@ -277,6 +368,77 @@ func TestStatusSchedulerLeaseExpiryRejectsLateWritesWithoutTakeover(t *testing.T
 	require.EqualValues(t, 1, lease.FencingToken)
 }
 
+func TestStatusSchedulerRenewsLeaseAcrossSlowProbesAndReachesLaterModelsAndRollups(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	currentTime := int64(10_000)
+	var renewalTime atomic.Int64
+	renewalTime.Store(currentTime)
+	var laterProbeCalls atomic.Int64
+	scheduler := &StatusScheduler{
+		Holder:             "node-a",
+		Now:                func() int64 { return currentTime },
+		LeaseSeconds:       2,
+		LeaseRenewInterval: 10 * time.Millisecond,
+		RenewLease: func(name string, holder string, fencingToken int64, _ int64, leaseSeconds int64) (bool, error) {
+			return model.RenewStatusJobLease(name, holder, fencingToken, renewalTime.Add(1), leaseSeconds)
+		},
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{
+				{ModelName: "a-slow", EnableGroup: []string{"public"}},
+				{ModelName: "z-later", EnableGroup: []string{"public"}},
+			}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+		ModelProbe: StatusProbeAdapterFunc(func(_ context.Context, component model.StatusComponent) StatusProbeOutcome {
+			if component.ModelName == "a-slow" {
+				time.Sleep(80 * time.Millisecond)
+			}
+			if component.ModelName == "z-later" {
+				laterProbeCalls.Add(1)
+			}
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), currentTime)
+	require.NoError(t, err)
+	require.True(t, ran)
+	require.EqualValues(t, 1, laterProbeCalls.Load())
+	require.EqualValues(t, 3, countStatusPeriodsByGranularity(t, db, model.StatusGranularityFiveMinutes))
+	require.EqualValues(t, 3, countStatusPeriodsByGranularity(t, db, model.StatusGranularityHour))
+	require.EqualValues(t, 3, countStatusPeriodsByGranularity(t, db, model.StatusGranularityDay))
+}
+
+func TestStatusSchedulerLostLeaseRenewalStopsProbeWrites(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	scheduler := &StatusScheduler{
+		Holder:             "node-a",
+		Now:                func() int64 { return 10_000 },
+		LeaseSeconds:       2,
+		LeaseRenewInterval: 10 * time.Millisecond,
+		RenewLease: func(_ string, _ string, _ int64, _ int64, _ int64) (bool, error) {
+			return false, nil
+		},
+		Pricing:      func() []model.Pricing { return nil },
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(ctx context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			<-ctx.Done()
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	ran, err := scheduler.RunOnce(context.Background(), 10_000)
+	require.True(t, ran)
+	require.ErrorContains(t, err, "status job lease renewal lost")
+	require.EqualValues(t, 0, countRows(t, db, &model.StatusProbeResult{}))
+	require.EqualValues(t, 0, countRows(t, db, &model.StatusPeriod{}))
+}
+
 func TestStatusSchedulerBucketUsesAlignedWindowAndKeepsWorstStatus(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	currentTime := int64(610)
@@ -329,19 +491,68 @@ func TestStatusSchedulerBucketUsesAlignedWindowAndKeepsWorstStatus(t *testing.T)
 	})
 }
 
+func TestStatusSchedulerConsumesTrafficRecoveryBucketOnlyOnce(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	require.NoError(t, db.Create(&model.StatusComponent{
+		ComponentKey:    "model:gpt-test",
+		Slug:            "model-gpt-test",
+		Kind:            model.StatusComponentKindModel,
+		ModelName:       "gpt-test",
+		DisplayName:     "gpt-test",
+		Lifecycle:       model.StatusLifecycleActive,
+		ObservedStatus:  model.StatusDegraded,
+		EffectiveStatus: model.StatusDegraded,
+		Version:         1,
+	}).Error)
+	currentTime := int64(610)
+	scheduler := &StatusScheduler{
+		Holder: "node-a",
+		Now:    func() int64 { return currentTime },
+		Pricing: func() []model.Pricing {
+			return []model.Pricing{{ModelName: "gpt-test", EnableGroup: []string{"public"}}}
+		},
+		UsableGroups: func() map[string]string { return map[string]string{"public": "Public"} },
+		Traffic: func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) {
+			return []model.PerfMetricSummary{{ModelName: "gpt-test", AvailabilityEligibleCount: 100, AvailabilitySuccessCount: 100}}, nil
+		},
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	for _, now := range []int64{610, 670, 730} {
+		currentTime = now
+		ran, err := scheduler.RunOnce(context.Background(), now)
+		require.NoError(t, err)
+		require.True(t, ran)
+	}
+
+	var component model.StatusComponent
+	require.NoError(t, db.Where("model_name = ?", "gpt-test").First(&component).Error)
+	require.Equal(t, model.StatusDegraded, component.ObservedStatus)
+	require.EqualValues(t, 1, component.ConsecutiveTrafficRecovery)
+
+	currentTime = 910
+	ran, err := scheduler.RunOnce(context.Background(), currentTime)
+	require.NoError(t, err)
+	require.True(t, ran)
+	require.NoError(t, db.Where("model_name = ?", "gpt-test").First(&component).Error)
+	require.Equal(t, model.StatusOperational, component.ObservedStatus)
+	require.EqualValues(t, 2, component.ConsecutiveTrafficRecovery)
+}
+
 func TestStatusSchedulerBucketReaderExcludesEndBoundary(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.PerfMetric{}))
-	require.NoError(t, db.Create(&[]model.PerfMetric{
-		{ModelName: "gpt-test", Group: "public", BucketTs: 300, RequestCount: 10, AvailabilityEligibleCount: 10, AvailabilitySuccessCount: 10},
-		{ModelName: "gpt-test", Group: "public", BucketTs: 599, RequestCount: 20, AvailabilityEligibleCount: 20, AvailabilitySuccessCount: 19},
-		{ModelName: "gpt-test", Group: "public", BucketTs: 600, RequestCount: 100, AvailabilityEligibleCount: 100},
+	require.NoError(t, db.AutoMigrate(&model.PerfMetricAvailability{}))
+	require.NoError(t, db.Create(&[]model.PerfMetricAvailability{
+		{ModelName: "gpt-test", Group: "public", BucketTs: 300, EligibleCount: 10, SuccessCount: 10},
+		{ModelName: "gpt-test", Group: "public", BucketTs: 599, EligibleCount: 20, SuccessCount: 19},
+		{ModelName: "gpt-test", Group: "public", BucketTs: 600, EligibleCount: 100},
 	}).Error)
 
 	summaries, err := readStatusTraffic(300, 600, []string{"public"})
 	require.NoError(t, err)
 	require.Len(t, summaries, 1)
-	require.EqualValues(t, 30, summaries[0].RequestCount)
 	require.EqualValues(t, 30, summaries[0].AvailabilityEligibleCount)
 	require.EqualValues(t, 29, summaries[0].AvailabilitySuccessCount)
 }
@@ -369,6 +580,34 @@ func TestStatusSchedulerRollupsAreIdempotent(t *testing.T) {
 		require.EqualValues(t, 900_000, period.ScoreSumMicros)
 		require.Equal(t, model.StatusDegraded, period.WorstStatus)
 	}
+}
+
+func TestStatusSchedulerRollupFinalFiveMinutePeriodIntoOwningDay(t *testing.T) {
+	db := setupStatusServiceTestDB(t)
+	now := int64(24*60*60 + 70)
+	lease := acquireStatusServiceLease(t, statusSchedulerJobName, "node-a", now)
+	component := model.StatusComponent{ComponentKey: "router", Slug: "router", Kind: model.StatusComponentKindRouter, DisplayName: "Router", Lifecycle: model.StatusLifecycleActive, Version: 1}
+	require.NoError(t, db.Create(&component).Error)
+
+	fiveMinuteStart := int64(23*60*60 + 55*60)
+	require.NoError(t, writeStatusPeriodWithFence(statusSchedulerJobName, "node-a", lease.FencingToken, now, &model.StatusPeriod{
+		ComponentID:      component.ID,
+		Granularity:      model.StatusGranularityFiveMinutes,
+		PeriodStart:      fiveMinuteStart,
+		ScoreSumMicros:   900_000,
+		KnownBucketCount: 1,
+		WorstStatus:      model.StatusDegraded,
+	}))
+
+	require.NoError(t, rollupStatusPeriodsWithFence(statusSchedulerJobName, "node-a", lease.FencingToken, now))
+
+	var hour model.StatusPeriod
+	require.NoError(t, db.Where("component_id = ? AND granularity = ?", component.ID, model.StatusGranularityHour).First(&hour).Error)
+	require.EqualValues(t, 23*60*60, hour.PeriodStart)
+	var day model.StatusPeriod
+	require.NoError(t, db.Where("component_id = ? AND granularity = ?", component.ID, model.StatusGranularityDay).First(&day).Error)
+	require.EqualValues(t, 0, day.PeriodStart)
+	require.EqualValues(t, 900_000, day.ScoreSumMicros)
 }
 
 func TestStatusSchedulerRetentionKeepsNinetyDayAggregates(t *testing.T) {

@@ -51,6 +51,22 @@ func AcquireStatusJobLease(name string, holder string, now int64, leaseSeconds i
 	return current, result.RowsAffected == 1, nil
 }
 
+func RenewStatusJobLease(name string, holder string, fencingToken int64, now int64, leaseSeconds int64) (bool, error) {
+	if DB == nil {
+		return false, errors.New("database is not initialized")
+	}
+	if name == "" || holder == "" || fencingToken <= 0 || leaseSeconds <= 0 {
+		return false, errors.New("invalid status job lease renewal")
+	}
+	result := DB.Model(&StatusJobLease{}).
+		Where("name = ? AND holder = ? AND fencing_token = ? AND expires_at > ?", name, holder, fencingToken, now).
+		Updates(map[string]any{
+			"expires_at": now + leaseSeconds,
+			"updated_at": now,
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
 func CommitStatusComponentWithFence(jobName string, holder string, fencingToken int64, now int64, component *StatusComponent) error {
 	if component == nil {
 		return errors.New("status component is nil")
@@ -86,6 +102,7 @@ func CommitStatusEvaluationWithFence(jobName string, holder string, fencingToken
 			"consecutive_probe_failures":   component.ConsecutiveProbeFailures,
 			"consecutive_probe_successes":  component.ConsecutiveProbeSuccesses,
 			"consecutive_traffic_recovery": component.ConsecutiveTrafficRecovery,
+			"last_traffic_bucket_start":    component.LastTrafficBucketStart,
 			"updated_at":                   component.UpdatedAt,
 		}).Error
 	})
