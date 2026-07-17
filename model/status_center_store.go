@@ -13,6 +13,7 @@ import (
 
 var (
 	ErrStatusVersionConflict               = errors.New("status object version conflict")
+	ErrStatusSubscriberAlreadyActive       = errors.New("status subscriber is already active")
 	ErrStatusMaintenanceNotPublished       = errors.New("status maintenance is not published")
 	ErrStatusMaintenanceOverlap            = errors.New("status maintenance overlaps an existing window")
 	ErrStatusMaintenanceRequiresTransition = errors.New("active status maintenance must be resolved through its transition")
@@ -75,6 +76,314 @@ type StatusOverrideMutation struct {
 	ActorID         int
 	Now             int64
 	Audit           StatusAuditMutation
+}
+
+type StatusSubscriberMutation struct {
+	Subscriber   StatusSubscriber
+	ComponentIDs []int64
+}
+
+type StatusDeliveryResultMutation struct {
+	ID              int64
+	LockToken       string
+	ExpectedVersion int64
+	Status          string
+	NextAttemptAt   int64
+	LastError       string
+	Now             int64
+}
+
+func CreateOrRefreshStatusSubscriber(input StatusSubscriberMutation) (StatusSubscriber, bool, error) {
+	if DB == nil {
+		return StatusSubscriber{}, false, errors.New("database is not initialized")
+	}
+	if input.Subscriber.Kind == "" || input.Subscriber.IdentityHash == "" || input.Subscriber.Status != StatusSubscriberPending ||
+		input.Subscriber.ManageTokenHash == "" || input.Subscriber.CreatedAt <= 0 || input.Subscriber.UpdatedAt <= 0 {
+		return StatusSubscriber{}, false, errors.New("invalid status subscriber")
+	}
+	componentIDs, err := normalizeStatusSubscriberComponentIDs(input.ComponentIDs)
+	if err != nil {
+		return StatusSubscriber{}, false, err
+	}
+
+	var subscriber StatusSubscriber
+	shouldNotify := false
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		candidate := input.Subscriber
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			subscriber = candidate
+			shouldNotify = true
+		} else {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("identity_hash = ?", input.Subscriber.IdentityHash).
+				First(&subscriber).Error; err != nil {
+				return err
+			}
+			if subscriber.Status == StatusSubscriberActive || subscriber.Status == StatusSubscriberSuspended {
+				return ErrStatusSubscriberAlreadyActive
+			}
+			updates := map[string]any{
+				"display_address":          input.Subscriber.DisplayAddress,
+				"encrypted_endpoint":       input.Subscriber.EncryptedEndpoint,
+				"encrypted_signing_secret": input.Subscriber.EncryptedSigningSecret,
+				"status":                   StatusSubscriberPending,
+				"verification_token_hash":  input.Subscriber.VerificationTokenHash,
+				"verification_expires_at":  input.Subscriber.VerificationExpiresAt,
+				"manage_token_hash":        input.Subscriber.ManageTokenHash,
+				"failure_count":            0,
+				"suspended_at":             0,
+				"updated_at":               input.Subscriber.UpdatedAt,
+			}
+			if err := tx.Model(&StatusSubscriber{}).Where("id = ?", subscriber.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+			if err := tx.First(&subscriber, subscriber.ID).Error; err != nil {
+				return err
+			}
+			shouldNotify = true
+		}
+		if err := tx.Where("subscriber_id = ?", subscriber.ID).Delete(&StatusSubscriberComponent{}).Error; err != nil {
+			return err
+		}
+		for _, componentID := range componentIDs {
+			if err := tx.Create(&StatusSubscriberComponent{SubscriberID: subscriber.ID, ComponentID: componentID}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return subscriber, shouldNotify, err
+}
+
+func ActivateStatusSubscriberChallenge(id int64, now int64) (bool, error) {
+	if DB == nil {
+		return false, errors.New("database is not initialized")
+	}
+	if id <= 0 || now <= 0 {
+		return false, errors.New("invalid status subscriber activation")
+	}
+	result := DB.Model(&StatusSubscriber{}).
+		Where("id = ? AND status = ?", id, StatusSubscriberPending).
+		Updates(map[string]any{
+			"status":                  StatusSubscriberActive,
+			"verification_token_hash": "",
+			"verification_expires_at": 0,
+			"updated_at":              now,
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
+func ConsumeStatusSubscriberVerification(tokenHash string, now int64) (bool, error) {
+	if DB == nil {
+		return false, errors.New("database is not initialized")
+	}
+	if tokenHash == "" || now <= 0 {
+		return false, nil
+	}
+	result := DB.Model(&StatusSubscriber{}).
+		Where("verification_token_hash = ? AND verification_expires_at >= ? AND status = ?", tokenHash, now, StatusSubscriberPending).
+		Updates(map[string]any{
+			"status":                  StatusSubscriberActive,
+			"verification_token_hash": "",
+			"verification_expires_at": 0,
+			"updated_at":              now,
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
+func GetStatusSubscriberByManageTokenHash(tokenHash string) (StatusSubscriber, bool, error) {
+	if DB == nil {
+		return StatusSubscriber{}, false, errors.New("database is not initialized")
+	}
+	var subscriber StatusSubscriber
+	err := DB.Where("manage_token_hash = ?", tokenHash).First(&subscriber).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return StatusSubscriber{}, false, nil
+	}
+	return subscriber, err == nil, err
+}
+
+func UnsubscribeStatusSubscriber(tokenHash string, now int64) (bool, error) {
+	if DB == nil {
+		return false, errors.New("database is not initialized")
+	}
+	if tokenHash == "" || now <= 0 {
+		return false, nil
+	}
+	result := DB.Model(&StatusSubscriber{}).
+		Where("manage_token_hash = ? AND status <> ?", tokenHash, StatusSubscriberUnsubscribed).
+		Updates(map[string]any{"status": StatusSubscriberUnsubscribed, "updated_at": now})
+	return result.RowsAffected == 1, result.Error
+}
+
+func GetStatusSubscriber(id int64) (StatusSubscriber, error) {
+	if DB == nil {
+		return StatusSubscriber{}, errors.New("database is not initialized")
+	}
+	var subscriber StatusSubscriber
+	err := DB.First(&subscriber, id).Error
+	return subscriber, err
+}
+
+func RecordStatusSubscriberDeliveryResult(id int64, delivered bool, permanentFailure bool, suspendThreshold int64, now int64) error {
+	if DB == nil {
+		return errors.New("database is not initialized")
+	}
+	if id <= 0 {
+		return errors.New("invalid status subscriber delivery result")
+	}
+	if delivered {
+		return DB.Model(&StatusSubscriber{}).Where("id = ?", id).Updates(map[string]any{
+			"failure_count": 0,
+			"updated_at":    now,
+		}).Error
+	}
+	if !permanentFailure {
+		return nil
+	}
+	if suspendThreshold <= 0 {
+		suspendThreshold = 1
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&StatusSubscriber{}).Where("id = ?", id).Updates(map[string]any{
+			"failure_count": gorm.Expr("failure_count + 1"),
+			"updated_at":    now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&StatusSubscriber{}).
+			Where("id = ? AND failure_count >= ? AND status = ?", id, suspendThreshold, StatusSubscriberActive).
+			Updates(map[string]any{"status": StatusSubscriberSuspended, "suspended_at": now, "updated_at": now}).Error
+	})
+}
+
+func UpsertStatusSetting(setting StatusSetting) (StatusSetting, error) {
+	if DB == nil {
+		return StatusSetting{}, errors.New("database is not initialized")
+	}
+	if setting.Key == "" || setting.UpdatedAt <= 0 {
+		return StatusSetting{}, errors.New("invalid status setting")
+	}
+	if setting.Version <= 0 {
+		setting.Version = 1
+	}
+	err := DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"value":      setting.Value,
+			"sensitive":  setting.Sensitive,
+			"version":    gorm.Expr("version + 1"),
+			"updated_by": setting.UpdatedBy,
+			"updated_at": setting.UpdatedAt,
+		}),
+	}).Create(&setting).Error
+	if err != nil {
+		return StatusSetting{}, err
+	}
+	err = DB.First(&setting, "key = ?", setting.Key).Error
+	return setting, err
+}
+
+func GetStatusSetting(key string) (StatusSetting, bool, error) {
+	if DB == nil {
+		return StatusSetting{}, false, errors.New("database is not initialized")
+	}
+	var setting StatusSetting
+	err := DB.First(&setting, "key = ?", key).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return StatusSetting{}, false, nil
+	}
+	return setting, err == nil, err
+}
+
+func ClaimStatusDeliveryOutbox(worker string, now int64, leaseSeconds int64, limit int) ([]StatusDeliveryOutbox, error) {
+	if DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
+	if worker == "" || now <= 0 || leaseSeconds <= 0 || limit <= 0 {
+		return nil, errors.New("invalid status delivery claim")
+	}
+	var candidates []StatusDeliveryOutbox
+	err := DB.Where(
+		"(status = ? AND next_attempt_at <= ?) OR (status = ? AND locked_until <= ?)",
+		StatusDeliveryPending, now, StatusDeliveryProcessing, now,
+	).Order("next_attempt_at ASC, id ASC").Limit(limit * 4).Find(&candidates).Error
+	if err != nil {
+		return nil, err
+	}
+	claimed := make([]StatusDeliveryOutbox, 0, limit)
+	for _, candidate := range candidates {
+		if len(claimed) >= limit {
+			break
+		}
+		lockToken := common.GetUUID()
+		result := DB.Model(&StatusDeliveryOutbox{}).
+			Where("id = ? AND version = ? AND ((status = ? AND next_attempt_at <= ?) OR (status = ? AND locked_until <= ?))",
+				candidate.ID, candidate.Version, StatusDeliveryPending, now, StatusDeliveryProcessing, now).
+			Updates(map[string]any{
+				"status":       StatusDeliveryProcessing,
+				"lock_token":   lockToken,
+				"locked_until": now + leaseSeconds,
+				"version":      gorm.Expr("version + 1"),
+				"updated_at":   now,
+			})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			continue
+		}
+		var delivery StatusDeliveryOutbox
+		if err := DB.First(&delivery, candidate.ID).Error; err != nil {
+			return nil, err
+		}
+		claimed = append(claimed, delivery)
+	}
+	return claimed, nil
+}
+
+func CompleteStatusDeliveryOutbox(input StatusDeliveryResultMutation) (bool, error) {
+	if DB == nil {
+		return false, errors.New("database is not initialized")
+	}
+	if input.ID <= 0 || input.LockToken == "" || input.ExpectedVersion <= 0 || input.Now <= 0 ||
+		(input.Status != StatusDeliveryPending && input.Status != StatusDeliveryDelivered && input.Status != StatusDeliveryDead) {
+		return false, errors.New("invalid status delivery result")
+	}
+	result := DB.Model(&StatusDeliveryOutbox{}).
+		Where("id = ? AND status = ? AND lock_token = ? AND version = ?", input.ID, StatusDeliveryProcessing, input.LockToken, input.ExpectedVersion).
+		Updates(map[string]any{
+			"status":          input.Status,
+			"lock_token":      "",
+			"locked_until":    0,
+			"attempts":        gorm.Expr("attempts + 1"),
+			"next_attempt_at": input.NextAttemptAt,
+			"last_error":      input.LastError,
+			"version":         gorm.Expr("version + 1"),
+			"updated_at":      input.Now,
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
+func normalizeStatusSubscriberComponentIDs(componentIDs []int64) ([]int64, error) {
+	unique := make(map[int64]struct{}, len(componentIDs))
+	result := make([]int64, 0, len(componentIDs))
+	for _, componentID := range componentIDs {
+		if componentID <= 0 {
+			return nil, errors.New("invalid status subscriber component")
+		}
+		if _, exists := unique[componentID]; exists {
+			continue
+		}
+		unique[componentID] = struct{}{}
+		result = append(result, componentID)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result, nil
 }
 
 func AcquireStatusJobLease(name string, holder string, now int64, leaseSeconds int64) (StatusJobLease, bool, error) {

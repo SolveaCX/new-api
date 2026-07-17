@@ -81,10 +81,11 @@ type statusLeaseKeeper struct {
 }
 
 var (
-	statusCenterTaskOnce   = &sync.Once{}
-	statusCenterTaskLaunch = launchStatusCenterTasks
-	statusModelProbeMu     sync.RWMutex
-	statusModelProbe       StatusProbeAdapter = StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+	statusCenterTaskOnce     = &sync.Once{}
+	statusCenterTaskLaunch   = launchStatusCenterTasks
+	statusDeliveryTaskLaunch = launchStatusDeliveryTasks
+	statusModelProbeMu       sync.RWMutex
+	statusModelProbe         StatusProbeAdapter = StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
 		return StatusProbeOutcome{MonitoringFault: true, DiagnosticType: "model_probe_not_configured"}
 	})
 	statusAvailabilityMu     sync.RWMutex
@@ -779,8 +780,37 @@ func StartStatusCenterTasks() bool {
 	statusCenterTaskOnce.Do(func() {
 		started = true
 		statusCenterTaskLaunch(scheduler)
+		if common.GetEnvOrDefaultBool("STATUS_CENTER_NOTIFICATIONS_ENABLED", false) {
+			keyring, keyringErr := LoadStatusSecretKeyringFromEnvironment()
+			if keyringErr != nil {
+				common.SysError("status notification keyring is invalid; webhook and Discord delivery disabled: " + keyringErr.Error())
+				keyring, _ = ParseStatusSecretKeyring("", "")
+			}
+			statusDeliveryTaskLaunch(StatusDeliveryWorker{
+				Keyring: keyring,
+				Webhook: NewStatusSafeWebhookClient(),
+				Now:     model.GetDBTimestamp,
+			})
+		}
 	})
 	return started
+}
+
+func launchStatusDeliveryTasks(worker StatusDeliveryWorker) {
+	gopool.Go(func() {
+		workerID := statusSchedulerHolder() + ":delivery"
+		run := func() {
+			if _, err := worker.RunOnce(context.Background(), workerID, 20); err != nil {
+				common.SysError("status delivery worker failed: " + err.Error())
+			}
+		}
+		run()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	})
 }
 
 func validateStatusRouterOrigin(origin string) (string, error) {
