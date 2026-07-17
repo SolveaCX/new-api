@@ -188,7 +188,7 @@ func (service StatusEmailSubscriptionService) Unsubscribe(token string, now int6
 	return StatusSubscriptionResponse{Message: StatusSubscriptionGenericMessage}, nil
 }
 
-func ConfigureStatusDiscordEndpoint(actor StatusMutationActor, endpoint string, keyring *StatusSecretKeyring, now int64) (model.StatusSetting, error) {
+func ConfigureStatusDiscordEndpoint(actor StatusMutationActor, endpoint string, expectedVersion int64, keyring *StatusSecretKeyring, now int64) (model.StatusSetting, error) {
 	actor, err := requireStatusAdmin(actor)
 	if err != nil {
 		return model.StatusSetting{}, err
@@ -213,10 +213,10 @@ func ConfigureStatusDiscordEndpoint(actor StatusMutationActor, endpoint string, 
 	if err != nil {
 		return model.StatusSetting{}, err
 	}
-	return model.UpsertStatusSetting(model.StatusSetting{
+	return model.UpdateStatusSettingVersion(model.StatusSetting{
 		Key: StatusDiscordEndpointSettingKey, Value: encryptedEndpoint, Sensitive: true,
-		Version: 1, UpdatedBy: actor.ID, UpdatedAt: now,
-	})
+		UpdatedBy: actor.ID, UpdatedAt: now,
+	}, expectedVersion)
 }
 
 func StatusDiscordEndpoint(keyring *StatusSecretKeyring) (string, error) {

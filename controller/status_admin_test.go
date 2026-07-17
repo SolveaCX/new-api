@@ -1,6 +1,7 @@
 package controller_test
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -149,4 +151,51 @@ func TestStatusAdminSettingMutationRejectsStaleVersionAndReservedDiscordKey(t *t
 	)
 	require.Equal(t, http.StatusBadRequest, reserved.Code, reserved.Body.String())
 	require.NotContains(t, reserved.Body.String(), "plaintext-secret")
+}
+
+func TestStatusAdminDiscordEndpointRejectsStaleVersionAndStoresOnlyEncryptedValue(t *testing.T) {
+	engine, db := setupStatusHTTPTest(t)
+	now := time.Now().Unix()
+	existingValue := "existing-encrypted-endpoint"
+	require.NoError(t, db.Create(&model.StatusSetting{
+		Key: service.StatusDiscordEndpointSettingKey, Value: existingValue, Sensitive: true,
+		Version: 2, UpdatedBy: 1, UpdatedAt: now - 10,
+	}).Error)
+	t.Setenv("STATUS_SECRET_KEYS", "active:"+base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	t.Setenv("STATUS_SECRET_ACTIVE_KEY_ID", "active")
+	verifiedRootCookie := statusAuthCookie(t, engine, common.RoleRootUser, true)
+	endpoint := "https://discord.com/api/webhooks/123/status-secret"
+
+	stale := performStatusAuthenticatedRequest(
+		engine, http.MethodPut, "/api/status/admin/settings/discord",
+		fmt.Sprintf(`{"endpoint":%q,"expected_version":1}`, endpoint), verifiedRootCookie,
+	)
+	require.Equal(t, http.StatusConflict, stale.Code, stale.Body.String())
+	require.NotContains(t, stale.Body.String(), endpoint)
+	require.NotContains(t, stale.Body.String(), existingValue)
+
+	var stored model.StatusSetting
+	require.NoError(t, db.First(&stored, "key = ?", service.StatusDiscordEndpointSettingKey).Error)
+	require.Equal(t, existingValue, stored.Value)
+	require.EqualValues(t, 2, stored.Version)
+
+	current := performStatusAuthenticatedRequest(
+		engine, http.MethodPut, "/api/status/admin/settings/discord",
+		fmt.Sprintf(`{"endpoint":%q,"expected_version":2}`, endpoint), verifiedRootCookie,
+	)
+	require.Equal(t, http.StatusOK, current.Code, current.Body.String())
+	data := statusResponseData(t, current)
+	require.EqualValues(t, 3, data["version"])
+	require.NotContains(t, current.Body.String(), endpoint)
+
+	require.NoError(t, db.First(&stored, "key = ?", service.StatusDiscordEndpointSettingKey).Error)
+	require.True(t, stored.Sensitive)
+	require.EqualValues(t, 3, stored.Version)
+	require.NotEqual(t, endpoint, stored.Value)
+	require.NotContains(t, current.Body.String(), stored.Value)
+	keyring, err := service.LoadStatusSecretKeyringFromEnvironment()
+	require.NoError(t, err)
+	plaintext, err := keyring.Decrypt(stored.Value)
+	require.NoError(t, err)
+	require.Equal(t, endpoint, plaintext)
 }

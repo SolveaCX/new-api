@@ -221,25 +221,25 @@ func TestStatusSubscriptionWebhookAndDiscordExplicitlyRejectMissingKeyring(t *te
 	webhook := StatusWebhookRegistrationService{Keyring: disabled, Sender: &statusChallengeSender{echo: true}, Now: func() int64 { return 50_000 }}
 	_, err = webhook.Register(context.Background(), "https://hooks.example.com/status", nil)
 	require.ErrorIs(t, err, ErrStatusSecretKeyringDisabled)
-	_, err = ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/1/token", disabled, 50_000)
+	_, err = ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/1/token", 0, disabled, 50_000)
 	require.ErrorIs(t, err, ErrStatusSecretKeyringDisabled)
 }
 
 func TestStatusSubscriptionDiscordEndpointIsEncryptedAndUsesOneGlobalSetting(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	keyring := statusSecretTestKeyring(t)
-	_, err := ConfigureStatusDiscordEndpoint(statusAdminActor(), "https://discord.com/api/webhooks/1/token", keyring, 60_000)
+	_, err := ConfigureStatusDiscordEndpoint(statusAdminActor(), "https://discord.com/api/webhooks/1/token", 0, keyring, 60_000)
 	require.ErrorIs(t, err, ErrStatusRootRequired)
-	_, err = ConfigureStatusDiscordEndpoint(statusRootActor(false), "https://discord.com/api/webhooks/1/token", keyring, 60_000)
+	_, err = ConfigureStatusDiscordEndpoint(statusRootActor(false), "https://discord.com/api/webhooks/1/token", 0, keyring, 60_000)
 	require.ErrorIs(t, err, ErrStatusSecureVerificationRequired)
 
-	configured, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/1/token", keyring, 60_000)
+	configured, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/1/token", 0, keyring, 60_000)
 	require.NoError(t, err)
 	require.Equal(t, StatusDiscordEndpointSettingKey, configured.Key)
 	require.True(t, configured.Sensitive)
 	require.NotContains(t, configured.Value, "discord.com")
 
-	configured, err = ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/2/token", keyring, 60_001)
+	configured, err = ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/2/token", configured.Version, keyring, 60_001)
 	require.NoError(t, err)
 	var count int64
 	require.NoError(t, db.Model(&model.StatusSetting{}).Where("key = ?", StatusDiscordEndpointSettingKey).Count(&count).Error)
@@ -273,7 +273,7 @@ func TestStatusSubscriptionDiscordTestDeliveryRequiresVerifiedRootAndConfigurati
 func TestStatusSubscriptionDiscordTestDeliveryUsesConfiguredSafeSenderWithoutReturningEndpoint(t *testing.T) {
 	setupStatusServiceTestDB(t)
 	keyring := statusSecretTestKeyring(t)
-	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/1/token", keyring, 66_000)
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/1/token", 0, keyring, 66_000)
 	require.NoError(t, err)
 	sender := &statusDeliveryWebhookRecorder{}
 
@@ -294,7 +294,7 @@ func TestStatusSubscriptionDiscordTestDeliveryReportsNonSuccessAndTransportFailu
 	setupStatusServiceTestDB(t)
 	keyring := statusSecretTestKeyring(t)
 	endpoint := "https://discord.com/api/webhooks/1/token"
-	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, keyring, 67_000)
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, 0, keyring, 67_000)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -329,7 +329,7 @@ func TestStatusSubscriptionSuccessfulDiscordTestClearsSuspensionButFailedTestDoe
 	setupStatusServiceTestDB(t)
 	keyring := statusSecretTestKeyring(t)
 	endpoint := "https://discord.com/api/webhooks/recovery/token"
-	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, keyring, 68_000)
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, 0, keyring, 68_000)
 	require.NoError(t, err)
 	state, err := model.RecordStatusDiscordDeliveryResult(false, true, 1, 68_001)
 	require.NoError(t, err)
@@ -749,7 +749,7 @@ func TestStatusDeliveryDiscordPermanentFailuresPersistSuspendAndDoNotBlockOtherD
 	db := setupStatusServiceTestDB(t)
 	keyring := statusSecretTestKeyring(t)
 	discordEndpoint := "https://discord.com/api/webhooks/health/token"
-	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), discordEndpoint, keyring, 110_000)
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), discordEndpoint, 0, keyring, 110_000)
 	require.NoError(t, err)
 	permanentSender := &statusDeliveryWebhookRecorder{results: map[string]StatusWebhookResponse{
 		discordEndpoint: {StatusCode: http.StatusGone},
@@ -821,7 +821,7 @@ func TestStatusDeliveryDiscordSuccessResetsPersistedFailureState(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	keyring := statusSecretTestKeyring(t)
 	endpoint := "https://discord.com/api/webhooks/reset/token"
-	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, keyring, 120_000)
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), endpoint, 0, keyring, 120_000)
 	require.NoError(t, err)
 
 	createStatusDiscordDelivery(t, db, 320, "discord-failure-before-success", 120_001)
