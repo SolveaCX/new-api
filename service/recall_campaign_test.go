@@ -217,6 +217,146 @@ func validRecallCampaignDraft(now time.Time) RecallCampaignDraft {
 	}
 }
 
+func TestRecallCampaignReadPaginationIsNormalizedAndBounded(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	campaigns := make([]model.RecallCampaign, 101)
+	for i := range campaigns {
+		campaigns[i] = model.RecallCampaign{
+			Name:                "bounded campaign",
+			Status:              model.RecallCampaignDraft,
+			AudienceTemplate:    "first_purchase",
+			AudienceConfig:      `{}`,
+			ExecutionMode:       "manual",
+			CouponSource:        "automatic",
+			DiscountConfig:      `{}`,
+			ProductScope:        `{}`,
+			EmailSequenceConfig: `[]`,
+		}
+	}
+	require.NoError(t, db.Create(&campaigns).Error)
+	target := campaigns[0]
+	recipients := make([]model.RecallRecipient, 101)
+	events := make([]model.RecallEvent, 101)
+	for i := range recipients {
+		recipients[i] = model.RecallRecipient{
+			CampaignId:          target.Id,
+			UserId:              30_000 + i,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "bounded@example.com",
+			LanguageSnapshot:    "en",
+			State:               model.RecallRecipientQueued,
+		}
+		events[i] = model.RecallEvent{
+			CampaignId:    target.Id,
+			EventType:     "bounded_event",
+			Source:        "service_pagination_test",
+			SourceEventId: fmt.Sprint(i),
+			EventData:     `{}`,
+		}
+	}
+	require.NoError(t, db.Create(&recipients).Error)
+	require.NoError(t, db.Create(&events).Error)
+
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	for _, test := range []struct {
+		name         string
+		page         common.PageInfo
+		wantPage     int
+		wantPageSize int
+		wantItems    int
+	}{
+		{name: "negative", page: common.PageInfo{Page: -2, PageSize: -5}, wantPage: 1, wantPageSize: common.ItemsPerPage, wantItems: common.ItemsPerPage},
+		{name: "zero", page: common.PageInfo{}, wantPage: 1, wantPageSize: common.ItemsPerPage, wantItems: common.ItemsPerPage},
+		{name: "oversize", page: common.PageInfo{Page: 1, PageSize: 1_000}, wantPage: 1, wantPageSize: 100, wantItems: 100},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			campaignPage := test.page
+			campaignItems, total, err := service.List(context.Background(), &campaignPage, "")
+			require.NoError(t, err)
+			require.Equal(t, int64(101), total)
+			require.Equal(t, test.wantPage, campaignPage.Page)
+			require.Equal(t, test.wantPageSize, campaignPage.PageSize)
+			require.Len(t, campaignItems, test.wantItems)
+
+			recipientPage := test.page
+			recipientItems, total, err := service.ListRecipients(context.Background(), target.Id, &recipientPage, "")
+			require.NoError(t, err)
+			require.Equal(t, int64(101), total)
+			require.Equal(t, test.wantPage, recipientPage.Page)
+			require.Equal(t, test.wantPageSize, recipientPage.PageSize)
+			require.Len(t, recipientItems, test.wantItems)
+
+			eventPage := test.page
+			eventItems, total, err := service.ListEvents(context.Background(), target.Id, &eventPage)
+			require.NoError(t, err)
+			require.Equal(t, int64(101), total)
+			require.Equal(t, test.wantPage, eventPage.Page)
+			require.Equal(t, test.wantPageSize, eventPage.PageSize)
+			require.Len(t, eventItems, test.wantItems)
+		})
+	}
+}
+
+func TestRecallCampaignExportRejectsRowAndByteOverflow(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	campaign := model.RecallCampaign{
+		Name:                "bounded export",
+		Status:              model.RecallCampaignCompleted,
+		AudienceTemplate:    "first_purchase",
+		AudienceConfig:      `{}`,
+		ExecutionMode:       "manual",
+		CouponSource:        "automatic",
+		DiscountConfig:      `{}`,
+		ProductScope:        `{}`,
+		EmailSequenceConfig: `[]`,
+	}
+	require.NoError(t, db.Create(&campaign).Error)
+	recipients := []model.RecallRecipient{
+		{CampaignId: campaign.Id, UserId: 40_001, EligibilitySnapshot: `{}`, EmailSnapshot: "one@example.com", LanguageSnapshot: "en", State: model.RecallRecipientQueued},
+		{CampaignId: campaign.Id, UserId: 40_002, EligibilitySnapshot: `{}`, EmailSnapshot: "two@example.com", LanguageSnapshot: "en", State: model.RecallRecipientQueued},
+		{CampaignId: campaign.Id, UserId: 40_003, EligibilitySnapshot: `{}`, EmailSnapshot: "three@example.com", LanguageSnapshot: "en", State: model.RecallRecipientQueued},
+	}
+	require.NoError(t, db.Create(&recipients).Error)
+
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	service.exportMaxRows = 2
+	service.exportMaxBytes = 1_024
+	data, err := service.Export(context.Background(), campaign.Id)
+	require.ErrorContains(t, err, "maximum of 2 recipients")
+	require.Nil(t, data, "row overflow must not return a truncated CSV")
+
+	require.NoError(t, db.Delete(&recipients[2]).Error)
+	service.exportMaxRows = 3
+	service.exportMaxBytes = 32
+	data, err = service.Export(context.Background(), campaign.Id)
+	require.ErrorContains(t, err, "maximum of 32 bytes")
+	require.Nil(t, data, "byte overflow must not return a truncated CSV")
+}
+
+func TestRecallCampaignExportHonorsCancelledContext(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	campaign := model.RecallCampaign{
+		Name:                "cancelled export",
+		Status:              model.RecallCampaignCompleted,
+		AudienceTemplate:    "first_purchase",
+		AudienceConfig:      `{}`,
+		ExecutionMode:       "manual",
+		CouponSource:        "automatic",
+		DiscountConfig:      `{}`,
+		ProductScope:        `{}`,
+		EmailSequenceConfig: `[]`,
+	}
+	require.NoError(t, db.Create(&campaign).Error)
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	data, err := service.Export(ctx, campaign.Id)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, data)
+}
+
 func TestRecallCampaignSaveDraftValidatesAndNormalizes(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)

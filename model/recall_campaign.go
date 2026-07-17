@@ -14,6 +14,7 @@ const (
 	RecallCampaignPaused    = "paused"
 	RecallCampaignCancelled = "cancelled"
 	RecallCampaignCompleted = "completed"
+	recallReadPageSizeMax   = 100
 )
 
 type RecallCampaign struct {
@@ -72,10 +73,27 @@ func ListRecallCampaignsWithContext(ctx context.Context, status string, offset i
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
+	offset, limit, bounded := boundRecallReadWindow(offset, limit)
+	if !bounded {
+		return campaigns, total, nil
+	}
 	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&campaigns).Error; err != nil {
 		return nil, 0, err
 	}
 	return campaigns, total, nil
+}
+
+func boundRecallReadWindow(offset int, limit int) (int, int, bool) {
+	if limit <= 0 {
+		return 0, 0, false
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if limit > recallReadPageSizeMax {
+		limit = recallReadPageSizeMax
+	}
+	return offset, limit, true
 }
 
 func UpdateRecallCampaignDraft(campaign *RecallCampaign) error {

@@ -67,6 +67,10 @@ func ListRecallEventsWithContext(ctx context.Context, campaignID int64, offset i
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
+	offset, limit, bounded := boundRecallReadWindow(offset, limit)
+	if !bounded {
+		return events, total, nil
+	}
 	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&events).Error; err != nil {
 		return nil, 0, err
 	}

@@ -19,6 +19,13 @@ import (
 
 var ErrRecallDisabled = errors.New("recall campaigns are disabled")
 
+const (
+	recallReadPageSizeMax       = 100
+	recallExportPageSize        = 500
+	defaultRecallExportMaxRows  = int64(100_000)
+	defaultRecallExportMaxBytes = 32 << 20
+)
+
 type recallCampaignPermanentRunError struct {
 	err error
 }
@@ -31,9 +38,11 @@ func permanentRecallCampaignRunError(err error) error {
 }
 
 type RecallCampaignService struct {
-	audience *RecallAudienceSelector
-	stripe   *RecallStripeService
-	now      func() time.Time
+	audience       *RecallAudienceSelector
+	stripe         *RecallStripeService
+	now            func() time.Time
+	exportMaxRows  int64
+	exportMaxBytes int
 }
 
 type RecallCampaignSummary struct {
@@ -116,9 +125,11 @@ func NewRecallCampaignService(audience *RecallAudienceSelector, stripeService *R
 		stripeService = NewRecallStripeService(nil)
 	}
 	return &RecallCampaignService{
-		audience: audience,
-		stripe:   stripeService,
-		now:      time.Now,
+		audience:       audience,
+		stripe:         stripeService,
+		now:            time.Now,
+		exportMaxRows:  defaultRecallExportMaxRows,
+		exportMaxBytes: defaultRecallExportMaxBytes,
 	}
 }
 
@@ -126,6 +137,7 @@ func (s *RecallCampaignService) List(ctx context.Context, page *common.PageInfo,
 	if page == nil {
 		return nil, 0, fmt.Errorf("recall campaign page is required")
 	}
+	normalizeRecallPage(page)
 	campaigns, total, err := model.ListRecallCampaignsWithContext(ctx, strings.TrimSpace(status), page.GetStartIdx(), page.GetPageSize())
 	if err != nil {
 		return nil, 0, err
@@ -167,6 +179,7 @@ func (s *RecallCampaignService) ListRecipients(ctx context.Context, id int64, pa
 	if id <= 0 || page == nil {
 		return nil, 0, fmt.Errorf("recall campaign ID and page are required")
 	}
+	normalizeRecallPage(page)
 	recipients, total, err := model.ListRecallRecipientsWithContext(ctx, id, page.GetStartIdx(), page.GetPageSize(), strings.TrimSpace(state))
 	if err != nil {
 		return nil, 0, err
@@ -194,7 +207,20 @@ func (s *RecallCampaignService) ListEvents(ctx context.Context, id int64, page *
 	if id <= 0 || page == nil {
 		return nil, 0, fmt.Errorf("recall campaign ID and page are required")
 	}
+	normalizeRecallPage(page)
 	return model.ListRecallEventsWithContext(ctx, id, page.GetStartIdx(), page.GetPageSize())
+}
+
+func normalizeRecallPage(page *common.PageInfo) {
+	if page.Page < 1 {
+		page.Page = 1
+	}
+	if page.PageSize < 1 {
+		page.PageSize = common.ItemsPerPage
+	}
+	if page.PageSize > recallReadPageSizeMax {
+		page.PageSize = recallReadPageSizeMax
+	}
 }
 
 func (s *RecallCampaignService) RetryRecipient(ctx context.Context, actorID int, campaignID int64, recipientID int64, acknowledgeUncertain bool) error {
@@ -296,24 +322,40 @@ func (s *RecallCampaignService) RetryRecipient(ctx context.Context, actorID int,
 }
 
 func (s *RecallCampaignService) Export(ctx context.Context, id int64) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if id <= 0 {
 		return nil, fmt.Errorf("recall campaign ID must be positive")
 	}
 	if _, err := model.GetRecallCampaignByIDWithContext(ctx, id); err != nil {
 		return nil, err
 	}
-	var buffer bytes.Buffer
+	snapshot, err := model.GetRecallRecipientExportSnapshotWithContext(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot.Total > s.exportMaxRows {
+		return nil, fmt.Errorf("recall campaign export exceeds maximum of %d recipients", s.exportMaxRows)
+	}
+	buffer := recallExportBuffer{maxBytes: s.exportMaxBytes}
 	writer := csv.NewWriter(&buffer)
 	if err := writer.Write([]string{"recipient_id", "user_id", "state", "promotion_code_masked", "conversion_kind", "currency", "conversion_amount", "discount_amount", "converted_at"}); err != nil {
 		return nil, err
 	}
-	const pageSize = 500
-	for offset := 0; ; offset += pageSize {
-		recipients, _, err := model.ListRecallRecipientsWithContext(ctx, id, offset, pageSize, "")
+	afterID := int64(0)
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		recipients, err := model.ListRecallRecipientsForExportWithContext(ctx, id, afterID, snapshot.MaxID, recallExportPageSize)
 		if err != nil {
 			return nil, err
 		}
 		for i := range recipients {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			row := []string{
 				strconv.FormatInt(recipients[i].Id, 10),
 				strconv.Itoa(recipients[i].UserId),
@@ -329,15 +371,32 @@ func (s *RecallCampaignService) Export(ctx context.Context, id int64) ([]byte, e
 				return nil, err
 			}
 		}
-		if len(recipients) < pageSize {
+		if len(recipients) < recallExportPageSize {
 			break
 		}
+		afterID = recipients[len(recipients)-1].Id
 	}
 	writer.Flush()
 	if err := writer.Error(); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+type recallExportBuffer struct {
+	buffer   bytes.Buffer
+	maxBytes int
+}
+
+func (b *recallExportBuffer) Write(data []byte) (int, error) {
+	if len(data) > b.maxBytes-b.buffer.Len() {
+		return 0, fmt.Errorf("recall campaign export exceeds maximum of %d bytes", b.maxBytes)
+	}
+	return b.buffer.Write(data)
+}
+
+func (b *recallExportBuffer) Bytes() []byte {
+	return b.buffer.Bytes()
 }
 
 func (s *RecallCampaignService) ValidateStripe(ctx context.Context, draft RecallCampaignDraft) (RecallStripePreview, error) {

@@ -58,6 +58,11 @@ type RecallRecipient struct {
 	UpdatedAt             int64   `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
+type RecallRecipientExportSnapshot struct {
+	MaxID int64 `gorm:"column:max_id"`
+	Total int64 `gorm:"column:total"`
+}
+
 type RecallClaimRecord struct {
 	Recipient      RecallRecipient
 	Campaign       RecallCampaign
@@ -659,10 +664,50 @@ func ListRecallRecipientsWithContext(ctx context.Context, campaignID int64, offs
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
+	offset, limit, bounded := boundRecallReadWindow(offset, limit)
+	if !bounded {
+		return recipients, total, nil
+	}
 	if err := query.Order("id ASC").Offset(offset).Limit(limit).Find(&recipients).Error; err != nil {
 		return nil, 0, err
 	}
 	return recipients, total, nil
+}
+
+func GetRecallRecipientExportSnapshotWithContext(ctx context.Context, campaignID int64) (RecallRecipientExportSnapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return RecallRecipientExportSnapshot{}, err
+	}
+	snapshot := RecallRecipientExportSnapshot{}
+	err := DB.WithContext(ctx).
+		Model(&RecallRecipient{}).
+		Select("COALESCE(MAX(id), 0) AS max_id, COUNT(*) AS total").
+		Where("campaign_id = ?", campaignID).
+		Scan(&snapshot).Error
+	return snapshot, err
+}
+
+func ListRecallRecipientsForExportWithContext(ctx context.Context, campaignID int64, afterID int64, maxID int64, limit int) ([]RecallRecipient, error) {
+	recipients := make([]RecallRecipient, 0)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if maxID <= 0 || limit <= 0 {
+		return recipients, nil
+	}
+	if afterID < 0 {
+		afterID = 0
+	}
+	const exportPageSizeMax = 500
+	if limit > exportPageSizeMax {
+		limit = exportPageSizeMax
+	}
+	err := DB.WithContext(ctx).
+		Where("campaign_id = ? AND id > ? AND id <= ?", campaignID, afterID, maxID).
+		Order("id ASC").
+		Limit(limit).
+		Find(&recipients).Error
+	return recipients, err
 }
 
 func ManualRetryRecallRecipientAndAdminEventWithContext(ctx context.Context, campaignID int64, recipientID int64, expectedUpdatedAt int64, to string, event RecallEvent) (bool, error) {
