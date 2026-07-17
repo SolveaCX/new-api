@@ -33,6 +33,41 @@ type statusAdminSetting struct {
 	UpdatedAt  int64  `json:"updated_at"`
 }
 
+type statusAdminComponent struct {
+	ID                      int64  `json:"id"`
+	Slug                    string `json:"slug"`
+	Kind                    string `json:"kind"`
+	DisplayName             string `json:"display_name"`
+	Capability              string `json:"capability,omitempty"`
+	Lifecycle               string `json:"lifecycle"`
+	Status                  string `json:"status"`
+	LastTrustworthyUpdateAt int64  `json:"last_trustworthy_update_at"`
+	Coverage                int64  `json:"coverage"`
+	OverrideStatus          string `json:"override_status,omitempty"`
+	OverrideExpiresAt       int64  `json:"override_expires_at,omitempty"`
+	Version                 int64  `json:"version"`
+}
+
+func ListAdminStatusComponents(c *gin.Context) {
+	components, err := service.QueryStatusComponents(service.StatusComponentFilter{})
+	if err != nil {
+		statusAdminServiceError(c, err)
+		return
+	}
+	response := make([]statusAdminComponent, 0, len(components))
+	for _, component := range components {
+		response = append(response, statusAdminComponent{
+			ID: component.ID, Slug: component.Slug, Kind: component.Kind,
+			DisplayName: component.DisplayName, Capability: component.Capability, Lifecycle: component.Lifecycle,
+			Status: component.EffectiveStatus, LastTrustworthyUpdateAt: component.LastTrustworthyUpdateAt,
+			Coverage:       component.CoverageMicros,
+			OverrideStatus: component.OverrideStatus, OverrideExpiresAt: component.OverrideExpiresAt,
+			Version: component.Version,
+		})
+	}
+	common.ApiSuccess(c, response)
+}
+
 func ListAdminStatusIncidents(c *gin.Context) {
 	adminStatusIncidentList(c, "")
 }
@@ -246,6 +281,31 @@ func ListAdminStatusDeliveries(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, deliveries)
+}
+
+func RetryAdminStatusDelivery(c *gin.Context) {
+	id, err := statusAdminID(c.Param("id"))
+	if err != nil {
+		statusAdminError(c, http.StatusBadRequest, err)
+		return
+	}
+	var request struct {
+		ExpectedVersion int64  `json:"expected_version"`
+		Reason          string `json:"reason"`
+	}
+	if err := decodeStatusAdminBody(c, &request); err != nil {
+		statusAdminDecodeError(c, err)
+		return
+	}
+	delivery, err := service.RetryStatusDelivery(service.StatusDeliveryRetryInput{
+		DeliveryID: id, ExpectedVersion: request.ExpectedVersion,
+		Actor: statusAdminActor(c), Reason: request.Reason, Now: time.Now().Unix(),
+	})
+	if err != nil {
+		statusAdminServiceError(c, err)
+		return
+	}
+	common.ApiSuccess(c, delivery)
 }
 
 func ListAdminStatusAudit(c *gin.Context) {

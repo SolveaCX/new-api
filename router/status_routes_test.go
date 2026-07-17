@@ -25,6 +25,7 @@ func TestStatusRoutesExposePublicAndGuardedAdminSurface(t *testing.T) {
 		"/api/status/subscriptions/verify":            http.MethodGet,
 		"/api/status/subscriptions/unsubscribe":       http.MethodPost,
 		"/api/status/admin/incidents":                 http.MethodGet,
+		"/api/status/admin/components":                http.MethodGet,
 		"/api/status/admin/incidents/:id":             http.MethodGet,
 		"/api/status/admin/incidents/:id/publish":     http.MethodPost,
 		"/api/status/admin/maintenance":               http.MethodPost,
@@ -37,6 +38,7 @@ func TestStatusRoutesExposePublicAndGuardedAdminSurface(t *testing.T) {
 		"/api/status/admin/discord/test":              http.MethodPost,
 		"/api/status/admin/subscribers":               http.MethodGet,
 		"/api/status/admin/deliveries":                http.MethodGet,
+		"/api/status/admin/deliveries/:id/retry":      http.MethodPost,
 		"/api/status/admin/audit":                     http.MethodGet,
 	}
 	got := map[string]string{}

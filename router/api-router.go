@@ -42,6 +42,7 @@ func SetApiRouter(router *gin.Engine) {
 			statusAdminRoute := statusRoute.Group("/admin")
 			statusAdminRoute.Use(middleware.AdminAuth())
 			{
+				statusAdminRoute.GET("/components", controller.ListAdminStatusComponents)
 				statusAdminRoute.GET("/incidents", controller.ListAdminStatusIncidents)
 				statusAdminRoute.GET("/incidents/:id", controller.GetAdminStatusIncident)
 				statusAdminRoute.POST("/incidents/:id/publish", controller.PublishAdminStatusIncident)
@@ -62,6 +63,7 @@ func SetApiRouter(router *gin.Engine) {
 				statusRootRoute.PUT("/settings/discord", controller.ConfigureAdminStatusDiscord)
 				statusRootRoute.PUT("/settings/:key", controller.UpdateAdminStatusSetting)
 				statusRootRoute.POST("/discord/test", controller.TestAdminStatusDiscord)
+				statusRootRoute.POST("/deliveries/:id/retry", controller.RetryAdminStatusDelivery)
 			}
 		}
 		registrationDomainRiskRoute := apiRouter.Group("/registration-domain-risk")

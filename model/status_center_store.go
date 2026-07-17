@@ -13,6 +13,7 @@ import (
 
 var (
 	ErrStatusVersionConflict               = errors.New("status object version conflict")
+	ErrStatusInvalidDeliveryMutation       = errors.New("invalid status delivery mutation")
 	ErrStatusSubscriberAlreadyActive       = errors.New("status subscriber is already active")
 	ErrStatusMaintenanceNotPublished       = errors.New("status maintenance is not published")
 	ErrStatusMaintenanceOverlap            = errors.New("status maintenance overlaps an existing window")
@@ -101,6 +102,20 @@ type StatusDeliveryResultMutation struct {
 	NextAttemptAt    int64
 	LastError        string
 	Now              int64
+}
+
+type StatusDeliveryRetryMutation struct {
+	ID              int64
+	ExpectedVersion int64
+	Now             int64
+	Audit           StatusAuditMutation
+}
+
+type statusDeliveryRetryAuditSnapshot struct {
+	Status        string `json:"status"`
+	Attempts      int64  `json:"attempts"`
+	NextAttemptAt int64  `json:"next_attempt_at"`
+	Version       int64  `json:"version"`
 }
 
 func CreateOrRefreshStatusSubscriber(input StatusSubscriberMutation) (StatusSubscriber, bool, error) {
@@ -237,6 +252,136 @@ func GetStatusSubscriber(id int64) (StatusSubscriber, error) {
 	var subscriber StatusSubscriber
 	err := DB.First(&subscriber, id).Error
 	return subscriber, err
+}
+
+func RetryDeadStatusDelivery(input StatusDeliveryRetryMutation) (StatusDeliveryOutbox, error) {
+	if DB == nil {
+		return StatusDeliveryOutbox{}, errors.New("database is not initialized")
+	}
+	if input.ID <= 0 || input.ExpectedVersion <= 0 || input.Now <= 0 || input.Audit.ActorID <= 0 ||
+		input.Audit.ActorType == "" || input.Audit.Action != "status.delivery.retry" || input.Audit.Reason == "" || input.Audit.CreatedAt <= 0 {
+		return StatusDeliveryOutbox{}, ErrStatusInvalidDeliveryMutation
+	}
+
+	var retried StatusDeliveryOutbox
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var delivery StatusDeliveryOutbox
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&delivery, input.ID).Error; err != nil {
+			return err
+		}
+		if delivery.Version != input.ExpectedVersion {
+			return ErrStatusVersionConflict
+		}
+		if delivery.Status != StatusDeliveryDead {
+			return ErrStatusInvalidDeliveryMutation
+		}
+
+		result := tx.Model(&StatusDeliveryOutbox{}).
+			Where("id = ? AND version = ? AND status = ?", input.ID, input.ExpectedVersion, StatusDeliveryDead).
+			Updates(map[string]any{
+				"status":          StatusDeliveryPending,
+				"lock_token":      "",
+				"locked_until":    0,
+				"next_attempt_at": input.Now,
+				"last_error":      "",
+				"version":         gorm.Expr("version + 1"),
+				"updated_at":      input.Now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrStatusVersionConflict
+		}
+
+		if err := makeStatusDeliveryDestinationDeliverable(tx, delivery, input.Now); err != nil {
+			return err
+		}
+		if err := tx.First(&retried, delivery.ID).Error; err != nil {
+			return err
+		}
+		before := statusDeliveryRetryAuditSnapshot{
+			Status: delivery.Status, Attempts: delivery.Attempts,
+			NextAttemptAt: delivery.NextAttemptAt, Version: delivery.Version,
+		}
+		after := statusDeliveryRetryAuditSnapshot{
+			Status: retried.Status, Attempts: retried.Attempts,
+			NextAttemptAt: retried.NextAttemptAt, Version: retried.Version,
+		}
+		return createStatusAuditEvent(tx, input.Audit, "delivery", strconv.FormatInt(delivery.ID, 10), before, after)
+	})
+	return retried, err
+}
+
+func makeStatusDeliveryDestinationDeliverable(tx *gorm.DB, delivery StatusDeliveryOutbox, now int64) error {
+	switch delivery.DestinationType {
+	case StatusDestinationEmail, StatusDestinationWebhook:
+		if delivery.DestinationID <= 0 {
+			return ErrStatusInvalidDeliveryMutation
+		}
+		var subscriber StatusSubscriber
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&subscriber, delivery.DestinationID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrStatusInvalidDeliveryMutation
+			}
+			return err
+		}
+		if subscriber.Kind != delivery.DestinationType {
+			return ErrStatusInvalidDeliveryMutation
+		}
+		switch subscriber.Status {
+		case StatusSubscriberActive:
+			return nil
+		case StatusSubscriberSuspended:
+			result := tx.Model(&StatusSubscriber{}).Where("id = ? AND status = ?", subscriber.ID, StatusSubscriberSuspended).
+				Updates(map[string]any{
+					"status": StatusSubscriberActive, "failure_count": 0,
+					"suspended_at": 0, "updated_at": now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return ErrStatusInvalidDeliveryMutation
+			}
+			return nil
+		default:
+			return ErrStatusInvalidDeliveryMutation
+		}
+	case StatusDestinationDiscord:
+		if delivery.DestinationID != 0 {
+			return ErrStatusInvalidDeliveryMutation
+		}
+		var setting StatusSetting
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("key = ?", statusDiscordDeliveryStateSettingKey).First(&setting).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := decodeStatusDiscordDeliveryState(setting.Value); err != nil {
+			return err
+		}
+		value, err := common.Marshal(StatusDiscordDeliveryState{})
+		if err != nil {
+			return err
+		}
+		result := tx.Model(&StatusSetting{}).
+			Where("key = ? AND version = ?", statusDiscordDeliveryStateSettingKey, setting.Version).
+			Updates(map[string]any{
+				"value": string(value), "version": gorm.Expr("version + 1"), "updated_at": now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrStatusVersionConflict
+		}
+		return nil
+	default:
+		return ErrStatusInvalidDeliveryMutation
+	}
 }
 
 func RecordStatusSubscriberDeliveryResult(id int64, delivered bool, permanentFailure bool, suspendThreshold int64, now int64) error {
