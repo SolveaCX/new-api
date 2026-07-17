@@ -38,14 +38,15 @@ func TestRecallAttributionCandidateDiscoveryIsBoundedAndAdvancesCursor(t *testin
 
 	stats := &recallAttributionQueryStats{}
 	require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:recall_attribution_bounded_discovery", stats.observe))
+	require.NoError(t, db.Callback().Row().After("gorm:row").Register("test:recall_attribution_bounded_discovery", stats.observe))
 	t.Cleanup(func() {
 		db.Callback().Query().Remove("test:recall_attribution_bounded_discovery")
+		db.Callback().Row().Remove("test:recall_attribution_bounded_discovery")
 	})
 
 	first, err := ListRecallAttributionCandidatesWithContext(context.Background(), nowUnix, limit)
 	require.NoError(t, err)
 	require.Empty(t, first, "one batch must stop after its bounded scan instead of walking all history")
-	require.LessOrEqual(t, stats.discoveryRows, int64(maxScannedRows))
 	require.LessOrEqual(t, stats.maxVariables, 32, "candidate discovery must not expand user IDs into an unbounded IN list")
 
 	stats.reset()
@@ -53,8 +54,90 @@ func TestRecallAttributionCandidateDiscoveryIsBoundedAndAdvancesCursor(t *testin
 	require.NoError(t, err)
 	require.Len(t, second, limit)
 	require.Equal(t, "trade_discovery_17", second[0].TradeNo)
-	require.LessOrEqual(t, stats.discoveryRows, int64(maxScannedRows))
 	require.LessOrEqual(t, stats.maxVariables, 32)
+}
+
+func TestRecallAttributionCandidateDiscoveryAdvancesPastIrrelevantRawHistory(t *testing.T) {
+	setupRecallAttributionDiscoveryTestDB(t)
+	const (
+		limit          = 2
+		maxScannedRows = 8 * limit
+		nowUnix        = int64(1_700_000_300)
+	)
+	userID := 20_001
+	require.NoError(t, DB.Create(&RecallRecipient{
+		CampaignId: 1, UserId: userID, EligibilitySnapshot: `{}`,
+		EmailSnapshot: "relevant@example.com", LanguageSnapshot: "en",
+		State: RecallRecipientCodeReady, CreatedAt: nowUnix,
+	}).Error)
+	for i := 1; i <= maxScannedRows; i++ {
+		require.NoError(t, DB.Create(&TopUp{
+			UserId: userID, TradeNo: fmt.Sprintf("trade_irrelevant_%d", i), GatewayTradeNo: fmt.Sprintf("cs_irrelevant_%d", i),
+			PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusSuccess,
+			CreateTime: nowUnix + int64(i), CompleteTime: nowUnix + int64(i),
+		}).Error)
+	}
+	want := RecallAttributionCandidate{
+		TradeNo: "trade_relevant_17", UserId: userID, CheckoutSessionId: "cs_relevant_17",
+		OrderCreatedAt: nowUnix + maxScannedRows + 1, EnrolledAt: nowUnix,
+	}
+	require.NoError(t, DB.Create(&TopUp{
+		UserId: userID, TradeNo: want.TradeNo, GatewayTradeNo: want.CheckoutSessionId,
+		PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusSuccess,
+		CreateTime: want.OrderCreatedAt, CompleteTime: want.OrderCreatedAt,
+	}).Error)
+
+	first, err := ListRecallAttributionCandidatesWithContext(context.Background(), nowUnix+100, limit)
+	require.NoError(t, err)
+	require.Empty(t, first, "one call must stop after its bounded physical raw-row budget")
+	second, err := ListRecallAttributionCandidatesWithContext(context.Background(), nowUnix+100, limit)
+	require.NoError(t, err)
+	require.Contains(t, second, want)
+}
+
+func TestRecallAttributionCandidateDiscoveryFiltersOnlyWithinBoundedRawPages(t *testing.T) {
+	db := setupRecallAttributionDiscoveryTestDB(t)
+	const (
+		pageSize = 2
+		nowUnix  = int64(1_700_000_300)
+		userID   = 30_001
+	)
+	require.NoError(t, DB.Create(&RecallRecipient{
+		CampaignId: 1, UserId: userID, EligibilitySnapshot: `{}`,
+		EmailSnapshot: "bounded@example.com", LanguageSnapshot: "en",
+		State: RecallRecipientCodeReady, CreatedAt: nowUnix,
+	}).Error)
+	topUps := []TopUp{
+		{UserId: userID, TradeNo: "trade_epay", GatewayTradeNo: "cs_epay", PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusSuccess, CreateTime: nowUnix + 1},
+		{UserId: userID, TradeNo: "trade_pending", GatewayTradeNo: "cs_pending", PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusPending, CreateTime: nowUnix + 2},
+		{UserId: userID + 1, TradeNo: "trade_no_recipient", GatewayTradeNo: "cs_no_recipient", PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusSuccess, CreateTime: nowUnix + 3},
+		{UserId: userID, TradeNo: "trade_pre_enrollment", GatewayTradeNo: "cs_pre_enrollment", PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusSuccess, CreateTime: nowUnix - 1},
+		{UserId: userID, TradeNo: "trade_bounded", GatewayTradeNo: "cs_bounded", PaymentProvider: PaymentProviderStripe, Status: common.TopUpStatusSuccess, CreateTime: nowUnix + 4},
+	}
+	for i := range topUps {
+		require.NoError(t, DB.Create(&topUps[i]).Error)
+	}
+	rawPage, err := listRecallAttributionOrderPageWithContext(context.Background(), recallAttributionCursor{Phase: recallAttributionPhaseTopUp}, pageSize)
+	require.NoError(t, err)
+	require.Len(t, rawPage, pageSize)
+	stats := &recallAttributionQueryStats{}
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:recall_attribution_bounded_page_filters", stats.observe))
+	require.NoError(t, db.Callback().Row().After("gorm:row").Register("test:recall_attribution_bounded_page_filters", stats.observe))
+	t.Cleanup(func() {
+		db.Callback().Query().Remove("test:recall_attribution_bounded_page_filters")
+		db.Callback().Row().Remove("test:recall_attribution_bounded_page_filters")
+	})
+
+	got, err := ListRecallAttributionCandidatesWithContext(context.Background(), nowUnix+100, pageSize)
+	require.NoError(t, err)
+	require.Contains(t, got, RecallAttributionCandidate{
+		TradeNo: "trade_bounded", UserId: userID, CheckoutSessionId: "cs_bounded",
+		OrderCreatedAt: nowUnix + 4, EnrolledAt: nowUnix,
+	})
+	require.Positive(t, stats.maxEnrollmentVariables)
+	require.LessOrEqual(t, stats.maxEnrollmentVariables, len(recallClaimActiveRecipientStates())+pageSize)
+	require.Positive(t, stats.maxDuplicateVariables)
+	require.LessOrEqual(t, stats.maxDuplicateVariables, 2+pageSize)
 }
 
 func TestRecallAttributionCandidateCursorWrapsToRevisitDueRetry(t *testing.T) {
@@ -141,19 +224,44 @@ func TestRecallAttributionOrderPageSQLSupportsAllDatabaseDialects(t *testing.T) 
 	for name, dialectDB := range dialects {
 		for _, phase := range []string{recallAttributionPhaseSubscription, recallAttributionPhaseTopUp} {
 			t.Run(name+"/"+phase, func(t *testing.T) {
-				generatedSQL := strings.ToLower(dialectDB.ToSQL(func(tx *gorm.DB) *gorm.DB {
-					rows := make([]recallAttributionOrderRow, 0)
-					return recallAttributionOrderPageQueryWithContext(context.Background(), tx, recallAttributionCursor{Phase: phase}, 10).Find(&rows)
-				}))
-				require.Contains(t, generatedSQL, "select min(recall_recipients.created_at)")
-				require.Contains(t, generatedSQL, "recall_recipients.user_id = recall_orders.user_id")
-				require.Contains(t, generatedSQL, "recall_orders.create_time")
-				if phase == recallAttributionPhaseTopUp {
-					require.Contains(t, generatedSQL, "left join subscription_orders")
+				generateSQL := func(limit int) string {
+					return strings.ToLower(dialectDB.ToSQL(func(tx *gorm.DB) *gorm.DB {
+						rows := make([]recallAttributionOrderRow, 0)
+						return recallAttributionOrderPageQueryWithContext(context.Background(), tx, recallAttributionCursor{Phase: phase}, limit).Find(&rows)
+					}))
 				}
+				generatedSQL := generateSQL(10)
+				require.Contains(t, generatedSQL, "where recall_orders.id >")
+				require.Contains(t, generatedSQL, "order by recall_orders.id asc")
+				require.Contains(t, generatedSQL, "limit 10")
+				require.NotContains(t, generatedSQL, "payment_provider =")
+				require.NotContains(t, generatedSQL, "status =")
+				require.NotContains(t, generatedSQL, "create_time >")
+				require.NotContains(t, generatedSQL, "recall_recipients")
+				require.NotContains(t, generatedSQL, " join ")
+				require.Contains(t, generateSQL(1_000), "limit 200")
 			})
 		}
 	}
+}
+
+func TestRecallAttributionOrderPageSQLiteUsesPrimaryKeyRangeWithoutTempSort(t *testing.T) {
+	setupRecallAttributionDiscoveryTestDB(t)
+	generatedSQL := DB.ToSQL(func(tx *gorm.DB) *gorm.DB {
+		rows := make([]recallAttributionOrderRow, 0)
+		return recallAttributionOrderPageQueryWithContext(context.Background(), tx, recallAttributionCursor{Phase: recallAttributionPhaseTopUp}, 10).Find(&rows)
+	})
+	var planRows []struct {
+		Detail string `gorm:"column:detail"`
+	}
+	require.NoError(t, DB.Raw("EXPLAIN QUERY PLAN "+generatedSQL).Scan(&planRows).Error)
+	details := make([]string, 0, len(planRows))
+	for _, row := range planRows {
+		details = append(details, strings.ToLower(row.Detail))
+	}
+	plan := strings.Join(details, "\n")
+	require.Contains(t, plan, "integer primary key")
+	require.NotContains(t, plan, "temp b-tree")
 }
 
 func TestRecallAttributionCursorCASDoesNotOverwriteConcurrentAdvance(t *testing.T) {
@@ -161,35 +269,56 @@ func TestRecallAttributionCursorCASDoesNotOverwriteConcurrentAdvance(t *testing.
 	const nowUnix = int64(1_700_000_300)
 	_, expectedData, err := loadRecallAttributionCursorWithContext(context.Background(), nowUnix)
 	require.NoError(t, err)
-	advanced := recallAttributionCursor{Phase: recallAttributionPhaseTopUp, OrderCreatedAt: nowUnix + 20, OrderId: 20}
+	advanced := recallAttributionCursor{Phase: recallAttributionPhaseTopUp, OrderId: 20}
 	require.NoError(t, storeRecallAttributionCursorWithContext(context.Background(), expectedData, advanced, nowUnix+1))
 
-	stale := recallAttributionCursor{Phase: recallAttributionPhaseSubscription, OrderCreatedAt: nowUnix + 10, OrderId: 10}
+	stale := recallAttributionCursor{Phase: recallAttributionPhaseSubscription, OrderId: 10}
 	require.NoError(t, storeRecallAttributionCursorWithContext(context.Background(), expectedData, stale, nowUnix+2))
 	stored, _, err := loadRecallAttributionCursorWithContext(context.Background(), nowUnix+3)
 	require.NoError(t, err)
 	require.Equal(t, advanced, stored)
 }
 
+func TestRecallAttributionCursorNormalizesLegacyCreateTimeData(t *testing.T) {
+	setupRecallAttributionDiscoveryTestDB(t)
+	const nowUnix = int64(1_700_000_300)
+	legacyData := `{"phase":"topup","order_created_at":1700000200,"order_id":7}`
+	require.NoError(t, DB.Create(&RecallEvent{
+		EventType: recallAttributionCursorEventType, Source: recallAttributionProgressSource,
+		SourceEventId: recallAttributionCursorSourceID, EventData: legacyData, CreatedAt: nowUnix,
+	}).Error)
+
+	cursor, expectedData, err := loadRecallAttributionCursorWithContext(context.Background(), nowUnix+1)
+	require.NoError(t, err)
+	require.Equal(t, recallAttributionCursor{Phase: recallAttributionPhaseTopUp, OrderId: 7}, cursor)
+	require.Equal(t, legacyData, expectedData)
+	require.NoError(t, storeRecallAttributionCursorWithContext(context.Background(), expectedData, cursor, nowUnix+2))
+	stored := RecallEvent{}
+	require.NoError(t, DB.Where("source = ? AND source_event_id = ?", recallAttributionProgressSource, recallAttributionCursorSourceID).First(&stored).Error)
+	require.JSONEq(t, `{"phase":"topup","order_id":7}`, stored.EventData)
+}
+
 type recallAttributionQueryStats struct {
-	discoveryRows int64
-	maxVariables  int
+	maxVariables           int
+	maxEnrollmentVariables int
+	maxDuplicateVariables  int
 }
 
 func (s *recallAttributionQueryStats) observe(tx *gorm.DB) {
 	sql := strings.ToLower(tx.Statement.SQL.String())
-	if !strings.Contains(sql, "recall_recipients") && !strings.Contains(sql, "subscription_orders") && !strings.Contains(sql, "top_ups") {
-		return
+	if strings.Contains(sql, "recall_recipients") && strings.Contains(sql, "user_id in") && len(tx.Statement.Vars) > s.maxEnrollmentVariables {
+		s.maxEnrollmentVariables = len(tx.Statement.Vars)
 	}
-	s.discoveryRows += tx.RowsAffected
+	if strings.Contains(sql, "subscription_orders") && strings.Contains(sql, "trade_no in") && len(tx.Statement.Vars) > s.maxDuplicateVariables {
+		s.maxDuplicateVariables = len(tx.Statement.Vars)
+	}
 	if len(tx.Statement.Vars) > s.maxVariables {
 		s.maxVariables = len(tx.Statement.Vars)
 	}
 }
 
 func (s *recallAttributionQueryStats) reset() {
-	s.discoveryRows = 0
-	s.maxVariables = 0
+	*s = recallAttributionQueryStats{}
 }
 
 func setupRecallAttributionDiscoveryTestDB(t *testing.T) *gorm.DB {
