@@ -316,9 +316,19 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+// TemporaryChannelSpendHook, when set, is invoked for every consume log with the
+// channel id, model name and quota (units). The service layer uses it to accumulate
+// per-model spend on temporary channels and alert the supply chain. It is a package
+// variable set by the service layer at init to avoid an import cycle (model must not
+// import service). Keep the callback cheap; it runs on the settlement path.
+var TemporaryChannelSpendHook func(channelId int, modelName string, quota int)
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
+	}
+	if TemporaryChannelSpendHook != nil {
+		TemporaryChannelSpendHook(params.ChannelId, params.ModelName, params.Quota)
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
 	username := c.GetString("username")

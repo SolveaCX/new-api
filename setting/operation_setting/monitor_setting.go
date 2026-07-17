@@ -27,21 +27,25 @@ type MonitorSetting struct {
 	AIAnalysisAPIKey             string  `json:"ai_analysis_api_key"`
 	AIAnalysisBaseURL            string  `json:"ai_analysis_base_url"`
 	AIAnalysisModel              string  `json:"ai_analysis_model"`
+	// TemporaryChannelSpendThresholdUSD 单模型在临时渠道上的累计消耗（美元）超过此值即预警，
+	// 驱动供应链侧寻找更便宜的直连资源。<=0 关闭。默认 200。
+	TemporaryChannelSpendThresholdUSD float64 `json:"temporary_channel_spend_threshold_usd"`
 }
 
 // 默认配置
 var monitorSetting = MonitorSetting{
-	AutoTestChannelEnabled:       false,
-	AutoTestChannelMinutes:       10,
-	AutoTestChannelAllowedTypes:  []int{},
-	AutoTestChannelIgnoredTypes:  []int{},
-	DingTalkAlertEnabled:         false,
-	DingTalkAlertWebhookURL:      "",
-	DingTalkAlertSecret:          "",
-	DingTalkAlertCooldownMinutes: 60,
-	AIAnalysisAPIKey:             "",
-	AIAnalysisBaseURL:            DefaultMonitorAIAnalysisBaseURL,
-	AIAnalysisModel:              DefaultMonitorAIAnalysisModelName,
+	AutoTestChannelEnabled:            false,
+	AutoTestChannelMinutes:            10,
+	AutoTestChannelAllowedTypes:       []int{},
+	AutoTestChannelIgnoredTypes:       []int{},
+	DingTalkAlertEnabled:              false,
+	DingTalkAlertWebhookURL:           "",
+	DingTalkAlertSecret:               "",
+	DingTalkAlertCooldownMinutes:      60,
+	AIAnalysisAPIKey:                  "",
+	AIAnalysisBaseURL:                 DefaultMonitorAIAnalysisBaseURL,
+	AIAnalysisModel:                   DefaultMonitorAIAnalysisModelName,
+	TemporaryChannelSpendThresholdUSD: 200,
 }
 
 func init() {
