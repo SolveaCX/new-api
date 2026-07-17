@@ -34,7 +34,7 @@ func ListRecallCampaigns(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	page := common.GetPageQuery(c)
+	page := recallPageQuery(c)
 	items, total, err := runtime.Campaigns.List(c.Request.Context(), page, c.Query("status"))
 	if err != nil {
 		common.ApiError(c, err)
@@ -175,7 +175,7 @@ func ListRecallRecipients(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	page := common.GetPageQuery(c)
+	page := recallPageQuery(c)
 	items, total, err := runtime.Campaigns.ListRecipients(c.Request.Context(), id, page, c.Query("state"))
 	if err != nil {
 		common.ApiError(c, err)
@@ -197,7 +197,7 @@ func ListRecallEvents(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	page := common.GetPageQuery(c)
+	page := recallPageQuery(c)
 	items, total, err := runtime.Campaigns.ListEvents(c.Request.Context(), id, page)
 	if err != nil {
 		common.ApiError(c, err)
@@ -360,6 +360,20 @@ func recallControllerRuntime() (*service.RecallRuntime, error) {
 		return nil, fmt.Errorf("recall runtime is unavailable")
 	}
 	return runtime, nil
+}
+
+func recallPageQuery(c *gin.Context) *common.PageInfo {
+	page := common.GetPageQuery(c)
+	if page.Page < 1 {
+		page.Page = 1
+	}
+	if page.PageSize < 1 {
+		page.PageSize = common.ItemsPerPage
+	}
+	if page.PageSize > 100 {
+		page.PageSize = 100
+	}
+	return page
 }
 
 func recallPathID(c *gin.Context, key string) (int64, error) {

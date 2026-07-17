@@ -430,6 +430,47 @@ func TestRecallCampaignReadsMaskCodesAndOmitClaimAndTemplateSecrets(t *testing.T
 	require.Contains(t, responses[2].Body.String(), model.MaskPromotionCode(recipient.PromotionCode))
 }
 
+func TestRecallCampaignListNormalizesAndBoundsHTTPPagination(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	campaigns := make([]model.RecallCampaign, 101)
+	for i := range campaigns {
+		campaigns[i] = model.RecallCampaign{
+			Name:                "bounded campaign",
+			Status:              model.RecallCampaignDraft,
+			AudienceTemplate:    "first_purchase",
+			AudienceConfig:      `{}`,
+			ExecutionMode:       "manual",
+			CouponSource:        "automatic",
+			DiscountConfig:      `{}`,
+			ProductScope:        `{}`,
+			EmailSequenceConfig: `[]`,
+		}
+	}
+	require.NoError(t, harness.db.Create(&campaigns).Error)
+
+	for _, test := range []struct {
+		name         string
+		query        string
+		wantPage     float64
+		wantPageSize float64
+		wantItems    int
+	}{
+		{name: "negative", query: "?p=-9&page_size=-4", wantPage: 1, wantPageSize: float64(common.ItemsPerPage), wantItems: common.ItemsPerPage},
+		{name: "zero", query: "?p=0&page_size=0", wantPage: 1, wantPageSize: float64(common.ItemsPerPage), wantItems: common.ItemsPerPage},
+		{name: "oversize", query: "?p=1&page_size=1000", wantPage: 1, wantPageSize: 100, wantItems: 100},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := invokeRecallHandler(t, ListRecallCampaigns, http.MethodGet, "/"+test.query, nil, 7, nil)
+			payload := decodeRecallEnvelope(t, recorder)
+			require.Equal(t, true, payload["success"])
+			page := payload["data"].(map[string]any)
+			require.Equal(t, test.wantPage, page["page"])
+			require.Equal(t, test.wantPageSize, page["page_size"])
+			require.Len(t, page["items"], test.wantItems)
+		})
+	}
+}
+
 func TestRecallClaimUsesAuthenticatedUserAndRejectsAnotherUser(t *testing.T) {
 	harness := setupRecallControllerHarness(t)
 	campaign := seedRecallControllerCampaign(t, harness, model.RecallCampaignRunning)

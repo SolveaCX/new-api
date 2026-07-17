@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -356,6 +357,90 @@ func TestRecallRepositoryInsertAndListRecipients(t *testing.T) {
 	_, total, err = ListRecallRecipients(campaign.Id, 0, 10)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total, "a duplicate run event must roll back recipient inserts")
+}
+
+func TestRecallRepositoryReadListsAreBoundedAndExportUsesSnapshotKeyset(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaigns := make([]RecallCampaign, 101)
+	for i := range campaigns {
+		campaigns[i] = newRecallRepositoryCampaign("bounded campaign")
+	}
+	require.NoError(t, DB.Create(&campaigns).Error)
+	target := campaigns[0]
+
+	recipients := make([]RecallRecipient, 101)
+	events := make([]RecallEvent, 101)
+	for i := range recipients {
+		recipients[i] = RecallRecipient{
+			CampaignId:          target.Id,
+			UserId:              10_000 + i,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "bounded@example.com",
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		}
+		events[i] = RecallEvent{
+			CampaignId:    target.Id,
+			EventType:     "bounded_event",
+			Source:        "bounded_test",
+			SourceEventId: strconv.Itoa(i),
+			EventData:     `{}`,
+		}
+	}
+	require.NoError(t, DB.Create(&recipients).Error)
+	require.NoError(t, DB.Create(&events).Error)
+
+	for _, limit := range []int{-1, 0} {
+		campaignPage, total, err := ListRecallCampaignsWithContext(context.Background(), "", 0, limit)
+		require.NoError(t, err)
+		require.Equal(t, int64(101), total)
+		require.Empty(t, campaignPage)
+
+		recipientPage, total, err := ListRecallRecipientsWithContext(context.Background(), target.Id, 0, limit, "")
+		require.NoError(t, err)
+		require.Equal(t, int64(101), total)
+		require.Empty(t, recipientPage)
+
+		eventPage, total, err := ListRecallEventsWithContext(context.Background(), target.Id, 0, limit)
+		require.NoError(t, err)
+		require.Equal(t, int64(101), total)
+		require.Empty(t, eventPage)
+	}
+
+	campaignPage, _, err := ListRecallCampaignsWithContext(context.Background(), "", 0, 1_000)
+	require.NoError(t, err)
+	require.Len(t, campaignPage, 100)
+	recipientPage, _, err := ListRecallRecipientsWithContext(context.Background(), target.Id, 0, 1_000, "")
+	require.NoError(t, err)
+	require.Len(t, recipientPage, 100)
+	eventPage, _, err := ListRecallEventsWithContext(context.Background(), target.Id, 0, 1_000)
+	require.NoError(t, err)
+	require.Len(t, eventPage, 100)
+
+	snapshot, err := GetRecallRecipientExportSnapshotWithContext(context.Background(), target.Id)
+	require.NoError(t, err)
+	require.Equal(t, int64(101), snapshot.Total)
+	require.Equal(t, recipients[len(recipients)-1].Id, snapshot.MaxID)
+
+	postSnapshot := RecallRecipient{
+		CampaignId:          target.Id,
+		UserId:              20_000,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "post-snapshot@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientQueued,
+	}
+	require.NoError(t, DB.Create(&postSnapshot).Error)
+
+	firstPage, err := ListRecallRecipientsForExportWithContext(context.Background(), target.Id, 0, snapshot.MaxID, 60)
+	require.NoError(t, err)
+	require.Len(t, firstPage, 60)
+	secondPage, err := ListRecallRecipientsForExportWithContext(context.Background(), target.Id, firstPage[len(firstPage)-1].Id, snapshot.MaxID, 60)
+	require.NoError(t, err)
+	require.Len(t, secondPage, 41)
+	require.Equal(t, snapshot.MaxID, secondPage[len(secondPage)-1].Id)
+	require.NotEqual(t, postSnapshot.Id, secondPage[len(secondPage)-1].Id)
 }
 
 func TestRecallRepositoryMaskPromotionCode(t *testing.T) {
