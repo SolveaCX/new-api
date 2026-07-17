@@ -71,5 +71,9 @@ test("the production workflow passes and smoke-tests the console origin", () => 
     /--update-env-vars[=\s"']+APP_CONSOLE_ORIGIN=\$\{APP_CONSOLE_ORIGIN\}/,
   );
   assert.match(workflow, /"\$C\/api\/status"/);
-  assert.ok(workflow.includes("grep -Eq '^\\{\"success\""));
+  assert.ok(
+    workflow.includes(
+      `grep -Eq '"success"[[:space:]]*:[[:space:]]*true'`,
+    ),
+  );
 });
