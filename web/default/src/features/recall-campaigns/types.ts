@@ -121,8 +121,8 @@ export interface RecallPage<T> {
 }
 
 export interface RecallCampaignSearch {
-  page?: number
-  page_size?: number
+  p?: number
+  ps?: number
   status?: RecallCampaignStatus | ''
 }
 
@@ -174,8 +174,6 @@ export interface RecallRecipient {
   id: number
   campaign_id: number
   user_id: number
-  eligibility_snapshot: string
-  email_snapshot: string
   language_snapshot: string
   state: RecallRecipientState
   stripe_customer_id: string

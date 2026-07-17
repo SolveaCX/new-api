@@ -25,8 +25,8 @@ export function CampaignTable() {
     pageSize: 20,
   })
   const search: RecallCampaignSearch = {
-    page: pagination.pageIndex + 1,
-    page_size: pagination.pageSize,
+    p: pagination.pageIndex + 1,
+    ps: pagination.pageSize,
   }
   const query = useQuery({
     queryKey: recallCampaignKeys.list(search),

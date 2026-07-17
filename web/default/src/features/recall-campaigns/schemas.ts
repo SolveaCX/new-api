@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { RecallCampaignDraft } from './types'
 
 const nonNegativeInteger = z.number().int().min(0)
 const nonNegativeNumber = z.number().min(0)
@@ -179,6 +180,47 @@ const emailStageSchema = z
     message: 'English template is required',
   })
 
+const emailSequenceSchema = z
+  .array(emailStageSchema)
+  .min(1)
+  .max(3)
+  .superRefine((sequence, context) => {
+    let previousDelay = -1
+    sequence.forEach((stage, index) => {
+      if (stage.stage_no !== index + 1) {
+        context.addIssue({
+          code: 'custom',
+          path: [index, 'stage_no'],
+          message: 'Email stages must be ordered from one',
+        })
+      }
+      if (
+        (index === 0 && stage.delay_seconds !== 0) ||
+        stage.delay_seconds <= previousDelay
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: [index, 'delay_seconds'],
+          message: 'Email delays must start at zero and increase',
+        })
+      }
+      previousDelay = stage.delay_seconds
+    })
+  })
+
+const activatedUpdateFieldsSchema = z
+  .object({
+    name: z.string().trim().min(1).max(128),
+    email_sequence: emailSequenceSchema,
+  })
+  .passthrough()
+
+export const recallCampaignActivatedUpdateSchema =
+  activatedUpdateFieldsSchema as unknown as z.ZodType<
+    RecallCampaignDraft,
+    RecallCampaignDraft
+  >
+
 export const recallCampaignDraftSchema = z
   .object({
     name: z.string().trim().min(1).max(128),
@@ -197,7 +239,7 @@ export const recallCampaignDraftSchema = z
     promotion_valid_seconds: z.number().int().positive(),
     enrollment_limit: z.number().int().min(1).max(100_000),
     worker_concurrency: z.number().int().min(1).max(20),
-    email_sequence: z.array(emailStageSchema).min(1).max(3),
+    email_sequence: emailSequenceSchema,
   })
   .strict()
   .superRefine((draft, context) => {
@@ -274,25 +316,4 @@ export const recallCampaignDraftSchema = z
         })
       }
     }
-    let previousDelay = -1
-    draft.email_sequence.forEach((stage, index) => {
-      if (stage.stage_no !== index + 1) {
-        context.addIssue({
-          code: 'custom',
-          path: ['email_sequence', index, 'stage_no'],
-          message: 'Email stages must be ordered from one',
-        })
-      }
-      if (
-        (index === 0 && stage.delay_seconds !== 0) ||
-        stage.delay_seconds <= previousDelay
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['email_sequence', index, 'delay_seconds'],
-          message: 'Email delays must start at zero and increase',
-        })
-      }
-      previousDelay = stage.delay_seconds
-    })
   })

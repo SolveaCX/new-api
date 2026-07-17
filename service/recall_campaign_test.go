@@ -1089,6 +1089,43 @@ func TestRecallCampaignActivatedUpdateOnlyChangesFutureEmailVersion(t *testing.T
 	require.Equal(t, 3, stages[0].TemplateVersion)
 }
 
+func TestRecallCampaignActivatedEmailUpdateIgnoresPastImmutableTimestamps(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	draft := validRecallCampaignDraft(now)
+	draft.ExecutionMode = "scheduled_once"
+	draft.Schedule.ScheduledAt = now.Add(time.Hour).Unix()
+	draft.Discount.CouponRedeemBy = now.Add(2 * time.Hour).Unix()
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+
+	discount := draft.Discount
+	discount.CouponRedeemBy = 1
+	discountJSON, err := common.Marshal(discount)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&model.RecallCampaign{}).Where("id = ?", campaign.Id).Updates(map[string]any{
+		"scheduled_at":    int64(-1),
+		"discount_config": string(discountJSON),
+	}).Error)
+
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	edit, err := recallCampaignDraftFromModel(stored)
+	require.NoError(t, err)
+	edit.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "Updated subject", BodyText: "Updated body"}
+	updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, edit)
+	require.NoError(t, err)
+
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	require.Equal(t, "Updated subject", stages[0].Templates["en"].Subject)
+	require.Equal(t, 2, stages[0].TemplateVersion)
+}
+
 func TestRecallCampaignConcurrentEmailEditsUseConfigRevisionFence(t *testing.T) {
 	db := setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)

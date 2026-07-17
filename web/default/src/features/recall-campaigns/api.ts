@@ -27,25 +27,32 @@ export const recallCampaignKeys = {
   metrics: (id: number) => ['recall-campaigns', id, 'metrics'] as const,
 }
 
+function requireRecallSuccess<T>(response: ApiResponse<T>): ApiResponse<T> {
+  if (response?.success !== true) {
+    throw new Error(response?.message || 'Recall campaign request failed')
+  }
+  return response
+}
+
 export async function listRecallCampaigns(
   search: RecallCampaignSearch
 ): Promise<ApiResponse<RecallPage<RecallCampaignSummary>>> {
   const response = await api.get('/api/recall-campaigns/', { params: search })
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function createRecallCampaign(
   draft: RecallCampaignDraft
 ): Promise<ApiResponse<RecallCampaignSummary>> {
   const response = await api.post('/api/recall-campaigns/', draft)
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function getRecallCampaign(
   id: number
 ): Promise<ApiResponse<RecallCampaignDetail>> {
   const response = await api.get(`/api/recall-campaigns/${id}`)
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function updateRecallCampaign(
@@ -53,7 +60,7 @@ export async function updateRecallCampaign(
   draft: RecallCampaignDraft
 ): Promise<ApiResponse<RecallCampaignSummary>> {
   const response = await api.put(`/api/recall-campaigns/${id}`, draft)
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function previewRecallCampaign(
@@ -63,7 +70,7 @@ export async function previewRecallCampaign(
   const response = await api.post(`/api/recall-campaigns/${id}/preview`, null, {
     params: { sample_size: sampleSize },
   })
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function validateRecallStripeConfig(
@@ -73,7 +80,7 @@ export async function validateRecallStripeConfig(
     '/api/recall-campaigns/stripe/validate',
     draft
   )
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function runRecallCampaignAction(
@@ -81,7 +88,7 @@ export async function runRecallCampaignAction(
   action: RecallCampaignAction
 ): Promise<ApiResponse> {
   const response = await api.post(`/api/recall-campaigns/${id}/${action}`)
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function listRecallRecipients(
@@ -91,9 +98,9 @@ export async function listRecallRecipients(
   state = ''
 ): Promise<ApiResponse<RecallPage<RecallRecipient>>> {
   const response = await api.get(`/api/recall-campaigns/${id}/recipients`, {
-    params: { p: page, page_size: pageSize, state },
+    params: { p: page, ps: pageSize, state },
   })
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function listRecallEvents(
@@ -102,16 +109,16 @@ export async function listRecallEvents(
   pageSize = 20
 ): Promise<ApiResponse<RecallPage<RecallEvent>>> {
   const response = await api.get(`/api/recall-campaigns/${id}/events`, {
-    params: { p: page, page_size: pageSize },
+    params: { p: page, ps: pageSize },
   })
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function getRecallCampaignMetrics(
   id: number
 ): Promise<ApiResponse<RecallCampaignMetrics>> {
   const response = await api.get(`/api/recall-campaigns/${id}/metrics`)
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function retryRecallRecipient(
@@ -123,7 +130,7 @@ export async function retryRecallRecipient(
     `/api/recall-campaigns/${campaignId}/recipients/${recipientId}/retry`,
     { acknowledge_uncertain: acknowledgeUncertain }
   )
-  return response.data
+  return requireRecallSuccess(response.data)
 }
 
 export async function exportRecallCampaign(id: number): Promise<Blob> {
@@ -131,7 +138,18 @@ export async function exportRecallCampaign(id: number): Promise<Blob> {
     responseType: 'blob',
     disableDuplicate: true,
   })
-  return response.data
+  const blob = response.data as Blob
+  if (blob.type.toLowerCase().includes('json')) {
+    let payload: ApiResponse
+    try {
+      payload = JSON.parse(await blob.text()) as ApiResponse
+    } catch {
+      throw new Error('Recall campaign export returned invalid JSON')
+    }
+    requireRecallSuccess(payload)
+    throw new Error('Recall campaign export returned JSON instead of CSV')
+  }
+  return blob
 }
 
 export function useRecallCampaignMutations(id?: number) {

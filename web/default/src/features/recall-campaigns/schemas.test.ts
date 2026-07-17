@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { recallCampaignDraftSchema } from './schemas'
+import {
+  recallCampaignActivatedUpdateSchema,
+  recallCampaignDraftSchema,
+} from './schemas'
 
 const FUTURE_TIMESTAMP = Math.floor(Date.now() / 1000) + 86_400
 
@@ -168,6 +171,21 @@ describe('recallCampaignDraftSchema', () => {
     )
   })
 
+  test('requires one currency for a fixed discount and minimum amount', () => {
+    const fixed = makeDraft()
+    fixed.discount_config = {
+      ...fixed.discount_config,
+      type: 'fixed',
+      percent_off: 0,
+      amount_off: 500,
+      currency: 'USD',
+      minimum_amount: 1_000,
+      minimum_amount_currency: 'EUR',
+    }
+
+    expect(recallCampaignDraftSchema.safeParse(fixed).success).toBe(false)
+  })
+
   test('accepts automatic coupons and requires an ID for existing coupons', () => {
     expect(recallCampaignDraftSchema.safeParse(makeDraft()).success).toBe(true)
 
@@ -288,6 +306,13 @@ describe('recallCampaignDraftSchema', () => {
     expect(recallCampaignDraftSchema.safeParse(draft).success).toBe(false)
   })
 
+  test('requires the first email stage delay to be exactly zero', () => {
+    const draft = makeDraft()
+    draft.email_sequence[0].delay_seconds = 1
+
+    expect(recallCampaignDraftSchema.safeParse(draft).success).toBe(false)
+  })
+
   test('requires English subject and body text', () => {
     const missingEnglish = makeDraft()
     missingEnglish.email_sequence[0].templates = {
@@ -325,5 +350,40 @@ describe('recallCampaignDraftSchema', () => {
     draft[field] = value
 
     expect(recallCampaignDraftSchema.safeParse(draft).success).toBe(false)
+  })
+
+  test.each([
+    ['enrollment_limit', 1],
+    ['enrollment_limit', 100_000],
+    ['worker_concurrency', 1],
+    ['worker_concurrency', 20],
+  ] as const)('accepts %s=%d at its supported boundary', (field, value) => {
+    const draft = makeDraft()
+    draft[field] = value
+
+    expect(recallCampaignDraftSchema.safeParse(draft).success).toBe(true)
+  })
+})
+
+describe('recallCampaignActivatedUpdateSchema', () => {
+  test('allows future email edits when immutable timestamps are in the past', () => {
+    const draft = makeDraft()
+    draft.execution_mode = 'scheduled_once'
+    draft.schedule.scheduled_at = 1
+    draft.discount_config.coupon_redeem_by = 1
+    draft.email_sequence[0].templates.en.subject = 'Updated subject'
+
+    expect(recallCampaignActivatedUpdateSchema.safeParse(draft).success).toBe(
+      true
+    )
+  })
+
+  test('still validates activated email content', () => {
+    const draft = makeDraft()
+    draft.email_sequence[0].templates.en.subject = ''
+
+    expect(recallCampaignActivatedUpdateSchema.safeParse(draft).success).toBe(
+      false
+    )
   })
 })
