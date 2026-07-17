@@ -125,7 +125,7 @@ test("updates navigation and mega-footer links with safe external attributes", a
   }
 });
 
-test("leaves documentation links untouched when no safe setting is available", async () => {
+test("keeps the local documentation fallback when no safe setting is available", async () => {
   const api = loadApi();
   const link = {
     href: "docs.html",

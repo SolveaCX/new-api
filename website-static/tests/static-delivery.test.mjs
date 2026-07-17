@@ -23,27 +23,18 @@ test("Nginx proxies the public status response with bounded browser caching", ()
   assert.match(nginx, /Cache-Control "public, max-age=60" always;/);
 });
 
-test("static HTML receives one shared configuration script and hidden pending links", () => {
+test("static HTML receives one shared configuration script and keeps local docs fallback visible", () => {
   const nginx = read("../nginx.conf");
   const css = read("../html/fk2.css");
+  const indexHtml = read("../html/index.html");
 
   assert.match(
     nginx,
     /sub_filter '<\/body>' '<script src="\/assets\/site-config\.js\?v=[^"]+"><\/script><\/body>';/,
   );
-  assert.match(
-    nginx,
-    /sub_filter 'fk2\.css\?v=716b' 'fk2\.css\?v=717a';/,
-  );
-  for (const selector of [
-    '.nav a[href="docs.html"]',
-    '.nav a[href="/docs.html"]',
-    '.megafoot .col a[href="docs.html"]',
-    '.megafoot .col a[href="/docs.html"]',
-  ]) {
-    assert.ok(css.includes(selector), `missing hidden selector: ${selector}`);
-  }
-  assert.match(css, /display\s*:\s*none/);
+  assert.doesNotMatch(nginx, /sub_filter 'fk2\.css\?v=716b'/);
+  assert.match(indexHtml, /<a href="docs\.html">Docs<\/a>/);
+  assert.doesNotMatch(css, /a\[href="\/?docs\.html"\]/);
 });
 
 test("the Nginx image substitutes only the configured console origin", () => {
