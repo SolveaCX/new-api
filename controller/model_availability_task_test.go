@@ -51,7 +51,13 @@ func TestValidatePongTestResponseBody(t *testing.T) {
 	require.NoError(t, validatePongTestResponseBody([]byte(`{"choices":[{"message":{"content":"pong"}}]}`)))
 	require.NoError(t, validatePongTestResponseBody([]byte(`{"output_text":"PONG!"}`)))
 	require.NoError(t, validatePongTestResponseBody([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"pong\"},\"message\":{\"content\":\"pong\"}}]}\n\n")))
-	require.Error(t, validatePongTestResponseBody([]byte(`{"choices":[{"message":{"content":"hello"}}]}`)))
+	// Tolerant contract: a non-pong but non-empty answer means the model is reachable.
+	// Real upstream errors are filtered by validateTestResponseBody before this runs,
+	// so a chat/reasoning model that does not echo "pong" must not be marked failed.
+	require.NoError(t, validatePongTestResponseBody([]byte(`{"choices":[{"message":{"content":"hello"}}]}`)))
+	require.NoError(t, validatePongTestResponseBody([]byte(`{"choices":[{"message":{"content":""}}],"usage":{"completion_tokens":64}}`)))
+	// An empty body is still a genuine failure.
+	require.Error(t, validatePongTestResponseBody([]byte(``)))
 }
 
 func TestModelAvailabilityProbeConfigUsesImageEndpointForImageModels(t *testing.T) {
