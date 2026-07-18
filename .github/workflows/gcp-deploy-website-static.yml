@@ -119,11 +119,15 @@ jobs:
         run: |
           C="https://canary---newapi-web-5qjldqffdq-uw.a.run.app"
           # new static pages
-          for p in "" login.html models.html docs.html topup.html sla.html install.sh llms.txt; do
+          for p in "" login.html models.html docs.html topup.html sla.html install.sh llms.txt compute.html; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p")
             echo "/$p -> $code"; [ "$code" = "200" ] || exit 1
           done
           curl -s -o /dev/null -w "%{http_code}" "$C/signup.html" | grep -q 301 || exit 1
+          # compute B2B landing: pretty route serves the page, SEO head + lead form present
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/compute"); echo "/compute -> $code"; [ "$code" = "200" ] || exit 1
+          curl -s -m 20 "$C/compute.html" | grep -q 'canonical" href="https://flatkey.ai/compute.html"' || { echo "compute canonical missing"; exit 1; }
+          curl -s -m 20 "$C/compute.html" | grep -q 'id="waitlist"' || { echo "compute waitlist form missing"; exit 1; }
           # legacy SEO surface through the fallback proxy (must be 200, not redirect/404)
           for p in blog zh models pricing gpt-api-alternative about rankings sitemap.xml robots.txt; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$C/$p")
