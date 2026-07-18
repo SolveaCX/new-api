@@ -8,6 +8,7 @@
 
   var DICTS = {
 "zh": {
+"ct.li": "关注 LinkedIn",
 "cp.badge": "全新 · flatkey Compute · B2B 抢先体验",
 "cp.h1": "专属推理 GPU，<br>按小时计费<span class=\"dot\">.</span>",
 "cp.sub": "把你已经在 flatkey 上运行的模型，一键升级为单租户专属端点——企业级 SLA、私有隔离，与推理合并为一张账单。我们不囤卡，所以价格始终贴着市场底价。",
@@ -383,6 +384,7 @@
 "aud.more": "+ 还有 12 个语音模型 →"
 },
 "es": {
+"ct.li": "Síguenos en LinkedIn",
 "cp.badge": "NUEVO · flatkey Compute · Acceso anticipado B2B",
 "cp.h1": "GPU de inferencia dedicadas,<br>por hora<span class=\"dot\">.</span>",
 "cp.sub": "Convierte un modelo que ya ejecutas en flatkey en un endpoint dedicado de un solo inquilino: SLA empresarial, aislamiento privado y una sola factura junto a tu inferencia. No acumulamos tarjetas, así que el precio se mantiene en el suelo del mercado.",
@@ -758,6 +760,7 @@
 "aud.more": "+ 12 modelos de audio más →"
 },
 "fr": {
+"ct.li": "Suivez-nous sur LinkedIn",
 "cp.badge": "NOUVEAU · flatkey Compute · Accès anticipé B2B",
 "cp.h1": "Des GPU d'inférence dédiés,<br>à l'heure<span class=\"dot\">.</span>",
 "cp.sub": "Transformez un modèle que vous exécutez déjà sur flatkey en un endpoint dédié mono-locataire : SLA entreprise, isolation privée, une seule facture avec votre inférence. Nous ne stockons pas de cartes, donc le prix reste au plancher du marché.",
@@ -1133,6 +1136,7 @@
 "aud.more": "+ 12 autres modèles audio →"
 },
 "pt": {
+"ct.li": "Siga no LinkedIn",
 "cp.badge": "NOVO · flatkey Compute · Acesso antecipado B2B",
 "cp.h1": "GPUs de inferência dedicadas,<br>por hora<span class=\"dot\">.</span>",
 "cp.sub": "Promova um modelo que você já roda na flatkey para um endpoint dedicado de inquilino único — SLA empresarial, isolamento privado, uma única fatura junto com sua inferência. Não estocamos placas, então o preço fica no piso do mercado.",
@@ -1508,6 +1512,7 @@
 "aud.more": "+ mais 12 modelos de áudio →"
 },
 "ru": {
+"ct.li": "Подписаться в LinkedIn",
 "cp.badge": "НОВОЕ · flatkey Compute · Ранний доступ B2B",
 "cp.h1": "Выделенные GPU для инференса,<br>с почасовой оплатой<span class=\"dot\">.</span>",
 "cp.sub": "Превратите модель, которую вы уже запускаете на flatkey, в выделенный однопользовательский endpoint — корпоративный SLA, приватная изоляция, единый счёт вместе с инференсом. Мы не копим карты, поэтому цена держится на минимуме рынка.",
@@ -1883,6 +1888,7 @@
 "aud.more": "+ ещё 12 аудиомоделей →"
 },
 "ja": {
+"ct.li": "LinkedIn でフォロー",
 "cp.badge": "NEW · flatkey Compute · B2B 早期アクセス",
 "cp.h1": "専用の推論 GPU を、<br>時間単位で<span class=\"dot\">.</span>",
 "cp.sub": "flatkey で既に稼働中のモデルを、シングルテナントの専用エンドポイントへワンクリックで昇格。エンタープライズ SLA、プライベート隔離、推論とまとめて 1 枚の請求書。カードを在庫せず、価格は常に市場最安値に張り付きます。",
@@ -2258,6 +2264,7 @@
 "aud.more": "+ さらに 12 の音声モデル →"
 },
 "vi": {
+"ct.li": "Theo dõi trên LinkedIn",
 "cp.badge": "MỚI · flatkey Compute · Truy cập sớm B2B",
 "cp.h1": "GPU suy luận chuyên dụng,<br>tính theo giờ<span class=\"dot\">.</span>",
 "cp.sub": "Nâng cấp một mô hình bạn đã chạy trên flatkey thành endpoint chuyên dụng đơn khách thuê — SLA doanh nghiệp, cô lập riêng tư, một hóa đơn duy nhất cùng với suy luận. Chúng tôi không tích trữ card, nên giá luôn ở mức sàn thị trường.",
@@ -2633,6 +2640,7 @@
 "aud.more": "+ 12 mô hình âm thanh nữa →"
 },
 "de": {
+"ct.li": "Auf LinkedIn folgen",
 "cp.badge": "NEU · flatkey Compute · B2B Early Access",
 "cp.h1": "Dedizierte Inferenz-GPUs,<br>stundenweise<span class=\"dot\">.</span>",
 "cp.sub": "Machen Sie aus einem Modell, das Sie bereits auf flatkey betreiben, mit einem Klick einen Single-Tenant-Endpoint — Enterprise-SLA, private Isolation, eine Rechnung zusammen mit Ihrer Inferenz. Wir horten keine Karten, deshalb bleibt der Preis am Marktboden.",
@@ -3008,6 +3016,7 @@
 "aud.more": "+ 12 weitere Audiomodelle →"
 },
 "id": {
+"ct.li": "Ikuti di LinkedIn",
 "cp.badge": "BARU · flatkey Compute · Akses awal B2B",
 "cp.h1": "GPU inferensi khusus,<br>per jam<span class=\"dot\">.</span>",
 "cp.sub": "Tingkatkan model yang sudah Anda jalankan di flatkey menjadi endpoint khusus single-tenant — SLA enterprise, isolasi privat, satu tagihan bersama inferensi Anda. Kami tidak menimbun kartu, jadi harganya tetap di dasar pasar.",
