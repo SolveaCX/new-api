@@ -359,6 +359,12 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		return nil, false, err
 	}
 	user.FinalizeOAuthUserCreation(inviterId)
+	// Give OAuth signups the same idempotent default API key as email signups so
+	// Google/GitHub users don't land in an empty backend (issue #406). Best-effort:
+	// a transient key-creation failure must not block a successful OAuth login.
+	if err := ensureDefaultUserToken(user); err != nil {
+		common.SysLog("oauth default token creation failed for user " + strconv.Itoa(user.Id) + ": " + err.Error())
+	}
 
 	gaClientID, _ := session.Get("ga_client_id").(string)
 	gaSessionID, _ := session.Get("ga_session_id").(string)
