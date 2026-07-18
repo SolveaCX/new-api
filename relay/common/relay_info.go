@@ -547,6 +547,10 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 		info = GenRelayInfoOpenAI(c, request)
 	case types.RelayFormatOpenAIAudio:
 		info = GenRelayInfoOpenAIAudio(c, request)
+	case types.RelayFormatElevenLabs:
+		// ElevenLabs native endpoints reuse the audio-style info (RelayMode is set from
+		// the path by Path2RelayMode -> RelayModeElevenLabs); the body is passed through.
+		info = GenRelayInfoOpenAIAudio(c, request)
 	case types.RelayFormatOpenAIImage:
 		info = GenRelayInfoImage(c, request)
 	case types.RelayFormatOpenAIRealtime:
