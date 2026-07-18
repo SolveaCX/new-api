@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -34,7 +35,9 @@ func ElevenLabsHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPI
 	adaptor.Init(info)
 
 	// Forward the original request body verbatim (GET /v1/voices carries none).
-	var reader io.Reader
+	// Default to a non-nil empty body: DoApiRequest calls req.Body.Close(), which
+	// nil-panics when http.NewRequest is given a nil body (bodyless GET).
+	var reader io.Reader = strings.NewReader("")
 	if c.Request.Body != nil && c.Request.ContentLength != 0 {
 		body, err := common.GetRequestBody(c)
 		if err != nil {
