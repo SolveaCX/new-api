@@ -3419,6 +3419,10 @@
     return /^\/(?:careers(?:\.html)?|careers-zh\.html|zh\/careers)\/?$/.test(pathname);
   }
 
+  function isAboutPath(pathname) {
+    return /^\/about(?:\.html)?\/?$/.test(pathname);
+  }
+
   function pathLocale() {
     var match = location.pathname.match(/^\/(zh|es|pt|fr|id|de|vi|ru|ja)(?:\/|$)/);
     return match ? match[1] : "";
@@ -3534,6 +3538,7 @@
     var file = location.pathname.split("/").pop();
     var legalSlug = LEGAL_ROUTES[file];
     var careerRoute = isCareerPath(location.pathname);
+    var aboutRoute = isAboutPath(location.pathname);
     var sel = document.createElement("select");
     sel.className = "langsel";
     LANGS.filter(function (p) {
@@ -3549,6 +3554,11 @@
       if (careerRoute) {
         try { localStorage.setItem("fk-lang", sel.value); } catch (e) {}
         location.href = sel.value === "zh" ? "/zh/careers" : "/careers";
+        return;
+      }
+      if (aboutRoute) {
+        try { localStorage.setItem("fk-lang", sel.value); } catch (e) {}
+        location.href = localeRoute(sel.value, "about");
         return;
       }
       if (legalSlug && sel.value !== "en") {
@@ -3578,6 +3588,10 @@
   var htmlLanguage = (document.documentElement.lang || "en").split("-")[0];
   if (isCareerPath(location.pathname)) {
     setLang(/(?:careers-zh\.html|^\/zh\/careers)/.test(location.pathname) ? "zh" : "en");
+  } else if (isAboutPath(location.pathname)) {
+    // /about is the English static page. Other choices navigate to the
+    // corresponding reviewed legacy locale instead of mixing body languages.
+    setLang("en");
   } else if (currentLegalSlug && legalLanguage !== "en") {
     // A user who selected a language elsewhere should never see an English
     // legal body paired with a non-English language selector.
