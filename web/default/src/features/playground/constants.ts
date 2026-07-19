@@ -37,7 +37,14 @@ export const API_ENDPOINTS = {
   CHAT_COMPLETIONS: '/pg/chat/completions',
   USER_MODELS: '/api/user/models',
   USER_GROUPS: '/api/user/self/groups',
+  // Async video generation (veo models): POST to submit, GET `${VIDEOS}/{id}` to
+  // poll, GET `${VIDEOS}/{id}/content` for the raw MP4 blob.
+  VIDEOS: '/v1/videos',
 } as const
+
+// Poll the video task status roughly every 6s while it generates (veo-fast is
+// ~40s, standard is longer).
+export const VIDEO_POLL_INTERVAL_MS = 6000
 
 // Default group — uses 'default' as the safe fallback; auto-group is
 // only selected when the backend confirms it is available for the user.

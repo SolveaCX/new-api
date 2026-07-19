@@ -36,6 +36,10 @@ const FIRST_RUN_EXAMPLE_PROMPTS: ReadonlyArray<{
     text: 'Generate an image of a cat astronaut',
     model: 'gemini-2.5-flash-image',
   },
+  {
+    text: 'Generate a video of a cat astronaut',
+    model: 'veo-3.1-fast-generate-preview',
+  },
   { text: 'Write a quicksort in Python' },
   { text: 'Explain Transformers' },
 ]

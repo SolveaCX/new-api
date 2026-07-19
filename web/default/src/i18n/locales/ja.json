@@ -5490,6 +5490,10 @@
     "No content to copy": "コピーする内容がありません",
     "Please wait for the current generation to complete": "現在の生成が完了するまでお待ちください",
     "An unknown error occurred": "不明なエラーが発生しました",
-    "Try one of these to get started:": "まずはこちらからお試しください："
+    "Try one of these to get started:": "まずはこちらからお試しください：",
+    "Generate a video of a cat astronaut": "宇宙飛行士の猫の動画を生成して",
+    "Generating video…": "動画を生成しています…",
+    "Generating video… {{progress}}%": "動画を生成しています… {{progress}}%",
+    "Video generation failed": "動画の生成に失敗しました"
   }
 }
