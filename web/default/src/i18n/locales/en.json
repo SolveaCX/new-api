@@ -5467,6 +5467,12 @@
     "Verification link unavailable": "Verification link unavailable",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "This verification link is invalid or expired. Use the code in your email or request a new message.",
     "Back to registration": "Back to registration",
-    "Close verification tab": "Close verification tab"
+    "Close verification tab": "Close verification tab",
+    "Connect your coding tool": "Connect your coding tool",
+    "flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.": "flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.",
+    "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.",
+    "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.",
+    "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.",
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key."
   }
 }

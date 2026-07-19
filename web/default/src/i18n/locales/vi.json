@@ -5467,6 +5467,12 @@
     "Verification link unavailable": "Liên kết xác minh không khả dụng",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "Liên kết này không hợp lệ hoặc đã hết hạn. Hãy dùng mã trong email hoặc yêu cầu gửi thư mới.",
     "Back to registration": "Quay lại đăng ký",
-    "Close verification tab": "Đóng thẻ xác minh"
+    "Close verification tab": "Đóng thẻ xác minh",
+    "Connect your coding tool": "Kết nối công cụ lập trình của bạn",
+    "flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.": "flatkey tương thích với OpenAI, nên có thể dùng trong bất kỳ công cụ nào chấp nhận OpenAI base URL tùy chỉnh. Hãy dùng Base URL bên dưới và API key của bạn.",
+    "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible. Dán Base URL và khóa của bạn, rồi chọn một mô hình như claude-opus-4-8.",
+    "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Bật 'Override OpenAI Base URL', dán Base URL và khóa của bạn.",
+    "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → thêm một nhà cung cấp OpenAI-compatible. Đặt API host thành Base URL và dán khóa của bạn.",
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → thêm một nhà cung cấp tùy chỉnh (OpenAI API Compatible). Đặt API host thành Base URL và dán khóa của bạn."
   }
 }

@@ -5467,6 +5467,12 @@
     "Verification link unavailable": "確認リンクを利用できません",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "このリンクは無効か期限切れです。メールの確認コードを使用するか、メールを再送してください。",
     "Back to registration": "登録画面に戻る",
-    "Close verification tab": "確認タブを閉じる"
+    "Close verification tab": "確認タブを閉じる",
+    "Connect your coding tool": "コーディングツールを接続",
+    "flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.": "flatkey は OpenAI 互換なので、カスタムの OpenAI base URL を指定できるあらゆるツールにそのまま組み込めます。下記の Base URL とあなたの API key を使用してください。",
+    "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible。Base URL とキーを貼り付け、claude-opus-4-8 などのモデルを選択します。",
+    "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key。'Override OpenAI Base URL' をオンにして、Base URL とキーを貼り付けます。",
+    "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → OpenAI-compatible のプロバイダーを追加します。API host に Base URL を設定し、キーを貼り付けます。",
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → カスタムプロバイダー（OpenAI API Compatible）を追加します。API host に Base URL を設定し、キーを貼り付けます。"
   }
 }
