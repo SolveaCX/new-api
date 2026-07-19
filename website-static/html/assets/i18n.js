@@ -233,7 +233,7 @@
 "d.card4p": "一人一 key,带限额与模型白名单;逐请求台账、配额与费用 API 给财务。",
 "d.qsh": "从一次调用开始",
 "d.qsp": "大多数人从这里开始:控制台建 key,改 base_url,发请求。三行代码,零基础设施。",
-"d.llm": "用 AI agent 构建?抓取完整文档索引 <a href=\"#\">/llms.txt</a>——每页都有纯 markdown 镜像(.md)。",
+"d.llm": "用 AI agent 构建?抓取完整文档索引 <a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a>——每页都有纯 markdown 镜像(.md)。",
 "d.gh": "指南——大家最常问的四件事",
 "d.c1k": "编程 AGENT · CODEX CLI",
 "d.c1h": "接入 Codex",
@@ -296,6 +296,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "排行榜",
 "nav.pricing": "价格",
+"nav.compute": "算力",
 "nav.usecases": "使用场景",
 "nav.docs": "文档",
 "nav.signin": "登录",
@@ -630,7 +631,7 @@
 "d.card4p": "Una key por miembro con límites y allowlists; libro mayor por petición, cuotas y API de gasto para finanzas.",
 "d.qsh": "Empieza con una llamada",
 "d.qsp": "La mayoría empieza aquí: crea una key en la consola, cambia el base_url, envía una petición. Tres líneas, sin infraestructura.",
-"d.llm": "¿Construyes con un agente IA? Descarga el índice completo en <a href=\"#\">/llms.txt</a> — cada página tiene espejo markdown (.md).",
+"d.llm": "¿Construyes con un agente IA? Descarga el índice completo en <a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a> — cada página tiene espejo markdown (.md).",
 "d.gh": "Guías — las cuatro cosas que todos preguntan",
 "d.c1k": "CODING AGENTS · CODEX CLI",
 "d.c1h": "Conectar Codex",
@@ -673,6 +674,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "Rankings",
 "nav.pricing": "Precios",
+"nav.compute": "Cómputo",
 "nav.usecases": "Casos de uso",
 "nav.docs": "Docs",
 "nav.signin": "Iniciar sesión",
@@ -1007,7 +1009,7 @@
 "d.card4p": "Une key par membre avec plafonds et allowlists ; registre par requête, quotas et API de dépense pour la finance.",
 "d.qsh": "Commencez par un appel",
 "d.qsp": "La plupart commencent ici : créez une key dans la console, changez le base_url, envoyez une requête. Trois lignes, zéro infrastructure.",
-"d.llm": "Vous construisez avec un agent IA ? Récupérez l'index complet sur <a href=\"#\">/llms.txt</a> — chaque page a un miroir markdown (.md).",
+"d.llm": "Vous construisez avec un agent IA ? Récupérez l'index complet sur <a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a> — chaque page a un miroir markdown (.md).",
 "d.gh": "Guides — les quatre questions que tout le monde pose",
 "d.c1k": "CODING AGENTS · CODEX CLI",
 "d.c1h": "Connecter Codex",
@@ -1050,6 +1052,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "Classements",
 "nav.pricing": "Tarifs",
+"nav.compute": "Compute",
 "nav.usecases": "Cas d'usage",
 "nav.docs": "Docs",
 "nav.signin": "Connexion",
@@ -1384,7 +1387,7 @@
 "d.card4p": "Uma key por membro com limites e allowlists; razão por requisição, cotas e API de gasto para o financeiro.",
 "d.qsh": "Comece com uma chamada",
 "d.qsp": "A maioria começa aqui: crie uma key no console, troque o base_url, envie uma requisição. Três linhas, zero infraestrutura.",
-"d.llm": "Construindo com agente de IA? Busque o índice completo em <a href=\"#\">/llms.txt</a> — cada página tem espelho markdown (.md).",
+"d.llm": "Construindo com agente de IA? Busque o índice completo em <a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a> — cada página tem espelho markdown (.md).",
 "d.gh": "Guias — as quatro coisas que todo mundo pergunta",
 "d.c1k": "CODING AGENTS · CODEX CLI",
 "d.c1h": "Conectar Codex",
@@ -1427,6 +1430,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "Rankings",
 "nav.pricing": "Preços",
+"nav.compute": "Computação",
 "nav.usecases": "Casos de uso",
 "nav.docs": "Docs",
 "nav.signin": "Entrar",
@@ -1761,7 +1765,7 @@
 "d.card4p": "Ключ на участника с лимитами и allowlist; реестр по запросам, квоты и API расходов для финансов.",
 "d.qsh": "Начните с одного вызова",
 "d.qsp": "Большинство начинает здесь: ключ в консоли, смена base_url, запрос. Три строки, без инфраструктуры.",
-"d.llm": "Строите с ИИ-агентом? Полный индекс — <a href=\"#\">/llms.txt</a>, у каждой страницы есть markdown-зеркало (.md).",
+"d.llm": "Строите с ИИ-агентом? Полный индекс — <a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a>, у каждой страницы есть markdown-зеркало (.md).",
 "d.gh": "Гайды — четыре вопроса, которые задают все",
 "d.c1k": "CODING AGENTS · CODEX CLI",
 "d.c1h": "Подключить Codex",
@@ -1804,6 +1808,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "Рейтинги",
 "nav.pricing": "Цены",
+"nav.compute": "Вычисления",
 "nav.usecases": "Сценарии",
 "nav.docs": "Документация",
 "nav.signin": "Войти",
@@ -2138,7 +2143,7 @@
 "d.card4p": "メンバーごとに 1 キー、上限とモデル許可リスト付き;リクエスト単位の台帳、クォータ、支出 API。",
 "d.qsh": "1 回の呼び出しから",
 "d.qsp": "ほとんどの人はここから:コンソールでキーを作成、base_url を変更、リクエスト送信。3 行、インフラ不要。",
-"d.llm": "AI エージェントで構築中?<a href=\"#\">/llms.txt</a> で全ドキュメント索引を取得——全ページに markdown ミラー(.md)あり。",
+"d.llm": "AI エージェントで構築中?<a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a> で全ドキュメント索引を取得——全ページに markdown ミラー(.md)あり。",
 "d.gh": "ガイド — みんなが聞く 4 つのこと",
 "d.c1k": "コーディングエージェント · CODEX CLI",
 "d.c1h": "Codex を接続",
@@ -2181,6 +2186,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "ランキング",
 "nav.pricing": "料金",
+"nav.compute": "コンピュート",
 "nav.usecases": "ユースケース",
 "nav.docs": "ドキュメント",
 "nav.signin": "ログイン",
@@ -2515,7 +2521,7 @@
 "d.card4p": "Mỗi thành viên một key với hạn mức và allowlist; sổ cái theo yêu cầu, quota và API chi tiêu cho tài chính.",
 "d.qsh": "Bắt đầu bằng một lời gọi",
 "d.qsp": "Đa số bắt đầu ở đây: tạo key trong console, đổi base_url, gửi yêu cầu. Ba dòng, không hạ tầng.",
-"d.llm": "Xây bằng AI agent? Lấy chỉ mục đầy đủ tại <a href=\"#\">/llms.txt</a> — mỗi trang đều có bản markdown (.md).",
+"d.llm": "Xây bằng AI agent? Lấy chỉ mục đầy đủ tại <a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a> — mỗi trang đều có bản markdown (.md).",
 "d.gh": "Hướng dẫn — bốn điều ai cũng hỏi",
 "d.c1k": "CODING AGENTS · CODEX CLI",
 "d.c1h": "Kết nối Codex",
@@ -2558,6 +2564,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "Bảng xếp hạng",
 "nav.pricing": "Giá",
+"nav.compute": "Điện toán",
 "nav.usecases": "Trường hợp dùng",
 "nav.docs": "Tài liệu",
 "nav.signin": "Đăng nhập",
@@ -2892,7 +2899,7 @@
 "d.card4p": "Ein Key pro Mitglied mit Limits und Allowlists; Ledger pro Request, Quoten und Spend-API für die Finanzabteilung.",
 "d.qsh": "Mit einem Call starten",
 "d.qsp": "Die meisten starten hier: Key in der Konsole anlegen, base_url ändern, Request senden. Drei Zeilen, keine Infrastruktur.",
-"d.llm": "Sie bauen mit einem KI-Agenten? Vollständigen Index unter <a href=\"#\">/llms.txt</a> abrufen — jede Seite hat einen Markdown-Spiegel (.md).",
+"d.llm": "Sie bauen mit einem KI-Agenten? Vollständigen Index unter <a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a> abrufen — jede Seite hat einen Markdown-Spiegel (.md).",
 "d.gh": "Guides — die vier Fragen, die alle stellen",
 "d.c1k": "CODING AGENTS · CODEX CLI",
 "d.c1h": "Codex verbinden",
@@ -2935,6 +2942,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "Rankings",
 "nav.pricing": "Preise",
+"nav.compute": "Compute",
 "nav.usecases": "Use Cases",
 "nav.docs": "Doku",
 "nav.signin": "Anmelden",
@@ -3269,7 +3277,7 @@
 "d.card4p": "Satu key per anggota dengan batas dan allowlist; buku besar per permintaan, kuota, dan API pengeluaran untuk finance.",
 "d.qsh": "Mulai dengan satu panggilan",
 "d.qsp": "Kebanyakan mulai di sini: buat key di konsol, ganti base_url, kirim permintaan. Tiga baris, tanpa infrastruktur.",
-"d.llm": "Membangun dengan agent AI? Ambil indeks lengkap di <a href=\"#\">/llms.txt</a> — tiap halaman punya cermin markdown (.md).",
+"d.llm": "Membangun dengan agent AI? Ambil indeks lengkap di <a href=\"https://docs.flatkey.ai/llms.txt\">/llms.txt</a> — tiap halaman punya cermin markdown (.md).",
 "d.gh": "Panduan — empat hal yang paling sering ditanya",
 "d.c1k": "CODING AGENTS · CODEX CLI",
 "d.c1h": "Hubungkan Codex",
@@ -3312,6 +3320,7 @@
 "nav.playground": "Playground",
 "nav.rankings": "Peringkat",
 "nav.pricing": "Harga",
+"nav.compute": "Komputasi",
 "nav.usecases": "Use case",
 "nav.docs": "Dokumentasi",
 "nav.signin": "Masuk",
@@ -3406,10 +3415,13 @@
   // These locale routes contain reviewed legal copy. German and Indonesian
   // currently fall back to English, so do not present them as translated law.
   var LEGAL_LANGUAGES = { en: true, zh: true, es: true, fr: true, pt: true, ru: true, ja: true, vi: true };
+  function isCareerPath(pathname) {
+    return /^\/(?:careers(?:\.html)?|careers-zh\.html|zh\/careers)\/?$/.test(pathname);
+  }
 
   var HREF_KEYS = {
     "models.html": "nav.models", "playground.html": "nav.playground",
-    "topup.html": "nav.pricing", "usecases.html": "nav.usecases",
+    "topup.html": "nav.pricing", "compute.html": "nav.compute", "/compute.html": "nav.compute", "usecases.html": "nav.usecases",
     "signup.html": "nav.signin", "contact.html": "nav.contact",
     "https://flatkey.ai/blog": "nav.blog", "/blog": "nav.blog", "/rankings": "nav.rankings", "/about": "ft.about", "docs.html": "nav.docs", "status.html": "nav.status", "sla.html": "nav.sla", "login.html": "nav.signin", "https://console.flatkey.ai/sign-in": "nav.signin", "https://console.flatkey.ai/sign-up?redirect=/keys": "nav.start"
   };
@@ -3467,15 +3479,24 @@
     if (!nav || document.querySelector(".langsel")) return;
     var file = location.pathname.split("/").pop();
     var legalSlug = LEGAL_ROUTES[file];
+    var careerRoute = isCareerPath(location.pathname);
     var sel = document.createElement("select");
     sel.className = "langsel";
-    LANGS.filter(function (p) { return !legalSlug || LEGAL_LANGUAGES[p[0]]; }).forEach(function (p) {
+    LANGS.filter(function (p) {
+      if (careerRoute) return p[0] === "en" || p[0] === "zh";
+      return !legalSlug || LEGAL_LANGUAGES[p[0]];
+    }).forEach(function (p) {
       var o = document.createElement("option");
       o.value = p[0]; o.textContent = p[1];
       sel.appendChild(o);
     });
     sel.addEventListener("change", function () {
       var p = location.pathname;
+      if (careerRoute) {
+        try { localStorage.setItem("fk-lang", sel.value); } catch (e) {}
+        location.href = sel.value === "zh" ? "/zh/careers" : "/careers";
+        return;
+      }
       if (legalSlug && sel.value !== "en") {
         try { localStorage.setItem("fk-lang", sel.value); } catch (e) {}
         location.href = "/" + sel.value + "/" + legalSlug;
@@ -3499,7 +3520,9 @@
   var currentLegalFile = location.pathname.split("/").pop();
   var currentLegalSlug = LEGAL_ROUTES[currentLegalFile];
   var legalLanguage = LEGAL_LANGUAGES[saved] ? saved : "en";
-  if (currentLegalSlug && legalLanguage !== "en") {
+  if (isCareerPath(location.pathname)) {
+    setLang(/(?:careers-zh\.html|^\/zh\/careers)/.test(location.pathname) ? "zh" : "en");
+  } else if (currentLegalSlug && legalLanguage !== "en") {
     // A user who selected a language elsewhere should never see an English
     // legal body paired with a non-English language selector.
     location.replace("/" + legalLanguage + "/" + currentLegalSlug + location.search + location.hash);
