@@ -871,7 +871,7 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
         <TableHeader>
           <TableRow>
             <TableHead>{t('User')}</TableHead>
-            <TableHead>{t('First Paid At')}</TableHead>
+            <TableHead>{t('Last Paid At')}</TableHead>
             <TableHead className='text-right'>{t('Paid Amount')}</TableHead>
             <TableHead>{t('Campaign')}</TableHead>
             <TableHead>{t('Region')}</TableHead>
@@ -903,9 +903,10 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
                   </div>
                 </TableCell>
                 <TableCell className='whitespace-nowrap'>
-                  <div>{shortTime(row.first_paid_at)}</div>
+                  <div>{shortTime(row.last_paid_at)}</div>
                   <div className='text-muted-foreground text-xs'>
-                    {t('Registrations')} {shortTime(row.registered_at)}
+                    {t('First Paid')} {shortTime(row.first_paid_at)} ·{' '}
+                    {t('Reg.')} {shortTime(row.registered_at)}
                   </div>
                 </TableCell>
                 <TableCell className='text-right whitespace-nowrap'>
@@ -935,11 +936,25 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className='whitespace-nowrap'>
-                    {countryLabel(row.ip_country, i18n.language) || '-'}
-                    {row.pay_country
-                      ? ` · 💳 ${countryLabel(row.pay_country, i18n.language)}`
-                      : ''}
+                  <div className='flex flex-wrap items-center gap-1 whitespace-nowrap'>
+                    {row.ip_country ? (
+                      <Badge
+                        variant='outline'
+                        className='border-blue-300 bg-blue-50 text-sm font-semibold text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200'
+                      >
+                        {countryLabel(row.ip_country, i18n.language)}
+                      </Badge>
+                    ) : (
+                      '-'
+                    )}
+                    {row.pay_country && row.pay_country !== row.ip_country ? (
+                      <Badge
+                        variant='outline'
+                        className='text-muted-foreground text-xs'
+                      >
+                        💳 {countryLabel(row.pay_country, i18n.language)}
+                      </Badge>
+                    ) : null}
                   </div>
                   <div className='font-mono text-xs'>
                     {row.last_ip ? (

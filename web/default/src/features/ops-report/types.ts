@@ -74,6 +74,7 @@ export interface OpsPayerRow {
   refunded_usd: number
   refunded_cnt: number
   first_paid_at: number
+  last_paid_at: number
   registered_at: number
   campaign: string
   keyword: string
