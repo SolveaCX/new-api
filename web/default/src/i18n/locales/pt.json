@@ -5266,6 +5266,7 @@
     "Paying Customers": "Clientes pagantes",
     "Orders": "Pedidos",
     "First Paid At": "Primeiro pagamento em",
+    "Refunded": "已退款",
     "Generated at": "Gerado em",
     "{{count}} days": "{{count}} dias",
     "{{count}} paying users, {{amount}} total": "{{count}} usuários pagantes, {{amount}} no total",
@@ -5473,6 +5474,11 @@
     "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible. Cole o Base URL e sua chave, depois escolha um modelo como claude-opus-4-8.",
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Ative 'Override OpenAI Base URL', cole o Base URL e sua chave.",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → adicione um provedor OpenAI-compatible. Defina o API host como o Base URL e cole sua chave.",
-    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → adicione um provedor personalizado (OpenAI API Compatible). Defina o API host como o Base URL e cole sua chave."
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → adicione um provedor personalizado (OpenAI API Compatible). Defina o API host como o Base URL e cole sua chave.",
+    "The unified gateway for 170+ AI models": "O gateway unificado para mais de 170 modelos de IA",
+    "The most complete catalog, the lowest price, the most reliable service.": "O catálogo mais completo, o menor preço, o serviço mais confiável.",
+    "One key, 170+ models": "Uma chave, mais de 170 modelos",
+    "At least 40% cheaper": "Pelo menos 40% mais barato",
+    "Official direct routes, trusted uptime": "Rotas diretas oficiais, disponibilidade confiável"
   }
 }

@@ -5266,6 +5266,7 @@
     "Paying Customers": "Clients payants",
     "Orders": "Commandes",
     "First Paid At": "Premier paiement le",
+    "Refunded": "已退款",
     "Generated at": "Généré le",
     "{{count}} days": "{{count}} jours",
     "{{count}} paying users, {{amount}} total": "{{count}} utilisateurs payants, {{amount}} au total",
@@ -5473,6 +5474,11 @@
     "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible. Collez le Base URL et votre clé, puis choisissez un modèle comme claude-opus-4-8.",
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Activez 'Override OpenAI Base URL', collez le Base URL et votre clé.",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → ajoutez un fournisseur OpenAI-compatible. Définissez l'API host sur le Base URL et collez votre clé.",
-    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → ajoutez un fournisseur personnalisé (OpenAI API Compatible). Définissez l'API host sur le Base URL et collez votre clé."
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → ajoutez un fournisseur personnalisé (OpenAI API Compatible). Définissez l'API host sur le Base URL et collez votre clé.",
+    "The unified gateway for 170+ AI models": "La passerelle unifiée pour plus de 170 modèles d'IA",
+    "The most complete catalog, the lowest price, the most reliable service.": "Le catalogue le plus complet, le prix le plus bas, le service le plus fiable.",
+    "One key, 170+ models": "Une seule clé, plus de 170 modèles",
+    "At least 40% cheaper": "Au moins 40 % moins cher",
+    "Official direct routes, trusted uptime": "Routes directes officielles, disponibilité fiable"
   }
 }
