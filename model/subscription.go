@@ -175,10 +175,11 @@ type SubscriptionPlan struct {
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
-	// Rolling 5-hour usage window limit in weighted quota units (0 = disabled)
-	Window5hAmount int64 `json:"window_5h_amount" gorm:"type:bigint;not null;default:0"`
+	// Rolling 5-hour usage window limit in weighted quota units (0 = disabled).
+	// 显式 column：GORM 默认会把 Window5hAmount 命名为 window5h_amount，与迁移列名不一致
+	Window5hAmount int64 `json:"window_5h_amount" gorm:"column:window_5h_amount;type:bigint;not null;default:0"`
 	// 7-day usage window limit in weighted quota units, cycle anchored at subscription start (0 = disabled)
-	WindowWeekAmount int64 `json:"window_week_amount" gorm:"type:bigint;not null;default:0"`
+	WindowWeekAmount int64 `json:"window_week_amount" gorm:"column:window_week_amount;type:bigint;not null;default:0"`
 
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
