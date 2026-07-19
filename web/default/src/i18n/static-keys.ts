@@ -628,6 +628,7 @@ export const STATIC_I18N_KEYS = [
   'statusCenter.settings.label.discordDeliveryState',
   'statusCenter.settings.label.evidenceMaxAgeSeconds',
   'statusCenter.settings.label.custom',
+  'statusCenter.settings.readOnly',
   'statusCenter.incidents.privateDraft.title',
   'statusCenter.incidents.privateDraft.description',
   'statusCenter.incidents.privateDraft.body',

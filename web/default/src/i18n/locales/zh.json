@@ -5705,6 +5705,7 @@
     "statusCenter.deliveries.retrySucceeded": "投递已加入重试队列",
     "statusCenter.settings.title": "状态设置",
     "statusCenter.settings.description": "仅限 Root 的设置需要安全验证。已保存的密钥不会返回或显示。",
+    "statusCenter.settings.readOnly": "只读",
     "statusCenter.settings.secretNeverShown": "已保存的密钥值永不显示；只能输入替换值。",
     "statusCenter.settings.replacementValue": "替换值",
     "statusCenter.settings.replacementPlaceholder": "输入替换值",

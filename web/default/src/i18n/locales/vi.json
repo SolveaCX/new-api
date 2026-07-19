@@ -5705,6 +5705,7 @@
     "statusCenter.deliveries.retrySucceeded": "Đã đưa lần gửi vào hàng đợi thử lại",
     "statusCenter.settings.title": "Cài đặt trạng thái",
     "statusCenter.settings.description": "Cài đặt chỉ dành cho Root yêu cầu xác minh an toàn. Bí mật đã lưu không bao giờ được trả về hay hiển thị.",
+    "statusCenter.settings.readOnly": "Chỉ đọc",
     "statusCenter.settings.secretNeverShown": "Bí mật đã lưu không bao giờ hiển thị; chỉ nhập giá trị thay thế.",
     "statusCenter.settings.replacementValue": "Giá trị thay thế",
     "statusCenter.settings.replacementPlaceholder": "Nhập giá trị thay thế",
