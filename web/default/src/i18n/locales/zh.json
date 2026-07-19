@@ -5474,6 +5474,11 @@
     "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible。粘贴 Base URL 和你的密钥，然后选择一个模型，例如 claude-opus-4-8。",
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key。开启 'Override OpenAI Base URL'，粘贴 Base URL 和你的密钥。",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → 添加一个 OpenAI-compatible 提供商。将 API host 设为该 Base URL，并粘贴你的密钥。",
-    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → 添加一个自定义提供商（OpenAI API Compatible）。将 API host 设为该 Base URL，并粘贴你的密钥。"
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → 添加一个自定义提供商（OpenAI API Compatible）。将 API host 设为该 Base URL，并粘贴你的密钥。",
+    "The unified gateway for 170+ AI models": "170+ AI 模型的统一网关",
+    "The most complete catalog, the lowest price, the most reliable service.": "最全的模型目录，最低的价格，最稳定的服务。",
+    "One key, 170+ models": "一把密钥，170+ 模型",
+    "At least 40% cheaper": "至少便宜 40%",
+    "Official direct routes, trusted uptime": "官方直连，稳定可信"
   }
 }

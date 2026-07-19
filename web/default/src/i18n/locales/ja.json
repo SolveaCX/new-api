@@ -5266,6 +5266,7 @@
     "Paying Customers": "課金顧客",
     "Orders": "注文数",
     "First Paid At": "初回支払日時",
+    "Refunded": "已退款",
     "Generated at": "生成日時",
     "{{count}} days": "{{count}}日",
     "{{count}} paying users, {{amount}} total": "課金ユーザー{{count}}名、合計{{amount}}",
@@ -5473,6 +5474,11 @@
     "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible。Base URL とキーを貼り付け、claude-opus-4-8 などのモデルを選択します。",
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key。'Override OpenAI Base URL' をオンにして、Base URL とキーを貼り付けます。",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → OpenAI-compatible のプロバイダーを追加します。API host に Base URL を設定し、キーを貼り付けます。",
-    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → カスタムプロバイダー（OpenAI API Compatible）を追加します。API host に Base URL を設定し、キーを貼り付けます。"
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → カスタムプロバイダー（OpenAI API Compatible）を追加します。API host に Base URL を設定し、キーを貼り付けます。",
+    "The unified gateway for 170+ AI models": "170以上のAIモデルを束ねる統合ゲートウェイ",
+    "The most complete catalog, the lowest price, the most reliable service.": "最も充実したカタログ、最も低い価格、最も安定したサービス。",
+    "One key, 170+ models": "1つのキーで170以上のモデル",
+    "At least 40% cheaper": "少なくとも40％お得",
+    "Official direct routes, trusted uptime": "公式ダイレクト接続、信頼できる稼働率"
   }
 }

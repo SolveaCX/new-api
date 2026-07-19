@@ -5266,6 +5266,7 @@
     "Paying Customers": "Khách hàng trả phí",
     "Orders": "Đơn hàng",
     "First Paid At": "Thanh toán lần đầu lúc",
+    "Refunded": "已退款",
     "Generated at": "Tạo lúc",
     "{{count}} days": "{{count}} ngày",
     "{{count}} paying users, {{amount}} total": "{{count}} người dùng trả phí, tổng {{amount}}",
@@ -5473,6 +5474,11 @@
     "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible. Dán Base URL và khóa của bạn, rồi chọn một mô hình như claude-opus-4-8.",
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Bật 'Override OpenAI Base URL', dán Base URL và khóa của bạn.",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → thêm một nhà cung cấp OpenAI-compatible. Đặt API host thành Base URL và dán khóa của bạn.",
-    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → thêm một nhà cung cấp tùy chỉnh (OpenAI API Compatible). Đặt API host thành Base URL và dán khóa của bạn."
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → thêm một nhà cung cấp tùy chỉnh (OpenAI API Compatible). Đặt API host thành Base URL và dán khóa của bạn.",
+    "The unified gateway for 170+ AI models": "Cổng kết nối hợp nhất cho hơn 170 mô hình AI",
+    "The most complete catalog, the lowest price, the most reliable service.": "Danh mục đầy đủ nhất, giá thấp nhất, dịch vụ ổn định nhất.",
+    "One key, 170+ models": "Một khóa, hơn 170 mô hình",
+    "At least 40% cheaper": "Rẻ hơn ít nhất 40%",
+    "Official direct routes, trusted uptime": "Tuyến kết nối trực tiếp chính thức, thời gian hoạt động đáng tin cậy"
   }
 }
