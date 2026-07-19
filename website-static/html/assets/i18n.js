@@ -3411,12 +3411,63 @@
 }
 };
 
-  var LEGAL_ROUTES = { "terms.html": "terms", "privacy.html": "privacy", "refund-policy.html": "refund-policy", "legal-sla.html": "sla" };
+  var LEGAL_ROUTES = { "terms.html": "terms", "privacy.html": "privacy", "refund-policy.html": "refund-policy", "sla.html": "sla", "legal-sla.html": "sla" };
   // These locale routes contain reviewed legal copy. German and Indonesian
   // currently fall back to English, so do not present them as translated law.
   var LEGAL_LANGUAGES = { en: true, zh: true, es: true, fr: true, pt: true, ru: true, ja: true, vi: true };
   function isCareerPath(pathname) {
     return /^\/(?:careers(?:\.html)?|careers-zh\.html|zh\/careers)\/?$/.test(pathname);
+  }
+
+  function pathLocale() {
+    var match = location.pathname.match(/^\/(zh|es|pt|fr|id|de|vi|ru|ja)(?:\/|$)/);
+    return match ? match[1] : "";
+  }
+
+  function localeRoute(locale, route) {
+    if (route === "home") return locale === "en" ? "/" : "/" + locale;
+    if (route === "careers") return locale === "zh" ? "/zh/careers" : "/careers";
+    if (route === "contact" || route === "about" || route === "blog") {
+      return locale === "en" ? "/" + route : "/" + locale + "/" + route;
+    }
+    if (route === "terms" || route === "privacy" || route === "sla" || route === "legal-sla" || route === "refund-policy") {
+      var localizedRoute = route === "legal-sla" ? "sla" : route;
+      return locale !== "en" && LEGAL_LANGUAGES[locale]
+        ? "/" + locale + "/" + localizedRoute
+        : "/" + route + ".html";
+    }
+    return "";
+  }
+
+  function identifyLocaleRoute(a) {
+    var key = a.dataset.i18n || "";
+    var keyed = {
+      "ft.careers": "careers", "ft.contact": "contact", "ft.about": "about",
+      "ft.terms": "terms", "ft.privacy": "privacy", "ft.sla": "sla",
+      "ft.refund": "refund-policy", "nav.blog": "blog"
+    };
+    if (keyed[key]) return keyed[key];
+    var href = (a.getAttribute("href") || "").replace(/^https?:\/\/flatkey\.ai/i, "").split(/[?#]/)[0];
+    if (/^(?:\/|index\.html)$/.test(href) && a.matches(".nav .logo, .dbar .brand, .megafoot .brandcol .logo")) return "home";
+    if (/^\/?(?:careers(?:\.html)?|careers-zh\.html|zh\/careers)\/?$/.test(href)) return "careers";
+    if (/^\/?contact(?:\.html)?\/?$/.test(href)) return "contact";
+    if (/^\/?about\/?$/.test(href)) return "about";
+    if (/^\/?blog\/?$/.test(href)) return "blog";
+    if (/^\/?terms(?:\.html)?\/?$/.test(href)) return "terms";
+    if (/^\/?privacy(?:\.html)?\/?$/.test(href)) return "privacy";
+    if (/^\/?legal-sla(?:\.html)?\/?$/.test(href)) return "legal-sla";
+    if (/^\/?sla(?:\.html)?\/?$/.test(href)) return "sla";
+    if (/^\/?refund-policy(?:\.html)?\/?$/.test(href)) return "refund-policy";
+    return "";
+  }
+
+  function syncLocaleRoutes(locale) {
+    document.querySelectorAll("a[href]").forEach(function (a) {
+      var route = a.dataset.localeRoute || identifyLocaleRoute(a);
+      if (!route) return;
+      a.dataset.localeRoute = route;
+      a.setAttribute("href", localeRoute(locale, route));
+    });
   }
 
   var HREF_KEYS = {
@@ -3469,9 +3520,12 @@
       el.innerHTML = v !== undefined ? v : el.dataset.orig;
     });
     document.documentElement.lang = l === "zh" ? "zh-CN" : l;
+    document.documentElement.dataset.locale = l;
     try { localStorage.setItem("fk-lang", l); } catch (e) {}
     var sel = document.querySelector(".langsel");
     if (sel) sel.value = l;
+    syncLocaleRoutes(l);
+    document.dispatchEvent(new CustomEvent("flatkey:languagechange", { detail: { locale: l } }));
   }
 
   function injectSwitcher() {
@@ -3520,13 +3574,19 @@
   var currentLegalFile = location.pathname.split("/").pop();
   var currentLegalSlug = LEGAL_ROUTES[currentLegalFile];
   var legalLanguage = LEGAL_LANGUAGES[saved] ? saved : "en";
+  var routedLanguage = pathLocale();
+  var htmlLanguage = (document.documentElement.lang || "en").split("-")[0];
   if (isCareerPath(location.pathname)) {
     setLang(/(?:careers-zh\.html|^\/zh\/careers)/.test(location.pathname) ? "zh" : "en");
   } else if (currentLegalSlug && legalLanguage !== "en") {
     // A user who selected a language elsewhere should never see an English
     // legal body paired with a non-English language selector.
     location.replace("/" + legalLanguage + "/" + currentLegalSlug + location.search + location.hash);
-  } else if (saved !== "en" && !currentLegalSlug) {
-    setLang(saved);
+  } else if (!currentLegalSlug) {
+    // A locale encoded in the URL or in a pre-rendered localized homepage is
+    // authoritative. Otherwise, keep the visitor's explicit saved preference.
+    setLang(routedLanguage || (htmlLanguage !== "en" && DICTS[htmlLanguage] ? htmlLanguage : saved));
+  } else {
+    setLang("en");
   }
 })();
