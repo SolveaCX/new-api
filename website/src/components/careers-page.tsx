@@ -21,6 +21,8 @@ const copy: Record<CareersLocale, {
   photosLead: string;
   awardCaption: string;
   officeCaption: string;
+  workspaceCaption: string;
+  boardroomCaption: string;
   rolesTitle: string;
   rolesLead: string;
   roles: { title: string; body: string; tags: string[]; mailSubject: string; cta: string }[];
@@ -59,6 +61,8 @@ const copy: Record<CareersLocale, {
     photosLead: "Q Bay Center, 160 E Tasman Dr, San Jose — ten minutes from almost everything in the Valley.",
     awardCaption: "OpenAI's award to our team — honored for passing 10 billion tokens",
     officeCaption: "Our lobby at Q Bay Center, San Jose",
+    workspaceCaption: "Open workspace at Q Bay Center",
+    boardroomCaption: "The boardroom where demo days happen",
     rolesTitle: "Open roles",
     rolesLead: "All roles are onsite in San Jose. New grads and students welcome — we care about what you've built, not how long you've worked.",
     roles: [
@@ -119,6 +123,8 @@ const copy: Record<CareersLocale, {
     photosLead: "Q Bay Center，160 E Tasman Dr, San Jose——到湾区哪里都只要十分钟。",
     awardCaption: "OpenAI 授予我们团队的奖杯——表彰 100 亿 tokens 里程碑",
     officeCaption: "Q Bay Center 办公楼大堂",
+    workspaceCaption: "Q Bay Center 的开放工位区",
+    boardroomCaption: "开 demo day 的会议室",
     rolesTitle: "开放职位",
     rolesLead: "所有岗位均为 San Jose 现场办公。欢迎应届生和在校生——我们看你造过什么，不看你工作了多久。",
     roles: [
@@ -208,14 +214,17 @@ export function CareersPage({ locale, pathname }: { locale: Locale; pathname: st
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{t.photosTitle}</h2>
             <p className="mt-2 text-slate-600 dark:text-slate-300">{t.photosLead}</p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <figure className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
-                <Image src="/careers/openai-award.jpg" alt={t.awardCaption} width={720} height={960} className="h-72 w-full object-cover" />
-                <figcaption className="bg-white/80 px-4 py-3 text-sm text-slate-600 dark:bg-white/5 dark:text-slate-300">{t.awardCaption}</figcaption>
-              </figure>
-              <figure className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
-                <Image src="/careers/qbay-office.jpg" alt={t.officeCaption} width={1080} height={620} className="h-72 w-full object-cover" />
-                <figcaption className="bg-white/80 px-4 py-3 text-sm text-slate-600 dark:bg-white/5 dark:text-slate-300">{t.officeCaption}</figcaption>
-              </figure>
+              {([
+                { src: "/careers/openai-award.jpg", w: 720, h: 960, cap: t.awardCaption },
+                { src: "/careers/qbay-workspace.jpg", w: 800, h: 439, cap: t.workspaceCaption },
+                { src: "/careers/qbay-boardroom.jpg", w: 1200, h: 686, cap: t.boardroomCaption },
+                { src: "/careers/qbay-office.jpg", w: 1080, h: 620, cap: t.officeCaption },
+              ] as const).map((ph) => (
+                <figure key={ph.src} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+                  <Image src={ph.src} alt={ph.cap} width={ph.w} height={ph.h} className="h-64 w-full object-cover" />
+                  <figcaption className="bg-white/80 px-4 py-3 text-sm text-slate-600 dark:bg-white/5 dark:text-slate-300">{ph.cap}</figcaption>
+                </figure>
+              ))}
             </div>
           </section>
 
