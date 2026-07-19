@@ -73,11 +73,11 @@ td{padding:11px 14px;font-size:14px;border-bottom:1px solid var(--line)}
 .btn.ghost{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
 .btn.ghost.ondark{background:transparent;border:1px solid #ffffff55;color:#fff;box-shadow:none}
 .btn.lime{background:var(--green);color:#fff}
-.megafoot.slim{position:fixed;left:0;right:0;bottom:0;height:120px;background:transparent;border-top:none;overflow:hidden;pointer-events:none;z-index:4}
-.megafoot.slim .word{position:absolute;right:10px;bottom:-58px;margin:0;padding:0;font-size:170px;letter-spacing:-8px;color:var(--ink);opacity:.08}
+.megafoot.slim{position:relative;min-height:72px;background:var(--paper2);border-top:1px solid var(--line);overflow:hidden;pointer-events:auto;z-index:4}
+.megafoot.slim .word{display:none}
 .megafoot.slim .word img{display:none}
-.megafoot.slim .legal{position:absolute;left:40px;bottom:16px;font-size:12px;background:rgba(255,255,255,.85);backdrop-filter:blur(4px);padding:4px 12px;border-radius:8px;max-width:none}
-body:has(.megafoot.slim) .stripe{margin-top:96px}
+.megafoot.slim .legal{position:relative;left:auto;bottom:auto;font-size:12px;background:none;backdrop-filter:none;padding:24px 40px;border-radius:0;max-width:none}
+body:has(.megafoot.slim) .stripe{margin-top:0}
 
 /* fal-style pixel clusters */
 .pxgrid{position:absolute;pointer-events:none;z-index:0;overflow:hidden}
@@ -406,7 +406,7 @@ body:has(.megafoot.slim) .stripe{margin-top:96px}
   .megafoot.slim{position:relative!important;height:auto!important;padding:20px 0 4px!important;overflow:hidden!important}
   .megafoot.slim .legal{position:static!important;left:auto!important;bottom:auto!important;display:block!important;margin:0 16px 16px!important;padding:0!important;max-width:calc(100% - 32px)!important;line-height:1.6;background:none!important;backdrop-filter:none!important}
   .megafoot.slim .word{display:none}
-  body:has(.megafoot.slim) .stripe{margin-top:36px}
+  body:has(.megafoot.slim) .stripe{margin-top:0}
   .pod,.bar{padding:26px 20px!important}
   .prow{align-items:flex-start;flex-wrap:wrap}
   .photowall{grid-template-columns:1fr!important;grid-auto-rows:220px}
