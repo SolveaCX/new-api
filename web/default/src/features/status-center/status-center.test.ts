@@ -16,14 +16,48 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'bun:test'
+import { createElement } from 'react'
+import { beforeAll, describe, expect, test } from 'bun:test'
+import { createInstance } from 'i18next'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { I18nextProvider, initReactI18next } from 'react-i18next'
+import { PublishedIncidentHistory } from './components/incidents'
+import { DeliveryRetryAction } from './components/operations'
 import {
+  buildStatusDeliveryRetryInput,
   buildPublishedUpdateRows,
+  getRequiredStatusComponentVersion,
   getStatusCenterPermissions,
   getStatusLabelKey,
   resolveStatusMutationError,
   validateStatusOverride,
 } from './types'
+
+const testI18n = createInstance()
+
+beforeAll(async () => {
+  await testI18n.use(initReactI18next).init({
+    lng: 'en',
+    resources: {
+      en: {
+        translation: {
+          'statusCenter.incidents.state.investigating': 'Investigating',
+          'statusCenter.incidents.correctionsAppendOnly':
+            'Published updates are immutable. Add a correction instead.',
+          'statusCenter.incidents.appendCorrection': 'Append correction',
+          'statusCenter.deliveries.retry': 'Retry',
+        },
+      },
+    },
+    interpolation: { escapeValue: false },
+  })
+})
+
+function renderWithI18n(component: ReturnType<typeof createElement>): string {
+  return renderToStaticMarkup(
+    createElement(I18nextProvider, { i18n: testI18n }, component)
+  )
+}
 
 describe('status center status labels', () => {
   test.each([
@@ -109,6 +143,11 @@ describe('status center override validation', () => {
       })
     ).toEqual([])
   })
+
+  test('requires the server-provided admin component version without a fallback', () => {
+    expect(getRequiredStatusComponentVersion({ version: 7 })).toBe(7)
+    expect(getRequiredStatusComponentVersion({})).toBeNull()
+  })
 })
 
 describe('published incident updates', () => {
@@ -147,6 +186,108 @@ describe('published incident updates', () => {
     })
     expect(Object.isFrozen(rows[0])).toBe(true)
     expect(Object.isFrozen(rows)).toBe(true)
+  })
+
+  test('renders immutable published history with an append-only correction path', () => {
+    const html = renderWithI18n(
+      createElement(PublishedIncidentHistory, {
+        updates: [
+          {
+            id: 1,
+            incident_id: 10,
+            event_id: 'published-1',
+            state: 'investigating',
+            body: 'Investigating elevated errors.',
+            published: true,
+            published_at: 1_800_000_000,
+            actor_id: 2,
+            created_at: 1_800_000_000,
+          },
+          {
+            id: 2,
+            incident_id: 10,
+            event_id: 'draft-1',
+            state: 'identified',
+            body: 'Draft correction.',
+            published: false,
+            published_at: 0,
+            actor_id: 2,
+            created_at: 1_800_000_100,
+          },
+        ],
+        correctionTargetId: 'incident-new-update',
+      })
+    )
+
+    expect(html).toContain('Investigating elevated errors.')
+    expect(html).not.toContain('Draft correction.')
+    expect(html).toContain('Investigating')
+    expect(html).toContain('href="#incident-new-update"')
+    expect(html).toContain('Append correction')
+    expect(html).not.toContain('>Edit<')
+  })
+})
+
+describe('delivery retry controls', () => {
+  test('requires and trims the retry reason in the optimistic payload', () => {
+    const delivery = {
+      id: 41,
+      version: 4,
+    }
+
+    expect(buildStatusDeliveryRetryInput(delivery, '   ')).toBeNull()
+    expect(buildStatusDeliveryRetryInput(delivery, '  transient outage  ')).toEqual(
+      {
+        expected_version: 4,
+        reason: 'transient outage',
+      }
+    )
+  })
+
+  test('renders retry only for Root users viewing a dead delivery', () => {
+    const deadDelivery = {
+      id: 41,
+      published_update_id: 2,
+      destination_type: 'webhook',
+      destination_id: 5,
+      event_id: 'delivery-41',
+      status: 'dead',
+      locked_until: 0,
+      attempts: 3,
+      next_attempt_at: 0,
+      last_error: 'failed',
+      version: 4,
+      created_at: 1,
+      updated_at: 2,
+    }
+    const rootHTML = renderWithI18n(
+      createElement(DeliveryRetryAction, {
+        delivery: deadDelivery,
+        isRoot: true,
+        pending: false,
+        onRetry: () => undefined,
+      })
+    )
+    const adminHTML = renderWithI18n(
+      createElement(DeliveryRetryAction, {
+        delivery: deadDelivery,
+        isRoot: false,
+        pending: false,
+        onRetry: () => undefined,
+      })
+    )
+    const deliveredHTML = renderWithI18n(
+      createElement(DeliveryRetryAction, {
+        delivery: { ...deadDelivery, status: 'delivered' },
+        isRoot: true,
+        pending: false,
+        onRetry: () => undefined,
+      })
+    )
+
+    expect(rootHTML).toContain('Retry')
+    expect(adminHTML).not.toContain('Retry')
+    expect(deliveredHTML).not.toContain('Retry')
   })
 })
 

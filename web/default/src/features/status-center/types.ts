@@ -47,6 +47,10 @@ export interface StatusComponent {
   override_expires_at?: number
 }
 
+export interface StatusAdminComponent extends Omit<StatusComponent, 'version'> {
+  version: number
+}
+
 export interface StatusSummary {
   generated_at: number
   last_trustworthy_update_at: number
@@ -147,6 +151,11 @@ export interface StatusOverrideInput {
   status: StatusValue
   reason: string
   expires_at: number
+}
+
+export interface StatusDeliveryRetryInput {
+  expected_version: number
+  reason: string
 }
 
 export interface StatusIncidentPublishInput {
@@ -260,6 +269,24 @@ export function validateStatusOverride(
     errors.push('statusCenter.validation.forceGreenOneHour')
   }
   return errors
+}
+
+export function getRequiredStatusComponentVersion(
+  component: Pick<StatusComponent, 'version'> | undefined
+): number | null {
+  return typeof component?.version === 'number' ? component.version : null
+}
+
+export function buildStatusDeliveryRetryInput(
+  delivery: Pick<StatusDelivery, 'version'>,
+  reason: string
+): StatusDeliveryRetryInput | null {
+  const trimmedReason = reason.trim()
+  if (!trimmedReason) return null
+  return {
+    expected_version: delivery.version,
+    reason: trimmedReason,
+  }
 }
 
 export function buildPublishedUpdateRows(

@@ -44,11 +44,13 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import {
   createStatusOverride,
+  getStatusAdminComponents,
   getStatusSummary,
   statusCenterQueryKeys,
 } from '../api'
 import { formatCoverage, formatStatusTimestamp } from '../format'
 import {
+  getRequiredStatusComponentVersion,
   getStatusLabelKey,
   resolveStatusMutationError,
   type StatusCenterRole,
@@ -87,7 +89,12 @@ export function OverviewPanel(props: OverviewPanelProps) {
     enabled: props.active,
     refetchInterval: 60_000,
   })
-  const components = summaryQuery.data?.components ?? []
+  const adminComponentsQuery = useQuery({
+    queryKey: statusCenterQueryKeys.adminComponents(),
+    queryFn: getStatusAdminComponents,
+    enabled: props.active,
+  })
+  const components = adminComponentsQuery.data ?? []
   const selectedComponent =
     components.find((component) => component.id === componentId) ??
     components[0]
@@ -100,23 +107,31 @@ export function OverviewPanel(props: OverviewPanelProps) {
     role: props.role,
     secureVerified: status === 'operational' && props.role === 'root',
   })
-  const expectedVersion = selectedComponent?.version
+  const expectedVersion = getRequiredStatusComponentVersion(selectedComponent)
+
+  const reloadComponentsAndSummary = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: statusCenterQueryKeys.adminComponents(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: statusCenterQueryKeys.summary(),
+      }),
+    ])
+  }
 
   const overrideMutation = useMutation({
     mutationFn: (input: StatusOverrideInput) => createStatusOverride(input),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await reloadComponentsAndSummary()
       toast.success(t('statusCenter.override.saved'))
       setReason('')
-      void queryClient.invalidateQueries({
-        queryKey: statusCenterQueryKeys.summary(),
-      })
     },
     onError: async (error) => {
-      const resolution = await resolveStatusMutationError(error, async () => {
-        await queryClient.invalidateQueries({
-          queryKey: statusCenterQueryKeys.summary(),
-        })
-      })
+      const resolution = await resolveStatusMutationError(
+        error,
+        reloadComponentsAndSummary
+      )
       toast.error(t(resolution.messageKey))
     },
   })
@@ -131,7 +146,11 @@ export function OverviewPanel(props: OverviewPanelProps) {
   ])
 
   const submitOverride = async () => {
-    if (!selectedComponent || !expectedVersion || validationErrors.length > 0) {
+    if (
+      !selectedComponent ||
+      expectedVersion === null ||
+      validationErrors.length > 0
+    ) {
       return
     }
     const input: StatusOverrideInput = {
@@ -148,9 +167,18 @@ export function OverviewPanel(props: OverviewPanelProps) {
     overrideMutation.mutate(input)
   }
 
-  if (summaryQuery.isLoading) return <LoadingState />
-  if (summaryQuery.isError) {
-    return <ErrorState onRetry={() => void summaryQuery.refetch()} />
+  if (summaryQuery.isLoading || adminComponentsQuery.isLoading) {
+    return <LoadingState />
+  }
+  if (summaryQuery.isError || adminComponentsQuery.isError) {
+    return (
+      <ErrorState
+        onRetry={() => {
+          void summaryQuery.refetch()
+          void adminComponentsQuery.refetch()
+        }}
+      />
+    )
   }
   if (!summaryQuery.data || components.length === 0) {
     return <EmptyState descriptionKey='statusCenter.empty.components' />
@@ -256,7 +284,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
-          {!expectedVersion ? (
+          {expectedVersion === null ? (
             <Alert>
               <AlertTriangle aria-hidden='true' />
               <AlertTitle>
@@ -347,7 +375,7 @@ export function OverviewPanel(props: OverviewPanelProps) {
           <Button
             type='button'
             disabled={
-              !expectedVersion ||
+              expectedVersion === null ||
               validationErrors.length > 0 ||
               overrideMutation.isPending
             }

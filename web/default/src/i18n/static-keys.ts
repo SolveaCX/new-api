@@ -604,6 +604,12 @@ export const STATIC_I18N_KEYS = [
   'statusCenter.validation.forceGreenOneHour',
   'statusCenter.conflict.reload',
   'statusCenter.error.requestFailed',
+  'statusCenter.notAvailable',
+  'statusCenter.incidents.appendCorrection',
+  'statusCenter.deliveries.retry',
+  'statusCenter.deliveries.retryReason',
+  'statusCenter.deliveries.retryReasonPlaceholder',
+  'statusCenter.deliveries.retrySucceeded',
 
   // Misc
   'Cancel',
