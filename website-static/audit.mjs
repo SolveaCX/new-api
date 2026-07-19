@@ -27,6 +27,13 @@ for (const file of files) {
   if (/\bdata-i18n(?:-ph)?=/.test(html) && !/assets\/i18n\.js\?v=/.test(html)) {
     fail(file, "uses i18n keys without loading assets/i18n.js");
   }
+  const i18nScript = html.indexOf("assets/i18n.js?v=720a");
+  const shellScript = html.indexOf("assets/site-shell.js?v=720a");
+  if (i18nScript === -1) fail(file, "missing the current locale-routing script version");
+  if (shellScript === -1) fail(file, "missing the current responsive shell version");
+  if (i18nScript !== -1 && shellScript !== -1 && i18nScript > shellScript) {
+    fail(file, "site shell loads before locale state is initialized");
+  }
 
   const footers = [...html.matchAll(/<footer\b/g)];
   if (footers.length !== 1) fail(file, `expected one semantic footer, found ${footers.length}`);
@@ -87,6 +94,29 @@ const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
 if (/\.megafoot\.slim\b/.test(sharedCss)) fail("fk2.css", "contains obsolete slim-footer styles");
 
 const i18nSource = fs.readFileSync(path.join(root, "assets/i18n.js"), "utf8");
+for (const requiredLocaleBehavior of [
+  "function pathLocale()",
+  "function localeRoute(locale, route)",
+  "function syncLocaleRoutes(locale)",
+  'document.documentElement.dataset.locale = l',
+  'new CustomEvent("flatkey:languagechange"',
+  '"sla.html": "sla"',
+  'locale === "zh" ? "/zh/careers" : "/careers"',
+]) {
+  if (!i18nSource.includes(requiredLocaleBehavior)) {
+    fail("assets/i18n.js", `missing locale synchronization behavior: ${requiredLocaleBehavior}`);
+  }
+}
+for (const route of ["home", "careers", "contact", "about", "blog", "terms", "privacy", "sla", "legal-sla", "refund-policy"]) {
+  if (!i18nSource.includes(`"${route}"`)) fail("assets/i18n.js", `locale router is missing ${route}`);
+}
+
+const shellSource = fs.readFileSync(path.join(root, "assets/site-shell.js"), "utf8");
+if (!shellSource.includes("function syncPanel()")) fail("assets/site-shell.js", "mobile navigation is not rebuilt after a locale change");
+if (!shellSource.includes('document.addEventListener("flatkey:languagechange"')) {
+  fail("assets/site-shell.js", "mobile navigation does not listen for locale changes");
+}
+
 const dictMatch = i18nSource.match(/var DICTS = (\{[\s\S]*?\n\});\n\n  var LEGAL_ROUTES/);
 if (!dictMatch) {
   fail("assets/i18n.js", "cannot parse dictionaries");

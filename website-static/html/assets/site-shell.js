@@ -14,13 +14,17 @@
   panel.id = "mobile-site-nav";
   panel.hidden = true;
 
-  links.forEach(function (link) {
-    var copy = link.cloneNode(true);
-    copy.removeAttribute("id");
-    copy.classList.remove("on");
-    copy.addEventListener("click", close);
-    panel.appendChild(copy);
-  });
+  function syncPanel() {
+    panel.innerHTML = "";
+    links.forEach(function (link) {
+      var copy = link.cloneNode(true);
+      copy.removeAttribute("id");
+      copy.classList.remove("on");
+      copy.addEventListener("click", close);
+      panel.appendChild(copy);
+    });
+  }
+  syncPanel();
 
   var button = document.createElement("button");
   button.className = "nav-toggle";
@@ -41,6 +45,10 @@
   updateLabel();
   var languageSelector = document.querySelector(".langsel");
   if (languageSelector) languageSelector.addEventListener("change", updateLabel);
+  document.addEventListener("flatkey:languagechange", function () {
+    updateLabel();
+    syncPanel();
+  });
   button.innerHTML = "<span></span><span></span><span></span>";
 
   function close() {
