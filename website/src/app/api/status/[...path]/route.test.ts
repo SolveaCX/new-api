@@ -96,6 +96,44 @@ describe("public status proxy", () => {
     }
   });
 
+  test("forces upstream GET errors to no-store even when upstream marks them cacheable", async () => {
+    const originalFetch = globalThis.fetch;
+    const upstreamResponses = [
+      new Response('{"success":false}', { status: 404 }),
+      new Response('{"success":false}', { status: 503, headers: { "cache-control": "public, max-age=30" } }),
+    ];
+    globalThis.fetch = (() => Promise.resolve(upstreamResponses.shift()!)) as typeof fetch;
+
+    try {
+      for (const expectedStatus of [404, 503]) {
+        const response = await GET(new NextRequest("https://flatkey.ai/api/status/summary"), context("summary"));
+        expect(response.status).toBe(expectedStatus);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("preserves successful conditional GET cache headers and ETags", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.resolve(
+      new Response(null, {
+        status: 304,
+        headers: { "cache-control": "public, max-age=30", etag: '"status-v2"' },
+      })
+    )) as typeof fetch;
+
+    try {
+      const response = await GET(new NextRequest("https://flatkey.ai/api/status/summary"), context("summary"));
+      expect(response.status).toBe(304);
+      expect(response.headers.get("cache-control")).toBe("public, max-age=30");
+      expect(response.headers.get("etag")).toBe('"status-v2"');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("rejects admin, traversal, encoded, extra-segment, and method-confused requests without proxying", async () => {
     const originalFetch = globalThis.fetch;
     let calls = 0;

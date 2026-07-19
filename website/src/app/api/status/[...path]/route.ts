@@ -100,12 +100,13 @@ function forwardedRequestHeaders(request: Request, includeContentType: boolean):
 
 function publicUpstreamResponse(response: Response, preserveCacheControl: boolean): Response {
   const headers = new Headers();
+  const shouldPreserveCacheControl = preserveCacheControl && response.status < 400;
   for (const name of FORWARDED_RESPONSE_HEADERS) {
-    if (name === "cache-control" && !preserveCacheControl) continue;
+    if (name === "cache-control" && !shouldPreserveCacheControl) continue;
     const value = response.headers.get(name);
     if (value) headers.set(name, value);
   }
-  if (!preserveCacheControl) headers.set("cache-control", "no-store");
+  if (!shouldPreserveCacheControl) headers.set("cache-control", "no-store");
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
