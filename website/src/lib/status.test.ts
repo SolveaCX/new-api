@@ -173,6 +173,43 @@ describe("status client", () => {
     }
   });
 
+  test("fails closed when trustworthy evidence timestamps are far in the future", async () => {
+    const originalFetch = globalThis.fetch;
+    const timestamp = now();
+    const component = {
+      id: 1,
+      slug: "router",
+      kind: "router",
+      display_name: "Router",
+      lifecycle: "active",
+      status: "operational",
+      last_trustworthy_update_at: timestamp,
+      coverage: 1000000,
+    };
+    const valid = {
+      generated_at: timestamp,
+      last_trustworthy_update_at: timestamp,
+      coverage: 1000000,
+      status: "all_systems_operational",
+      components: [component],
+    };
+    const invalid = [
+      { ...valid, last_trustworthy_update_at: timestamp + 3600 },
+      { ...valid, components: [{ ...component, last_trustworthy_update_at: timestamp + 3600 }] },
+    ];
+    globalThis.fetch = (() => Promise.resolve(Response.json({ success: true, data: invalid.shift() }))) as typeof fetch;
+
+    try {
+      const results = [await fetchStatusSummary(), await fetchStatusSummary()];
+      expect(results.map((result) => [result.state, result.data.status])).toEqual([
+        ["monitoring-unavailable", "monitoring_incomplete"],
+        ["monitoring-unavailable", "monitoring_incomplete"],
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("does not pass malformed endpoint DTOs through as typed data", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (() => Promise.resolve(Response.json({ success: true, data: {} }))) as typeof fetch;
