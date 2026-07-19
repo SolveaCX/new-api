@@ -66,6 +66,14 @@ if (JSON.stringify(termNumbers) !== JSON.stringify(expectedTermNumbers)) {
   fail("terms.html", `section sequence is ${termNumbers.join(", ")}; expected 1–19 exactly once`);
 }
 
+const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
+if (/\.megafoot\.slim\s*\{[^}]*\bposition\s*:\s*fixed\b/i.test(sharedCss)) {
+  fail("fk2.css", "slim footer must stay in document flow instead of covering page content");
+}
+if (!/\.megafoot\.slim\s+\.word\s*\{[^}]*\bdisplay\s*:\s*none\b/i.test(sharedCss)) {
+  fail("fk2.css", "slim footer must not render the oversized wordmark");
+}
+
 const i18nSource = fs.readFileSync(path.join(root, "assets/i18n.js"), "utf8");
 const dictMatch = i18nSource.match(/var DICTS = (\{[\s\S]*?\n\});\n\n  var LEGAL_ROUTES/);
 if (!dictMatch) {
