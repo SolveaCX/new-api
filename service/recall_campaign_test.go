@@ -1264,6 +1264,67 @@ func TestRecallCampaignLifecycleIsConditionalIdempotentAndCancelPreservesCode(t 
 	require.Equal(t, model.RecallCampaignCompleted, completed.Status)
 }
 
+func TestRecallCampaignRetryTreatsOnlyExpiredSendingAsAcknowledgedUncertainty(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Unix(1_721_200_000, 0).UTC()
+	service := NewRecallCampaignService(nil, nil)
+	service.now = func() time.Time { return now }
+
+	recipients := []model.RecallRecipient{
+		{CampaignId: 51, UserId: 951, EligibilitySnapshot: `{}`, EmailSnapshot: "expired-sending@example.com", LanguageSnapshot: "en", State: model.RecallRecipientContacting},
+		{CampaignId: 51, UserId: 952, EligibilitySnapshot: `{}`, EmailSnapshot: "active-sending@example.com", LanguageSnapshot: "en", State: model.RecallRecipientContacting},
+		{CampaignId: 51, UserId: 953, EligibilitySnapshot: `{}`, EmailSnapshot: "missing-sending-lease@example.com", LanguageSnapshot: "en", State: model.RecallRecipientContacting},
+	}
+	require.NoError(t, db.Create(&recipients).Error)
+	messages := []model.RecallMessage{
+		{RecipientId: recipients[0].Id, StageNo: 1, TemplateVersion: 4, TemplateSnapshot: `{"en":{"subject":"preserved"}}`, State: model.RecallMessageSending, AttemptCount: 1, LeaseOwner: "crashed-node", LeaseExpiresAt: now.Unix() - 1, UpdatedAt: now.Unix() - 10},
+		{RecipientId: recipients[1].Id, StageNo: 1, TemplateVersion: 5, TemplateSnapshot: `{"en":{"subject":"active"}}`, State: model.RecallMessageSending, AttemptCount: 1, LeaseOwner: "live-node", LeaseExpiresAt: now.Unix() + 1, UpdatedAt: now.Unix() - 9},
+		{RecipientId: recipients[2].Id, StageNo: 1, TemplateVersion: 6, TemplateSnapshot: `{"en":{"subject":"missing"}}`, State: model.RecallMessageSending, AttemptCount: 1, UpdatedAt: now.Unix() - 8},
+	}
+	require.NoError(t, db.Create(&messages).Error)
+	due, err := model.ListDueRecallMessageIDs(now.Unix(), 10)
+	require.NoError(t, err)
+	require.NotContains(t, due, messages[0].Id, "an expired sending lease must remain out of automatic scheduling")
+
+	err = service.RetryRecipient(context.Background(), 7, 51, recipients[0].Id, false)
+	require.ErrorContains(t, err, "acknowledge_uncertain=true")
+	err = service.RetryRecipient(context.Background(), 7, 51, recipients[1].Id, true)
+	require.Error(t, err)
+	err = service.RetryRecipient(context.Background(), 7, 51, recipients[2].Id, true)
+	require.Error(t, err)
+	err = service.RetryRecipient(context.Background(), 7, 51, recipients[0].Id, true)
+	require.NoError(t, err)
+
+	var retried model.RecallMessage
+	require.NoError(t, db.First(&retried, messages[0].Id).Error)
+	require.Equal(t, model.RecallMessageRetryWait, retried.State)
+	require.Equal(t, now.Unix(), retried.NextAttemptAt)
+	require.Equal(t, 4, retried.TemplateVersion)
+	require.Equal(t, messages[0].TemplateSnapshot, retried.TemplateSnapshot)
+	require.Empty(t, retried.LeaseOwner)
+	require.Zero(t, retried.LeaseExpiresAt)
+
+	var active model.RecallMessage
+	require.NoError(t, db.First(&active, messages[1].Id).Error)
+	require.Equal(t, model.RecallMessageSending, active.State)
+	require.Equal(t, "live-node", active.LeaseOwner)
+
+	var events []model.RecallEvent
+	require.NoError(t, db.Where("recipient_id = ?", recipients[0].Id).Find(&events).Error)
+	require.Len(t, events, 1)
+	require.Contains(t, events[0].EventData, `"previous_state":"sending"`)
+	require.Contains(t, events[0].EventData, `"acknowledge_uncertain":true`)
+	require.Contains(t, events[0].EventData, fmt.Sprintf(`"previous_lease_expires_at":%d`, now.Unix()-1))
+
+	due, err = model.ListDueRecallMessageIDs(now.Unix(), 10)
+	require.NoError(t, err)
+	require.Contains(t, due, messages[0].Id, "the acknowledged retry must re-enter normal worker scheduling")
+	won, err := model.LeaseRecallMessage(messages[0].Id, "next-worker", now.Unix(), now.Unix()+60)
+	require.NoError(t, err)
+	require.True(t, won)
+}
+
 func TestRecallCampaignAllEntryPointsRespectFeatureGate(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)

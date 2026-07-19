@@ -290,7 +290,7 @@ func ManualRetryRecallMessageWithContext(ctx context.Context, id int64, acknowle
 		Where("id = ? AND state = ?", id, RecallMessageFailed)
 	if acknowledgeUncertain {
 		query = DB.WithContext(ctx).Model(&RecallMessage{}).
-			Where("id = ? AND (state IN ? OR (state = ? AND lease_expires_at < ?))", id, []string{RecallMessageFailed, RecallMessageUncertain}, RecallMessageSending, now)
+			Where("id = ? AND (state IN ? OR (state = ? AND lease_expires_at > 0 AND lease_expires_at < ?))", id, []string{RecallMessageFailed, RecallMessageUncertain}, RecallMessageSending, now)
 	}
 	result := query.Updates(map[string]any{
 		"state":              RecallMessageRetryWait,
@@ -352,11 +352,14 @@ func ManualRetryRecallMessageAndAdminEventWithContext(ctx context.Context, id in
 }
 
 func manualRetryRecallMessageState(db *gorm.DB, id int64, recipientID int64, expectedState string, expectedUpdatedAt int64, now int64) (bool, error) {
-	if expectedState != RecallMessageFailed && expectedState != RecallMessageUncertain {
-		return false, fmt.Errorf("recall message %d is not failed or uncertain", id)
+	if expectedState != RecallMessageFailed && expectedState != RecallMessageUncertain && expectedState != RecallMessageSending {
+		return false, fmt.Errorf("recall message %d is not manually retryable", id)
 	}
 	query := db.Model(&RecallMessage{}).
 		Where("id = ? AND state = ? AND updated_at = ?", id, expectedState, expectedUpdatedAt)
+	if expectedState == RecallMessageSending {
+		query = query.Where("lease_expires_at > 0 AND lease_expires_at < ?", now)
+	}
 	if recipientID > 0 {
 		query = query.Where("recipient_id = ?", recipientID)
 	}

@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog'
 import { TitledCard } from '@/components/ui/titled-card'
 import { SectionPageLayout } from '@/components/layout'
+import { consumePendingPostLoginRedirect } from '@/features/auth/lib/storage'
 import { getCardStatus } from '@/features/onboarding/api'
 import { RecallClaimProvider } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import { getPaddleTopUpStatus, isApiSuccess } from './api'
@@ -312,6 +313,7 @@ export function Wallet(props: WalletProps) {
       '',
       `${url.pathname}${sanitizedSearch}${url.hash}`
     )
+    consumePendingPostLoginRedirect()
     resumeMixpanelAfterRecallClaim()
   }, [props.initialRecallClaim])
 
@@ -334,6 +336,7 @@ export function Wallet(props: WalletProps) {
         }
 
         const message = response.message?.toLowerCase() || ''
+        consumePendingPostLoginRedirect()
         setRecallClaimStatus(
           message.includes('expired') ? 'expired' : 'invalid'
         )
@@ -358,6 +361,7 @@ export function Wallet(props: WalletProps) {
     const expireClaimWhenDue = () => {
       const remainingMs = recallClaimView.expires_at * 1000 - Date.now()
       if (remainingMs <= 0) {
+        consumePendingPostLoginRedirect()
         setRecallClaimStatus('expired')
         return
       }
