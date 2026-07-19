@@ -66,6 +66,14 @@ if (JSON.stringify(termNumbers) !== JSON.stringify(expectedTermNumbers)) {
   fail("terms.html", `section sequence is ${termNumbers.join(", ")}; expected 1–19 exactly once`);
 }
 
+const compute = fs.readFileSync(path.join(root, "compute.html"), "utf8");
+if (!/<footer class="megafoot">[\s\S]*?class="cols"[\s\S]*?class="trustrow"[\s\S]*?class="bottom"[\s\S]*?<\/footer>/.test(compute)) {
+  fail("compute.html", "missing the complete shared marketing footer");
+}
+if (/class="megafoot slim"/.test(compute)) {
+  fail("compute.html", "must not fall back to the one-line slim footer");
+}
+
 const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
 if (/\.megafoot\.slim\s*\{[^}]*\bposition\s*:\s*fixed\b/i.test(sharedCss)) {
   fail("fk2.css", "slim footer must stay in document flow instead of covering page content");
