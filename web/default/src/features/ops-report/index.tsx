@@ -20,6 +20,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { VChart } from '@visactor/react-vchart'
 import { useTranslation } from 'react-i18next'
+import { officialWebsiteUrl } from '@/lib/origins'
 import { useTheme } from '@/context/theme-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,7 +36,6 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
-import { officialWebsiteUrl } from '@/lib/origins'
 import {
   getOpsAdsReport,
   getOpsReport,
@@ -453,13 +453,18 @@ function StripeStat({ label, value }: { label: string; value: string }) {
 function StripePersonStatus({ status }: { status: string }) {
   const { t } = useTranslation()
   const label = STRIPE_STATUS_LABELS[status] ?? status
-  const variant =
-    status === 'paid'
-      ? 'default'
-      : status === 'failed'
-        ? 'destructive'
-        : 'secondary'
-  return <Badge variant={variant}>{t(label)}</Badge>
+  if (status === 'paid') {
+    return (
+      <Badge className='border-transparent bg-green-600 text-white dark:bg-green-700'>
+        {t(label)}
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant={status === 'failed' ? 'destructive' : 'secondary'}>
+      {t(label)}
+    </Badge>
+  )
 }
 
 const shortTime = (timestamp: number): string => {
@@ -475,8 +480,7 @@ const shortTime = (timestamp: number): string => {
     // midnight hour as 24 under hour12:false), keeping the PT day boundary clear.
     hourCycle: 'h23',
   }).formatToParts(new Date(timestamp * 1000))
-  const get = (type: string) =>
-    parts.find((p) => p.type === type)?.value ?? ''
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
   return `${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
 }
 
@@ -861,115 +865,125 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
   const { t, i18n } = useTranslation()
   return (
     <div className='overflow-x-auto'>
-      <Table className={TABLE_GRID}>
+      <Table
+        className={`${TABLE_GRID} text-xs [&_td]:px-2 [&_td]:py-1.5 [&_th]:px-2`}
+      >
         <TableHeader>
           <TableRow>
-            <TableHead>{t('First Paid At')}</TableHead>
             <TableHead>{t('User')}</TableHead>
-            <TableHead>{t('Email')}</TableHead>
+            <TableHead>{t('First Paid At')}</TableHead>
             <TableHead className='text-right'>{t('Paid Amount')}</TableHead>
-            <TableHead className='text-right'>{t('Orders')}</TableHead>
-            <TableHead>{t('Payment Currency')}</TableHead>
             <TableHead>{t('Campaign')}</TableHead>
-            <TableHead>{t('Keyword')}</TableHead>
-            <TableHead>{t('Languages')}</TableHead>
-            <TableHead>{t('Landing Pages')}</TableHead>
-            <TableHead>{t('Signup Method')}</TableHead>
             <TableHead>{t('Region')}</TableHead>
-            <TableHead>{t('Payment Country')}</TableHead>
-            <TableHead>{t('Login IP')}</TableHead>
-            <TableHead className='text-right'>{t('Balance')}</TableHead>
-            <TableHead className='text-right'>{t('Consumed')}</TableHead>
-            <TableHead className='text-right'>{t('Requests')}</TableHead>
+            <TableHead className='text-right'>
+              {t('Consumed')} / {t('Balance')}
+            </TableHead>
             <TableHead>{t('Top Models')}</TableHead>
-            <TableHead>{t('Last Active')}</TableHead>
-            <TableHead>{t('Registered At')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.user_id}>
-              <TableCell className='whitespace-nowrap'>
-                {formatTimestamp(row.first_paid_at)}
-              </TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {row.display_name || row.username}{' '}
-                <span className='text-muted-foreground text-xs'>
-                  #{row.user_id}
-                </span>
-              </TableCell>
-              <TableCell>{row.email || '-'}</TableCell>
-              <TableCell className='text-right'>{usd(row.paid_usd)}</TableCell>
-              <TableCell className='text-right'>{row.orders}</TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {(row.currencies ?? []).map((c) => (
-                  <Badge key={c} variant={c === 'USD' ? 'secondary' : 'default'}>
-                    {c}
-                  </Badge>
-                ))}
-              </TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {row.campaign || '-'}
-              </TableCell>
-              <TableCell className='max-w-40 truncate'>
-                {row.keyword || '-'}
-              </TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {[row.browser_lang, row.lng]
-                  .filter(Boolean)
-                  .filter((v, i, arr) => arr.indexOf(v) === i)
-                  .join(' · ') || '-'}
-              </TableCell>
-              <TableCell className='max-w-40 truncate'>
-                {row.landing || '-'}
-              </TableCell>
-              <TableCell>{row.signup_method || '-'}</TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {countryLabel(row.ip_country, i18n.language) || '-'}
-              </TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {countryLabel(row.pay_country, i18n.language) || '-'}
-              </TableCell>
-              <TableCell className='whitespace-nowrap font-mono text-xs'>
-                {row.last_ip ? (
-                  <>
-                    <a
-                      href={`https://ipinfo.io/${row.last_ip}`}
-                      target='_blank'
-                      rel='noreferrer'
-                      className='underline decoration-dotted'
-                    >
-                      {row.last_ip}
-                    </a>
-                  </>
-                ) : (
-                  '-'
-                )}
-              </TableCell>
-              <TableCell className='text-right'>
-                {usd(row.balance_usd)}
-              </TableCell>
-              <TableCell className='text-right'>
-                {usd(row.consumed_usd)}
-              </TableCell>
-              <TableCell className='text-right'>{row.requests}</TableCell>
-              <TableCell className='max-w-56'>
-                <div className='flex flex-wrap gap-1'>
-                  {(row.top_models ?? []).map((m) => (
-                    <Badge key={m} variant='secondary'>
-                      {m}
-                    </Badge>
-                  ))}
-                </div>
-              </TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {formatTimestamp(row.last_active_at)}
-              </TableCell>
-              <TableCell className='whitespace-nowrap'>
-                {formatTimestamp(row.registered_at)}
-              </TableCell>
-            </TableRow>
-          ))}
+          {rows.map((row) => {
+            const langs =
+              [row.browser_lang, row.lng]
+                .filter(Boolean)
+                .filter((v, i, arr) => arr.indexOf(v) === i)
+                .join('/') || ''
+            return (
+              <TableRow key={row.user_id}>
+                <TableCell>
+                  <div className='whitespace-nowrap'>
+                    {row.display_name || row.username}{' '}
+                    <span className='text-muted-foreground text-xs'>
+                      #{row.user_id}
+                    </span>
+                  </div>
+                  <div className='text-muted-foreground max-w-52 truncate text-xs'>
+                    {row.email || '-'}
+                    {row.signup_method ? ` · ${row.signup_method}` : ''}
+                  </div>
+                </TableCell>
+                <TableCell className='whitespace-nowrap'>
+                  <div>{shortTime(row.first_paid_at)}</div>
+                  <div className='text-muted-foreground text-xs'>
+                    {t('Registrations')} {shortTime(row.registered_at)}
+                  </div>
+                </TableCell>
+                <TableCell className='text-right whitespace-nowrap'>
+                  <div>
+                    {usd(row.paid_usd)}{' '}
+                    <span className='text-muted-foreground text-xs'>
+                      ×{row.orders}
+                    </span>
+                  </div>
+                  <div className='flex justify-end gap-1'>
+                    {(row.currencies ?? []).map((c) => (
+                      <Badge
+                        key={c}
+                        variant={c === 'USD' ? 'secondary' : 'default'}
+                      >
+                        {c}
+                      </Badge>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className='whitespace-nowrap'>{row.campaign || '-'}</div>
+                  <div className='text-muted-foreground max-w-52 truncate text-xs'>
+                    {[row.keyword, row.landing, langs]
+                      .filter(Boolean)
+                      .join(' · ') || '-'}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className='whitespace-nowrap'>
+                    {countryLabel(row.ip_country, i18n.language) || '-'}
+                    {row.pay_country
+                      ? ` · 💳 ${countryLabel(row.pay_country, i18n.language)}`
+                      : ''}
+                  </div>
+                  <div className='font-mono text-xs'>
+                    {row.last_ip ? (
+                      <a
+                        href={`https://ipinfo.io/${row.last_ip}`}
+                        target='_blank'
+                        rel='noreferrer'
+                        className='underline decoration-dotted'
+                      >
+                        {row.last_ip}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className='text-right whitespace-nowrap'>
+                  <div>
+                    {usd(row.consumed_usd)}{' '}
+                    <span className='text-muted-foreground text-xs'>
+                      / {usd(row.balance_usd)}
+                    </span>
+                  </div>
+                  <div className='text-muted-foreground text-xs'>
+                    {row.requests} req · {shortTime(row.last_active_at)}
+                  </div>
+                </TableCell>
+                <TableCell className='max-w-44'>
+                  <div className='flex flex-wrap gap-1'>
+                    {(row.top_models ?? []).map((m) => (
+                      <Badge
+                        key={m}
+                        variant='secondary'
+                        className='max-w-40 truncate'
+                        title={m}
+                      >
+                        {m}
+                      </Badge>
+                    ))}
+                  </div>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>
@@ -1015,9 +1029,7 @@ export function OpsReport() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>
-        {t('Ops Daily Report')}
-      </SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t('Ops Daily Report')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <div className='flex items-center gap-1'>
           {DAY_OPTIONS.map((option) => (
@@ -1052,9 +1064,7 @@ export function OpsReport() {
                 <TabsTrigger value='registrations'>
                   {t('Daily Registrations')}
                 </TabsTrigger>
-                <TabsTrigger value='users'>
-                  {t('Registered Users')}
-                </TabsTrigger>
+                <TabsTrigger value='users'>{t('Registered Users')}</TabsTrigger>
                 <TabsTrigger value='campaigns'>{t('Ad Campaigns')}</TabsTrigger>
                 <TabsTrigger value='ads'>{t('Ads Automation')}</TabsTrigger>
                 <TabsTrigger value='funnel'>
@@ -1070,7 +1080,7 @@ export function OpsReport() {
                   {t('Active Users (Key Usage)')}
                 </TabsTrigger>
                 <TabsTrigger value='payers'>
-                  {t('Top Paying Customers')}
+                  {t('Paying Customers')}
                 </TabsTrigger>
               </TabsList>
 
@@ -1107,7 +1117,9 @@ export function OpsReport() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <RegisteredUsersTable rows={report.registered_users ?? []} />
+                    <RegisteredUsersTable
+                      rows={report.registered_users ?? []}
+                    />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -1230,7 +1242,7 @@ export function OpsReport() {
                 <Card>
                   <CardHeader>
                     <CardTitle>
-                      {t('Top Paying Customers')}{' '}
+                      {t('Paying Customers')}{' '}
                       <span className='text-muted-foreground text-sm font-normal'>
                         {t('{{count}} paying users, {{amount}} total', {
                           count: report.total_paid_users,
