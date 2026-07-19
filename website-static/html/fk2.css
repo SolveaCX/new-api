@@ -49,7 +49,8 @@ td{padding:11px 14px;font-size:14px;border-bottom:1px solid var(--line)}
 .container{max-width:1240px;margin:0 auto;padding:0 40px}
 /* mega footer — fal-exact: link columns, legal bottom-left, giant wordmark bottom-right fully visible */
 .megafoot{position:relative;background:var(--paper2);border-top:1px solid var(--line)}
-.megafoot .cols{max-width:1240px;margin:0 auto;padding:56px 40px 8px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px}
+body>.megafoot,body>.stripe{grid-column:1/-1}
+.megafoot .cols{max-width:1240px;margin:0 auto;padding:56px 40px 8px;display:grid;grid-template-columns:2fr repeat(4,1fr);gap:40px}
 .megafoot .col h5{font-size:14px;font-weight:600;color:var(--ink3);margin-bottom:14px}
 .megafoot .col a{display:block;font-size:15px;font-weight:650;color:var(--ink);text-decoration:none;margin-bottom:11px}
 .megafoot .col a:hover{color:var(--violet-deep)}
@@ -73,11 +74,6 @@ td{padding:11px 14px;font-size:14px;border-bottom:1px solid var(--line)}
 .btn.ghost{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
 .btn.ghost.ondark{background:transparent;border:1px solid #ffffff55;color:#fff;box-shadow:none}
 .btn.lime{background:var(--green);color:#fff}
-.megafoot.slim{position:relative;min-height:72px;background:var(--paper2);border-top:1px solid var(--line);overflow:hidden;pointer-events:auto;z-index:4}
-.megafoot.slim .word{display:none}
-.megafoot.slim .word img{display:none}
-.megafoot.slim .legal{position:relative;left:auto;bottom:auto;font-size:12px;background:none;backdrop-filter:none;padding:24px 40px;border-radius:0;max-width:none}
-body:has(.megafoot.slim) .stripe{margin-top:0}
 
 /* fal-style pixel clusters */
 .pxgrid{position:absolute;pointer-events:none;z-index:0;overflow:hidden}
@@ -232,9 +228,6 @@ body:has(.megafoot.slim) .stripe{margin-top:0}
 .showcase.art .glow{position:absolute;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,#8B5CF64d,transparent 65%);left:-140px;top:-120px}
 .showcase.art .glow.g2{left:auto;right:-160px;top:auto;bottom:-140px;background:radial-gradient(circle,#67E8F933,transparent 65%)}
 
-.megafoot.slim .legal{pointer-events:auto;position:relative;z-index:5}
-.megafoot.slim .legal a{color:inherit;text-decoration:underline;text-underline-offset:2px}
-
 /* Shared responsive shell. Page-level styles intentionally stay desktop-first;
    these rules are the common contract for navigation, content grids and footer. */
 .nav-toggle{display:none;width:42px;height:42px;border:1px solid var(--line);border-radius:10px;background:#fff;align-items:center;justify-content:center;flex-direction:column;gap:4px;cursor:pointer;flex:none}
@@ -320,7 +313,7 @@ body:has(.megafoot.slim) .stripe{margin-top:0}
   .chGrid{grid-template-columns:1fr 1fr}
   .ctaBanner{padding:70px 32px}
 
-  .megafoot .cols{grid-template-columns:1.4fr 1fr 1fr;padding:44px 24px 16px;gap:28px}
+  .megafoot .cols{grid-template-columns:repeat(4,minmax(0,1fr));padding:44px 24px 16px;gap:28px}
   .megafoot .brandcol{grid-column:1/-1}
   .megafoot .bottom{padding:12px 24px 0;display:block}
   .megafoot .legal{max-width:none;padding-bottom:24px}
@@ -403,10 +396,6 @@ body:has(.megafoot.slim) .stripe{margin-top:0}
   .megafoot .brandcol{grid-column:1/-1}
   .megafoot .bottom{padding-left:20px;padding-right:20px}
   .megafoot .word{font-size:clamp(58px,18vw,90px);gap:12px;padding-bottom:28px}
-  .megafoot.slim{position:relative!important;height:auto!important;padding:20px 0 4px!important;overflow:hidden!important}
-  .megafoot.slim .legal{position:static!important;left:auto!important;bottom:auto!important;display:block!important;margin:0 16px 16px!important;padding:0!important;max-width:calc(100% - 32px)!important;line-height:1.6;background:none!important;backdrop-filter:none!important}
-  .megafoot.slim .word{display:none}
-  body:has(.megafoot.slim) .stripe{margin-top:0}
   .pod,.bar{padding:26px 20px!important}
   .prow{align-items:flex-start;flex-wrap:wrap}
   .photowall{grid-template-columns:1fr!important;grid-auto-rows:220px}
