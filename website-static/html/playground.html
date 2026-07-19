@@ -85,6 +85,11 @@
 <script>
 (function(){
   var model = "claude-opus-4-8";
+  // Preselect the model passed from the Models page (models.html Try links carry ?model=<name>).
+  try {
+    var qm = new URLSearchParams(location.search).get("model");
+    if (qm) model = qm;
+  } catch (e) {}
   var lang = "python";
   var esc = function(t){return t.replace(/&/g,"&amp;").replace(/</g,"&lt;");};
   var T = {
@@ -116,6 +121,14 @@
   });
   var sc = document.getElementById("streamchip");
   sc.addEventListener("click", function(){ sc.textContent = sc.textContent.indexOf("✓")>-1 ? "stream ✗" : "stream ✓"; });
+  // Sync the chip highlight to the active model (may come from ?model=). If the model
+  // isn't one of the preset chips (any row from models.html), no chip lights up but the
+  // snippets below still show the right model name.
+  document.querySelectorAll(".mchip").forEach(function(x){
+    var on = x.dataset.model === model;
+    x.classList.toggle("on", on);
+    x.style.boxShadow = on ? "0 0 0 2px var(--violet-hi)" : "";
+  });
   render();
 })();
 </script>
