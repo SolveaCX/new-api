@@ -131,6 +131,10 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/compute"); echo "/compute -> $code"; [ "$code" = "200" ] || exit 1
           curl -s -m 20 "$C/compute.html" | grep -q 'canonical" href="https://flatkey.ai/compute.html"' || { echo "compute canonical missing"; exit 1; }
           curl -s -m 20 "$C/compute.html" | grep -q 'id="waitlist"' || { echo "compute waitlist form missing"; exit 1; }
+          # Common singular career links must permanently redirect to the
+          # canonical plural pages instead of falling through to legacy 404s.
+          curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -m 20 "$C/career" | grep -q "^301 $C/careers$" || { echo "/career redirect broken"; exit 1; }
+          curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -m 20 "$C/zh/career" | grep -q "^301 $C/zh/careers$" || { echo "/zh/career redirect broken"; exit 1; }
           # legacy SEO surface through the fallback proxy (must be 200, not redirect/404)
           for p in blog zh models pricing gpt-api-alternative about rankings sitemap.xml robots.txt; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$C/$p")
