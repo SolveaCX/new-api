@@ -25,7 +25,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);-webkit-fo
 .nav a.on{color:var(--ink);font-weight:700}
 .nav .sp{flex:1}
 .logo,.nav a.logo{display:flex;align-items:center;gap:13px;font-family:var(--disp);font-size:46px;font-weight:700;letter-spacing:-2.2px;color:var(--ink);text-decoration:none;line-height:1}
-.logo img{width:44px;height:44px;display:block}
+.logo img{width:52px;height:52px;display:block}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;padding:11px 20px;font-size:14.5px;font-weight:650;text-decoration:none;cursor:pointer;border:none;white-space:nowrap;min-height:44px;font-family:var(--sans);transition:transform .12s ease,box-shadow .12s ease}
 .btn:hover{transform:translateY(-1px)}
 .btn.black{background:#070707;color:#fff}
@@ -60,9 +60,9 @@ td{padding:11px 14px;font-size:14px;border-bottom:1px solid var(--line)}
 .megafoot .word{display:flex;align-items:center;gap:clamp(14px,1.8vw,30px);font-family:var(--disp);font-size:clamp(120px,13.5vw,200px);font-weight:700;letter-spacing:-.045em;line-height:1;color:var(--ink);white-space:nowrap;padding-bottom:52px;flex:none}
 .megafoot .word img{width:.84em;height:.84em}
 .megafoot .brandcol a.logo{font-size:30px;letter-spacing:-1.2px;gap:10px;font-weight:700}
-.megafoot .brandcol a.logo img{width:38px;height:38px}
+.megafoot .brandcol a.logo img{width:44px;height:44px}
 .side a.logo{font-size:27px;gap:9px;letter-spacing:-1px}
-.side a.logo img{width:32px;height:32px}
+.side a.logo img{width:38px;height:38px}
 .stripe{height:10px;display:flex}
 .stripe i{flex:1}
 .stripe .s1{background:var(--ink)}.stripe .s2{background:var(--violet-hi)}.stripe .s3{background:var(--violet-deep)}.stripe .s4{background:var(--green)}.stripe .s5{background:#1E1B4B}
