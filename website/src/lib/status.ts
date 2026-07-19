@@ -1,7 +1,15 @@
 export const STATUS_REVALIDATE_SECONDS = 60;
+export const STATUS_OVERALL_VALUES = [
+  "major_outage",
+  "some_systems_affected",
+  "degraded_performance",
+  "monitoring_incomplete",
+  "maintenance",
+  "all_systems_operational",
+] as const;
 
 export type StatusValue = "operational" | "degraded" | "outage" | "unknown" | "maintenance";
-export type StatusOverallValue = StatusValue | "monitoring_incomplete";
+export type StatusOverallValue = (typeof STATUS_OVERALL_VALUES)[number];
 export type StatusHistoryRange = "24h" | "7d" | "30d" | "90d";
 
 export interface StatusApiEnvelope<T> {
@@ -126,10 +134,22 @@ export type StatusApiResult<T> =
   | { state: "fresh" | "stale"; data: T }
   | { state: "monitoring-unavailable"; data: null };
 
+export type StatusSummaryResult = {
+  state: "fresh" | "stale" | "monitoring-unavailable";
+  data: StatusSummary;
+};
+
 type NextRevalidateRequestInit = RequestInit & { next: { revalidate: number } };
 
-export function fetchStatusSummary(): Promise<StatusApiResult<StatusSummary>> {
-  return fetchStatusData("/api/status/summary");
+export async function fetchStatusSummary(): Promise<StatusSummaryResult> {
+  const result = await fetchStatusData<StatusSummary>("/api/status/summary");
+  if (result.state === "monitoring-unavailable" || !isStatusOverallValue(result.data.status)) {
+    return { state: "monitoring-unavailable", data: unavailableStatusSummary() };
+  }
+  if (result.state === "stale") {
+    return { state: "stale", data: { ...result.data, status: "monitoring_incomplete" } };
+  }
+  return result;
 }
 
 export function fetchStatusComponents(query: StatusComponentQuery = {}): Promise<StatusApiResult<StatusComponentsData>> {
@@ -217,6 +237,20 @@ function isStale(data: unknown): boolean {
   if (!data || typeof data !== "object" || !("generated_at" in data)) return false;
   const generatedAt = data.generated_at;
   return typeof generatedAt === "number" && Math.floor(Date.now() / 1000) - generatedAt > STATUS_REVALIDATE_SECONDS;
+}
+
+function isStatusOverallValue(value: unknown): value is StatusOverallValue {
+  return typeof value === "string" && STATUS_OVERALL_VALUES.includes(value as StatusOverallValue);
+}
+
+function unavailableStatusSummary(): StatusSummary {
+  return {
+    generated_at: 0,
+    last_trustworthy_update_at: 0,
+    coverage: 0,
+    status: "monitoring_incomplete",
+    components: [],
+  };
 }
 
 function unavailable<T>(): StatusApiResult<T> {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  STATUS_OVERALL_VALUES,
   fetchStatusComponent,
   fetchStatusComponentHistory,
   fetchStatusComponents,
@@ -11,11 +12,25 @@ import {
   subscribeToStatus,
   unsubscribeFromStatus,
   verifyStatusSubscription,
+  type StatusOverallValue,
 } from "./status";
 
 const now = () => Math.floor(Date.now() / 1000);
 
 describe("status client", () => {
+  test("matches the Go service overall status values exactly", () => {
+    const expected = [
+      "major_outage",
+      "some_systems_affected",
+      "degraded_performance",
+      "monitoring_incomplete",
+      "maintenance",
+      "all_systems_operational",
+    ] as const satisfies readonly StatusOverallValue[];
+
+    expect(STATUS_OVERALL_VALUES).toEqual(expected);
+  });
+
   test("fetches typed summary data with exactly 60-second revalidation", async () => {
     const originalFetch = globalThis.fetch;
     let requestedUrl = "";
@@ -60,7 +75,7 @@ describe("status client", () => {
             generated_at: 1,
             last_trustworthy_update_at: 0,
             coverage: 0,
-            status: "unknown",
+            status: "all_systems_operational",
             components: [{ id: 1, slug: "router", kind: "router", display_name: "Router", lifecycle: "active", status: "unknown", last_trustworthy_update_at: 0, coverage: 0 }],
           },
         })
@@ -69,7 +84,7 @@ describe("status client", () => {
     try {
       const result = await fetchStatusSummary();
       expect(result.state).toBe("stale");
-      expect(result.data?.status).toBe("unknown");
+      expect(result.data?.status).toBe("monitoring_incomplete");
       expect(result.data?.components[0]?.status).toBe("unknown");
       expect(JSON.stringify(result)).not.toContain("operational");
     } finally {
@@ -83,9 +98,33 @@ describe("status client", () => {
 
     try {
       const result = await fetchStatusSummary();
-      expect(result).toEqual({ state: "monitoring-unavailable", data: null });
+      expect(result.state).toBe("monitoring-unavailable");
+      expect(result.data.status).toBe("monitoring_incomplete");
+      expect(result.data.components).toEqual([]);
       expect(JSON.stringify(result)).not.toContain("hunter2");
       expect(JSON.stringify(result)).not.toContain("operational");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("rejects component-only values as invalid summary overall status", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.resolve(Response.json({
+      success: true,
+      data: {
+        generated_at: now(),
+        last_trustworthy_update_at: now(),
+        coverage: 1000000,
+        status: "operational",
+        components: [],
+      },
+    }))) as typeof fetch;
+
+    try {
+      const result = await fetchStatusSummary();
+      expect(result.state).toBe("monitoring-unavailable");
+      expect(result.data.status).toBe("monitoring_incomplete");
     } finally {
       globalThis.fetch = originalFetch;
     }
