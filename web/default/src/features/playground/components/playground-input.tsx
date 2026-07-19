@@ -235,11 +235,11 @@ export function PlaygroundInput({
               text === 'More' ? 'hidden sm:flex' : ''
             }`}
             key={text}
-            onClick={() => handleSuggestionClick(text)}
-            suggestion={text}
+            onClick={() => handleSuggestionClick(t(text))}
+            suggestion={t(text)}
           >
             {Icon && <Icon size={16} style={{ color }} />}
-            {text}
+            {t(text)}
           </Suggestion>
         ))}
       </Suggestions>

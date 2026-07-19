@@ -25,7 +25,8 @@ import { Button } from '@/components/ui/button'
 // input and send immediately so a brand-new user can make their first API call
 // with zero typing. Keys are translated via t().
 const FIRST_RUN_EXAMPLE_PROMPTS = [
-  'Hello!',
+  'How do I try flatkey?',
+  'Generate an image or a video for me',
   'Write a quicksort in Python',
   'Explain Transformers',
 ] as const
@@ -63,7 +64,7 @@ export function FirstRunWelcome({
               key={prompt}
               type='button'
               disabled={disabled}
-              onClick={() => onPickExample(prompt)}
+              onClick={() => onPickExample(t(prompt))}
               className='rounded-full border border-violet-200 bg-white px-3 py-1.5 text-sm text-violet-700 transition-colors hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-900/40 dark:bg-transparent dark:text-violet-300 dark:hover:bg-violet-950/30'
             >
               {t(prompt)}

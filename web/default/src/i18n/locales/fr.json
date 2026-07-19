@@ -5480,6 +5480,15 @@
     "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → ajoutez un fournisseur personnalisé (OpenAI API Compatible). Définissez l'API host sur le Base URL et collez votre clé.",
     "160+ official models · seedance-2.5 video included": "160+ modèles officiels · vidéo seedance-2.5 incluse",
     "More AI. Less cost. Every frontier model, one key.": "Plus d'IA. Moins de coûts. Tous les modèles de pointe, une seule clé.",
-    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "Texte, vidéo et audio via les mêmes endpoints officiels — avec un SLA signé derrière chaque appel."
+    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "Texte, vidéo et audio via les mêmes endpoints officiels — avec un SLA signé derrière chaque appel.",
+    "How do I try flatkey?": "Comment essayer flatkey ?",
+    "Generate an image or a video for me": "Génère une image ou une vidéo pour moi",
+    "Analyze data": "Analyser des données",
+    "Surprise me": "Surprends-moi",
+    "Summarize text": "Résumer un texte",
+    "Get advice": "Obtenir des conseils",
+    "No content to copy": "Aucun contenu à copier",
+    "Please wait for the current generation to complete": "Veuillez attendre la fin de la génération en cours",
+    "An unknown error occurred": "Une erreur inconnue s'est produite"
   }
 }

@@ -5480,6 +5480,15 @@
     "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.",
     "160+ official models · seedance-2.5 video included": "160+ official models · seedance-2.5 video included",
     "More AI. Less cost. Every frontier model, one key.": "More AI. Less cost. Every frontier model, one key.",
-    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "Text, video and audio through the same official endpoints — with a signed SLA behind every call."
+    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "Text, video and audio through the same official endpoints — with a signed SLA behind every call.",
+    "How do I try flatkey?": "How do I try flatkey?",
+    "Generate an image or a video for me": "Generate an image or a video for me",
+    "Analyze data": "Analyze data",
+    "Surprise me": "Surprise me",
+    "Summarize text": "Summarize text",
+    "Get advice": "Get advice",
+    "No content to copy": "No content to copy",
+    "Please wait for the current generation to complete": "Please wait for the current generation to complete",
+    "An unknown error occurred": "An unknown error occurred"
   }
 }
