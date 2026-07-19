@@ -134,6 +134,45 @@ describe("public status proxy", () => {
     }
   });
 
+  test("refuses upstream redirects for GET and POST without following credentials or bodies", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ input: string; init?: RequestInit }> = [];
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ input: String(input), init });
+      return Promise.resolve(new Response(null, {
+        status: 302,
+        headers: { location: "https://redirect.invalid/collect" },
+      }));
+    }) as typeof fetch;
+
+    try {
+      const responses = [
+        await GET(new NextRequest("https://flatkey.ai/api/status/summary"), context("summary")),
+        await POST(new NextRequest("https://flatkey.ai/api/status/subscriptions", {
+          method: "POST",
+          body: '{"email":"reader@example.com"}',
+          headers: { authorization: "Bearer secret", cookie: "session=secret", "content-type": "application/json" },
+        }), context("subscriptions")),
+      ];
+
+      expect(calls).toHaveLength(2);
+      for (const call of calls) {
+        expect(call.init?.redirect).toBe("manual");
+        expect(new Headers(call.init?.headers).get("authorization")).toBeNull();
+        expect(new Headers(call.init?.headers).get("cookie")).toBeNull();
+      }
+      for (const response of responses) {
+        const body = await response.text();
+        expect(response.status).toBe(502);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(response.headers.get("location")).toBeNull();
+        expect(body.length).toBeLessThan(256);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("rejects admin, traversal, encoded, extra-segment, and method-confused requests without proxying", async () => {
     const originalFetch = globalThis.fetch;
     let calls = 0;

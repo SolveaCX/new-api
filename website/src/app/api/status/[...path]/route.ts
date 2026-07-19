@@ -25,7 +25,9 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
       method: "GET",
       headers: forwardedRequestHeaders(request, false),
       next: { revalidate: REVALIDATE_SECONDS },
+      redirect: "manual",
     });
+    if (isRefusedRedirect(response.status)) return jsonError(502, "monitoring unavailable");
     return publicUpstreamResponse(response, true);
   } catch {
     return jsonError(502, "monitoring unavailable");
@@ -55,7 +57,9 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
       headers: forwardedRequestHeaders(request, true),
       body,
       cache: "no-store",
+      redirect: "manual",
     });
+    if (isRefusedRedirect(response.status)) return jsonError(502, "monitoring unavailable");
     return publicUpstreamResponse(response, false);
   } catch {
     return jsonError(502, "monitoring unavailable");
@@ -112,6 +116,10 @@ function publicUpstreamResponse(response: Response, preserveCacheControl: boolea
     statusText: response.statusText,
     headers,
   });
+}
+
+function isRefusedRedirect(status: number): boolean {
+  return status >= 300 && status < 400 && status !== 304;
 }
 
 async function readBoundedBody(request: Request): Promise<ArrayBuffer> {

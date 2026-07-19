@@ -1,3 +1,5 @@
+import { SITE_ORIGIN } from "./origins";
+
 export const STATUS_REVALIDATE_SECONDS = 60;
 export const STATUS_OVERALL_VALUES = [
   "major_outage",
@@ -140,10 +142,16 @@ export type StatusSummaryResult = {
 };
 
 type NextRevalidateRequestInit = RequestInit & { next: { revalidate: number } };
+type StatusDataGuard<T> = (value: unknown) => value is T;
+
+const STATUS_VALUES = ["operational", "degraded", "outage", "unknown", "maintenance"] as const;
+const STATUS_HISTORY_RANGES = ["24h", "7d", "30d", "90d"] as const;
+const MAX_FUTURE_SKEW_SECONDS = 60;
+const MAX_MICROS = 1_000_000;
 
 export async function fetchStatusSummary(): Promise<StatusSummaryResult> {
-  const result = await fetchStatusData<StatusSummary>("/api/status/summary");
-  if (result.state === "monitoring-unavailable" || !isStatusOverallValue(result.data.status)) {
+  const result = await fetchStatusData("/api/status/summary", isStatusSummary);
+  if (result.state === "monitoring-unavailable") {
     return { state: "monitoring-unavailable", data: unavailableStatusSummary() };
   }
   if (result.state === "stale") {
@@ -158,11 +166,11 @@ export function fetchStatusComponents(query: StatusComponentQuery = {}): Promise
   if (query.query) search.set("query", query.query);
   if (query.capability) search.set("capability", query.capability);
   if (query.status) search.set("status", query.status);
-  return fetchStatusData(withSearch("/api/status/components", search));
+  return fetchStatusData(withSearch("/api/status/components", search), isStatusComponentsData);
 }
 
 export function fetchStatusComponent(slug: string): Promise<StatusApiResult<StatusComponentData>> {
-  return fetchStatusData(`/api/status/components/${encodeURIComponent(slug)}`);
+  return fetchStatusData(`/api/status/components/${encodeURIComponent(slug)}`, isStatusComponentData);
 }
 
 export function fetchStatusComponentHistory(
@@ -170,60 +178,60 @@ export function fetchStatusComponentHistory(
   range: StatusHistoryRange = "24h"
 ): Promise<StatusApiResult<StatusComponentHistoryData>> {
   const search = new URLSearchParams({ range });
-  return fetchStatusData(withSearch(`/api/status/components/${encodeURIComponent(slug)}/history`, search));
+  return fetchStatusData(withSearch(`/api/status/components/${encodeURIComponent(slug)}/history`, search), isStatusComponentHistoryData);
 }
 
 export function fetchStatusIncidents(): Promise<StatusApiResult<StatusIncidentsData>> {
-  return fetchStatusData("/api/status/incidents");
+  return fetchStatusData("/api/status/incidents", isStatusIncidentsData);
 }
 
 export function fetchStatusIncident(id: string): Promise<StatusApiResult<StatusIncidentData>> {
-  return fetchStatusData(`/api/status/incidents/${encodeURIComponent(id)}`);
+  return fetchStatusData(`/api/status/incidents/${encodeURIComponent(id)}`, isStatusIncidentData);
 }
 
 export function fetchStatusMaintenance(): Promise<StatusApiResult<StatusMaintenanceData>> {
-  return fetchStatusData("/api/status/maintenance");
+  return fetchStatusData("/api/status/maintenance", isStatusMaintenanceData);
 }
 
 export function subscribeToStatus(input: StatusSubscriptionInput): Promise<StatusApiResult<StatusSubscriptionResponse>> {
-  return mutateStatus("/api/status/subscriptions", input);
+  return mutateStatus("/api/status/subscriptions", input, isStatusSubscriptionResponse);
 }
 
 export function verifyStatusSubscription(token: string): Promise<StatusApiResult<StatusSubscriptionResponse>> {
-  return fetchStatusData(withSearch("/api/status/subscriptions/verify", new URLSearchParams({ token })));
+  return fetchStatusData(withSearch("/api/status/subscriptions/verify", new URLSearchParams({ token })), isStatusSubscriptionResponse);
 }
 
 export function previewStatusUnsubscribe(token: string): Promise<StatusApiResult<StatusUnsubscribePreview>> {
-  return fetchStatusData(withSearch("/api/status/subscriptions/unsubscribe", new URLSearchParams({ token })));
+  return fetchStatusData(withSearch("/api/status/subscriptions/unsubscribe", new URLSearchParams({ token })), isStatusUnsubscribePreview);
 }
 
 export function unsubscribeFromStatus(input: StatusUnsubscribeInput): Promise<StatusApiResult<StatusSubscriptionResponse>> {
-  return mutateStatus("/api/status/subscriptions/unsubscribe", input);
+  return mutateStatus("/api/status/subscriptions/unsubscribe", input, isStatusSubscriptionResponse);
 }
 
-async function fetchStatusData<T>(path: string): Promise<StatusApiResult<T>> {
+async function fetchStatusData<T>(path: string, guard: StatusDataGuard<T>): Promise<StatusApiResult<T>> {
   const init: NextRevalidateRequestInit = {
     headers: { accept: "application/json" },
     next: { revalidate: STATUS_REVALIDATE_SECONDS },
   };
-  return requestStatus(path, init);
+  return requestStatus(path, init, guard);
 }
 
-async function mutateStatus<T>(path: string, input: object): Promise<StatusApiResult<T>> {
+async function mutateStatus<T>(path: string, input: object, guard: StatusDataGuard<T>): Promise<StatusApiResult<T>> {
   return requestStatus(path, {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify(input),
     cache: "no-store",
-  });
+  }, guard);
 }
 
-async function requestStatus<T>(path: string, init: RequestInit): Promise<StatusApiResult<T>> {
+async function requestStatus<T>(path: string, init: RequestInit, guard: StatusDataGuard<T>): Promise<StatusApiResult<T>> {
   try {
-    const response = await fetch(path, init);
+    const response = await fetch(statusRequestUrl(path), init);
     if (!response.ok) return unavailable();
-    const envelope = (await response.json()) as Partial<StatusApiEnvelope<T>>;
-    if (envelope.success !== true || envelope.data == null) return unavailable();
+    const envelope: unknown = await response.json();
+    if (!isSuccessfulEnvelope(envelope, guard)) return unavailable();
     return {
       state: isStale(envelope.data) ? "stale" : "fresh",
       data: envelope.data,
@@ -231,6 +239,10 @@ async function requestStatus<T>(path: string, init: RequestInit): Promise<Status
   } catch {
     return unavailable();
   }
+}
+
+function statusRequestUrl(path: string): string {
+  return typeof window === "undefined" ? new URL(path, SITE_ORIGIN).toString() : path;
 }
 
 function isStale(data: unknown): boolean {
@@ -241,6 +253,133 @@ function isStale(data: unknown): boolean {
 
 function isStatusOverallValue(value: unknown): value is StatusOverallValue {
   return typeof value === "string" && STATUS_OVERALL_VALUES.includes(value as StatusOverallValue);
+}
+
+function isSuccessfulEnvelope<T>(value: unknown, guard: StatusDataGuard<T>): value is StatusApiEnvelope<T> {
+  return isRecord(value) && value.success === true && isOptionalString(value.message) && guard(value.data);
+}
+
+function isStatusSummary(value: unknown): value is StatusSummary {
+  return hasStatusMetadata(value) && isStatusOverallValue(value.status) && isOptionalString(value.message) &&
+    isArrayOf(value.components, isStatusComponent);
+}
+
+function isStatusComponentsData(value: unknown): value is StatusComponentsData {
+  return hasStatusMetadata(value) && isArrayOf(value.components, isStatusComponent);
+}
+
+function isStatusComponentData(value: unknown): value is StatusComponentData {
+  return hasStatusMetadata(value) && isStatusComponent(value.component);
+}
+
+function isStatusComponentHistoryData(value: unknown): value is StatusComponentHistoryData {
+  return hasStatusMetadata(value) && isStatusComponent(value.component) && isStatusHistoryRange(value.range) &&
+    isStatusAvailability(value.availability) && isArrayOf(value.periods, isStatusPeriod);
+}
+
+function isStatusIncidentsData(value: unknown): value is StatusIncidentsData {
+  return hasStatusMetadata(value) && isArrayOf(value.incidents, (incident) => isStatusIncident(incident, "incident"));
+}
+
+function isStatusIncidentData(value: unknown): value is StatusIncidentData {
+  return hasStatusMetadata(value) && isStatusIncident(value.incident, "incident");
+}
+
+function isStatusMaintenanceData(value: unknown): value is StatusMaintenanceData {
+  return hasStatusMetadata(value) && isArrayOf(value.maintenance, (incident) => isStatusIncident(incident, "maintenance"));
+}
+
+function isStatusSubscriptionResponse(value: unknown): value is StatusSubscriptionResponse {
+  return isRecord(value) && typeof value.message === "string";
+}
+
+function isStatusUnsubscribePreview(value: unknown): value is StatusUnsubscribePreview {
+  return isRecord(value) && typeof value.can_unsubscribe === "boolean" && isStatusSubscriptionResponse(value);
+}
+
+function hasStatusMetadata(value: unknown): value is Record<string, unknown> & StatusMetadata {
+  return isRecord(value) && isGeneratedAt(value.generated_at) && isTimestamp(value.last_trustworthy_update_at) &&
+    isMicros(value.coverage);
+}
+
+function isStatusComponent(value: unknown): value is StatusComponent {
+  return isRecord(value) && isPositiveInteger(value.id) && isNonEmptyString(value.slug) &&
+    (value.kind === "router" || value.kind === "model") && isNonEmptyString(value.display_name) &&
+    isOptionalString(value.capability) && (value.lifecycle === "active" || value.lifecycle === "retired") &&
+    isStatusValue(value.status) && isTimestamp(value.last_trustworthy_update_at) && isMicros(value.coverage);
+}
+
+function isStatusAvailability(value: unknown): value is StatusAvailability {
+  return isRecord(value) && isMicros(value.availability_micros) && isMicros(value.coverage_micros) &&
+    isNonNegativeInteger(value.known_bucket_count) && isNonNegativeInteger(value.unknown_bucket_count) &&
+    isNonNegativeInteger(value.maintenance_bucket_count);
+}
+
+function isStatusPeriod(value: unknown): value is StatusPeriod {
+  return isRecord(value) && isTimestamp(value.period_start) && isMicros(value.availability) &&
+    isMicros(value.coverage) && isStatusValue(value.status) &&
+    (value.maintenance_count === undefined || isNonNegativeInteger(value.maintenance_count));
+}
+
+function isStatusIncident(value: unknown, expectedKind: StatusIncident["kind"]): value is StatusIncident {
+  return isRecord(value) && isNonEmptyString(value.id) && value.kind === expectedKind &&
+    typeof value.title === "string" && typeof value.impact === "string" && typeof value.status === "string" &&
+    isOptionalTimestamp(value.scheduled_start_at) && isOptionalTimestamp(value.scheduled_end_at) &&
+    isOptionalTimestamp(value.started_at) && isOptionalTimestamp(value.resolved_at) && isTimestamp(value.updated_at) &&
+    isArrayOf(value.component_ids, isPositiveInteger) && isArrayOf(value.updates, isStatusIncidentUpdate);
+}
+
+function isStatusIncidentUpdate(value: unknown): value is StatusIncidentUpdate {
+  return isRecord(value) && typeof value.state === "string" && typeof value.body === "string" &&
+    isTimestamp(value.published_at);
+}
+
+function isStatusValue(value: unknown): value is StatusValue {
+  return typeof value === "string" && STATUS_VALUES.includes(value as StatusValue);
+}
+
+function isStatusHistoryRange(value: unknown): value is StatusHistoryRange {
+  return typeof value === "string" && STATUS_HISTORY_RANGES.includes(value as StatusHistoryRange);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isArrayOf<T>(value: unknown, guard: StatusDataGuard<T>): value is T[] {
+  return Array.isArray(value) && value.every(guard);
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return isNonNegativeInteger(value) && value > 0;
+}
+
+function isTimestamp(value: unknown): value is number {
+  return isNonNegativeInteger(value);
+}
+
+function isOptionalTimestamp(value: unknown): value is number | undefined {
+  return value === undefined || isTimestamp(value);
+}
+
+function isGeneratedAt(value: unknown): value is number {
+  return isTimestamp(value) && value <= Math.floor(Date.now() / 1000) + MAX_FUTURE_SKEW_SECONDS;
+}
+
+function isMicros(value: unknown): value is number {
+  return isNonNegativeInteger(value) && value <= MAX_MICROS;
 }
 
 function unavailableStatusSummary(): StatusSummary {
