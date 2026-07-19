@@ -230,6 +230,128 @@ export interface StatusCenterPermissions {
   requiresSecureVerification: boolean
 }
 
+export type StatusTranslationKey =
+  | 'statusCenter.componentKind.router'
+  | 'statusCenter.componentKind.model'
+  | 'statusCenter.componentKind.custom'
+  | 'statusCenter.audit.action.deliveryRetry'
+  | 'statusCenter.audit.action.incidentDraftAuto'
+  | 'statusCenter.audit.action.incidentPublish'
+  | 'statusCenter.audit.action.maintenanceCreate'
+  | 'statusCenter.audit.action.maintenanceStart'
+  | 'statusCenter.audit.action.maintenanceEnd'
+  | 'statusCenter.audit.action.maintenanceComponentStart'
+  | 'statusCenter.audit.action.maintenanceComponentEnd'
+  | 'statusCenter.audit.action.overrideSet'
+  | 'statusCenter.audit.action.overrideExpire'
+  | 'statusCenter.audit.action.custom'
+  | 'statusCenter.audit.objectType.delivery'
+  | 'statusCenter.audit.objectType.incident'
+  | 'statusCenter.audit.objectType.maintenance'
+  | 'statusCenter.audit.objectType.component'
+  | 'statusCenter.audit.objectType.custom'
+  | 'statusCenter.settings.label.discordWebhookEndpoint'
+  | 'statusCenter.settings.label.discordDeliveryState'
+  | 'statusCenter.settings.label.evidenceMaxAgeSeconds'
+  | 'statusCenter.settings.label.custom'
+
+export interface StatusTranslationLabel {
+  key: StatusTranslationKey
+  values?: { identifier: string }
+}
+
+const componentKindLabelKeys = {
+  router: 'statusCenter.componentKind.router',
+  model: 'statusCenter.componentKind.model',
+} as const satisfies Record<string, StatusTranslationKey>
+
+const auditActionLabelKeys = {
+  'status.delivery.retry': 'statusCenter.audit.action.deliveryRetry',
+  'status.incident.draft.auto': 'statusCenter.audit.action.incidentDraftAuto',
+  'status.incident.publish': 'statusCenter.audit.action.incidentPublish',
+  'status.maintenance.create': 'statusCenter.audit.action.maintenanceCreate',
+  'status.maintenance.start': 'statusCenter.audit.action.maintenanceStart',
+  'status.maintenance.end': 'statusCenter.audit.action.maintenanceEnd',
+  'status.maintenance.component.start':
+    'statusCenter.audit.action.maintenanceComponentStart',
+  'status.maintenance.component.end':
+    'statusCenter.audit.action.maintenanceComponentEnd',
+  'status.override.set': 'statusCenter.audit.action.overrideSet',
+  'status.override.expire': 'statusCenter.audit.action.overrideExpire',
+} as const satisfies Record<string, StatusTranslationKey>
+
+const auditObjectTypeLabelKeys = {
+  delivery: 'statusCenter.audit.objectType.delivery',
+  incident: 'statusCenter.audit.objectType.incident',
+  maintenance: 'statusCenter.audit.objectType.maintenance',
+  component: 'statusCenter.audit.objectType.component',
+} as const satisfies Record<string, StatusTranslationKey>
+
+const settingLabelKeys = {
+  'status.discord.webhook_endpoint':
+    'statusCenter.settings.label.discordWebhookEndpoint',
+  'status.discord.delivery_state':
+    'statusCenter.settings.label.discordDeliveryState',
+  'status.evidence_max_age_seconds':
+    'statusCenter.settings.label.evidenceMaxAgeSeconds',
+} as const satisfies Record<string, StatusTranslationKey>
+
+function getKnownTranslationLabel(
+  identifier: string,
+  labels: Record<string, StatusTranslationKey>,
+  fallbackKey: StatusTranslationKey,
+  preserveIdentifier: boolean
+): StatusTranslationLabel {
+  const key = labels[identifier]
+  if (key) return { key }
+  if (preserveIdentifier) {
+    return { key: fallbackKey, values: { identifier } }
+  }
+  return { key: fallbackKey }
+}
+
+export function getStatusComponentKindLabel(
+  kind: string
+): StatusTranslationLabel {
+  return getKnownTranslationLabel(
+    kind,
+    componentKindLabelKeys,
+    'statusCenter.componentKind.custom',
+    true
+  )
+}
+
+export function getStatusAuditActionLabel(
+  action: string
+): StatusTranslationLabel {
+  return getKnownTranslationLabel(
+    action,
+    auditActionLabelKeys,
+    'statusCenter.audit.action.custom',
+    true
+  )
+}
+
+export function getStatusAuditObjectTypeLabel(
+  objectType: string
+): StatusTranslationLabel {
+  return getKnownTranslationLabel(
+    objectType,
+    auditObjectTypeLabelKeys,
+    'statusCenter.audit.objectType.custom',
+    true
+  )
+}
+
+export function getStatusSettingLabel(key: string): StatusTranslationLabel {
+  return getKnownTranslationLabel(
+    key,
+    settingLabelKeys,
+    'statusCenter.settings.label.custom',
+    false
+  )
+}
+
 const statusLabelKeys: Record<StatusValue, string> = {
   operational: 'statusCenter.status.operational',
   degraded: 'statusCenter.status.degraded',

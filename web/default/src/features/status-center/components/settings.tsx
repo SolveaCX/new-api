@@ -40,7 +40,11 @@ import {
   updateStatusSetting,
 } from '../api'
 import { formatStatusTimestamp } from '../format'
-import { resolveStatusMutationError, type StatusSetting } from '../types'
+import {
+  getStatusSettingLabel,
+  resolveStatusMutationError,
+  type StatusSetting,
+} from '../types'
 import { EmptyState, ErrorState, ForbiddenState, LoadingState } from './common'
 
 const discordSettingKey = 'status.discord.webhook_endpoint'
@@ -139,54 +143,62 @@ export function SettingsPanel(props: SettingsPanelProps) {
           {ordinarySettings.length === 0 ? (
             <EmptyState descriptionKey='statusCenter.empty.settings' />
           ) : (
-            ordinarySettings.map((setting) => (
-              <div
-                key={setting.key}
-                className='grid gap-3 rounded-lg border p-3 lg:grid-cols-[1fr_1fr_auto] lg:items-end'
-              >
-                <div className='min-w-0'>
-                  <div className='truncate font-medium'>{setting.key}</div>
-                  <div className='text-muted-foreground text-xs'>
-                    {setting.sensitive
-                      ? t('statusCenter.settings.secretNeverShown')
-                      : setting.value || t('statusCenter.notConfigured')}
-                    {' · '}
-                    {formatStatusTimestamp(setting.updated_at)}
-                  </div>
-                </div>
-                <div className='space-y-2'>
-                  <Label htmlFor={`setting-${setting.key}`}>
-                    {t('statusCenter.settings.replacementValue')}
-                  </Label>
-                  <Input
-                    id={`setting-${setting.key}`}
-                    type={setting.sensitive ? 'password' : 'text'}
-                    autoComplete='new-password'
-                    value={replacements[setting.key] ?? ''}
-                    onChange={(event) =>
-                      setReplacements((current) => ({
-                        ...current,
-                        [setting.key]: event.target.value,
-                      }))
-                    }
-                    placeholder={t(
-                      'statusCenter.settings.replacementPlaceholder'
-                    )}
-                  />
-                </div>
-                <Button
-                  type='button'
-                  disabled={
-                    !(replacements[setting.key] ?? '').trim() ||
-                    settingMutation.isPending
-                  }
-                  onClick={() => saveSetting(setting)}
+            ordinarySettings.map((setting) => {
+              const settingLabel = getStatusSettingLabel(setting.key)
+              return (
+                <div
+                  key={setting.key}
+                  className='grid gap-3 rounded-lg border p-3 lg:grid-cols-[1fr_1fr_auto] lg:items-end'
                 >
-                  <KeyRound aria-hidden='true' />
-                  {t('statusCenter.settings.verifyAndSave')}
-                </Button>
-              </div>
-            ))
+                  <div className='min-w-0'>
+                    <div className='truncate font-medium'>
+                      {t(settingLabel.key, settingLabel.values)}
+                    </div>
+                    <code className='text-muted-foreground block truncate text-xs'>
+                      {setting.key}
+                    </code>
+                    <div className='text-muted-foreground text-xs'>
+                      {setting.sensitive
+                        ? t('statusCenter.settings.secretNeverShown')
+                        : setting.value || t('statusCenter.notConfigured')}
+                      {' · '}
+                      {formatStatusTimestamp(setting.updated_at)}
+                    </div>
+                  </div>
+                  <div className='space-y-2'>
+                    <Label htmlFor={`setting-${setting.key}`}>
+                      {t('statusCenter.settings.replacementValue')}
+                    </Label>
+                    <Input
+                      id={`setting-${setting.key}`}
+                      type={setting.sensitive ? 'password' : 'text'}
+                      autoComplete='new-password'
+                      value={replacements[setting.key] ?? ''}
+                      onChange={(event) =>
+                        setReplacements((current) => ({
+                          ...current,
+                          [setting.key]: event.target.value,
+                        }))
+                      }
+                      placeholder={t(
+                        'statusCenter.settings.replacementPlaceholder'
+                      )}
+                    />
+                  </div>
+                  <Button
+                    type='button'
+                    disabled={
+                      !(replacements[setting.key] ?? '').trim() ||
+                      settingMutation.isPending
+                    }
+                    onClick={() => saveSetting(setting)}
+                  >
+                    <KeyRound aria-hidden='true' />
+                    {t('statusCenter.settings.verifyAndSave')}
+                  </Button>
+                </div>
+              )
+            })
           )}
         </CardContent>
       </Card>
@@ -199,6 +211,14 @@ export function SettingsPanel(props: SettingsPanelProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
+          <div>
+            <div className='font-medium'>
+              {t(getStatusSettingLabel(discordSettingKey).key)}
+            </div>
+            <code className='text-muted-foreground text-xs'>
+              {discordSettingKey}
+            </code>
+          </div>
           <div className='flex flex-wrap items-center gap-2'>
             <Badge
               variant={discordSetting?.configured ? 'secondary' : 'outline'}

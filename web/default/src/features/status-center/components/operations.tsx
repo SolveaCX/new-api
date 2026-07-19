@@ -48,6 +48,8 @@ import {
 import { formatStatusTimestamp } from '../format'
 import {
   buildStatusDeliveryRetryInput,
+  getStatusAuditActionLabel,
+  getStatusAuditObjectTypeLabel,
   resolveStatusMutationError,
   type StatusDelivery,
   type StatusDeliveryRetryInput,
@@ -299,24 +301,33 @@ export function AuditPanel(props: { active: boolean }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {events.map((event) => (
-                <TableRow key={event.id}>
-                  <TableCell>{event.action}</TableCell>
-                  <TableCell>
-                    {event.object_type} #{event.object_id}
-                  </TableCell>
-                  <TableCell>
-                    {t(`statusCenter.actor.${event.actor_type}`)} #
-                    {event.actor_id}
-                  </TableCell>
-                  <TableCell className='max-w-96 whitespace-normal'>
-                    {event.reason || t('statusCenter.notAvailable')}
-                  </TableCell>
-                  <TableCell>
-                    {formatStatusTimestamp(event.created_at)}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {events.map((event) => {
+                const actionLabel = getStatusAuditActionLabel(event.action)
+                const objectTypeLabel = getStatusAuditObjectTypeLabel(
+                  event.object_type
+                )
+                return (
+                  <TableRow key={event.id}>
+                    <TableCell>
+                      {t(actionLabel.key, actionLabel.values)}
+                    </TableCell>
+                    <TableCell>
+                      {t(objectTypeLabel.key, objectTypeLabel.values)} #
+                      {event.object_id}
+                    </TableCell>
+                    <TableCell>
+                      {t(`statusCenter.actor.${event.actor_type}`)} #
+                      {event.actor_id}
+                    </TableCell>
+                    <TableCell className='max-w-96 whitespace-normal'>
+                      {event.reason || t('statusCenter.notAvailable')}
+                    </TableCell>
+                    <TableCell>
+                      {formatStatusTimestamp(event.created_at)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         )}

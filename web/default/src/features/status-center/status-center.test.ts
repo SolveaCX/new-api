@@ -26,10 +26,15 @@ import { DeliveryRetryAction } from './components/operations'
 import {
   buildStatusDeliveryRetryInput,
   buildPublishedUpdateRows,
+  getStatusAuditActionLabel,
+  getStatusAuditObjectTypeLabel,
+  getStatusComponentKindLabel,
   getRequiredStatusComponentVersion,
   getStatusCenterPermissions,
   getStatusLabelKey,
+  getStatusSettingLabel,
   resolveStatusMutationError,
+  type StatusTranslationLabel,
   validateStatusOverride,
 } from './types'
 
@@ -46,6 +51,38 @@ beforeAll(async () => {
             'Published updates are immutable. Add a correction instead.',
           'statusCenter.incidents.appendCorrection': 'Append correction',
           'statusCenter.deliveries.retry': 'Retry',
+          'statusCenter.componentKind.router': 'Router',
+          'statusCenter.componentKind.model': 'Model',
+          'statusCenter.componentKind.custom':
+            'Other component ({{identifier}})',
+          'statusCenter.audit.action.deliveryRetry': 'Delivery retried',
+          'statusCenter.audit.action.incidentDraftAuto':
+            'Automatic incident draft created',
+          'statusCenter.audit.action.incidentPublish': 'Incident published',
+          'statusCenter.audit.action.maintenanceCreate':
+            'Maintenance created',
+          'statusCenter.audit.action.maintenanceStart': 'Maintenance started',
+          'statusCenter.audit.action.maintenanceEnd': 'Maintenance ended',
+          'statusCenter.audit.action.maintenanceComponentStart':
+            'Component maintenance started',
+          'statusCenter.audit.action.maintenanceComponentEnd':
+            'Component maintenance ended',
+          'statusCenter.audit.action.overrideSet': 'Override set',
+          'statusCenter.audit.action.overrideExpire': 'Override expired',
+          'statusCenter.audit.action.custom': 'Other action ({{identifier}})',
+          'statusCenter.audit.objectType.delivery': 'Delivery',
+          'statusCenter.audit.objectType.incident': 'Incident',
+          'statusCenter.audit.objectType.maintenance': 'Maintenance',
+          'statusCenter.audit.objectType.component': 'Component',
+          'statusCenter.audit.objectType.custom':
+            'Other object ({{identifier}})',
+          'statusCenter.settings.label.discordWebhookEndpoint':
+            'Discord webhook endpoint',
+          'statusCenter.settings.label.discordDeliveryState':
+            'Discord delivery state',
+          'statusCenter.settings.label.evidenceMaxAgeSeconds':
+            'Maximum evidence age',
+          'statusCenter.settings.label.custom': 'Custom status setting',
         },
       },
     },
@@ -58,6 +95,65 @@ function renderWithI18n(component: ReturnType<typeof createElement>): string {
     createElement(I18nextProvider, { i18n: testI18n }, component)
   )
 }
+
+function renderStatusLabel(label: StatusTranslationLabel): string {
+  return testI18n.t(label.key, label.values)
+}
+
+describe('status center identifier labels', () => {
+  test.each([
+    ['router', 'statusCenter.componentKind.router', 'Router'],
+    ['model', 'statusCenter.componentKind.model', 'Model'],
+  ] as const)('translates the %s component kind', (kind, key, rendered) => {
+    const label = getStatusComponentKindLabel(kind)
+    expect(label.key).toBe(key)
+    expect(renderStatusLabel(label)).toBe(rendered)
+  })
+
+  test.each([
+    ['status.delivery.retry', 'Delivery retried'],
+    ['status.incident.draft.auto', 'Automatic incident draft created'],
+    ['status.incident.publish', 'Incident published'],
+    ['status.maintenance.create', 'Maintenance created'],
+    ['status.maintenance.start', 'Maintenance started'],
+    ['status.maintenance.end', 'Maintenance ended'],
+    ['status.maintenance.component.start', 'Component maintenance started'],
+    ['status.maintenance.component.end', 'Component maintenance ended'],
+    ['status.override.set', 'Override set'],
+    ['status.override.expire', 'Override expired'],
+  ] as const)('translates the %s audit action', (action, rendered) => {
+    expect(renderStatusLabel(getStatusAuditActionLabel(action))).toBe(rendered)
+  })
+
+  test.each([
+    ['delivery', 'Delivery'],
+    ['incident', 'Incident'],
+    ['maintenance', 'Maintenance'],
+    ['component', 'Component'],
+  ] as const)('translates the %s audit object type', (objectType, rendered) => {
+    expect(renderStatusLabel(getStatusAuditObjectTypeLabel(objectType))).toBe(
+      rendered
+    )
+  })
+
+  test('preserves unknown audit identifiers in translated diagnostic wrappers', () => {
+    expect(
+      renderStatusLabel(getStatusAuditActionLabel('status.future.action'))
+    ).toBe('Other action (status.future.action)')
+    expect(
+      renderStatusLabel(getStatusAuditObjectTypeLabel('future-object'))
+    ).toBe('Other object (future-object)')
+  })
+
+  test.each([
+    ['status.discord.webhook_endpoint', 'Discord webhook endpoint'],
+    ['status.discord.delivery_state', 'Discord delivery state'],
+    ['status.evidence_max_age_seconds', 'Maximum evidence age'],
+    ['status.custom.setting', 'Custom status setting'],
+  ] as const)('translates the %s setting label', (key, rendered) => {
+    expect(renderStatusLabel(getStatusSettingLabel(key))).toBe(rendered)
+  })
+})
 
 describe('status center status labels', () => {
   test.each([
