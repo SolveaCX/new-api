@@ -3074,7 +3074,7 @@
     "Only the last {{value}} log files will be retained; the rest will be deleted.": "Only the last {{value}} log files will be retained; the rest will be deleted.",
     "Oops! Page Not Found!": "Oops! Page Not Found!",
     "Oops! Something went wrong": "Oops! Something went wrong",
-    "Open": "Open",
+    "Open": "Abrir",
     "Open a source model first": "Open a source model first",
     "Open authorization page": "Open authorization page",
     "Open CC Switch": "Open CC Switch",
@@ -5467,6 +5467,12 @@
     "Verification link unavailable": "Enlace de verificación no disponible",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "Este enlace no es válido o ha caducado. Usa el código del correo o solicita un mensaje nuevo.",
     "Back to registration": "Volver al registro",
-    "Close verification tab": "Cerrar pestaña de verificación"
+    "Close verification tab": "Cerrar pestaña de verificación",
+    "Connect your coding tool": "Conecta tu herramienta de programación",
+    "flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.": "flatkey es compatible con OpenAI, así que funciona en cualquier herramienta que acepte una OpenAI base URL personalizada. Usa el Base URL de abajo y tu API key.",
+    "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible. Pega el Base URL y tu clave, luego elige un modelo como claude-opus-4-8.",
+    "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Activa 'Override OpenAI Base URL', pega el Base URL y tu clave.",
+    "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → añade un proveedor OpenAI-compatible. Configura el API host con el Base URL y pega tu clave.",
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → añade un proveedor personalizado (OpenAI API Compatible). Configura el API host con el Base URL y pega tu clave."
   }
 }

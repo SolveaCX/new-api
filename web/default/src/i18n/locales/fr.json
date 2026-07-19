@@ -5467,6 +5467,12 @@
     "Verification link unavailable": "Lien de vérification indisponible",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "Ce lien est invalide ou a expiré. Utilisez le code reçu par e-mail ou demandez un nouveau message.",
     "Back to registration": "Retour à l’inscription",
-    "Close verification tab": "Fermer l’onglet de vérification"
+    "Close verification tab": "Fermer l’onglet de vérification",
+    "Connect your coding tool": "Connectez votre outil de développement",
+    "flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.": "flatkey est compatible avec OpenAI, il s'intègre donc à tout outil acceptant une OpenAI base URL personnalisée. Utilisez le Base URL ci-dessous et votre API key.",
+    "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible. Collez le Base URL et votre clé, puis choisissez un modèle comme claude-opus-4-8.",
+    "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Activez 'Override OpenAI Base URL', collez le Base URL et votre clé.",
+    "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → ajoutez un fournisseur OpenAI-compatible. Définissez l'API host sur le Base URL et collez votre clé.",
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → ajoutez un fournisseur personnalisé (OpenAI API Compatible). Définissez l'API host sur le Base URL et collez votre clé."
   }
 }

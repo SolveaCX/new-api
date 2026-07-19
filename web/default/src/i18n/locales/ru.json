@@ -5467,6 +5467,12 @@
     "Verification link unavailable": "Ссылка для подтверждения недоступна",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "Ссылка недействительна или устарела. Используйте код из письма или запросите новое сообщение.",
     "Back to registration": "Вернуться к регистрации",
-    "Close verification tab": "Закрыть вкладку проверки"
+    "Close verification tab": "Закрыть вкладку проверки",
+    "Connect your coding tool": "Подключите свой инструмент разработки",
+    "flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.": "flatkey совместим с OpenAI, поэтому подходит для любого инструмента, принимающего пользовательский OpenAI base URL. Используйте Base URL ниже и свой API key.",
+    "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible. Вставьте Base URL и свой ключ, затем выберите модель, например claude-opus-4-8.",
+    "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Включите 'Override OpenAI Base URL', вставьте Base URL и свой ключ.",
+    "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → добавьте OpenAI-compatible провайдера. Укажите в API host значение Base URL и вставьте свой ключ.",
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → добавьте пользовательского провайдера (OpenAI API Compatible). Укажите в API host значение Base URL и вставьте свой ключ."
   }
 }

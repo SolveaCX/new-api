@@ -5467,6 +5467,12 @@
     "Verification link unavailable": "验证链接不可用",
     "This verification link is invalid or expired. Use the code in your email or request a new message.": "此验证链接无效或已过期。请使用邮件中的验证码，或重新发送邮件。",
     "Back to registration": "返回注册",
-    "Close verification tab": "关闭验证标签页"
+    "Close verification tab": "关闭验证标签页",
+    "Connect your coding tool": "连接你的编程工具",
+    "flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.": "flatkey 兼容 OpenAI，可无缝接入任何支持自定义 OpenAI base URL 的工具。使用下方的 Base URL 和你的 API key 即可。",
+    "API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.": "API Provider → OpenAI Compatible。粘贴 Base URL 和你的密钥，然后选择一个模型，例如 claude-opus-4-8。",
+    "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key。开启 'Override OpenAI Base URL'，粘贴 Base URL 和你的密钥。",
+    "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → 添加一个 OpenAI-compatible 提供商。将 API host 设为该 Base URL，并粘贴你的密钥。",
+    "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → 添加一个自定义提供商（OpenAI API Compatible）。将 API host 设为该 Base URL，并粘贴你的密钥。"
   }
 }
