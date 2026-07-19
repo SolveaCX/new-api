@@ -37,18 +37,46 @@ import {
   getFirstRunChatOverride as resolveFirstRunChatOverride,
   pickFirstRunModel,
   shouldOpenFirstRunTopupPrompt,
+  clearFirstRunDone,
+  isFirstRunActive,
+  markFirstRunDone,
+  markFirstRunStarted,
 } from './lib'
 import type { Message as MessageType } from './types'
 
 // PLG users are always pinned to the single `plg` group.
 const PLG_GROUP = 'plg'
 
-export function Playground({ firstRun = false }: { firstRun?: boolean }) {
+export function Playground({
+  firstRun: firstRunFromUrl = false,
+}: {
+  firstRun?: boolean
+}) {
   const navigate = useNavigate()
   const canUseGroups = useCanUseGroups()
   const { playgroundDefaultModel, enableStripeCardBind } = useSystemConfig()
   const authUser = useAuthStore((state) => state.auth.user)
   const openOnboarding = useOnboardingStore((state) => state.openOnboarding)
+
+  // The onboarding is triggered one-shot via `?first=1`, but it must persist
+  // across tab switches / reloads for a brand-new user until they finish their
+  // first successful call. We remember that per user (keyed on the authed id so
+  // a shared browser never leaks state between accounts): a fresh `?first=1`
+  // (re-)starts it, completion marks it done. The effective `firstRun` below
+  // therefore stays true on later returns until the user has completed once, so
+  // every downstream `firstRun` usage is unchanged.
+  const userId = authUser?.id
+  const firstRun = firstRunFromUrl || isFirstRunActive(userId)
+
+  // Persist first-run entry. Explicit `?first=1` re-enables onboarding even if
+  // the user completed it before (clears the done flag), then records that the
+  // user has started so a plain tab return keeps showing it.
+  useEffect(() => {
+    if (!firstRunFromUrl) return
+    if (userId === undefined) return
+    clearFirstRunDone(userId)
+    markFirstRunStarted(userId)
+  }, [firstRunFromUrl, userId])
   const {
     config,
     parameterEnabled,
@@ -232,6 +260,10 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
     if (!sentThisSession) return
     if (!hasCompletedAssistant) return
     getKeyCardShownRef.current = true
+    // First successful call: mark onboarding done in persistent storage so a
+    // later tab return / reload no longer reshows the welcome banner for this
+    // user (the effective firstRun then resolves to false).
+    markFirstRunDone(userId)
     const showCardTimer = window.setTimeout(() => {
       setShowGetKeyCard(true)
       // First call succeeded — drop `?first=1` from the URL so a reload/back-nav
@@ -240,7 +272,7 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
       navigate({ to: '/playground', replace: true })
     }, 0)
     return () => window.clearTimeout(showCardTimer)
-  }, [firstRun, sentThisSession, hasCompletedAssistant, navigate])
+  }, [firstRun, sentThisSession, hasCompletedAssistant, navigate, userId])
 
   useEffect(() => {
     const shouldOpen = shouldOpenFirstRunTopupPrompt({
