@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { SITE_ORIGIN } from "./origins";
 import {
   STATUS_OVERALL_VALUES,
   fetchStatusComponent,
@@ -16,6 +17,7 @@ import {
 } from "./status";
 
 const now = () => Math.floor(Date.now() / 1000);
+const statusUrl = (path: string) => new URL(path, SITE_ORIGIN).toString();
 
 describe("status client", () => {
   test("matches the Go service overall status values exactly", () => {
@@ -31,7 +33,7 @@ describe("status client", () => {
     expect(STATUS_OVERALL_VALUES).toEqual(expected);
   });
 
-  test("fetches typed summary data with exactly 60-second revalidation", async () => {
+  test("uses the configured trusted site origin for SSR fetches with 60-second revalidation", async () => {
     const originalFetch = globalThis.fetch;
     let requestedUrl = "";
     let requestedInit: RequestInit | undefined;
@@ -56,7 +58,7 @@ describe("status client", () => {
 
     try {
       const result = await fetchStatusSummary();
-      expect(requestedUrl).toBe("/api/status/summary");
+      expect(requestedUrl).toBe(statusUrl("/api/status/summary"));
       expect((requestedInit as RequestInit & { next?: { revalidate?: number } })?.next?.revalidate).toBe(60);
       expect(result.state).toBe("fresh");
       expect(result.data?.status).toBe("monitoring_incomplete");
@@ -130,6 +132,70 @@ describe("status client", () => {
     }
   });
 
+  test("fails closed for malformed or future-dated summary DTOs", async () => {
+    const originalFetch = globalThis.fetch;
+    const timestamp = now();
+    const component = {
+      id: 1,
+      slug: "router",
+      kind: "router",
+      display_name: "Router",
+      lifecycle: "active",
+      status: "operational",
+      last_trustworthy_update_at: timestamp,
+      coverage: 1000000,
+    };
+    const valid = {
+      generated_at: timestamp,
+      last_trustworthy_update_at: timestamp,
+      coverage: 1000000,
+      status: "all_systems_operational",
+      components: [component],
+    };
+    const invalid = [
+      { status: "all_systems_operational" },
+      { ...valid, coverage: "full" },
+      { ...valid, components: [{ ...component, status: "green" }] },
+      { ...valid, components: [{ ...component, last_trustworthy_update_at: "now" }] },
+      { ...valid, generated_at: timestamp + 3600 },
+      { ...valid, generated_at: null },
+    ];
+    globalThis.fetch = (() => Promise.resolve(Response.json({ success: true, data: invalid.shift() }))) as typeof fetch;
+
+    try {
+      for (let index = 0; index < 6; index += 1) {
+        const result = await fetchStatusSummary();
+        expect(result.state).toBe("monitoring-unavailable");
+        expect(result.data.status).toBe("monitoring_incomplete");
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("does not pass malformed endpoint DTOs through as typed data", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.resolve(Response.json({ success: true, data: {} }))) as typeof fetch;
+    const fetchers = [
+      () => fetchStatusComponents(),
+      () => fetchStatusComponent("router"),
+      () => fetchStatusComponentHistory("router"),
+      () => fetchStatusIncidents(),
+      () => fetchStatusIncident("inc_public"),
+      () => fetchStatusMaintenance(),
+      () => subscribeToStatus({ email: "reader@example.com", component_ids: [1] }),
+      () => previewStatusUnsubscribe("manage-token"),
+    ];
+
+    try {
+      for (const fetcher of fetchers) {
+        expect(await fetcher()).toEqual({ state: "monitoring-unavailable", data: null });
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("builds all public data endpoint paths with encoded identifiers and query values", async () => {
     const originalFetch = globalThis.fetch;
     const requested: string[] = [];
@@ -147,12 +213,12 @@ describe("status client", () => {
       await fetchStatusMaintenance();
 
       expect(requested).toEqual([
-        "/api/status/components?kind=model&query=gpt+5&capability=text&status=degraded",
-        "/api/status/components/gpt%205",
-        "/api/status/components/gpt%205/history?range=7d",
-        "/api/status/incidents",
-        "/api/status/incidents/inc%20public",
-        "/api/status/maintenance",
+        statusUrl("/api/status/components?kind=model&query=gpt+5&capability=text&status=degraded"),
+        statusUrl("/api/status/components/gpt%205"),
+        statusUrl("/api/status/components/gpt%205/history?range=7d"),
+        statusUrl("/api/status/incidents"),
+        statusUrl("/api/status/incidents/inc%20public"),
+        statusUrl("/api/status/maintenance"),
       ]);
     } finally {
       globalThis.fetch = originalFetch;
@@ -177,10 +243,10 @@ describe("status client", () => {
       expect((await unsubscribeFromStatus({ token: "manage token" })).state).toBe("fresh");
 
       expect(calls.map((call) => call.url)).toEqual([
-        "/api/status/subscriptions",
-        "/api/status/subscriptions/verify?token=verify+token",
-        "/api/status/subscriptions/unsubscribe?token=manage+token",
-        "/api/status/subscriptions/unsubscribe",
+        statusUrl("/api/status/subscriptions"),
+        statusUrl("/api/status/subscriptions/verify?token=verify+token"),
+        statusUrl("/api/status/subscriptions/unsubscribe?token=manage+token"),
+        statusUrl("/api/status/subscriptions/unsubscribe"),
       ]);
       expect(calls[0]?.init?.cache).toBe("no-store");
       expect((calls[0]?.init as RequestInit & { next?: unknown })?.next).toBeUndefined();
