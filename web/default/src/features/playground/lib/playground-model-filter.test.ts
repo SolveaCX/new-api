@@ -33,12 +33,31 @@ describe('isPlaygroundChatModelName', () => {
     }
   })
 
+  test('allowlists chat-capable image models (nano-banana / Gemini image)', () => {
+    // These generate an image via /v1/chat/completions and return it as a
+    // markdown data-URI, which the Playground renders inline — so they must be
+    // selectable despite matching the `-image` non-chat pattern.
+    for (const model of [
+      'nano-banana',
+      'google/nano-banana',
+      'gemini-2.5-flash-image',
+      'google/gemini-2.5-flash-image',
+      'gemini-2.5-flash-image-preview',
+      'gemini-3-pro-image',
+      'gemini-3.1-flash-image',
+      'gemini-3.1-flash-lite-image',
+    ]) {
+      expect(isPlaygroundChatModelName(model)).toBe(true)
+    }
+  })
+
   test('hides image, video, audio, embedding, and task models', () => {
     for (const model of [
       'gpt-image-1',
+      'gpt-image-2',
       'dall-e-3',
       'black-forest-labs/flux-1.1-pro',
-      'gemini-2.5-flash-image',
+      'imagen-3.0-generate',
       'qwen-image-edit-plus',
       'z-image',
       'sora-2',
