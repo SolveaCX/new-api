@@ -827,6 +827,130 @@ func TestFulfillOrderAcceptsDiscountedStripePaymentContract(t *testing.T) {
 	assert.Equal(t, int(200*common.QuotaPerUnit), stripeFulfillmentUserQuota(t, 902))
 }
 
+func TestSessionCompletedFulfillsNoPaymentRequiredTopUpOnce(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalContractFromEvent := stripeCheckoutPaymentContractFromEvent
+	t.Cleanup(func() {
+		stripeCheckoutPaymentContractFromEvent = originalContractFromEvent
+	})
+
+	insertStripeFulfillmentUser(t, 908)
+	topUp := &model.TopUp{
+		UserId:             908,
+		Amount:             20,
+		Money:              20,
+		PaymentCurrency:    "USD",
+		PaymentPriceId:     "price_full_discount_topup",
+		PaymentAmountMinor: 2000,
+		TradeNo:            "ref_stripe_no_payment_required_topup",
+		GatewayTradeNo:     "cs_no_payment_required_topup",
+		PaymentMethod:      model.PaymentMethodStripe,
+		PaymentProvider:    model.PaymentProviderStripe,
+		CreateTime:         time.Now().Unix(),
+		Status:             common.TopUpStatusPending,
+	}
+	require.NoError(t, topUp.Insert())
+
+	contractChecks := 0
+	stripeCheckoutPaymentContractFromEvent = func(stripe.Event) (stripeCheckoutPaymentContract, error) {
+		contractChecks++
+		return stripeCheckoutPaymentContract{
+			SessionId:           topUp.GatewayTradeNo,
+			PriceId:             topUp.PaymentPriceId,
+			Quantity:            1,
+			AmountSubtotalMinor: topUp.PaymentAmountMinor,
+			AmountTotalMinor:    0,
+			Currency:            topUp.PaymentCurrency,
+		}, nil
+	}
+
+	event := stripe.Event{
+		ID:   "evt_no_payment_required_topup",
+		Type: stripe.EventTypeCheckoutSessionCompleted,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  topUp.GatewayTradeNo,
+			"status":              "complete",
+			"mode":                string(stripe.CheckoutSessionModePayment),
+			"payment_status":      string(stripe.CheckoutSessionPaymentStatusNoPaymentRequired),
+			"amount_total":        float64(0),
+			"currency":            "usd",
+			"client_reference_id": topUp.TradeNo,
+			"customer":            "cus_no_payment_required_topup",
+		}},
+	}
+
+	require.NoError(t, sessionCompleted(context.Background(), event, "127.0.0.1"))
+	require.NoError(t, sessionCompleted(context.Background(), event, "127.0.0.1"))
+
+	reloaded := model.GetTopUpByTradeNo(topUp.TradeNo)
+	require.NotNil(t, reloaded)
+	assert.Equal(t, common.TopUpStatusSuccess, reloaded.Status)
+	assert.Equal(t, 0.0, reloaded.Money, "the persisted payment snapshot must reflect Stripe's fully discounted total")
+	assert.Equal(t, "USD", reloaded.PaymentCurrency)
+	assert.Equal(t, int(float64(topUp.Amount)*common.QuotaPerUnit), stripeFulfillmentUserQuota(t, topUp.UserId))
+	assert.Equal(t, 1, contractChecks, "replay must not revalidate or credit an already fulfilled order")
+}
+
+func TestSessionCompletedFulfillsNoPaymentRequiredSubscriptionOnce(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	insertStripeFulfillmentUser(t, 909)
+	plan := model.SubscriptionPlan{
+		Id:            9309,
+		Title:         "Fully discounted plan",
+		PriceAmount:   29,
+		TotalAmount:   1000,
+		Currency:      "USD",
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+	}
+	require.NoError(t, model.DB.Create(&plan).Error)
+	model.InvalidateSubscriptionPlanCache(plan.Id)
+	t.Cleanup(func() {
+		model.InvalidateSubscriptionPlanCache(plan.Id)
+	})
+	order := model.SubscriptionOrder{
+		UserId:          909,
+		PlanId:          plan.Id,
+		Money:           29,
+		TradeNo:         "ref_stripe_no_payment_required_subscription",
+		PaymentMethod:   model.PaymentMethodStripe,
+		PaymentProvider: model.PaymentProviderStripe,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      time.Now().Unix(),
+	}
+	require.NoError(t, order.Insert())
+
+	event := stripe.Event{
+		ID:   "evt_no_payment_required_subscription",
+		Type: stripe.EventTypeCheckoutSessionCompleted,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_no_payment_required_subscription",
+			"status":              "complete",
+			"mode":                string(stripe.CheckoutSessionModePayment),
+			"payment_status":      string(stripe.CheckoutSessionPaymentStatusNoPaymentRequired),
+			"amount_total":        float64(0),
+			"currency":            "usd",
+			"client_reference_id": order.TradeNo,
+			"customer":            "cus_no_payment_required_subscription",
+		}},
+	}
+
+	require.NoError(t, sessionCompleted(context.Background(), event, "127.0.0.1"))
+	require.NoError(t, sessionCompleted(context.Background(), event, "127.0.0.1"))
+
+	reloaded := model.GetSubscriptionOrderByTradeNo(order.TradeNo)
+	require.NotNil(t, reloaded)
+	assert.Equal(t, common.TopUpStatusSuccess, reloaded.Status)
+	var payload map[string]any
+	require.NoError(t, common.Unmarshal([]byte(reloaded.ProviderPayload), &payload))
+	assert.Equal(t, "0", payload["amount_total"], "the provider payload must preserve Stripe's fully discounted total for reconciliation")
+	assert.Equal(t, "USD", payload["currency"])
+	var subscriptionCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", order.UserId).Count(&subscriptionCount).Error)
+	assert.Equal(t, int64(1), subscriptionCount, "webhook replay must not provision the subscription twice")
+}
+
 type stripeWebhookRecallClient struct {
 	service.RecallStripeClient
 	getCheckoutSessionFn func(context.Context, string, ...string) (*stripe.CheckoutSession, error)

@@ -406,13 +406,16 @@ func TestRecallCampaignReadsMaskCodesAndOmitClaimAndTemplateSecrets(t *testing.T
 		ClaimTokenHash:        &claimHash,
 	}
 	require.NoError(t, harness.db.Create(&recipient).Error)
+	leaseExpiresAt := time.Now().Add(-time.Minute).Unix()
 	require.NoError(t, harness.db.Create(&model.RecallMessage{
 		RecipientId:      recipient.Id,
 		StageNo:          1,
 		TemplateVersion:  3,
 		TemplateSnapshot: "template-body-secret",
 		ScheduledAt:      time.Now().Unix(),
-		State:            model.RecallMessageFailed,
+		State:            model.RecallMessageSending,
+		LeaseOwner:       "crashed-sender",
+		LeaseExpiresAt:   leaseExpiresAt,
 		ClaimTokenHash:   &claimHash,
 	}).Error)
 
@@ -432,6 +435,9 @@ func TestRecallCampaignReadsMaskCodesAndOmitClaimAndTemplateSecrets(t *testing.T
 		require.NotContains(t, response.Body.String(), "masked@example.com")
 	}
 	require.Contains(t, responses[2].Body.String(), model.MaskPromotionCode(recipient.PromotionCode))
+	require.Contains(t, responses[2].Body.String(), `"state":"sending"`)
+	require.Contains(t, responses[2].Body.String(), fmt.Sprintf(`"lease_expires_at":%d`, leaseExpiresAt))
+	require.NotContains(t, responses[2].Body.String(), "crashed-sender")
 }
 
 func TestRecallCampaignListNormalizesAndBoundsHTTPPagination(t *testing.T) {
@@ -555,19 +561,29 @@ func TestRecallRetryAcceptsFailedWorkAndRequiresAcknowledgementForUncertainMail(
 	seedRecallControllerUser(t, harness, 72, "retry-message")
 	seedRecallControllerUser(t, harness, 73, "retry-uncertain")
 	seedRecallControllerUser(t, harness, 74, "retry-active")
+	seedRecallControllerUser(t, harness, 75, "retry-expired-sending")
+	seedRecallControllerUser(t, harness, 76, "retry-live-sending")
 
 	failedRecipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 71, EligibilitySnapshot: `{}`, EmailSnapshot: "retry-recipient@example.com", LanguageSnapshot: "en", State: model.RecallRecipientFailed, LastErrorCode: "stripe_permanent", UpdatedAt: recallControllerBoundary}
 	failedMessageRecipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 72, EligibilitySnapshot: `{}`, EmailSnapshot: "retry-message@example.com", LanguageSnapshot: "en", State: model.RecallRecipientContacting}
 	uncertainRecipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 73, EligibilitySnapshot: `{}`, EmailSnapshot: "retry-uncertain@example.com", LanguageSnapshot: "en", State: model.RecallRecipientContacting}
 	activeRecipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 74, EligibilitySnapshot: `{}`, EmailSnapshot: "retry-active@example.com", LanguageSnapshot: "en", State: model.RecallRecipientQueued}
+	expiredSendingRecipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 75, EligibilitySnapshot: `{}`, EmailSnapshot: "retry-expired-sending@example.com", LanguageSnapshot: "en", State: model.RecallRecipientContacting}
+	liveSendingRecipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 76, EligibilitySnapshot: `{}`, EmailSnapshot: "retry-live-sending@example.com", LanguageSnapshot: "en", State: model.RecallRecipientContacting}
 	require.NoError(t, harness.db.Create(&failedRecipient).Error)
 	require.NoError(t, harness.db.Create(&failedMessageRecipient).Error)
 	require.NoError(t, harness.db.Create(&uncertainRecipient).Error)
 	require.NoError(t, harness.db.Create(&activeRecipient).Error)
+	require.NoError(t, harness.db.Create(&expiredSendingRecipient).Error)
+	require.NoError(t, harness.db.Create(&liveSendingRecipient).Error)
 	failedMessage := model.RecallMessage{RecipientId: failedMessageRecipient.Id, StageNo: 1, TemplateSnapshot: "failed-template", State: model.RecallMessageFailed, AttemptCount: 2, FailedAt: recallControllerBoundary, UpdatedAt: recallControllerBoundary}
 	uncertainMessage := model.RecallMessage{RecipientId: uncertainRecipient.Id, StageNo: 1, TemplateSnapshot: "uncertain-template", State: model.RecallMessageUncertain, AttemptCount: 1, FailedAt: recallControllerBoundary + 1, UpdatedAt: recallControllerBoundary + 1}
+	expiredSendingMessage := model.RecallMessage{RecipientId: expiredSendingRecipient.Id, StageNo: 1, TemplateVersion: 6, TemplateSnapshot: "expired-sending-template", State: model.RecallMessageSending, AttemptCount: 1, LeaseOwner: "crashed", LeaseExpiresAt: 1, UpdatedAt: recallControllerBoundary + 2}
+	liveSendingMessage := model.RecallMessage{RecipientId: liveSendingRecipient.Id, StageNo: 1, TemplateVersion: 7, TemplateSnapshot: "live-sending-template", State: model.RecallMessageSending, AttemptCount: 1, LeaseOwner: "live", LeaseExpiresAt: 9_999_999_999, UpdatedAt: recallControllerBoundary + 3}
 	require.NoError(t, harness.db.Create(&failedMessage).Error)
 	require.NoError(t, harness.db.Create(&uncertainMessage).Error)
+	require.NoError(t, harness.db.Create(&expiredSendingMessage).Error)
+	require.NoError(t, harness.db.Create(&liveSendingMessage).Error)
 
 	retry := func(recipientID int64, body string) *httptest.ResponseRecorder {
 		return invokeRecallHandler(t, RetryRecallRecipient, http.MethodPost, "/", []byte(body), 7, gin.Params{{Key: "id", Value: fmt.Sprint(campaign.Id)}, {Key: "rid", Value: fmt.Sprint(recipientID)}})
@@ -586,6 +602,17 @@ func TestRecallRetryAcceptsFailedWorkAndRequiresAcknowledgementForUncertainMail(
 	require.Equal(t, true, decodeRecallEnvelope(t, retry(uncertainRecipient.Id, `{"acknowledge_uncertain":true}`))["success"])
 	require.NoError(t, harness.db.First(&uncertainMessage, uncertainMessage.Id).Error)
 	require.Equal(t, model.RecallMessageRetryWait, uncertainMessage.State)
+
+	requireRecallFailure(t, retry(expiredSendingRecipient.Id, `{}`), "acknowledge_uncertain")
+	require.Equal(t, true, decodeRecallEnvelope(t, retry(expiredSendingRecipient.Id, `{"acknowledge_uncertain":true}`))["success"])
+	require.NoError(t, harness.db.First(&expiredSendingMessage, expiredSendingMessage.Id).Error)
+	require.Equal(t, model.RecallMessageRetryWait, expiredSendingMessage.State)
+	require.Equal(t, 6, expiredSendingMessage.TemplateVersion)
+	require.Equal(t, "expired-sending-template", expiredSendingMessage.TemplateSnapshot)
+
+	requireRecallFailure(t, retry(liveSendingRecipient.Id, `{"acknowledge_uncertain":true}`), "failed")
+	require.NoError(t, harness.db.First(&liveSendingMessage, liveSendingMessage.Id).Error)
+	require.Equal(t, model.RecallMessageSending, liveSendingMessage.State)
 
 	requireRecallFailure(t, retry(activeRecipient.Id, `{}`), "failed")
 }

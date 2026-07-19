@@ -17,6 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { AuthUser } from '@/stores/auth-store'
+import {
+  containsRecallClaimInURL,
+  isRecallClaimAnalyticsBlocked,
+} from './recall-claim'
+
+export { containsRecallClaimInURL } from './recall-claim'
 
 type MixpanelProperties = Record<string, string | number | boolean | undefined>
 
@@ -56,27 +62,6 @@ const MIXPANEL_SCRIPT_SRC =
 
 let loaderPromise: Promise<boolean> | null = null
 let initialized = false
-
-export function containsRecallClaimInURL(rawURL: string, depth = 0): boolean {
-  if (!rawURL || depth > 2) return false
-
-  try {
-    const url = new URL(rawURL, 'https://console.invalid')
-    if (url.searchParams.has('recall_claim')) return true
-    if (
-      url.pathname.endsWith('/recall/claim') &&
-      url.searchParams.has('claim')
-    ) {
-      return true
-    }
-
-    return url.searchParams
-      .getAll('redirect')
-      .some((redirectURL) => containsRecallClaimInURL(redirectURL, depth + 1))
-  } catch {
-    return false
-  }
-}
 
 export function suspendMixpanelForRecallClaim(rawURL: string): void {
   if (!containsRecallClaimInURL(rawURL) || typeof window === 'undefined') {
@@ -132,12 +117,9 @@ export function getMixpanelConsentStatus(): MixpanelConsentStatus {
 }
 
 export function shouldEnableMixpanel(): boolean {
-  const hasRecallClaim =
-    typeof window !== 'undefined' &&
-    containsRecallClaimInURL(window.location?.href || '')
   return (
     Boolean(MIXPANEL_TOKEN) &&
-    !hasRecallClaim &&
+    !isRecallClaimAnalyticsBlocked() &&
     getMixpanelConsentStatus() === 'granted'
   )
 }

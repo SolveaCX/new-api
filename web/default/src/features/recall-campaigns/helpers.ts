@@ -80,7 +80,10 @@ export function getRecallPageCount(total: number, pageSize: number): number {
   return Math.max(1, Math.ceil(total / pageSize))
 }
 
-export function getRecallRecipientRetry(recipient: RecallRecipient): {
+export function getRecallRecipientRetry(
+  recipient: RecallRecipient,
+  nowSeconds = Math.floor(Date.now() / 1000)
+): {
   allowed: boolean
   acknowledgeUncertain: boolean
 } {
@@ -91,6 +94,16 @@ export function getRecallRecipientRetry(recipient: RecallRecipient): {
     return { allowed: true, acknowledgeUncertain: false }
   }
   if (recipient.messages.some((message) => message.state === 'uncertain')) {
+    return { allowed: true, acknowledgeUncertain: true }
+  }
+  if (
+    recipient.messages.some(
+      (message) =>
+        message.state === 'sending' &&
+        message.lease_expires_at > 0 &&
+        message.lease_expires_at < nowSeconds
+    )
+  ) {
     return { allowed: true, acknowledgeUncertain: true }
   }
   return { allowed: false, acknowledgeUncertain: false }

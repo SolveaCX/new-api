@@ -815,7 +815,8 @@ func sessionCompleted(ctx context.Context, event stripe.Event, callerIp string) 
 	}
 
 	paymentStatus := event.GetObjectValue("payment_status")
-	if paymentStatus != "paid" {
+	if paymentStatus != string(stripe.CheckoutSessionPaymentStatusPaid) &&
+		paymentStatus != string(stripe.CheckoutSessionPaymentStatusNoPaymentRequired) {
 		logger.LogInfo(ctx, fmt.Sprintf("Stripe Checkout 支付未完成，等待异步结果 trade_no=%s payment_status=%s client_ip=%s", referenceId, paymentStatus, callerIp))
 		return nil
 	}

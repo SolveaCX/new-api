@@ -39,13 +39,15 @@ function makeStage(stageNo: number, delaySeconds: number): RecallEmailStage {
 
 function makeRecipient(
   state: RecallRecipient['state'],
-  messageStates: RecallRecipient['messages'][number]['state'][]
+  messageStates: RecallRecipient['messages'][number]['state'][],
+  leaseExpiresAt: number[] = []
 ): RecallRecipient {
   return {
     state,
     messages: messageStates.map((messageState, index) => ({
       id: index + 1,
       state: messageState,
+      lease_expires_at: leaseExpiresAt[index] ?? 0,
     })),
   } as RecallRecipient
 }
@@ -131,6 +133,30 @@ describe('recall campaign detail guards', () => {
     ).toEqual({ allowed: true, acknowledgeUncertain: false })
     expect(
       getRecallRecipientRetry(makeRecipient('contacting', ['accepted']))
+    ).toEqual({ allowed: false, acknowledgeUncertain: false })
+    expect(
+      getRecallRecipientRetry(
+        makeRecipient('contacting', ['sending'], [998]),
+        999
+      )
+    ).toEqual({ allowed: true, acknowledgeUncertain: true })
+    expect(
+      getRecallRecipientRetry(
+        makeRecipient('contacting', ['sending'], [999]),
+        999
+      )
+    ).toEqual({ allowed: false, acknowledgeUncertain: false })
+    expect(
+      getRecallRecipientRetry(
+        makeRecipient('contacting', ['sending'], [1_000]),
+        999
+      )
+    ).toEqual({ allowed: false, acknowledgeUncertain: false })
+    expect(
+      getRecallRecipientRetry(
+        makeRecipient('contacting', ['sending'], [0]),
+        999
+      )
     ).toEqual({ allowed: false, acknowledgeUncertain: false })
   })
 })

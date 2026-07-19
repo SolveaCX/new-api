@@ -99,6 +99,7 @@ export type RecallRecipientState =
 export type RecallMessageState =
   | 'scheduled'
   | 'leased'
+  | 'sending'
   | 'accepted'
   | 'retry_wait'
   | 'uncertain'
@@ -161,6 +162,7 @@ export interface RecallMessage {
   state: RecallMessageState
   attempt_count: number
   next_attempt_at: number
+  lease_expires_at: number
   provider_message_id: string
   accepted_at: number
   failed_at: number

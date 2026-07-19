@@ -1102,6 +1102,7 @@ func TestRecallManualRetrySendingRequiresAcknowledgementAndExpiredLease(t *testi
 	messages := []RecallMessage{
 		{RecipientId: 851, StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageSending, LeaseOwner: "active", LeaseExpiresAt: 1_000},
 		{RecipientId: 852, StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageSending, LeaseOwner: "expired", LeaseExpiresAt: 998},
+		{RecipientId: 853, StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageSending},
 	}
 	require.NoError(t, DB.Create(&messages).Error)
 
@@ -1114,6 +1115,9 @@ func TestRecallManualRetrySendingRequiresAcknowledgementAndExpiredLease(t *testi
 	won, err = ManualRetryRecallMessageWithContext(context.Background(), messages[1].Id, true, 999)
 	require.NoError(t, err)
 	require.True(t, won)
+	won, err = ManualRetryRecallMessageWithContext(context.Background(), messages[2].Id, true, 999)
+	require.NoError(t, err)
+	require.False(t, won, "a missing lease is not an expired sending lease")
 
 	var retried RecallMessage
 	require.NoError(t, DB.First(&retried, messages[1].Id).Error)
@@ -1121,4 +1125,63 @@ func TestRecallManualRetrySendingRequiresAcknowledgementAndExpiredLease(t *testi
 	require.Equal(t, int64(999), retried.NextAttemptAt)
 	require.Empty(t, retried.LeaseOwner)
 	require.Zero(t, retried.LeaseExpiresAt)
+}
+
+func TestRecallManualRetryExpiredSendingWritesAdminEventAndFencesActiveLease(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	const now = int64(999)
+	messages := []RecallMessage{
+		{RecipientId: 861, StageNo: 1, TemplateVersion: 7, TemplateSnapshot: `{"en":{"subject":"snapshot"}}`, State: RecallMessageSending, LeaseOwner: "expired", LeaseExpiresAt: now - 1, UpdatedAt: 901},
+		{RecipientId: 862, StageNo: 1, TemplateVersion: 8, TemplateSnapshot: `{"en":{"subject":"active"}}`, State: RecallMessageSending, LeaseOwner: "active", LeaseExpiresAt: now + 1, UpdatedAt: 902},
+		{RecipientId: 863, StageNo: 1, TemplateVersion: 9, TemplateSnapshot: `{"en":{"subject":"missing"}}`, State: RecallMessageSending, UpdatedAt: 903},
+	}
+	require.NoError(t, DB.Create(&messages).Error)
+
+	expiredEvent := RecallEvent{
+		CampaignId:    41,
+		RecipientId:   messages[0].RecipientId,
+		EventType:     "recipient_retry",
+		Source:        "admin",
+		SourceEventId: "retry-expired-sending",
+		EventData:     `{"previous_state":"sending","acknowledge_uncertain":true}`,
+		CreatedAt:     now,
+	}
+	won, err := ManualRetryRecallMessageAndAdminEventWithContext(context.Background(), messages[0].Id, RecallMessageSending, messages[0].UpdatedAt, now, expiredEvent)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	activeEvent := expiredEvent
+	activeEvent.RecipientId = messages[1].RecipientId
+	activeEvent.SourceEventId = "retry-active-sending"
+	won, err = ManualRetryRecallMessageAndAdminEventWithContext(context.Background(), messages[1].Id, RecallMessageSending, messages[1].UpdatedAt, now, activeEvent)
+	require.NoError(t, err)
+	require.False(t, won)
+
+	missingEvent := expiredEvent
+	missingEvent.RecipientId = messages[2].RecipientId
+	missingEvent.SourceEventId = "retry-missing-sending-lease"
+	won, err = ManualRetryRecallMessageAndAdminEventWithContext(context.Background(), messages[2].Id, RecallMessageSending, messages[2].UpdatedAt, now, missingEvent)
+	require.NoError(t, err)
+	require.False(t, won)
+
+	var retried RecallMessage
+	require.NoError(t, DB.First(&retried, messages[0].Id).Error)
+	require.Equal(t, RecallMessageRetryWait, retried.State)
+	require.Equal(t, now, retried.NextAttemptAt)
+	require.Equal(t, 7, retried.TemplateVersion)
+	require.Equal(t, messages[0].TemplateSnapshot, retried.TemplateSnapshot)
+	require.Empty(t, retried.LeaseOwner)
+	require.Zero(t, retried.LeaseExpiresAt)
+
+	var active RecallMessage
+	require.NoError(t, DB.First(&active, messages[1].Id).Error)
+	require.Equal(t, RecallMessageSending, active.State)
+	require.Equal(t, "active", active.LeaseOwner)
+	require.Equal(t, now+1, active.LeaseExpiresAt)
+
+	var events []RecallEvent
+	require.NoError(t, DB.Order("id ASC").Find(&events).Error)
+	require.Len(t, events, 1)
+	require.Equal(t, expiredEvent.SourceEventId, events[0].SourceEventId)
 }

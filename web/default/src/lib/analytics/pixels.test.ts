@@ -17,53 +17,30 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { afterEach, describe, test } from 'node:test'
-import * as gtag from './gtag'
-import { getGAMeasurementIdentifiers } from './gtag'
-
-const originalDocument = globalThis.document
-
-afterEach(() => {
-  Object.defineProperty(globalThis, 'document', {
-    configurable: true,
-    value: originalDocument,
-  })
-})
-
-describe('getGAMeasurementIdentifiers', () => {
-  test('ignores malformed cookie encoding', () => {
-    Object.defineProperty(globalThis, 'document', {
-      configurable: true,
-      value: {
-        cookie: '_ga=GA1.1.123%; _ga_30RCEP2CVH=GS2.1.s456%',
-      },
-    })
-
-    assert.doesNotThrow(() => getGAMeasurementIdentifiers())
-  })
-})
+import { describe, test } from 'node:test'
+import * as pixels from './pixels'
 
 describe('recall claim analytics isolation', () => {
-  test('blocks Google initialization for direct and nested recall claim URLs', () => {
-    assert.equal(typeof gtag.shouldInitializeGtagForURL, 'function')
+  test('blocks Meta and TikTok initialization for direct and nested recall claim URLs', () => {
+    assert.equal(typeof pixels.shouldInitializePixelsForURL, 'function')
     assert.equal(
-      gtag.shouldInitializeGtagForURL?.(
+      pixels.shouldInitializePixelsForURL?.(
         'https://console.example.com/sign-up?recall_claim=signed-secret'
       ),
       false
     )
     assert.equal(
-      gtag.shouldInitializeGtagForURL?.(
+      pixels.shouldInitializePixelsForURL?.(
         'https://console.example.com/sign-in?redirect=%2Fconsole%2Ftopup%3Frecall_claim%3Dsigned-secret'
       ),
       false
     )
   })
 
-  test('keeps Google initialization enabled for ordinary auth URLs', () => {
-    assert.equal(typeof gtag.shouldInitializeGtagForURL, 'function')
+  test('keeps Meta and TikTok initialization enabled for ordinary auth URLs', () => {
+    assert.equal(typeof pixels.shouldInitializePixelsForURL, 'function')
     assert.equal(
-      gtag.shouldInitializeGtagForURL?.(
+      pixels.shouldInitializePixelsForURL?.(
         'https://console.example.com/sign-in?redirect=%2Fkeys'
       ),
       true
