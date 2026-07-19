@@ -49,6 +49,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Audit static website
+        run: node website-static/audit.mjs
+
       - name: Auth to GCP (WIF)
         uses: google-github-actions/auth@v2
         with:
@@ -163,7 +166,7 @@ jobs:
           # slim footer legal links must be real anchors; assets must be version-busted
           curl -s -m 20 "$C/terms.html" | grep -q 'href="legal-sla.html">' || { echo "footer legal links not anchors"; exit 1; }
           curl -s -m 20 "$C/terms.html" | grep -q 'hreflang="zh-CN" href="https://flatkey.ai/zh/terms"' || { echo "terms hreflang missing"; exit 1; }
-          curl -s -m 20 "$C/assets/i18n.js?v=719c" | grep -q 'location.replace("/" + legalLanguage' || { echo "saved-language legal redirect missing"; exit 1; }
+          curl -s -m 20 "$C/assets/i18n.js?v=719f" | grep -q 'location.replace("/" + legalLanguage' || { echo "saved-language legal redirect missing"; exit 1; }
           curl -s -m 20 "$C/" | grep -q 'i18n.js?v=' || { echo "asset versioning missing"; exit 1; }
           code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$C/ja/terms"); [ "$code" = "200" ] || { echo "/ja/terms -> $code"; exit 1; }
           # media price calibration + conversion tracking
