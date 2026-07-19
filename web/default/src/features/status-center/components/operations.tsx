@@ -16,8 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -25,6 +28,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Table,
   TableBody,
@@ -37,10 +42,53 @@ import {
   getStatusAudit,
   getStatusDeliveries,
   getStatusSubscribers,
+  retryStatusDelivery,
   statusCenterQueryKeys,
 } from '../api'
 import { formatStatusTimestamp } from '../format'
+import {
+  buildStatusDeliveryRetryInput,
+  resolveStatusMutationError,
+  type StatusDelivery,
+  type StatusDeliveryRetryInput,
+} from '../types'
 import { EmptyState, ErrorState, LoadingState } from './common'
+
+export function DeliveryRetryAction(props: {
+  delivery: StatusDelivery
+  isRoot: boolean
+  pending: boolean
+  onRetry: (reason: string) => void
+}) {
+  const { t } = useTranslation()
+  const [reason, setReason] = useState('')
+
+  if (!props.isRoot || props.delivery.status !== 'dead') return null
+
+  const reasonId = `status-delivery-${props.delivery.id}-retry-reason`
+  return (
+    <div className='min-w-52 space-y-2'>
+      <Label className='sr-only' htmlFor={reasonId}>
+        {t('statusCenter.deliveries.retryReason')}
+      </Label>
+      <Input
+        id={reasonId}
+        value={reason}
+        onChange={(event) => setReason(event.target.value)}
+        placeholder={t('statusCenter.deliveries.retryReasonPlaceholder')}
+      />
+      <Button
+        type='button'
+        size='sm'
+        variant='outline'
+        disabled={!reason.trim() || props.pending}
+        onClick={() => props.onRetry(reason.trim())}
+      >
+        {t('statusCenter.deliveries.retry')}
+      </Button>
+    </div>
+  )
+}
 
 export function SubscribersPanel(props: { active: boolean }) {
   const { t } = useTranslation()
@@ -102,13 +150,57 @@ export function SubscribersPanel(props: { active: boolean }) {
   )
 }
 
-export function DeliveriesPanel(props: { active: boolean }) {
+export function DeliveriesPanel(props: {
+  active: boolean
+  isRoot: boolean
+  runSensitiveAction: (action: () => Promise<unknown>) => Promise<void>
+}) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: statusCenterQueryKeys.deliveries(),
     queryFn: getStatusDeliveries,
     enabled: props.active,
   })
+  const reloadDeliveries = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: statusCenterQueryKeys.deliveries(),
+    })
+  }
+  const retryMutation = useMutation({
+    mutationFn: (request: {
+      deliveryId: number
+      input: StatusDeliveryRetryInput
+    }) => retryStatusDelivery(request.deliveryId, request.input),
+    onSuccess: async () => {
+      await Promise.all([
+        reloadDeliveries(),
+        queryClient.invalidateQueries({
+          queryKey: statusCenterQueryKeys.subscribers(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: statusCenterQueryKeys.audit(),
+        }),
+      ])
+      toast.success(t('statusCenter.deliveries.retrySucceeded'))
+    },
+    onError: async (error) => {
+      const resolution = await resolveStatusMutationError(
+        error,
+        reloadDeliveries
+      )
+      toast.error(t(resolution.messageKey))
+    },
+  })
+
+  const retryDelivery = (delivery: StatusDelivery, reason: string) => {
+    const input = buildStatusDeliveryRetryInput(delivery, reason)
+    if (!input) return
+    void props.runSensitiveAction(() =>
+      retryMutation.mutateAsync({ deliveryId: delivery.id, input })
+    )
+  }
+
   if (query.isLoading) return <LoadingState />
   if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />
   const deliveries = query.data ?? []
@@ -134,6 +226,9 @@ export function DeliveriesPanel(props: { active: boolean }) {
                 <TableHead>{t('statusCenter.status')}</TableHead>
                 <TableHead>{t('statusCenter.deliveries.attempts')}</TableHead>
                 <TableHead>{t('statusCenter.updatedAt')}</TableHead>
+                {props.isRoot ? (
+                  <TableHead>{t('statusCenter.actions')}</TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -153,6 +248,16 @@ export function DeliveriesPanel(props: { active: boolean }) {
                   <TableCell>
                     {formatStatusTimestamp(delivery.updated_at)}
                   </TableCell>
+                  {props.isRoot ? (
+                    <TableCell>
+                      <DeliveryRetryAction
+                        delivery={delivery}
+                        isRoot={props.isRoot}
+                        pending={retryMutation.isPending}
+                        onRetry={(reason) => retryDelivery(delivery, reason)}
+                      />
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))}
             </TableBody>
@@ -205,7 +310,7 @@ export function AuditPanel(props: { active: boolean }) {
                     {event.actor_id}
                   </TableCell>
                   <TableCell className='max-w-96 whitespace-normal'>
-                    {event.reason || '—'}
+                    {event.reason || t('statusCenter.notAvailable')}
                   </TableCell>
                   <TableCell>
                     {formatStatusTimestamp(event.created_at)}

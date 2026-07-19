@@ -111,7 +111,11 @@ export function StatusCenter() {
             <SubscribersPanel active={activeTab === 'subscribers'} />
           </TabsContent>
           <TabsContent value='deliveries'>
-            <DeliveriesPanel active={activeTab === 'deliveries'} />
+            <DeliveriesPanel
+              active={activeTab === 'deliveries'}
+              isRoot={permissions.canViewRootControls}
+              runSensitiveAction={runSensitiveAction}
+            />
           </TabsContent>
           <TabsContent value='settings'>
             <SettingsPanel

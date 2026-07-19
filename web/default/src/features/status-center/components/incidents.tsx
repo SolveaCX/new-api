@@ -51,10 +51,52 @@ import {
   buildPublishedUpdateRows,
   resolveStatusMutationError,
   type StatusIncidentPublishInput,
+  type StatusIncidentUpdate,
 } from '../types'
 import { EmptyState, ErrorState, LoadingState } from './common'
 
 type IncidentState = StatusIncidentPublishInput['state']
+
+export function PublishedIncidentHistory(props: {
+  updates: StatusIncidentUpdate[]
+  correctionTargetId: string
+}) {
+  const { t } = useTranslation()
+  const publishedRows = buildPublishedUpdateRows(props.updates)
+
+  if (publishedRows.length === 0) {
+    return <EmptyState descriptionKey='statusCenter.empty.publishedUpdates' />
+  }
+
+  return (
+    <ol className='space-y-3'>
+      {publishedRows.map((update) => (
+        <li key={update.id} className='rounded-lg border p-3'>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
+            <Badge variant='outline'>
+              {t(`statusCenter.incidents.state.${update.state}`)}
+            </Badge>
+            <time className='text-muted-foreground text-xs'>
+              {formatStatusTimestamp(update.publishedAt)}
+            </time>
+          </div>
+          <p className='mt-2 whitespace-pre-wrap'>{update.body}</p>
+          <div className='mt-2 flex flex-wrap items-center justify-between gap-2 text-xs'>
+            <p className='text-muted-foreground'>
+              {t('statusCenter.incidents.correctionsAppendOnly')}
+            </p>
+            <a
+              className='text-primary font-medium underline-offset-4 hover:underline'
+              href={`#${props.correctionTargetId}`}
+            >
+              {t('statusCenter.incidents.appendCorrection')}
+            </a>
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
 
 export function IncidentsPanel(props: { active: boolean }) {
   const { t } = useTranslation()
@@ -72,9 +114,6 @@ export function IncidentsPanel(props: { active: boolean }) {
   const records = incidentsQuery.data ?? []
   const selected =
     records.find((record) => record.incident.id === incidentId) ?? records[0]
-  const publishedRows = selected
-    ? buildPublishedUpdateRows(selected.updates)
-    : []
 
   const publishMutation = useMutation({
     mutationFn: (input: StatusIncidentPublishInput) => {
@@ -148,9 +187,15 @@ export function IncidentsPanel(props: { active: boolean }) {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant='outline'>{record.incident.status}</Badge>
+                    <Badge variant='outline'>
+                      {t(`statusCenter.recordStatus.${record.incident.status}`)}
+                    </Badge>
                   </TableCell>
-                  <TableCell>{record.incident.visibility}</TableCell>
+                  <TableCell>
+                    {t(
+                      `statusCenter.recordStatus.${record.incident.visibility}`
+                    )}
+                  </TableCell>
                   <TableCell>
                     {formatStatusTimestamp(record.incident.updated_at)}
                   </TableCell>
@@ -190,30 +235,14 @@ export function IncidentsPanel(props: { active: boolean }) {
               ))}
             </NativeSelect>
           </div>
-          {publishedRows.length === 0 ? (
-            <EmptyState descriptionKey='statusCenter.empty.publishedUpdates' />
-          ) : (
-            <ol className='space-y-3'>
-              {publishedRows.map((update) => (
-                <li key={update.id} className='rounded-lg border p-3'>
-                  <div className='flex flex-wrap items-center justify-between gap-2'>
-                    <Badge variant='outline'>{update.state}</Badge>
-                    <time className='text-muted-foreground text-xs'>
-                      {formatStatusTimestamp(update.publishedAt)}
-                    </time>
-                  </div>
-                  <p className='mt-2 whitespace-pre-wrap'>{update.body}</p>
-                  <p className='text-muted-foreground mt-2 text-xs'>
-                    {t('statusCenter.incidents.correctionsAppendOnly')}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          )}
+          <PublishedIncidentHistory
+            updates={selected?.updates ?? []}
+            correctionTargetId='incident-new-update'
+          />
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id='incident-new-update'>
         <CardHeader>
           <CardTitle>{t('statusCenter.incidents.addUpdate')}</CardTitle>
           <CardDescription>

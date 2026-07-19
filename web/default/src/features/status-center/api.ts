@@ -19,9 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 import type {
   ApiEnvelope,
+  StatusAdminComponent,
   StatusAuditEvent,
   StatusComponent,
   StatusDelivery,
+  StatusDeliveryRetryInput,
   StatusDiscordInput,
   StatusIncidentPublishInput,
   StatusIncidentRecord,
@@ -41,6 +43,7 @@ const requestConfig = {
 export const statusCenterQueryKeys = {
   all: ['status-center'] as const,
   summary: () => ['status-center', 'summary'] as const,
+  adminComponents: () => ['status-center', 'admin-components'] as const,
   incidents: () => ['status-center', 'incidents'] as const,
   maintenance: () => ['status-center', 'maintenance'] as const,
   subscribers: () => ['status-center', 'subscribers'] as const,
@@ -58,6 +61,10 @@ export function getStatusSummary(): Promise<StatusSummary> {
   return getData('/api/status/summary')
 }
 
+export function getStatusAdminComponents(): Promise<StatusAdminComponent[]> {
+  return getData('/api/status/admin/components')
+}
+
 export function getStatusIncidents(): Promise<StatusIncidentRecord[]> {
   return getData('/api/status/admin/incidents')
 }
@@ -72,6 +79,18 @@ export function getStatusSubscribers(): Promise<StatusSubscriber[]> {
 
 export function getStatusDeliveries(): Promise<StatusDelivery[]> {
   return getData('/api/status/admin/deliveries')
+}
+
+export async function retryStatusDelivery(
+  deliveryId: number,
+  input: StatusDeliveryRetryInput
+): Promise<StatusDelivery> {
+  const response = await api.post<ApiEnvelope<StatusDelivery>>(
+    `/api/status/admin/deliveries/${deliveryId}/retry`,
+    input,
+    requestConfig
+  )
+  return response.data.data
 }
 
 export function getStatusSettings(): Promise<StatusSetting[]> {
