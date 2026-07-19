@@ -11,7 +11,7 @@ const warnings = [];
 const fail = (file, message) => errors.push(`${file}: ${message}`);
 
 const appOnly = new Set(["console.html", "login.html", "onboarding.html", "signup.html"]);
-const legacyRoutes = new Set(["/about", "/blog", "/models", "/pricing", "/rankings"]);
+const legacyRoutes = new Set(["/blog", "/models", "/pricing", "/rankings"]);
 const requiredNavRoutes = ["models.html", "docs.html", "playground.html", "topup.html", "compute.html", "usecases.html"];
 
 for (const file of files) {
@@ -27,7 +27,7 @@ for (const file of files) {
   if (/\bdata-i18n(?:-ph)?=/.test(html) && !/assets\/i18n\.js\?v=/.test(html)) {
     fail(file, "uses i18n keys without loading assets/i18n.js");
   }
-  const i18nScript = html.indexOf("assets/i18n.js?v=720a");
+  const i18nScript = html.indexOf("assets/i18n.js?v=720b");
   const shellScript = html.indexOf("assets/site-shell.js?v=720a");
   if (i18nScript === -1) fail(file, "missing the current locale-routing script version");
   if (shellScript === -1) fail(file, "missing the current responsive shell version");
@@ -90,12 +90,30 @@ if (JSON.stringify(termNumbers) !== JSON.stringify(expectedTermNumbers)) {
   fail("terms.html", `section sequence is ${termNumbers.join(", ")}; expected 1–19 exactly once`);
 }
 
+const about = fs.readFileSync(path.join(root, "about.html"), "utf8");
+for (const requiredAboutContent of [
+  "Hunter Guo",
+  "Andrew Guo",
+  "Google &amp; Alibaba",
+  "Hundreds of millions",
+  "AI should be simple enough for",
+  'rel="canonical" href="https://flatkey.ai/about"',
+]) {
+  if (!about.includes(requiredAboutContent)) fail("about.html", `missing founder-story content: ${requiredAboutContent}`);
+}
+
+const nginxConfig = fs.readFileSync(path.join(path.dirname(root), "nginx.conf"), "utf8");
+if (!nginxConfig.includes("location = /about { try_files /about.html =404; }")) {
+  fail("nginx.conf", "/about does not serve the new static founder story");
+}
+
 const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
 if (/\.megafoot\.slim\b/.test(sharedCss)) fail("fk2.css", "contains obsolete slim-footer styles");
 
 const i18nSource = fs.readFileSync(path.join(root, "assets/i18n.js"), "utf8");
 for (const requiredLocaleBehavior of [
   "function pathLocale()",
+  "function isAboutPath(pathname)",
   "function localeRoute(locale, route)",
   "function syncLocaleRoutes(locale)",
   'document.documentElement.dataset.locale = l',
