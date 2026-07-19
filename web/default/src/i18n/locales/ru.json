@@ -5950,6 +5950,7 @@
     "statusCenter.deliveries.retrySucceeded": "Доставка поставлена в очередь на повтор",
     "statusCenter.settings.title": "Настройки статуса",
     "statusCenter.settings.description": "Настройки Root требуют безопасной проверки. Сохранённые секреты не возвращаются и не отображаются.",
+    "statusCenter.settings.readOnly": "Только для чтения",
     "statusCenter.settings.secretNeverShown": "Сохранённые секреты не показываются; вводите только замену.",
     "statusCenter.settings.replacementValue": "Новое значение",
     "statusCenter.settings.replacementPlaceholder": "Введите новое значение",

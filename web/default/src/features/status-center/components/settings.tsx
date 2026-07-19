@@ -48,6 +48,7 @@ import {
 import { EmptyState, ErrorState, ForbiddenState, LoadingState } from './common'
 
 const discordSettingKey = 'status.discord.webhook_endpoint'
+const discordSettingPrefix = 'status.discord.'
 
 type SettingsPanelProps = {
   active: boolean
@@ -118,8 +119,15 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const discordSetting = settings.find(
     (setting) => setting.key === discordSettingKey
   )
+  const readOnlySettings = settings.filter(
+    (setting) =>
+      setting.key !== discordSettingKey &&
+      setting.key.startsWith(discordSettingPrefix)
+  )
   const ordinarySettings = settings.filter(
-    (setting) => setting.key !== discordSettingKey
+    (setting) =>
+      setting.key !== discordSettingKey &&
+      !setting.key.startsWith(discordSettingPrefix)
   )
 
   const saveSetting = (setting: StatusSetting) => {
@@ -140,7 +148,35 @@ export function SettingsPanel(props: SettingsPanelProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className='space-y-3'>
-          {ordinarySettings.length === 0 ? (
+          {readOnlySettings.map((setting) => {
+            const settingLabel = getStatusSettingLabel(setting.key)
+            return (
+              <div
+                key={setting.key}
+                className='flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3'
+              >
+                <div className='min-w-0'>
+                  <div className='truncate font-medium'>
+                    {t(settingLabel.key, settingLabel.values)}
+                  </div>
+                  <code className='text-muted-foreground block truncate text-xs'>
+                    {setting.key}
+                  </code>
+                  <div className='text-muted-foreground text-xs'>
+                    {setting.sensitive
+                      ? t('statusCenter.settings.secretNeverShown')
+                      : setting.value || t('statusCenter.notConfigured')}
+                    {' · '}
+                    {formatStatusTimestamp(setting.updated_at)}
+                  </div>
+                </div>
+                <Badge variant='outline'>
+                  {t('statusCenter.settings.readOnly')}
+                </Badge>
+              </div>
+            )
+          })}
+          {ordinarySettings.length === 0 && readOnlySettings.length === 0 ? (
             <EmptyState descriptionKey='statusCenter.empty.settings' />
           ) : (
             ordinarySettings.map((setting) => {

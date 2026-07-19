@@ -5950,6 +5950,7 @@
     "statusCenter.deliveries.retrySucceeded": "A entrega foi colocada na fila para nova tentativa",
     "statusCenter.settings.title": "Configurações de status",
     "statusCenter.settings.description": "Configurações exclusivas de Root exigem verificação segura. Segredos salvos nunca são retornados nem exibidos.",
+    "statusCenter.settings.readOnly": "Somente leitura",
     "statusCenter.settings.secretNeverShown": "Segredos salvos nunca são exibidos; informe apenas um valor substituto.",
     "statusCenter.settings.replacementValue": "Valor substituto",
     "statusCenter.settings.replacementPlaceholder": "Informe um valor substituto",

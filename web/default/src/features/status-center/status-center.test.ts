@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createElement } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -26,6 +27,8 @@ import {
   PublishedIncidentHistory,
 } from './components/incidents'
 import { DeliveryRetryAction } from './components/operations'
+import { SettingsPanel } from './components/settings'
+import { statusCenterQueryKeys } from './api'
 import {
   buildStatusDeliveryRetryInput,
   buildPublishedUpdateRows,
@@ -42,6 +45,7 @@ import {
   syncIncidentPublicationForm,
   type IncidentPublicationFormState,
   type StatusIncidentRecord,
+  type StatusSetting,
   type StatusTranslationLabel,
   validateStatusOverride,
 } from './types'
@@ -91,6 +95,7 @@ beforeAll(async () => {
           'statusCenter.settings.label.evidenceMaxAgeSeconds':
             'Maximum evidence age',
           'statusCenter.settings.label.custom': 'Custom status setting',
+          'statusCenter.settings.readOnly': 'Read only',
           'statusCenter.incidents.privateDraft.title':
             'Private automation draft',
           'statusCenter.incidents.privateDraft.description':
@@ -112,6 +117,24 @@ function renderWithI18n(component: ReturnType<typeof createElement>): string {
 
 function renderStatusLabel(label: StatusTranslationLabel): string {
   return testI18n.t(label.key, label.values)
+}
+
+function renderSettingsPanel(settings: StatusSetting[]): string {
+  const queryClient = new QueryClient()
+  queryClient.setQueryData(statusCenterQueryKeys.settings(), settings)
+  return renderWithI18n(
+    createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      createElement(SettingsPanel, {
+        active: true,
+        isRoot: true,
+        runSensitiveAction: async (action) => {
+          await action()
+        },
+      })
+    )
+  )
 }
 
 describe('status center identifier labels', () => {
@@ -166,6 +189,62 @@ describe('status center identifier labels', () => {
     ['status.custom.setting', 'Custom status setting'],
   ] as const)('translates the %s setting label', (key, rendered) => {
     expect(renderStatusLabel(getStatusSettingLabel(key))).toBe(rendered)
+  })
+})
+
+describe('status settings controls', () => {
+  test('renders internal Discord delivery state without generic mutation controls', () => {
+    const savedEndpoint = 'https://discord.example/secret'
+    const html = renderSettingsPanel([
+      {
+        key: 'status.discord.delivery_state',
+        value: 'enabled',
+        sensitive: false,
+        configured: true,
+        version: 2,
+        updated_by: 1,
+        updated_at: 1_800_000_000,
+      },
+      {
+        key: 'status.evidence_max_age_seconds',
+        value: '300',
+        sensitive: false,
+        configured: true,
+        version: 4,
+        updated_by: 1,
+        updated_at: 1_800_000_000,
+      },
+      {
+        key: 'status.discord.webhook_endpoint',
+        value: savedEndpoint,
+        sensitive: true,
+        configured: true,
+        version: 6,
+        updated_by: 1,
+        updated_at: 1_800_000_000,
+      },
+    ])
+
+    const deliveryStateStart = html.indexOf('status.discord.delivery_state')
+    const supportedSettingStart = html.indexOf(
+      'status.evidence_max_age_seconds'
+    )
+    const deliveryStateRow = html.slice(
+      deliveryStateStart,
+      supportedSettingStart
+    )
+
+    expect(deliveryStateStart).toBeGreaterThan(-1)
+    expect(supportedSettingStart).toBeGreaterThan(deliveryStateStart)
+    expect(deliveryStateRow).toContain('enabled')
+    expect(deliveryStateRow).toContain('Read only')
+    expect(deliveryStateRow).not.toContain('<input')
+    expect(deliveryStateRow).not.toContain('<button')
+    expect(html).toContain(
+      'id="setting-status.evidence_max_age_seconds"'
+    )
+    expect(html).toContain('id="status-discord-endpoint"')
+    expect(html).not.toContain(savedEndpoint)
   })
 })
 

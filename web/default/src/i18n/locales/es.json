@@ -5950,6 +5950,7 @@
     "statusCenter.deliveries.retrySucceeded": "La entrega se puso en cola para reintento",
     "statusCenter.settings.title": "Ajustes de estado",
     "statusCenter.settings.description": "Los ajustes exclusivos de Root requieren verificación segura. Los secretos guardados nunca se devuelven ni muestran.",
+    "statusCenter.settings.readOnly": "Solo lectura",
     "statusCenter.settings.secretNeverShown": "Los secretos guardados nunca se muestran; introduce solo un reemplazo.",
     "statusCenter.settings.replacementValue": "Valor de reemplazo",
     "statusCenter.settings.replacementPlaceholder": "Introduce un valor de reemplazo",

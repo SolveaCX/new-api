@@ -5950,6 +5950,7 @@
     "statusCenter.deliveries.retrySucceeded": "La livraison a été mise en file d’attente pour une nouvelle tentative",
     "statusCenter.settings.title": "Paramètres d’état",
     "statusCenter.settings.description": "Les paramètres Root exigent une vérification sécurisée. Les secrets enregistrés ne sont jamais renvoyés ni affichés.",
+    "statusCenter.settings.readOnly": "Lecture seule",
     "statusCenter.settings.secretNeverShown": "Les secrets enregistrés ne sont jamais affichés ; saisissez uniquement une valeur de remplacement.",
     "statusCenter.settings.replacementValue": "Valeur de remplacement",
     "statusCenter.settings.replacementPlaceholder": "Saisissez une valeur de remplacement",

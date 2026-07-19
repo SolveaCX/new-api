@@ -5950,6 +5950,7 @@
     "statusCenter.deliveries.retrySucceeded": "Delivery queued for retry",
     "statusCenter.settings.title": "Status settings",
     "statusCenter.settings.description": "Root-only settings require secure verification. Saved secrets are never returned or displayed.",
+    "statusCenter.settings.readOnly": "Read only",
     "statusCenter.settings.secretNeverShown": "Saved secret values are never shown; enter a replacement only.",
     "statusCenter.settings.replacementValue": "Replacement value",
     "statusCenter.settings.replacementPlaceholder": "Enter a replacement value",

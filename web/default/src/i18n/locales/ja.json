@@ -5950,6 +5950,7 @@
     "statusCenter.deliveries.retrySucceeded": "配信を再試行キューに追加しました",
     "statusCenter.settings.title": "ステータス設定",
     "statusCenter.settings.description": "Root 専用設定には安全な本人確認が必要です。保存済みシークレットは返却も表示もされません。",
+    "statusCenter.settings.readOnly": "読み取り専用",
     "statusCenter.settings.secretNeverShown": "保存済みシークレットは表示されません。置換値だけを入力してください。",
     "statusCenter.settings.replacementValue": "置換値",
     "statusCenter.settings.replacementPlaceholder": "置換値を入力",
