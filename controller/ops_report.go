@@ -107,6 +107,7 @@ type opsPayerRow struct {
 	RefundedUSD  float64  `json:"refunded_usd"`
 	RefundedCnt  int      `json:"refunded_cnt"`
 	FirstPaidAt  int64    `json:"first_paid_at"`
+	LastPaidAt   int64    `json:"last_paid_at"`
 	RegisteredAt int64    `json:"registered_at"`
 	Campaign     string   `json:"campaign"`
 	Keyword      string   `json:"keyword"`
@@ -869,12 +870,16 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		if a.logStats != nil && a.logStats.LastRequestAt > lastActive {
 			lastActive = a.logStats.LastRequestAt
 		}
-		// Refunded-only payers (e.g. fraud cleanup) keep their first charge time.
-		firstPaidAt := int64(0)
+		// Refunded-only payers (e.g. fraud cleanup) keep their charge times.
+		// Orders arrive sorted by create_time asc (GetOpsTopUps), so first/last
+		// are the slice ends.
+		firstPaidAt, lastPaidAt := int64(0), int64(0)
 		if len(a.paidOrders) > 0 {
 			firstPaidAt = a.paidOrders[0].CreateTime
+			lastPaidAt = a.paidOrders[len(a.paidOrders)-1].CreateTime
 		} else if len(a.refundedOrders) > 0 {
 			firstPaidAt = a.refundedOrders[0].CreateTime
+			lastPaidAt = a.refundedOrders[len(a.refundedOrders)-1].CreateTime
 		}
 		payers = append(payers, opsPayerRow{
 			UserId:       a.user.Id,
@@ -886,6 +891,7 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 			RefundedUSD:  refunded,
 			RefundedCnt:  len(a.refundedOrders),
 			FirstPaidAt:  firstPaidAt,
+			LastPaidAt:   lastPaidAt,
 			RegisteredAt: a.user.CreatedAt,
 			Campaign:     a.campaign,
 			Keyword:      a.keyword,
@@ -908,8 +914,8 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 	}
 	count := len(payers)
 	sort.Slice(payers, func(i, j int) bool {
-		if payers[i].FirstPaidAt != payers[j].FirstPaidAt {
-			return payers[i].FirstPaidAt > payers[j].FirstPaidAt
+		if payers[i].LastPaidAt != payers[j].LastPaidAt {
+			return payers[i].LastPaidAt > payers[j].LastPaidAt
 		}
 		return payers[i].PaidUSD > payers[j].PaidUSD
 	})
