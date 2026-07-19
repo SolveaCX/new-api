@@ -537,7 +537,7 @@ export const STATIC_I18N_KEYS = [
   // regex can't pick them up. ('Regenerate', 'Edit', 'Delete', 'More' are already
   // registered below; 'An unknown error occurred' is a literal the regex catches.)
   'How do I try flatkey?',
-  'Generate an image or a video for me',
+  'Generate an image of a cat astronaut',
   'Write a quicksort in Python',
   'Explain Transformers',
   'Analyze data',

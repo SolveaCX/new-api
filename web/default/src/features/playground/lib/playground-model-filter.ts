@@ -24,9 +24,29 @@ const NON_CHAT_MODEL_PATTERNS = [
   /^mj_/,
 ]
 
+// Allowlist of image models that are actually driven through the normal chat
+// completions endpoint: they take a text prompt and return the generated image
+// as a markdown data-URI (`![](data:image/png;base64,...)`) inside the assistant
+// message, which the Playground renders inline via <Response>/Streamdown. These
+// belong in the Playground even though their names contain an `-image` segment
+// that the NON_CHAT patterns above would otherwise exclude.
+//
+// Scoped deliberately to Google's chat-capable image models (nano-banana and the
+// Gemini flash/pro *image* variants, with or without a `google/` prefix or a
+// `-preview` suffix). Do NOT widen this to gpt-image / dall-e / imagen / flux /
+// etc. — those use the dedicated images endpoint and would not render here.
+const CHAT_CAPABLE_IMAGE_PATTERNS = [
+  /(^|[-_/])nano-banana(?:$|[-_/])/,
+  /(^|\/)gemini[a-z0-9.-]*-(?:flash|pro)(?:-lite)?-image(?:-preview)?$/,
+]
+
 export function isPlaygroundChatModelName(model: unknown): model is string {
   if (typeof model !== 'string') return false
   const normalized = model.trim().toLowerCase()
   if (!normalized) return false
+  // Allowlist wins: a chat-capable image model stays visible even though it also
+  // matches an `-image` non-chat pattern below.
+  if (CHAT_CAPABLE_IMAGE_PATTERNS.some((pattern) => pattern.test(normalized)))
+    return true
   return !NON_CHAT_MODEL_PATTERNS.some((pattern) => pattern.test(normalized))
 }

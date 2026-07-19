@@ -301,13 +301,27 @@ export function Playground({
     return true
   }, [firstRun, isFirstRunModelApplied])
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = (text: string, model?: string) => {
     if (!prepareFirstRunSend()) return
     const userMessage = createUserMessage(text)
     const assistantMessage = createLoadingAssistantMessage()
 
     const newMessages = [...messages, userMessage, assistantMessage]
     updateMessages(newMessages)
+
+    // An example prompt can force a specific model (e.g. the image-generation
+    // chip pins `gemini-2.5-flash-image`). Persist the selection so the picker
+    // reflects it, and mark it as an explicit user choice so the first-run cheap
+    // default never overrides it. Crucially, we ALSO pass the model as a direct
+    // send override here: `updateConfig` is async and wouldn't be reflected in
+    // `config` for this same-tick send, so the override guarantees THIS message
+    // is actually requested against the forced model.
+    if (model) {
+      setUserPickedModel(true)
+      updateConfig('model', model)
+      sendChat(newMessages, { model })
+      return
+    }
 
     // Send chat request
     sendChat(newMessages, getFirstRunChatOverride())
