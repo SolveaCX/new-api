@@ -49,13 +49,25 @@ import {
 import { formatStatusTimestamp } from '../format'
 import {
   buildPublishedUpdateRows,
+  getLatestStatusAutomationDraft,
+  getStatusAutomationDraftEvidence,
   resolveStatusMutationError,
+  syncIncidentPublicationForm,
+  type IncidentPublicationFormState,
   type StatusIncidentPublishInput,
   type StatusIncidentUpdate,
 } from '../types'
 import { EmptyState, ErrorState, LoadingState } from './common'
 
 type IncidentState = StatusIncidentPublishInput['state']
+
+const emptyIncidentPublicationForm: IncidentPublicationFormState = {
+  sourceIncidentId: 0,
+  sourceDraftId: 0,
+  state: 'investigating',
+  body: '',
+  dirty: false,
+}
 
 export function PublishedIncidentHistory(props: {
   updates: StatusIncidentUpdate[]
@@ -98,12 +110,48 @@ export function PublishedIncidentHistory(props: {
   )
 }
 
+export function PrivateIncidentDraftReview(props: {
+  draft: StatusIncidentUpdate | null | undefined
+}) {
+  const { t } = useTranslation()
+  if (!props.draft) return null
+
+  return (
+    <section className='bg-muted/40 space-y-3 rounded-lg border p-4'>
+      <div>
+        <h3 className='font-medium'>
+          {t('statusCenter.incidents.privateDraft.title')}
+        </h3>
+        <p className='text-muted-foreground text-sm'>
+          {t('statusCenter.incidents.privateDraft.description')}
+        </p>
+      </div>
+      <dl className='grid gap-3 md:grid-cols-2'>
+        <div className='space-y-1'>
+          <dt className='text-muted-foreground text-xs font-medium'>
+            {t('statusCenter.incidents.privateDraft.body')}
+          </dt>
+          <dd className='whitespace-pre-wrap text-sm'>{props.draft.body}</dd>
+        </div>
+        <div className='space-y-1'>
+          <dt className='text-muted-foreground text-xs font-medium'>
+            {t('statusCenter.incidents.privateDraft.evidence')}
+          </dt>
+          <dd className='whitespace-pre-wrap text-sm'>
+            {getStatusAutomationDraftEvidence(props.draft)}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  )
+}
+
 export function IncidentsPanel(props: { active: boolean }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [incidentId, setIncidentId] = useState(0)
-  const [state, setState] = useState<IncidentState>('investigating')
-  const [body, setBody] = useState('')
+  const [publicationFormState, setPublicationFormState] =
+    useState<IncidentPublicationFormState>(emptyIncidentPublicationForm)
   const [reason, setReason] = useState('')
 
   const incidentsQuery = useQuery({
@@ -114,6 +162,13 @@ export function IncidentsPanel(props: { active: boolean }) {
   const records = incidentsQuery.data ?? []
   const selected =
     records.find((record) => record.incident.id === incidentId) ?? records[0]
+  const privateDraft = selected
+    ? getLatestStatusAutomationDraft(selected)
+    : null
+  const publicationForm = syncIncidentPublicationForm(
+    publicationFormState,
+    selected
+  )
 
   const publishMutation = useMutation({
     mutationFn: (input: StatusIncidentPublishInput) => {
@@ -121,7 +176,10 @@ export function IncidentsPanel(props: { active: boolean }) {
       return publishStatusIncident(selected.incident.id, input)
     },
     onSuccess: () => {
-      setBody('')
+      setPublicationFormState({
+        ...emptyIncidentPublicationForm,
+        sourceIncidentId: selected?.incident.id ?? 0,
+      })
       setReason('')
       toast.success(t('statusCenter.incidents.updatePublished'))
       void queryClient.invalidateQueries({
@@ -139,11 +197,11 @@ export function IncidentsPanel(props: { active: boolean }) {
   })
 
   const publish = () => {
-    if (!selected || !body.trim() || !reason.trim()) return
+    if (!selected || !publicationForm.body.trim() || !reason.trim()) return
     publishMutation.mutate({
       expected_version: selected.incident.version,
-      state,
-      body: body.trim(),
+      state: publicationForm.state,
+      body: publicationForm.body.trim(),
       event_id: `console_${globalThis.crypto.randomUUID()}`,
       reason: reason.trim(),
       destinations: [],
@@ -215,6 +273,7 @@ export function IncidentsPanel(props: { active: boolean }) {
           </CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
+          <PrivateIncidentDraftReview draft={privateDraft} />
           <div className='space-y-2'>
             <Label htmlFor='incident-record'>
               {t('statusCenter.incidents.incident')}
@@ -256,9 +315,13 @@ export function IncidentsPanel(props: { active: boolean }) {
             </Label>
             <NativeSelect
               id='incident-state'
-              value={state}
+              value={publicationForm.state}
               onChange={(event) =>
-                setState(event.target.value as IncidentState)
+                setPublicationFormState({
+                  ...publicationForm,
+                  state: event.target.value as IncidentState,
+                  dirty: true,
+                })
               }
             >
               {(
@@ -281,8 +344,14 @@ export function IncidentsPanel(props: { active: boolean }) {
             </Label>
             <Textarea
               id='incident-body'
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
+              value={publicationForm.body}
+              onChange={(event) =>
+                setPublicationFormState({
+                  ...publicationForm,
+                  body: event.target.value,
+                  dirty: true,
+                })
+              }
               placeholder={t('statusCenter.incidents.publicUpdatePlaceholder')}
             />
           </div>
@@ -300,7 +369,9 @@ export function IncidentsPanel(props: { active: boolean }) {
           <Button
             type='button'
             disabled={
-              !body.trim() || !reason.trim() || publishMutation.isPending
+              !publicationForm.body.trim() ||
+              !reason.trim() ||
+              publishMutation.isPending
             }
             onClick={publish}
           >

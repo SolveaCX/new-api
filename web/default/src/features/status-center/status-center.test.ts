@@ -21,7 +21,10 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
-import { PublishedIncidentHistory } from './components/incidents'
+import {
+  PrivateIncidentDraftReview,
+  PublishedIncidentHistory,
+} from './components/incidents'
 import { DeliveryRetryAction } from './components/operations'
 import {
   buildStatusDeliveryRetryInput,
@@ -29,11 +32,16 @@ import {
   getStatusAuditActionLabel,
   getStatusAuditObjectTypeLabel,
   getStatusComponentKindLabel,
+  getLatestStatusAutomationDraft,
   getRequiredStatusComponentVersion,
+  getStatusAutomationDraftEvidence,
   getStatusCenterPermissions,
   getStatusLabelKey,
   getStatusSettingLabel,
   resolveStatusMutationError,
+  syncIncidentPublicationForm,
+  type IncidentPublicationFormState,
+  type StatusIncidentRecord,
   type StatusTranslationLabel,
   validateStatusOverride,
 } from './types'
@@ -83,6 +91,12 @@ beforeAll(async () => {
           'statusCenter.settings.label.evidenceMaxAgeSeconds':
             'Maximum evidence age',
           'statusCenter.settings.label.custom': 'Custom status setting',
+          'statusCenter.incidents.privateDraft.title':
+            'Private automation draft',
+          'statusCenter.incidents.privateDraft.description':
+            'Review the draft and evidence before publishing.',
+          'statusCenter.incidents.privateDraft.body': 'Draft body',
+          'statusCenter.incidents.privateDraft.evidence': 'Internal evidence',
         },
       },
     },
@@ -321,6 +335,136 @@ describe('published incident updates', () => {
     expect(html).toContain('href="#incident-new-update"')
     expect(html).toContain('Append correction')
     expect(html).not.toContain('>Edit<')
+  })
+})
+
+describe('private automation incident drafts', () => {
+  const record: StatusIncidentRecord = {
+    incident: {
+      id: 10,
+      public_id: 'inc-10',
+      kind: 'incident',
+      title: 'Automated component status review',
+      impact: 'outage',
+      status: 'draft',
+      visibility: 'private',
+      automation_mode: 'automatic',
+      version: 3,
+      created_at: 1_800_000_000,
+      updated_at: 1_800_000_200,
+    },
+    component_ids: [4],
+    updates: [
+      {
+        id: 1,
+        incident_id: 10,
+        event_id: 'published-1',
+        state: 'investigating',
+        body: 'Earlier public update.',
+        published: true,
+        published_at: 1_800_000_050,
+        created_at: 1_800_000_050,
+      },
+      {
+        id: 2,
+        incident_id: 10,
+        event_id: 'draft-older',
+        state: 'investigating',
+        body: 'Automated evidence: earlier probe failure',
+        published: false,
+        published_at: 0,
+        created_at: 1_800_000_100,
+      },
+      {
+        id: 3,
+        incident_id: 10,
+        event_id: 'draft-latest',
+        state: 'identified',
+        body: 'Automated evidence: probe and traffic signals confirm the outage',
+        published: false,
+        published_at: 0,
+        created_at: 1_800_000_200,
+      },
+    ],
+  }
+
+  test('extracts the latest private automation draft and its internal evidence', () => {
+    const draft = getLatestStatusAutomationDraft(record)
+
+    expect(draft?.id).toBe(3)
+    expect(draft?.published).toBe(false)
+    expect(getStatusAutomationDraftEvidence(draft)).toBe(
+      'probe and traffic signals confirm the outage'
+    )
+    expect(buildPublishedUpdateRows(record.updates)).toHaveLength(1)
+  })
+
+  test('prefills from the selected draft without overwriting active edits on refresh', () => {
+    const initial: IncidentPublicationFormState = {
+      sourceIncidentId: 0,
+      sourceDraftId: 0,
+      state: 'investigating',
+      body: '',
+      dirty: false,
+    }
+    const prefilled = syncIncidentPublicationForm(initial, record)
+    expect(prefilled).toMatchObject({
+      sourceIncidentId: 10,
+      sourceDraftId: 3,
+      state: 'identified',
+      body: 'Automated evidence: probe and traffic signals confirm the outage',
+      dirty: false,
+    })
+
+    const edited = { ...prefilled, body: 'Operator-reviewed copy', dirty: true }
+    const refreshedRecord = {
+      ...record,
+      updates: record.updates.map((update) =>
+        update.id === 3
+          ? { ...update, body: 'Automated evidence: refreshed evidence' }
+          : update
+      ),
+    }
+    expect(syncIncidentPublicationForm(edited, refreshedRecord)).toEqual(
+      edited
+    )
+
+    const nextRecord = {
+      ...record,
+      incident: { ...record.incident, id: 11, public_id: 'inc-11' },
+      updates: [
+        {
+          ...record.updates[2],
+          id: 4,
+          incident_id: 11,
+          event_id: 'draft-next',
+          state: 'resolved',
+          body: 'Recovery observed; review this resolution suggestion: probes recovered',
+        },
+      ],
+    }
+    expect(syncIncidentPublicationForm(edited, nextRecord)).toMatchObject({
+      sourceIncidentId: 11,
+      sourceDraftId: 4,
+      state: 'resolved',
+      body: 'Recovery observed; review this resolution suggestion: probes recovered',
+      dirty: false,
+    })
+  })
+
+  test('renders private draft body and evidence for administrator review', () => {
+    const html = renderWithI18n(
+      createElement(PrivateIncidentDraftReview, {
+        draft: getLatestStatusAutomationDraft(record),
+      })
+    )
+
+    expect(html).toContain('Private automation draft')
+    expect(html).toContain(
+      'Automated evidence: probe and traffic signals confirm the outage'
+    )
+    expect(html).toContain('Internal evidence')
+    expect(html).toContain('probe and traffic signals confirm the outage')
   })
 })
 

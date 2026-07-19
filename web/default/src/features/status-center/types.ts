@@ -167,6 +167,14 @@ export interface StatusIncidentPublishInput {
   destinations: Array<{ type: string; id: number }>
 }
 
+export interface IncidentPublicationFormState {
+  sourceIncidentId: number
+  sourceDraftId: number
+  state: StatusIncidentPublishInput['state']
+  body: string
+  dirty: boolean
+}
+
 export interface StatusMaintenanceInput {
   title: string
   body: string
@@ -427,6 +435,97 @@ export function buildPublishedUpdateRows(
       })
     )
   return Object.freeze(rows)
+}
+
+export function getLatestStatusAutomationDraft(
+  record: StatusIncidentRecord
+): StatusIncidentUpdate | null {
+  if (
+    record.incident.visibility !== 'private' ||
+    record.incident.automation_mode !== 'automatic'
+  ) {
+    return null
+  }
+
+  return record.updates.reduce<StatusIncidentUpdate | null>(
+    (latest, update) => {
+      if (update.published) return latest
+      if (!latest) return update
+      if (update.created_at !== latest.created_at) {
+        return update.created_at > latest.created_at ? update : latest
+      }
+      return update.id > latest.id ? update : latest
+    },
+    null
+  )
+}
+
+const automationEvidencePrefixes = [
+  'Automated evidence: ',
+  'Recovery observed; review this resolution suggestion: ',
+] as const
+
+export function getStatusAutomationDraftEvidence(
+  draft: StatusIncidentUpdate | null | undefined
+): string {
+  const body = draft?.body.trim() ?? ''
+  const prefix = automationEvidencePrefixes.find((value) =>
+    body.startsWith(value)
+  )
+  return prefix ? body.slice(prefix.length).trim() : body
+}
+
+const incidentPublicationStates = [
+  'investigating',
+  'identified',
+  'monitoring',
+  'resolved',
+] as const satisfies readonly StatusIncidentPublishInput['state'][]
+
+function getIncidentPublicationState(
+  state: string | undefined
+): StatusIncidentPublishInput['state'] {
+  return incidentPublicationStates.includes(
+    state as StatusIncidentPublishInput['state']
+  )
+    ? (state as StatusIncidentPublishInput['state'])
+    : 'investigating'
+}
+
+export function syncIncidentPublicationForm(
+  current: IncidentPublicationFormState,
+  record: StatusIncidentRecord | undefined
+): IncidentPublicationFormState {
+  const draft = record ? getLatestStatusAutomationDraft(record) : null
+  const sourceIncidentId = record?.incident.id ?? 0
+  const sourceDraftId = draft?.id ?? 0
+
+  if (
+    current.sourceIncidentId === sourceIncidentId &&
+    current.sourceDraftId === sourceDraftId &&
+    current.dirty
+  ) {
+    return current
+  }
+
+  const next: IncidentPublicationFormState = {
+    sourceIncidentId,
+    sourceDraftId,
+    state: getIncidentPublicationState(draft?.state),
+    body: draft?.body ?? '',
+    dirty: false,
+  }
+
+  if (
+    current.sourceIncidentId === next.sourceIncidentId &&
+    current.sourceDraftId === next.sourceDraftId &&
+    current.state === next.state &&
+    current.body === next.body &&
+    current.dirty === next.dirty
+  ) {
+    return current
+  }
+  return next
 }
 
 function isHttpConflict(error: unknown): boolean {
