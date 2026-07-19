@@ -175,6 +175,11 @@ type SubscriptionPlan struct {
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
+	// Rolling 5-hour usage window limit in weighted quota units (0 = disabled)
+	Window5hAmount int64 `json:"window_5h_amount" gorm:"type:bigint;not null;default:0"`
+	// 7-day usage window limit in weighted quota units, cycle anchored at subscription start (0 = disabled)
+	WindowWeekAmount int64 `json:"window_week_amount" gorm:"type:bigint;not null;default:0"`
+
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
@@ -799,6 +804,44 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 		return nil, err
 	}
 	return buildSubscriptionSummaries(subs), nil
+}
+
+// SubscriptionWindowInfo carries the data needed to enforce usage windows
+// (5h rolling + weekly anchored at subscription start) before pre-consume.
+type SubscriptionWindowInfo struct {
+	UserSubscriptionId int
+	SubscriptionStart  int64
+	Window5hAmount     int64
+	WindowWeekAmount   int64
+}
+
+// GetActiveSubscriptionWindowInfo returns window limits for the user's first
+// active subscription (same end_time asc order as PreConsumeUserSubscription).
+// Returns (nil, nil) when the user has no active subscription.
+func GetActiveSubscriptionWindowInfo(userId int) (*SubscriptionWindowInfo, error) {
+	if userId <= 0 {
+		return nil, errors.New("invalid userId")
+	}
+	now := common.GetTimestamp()
+	var sub UserSubscription
+	query := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+		Order("end_time asc, id asc").Limit(1).Find(&sub)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, nil
+	}
+	plan, err := GetSubscriptionPlanById(sub.PlanId)
+	if err != nil {
+		return nil, err
+	}
+	return &SubscriptionWindowInfo{
+		UserSubscriptionId: sub.Id,
+		SubscriptionStart:  sub.StartTime,
+		Window5hAmount:     plan.Window5hAmount,
+		WindowWeekAmount:   plan.WindowWeekAmount,
+	}, nil
 }
 
 // HasActiveUserSubscription returns whether the user has any active subscription.
