@@ -298,15 +298,16 @@ function isStatusUnsubscribePreview(value: unknown): value is StatusUnsubscribeP
 }
 
 function hasStatusMetadata(value: unknown): value is Record<string, unknown> & StatusMetadata {
-  return isRecord(value) && isGeneratedAt(value.generated_at) && isTimestamp(value.last_trustworthy_update_at) &&
-    isMicros(value.coverage);
+  return isRecord(value) && isBoundedEvidenceTimestamp(value.generated_at) &&
+    isBoundedEvidenceTimestamp(value.last_trustworthy_update_at) && isMicros(value.coverage);
 }
 
 function isStatusComponent(value: unknown): value is StatusComponent {
   return isRecord(value) && isPositiveInteger(value.id) && isNonEmptyString(value.slug) &&
     (value.kind === "router" || value.kind === "model") && isNonEmptyString(value.display_name) &&
     isOptionalString(value.capability) && (value.lifecycle === "active" || value.lifecycle === "retired") &&
-    isStatusValue(value.status) && isTimestamp(value.last_trustworthy_update_at) && isMicros(value.coverage);
+    isStatusValue(value.status) && isBoundedEvidenceTimestamp(value.last_trustworthy_update_at) &&
+    isMicros(value.coverage);
 }
 
 function isStatusAvailability(value: unknown): value is StatusAvailability {
@@ -374,7 +375,7 @@ function isOptionalTimestamp(value: unknown): value is number | undefined {
   return value === undefined || isTimestamp(value);
 }
 
-function isGeneratedAt(value: unknown): value is number {
+function isBoundedEvidenceTimestamp(value: unknown): value is number {
   return isTimestamp(value) && value <= Math.floor(Date.now() / 1000) + MAX_FUTURE_SKEW_SECONDS;
 }
 
