@@ -3402,6 +3402,11 @@
 }
 };
 
+  var LEGAL_ROUTES = { "terms.html": "terms", "privacy.html": "privacy", "refund-policy.html": "refund-policy", "legal-sla.html": "sla" };
+  // These locale routes contain reviewed legal copy. German and Indonesian
+  // currently fall back to English, so do not present them as translated law.
+  var LEGAL_LANGUAGES = { en: true, zh: true, es: true, fr: true, pt: true, ru: true, ja: true, vi: true };
+
   var HREF_KEYS = {
     "models.html": "nav.models", "playground.html": "nav.playground",
     "topup.html": "nav.pricing", "usecases.html": "nav.usecases",
@@ -3460,20 +3465,20 @@
   function injectSwitcher() {
     var nav = document.querySelector(".nav") || document.querySelector(".dbar .dext");
     if (!nav || document.querySelector(".langsel")) return;
+    var file = location.pathname.split("/").pop();
+    var legalSlug = LEGAL_ROUTES[file];
     var sel = document.createElement("select");
     sel.className = "langsel";
-    LANGS.forEach(function (p) {
+    LANGS.filter(function (p) { return !legalSlug || LEGAL_LANGUAGES[p[0]]; }).forEach(function (p) {
       var o = document.createElement("option");
       o.value = p[0]; o.textContent = p[1];
       sel.appendChild(o);
     });
     sel.addEventListener("change", function () {
       var p = location.pathname;
-      var LEGAL = { "terms.html": "terms", "privacy.html": "privacy", "refund-policy.html": "refund-policy", "legal-sla.html": "sla" };
-      var file = p.split("/").pop();
-      if (LEGAL[file] && sel.value !== "en") {
+      if (legalSlug && sel.value !== "en") {
         try { localStorage.setItem("fk-lang", sel.value); } catch (e) {}
-        location.href = "/" + sel.value + "/" + LEGAL[file];
+        location.href = "/" + sel.value + "/" + legalSlug;
         return;
       }
       if (p === "/" || p === "/index.html" || /^\/(zh|es|pt|fr|id|de|vi|ru|ja)\/?$/.test(p)) {
@@ -3491,5 +3496,14 @@
   injectSwitcher();
   var saved = "en";
   try { saved = localStorage.getItem("fk-lang") || "en"; } catch (e) {}
-  if (saved !== "en") setLang(saved);
+  var currentLegalFile = location.pathname.split("/").pop();
+  var currentLegalSlug = LEGAL_ROUTES[currentLegalFile];
+  var legalLanguage = LEGAL_LANGUAGES[saved] ? saved : "en";
+  if (currentLegalSlug && legalLanguage !== "en") {
+    // A user who selected a language elsewhere should never see an English
+    // legal body paired with a non-English language selector.
+    location.replace("/" + legalLanguage + "/" + currentLegalSlug + location.search + location.hash);
+  } else if (saved !== "en" && !currentLegalSlug) {
+    setLang(saved);
+  }
 })();
