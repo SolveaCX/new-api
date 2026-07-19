@@ -5478,10 +5478,8 @@
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key。开启 'Override OpenAI Base URL'，粘贴 Base URL 和你的密钥。",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → 添加一个 OpenAI-compatible 提供商。将 API host 设为该 Base URL，并粘贴你的密钥。",
     "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → 添加一个自定义提供商（OpenAI API Compatible）。将 API host 设为该 Base URL，并粘贴你的密钥。",
-    "The unified gateway for 170+ AI models": "170+ AI 模型的统一网关",
-    "The most complete catalog, the lowest price, the most reliable service.": "最全的模型目录，最低的价格，最稳定的服务。",
-    "One key, 170+ models": "一把密钥，170+ 模型",
-    "At least 40% cheaper": "至少便宜 40%",
-    "Official direct routes, trusted uptime": "官方直连，稳定可信"
+    "160+ official models · seedance-2.5 video included": "160+ 官方模型 · 含 seedance-2.5 视频",
+    "More AI. Less cost. Every frontier model, one key.": "更多 AI，更低成本。每一个前沿模型，只需一把密钥。",
+    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "文本、视频与音频，统一走官方端点——每一次调用背后都有签署的 SLA 保障。"
   }
 }

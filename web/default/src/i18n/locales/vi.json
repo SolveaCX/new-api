@@ -5478,10 +5478,8 @@
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Bật 'Override OpenAI Base URL', dán Base URL và khóa của bạn.",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → thêm một nhà cung cấp OpenAI-compatible. Đặt API host thành Base URL và dán khóa của bạn.",
     "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → thêm một nhà cung cấp tùy chỉnh (OpenAI API Compatible). Đặt API host thành Base URL và dán khóa của bạn.",
-    "The unified gateway for 170+ AI models": "Cổng kết nối hợp nhất cho hơn 170 mô hình AI",
-    "The most complete catalog, the lowest price, the most reliable service.": "Danh mục đầy đủ nhất, giá thấp nhất, dịch vụ ổn định nhất.",
-    "One key, 170+ models": "Một khóa, hơn 170 mô hình",
-    "At least 40% cheaper": "Rẻ hơn ít nhất 40%",
-    "Official direct routes, trusted uptime": "Tuyến kết nối trực tiếp chính thức, thời gian hoạt động đáng tin cậy"
+    "160+ official models · seedance-2.5 video included": "160+ mô hình chính thức · có video seedance-2.5",
+    "More AI. Less cost. Every frontier model, one key.": "Nhiều AI hơn. Chi phí thấp hơn. Mọi mô hình tiên phong, chỉ một khóa.",
+    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "Văn bản, video và âm thanh qua cùng các endpoint chính thức — với SLA được ký kết sau mỗi lệnh gọi."
   }
 }

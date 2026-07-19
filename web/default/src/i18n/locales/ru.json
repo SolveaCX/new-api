@@ -5478,10 +5478,8 @@
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Включите 'Override OpenAI Base URL', вставьте Base URL и свой ключ.",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → добавьте OpenAI-compatible провайдера. Укажите в API host значение Base URL и вставьте свой ключ.",
     "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → добавьте пользовательского провайдера (OpenAI API Compatible). Укажите в API host значение Base URL и вставьте свой ключ.",
-    "The unified gateway for 170+ AI models": "Единый шлюз для более чем 170 моделей ИИ",
-    "The most complete catalog, the lowest price, the most reliable service.": "Самый полный каталог, самая низкая цена, самый надёжный сервис.",
-    "One key, 170+ models": "Один ключ — более 170 моделей",
-    "At least 40% cheaper": "Минимум на 40 % дешевле",
-    "Official direct routes, trusted uptime": "Официальные прямые маршруты, надёжная доступность"
+    "160+ official models · seedance-2.5 video included": "160+ официальных моделей · видео seedance-2.5 включено",
+    "More AI. Less cost. Every frontier model, one key.": "Больше ИИ. Меньше затрат. Все передовые модели — один ключ.",
+    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "Текст, видео и аудио через одни и те же официальные эндпоинты — с подписанным SLA за каждым вызовом."
   }
 }
