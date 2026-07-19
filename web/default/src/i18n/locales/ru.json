@@ -5490,6 +5490,10 @@
     "No content to copy": "Нет содержимого для копирования",
     "Please wait for the current generation to complete": "Дождитесь завершения текущей генерации",
     "An unknown error occurred": "Произошла неизвестная ошибка",
-    "Try one of these to get started:": "Начните с одного из этих примеров:"
+    "Try one of these to get started:": "Начните с одного из этих примеров:",
+    "Generate a video of a cat astronaut": "Сгенерируй видео кота-космонавта",
+    "Generating video…": "Генерация видео…",
+    "Generating video… {{progress}}%": "Генерация видео… {{progress}} %",
+    "Video generation failed": "Не удалось сгенерировать видео"
   }
 }

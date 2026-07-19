@@ -30,11 +30,17 @@ import { PlaygroundChat } from './components/playground-chat'
 import { FirstRunWelcome, GetKeyCard } from './components/playground-first-run'
 import { PlaygroundInput } from './components/playground-input'
 import { MESSAGE_ROLES, MESSAGE_STATUS } from './constants'
-import { usePlaygroundState, useChatHandler } from './hooks'
+import {
+  usePlaygroundState,
+  useChatHandler,
+  useVideoGeneration,
+} from './hooks'
 import {
   createUserMessage,
   createLoadingAssistantMessage,
+  createLoadingVideoMessage,
   getFirstRunChatOverride as resolveFirstRunChatOverride,
+  isVideoGenModelName,
   pickFirstRunModel,
   shouldOpenFirstRunTopupPrompt,
   clearFirstRunDone,
@@ -89,12 +95,31 @@ export function Playground({
     updateConfig,
   } = usePlaygroundState()
 
-  const { sendChat, stopGeneration, isGenerating } = useChatHandler({
+  const {
+    sendChat,
+    stopGeneration: stopChatGeneration,
+    isGenerating: isChatGenerating,
+  } = useChatHandler({
     config,
     parameterEnabled,
     onMessageUpdate: updateMessages,
     minimalParameters: firstRun,
   })
+
+  const {
+    generateVideo,
+    stopVideoGeneration,
+    releaseVideoObjectUrl,
+    isVideoGenerating,
+  } = useVideoGeneration({ onMessageUpdate: updateMessages })
+
+  // Either a chat stream or a video-generation task can be in flight; the input,
+  // stop button, and welcome chips all key off the combined state.
+  const isGenerating = isChatGenerating || isVideoGenerating
+  const stopGeneration = useCallback(() => {
+    stopChatGeneration()
+    stopVideoGeneration()
+  }, [stopChatGeneration, stopVideoGeneration])
 
   // Edit dialog state
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(
@@ -304,21 +329,37 @@ export function Playground({
   const handleSendMessage = (text: string, model?: string) => {
     if (!prepareFirstRunSend()) return
     const userMessage = createUserMessage(text)
-    const assistantMessage = createLoadingAssistantMessage()
+    // The effective model for THIS send: an example chip / override wins,
+    // otherwise the currently selected model.
+    const targetModel = model || config.model
 
-    const newMessages = [...messages, userMessage, assistantMessage]
-    updateMessages(newMessages)
-
-    // An example prompt can force a specific model (e.g. the image-generation
-    // chip pins `gemini-2.5-flash-image`). Persist the selection so the picker
-    // reflects it, and mark it as an explicit user choice so the first-run cheap
-    // default never overrides it. Crucially, we ALSO pass the model as a direct
-    // send override here: `updateConfig` is async and wouldn't be reflected in
-    // `config` for this same-tick send, so the override guarantees THIS message
-    // is actually requested against the forced model.
+    // An example prompt (or the picker) can force a specific model. Persist the
+    // selection so the picker reflects it, and mark it as an explicit user choice
+    // so the first-run cheap default never overrides it.
     if (model) {
       setUserPickedModel(true)
       updateConfig('model', model)
+    }
+
+    // Video-generation models (veo) do NOT run through chat completions: insert a
+    // video assistant bubble and drive the async /v1/videos submit→poll→content
+    // flow, which renders an inline <video> when done.
+    if (isVideoGenModelName(targetModel)) {
+      const videoMessage = createLoadingVideoMessage()
+      const newMessages = [...messages, userMessage, videoMessage]
+      updateMessages(newMessages)
+      generateVideo(text, targetModel, videoMessage.key)
+      return
+    }
+
+    const assistantMessage = createLoadingAssistantMessage()
+    const newMessages = [...messages, userMessage, assistantMessage]
+    updateMessages(newMessages)
+
+    // Crucially, pass a forced model as a direct send override: `updateConfig` is
+    // async and wouldn't be reflected in `config` for this same-tick send, so the
+    // override guarantees THIS message is requested against the forced model.
+    if (model) {
       sendChat(newMessages, { model })
       return
     }
@@ -340,6 +381,21 @@ export function Playground({
 
     // Remove messages after this one and regenerate
     const messagesUpToHere = messages.slice(0, messageIndex)
+
+    // Regenerating against a video model re-runs the async video flow using the
+    // most recent user prompt rather than hitting chat completions.
+    if (isVideoGenModelName(config.model)) {
+      const lastUser = [...messagesUpToHere]
+        .reverse()
+        .find((m) => m.from === MESSAGE_ROLES.USER)
+      const prompt = lastUser?.versions?.[0]?.content ?? ''
+      const videoMessage = createLoadingVideoMessage()
+      const newMessages = [...messagesUpToHere, videoMessage]
+      updateMessages(newMessages)
+      generateVideo(prompt, config.model, videoMessage.key)
+      return
+    }
+
     const loadingMessage = createLoadingAssistantMessage()
     const newMessages = [...messagesUpToHere, loadingMessage]
 
@@ -394,6 +450,8 @@ export function Playground({
   )
 
   const handleDeleteMessage = (message: MessageType) => {
+    // Revoke the video blob URL (if any) so deleting a video message doesn't leak.
+    if (message.videoUrl) releaseVideoObjectUrl(message.videoUrl)
     const newMessages = messages.filter((m) => m.key !== message.key)
     updateMessages(newMessages)
   }

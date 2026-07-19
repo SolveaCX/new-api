@@ -5490,6 +5490,10 @@
     "No content to copy": "Nenhum conteúdo para copiar",
     "Please wait for the current generation to complete": "Aguarde a conclusão da geração atual",
     "An unknown error occurred": "Ocorreu um erro desconhecido",
-    "Try one of these to get started:": "Experimente uma destas para começar:"
+    "Try one of these to get started:": "Experimente uma destas para começar:",
+    "Generate a video of a cat astronaut": "Gere um vídeo de um gato astronauta",
+    "Generating video…": "Gerando vídeo…",
+    "Generating video… {{progress}}%": "Gerando vídeo… {{progress}}%",
+    "Video generation failed": "Falha na geração do vídeo"
   }
 }

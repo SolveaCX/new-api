@@ -5490,6 +5490,10 @@
     "No content to copy": "Không có nội dung để sao chép",
     "Please wait for the current generation to complete": "Vui lòng đợi quá trình tạo hiện tại hoàn tất",
     "An unknown error occurred": "Đã xảy ra lỗi không xác định",
-    "Try one of these to get started:": "Hãy thử một trong những gợi ý này để bắt đầu:"
+    "Try one of these to get started:": "Hãy thử một trong những gợi ý này để bắt đầu:",
+    "Generate a video of a cat astronaut": "Tạo một video chú mèo phi hành gia",
+    "Generating video…": "Đang tạo video…",
+    "Generating video… {{progress}}%": "Đang tạo video… {{progress}}%",
+    "Video generation failed": "Tạo video thất bại"
   }
 }

@@ -84,6 +84,22 @@ export function createLoadingAssistantMessage(): Message {
 }
 
 /**
+ * Create a loading assistant message for a video-generation task. Marked with
+ * `isVideo` so the chat renders a progress spinner while generating and an inline
+ * `<video>` once `videoUrl` is set (instead of the markdown text pipeline).
+ */
+export function createLoadingVideoMessage(): Message {
+  return {
+    key: nanoid(),
+    from: MESSAGE_ROLES.ASSISTANT,
+    versions: [createMessageVersion('')],
+    status: MESSAGE_STATUS.LOADING,
+    isVideo: true,
+    videoProgress: 0,
+  }
+}
+
+/**
  * Build message content with optional images
  */
 export function buildMessageContent(

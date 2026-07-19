@@ -5490,6 +5490,10 @@
     "No content to copy": "没有可复制的内容",
     "Please wait for the current generation to complete": "请等待当前生成完成",
     "An unknown error occurred": "发生未知错误",
-    "Try one of these to get started:": "试试这些快速上手："
+    "Try one of these to get started:": "试试这些快速上手：",
+    "Generate a video of a cat astronaut": "帮我生成一段宇航员猫咪的视频",
+    "Generating video…": "正在生成视频…",
+    "Generating video… {{progress}}%": "正在生成视频… {{progress}}%",
+    "Video generation failed": "视频生成失败"
   }
 }

@@ -17,7 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
-import { isPlaygroundChatModelName } from './playground-model-filter'
+import {
+  isPlaygroundChatModelName,
+  isVideoGenModelName,
+} from './playground-model-filter'
 
 describe('isPlaygroundChatModelName', () => {
   test('keeps chat-compatible text models visible in Playground', () => {
@@ -51,6 +54,21 @@ describe('isPlaygroundChatModelName', () => {
     }
   })
 
+  test('allowlists supported veo video-gen models so they are selectable', () => {
+    // These do NOT run through chat completions — the send path detects them and
+    // drives the async /v1/videos flow — but they must be selectable in the model
+    // picker despite matching the `veo`/`video` non-chat pattern.
+    for (const model of [
+      'veo-3.1-fast-generate-preview',
+      'veo-3.1-generate-preview',
+      'veo-3.0-generate-preview',
+      'veo-3.0-fast-generate-preview',
+      'google/veo-3.1-fast-generate-preview',
+    ]) {
+      expect(isPlaygroundChatModelName(model)).toBe(true)
+    }
+  })
+
   test('hides image, video, audio, embedding, and task models', () => {
     for (const model of [
       'gpt-image-1',
@@ -65,6 +83,7 @@ describe('isPlaygroundChatModelName', () => {
       'doubao-seedance-2-0-260128',
       'kling-v1',
       'veo-3',
+      'veo-2.0',
       'mj_video',
       'tts-1',
       'whisper-1',
@@ -76,6 +95,38 @@ describe('isPlaygroundChatModelName', () => {
     ]) {
       expect(isPlaygroundChatModelName(model)).toBe(false)
     }
+  })
+
+  describe('isVideoGenModelName', () => {
+    test('matches supported veo *generate* video models', () => {
+      for (const model of [
+        'veo-3.1-fast-generate-preview',
+        'veo-3.1-generate-preview',
+        'veo-3.0-generate-preview',
+        'veo-3.0-fast-generate-preview',
+        'google/veo-3.1-fast-generate-preview',
+      ]) {
+        expect(isVideoGenModelName(model)).toBe(true)
+      }
+    })
+
+    test('does not match chat / image / other video families', () => {
+      for (const model of [
+        'gpt-4o',
+        'gemini-2.5-flash-image',
+        'veo-3',
+        'veo-2.0',
+        'sora-2',
+        'bytedance/seedance-2.0-fast',
+        'kling-v1',
+        '',
+        '   ',
+      ]) {
+        expect(isVideoGenModelName(model)).toBe(false)
+      }
+      expect(isVideoGenModelName(null)).toBe(false)
+      expect(isVideoGenModelName({})).toBe(false)
+    })
   })
 
   test('rejects invalid runtime model values', () => {
