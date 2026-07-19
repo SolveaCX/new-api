@@ -127,10 +127,6 @@ export function Playground({
     if (messages.length > 0) updateMessages([])
   }, [firstRun, messages.length, updateMessages])
 
-  // Whether the empty-state welcome/example chips should show: first-run mode
-  // with no conversation yet.
-  const showWelcome = firstRun && messages.length === 0
-
   // Load models
   const { data: modelsData, isLoading: isLoadingModels } = useQuery({
     queryKey: ['playground-models', config.group],
@@ -390,9 +386,12 @@ export function Playground({
 
   return (
     <div className='relative flex size-full flex-col overflow-hidden'>
-      {/* First-run welcome banner + example prompts (empty state only) */}
-      {showWelcome && (
+      {/* Welcome banner + example prompts — shown on an empty Playground for
+          every user (new users get the first-run banner, returning users get a
+          neutral "try one of these" header with the same one-click prompts). */}
+      {messages.length === 0 && (
         <FirstRunWelcome
+          firstRun={firstRun}
           disabled={!isFirstRunModelReady}
           onPickExample={handleSendMessage}
         />

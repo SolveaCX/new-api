@@ -34,15 +34,21 @@ const FIRST_RUN_EXAMPLE_PROMPTS = [
 interface FirstRunWelcomeProps {
   onPickExample: (prompt: string) => void
   disabled?: boolean
+  // New users (via `?first=1`) get the "make your first call in 30s" banner;
+  // everyone else lands here on an empty Playground and gets a neutral header
+  // with the same one-click example prompts.
+  firstRun?: boolean
 }
 
 /**
- * Welcome banner + example-prompt chips shown at the top of the empty Playground
- * when a user lands via `?first=1` and has not sent any message yet.
+ * Welcome banner + example-prompt chips shown at the top of the empty Playground.
+ * Shown whenever there is no conversation yet — for new users (with the first-run
+ * banner) and for returning users (with a neutral "try one of these" header).
  */
 export function FirstRunWelcome({
   onPickExample,
   disabled = false,
+  firstRun = false,
 }: FirstRunWelcomeProps) {
   const { t } = useTranslation()
   return (
@@ -53,9 +59,11 @@ export function FirstRunWelcome({
             <Sparkles className='size-4' />
           </span>
           <p className='text-foreground text-sm leading-relaxed'>
-            {t(
-              'Welcome to flatkey! Send a message to make your first API call in 30 seconds — no key or setup needed.'
-            )}
+            {firstRun
+              ? t(
+                  'Welcome to flatkey! Send a message to make your first API call in 30 seconds — no key or setup needed.'
+                )
+              : t('Try one of these to get started:')}
           </p>
         </div>
         <div className='mt-4 flex flex-wrap gap-2'>

@@ -5489,6 +5489,7 @@
     "Get advice": "アドバイスをもらう",
     "No content to copy": "コピーする内容がありません",
     "Please wait for the current generation to complete": "現在の生成が完了するまでお待ちください",
-    "An unknown error occurred": "不明なエラーが発生しました"
+    "An unknown error occurred": "不明なエラーが発生しました",
+    "Try one of these to get started:": "まずはこちらからお試しください："
   }
 }
