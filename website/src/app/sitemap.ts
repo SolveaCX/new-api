@@ -59,6 +59,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/glm-5-2", 0.86, "daily"),
     ...entry("/rankings", 0.7, "daily"),
     ...entry("/about", 0.5, "monthly"),
+    ...entry("/careers", 0.6, "monthly", ["en", "zh"]),
     ...entry("/contact", 0.5, "monthly"),
     ...entry("/blog", 0.9, "daily"),
     ...entry("/terms", 0.3, "yearly"),
