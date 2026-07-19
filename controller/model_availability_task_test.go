@@ -61,8 +61,9 @@ func TestValidatePongTestResponseBody(t *testing.T) {
 }
 
 func TestModelAvailabilityProbeConfigUsesImageEndpointForImageModels(t *testing.T) {
-	endpointType, options := modelAvailabilityProbeConfig("gpt-image-2")
+	endpointType, options, testable := modelAvailabilityProbeConfig("gpt-image-2", constant.ChannelTypeOpenAI)
 
+	require.True(t, testable)
 	require.Equal(t, string(constant.EndpointTypeImageGeneration), endpointType)
 	require.False(t, options.ExpectPong)
 	require.Equal(t, "模型可用性检测", options.TokenName)
@@ -71,10 +72,33 @@ func TestModelAvailabilityProbeConfigUsesImageEndpointForImageModels(t *testing.
 }
 
 func TestModelAvailabilityProbeConfigKeepsPingPongForTextModels(t *testing.T) {
-	endpointType, options := modelAvailabilityProbeConfig("gpt-5.4")
+	endpointType, options, testable := modelAvailabilityProbeConfig("gpt-5.4", constant.ChannelTypeOpenAI)
 
+	require.True(t, testable)
 	require.Empty(t, endpointType)
 	require.True(t, options.ExpectPong)
 	require.Equal(t, modelAvailabilityProbePrompt, options.Prompt)
 	require.Equal(t, uint(8), options.MaxTokens)
+}
+
+func TestModelAvailabilityProbeConfigMarksMediaModelsUntestable(t *testing.T) {
+	// A TTS model on a generic chat channel cannot be probed synchronously.
+	_, _, ttsTestable := modelAvailabilityProbeConfig("tts-1-hd", constant.ChannelTypeOpenAI)
+	require.False(t, ttsTestable)
+
+	// A video model likewise: no synchronous ping→pong is meaningful.
+	_, _, videoTestable := modelAvailabilityProbeConfig("veo-3-video", constant.ChannelTypeOpenAI)
+	require.False(t, videoTestable)
+
+	// An async-task channel type is untestable regardless of the model name.
+	_, _, taskTestable := modelAvailabilityProbeConfig("some-model", constant.ChannelTypeKling)
+	require.False(t, taskTestable)
+}
+
+func TestModelAvailabilityProbeConfigUsesEmbeddingEndpointForEmbeddingModels(t *testing.T) {
+	endpointType, options, testable := modelAvailabilityProbeConfig("text-embedding-3-large", constant.ChannelTypeOpenAI)
+
+	require.True(t, testable)
+	require.Equal(t, string(constant.EndpointTypeEmbeddings), endpointType)
+	require.False(t, options.ExpectPong)
 }
