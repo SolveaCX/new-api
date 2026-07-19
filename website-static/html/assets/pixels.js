@@ -28,15 +28,4 @@
     }
   }
   document.querySelectorAll(".pxgrid").forEach(cluster);
-  // slim footer legal: only show near page bottom (avoid covering content mid-scroll)
-  var slimLegal = document.querySelector(".megafoot.slim .legal");
-  if (slimLegal) {
-    slimLegal.style.transition = "opacity .25s ease";
-    var upd = function () {
-      var nearBottom = window.innerHeight + window.scrollY > document.body.scrollHeight - 220;
-      slimLegal.style.opacity = nearBottom ? "1" : "0";
-    };
-    window.addEventListener("scroll", upd, { passive: true });
-    upd();
-  }
 })();

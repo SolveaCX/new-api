@@ -28,6 +28,24 @@ for (const file of files) {
     fail(file, "uses i18n keys without loading assets/i18n.js");
   }
 
+  const footers = [...html.matchAll(/<footer\b/g)];
+  if (footers.length !== 1) fail(file, `expected one semantic footer, found ${footers.length}`);
+  if (/class="megafoot slim"/.test(html)) fail(file, "still uses the one-line slim footer");
+  const fullFooter = html.match(/<footer class="megafoot">([\s\S]*?)<\/footer>/);
+  if (!fullFooter) {
+    fail(file, "missing the complete shared marketing footer");
+  } else {
+    const footerMarkup = fullFooter[1];
+    const footerColumns = [...footerMarkup.matchAll(/class="col(?:\s|\")/g)].length;
+    if (footerColumns !== 5) fail(file, `complete footer has ${footerColumns} columns; expected 5`);
+    if (/class="pxgrid"/.test(footerMarkup)) fail(file, "footer pixel overlay can cover navigation links");
+    for (const requiredClass of ["cols", "trustrow", "bottom", "legal", "word"]) {
+      if (!new RegExp(`class="[^"]*\\b${requiredClass}\\b`).test(footerMarkup)) {
+        fail(file, `complete footer is missing .${requiredClass}`);
+      }
+    }
+  }
+
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
   const duplicateIds = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
   if (duplicateIds.length) fail(file, `duplicate ids: ${duplicateIds.join(", ")}`);
@@ -37,7 +55,6 @@ for (const file of files) {
   if (duplicateHreflangs.length) fail(file, `duplicate hreflang values: ${duplicateHreflangs.join(", ")}`);
 
   if (!appOnly.has(file)) {
-    if (!/<footer\b/i.test(html)) fail(file, "public page is missing a semantic footer");
     if (!/<nav\b|class="dbar"/.test(html)) fail(file, "public page is missing navigation");
   }
 
@@ -66,21 +83,8 @@ if (JSON.stringify(termNumbers) !== JSON.stringify(expectedTermNumbers)) {
   fail("terms.html", `section sequence is ${termNumbers.join(", ")}; expected 1–19 exactly once`);
 }
 
-const compute = fs.readFileSync(path.join(root, "compute.html"), "utf8");
-if (!/<footer class="megafoot">[\s\S]*?class="cols"[\s\S]*?class="trustrow"[\s\S]*?class="bottom"[\s\S]*?<\/footer>/.test(compute)) {
-  fail("compute.html", "missing the complete shared marketing footer");
-}
-if (/class="megafoot slim"/.test(compute)) {
-  fail("compute.html", "must not fall back to the one-line slim footer");
-}
-
 const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
-if (/\.megafoot\.slim\s*\{[^}]*\bposition\s*:\s*fixed\b/i.test(sharedCss)) {
-  fail("fk2.css", "slim footer must stay in document flow instead of covering page content");
-}
-if (!/\.megafoot\.slim\s+\.word\s*\{[^}]*\bdisplay\s*:\s*none\b/i.test(sharedCss)) {
-  fail("fk2.css", "slim footer must not render the oversized wordmark");
-}
+if (/\.megafoot\.slim\b/.test(sharedCss)) fail("fk2.css", "contains obsolete slim-footer styles");
 
 const i18nSource = fs.readFileSync(path.join(root, "assets/i18n.js"), "utf8");
 const dictMatch = i18nSource.match(/var DICTS = (\{[\s\S]*?\n\});\n\n  var LEGAL_ROUTES/);
