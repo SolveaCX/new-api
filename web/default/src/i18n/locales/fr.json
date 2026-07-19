@@ -5478,10 +5478,8 @@
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Activez 'Override OpenAI Base URL', collez le Base URL et votre clé.",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → ajoutez un fournisseur OpenAI-compatible. Définissez l'API host sur le Base URL et collez votre clé.",
     "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → ajoutez un fournisseur personnalisé (OpenAI API Compatible). Définissez l'API host sur le Base URL et collez votre clé.",
-    "The unified gateway for 170+ AI models": "La passerelle unifiée pour plus de 170 modèles d'IA",
-    "The most complete catalog, the lowest price, the most reliable service.": "Le catalogue le plus complet, le prix le plus bas, le service le plus fiable.",
-    "One key, 170+ models": "Une seule clé, plus de 170 modèles",
-    "At least 40% cheaper": "Au moins 40 % moins cher",
-    "Official direct routes, trusted uptime": "Routes directes officielles, disponibilité fiable"
+    "160+ official models · seedance-2.5 video included": "160+ modèles officiels · vidéo seedance-2.5 incluse",
+    "More AI. Less cost. Every frontier model, one key.": "Plus d'IA. Moins de coûts. Tous les modèles de pointe, une seule clé.",
+    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "Texte, vidéo et audio via les mêmes endpoints officiels — avec un SLA signé derrière chaque appel."
   }
 }

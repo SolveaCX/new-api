@@ -5478,10 +5478,8 @@
     "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.": "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.",
     "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.": "Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.",
     "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.",
-    "The unified gateway for 170+ AI models": "The unified gateway for 170+ AI models",
-    "The most complete catalog, the lowest price, the most reliable service.": "The most complete catalog, the lowest price, the most reliable service.",
-    "One key, 170+ models": "One key, 170+ models",
-    "At least 40% cheaper": "At least 40% cheaper",
-    "Official direct routes, trusted uptime": "Official direct routes, trusted uptime"
+    "160+ official models · seedance-2.5 video included": "160+ official models · seedance-2.5 video included",
+    "More AI. Less cost. Every frontier model, one key.": "More AI. Less cost. Every frontier model, one key.",
+    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "Text, video and audio through the same official endpoints — with a signed SLA behind every call."
   }
 }
