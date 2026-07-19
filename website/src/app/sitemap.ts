@@ -57,6 +57,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/use-case/claude-code", 0.84, "weekly"),
     ...entry("/use-case/image-buddy", 0.84, "weekly"),
     ...entry("/glm-5-2", 0.86, "daily"),
+    ...entry("/kimi-3-0", 0.86, "daily"),
     ...entry("/rankings", 0.7, "daily"),
     ...entry("/about", 0.5, "monthly"),
     ...entry("/contact", 0.5, "monthly"),
