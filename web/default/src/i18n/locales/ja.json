@@ -5480,6 +5480,15 @@
     "Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.": "Settings → カスタムプロバイダー（OpenAI API Compatible）を追加します。API host に Base URL を設定し、キーを貼り付けます。",
     "160+ official models · seedance-2.5 video included": "160以上の公式モデル · seedance-2.5 の動画に対応",
     "More AI. Less cost. Every frontier model, one key.": "より多くの AI を、より低コストで。あらゆる最先端モデルを、ひとつのキーで。",
-    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "テキスト・動画・音声を同じ公式エンドポイントで。すべての呼び出しの背後に署名済みの SLA を。"
+    "Text, video and audio through the same official endpoints — with a signed SLA behind every call.": "テキスト・動画・音声を同じ公式エンドポイントで。すべての呼び出しの背後に署名済みの SLA を。",
+    "How do I try flatkey?": "flatkey はどう試せますか？",
+    "Generate an image or a video for me": "画像か動画を生成して",
+    "Analyze data": "データを分析",
+    "Surprise me": "驚かせて",
+    "Summarize text": "テキストを要約",
+    "Get advice": "アドバイスをもらう",
+    "No content to copy": "コピーする内容がありません",
+    "Please wait for the current generation to complete": "現在の生成が完了するまでお待ちください",
+    "An unknown error occurred": "不明なエラーが発生しました"
   }
 }
