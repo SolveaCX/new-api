@@ -51,6 +51,7 @@ import {
 import { formatCoverage, formatStatusTimestamp } from '../format'
 import {
   getRequiredStatusComponentVersion,
+  getStatusComponentKindLabel,
   getStatusLabelKey,
   resolveStatusMutationError,
   type StatusCenterRole,
@@ -252,25 +253,28 @@ export function OverviewPanel(props: OverviewPanelProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {components.map((component) => (
-                <TableRow key={component.id}>
-                  <TableCell>
-                    <div className='font-medium'>{component.display_name}</div>
-                    <div className='text-muted-foreground text-xs'>
-                      {component.kind}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={component.status} />
-                  </TableCell>
-                  <TableCell>{formatCoverage(component.coverage)}</TableCell>
-                  <TableCell>
-                    {formatStatusTimestamp(
-                      component.last_trustworthy_update_at
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {components.map((component) => {
+                const kindLabel = getStatusComponentKindLabel(component.kind)
+                return (
+                  <TableRow key={component.id}>
+                    <TableCell>
+                      <div className='font-medium'>{component.display_name}</div>
+                      <div className='text-muted-foreground text-xs'>
+                        {t(kindLabel.key, kindLabel.values)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={component.status} />
+                    </TableCell>
+                    <TableCell>{formatCoverage(component.coverage)}</TableCell>
+                    <TableCell>
+                      {formatStatusTimestamp(
+                        component.last_trustworthy_update_at
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </CardContent>
