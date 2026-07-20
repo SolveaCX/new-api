@@ -72,9 +72,11 @@ export function ModelAccessScopeRail({
                 htmlFor={inputId}
                 className='flex cursor-pointer flex-col gap-3 text-left'
               >
-                <CardHeader>
-                  <CardTitle>{scope.label}</CardTitle>
-                  <CardAction>
+                <CardHeader className='min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3'>
+                  <CardTitle className='min-w-0 [overflow-wrap:anywhere] break-words whitespace-normal'>
+                    {scope.label}
+                  </CardTitle>
+                  <CardAction className='shrink-0'>
                     <RadioGroupItem
                       id={inputId}
                       value={scope.id}
