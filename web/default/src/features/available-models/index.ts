@@ -22,12 +22,16 @@ export {
   getAccountModels,
   getEffectiveTokenModels,
   getScopeModels,
+  getUnavailableAccountModels,
+  getUnavailableScopeModels,
+  isCallableModel,
   resolveCreateScope,
 } from './lib/model-access'
 export {
   filterModelAccessModels,
   getModelAccessScopeModels,
-  getModelEndpointFilters,
+  getModelAccessUnavailableScopeModels,
+  getModelVendorFilters,
   isFixedModelAccessView,
   resolveModelAccessScope,
 } from './lib/model-access-browser'

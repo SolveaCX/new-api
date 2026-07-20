@@ -3090,7 +3090,7 @@
     "Open theme settings": "Open theme settings",
     "Open weights": "Open weights",
     "OpenAI": "OpenAI",
-    "OpenAI Compatible": "OpenAI Compatible",
+    "OpenAI Compatible": "Compatible con OpenAI",
     "OpenAI Organization": "OpenAI Organization",
     "OpenAI Organization ID (optional)": "OpenAI Organization ID (optional)",
     "OpenAI-compatible": "Compatible con OpenAI",
@@ -5550,6 +5550,15 @@
     "This preview follows the current API key and model access settings.": "Esta vista previa sigue la configuración actual de la clave API y del acceso a modelos.",
     "Review the API key and model access settings.": "Revisa la configuración de la clave API y del acceso a modelos.",
     "No callable models available for this API key": "No hay modelos invocables disponibles para esta clave API",
-    "Select a callable model": "Seleccionar un modelo invocable"
+    "Select a callable model": "Seleccionar un modelo invocable",
+    "Model vendors": "Proveedores de modelos",
+    "Unlabelled vendor": "Proveedor sin especificar",
+    "Unavailable models": "Modelos no disponibles",
+    "These models cannot be called because upstreams no longer support them.": "Estos modelos no se pueden invocar porque los proveedores ascendentes ya no los admiten.",
+    "{{count}} unavailable models": "{{count}} modelos no disponibles",
+    "Anthropic Compatible": "Compatible con Anthropic",
+    "Gemini Compatible": "Compatible con Gemini",
+    "This model cannot be called because upstreams no longer support it.": "Este modelo no se puede invocar porque los proveedores ascendentes ya no lo admiten.",
+    "Not callable · Officially unsupported": "No invocable · Ya no cuenta con soporte oficial"
   }
 }

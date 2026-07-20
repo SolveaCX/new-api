@@ -3090,7 +3090,7 @@
     "Open theme settings": "打开主题设置",
     "Open weights": "开放权重",
     "OpenAI": "OpenAI",
-    "OpenAI Compatible": "兼容 OpenAI",
+    "OpenAI Compatible": "OpenAI 兼容",
     "OpenAI Organization": "OpenAI 组织",
     "OpenAI Organization ID (optional)": "OpenAI 组织 ID（可选）",
     "OpenAI-compatible": "兼容 OpenAI",
@@ -5550,6 +5550,15 @@
     "This preview follows the current API key and model access settings.": "此预览会随当前 API 密钥和模型访问设置更新。",
     "Review the API key and model access settings.": "请检查 API 密钥和模型访问设置。",
     "No callable models available for this API key": "此 API 密钥没有可调用的模型",
-    "Select a callable model": "选择可调用的模型"
+    "Select a callable model": "选择可调用的模型",
+    "Model vendors": "模型厂商",
+    "Unlabelled vendor": "未标注厂商",
+    "Unavailable models": "不可调用模型",
+    "These models cannot be called because upstreams no longer support them.": "这些模型已不再受上游支持，无法调用。",
+    "{{count}} unavailable models": "{{count}} 个不可调用模型",
+    "Anthropic Compatible": "Anthropic 兼容",
+    "Gemini Compatible": "Gemini 兼容",
+    "This model cannot be called because upstreams no longer support it.": "该模型已不再受上游支持，无法调用。",
+    "Not callable · Officially unsupported": "不可调用 · 官方不再支持"
   }
 }

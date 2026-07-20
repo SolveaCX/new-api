@@ -5550,6 +5550,15 @@
     "This preview follows the current API key and model access settings.": "Cet aperçu suit les paramètres actuels de la clé API et de l’accès aux modèles.",
     "Review the API key and model access settings.": "Vérifiez les paramètres de la clé API et de l’accès aux modèles.",
     "No callable models available for this API key": "Aucun modèle appelable n’est disponible pour cette clé API",
-    "Select a callable model": "Sélectionner un modèle appelable"
+    "Select a callable model": "Sélectionner un modèle appelable",
+    "Model vendors": "Fournisseurs de modèles",
+    "Unlabelled vendor": "Fournisseur non renseigné",
+    "Unavailable models": "Modèles indisponibles",
+    "These models cannot be called because upstreams no longer support them.": "Ces modèles ne peuvent pas être appelés car les fournisseurs en amont ne les prennent plus en charge.",
+    "{{count}} unavailable models": "{{count}} modèles indisponibles",
+    "Anthropic Compatible": "Compatible Anthropic",
+    "Gemini Compatible": "Compatible Gemini",
+    "This model cannot be called because upstreams no longer support it.": "Ce modèle ne peut pas être appelé car les fournisseurs en amont ne le prennent plus en charge.",
+    "Not callable · Officially unsupported": "Non appelable · Plus pris en charge officiellement"
   }
 }

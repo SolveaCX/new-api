@@ -45,7 +45,7 @@ const models: ModelAccessModel[] = [
 ]
 
 describe('ModelAccessPreview', () => {
-  test('renders strict-scope context, live counts, endpoints, and copy actions', () => {
+  test('renders strict-scope context, vendor filters, compatible endpoints, and copy actions', () => {
     const html = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
         <ModelAccessPreview
@@ -64,7 +64,8 @@ describe('ModelAccessPreview', () => {
     )
     expect(html).toContain('Current group supports 3 models')
     expect(html).not.toContain('1 / 3 models')
-    expect(html).toContain('OpenAI')
+    expect(html).toContain('Model vendors')
+    expect(html).toContain('OpenAI Compatible')
     expect(html).toContain('Temporary failure')
     expect(html).toContain('aria-label="Copy to clipboard"')
   })

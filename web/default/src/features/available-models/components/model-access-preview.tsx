@@ -32,10 +32,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
+  ALL_MODEL_VENDORS,
   filterModelAccessModels,
-  getModelEndpointFilters,
-  getModelEndpointLabel,
-  type ModelEndpointFilter,
+  getModelVendorFilters,
+  resolveModelVendorSelection,
+  UNLABELLED_MODEL_VENDOR,
+  type ModelVendorFilter,
+  type ModelVendorSelection,
 } from '../lib/model-access-browser'
 import type { ModelAccessModel } from '../types'
 import { ModelAccessList } from './model-access-list'
@@ -53,20 +56,31 @@ export type ModelAccessPreviewProps = {
 export function ModelAccessPreview(props: ModelAccessPreviewProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
-  const [endpoint, setEndpoint] = useState<ModelEndpointFilter>('all')
-  const endpointFilters = useMemo(
-    () => getModelEndpointFilters(props.models),
+  const vendorFilters = useMemo(
+    () => getModelVendorFilters(props.models),
     [props.models]
   )
-  const activeEndpoint = endpointFilters.includes(endpoint) ? endpoint : 'all'
+  const [vendorSelection, setVendorSelection] = useState<ModelVendorSelection>(
+    () => ({
+      filterOptions: vendorFilters,
+      value: ALL_MODEL_VENDORS,
+    })
+  )
+  const activeVendor = resolveModelVendorSelection(
+    vendorFilters,
+    vendorSelection
+  )
   const visibleModels = useMemo(
-    () => filterModelAccessModels(props.models, query, activeEndpoint),
-    [activeEndpoint, props.models, query]
+    () => filterModelAccessModels(props.models, query, activeVendor),
+    [activeVendor, props.models, query]
   )
 
   const clearFilters = () => {
     setQuery('')
-    setEndpoint('all')
+    setVendorSelection({
+      filterOptions: vendorFilters,
+      value: ALL_MODEL_VENDORS,
+    })
   }
 
   return (
@@ -126,22 +140,36 @@ export function ModelAccessPreview(props: ModelAccessPreviewProps) {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        <div className='overflow-x-auto pb-0.5'>
-          <ToggleGroup
-            value={[activeEndpoint]}
-            variant='outline'
-            size='sm'
-            aria-label={t('Endpoints')}
-            onValueChange={(values) => {
-              if (values[0]) setEndpoint(values[0])
-            }}
-          >
-            {endpointFilters.map((filter) => (
-              <ToggleGroupItem key={filter} value={filter}>
-                {getModelEndpointLabel(filter, t)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        <div className='flex flex-col gap-1.5'>
+          <span className='text-muted-foreground text-xs font-medium'>
+            {t('Model vendors')}
+          </span>
+          <div className='overflow-x-auto pb-0.5'>
+            <ToggleGroup
+              value={[activeVendor]}
+              variant='outline'
+              size='sm'
+              aria-label={t('Model vendors')}
+              onValueChange={(values) => {
+                if (values[0]) {
+                  setVendorSelection({
+                    filterOptions: vendorFilters,
+                    value: values[0] as ModelVendorFilter,
+                  })
+                }
+              }}
+            >
+              {vendorFilters.map((option) => (
+                <ToggleGroupItem key={option.value} value={option.value}>
+                  {option.value === ALL_MODEL_VENDORS
+                    ? t('All')
+                    : option.value === UNLABELLED_MODEL_VENDOR
+                      ? t('Unlabelled vendor')
+                      : option.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
         </div>
       </div>
 

@@ -38,12 +38,14 @@ import type { ModelAccessScope } from '../types'
 
 type ModelAccessScopeRailProps = {
   scopes: ModelAccessScope[]
+  modelCounts: ReadonlyMap<string, number>
   selectedScopeId: string | null
   onScopeChange: (scopeId: string) => void
 }
 
 export function ModelAccessScopeRail({
   scopes,
+  modelCounts,
   selectedScopeId,
   onScopeChange,
 }: ModelAccessScopeRailProps) {
@@ -93,7 +95,7 @@ export function ModelAccessScopeRail({
                   <div className='flex flex-wrap gap-1.5'>
                     <Badge variant='secondary'>
                       {t('{{count}} models available', {
-                        count: scope.model_ids.length,
+                        count: modelCounts.get(scope.id) ?? 0,
                       })}
                     </Badge>
                     {scope.ratio !== null && (

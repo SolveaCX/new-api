@@ -5550,6 +5550,15 @@
     "This preview follows the current API key and model access settings.": "Bản xem trước này tuân theo cài đặt hiện tại của khóa API và quyền truy cập mô hình.",
     "Review the API key and model access settings.": "Hãy kiểm tra cài đặt khóa API và quyền truy cập mô hình.",
     "No callable models available for this API key": "Không có mô hình nào có thể gọi bằng khóa API này",
-    "Select a callable model": "Chọn mô hình có thể gọi"
+    "Select a callable model": "Chọn mô hình có thể gọi",
+    "Model vendors": "Nhà cung cấp mô hình",
+    "Unlabelled vendor": "Chưa ghi rõ nhà cung cấp",
+    "Unavailable models": "Mô hình không khả dụng",
+    "These models cannot be called because upstreams no longer support them.": "Không thể gọi các mô hình này vì nhà cung cấp thượng nguồn không còn hỗ trợ.",
+    "{{count}} unavailable models": "{{count}} mô hình không khả dụng",
+    "Anthropic Compatible": "Tương thích Anthropic",
+    "Gemini Compatible": "Tương thích Gemini",
+    "This model cannot be called because upstreams no longer support it.": "Không thể gọi mô hình này vì nhà cung cấp thượng nguồn không còn hỗ trợ.",
+    "Not callable · Officially unsupported": "Không thể gọi · Không còn được hỗ trợ chính thức"
   }
 }

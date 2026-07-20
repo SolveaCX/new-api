@@ -5550,6 +5550,15 @@
     "This preview follows the current API key and model access settings.": "このプレビューは現在の API キーとモデルアクセスの設定に従います。",
     "Review the API key and model access settings.": "API キーとモデルアクセスの設定を確認してください。",
     "No callable models available for this API key": "この API キーで呼び出せるモデルはありません",
-    "Select a callable model": "呼び出すモデルを選択"
+    "Select a callable model": "呼び出すモデルを選択",
+    "Model vendors": "モデル提供元",
+    "Unlabelled vendor": "提供元未設定",
+    "Unavailable models": "利用不可のモデル",
+    "These models cannot be called because upstreams no longer support them.": "これらのモデルは上流でサポート終了のため呼び出せません。",
+    "{{count}} unavailable models": "利用不可のモデル {{count}} 件",
+    "Anthropic Compatible": "Anthropic互換",
+    "Gemini Compatible": "Gemini互換",
+    "This model cannot be called because upstreams no longer support it.": "このモデルは上流でサポート終了のため呼び出せません。",
+    "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了"
   }
 }

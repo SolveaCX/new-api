@@ -5550,6 +5550,15 @@
     "This preview follows the current API key and model access settings.": "This preview follows the current API key and model access settings.",
     "Review the API key and model access settings.": "Review the API key and model access settings.",
     "No callable models available for this API key": "No callable models available for this API key",
-    "Select a callable model": "Select a callable model"
+    "Select a callable model": "Select a callable model",
+    "Model vendors": "Model vendors",
+    "Unlabelled vendor": "Unlabelled vendor",
+    "Unavailable models": "Unavailable models",
+    "These models cannot be called because upstreams no longer support them.": "These models cannot be called because upstreams no longer support them.",
+    "{{count}} unavailable models": "{{count}} unavailable models",
+    "Anthropic Compatible": "Anthropic Compatible",
+    "Gemini Compatible": "Gemini Compatible",
+    "This model cannot be called because upstreams no longer support it.": "This model cannot be called because upstreams no longer support it.",
+    "Not callable · Officially unsupported": "Not callable · Officially unsupported"
   }
 }

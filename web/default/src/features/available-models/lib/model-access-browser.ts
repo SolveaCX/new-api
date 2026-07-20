@@ -22,19 +22,30 @@ import type { ModelAccessModel, UserModelAccess } from '../types'
 import {
   getAccountModels,
   getScopeModels,
+  getUnavailableAccountModels,
+  getUnavailableScopeModels,
   resolveCreateScope,
 } from './model-access'
 
-export type ModelEndpointFilter = string
+export const ALL_MODEL_VENDORS = 'all'
+export const UNLABELLED_MODEL_VENDOR = 'unlabelled'
 
-export function getModelEndpointLabel(
-  endpoint: ModelEndpointFilter,
-  t: TFunction
-): string {
-  if (endpoint === 'all') return t('All')
-  if (endpoint.startsWith('openai')) return t('OpenAI')
-  if (endpoint === 'anthropic') return t('Anthropic')
-  if (endpoint === 'gemini') return t('Gemini')
+export type ModelVendorFilter = string
+
+export type ModelVendorFilterOption = {
+  label: string | null
+  value: ModelVendorFilter
+}
+
+export type ModelVendorSelection = {
+  filterOptions: readonly ModelVendorFilterOption[]
+  value: ModelVendorFilter
+}
+
+export function getModelEndpointLabel(endpoint: string, t: TFunction): string {
+  if (endpoint.startsWith('openai')) return t('OpenAI Compatible')
+  if (endpoint === 'anthropic') return t('Anthropic Compatible')
+  if (endpoint === 'gemini') return t('Gemini Compatible')
   if (endpoint === 'image-generation') return t('Image Generation')
   return endpoint
 }
@@ -72,33 +83,69 @@ export function getModelAccessScopeModels(
   return getScopeModels(access, scopeId)
 }
 
-function matchesEndpoint(
-  model: ModelAccessModel,
-  endpoint: ModelEndpointFilter
-): boolean {
-  if (endpoint === 'all') return true
-  if (endpoint === 'openai') {
-    return model.supported_endpoint_types.some((type) =>
-      type.startsWith('openai')
-    )
+export function getModelAccessUnavailableScopeModels(
+  access: UserModelAccess,
+  scopeId?: string | null
+): ModelAccessModel[] {
+  if (isFixedModelAccessView(access)) {
+    return getUnavailableAccountModels(access)
   }
-  return model.supported_endpoint_types.includes(endpoint)
+  return getUnavailableScopeModels(access, scopeId)
 }
 
-function endpointFilterValue(endpoint: string): string {
-  return endpoint.startsWith('openai') ? 'openai' : endpoint
+function modelVendorFilterValue(model: ModelAccessModel): ModelVendorFilter {
+  const name = model.vendor?.name.trim()
+  return name ? `vendor:${name.toLocaleLowerCase()}` : UNLABELLED_MODEL_VENDOR
 }
 
-export function getModelEndpointFilters(
+export function getModelVendorFilters(
   models: readonly ModelAccessModel[]
-): ModelEndpointFilter[] {
-  const endpoints = new Set<string>()
+): ModelVendorFilterOption[] {
+  const vendors = new Map<ModelVendorFilter, string>()
+  let hasUnlabelled = false
+
   for (const model of models) {
-    for (const endpoint of model.supported_endpoint_types) {
-      endpoints.add(endpointFilterValue(endpoint))
+    const value = modelVendorFilterValue(model)
+    if (value === UNLABELLED_MODEL_VENDOR) {
+      hasUnlabelled = true
+      continue
+    }
+    if (!vendors.has(value)) {
+      vendors.set(value, model.vendor?.name.trim() ?? '')
     }
   }
-  return ['all', ...Array.from(endpoints).sort()]
+
+  const options: ModelVendorFilterOption[] = Array.from(
+    vendors,
+    ([value, label]) => ({ value, label })
+  )
+    .filter((option) => option.label)
+    .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''))
+
+  if (hasUnlabelled) {
+    options.push({ value: UNLABELLED_MODEL_VENDOR, label: null })
+  }
+
+  return [{ value: ALL_MODEL_VENDORS, label: null }, ...options]
+}
+
+export function resolveModelVendorSelection(
+  filterOptions: readonly ModelVendorFilterOption[],
+  selection: ModelVendorSelection
+): ModelVendorFilter {
+  if (selection.filterOptions !== filterOptions) return ALL_MODEL_VENDORS
+  return filterOptions.some((option) => option.value === selection.value)
+    ? selection.value
+    : ALL_MODEL_VENDORS
+}
+
+function matchesVendor(
+  model: ModelAccessModel,
+  vendor: ModelVendorFilter
+): boolean {
+  return (
+    vendor === ALL_MODEL_VENDORS || modelVendorFilterValue(model) === vendor
+  )
 }
 
 export function normalizeModelAvailabilityStatus(
@@ -110,11 +157,11 @@ export function normalizeModelAvailabilityStatus(
 export function filterModelAccessModels(
   models: readonly ModelAccessModel[],
   query: string,
-  endpoint: ModelEndpointFilter
+  vendor: ModelVendorFilter
 ): ModelAccessModel[] {
   const normalizedQuery = query.trim().toLocaleLowerCase()
   return models.filter((model) => {
-    if (!matchesEndpoint(model, endpoint)) return false
+    if (!matchesVendor(model, vendor)) return false
     if (!normalizedQuery) return true
     return [model.id, model.vendor?.name ?? ''].some((value) =>
       value.toLocaleLowerCase().includes(normalizedQuery)

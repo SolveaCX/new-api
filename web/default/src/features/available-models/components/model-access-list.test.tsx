@@ -71,6 +71,51 @@ describe('ModelAccessList', () => {
     expect(html).toContain('Unknown failure')
   })
 
+  test('renders explicit compatible endpoint labels and deduplicates variants', () => {
+    const html = renderList(
+      [
+        {
+          id: 'multi-protocol-model',
+          allowlist_match_key: 'multi-protocol-model',
+          vendor: { id: 1, name: 'Example Labs' },
+          supported_endpoint_types: [
+            'openai',
+            'openai-response',
+            'anthropic',
+            'gemini',
+          ],
+          availability_status: 'available',
+        },
+      ],
+      false
+    )
+
+    expect(html.match(/OpenAI Compatible/g)).toHaveLength(1)
+    expect(html).toContain('Anthropic Compatible')
+    expect(html).toContain('Gemini Compatible')
+  })
+
+  test('renders officially unsupported models as prominently not callable', () => {
+    const html = renderList(
+      [
+        {
+          id: 'retired-model',
+          allowlist_match_key: 'retired-model',
+          vendor: null,
+          supported_endpoint_types: ['openai'],
+          availability_status: 'official_unsupported',
+        },
+      ],
+      false
+    )
+
+    expect(html).toContain('Not callable · Officially unsupported')
+    expect(html).toContain(
+      'This model cannot be called because upstreams no longer support it.'
+    )
+    expect(html).toContain('border-destructive/40')
+  })
+
   test('distinguishes filter misses from a truly empty scope', () => {
     const filteredHtml = renderList([], false)
     const emptyScopeHtml = renderList([], true)

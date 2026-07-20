@@ -22,6 +22,8 @@ import {
   getAccountModels,
   getEffectiveTokenModels,
   getScopeModels,
+  getUnavailableAccountModels,
+  getUnavailableScopeModels,
   resolveCreateScope,
 } from './model-access'
 
@@ -38,13 +40,13 @@ function buildSelectableAccess(
         id: 'auto',
         label: 'Auto',
         ratio: null,
-        model_ids: ['gpt-gizmo-*', 'scope-model'],
+        model_ids: ['gpt-gizmo-*', 'scope-model', 'retired-model'],
       },
       {
         id: 'standard',
         label: 'Standard',
         ratio: 1,
-        model_ids: ['scope-model'],
+        model_ids: ['scope-model', 'retired-model'],
       },
     ],
     account_model_ids: [],
@@ -69,6 +71,13 @@ function buildSelectableAccess(
         vendor: null,
         supported_endpoint_types: ['anthropic'],
         availability_status: 'temporary_failure',
+      },
+      {
+        id: 'retired-model',
+        allowlist_match_key: 'retired-model',
+        vendor: null,
+        supported_endpoint_types: ['openai'],
+        availability_status: 'official_unsupported',
       },
     ],
     ...overrides,
@@ -103,7 +112,7 @@ describe('model access scopes', () => {
       identity_model_ids: [],
       create_default_scope: null,
       groups: [],
-      account_model_ids: ['scope-model'],
+      account_model_ids: ['scope-model', 'retired-model'],
     })
 
     expect(resolveCreateScope(access, 'plg')).toBeNull()
@@ -117,6 +126,9 @@ describe('model access scopes', () => {
         model_limits: '',
       }).map((model) => model.id)
     ).toEqual(['scope-model'])
+    expect(
+      getUnavailableAccountModels(access).map((model) => model.id)
+    ).toEqual(['retired-model'])
   })
 
   test('returns the exact ordinary and auto scope collections', () => {
@@ -129,6 +141,9 @@ describe('model access scopes', () => {
       'gpt-gizmo-*',
       'scope-model',
     ])
+    expect(
+      getUnavailableScopeModels(access, 'standard').map((model) => model.id)
+    ).toEqual(['retired-model'])
   })
 })
 
@@ -222,5 +237,24 @@ describe('effective token models', () => {
     })
 
     expect(models).toEqual([])
+  })
+
+  test('never restores officially unsupported models through an allowlist', () => {
+    const access = buildSelectableAccess()
+
+    expect(
+      getEffectiveTokenModels(access, {
+        group: 'standard',
+        model_limits_enabled: false,
+        model_limits: [],
+      }).map((model) => model.id)
+    ).toEqual(['scope-model'])
+    expect(
+      getEffectiveTokenModels(access, {
+        group: 'standard',
+        model_limits_enabled: true,
+        model_limits: ['retired-model'],
+      })
+    ).toEqual([])
   })
 })
