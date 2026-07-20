@@ -163,7 +163,7 @@ func classifyModelProbeError(err error, apiErr *types.NewAPIError) modelProbeOut
 	}
 }
 
-func modelAvailabilityProbeConfig(modelName string) (string, channelTestOptions) {
+func modelAvailabilityProbeConfig(modelName string, channelType int) (string, channelTestOptions, bool) {
 	options := channelTestOptions{
 		Prompt:     modelAvailabilityProbePrompt,
 		ExpectPong: true,
@@ -172,11 +172,14 @@ func modelAvailabilityProbeConfig(modelName string) (string, channelTestOptions)
 		MaxTokens:  8,
 		SkipLog:    true,
 	}
+	if channelType == constant.ChannelTypeBytePlus {
+		return "", options, false
+	}
 	if common.IsImageGenerationModel(modelName) {
 		options.ExpectPong = false
-		return string(constant.EndpointTypeImageGeneration), options
+		return string(constant.EndpointTypeImageGeneration), options, true
 	}
-	return "", options
+	return "", options, true
 }
 
 func saveModelAvailabilityProbeResult(modelName string, outcome modelProbeOutcome) error {
@@ -255,6 +258,7 @@ func probeOneModelAvailability(modelName string, testUserID int) {
 	}
 
 	outcomes := make([]modelProbeOutcome, 0, len(targets))
+	sawUntestable := false
 	for _, target := range targets {
 		channel, err := model.GetChannelById(target.ChannelID, true)
 		if err != nil {
@@ -266,7 +270,11 @@ func probeOneModelAvailability(modelName string, testUserID int) {
 			})
 			continue
 		}
-		endpointType, options := modelAvailabilityProbeConfig(modelName)
+		endpointType, options, testable := modelAvailabilityProbeConfig(modelName, channel.Type)
+		if !testable {
+			sawUntestable = true
+			continue
+		}
 		result := testChannelWithOptions(channel, testUserID, modelName, endpointType, false, options)
 		if result.localErr == nil && result.newAPIError == nil {
 			_ = saveModelAvailabilityProbeResult(modelName, modelProbeOutcome{
@@ -278,6 +286,13 @@ func probeOneModelAvailability(modelName string, testUserID int) {
 		outcome := classifyModelProbeError(result.localErr, result.newAPIError)
 		outcome.ChannelID = target.ChannelID
 		outcomes = append(outcomes, outcome)
+	}
+	if len(outcomes) == 0 && sawUntestable {
+		_ = saveModelAvailabilityProbeResult(modelName, modelProbeOutcome{
+			Class: modelProbeAvailable,
+		})
+		model.InvalidatePricingCache()
+		return
 	}
 
 	final := summarizeModelProbeOutcomes(outcomes)

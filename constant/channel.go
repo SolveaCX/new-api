@@ -65,6 +65,7 @@ const (
 	ChannelTypeJimengProxy      = 103 // Jimeng reverse proxy (iptag/jimeng-api): OpenAI-compatible image/video proxy, sessionid auth
 	ChannelTypeJimengZhizinan   = 104 // Jimeng reverse proxy (zhizinan1997/jimeng-free-api-all)
 	ChannelTypeTechMobiVideo    = 105 // TechMobi Seedance-compatible async video API
+	ChannelTypeBytePlus         = 107 // BytePlus Ark Seedance async video API
 	ChannelTypeDummy                  // this one is only for count, do not add any channel after this
 
 )
@@ -141,6 +142,8 @@ var ChannelBaseURLs = []string{
 	"",                             // 103 JimengProxy (self-hosted iptag/jimeng-api; set base URL per channel)
 	"",                             // 104 JimengZhizinan (self-hosted zhizinan1997/jimeng-free-api-all)
 	"https://api.chatgpttech.mobi", // 105 TechMobiVideo
+	"",                             // 106 reserved
+	"https://ark.ap-southeast.bytepluses.com", // 107 BytePlus
 }
 
 var ChannelTypeNames = map[int]string{
@@ -205,6 +208,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeJimengProxy:      "JimengProxy",
 	ChannelTypeJimengZhizinan:   "JimengZhizinan",
 	ChannelTypeTechMobiVideo:    "TechMobiVideo",
+	ChannelTypeBytePlus:         "BytePlus",
 }
 
 func GetChannelTypeName(channelType int) string {

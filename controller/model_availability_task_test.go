@@ -55,8 +55,9 @@ func TestValidatePongTestResponseBody(t *testing.T) {
 }
 
 func TestModelAvailabilityProbeConfigUsesImageEndpointForImageModels(t *testing.T) {
-	endpointType, options := modelAvailabilityProbeConfig("gpt-image-2")
+	endpointType, options, testable := modelAvailabilityProbeConfig("gpt-image-2", constant.ChannelTypeOpenAI)
 
+	require.True(t, testable)
 	require.Equal(t, string(constant.EndpointTypeImageGeneration), endpointType)
 	require.False(t, options.ExpectPong)
 	require.Equal(t, "模型可用性检测", options.TokenName)
@@ -65,10 +66,17 @@ func TestModelAvailabilityProbeConfigUsesImageEndpointForImageModels(t *testing.
 }
 
 func TestModelAvailabilityProbeConfigKeepsPingPongForTextModels(t *testing.T) {
-	endpointType, options := modelAvailabilityProbeConfig("gpt-5.4")
+	endpointType, options, testable := modelAvailabilityProbeConfig("gpt-5.4", constant.ChannelTypeOpenAI)
 
+	require.True(t, testable)
 	require.Empty(t, endpointType)
 	require.True(t, options.ExpectPong)
 	require.Equal(t, modelAvailabilityProbePrompt, options.Prompt)
 	require.Equal(t, uint(8), options.MaxTokens)
+}
+
+func TestModelAvailabilityProbeConfigMarksBytePlusUntestable(t *testing.T) {
+	_, _, testable := modelAvailabilityProbeConfig("seedance-2.0", constant.ChannelTypeBytePlus)
+
+	require.False(t, testable)
 }

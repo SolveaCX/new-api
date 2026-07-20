@@ -102,6 +102,7 @@ export function getChannelTypeIcon(type: number): string {
     54: 'Doubao', // DoubaoVideo
     58: 'Doubao', // KuaiziLizhen (proxies Seedance, reuse Doubao icon)
     105: 'Doubao', // TechMobiVideo (Seedance-compatible video)
+    107: 'Doubao', // BytePlus (Ark Seedance-compatible video)
     56: 'Replicate', // Replicate
 
     // Tools & Platforms
