@@ -5538,6 +5538,8 @@
     "Text models": "Modèles texte",
     "Image & video models": "Modèles image et vidéo",
     "One key, 328+ frontier models: GPT, Claude, Gemini, DeepSeek, GLM for text, plus Seedance 2.5 and more for image & video generation.": "Une seule clé, plus de 328 modèles de pointe : GPT, Claude, Gemini, DeepSeek, GLM pour le texte, plus Seedance 2.5 et d'autres pour la génération d'images et de vidéos.",
+    "Owned": "Déjà détenu",
+    "Pay with card (Stripe)": "Payer par carte (Stripe)",
     "≈ {{images}} images or {{seconds}}s of video": "≈ {{images}} images ou {{seconds}} s de vidéo",
     "≈ {{images}} images or {{minutes}} min of video": "≈ {{images}} images ou {{minutes}} min de vidéo",
     "Media credits": "Crédits média",

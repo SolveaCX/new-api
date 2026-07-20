@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import type { TFunction } from 'i18next'
 import { Crown, RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatQuota } from '@/lib/format'
@@ -37,6 +36,7 @@ import {
   getSelfSubscriptionFull,
 } from '@/features/subscriptions/api'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
+import { formatMediaValue } from '@/features/subscriptions/lib'
 import type {
   CurrentSubscriptionRecord,
   PlanRecord,
@@ -79,29 +79,6 @@ function formatPlanPrice(amount: number): string {
 function usagePercent(used: number, limit: number): number {
   if (limit <= 0) return 0
   return Math.min(100, Math.max(0, Math.round((used / limit) * 100)))
-}
-
-// 300 credits ≈ 100 images / 75s standard video — anchored on the standard
-// tier of the public media price table (image 3 credits, video 4 credits/s).
-const IMAGE_CREDITS_PER_UNIT = 3
-const VIDEO_CREDITS_PER_SECOND = 4
-
-function formatMediaValue(credits: number, t: TFunction): string {
-  let images = Math.floor(credits / IMAGE_CREDITS_PER_UNIT)
-  if (images >= 200) {
-    images = Math.floor(images / 100) * 100
-  }
-  const seconds = Math.floor(credits / VIDEO_CREDITS_PER_SECOND)
-  if (seconds >= 120) {
-    return t('≈ {{images}} images or {{minutes}} min of video', {
-      images,
-      minutes: Math.floor(seconds / 60),
-    })
-  }
-  return t('≈ {{images}} images or {{seconds}}s of video', {
-    images,
-    seconds,
-  })
 }
 
 function getPlanAudience(title: string, t: (key: string) => string): string {
@@ -437,6 +414,9 @@ export function SubscriptionPlansCard({
               const limit = Number(plan.max_purchase_per_user || 0)
               const count = planPurchaseCountMap.get(plan.id) || 0
               const reached = limit > 0 && count >= limit
+              // Only the primary plan (highest-priced active subscription) is
+              // "current"; other still-active lower tiers show as owned.
+              const isCurrent = currentPlan?.id === plan.id
               const isOwned = ownedPlanIds.has(plan.id)
               const window5h = Number(plan.window_5h_amount || 0)
               const windowWeek = Number(plan.window_week_amount || 0)
@@ -523,9 +503,13 @@ export function SubscriptionPlansCard({
                     <div className='flex-1' />
 
                     <div className='mt-5'>
-                      {isOwned ? (
+                      {isCurrent ? (
                         <Button className='w-full' variant='secondary' disabled>
                           {t('Current Plan')}
+                        </Button>
+                      ) : isOwned ? (
+                        <Button className='w-full' variant='secondary' disabled>
+                          {t('Owned')}
                         </Button>
                       ) : reached ? (
                         <Tooltip>

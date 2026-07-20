@@ -5538,6 +5538,8 @@
     "Text models": "Mô hình văn bản",
     "Image & video models": "Mô hình hình ảnh & video",
     "One key, 328+ frontier models: GPT, Claude, Gemini, DeepSeek, GLM for text, plus Seedance 2.5 and more for image & video generation.": "Một khóa, hơn 328 mô hình hàng đầu: GPT, Claude, Gemini, DeepSeek, GLM cho văn bản, cùng Seedance 2.5 và nhiều mô hình tạo ảnh & video khác.",
+    "Owned": "Đang sở hữu",
+    "Pay with card (Stripe)": "Thanh toán bằng thẻ (Stripe)",
     "≈ {{images}} images or {{seconds}}s of video": "≈ {{images}} ảnh hoặc {{seconds}} giây video",
     "≈ {{images}} images or {{minutes}} min of video": "≈ {{images}} ảnh hoặc {{minutes}} phút video",
     "Media credits": "Tín dụng media",
