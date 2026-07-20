@@ -93,6 +93,9 @@ func TestModelAvailabilityProbeConfigMarksMediaModelsUntestable(t *testing.T) {
 	// An async-task channel type is untestable regardless of the model name.
 	_, _, taskTestable := modelAvailabilityProbeConfig("some-model", constant.ChannelTypeKling)
 	require.False(t, taskTestable)
+
+	_, _, bytePlusTestable := modelAvailabilityProbeConfig("some-model", constant.ChannelTypeBytePlus)
+	require.False(t, bytePlusTestable)
 }
 
 func TestModelAvailabilityProbeConfigUsesEmbeddingEndpointForEmbeddingModels(t *testing.T) {
@@ -101,4 +104,12 @@ func TestModelAvailabilityProbeConfigUsesEmbeddingEndpointForEmbeddingModels(t *
 	require.True(t, testable)
 	require.Equal(t, string(constant.EndpointTypeEmbeddings), endpointType)
 	require.False(t, options.ExpectPong)
+}
+
+func TestSummarizeModelProbeOutcomesKeepsUntestableProviderAvailable(t *testing.T) {
+	outcome := summarizeModelProbeOutcomes([]modelProbeOutcome{
+		{Class: modelProbeOfficialUnsupported, ReasonType: "official_model_unsupported"},
+	}, true)
+
+	require.Equal(t, modelProbeAvailable, outcome.Class)
 }

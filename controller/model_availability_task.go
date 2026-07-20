@@ -194,6 +194,7 @@ var untestableProbeChannelTypes = map[int]bool{
 	constant.ChannelTypeBlockRunVideo:    true,
 	constant.ChannelTypeBlockRunSeedance: true,
 	constant.ChannelTypeTechMobiVideo:    true,
+	constant.ChannelTypeBytePlus:         true,
 }
 
 var untestableProbeModelSubstrings = []string{
@@ -394,28 +395,17 @@ func probeOneModelAvailability(modelName string, testUserID int) {
 		outcome.ChannelID = target.ChannelID
 		outcomes = append(outcomes, outcome)
 	}
-
-	// Every candidate channel was untestable (no live outcome recorded):
-	// mark the model available so a stale unknown_failure is cleared. This
-	// biases untestable modalities toward "available" without a live call —
-	// the correct bias for this bug, since these channels keep coverage via
-	// the channel-test monitor.
-	if len(outcomes) == 0 && sawUntestable {
-		_ = saveModelAvailabilityProbeResult(modelName, modelProbeOutcome{
-			Class: modelProbeAvailable,
-		})
-		model.InvalidatePricingCache()
-		return
-	}
-
-	final := summarizeModelProbeOutcomes(outcomes)
+	final := summarizeModelProbeOutcomes(outcomes, sawUntestable)
 	if err := saveModelAvailabilityProbeResult(modelName, final); err != nil {
 		common.SysError("failed to save model availability state: " + err.Error())
 	}
 	model.InvalidatePricingCache()
 }
 
-func summarizeModelProbeOutcomes(outcomes []modelProbeOutcome) modelProbeOutcome {
+func summarizeModelProbeOutcomes(outcomes []modelProbeOutcome, sawUntestable bool) modelProbeOutcome {
+	if sawUntestable {
+		return modelProbeOutcome{Class: modelProbeAvailable}
+	}
 	if len(outcomes) == 0 {
 		return modelProbeOutcome{Class: modelProbeUnknownFailure, ReasonType: "empty_probe_result"}
 	}

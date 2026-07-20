@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +32,22 @@ func TestNewCodexLimitReportContextUsesSixtySecondDeadline(t *testing.T) {
 	}
 	if codexLimitReportRequestTimeout != 60*time.Second {
 		t.Fatalf("codexLimitReportRequestTimeout = %s, want 60s", codexLimitReportRequestTimeout)
+	}
+}
+
+func TestNewCodexLimitReportContextInheritsParentCancellation(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
+	ctx, cancel := newCodexLimitReportContext(parent)
+	defer cancel()
+
+	cancelParent()
+	select {
+	case <-ctx.Done():
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			t.Fatalf("context error = %v, want context.Canceled", ctx.Err())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("report context did not inherit parent cancellation")
 	}
 }
 

@@ -68,6 +68,7 @@ import { Route as AuthenticatedInviteIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedCodexModelGovernanceIndexRouteImport } from './routes/_authenticated/codex-model-governance/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
+import { Route as AuthenticatedAvailableModelsIndexRouteImport } from './routes/_authenticated/available-models/index'
 import { Route as LocaleRankingsIndexRouteImport } from './routes/$locale/rankings/index'
 import { Route as LocalePricingIndexRouteImport } from './routes/$locale/pricing/index'
 import { Route as LocaleBlogIndexRouteImport } from './routes/$locale/blog/index'
@@ -407,6 +408,12 @@ const AuthenticatedChannelsIndexRoute =
     path: '/channels/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAvailableModelsIndexRoute =
+  AuthenticatedAvailableModelsIndexRouteImport.update({
+    id: '/available-models/',
+    path: '/available-models/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const LocaleRankingsIndexRoute = LocaleRankingsIndexRouteImport.update({
   id: '/$locale/rankings/',
   path: '/$locale/rankings/',
@@ -639,6 +646,7 @@ export interface FileRoutesByFullPath {
   '/$locale/blog/': typeof LocaleBlogIndexRoute
   '/$locale/pricing/': typeof LocalePricingIndexRoute
   '/$locale/rankings/': typeof LocaleRankingsIndexRoute
+  '/available-models/': typeof AuthenticatedAvailableModelsIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -728,6 +736,7 @@ export interface FileRoutesByTo {
   '/$locale/blog': typeof LocaleBlogIndexRoute
   '/$locale/pricing': typeof LocalePricingIndexRoute
   '/$locale/rankings': typeof LocaleRankingsIndexRoute
+  '/available-models': typeof AuthenticatedAvailableModelsIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance': typeof AuthenticatedCodexModelGovernanceIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
@@ -821,6 +830,7 @@ export interface FileRoutesById {
   '/$locale/blog/': typeof LocaleBlogIndexRoute
   '/$locale/pricing/': typeof LocalePricingIndexRoute
   '/$locale/rankings/': typeof LocaleRankingsIndexRoute
+  '/_authenticated/available-models/': typeof AuthenticatedAvailableModelsIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -913,6 +923,7 @@ export interface FileRouteTypes {
     | '/$locale/blog/'
     | '/$locale/pricing/'
     | '/$locale/rankings/'
+    | '/available-models/'
     | '/channels/'
     | '/codex-model-governance/'
     | '/dashboard/'
@@ -1002,6 +1013,7 @@ export interface FileRouteTypes {
     | '/$locale/blog'
     | '/$locale/pricing'
     | '/$locale/rankings'
+    | '/available-models'
     | '/channels'
     | '/codex-model-governance'
     | '/dashboard'
@@ -1094,6 +1106,7 @@ export interface FileRouteTypes {
     | '/$locale/blog/'
     | '/$locale/pricing/'
     | '/$locale/rankings/'
+    | '/_authenticated/available-models/'
     | '/_authenticated/channels/'
     | '/_authenticated/codex-model-governance/'
     | '/_authenticated/dashboard/'
@@ -1590,6 +1603,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChannelsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/available-models/': {
+      id: '/_authenticated/available-models/'
+      path: '/available-models'
+      fullPath: '/available-models/'
+      preLoaderRoute: typeof AuthenticatedAvailableModelsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/$locale/rankings/': {
       id: '/$locale/rankings/'
       path: '/$locale/rankings'
@@ -1904,6 +1924,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
+  AuthenticatedAvailableModelsIndexRoute: typeof AuthenticatedAvailableModelsIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedCodexModelGovernanceIndexRoute: typeof AuthenticatedCodexModelGovernanceIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
@@ -1930,6 +1951,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
+  AuthenticatedAvailableModelsIndexRoute:
+    AuthenticatedAvailableModelsIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedCodexModelGovernanceIndexRoute:
     AuthenticatedCodexModelGovernanceIndexRoute,

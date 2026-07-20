@@ -51,3 +51,42 @@ func TestGetStatusIncludesPlaygroundDefaultModel(t *testing.T) {
 		t.Fatalf("playground_default_model = %q, want %q", response.Data.PlaygroundDefaultModel, "gpt-4.1-mini")
 	}
 }
+
+func TestGetStatusIncludesConfiguredInviterRewardUSD(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalQuotaForInviter := common.QuotaForInviter
+	originalQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaForInviter = 3_250_000
+	common.QuotaPerUnit = 500_000
+	t.Cleanup(func() {
+		common.QuotaForInviter = originalQuotaForInviter
+		common.QuotaPerUnit = originalQuotaPerUnit
+	})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+
+	GetStatus(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			InviterRewardUSD float64 `json:"inviter_reward_usd"`
+		} `json:"data"`
+	}
+	if err := common.DecodeJson(recorder.Body, &response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !response.Success {
+		t.Fatal("success = false, want true")
+	}
+	if response.Data.InviterRewardUSD != 6.5 {
+		t.Fatalf("inviter_reward_usd = %v, want 6.5", response.Data.InviterRewardUSD)
+	}
+}

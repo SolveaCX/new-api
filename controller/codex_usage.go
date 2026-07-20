@@ -81,6 +81,8 @@ func GetCodexChannelLimitReport(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 		return
 	}
+	reportCtx, cancel := newCodexLimitReportContext(c.Request.Context())
+	defer cancel()
 
 	channelIds := make([]int, 0, len(channels))
 	for _, channel := range channels {
@@ -89,6 +91,7 @@ func GetCodexChannelLimitReport(c *gin.Context) {
 		}
 	}
 	usageStats, err := model.GetCodexChannelUsageStats(
+		reportCtx,
 		channelIds,
 		startTimestamp,
 		endTimestamp,
@@ -98,8 +101,6 @@ func GetCodexChannelLimitReport(c *gin.Context) {
 		return
 	}
 
-	reportCtx, cancel := newCodexLimitReportContext(c.Request.Context())
-	defer cancel()
 	report := runCodexLimitReport(
 		reportCtx,
 		channels,

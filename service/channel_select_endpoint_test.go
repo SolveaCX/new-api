@@ -385,6 +385,9 @@ func TestChannelSupportsRequestEndpointRejectsUnsupportedResponsesAdaptors(t *te
 	require.False(t, ChannelSupportsRequestEndpoint(ctx, &model.Channel{
 		Type: constant.ChannelTypeAws,
 	}, "gpt-5.4"))
+	require.False(t, ChannelSupportsRequestEndpoint(ctx, &model.Channel{
+		Type: constant.ChannelTypeBytePlus,
+	}, "seedance-2.0"))
 }
 
 func TestRequestedEndpointTypeDoesNotFilterLegacyEndpointModes(t *testing.T) {

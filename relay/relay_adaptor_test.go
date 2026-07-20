@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/relay/channel/task/byteplus"
 )
 
 func TestGetTaskAdaptor_JimengProxy(t *testing.T) {
@@ -14,6 +15,16 @@ func TestGetTaskAdaptor_JimengProxy(t *testing.T) {
 	}
 	if adaptor.GetChannelName() != "JimengProxy" {
 		t.Fatalf("channel name = %q, want JimengProxy", adaptor.GetChannelName())
+	}
+}
+
+func TestGetTaskAdaptor_BytePlus(t *testing.T) {
+	adaptor := GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeBytePlus)))
+	if adaptor == nil {
+		t.Fatal("expected BytePlus task adaptor")
+	}
+	if _, ok := adaptor.(*byteplus.TaskAdaptor); !ok {
+		t.Fatalf("adaptor type = %T, want *byteplus.TaskAdaptor", adaptor)
 	}
 }
 

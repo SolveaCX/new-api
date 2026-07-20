@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -590,6 +591,80 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	if strings.Contains(recorder.Body.String(), token.Key) {
 		t.Fatalf("update response leaked raw token key: %s", recorder.Body.String())
 	}
+}
+
+func TestUpdateTokenCanPreserveModelAccessFields(t *testing.T) {
+	db := setupInitialTokenControllerTestDB(t)
+	user := seedTokenUser(t, db, 1)
+	user.Group = "Enterprise"
+	require.NoError(t, db.Save(user).Error)
+	token := seedToken(t, db, 1, "editable-token", "preserve1234model5678")
+	token.Group = "auto"
+	token.ModelLimitsEnabled = true
+	token.ModelLimits = "gpt-4o,claude-3-5-sonnet"
+	token.CrossGroupRetry = true
+	require.NoError(t, db.Save(token).Error)
+
+	body := map[string]any{
+		"id":                    token.Id,
+		"name":                  "renamed-token",
+		"expired_time":          -1,
+		"remain_quota":          200,
+		"unlimited_quota":       false,
+		"allow_ips":             "192.0.2.1",
+		"model_limits_enabled":  false,
+		"model_limits":          "",
+		"group":                 "default",
+		"cross_group_retry":     false,
+		"preserve_model_access": true,
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", body, 1)
+	UpdateToken(ctx)
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+
+	var stored model.Token
+	require.NoError(t, db.First(&stored, token.Id).Error)
+	require.Equal(t, "renamed-token", stored.Name)
+	require.Equal(t, 200, stored.RemainQuota)
+	require.Equal(t, "auto", stored.Group)
+	require.True(t, stored.ModelLimitsEnabled)
+	require.Equal(t, "gpt-4o,claude-3-5-sonnet", stored.ModelLimits)
+	require.True(t, stored.CrossGroupRetry)
+}
+
+func TestUpdateTokenPreservationStillEnforcesPLGGroup(t *testing.T) {
+	db := setupInitialTokenControllerTestDB(t)
+	seedTokenUser(t, db, 1)
+	token := seedToken(t, db, 1, "legacy-token", "preserve1234plg567890")
+	token.Group = "legacy-enterprise"
+	token.ModelLimitsEnabled = true
+	token.ModelLimits = "gpt-4o"
+	token.CrossGroupRetry = true
+	require.NoError(t, db.Save(token).Error)
+
+	body := map[string]any{
+		"id":                    token.Id,
+		"name":                  "renamed-token",
+		"expired_time":          -1,
+		"remain_quota":          200,
+		"unlimited_quota":       false,
+		"allow_ips":             "192.0.2.1",
+		"preserve_model_access": true,
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", body, 1)
+	UpdateToken(ctx)
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+
+	var stored model.Token
+	require.NoError(t, db.First(&stored, token.Id).Error)
+	require.Equal(t, plgGroup, stored.Group)
+	require.False(t, stored.CrossGroupRetry)
+	require.True(t, stored.ModelLimitsEnabled)
+	require.Equal(t, "gpt-4o", stored.ModelLimits)
 }
 
 func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
