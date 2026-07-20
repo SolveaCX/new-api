@@ -49,9 +49,9 @@
   .pagents{display:flex;gap:8px;flex-wrap:wrap;}
   .pagent{border:1px solid var(--dark-line);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:11.5px;color:#B9B9C6;background:#FFFFFF08;}
   .photowall{display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:150px;gap:12px;}
-  @media(max-width:800px){.photowall{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:800px){.photowall{grid-template-columns:repeat(2,1fr);}.photowall .ph.w2,.photowall .ph.w3{grid-column:span 2!important;}}
   .ph{border-radius:14px;overflow:hidden;position:relative;display:flex;align-items:flex-end;padding:14px;background:linear-gradient(135deg,var(--violet-tint),#fff);border:1px solid var(--line);}
-  .ph.w2{grid-column:span 2;}.ph.h2{grid-row:span 2;}
+  .ph.w2{grid-column:span 2;}.ph.w3{grid-column:span 3;}.ph.h2{grid-row:span 2;}
   .ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
   .ph .cap{position:relative;z-index:2;font-size:12px;font-weight:650;color:var(--violet-deep);background:#FFFFFFD9;border-radius:8px;padding:4px 10px;}
   .ph.dk{background:linear-gradient(160deg,#4C1D95,#7C3AED);}
@@ -130,14 +130,15 @@
 </section>
 
 <section class="sec" id="photos">
-  <h2>San Jose 办公室的日常</h2>
-  <p class="lead">Q Bay Center，160 E Tasman Dr, San Jose——到湾区哪里都只要十分钟。</p>
+  <h2>真实在场的团队</h2>
+  <p class="lead">我们在 San Jose 一起做产品，也把一线经验带到更广泛的 AI 与开发者社区。</p>
   <div class="photowall">
     <div class="ph w2 h2"><img src="assets/careers/openai-award.jpg" alt="OpenAI award for passing 10 billion tokens"><span class="cap">OpenAI 授予我们团队的 100 亿 tokens 奖杯</span></div>
-    <div class="ph w2"><img src="assets/careers/qbay-workspace.jpg" alt="Open workspace at Q Bay Center"><span class="cap">开放工位区</span></div>
-    <div class="ph w2"><img src="assets/careers/qbay-boardroom.jpg" alt="Boardroom at Q Bay Center"><span class="cap">开 demo day 的会议室</span></div>
-    <div class="ph w2"><img src="assets/careers/qbay-office.jpg" alt="Lobby at Q Bay Center San Jose"><span class="cap">Q Bay Center 大堂</span></div>
-    <div class="ph w2 dk"><span class="cap">你的工位在等你 →</span></div>
+    <div class="ph w2 h2"><img src="assets/team/amazon-accelerate-team.jpg" alt="flatkey 团队亮相 Amazon Accelerate"><span class="cap">团队亮相 Amazon Accelerate</span></div>
+    <div class="ph w2"><img src="assets/team/team-dinner.jpg" alt="flatkey 团队聚餐"><span class="cap">做产品、见完客户之后的团队聚餐</span></div>
+    <div class="ph w2"><img src="assets/team/product-conversations.jpg" alt="在 IntelliPro 活动现场交流 Solvea"><span class="cap">在 IntelliPro 活动现场与一线运营者交流 Solvea</span></div>
+    <div class="ph w3"><img src="assets/team/community-audience.jpg" alt="AI 社区活动中的创业者和运营者"><span class="cap">与创业者和运营者分享可落地的 AI 实践</span></div>
+    <div class="ph w3"><img src="assets/team/seattle-community.jpg" alt="西雅图创始人和开发者社区活动"><span class="cap">在西雅图与创始人、开发者面对面交流</span></div>
   </div>
 </section>
 

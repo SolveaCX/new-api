@@ -123,7 +123,7 @@ jobs:
         run: |
           C="https://canary---newapi-web-5qjldqffdq-uw.a.run.app"
           # new static pages
-          for p in "" models.html docs.html topup.html sla.html install.sh llms.txt compute.html about.html; do
+          for p in "" models.html docs.html topup.html sla.html install.sh llms.txt compute.html about.html about-zh.html careers.html careers-zh.html assets/team/amazon-accelerate-team.jpg assets/team/team-dinner.jpg; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p")
             echo "/$p -> $code"; [ "$code" = "200" ] || exit 1
           done
@@ -137,6 +137,13 @@ jobs:
           curl -s -m 20 "$C/compute.html" | grep -q 'id="waitlist"' || { echo "compute waitlist form missing"; exit 1; }
           code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/about"); echo "/about -> $code"; [ "$code" = "200" ] || exit 1
           curl -s -m 20 "$C/about" | grep -q 'Hunter Guo' || { echo "new About founder story missing"; exit 1; }
+          curl -s -m 20 "$C/about" | grep -q 'assets/team/amazon-accelerate-team.jpg' || { echo "About team photos missing"; exit 1; }
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/zh/about"); echo "/zh/about -> $code"; [ "$code" = "200" ] || exit 1
+          curl -s -m 20 "$C/zh/about" | grep -q '让每个人都能更简单地使用 AI' || { echo "localized About story missing"; exit 1; }
+          for p in careers zh/careers; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p"); echo "/$p -> $code"; [ "$code" = "200" ] || exit 1
+            curl -s -m 20 "$C/$p" | grep -q 'assets/team/seattle-community.jpg' || { echo "/$p team photos missing"; exit 1; }
+          done
           # Common singular career links must permanently redirect to the
           # canonical plural pages instead of falling through to legacy 404s.
           curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -m 20 "$C/career" | grep -q "^301 $C/careers$" || { echo "/career redirect broken"; exit 1; }

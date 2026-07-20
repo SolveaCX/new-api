@@ -20,9 +20,11 @@ const copy: Record<CareersLocale, {
   photosTitle: string;
   photosLead: string;
   awardCaption: string;
-  officeCaption: string;
-  workspaceCaption: string;
-  boardroomCaption: string;
+  teamCaption: string;
+  dinnerCaption: string;
+  conversationCaption: string;
+  audienceCaption: string;
+  communityCaption: string;
   rolesTitle: string;
   rolesLead: string;
   roles: { title: string; body: string; tags: string[]; mailSubject: string; cta: string }[];
@@ -57,12 +59,14 @@ const copy: Record<CareersLocale, {
       "You own outcomes, not tasks. A pod runs its product line, its growth channel, or its function end-to-end.",
       "Scaling the company means adding pods, never adding layers.",
     ],
-    photosTitle: "Life at the San Jose office",
-    photosLead: "Q Bay Center, 160 E Tasman Dr, San Jose — ten minutes from almost everything in the Valley.",
+    photosTitle: "The team, in the room",
+    photosLead: "We build together in San Jose, then take what we learn into the wider AI and builder community.",
     awardCaption: "OpenAI's award to our team — honored for passing 10 billion tokens",
-    officeCaption: "Our lobby at Q Bay Center, San Jose",
-    workspaceCaption: "Open workspace at Q Bay Center",
-    boardroomCaption: "The boardroom where demo days happen",
+    teamCaption: "Our team at Amazon Accelerate",
+    dinnerCaption: "A team dinner after a full day of building and meeting customers",
+    conversationCaption: "Sharing Solvea with operators at an IntelliPro event",
+    audienceCaption: "Builders and operators exchanging practical AI lessons",
+    communityCaption: "A Seattle community session with founders and developers",
     rolesTitle: "Open roles",
     rolesLead: "All roles are onsite in San Jose. New grads and students welcome — we care about what you've built, not how long you've worked.",
     roles: [
@@ -119,12 +123,14 @@ const copy: Record<CareersLocale, {
       "你为结果负责，而不是为任务负责。一个 pod 端到端地跑一条产品线、一个增长渠道或一个职能。",
       "公司扩张靠增加 pod，永远不加层级。",
     ],
-    photosTitle: "San Jose 办公室的日常",
-    photosLead: "Q Bay Center，160 E Tasman Dr, San Jose——到湾区哪里都只要十分钟。",
+    photosTitle: "真实在场的团队",
+    photosLead: "我们在 San Jose 一起做产品，也把一线经验带到更广泛的 AI 与开发者社区。",
     awardCaption: "OpenAI 授予我们团队的奖杯——表彰 100 亿 tokens 里程碑",
-    officeCaption: "Q Bay Center 办公楼大堂",
-    workspaceCaption: "Q Bay Center 的开放工位区",
-    boardroomCaption: "开 demo day 的会议室",
+    teamCaption: "团队亮相 Amazon Accelerate",
+    dinnerCaption: "做产品、见完客户之后的团队聚餐",
+    conversationCaption: "在 IntelliPro 活动现场与一线运营者交流 Solvea",
+    audienceCaption: "与创业者和运营者分享可落地的 AI 实践",
+    communityCaption: "在西雅图与创始人、开发者面对面交流",
     rolesTitle: "开放职位",
     rolesLead: "所有岗位均为 San Jose 现场办公。欢迎应届生和在校生——我们看你造过什么，不看你工作了多久。",
     roles: [
@@ -216,12 +222,14 @@ export function CareersPage({ locale, pathname }: { locale: Locale; pathname: st
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               {([
                 { src: "/careers/openai-award.jpg", w: 720, h: 960, cap: t.awardCaption },
-                { src: "/careers/qbay-workspace.jpg", w: 800, h: 439, cap: t.workspaceCaption },
-                { src: "/careers/qbay-boardroom.jpg", w: 1200, h: 686, cap: t.boardroomCaption },
-                { src: "/careers/qbay-office.jpg", w: 1080, h: 620, cap: t.officeCaption },
+                { src: "/team/amazon-accelerate-team.jpg", w: 1200, h: 1600, cap: t.teamCaption },
+                { src: "/team/team-dinner.jpg", w: 1600, h: 1200, cap: t.dinnerCaption },
+                { src: "/team/product-conversations.jpg", w: 1600, h: 1067, cap: t.conversationCaption },
+                { src: "/team/community-audience.jpg", w: 1600, h: 1066, cap: t.audienceCaption },
+                { src: "/team/seattle-community.jpg", w: 1600, h: 1200, cap: t.communityCaption },
               ] as const).map((ph) => (
                 <figure key={ph.src} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
-                  <Image src={ph.src} alt={ph.cap} width={ph.w} height={ph.h} className="h-64 w-full object-cover" />
+                  <Image src={ph.src} alt={ph.cap} width={ph.w} height={ph.h} loading="eager" sizes="(min-width: 640px) 50vw, 100vw" className="h-64 w-full object-cover" />
                   <figcaption className="bg-white/80 px-4 py-3 text-sm text-slate-600 dark:bg-white/5 dark:text-slate-300">{ph.cap}</figcaption>
                 </figure>
               ))}

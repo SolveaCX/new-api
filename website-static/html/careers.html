@@ -48,9 +48,9 @@
   .pagents{display:flex;gap:8px;flex-wrap:wrap;}
   .pagent{border:1px solid var(--dark-line);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:11.5px;color:#B9B9C6;background:#FFFFFF08;}
   .photowall{display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:150px;gap:12px;}
-  @media(max-width:800px){.photowall{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:800px){.photowall{grid-template-columns:repeat(2,1fr);}.photowall .ph.w2,.photowall .ph.w3{grid-column:span 2!important;}}
   .ph{border-radius:14px;overflow:hidden;position:relative;display:flex;align-items:flex-end;padding:14px;background:linear-gradient(135deg,var(--violet-tint),#fff);border:1px solid var(--line);}
-  .ph.w2{grid-column:span 2;}.ph.h2{grid-row:span 2;}
+  .ph.w2{grid-column:span 2;}.ph.w3{grid-column:span 3;}.ph.h2{grid-row:span 2;}
   .ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
   .ph .cap{position:relative;z-index:2;font-size:12px;font-weight:650;color:var(--violet-deep);background:#FFFFFFD9;border-radius:8px;padding:4px 10px;}
   .ph.dk{background:linear-gradient(160deg,#4C1D95,#7C3AED);}
@@ -129,14 +129,15 @@
 </section>
 
 <section class="sec" id="photos">
-  <h2>Life at the San Jose office</h2>
-  <p class="lead">160 E Tasman Dr, San Jose — ten minutes from almost everything in the Valley.</p>
+  <h2>The team, in the room</h2>
+  <p class="lead">We build together in San Jose, then take what we learn into the wider AI and builder community.</p>
   <div class="photowall">
     <div class="ph w2 h2"><img src="assets/careers/openai-award.jpg" alt="OpenAI award for passing 10 billion tokens"><span class="cap">OpenAI's 10-billion-token award to our team</span></div>
-    <div class="ph w2"><img src="assets/careers/qbay-workspace.jpg" alt="Open workspace at Q Bay Center"><span class="cap">Open workspace</span></div>
-    <div class="ph w2"><img src="assets/careers/qbay-boardroom.jpg" alt="Boardroom at Q Bay Center"><span class="cap">Demo-day boardroom</span></div>
-    <div class="ph w2"><img src="assets/careers/qbay-office.jpg" alt="Lobby at Q Bay Center San Jose"><span class="cap">Q Bay Center lobby</span></div>
-    <div class="ph w2 dk"><span class="cap">Your desk is waiting →</span></div>
+    <div class="ph w2 h2"><img src="assets/team/amazon-accelerate-team.jpg" alt="flatkey team at Amazon Accelerate"><span class="cap">Our team at Amazon Accelerate</span></div>
+    <div class="ph w2"><img src="assets/team/team-dinner.jpg" alt="flatkey team dinner"><span class="cap">A team dinner after a full day of building and meeting customers</span></div>
+    <div class="ph w2"><img src="assets/team/product-conversations.jpg" alt="Sharing Solvea at an IntelliPro event"><span class="cap">Sharing Solvea with operators at an IntelliPro event</span></div>
+    <div class="ph w3"><img src="assets/team/community-audience.jpg" alt="Builders and operators at an AI community event"><span class="cap">Builders and operators exchanging practical AI lessons</span></div>
+    <div class="ph w3"><img src="assets/team/seattle-community.jpg" alt="Seattle founder and developer community session"><span class="cap">A Seattle community session with founders and developers</span></div>
   </div>
 </section>
 
