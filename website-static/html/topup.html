@@ -75,7 +75,7 @@
         <div class="tgmain" data-i18n="tu.mc1">300 media credits / mo</div>
         <div class="tgsub" data-i18n="tu.mv1">≈ 100 images, or 75s of video</div>
       </div>
-      <a class="btn primary tcta" href="/login" data-i18n="tu.cta">Subscribe →</a>
+      <a class="btn primary tcta" href="https://console.flatkey.ai/sign-up?redirect=%2Fwallet%3Fplan%3Dgo%26intent%3Dsubscribe" data-i18n="tu.cta">Subscribe →</a>
     </div>
     <div class="tier"><div class="curr" data-i18n="tu.cur2"></div><div class="tname">Pro</div><div class="taud" data-i18n="tu.aud2">For daily development &amp; high-frequency requests</div><div><b>$30</b><span class="per">/mo</span></div>
       <div class="tval">
@@ -87,7 +87,7 @@
         <div class="tgmain" data-i18n="tu.mc2">1,200 media credits / mo</div>
         <div class="tgsub" data-i18n="tu.mv2">≈ 400 images, or 5 min of video</div>
       </div>
-      <a class="btn white tcta" href="/login" data-i18n="tu.cta">Subscribe →</a>
+      <a class="btn white tcta" href="https://console.flatkey.ai/sign-up?redirect=%2Fwallet%3Fplan%3Dpro%26intent%3Dsubscribe" data-i18n="tu.cta">Subscribe →</a>
     </div>
     <div class="tier"><div class="curr" data-i18n="tu.cur3"></div><div class="tname">Max</div><div class="taud" data-i18n="tu.aud3">For teams &amp; heavy workloads</div><div><b>$100</b><span class="per">/mo</span></div>
       <div class="tval">
@@ -99,7 +99,7 @@
         <div class="tgmain" data-i18n="tu.mc3">5,000 media credits / mo</div>
         <div class="tgsub" data-i18n="tu.mv3">≈ 1,600 images, or 20 min of video</div>
       </div>
-      <a class="btn white tcta" href="/login" data-i18n="tu.cta">Subscribe →</a>
+      <a class="btn white tcta" href="https://console.flatkey.ai/sign-up?redirect=%2Fwallet%3Fplan%3Dmax%26intent%3Dsubscribe" data-i18n="tu.cta">Subscribe →</a>
     </div>
     <div class="tier"><div class="curr">B2B</div><div class="tname">Enterprise</div><div class="taud" data-i18n="tu.aud4">Committed volume &amp; procurement</div><div><b class="tcustom">Custom</b></div>
       <div class="tval"><p style="margin:0" data-i18n="pr.ent">Custom pricing <b>below the self-serve tiers</b> — committed-volume discounts, custom routing, invoicing and procurement.</p></div>
@@ -109,7 +109,7 @@
   <div class="pay">
     <span style="font-weight:800;font-size:14.5px">Pay with</span>
     <div class="pm on">Card · 3DS</div><div class="pm">Pix · BRL</div><div class="pm">UPI · INR</div><div class="pm">Alipay</div><div class="pm">USDC</div>
-    <div style="flex:1"></div><a class="btn primary big" href="/login" id="topbtn">Subscribe Go $10/mo → sign in</a>
+    <div style="flex:1"></div><a class="btn primary big" href="https://console.flatkey.ai/sign-up?redirect=%2Fwallet%3Fplan%3Dgo%26intent%3Dsubscribe" id="topbtn">Subscribe Go $10/mo → sign in</a>
   </div>
   <p class="local">Stripe Checkout · Adaptive Pricing (BRL/INR/CNY/EUR) · bank transfer &amp; invoicing via <u>Enterprise billing</u> · cancel anytime — past your monthly allowance, keep going pay-as-you-go on the same key · new users start with $1 free credit</p>
 
@@ -162,7 +162,7 @@
       t.style.borderColor = "var(--violet)"; t.style.boxShadow = "0 16px 48px rgba(109,92,255,.14)";
       var b = document.getElementById("topbtn");
       if(amts[i] === "Enterprise"){ b.textContent = "Contact sales →"; b.href = "contact.html"; }
-      else { b.textContent = "Subscribe " + amts[i] + " → sign in"; b.href = "login.html"; }
+      else { var plans=["go","pro","max"]; b.textContent = "Subscribe " + amts[i] + " → sign in"; b.href = "https://console.flatkey.ai/sign-up?redirect=" + encodeURIComponent("/wallet?plan=" + plans[i] + "&intent=subscribe"); }
     });
   });
   document.querySelectorAll(".pm").forEach(function(p){
