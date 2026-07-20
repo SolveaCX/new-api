@@ -198,7 +198,9 @@ type SubscriptionPlan struct {
 	// 并发数上限（0 = 不显示）
 	Concurrency int `json:"concurrency" gorm:"type:int;not null;default:0"`
 	// 价值卖点，每行一条（admin 用换行分隔录入，前端按 \n 拆分渲染）
-	FeatureLines string `json:"feature_lines" gorm:"type:text;default:''"`
+	// MySQL forbids DEFAULT on TEXT columns — keep the tag default-free; GORM
+	// scans NULL into the zero value ("") for existing rows.
+	FeatureLines string `json:"feature_lines" gorm:"type:text"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
