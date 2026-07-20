@@ -429,11 +429,13 @@ func buildUsage(u *apicompat.ResponsesUsage) any {
 	}
 	if u.InputTokensDetails != nil {
 		out.PromptTokensDetails = dto.InputTokenDetails{
-			CachedTokens: u.InputTokensDetails.CachedTokens,
+			CachedTokens:     u.InputTokensDetails.CachedTokens,
+			CacheWriteTokens: u.InputTokensDetails.CacheWriteTokens,
 		}
 		// 同步指针字段，方便下游 reasoning/responses 链路读取
 		out.InputTokensDetails = &dto.InputTokenDetails{
-			CachedTokens: u.InputTokensDetails.CachedTokens,
+			CachedTokens:     u.InputTokensDetails.CachedTokens,
+			CacheWriteTokens: u.InputTokensDetails.CacheWriteTokens,
 		}
 		if u.InputTokensDetails.CachedTokens > 0 {
 			out.PromptCacheHitTokens = u.InputTokensDetails.CachedTokens

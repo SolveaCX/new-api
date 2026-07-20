@@ -1072,12 +1072,7 @@ func TestChannel(c *gin.Context) {
 var testAllChannelsLock sync.Mutex
 var testAllChannelsRunning bool = false
 
-func testAllChannels(notify bool) error {
-	testUserID, err := resolveChannelTestUserID(nil)
-	if err != nil {
-		return err
-	}
-
+func testChannels(channels []*model.Channel, testUserID int, notify bool, allowDisable bool) error {
 	testAllChannelsLock.Lock()
 	if testAllChannelsRunning {
 		testAllChannelsLock.Unlock()
@@ -1085,10 +1080,6 @@ func testAllChannels(notify bool) error {
 	}
 	testAllChannelsRunning = true
 	testAllChannelsLock.Unlock()
-	channels, getChannelErr := model.GetAllChannels(0, 0, true, false)
-	if getChannelErr != nil {
-		return getChannelErr
-	}
 	var disableThreshold = int64(common.ChannelDisableThreshold * 1000)
 	if disableThreshold == 0 {
 		disableThreshold = 10000000 // a impossible value
@@ -1103,9 +1094,6 @@ func testAllChannels(notify bool) error {
 
 		dingTalkAlerts := make([]service.DingTalkChannelAlert, 0)
 		for _, channel := range channels {
-			if channel.Status == common.ChannelStatusManuallyDisabled {
-				continue
-			}
 			if shouldSkipScheduledChannelTestByType(notify, channel.Type, operation_setting.GetMonitorSetting()) {
 				continue
 			}
@@ -1133,7 +1121,7 @@ func testAllChannels(notify bool) error {
 
 			autoDisabled := false
 			// disable channel
-			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
+			if allowDisable && isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
 				autoDisabled = true
 				processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 			}
@@ -1148,7 +1136,7 @@ func testAllChannels(notify bool) error {
 			}
 
 			// enable channel
-			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+			if result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 			}
 
@@ -1167,6 +1155,44 @@ func testAllChannels(notify bool) error {
 		}
 	})
 	return nil
+}
+
+func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*model.Channel {
+	selected := make([]*model.Channel, 0, len(channels))
+	for _, channel := range channels {
+		if channel.Status == common.ChannelStatusManuallyDisabled {
+			continue
+		}
+		if mode == operation_setting.ChannelTestModePassiveRecovery && channel.Status != common.ChannelStatusAutoDisabled {
+			continue
+		}
+		selected = append(selected, channel)
+	}
+	return selected
+}
+
+func testAllChannels(notify bool) error {
+	testUserID, err := resolveChannelTestUserID(nil)
+	if err != nil {
+		return err
+	}
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		return err
+	}
+	return testChannels(selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModeScheduledAll), testUserID, notify, true)
+}
+
+func testAutoDisabledChannels(notify bool) error {
+	testUserID, err := resolveChannelTestUserID(nil)
+	if err != nil {
+		return err
+	}
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		return err
+	}
+	return testChannels(selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModePassiveRecovery), testUserID, notify, false)
 }
 
 func TestAllChannels(c *gin.Context) {
@@ -1198,8 +1224,13 @@ func AutomaticallyTestChannels() {
 				frequency := operation_setting.GetMonitorSetting().AutoTestChannelMinutes
 				time.Sleep(time.Duration(int(math.Round(frequency))) * time.Minute)
 				common.SysLog(fmt.Sprintf("automatically test channels with interval %f minutes", frequency))
-				common.SysLog("automatically testing all channels")
-				_ = testAllChannels(false)
+				if operation_setting.GetMonitorSetting().ChannelTestMode == operation_setting.ChannelTestModePassiveRecovery {
+					common.SysLog("automatically testing auto-disabled channels")
+					_ = testAutoDisabledChannels(false)
+				} else {
+					common.SysLog("automatically testing all channels")
+					_ = testAllChannels(false)
+				}
 				common.SysLog("automatically channel test finished")
 				if !operation_setting.GetMonitorSetting().AutoTestChannelEnabled {
 					break

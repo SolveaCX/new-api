@@ -443,7 +443,7 @@ func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 	require.NotNil(t, params.UIMode)
 	require.Equal(t, "embedded", *params.UIMode)
 	require.NotNil(t, params.ReturnURL, "redirect payment methods need a landing page")
-	require.Equal(t, "https://example.com/success", *params.ReturnURL)
+	require.Equal(t, "https://example.com/success?session_id={CHECKOUT_SESSION_ID}&trade_no=trade_embedded", *params.ReturnURL)
 	require.Nil(t, params.SuccessURL, "embedded sessions reject success_url")
 	require.Nil(t, params.CancelURL, "embedded sessions reject cancel_url")
 

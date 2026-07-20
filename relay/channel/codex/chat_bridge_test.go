@@ -552,6 +552,20 @@ func TestRelayChatOverCodex_UsageReturnedToBilling(t *testing.T) {
 	assert.Equal(t, 2, dtoUsage.CompletionTokenDetails.ReasoningTokens)
 }
 
+func TestBuildUsagePropagatesCacheWriteTokens(t *testing.T) {
+	usage, ok := buildUsage(&apicompat.ResponsesUsage{
+		InputTokens: 100,
+		InputTokensDetails: &apicompat.ResponsesInputTokensDetails{
+			CachedTokens:     40,
+			CacheWriteTokens: 80,
+		},
+	}).(*dto.Usage)
+	require.True(t, ok)
+	require.Equal(t, 80, usage.PromptTokensDetails.CacheWriteTokens)
+	require.NotNil(t, usage.InputTokensDetails)
+	require.Equal(t, 80, usage.InputTokensDetails.CacheWriteTokens)
+}
+
 func TestChatBridge_StripsAllCodexBannedFields(t *testing.T) {
 	temp := 0.7
 	topP := 0.9
@@ -691,12 +705,13 @@ func TestConvertOpenAIResponsesRequest_NonCompactPreservesDtoOnlyFields(t *testi
 	// 非 compact RelayMode 默认 zero
 	maxToolCalls := uint(7)
 	req := dto.OpenAIResponsesRequest{
-		Model:             "gpt-5",
-		Conversation:      json.RawMessage(`{"id":"conv_1"}`),
-		ContextManagement: json.RawMessage(`{"strategy":"summary"}`),
-		Truncation:        json.RawMessage(`"auto"`),
-		MaxToolCalls:      &maxToolCalls,
-		Prompt:            json.RawMessage(`{"id":"p_1"}`),
+		Model:              "gpt-5",
+		Conversation:       json.RawMessage(`{"id":"conv_1"}`),
+		ContextManagement:  json.RawMessage(`{"strategy":"summary"}`),
+		Truncation:         json.RawMessage(`"auto"`),
+		MaxToolCalls:       &maxToolCalls,
+		Prompt:             json.RawMessage(`{"id":"p_1"}`),
+		PromptCacheOptions: json.RawMessage(`{"mode":"explicit","ttl":"30m"}`),
 	}
 	out, err := a.ConvertOpenAIResponsesRequest(nil, info, req)
 	require.NoError(t, err)
@@ -708,6 +723,7 @@ func TestConvertOpenAIResponsesRequest_NonCompactPreservesDtoOnlyFields(t *testi
 	assert.Contains(t, s, `"truncation":"auto"`)
 	assert.Contains(t, s, `"max_tool_calls":7`)
 	assert.Contains(t, s, `"prompt":{"id":"p_1"}`)
+	assert.Contains(t, s, `"prompt_cache_options":{"mode":"explicit","ttl":"30m"}`)
 }
 
 // /v1/responses 非 compact 必须剥除 Temperature/TopP/MaxOutputTokens
@@ -930,9 +946,10 @@ func TestConvertOpenAIResponsesRequest_CompactPreservesDtoOnlyFields(t *testing.
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
 	info.RelayMode = relayconstant.RelayModeResponsesCompact
 	req := dto.OpenAIResponsesRequest{
-		Model:        "gpt-5",
-		Conversation: json.RawMessage(`{"id":"conv_1"}`),
-		Truncation:   json.RawMessage(`"auto"`),
+		Model:              "gpt-5",
+		Conversation:       json.RawMessage(`{"id":"conv_1"}`),
+		Truncation:         json.RawMessage(`"auto"`),
+		PromptCacheOptions: json.RawMessage(`{"mode":"explicit","ttl":"30m"}`),
 	}
 	out, err := a.ConvertOpenAIResponsesRequest(nil, info, req)
 	require.NoError(t, err)
@@ -941,6 +958,7 @@ func TestConvertOpenAIResponsesRequest_CompactPreservesDtoOnlyFields(t *testing.
 	s := string(body)
 	assert.Contains(t, s, `"conversation":{"id":"conv_1"}`)
 	assert.Contains(t, s, `"truncation":"auto"`)
+	assert.Contains(t, s, `"prompt_cache_options":{"mode":"explicit","ttl":"30m"}`)
 	// compact 不能带 store/stream 字段
 	assert.NotContains(t, s, `"store"`)
 	assert.NotContains(t, s, `"stream"`)

@@ -18,6 +18,7 @@ const (
 type MonitorSetting struct {
 	AutoTestChannelEnabled       bool    `json:"auto_test_channel_enabled"`
 	AutoTestChannelMinutes       float64 `json:"auto_test_channel_minutes"`
+	ChannelTestMode              string  `json:"channel_test_mode"`
 	AutoTestChannelAllowedTypes  []int   `json:"auto_test_channel_allowed_types"`
 	AutoTestChannelIgnoredTypes  []int   `json:"auto_test_channel_ignored_types"`
 	DingTalkAlertEnabled         bool    `json:"dingtalk_alert_enabled"`
@@ -29,10 +30,16 @@ type MonitorSetting struct {
 	AIAnalysisModel              string  `json:"ai_analysis_model"`
 }
 
+const (
+	ChannelTestModeScheduledAll    = "scheduled_all"
+	ChannelTestModePassiveRecovery = "passive_recovery"
+)
+
 // 默认配置
 var monitorSetting = MonitorSetting{
 	AutoTestChannelEnabled:       false,
 	AutoTestChannelMinutes:       10,
+	ChannelTestMode:              ChannelTestModeScheduledAll,
 	AutoTestChannelAllowedTypes:  []int{},
 	AutoTestChannelIgnoredTypes:  []int{},
 	DingTalkAlertEnabled:         false,
@@ -55,7 +62,11 @@ func GetMonitorSetting() *MonitorSetting {
 		if err == nil && frequency > 0 {
 			monitorSetting.AutoTestChannelEnabled = true
 			monitorSetting.AutoTestChannelMinutes = float64(frequency)
+			monitorSetting.ChannelTestMode = ChannelTestModeScheduledAll
 		}
+	}
+	if monitorSetting.ChannelTestMode != ChannelTestModePassiveRecovery {
+		monitorSetting.ChannelTestMode = ChannelTestModeScheduledAll
 	}
 	return &monitorSetting
 }
