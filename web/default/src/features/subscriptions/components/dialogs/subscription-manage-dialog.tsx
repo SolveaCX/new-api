@@ -33,11 +33,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
-import {
-  formatDuration,
-  formatModelCount,
-  formatResetPeriod,
-} from '../../lib'
+import { formatDuration, formatModelCount, formatResetPeriod } from '../../lib'
 import type { PlanRecord, UserSubscriptionRecord } from '../../types'
 
 interface BillingPreferenceOption {
@@ -55,6 +51,8 @@ interface Props {
   currentPlan: PlanRecord | null
   // 全部可购买套餐
   plans: PlanRecord[]
+  // 订阅数据抓取时的服务端近似时间，避免 render 中读取不稳定时钟
+  snapshotTime: number
   // 计费偏好
   billingPreference: string
   preferenceOptions: BillingPreferenceOption[]
@@ -73,6 +71,7 @@ export function SubscriptionManageDialog({
   currentPlanTitle,
   currentPlan,
   plans,
+  snapshotTime,
   billingPreference,
   preferenceOptions,
   preferenceLabel,
@@ -90,9 +89,10 @@ export function SubscriptionManageDialog({
   const usagePercent =
     totalAmount > 0 ? Math.round((usedAmount / totalAmount) * 100) : 0
   const endTime = subscription?.end_time || 0
-  const remainDays = endTime
-    ? Math.max(0, Math.ceil((endTime - Date.now() / 1000) / 86400))
-    : 0
+  const remainDays =
+    endTime && snapshotTime
+      ? Math.max(0, Math.ceil((endTime - snapshotTime) / 86400))
+      : 0
 
   const currentPrice = Number(currentPlan?.plan?.price_amount ?? -1)
   const currentPlanId = currentPlan?.plan?.id ?? -1
@@ -155,7 +155,9 @@ export function SubscriptionManageDialog({
               <Progress value={usagePercent} className='h-1.5' />
             </div>
           ) : (
-            <div className='text-muted-foreground text-xs'>{t('Unlimited')}</div>
+            <div className='text-muted-foreground text-xs'>
+              {t('Unlimited')}
+            </div>
           )}
 
           {endTime > 0 && (

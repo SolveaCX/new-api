@@ -129,6 +129,7 @@ export function SubscriptionPlansCard({
   >([])
   const [billingPreference, setBillingPreference] =
     useState('subscription_first')
+  const [subscriptionSnapshotTime, setSubscriptionSnapshotTime] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -163,6 +164,7 @@ export function SubscriptionPlansCard({
     try {
       const res = await getSelfSubscriptionFull()
       if (res.success && res.data) {
+        setSubscriptionSnapshotTime(Math.floor(Date.now() / 1000))
         setBillingPreference(
           res.data.billing_preference || 'subscription_first'
         )
@@ -271,14 +273,20 @@ export function SubscriptionPlansCard({
           getBillingPreferenceLabel('subscription_first', t) +
           (disablePref ? ` (${t('No Active')})` : ''),
       },
-      { value: 'wallet_first', label: getBillingPreferenceLabel('wallet_first', t) },
+      {
+        value: 'wallet_first',
+        label: getBillingPreferenceLabel('wallet_first', t),
+      },
       {
         value: 'subscription_only',
         label:
           getBillingPreferenceLabel('subscription_only', t) +
           (disablePref ? ` (${t('No Active')})` : ''),
       },
-      { value: 'wallet_only', label: getBillingPreferenceLabel('wallet_only', t) },
+      {
+        value: 'wallet_only',
+        label: getBillingPreferenceLabel('wallet_only', t),
+      },
     ],
     [t, disablePref]
   )
@@ -296,9 +304,8 @@ export function SubscriptionPlansCard({
 
   const getRemainingDays = (sub: UserSubscriptionRecord) => {
     const endTime = sub?.subscription?.end_time || 0
-    if (!endTime) return 0
-    const now = Date.now() / 1000
-    return Math.max(0, Math.ceil((endTime - now) / 86400))
+    if (!endTime || !subscriptionSnapshotTime) return 0
+    return Math.max(0, Math.ceil((endTime - subscriptionSnapshotTime) / 86400))
   }
 
   const getUsagePercent = (sub: UserSubscriptionRecord) => {
@@ -475,11 +482,13 @@ export function SubscriptionPlansCard({
                   const remainAmount =
                     totalAmount > 0 ? Math.max(0, totalAmount - usedAmount) : 0
                   const planTitle =
-                    planTitleMap.get(subscription?.plan_id) || ''
+                    planTitleMap.get(subscription?.plan_id) ||
+                    (subscription?.source === 'free' ? 'Free' : '')
                   const remainDays = getRemainingDays(sub)
                   const usagePercent = getUsagePercent(sub)
-                  const now = Date.now() / 1000
-                  const isExpired = (subscription?.end_time || 0) < now
+                  const isExpired =
+                    subscriptionSnapshotTime > 0 &&
+                    (subscription?.end_time || 0) < subscriptionSnapshotTime
                   const isCancelled = subscription?.status === 'cancelled'
                   const isActive =
                     subscription?.status === 'active' && !isExpired
@@ -598,12 +607,13 @@ export function SubscriptionPlansCard({
         {/* Available plans grid — 价值突出：模型数 + 速度 + 窗口 + 卖点 */}
         {plans.length > 0 ? (
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 xl:gap-4'>
-            {plans.map((p, index) => {
+            {plans.map((p) => {
               const plan = p?.plan
               if (!plan) return null
               const totalAmount = Number(plan.total_amount || 0)
               const price = Number(plan.price_amount || 0).toFixed(2)
-              const isPopular = index === 0 && plans.length > 1
+              const isRecommended =
+                plan.title.trim().toLowerCase() === 'pro' && plans.length > 1
               const limit = Number(plan.max_purchase_per_user || 0)
               const count = planPurchaseCountMap.get(plan.id) || 0
               const reached = limit > 0 && count >= limit
@@ -630,7 +640,7 @@ export function SubscriptionPlansCard({
                   key={plan.id}
                   className={cn(
                     'transition-shadow hover:shadow-md',
-                    isPopular && 'border-primary/70 shadow-sm',
+                    isRecommended && 'border-primary/70 shadow-sm',
                     isOwned && 'border-emerald-500/60'
                   )}
                 >
@@ -656,7 +666,7 @@ export function SubscriptionPlansCard({
                           {t('Current')}
                         </StatusBadge>
                       ) : (
-                        isPopular && (
+                        isRecommended && (
                           <StatusBadge
                             variant='info'
                             copyable={false}
@@ -737,7 +747,9 @@ export function SubscriptionPlansCard({
                       </Tooltip>
                     ) : (
                       <Button
-                        variant={isPopular && !isOwned ? 'default' : 'outline'}
+                        variant={
+                          isRecommended && !isOwned ? 'default' : 'outline'
+                        }
                         className='w-full'
                         onClick={() => openPurchase(p)}
                       >
@@ -790,7 +802,8 @@ export function SubscriptionPlansCard({
         currentSub={manageSub}
         currentPlanTitle={
           manageSub?.subscription?.plan_id
-            ? planTitleMap.get(manageSub.subscription.plan_id) || ''
+            ? planTitleMap.get(manageSub.subscription.plan_id) ||
+              (manageSub.subscription.source === 'free' ? 'Free' : '')
             : ''
         }
         currentPlan={
@@ -799,6 +812,7 @@ export function SubscriptionPlansCard({
             : null
         }
         plans={plans}
+        snapshotTime={subscriptionSnapshotTime}
         billingPreference={displayPref}
         preferenceOptions={preferenceOptions}
         preferenceLabel={(pref) => getBillingPreferenceLabel(pref, t)}
