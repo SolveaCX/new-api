@@ -129,6 +129,7 @@ export interface SystemStatus {
     display_in_currency?: boolean
     display_token_stat_enabled?: boolean
     quota_per_unit?: number
+    inviter_reward_usd?: number
     quota_display_type?: string
     usd_exchange_rate?: number
     custom_currency_symbol?: string
@@ -175,6 +176,7 @@ export interface SystemStatus {
   display_in_currency?: boolean
   display_token_stat_enabled?: boolean
   quota_per_unit?: number
+  inviter_reward_usd?: number
   quota_display_type?: string
   usd_exchange_rate?: number
   custom_currency_symbol?: string
