@@ -39,6 +39,20 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
+import { useStatus } from './use-status'
+
+function formatInvitationRewardBadge(rewardUSD?: number): string | undefined {
+  if (!Number.isFinite(rewardUSD) || !rewardUSD || rewardUSD <= 0) {
+    return undefined
+  }
+
+  const amount = Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+    useGrouping: false,
+  }).format(rewardUSD)
+  return `+${amount}$`
+}
 
 /**
  * Root navigation groups for the application sidebar.
@@ -46,7 +60,10 @@ import { type SidebarData } from '@/components/layout/types'
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
  */
-export function buildSidebarData(t: TFunction): SidebarData {
+export function buildSidebarData(
+  t: TFunction,
+  inviterRewardUSD?: number
+): SidebarData {
   return {
     navGroups: [
       {
@@ -116,7 +133,7 @@ export function buildSidebarData(t: TFunction): SidebarData {
             title: t('Invite'),
             url: '/invite',
             icon: UserPlus,
-            badge: t('Earn More Credits!'),
+            badge: formatInvitationRewardBadge(inviterRewardUSD),
             badgeVariant: 'promotion',
           },
           {
@@ -179,6 +196,7 @@ export function buildSidebarData(t: TFunction): SidebarData {
 
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const { status } = useStatus()
 
-  return buildSidebarData(t)
+  return buildSidebarData(t, status?.inviter_reward_usd)
 }
