@@ -98,13 +98,50 @@ for (const requiredAboutContent of [
   "Hundreds of millions",
   "AI should be simple enough for",
   'rel="canonical" href="https://flatkey.ai/about"',
+  'assets/team/amazon-accelerate-team.jpg',
+  'assets/team/team-dinner.jpg',
+  'assets/team/product-conversations.jpg',
+  'assets/team/seattle-community.jpg',
 ]) {
   if (!about.includes(requiredAboutContent)) fail("about.html", `missing founder-story content: ${requiredAboutContent}`);
+}
+
+const aboutZh = fs.readFileSync(path.join(root, "about-zh.html"), "utf8");
+for (const requiredAboutZhContent of [
+  '<html lang="zh-CN">',
+  "Hunter Guo",
+  "Andrew Guo",
+  "Google + 阿里巴巴",
+  "让每个人都能更简单地使用 AI",
+  'rel="canonical" href="https://flatkey.ai/zh/about"',
+  'href="/zh/careers"',
+  'assets/team/amazon-accelerate-team.jpg',
+]) {
+  if (!aboutZh.includes(requiredAboutZhContent)) fail("about-zh.html", `missing localized founder-story content: ${requiredAboutZhContent}`);
+}
+
+for (const careersFile of ["careers.html", "careers-zh.html"]) {
+  const careers = fs.readFileSync(path.join(root, careersFile), "utf8");
+  for (const removedOfficeImage of ["qbay-workspace.jpg", "qbay-boardroom.jpg", "qbay-office.jpg"]) {
+    if (careers.includes(removedOfficeImage)) fail(careersFile, `still shows empty office image: ${removedOfficeImage}`);
+  }
+  for (const requiredTeamImage of [
+    "amazon-accelerate-team.jpg",
+    "team-dinner.jpg",
+    "product-conversations.jpg",
+    "community-audience.jpg",
+    "seattle-community.jpg",
+  ]) {
+    if (!careers.includes(`assets/team/${requiredTeamImage}`)) fail(careersFile, `missing team image: ${requiredTeamImage}`);
+  }
 }
 
 const nginxConfig = fs.readFileSync(path.join(path.dirname(root), "nginx.conf"), "utf8");
 if (!nginxConfig.includes("location = /about { try_files /about.html =404; }")) {
   fail("nginx.conf", "/about does not serve the new static founder story");
+}
+if (!nginxConfig.includes("location = /zh/about { try_files /about-zh.html =404; }")) {
+  fail("nginx.conf", "/zh/about does not serve the localized static founder story");
 }
 
 const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
