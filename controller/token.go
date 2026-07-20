@@ -336,15 +336,21 @@ func DeleteToken(c *gin.Context) {
 	})
 }
 
+type tokenUpdateRequest struct {
+	model.Token
+	PreserveModelAccess bool `json:"preserve_model_access"`
+}
+
 func UpdateToken(c *gin.Context) {
 	userId := c.GetInt("id")
 	statusOnly := c.Query("status_only")
-	token := model.Token{}
-	err := c.ShouldBindJSON(&token)
+	request := tokenUpdateRequest{}
+	err := c.ShouldBindJSON(&request)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	token := request.Token
 	if len(token.Name) > 50 {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
@@ -383,23 +389,32 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ExpiredTime = token.ExpiredTime
 		cleanToken.RemainQuota = token.RemainQuota
 		cleanToken.UnlimitedQuota = token.UnlimitedQuota
-		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
-		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
-		cleanToken.Group = token.Group
-		cleanToken.CrossGroupRetry = token.CrossGroupRetry
-		// PLG users cannot pick a group — force every token onto plg.
-		canUseGroups, err := userCanUseGroups(userId)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		if !canUseGroups {
-			cleanToken.Group = plgGroup
-			cleanToken.CrossGroupRetry = false
+		if !request.PreserveModelAccess {
+			cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
+			cleanToken.ModelLimits = token.ModelLimits
+			cleanToken.Group = token.Group
+			cleanToken.CrossGroupRetry = token.CrossGroupRetry
+			// PLG users cannot pick a group — force every token onto plg.
+			canUseGroups, err := userCanUseGroups(userId)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			if !canUseGroups {
+				cleanToken.Group = plgGroup
+				cleanToken.CrossGroupRetry = false
+			}
 		}
 	}
-	err = cleanToken.Update()
+	if statusOnly == "" && request.PreserveModelAccess {
+		err = cleanToken.UpdateNonModelFields()
+		if err == nil {
+			cleanToken, err = model.GetTokenByIds(token.Id, userId)
+		}
+	} else {
+		err = cleanToken.Update()
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return

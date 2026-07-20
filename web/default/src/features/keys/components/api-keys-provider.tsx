@@ -30,7 +30,10 @@ import {
   ensureInitialApiKeyCreateOnce,
   resetInitialApiKeyCreateOnce,
 } from '../lib'
-import { getCreateDialogDeepLinkAction } from '../lib/api-key-create-dialog'
+import {
+  getCreateDialogDeepLinkAction,
+  getCreateDialogRequestTransition,
+} from '../lib/api-key-create-dialog'
 import { type ApiKey, type ApiKeysDialogType } from '../types'
 import { ApiKeyRevealDialog } from './api-key-reveal-dialog'
 
@@ -50,6 +53,8 @@ type ApiKeysContextType = {
   copiedKeyId: number | null
   markKeyCopied: (id: number) => void
   initialCreateGroup?: string | null
+  createRequestKey: string | null
+  createRequestedGroup?: string
   modelAccessQuery: ReturnType<typeof useModelAccess>
 }
 
@@ -69,6 +74,11 @@ export function ApiKeysProvider(props: ApiKeysProviderProps) {
   const autoCreateRequested = props.autoCreateRequested
   const onAutoCreateConsumed = props.onAutoCreateConsumed
   const createDialogRequested = props.createDialogRequested === true
+  const createRequestKey = getCreateDialogRequestTransition(
+    null,
+    createDialogRequested,
+    props.requestedCreateGroup
+  ).requestKey
   const authUserId = useAuthStore((state) => state.auth.user?.id)
   const [open, setDialogOpen] = useDialogState<ApiKeysDialogType>(null)
   const [initialCreateGroup, setInitialCreateGroup] = useState<
@@ -87,6 +97,7 @@ export function ApiKeysProvider(props: ApiKeysProviderProps) {
   const deepLinkActiveRef = useRef(false)
   const didOpenCreateDeepLinkRef = useRef(false)
   const didResolveCreateDeepLinkRef = useRef(false)
+  const createDeepLinkRequestKeyRef = useRef<string | null>(null)
   const onCreateDialogConsumedRef = useRef(props.onCreateDialogConsumed)
 
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null)
@@ -131,9 +142,18 @@ export function ApiKeysProvider(props: ApiKeysProviderProps) {
   )
 
   useEffect(() => {
-    if (!createDialogRequested) {
+    const requestTransition = getCreateDialogRequestTransition(
+      createDeepLinkRequestKeyRef.current,
+      createDialogRequested,
+      props.requestedCreateGroup
+    )
+    if (requestTransition.shouldReset) {
       didOpenCreateDeepLinkRef.current = false
       didResolveCreateDeepLinkRef.current = false
+      createDeepLinkRequestKeyRef.current = requestTransition.requestKey
+      setInitialCreateGroup(undefined)
+    }
+    if (!createDialogRequested) {
       return
     }
     const action = getCreateDialogDeepLinkAction(
@@ -329,6 +349,10 @@ export function ApiKeysProvider(props: ApiKeysProviderProps) {
         copiedKeyId,
         markKeyCopied,
         initialCreateGroup,
+        createRequestKey,
+        createRequestedGroup: createDialogRequested
+          ? props.requestedCreateGroup
+          : undefined,
         modelAccessQuery,
       }}
     >

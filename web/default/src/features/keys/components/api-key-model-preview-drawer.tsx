@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { ViewIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
@@ -46,6 +47,7 @@ type ApiKeyModelPreviewDrawerProps = {
 
 export function ApiKeyModelPreviewDrawer(props: ApiKeyModelPreviewDrawerProps) {
   const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
 
   return (
     <div className='flex flex-col gap-2 lg:hidden'>
@@ -55,7 +57,7 @@ export function ApiKeyModelPreviewDrawer(props: ApiKeyModelPreviewDrawerProps) {
           <p className='text-muted-foreground text-xs'>{props.summary}</p>
           <span className='sr-only'>{props.drawerDescription}</span>
         </div>
-        <Drawer>
+        <Drawer open={open} onOpenChange={setOpen}>
           <DrawerTrigger asChild>
             <Button type='button' size='sm' variant='outline'>
               <HugeiconsIcon
@@ -67,23 +69,25 @@ export function ApiKeyModelPreviewDrawer(props: ApiKeyModelPreviewDrawerProps) {
               {t('View models')}
             </Button>
           </DrawerTrigger>
-          <DrawerContent className='h-[80vh]'>
-            <DrawerHeader>
-              <DrawerTitle>{props.drawerTitle}</DrawerTitle>
-              <DrawerDescription>{props.drawerDescription}</DrawerDescription>
-            </DrawerHeader>
-            <ScrollArea className='min-h-0 flex-1 px-4 pb-4'>
-              <ModelAccessPreview
-                models={props.models}
-                totalCount={props.totalCount}
-                scopeTitle={props.scopeTitle}
-                scopeDescription={props.scopeDescription}
-                summary={props.summary}
-                emptyTitle={props.emptyTitle}
-                emptyDescription={props.emptyDescription}
-              />
-            </ScrollArea>
-          </DrawerContent>
+          {open && (
+            <DrawerContent className='h-[80vh]'>
+              <DrawerHeader>
+                <DrawerTitle>{props.drawerTitle}</DrawerTitle>
+                <DrawerDescription>{props.drawerDescription}</DrawerDescription>
+              </DrawerHeader>
+              <ScrollArea className='min-h-0 flex-1 px-4 pb-4'>
+                <ModelAccessPreview
+                  models={props.models}
+                  totalCount={props.totalCount}
+                  scopeTitle={props.scopeTitle}
+                  scopeDescription={props.scopeDescription}
+                  summary={props.summary}
+                  emptyTitle={props.emptyTitle}
+                  emptyDescription={props.emptyDescription}
+                />
+              </ScrollArea>
+            </DrawerContent>
+          )}
         </Drawer>
       </div>
     </div>

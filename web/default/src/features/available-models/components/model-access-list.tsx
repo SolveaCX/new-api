@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { Copy01Icon, PackageIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
@@ -61,6 +62,37 @@ type ModelAccessListProps = {
   onClearFilters: () => void
 }
 
+export const MODEL_ACCESS_PAGE_SIZE = 50
+
+type ModelAccessPaginationState = {
+  models: ModelAccessModel[]
+  scopeIsEmpty: boolean
+  visibleCount: number
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function getNextVisibleModelCount(
+  currentCount: number,
+  totalCount: number
+): number {
+  return Math.min(currentCount + MODEL_ACCESS_PAGE_SIZE, totalCount)
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function getEffectiveVisibleModelCount(
+  pagination: ModelAccessPaginationState,
+  models: ModelAccessModel[],
+  scopeIsEmpty: boolean
+): number {
+  if (
+    pagination.models !== models ||
+    pagination.scopeIsEmpty !== scopeIsEmpty
+  ) {
+    return MODEL_ACCESS_PAGE_SIZE
+  }
+  return pagination.visibleCount
+}
+
 export function ModelAccessList({
   models,
   scopeIsEmpty,
@@ -69,6 +101,13 @@ export function ModelAccessList({
   const { t } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
   const availability = getModelAvailabilityConfig(t)
+  const [pagination, setPagination] = useState<ModelAccessPaginationState>(
+    () => ({
+      models,
+      scopeIsEmpty,
+      visibleCount: MODEL_ACCESS_PAGE_SIZE,
+    })
+  )
 
   if (models.length === 0) {
     return (
@@ -110,81 +149,110 @@ export function ModelAccessList({
     )
   }
 
+  const visibleCount = getEffectiveVisibleModelCount(
+    pagination,
+    models,
+    scopeIsEmpty
+  )
+  const visibleModels = models.slice(0, visibleCount)
+  const hasMoreModels = visibleModels.length < models.length
+
   return (
     <TooltipProvider>
-      <ItemGroup className='gap-2.5'>
-        {models.map((model) => {
-          const availabilityConfig =
-            availability[
-              normalizeModelAvailabilityStatus(model.availability_status)
-            ] || availability.unknown_failure
-          const endpointLabels = Array.from(
-            new Set(
-              model.supported_endpoint_types.map((endpoint) =>
-                getModelEndpointLabel(endpoint, t)
+      <div className='flex flex-col gap-3'>
+        <ItemGroup className='gap-2.5'>
+          {visibleModels.map((model) => {
+            const availabilityConfig =
+              availability[
+                normalizeModelAvailabilityStatus(model.availability_status)
+              ] || availability.unknown_failure
+            const endpointLabels = Array.from(
+              new Set(
+                model.supported_endpoint_types.map((endpoint) =>
+                  getModelEndpointLabel(endpoint, t)
+                )
               )
             )
-          )
 
-          return (
-            <Item key={model.id} variant='outline' size='sm'>
-              <ItemMedia variant='icon'>
-                {getLobeIcon(model.vendor?.icon, 18)}
-              </ItemMedia>
-              <ItemContent className='min-w-0'>
-                <ItemTitle className='max-w-full font-mono'>
-                  <span className='truncate'>{model.id}</span>
-                </ItemTitle>
-                <ItemDescription>
-                  {model.vendor?.name ?? t('Unknown')}
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <StatusBadge
-                  label={availabilityConfig.label}
-                  variant={availabilityConfig.variant}
-                  copyable={false}
-                />
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        type='button'
-                        size='icon-sm'
-                        variant='ghost'
-                        aria-label={t('Copy to clipboard')}
-                        onClick={() => void copyToClipboard(model.id)}
+            return (
+              <Item key={model.id} variant='outline' size='sm'>
+                <ItemMedia variant='icon'>
+                  {getLobeIcon(model.vendor?.icon, 18)}
+                </ItemMedia>
+                <ItemContent className='min-w-0'>
+                  <ItemTitle className='max-w-full font-mono'>
+                    <span className='truncate'>{model.id}</span>
+                  </ItemTitle>
+                  <ItemDescription>
+                    {model.vendor?.name ?? t('Unknown')}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <StatusBadge
+                    label={availabilityConfig.label}
+                    variant={availabilityConfig.variant}
+                    copyable={false}
+                  />
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type='button'
+                          size='icon-sm'
+                          variant='ghost'
+                          aria-label={t('Copy to clipboard')}
+                          onClick={() => void copyToClipboard(model.id)}
+                        />
+                      }
+                    >
+                      <HugeiconsIcon
+                        icon={Copy01Icon}
+                        strokeWidth={2}
+                        aria-hidden='true'
                       />
-                    }
-                  >
-                    <HugeiconsIcon
-                      icon={Copy01Icon}
-                      strokeWidth={2}
-                      aria-hidden='true'
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent>{t('Copy to clipboard')}</TooltipContent>
-                </Tooltip>
-              </ItemActions>
-              <ItemFooter className='justify-start'>
-                <div className='flex flex-wrap gap-1.5'>
-                  {endpointLabels.length > 0 ? (
-                    endpointLabels.map((endpoint) => (
-                      <Badge key={endpoint} variant='outline'>
-                        {endpoint}
+                    </TooltipTrigger>
+                    <TooltipContent>{t('Copy to clipboard')}</TooltipContent>
+                  </Tooltip>
+                </ItemActions>
+                <ItemFooter className='justify-start'>
+                  <div className='flex flex-wrap gap-1.5'>
+                    {endpointLabels.length > 0 ? (
+                      endpointLabels.map((endpoint) => (
+                        <Badge key={endpoint} variant='outline'>
+                          {endpoint}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge variant='outline'>
+                        {t('Endpoint not specified')}
                       </Badge>
-                    ))
-                  ) : (
-                    <Badge variant='outline'>
-                      {t('Endpoint not specified')}
-                    </Badge>
-                  )}
-                </div>
-              </ItemFooter>
-            </Item>
-          )
-        })}
-      </ItemGroup>
+                    )}
+                  </div>
+                </ItemFooter>
+              </Item>
+            )
+          })}
+        </ItemGroup>
+        {hasMoreModels && (
+          <Button
+            type='button'
+            variant='outline'
+            className='self-center'
+            onClick={() =>
+              setPagination({
+                models,
+                scopeIsEmpty,
+                visibleCount: getNextVisibleModelCount(
+                  visibleCount,
+                  models.length
+                ),
+              })
+            }
+          >
+            {t('More')}
+          </Button>
+        )}
+      </div>
     </TooltipProvider>
   )
 }
