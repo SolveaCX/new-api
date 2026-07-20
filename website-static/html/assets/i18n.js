@@ -5,6 +5,10 @@
     ["pt", "Português"], ["ru", "Русский"], ["ja", "日本語"], ["vi", "Tiếng Việt"],
     ["de", "Deutsch"], ["id", "Bahasa Indonesia"]
   ];
+  var LANG_TAGS = {
+    en: "en-US", zh: "zh-CN", es: "es-ES", fr: "fr-FR", pt: "pt-PT",
+    ru: "ru-RU", ja: "ja-JP", vi: "vi-VN", de: "de-DE", id: "id-ID"
+  };
 
   var DICTS = {
 "zh": {
@@ -3411,7 +3415,12 @@
 }
 };
 
-  var LEGAL_ROUTES = { "terms.html": "terms", "privacy.html": "privacy", "refund-policy.html": "refund-policy", "sla.html": "sla", "legal-sla.html": "sla" };
+  var LEGAL_ROUTES = {
+    terms: "terms", "terms.html": "terms",
+    privacy: "privacy", "privacy.html": "privacy",
+    "refund-policy": "refund-policy", "refund-policy.html": "refund-policy",
+    sla: "sla", "sla.html": "sla", "legal-sla": "sla", "legal-sla.html": "sla"
+  };
   // These locale routes contain reviewed legal copy. German and Indonesian
   // currently fall back to English, so do not present them as translated law.
   var LEGAL_LANGUAGES = { en: true, zh: true, es: true, fr: true, pt: true, ru: true, ja: true, vi: true };
@@ -3420,7 +3429,7 @@
   }
 
   function isAboutPath(pathname) {
-    return /^\/about(?:\.html)?\/?$/.test(pathname);
+    return /^\/(?:(?:zh|es|pt|fr|id|de|vi|ru|ja)\/)?about(?:\.html)?\/?$/.test(pathname);
   }
 
   function pathLocale() {
@@ -3438,7 +3447,7 @@
       var localizedRoute = route === "legal-sla" ? "sla" : route;
       return locale !== "en" && LEGAL_LANGUAGES[locale]
         ? "/" + locale + "/" + localizedRoute
-        : "/" + route + ".html";
+        : "/" + localizedRoute;
     }
     return "";
   }
@@ -3475,10 +3484,10 @@
   }
 
   var HREF_KEYS = {
-    "models.html": "nav.models", "playground.html": "nav.playground",
-    "topup.html": "nav.pricing", "compute.html": "nav.compute", "/compute.html": "nav.compute", "usecases.html": "nav.usecases",
-    "signup.html": "nav.signin", "contact.html": "nav.contact",
-    "https://flatkey.ai/blog": "nav.blog", "/blog": "nav.blog", "/rankings": "nav.rankings", "/about": "ft.about", "docs.html": "nav.docs", "status.html": "nav.status", "sla.html": "nav.sla", "login.html": "nav.signin", "https://console.flatkey.ai/sign-in": "nav.signin", "https://console.flatkey.ai/sign-up?redirect=/keys": "nav.start"
+    "/models": "nav.models", "/playground": "nav.playground",
+    "/pricing": "nav.pricing", "/compute": "nav.compute", "/usecases": "nav.usecases",
+    "/login": "nav.signin", "/contact": "nav.contact",
+    "https://flatkey.ai/blog": "nav.blog", "/blog": "nav.blog", "/rankings": "nav.rankings", "/about": "ft.about", "/docs": "nav.docs", "/status": "nav.status", "/sla": "nav.sla", "https://console.flatkey.ai/sign-in": "nav.signin", "https://console.flatkey.ai/sign-up?redirect=/keys": "nav.start"
   };
   function autoTag() {
     document.querySelectorAll(".nav a:not(.logo):not(.btn)").forEach(function (a) {
@@ -3523,7 +3532,7 @@
       var v = d && d[el.dataset.i18n];
       el.innerHTML = v !== undefined ? v : el.dataset.orig;
     });
-    document.documentElement.lang = l === "zh" ? "zh-CN" : l;
+    document.documentElement.lang = LANG_TAGS[l] || "en-US";
     document.documentElement.dataset.locale = l;
     try { localStorage.setItem("fk-lang", l); } catch (e) {}
     var sel = document.querySelector(".langsel");
@@ -3589,9 +3598,9 @@
   if (isCareerPath(location.pathname)) {
     setLang(/(?:careers-zh\.html|^\/zh\/careers)/.test(location.pathname) ? "zh" : "en");
   } else if (isAboutPath(location.pathname)) {
-    // /about is the English static page. Other choices navigate to the
-    // corresponding reviewed legacy locale instead of mixing body languages.
-    setLang("en");
+    // About is a real localized route. Keep the body language aligned with the
+    // URL and make every selector choice navigate to its alternate page.
+    setLang(routedLanguage || "en");
   } else if (currentLegalSlug && legalLanguage !== "en") {
     // A user who selected a language elsewhere should never see an English
     // legal body paired with a non-English language selector.
