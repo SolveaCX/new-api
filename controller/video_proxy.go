@@ -134,6 +134,8 @@ func VideoProxy(c *gin.Context) {
 		videoURL = taskjimengzhizinan.ExtractUpstreamVideoURL(task.Data)
 	case constant.ChannelTypeTechMobiVideo:
 		videoURL = tasktechmobi.ExtractUpstreamVideoURL(task.Data)
+	case constant.ChannelTypeBytePlus:
+		videoURL = extractBytePlusVideoURL(task)
 	default:
 		// Video URL is stored in PrivateData.ResultURL (fallback to FailReason for old data)
 		videoURL = task.GetResultURL()

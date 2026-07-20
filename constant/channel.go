@@ -66,6 +66,7 @@ const (
 	ChannelTypeJimengZhizinan   = 104 // Jimeng reverse proxy (zhizinan1997/jimeng-free-api-all)
 	ChannelTypeTechMobiVideo    = 105 // TechMobi Seedance-compatible async video API
 	ChannelTypeElevenLabs       = 106 // ElevenLabs voice/music/SFX — native endpoints passthrough (xi-api-key)
+	ChannelTypeBytePlus         = 107 // BytePlus Ark Seedance async video API
 	ChannelTypeDummy                  // this one is only for count, do not add any channel after this
 
 )
@@ -143,6 +144,7 @@ var ChannelBaseURLs = []string{
 	"",                             // 104 JimengZhizinan (self-hosted zhizinan1997/jimeng-free-api-all)
 	"https://api.chatgpttech.mobi", // 105 TechMobiVideo
 	"https://api.elevenlabs.io",    // 106 ElevenLabs
+	"https://ark.ap-southeast.bytepluses.com", // 107 BytePlus
 }
 
 var ChannelTypeNames = map[int]string{
@@ -208,6 +210,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeJimengZhizinan:   "JimengZhizinan",
 	ChannelTypeTechMobiVideo:    "TechMobiVideo",
 	ChannelTypeElevenLabs:       "ElevenLabs",
+	ChannelTypeBytePlus:         "BytePlus",
 }
 
 func GetChannelTypeName(channelType int) string {

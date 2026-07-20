@@ -35,6 +35,7 @@ import (
 	taskali "github.com/QuantumNous/new-api/relay/channel/task/ali"
 	taskblockrunseedance "github.com/QuantumNous/new-api/relay/channel/task/blockrunseedance"
 	taskblockrunvideo "github.com/QuantumNous/new-api/relay/channel/task/blockrunvideo"
+	taskbyteplus "github.com/QuantumNous/new-api/relay/channel/task/byteplus"
 	taskdoubao "github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	taskGemini "github.com/QuantumNous/new-api/relay/channel/task/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/task/hailuo"
@@ -183,6 +184,8 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 			return &taskblockrunseedance.TaskAdaptor{}
 		case constant.ChannelTypeTechMobiVideo:
 			return &tasktechmobi.TaskAdaptor{}
+		case constant.ChannelTypeBytePlus:
+			return &taskbyteplus.TaskAdaptor{}
 		}
 	}
 	return nil

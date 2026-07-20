@@ -194,6 +194,7 @@ var untestableProbeChannelTypes = map[int]bool{
 	constant.ChannelTypeBlockRunVideo:    true,
 	constant.ChannelTypeBlockRunSeedance: true,
 	constant.ChannelTypeTechMobiVideo:    true,
+	constant.ChannelTypeBytePlus:         true,
 }
 
 var untestableProbeModelSubstrings = []string{
