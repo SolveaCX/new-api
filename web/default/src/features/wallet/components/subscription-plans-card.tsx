@@ -273,14 +273,15 @@ export function SubscriptionPlansCard({
           ).toLocaleString(),
         })
       : ''
-  const usageLimitRows: Array<{
+  interface UsageRow {
     key: string
     label: string
     used: number
     limit: number
     detail: string
     format?: (v: number) => string
-  }> = currentSubscription
+  }
+  const textUsageRows: UsageRow[] = currentSubscription
     ? [
         {
           key: 'monthly',
@@ -310,6 +311,10 @@ export function SubscriptionPlansCard({
                 })
               : '',
         },
+      ].filter((item) => item.limit > 0)
+    : []
+  const mediaUsageRows: UsageRow[] = currentSubscription
+    ? [
         {
           key: 'media',
           label: t('Media credits'),
@@ -321,6 +326,31 @@ export function SubscriptionPlansCard({
         },
       ].filter((item) => item.limit > 0)
     : []
+
+  const renderUsageRow = (item: UsageRow) => {
+    const percent = usagePercent(item.used, item.limit)
+    return (
+      <div key={item.key} className='min-w-0'>
+        <div className='flex items-center justify-between gap-3 text-xs'>
+          <span className='font-medium'>{item.label}</span>
+          <span className='text-muted-foreground tabular-nums'>
+            {percent}% {t('used')}
+          </span>
+        </div>
+        <Progress
+          value={percent}
+          className='mt-2 h-2 bg-[#e5eefb] dark:bg-white/10 [&_[data-slot=progress-indicator]]:bg-[#5b21b6]'
+        />
+        <div className='text-muted-foreground mt-1.5 flex items-center justify-between gap-3 text-[11px]'>
+          <span>
+            {(item.format ?? formatQuota)(item.used)} /{' '}
+            {(item.format ?? formatQuota)(item.limit)}
+          </span>
+          <span className='truncate'>{item.detail}</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -363,31 +393,27 @@ export function SubscriptionPlansCard({
           </div>
 
           {currentSubscription ? (
-            <div className='mt-4 grid gap-4 md:grid-cols-3'>
-              {usageLimitRows.map((item) => {
-                const percent = usagePercent(item.used, item.limit)
-                return (
-                  <div key={item.key} className='min-w-0'>
-                    <div className='flex items-center justify-between gap-3 text-xs'>
-                      <span className='font-medium'>{item.label}</span>
-                      <span className='text-muted-foreground tabular-nums'>
-                        {percent}% {t('used')}
-                      </span>
-                    </div>
-                    <Progress
-                      value={percent}
-                      className='mt-2 h-2 bg-[#e5eefb] dark:bg-white/10 [&_[data-slot=progress-indicator]]:bg-[#5b21b6]'
-                    />
-                    <div className='text-muted-foreground mt-1.5 flex items-center justify-between gap-3 text-[11px]'>
-                      <span>
-                        {(item.format ?? formatQuota)(item.used)} /{' '}
-                        {(item.format ?? formatQuota)(item.limit)}
-                      </span>
-                      <span className='truncate'>{item.detail}</span>
-                    </div>
+            <div className='mt-4 space-y-4'>
+              {textUsageRows.length > 0 && (
+                <div>
+                  <p className='text-muted-foreground text-[10px] font-semibold tracking-widest uppercase'>
+                    {t('Text models')}
+                  </p>
+                  <div className='mt-2 grid gap-4 md:grid-cols-3'>
+                    {textUsageRows.map(renderUsageRow)}
                   </div>
-                )
-              })}
+                </div>
+              )}
+              {mediaUsageRows.length > 0 && (
+                <div className='border-t pt-3'>
+                  <p className='text-muted-foreground text-[10px] font-semibold tracking-widest uppercase'>
+                    {t('Image & video models')}
+                  </p>
+                  <div className='mt-2 grid gap-4 md:grid-cols-3'>
+                    {mediaUsageRows.map(renderUsageRow)}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <p className='text-muted-foreground mt-3 text-xs'>
