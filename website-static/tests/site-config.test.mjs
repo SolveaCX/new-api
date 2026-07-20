@@ -5,13 +5,13 @@ import vm from "node:vm";
 
 const scriptPath = new URL("../html/assets/site-config.js", import.meta.url);
 
-function loadApi() {
+function loadApi({ withAbortController = true } = {}) {
   const context = {
-    AbortController,
     URL,
     clearTimeout,
     setTimeout,
   };
+  if (withAbortController) context.AbortController = AbortController;
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(readFileSync(scriptPath, "utf8"), context, {
@@ -64,6 +64,25 @@ test("reads docs_link from the bounded same-origin status request", async () => 
   assert.equal(requestedUrl, "/api/status");
   assert.equal(requestedOptions.headers.accept, "application/json");
   assert.ok(requestedOptions.signal instanceof AbortSignal);
+});
+
+test("fetches the status without a signal when AbortController is unavailable", async () => {
+  const api = loadApi({ withAbortController: false });
+  let requestedOptions;
+
+  const url = await api.getDocsUrl(async (_input, options) => {
+    requestedOptions = options;
+    return {
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { docs_link: "https://docs.example.com" },
+      }),
+    };
+  });
+
+  assert.equal(url, "https://docs.example.com/");
+  assert.equal("signal" in requestedOptions, false);
 });
 
 test("returns null for failed responses, envelopes, payloads, and requests", async () => {

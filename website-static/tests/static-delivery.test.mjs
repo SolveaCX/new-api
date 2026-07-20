@@ -15,6 +15,7 @@ test("Nginx proxies the public status response with bounded browser caching", ()
     /proxy_pass \$\{APP_CONSOLE_ORIGIN\}\/api\/status;/,
   );
   assert.match(nginx, /proxy_set_header Cookie "";/);
+  assert.match(nginx, /proxy_set_header Authorization "";/);
 
   const timeoutNames = [
     ...nginx.matchAll(/proxy_(connect|read|send)_timeout 3s;/g),

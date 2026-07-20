@@ -22,14 +22,17 @@
   }
 
   async function getDocsUrl(fetcher = global.fetch, timeoutMs = 3000) {
-    const controller = new global.AbortController();
-    const timeout = global.setTimeout(() => controller.abort(), timeoutMs);
+    let timeout;
 
     try {
-      const response = await fetcher("/api/status", {
-        headers: { accept: "application/json" },
-        signal: controller.signal,
-      });
+      const requestOptions = { headers: { accept: "application/json" } };
+      if (typeof global.AbortController === "function") {
+        const controller = new global.AbortController();
+        timeout = global.setTimeout(() => controller.abort(), timeoutMs);
+        requestOptions.signal = controller.signal;
+      }
+
+      const response = await fetcher("/api/status", requestOptions);
       if (!response.ok) return null;
 
       const payload = await response.json();
@@ -39,7 +42,7 @@
     } catch {
       return null;
     } finally {
-      global.clearTimeout(timeout);
+      if (timeout !== undefined) global.clearTimeout(timeout);
     }
   }
 
