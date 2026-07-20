@@ -44,6 +44,8 @@ func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIErro
 		fallthrough
 	case relayconstant.RelayModeAudioTranscription:
 		err = relay.AudioHelper(c, info)
+	case relayconstant.RelayModeElevenLabs:
+		err = relay.ElevenLabsHelper(c, info)
 	case relayconstant.RelayModeRerank:
 		err = relay.RerankHelper(c, info)
 	case relayconstant.RelayModeEmbeddings:
@@ -97,19 +99,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			// still see the original text server-side.
 			service.ScrubWhitelabelError(c, newAPIError, common.GetContextKeyInt(c, constant.ContextKeyChannelType))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
-			switch relayFormat {
-			case types.RelayFormatOpenAIRealtime:
-				helper.WssError(c, ws, newAPIError.ToOpenAIError())
-			case types.RelayFormatClaude:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
-				})
-			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"error": newAPIError.ToOpenAIError(),
-				})
-			}
+			writeRelayError(c, relayFormat, ws, newAPIError)
 		}
 	}()
 
@@ -224,6 +214,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
+		attemptStartedAt := time.Now()
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
 			newAPIError = relay.WssHelper(c, relayInfo)
@@ -236,6 +227,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		releaseChannelConcurrencyForRequest(c)
+		perfmetrics.RecordChannelAttempt(relayInfo, channel.Id, channel.Name, attemptStartedAt, newAPIError)
 		if newAPIError == nil {
 			relayInfo.LastError = nil
 			return
@@ -257,8 +249,28 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
-		gopool.Go(func() {
-			perfmetrics.RecordRelaySample(relayInfo, false, 0)
+		perfmetrics.RecordRelaySample(relayInfo, false, 0, newAPIError)
+	}
+}
+
+func writeRelayError(c *gin.Context, relayFormat types.RelayFormat, ws *websocket.Conn, apiErr *types.NewAPIError) {
+	if apiErr == nil {
+		return
+	}
+	if relayFormat != types.RelayFormatOpenAIRealtime && c.Writer.Written() {
+		return
+	}
+	switch relayFormat {
+	case types.RelayFormatOpenAIRealtime:
+		helper.WssError(c, ws, apiErr.ToOpenAIError())
+	case types.RelayFormatClaude:
+		c.JSON(apiErr.StatusCode, gin.H{
+			"type":  "error",
+			"error": apiErr.ToClaudeError(),
+		})
+	default:
+		c.JSON(apiErr.StatusCode, gin.H{
+			"error": apiErr.ToOpenAIError(),
 		})
 	}
 }
@@ -371,6 +383,9 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
+		return false
+	}
+	if c != nil && c.Writer != nil && c.Writer.Written() {
 		return false
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {

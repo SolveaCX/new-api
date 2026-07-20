@@ -744,6 +744,10 @@ func StripeWebhook(c *gin.Context) {
 		processingErr = sessionAsyncPaymentSucceeded(ctx, event, callerIp)
 	case stripe.EventTypeCheckoutSessionAsyncPaymentFailed:
 		sessionAsyncPaymentFailed(ctx, event, callerIp)
+	case stripe.EventTypeChargeRefunded:
+		processingErr = chargeReversed(ctx, event, model.InviteSubRewardReasonRefunded, callerIp)
+	case stripe.EventTypeChargeDisputeCreated:
+		processingErr = chargeReversed(ctx, event, model.InviteSubRewardReasonDisputed, callerIp)
 	default:
 		logger.LogInfo(ctx, fmt.Sprintf("Stripe webhook 忽略事件 event_type=%s client_ip=%s", string(event.Type), callerIp))
 	}
@@ -1303,6 +1307,56 @@ func backfillCardFingerprintFromTopUp(ctx context.Context, topUp *model.TopUp, c
 	logger.LogInfo(ctx, fmt.Sprintf("Stripe 充值绑卡：已记录卡指纹 user_id=%d trade_no=%s client_ip=%s", topUp.UserId, topUp.TradeNo, callerIp))
 }
 
+// chargeReversed handles charge.refunded / charge.dispute.created. Its only
+// job today is invite-reward-v2 clawback: map the charge back to the checkout
+// session's client_reference_id (our trade_no) and revoke any subscription
+// invite reward tied to that order. Top-up refund bookkeeping stays a manual
+// ops process, unchanged.
+func chargeReversed(ctx context.Context, event stripe.Event, reason string, callerIp string) error {
+	if !common.InviteRewardSubscriptionMode {
+		return nil
+	}
+	paymentIntentId := event.GetObjectValue("payment_intent")
+	if paymentIntentId == "" {
+		logger.LogWarn(ctx, fmt.Sprintf("Stripe %s 事件缺少 payment_intent，跳过邀请奖励回收 client_ip=%s", string(event.Type), callerIp))
+		return nil
+	}
+	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
+		logger.LogWarn(ctx, "Stripe API 密钥未配置，无法回查 checkout session，跳过邀请奖励回收")
+		return nil
+	}
+	stripe.Key = setting.StripeApiSecret
+	listParams := &stripe.CheckoutSessionListParams{
+		PaymentIntent: stripe.String(paymentIntentId),
+	}
+	listParams.Limit = stripe.Int64(1)
+	iter := session.List(listParams)
+	referenceId := ""
+	for iter.Next() {
+		if s := iter.CheckoutSession(); s != nil {
+			referenceId = s.ClientReferenceID
+		}
+		break
+	}
+	if err := iter.Err(); err != nil {
+		logger.LogError(ctx, fmt.Sprintf("Stripe 回查 checkout session 失败 payment_intent=%s error=%q", paymentIntentId, err.Error()))
+		return err // retryable: let Stripe redeliver so the clawback is not lost
+	}
+	if referenceId == "" {
+		logger.LogInfo(ctx, fmt.Sprintf("Stripe %s 未关联 checkout session，跳过邀请奖励回收 payment_intent=%s", string(event.Type), paymentIntentId))
+		return nil
+	}
+	revoked, err := model.RevokeInviteSubscriptionRewardByTradeNo(referenceId, reason)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("邀请奖励回收失败 trade_no=%s reason=%s error=%q", referenceId, reason, err.Error()))
+		return err
+	}
+	if revoked {
+		logger.LogInfo(ctx, fmt.Sprintf("邀请奖励已回收 trade_no=%s reason=%s client_ip=%s", referenceId, reason, callerIp))
+	}
+	return nil
+}
+
 func sessionExpired(ctx context.Context, event stripe.Event) {
 	referenceId := event.GetObjectValue("client_reference_id")
 	status := event.GetObjectValue("status")
@@ -1611,21 +1665,6 @@ func genStripeLink(referenceId string, customerId string, email string, checkout
 
 	params := buildStripeCheckoutSessionParams(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, embedded, submitMessage, recall)
 
-	// For onboarding promo top-ups, save the card while paying so it can be charged
-	// off-session later (postpaid auto-charge). Plain wallet top-ups don't save the card.
-	// Scoped to payment_method_options.card (not payment_intent_data.setup_future_usage):
-	// a top-level setup_future_usage makes Stripe hide every payment method that can't be
-	// saved for off-session reuse (Alipay/Pix/UPI/WeChat...), leaving card-only checkouts.
-	// Card payments still bind the card; local-method payments simply skip binding
-	// (backfillCardFingerprintFromTopUp tolerates the missing card).
-	if saveCard {
-		params.PaymentMethodOptions = &stripe.CheckoutSessionPaymentMethodOptionsParams{
-			Card: &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
-				SetupFutureUsage: stripe.String("off_session"),
-			},
-		}
-	}
-
 	result, err := session.New(params)
 	if err != nil {
 		return nil, err
@@ -1781,6 +1820,27 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 		StatementDescriptorSuffix: stripe.String("FLATKEY"),
 	}
 
+	// Ask issuers to run 3D Secure whenever the card is enrolled ("any"): card-testing
+	// bots holding stolen numbers can't pass the cardholder challenge, and liability for
+	// fraudulent-use disputes shifts to the issuer. Enrolled cards mostly clear through a
+	// frictionless flow, so legitimate friction stays minimal.
+	cardOptions := &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
+		RequestThreeDSecure: stripe.String(string(stripe.CheckoutSessionPaymentMethodOptionsCardRequestThreeDSecureAny)),
+	}
+	// For onboarding promo top-ups, save the card while paying so it can be charged
+	// off-session later (postpaid auto-charge). Plain wallet top-ups don't save the card.
+	// Scoped to payment_method_options.card (not payment_intent_data.setup_future_usage):
+	// a top-level setup_future_usage makes Stripe hide every payment method that can't be
+	// saved for off-session reuse (Alipay/Pix/UPI/WeChat...), leaving card-only checkouts.
+	// Card payments still bind the card; local-method payments simply skip binding
+	// (backfillCardFingerprintFromTopUp tolerates the missing card).
+	if saveCard {
+		cardOptions.SetupFutureUsage = stripe.String("off_session")
+	}
+	params.PaymentMethodOptions = &stripe.CheckoutSessionPaymentMethodOptionsParams{
+		Card: cardOptions,
+	}
+
 	if submitMessage != "" {
 		params.CustomText = &stripe.CheckoutSessionCustomTextParams{
 			Submit: &stripe.CheckoutSessionCustomTextSubmitParams{
@@ -1858,23 +1918,11 @@ func normalizeStripeTopUpAmount(amount int64) int64 {
 }
 
 func getStripePayMoney(amount float64, group string) float64 {
-	originalAmount := amount
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		amount = amount / common.QuotaPerUnit
 	}
-	// Using float64 for monetary calculations is acceptable here due to the small amounts involved
-	topupGroupRatio := common.GetTopupGroupRatio(group)
-	if topupGroupRatio == 0 {
-		topupGroupRatio = 1
-	}
-	// apply optional preset discount by the original request amount (if configured), default 1.0
-	discount := 1.0
-	if ds, ok := operation_setting.GetPaymentSetting().AmountDiscount[int(originalAmount)]; ok {
-		if ds > 0 {
-			discount = ds
-		}
-	}
-	payMoney := amount * setting.StripeUnitPrice * topupGroupRatio * discount
+	// Using float64 for monetary calculations is acceptable here due to the small amounts involved.
+	payMoney := amount * setting.StripeUnitPrice
 	return payMoney
 }
 

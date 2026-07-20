@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
@@ -16,10 +17,6 @@ import (
 
 type SubscriptionPlanDTO struct {
 	Plan model.SubscriptionPlan `json:"plan"`
-}
-
-type BillingPreferenceRequest struct {
-	BillingPreference string `json:"billing_preference"`
 }
 
 type SubscriptionBalancePayRequest struct {
@@ -51,8 +48,6 @@ func GetSubscriptionPlans(c *gin.Context) {
 
 func GetSubscriptionSelf(c *gin.Context) {
 	userId := c.GetInt("id")
-	settingMap, _ := model.GetUserSetting(userId, false)
-	pref := common.NormalizeBillingPreference(settingMap.BillingPreference)
 
 	// Get all subscriptions (including expired)
 	allSubscriptions, err := model.GetAllUserSubscriptions(userId)
@@ -66,35 +61,53 @@ func GetSubscriptionSelf(c *gin.Context) {
 		activeSubscriptions = []model.SubscriptionSummary{}
 	}
 
+	// The wallet presents one primary plan. Prefer the highest-priced active
+	// plan so a system-granted Free tier does not obscure a purchased plan.
+	var currentSubscription gin.H
+	var currentPlan *model.SubscriptionPlan
+	var currentSub *model.UserSubscription
+	for _, summary := range activeSubscriptions {
+		if summary.Subscription == nil {
+			continue
+		}
+		plan, planErr := model.GetSubscriptionPlanById(summary.Subscription.PlanId)
+		if planErr != nil {
+			continue
+		}
+		if currentPlan == nil || plan.PriceAmount > currentPlan.PriceAmount {
+			planCopy := *plan
+			subCopy := *summary.Subscription
+			currentPlan = &planCopy
+			currentSub = &subCopy
+		}
+	}
+	if currentPlan != nil && currentSub != nil {
+		windowInfo := &model.SubscriptionWindowInfo{
+			UserSubscriptionId: currentSub.Id,
+			SubscriptionStart:  currentSub.StartTime,
+			Window5hAmount:     currentPlan.Window5hAmount,
+			WindowWeekAmount:   currentPlan.WindowWeekAmount,
+		}
+		currentSubscription = gin.H{
+			"subscription": currentSub,
+			"plan":         currentPlan,
+			"usage_limits": service.GetSubscriptionWindowUsage(windowInfo),
+		}
+	}
+
 	common.ApiSuccess(c, gin.H{
-		"billing_preference": pref,
-		"subscriptions":      activeSubscriptions, // all active subscriptions
-		"all_subscriptions":  allSubscriptions,    // all subscriptions including expired
+		"billing_preference":   "subscription_first",
+		"billing_order":        []string{"subscription", "wallet"},
+		"current_subscription": currentSubscription,
+		"subscriptions":        activeSubscriptions, // all active subscriptions
+		"all_subscriptions":    allSubscriptions,    // all subscriptions including expired
 	})
 }
 
 func UpdateSubscriptionPreference(c *gin.Context) {
-	userId := c.GetInt("id")
-	var req BillingPreferenceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ApiErrorMsg(c, "参数错误")
-		return
-	}
-	pref := common.NormalizeBillingPreference(req.BillingPreference)
-
-	user, err := model.GetUserById(userId, true)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	current := user.GetSetting()
-	current.BillingPreference = pref
-	user.SetSetting(current)
-	if err := user.Update(false); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	common.ApiSuccess(c, gin.H{"billing_preference": pref})
+	// Kept as a compatibility endpoint for older clients. Billing order is now
+	// fixed: subscription quota first, then wallet balance.
+	common.ApiSuccess(c, gin.H{"billing_preference": "subscription_first"})
 }
 
 func SubscriptionRequestBalancePay(c *gin.Context) {
@@ -182,6 +195,10 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
 	}
+	if req.Plan.MediaCreditsMonthly < 0 {
+		common.ApiErrorMsg(c, "媒体额度不能为负数")
+		return
+	}
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
 	if req.Plan.UpgradeGroup != "" {
 		if _, ok := ratio_setting.GetGroupRatioCopy()[req.Plan.UpgradeGroup]; !ok {
@@ -249,6 +266,10 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
 	}
+	if req.Plan.MediaCreditsMonthly < 0 {
+		common.ApiErrorMsg(c, "媒体额度不能为负数")
+		return
+	}
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
 	if req.Plan.UpgradeGroup != "" {
 		if _, ok := ratio_setting.GetGroupRatioCopy()[req.Plan.UpgradeGroup]; !ok {
@@ -279,9 +300,14 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"waffo_pancake_product_id":   req.Plan.WaffoPancakeProductId,
 			"max_purchase_per_user":      req.Plan.MaxPurchasePerUser,
 			"total_amount":               req.Plan.TotalAmount,
+			"media_credits_monthly":      req.Plan.MediaCreditsMonthly,
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
+			"model_count":                req.Plan.ModelCount,
+			"rpm":                        req.Plan.Rpm,
+			"concurrency":                req.Plan.Concurrency,
+			"feature_lines":              req.Plan.FeatureLines,
 			"updated_at":                 common.GetTimestamp(),
 		}
 		if req.Plan.AllowBalancePay != nil {

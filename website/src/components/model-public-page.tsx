@@ -33,6 +33,7 @@ import {
   buildModelExampleCurl,
   buildModelExampleNode,
   buildModelExamplePython,
+  classifyModelHealthStatus,
   modelPublicPath,
   normalizeModelKey,
   type ModelPeer,
@@ -112,8 +113,9 @@ export function ModelPublicPage(props: ModelPublicPageProps) {
   const trendSuccess = rates.length > 0 ? rates.reduce((sum, value) => sum + value, 0) / rates.length : undefined;
   const successRate = summary?.success_rate ?? trendSuccess;
   const ttft = summary?.avg_ttft_ms ?? trendAvgTtftMs(trend);
-  const online = successRate != null && successRate >= 99.5;
-  const degraded = successRate != null && successRate < 99.5;
+  const healthStatus = classifyModelHealthStatus(successRate);
+  const online = healthStatus === "operational";
+  const degraded = healthStatus === "degraded";
 
   // Programmatic SEO copy (English for now) + structured data, derived purely
   // from the live pricing so every model page is unique and crawlable.

@@ -24,6 +24,7 @@ import type {
   ChatCompletionResponse,
   ModelOption,
   GroupOption,
+  VideoTask,
 } from './types'
 
 /**
@@ -36,6 +37,54 @@ export async function sendChatCompletion(
     skipErrorHandler: true,
   } as Record<string, unknown>)
   return res.data
+}
+
+/**
+ * Submit an async video-generation task (veo models).
+ * POST /v1/videos { model, prompt } -> { id, status, progress, ... }
+ */
+export async function submitVideo(
+  model: string,
+  prompt: string
+): Promise<VideoTask> {
+  const res = await api.post(
+    API_ENDPOINTS.VIDEOS,
+    { model, prompt },
+    { skipErrorHandler: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
+/**
+ * Poll a video task's status.
+ * GET /v1/videos/{id} -> { status, progress, ... }
+ * `disableDuplicate` opts out of the GET dedupe cache so each poll is a fresh
+ * request rather than a possibly-stale in-flight promise.
+ */
+export async function fetchVideoStatus(id: string): Promise<VideoTask> {
+  const res = await api.get(`${API_ENDPOINTS.VIDEOS}/${encodeURIComponent(id)}`, {
+    disableDuplicate: true,
+    skipErrorHandler: true,
+  })
+  return res.data
+}
+
+/**
+ * Fetch the finished video as a binary blob.
+ * GET /v1/videos/{id}/content -> raw MP4 (video/mp4). Returned as a Blob so the
+ * caller can URL.createObjectURL(...) it into a <video> element (the endpoint
+ * needs the auth header, so the bare URL can't be used as a <video src>).
+ */
+export async function fetchVideoContent(id: string): Promise<Blob> {
+  const res = await api.get(
+    `${API_ENDPOINTS.VIDEOS}/${encodeURIComponent(id)}/content`,
+    {
+      responseType: 'blob',
+      disableDuplicate: true,
+      skipErrorHandler: true,
+    }
+  )
+  return res.data as Blob
 }
 
 /**

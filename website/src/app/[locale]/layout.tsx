@@ -2,6 +2,7 @@ import Script from "next/script";
 import { notFound } from "next/navigation";
 import { ATTRIBUTION_COOKIE_SCRIPT, RootDocument, rootMetadata } from "@/components/root-document";
 import { DEFAULT_LOCALE, LOCALES, isLocale } from "@/lib/locales";
+import { getDocsUrl } from "@/lib/public-site-settings";
 import "../globals.css";
 
 export const metadata = rootMetadata;
@@ -19,9 +20,11 @@ export default async function RootLayout({ children, params }: Props) {
   const { locale } = await params;
 
   if (!isLocale(locale) || locale === DEFAULT_LOCALE) notFound();
+  const docsUrl = await getDocsUrl();
 
   return (
     <RootDocument
+      docsUrl={docsUrl}
       lang={locale}
       bodyStart={
         <Script id="flatkey-attribution-cookie" strategy="beforeInteractive">

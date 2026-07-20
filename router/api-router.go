@@ -389,6 +389,14 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/self/tokens", middleware.UserAuth(), controller.GetUserTokenQuotaDates)
 		dataRoute.GET("/ops_report", middleware.AdminAuth(), controller.GetOpsReport)
 		dataRoute.GET("/ops_report_stripe", middleware.AdminAuth(), controller.GetOpsStripeReport)
+		dataRoute.GET("/ops_report_ads", middleware.AdminAuth(), controller.GetOpsAdsPilotReport)
+
+		adsPilotRoute := apiRouter.Group("/ads_pilot")
+		adsPilotRoute.Use(middleware.AdminAuth())
+		{
+			adsPilotRoute.POST("/proposals/:id/decide", controller.DecideAdsPilotProposal)
+			adsPilotRoute.POST("/insights/:id/ack", controller.AckAdsPilotInsight)
+		}
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

@@ -39,7 +39,6 @@ const (
 	opsReportCacheTTL   = 10 * time.Minute
 	opsAutoBrowseWindow = 60  // seconds after signup treated as auto-fired playground call
 	opsAutoTokenWindow  = 120 // seconds after signup treated as auto-provisioned token
-	opsReportTopPayers  = 20
 	// registered-users detail rows shown in the ops report (newest first)
 	opsReportMaxRegisteredUsers = 200
 	opsReportMaxDays            = 180
@@ -59,6 +58,17 @@ type opsFunnelRow struct {
 	// (created < opsAutoTokenWindow after signup), i.e. signup-credit spend by
 	// users who never manually created a key — dominated by farm registrations.
 	CostUSD float64 `json:"cost_usd"`
+}
+
+// opsDailyRow is a funnel row for the daily table, prefixed with the day's
+// paid-ads totals (all campaigns) so spend/clicks line up with the
+// registrations they produced. Ads dates are the ads account timezone
+// (America/New_York), joined to the Pacific funnel days by date string —
+// a 3-hour edge skew day-level stats can tolerate.
+type opsDailyRow struct {
+	opsFunnelRow
+	AdsCostUSD float64 `json:"ads_cost_usd"`
+	AdsClicks  int     `json:"ads_clicks"`
 }
 
 type opsNameCount struct {
@@ -94,7 +104,10 @@ type opsPayerRow struct {
 	Email        string   `json:"email"`
 	PaidUSD      float64  `json:"paid_usd"`
 	Orders       int      `json:"orders"`
+	RefundedUSD  float64  `json:"refunded_usd"`
+	RefundedCnt  int      `json:"refunded_cnt"`
 	FirstPaidAt  int64    `json:"first_paid_at"`
+	LastPaidAt   int64    `json:"last_paid_at"`
 	RegisteredAt int64    `json:"registered_at"`
 	Campaign     string   `json:"campaign"`
 	Keyword      string   `json:"keyword"`
@@ -127,7 +140,7 @@ type opsReportData struct {
 	GeneratedAt    int64            `json:"generated_at"`
 	Days           int              `json:"days"`
 	DauScope       string           `json:"dau_scope"`
-	Daily          []opsFunnelRow   `json:"daily"`
+	Daily          []opsDailyRow    `json:"daily"`
 	WeeklyFunnel   []opsFunnelRow   `json:"weekly_funnel"`
 	CampaignFunnel []opsCampaignRow `json:"campaign_funnel"`
 	KeywordFunnel  []opsKeywordRow  `json:"keyword_funnel"`
@@ -202,17 +215,18 @@ func GetOpsReport(c *gin.Context) {
 }
 
 type opsUserAgg struct {
-	user       *model.OpsPlgUser
-	logStats   *model.OpsUserLogStats
-	tokenStats *model.OpsUserTokenStats
-	campaign   string
-	keyword    string
-	lng        string
-	landing    string
-	referrer   string
-	matchType  string
-	paidOrders []*model.OpsTopUp
-	hasIntent  bool
+	user           *model.OpsPlgUser
+	logStats       *model.OpsUserLogStats
+	tokenStats     *model.OpsUserTokenStats
+	campaign       string
+	keyword        string
+	lng            string
+	landing        string
+	referrer       string
+	matchType      string
+	paidOrders     []*model.OpsTopUp
+	refundedOrders []*model.OpsTopUp
+	hasIntent      bool
 }
 
 // opsIPCountry resolves an IP to an ISO country code via the embedded iploc
@@ -300,6 +314,9 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 		if t.Status == common.TopUpStatusSuccess {
 			a.paidOrders = append(a.paidOrders, t)
 		}
+		if t.Status == common.TopUpStatusRefunded {
+			a.refundedOrders = append(a.refundedOrders, t)
+		}
 	}
 
 	now := time.Now().Unix()
@@ -322,12 +339,20 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 		}
 		report.Dau = opsRollupDau(keyDaily, dayStarts)
 	}
-	report.Daily = opsRollupFunnel(aggs, func(a *opsUserAgg) string {
+	dailyRows := opsRollupFunnel(aggs, func(a *opsUserAgg) string {
 		if a.user.CreatedAt < startTs {
 			return ""
 		}
 		return opsDay(a.user.CreatedAt)
 	}, true)
+	// Refresh ads spend from the Google Ads API when stale (no-op without
+	// creds; failures log and the report renders with the last synced rows).
+	opsSyncAdsSpend()
+	adsDaily, err := model.GetOpsAdsSpendDaily(opsDay(startTs))
+	if err != nil {
+		return nil, err
+	}
+	report.Daily = opsAttachAdsSpend(dailyRows, adsDaily)
 	report.WeeklyFunnel = opsRollupFunnel(aggs, func(a *opsUserAgg) string {
 		return opsWeek(a.user.CreatedAt)
 	}, true)
@@ -340,6 +365,42 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 	report.TopPayers, report.TotalPaidUsers, report.TotalPaidUSD = opsTopPayers(aggs)
 	report.RegisteredUsers = opsRegisteredUsers(aggs)
 	return report, nil
+}
+
+// opsAttachAdsSpend joins per-day ads totals onto the daily funnel rows by
+// date string (both are Pacific days). A day with spend but zero registrations
+// gets a zero funnel row so spend never silently disappears from the table;
+// tomorrow's ads dates (the ads account day can run ahead of a UTC server day)
+// are dropped along with any date outside the funnel window.
+func opsAttachAdsSpend(rows []opsFunnelRow, ads []*model.AdsSpendDaily) []opsDailyRow {
+	byDate := make(map[string]*model.AdsSpendDaily, len(ads))
+	for _, a := range ads {
+		byDate[a.Date] = a
+	}
+	daily := make([]opsDailyRow, 0, len(rows))
+	seen := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		dr := opsDailyRow{opsFunnelRow: row}
+		if a, ok := byDate[row.Key]; ok {
+			dr.AdsCostUSD = a.CostUSD
+			dr.AdsClicks = a.Clicks
+		}
+		seen[row.Key] = true
+		daily = append(daily, dr)
+	}
+	today := opsDay(time.Now().Unix())
+	for date, a := range byDate {
+		if seen[date] || date > today || (a.CostUSD == 0 && a.Clicks == 0) {
+			continue
+		}
+		daily = append(daily, opsDailyRow{
+			opsFunnelRow: opsFunnelRow{Key: date},
+			AdsCostUSD:   a.CostUSD,
+			AdsClicks:    a.Clicks,
+		})
+	}
+	sort.Slice(daily, func(i, j int) bool { return daily[i].Key > daily[j].Key })
+	return daily
 }
 
 // opsRegisteredUsers lists the newest registrations in the report window with
@@ -782,14 +843,20 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 	var payers []opsPayerRow
 	total := 0.0
 	for _, a := range aggs {
-		if len(a.paidOrders) == 0 {
+		if len(a.paidOrders) == 0 && len(a.refundedOrders) == 0 {
 			continue
 		}
 		paid := a.paidUSD()
 		total += paid
+		refunded := 0.0
+		for _, t := range a.refundedOrders {
+			if usd, ok := opsTopUpUSD(t); ok {
+				refunded += usd
+			}
+		}
 		currencySet := map[string]bool{}
 		var currencies []string
-		for _, t := range a.paidOrders {
+		for _, t := range append(append([]*model.OpsTopUp(nil), a.paidOrders...), a.refundedOrders...) {
 			ccy := strings.ToUpper(t.PaymentCurrency)
 			if ccy == "" {
 				ccy = "USD"
@@ -803,6 +870,17 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		if a.logStats != nil && a.logStats.LastRequestAt > lastActive {
 			lastActive = a.logStats.LastRequestAt
 		}
+		// Refunded-only payers (e.g. fraud cleanup) keep their charge times.
+		// Orders arrive sorted by create_time asc (GetOpsTopUps), so first/last
+		// are the slice ends.
+		firstPaidAt, lastPaidAt := int64(0), int64(0)
+		if len(a.paidOrders) > 0 {
+			firstPaidAt = a.paidOrders[0].CreateTime
+			lastPaidAt = a.paidOrders[len(a.paidOrders)-1].CreateTime
+		} else if len(a.refundedOrders) > 0 {
+			firstPaidAt = a.refundedOrders[0].CreateTime
+			lastPaidAt = a.refundedOrders[len(a.refundedOrders)-1].CreateTime
+		}
 		payers = append(payers, opsPayerRow{
 			UserId:       a.user.Id,
 			Username:     a.user.Username,
@@ -810,7 +888,10 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 			Email:        a.user.Email,
 			PaidUSD:      paid,
 			Orders:       len(a.paidOrders),
-			FirstPaidAt:  a.paidOrders[0].CreateTime,
+			RefundedUSD:  refunded,
+			RefundedCnt:  len(a.refundedOrders),
+			FirstPaidAt:  firstPaidAt,
+			LastPaidAt:   lastPaidAt,
 			RegisteredAt: a.user.CreatedAt,
 			Campaign:     a.campaign,
 			Keyword:      a.keyword,
@@ -832,15 +913,32 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		})
 	}
 	count := len(payers)
-	sort.Slice(payers, func(i, j int) bool { return payers[i].PaidUSD > payers[j].PaidUSD })
-	if len(payers) > opsReportTopPayers {
-		payers = payers[:opsReportTopPayers]
-	}
+	sort.Slice(payers, func(i, j int) bool {
+		if payers[i].LastPaidAt != payers[j].LastPaidAt {
+			return payers[i].LastPaidAt > payers[j].LastPaidAt
+		}
+		return payers[i].PaidUSD > payers[j].PaidUSD
+	})
 	ids := make([]int, len(payers))
 	for i := range payers {
 		ids[i] = payers[i].UserId
 	}
-	if usage, err := model.GetOpsUsersModelUsage(ids); err == nil {
+	// Enrich in batches: payer list is unbounded now, keep each IN (...) small.
+	var usage []*model.OpsUserModelUsage
+	usageErr := error(nil)
+	for start := 0; start < len(ids); start += 500 {
+		end := start + 500
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch, err := model.GetOpsUsersModelUsage(ids[start:end])
+		if err != nil {
+			usageErr = err
+			break
+		}
+		usage = append(usage, batch...)
+	}
+	if usageErr == nil {
 		type mc struct {
 			name  string
 			count int

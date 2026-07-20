@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
+import { SiteConfigProvider } from "@/components/site-config-provider";
 import { MIXPANEL_BROWSER_SCRIPT } from "@/lib/mixpanel";
 import type { Locale } from "@/lib/locales";
 
@@ -46,10 +47,11 @@ export const rootMetadata: Metadata = {
 type RootDocumentProps = {
   bodyStart?: ReactNode;
   children: ReactNode;
+  docsUrl: string | null;
   lang: Locale;
 };
 
-export function RootDocument({ bodyStart, children, lang }: RootDocumentProps) {
+export function RootDocument({ bodyStart, children, docsUrl, lang }: RootDocumentProps) {
   return (
     <html lang={lang} suppressHydrationWarning>
       <body>
@@ -86,7 +88,7 @@ export function RootDocument({ bodyStart, children, lang }: RootDocumentProps) {
             />
           ))}
         </noscript>
-        {children}
+        <SiteConfigProvider docsUrl={docsUrl}>{children}</SiteConfigProvider>
         <Script id="solvea-livechat-bootstrap" strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.livechatStrategy}>
           {LIVECHAT_BOOTSTRAP_SCRIPT}
         </Script>

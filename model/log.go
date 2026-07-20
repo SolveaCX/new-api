@@ -347,9 +347,19 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+// TemporaryChannelSpendHook, when set, is invoked for every consume log with the
+// channel id, model name and quota (units). The service layer uses it to accumulate
+// per-model spend on temporary channels and alert the supply chain. It is a package
+// variable set by the service layer at init to avoid an import cycle (model must not
+// import service). Keep the callback cheap; it runs on the settlement path.
+var TemporaryChannelSpendHook func(channelId int, modelName string, quota int)
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
+	}
+	if TemporaryChannelSpendHook != nil {
+		TemporaryChannelSpendHook(params.ChannelId, params.ModelName, params.Quota)
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
 	username := c.GetString("username")
@@ -544,6 +554,17 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 
 const logSearchCountLimit = 10000
 
+func limitedLogCountQuery(db *gorm.DB, filteredQuery *gorm.DB, limit int) *gorm.DB {
+	limitedLogs := filteredQuery.Model(&Log{}).Select("logs.id").Limit(limit)
+	return db.Table("(?) AS limited_logs", limitedLogs)
+}
+
+func countLogsUpTo(db *gorm.DB, filteredQuery *gorm.DB, limit int) (int64, error) {
+	var total int64
+	err := limitedLogCountQuery(db, filteredQuery, limit).Count(&total).Error
+	return total, err
+}
+
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
@@ -573,7 +594,7 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
-	err = tx.Model(&Log{}).Limit(logSearchCountLimit).Count(&total).Error
+	total, err = countLogsUpTo(LOG_DB, tx, logSearchCountLimit)
 	if err != nil {
 		common.SysError("failed to count user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")
@@ -601,6 +622,7 @@ type CodexChannelUsageStat struct {
 }
 
 func GetCodexChannelUsageStats(
+	ctx context.Context,
 	channelIds []int,
 	startTimestamp int64,
 	endTimestamp int64,
@@ -611,7 +633,7 @@ func GetCodexChannelUsageStats(
 	}
 
 	var stats []CodexChannelUsageStat
-	tx := LOG_DB.Table("logs").Select(
+	tx := LOG_DB.WithContext(ctx).Table("logs").Select(
 		"channel_id, COALESCE(SUM(prompt_tokens), 0) + COALESCE(SUM(completion_tokens), 0) AS token_used, COALESCE(SUM(quota), 0) AS quota",
 	).Where("type = ?", LogTypeConsume).Where("channel_id IN ?", channelIds)
 	if startTimestamp > 0 {

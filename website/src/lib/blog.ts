@@ -1,5 +1,5 @@
 import sanitizeHtml from "sanitize-html";
-import { DEFAULT_LOCALE, localizePath, stripLocale, type Locale } from "@/lib/locales";
+import { DEFAULT_LOCALE, localizePath, stripLocale, type Locale, withIdFallback } from "@/lib/locales";
 import { APP_CONSOLE_ORIGIN } from "@/lib/origins";
 
 const API_BASE_URL = APP_CONSOLE_ORIGIN;
@@ -342,7 +342,7 @@ export function rewriteBlogHref(href: string | undefined, locale: Locale = DEFAU
   }
 }
 
-const BLOG_DATE_LOCALES: Record<Locale, string> = {
+const BLOG_DATE_LOCALES: Record<Locale, string> =withIdFallback({
   en: "en-US",
   zh: "zh-CN",
   es: "es-ES",
@@ -352,7 +352,7 @@ const BLOG_DATE_LOCALES: Record<Locale, string> = {
   ja: "ja-JP",
   vi: "vi-VN",
   de: "de-DE",
-};
+});
 
 export function formatBlogDate(value: string | undefined, length: "short" | "long", locale: Locale = "en"): string {
   if (!value) return "";

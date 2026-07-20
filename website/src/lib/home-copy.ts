@@ -21,6 +21,7 @@ export type HomeCopy = {
     flatkey: string;
     inputLabel: string;
     save: string;
+    more: string;
   };
   health: {
     eyebrow: string;
@@ -73,17 +74,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   en: {
     hero: {
       badge: "Official models · Stable and secure",
-      titleLine1: "Official GPT, Claude and Gemini models.",
+      titleLine1: "160+ official models. One key.",
       titleLine2: "As low as 50% off.",
       description:
-        "flatkey.ai routes your traffic to the official GPT, Claude, and Gemini APIs through one key. Model prices run 60-90% of official list, and topping up $200 gets $100 free — stacked, as low as half the official price, stable and secure.",
+        "flatkey.ai routes your traffic to the official GPT, Claude, Gemini, DeepSeek, Qwen and GLM APIs through one key — real models, no downgrades, no disappearing acts. Model prices run 60-90% of official list, and topping up $200 gets $100 free — stacked, as low as half the official price.",
       ctaTrial: "Start free trial",
       ctaModels: "View model health",
     },
     stats: [
       { value: "46B", label: "tokens served monthly" },
       { value: "4K+", label: "paying users" },
-      { value: "45", label: "models behind one key" },
+      { value: "160+", label: "models behind one key" },
       { value: "100+", label: "enterprises in production" },
     ],
     compare: {
@@ -95,6 +96,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "After bonus",
       inputLabel: "Input / 1M tokens",
       save: "Both discounts stack — as low as 50% of the official price",
+      more: "…and 150+ more models behind the same key",
     },
     health: {
       eyebrow: "Live model health",
@@ -127,10 +129,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "Cut your model spend",
-        desc: "Model prices at 60-90% of official, and the top-up bonus takes another third off — as low as 50% of official. One key for 40+ models so every task runs on the right-cost model.",
+        desc: "Model prices at 60-90% of official, and the top-up bonus takes another third off — as low as 50% of official. One key for 160+ models — now including DeepSeek, Qwen and GLM — so every task runs on the right-cost model.",
         points: [
           "60-90% of official pricing, stacked with the top-up bonus — as low as 50% off",
-          "40+ models integrated behind one key",
+          "160+ models behind one key — incl. DeepSeek, Qwen and GLM",
           "Route cheap tasks to cheap models, hard tasks to frontier models",
         ],
       },
@@ -147,7 +149,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "All models",
-      title: "45 models, one key — prices, latency, and health",
+      title: "160+ models, one key — prices, latency, and health",
       description: "The 10 busiest models: after-bonus price vs official, TTFT latency, and 30-day health. The full directory lives on the models page.",
       colModel: "Model",
       colOfficial: "Official",
@@ -171,17 +173,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   zh: {
     hero: {
       badge: "官方模型 · 稳定安全",
-      titleLine1: "GPT、Claude、Gemini 官方模型",
+      titleLine1: "160+ 官方模型，一个 key",
       titleLine2: "最低 5 折",
       description:
-        "flatkey.ai 用一个 key 把你的请求路由到 GPT、Claude、Gemini 官方 API——模型定价为官方 6～9 折，充值 $200 再送 $100，两层优惠叠加最低 5 折，稳定安全。",
+        "flatkey.ai 用一个 key 把你的请求路由到 GPT、Claude、Gemini、DeepSeek、Qwen、GLM 官方 API——真模型、不降智、不跑路。模型定价为官方 6～9 折，充值 $200 再送 $100，两层优惠叠加最低 5 折。",
       ctaTrial: "免费试用",
       ctaModels: "查看模型健康度",
     },
     stats: [
       { value: "46B", label: "每月处理 Token" },
       { value: "4K+", label: "付费用户" },
-      { value: "45", label: "个模型一个 key" },
+      { value: "160+", label: "个模型一个 key" },
       { value: "100+", label: "企业生产环境在用" },
     ],
     compare: {
@@ -193,6 +195,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "充值后",
       inputLabel: "输入 / 1M tokens",
       save: "两层优惠叠加，最低为官方价 5 折",
+      more: "……同一个 key 还有 150+ 模型",
     },
     health: {
       eyebrow: "实时模型健康度",
@@ -225,10 +228,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "降低成本",
-        desc: "模型价为官方 6～9 折，充值赠送再省 1/3，叠加最低 5 折；一个 key 集成 40+ 模型，不同任务用不同成本的模型。",
+        desc: "模型价为官方 6～9 折，充值赠送再省 1/3，叠加最低 5 折；一个 key 集成 160+ 模型（新增 DeepSeek、Qwen、GLM），不同任务用不同成本的模型。",
         points: [
           "官方 6～9 折 × 充值赠送，最低 5 折",
-          "一个 key 集成 40+ 模型",
+          "一个 key 集成 160+ 模型，含 DeepSeek、Qwen、GLM",
           "轻任务用低价模型，难任务用旗舰模型",
         ],
       },
@@ -245,7 +248,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "全部模型",
-      title: "45 个模型一个 key——价格、延迟、健康度",
+      title: "160+ 个模型一个 key——价格、延迟、健康度",
       description: "最热门的 10 个模型：充值后价格 vs 官方价、首字延迟与 30 天健康度。完整列表见模型页。",
       colModel: "模型",
       colOfficial: "官方价",
@@ -269,17 +272,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   es: {
     hero: {
       badge: "Modelos oficiales · Estable y seguro",
-      titleLine1: "Modelos oficiales de GPT, Claude y Gemini.",
+      titleLine1: "160+ modelos oficiales. Una key.",
       titleLine2: "Hasta 50% de descuento.",
       description:
-        "flatkey.ai enruta tu tráfico a las API oficiales de GPT, Claude y Gemini con una sola key. Los precios de modelo son el 60-90% del oficial y al recargar $200 recibes $100 gratis: combinados, hasta la mitad del precio oficial, estable y seguro.",
+        "flatkey.ai enruta tu tráfico a las API oficiales de GPT, Claude, Gemini, DeepSeek, Qwen y GLM con una sola key: modelos de verdad, sin versiones degradadas, sin desaparecer. Los precios son el 60-90% del oficial y al recargar $200 recibes $100 gratis: combinados, hasta la mitad del precio oficial.",
       ctaTrial: "Prueba gratis",
       ctaModels: "Ver salud de los modelos",
     },
     stats: [
       { value: "46B", label: "tokens servidos al mes" },
       { value: "4K+", label: "usuarios de pago" },
-      { value: "45", label: "modelos con una key" },
+      { value: "160+", label: "modelos con una key" },
       { value: "100+", label: "empresas en producción" },
     ],
     compare: {
@@ -291,6 +294,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "Con bono",
       inputLabel: "Entrada / 1M tokens",
       save: "Los dos descuentos se combinan: hasta el 50% del precio oficial",
+      more: "…y 150+ modelos más con la misma key",
     },
     health: {
       eyebrow: "Salud de modelos en vivo",
@@ -323,10 +327,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "Reduce tu gasto en modelos",
-        desc: "Precios de modelo al 60-90% del oficial y el bono de recarga quita otro tercio: hasta el 50% del oficial. Una key para 40+ modelos.",
+        desc: "Precios de modelo al 60-90% del oficial y el bono de recarga quita otro tercio: hasta el 50% del oficial. Una key para 160+ modelos, ahora con DeepSeek, Qwen y GLM.",
         points: [
           "60-90% del precio oficial, combinado con el bono de recarga: hasta 50% menos",
-          "40+ modelos integrados con una key",
+          "160+ modelos integrados con una key, incl. DeepSeek, Qwen y GLM",
           "Tareas simples a modelos baratos, tareas difíciles a modelos frontier",
         ],
       },
@@ -343,7 +347,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "Todos los modelos",
-      title: "45 modelos, una key: precios, latencia y salud",
+      title: "160+ modelos, una key: precios, latencia y salud",
       description: "Los 10 modelos más usados: precio con bono vs oficial, latencia TTFT y salud de 30 días. El directorio completo está en la página de modelos.",
       colModel: "Modelo",
       colOfficial: "Oficial",
@@ -367,17 +371,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   fr: {
     hero: {
       badge: "Modèles officiels · Stable et sécurisé",
-      titleLine1: "Modèles officiels GPT, Claude et Gemini.",
+      titleLine1: "160+ modèles officiels. Une clé.",
       titleLine2: "Jusqu'à 50 % de remise.",
       description:
-        "flatkey.ai route votre trafic vers les API officielles GPT, Claude et Gemini avec une seule clé. Les prix des modèles sont à 60-90 % du tarif officiel, et recharger 200 $ offre 100 $ : cumulés, jusqu'à la moitié du prix officiel, stable et sécurisé.",
+        "flatkey.ai route votre trafic vers les API officielles GPT, Claude, Gemini, DeepSeek, Qwen et GLM avec une seule clé — de vrais modèles, sans version dégradée, sans disparition. Les prix sont à 60-90 % du tarif officiel, et recharger 200 $ offre 100 $ : cumulés, jusqu'à la moitié du prix officiel.",
       ctaTrial: "Essai gratuit",
       ctaModels: "Voir la santé des modèles",
     },
     stats: [
       { value: "46B", label: "tokens servis par mois" },
       { value: "4K+", label: "utilisateurs payants" },
-      { value: "45", label: "modèles avec une clé" },
+      { value: "160+", label: "modèles avec une clé" },
       { value: "100+", label: "entreprises en production" },
     ],
     compare: {
@@ -389,6 +393,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "Avec bonus",
       inputLabel: "Entrée / 1M tokens",
       save: "Les deux remises se cumulent : jusqu'à 50 % du prix officiel",
+      more: "…et 150+ modèles de plus derrière la même clé",
     },
     health: {
       eyebrow: "Santé des modèles en direct",
@@ -421,10 +426,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "Réduisez vos coûts de modèles",
-        desc: "Prix des modèles à 60-90 % du tarif officiel, et le bonus de recharge retire encore un tiers : jusqu'à 50 % du prix officiel. Une clé pour 40+ modèles.",
+        desc: "Prix des modèles à 60-90 % du tarif officiel, et le bonus de recharge retire encore un tiers : jusqu'à 50 % du prix officiel. Une clé pour 160+ modèles, désormais avec DeepSeek, Qwen et GLM.",
         points: [
           "60-90 % du tarif officiel, cumulé au bonus de recharge : jusqu'à -50 %",
-          "40+ modèles intégrés derrière une clé",
+          "160+ modèles intégrés derrière une clé — incl. DeepSeek, Qwen et GLM",
           "Tâches simples sur modèles économiques, tâches dures sur modèles frontier",
         ],
       },
@@ -441,7 +446,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "Tous les modèles",
-      title: "45 modèles, une clé : prix, latence et santé",
+      title: "160+ modèles, une clé : prix, latence et santé",
       description: "Les 10 modèles les plus utilisés : prix avec bonus vs officiel, latence TTFT et santé sur 30 jours. Le catalogue complet est sur la page modèles.",
       colModel: "Modèle",
       colOfficial: "Officiel",
@@ -465,17 +470,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   pt: {
     hero: {
       badge: "Modelos oficiais · Estável e seguro",
-      titleLine1: "Modelos oficiais GPT, Claude e Gemini.",
+      titleLine1: "160+ modelos oficiais. Uma key.",
       titleLine2: "Até 50% de desconto.",
       description:
-        "A flatkey.ai roteia seu tráfego para as APIs oficiais de GPT, Claude e Gemini com uma única key. Os preços dos modelos ficam em 60-90% do oficial e recarregar $200 dá $100 grátis: somados, até a metade do preço oficial, estável e seguro.",
+        "A flatkey.ai roteia seu tráfego para as APIs oficiais de GPT, Claude, Gemini, DeepSeek, Qwen e GLM com uma única key — modelos de verdade, sem downgrade, sem sumir. Os preços ficam em 60-90% do oficial e recarregar $200 dá $100 grátis: somados, até a metade do preço oficial.",
       ctaTrial: "Teste grátis",
       ctaModels: "Ver saúde dos modelos",
     },
     stats: [
       { value: "46B", label: "tokens servidos por mês" },
       { value: "4K+", label: "usuários pagantes" },
-      { value: "45", label: "modelos com uma key" },
+      { value: "160+", label: "modelos com uma key" },
       { value: "100+", label: "empresas em produção" },
     ],
     compare: {
@@ -487,6 +492,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "Com bônus",
       inputLabel: "Entrada / 1M tokens",
       save: "Os dois descontos se somam: até 50% do preço oficial",
+      more: "…e mais de 150 outros modelos na mesma key",
     },
     health: {
       eyebrow: "Saúde dos modelos ao vivo",
@@ -519,10 +525,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "Reduza o gasto com modelos",
-        desc: "Preços de modelo a 60-90% do oficial e o bônus de recarga tira mais um terço: até 50% do oficial. Uma key para 40+ modelos.",
+        desc: "Preços de modelo a 60-90% do oficial e o bônus de recarga tira mais um terço: até 50% do oficial. Uma key para 160+ modelos, agora com DeepSeek, Qwen e GLM.",
         points: [
           "60-90% do preço oficial, somado ao bônus de recarga: até 50% off",
-          "40+ modelos integrados com uma key",
+          "160+ modelos integrados com uma key — incl. DeepSeek, Qwen e GLM",
           "Tarefas simples em modelos baratos, tarefas difíceis em modelos frontier",
         ],
       },
@@ -539,7 +545,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "Todos os modelos",
-      title: "45 modelos, uma key: preços, latência e saúde",
+      title: "160+ modelos, uma key: preços, latência e saúde",
       description: "Os 10 modelos mais usados: preço com bônus vs oficial, latência TTFT e saúde de 30 dias. O diretório completo está na página de modelos.",
       colModel: "Modelo",
       colOfficial: "Oficial",
@@ -563,17 +569,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   ru: {
     hero: {
       badge: "Официальные модели · Стабильно и безопасно",
-      titleLine1: "Официальные модели GPT, Claude и Gemini.",
+      titleLine1: "160+ официальных моделей. Один ключ.",
       titleLine2: "До 50% дешевле.",
       description:
-        "flatkey.ai направляет ваш трафик в официальные API GPT, Claude и Gemini через один ключ. Цены моделей — 60-90% от официальных, а при пополнении на $200 вы получаете $100 в подарок: вместе это до половины официальной цены, стабильно и безопасно.",
+        "flatkey.ai направляет ваш трафик в официальные API GPT, Claude, Gemini, DeepSeek, Qwen и GLM через один ключ — настоящие модели, без даунгрейда, без исчезновений. Цены — 60-90% от официальных, а при пополнении на $200 вы получаете $100 в подарок: вместе до половины официальной цены.",
       ctaTrial: "Бесплатный доступ",
       ctaModels: "Смотреть здоровье моделей",
     },
     stats: [
       { value: "46B", label: "токенов в месяц" },
       { value: "4K+", label: "платящих пользователей" },
-      { value: "45", label: "моделей за одним ключом" },
+      { value: "160+", label: "моделей за одним ключом" },
       { value: "100+", label: "компаний в продакшене" },
     ],
     compare: {
@@ -585,6 +591,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "С бонусом",
       inputLabel: "Вход / 1M токенов",
       save: "Скидки складываются: до 50% от официальной цены",
+      more: "…и ещё 150+ моделей за тем же ключом",
     },
     health: {
       eyebrow: "Здоровье моделей в реальном времени",
@@ -617,10 +624,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "Снижайте расходы на модели",
-        desc: "Цены моделей 60-90% от официальных, бонус пополнения снимает ещё треть — до 50% от официальной цены. Один ключ на 40+ моделей.",
+        desc: "Цены моделей 60-90% от официальных, бонус пополнения снимает ещё треть — до 50% от официальной цены. Один ключ на 160+ моделей — теперь с DeepSeek, Qwen и GLM.",
         points: [
           "60-90% от официальной цены плюс бонус пополнения — до 50% скидки",
-          "40+ моделей за одним ключом",
+          "160+ моделей за одним ключом — вкл. DeepSeek, Qwen и GLM",
           "Простые задачи — на дешёвых моделях, сложные — на frontier",
         ],
       },
@@ -637,7 +644,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "Все модели",
-      title: "45 моделей, один ключ: цены, задержка, здоровье",
+      title: "160+ моделей, один ключ: цены, задержка, здоровье",
       description: "10 самых загруженных моделей: цена с бонусом vs официальная, задержка TTFT и 30-дневное здоровье. Полный каталог — на странице моделей.",
       colModel: "Модель",
       colOfficial: "Официально",
@@ -661,17 +668,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   ja: {
     hero: {
       badge: "公式モデル · 安定・安全",
-      titleLine1: "GPT・Claude・Gemini の公式モデル。",
+      titleLine1: "160+ の公式モデルを 1 つの key で。",
       titleLine2: "最安で半額。",
       description:
-        "flatkey.ai は 1 つの key でトラフィックを GPT・Claude・Gemini の公式 API にルーティングします。モデル価格は公式の 60〜90%、さらに $200 チャージで $100 プレゼント。二重の割引で最安なら公式の半額、安定・安全です。",
+        "flatkey.ai は 1 つの key でトラフィックを GPT・Claude・Gemini・DeepSeek・Qwen・GLM の公式 API にルーティング——本物のモデル、ダウングレードなし、突然消えることもありません。モデル価格は公式の 60〜90%、さらに $200 チャージで $100 プレゼント。二重の割引で最安なら公式の半額です。",
       ctaTrial: "無料で試す",
       ctaModels: "モデルの健全性を見る",
     },
     stats: [
       { value: "46B", label: "月間処理トークン" },
       { value: "4K+", label: "有料ユーザー" },
-      { value: "45", label: "モデルを 1 key で" },
+      { value: "160+", label: "モデルを 1 key で" },
       { value: "100+", label: "企業が本番利用" },
     ],
     compare: {
@@ -683,6 +690,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "チャージ後",
       inputLabel: "入力 / 1M tokens",
       save: "割引は重ねがけ：最安で公式価格の 50%",
+      more: "…同じ key であと 150+ モデル",
     },
     health: {
       eyebrow: "モデル健全性（ライブ）",
@@ -715,10 +723,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "コスト削減",
-        desc: "モデル価格は公式の 60〜90%、チャージ特典でさらに 1/3 オフ——最安で公式の半額。1 key で 40+ モデルを統合できます。",
+        desc: "モデル価格は公式の 60〜90%、チャージ特典でさらに 1/3 オフ——最安で公式の半額。1 key で 160+ モデル（DeepSeek・Qwen・GLM を追加）を統合できます。",
         points: [
           "公式の 60〜90% × チャージ特典で、最安 50% オフ",
-          "1 key で 40+ モデルを統合",
+          "1 key で 160+ モデルを統合——DeepSeek・Qwen・GLM も",
           "軽いタスクは低価格モデル、難しいタスクはフロンティアモデルへ",
         ],
       },
@@ -735,7 +743,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "全モデル",
-      title: "45 モデルを 1 key で——価格・レイテンシ・健全性",
+      title: "160+ モデルを 1 key で——価格・レイテンシ・健全性",
       description: "利用の多い上位 10 モデル：チャージ後価格 vs 公式価格、TTFT レイテンシ、30 日健全性。全モデルはモデルページへ。",
       colModel: "モデル",
       colOfficial: "公式",
@@ -759,17 +767,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   vi: {
     hero: {
       badge: "Model chính thức · Ổn định và an toàn",
-      titleLine1: "Model chính thức GPT, Claude và Gemini.",
+      titleLine1: "160+ model chính thức. Một key.",
       titleLine2: "Rẻ hơn tới 50%.",
       description:
-        "flatkey.ai định tuyến traffic của bạn tới API chính thức của GPT, Claude và Gemini qua một key. Giá model bằng 60-90% giá chính thức, nạp $200 tặng $100: cộng dồn, thấp nhất bằng một nửa giá chính thức, ổn định và an toàn.",
+        "flatkey.ai định tuyến traffic của bạn tới API chính thức của GPT, Claude, Gemini, DeepSeek, Qwen và GLM qua một key — model thật, không hạ cấp, không biến mất. Giá bằng 60-90% giá chính thức, nạp $200 tặng $100: cộng dồn, thấp nhất bằng một nửa giá chính thức.",
       ctaTrial: "Dùng thử miễn phí",
       ctaModels: "Xem sức khỏe model",
     },
     stats: [
       { value: "46B", label: "token xử lý mỗi tháng" },
       { value: "4K+", label: "người dùng trả phí" },
-      { value: "45", label: "model sau một key" },
+      { value: "160+", label: "model sau một key" },
       { value: "100+", label: "doanh nghiệp dùng production" },
     ],
     compare: {
@@ -781,6 +789,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "Sau ưu đãi",
       inputLabel: "Input / 1M tokens",
       save: "Hai ưu đãi cộng dồn: thấp nhất bằng 50% giá chính thức",
+      more: "…và 150+ model khác sau cùng một key",
     },
     health: {
       eyebrow: "Sức khỏe model trực tiếp",
@@ -813,10 +822,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "Giảm chi phí model",
-        desc: "Giá model bằng 60-90% chính thức, ưu đãi nạp giảm thêm 1/3 — thấp nhất 50% giá chính thức. Một key cho 40+ model.",
+        desc: "Giá model bằng 60-90% chính thức, ưu đãi nạp giảm thêm 1/3 — thấp nhất 50% giá chính thức. Một key cho 160+ model — nay có DeepSeek, Qwen và GLM.",
         points: [
           "60-90% giá chính thức, cộng ưu đãi nạp: giảm tới 50%",
-          "40+ model tích hợp sau một key",
+          "160+ model tích hợp sau một key — gồm DeepSeek, Qwen và GLM",
           "Tác vụ nhẹ dùng model rẻ, tác vụ khó dùng model frontier",
         ],
       },
@@ -833,7 +842,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "Tất cả model",
-      title: "45 model, một key — giá, độ trễ, sức khỏe",
+      title: "160+ model, một key — giá, độ trễ, sức khỏe",
       description: "10 model được dùng nhiều nhất: giá sau ưu đãi vs chính thức, độ trễ TTFT và sức khỏe 30 ngày. Danh mục đầy đủ ở trang model.",
       colModel: "Model",
       colOfficial: "Chính thức",
@@ -857,17 +866,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   de: {
     hero: {
       badge: "Offizielle Modelle · Stabil und sicher",
-      titleLine1: "Offizielle GPT-, Claude- und Gemini-Modelle.",
+      titleLine1: "160+ offizielle Modelle. Ein Key.",
       titleLine2: "Bis zu 50% günstiger.",
       description:
-        "flatkey.ai leitet deinen Traffic mit einem Key zu den offiziellen GPT-, Claude- und Gemini-APIs. Modellpreise liegen bei 60-90% des offiziellen Listenpreises, und wer $200 auflädt, bekommt $100 geschenkt: kombiniert bis zu 50% des offiziellen Preises, stabil und sicher.",
+        "flatkey.ai leitet deinen Traffic mit einem Key zu den offiziellen GPT-, Claude-, Gemini-, DeepSeek-, Qwen- und GLM-APIs — echte Modelle, kein Downgrade, kein Verschwinden. Modellpreise liegen bei 60-90% des offiziellen Listenpreises, und wer $200 auflädt, bekommt $100 geschenkt: kombiniert bis zu 50% des offiziellen Preises.",
       ctaTrial: "Kostenlos testen",
       ctaModels: "Modell-Gesundheit ansehen",
     },
     stats: [
       { value: "46B", label: "Tokens pro Monat" },
       { value: "4K+", label: "zahlende Nutzer" },
-      { value: "45", label: "Modelle hinter einem Key" },
+      { value: "160+", label: "Modelle hinter einem Key" },
       { value: "100+", label: "Unternehmen in Produktion" },
     ],
     compare: {
@@ -879,6 +888,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       flatkey: "Mit Bonus",
       inputLabel: "Input / 1M Tokens",
       save: "Beide Rabatte kombiniert: bis zu 50% des offiziellen Preises",
+      more: "…und 150+ weitere Modelle hinter demselben Key",
     },
     health: {
       eyebrow: "Live-Modell-Gesundheit",
@@ -911,10 +921,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       cost: {
         title: "Modellkosten senken",
-        desc: "Modellpreise bei 60-90% des offiziellen Preises, der Aufladebonus spart ein weiteres Drittel — bis zu 50% des offiziellen Preises. Ein Key für 40+ Modelle.",
+        desc: "Modellpreise bei 60-90% des offiziellen Preises, der Aufladebonus spart ein weiteres Drittel — bis zu 50% des offiziellen Preises. Ein Key für 160+ Modelle — jetzt mit DeepSeek, Qwen und GLM.",
         points: [
           "60-90% des offiziellen Preises, kombiniert mit dem Aufladebonus: bis zu -50%",
-          "40+ Modelle hinter einem Key",
+          "160+ Modelle hinter einem Key — inkl. DeepSeek, Qwen und GLM",
           "Leichte Aufgaben auf günstige Modelle, harte auf Frontier-Modelle",
         ],
       },
@@ -931,7 +941,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     table: {
       eyebrow: "Alle Modelle",
-      title: "45 Modelle, ein Key — Preise, Latenz und Gesundheit",
+      title: "160+ Modelle, ein Key — Preise, Latenz und Gesundheit",
       description: "Die 10 meistgenutzten Modelle: Preis mit Bonus vs offiziell, TTFT-Latenz und 30-Tage-Gesundheit. Das vollständige Verzeichnis gibt es auf der Modellseite.",
       colModel: "Modell",
       colOfficial: "Offiziell",
@@ -950,6 +960,106 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       chat: { title: "Live-Chat", desc: "Chatte direkt hier auf der Seite — der schnellste Weg zur Antwort.", action: "Chat starten" },
       sms: { title: "SMS", desc: "Schreib uns eine SMS, wir melden uns." },
       x: { title: "X (Twitter)", desc: "Folge uns oder schreib uns per DM auf X." },
+    },
+  },
+  id: {
+    hero: {
+      badge: "Model resmi · Stabil dan aman",
+      titleLine1: "160+ model resmi. Satu key.",
+      titleLine2: "Hemat sampai 50%.",
+      description:
+        "flatkey.ai merutekan traffic kamu ke API resmi GPT, Claude, Gemini, DeepSeek, Qwen, dan GLM lewat satu key — model asli, tanpa downgrade, tanpa kabur. Harga model 60-90% dari harga resmi, dan top-up $200 dapat $100 gratis — digabung, serendah setengah harga resmi.",
+      ctaTrial: "Coba gratis",
+      ctaModels: "Lihat kesehatan model",
+    },
+    stats: [
+      { value: "46B", label: "token diproses per bulan" },
+      { value: "4K+", label: "pengguna berbayar" },
+      { value: "160+", label: "model dalam satu key" },
+      { value: "100+", label: "perusahaan di production" },
+    ],
+    compare: {
+      title: "Dua diskon, digabung",
+      subtitle: "Harga input per 1M token",
+      badge: "Serendah -50%",
+      layers: ["Harga model: 60-90% dari harga resmi", "Top-up $200 dapat $100 gratis: kamu bayar 2/3"],
+      official: "Resmi",
+      flatkey: "Setelah bonus",
+      inputLabel: "Input / 1M token",
+      save: "Kedua diskon digabung — serendah 50% dari harga resmi",
+      more: "…dan 150+ model lain di key yang sama",
+    },
+    health: {
+      eyebrow: "Kesehatan model real-time",
+      title: "Kesehatan 30 hari, diukur dari traffic asli",
+      description:
+        "Semua angka di bawah berasal dari panggilan production asli lewat flatkey.ai — tingkat keberhasilan, latensi, dan volume dalam 30 hari terakhir. Bukan benchmark sintetis.",
+      uptimeLabel: "Tingkat sukses 30 hari",
+      latencyLabel: "Latensi rata-rata",
+      callsLabel: "Panggilan 30 hari",
+      trendLabel: "Tingkat sukses, 30 hari terakhir",
+      empty: "Mengumpulkan data…",
+      viewAll: "Lihat kesehatan semua model",
+    },
+    usage: {
+      title: "Model teratas",
+      subtitle: "Pemakaian token harian per model dalam sebulan terakhir",
+      tokensLabel: "token",
+    },
+    values: {
+      eyebrow: "Kenapa memilih flatkey.ai",
+      title: "Andal, lebih murah, dan privat by design",
+      reliability: {
+        title: "Stabil dan andal",
+        desc: "100+ perusahaan dan 4K+ pengguna berbayar memakai flatkey.ai setiap hari.",
+        points: [
+          "Tingkat sukses rata-rata 99,9% dalam 30 hari",
+          "Failover otomatis antar beberapa provider upstream",
+          "Dashboard kesehatan real-time untuk tiap model",
+        ],
+      },
+      cost: {
+        title: "Pangkas biaya model",
+        desc: "Harga model 60-90% dari resmi, dan bonus top-up memangkas sepertiga lagi — serendah 50% dari resmi. Satu key untuk 160+ model — kini termasuk DeepSeek, Qwen, dan GLM — jadi tiap tugas jalan di model dengan biaya yang pas.",
+        points: [
+          "60-90% dari harga resmi, digabung bonus top-up — serendah 50% off",
+          "160+ model dalam satu key — termasuk DeepSeek, Qwen, dan GLM",
+          "Tugas ringan ke model murah, tugas berat ke model frontier",
+        ],
+      },
+      privacy: {
+        title: "Privasi terjamin",
+        desc: "Server dan penyimpanan kami mengikuti praktik GDPR, SOC 2, dan ISO 27001. Kami tidak menyimpan prompt maupun respons kamu.",
+        points: [
+          "Infrastruktur patuh GDPR",
+          "Kontrol selaras SOC 2 dan ISO 27001",
+          "Nol penyimpanan konten permintaan kamu",
+        ],
+      },
+      learnMore: "Selengkapnya",
+    },
+    table: {
+      eyebrow: "Semua model",
+      title: "160+ model, satu key — harga, latensi, dan kesehatan",
+      description:
+        "10 model tersibuk: harga setelah bonus vs resmi, latensi TTFT, dan kesehatan 30 hari. Direktori lengkap ada di halaman model.",
+      colModel: "Model",
+      colOfficial: "Resmi",
+      colFlatkey: "Setelah bonus",
+      colLatency: "Latensi",
+      colHealth: "Kesehatan 30 hari",
+      perMillion: "$ / 1M token input",
+      viewAll: "Jelajahi direktori model lengkap",
+    },
+    support: {
+      eyebrow: "Dukungan",
+      title: "Ada pertanyaan? Hubungi kami.",
+      description:
+        "Kami menyediakan dukungan online dan konsultasi pemakaian untuk layanan LLM di flatkey.ai — integrasi, pemilihan model, atau tagihan. Hubungi kami lewat kanal mana pun di bawah.",
+      email: { title: "Email", desc: "Kirim detailnya dan kami balas via email." },
+      chat: { title: "Live chat", desc: "Chat dengan kami langsung di situs untuk jawaban tercepat.", action: "Mulai chat" },
+      sms: { title: "SMS", desc: "Kirim SMS dan kami akan menghubungi kamu kembali." },
+      x: { title: "X (Twitter)", desc: "Ikuti atau DM kami di X." },
     },
   },
 };

@@ -1,4 +1,5 @@
 import type { Locale } from "./locales";
+import { withIdFallback } from "@/lib/locales";
 import type { PricingModel } from "./pricing";
 
 export type ModelPriceRow = {
@@ -108,6 +109,123 @@ export const GPT_CONFIG: ModelConfig = {
   ],
 };
 
+export const GEMINI_CONFIG: ModelConfig = {
+  slug: "gemini-api",
+  modelIds: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+  displayName: "Gemini API",
+  modelId: "gemini-2.5-pro",
+  officialName: "Google Gemini",
+  officialPrice: "$10.00",
+  flatkeyPrice: "$6.67",
+  estFlatkey: "$0.004",
+  estOfficial: "$0.006",
+  examplePrompt:
+    "You are a senior backend engineer. In 3 sentences, explain why developers should use an LLM gateway instead of calling each official API directly.",
+  priceUnit: "/ million output tokens",
+  rows: [
+    { label: "Gemini 2.5 Pro output", flatkey: "$6.67", official: "$10" },
+    { label: "Gemini 2.5 Flash output", flatkey: "$1.67", official: "$2.50" },
+    { label: "Gemini 2.5 Pro input", flatkey: "$0.83", official: "$1.25" },
+    { label: "Cache reads", flatkey: "", value: "up to 50% off" },
+    { label: "Coverage", flatkey: "", value: COVERAGE },
+  ],
+  seo: {
+    title: "Gemini API without GCP setup — one OpenAI-compatible key",
+    description:
+      "Call Gemini 2.5 Pro and Flash through flatkey.ai with no Google Cloud project, billing account, or vendor SDK — one OpenAI-compatible key, lower token costs, unified billing.",
+  },
+  positioning: "Best for general AI apps, agents, search, and high-volume API workloads",
+  useCases: ["AI app backends", "Agent workflows", "Batch content generation"],
+  faq: [
+    { question: "Does this use the same model id in my SDK?", answer: "Yes. Keep your SDK and switch base_url plus api_key." },
+    { question: "Can I control usage before scaling?", answer: "Yes. Prepaid balance, usage analytics, and one invoice keep spend bounded." },
+  ],
+};
+
+export const DEEPSEEK_CONFIG: ModelConfig = {
+  slug: "deepseek-api",
+  modelIds: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v3", "deepseek-v3.1", "deepseek-v3.2"],
+  displayName: "DeepSeek API",
+  modelId: "deepseek-v4-flash",
+  officialName: "DeepSeek",
+  officialPrice: "$0.14",
+  flatkeyPrice: "$0.074667",
+  estFlatkey: "$0.001",
+  estOfficial: "$0.002",
+  examplePrompt: "Compare two API gateway designs for reliability, cost control, and failover in three concise bullets.",
+  priceUnit: "/ million output tokens",
+  rows: [
+    { label: "Coverage", flatkey: "", value: "DeepSeek V3 · V3.2 · V4 Flash · V4 Pro" },
+    { label: "Cache reads", flatkey: "", value: "up to 50% off" },
+  ],
+  seo: {
+    title: "DeepSeek API pricing — OpenAI-compatible access",
+    description: "Call DeepSeek V3 and V4 models through flatkey.ai with live pricing, health metrics, one API key, and OpenAI-compatible code.",
+  },
+  positioning: "Best for general AI apps, agents, search, and high-volume API workloads",
+  useCases: ["AI app backends", "Agent workflows", "Batch content generation"],
+  faq: [
+    { question: "Does this use the same model id in my SDK?", answer: "Yes. Keep your SDK and switch base_url plus api_key." },
+    { question: "Can I control usage before scaling?", answer: "Yes. Prepaid balance, usage analytics, and one invoice keep spend bounded." },
+  ],
+};
+
+export const QWEN_CONFIG: ModelConfig = {
+  slug: "qwen-api",
+  modelIds: ["qwen3.7-plus", "qwen3.7-max", "qwen3.6-plus", "qwen3.5-plus", "qwen3.5-flash"],
+  displayName: "Qwen API",
+  modelId: "qwen3.7-plus",
+  officialName: "Alibaba Qwen",
+  officialPrice: "$0.40",
+  flatkeyPrice: "$0.24",
+  estFlatkey: "$0.002",
+  estOfficial: "$0.004",
+  examplePrompt: "Design a multilingual support-agent workflow and return the architecture in three concise bullets.",
+  priceUnit: "/ million output tokens",
+  rows: [
+    { label: "Coverage", flatkey: "", value: "Qwen 3.5 · 3.6 · 3.7 · Max · Plus" },
+    { label: "Cache reads", flatkey: "", value: "up to 50% off" },
+  ],
+  seo: {
+    title: "Qwen API pricing — one OpenAI-compatible key",
+    description: "Use Qwen 3.5, 3.6, and 3.7 models through flatkey.ai with live pricing, one API key, and OpenAI-compatible routing.",
+  },
+  positioning: "Best for general AI apps, agents, search, and high-volume API workloads",
+  useCases: ["AI app backends", "Agent workflows", "Batch content generation"],
+  faq: [
+    { question: "Does this use the same model id in my SDK?", answer: "Yes. Keep your SDK and switch base_url plus api_key." },
+    { question: "Can I control usage before scaling?", answer: "Yes. Prepaid balance, usage analytics, and one invoice keep spend bounded." },
+  ],
+};
+
+export const GLM_API_CONFIG: ModelConfig = {
+  slug: "glm-api",
+  modelIds: ["glm-5.2", "glm-5-turbo", "glm-4.7"],
+  displayName: "GLM API",
+  modelId: "glm-5.2",
+  officialName: "Z.ai",
+  officialPrice: "$1.40",
+  flatkeyPrice: "$0.56",
+  estFlatkey: "$0.003",
+  estOfficial: "$0.006",
+  examplePrompt: "Review this API migration plan for cost, latency, and rollback risk in three concise bullets.",
+  priceUnit: "/ million output tokens",
+  rows: [
+    { label: "Coverage", flatkey: "", value: "GLM 4.7 · GLM 5 Turbo · GLM 5.2" },
+    { label: "Cache reads", flatkey: "", value: "up to 50% off" },
+  ],
+  seo: {
+    title: "GLM API pricing — GLM 5.2 and Z.ai models",
+    description: "Call GLM 4.7, GLM 5 Turbo, and GLM 5.2 through flatkey.ai with live pricing, one API key, and OpenAI-compatible routing.",
+  },
+  positioning: "Best for general AI apps, agents, search, and high-volume API workloads",
+  useCases: ["AI app backends", "Agent workflows", "Batch content generation"],
+  faq: [
+    { question: "Does this use the same model id in my SDK?", answer: "Yes. Keep your SDK and switch base_url plus api_key." },
+    { question: "Can I control usage before scaling?", answer: "Yes. Prepaid balance, usage analytics, and one invoice keep spend bounded." },
+  ],
+};
+
 export const SEEDANCE_CONFIG: ModelConfig = {
   slug: "seedance-api",
   modelIds: ["seedance-2-0", "seedance-2.0", "seedance"],
@@ -147,7 +265,11 @@ export const SEEDANCE_CONFIG: ModelConfig = {
 
 export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   [CLAUDE_CONFIG.slug]: CLAUDE_CONFIG,
+  [DEEPSEEK_CONFIG.slug]: DEEPSEEK_CONFIG,
+  [GEMINI_CONFIG.slug]: GEMINI_CONFIG,
+  [GLM_API_CONFIG.slug]: GLM_API_CONFIG,
   [GPT_CONFIG.slug]: GPT_CONFIG,
+  [QWEN_CONFIG.slug]: QWEN_CONFIG,
   [SEEDANCE_CONFIG.slug]: SEEDANCE_CONFIG,
 };
 
@@ -184,6 +306,9 @@ export type ModelLandingKey =
   | "GPT-5 output"
   | "GPT-5 mini output"
   | "GPT-5 input"
+  | "Gemini 2.5 Pro output"
+  | "Gemini 2.5 Flash output"
+  | "Gemini 2.5 Pro input"
   | "Seedance video / sec"
   | "Image-to-video / sec"
   | "1080p / sec"
@@ -281,6 +406,9 @@ const en: Record<ModelLandingKey, string> = {
   "GPT-5 output": "GPT-5 output",
   "GPT-5 mini output": "GPT-5 mini output",
   "GPT-5 input": "GPT-5 input",
+  "Gemini 2.5 Pro output": "Gemini 2.5 Pro output",
+  "Gemini 2.5 Flash output": "Gemini 2.5 Flash output",
+  "Gemini 2.5 Pro input": "Gemini 2.5 Pro input",
   "Seedance video / sec": "Seedance video / sec",
   "Image-to-video / sec": "Image-to-video / sec",
   "1080p / sec": "1080p / sec",
@@ -308,7 +436,12 @@ const en: Record<ModelLandingKey, string> = {
   "50% off": "50% off",
 };
 
-const translations: Record<Locale, Record<ModelLandingKey, string>> = {
+// Non-English dictionaries may lag behind the union: modelLandingCopy falls
+// back to the English entry (then the key itself), so new keys only require
+// an English translation. `id` falls back to English via withIdFallback.
+const translations: Record<Locale, Partial<Record<ModelLandingKey, string>>> = withIdFallback<
+  Partial<Record<ModelLandingKey, string>>
+>({
   en,
   zh: {
     "↓ Top up $200, get $300 — stretch your token budget 1.5×": "↓ 充 $200 到账 $300 —— token 预算多 50%",
@@ -782,7 +915,7 @@ const translations: Record<Locale, Record<ModelLandingKey, string>> = {
     "Yes. Prepaid balance, usage analytics, and one invoice keep spend bounded.": "Ja. Prepaid-Guthaben, Nutzungsanalyse und eine Rechnung halten Kosten begrenzt.",
     "50% off": "50% Rabatt",
   },
-};
+});
 
 export function modelLandingCopy(locale: Locale, key: ModelLandingKey, vars: Record<string, string> = {}) {
   let value = translations[locale][key] ?? translations.en[key] ?? key;

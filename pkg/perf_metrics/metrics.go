@@ -1,7 +1,11 @@
 package perfmetrics
 
 import (
+	"context"
+	"errors"
 	"math"
+	"net"
+	"net/http"
 	"sort"
 	"sync"
 	"time"
@@ -9,10 +13,32 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
+	"github.com/QuantumNous/new-api/types"
 )
 
 var hotBuckets sync.Map
 var prometheusPendingBuckets sync.Map
+var prometheusChannelBuckets sync.Map
+var prometheusChannelModelBuckets sync.Map
+var prometheusModelPerformanceBuckets sync.Map
+var prometheusModelAdmissionMu sync.Mutex
+var prometheusModelDroppedSamples prometheusModelDropCounters
+
+var prometheusChannelDurationBucketsSeconds = []float64{
+	0.25,
+	0.5,
+	1,
+	2,
+	3,
+	5,
+	10,
+	15,
+	30,
+	60,
+	120,
+	300,
+	600,
+}
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
@@ -22,9 +48,13 @@ func Init() {
 	go flushLoop()
 }
 
-func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
+func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64, relayErr *types.NewAPIError) {
 	if info == nil {
 		return
+	}
+	finalSuccess := success && relayErr == nil
+	if finalSuccess && info.IsStream && info.StreamStatus != nil {
+		finalSuccess = info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors()
 	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
@@ -40,6 +70,7 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
+	recordPrometheusModelPerformance(info, finalSuccess, relayErr, now)
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
@@ -47,10 +78,159 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
-		Success:      success,
+		Success:      finalSuccess,
 		OutputTokens: outputTokens,
 		GenerationMs: generationMs,
 	})
+}
+
+func RecordChannelAttempt(
+	info *relaycommon.RelayInfo,
+	channelID int,
+	channelName string,
+	startedAt time.Time,
+	relayErr *types.NewAPIError,
+) {
+	if !perf_metrics_setting.GetSetting().Enabled || info == nil || channelID <= 0 {
+		return
+	}
+
+	now := time.Now()
+	durationSeconds := 0.0
+	if !startedAt.IsZero() && startedAt.Before(now) {
+		durationSeconds = now.Sub(startedAt).Seconds()
+	}
+
+	hasTtft := info.IsStream && info.HasSendResponse() && !info.FirstResponseTime.Before(startedAt)
+	ttftSeconds := 0.0
+	if hasTtft {
+		ttftSeconds = info.FirstResponseTime.Sub(startedAt).Seconds()
+		if ttftSeconds < 0 {
+			hasTtft = false
+			ttftSeconds = 0
+		}
+	}
+
+	status, errorCategory := classifyChannelAttempt(info, relayErr)
+	for {
+		actual, _ := prometheusChannelBuckets.LoadOrStore(channelID, newPrometheusChannelBucket())
+		if actual.(*prometheusChannelBucket).addAttempt(
+			channelName,
+			status,
+			errorCategory,
+			durationSeconds,
+			ttftSeconds,
+			hasTtft,
+		) {
+			break
+		}
+		prometheusChannelBuckets.CompareAndDelete(channelID, actual)
+	}
+
+	if info.OriginModelName == "" {
+		return
+	}
+	recordPrometheusChannelModelAttempt(channelID, info.OriginModelName, status)
+}
+
+func RecordChannelTokens(info *relaycommon.RelayInfo, inputTokens int64, outputTokens int64) {
+	if !perf_metrics_setting.GetSetting().Enabled || info == nil {
+		return
+	}
+	if info.ChannelId <= 0 || info.OriginModelName == "" || (inputTokens <= 0 && outputTokens <= 0) {
+		return
+	}
+	if status, _ := classifyChannelAttempt(info, nil); status != "success" {
+		return
+	}
+
+	key := prometheusChannelModelKey{channelID: info.ChannelId, model: info.OriginModelName}
+	for {
+		actual, _ := prometheusChannelModelBuckets.LoadOrStore(key, newPrometheusChannelModelBucket())
+		if actual.(*prometheusChannelModelBucket).addTokens(inputTokens, outputTokens) {
+			return
+		}
+		prometheusChannelModelBuckets.CompareAndDelete(key, actual)
+	}
+}
+
+func classifyChannelAttempt(info *relaycommon.RelayInfo, relayErr *types.NewAPIError) (string, string) {
+	if relayErr != nil || info == nil || !info.IsStream || info.StreamStatus == nil {
+		return classifyChannelError(relayErr)
+	}
+
+	streamStatus := info.StreamStatus
+	switch streamStatus.EndReason {
+	case relaycommon.StreamEndReasonClientGone:
+		return "client_cancel", "client_cancel"
+	case relaycommon.StreamEndReasonTimeout, relaycommon.StreamEndReasonFirstResponseTimeout:
+		return "error", "timeout"
+	}
+	if !streamStatus.IsNormalEnd() || streamStatus.HasErrors() {
+		return "error", "other"
+	}
+	return "success", "none"
+}
+
+func recordPrometheusChannelModelAttempt(channelID int, modelName string, status string) {
+	key := prometheusChannelModelKey{channelID: channelID, model: modelName}
+	for {
+		actual, _ := prometheusChannelModelBuckets.LoadOrStore(key, newPrometheusChannelModelBucket())
+		if actual.(*prometheusChannelModelBucket).addAttempt(status) {
+			return
+		}
+		prometheusChannelModelBuckets.CompareAndDelete(key, actual)
+	}
+}
+
+func classifyChannelError(relayErr *types.NewAPIError) (string, string) {
+	if relayErr == nil {
+		return "success", "none"
+	}
+	if errors.Is(relayErr, context.Canceled) {
+		return "client_cancel", "client_cancel"
+	}
+
+	errorCode := relayErr.GetErrorCode()
+	if errors.Is(relayErr, context.DeadlineExceeded) ||
+		errorCode == types.ErrorCodeChannelResponseTimeExceeded ||
+		relayErr.StatusCode == http.StatusRequestTimeout ||
+		relayErr.StatusCode == http.StatusGatewayTimeout {
+		return "error", "timeout"
+	}
+	var networkError net.Error
+	if errors.As(relayErr, &networkError) && networkError.Timeout() {
+		return "error", "timeout"
+	}
+
+	if relayErr.StatusCode == http.StatusTooManyRequests {
+		return "error", "rate_limit"
+	}
+	if relayErr.StatusCode == http.StatusUnauthorized ||
+		relayErr.StatusCode == http.StatusForbidden ||
+		errorCode == types.ErrorCodeChannelInvalidKey {
+		return "error", "auth"
+	}
+
+	switch errorCode {
+	case types.ErrorCodeReadResponseBodyFailed,
+		types.ErrorCodeBadResponse,
+		types.ErrorCodeBadResponseBody,
+		types.ErrorCodeEmptyResponse:
+		return "error", "bad_response"
+	case types.ErrorCodeDoRequestFailed,
+		types.ErrorCodeAwsInvokeError,
+		types.ErrorCodeChannelAwsClientError:
+		return "error", "network"
+	}
+
+	if relayErr.StatusCode >= http.StatusBadRequest && relayErr.StatusCode < http.StatusInternalServerError {
+		return "error", "upstream_4xx"
+	}
+	if relayErr.StatusCode >= http.StatusInternalServerError && relayErr.StatusCode <= 599 {
+		return "error", "upstream_5xx"
+	}
+	return "error", "other"
 }
 
 func Record(sample Sample) {

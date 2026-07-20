@@ -37,6 +37,25 @@ func TestParseTaskResultScrubsProviderFailure(t *testing.T) {
 	}
 }
 
+func TestDoResponseMalformedSubmitDoesNotExposeProviderBody(t *testing.T) {
+	a := &TaskAdaptor{}
+	c := newTestContext(`{"model":"seedance-2.0","content":[{"type":"text","text":"hello"}]}`)
+	info := newTestRelayInfo("https://ark.ap-southeast.bytepluses.com", "test-key")
+	info.PublicTaskID = "task_public"
+	info.OriginModelName = "seedance-2.0"
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":"BytePlus bytepluses.com endpoint ep-test-secret rejected"`)),
+	}
+	_, _, taskErr := a.DoResponse(c, resp, info)
+	if taskErr == nil {
+		t.Fatal("DoResponse should reject malformed submit body")
+	}
+	assertNoBytePlusLeak(t, taskErr)
+}
+
 func TestConvertToOpenAIVideoUsesProxyURLAndScrubsErrors(t *testing.T) {
 	a := &TaskAdaptor{}
 	success := &model.Task{
@@ -78,6 +97,19 @@ func TestConvertToOpenAIVideoUsesProxyURLAndScrubsErrors(t *testing.T) {
 	}
 	if got.Error == nil || got.Error.Message != "task failed at upstream provider" {
 		t.Fatalf("failure error = %+v", got.Error)
+	}
+}
+
+func assertNoBytePlusLeak(t *testing.T, taskErr *dto.TaskError) {
+	t.Helper()
+	text := taskErr.Message
+	if taskErr.Error != nil {
+		text += " " + taskErr.Error.Error()
+	}
+	for _, marker := range []string{"bytepluses.com", "BytePlus", "ep-test-secret"} {
+		if strings.Contains(text, marker) {
+			t.Fatalf("error leaked %q in %q", marker, text)
+		}
 	}
 }
 

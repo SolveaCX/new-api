@@ -1,4 +1,5 @@
 import { modelIconKey } from "@/lib/home-models";
+import { withIdFallback } from "@/lib/locales";
 import type { Locale } from "@/lib/locales";
 import {
   discountedPriceUsd,
@@ -73,6 +74,17 @@ export function classifyPublicModel(model: PricingModel): ModelPublicKind {
   return "chat";
 }
 
+export type ModelHealthStatus = "operational" | "degraded";
+
+// A model should only be labelled degraded when reliability is materially
+// below the production threshold. The previous 99.5% cutoff marked healthy
+// models such as DeepSeek (99.33%) and GLM (96.8%) as degraded, which
+// contradicted the page's own 30-day evidence.
+export function classifyModelHealthStatus(successRate?: number): ModelHealthStatus | null {
+  if (successRate == null || !Number.isFinite(successRate)) return null;
+  return successRate >= 95 ? "operational" : "degraded";
+}
+
 export type ModelPublicCopy = {
   successRate: string;
   stackedDiscount: string;
@@ -118,7 +130,7 @@ export type ModelPublicPriceRow = {
   discounted: string;
 };
 
-export const MODEL_PUBLIC_COPY: Record<Locale, ModelPublicCopy> = {
+export const MODEL_PUBLIC_COPY: Record<Locale, ModelPublicCopy> = withIdFallback({
   en: {
     successRate: "30-day success rate",
     stackedDiscount: "Stacked discount",
@@ -371,7 +383,7 @@ export const MODEL_PUBLIC_COPY: Record<Locale, ModelPublicCopy> = {
     noData: "Noch nicht genug Daten",
     backToModels: "Alle Modelle",
   },
-};
+});
 
 // Server-side view model for the public page. Strike-through = official
 // vendor price; hero = after both discount layers (best group ratio, then

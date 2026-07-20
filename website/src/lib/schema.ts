@@ -5,6 +5,7 @@ import { SITE_NAME, SITE_ORIGIN } from "./seo";
 
 type JsonLdValue = string | number | boolean | null | JsonLdObject | JsonLdValue[];
 type JsonLdObject = { [key: string]: JsonLdValue | undefined };
+const PRODUCT_IMAGE_URL = `${SITE_ORIGIN}/flatkey-mark.svg`;
 
 export type JsonLdGraph = {
   "@context": "https://schema.org";
@@ -164,6 +165,7 @@ export function buildModelSchema(input: ModelSchemaInput): JsonLdGraph {
       category: "AI model API",
       brand: { "@type": "Brand", name: input.vendorName },
       url: pageUrl,
+      image: PRODUCT_IMAGE_URL,
       ...(validPrice
         ? {
             offers: {
@@ -174,6 +176,8 @@ export function buildModelSchema(input: ModelSchemaInput): JsonLdGraph {
               availability: "https://schema.org/InStock",
               url: pageUrl,
               seller: organizationSchema(),
+              hasMerchantReturnPolicy: digitalServiceReturnPolicy(),
+              shippingDetails: digitalServiceShippingDetails(),
             },
           }
         : {}),
@@ -241,6 +245,44 @@ function organizationSchema(): JsonLdObject {
     "@type": "Organization",
     name: SITE_NAME,
     url: SITE_ORIGIN,
+  };
+}
+
+function digitalServiceReturnPolicy(): JsonLdObject {
+  return {
+    "@type": "MerchantReturnPolicy",
+    applicableCountry: "US",
+    returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
+  };
+}
+
+function digitalServiceShippingDetails(): JsonLdObject {
+  return {
+    "@type": "OfferShippingDetails",
+    shippingRate: {
+      "@type": "MonetaryAmount",
+      value: 0,
+      currency: "USD",
+    },
+    shippingDestination: {
+      "@type": "DefinedRegion",
+      addressCountry: "US",
+    },
+    deliveryTime: {
+      "@type": "ShippingDeliveryTime",
+      handlingTime: {
+        "@type": "QuantitativeValue",
+        minValue: 0,
+        maxValue: 0,
+        unitCode: "DAY",
+      },
+      transitTime: {
+        "@type": "QuantitativeValue",
+        minValue: 0,
+        maxValue: 0,
+        unitCode: "DAY",
+      },
+    },
   };
 }
 

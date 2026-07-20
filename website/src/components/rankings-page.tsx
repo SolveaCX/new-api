@@ -1,5 +1,6 @@
 import { BarChart3, Trophy } from "lucide-react";
 import Link from "next/link";
+import { withIdFallback } from "@/lib/locales";
 import { SiteShell } from "@/components/site-shell";
 import { getPageContent } from "@/content/pages";
 import { getHomeCopy } from "@/lib/home-copy";
@@ -24,7 +25,7 @@ type RankingsUiCopy = {
   updatedDaily: string;
 };
 
-const RANKINGS_UI: Record<Locale, RankingsUiCopy> = {
+const RANKINGS_UI: Record<Locale, RankingsUiCopy> =withIdFallback({
   en: {
     llmTitle: "LLM leaderboard",
     llmSubtitle: "The most used models on the platform over the past month",
@@ -70,7 +71,7 @@ const RANKINGS_UI: Record<Locale, RankingsUiCopy> = {
     llmSubtitle: "Die meistgenutzten Modelle auf der Plattform im letzten Monat",
     updatedDaily: "Täglich aktualisiert · Nutzungsindex basierend auf dem Routing-Traffic der Plattform",
   },
-};
+});
 
 function formatShare(share: number | undefined): string {
   if (share == null || !Number.isFinite(share) || share <= 0) return "—";

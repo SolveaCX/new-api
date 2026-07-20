@@ -30,25 +30,59 @@ import { PlaygroundChat } from './components/playground-chat'
 import { FirstRunWelcome, GetKeyCard } from './components/playground-first-run'
 import { PlaygroundInput } from './components/playground-input'
 import { MESSAGE_ROLES, MESSAGE_STATUS } from './constants'
-import { usePlaygroundState, useChatHandler } from './hooks'
+import {
+  usePlaygroundState,
+  useChatHandler,
+  useVideoGeneration,
+} from './hooks'
 import {
   createUserMessage,
   createLoadingAssistantMessage,
+  createLoadingVideoMessage,
   getFirstRunChatOverride as resolveFirstRunChatOverride,
+  isVideoGenModelName,
   pickFirstRunModel,
   shouldOpenFirstRunTopupPrompt,
+  clearFirstRunDone,
+  isFirstRunActive,
+  markFirstRunDone,
+  markFirstRunStarted,
 } from './lib'
 import type { Message as MessageType } from './types'
 
 // PLG users are always pinned to the single `plg` group.
 const PLG_GROUP = 'plg'
 
-export function Playground({ firstRun = false }: { firstRun?: boolean }) {
+export function Playground({
+  firstRun: firstRunFromUrl = false,
+}: {
+  firstRun?: boolean
+}) {
   const navigate = useNavigate()
   const canUseGroups = useCanUseGroups()
   const { playgroundDefaultModel, enableStripeCardBind } = useSystemConfig()
   const authUser = useAuthStore((state) => state.auth.user)
   const openOnboarding = useOnboardingStore((state) => state.openOnboarding)
+
+  // The onboarding is triggered one-shot via `?first=1`, but it must persist
+  // across tab switches / reloads for a brand-new user until they finish their
+  // first successful call. We remember that per user (keyed on the authed id so
+  // a shared browser never leaks state between accounts): a fresh `?first=1`
+  // (re-)starts it, completion marks it done. The effective `firstRun` below
+  // therefore stays true on later returns until the user has completed once, so
+  // every downstream `firstRun` usage is unchanged.
+  const userId = authUser?.id
+  const firstRun = firstRunFromUrl || isFirstRunActive(userId)
+
+  // Persist first-run entry. Explicit `?first=1` re-enables onboarding even if
+  // the user completed it before (clears the done flag), then records that the
+  // user has started so a plain tab return keeps showing it.
+  useEffect(() => {
+    if (!firstRunFromUrl) return
+    if (userId === undefined) return
+    clearFirstRunDone(userId)
+    markFirstRunStarted(userId)
+  }, [firstRunFromUrl, userId])
   const {
     config,
     parameterEnabled,
@@ -61,12 +95,31 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
     updateConfig,
   } = usePlaygroundState()
 
-  const { sendChat, stopGeneration, isGenerating } = useChatHandler({
+  const {
+    sendChat,
+    stopGeneration: stopChatGeneration,
+    isGenerating: isChatGenerating,
+  } = useChatHandler({
     config,
     parameterEnabled,
     onMessageUpdate: updateMessages,
     minimalParameters: firstRun,
   })
+
+  const {
+    generateVideo,
+    stopVideoGeneration,
+    releaseVideoObjectUrl,
+    isVideoGenerating,
+  } = useVideoGeneration({ onMessageUpdate: updateMessages })
+
+  // Either a chat stream or a video-generation task can be in flight; the input,
+  // stop button, and welcome chips all key off the combined state.
+  const isGenerating = isChatGenerating || isVideoGenerating
+  const stopGeneration = useCallback(() => {
+    stopChatGeneration()
+    stopVideoGeneration()
+  }, [stopChatGeneration, stopVideoGeneration])
 
   // Edit dialog state
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(
@@ -98,10 +151,6 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
     clearedFirstRunMessagesRef.current = true
     if (messages.length > 0) updateMessages([])
   }, [firstRun, messages.length, updateMessages])
-
-  // Whether the empty-state welcome/example chips should show: first-run mode
-  // with no conversation yet.
-  const showWelcome = firstRun && messages.length === 0
 
   // Load models
   const { data: modelsData, isLoading: isLoadingModels } = useQuery({
@@ -232,6 +281,10 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
     if (!sentThisSession) return
     if (!hasCompletedAssistant) return
     getKeyCardShownRef.current = true
+    // First successful call: mark onboarding done in persistent storage so a
+    // later tab return / reload no longer reshows the welcome banner for this
+    // user (the effective firstRun then resolves to false).
+    markFirstRunDone(userId)
     const showCardTimer = window.setTimeout(() => {
       setShowGetKeyCard(true)
       // First call succeeded — drop `?first=1` from the URL so a reload/back-nav
@@ -240,7 +293,7 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
       navigate({ to: '/playground', replace: true })
     }, 0)
     return () => window.clearTimeout(showCardTimer)
-  }, [firstRun, sentThisSession, hasCompletedAssistant, navigate])
+  }, [firstRun, sentThisSession, hasCompletedAssistant, navigate, userId])
 
   useEffect(() => {
     const shouldOpen = shouldOpenFirstRunTopupPrompt({
@@ -273,13 +326,43 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
     return true
   }, [firstRun, isFirstRunModelApplied])
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = (text: string, model?: string) => {
     if (!prepareFirstRunSend()) return
     const userMessage = createUserMessage(text)
-    const assistantMessage = createLoadingAssistantMessage()
+    // The effective model for THIS send: an example chip / override wins,
+    // otherwise the currently selected model.
+    const targetModel = model || config.model
 
+    // An example prompt (or the picker) can force a specific model. Persist the
+    // selection so the picker reflects it, and mark it as an explicit user choice
+    // so the first-run cheap default never overrides it.
+    if (model) {
+      setUserPickedModel(true)
+      updateConfig('model', model)
+    }
+
+    // Video-generation models (veo) do NOT run through chat completions: insert a
+    // video assistant bubble and drive the async /v1/videos submit→poll→content
+    // flow, which renders an inline <video> when done.
+    if (isVideoGenModelName(targetModel)) {
+      const videoMessage = createLoadingVideoMessage()
+      const newMessages = [...messages, userMessage, videoMessage]
+      updateMessages(newMessages)
+      generateVideo(text, targetModel, videoMessage.key)
+      return
+    }
+
+    const assistantMessage = createLoadingAssistantMessage()
     const newMessages = [...messages, userMessage, assistantMessage]
     updateMessages(newMessages)
+
+    // Crucially, pass a forced model as a direct send override: `updateConfig` is
+    // async and wouldn't be reflected in `config` for this same-tick send, so the
+    // override guarantees THIS message is requested against the forced model.
+    if (model) {
+      sendChat(newMessages, { model })
+      return
+    }
 
     // Send chat request
     sendChat(newMessages, getFirstRunChatOverride())
@@ -298,6 +381,21 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
 
     // Remove messages after this one and regenerate
     const messagesUpToHere = messages.slice(0, messageIndex)
+
+    // Regenerating against a video model re-runs the async video flow using the
+    // most recent user prompt rather than hitting chat completions.
+    if (isVideoGenModelName(config.model)) {
+      const lastUser = [...messagesUpToHere]
+        .reverse()
+        .find((m) => m.from === MESSAGE_ROLES.USER)
+      const prompt = lastUser?.versions?.[0]?.content ?? ''
+      const videoMessage = createLoadingVideoMessage()
+      const newMessages = [...messagesUpToHere, videoMessage]
+      updateMessages(newMessages)
+      generateVideo(prompt, config.model, videoMessage.key)
+      return
+    }
+
     const loadingMessage = createLoadingAssistantMessage()
     const newMessages = [...messagesUpToHere, loadingMessage]
 
@@ -352,15 +450,20 @@ export function Playground({ firstRun = false }: { firstRun?: boolean }) {
   )
 
   const handleDeleteMessage = (message: MessageType) => {
+    // Revoke the video blob URL (if any) so deleting a video message doesn't leak.
+    if (message.videoUrl) releaseVideoObjectUrl(message.videoUrl)
     const newMessages = messages.filter((m) => m.key !== message.key)
     updateMessages(newMessages)
   }
 
   return (
     <div className='relative flex size-full flex-col overflow-hidden'>
-      {/* First-run welcome banner + example prompts (empty state only) */}
-      {showWelcome && (
+      {/* Welcome banner + example prompts — shown on an empty Playground for
+          every user (new users get the first-run banner, returning users get a
+          neutral "try one of these" header with the same one-click prompts). */}
+      {messages.length === 0 && (
         <FirstRunWelcome
+          firstRun={firstRun}
           disabled={!isFirstRunModelReady}
           onPickExample={handleSendMessage}
         />

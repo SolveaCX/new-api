@@ -22,23 +22,36 @@ export function InvitationStats(props: InvitationStatsProps) {
   const { t } = useTranslation()
   const pending = props.loading || props.summary === null
   const hasPendingReferrals = (props.summary?.pending_count ?? 0) > 0
+  const subscriptionMode = props.summary?.reward_mode === 'subscription'
   const stats = [
     {
       label: t('Total earned'),
       value: formatInvitationUSD(props.summary?.history_usd ?? 0),
       description: t('Lifetime'),
     },
-    {
-      label: t('Pending credits'),
-      value: formatInvitationUSD(props.summary?.pending_reward_usd ?? 0),
-      description: t("Released after your friend's first top-up"),
-    },
+    subscriptionMode
+      ? {
+          label: t('Locked credits'),
+          value: formatInvitationUSD(props.summary?.locked_reward_usd ?? 0),
+          description: t("Unlocks {{days}} days after your friend's payment", {
+            days: props.summary?.unlock_delay_days ?? 7,
+          }),
+        }
+      : {
+          label: t('Pending credits'),
+          value: formatInvitationUSD(props.summary?.pending_reward_usd ?? 0),
+          description: t("Released after your friend's first top-up"),
+        },
     {
       label: t('Registered friends'),
       value: String(props.registeredCount),
-      description: t('{{reward}} each after first top-up', {
-        reward: formatInvitationUSD(props.summary?.inviter_reward_usd ?? 0),
-      }),
+      description: subscriptionMode
+        ? t('{{reward}} each after their first subscription', {
+            reward: formatInvitationUSD(props.summary?.inviter_reward_usd ?? 0),
+          })
+        : t('{{reward}} each after first top-up', {
+            reward: formatInvitationUSD(props.summary?.inviter_reward_usd ?? 0),
+          }),
     },
     {
       label: t('Status'),

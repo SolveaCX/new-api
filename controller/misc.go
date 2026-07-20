@@ -40,6 +40,27 @@ func TestStatus(c *gin.Context) {
 	return
 }
 
+func inviteRewardMode() string {
+	if common.InviteRewardSubscriptionMode {
+		return "subscription"
+	}
+	return "topup"
+}
+
+// inviteRewardBadgeUSD feeds the sidebar invite badge ("+$N"). Legacy mode:
+// the fixed inviter reward. Subscription mode: the combined value of one
+// referral — inviter balance reward plus the invitee's first-month discount.
+func inviteRewardBadgeUSD() float64 {
+	if common.QuotaPerUnit <= 0 {
+		return 0
+	}
+	inviterUSD := float64(common.QuotaForInviter) / common.QuotaPerUnit
+	if common.InviteRewardSubscriptionMode {
+		return inviterUSD + common.InviteFirstSubDiscountUSD
+	}
+	return inviterUSD
+}
+
 func GetStatus(c *gin.Context) {
 
 	cs := console_setting.GetConsoleSetting()
@@ -130,6 +151,8 @@ func GetStatus(c *gin.Context) {
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"auth_notice_enabled":         legalSetting.AuthNoticeEnabled,
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
+		"invite_reward_mode":          inviteRewardMode(),
+		"invite_reward_badge_usd":     inviteRewardBadgeUSD(),
 	}
 
 	// 根据启用状态注入可选内容

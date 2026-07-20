@@ -176,9 +176,29 @@ type SubscriptionPlan struct {
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
+	// Rolling 5-hour usage window limit in weighted quota units (0 = disabled).
+	// 显式 column：GORM 默认会把 Window5hAmount 命名为 window5h_amount，与迁移列名不一致
+	Window5hAmount int64 `json:"window_5h_amount" gorm:"column:window_5h_amount;type:bigint;not null;default:0"`
+	// 7-day usage window limit in weighted quota units, cycle anchored at subscription start (0 = disabled)
+	WindowWeekAmount int64 `json:"window_week_amount" gorm:"column:window_week_amount;type:bigint;not null;default:0"`
+
+	// Media (image/video) credits granted per plan period, 1 credit = $0.01 (0 = plan has no media pool)
+	MediaCreditsMonthly int64 `json:"media_credits_monthly" gorm:"type:bigint;not null;default:0"`
+
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
+
+	// ---- 面向用户的价值展示字段（纯展示，不参与计费）----
+	// 套餐可用模型数量（0 = 不显示，前端回退为「全部模型」文案）
+	ModelCount int `json:"model_count" gorm:"type:int;not null;default:0"`
+	// Legacy display metadata kept for schema compatibility. Product plans no longer
+	// advertise or configure a per-minute request limit; keep this value at 0.
+	Rpm int `json:"rpm" gorm:"type:int;not null;default:0"`
+	// 并发数上限（0 = 不显示）
+	Concurrency int `json:"concurrency" gorm:"type:int;not null;default:0"`
+	// 价值卖点，每行一条（admin 用换行分隔录入，前端按 \n 拆分渲染）
+	FeatureLines string `json:"feature_lines" gorm:"type:text;default:''"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
@@ -259,6 +279,10 @@ type UserSubscription struct {
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
+
+	// Media (image/video) credits pool, snapshot from plan at purchase; resets with the quota cycle
+	MediaCreditsTotal int64 `json:"media_credits_total" gorm:"type:bigint;not null;default:0"`
+	MediaCreditsUsed  int64 `json:"media_credits_used" gorm:"type:bigint;not null;default:0"`
 
 	StartTime int64  `json:"start_time" gorm:"bigint"`
 	EndTime   int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
@@ -537,20 +561,22 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		}
 	}
 	sub := &UserSubscription{
-		UserId:        userId,
-		PlanId:        plan.Id,
-		AmountTotal:   plan.TotalAmount,
-		AmountUsed:    0,
-		StartTime:     now.Unix(),
-		EndTime:       endUnix,
-		Status:        "active",
-		Source:        source,
-		LastResetTime: lastReset,
-		NextResetTime: nextReset,
-		UpgradeGroup:  upgradeGroup,
-		PrevUserGroup: prevGroup,
-		CreatedAt:     common.GetTimestamp(),
-		UpdatedAt:     common.GetTimestamp(),
+		UserId:            userId,
+		PlanId:            plan.Id,
+		AmountTotal:       plan.TotalAmount,
+		AmountUsed:        0,
+		MediaCreditsTotal: plan.MediaCreditsMonthly,
+		MediaCreditsUsed:  0,
+		StartTime:         now.Unix(),
+		EndTime:           endUnix,
+		Status:            "active",
+		Source:            source,
+		LastResetTime:     lastReset,
+		NextResetTime:     nextReset,
+		UpgradeGroup:      upgradeGroup,
+		PrevUserGroup:     prevGroup,
+		CreatedAt:         common.GetTimestamp(),
+		UpdatedAt:         common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
@@ -629,6 +655,10 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	if logUserId > 0 {
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
 		RecordLog(logUserId, LogTypeTopup, msg)
+	}
+	if err := TryGrantInviteSubscriptionRewardAfterOrderCompleted(tradeNo); err != nil {
+		// Reward bookkeeping must never fail an already-completed payment.
+		common.SysError(fmt.Sprintf("invite subscription reward grant failed for order %s: %v", tradeNo, err))
 	}
 	return nil
 }
@@ -803,6 +833,12 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			return err
 		}
 
+		// 让余额购买的订阅也进入计费历史（与网关支付订阅一致，见 CompleteSubscriptionOrder）。
+		// 记录为一笔 method=balance 的成功付款，Money=套餐价，Amount=0（不加钱包余额）。
+		if err := upsertSubscriptionTopUpTx(tx, order); err != nil {
+			return err
+		}
+
 		logPlanTitle = plan.Title
 		logMoney = plan.PriceAmount
 		chargedQuota = requiredQuota
@@ -840,6 +876,44 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 		return nil, err
 	}
 	return buildSubscriptionSummaries(subs), nil
+}
+
+// SubscriptionWindowInfo carries the data needed to enforce usage windows
+// (5h rolling + weekly anchored at subscription start) before pre-consume.
+type SubscriptionWindowInfo struct {
+	UserSubscriptionId int
+	SubscriptionStart  int64
+	Window5hAmount     int64
+	WindowWeekAmount   int64
+}
+
+// GetActiveSubscriptionWindowInfo returns window limits for the user's first
+// active subscription (same end_time asc order as PreConsumeUserSubscription).
+// Returns (nil, nil) when the user has no active subscription.
+func GetActiveSubscriptionWindowInfo(userId int) (*SubscriptionWindowInfo, error) {
+	if userId <= 0 {
+		return nil, errors.New("invalid userId")
+	}
+	now := common.GetTimestamp()
+	var sub UserSubscription
+	query := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+		Order("end_time asc, id asc").Limit(1).Find(&sub)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, nil
+	}
+	plan, err := GetSubscriptionPlanById(sub.PlanId)
+	if err != nil {
+		return nil, err
+	}
+	return &SubscriptionWindowInfo{
+		UserSubscriptionId: sub.Id,
+		SubscriptionStart:  sub.StartTime,
+		Window5hAmount:     plan.Window5hAmount,
+		WindowWeekAmount:   plan.WindowWeekAmount,
+	}, nil
 }
 
 // HasActiveUserSubscription returns whether the user has any active subscription.
@@ -1123,6 +1197,7 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 		return nil
 	}
 	sub.AmountUsed = 0
+	sub.MediaCreditsUsed = 0
 	sub.LastResetTime = base.Unix()
 	sub.NextResetTime = next
 	return tx.Save(sub).Error

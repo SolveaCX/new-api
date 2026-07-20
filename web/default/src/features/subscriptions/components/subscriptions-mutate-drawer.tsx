@@ -51,6 +51,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   SideDrawerSection,
   sideDrawerContentClassName,
@@ -422,6 +423,104 @@ export function SubscriptionsMutateDrawer({
                   )}
                 />
               </div>
+
+              {/* 面向用户的价值展示字段（纯展示，不参与计费） */}
+              <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+                <FormField
+                  control={form.control}
+                  name='model_count'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Model count')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          min={0}
+                          onChange={(e) =>
+                            field.onChange(parseInt(e.target.value, 10) || 0)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('0 shows "All models"')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='concurrency'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Concurrency')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          min={0}
+                          onChange={(e) =>
+                            field.onChange(parseInt(e.target.value, 10) || 0)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>{t('0 hides it')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='media_credits_monthly'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Media credits per month')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          min={0}
+                          onChange={(e) =>
+                            field.onChange(parseInt(e.target.value, 10) || 0)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Credits for image & video generation. 0 hides it.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name='feature_lines'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Value highlights')}</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        rows={4}
+                        placeholder={t('One value per line')}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'One bullet per line, shown on the plan card as selling points.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormField

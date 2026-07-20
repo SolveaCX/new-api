@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { NotificationPopover } from "@/components/notification-popover";
+import { useSiteConfig } from "@/components/site-config-provider";
 import { getCopy } from "@/lib/copy";
-import { type Locale, localizePath, stripLocale } from "@/lib/locales";
+import { type Locale, localizePath, stripLocale, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +19,7 @@ const useCaseItems = [
   { href: "/use-case/claude-code", label: "Claude Code" },
   { href: "/use-case/image-buddy", label: "Image Buddy" },
 ];
-const useCaseLabelByLocale: Record<Locale, string> = {
+const useCaseLabelByLocale: Record<Locale, string> =withIdFallback({
   en: "Use Case",
   zh: "使用场景",
   es: "Casos de uso",
@@ -28,26 +29,37 @@ const useCaseLabelByLocale: Record<Locale, string> = {
   ja: "ユースケース",
   vi: "Use case",
   de: "Anwendungsfälle",
-};
+});
 
 type Props = {
   locale: Locale;
   pathname: string;
   languageCookieDomain?: string;
+  /** Single-locale routes (market pages) have no localized siblings — the switcher would link to 404s. */
+  hideLanguageSwitcher?: boolean;
+};
+
+type NavItem = {
+  external?: boolean;
+  href: string;
+  label: string;
+  publicPath?: boolean;
 };
 
 export function SiteHeader(props: Props) {
+  const { docsUrl } = useSiteConfig();
   const copy = getCopy(props.locale);
   const consoleHref = consoleUrl("/dashboard", `lng=${props.locale}`);
   const signInHref = consoleUrl("/sign-in", `lng=${props.locale}`);
   const useCaseLabel = useCaseLabelByLocale[props.locale] ?? useCaseLabelByLocale.en;
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const navItems = [
+  const navItems: NavItem[] = [
     { href: "/", label: copy.nav.home, publicPath: true },
     { href: "/blog", label: copy.nav.blog, publicPath: true },
     { href: "/pricing", label: copy.nav.pricing, publicPath: true },
     { href: "/models", label: copy.nav.modelPricing, publicPath: true },
+    ...(docsUrl ? [{ href: docsUrl, label: copy.nav.docs, external: true }] : []),
     // Rankings is the website's own daily-updated data page (same pipeline
     // as the console chart) — the single public rankings surface.
     { href: "/rankings", label: copy.nav.rankings, publicPath: true },
@@ -95,13 +107,25 @@ export function SiteHeader(props: Props) {
             <div className="hidden items-center gap-0.5 sm:flex">
               {navItems.map((item) => {
                 const active = item.publicPath && currentPath === item.href;
-                return (
+                const className = cn(
+                  "rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-200",
+                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                );
+
+                return item.external ? (
+                  <a
+                    key={item.href}
+                    className={className}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {item.label}
+                  </a>
+                ) : (
                   <Link
                     key={item.href}
-                    className={cn(
-                      "rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-200",
-                      active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                    )}
+                    className={className}
                     href={item.publicPath ? localizePath(item.href, props.locale) : item.href}
                   >
                     {item.label}
@@ -148,11 +172,13 @@ export function SiteHeader(props: Props) {
               </Link>
 
               <div className="mx-2 h-4 w-px bg-border/40" />
-              <LanguageSwitcher
-                locale={props.locale}
-                pathname={props.pathname}
-                cookieDomain={props.languageCookieDomain}
-              />
+              {!props.hideLanguageSwitcher && (
+                <LanguageSwitcher
+                  locale={props.locale}
+                  pathname={props.pathname}
+                  cookieDomain={props.languageCookieDomain}
+                />
+              )}
               <NotificationPopover locale={props.locale} />
               <div className="mx-1 h-4 w-px bg-border/40" />
               <a
@@ -211,21 +237,38 @@ export function SiteHeader(props: Props) {
       >
         <div className="flex h-full flex-col justify-between px-8 pt-20 pb-10">
           <nav className="flex flex-col gap-1">
-            {navItems.map((item, index) => (
-              <Link
-                key={item.href}
-                href={item.publicPath ? localizePath(item.href, props.locale) : item.href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 py-3 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                  mobileOpen ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0",
-                  item.publicPath && currentPath === item.href ? "text-foreground" : "text-muted-foreground"
-                )}
-                style={{ transitionDelay: mobileOpen ? `${100 + index * 50}ms` : "0ms" }}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {navItems.map((item, index) => {
+              const className = cn(
+                "flex items-center gap-3 py-3 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                mobileOpen ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0",
+                item.publicPath && currentPath === item.href ? "text-foreground" : "text-muted-foreground"
+              );
+              const style = { transitionDelay: mobileOpen ? `${100 + index * 50}ms` : "0ms" };
+
+              return item.external ? (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setMobileOpen(false)}
+                  className={className}
+                  style={style}
+                >
+                  {item.label}
+                </a>
+              ) : (
+                <Link
+                  key={item.href}
+                  href={item.publicPath ? localizePath(item.href, props.locale) : item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={className}
+                  style={style}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
             <div
               className={cn(
                 "pt-3 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",

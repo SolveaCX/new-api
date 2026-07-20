@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -96,6 +97,8 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	}
 
 	defer service.CloseResponseBodyGracefully(resp)
+	isCodexClaudeBridge := info.RelayFormat == types.RelayFormatClaude &&
+		info.ChannelMeta != nil && info.ApiType == constant.APITypeCodex
 
 	responseId := helper.GetResponseID(c)
 	createAt := time.Now().Unix()
@@ -489,6 +492,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 					finishReason = "tool_calls"
 				}
 				stop := helper.GenerateStopResponse(responseId, createAt, model, finishReason)
+				if isCodexClaudeBridge {
+					stop.Usage = usage
+				}
 				if !sendChatChunk(stop) {
 					sr.Stop(streamErr)
 					return
@@ -534,6 +540,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			finishReason = "tool_calls"
 		}
 		stop := helper.GenerateStopResponse(responseId, createAt, model, finishReason)
+		if isCodexClaudeBridge {
+			stop.Usage = usage
+		}
 		if !sendChatChunk(stop) {
 			return nil, streamErr
 		}

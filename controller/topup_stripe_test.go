@@ -1624,7 +1624,7 @@ func TestValidateStripeRedirectURLAllowsForwardedAndOriginHosts(t *testing.T) {
 	require.Error(t, validateStripeRedirectURL(ctx, "https://evil.example/wallet"))
 }
 
-func TestGetStripePayMoneyAppliesDisplayGroupAndDiscount(t *testing.T) {
+func TestGetStripePayMoneyIgnoresRechargeGroupAndDiscount(t *testing.T) {
 	originalDisplayType := operation_setting.GetQuotaDisplayType()
 	originalUnitPrice := setting.StripeUnitPrice
 	originalTopupGroupRatio := common.TopupGroupRatio2JSONString()
@@ -1645,7 +1645,7 @@ func TestGetStripePayMoneyAppliesDisplayGroupAndDiscount(t *testing.T) {
 	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"vip":1.5}`))
 	paymentSetting.AmountDiscount = map[int]float64{int(2 * common.QuotaPerUnit): 0.5}
 
-	require.Equal(t, 3.0, getStripePayMoney(2*common.QuotaPerUnit, "vip"))
+	require.Equal(t, 4.0, getStripePayMoney(2*common.QuotaPerUnit, "vip"))
 }
 
 func TestMapStripeInvoiceStatusUsesLocalStatuses(t *testing.T) {
