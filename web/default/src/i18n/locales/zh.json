@@ -5517,6 +5517,21 @@
     "Generate a video of a cat astronaut": "帮我生成一段宇航员猫咪的视频",
     "Generating video…": "正在生成视频…",
     "Generating video… {{progress}}%": "正在生成视频… {{progress}}%",
-    "Video generation failed": "视频生成失败"
+    "Video generation failed": "视频生成失败",
+    "For individuals and light everyday use": "适合个人与轻量日常使用",
+    "For daily development and frequent requests": "适合日常开发与高频请求",
+    "For teams and high-intensity workloads": "适合团队与高强度任务",
+    "All plans include the same models. Choose based on included usage and request speed.": "所有套餐均包含相同模型，按所含用量和请求速度选择即可。",
+    "More model usage for one fixed monthly price": "一份固定月费，获得更多模型用量",
+    "Up to {{value}} in model usage": "最多 {{value}} 模型用量",
+    "Every plan includes all available models. Higher plans add more usage and let you send more requests faster.": "每档均可使用全部模型；档位越高，所含用量越多，请求速度也越快。",
+    "Start with Go": "从 Go 开始",
+    "Monthly price": "每月价格",
+    "Included model usage": "所含模型用量",
+    "Up to {{value}}": "最多 {{value}}",
+    "Includes {{models}}": "包含 {{models}}",
+    "Up to {{count}} requests per minute": "每分钟最多 {{count}} 个请求",
+    "Run up to {{count}} requests at the same time": "可同时处理最多 {{count}} 个请求",
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "短期用量上限：每 5 小时 {{fiveHour}} · 每 7 天 {{weekly}}"
   }
 }

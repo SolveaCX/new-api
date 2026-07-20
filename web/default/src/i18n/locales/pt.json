@@ -5517,6 +5517,21 @@
     "Generate a video of a cat astronaut": "Gere um vídeo de um gato astronauta",
     "Generating video…": "Gerando vídeo…",
     "Generating video… {{progress}}%": "Gerando vídeo… {{progress}}%",
-    "Video generation failed": "Falha na geração do vídeo"
+    "Video generation failed": "Falha na geração do vídeo",
+    "For individuals and light everyday use": "Para uso individual e cotidiano leve",
+    "For daily development and frequent requests": "Para desenvolvimento diário e requisições frequentes",
+    "For teams and high-intensity workloads": "Para equipes e cargas de trabalho intensas",
+    "All plans include the same models. Choose based on included usage and request speed.": "Todos os planos incluem os mesmos modelos. Escolha pelo uso incluído e pela velocidade das requisições.",
+    "More model usage for one fixed monthly price": "Mais uso de modelos por um preço mensal fixo",
+    "Up to {{value}} in model usage": "Até {{value}} em uso de modelos",
+    "Every plan includes all available models. Higher plans add more usage and let you send more requests faster.": "Todos os planos incluem todos os modelos disponíveis. Planos superiores oferecem mais uso e permitem enviar mais requisições com maior velocidade.",
+    "Start with Go": "Comece com o Go",
+    "Monthly price": "Preço mensal",
+    "Included model usage": "Uso de modelos incluído",
+    "Up to {{value}}": "Até {{value}}",
+    "Includes {{models}}": "Inclui {{models}}",
+    "Up to {{count}} requests per minute": "Até {{count}} requisições por minuto",
+    "Run up to {{count}} requests at the same time": "Processe até {{count}} requisições ao mesmo tempo",
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Limites de uso de curto prazo: {{fiveHour}} a cada 5 horas · {{weekly}} a cada 7 dias"
   }
 }

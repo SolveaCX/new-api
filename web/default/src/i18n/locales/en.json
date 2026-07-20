@@ -5517,6 +5517,21 @@
     "Generate a video of a cat astronaut": "Generate a video of a cat astronaut",
     "Generating video…": "Generating video…",
     "Generating video… {{progress}}%": "Generating video… {{progress}}%",
-    "Video generation failed": "Video generation failed"
+    "Video generation failed": "Video generation failed",
+    "For individuals and light everyday use": "For individuals and light everyday use",
+    "For daily development and frequent requests": "For daily development and frequent requests",
+    "For teams and high-intensity workloads": "For teams and high-intensity workloads",
+    "All plans include the same models. Choose based on included usage and request speed.": "All plans include the same models. Choose based on included usage and request speed.",
+    "More model usage for one fixed monthly price": "More model usage for one fixed monthly price",
+    "Up to {{value}} in model usage": "Up to {{value}} in model usage",
+    "Every plan includes all available models. Higher plans add more usage and let you send more requests faster.": "Every plan includes all available models. Higher plans add more usage and let you send more requests faster.",
+    "Start with Go": "Start with Go",
+    "Monthly price": "Monthly price",
+    "Included model usage": "Included model usage",
+    "Up to {{value}}": "Up to {{value}}",
+    "Includes {{models}}": "Includes {{models}}",
+    "Up to {{count}} requests per minute": "Up to {{count}} requests per minute",
+    "Run up to {{count}} requests at the same time": "Run up to {{count}} requests at the same time",
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days"
   }
 }

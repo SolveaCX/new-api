@@ -5517,6 +5517,21 @@
     "Generate a video of a cat astronaut": "Tạo một video chú mèo phi hành gia",
     "Generating video…": "Đang tạo video…",
     "Generating video… {{progress}}%": "Đang tạo video… {{progress}}%",
-    "Video generation failed": "Tạo video thất bại"
+    "Video generation failed": "Tạo video thất bại",
+    "For individuals and light everyday use": "Dành cho cá nhân và nhu cầu hằng ngày nhẹ",
+    "For daily development and frequent requests": "Dành cho phát triển hằng ngày và gửi yêu cầu thường xuyên",
+    "For teams and high-intensity workloads": "Dành cho nhóm và khối lượng công việc cường độ cao",
+    "All plans include the same models. Choose based on included usage and request speed.": "Mọi gói đều có cùng các mô hình. Hãy chọn theo mức sử dụng đi kèm và tốc độ gửi yêu cầu.",
+    "More model usage for one fixed monthly price": "Dùng mô hình nhiều hơn với mức phí cố định hằng tháng",
+    "Up to {{value}} in model usage": "Tối đa {{value}} giá trị sử dụng mô hình",
+    "Every plan includes all available models. Higher plans add more usage and let you send more requests faster.": "Mỗi gói đều có tất cả mô hình hiện có. Gói cao hơn cung cấp nhiều mức sử dụng hơn và cho phép gửi nhiều yêu cầu nhanh hơn.",
+    "Start with Go": "Bắt đầu với Go",
+    "Monthly price": "Giá hằng tháng",
+    "Included model usage": "Mức sử dụng mô hình đi kèm",
+    "Up to {{value}}": "Tối đa {{value}}",
+    "Includes {{models}}": "Bao gồm {{models}}",
+    "Up to {{count}} requests per minute": "Tối đa {{count}} yêu cầu mỗi phút",
+    "Run up to {{count}} requests at the same time": "Xử lý đồng thời tối đa {{count}} yêu cầu",
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Giới hạn sử dụng ngắn hạn: {{fiveHour}} mỗi 5 giờ · {{weekly}} mỗi 7 ngày"
   }
 }

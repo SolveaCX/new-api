@@ -5517,6 +5517,21 @@
     "Generate a video of a cat astronaut": "Génère une vidéo d'un chat astronaute",
     "Generating video…": "Génération de la vidéo…",
     "Generating video… {{progress}}%": "Génération de la vidéo… {{progress}} %",
-    "Video generation failed": "Échec de la génération de la vidéo"
+    "Video generation failed": "Échec de la génération de la vidéo",
+    "For individuals and light everyday use": "Pour les particuliers et un usage quotidien léger",
+    "For daily development and frequent requests": "Pour le développement quotidien et les requêtes fréquentes",
+    "For teams and high-intensity workloads": "Pour les équipes et les charges de travail intensives",
+    "All plans include the same models. Choose based on included usage and request speed.": "Tous les forfaits incluent les mêmes modèles. Choisissez selon l’usage inclus et la vitesse des requêtes.",
+    "More model usage for one fixed monthly price": "Plus d’usage des modèles pour un prix mensuel fixe",
+    "Up to {{value}} in model usage": "Jusqu’à {{value}} d’usage des modèles",
+    "Every plan includes all available models. Higher plans add more usage and let you send more requests faster.": "Chaque forfait inclut tous les modèles disponibles. Les forfaits supérieurs offrent plus d’usage et permettent d’envoyer davantage de requêtes plus rapidement.",
+    "Start with Go": "Commencer avec Go",
+    "Monthly price": "Prix mensuel",
+    "Included model usage": "Usage des modèles inclus",
+    "Up to {{value}}": "Jusqu’à {{value}}",
+    "Includes {{models}}": "Inclut {{models}}",
+    "Up to {{count}} requests per minute": "Jusqu’à {{count}} requêtes par minute",
+    "Run up to {{count}} requests at the same time": "Traitez jusqu’à {{count}} requêtes simultanément",
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Limites d’usage à court terme : {{fiveHour}} par 5 heures · {{weekly}} par 7 jours"
   }
 }

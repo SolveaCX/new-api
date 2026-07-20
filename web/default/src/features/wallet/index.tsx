@@ -20,11 +20,11 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { PartyPopper, Wallet2, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
 import { trackTopupOnce } from '@/lib/analytics/topup-tracking'
 import { getSelf } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -691,15 +691,15 @@ export function Wallet(props: WalletProps) {
               </Alert>
             ) : null}
 
-            <WalletStatsCard user={user} loading={userLoading} />
-
-            {/* 订阅套餐置顶、全宽、突出——纯套餐模式主入口 */}
+            {/* 第一屏先展示套餐价值与档位，钱包统计降到套餐之后 */}
             <SubscriptionPlansCard
               topupInfo={topupInfo}
               onAvailabilityChange={handleSubscriptionAvailabilityChange}
               userQuota={user?.quota}
               onPurchaseSuccess={fetchUser}
             />
+
+            <WalletStatsCard user={user} loading={userLoading} />
 
             {/* 充值加油包弱化为次要区：默认收起，需要更多额度时展开 */}
             <div id='wallet-top-up-packages' className='scroll-mt-4'>
@@ -764,7 +764,9 @@ export function Wallet(props: WalletProps) {
                   selectedPreset={selectedPreset}
                   onSelectPreset={handleSelectPreset}
                   onStripeTopUp={handleStripeTopUp}
-                  paymentLoadingAmount={processing ? paymentLoadingAmount : null}
+                  paymentLoadingAmount={
+                    processing ? paymentLoadingAmount : null
+                  }
                   loading={topupLoading}
                   checkoutCurrency={checkoutCurrency}
                   onCheckoutCurrencyChange={handleCheckoutCurrencyChange}

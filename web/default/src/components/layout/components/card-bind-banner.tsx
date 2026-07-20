@@ -17,12 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect } from 'react'
+import { useLocation } from '@tanstack/react-router'
 import { Sparkles, ChevronRight } from 'lucide-react'
 import { useTranslation, Trans } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOnboardingStore } from '@/stores/onboarding-store'
-import { useSystemConfig } from '@/hooks/use-system-config'
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
+import { useSystemConfig } from '@/hooks/use-system-config'
 import { isCardBindEligible } from './card-bind-eligibility'
 
 /**
@@ -36,14 +37,18 @@ export function CardBindBanner() {
   const config = useSystemConfig()
   const user = useAuthStore((s) => s.auth.user)
   const openOnboarding = useOnboardingStore((s) => s.openOnboarding)
+  const pathname = useLocation({ select: (location) => location.pathname })
 
   const eligible = isCardBindEligible(user, config.enableStripeCardBind)
+  const hiddenForSubscriptionFirstWallet = pathname === '/wallet'
   // Funnel step 0: the card-bind banner was actually shown to an eligible (un-bound) user.
   useEffect(() => {
-    if (eligible) trackAdsFunnelEvent('flatkey_cardbind_banner_view')
-  }, [eligible])
+    if (eligible && !hiddenForSubscriptionFirstWallet) {
+      trackAdsFunnelEvent('flatkey_cardbind_banner_view')
+    }
+  }, [eligible, hiddenForSubscriptionFirstWallet])
 
-  if (!eligible) return null
+  if (!eligible || hiddenForSubscriptionFirstWallet) return null
 
   const handleClick = () => {
     trackAdsFunnelEvent('flatkey_cardbind_banner_click')
@@ -66,7 +71,7 @@ export function CardBindBanner() {
           className='animate-bonus-shine pointer-events-none absolute inset-y-0 left-0 w-1/5 bg-white/30 blur-md'
         />
         {/* Standing-offer pill — frosted glass on the gradient. */}
-        <span className='relative flex shrink-0 items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-xs font-bold ring-1 ring-white/40 ring-inset backdrop-blur-sm'>
+        <span className='relative flex shrink-0 items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-xs font-bold ring-1 ring-white/40 backdrop-blur-sm ring-inset'>
           <Sparkles className='size-3 animate-pulse' aria-hidden='true' />
           {t('Top-up bonus')}
         </span>

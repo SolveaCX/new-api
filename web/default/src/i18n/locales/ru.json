@@ -5517,6 +5517,21 @@
     "Generate a video of a cat astronaut": "Сгенерируй видео кота-космонавта",
     "Generating video…": "Генерация видео…",
     "Generating video… {{progress}}%": "Генерация видео… {{progress}} %",
-    "Video generation failed": "Не удалось сгенерировать видео"
+    "Video generation failed": "Не удалось сгенерировать видео",
+    "For individuals and light everyday use": "Для личного и лёгкого повседневного использования",
+    "For daily development and frequent requests": "Для ежедневной разработки и частых запросов",
+    "For teams and high-intensity workloads": "Для команд и интенсивных рабочих нагрузок",
+    "All plans include the same models. Choose based on included usage and request speed.": "Во все планы входят одинаковые модели. Выбирайте по включённому объёму и скорости запросов.",
+    "More model usage for one fixed monthly price": "Больше использования моделей за фиксированную месячную плату",
+    "Up to {{value}} in model usage": "До {{value}} на использование моделей",
+    "Every plan includes all available models. Higher plans add more usage and let you send more requests faster.": "Каждый план включает все доступные модели. Более высокие планы дают больше объёма и позволяют быстрее отправлять больше запросов.",
+    "Start with Go": "Начать с Go",
+    "Monthly price": "Цена в месяц",
+    "Included model usage": "Включённый объём моделей",
+    "Up to {{value}}": "До {{value}}",
+    "Includes {{models}}": "Включает {{models}}",
+    "Up to {{count}} requests per minute": "До {{count}} запросов в минуту",
+    "Run up to {{count}} requests at the same time": "Одновременно обрабатывается до {{count}} запросов",
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Краткосрочные лимиты: {{fiveHour}} на 5 часов · {{weekly}} на 7 дней"
   }
 }

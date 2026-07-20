@@ -5517,6 +5517,21 @@
     "Generate a video of a cat astronaut": "宇宙飛行士の猫の動画を生成して",
     "Generating video…": "動画を生成しています…",
     "Generating video… {{progress}}%": "動画を生成しています… {{progress}}%",
-    "Video generation failed": "動画の生成に失敗しました"
+    "Video generation failed": "動画の生成に失敗しました",
+    "For individuals and light everyday use": "個人の軽い日常利用向け",
+    "For daily development and frequent requests": "日常的な開発と頻繁なリクエスト向け",
+    "For teams and high-intensity workloads": "チームと高負荷なワークロード向け",
+    "All plans include the same models. Choose based on included usage and request speed.": "すべてのプランで同じモデルを利用できます。含まれる使用量とリクエスト速度でお選びください。",
+    "More model usage for one fixed monthly price": "月額固定で、より多くのモデル使用量",
+    "Up to {{value}} in model usage": "最大 {{value}} 分のモデル使用量",
+    "Every plan includes all available models. Higher plans add more usage and let you send more requests faster.": "どのプランでも利用可能な全モデルを使えます。上位プランほど使用量が多く、より多くのリクエストを高速に送信できます。",
+    "Start with Go": "Go から始める",
+    "Monthly price": "月額料金",
+    "Included model usage": "含まれるモデル使用量",
+    "Up to {{value}}": "最大 {{value}}",
+    "Includes {{models}}": "{{models}} を含む",
+    "Up to {{count}} requests per minute": "1分あたり最大 {{count}} リクエスト",
+    "Run up to {{count}} requests at the same time": "同時に最大 {{count}} リクエストを処理",
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "短期使用上限：5時間ごとに {{fiveHour}} · 7日ごとに {{weekly}}"
   }
 }
