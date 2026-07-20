@@ -48,16 +48,17 @@ func inviteRewardMode() string {
 }
 
 // inviteRewardBadgeUSD feeds the sidebar invite badge ("+$N"). Legacy mode:
-// the fixed inviter reward. Subscription mode: the max possible reward — the
-// invitee's discounted first payment on the priciest plan.
+// the fixed inviter reward. Subscription mode: the combined value of one
+// referral — inviter balance reward plus the invitee's first-month discount.
 func inviteRewardBadgeUSD() float64 {
-	if common.InviteRewardSubscriptionMode {
-		return model.GetMaxInviteSubscriptionRewardUSD()
-	}
 	if common.QuotaPerUnit <= 0 {
 		return 0
 	}
-	return float64(common.QuotaForInviter) / common.QuotaPerUnit
+	inviterUSD := float64(common.QuotaForInviter) / common.QuotaPerUnit
+	if common.InviteRewardSubscriptionMode {
+		return inviterUSD + common.InviteFirstSubDiscountUSD
+	}
+	return inviterUSD
 }
 
 func GetStatus(c *gin.Context) {

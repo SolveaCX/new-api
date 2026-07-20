@@ -18,8 +18,8 @@ const (
 )
 
 type invitationSummary struct {
-	RewardMode            string  `json:"reward_mode"` // "topup" (legacy fixed) | "subscription" (v2 equal-amount)
-	FirstSubDiscountRatio float64 `json:"first_sub_discount_ratio"`
+	RewardMode            string  `json:"reward_mode"` // "topup" (legacy) | "subscription" (v2 fixed reward on first subscription)
+	FirstSubDiscountUSD   float64 `json:"first_sub_discount_usd"`
 	UnlockDelayDays       int64   `json:"unlock_delay_days"`
 	InviterRewardUSD      float64 `json:"inviter_reward_usd"`
 	InviteeRewardUSD      float64 `json:"invitee_reward_usd"`
@@ -175,7 +175,7 @@ func GetSelfInvitations(c *gin.Context) {
 	common.ApiSuccess(c, invitationResponse{
 		Summary: invitationSummary{
 			RewardMode:            rewardMode,
-			FirstSubDiscountRatio: common.InviteFirstSubDiscountRatio,
+			FirstSubDiscountUSD:   common.InviteFirstSubDiscountUSD,
 			UnlockDelayDays:       common.InviteRewardUnlockDelaySeconds / 86400,
 			LockedRewardUSD:       lockedRewardUSD,
 			InviterRewardUSD:      invitationUSDFromQuota(common.QuotaForInviter),

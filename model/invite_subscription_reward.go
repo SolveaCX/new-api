@@ -3,8 +3,6 @@ package model
 import (
 	"errors"
 	"fmt"
-	"math"
-	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -15,11 +13,12 @@ import (
 )
 
 // Subscription-mode invite rewards ("invite reward v2"): when
-// common.InviteRewardSubscriptionMode is enabled, the inviter no longer gets a
-// fixed quota on the invitee's first top-up. Instead, the invitee's first
-// successful subscription payment creates a locked reward equal to the amount
-// the invitee actually paid. The reward unlocks after a settle window (default
-// 7 days) so refunds and card-testing chargebacks can claw it back first.
+// common.InviteRewardSubscriptionMode is enabled, the trigger moves from the
+// invitee's first top-up to their first successful subscription payment. The
+// inviter gets a fixed QuotaForInviter reward, created locked and unlocking
+// after a settle window (default 7 days) so refunds and card-testing
+// chargebacks can claw it back first. The invitee's side is a flat
+// InviteFirstSubDiscountUSD off their first payment, applied at checkout.
 const (
 	InviteSubRewardStatusPending = "pending"
 	InviteSubRewardStatusGranted = "granted"
@@ -54,17 +53,6 @@ type inviteSubRewardCreateResult struct {
 	inviterId   int
 	rewardQuota int
 	unlockAt    int64
-}
-
-func inviteSubRewardQuotaFromMoney(money float64) int {
-	if money <= 0 || common.QuotaPerUnit <= 0 {
-		return 0
-	}
-	quota := math.Round(money * common.QuotaPerUnit)
-	if quota <= 0 || quota > float64(math.MaxInt) {
-		return 0
-	}
-	return int(quota)
 }
 
 // TryGrantInviteSubscriptionRewardAfterOrderCompleted creates the locked
@@ -111,7 +99,7 @@ func tryCreateInviteSubscriptionRewardInTx(tx *gorm.DB, order *SubscriptionOrder
 	if invitee.InviterId <= 0 {
 		return inviteSubRewardCreateResult{}, nil
 	}
-	rewardQuota := inviteSubRewardQuotaFromMoney(order.Money)
+	rewardQuota := common.QuotaForInviter
 	if rewardQuota <= 0 {
 		return inviteSubRewardCreateResult{}, nil
 	}
@@ -351,38 +339,6 @@ func SumLockedInviteSubscriptionRewardQuota(inviterId int) (int64, error) {
 		Select("COALESCE(SUM(reward_quota), 0)").
 		Scan(&total).Error
 	return total, err
-}
-
-var maxInviteSubRewardUSDCache struct {
-	sync.Mutex
-	value     float64
-	fetchedAt int64
-}
-
-// GetMaxInviteSubscriptionRewardUSD returns the marketing ceiling for a single
-// v2 reward: the priciest enabled USD plan's first payment after the invite
-// first-month discount (reward = what the invitee actually pays). Cached for
-// 60s — read-only, so cross-node staleness is harmless.
-func GetMaxInviteSubscriptionRewardUSD() float64 {
-	cache := &maxInviteSubRewardUSDCache
-	cache.Lock()
-	defer cache.Unlock()
-	now := common.GetTimestamp()
-	if now-cache.fetchedAt < 60 {
-		return cache.value
-	}
-	var maxPrice float64
-	if err := DB.Model(&SubscriptionPlan{}).
-		Where(map[string]any{"enabled": true}).
-		Where("currency = ?", "USD").
-		Select("COALESCE(MAX(price_amount), 0)").
-		Scan(&maxPrice).Error; err != nil {
-		common.SysLog(fmt.Sprintf("failed to load max subscription plan price: %v", err))
-		return cache.value
-	}
-	cache.value = maxPrice * common.InviteFirstSubDiscountRatio
-	cache.fetchedAt = now
-	return cache.value
 }
 
 // StartInviteSubscriptionRewardUnlocker runs the settle-window unlocker on the

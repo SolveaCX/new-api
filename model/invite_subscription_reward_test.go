@@ -38,7 +38,7 @@ func createCompletedSubscriptionOrder(t *testing.T, userId int, money float64, t
 	return order
 }
 
-func TestInviteSubRewardCreatedEqualToOrderMoney(t *testing.T) {
+func TestInviteSubRewardCreatedWithFixedInviterAmount(t *testing.T) {
 	setupInviteSubRewardTest(t)
 
 	inviter := createInviteRewardUser(t, "inviter", 0)
@@ -50,7 +50,7 @@ func TestInviteSubRewardCreatedEqualToOrderMoney(t *testing.T) {
 	var reward InviteSubscriptionReward
 	require.NoError(t, DB.First(&reward, "invitee_id = ?", invitee.Id).Error)
 	require.Equal(t, InviteSubRewardStatusPending, reward.Status)
-	require.Equal(t, int(5*common.QuotaPerUnit), reward.RewardQuota)
+	require.Equal(t, common.QuotaForInviter, reward.RewardQuota)
 	require.Greater(t, reward.UnlockAt, common.GetTimestamp()+6*24*3600)
 
 	// no quota granted yet — reward is locked
@@ -166,7 +166,7 @@ func TestInviteSubRewardUnlockGrantsQuotaOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, granted)
 
-	expectedQuota := int(15 * common.QuotaPerUnit)
+	expectedQuota := common.QuotaForInviter
 	var refreshedInviter User
 	require.NoError(t, DB.First(&refreshedInviter, inviter.Id).Error)
 	require.Equal(t, expectedQuota, refreshedInviter.Quota)
@@ -278,10 +278,10 @@ func TestInvitationPageOverlaysSubscriptionReward(t *testing.T) {
 	require.Len(t, page.Items, 1)
 	record := page.Items[0]
 	require.Equal(t, InvitationRecordStatusLocked, record.Status)
-	require.Equal(t, int(5*common.QuotaPerUnit), record.RewardQuota)
+	require.Equal(t, common.QuotaForInviter, record.RewardQuota)
 	require.NotZero(t, record.UnlockAt)
 
 	locked, err := SumLockedInviteSubscriptionRewardQuota(inviter.Id)
 	require.NoError(t, err)
-	require.EqualValues(t, int64(5*common.QuotaPerUnit), locked)
+	require.EqualValues(t, int64(common.QuotaForInviter), locked)
 }

@@ -155,10 +155,11 @@ var QuotaForInviterMaxCount = 5
 var InviteRewardSubscriptionMode = false
 var InviteRewardUnlockDelaySeconds int64 = 7 * 24 * 3600
 
-// First-month discount ratio for invited users' first subscription (0.5 = 50%
-// off). Single source of truth shared by the checkout coupon and the sidebar
-// reward badge (reward = invitee's discounted first payment).
-var InviteFirstSubDiscountRatio = 0.5
+// Flat USD discount on an invited user's first subscription payment. Single
+// source of truth shared by the checkout coupon and the sidebar badge. The
+// inviter's reward amount is QuotaForInviter, granted on the invitee's first
+// subscription payment when subscription mode is on.
+var InviteFirstSubDiscountUSD = 5.0
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false

@@ -5518,16 +5518,9 @@
     "Generating video…": "Generating video…",
     "Generating video… {{progress}}%": "Generating video… {{progress}}%",
     "Video generation failed": "Video generation failed",
-    "Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.": "Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.",
     "Unlocks {{days}} days after your friend's payment": "Unlocks {{days}} days after your friend's payment",
     "Locked credits": "Locked credits",
-    "You earn what they pay for their first month": "You earn what they pay for their first month",
-    "You receive what your friend paid": "You receive what your friend paid",
-    "Your friend subscribes at {{percent}}% off": "Your friend subscribes at {{percent}}% off",
-    "They sign up with your link and get {{percent}}% off the first month of any plan.": "They sign up with your link and get {{percent}}% off the first month of any plan.",
-    "The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.": "The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.",
     "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.",
-    "Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.": "Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.",
     "Unlocks {{date}}": "Unlocks {{date}}",
     "Awaiting subscription": "Awaiting subscription",
     "Reward revoked": "Reward revoked",
@@ -5547,5 +5540,13 @@
     "Includes {{models}}": "Includes {{models}}",
     "Up to {{count}} requests per minute": "Up to {{count}} requests per minute",
     "Run up to {{count}} requests at the same time": "Run up to {{count}} requests at the same time",
-    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days"  }
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days",
+    "Invite friends to subscribe: they get {{discount}} off their first month, and you receive {{reward}} in balance — unlocked {{days}} days after payment.": "Invite friends to subscribe: they get {{discount}} off their first month, and you receive {{reward}} in balance — unlocked {{days}} days after payment.",
+    "{{reward}} each after their first subscription": "{{reward}} each after their first subscription",
+    "You receive {{reward}} in balance": "You receive {{reward}} in balance",
+    "Your friend subscribes with {{discount}} off": "Your friend subscribes with {{discount}} off",
+    "They sign up with your link and get {{discount}} off the first month of any plan.": "They sign up with your link and get {{discount}} off the first month of any plan.",
+    "{{reward}} is added to your balance, unlocked {{days}} days after payment if there is no refund.": "{{reward}} is added to your balance, unlocked {{days}} days after payment if there is no refund.",
+    "Your friend gets {{discount}} off the first month of any plan, and you receive {{reward}} as balance.": "Your friend gets {{discount}} off the first month of any plan, and you receive {{reward}} as balance."
+  }
 }

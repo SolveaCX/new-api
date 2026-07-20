@@ -46,7 +46,9 @@ export function InvitationStats(props: InvitationStatsProps) {
       label: t('Registered friends'),
       value: String(props.registeredCount),
       description: subscriptionMode
-        ? t('You earn what they pay for their first month')
+        ? t('{{reward}} each after their first subscription', {
+            reward: formatInvitationUSD(props.summary?.inviter_reward_usd ?? 0),
+          })
         : t('{{reward}} each after first top-up', {
             reward: formatInvitationUSD(props.summary?.inviter_reward_usd ?? 0),
           }),

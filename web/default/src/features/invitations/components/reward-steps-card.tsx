@@ -22,7 +22,9 @@ export function RewardStepsCard(props: RewardStepsCardProps) {
   let rewardTitle: string | null = null
   if (props.summary !== null) {
     if (subscriptionMode) {
-      rewardTitle = t('You receive what your friend paid')
+      rewardTitle = t('You receive {{reward}} in balance', {
+        reward: formatInvitationUSD(props.summary.inviter_reward_usd),
+      })
     } else if (
       props.summary.inviter_reward_usd === props.summary.invitee_reward_usd
     ) {
@@ -46,16 +48,16 @@ export function RewardStepsCard(props: RewardStepsCardProps) {
           description: t('Send your unique referral link to a friend.'),
         },
         {
-          title: t('Your friend subscribes at {{percent}}% off', {
-            percent: Math.round(
-              (1 - (props.summary?.first_sub_discount_ratio ?? 0.5)) * 100
+          title: t('Your friend subscribes with {{discount}} off', {
+            discount: formatInvitationUSD(
+              props.summary?.first_sub_discount_usd ?? 5
             ),
           }),
           description: t(
-            'They sign up with your link and get {{percent}}% off the first month of any plan.',
+            'They sign up with your link and get {{discount}} off the first month of any plan.',
             {
-              percent: Math.round(
-                (1 - (props.summary?.first_sub_discount_ratio ?? 0.5)) * 100
+              discount: formatInvitationUSD(
+                props.summary?.first_sub_discount_usd ?? 5
               ),
             }
           ),
@@ -63,8 +65,13 @@ export function RewardStepsCard(props: RewardStepsCardProps) {
         {
           title: rewardTitle,
           description: t(
-            'The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.',
-            { days: props.summary?.unlock_delay_days ?? 7 }
+            '{{reward}} is added to your balance, unlocked {{days}} days after payment if there is no refund.',
+            {
+              reward: formatInvitationUSD(
+                props.summary?.inviter_reward_usd ?? 0
+              ),
+              days: props.summary?.unlock_delay_days ?? 7,
+            }
           ),
         },
       ]

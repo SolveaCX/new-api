@@ -48,7 +48,7 @@ export interface InvitationRecord {
 
 export interface InvitationSummary {
   reward_mode: InvitationRewardMode
-  first_sub_discount_ratio: number
+  first_sub_discount_usd: number
   unlock_delay_days: number
   inviter_reward_usd: number
   invitee_reward_usd: number

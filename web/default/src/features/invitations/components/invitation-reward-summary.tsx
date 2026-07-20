@@ -40,11 +40,10 @@ export function InvitationRewardSummary(props: InvitationRewardSummaryProps) {
   let rewardCopy: string
   if (props.summary.reward_mode === 'subscription') {
     rewardCopy = t(
-      'Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.',
+      'Invite friends to subscribe: they get {{discount}} off their first month, and you receive {{reward}} in balance — unlocked {{days}} days after payment.',
       {
-        percent: Math.round(
-          (1 - props.summary.first_sub_discount_ratio) * 100
-        ),
+        discount: formatInvitationUSD(props.summary.first_sub_discount_usd),
+        reward: inviterReward,
         days: props.summary.unlock_delay_days,
       }
     )

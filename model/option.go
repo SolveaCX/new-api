@@ -185,7 +185,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForInviterMaxCount"] = strconv.Itoa(common.QuotaForInviterMaxCount)
 	common.OptionMap["InviteRewardSubscriptionModeEnabled"] = strconv.FormatBool(common.InviteRewardSubscriptionMode)
 	common.OptionMap["InviteRewardUnlockDelaySeconds"] = strconv.FormatInt(common.InviteRewardUnlockDelaySeconds, 10)
-	common.OptionMap["InviteFirstSubDiscountRatio"] = strconv.FormatFloat(common.InviteFirstSubDiscountRatio, 'f', -1, 64)
+	common.OptionMap["InviteFirstSubDiscountUSD"] = strconv.FormatFloat(common.InviteFirstSubDiscountUSD, 'f', -1, 64)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -887,9 +887,9 @@ func applyOptionMapValue(key string, value string) (err error) {
 		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil && parsed >= 0 {
 			common.InviteRewardUnlockDelaySeconds = parsed
 		}
-	case "InviteFirstSubDiscountRatio":
-		if parsed, err := strconv.ParseFloat(value, 64); err == nil && parsed > 0 && parsed <= 1 {
-			common.InviteFirstSubDiscountRatio = parsed
+	case "InviteFirstSubDiscountUSD":
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil && parsed >= 0 {
+			common.InviteFirstSubDiscountUSD = parsed
 		}
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)

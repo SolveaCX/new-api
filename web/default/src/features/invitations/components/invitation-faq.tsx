@@ -40,9 +40,7 @@ export function InvitationFaq({ summary }: InvitationFaqProps) {
   const inviteeReward = formatInvitationUSD(summary.invitee_reward_usd)
   const limit = summary.inviter_reward_max_count
   const subscriptionMode = summary.reward_mode === 'subscription'
-  const discountPercent = Math.round(
-    (1 - summary.first_sub_discount_ratio) * 100
-  )
+  const subDiscount = formatInvitationUSD(summary.first_sub_discount_usd)
   const items = [
     subscriptionMode
       ? {
@@ -62,8 +60,8 @@ export function InvitationFaq({ summary }: InvitationFaqProps) {
       ? {
           question: t('What are the current referral rewards?'),
           answer: t(
-            'Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.',
-            { percent: discountPercent }
+            'Your friend gets {{discount}} off the first month of any plan, and you receive {{reward}} as balance.',
+            { discount: subDiscount, reward: inviterReward }
           ),
         }
       : {

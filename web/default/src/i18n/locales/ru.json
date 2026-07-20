@@ -5518,16 +5518,9 @@
     "Generating video…": "Генерация видео…",
     "Generating video… {{progress}}%": "Генерация видео… {{progress}} %",
     "Video generation failed": "Не удалось сгенерировать видео",
-    "Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.": "Приглашайте друзей оформить подписку: они получают скидку {{percent}}% на первый месяц, а вы — на баланс ровно ту сумму, которую они заплатили; разблокировка через {{days}} дней после оплаты.",
     "Unlocks {{days}} days after your friend's payment": "Разблокируется через {{days}} дней после оплаты вашим другом",
     "Locked credits": "Заблокированные кредиты",
-    "You earn what they pay for their first month": "Вы получаете столько, сколько они заплатят за первый месяц",
-    "You receive what your friend paid": "Вы получаете сумму, которую заплатил ваш друг",
-    "Your friend subscribes at {{percent}}% off": "Ваш друг оформляет подписку со скидкой {{percent}}%",
-    "They sign up with your link and get {{percent}}% off the first month of any plan.": "Они регистрируются по вашей ссылке и получают скидку {{percent}}% на первый месяц любого тарифа.",
-    "The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.": "Точная сумма их платежа добавляется на ваш баланс и разблокируется через {{days}} дней после оплаты, если не было возврата.",
     "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "Реферальное вознаграждение создаётся, когда ваш друг совершает первый платёж за подписку, и разблокируется через {{days}} дней, если платёж не был возвращён. Регистрация, пополнения и вызовы API сами по себе вознаграждение не дают.",
-    "Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.": "Ваш друг получает скидку {{percent}}% на первый месяц любого тарифа, а вы — на баланс ровно ту сумму, которую он заплатил.",
     "Unlocks {{date}}": "Разблокируется {{date}}",
     "Awaiting subscription": "Ожидает подписки",
     "Reward revoked": "Вознаграждение отозвано",
@@ -5547,5 +5540,13 @@
     "Includes {{models}}": "Включает {{models}}",
     "Up to {{count}} requests per minute": "До {{count}} запросов в минуту",
     "Run up to {{count}} requests at the same time": "Одновременно обрабатывается до {{count}} запросов",
-    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Краткосрочные лимиты: {{fiveHour}} на 5 часов · {{weekly}} на 7 дней"  }
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Краткосрочные лимиты: {{fiveHour}} на 5 часов · {{weekly}} на 7 дней",
+    "Invite friends to subscribe: they get {{discount}} off their first month, and you receive {{reward}} in balance — unlocked {{days}} days after payment.": "Приглашайте друзей оформить подписку: они получают скидку {{discount}} на первый месяц, а вы — {{reward}} на баланс; разблокировка через {{days}} дней после оплаты.",
+    "{{reward}} each after their first subscription": "{{reward}} за каждого после его первой подписки",
+    "You receive {{reward}} in balance": "Вы получаете {{reward}} на баланс",
+    "Your friend subscribes with {{discount}} off": "Ваш друг оформляет подписку со скидкой {{discount}}",
+    "They sign up with your link and get {{discount}} off the first month of any plan.": "Они регистрируются по вашей ссылке и получают скидку {{discount}} на первый месяц любого тарифа.",
+    "{{reward}} is added to your balance, unlocked {{days}} days after payment if there is no refund.": "{{reward}} добавляется на ваш баланс и разблокируется через {{days}} дней после оплаты, если не было возврата.",
+    "Your friend gets {{discount}} off the first month of any plan, and you receive {{reward}} as balance.": "Ваш друг получает скидку {{discount}} на первый месяц любого тарифа, а вы — {{reward}} на баланс."
+  }
 }

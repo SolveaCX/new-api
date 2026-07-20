@@ -5518,16 +5518,9 @@
     "Generating video…": "Đang tạo video…",
     "Generating video… {{progress}}%": "Đang tạo video… {{progress}}%",
     "Video generation failed": "Tạo video thất bại",
-    "Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.": "Mời bạn bè đăng ký gói: họ được giảm {{percent}}% tháng đầu, còn bạn nhận đúng số tiền họ đã trả vào số dư — mở khóa sau {{days}} ngày kể từ khi thanh toán.",
     "Unlocks {{days}} days after your friend's payment": "Mở khóa sau {{days}} ngày kể từ khi bạn bè thanh toán",
     "Locked credits": "Tín dụng đang khóa",
-    "You earn what they pay for their first month": "Bạn nhận đúng số tiền họ trả cho tháng đầu",
-    "You receive what your friend paid": "Bạn nhận số tiền bạn bè đã trả",
-    "Your friend subscribes at {{percent}}% off": "Bạn bè đăng ký gói với ưu đãi giảm {{percent}}%",
-    "They sign up with your link and get {{percent}}% off the first month of any plan.": "Họ đăng ký qua liên kết của bạn và được giảm {{percent}}% tháng đầu cho mọi gói.",
-    "The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.": "Đúng số tiền họ đã trả sẽ được cộng vào số dư của bạn, mở khóa sau {{days}} ngày kể từ khi thanh toán nếu không có hoàn tiền.",
     "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "Phần thưởng giới thiệu được tạo khi bạn bè hoàn tất thanh toán gói đầu tiên và mở khóa sau {{days}} ngày nếu khoản thanh toán không bị hoàn. Chỉ đăng ký, nạp tiền hoặc gọi API sẽ không tạo phần thưởng.",
-    "Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.": "Bạn bè được giảm {{percent}}% tháng đầu cho mọi gói, còn bạn nhận đúng số tiền họ đã trả vào số dư.",
     "Unlocks {{date}}": "Mở khóa vào {{date}}",
     "Awaiting subscription": "Chờ đăng ký gói",
     "Reward revoked": "Phần thưởng đã bị thu hồi",
@@ -5547,5 +5540,13 @@
     "Includes {{models}}": "Bao gồm {{models}}",
     "Up to {{count}} requests per minute": "Tối đa {{count}} yêu cầu mỗi phút",
     "Run up to {{count}} requests at the same time": "Xử lý đồng thời tối đa {{count}} yêu cầu",
-    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Giới hạn sử dụng ngắn hạn: {{fiveHour}} mỗi 5 giờ · {{weekly}} mỗi 7 ngày"  }
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "Giới hạn sử dụng ngắn hạn: {{fiveHour}} mỗi 5 giờ · {{weekly}} mỗi 7 ngày",
+    "Invite friends to subscribe: they get {{discount}} off their first month, and you receive {{reward}} in balance — unlocked {{days}} days after payment.": "Mời bạn bè đăng ký gói: họ được giảm {{discount}} cho tháng đầu, còn bạn nhận {{reward}} vào số dư — mở khóa sau {{days}} ngày kể từ khi thanh toán.",
+    "{{reward}} each after their first subscription": "{{reward}} cho mỗi người sau lần đăng ký gói đầu tiên",
+    "You receive {{reward}} in balance": "Bạn nhận {{reward}} vào số dư",
+    "Your friend subscribes with {{discount}} off": "Bạn bè đăng ký gói với ưu đãi giảm {{discount}}",
+    "They sign up with your link and get {{discount}} off the first month of any plan.": "Họ đăng ký qua liên kết của bạn và được giảm {{discount}} cho tháng đầu của mọi gói.",
+    "{{reward}} is added to your balance, unlocked {{days}} days after payment if there is no refund.": "{{reward}} sẽ được cộng vào số dư của bạn, mở khóa sau {{days}} ngày kể từ khi thanh toán nếu không có hoàn tiền.",
+    "Your friend gets {{discount}} off the first month of any plan, and you receive {{reward}} as balance.": "Bạn bè được giảm {{discount}} cho tháng đầu của mọi gói, còn bạn nhận {{reward}} vào số dư."
+  }
 }

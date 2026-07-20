@@ -5518,16 +5518,9 @@
     "Generating video…": "動画を生成しています…",
     "Generating video… {{progress}}%": "動画を生成しています… {{progress}}%",
     "Video generation failed": "動画の生成に失敗しました",
-    "Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.": "友達を招待してサブスクリプションに登録してもらいましょう：友達は初月 {{percent}}% オフ、あなたは友達の支払額と同額を残高として受け取れます（支払いから {{days}} 日後にロック解除）。",
     "Unlocks {{days}} days after your friend's payment": "友達の支払いから {{days}} 日後にロック解除",
     "Locked credits": "ロック中のクレジット",
-    "You earn what they pay for their first month": "友達の初月支払額と同額を獲得",
-    "You receive what your friend paid": "友達が支払った金額を受け取ります",
-    "Your friend subscribes at {{percent}}% off": "友達は {{percent}}% オフでサブスク登録",
-    "They sign up with your link and get {{percent}}% off the first month of any plan.": "友達があなたのリンクから登録すると、任意のプランの初月が {{percent}}% オフになります。",
-    "The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.": "友達が支払った金額がそのままあなたの残高に追加され、返金がなければ支払いから {{days}} 日後にロック解除されます。",
     "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "招待報酬は友達が最初のサブスクリプション支払いを完了した時点で作成され、返金がなければ {{days}} 日後にロック解除されます。登録・チャージ・API 呼び出しだけでは報酬は発生しません。",
-    "Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.": "友達は任意のプランの初月が {{percent}}% オフになり、あなたは友達の支払額と同額を残高として受け取れます。",
     "Unlocks {{date}}": "{{date}} にロック解除",
     "Awaiting subscription": "サブスク登録待ち",
     "Reward revoked": "報酬が取り消されました",
@@ -5547,5 +5540,13 @@
     "Includes {{models}}": "{{models}} を含む",
     "Up to {{count}} requests per minute": "1分あたり最大 {{count}} リクエスト",
     "Run up to {{count}} requests at the same time": "同時に最大 {{count}} リクエストを処理",
-    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "短期使用上限：5時間ごとに {{fiveHour}} · 7日ごとに {{weekly}}"  }
+    "Short-term usage limits: {{fiveHour}} per 5 hours · {{weekly}} per 7 days": "短期使用上限：5時間ごとに {{fiveHour}} · 7日ごとに {{weekly}}",
+    "Invite friends to subscribe: they get {{discount}} off their first month, and you receive {{reward}} in balance — unlocked {{days}} days after payment.": "友達を招待してサブスクリプションに登録してもらいましょう：友達は初月 {{discount}} オフ、あなたは {{reward}} を残高として受け取れます（支払いから {{days}} 日後にロック解除）。",
+    "{{reward}} each after their first subscription": "友達 1 人の初回サブスク登録ごとに {{reward}}",
+    "You receive {{reward}} in balance": "{{reward}} を残高として受け取れます",
+    "Your friend subscribes with {{discount}} off": "友達は {{discount}} オフでサブスク登録",
+    "They sign up with your link and get {{discount}} off the first month of any plan.": "友達があなたのリンクから登録すると、任意のプランの初月が {{discount}} オフになります。",
+    "{{reward}} is added to your balance, unlocked {{days}} days after payment if there is no refund.": "{{reward}} があなたの残高に追加され、返金がなければ支払いから {{days}} 日後にロック解除されます。",
+    "Your friend gets {{discount}} off the first month of any plan, and you receive {{reward}} as balance.": "友達は任意のプランの初月が {{discount}} オフになり、あなたは {{reward}} を残高として受け取れます。"
+  }
 }
