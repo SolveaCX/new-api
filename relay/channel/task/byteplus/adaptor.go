@@ -1,8 +1,10 @@
 package byteplus
 
 import (
+	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -11,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -43,6 +46,41 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 // adapter's fixed moderation header.
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	return channel.DoTaskApiRequest(a, c, info, requestBody)
+}
+
+func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *dto.TaskError) {
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", nil, service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
+	}
+	_ = resp.Body.Close()
+
+	var submitResp struct {
+		ID string `json:"id"`
+	}
+	if err := common.Unmarshal(responseBody, &submitResp); err != nil {
+		return "", nil, service.TaskErrorWrapperLocal(
+			errors.New("invalid upstream submit response"),
+			"unmarshal_response_body_failed",
+			http.StatusBadGateway,
+		)
+	}
+	if submitResp.ID == "" {
+		return "", nil, service.TaskErrorWrapperLocal(
+			errors.New("invalid upstream submit response"),
+			"invalid_response",
+			http.StatusBadGateway,
+		)
+	}
+
+	ov := dto.NewOpenAIVideo()
+	ov.ID = info.PublicTaskID
+	ov.TaskID = info.PublicTaskID
+	ov.CreatedAt = time.Now().Unix()
+	ov.Model = info.OriginModelName
+
+	c.JSON(http.StatusOK, ov)
+	return submitResp.ID, responseBody, nil
 }
 
 func (a *TaskAdaptor) GetModelList() []string {

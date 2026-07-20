@@ -222,8 +222,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		return nil, service.TaskErrorWrapper(fmt.Errorf("%s", string(responseBody)), "fail_to_fetch_task", resp.StatusCode)
+		return nil, taskSubmitStatusError(platform, resp)
 	}
 
 	// 10. 返回 OtherRatios 给下游（header 必须在 DoResponse 写 body 之前设置）
@@ -255,6 +254,22 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		Platform:       platform,
 		Quota:          finalQuota,
 	}, nil
+}
+
+func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) *dto.TaskError {
+	statusCode := http.StatusInternalServerError
+	if resp != nil {
+		statusCode = resp.StatusCode
+	}
+	var responseBody []byte
+	if resp != nil && resp.Body != nil {
+		responseBody, _ = io.ReadAll(resp.Body)
+	}
+	message := string(responseBody)
+	if string(platform) == strconv.Itoa(constant.ChannelTypeBytePlus) {
+		message = "task failed at upstream provider"
+	}
+	return service.TaskErrorWrapper(fmt.Errorf("%s", message), "fail_to_fetch_task", statusCode)
 }
 
 // recalcQuotaFromRatios 根据 adjustedRatios 重新计算 quota。
