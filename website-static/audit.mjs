@@ -30,7 +30,7 @@ for (const file of files) {
   if (/\bdata-i18n(?:-ph)?=/.test(html) && !/assets\/i18n\.js\?v=/.test(html)) {
     fail(file, "uses i18n keys without loading assets/i18n.js");
   }
-  const i18nScript = html.indexOf("assets/i18n.js?v=720d");
+  const i18nScript = html.indexOf("assets/i18n.js?v=720e");
   const shellScript = html.indexOf("assets/site-shell.js?v=720a");
   if (i18nScript === -1) fail(file, "missing the current locale-routing script version");
   if (shellScript === -1) fail(file, "missing the current responsive shell version");
@@ -227,6 +227,9 @@ if (!dictMatch) {
     if (missing.length) fail("assets/i18n.js", `${locale} is missing ${missing.length} referenced keys: ${missing.join(", ")}`);
     if (!dictionary["rel.s1"]?.includes('href="/sla"')) {
       fail("assets/i18n.js", `${locale} rel.s1 does not link to the canonical /sla route`);
+    }
+    if (!dictionary["rel.s1"]?.includes("white-space:nowrap")) {
+      fail("assets/i18n.js", `${locale} rel.s1 allows its nested link hit target to split across lines`);
     }
     if (/href="[^"]*\.html/.test(dictionary["rel.s1"] || "")) {
       fail("assets/i18n.js", `${locale} rel.s1 still exposes a legacy .html route`);
