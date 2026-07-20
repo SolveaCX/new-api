@@ -105,7 +105,8 @@ jobs:
       - name: Deploy canary (no traffic)
         run: |
           gcloud run deploy "$RUN_SERVICE" --project "$PROJECT_ID" --region "$REGION" \
-            --image "$IMAGE" --no-traffic --tag canary --port 8080
+            --image "$IMAGE" --no-traffic --tag canary --port 8080 \
+            --update-env-vars "APP_CONSOLE_ORIGIN=${APP_CONSOLE_ORIGIN}"
 
       - name: Assert liveness probe targets 8080 (before traffic shift)
         run: |
@@ -140,6 +141,8 @@ jobs:
           # canonical plural pages instead of falling through to legacy 404s.
           curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -m 20 "$C/career" | grep -q "^301 $C/careers$" || { echo "/career redirect broken"; exit 1; }
           curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -m 20 "$C/zh/career" | grep -q "^301 $C/zh/careers$" || { echo "/zh/career redirect broken"; exit 1; }
+          curl -s -m 10 "$C/api/status" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' \
+            || { echo "public status proxy unavailable"; exit 1; }
           # legacy SEO surface through the fallback proxy (must be 200, not redirect/404)
           for p in blog zh models pricing gpt-api-alternative rankings sitemap.xml robots.txt; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$C/$p")
