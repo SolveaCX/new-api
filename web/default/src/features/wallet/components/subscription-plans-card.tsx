@@ -395,8 +395,13 @@ export function SubscriptionPlansCard({
               const price = formatPlanPrice(Number(plan.price_amount || 0))
               const includedValue =
                 totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited')
+              // Recommend Go only to users without an active plan — once
+              // subscribed, no tier gets promotional emphasis (never nudge a
+              // downgrade); non-current tiers keep plain outline buttons.
               const isRecommended =
-                plan.title.trim().toLowerCase() === 'go' && plans.length > 1
+                !currentPlan &&
+                plan.title.trim().toLowerCase() === 'go' &&
+                plans.length > 1
               const limit = Number(plan.max_purchase_per_user || 0)
               const count = planPurchaseCountMap.get(plan.id) || 0
               const reached = limit > 0 && count >= limit
