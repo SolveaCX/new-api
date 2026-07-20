@@ -112,18 +112,19 @@ func applyLogUsernameFilter(tx *gorm.DB, usernameColumn string, userIDColumn str
 	// 纯数字：按 user_id 精确匹配，用于 /users「使用日志」行内跳转以及按 ID
 	// 精确定位单个用户（用户名唯一，但管理员也可能直接输 ID）。
 	if userID, err := strconv.Atoi(value); err == nil {
-		return tx.Where("("+usernameColumn+" = ? OR "+userIDColumn+" = ?)", value, userID), nil
+		return tx.Where(userIDColumn+" = ?", userID), nil
 	}
-	// 纯文本关键词：精确匹配 logs.username 快照，并经 user 表把用户名解析成
-	// user_id，补齐用户改名前写入的历史日志。精确查询走索引、无前导通配扫描，
-	// 不会像 "%kw%" 那样在大日志表上全表扫描（#222）。需要模糊时由用户在输入
-	// 框显式输入 % 触发，走上面的 strings.Contains(value, "%") 分支。
+	// 纯文本关键词：先经 user 表把当前用户名解析成 user_id，再只按 user_id 查询。
+	// 这样既能补齐用户改名前写入的历史日志，也能让日志查询使用
+	// (user_id, created_at, type) 组合索引，避免 username OR user_id 的索引合并。
+	// 无法解析到当前用户时，才回退到 logs.username 快照精确匹配。需要模糊时由
+	// 用户在输入框显式输入 %，走上面的 strings.Contains(value, "%") 分支。
 	userIDs, err := getUserIDsByUsernameFilter(value, false)
 	if err != nil {
 		return nil, err
 	}
 	if len(userIDs) > 0 {
-		return tx.Where("("+usernameColumn+" = ? OR "+userIDColumn+" IN ?)", value, userIDs), nil
+		return tx.Where(userIDColumn+" IN ?", userIDs), nil
 	}
 	return tx.Where(usernameColumn+" = ?", value), nil
 }

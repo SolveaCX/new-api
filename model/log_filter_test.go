@@ -360,6 +360,43 @@ func TestGetAllLogsExactUsernameMatch(t *testing.T) {
 	}
 }
 
+func TestExactUsernameResolvedToUserIDExcludesOtherUsersStaleSnapshot(t *testing.T) {
+	resetUsageTables(t)
+	resetLogFilterTestUser(t, 601)
+	resetLogFilterTestUser(t, 602)
+	now := time.Now().Unix()
+
+	mustCreateUsage(t, &User{Id: 601, Username: "bd@coolyacloud.com", DisplayName: "Current", AffCode: "log-filter-601"})
+	mustCreateUsage(t, &Log{
+		UserId: 601, Username: "previous-name", Type: LogTypeConsume,
+		CreatedAt: now, ModelName: "gpt-4o", Quota: 10,
+		PromptTokens: 3, CompletionTokens: 2,
+	})
+	// This stale username snapshot belongs to another user and must not be
+	// included once the exact current username resolves to user_id 601.
+	mustCreateUsage(t, &Log{
+		UserId: 602, Username: "bd@coolyacloud.com", Type: LogTypeConsume,
+		CreatedAt: now, ModelName: "gpt-4o", Quota: 100,
+		PromptTokens: 30, CompletionTokens: 20,
+	})
+
+	logs, total, err := GetAllLogs(LogTypeConsume, 0, 0, "", "bd@coolyacloud.com", "", 0, 20, 0, "", "", "", 0)
+	if err != nil {
+		t.Fatalf("GetAllLogs exact resolved username: %v", err)
+	}
+	if total != 1 || len(logs) != 1 || logs[0].UserId != 601 {
+		t.Fatalf("logs = %+v / total %d, want only user_id 601", logs, total)
+	}
+
+	stat, err := SumUsedQuota(LogTypeConsume, 0, 0, "", "bd@coolyacloud.com", "", 0, "", 0, 0)
+	if err != nil {
+		t.Fatalf("SumUsedQuota exact resolved username: %v", err)
+	}
+	if stat.Quota != 10 || stat.Rpm != 1 || stat.Tpm != 5 {
+		t.Fatalf("stat = %+v, want quota=10 rpm=1 tpm=5 for user_id 601", stat)
+	}
+}
+
 func TestGetAllLogsExplicitWildcard(t *testing.T) {
 	resetUsageTables(t)
 	resetLogFilterTestUser(t, 311)
