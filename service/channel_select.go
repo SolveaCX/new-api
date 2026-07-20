@@ -246,6 +246,9 @@ func channelSupportsRequestedEndpoint(channel *model.Channel, modelName string, 
 }
 
 func channelSupportsOpenAIResponses(channelType int) bool {
+	if channelType == constant.ChannelTypeBytePlus {
+		return false
+	}
 	apiType, ok := common.ChannelType2APIType(channelType)
 	if !ok {
 		// Unknown legacy/OpenAI-compatible channel types fall back to the OpenAI
