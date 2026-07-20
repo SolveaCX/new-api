@@ -80,6 +80,11 @@ export function buildSidebarData(t: TFunction): SidebarData {
             icon: LayoutDashboard,
           },
           {
+            title: t('Available Models'),
+            url: '/available-models',
+            icon: Box,
+          },
+          {
             title: t('API Keys'),
             url: '/keys',
             icon: Key,

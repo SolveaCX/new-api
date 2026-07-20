@@ -23,6 +23,24 @@ import { buildSidebarData } from './use-sidebar-data'
 const t = ((key: string) => key) as TFunction
 
 describe('buildSidebarData', () => {
+  test('places available models between dashboard and API keys', () => {
+    const generalGroup = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'general'
+    )
+    const urls = generalGroup?.items.flatMap((item) =>
+      'url' in item && item.url ? [item.url] : []
+    )
+
+    expect(urls).toEqual([
+      '/dashboard/overview',
+      '/dashboard/models',
+      '/available-models',
+      '/keys',
+      '/usage-logs/common',
+      '/usage-logs/task',
+    ])
+  })
+
   test('highlights the invitation entry with localized credit copy', () => {
     const personalGroup = buildSidebarData(t).navGroups.find(
       (group) => group.id === 'personal'

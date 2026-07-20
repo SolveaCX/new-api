@@ -92,6 +92,7 @@ export interface ApiKeyFormData {
   allow_ips: string
   group: string
   cross_group_retry: boolean
+  preserve_model_access?: boolean
 }
 
 export interface EnsureInitialApiKeyResponse {
