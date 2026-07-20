@@ -24,6 +24,7 @@ import {
   getScopeModels,
   getUnavailableAccountModels,
   getUnavailableScopeModels,
+  isCallableModel,
   resolveCreateScope,
 } from './model-access'
 
@@ -37,8 +38,9 @@ export type ModelVendorFilterOption = {
   value: ModelVendorFilter
 }
 
-export type ModelVendorSelection = {
-  filterOptions: readonly ModelVendorFilterOption[]
+export type ModelVendorFilterState = {
+  filterSignature: string
+  scopeKey: string | null
   value: ModelVendorFilter
 }
 
@@ -93,6 +95,24 @@ export function getModelAccessUnavailableScopeModels(
   return getUnavailableScopeModels(access, scopeId)
 }
 
+export function getModelAccessScopeModelCounts(
+  access: UserModelAccess
+): Map<string, number> {
+  const callableModelIds = new Set(
+    access.models.filter(isCallableModel).map((model) => model.id)
+  )
+
+  return new Map(
+    access.groups.map((scope) => [
+      scope.id,
+      scope.model_ids.reduce(
+        (count, modelId) => count + Number(callableModelIds.has(modelId)),
+        0
+      ),
+    ])
+  )
+}
+
 function modelVendorFilterValue(model: ModelAccessModel): ModelVendorFilter {
   const name = model.vendor?.name.trim()
   return name ? `vendor:${name.toLocaleLowerCase()}` : UNLABELLED_MODEL_VENDOR
@@ -129,14 +149,54 @@ export function getModelVendorFilters(
   return [{ value: ALL_MODEL_VENDORS, label: null }, ...options]
 }
 
+export function getModelVendorFilterSignature(
+  filterOptions: readonly ModelVendorFilterOption[]
+): string {
+  return filterOptions.map((option) => option.value).join('\u0000')
+}
+
 export function resolveModelVendorSelection(
   filterOptions: readonly ModelVendorFilterOption[],
-  selection: ModelVendorSelection
+  selection: ModelVendorFilter
 ): ModelVendorFilter {
-  if (selection.filterOptions !== filterOptions) return ALL_MODEL_VENDORS
-  return filterOptions.some((option) => option.value === selection.value)
-    ? selection.value
+  return filterOptions.some((option) => option.value === selection)
+    ? selection
     : ALL_MODEL_VENDORS
+}
+
+export function createModelVendorFilterState(
+  filterOptions: readonly ModelVendorFilterOption[],
+  scopeKey: string | null,
+  value: ModelVendorFilter = ALL_MODEL_VENDORS
+): ModelVendorFilterState {
+  return {
+    filterSignature: getModelVendorFilterSignature(filterOptions),
+    scopeKey,
+    value: resolveModelVendorSelection(filterOptions, value),
+  }
+}
+
+export function reconcileModelVendorFilterState(
+  filterOptions: readonly ModelVendorFilterOption[],
+  scopeKey: string | null,
+  state: ModelVendorFilterState
+): ModelVendorFilterState {
+  const filterSignature = getModelVendorFilterSignature(filterOptions)
+  const selectedVendor = resolveModelVendorSelection(filterOptions, state.value)
+  const value =
+    state.scopeKey === scopeKey && selectedVendor === state.value
+      ? state.value
+      : ALL_MODEL_VENDORS
+
+  if (
+    state.filterSignature === filterSignature &&
+    state.scopeKey === scopeKey &&
+    state.value === value
+  ) {
+    return state
+  }
+
+  return { filterSignature, scopeKey, value }
 }
 
 function matchesVendor(

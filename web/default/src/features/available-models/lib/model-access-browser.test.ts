@@ -21,14 +21,18 @@ import type { TFunction } from 'i18next'
 import type { UserModelAccess } from '../types'
 import {
   ALL_MODEL_VENDORS,
+  createModelVendorFilterState,
   filterModelAccessModels,
   getCreateKeySearch,
   getModelEndpointLabel,
+  getModelAccessScopeModelCounts,
   getModelAccessScopeModels,
   getModelAccessUnavailableScopeModels,
+  getModelVendorFilterSignature,
   getModelVendorFilters,
   isFixedModelAccessView,
   normalizeModelAvailabilityStatus,
+  reconcileModelVendorFilterState,
   resolveModelAccessScope,
   resolveModelVendorSelection,
   UNLABELLED_MODEL_VENDOR,
@@ -124,6 +128,40 @@ describe('available models browser scope selection', () => {
       getModelAccessScopeModels(access, 'plg').map((model) => model.id)
     ).toEqual(['gpt-main'])
   })
+
+  test('counts callable models for every scope from one shared model index', () => {
+    const access = buildAccess({
+      groups: [
+        {
+          id: 'auto',
+          label: 'Auto',
+          ratio: null,
+          model_ids: ['gpt-main', 'image-main', 'retired-main'],
+        },
+        {
+          id: 'standard',
+          label: 'Standard',
+          ratio: 1,
+          model_ids: ['gpt-main', 'missing-main'],
+        },
+      ],
+      models: [
+        ...buildAccess().models,
+        {
+          ...buildAccess().models[0],
+          id: 'retired-main',
+          availability_status: 'official_unsupported',
+        },
+      ],
+    })
+
+    expect(getModelAccessScopeModelCounts(access)).toEqual(
+      new Map([
+        ['auto', 2],
+        ['standard', 1],
+      ])
+    )
+  })
 })
 
 describe('available models browser filters', () => {
@@ -171,26 +209,72 @@ describe('available models browser filters', () => {
     ])
   })
 
-  test('does not restore a vendor selection after the model collection changes', () => {
+  test('preserves valid vendor selections across equivalent option arrays', () => {
     const openAiFilters = getModelVendorFilters([models[0]])
-    const selection = {
-      filterOptions: openAiFilters,
-      value: 'vendor:openai',
-    }
-
-    expect(resolveModelVendorSelection(openAiFilters, selection)).toBe(
+    expect(resolveModelVendorSelection(openAiFilters, 'vendor:openai')).toBe(
       'vendor:openai'
     )
 
+    const equivalentOpenAiFilters = getModelVendorFilters([models[0]])
+    expect(getModelVendorFilterSignature(equivalentOpenAiFilters)).toBe(
+      getModelVendorFilterSignature(openAiFilters)
+    )
+    expect(
+      resolveModelVendorSelection(equivalentOpenAiFilters, 'vendor:openai')
+    ).toBe('vendor:openai')
+
+    const selectedState = createModelVendorFilterState(
+      openAiFilters,
+      'scope-a',
+      'vendor:openai'
+    )
+    expect(
+      reconcileModelVendorFilterState(
+        equivalentOpenAiFilters,
+        'scope-a',
+        selectedState
+      )
+    ).toBe(selectedState)
+
     const otherVendorFilters = getModelVendorFilters([models[2]])
-    expect(resolveModelVendorSelection(otherVendorFilters, selection)).toBe(
-      ALL_MODEL_VENDORS
+    expect(
+      resolveModelVendorSelection(otherVendorFilters, 'vendor:openai')
+    ).toBe(ALL_MODEL_VENDORS)
+  })
+
+  test('permanently resets vendor selection after changing scopes', () => {
+    const openAiFilters = getModelVendorFilters([models[0]])
+    const otherVendorFilters = getModelVendorFilters([models[2]])
+    const selectedState = createModelVendorFilterState(
+      openAiFilters,
+      'scope-a',
+      'vendor:openai'
     )
 
-    const openAiFiltersAfterRoundTrip = getModelVendorFilters([models[0]])
-    expect(
-      resolveModelVendorSelection(openAiFiltersAfterRoundTrip, selection)
-    ).toBe(ALL_MODEL_VENDORS)
+    const otherScopeState = reconcileModelVendorFilterState(
+      otherVendorFilters,
+      'scope-b',
+      selectedState
+    )
+    expect(otherScopeState.value).toBe(ALL_MODEL_VENDORS)
+
+    const returnedScopeState = reconcileModelVendorFilterState(
+      openAiFilters,
+      'scope-a',
+      otherScopeState
+    )
+    expect(returnedScopeState.value).toBe(ALL_MODEL_VENDORS)
+  })
+
+  test('rejects vendor selections that are missing from the current options', () => {
+    const openAiFilters = getModelVendorFilters([models[0]])
+
+    expect(resolveModelVendorSelection(openAiFilters, 'vendor:missing')).toBe(
+      ALL_MODEL_VENDORS
+    )
+    expect(resolveModelVendorSelection(openAiFilters, ALL_MODEL_VENDORS)).toBe(
+      ALL_MODEL_VENDORS
+    )
   })
 
   test('filters by actual vendor metadata and keeps unlabelled models distinct', () => {

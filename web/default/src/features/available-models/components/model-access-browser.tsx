@@ -35,17 +35,18 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   ALL_MODEL_VENDORS,
+  createModelVendorFilterState,
   filterModelAccessModels,
   getCreateKeySearch,
+  getModelAccessScopeModelCounts,
   getModelAccessScopeModels,
   getModelAccessUnavailableScopeModels,
   getModelVendorFilters,
   isFixedModelAccessView,
+  reconcileModelVendorFilterState,
   resolveModelAccessScope,
-  resolveModelVendorSelection,
   UNLABELLED_MODEL_VENDOR,
   type ModelVendorFilter,
-  type ModelVendorSelection,
 } from '../lib/model-access-browser'
 import type { UserModelAccess } from '../types'
 import { ModelAccessList } from './model-access-list'
@@ -75,27 +76,23 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
     () => getModelVendorFilters([...scopeModels, ...unavailableScopeModels]),
     [scopeModels, unavailableScopeModels]
   )
-  const [vendorSelection, setVendorSelection] = useState<ModelVendorSelection>(
-    () => ({
-      filterOptions: vendorFilters,
-      value: ALL_MODEL_VENDORS,
-    })
+  const [vendorState, setVendorState] = useState(() =>
+    createModelVendorFilterState(vendorFilters, activeScopeId)
   )
   const scopeModelCounts = useMemo(
-    () =>
-      new Map(
-        access.groups.map((scope) => [
-          scope.id,
-          getModelAccessScopeModels(access, scope.id).length,
-        ])
-      ),
+    () => getModelAccessScopeModelCounts(access),
     [access]
   )
 
-  const activeVendor = resolveModelVendorSelection(
+  const reconciledVendorState = reconcileModelVendorFilterState(
     vendorFilters,
-    vendorSelection
+    activeScopeId,
+    vendorState
   )
+  if (reconciledVendorState !== vendorState) {
+    setVendorState(reconciledVendorState)
+  }
+  const activeVendor = reconciledVendorState.value
 
   const visibleModels = useMemo(
     () => filterModelAccessModels(scopeModels, query, activeVendor),
@@ -114,10 +111,11 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
 
   const clearFilters = () => {
     setQuery('')
-    setVendorSelection({
-      filterOptions: vendorFilters,
-      value: ALL_MODEL_VENDORS,
-    })
+    setVendorState(createModelVendorFilterState(vendorFilters, activeScopeId))
+  }
+
+  const handleScopeChange = (scopeId: string) => {
+    setSelectedScopeId(scopeId)
   }
 
   const catalog = (
@@ -156,7 +154,7 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
             className='w-full'
             value={activeScopeId ?? ''}
             aria-label={t('Access groups')}
-            onChange={(event) => setSelectedScopeId(event.target.value)}
+            onChange={(event) => handleScopeChange(event.target.value)}
           >
             {access.groups.map((scope) => (
               <NativeSelectOption key={scope.id} value={scope.id}>
@@ -252,10 +250,13 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
               aria-label={t('Model vendors')}
               onValueChange={(values) => {
                 if (values[0]) {
-                  setVendorSelection({
-                    filterOptions: vendorFilters,
-                    value: values[0] as ModelVendorFilter,
-                  })
+                  setVendorState(
+                    createModelVendorFilterState(
+                      vendorFilters,
+                      activeScopeId,
+                      values[0] as ModelVendorFilter
+                    )
+                  )
                 }
               }}
             >
@@ -320,7 +321,7 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
               scopes={access.groups}
               modelCounts={scopeModelCounts}
               selectedScopeId={activeScopeId}
-              onScopeChange={setSelectedScopeId}
+              onScopeChange={handleScopeChange}
             />
           </aside>
           {catalog}

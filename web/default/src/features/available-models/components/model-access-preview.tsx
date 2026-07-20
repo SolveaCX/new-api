@@ -33,12 +33,12 @@ import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   ALL_MODEL_VENDORS,
+  createModelVendorFilterState,
   filterModelAccessModels,
   getModelVendorFilters,
-  resolveModelVendorSelection,
+  reconcileModelVendorFilterState,
   UNLABELLED_MODEL_VENDOR,
   type ModelVendorFilter,
-  type ModelVendorSelection,
 } from '../lib/model-access-browser'
 import type { ModelAccessModel } from '../types'
 import { ModelAccessList } from './model-access-list'
@@ -48,6 +48,7 @@ export type ModelAccessPreviewProps = {
   emptyTitle?: string
   models: ModelAccessModel[]
   scopeDescription?: string
+  scopeKey?: string
   scopeTitle: string
   summary?: string
   totalCount: number
@@ -60,16 +61,20 @@ export function ModelAccessPreview(props: ModelAccessPreviewProps) {
     () => getModelVendorFilters(props.models),
     [props.models]
   )
-  const [vendorSelection, setVendorSelection] = useState<ModelVendorSelection>(
-    () => ({
-      filterOptions: vendorFilters,
-      value: ALL_MODEL_VENDORS,
-    })
+  const vendorScopeKey = props.scopeKey ?? props.scopeTitle
+  const [vendorState, setVendorState] = useState(() =>
+    createModelVendorFilterState(vendorFilters, vendorScopeKey)
   )
-  const activeVendor = resolveModelVendorSelection(
+  const reconciledVendorState = reconcileModelVendorFilterState(
     vendorFilters,
-    vendorSelection
+    vendorScopeKey,
+    vendorState
   )
+  if (reconciledVendorState !== vendorState) {
+    setVendorState(reconciledVendorState)
+  }
+  const activeVendor = reconciledVendorState.value
+
   const visibleModels = useMemo(
     () => filterModelAccessModels(props.models, query, activeVendor),
     [activeVendor, props.models, query]
@@ -77,10 +82,7 @@ export function ModelAccessPreview(props: ModelAccessPreviewProps) {
 
   const clearFilters = () => {
     setQuery('')
-    setVendorSelection({
-      filterOptions: vendorFilters,
-      value: ALL_MODEL_VENDORS,
-    })
+    setVendorState(createModelVendorFilterState(vendorFilters, vendorScopeKey))
   }
 
   return (
@@ -152,10 +154,13 @@ export function ModelAccessPreview(props: ModelAccessPreviewProps) {
               aria-label={t('Model vendors')}
               onValueChange={(values) => {
                 if (values[0]) {
-                  setVendorSelection({
-                    filterOptions: vendorFilters,
-                    value: values[0] as ModelVendorFilter,
-                  })
+                  setVendorState(
+                    createModelVendorFilterState(
+                      vendorFilters,
+                      vendorScopeKey,
+                      values[0] as ModelVendorFilter
+                    )
+                  )
                 }
               }}
             >

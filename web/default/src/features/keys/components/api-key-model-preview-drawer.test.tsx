@@ -44,6 +44,7 @@ describe('ApiKeyModelPreviewDrawer', () => {
           emptyTitle='No models available to the new API key'
           models={[]}
           totalCount={4}
+          scopeKey='fixed-account'
           scopeTitle='Current account scope'
           summary='New keys use the current account scope with 4 available models'
         />
@@ -73,6 +74,7 @@ describe('ApiKeyModelPreviewDrawer', () => {
           emptyTitle='No models available to this API key'
           models={[]}
           totalCount={4}
+          scopeKey='fixed-account'
           scopeTitle='Current account scope'
           summary='Effective 0 / 4 in account'
         />

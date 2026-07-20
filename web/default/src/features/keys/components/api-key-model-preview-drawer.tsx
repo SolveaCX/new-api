@@ -40,6 +40,7 @@ type ApiKeyModelPreviewDrawerProps = {
   emptyTitle: string
   models: ModelAccessModel[]
   scopeDescription?: string
+  scopeKey: string
   scopeTitle: string
   summary: string
   totalCount: number
@@ -79,6 +80,7 @@ export function ApiKeyModelPreviewDrawer(props: ApiKeyModelPreviewDrawerProps) {
                 <ModelAccessPreview
                   models={props.models}
                   totalCount={props.totalCount}
+                  scopeKey={props.scopeKey}
                   scopeTitle={props.scopeTitle}
                   scopeDescription={props.scopeDescription}
                   summary={props.summary}
