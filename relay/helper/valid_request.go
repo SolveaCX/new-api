@@ -49,10 +49,57 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 		request, err = GetAndValidAudioRequest(c, relayMode)
 	case types.RelayFormatOpenAIRealtime:
 		request = &dto.BaseRequest{}
+	case types.RelayFormatElevenLabs:
+		request, err = GetAndValidElevenLabsRequest(c)
 	default:
 		return nil, fmt.Errorf("unsupported relay format: %s", format)
 	}
 	return request, err
+}
+
+// GetAndValidElevenLabsRequest builds the passthrough request for ElevenLabs native
+// endpoints and pre-computes the billable units from the (verbatim-forwarded) body:
+// input characters for TTS, requested seconds for SFX/music, 0 for the voices list.
+func GetAndValidElevenLabsRequest(c *gin.Context) (*dto.ElevenLabsRequest, error) {
+	req := &dto.ElevenLabsRequest{}
+	path := c.Request.URL.Path
+	switch {
+	case strings.HasPrefix(path, "/v1/text-to-speech/"):
+		var body struct {
+			Text string `json:"text"`
+		}
+		_ = common.UnmarshalBodyReusable(c, &body)
+		req.BillTokens = len([]rune(body.Text))
+	case strings.HasPrefix(path, "/v1/sound-generation"):
+		var body struct {
+			DurationSeconds float64 `json:"duration_seconds"`
+		}
+		_ = common.UnmarshalBodyReusable(c, &body)
+		req.BillTokens = ceilSeconds(body.DurationSeconds, 5) // ElevenLabs auto-length -> default 5s estimate
+	case strings.HasPrefix(path, "/v1/music"):
+		var body struct {
+			MusicLengthMs int `json:"music_length_ms"`
+		}
+		_ = common.UnmarshalBodyReusable(c, &body)
+		req.BillTokens = ceilSeconds(float64(body.MusicLengthMs)/1000.0, 30) // default 30s
+	default: // /v1/voices — listing, not billed
+		req.BillTokens = 0
+	}
+	return req, nil
+}
+
+func ceilSeconds(v float64, fallback int) int {
+	if v <= 0 {
+		return fallback
+	}
+	n := int(v)
+	if float64(n) < v {
+		n++
+	}
+	if n < 1 {
+		n = 1
+	}
+	return n
 }
 
 func GetAndValidAudioRequest(c *gin.Context, relayMode int) (*dto.AudioRequest, error) {

@@ -39,7 +39,6 @@ const (
 	opsReportCacheTTL   = 10 * time.Minute
 	opsAutoBrowseWindow = 60  // seconds after signup treated as auto-fired playground call
 	opsAutoTokenWindow  = 120 // seconds after signup treated as auto-provisioned token
-	opsReportTopPayers  = 20
 	// registered-users detail rows shown in the ops report (newest first)
 	opsReportMaxRegisteredUsers = 200
 	opsReportMaxDays            = 180
@@ -105,7 +104,10 @@ type opsPayerRow struct {
 	Email        string   `json:"email"`
 	PaidUSD      float64  `json:"paid_usd"`
 	Orders       int      `json:"orders"`
+	RefundedUSD  float64  `json:"refunded_usd"`
+	RefundedCnt  int      `json:"refunded_cnt"`
 	FirstPaidAt  int64    `json:"first_paid_at"`
+	LastPaidAt   int64    `json:"last_paid_at"`
 	RegisteredAt int64    `json:"registered_at"`
 	Campaign     string   `json:"campaign"`
 	Keyword      string   `json:"keyword"`
@@ -213,17 +215,18 @@ func GetOpsReport(c *gin.Context) {
 }
 
 type opsUserAgg struct {
-	user       *model.OpsPlgUser
-	logStats   *model.OpsUserLogStats
-	tokenStats *model.OpsUserTokenStats
-	campaign   string
-	keyword    string
-	lng        string
-	landing    string
-	referrer   string
-	matchType  string
-	paidOrders []*model.OpsTopUp
-	hasIntent  bool
+	user           *model.OpsPlgUser
+	logStats       *model.OpsUserLogStats
+	tokenStats     *model.OpsUserTokenStats
+	campaign       string
+	keyword        string
+	lng            string
+	landing        string
+	referrer       string
+	matchType      string
+	paidOrders     []*model.OpsTopUp
+	refundedOrders []*model.OpsTopUp
+	hasIntent      bool
 }
 
 // opsIPCountry resolves an IP to an ISO country code via the embedded iploc
@@ -310,6 +313,9 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 		}
 		if t.Status == common.TopUpStatusSuccess {
 			a.paidOrders = append(a.paidOrders, t)
+		}
+		if t.Status == common.TopUpStatusRefunded {
+			a.refundedOrders = append(a.refundedOrders, t)
 		}
 	}
 
@@ -837,14 +843,20 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 	var payers []opsPayerRow
 	total := 0.0
 	for _, a := range aggs {
-		if len(a.paidOrders) == 0 {
+		if len(a.paidOrders) == 0 && len(a.refundedOrders) == 0 {
 			continue
 		}
 		paid := a.paidUSD()
 		total += paid
+		refunded := 0.0
+		for _, t := range a.refundedOrders {
+			if usd, ok := opsTopUpUSD(t); ok {
+				refunded += usd
+			}
+		}
 		currencySet := map[string]bool{}
 		var currencies []string
-		for _, t := range a.paidOrders {
+		for _, t := range append(append([]*model.OpsTopUp(nil), a.paidOrders...), a.refundedOrders...) {
 			ccy := strings.ToUpper(t.PaymentCurrency)
 			if ccy == "" {
 				ccy = "USD"
@@ -858,6 +870,17 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		if a.logStats != nil && a.logStats.LastRequestAt > lastActive {
 			lastActive = a.logStats.LastRequestAt
 		}
+		// Refunded-only payers (e.g. fraud cleanup) keep their charge times.
+		// Orders arrive sorted by create_time asc (GetOpsTopUps), so first/last
+		// are the slice ends.
+		firstPaidAt, lastPaidAt := int64(0), int64(0)
+		if len(a.paidOrders) > 0 {
+			firstPaidAt = a.paidOrders[0].CreateTime
+			lastPaidAt = a.paidOrders[len(a.paidOrders)-1].CreateTime
+		} else if len(a.refundedOrders) > 0 {
+			firstPaidAt = a.refundedOrders[0].CreateTime
+			lastPaidAt = a.refundedOrders[len(a.refundedOrders)-1].CreateTime
+		}
 		payers = append(payers, opsPayerRow{
 			UserId:       a.user.Id,
 			Username:     a.user.Username,
@@ -865,7 +888,10 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 			Email:        a.user.Email,
 			PaidUSD:      paid,
 			Orders:       len(a.paidOrders),
-			FirstPaidAt:  a.paidOrders[0].CreateTime,
+			RefundedUSD:  refunded,
+			RefundedCnt:  len(a.refundedOrders),
+			FirstPaidAt:  firstPaidAt,
+			LastPaidAt:   lastPaidAt,
 			RegisteredAt: a.user.CreatedAt,
 			Campaign:     a.campaign,
 			Keyword:      a.keyword,
@@ -887,15 +913,32 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		})
 	}
 	count := len(payers)
-	sort.Slice(payers, func(i, j int) bool { return payers[i].PaidUSD > payers[j].PaidUSD })
-	if len(payers) > opsReportTopPayers {
-		payers = payers[:opsReportTopPayers]
-	}
+	sort.Slice(payers, func(i, j int) bool {
+		if payers[i].LastPaidAt != payers[j].LastPaidAt {
+			return payers[i].LastPaidAt > payers[j].LastPaidAt
+		}
+		return payers[i].PaidUSD > payers[j].PaidUSD
+	})
 	ids := make([]int, len(payers))
 	for i := range payers {
 		ids[i] = payers[i].UserId
 	}
-	if usage, err := model.GetOpsUsersModelUsage(ids); err == nil {
+	// Enrich in batches: payer list is unbounded now, keep each IN (...) small.
+	var usage []*model.OpsUserModelUsage
+	usageErr := error(nil)
+	for start := 0; start < len(ids); start += 500 {
+		end := start + 500
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch, err := model.GetOpsUsersModelUsage(ids[start:end])
+		if err != nil {
+			usageErr = err
+			break
+		}
+		usage = append(usage, batch...)
+	}
+	if usageErr == nil {
 		type mc struct {
 			name  string
 			count int

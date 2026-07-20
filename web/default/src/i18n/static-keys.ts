@@ -532,11 +532,24 @@ export const STATIC_I18N_KEYS = [
   'Batch detection failed',
   'Batch detection complete: {{channels}} channels, {{add}} to add, {{remove}} to remove, {{fails}} failed',
 
-  // Playground first-run example prompts (rendered via t(prompt) from the
-  // FIRST_RUN_EXAMPLE_PROMPTS constant, so the t('...') regex can't pick them up)
-  'Hello!',
+  // Playground first-run example prompts, input suggestions, and message action
+  // labels — all rendered via t(variable) from constants/arrays, so the t('...')
+  // regex can't pick them up. ('Regenerate', 'Edit', 'Delete', 'More' are already
+  // registered below; 'An unknown error occurred' is a literal the regex catches.)
+  'How do I try flatkey?',
+  'Generate an image of a cat astronaut',
+  'Generate a video of a cat astronaut',
   'Write a quicksort in Python',
   'Explain Transformers',
+  'Analyze data',
+  'Surprise me',
+  'Summarize text',
+  'Code',
+  'Get advice',
+  'Copy',
+  'Copied!',
+  'No content to copy',
+  'Please wait for the current generation to complete',
 
   // Misc
   'Cancel',

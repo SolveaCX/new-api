@@ -1,14 +1,14 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
-// Brand v5 (design doc "Flatkey Logo 方案" card 5a): gradient shield-key mark +
-// single-color "flatkey.ai" wordmark in Space Grotesk SemiBold, lowercase.
-// Wordmark color is #1E1B4B on light, near-white on dark — no gradient text.
+// Single brand standard (matches the official website / website-static lockup):
+// the gradient "flatkey-mark" tile + a single-color "flatkey" wordmark (no ".ai")
+// in Public Sans Bold, lowercase. Color is #1E1B4B on light, near-white on dark.
 const FLATKEY_LOCKUP_LIGHT = "/flatkey-lockup-light.svg";
 const FLATKEY_LOCKUP_DARK = "/flatkey-lockup-dark.svg";
 const FLATKEY_MARK = "/flatkey-mark.svg";
 
-const WORDMARK_FONT_FAMILY = "'Space Grotesk', Inter, 'SF Pro Display', Arial, sans-serif";
+const WORDMARK_FONT_FAMILY = "'Public Sans', Inter, 'SF Pro Display', Arial, sans-serif";
 
 type FlatkeyBrandLogoProps = {
   alt?: string;
@@ -18,7 +18,7 @@ type FlatkeyBrandLogoProps = {
 };
 
 export function FlatkeyBrandLogo({
-  alt = "Flatkey",
+  alt = "flatkey",
   className,
   imageClassName,
   variant = "lockup",
@@ -50,10 +50,10 @@ export function FlatkeyBrandLogo({
     <span className={cn("inline-flex items-center gap-2.5", className)}>
       <Image src={FLATKEY_MARK} alt="" aria-hidden width={32} height={32} className="h-8 w-8 shrink-0" />
       <span
-        className="text-[20px] leading-none font-semibold text-[#1E1B4B] dark:text-slate-50"
-        style={{ fontFamily: WORDMARK_FONT_FAMILY }}
+        className="text-[20px] leading-none font-bold text-[#1E1B4B] dark:text-slate-50"
+        style={{ fontFamily: WORDMARK_FONT_FAMILY, letterSpacing: "-0.04em" }}
       >
-        flatkey.ai
+        flatkey
       </span>
     </span>
   );

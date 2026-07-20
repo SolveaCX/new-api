@@ -88,6 +88,51 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 	require.Equal(t, 2, userID)
 }
 
+func TestNormalizeChannelTestEndpointCodexAnthropicUsesResponsesBridge(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeCodex}
+
+	endpoint := normalizeChannelTestEndpoint(
+		channel,
+		"gpt-5.5",
+		string(constant.EndpointTypeAnthropic),
+	)
+
+	require.Equal(t, string(constant.EndpointTypeOpenAIResponse), endpoint)
+}
+
+func TestNormalizeChannelTestEndpointKeepsAnthropicForOtherChannels(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeOpenAI}
+
+	endpoint := normalizeChannelTestEndpoint(
+		channel,
+		"gpt-5.5",
+		string(constant.EndpointTypeAnthropic),
+	)
+
+	require.Equal(t, string(constant.EndpointTypeAnthropic), endpoint)
+}
+
+func TestNormalizeChannelTestEndpointCodexKeepsNonAnthropicProtocols(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeCodex}
+	endpointTypes := []constant.EndpointType{
+		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
+		constant.EndpointTypeOpenAIResponseCompact,
+		constant.EndpointTypeGemini,
+		constant.EndpointTypeJinaRerank,
+		constant.EndpointTypeImageGeneration,
+		constant.EndpointTypeEmbeddings,
+		constant.EndpointTypeOpenAIVideo,
+	}
+
+	for _, endpointType := range endpointTypes {
+		t.Run(string(endpointType), func(t *testing.T) {
+			endpoint := normalizeChannelTestEndpoint(channel, "gpt-5.5", string(endpointType))
+			require.Equal(t, string(endpointType), endpoint)
+		})
+	}
+}
+
 func TestBuildScheduledChannelTestAlertMarksAutoDisabled(t *testing.T) {
 	autoBan := 1
 	now := time.Date(2026, 6, 2, 13, 14, 15, 0, time.UTC)

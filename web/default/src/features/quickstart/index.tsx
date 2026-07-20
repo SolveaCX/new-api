@@ -39,6 +39,36 @@ function buildBaseUrl(serverAddress?: string): string {
   return `${origin}/v1`
 }
 
+// Coding tools/agents that accept a custom OpenAI-compatible base URL — the main
+// distribution channel for flatkey. Each `steps` string is the one-line setup path
+// inside that tool; it's translated via t(). (#406 tool-connect step)
+const CODING_TOOLS: { name: string; url: string; steps: string }[] = [
+  {
+    name: 'Cline',
+    url: 'https://cline.bot',
+    steps:
+      'API Provider → OpenAI Compatible. Paste the Base URL and your key, then pick a model like claude-opus-4-8.',
+  },
+  {
+    name: 'Cursor',
+    url: 'https://cursor.com',
+    steps:
+      "Settings → Models → OpenAI API Key. Turn on 'Override OpenAI Base URL', paste the Base URL and your key.",
+  },
+  {
+    name: 'Cherry Studio',
+    url: 'https://cherry-ai.com',
+    steps:
+      'Settings → Model Providers → add an OpenAI-compatible provider. Set the API host to the Base URL and paste your key.',
+  },
+  {
+    name: 'Chatbox',
+    url: 'https://chatboxai.app',
+    steps:
+      'Settings → add a custom provider (OpenAI API Compatible). Set the API host to the Base URL and paste your key.',
+  },
+]
+
 function CodeBlock({ code }: { code: string }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
@@ -162,6 +192,42 @@ console.log(resp.choices[0].message.content)`
                   <CodeBlock code={tsExample} />
                 </TabsContent>
               </Tabs>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className='text-base'>
+                {t('Connect your coding tool')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className='flex flex-col gap-3'>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'flatkey is OpenAI-compatible, so it drops into any tool that takes a custom OpenAI base URL. Use the Base URL below and your API key.'
+                )}
+              </p>
+              <div className='grid gap-3 sm:grid-cols-2'>
+                {CODING_TOOLS.map((tool) => (
+                  <div key={tool.name} className='rounded-lg border p-3'>
+                    <div className='flex items-center justify-between gap-2'>
+                      <span className='text-sm font-semibold'>{tool.name}</span>
+                      <a
+                        href={tool.url}
+                        target='_blank'
+                        rel='noreferrer'
+                        className='text-muted-foreground hover:text-foreground text-xs underline underline-offset-2'
+                      >
+                        {t('Open')}
+                      </a>
+                    </div>
+                    <p className='text-muted-foreground mt-1.5 text-xs leading-relaxed'>
+                      {t(tool.steps)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <CodeBlock code={baseUrl} />
             </CardContent>
           </Card>
 

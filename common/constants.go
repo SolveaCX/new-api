@@ -264,4 +264,7 @@ const (
 	TopUpStatusSuccess = "success"
 	TopUpStatusFailed  = "failed"
 	TopUpStatusExpired = "expired"
+	// Set by ops when a charge is refunded on the gateway (e.g. fraudulent
+	// card-testing payments); keeps revenue reporting consistent with Stripe.
+	TopUpStatusRefunded = "refunded"
 )

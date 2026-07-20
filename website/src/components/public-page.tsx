@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { LegalMarkdown, getLegalHeadings } from "@/components/legal-markdown";
 import { withIdFallback } from "@/lib/locales";
 import { SiteShell } from "@/components/site-shell";
@@ -9,6 +10,13 @@ type Props = {
   pageKey: PublicPageKey;
   pathname: string;
 };
+
+const aboutPhotos = [
+  { src: "/team/amazon-accelerate-team.jpg", className: "row-span-2 md:col-span-4" },
+  { src: "/team/team-dinner.jpg", className: "md:col-span-8" },
+  { src: "/team/product-conversations.jpg", className: "md:col-span-4" },
+  { src: "/team/seattle-community.jpg", className: "md:col-span-4" },
+] as const;
 
 export function PublicPage(props: Props) {
   const content = getPageContent(props.pageKey, props.locale);
@@ -86,6 +94,25 @@ export function PublicPage(props: Props) {
             {content.description}
           </p>
         </section>
+        {props.pageKey === "about" ? (
+          <section
+            aria-hidden
+            className="relative z-10 mx-auto mb-12 grid max-w-6xl auto-rows-[170px] grid-cols-2 gap-3 overflow-hidden rounded-2xl border border-violet-500/15 bg-white/60 p-3 shadow-[0_30px_90px_-58px_rgba(91,33,182,0.85)] md:auto-rows-[220px] md:grid-cols-12 dark:border-violet-300/14 dark:bg-white/[0.035]"
+          >
+            {aboutPhotos.map((photo) => (
+              <div key={photo.src} className={`relative overflow-hidden rounded-xl ${photo.className}`}>
+                <Image
+                  src={photo.src}
+                  alt=""
+                  fill
+                  loading="eager"
+                  sizes="(min-width: 768px) 66vw, 50vw"
+                  className="object-cover transition duration-500 hover:scale-[1.02]"
+                />
+              </div>
+            ))}
+          </section>
+        ) : null}
         <section className="relative z-10 mx-auto grid max-w-6xl gap-5 md:grid-cols-3">
           {(content.sections ?? []).map((section) => (
             <article
