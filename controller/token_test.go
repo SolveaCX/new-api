@@ -634,6 +634,39 @@ func TestUpdateTokenCanPreserveModelAccessFields(t *testing.T) {
 	require.True(t, stored.CrossGroupRetry)
 }
 
+func TestUpdateTokenPreservationStillEnforcesPLGGroup(t *testing.T) {
+	db := setupInitialTokenControllerTestDB(t)
+	seedTokenUser(t, db, 1)
+	token := seedToken(t, db, 1, "legacy-token", "preserve1234plg567890")
+	token.Group = "legacy-enterprise"
+	token.ModelLimitsEnabled = true
+	token.ModelLimits = "gpt-4o"
+	token.CrossGroupRetry = true
+	require.NoError(t, db.Save(token).Error)
+
+	body := map[string]any{
+		"id":                    token.Id,
+		"name":                  "renamed-token",
+		"expired_time":          -1,
+		"remain_quota":          200,
+		"unlimited_quota":       false,
+		"allow_ips":             "192.0.2.1",
+		"preserve_model_access": true,
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", body, 1)
+	UpdateToken(ctx)
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+
+	var stored model.Token
+	require.NoError(t, db.First(&stored, token.Id).Error)
+	require.Equal(t, plgGroup, stored.Group)
+	require.False(t, stored.CrossGroupRetry)
+	require.True(t, stored.ModelLimitsEnabled)
+	require.Equal(t, "gpt-4o", stored.ModelLimits)
+}
+
 func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "owned-token", "owner1234token5678")

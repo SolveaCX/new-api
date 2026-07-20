@@ -64,16 +64,9 @@ export function getCCSwitchModelAccessState(input: {
   modelCount: number
 }): CCSwitchModelAccessState {
   if (input.isPending) return 'loading'
-  if (!input.hasData) return input.isError ? 'error' : 'loading'
+  if (input.isError) return 'error'
+  if (!input.hasData) return 'loading'
   return input.modelCount === 0 ? 'empty' : 'ready'
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function shouldShowCCSwitchRefreshWarning(input: {
-  isError: boolean
-  hasData: boolean
-}): boolean {
-  return input.isError && input.hasData
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -163,10 +156,6 @@ export function CCSwitchDialog(props: Props) {
     hasData: modelAccessQuery.data !== undefined,
     modelCount: modelOptions.length,
   })
-  const showRefreshWarning = shouldShowCCSwitchRefreshWarning({
-    isError: modelAccessQuery.isError,
-    hasData: modelAccessQuery.data !== undefined,
-  })
 
   useEffect(() => {
     if (props.open) {
@@ -239,22 +228,6 @@ export function CCSwitchDialog(props: Props) {
         )}
         {modelAccessState === 'error' && (
           <Alert variant='destructive'>
-            <AlertTitle>{t('Unable to load available models')}</AlertTitle>
-            <AlertAction>
-              <Button
-                type='button'
-                size='sm'
-                variant='outline'
-                disabled={modelAccessQuery.isFetching}
-                onClick={() => void modelAccessQuery.refetch()}
-              >
-                {t('Retry')}
-              </Button>
-            </AlertAction>
-          </Alert>
-        )}
-        {showRefreshWarning && (
-          <Alert>
             <AlertTitle>{t('Unable to load available models')}</AlertTitle>
             <AlertAction>
               <Button

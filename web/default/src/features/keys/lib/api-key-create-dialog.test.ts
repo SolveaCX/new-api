@@ -178,8 +178,9 @@ describe('create dialog deep-link model access contract', () => {
     })
   })
 
-  test('uses the safe server default when access is unavailable', () => {
-    expect(resolveSafeCreateScope(undefined, 'premium')).toBeNull()
+  test('uses the safe server default only without a requested group', () => {
+    expect(resolveSafeCreateScope(undefined, undefined)).toBeNull()
+    expect(resolveSafeCreateScope(undefined, 'premium')).toBe('premium')
     expect(resolveSafeCreateScope(buildAccess(), 'premium')).toBe('premium')
   })
 

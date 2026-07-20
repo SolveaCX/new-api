@@ -427,10 +427,10 @@ func (token *Token) Update() (err error) {
 	return err
 }
 
-// UpdateNonModelFields atomically updates only form fields unrelated to model
-// access. It intentionally invalidates the token cache instead of replaying a
-// potentially stale model-access snapshot into Redis.
-func (token *Token) UpdateNonModelFields() (err error) {
+// UpdateNonModelFields atomically updates form fields unrelated to model access.
+// When forcePLGGroup is true, it also enforces the PLG group invariant without
+// replaying the allowlist from a potentially stale client snapshot.
+func (token *Token) UpdateNonModelFields(forcePLGGroup bool) (err error) {
 	defer func() {
 		if shouldUpdateRedis(true, err) {
 			gopool.Go(func() {
@@ -440,7 +440,11 @@ func (token *Token) UpdateNonModelFields() (err error) {
 			})
 		}
 	}()
-	err = DB.Model(token).Select("name", "expired_time", "remain_quota", "unlimited_quota", "allow_ips").Updates(token).Error
+	columns := []string{"name", "expired_time", "remain_quota", "unlimited_quota", "allow_ips"}
+	if forcePLGGroup {
+		columns = append(columns, "group", "cross_group_retry")
+	}
+	err = DB.Model(token).Select(columns).Updates(token).Error
 	return err
 }
 
