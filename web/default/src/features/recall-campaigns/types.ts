@@ -6,6 +6,7 @@ export type RecallAudienceTemplate =
 export type RecallExecutionMode = 'manual' | 'scheduled_once' | 'recurring'
 export type RecallCouponSource = 'automatic' | 'existing'
 export type RecallDiscountType = 'percent' | 'fixed'
+export type RecallFixedCurrency = 'USD' | 'INR' | 'BRL' | 'JPY'
 export type RecallFrequency = 'daily' | 'weekly'
 export type RecallGroupMode = '' | 'allow' | 'block'
 
@@ -39,6 +40,7 @@ export interface RecallDiscountConfig {
   percent_off: number
   amount_off: number
   currency: string
+  currency_options: Record<string, number>
   minimum_amount: number
   minimum_amount_currency: string
   coupon_redeem_by: number

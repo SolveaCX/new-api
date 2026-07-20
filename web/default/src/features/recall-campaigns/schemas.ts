@@ -66,6 +66,7 @@ const discountSchema = z
     percent_off: z.number().min(0),
     amount_off: nonNegativeInteger,
     currency: z.string(),
+    currency_options: z.record(z.string(), nonNegativeInteger),
     minimum_amount: nonNegativeInteger,
     minimum_amount_currency: z.string(),
     coupon_redeem_by: nonNegativeInteger,
@@ -80,11 +81,15 @@ const discountSchema = z
           message: 'Percent is invalid',
         })
       }
-      if (discount.amount_off !== 0 || discount.currency !== '') {
+      if (
+        discount.amount_off !== 0 ||
+        discount.currency !== '' ||
+        Object.keys(discount.currency_options).length > 0
+      ) {
         context.addIssue({
           code: 'custom',
           path: ['amount_off'],
-          message: 'Amount must be zero',
+          message: 'Fixed amounts must be empty',
         })
       }
     }
@@ -252,6 +257,46 @@ export const recallCampaignDraftSchema = z
         path: ['existing_coupon_id'],
         message: 'Automatic coupons cannot use an existing coupon ID',
       })
+    }
+    if (
+      draft.coupon_source === 'automatic' &&
+      draft.discount_config.type === 'fixed'
+    ) {
+      const discount = draft.discount_config
+      if (discount.currency !== 'USD') {
+        context.addIssue({
+          code: 'custom',
+          path: ['discount_config', 'currency'],
+          message: 'Automatic fixed coupons must use USD as the base currency',
+        })
+      }
+      const currencies = Object.keys(discount.currency_options).sort()
+      if (currencies.join(',') !== 'brl,inr,jpy') {
+        context.addIssue({
+          code: 'custom',
+          path: ['discount_config', 'currency_options'],
+          message: 'INR, BRL, and JPY amounts are required',
+        })
+      }
+      for (const currency of ['inr', 'brl', 'jpy']) {
+        if ((discount.currency_options[currency] ?? 0) <= 0) {
+          context.addIssue({
+            code: 'custom',
+            path: ['discount_config', 'currency_options', currency],
+            message: `${currency.toUpperCase()} amount is required`,
+          })
+        }
+      }
+      if (
+        discount.minimum_amount !== 0 ||
+        discount.minimum_amount_currency !== ''
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['discount_config', 'minimum_amount'],
+          message: 'Automatic fixed coupons cannot set a minimum amount',
+        })
+      }
     }
     if (
       draft.coupon_source === 'existing' &&

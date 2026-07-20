@@ -41,6 +41,7 @@ function makeDraft() {
       percent_off: 20,
       amount_off: 0,
       currency: '',
+      currency_options: {},
       minimum_amount: 0,
       minimum_amount_currency: '',
       coupon_redeem_by: 0,
@@ -151,6 +152,7 @@ describe('recallCampaignDraftSchema', () => {
       percent_off: 0,
       amount_off: 500,
       currency: 'USD',
+      currency_options: { inr: 45_000, brl: 2_500, jpy: 750 },
     }
     expect(recallCampaignDraftSchema.safeParse(fixed).success).toBe(true)
 
@@ -169,9 +171,27 @@ describe('recallCampaignDraftSchema', () => {
     expect(recallCampaignDraftSchema.safeParse(percentAlsoSet).success).toBe(
       false
     )
+
+    const missingCurrency = structuredClone(fixed)
+    delete missingCurrency.discount_config.currency_options.jpy
+    expect(recallCampaignDraftSchema.safeParse(missingCurrency).success).toBe(
+      false
+    )
+
+    const extraCurrency = structuredClone(fixed)
+    extraCurrency.discount_config.currency_options.eur = 500
+    expect(recallCampaignDraftSchema.safeParse(extraCurrency).success).toBe(
+      false
+    )
+
+    const zeroCurrency = structuredClone(fixed)
+    zeroCurrency.discount_config.currency_options.brl = 0
+    expect(recallCampaignDraftSchema.safeParse(zeroCurrency).success).toBe(
+      false
+    )
   })
 
-  test('requires one currency for a fixed discount and minimum amount', () => {
+  test('rejects a minimum amount for an automatic fixed discount', () => {
     const fixed = makeDraft()
     fixed.discount_config = {
       ...fixed.discount_config,
@@ -179,8 +199,9 @@ describe('recallCampaignDraftSchema', () => {
       percent_off: 0,
       amount_off: 500,
       currency: 'USD',
+      currency_options: { inr: 45_000, brl: 2_500, jpy: 750 },
       minimum_amount: 1_000,
-      minimum_amount_currency: 'EUR',
+      minimum_amount_currency: 'USD',
     }
 
     expect(recallCampaignDraftSchema.safeParse(fixed).success).toBe(false)
