@@ -38,6 +38,36 @@ func TestGetUserLogsCapsTotalAtSearchLimit(t *testing.T) {
 	require.Equal(t, 2, got[1].Id)
 }
 
+func TestGetUserLogsReturnsCompleteRowsAfterLimitedCount(t *testing.T) {
+	truncateTables(t)
+
+	log := Log{
+		UserId:           42,
+		Type:             LogTypeConsume,
+		CreatedAt:        1234,
+		Username:         "alice",
+		TokenName:        "production-key",
+		ModelName:        "gpt-4o",
+		Quota:            99,
+		PromptTokens:     12,
+		CompletionTokens: 7,
+	}
+	require.NoError(t, LOG_DB.Create(&log).Error)
+
+	got, total, err := GetUserLogs(42, LogTypeUnknown, 0, 0, "", "", 0, 100, "", "", "")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, got, 1)
+	require.Equal(t, log.UserId, got[0].UserId)
+	require.Equal(t, log.CreatedAt, got[0].CreatedAt)
+	require.Equal(t, log.Username, got[0].Username)
+	require.Equal(t, log.TokenName, got[0].TokenName)
+	require.Equal(t, log.ModelName, got[0].ModelName)
+	require.Equal(t, log.Quota, got[0].Quota)
+	require.Equal(t, log.PromptTokens, got[0].PromptTokens)
+	require.Equal(t, log.CompletionTokens, got[0].CompletionTokens)
+}
+
 func TestGetCodexChannelUsageStatsHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
