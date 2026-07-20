@@ -524,8 +524,8 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 const logSearchCountLimit = 10000
 
 func limitedLogCountQuery(db *gorm.DB, filteredQuery *gorm.DB, limit int) *gorm.DB {
-	limitedLogs := filteredQuery.Model(&Log{}).Select("logs.id").Limit(limit)
-	return db.Table("(?) AS limited_logs", limitedLogs)
+	limitedLogs := filteredQuery.Session(&gorm.Session{}).Model(&Log{}).Select("logs.id").Limit(limit)
+	return db.Session(&gorm.Session{NewDB: true}).Table("(?) AS limited_logs", limitedLogs)
 }
 
 func countLogsUpTo(db *gorm.DB, filteredQuery *gorm.DB, limit int) (int64, error) {
