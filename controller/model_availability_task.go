@@ -287,22 +287,17 @@ func probeOneModelAvailability(modelName string, testUserID int) {
 		outcome.ChannelID = target.ChannelID
 		outcomes = append(outcomes, outcome)
 	}
-	if len(outcomes) == 0 && sawUntestable {
-		_ = saveModelAvailabilityProbeResult(modelName, modelProbeOutcome{
-			Class: modelProbeAvailable,
-		})
-		model.InvalidatePricingCache()
-		return
-	}
-
-	final := summarizeModelProbeOutcomes(outcomes)
+	final := summarizeModelProbeOutcomes(outcomes, sawUntestable)
 	if err := saveModelAvailabilityProbeResult(modelName, final); err != nil {
 		common.SysError("failed to save model availability state: " + err.Error())
 	}
 	model.InvalidatePricingCache()
 }
 
-func summarizeModelProbeOutcomes(outcomes []modelProbeOutcome) modelProbeOutcome {
+func summarizeModelProbeOutcomes(outcomes []modelProbeOutcome, sawUntestable bool) modelProbeOutcome {
+	if sawUntestable {
+		return modelProbeOutcome{Class: modelProbeAvailable}
+	}
 	if len(outcomes) == 0 {
 		return modelProbeOutcome{Class: modelProbeUnknownFailure, ReasonType: "empty_probe_result"}
 	}

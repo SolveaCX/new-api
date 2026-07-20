@@ -80,3 +80,11 @@ func TestModelAvailabilityProbeConfigMarksBytePlusUntestable(t *testing.T) {
 
 	require.False(t, testable)
 }
+
+func TestSummarizeModelProbeOutcomesKeepsUntestableProviderAvailable(t *testing.T) {
+	outcome := summarizeModelProbeOutcomes([]modelProbeOutcome{
+		{Class: modelProbeOfficialUnsupported, ReasonType: "official_model_unsupported"},
+	}, true)
+
+	require.Equal(t, modelProbeAvailable, outcome.Class)
+}
