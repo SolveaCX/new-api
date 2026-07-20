@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 import dayjs from '@/lib/dayjs'
+import { formatQuota } from '@/lib/format'
 import type { SubscriptionPlan } from '../types'
 
 export function formatDuration(
@@ -63,4 +64,50 @@ export function formatResetPeriod(
 export function formatTimestamp(ts: number): string {
   if (!ts) return '-'
   return dayjs(ts * 1000).format('YYYY-MM-DD HH:mm:ss')
+}
+
+// 套餐可用模型数量文案：0 = 回退为「全部模型」
+export function formatModelCount(
+  plan: Partial<SubscriptionPlan>,
+  t: TFunction
+): string {
+  const count = Number(plan?.model_count || 0)
+  if (count > 0) return t('{{count}} models', { count })
+  return t('All models')
+}
+
+// 速度规格 chips（RPM / 并发），值为 0 的项省略
+export function formatSpeedSpecs(
+  plan: Partial<SubscriptionPlan>,
+  t: TFunction
+): string[] {
+  const specs: string[] = []
+  const rpm = Number(plan?.rpm || 0)
+  const concurrency = Number(plan?.concurrency || 0)
+  if (rpm > 0) specs.push(t('{{count}} RPM', { count: rpm }))
+  if (concurrency > 0)
+    specs.push(t('{{count}} concurrent', { count: concurrency }))
+  return specs
+}
+
+// 三层用量窗口摘要（加权美元），未配置的窗口省略
+export function formatWindowSummary(
+  plan: Partial<SubscriptionPlan>,
+  t: TFunction
+): string {
+  const parts: string[] = []
+  const w5h = Number(plan?.window_5h_amount || 0)
+  const wWeek = Number(plan?.window_week_amount || 0)
+  if (w5h > 0) parts.push(`${formatQuota(w5h)}/5h`)
+  if (wWeek > 0) parts.push(`${formatQuota(wWeek)}/${t('week')}`)
+  return parts.join(' · ')
+}
+
+// admin 录入的价值卖点：按换行拆分、去空行
+export function parseFeatureLines(plan: Partial<SubscriptionPlan>): string[] {
+  const raw = plan?.feature_lines || ''
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
 }

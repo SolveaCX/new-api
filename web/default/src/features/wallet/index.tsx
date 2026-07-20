@@ -17,9 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { PartyPopper } from 'lucide-react'
+import { PartyPopper, Wallet2, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
 import { trackTopupOnce } from '@/lib/analytics/topup-tracking'
@@ -148,6 +149,7 @@ export function Wallet(props: WalletProps) {
     number | null
   >(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
+  const [showTopup, setShowTopup] = useState(false)
   const [paddleCheckoutNotice, setPaddleCheckoutNotice] =
     useState<PaddleCheckoutNotice | null>(null)
   const handledPaddleTransactionRef = useRef<string | null>(null)
@@ -691,23 +693,78 @@ export function Wallet(props: WalletProps) {
 
             <WalletStatsCard user={user} loading={userLoading} />
 
-            <div
-              className={
-                showSubscriptionPanel
-                  ? 'grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-start'
-                  : 'grid gap-4'
-              }
-            >
-              <div id='wallet-top-up-packages' className='scroll-mt-4'>
+            {/* 订阅套餐置顶、全宽、突出——纯套餐模式主入口 */}
+            <SubscriptionPlansCard
+              topupInfo={topupInfo}
+              onAvailabilityChange={handleSubscriptionAvailabilityChange}
+              userQuota={user?.quota}
+              onPurchaseSuccess={fetchUser}
+            />
+
+            {/* 充值加油包弱化为次要区：默认收起，需要更多额度时展开 */}
+            <div id='wallet-top-up-packages' className='scroll-mt-4'>
+              {showSubscriptionPanel ? (
+                <div className='border-border/70 bg-muted/20 rounded-xl border border-dashed'>
+                  <button
+                    type='button'
+                    onClick={() => setShowTopup((v) => !v)}
+                    className='hover:bg-muted/30 flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors'
+                  >
+                    <div className='flex items-center gap-2.5'>
+                      <Wallet2 className='text-muted-foreground h-4 w-4 shrink-0' />
+                      <div>
+                        <div className='text-sm font-medium'>
+                          {t('Need more usage? Top up credits')}
+                        </div>
+                        <div className='text-muted-foreground text-xs'>
+                          {t(
+                            'Pay-as-you-go add-on. Used after your subscription quota runs out, billed at list price.'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        'text-muted-foreground h-4 w-4 shrink-0 transition-transform',
+                        showTopup && 'rotate-180'
+                      )}
+                    />
+                  </button>
+                  {showTopup && (
+                    <div className='border-border/60 border-t p-3 sm:p-4'>
+                      <RechargeFormCard
+                        topupInfo={topupInfo}
+                        presetAmounts={presetAmounts}
+                        selectedPreset={selectedPreset}
+                        onSelectPreset={handleSelectPreset}
+                        onStripeTopUp={handleStripeTopUp}
+                        paymentLoadingAmount={
+                          processing ? paymentLoadingAmount : null
+                        }
+                        loading={topupLoading}
+                        checkoutCurrency={checkoutCurrency}
+                        onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
+                        showCurrencySelector={
+                          shouldShowCurrencySelector(
+                            topupInfo?.client_region
+                          ) ||
+                          normalizeStripeCheckoutCurrency(
+                            props.initialCheckoutSearch?.currency
+                          ) != null
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // 无可用订阅套餐时，充值是唯一入口，保持完整展示
                 <RechargeFormCard
                   topupInfo={topupInfo}
                   presetAmounts={presetAmounts}
                   selectedPreset={selectedPreset}
                   onSelectPreset={handleSelectPreset}
                   onStripeTopUp={handleStripeTopUp}
-                  paymentLoadingAmount={
-                    processing ? paymentLoadingAmount : null
-                  }
+                  paymentLoadingAmount={processing ? paymentLoadingAmount : null}
                   loading={topupLoading}
                   checkoutCurrency={checkoutCurrency}
                   onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
@@ -718,14 +775,7 @@ export function Wallet(props: WalletProps) {
                     ) != null
                   }
                 />
-              </div>
-
-              <SubscriptionPlansCard
-                topupInfo={topupInfo}
-                onAvailabilityChange={handleSubscriptionAvailabilityChange}
-                userQuota={user?.quota}
-                onPurchaseSuccess={fetchUser}
-              />
+              )}
             </div>
 
             <div id='wallet-billing-history' className='scroll-mt-4'>

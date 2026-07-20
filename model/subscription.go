@@ -185,6 +185,16 @@ type SubscriptionPlan struct {
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
 
+	// ---- 面向用户的价值展示字段（纯展示，不参与计费）----
+	// 套餐可用模型数量（0 = 不显示，前端回退为「全部模型」文案）
+	ModelCount int `json:"model_count" gorm:"type:int;not null;default:0"`
+	// 速率上限：每分钟请求数 RPM（0 = 不显示）
+	Rpm int `json:"rpm" gorm:"type:int;not null;default:0"`
+	// 并发数上限（0 = 不显示）
+	Concurrency int `json:"concurrency" gorm:"type:int;not null;default:0"`
+	// 价值卖点，每行一条（admin 用换行分隔录入，前端按 \n 拆分渲染）
+	FeatureLines string `json:"feature_lines" gorm:"type:text;default:''"`
+
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
 }
@@ -765,6 +775,12 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
 		}
 		if err := tx.Create(order).Error; err != nil {
+			return err
+		}
+
+		// 让余额购买的订阅也进入计费历史（与网关支付订阅一致，见 CompleteSubscriptionOrder）。
+		// 记录为一笔 method=balance 的成功付款，Money=套餐价，Amount=0（不加钱包余额）。
+		if err := upsertSubscriptionTopUpTx(tx, order); err != nil {
 			return err
 		}
 

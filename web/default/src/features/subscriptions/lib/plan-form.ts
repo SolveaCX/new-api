@@ -46,6 +46,10 @@ export function getPlanFormSchema(t: TFunction) {
     stripe_price_id: z.string().optional(),
     creem_product_id: z.string().optional(),
     waffo_pancake_product_id: z.string().optional(),
+    model_count: z.coerce.number().min(0).optional(),
+    rpm: z.coerce.number().min(0).optional(),
+    concurrency: z.coerce.number().min(0).optional(),
+    feature_lines: z.string().optional(),
   })
 }
 
@@ -69,6 +73,10 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   stripe_price_id: '',
   creem_product_id: '',
   waffo_pancake_product_id: '',
+  model_count: 0,
+  rpm: 0,
+  concurrency: 0,
+  feature_lines: '',
 }
 
 export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
@@ -90,6 +98,10 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     stripe_price_id: plan.stripe_price_id || '',
     creem_product_id: plan.creem_product_id || '',
     waffo_pancake_product_id: plan.waffo_pancake_product_id || '',
+    model_count: Number(plan.model_count || 0),
+    rpm: Number(plan.rpm || 0),
+    concurrency: Number(plan.concurrency || 0),
+    feature_lines: plan.feature_lines || '',
   }
 }
 
@@ -110,6 +122,10 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       max_purchase_per_user: Number(values.max_purchase_per_user || 0),
       total_amount: parseQuotaFromDollars(Number(values.total_amount || 0)),
       upgrade_group: values.upgrade_group || '',
+      model_count: Number(values.model_count || 0),
+      rpm: Number(values.rpm || 0),
+      concurrency: Number(values.concurrency || 0),
+      feature_lines: values.feature_lines || '',
     },
   }
 }

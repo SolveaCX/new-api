@@ -17,7 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Crown, RefreshCw, Sparkles, Check } from 'lucide-react'
+import {
+  Crown,
+  RefreshCw,
+  Sparkles,
+  Check,
+  Boxes,
+  Gauge,
+  Layers,
+  Settings2,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuota } from '@/lib/format'
@@ -51,8 +60,16 @@ import {
   getSelfSubscriptionFull,
   updateBillingPreference,
 } from '@/features/subscriptions/api'
+import { SubscriptionManageDialog } from '@/features/subscriptions/components/dialogs/subscription-manage-dialog'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
-import { formatDuration, formatResetPeriod } from '@/features/subscriptions/lib'
+import {
+  formatDuration,
+  formatResetPeriod,
+  formatModelCount,
+  formatSpeedSpecs,
+  formatWindowSummary,
+  parseFeatureLines,
+} from '@/features/subscriptions/lib'
 import type {
   PlanRecord,
   UserSubscriptionRecord,
@@ -117,6 +134,10 @@ export function SubscriptionPlansCard({
 
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<PlanRecord | null>(null)
+  const [manageOpen, setManageOpen] = useState(false)
+  const [manageSub, setManageSub] = useState<UserSubscriptionRecord | null>(
+    null
+  )
 
   const enableStripe = !!topupInfo?.enable_stripe_topup
   const enableCreem = !!topupInfo?.enable_creem_topup
@@ -223,6 +244,55 @@ export function SubscriptionPlansCard({
     }
     return map
   }, [plans])
+
+  const planById = useMemo(() => {
+    const map = new Map<number, PlanRecord>()
+    for (const p of plans) {
+      if (p?.plan?.id) map.set(p.plan.id, p)
+    }
+    return map
+  }, [plans])
+
+  // 当前用户已持有的套餐 id 集合（用于在套餐网格标记「当前档」）
+  const ownedPlanIds = useMemo(() => {
+    const set = new Set<number>()
+    for (const sub of activeSubscriptions) {
+      const planId = sub?.subscription?.plan_id
+      if (planId) set.add(planId)
+    }
+    return set
+  }, [activeSubscriptions])
+
+  const preferenceOptions = useMemo(
+    () => [
+      {
+        value: 'subscription_first',
+        label:
+          getBillingPreferenceLabel('subscription_first', t) +
+          (disablePref ? ` (${t('No Active')})` : ''),
+      },
+      { value: 'wallet_first', label: getBillingPreferenceLabel('wallet_first', t) },
+      {
+        value: 'subscription_only',
+        label:
+          getBillingPreferenceLabel('subscription_only', t) +
+          (disablePref ? ` (${t('No Active')})` : ''),
+      },
+      { value: 'wallet_only', label: getBillingPreferenceLabel('wallet_only', t) },
+    ],
+    [t, disablePref]
+  )
+
+  const openManage = (sub: UserSubscriptionRecord) => {
+    setManageSub(sub)
+    setManageOpen(true)
+  }
+
+  const openPurchase = (p: PlanRecord) => {
+    setSelectedPlan(p)
+    setManageOpen(false)
+    setPurchaseOpen(true)
+  }
 
   const getRemainingDays = (sub: UserSubscriptionRecord) => {
     const endTime = sub?.subscription?.end_time || 0
@@ -447,11 +517,22 @@ export function SubscriptionPlansCard({
                           )}
                         </div>
                         {isActive && (
-                          <span className='text-muted-foreground'>
-                            {t('{{count}} days remaining', {
-                              count: remainDays,
-                            })}
-                          </span>
+                          <div className='flex items-center gap-2'>
+                            <span className='text-muted-foreground'>
+                              {t('{{count}} days remaining', {
+                                count: remainDays,
+                              })}
+                            </span>
+                            <Button
+                              variant='outline'
+                              size='sm'
+                              className='h-7 px-2 text-xs'
+                              onClick={() => openManage(sub)}
+                            >
+                              <Settings2 className='mr-1 h-3 w-3' />
+                              {t('Manage')}
+                            </Button>
+                          </div>
                         )}
                       </div>
                       <div className='text-muted-foreground mt-1.5'>
@@ -514,9 +595,9 @@ export function SubscriptionPlansCard({
           )}
         </div>
 
-        {/* Available plans grid */}
+        {/* Available plans grid — 价值突出：模型数 + 速度 + 窗口 + 卖点 */}
         {plans.length > 0 ? (
-          <div className='grid grid-cols-1 gap-3 2xl:grid-cols-2 2xl:gap-4'>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 xl:gap-4'>
             {plans.map((p, index) => {
               const plan = p?.plan
               if (!plan) return null
@@ -526,19 +607,22 @@ export function SubscriptionPlansCard({
               const limit = Number(plan.max_purchase_per_user || 0)
               const count = planPurchaseCountMap.get(plan.id) || 0
               const reached = limit > 0 && count >= limit
+              const isOwned = ownedPlanIds.has(plan.id)
+              const speedSpecs = formatSpeedSpecs(plan, t)
+              const windowSummary = formatWindowSummary(plan, t)
+              const featureLines = parseFeatureLines(plan)
 
-              const benefits = [
+              // 计价/额度/周期等次要信息（feature_lines 未覆盖时的兜底价值条）
+              const metaLines = [
+                totalAmount > 0
+                  ? `${t('Total Quota')}: ${formatQuota(totalAmount)}`
+                  : `${t('Total Quota')}: ${t('Unlimited')}`,
+                windowSummary ? `${t('Usage window')}: ${windowSummary}` : null,
                 `${t('Validity Period')}: ${formatDuration(plan, t)}`,
                 formatResetPeriod(plan, t) !== t('No Reset')
                   ? `${t('Quota Reset')}: ${formatResetPeriod(plan, t)}`
                   : null,
-                totalAmount > 0
-                  ? `${t('Total Quota')}: ${formatQuota(totalAmount)}`
-                  : `${t('Total Quota')}: ${t('Unlimited')}`,
                 limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
-                plan.upgrade_group
-                  ? `${t('Upgrade Group')}: ${plan.upgrade_group}`
-                  : null,
               ].filter(Boolean) as string[]
 
               return (
@@ -546,7 +630,8 @@ export function SubscriptionPlansCard({
                   key={plan.id}
                   className={cn(
                     'transition-shadow hover:shadow-md',
-                    isPopular && 'border-primary/70 shadow-sm'
+                    isPopular && 'border-primary/70 shadow-sm',
+                    isOwned && 'border-emerald-500/60'
                   )}
                 >
                   <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
@@ -561,31 +646,77 @@ export function SubscriptionPlansCard({
                           </p>
                         )}
                       </div>
-                      {isPopular && (
+                      {isOwned ? (
                         <StatusBadge
-                          variant='info'
+                          variant='success'
                           copyable={false}
                           className='shrink-0'
                         >
-                          <Sparkles className='h-3 w-3' />
-                          {t('Recommended')}
+                          <Check className='h-3 w-3' />
+                          {t('Current')}
                         </StatusBadge>
+                      ) : (
+                        isPopular && (
+                          <StatusBadge
+                            variant='info'
+                            copyable={false}
+                            className='shrink-0'
+                          >
+                            <Sparkles className='h-3 w-3' />
+                            {t('Recommended')}
+                          </StatusBadge>
+                        )
                       )}
                     </div>
 
-                    <div className='py-2'>
+                    <div className='flex items-baseline gap-1 py-2'>
                       <span className='text-primary text-2xl font-bold'>
                         ${price}
                       </span>
+                      <span className='text-muted-foreground text-xs'>
+                        / {formatDuration(plan, t)}
+                      </span>
+                    </div>
+
+                    {/* 核心价值 chips：模型数 + 速度 */}
+                    <div className='mb-3 flex flex-wrap gap-1.5'>
+                      <span className='bg-primary/10 text-primary inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium'>
+                        <Boxes className='h-3 w-3' />
+                        {formatModelCount(plan, t)}
+                      </span>
+                      {speedSpecs.map((spec, i) => (
+                        <span
+                          key={spec}
+                          className='bg-muted text-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium'
+                        >
+                          {i === 0 ? (
+                            <Gauge className='h-3 w-3' />
+                          ) : (
+                            <Layers className='h-3 w-3' />
+                          )}
+                          {spec}
+                        </span>
+                      ))}
                     </div>
 
                     <div className='flex-1 space-y-1.5 pb-3'>
-                      {benefits.map((label) => (
+                      {/* admin 录入的价值卖点优先 */}
+                      {featureLines.map((label) => (
                         <div
                           key={label}
-                          className='text-muted-foreground flex items-center gap-2 text-xs'
+                          className='flex items-start gap-2 text-xs'
                         >
-                          <Check className='text-primary h-3 w-3 shrink-0' />
+                          <Check className='text-primary mt-0.5 h-3 w-3 shrink-0' />
+                          <span>{label}</span>
+                        </div>
+                      ))}
+                      {/* 额度/窗口/有效期等硬信息 */}
+                      {metaLines.map((label) => (
+                        <div
+                          key={label}
+                          className='text-muted-foreground flex items-start gap-2 text-xs'
+                        >
+                          <Check className='mt-0.5 h-3 w-3 shrink-0 opacity-40' />
                           <span>{label}</span>
                         </div>
                       ))}
@@ -606,14 +737,11 @@ export function SubscriptionPlansCard({
                       </Tooltip>
                     ) : (
                       <Button
-                        variant='outline'
+                        variant={isPopular && !isOwned ? 'default' : 'outline'}
                         className='w-full'
-                        onClick={() => {
-                          setSelectedPlan(p)
-                          setPurchaseOpen(true)
-                        }}
+                        onClick={() => openPurchase(p)}
                       >
-                        {t('Subscribe Now')}
+                        {isOwned ? t('Buy Again') : t('Subscribe Now')}
                       </Button>
                     )}
                   </CardContent>
@@ -654,6 +782,29 @@ export function SubscriptionPlansCard({
             ? planPurchaseCountMap.get(selectedPlan.plan.id)
             : undefined
         }
+      />
+
+      <SubscriptionManageDialog
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        currentSub={manageSub}
+        currentPlanTitle={
+          manageSub?.subscription?.plan_id
+            ? planTitleMap.get(manageSub.subscription.plan_id) || ''
+            : ''
+        }
+        currentPlan={
+          manageSub?.subscription?.plan_id
+            ? planById.get(manageSub.subscription.plan_id) || null
+            : null
+        }
+        plans={plans}
+        billingPreference={displayPref}
+        preferenceOptions={preferenceOptions}
+        preferenceLabel={(pref) => getBillingPreferenceLabel(pref, t)}
+        onPreferenceChange={handlePreferenceChange}
+        onSelectPlan={openPurchase}
+        purchaseCountMap={planPurchaseCountMap}
       />
     </>
   )

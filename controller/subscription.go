@@ -282,6 +282,10 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
+			"model_count":                req.Plan.ModelCount,
+			"rpm":                        req.Plan.Rpm,
+			"concurrency":                req.Plan.Concurrency,
+			"feature_lines":              req.Plan.FeatureLines,
 			"updated_at":                 common.GetTimestamp(),
 		}
 		if req.Plan.AllowBalancePay != nil {

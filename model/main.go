@@ -427,6 +427,10 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`window_week_amount`" + ` bigint NOT NULL DEFAULT 0,
 ` + "`quota_reset_period`" + ` varchar(16) DEFAULT 'never',
 ` + "`quota_reset_custom_seconds`" + ` bigint DEFAULT 0,
+` + "`model_count`" + ` integer NOT NULL DEFAULT 0,
+` + "`rpm`" + ` integer NOT NULL DEFAULT 0,
+` + "`concurrency`" + ` integer NOT NULL DEFAULT 0,
+` + "`feature_lines`" + ` text DEFAULT '',
 ` + "`created_at`" + ` bigint,
 ` + "`updated_at`" + ` bigint,
 PRIMARY KEY (` + "`id`" + `)
@@ -464,6 +468,10 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "window_week_amount", DDL: "`window_week_amount` bigint NOT NULL DEFAULT 0"},
 		{Name: "quota_reset_period", DDL: "`quota_reset_period` varchar(16) DEFAULT 'never'"},
 		{Name: "quota_reset_custom_seconds", DDL: "`quota_reset_custom_seconds` bigint DEFAULT 0"},
+		{Name: "model_count", DDL: "`model_count` integer NOT NULL DEFAULT 0"},
+		{Name: "rpm", DDL: "`rpm` integer NOT NULL DEFAULT 0"},
+		{Name: "concurrency", DDL: "`concurrency` integer NOT NULL DEFAULT 0"},
+		{Name: "feature_lines", DDL: "`feature_lines` text DEFAULT ''"},
 		{Name: "created_at", DDL: "`created_at` bigint"},
 		{Name: "updated_at", DDL: "`updated_at` bigint"},
 	}
