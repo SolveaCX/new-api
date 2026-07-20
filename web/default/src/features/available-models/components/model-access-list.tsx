@@ -17,11 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
-import { Copy01Icon, PackageIcon } from '@hugeicons/core-free-icons'
+import {
+  Alert02Icon,
+  Copy01Icon,
+  PackageIcon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { getModelAvailabilityConfig } from '@/lib/model-availability'
+import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -162,6 +167,8 @@ export function ModelAccessList({
       <div className='flex flex-col gap-3'>
         <ItemGroup className='gap-2.5'>
           {visibleModels.map((model) => {
+            const officiallyUnsupported =
+              model.availability_status === 'official_unsupported'
             const availabilityConfig =
               availability[
                 normalizeModelAvailabilityStatus(model.availability_status)
@@ -175,7 +182,15 @@ export function ModelAccessList({
             )
 
             return (
-              <Item key={model.id} variant='outline' size='sm'>
+              <Item
+                key={model.id}
+                variant='outline'
+                size='sm'
+                className={cn(
+                  officiallyUnsupported &&
+                    'border-destructive/40 bg-destructive/5'
+                )}
+              >
                 <ItemMedia variant='icon'>
                   {getLobeIcon(model.vendor?.icon, 18)}
                 </ItemMedia>
@@ -186,13 +201,32 @@ export function ModelAccessList({
                   <ItemDescription>
                     {model.vendor?.name ?? t('Unknown')}
                   </ItemDescription>
+                  {officiallyUnsupported && (
+                    <p className='text-destructive text-xs font-medium'>
+                      {t(
+                        'This model cannot be called because upstreams no longer support it.'
+                      )}
+                    </p>
+                  )}
                 </ItemContent>
                 <ItemActions>
-                  <StatusBadge
-                    label={availabilityConfig.label}
-                    variant={availabilityConfig.variant}
-                    copyable={false}
-                  />
+                  {officiallyUnsupported ? (
+                    <Badge variant='destructive'>
+                      <HugeiconsIcon
+                        icon={Alert02Icon}
+                        strokeWidth={2}
+                        data-icon='inline-start'
+                        aria-hidden='true'
+                      />
+                      {t('Not callable · Officially unsupported')}
+                    </Badge>
+                  ) : (
+                    <StatusBadge
+                      label={availabilityConfig.label}
+                      variant={availabilityConfig.variant}
+                      copyable={false}
+                    />
+                  )}
                   <Tooltip>
                     <TooltipTrigger
                       render={

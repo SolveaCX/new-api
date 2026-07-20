@@ -5668,6 +5668,15 @@
     "campaign_run": "Execução da campanha",
     "observed_click": "Clique observado",
     "conversion": "Conversão",
-    "reconciliation_run": "Execução da conciliação"
+    "reconciliation_run": "Execução da conciliação",
+    "Model vendors": "Fornecedores de modelos",
+    "Unlabelled vendor": "Fornecedor não informado",
+    "Unavailable models": "Modelos indisponíveis",
+    "These models cannot be called because upstreams no longer support them.": "Estes modelos não podem ser chamados porque os provedores upstream não oferecem mais suporte.",
+    "{{count}} unavailable models": "{{count}} modelos indisponíveis",
+    "Anthropic Compatible": "Compatível com Anthropic",
+    "Gemini Compatible": "Compatível com Gemini",
+    "This model cannot be called because upstreams no longer support it.": "Este modelo não pode ser chamado porque os provedores upstream não oferecem mais suporte.",
+    "Not callable · Officially unsupported": "Não pode ser chamado · Sem suporte oficial"
   }
 }

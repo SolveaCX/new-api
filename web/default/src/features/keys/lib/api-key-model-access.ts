@@ -20,6 +20,7 @@ import {
   getAccountModels,
   getEffectiveTokenModels,
   getScopeModels,
+  isCallableModel,
   type ModelAccessModel,
   type ModelAccessScope,
   type UserModelAccess,
@@ -68,6 +69,7 @@ export function getApiKeyModelAllowlistOptions(
 ): ApiKeyModelAllowlistOption[] {
   const options = new Map<string, ApiKeyModelAllowlistOption>()
   for (const model of models) {
+    if (!isCallableModel(model)) continue
     if (!options.has(model.allowlist_match_key)) {
       options.set(model.allowlist_match_key, {
         label: model.id,

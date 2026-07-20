@@ -38,7 +38,12 @@ function buildAccess(
         id: 'ordinary',
         label: 'Ordinary',
         ratio: 1,
-        model_ids: ['scope-model', 'scope-variant'],
+        model_ids: [
+          'scope-model',
+          'scope-variant',
+          'retired-variant',
+          'retired-model',
+        ],
       },
       {
         id: 'auto',
@@ -76,6 +81,20 @@ function buildAccess(
         vendor: null,
         supported_endpoint_types: ['gemini'],
         availability_status: 'unknown',
+      },
+      {
+        id: 'retired-variant',
+        allowlist_match_key: 'scope-family',
+        vendor: null,
+        supported_endpoint_types: ['openai'],
+        availability_status: 'official_unsupported',
+      },
+      {
+        id: 'retired-model',
+        allowlist_match_key: 'retired-model',
+        vendor: null,
+        supported_endpoint_types: ['openai'],
+        availability_status: 'official_unsupported',
       },
     ],
     ...overrides,
@@ -206,6 +225,28 @@ describe('API key model access state', () => {
 
     expect(state.scopeModels).toHaveLength(2)
     expect(state.effectiveModels).toEqual([])
+  })
+
+  test('excludes officially unsupported models from scope totals and allowlists', () => {
+    const access = buildAccess()
+    const state = getApiKeyModelAccessState(access, 'ordinary', true, [
+      'scope-family',
+      'retired-model',
+    ])
+
+    expect(state.scopeModels.map((model) => model.id)).toEqual([
+      'scope-model',
+      'scope-variant',
+    ])
+    expect(state.effectiveModels.map((model) => model.id)).toEqual([
+      'scope-model',
+      'scope-variant',
+    ])
+    expect(state.invalidAllowlistItems).toEqual(['retired-model'])
+    expect(getApiKeyModelAllowlistOptions(access.models)).not.toContainEqual({
+      label: 'retired-model',
+      value: 'retired-model',
+    })
   })
 
   test('preserves and reports allowlist items outside the selected scope', () => {

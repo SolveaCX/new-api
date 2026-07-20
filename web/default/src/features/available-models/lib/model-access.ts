@@ -33,6 +33,34 @@ function getModelsById(
   })
 }
 
+export function isCallableModel(model: ModelAccessModel): boolean {
+  return model.availability_status !== 'official_unsupported'
+}
+
+function getConfiguredAccountModels(
+  access: UserModelAccess
+): ModelAccessModel[] {
+  const modelIds =
+    access.scope_mode === 'fixed_account'
+      ? access.account_model_ids
+      : access.identity_model_ids
+  return getModelsById(access, modelIds)
+}
+
+function getConfiguredScopeModels(
+  access: UserModelAccess,
+  scopeId: string | null | undefined
+): ModelAccessModel[] {
+  if (access.scope_mode === 'fixed_account') {
+    return getConfiguredAccountModels(access)
+  }
+  if (!scopeId) {
+    return getModelsById(access, access.identity_model_ids)
+  }
+  const scope = access.groups.find((group) => group.id === scopeId)
+  return scope ? getModelsById(access, scope.model_ids) : []
+}
+
 export function resolveCreateScope(
   access: UserModelAccess,
   requestedScope?: string | null
@@ -56,22 +84,28 @@ export function getScopeModels(
   access: UserModelAccess,
   scopeId: string | null | undefined
 ): ModelAccessModel[] {
-  if (access.scope_mode === 'fixed_account') {
-    return getAccountModels(access)
-  }
-  if (!scopeId) {
-    return getModelsById(access, access.identity_model_ids)
-  }
-  const scope = access.groups.find((group) => group.id === scopeId)
-  return scope ? getModelsById(access, scope.model_ids) : []
+  return getConfiguredScopeModels(access, scopeId).filter(isCallableModel)
+}
+
+export function getUnavailableScopeModels(
+  access: UserModelAccess,
+  scopeId: string | null | undefined
+): ModelAccessModel[] {
+  return getConfiguredScopeModels(access, scopeId).filter(
+    (model) => !isCallableModel(model)
+  )
 }
 
 export function getAccountModels(access: UserModelAccess): ModelAccessModel[] {
-  const modelIds =
-    access.scope_mode === 'fixed_account'
-      ? access.account_model_ids
-      : access.identity_model_ids
-  return getModelsById(access, modelIds)
+  return getConfiguredAccountModels(access).filter(isCallableModel)
+}
+
+export function getUnavailableAccountModels(
+  access: UserModelAccess
+): ModelAccessModel[] {
+  return getConfiguredAccountModels(access).filter(
+    (model) => !isCallableModel(model)
+  )
 }
 
 function parseAllowlist(

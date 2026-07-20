@@ -5668,6 +5668,15 @@
     "campaign_run": "キャンペーン実行",
     "observed_click": "クリックを確認",
     "conversion": "コンバージョン",
-    "reconciliation_run": "照合処理"
+    "reconciliation_run": "照合処理",
+    "Model vendors": "モデル提供元",
+    "Unlabelled vendor": "提供元未設定",
+    "Unavailable models": "利用不可のモデル",
+    "These models cannot be called because upstreams no longer support them.": "これらのモデルは上流でサポート終了のため呼び出せません。",
+    "{{count}} unavailable models": "利用不可のモデル {{count}} 件",
+    "Anthropic Compatible": "Anthropic互換",
+    "Gemini Compatible": "Gemini互換",
+    "This model cannot be called because upstreams no longer support it.": "このモデルは上流でサポート終了のため呼び出せません。",
+    "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了"
   }
 }

@@ -39,7 +39,7 @@ function buildAccess(
         id: 'standard',
         label: 'Standard',
         ratio: 1,
-        model_ids: ['standard-model', 'wildcard-model-*'],
+        model_ids: ['standard-model', 'wildcard-model-*', 'retired-model'],
       },
       {
         id: 'auto',
@@ -77,6 +77,13 @@ function buildAccess(
         vendor: null,
         supported_endpoint_types: ['gemini'],
         availability_status: 'available',
+      },
+      {
+        id: 'retired-model',
+        allowlist_match_key: 'retired-model',
+        vendor: null,
+        supported_endpoint_types: ['openai'],
+        availability_status: 'official_unsupported',
       },
     ],
     ...overrides,
@@ -221,6 +228,26 @@ describe('API key model scope summary', () => {
     expect(enabledEmpty.labelKind).toBe('empty')
     expect(enabledEmpty.effectiveModels).toEqual([])
     expect(enabledEmpty.totalModels).toHaveLength(2)
+  })
+
+  test('excludes officially unsupported models from callable summaries', () => {
+    const access = buildAccess()
+    const unrestricted = getApiKeyModelScopeSummary(access, buildApiKey())
+    const allowlisted = getApiKeyModelScopeSummary(
+      access,
+      buildApiKey({
+        model_limits_enabled: true,
+        model_limits: 'retired-model',
+      })
+    )
+
+    expect(unrestricted.totalModels.map((model) => model.id)).toEqual([
+      'standard-model',
+      'wildcard-model-*',
+    ])
+    expect(unrestricted.effectiveModels).toHaveLength(2)
+    expect(allowlisted.totalModels).toHaveLength(2)
+    expect(allowlisted.effectiveModels).toEqual([])
   })
 
   test('fails closed for unknown groups and scope-external allowlist entries', () => {

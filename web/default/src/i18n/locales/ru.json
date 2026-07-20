@@ -5668,6 +5668,15 @@
     "campaign_run": "Запуск кампании",
     "observed_click": "Зафиксированный клик",
     "conversion": "Конверсия",
-    "reconciliation_run": "Запуск сверки"
+    "reconciliation_run": "Запуск сверки",
+    "Model vendors": "Поставщики моделей",
+    "Unlabelled vendor": "Поставщик не указан",
+    "Unavailable models": "Недоступные модели",
+    "These models cannot be called because upstreams no longer support them.": "Эти модели нельзя вызвать, поскольку вышестоящие поставщики больше их не поддерживают.",
+    "{{count}} unavailable models": "Недоступных моделей: {{count}}",
+    "Anthropic Compatible": "Совместимо с Anthropic",
+    "Gemini Compatible": "Совместимо с Gemini",
+    "This model cannot be called because upstreams no longer support it.": "Эту модель нельзя вызвать, поскольку вышестоящие поставщики больше её не поддерживают.",
+    "Not callable · Officially unsupported": "Вызов недоступен · Официальная поддержка прекращена"
   }
 }

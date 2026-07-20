@@ -17,15 +17,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
+import type { TFunction } from 'i18next'
 import type { UserModelAccess } from '../types'
 import {
+  ALL_MODEL_VENDORS,
   filterModelAccessModels,
   getCreateKeySearch,
-  getModelEndpointFilters,
+  getModelEndpointLabel,
   getModelAccessScopeModels,
+  getModelAccessUnavailableScopeModels,
+  getModelVendorFilters,
   isFixedModelAccessView,
   normalizeModelAvailabilityStatus,
   resolveModelAccessScope,
+  resolveModelVendorSelection,
+  UNLABELLED_MODEL_VENDOR,
 } from './model-access-browser'
 
 function buildAccess(
@@ -122,6 +128,7 @@ describe('available models browser scope selection', () => {
 
 describe('available models browser filters', () => {
   const models = buildAccess().models
+  const t = ((key: string) => key) as TFunction
 
   test('matches model IDs and public vendor names case-insensitively', () => {
     expect(
@@ -134,62 +141,117 @@ describe('available models browser filters', () => {
     ).toEqual(['image-main'])
   })
 
-  test('groups OpenAI-compatible endpoint variants under OpenAI', () => {
-    const withResponses = [
+  test('builds dynamic vendor filters without hardcoding vendors', () => {
+    const withMoreVendors = [
       ...models,
       {
         ...models[0],
-        id: 'responses-main',
-        supported_endpoint_types: ['openai-response'],
+        id: 'claude-main',
+        vendor: { id: 3, name: 'Anthropic' },
+      },
+      {
+        ...models[0],
+        id: 'gemini-main',
+        vendor: { id: 4, name: 'Google' },
+      },
+      {
+        ...models[0],
+        id: 'openai-duplicate',
+        vendor: { id: 99, name: 'openai' },
       },
     ]
 
-    expect(
-      filterModelAccessModels(withResponses, '', 'openai').map(
-        (model) => model.id
-      )
-    ).toEqual(['gpt-main', 'responses-main'])
-    expect(getModelEndpointFilters(withResponses)).toEqual([
-      'all',
-      'anthropic',
-      'gemini',
-      'image-generation',
-      'openai',
+    expect(getModelVendorFilters(withMoreVendors)).toEqual([
+      { value: ALL_MODEL_VENDORS, label: null },
+      { value: 'vendor:anthropic', label: 'Anthropic' },
+      { value: 'vendor:example labs', label: 'Example Labs' },
+      { value: 'vendor:google', label: 'Google' },
+      { value: 'vendor:openai', label: 'OpenAI' },
+      { value: UNLABELLED_MODEL_VENDOR, label: null },
     ])
   })
 
-  test('keeps unknown endpoint filters instead of dropping new endpoint types', () => {
-    const withUnknown = [
-      ...models,
-      {
-        ...models[0],
-        id: 'rerank-main',
-        supported_endpoint_types: ['jina-rerank'],
-      },
-    ]
+  test('does not restore a vendor selection after the model collection changes', () => {
+    const openAiFilters = getModelVendorFilters([models[0]])
+    const selection = {
+      filterOptions: openAiFilters,
+      value: 'vendor:openai',
+    }
 
-    expect(getModelEndpointFilters(withUnknown)).toContain('jina-rerank')
+    expect(resolveModelVendorSelection(openAiFilters, selection)).toBe(
+      'vendor:openai'
+    )
+
+    const otherVendorFilters = getModelVendorFilters([models[2]])
+    expect(resolveModelVendorSelection(otherVendorFilters, selection)).toBe(
+      ALL_MODEL_VENDORS
+    )
+
+    const openAiFiltersAfterRoundTrip = getModelVendorFilters([models[0]])
     expect(
-      filterModelAccessModels(withUnknown, '', 'jina-rerank').map(
+      resolveModelVendorSelection(openAiFiltersAfterRoundTrip, selection)
+    ).toBe(ALL_MODEL_VENDORS)
+  })
+
+  test('filters by actual vendor metadata and keeps unlabelled models distinct', () => {
+    expect(
+      filterModelAccessModels(models, '', 'vendor:example labs').map(
         (model) => model.id
       )
-    ).toEqual(['rerank-main'])
-  })
-
-  test('keeps an all-only filter for models without endpoint metadata', () => {
+    ).toEqual(['image-main'])
     expect(
-      getModelEndpointFilters([{ ...models[0], supported_endpoint_types: [] }])
-    ).toEqual(['all'])
+      filterModelAccessModels(models, '', UNLABELLED_MODEL_VENDOR).map(
+        (model) => model.id
+      )
+    ).toEqual(['identity-model'])
   })
 
-  test('keeps temporary failures in the catalog while filtering endpoints', () => {
-    const visible = filterModelAccessModels(models, '', 'anthropic')
+  test('labels compatible endpoints explicitly and deduplicates variants', () => {
+    expect(getModelEndpointLabel('openai', t)).toBe('OpenAI Compatible')
+    expect(getModelEndpointLabel('openai-response', t)).toBe(
+      'OpenAI Compatible'
+    )
+    expect(getModelEndpointLabel('anthropic', t)).toBe('Anthropic Compatible')
+    expect(getModelEndpointLabel('gemini', t)).toBe('Gemini Compatible')
+    expect(getModelEndpointLabel('jina-rerank', t)).toBe('jina-rerank')
+  })
+
+  test('keeps temporary failures callable while filtering vendors', () => {
+    const visible = filterModelAccessModels(models, '', 'vendor:openai')
 
     expect(visible).toHaveLength(1)
     expect(visible[0]).toMatchObject({
       id: 'gpt-main',
       availability_status: 'temporary_failure',
     })
+  })
+
+  test('separates officially unsupported models from the callable scope', () => {
+    const base = buildAccess()
+    const access = buildAccess({
+      groups: base.groups.map((scope) =>
+        scope.id === 'standard'
+          ? { ...scope, model_ids: ['gpt-main', 'retired-main'] }
+          : scope
+      ),
+      models: [
+        ...base.models,
+        {
+          ...base.models[0],
+          id: 'retired-main',
+          availability_status: 'official_unsupported',
+        },
+      ],
+    })
+
+    expect(
+      getModelAccessScopeModels(access, 'standard').map((model) => model.id)
+    ).toEqual(['gpt-main'])
+    expect(
+      getModelAccessUnavailableScopeModels(access, 'standard').map(
+        (model) => model.id
+      )
+    ).toEqual(['retired-main'])
   })
 
   test('maps unknown availability to the neutral unknown-failure config', () => {

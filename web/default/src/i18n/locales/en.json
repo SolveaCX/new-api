@@ -5668,6 +5668,15 @@
     "campaign_run": "Campaign run",
     "observed_click": "Observed click",
     "conversion": "Conversion",
-    "reconciliation_run": "Reconciliation run"
+    "reconciliation_run": "Reconciliation run",
+    "Model vendors": "Model vendors",
+    "Unlabelled vendor": "Unlabelled vendor",
+    "Unavailable models": "Unavailable models",
+    "These models cannot be called because upstreams no longer support them.": "These models cannot be called because upstreams no longer support them.",
+    "{{count}} unavailable models": "{{count}} unavailable models",
+    "Anthropic Compatible": "Anthropic Compatible",
+    "Gemini Compatible": "Gemini Compatible",
+    "This model cannot be called because upstreams no longer support it.": "This model cannot be called because upstreams no longer support it.",
+    "Not callable · Officially unsupported": "Not callable · Officially unsupported"
   }
 }

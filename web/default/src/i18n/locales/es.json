@@ -3090,7 +3090,7 @@
     "Open theme settings": "Open theme settings",
     "Open weights": "Open weights",
     "OpenAI": "OpenAI",
-    "OpenAI Compatible": "OpenAI Compatible",
+    "OpenAI Compatible": "Compatible con OpenAI",
     "OpenAI Organization": "OpenAI Organization",
     "OpenAI Organization ID (optional)": "OpenAI Organization ID (optional)",
     "OpenAI-compatible": "Compatible con OpenAI",
@@ -5668,6 +5668,15 @@
     "campaign_run": "Ejecución de campaña",
     "observed_click": "Clic observado",
     "conversion": "Conversión",
-    "reconciliation_run": "Ejecución de conciliación"
+    "reconciliation_run": "Ejecución de conciliación",
+    "Model vendors": "Proveedores de modelos",
+    "Unlabelled vendor": "Proveedor sin especificar",
+    "Unavailable models": "Modelos no disponibles",
+    "These models cannot be called because upstreams no longer support them.": "Estos modelos no se pueden invocar porque los proveedores ascendentes ya no los admiten.",
+    "{{count}} unavailable models": "{{count}} modelos no disponibles",
+    "Anthropic Compatible": "Compatible con Anthropic",
+    "Gemini Compatible": "Compatible con Gemini",
+    "This model cannot be called because upstreams no longer support it.": "Este modelo no se puede invocar porque los proveedores ascendentes ya no lo admiten.",
+    "Not callable · Officially unsupported": "No invocable · Ya no cuenta con soporte oficial"
   }
 }

@@ -34,14 +34,18 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
+  ALL_MODEL_VENDORS,
   filterModelAccessModels,
   getCreateKeySearch,
   getModelAccessScopeModels,
-  getModelEndpointFilters,
-  getModelEndpointLabel,
+  getModelAccessUnavailableScopeModels,
+  getModelVendorFilters,
   isFixedModelAccessView,
   resolveModelAccessScope,
-  type ModelEndpointFilter,
+  resolveModelVendorSelection,
+  UNLABELLED_MODEL_VENDOR,
+  type ModelVendorFilter,
+  type ModelVendorSelection,
 } from '../lib/model-access-browser'
 import type { UserModelAccess } from '../types'
 import { ModelAccessList } from './model-access-list'
@@ -56,7 +60,6 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
   const fixedView = isFixedModelAccessView(access)
   const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [endpoint, setEndpoint] = useState<ModelEndpointFilter>('all')
 
   const activeScopeId = resolveModelAccessScope(access, selectedScopeId)
 
@@ -64,16 +67,43 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
     () => getModelAccessScopeModels(access, activeScopeId),
     [access, activeScopeId]
   )
-  const endpointFilters = useMemo(
-    () => getModelEndpointFilters(scopeModels),
-    [scopeModels]
+  const unavailableScopeModels = useMemo(
+    () => getModelAccessUnavailableScopeModels(access, activeScopeId),
+    [access, activeScopeId]
+  )
+  const vendorFilters = useMemo(
+    () => getModelVendorFilters([...scopeModels, ...unavailableScopeModels]),
+    [scopeModels, unavailableScopeModels]
+  )
+  const [vendorSelection, setVendorSelection] = useState<ModelVendorSelection>(
+    () => ({
+      filterOptions: vendorFilters,
+      value: ALL_MODEL_VENDORS,
+    })
+  )
+  const scopeModelCounts = useMemo(
+    () =>
+      new Map(
+        access.groups.map((scope) => [
+          scope.id,
+          getModelAccessScopeModels(access, scope.id).length,
+        ])
+      ),
+    [access]
   )
 
-  const activeEndpoint = endpointFilters.includes(endpoint) ? endpoint : 'all'
+  const activeVendor = resolveModelVendorSelection(
+    vendorFilters,
+    vendorSelection
+  )
 
   const visibleModels = useMemo(
-    () => filterModelAccessModels(scopeModels, query, activeEndpoint),
-    [activeEndpoint, query, scopeModels]
+    () => filterModelAccessModels(scopeModels, query, activeVendor),
+    [activeVendor, query, scopeModels]
+  )
+  const visibleUnavailableModels = useMemo(
+    () => filterModelAccessModels(unavailableScopeModels, query, activeVendor),
+    [activeVendor, query, unavailableScopeModels]
   )
   const selectedScope = access.groups.find(
     (scope) => scope.id === activeScopeId
@@ -84,7 +114,10 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
 
   const clearFilters = () => {
     setQuery('')
-    setEndpoint('all')
+    setVendorSelection({
+      filterOptions: vendorFilters,
+      value: ALL_MODEL_VENDORS,
+    })
   }
 
   const catalog = (
@@ -129,7 +162,7 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
               <NativeSelectOption key={scope.id} value={scope.id}>
                 {scope.label} ·{' '}
                 {t('{{count}} models available', {
-                  count: scope.model_ids.length,
+                  count: scopeModelCounts.get(scope.id) ?? 0,
                 })}
               </NativeSelectOption>
             ))}
@@ -148,7 +181,7 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
                 <div className='flex flex-wrap gap-1.5'>
                   <Badge variant='secondary'>
                     {t('{{count}} models available', {
-                      count: selectedScope.model_ids.length,
+                      count: scopeModelCounts.get(selectedScope.id) ?? 0,
                     })}
                   </Badge>
                   {selectedScope.ratio !== null && (
@@ -207,22 +240,36 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
           />
         </div>
 
-        <div className='overflow-x-auto pb-0.5'>
-          <ToggleGroup
-            value={[activeEndpoint]}
-            variant='outline'
-            size='sm'
-            aria-label={t('Endpoints')}
-            onValueChange={(values) => {
-              if (values[0]) setEndpoint(values[0])
-            }}
-          >
-            {endpointFilters.map((filter) => (
-              <ToggleGroupItem key={filter} value={filter}>
-                {getModelEndpointLabel(filter, t)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        <div className='flex flex-col gap-1.5'>
+          <span className='text-muted-foreground text-xs font-medium'>
+            {t('Model vendors')}
+          </span>
+          <div className='overflow-x-auto pb-0.5'>
+            <ToggleGroup
+              value={[activeVendor]}
+              variant='outline'
+              size='sm'
+              aria-label={t('Model vendors')}
+              onValueChange={(values) => {
+                if (values[0]) {
+                  setVendorSelection({
+                    filterOptions: vendorFilters,
+                    value: values[0] as ModelVendorFilter,
+                  })
+                }
+              }}
+            >
+              {vendorFilters.map((option) => (
+                <ToggleGroupItem key={option.value} value={option.value}>
+                  {option.value === ALL_MODEL_VENDORS
+                    ? t('All')
+                    : option.value === UNLABELLED_MODEL_VENDOR
+                      ? t('Unlabelled vendor')
+                      : option.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
         </div>
       </div>
 
@@ -231,6 +278,33 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
         scopeIsEmpty={scopeModels.length === 0}
         onClearFilters={clearFilters}
       />
+
+      {unavailableScopeModels.length > 0 && (
+        <section className='flex flex-col gap-2.5'>
+          <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+            <div className='min-w-0'>
+              <h3 className='text-sm font-semibold'>
+                {t('Unavailable models')}
+              </h3>
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'These models cannot be called because upstreams no longer support them.'
+                )}
+              </p>
+            </div>
+            <Badge variant='destructive' className='shrink-0'>
+              {t('{{count}} unavailable models', {
+                count: unavailableScopeModels.length,
+              })}
+            </Badge>
+          </div>
+          <ModelAccessList
+            models={visibleUnavailableModels}
+            scopeIsEmpty={false}
+            onClearFilters={clearFilters}
+          />
+        </section>
+      )}
     </div>
   )
 
@@ -244,6 +318,7 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
           <aside className='hover-scrollbar hidden lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:pr-2'>
             <ModelAccessScopeRail
               scopes={access.groups}
+              modelCounts={scopeModelCounts}
               selectedScopeId={activeScopeId}
               onScopeChange={setSelectedScopeId}
             />
