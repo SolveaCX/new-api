@@ -26,14 +26,23 @@
 
     try {
       const requestOptions = { headers: { accept: "application/json" } };
+      let controller;
       if (typeof global.AbortController === "function") {
-        const controller = new global.AbortController();
-        timeout = global.setTimeout(() => controller.abort(), timeoutMs);
+        controller = new global.AbortController();
         requestOptions.signal = controller.signal;
       }
 
-      const response = await fetcher("/api/status", requestOptions);
-      if (!response.ok) return null;
+      const timeoutResult = new Promise((resolve) => {
+        timeout = global.setTimeout(() => {
+          if (controller) controller.abort();
+          resolve(null);
+        }, timeoutMs);
+      });
+      const response = await Promise.race([
+        fetcher("/api/status", requestOptions),
+        timeoutResult,
+      ]);
+      if (!response || !response.ok) return null;
 
       const payload = await response.json();
       if (!payload || payload.success === false) return null;

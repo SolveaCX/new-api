@@ -85,6 +85,27 @@ test("fetches the status without a signal when AbortController is unavailable", 
   assert.equal("signal" in requestedOptions, false);
 });
 
+test("bounds the status request when AbortController is unavailable", async () => {
+  const api = loadApi({ withAbortController: false });
+
+  const url = await api.getDocsUrl(
+    () => new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: { docs_link: "https://docs.example.com" },
+          }),
+        });
+      }, 25);
+    }),
+    1,
+  );
+
+  assert.equal(url, null);
+});
+
 test("returns null for failed responses, envelopes, payloads, and requests", async () => {
   const api = loadApi();
 
