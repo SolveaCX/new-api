@@ -241,7 +241,7 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
         catalog
       ) : (
         <div className='grid min-w-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start'>
-          <aside className='hidden lg:sticky lg:top-0 lg:block'>
+          <aside className='hover-scrollbar hidden lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:pr-2'>
             <ModelAccessScopeRail
               scopes={access.groups}
               selectedScopeId={activeScopeId}
