@@ -18,17 +18,68 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useRecallCampaignMutations } from '../api'
 import {
+  formatRecallMinorAmount,
   normalizeRecallCouponSource,
   normalizeRecallDiscountType,
+  parseRecallMajorAmount,
+  recallFixedCurrencies,
   removeRecallEmailStage,
 } from '../helpers'
 import {
   recallCampaignActivatedUpdateSchema,
   recallCampaignDraftSchema,
 } from '../schemas'
-import type { RecallCampaignDraft, RecallCampaignStatus } from '../types'
+import type {
+  RecallCampaignDraft,
+  RecallCampaignStatus,
+  RecallDiscountConfig,
+  RecallFixedCurrency,
+} from '../types'
 
 const languages = ['en', 'zh', 'es', 'fr', 'pt', 'ru', 'ja', 'vi'] as const
+
+type RecallFixedAmountInputs = Record<RecallFixedCurrency, string>
+
+const recallFixedAmountPaths: Record<
+  RecallFixedCurrency,
+  FieldPath<RecallCampaignDraft>
+> = {
+  USD: 'discount_config.amount_off',
+  INR: 'discount_config.currency_options.inr',
+  BRL: 'discount_config.currency_options.brl',
+  JPY: 'discount_config.currency_options.jpy',
+}
+
+function getRecallFixedMinorAmount(
+  discount: RecallDiscountConfig,
+  currency: RecallFixedCurrency
+): number {
+  if (currency === 'USD') return discount.amount_off
+  return discount.currency_options[currency.toLowerCase()] ?? 0
+}
+
+function createRecallFixedAmountInputs(
+  discount: RecallDiscountConfig
+): RecallFixedAmountInputs {
+  return Object.fromEntries(
+    recallFixedCurrencies.map((currency) => [
+      currency,
+      formatRecallMinorAmount(
+        currency,
+        getRecallFixedMinorAmount(discount, currency)
+      ),
+    ])
+  ) as RecallFixedAmountInputs
+}
+
+function createRecallCampaignFormDraft(
+  draft: RecallCampaignDraft
+): RecallCampaignDraft {
+  return draft.coupon_source === 'automatic' &&
+    draft.discount_config.type === 'fixed'
+    ? normalizeRecallDiscountType(draft, 'fixed')
+    : draft
+}
 
 const audienceFields: Record<
   RecallCampaignDraft['audience_template'],
@@ -112,6 +163,7 @@ function createRecallCampaignDefaults(): RecallCampaignDraft {
       percent_off: 20,
       amount_off: 0,
       currency: '',
+      currency_options: {},
       minimum_amount: 0,
       minimum_amount_currency: '',
       coupon_redeem_by: 0,
@@ -147,10 +199,17 @@ export function CampaignEditor(props: CampaignEditorProps) {
     props.status && props.status !== 'draft'
       ? recallCampaignActivatedUpdateSchema
       : recallCampaignDraftSchema
+  const defaultValues = createRecallCampaignFormDraft(
+    props.initialDraft ?? createRecallCampaignDefaults()
+  )
   const form = useForm<RecallCampaignDraft>({
     resolver: zodResolver(updateSchema),
-    defaultValues: props.initialDraft ?? createRecallCampaignDefaults(),
+    defaultValues,
   })
+  const [fixedAmountInputs, setFixedAmountInputs] =
+    useState<RecallFixedAmountInputs>(() =>
+      createRecallFixedAmountInputs(defaultValues.discount_config)
+    )
   const stages = useFieldArray({
     control: form.control,
     name: 'email_sequence',
@@ -164,11 +223,17 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const topUpPrices = form.watch('product_scope.topup_price_ids')
   const subscriptionPrices = form.watch('product_scope.subscription_price_ids')
   const immutable = Boolean(props.status && props.status !== 'draft')
+  const automaticFixed =
+    couponSource === 'automatic' && discountType === 'fixed'
   const terminal = props.status === 'cancelled' || props.status === 'completed'
   const isSaving = mutations.create.isPending || mutations.update.isPending
 
   useEffect(() => {
-    if (props.initialDraft) form.reset(props.initialDraft)
+    if (props.initialDraft) {
+      const draft = createRecallCampaignFormDraft(props.initialDraft)
+      form.reset(draft)
+      setFixedAmountInputs(createRecallFixedAmountInputs(draft.discount_config))
+    }
   }, [form, props.initialDraft])
 
   const setCsv = (
@@ -210,6 +275,13 @@ export function CampaignEditor(props: CampaignEditorProps) {
       shouldDirty: true,
       shouldValidate: true,
     })
+    form.setValue('discount_config', normalized.discount_config, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+    setFixedAmountInputs(
+      createRecallFixedAmountInputs(normalized.discount_config)
+    )
   }
 
   const setDiscountType = (
@@ -220,6 +292,18 @@ export function CampaignEditor(props: CampaignEditorProps) {
       shouldDirty: true,
       shouldValidate: true,
     })
+    setFixedAmountInputs(
+      createRecallFixedAmountInputs(normalized.discount_config)
+    )
+  }
+
+  const setFixedAmount = (currency: RecallFixedCurrency, value: string) => {
+    setFixedAmountInputs((current) => ({ ...current, [currency]: value }))
+    form.setValue(
+      recallFixedAmountPaths[currency],
+      parseRecallMajorAmount(currency, value) ?? 0,
+      { shouldDirty: true, shouldValidate: true }
+    )
   }
 
   return (
@@ -441,6 +525,29 @@ export function CampaignEditor(props: CampaignEditorProps) {
                 })}
               />
             </div>
+          ) : automaticFixed ? (
+            <>
+              <p className='text-muted-foreground text-sm md:col-span-3'>
+                {t(
+                  'Stripe does not convert fixed Coupon amounts automatically. Configure each checkout currency explicitly.'
+                )}
+              </p>
+              {recallFixedCurrencies.map((currency) => (
+                <div className='space-y-2' key={currency}>
+                  <Label>{t('{{currency}} amount off', { currency })}</Label>
+                  <Input
+                    type='number'
+                    min={currency === 'JPY' ? 1 : 0.01}
+                    step={currency === 'JPY' ? '1' : '0.01'}
+                    disabled={immutable}
+                    value={fixedAmountInputs[currency]}
+                    onChange={(event) =>
+                      setFixedAmount(currency, event.target.value)
+                    }
+                  />
+                </div>
+              ))}
+            </>
           ) : (
             <>
               <div className='space-y-2'>
@@ -496,26 +603,30 @@ export function CampaignEditor(props: CampaignEditorProps) {
               }
             />
           </div>
-          <div className='space-y-2'>
-            <Label>{t('Minimum amount')}</Label>
-            <Input
-              type='number'
-              min={0}
-              disabled={immutable}
-              {...form.register('discount_config.minimum_amount', {
-                valueAsNumber: true,
-              })}
-            />
-          </div>
-          <div className='space-y-2'>
-            <Label>{t('Minimum amount currency')}</Label>
-            <Input
-              maxLength={3}
-              placeholder='USD'
-              disabled={immutable}
-              {...form.register('discount_config.minimum_amount_currency')}
-            />
-          </div>
+          {!automaticFixed ? (
+            <>
+              <div className='space-y-2'>
+                <Label>{t('Minimum amount')}</Label>
+                <Input
+                  type='number'
+                  min={0}
+                  disabled={immutable}
+                  {...form.register('discount_config.minimum_amount', {
+                    valueAsNumber: true,
+                  })}
+                />
+              </div>
+              <div className='space-y-2'>
+                <Label>{t('Minimum amount currency')}</Label>
+                <Input
+                  maxLength={3}
+                  placeholder='USD'
+                  disabled={immutable}
+                  {...form.register('discount_config.minimum_amount_currency')}
+                />
+              </div>
+            </>
+          ) : null}
           <div className='space-y-2'>
             <Label>{t('Coupon redeem-by timestamp')}</Label>
             <Input

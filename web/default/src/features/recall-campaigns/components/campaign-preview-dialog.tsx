@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { previewRecallCampaign } from '../api'
+import { formatRecallMinorAmount, recallFixedCurrencies } from '../helpers'
 
 interface CampaignPreviewDialogProps {
   campaignId: number
@@ -68,6 +69,25 @@ export function CampaignPreviewDialog(props: CampaignPreviewDialogProps) {
                   {t('Coupon ID')}:{' '}
                   {data.stripe.coupon_id || t('Created automatically')}
                 </p>
+                {data.stripe.discount.type === 'fixed' ? (
+                  <div>
+                    <p className='font-medium'>{t('Fixed discount amounts')}</p>
+                    {recallFixedCurrencies.map((currency) => {
+                      const amount =
+                        currency === 'USD'
+                          ? data.stripe.discount.amount_off
+                          : (data.stripe.discount.currency_options[
+                              currency.toLowerCase()
+                            ] ?? 0)
+                      return (
+                        <p key={currency}>
+                          {currency}:{' '}
+                          {formatRecallMinorAmount(currency, amount) || '-'}
+                        </p>
+                      )
+                    })}
+                  </div>
+                ) : null}
                 <p>
                   {t('Resolved Products')}:{' '}
                   {data.stripe.product_ids.join(', ') || '-'}

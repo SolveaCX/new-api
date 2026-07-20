@@ -3,19 +3,59 @@ import type {
   RecallCouponSource,
   RecallDiscountType,
   RecallEmailStage,
+  RecallFixedCurrency,
   RecallRecipient,
 } from './types'
+
+export const recallFixedCurrencies = ['USD', 'INR', 'BRL', 'JPY'] as const
+
+export const recallFixedCurrencyDefaults = {
+  amount_off: 500,
+  currency_options: { inr: 45_000, brl: 2_500, jpy: 750 },
+} as const
+
+const recallCurrencyMinorUnitScale: Record<RecallFixedCurrency, number> = {
+  USD: 100,
+  INR: 100,
+  BRL: 100,
+  JPY: 1,
+}
+
+export function parseRecallMajorAmount(
+  currency: RecallFixedCurrency,
+  value: string
+): number | null {
+  const normalized = value.trim()
+  const pattern = currency === 'JPY' ? /^\d+$/ : /^\d+(?:\.\d{1,2})?$/
+  if (!pattern.test(normalized)) return null
+  const amount = Number(normalized)
+  const minorUnits = Math.round(amount * recallCurrencyMinorUnitScale[currency])
+  if (amount <= 0 || !Number.isSafeInteger(minorUnits)) return null
+  return minorUnits
+}
+
+export function formatRecallMinorAmount(
+  currency: RecallFixedCurrency,
+  value: number
+): string {
+  if (!Number.isSafeInteger(value) || value <= 0) return ''
+  const scale = recallCurrencyMinorUnitScale[currency]
+  return currency === 'JPY' ? String(value) : (value / scale).toFixed(2)
+}
 
 export function normalizeRecallCouponSource(
   draft: RecallCampaignDraft,
   couponSource: RecallCouponSource
 ): RecallCampaignDraft {
-  return {
+  const normalized = {
     ...draft,
     coupon_source: couponSource,
     existing_coupon_id:
       couponSource === 'automatic' ? '' : draft.existing_coupon_id,
   }
+  return couponSource === 'automatic' && draft.discount_config.type === 'fixed'
+    ? normalizeRecallDiscountType(normalized, 'fixed')
+    : normalized
 }
 
 export function normalizeRecallDiscountType(
@@ -35,10 +75,43 @@ export function normalizeRecallDiscountType(
             : 20,
         amount_off: 0,
         currency: '',
+        currency_options: {},
         minimum_amount_currency:
           discount.minimum_amount > 0
             ? discount.minimum_amount_currency.trim().toUpperCase()
             : '',
+      },
+    }
+  }
+
+  if (draft.coupon_source === 'automatic') {
+    return {
+      ...draft,
+      discount_config: {
+        ...discount,
+        type: 'fixed',
+        percent_off: 0,
+        amount_off:
+          discount.amount_off > 0
+            ? discount.amount_off
+            : recallFixedCurrencyDefaults.amount_off,
+        currency: 'USD',
+        currency_options: {
+          inr:
+            discount.currency_options.inr > 0
+              ? discount.currency_options.inr
+              : recallFixedCurrencyDefaults.currency_options.inr,
+          brl:
+            discount.currency_options.brl > 0
+              ? discount.currency_options.brl
+              : recallFixedCurrencyDefaults.currency_options.brl,
+          jpy:
+            discount.currency_options.jpy > 0
+              ? discount.currency_options.jpy
+              : recallFixedCurrencyDefaults.currency_options.jpy,
+        },
+        minimum_amount: 0,
+        minimum_amount_currency: '',
       },
     }
   }
