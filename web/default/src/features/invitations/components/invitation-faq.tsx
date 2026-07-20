@@ -39,20 +39,40 @@ export function InvitationFaq({ summary }: InvitationFaqProps) {
   const inviterReward = formatInvitationUSD(summary.inviter_reward_usd)
   const inviteeReward = formatInvitationUSD(summary.invitee_reward_usd)
   const limit = summary.inviter_reward_max_count
+  const subscriptionMode = summary.reward_mode === 'subscription'
+  const discountPercent = Math.round(
+    (1 - summary.first_sub_discount_ratio) * 100
+  )
   const items = [
-    {
-      question: t('When are referral rewards granted?'),
-      answer: t(
-        'Referral rewards are granted only after your friend completes their first successful top-up. Registration, creating an API key, and making an API call do not grant a reward.'
-      ),
-    },
-    {
-      question: t('What are the current referral rewards?'),
-      answer: t(
-        "The current configured rewards are {{inviterReward}} for you and {{inviteeReward}} for your friend. Rewards are processed after your friend's first successful top-up.",
-        { inviterReward, inviteeReward }
-      ),
-    },
+    subscriptionMode
+      ? {
+          question: t('When are referral rewards granted?'),
+          answer: t(
+            "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.",
+            { days: summary.unlock_delay_days }
+          ),
+        }
+      : {
+          question: t('When are referral rewards granted?'),
+          answer: t(
+            'Referral rewards are granted only after your friend completes their first successful top-up. Registration, creating an API key, and making an API call do not grant a reward.'
+          ),
+        },
+    subscriptionMode
+      ? {
+          question: t('What are the current referral rewards?'),
+          answer: t(
+            'Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.',
+            { percent: discountPercent }
+          ),
+        }
+      : {
+          question: t('What are the current referral rewards?'),
+          answer: t(
+            "The current configured rewards are {{inviterReward}} for you and {{inviteeReward}} for your friend. Rewards are processed after your friend's first successful top-up.",
+            { inviterReward, inviteeReward }
+          ),
+        },
     {
       question: t('Is there a referral reward limit?'),
       answer:

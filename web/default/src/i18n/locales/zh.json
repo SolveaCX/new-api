@@ -5494,6 +5494,21 @@
     "Generate a video of a cat astronaut": "帮我生成一段宇航员猫咪的视频",
     "Generating video…": "正在生成视频…",
     "Generating video… {{progress}}%": "正在生成视频… {{progress}}%",
-    "Video generation failed": "视频生成失败"
+    "Video generation failed": "视频生成失败",
+    "Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.": "邀请好友订阅：好友首月立减 {{percent}}%，你将获得与好友实付等额的余额奖励——付款 {{days}} 天后解锁。",
+    "Unlocks {{days}} days after your friend's payment": "好友付款 {{days}} 天后解锁",
+    "Locked credits": "待解锁余额",
+    "You earn what they pay for their first month": "好友首月付多少，你就得多少",
+    "You receive what your friend paid": "你获得好友实付的金额",
+    "Your friend subscribes at {{percent}}% off": "好友订阅首月立减 {{percent}}%",
+    "They sign up with your link and get {{percent}}% off the first month of any plan.": "好友通过你的链接注册，任意套餐首月立减 {{percent}}%。",
+    "The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.": "好友实付金额将全额计入你的余额，付款后 {{days}} 天内无退款即自动解锁。",
+    "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "邀请奖励在好友完成首次订阅付款时生成，若 {{days}} 天内未退款将自动解锁。仅注册、充值或调用 API 不会产生奖励。",
+    "Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.": "好友任意套餐首月立减 {{percent}}%，你将获得与好友实付等额的余额。",
+    "Unlocks {{date}}": "{{date}} 解锁",
+    "Awaiting subscription": "待订阅",
+    "Reward revoked": "奖励已撤销",
+    "Your friend's subscription was refunded": "好友的订阅已退款",
+    "Your friend's payment was disputed": "好友的支付发生争议"
   }
 }

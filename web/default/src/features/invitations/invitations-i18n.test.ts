@@ -97,6 +97,22 @@ const invitationKeys = [
   'This list shows active accounts registered through your referral link. Deleted accounts may not appear, so the rewards shown here may not add up to your lifetime earnings.',
   'What behavior is prohibited?',
   'Self-referrals, duplicate accounts, and other abuse are prohibited. Rewards may be withheld or revoked.',
+  // Subscription-mode (invite reward v2) keys
+  'Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.',
+  "Unlocks {{days}} days after your friend's payment",
+  'Locked credits',
+  'You earn what they pay for their first month',
+  'You receive what your friend paid',
+  'Your friend subscribes at {{percent}}% off',
+  'They sign up with your link and get {{percent}}% off the first month of any plan.',
+  'The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.',
+  'Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.',
+  'Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.',
+  'Unlocks {{date}}',
+  'Awaiting subscription',
+  'Reward revoked',
+  "Your friend's subscription was refunded",
+  "Your friend's payment was disputed",
 ] as const
 
 const localeInvariantKeys = new Set<(typeof invitationKeys)[number]>(['FAQ'])
@@ -147,6 +163,19 @@ describe('invitation i18n', () => {
         ['{{inviterReward}}', '{{inviteeReward}}'],
       'The maximum number of successful referrals you can earn rewards for is {{count}}. Friends invited after that can still receive their reward.':
         ['{{count}}'],
+      'Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.':
+        ['{{percent}}', '{{days}}'],
+      "Unlocks {{days}} days after your friend's payment": ['{{days}}'],
+      'Your friend subscribes at {{percent}}% off': ['{{percent}}'],
+      'They sign up with your link and get {{percent}}% off the first month of any plan.':
+        ['{{percent}}'],
+      'The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.':
+        ['{{days}}'],
+      'Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.':
+        ['{{days}}'],
+      'Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.':
+        ['{{percent}}'],
+      'Unlocks {{date}}': ['{{date}}'],
     } as const
 
     for (const [locale, translations] of Object.entries(localeTranslations)) {

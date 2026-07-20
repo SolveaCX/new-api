@@ -5494,6 +5494,21 @@
     "Generate a video of a cat astronaut": "Genera un video de un gato astronauta",
     "Generating video…": "Generando video…",
     "Generating video… {{progress}}%": "Generando video… {{progress}} %",
-    "Video generation failed": "La generación del video falló"
+    "Video generation failed": "La generación del video falló",
+    "Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.": "Invita a tus amigos a suscribirse: obtienen un {{percent}}% de descuento en su primer mes y tú recibes como saldo el importe exacto que pagaron, desbloqueado {{days}} días después del pago.",
+    "Unlocks {{days}} days after your friend's payment": "Se desbloquea {{days}} días después del pago de tu amigo",
+    "Locked credits": "Créditos bloqueados",
+    "You earn what they pay for their first month": "Ganas lo que paguen por su primer mes",
+    "You receive what your friend paid": "Recibes lo que pagó tu amigo",
+    "Your friend subscribes at {{percent}}% off": "Tu amigo se suscribe con un {{percent}}% de descuento",
+    "They sign up with your link and get {{percent}}% off the first month of any plan.": "Se registran con tu enlace y obtienen un {{percent}}% de descuento en el primer mes de cualquier plan.",
+    "The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.": "El importe exacto que pagaron se añade a tu saldo, desbloqueado {{days}} días después del pago si no hay reembolso.",
+    "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "Las recompensas por invitación se crean cuando tu amigo completa su primer pago de suscripción y se desbloquean {{days}} días después si el pago no es reembolsado. El registro, las recargas y las llamadas a la API por sí solas no generan recompensa.",
+    "Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.": "Tu amigo obtiene un {{percent}}% de descuento en el primer mes de cualquier plan y tú recibes como saldo el importe exacto que pagó.",
+    "Unlocks {{date}}": "Se desbloquea el {{date}}",
+    "Awaiting subscription": "Esperando suscripción",
+    "Reward revoked": "Recompensa revocada",
+    "Your friend's subscription was refunded": "La suscripción de tu amigo fue reembolsada",
+    "Your friend's payment was disputed": "El pago de tu amigo fue disputado"
   }
 }

@@ -5494,6 +5494,21 @@
     "Generate a video of a cat astronaut": "Génère une vidéo d'un chat astronaute",
     "Generating video…": "Génération de la vidéo…",
     "Generating video… {{progress}}%": "Génération de la vidéo… {{progress}} %",
-    "Video generation failed": "Échec de la génération de la vidéo"
+    "Video generation failed": "Échec de la génération de la vidéo",
+    "Invite friends to subscribe: they get {{percent}}% off their first month, and you receive the full amount they paid as balance — unlocked {{days}} days after payment.": "Invitez vos amis à s'abonner : ils bénéficient de {{percent}} % de réduction sur leur premier mois et vous recevez en solde le montant exact qu'ils ont payé, débloqué {{days}} jours après le paiement.",
+    "Unlocks {{days}} days after your friend's payment": "Débloqué {{days}} jours après le paiement de votre ami",
+    "Locked credits": "Crédits verrouillés",
+    "You earn what they pay for their first month": "Vous gagnez ce qu'ils paient pour leur premier mois",
+    "You receive what your friend paid": "Vous recevez ce que votre ami a payé",
+    "Your friend subscribes at {{percent}}% off": "Votre ami s'abonne avec {{percent}} % de réduction",
+    "They sign up with your link and get {{percent}}% off the first month of any plan.": "Ils s'inscrivent avec votre lien et bénéficient de {{percent}} % de réduction sur le premier mois de n'importe quel forfait.",
+    "The exact amount they paid is added to your balance, unlocked {{days}} days after payment if there is no refund.": "Le montant exact payé est ajouté à votre solde, débloqué {{days}} jours après le paiement s'il n'y a pas de remboursement.",
+    "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "Les récompenses de parrainage sont créées lorsque votre ami effectue son premier paiement d'abonnement et sont débloquées {{days}} jours plus tard si le paiement n'est pas remboursé. L'inscription, les recharges et les appels API seuls ne génèrent aucune récompense.",
+    "Your friend gets {{percent}}% off the first month of any plan, and you receive the exact amount they paid as balance.": "Votre ami bénéficie de {{percent}} % de réduction sur le premier mois de n'importe quel forfait et vous recevez en solde le montant exact qu'il a payé.",
+    "Unlocks {{date}}": "Débloqué le {{date}}",
+    "Awaiting subscription": "En attente d'abonnement",
+    "Reward revoked": "Récompense révoquée",
+    "Your friend's subscription was refunded": "L'abonnement de votre ami a été remboursé",
+    "Your friend's payment was disputed": "Le paiement de votre ami a été contesté"
   }
 }
