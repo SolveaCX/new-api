@@ -459,6 +459,7 @@ export function ApiKeysMutateDrawer({
       <ModelAccessPreview
         models={modelAccessState.effectiveModels}
         totalCount={modelAccessState.scopeModels.length}
+        scopeKey={selectedGroup || previewScopeTitle}
         scopeTitle={previewScopeTitle}
         scopeDescription={previewScopeDescription}
         summary={previewSummary}
@@ -481,6 +482,7 @@ export function ApiKeysMutateDrawer({
       <ApiKeyModelPreviewDrawer
         models={modelAccessState.effectiveModels}
         totalCount={modelAccessState.scopeModels.length}
+        scopeKey={selectedGroup || previewScopeTitle}
         scopeTitle={previewScopeTitle}
         scopeDescription={previewScopeDescription}
         summary={previewSummary}
