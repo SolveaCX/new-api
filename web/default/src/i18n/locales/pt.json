@@ -5518,6 +5518,14 @@
     "Generating video…": "Gerando vídeo…",
     "Generating video… {{progress}}%": "Gerando vídeo… {{progress}}%",
     "Video generation failed": "Falha na geração do vídeo",
+    "Unlocks {{days}} days after your friend's payment": "Desbloqueia {{days}} dias após o pagamento do seu amigo",
+    "Locked credits": "Créditos bloqueados",
+    "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "As recompensas de indicação são criadas quando seu amigo conclui o primeiro pagamento de assinatura e são desbloqueadas {{days}} dias depois se o pagamento não for reembolsado. Cadastro, recargas e chamadas de API por si só não geram recompensa.",
+    "Unlocks {{date}}": "Desbloqueia em {{date}}",
+    "Awaiting subscription": "Aguardando assinatura",
+    "Reward revoked": "Recompensa revogada",
+    "Your friend's subscription was refunded": "A assinatura do seu amigo foi reembolsada",
+    "Your friend's payment was disputed": "O pagamento do seu amigo foi contestado",
     "For individuals and light everyday use": "Para uso individual e cotidiano leve",
     "For daily development and frequent requests": "Para desenvolvimento diário e requisições frequentes",
     "For teams and high-intensity workloads": "Para equipes e cargas de trabalho intensas",
@@ -5557,6 +5565,13 @@
     "Top up": "Recarregar",
     "Top up balance": "Recarregar saldo",
     "Pay face value. The same amount is added to your balance.": "Pague o valor nominal; o mesmo valor será adicionado ao saldo.",
-    "Top up {{amount}}": "Recarregar {{amount}}"
+    "Top up {{amount}}": "Recarregar {{amount}}",
+    "Invite friends to subscribe: they get {{discount}} off their first month, and you receive {{reward}} in balance — unlocked {{days}} days after payment.": "Convide amigos para assinar: eles ganham {{discount}} de desconto no primeiro mês e você recebe {{reward}} de saldo, desbloqueado {{days}} dias após o pagamento.",
+    "{{reward}} each after their first subscription": "{{reward}} por cada um após a primeira assinatura",
+    "You receive {{reward}} in balance": "Você recebe {{reward}} de saldo",
+    "Your friend subscribes with {{discount}} off": "Seu amigo assina com {{discount}} de desconto",
+    "They sign up with your link and get {{discount}} off the first month of any plan.": "Eles se cadastram com seu link e ganham {{discount}} de desconto no primeiro mês de qualquer plano.",
+    "{{reward}} is added to your balance, unlocked {{days}} days after payment if there is no refund.": "{{reward}} é adicionado ao seu saldo, desbloqueado {{days}} dias após o pagamento se não houver reembolso.",
+    "Your friend gets {{discount}} off the first month of any plan, and you receive {{reward}} as balance.": "Seu amigo ganha {{discount}} de desconto no primeiro mês de qualquer plano e você recebe {{reward}} como saldo."
   }
 }

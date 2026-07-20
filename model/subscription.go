@@ -615,6 +615,10 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
 		RecordLog(logUserId, LogTypeTopup, msg)
 	}
+	if err := TryGrantInviteSubscriptionRewardAfterOrderCompleted(tradeNo); err != nil {
+		// Reward bookkeeping must never fail an already-completed payment.
+		common.SysError(fmt.Sprintf("invite subscription reward grant failed for order %s: %v", tradeNo, err))
+	}
 	return nil
 }
 

@@ -5518,6 +5518,14 @@
     "Generating video…": "Генерация видео…",
     "Generating video… {{progress}}%": "Генерация видео… {{progress}} %",
     "Video generation failed": "Не удалось сгенерировать видео",
+    "Unlocks {{days}} days after your friend's payment": "Разблокируется через {{days}} дней после оплаты вашим другом",
+    "Locked credits": "Заблокированные кредиты",
+    "Referral rewards are created when your friend completes their first subscription payment, and unlock {{days}} days later if the payment is not refunded. Registration, top-ups, and API calls alone do not grant a reward.": "Реферальное вознаграждение создаётся, когда ваш друг совершает первый платёж за подписку, и разблокируется через {{days}} дней, если платёж не был возвращён. Регистрация, пополнения и вызовы API сами по себе вознаграждение не дают.",
+    "Unlocks {{date}}": "Разблокируется {{date}}",
+    "Awaiting subscription": "Ожидает подписки",
+    "Reward revoked": "Вознаграждение отозвано",
+    "Your friend's subscription was refunded": "Подписка вашего друга была возвращена",
+    "Your friend's payment was disputed": "Платёж вашего друга был оспорен",
     "For individuals and light everyday use": "Для личного и лёгкого повседневного использования",
     "For daily development and frequent requests": "Для ежедневной разработки и частых запросов",
     "For teams and high-intensity workloads": "Для команд и интенсивных рабочих нагрузок",
@@ -5557,6 +5565,13 @@
     "Top up": "Пополнить",
     "Top up balance": "Пополнить баланс",
     "Pay face value. The same amount is added to your balance.": "Оплатите номинал — та же сумма поступит на баланс.",
-    "Top up {{amount}}": "Пополнить на {{amount}}"
+    "Top up {{amount}}": "Пополнить на {{amount}}",
+    "Invite friends to subscribe: they get {{discount}} off their first month, and you receive {{reward}} in balance — unlocked {{days}} days after payment.": "Приглашайте друзей оформить подписку: они получают скидку {{discount}} на первый месяц, а вы — {{reward}} на баланс; разблокировка через {{days}} дней после оплаты.",
+    "{{reward}} each after their first subscription": "{{reward}} за каждого после его первой подписки",
+    "You receive {{reward}} in balance": "Вы получаете {{reward}} на баланс",
+    "Your friend subscribes with {{discount}} off": "Ваш друг оформляет подписку со скидкой {{discount}}",
+    "They sign up with your link and get {{discount}} off the first month of any plan.": "Они регистрируются по вашей ссылке и получают скидку {{discount}} на первый месяц любого тарифа.",
+    "{{reward}} is added to your balance, unlocked {{days}} days after payment if there is no refund.": "{{reward}} добавляется на ваш баланс и разблокируется через {{days}} дней после оплаты, если не было возврата.",
+    "Your friend gets {{discount}} off the first month of any plan, and you receive {{reward}} as balance.": "Ваш друг получает скидку {{discount}} на первый месяц любого тарифа, а вы — {{reward}} на баланс."
   }
 }
