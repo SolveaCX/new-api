@@ -105,7 +105,7 @@ export function resolveSafeCreateScope(
   access: UserModelAccess | undefined,
   requestedGroup?: string | null
 ): string | null {
-  if (!access) return null
+  if (!access) return requestedGroup ?? null
   return resolveCreateScope(access, requestedGroup ?? undefined)
 }
 

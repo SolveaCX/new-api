@@ -20,7 +20,6 @@ import { describe, expect, test } from 'bun:test'
 import {
   getCCSwitchModelAccessState,
   getCCSwitchModelPlaceholderKey,
-  shouldShowCCSwitchRefreshWarning,
   validateCCSwitchModels,
 } from './cc-switch-dialog'
 
@@ -60,7 +59,7 @@ describe('CCSwitchDialog model access', () => {
     ).toBe('ready')
   })
 
-  test('keeps cached models usable when a background refresh fails', () => {
+  test('fails closed when a background refresh fails with cached models', () => {
     expect(
       getCCSwitchModelAccessState({
         isPending: false,
@@ -68,13 +67,7 @@ describe('CCSwitchDialog model access', () => {
         hasData: true,
         modelCount: 2,
       })
-    ).toBe('ready')
-    expect(
-      shouldShowCCSwitchRefreshWarning({ isError: true, hasData: true })
-    ).toBeTrue()
-    expect(
-      shouldShowCCSwitchRefreshWarning({ isError: true, hasData: false })
-    ).toBeFalse()
+    ).toBe('error')
   })
 
   test('selects the placeholder key without nested conditional rendering', () => {

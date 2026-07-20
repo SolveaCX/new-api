@@ -381,6 +381,7 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 	}
+	forcePLGGroup := false
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
@@ -390,25 +391,27 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.RemainQuota = token.RemainQuota
 		cleanToken.UnlimitedQuota = token.UnlimitedQuota
 		cleanToken.AllowIps = token.AllowIps
+		canUseGroups, err := userCanUseGroups(userId)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
 		if !request.PreserveModelAccess {
 			cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 			cleanToken.ModelLimits = token.ModelLimits
 			cleanToken.Group = token.Group
 			cleanToken.CrossGroupRetry = token.CrossGroupRetry
-			// PLG users cannot pick a group — force every token onto plg.
-			canUseGroups, err := userCanUseGroups(userId)
-			if err != nil {
-				common.ApiError(c, err)
-				return
-			}
-			if !canUseGroups {
-				cleanToken.Group = plgGroup
-				cleanToken.CrossGroupRetry = false
-			}
+		}
+		// PLG users cannot retain or pick a non-PLG group, including when the
+		// client requests preservation of the other model-access fields.
+		if !canUseGroups {
+			forcePLGGroup = true
+			cleanToken.Group = plgGroup
+			cleanToken.CrossGroupRetry = false
 		}
 	}
 	if statusOnly == "" && request.PreserveModelAccess {
-		err = cleanToken.UpdateNonModelFields()
+		err = cleanToken.UpdateNonModelFields(forcePLGGroup)
 		if err == nil {
 			cleanToken, err = model.GetTokenByIds(token.Id, userId)
 		}
