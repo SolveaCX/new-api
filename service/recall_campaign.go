@@ -1200,6 +1200,11 @@ func validateAndNormalizeRecallCampaignDraft(draft RecallCampaignDraft, now time
 	if err != nil {
 		return RecallCampaignDraft{}, err
 	}
+	if draft.CouponSource == "automatic" && discount.Type == "fixed" {
+		if err := validateRecallAutomaticFixedDiscount(discount); err != nil {
+			return RecallCampaignDraft{}, err
+		}
+	}
 	if discount.Type != "percent" && discount.Type != "fixed" {
 		return RecallCampaignDraft{}, fmt.Errorf("recall discount type must be percent or fixed")
 	}

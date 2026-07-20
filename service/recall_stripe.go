@@ -451,6 +451,18 @@ func normalizeRecallDiscount(discount RecallDiscountConfig) (RecallDiscountConfi
 	discount.Type = strings.ToLower(strings.TrimSpace(discount.Type))
 	discount.Currency = strings.ToLower(strings.TrimSpace(discount.Currency))
 	discount.MinimumAmountCurrency = strings.ToLower(strings.TrimSpace(discount.MinimumAmountCurrency))
+	currencyOptions := make(map[string]int64, len(discount.CurrencyOptions))
+	for currency, amountOff := range discount.CurrencyOptions {
+		currency = strings.ToLower(strings.TrimSpace(currency))
+		if currency == "" {
+			return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "currency option cannot use an empty currency")
+		}
+		if _, exists := currencyOptions[currency]; exists {
+			return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "currency option %s is duplicated", currency)
+		}
+		currencyOptions[currency] = amountOff
+	}
+	discount.CurrencyOptions = currencyOptions
 	if discount.MinimumAmount > 0 && discount.MinimumAmountCurrency == "" {
 		return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "minimum amount currency is required")
 	}
@@ -462,8 +474,8 @@ func normalizeRecallDiscount(discount RecallDiscountConfig) (RecallDiscountConfi
 		if discount.PercentOff <= 0 || discount.PercentOff > 100 {
 			return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "percent_off must be greater than zero and at most 100")
 		}
-		if discount.AmountOff != 0 || discount.Currency != "" {
-			return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "percent discount cannot set amount_off or currency")
+		if discount.AmountOff != 0 || discount.Currency != "" || len(discount.CurrencyOptions) > 0 {
+			return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "percent discount cannot set amount_off, currency, or currency_options")
 		}
 	case "fixed":
 		if discount.AmountOff <= 0 || discount.Currency == "" {
@@ -476,6 +488,33 @@ func normalizeRecallDiscount(discount RecallDiscountConfig) (RecallDiscountConfi
 		return RecallDiscountConfig{}, recallStripePermanent("validate recall discount", "unsupported discount type %q", discount.Type)
 	}
 	return discount, nil
+}
+
+func validateRecallAutomaticFixedDiscount(discount RecallDiscountConfig) error {
+	if discount.Type != "fixed" {
+		return recallStripePermanent("validate recall discount", "automatic fixed discount must use fixed type")
+	}
+	if discount.Currency != "usd" {
+		return recallStripePermanent("validate recall discount", "automatic fixed discount base currency must be usd")
+	}
+	if discount.AmountOff <= 0 {
+		return recallStripePermanent("validate recall discount", "automatic fixed discount amount_off must be positive")
+	}
+	if discount.PercentOff != 0 {
+		return recallStripePermanent("validate recall discount", "automatic fixed discount cannot set percent_off")
+	}
+	if discount.MinimumAmount != 0 || discount.MinimumAmountCurrency != "" {
+		return recallStripePermanent("validate recall discount", "automatic fixed discount cannot set a minimum amount")
+	}
+	if len(discount.CurrencyOptions) != 3 {
+		return recallStripePermanent("validate recall discount", "automatic fixed discount requires exactly inr, brl, and jpy currency options")
+	}
+	for _, currency := range []string{"inr", "brl", "jpy"} {
+		if discount.CurrencyOptions[currency] <= 0 {
+			return recallStripePermanent("validate recall discount", "automatic fixed discount requires a positive %s amount", currency)
+		}
+	}
+	return nil
 }
 
 func buildRecallCouponParams(ctx context.Context, campaignID int64, configRevision int64, discount RecallDiscountConfig, productIDs []string, enrollmentLimit int) (*stripe.CouponParams, error) {
@@ -505,8 +544,15 @@ func buildRecallCouponParams(ctx context.Context, campaignID int64, configRevisi
 	case "percent":
 		params.PercentOff = stripe.Float64(discount.PercentOff)
 	case "fixed":
+		if err := validateRecallAutomaticFixedDiscount(discount); err != nil {
+			return nil, err
+		}
 		params.AmountOff = stripe.Int64(discount.AmountOff)
 		params.Currency = stripe.String(discount.Currency)
+		params.CurrencyOptions = make(map[string]*stripe.CouponCurrencyOptionsParams, len(discount.CurrencyOptions))
+		for currency, amountOff := range discount.CurrencyOptions {
+			params.CurrencyOptions[currency] = &stripe.CouponCurrencyOptionsParams{AmountOff: stripe.Int64(amountOff)}
+		}
 	default:
 		return nil, recallStripePermanent("create Stripe Coupon", "automatic coupon requires a percent or fixed discount")
 	}

@@ -394,6 +394,9 @@ func TestRecallCampaignSaveDraftRejectsInvalidBoundaries(t *testing.T) {
 		{name: "unknown execution mode", mutate: func(d *RecallCampaignDraft) { d.ExecutionMode = "cron" }},
 		{name: "unknown coupon source", mutate: func(d *RecallCampaignDraft) { d.CouponSource = "local" }},
 		{name: "unknown discount type", mutate: func(d *RecallCampaignDraft) { d.Discount.Type = "credit" }},
+		{name: "automatic fixed coupon lacks currency options", mutate: func(d *RecallCampaignDraft) {
+			d.Discount = RecallDiscountConfig{Type: "fixed", AmountOff: 500, Currency: "usd"}
+		}},
 		{name: "automatic coupon has existing id", mutate: func(d *RecallCampaignDraft) { d.ExistingCouponID = "coupon_existing" }},
 		{name: "existing coupon lacks id", mutate: func(d *RecallCampaignDraft) { d.CouponSource = "existing" }},
 		{name: "no prices", mutate: func(d *RecallCampaignDraft) { d.Products = RecallProductScope{} }},
