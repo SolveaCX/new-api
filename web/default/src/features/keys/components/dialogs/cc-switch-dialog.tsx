@@ -17,15 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { getUserModels } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ComboboxInput } from '@/components/ui/combobox-input'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog } from '@/components/dialog'
+import { getApiKeyCallableModels } from '../../lib/api-key-model-scope'
+import { useApiKeys } from '../api-keys-provider'
 
 const APP_CONFIGS = {
   claude: {
@@ -98,18 +99,12 @@ export function CCSwitchDialog(props: Props) {
   const [app, setApp] = useState<AppType>('claude')
   const [name, setName] = useState<string>(APP_CONFIGS.claude.defaultName)
   const [models, setModels] = useState<Record<string, string>>({})
-
-  const { data: modelsData } = useQuery({
-    queryKey: ['user-models-ccswitch'],
-    queryFn: () => getUserModels(),
-    enabled: props.open,
-    staleTime: 5 * 60 * 1000,
-  })
+  const { currentRow, modelAccessQuery } = useApiKeys()
 
   const modelOptions = useMemo(() => {
-    const items = modelsData?.data ?? []
-    return items.map((m) => ({ value: m, label: m }))
-  }, [modelsData?.data])
+    const items = getApiKeyCallableModels(modelAccessQuery.data, currentRow)
+    return items.map((model) => ({ value: model.id, label: model.id }))
+  }, [currentRow, modelAccessQuery.data])
 
   useEffect(() => {
     if (props.open) {
@@ -132,7 +127,8 @@ export function CCSwitchDialog(props: Props) {
   }
 
   const handleSubmit = () => {
-    if (!models.model) {
+    const callableModels = new Set(modelOptions.map((option) => option.value))
+    if (!models.model || !callableModels.has(models.model)) {
       toast.warning(t('Please select a primary model'))
       return
     }
@@ -157,7 +153,9 @@ export function CCSwitchDialog(props: Props) {
           <Button variant='outline' onClick={() => props.onOpenChange(false)}>
             {t('Cancel')}
           </Button>
-          <Button onClick={handleSubmit}>{t('Open CC Switch')}</Button>
+          <Button onClick={handleSubmit} disabled={modelOptions.length === 0}>
+            {t('Open CC Switch')}
+          </Button>
         </>
       }
     >
@@ -205,15 +203,24 @@ export function CCSwitchDialog(props: Props) {
                 <span className='text-destructive ml-0.5'>*</span>
               )}
             </Label>
-            <ComboboxInput
-              options={modelOptions}
-              value={models[field.key] || ''}
-              onValueChange={(v) =>
-                setModels((prev) => ({ ...prev, [field.key]: v }))
-              }
-              placeholder={t('Select or enter model name')}
-              emptyText={t('No models found')}
-            />
+            {modelOptions.length === 0 ? (
+              <Input
+                disabled
+                readOnly
+                value=''
+                placeholder={t('No callable models available for this API key')}
+              />
+            ) : (
+              <ComboboxInput
+                options={modelOptions}
+                value={models[field.key] || ''}
+                onValueChange={(v) =>
+                  setModels((prev) => ({ ...prev, [field.key]: v }))
+                }
+                placeholder={t('Select a callable model')}
+                emptyText={t('No models found')}
+              />
+            )}
           </div>
         ))}
       </div>

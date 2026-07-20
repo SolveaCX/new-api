@@ -22,7 +22,8 @@ import { useApiKeys } from './api-keys-provider'
 import { CCSwitchDialog } from './dialogs/cc-switch-dialog'
 
 export function ApiKeysDialogs() {
-  const { open, setOpen, currentRow, resolvedKey } = useApiKeys()
+  const { open, setOpen, currentRow, resolvedKey, initialCreateGroup } =
+    useApiKeys()
 
   return (
     <>
@@ -30,6 +31,7 @@ export function ApiKeysDialogs() {
         open={open === 'create' || open === 'update'}
         onOpenChange={(isOpen) => !isOpen && setOpen(null)}
         currentRow={open === 'update' ? currentRow || undefined : undefined}
+        initialCreateGroup={initialCreateGroup}
       />
       <ApiKeysDeleteDialog />
       <CCSwitchDialog
