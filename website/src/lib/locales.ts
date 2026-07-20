@@ -17,6 +17,27 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   id: "Bahasa Indonesia",
 };
 
+/**
+ * Stable BCP 47 tags used in rendered HTML, hreflang and XML sitemaps.
+ * URL segments and application state intentionally keep the short locale keys.
+ */
+export const LOCALE_LANGUAGE_TAGS: Record<Locale, string> = {
+  en: "en-US",
+  zh: "zh-CN",
+  es: "es-ES",
+  fr: "fr-FR",
+  pt: "pt-PT",
+  ru: "ru-RU",
+  ja: "ja-JP",
+  vi: "vi-VN",
+  de: "de-DE",
+  id: "id-ID",
+};
+
+export function localeLanguageTag(locale: Locale): string {
+  return LOCALE_LANGUAGE_TAGS[locale];
+}
+
 export function isLocale(value: string | undefined): value is Locale {
   return LOCALES.some((locale) => locale === value);
 }
@@ -56,6 +77,6 @@ export function stripLocale(pathname: string): string {
 export function localeAlternates(pathname: string): Record<string, string> {
   const stripped = stripLocale(pathname);
   return Object.fromEntries(
-    LOCALES.map((locale) => [locale, `https://flatkey.ai${localizePath(stripped, locale)}`])
+    LOCALES.map((locale) => [localeLanguageTag(locale), `https://flatkey.ai${localizePath(stripped, locale)}`])
   );
 }

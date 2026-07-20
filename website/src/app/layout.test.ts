@@ -4,7 +4,7 @@ import {
   LIVECHAT_BOOTSTRAP_SCRIPT,
   ROOT_DOCUMENT_PERFORMANCE_POLICY,
 } from "@/components/root-document";
-import { resolveLocaleFromPathname } from "@/lib/locales";
+import { LOCALES, localeAlternates, localeLanguageTag, resolveLocaleFromPathname } from "@/lib/locales";
 
 describe("resolveLocaleFromPathname", () => {
   test("defaults to English without a supported path locale", () => {
@@ -20,6 +20,23 @@ describe("resolveLocaleFromPathname", () => {
   test("ignores unsupported path locales", () => {
     expect(resolveLocaleFromPathname("/pricing/model")).toBe("en");
     expect(resolveLocaleFromPathname("/xx/blog")).toBe("en");
+  });
+});
+
+describe("regional language metadata", () => {
+  test("maps every route locale to one stable BCP47 tag", () => {
+    expect(LOCALES.map(localeLanguageTag)).toEqual([
+      "en-US", "zh-CN", "es-ES", "fr-FR", "pt-PT",
+      "ru-RU", "ja-JP", "vi-VN", "de-DE", "id-ID",
+    ]);
+  });
+
+  test("uses regional tags as hreflang keys without changing URL segments", () => {
+    expect(localeAlternates("/pricing")).toMatchObject({
+      "en-US": "https://flatkey.ai/pricing",
+      "zh-CN": "https://flatkey.ai/zh/pricing",
+      "ja-JP": "https://flatkey.ai/ja/pricing",
+    });
   });
 });
 

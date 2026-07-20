@@ -34,8 +34,36 @@ test("static HTML receives one shared configuration script and keeps local docs 
     /sub_filter '<\/body>' '<script src="\/assets\/site-config\.js\?v=[^"]+"><\/script><\/body>';/,
   );
   assert.doesNotMatch(nginx, /sub_filter 'fk2\.css\?v=716b'/);
-  assert.match(indexHtml, /<a href="docs\.html">Docs<\/a>/);
-  assert.doesNotMatch(css, /a\[href="\/?docs\.html"\]/);
+  assert.match(indexHtml, /<a href="\/docs">Docs<\/a>/);
+  assert.doesNotMatch(indexHtml, /href="[^"]*\.html/);
+});
+
+test("public static pages use one extensionless canonical route", () => {
+  const nginx = read("../nginx.conf");
+  const sitemap = read("../html/sitemap-v2.xml");
+
+  for (const [route, file] of [
+    ["models", "models.html"],
+    ["docs", "docs.html"],
+    ["playground", "playground.html"],
+    ["pricing", "topup.html"],
+    ["terms", "terms.html"],
+  ]) {
+    assert.match(nginx, new RegExp(`location = /${route} \\{ try_files /${file.replace(".", "\\.")} =404; \\}`));
+  }
+  assert.match(nginx, /location = \/topup\.html \{ return 301 \/pricing; \}/);
+  assert.doesNotMatch(sitemap, /\.html</);
+  assert.doesNotMatch(sitemap, /<loc>https:\/\/flatkey\.ai\/login<\/loc>/);
+});
+
+test("legacy HTML and sitemap responses normalize regional language tags", () => {
+  const nginx = read("../nginx.conf");
+
+  for (const [short, regional] of [["en", "en-US"], ["zh", "zh-CN"], ["ja", "ja-JP"]]) {
+    assert.match(nginx, new RegExp(`sub_filter 'lang="${short}"' 'lang="${regional}"';`));
+  }
+  assert.match(nginx, /sub_filter_types application\/xml text\/xml;/);
+  assert.match(nginx, /sub_filter_once off;/);
 });
 
 test("the Nginx image substitutes only the configured console origin", () => {

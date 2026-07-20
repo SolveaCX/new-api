@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8">
+<html lang="ja-JP"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>flatkey — More AI, Less Cost. Every official model, one key.</title>
 <link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-64.png?v=3">
@@ -108,15 +108,15 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
 <meta name="description" content="flatkey は 1 つの key で GPT・Claude・Gemini・DeepSeek・GLM——さらに Seedance 2.5 動画——の公式 API へルーティング:本物のモデル、劣化なし。中国系モデルは公式価格の 60% から、チャージごとに 15–50% ボーナス($200 で $100 付与)。1 行変えるだけ、SDK はそのまま。">
 <link rel="canonical" href="https://flatkey.ai/ja">
 <link rel="alternate" hreflang="zh-CN" href="https://flatkey.ai/zh">
-<link rel="alternate" hreflang="es" href="https://flatkey.ai/es">
-<link rel="alternate" hreflang="fr" href="https://flatkey.ai/fr">
-<link rel="alternate" hreflang="pt" href="https://flatkey.ai/pt">
-<link rel="alternate" hreflang="ru" href="https://flatkey.ai/ru">
-<link rel="alternate" hreflang="ja" href="https://flatkey.ai/ja">
-<link rel="alternate" hreflang="vi" href="https://flatkey.ai/vi">
-<link rel="alternate" hreflang="de" href="https://flatkey.ai/de">
-<link rel="alternate" hreflang="id" href="https://flatkey.ai/id">
-<link rel="alternate" hreflang="en" href="https://flatkey.ai/">
+<link rel="alternate" hreflang="es-ES" href="https://flatkey.ai/es">
+<link rel="alternate" hreflang="fr-FR" href="https://flatkey.ai/fr">
+<link rel="alternate" hreflang="pt-PT" href="https://flatkey.ai/pt">
+<link rel="alternate" hreflang="ru-RU" href="https://flatkey.ai/ru">
+<link rel="alternate" hreflang="ja-JP" href="https://flatkey.ai/ja">
+<link rel="alternate" hreflang="vi-VN" href="https://flatkey.ai/vi">
+<link rel="alternate" hreflang="de-DE" href="https://flatkey.ai/de">
+<link rel="alternate" hreflang="id-ID" href="https://flatkey.ai/id">
+<link rel="alternate" hreflang="en-US" href="https://flatkey.ai/">
 <link rel="alternate" hreflang="x-default" href="https://flatkey.ai/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="flatkey.ai">
@@ -139,11 +139,11 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
 
 <nav class="nav">
   <a class="logo" href="/"><img src="/assets/flatkey-mark.svg?v=4" alt="flatkey">flatkey</a>
-  <a href="/models.html" data-i18n="nav.models" data-orig="Models">モデル</a><a href="/docs.html" data-i18n="nav.docs" data-orig="Docs">ドキュメント</a><a href="/playground.html" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/models.html#leaderboard" data-i18n="nav.rankings" data-orig="Rankings">ランキング</a><a href="/topup.html" data-i18n="nav.pricing" data-orig="Pricing">料金</a><a href="/compute.html" data-i18n="nav.compute" data-orig="Compute">Compute</a><a href="/usecases.html" data-i18n="nav.usecases" data-orig="Use cases">ユースケース</a>
+  <a href="/models" data-i18n="nav.models" data-orig="Models">モデル</a><a href="/docs" data-i18n="nav.docs" data-orig="Docs">ドキュメント</a><a href="/playground" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/models#leaderboard" data-i18n="nav.rankings" data-orig="Rankings">ランキング</a><a href="/pricing" data-i18n="nav.pricing" data-orig="Pricing">料金</a><a href="/compute" data-i18n="nav.compute" data-orig="Compute">Compute</a><a href="/usecases" data-i18n="nav.usecases" data-orig="Use cases">ユースケース</a>
   <div class="sp"></div>
-  <a href="/login.html" data-i18n="nav.signin" data-orig="Sign in">ログイン</a>
-  <a class="btn white" href="/contact.html" data-i18n="nav.contact" data-orig="Contact sales">営業に問い合わせ</a>
-  <a class="btn black" href="/login.html" data-i18n="nav.start" data-orig="Start free →">無料で始める →</a>
+  <a href="/login" data-i18n="nav.signin" data-orig="Sign in">ログイン</a>
+  <a class="btn white" href="/contact" data-i18n="nav.contact" data-orig="Contact sales">営業に問い合わせ</a>
+  <a class="btn black" href="/login" data-i18n="nav.start" data-orig="Start free →">無料で始める →</a>
 </nav>
 
 <header class="hero">
@@ -156,8 +156,8 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
       <div class="code">gpt&nbsp;&nbsp;&nbsp; = OpenAI(<span class="k">base_url</span>=<span class="s">"https://router.flatkey.ai/v1"</span>, <span class="k">api_key</span>=<span class="s">"sk-fk-…"</span>)
 claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://router.flatkey.ai"</span>, <span class="k">api_key</span>=<span class="s">"sk-fk-…"</span>)</div>
       <div class="ctas">
-        <a class="btn black big" href="/login.html" data-i18n="hero.cta1" data-orig="Start building — free $2 credit">無料で始める — $2 クレジット</a>
-        <a class="btn white big" href="/playground.html" data-i18n="hero.cta2" data-orig="Try in Playground, no signup">登録なしで Playground を試す</a>
+        <a class="btn black big" href="/login" data-i18n="hero.cta1" data-orig="Start building — free $2 credit">無料で始める — $2 クレジット</a>
+        <a class="btn white big" href="/playground" data-i18n="hero.cta2" data-orig="Try in Playground, no signup">登録なしで Playground を試す</a>
       </div>
       <p class="proofline" data-i18n="hero.proof" data-orig="&lt;b class=&quot;num&quot;&gt;46B&lt;/b&gt; tokens/month · &lt;b class=&quot;num&quot;&gt;4K+&lt;/b&gt; paying users · &lt;b class=&quot;num&quot;&gt;100+&lt;/b&gt; enterprises in production · &lt;b class=&quot;num&quot;&gt;0&lt;/b&gt; model swaps — &lt;a href=&quot;#trust&quot; style=&quot;color:var(--violet-deep);font-weight:600&quot;&gt;public audit log ↗&lt;/a&gt;"><b class="num">46B</b> トークン/月 · <b class="num">4K+</b> 有料ユーザー · <b class="num">100+</b> 企業が本番利用 · <b class="num">0</b> 回のモデル差し替え — <a href="#trust" style="color:var(--violet-deep);font-weight:600">公開監査ログ ↗</a></p>
     </div>
@@ -172,7 +172,7 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
         <div class="brow"><b>deepseek-v4-flash</b><span class="prov">deepseek</span><span class="hdot" title="99.4% success · 30-day real traffic"></span><span class="pr"><s>$0.14</s><span class="now">$0.056</span><span class="un">/M in</span></span></div>
         <div class="brow"><b>glm-5.2</b><span class="prov">z.ai</span><span class="hdot" title="96.6% success · 30-day real traffic"></span><span class="pr"><s>$1.40</s><span class="now">$0.56</span><span class="un">/M in</span></span></div>
         <div class="brow" style="background:var(--violet-tint);border-radius:10px;margin:4px 14px 2px;padding-left:12px;padding-right:12px;border-bottom:none"><b>seedance-2.5</b><span class="prov">bytedance</span><span style="font-family:var(--mono);font-size:9.5px;background:#fff;color:var(--violet-deep);border-radius:999px;padding:2px 8px;font-weight:600">VIDEO · NEW</span><span class="hdot" title="early access · official bytedance"></span><span class="pr"><span class="now" style="font-size:12.5px" data-i18n="md.early" data-orig="Early access">先行アクセス</span></span></div>
-        <div class="boardfoot"><a href="/models.html" data-i18n="board.foot" data-orig="See all 160+ models &amp;amp; live health →">160+ モデルとライブヘルスを見る →</a></div>
+        <div class="boardfoot"><a href="/models" data-i18n="board.foot" data-orig="See all 160+ models &amp;amp; live health →">160+ モデルとライブヘルスを見る →</a></div>
       </div>
       </div>
     </div>
@@ -231,11 +231,11 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
       <h2 class="display" data-i18n="rel.h2" data-orig="Stability you can&lt;br&gt;hold us to.">責任を問える<br>安定性を。</h2>
       <p class="sub" style="margin-top:14px;max-width:440px" data-i18n="rel.p" data-orig="One request, five upstream channel classes. When a channel degrades, the router reroutes automatically — and the SLA is a public document, not a sales promise.">1 つのリクエストの裏に 5 系統の上流チャネル。チャネルが劣化すればルーターが自動で切り替え——そして SLA は公開文書であり、営業トークではありません。</p>
       <div class="relStats">
-        <div><b class="num">99.5%</b><span data-i18n="rel.s1" data-orig="signed SLA — &lt;a href=&quot;sla.html&quot; style=&quot;color:var(--violet-deep)&quot;&gt;public terms →&lt;/a&gt;">署名済み SLA — <a href="/sla.html" style="color:var(--violet-deep)">公開条項 →</a></span></div>
+        <div><b class="num">99.5%</b><span data-i18n="rel.s1" data-orig="signed SLA — &lt;a href=&quot;/sla&quot; style=&quot;color:var(--violet-deep)&quot;&gt;public terms →&lt;/a&gt;">署名済み SLA — <a href="/sla" style="color:var(--violet-deep)">公開条項 →</a></span></div>
         <div><b class="num">5</b><span data-i18n="rel.s2" data-orig="channel classes, automatic failover">系統のチャネル、自動フェイルオーバー</span></div>
         <div><b class="num">$0</b><span data-i18n="rel.s3" data-orig="balance consumed by flatkey-side errors">flatkey 側エラーによる残高消費</span></div>
       </div>
-      <div style="display:flex;gap:12px;margin-top:24px"><a class="btn black big" href="/status.html" data-i18n="rel.cta1" data-orig="Live status →">ライブステータス →</a><a class="btn white big" href="/sla.html" data-i18n="rel.cta2" data-orig="SLA &amp;amp; service credits">SLA とクレジット</a></div>
+      <div style="display:flex;gap:12px;margin-top:24px"><a class="btn black big" href="/status" data-i18n="rel.cta1" data-orig="Live status →">ライブステータス →</a><a class="btn white big" href="/sla" data-i18n="rel.cta2" data-orig="SLA &amp;amp; service credits">SLA とクレジット</a></div>
     </div>
     <div class="relChart">
       <div class="rcHead"><span data-i18n="rel.ct" data-orig="UPTIME · SINGLE CHANNEL VS FLATKEY MESH · LIVE">可用性 · 単一チャネル VS FLATKEY メッシュ · LIVE</span><span class="pill mint"><span class="dot"></span>LIVE</span></div>
@@ -366,18 +366,18 @@ client.chat.completions.create(
     <h2 class="display" data-i18n="vid.h2" data-orig="Video generation, official endpoints.">動画生成も、公式エンドポイントで。</h2>
     <p class="sub" style="margin-top:12px;max-width:620px" data-i18n="vid.sub" data-orig="Text-to-video and image-to-video from every major lab — metered per second on the same prepaid balance as your text models.">主要ラボの text-to-video / image-to-video——秒単位課金、テキストモデルと同じプリペイド残高で。</p>
     <div class="vgal">
-      <a class="vcard big" href="/playground.html">
+      <a class="vcard big" href="/playground">
         <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.1.jpg" src="/assets/video/v1.1.mp4"></video>
         <div class="vshade"></div>
         <span class="fbadge" data-i18n="vid.badge" data-orig="FEATURED · NEW">注目 · 新登場</span>
         <div class="vmeta"><h3>Seedance 2.5<br>Image to Video</h3><p><span>bytedance · 1080p · t2v + i2v</span><i>Early access</i></p></div>
       </a>
-      <a class="vcard" href="/playground.html">
+      <a class="vcard" href="/playground">
         <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.2.jpg" src="/assets/video/v1.2.mp4"></video>
         <div class="vshade"></div>
         <div class="vmeta"><h3>Seedance 2.0<br>Image to Video</h3><p><span>bytedance · i2v</span><i><span style="font-size:inherit" data-i18n="md.usage" data-orig="Usage-based">従量課金</span></i></p></div>
       </a>
-      <a class="vcard" href="/playground.html">
+      <a class="vcard" href="/playground">
         <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.3.jpg" src="/assets/video/v1.3.mp4"></video>
         <div class="vshade"></div>
         <div class="vmeta"><h3>Veo 3.1<br>Text to Video</h3><p><span>google · t2v + audio</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></p></div>
@@ -391,7 +391,7 @@ client.chat.completions.create(
       <div class="mcard"><b>pixverse-v6</b><span>pixverse · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
       <div class="mcard"><b>seedance-2.0-lite</b><span>bytedance · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
       <div class="mcard"><b>ltx-2.3</b><span>lightricks · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard more"><a href="/models.html" data-i18n="vid.more" data-orig="+ 20 more video models →">+ さらに 20 の動画モデル →</a></div>
+      <div class="mcard more"><a href="/models" data-i18n="vid.more" data-orig="+ 20 more video models →">+ さらに 20 の動画モデル →</a></div>
     </div>
   </div></section>
 
@@ -409,7 +409,7 @@ client.chat.completions.create(
       <div class="mcard"><b>cosyvoice-3</b><span>alibaba · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
       <div class="mcard"><b>seed-tts-2</b><span>bytedance · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
       <div class="mcard"><b>gemini-2.5-flash-tts</b><span>google · tts</span><i>$0.50/M in · $10/M out</i></div>
-      <div class="mcard more"><a href="/models.html" data-i18n="aud.more" data-orig="+ 12 more audio models →">+ さらに 12 の音声モデル →</a></div>
+      <div class="mcard more"><a href="/models" data-i18n="aud.more" data-orig="+ 12 more audio models →">+ さらに 12 の音声モデル →</a></div>
     </div>
   </div>
 </section>
@@ -465,7 +465,7 @@ client.chat.completions.create(
         <i style="color:#C7CCFF" data-i18n="sup.dc.i" data-orig="Builders answering builders — the team is in the channels daily">ビルダー同士の助け合い——チームも毎日チャンネルにいます</i>
       </a>
       <a class="ch" href="mailto:support@flatkey.ai"><b data-i18n="sup.email" data-orig="Email">メール</b><span>support@flatkey.ai</span><i data-i18n="sup.email.i" data-orig="Reply within 1 business day">1 営業日以内に返信</i></a>
-      <a class="ch" href="/contact.html"><b data-i18n="sup.chat" data-orig="Live chat">ライブチャット</b><span data-i18n="sup.chat.s" data-orig="Start chatting →">チャットを開始 →</span><i data-i18n="sup.chat.i" data-orig="Fastest answer, on the site">サイト内で最速回答</i></a>
+      <a class="ch" href="/contact"><b data-i18n="sup.chat" data-orig="Live chat">ライブチャット</b><span data-i18n="sup.chat.s" data-orig="Start chatting →">チャットを開始 →</span><i data-i18n="sup.chat.i" data-orig="Fastest answer, on the site">サイト内で最速回答</i></a>
       
       <a class="ch" href="https://x.com/flatkey101"><b data-i18n="sup.x" data-orig="X (Twitter)">X (Twitter)</b><span>@flatkey101</span><i data-i18n="sup.x.i" data-orig="Follow or DM">フォローまたは DM</i></a>
     </div>
@@ -480,7 +480,7 @@ client.chat.completions.create(
     <div class="ctaIn">
       <h2 data-i18n="cta.h" data-orig="More AI, less cost —&lt;br&gt;on every official model">More AI, less cost —<br>すべての公式モデルの上で</h2>
       <p data-i18n="cta.sub" data-orig="Whether you ship an agent today or route billions of tokens a month — one key, a signed SLA, and prices that drop as you grow.">今日エージェントを出すのも、月数十億トークンを流すのも——ひとつのキー、署名済み SLA、成長するほど下がる価格。</p>
-      <div class="ctaBtns"><a class="btn white big" href="/login.html" data-i18n="cta.b1" data-orig="Get started">始める</a><a class="btn black big" href="/contact.html" data-i18n="cta.b2" data-orig="Contact Sales">営業に相談</a></div>
+      <div class="ctaBtns"><a class="btn white big" href="/login" data-i18n="cta.b1" data-orig="Get started">始める</a><a class="btn black big" href="/contact" data-i18n="cta.b2" data-orig="Contact Sales">営業に相談</a></div>
     </div>
   </div>
 </section>
@@ -491,10 +491,10 @@ client.chat.completions.create(
       <a class="logo" href="/"><img src="/assets/flatkey-mark.svg?v=4" alt="flatkey">flatkey</a>
       <p data-i18n="ft.brand" data-orig="The official-model gateway. More AI, less cost — every frontier model behind one key, verified hourly.">公式モデルのゲートウェイ。More AI, less cost——すべてのフロンティアモデルをひとつのキーで、毎時検証。</p>
     </div>
-    <div class="col"><h5 data-i18n="ft.product" data-orig="Product">プロダクト</h5><a href="/models.html" data-i18n="nav.models" data-orig="Models">モデル</a><a href="/playground.html" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/rankings" data-i18n="nav.rankings" data-orig="Rankings">ランキング</a><a href="/topup.html" data-i18n="nav.pricing" data-orig="Pricing">料金</a><a href="/usecases.html" data-i18n="nav.usecases" data-orig="Use cases">ユースケース</a><a href="https://console.flatkey.ai/dashboard" data-i18n="ft.console" data-orig="Console ↗">コンソール ↗</a></div>
-    <div class="col"><h5 data-i18n="ft.dev" data-orig="Developers">開発者</h5><a href="/docs.html" data-i18n="nav.docs" data-orig="Docs">ドキュメント</a><a href="/docs.html#community">gateway-bench</a><a href="/status.html" data-i18n="nav.status" data-orig="API status">ステータス</a><a href="https://docs.flatkey.ai/llms.txt">llms.txt</a><a href="/blog" data-i18n="nav.blog" data-orig="Blog ↗">Blog</a></div>
-    <div class="col"><h5 data-i18n="ft.company" data-orig="Company">会社</h5><a href="/contact.html" data-i18n="ft.contact" data-orig="Contact us">お問い合わせ</a><a href="/about" data-i18n="ft.about" data-orig="About">会社概要</a><a href="/terms.html" data-i18n="ft.terms" data-orig="Terms of Service">利用規約</a><a href="/privacy.html" data-i18n="ft.privacy" data-orig="Privacy Policy">プライバシーポリシー</a><a href="/sla.html" data-i18n="ft.sla" data-orig="Service Level Agreement">SLA</a><a href="/refund-policy.html" data-i18n="ft.refund" data-orig="Refund Policy">返金ポリシー</a></div>
-    <div class="col"><h5 data-i18n="ft.social" data-orig="Socials">ソーシャル</h5><a href="https://x.com/flatkey101">X @flatkey101</a><a href="mailto:support@flatkey.ai">support@flatkey.ai</a><a href="/docs.html#community">GitHub</a><a href="https://www.linkedin.com/company/flatkey/">LinkedIn</a><a href="https://discord.gg/VrbZFDXj5g">Discord</a></div>
+    <div class="col"><h5 data-i18n="ft.product" data-orig="Product">プロダクト</h5><a href="/models" data-i18n="nav.models" data-orig="Models">モデル</a><a href="/playground" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/rankings" data-i18n="nav.rankings" data-orig="Rankings">ランキング</a><a href="/pricing" data-i18n="nav.pricing" data-orig="Pricing">料金</a><a href="/usecases" data-i18n="nav.usecases" data-orig="Use cases">ユースケース</a><a href="https://console.flatkey.ai/dashboard" data-i18n="ft.console" data-orig="Console ↗">コンソール ↗</a></div>
+    <div class="col"><h5 data-i18n="ft.dev" data-orig="Developers">開発者</h5><a href="/docs" data-i18n="nav.docs" data-orig="Docs">ドキュメント</a><a href="/docs#community">gateway-bench</a><a href="/status" data-i18n="nav.status" data-orig="API status">ステータス</a><a href="https://docs.flatkey.ai/llms.txt">llms.txt</a><a href="/blog" data-i18n="nav.blog" data-orig="Blog ↗">Blog</a></div>
+    <div class="col"><h5 data-i18n="ft.company" data-orig="Company">会社</h5><a href="/contact" data-i18n="ft.contact" data-orig="Contact us">お問い合わせ</a><a href="/about" data-i18n="ft.about" data-orig="About">会社概要</a><a href="/terms" data-i18n="ft.terms" data-orig="Terms of Service">利用規約</a><a href="/privacy" data-i18n="ft.privacy" data-orig="Privacy Policy">プライバシーポリシー</a><a href="/sla" data-i18n="ft.sla" data-orig="Service Level Agreement">SLA</a><a href="/refund-policy" data-i18n="ft.refund" data-orig="Refund Policy">返金ポリシー</a></div>
+    <div class="col"><h5 data-i18n="ft.social" data-orig="Socials">ソーシャル</h5><a href="https://x.com/flatkey101">X @flatkey101</a><a href="mailto:support@flatkey.ai">support@flatkey.ai</a><a href="/docs#community">GitHub</a><a href="https://www.linkedin.com/company/flatkey/">LinkedIn</a><a href="https://discord.gg/VrbZFDXj5g">Discord</a></div>
   </div>
   <div class="trustrow"><span data-i18n="ft.trusted" data-orig="TRUSTED &amp;amp; VERIFIED BY">認証・検証</span>
     <a href="https://www.cert-assure.com/serchresult.php?type=Management+System+Certification&amp;certificate=USA-SOC2-220513">SOC 2 Type II</a>
@@ -504,14 +504,14 @@ client.chat.completions.create(
     <span class="b" data-i18n="ft.zeroret" data-orig="Zero retention of request content">リクエスト内容は保存しません</span>
   </div>
   <div class="bottom">
-    <div class="legal" data-i18n="ft.legal" data-orig="© 2026 flatkey.ai · VOC AI INC, San Jose, CA. All rights reserved. &lt;a href=&quot;terms.html&quot;&gt;Terms&lt;/a&gt; · &lt;a href=&quot;privacy.html&quot;&gt;Privacy&lt;/a&gt; · &lt;a href=&quot;legal-sla.html&quot;&gt;SLA&lt;/a&gt; · &lt;a href=&quot;refund-policy.html&quot;&gt;Refunds&lt;/a&gt;">© 2026 flatkey.ai · VOC AI INC (San Jose, CA). All rights reserved. <a href="/terms.html">規約</a> · <a href="/privacy.html">プライバシー</a> · <a href="legal-sla.html">SLA</a> · <a href="/refund-policy.html">返金</a></div>
+    <div class="legal" data-i18n="ft.legal" data-orig="© 2026 flatkey.ai · VOC AI INC, San Jose, CA. All rights reserved. &lt;a href=&quot;/terms&quot;&gt;Terms&lt;/a&gt; · &lt;a href=&quot;/privacy&quot;&gt;Privacy&lt;/a&gt; · &lt;a href=&quot;/sla&quot;&gt;SLA&lt;/a&gt; · &lt;a href=&quot;/refund-policy&quot;&gt;Refunds&lt;/a&gt;">© 2026 flatkey.ai · VOC AI INC (San Jose, CA). All rights reserved. <a href="/terms">規約</a> · <a href="/privacy">プライバシー</a> · <a href="/sla">SLA</a> · <a href="/refund-policy">返金</a></div>
     <div class="word"><img src="/assets/flatkey-mark.svg?v=4" alt="">flatkey</div>
   </div>
 </footer>
 <div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
 <script src="/assets/pixels.js?v=719h"></script>
 <script>try{localStorage.setItem("fk-lang","ja")}catch(e){}</script>
-<script src="/assets/i18n.js?v=720b"></script>
+<script src="/assets/i18n.js?v=720c"></script>
 <script src="/assets/track.js?v=716b"></script>
 <script src="assets/site-shell.js?v=720a"></script>
 </body></html>

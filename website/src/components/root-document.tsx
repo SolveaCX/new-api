@@ -3,7 +3,7 @@ import Script from "next/script";
 import type { ReactNode } from "react";
 import { SiteConfigProvider } from "@/components/site-config-provider";
 import { MIXPANEL_BROWSER_SCRIPT } from "@/lib/mixpanel";
-import type { Locale } from "@/lib/locales";
+import { localeLanguageTag, type Locale } from "@/lib/locales";
 
 const GTM_IDS = ["GTM-NKH9LPX9", "GTM-5T5LPLSZ"] as const;
 
@@ -53,7 +53,7 @@ type RootDocumentProps = {
 
 export function RootDocument({ bodyStart, children, docsUrl, lang }: RootDocumentProps) {
   return (
-    <html lang={lang} suppressHydrationWarning>
+    <html lang={localeLanguageTag(lang)} suppressHydrationWarning>
       <body>
         {bodyStart}
         <Script id="google-tag-manager" strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.gtmStrategy}>
