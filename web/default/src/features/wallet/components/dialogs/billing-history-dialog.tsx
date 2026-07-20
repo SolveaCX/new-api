@@ -498,8 +498,9 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                         <Label className='text-muted-foreground text-xs'>
                           {t('Payment')}
                         </Label>
-                        <div className='text-sm font-semibold text-red-600'>
-                          {formatNumber(record.money)}
+                        <div className='text-sm font-semibold'>
+                          {formatNumber(record.money)}{' '}
+                          {record.payment_currency?.trim() || 'USD'}
                         </div>
                       </div>
                       {record.bonus_amount && record.bonus_amount > 0 ? (

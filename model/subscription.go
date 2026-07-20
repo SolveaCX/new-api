@@ -639,6 +639,8 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 				TradeNo:         order.TradeNo,
 				PaymentMethod:   order.PaymentMethod,
 				PaymentProvider: order.PaymentProvider,
+				// Plan prices are USD-denominated regardless of gateway.
+				PaymentCurrency: "USD",
 				CreateTime:      order.CreateTime,
 				CompleteTime:    now,
 				Status:          common.TopUpStatusSuccess,
