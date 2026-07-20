@@ -175,9 +175,25 @@ type SubscriptionPlan struct {
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
+	// Rolling 5-hour usage window limit in weighted quota units (0 = disabled).
+	// 显式 column：GORM 默认会把 Window5hAmount 命名为 window5h_amount，与迁移列名不一致
+	Window5hAmount int64 `json:"window_5h_amount" gorm:"column:window_5h_amount;type:bigint;not null;default:0"`
+	// 7-day usage window limit in weighted quota units, cycle anchored at subscription start (0 = disabled)
+	WindowWeekAmount int64 `json:"window_week_amount" gorm:"column:window_week_amount;type:bigint;not null;default:0"`
+
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
+
+	// ---- 面向用户的价值展示字段（纯展示，不参与计费）----
+	// 套餐可用模型数量（0 = 不显示，前端回退为「全部模型」文案）
+	ModelCount int `json:"model_count" gorm:"type:int;not null;default:0"`
+	// 速率上限：每分钟请求数 RPM（0 = 不显示）
+	Rpm int `json:"rpm" gorm:"type:int;not null;default:0"`
+	// 并发数上限（0 = 不显示）
+	Concurrency int `json:"concurrency" gorm:"type:int;not null;default:0"`
+	// 价值卖点，每行一条（admin 用换行分隔录入，前端按 \n 拆分渲染）
+	FeatureLines string `json:"feature_lines" gorm:"type:text;default:''"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
@@ -766,6 +782,12 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			return err
 		}
 
+		// 让余额购买的订阅也进入计费历史（与网关支付订阅一致，见 CompleteSubscriptionOrder）。
+		// 记录为一笔 method=balance 的成功付款，Money=套餐价，Amount=0（不加钱包余额）。
+		if err := upsertSubscriptionTopUpTx(tx, order); err != nil {
+			return err
+		}
+
 		logPlanTitle = plan.Title
 		logMoney = plan.PriceAmount
 		chargedQuota = requiredQuota
@@ -803,6 +825,44 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 		return nil, err
 	}
 	return buildSubscriptionSummaries(subs), nil
+}
+
+// SubscriptionWindowInfo carries the data needed to enforce usage windows
+// (5h rolling + weekly anchored at subscription start) before pre-consume.
+type SubscriptionWindowInfo struct {
+	UserSubscriptionId int
+	SubscriptionStart  int64
+	Window5hAmount     int64
+	WindowWeekAmount   int64
+}
+
+// GetActiveSubscriptionWindowInfo returns window limits for the user's first
+// active subscription (same end_time asc order as PreConsumeUserSubscription).
+// Returns (nil, nil) when the user has no active subscription.
+func GetActiveSubscriptionWindowInfo(userId int) (*SubscriptionWindowInfo, error) {
+	if userId <= 0 {
+		return nil, errors.New("invalid userId")
+	}
+	now := common.GetTimestamp()
+	var sub UserSubscription
+	query := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+		Order("end_time asc, id asc").Limit(1).Find(&sub)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, nil
+	}
+	plan, err := GetSubscriptionPlanById(sub.PlanId)
+	if err != nil {
+		return nil, err
+	}
+	return &SubscriptionWindowInfo{
+		UserSubscriptionId: sub.Id,
+		SubscriptionStart:  sub.StartTime,
+		Window5hAmount:     plan.Window5hAmount,
+		WindowWeekAmount:   plan.WindowWeekAmount,
+	}, nil
 }
 
 // HasActiveUserSubscription returns whether the user has any active subscription.

@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
@@ -556,6 +557,13 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 
 	if user.NewUserBonusGiven && user.Quota > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(user.Quota)))
+	}
+
+	// 纯套餐模式：注册成功（风控通过）后自动发放 Free 套餐。发放失败不阻断注册。
+	if setting.FreePlanOnSignupEnabled && user.Role <= common.RoleCommonUser {
+		if err := GrantFreePlanToUser(user.Id); err != nil {
+			common.SysError(fmt.Sprintf("failed to grant free plan to user %d: %s", user.Id, err.Error()))
+		}
 	}
 }
 

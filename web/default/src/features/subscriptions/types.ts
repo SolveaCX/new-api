@@ -38,10 +38,17 @@ export const subscriptionPlanSchema = z.object({
   allow_balance_pay: z.boolean().optional().default(true),
   max_purchase_per_user: z.number(),
   total_amount: z.number(),
+  window_5h_amount: z.number().optional().default(0),
+  window_week_amount: z.number().optional().default(0),
   upgrade_group: z.string().optional(),
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),
+  // 面向用户的价值展示字段（纯展示，不参与计费）
+  model_count: z.number().optional().default(0),
+  rpm: z.number().optional().default(0),
+  concurrency: z.number().optional().default(0),
+  feature_lines: z.string().optional().default(''),
 })
 
 export type SubscriptionPlan = z.infer<typeof subscriptionPlanSchema>
