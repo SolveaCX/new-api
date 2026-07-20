@@ -8,6 +8,10 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
+// FreePlanOnSignupEnabled 控制新用户注册后是否自动发放 Free 免费套餐。
+// 默认关闭：不配置时行为与现网一致；纯套餐模式上线时在系统设置打开。
+var FreePlanOnSignupEnabled = false
+
 // SubscriptionModelWeights 订阅池模型权重表（全局一张表，所有套餐共用）。
 // key = 模型名前缀（最长前缀优先），value = 权重 w（>0）。
 // 订阅池/窗口扣量 = list 等值额度 × w；未命中任何前缀时权重为 1.0。

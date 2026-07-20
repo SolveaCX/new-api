@@ -3,6 +3,7 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -61,4 +62,28 @@ func TestGrantFreePlanToUserIdempotent(t *testing.T) {
 	require.EqualValues(t, 500000, subs[0].AmountTotal)
 	require.EqualValues(t, 0, subs[0].NextResetTime) // never reset（一次性）
 	require.Greater(t, subs[0].EndTime, subs[0].StartTime)
+}
+
+func TestFinalizeUserCreationGrantsFreePlanWhenEnabled(t *testing.T) {
+	setupFreePlanTest(t)
+	original := setting.FreePlanOnSignupEnabled
+	t.Cleanup(func() { setting.FreePlanOnSignupEnabled = original })
+
+	require.NoError(t, DB.Create(&User{Username: "u2", Password: "x", Group: "default"}).Error)
+	var user User
+	require.NoError(t, DB.Where("username = ?", "u2").First(&user).Error)
+
+	// 开关关闭：不发放
+	setting.FreePlanOnSignupEnabled = false
+	user.FinalizeOAuthUserCreation(0)
+	var count int64
+	require.NoError(t, DB.Model(&UserSubscription{}).Where("user_id = ?", user.Id).Count(&count).Error)
+	require.EqualValues(t, 0, count)
+
+	// 开关打开：发放一份，重复调用不加发
+	setting.FreePlanOnSignupEnabled = true
+	user.FinalizeOAuthUserCreation(0)
+	user.FinalizeOAuthUserCreation(0)
+	require.NoError(t, DB.Model(&UserSubscription{}).Where("user_id = ?", user.Id).Count(&count).Error)
+	require.EqualValues(t, 1, count)
 }
