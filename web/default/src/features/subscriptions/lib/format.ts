@@ -76,15 +76,13 @@ export function formatModelCount(
   return t('All models')
 }
 
-// 速度规格 chips（RPM / 并发），值为 0 的项省略
+// 套餐并发规格；RPM 不再作为套餐差异或限制展示。
 export function formatSpeedSpecs(
   plan: Partial<SubscriptionPlan>,
   t: TFunction
 ): string[] {
   const specs: string[] = []
-  const rpm = Number(plan?.rpm || 0)
   const concurrency = Number(plan?.concurrency || 0)
-  if (rpm > 0) specs.push(t('{{count}} RPM', { count: rpm }))
   if (concurrency > 0)
     specs.push(t('{{count}} concurrent', { count: concurrency }))
   return specs

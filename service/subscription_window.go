@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -32,6 +33,15 @@ const (
 // billing_session maps it to an insufficient-quota error so subscription_first
 // falls back to wallet automatically.
 var ErrSubscriptionWindowExceeded = errors.New("subscription window exceeded")
+
+// SubscriptionWindowUsage is the read-only usage snapshot shown in the wallet.
+// Counters use the same weighted quota units as enforcement.
+type SubscriptionWindowUsage struct {
+	Window5hUsed      int64 `json:"window_5h_used"`
+	Window5hResetAt   int64 `json:"window_5h_reset_at"`
+	WindowWeekUsed    int64 `json:"window_week_used"`
+	WindowWeekResetAt int64 `json:"window_week_reset_at"`
+}
 
 type subscriptionWindowExceededError struct {
 	Window  string // "5h" | "week"
@@ -122,6 +132,52 @@ func subscriptionWindowKeys(info *model.SubscriptionWindowInfo, now int64) (week
 		bucketKeys = append(bucketKeys, subscriptionWindowBucketKey(info.UserSubscriptionId, ts))
 	}
 	return weekKey, bucketKeys, weekExpireAt
+}
+
+// GetSubscriptionWindowUsage reads the same Redis counters used by the window
+// guard. When Redis is disabled or temporarily unavailable, limits remain
+// visible and usage safely falls back to zero; the monthly database counter is
+// still authoritative and is returned separately by the subscription API.
+func GetSubscriptionWindowUsage(info *model.SubscriptionWindowInfo) SubscriptionWindowUsage {
+	usage := SubscriptionWindowUsage{}
+	if info == nil {
+		return usage
+	}
+
+	now := common.GetTimestamp()
+	weekKey, bucketKeys, _ := subscriptionWindowKeys(info, now)
+	usage.Window5hResetAt = (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
+	idx := subscriptionWindowWeekIndex(info.SubscriptionStart, now)
+	usage.WindowWeekResetAt = info.SubscriptionStart + (idx+1)*subscriptionWindowWeekSeconds
+
+	if !common.RedisEnabled || common.RDB == nil {
+		return usage
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	pipe := common.RDB.Pipeline()
+	fiveHourValues := pipe.MGet(ctx, bucketKeys...)
+	weekValue := pipe.Get(ctx, weekKey)
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		common.SysLog("subscription window usage query failed (showing zero): " + err.Error())
+		return usage
+	}
+
+	for _, raw := range fiveHourValues.Val() {
+		switch value := raw.(type) {
+		case string:
+			if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
+				usage.Window5hUsed += parsed
+			}
+		case int64:
+			usage.Window5hUsed += value
+		}
+	}
+	if value, err := weekValue.Int64(); err == nil {
+		usage.WindowWeekUsed = value
+	}
+	return usage
 }
 
 // reserveSubscriptionWindows checks both usage windows and atomically reserves

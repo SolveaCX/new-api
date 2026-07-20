@@ -17,14 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { PartyPopper, Wallet2, ChevronDown } from 'lucide-react'
+import { PartyPopper, Wallet2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
 import { trackTopupOnce } from '@/lib/analytics/topup-tracking'
 import { getSelf } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { formatQuota } from '@/lib/format'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
 import { TitledCard } from '@/components/ui/titled-card'
 import { SectionPageLayout } from '@/components/layout'
 import { getCardStatus } from '@/features/onboarding/api'
@@ -43,7 +44,6 @@ import { BillingHistoryPanel } from './components/dialogs/billing-history-dialog
 import { StripeEmbeddedCheckoutDialog } from './components/dialogs/stripe-embedded-checkout-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
-import { WalletStatsCard } from './components/wallet-stats-card'
 import {
   PADDLE_ORDER_SEARCH_PARAM,
   PADDLE_TRANSACTION_SEARCH_PARAM,
@@ -148,8 +148,8 @@ export function Wallet(props: WalletProps) {
   const [paymentLoadingAmount, setPaymentLoadingAmount] = useState<
     number | null
   >(null)
-  const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
-  const [showTopup, setShowTopup] = useState(false)
+  const [topupDialogOpen, setTopupDialogOpen] = useState(false)
+  const [hasRechargeHistory, setHasRechargeHistory] = useState(false)
   const [paddleCheckoutNotice, setPaddleCheckoutNotice] =
     useState<PaddleCheckoutNotice | null>(null)
   const handledPaddleTransactionRef = useRef<string | null>(null)
@@ -297,10 +297,9 @@ export function Wallet(props: WalletProps) {
     // Clean the query param immediately so a refresh doesn't re-trigger this.
     window.history.replaceState({}, '', window.location.pathname)
 
-    // The card-binding bonus is granted by an async Stripe webhook, which may not
-    // have arrived yet at the moment we land back here. Poll the card status until
-    // the binding is confirmed, then show success and refresh; otherwise tell the
-    // user it's still processing.
+    // Card binding is confirmed by an async Stripe webhook, which may not have
+    // arrived yet when we land back here. Poll until the binding is confirmed,
+    // then refresh the user state; otherwise explain that confirmation is pending.
     const POLL_ATTEMPTS = 6
     const POLL_INTERVAL_MS = 2000
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -327,7 +326,6 @@ export function Wallet(props: WalletProps) {
             toast.dismiss(pendingToast)
             await refreshAuthUser()
             await fetchUser()
-            // Celebratory confirmation that the bonus has landed.
             setCardBoundDialogOpen(true)
             return
           }
@@ -336,14 +334,10 @@ export function Wallet(props: WalletProps) {
         }
         await sleep(POLL_INTERVAL_MS)
       }
-      // Webhook hasn't landed in time; reassure the user instead of claiming success.
+      // Webhook hasn't landed in time; avoid claiming success prematurely.
       trackAdsFunnelEvent('flatkey_cardbind_pending')
       toast.dismiss(pendingToast)
-      toast.info(
-        t(
-          'Recharge successful. Your bonus is being credited. Refresh in a moment.'
-        )
-      )
+      toast.info(t('Confirming your card binding…'))
       await refreshAuthUser()
       await fetchUser()
     }
@@ -658,13 +652,6 @@ export function Wallet(props: WalletProps) {
     }
   }
 
-  const handleSubscriptionAvailabilityChange = useCallback(
-    (available: boolean) => {
-      setShowSubscriptionPanel(available)
-    },
-    []
-  )
-
   // Stable so the embedded Stripe Checkout effect (which depends on this
   // callback) does not re-run and remount the form on every wallet re-render.
   const handleEmbeddedCheckoutOpenChange = useCallback(
@@ -674,6 +661,11 @@ export function Wallet(props: WalletProps) {
       }
     },
     [closeEmbeddedCheckout]
+  )
+
+  const handleRechargeHistoryAvailability = useCallback(
+    (available: boolean) => setHasRechargeHistory(available),
+    []
   )
 
   return (
@@ -694,106 +686,89 @@ export function Wallet(props: WalletProps) {
             {/* 第一屏先展示套餐价值与档位，钱包统计降到套餐之后 */}
             <SubscriptionPlansCard
               topupInfo={topupInfo}
-              onAvailabilityChange={handleSubscriptionAvailabilityChange}
               userQuota={user?.quota}
               onPurchaseSuccess={fetchUser}
             />
 
-            <WalletStatsCard user={user} loading={userLoading} />
-
-            {/* 充值加油包弱化为次要区：默认收起，需要更多额度时展开 */}
-            <div id='wallet-top-up-packages' className='scroll-mt-4'>
-              {showSubscriptionPanel ? (
-                <div className='border-border/70 bg-muted/20 rounded-xl border border-dashed'>
-                  <button
-                    type='button'
-                    onClick={() => setShowTopup((v) => !v)}
-                    className='hover:bg-muted/30 flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors'
-                  >
-                    <div className='flex items-center gap-2.5'>
-                      <Wallet2 className='text-muted-foreground h-4 w-4 shrink-0' />
-                      <div>
-                        <div className='text-sm font-medium'>
-                          {t('Need more usage? Top up credits')}
-                        </div>
-                        <div className='text-muted-foreground text-xs'>
-                          {t(
-                            'Pay-as-you-go add-on. Used after your subscription quota runs out, billed at list price.'
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <ChevronDown
-                      className={cn(
-                        'text-muted-foreground h-4 w-4 shrink-0 transition-transform',
-                        showTopup && 'rotate-180'
-                      )}
-                    />
-                  </button>
-                  {showTopup && (
-                    <div className='border-border/60 border-t p-3 sm:p-4'>
-                      <RechargeFormCard
-                        topupInfo={topupInfo}
-                        presetAmounts={presetAmounts}
-                        selectedPreset={selectedPreset}
-                        onSelectPreset={handleSelectPreset}
-                        onStripeTopUp={handleStripeTopUp}
-                        paymentLoadingAmount={
-                          processing ? paymentLoadingAmount : null
-                        }
-                        loading={topupLoading}
-                        checkoutCurrency={checkoutCurrency}
-                        onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
-                        showCurrencySelector={
-                          shouldShowCurrencySelector(
-                            topupInfo?.client_region
-                          ) ||
-                          normalizeStripeCheckoutCurrency(
-                            props.initialCheckoutSearch?.currency
-                          ) != null
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : (
-                // 无可用订阅套餐时，充值是唯一入口，保持完整展示
-                <RechargeFormCard
-                  topupInfo={topupInfo}
-                  presetAmounts={presetAmounts}
-                  selectedPreset={selectedPreset}
-                  onSelectPreset={handleSelectPreset}
-                  onStripeTopUp={handleStripeTopUp}
-                  paymentLoadingAmount={
-                    processing ? paymentLoadingAmount : null
-                  }
-                  loading={topupLoading}
-                  checkoutCurrency={checkoutCurrency}
-                  onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
-                  showCurrencySelector={
-                    shouldShowCurrencySelector(topupInfo?.client_region) ||
-                    normalizeStripeCheckoutCurrency(
-                      props.initialCheckoutSearch?.currency
-                    ) != null
-                  }
-                />
+            {/* 第二部分：余额、加油包与充值历史。 */}
+            <TitledCard
+              title={t('Balance and Top-ups')}
+              description={t(
+                'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
               )}
-            </div>
+              icon={<Wallet2 className='h-4 w-4' />}
+              iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
+              contentClassName='space-y-4'
+            >
+              <div className='flex flex-wrap items-center justify-between gap-4 rounded-xl border px-4 py-3'>
+                <div>
+                  <div className='text-muted-foreground text-xs font-medium'>
+                    {t('Current Balance')}
+                  </div>
+                  <div className='mt-1 font-mono text-2xl font-bold tabular-nums'>
+                    {userLoading ? '—' : formatQuota(user?.quota ?? 0)}
+                  </div>
+                </div>
+                <Button
+                  className='bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black'
+                  onClick={() => setTopupDialogOpen(true)}
+                >
+                  {t('Top up')}
+                </Button>
+              </div>
 
-            <div id='wallet-billing-history' className='scroll-mt-4'>
-              <TitledCard
-                title={t('Billing History')}
-                description={t(
-                  'View your topup transaction records and payment history'
-                )}
-                contentClassName='space-y-3'
+              <div
+                id='wallet-billing-history'
+                className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
               >
-                <BillingHistoryPanel scrollAreaClassName='max-h-none pr-0 sm:pr-0' />
-              </TitledCard>
-            </div>
+                {hasRechargeHistory && <Separator className='mb-4' />}
+                {hasRechargeHistory && (
+                  <div className='mb-3'>
+                    <h3 className='text-sm font-semibold'>
+                      {t('Recharge History')}
+                    </h3>
+                    <p className='text-muted-foreground mt-0.5 text-xs'>
+                      {t('View your top-up records and payment receipts.')}
+                    </p>
+                  </div>
+                )}
+                <BillingHistoryPanel
+                  scrollAreaClassName='max-h-none pr-0 sm:pr-0'
+                  onAvailabilityChange={handleRechargeHistoryAvailability}
+                />
+              </div>
+            </TitledCard>
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
+
+      <Dialog open={topupDialogOpen} onOpenChange={setTopupDialogOpen}>
+        <DialogContent className='sm:max-w-lg' showCloseButton>
+          <DialogHeader>
+            <DialogTitle>{t('Top up balance')}</DialogTitle>
+            <DialogDescription>
+              {t('Pay face value. The same amount is added to your balance.')}
+            </DialogDescription>
+          </DialogHeader>
+          <RechargeFormCard
+            topupInfo={topupInfo}
+            presetAmounts={presetAmounts}
+            selectedPreset={selectedPreset}
+            onSelectPreset={handleSelectPreset}
+            onStripeTopUp={handleStripeTopUp}
+            paymentLoadingAmount={processing ? paymentLoadingAmount : null}
+            loading={topupLoading}
+            checkoutCurrency={checkoutCurrency}
+            onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
+            showCurrencySelector={
+              shouldShowCurrencySelector(topupInfo?.client_region) ||
+              normalizeStripeCheckoutCurrency(
+                props.initialCheckoutSearch?.currency
+              ) != null
+            }
+          />
+        </DialogContent>
+      </Dialog>
 
       <StripeEmbeddedCheckoutDialog
         session={embeddedCheckout}
@@ -807,11 +782,8 @@ export function Wallet(props: WalletProps) {
               <PartyPopper className='text-primary size-7' aria-hidden='true' />
             </div>
             <DialogTitle className='text-xl'>
-              {t('Recharge successful')}
+              {t('Binding successful!')}
             </DialogTitle>
-            <DialogDescription>
-              {t('Your bonus has been credited to your wallet. Enjoy!')}
-            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button

@@ -443,7 +443,7 @@ func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 	require.NotNil(t, params.UIMode)
 	require.Equal(t, "embedded", *params.UIMode)
 	require.NotNil(t, params.ReturnURL, "redirect payment methods need a landing page")
-	require.Equal(t, "https://example.com/success", *params.ReturnURL)
+	require.Equal(t, "https://example.com/success?session_id={CHECKOUT_SESSION_ID}&trade_no=trade_embedded", *params.ReturnURL)
 	require.Nil(t, params.SuccessURL, "embedded sessions reject success_url")
 	require.Nil(t, params.CancelURL, "embedded sessions reject cancel_url")
 
@@ -1140,7 +1140,7 @@ func TestValidateStripeRedirectURLAllowsForwardedAndOriginHosts(t *testing.T) {
 	require.Error(t, validateStripeRedirectURL(ctx, "https://evil.example/wallet"))
 }
 
-func TestGetStripePayMoneyAppliesDisplayGroupAndDiscount(t *testing.T) {
+func TestGetStripePayMoneyIgnoresRechargeGroupAndDiscount(t *testing.T) {
 	originalDisplayType := operation_setting.GetQuotaDisplayType()
 	originalUnitPrice := setting.StripeUnitPrice
 	originalTopupGroupRatio := common.TopupGroupRatio2JSONString()
@@ -1161,7 +1161,7 @@ func TestGetStripePayMoneyAppliesDisplayGroupAndDiscount(t *testing.T) {
 	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"vip":1.5}`))
 	paymentSetting.AmountDiscount = map[int]float64{int(2 * common.QuotaPerUnit): 0.5}
 
-	require.Equal(t, 3.0, getStripePayMoney(2*common.QuotaPerUnit, "vip"))
+	require.Equal(t, 4.0, getStripePayMoney(2*common.QuotaPerUnit, "vip"))
 }
 
 func TestMapStripeInvoiceStatusUsesLocalStatuses(t *testing.T) {

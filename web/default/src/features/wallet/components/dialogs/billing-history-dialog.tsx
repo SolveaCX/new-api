@@ -58,8 +58,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog } from '@/components/dialog'
-import { StatusBadge } from '@/components/status-badge'
-import type { StatusVariant } from '@/components/status-badge'
+import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { getInvoiceProfile, isApiSuccess } from '../../api'
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import {
@@ -86,6 +85,7 @@ interface BillingHistoryDialogProps {
 
 interface BillingHistoryPanelProps {
   scrollAreaClassName?: string
+  onAvailabilityChange?: (available: boolean) => void
 }
 
 function isPendingPaddleRecord(record: TopupRecord): boolean {
@@ -176,6 +176,7 @@ function getInvoiceStatusVariant(status?: string): StatusVariant {
 }
 
 export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
+  const { onAvailabilityChange, scrollAreaClassName } = props
   const { t } = useTranslation()
   const {
     records,
@@ -201,6 +202,10 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
   useEffect(() => {
     if (records.length) trackSuccessfulTopups(records)
   }, [records])
+
+  useEffect(() => {
+    onAvailabilityChange?.(!loading && total > 0)
+  }, [loading, onAvailabilityChange, total])
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
   const [invoiceTradeNo, setInvoiceTradeNo] = useState<string | null>(null)
@@ -256,6 +261,10 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
       cancelled = true
     }
   }, [invoiceTradeNo, t])
+
+  if (!loading && total === 0) {
+    return null
+  }
 
   const updateInvoiceField = (
     field: keyof InvoiceProfile,
@@ -344,7 +353,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
         <ScrollArea
           className={cn(
             'max-h-[min(54vh,520px)] pr-3 sm:pr-4',
-            props.scrollAreaClassName
+            scrollAreaClassName
           )}
         >
           {loading ? (

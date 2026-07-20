@@ -120,6 +120,26 @@ func TestReserveSubscriptionWindowsWeekLimit(t *testing.T) {
 	}
 }
 
+func TestGetSubscriptionWindowUsage(t *testing.T) {
+	setupWindowTestRedis(t)
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 46,
+		SubscriptionStart:  common.GetTimestamp() - 3600,
+		Window5hAmount:     100,
+		WindowWeekAmount:   200,
+	}
+	if guard, err := reserveSubscriptionWindows(info, 40); err != nil || guard == nil {
+		t.Fatalf("reserve failed: guard=%v err=%v", guard, err)
+	}
+	usage := GetSubscriptionWindowUsage(info)
+	if usage.Window5hUsed != 40 || usage.WindowWeekUsed != 40 {
+		t.Fatalf("usage = 5h:%d week:%d, want 40/40", usage.Window5hUsed, usage.WindowWeekUsed)
+	}
+	if usage.Window5hResetAt <= common.GetTimestamp() || usage.WindowWeekResetAt <= common.GetTimestamp() {
+		t.Fatalf("reset times must be in the future: %+v", usage)
+	}
+}
+
 func TestReserveSubscriptionWindowsSettleAdjust(t *testing.T) {
 	setupWindowTestRedis(t)
 	info := &model.SubscriptionWindowInfo{

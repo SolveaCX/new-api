@@ -383,7 +383,11 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		return nil, types.NewError(fmt.Errorf("relayInfo is nil"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 
-	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)
+	// Pure subscription mode has one predictable billing order: consume the
+	// active subscription first and fall back to wallet balance when exhausted.
+	// Legacy preference values remain readable for compatibility but no longer
+	// alter request billing.
+	pref := "subscription_first"
 
 	// 钱包路径需要先检查用户额度
 	tryWallet := func() (*BillingSession, *types.NewAPIError) {

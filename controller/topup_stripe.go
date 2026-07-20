@@ -1786,23 +1786,11 @@ func normalizeStripeTopUpAmount(amount int64) int64 {
 }
 
 func getStripePayMoney(amount float64, group string) float64 {
-	originalAmount := amount
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		amount = amount / common.QuotaPerUnit
 	}
-	// Using float64 for monetary calculations is acceptable here due to the small amounts involved
-	topupGroupRatio := common.GetTopupGroupRatio(group)
-	if topupGroupRatio == 0 {
-		topupGroupRatio = 1
-	}
-	// apply optional preset discount by the original request amount (if configured), default 1.0
-	discount := 1.0
-	if ds, ok := operation_setting.GetPaymentSetting().AmountDiscount[int(originalAmount)]; ok {
-		if ds > 0 {
-			discount = ds
-		}
-	}
-	payMoney := amount * setting.StripeUnitPrice * topupGroupRatio * discount
+	// Using float64 for monetary calculations is acceptable here due to the small amounts involved.
+	payMoney := amount * setting.StripeUnitPrice
 	return payMoney
 }
 
