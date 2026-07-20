@@ -57,6 +57,14 @@ type channelTestOptions struct {
 
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
+	// Codex upstream only accepts the Responses protocol. An Anthropic channel
+	// test therefore targets the same upstream protocol used by the real
+	// Claude -> Chat -> Responses bridge instead of sending /v1/messages directly
+	// to the Codex adaptor.
+	if channel != nil && channel.Type == constant.ChannelTypeCodex &&
+		normalized == string(constant.EndpointTypeAnthropic) {
+		return string(constant.EndpointTypeOpenAIResponse)
+	}
 	if normalized != "" {
 		return normalized
 	}
