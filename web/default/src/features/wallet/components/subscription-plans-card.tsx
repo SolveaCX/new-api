@@ -103,9 +103,6 @@ export function SubscriptionPlansCard({
   const { t } = useTranslation()
 
   const [plans, setPlans] = useState<PlanRecord[]>([])
-  const [activeSubscriptions, setActiveSubscriptions] = useState<
-    UserSubscriptionRecord[]
-  >([])
   const [allSubscriptions, setAllSubscriptions] = useState<
     UserSubscriptionRecord[]
   >([])
@@ -142,7 +139,6 @@ export function SubscriptionPlansCard({
       const res = await getSelfSubscriptionFull()
       if (res.success && res.data) {
         setCurrentSubscription(res.data.current_subscription || null)
-        setActiveSubscriptions(res.data.subscriptions || [])
         setAllSubscriptions(res.data.all_subscriptions || [])
       }
     } catch {
@@ -199,16 +195,6 @@ export function SubscriptionPlansCard({
   useEffect(() => {
     onAvailabilityChange?.(isAvailable)
   }, [isAvailable, onAvailabilityChange])
-
-  // 当前用户已持有的套餐 id 集合（用于在套餐网格标记「当前档」）
-  const ownedPlanIds = useMemo(() => {
-    const set = new Set<number>()
-    for (const sub of activeSubscriptions) {
-      const planId = sub?.subscription?.plan_id
-      if (planId) set.add(planId)
-    }
-    return set
-  }, [activeSubscriptions])
 
   const openPurchase = (p: PlanRecord) => {
     setSelectedPlan(p)
@@ -417,7 +403,6 @@ export function SubscriptionPlansCard({
               // Only the primary plan (highest-priced active subscription) is
               // "current"; other still-active lower tiers show as owned.
               const isCurrent = currentPlan?.id === plan.id
-              const isOwned = ownedPlanIds.has(plan.id)
               const window5h = Number(plan.window_5h_amount || 0)
               const windowWeek = Number(plan.window_week_amount || 0)
               const mediaCredits = Number(plan.media_credits_monthly || 0)
@@ -506,10 +491,6 @@ export function SubscriptionPlansCard({
                       {isCurrent ? (
                         <Button className='w-full' variant='secondary' disabled>
                           {t('Current Plan')}
-                        </Button>
-                      ) : isOwned ? (
-                        <Button className='w-full' variant='secondary' disabled>
-                          {t('Owned')}
                         </Button>
                       ) : reached ? (
                         <Tooltip>
