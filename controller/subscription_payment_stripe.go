@@ -139,7 +139,9 @@ func genStripeSubscriptionLink(referenceId string, customerId string, email stri
 		if "" != email {
 			params.CustomerEmail = stripe.String(email)
 		}
-		params.CustomerCreation = stripe.String(string(stripe.CheckoutSessionCustomerCreationAlways))
+		// Do NOT set CustomerCreation here: Stripe rejects it outside payment
+		// mode ("customer_creation can only be used in payment mode"), and
+		// subscription-mode checkouts always create a customer anyway.
 	} else {
 		params.Customer = stripe.String(customerId)
 	}
