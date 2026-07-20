@@ -21,7 +21,12 @@ import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import type { ModelAccessModel } from '../types'
-import { ModelAccessList } from './model-access-list'
+import {
+  getEffectiveVisibleModelCount,
+  getNextVisibleModelCount,
+  MODEL_ACCESS_PAGE_SIZE,
+  ModelAccessList,
+} from './model-access-list'
 
 const testI18n = createInstance()
 
@@ -79,5 +84,47 @@ describe('ModelAccessList', () => {
     expect(emptyScopeHtml).toContain(
       'No models are available in the current scope.'
     )
+  })
+
+  test('renders only the first page and offers incremental expansion', () => {
+    const models = Array.from(
+      { length: MODEL_ACCESS_PAGE_SIZE + 1 },
+      (_, i) => ({
+        id: `model-${i + 1}`,
+        allowlist_match_key: `model-${i + 1}`,
+        vendor: null,
+        supported_endpoint_types: [],
+        availability_status: 'available' as const,
+      })
+    )
+
+    const html = renderList(models, false)
+
+    expect(html).toContain(`model-${MODEL_ACCESS_PAGE_SIZE}`)
+    expect(html).not.toContain(`model-${MODEL_ACCESS_PAGE_SIZE + 1}`)
+    expect(html).toContain('>More</button>')
+    expect(
+      getNextVisibleModelCount(MODEL_ACCESS_PAGE_SIZE, models.length)
+    ).toBe(models.length)
+  })
+
+  test('resets effective pagination when the model dataset changes', () => {
+    const previousModels = []
+    const nextModels = []
+    const pagination = {
+      models: previousModels,
+      scopeIsEmpty: false,
+      visibleCount: 150,
+    }
+
+    expect(
+      getEffectiveVisibleModelCount(pagination, previousModels, false)
+    ).toBe(150)
+    expect(getEffectiveVisibleModelCount(pagination, nextModels, false)).toBe(
+      MODEL_ACCESS_PAGE_SIZE
+    )
+    expect(
+      getEffectiveVisibleModelCount(pagination, previousModels, true)
+    ).toBe(MODEL_ACCESS_PAGE_SIZE)
   })
 })

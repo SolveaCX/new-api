@@ -33,6 +33,24 @@ import { SectionPageLayout } from '@/components/layout'
 import { ModelAccessBrowser } from './components/model-access-browser'
 import { useModelAccess } from './hooks/use-model-access'
 
+export type AvailableModelsViewState =
+  | 'loading'
+  | 'error'
+  | 'data'
+  | 'data-with-refetch-error'
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function getAvailableModelsViewState(options: {
+  hasData: boolean
+  isError: boolean
+  isLoading: boolean
+}): AvailableModelsViewState {
+  if (options.hasData) {
+    return options.isError ? 'data-with-refetch-error' : 'data'
+  }
+  return options.isLoading ? 'loading' : 'error'
+}
+
 function ModelAccessSkeleton() {
   return (
     <div className='mx-auto grid w-full max-w-7xl gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]'>
@@ -55,11 +73,16 @@ function ModelAccessSkeleton() {
 export function AvailableModels() {
   const { t } = useTranslation()
   const modelAccessQuery = useModelAccess()
+  const viewState = getAvailableModelsViewState({
+    hasData: modelAccessQuery.data !== undefined,
+    isError: modelAccessQuery.isError,
+    isLoading: modelAccessQuery.isLoading,
+  })
   let content: ReactNode
 
-  if (modelAccessQuery.isLoading) {
+  if (viewState === 'loading') {
     content = <ModelAccessSkeleton />
-  } else if (modelAccessQuery.isError || !modelAccessQuery.data) {
+  } else if (viewState === 'error' || !modelAccessQuery.data) {
     content = (
       <Alert variant='destructive'>
         <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} aria-hidden='true' />
@@ -81,7 +104,35 @@ export function AvailableModels() {
       </Alert>
     )
   } else {
-    content = <ModelAccessBrowser access={modelAccessQuery.data} />
+    content = (
+      <div className='flex flex-col gap-4'>
+        {viewState === 'data-with-refetch-error' && (
+          <Alert>
+            <HugeiconsIcon
+              icon={Alert02Icon}
+              strokeWidth={2}
+              aria-hidden='true'
+            />
+            <AlertTitle>{t('Unable to load available models')}</AlertTitle>
+            <AlertDescription>{t('Request failed')}</AlertDescription>
+            <AlertAction>
+              <Button
+                size='sm'
+                variant='outline'
+                disabled={modelAccessQuery.isFetching}
+                onClick={() => void modelAccessQuery.refetch()}
+              >
+                {modelAccessQuery.isFetching && (
+                  <Spinner data-icon='inline-start' />
+                )}
+                {t('Retry')}
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
+        <ModelAccessBrowser access={modelAccessQuery.data} />
+      </div>
+    )
   }
 
   return (

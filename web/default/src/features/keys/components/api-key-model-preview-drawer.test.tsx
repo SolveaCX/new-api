@@ -55,6 +55,8 @@ describe('ApiKeyModelPreviewDrawer', () => {
     )
     expect(html).toContain('View models')
     expect(html).toContain('data-slot="drawer-trigger"')
+    expect(html).not.toContain('data-slot="drawer-content"')
+    expect(html).not.toContain('No models available to the new API key')
     expect(html).toContain(
       'This preview shows the models the new API key can call with the current settings.'
     )

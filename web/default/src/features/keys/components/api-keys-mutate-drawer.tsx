@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 import { trackYahooApiKeyCreatedConversion } from '@/lib/analytics/yahoo'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { useCanUseGroups } from '@/hooks/use-enterprise'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -65,7 +66,15 @@ import {
   transformFormDataToPayload,
   transformApiKeyToFormDefaults,
 } from '../lib'
-import { shouldApplyResolvedCreateGroup } from '../lib/api-key-create-dialog'
+import {
+  getApiKeyModelPreviewPlacement,
+  isApiKeyUpdateDetailReady,
+  requestApiKeyModelAccessPreservation,
+  requiresModelAccessForApiKeyMutation,
+  resolveSafeCreateScope,
+  shouldApplyResolvedCreateGroup,
+  shouldReinitializeCreateForm,
+} from '../lib/api-key-create-dialog'
 import {
   getApiKeyModelAccessState,
   getApiKeyModelAllowlistOptions,
@@ -86,6 +95,8 @@ type ApiKeyMutateDrawerProps = {
   onOpenChange: (open: boolean) => void
   currentRow?: ApiKey
   initialCreateGroup?: string | null
+  createRequestKey?: string | null
+  createRequestedGroup?: string
 }
 
 export function ApiKeysMutateDrawer({
@@ -93,6 +104,8 @@ export function ApiKeysMutateDrawer({
   onOpenChange,
   currentRow,
   initialCreateGroup,
+  createRequestKey,
+  createRequestedGroup,
 }: ApiKeyMutateDrawerProps) {
   const { t } = useTranslation()
   const isUpdate = !!currentRow
@@ -100,7 +113,10 @@ export function ApiKeysMutateDrawer({
   const canUseGroups = useCanUseGroups()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [revealKey, setRevealKey] = useState<string | null>(null)
-  const didInitializeCreateRef = useRef(false)
+  const [loadedUpdateKey, setLoadedUpdateKey] = useState<ApiKey | null>(null)
+  const initializedCreateRequestRef = useRef<string | undefined>(undefined)
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
+  const modelPreviewPlacement = getApiKeyModelPreviewPlacement(isDesktop)
   const modelAccess = modelAccessQuery.data
   const groups: ApiKeyGroupOption[] = useMemo(
     () =>
@@ -123,36 +139,57 @@ export function ApiKeysMutateDrawer({
     defaultValues: getApiKeyFormDefaultValues(false),
   })
 
-  // Load existing data when updating
   useEffect(() => {
-    if (open && isUpdate && currentRow) {
-      getApiKey(currentRow.id).then((result) => {
-        if (result.success && result.data) {
-          form.reset(transformApiKeyToFormDefaults(result.data))
-        }
+    let cancelled = false
+    const currentKeyId = currentRow?.id
+
+    if (!open || !isUpdate || currentKeyId === undefined) {
+      setLoadedUpdateKey(null)
+      return
+    }
+
+    setLoadedUpdateKey(null)
+    void getApiKey(currentKeyId).then((result) => {
+      if (!cancelled && result.success && result.data) {
+        setLoadedUpdateKey(result.data)
+        form.reset(transformApiKeyToFormDefaults(result.data))
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentRow?.id, form, isUpdate, open])
+
+  useEffect(() => {
+    const scopeReady = modelAccess !== undefined || modelAccessQuery.isError
+    if (
+      shouldReinitializeCreateForm({
+        initializedRequestKey: initializedCreateRequestRef.current,
+        nextRequestKey: createRequestKey,
+        open,
+        isUpdate,
+        scopeReady,
       })
-    } else if (
-      open &&
-      !isUpdate &&
-      !didInitializeCreateRef.current &&
-      (modelAccess || modelAccessQuery.isError)
     ) {
-      const createScope = modelAccess
-        ? resolveCreateScope(modelAccess, initialCreateGroup)
-        : (initialCreateGroup ?? null)
+      const requestedGroup = createRequestKey
+        ? createRequestedGroup
+        : initialCreateGroup
+      const createScope = resolveSafeCreateScope(modelAccess, requestedGroup)
       form.reset(getApiKeyFormDefaultValues(false, createScope))
-      didInitializeCreateRef.current = true
+      initializedCreateRequestRef.current = createRequestKey ?? 'manual'
     } else if (!open) {
-      didInitializeCreateRef.current = false
+      initializedCreateRequestRef.current = undefined
     }
   }, [
     open,
     isUpdate,
-    currentRow,
     form,
     modelAccess,
     modelAccessQuery.isError,
     initialCreateGroup,
+    createRequestKey,
+    createRequestedGroup,
   ])
 
   useEffect(() => {
@@ -161,7 +198,7 @@ export function ApiKeysMutateDrawer({
       !shouldApplyResolvedCreateGroup({
         access: modelAccess,
         groupDirty,
-        initialized: didInitializeCreateRef.current,
+        initialized: initializedCreateRequestRef.current !== undefined,
         isUpdate,
         open,
       }) ||
@@ -170,12 +207,23 @@ export function ApiKeysMutateDrawer({
       return
     }
 
-    const resolvedGroup = resolveCreateScope(modelAccess, initialCreateGroup)
+    const requestedGroup = createRequestKey
+      ? createRequestedGroup
+      : initialCreateGroup
+    const resolvedGroup = resolveCreateScope(modelAccess, requestedGroup)
     const nextGroup = resolvedGroup ?? ''
     if (form.getValues('group') !== nextGroup) {
       form.setValue('group', nextGroup, { shouldDirty: false })
     }
-  }, [form, initialCreateGroup, isUpdate, modelAccess, open])
+  }, [
+    createRequestKey,
+    createRequestedGroup,
+    form,
+    initialCreateGroup,
+    isUpdate,
+    modelAccess,
+    open,
+  ])
 
   // Only create mode may safely fall back to another selectable scope. Existing
   // keys keep their saved group until the user explicitly changes it.
@@ -195,14 +243,33 @@ export function ApiKeysMutateDrawer({
   }, [groups, form, isUpdate])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
-    if (!hasUsableApiKeyModelAccess(modelAccess)) {
+    const updateDetailReady = isApiKeyUpdateDetailReady(
+      isUpdate,
+      currentRow?.id,
+      loadedUpdateKey?.id
+    )
+    if (!updateDetailReady) {
+      toast.error(t('API key is loading, please try again in a moment'))
+      return
+    }
+
+    const modelAccessRequired = requiresModelAccessForApiKeyMutation(
+      isUpdate,
+      form.formState.dirtyFields,
+      data
+    )
+    if (modelAccessRequired && !hasUsableApiKeyModelAccess(modelAccess)) {
       toast.error(t('Unable to load available models'))
       return
     }
 
     setIsSubmitting(true)
     try {
-      const basePayload = transformFormDataToPayload(data, canUseGroups)
+      let basePayload = transformFormDataToPayload(data, canUseGroups)
+
+      if (isUpdate && !modelAccessRequired) {
+        basePayload = requestApiKeyModelAccessPreservation(basePayload)
+      }
 
       if (isUpdate && currentRow) {
         const result = await updateApiKey({
@@ -291,6 +358,7 @@ export function ApiKeysMutateDrawer({
   const selectedGroup = form.watch('group')
   const modelLimitsEnabled = form.watch('model_limits_enabled')
   const modelLimits = form.watch('model_limits')
+  const crossGroupRetry = form.watch('cross_group_retry')
   const allowlistEnabled = isUpdate && modelLimitsEnabled
   const modelAccessState = useMemo(
     () =>
@@ -372,7 +440,7 @@ export function ApiKeysMutateDrawer({
   )
 
   const renderDesktopModelPreview = () => {
-    if (modelAccessQuery.isError) {
+    if (modelAccessQuery.isError && !modelAccess) {
       return renderModelAccessError()
     }
 
@@ -403,7 +471,7 @@ export function ApiKeysMutateDrawer({
   }
 
   const renderMobileModelPreview = () => {
-    if (modelAccessQuery.isError) {
+    if (modelAccessQuery.isError && !modelAccess) {
       return renderModelAccessError('lg:hidden')
     }
     if (!modelAccessState) {
@@ -430,6 +498,25 @@ export function ApiKeysMutateDrawer({
   if (isSubmitting) {
     submitLabel = t('Saving...')
   }
+  const modelAccessRequired = requiresModelAccessForApiKeyMutation(
+    isUpdate,
+    form.formState.dirtyFields,
+    {
+      group: selectedGroup,
+      model_limits_enabled: modelLimitsEnabled,
+      model_limits: modelLimits,
+      cross_group_retry: crossGroupRetry,
+    }
+  )
+  const updateDetailReady = isApiKeyUpdateDetailReady(
+    isUpdate,
+    currentRow?.id,
+    loadedUpdateKey?.id
+  )
+  const submitDisabled =
+    isSubmitting ||
+    !updateDetailReady ||
+    (modelAccessRequired && !hasUsableApiKeyModelAccess(modelAccess))
 
   return (
     <>
@@ -856,17 +943,20 @@ export function ApiKeysMutateDrawer({
                       </>
                     )}
 
-                    {renderMobileModelPreview()}
+                    {modelPreviewPlacement === 'mobile' &&
+                      renderMobileModelPreview()}
                   </form>
                 </Form>
               </div>
             </ScrollArea>
 
-            <aside className='bg-muted/20 hidden min-h-0 lg:block'>
-              <ScrollArea className='h-full'>
-                <div className='p-4'>{renderDesktopModelPreview()}</div>
-              </ScrollArea>
-            </aside>
+            {modelPreviewPlacement === 'desktop' && (
+              <aside className='bg-muted/20 min-h-0'>
+                <ScrollArea className='h-full'>
+                  <div className='p-4'>{renderDesktopModelPreview()}</div>
+                </ScrollArea>
+              </aside>
+            )}
           </div>
 
           <DialogFooter className='mx-0 mb-0 shrink-0 rounded-b-xl'>
@@ -878,7 +968,7 @@ export function ApiKeysMutateDrawer({
             <Button
               type='button'
               onClick={form.handleSubmit(onSubmit, onInvalid)}
-              disabled={isSubmitting || !modelAccess}
+              disabled={submitDisabled}
               className='w-full sm:w-auto'
             >
               {isSubmitting && <Spinner data-icon='inline-start' />}

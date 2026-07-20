@@ -127,14 +127,18 @@ func matchPublicModelMetadataRule(modelName string, rules map[int][]Model) (Mode
 	orderedRules := []int{NameRulePrefix, NameRuleSuffix, NameRuleContains}
 	for _, rule := range orderedRules {
 		for _, item := range rules[rule] {
+			pattern := strings.TrimSpace(item.ModelName)
+			if pattern == "" {
+				continue
+			}
 			matched := false
 			switch rule {
 			case NameRulePrefix:
-				matched = strings.HasPrefix(modelName, item.ModelName)
+				matched = strings.HasPrefix(modelName, pattern)
 			case NameRuleSuffix:
-				matched = strings.HasSuffix(modelName, item.ModelName)
+				matched = strings.HasSuffix(modelName, pattern)
 			case NameRuleContains:
-				matched = strings.Contains(modelName, item.ModelName)
+				matched = strings.Contains(modelName, pattern)
 			}
 			if matched {
 				return item, true

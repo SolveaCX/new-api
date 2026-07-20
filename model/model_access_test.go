@@ -96,3 +96,44 @@ func TestGetPublicModelMetadataMapUsesPublicVendorAndNilFallback(t *testing.T) {
 	_, exists := metadata["missing"]
 	require.False(t, exists)
 }
+
+func TestMatchPublicModelMetadataRuleSkipsBlankPatterns(t *testing.T) {
+	tests := []struct {
+		name    string
+		rule    int
+		pattern string
+	}{
+		{name: "prefix", rule: NameRulePrefix, pattern: "target"},
+		{name: "suffix", rule: NameRuleSuffix, pattern: "model"},
+		{name: "contains", rule: NameRuleContains, pattern: "get-mo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, ok := matchPublicModelMetadataRule("target-model", map[int][]Model{
+				tt.rule: {
+					{ModelName: "   ", NameRule: tt.rule, VendorID: 1},
+					{ModelName: tt.pattern, NameRule: tt.rule, VendorID: 2},
+				},
+			})
+			require.True(t, ok)
+			require.Equal(t, 2, matched.VendorID)
+		})
+	}
+}
+
+func TestGetPublicModelMetadataMapPrefersExactMatchOverRule(t *testing.T) {
+	db, _ := setupModelAccessDB(t)
+	exactVendor := Vendor{Name: "Exact Vendor", Icon: "exact", Status: 1}
+	ruleVendor := Vendor{Name: "Rule Vendor", Icon: "rule", Status: 1}
+	require.NoError(t, db.Create(&exactVendor).Error)
+	require.NoError(t, db.Create(&ruleVendor).Error)
+	require.NoError(t, db.Create(&[]Model{
+		{ModelName: "exact-model", VendorID: exactVendor.Id, Status: 1, NameRule: NameRuleExact},
+		{ModelName: "exact-", VendorID: ruleVendor.Id, Status: 1, NameRule: NameRulePrefix},
+	}).Error)
+
+	metadata, err := GetPublicModelMetadataMap([]string{"exact-model"})
+	require.NoError(t, err)
+	require.Equal(t, "Exact Vendor", metadata["exact-model"].Vendor.Name)
+}

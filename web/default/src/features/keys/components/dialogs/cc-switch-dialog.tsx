@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { Alert, AlertAction, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { ComboboxInput } from '@/components/ui/combobox-input'
 import { Input } from '@/components/ui/input'
@@ -52,6 +53,56 @@ const APP_CONFIGS = {
 } as const
 
 type AppType = keyof typeof APP_CONFIGS
+
+export type CCSwitchModelAccessState = 'loading' | 'error' | 'empty' | 'ready'
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function getCCSwitchModelAccessState(input: {
+  isPending: boolean
+  isError: boolean
+  hasData: boolean
+  modelCount: number
+}): CCSwitchModelAccessState {
+  if (input.isPending) return 'loading'
+  if (!input.hasData) return input.isError ? 'error' : 'loading'
+  return input.modelCount === 0 ? 'empty' : 'ready'
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function shouldShowCCSwitchRefreshWarning(input: {
+  isError: boolean
+  hasData: boolean
+}): boolean {
+  return input.isError && input.hasData
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function getCCSwitchModelPlaceholderKey(
+  state: CCSwitchModelAccessState
+): string {
+  if (state === 'loading') return 'Loading...'
+  if (state === 'error') return 'Unable to load available models'
+  return 'No callable models available for this API key'
+}
+
+export type CCSwitchModelValidation =
+  | 'missing-required'
+  | 'invalid-selection'
+  | null
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function validateCCSwitchModels(
+  app: AppType,
+  models: Record<string, string>,
+  callableModelIds: ReadonlySet<string>
+): CCSwitchModelValidation {
+  for (const field of APP_CONFIGS[app].modelFields) {
+    const model = models[field.key] ?? ''
+    if (field.required && !model.trim()) return 'missing-required'
+    if (model && !callableModelIds.has(model)) return 'invalid-selection'
+  }
+  return null
+}
 
 function getServerAddress(): string {
   try {
@@ -106,6 +157,17 @@ export function CCSwitchDialog(props: Props) {
     return items.map((model) => ({ value: model.id, label: model.id }))
   }, [currentRow, modelAccessQuery.data])
 
+  const modelAccessState = getCCSwitchModelAccessState({
+    isPending: modelAccessQuery.isPending,
+    isError: modelAccessQuery.isError,
+    hasData: modelAccessQuery.data !== undefined,
+    modelCount: modelOptions.length,
+  })
+  const showRefreshWarning = shouldShowCCSwitchRefreshWarning({
+    isError: modelAccessQuery.isError,
+    hasData: modelAccessQuery.data !== undefined,
+  })
+
   useEffect(() => {
     if (props.open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -127,9 +189,16 @@ export function CCSwitchDialog(props: Props) {
   }
 
   const handleSubmit = () => {
+    if (modelAccessState !== 'ready') return
+
     const callableModels = new Set(modelOptions.map((option) => option.value))
-    if (!models.model || !callableModels.has(models.model)) {
+    const validation = validateCCSwitchModels(app, models, callableModels)
+    if (validation === 'missing-required') {
       toast.warning(t('Please select a primary model'))
+      return
+    }
+    if (validation === 'invalid-selection') {
+      toast.warning(t('Select a callable model'))
       return
     }
     const key = props.tokenKey.startsWith('sk-')
@@ -153,13 +222,60 @@ export function CCSwitchDialog(props: Props) {
           <Button variant='outline' onClick={() => props.onOpenChange(false)}>
             {t('Cancel')}
           </Button>
-          <Button onClick={handleSubmit} disabled={modelOptions.length === 0}>
+          <Button
+            onClick={handleSubmit}
+            disabled={modelAccessState !== 'ready'}
+          >
             {t('Open CC Switch')}
           </Button>
         </>
       }
     >
       <div className='space-y-4'>
+        {modelAccessState === 'loading' && (
+          <Alert>
+            <AlertTitle>{t('Loading...')}</AlertTitle>
+          </Alert>
+        )}
+        {modelAccessState === 'error' && (
+          <Alert variant='destructive'>
+            <AlertTitle>{t('Unable to load available models')}</AlertTitle>
+            <AlertAction>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                disabled={modelAccessQuery.isFetching}
+                onClick={() => void modelAccessQuery.refetch()}
+              >
+                {t('Retry')}
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
+        {showRefreshWarning && (
+          <Alert>
+            <AlertTitle>{t('Unable to load available models')}</AlertTitle>
+            <AlertAction>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                disabled={modelAccessQuery.isFetching}
+                onClick={() => void modelAccessQuery.refetch()}
+              >
+                {t('Retry')}
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
+        {modelAccessState === 'empty' && (
+          <Alert>
+            <AlertTitle>
+              {t('No callable models available for this API key')}
+            </AlertTitle>
+          </Alert>
+        )}
         <div className='space-y-2'>
           <Label>{t('Application')}</Label>
           <RadioGroup
@@ -203,12 +319,14 @@ export function CCSwitchDialog(props: Props) {
                 <span className='text-destructive ml-0.5'>*</span>
               )}
             </Label>
-            {modelOptions.length === 0 ? (
+            {modelAccessState !== 'ready' ? (
               <Input
                 disabled
                 readOnly
                 value=''
-                placeholder={t('No callable models available for this API key')}
+                placeholder={t(
+                  getCCSwitchModelPlaceholderKey(modelAccessState)
+                )}
               />
             ) : (
               <ComboboxInput

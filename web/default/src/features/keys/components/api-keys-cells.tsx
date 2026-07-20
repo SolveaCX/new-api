@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Check, Copy, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -159,12 +159,19 @@ export function ModelLimitsCell({ apiKey }: { apiKey: ApiKey }) {
   const { t } = useTranslation()
   const { modelAccessQuery } = useApiKeys()
   const [scopeOpen, setScopeOpen] = useState(false)
+  const summary = useMemo(
+    () =>
+      modelAccessQuery.data
+        ? getApiKeyModelScopeSummary(modelAccessQuery.data, apiKey)
+        : null,
+    [apiKey, modelAccessQuery.data]
+  )
 
   if (modelAccessQuery.isPending) {
     return <Skeleton className='h-5 w-28' />
   }
 
-  if (!modelAccessQuery.data) {
+  if (!summary) {
     return (
       <StatusBadge
         label={t('Unable to load available models')}
@@ -174,7 +181,6 @@ export function ModelLimitsCell({ apiKey }: { apiKey: ApiKey }) {
     )
   }
 
-  const summary = getApiKeyModelScopeSummary(modelAccessQuery.data, apiKey)
   let label: string
   if (summary.labelKind === 'empty') {
     label = t('0 callable')
