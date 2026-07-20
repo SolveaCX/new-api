@@ -721,6 +721,10 @@ func StripeWebhook(c *gin.Context) {
 		processingErr = sessionAsyncPaymentSucceeded(ctx, event, callerIp)
 	case stripe.EventTypeCheckoutSessionAsyncPaymentFailed:
 		sessionAsyncPaymentFailed(ctx, event, callerIp)
+	case stripe.EventTypeChargeRefunded:
+		processingErr = chargeReversed(ctx, event, model.InviteSubRewardReasonRefunded, callerIp)
+	case stripe.EventTypeChargeDisputeCreated:
+		processingErr = chargeReversed(ctx, event, model.InviteSubRewardReasonDisputed, callerIp)
 	default:
 		logger.LogInfo(ctx, fmt.Sprintf("Stripe webhook 忽略事件 event_type=%s client_ip=%s", string(event.Type), callerIp))
 	}
@@ -1230,6 +1234,56 @@ func backfillCardFingerprintFromTopUp(ctx context.Context, topUp *model.TopUp, c
 		logger.LogWarn(ctx, fmt.Sprintf("Stripe 充值绑卡：占用卡指纹名额失败 user_id=%d trade_no=%s error=%q", topUp.UserId, topUp.TradeNo, err.Error()))
 	}
 	logger.LogInfo(ctx, fmt.Sprintf("Stripe 充值绑卡：已记录卡指纹 user_id=%d trade_no=%s client_ip=%s", topUp.UserId, topUp.TradeNo, callerIp))
+}
+
+// chargeReversed handles charge.refunded / charge.dispute.created. Its only
+// job today is invite-reward-v2 clawback: map the charge back to the checkout
+// session's client_reference_id (our trade_no) and revoke any subscription
+// invite reward tied to that order. Top-up refund bookkeeping stays a manual
+// ops process, unchanged.
+func chargeReversed(ctx context.Context, event stripe.Event, reason string, callerIp string) error {
+	if !common.InviteRewardSubscriptionMode {
+		return nil
+	}
+	paymentIntentId := event.GetObjectValue("payment_intent")
+	if paymentIntentId == "" {
+		logger.LogWarn(ctx, fmt.Sprintf("Stripe %s 事件缺少 payment_intent，跳过邀请奖励回收 client_ip=%s", string(event.Type), callerIp))
+		return nil
+	}
+	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
+		logger.LogWarn(ctx, "Stripe API 密钥未配置，无法回查 checkout session，跳过邀请奖励回收")
+		return nil
+	}
+	stripe.Key = setting.StripeApiSecret
+	listParams := &stripe.CheckoutSessionListParams{
+		PaymentIntent: stripe.String(paymentIntentId),
+	}
+	listParams.Limit = stripe.Int64(1)
+	iter := session.List(listParams)
+	referenceId := ""
+	for iter.Next() {
+		if s := iter.CheckoutSession(); s != nil {
+			referenceId = s.ClientReferenceID
+		}
+		break
+	}
+	if err := iter.Err(); err != nil {
+		logger.LogError(ctx, fmt.Sprintf("Stripe 回查 checkout session 失败 payment_intent=%s error=%q", paymentIntentId, err.Error()))
+		return err // retryable: let Stripe redeliver so the clawback is not lost
+	}
+	if referenceId == "" {
+		logger.LogInfo(ctx, fmt.Sprintf("Stripe %s 未关联 checkout session，跳过邀请奖励回收 payment_intent=%s", string(event.Type), paymentIntentId))
+		return nil
+	}
+	revoked, err := model.RevokeInviteSubscriptionRewardByTradeNo(referenceId, reason)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("邀请奖励回收失败 trade_no=%s reason=%s error=%q", referenceId, reason, err.Error()))
+		return err
+	}
+	if revoked {
+		logger.LogInfo(ctx, fmt.Sprintf("邀请奖励已回收 trade_no=%s reason=%s client_ip=%s", referenceId, reason, callerIp))
+	}
+	return nil
 }
 
 func sessionExpired(ctx context.Context, event stripe.Event) {

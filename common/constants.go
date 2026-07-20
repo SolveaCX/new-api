@@ -147,6 +147,18 @@ var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
 var QuotaForInviterMaxCount = 5
+
+// Invite reward v2 (subscription mode): when enabled, the inviter reward is
+// created from the invitee's first successful subscription payment (equal to
+// the amount paid) and unlocks after the settle window; the legacy fixed
+// reward on first top-up stops granting.
+var InviteRewardSubscriptionMode = false
+var InviteRewardUnlockDelaySeconds int64 = 7 * 24 * 3600
+
+// First-month discount ratio for invited users' first subscription (0.5 = 50%
+// off). Single source of truth shared by the checkout coupon and the sidebar
+// reward badge (reward = invitee's discounted first payment).
+var InviteFirstSubDiscountRatio = 0.5
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false
