@@ -105,3 +105,11 @@ func TestModelAvailabilityProbeConfigUsesEmbeddingEndpointForEmbeddingModels(t *
 	require.Equal(t, string(constant.EndpointTypeEmbeddings), endpointType)
 	require.False(t, options.ExpectPong)
 }
+
+func TestSummarizeModelProbeOutcomesKeepsUntestableProviderAvailable(t *testing.T) {
+	outcome := summarizeModelProbeOutcomes([]modelProbeOutcome{
+		{Class: modelProbeOfficialUnsupported, ReasonType: "official_model_unsupported"},
+	}, true)
+
+	require.Equal(t, modelProbeAvailable, outcome.Class)
+}
