@@ -181,6 +181,9 @@ type SubscriptionPlan struct {
 	// 7-day usage window limit in weighted quota units, cycle anchored at subscription start (0 = disabled)
 	WindowWeekAmount int64 `json:"window_week_amount" gorm:"column:window_week_amount;type:bigint;not null;default:0"`
 
+	// Media (image/video) credits granted per plan period, 1 credit = $0.01 (0 = plan has no media pool)
+	MediaCreditsMonthly int64 `json:"media_credits_monthly" gorm:"type:bigint;not null;default:0"`
+
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
@@ -188,7 +191,8 @@ type SubscriptionPlan struct {
 	// ---- 面向用户的价值展示字段（纯展示，不参与计费）----
 	// 套餐可用模型数量（0 = 不显示，前端回退为「全部模型」文案）
 	ModelCount int `json:"model_count" gorm:"type:int;not null;default:0"`
-	// 速率上限：每分钟请求数 RPM（0 = 不显示）
+	// Legacy display metadata kept for schema compatibility. Product plans no longer
+	// advertise or configure a per-minute request limit; keep this value at 0.
 	Rpm int `json:"rpm" gorm:"type:int;not null;default:0"`
 	// 并发数上限（0 = 不显示）
 	Concurrency int `json:"concurrency" gorm:"type:int;not null;default:0"`
@@ -264,6 +268,10 @@ type UserSubscription struct {
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
+
+	// Media (image/video) credits pool, snapshot from plan at purchase; resets with the quota cycle
+	MediaCreditsTotal int64 `json:"media_credits_total" gorm:"type:bigint;not null;default:0"`
+	MediaCreditsUsed  int64 `json:"media_credits_used" gorm:"type:bigint;not null;default:0"`
 
 	StartTime int64  `json:"start_time" gorm:"bigint"`
 	EndTime   int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
@@ -512,20 +520,22 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		}
 	}
 	sub := &UserSubscription{
-		UserId:        userId,
-		PlanId:        plan.Id,
-		AmountTotal:   plan.TotalAmount,
-		AmountUsed:    0,
-		StartTime:     now.Unix(),
-		EndTime:       endUnix,
-		Status:        "active",
-		Source:        source,
-		LastResetTime: lastReset,
-		NextResetTime: nextReset,
-		UpgradeGroup:  upgradeGroup,
-		PrevUserGroup: prevGroup,
-		CreatedAt:     common.GetTimestamp(),
-		UpdatedAt:     common.GetTimestamp(),
+		UserId:            userId,
+		PlanId:            plan.Id,
+		AmountTotal:       plan.TotalAmount,
+		AmountUsed:        0,
+		MediaCreditsTotal: plan.MediaCreditsMonthly,
+		MediaCreditsUsed:  0,
+		StartTime:         now.Unix(),
+		EndTime:           endUnix,
+		Status:            "active",
+		Source:            source,
+		LastResetTime:     lastReset,
+		NextResetTime:     nextReset,
+		UpgradeGroup:      upgradeGroup,
+		PrevUserGroup:     prevGroup,
+		CreatedAt:         common.GetTimestamp(),
+		UpdatedAt:         common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
@@ -1142,6 +1152,7 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 		return nil
 	}
 	sub.AmountUsed = 0
+	sub.MediaCreditsUsed = 0
 	sub.LastResetTime = base.Unix()
 	sub.NextResetTime = next
 	return tx.Save(sub).Error

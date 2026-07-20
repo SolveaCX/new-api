@@ -33,7 +33,6 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -52,6 +51,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   SideDrawerSection,
   sideDrawerContentClassName,
@@ -452,10 +452,10 @@ export function SubscriptionsMutateDrawer({
 
                 <FormField
                   control={form.control}
-                  name='rpm'
+                  name='concurrency'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('RPM')}</FormLabel>
+                      <FormLabel>{t('Concurrency')}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -474,10 +474,10 @@ export function SubscriptionsMutateDrawer({
 
                 <FormField
                   control={form.control}
-                  name='concurrency'
+                  name='media_credits_monthly'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Concurrency')}</FormLabel>
+                      <FormLabel>{t('Media credits per month')}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -488,7 +488,11 @@ export function SubscriptionsMutateDrawer({
                           }
                         />
                       </FormControl>
-                      <FormDescription>{t('0 hides it')}</FormDescription>
+                      <FormDescription>
+                        {t(
+                          'Credits for image & video generation. 0 hides it.'
+                        )}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

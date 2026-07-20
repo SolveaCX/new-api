@@ -295,15 +295,29 @@ export function SubscriptionPurchaseDialog(props: Props) {
               <span className='text-sm'>{formatResetPeriod(plan, t)}</span>
             </div>
           )}
+          {/* Plan quota is an estimated max usage value, not a wallet top-up —
+              mirror the plan card's "Up to $X" framing. */}
           <div className='flex items-center justify-between'>
             <span className='text-muted-foreground text-sm'>
-              {t('Received amount')}
+              {t('Included model usage')}
             </span>
             <span className='flex items-center gap-1 text-sm'>
               <Package className='h-3.5 w-3.5' />
-              {totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited')}
+              {totalAmount > 0
+                ? t('Up to {{value}}', { value: formatQuota(totalAmount) })
+                : t('Unlimited')}
             </span>
           </div>
+          {Number(plan.media_credits_monthly || 0) > 0 && (
+            <div className='flex items-center justify-between'>
+              <span className='text-muted-foreground text-sm'>
+                {t('Media credits')}
+              </span>
+              <span className='text-sm'>
+                {Number(plan.media_credits_monthly || 0)}
+              </span>
+            </div>
+          )}
           {plan.upgrade_group && (
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground text-sm'>
