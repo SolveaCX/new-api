@@ -1430,6 +1430,9 @@ func recallCampaignImmutableDraft(draft RecallCampaignDraft) recallImmutableCamp
 	draft.Discount.Type = strings.ToLower(strings.TrimSpace(draft.Discount.Type))
 	draft.Discount.Currency = strings.ToLower(strings.TrimSpace(draft.Discount.Currency))
 	draft.Discount.MinimumAmountCurrency = strings.ToLower(strings.TrimSpace(draft.Discount.MinimumAmountCurrency))
+	if draft.Discount.CurrencyOptions == nil {
+		draft.Discount.CurrencyOptions = map[string]int64{}
+	}
 	draft.Products.TopUpPriceIDs = normalizeRecallStripeIDs(draft.Products.TopUpPriceIDs)
 	draft.Products.SubscriptionPriceIDs = normalizeRecallStripeIDs(draft.Products.SubscriptionPriceIDs)
 	emailStages := make([]recallImmutableEmailStage, len(draft.Emails))
