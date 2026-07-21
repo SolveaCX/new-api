@@ -96,6 +96,10 @@ const audienceFields: Record<
       label: 'Minimum request count',
     },
     { name: 'audience_config.max_quota', label: 'Maximum quota' },
+    {
+      name: 'audience_config.last_api_call_age_days',
+      label: 'Last API call age days',
+    },
   ],
   lapsed_payer: [
     {
@@ -111,6 +115,7 @@ const audienceFields: Record<
       name: 'audience_config.last_payment_age_days',
       label: 'Last payment age days',
     },
+    { name: 'audience_config.max_quota', label: 'Maximum quota' },
   ],
   expired_subscription: [
     {
@@ -125,6 +130,10 @@ const audienceFields: Record<
     {
       name: 'audience_config.min_subscription_count',
       label: 'Minimum subscription count',
+    },
+    {
+      name: 'audience_config.last_api_call_age_days',
+      label: 'Last API call age days',
     },
   ],
 }
@@ -343,7 +352,10 @@ export function CampaignEditor(props: CampaignEditorProps) {
                 },
               ]}
             >
-              <SelectTrigger className='w-full'>
+              <SelectTrigger
+                aria-describedby='recall-audience-help'
+                className='w-full'
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -361,13 +373,16 @@ export function CampaignEditor(props: CampaignEditorProps) {
               </SelectContent>
             </Select>
           </div>
-          <div className='bg-muted/50 text-muted-foreground space-y-1 rounded-md p-3 text-sm md:col-span-2'>
+          <div
+            id='recall-audience-help'
+            className='bg-muted/50 text-muted-foreground space-y-1 rounded-md p-3 text-sm md:col-span-2'
+          >
             <p>
               {t(
-                'Audience templates define the base audience. The rules below narrow it further, and every condition must match. Preview the audience before activation.'
+                'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.'
               )}
             </p>
-            <p className='text-foreground'>
+            <p aria-live='polite' className='text-foreground'>
               {t(audienceTemplateDescriptionKeys[audienceTemplate])}
             </p>
           </div>
@@ -431,16 +446,21 @@ export function CampaignEditor(props: CampaignEditorProps) {
               </SelectContent>
             </Select>
           </div>
-          <div className='space-y-2'>
-            <Label>{t('Payment providers (comma separated)')}</Label>
-            <Input
-              disabled={immutable}
-              value={providers.join(', ')}
-              onChange={(event) =>
-                setCsv('audience_config.payment_providers', event.target.value)
-              }
-            />
-          </div>
+          {audienceTemplate !== 'first_purchase' && (
+            <div className='space-y-2'>
+              <Label>{t('Payment providers (comma separated)')}</Label>
+              <Input
+                disabled={immutable}
+                value={providers.join(', ')}
+                onChange={(event) =>
+                  setCsv(
+                    'audience_config.payment_providers',
+                    event.target.value
+                  )
+                }
+              />
+            </div>
+          )}
           <label className='flex items-center gap-2 md:col-span-3'>
             <input
               type='checkbox'

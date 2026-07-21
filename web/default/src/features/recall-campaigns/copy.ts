@@ -23,7 +23,7 @@ export const audienceTemplateDescriptionKeys: Record<
   string
 > = {
   first_purchase:
-    'Targets registered users who have never paid, for campaigns that encourage a first purchase.',
+    'Targets registered users in the PLG group who have never paid, for campaigns that encourage a first purchase.',
   lapsed_payer:
     'Targets previous payers who have not paid or used the API recently.',
   expired_subscription:

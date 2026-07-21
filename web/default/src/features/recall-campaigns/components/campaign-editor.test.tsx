@@ -21,13 +21,105 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import type { RecallAudienceTemplate, RecallCampaignDraft } from '../types'
 import { CampaignEditor } from './campaign-editor'
 
 const commonHelp =
-  'Audience templates define the base audience. The rules below narrow it further, and every condition must match. Preview the audience before activation.'
+  'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.'
 const firstPurchaseHelp =
-  'Targets registered users who have never paid, for campaigns that encourage a first purchase.'
+  'Targets registered users in the PLG group who have never paid, for campaigns that encourage a first purchase.'
 const testI18n = createInstance()
+
+function makeDraft(template: RecallAudienceTemplate): RecallCampaignDraft {
+  return {
+    name: 'Test campaign',
+    audience_template: template,
+    audience_config: {
+      registration_age_days: 30,
+      min_request_count: 1,
+      max_quota: 0,
+      min_paid_amount: 0,
+      last_api_call_age_days: 30,
+      last_payment_age_days: 30,
+      subscription_expired_days: 30,
+      min_subscription_amount: 0,
+      min_subscription_count: 1,
+      payment_providers: [],
+      groups: [],
+      group_mode: '',
+      require_verified_email: true,
+    },
+    execution_mode: 'manual',
+    schedule: {
+      scheduled_at: 0,
+      timezone: 'UTC',
+      frequency: 'daily',
+      weekday: 1,
+      hour: 9,
+      minute: 0,
+    },
+    coupon_source: 'automatic',
+    existing_coupon_id: '',
+    discount_config: {
+      type: 'percent',
+      percent_off: 20,
+      amount_off: 0,
+      currency: '',
+      currency_options: {},
+      minimum_amount: 0,
+      minimum_amount_currency: '',
+      coupon_redeem_by: 0,
+    },
+    product_scope: { topup_price_ids: [], subscription_price_ids: [] },
+    promotion_valid_seconds: 604800,
+    enrollment_limit: 1000,
+    worker_concurrency: 5,
+    email_sequence: [
+      {
+        stage_no: 1,
+        delay_seconds: 0,
+        template_version: 1,
+        templates: { en: { subject: '', body_text: '' } },
+      },
+    ],
+  }
+}
+
+function renderEditor(template: RecallAudienceTemplate): string {
+  return renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <I18nextProvider i18n={testI18n}>
+        <CampaignEditor initialDraft={makeDraft(template)} />
+      </I18nextProvider>
+    </QueryClientProvider>
+  )
+}
+
+const audienceThresholdFields = [
+  'registration_age_days',
+  'min_request_count',
+  'max_quota',
+  'min_paid_amount',
+  'last_api_call_age_days',
+  'last_payment_age_days',
+  'subscription_expired_days',
+  'min_subscription_amount',
+  'min_subscription_count',
+] as const
+
+function expectAudienceThresholds(
+  html: string,
+  shownFields: (typeof audienceThresholdFields)[number][]
+) {
+  for (const field of audienceThresholdFields) {
+    const inputName = `name="audience_config.${field}"`
+    if (shownFields.includes(field)) {
+      expect(html).toContain(inputName)
+    } else {
+      expect(html).not.toContain(inputName)
+    }
+  }
+}
 
 beforeAll(async () => {
   await testI18n.use(initReactI18next).init({
@@ -45,17 +137,50 @@ beforeAll(async () => {
   })
 })
 
-describe('CampaignEditor audience help', () => {
-  test('explains the selected audience before its rules', () => {
-    const html = renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
-        <I18nextProvider i18n={testI18n}>
-          <CampaignEditor />
-        </I18nextProvider>
-      </QueryClientProvider>
-    )
+describe('CampaignEditor audience rules', () => {
+  test('explains the selected audience and associates the help with the selector', () => {
+    const html = renderEditor('first_purchase')
 
     expect(html).toContain(commonHelp)
     expect(html).toContain(firstPurchaseHelp)
+    expect(html).toContain('aria-describedby="recall-audience-help"')
+    expect(html).toContain('id="recall-audience-help"')
+    expect(html).toContain('aria-live="polite"')
+  })
+
+  test('shows every rule applied to first-purchase audiences', () => {
+    const html = renderEditor('first_purchase')
+
+    expectAudienceThresholds(html, [
+      'registration_age_days',
+      'min_request_count',
+      'max_quota',
+      'last_api_call_age_days',
+    ])
+    expect(html).not.toContain('Payment providers (comma separated)')
+  })
+
+  test('shows every rule applied to lapsed-payer audiences', () => {
+    const html = renderEditor('lapsed_payer')
+
+    expectAudienceThresholds(html, [
+      'max_quota',
+      'min_paid_amount',
+      'last_api_call_age_days',
+      'last_payment_age_days',
+    ])
+    expect(html).toContain('Payment providers (comma separated)')
+  })
+
+  test('shows every rule applied to expired-subscription audiences', () => {
+    const html = renderEditor('expired_subscription')
+
+    expectAudienceThresholds(html, [
+      'last_api_call_age_days',
+      'subscription_expired_days',
+      'min_subscription_amount',
+      'min_subscription_count',
+    ])
+    expect(html).toContain('Payment providers (comma separated)')
   })
 })
