@@ -44,9 +44,11 @@ import type { ModelAccessModel } from '../types'
 import { ModelAccessList } from './model-access-list'
 
 export type ModelAccessPreviewProps = {
+  defaultRatio: number | null
   emptyDescription?: string
   emptyTitle?: string
   models: ModelAccessModel[]
+  modelRatios: Readonly<Record<string, number>>
   scopeDescription?: string
   scopeKey?: string
   scopeTitle: string
@@ -199,6 +201,8 @@ export function ModelAccessPreview(props: ModelAccessPreviewProps) {
         </Empty>
       ) : (
         <ModelAccessList
+          defaultRatio={props.defaultRatio}
+          modelRatios={props.modelRatios}
           models={visibleModels}
           scopeIsEmpty={false}
           onClearFilters={clearFilters}
