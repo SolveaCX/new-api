@@ -1,7 +1,9 @@
 # NewAPI 原生状态中心设计
 
-日期：2026-07-16  
-状态：交互设计与技术契约已由用户批准  
+日期：2026-07-16
+
+状态：交互设计与技术契约已由用户批准
+
 目标系统：NewAPI Router、NewAPI Console、Flatkey Website
 
 ## 1. 摘要
