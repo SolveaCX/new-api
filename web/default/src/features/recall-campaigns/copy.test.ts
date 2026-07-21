@@ -17,7 +17,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
+import en from '../../i18n/locales/en.json'
+import es from '../../i18n/locales/es.json'
+import fr from '../../i18n/locales/fr.json'
+import ja from '../../i18n/locales/ja.json'
+import pt from '../../i18n/locales/pt.json'
+import ru from '../../i18n/locales/ru.json'
+import vi from '../../i18n/locales/vi.json'
+import zh from '../../i18n/locales/zh.json'
 import { audienceTemplateDescriptionKeys } from './copy'
+
+const localeTranslations: Record<string, Record<string, string>> = {
+  en: en.translation,
+  es: es.translation,
+  fr: fr.translation,
+  ja: ja.translation,
+  pt: pt.translation,
+  ru: ru.translation,
+  vi: vi.translation,
+  zh: zh.translation,
+}
+
+const recallHelpKeys = [
+  'Stripe does not convert fixed Coupon amounts automatically. Configure each checkout currency explicitly.',
+  'Audience templates define the base audience. The rules below narrow it further, and every condition must match. Preview the audience before activation.',
+  ...Object.values(audienceTemplateDescriptionKeys),
+] as const
 
 describe('recall campaign copy', () => {
   test('maps each audience template to its explanation', () => {
@@ -30,4 +55,26 @@ describe('recall campaign copy', () => {
         'Targets previous subscribers whose subscription is no longer active and expired long enough ago.',
     })
   })
+
+  for (const [locale, translations] of Object.entries(localeTranslations)) {
+    test(`${locale} contains translated recall configuration help`, () => {
+      for (const key of recallHelpKeys) {
+        expect(
+          Object.prototype.hasOwnProperty.call(translations, key),
+          `${locale} is missing ${key}`
+        ).toBe(true)
+        expect(
+          translations[key],
+          `${locale} has an empty value for ${key}`
+        ).toBeTruthy()
+
+        if (locale !== 'en') {
+          expect(
+            translations[key],
+            `${locale} should translate ${key}`
+          ).not.toBe(key)
+        }
+      }
+    })
+  }
 })
