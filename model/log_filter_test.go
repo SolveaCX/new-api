@@ -200,6 +200,40 @@ func TestSumUsedQuotaFiltersNumericUsernameAsUserID(t *testing.T) {
 	}
 }
 
+func TestNumericLogFilterMatchesUsernameAndUserID(t *testing.T) {
+	resetUsageTables(t)
+	resetLogFilterTestUser(t, 700)
+	resetLogFilterTestUser(t, 701)
+	now := time.Now().Unix()
+
+	mustCreateUsage(t, &User{Id: 700, Username: "user-700", DisplayName: "By ID", AffCode: "log-filter-700"})
+	mustCreateUsage(t, &User{Id: 701, Username: "700", DisplayName: "Numeric username", AffCode: "log-filter-701"})
+	mustCreateUsage(t, &Log{
+		UserId: 700, Username: "user-700", Type: LogTypeConsume, CreatedAt: now,
+		ModelName: "gpt-4o", Quota: 10, PromptTokens: 3, CompletionTokens: 2,
+	})
+	mustCreateUsage(t, &Log{
+		UserId: 701, Username: "700", Type: LogTypeConsume, CreatedAt: now,
+		ModelName: "gpt-4o", Quota: 20, PromptTokens: 4, CompletionTokens: 1,
+	})
+
+	logs, total, err := GetAllLogs(LogTypeConsume, 0, 0, "", "700", "", 0, 20, 0, "", "", "", 0)
+	if err != nil {
+		t.Fatalf("GetAllLogs numeric filter: %v", err)
+	}
+	if total != 2 || len(logs) != 2 {
+		t.Fatalf("logs = %+v / total %d, want both user_id 700 and username 700", logs, total)
+	}
+
+	stat, err := SumUsedQuota(LogTypeConsume, 0, 0, "", "700", "", 0, "", 0, 0)
+	if err != nil {
+		t.Fatalf("SumUsedQuota numeric filter: %v", err)
+	}
+	if stat.Quota != 30 || stat.Rpm != 2 || stat.Tpm != 10 {
+		t.Fatalf("stat = %+v, want quota=30 rpm=2 tpm=10", stat)
+	}
+}
+
 // TestSumUsedQuotaSelfStatIsExactByUserID 锁住越权回归：self stat 用 selfUserId
 // 精确约束身份，username 自动模糊化后绝不能把同前缀用户（alice2/malice）的用量
 // 统计算进 alice 自己的统计里。

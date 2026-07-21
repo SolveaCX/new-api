@@ -109,10 +109,10 @@ func applyLogUsernameFilter(tx *gorm.DB, usernameColumn string, userIDColumn str
 	if strings.Contains(value, "%") {
 		return applyFuzzyUsernameFilter(tx, usernameColumn, userIDColumn, value)
 	}
-	// 纯数字：按 user_id 精确匹配，用于 /users「使用日志」行内跳转以及按 ID
-	// 精确定位单个用户（用户名唯一，但管理员也可能直接输 ID）。
+	// 纯数字既可能是 user_id，也可能是合法用户名。保留两者的精确匹配，避免
+	// 数字用户名无法查询；普通文本用户名仍走下方的纯 user_id 快路径。
 	if userID, err := strconv.Atoi(value); err == nil {
-		return tx.Where(userIDColumn+" = ?", userID), nil
+		return tx.Where("("+usernameColumn+" = ? OR "+userIDColumn+" = ?)", value, userID), nil
 	}
 	// 纯文本关键词：先经 user 表把当前用户名解析成 user_id，再只按 user_id 查询。
 	// 这样既能补齐用户改名前写入的历史日志，也能让日志查询使用
