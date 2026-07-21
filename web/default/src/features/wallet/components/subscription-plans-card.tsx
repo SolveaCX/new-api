@@ -418,9 +418,10 @@ export function SubscriptionPlansCard({
                 <Card
                   key={plan.id}
                   className={cn(
-                    'border-border/70 relative transition-colors hover:border-[#8b5cf6]/45',
-                    isRecommended &&
-                      'border-[#8b5cf6]/45 shadow-[0_10px_30px_-28px_rgba(91,33,182,0.8)]'
+                    'ring-border relative rounded-2xl shadow-none transition-shadow',
+                    isRecommended
+                      ? 'ring-2 ring-[#8b5cf6]/60 shadow-[0_0_0_6px_rgba(139,92,246,0.1)] dark:shadow-[0_0_0_6px_rgba(139,92,246,0.18)]'
+                      : 'hover:ring-foreground/20'
                   )}
                 >
                   <CardContent className='flex h-full flex-col p-5'>
@@ -451,7 +452,7 @@ export function SubscriptionPlansCard({
                         {t('per month')}
                       </span>
                     </div>
-                    <div className='mt-4 rounded-xl bg-[#f7f5fc] p-3.5 dark:bg-white/5'>
+                    <div className='mt-5 border-t pt-4'>
                       <p className='text-muted-foreground text-[10px] font-semibold tracking-widest uppercase'>
                         {t('Text models')}
                       </p>
@@ -474,7 +475,7 @@ export function SubscriptionPlansCard({
                         </p>
                       )}
                       {mediaCredits > 0 && (
-                        <div className='mt-3 border-t border-[#5b21b6]/10 pt-3 dark:border-white/10'>
+                        <div className='mt-4 border-t pt-3'>
                           <p className='text-muted-foreground text-[10px] font-semibold tracking-widest uppercase'>
                             {t('Image & video models')}
                           </p>
