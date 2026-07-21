@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -38,11 +39,12 @@ func permanentRecallCampaignRunError(err error) error {
 }
 
 type RecallCampaignService struct {
-	audience       *RecallAudienceSelector
-	stripe         *RecallStripeService
-	now            func() time.Time
-	exportMaxRows  int64
-	exportMaxBytes int
+	audience        *RecallAudienceSelector
+	stripe          *RecallStripeService
+	emailTranslator RecallEmailTranslator
+	now             func() time.Time
+	exportMaxRows   int64
+	exportMaxBytes  int
 }
 
 type RecallCampaignSummary struct {
@@ -117,6 +119,10 @@ type RecallRecipientView struct {
 }
 
 func NewRecallCampaignService(audience *RecallAudienceSelector, stripeService *RecallStripeService) *RecallCampaignService {
+	return NewRecallCampaignServiceWithTranslator(audience, stripeService, nil)
+}
+
+func NewRecallCampaignServiceWithTranslator(audience *RecallAudienceSelector, stripeService *RecallStripeService, translator RecallEmailTranslator) *RecallCampaignService {
 	if audience == nil {
 		audience = NewRecallAudienceSelector()
 	}
@@ -124,11 +130,12 @@ func NewRecallCampaignService(audience *RecallAudienceSelector, stripeService *R
 		stripeService = NewRecallStripeService(nil)
 	}
 	return &RecallCampaignService{
-		audience:       audience,
-		stripe:         stripeService,
-		now:            time.Now,
-		exportMaxRows:  defaultRecallExportMaxRows,
-		exportMaxBytes: defaultRecallExportMaxBytes,
+		audience:        audience,
+		stripe:          stripeService,
+		emailTranslator: translator,
+		now:             time.Now,
+		exportMaxRows:   defaultRecallExportMaxRows,
+		exportMaxBytes:  defaultRecallExportMaxBytes,
 	}
 }
 
@@ -528,7 +535,15 @@ func (s *RecallCampaignService) SaveDraft(ctx context.Context, actorID int, draf
 	if actorID <= 0 {
 		return nil, fmt.Errorf("recall campaign actor ID must be positive")
 	}
-	normalized, err := validateAndNormalizeRecallCampaignDraft(draft, s.now())
+	canonical, err := canonicalizeRecallEmailDraft(draft)
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := validateAndNormalizeRecallCampaignDraft(canonical, s.now())
+	if err != nil {
+		return nil, err
+	}
+	normalized.Emails, err = s.localizeRecallEmailStages(ctx, normalized.Emails, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -554,7 +569,19 @@ func (s *RecallCampaignService) UpdateDraft(ctx context.Context, actorID int, id
 		return nil, err
 	}
 	if stored.Status == model.RecallCampaignDraft {
-		normalized, err := validateAndNormalizeRecallCampaignDraft(draft, s.now())
+		current, err := recallCampaignDraftFromModel(stored)
+		if err != nil {
+			return nil, err
+		}
+		canonical, err := canonicalizeRecallEmailDraft(draft)
+		if err != nil {
+			return nil, err
+		}
+		normalized, err := validateAndNormalizeRecallCampaignDraft(canonical, s.now())
+		if err != nil {
+			return nil, err
+		}
+		normalized.Emails, err = s.localizeRecallEmailStages(ctx, normalized.Emails, current.Emails)
 		if err != nil {
 			return nil, err
 		}
@@ -581,17 +608,22 @@ func (s *RecallCampaignService) UpdateDraft(ctx context.Context, actorID int, id
 	if err != nil {
 		return nil, err
 	}
-	if !reflect.DeepEqual(recallCampaignImmutableDraft(current), recallCampaignImmutableDraft(draft)) {
+	canonical, err := canonicalizeRecallEmailDraft(draft)
+	if err != nil {
+		return nil, err
+	}
+	if !reflect.DeepEqual(recallCampaignImmutableDraft(current), recallCampaignImmutableDraft(canonical)) {
 		return nil, fmt.Errorf("activated recall campaign configuration is immutable")
 	}
-	if _, err := normalizeRecallEmailStages(current.Emails); err != nil {
-		return nil, fmt.Errorf("stored recall campaign %d email sequence is invalid: %w", id, err)
-	}
-	name := strings.TrimSpace(draft.Name)
+	name := strings.TrimSpace(canonical.Name)
 	if name == "" || len(name) > 128 {
 		return nil, fmt.Errorf("recall campaign name must contain 1 to 128 characters")
 	}
-	normalizedEmails, err := normalizeRecallEmailStages(draft.Emails)
+	normalizedEmails, err := normalizeRecallEmailStages(canonical.Emails)
+	if err != nil {
+		return nil, err
+	}
+	normalizedEmails, err = s.localizeRecallEmailStages(ctx, normalizedEmails, current.Emails)
 	if err != nil {
 		return nil, err
 	}
@@ -1258,6 +1290,151 @@ func normalizeRecallStrings(values []string) []string {
 	return normalized
 }
 
+func canonicalizeRecallEmailDraft(draft RecallCampaignDraft) (RecallCampaignDraft, error) {
+	stages := make([]RecallEmailStage, len(draft.Emails))
+	for i, stage := range draft.Emails {
+		stages[i] = RecallEmailStage{
+			StageNo:         stage.StageNo,
+			DelaySeconds:    stage.DelaySeconds,
+			TemplateVersion: stage.TemplateVersion,
+			Templates:       make(map[string]RecallEmailTemplate, 1),
+		}
+		for language, template := range stage.Templates {
+			if strings.ToLower(strings.TrimSpace(language)) != "en" {
+				continue
+			}
+			if _, exists := stages[i].Templates["en"]; exists {
+				return RecallCampaignDraft{}, fmt.Errorf("recall email stage %d has duplicate English templates", stage.StageNo)
+			}
+			stages[i].Templates["en"] = template
+		}
+	}
+	draft.Emails = stages
+	return draft, nil
+}
+
+func (s *RecallCampaignService) localizeRecallEmailStages(ctx context.Context, incoming []RecallEmailStage, stored []RecallEmailStage) ([]RecallEmailStage, error) {
+	if s.emailTranslator == nil {
+		return incoming, nil
+	}
+
+	storedByStage := make(map[int]RecallEmailStage, len(stored))
+	for _, stage := range stored {
+		storedByStage[stage.StageNo] = stage
+	}
+	localized := make([]RecallEmailStage, len(incoming))
+	needsTranslation := make([]RecallEmailStage, 0, len(incoming))
+	for i, stage := range incoming {
+		localized[i] = stage
+		if templates, reusable := reusableRecallEmailTemplates(stage, storedByStage[stage.StageNo]); reusable {
+			localized[i].Templates = templates
+			continue
+		}
+		needsTranslation = append(needsTranslation, stage)
+	}
+	if len(needsTranslation) == 0 {
+		return localized, nil
+	}
+
+	translated, err := s.emailTranslator.Translate(ctx, needsTranslation)
+	if err != nil {
+		return nil, fmt.Errorf("translate recall campaign email templates: %w", err)
+	}
+	if len(translated) != len(needsTranslation) {
+		return nil, fmt.Errorf("recall email translation returned %d stages; expected %d", len(translated), len(needsTranslation))
+	}
+	expected := make(map[int]struct{}, len(needsTranslation))
+	for _, stage := range needsTranslation {
+		expected[stage.StageNo] = struct{}{}
+	}
+	for stageNo := range translated {
+		if _, exists := expected[stageNo]; !exists {
+			return nil, fmt.Errorf("recall email translation returned unexpected stage %d", stageNo)
+		}
+	}
+	for i := range localized {
+		if _, needs := expected[localized[i].StageNo]; !needs {
+			continue
+		}
+		templates, err := canonicalRecallEmailTemplates(localized[i].StageNo, localized[i].Templates["en"], translated[localized[i].StageNo])
+		if err != nil {
+			return nil, err
+		}
+		localized[i].Templates = templates
+	}
+	return localized, nil
+}
+
+func reusableRecallEmailTemplates(incoming RecallEmailStage, stored RecallEmailStage) (map[string]RecallEmailTemplate, bool) {
+	if stored.StageNo != incoming.StageNo || len(stored.Templates) != len(recallEmailTranslationLanguages)+1 {
+		return nil, false
+	}
+	storedEnglish, exists := stored.Templates["en"]
+	if !exists {
+		return nil, false
+	}
+	storedEnglish, err := normalizeRecallEmailTemplate(stored.StageNo, "en", storedEnglish)
+	if err != nil || storedEnglish != incoming.Templates["en"] {
+		return nil, false
+	}
+	targets := make(map[string]RecallEmailTemplate, len(recallEmailTranslationLanguages))
+	for _, language := range recallEmailTranslationLanguages {
+		template, exists := stored.Templates[language]
+		if !exists {
+			return nil, false
+		}
+		template, err = normalizeRecallEmailTemplate(stored.StageNo, language, template)
+		if err != nil {
+			return nil, false
+		}
+		targets[language] = template
+	}
+	templates, err := canonicalRecallEmailTemplates(stored.StageNo, storedEnglish, targets)
+	return templates, err == nil
+}
+
+func canonicalRecallEmailTemplates(stageNo int, english RecallEmailTemplate, targets map[string]RecallEmailTemplate) (map[string]RecallEmailTemplate, error) {
+	if len(targets) != len(recallEmailTranslationLanguages) {
+		return nil, fmt.Errorf("recall email translation stage %d must contain exactly seven target languages", stageNo)
+	}
+	english, err := normalizeRecallEmailTemplate(stageNo, "en", english)
+	if err != nil {
+		return nil, err
+	}
+	templates := make(map[string]RecallEmailTemplate, len(recallEmailTranslationLanguages)+1)
+	templates["en"] = english
+	for _, language := range recallEmailTranslationLanguages {
+		template, exists := targets[language]
+		if !exists {
+			return nil, fmt.Errorf("recall email translation stage %d is missing language %s", stageNo, language)
+		}
+		template, err = normalizeRecallEmailTemplate(stageNo, language, template)
+		if err != nil {
+			return nil, err
+		}
+		templates[language] = template
+	}
+	return templates, nil
+}
+
+func normalizeRecallEmailTemplate(stageNo int, language string, template RecallEmailTemplate) (RecallEmailTemplate, error) {
+	template.Subject = strings.TrimSpace(template.Subject)
+	template.BodyText = strings.TrimSpace(template.BodyText)
+	if template.Subject == "" || template.BodyText == "" {
+		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q requires subject and body", stageNo, language)
+	}
+	if strings.ContainsAny(template.Subject, "\r\n") {
+		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q subject must be single line", stageNo, language)
+	}
+	if utf8.RuneCountInString(template.Subject) > recallEmailSubjectMaxRunes {
+		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q subject must contain at most %d characters", stageNo, language, recallEmailSubjectMaxRunes)
+	}
+	if utf8.RuneCountInString(template.BodyText) > recallEmailBodyMaxRunes {
+		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q body must contain at most %d characters", stageNo, language, recallEmailBodyMaxRunes)
+	}
+	return template, nil
+}
+
 func normalizeRecallEmailStages(stages []RecallEmailStage) ([]RecallEmailStage, error) {
 	if len(stages) < 1 || len(stages) > 3 {
 		return nil, fmt.Errorf("recall campaign requires one to three email stages")
@@ -1283,10 +1460,9 @@ func normalizeRecallEmailStages(stages []RecallEmailStage) ([]RecallEmailStage, 
 			if _, exists := templates[language]; exists {
 				return nil, fmt.Errorf("recall email stage %d has duplicate language %q", stage.StageNo, language)
 			}
-			template.Subject = strings.TrimSpace(template.Subject)
-			template.BodyText = strings.TrimSpace(template.BodyText)
-			if template.Subject == "" || template.BodyText == "" {
-				return nil, fmt.Errorf("recall email stage %d language %q requires subject and body", stage.StageNo, language)
+			template, err := normalizeRecallEmailTemplate(stage.StageNo, language, template)
+			if err != nil {
+				return nil, err
 			}
 			templates[language] = template
 		}

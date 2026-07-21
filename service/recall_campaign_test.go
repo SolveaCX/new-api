@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,6 +19,74 @@ import (
 	"github.com/stripe/stripe-go/v81"
 	"gorm.io/gorm"
 )
+
+type recallCampaignFakeEmailTranslator struct {
+	mu          sync.Mutex
+	calls       [][]RecallEmailStage
+	err         error
+	translateFn func([]RecallEmailStage) (map[int]map[string]RecallEmailTemplate, error)
+}
+
+func (f *recallCampaignFakeEmailTranslator) Translate(_ context.Context, stages []RecallEmailStage) (map[int]map[string]RecallEmailTemplate, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, cloneRecallCampaignTestStages(stages))
+	f.mu.Unlock()
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.translateFn != nil {
+		return f.translateFn(stages)
+	}
+	return recallCampaignTestTranslations(stages), nil
+}
+
+func (f *recallCampaignFakeEmailTranslator) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.calls)
+}
+
+func cloneRecallCampaignTestStages(stages []RecallEmailStage) []RecallEmailStage {
+	cloned := make([]RecallEmailStage, len(stages))
+	for i := range stages {
+		cloned[i] = stages[i]
+		cloned[i].Templates = make(map[string]RecallEmailTemplate, len(stages[i].Templates))
+		for language, template := range stages[i].Templates {
+			cloned[i].Templates[language] = template
+		}
+	}
+	return cloned
+}
+
+func recallCampaignTestTranslations(stages []RecallEmailStage) map[int]map[string]RecallEmailTemplate {
+	translations := make(map[int]map[string]RecallEmailTemplate, len(stages))
+	for _, stage := range stages {
+		english := stage.Templates["en"]
+		localized := make(map[string]RecallEmailTemplate, len(recallEmailTranslationLanguages))
+		for _, language := range recallEmailTranslationLanguages {
+			localized[language] = RecallEmailTemplate{
+				Subject:  language + ":" + english.Subject,
+				BodyText: language + ":" + english.BodyText,
+			}
+		}
+		translations[stage.StageNo] = localized
+	}
+	return translations
+}
+
+func requireRecallCampaignCanonicalLanguages(t *testing.T, stages []RecallEmailStage) {
+	t.Helper()
+	want := append([]string{"en"}, recallEmailTranslationLanguages...)
+	for _, stage := range stages {
+		require.Len(t, stage.Templates, len(want))
+		for _, language := range want {
+			template, ok := stage.Templates[language]
+			require.True(t, ok, "missing language %s", language)
+			require.NotEmpty(t, template.Subject)
+			require.NotEmpty(t, template.BodyText)
+		}
+	}
+}
 
 func setupRecallCampaignTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -372,6 +442,287 @@ func TestRecallCampaignSaveDraftValidatesAndNormalizes(t *testing.T) {
 	var emails []RecallEmailStage
 	require.NoError(t, common.Unmarshal([]byte(campaign.EmailSequenceConfig), &emails))
 	require.Equal(t, 1, emails[0].TemplateVersion)
+}
+
+func TestRecallCampaignSaveDraftTranslatesAndPersistsAllLanguages(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	draft.Emails = append(draft.Emails, RecallEmailStage{
+		StageNo:      2,
+		DelaySeconds: 3600,
+		Templates: map[string]RecallEmailTemplate{
+			"en": {Subject: "One more reason", BodyText: "Your offer is still waiting."},
+		},
+	})
+
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, translator.callCount())
+	require.Len(t, translator.calls[0], 2, "all stages must be translated in one batch")
+	for _, stage := range translator.calls[0] {
+		require.Equal(t, map[string]RecallEmailTemplate{"en": stage.Templates["en"]}, stage.Templates)
+	}
+	var stored []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(campaign.EmailSequenceConfig), &stored))
+	requireRecallCampaignCanonicalLanguages(t, stored)
+	require.Equal(t, "zh:Come back", stored[0].Templates["zh"].Subject)
+	require.Equal(t, "vi:Your offer is still waiting.", stored[1].Templates["vi"].BodyText)
+}
+
+func TestRecallCampaignSaveDraftTranslationFailureDoesNotPersist(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{err: errors.New("translation unavailable")}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+
+	campaign, err := service.SaveDraft(context.Background(), 7, validRecallCampaignDraft(now))
+
+	require.ErrorContains(t, err, "translation unavailable")
+	require.Nil(t, campaign)
+	var count int64
+	require.NoError(t, db.Model(&model.RecallCampaign{}).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestRecallCampaignUpdateDraftReusesCompleteStoredTranslations(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	draft.Name = "Renamed without content changes"
+	updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, translator.callCount(), "unchanged English must reuse complete stored translations")
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	requireRecallCampaignCanonicalLanguages(t, stages)
+	require.Equal(t, "ja:Come back", stages[0].Templates["ja"].Subject)
+}
+
+func TestRecallCampaignUpdateDraftRepairsMissingLocalizedTemplate(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	var damaged []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(campaign.EmailSequenceConfig), &damaged))
+	delete(damaged[0].Templates, "zh")
+	raw, err := common.Marshal(damaged)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&model.RecallCampaign{}).Where("id = ?", campaign.Id).Update("email_sequence_config", string(raw)).Error)
+
+	updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, translator.callCount())
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	requireRecallCampaignCanonicalLanguages(t, stages)
+	require.Equal(t, "zh:Come back", stages[0].Templates["zh"].Subject)
+}
+
+func TestRecallCampaignUpdateDraftReplacesGeneratedTranslationsWhenEnglishChanges(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	draft.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "A new subject", BodyText: "A new body"}
+
+	updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, translator.callCount())
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	require.Equal(t, "fr:A new subject", stages[0].Templates["fr"].Subject)
+	require.Equal(t, "ru:A new body", stages[0].Templates["ru"].BodyText)
+}
+
+func TestRecallCampaignSaveDraftIgnoresClientSubmittedNonEnglishTemplates(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	draft.Emails[0].Templates = map[string]RecallEmailTemplate{
+		" EN ": {Subject: "Come back", BodyText: "A Stripe offer is waiting."},
+		"fr":   {Subject: "", BodyText: "forged"},
+		"xx":   {Subject: "forged\r\nheader", BodyText: strings.Repeat("x", recallEmailBodyMaxRunes+1)},
+	}
+
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, translator.callCount())
+	require.Equal(t, map[string]RecallEmailTemplate{
+		"en": {Subject: "Come back", BodyText: "A Stripe offer is waiting."},
+	}, translator.calls[0][0].Templates)
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(campaign.EmailSequenceConfig), &stages))
+	requireRecallCampaignCanonicalLanguages(t, stages)
+	require.Equal(t, "fr:Come back", stages[0].Templates["fr"].Subject)
+	require.NotEqual(t, "forged", stages[0].Templates["fr"].BodyText)
+}
+
+func TestRecallCampaignActivatedTranslatedEmailUpdateIncrementsVersionOnce(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}), translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+	recipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 9001, EligibilitySnapshot: `{}`, EmailSnapshot: "snapshot@example.com", LanguageSnapshot: "fr", State: model.RecallRecipientContacting}
+	require.NoError(t, db.Create(&recipient).Error)
+	message := model.RecallMessage{RecipientId: recipient.Id, StageNo: 1, TemplateVersion: 1, TemplateSnapshot: `{"fr":{"subject":"old snapshot","body_text":"old body"}}`, State: model.RecallMessageScheduled}
+	require.NoError(t, db.Create(&message).Error)
+	draft.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "Updated once", BodyText: "Updated body once"}
+
+	updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, translator.callCount())
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	require.Equal(t, 2, stages[0].TemplateVersion)
+	require.Equal(t, "es:Updated once", stages[0].Templates["es"].Subject)
+	var preserved model.RecallMessage
+	require.NoError(t, db.First(&preserved, message.Id).Error)
+	require.Equal(t, message.TemplateSnapshot, preserved.TemplateSnapshot)
+	require.Equal(t, 1, preserved.TemplateVersion)
+
+	draft.Name = "Only rename"
+	updated, err = service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+	require.NoError(t, err)
+	require.Equal(t, 2, translator.callCount(), "same English content must not be translated again")
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	require.Equal(t, 2, stages[0].TemplateVersion, "name-only edits must not bump template version")
+}
+
+func TestRecallCampaignConcurrentEmailEditsUseConfigRevisionFenceAfterTranslation(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	arrived := make(chan struct{}, 2)
+	release := make(chan struct{})
+	translator := &recallCampaignFakeEmailTranslator{}
+	translator.translateFn = func(stages []RecallEmailStage) (map[int]map[string]RecallEmailTemplate, error) {
+		if strings.Contains(stages[0].Templates["en"].Subject, "concurrent") {
+			arrived <- struct{}{}
+			<-release
+		}
+		return recallCampaignTestTranslations(stages), nil
+	}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}), translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+
+	makeEdit := func(subject string) RecallCampaignDraft {
+		edit := validRecallCampaignDraft(now)
+		edit.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: subject, BodyText: subject + " body"}
+		return edit
+	}
+	edits := []RecallCampaignDraft{makeEdit("First concurrent edit"), makeEdit("Second concurrent edit")}
+	errs := make(chan error, len(edits))
+	for i := range edits {
+		edit := edits[i]
+		go func() {
+			_, updateErr := service.UpdateDraft(context.Background(), 7, campaign.Id, edit)
+			errs <- updateErr
+		}()
+	}
+	<-arrived
+	<-arrived
+	close(release)
+
+	results := []error{<-errs, <-errs}
+	successes := 0
+	for _, updateErr := range results {
+		if updateErr == nil {
+			successes++
+		}
+	}
+	require.Equal(t, 1, successes)
+	require.Equal(t, 3, translator.callCount(), "both contenders may translate before the database fence")
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, stored.ConfigRevision)
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(stored.EmailSequenceConfig), &stages))
+	winner := stages[0].Templates["en"].Subject
+	require.Contains(t, []string{"First concurrent edit", "Second concurrent edit"}, winner)
+	require.Equal(t, "ja:"+winner, stages[0].Templates["ja"].Subject)
+	require.Equal(t, 2, stages[0].TemplateVersion)
+}
+
+func TestRecallCampaignSaveDraftRejectsInvalidEnglishTemplateBoundaries(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*RecallEmailTemplate)
+		want   string
+	}{
+		{name: "subject too long", mutate: func(template *RecallEmailTemplate) {
+			template.Subject = strings.Repeat("界", recallEmailSubjectMaxRunes+1)
+		}, want: "subject"},
+		{name: "body too long", mutate: func(template *RecallEmailTemplate) {
+			template.BodyText = strings.Repeat("界", recallEmailBodyMaxRunes+1)
+		}, want: "body"},
+		{name: "subject CRLF", mutate: func(template *RecallEmailTemplate) { template.Subject = "hello\r\nBcc: forged@example.com" }, want: "single line"},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := setupRecallCampaignTestDB(t)
+			setRecallCampaignEnabled(t, true)
+			now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+			service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+			service.now = func() time.Time { return now }
+			draft := validRecallCampaignDraft(now)
+			template := draft.Emails[0].Templates["en"]
+			testCase.mutate(&template)
+			draft.Emails[0].Templates["en"] = template
+
+			campaign, err := service.SaveDraft(context.Background(), 7, draft)
+
+			require.ErrorContains(t, err, testCase.want)
+			require.Nil(t, campaign)
+			var count int64
+			require.NoError(t, db.Model(&model.RecallCampaign{}).Count(&count).Error)
+			require.Zero(t, count)
+		})
+	}
 }
 
 func TestRecallCampaignSaveDraftRejectsInvalidBoundaries(t *testing.T) {
@@ -1448,4 +1799,5 @@ func TestRecallCampaignRuntimeInitiallyContainsCampaigns(t *testing.T) {
 	runtime := GetRecallRuntime()
 	require.NotNil(t, runtime)
 	require.NotNil(t, runtime.Campaigns)
+	require.NotNil(t, runtime.Campaigns.emailTranslator, "production runtime must never silently bypass localization")
 }

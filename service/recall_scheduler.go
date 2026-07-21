@@ -35,9 +35,12 @@ func GetRecallRuntime() *RecallRuntime {
 		audience := NewRecallAudienceSelector()
 		owner := common.GetReplicaID()
 		recallRuntime = &RecallRuntime{
-			Campaigns: NewRecallCampaignService(
+			Campaigns: NewRecallCampaignServiceWithTranslator(
 				audience,
 				stripeService,
+				NewRecallEmailTranslator(RecallEmailTranslatorOptions{
+					APIKey: operation_setting.GetMonitorAIAnalysisAPIKey(),
+				}),
 			),
 			Claims:      claims,
 			Recipients:  NewRecallRecipientWorker(stripeService, claims, owner),
