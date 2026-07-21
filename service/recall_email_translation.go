@@ -364,11 +364,67 @@ func parseRecallEmailTranslationResponse(raw []byte) (recallEmailTranslationResu
 	if outputText == "" {
 		return recallEmailTranslationResult{}, fmt.Errorf("recall email translation returned empty output")
 	}
+	outputJSON := []byte(outputText)
+	if err := validateRecallEmailTranslationOutputShape(outputJSON); err != nil {
+		return recallEmailTranslationResult{}, err
+	}
 	var result recallEmailTranslationResult
-	if err := common.Unmarshal([]byte(outputText), &result); err != nil {
+	if err := common.Unmarshal(outputJSON, &result); err != nil {
 		return recallEmailTranslationResult{}, fmt.Errorf("invalid recall email translation output: %w", err)
 	}
 	return result, nil
+}
+
+func validateRecallEmailTranslationOutputShape(raw []byte) error {
+	var root map[string]any
+	if err := common.Unmarshal(raw, &root); err != nil {
+		return fmt.Errorf("invalid recall email translation output: %w", err)
+	}
+	if !recallEmailTranslationHasExactKeys(root, []string{"stages"}) {
+		return fmt.Errorf("invalid recall email translation output: root must contain only stages")
+	}
+	stages, ok := root["stages"].([]any)
+	if !ok {
+		return fmt.Errorf("invalid recall email translation output: stages must be an array")
+	}
+	for stageIndex, rawStage := range stages {
+		stage, ok := rawStage.(map[string]any)
+		if !ok {
+			return fmt.Errorf("invalid recall email translation output: stage %d must be an object", stageIndex+1)
+		}
+		if !recallEmailTranslationHasExactKeys(stage, []string{"stage_no", "translations"}) {
+			return fmt.Errorf("invalid recall email translation output: stage %d contains unexpected fields", stageIndex+1)
+		}
+		translations, ok := stage["translations"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("invalid recall email translation output: stage %d translations must be an object", stageIndex+1)
+		}
+		if !recallEmailTranslationHasExactKeys(translations, recallEmailTranslationLanguages) {
+			return fmt.Errorf("invalid recall email translation output: stage %d translations must contain exactly seven target languages", stageIndex+1)
+		}
+		for _, language := range recallEmailTranslationLanguages {
+			template, ok := translations[language].(map[string]any)
+			if !ok {
+				return fmt.Errorf("invalid recall email translation output: stage %d language %s must be an object", stageIndex+1, language)
+			}
+			if !recallEmailTranslationHasExactKeys(template, []string{"subject", "body_text"}) {
+				return fmt.Errorf("invalid recall email translation output: stage %d language %s contains unexpected fields", stageIndex+1, language)
+			}
+		}
+	}
+	return nil
+}
+
+func recallEmailTranslationHasExactKeys(object map[string]any, expected []string) bool {
+	if len(object) != len(expected) {
+		return false
+	}
+	for _, key := range expected {
+		if _, exists := object[key]; !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func validateAndRestoreRecallEmailTranslations(result recallEmailTranslationResult, stages []recallEmailProtectedStage) (map[int]map[string]RecallEmailTemplate, error) {

@@ -176,6 +176,26 @@ func TestRecallEmailTranslationValidatesStructuredOutput(t *testing.T) {
 		name   string
 		result map[string]any
 	}{
+		{name: "extra root field", result: func() map[string]any {
+			result := validRecallEmailTranslationResult([]int{1})
+			result["unexpected"] = "value"
+			return result
+		}()},
+		{name: "extra stage field", result: func() map[string]any {
+			result := validRecallEmailTranslationResult([]int{1})
+			result["stages"].([]map[string]any)[0]["unexpected"] = "value"
+			return result
+		}()},
+		{name: "extra template field", result: func() map[string]any {
+			result := validRecallEmailTranslationResult([]int{1})
+			translations := result["stages"].([]map[string]any)[0]["translations"].(map[string]RecallEmailTemplate)
+			result["stages"].([]map[string]any)[0]["translations"] = map[string]any{
+				"zh": map[string]any{"subject": "zh subject 1", "body_text": "zh body 1", "unexpected": "value"},
+				"es": translations["es"], "fr": translations["fr"], "pt": translations["pt"],
+				"ru": translations["ru"], "ja": translations["ja"], "vi": translations["vi"],
+			}
+			return result
+		}()},
 		{name: "missing language", result: func() map[string]any {
 			result := validRecallEmailTranslationResult([]int{1})
 			delete(result["stages"].([]map[string]any)[0]["translations"].(map[string]RecallEmailTemplate), "vi")
