@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/require"
 )
@@ -64,6 +65,82 @@ func TestRecallEmailTranslatorTranslatesMultipleStagesInOneStructuredRequest(t *
 	require.Len(t, translated, 2)
 	require.Equal(t, "zh subject 1", translated[1]["zh"].Subject)
 	require.Equal(t, "vi body 2", translated[2]["vi"].BodyText)
+}
+
+func TestRecallEmailTranslatorFromMonitorSettingsResolvesUpdatedConfigPerTranslate(t *testing.T) {
+	allowRecallEmailTranslationTestServer(t)
+	preserveRecallEmailTranslationMonitorSettings(t)
+	var firstRequests atomic.Int32
+	firstServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstRequests.Add(1)
+		require.Equal(t, "Bearer sk-monitor-first", r.Header.Get("Authorization"))
+		var request map[string]any
+		require.NoError(t, common.DecodeJson(r.Body, &request))
+		require.Equal(t, "gpt-monitor-first", request["model"])
+		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+	}))
+	defer firstServer.Close()
+	var secondRequests atomic.Int32
+	secondServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondRequests.Add(1)
+		require.Equal(t, "Bearer sk-monitor-second", r.Header.Get("Authorization"))
+		var request map[string]any
+		require.NoError(t, common.DecodeJson(r.Body, &request))
+		require.Equal(t, "gpt-monitor-second", request["model"])
+		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+	}))
+	defer secondServer.Close()
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"monitor_setting.ai_analysis_api_key":  "sk-monitor-first",
+		"monitor_setting.ai_analysis_base_url": firstServer.URL + "/v1",
+		"monitor_setting.ai_analysis_model":    "gpt-monitor-first",
+	}))
+	translator := NewRecallEmailTranslatorFromMonitorSettings(RecallEmailTranslatorOptions{Client: firstServer.Client()})
+	_, err := translator.Translate(context.Background(), recallEmailTranslationTestStages())
+	require.NoError(t, err)
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"monitor_setting.ai_analysis_api_key":  "sk-monitor-second",
+		"monitor_setting.ai_analysis_base_url": secondServer.URL + "/v1",
+		"monitor_setting.ai_analysis_model":    "gpt-monitor-second",
+	}))
+	_, err = translator.Translate(context.Background(), recallEmailTranslationTestStages())
+
+	require.NoError(t, err)
+	require.EqualValues(t, 1, firstRequests.Load())
+	require.EqualValues(t, 1, secondRequests.Load())
+}
+
+func TestRecallEmailTranslatorExplicitOptionsRemainStaticAfterMonitorSettingsChange(t *testing.T) {
+	allowRecallEmailTranslationTestServer(t)
+	preserveRecallEmailTranslationMonitorSettings(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		require.Equal(t, "Bearer sk-explicit", r.Header.Get("Authorization"))
+		var request map[string]any
+		require.NoError(t, common.DecodeJson(r.Body, &request))
+		require.Equal(t, "gpt-explicit", request["model"])
+		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+	}))
+	defer server.Close()
+	translator := NewRecallEmailTranslator(RecallEmailTranslatorOptions{
+		APIKey:  "sk-explicit",
+		BaseURL: server.URL + "/v1",
+		Model:   "gpt-explicit",
+		Client:  server.Client(),
+	})
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"monitor_setting.ai_analysis_api_key":  "sk-monitor-other",
+		"monitor_setting.ai_analysis_base_url": "https://monitor.invalid/v1",
+		"monitor_setting.ai_analysis_model":    "gpt-monitor-other",
+	}))
+	_, err := translator.Translate(context.Background(), recallEmailTranslationTestStages())
+
+	require.NoError(t, err)
+	require.EqualValues(t, 1, requests.Load())
 }
 
 func TestRecallEmailTranslatorRejectsMissingAPIKey(t *testing.T) {
@@ -439,6 +516,19 @@ func allowRecallEmailTranslationTestServer(t *testing.T) {
 	original := *system_setting.GetFetchSetting()
 	t.Cleanup(func() { *system_setting.GetFetchSetting() = original })
 	system_setting.GetFetchSetting().EnableSSRFProtection = false
+}
+
+func preserveRecallEmailTranslationMonitorSettings(t *testing.T) {
+	t.Helper()
+	original := config.GlobalConfig.ExportAllConfigs()
+	saved := map[string]string{
+		"monitor_setting.ai_analysis_api_key":  original["monitor_setting.ai_analysis_api_key"],
+		"monitor_setting.ai_analysis_base_url": original["monitor_setting.ai_analysis_base_url"],
+		"monitor_setting.ai_analysis_model":    original["monitor_setting.ai_analysis_model"],
+	}
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
 }
 
 type temporaryTranslationNetworkError struct{}
