@@ -71,6 +71,41 @@ func TestStatusSchedulerCompetingWorkersOnlyLeaseOwnerCommits(t *testing.T) {
 	require.EqualValues(t, 1, countStatusPeriodsByGranularity(t, db, model.StatusGranularityFiveMinutes))
 }
 
+func TestStatusSchedulerReportsLeaseHolderOnlyOncePerProcess(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	originalObserver := statusLeaseAcquiredObserver
+	originalOnce := statusLeaseAcquiredOnce
+	statusLeaseAcquiredOnce = &sync.Once{}
+	var observed []string
+	statusLeaseAcquiredObserver = func(holder string) {
+		observed = append(observed, holder)
+	}
+	t.Cleanup(func() {
+		statusLeaseAcquiredObserver = originalObserver
+		statusLeaseAcquiredOnce = originalOnce
+	})
+
+	currentTime := int64(1_000)
+	scheduler := &StatusScheduler{
+		Holder:       "node-a",
+		Now:          func() int64 { return currentTime },
+		Pricing:      func() []model.Pricing { return nil },
+		UsableGroups: func() map[string]string { return map[string]string{WebsitePublicGroup: WebsitePublicGroup} },
+		Traffic:      func(_ int64, _ int64, _ []string) ([]model.PerfMetricSummary, error) { return nil, nil },
+		RouterProbe: StatusProbeAdapterFunc(func(_ context.Context, _ model.StatusComponent) StatusProbeOutcome {
+			return StatusProbeOutcome{Success: true, DiagnosticType: "ok"}
+		}),
+	}
+
+	for _, now := range []int64{1_000, 1_060} {
+		currentTime = now
+		ran, err := scheduler.RunOnce(context.Background(), now)
+		require.NoError(t, err)
+		require.True(t, ran)
+	}
+	require.Equal(t, []string{"node-a"}, observed)
+}
+
 func TestStatusSchedulerProbeIsConsumedOnlyOnce(t *testing.T) {
 	db := setupStatusServiceTestDB(t)
 	var modelProbeCalls atomic.Int64

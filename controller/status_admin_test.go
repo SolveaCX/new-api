@@ -271,3 +271,15 @@ func TestStatusAdminDiscordEndpointRejectsStaleVersionAndStoresOnlyEncryptedValu
 	require.NoError(t, err)
 	require.Equal(t, endpoint, plaintext)
 }
+
+func TestStatusAdminDiscordTestIsUnavailableInShadowMode(t *testing.T) {
+	engine, _ := setupStatusHTTPTest(t)
+	t.Setenv("STATUS_CENTER_SHADOW_MODE", "true")
+	verifiedRootCookie := statusAuthCookie(t, engine, common.RoleRootUser, true)
+
+	response := performStatusAuthenticatedRequest(
+		engine, http.MethodPost, "/api/status/admin/discord/test", "", verifiedRootCookie,
+	)
+
+	require.Equal(t, http.StatusServiceUnavailable, response.Code, response.Body.String())
+}

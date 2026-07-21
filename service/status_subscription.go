@@ -34,7 +34,10 @@ const (
 	StatusDeliveryResultRetry     = "retry"
 )
 
-var ErrStatusDiscordTestDeliveryFailed = errors.New("status Discord test delivery failed")
+var (
+	ErrStatusDiscordTestDeliveryFailed  = errors.New("status Discord test delivery failed")
+	ErrStatusExternalEffectsSuppressed = errors.New("status external effects are suppressed in shadow mode")
+)
 
 type StatusEmailSender interface {
 	SendEmail(subject string, receiver string, content string) error
@@ -243,6 +246,9 @@ func SendStatusDiscordTest(ctx context.Context, actor StatusMutationActor, keyri
 	}
 	if !actor.SecureVerified {
 		return StatusDiscordTestResult{}, ErrStatusSecureVerificationRequired
+	}
+	if IsStatusCenterShadowMode() {
+		return StatusDiscordTestResult{}, ErrStatusExternalEffectsSuppressed
 	}
 	if keyring == nil || !keyring.Enabled() {
 		return StatusDiscordTestResult{}, ErrStatusSecretKeyringDisabled

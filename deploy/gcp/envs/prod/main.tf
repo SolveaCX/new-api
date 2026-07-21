@@ -140,12 +140,36 @@ resource "google_secret_manager_secret" "blockrun_usage_summary_token" {
   depends_on = [module.apis]
 }
 
-// Custom RunMonitoring config for Google Managed Service for Prometheus.
+// Custom RunMonitoring configs for Google Managed Service for Prometheus.
 // Cloud Run sidecar's built-in default scrapes port 8080, but new-api serves
-// metrics on port 3000, so the router mounts this as /etc/rungmp/config.yaml.
+// metrics on port 3000, so each monitored service mounts its own config.
 resource "google_secret_manager_secret" "prometheus_run_monitoring_config" {
   project   = var.project_id
   secret_id = "newapi-router-run-monitoring-config"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [module.apis]
+}
+
+// Keyring value is operator-populated. Terraform owns the secret container and
+// runtime access only; it never stores key material in state or source control.
+resource "google_secret_manager_secret" "status_secret_keys" {
+  project   = var.project_id
+  secret_id = "newapi-status-secret-keys"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [module.apis]
+}
+
+resource "google_secret_manager_secret" "console_prometheus_run_monitoring_config" {
+  project   = var.project_id
+  secret_id = "newapi-console-run-monitoring-config"
 
   replication {
     auto {}
@@ -174,6 +198,26 @@ resource "google_secret_manager_secret_version" "prometheus_run_monitoring_confi
   EOT
 }
 
+resource "google_secret_manager_secret_version" "console_prometheus_run_monitoring_config" {
+  secret      = google_secret_manager_secret.console_prometheus_run_monitoring_config.id
+  secret_data = <<-EOT
+    apiVersion: monitoring.googleapis.com/v1beta
+    kind: RunMonitoring
+    metadata:
+      name: newapi-console
+    spec:
+      endpoints:
+      - port: 3000
+        path: /metrics
+        interval: 30s
+      targetLabels:
+        metadata:
+        - instance
+        - service
+        - revision
+  EOT
+}
+
 module "service_accounts" {
   source     = "../../modules/service-accounts"
   project_id = var.project_id
@@ -184,7 +228,9 @@ module "service_accounts" {
       google_secret_manager_secret.sql_dsn.secret_id,
       google_secret_manager_secret.redis_url.secret_id,
       google_secret_manager_secret.blockrun_usage_summary_token.secret_id,
+      google_secret_manager_secret.status_secret_keys.secret_id,
       google_secret_manager_secret.prometheus_run_monitoring_config.secret_id,
+      google_secret_manager_secret.console_prometheus_run_monitoring_config.secret_id,
     ],
   )
 
@@ -321,10 +367,15 @@ module "cloud_run_console" {
   router_origin         = "https://router.flatkey.ai"
   status_center_enabled = false
 
+  prometheus_sidecar_enabled  = true
+  prometheus_config_secret_id = google_secret_manager_secret.console_prometheus_run_monitoring_config.secret_id
+
   depends_on = [
     module.apis,
+    module.service_accounts,
     google_secret_manager_secret_version.sql_dsn,
     google_secret_manager_secret_version.redis_url,
+    google_secret_manager_secret_version.console_prometheus_run_monitoring_config,
   ]
 }
 

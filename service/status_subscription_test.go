@@ -20,11 +20,13 @@ import (
 func TestStatusDeliveryTaskStartsOnlyWhenNotificationsAreEnabled(t *testing.T) {
 	originalMaster := common.IsMasterNode
 	originalOnce := statusCenterTaskOnce
+	originalDeliveryOnce := statusDeliveryTaskOnce
 	originalStatusLaunch := statusCenterTaskLaunch
 	originalDeliveryLaunch := statusDeliveryTaskLaunch
 	t.Cleanup(func() {
 		common.IsMasterNode = originalMaster
 		statusCenterTaskOnce = originalOnce
+		statusDeliveryTaskOnce = originalDeliveryOnce
 		statusCenterTaskLaunch = originalStatusLaunch
 		statusDeliveryTaskLaunch = originalDeliveryLaunch
 	})
@@ -36,11 +38,13 @@ func TestStatusDeliveryTaskStartsOnlyWhenNotificationsAreEnabled(t *testing.T) {
 	statusDeliveryTaskLaunch = func(StatusDeliveryWorker) { launches.Add(1) }
 
 	statusCenterTaskOnce = &sync.Once{}
+	statusDeliveryTaskOnce = &sync.Once{}
 	t.Setenv("STATUS_CENTER_NOTIFICATIONS_ENABLED", "false")
 	require.True(t, StartStatusCenterTasks())
 	require.Zero(t, launches.Load())
 
 	statusCenterTaskOnce = &sync.Once{}
+	statusDeliveryTaskOnce = &sync.Once{}
 	t.Setenv("STATUS_CENTER_NOTIFICATIONS_ENABLED", "true")
 	require.True(t, StartStatusCenterTasks())
 	require.EqualValues(t, 1, launches.Load())
@@ -288,6 +292,21 @@ func TestStatusSubscriptionDiscordTestDeliveryUsesConfiguredSafeSenderWithoutRet
 	encoded, err := common.Marshal(result)
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), "discord.com")
+}
+
+func TestStatusSubscriptionDiscordTestDeliveryIsSuppressedInShadowMode(t *testing.T) {
+	setupStatusServiceTestDB(t)
+	keyring := statusSecretTestKeyring(t)
+	_, err := ConfigureStatusDiscordEndpoint(statusRootActor(true), "https://discord.com/api/webhooks/1/token", 0, keyring, 66_000)
+	require.NoError(t, err)
+	t.Setenv("STATUS_CENTER_SHADOW_MODE", "true")
+	sender := &statusDeliveryWebhookRecorder{}
+
+	result, err := SendStatusDiscordTest(context.Background(), statusRootActor(true), keyring, sender, 66_001)
+
+	require.ErrorContains(t, err, "shadow mode")
+	require.False(t, result.Success)
+	require.Empty(t, sender.requests)
 }
 
 func TestStatusSubscriptionDiscordTestDeliveryReportsNonSuccessAndTransportFailure(t *testing.T) {
