@@ -1,4 +1,4 @@
-# Recall Fixed-Coupon Hint Internationalization Design
+# Recall Campaign Configuration Help Internationalization Design
 
 ## Problem
 
@@ -8,12 +8,32 @@ The recall campaign editor already renders the fixed-coupon currency warning thr
 
 Operators using a non-English interface must receive the same explanation in their selected language.
 
+The audience template selector also lacks enough context for operators to understand what each template selects and how the rules below affect that selection. This makes campaign configuration unnecessarily error-prone.
+
 ## Scope
 
 - Keep the existing English sentence as the flat i18n key, matching the console's current convention.
 - Add a natural translation to all eight locale catalogs: English, Simplified Chinese, French, Russian, Japanese, Vietnamese, Spanish, and Portuguese.
-- Keep the current component, layout, Stripe behavior, supported currencies, and form behavior unchanged.
+- Add a compact explanation directly below the audience template selector and above the detailed audience rules.
+- Show one common rule explanation plus a template-specific description that updates immediately when the selected template changes.
+- Keep the current component structure, Stripe behavior, supported currencies, and form behavior unchanged apart from inserting the help copy.
 - Do not modify legacy coupons or any backend API.
+
+## Audience Template Help
+
+The common explanation will state:
+
+> Audience templates define the base audience. The rules below narrow it further, and every condition must match. Preview the audience before activation.
+
+The selected template will add one of these descriptions:
+
+| Template | Description |
+| --- | --- |
+| First purchase | Targets registered users who have never paid, for campaigns that encourage a first purchase. |
+| Lapsed payer | Targets previous payers who have not paid or used the API recently. |
+| Expired subscription | Targets previous subscribers whose subscription is no longer active and expired long enough ago. |
+
+The explanation is informational only. It does not change field defaults, validation, audience queries, or preview behavior. All four source strings will receive natural translations in the same eight locale catalogs as the Stripe warning.
 
 ## Translations
 
@@ -30,10 +50,12 @@ Operators using a non-English interface must receive the same explanation in the
 
 ## Validation
 
-Add a focused Bun test beside the recall campaign feature. The test will import all eight locale catalogs and assert that:
+Add focused Bun tests beside the recall campaign feature. The tests will assert that the template-description mapping returns the appropriate source key when the selected template changes. They will also import all eight locale catalogs and assert that:
 
 1. Every catalog contains the exact English source key.
 2. Every value is non-empty.
 3. Each non-English locale differs from the English fallback.
 
-Then run the focused test, the i18n synchronization check, TypeScript type checking, and the production frontend build. This change is console-only and does not require a router deployment.
+These catalog assertions apply to the Stripe warning, the common audience explanation, and all three template-specific descriptions.
+
+Then run the focused tests, the i18n synchronization check, TypeScript type checking, and the production frontend build. This change is console-only and does not require a router deployment.
