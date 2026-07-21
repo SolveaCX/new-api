@@ -44,6 +44,16 @@ For commercial licensing, please contact support@quantumnous.com
     U+2215, U+feff, U+fffd;
 }
 
+/* Display face: headings and hero numerals use the brand Space Grotesk
+ * (latin subset only — CJK glyphs fall back to the body stack). */
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family: 'Space Grotesk', var(--font-body, var(--font-sans));
+}
+
 /* Brand wordmark font: Public Sans Bold (700), self-hosted latin subset.
  * Matches the official website (website-static) lockup — the single brand
  * standard is Mark + "flatkey" in Public Sans 700. Used only by FlatkeyBrandLogo. */
