@@ -44,6 +44,13 @@ const recallHelpKeys = [
   'Stripe does not convert fixed Coupon amounts automatically. Configure each checkout currency explicitly.',
   'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.',
   "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable.",
+  'Recall user groups',
+  'Select user groups',
+  'No matching user groups',
+  'Loading configured user groups...',
+  'Failed to load configured user groups.',
+  'No configured user groups are available.',
+  'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.',
   ...Object.values(audienceTemplateDescriptionKeys),
 ] as const
 
@@ -51,7 +58,7 @@ describe('recall campaign copy', () => {
   test('maps each audience template to its explanation', () => {
     expect(audienceTemplateDescriptionKeys).toEqual({
       first_purchase:
-        'Targets registered users in the PLG group who have never paid, for campaigns that encourage a first purchase.',
+        'Targets registered users who have never paid, for campaigns that encourage a first purchase.',
       lapsed_payer:
         'Targets previous payers who have not paid or used the API recently.',
       expired_subscription:

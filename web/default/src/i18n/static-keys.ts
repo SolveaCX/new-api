@@ -552,7 +552,7 @@ export const STATIC_I18N_KEYS = [
   'Please wait for the current generation to complete',
 
   // Recall campaign audience help
-  'Targets registered users in the PLG group who have never paid, for campaigns that encourage a first purchase.',
+  'Targets registered users who have never paid, for campaigns that encourage a first purchase.',
   'Targets previous payers who have not paid or used the API recently.',
   'Targets previous subscribers whose subscription is no longer active and expired long enough ago.',
 

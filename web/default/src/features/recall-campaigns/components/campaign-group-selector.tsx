@@ -76,7 +76,7 @@ export function CampaignGroupSelector(props: CampaignGroupSelectorProps) {
 
   return (
     <div className='space-y-2'>
-      <Label htmlFor='recall-groups'>{t('Groups')}</Label>
+      <Label htmlFor='recall-groups'>{t('Recall user groups')}</Label>
       <MultiSelect
         id='recall-groups'
         options={options}

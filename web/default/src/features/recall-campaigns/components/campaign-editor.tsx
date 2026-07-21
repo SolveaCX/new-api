@@ -39,6 +39,7 @@ import type {
   RecallDiscountConfig,
   RecallFixedCurrency,
 } from '../types'
+import { CampaignGroupSelector } from './campaign-group-selector'
 import { CampaignProductSelector } from './campaign-product-selector'
 
 type RecallFixedAmountInputs = Record<RecallFixedCurrency, string>
@@ -271,12 +272,8 @@ export function CampaignEditor(props: CampaignEditorProps) {
     })
   }
 
-  const setGroups = (value: string) => {
-    const groups = value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-    void setRecallCampaignGroups(form, groups).catch(() => {
+  const setGroups = (value: string[]) => {
+    void setRecallCampaignGroups(form, value).catch(() => {
       toast.error(t('Something went wrong!'))
     })
   }
@@ -424,17 +421,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
               />
             </div>
           ))}
-          <div className='space-y-2'>
-            <Label htmlFor='recall-groups'>
-              {t('Groups (comma separated)')}
-            </Label>
-            <Input
-              id='recall-groups'
-              disabled={immutable || groupMode === ''}
-              value={groups.join(', ')}
-              onChange={(event) => setGroups(event.target.value)}
-            />
-          </div>
+          <CampaignGroupSelector
+            groups={groups}
+            groupMode={groupMode}
+            onChange={setGroups}
+            immutable={immutable}
+          />
           <div className='space-y-2'>
             <Label>{t('Group mode')}</Label>
             <Select
@@ -464,6 +456,11 @@ export function CampaignEditor(props: CampaignEditorProps) {
               </SelectContent>
             </Select>
           </div>
+          <p className='text-muted-foreground text-sm md:col-span-3'>
+            {t(
+              'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.'
+            )}
+          </p>
           {audienceTemplate !== 'first_purchase' && (
             <div className='space-y-2'>
               <Label>{t('Payment providers (comma separated)')}</Label>
