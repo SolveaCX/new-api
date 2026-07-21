@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFormControl } from 'react-hook-form'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { createInstance } from 'i18next'
@@ -157,6 +156,18 @@ describe('CampaignEditor audience rules', () => {
     )
   })
 
+  test('clears stale groups when loading a no-filter draft', () => {
+    const draft = makeDraft('first_purchase')
+    draft.audience_config.groups = ['stale-group']
+    const html = renderEditor('first_purchase', draft)
+    const groupInput = html.match(/<input[^>]*id="recall-groups"[^>]*>/)?.[0]
+
+    expect(groupInput).toBeTruthy()
+    expect(groupInput).toContain('disabled=""')
+    expect(groupInput).toContain('value=""')
+    expect(groupInput).not.toContain('stale-group')
+  })
+
   test('uses configured product selectors instead of manual Stripe Price ID inputs', () => {
     const html = renderEditor('first_purchase')
 
@@ -214,34 +225,29 @@ describe('CampaignEditor audience rules', () => {
 })
 
 describe('CampaignEditor email sequence', () => {
-  test('edits only English while retaining non-English draft templates', () => {
+  test('renders only English template fields', () => {
     const draft = makeDraft('first_purchase')
-    const form = createFormControl<RecallCampaignDraft>({
-      defaultValues: draft,
-    })
-    form.register('email_sequence.0.templates.en.subject')
-    form.register('email_sequence.0.templates.en.body_text')
     const html = renderEditor('first_purchase', draft)
 
     expect(html).not.toContain('Template language')
     expect(html).toContain('name="email_sequence.0.templates.en.subject"')
     expect(html).toContain('name="email_sequence.0.templates.en.body_text"')
     expect(html).not.toContain('templates.fr')
-    expect(form.getValues('email_sequence.0.templates.fr')).toEqual({
-      subject: 'Sujet français',
-      body_text: 'Corps français',
-    })
   })
 
-  test('explains automatic localization and exposes backend-aligned limits', () => {
+  test('explains automatic localization without UTF-16 native limits', () => {
     const html = renderEditor('first_purchase')
+    const subjectInput = html.match(
+      /<input[^>]*name="email_sequence\.0\.templates\.en\.subject"[^>]*>/
+    )?.[0]
+    const bodyInput = html.match(
+      /<textarea[^>]*name="email_sequence\.0\.templates\.en\.body_text"[^>]*>/
+    )?.[0]
 
     expect(html.replaceAll('&#x27;', "'")).toContain(automaticTranslationHelp)
-    expect(html).toMatch(
-      /<input(?=[^>]*name="email_sequence\.0\.templates\.en\.subject")(?=[^>]*maxLength="200")[^>]*>/
-    )
-    expect(html).toMatch(
-      /<textarea(?=[^>]*name="email_sequence\.0\.templates\.en\.body_text")(?=[^>]*maxLength="2000")[^>]*>/
-    )
+    expect(subjectInput).toBeTruthy()
+    expect(subjectInput?.toLowerCase()).not.toContain('maxlength')
+    expect(bodyInput).toBeTruthy()
+    expect(bodyInput?.toLowerCase()).not.toContain('maxlength')
   })
 })

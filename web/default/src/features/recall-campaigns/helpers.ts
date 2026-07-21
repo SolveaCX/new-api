@@ -65,6 +65,21 @@ export function normalizeRecallGroupsForMode(
   return mode === '' ? [] : groups
 }
 
+export function prepareRecallCampaignSubmitDraft(
+  draft: RecallCampaignDraft
+): RecallCampaignDraft {
+  return {
+    ...draft,
+    audience_config: {
+      ...draft.audience_config,
+      groups: normalizeRecallGroupsForMode(
+        draft.audience_config.groups,
+        draft.audience_config.group_mode
+      ),
+    },
+  }
+}
+
 export function normalizeRecallDiscountType(
   draft: RecallCampaignDraft,
   discountType: RecallDiscountType

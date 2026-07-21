@@ -7,6 +7,7 @@ import {
   normalizeRecallCouponSource,
   normalizeRecallDiscountType,
   parseRecallMajorAmount,
+  prepareRecallCampaignSubmitDraft,
   removeRecallEmailStage,
 } from './helpers'
 import type {
@@ -57,6 +58,49 @@ function makeRecipient(
 }
 
 describe('recall campaign editor normalization', () => {
+  test('canonicalizes no-filter groups at the editor submission boundary without dropping translations', () => {
+    const draft = makeDraft()
+    draft.audience_config = {
+      registration_age_days: 30,
+      min_request_count: 1,
+      max_quota: 0,
+      min_paid_amount: 0,
+      last_api_call_age_days: 30,
+      last_payment_age_days: 30,
+      subscription_expired_days: 30,
+      min_subscription_amount: 0,
+      min_subscription_count: 1,
+      payment_providers: [],
+      groups: ['stale-group'],
+      group_mode: '',
+      require_verified_email: true,
+    }
+    draft.email_sequence = [
+      {
+        stage_no: 1,
+        delay_seconds: 0,
+        template_version: 1,
+        templates: {
+          en: { subject: 'English subject', body_text: 'English body' },
+          fr: { subject: 'Sujet français', body_text: 'Corps français' },
+        },
+      },
+    ]
+
+    const normalized = prepareRecallCampaignSubmitDraft(draft)
+
+    expect(normalized).not.toBe(draft)
+    expect(draft.audience_config.groups).toEqual(['stale-group'])
+    expect(normalized.audience_config.groups).toEqual([])
+    expect(normalized.email_sequence[0].templates).toEqual(
+      draft.email_sequence[0].templates
+    )
+    expect(normalized.email_sequence[0].templates.fr).toEqual({
+      subject: 'Sujet français',
+      body_text: 'Corps français',
+    })
+  })
+
   test('clears groups when no group filter is selected', () => {
     expect(normalizeRecallGroupsForMode(['paid', 'trial'], '')).toEqual([])
   })
