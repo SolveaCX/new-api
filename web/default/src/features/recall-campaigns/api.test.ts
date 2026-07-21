@@ -4,6 +4,8 @@ import { api } from '@/lib/api'
 import {
   createRecallCampaign,
   exportRecallCampaign,
+  getRecallSubscriptionProductConfiguration,
+  getRecallTopUpProductConfiguration,
   getRecallCampaign,
   getRecallCampaignMetrics,
   listRecallCampaigns,
@@ -39,6 +41,17 @@ afterEach(() => {
 })
 
 describe('recall campaign API contracts', () => {
+  test('loads configured top-up and subscription products from existing APIs', async () => {
+    respondWith({ success: true, data: { stripe_price_ids: {} } })
+
+    await getRecallTopUpProductConfiguration()
+    expect(capturedConfig?.url).toBe('/api/user/topup/info')
+
+    respondWith({ success: true, data: [] })
+    await getRecallSubscriptionProductConfiguration()
+    expect(capturedConfig?.url).toBe('/api/subscription/admin/plans')
+  })
+
   test('uses p and ps for campaign list pagination', async () => {
     respondWith({ success: true, data: { items: [], total: 0 } })
 
@@ -70,6 +83,11 @@ describe('recall campaign API contracts', () => {
     ['events', () => listRecallEvents(1, 1)],
     ['metrics', () => getRecallCampaignMetrics(1)],
     ['retry', () => retryRecallRecipient(1, 2, false)],
+    ['top-up product configuration', getRecallTopUpProductConfiguration],
+    [
+      'subscription product configuration',
+      getRecallSubscriptionProductConfiguration,
+    ],
   ])('rejects a success:false envelope from %s', async (_name, call) => {
     respondWith({ success: false, message: 'Recall request failed' })
 

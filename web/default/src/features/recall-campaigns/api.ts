@@ -12,7 +12,9 @@ import type {
   RecallEvent,
   RecallPage,
   RecallRecipient,
+  RecallSubscriptionProductRecord,
   RecallStripePreview,
+  RecallTopUpProductConfiguration,
 } from './types'
 
 export const recallCampaignKeys = {
@@ -25,6 +27,16 @@ export const recallCampaignKeys = {
   events: (id: number, page: number) =>
     ['recall-campaigns', id, 'events', page] as const,
   metrics: (id: number) => ['recall-campaigns', id, 'metrics'] as const,
+  topUpProductConfiguration: [
+    'recall-campaigns',
+    'product-options',
+    'top-up',
+  ] as const,
+  subscriptionProductConfiguration: [
+    'recall-campaigns',
+    'product-options',
+    'subscription',
+  ] as const,
 }
 
 function requireRecallSuccess<T>(response: ApiResponse<T>): ApiResponse<T> {
@@ -80,6 +92,20 @@ export async function validateRecallStripeConfig(
     '/api/recall-campaigns/stripe/validate',
     draft
   )
+  return requireRecallSuccess(response.data)
+}
+
+export async function getRecallTopUpProductConfiguration(): Promise<
+  ApiResponse<RecallTopUpProductConfiguration>
+> {
+  const response = await api.get('/api/user/topup/info')
+  return requireRecallSuccess(response.data)
+}
+
+export async function getRecallSubscriptionProductConfiguration(): Promise<
+  ApiResponse<RecallSubscriptionProductRecord[]>
+> {
+  const response = await api.get('/api/subscription/admin/plans')
   return requireRecallSuccess(response.data)
 }
 
