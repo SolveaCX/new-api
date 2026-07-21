@@ -250,6 +250,10 @@ func ConfigureAdminStatusDiscord(c *gin.Context) {
 }
 
 func TestAdminStatusDiscord(c *gin.Context) {
+	if service.IsStatusCenterShadowMode() {
+		statusAdminServiceError(c, service.ErrStatusExternalEffectsSuppressed)
+		return
+	}
 	keyring, err := service.LoadStatusSecretKeyringFromEnvironment()
 	if err != nil {
 		statusAdminServiceError(c, err)
@@ -411,6 +415,8 @@ func statusAdminServiceError(c *gin.Context, err error) {
 		statusAdminError(c, http.StatusConflict, err)
 	case errors.Is(err, service.ErrStatusInvalidMutation):
 		statusAdminError(c, http.StatusBadRequest, err)
+	case errors.Is(err, service.ErrStatusExternalEffectsSuppressed):
+		statusAdminError(c, http.StatusServiceUnavailable, err)
 	case errors.Is(err, service.ErrStatusAdminRequired),
 		errors.Is(err, service.ErrStatusRootRequired),
 		errors.Is(err, service.ErrStatusSecureVerificationRequired):

@@ -70,6 +70,26 @@ type statusPublicIncident struct {
 	Updates          []statusPublicIncidentUpdate `json:"updates"`
 }
 
+func RequireStatusCenterPublic(c *gin.Context) {
+	if service.IsStatusCenterPublicEnabled() {
+		return
+	}
+	abortStatusCenterUnavailable(c, "status center unavailable")
+}
+
+func RequireStatusCenterNotifications(c *gin.Context) {
+	if service.IsStatusCenterNotificationsEnabled() {
+		return
+	}
+	abortStatusCenterUnavailable(c, "status notifications unavailable")
+}
+
+func abortStatusCenterUnavailable(c *gin.Context, message string) {
+	c.Header("Cache-Control", "no-store")
+	c.Abort()
+	statusPublicError(c, http.StatusServiceUnavailable, errors.New(message))
+}
+
 func GetPublicStatusSummary(c *gin.Context) {
 	now := time.Now().Unix()
 	generatedAt := statusGeneratedAt(now)

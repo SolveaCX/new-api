@@ -81,7 +81,12 @@ type statusLeaseKeeper struct {
 }
 
 var (
-	statusCenterTaskOnce     = &sync.Once{}
+	statusCenterTaskOnce        = &sync.Once{}
+	statusDeliveryTaskOnce      = &sync.Once{}
+	statusLeaseAcquiredOnce     = &sync.Once{}
+	statusLeaseAcquiredObserver = func(holder string) {
+		common.SysLog("status center scheduler lease acquired by " + holder)
+	}
 	statusCenterTaskLaunch   = launchStatusCenterTasks
 	statusDeliveryTaskLaunch = launchStatusDeliveryTasks
 	statusModelProbeMu       sync.RWMutex
@@ -154,6 +159,9 @@ func (scheduler *StatusScheduler) RunOnce(ctx context.Context, now int64) (ran b
 	if err != nil || !acquired {
 		return false, err
 	}
+	statusLeaseAcquiredOnce.Do(func() {
+		statusLeaseAcquiredObserver(scheduler.Holder)
+	})
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -767,20 +775,25 @@ func worseStatus(left string, right string) string {
 }
 
 func StartStatusCenterTasks() bool {
-	if !common.IsMasterNode || !common.GetEnvOrDefaultBool("STATUS_CENTER_ENABLED", false) {
-		return false
-	}
-	routerOrigin, err := validateStatusRouterOrigin(common.GetEnvOrDefaultString("ROUTER_ORIGIN", ""))
-	if err != nil {
-		common.SysError("status center scheduler not started: " + err.Error())
+	if !common.IsMasterNode {
 		return false
 	}
 	started := false
-	scheduler := newStatusCenterScheduler(routerOrigin)
-	statusCenterTaskOnce.Do(func() {
-		started = true
-		statusCenterTaskLaunch(scheduler)
-		if common.GetEnvOrDefaultBool("STATUS_CENTER_NOTIFICATIONS_ENABLED", false) {
+	if IsStatusCenterEnabled() {
+		routerOrigin, err := validateStatusRouterOrigin(common.GetEnvOrDefaultString("ROUTER_ORIGIN", ""))
+		if err != nil {
+			common.SysError("status center scheduler not started: " + err.Error())
+		} else {
+			scheduler := newStatusCenterScheduler(routerOrigin)
+			statusCenterTaskOnce.Do(func() {
+				started = true
+				statusCenterTaskLaunch(scheduler)
+			})
+		}
+	}
+	if IsStatusCenterNotificationsEnabled() {
+		statusDeliveryTaskOnce.Do(func() {
+			started = true
 			keyring, keyringErr := LoadStatusSecretKeyringFromEnvironment()
 			if keyringErr != nil {
 				common.SysError("status notification keyring is invalid; webhook and Discord delivery disabled: " + keyringErr.Error())
@@ -791,8 +804,8 @@ func StartStatusCenterTasks() bool {
 				Webhook: NewStatusSafeWebhookClient(),
 				Now:     model.GetDBTimestamp,
 			})
-		}
-	})
+		})
+	}
 	return started
 }
 

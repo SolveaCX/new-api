@@ -24,6 +24,9 @@ import (
 
 func setupStatusHTTPTest(t *testing.T) (*gin.Engine, *gorm.DB) {
 	t.Helper()
+	t.Setenv("STATUS_CENTER_PUBLIC_ENABLED", "true")
+	t.Setenv("STATUS_CENTER_NOTIFICATIONS_ENABLED", "true")
+	t.Setenv("STATUS_CENTER_SHADOW_MODE", "false")
 	require.NoError(t, backendI18n.Init())
 	gin.SetMode(gin.TestMode)
 	originalDB := model.DB
