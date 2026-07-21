@@ -1,3 +1,4 @@
+import type { UseFormReturn } from 'react-hook-form'
 import type {
   RecallCampaignDraft,
   RecallCouponSource,
@@ -63,6 +64,30 @@ export function normalizeRecallGroupsForMode(
   mode: RecallCampaignDraft['audience_config']['group_mode']
 ): string[] {
   return mode === '' ? [] : groups
+}
+
+type RecallGroupModeForm = Pick<
+  UseFormReturn<RecallCampaignDraft>,
+  'getValues' | 'setValue' | 'trigger'
+>
+
+export function setRecallCampaignGroupMode(
+  form: RecallGroupModeForm,
+  mode: RecallCampaignDraft['audience_config']['group_mode']
+): Promise<boolean> {
+  form.setValue('audience_config.group_mode', mode, {
+    shouldDirty: true,
+    shouldValidate: true,
+  })
+  form.setValue(
+    'audience_config.groups',
+    normalizeRecallGroupsForMode(
+      form.getValues('audience_config.groups'),
+      mode
+    ),
+    { shouldDirty: true, shouldValidate: true }
+  )
+  return form.trigger('audience_config')
 }
 
 export function prepareRecallCampaignSubmitDraft(

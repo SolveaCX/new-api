@@ -5578,6 +5578,8 @@
     "Delay seconds": "Segundos de atraso",
     "Subject": "Assunto",
     "Body text": "Corpo do texto",
+    "Subject must be 200 characters or fewer": "O assunto deve ter no máximo 200 caracteres",
+    "Body text must be 2000 characters or fewer": "O corpo do texto deve ter no máximo 2000 caracteres",
     "Add email stage": "Adicionar etapa de e-mail",
     "Remove stage": "Remover etapa",
     "Please correct the highlighted fields.": "Corrija os campos destacados.",

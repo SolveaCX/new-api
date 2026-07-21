@@ -171,12 +171,16 @@ const emailTemplateSchema = z
       .string()
       .trim()
       .min(1)
-      .refine((value) => Array.from(value).length <= 200),
+      .refine((value) => Array.from(value).length <= 200, {
+        message: 'Subject must be 200 characters or fewer',
+      }),
     body_text: z
       .string()
       .trim()
       .min(1)
-      .refine((value) => Array.from(value).length <= 2_000),
+      .refine((value) => Array.from(value).length <= 2_000, {
+        message: 'Body text must be 2000 characters or fewer',
+      }),
   })
   .strict()
 

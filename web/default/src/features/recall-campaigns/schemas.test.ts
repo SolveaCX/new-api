@@ -362,11 +362,29 @@ describe('recallCampaignDraftSchema', () => {
 
     const longSubject = structuredClone(valid)
     longSubject.email_sequence[0].templates.en.subject = '😀'.repeat(201)
-    expect(recallCampaignDraftSchema.safeParse(longSubject).success).toBe(false)
+    const longSubjectResult = recallCampaignDraftSchema.safeParse(longSubject)
+    expect(longSubjectResult.success).toBe(false)
+    if (!longSubjectResult.success) {
+      expect(longSubjectResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['email_sequence', 0, 'templates', 'en', 'subject'],
+          message: 'Subject must be 200 characters or fewer',
+        })
+      )
+    }
 
     const longBody = structuredClone(valid)
     longBody.email_sequence[0].templates.en.body_text = '界'.repeat(2_001)
-    expect(recallCampaignDraftSchema.safeParse(longBody).success).toBe(false)
+    const longBodyResult = recallCampaignDraftSchema.safeParse(longBody)
+    expect(longBodyResult.success).toBe(false)
+    if (!longBodyResult.success) {
+      expect(longBodyResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['email_sequence', 0, 'templates', 'en', 'body_text'],
+          message: 'Body text must be 2000 characters or fewer',
+        })
+      )
+    }
   })
 
   test('requires positive email template versions', () => {

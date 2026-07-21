@@ -5578,6 +5578,8 @@
     "Delay seconds": "Délai en secondes",
     "Subject": "Objet",
     "Body text": "Corps du message",
+    "Subject must be 200 characters or fewer": "L’objet doit comporter au maximum 200 caractères",
+    "Body text must be 2000 characters or fewer": "Le corps du message doit comporter au maximum 2000 caractères",
     "Add email stage": "Ajouter une étape d’e-mail",
     "Remove stage": "Supprimer l’étape",
     "Please correct the highlighted fields.": "Corrigez les champs signalés.",

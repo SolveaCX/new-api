@@ -250,4 +250,23 @@ describe('CampaignEditor email sequence', () => {
     expect(bodyInput).toBeTruthy()
     expect(bodyInput?.toLowerCase()).not.toContain('maxlength')
   })
+
+  test('associates email labels and validation state with stable field IDs', () => {
+    const html = renderEditor('first_purchase')
+    const subjectInput = html.match(
+      /<input[^>]*name="email_sequence\.0\.templates\.en\.subject"[^>]*>/
+    )?.[0]
+    const bodyInput = html.match(
+      /<textarea[^>]*name="email_sequence\.0\.templates\.en\.body_text"[^>]*>/
+    )?.[0]
+
+    expect(html).toContain('for="recall-email-0-subject"')
+    expect(subjectInput).toContain('id="recall-email-0-subject"')
+    expect(subjectInput).toContain('aria-invalid="false"')
+    expect(subjectInput).not.toContain('aria-describedby')
+    expect(html).toContain('for="recall-email-0-body-text"')
+    expect(bodyInput).toContain('id="recall-email-0-body-text"')
+    expect(bodyInput).toContain('aria-invalid="false"')
+    expect(bodyInput).not.toContain('aria-describedby')
+  })
 })
