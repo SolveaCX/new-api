@@ -201,4 +201,3 @@ Expected: all tests pass, typecheck succeeds, every locale reports zero missing/
 - [ ] **Step 6: Commit with Lore trailers**
 
 Commit only selector implementation, tests, and i18n files. Record that existing APIs and the unchanged campaign payload were deliberate constraints.
-

@@ -39,4 +39,3 @@ Replace free-form Stripe Price ID fields in the recall campaign editor with conf
 - Component tests cover loading configured options, selecting and clearing both product groups, immutable mode, empty/error states, and unavailable saved selections.
 - Existing schema tests continue to prove that at least one Price is required.
 - Run targeted frontend tests, TypeScript checking, localization synchronization, formatting/lint checks, and the production build before promotion.
-
