@@ -399,6 +399,7 @@
     "API key is required": "Khóa API là bắt buộc",
     "API Key mode (does not support batch creation)": "Chế độ Khóa API (không hỗ trợ tạo hàng loạt)",
     "API Key mode: use APIKey|Region": "Chế độ khóa API: sử dụng APIKey|Region",
+    "API Key Statistics": "Thống kê khóa API",
     "API Key updated successfully": "API Key đã được cập nhật thành công",
     "API Keys": "Khóa API",
     "API keys must be the full Paddle key, not just the ID: {{sandboxPrefix}}..._..._... for sandbox or {{livePrefix}}..._..._... for live. Values starting with only {{incompletePrefix}} or missing the secret suffix are incomplete.": "API key phải là Paddle key đầy đủ, không chỉ là ID: {{sandboxPrefix}}..._..._... cho sandbox hoặc {{livePrefix}}..._..._... cho live. Giá trị chỉ bắt đầu bằng {{incompletePrefix}} hoặc thiếu hậu tố secret là chưa đầy đủ.",

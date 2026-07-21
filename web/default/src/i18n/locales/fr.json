@@ -399,6 +399,7 @@
     "API key is required": "La clé API est requise",
     "API Key mode (does not support batch creation)": "Mode clé API (ne prend pas en charge la création par lots)",
     "API Key mode: use APIKey|Region": "Mode clé API : utiliser APIKey|Region",
+    "API Key Statistics": "Statistiques des clés API",
     "API Key updated successfully": "Clé API mise à jour avec succès",
     "API Keys": "Clés API",
     "API keys must be the full Paddle key, not just the ID: {{sandboxPrefix}}..._..._... for sandbox or {{livePrefix}}..._..._... for live. Values starting with only {{incompletePrefix}} or missing the secret suffix are incomplete.": "Les clés API doivent être la clé Paddle complète, pas seulement l’ID : {{sandboxPrefix}}..._..._... pour sandbox ou {{livePrefix}}..._..._... pour live. Les valeurs commençant seulement par {{incompletePrefix}} ou sans suffixe secret sont incomplètes.",
