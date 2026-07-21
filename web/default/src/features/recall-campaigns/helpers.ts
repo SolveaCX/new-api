@@ -90,6 +90,17 @@ export function setRecallCampaignGroupMode(
   return form.trigger('audience_config')
 }
 
+export function setRecallCampaignGroups(
+  form: RecallGroupModeForm,
+  groups: string[]
+): Promise<boolean> {
+  form.setValue('audience_config.groups', groups, {
+    shouldDirty: true,
+    shouldValidate: true,
+  })
+  return form.trigger('audience_config')
+}
+
 export function prepareRecallCampaignSubmitDraft(
   draft: RecallCampaignDraft
 ): RecallCampaignDraft {

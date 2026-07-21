@@ -11,6 +11,7 @@ import {
   parseRecallMajorAmount,
   prepareRecallCampaignSubmitDraft,
   removeRecallEmailStage,
+  setRecallCampaignGroups,
   setRecallCampaignGroupMode,
 } from './helpers'
 import { recallCampaignDraftSchema } from './schemas'
@@ -208,6 +209,34 @@ describe('recall campaign editor normalization', () => {
       subscription()
     }
   )
+
+  test('revalidates the audience after entering groups for an active filter', async () => {
+    const draft = makeValidDraft()
+    draft.audience_config.groups = []
+    const form = createFormControl<RecallCampaignDraft>({
+      resolver: zodResolver(recallCampaignDraftSchema),
+      defaultValues: draft,
+    })
+    const subscription = form.subscribe({
+      formState: { values: true },
+      callback: () => undefined,
+    })
+    form.register('audience_config.group_mode')
+    form.register('audience_config.groups')
+
+    await setRecallCampaignGroupMode(form, 'allow')
+    expect(
+      form.getFieldState('audience_config.group_mode').error?.message
+    ).toBe('Groups are required')
+
+    await setRecallCampaignGroups(form, ['paid'])
+
+    expect(form.getValues('audience_config.groups')).toEqual(['paid'])
+    expect(
+      form.getFieldState('audience_config.group_mode').error
+    ).toBeUndefined()
+    subscription()
+  })
 
   test('clears the hidden existing coupon ID when switching to automatic', () => {
     const normalized = normalizeRecallCouponSource(makeDraft(), 'automatic')

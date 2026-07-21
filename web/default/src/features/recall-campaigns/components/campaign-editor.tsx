@@ -26,6 +26,7 @@ import {
   prepareRecallCampaignSubmitDraft,
   recallFixedCurrencies,
   removeRecallEmailStage,
+  setRecallCampaignGroups,
   setRecallCampaignGroupMode,
 } from '../helpers'
 import {
@@ -270,6 +271,16 @@ export function CampaignEditor(props: CampaignEditorProps) {
     })
   }
 
+  const setGroups = (value: string) => {
+    const groups = value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    void setRecallCampaignGroups(form, groups).catch(() => {
+      toast.error(t('Something went wrong!'))
+    })
+  }
+
   const onSubmit = async (draft: RecallCampaignDraft) => {
     const normalizedDraft = prepareRecallCampaignSubmitDraft(draft)
     const response = props.campaignId
@@ -421,9 +432,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
               id='recall-groups'
               disabled={immutable || groupMode === ''}
               value={groups.join(', ')}
-              onChange={(event) =>
-                setCsv('audience_config.groups', event.target.value)
-              }
+              onChange={(event) => setGroups(event.target.value)}
             />
           </div>
           <div className='space-y-2'>
