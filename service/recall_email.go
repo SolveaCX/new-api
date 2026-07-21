@@ -33,6 +33,7 @@ type RecallEmailWorker struct {
 }
 
 type RecallEmailRenderInput struct {
+	Language            string
 	Template            RecallEmailTemplate
 	RecipientName       string
 	PromotionCodeMasked string
@@ -40,6 +41,64 @@ type RecallEmailRenderInput struct {
 	ProductSummary      string
 	ClaimURL            string
 	UnsubscribeURL      string
+}
+
+type recallEmailCopy struct {
+	GreetingPrefix         string
+	GreetingSuffix         string
+	ValueSeparator         string
+	OfferCodeLabel         string
+	ValidForLabel          string
+	ExpiresLabel           string
+	ClaimLabel             string
+	UnsubscribeLabel       string
+	TopUpsAndSubscriptions string
+	TopUps                 string
+	Subscriptions          string
+	EligibleProducts       string
+}
+
+var recallEmailCopyByLanguage = map[string]recallEmailCopy{
+	"en": {
+		GreetingPrefix: "Hello ", GreetingSuffix: ",", ValueSeparator: " ", OfferCodeLabel: "Offer code:", ValidForLabel: "Valid for:",
+		ExpiresLabel: "Expires:", ClaimLabel: "Claim your offer", UnsubscribeLabel: "Unsubscribe",
+		TopUpsAndSubscriptions: "Top-ups and subscriptions", TopUps: "Top-ups", Subscriptions: "Subscriptions", EligibleProducts: "Eligible products",
+	},
+	"zh": {
+		GreetingPrefix: "您好，", GreetingSuffix: "！", OfferCodeLabel: "优惠码：", ValidForLabel: "适用于：",
+		ExpiresLabel: "有效期至：", ClaimLabel: "领取优惠", UnsubscribeLabel: "取消订阅",
+		TopUpsAndSubscriptions: "充值和订阅", TopUps: "充值", Subscriptions: "订阅", EligibleProducts: "符合条件的产品",
+	},
+	"es": {
+		GreetingPrefix: "Hola ", GreetingSuffix: ",", ValueSeparator: " ", OfferCodeLabel: "Código de oferta:", ValidForLabel: "Válido para:",
+		ExpiresLabel: "Caduca:", ClaimLabel: "Canjear tu oferta", UnsubscribeLabel: "Cancelar suscripción",
+		TopUpsAndSubscriptions: "Recargas y suscripciones", TopUps: "Recargas", Subscriptions: "Suscripciones", EligibleProducts: "Productos elegibles",
+	},
+	"fr": {
+		GreetingPrefix: "Bonjour ", GreetingSuffix: ",", ValueSeparator: " ", OfferCodeLabel: "Code promotionnel :", ValidForLabel: "Valable pour :",
+		ExpiresLabel: "Expire le :", ClaimLabel: "Profiter de votre offre", UnsubscribeLabel: "Se désabonner",
+		TopUpsAndSubscriptions: "Recharges et abonnements", TopUps: "Recharges", Subscriptions: "Abonnements", EligibleProducts: "Produits éligibles",
+	},
+	"pt": {
+		GreetingPrefix: "Olá ", GreetingSuffix: ",", ValueSeparator: " ", OfferCodeLabel: "Código da oferta:", ValidForLabel: "Válido para:",
+		ExpiresLabel: "Expira em:", ClaimLabel: "Resgatar sua oferta", UnsubscribeLabel: "Cancelar inscrição",
+		TopUpsAndSubscriptions: "Recargas e assinaturas", TopUps: "Recargas", Subscriptions: "Assinaturas", EligibleProducts: "Produtos elegíveis",
+	},
+	"ru": {
+		GreetingPrefix: "Здравствуйте, ", GreetingSuffix: "!", ValueSeparator: " ", OfferCodeLabel: "Код предложения:", ValidForLabel: "Действует для:",
+		ExpiresLabel: "Истекает:", ClaimLabel: "Получить предложение", UnsubscribeLabel: "Отписаться",
+		TopUpsAndSubscriptions: "Пополнения и подписки", TopUps: "Пополнения", Subscriptions: "Подписки", EligibleProducts: "Подходящие продукты",
+	},
+	"ja": {
+		GreetingPrefix: "", GreetingSuffix: " さん、こんにちは。", OfferCodeLabel: "オファーコード：", ValidForLabel: "対象商品：",
+		ExpiresLabel: "有効期限：", ClaimLabel: "オファーを利用する", UnsubscribeLabel: "配信停止",
+		TopUpsAndSubscriptions: "チャージとサブスクリプション", TopUps: "チャージ", Subscriptions: "サブスクリプション", EligibleProducts: "対象商品",
+	},
+	"vi": {
+		GreetingPrefix: "Xin chào ", GreetingSuffix: ",", ValueSeparator: " ", OfferCodeLabel: "Mã ưu đãi:", ValidForLabel: "Áp dụng cho:",
+		ExpiresLabel: "Hết hạn:", ClaimLabel: "Nhận ưu đãi", UnsubscribeLabel: "Hủy đăng ký",
+		TopUpsAndSubscriptions: "Nạp tiền và gói đăng ký", TopUps: "Nạp tiền", Subscriptions: "Gói đăng ký", EligibleProducts: "Sản phẩm đủ điều kiện",
+	},
 }
 
 func NewRecallEmailWorker(sender RecallEmailSender, audience *RecallAudienceSelector, claims *RecallClaimService, owner string) *RecallEmailWorker {
@@ -221,14 +280,14 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 	if err != nil {
 		return w.finishPreAcceptError(ctx, item, "unsubscribe_token_failed", true)
 	}
-	template, err := recallEmailTemplateForLanguage(item.Message.TemplateSnapshot, item.Recipient.LanguageSnapshot)
+	template, resolvedLanguage, err := recallEmailTemplateForLanguage(item.Message.TemplateSnapshot, item.Recipient.LanguageSnapshot)
 	if err != nil {
 		return w.finishPreAcceptError(ctx, item, "template_invalid", false)
 	}
 	baseOrigin := strings.TrimRight(strings.TrimSpace(topUpBaseOrigin()), "/")
 	claimURL := baseOrigin + "/console/topup?recall_claim=" + url.QueryEscape(rawClaim)
 	unsubscribeURL := baseOrigin + "/api/recall/unsubscribe?token=" + url.QueryEscape(unsubscribeToken)
-	productSummary, err := recallEmailProductSummary(item.Campaign.ProductScope)
+	productSummary, err := recallEmailProductSummary(item.Campaign.ProductScope, resolvedLanguage)
 	if err != nil {
 		return w.finishPreAcceptError(ctx, item, "product_scope_invalid", false)
 	}
@@ -237,6 +296,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		recipientName = strings.TrimSpace(item.User.Username)
 	}
 	subject, htmlBody, err := RenderRecallEmail(RecallEmailRenderInput{
+		Language:            resolvedLanguage,
 		Template:            template,
 		RecipientName:       recipientName,
 		PromotionCodeMasked: model.MaskPromotionCode(item.Recipient.PromotionCode),
@@ -464,18 +524,21 @@ func recallEmailMessageID(recipientID int64, stageNo int) (string, error) {
 	return messageID, nil
 }
 
-func recallEmailTemplateForLanguage(snapshot string, language string) (RecallEmailTemplate, error) {
+func recallEmailTemplateForLanguage(snapshot string, language string) (template RecallEmailTemplate, resolvedLanguage string, err error) {
 	templates := make(map[string]RecallEmailTemplate)
 	if err := common.Unmarshal([]byte(snapshot), &templates); err != nil {
-		return RecallEmailTemplate{}, err
+		return RecallEmailTemplate{}, "", err
 	}
-	if template, ok := templates[language]; ok {
-		return template, nil
+	language = strings.TrimSpace(language)
+	if _, supported := recallEmailCopyByLanguage[language]; supported {
+		if template, ok := templates[language]; ok {
+			return template, language, nil
+		}
 	}
 	if template, ok := templates["en"]; ok {
-		return template, nil
+		return template, "en", nil
 	}
-	return RecallEmailTemplate{}, fmt.Errorf("recall email template has no exact language or English fallback")
+	return RecallEmailTemplate{}, "", fmt.Errorf("recall email template has no exact supported language or English fallback")
 }
 
 func nextRecallEmailMessage(item *model.RecallEmailWorkItem, acceptedAt int64) (*model.RecallMessage, error) {
@@ -513,23 +576,31 @@ func nextRecallEmailMessage(item *model.RecallEmailWorkItem, acceptedAt int64) (
 	}, nil
 }
 
-func recallEmailProductSummary(productScopeJSON string) (string, error) {
+func recallEmailProductSummary(productScopeJSON string, language string) (string, error) {
 	products := RecallProductScope{}
 	if err := common.Unmarshal([]byte(productScopeJSON), &products); err != nil {
 		return "", err
 	}
+	copy := recallEmailCopyForLanguage(language)
 	hasTopUps := len(products.TopUpPriceIDs) > 0
 	hasSubscriptions := len(products.SubscriptionPriceIDs) > 0
 	switch {
 	case hasTopUps && hasSubscriptions:
-		return "Top-ups and subscriptions", nil
+		return copy.TopUpsAndSubscriptions, nil
 	case hasTopUps:
-		return "Top-ups", nil
+		return copy.TopUps, nil
 	case hasSubscriptions:
-		return "Subscriptions", nil
+		return copy.Subscriptions, nil
 	default:
-		return "Eligible products", nil
+		return copy.EligibleProducts, nil
 	}
+}
+
+func recallEmailCopyForLanguage(language string) recallEmailCopy {
+	if copy, ok := recallEmailCopyByLanguage[strings.TrimSpace(language)]; ok {
+		return copy
+	}
+	return recallEmailCopyByLanguage["en"]
 }
 
 func RenderRecallEmail(input RecallEmailRenderInput) (subject string, htmlBody string, err error) {
@@ -545,15 +616,16 @@ func RenderRecallEmail(input RecallEmailRenderInput) (subject string, htmlBody s
 		}
 		paragraphs = append(paragraphs, "<p>"+html.EscapeString(line)+"</p>")
 	}
-	expires := time.Unix(input.ExpiresAt, 0).UTC().Format(time.RFC1123)
+	copy := recallEmailCopyForLanguage(input.Language)
+	expires := time.Unix(input.ExpiresAt, 0).UTC().Format("2006-01-02 15:04 UTC")
 	htmlBody = "<!doctype html><html><body>" +
-		"<p>Hello " + html.EscapeString(input.RecipientName) + ",</p>" +
+		"<p>" + copy.GreetingPrefix + html.EscapeString(input.RecipientName) + copy.GreetingSuffix + "</p>" +
 		strings.Join(paragraphs, "") +
-		"<p>Offer code: <code>" + html.EscapeString(input.PromotionCodeMasked) + "</code></p>" +
-		"<p>Eligible for: " + html.EscapeString(input.ProductSummary) + "</p>" +
-		"<p>Expires: " + html.EscapeString(expires) + "</p>" +
-		"<p><a href=\"" + html.EscapeString(input.ClaimURL) + "\">Claim your offer</a></p>" +
-		"<p><a href=\"" + html.EscapeString(input.UnsubscribeURL) + "\">Unsubscribe</a></p>" +
+		"<p>" + copy.OfferCodeLabel + copy.ValueSeparator + "<code>" + html.EscapeString(input.PromotionCodeMasked) + "</code></p>" +
+		"<p>" + copy.ValidForLabel + copy.ValueSeparator + html.EscapeString(input.ProductSummary) + "</p>" +
+		"<p>" + copy.ExpiresLabel + copy.ValueSeparator + html.EscapeString(expires) + "</p>" +
+		"<p><a href=\"" + html.EscapeString(input.ClaimURL) + "\">" + copy.ClaimLabel + "</a></p>" +
+		"<p><a href=\"" + html.EscapeString(input.UnsubscribeURL) + "\">" + copy.UnsubscribeLabel + "</a></p>" +
 		"</body></html>"
 	return input.Template.Subject, htmlBody, nil
 }
