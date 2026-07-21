@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
@@ -20,13 +21,33 @@ func excludeUserIdForNonAdmin(c *gin.Context) int {
 	return 0
 }
 
+func parseOptionalLogUserId(c *gin.Context) (int, bool) {
+	rawUserId := c.Query("user_id")
+	if rawUserId == "" {
+		return 0, true
+	}
+
+	userId, err := strconv.Atoi(rawUserId)
+	if err != nil || userId <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": i18n.T(c, i18n.MsgLogInvalidUserId),
+		})
+		return 0, false
+	}
+	return userId, true
+}
+
 func GetAllLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	username := c.Query("username")
-	searchUserId, _ := strconv.Atoi(c.Query("user_id"))
+	searchUserId, ok := parseOptionalLogUserId(c)
+	if !ok {
+		return
+	}
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
@@ -142,7 +163,10 @@ func GetLogsStat(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	tokenName := c.Query("token_name")
 	username := c.Query("username")
-	searchUserId, _ := strconv.Atoi(c.Query("user_id"))
+	searchUserId, ok := parseOptionalLogUserId(c)
+	if !ok {
+		return
+	}
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
