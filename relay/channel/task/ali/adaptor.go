@@ -274,43 +274,45 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func taskImagesInOrder(req relaycommon.TaskSubmitReq) []string {
-	images := make([]string, 0, len(req.Images)+2)
-	seen := make(map[string]struct{}, len(req.Images)+2)
-	appendImage := func(image string) {
-		trimmed := strings.TrimSpace(image)
-		if trimmed == "" {
-			return
+func nonEmptyTaskImages(images []string) []string {
+	result := make([]string, 0, len(images))
+	for _, image := range images {
+		if trimmed := strings.TrimSpace(image); trimmed != "" {
+			result = append(result, trimmed)
 		}
-		if _, ok := seen[trimmed]; ok {
-			return
-		}
-		seen[trimmed] = struct{}{}
-		images = append(images, trimmed)
 	}
-
-	appendImage(req.Image)
-	for _, image := range req.Images {
-		appendImage(image)
-	}
-	appendImage(req.InputReference)
-	return images
+	return result
 }
 
 func firstTaskImage(req relaycommon.TaskSubmitReq) string {
-	images := taskImagesInOrder(req)
-	if len(images) == 0 {
-		return ""
+	if image := strings.TrimSpace(req.Image); image != "" {
+		return image
 	}
-	return images[0]
+	images := nonEmptyTaskImages(req.Images)
+	if len(images) > 0 {
+		return images[0]
+	}
+	return strings.TrimSpace(req.InputReference)
 }
 
 func secondTaskImage(req relaycommon.TaskSubmitReq) string {
-	images := taskImagesInOrder(req)
-	if len(images) < 2 {
-		return ""
+	images := nonEmptyTaskImages(req.Images)
+	if strings.TrimSpace(req.Image) != "" {
+		if len(images) >= 2 {
+			return images[1]
+		}
+		if len(images) == 1 {
+			return images[0]
+		}
+		return strings.TrimSpace(req.InputReference)
 	}
-	return images[1]
+	if len(images) >= 2 {
+		return images[1]
+	}
+	if len(images) == 1 {
+		return strings.TrimSpace(req.InputReference)
+	}
+	return ""
 }
 
 func normalizeWan27I2VInput(aliReq *AliVideoRequest, req relaycommon.TaskSubmitReq) error {

@@ -154,6 +154,28 @@ func TestTestChannelsReleasesRunStateWhenBatchLoadFails(t *testing.T) {
 	require.False(t, running)
 }
 
+func TestTestChannelsReleasesRunStateWhenBatchLoaderPanics(t *testing.T) {
+	testAllChannelsLock.Lock()
+	previousRunning := testAllChannelsRunning
+	testAllChannelsRunning = false
+	testAllChannelsLock.Unlock()
+	t.Cleanup(func() {
+		testAllChannelsLock.Lock()
+		testAllChannelsRunning = previousRunning
+		testAllChannelsLock.Unlock()
+	})
+
+	err := testChannels(func() (int, []*model.Channel, error) {
+		panic("load panic")
+	}, false, true)
+
+	require.EqualError(t, err, "加载渠道测试批次失败: load panic")
+	testAllChannelsLock.Lock()
+	running := testAllChannelsRunning
+	testAllChannelsLock.Unlock()
+	require.False(t, running)
+}
+
 func TestNormalizeChannelTestEndpointCodexAnthropicUsesResponsesBridge(t *testing.T) {
 	channel := &model.Channel{Type: constant.ChannelTypeCodex}
 
