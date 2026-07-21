@@ -74,7 +74,7 @@ func TestRecallEmailTranslatorRejectsMissingAPIKey(t *testing.T) {
 
 func TestRecallEmailTranslatorDoesNotRetryPermanentHTTPFailuresAndRedactsBody(t *testing.T) {
 	allowRecallEmailTranslationTestServer(t)
-	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized} {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, 600} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var requests atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
