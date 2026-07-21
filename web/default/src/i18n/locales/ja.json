@@ -5636,8 +5636,8 @@
     "Gemini Compatible": "Gemini互換",
     "This model cannot be called because upstreams no longer support it.": "このモデルは上流でサポート終了のため呼び出せません。",
     "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了",
-    "5-hour window limit (USD)": "5時間ウィンドウ上限（USD）",
-    "7-day window limit (USD)": "7日間ウィンドウ上限（USD）",
-    "0 disables this window limit.": "0 でこのウィンドウ制限を無効にします。"
+    "5-hour window limit": "5時間ウィンドウ上限",
+    "7-day window limit": "7日間ウィンドウ上限",
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 でこのウィンドウ制限を無効にします。保存時にクォータ単位へ換算されます。"
   }
 }

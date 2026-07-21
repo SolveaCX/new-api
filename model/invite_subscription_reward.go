@@ -312,17 +312,18 @@ func RevokeInviteSubscriptionRewardByTradeNo(tradeNo string, reason string) (boo
 	return true, nil
 }
 
-// EligibleInviteeFirstSubDiscountUSD returns the first-subscription discount
-// the user is entitled to (0 when not eligible). Eligible = subscription
-// reward mode on, user was invited, and user has no successful subscription
-// order yet. Read-only prediction — callers record the applied discount on
-// the order row; a concurrent double-checkout can in theory both prequalify,
-// which is bounded by the order-completion flow charging what was quoted.
-func EligibleInviteeFirstSubDiscountUSD(userId int) (float64, error) {
-	return eligibleInviteeFirstSubDiscountUSDTx(DB, userId)
-}
-
-func eligibleInviteeFirstSubDiscountUSDTx(tx *gorm.DB, userId int) (float64, error) {
+// claimInviteFirstSubDiscountTx atomically determines the invitee
+// first-subscription discount inside the caller's transaction. It locks the
+// invitee's user row (FOR UPDATE) so concurrent purchase attempts — including
+// cross-node ones — serialize on the claim, then treats both successful
+// orders AND live discounted orders (pending/success with discount_usd > 0)
+// as consuming the one-time slot. Failed/expired discounted orders release
+// the slot automatically by dropping out of that status set.
+//
+// The returned discount is clamped so the charged amount never drops below
+// minCharge (amount-based gateways such as epay cannot start a zero-amount
+// payment; pass 0 for gateways that can).
+func claimInviteFirstSubDiscountTx(tx *gorm.DB, userId int, planPrice float64, minCharge float64) (float64, error) {
 	if userId <= 0 {
 		return 0, errors.New("invalid userId")
 	}
@@ -330,7 +331,8 @@ func eligibleInviteeFirstSubDiscountUSDTx(tx *gorm.DB, userId int) (float64, err
 		return 0, nil
 	}
 	var invitee User
-	query := tx.Select("id", "inviter_id").Where("id = ?", userId).Limit(1).Find(&invitee)
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "inviter_id").Where("id = ?", userId).Limit(1).Find(&invitee)
 	if query.Error != nil {
 		return 0, query.Error
 	}
@@ -339,14 +341,45 @@ func eligibleInviteeFirstSubDiscountUSDTx(tx *gorm.DB, userId int) (float64, err
 	}
 	var count int64
 	if err := tx.Model(&SubscriptionOrder{}).
-		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Where("user_id = ? AND (status = ? OR (discount_usd > 0 AND status IN ?))",
+			userId, common.TopUpStatusSuccess,
+			[]string{common.TopUpStatusPending, common.TopUpStatusSuccess}).
 		Count(&count).Error; err != nil {
 		return 0, err
 	}
 	if count > 0 {
 		return 0, nil
 	}
-	return common.InviteFirstSubDiscountUSD, nil
+	discount := common.InviteFirstSubDiscountUSD
+	maxDiscount := planPrice - minCharge
+	if discount > maxDiscount {
+		discount = maxDiscount
+	}
+	if discount < 0 {
+		discount = 0
+	}
+	return discount, nil
+}
+
+// CreateSubscriptionOrderWithInviteDiscount claims the invitee
+// first-subscription discount and creates the order in one transaction, so
+// concurrent checkout attempts cannot each acquire the discount. The order's
+// Money/DiscountUSD are filled from the claim (Money = planPrice - discount).
+// Claim-lookup failures degrade to a full-price order — never block checkout.
+func CreateSubscriptionOrderWithInviteDiscount(order *SubscriptionOrder, planPrice float64, minCharge float64) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		discount, err := claimInviteFirstSubDiscountTx(tx, order.UserId, planPrice, minCharge)
+		if err != nil {
+			common.SysLog("查询被邀首订折扣失败，按无折扣处理: " + err.Error())
+			discount = 0
+		}
+		order.Money = planPrice - discount
+		order.DiscountUSD = discount
+		if order.CreateTime == 0 {
+			order.CreateTime = common.GetTimestamp()
+		}
+		return tx.Create(order).Error
+	})
 }
 
 // GetInviteSubscriptionRewardsByInviteeIds returns the v2 reward rows for the
@@ -378,6 +411,41 @@ func SumLockedInviteSubscriptionRewardQuota(inviterId int) (int64, error) {
 	return total, err
 }
 
+// ReconcileMissedInviteSubscriptionRewards backfills rewards for successful
+// subscription orders whose invited payer has no reward row — the durable
+// compensation for grant paths that run after their order transaction commits
+// (balance purchases, or a crash between order commit and reward creation).
+// TryGrant... is idempotent (invitee_id unique), so re-scanning is safe.
+func ReconcileMissedInviteSubscriptionRewards(sinceSeconds int64, limit int) (int, error) {
+	if !common.InviteRewardSubscriptionMode {
+		return 0, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	since := common.GetTimestamp() - sinceSeconds
+	var tradeNos []string
+	if err := DB.Model(&SubscriptionOrder{}).
+		Select("subscription_orders.trade_no").
+		Joins("JOIN users ON users.id = subscription_orders.user_id AND users.inviter_id > 0").
+		Joins("LEFT JOIN invite_subscription_rewards ON invite_subscription_rewards.invitee_id = subscription_orders.user_id").
+		Where("subscription_orders.status = ? AND subscription_orders.complete_time >= ? AND invite_subscription_rewards.id IS NULL",
+			common.TopUpStatusSuccess, since).
+		Limit(limit).
+		Pluck("subscription_orders.trade_no", &tradeNos).Error; err != nil {
+		return 0, err
+	}
+	granted := 0
+	for _, tradeNo := range tradeNos {
+		if err := TryGrantInviteSubscriptionRewardAfterOrderCompleted(tradeNo); err != nil {
+			common.SysError(fmt.Sprintf("invite subscription reward reconcile failed for order %s: %v", tradeNo, err))
+			continue
+		}
+		granted++
+	}
+	return granted, nil
+}
+
 // StartInviteSubscriptionRewardUnlocker runs the settle-window unlocker on the
 // master node. Claims are per-row conditional updates, so overlap with another
 // node is safe; master-only gating just avoids redundant scans.
@@ -400,6 +468,11 @@ func StartInviteSubscriptionRewardUnlocker() {
 				if granted < 100 {
 					break
 				}
+			}
+			// 漏发对账：余额购等「事务后发奖」路径若在提交与发奖之间崩溃，
+			// 由这里按成功订单幂等补建（扫最近 7 天）。
+			if _, err := ReconcileMissedInviteSubscriptionRewards(7*24*3600, 100); err != nil {
+				common.SysError(fmt.Sprintf("invite subscription reward reconcile scan failed: %v", err))
 			}
 		}
 	})

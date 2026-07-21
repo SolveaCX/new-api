@@ -5636,8 +5636,8 @@
     "Gemini Compatible": "Tương thích Gemini",
     "This model cannot be called because upstreams no longer support it.": "Không thể gọi mô hình này vì nhà cung cấp thượng nguồn không còn hỗ trợ.",
     "Not callable · Officially unsupported": "Không thể gọi · Không còn được hỗ trợ chính thức",
-    "5-hour window limit (USD)": "Giới hạn cửa sổ 5 giờ (USD)",
-    "7-day window limit (USD)": "Giới hạn cửa sổ 7 ngày (USD)",
-    "0 disables this window limit.": "0 sẽ tắt giới hạn cửa sổ này."
+    "5-hour window limit": "Giới hạn cửa sổ 5 giờ",
+    "7-day window limit": "Giới hạn cửa sổ 7 ngày",
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 sẽ tắt giới hạn cửa sổ này. Giá trị được quy đổi sang đơn vị hạn mức khi lưu."
   }
 }

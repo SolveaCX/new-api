@@ -768,14 +768,12 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			return errors.New("该套餐不允许使用余额兑换")
 		}
 
-		// 被邀用户首次订阅：首月立减（与 Stripe 路径同口径），事务内判定。
-		discountUSD, err := eligibleInviteeFirstSubDiscountUSDTx(tx, userId)
+		// 被邀用户首次订阅：首月立减（与 Stripe 路径同口径）。claim 会锁用户行
+		// 并把已占用折扣的 pending/success 订单计入名额，并发购买只折一次。
+		discountUSD, err := claimInviteFirstSubDiscountTx(tx, userId, plan.PriceAmount, 0)
 		if err != nil {
 			common.SysLog("查询被邀首订折扣失败，按无折扣处理: " + err.Error())
 			discountUSD = 0
-		}
-		if discountUSD > plan.PriceAmount {
-			discountUSD = plan.PriceAmount
 		}
 		chargedPrice := plan.PriceAmount - discountUSD
 

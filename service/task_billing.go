@@ -105,16 +105,28 @@ func taskSubscriptionWeighted(task *model.Task, n int64) int64 {
 }
 
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
-// 订阅来源按提交时快照的模型权重换算池扣量，并同步补偿窗口计数
+// 订阅来源按「加权后总量之差」换算池扣量——对 delta 单独 ceil 会累计舍入
+// （如 weight=1.5、预扣 1 已计 2，实际 2 应总计 3，按增量 ceil 会补 2 变 4）；
+// 以 task.Quota（调整前的未加权总量）为基准做差杜绝该误差。窗口计数同步补偿
 // （负向按台账退回原始 Redis key，正向记入当前窗口）。
 func taskAdjustFunding(task *model.Task, delta int) error {
 	if taskIsSubscription(task) {
-		weightedDelta := taskSubscriptionWeighted(task, int64(delta))
+		currentQuota := int64(task.Quota)
+		targetQuota := currentQuota + int64(delta)
+		if targetQuota < 0 {
+			targetQuota = 0
+		}
+		weightedDelta := taskSubscriptionWeighted(task, targetQuota) - taskSubscriptionWeighted(task, currentQuota)
+		if weightedDelta == 0 {
+			return nil
+		}
 		if err := model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, weightedDelta); err != nil {
 			return err
 		}
 		if bc := task.PrivateData.BillingContext; bc != nil && bc.SubscriptionWindow != nil {
-			AdjustSubscriptionWindowFromSnapshot(bc.SubscriptionWindow, weightedDelta)
+			if _, err := AdjustSubscriptionWindowFromSnapshot(bc.SubscriptionWindow, weightedDelta); err != nil {
+				common.SysLog(fmt.Sprintf("task %s subscription window compensation failed (tolerated): %v", task.TaskID, err))
+			}
 		}
 		return nil
 	}

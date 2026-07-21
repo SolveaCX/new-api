@@ -1301,7 +1301,9 @@ func chargeReversed(ctx context.Context, event stripe.Event, reason string, call
 		}
 		if err := iter.Err(); err != nil {
 			logger.LogError(ctx, fmt.Sprintf("Stripe 回查 checkout session 失败 payment_intent=%s error=%q", paymentIntentId, err.Error()))
-			return err // retryable: let Stripe redeliver so the clawback is not lost
+			// 4xx（权限/对象不存在/参数）重投也不会好，标记永久防止 Stripe 长期重投；
+			// 网络/5xx/限流保持可重试，回收不丢。
+			return classifyStripeLookupError(err)
 		}
 	}
 
@@ -1309,7 +1311,7 @@ func chargeReversed(ctx context.Context, event stripe.Event, reason string, call
 		subscriptionId, err := stripeSubscriptionIdForCharge(chargeId)
 		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("Stripe 回查 charge→invoice→subscription 失败 charge=%s error=%q", chargeId, err.Error()))
-			return err // retryable
+			return classifyStripeLookupError(err)
 		}
 		if subscriptionId != "" {
 			listParams := &stripe.CheckoutSessionListParams{
@@ -1325,7 +1327,7 @@ func chargeReversed(ctx context.Context, event stripe.Event, reason string, call
 			}
 			if err := iter.Err(); err != nil {
 				logger.LogError(ctx, fmt.Sprintf("Stripe 按 subscription 回查 checkout session 失败 subscription=%s error=%q", subscriptionId, err.Error()))
-				return err // retryable
+				return classifyStripeLookupError(err)
 			}
 		}
 	}
@@ -1343,6 +1345,21 @@ func chargeReversed(ctx context.Context, event stripe.Event, reason string, call
 		logger.LogInfo(ctx, fmt.Sprintf("邀请奖励已回收 trade_no=%s reason=%s client_ip=%s", referenceId, reason, callerIp))
 	}
 	return nil
+}
+
+// classifyStripeLookupError marks non-recoverable Stripe API failures (4xx
+// other than 429: bad key permissions, missing/cross-account objects, bad
+// params) as permanent so the webhook is acknowledged instead of redelivered
+// forever; everything else (network, 5xx, 429) stays retryable.
+func classifyStripeLookupError(err error) error {
+	var sErr *stripe.Error
+	if errors.As(err, &sErr) {
+		code := sErr.HTTPStatusCode
+		if code >= 400 && code < 500 && code != http.StatusTooManyRequests {
+			return stripeWebhookPermanentError{err: err}
+		}
+	}
+	return err
 }
 
 // stripeSubscriptionIdForCharge resolves charge → invoice → subscription.

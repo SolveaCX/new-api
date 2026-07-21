@@ -365,7 +365,7 @@ export function SubscriptionsMutateDrawer({
                   name='window_5h_amount'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('5-hour window limit (USD)')}</FormLabel>
+                      <FormLabel>{t('5-hour window limit')}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -377,7 +377,9 @@ export function SubscriptionsMutateDrawer({
                         />
                       </FormControl>
                       <FormDescription>
-                        {t('0 disables this window limit.')}
+                        {t(
+                          '0 disables this window limit. The value is converted to quota units when saved.'
+                        )}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -389,7 +391,7 @@ export function SubscriptionsMutateDrawer({
                   name='window_week_amount'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('7-day window limit (USD)')}</FormLabel>
+                      <FormLabel>{t('7-day window limit')}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -401,7 +403,9 @@ export function SubscriptionsMutateDrawer({
                         />
                       </FormControl>
                       <FormDescription>
-                        {t('0 disables this window limit.')}
+                        {t(
+                          '0 disables this window limit. The value is converted to quota units when saved.'
+                        )}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

@@ -81,27 +81,23 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	reference := fmt.Sprintf("sub-stripe-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "sub_ref_" + common.Sha1([]byte(reference))
 
-	// 被邀用户首次订阅：首月立减（前端与邀请页承诺的口径，见
-	// InviteFirstSubDiscountUSD）。查询失败按无折扣处理，不阻塞购买。
-	discountUSD := subscriptionInviteeDiscountUSD(c, userId, plan.PriceAmount)
-
+	// 被邀用户首次订阅：首月立减（前端与邀请页承诺的口径）。折扣判定与
+	// 订单创建同事务、锁用户行——并发多开 checkout 只有一单能占到折扣。
 	order := &model.SubscriptionOrder{
 		UserId:          userId,
 		PlanId:          plan.Id,
-		Money:           plan.PriceAmount - discountUSD,
-		DiscountUSD:     discountUSD,
 		TradeNo:         referenceId,
 		PaymentMethod:   model.PaymentMethodStripe,
 		PaymentProvider: model.PaymentProviderStripe,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := order.Insert(); err != nil {
+	if err := model.CreateSubscriptionOrderWithInviteDiscount(order, plan.PriceAmount, 0); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
 		return
 	}
 
-	payLink, err := genStripeSubscriptionLink(referenceId, user.StripeCustomer, user.Email, plan.StripePriceId, discountUSD)
+	payLink, err := genStripeSubscriptionLink(referenceId, user.StripeCustomer, user.Email, plan.StripePriceId, order.DiscountUSD)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 订阅支付链接创建失败 trade_no=%s plan_id=%d error=%q", referenceId, plan.Id, err.Error()))
 		order.Status = common.TopUpStatusFailed
@@ -116,24 +112,6 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 			"pay_link": payLink,
 		},
 	})
-}
-
-// subscriptionInviteeDiscountUSD resolves the invitee first-subscription
-// discount for this purchase, clamped to the plan price. Lookup failures
-// degrade to no discount (never block checkout).
-func subscriptionInviteeDiscountUSD(c *gin.Context, userId int, planPrice float64) float64 {
-	discount, err := model.EligibleInviteeFirstSubDiscountUSD(userId)
-	if err != nil {
-		logger.LogWarn(c.Request.Context(), fmt.Sprintf("查询被邀首订折扣失败，按无折扣处理 user_id=%d error=%q", userId, err.Error()))
-		return 0
-	}
-	if discount > planPrice {
-		discount = planPrice
-	}
-	if discount < 0 {
-		return 0
-	}
-	return discount
 }
 
 func genStripeSubscriptionLink(referenceId string, customerId string, email string, priceId string, discountUSD float64) (string, error) {

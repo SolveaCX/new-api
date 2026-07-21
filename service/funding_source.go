@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -138,10 +139,14 @@ func (s *SubscriptionFunding) PreConsume(_ int) error {
 			reGuard, reErr := reserveSubscriptionWindows(actualInfo, weightedAmount)
 			if reErr != nil {
 				// 实际扣费订阅的窗口已满：回滚池扣费并拒绝本次请求。
+				// 回滚失败必须上抛为系统错误——此时池已扣但请求被拒，
+				// 吞掉会造成静默少给用户额度（RefundSubscriptionPreConsume
+				// 按 requestId 幂等，上层重试/人工补偿均可安全重放）。
 				if refundErr := refundWithRetry(func() error {
 					return model.RefundSubscriptionPreConsume(s.requestId)
 				}); refundErr != nil {
-					common.SysLog("failed to refund subscription pre-consume after window rejection: " + refundErr.Error())
+					common.SysError("failed to refund subscription pre-consume after window rejection: " + refundErr.Error())
+					return fmt.Errorf("subscription window rejected but pre-consume refund failed (request_id=%s): %w", s.requestId, refundErr)
 				}
 				return reErr
 			}

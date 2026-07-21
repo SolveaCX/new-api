@@ -5636,8 +5636,8 @@
     "Gemini Compatible": "Compatible Gemini",
     "This model cannot be called because upstreams no longer support it.": "Ce modèle ne peut pas être appelé car les fournisseurs en amont ne le prennent plus en charge.",
     "Not callable · Officially unsupported": "Non appelable · Plus pris en charge officiellement",
-    "5-hour window limit (USD)": "Limite de fenêtre de 5 heures (USD)",
-    "7-day window limit (USD)": "Limite de fenêtre de 7 jours (USD)",
-    "0 disables this window limit.": "0 désactive cette limite de fenêtre."
+    "5-hour window limit": "Limite de fenêtre de 5 heures",
+    "7-day window limit": "Limite de fenêtre de 7 jours",
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 désactive cette limite de fenêtre. La valeur est convertie en unités de quota lors de l'enregistrement."
   }
 }

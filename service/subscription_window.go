@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -96,10 +97,14 @@ return {1, 0}
 // (a long-lived request can cross bucket/week boundaries), so refunds credit
 // the original keys instead of whatever key the current wall clock maps to.
 type subscriptionWindowGuard struct {
-	subId      int
-	subStart   int64
-	limit5h    int64
-	limitWeek  int64
+	subId     int
+	subStart  int64
+	limit5h   int64
+	limitWeek int64
+	// mu serializes all state access: settle adjustments run on the request
+	// goroutine while refunds run on a detached goroutine (BillingSession
+	// refund is async), so unsynchronized map/flag access would race.
+	mu         sync.Mutex
 	reserved   int64 // weighted units currently held by this request
 	released   bool
 	bucketHeld map[string]int64 // 5h bucket key -> weighted units held
@@ -255,20 +260,30 @@ func reserveSubscriptionWindows(info *model.SubscriptionWindowInfo, weightedAmou
 // the shared counters (e.g. Refund() then RefundExtra() double-crediting).
 // Best-effort: errors are logged and tolerated (fail-open drift).
 func (g *subscriptionWindowGuard) Adjust(delta int64) {
-	if g == nil || delta == 0 || g.released {
+	if g == nil || delta == 0 {
 		return
 	}
-	g.apply(delta)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.released {
+		return
+	}
+	_ = g.apply(delta) // apply logs; window drift is fail-open by design
 }
 
 // Release returns the full remaining reservation (refund path). Idempotent.
 func (g *subscriptionWindowGuard) Release() {
-	if g == nil || g.released {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.released {
 		return
 	}
 	g.released = true
 	if g.reserved > 0 {
-		g.apply(-g.reserved)
+		_ = g.apply(-g.reserved)
 	}
 }
 
@@ -277,7 +292,12 @@ func (g *subscriptionWindowGuard) Release() {
 // them credit the exact keys this request debited). Returns nil when nothing
 // is held.
 func (g *subscriptionWindowGuard) Snapshot() *model.TaskSubscriptionWindow {
-	if g == nil || g.released || g.reserved <= 0 {
+	if g == nil {
+		return nil
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.released || g.reserved <= 0 {
 		return nil
 	}
 	snap := &model.TaskSubscriptionWindow{
@@ -304,11 +324,15 @@ func (g *subscriptionWindowGuard) Snapshot() *model.TaskSubscriptionWindow {
 // AdjustSubscriptionWindowFromSnapshot applies an async settle delta to the
 // window counters using a persisted guard snapshot. Positive deltas debit the
 // counters the current wall clock maps to; negative deltas credit only the
-// snapshot's original keys, capped at the held amounts. The snapshot's held
-// maps are updated in place so the caller can re-persist it.
-func AdjustSubscriptionWindowFromSnapshot(snap *model.TaskSubscriptionWindow, delta int64) {
+// snapshot's original keys, capped at the held amounts. On success the
+// snapshot's held maps are updated in place (changed=true) so the caller can
+// re-persist them alongside its own task-state update; on error the ledger is
+// untouched and the caller decides whether to retry within its idempotent
+// flow. Window counters remain advisory fail-open by design — the monthly
+// pool is the hard cap, and bucket TTL / week rollover bound any drift.
+func AdjustSubscriptionWindowFromSnapshot(snap *model.TaskSubscriptionWindow, delta int64) (bool, error) {
 	if snap == nil || delta == 0 {
-		return
+		return false, nil
 	}
 	if snap.BucketHeld == nil {
 		snap.BucketHeld = map[string]int64{}
@@ -334,17 +358,24 @@ func AdjustSubscriptionWindowFromSnapshot(snap *model.TaskSubscriptionWindow, de
 		bucketHeld: snap.BucketHeld,
 		weekHeld:   snap.WeekHeld,
 	}
-	guard.apply(delta)
+	if err := guard.apply(delta); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
-// apply performs the Redis writes for a delta. Positive deltas debit the
-// counters the current wall clock maps to and are recorded in the held
-// ledgers; negative deltas credit only keys this guard actually debited,
-// capped at the held amounts, so refunds can neither hit a foreign
-// bucket/week key nor drive a counter negative.
-func (g *subscriptionWindowGuard) apply(delta int64) {
+// apply performs the Redis writes for a delta; callers must hold g.mu (or
+// own the guard exclusively). Positive deltas debit the counters the current
+// wall clock maps to and are recorded in the held ledgers; negative deltas
+// credit only keys this guard actually debited, capped at the held amounts,
+// so refunds can neither hit a foreign bucket/week key nor drive a counter
+// negative. Ledger/reserved update only after a successful pipeline exec —
+// a partially-applied failed pipeline leaves the ledger conservative (may
+// re-credit less than debited), which is the fail-open direction; bucket TTL
+// and week rollover bound any residual drift.
+func (g *subscriptionWindowGuard) apply(delta int64) error {
 	if !common.RedisEnabled || common.RDB == nil {
-		return
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -396,11 +427,11 @@ func (g *subscriptionWindowGuard) apply(delta int64) {
 	}
 
 	if len(changes) == 0 {
-		return
+		return nil
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		common.SysLog("subscription window adjust failed (tolerated): " + err.Error())
-		return
+		return err
 	}
 	for _, ch := range changes {
 		ch.held[ch.key] += ch.take
@@ -412,4 +443,5 @@ func (g *subscriptionWindowGuard) apply(delta int64) {
 	if g.reserved < 0 {
 		g.reserved = 0
 	}
+	return nil
 }

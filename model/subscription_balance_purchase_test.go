@@ -88,3 +88,56 @@ func TestBalancePurchaseAppliesInviteeFirstSubDiscount(t *testing.T) {
 	require.InDelta(t, 10.0, soloOrder.Money, 1e-9)
 	require.Zero(t, soloOrder.DiscountUSD)
 }
+
+// A live discounted order (pending or success) occupies the one-time slot;
+// a failed/expired one releases it.
+func TestInviteDiscountSlotHeldByLiveOrders(t *testing.T) {
+	plan := setupBalancePurchaseTest(t)
+
+	originalDiscount := common.InviteFirstSubDiscountUSD
+	t.Cleanup(func() { common.InviteFirstSubDiscountUSD = originalDiscount })
+	common.InviteFirstSubDiscountUSD = 5
+
+	inviter := createInviteRewardUser(t, "inviter", 0)
+	invitee := createInviteRewardUser(t, "invitee", inviter.Id)
+
+	newOrder := func(tradeNo string) *SubscriptionOrder {
+		return &SubscriptionOrder{
+			UserId:          invitee.Id,
+			PlanId:          plan.Id,
+			TradeNo:         tradeNo,
+			PaymentMethod:   PaymentMethodStripe,
+			PaymentProvider: PaymentProviderStripe,
+			Status:          common.TopUpStatusPending,
+		}
+	}
+
+	// First checkout claims the discount.
+	first := newOrder("disc-001")
+	require.NoError(t, CreateSubscriptionOrderWithInviteDiscount(first, plan.PriceAmount, 0))
+	require.InDelta(t, 5.0, first.DiscountUSD, 1e-9)
+	require.InDelta(t, 5.0, first.Money, 1e-9)
+
+	// A second concurrent checkout must NOT claim it again.
+	second := newOrder("disc-002")
+	require.NoError(t, CreateSubscriptionOrderWithInviteDiscount(second, plan.PriceAmount, 0))
+	require.Zero(t, second.DiscountUSD)
+	require.InDelta(t, 10.0, second.Money, 1e-9)
+
+	// Expiring the discounted order releases the slot for a fresh attempt.
+	require.NoError(t, DB.Model(&SubscriptionOrder{}).Where("id = ?", first.Id).
+		Update("status", common.TopUpStatusExpired).Error)
+	third := newOrder("disc-003")
+	require.NoError(t, CreateSubscriptionOrderWithInviteDiscount(third, plan.PriceAmount, 0))
+	require.InDelta(t, 5.0, third.DiscountUSD, 1e-9)
+
+	// minCharge keeps amount-based gateways above zero: price 10, discount 5
+	// unaffected, but a discount >= price is clamped to price - minCharge.
+	common.InviteFirstSubDiscountUSD = 50
+	require.NoError(t, DB.Model(&SubscriptionOrder{}).Where("id = ?", third.Id).
+		Update("status", common.TopUpStatusFailed).Error)
+	fourth := newOrder("disc-004")
+	require.NoError(t, CreateSubscriptionOrderWithInviteDiscount(fourth, plan.PriceAmount, 0.01))
+	require.InDelta(t, plan.PriceAmount-0.01, fourth.DiscountUSD, 1e-9)
+	require.InDelta(t, 0.01, fourth.Money, 1e-9)
+}
