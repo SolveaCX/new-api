@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useRecallCampaignMutations } from '../api'
+import { audienceTemplateDescriptionKeys } from '../copy'
 import {
   formatRecallMinorAmount,
   normalizeRecallCouponSource,
@@ -359,6 +360,16 @@ export function CampaignEditor(props: CampaignEditorProps) {
                 </SelectGroup>
               </SelectContent>
             </Select>
+          </div>
+          <div className='bg-muted/50 text-muted-foreground space-y-1 rounded-md p-3 text-sm md:col-span-2'>
+            <p>
+              {t(
+                'Audience templates define the base audience. The rules below narrow it further, and every condition must match. Preview the audience before activation.'
+              )}
+            </p>
+            <p className='text-foreground'>
+              {t(audienceTemplateDescriptionKeys[audienceTemplate])}
+            </p>
           </div>
         </CardContent>
       </Card>
