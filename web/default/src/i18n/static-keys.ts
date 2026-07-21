@@ -551,6 +551,11 @@ export const STATIC_I18N_KEYS = [
   'No content to copy',
   'Please wait for the current generation to complete',
 
+  // Recall campaign audience help
+  'Targets registered users who have never paid, for campaigns that encourage a first purchase.',
+  'Targets previous payers who have not paid or used the API recently.',
+  'Targets previous subscribers whose subscription is no longer active and expired long enough ago.',
+
   // Misc
   'Cancel',
   'Status',
