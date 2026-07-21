@@ -329,8 +329,19 @@ docker run --name new-api -d --restart always \
 | `PYROSCOPE_MUTEX_RATE` | Pyroscope mutex sampling rate | `5` |
 | `PYROSCOPE_BLOCK_RATE` | Pyroscope block sampling rate | `5` |
 | `HOSTNAME` | Hostname tag for Pyroscope | `new-api` |
+| `STATUS_CENTER_ENABLED` | Record relay availability counters on Router/slave; run catalog sync, probes, evaluation, rollups, and retention on Console/master | `false` |
+| `STATUS_CENTER_PUBLIC_ENABLED` | Expose public status APIs and subscription entry points; suppressed by shadow mode | `false` |
+| `STATUS_CENTER_NOTIFICATIONS_ENABLED` | Enable new subscriptions and run the outbox worker independently; suppressed by shadow mode | `false` |
+| `STATUS_CENTER_SHADOW_MODE` | Collect and evaluate evidence without public exposure or notification delivery | `false` |
+| `ROUTER_ORIGIN` | Absolute public Router origin used by the Router canary; no path, query, fragment, or credentials | - |
+| `STATUS_SECRET_KEYS` | Comma-separated `key_id:base64-32-byte-key` keyring for encrypted Webhook/Discord values | - |
+| `STATUS_SECRET_ACTIVE_KEY_ID` | Key ID used for new encrypted status notification values | - |
+
+Set `STATUS_CENTER_ENABLED` on both Router/slave and Console/master so real relay availability feeds model health. Keep the other lifecycle flags, notification keys, and authoritative `newapi_status_center_*` Prometheus scraping on Console/master only. Router/slave `/metrics` remains the source for relay/process metrics and does not expose `newapi_status_center_*`.
 
 📖 **Complete configuration:** [Environment Variables Documentation](https://docs.newapi.pro/en/docs/installation/config-maintenance/environment-variables)
+
+📟 **Native status center:** [operations, staged rollout, metrics, key rotation, retention, and rollback](docs/status-center-operations.md)
 
 </details>
 

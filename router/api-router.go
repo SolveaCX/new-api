@@ -25,6 +25,51 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
+		statusRoute := apiRouter.Group("/status")
+		{
+			statusPublicRoute := statusRoute.Group("")
+			statusPublicRoute.Use(controller.RequireStatusCenterPublic)
+			{
+				statusPublicRoute.GET("/summary", controller.GetPublicStatusSummary)
+				statusPublicRoute.GET("/components", controller.GetPublicStatusComponents)
+				statusPublicRoute.GET("/components/:slug", controller.GetPublicStatusComponent)
+				statusPublicRoute.GET("/components/:slug/history", controller.GetPublicStatusComponentHistory)
+				statusPublicRoute.GET("/incidents", controller.GetPublicStatusIncidents)
+				statusPublicRoute.GET("/incidents/:id", controller.GetPublicStatusIncident)
+				statusPublicRoute.GET("/maintenance", controller.GetPublicStatusMaintenance)
+				statusPublicRoute.POST("/subscriptions", controller.RequireStatusCenterNotifications, middleware.CriticalRateLimit(), controller.CreatePublicStatusSubscription)
+				statusPublicRoute.GET("/subscriptions/verify", middleware.CriticalRateLimit(), controller.VerifyPublicStatusSubscription)
+				statusPublicRoute.GET("/subscriptions/unsubscribe", middleware.CriticalRateLimit(), controller.PreviewPublicStatusUnsubscribe)
+				statusPublicRoute.POST("/subscriptions/unsubscribe", middleware.CriticalRateLimit(), controller.UnsubscribePublicStatus)
+			}
+
+			statusAdminRoute := statusRoute.Group("/admin")
+			statusAdminRoute.Use(middleware.AdminAuth())
+			{
+				statusAdminRoute.GET("/components", controller.ListAdminStatusComponents)
+				statusAdminRoute.GET("/incidents", controller.ListAdminStatusIncidents)
+				statusAdminRoute.GET("/incidents/:id", controller.GetAdminStatusIncident)
+				statusAdminRoute.POST("/incidents/:id/publish", controller.PublishAdminStatusIncident)
+				statusAdminRoute.GET("/maintenance", controller.ListAdminStatusMaintenance)
+				statusAdminRoute.POST("/maintenance", controller.CreateAdminStatusMaintenance)
+				statusAdminRoute.POST("/maintenance/:id/reconcile", controller.ReconcileAdminStatusMaintenance)
+				statusAdminRoute.POST("/overrides", controller.CreateAdminStatusOverride)
+				statusAdminRoute.GET("/settings", controller.ListAdminStatusSettings)
+				statusAdminRoute.GET("/subscribers", controller.ListAdminStatusSubscribers)
+				statusAdminRoute.GET("/deliveries", controller.ListAdminStatusDeliveries)
+				statusAdminRoute.GET("/audit", controller.ListAdminStatusAudit)
+			}
+
+			statusRootRoute := statusRoute.Group("/admin")
+			statusRootRoute.Use(middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.SecureVerificationRequired(), middleware.OptionalSecureVerification())
+			{
+				statusRootRoute.POST("/overrides/force-green", controller.CreateAdminStatusForceGreen)
+				statusRootRoute.PUT("/settings/discord", controller.ConfigureAdminStatusDiscord)
+				statusRootRoute.PUT("/settings/:key", controller.UpdateAdminStatusSetting)
+				statusRootRoute.POST("/discord/test", controller.TestAdminStatusDiscord)
+				statusRootRoute.POST("/deliveries/:id/retry", controller.RetryAdminStatusDelivery)
+			}
+		}
 		registrationDomainRiskRoute := apiRouter.Group("/registration-domain-risk")
 		registrationDomainRiskRoute.Use(middleware.AdminAuth())
 		{

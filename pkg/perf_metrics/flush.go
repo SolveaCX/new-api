@@ -9,6 +9,8 @@ import (
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 )
 
+const availabilityFlushInterval = 5 * time.Second
+
 func flushLoop() {
 	for {
 		interval := perf_metrics_setting.GetFlushIntervalMinutes()
@@ -19,6 +21,76 @@ func flushLoop() {
 		}
 		flushCompletedBuckets()
 		cleanupExpiredMetrics(setting.RetentionDays)
+	}
+}
+
+func flushAvailabilityLoop() {
+	ticker := time.NewTicker(availabilityFlushInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if !statusAvailabilityEnabled.Load() {
+			continue
+		}
+		flushCompletedAvailabilityBuckets(time.Now().Unix())
+	}
+}
+
+func flushCompletedAvailabilityBuckets(now int64) {
+	currentBucket := fixedAvailabilityBucketStart(now)
+	availabilityHotBuckets.Range(func(rawKey, value any) bool {
+		key := rawKey.(availabilityBucketKey)
+		if key.bucketTs >= currentBucket {
+			return true
+		}
+
+		bucket := value.(*atomicAvailabilityBucket)
+		drained := bucket.drain()
+		if drained.eligible == 0 {
+			deleteOldEmptyAvailabilityBucket(key, rawKey, bucket, now)
+			return true
+		}
+		if err := model.UpsertPerfMetricAvailability(&model.PerfMetricAvailability{
+			ModelName:     key.model,
+			Group:         key.group,
+			BucketTs:      key.bucketTs,
+			EligibleCount: drained.eligible,
+			SuccessCount:  drained.success,
+		}); err != nil {
+			if !bucket.addCounters(drained) {
+				common.SysError(fmt.Sprintf("failed to restore availability metric bucket model=%s group=%s bucket=%d after flush error", key.model, key.group, key.bucketTs))
+			}
+			common.SysError(fmt.Sprintf("failed to flush availability metric bucket model=%s group=%s bucket=%d: %s", key.model, key.group, key.bucketTs, err.Error()))
+			return true
+		}
+		deleteOldEmptyAvailabilityBucket(key, rawKey, bucket, now)
+		return true
+	})
+	cleanupExpiredAvailabilityMetrics(now)
+}
+
+func cleanupExpiredAvailabilityMetrics(now int64) {
+	if now <= 0 {
+		return
+	}
+	for {
+		lastCleanupAt := availabilityLastCleanupAt.Load()
+		if lastCleanupAt > 0 && now-lastCleanupAt < availabilityCleanupIntervalSeconds {
+			return
+		}
+		if !availabilityLastCleanupAt.CompareAndSwap(lastCleanupAt, now) {
+			continue
+		}
+		if err := model.DeletePerfMetricAvailabilityBefore(now - availabilityRetentionSeconds); err != nil {
+			availabilityLastCleanupAt.CompareAndSwap(now, lastCleanupAt)
+			common.SysError("failed to cleanup expired availability metrics: " + err.Error())
+		}
+		return
+	}
+}
+
+func deleteOldEmptyAvailabilityBucket(key availabilityBucketKey, rawKey any, bucket *atomicAvailabilityBucket, now int64) {
+	if key.bucketTs < fixedAvailabilityBucketStart(now-24*60*60) && bucket.snapshot().eligible == 0 {
+		availabilityHotBuckets.Delete(rawKey)
 	}
 }
 
@@ -38,16 +110,18 @@ func flushCompletedBuckets() {
 		}
 
 		err := model.UpsertPerfMetric(&model.PerfMetric{
-			ModelName:      k.model,
-			Group:          k.group,
-			BucketTs:       k.bucketTs,
-			RequestCount:   drained.requestCount,
-			SuccessCount:   drained.successCount,
-			TotalLatencyMs: drained.totalLatencyMs,
-			TtftSumMs:      drained.ttftSumMs,
-			TtftCount:      drained.ttftCount,
-			OutputTokens:   drained.outputTokens,
-			GenerationMs:   drained.generationMs,
+			ModelName:                 k.model,
+			Group:                     k.group,
+			BucketTs:                  k.bucketTs,
+			RequestCount:              drained.requestCount,
+			SuccessCount:              drained.successCount,
+			TotalLatencyMs:            drained.totalLatencyMs,
+			TtftSumMs:                 drained.ttftSumMs,
+			TtftCount:                 drained.ttftCount,
+			OutputTokens:              drained.outputTokens,
+			GenerationMs:              drained.generationMs,
+			AvailabilityEligibleCount: drained.availabilityEligibleCount,
+			AvailabilitySuccessCount:  drained.availabilitySuccessCount,
 		})
 		if err != nil {
 			bucket.addCounters(drained)

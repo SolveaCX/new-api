@@ -290,6 +290,7 @@ func migrateDB() error {
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		&PerfMetricAvailability{},
 		&DingTalkAlertCooldownRecord{},
 		&ModelAvailabilityState{},
 		&CodexModelGovernanceRecord{},
@@ -304,6 +305,9 @@ func migrateDB() error {
 		&AdsPilotMeta{},
 	)
 	if err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(StatusCenterModels()...); err != nil {
 		return err
 	}
 	if common.UsingSQLite {
@@ -358,6 +362,7 @@ func migrateDBFast() error {
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},
+		{&PerfMetricAvailability{}, "PerfMetricAvailability"},
 		{&DingTalkAlertCooldownRecord{}, "DingTalkAlertCooldownRecord"},
 		{&ModelAvailabilityState{}, "ModelAvailabilityState"},
 		{&CodexModelGovernanceRecord{}, "CodexModelGovernanceRecord"},

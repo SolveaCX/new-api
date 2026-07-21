@@ -4,10 +4,11 @@ import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/loc
 import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingPathnames } from "@/lib/model-landing";
 import { modelPublicPath } from "@/lib/model-public";
+import { SITE_ORIGIN } from "@/lib/origins";
 import { getSkagLandingPathnames } from "@/lib/skag-landing";
 import { getPricingData, getTopVendors, getVendorName } from "@/lib/pricing";
 
-const base = "https://flatkey.ai";
+const base = SITE_ORIGIN;
 
 function entry(
   pathname: string,
@@ -52,6 +53,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries = [
     ...entry("/", 1, "daily"),
     ...entry("/pricing", 0.8, "daily"),
+    ...entry("/status", 0.75, "always"),
     ...entry("/models", 0.82, "daily"),
     ...entry("/use-case/codex", 0.84, "weekly"),
     ...entry("/use-case/claude-code", 0.84, "weekly"),

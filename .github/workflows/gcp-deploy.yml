@@ -132,6 +132,13 @@ jobs:
       RUN_SERVICE: newapi-console
       NODE_TYPE: master
       APP_ROLE: console
+      ROUTER_ORIGIN: https://router.flatkey.ai
+      STATUS_CENTER_ENABLED: ${{ vars.STATUS_CENTER_ENABLED || 'false' }}
+      STATUS_CENTER_PUBLIC_ENABLED: ${{ vars.STATUS_CENTER_PUBLIC_ENABLED || 'false' }}
+      STATUS_CENTER_NOTIFICATIONS_ENABLED: ${{ vars.STATUS_CENTER_NOTIFICATIONS_ENABLED || 'false' }}
+      STATUS_CENTER_SHADOW_MODE: ${{ vars.STATUS_CENTER_SHADOW_MODE || 'false' }}
+      STATUS_SECRET_KEYS_SECRET_ID: ${{ vars.STATUS_SECRET_KEYS_SECRET_ID || '' }}
+      STATUS_SECRET_ACTIVE_KEY_ID: ${{ vars.STATUS_SECRET_ACTIVE_KEY_ID || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -180,7 +187,9 @@ jobs:
             PADDLE_LIVE_PRODUCT_ID PADDLE_LIVE_CURRENCY PADDLE_LIVE_UNIT_PRICE PADDLE_LIVE_MIN_TOPUP \
             PADDLE_LIVE_API_KEY PADDLE_LIVE_CLIENT_TOKEN PADDLE_LIVE_WEBHOOK_SECRET \
             GA_MEASURE_PROTOCOL_API_SECRET GA_MESSUREMENT_ID \
-            OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE \
+            OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE ROUTER_ORIGIN \
+            STATUS_CENTER_ENABLED STATUS_CENTER_PUBLIC_ENABLED STATUS_CENTER_NOTIFICATIONS_ENABLED STATUS_CENTER_SHADOW_MODE \
+            STATUS_SECRET_ACTIVE_KEY_ID \
             NODE_TYPE APP_ROLE; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then
@@ -192,6 +201,10 @@ jobs:
             IFS=,
             env_args=(--update-env-vars="${env_vars[*]}")
             unset IFS
+          fi
+          secret_args=()
+          if [[ -n "${STATUS_SECRET_KEYS_SECRET_ID}" ]]; then
+            secret_args=(--update-secrets="STATUS_SECRET_KEYS=${STATUS_SECRET_KEYS_SECRET_ID}:latest")
           fi
           container_args=()
           container_names="$(gcloud run services describe "${RUN_SERVICE}" \
@@ -211,7 +224,8 @@ jobs:
             --quiet \
             "${container_args[@]}" \
             --image="${{ needs.build.outputs.image_uri }}" \
-            "${env_args[@]}"
+            "${env_args[@]}" \
+            "${secret_args[@]}"
           new_rev="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
             --format='value(status.latestCreatedRevisionName)')"
@@ -279,6 +293,7 @@ jobs:
       APP_ROLE: router
       # Keep in sync with deploy/gcp/envs/prod/terraform.tfvars.
       MAX_INSTANCES: 30
+      STATUS_CENTER_ENABLED: ${{ vars.STATUS_CENTER_ENABLED || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -328,6 +343,7 @@ jobs:
             PADDLE_LIVE_API_KEY PADDLE_LIVE_CLIENT_TOKEN PADDLE_LIVE_WEBHOOK_SECRET \
             GA_MEASURE_PROTOCOL_API_SECRET GA_MESSUREMENT_ID \
             OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE \
+            STATUS_CENTER_ENABLED \
             NODE_TYPE APP_ROLE; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then
