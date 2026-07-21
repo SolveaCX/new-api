@@ -27,6 +27,7 @@ import {
   Key,
   LayoutDashboard,
   ListTodo,
+  MailCheck,
   MessageSquare,
   Radio,
   Settings,
@@ -168,6 +169,11 @@ export function buildSidebarData(
             title: t('Subscription Management'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('Recall Campaigns'),
+            url: '/recall-campaigns',
+            icon: MailCheck,
           },
           {
             title: t('System Settings'),
