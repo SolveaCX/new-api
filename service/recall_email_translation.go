@@ -52,14 +52,21 @@ type RecallEmailTranslatorOptions struct {
 	sleep func(context.Context, time.Duration) error
 }
 
+type recallEmailTranslationConfig struct {
+	apiKey  string
+	baseURL string
+	model   string
+}
+
 type recallEmailTranslator struct {
-	apiKey   string
-	baseURL  string
-	model    string
-	client   *http.Client
-	maxBytes int64
-	timeout  time.Duration
-	sleep    func(context.Context, time.Duration) error
+	apiKey         string
+	baseURL        string
+	model          string
+	configProvider func() recallEmailTranslationConfig
+	client         *http.Client
+	maxBytes       int64
+	timeout        time.Duration
+	sleep          func(context.Context, time.Duration) error
 }
 
 type recallEmailTranslationMessage struct {
@@ -149,23 +156,36 @@ func NewRecallEmailTranslator(options RecallEmailTranslatorOptions) RecallEmailT
 	}
 }
 
+func NewRecallEmailTranslatorFromMonitorSettings(options RecallEmailTranslatorOptions) RecallEmailTranslator {
+	translator := NewRecallEmailTranslator(options).(*recallEmailTranslator)
+	translator.configProvider = func() recallEmailTranslationConfig {
+		return recallEmailTranslationConfig{
+			apiKey:  operation_setting.GetMonitorAIAnalysisAPIKey(),
+			baseURL: operation_setting.GetMonitorAIAnalysisBaseURL(),
+			model:   operation_setting.GetMonitorAIAnalysisModel(),
+		}
+	}
+	return translator
+}
+
 func (t *recallEmailTranslator) Translate(ctx context.Context, stages []RecallEmailStage) (map[int]map[string]RecallEmailTemplate, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if t.apiKey == "" {
+	translationConfig := t.currentConfig()
+	if translationConfig.apiKey == "" {
 		return nil, fmt.Errorf("recall email translation API key is empty")
 	}
 	protectedStages, err := protectRecallEmailTranslationStages(stages)
 	if err != nil {
 		return nil, err
 	}
-	endpoint := recallEmailTranslationEndpoint(t.baseURL)
+	endpoint := recallEmailTranslationEndpoint(translationConfig.baseURL)
 	fetchSetting := system_setting.GetFetchSetting()
 	if err := common.ValidateURLWithFetchSetting(endpoint, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, fetchSetting.ApplyIPFilterForDomain); err != nil {
 		return nil, fmt.Errorf("recall email translation request rejected: %v", err)
 	}
-	requestBody, err := common.Marshal(buildRecallEmailTranslationRequest(t.model, protectedStages))
+	requestBody, err := common.Marshal(buildRecallEmailTranslationRequest(translationConfig.model, protectedStages))
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +202,7 @@ func (t *recallEmailTranslator) Translate(ctx context.Context, stages []RecallEm
 
 	var raw []byte
 	for attempt := 0; attempt < recallEmailTranslationMaxAttempts; attempt++ {
-		raw, err = t.request(requestCtx, client, endpoint, requestBody, attempt)
+		raw, err = t.request(requestCtx, client, endpoint, translationConfig.apiKey, requestBody, attempt)
 		if err == nil {
 			break
 		}
@@ -205,6 +225,13 @@ func (t *recallEmailTranslator) Translate(ctx context.Context, stages []RecallEm
 	return validateAndRestoreRecallEmailTranslations(result, protectedStages)
 }
 
+func (t *recallEmailTranslator) currentConfig() recallEmailTranslationConfig {
+	if t.configProvider != nil {
+		return t.configProvider()
+	}
+	return recallEmailTranslationConfig{apiKey: t.apiKey, baseURL: t.baseURL, model: t.model}
+}
+
 type recallEmailTranslationRetryableError struct {
 	err   error
 	delay time.Duration
@@ -213,12 +240,12 @@ type recallEmailTranslationRetryableError struct {
 func (e *recallEmailTranslationRetryableError) Error() string { return e.err.Error() }
 func (e *recallEmailTranslationRetryableError) Unwrap() error { return e.err }
 
-func (t *recallEmailTranslator) request(ctx context.Context, client *http.Client, endpoint string, body []byte, attempt int) ([]byte, error) {
+func (t *recallEmailTranslator) request(ctx context.Context, client *http.Client, endpoint string, apiKey string, body []byte, attempt int) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "NewAPI-Recall-Email-Translation/1.0")
 

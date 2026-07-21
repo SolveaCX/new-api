@@ -38,9 +38,7 @@ func GetRecallRuntime() *RecallRuntime {
 			Campaigns: NewRecallCampaignServiceWithTranslator(
 				audience,
 				stripeService,
-				NewRecallEmailTranslator(RecallEmailTranslatorOptions{
-					APIKey: operation_setting.GetMonitorAIAnalysisAPIKey(),
-				}),
+				NewRecallEmailTranslatorFromMonitorSettings(RecallEmailTranslatorOptions{}),
 			),
 			Claims:      claims,
 			Recipients:  NewRecallRecipientWorker(stripeService, claims, owner),
