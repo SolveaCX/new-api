@@ -457,6 +457,8 @@ export function ApiKeysMutateDrawer({
 
     return (
       <ModelAccessPreview
+        defaultRatio={modelAccessState.defaultRatio}
+        modelRatios={modelAccessState.modelRatios}
         models={modelAccessState.effectiveModels}
         totalCount={modelAccessState.scopeModels.length}
         scopeKey={selectedGroup || previewScopeTitle}
@@ -480,6 +482,8 @@ export function ApiKeysMutateDrawer({
     }
     return (
       <ApiKeyModelPreviewDrawer
+        defaultRatio={modelAccessState.defaultRatio}
+        modelRatios={modelAccessState.modelRatios}
         models={modelAccessState.effectiveModels}
         totalCount={modelAccessState.scopeModels.length}
         scopeKey={selectedGroup || previewScopeTitle}
