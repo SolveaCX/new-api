@@ -3,7 +3,6 @@ import { StatusPage, type StatusPageFilters } from "@/components/status-page";
 import { isLocale, LOCALES } from "@/lib/locales";
 import { getStatusCopy } from "@/lib/status-copy";
 import {
-  STATUS_REVALIDATE_SECONDS,
   fetchStatusIncidents,
   fetchStatusMaintenance,
   fetchStatusSummary,
@@ -11,7 +10,7 @@ import {
 } from "@/lib/status";
 import { buildMetadata } from "@/lib/seo";
 
-export const revalidate = STATUS_REVALIDATE_SECONDS;
+export const revalidate = 60;
 
 type Props = {
   params: Promise<{ locale: string }>;

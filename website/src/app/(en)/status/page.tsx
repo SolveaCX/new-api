@@ -1,7 +1,6 @@
 import { StatusPage, type StatusPageFilters } from "@/components/status-page";
 import { getStatusCopy } from "@/lib/status-copy";
 import {
-  STATUS_REVALIDATE_SECONDS,
   fetchStatusIncidents,
   fetchStatusMaintenance,
   fetchStatusSummary,
@@ -11,7 +10,7 @@ import { buildMetadata } from "@/lib/seo";
 
 const copy = getStatusCopy("en");
 
-export const revalidate = STATUS_REVALIDATE_SECONDS;
+export const revalidate = 60;
 export const metadata = buildMetadata({
   title: copy.title,
   description: copy.description,
