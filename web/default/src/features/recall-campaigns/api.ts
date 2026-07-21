@@ -37,6 +37,7 @@ export const recallCampaignKeys = {
     'product-options',
     'subscription',
   ] as const,
+  userGroups: ['recall-campaigns', 'audience-options', 'user-groups'] as const,
 }
 
 function requireRecallSuccess<T>(response: ApiResponse<T>): ApiResponse<T> {
@@ -106,6 +107,11 @@ export async function getRecallSubscriptionProductConfiguration(): Promise<
   ApiResponse<RecallSubscriptionProductRecord[]>
 > {
   const response = await api.get('/api/subscription/admin/plans')
+  return requireRecallSuccess(response.data)
+}
+
+export async function getRecallUserGroups(): Promise<ApiResponse<string[]>> {
+  const response = await api.get('/api/group/', { params: { type: 'user' } })
   return requireRecallSuccess(response.data)
 }
 
