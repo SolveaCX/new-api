@@ -253,9 +253,6 @@ func recallAudienceCandidate(draft RecallCampaignDraft, fact model.RecallCandida
 	if draft.Audience.RequireVerifiedEmail && user.EmailVerifiedAt <= 0 {
 		return recallAudienceSelection{}, "unverified_email", nil
 	}
-	if draft.AudienceTemplate == "first_purchase" && strings.TrimSpace(user.Group) != "plg" {
-		return recallAudienceSelection{}, "group_filtered", nil
-	}
 	if !recallAudienceGroupAllowed(user.Group, draft.Audience.Groups, draft.Audience.GroupMode) {
 		return recallAudienceSelection{}, "group_filtered", nil
 	}
