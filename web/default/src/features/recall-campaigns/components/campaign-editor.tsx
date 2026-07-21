@@ -22,11 +22,11 @@ import {
   formatRecallMinorAmount,
   normalizeRecallCouponSource,
   normalizeRecallDiscountType,
-  normalizeRecallGroupsForMode,
   parseRecallMajorAmount,
   prepareRecallCampaignSubmitDraft,
   recallFixedCurrencies,
   removeRecallEmailStage,
+  setRecallCampaignGroupMode,
 } from '../helpers'
 import {
   recallCampaignActivatedUpdateSchema,
@@ -265,18 +265,9 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const setGroupMode = (
     mode: RecallCampaignDraft['audience_config']['group_mode']
   ) => {
-    form.setValue('audience_config.group_mode', mode, {
-      shouldDirty: true,
-      shouldValidate: true,
+    void setRecallCampaignGroupMode(form, mode).catch(() => {
+      toast.error(t('Something went wrong!'))
     })
-    form.setValue(
-      'audience_config.groups',
-      normalizeRecallGroupsForMode(
-        form.getValues('audience_config.groups'),
-        mode
-      ),
-      { shouldDirty: true, shouldValidate: true }
-    )
   }
 
   const onSubmit = async (draft: RecallCampaignDraft) => {
@@ -856,6 +847,15 @@ export function CampaignEditor(props: CampaignEditorProps) {
               `email_sequence.${index}.templates.en.subject` as FieldPath<RecallCampaignDraft>
             const bodyPath =
               `email_sequence.${index}.templates.en.body_text` as FieldPath<RecallCampaignDraft>
+            const subjectId = `recall-email-${index}-subject`
+            const subjectErrorId = `${subjectId}-error`
+            const subjectError = form.getFieldState(
+              subjectPath,
+              form.formState
+            ).error
+            const bodyId = `recall-email-${index}-body-text`
+            const bodyErrorId = `${bodyId}-error`
+            const bodyError = form.getFieldState(bodyPath, form.formState).error
             return (
               <div className='space-y-3 rounded-lg border p-3' key={stage.id}>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
@@ -881,20 +881,46 @@ export function CampaignEditor(props: CampaignEditorProps) {
                     />
                   </div>
                   <div className='space-y-2'>
-                    <Label>{t('Subject')}</Label>
+                    <Label htmlFor={subjectId}>{t('Subject')}</Label>
                     <Input
+                      id={subjectId}
                       disabled={terminal}
+                      aria-invalid={Boolean(subjectError)}
+                      aria-describedby={
+                        subjectError ? subjectErrorId : undefined
+                      }
                       {...form.register(subjectPath)}
                     />
+                    {subjectError ? (
+                      <p
+                        id={subjectErrorId}
+                        role='alert'
+                        className='text-destructive text-sm'
+                      >
+                        {t(String(subjectError.message))}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className='space-y-2'>
-                  <Label>{t('Body text')}</Label>
+                  <Label htmlFor={bodyId}>{t('Body text')}</Label>
                   <Textarea
+                    id={bodyId}
                     rows={5}
                     disabled={terminal}
+                    aria-invalid={Boolean(bodyError)}
+                    aria-describedby={bodyError ? bodyErrorId : undefined}
                     {...form.register(bodyPath)}
                   />
+                  {bodyError ? (
+                    <p
+                      id={bodyErrorId}
+                      role='alert'
+                      className='text-destructive text-sm'
+                    >
+                      {t(String(bodyError.message))}
+                    </p>
+                  ) : null}
                 </div>
                 {stages.fields.length > 1 && !immutable ? (
                   <Button

@@ -5704,6 +5704,8 @@
     "Delay seconds": "Thời gian trì hoãn (giây)",
     "Subject": "Tiêu đề",
     "Body text": "Nội dung",
+    "Subject must be 200 characters or fewer": "Tiêu đề phải có tối đa 200 ký tự",
+    "Body text must be 2000 characters or fewer": "Nội dung phải có tối đa 2000 ký tự",
     "Add email stage": "Thêm giai đoạn email",
     "Remove stage": "Xóa giai đoạn",
     "Please correct the highlighted fields.": "Vui lòng sửa các trường được đánh dấu.",

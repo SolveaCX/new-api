@@ -5704,6 +5704,8 @@
     "Delay seconds": "遅延時間（秒）",
     "Subject": "件名",
     "Body text": "本文",
+    "Subject must be 200 characters or fewer": "件名は200文字以内で入力してください",
+    "Body text must be 2000 characters or fewer": "本文は2000文字以内で入力してください",
     "Add email stage": "メールステージを追加",
     "Remove stage": "ステージを削除",
     "Please correct the highlighted fields.": "強調表示された項目を修正してください。",

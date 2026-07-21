@@ -39,6 +39,8 @@ const localeTranslations: Record<string, Record<string, string>> = {
 }
 
 const recallHelpKeys = [
+  'Subject must be 200 characters or fewer',
+  'Body text must be 2000 characters or fewer',
   'Stripe does not convert fixed Coupon amounts automatically. Configure each checkout currency explicitly.',
   'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.',
   "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable.",

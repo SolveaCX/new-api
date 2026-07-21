@@ -1,3 +1,5 @@
+import { createFormControl } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { describe, expect, test } from 'bun:test'
 import {
   formatRecallMinorAmount,
@@ -9,7 +11,9 @@ import {
   parseRecallMajorAmount,
   prepareRecallCampaignSubmitDraft,
   removeRecallEmailStage,
+  setRecallCampaignGroupMode,
 } from './helpers'
+import { recallCampaignDraftSchema } from './schemas'
 import type {
   RecallCampaignDraft,
   RecallEmailStage,
@@ -31,6 +35,66 @@ function makeDraft(): RecallCampaignDraft {
       coupon_redeem_by: 0,
     },
   } as RecallCampaignDraft
+}
+
+function makeValidDraft(): RecallCampaignDraft {
+  return {
+    name: 'Win back inactive customers',
+    audience_template: 'first_purchase',
+    audience_config: {
+      registration_age_days: 14,
+      min_request_count: 1,
+      max_quota: 10,
+      min_paid_amount: 0,
+      last_api_call_age_days: 0,
+      last_payment_age_days: 0,
+      subscription_expired_days: 0,
+      min_subscription_amount: 0,
+      min_subscription_count: 0,
+      payment_providers: [],
+      groups: ['paid'],
+      group_mode: '',
+      require_verified_email: true,
+    },
+    execution_mode: 'manual',
+    schedule: {
+      scheduled_at: 0,
+      timezone: '',
+      frequency: '',
+      weekday: 0,
+      hour: 0,
+      minute: 0,
+    },
+    coupon_source: 'automatic',
+    existing_coupon_id: '',
+    discount_config: {
+      type: 'percent',
+      percent_off: 20,
+      amount_off: 0,
+      currency: '',
+      currency_options: {},
+      minimum_amount: 0,
+      minimum_amount_currency: '',
+      coupon_redeem_by: 0,
+    },
+    product_scope: {
+      topup_price_ids: ['price_topup_20'],
+      subscription_price_ids: [],
+    },
+    promotion_valid_seconds: 604_800,
+    enrollment_limit: 1_000,
+    worker_concurrency: 5,
+    email_sequence: [
+      {
+        stage_no: 1,
+        delay_seconds: 0,
+        template_version: 1,
+        templates: {
+          en: { subject: 'We miss you', body_text: 'Come back soon.' },
+        },
+      },
+    ],
+  }
 }
 
 function makeStage(stageNo: number, delaySeconds: number): RecallEmailStage {
@@ -111,6 +175,37 @@ describe('recall campaign editor normalization', () => {
       const groups = ['paid', 'trial']
 
       expect(normalizeRecallGroupsForMode(groups, mode)).toEqual(groups)
+    }
+  )
+
+  test.each([
+    ['', []],
+    ['allow', ['paid']],
+  ] as const)(
+    'revalidates the audience after switching group mode to %s',
+    async (mode, expectedGroups) => {
+      const form = createFormControl<RecallCampaignDraft>({
+        resolver: zodResolver(recallCampaignDraftSchema),
+        defaultValues: makeValidDraft(),
+      })
+      const subscription = form.subscribe({
+        formState: { values: true },
+        callback: () => undefined,
+      })
+      form.register('audience_config.group_mode')
+      form.register('audience_config.groups')
+      await form.trigger('audience_config')
+      expect(
+        form.getFieldState('audience_config.group_mode').error?.message
+      ).toBe('Group mode is required')
+
+      await setRecallCampaignGroupMode(form, mode)
+
+      expect(form.getValues('audience_config.groups')).toEqual(expectedGroups)
+      expect(
+        form.getFieldState('audience_config.group_mode').error
+      ).toBeUndefined()
+      subscription()
     }
   )
 
