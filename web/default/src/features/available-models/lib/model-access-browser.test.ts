@@ -45,6 +45,8 @@ function buildAccess(
     scope_mode: 'selectable_group',
     identity_scope: 'identity',
     identity_model_ids: ['identity-model'],
+    identity_model_ratios: {},
+    identity_default_ratio: 1,
     create_default_scope: 'auto',
     groups: [
       {
@@ -52,15 +54,19 @@ function buildAccess(
         label: 'Auto',
         ratio: null,
         model_ids: ['gpt-main', 'image-main'],
+        model_ratios: {},
       },
       {
         id: 'standard',
         label: 'Standard',
         ratio: 1,
         model_ids: ['gpt-main'],
+        model_ratios: { 'gpt-main': 0.7 },
       },
     ],
     account_model_ids: [],
+    account_model_ratios: {},
+    account_default_ratio: null,
     models: [
       {
         id: 'gpt-main',
@@ -137,12 +143,14 @@ describe('available models browser scope selection', () => {
           label: 'Auto',
           ratio: null,
           model_ids: ['gpt-main', 'image-main', 'retired-main'],
+          model_ratios: {},
         },
         {
           id: 'standard',
           label: 'Standard',
           ratio: 1,
           model_ids: ['gpt-main', 'missing-main'],
+          model_ratios: {},
         },
       ],
       models: [
