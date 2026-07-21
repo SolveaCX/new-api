@@ -1089,25 +1089,42 @@ func TestChannel(c *gin.Context) {
 var testAllChannelsLock sync.Mutex
 var testAllChannelsRunning bool = false
 
-func testChannels(channels []*model.Channel, testUserID int, notify bool, allowDisable bool) error {
+type channelTestBatchLoader func() (int, []*model.Channel, error)
+
+func acquireChannelTestRun() error {
 	testAllChannelsLock.Lock()
+	defer testAllChannelsLock.Unlock()
 	if testAllChannelsRunning {
-		testAllChannelsLock.Unlock()
 		return errors.New("测试已在运行中")
 	}
 	testAllChannelsRunning = true
+	return nil
+}
+
+func releaseChannelTestRun() {
+	testAllChannelsLock.Lock()
+	testAllChannelsRunning = false
 	testAllChannelsLock.Unlock()
+}
+
+func testChannels(loadBatch channelTestBatchLoader, notify bool, allowDisable bool) error {
+	if err := acquireChannelTestRun(); err != nil {
+		return err
+	}
+
+	testUserID, channels, err := loadBatch()
+	if err != nil {
+		releaseChannelTestRun()
+		return err
+	}
+
 	var disableThreshold = int64(common.ChannelDisableThreshold * 1000)
 	if disableThreshold == 0 {
 		disableThreshold = 10000000 // a impossible value
 	}
 	gopool.Go(func() {
 		// 使用 defer 确保无论如何都会重置运行状态，防止死锁
-		defer func() {
-			testAllChannelsLock.Lock()
-			testAllChannelsRunning = false
-			testAllChannelsLock.Unlock()
-		}()
+		defer releaseChannelTestRun()
 
 		dingTalkAlerts := make([]service.DingTalkChannelAlert, 0)
 		for _, channel := range channels {
@@ -1189,27 +1206,31 @@ func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*m
 }
 
 func testAllChannels(notify bool) error {
-	testUserID, err := resolveChannelTestUserID(nil)
-	if err != nil {
-		return err
-	}
-	channels, err := model.GetAllChannels(0, 0, true, false)
-	if err != nil {
-		return err
-	}
-	return testChannels(selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModeScheduledAll), testUserID, notify, true)
+	return testChannels(func() (int, []*model.Channel, error) {
+		testUserID, err := resolveChannelTestUserID(nil)
+		if err != nil {
+			return 0, nil, err
+		}
+		channels, err := model.GetAllChannels(0, 0, true, false)
+		if err != nil {
+			return 0, nil, err
+		}
+		return testUserID, selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModeScheduledAll), nil
+	}, notify, true)
 }
 
 func testAutoDisabledChannels(notify bool) error {
-	testUserID, err := resolveChannelTestUserID(nil)
-	if err != nil {
-		return err
-	}
-	channels, err := model.GetAllChannels(0, 0, true, false)
-	if err != nil {
-		return err
-	}
-	return testChannels(selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModePassiveRecovery), testUserID, notify, false)
+	return testChannels(func() (int, []*model.Channel, error) {
+		testUserID, err := resolveChannelTestUserID(nil)
+		if err != nil {
+			return 0, nil, err
+		}
+		channels, err := model.GetAllChannels(0, 0, true, false)
+		if err != nil {
+			return 0, nil, err
+		}
+		return testUserID, selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModePassiveRecovery), nil
+	}, notify, false)
 }
 
 func TestAllChannels(c *gin.Context) {

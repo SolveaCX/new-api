@@ -19,9 +19,6 @@ func FetchCodexChannelModels(channel *model.Channel) ([]string, error) {
 	if channel.ChannelInfo.IsMultiKey {
 		return nil, fmt.Errorf("codex channel does not support multi-key model discovery")
 	}
-	if channel.Id > 0 {
-		return nil, fmt.Errorf("saved Codex channel model discovery is deferred")
-	}
 
 	baseClient, err := NewProxyHttpClient(channel.GetSetting().Proxy)
 	if err != nil {
@@ -72,12 +69,24 @@ func fetchCodexChannelModels(
 	}
 
 	modelVariants := make([]string, 0, len(models)*2)
-	modelVariants = append(modelVariants, models...)
+	seen := make(map[string]struct{}, len(models)*2)
+	for _, modelName := range models {
+		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		seen[modelName] = struct{}{}
+		modelVariants = append(modelVariants, modelName)
+	}
 	for _, modelName := range models {
 		if modelName == "codex-auto-review" {
 			continue
 		}
-		modelVariants = append(modelVariants, ratio_setting.WithCompactModelSuffix(modelName))
+		compactModel := ratio_setting.WithCompactModelSuffix(modelName)
+		if _, ok := seen[compactModel]; ok {
+			continue
+		}
+		seen[compactModel] = struct{}{}
+		modelVariants = append(modelVariants, compactModel)
 	}
 	return modelVariants, nil
 }

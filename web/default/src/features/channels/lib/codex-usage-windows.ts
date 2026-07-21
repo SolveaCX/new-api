@@ -39,7 +39,7 @@ export type CodexRateLimitSource = {
 export type VisibleCodexLimitWindow<
   TWindow extends CodexRateLimitWindow = CodexRateLimitWindow,
 > = {
-  kind: 'fiveHour' | 'weekly'
+  kind: 'fiveHour' | 'weekly' | 'unknown'
   window: TWindow
 }
 
@@ -49,13 +49,16 @@ function classifyWindowByDuration(
   const seconds = Number(windowData?.limit_window_seconds)
   if (!Number.isFinite(seconds) || seconds <= 0) return null
   if (seconds === 5 * 60 * 60) return 'fiveHour'
-  if (seconds === 7 * 24 * 60 * 60) return 'weekly'
+  if (seconds >= 6 * 24 * 60 * 60 && seconds <= 8 * 24 * 60 * 60) {
+    return 'weekly'
+  }
   return null
 }
 
 export function resolveCodexLimitWindows(data: CodexRateLimitSource | null): {
   fiveHourWindow: CodexRateLimitWindow | null
   weeklyWindow: CodexRateLimitWindow | null
+  unknownWindows: CodexRateLimitWindow[]
 } {
   const rateLimit = data?.rate_limit ?? {}
   const primary = rateLimit.primary_window ?? null
@@ -66,28 +69,32 @@ export function resolveCodexLimitWindows(data: CodexRateLimitSource | null): {
     .toLowerCase()
   let fiveHourWindow: CodexRateLimitWindow | null = null
   let weeklyWindow: CodexRateLimitWindow | null = null
+  const unknownWindows: CodexRateLimitWindow[] = []
 
   for (const window of windows) {
     const kind = classifyWindowByDuration(window)
-    if (kind === 'fiveHour' && !fiveHourWindow) {
+    if (kind === 'fiveHour') {
+      if (planType === 'free') continue
+      if (fiveHourWindow) continue
       fiveHourWindow = window
       continue
     }
-    if (kind === 'weekly' && !weeklyWindow) {
-      weeklyWindow = window
+    if (kind === 'weekly') {
+      if (!weeklyWindow) weeklyWindow = window
+      continue
     }
+    unknownWindows.push(window)
   }
 
-  if (planType === 'free') fiveHourWindow = null
-
-  return { fiveHourWindow, weeklyWindow }
+  return { fiveHourWindow, weeklyWindow, unknownWindows }
 }
 
 export function getVisibleCodexLimitWindows<
   TWindow extends CodexRateLimitWindow = CodexRateLimitWindow,
 >(
   fiveHourWindow?: TWindow | null,
-  weeklyWindow?: TWindow | null
+  weeklyWindow?: TWindow | null,
+  unknownWindows: TWindow[] = []
 ): VisibleCodexLimitWindow<TWindow>[] {
   const windows: Array<{
     kind: VisibleCodexLimitWindow['kind']
@@ -95,6 +102,7 @@ export function getVisibleCodexLimitWindows<
   }> = [
     { kind: 'fiveHour', window: fiveHourWindow },
     { kind: 'weekly', window: weeklyWindow },
+    ...unknownWindows.map((window) => ({ kind: 'unknown' as const, window })),
   ]
 
   return windows.filter(

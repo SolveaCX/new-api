@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +93,28 @@ func TestFetchCodexModelsRejectsDisallowedPrivateURL(t *testing.T) {
 	require.Nil(t, models)
 }
 
+func TestFetchCodexModelsRejectsOversizedResponse(t *testing.T) {
+	allowPrivateCodexModelFetch(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"models":[],"padding":"`))
+		_, _ = w.Write([]byte(strings.Repeat("x", codexModelsResponseMaxBytes)))
+		_, _ = w.Write([]byte(`"}`))
+	}))
+	defer server.Close()
+
+	status, models, err := FetchCodexModels(
+		context.Background(),
+		server.Client(),
+		server.URL,
+		&CodexOAuthKey{AccessToken: "access-token", AccountID: "account-id"},
+		"0.144.6",
+	)
+
+	require.ErrorContains(t, err, "codex models response exceeds")
+	require.Equal(t, http.StatusOK, status)
+	require.Nil(t, models)
+}
+
 func TestCodexClientVersionCacheUsesCachedVersion(t *testing.T) {
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -146,4 +169,31 @@ func TestCodexClientVersionCacheTemporarilyCachesColdFailure(t *testing.T) {
 	require.Error(t, firstErr)
 	require.EqualError(t, secondErr, firstErr.Error())
 	require.Equal(t, 1, requestCount)
+}
+
+func TestCodexClientVersionCacheDoesNotHoldMutexDuringFetch(t *testing.T) {
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(requestStarted)
+		<-releaseRequest
+		_, _ = w.Write([]byte(`{"name":"0.144.6","draft":false,"prerelease":false}`))
+	}))
+	defer server.Close()
+
+	cache := codexClientVersionCache{}
+	done := make(chan error, 1)
+	go func() {
+		_, err := cache.get(context.Background(), server.Client(), server.URL, time.Now())
+		done <- err
+	}()
+
+	<-requestStarted
+	mutexAvailable := cache.TryLock()
+	if mutexAvailable {
+		cache.Unlock()
+	}
+	close(releaseRequest)
+	require.True(t, mutexAvailable, "cache mutex must remain available during network I/O")
+	require.NoError(t, <-done)
 }

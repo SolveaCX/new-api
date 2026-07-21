@@ -48,12 +48,7 @@ func ollamaToolCallsToOpenAI(toolCalls []OllamaToolCall, startIndex int, include
 	}
 	result := make([]dto.ToolCallResponse, 0, len(toolCalls))
 	for _, tc := range toolCalls {
-		argBytes := []byte("{}")
-		if tc.Function.Arguments != nil {
-			if encoded, err := common.Marshal(tc.Function.Arguments); err == nil && len(encoded) > 0 {
-				argBytes = encoded
-			}
-		}
+		argBytes := ollamaToolCallArguments(tc.Function.Arguments)
 		tr := dto.ToolCallResponse{
 			ID:   fmt.Sprintf("call_%d", startIndex),
 			Type: "function",
@@ -69,6 +64,40 @@ func ollamaToolCallsToOpenAI(toolCalls []OllamaToolCall, startIndex int, include
 		result = append(result, tr)
 	}
 	return result, startIndex
+}
+
+func ollamaToolCallArguments(arguments any) []byte {
+	argBytes := []byte("{}")
+	switch arguments := arguments.(type) {
+	case string:
+		trimmed := strings.TrimSpace(arguments)
+		if trimmed == "" {
+			return argBytes
+		}
+		var decoded any
+		if err := common.Unmarshal([]byte(trimmed), &decoded); err == nil {
+			return []byte(trimmed)
+		}
+		if encoded, err := common.Marshal(arguments); err == nil && len(encoded) > 0 {
+			return encoded
+		}
+	case json.RawMessage:
+		trimmed := strings.TrimSpace(string(arguments))
+		if trimmed == "" {
+			return argBytes
+		}
+		var decoded any
+		if err := common.Unmarshal([]byte(trimmed), &decoded); err == nil {
+			return []byte(trimmed)
+		}
+	case nil:
+		return argBytes
+	default:
+		if encoded, err := common.Marshal(arguments); err == nil && len(encoded) > 0 {
+			return encoded
+		}
+	}
+	return argBytes
 }
 
 func toUnix(ts string) int64 {
@@ -170,11 +199,11 @@ func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		usage.CompletionTokens = chunk.EvalCount
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 		finishReason := chunk.DoneReason
-		if finishReason == "" {
-			finishReason = "stop"
-		}
-		if toolCallIndex > 0 {
+		if toolCallIndex > 0 && (finishReason == "" || finishReason == constant.FinishReasonStop) {
 			finishReason = constant.FinishReasonToolCalls
+		}
+		if finishReason == "" {
+			finishReason = constant.FinishReasonStop
 		}
 		// emit stop delta
 		if stop := helper.GenerateStopResponse(responseId, created, model, finishReason); stop != nil {
@@ -297,11 +326,11 @@ func ollamaChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	usage := &dto.Usage{PromptTokens: lastChunk.PromptEvalCount, CompletionTokens: lastChunk.EvalCount, TotalTokens: lastChunk.PromptEvalCount + lastChunk.EvalCount}
 	content := aggContent.String()
 	finishReason := lastChunk.DoneReason
-	if finishReason == "" {
-		finishReason = "stop"
-	}
-	if len(toolCalls) > 0 {
+	if len(toolCalls) > 0 && (finishReason == "" || finishReason == constant.FinishReasonStop) {
 		finishReason = constant.FinishReasonToolCalls
+	}
+	if finishReason == "" {
+		finishReason = constant.FinishReasonStop
 	}
 
 	msg := dto.Message{Role: "assistant", Content: contentPtr(content)}

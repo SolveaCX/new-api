@@ -58,7 +58,10 @@ func GetVideoInputRatio(modelName, resolution string, hasVideo bool) (float64, b
 	res := strings.ToLower(strings.TrimSpace(resolution))
 	price, ok := prices[videoPriceKey{is1080p: res == "1080p", is4k: res == "4k", hasVideo: hasVideo}]
 	if !ok {
-		return 1.0, true
+		price, ok = prices[videoPriceKey{hasVideo: hasVideo}]
+		if !ok {
+			return 0, false
+		}
 	}
 	return price / base, true
 }

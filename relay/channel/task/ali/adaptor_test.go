@@ -84,7 +84,22 @@ func TestConvertToAliRequestWan27I2VPrefersImageBeforeImagesAndInputReference(t 
 	require.NoError(t, err)
 	require.Equal(t, []AliVideoMedia{
 		{Type: "first_frame", URL: "https://example.com/direct.png"},
-		{Type: "last_frame", URL: "https://example.com/images-last.png"},
+		{Type: "last_frame", URL: "https://example.com/images-first.png"},
+	}, aliReq.Input.Media)
+}
+
+func TestConvertToAliRequestWan27I2VUsesInputReferenceAsSecondImage(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Model:          "wan2.7-i2v",
+		Image:          "https://example.com/first.png",
+		InputReference: "https://example.com/last.png",
+	}
+	aliReq, err := adaptor.convertToAliRequest(testRelayInfo(), req)
+	require.NoError(t, err)
+	require.Equal(t, []AliVideoMedia{
+		{Type: "first_frame", URL: "https://example.com/first.png"},
+		{Type: "last_frame", URL: "https://example.com/last.png"},
 	}, aliReq.Input.Media)
 }
 
@@ -119,6 +134,33 @@ func TestConvertToAliRequestWan27I2VKeepsExplicitMetadataMedia(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(body), `"media"`)
 	require.NotContains(t, string(body), `"img_url"`)
+}
+
+func TestConvertToAliRequestWan27I2VFiltersInvalidMetadataMediaAndFallsBack(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Model: "wan2.7-i2v", Image: "https://example.com/direct.png",
+		Metadata: map[string]interface{}{"input": map[string]interface{}{"media": []interface{}{
+			map[string]interface{}{"type": " ", "url": "https://example.com/missing-type.png"},
+			map[string]interface{}{"type": "first_frame", "url": " "},
+		}}},
+	}
+	aliReq, err := adaptor.convertToAliRequest(testRelayInfo(), req)
+	require.NoError(t, err)
+	require.Equal(t, []AliVideoMedia{{Type: "first_frame", URL: "https://example.com/direct.png"}}, aliReq.Input.Media)
+}
+
+func TestConvertToAliRequestWan27I2VTrimsValidMetadataMedia(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Model: "wan2.7-i2v",
+		Metadata: map[string]interface{}{"input": map[string]interface{}{"media": []interface{}{
+			map[string]interface{}{"type": " first_clip ", "url": " https://example.com/input.mp4 "},
+		}}},
+	}
+	aliReq, err := adaptor.convertToAliRequest(testRelayInfo(), req)
+	require.NoError(t, err)
+	require.Equal(t, []AliVideoMedia{{Type: "first_clip", URL: "https://example.com/input.mp4"}}, aliReq.Input.Media)
 }
 
 func TestConvertToAliRequestWan27I2VRequiresMedia(t *testing.T) {

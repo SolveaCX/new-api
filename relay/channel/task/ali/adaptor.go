@@ -274,40 +274,60 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func firstTaskImage(req relaycommon.TaskSubmitReq) string {
-	if image := strings.TrimSpace(req.Image); image != "" {
-		return image
-	}
-	for _, image := range req.Images {
-		if trimmed := strings.TrimSpace(image); trimmed != "" {
-			return trimmed
+func taskImagesInOrder(req relaycommon.TaskSubmitReq) []string {
+	images := make([]string, 0, len(req.Images)+2)
+	seen := make(map[string]struct{}, len(req.Images)+2)
+	appendImage := func(image string) {
+		trimmed := strings.TrimSpace(image)
+		if trimmed == "" {
+			return
 		}
+		if _, ok := seen[trimmed]; ok {
+			return
+		}
+		seen[trimmed] = struct{}{}
+		images = append(images, trimmed)
 	}
-	if inputReference := strings.TrimSpace(req.InputReference); inputReference != "" {
-		return inputReference
+
+	appendImage(req.Image)
+	for _, image := range req.Images {
+		appendImage(image)
 	}
-	return ""
+	appendImage(req.InputReference)
+	return images
+}
+
+func firstTaskImage(req relaycommon.TaskSubmitReq) string {
+	images := taskImagesInOrder(req)
+	if len(images) == 0 {
+		return ""
+	}
+	return images[0]
 }
 
 func secondTaskImage(req relaycommon.TaskSubmitReq) string {
-	nonEmptyImages := 0
-	for _, image := range req.Images {
-		trimmed := strings.TrimSpace(image)
-		if trimmed == "" {
-			continue
-		}
-		nonEmptyImages++
-		if nonEmptyImages == 2 {
-			return trimmed
-		}
+	images := taskImagesInOrder(req)
+	if len(images) < 2 {
+		return ""
 	}
-	return ""
+	return images[1]
 }
 
 func normalizeWan27I2VInput(aliReq *AliVideoRequest, req relaycommon.TaskSubmitReq) error {
 	if !isWan27I2VModel(aliReq.Model) {
 		return nil
 	}
+
+	validMedia := aliReq.Input.Media[:0]
+	for _, media := range aliReq.Input.Media {
+		media.Type = strings.TrimSpace(media.Type)
+		media.URL = strings.TrimSpace(media.URL)
+		if media.Type == "" || media.URL == "" {
+			continue
+		}
+		validMedia = append(validMedia, media)
+	}
+	aliReq.Input.Media = validMedia
 
 	if len(aliReq.Input.Media) == 0 {
 		firstFrameURL := firstNonEmpty(aliReq.Input.FirstFrameURL, aliReq.Input.ImgURL, firstTaskImage(req))
