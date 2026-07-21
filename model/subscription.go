@@ -184,6 +184,12 @@ type SubscriptionPlan struct {
 	// Media (image/video) credits granted per plan period, 1 credit = $0.01 (0 = plan has no media pool)
 	MediaCreditsMonthly int64 `json:"media_credits_monthly" gorm:"type:bigint;not null;default:0"`
 
+	// SeedKey marks system-seeded plans (e.g. "free") with a cross-database
+	// unique key so concurrent nodes cannot create duplicate seed rows.
+	// NULL for operator-created plans (unique indexes permit multiple NULLs
+	// on SQLite/MySQL/PostgreSQL alike).
+	SeedKey *string `json:"-" gorm:"column:seed_key;type:varchar(32);uniqueIndex:idx_subscription_plans_seed_key"`
+
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
@@ -228,7 +234,13 @@ type SubscriptionOrder struct {
 	Id     int     `json:"id"`
 	UserId int     `json:"user_id" gorm:"index"`
 	PlanId int     `json:"plan_id" gorm:"index"`
-	Money  float64 `json:"money"`
+	// Money is the amount actually charged (plan price minus any applied
+	// first-subscription invitee discount).
+	Money float64 `json:"money"`
+	// DiscountUSD records the invitee first-subscription discount applied to
+	// this order (0 = none), so support/reconciliation can see why Money is
+	// below the plan price.
+	DiscountUSD float64 `json:"discount_usd" gorm:"default:0"`
 
 	TradeNo         string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod   string `json:"payment_method" gorm:"type:varchar(50)"`
@@ -740,6 +752,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	var logMoney float64
 	var chargedQuota int
 	var upgradeGroup string
+	var completedTradeNo string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		plan, err := getSubscriptionPlanByIdTx(tx, planId)
 		if err != nil {
@@ -755,7 +768,18 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			return errors.New("该套餐不允许使用余额兑换")
 		}
 
-		requiredQuota, err := calcSubscriptionBalanceQuota(plan.PriceAmount)
+		// 被邀用户首次订阅：首月立减（与 Stripe 路径同口径），事务内判定。
+		discountUSD, err := eligibleInviteeFirstSubDiscountUSDTx(tx, userId)
+		if err != nil {
+			common.SysLog("查询被邀首订折扣失败，按无折扣处理: " + err.Error())
+			discountUSD = 0
+		}
+		if discountUSD > plan.PriceAmount {
+			discountUSD = plan.PriceAmount
+		}
+		chargedPrice := plan.PriceAmount - discountUSD
+
+		requiredQuota, err := calcSubscriptionBalanceQuota(chargedPrice)
 		if err != nil {
 			return err
 		}
@@ -783,7 +807,8 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		order := &SubscriptionOrder{
 			UserId:          userId,
 			PlanId:          plan.Id,
-			Money:           plan.PriceAmount,
+			Money:           chargedPrice,
+			DiscountUSD:     discountUSD,
 			TradeNo:         tradeNo,
 			PaymentMethod:   PaymentMethodBalance,
 			PaymentProvider: PaymentProviderBalance,
@@ -803,9 +828,10 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		}
 
 		logPlanTitle = plan.Title
-		logMoney = plan.PriceAmount
+		logMoney = chargedPrice
 		chargedQuota = requiredQuota
 		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
+		completedTradeNo = tradeNo
 		return nil
 	})
 	if err != nil {
@@ -822,6 +848,11 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	}
 	msg := fmt.Sprintf("使用余额购买订阅成功，套餐: %s，支付金额: %.2f，扣除额度: %d", logPlanTitle, logMoney, chargedQuota)
 	RecordLog(userId, LogTypeTopup, msg)
+	// Balance purchases bypass CompleteSubscriptionOrder, so trigger the same
+	// idempotent referral-reward bookkeeping here (never fails the purchase).
+	if err := TryGrantInviteSubscriptionRewardAfterOrderCompleted(completedTradeNo); err != nil {
+		common.SysError(fmt.Sprintf("invite subscription reward grant failed for balance order %s: %v", completedTradeNo, err))
+	}
 	return nil
 }
 
@@ -865,6 +896,76 @@ func GetActiveSubscriptionWindowInfo(userId int) (*SubscriptionWindowInfo, error
 		return nil, query.Error
 	}
 	if query.RowsAffected == 0 {
+		return nil, nil
+	}
+	plan, err := GetSubscriptionPlanById(sub.PlanId)
+	if err != nil {
+		return nil, err
+	}
+	return &SubscriptionWindowInfo{
+		UserSubscriptionId: sub.Id,
+		SubscriptionStart:  sub.StartTime,
+		Window5hAmount:     plan.Window5hAmount,
+		WindowWeekAmount:   plan.WindowWeekAmount,
+	}, nil
+}
+
+// GetChargeableSubscriptionWindowInfo predicts which active subscription
+// PreConsumeUserSubscription would charge for the given weighted amount —
+// same end_time asc order, skipping plans whose remaining pool can't cover
+// it — and returns that subscription's window limits. Read-only prediction:
+// a concurrent request can still change the outcome, so callers must
+// re-validate against the actually charged subscription id afterwards.
+// Returns (nil, nil) when the user has no active subscription.
+func GetChargeableSubscriptionWindowInfo(userId int, amount int64) (*SubscriptionWindowInfo, error) {
+	if userId <= 0 {
+		return nil, errors.New("invalid userId")
+	}
+	now := common.GetTimestamp()
+	var subs []UserSubscription
+	if err := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+		Order("end_time asc, id asc").
+		Find(&subs).Error; err != nil {
+		return nil, err
+	}
+	if len(subs) == 0 {
+		return nil, nil
+	}
+	var fallback *UserSubscription
+	for i := range subs {
+		sub := &subs[i]
+		if fallback == nil {
+			fallback = sub
+		}
+		if sub.AmountTotal > 0 && sub.AmountTotal-sub.AmountUsed < amount {
+			continue
+		}
+		return subscriptionWindowInfoForSub(sub)
+	}
+	// Every pool is short — PreConsume will fail, but keep the first sub's
+	// windows enforced for consistency with the historical behavior.
+	return subscriptionWindowInfoForSub(fallback)
+}
+
+// GetSubscriptionWindowInfoBySubId returns window limits for one specific
+// user subscription (used to re-reserve after a prediction mismatch).
+func GetSubscriptionWindowInfoBySubId(subId int) (*SubscriptionWindowInfo, error) {
+	if subId <= 0 {
+		return nil, errors.New("invalid subscription id")
+	}
+	var sub UserSubscription
+	query := DB.Where("id = ?", subId).Limit(1).Find(&sub)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, nil
+	}
+	return subscriptionWindowInfoForSub(&sub)
+}
+
+func subscriptionWindowInfoForSub(sub *UserSubscription) (*SubscriptionWindowInfo, error) {
+	if sub == nil {
 		return nil, nil
 	}
 	plan, err := GetSubscriptionPlanById(sub.PlanId)

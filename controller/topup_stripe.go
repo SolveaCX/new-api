@@ -23,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v81"
+	stripecharge "github.com/stripe/stripe-go/v81/charge"
 	"github.com/stripe/stripe-go/v81/checkout/session"
 	stripecustomer "github.com/stripe/stripe-go/v81/customer"
 	stripeinvoice "github.com/stripe/stripe-go/v81/invoice"
@@ -1256,42 +1257,81 @@ func backfillCardFingerprintFromTopUp(ctx context.Context, topUp *model.TopUp, c
 }
 
 // chargeReversed handles charge.refunded / charge.dispute.created. Its only
-// job today is invite-reward-v2 clawback: map the charge back to the checkout
-// session's client_reference_id (our trade_no) and revoke any subscription
-// invite reward tied to that order. Top-up refund bookkeeping stays a manual
-// ops process, unchanged.
+// job today is invite-reward-v2 clawback: map the reversed charge back to the
+// checkout session's client_reference_id (our trade_no) and revoke any
+// subscription invite reward tied to that order. Top-up refund bookkeeping
+// stays a manual ops process, unchanged.
+//
+// Deliberately NOT gated on common.InviteRewardSubscriptionMode: rewards
+// created while the mode was enabled must remain clawback-able even after the
+// flag is turned off; Revoke is a cheap no-op when no reward exists.
+//
+// Lookup covers both checkout modes:
+//   - mode=payment: the session carries the charge's payment_intent directly.
+//   - mode=subscription: the session has no payment_intent (the charge belongs
+//     to the subscription invoice), so walk charge → invoice → subscription and
+//     list sessions by subscription id.
 func chargeReversed(ctx context.Context, event stripe.Event, reason string, callerIp string) error {
-	if !common.InviteRewardSubscriptionMode {
-		return nil
-	}
-	paymentIntentId := event.GetObjectValue("payment_intent")
-	if paymentIntentId == "" {
-		logger.LogWarn(ctx, fmt.Sprintf("Stripe %s 事件缺少 payment_intent，跳过邀请奖励回收 client_ip=%s", string(event.Type), callerIp))
-		return nil
-	}
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		logger.LogWarn(ctx, "Stripe API 密钥未配置，无法回查 checkout session，跳过邀请奖励回收")
 		return nil
 	}
 	stripe.Key = setting.StripeApiSecret
-	listParams := &stripe.CheckoutSessionListParams{
-		PaymentIntent: stripe.String(paymentIntentId),
+
+	paymentIntentId := event.GetObjectValue("payment_intent")
+	// charge.refunded delivers a charge object (its id IS the charge id);
+	// charge.dispute.created delivers a dispute pointing at its charge.
+	chargeId := event.GetObjectValue("id")
+	if event.Type == stripe.EventTypeChargeDisputeCreated {
+		chargeId = event.GetObjectValue("charge")
 	}
-	listParams.Limit = stripe.Int64(1)
-	iter := session.List(listParams)
+
 	referenceId := ""
-	for iter.Next() {
-		if s := iter.CheckoutSession(); s != nil {
-			referenceId = s.ClientReferenceID
+	if paymentIntentId != "" {
+		listParams := &stripe.CheckoutSessionListParams{
+			PaymentIntent: stripe.String(paymentIntentId),
 		}
-		break
+		listParams.Limit = stripe.Int64(1)
+		iter := session.List(listParams)
+		for iter.Next() {
+			if s := iter.CheckoutSession(); s != nil {
+				referenceId = s.ClientReferenceID
+			}
+			break
+		}
+		if err := iter.Err(); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("Stripe 回查 checkout session 失败 payment_intent=%s error=%q", paymentIntentId, err.Error()))
+			return err // retryable: let Stripe redeliver so the clawback is not lost
+		}
 	}
-	if err := iter.Err(); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("Stripe 回查 checkout session 失败 payment_intent=%s error=%q", paymentIntentId, err.Error()))
-		return err // retryable: let Stripe redeliver so the clawback is not lost
+
+	if referenceId == "" && chargeId != "" {
+		subscriptionId, err := stripeSubscriptionIdForCharge(chargeId)
+		if err != nil {
+			logger.LogError(ctx, fmt.Sprintf("Stripe 回查 charge→invoice→subscription 失败 charge=%s error=%q", chargeId, err.Error()))
+			return err // retryable
+		}
+		if subscriptionId != "" {
+			listParams := &stripe.CheckoutSessionListParams{
+				Subscription: stripe.String(subscriptionId),
+			}
+			listParams.Limit = stripe.Int64(1)
+			iter := session.List(listParams)
+			for iter.Next() {
+				if s := iter.CheckoutSession(); s != nil {
+					referenceId = s.ClientReferenceID
+				}
+				break
+			}
+			if err := iter.Err(); err != nil {
+				logger.LogError(ctx, fmt.Sprintf("Stripe 按 subscription 回查 checkout session 失败 subscription=%s error=%q", subscriptionId, err.Error()))
+				return err // retryable
+			}
+		}
 	}
+
 	if referenceId == "" {
-		logger.LogInfo(ctx, fmt.Sprintf("Stripe %s 未关联 checkout session，跳过邀请奖励回收 payment_intent=%s", string(event.Type), paymentIntentId))
+		logger.LogInfo(ctx, fmt.Sprintf("Stripe %s 未关联 checkout session，跳过邀请奖励回收 payment_intent=%s charge=%s", string(event.Type), paymentIntentId, chargeId))
 		return nil
 	}
 	revoked, err := model.RevokeInviteSubscriptionRewardByTradeNo(referenceId, reason)
@@ -1303,6 +1343,26 @@ func chargeReversed(ctx context.Context, event stripe.Event, reason string, call
 		logger.LogInfo(ctx, fmt.Sprintf("邀请奖励已回收 trade_no=%s reason=%s client_ip=%s", referenceId, reason, callerIp))
 	}
 	return nil
+}
+
+// stripeSubscriptionIdForCharge resolves charge → invoice → subscription.
+// Returns "" (no error) when the charge is not tied to a subscription invoice.
+func stripeSubscriptionIdForCharge(chargeId string) (string, error) {
+	ch, err := stripecharge.Get(chargeId, nil)
+	if err != nil {
+		return "", err
+	}
+	if ch == nil || ch.Invoice == nil || ch.Invoice.ID == "" {
+		return "", nil
+	}
+	inv, err := stripeinvoice.Get(ch.Invoice.ID, nil)
+	if err != nil {
+		return "", err
+	}
+	if inv == nil || inv.Subscription == nil {
+		return "", nil
+	}
+	return inv.Subscription.ID, nil
 }
 
 func sessionExpired(ctx context.Context, event stripe.Event) {

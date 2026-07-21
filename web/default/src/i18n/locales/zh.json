@@ -5635,6 +5635,9 @@
     "Anthropic Compatible": "Anthropic 兼容",
     "Gemini Compatible": "Gemini 兼容",
     "This model cannot be called because upstreams no longer support it.": "该模型已不再受上游支持，无法调用。",
-    "Not callable · Officially unsupported": "不可调用 · 官方不再支持"
+    "Not callable · Officially unsupported": "不可调用 · 官方不再支持",
+    "5-hour window limit (USD)": "5 小时窗口上限（USD）",
+    "7-day window limit (USD)": "7 天窗口上限（USD）",
+    "0 disables this window limit.": "0 表示不启用该窗口限制。"
   }
 }

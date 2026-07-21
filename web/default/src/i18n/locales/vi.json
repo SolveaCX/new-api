@@ -5635,6 +5635,9 @@
     "Anthropic Compatible": "Tương thích Anthropic",
     "Gemini Compatible": "Tương thích Gemini",
     "This model cannot be called because upstreams no longer support it.": "Không thể gọi mô hình này vì nhà cung cấp thượng nguồn không còn hỗ trợ.",
-    "Not callable · Officially unsupported": "Không thể gọi · Không còn được hỗ trợ chính thức"
+    "Not callable · Officially unsupported": "Không thể gọi · Không còn được hỗ trợ chính thức",
+    "5-hour window limit (USD)": "Giới hạn cửa sổ 5 giờ (USD)",
+    "7-day window limit (USD)": "Giới hạn cửa sổ 7 ngày (USD)",
+    "0 disables this window limit.": "0 sẽ tắt giới hạn cửa sổ này."
   }
 }

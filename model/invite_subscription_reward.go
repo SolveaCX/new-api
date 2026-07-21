@@ -312,6 +312,43 @@ func RevokeInviteSubscriptionRewardByTradeNo(tradeNo string, reason string) (boo
 	return true, nil
 }
 
+// EligibleInviteeFirstSubDiscountUSD returns the first-subscription discount
+// the user is entitled to (0 when not eligible). Eligible = subscription
+// reward mode on, user was invited, and user has no successful subscription
+// order yet. Read-only prediction — callers record the applied discount on
+// the order row; a concurrent double-checkout can in theory both prequalify,
+// which is bounded by the order-completion flow charging what was quoted.
+func EligibleInviteeFirstSubDiscountUSD(userId int) (float64, error) {
+	return eligibleInviteeFirstSubDiscountUSDTx(DB, userId)
+}
+
+func eligibleInviteeFirstSubDiscountUSDTx(tx *gorm.DB, userId int) (float64, error) {
+	if userId <= 0 {
+		return 0, errors.New("invalid userId")
+	}
+	if !common.InviteRewardSubscriptionMode || common.InviteFirstSubDiscountUSD <= 0 {
+		return 0, nil
+	}
+	var invitee User
+	query := tx.Select("id", "inviter_id").Where("id = ?", userId).Limit(1).Find(&invitee)
+	if query.Error != nil {
+		return 0, query.Error
+	}
+	if query.RowsAffected == 0 || invitee.InviterId <= 0 {
+		return 0, nil
+	}
+	var count int64
+	if err := tx.Model(&SubscriptionOrder{}).
+		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Count(&count).Error; err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		return 0, nil
+	}
+	return common.InviteFirstSubDiscountUSD, nil
+}
+
 // GetInviteSubscriptionRewardsByInviteeIds returns the v2 reward rows for the
 // invitation page overlay, keyed by invitee id.
 func GetInviteSubscriptionRewardsByInviteeIds(inviterId int, inviteeIds []int) (map[int]InviteSubscriptionReward, error) {

@@ -288,6 +288,7 @@ func migrateDB() error {
 		&SubscriptionOrder{},
 		&UserSubscription{},
 		&SubscriptionPreConsumeRecord{},
+		&FreePlanGrant{},
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
@@ -357,6 +358,7 @@ func migrateDBFast() error {
 		{&SubscriptionOrder{}, "SubscriptionOrder"},
 		{&UserSubscription{}, "UserSubscription"},
 		{&SubscriptionPreConsumeRecord{}, "SubscriptionPreConsumeRecord"},
+		{&FreePlanGrant{}, "FreePlanGrant"},
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},
@@ -438,9 +440,13 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`feature_lines`" + ` text DEFAULT '',
 ` + "`created_at`" + ` bigint,
 ` + "`updated_at`" + ` bigint,
+` + "`seed_key`" + ` varchar(32),
 PRIMARY KEY (` + "`id`" + `)
 )`
-		return DB.Exec(createSQL).Error
+		if err := DB.Exec(createSQL).Error; err != nil {
+			return err
+		}
+		return DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS `idx_subscription_plans_seed_key` ON `" + tableName + "`(`seed_key`)").Error
 	}
 	var cols []struct {
 		Name string `gorm:"column:name"`
@@ -480,6 +486,7 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "feature_lines", DDL: "`feature_lines` text DEFAULT ''"},
 		{Name: "created_at", DDL: "`created_at` bigint"},
 		{Name: "updated_at", DDL: "`updated_at` bigint"},
+		{Name: "seed_key", DDL: "`seed_key` varchar(32)"},
 	}
 	for _, col := range required {
 		if _, ok := existing[col.Name]; ok {
@@ -489,7 +496,7 @@ PRIMARY KEY (` + "`id`" + `)
 			return err
 		}
 	}
-	return nil
+	return DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS `idx_subscription_plans_seed_key` ON `" + tableName + "`(`seed_key`)").Error
 }
 
 // migrateTokenModelLimitsToText migrates model_limits column from varchar(1024) to text

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
+	stripecoupon "github.com/stripe/stripe-go/v81/coupon"
 	"github.com/thanhpk/randstr"
 )
 
@@ -79,10 +81,15 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	reference := fmt.Sprintf("sub-stripe-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "sub_ref_" + common.Sha1([]byte(reference))
 
+	// 被邀用户首次订阅：首月立减（前端与邀请页承诺的口径，见
+	// InviteFirstSubDiscountUSD）。查询失败按无折扣处理，不阻塞购买。
+	discountUSD := subscriptionInviteeDiscountUSD(c, userId, plan.PriceAmount)
+
 	order := &model.SubscriptionOrder{
 		UserId:          userId,
 		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
+		Money:           plan.PriceAmount - discountUSD,
+		DiscountUSD:     discountUSD,
 		TradeNo:         referenceId,
 		PaymentMethod:   model.PaymentMethodStripe,
 		PaymentProvider: model.PaymentProviderStripe,
@@ -94,7 +101,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		return
 	}
 
-	payLink, err := genStripeSubscriptionLink(referenceId, user.StripeCustomer, user.Email, plan.StripePriceId)
+	payLink, err := genStripeSubscriptionLink(referenceId, user.StripeCustomer, user.Email, plan.StripePriceId, discountUSD)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 订阅支付链接创建失败 trade_no=%s plan_id=%d error=%q", referenceId, plan.Id, err.Error()))
 		order.Status = common.TopUpStatusFailed
@@ -111,7 +118,25 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	})
 }
 
-func genStripeSubscriptionLink(referenceId string, customerId string, email string, priceId string) (string, error) {
+// subscriptionInviteeDiscountUSD resolves the invitee first-subscription
+// discount for this purchase, clamped to the plan price. Lookup failures
+// degrade to no discount (never block checkout).
+func subscriptionInviteeDiscountUSD(c *gin.Context, userId int, planPrice float64) float64 {
+	discount, err := model.EligibleInviteeFirstSubDiscountUSD(userId)
+	if err != nil {
+		logger.LogWarn(c.Request.Context(), fmt.Sprintf("查询被邀首订折扣失败，按无折扣处理 user_id=%d error=%q", userId, err.Error()))
+		return 0
+	}
+	if discount > planPrice {
+		discount = planPrice
+	}
+	if discount < 0 {
+		return 0
+	}
+	return discount
+}
+
+func genStripeSubscriptionLink(referenceId string, customerId string, email string, priceId string, discountUSD float64) (string, error) {
 	stripe.Key = setting.StripeApiSecret
 
 	params := &stripe.CheckoutSessionParams{
@@ -144,6 +169,23 @@ func genStripeSubscriptionLink(referenceId string, customerId string, email stri
 		// subscription-mode checkouts always create a customer anyway.
 	} else {
 		params.Customer = stripe.String(customerId)
+	}
+
+	// 被邀首订折扣：一次性 coupon 只作用于首期账单，续费恢复原价。
+	if discountUSD > 0 {
+		couponParams := &stripe.CouponParams{
+			AmountOff: stripe.Int64(int64(math.Round(discountUSD * 100))),
+			Currency:  stripe.String(string(stripe.CurrencyUSD)),
+			Duration:  stripe.String(string(stripe.CouponDurationOnce)),
+			Name:      stripe.String("Invite first-month discount"),
+		}
+		cp, err := stripecoupon.New(couponParams)
+		if err != nil {
+			return "", fmt.Errorf("create invite discount coupon: %w", err)
+		}
+		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
+			{Coupon: stripe.String(cp.ID)},
+		}
 	}
 
 	result, err := session.New(params)

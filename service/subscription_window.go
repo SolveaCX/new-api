@@ -92,13 +92,18 @@ return {1, 0}
 
 // subscriptionWindowGuard tracks a successful window reservation so that
 // settle deltas and refunds can be written back to the same counters.
+// bucketHeld/weekHeld record exactly which Redis keys this request debited
+// (a long-lived request can cross bucket/week boundaries), so refunds credit
+// the original keys instead of whatever key the current wall clock maps to.
 type subscriptionWindowGuard struct {
-	subId     int
-	subStart  int64
-	limit5h   int64
-	limitWeek int64
-	reserved  int64 // weighted units currently held by this request
-	released  bool
+	subId      int
+	subStart   int64
+	limit5h    int64
+	limitWeek  int64
+	reserved   int64 // weighted units currently held by this request
+	released   bool
+	bucketHeld map[string]int64 // 5h bucket key -> weighted units held
+	weekHeld   map[string]int64 // week key -> weighted units held
 }
 
 func subscriptionWindowBucketKey(subId int, bucketTs int64) string {
@@ -217,13 +222,23 @@ func reserveSubscriptionWindows(info *model.SubscriptionWindowInfo, weightedAmou
 	allowed, _ := vals[0].(int64)
 	which, _ := vals[1].(int64)
 	if allowed == 1 {
-		return &subscriptionWindowGuard{
-			subId:     info.UserSubscriptionId,
-			subStart:  info.SubscriptionStart,
-			limit5h:   info.Window5hAmount,
-			limitWeek: info.WindowWeekAmount,
-			reserved:  weightedAmount,
-		}, nil
+		guard := &subscriptionWindowGuard{
+			subId:      info.UserSubscriptionId,
+			subStart:   info.SubscriptionStart,
+			limit5h:    info.Window5hAmount,
+			limitWeek:  info.WindowWeekAmount,
+			reserved:   weightedAmount,
+			bucketHeld: map[string]int64{},
+			weekHeld:   map[string]int64{},
+		}
+		if info.Window5hAmount > 0 {
+			// KEYS[12] in the reserve script — the current bucket.
+			guard.bucketHeld[bucketKeys[len(bucketKeys)-1]] = weightedAmount
+		}
+		if info.WindowWeekAmount > 0 {
+			guard.weekHeld[weekKey] = weightedAmount
+		}
+		return guard, nil
 	}
 	if which == 2 {
 		idx := subscriptionWindowWeekIndex(info.SubscriptionStart, now)
@@ -235,42 +250,15 @@ func reserveSubscriptionWindows(info *model.SubscriptionWindowInfo, weightedAmou
 }
 
 // Adjust writes a settle delta (positive or negative) back to the window
-// counters. Best-effort: errors are logged and tolerated (fail-open drift).
+// counters. No-op once the guard has been released — Release() already
+// returned the full remaining reservation, so any later adjust would corrupt
+// the shared counters (e.g. Refund() then RefundExtra() double-crediting).
+// Best-effort: errors are logged and tolerated (fail-open drift).
 func (g *subscriptionWindowGuard) Adjust(delta int64) {
-	if g == nil || delta == 0 {
+	if g == nil || delta == 0 || g.released {
 		return
 	}
-	if !common.RedisEnabled || common.RDB == nil {
-		return
-	}
-	now := common.GetTimestamp()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	pipe := common.RDB.Pipeline()
-	if g.limit5h > 0 {
-		currentBucket := now / subscriptionWindowBucketSeconds * subscriptionWindowBucketSeconds
-		bucketKey := subscriptionWindowBucketKey(g.subId, currentBucket)
-		pipe.IncrBy(ctx, bucketKey, delta)
-		pipe.Expire(ctx, bucketKey, time.Duration(subscriptionWindowBucketTTL)*time.Second)
-	}
-	if g.limitWeek > 0 {
-		idx := subscriptionWindowWeekIndex(g.subStart, now)
-		weekKey := subscriptionWindowWeekKey(g.subId, idx)
-		base := g.subStart
-		if base <= 0 {
-			base = 0
-		}
-		pipe.IncrBy(ctx, weekKey, delta)
-		pipe.ExpireAt(ctx, weekKey, time.Unix(base+(idx+1)*subscriptionWindowWeekSeconds+3600, 0))
-	}
-	if _, err := pipe.Exec(ctx); err != nil {
-		common.SysLog("subscription window adjust failed (tolerated): " + err.Error())
-		return
-	}
-	g.reserved += delta
-	if g.reserved < 0 {
-		g.reserved = 0
-	}
+	g.apply(delta)
 }
 
 // Release returns the full remaining reservation (refund path). Idempotent.
@@ -280,8 +268,148 @@ func (g *subscriptionWindowGuard) Release() {
 	}
 	g.released = true
 	if g.reserved > 0 {
-		reserved := g.reserved
+		g.apply(-g.reserved)
+	}
+}
+
+// Snapshot exports the guard's held-key ledger for persistence (async tasks
+// settle minutes later in another goroutine/process moment; the snapshot lets
+// them credit the exact keys this request debited). Returns nil when nothing
+// is held.
+func (g *subscriptionWindowGuard) Snapshot() *model.TaskSubscriptionWindow {
+	if g == nil || g.released || g.reserved <= 0 {
+		return nil
+	}
+	snap := &model.TaskSubscriptionWindow{
+		SubId:     g.subId,
+		SubStart:  g.subStart,
+		Limit5h:   g.limit5h,
+		LimitWeek: g.limitWeek,
+	}
+	if len(g.bucketHeld) > 0 {
+		snap.BucketHeld = make(map[string]int64, len(g.bucketHeld))
+		for k, v := range g.bucketHeld {
+			snap.BucketHeld[k] = v
+		}
+	}
+	if len(g.weekHeld) > 0 {
+		snap.WeekHeld = make(map[string]int64, len(g.weekHeld))
+		for k, v := range g.weekHeld {
+			snap.WeekHeld[k] = v
+		}
+	}
+	return snap
+}
+
+// AdjustSubscriptionWindowFromSnapshot applies an async settle delta to the
+// window counters using a persisted guard snapshot. Positive deltas debit the
+// counters the current wall clock maps to; negative deltas credit only the
+// snapshot's original keys, capped at the held amounts. The snapshot's held
+// maps are updated in place so the caller can re-persist it.
+func AdjustSubscriptionWindowFromSnapshot(snap *model.TaskSubscriptionWindow, delta int64) {
+	if snap == nil || delta == 0 {
+		return
+	}
+	if snap.BucketHeld == nil {
+		snap.BucketHeld = map[string]int64{}
+	}
+	if snap.WeekHeld == nil {
+		snap.WeekHeld = map[string]int64{}
+	}
+	reserved := int64(0)
+	for _, v := range snap.BucketHeld {
+		reserved += v
+	}
+	if reserved == 0 {
+		for _, v := range snap.WeekHeld {
+			reserved += v
+		}
+	}
+	guard := &subscriptionWindowGuard{
+		subId:      snap.SubId,
+		subStart:   snap.SubStart,
+		limit5h:    snap.Limit5h,
+		limitWeek:  snap.LimitWeek,
+		reserved:   reserved,
+		bucketHeld: snap.BucketHeld,
+		weekHeld:   snap.WeekHeld,
+	}
+	guard.apply(delta)
+}
+
+// apply performs the Redis writes for a delta. Positive deltas debit the
+// counters the current wall clock maps to and are recorded in the held
+// ledgers; negative deltas credit only keys this guard actually debited,
+// capped at the held amounts, so refunds can neither hit a foreign
+// bucket/week key nor drive a counter negative.
+func (g *subscriptionWindowGuard) apply(delta int64) {
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	pipe := common.RDB.Pipeline()
+
+	type heldChange struct {
+		held map[string]int64
+		key  string
+		take int64
+	}
+	var changes []heldChange
+
+	if delta > 0 {
+		now := common.GetTimestamp()
+		if g.limit5h > 0 {
+			currentBucket := now / subscriptionWindowBucketSeconds * subscriptionWindowBucketSeconds
+			bucketKey := subscriptionWindowBucketKey(g.subId, currentBucket)
+			pipe.IncrBy(ctx, bucketKey, delta)
+			pipe.Expire(ctx, bucketKey, time.Duration(subscriptionWindowBucketTTL)*time.Second)
+			changes = append(changes, heldChange{g.bucketHeld, bucketKey, delta})
+		}
+		if g.limitWeek > 0 {
+			idx := subscriptionWindowWeekIndex(g.subStart, now)
+			weekKey := subscriptionWindowWeekKey(g.subId, idx)
+			base := g.subStart
+			if base <= 0 {
+				base = 0
+			}
+			pipe.IncrBy(ctx, weekKey, delta)
+			pipe.ExpireAt(ctx, weekKey, time.Unix(base+(idx+1)*subscriptionWindowWeekSeconds+3600, 0))
+			changes = append(changes, heldChange{g.weekHeld, weekKey, delta})
+		}
+	} else {
+		for _, held := range []map[string]int64{g.bucketHeld, g.weekHeld} {
+			refund := -delta
+			for key, amt := range held {
+				if refund <= 0 {
+					break
+				}
+				take := amt
+				if take > refund {
+					take = refund
+				}
+				pipe.DecrBy(ctx, key, take)
+				changes = append(changes, heldChange{held, key, -take})
+				refund -= take
+			}
+		}
+	}
+
+	if len(changes) == 0 {
+		return
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		common.SysLog("subscription window adjust failed (tolerated): " + err.Error())
+		return
+	}
+	for _, ch := range changes {
+		ch.held[ch.key] += ch.take
+		if ch.held[ch.key] <= 0 {
+			delete(ch.held, ch.key)
+		}
+	}
+	g.reserved += delta
+	if g.reserved < 0 {
 		g.reserved = 0
-		g.Adjust(-reserved)
 	}
 }

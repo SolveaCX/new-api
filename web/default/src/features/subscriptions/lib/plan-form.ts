@@ -50,6 +50,8 @@ export function getPlanFormSchema(t: TFunction) {
     rpm: z.coerce.number().min(0).optional(),
     concurrency: z.coerce.number().min(0).optional(),
     media_credits_monthly: z.coerce.number().min(0).optional(),
+    window_5h_amount: z.coerce.number().min(0).optional(),
+    window_week_amount: z.coerce.number().min(0).optional(),
     feature_lines: z.string().optional(),
   })
 }
@@ -78,6 +80,8 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   rpm: 0,
   concurrency: 0,
   media_credits_monthly: 0,
+  window_5h_amount: 0,
+  window_week_amount: 0,
   feature_lines: '',
 }
 
@@ -104,6 +108,10 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     rpm: 0,
     concurrency: Number(plan.concurrency || 0),
     media_credits_monthly: Number(plan.media_credits_monthly || 0),
+    window_5h_amount: quotaUnitsToDollars(Number(plan.window_5h_amount || 0)),
+    window_week_amount: quotaUnitsToDollars(
+      Number(plan.window_week_amount || 0)
+    ),
     feature_lines: plan.feature_lines || '',
   }
 }
@@ -129,6 +137,12 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       rpm: 0,
       concurrency: Number(values.concurrency || 0),
       media_credits_monthly: Number(values.media_credits_monthly || 0),
+      window_5h_amount: parseQuotaFromDollars(
+        Number(values.window_5h_amount || 0)
+      ),
+      window_week_amount: parseQuotaFromDollars(
+        Number(values.window_week_amount || 0)
+      ),
       feature_lines: values.feature_lines || '',
     },
   }

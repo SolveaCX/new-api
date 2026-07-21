@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -86,10 +87,36 @@ func taskIsSubscription(task *model.Task) bool {
 	return task.PrivateData.BillingSource == BillingSourceSubscription && task.PrivateData.SubscriptionId > 0
 }
 
+// taskSubscriptionWeighted 把 list 等值额度换算为订阅池扣量（与
+// SubscriptionFunding.weighted 同语义：向上取整、负数对称）。任务提交时
+// 快照的权重存在 BillingContext.SubscriptionWeight；0 视为 1.0（旧数据）。
+func taskSubscriptionWeighted(task *model.Task, n int64) int64 {
+	w := 1.0
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.SubscriptionWeight > 0 {
+		w = bc.SubscriptionWeight
+	}
+	if n == 0 || w == 1 {
+		return n
+	}
+	if n >= 0 {
+		return int64(math.Ceil(float64(n) * w))
+	}
+	return -int64(math.Ceil(float64(-n) * w))
+}
+
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
+// 订阅来源按提交时快照的模型权重换算池扣量，并同步补偿窗口计数
+// （负向按台账退回原始 Redis key，正向记入当前窗口）。
 func taskAdjustFunding(task *model.Task, delta int) error {
 	if taskIsSubscription(task) {
-		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
+		weightedDelta := taskSubscriptionWeighted(task, int64(delta))
+		if err := model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, weightedDelta); err != nil {
+			return err
+		}
+		if bc := task.PrivateData.BillingContext; bc != nil && bc.SubscriptionWindow != nil {
+			AdjustSubscriptionWindowFromSnapshot(bc.SubscriptionWindow, weightedDelta)
+		}
+		return nil
 	}
 	if delta > 0 {
 		return model.DecreaseUserQuota(task.UserId, delta, false)

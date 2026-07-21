@@ -83,10 +83,15 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		return
 	}
 
+	// 被邀首订折扣：epay 是金额制网关，直接按折后价拉起支付。
+	discountUSD := subscriptionInviteeDiscountUSD(c, userId, plan.PriceAmount)
+	chargedPrice := plan.PriceAmount - discountUSD
+
 	order := &model.SubscriptionOrder{
 		UserId:          userId,
 		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
+		Money:           chargedPrice,
+		DiscountUSD:     discountUSD,
 		TradeNo:         tradeNo,
 		PaymentMethod:   req.PaymentMethod,
 		PaymentProvider: model.PaymentProviderEpay,
@@ -101,7 +106,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		Type:           req.PaymentMethod,
 		ServiceTradeNo: tradeNo,
 		Name:           fmt.Sprintf("SUB:%s", plan.Title),
-		Money:          strconv.FormatFloat(plan.PriceAmount, 'f', 2, 64),
+		Money:          strconv.FormatFloat(chargedPrice, 'f', 2, 64),
 		Device:         epay.PC,
 		NotifyUrl:      notifyUrl,
 		ReturnUrl:      returnUrl,

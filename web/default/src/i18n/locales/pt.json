@@ -5635,6 +5635,9 @@
     "Anthropic Compatible": "Compatível com Anthropic",
     "Gemini Compatible": "Compatível com Gemini",
     "This model cannot be called because upstreams no longer support it.": "Este modelo não pode ser chamado porque os provedores upstream não oferecem mais suporte.",
-    "Not callable · Officially unsupported": "Não pode ser chamado · Sem suporte oficial"
+    "Not callable · Officially unsupported": "Não pode ser chamado · Sem suporte oficial",
+    "5-hour window limit (USD)": "Limite da janela de 5 horas (USD)",
+    "7-day window limit (USD)": "Limite da janela de 7 dias (USD)",
+    "0 disables this window limit.": "0 desativa este limite de janela."
   }
 }

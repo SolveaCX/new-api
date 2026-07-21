@@ -106,7 +106,9 @@ func (s *SubscriptionFunding) PreConsume(_ int) error {
 	weightedAmount := s.weighted(s.amount)
 
 	// ---- 窗口检查 + 原子预留（5h 滚动 + 周锚定周期）----
-	windowInfo, err := model.GetActiveSubscriptionWindowInfo(s.userId)
+	// 预测本次将被扣费的订阅（与 PreConsumeUserSubscription 相同的选择逻辑：
+	// end_time asc、跳过池余额不足的档），窗口按该订阅预留。
+	windowInfo, err := model.GetChargeableSubscriptionWindowInfo(s.userId, weightedAmount)
 	if err != nil {
 		// 读取失败按 fail-open 处理，窗口不拦截；池扣费仍然照常
 		common.SysLog("subscription window info query failed (fail-open): " + err.Error())
@@ -122,11 +124,29 @@ func (s *SubscriptionFunding) PreConsume(_ int) error {
 		guard.Release()
 		return err
 	}
-	// 窗口守卫按第一个活跃订阅预留；极少数多订阅场景下实际扣费订阅可能不同，
-	// 此时释放守卫（fail-open），窗口不再跟踪本次请求。
+	// 并发下实际扣费订阅仍可能与预测不符：释放旧守卫后必须对实际订阅重新
+	// 预留并判限——直接放行会让付费档的 5h/周窗口被绕过（Free+付费并存是常态）。
 	if guard != nil && res.UserSubscriptionId != guard.subId {
 		guard.Release()
 		guard = nil
+	}
+	if guard == nil {
+		actualInfo, infoErr := model.GetSubscriptionWindowInfoBySubId(res.UserSubscriptionId)
+		if infoErr != nil {
+			common.SysLog("subscription window info re-query failed (fail-open): " + infoErr.Error())
+		} else if actualInfo != nil {
+			reGuard, reErr := reserveSubscriptionWindows(actualInfo, weightedAmount)
+			if reErr != nil {
+				// 实际扣费订阅的窗口已满：回滚池扣费并拒绝本次请求。
+				if refundErr := refundWithRetry(func() error {
+					return model.RefundSubscriptionPreConsume(s.requestId)
+				}); refundErr != nil {
+					common.SysLog("failed to refund subscription pre-consume after window rejection: " + refundErr.Error())
+				}
+				return reErr
+			}
+			guard = reGuard
+		}
 	}
 	s.windowGuard = guard
 	s.subscriptionId = res.UserSubscriptionId
@@ -205,6 +225,15 @@ func (s *SubscriptionFunding) RefundExtra(delta int64) error {
 
 // ExtraWeighted 返回追加预扣的池额度（加权后），供日志/RelayInfo 展示。
 func (s *SubscriptionFunding) ExtraWeighted() int64 { return s.extraWeighted }
+
+// Weight 返回本次请求的模型权重快照（池/窗口扣量 = list × weight）。
+func (s *SubscriptionFunding) Weight() float64 { return s.weight }
+
+// WindowSnapshot 导出窗口守卫台账（窗口未启用/已释放时为 nil），
+// 供异步任务持久化后在轮询阶段做窗口补偿。
+func (s *SubscriptionFunding) WindowSnapshot() *model.TaskSubscriptionWindow {
+	return s.windowGuard.Snapshot()
+}
 
 // refundWithRetry 尝试多次执行退款操作以提高成功率，只能用于基于事务的退款函数！！！！！！
 // try to refund with retries, only for refund functions based on transactions!!!

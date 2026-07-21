@@ -5635,6 +5635,9 @@
     "Anthropic Compatible": "Anthropic Compatible",
     "Gemini Compatible": "Gemini Compatible",
     "This model cannot be called because upstreams no longer support it.": "This model cannot be called because upstreams no longer support it.",
-    "Not callable · Officially unsupported": "Not callable · Officially unsupported"
+    "Not callable · Officially unsupported": "Not callable · Officially unsupported",
+    "5-hour window limit (USD)": "5-hour window limit (USD)",
+    "7-day window limit (USD)": "7-day window limit (USD)",
+    "0 disables this window limit.": "0 disables this window limit."
   }
 }
