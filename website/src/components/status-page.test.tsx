@@ -117,6 +117,25 @@ describe("StatusPage", () => {
     expect(html).toMatch(/<fieldset[\s>][\s\S]*<legend[\s>]/);
     expect(html).toMatch(/<button[^>]+type="submit"/);
   });
+
+  test("does not describe unavailable incident or maintenance feeds as empty", () => {
+    const html = renderToStaticMarkup(
+      <StatusPage
+        locale="en"
+        summary={SUMMARY}
+        freshness="fresh"
+        incidents={[]}
+        incidentFreshness="monitoring-unavailable"
+        maintenance={[]}
+        maintenanceFreshness="stale"
+      />
+    );
+
+    expect(html).toContain("Monitoring unavailable");
+    expect(html).toContain("Stale monitoring data");
+    expect(html).not.toContain("No recent incidents");
+    expect(html).not.toContain("No scheduled maintenance");
+  });
 });
 
 function pageFiles(root: string, current = root): string[] {
@@ -138,5 +157,14 @@ describe("status routes", () => {
 
     const sitemapSource = readFileSync(resolve(appRoot, "sitemap.ts"), "utf8");
     expect(sitemapSource).toMatch(/entry\(["']\/status["']/);
+
+    for (const route of [
+      resolve(appRoot, "(en)/status/models/[slug]/page.tsx"),
+      resolve(appRoot, "[locale]/status/models/[slug]/page.tsx"),
+    ]) {
+      const source = readFileSync(route, "utf8");
+      expect(source).toMatch(/history\.state\s*===\s*["']not-found["']/);
+      expect(source).toMatch(/notFound\(\)/);
+    }
   });
 });

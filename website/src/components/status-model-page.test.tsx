@@ -111,4 +111,34 @@ describe("StatusModelPage", () => {
     expect(html).toContain('href="/de/status/models/legacy-chat?range=24h"');
     expect(html).toContain('href="/de/status/models/legacy-chat?range=90d"');
   });
+
+  test("never renders retired operational evidence as a green current status", () => {
+    const history = {
+      ...HISTORY,
+      component: { ...HISTORY.component, status: "operational" as const },
+    };
+    const html = renderToStaticMarkup(
+      <StatusModelPage locale="en" history={history} freshness="fresh" incidents={[]} selectedRange="90d" />
+    );
+
+    expect(html).toMatch(/Retired/i);
+    expect(html).toMatch(/Unknown/i);
+    expect(html).not.toContain("text-emerald-800");
+  });
+
+  test("does not describe an unavailable incident feed as having no incidents", () => {
+    const html = renderToStaticMarkup(
+      <StatusModelPage
+        locale="en"
+        history={HISTORY}
+        freshness="fresh"
+        incidents={[]}
+        incidentFreshness="monitoring-unavailable"
+        selectedRange="90d"
+      />
+    );
+
+    expect(html).toContain("Monitoring unavailable");
+    expect(html).not.toContain("No recent incidents");
+  });
 });

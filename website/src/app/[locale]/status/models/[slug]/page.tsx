@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { StatusModelPage } from "@/components/status-model-page";
 import { isLocale, LOCALES } from "@/lib/locales";
-import { getStatusCopy, type StatusFreshness } from "@/lib/status-copy";
+import { getStatusCopy } from "@/lib/status-copy";
 import {
   STATUS_REVALIDATE_SECONDS,
   fetchStatusComponentHistory,
@@ -44,22 +44,18 @@ export default async function Page(props: Props) {
     fetchStatusComponentHistory(slug, range),
     fetchStatusIncidents(),
   ]);
-  const freshness = combineFreshness(history.state, incidents.state);
+  if (history.state === "not-found") notFound();
 
   return (
     <StatusModelPage
       locale={locale}
       history={history.data ?? unavailableHistory(slug, range)}
-      freshness={freshness}
+      freshness={history.state}
       incidents={incidents.data?.incidents ?? []}
+      incidentFreshness={incidents.state === "not-found" ? "monitoring-unavailable" : incidents.state}
       selectedRange={range}
     />
   );
-}
-
-function combineFreshness(...states: StatusFreshness[]): StatusFreshness {
-  if (states.includes("monitoring-unavailable")) return "monitoring-unavailable";
-  return states.includes("stale") ? "stale" : "fresh";
 }
 
 function parseRange(value: string | undefined): StatusHistoryRange {

@@ -10,9 +10,15 @@ interface StatusSubscribeProps {
   components: StatusComponent[];
 }
 
+const MAX_STATUS_SUBSCRIPTION_COMPONENTS = 100;
+
+export function initialStatusSubscriptionComponentIds(components: StatusComponent[]): number[] {
+  return components.slice(0, MAX_STATUS_SUBSCRIPTION_COMPONENTS).map((component) => component.id);
+}
+
 export function StatusSubscribe({ locale, components }: StatusSubscribeProps) {
   const copy = getStatusCopy(locale).subscribe;
-  const [selectedIds, setSelectedIds] = useState(() => components.map((component) => component.id));
+  const [selectedIds, setSelectedIds] = useState(() => initialStatusSubscriptionComponentIds(components));
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -21,7 +27,7 @@ export function StatusSubscribe({ locale, components }: StatusSubscribeProps) {
     if (pending) return;
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "").trim();
-    if (!email || email.length > 254 || selectedIds.length === 0 || selectedIds.length > 100) {
+    if (!email || email.length > 254 || selectedIds.length === 0 || selectedIds.length > MAX_STATUS_SUBSCRIPTION_COMPONENTS) {
       setMessage(copy.errorLabel);
       return;
     }
@@ -36,7 +42,7 @@ export function StatusSubscribe({ locale, components }: StatusSubscribeProps) {
   function toggle(componentId: number) {
     setSelectedIds((current) => current.includes(componentId)
       ? current.filter((id) => id !== componentId)
-      : [...current, componentId].slice(0, 100));
+      : [...current, componentId].slice(0, MAX_STATUS_SUBSCRIPTION_COMPONENTS));
   }
 
   return (
@@ -60,7 +66,7 @@ export function StatusSubscribe({ locale, components }: StatusSubscribeProps) {
         <fieldset>
           <legend className="text-sm font-semibold text-slate-800 dark:text-slate-100">{copy.componentLegend}</legend>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {components.slice(0, 100).map((component) => (
+            {components.slice(0, MAX_STATUS_SUBSCRIPTION_COMPONENTS).map((component) => (
               <label key={component.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
                 <input
                   type="checkbox"

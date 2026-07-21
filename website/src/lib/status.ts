@@ -134,6 +134,7 @@ export interface StatusComponentQuery {
 
 export type StatusApiResult<T> =
   | { state: "fresh" | "stale"; data: T }
+  | { state: "not-found"; data: null }
   | { state: "monitoring-unavailable"; data: null };
 
 export type StatusSummaryResult = {
@@ -151,7 +152,7 @@ const MAX_MICROS = 1_000_000;
 
 export async function fetchStatusSummary(): Promise<StatusSummaryResult> {
   const result = await fetchStatusData("/api/status/summary", isStatusSummary);
-  if (result.state === "monitoring-unavailable") {
+  if (result.state === "monitoring-unavailable" || result.state === "not-found") {
     return { state: "monitoring-unavailable", data: unavailableStatusSummary() };
   }
   if (result.state === "stale") {
@@ -170,7 +171,7 @@ export function fetchStatusComponents(query: StatusComponentQuery = {}): Promise
 }
 
 export function fetchStatusComponent(slug: string): Promise<StatusApiResult<StatusComponentData>> {
-  return fetchStatusData(`/api/status/components/${encodeURIComponent(slug)}`, isStatusComponentData);
+  return fetchStatusData(`/api/status/components/${encodeURIComponent(slug)}`, isStatusComponentData, true);
 }
 
 export function fetchStatusComponentHistory(
@@ -178,7 +179,7 @@ export function fetchStatusComponentHistory(
   range: StatusHistoryRange = "24h"
 ): Promise<StatusApiResult<StatusComponentHistoryData>> {
   const search = new URLSearchParams({ range });
-  return fetchStatusData(withSearch(`/api/status/components/${encodeURIComponent(slug)}/history`, search), isStatusComponentHistoryData);
+  return fetchStatusData(withSearch(`/api/status/components/${encodeURIComponent(slug)}/history`, search), isStatusComponentHistoryData, true);
 }
 
 export function fetchStatusIncidents(): Promise<StatusApiResult<StatusIncidentsData>> {
@@ -186,7 +187,7 @@ export function fetchStatusIncidents(): Promise<StatusApiResult<StatusIncidentsD
 }
 
 export function fetchStatusIncident(id: string): Promise<StatusApiResult<StatusIncidentData>> {
-  return fetchStatusData(`/api/status/incidents/${encodeURIComponent(id)}`, isStatusIncidentData);
+  return fetchStatusData(`/api/status/incidents/${encodeURIComponent(id)}`, isStatusIncidentData, true);
 }
 
 export function fetchStatusMaintenance(): Promise<StatusApiResult<StatusMaintenanceData>> {
@@ -209,12 +210,12 @@ export function unsubscribeFromStatus(input: StatusUnsubscribeInput): Promise<St
   return mutateStatus("/api/status/subscriptions/unsubscribe", input, isStatusSubscriptionResponse);
 }
 
-async function fetchStatusData<T>(path: string, guard: StatusDataGuard<T>): Promise<StatusApiResult<T>> {
+async function fetchStatusData<T>(path: string, guard: StatusDataGuard<T>, preserveNotFound = false): Promise<StatusApiResult<T>> {
   const init: NextRevalidateRequestInit = {
     headers: { accept: "application/json" },
     next: { revalidate: STATUS_REVALIDATE_SECONDS },
   };
-  return requestStatus(path, init, guard);
+  return requestStatus(path, init, guard, preserveNotFound);
 }
 
 async function mutateStatus<T>(path: string, input: object, guard: StatusDataGuard<T>): Promise<StatusApiResult<T>> {
@@ -226,9 +227,15 @@ async function mutateStatus<T>(path: string, input: object, guard: StatusDataGua
   }, guard);
 }
 
-async function requestStatus<T>(path: string, init: RequestInit, guard: StatusDataGuard<T>): Promise<StatusApiResult<T>> {
+async function requestStatus<T>(
+  path: string,
+  init: RequestInit,
+  guard: StatusDataGuard<T>,
+  preserveNotFound = false
+): Promise<StatusApiResult<T>> {
   try {
     const response = await fetch(statusRequestUrl(path), init);
+    if (preserveNotFound && response.status === 404) return { state: "not-found", data: null };
     if (!response.ok) return unavailable();
     const envelope: unknown = await response.json();
     if (!isSuccessfulEnvelope(envelope, guard)) return unavailable();
