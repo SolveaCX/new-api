@@ -40,7 +40,7 @@ const localeTranslations: Record<string, Record<string, string>> = {
 
 const recallHelpKeys = [
   'Stripe does not convert fixed Coupon amounts automatically. Configure each checkout currency explicitly.',
-  'Audience templates define the base audience. The rules below narrow it further, and every condition must match. Preview the audience before activation.',
+  'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.',
   ...Object.values(audienceTemplateDescriptionKeys),
 ] as const
 
@@ -48,7 +48,7 @@ describe('recall campaign copy', () => {
   test('maps each audience template to its explanation', () => {
     expect(audienceTemplateDescriptionKeys).toEqual({
       first_purchase:
-        'Targets registered users who have never paid, for campaigns that encourage a first purchase.',
+        'Targets registered users in the PLG group who have never paid, for campaigns that encourage a first purchase.',
       lapsed_payer:
         'Targets previous payers who have not paid or used the API recently.',
       expired_subscription:
