@@ -1107,14 +1107,22 @@ func releaseChannelTestRun() {
 	testAllChannelsLock.Unlock()
 }
 
-func testChannels(loadBatch channelTestBatchLoader, notify bool, allowDisable bool) error {
-	if err := acquireChannelTestRun(); err != nil {
+func testChannels(loadBatch channelTestBatchLoader, notify bool, allowDisable bool) (err error) {
+	if err = acquireChannelTestRun(); err != nil {
 		return err
 	}
+	handedOff := false
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("加载渠道测试批次失败: %v", recovered)
+		}
+		if !handedOff {
+			releaseChannelTestRun()
+		}
+	}()
 
 	testUserID, channels, err := loadBatch()
 	if err != nil {
-		releaseChannelTestRun()
 		return err
 	}
 
@@ -1188,6 +1196,7 @@ func testChannels(loadBatch channelTestBatchLoader, notify bool, allowDisable bo
 			service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 		}
 	})
+	handedOff = true
 	return nil
 }
 

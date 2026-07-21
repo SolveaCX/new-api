@@ -84,7 +84,39 @@ func TestConvertToAliRequestWan27I2VPrefersImageBeforeImagesAndInputReference(t 
 	require.NoError(t, err)
 	require.Equal(t, []AliVideoMedia{
 		{Type: "first_frame", URL: "https://example.com/direct.png"},
-		{Type: "last_frame", URL: "https://example.com/images-first.png"},
+		{Type: "last_frame", URL: "https://example.com/images-last.png"},
+	}, aliReq.Input.Media)
+}
+
+func TestConvertToAliRequestWan27I2VUsesSingleImagesEntryAsLastFrameAfterImage(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Model:  "wan2.7-i2v",
+		Image:  "https://example.com/first.png",
+		Images: []string{"https://example.com/last.png"},
+	}
+	aliReq, err := adaptor.convertToAliRequest(testRelayInfo(), req)
+	require.NoError(t, err)
+	require.Equal(t, []AliVideoMedia{
+		{Type: "first_frame", URL: "https://example.com/first.png"},
+		{Type: "last_frame", URL: "https://example.com/last.png"},
+	}, aliReq.Input.Media)
+}
+
+func TestConvertToAliRequestWan27I2VPreservesDuplicateFrameURLs(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	req := relaycommon.TaskSubmitReq{
+		Model: "wan2.7-i2v",
+		Images: []string{
+			"https://example.com/repeated.png",
+			"https://example.com/repeated.png",
+		},
+	}
+	aliReq, err := adaptor.convertToAliRequest(testRelayInfo(), req)
+	require.NoError(t, err)
+	require.Equal(t, []AliVideoMedia{
+		{Type: "first_frame", URL: "https://example.com/repeated.png"},
+		{Type: "last_frame", URL: "https://example.com/repeated.png"},
 	}, aliReq.Input.Media)
 }
 
