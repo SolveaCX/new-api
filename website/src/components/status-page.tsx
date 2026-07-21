@@ -23,7 +23,9 @@ interface StatusPageProps {
   summary: StatusSummary;
   freshness: StatusFreshness;
   incidents: StatusIncident[];
+  incidentFreshness?: StatusFreshness;
   maintenance: StatusIncident[];
+  maintenanceFreshness?: StatusFreshness;
   filters?: StatusPageFilters;
 }
 
@@ -57,7 +59,16 @@ export function sortStatusComponents(components: StatusComponent[]): StatusCompo
   });
 }
 
-export function StatusPage({ locale, summary, freshness, incidents, maintenance, filters = {} }: StatusPageProps) {
+export function StatusPage({
+  locale,
+  summary,
+  freshness,
+  incidents,
+  incidentFreshness = "fresh",
+  maintenance,
+  maintenanceFreshness = "fresh",
+  filters = {},
+}: StatusPageProps) {
   const copy = getStatusCopy(locale);
   const components = filterStatusComponents(summary.components, filters);
   const capabilities = Array.from(new Set(summary.components.map((component) => component.capability).filter(Boolean) as string[])).sort();
@@ -127,8 +138,8 @@ export function StatusPage({ locale, summary, freshness, incidents, maintenance,
           </section>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <IncidentList title={copy.incidents.title} empty={copy.incidents.empty} incidents={incidents} locale={locale} />
-            <IncidentList title={copy.maintenance.title} empty={copy.maintenance.empty} incidents={maintenance} locale={locale} />
+            <IncidentList title={copy.incidents.title} empty={copy.incidents.empty} incidents={incidents} freshness={incidentFreshness} locale={locale} />
+            <IncidentList title={copy.maintenance.title} empty={copy.maintenance.empty} incidents={maintenance} freshness={maintenanceFreshness} locale={locale} />
           </div>
 
           <StatusSubscribe locale={locale} components={sortStatusComponents(summary.components)} />
@@ -152,11 +163,27 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div><p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</p><p className="mt-2 text-lg font-bold text-slate-950 dark:text-white">{value}</p></div>;
 }
 
-function IncidentList({ title, empty, incidents, locale }: { title: string; empty: string; incidents: StatusIncident[]; locale: Locale }) {
+function IncidentList({
+  title,
+  empty,
+  incidents,
+  freshness,
+  locale,
+}: {
+  title: string;
+  empty: string;
+  incidents: StatusIncident[];
+  freshness: StatusFreshness;
+  locale: Locale;
+}) {
+  const freshnessMessage = freshness === "stale"
+    ? getStatusCopy(locale).freshness.stale
+    : getStatusCopy(locale).freshness.unavailable;
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
       <h2 className="text-xl font-bold text-slate-950 dark:text-white">{title}</h2>
-      {incidents.length === 0 ? <p className="mt-4 text-slate-600 dark:text-slate-300">{empty}</p> : (
+      {freshness !== "fresh" ? <p className="mt-4 text-slate-600 dark:text-slate-300">{freshnessMessage}</p> : null}
+      {incidents.length === 0 ? (freshness === "fresh" ? <p className="mt-4 text-slate-600 dark:text-slate-300">{empty}</p> : null) : (
         <ul className="mt-4 space-y-4">
           {incidents.map((incident) => (
             <li key={incident.id} className="border-l-2 border-slate-300 pl-4 dark:border-slate-700">

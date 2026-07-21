@@ -110,6 +110,18 @@ describe("status client", () => {
     }
   });
 
+  test("preserves confirmed component 404s instead of turning them into monitoring failures", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.resolve(Response.json({ success: false }, { status: 404 }))) as typeof fetch;
+
+    try {
+      expect(await fetchStatusComponent("missing-model")).toEqual({ state: "not-found", data: null });
+      expect(await fetchStatusComponentHistory("missing-model", "90d")).toEqual({ state: "not-found", data: null });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("rejects component-only values as invalid summary overall status", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (() => Promise.resolve(Response.json({

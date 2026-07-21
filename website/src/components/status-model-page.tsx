@@ -11,14 +11,25 @@ interface StatusModelPageProps {
   history: StatusComponentHistoryData;
   freshness: StatusFreshness;
   incidents: StatusIncident[];
+  incidentFreshness?: StatusFreshness;
   selectedRange: StatusHistoryRange;
 }
 
-export function StatusModelPage({ locale, history, freshness, incidents, selectedRange }: StatusModelPageProps) {
+export function StatusModelPage({
+  locale,
+  history,
+  freshness,
+  incidents,
+  incidentFreshness = "fresh",
+  selectedRange,
+}: StatusModelPageProps) {
   const copy = getStatusCopy(locale);
   const component = history.component;
   const relatedIncidents = incidents.filter((incident) => incident.component_ids.includes(component.id));
-  const current = getStatusPresentation({ locale, status: component.status, freshness, lifecycle: "active" });
+  const displayStatus = component.lifecycle === "retired" && component.status === "operational"
+    ? "unknown"
+    : component.status;
+  const current = getStatusPresentation({ locale, status: displayStatus, freshness, lifecycle: "active" });
   const lifecycle = component.lifecycle === "retired"
     ? getStatusPresentation({ locale, status: component.status, freshness, lifecycle: component.lifecycle })
     : null;
@@ -58,7 +69,12 @@ export function StatusModelPage({ locale, history, freshness, incidents, selecte
 
           <section aria-labelledby="model-incident-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <h2 id="model-incident-title" className="text-xl font-bold text-slate-950 dark:text-white">{copy.incidents.title}</h2>
-            {relatedIncidents.length === 0 ? <p className="mt-4 text-slate-600 dark:text-slate-300">{copy.incidents.empty}</p> : (
+            {incidentFreshness !== "fresh" ? (
+              <p className="mt-4 text-slate-600 dark:text-slate-300">
+                {incidentFreshness === "stale" ? copy.freshness.stale : copy.freshness.unavailable}
+              </p>
+            ) : null}
+            {relatedIncidents.length === 0 ? (incidentFreshness === "fresh" ? <p className="mt-4 text-slate-600 dark:text-slate-300">{copy.incidents.empty}</p> : null) : (
               <ol className="mt-5 space-y-6 border-l-2 border-slate-200 pl-5 dark:border-slate-700">
                 {relatedIncidents.map((incident) => (
                   <li key={incident.id}>

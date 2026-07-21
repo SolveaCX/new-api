@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { StatusPage, type StatusPageFilters } from "@/components/status-page";
 import { isLocale, LOCALES } from "@/lib/locales";
-import { getStatusCopy, type StatusFreshness } from "@/lib/status-copy";
+import { getStatusCopy } from "@/lib/status-copy";
 import {
   STATUS_REVALIDATE_SECONDS,
   fetchStatusIncidents,
@@ -43,17 +43,14 @@ export default async function Page(props: Props) {
     <StatusPage
       locale={locale}
       summary={summary.data}
-      freshness={combineFreshness(summary.state, incidents.state, maintenance.state)}
+      freshness={summary.state}
       incidents={incidents.data?.incidents ?? []}
+      incidentFreshness={incidents.state === "not-found" ? "monitoring-unavailable" : incidents.state}
       maintenance={maintenance.data?.maintenance ?? []}
+      maintenanceFreshness={maintenance.state === "not-found" ? "monitoring-unavailable" : maintenance.state}
       filters={parseFilters(searchParams)}
     />
   );
-}
-
-function combineFreshness(...states: StatusFreshness[]): StatusFreshness {
-  if (states.includes("monitoring-unavailable")) return "monitoring-unavailable";
-  return states.includes("stale") ? "stale" : "fresh";
 }
 
 function parseFilters(searchParams?: Record<string, string | string[] | undefined>): StatusPageFilters {
