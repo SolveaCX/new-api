@@ -6,6 +6,7 @@ import {
   exportRecallCampaign,
   getRecallSubscriptionProductConfiguration,
   getRecallTopUpProductConfiguration,
+  getRecallUserGroups,
   getRecallCampaign,
   getRecallCampaignMetrics,
   listRecallCampaigns,
@@ -52,6 +53,15 @@ describe('recall campaign API contracts', () => {
     expect(capturedConfig?.url).toBe('/api/subscription/admin/plans')
   })
 
+  test('loads configured user groups from the authoritative user-group API', async () => {
+    respondWith({ success: true, data: ['admin'] })
+
+    await getRecallUserGroups()
+
+    expect(capturedConfig?.url).toBe('/api/group/')
+    expect(capturedConfig?.params).toEqual({ type: 'user' })
+  })
+
   test('uses p and ps for campaign list pagination', async () => {
     respondWith({ success: true, data: { items: [], total: 0 } })
 
@@ -88,6 +98,7 @@ describe('recall campaign API contracts', () => {
       'subscription product configuration',
       getRecallSubscriptionProductConfiguration,
     ],
+    ['user groups', getRecallUserGroups],
   ])('rejects a success:false envelope from %s', async (_name, call) => {
     respondWith({ success: false, message: 'Recall request failed' })
 
