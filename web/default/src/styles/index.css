@@ -958,3 +958,14 @@ For commercial licensing, please contact support@quantumnous.com
     opacity: 1;
   }
 }
+
+/* The console shell owns all scrolling (Main / SidebarInset inner
+ * containers). Lock the document while the shell is mounted so macOS
+ * wheel overscroll can't drag the sticky header away from the
+ * fixed-positioned sidebar — they visibly shear apart otherwise.
+ * Public pages (sign-in, etc.) render without the shell and keep
+ * normal document scrolling. */
+body:has([data-slot='sidebar-wrapper']) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}

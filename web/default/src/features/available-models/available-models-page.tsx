@@ -137,7 +137,11 @@ export function AvailableModels() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Available Models')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>
+        <span className='mx-auto block w-full max-w-7xl'>
+          {t('Available Models')}
+        </span>
+      </SectionPageLayout.Title>
       <SectionPageLayout.Content>{content}</SectionPageLayout.Content>
     </SectionPageLayout>
   )
