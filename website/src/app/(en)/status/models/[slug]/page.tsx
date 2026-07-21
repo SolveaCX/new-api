@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { StatusModelPage } from "@/components/status-model-page";
 import { getStatusCopy } from "@/lib/status-copy";
 import {
-  STATUS_REVALIDATE_SECONDS,
   fetchStatusComponentHistory,
   fetchStatusIncidents,
   type StatusComponentHistoryData,
@@ -10,7 +9,7 @@ import {
 } from "@/lib/status";
 import { buildMetadata } from "@/lib/seo";
 
-export const revalidate = STATUS_REVALIDATE_SECONDS;
+export const revalidate = 60;
 
 type Props = {
   params: Promise<{ slug: string }>;

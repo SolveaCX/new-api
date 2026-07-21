@@ -167,4 +167,17 @@ describe("status routes", () => {
       expect(source).toMatch(/notFound\(\)/);
     }
   });
+
+  test("exports a statically analyzable revalidation interval from every status page", () => {
+    const appRoot = resolve(import.meta.dir, "../app");
+    for (const route of [
+      resolve(appRoot, "(en)/status/page.tsx"),
+      resolve(appRoot, "(en)/status/models/[slug]/page.tsx"),
+      resolve(appRoot, "[locale]/status/page.tsx"),
+      resolve(appRoot, "[locale]/status/models/[slug]/page.tsx"),
+    ]) {
+      const source = readFileSync(route, "utf8");
+      expect(source).toMatch(/export const revalidate = 60;/);
+    }
+  });
 });
