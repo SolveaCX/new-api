@@ -73,7 +73,7 @@ export function InvitationStats(props: InvitationStatsProps) {
             {pending ? (
               <Skeleton className='mt-2 h-7 w-24' />
             ) : (
-              <p className='font-display mt-2 text-2xl font-semibold tabular-nums'>
+              <p className='mt-2 text-2xl font-semibold tabular-nums'>
                 {stat.value}
               </p>
             )}
