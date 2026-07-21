@@ -36,6 +36,7 @@ import type {
   RecallDiscountConfig,
   RecallFixedCurrency,
 } from '../types'
+import { CampaignProductSelector } from './campaign-product-selector'
 
 const languages = ['en', 'zh', 'es', 'fr', 'pt', 'ru', 'ja', 'vi'] as const
 
@@ -247,11 +248,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
   }, [form, props.initialDraft])
 
   const setCsv = (
-    path:
-      | 'audience_config.groups'
-      | 'audience_config.payment_providers'
-      | 'product_scope.topup_price_ids'
-      | 'product_scope.subscription_price_ids',
+    path: 'audience_config.groups' | 'audience_config.payment_providers',
     value: string
   ) => {
     form.setValue(
@@ -611,29 +608,23 @@ export function CampaignEditor(props: CampaignEditorProps) {
           <CardTitle>{t('4. Products, minimum, and validity')}</CardTitle>
         </CardHeader>
         <CardContent className='grid gap-4 md:grid-cols-2'>
-          <div className='space-y-2'>
-            <Label>{t('Top-up Stripe Price IDs')}</Label>
-            <Input
-              disabled={immutable}
-              value={topUpPrices.join(', ')}
-              onChange={(event) =>
-                setCsv('product_scope.topup_price_ids', event.target.value)
-              }
-            />
-          </div>
-          <div className='space-y-2'>
-            <Label>{t('Subscription Stripe Price IDs')}</Label>
-            <Input
-              disabled={immutable}
-              value={subscriptionPrices.join(', ')}
-              onChange={(event) =>
-                setCsv(
-                  'product_scope.subscription_price_ids',
-                  event.target.value
-                )
-              }
-            />
-          </div>
+          <CampaignProductSelector
+            topUpPriceIDs={topUpPrices}
+            subscriptionPriceIDs={subscriptionPrices}
+            onTopUpChange={(value) =>
+              form.setValue('product_scope.topup_price_ids', value, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }
+            onSubscriptionChange={(value) =>
+              form.setValue('product_scope.subscription_price_ids', value, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }
+            immutable={immutable}
+          />
           {!automaticFixed ? (
             <>
               <div className='space-y-2'>

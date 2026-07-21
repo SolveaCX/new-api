@@ -138,6 +138,15 @@ beforeAll(async () => {
 })
 
 describe('CampaignEditor audience rules', () => {
+  test('uses configured product selectors instead of manual Stripe Price ID inputs', () => {
+    const html = renderEditor('first_purchase')
+
+    expect(html).toContain('Top-up products')
+    expect(html).toContain('Subscription products')
+    expect(html).not.toContain('Top-up Stripe Price IDs')
+    expect(html).not.toContain('Subscription Stripe Price IDs')
+  })
+
   test('explains the selected audience and associates the help with the selector', () => {
     const html = renderEditor('first_purchase')
 

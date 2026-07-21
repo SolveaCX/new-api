@@ -51,6 +51,23 @@ export interface RecallProductScope {
   subscription_price_ids: string[]
 }
 
+export interface RecallTopUpProductConfiguration {
+  stripe_price_ids?: Record<string, string>
+}
+
+export interface RecallSubscriptionProductPlan {
+  id: number
+  title: string
+  price_amount: number
+  currency: string
+  enabled: boolean
+  stripe_price_id?: string
+}
+
+export interface RecallSubscriptionProductRecord {
+  plan: RecallSubscriptionProductPlan
+}
+
 export interface RecallEmailTemplate {
   subject: string
   body_text: string
