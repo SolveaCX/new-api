@@ -5697,6 +5697,7 @@
     "Hour (0-23)": "Час (0-23)",
     "Minute (0-59)": "Минута (0-59)",
     "Template language": "Язык шаблона",
+    "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable.": "Содержимое письма автоматически переводится при сохранении, отправляется на языке каждого пользователя, а при отсутствии перевода используется английский.",
     "Email stage {{stage}}": "Письмо этапа {{stage}}",
     "Stage {{stage}}": "Этап {{stage}}",
     "TemplateVersion": "Версия шаблона",

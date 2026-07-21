@@ -5697,6 +5697,7 @@
     "Hour (0-23)": "Hora (0-23)",
     "Minute (0-59)": "Minuto (0-59)",
     "Template language": "Idioma de la plantilla",
+    "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable.": "El contenido del correo se traduce automáticamente al guardarlo, se envía en el idioma de cada usuario y, si no está disponible, se utiliza el inglés.",
     "Email stage {{stage}}": "Correo de etapa {{stage}}",
     "Stage {{stage}}": "Etapa {{stage}}",
     "TemplateVersion": "Versión de plantilla",

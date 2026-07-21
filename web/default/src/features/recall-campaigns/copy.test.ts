@@ -41,6 +41,7 @@ const localeTranslations: Record<string, Record<string, string>> = {
 const recallHelpKeys = [
   'Stripe does not convert fixed Coupon amounts automatically. Configure each checkout currency explicitly.',
   'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.',
+  "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable.",
   ...Object.values(audienceTemplateDescriptionKeys),
 ] as const
 

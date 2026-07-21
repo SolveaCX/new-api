@@ -354,6 +354,21 @@ describe('recallCampaignDraftSchema', () => {
     expect(recallCampaignDraftSchema.safeParse(missingBody).success).toBe(false)
   })
 
+  test('counts subject and body limits in Unicode characters', () => {
+    const valid = makeDraft()
+    valid.email_sequence[0].templates.en.subject = '😀'.repeat(200)
+    valid.email_sequence[0].templates.en.body_text = '界'.repeat(2_000)
+    expect(recallCampaignDraftSchema.safeParse(valid).success).toBe(true)
+
+    const longSubject = structuredClone(valid)
+    longSubject.email_sequence[0].templates.en.subject = '😀'.repeat(201)
+    expect(recallCampaignDraftSchema.safeParse(longSubject).success).toBe(false)
+
+    const longBody = structuredClone(valid)
+    longBody.email_sequence[0].templates.en.body_text = '界'.repeat(2_001)
+    expect(recallCampaignDraftSchema.safeParse(longBody).success).toBe(false)
+  })
+
   test('requires positive email template versions', () => {
     const draft = makeDraft()
     draft.email_sequence[0].template_version = 0
@@ -402,6 +417,15 @@ describe('recallCampaignActivatedUpdateSchema', () => {
   test('still validates activated email content', () => {
     const draft = makeDraft()
     draft.email_sequence[0].templates.en.subject = ''
+
+    expect(recallCampaignActivatedUpdateSchema.safeParse(draft).success).toBe(
+      false
+    )
+  })
+
+  test('applies email character limits to activated updates', () => {
+    const draft = makeDraft()
+    draft.email_sequence[0].templates.en.subject = '界'.repeat(201)
 
     expect(recallCampaignActivatedUpdateSchema.safeParse(draft).success).toBe(
       false

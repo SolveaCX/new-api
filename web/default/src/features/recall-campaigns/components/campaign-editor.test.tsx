@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { createFormControl } from 'react-hook-form'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { createInstance } from 'i18next'
@@ -28,6 +29,8 @@ const commonHelp =
   'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.'
 const firstPurchaseHelp =
   'Targets registered users in the PLG group who have never paid, for campaigns that encourage a first purchase.'
+const automaticTranslationHelp =
+  "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable."
 const testI18n = createInstance()
 
 function makeDraft(template: RecallAudienceTemplate): RecallCampaignDraft {
@@ -79,17 +82,23 @@ function makeDraft(template: RecallAudienceTemplate): RecallCampaignDraft {
         stage_no: 1,
         delay_seconds: 0,
         template_version: 1,
-        templates: { en: { subject: '', body_text: '' } },
+        templates: {
+          en: { subject: 'English subject', body_text: 'English body' },
+          fr: { subject: 'Sujet français', body_text: 'Corps français' },
+        },
       },
     ],
   }
 }
 
-function renderEditor(template: RecallAudienceTemplate): string {
+function renderEditor(
+  template: RecallAudienceTemplate,
+  draft = makeDraft(template)
+): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <I18nextProvider i18n={testI18n}>
-        <CampaignEditor initialDraft={makeDraft(template)} />
+        <CampaignEditor initialDraft={draft} />
       </I18nextProvider>
     </QueryClientProvider>
   )
@@ -130,6 +139,7 @@ beforeAll(async () => {
         translation: {
           [commonHelp]: commonHelp,
           [firstPurchaseHelp]: firstPurchaseHelp,
+          [automaticTranslationHelp]: automaticTranslationHelp,
         },
       },
     },
@@ -138,6 +148,15 @@ beforeAll(async () => {
 })
 
 describe('CampaignEditor audience rules', () => {
+  test('keeps the no-filter group input visible, disabled, and labelled', () => {
+    const html = renderEditor('first_purchase')
+
+    expect(html).toContain('for="recall-groups"')
+    expect(html).toMatch(
+      /<input(?=[^>]*id="recall-groups")(?=[^>]*disabled="")[^>]*>/
+    )
+  })
+
   test('uses configured product selectors instead of manual Stripe Price ID inputs', () => {
     const html = renderEditor('first_purchase')
 
@@ -191,5 +210,38 @@ describe('CampaignEditor audience rules', () => {
       'min_subscription_count',
     ])
     expect(html).toContain('Payment providers (comma separated)')
+  })
+})
+
+describe('CampaignEditor email sequence', () => {
+  test('edits only English while retaining non-English draft templates', () => {
+    const draft = makeDraft('first_purchase')
+    const form = createFormControl<RecallCampaignDraft>({
+      defaultValues: draft,
+    })
+    form.register('email_sequence.0.templates.en.subject')
+    form.register('email_sequence.0.templates.en.body_text')
+    const html = renderEditor('first_purchase', draft)
+
+    expect(html).not.toContain('Template language')
+    expect(html).toContain('name="email_sequence.0.templates.en.subject"')
+    expect(html).toContain('name="email_sequence.0.templates.en.body_text"')
+    expect(html).not.toContain('templates.fr')
+    expect(form.getValues('email_sequence.0.templates.fr')).toEqual({
+      subject: 'Sujet français',
+      body_text: 'Corps français',
+    })
+  })
+
+  test('explains automatic localization and exposes backend-aligned limits', () => {
+    const html = renderEditor('first_purchase')
+
+    expect(html.replaceAll('&#x27;', "'")).toContain(automaticTranslationHelp)
+    expect(html).toMatch(
+      /<input(?=[^>]*name="email_sequence\.0\.templates\.en\.subject")(?=[^>]*maxLength="200")[^>]*>/
+    )
+    expect(html).toMatch(
+      /<textarea(?=[^>]*name="email_sequence\.0\.templates\.en\.body_text")(?=[^>]*maxLength="2000")[^>]*>/
+    )
   })
 })

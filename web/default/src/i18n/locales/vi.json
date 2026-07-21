@@ -5697,6 +5697,7 @@
     "Hour (0-23)": "Giờ (0-23)",
     "Minute (0-59)": "Phút (0-59)",
     "Template language": "Ngôn ngữ mẫu",
+    "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable.": "Nội dung email được tự động dịch khi lưu, được gửi bằng ngôn ngữ của từng người dùng và sẽ dùng tiếng Anh nếu bản dịch không có sẵn.",
     "Email stage {{stage}}": "Giai đoạn email {{stage}}",
     "Stage {{stage}}": "Giai đoạn {{stage}}",
     "TemplateVersion": "Phiên bản mẫu",
