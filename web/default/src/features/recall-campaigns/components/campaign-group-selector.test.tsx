@@ -97,6 +97,7 @@ describe('CampaignGroupSelector', () => {
       configuredGroups: ['admin', 'plg'],
     })
 
+    expect(html).toContain('Recall user groups')
     expect(html).toContain('admin')
     expect(html).toContain('removed')
   })

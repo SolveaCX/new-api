@@ -21,13 +21,16 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import { recallCampaignKeys } from '../api'
 import type { RecallAudienceTemplate, RecallCampaignDraft } from '../types'
 import { CampaignEditor } from './campaign-editor'
 
 const commonHelp =
   'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.'
 const firstPurchaseHelp =
-  'Targets registered users in the PLG group who have never paid, for campaigns that encourage a first purchase.'
+  'Targets registered users who have never paid, for campaigns that encourage a first purchase.'
+const groupHelp =
+  'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.'
 const automaticTranslationHelp =
   "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable."
 const testI18n = createInstance()
@@ -94,8 +97,23 @@ function renderEditor(
   template: RecallAudienceTemplate,
   draft = makeDraft(template)
 ): string {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        enabled: false,
+        retry: false,
+        retryOnMount: false,
+        refetchOnMount: false,
+      },
+    },
+  })
+  queryClient.setQueryData(recallCampaignKeys.userGroups, {
+    success: true,
+    data: ['admin', 'default', 'plg'],
+  })
+
   return renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={testI18n}>
         <CampaignEditor initialDraft={draft} />
       </I18nextProvider>
@@ -138,6 +156,7 @@ beforeAll(async () => {
         translation: {
           [commonHelp]: commonHelp,
           [firstPurchaseHelp]: firstPurchaseHelp,
+          [groupHelp]: groupHelp,
           [automaticTranslationHelp]: automaticTranslationHelp,
         },
       },
@@ -147,13 +166,37 @@ beforeAll(async () => {
 })
 
 describe('CampaignEditor audience rules', () => {
-  test('keeps the no-filter group input visible, disabled, and labelled', () => {
+  test('integrates the configured group selector with a stable id', () => {
     const html = renderEditor('first_purchase')
 
     expect(html).toContain('for="recall-groups"')
+    expect(html).toContain('Recall user groups')
+    expect(html).toContain('aria-label="Select user groups"')
+    expect(html).not.toContain('Loading configured user groups...')
     expect(html).toMatch(
       /<input(?=[^>]*id="recall-groups")(?=[^>]*disabled="")[^>]*>/
     )
+  })
+
+  test('keeps all group-mode choices', () => {
+    for (const [mode, label] of [
+      ['', 'No group filter'],
+      ['allow', 'Allow groups'],
+      ['block', 'Block groups'],
+    ] as const) {
+      const draft = makeDraft('first_purchase')
+      draft.audience_config.group_mode = mode
+
+      expect(renderEditor('first_purchase', draft)).toContain(label)
+    }
+  })
+
+  test('uses approved group guidance without free-form or PLG wording', () => {
+    const html = renderEditor('first_purchase')
+
+    expect(html).toContain(groupHelp)
+    expect(html).not.toContain('Groups (comma separated)')
+    expect(html).not.toContain('PLG group')
   })
 
   test('clears stale groups when loading a no-filter draft', () => {
