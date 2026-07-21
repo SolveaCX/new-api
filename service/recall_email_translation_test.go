@@ -31,6 +31,7 @@ func TestRecallEmailTranslatorTranslatesMultipleStagesInOneStructuredRequest(t *
 		var request map[string]any
 		require.NoError(t, common.DecodeJson(r.Body, &request))
 		require.Equal(t, "gpt-translation", request["model"])
+		require.EqualValues(t, 32768, request["max_output_tokens"])
 		requestJSON, err := common.Marshal(request)
 		require.NoError(t, err)
 		requestText := string(requestJSON)
@@ -240,7 +241,7 @@ func TestRecallEmailTranslationValidatesStructuredOutput(t *testing.T) {
 
 func TestRecallEmailTranslationProtectsAndRestoresTokensAndURLs(t *testing.T) {
 	allowRecallEmailTranslationTestServer(t)
-	sentinelPattern := regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9]{4}__`)
+	sentinelPattern := regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9a-f]{32}_[0-9]{4}__`)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -274,6 +275,77 @@ func TestRecallEmailTranslationProtectsAndRestoresTokensAndURLs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "zh hello {{name}}", translated[1]["zh"].Subject)
 	require.Equal(t, "zh visit https://example.com/pay?code=${code} use {{coupon}}", translated[1]["zh"].BodyText)
+}
+
+func TestRecallEmailTranslationDoesNotRecursivelyRestoreSentinelLikeText(t *testing.T) {
+	allowRecallEmailTranslationTestServer(t)
+	sentinelPattern := regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9a-f]{32}_[0-9]{4}__`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		sentinels := sentinelPattern.FindAllString(string(raw), -1)
+		require.Len(t, sentinels, 2)
+
+		translations := make(map[string]RecallEmailTemplate, len(recallEmailTranslationTestLanguages))
+		for _, language := range recallEmailTranslationTestLanguages {
+			translations[language] = RecallEmailTemplate{
+				Subject:  language + " subject",
+				BodyText: sentinels[0] + " then " + sentinels[1],
+			}
+		}
+		writeRecallEmailTranslationResponse(t, w, map[string]any{"stages": []map[string]any{{"stage_no": 1, "translations": translations}}})
+	}))
+	defer server.Close()
+
+	translator := newRecallEmailTranslationTestTranslator(server, RecallEmailTranslatorOptions{})
+	translated, err := translator.Translate(context.Background(), []RecallEmailStage{{
+		StageNo: 1,
+		Templates: map[string]RecallEmailTemplate{"en": {
+			Subject:  "English subject",
+			BodyText: "https://example.com/__RECALL_EMAIL_PROTECTED_0002__ then {{name}}",
+		}},
+	}})
+
+	require.NoError(t, err)
+	require.Equal(t, "https://example.com/__RECALL_EMAIL_PROTECTED_0002__ then {{name}}", translated[1]["zh"].BodyText)
+}
+
+func TestRecallEmailTranslationValidatesEnglishTemplateRuneLimitsBeforeRequest(t *testing.T) {
+	allowRecallEmailTranslationTestServer(t)
+	tests := []struct {
+		name         string
+		subject      string
+		body         string
+		wantError    bool
+		wantRequests int32
+	}{
+		{name: "maximum lengths", subject: strings.Repeat("界", 200), body: strings.Repeat("界", 2000), wantRequests: 1},
+		{name: "subject too long", subject: strings.Repeat("界", 201), body: "body", wantError: true},
+		{name: "body too long", subject: "subject", body: strings.Repeat("界", 2001), wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests.Add(1)
+				writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+			}))
+			defer server.Close()
+
+			translator := newRecallEmailTranslationTestTranslator(server, RecallEmailTranslatorOptions{})
+			_, err := translator.Translate(context.Background(), []RecallEmailStage{{
+				StageNo:   1,
+				Templates: map[string]RecallEmailTemplate{"en": {Subject: test.subject, BodyText: test.body}},
+			}})
+
+			if test.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, test.wantRequests, requests.Load())
+		})
+	}
 }
 
 func TestRecallEmailTranslationRejectsDamagedProtectedSequence(t *testing.T) {
