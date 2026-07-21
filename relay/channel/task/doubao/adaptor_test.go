@@ -81,6 +81,19 @@ func mustVideoRatio(t *testing.T, model, resolution string, hasVideo bool) float
 	return ratio
 }
 
+func TestGetVideoInputRatioFallsBackToSameInputTypeBasePrice(t *testing.T) {
+	const model = "doubao-seedance-2-0-fast-260128"
+	withoutVideo := mustVideoRatio(t, model, "1080p", false)
+	withVideo := mustVideoRatio(t, model, "4k", true)
+
+	if withoutVideo != 1 {
+		t.Fatalf("1080p ratio without video = %v, want 1", withoutVideo)
+	}
+	if want := 22.0 / 37.0; withVideo != want {
+		t.Fatalf("4k ratio with video = %v, want %v", withVideo, want)
+	}
+}
+
 // ---- pure mapping function ----------------------------------------------
 
 // buildDoubaoCreateRequest must pass the official content[] through to the Ark

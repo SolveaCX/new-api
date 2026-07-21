@@ -128,18 +128,16 @@ func TestCollectPendingUpstreamModelChangesFromModels_WithIgnoredRegexPatterns(t
 	require.Equal(t, []string{}, pendingRemoveModels)
 }
 
-func TestFetchChannelUpstreamModelIDsRejectsSavedCodexBeforeNetwork(t *testing.T) {
-	baseURL := "http://127.0.0.1:1"
+func TestFetchChannelUpstreamModelIDsUsesCodexDiscoveryForSavedChannels(t *testing.T) {
 	channel := &model.Channel{
-		Id:      1,
-		Type:    constant.ChannelTypeCodex,
-		Key:     `{"access_token":"secret","refresh_token":"secret-refresh","account_id":"account"}`,
-		BaseURL: &baseURL,
+		Id:   1,
+		Type: constant.ChannelTypeCodex,
 	}
+	channel.ChannelInfo.IsMultiKey = true
 
 	models, err := fetchChannelUpstreamModelIDs(channel)
 
-	require.ErrorContains(t, err, "saved Codex channel model discovery is not supported")
+	require.ErrorContains(t, err, "does not support multi-key model discovery")
 	require.Nil(t, models)
 }
 

@@ -205,8 +205,13 @@ type RateLimitGroupSectionProps = {
 
 function RateLimitGroupSection(props: RateLimitGroupSectionProps) {
   const { t } = useTranslation()
-  const { fiveHourWindow, weeklyWindow } = resolveCodexLimitWindows(props.source)
-  const windows = getVisibleCodexLimitWindows(fiveHourWindow, weeklyWindow)
+  const { fiveHourWindow, weeklyWindow, unknownWindows } =
+    resolveCodexLimitWindows(props.source)
+  const windows = getVisibleCodexLimitWindows(
+    fiveHourWindow,
+    weeklyWindow,
+    unknownWindows
+  )
 
   return (
     <section className='space-y-3'>
@@ -232,17 +237,18 @@ function RateLimitGroupSection(props: RateLimitGroupSectionProps) {
             windows.length > 1 ? 'md:grid-cols-2' : ''
           }`}
         >
-          {windows.map((item) => (
-            <RateLimitWindow
-              key={item.kind}
-              title={
-                item.kind === 'fiveHour'
-                  ? t('5-Hour Window')
-                  : t('Weekly Window')
-              }
-              window={item.window}
-            />
-          ))}
+          {windows.map((item, index) => {
+            let title = t('Rate Limit Windows')
+            if (item.kind === 'fiveHour') title = t('5-Hour Window')
+            if (item.kind === 'weekly') title = t('Weekly Window')
+            return (
+              <RateLimitWindow
+                key={`${item.kind}-${index}`}
+                title={title}
+                window={item.window}
+              />
+            )
+          })}
         </div>
       ) : (
         <div className='text-muted-foreground text-xs'>-</div>

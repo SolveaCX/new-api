@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +25,7 @@ func TestFetchCodexChannelModelsRejectsMultiKey(t *testing.T) {
 func TestFetchCodexChannelModelsAddsCompactVariantsExceptAutoReview(t *testing.T) {
 	allowPrivateCodexModelFetch(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"models":[{"slug":"gpt-5.6-sol"},{"slug":"codex-auto-review"}]}`))
+		_, _ = w.Write([]byte(`{"models":[{"slug":"gpt-5.6-sol"},{"slug":"gpt-5.6-sol-openai-compact"},{"slug":"codex-auto-review"}]}`))
 	}))
 	defer server.Close()
 
@@ -44,8 +44,8 @@ func TestFetchCodexChannelModelsAddsCompactVariantsExceptAutoReview(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"gpt-5.6-sol",
+		"gpt-5.6-sol-openai-compact",
 		"codex-auto-review",
-		ratio_setting.WithCompactModelSuffix("gpt-5.6-sol"),
 	}, models)
 }
 
@@ -72,10 +72,48 @@ func TestFetchCodexChannelModelsReturnsExpiredCredentialError(t *testing.T) {
 	require.Nil(t, models)
 }
 
-func TestFetchCodexChannelModelsRejectsSavedChannelDiscovery(t *testing.T) {
-	channel := &model.Channel{Id: 1, Type: constant.ChannelTypeCodex}
+func TestFetchCodexChannelModelsSupportsSavedChannel(t *testing.T) {
+	allowPrivateCodexModelFetch(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"models":[{"slug":"gpt-5.6-sol"}]}`))
+	}))
+	defer server.Close()
+	previousHTTPClient := httpClient
+	httpClient = server.Client()
+	t.Cleanup(func() { httpClient = previousHTTPClient })
+
+	latestCodexClientVersion.Lock()
+	previousVersion := latestCodexClientVersion.version
+	previousExpiresAt := latestCodexClientVersion.expiresAt
+	previousLastError := latestCodexClientVersion.lastError
+	previousRetryAt := latestCodexClientVersion.retryAt
+	latestCodexClientVersion.version = "0.144.6"
+	latestCodexClientVersion.expiresAt = time.Now().Add(time.Hour)
+	latestCodexClientVersion.lastError = ""
+	latestCodexClientVersion.retryAt = time.Time{}
+	latestCodexClientVersion.Unlock()
+	t.Cleanup(func() {
+		latestCodexClientVersion.Lock()
+		defer latestCodexClientVersion.Unlock()
+		latestCodexClientVersion.version = previousVersion
+		latestCodexClientVersion.expiresAt = previousExpiresAt
+		latestCodexClientVersion.lastError = previousLastError
+		latestCodexClientVersion.retryAt = previousRetryAt
+	})
+
+	baseURL := server.URL
+	channel := &model.Channel{
+		Id:      1,
+		Type:    constant.ChannelTypeCodex,
+		Key:     `{"access_token":"token","account_id":"account"}`,
+		BaseURL: &baseURL,
+	}
+
 	models, err := FetchCodexChannelModels(channel)
 
-	require.ErrorContains(t, err, "saved Codex channel model discovery is deferred")
-	require.Nil(t, models)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"gpt-5.6-sol",
+		"gpt-5.6-sol-openai-compact",
+	}, models)
 }

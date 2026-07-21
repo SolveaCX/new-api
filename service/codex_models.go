@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,20 +12,23 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/system_setting"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
 	codexLatestReleaseURL        = "https://api.github.com/repos/openai/codex/releases/latest"
 	codexClientVersionCacheTTL   = time.Hour
 	codexClientVersionFailureTTL = 30 * time.Second
+	codexModelsResponseMaxBytes  = 4 << 20
 )
 
 type codexClientVersionCache struct {
 	sync.Mutex
-	version   string
-	expiresAt time.Time
-	lastError string
-	retryAt   time.Time
+	fetchGroup singleflight.Group
+	version    string
+	expiresAt  time.Time
+	lastError  string
+	retryAt    time.Time
 }
 
 var latestCodexClientVersion codexClientVersionCache
@@ -40,32 +44,56 @@ func (cache *codexClientVersionCache) get(
 	now time.Time,
 ) (string, error) {
 	cache.Lock()
-	defer cache.Unlock()
-
 	if cache.version != "" && now.Before(cache.expiresAt) {
-		return cache.version, nil
+		version := cache.version
+		cache.Unlock()
+		return version, nil
 	}
 	if cache.version == "" && cache.lastError != "" && now.Before(cache.retryAt) {
-		return "", fmt.Errorf("%s", cache.lastError)
-	}
-
-	version, err := fetchLatestCodexClientVersion(ctx, client, releaseURL)
-	if err != nil {
-		if cache.version != "" {
-			common.SysError(fmt.Sprintf("Codex client version lookup failed; using stale version %s: %v", cache.version, err))
-			cache.expiresAt = now.Add(codexClientVersionCacheTTL)
-			return cache.version, nil
-		}
-		cache.lastError = err.Error()
-		cache.retryAt = now.Add(codexClientVersionFailureTTL)
+		err := fmt.Errorf("%s", cache.lastError)
+		cache.Unlock()
 		return "", err
 	}
+	cache.Unlock()
 
-	cache.version = version
-	cache.expiresAt = now.Add(codexClientVersionCacheTTL)
-	cache.lastError = ""
-	cache.retryAt = time.Time{}
-	return version, nil
+	value, err, _ := cache.fetchGroup.Do(releaseURL, func() (any, error) {
+		cache.Lock()
+		if cache.version != "" && now.Before(cache.expiresAt) {
+			version := cache.version
+			cache.Unlock()
+			return version, nil
+		}
+		if cache.version == "" && cache.lastError != "" && now.Before(cache.retryAt) {
+			err := fmt.Errorf("%s", cache.lastError)
+			cache.Unlock()
+			return "", err
+		}
+		cache.Unlock()
+
+		version, fetchErr := fetchLatestCodexClientVersion(ctx, client, releaseURL)
+		cache.Lock()
+		defer cache.Unlock()
+		if fetchErr != nil {
+			if cache.version != "" {
+				common.SysError(fmt.Sprintf("Codex client version lookup failed; using stale version %s: %v", cache.version, fetchErr))
+				cache.expiresAt = now.Add(codexClientVersionCacheTTL)
+				return cache.version, nil
+			}
+			cache.lastError = fetchErr.Error()
+			cache.retryAt = now.Add(codexClientVersionFailureTTL)
+			return "", fetchErr
+		}
+
+		cache.version = version
+		cache.expiresAt = now.Add(codexClientVersionCacheTTL)
+		cache.lastError = ""
+		cache.retryAt = time.Time{}
+		return version, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return value.(string), nil
 }
 
 func fetchLatestCodexClientVersion(ctx context.Context, client *http.Client, releaseURL string) (string, error) {
@@ -185,7 +213,14 @@ func FetchCodexModels(
 			Slug string `json:"slug"`
 		} `json:"models"`
 	}
-	if err := common.DecodeJson(resp.Body, &result); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, codexModelsResponseMaxBytes+1))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	if len(body) > codexModelsResponseMaxBytes {
+		return resp.StatusCode, nil, fmt.Errorf("codex models response exceeds %d bytes", codexModelsResponseMaxBytes)
+	}
+	if err := common.Unmarshal(body, &result); err != nil {
 		return resp.StatusCode, nil, err
 	}
 

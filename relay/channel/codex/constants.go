@@ -13,7 +13,6 @@ var baseModelList = []string{
 	"gpt-5.2", "gpt-5.2-codex", "gpt-5.3-codex", "gpt-5.3-codex-spark",
 	"gpt-5.4", "gpt-5.4-mini", "gpt-5.5",
 	"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
-	"codex-auto-review",
 }
 
 // 图像模型:codex 后端只有一套原生图像能力,model 名仅作标签;对外暴露 gpt-image-2。

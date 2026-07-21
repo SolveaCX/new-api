@@ -265,7 +265,11 @@ func normalizeUpstreamModelFetchKey(key string) string {
 
 func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 	if channel.Type == constant.ChannelTypeCodex {
-		return nil, fmt.Errorf("saved Codex channel model discovery is not supported")
+		models, err := service.FetchCodexChannelModels(channel)
+		if err != nil {
+			return nil, err
+		}
+		return normalizeModelNames(models), nil
 	}
 
 	baseURL := constant.ChannelBaseURLs[channel.Type]

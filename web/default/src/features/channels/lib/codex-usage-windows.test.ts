@@ -34,6 +34,7 @@ describe('Codex usage windows', () => {
 
     expect(resolved.fiveHourWindow).toBeNull()
     expect(resolved.weeklyWindow).toBe(weekly)
+    expect(resolved.unknownWindows).toEqual([])
     expect(
       getVisibleCodexLimitWindows(
         resolved.fiveHourWindow,
@@ -68,7 +69,7 @@ describe('Codex usage windows', () => {
     expect(getVisibleCodexLimitWindows({}, {})).toEqual([])
   })
 
-  it('does not invent named windows when duration is missing or unknown', () => {
+  it('keeps durationless or unknown windows visible without inventing a name', () => {
     for (const window of [
       { used_percent: 0 },
       { used_percent: 10, limit_window_seconds: 60 * 60 },
@@ -77,17 +78,33 @@ describe('Codex usage windows', () => {
       const resolved = resolveCodexLimitWindows({
         rate_limit: { primary_window: window },
       })
-      expect(resolved).toEqual({
-        fiveHourWindow: null,
-        weeklyWindow: null,
-      })
+      expect(resolved.fiveHourWindow).toBeNull()
+      expect(resolved.weeklyWindow).toBeNull()
+      expect(resolved.unknownWindows).toEqual([window])
       expect(
         getVisibleCodexLimitWindows(
           resolved.fiveHourWindow,
-          resolved.weeklyWindow
+          resolved.weeklyWindow,
+          resolved.unknownWindows
         )
-      ).toEqual([])
+      ).toEqual([{ kind: 'unknown', window }])
     }
+  })
+
+  it('recognizes a near-weekly upstream duration as weekly', () => {
+    const weekly = {
+      used_percent: 25,
+      limit_window_seconds: 7 * 24 * 60 * 60 - 60,
+    }
+    expect(
+      resolveCodexLimitWindows({
+        rate_limit: { secondary_window: weekly },
+      })
+    ).toEqual({
+      fiveHourWindow: null,
+      weeklyWindow: weekly,
+      unknownWindows: [],
+    })
   })
 
   it('does not expose a five-hour window for free plans', () => {
@@ -101,6 +118,10 @@ describe('Codex usage windows', () => {
           },
         },
       })
-    ).toEqual({ fiveHourWindow: null, weeklyWindow: null })
+    ).toEqual({
+      fiveHourWindow: null,
+      weeklyWindow: null,
+      unknownWindows: [],
+    })
   })
 })
