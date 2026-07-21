@@ -167,8 +167,16 @@ const productScopeSchema = z
 
 const emailTemplateSchema = z
   .object({
-    subject: z.string().trim().min(1),
-    body_text: z.string().trim().min(1),
+    subject: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => Array.from(value).length <= 200),
+    body_text: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => Array.from(value).length <= 2_000),
   })
   .strict()
 

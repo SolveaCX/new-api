@@ -22,6 +22,7 @@ import {
   formatRecallMinorAmount,
   normalizeRecallCouponSource,
   normalizeRecallDiscountType,
+  normalizeRecallGroupsForMode,
   parseRecallMajorAmount,
   recallFixedCurrencies,
   removeRecallEmailStage,
@@ -37,8 +38,6 @@ import type {
   RecallFixedCurrency,
 } from '../types'
 import { CampaignProductSelector } from './campaign-product-selector'
-
-const languages = ['en', 'zh', 'es', 'fr', 'pt', 'ru', 'ja', 'vi'] as const
 
 type RecallFixedAmountInputs = Record<RecallFixedCurrency, string>
 
@@ -203,8 +202,6 @@ interface CampaignEditorProps {
 
 export function CampaignEditor(props: CampaignEditorProps) {
   const { t } = useTranslation()
-  const [activeLanguage, setActiveLanguage] =
-    useState<(typeof languages)[number]>('en')
   const mutations = useRecallCampaignMutations(props.campaignId)
   const updateSchema =
     props.status && props.status !== 'draft'
@@ -230,6 +227,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const discountType = form.watch('discount_config.type')
   const executionMode = form.watch('execution_mode')
   const groups = form.watch('audience_config.groups')
+  const groupMode = form.watch('audience_config.group_mode')
   const providers = form.watch('audience_config.payment_providers')
   const topUpPrices = form.watch('product_scope.topup_price_ids')
   const subscriptionPrices = form.watch('product_scope.subscription_price_ids')
@@ -257,6 +255,23 @@ export function CampaignEditor(props: CampaignEditorProps) {
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean),
+      { shouldDirty: true, shouldValidate: true }
+    )
+  }
+
+  const setGroupMode = (
+    mode: RecallCampaignDraft['audience_config']['group_mode']
+  ) => {
+    form.setValue('audience_config.group_mode', mode, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+    form.setValue(
+      'audience_config.groups',
+      normalizeRecallGroupsForMode(
+        form.getValues('audience_config.groups'),
+        mode
+      ),
       { shouldDirty: true, shouldValidate: true }
     )
   }
@@ -404,9 +419,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
             </div>
           ))}
           <div className='space-y-2'>
-            <Label>{t('Groups (comma separated)')}</Label>
+            <Label htmlFor='recall-groups'>
+              {t('Groups (comma separated)')}
+            </Label>
             <Input
-              disabled={immutable}
+              id='recall-groups'
+              disabled={immutable || groupMode === ''}
               value={groups.join(', ')}
               onChange={(event) =>
                 setCsv('audience_config.groups', event.target.value)
@@ -417,10 +435,9 @@ export function CampaignEditor(props: CampaignEditorProps) {
             <Label>{t('Group mode')}</Label>
             <Select
               disabled={immutable}
-              value={form.watch('audience_config.group_mode')}
+              value={groupMode}
               onValueChange={(value) =>
-                form.setValue(
-                  'audience_config.group_mode',
+                setGroupMode(
                   (value ??
                     '') as RecallCampaignDraft['audience_config']['group_mode']
                 )
@@ -825,37 +842,16 @@ export function CampaignEditor(props: CampaignEditorProps) {
           <CardTitle>{t('6. Email sequence')}</CardTitle>
         </CardHeader>
         <CardContent className='space-y-4'>
-          <div className='max-w-xs space-y-2'>
-            <Label>{t('Template language')}</Label>
-            <Select
-              value={activeLanguage}
-              onValueChange={(value) =>
-                value && setActiveLanguage(value as (typeof languages)[number])
-              }
-              items={languages.map((language) => ({
-                value: language,
-                label: language.toUpperCase(),
-              }))}
-            >
-              <SelectTrigger className='w-full'>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {languages.map((language) => (
-                    <SelectItem key={language} value={language}>
-                      {language.toUpperCase()}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable."
+            )}
+          </p>
           {stages.fields.map((stage, index) => {
             const subjectPath =
-              `email_sequence.${index}.templates.${activeLanguage}.subject` as FieldPath<RecallCampaignDraft>
+              `email_sequence.${index}.templates.en.subject` as FieldPath<RecallCampaignDraft>
             const bodyPath =
-              `email_sequence.${index}.templates.${activeLanguage}.body_text` as FieldPath<RecallCampaignDraft>
+              `email_sequence.${index}.templates.en.body_text` as FieldPath<RecallCampaignDraft>
             return (
               <div className='space-y-3 rounded-lg border p-3' key={stage.id}>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
@@ -883,6 +879,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   <div className='space-y-2'>
                     <Label>{t('Subject')}</Label>
                     <Input
+                      maxLength={200}
                       disabled={terminal}
                       {...form.register(subjectPath)}
                     />
@@ -892,6 +889,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   <Label>{t('Body text')}</Label>
                   <Textarea
                     rows={5}
+                    maxLength={2000}
                     disabled={terminal}
                     {...form.register(bodyPath)}
                   />

@@ -58,6 +58,13 @@ export function normalizeRecallCouponSource(
     : normalized
 }
 
+export function normalizeRecallGroupsForMode(
+  groups: string[],
+  mode: RecallCampaignDraft['audience_config']['group_mode']
+): string[] {
+  return mode === '' ? [] : groups
+}
+
 export function normalizeRecallDiscountType(
   draft: RecallCampaignDraft,
   discountType: RecallDiscountType

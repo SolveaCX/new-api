@@ -5571,6 +5571,7 @@
     "Hour (0-23)": "小时（0-23）",
     "Minute (0-59)": "分钟（0-59）",
     "Template language": "模板语言",
+    "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable.": "保存时会自动翻译邮件内容；发送时会使用每位用户的语言，若对应译文不可用则回退到英语。",
     "Email stage {{stage}}": "第 {{stage}} 封邮件",
     "Stage {{stage}}": "阶段 {{stage}}",
     "TemplateVersion": "模板版本",

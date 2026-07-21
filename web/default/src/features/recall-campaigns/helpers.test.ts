@@ -3,6 +3,7 @@ import {
   formatRecallMinorAmount,
   getRecallPageCount,
   getRecallRecipientRetry,
+  normalizeRecallGroupsForMode,
   normalizeRecallCouponSource,
   normalizeRecallDiscountType,
   parseRecallMajorAmount,
@@ -56,6 +57,19 @@ function makeRecipient(
 }
 
 describe('recall campaign editor normalization', () => {
+  test('clears groups when no group filter is selected', () => {
+    expect(normalizeRecallGroupsForMode(['paid', 'trial'], '')).toEqual([])
+  })
+
+  test.each(['allow', 'block'] as const)(
+    'preserves normalized groups in %s mode',
+    (mode) => {
+      const groups = ['paid', 'trial']
+
+      expect(normalizeRecallGroupsForMode(groups, mode)).toEqual(groups)
+    }
+  )
+
   test('clears the hidden existing coupon ID when switching to automatic', () => {
     const normalized = normalizeRecallCouponSource(makeDraft(), 'automatic')
 

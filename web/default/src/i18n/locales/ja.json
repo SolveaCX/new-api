@@ -5571,6 +5571,7 @@
     "Hour (0-23)": "時（0～23）",
     "Minute (0-59)": "分（0～59）",
     "Template language": "テンプレート言語",
+    "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable.": "メール本文は保存時に自動翻訳され、各ユーザーの言語で送信されます。翻訳がない場合は英語が使用されます。",
     "Email stage {{stage}}": "メールステージ {{stage}}",
     "Stage {{stage}}": "ステージ {{stage}}",
     "TemplateVersion": "テンプレートバージョン",
