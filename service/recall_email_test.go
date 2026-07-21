@@ -42,6 +42,7 @@ type recallEmailFixture struct {
 
 func TestRecallEmailRenderEscapesStoredContentAndOwnsActionMarkup(t *testing.T) {
 	subject, body, err := RenderRecallEmail(RecallEmailRenderInput{
+		Language: "en",
 		Template: RecallEmailTemplate{
 			Subject:  "Return <now>",
 			BodyText: "Hello <script>alert(1)</script>\nSecond & final line",
@@ -66,6 +67,184 @@ func TestRecallEmailRenderEscapesStoredContentAndOwnsActionMarkup(t *testing.T) 
 	require.Contains(t, body, "Claim your offer</a>")
 	require.Contains(t, body, "Unsubscribe</a>")
 	require.Contains(t, body, "claim=raw_token&amp;next=&#34;bad&#34;")
+}
+
+func TestRecallEmailRenderUsesLanguageSpecificWrapperAndProductSummary(t *testing.T) {
+	tests := []struct {
+		language         string
+		products         RecallProductScope
+		greeting         string
+		offerCodeLabel   string
+		validForLabel    string
+		productSummary   string
+		expiresLabel     string
+		claimLabel       string
+		unsubscribeLabel string
+	}{
+		{
+			language: "en", products: RecallProductScope{TopUpPriceIDs: []string{"topup"}, SubscriptionPriceIDs: []string{"subscription"}},
+			greeting: "Hello Ada,", offerCodeLabel: "Offer code:", validForLabel: "Valid for:", productSummary: "Top-ups and subscriptions",
+			expiresLabel: "Expires:", claimLabel: "Claim your offer", unsubscribeLabel: "Unsubscribe",
+		},
+		{
+			language: "zh", products: RecallProductScope{TopUpPriceIDs: []string{"topup"}},
+			greeting: "您好，Ada！", offerCodeLabel: "优惠码：", validForLabel: "适用于：", productSummary: "充值",
+			expiresLabel: "有效期至：", claimLabel: "领取优惠", unsubscribeLabel: "取消订阅",
+		},
+		{
+			language: "es", products: RecallProductScope{SubscriptionPriceIDs: []string{"subscription"}},
+			greeting: "Hola Ada,", offerCodeLabel: "Código de oferta:", validForLabel: "Válido para:", productSummary: "Suscripciones",
+			expiresLabel: "Caduca:", claimLabel: "Canjear tu oferta", unsubscribeLabel: "Cancelar suscripción",
+		},
+		{
+			language: "fr", products: RecallProductScope{},
+			greeting: "Bonjour Ada,", offerCodeLabel: "Code promotionnel :", validForLabel: "Valable pour :", productSummary: "Produits éligibles",
+			expiresLabel: "Expire le :", claimLabel: "Profiter de votre offre", unsubscribeLabel: "Se désabonner",
+		},
+		{
+			language: "pt", products: RecallProductScope{TopUpPriceIDs: []string{"topup"}, SubscriptionPriceIDs: []string{"subscription"}},
+			greeting: "Olá Ada,", offerCodeLabel: "Código da oferta:", validForLabel: "Válido para:", productSummary: "Recargas e assinaturas",
+			expiresLabel: "Expira em:", claimLabel: "Resgatar sua oferta", unsubscribeLabel: "Cancelar inscrição",
+		},
+		{
+			language: "ru", products: RecallProductScope{TopUpPriceIDs: []string{"topup"}},
+			greeting: "Здравствуйте, Ada!", offerCodeLabel: "Код предложения:", validForLabel: "Действует для:", productSummary: "Пополнения",
+			expiresLabel: "Истекает:", claimLabel: "Получить предложение", unsubscribeLabel: "Отписаться",
+		},
+		{
+			language: "ja", products: RecallProductScope{SubscriptionPriceIDs: []string{"subscription"}},
+			greeting: "Ada さん、こんにちは。", offerCodeLabel: "オファーコード：", validForLabel: "対象商品：", productSummary: "サブスクリプション",
+			expiresLabel: "有効期限：", claimLabel: "オファーを利用する", unsubscribeLabel: "配信停止",
+		},
+		{
+			language: "vi", products: RecallProductScope{},
+			greeting: "Xin chào Ada,", offerCodeLabel: "Mã ưu đãi:", validForLabel: "Áp dụng cho:", productSummary: "Sản phẩm đủ điều kiện",
+			expiresLabel: "Hết hạn:", claimLabel: "Nhận ưu đãi", unsubscribeLabel: "Hủy đăng ký",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.language, func(t *testing.T) {
+			productJSON, err := common.Marshal(testCase.products)
+			require.NoError(t, err)
+			productSummary, err := recallEmailProductSummary(string(productJSON), testCase.language)
+			require.NoError(t, err)
+
+			_, body, err := RenderRecallEmail(RecallEmailRenderInput{
+				Language:            testCase.language,
+				Template:            RecallEmailTemplate{Subject: "Subject", BodyText: "Body"},
+				RecipientName:       "Ada",
+				PromotionCodeMasked: "SAVE****25",
+				ExpiresAt:           recallEmailTestNow + 3600,
+				ProductSummary:      productSummary,
+				ClaimURL:            "https://console.example.com/claim",
+				UnsubscribeURL:      "https://console.example.com/unsubscribe",
+			})
+			require.NoError(t, err)
+			for _, expected := range []string{
+				testCase.greeting,
+				testCase.offerCodeLabel,
+				testCase.validForLabel,
+				testCase.productSummary,
+				testCase.expiresLabel,
+				testCase.claimLabel + "</a>",
+				testCase.unsubscribeLabel + "</a>",
+				time.Unix(recallEmailTestNow+3600, 0).UTC().Format("2006-01-02 15:04 UTC"),
+			} {
+				require.Contains(t, body, expected)
+			}
+		})
+	}
+}
+
+func TestRecallEmailRenderUnknownLanguageUsesEnglish(t *testing.T) {
+	productJSON, err := common.Marshal(RecallProductScope{TopUpPriceIDs: []string{"topup"}, SubscriptionPriceIDs: []string{"subscription"}})
+	require.NoError(t, err)
+	productSummary, err := recallEmailProductSummary(string(productJSON), "de")
+	require.NoError(t, err)
+	require.Equal(t, "Top-ups and subscriptions", productSummary)
+
+	_, body, err := RenderRecallEmail(RecallEmailRenderInput{
+		Language:            "de",
+		Template:            RecallEmailTemplate{Subject: "Subject", BodyText: "Body"},
+		RecipientName:       "Ada",
+		PromotionCodeMasked: "SAVE****25",
+		ExpiresAt:           recallEmailTestNow + 3600,
+		ProductSummary:      productSummary,
+		ClaimURL:            "https://console.example.com/claim",
+		UnsubscribeURL:      "https://console.example.com/unsubscribe",
+	})
+	require.NoError(t, err)
+	require.Contains(t, body, "Hello Ada,")
+	require.Contains(t, body, "Offer code:")
+	require.Contains(t, body, "Valid for: Top-ups and subscriptions")
+	require.Contains(t, body, "Claim your offer</a>")
+	require.Contains(t, body, "Unsubscribe</a>")
+}
+
+func TestRecallEmailTemplateForLanguageReturnsResolvedLanguage(t *testing.T) {
+	snapshot, err := common.Marshal(map[string]RecallEmailTemplate{
+		"en": {Subject: "English subject", BodyText: "English body"},
+		"zh": {Subject: "中文主题", BodyText: "中文正文"},
+		"de": {Subject: "German subject", BodyText: "German body"},
+	})
+	require.NoError(t, err)
+
+	template, language, err := recallEmailTemplateForLanguage(string(snapshot), "zh")
+	require.NoError(t, err)
+	require.Equal(t, RecallEmailTemplate{Subject: "中文主题", BodyText: "中文正文"}, template)
+	require.Equal(t, "zh", language)
+
+	template, language, err = recallEmailTemplateForLanguage(string(snapshot), "fr")
+	require.NoError(t, err)
+	require.Equal(t, RecallEmailTemplate{Subject: "English subject", BodyText: "English body"}, template)
+	require.Equal(t, "en", language)
+
+	template, language, err = recallEmailTemplateForLanguage(string(snapshot), "de")
+	require.NoError(t, err)
+	require.Equal(t, RecallEmailTemplate{Subject: "English subject", BodyText: "English body"}, template)
+	require.Equal(t, "en", language)
+}
+
+func TestRecallEmailZhExactTemplateUsesZhThroughout(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	snapshot, err := common.Marshal(map[string]RecallEmailTemplate{
+		"en": {Subject: "English subject", BodyText: "English body"},
+		"zh": {Subject: "中文主题", BodyText: "中文正文"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", fixture.recipient.Id).Update("language_snapshot", "zh").Error)
+	require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Update("template_snapshot", string(snapshot)).Error)
+
+	require.NoError(t, fixture.worker.ProcessLeased(context.Background(), fixture.message.Id))
+	require.Len(t, *fixture.sent, 1)
+	sent := (*fixture.sent)[0]
+	require.Equal(t, "中文主题", sent.subject)
+	require.Contains(t, sent.htmlBody, "中文正文")
+	require.Contains(t, sent.htmlBody, "您好，Ada &lt;admin&gt;！")
+	require.Contains(t, sent.htmlBody, "适用于：充值和订阅")
+	require.Contains(t, sent.htmlBody, "领取优惠</a>")
+}
+
+func TestRecallEmailMissingFrTemplateUsesEnglishThroughout(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	snapshot, err := common.Marshal(map[string]RecallEmailTemplate{
+		"en": {Subject: "English subject", BodyText: "English body"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", fixture.recipient.Id).Update("language_snapshot", "fr").Error)
+	require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Update("template_snapshot", string(snapshot)).Error)
+
+	require.NoError(t, fixture.worker.ProcessLeased(context.Background(), fixture.message.Id))
+	require.Len(t, *fixture.sent, 1)
+	sent := (*fixture.sent)[0]
+	require.Equal(t, "English subject", sent.subject)
+	require.Contains(t, sent.htmlBody, "English body")
+	require.Contains(t, sent.htmlBody, "Hello Ada &lt;admin&gt;,")
+	require.Contains(t, sent.htmlBody, "Valid for: Top-ups and subscriptions")
+	require.Contains(t, sent.htmlBody, "Claim your offer</a>")
+	require.NotContains(t, sent.htmlBody, "Bonjour")
+	require.NotContains(t, sent.htmlBody, "Recharges")
 }
 
 func TestRecallEmailStableMessageIDUsesEffectiveSMTPDomain(t *testing.T) {
