@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -23,12 +26,15 @@ const (
 	recallEmailTranslationDefaultTimeout  = 30 * time.Second
 	recallEmailTranslationMaxAttempts     = 3
 	recallEmailTranslationMaxRetryAfter   = 2 * time.Second
+	recallEmailSubjectMaxRunes            = 200
+	recallEmailBodyMaxRunes               = 2000
+	recallEmailTranslationMaxOutputTokens = 32768
 )
 
 var (
 	recallEmailTranslationLanguages = []string{"zh", "es", "fr", "pt", "ru", "ja", "vi"}
 	recallEmailProtectedPattern     = regexp.MustCompile(`https?://[^\s<>"']+|\{\{[^{}\r\n]+\}\}|\$\{[^{}\r\n]+\}`)
-	recallEmailSentinelPattern      = regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9]{4}__`)
+	recallEmailSentinelPattern      = regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9a-f]{32}_[0-9]{4}__`)
 )
 
 type RecallEmailTranslator interface {
@@ -249,8 +255,7 @@ func protectRecallEmailTranslationStages(stages []RecallEmailStage) ([]recallEma
 		return nil, fmt.Errorf("recall email translation requires one to three stages")
 	}
 	seen := make(map[int]struct{}, len(stages))
-	protected := make([]recallEmailProtectedStage, 0, len(stages))
-	counter := 0
+	originalValues := make([]string, 0, len(stages)*2)
 	for _, stage := range stages {
 		if stage.StageNo <= 0 {
 			return nil, fmt.Errorf("recall email translation stage number must be positive")
@@ -266,8 +271,24 @@ func protectRecallEmailTranslationStages(stages []RecallEmailStage) ([]recallEma
 		if strings.ContainsAny(english.Subject, "\r\n") {
 			return nil, fmt.Errorf("recall email translation stage %d English subject must be single-line", stage.StageNo)
 		}
-		subject, subjectValues := protectRecallEmailValue(english.Subject, &counter)
-		body, bodyValues := protectRecallEmailValue(english.BodyText, &counter)
+		if utf8.RuneCountInString(english.Subject) > recallEmailSubjectMaxRunes {
+			return nil, fmt.Errorf("recall email translation stage %d English subject exceeds %d characters", stage.StageNo, recallEmailSubjectMaxRunes)
+		}
+		if utf8.RuneCountInString(english.BodyText) > recallEmailBodyMaxRunes {
+			return nil, fmt.Errorf("recall email translation stage %d English body exceeds %d characters", stage.StageNo, recallEmailBodyMaxRunes)
+		}
+		originalValues = append(originalValues, english.Subject, english.BodyText)
+	}
+	nonce, err := newRecallEmailTranslationSentinelNonce(originalValues)
+	if err != nil {
+		return nil, err
+	}
+	protected := make([]recallEmailProtectedStage, 0, len(stages))
+	counter := 0
+	for _, stage := range stages {
+		english := stage.Templates["en"]
+		subject, subjectValues := protectRecallEmailValue(english.Subject, nonce, &counter)
+		body, bodyValues := protectRecallEmailValue(english.BodyText, nonce, &counter)
 		protected = append(protected, recallEmailProtectedStage{
 			StageNo: stage.StageNo, Subject: subject, BodyText: body,
 			subjectValues: subjectValues, bodyValues: bodyValues,
@@ -276,11 +297,31 @@ func protectRecallEmailTranslationStages(stages []RecallEmailStage) ([]recallEma
 	return protected, nil
 }
 
-func protectRecallEmailValue(value string, counter *int) (string, []recallEmailProtectedValue) {
+func newRecallEmailTranslationSentinelNonce(originalValues []string) (string, error) {
+	var random [16]byte
+	for {
+		if _, err := rand.Read(random[:]); err != nil {
+			return "", fmt.Errorf("generate recall email translation protected marker: %w", err)
+		}
+		nonce := hex.EncodeToString(random[:])
+		collides := false
+		for _, value := range originalValues {
+			if strings.Contains(value, nonce) {
+				collides = true
+				break
+			}
+		}
+		if !collides {
+			return nonce, nil
+		}
+	}
+}
+
+func protectRecallEmailValue(value string, nonce string, counter *int) (string, []recallEmailProtectedValue) {
 	values := make([]recallEmailProtectedValue, 0)
 	protected := recallEmailProtectedPattern.ReplaceAllStringFunc(value, func(match string) string {
 		*counter++
-		sentinel := fmt.Sprintf("__RECALL_EMAIL_PROTECTED_%04d__", *counter)
+		sentinel := fmt.Sprintf("__RECALL_EMAIL_PROTECTED_%s_%04d__", nonce, *counter)
 		values = append(values, recallEmailProtectedValue{Sentinel: sentinel, Original: match})
 		return sentinel
 	})
@@ -302,7 +343,7 @@ func buildRecallEmailTranslationRequest(modelName string, stages []recallEmailPr
 		Text: recallEmailTranslationText{Format: recallEmailTranslationFormat{
 			Type: "json_schema", Name: "recall_email_translations", Schema: buildRecallEmailTranslationSchema(), Strict: true,
 		}},
-		MaxOutputTokens: 6000,
+		MaxOutputTokens: recallEmailTranslationMaxOutputTokens,
 	}
 }
 
@@ -479,13 +520,16 @@ func restoreRecallEmailProtectedValue(value string, protected []recallEmailProte
 	if len(found) != len(protected) {
 		return "", fmt.Errorf("protected marker sequence changed")
 	}
+	replacements := make(map[string]string, len(protected))
 	for index, item := range protected {
 		if found[index] != item.Sentinel {
 			return "", fmt.Errorf("protected marker sequence changed")
 		}
-		value = strings.ReplaceAll(value, item.Sentinel, item.Original)
+		replacements[item.Sentinel] = item.Original
 	}
-	return value, nil
+	return recallEmailSentinelPattern.ReplaceAllStringFunc(value, func(match string) string {
+		return replacements[match]
+	}), nil
 }
 
 func recallEmailTranslationEndpoint(baseURL string) string {
