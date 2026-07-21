@@ -441,7 +441,7 @@ func recallEmailTranslationEndpoint(baseURL string) string {
 }
 
 func recallEmailTranslationRetryableStatus(status int) bool {
-	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500
+	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || (status >= 500 && status < 600)
 }
 
 func isTemporaryRecallEmailTranslationNetworkError(err error) bool {
