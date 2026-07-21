@@ -24,6 +24,7 @@ import {
   normalizeRecallDiscountType,
   normalizeRecallGroupsForMode,
   parseRecallMajorAmount,
+  prepareRecallCampaignSubmitDraft,
   recallFixedCurrencies,
   removeRecallEmailStage,
 } from '../helpers'
@@ -76,10 +77,12 @@ function createRecallFixedAmountInputs(
 function createRecallCampaignFormDraft(
   draft: RecallCampaignDraft
 ): RecallCampaignDraft {
-  return draft.coupon_source === 'automatic' &&
+  const normalizedDraft =
+    draft.coupon_source === 'automatic' &&
     draft.discount_config.type === 'fixed'
-    ? normalizeRecallDiscountType(draft, 'fixed')
-    : draft
+      ? normalizeRecallDiscountType(draft, 'fixed')
+      : draft
+  return prepareRecallCampaignSubmitDraft(normalizedDraft)
 }
 
 const audienceFields: Record<
@@ -277,9 +280,10 @@ export function CampaignEditor(props: CampaignEditorProps) {
   }
 
   const onSubmit = async (draft: RecallCampaignDraft) => {
+    const normalizedDraft = prepareRecallCampaignSubmitDraft(draft)
     const response = props.campaignId
-      ? await mutations.update.mutateAsync(draft)
-      : await mutations.create.mutateAsync(draft)
+      ? await mutations.update.mutateAsync(normalizedDraft)
+      : await mutations.create.mutateAsync(normalizedDraft)
     if (!response.success || !response.data) return
     toast.success(
       props.campaignId ? t('Campaign updated') : t('Campaign created')
@@ -879,7 +883,6 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   <div className='space-y-2'>
                     <Label>{t('Subject')}</Label>
                     <Input
-                      maxLength={200}
                       disabled={terminal}
                       {...form.register(subjectPath)}
                     />
@@ -889,7 +892,6 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   <Label>{t('Body text')}</Label>
                   <Textarea
                     rows={5}
-                    maxLength={2000}
                     disabled={terminal}
                     {...form.register(bodyPath)}
                   />
