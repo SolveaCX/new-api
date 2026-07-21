@@ -26,6 +26,7 @@ func GetAllLogs(c *gin.Context) {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	username := c.Query("username")
+	searchUserId, _ := strconv.Atoi(c.Query("user_id"))
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
@@ -34,7 +35,7 @@ func GetAllLogs(c *gin.Context) {
 	upstreamRequestId := c.Query("upstream_request_id")
 	// non_admin=true（仅 root 可用）：仅查看普通用户日志，排除 root 自己的记录
 	excludeUserId := excludeUserIdForNonAdmin(c)
-	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId, excludeUserId)
+	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, searchUserId, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId, excludeUserId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -141,11 +142,12 @@ func GetLogsStat(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	tokenName := c.Query("token_name")
 	username := c.Query("username")
+	searchUserId, _ := strconv.Atoi(c.Query("user_id"))
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
 	excludeUserId := excludeUserIdForNonAdmin(c)
-	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, excludeUserId, 0)
+	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, searchUserId, tokenName, channel, group, excludeUserId, 0)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -174,7 +176,7 @@ func GetLogsSelfStat(c *gin.Context) {
 	group := c.Query("group")
 	// 身份约束按 user_id 精确（最后一个参数），username 传空：self 路径绝不能用
 	// username 模糊匹配，否则 alice 会把 alice2/malice 的用量统计算进来（越权）。
-	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, "", tokenName, channel, group, 0, userId)
+	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, "", 0, tokenName, channel, group, 0, userId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
