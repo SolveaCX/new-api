@@ -3476,6 +3476,8 @@
 
   function syncLocaleRoutes(locale) {
     document.querySelectorAll("a[href]").forEach(function (a) {
+      // Navbar destinations are shared across locales; only their labels change.
+      if (a.closest(".nav, .dbar")) return;
       var route = a.dataset.localeRoute || identifyLocaleRoute(a);
       if (!route) return;
       a.dataset.localeRoute = route;
