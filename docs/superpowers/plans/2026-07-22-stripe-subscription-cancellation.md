@@ -147,25 +147,25 @@ Commit with Lore message:
 - Modify: `model/subscription_recurring.go`
 - Test: `controller/topup_stripe_test.go`, `service/stripe_subscription_lifecycle_test.go`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add tests for signed event ID dedupe, unrelated subscription event 200, NewAPI metadata missing order retryable 500, updated fetches current Stripe snapshot, deleted is terminal/idempotent, and late updated cannot revive deleted binding.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `go test ./controller ./service -run 'TestStripeSubscriptionWebhook|TestApplyProviderSubscription' -count=1`
 Expected: FAIL because new event types are ignored.
 
-- [ ] **Step 3: Implement minimal webhook flow**
+- [x] **Step 3: Implement minimal webhook flow**
 
 After signature verification, persist event processing row. For `updated`, fetch current snapshot before applying. For `deleted`, apply terminal state and reconcile invoice collection. Unknown no-metadata subscription objects return 200.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: `go test ./controller ./service -run 'TestStripeSubscriptionWebhook|TestApplyProviderSubscription' -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit with Lore message:
 `Make Stripe subscription webhooks idempotent and terminal-aware`

@@ -31,6 +31,7 @@ import (
 	stripetaxid "github.com/stripe/stripe-go/v81/taxid"
 	"github.com/stripe/stripe-go/v81/webhook"
 	"github.com/thanhpk/randstr"
+	"gorm.io/gorm"
 )
 
 var stripeAdaptor = &StripeAdaptor{}
@@ -672,6 +673,10 @@ func StripeWebhook(c *gin.Context) {
 		processingErr = sessionAsyncPaymentSucceeded(ctx, event, callerIp)
 	case stripe.EventTypeCheckoutSessionAsyncPaymentFailed:
 		sessionAsyncPaymentFailed(ctx, event, callerIp)
+	case stripe.EventTypeCustomerSubscriptionUpdated:
+		processingErr = handleStripeSubscriptionUpdated(ctx, event)
+	case stripe.EventTypeCustomerSubscriptionDeleted:
+		processingErr = handleStripeSubscriptionDeleted(ctx, event)
 	default:
 		logger.LogInfo(ctx, fmt.Sprintf("Stripe webhook 忽略事件 event_type=%s client_ip=%s", string(event.Type), callerIp))
 	}
@@ -873,7 +878,111 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 
 var stripeCheckoutPaymentContractFromEvent = getStripeCheckoutPaymentContractFromEvent
 var stripeSubscriptionSnapshotFromCheckoutSession = getStripeSubscriptionSnapshotFromCheckoutSession
+var stripeSubscriptionSnapshotFromSubscriptionEvent = getStripeSubscriptionSnapshotFromSubscriptionEvent
 var notifyStripePaymentProcessingFailure = service.NotifyDingTalkPaymentProcessingFailure
+
+func handleStripeSubscriptionUpdated(ctx context.Context, event stripe.Event) (err error) {
+	first, err := recordStripeSubscriptionWebhookEvent(event)
+	if err != nil || !first {
+		return err
+	}
+	defer finishStripeSubscriptionWebhookEvent(event, &err)
+	snapshot, err := stripeSubscriptionSnapshotFromSubscriptionEvent(event)
+	if err != nil {
+		return err
+	}
+	binding, err := model.FindBindingByProviderSubscriptionID(model.PaymentProviderStripe, snapshot.ProviderSubscriptionId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := repairMissingStripeSubscriptionBindingFromEvent(event, snapshot); err != nil {
+				return err
+			}
+			logger.LogInfo(ctx, fmt.Sprintf("Stripe subscription updated ignored for unbound subscription_id=%s", snapshot.ProviderSubscriptionId))
+			return nil
+		}
+		return err
+	}
+	if binding.EndedAt > 0 || isTerminalRecurringProviderStatus(binding.ProviderStatus) {
+		logger.LogInfo(ctx, fmt.Sprintf("Stripe subscription updated ignored for terminal binding_id=%d subscription_id=%s", binding.Id, binding.ProviderSubscriptionId))
+		return nil
+	}
+	_, err = model.ApplyProviderSubscriptionSnapshot(binding.Id, snapshot)
+	return err
+}
+
+func handleStripeSubscriptionDeleted(ctx context.Context, event stripe.Event) (err error) {
+	first, err := recordStripeSubscriptionWebhookEvent(event)
+	if err != nil || !first {
+		return err
+	}
+	defer finishStripeSubscriptionWebhookEvent(event, &err)
+	snapshot := stripeSubscriptionSnapshotFromDeletedEvent(event)
+	binding, err := model.FindBindingByProviderSubscriptionID(model.PaymentProviderStripe, snapshot.ProviderSubscriptionId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if newAPIStripeSubscriptionTradeNo(event) != "" {
+				return fmt.Errorf("Stripe subscription deleted missing local binding for NewAPI trade_no=%s", newAPIStripeSubscriptionTradeNo(event))
+			}
+			logger.LogInfo(ctx, fmt.Sprintf("Stripe subscription deleted ignored for unbound subscription_id=%s", snapshot.ProviderSubscriptionId))
+			return nil
+		}
+		return err
+	}
+	_, err = model.ApplyProviderSubscriptionTermination(binding.Id, snapshot)
+	return err
+}
+
+func recordStripeSubscriptionWebhookEvent(event stripe.Event) (bool, error) {
+	eventID := strings.TrimSpace(event.ID)
+	if eventID == "" {
+		return true, nil
+	}
+	return model.ClaimPaymentWebhookEventProcessing(
+		model.PaymentProviderStripe,
+		eventID,
+		string(event.Type),
+		strings.TrimSpace(stripeEventObjectValue(event, "id")),
+		event.Created,
+		"",
+	)
+}
+
+func finishStripeSubscriptionWebhookEvent(event stripe.Event, processingErr *error) {
+	eventID := strings.TrimSpace(event.ID)
+	if eventID == "" || processingErr == nil {
+		return
+	}
+	if *processingErr != nil {
+		_ = model.MarkPaymentWebhookEventFailed(model.PaymentProviderStripe, eventID, *processingErr)
+		return
+	}
+	if err := model.MarkPaymentWebhookEventProcessed(model.PaymentProviderStripe, eventID); err != nil {
+		*processingErr = err
+	}
+}
+
+func repairMissingStripeSubscriptionBindingFromEvent(event stripe.Event, snapshot model.ProviderSubscriptionSnapshot) error {
+	tradeNo := newAPIStripeSubscriptionTradeNo(event)
+	if tradeNo == "" {
+		return nil
+	}
+	order := model.GetSubscriptionOrderByTradeNo(tradeNo)
+	if order == nil {
+		return fmt.Errorf("Stripe subscription metadata references missing local order trade_no=%s", tradeNo)
+	}
+	if strings.TrimSpace(stripeEventObjectValue(event, "metadata", "newapi_user_id")) != strconv.Itoa(order.UserId) {
+		return errors.New("Stripe subscription metadata user_id mismatch")
+	}
+	if strings.TrimSpace(stripeEventObjectValue(event, "metadata", "newapi_plan_id")) != strconv.Itoa(order.PlanId) {
+		return errors.New("Stripe subscription metadata plan_id mismatch")
+	}
+	_, err := model.CompleteSubscriptionOrderWithProviderBinding(tradeNo, "", model.PaymentProviderStripe, model.PaymentMethodStripe, snapshot)
+	return err
+}
+
+func newAPIStripeSubscriptionTradeNo(event stripe.Event) string {
+	return strings.TrimSpace(stripeEventObjectValue(event, "metadata", "newapi_trade_no"))
+}
 
 func getStripeSubscriptionSnapshotFromCheckoutSession(event stripe.Event, order *model.SubscriptionOrder) (model.ProviderSubscriptionSnapshot, error) {
 	if order == nil {
@@ -956,6 +1065,77 @@ func stripeSubscriptionFirstPriceID(sub *stripe.Subscription) string {
 		return ""
 	}
 	return strings.TrimSpace(sub.Items.Data[0].Price.ID)
+}
+
+func getStripeSubscriptionSnapshotFromSubscriptionEvent(event stripe.Event) (model.ProviderSubscriptionSnapshot, error) {
+	subscriptionID := strings.TrimSpace(stripeEventObjectValue(event, "id"))
+	if subscriptionID == "" {
+		return model.ProviderSubscriptionSnapshot{}, errors.New("Stripe subscription event missing subscription id")
+	}
+	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
+		return model.ProviderSubscriptionSnapshot{}, fmt.Errorf("invalid Stripe API key")
+	}
+	stripe.Key = setting.StripeApiSecret
+	params := &stripe.SubscriptionParams{}
+	params.AddExpand("latest_invoice")
+	params.AddExpand("items.data.price")
+	sub, err := stripesubscription.Get(subscriptionID, params)
+	if err != nil {
+		return model.ProviderSubscriptionSnapshot{}, err
+	}
+	return stripeSubscriptionSnapshotFromStripeSubscription(sub), nil
+}
+
+func stripeSubscriptionSnapshotFromStripeSubscription(sub *stripe.Subscription) model.ProviderSubscriptionSnapshot {
+	if sub == nil {
+		return model.ProviderSubscriptionSnapshot{}
+	}
+	customerID := ""
+	if sub.Customer != nil {
+		customerID = strings.TrimSpace(sub.Customer.ID)
+	}
+	latestInvoiceID := ""
+	if sub.LatestInvoice != nil {
+		latestInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
+	}
+	return model.ProviderSubscriptionSnapshot{
+		ProviderSubscriptionId:  strings.TrimSpace(sub.ID),
+		ProviderCustomerId:      customerID,
+		ProviderPriceId:         stripeSubscriptionFirstPriceID(sub),
+		ProviderLatestInvoiceId: latestInvoiceID,
+		ProviderStatus:          string(sub.Status),
+		CancelAtPeriodEnd:       sub.CancelAtPeriodEnd,
+		CurrentPeriodStart:      sub.CurrentPeriodStart,
+		CurrentPeriodEnd:        sub.CurrentPeriodEnd,
+		CanceledAt:              sub.CanceledAt,
+		EndedAt:                 sub.EndedAt,
+		Livemode:                sub.Livemode,
+	}
+}
+
+func stripeSubscriptionSnapshotFromDeletedEvent(event stripe.Event) model.ProviderSubscriptionSnapshot {
+	return model.ProviderSubscriptionSnapshot{
+		ProviderSubscriptionId: strings.TrimSpace(stripeEventObjectValue(event, "id")),
+		ProviderCustomerId:     strings.TrimSpace(stripeEventObjectValue(event, "customer")),
+		ProviderStatus:         strings.TrimSpace(stripeEventObjectValue(event, "status")),
+		CurrentPeriodStart:     stripeEventUnix(event, "current_period_start"),
+		CurrentPeriodEnd:       stripeEventUnix(event, "current_period_end"),
+		CanceledAt:             stripeEventUnix(event, "canceled_at"),
+		EndedAt:                stripeEventUnix(event, "ended_at"),
+		Livemode:               event.Livemode,
+	}
+}
+
+func stripeEventUnix(event stripe.Event, key string) int64 {
+	raw := strings.TrimSpace(stripeEventObjectValue(event, key))
+	if raw == "" {
+		return 0
+	}
+	value, err := decimal.NewFromString(raw)
+	if err != nil || value.IsNegative() {
+		return 0
+	}
+	return value.IntPart()
 }
 
 func alertStripePaymentProcessingFailure(ctx context.Context, event stripe.Event, referenceId string, customerId string, processingErr error) {
