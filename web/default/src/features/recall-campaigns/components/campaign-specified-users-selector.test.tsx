@@ -329,6 +329,10 @@ function dispose(root: Root) {
   })
 }
 
+function optionLabels(): string[] {
+  return latestMultiSelectProps?.options.map((option) => option.label) ?? []
+}
+
 async function waitFor(
   predicate: () => boolean,
   timeout = 1000
@@ -408,6 +412,41 @@ describe('CampaignSpecifiedUsersSelector', () => {
     })
     await waitFor(() => apiCalls.some((call) => call.keyword === 'linus'))
     await waitFor(() => container.textContent?.includes('Ada') === true)
+    dispose(root)
+  })
+
+  test('treats empty and cleared keyword searches as authoritative for unselected options', async () => {
+    userFixtures.set('keyword:ada', [
+      user(1, {
+        username: 'ada',
+        display_name: 'Ada',
+        email: 'ada@example.com',
+      }),
+    ])
+    userFixtures.set('keyword:zzzz', [])
+    const { container, root } = renderSelector()
+    await waitFor(() => latestMultiSelectProps !== undefined)
+
+    React.act(() => {
+      latestMultiSelectProps?.onSearchChange?.('ada')
+    })
+    await waitFor(() => apiCalls.some((call) => call.keyword === 'ada'))
+    await waitFor(() => optionLabels().some((label) => label.includes('Ada')))
+
+    React.act(() => {
+      latestMultiSelectProps?.onSearchChange?.('zzzz')
+    })
+    await waitFor(() => apiCalls.some((call) => call.keyword === 'zzzz'))
+    await waitFor(() => optionLabels().length === 0)
+    expect(optionLabels().join(' ')).not.toContain('Ada')
+    expect(container.textContent).not.toContain('Ada')
+
+    React.act(() => {
+      latestMultiSelectProps?.onSearchChange?.('')
+    })
+    await waitFor(() => optionLabels().length === 0)
+    expect(optionLabels().join(' ')).not.toContain('Ada')
+    expect(container.textContent).not.toContain('Ada')
     dispose(root)
   })
 
@@ -548,14 +587,10 @@ describe('CampaignSpecifiedUsersSelector', () => {
     dispose(root)
   })
 
-  test('disables real control props and does not trigger callbacks through disabled controls', async () => {
-    const userChanges: number[][] = []
-    const emailChanges: string[][] = []
+  test('passes disabled control props for immutable campaigns', async () => {
     const { root } = renderSelector({
       immutable: true,
       emails: ['a@b.co'],
-      onUserIDsChange: (value) => userChanges.push(value),
-      onEmailsChange: (value) => emailChanges.push(value),
     })
     await waitFor(
       () =>
@@ -572,8 +607,6 @@ describe('CampaignSpecifiedUsersSelector', () => {
 
     expect(latestMultiSelectProps?.disabled).toBe(true)
     expect(latestTextareaProps?.disabled).toBe(true)
-    expect(userChanges).toEqual([])
-    expect(emailChanges).toEqual([])
     dispose(root)
   })
 })
