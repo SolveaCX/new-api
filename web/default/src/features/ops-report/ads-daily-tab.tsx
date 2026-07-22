@@ -89,10 +89,28 @@ function StatusBadge(props: { status: string }) {
 }
 
 // Google-search-style ad preview: display URL line, headlines, descriptions,
-// image assets, plus campaign/metrics footer.
-function CreativeCard(props: { row: AdsDailyCreativeRow }) {
+// image assets, plus campaign/metrics footer. Days before the first content
+// snapshot have metrics-only rows — those render with the ad's most recent
+// snapshot content as a stand-in (marked as such), since creatives rarely
+// change day to day.
+function CreativeCard(props: {
+  row: AdsDailyCreativeRow
+  fallback?: AdsDailyCreativeRow
+}) {
   const { t } = useTranslation()
-  const row = props.row
+  const isStandIn = !(props.row.headlines ?? []).length && !!props.fallback
+  const row =
+    isStandIn && props.fallback
+      ? {
+          ...props.fallback,
+          cost_usd: props.row.cost_usd,
+          clicks: props.row.clicks,
+          impressions: props.row.impressions,
+          conversions: props.row.conversions,
+          change: props.row.change,
+          status: '',
+        }
+      : props.row
   const finalUrl = row.final_urls?.[0] ?? ''
   let host = ''
   try {
@@ -112,6 +130,11 @@ function CreativeCard(props: { row: AdsDailyCreativeRow }) {
           {displayUrl && <> · {displayUrl}</>}
         </div>
         <div className='flex shrink-0 gap-1'>
+          {isStandIn && (
+            <Badge variant='outline' className='text-muted-foreground text-xs'>
+              {t('Latest version')}
+            </Badge>
+          )}
           <ChangeBadge change={row.change} />
           <StatusBadge status={row.status} />
         </div>
@@ -357,6 +380,7 @@ function DayCard(props: {
   day: AdsDailyDay
   expanded: boolean
   onToggle: () => void
+  contentByAdId: Map<string, AdsDailyCreativeRow>
 }) {
   const { t, i18n } = useTranslation()
   const day = props.day
@@ -415,6 +439,7 @@ function DayCard(props: {
                     <CreativeCard
                       key={`${row.ad_id}-${row.change}`}
                       row={row}
+                      fallback={props.contentByAdId.get(row.ad_id)}
                     />
                   ))}
                 </div>
@@ -447,6 +472,16 @@ export function AdsDailyTab(props: { report: AdsDailyReport }) {
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(days.slice(0, 1).map((d) => d.date))
   )
+  // latest known content per ad, used as a stand-in on pre-snapshot days
+  // (days_list is newest-first, so the first hit wins)
+  const contentByAdId = new Map<string, AdsDailyCreativeRow>()
+  for (const day of days) {
+    for (const row of day.creatives ?? []) {
+      if ((row.headlines ?? []).length > 0 && !contentByAdId.has(row.ad_id)) {
+        contentByAdId.set(row.ad_id, row)
+      }
+    }
+  }
   const toggle = (date: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -492,6 +527,7 @@ export function AdsDailyTab(props: { report: AdsDailyReport }) {
           day={day}
           expanded={expanded.has(day.date)}
           onToggle={() => toggle(day.date)}
+          contentByAdId={contentByAdId}
         />
       ))}
     </div>
