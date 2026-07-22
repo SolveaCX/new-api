@@ -6,6 +6,7 @@ import (
 	htmltemplate "html/template"
 	"net/url"
 	"strings"
+	texttemplate "text/template"
 	"text/template/parse"
 
 	"golang.org/x/net/html"
@@ -136,19 +137,14 @@ func walkRecallEmailHTML(node *html.Node, inHead bool, inStyle bool, document *r
 			}
 			value := strings.TrimSpace(attr.Val)
 			key := strings.ToLower(attr.Key)
-			if value == "{{.ClaimURL}}" || value == "{{.UnsubscribeURL}}" {
-				if element != "a" || key != "href" {
-					if value == "{{.ClaimURL}}" {
-						return fmt.Errorf("ClaimURL action must appear in an anchor href")
-					}
-					return fmt.Errorf("UnsubscribeURL action must appear in an anchor href")
+			actions, err := recallEmailHTMLURLActionsInTemplate(attr.Val)
+			if err != nil {
+				return err
+			}
+			if actions.claim || actions.unsubscribe {
+				if element != "a" || key != "href" || (value != "{{.ClaimURL}}" && value != "{{.UnsubscribeURL}}") {
+					return actions.err()
 				}
-			}
-			if value != "{{.ClaimURL}}" && strings.Contains(value, "{{.ClaimURL}}") {
-				return fmt.Errorf("ClaimURL action must appear in an anchor href")
-			}
-			if value != "{{.UnsubscribeURL}}" && strings.Contains(value, "{{.UnsubscribeURL}}") {
-				return fmt.Errorf("UnsubscribeURL action must appear in an anchor href")
 			}
 			if element == "a" && key == "href" {
 				switch value {
@@ -164,11 +160,12 @@ func walkRecallEmailHTML(node *html.Node, inHead bool, inStyle bool, document *r
 		}
 	}
 	if node.Type == html.TextNode || node.Type == html.CommentNode {
-		if strings.Contains(node.Data, "{{.ClaimURL}}") {
-			return fmt.Errorf("ClaimURL action must appear in an anchor href")
+		actions, err := recallEmailHTMLURLActionsInTemplate(node.Data)
+		if err != nil {
+			return err
 		}
-		if strings.Contains(node.Data, "{{.UnsubscribeURL}}") {
-			return fmt.Errorf("UnsubscribeURL action must appear in an anchor href")
+		if actions.claim || actions.unsubscribe {
+			return actions.err()
 		}
 	}
 	if node.Type == html.TextNode && !inHead && !inStyle && strings.TrimSpace(node.Data) != "" {
@@ -180,6 +177,61 @@ func walkRecallEmailHTML(node *html.Node, inHead bool, inStyle bool, document *r
 		}
 	}
 	return nil
+}
+
+type recallEmailHTMLURLActions struct {
+	claim       bool
+	unsubscribe bool
+}
+
+func (actions recallEmailHTMLURLActions) err() error {
+	if actions.claim {
+		return fmt.Errorf("ClaimURL action must appear in an anchor href")
+	}
+	return fmt.Errorf("UnsubscribeURL action must appear in an anchor href")
+}
+
+func recallEmailHTMLURLActionsInTemplate(raw string) (recallEmailHTMLURLActions, error) {
+	if !strings.Contains(raw, "{{") {
+		return recallEmailHTMLURLActions{}, nil
+	}
+	template, err := texttemplate.New("recall-email-html-fragment").Parse(raw)
+	if err != nil {
+		return recallEmailHTMLURLActions{}, fmt.Errorf("parse recall email html template fragment: %w", err)
+	}
+	actions := recallEmailHTMLURLActions{}
+	collectRecallEmailHTMLURLActions(template.Tree.Root, &actions)
+	return actions, nil
+}
+
+func collectRecallEmailHTMLURLActions(node parse.Node, actions *recallEmailHTMLURLActions) {
+	switch typed := node.(type) {
+	case *parse.ListNode:
+		for _, child := range typed.Nodes {
+			collectRecallEmailHTMLURLActions(child, actions)
+		}
+	case *parse.ActionNode:
+		if typed.Pipe != nil {
+			collectRecallEmailHTMLURLActions(typed.Pipe, actions)
+		}
+	case *parse.PipeNode:
+		for _, command := range typed.Cmds {
+			collectRecallEmailHTMLURLActions(command, actions)
+		}
+	case *parse.CommandNode:
+		for _, arg := range typed.Args {
+			collectRecallEmailHTMLURLActions(arg, actions)
+		}
+	case *parse.FieldNode:
+		if len(typed.Ident) == 1 {
+			switch typed.Ident[0] {
+			case "ClaimURL":
+				actions.claim = true
+			case "UnsubscribeURL":
+				actions.unsubscribe = true
+			}
+		}
+	}
 }
 
 func validateRecallEmailHTMLElement(node *html.Node) error {
