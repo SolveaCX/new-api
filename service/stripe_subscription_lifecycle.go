@@ -123,11 +123,13 @@ func adminRecurringPolicyTarget(userSubscriptionID int) (*model.UserSubscription
 func recurringLifecycleIdempotencyKey(binding *model.SubscriptionProviderBinding, action string) string {
 	currentPeriodEnd := int64(0)
 	bindingID := int64(0)
+	actionSeq := int64(0)
 	if binding != nil {
 		currentPeriodEnd = binding.CurrentPeriodEnd
 		bindingID = binding.Id
+		actionSeq = binding.LifecycleActionSeq
 	}
-	return fmt.Sprintf("newapi_subscription_binding_%d_%s_%d", bindingID, action, currentPeriodEnd)
+	return fmt.Sprintf("newapi_subscription_binding_%d_%s_%d_%d", bindingID, action, currentPeriodEnd, actionSeq)
 }
 
 func isTerminalStripeSubscriptionStatus(status string) bool {

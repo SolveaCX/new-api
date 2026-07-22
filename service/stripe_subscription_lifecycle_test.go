@@ -157,6 +157,61 @@ func TestStripeSubscriptionLifecycleResumeClearsPeriodEnd(t *testing.T) {
 	require.False(t, updated.CancelAtPeriodEnd)
 }
 
+func TestStripeSubscriptionLifecycleIdempotencyKeyAdvancesAfterOppositeAction(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBindingWithSubscriptionID(t, 812, "sub_lifecycle_sequence", "active", false)
+	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	t.Cleanup(func() { stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate })
+	var keys []string
+	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		require.Equal(t, "sub_lifecycle_sequence", providerSubscriptionID)
+		keys = append(keys, idempotencyKey)
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId: providerSubscriptionID,
+			ProviderCustomerId:     "cus_lifecycle",
+			ProviderPriceId:        "price_lifecycle",
+			ProviderStatus:         "active",
+			CancelAtPeriodEnd:      cancelAtPeriodEnd,
+			CurrentPeriodStart:     1000,
+			CurrentPeriodEnd:       2000,
+		}, nil
+	}
+
+	_, err := CancelStripeRecurringSubscription(812, binding.Id)
+	require.NoError(t, err)
+	_, err = ResumeStripeRecurringSubscription(812, binding.Id)
+	require.NoError(t, err)
+	_, err = CancelStripeRecurringSubscription(812, binding.Id)
+	require.NoError(t, err)
+
+	require.Len(t, keys, 3)
+	require.NotEqual(t, keys[0], keys[2])
+	require.Contains(t, keys[0], "_cancel_")
+	require.Contains(t, keys[2], "_cancel_")
+}
+
+func TestStripeSubscriptionLifecycleIdempotencyKeyIsStableForFailedRetry(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBindingWithSubscriptionID(t, 813, "sub_lifecycle_retry", "active", false)
+	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	t.Cleanup(func() { stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate })
+	var keys []string
+	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		require.Equal(t, "sub_lifecycle_retry", providerSubscriptionID)
+		require.True(t, cancelAtPeriodEnd)
+		keys = append(keys, idempotencyKey)
+		return model.ProviderSubscriptionSnapshot{}, assertAnErrorForAdminLifecycleTest
+	}
+
+	_, err := CancelStripeRecurringSubscription(813, binding.Id)
+	require.ErrorIs(t, err, assertAnErrorForAdminLifecycleTest)
+	_, err = CancelStripeRecurringSubscription(813, binding.Id)
+	require.ErrorIs(t, err, assertAnErrorForAdminLifecycleTest)
+
+	require.Len(t, keys, 2)
+	require.Equal(t, keys[0], keys[1])
+}
+
 func TestStripeSubscriptionLifecycleRejectsForeignBinding(t *testing.T) {
 	setupStripeSubscriptionLifecycleTestDB(t)
 	binding := insertStripeLifecycleBinding(t, 803, "active", false)

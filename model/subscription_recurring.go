@@ -39,6 +39,7 @@ type SubscriptionProviderBinding struct {
 	EndedAt            int64 `json:"ended_at" gorm:"type:bigint;default:0"`
 	Livemode           bool  `json:"livemode" gorm:"default:false"`
 	LastSyncedAt       int64 `json:"last_synced_at" gorm:"type:bigint;default:0"`
+	LifecycleActionSeq int64 `json:"lifecycle_action_seq" gorm:"type:bigint;default:0"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
@@ -212,6 +213,9 @@ func ApplyProviderSubscriptionSnapshot(bindingID int64, snapshot ProviderSubscri
 			"last_synced_at":             common.GetTimestamp(),
 			"updated_at":                 common.GetTimestamp(),
 		}
+		if snapshot.CancelAtPeriodEnd != binding.CancelAtPeriodEnd {
+			updates["lifecycle_action_seq"] = binding.LifecycleActionSeq + 1
+		}
 		if err := tx.Model(&binding).Updates(updates).Error; err != nil {
 			return err
 		}
@@ -256,6 +260,9 @@ func ApplyProviderSubscriptionTermination(bindingID int64, snapshot ProviderSubs
 			"livemode":                   snapshot.Livemode,
 			"last_synced_at":             now,
 			"updated_at":                 now,
+		}
+		if binding.CancelAtPeriodEnd {
+			updates["lifecycle_action_seq"] = binding.LifecycleActionSeq + 1
 		}
 		if err := tx.Model(&binding).Updates(updates).Error; err != nil {
 			return err
@@ -360,6 +367,10 @@ func ClaimPaymentWebhookEventProcessing(provider string, eventID string, eventTy
 	if existing.Status != PaymentWebhookEventStatusFailed {
 		return false, nil
 	}
+	return claimFailedPaymentWebhookEventForRetry(existing, eventType, providerObjectID, eventCreated, payloadHash)
+}
+
+func claimFailedPaymentWebhookEventForRetry(existing PaymentWebhookEvent, eventType string, providerObjectID string, eventCreated int64, payloadHash string) (bool, error) {
 	updates := map[string]interface{}{
 		"event_type":         strings.TrimSpace(eventType),
 		"provider_object_id": strings.TrimSpace(providerObjectID),
@@ -370,10 +381,14 @@ func ClaimPaymentWebhookEventProcessing(provider string, eventID string, eventTy
 		"last_error":         "",
 		"updated_at":         common.GetTimestamp(),
 	}
-	if err := DB.Model(&PaymentWebhookEvent{}).
-		Where("provider = ? AND event_id = ? AND status = ?", provider, eventID, PaymentWebhookEventStatusFailed).
-		Updates(updates).Error; err != nil {
-		return false, err
+	result := DB.Model(&PaymentWebhookEvent{}).
+		Where("provider = ? AND event_id = ? AND status = ?", existing.Provider, existing.EventId, PaymentWebhookEventStatusFailed).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
 	}
 	return true, nil
 }

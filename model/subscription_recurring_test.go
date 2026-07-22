@@ -187,6 +187,38 @@ func TestPaymentWebhookEventProcessingRecordsDuplicateOnlyOnce(t *testing.T) {
 	require.EqualValues(t, 1, count)
 }
 
+func TestPaymentWebhookEventFailedRetryClaimRequiresConditionalUpdate(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionRecurringTestDB(t)
+	require.NoError(t, DB.Create(&PaymentWebhookEvent{
+		Provider:         PaymentProviderStripe,
+		EventId:          "evt_failed_retry",
+		EventType:        "customer.subscription.updated",
+		ProviderObjectId: "sub_retry",
+		EventCreated:     123,
+		Status:           PaymentWebhookEventStatusFailed,
+		AttemptCount:     1,
+		PayloadHash:      "hash-a",
+		LastError:        "first failure",
+	}).Error)
+	var staleFailed PaymentWebhookEvent
+	require.NoError(t, DB.Where("provider = ? AND event_id = ?", PaymentProviderStripe, "evt_failed_retry").First(&staleFailed).Error)
+
+	firstResult := DB.Model(&PaymentWebhookEvent{}).
+		Where("provider = ? AND event_id = ? AND status = ?", staleFailed.Provider, staleFailed.EventId, PaymentWebhookEventStatusFailed).
+		Updates(map[string]interface{}{
+			"status":        PaymentWebhookEventStatusProcessing,
+			"attempt_count": staleFailed.AttemptCount + 1,
+			"last_error":    "",
+		})
+	require.NoError(t, firstResult.Error)
+	require.EqualValues(t, 1, firstResult.RowsAffected)
+	secondClaimed, err := claimFailedPaymentWebhookEventForRetry(staleFailed, "customer.subscription.updated", "sub_retry", 123, "hash-b")
+
+	require.NoError(t, err)
+	require.False(t, secondClaimed)
+}
+
 func TestSubscriptionProviderBindingAllowsMultipleStripeSubscriptionsForSameUser(t *testing.T) {
 	setupSubscriptionRecurringTestDB(t)
 	migrateSubscriptionRecurringTestDB(t)
