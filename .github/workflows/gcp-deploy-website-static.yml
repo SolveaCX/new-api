@@ -199,7 +199,8 @@ jobs:
           # media price calibration + conversion tracking
           curl -s -m 20 "$C/" | grep -q 'md.early' || { echo "media calibration missing"; exit 1; }
           curl -s -m 20 "$C/" | grep -qE '\$0\.[0-9]+/s' && { echo "fabricated per-second price still present"; exit 1; }
-          curl -s -m 20 "$C/assets/track.js?v=716b" | grep -q 'sign_up_click' || { echo "track.js missing"; exit 1; }
+          curl -s -m 20 "$C/assets/track.js?v=721a" | grep -q 'sign_up_click' || { echo "track.js missing"; exit 1; }
+          curl -s -m 20 "$C/assets/track.js?v=721a" | grep -q 'first_landing_path' || { echo "track.js attribution missing"; exit 1; }
           # pricing honesty: no legacy fake claims may reappear
           for bad in "60–90%" "50% of list" "53% of list"; do
             curl -s -m 20 "$C/" | grep -q "$bad" && { echo "fake claim present: $bad"; exit 1; }

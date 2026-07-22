@@ -20,6 +20,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   captureAdsAttribution,
   getAttributionPayload,
+  isAcquisitionLandingPath,
   mergeAttributionValues,
   normalizeAttribution,
   parseAttributionPayload,
@@ -124,6 +125,33 @@ describe('attribution normalization', () => {
     expect(merged.landing_path).toBe('/pricing')
     expect(merged.captured_at).toBe('2026-06-16T00:00:00.000Z')
     expect(merged.source_type).toBe('utm')
+  })
+
+  test('keeps immutable first landing when a later paid campaign replaces last touch', () => {
+    const merged = mergeAttributionValues(
+      {
+        gclid: 'first-click',
+        landing_path: '/pt',
+        captured_at: '2026-07-21T00:00:00.000Z',
+      },
+      {
+        gclid: 'second-click',
+        landing_path: '/pricing',
+        captured_at: '2026-07-21T01:00:00.000Z',
+      }
+    )
+
+    expect(merged.gclid).toBe('second-click')
+    expect(merged.landing_path).toBe('/pricing')
+    expect(merged.first_landing_path).toBe('/pt')
+    expect(merged.first_captured_at).toBe('2026-07-21T00:00:00.000Z')
+  })
+
+  test('never treats authentication callbacks as acquisition landers', () => {
+    expect(isAcquisitionLandingPath('/oauth/google')).toBe(false)
+    expect(isAcquisitionLandingPath('/sign-in')).toBe(false)
+    expect(isAcquisitionLandingPath('/sign-up')).toBe(false)
+    expect(isAcquisitionLandingPath('/pt')).toBe(true)
   })
 
   test('keeps direct first landing page across route changes', () => {

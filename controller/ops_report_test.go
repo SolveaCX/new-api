@@ -6,6 +6,20 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
+func TestParseOpsAttributionPrefersFirstValidLanding(t *testing.T) {
+	agg := &opsUserAgg{user: &model.OpsPlgUser{AdsAttribution: `{"utm_campaign":"pt","first_landing_path":"/pt","landing_path":"/oauth/google"}`}}
+	parseOpsAttribution(agg)
+	if agg.landing != "/pt" {
+		t.Fatalf("landing = %q, want /pt", agg.landing)
+	}
+
+	agg = &opsUserAgg{user: &model.OpsPlgUser{AdsAttribution: `{"landing_path":"/oauth/google"}`}}
+	parseOpsAttribution(agg)
+	if agg.landing != "" {
+		t.Fatalf("OAuth callback must not be reported as a lander, got %q", agg.landing)
+	}
+}
+
 func opsTestAgg(id int, createdAt int64, campaign, keyword, matchType, landing string, apiKeyCount int) *opsUserAgg {
 	return &opsUserAgg{
 		user:      &model.OpsPlgUser{Id: id, CreatedAt: createdAt},

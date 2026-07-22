@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { InformationCircleIcon, PackageIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
@@ -47,6 +47,7 @@ export type ModelAccessPreviewProps = {
   defaultRatio: number | null
   emptyDescription?: string
   emptyTitle?: string
+  headerAction?: ReactNode
   models: ModelAccessModel[]
   modelRatios: Readonly<Record<string, number>>
   scopeDescription?: string
@@ -98,13 +99,16 @@ export function ModelAccessPreview(props: ModelAccessPreviewProps) {
             </p>
           )}
         </div>
-        <Badge variant='secondary' className='shrink-0'>
-          {props.summary ??
-            t('{{effective}} / {{total}} models', {
-              effective: props.models.length,
-              total: props.totalCount,
-            })}
-        </Badge>
+        <div className='flex shrink-0 flex-wrap items-center justify-end gap-2'>
+          <Badge variant='secondary'>
+            {props.summary ??
+              t('{{effective}} / {{total}} models', {
+                effective: props.models.length,
+                total: props.totalCount,
+              })}
+          </Badge>
+          {props.headerAction}
+        </div>
       </div>
 
       <Alert>

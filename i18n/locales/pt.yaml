@@ -123,6 +123,9 @@ quota.subscription_insufficient: "Cota de assinatura insuficiente ou nenhuma ass
 quota.token_insufficient: "Cota do token insuficiente, cota restante do token: {{.Remain}}, cota necessária: {{.Required}}"
 quota.user_insufficient_need: "Cota de usuário insuficiente, cota do usuário: {{.Quota}}, cota necessária: {{.Required}}"
 
+# Log messages
+log.invalid_user_id: "ID de usuário inválido"
+
 # Subscription messages
 subscription.not_enabled: "O plano de assinatura não está habilitado"
 subscription.title_empty: "O título do plano de assinatura não pode ficar vazio"
