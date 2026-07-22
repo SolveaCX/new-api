@@ -134,6 +134,20 @@ func PreviewRecallCampaign(c *gin.Context) {
 	common.ApiSuccess(c, recallPreviewResponse{RecallAudiencePreview: audience, Stripe: stripePreview})
 }
 
+func PreviewRecallEmailTemplate(c *gin.Context) {
+	var request service.RecallEmailPreviewRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	preview, err := service.PreviewRecallEmail(request)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, preview)
+}
+
 func ActivateRecallCampaign(c *gin.Context) {
 	recallCampaignAction(c, func(runtime *service.RecallRuntime, actorID int, campaignID int64) error {
 		return runtime.Campaigns.Activate(c.Request.Context(), actorID, campaignID)

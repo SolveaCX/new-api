@@ -295,6 +295,66 @@ func seedRecallControllerUser(t *testing.T, harness *recallControllerHarness, id
 	return user
 }
 
+const recallControllerEmailPreviewHTML = `<!doctype html><html><body>
+<p>Hello {{.RecipientName}}</p>
+<p>{{.PromotionCodeMasked}} - {{.ProductSummary}} - {{.ExpiresAt}}</p>
+<p><a href="{{.ClaimURL}}">Claim offer</a></p>
+<p><a href="{{.UnsubscribeURL}}">Unsubscribe</a></p>
+</body></html>`
+
+func countRecallControllerRows[T any](t *testing.T, db *gorm.DB) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, db.Model(new(T)).Count(&count).Error)
+	return count
+}
+
+func TestRecallCampaignEmailPreviewRendersUnsavedTemplateWithoutPersistence(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	beforeCampaigns := countRecallControllerRows[model.RecallCampaign](t, harness.db)
+	beforeMessages := countRecallControllerRows[model.RecallMessage](t, harness.db)
+	body := recallControllerJSON(t, service.RecallEmailPreviewRequest{
+		Template: service.RecallEmailTemplate{
+			Subject:  "Preview subject",
+			BodyHTML: recallControllerEmailPreviewHTML,
+		},
+	})
+
+	recorder := invokeRecallHandler(t, PreviewRecallEmailTemplate, http.MethodPost, "/", body, 0, nil)
+
+	payload := decodeRecallEnvelope(t, recorder)
+	require.Equal(t, true, payload["success"])
+	data := payload["data"].(map[string]any)
+	require.Equal(t, "Preview subject", data["subject"])
+	bodyHTML := data["body_html"].(string)
+	require.Contains(t, bodyHTML, "Ada")
+	require.Contains(t, bodyHTML, "SAVE****25")
+	require.Contains(t, bodyHTML, "Flatkey top-ups and subscriptions")
+	require.Contains(t, bodyHTML, time.Unix(1_900_000_000, 0).UTC().Format("2006-01-02 15:04 UTC"))
+	require.Contains(t, bodyHTML, `href="https://flatkey.ai/recall/claim?preview=1"`)
+	require.Contains(t, bodyHTML, `href="https://flatkey.ai/recall/unsubscribe?preview=1"`)
+	require.Equal(t, beforeCampaigns, countRecallControllerRows[model.RecallCampaign](t, harness.db))
+	require.Equal(t, beforeMessages, countRecallControllerRows[model.RecallMessage](t, harness.db))
+}
+
+func TestRecallCampaignEmailPreviewRejectsInvalidHTMLWithoutPersistence(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	beforeCampaigns := countRecallControllerRows[model.RecallCampaign](t, harness.db)
+	beforeMessages := countRecallControllerRows[model.RecallMessage](t, harness.db)
+	body := recallControllerJSON(t, service.RecallEmailPreviewRequest{
+		Template: service.RecallEmailTemplate{
+			Subject:  "Preview subject",
+			BodyHTML: `<html><body><script>alert(1)</script></body></html>`,
+		},
+	})
+
+	recorder := invokeRecallHandler(t, PreviewRecallEmailTemplate, http.MethodPost, "/", body, 0, nil)
+
+	requireRecallFailure(t, recorder, "body_html")
+	require.Equal(t, beforeCampaigns, countRecallControllerRows[model.RecallCampaign](t, harness.db))
+	require.Equal(t, beforeMessages, countRecallControllerRows[model.RecallMessage](t, harness.db))
+}
+
 func TestRecallCampaignDisabledRejectsMutationAndWorkerAffectingHandlers(t *testing.T) {
 	harness := setupRecallControllerHarness(t)
 	setRecallControllerEnabled(t, false)

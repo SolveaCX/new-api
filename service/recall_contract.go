@@ -81,6 +81,42 @@ type RecallEmailTemplate struct {
 	BodyHTML string `json:"body_html,omitempty"`
 }
 
+type RecallEmailPreviewRequest struct {
+	Template RecallEmailTemplate `json:"template"`
+}
+
+type RecallEmailPreviewResponse struct {
+	Subject  string `json:"subject"`
+	BodyHTML string `json:"body_html"`
+}
+
+func PreviewRecallEmail(request RecallEmailPreviewRequest) (RecallEmailPreviewResponse, error) {
+	stages, err := normalizeRecallEmailStages([]RecallEmailStage{{
+		StageNo:      1,
+		DelaySeconds: 0,
+		Templates: map[string]RecallEmailTemplate{
+			"en": request.Template,
+		},
+	}})
+	if err != nil {
+		return RecallEmailPreviewResponse{}, err
+	}
+	subject, bodyHTML, err := RenderRecallEmail(RecallEmailRenderInput{
+		Language:            "en",
+		Template:            stages[0].Templates["en"],
+		RecipientName:       "Ada",
+		PromotionCodeMasked: "SAVE****25",
+		ExpiresAt:           1_900_000_000,
+		ProductSummary:      "Flatkey top-ups and subscriptions",
+		ClaimURL:            "https://flatkey.ai/recall/claim?preview=1",
+		UnsubscribeURL:      "https://flatkey.ai/recall/unsubscribe?preview=1",
+	})
+	if err != nil {
+		return RecallEmailPreviewResponse{}, err
+	}
+	return RecallEmailPreviewResponse{Subject: subject, BodyHTML: bodyHTML}, nil
+}
+
 type RecallClaimView struct {
 	CampaignID          int64                `json:"campaign_id"`
 	RecipientID         int64                `json:"recipient_id"`
