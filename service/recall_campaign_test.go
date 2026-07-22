@@ -74,6 +74,35 @@ func recallCampaignTestTranslations(stages []RecallEmailStage) map[int]map[strin
 	return translations
 }
 
+func recallCampaignHTMLTranslations(stages []RecallEmailStage, version string) map[int]map[string]RecallEmailTemplate {
+	translations := make(map[int]map[string]RecallEmailTemplate, len(stages))
+	for _, stage := range stages {
+		english := stage.Templates["en"]
+		document, err := parseRecallEmailHTML(english.BodyHTML)
+		if err != nil {
+			panic(err)
+		}
+		segments := document.TranslationSegments()
+		localized := make(map[string]RecallEmailTemplate, len(recallEmailTranslationLanguages))
+		for _, language := range recallEmailTranslationLanguages {
+			localizedSegments := make([]string, len(segments))
+			for index, segment := range segments {
+				localizedSegments[index] = language + ":" + version + ":" + segment
+			}
+			bodyHTML, err := document.Rebuild(localizedSegments)
+			if err != nil {
+				panic(err)
+			}
+			localized[language] = RecallEmailTemplate{
+				Subject:  language + ":" + version + ":" + english.Subject,
+				BodyHTML: bodyHTML,
+			}
+		}
+		translations[stage.StageNo] = localized
+	}
+	return translations
+}
+
 func requireRecallCampaignCanonicalLanguages(t *testing.T, stages []RecallEmailStage) {
 	t.Helper()
 	want := append([]string{"en"}, recallEmailTranslationLanguages...)
@@ -561,6 +590,96 @@ func TestRecallCampaignUpdateDraftReplacesGeneratedTranslationsWhenEnglishChange
 	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
 	require.Equal(t, "fr:A new subject", stages[0].Templates["fr"].Subject)
 	require.Equal(t, "ru:A new body", stages[0].Templates["ru"].BodyText)
+}
+
+func TestRecallCampaignUpdateDraftReusesUnchangedEnglishHTMLTranslations(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	translator.translateFn = func(stages []RecallEmailStage) (map[int]map[string]RecallEmailTemplate, error) {
+		return recallCampaignHTMLTranslations(stages, "stored"), nil
+	}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	draft.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "HTML offer", BodyHTML: validRecallHTML}
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	draft.Name = "Rename only"
+	updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, translator.callCount(), "unchanged English HTML must reuse stored localized HTML")
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	require.Equal(t, "zh:stored:HTML offer", stages[0].Templates["zh"].Subject)
+	require.Contains(t, stages[0].Templates["zh"].BodyHTML, "zh:stored:Claim offer")
+	require.Empty(t, stages[0].Templates["zh"].BodyText)
+}
+
+func TestRecallCampaignUpdateDraftReplacesAllGeneratedHTMLTranslationsWhenEnglishChanges(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	translationVersion := "initial"
+	translator.translateFn = func(stages []RecallEmailStage) (map[int]map[string]RecallEmailTemplate, error) {
+		return recallCampaignHTMLTranslations(stages, translationVersion), nil
+	}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	draft.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "HTML offer", BodyHTML: validRecallHTML}
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	translationVersion = "replacement"
+	draft.Emails[0].Templates["en"] = RecallEmailTemplate{
+		Subject:  "Updated HTML offer",
+		BodyHTML: strings.Replace(validRecallHTML, "Claim offer", "Claim updated offer", 1),
+	}
+	updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, translator.callCount())
+	var stages []RecallEmailStage
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	for _, language := range recallEmailTranslationLanguages {
+		template := stages[0].Templates[language]
+		require.Equal(t, language+":replacement:Updated HTML offer", template.Subject)
+		require.Contains(t, template.BodyHTML, language+":replacement:Claim updated offer")
+		require.NotContains(t, template.BodyHTML, "initial")
+		require.Empty(t, template.BodyText)
+	}
+}
+
+func TestRecallCampaignSaveDraftRejectsInvalidTranslatedHTMLBeforePersistence(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	translator.translateFn = func(stages []RecallEmailStage) (map[int]map[string]RecallEmailTemplate, error) {
+		translations := recallCampaignHTMLTranslations(stages, "bad")
+		translations[1]["zh"] = RecallEmailTemplate{
+			Subject:  "zh:bad:HTML offer",
+			BodyHTML: strings.Replace(validRecallHTML, `href="{{.ClaimURL}}"`, `href="https://flatkey.ai/help"`, 1),
+		}
+		return translations, nil
+	}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	draft.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "HTML offer", BodyHTML: validRecallHTML}
+
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+
+	require.ErrorContains(t, err, "ClaimURL action must appear in an anchor href")
+	require.Nil(t, campaign)
+	var count int64
+	require.NoError(t, db.Model(&model.RecallCampaign{}).Count(&count).Error)
+	require.Zero(t, count)
 }
 
 func TestRecallCampaignSaveDraftIgnoresClientSubmittedNonEnglishTemplates(t *testing.T) {
