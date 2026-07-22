@@ -48,6 +48,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 	}
 
 	var result *ChangePlanResult
+	var balanceEffects *balanceOnePeriodSideEffects
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var user model.User
 		if err := subscriptionCommandLock(tx).Where("id = ?", cmd.UserID).First(&user).Error; err != nil {
@@ -81,6 +82,9 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 		if cmd.PaymentMode == model.SubscriptionPaymentModeBalanceOnePeriod && plan.AllowBalancePay != nil && !*plan.AllowBalancePay {
 			return errors.New("subscription plan does not allow balance payment")
 		}
+		if err := enforceMaxPurchasePerUserTx(tx, cmd.UserID, plan); err != nil {
+			return err
+		}
 
 		kind, err := classifyPlanChangeTx(tx, contract, plan)
 		if err != nil {
@@ -113,9 +117,11 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			if kind == model.SubscriptionChangeIntentKindDowngrade {
 				return ErrSubscriptionDowngradeDeferred
 			}
-			if err := applyBalanceOnePeriodChangeTx(tx, &user, contract, intent, plan); err != nil {
+			effects, err := applyBalanceOnePeriodChangeTx(tx, &user, contract, intent, plan)
+			if err != nil {
 				return err
 			}
+			balanceEffects = effects
 			result = &ChangePlanResult{
 				Status:   ChangePlanStatusApplied,
 				Contract: contract,
@@ -143,6 +149,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	applyBalanceOnePeriodSideEffects(balanceEffects)
 	return result, nil
 }
 
@@ -189,10 +196,29 @@ func loadEnabledSubscriptionPlanTx(tx *gorm.DB, planID int) (*model.Subscription
 	if !plan.Enabled {
 		return nil, errors.New("subscription plan is disabled")
 	}
+	if plan.PriceAmount < 0 {
+		return nil, errors.New("subscription plan price cannot be negative")
+	}
 	if plan.TierRank == nil || *plan.TierRank <= 0 {
 		return nil, errors.New("subscription plan tier rank is required")
 	}
 	return &plan, nil
+}
+
+func enforceMaxPurchasePerUserTx(tx *gorm.DB, userID int, plan *model.SubscriptionPlan) error {
+	if plan == nil || plan.MaxPurchasePerUser <= 0 {
+		return nil
+	}
+	var count int64
+	if err := tx.Model(&model.UserSubscription{}).
+		Where("user_id = ? AND plan_id = ?", userID, plan.Id).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count >= int64(plan.MaxPurchasePerUser) {
+		return errors.New("subscription plan purchase limit reached")
+	}
+	return nil
 }
 
 func getOrCreateContractForUserTx(tx *gorm.DB, userID int) (*model.UserSubscriptionContract, error) {
@@ -281,18 +307,25 @@ func classifyPlanChangeTx(tx *gorm.DB, contract *model.UserSubscriptionContract,
 	return model.SubscriptionChangeIntentKindDowngrade, nil
 }
 
-func applyBalanceOnePeriodChangeTx(tx *gorm.DB, user *model.User, contract *model.UserSubscriptionContract, intent *model.SubscriptionChangeIntent, plan *model.SubscriptionPlan) error {
+type balanceOnePeriodSideEffects struct {
+	userID       int
+	planTitle    string
+	money        float64
+	chargedQuota int
+}
+
+func applyBalanceOnePeriodChangeTx(tx *gorm.DB, user *model.User, contract *model.UserSubscriptionContract, intent *model.SubscriptionChangeIntent, plan *model.SubscriptionPlan) (*balanceOnePeriodSideEffects, error) {
 	requiredQuota, err := subscriptionBalanceQuota(plan.PriceAmount)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if requiredQuota > 0 && user.Quota < requiredQuota {
-		return errors.New("insufficient balance")
+		return nil, errors.New("insufficient balance")
 	}
 	if requiredQuota > 0 {
 		if err := tx.Model(&model.User{}).Where("id = ?", user.Id).
 			Update("quota", gorm.Expr("quota - ?", requiredQuota)).Error; err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -311,13 +344,13 @@ func applyBalanceOnePeriodChangeTx(tx *gorm.DB, user *model.User, contract *mode
 		ProviderPayload: fmt.Sprintf("charged_quota=%d;change_intent_id=%d", requiredQuota, intent.Id),
 	}
 	if err := tx.Create(order).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	periodStart := common.GetTimestamp()
 	periodEnd, err := subscriptionPlanPeriodEnd(periodStart, plan)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	grant, err := model.RotateCurrentEntitlementTx(tx, model.GrantEntitlementInput{
 		ContractId:           contract.Id,
@@ -333,7 +366,7 @@ func applyBalanceOnePeriodChangeTx(tx *gorm.DB, user *model.User, contract *mode
 		Source:               model.PaymentMethodBalance,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	intent.Status = model.SubscriptionChangeIntentStatusApplied
@@ -345,15 +378,34 @@ func applyBalanceOnePeriodChangeTx(tx *gorm.DB, user *model.User, contract *mode
 		"effective_at":          intent.EffectiveAt,
 		"updated_at":            common.GetTimestamp(),
 	}).Error; err != nil {
-		return err
+		return nil, err
 	}
 	if err := tx.Where("id = ?", contract.Id).First(contract).Error; err != nil {
-		return err
+		return nil, err
 	}
 	if grant != nil && grant.Entitlement != nil {
 		contract.CurrentEntitlementId = grant.Entitlement.Id
 	}
-	return nil
+	return &balanceOnePeriodSideEffects{
+		userID:       user.Id,
+		planTitle:    plan.Title,
+		money:        plan.PriceAmount,
+		chargedQuota: requiredQuota,
+	}, nil
+}
+
+func applyBalanceOnePeriodSideEffects(effects *balanceOnePeriodSideEffects) {
+	if effects == nil || effects.userID <= 0 {
+		return
+	}
+	if err := model.InvalidateUserCache(effects.userID); err != nil {
+		common.SysLog("failed to invalidate user cache after subscription balance purchase: " + err.Error())
+	}
+	model.RecordLog(
+		effects.userID,
+		model.LogTypeTopup,
+		fmt.Sprintf("Subscription balance purchase succeeded, plan: %s, amount: %.2f, charged quota: %d", effects.planTitle, effects.money, effects.chargedQuota),
+	)
 }
 
 func subscriptionBalanceQuota(priceAmount float64) (int, error) {

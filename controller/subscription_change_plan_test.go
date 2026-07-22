@@ -93,7 +93,7 @@ func TestChangeSubscriptionPlanRejectsInvalidRequestID(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "request_id")
 }
 
-func TestSubscriptionStripePayCreatesIntentWithoutLegacyOrder(t *testing.T) {
+func TestSubscriptionStripePayReturnsUnsupportedWithoutLegacyState(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
 	rank := 1
@@ -129,16 +129,15 @@ func TestSubscriptionStripePayCreatesIntentWithoutLegacyOrder(t *testing.T) {
 	SubscriptionRequestStripePay(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Contains(t, recorder.Body.String(), `"message":"success"`)
-	require.Contains(t, recorder.Body.String(), `"status":"checkout_required"`)
+	require.Contains(t, recorder.Body.String(), `"success":false`)
+	require.Contains(t, recorder.Body.String(), "pending migration")
 	var orderCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 902).Count(&orderCount).Error)
 	require.Zero(t, orderCount)
 	var entitlementCount int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 902).Count(&entitlementCount).Error)
 	require.Zero(t, entitlementCount)
-	var intent model.SubscriptionChangeIntent
-	require.NoError(t, model.DB.First(&intent, "user_id = ? AND request_id = ?", 902, "stripe-request-1").Error)
-	require.Equal(t, model.SubscriptionChangeIntentStatusAwaitingPayment, intent.Status)
-	require.Equal(t, model.SubscriptionPaymentModeStripeRecurring, intent.PaymentMode)
+	var intentCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 902).Count(&intentCount).Error)
+	require.Zero(t, intentCount)
 }

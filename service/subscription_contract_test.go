@@ -246,6 +246,51 @@ func TestBalanceDowngradeDoesNotApplyImmediately(t *testing.T) {
 	require.Equal(t, int64(1), orderCount)
 }
 
+func TestBalancePurchaseEnforcesMaxPurchasePerUser(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7108, 3000)
+	plan := insertContractServicePlan(t, 7212, 1, 1, 1000)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).
+		Where("id = ?", plan.Id).
+		Update("max_purchase_per_user", 1).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		UserId:      7108,
+		PlanId:      plan.Id,
+		AmountTotal: plan.TotalAmount,
+		Status:      "expired",
+		Source:      model.PaymentMethodBalance,
+		PaymentMode: model.SubscriptionPaymentModeBalanceOnePeriod,
+	}).Error)
+
+	_, err := ChangeSubscriptionPlan(balanceChangeCommand(7108, plan.Id, "purchase-limit"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "purchase limit")
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 7108).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
+	var intentCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 7108).Count(&intentCount).Error)
+	require.Zero(t, intentCount)
+}
+
+func TestBalancePurchaseRejectsNegativePlanPrice(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7109, 3000)
+	insertContractServicePlan(t, 7213, 1, -1, 1000)
+
+	_, err := ChangeSubscriptionPlan(balanceChangeCommand(7109, 7213, "negative-price"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "price")
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 7109).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
+	var intentCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 7109).Count(&intentCount).Error)
+	require.Zero(t, intentCount)
+}
+
 func TestUnresolvedPurchaseBlocksSecondChange(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7105, 2000)
