@@ -111,6 +111,54 @@ func TestRecallAudienceValidationAcceptsSupportedTemplates(t *testing.T) {
 	}
 }
 
+func TestValidateRecallAudienceNewTemplates(t *testing.T) {
+	tooManyUserIDs := make([]int, 501)
+	for i := range tooManyUserIDs {
+		tooManyUserIDs[i] = i + 1
+	}
+
+	tests := []struct {
+		template string
+		cfg      RecallAudienceConfig
+		wantErr  string
+	}{
+		{"registered_only", RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}, ""},
+		{"registered_only", RecallAudienceConfig{RegistrationEndAt: 200}, "registration time range"},
+		{"registered_only", RecallAudienceConfig{RegistrationStartAt: 100}, "registration time range"},
+		{"registered_only", RecallAudienceConfig{RegistrationStartAt: 200, RegistrationEndAt: 100}, "registration time range"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{7}}, ""},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"ops@example.com"}}, ""},
+		{"specified_users", RecallAudienceConfig{}, "at least one"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{0}}, "positive"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{-1}}, "positive"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"not-an-email"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: tooManyUserIDs}, "500"},
+	}
+	for _, test := range tests {
+		t.Run(test.template+"/"+test.wantErr, func(t *testing.T) {
+			err := ValidateRecallAudience(test.template, test.cfg)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestNormalizeRecallAudienceSpecifiedUsers(t *testing.T) {
+	require.Equal(t, []int{7, 3, 9}, normalizeRecallUserIDs([]int{7, 3, 7, 9, 3}))
+	require.Equal(t, []string{"ops@example.com", "alerts@example.com"}, normalizeRecallEmails([]string{
+		" Ops@Example.COM ",
+		"ops@example.com",
+		"ALERTS@example.com",
+		" alerts@example.com ",
+		" ",
+	}))
+	require.NotNil(t, normalizeRecallUserIDs(nil))
+	require.NotNil(t, normalizeRecallEmails(nil))
+}
+
 func TestRecallAudienceValidationRejectsInvalidBoundaries(t *testing.T) {
 	tests := []struct {
 		name     string

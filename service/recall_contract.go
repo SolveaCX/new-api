@@ -29,6 +29,8 @@ type RecallCampaignDraft struct {
 
 type RecallAudienceConfig struct {
 	RegistrationAgeDays     int      `json:"registration_age_days"`
+	RegistrationStartAt     int64    `json:"registration_start_at"`
+	RegistrationEndAt       int64    `json:"registration_end_at"`
 	MinRequestCount         int      `json:"min_request_count"`
 	MaxQuota                int      `json:"max_quota"`
 	MinPaidAmount           float64  `json:"min_paid_amount"`
@@ -41,6 +43,8 @@ type RecallAudienceConfig struct {
 	Groups                  []string `json:"groups"`
 	GroupMode               string   `json:"group_mode"`
 	RequireVerifiedEmail    bool     `json:"require_verified_email"`
+	SpecifiedUserIDs        []int    `json:"specified_user_ids"`
+	SpecifiedEmails         []string `json:"specified_emails"`
 }
 
 type RecallScheduleConfig struct {
