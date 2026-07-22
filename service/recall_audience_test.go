@@ -147,6 +147,10 @@ func TestValidateRecallAudienceNewTemplates(t *testing.T) {
 		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{0}}, "positive"},
 		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{-1}}, "positive"},
 		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"not-an-email"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"Display Name <ops@example.com>"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"ops@example.com (ops)"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"ops@example.com, alerts@example.com"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"   "}}, "email"},
 		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: tooManyUserIDs}, "500"},
 		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: combinedLimitIDs, SpecifiedEmails: combinedLimitEmails}, "500"},
 		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: duplicateHeavyIDs, SpecifiedEmails: duplicateHeavyEmails}, ""},
@@ -163,6 +167,82 @@ func TestValidateRecallAudienceNewTemplates(t *testing.T) {
 	}
 }
 
+func TestValidateRecallAudienceNewTemplatesIgnoreInactiveLegacyFields(t *testing.T) {
+	staleLegacy := RecallAudienceConfig{
+		RegistrationAgeDays:     -1,
+		MinRequestCount:         -1,
+		MaxQuota:                -1,
+		MinPaidAmount:           -1,
+		LastAPICallAgeDays:      -1,
+		LastPaymentAgeDays:      -1,
+		SubscriptionExpiredDays: -1,
+		MinSubscriptionAmount:   -1,
+		MinSubscriptionCount:    -1,
+		PaymentProviders:        []string{""},
+	}
+
+	registeredOnly := staleLegacy
+	registeredOnly.RegistrationStartAt = 100
+	registeredOnly.RegistrationEndAt = 200
+	require.NoError(t, ValidateRecallAudience("registered_only", registeredOnly))
+
+	specifiedUsers := staleLegacy
+	specifiedUsers.Groups = []string{"plg"}
+	specifiedUsers.GroupMode = "unsupported"
+	specifiedUsers.SpecifiedUserIDs = []int{7}
+	require.NoError(t, ValidateRecallAudience("specified_users", specifiedUsers))
+}
+
+func TestValidateRecallAudienceNewTemplatesRespectActiveGroupFields(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  RecallAudienceConfig
+	}{
+		{name: "unknown group mode", cfg: RecallAudienceConfig{
+			RegistrationStartAt: 100,
+			RegistrationEndAt:   200,
+			Groups:              []string{"plg"},
+			GroupMode:           "unsupported",
+		}},
+		{name: "groups without mode", cfg: RecallAudienceConfig{
+			RegistrationStartAt: 100,
+			RegistrationEndAt:   200,
+			Groups:              []string{"plg"},
+		}},
+		{name: "mode without groups", cfg: RecallAudienceConfig{
+			RegistrationStartAt: 100,
+			RegistrationEndAt:   200,
+			GroupMode:           "allow",
+		}},
+		{name: "empty group", cfg: RecallAudienceConfig{
+			RegistrationStartAt: 100,
+			RegistrationEndAt:   200,
+			Groups:              []string{""},
+			GroupMode:           "allow",
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Error(t, ValidateRecallAudience("registered_only", test.cfg))
+		})
+	}
+}
+
+func TestValidateRecallAudienceExistingTemplatesIgnoreNewFields(t *testing.T) {
+	cfg := RecallAudienceConfig{
+		RegistrationStartAt: 200,
+		RegistrationEndAt:   100,
+		SpecifiedUserIDs:    []int{0},
+		SpecifiedEmails:     []string{"Display Name <ops@example.com>"},
+	}
+
+	for _, template := range []string{"first_purchase", "lapsed_payer", "expired_subscription"} {
+		t.Run(template, func(t *testing.T) {
+			require.NoError(t, ValidateRecallAudience(template, cfg))
+		})
+	}
+}
+
 func TestNormalizeRecallAudienceSpecifiedUsers(t *testing.T) {
 	require.Equal(t, []int{7, 3, 9}, normalizeRecallUserIDs([]int{7, 3, 7, 9, 3}))
 	require.Equal(t, []string{"ops@example.com", "alerts@example.com"}, normalizeRecallEmails([]string{
@@ -174,6 +254,43 @@ func TestNormalizeRecallAudienceSpecifiedUsers(t *testing.T) {
 	}))
 	require.NotNil(t, normalizeRecallUserIDs(nil))
 	require.NotNil(t, normalizeRecallEmails(nil))
+}
+
+func TestRecallAudienceSelectorRejectsNewTemplatesUntilSupported(t *testing.T) {
+	mainDB, _ := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	createRecallAudienceUser(t, mainDB, now, "new_template_guard", nil)
+	userQueries := 0
+	callbackName := "recall_new_template_guard_" + strings.ReplaceAll(t.Name(), "/", "_")
+	require.NoError(t, mainDB.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == "users" {
+			userQueries++
+		}
+	}))
+	t.Cleanup(func() { _ = mainDB.Callback().Query().Remove(callbackName) })
+
+	tests := []struct {
+		template string
+		cfg      RecallAudienceConfig
+	}{
+		{template: "registered_only", cfg: RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}},
+		{template: "specified_users", cfg: RecallAudienceConfig{SpecifiedUserIDs: []int{7}}},
+	}
+	for _, test := range tests {
+		t.Run(test.template, func(t *testing.T) {
+			userQueries = 0
+			draft := RecallCampaignDraft{AudienceTemplate: test.template, Audience: test.cfg}
+
+			preview, err := NewRecallAudienceSelector().Preview(context.Background(), draft, 10, time.Unix(now, 0))
+			require.ErrorContains(t, err, "not supported by recall audience selector")
+			require.Zero(t, preview.EligibleTotal)
+			require.Zero(t, userQueries, "preview must reject before candidate queries")
+
+			_, _, err = NewRecallAudienceSelector().Snapshot(context.Background(), draft, 10, time.Unix(now, 0))
+			require.ErrorContains(t, err, "not supported by recall audience selector")
+			require.Zero(t, userQueries, "snapshot must reject before candidate queries")
+		})
+	}
 }
 
 func TestRecallAudienceValidationRejectsInvalidBoundaries(t *testing.T) {
