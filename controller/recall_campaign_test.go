@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -367,6 +368,49 @@ func TestListRecallAudienceUsersSearchesByKeywordWithBounds(t *testing.T) {
 
 	invalidRecorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword=a&page_size=0", nil, 7, nil)
 	requireRecallFailure(t, invalidRecorder, "page_size")
+}
+
+func TestListRecallAudienceUsersLimitsTrimmedKeywordTo128Runes(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	exactLimitKeyword := strings.Repeat("界", 128)
+	require.NoError(t, harness.db.Create(&model.User{
+		Id: 171, Username: "keyword-limit-user", Password: "hash", DisplayName: exactLimitKeyword, Email: "keyword-limit@example.com",
+		Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-171",
+	}).Error)
+
+	exactLimit := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword="+url.QueryEscape("  "+exactLimitKeyword+"  "), nil, 7, nil)
+	require.Equal(t, []int{171}, recallAudienceOptionIDs(decodeRecallAudienceUserOptions(t, exactLimit)))
+
+	overLimitKeyword := strings.Repeat("界", 129)
+	overLimit := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword="+url.QueryEscape(overLimitKeyword), nil, 7, nil)
+	requireRecallFailure(t, overLimit, "keyword")
+	requireRecallFailure(t, overLimit, "128")
+}
+
+func TestListRecallAudienceUsersEscapesKeywordWildcardsAsLiterals(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	users := []model.User{
+		{Id: 181, Username: "percent-user", Password: "hash", DisplayName: "Literal 100% User", Email: "percent@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-181"},
+		{Id: 182, Username: "underscore_user", Password: "hash", DisplayName: "Literal Underscore User", Email: "underscore@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-182"},
+		{Id: 183, Username: "bang-user", Password: "hash", DisplayName: "Literal Bang! User", Email: "bang@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-183"},
+		{Id: 184, Username: "plain-user", Password: "hash", DisplayName: "Plain Wildcard Decoy", Email: "plain@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-184"},
+	}
+	require.NoError(t, harness.db.Create(&users).Error)
+
+	for _, test := range []struct {
+		name    string
+		keyword string
+		wantIDs []int
+	}{
+		{name: "percent", keyword: "%", wantIDs: []int{181}},
+		{name: "underscore", keyword: "_", wantIDs: []int{182}},
+		{name: "bang", keyword: "!", wantIDs: []int{183}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword="+url.QueryEscape(test.keyword), nil, 7, nil)
+			require.Equal(t, test.wantIDs, recallAudienceOptionIDs(decodeRecallAudienceUserOptions(t, recorder)))
+		})
+	}
 }
 
 func TestListRecallAudienceUsersResolvesIDsSafely(t *testing.T) {

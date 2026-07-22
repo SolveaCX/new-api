@@ -37,6 +37,8 @@ type recallAudienceUserOption struct {
 	Status      int    `json:"status"`
 }
 
+const maxRecallAudienceUserKeywordRunes = 128
+
 func ListRecallCampaigns(c *gin.Context) {
 	runtime, err := recallControllerRuntime()
 	if err != nil {
@@ -338,6 +340,9 @@ func recallAudienceUserLookupQuery(c *gin.Context) (model.RecallAudienceUserLook
 	}
 	if !hasKeyword && !hasIDs {
 		return model.RecallAudienceUserLookup{}, true, nil
+	}
+	if hasKeyword && len([]rune(keyword)) > maxRecallAudienceUserKeywordRunes {
+		return model.RecallAudienceUserLookup{}, false, fmt.Errorf("recall audience users keyword must be at most %d characters", maxRecallAudienceUserKeywordRunes)
 	}
 	if hasIDs {
 		ids, err := parseRecallAudienceUserIDs(rawIDs)
