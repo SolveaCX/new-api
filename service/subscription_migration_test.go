@@ -287,13 +287,21 @@ func TestMigrationGateDoesNotChangeExactBindingCancellation(t *testing.T) {
 	now := common.GetTimestamp()
 	untouched := insertMigrationBinding(t, 8106, 8210, "sub_cancel_untouched", now+3600)
 	target := insertMigrationBinding(t, 8106, 8210, "sub_cancel_target", now+7200)
+	require.NoError(t, model.DB.Model(&target).Update("provider_schedule_id", "sched_legacy_exact").Error)
+	target.ProviderScheduleId = "sched_legacy_exact"
 	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	originalRelease := stripeReleaseSubscriptionSchedule
 	originalGate := common.SubscriptionSingleContractEnabled
 	common.SubscriptionSingleContractEnabled = true
 	t.Cleanup(func() {
 		stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+		stripeReleaseSubscriptionSchedule = originalRelease
 		common.SubscriptionSingleContractEnabled = originalGate
 	})
+	stripeReleaseSubscriptionSchedule = func(scheduleID string, idempotencyKey string) error {
+		t.Fatal("legacy exact-binding cancellation must not coordinate an unowned schedule")
+		return nil
+	}
 	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
 		require.Equal(t, target.ProviderSubscriptionId, providerSubscriptionID)
 		require.True(t, cancelAtPeriodEnd)

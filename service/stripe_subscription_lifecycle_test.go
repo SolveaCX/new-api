@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -50,6 +52,8 @@ func setupStripeSubscriptionLifecycleTestDB(t *testing.T) {
 		&model.SubscriptionPlan{},
 		&model.SubscriptionOrder{},
 		&model.UserSubscription{},
+		&model.UserSubscriptionContract{},
+		&model.SubscriptionChangeIntent{},
 		&model.SubscriptionProviderBinding{},
 	))
 }
@@ -90,17 +94,75 @@ func insertStripeLifecycleBindingWithSubscriptionID(t *testing.T, userID int, pr
 		CurrentPeriodEnd:       2000,
 	}
 	require.NoError(t, model.DB.Create(binding).Error)
-	require.NoError(t, model.DB.Create(&model.UserSubscription{
+	sub := &model.UserSubscription{
 		UserId:            userID,
 		PlanId:            binding.PlanId,
 		ProviderBindingId: binding.Id,
 		AmountTotal:       1000,
 		StartTime:         1000,
 		EndTime:           2000,
+		AccessEndTime:     2000,
 		Status:            "active",
 		Source:            "order",
+		PaymentMode:       model.SubscriptionPaymentModeStripeRecurring,
+	}
+	require.NoError(t, model.DB.Create(sub).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscriptionContract{
+		UserId:                   userID,
+		Status:                   model.SubscriptionContractStatusActive,
+		PaymentMode:              model.SubscriptionPaymentModeStripeRecurring,
+		CurrentPlanId:            binding.PlanId,
+		CurrentEntitlementId:     sub.Id,
+		CurrentProviderBindingId: binding.Id,
+		CurrentPeriodStart:       1000,
+		CurrentPeriodEnd:         2000,
 	}).Error)
+	require.NoError(t, model.DB.Model(binding).Update("contract_id", gorm.Expr("(SELECT id FROM user_subscription_contracts WHERE user_id = ?)", userID)).Error)
+	require.NoError(t, model.DB.Model(sub).Update("contract_id", gorm.Expr("(SELECT id FROM user_subscription_contracts WHERE user_id = ?)", userID)).Error)
 	return binding
+}
+
+func seedPendingDowngradeCancelFixture(t *testing.T, userID int, scheduleID string, requestID string) (*model.SubscriptionProviderBinding, *model.UserSubscriptionContract, *model.SubscriptionChangeIntent) {
+	t.Helper()
+	binding := insertStripeLifecycleBinding(t, userID, "active", false)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:            binding.PlanId + 1,
+		Title:         "Lifecycle Pending Downgrade Plan",
+		PriceAmount:   4.99,
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   500,
+		StripePriceId: "price_lifecycle_pending_downgrade",
+	}).Error)
+	require.NoError(t, model.DB.Model(binding).Update("provider_schedule_id", scheduleID).Error)
+	binding.ProviderScheduleId = scheduleID
+	var contract model.UserSubscriptionContract
+	require.NoError(t, model.DB.Where("user_id = ?", userID).First(&contract).Error)
+	require.NoError(t, model.DB.Model(&contract).Updates(map[string]interface{}{
+		"pending_plan_id":      binding.PlanId + 1,
+		"pending_effective_at": int64(2000),
+	}).Error)
+	contract.PendingPlanId = binding.PlanId + 1
+	contract.PendingEffectiveAt = 2000
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:         contract.Id,
+		UserId:             userID,
+		RequestId:          requestID,
+		ChangeVersion:      1,
+		Kind:               model.SubscriptionChangeIntentKindDowngrade,
+		PaymentMode:        model.SubscriptionPaymentModeStripeRecurring,
+		Status:             model.SubscriptionChangeIntentStatusScheduled,
+		FromPlanId:         binding.PlanId,
+		ToPlanId:           binding.PlanId + 1,
+		ProviderBindingId:  binding.Id,
+		ProviderScheduleId: scheduleID,
+		EffectiveAt:        2000,
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	require.NoError(t, model.DB.Model(&contract).Update("latest_change_intent_id", intent.Id).Error)
+	contract.LatestChangeIntentId = intent.Id
+	return binding, &contract, intent
 }
 
 func TestStripeSubscriptionLifecycleCancelMarksPeriodEnd(t *testing.T) {
@@ -215,10 +277,500 @@ func TestStripeSubscriptionLifecycleIdempotencyKeyIsStableForFailedRetry(t *test
 func TestStripeSubscriptionLifecycleRejectsForeignBinding(t *testing.T) {
 	setupStripeSubscriptionLifecycleTestDB(t)
 	binding := insertStripeLifecycleBinding(t, 803, "active", false)
+	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	t.Cleanup(func() { stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate })
+	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		t.Fatal("ownership mismatch must perform zero remote writes")
+		return model.ProviderSubscriptionSnapshot{}, nil
+	}
 
 	_, err := CancelStripeRecurringSubscription(804, binding.Id)
 
 	require.Error(t, err)
+}
+
+func TestCancelReleasesPendingDowngradeBeforePeriodEndCancel(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBinding(t, 814, "active", false)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:            binding.PlanId + 1,
+		Title:         "Lifecycle Downgrade Plan",
+		PriceAmount:   4.99,
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   500,
+		StripePriceId: "price_lifecycle_downgrade",
+	}).Error)
+	require.NoError(t, model.DB.Model(binding).Update("provider_schedule_id", "sched_cancel_pending").Error)
+	var contract model.UserSubscriptionContract
+	require.NoError(t, model.DB.Where("user_id = ?", 814).First(&contract).Error)
+	require.NoError(t, model.DB.Model(&contract).Updates(map[string]interface{}{
+		"pending_plan_id":      binding.PlanId + 1,
+		"pending_effective_at": int64(2000),
+	}).Error)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:         contract.Id,
+		UserId:             814,
+		RequestId:          "cancel-pending-downgrade",
+		ChangeVersion:      1,
+		Kind:               model.SubscriptionChangeIntentKindDowngrade,
+		PaymentMode:        model.SubscriptionPaymentModeStripeRecurring,
+		Status:             model.SubscriptionChangeIntentStatusScheduled,
+		FromPlanId:         binding.PlanId,
+		ToPlanId:           binding.PlanId + 1,
+		ProviderBindingId:  binding.Id,
+		ProviderScheduleId: "sched_cancel_pending",
+		EffectiveAt:        2000,
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	require.NoError(t, model.DB.Model(&contract).Update("latest_change_intent_id", intent.Id).Error)
+	originalRelease := stripeReleaseSubscriptionSchedule
+	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	originalGet := stripeSubscriptionSnapshotGetter
+	t.Cleanup(func() {
+		stripeReleaseSubscriptionSchedule = originalRelease
+		stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+		stripeSubscriptionSnapshotGetter = originalGet
+	})
+	var calls []string
+	stripeReleaseSubscriptionSchedule = func(scheduleID string, idempotencyKey string) error {
+		calls = append(calls, "release:"+scheduleID)
+		require.Equal(t, "sched_cancel_pending", scheduleID)
+		return nil
+	}
+	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		calls = append(calls, "period-end")
+		require.True(t, cancelAtPeriodEnd)
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId:     providerSubscriptionID,
+			ProviderScheduleIdObserved: true,
+			ProviderStatus:             "active",
+			CancelAtPeriodEnd:          true,
+			CurrentPeriodStart:         1000,
+			CurrentPeriodEnd:           2000,
+		}, nil
+	}
+	stripeSubscriptionSnapshotGetter = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+		calls = append(calls, "get")
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId:     providerSubscriptionID,
+			ProviderScheduleIdObserved: true,
+			ProviderStatus:             "active",
+			CancelAtPeriodEnd:          true,
+			CurrentPeriodStart:         1000,
+			CurrentPeriodEnd:           2000,
+		}, nil
+	}
+
+	updated, err := CancelStripeRecurringSubscription(814, binding.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"release:sched_cancel_pending", "period-end", "get"}, calls)
+	require.True(t, updated.CancelAtPeriodEnd)
+	var reloaded model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloaded, contract.Id).Error)
+	require.Zero(t, reloaded.PendingPlanId)
+	require.Zero(t, reloaded.PendingEffectiveAt)
+	var downgraded model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&downgraded, intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusSuperseded, downgraded.Status)
+	require.NotEmpty(t, downgraded.PreviousScheduleSnapshot)
+	var entitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&entitlement, contract.CurrentEntitlementId).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusActive, entitlement.Status)
+	require.Equal(t, int64(2000), entitlement.AccessEndTime)
+}
+
+func TestCancelOwnershipMismatchPerformsZeroRemoteWrites(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBinding(t, 815, "active", false)
+	require.NoError(t, model.DB.Model(binding).Update("contract_id", binding.Id+999).Error)
+	originalRelease := stripeReleaseSubscriptionSchedule
+	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	t.Cleanup(func() {
+		stripeReleaseSubscriptionSchedule = originalRelease
+		stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+	})
+	stripeReleaseSubscriptionSchedule = func(scheduleID string, idempotencyKey string) error {
+		t.Fatal("ownership mismatch must not release schedules")
+		return nil
+	}
+	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		t.Fatal("ownership mismatch must not update Stripe")
+		return model.ProviderSubscriptionSnapshot{}, nil
+	}
+
+	_, err := CancelStripeRecurringSubscription(815, binding.Id)
+
+	require.Error(t, err)
+}
+
+func TestCancelFailureRestoresPendingDowngradeWithoutClearingPaidAccess(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBinding(t, 816, "active", false)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:            binding.PlanId + 1,
+		Title:         "Lifecycle Restore Plan",
+		PriceAmount:   4.99,
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   500,
+		StripePriceId: "price_lifecycle_restore",
+	}).Error)
+	require.NoError(t, model.DB.Model(binding).Update("provider_schedule_id", "sched_cancel_restore").Error)
+	var contract model.UserSubscriptionContract
+	require.NoError(t, model.DB.Where("user_id = ?", 816).First(&contract).Error)
+	require.NoError(t, model.DB.Model(&contract).Updates(map[string]interface{}{
+		"pending_plan_id":      binding.PlanId + 1,
+		"pending_effective_at": int64(2000),
+	}).Error)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:         contract.Id,
+		UserId:             816,
+		RequestId:          "cancel-failure-downgrade",
+		ChangeVersion:      1,
+		Kind:               model.SubscriptionChangeIntentKindDowngrade,
+		PaymentMode:        model.SubscriptionPaymentModeStripeRecurring,
+		Status:             model.SubscriptionChangeIntentStatusScheduled,
+		FromPlanId:         binding.PlanId,
+		ToPlanId:           binding.PlanId + 1,
+		ProviderBindingId:  binding.Id,
+		ProviderScheduleId: "sched_cancel_restore",
+		EffectiveAt:        2000,
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	require.NoError(t, model.DB.Model(&contract).Update("latest_change_intent_id", intent.Id).Error)
+	originalRelease := stripeReleaseSubscriptionSchedule
+	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	originalRestore := stripeRestoreSubscriptionSchedule
+	originalGet := stripeSubscriptionSnapshotGetter
+	t.Cleanup(func() {
+		stripeReleaseSubscriptionSchedule = originalRelease
+		stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+		stripeRestoreSubscriptionSchedule = originalRestore
+		stripeSubscriptionSnapshotGetter = originalGet
+	})
+	getCalls := 0
+	stripeReleaseSubscriptionSchedule = func(scheduleID string, idempotencyKey string) error { return nil }
+	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		return model.ProviderSubscriptionSnapshot{}, assertAnErrorForAdminLifecycleTest
+	}
+	stripeSubscriptionSnapshotGetter = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+		getCalls++
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId: providerSubscriptionID,
+			ProviderStatus:         "active",
+			CancelAtPeriodEnd:      false,
+			CurrentPeriodStart:     1000,
+			CurrentPeriodEnd:       2000,
+		}, nil
+	}
+	stripeRestoreSubscriptionSchedule = func(rawSnapshot string, idempotencyKey string) (string, error) {
+		require.Contains(t, rawSnapshot, "sched_cancel_restore")
+		return "sched_cancel_restore", nil
+	}
+
+	_, err := CancelStripeRecurringSubscription(816, binding.Id)
+
+	require.ErrorIs(t, err, assertAnErrorForAdminLifecycleTest)
+	require.Equal(t, 1, getCalls)
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, contract.Id).Error)
+	require.Equal(t, binding.PlanId+1, reloadedContract.PendingPlanId)
+	require.Equal(t, int64(2000), reloadedContract.PendingEffectiveAt)
+	require.Equal(t, model.SubscriptionContractStatusActive, reloadedContract.Status)
+	var reloadedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&reloadedBinding, binding.Id).Error)
+	require.Equal(t, "sched_cancel_restore", reloadedBinding.ProviderScheduleId)
+	require.False(t, reloadedBinding.CancelAtPeriodEnd)
+	var entitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&entitlement, contract.CurrentEntitlementId).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusActive, entitlement.Status)
+}
+
+func TestCancelUpdateErrorConfirmedRemoteCancelSupersedesPendingDowngrade(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding, contract, intent := seedPendingDowngradeCancelFixture(t, 818, "sched_cancel_remote_truth", "cancel-remote-truth")
+	originalRelease := stripeReleaseSubscriptionSchedule
+	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	originalRestore := stripeRestoreSubscriptionSchedule
+	originalGet := stripeSubscriptionSnapshotGetter
+	t.Cleanup(func() {
+		stripeReleaseSubscriptionSchedule = originalRelease
+		stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+		stripeRestoreSubscriptionSchedule = originalRestore
+		stripeSubscriptionSnapshotGetter = originalGet
+	})
+	stripeReleaseSubscriptionSchedule = func(scheduleID string, idempotencyKey string) error { return nil }
+	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		return model.ProviderSubscriptionSnapshot{}, errors.New("Stripe update transport failure")
+	}
+	stripeSubscriptionSnapshotGetter = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId: providerSubscriptionID,
+			ProviderStatus:         "active",
+			CancelAtPeriodEnd:      true,
+			CurrentPeriodStart:     1000,
+			CurrentPeriodEnd:       2000,
+		}, nil
+	}
+	stripeRestoreSubscriptionSchedule = func(rawSnapshot string, idempotencyKey string) (string, error) {
+		t.Fatal("confirmed remote cancellation must not restore the downgrade schedule")
+		return "", nil
+	}
+
+	updated, err := CancelStripeRecurringSubscription(818, binding.Id)
+	require.NoError(t, err)
+	require.True(t, updated.CancelAtPeriodEnd)
+	require.NoError(t, model.DB.First(contract, contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusActive, contract.Status)
+	require.Zero(t, contract.PendingPlanId)
+	require.Zero(t, contract.PendingEffectiveAt)
+	require.NoError(t, model.DB.First(intent, intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusSuperseded, intent.Status)
+}
+
+func TestCancelConfirmationUnknownMarksDowngradeForCompensationWithoutRestore(t *testing.T) {
+	for _, updateSucceeds := range []bool{false, true} {
+		name := "update_error"
+		if updateSucceeds {
+			name = "post_update_confirmation_error"
+		}
+		t.Run(name, func(t *testing.T) {
+			setupStripeSubscriptionLifecycleTestDB(t)
+			binding, contract, intent := seedPendingDowngradeCancelFixture(t, 819, "sched_cancel_unknown", "cancel-confirmation-unknown")
+			originalRelease := stripeReleaseSubscriptionSchedule
+			originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+			originalRestore := stripeRestoreSubscriptionSchedule
+			originalGet := stripeSubscriptionSnapshotGetter
+			t.Cleanup(func() {
+				stripeReleaseSubscriptionSchedule = originalRelease
+				stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+				stripeRestoreSubscriptionSchedule = originalRestore
+				stripeSubscriptionSnapshotGetter = originalGet
+			})
+			stripeReleaseSubscriptionSchedule = func(scheduleID string, idempotencyKey string) error { return nil }
+			stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+				if updateSucceeds {
+					return model.ProviderSubscriptionSnapshot{ProviderSubscriptionId: providerSubscriptionID, ProviderStatus: "active", CancelAtPeriodEnd: true}, nil
+				}
+				return model.ProviderSubscriptionSnapshot{}, errors.New("Stripe update transport failure")
+			}
+			stripeSubscriptionSnapshotGetter = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+				return model.ProviderSubscriptionSnapshot{}, errors.New("authoritative Stripe fetch unavailable")
+			}
+			stripeRestoreSubscriptionSchedule = func(rawSnapshot string, idempotencyKey string) (string, error) {
+				t.Fatal("ambiguous cancellation must not restore a clean scheduled downgrade")
+				return "", nil
+			}
+
+			_, err := CancelStripeRecurringSubscription(819, binding.Id)
+			require.Error(t, err)
+			require.NoError(t, model.DB.First(contract, contract.Id).Error)
+			require.Equal(t, model.SubscriptionContractStatusNeedsAttention, contract.Status)
+			require.Equal(t, binding.PlanId+1, contract.PendingPlanId)
+			require.NoError(t, model.DB.First(intent, intent.Id).Error)
+			require.Equal(t, model.SubscriptionChangeIntentStatusCompensationRequired, intent.Status)
+			var reloadedBinding model.SubscriptionProviderBinding
+			require.NoError(t, model.DB.First(&reloadedBinding, binding.Id).Error)
+			require.Empty(t, reloadedBinding.ProviderScheduleId)
+		})
+	}
+}
+
+func TestCancelDowngradeCompensationReconciliationClosesAuthoritativeBranches(t *testing.T) {
+	for _, cancelAtPeriodEnd := range []bool{true, false} {
+		name := "cancel_confirmed"
+		if !cancelAtPeriodEnd {
+			name = "cancel_not_applied"
+		}
+		t.Run(name, func(t *testing.T) {
+			setupStripeSubscriptionLifecycleTestDB(t)
+			binding, contract, intent := seedPendingDowngradeCancelFixture(t, 820, "sched_cancel_reconcile", "cancel-reconcile")
+			originalRelease := stripeReleaseSubscriptionSchedule
+			originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+			originalRestore := stripeRestoreSubscriptionSchedule
+			originalGet := stripeSubscriptionSnapshotGetter
+			t.Cleanup(func() {
+				stripeReleaseSubscriptionSchedule = originalRelease
+				stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+				stripeRestoreSubscriptionSchedule = originalRestore
+				stripeSubscriptionSnapshotGetter = originalGet
+			})
+			stripeReleaseSubscriptionSchedule = func(scheduleID string, idempotencyKey string) error { return nil }
+			stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+				return model.ProviderSubscriptionSnapshot{}, errors.New("Stripe update transport failure")
+			}
+			stripeSubscriptionSnapshotGetter = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+				return model.ProviderSubscriptionSnapshot{}, errors.New("initial authoritative fetch unavailable")
+			}
+			stripeRestoreSubscriptionSchedule = func(rawSnapshot string, idempotencyKey string) (string, error) {
+				return "sched_cancel_reconciled", nil
+			}
+			_, err := CancelStripeRecurringSubscription(820, binding.Id)
+			require.Error(t, err)
+
+			stripeSubscriptionSnapshotGetter = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+				return model.ProviderSubscriptionSnapshot{
+					ProviderSubscriptionId: providerSubscriptionID,
+					ProviderStatus:         "active",
+					CancelAtPeriodEnd:      cancelAtPeriodEnd,
+					CurrentPeriodStart:     1000,
+					CurrentPeriodEnd:       2000,
+				}, nil
+			}
+			processed, err := ReconcileCancelDowngradeCompensationRequired(context.Background(), 100)
+			require.NoError(t, err)
+			require.Equal(t, 1, processed)
+			processed, err = ReconcileCancelDowngradeCompensationRequired(context.Background(), 100)
+			require.NoError(t, err)
+			require.Zero(t, processed)
+
+			require.NoError(t, model.DB.First(contract, contract.Id).Error)
+			require.Equal(t, model.SubscriptionContractStatusActive, contract.Status)
+			require.NoError(t, model.DB.First(intent, intent.Id).Error)
+			var reloadedBinding model.SubscriptionProviderBinding
+			require.NoError(t, model.DB.First(&reloadedBinding, binding.Id).Error)
+			if cancelAtPeriodEnd {
+				require.Equal(t, model.SubscriptionChangeIntentStatusSuperseded, intent.Status)
+				require.Zero(t, contract.PendingPlanId)
+				require.True(t, reloadedBinding.CancelAtPeriodEnd)
+				require.Empty(t, reloadedBinding.ProviderScheduleId)
+			} else {
+				require.Equal(t, model.SubscriptionChangeIntentStatusScheduled, intent.Status)
+				require.Equal(t, binding.PlanId+1, contract.PendingPlanId)
+				require.False(t, reloadedBinding.CancelAtPeriodEnd)
+				require.Equal(t, "sched_cancel_reconciled", reloadedBinding.ProviderScheduleId)
+			}
+		})
+	}
+}
+
+func TestCancelDowngradeCrashAfterRemoteUpdateKeepsDurableMarkerUntilReconciled(t *testing.T) {
+	for _, cancelAtPeriodEnd := range []bool{true, false} {
+		name := "cancel_confirmed"
+		if !cancelAtPeriodEnd {
+			name = "cancel_not_applied"
+		}
+		t.Run(name, func(t *testing.T) {
+			setupStripeSubscriptionLifecycleTestDB(t)
+			binding, contract, intent := seedPendingDowngradeCancelFixture(t, 821, "sched_cancel_crash", "cancel-crash-window")
+			originalRelease := stripeReleaseSubscriptionSchedule
+			originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+			originalRestore := stripeRestoreSubscriptionSchedule
+			originalGet := stripeSubscriptionSnapshotGetter
+			t.Cleanup(func() {
+				stripeReleaseSubscriptionSchedule = originalRelease
+				stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+				stripeRestoreSubscriptionSchedule = originalRestore
+				stripeSubscriptionSnapshotGetter = originalGet
+			})
+			assertDurableMarker := func() {
+				var markedIntent model.SubscriptionChangeIntent
+				require.NoError(t, model.DB.First(&markedIntent, intent.Id).Error)
+				require.Equal(t, model.SubscriptionChangeIntentStatusCompensationRequired, markedIntent.Status)
+				var markedContract model.UserSubscriptionContract
+				require.NoError(t, model.DB.First(&markedContract, contract.Id).Error)
+				require.Equal(t, model.SubscriptionContractStatusNeedsAttention, markedContract.Status)
+			}
+			stripeReleaseSubscriptionSchedule = func(scheduleID string, idempotencyKey string) error {
+				assertDurableMarker()
+				return nil
+			}
+			stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+				assertDurableMarker()
+				panic("simulated process crash after Stripe update")
+			}
+			func() {
+				defer func() {
+					require.Equal(t, "simulated process crash after Stripe update", recover())
+				}()
+				_, _ = CancelStripeRecurringSubscription(821, binding.Id)
+			}()
+			assertDurableMarker()
+
+			stripeSubscriptionSnapshotGetter = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+				return model.ProviderSubscriptionSnapshot{
+					ProviderSubscriptionId:     providerSubscriptionID,
+					ProviderScheduleIdObserved: true,
+					ProviderStatus:             "active",
+					CancelAtPeriodEnd:          cancelAtPeriodEnd,
+					CurrentPeriodStart:         1000,
+					CurrentPeriodEnd:           2000,
+				}, nil
+			}
+			stripeRestoreSubscriptionSchedule = func(rawSnapshot string, idempotencyKey string) (string, error) {
+				if cancelAtPeriodEnd {
+					t.Fatal("confirmed cancellation must not restore the released downgrade")
+				}
+				return "sched_cancel_crash_restored", nil
+			}
+			processed, err := ReconcileCancelDowngradeCompensationRequired(context.Background(), 100)
+			require.NoError(t, err)
+			require.Equal(t, 1, processed)
+			processed, err = ReconcileCancelDowngradeCompensationRequired(context.Background(), 100)
+			require.NoError(t, err)
+			require.Zero(t, processed)
+
+			require.NoError(t, model.DB.First(contract, contract.Id).Error)
+			require.Equal(t, model.SubscriptionContractStatusActive, contract.Status)
+			require.NoError(t, model.DB.First(intent, intent.Id).Error)
+			if cancelAtPeriodEnd {
+				require.Equal(t, model.SubscriptionChangeIntentStatusSuperseded, intent.Status)
+				require.Zero(t, contract.PendingPlanId)
+			} else {
+				require.Equal(t, model.SubscriptionChangeIntentStatusScheduled, intent.Status)
+				require.Equal(t, binding.PlanId+1, contract.PendingPlanId)
+			}
+		})
+	}
+}
+
+func TestResumeClearsPeriodEndCancelAndDoesNotRestoreOldDowngrade(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBinding(t, 817, "active", true)
+	var contract model.UserSubscriptionContract
+	require.NoError(t, model.DB.Where("user_id = ?", 817).First(&contract).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionChangeIntent{
+		ContractId:               contract.Id,
+		UserId:                   817,
+		RequestId:                "old-downgrade",
+		ChangeVersion:            1,
+		Kind:                     model.SubscriptionChangeIntentKindDowngrade,
+		PaymentMode:              model.SubscriptionPaymentModeStripeRecurring,
+		Status:                   model.SubscriptionChangeIntentStatusSuperseded,
+		FromPlanId:               binding.PlanId,
+		ToPlanId:                 binding.PlanId + 1,
+		ProviderBindingId:        binding.Id,
+		PreviousScheduleSnapshot: `{"subscription_id":"sub_lifecycle","phases":[{"items":[{"price_id":"price_old","quantity":1}]}]}`,
+	}).Error)
+	originalUpdate := stripeUpdateSubscriptionCancelAtPeriodEnd
+	originalRestore := stripeRestoreSubscriptionSchedule
+	t.Cleanup(func() {
+		stripeUpdateSubscriptionCancelAtPeriodEnd = originalUpdate
+		stripeRestoreSubscriptionSchedule = originalRestore
+	})
+	stripeRestoreSubscriptionSchedule = func(rawSnapshot string, idempotencyKey string) (string, error) {
+		t.Fatal("resume must not restore deliberately cleared downgrade")
+		return "", nil
+	}
+	stripeUpdateSubscriptionCancelAtPeriodEnd = func(providerSubscriptionID string, cancelAtPeriodEnd bool, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		require.False(t, cancelAtPeriodEnd)
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId: providerSubscriptionID,
+			ProviderStatus:         "active",
+			CancelAtPeriodEnd:      false,
+			CurrentPeriodStart:     1000,
+			CurrentPeriodEnd:       2000,
+		}, nil
+	}
+
+	updated, err := ResumeStripeRecurringSubscription(817, binding.Id)
+
+	require.NoError(t, err)
+	require.False(t, updated.CancelAtPeriodEnd)
 }
 
 func TestStripeSubscriptionLifecyclePastDueCancelTerminatesLocalEntitlement(t *testing.T) {
@@ -272,6 +824,10 @@ func TestStripeSubscriptionReconciliationAppliesExactBindingSnapshots(t *testing
 	require.NoError(t, model.DB.Model(ended).Updates(map[string]interface{}{
 		"ended_at":        int64(1500),
 		"provider_status": "canceled",
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("user_id = ?", ended.UserId).Updates(map[string]interface{}{
+		"status":                      model.SubscriptionContractStatusEnded,
+		"current_provider_binding_id": 0,
 	}).Error)
 	originalIsMaster := common.IsMasterNode
 	originalFetch := stripeSubscriptionSnapshotForReconciliation

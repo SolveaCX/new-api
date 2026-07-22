@@ -61,16 +61,6 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 		if err := subscriptionCommandLock(tx).Where("id = ?", cmd.UserID).First(&user).Error; err != nil {
 			return err
 		}
-		if common.SubscriptionSingleContractEnabled {
-			migration, err := auditLegacySubscriptionForUserTx(tx, cmd.UserID)
-			if err != nil {
-				return err
-			}
-			if IsLegacySubscriptionMigrationBlocking(migration.Classification) {
-				return ErrSubscriptionMigrationRequiresAdmin
-			}
-		}
-
 		if existing, found, err := findIntentByRequestTx(tx, cmd.UserID, cmd.RequestID); err != nil {
 			return err
 		} else if found {
@@ -220,6 +210,15 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			}
 			return nil
 		}
+		if common.SubscriptionSingleContractEnabled {
+			migration, err := auditLegacySubscriptionForUserTx(tx, cmd.UserID)
+			if err != nil {
+				return err
+			}
+			if IsLegacySubscriptionMigrationBlocking(migration.Classification) {
+				return ErrSubscriptionMigrationRequiresAdmin
+			}
+		}
 
 		if err := validateChangePaymentMode(cmd.PaymentMode); err != nil {
 			return err
@@ -289,6 +288,17 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 					Intent:   intent,
 				}
 				return nil
+			}
+			if kind == model.SubscriptionChangeIntentKindUpgrade &&
+				contract.Status == model.SubscriptionContractStatusActive &&
+				contract.PaymentMode == model.SubscriptionPaymentModeStripeRecurring &&
+				contract.CurrentProviderBindingId > 0 {
+				result = &ChangePlanResult{
+					Status:   ChangePlanStatusCheckoutRequired,
+					Contract: contract,
+					Intent:   intent,
+				}
+				return prepareStripeToBalanceCompensationTx(tx, &user, contract, intent, plan)
 			}
 			effects, err := applyBalanceOnePeriodChangeTx(tx, &user, contract, intent, plan)
 			if err != nil {
@@ -515,6 +525,22 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			return nil, err
 		}
 		result.Status = ChangePlanStatusScheduled
+	}
+	if result != nil && result.Intent != nil &&
+		result.Intent.PaymentMode == model.SubscriptionPaymentModeBalanceOnePeriod &&
+		result.Intent.Kind == model.SubscriptionChangeIntentKindUpgrade &&
+		(result.Intent.Status == model.SubscriptionChangeIntentStatusSyncing ||
+			result.Intent.Status == model.SubscriptionChangeIntentStatusCompensationRequired) {
+		if err := executeStripeToBalanceCompensation(context.Background(), result.Intent.Id); err != nil {
+			return nil, err
+		}
+		if err := model.DB.Where("id = ?", result.Intent.Id).First(result.Intent).Error; err != nil {
+			return nil, err
+		}
+		if err := model.DB.Where("id = ?", result.Contract.Id).First(result.Contract).Error; err != nil {
+			return nil, err
+		}
+		result.Status = changePlanResultStatus(result.Intent.Status)
 	}
 	applyBalanceOnePeriodSideEffects(balanceEffects)
 	return result, nil

@@ -74,6 +74,8 @@ func RunStripeSubscriptionReconciliationOnce() (int, error) {
 	for _, scan := range []func(context.Context) (int, error){
 		reconcileExpiredStripeGraceContracts,
 		resetExpiredStripeWebhookLeases,
+		reconcileCancelDowngradeCompensations,
+		reconcileStripeToBalanceCompensations,
 		reconcileUnresolvedStripeInvoiceIntents,
 		reconcileStalePendingStripePurchases,
 		reconcilePendingStripeDowngrades,
