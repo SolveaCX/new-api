@@ -39,6 +39,19 @@ test("static HTML receives one shared configuration script and keeps local docs 
   assert.doesNotMatch(indexHtml, /href="[^"]*\.html/);
 });
 
+test("the marketing navigation collapses only after measured overflow", () => {
+  const shell = read("../html/assets/site-shell.js");
+  const css = read("../html/fk2.css");
+
+  assert.match(shell, /shell\.scrollWidth > shell\.clientWidth \+ 1/);
+  assert.match(shell, /shell\.classList\.toggle\("nav-collapsed", needsCollapse\)/);
+  assert.match(shell, /window\.addEventListener\("resize", syncCollapse/);
+  assert.match(css, /\.nav\.nav-collapsed>a:not\(\.logo\),\.nav\.nav-collapsed>\.sp\{display:none\}/);
+  assert.match(css, /\.nav\.nav-collapsed\+\.mobile-nav-panel a\.btn\.black\{color:#fff\}/);
+  assert.match(css, /@media \(max-width:620px\)[\s\S]*\.nav\.nav-collapsed\+\.mobile-nav-panel:not\(\[hidden\]\)\{grid-template-columns:1fr\}/);
+  assert.doesNotMatch(css, /@media \(max-width:\d+px\)\{[^}]*\.nav>a:not\(\.logo\),\.nav>\.sp\{display:none\}/);
+});
+
 test("public static pages use one extensionless canonical route", () => {
   const nginx = read("../nginx.conf");
   const sitemap = read("../html/sitemap-v2.xml");
