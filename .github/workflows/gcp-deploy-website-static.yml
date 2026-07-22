@@ -122,10 +122,16 @@ jobs:
       - name: Smoke test canary
         run: |
           C="https://canary---newapi-web-5qjldqffdq-uw.a.run.app"
-          # new static pages
-          for p in "" models.html docs.html topup.html sla.html install.sh llms.txt compute.html about.html about-zh.html careers.html careers-zh.html assets/team/amazon-accelerate-team.jpg assets/team/team-dinner.jpg; do
+          # canonical static pages and assets
+          for p in "" models docs playground pricing compute usecases contact status terms privacy refund-policy sla about zh/about careers zh/careers install.sh llms.txt assets/team/amazon-accelerate-team.jpg assets/team/team-dinner.jpg; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p")
             echo "/$p -> $code"; [ "$code" = "200" ] || exit 1
+          done
+          # Every historical .html page permanently consolidates into one clean
+          # canonical URL instead of returning a second indexable 200.
+          for pair in "models.html models" "docs.html docs" "playground.html playground" "topup.html pricing" "compute.html compute" "terms.html terms" "about.html about" "careers.html careers" "about-zh.html zh/about" "careers-zh.html zh/careers"; do
+            set -- $pair
+            curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -m 20 "$C/$1" | grep -q "^301 $C/$2$" || { echo "/$1 redirect broken"; exit 1; }
           done
           # Auth entry points collapse to the single console auth screen (dedupe): 301/302, not 200.
           curl -s -o /dev/null -w "%{http_code}" "$C/signup.html" | grep -q 301 || exit 1
@@ -133,8 +139,8 @@ jobs:
           curl -s -o /dev/null -w "%{http_code}" "$C/login" | grep -q 302 || exit 1
           # compute B2B landing: pretty route serves the page, SEO head + lead form present
           code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/compute"); echo "/compute -> $code"; [ "$code" = "200" ] || exit 1
-          curl -s -m 20 "$C/compute.html" | grep -q 'canonical" href="https://flatkey.ai/compute.html"' || { echo "compute canonical missing"; exit 1; }
-          curl -s -m 20 "$C/compute.html" | grep -q 'id="waitlist"' || { echo "compute waitlist form missing"; exit 1; }
+          curl -s -m 20 "$C/compute" | grep -q 'canonical" href="https://flatkey.ai/compute"' || { echo "compute canonical missing"; exit 1; }
+          curl -s -m 20 "$C/compute" | grep -q 'id="waitlist"' || { echo "compute waitlist form missing"; exit 1; }
           code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/about"); echo "/about -> $code"; [ "$code" = "200" ] || exit 1
           curl -s -m 20 "$C/about" | grep -q 'Hunter Guo' || { echo "new About founder story missing"; exit 1; }
           curl -s -m 20 "$C/about" | grep -q 'assets/team/amazon-accelerate-team.jpg' || { echo "About team photos missing"; exit 1; }
@@ -158,10 +164,14 @@ jobs:
           # blog must NOT redirect to homepage anymore
           loc=$(curl -s -o /dev/null -w "%{redirect_url}" -m 30 "$C/blog")
           [ -z "$loc" ] || { echo "unexpected redirect: /blog -> $loc"; exit 1; }
+          curl -s -m 30 "$C/blog" | grep -q 'href="/blog/category/' || { echo "blog category links missing"; exit 1; }
+          curl -s -m 30 "$C/blog" | grep -q 'href="/blog/[^c]' || { echo "blog article links missing"; exit 1; }
           # merged sitemap: index + legacy inventory + v2 pages
           curl -s -m 30 "$C/sitemap.xml" | grep -q "<sitemapindex" || { echo "sitemap index missing"; exit 1; }
           curl -s -m 30 "$C/sitemap-site.xml" | grep -q "<urlset" || { echo "legacy sitemap proxy broken"; exit 1; }
           curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/sitemap-v2.xml" | grep -q 200 || exit 1
+          curl -s -m 30 "$C/sitemap-site.xml" | grep -q 'hreflang="en-US"' || { echo "legacy sitemap regional hreflang missing"; exit 1; }
+          curl -s -m 20 "$C/sitemap-v2.xml" | grep -q '\.html<' && { echo "v2 sitemap exposes .html URLs"; exit 1; }
           # legacy skin must be injected into proxied pages
           curl -s -m 30 "$C/blog" | grep -q "legacy-skin.css" || { echo "legacy skin not injected"; exit 1; }
           curl -s -m 30 "$C/zh/terms" | grep -q '>flatkey.ai</span>' || { echo "legacy SSR wordmark was mutated; React hydration would fail"; exit 1; }
@@ -171,23 +181,26 @@ jobs:
           # localized homepages + SEO heads
           curl -s -m 20 "$C/zh" | grep -q 'lang="zh-CN"' || { echo "/zh not localized static"; exit 1; }
           curl -s -m 20 "$C/zh" | grep -q 'canonical" href="https://flatkey.ai/zh"' || { echo "/zh canonical missing"; exit 1; }
-          curl -s -m 20 "$C/ja" | grep -q 'lang="ja"' || { echo "/ja not localized"; exit 1; }
+          curl -s -m 20 "$C/ja" | grep -q 'lang="ja-JP"' || { echo "/ja not localized"; exit 1; }
+          curl -s -m 20 "$C/zh/terms" | grep -q 'lang="zh-CN"' || { echo "legacy localized lang normalization missing"; exit 1; }
+          curl -s -m 20 "$C/" | grep -q 'hreflang="en-US"' || { echo "regional hreflang cluster missing"; exit 1; }
           curl -s -m 20 "$C/" | grep -q 'hreflang="zh-CN"' || { echo "hreflang cluster missing"; exit 1; }
           curl -s -m 20 "$C/" | grep -q 'og:image' || { echo "og tags missing"; exit 1; }
-          curl -s -m 20 "$C/docs.html" | grep -q 'rel="canonical"' || { echo "docs canonical missing"; exit 1; }
-          curl -s -m 20 "$C/contact.html" | grep -q 'class="nav"' || { echo "contact nav missing"; exit 1; }
+          curl -s -m 20 "$C/docs" | grep -q 'canonical" href="https://flatkey.ai/docs"' || { echo "docs canonical missing"; exit 1; }
+          curl -s -m 20 "$C/contact" | grep -q 'class="nav"' || { echo "contact nav missing"; exit 1; }
           # slim footer legal links must be real anchors; assets must be version-busted
-          curl -s -m 20 "$C/terms.html" | grep -q 'href="legal-sla.html">' || { echo "footer legal links not anchors"; exit 1; }
-          curl -s -m 20 "$C/terms.html" | grep -q 'hreflang="zh-CN" href="https://flatkey.ai/zh/terms"' || { echo "terms hreflang missing"; exit 1; }
-          curl -s -m 20 "$C/assets/i18n.js?v=720b" | grep -q 'location.replace("/" + legalLanguage' || { echo "saved-language legal redirect missing"; exit 1; }
-          curl -s -m 20 "$C/assets/i18n.js?v=720b" | grep -q 'locale === "zh" ? "/zh/careers" : "/careers"' || { echo "locale-aware Careers route missing"; exit 1; }
+          curl -s -m 20 "$C/terms" | grep -q 'href="/sla">' || { echo "footer legal links not canonical"; exit 1; }
+          curl -s -m 20 "$C/terms" | grep -q 'hreflang="zh-CN" href="https://flatkey.ai/zh/terms"' || { echo "terms hreflang missing"; exit 1; }
+          curl -s -m 20 "$C/assets/i18n.js?v=720e" | grep -q 'location.replace("/" + legalLanguage' || { echo "saved-language legal redirect missing"; exit 1; }
+          curl -s -m 20 "$C/assets/i18n.js?v=720e" | grep -q 'locale === "zh" ? "/zh/careers" : "/careers"' || { echo "locale-aware Careers route missing"; exit 1; }
           curl -s -m 20 "$C/assets/site-shell.js?v=720a" | grep -q 'flatkey:languagechange' || { echo "locale-aware mobile navigation missing"; exit 1; }
           curl -s -m 20 "$C/" | grep -q 'i18n.js?v=' || { echo "asset versioning missing"; exit 1; }
           code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$C/ja/terms"); [ "$code" = "200" ] || { echo "/ja/terms -> $code"; exit 1; }
           # media price calibration + conversion tracking
           curl -s -m 20 "$C/" | grep -q 'md.early' || { echo "media calibration missing"; exit 1; }
           curl -s -m 20 "$C/" | grep -qE '\$0\.[0-9]+/s' && { echo "fabricated per-second price still present"; exit 1; }
-          curl -s -m 20 "$C/assets/track.js?v=716b" | grep -q 'sign_up_click' || { echo "track.js missing"; exit 1; }
+          curl -s -m 20 "$C/assets/track.js?v=721a" | grep -q 'sign_up_click' || { echo "track.js missing"; exit 1; }
+          curl -s -m 20 "$C/assets/track.js?v=721a" | grep -q 'first_landing_path' || { echo "track.js attribution missing"; exit 1; }
           # pricing honesty: no legacy fake claims may reappear
           for bad in "60–90%" "50% of list" "53% of list"; do
             curl -s -m 20 "$C/" | grep -q "$bad" && { echo "fake claim present: $bad"; exit 1; }

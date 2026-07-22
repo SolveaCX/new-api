@@ -21,6 +21,7 @@ import {
   Activity,
   Box,
   CalendarRange,
+  Cpu,
   CreditCard,
   FileText,
   FlaskConical,
@@ -138,6 +139,11 @@ export function buildSidebarData(
             title: t('Channels'),
             url: '/channels',
             icon: Radio,
+          },
+          {
+            title: t('Compute'),
+            url: '/compute',
+            icon: Cpu,
           },
           {
             title: t('Models'),

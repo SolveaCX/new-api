@@ -115,6 +115,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/aff", controller.GetAffCode)
 				selfRoute.GET("/topup/info", controller.GetTopUpInfo)
 				selfRoute.GET("/topup/self", controller.GetUserTopUps)
+				selfRoute.POST("/topup/:trade_no/resume", middleware.CriticalRateLimit(), controller.ResumeStripeTopUpCheckout)
 				selfRoute.POST("/topup/:trade_no/invoice", middleware.CriticalRateLimit(), controller.RequestStripeTopUpInvoice)
 				selfRoute.GET("/invoice-profile", controller.GetSelfInvoiceProfile)
 				selfRoute.PUT("/invoice-profile", controller.UpdateSelfInvoiceProfile)
@@ -312,6 +313,16 @@ func SetApiRouter(router *gin.Engine) {
 			codexModelGovernanceRoute.POST("/rules/test", controller.TestCodexModelGovernanceRule)
 			codexModelGovernanceRoute.POST("/:id/review", controller.ReviewCodexModelGovernanceRecord)
 		}
+		// flatkey Compute (GPU rental) admin dashboard. Admin-only, same guard as
+		// channels. Whitelabel: responses expose only flatkey-branded fields.
+		computeRoute := apiRouter.Group("/compute")
+		computeRoute.Use(middleware.AdminAuth())
+		{
+			computeRoute.GET("/nodes", controller.GetComputeNodes)
+			computeRoute.GET("/nodes/:id", controller.GetComputeNode)
+			computeRoute.POST("/nodes/:id/stop", controller.StopComputeNode)
+			computeRoute.GET("/offers", controller.GetComputeOffers)
+		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
@@ -369,6 +380,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/ops_report", middleware.AdminAuth(), controller.GetOpsReport)
 		dataRoute.GET("/ops_report_stripe", middleware.AdminAuth(), controller.GetOpsStripeReport)
 		dataRoute.GET("/ops_report_ads", middleware.AdminAuth(), controller.GetOpsAdsPilotReport)
+		dataRoute.GET("/ops_report_ads_daily", middleware.AdminAuth(), controller.GetOpsAdsDailyReport)
+		dataRoute.GET("/ops_report_landing_thumb", middleware.AdminAuth(), controller.GetOpsAdsLandingThumb)
 
 		adsPilotRoute := apiRouter.Group("/ads_pilot")
 		adsPilotRoute.Use(middleware.AdminAuth())

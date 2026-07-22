@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { SectionPageLayout } from '@/components/layout'
+import { OperationDocumentationLink } from '@/components/operation-documentation-link'
 import { ModelAccessBrowser } from './components/model-access-browser'
 import { useModelAccess } from './hooks/use-model-access'
 
@@ -142,6 +143,9 @@ export function AvailableModels() {
           {t('Available Models')}
         </span>
       </SectionPageLayout.Title>
+      <SectionPageLayout.Actions>
+        <OperationDocumentationLink />
+      </SectionPageLayout.Actions>
       <SectionPageLayout.Content>{content}</SectionPageLayout.Content>
     </SectionPageLayout>
   )

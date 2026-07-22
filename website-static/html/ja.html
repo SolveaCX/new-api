@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8">
+<html lang="ja-JP"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>flatkey — More AI, Less Cost. Every official model, one key.</title>
+<title>flatkey — More AI, less cost. All frontier models, one key.</title>
 <link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-64.png?v=3">
 <link rel="icon" type="image/svg+xml" href="/assets/flatkey-mark.svg?v=4">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=3">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/fk2.css?v=719h"><style>
+<link rel="stylesheet" href="/fk2.css?v=723c"><style>
 /* ---------- hero ---------- */
 .hero{background:linear-gradient(180deg,#FFFFFF 0%,#F7F5FD 100%);border-bottom:1px solid var(--line)}
 .heroGrid{max-width:1240px;margin:0 auto;padding:56px 40px 52px;display:grid;grid-template-columns:minmax(0,1fr) 560px;gap:48px;align-items:start}
@@ -24,7 +24,10 @@
 .board{background:#fff;border:1px solid var(--line);border-radius:14px;padding:6px 0 4px;box-shadow:0 24px 60px -18px rgba(46,16,101,.18)}
 .board h4{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--ink3);display:flex;justify-content:space-between;font-weight:600;padding:14px 24px 10px}
 .board h4 .g{color:var(--green)}
-.brow{display:flex;align-items:baseline;gap:14px;padding:15px 24px;border-bottom:1px solid var(--line2)}
+.brow{display:flex;align-items:center;gap:14px;padding:10px 24px;border-bottom:1px solid var(--line2)}
+.brow .bm{display:flex;flex-direction:column;gap:1px;min-width:0}
+.brow .bm .prov{line-height:1.2}
+.brow img.plogo{width:18px;height:18px;flex:none;align-self:center;object-fit:contain}
 .brow:last-of-type{border:none}
 .brow b{font-size:16px;font-weight:700;letter-spacing:-.3px;white-space:nowrap}
 .brow .prov{font-family:var(--mono);font-size:11px;color:var(--ink3)}
@@ -38,7 +41,7 @@
 .bauto b{font-size:14.5px;color:var(--violet-deep)}
 .bauto .d{font-family:var(--mono);font-size:11px;color:var(--ink3)}
 .bauto .fee{margin-left:auto;font-family:var(--mono);font-size:12.5px;color:var(--violet-deep);font-weight:600;white-space:nowrap}
-.boardfoot{text-align:center;padding:10px 0 10px}
+.boardfoot{text-align:center;padding:12px 0 8px;border-bottom:1px solid var(--line2)}
 .boardfoot a{color:var(--violet-deep);font-size:13px;font-weight:650;text-decoration:none}
 /* ---------- proof bar (新洞察价值点) ---------- */
 .proof{border-bottom:1px solid var(--line);background:#fff}
@@ -101,35 +104,93 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
 .tile span{font-family:var(--mono);font-size:10px;color:#77778A}
 .tile .pr{font-family:var(--mono);font-size:11px;color:#B7A3F0;margin-top:11px;display:block}
 @keyframes slide{to{transform:translateX(-50%)}}
+
+/* hero carousel */
+.heroSlides{position:relative;display:grid}
+.heroSlides .hslide{grid-area:1/1;visibility:hidden;opacity:0;transition:opacity .35s ease;display:flex;flex-direction:column;justify-content:center}
+.heroSlides .hslide.on{visibility:visible;opacity:1}
+.hs2{position:relative;display:flex;flex-direction:column;justify-content:center;background:linear-gradient(180deg,#FBFAFF 0%,#F3EFFC 100%);border:1px solid var(--line);border-radius:14px;padding:18px 22px 14px;box-shadow:0 24px 60px -18px rgba(46,16,101,.18)}
+.hs2::before{content:"";position:absolute;inset:-40px;background:radial-gradient(closest-side,rgba(168,85,247,.10),transparent 70%);pointer-events:none}
+.kwall{position:relative;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-width:420px;margin:0 auto;width:100%}
+.kcol{display:flex;flex-direction:column;gap:11px}
+.kcol:nth-child(1),.kcol:nth-child(5){padding-top:16px}
+.kcol:nth-child(2),.kcol:nth-child(4){padding-top:44px}
+.kt{aspect-ratio:1;background:#fff;border:1px solid #E9E7F2;border-radius:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px -18px rgba(30,27,75,.35)}
+.kt img{width:28px;height:28px;object-fit:contain}
+.kt img.sm{width:26px;height:26px}
+.kfun{position:relative;display:block;width:240px;height:34px;margin:8px auto 0}
+.keypill{position:relative;margin:0 auto;display:flex;align-items:center;gap:8px;background:#6D28D9;color:#fff;font-family:var(--mono);font-weight:600;font-size:13px;letter-spacing:.5px;border-radius:999px;padding:10px 20px;width:max-content;box-shadow:0 14px 34px rgba(109,40,217,.35)}
+.keypill img{width:16px;height:16px}
+.kcap{position:relative;text-align:center;font-size:12px;color:var(--ink3);margin-top:12px;font-family:var(--mono)}
+.kcats{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.kcat{background:#fff;border:1px solid #E9E7F2;border-radius:14px;padding:12px 14px;box-shadow:0 10px 24px -18px rgba(30,27,75,.35)}
+.kcat b{display:block;color:var(--ink);font-size:13.5px;font-weight:750;letter-spacing:-.2px;margin-bottom:4px}
+.kcat span{font-family:var(--mono);font-size:10.5px;color:var(--ink3);line-height:1.5;display:block}
+.klink{position:relative;display:block;text-align:center;margin-top:14px;font-weight:700;font-size:13.5px;color:var(--violet-deep);text-decoration:none}
+.hnav{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink2);font-size:16px;user-select:none;box-shadow:0 6px 18px rgba(46,16,101,.14);z-index:5}
+.hprev{left:-15px}.hnext{right:-15px}
+.hdots{grid-row:2;display:flex;gap:6px;justify-content:center;margin-top:12px}
+.hdots i{width:7px;height:7px;border-radius:50%;background:#D9D2F5;cursor:pointer}
+.hdots i.on{background:var(--violet)}
+@media (max-width:620px){
+  .hs2{padding:20px 14px 16px}
+  .kwall{gap:8px}
+  .kcol{gap:8px}
+  .kcol:nth-child(1),.kcol:nth-child(5){padding-top:10px}
+  .kcol:nth-child(2),.kcol:nth-child(4){padding-top:28px}
+  .kt{border-radius:12px}
+  .kt img{width:22px;height:22px}
+  .kfun{width:180px;height:26px}
+  .kcats{grid-template-columns:1fr;gap:8px}
+  .kcat{padding:10px 12px}
+  .hprev{left:8px}.hnext{right:8px}
+}
+
+#trust{color:var(--ink);background:linear-gradient(180deg,#FBFAFE 0%,#F2EEFB 100%)}
+#trust .shade{background:linear-gradient(90deg,rgba(251,250,254,.94) 0%,rgba(251,250,254,.55) 48%,rgba(251,250,254,.08) 100%)}
+#trust .kick{color:var(--violet-deep)}
+#trust h2.big{color:var(--ink)}
+#trust h2.big em{color:var(--violet-deep)}
+#trust .d{color:var(--ink2)}
+#trust .d a{color:var(--violet-deep)!important}
+#trust .radar{background:radial-gradient(circle,#EAE3FA 0%,#F6F3FD 45%,transparent 70%)}
+#trust .radar i{border-color:#7C3AED30}
+#trust .sweep{background:conic-gradient(from 0deg,#8B5CF636,transparent 70deg)}
+#trust .blip{background:#7C3AED;box-shadow:0 0 12px #8B5CF680}
+#trust .rows>div{border-bottom:1px solid rgba(20,16,31,.10);color:var(--ink2)}
+#trust .rows b{color:var(--ink)}
+#trust .rows .ok{color:#15803D}
+#trust .vtag{color:#8A8794}
+#trust .vtag .p{background:#7C3AED14;color:var(--violet-deep)}
 </style><!-- Google Tag Manager -->
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-5T5LPLSZ');</script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NKH9LPX9');</script>
 <!-- End Google Tag Manager -->
-<meta name="description" content="flatkey は 1 つの key で GPT・Claude・Gemini・DeepSeek・GLM——さらに Seedance 2.5 動画——の公式 API へルーティング:本物のモデル、劣化なし。中国系モデルは公式価格の 60% から、チャージごとに 15–50% ボーナス($200 で $100 付与)。1 行変えるだけ、SDK はそのまま。">
+<meta name="description" content="flatkey は 1 つの key で GPT・Claude・Gemini・DeepSeek・Kimi・GLM の公式 API へルーティング——328+ のフロンティアモデルをひとつのキーで。プランは月 $10 から、すべての呼び出しに契約 SLA、毎時検証。">
 <link rel="canonical" href="https://flatkey.ai/ja">
 <link rel="alternate" hreflang="zh-CN" href="https://flatkey.ai/zh">
-<link rel="alternate" hreflang="es" href="https://flatkey.ai/es">
-<link rel="alternate" hreflang="fr" href="https://flatkey.ai/fr">
-<link rel="alternate" hreflang="pt" href="https://flatkey.ai/pt">
-<link rel="alternate" hreflang="ru" href="https://flatkey.ai/ru">
-<link rel="alternate" hreflang="ja" href="https://flatkey.ai/ja">
-<link rel="alternate" hreflang="vi" href="https://flatkey.ai/vi">
-<link rel="alternate" hreflang="de" href="https://flatkey.ai/de">
-<link rel="alternate" hreflang="id" href="https://flatkey.ai/id">
-<link rel="alternate" hreflang="en" href="https://flatkey.ai/">
+<link rel="alternate" hreflang="es-ES" href="https://flatkey.ai/es">
+<link rel="alternate" hreflang="fr-FR" href="https://flatkey.ai/fr">
+<link rel="alternate" hreflang="pt-PT" href="https://flatkey.ai/pt">
+<link rel="alternate" hreflang="ru-RU" href="https://flatkey.ai/ru">
+<link rel="alternate" hreflang="ja-JP" href="https://flatkey.ai/ja">
+<link rel="alternate" hreflang="vi-VN" href="https://flatkey.ai/vi">
+<link rel="alternate" hreflang="de-DE" href="https://flatkey.ai/de">
+<link rel="alternate" hreflang="id-ID" href="https://flatkey.ai/id">
+<link rel="alternate" hreflang="en-US" href="https://flatkey.ai/">
 <link rel="alternate" hreflang="x-default" href="https://flatkey.ai/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="flatkey.ai">
-<meta property="og:title" content="flatkey — More AI, Less Cost. Every official model, one key.">
-<meta property="og:description" content="flatkey は 1 つの key で GPT・Claude・Gemini・DeepSeek・GLM——さらに Seedance 2.5 動画——の公式 API へルーティング:本物のモデル、劣化なし。中国系モデルは公式価格の 60% から、チャージごとに 15–50% ボーナス($200 で $100 付与)。1 行変えるだけ、SDK はそのまま。">
+<meta property="og:title" content="flatkey — More AI, less cost. All frontier models, one key.">
+<meta property="og:description" content="flatkey は 1 つの key で GPT・Claude・Gemini・DeepSeek・Kimi・GLM の公式 API へルーティング——328+ のフロンティアモデルをひとつのキーで。プランは月 $10 から、すべての呼び出しに契約 SLA、毎時検証。">
 <meta property="og:url" content="https://flatkey.ai/ja">
 <meta property="og:image" content="https://flatkey.ai/assets/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@flatkey101">
-<meta name="twitter:title" content="flatkey — More AI, Less Cost. Every official model, one key.">
-<meta name="twitter:description" content="flatkey は 1 つの key で GPT・Claude・Gemini・DeepSeek・GLM——さらに Seedance 2.5 動画——の公式 API へルーティング:本物のモデル、劣化なし。中国系モデルは公式価格の 60% から、チャージごとに 15–50% ボーナス($200 で $100 付与)。1 行変えるだけ、SDK はそのまま。">
+<meta name="twitter:title" content="flatkey — More AI, less cost. All frontier models, one key.">
+<meta name="twitter:description" content="flatkey は 1 つの key で GPT・Claude・Gemini・DeepSeek・Kimi・GLM の公式 API へルーティング——328+ のフロンティアモデルをひとつのキーで。プランは月 $10 から、すべての呼び出しに契約 SLA、毎時検証。">
 <meta name="twitter:image" content="https://flatkey.ai/assets/og-image.png">
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "Organization", "name": "flatkey.ai", "url": "https://flatkey.ai/", "logo": "https://flatkey.ai/assets/flatkey-mark.svg?v=4", "sameAs": ["https://x.com/flatkey101", "https://discord.gg/VrbZFDXj5g", "https://www.linkedin.com/company/flatkey/"], "contactPoint": {"@type": "ContactPoint", "email": "support@flatkey.ai", "contactType": "customer support"}}</script>
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebSite", "name": "flatkey.ai", "url": "https://flatkey.ai/"}</script>
@@ -139,11 +200,11 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
 
 <nav class="nav">
   <a class="logo" href="/"><img src="/assets/flatkey-mark.svg?v=4" alt="flatkey">flatkey</a>
-  <a href="/models.html" data-i18n="nav.models" data-orig="Models">モデル</a><a href="/docs.html" data-i18n="nav.docs" data-orig="Docs">ドキュメント</a><a href="/playground.html" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/models.html#leaderboard" data-i18n="nav.rankings" data-orig="Rankings">ランキング</a><a href="/topup.html" data-i18n="nav.pricing" data-orig="Pricing">料金</a><a href="/compute.html" data-i18n="nav.compute" data-orig="Compute">Compute</a><a href="/usecases.html" data-i18n="nav.usecases" data-orig="Use cases">ユースケース</a>
+  <a href="/models" data-i18n="nav.models" data-orig="Models">モデル</a><a href="/docs" data-i18n="nav.docs" data-orig="Docs">ドキュメント</a><a href="/playground" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/models#leaderboard" data-i18n="nav.rankings" data-orig="Rankings">ランキング</a><a href="/pricing" data-i18n="nav.pricing" data-orig="Pricing">料金</a><a href="/compute" data-i18n="nav.compute" data-orig="Compute">Compute</a><a href="/usecases" data-i18n="nav.usecases" data-orig="Use cases">ユースケース</a><a href="/status" data-i18n="nav.status" data-orig="Status">ステータス</a>
   <div class="sp"></div>
-  <a href="/login.html" data-i18n="nav.signin" data-orig="Sign in">ログイン</a>
-  <a class="btn white" href="/contact.html" data-i18n="nav.contact" data-orig="Contact sales">営業に問い合わせ</a>
-  <a class="btn black" href="/login.html" data-i18n="nav.start" data-orig="Start free →">無料で始める →</a>
+  <a href="/login" data-i18n="nav.signin" data-orig="Sign in">ログイン</a>
+  <a class="btn white" href="/contact" data-i18n="nav.contact" data-orig="Contact sales">営業に問い合わせ</a>
+  <a class="btn black" href="/login" data-i18n="nav.start" data-orig="Start free →">無料で始める →</a>
 </nav>
 
 <header class="hero">
@@ -151,29 +212,51 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
   <div class="heroGrid">
     <div>
       <span class="eyebrow" data-i18n="hero.eyebrow" data-orig="OFFICIAL APIS ONLY · VERIFIED HOURLY">公式APIのみ · 毎時検証</span>
-      <h1 class="display" data-i18n="hero.h1" data-orig="Every official model.&lt;br&gt;One key.&lt;br&gt;&lt;span class=&quot;price&quot;&gt;More AI, less cost.&lt;/span&gt;">すべての公式モデル。<br>ひとつのキー。<br><span class="price">More AI, less cost.</span></h1>
-      <p class="sub" data-i18n="hero.sub" data-orig="GPT, Claude, Gemini, DeepSeek, GLM — and Seedance 2.5 video — routed to the real, official endpoints with public per-model multipliers you can audit. Change one line, keep your SDK.">flatkey は 1 つの key で GPT・Claude・Gemini・DeepSeek・GLM——さらに Seedance 2.5 動画——の公式 API へルーティング:本物のモデル、劣化なし。中国系モデルは公式価格の 60% から、チャージごとに 15–50% ボーナス($200 で $100 付与)。1 行変えるだけ、SDK はそのまま。</p>
+      <h1 class="display" data-i18n="hero.h1" data-orig="&lt;span class=&quot;price&quot;&gt;More AI, less cost.&lt;/span&gt;&lt;br&gt;All frontier models,&lt;br&gt;one key."><span class="price">もっと AI を、より低コストで。</span><br>すべてのフロンティアモデルを、<br>1 つのキーで。</h1>
+      <p class="sub" data-i18n="hero.sub" data-orig="Text, video and audio — 328+ frontier models, all routed to the real, official endpoints, with a signed SLA behind every call. No separate subscriptions per vendor — one key, less spend.">テキスト・動画・音声——328+ のフロンティアモデルを本物の公式エンドポイントへルーティング。すべての呼び出しの背後に署名済み SLA。ベンダーごとの複数サブスクは不要——1 つのキーで、より安く。</p>
       <div class="code">gpt&nbsp;&nbsp;&nbsp; = OpenAI(<span class="k">base_url</span>=<span class="s">"https://router.flatkey.ai/v1"</span>, <span class="k">api_key</span>=<span class="s">"sk-fk-…"</span>)
 claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://router.flatkey.ai"</span>, <span class="k">api_key</span>=<span class="s">"sk-fk-…"</span>)</div>
       <div class="ctas">
-        <a class="btn black big" href="/login.html" data-i18n="hero.cta1" data-orig="Start building — free $2 credit">無料で始める — $2 クレジット</a>
-        <a class="btn white big" href="/playground.html" data-i18n="hero.cta2" data-orig="Try in Playground, no signup">登録なしで Playground を試す</a>
+        <a class="btn black big" href="/login" data-i18n="hero.cta1" data-orig="Start building — free $1 credit">無料で始める — $1 クレジット</a>
+        <a class="btn white big" href="/playground" data-i18n="hero.cta2" data-orig="Try in Playground, no signup">登録なしで Playground を試す</a>
       </div>
-      <p class="proofline" data-i18n="hero.proof" data-orig="&lt;b class=&quot;num&quot;&gt;46B&lt;/b&gt; tokens/month · &lt;b class=&quot;num&quot;&gt;4K+&lt;/b&gt; paying users · &lt;b class=&quot;num&quot;&gt;100+&lt;/b&gt; enterprises in production · &lt;b class=&quot;num&quot;&gt;0&lt;/b&gt; model swaps — &lt;a href=&quot;#trust&quot; style=&quot;color:var(--violet-deep);font-weight:600&quot;&gt;public audit log ↗&lt;/a&gt;"><b class="num">46B</b> トークン/月 · <b class="num">4K+</b> 有料ユーザー · <b class="num">100+</b> 企業が本番利用 · <b class="num">0</b> 回のモデル差し替え — <a href="#trust" style="color:var(--violet-deep);font-weight:600">公開監査ログ ↗</a></p>
+      <p class="proofline" data-i18n="hero.proof" data-orig="&lt;b class=&quot;num&quot;&gt;46B&lt;/b&gt; tokens/month · &lt;b class=&quot;num&quot;&gt;4K+&lt;/b&gt; paying users · &lt;b class=&quot;num&quot;&gt;100+&lt;/b&gt; enterprises in production · &lt;b class=&quot;num&quot;&gt;0&lt;/b&gt; model swaps — &lt;a href=&quot;#trust&quot; style=&quot;color:var(--violet-deep);font-weight:600&quot;&gt;public audit log ↗&lt;/a&gt;"><b class="num">46B</b> トークン/月 · <b class="num">4K+</b> 有料ユーザー · <b class="num">100+</b> 企業が本番利用 · <b class="num">0</b> 回のモデル差し替え — <a href="/status" style="color:var(--violet-deep);font-weight:600">公開監査ログ ↗</a></p>
     </div>
     <div>
-      <div class="board">
-        <h4>LIVE MODEL BOARD<span class="g">ALL VERIFIED HOURLY ✓ · REAL 30-DAY TRAFFIC</span></h4>
-        <div class="bauto"><div class="ico">A</div><div><b>flatkey-auto</b> <span class="d">picks the best official model per request</span></div><span class="fee">no routing fee</span></div>
-        <div class="brow"><b>gpt-5.5</b><span class="prov">openai</span><span class="hdot" title="96.5% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>claude-sonnet-4-6</b><span class="prov">anthropic</span><span class="hdot" title="98.2% success · 30-day real traffic"></span><span class="pr"><s>$3.00</s><span class="now">$2.00</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>gpt-5.4</b><span class="prov">openai</span><span class="hdot" title="99.8% success · 30-day real traffic"></span><span class="pr"><s>$3.33</s><span class="now">$1.67</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>claude-opus-4-8</b><span class="prov">anthropic</span><span class="hdot" title="93.8% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>deepseek-v4-flash</b><span class="prov">deepseek</span><span class="hdot" title="99.4% success · 30-day real traffic"></span><span class="pr"><s>$0.14</s><span class="now">$0.056</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>glm-5.2</b><span class="prov">z.ai</span><span class="hdot" title="96.6% success · 30-day real traffic"></span><span class="pr"><s>$1.40</s><span class="now">$0.56</span><span class="un">/M in</span></span></div>
-        <div class="brow" style="background:var(--violet-tint);border-radius:10px;margin:4px 14px 2px;padding-left:12px;padding-right:12px;border-bottom:none"><b>seedance-2.5</b><span class="prov">bytedance</span><span style="font-family:var(--mono);font-size:9.5px;background:#fff;color:var(--violet-deep);border-radius:999px;padding:2px 8px;font-weight:600">VIDEO · NEW</span><span class="hdot" title="early access · official bytedance"></span><span class="pr"><span class="now" style="font-size:12.5px" data-i18n="md.early" data-orig="Early access">先行アクセス</span></span></div>
-        <div class="boardfoot"><a href="/models.html" data-i18n="board.foot" data-orig="See all 160+ models &amp;amp; live health →">160+ モデルとライブヘルスを見る →</a></div>
+      <div class="heroSlides">
+      <div class="hslide on"><div class="board">
+        <div class="boardfoot"><a href="/models" data-i18n="board.foot" data-orig="See all 328+ models &amp;amp; live health →">328+ モデルとライブヘルスを見る →</a></div>
+        <div class="brow"><img class="plogo" src="assets/logos/openai.svg" alt=""><div class="bm"><b>gpt-5.5</b><span class="prov">openai</span></div><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/claude.svg" alt=""><div class="bm"><b>claude-sonnet-4-6</b><span class="prov">anthropic</span></div><span class="pr"><s>$3.00</s><span class="now">$2.00</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/openai.svg" alt=""><div class="bm"><b>gpt-5.4</b><span class="prov">openai</span></div><span class="pr"><s>$3.33</s><span class="now">$1.67</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/claude.svg" alt=""><div class="bm"><b>claude-opus-4-8</b><span class="prov">anthropic</span></div><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/moonshotai.svg" alt=""><div class="bm"><b>kimi-k3</b><span class="prov">moonshot</span></div><span class="pr"><s>$3.00</s><span class="now">$1.20</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/deepseek.svg" alt=""><div class="bm"><b>deepseek-v4-flash</b><span class="prov">deepseek</span></div><span class="pr"><s>$0.14</s><span class="now">$0.056</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/zai.svg" alt=""><div class="bm"><b>glm-5.2</b><span class="prov">z.ai</span></div><span class="pr"><s>$1.40</s><span class="now">$0.56</span><span class="un">/M in</span></span></div>
+        <div class="brow" style="background:var(--violet-tint);border-radius:10px;margin:4px 14px 2px;padding-left:12px;padding-right:12px;border-bottom:none"><img class="plogo" src="assets/logos/bytedance.svg" alt=""><div class="bm"><b>seedance-2.0</b><span class="prov">bytedance</span></div><span class="pr"><s>$0.14</s><span class="now">$0.09</span><span class="un">/s video</span></span></div>
+      </div></div>
+      <div class="hslide hs2">
+        <div class="kwall">
+          <div class="kcol"><div class="kt"><img src="assets/logos/openai.svg" alt="OpenAI"></div><div class="kt"><img src="assets/logos/meta.svg" alt="Meta"></div><div class="kt"><img src="assets/logos/mistralai.svg" alt="Mistral AI"></div></div>
+          <div class="kcol"><div class="kt"><img src="assets/logos/claude.svg" alt="Claude"></div><div class="kt"><img src="assets/logos/deepseek.svg" alt="DeepSeek"></div></div>
+          <div class="kcol"><div class="kt"><img src="assets/logos/googlegemini.svg" alt="Google Gemini"></div><div class="kt"><img src="assets/logos/huggingface.svg" alt="Hugging Face"></div><div class="kt"><img src="assets/logos/qwen.svg" alt="Qwen"></div></div>
+          <div class="kcol"><div class="kt"><img class="sm" src="assets/logos/moonshotai.svg" alt="Moonshot AI"></div><div class="kt"><img src="assets/logos/perplexity.svg" alt="Perplexity"></div></div>
+          <div class="kcol"><div class="kt"><img src="assets/logos/minimax.svg" alt="MiniMax"></div><div class="kt"><img src="assets/logos/ollama.svg" alt="Ollama"></div><div class="kt"><img src="assets/logos/nvidia.svg" alt="NVIDIA"></div></div>
+        </div>
+        <svg class="kfun" viewBox="0 0 240 34" aria-hidden="true"><path d="M16 0 C 16 26, 120 8, 120 34 M120 0 L 120 34 M224 0 C 224 26, 120 8, 120 34" fill="none" stroke="#D9D2EE" stroke-width="1.5"/></svg>
+        <div class="keypill"><img src="assets/logos/flatkey-mark-dark.svg" alt=""> only one key</div>
+        <p class="kcap" data-i18n="hero.v2cap">1 つのキー · 公式エンドポイント · 契約 SLA</p>
+        <div class="kcats">
+          <div class="kcat"><b data-i18n="hero.cat1" data-orig="Text &amp; coding">テキストとコーディング</b><span>claude-sonnet · gpt-5.5</span></div>
+          <div class="kcat"><b data-i18n="hero.cat2" data-orig="Image &amp; video">画像と動画</b><span>seedance-2.5 · seedream</span></div>
+          <div class="kcat"><b data-i18n="hero.cat3" data-orig="Audio">音声</b><span>gpt-realtime · minimax-speech</span></div>
+        </div>
+        <a class="klink" href="/models" data-i18n="board.foot" data-orig="See all 328+ models &amp; live health →">328+ モデルとライブヘルスを見る →</a>
       </div>
+      <span class="hnav hprev" aria-label="previous">‹</span>
+      <span class="hnav hnext" aria-label="next">›</span>
+      <div class="hdots"><i class="on"></i><i></i></div>
+    </div>
       </div>
     </div>
   
@@ -184,7 +267,7 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
   <div class="proofGrid">
     <div>
       <span class="tagline" data-i18n="proof.t1" data-orig="FREE START">無料スタート</span>
-      <h3 data-i18n="proof.h1" data-orig="$2 credit + &lt;span&gt;3 runs before signup&lt;/span&gt;">$2 クレジット + <span>登録前に 3 回実行</span></h3>
+      <h3 data-i18n="proof.h1" data-orig="$1 credit + &lt;span&gt;3 runs before signup&lt;/span&gt;">$1 クレジット + <span>登録前に 3 回実行</span></h3>
       <p data-i18n="proof.p1" data-orig="Together and Segmind killed their free tiers; Novita is down to $0.50. flatkey still lets you run real models before you even sign in.">Together と Segmind は無料枠を廃止、Novita は $0.50 だけ。flatkey ならログイン前から本物のモデルを実行できます。</p>
     </div>
     <div>
@@ -195,7 +278,7 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
     <div>
       <span class="tagline" data-i18n="proof.t3" data-orig="TRUST · ZERO QUANTIZATION">信頼 · 量子化ゼロ</span>
       <h3 data-i18n="proof.h3" data-orig="Official APIs, &lt;span&gt;audited hourly&lt;/span&gt;">公式 API、<span>毎時監査</span></h3>
-      <p data-i18n="proof.p3" data-orig="No fp8 re-serves, no silent swaps. Every model probed against its official fingerprint, on a public log — 160+ models probed, every hour, on the record.">fp8 の再配信も、こっそり差し替えもなし。160+ モデルを毎時、公式フィンガープリントと照合し、ログは公開。</p>
+      <p data-i18n="proof.p3" data-orig="No fp8 re-serves, no silent swaps. Every model probed against its official fingerprint, on a public log — 328+ models probed, every hour, on the record.">fp8 の再配信も、こっそり差し替えもなし。328+ モデルを毎時、公式フィンガープリントと照合し、ログは公開。</p>
     </div>
     <div>
       <span class="tagline" data-i18n="proof.t4" data-orig="PAY LOCAL">現地通貨で支払い</span>
@@ -210,16 +293,16 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
   <div class="compareIn">
     <div class="head">
       <h2 class="display" data-i18n="cmp.h2" data-orig="Claude at 67% of list.&lt;br&gt;Everyone else charges full price.">Claude は公式価格の 67%。<br>他社はすべて定価。</h2>
-      <p class="sub" style="max-width:380px" data-i18n="cmp.sub" data-orig="Claude Opus 4.8, $ per 1M input tokens after top-up bonus, measured across gateways on 2026-07-14.">Claude Opus 4.8、チャージボーナス適用後の 1M 入力トークン単価(2026-07-14 実測)。</p>
+      <p class="sub" style="max-width:380px" data-i18n="cmp.sub" data-orig="Claude Opus 4.8, $ per 1M input tokens, measured across gateways on 2026-07-14.">Claude Opus 4.8、1M 入力トークン単価(2026-07-14 実測)。</p>
     </div>
     <div class="bars">
       <div class="bar"><span class="who">Anthropic official</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="amt">$5.00</span></div>
       <div class="bar"><span class="who">WaveSpeed</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="amt">$5.00</span></div>
       <div class="bar"><span class="who">Replicate</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="amt">$5.00</span></div>
       <div class="bar"><span class="who">Nonelinear</span><div class="track"><div class="fill" style="width:98%"></div></div><span class="amt">$4.90</span></div>
-      <div class="bar fk"><span class="who">flatkey</span><div class="track"><div class="fill" style="width:53%"></div></div><span class="amt">$2.67</span></div>
+      <div class="bar fk"><span class="who">flatkey</span><div class="track"><div class="fill" style="width:67%"></div></div><span class="amt">$3.33</span></div>
     </div>
-    <p class="footnote" data-i18n="cmp.foot" data-orig="Together, Novita and Segmind don’t carry official Claude at all. flatkey self-serve: every top-up earns 15–50% bonus credit — Claude from ⅔ of list, national-lab models down to 40% — and enterprise interfaces price below self-serve.">Together・Novita・Segmind は公式 Claude を扱っていません。flatkey はチャージごとに 15–50% のボーナス付与——Claude は公式価格の ⅔ から、中国系モデルは 40% から。</p>
+    <p class="footnote" data-i18n="cmp.foot" data-orig="Together, Novita and Segmind don’t carry official Claude at all. flatkey runs Claude at ⅔ of list — one subscription, every model — and enterprise interfaces price below self-serve.">Together・Novita・Segmind は公式 Claude を扱っていません。flatkey は Claude を公式価格の ⅔ で提供——1 つのサブスクで全モデル。エンタープライズはさらに安く。</p>
   </div>
 </section>
 
@@ -231,11 +314,11 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
       <h2 class="display" data-i18n="rel.h2" data-orig="Stability you can&lt;br&gt;hold us to.">責任を問える<br>安定性を。</h2>
       <p class="sub" style="margin-top:14px;max-width:440px" data-i18n="rel.p" data-orig="One request, five upstream channel classes. When a channel degrades, the router reroutes automatically — and the SLA is a public document, not a sales promise.">1 つのリクエストの裏に 5 系統の上流チャネル。チャネルが劣化すればルーターが自動で切り替え——そして SLA は公開文書であり、営業トークではありません。</p>
       <div class="relStats">
-        <div><b class="num">99.5%</b><span data-i18n="rel.s1" data-orig="signed SLA — &lt;a href=&quot;sla.html&quot; style=&quot;color:var(--violet-deep)&quot;&gt;public terms →&lt;/a&gt;">署名済み SLA — <a href="/sla.html" style="color:var(--violet-deep)">公開条項 →</a></span></div>
+        <div><b class="num">99.5%</b><span data-i18n="rel.s1" data-orig="signed SLA — &lt;a href=&quot;/sla&quot; style=&quot;color:var(--violet-deep);white-space:nowrap&quot;&gt;public terms →&lt;/a&gt;">署名済み SLA — <a href="/sla" style="color:var(--violet-deep);white-space:nowrap">公開条項 →</a></span></div>
         <div><b class="num">5</b><span data-i18n="rel.s2" data-orig="channel classes, automatic failover">系統のチャネル、自動フェイルオーバー</span></div>
         <div><b class="num">$0</b><span data-i18n="rel.s3" data-orig="balance consumed by flatkey-side errors">flatkey 側エラーによる残高消費</span></div>
       </div>
-      <div style="display:flex;gap:12px;margin-top:24px"><a class="btn black big" href="/status.html" data-i18n="rel.cta1" data-orig="Live status →">ライブステータス →</a><a class="btn white big" href="/sla.html" data-i18n="rel.cta2" data-orig="SLA &amp;amp; service credits">SLA とクレジット</a></div>
+      <div style="display:flex;gap:12px;margin-top:24px"><a class="btn black big" href="/status" data-i18n="rel.cta1" data-orig="Live status →">ライブステータス →</a><a class="btn white big" href="/sla" data-i18n="rel.cta2" data-orig="SLA &amp;amp; service credits">SLA とクレジット</a></div>
     </div>
     <div class="relChart">
       <div class="rcHead"><span data-i18n="rel.ct" data-orig="UPTIME · SINGLE CHANNEL VS FLATKEY MESH · LIVE">可用性 · 単一チャネル VS FLATKEY メッシュ · LIVE</span><span class="pill mint"><span class="dot"></span>LIVE</span></div>
@@ -257,17 +340,17 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
     <div class="whyHead"><h2 class="display" style="font-size:56px" data-i18n="why.h2" data-orig="Why choose&lt;br&gt;flatkey?">なぜ<br>flatkey?</h2></div>
     <div class="whyGrid">
       <div class="wcard">
-        <h3 data-i18n="why.c1h" data-orig="As low as 40% of list">定価の最大 50%</h3>
-        <p data-i18n="why.c1p" data-orig="National-lab models from 60% of list, stacking with the top-up bonus to 40%; flagships bill at list with the same bonus. One prepaid balance across every model.">中国系モデルは定価の 60% から、ボーナス併用で 40% まで。フラッグシップは公式価格+同じボーナス。1 つのプリペイド残高で全モデルへ。</p>
+        <h3 data-i18n="why.c1h" data-orig="Flagships at ⅔ of list">フラッグシップは公式価格の ⅔</h3>
+        <p data-i18n="why.c1p" data-orig="Flagship GPT and Claude bill at ⅔ of the official list. One subscription covers all 328+ models — text, image and video — on a single key.">GPT・Claude のフラッグシップは公式価格の ⅔。1 つのサブスクリプションで 328+ モデルすべて——テキスト・画像・動画を 1 つのキーで。</p>
         <div class="mini">
           <div class="mbar"><span>official</span><div class="mtrack"><div class="mfill" style="width:100%;background:#C9C9D2"></div></div><b>$5.00</b></div>
-          <div class="mbar"><span>flatkey</span><div class="mtrack"><div class="mfill" style="width:53%;background:linear-gradient(90deg,var(--violet-hi),var(--violet-deep))"></div></div><b style="color:var(--violet-deep)">$2.67</b></div>
-          <p class="mcap">claude-opus-4-8 · $/1M input tokens, after bonus</p>
+          <div class="mbar"><span>flatkey</span><div class="mtrack"><div class="mfill" style="width:67%;background:linear-gradient(90deg,var(--violet-hi),var(--violet-deep))"></div></div><b style="color:var(--violet-deep)">$3.33</b></div>
+          <p class="mcap">claude-opus-4-8 · $/1M input tokens</p>
         </div>
       </div>
       <div class="wcard">
         <h3 data-i18n="why.c2h" data-orig="Official endpoints, verified hourly">公式エンドポイント、毎時検証</h3>
-        <p data-i18n="why.c2p" data-orig="Every request hits the real lab API — no fp8 re-serves, no silent swaps. 160+ models probed against official fingerprints, on a public log.">すべてのリクエストが本物のラボ API へ——fp8 再配信も、こっそり差し替えもなし。160+ モデルを公式フィンガープリントと照合、ログは公開。</p>
+        <p data-i18n="why.c2p" data-orig="Every request hits the real lab API — no fp8 re-serves, no silent swaps. 328+ models probed against official fingerprints, on a public log.">すべてのリクエストが本物のラボ API へ——fp8 再配信も、こっそり差し替えもなし。328+ モデルを公式フィンガープリントと照合、ログは公開。</p>
         <div class="labs">
           <div class="lab" style="background:#0E8A6C">G<span>OpenAI</span></div>
           <div class="lab" style="background:#B45309">C<span>Anthropic</span></div>
@@ -298,24 +381,24 @@ client.chat.completions.create(
 </section>
 
 <section class="v" id="trust">
-  <div class="pxgrid" data-seed="41" data-cell="24" data-cols="12" data-rows="6" data-n="20" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right: 34px; top: 48px; z-index: 1; width: 288px; height: 144px;"></div>
+  <div class="pxgrid" data-seed="41" data-cell="24" data-cols="12" data-rows="6" data-n="20" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right:34px;top:48px;z-index:1"></div>
   <div class="bgv"><div class="radar"><i></i><i></i><i></i><i></i><div class="sweep"></div>
     <div class="blip" style="left:32%;top:38%"></div><div class="blip" style="left:58%;top:26%;animation-delay:.7s"></div><div class="blip" style="left:47%;top:62%;animation-delay:1.3s"></div><div class="blip" style="left:70%;top:52%;animation-delay:.4s"></div>
   </div></div>
   <div class="shade"></div>
   <div class="in">
-    <div class="kick" data-i18n="trust.kick" data-orig="TRUST · HOURLY MODEL-AUTHENTICITY PROBES">TRUST · 毎時のモデル真正性プローブ</div>
-    <h2 class="big" data-i18n="trust.h2" data-orig="0 model swaps. &lt;em&gt;Ever.&lt;/em&gt;&lt;br&gt;And we prove it.">モデル差し替え 0 回。<em>永遠に。</em><br>それを証明します。</h2>
-    <p class="d" data-i18n="trust.p" data-orig="Every hour, every model is probed against its official API fingerprint — logits, tokenizer, refusal shape. The log is public. Cheap gateways ask for trust; flatkey shows receipts.">毎時、全モデルを公式 API のフィンガープリントと照合——logits、トークナイザー、拒否パターン。ログは公開。安いゲートウェイは信頼を求めますが、flatkey は証拠を見せます。</p>
+    <div class="kick" data-i18n="st2.kick" data-orig="API STATUS · PUBLIC STATUS PAGE">API ステータス · 公開ステータスページ</div>
+    <h2 class="big" data-i18n="st2.h2" data-orig="Uptime, on the record.">稼働状況は、公開情報です。</h2>
+    <p class="d" data-i18n="st2.sub" data-orig="SLA target 99.5% · 90-day uptime log and incident history, published on the &lt;a href=&quot;/status&quot;&gt;public status page →&lt;/a&gt;">SLA 目標 99.5% · 90 日間の稼働ログと障害履歴は<a href="/status">公開ステータスページ →</a>に掲載</p>
     <div class="rows">
-      <div><span class="t">14:00</span><b>claude-opus-4-8</b> fingerprint ✓ · official anthropic · 388ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>gpt-5.5</b> fingerprint ✓ · official openai · 412ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>glm-5.2</b> fingerprint ✓ · official zhipu · 241ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>seedance-2.0</b> fingerprint ✓ · official bytedance · video<span class="ok">PASS</span></div>
-      <div><span class="t">13:00</span>160+ models probed hourly · 30-day log public<span class="ok">PASS</span></div>
+      <div><b>Router API</b> router.flatkey.ai/v1 · OpenAI-compatible<span class="ok"><a href="/status" style="color:inherit;text-decoration:none" data-i18n="st2.live" data-orig="live →">ライブ →</a></span></div>
+      <div><b>Anthropic endpoint</b> router.flatkey.ai · Claude Code / Cline<span class="ok"><a href="/status" style="color:inherit;text-decoration:none" data-i18n="st2.live" data-orig="live →">ライブ →</a></span></div>
+      <div><b>Model failover mesh</b> 5 upstream channel classes · automatic rerouting<span class="ok"><a href="/status" style="color:inherit;text-decoration:none" data-i18n="st2.live" data-orig="live →">ライブ →</a></span></div>
+      <div><b>Console &amp; billing</b> console.flatkey.ai · Stripe<span class="ok"><a href="/status" style="color:inherit;text-decoration:none" data-i18n="st2.live" data-orig="live →">ライブ →</a></span></div>
+      <div><a href="/status" style="color:var(--violet-deep);font-weight:700;text-decoration:none" data-i18n="st2.more" data-orig="See full status &amp;amp; incident history →">全ステータスと障害履歴を見る →</a></div>
     </div>
   </div>
-  <div class="vtag"><span class="p">▶</span>BACKGROUND VIDEO · hourly-probe radar · 12s loop</div>
+  <div class="vtag"><span class="p">▶</span>PUBLIC STATUS · 90-DAY LOG</div>
 </section>
 
 <section class="v" id="compliance">
@@ -343,13 +426,13 @@ client.chat.completions.create(
 <section class="v" id="models">
   <div class="pxgrid" data-seed="47" data-cell="24" data-cols="10" data-rows="5" data-n="16" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right: 60px; bottom: 56px; z-index: 1; width: 240px; height: 120px;"></div>
   <div class="bgv wall">
-    <div class="lane"><div class="tile"><b>gpt-5.5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 1M</span><span class="pr">$3.33/M · 67% of list</span></div><div class="tile"><b>claude-opus-4-8</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 500K</span><span class="pr">$3.33/M · 67% of list</span></div><div class="tile"><b>gemini-3.2-pro</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · google · 2M</span><span class="pr">$1.50/M</span></div><div class="tile"><b>deepseek-v4</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · deepseek · 256K</span><span class="pr">$0.17/M</span></div><div class="tile"><b>qwen3-max</b><span>alibaba</span><span class="pr">$0.72/M</span></div><div class="tile"><b>glm-5.2</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · zhipu · 200K</span><span class="pr">$0.56/M</span></div><div class="tile"><b>gpt-5.5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 1M</span><span class="pr">$3.33/M · 67% of list</span></div><div class="tile"><b>claude-opus-4-8</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 500K</span><span class="pr">$3.33/M · 67% of list</span></div><div class="tile"><b>gemini-3.2-pro</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · google · 2M</span><span class="pr">$1.50/M</span></div><div class="tile"><b>deepseek-v4</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · deepseek · 256K</span><span class="pr">$0.17/M</span></div><div class="tile"><b>qwen3-max</b><span>alibaba</span><span class="pr">$0.72/M</span></div><div class="tile"><b>glm-5.2</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · zhipu · 200K</span><span class="pr">$0.56/M</span></div></div>
+    <div class="lane"><div class="tile"><b>gpt-5.5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 1M</span><span class="pr">$3.33/M · 67% of list</span></div><div class="tile"><b>claude-opus-4-8</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 500K</span><span class="pr">$3.33/M · 67% of list</span></div><div class="tile"><b>gemini-3.2-pro</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · google · 2M</span><span class="pr">$1.50/M</span></div><div class="tile"><b>deepseek-v4</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · deepseek · 256K</span><span class="pr">$0.17/M</span></div><div class="tile"><b>kimi-k3</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · moonshot · 256K</span><span class="pr">$1.20/M</span></div><div class="tile"><b>qwen3-max</b><span>alibaba</span><span class="pr">$0.72/M</span></div><div class="tile"><b>glm-5.2</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · zhipu · 200K</span><span class="pr">$0.56/M</span></div><div class="tile"><b>gpt-5.5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 1M</span><span class="pr">$3.33/M · 67% of list</span></div><div class="tile"><b>claude-opus-4-8</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 500K</span><span class="pr">$3.33/M · 67% of list</span></div><div class="tile"><b>gemini-3.2-pro</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · google · 2M</span><span class="pr">$1.50/M</span></div><div class="tile"><b>deepseek-v4</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · deepseek · 256K</span><span class="pr">$0.17/M</span></div><div class="tile"><b>kimi-k3</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · moonshot · 256K</span><span class="pr">$1.20/M</span></div><div class="tile"><b>qwen3-max</b><span>alibaba</span><span class="pr">$0.72/M</span></div><div class="tile"><b>glm-5.2</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · zhipu · 200K</span><span class="pr">$0.56/M</span></div></div>
     <div class="lane r"><div class="tile" style="border-color:#8B5CF666"><b style="color:#B7A3F0">seedance-2.5</b><span>bytedance · video · t2v + i2v</span><span class="pr" data-i18n="md.early" data-orig="Early access">先行アクセス</span></div><div class="tile"><b>glm-5.2</b><span>z.ai</span><span class="pr">$0.56/M</span></div><div class="tile"><b>claude-sonnet-5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 1M</span><span class="pr">$1.33/M</span></div><div class="tile"><b>gpt-5.4-mini</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 400K</span><span class="pr">$0.50/M</span></div><div class="tile"><b>gemini-3-flash</b><span>google</span><span class="pr">$0.047/M</span></div><div class="tile"><b>deepseek-v4-flash</b><span>deepseek</span><span class="pr">$0.056/M</span></div><div class="tile"><b>qwen3.7-max</b><span>alibaba</span><span class="pr">$1.00/M</span></div><div class="tile" style="border-color:#8B5CF666"><b style="color:#B7A3F0">seedance-2.5</b><span>bytedance · video · t2v + i2v</span><span class="pr" data-i18n="md.early" data-orig="Early access">先行アクセス</span></div><div class="tile"><b>glm-5.2</b><span>z.ai</span><span class="pr">$0.56/M</span></div><div class="tile"><b>claude-sonnet-5</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · anthropic · 1M</span><span class="pr">$1.33/M</span></div><div class="tile"><b>gpt-5.4-mini</b><span><i style="font-style:normal;color:var(--green)">✓ verified</i> · openai · 400K</span><span class="pr">$0.50/M</span></div><div class="tile"><b>gemini-3-flash</b><span>google</span><span class="pr">$0.047/M</span></div><div class="tile"><b>deepseek-v4-flash</b><span>deepseek</span><span class="pr">$0.056/M</span></div><div class="tile"><b>qwen3.7-max</b><span>alibaba</span><span class="pr">$1.00/M</span></div></div>
     <div class="lane"><div class="tile" style="border-color:#8B5CF666"><b style="color:#B7A3F0">flatkey-auto</b><span>routes itself</span><span class="pr">no routing fee</span></div><div class="tile"><b>minimax-m3</b><span>minimax</span><span class="pr">$0.18/M</span></div><div class="tile"><b>grok-4.2</b><span>xai</span><span class="pr">$1.80/M</span></div><div class="tile"><b>step-3.7-flash</b><span>stepfun</span><span class="pr">$0.16/M</span></div><div class="tile"><b>hunyuan-2.0</b><span>tencent</span><span class="pr">$0.40/M</span></div><div class="tile"><b>mimo-v2.5</b><span>xiaomi</span><span class="pr">$0.01/M</span></div><div class="tile" style="border-color:#8B5CF666"><b style="color:#B7A3F0">flatkey-auto</b><span>routes itself</span><span class="pr">no routing fee</span></div><div class="tile"><b>minimax-m3</b><span>minimax</span><span class="pr">$0.18/M</span></div><div class="tile"><b>grok-4.2</b><span>xai</span><span class="pr">$1.80/M</span></div><div class="tile"><b>step-3.7-flash</b><span>stepfun</span><span class="pr">$0.16/M</span></div><div class="tile"><b>hunyuan-2.0</b><span>tencent</span><span class="pr">$0.40/M</span></div><div class="tile"><b>mimo-v2.5</b><span>xiaomi</span><span class="pr">$0.01/M</span></div></div>
   </div>
   <div class="shade"></div>
   <div class="in">
-    <div class="kick" data-i18n="mdl.kick" data-orig="MODELS · 160+ OFFICIAL MODELS, ONE KEY">MODELS · 160+ の公式モデル、ひとつのキー</div>
+    <div class="kick" data-i18n="mdl.kick" data-orig="MODELS · 328+ OFFICIAL MODELS, ONE KEY">MODELS · 328+ の公式モデル、ひとつのキー</div>
     <h2 class="big" data-i18n="mdl.h2" data-orig="Every frontier lab&lt;em&gt;.&lt;/em&gt;&lt;br&gt;One key.">すべてのフロンティアラボ<em>。</em><br>ひとつのキーで。</h2>
     <p class="d" data-i18n="mdl.p" data-orig="OpenAI, Anthropic, Google, DeepSeek, Alibaba, Zhipu, Moonshot, ByteDance… new models live within 24h of official release — always the real endpoints, never quantized re-serves.">OpenAI、Anthropic、Google、DeepSeek、Alibaba、Zhipu、Moonshot、ByteDance……新モデルは公式リリースから 24 時間以内に対応——常に本物のエンドポイント。</p>
     
@@ -366,32 +449,32 @@ client.chat.completions.create(
     <h2 class="display" data-i18n="vid.h2" data-orig="Video generation, official endpoints.">動画生成も、公式エンドポイントで。</h2>
     <p class="sub" style="margin-top:12px;max-width:620px" data-i18n="vid.sub" data-orig="Text-to-video and image-to-video from every major lab — metered per second on the same prepaid balance as your text models.">主要ラボの text-to-video / image-to-video——秒単位課金、テキストモデルと同じプリペイド残高で。</p>
     <div class="vgal">
-      <a class="vcard big" href="/playground.html">
+      <a class="vcard big" href="/playground">
         <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.1.jpg" src="/assets/video/v1.1.mp4"></video>
         <div class="vshade"></div>
         <span class="fbadge" data-i18n="vid.badge" data-orig="FEATURED · NEW">注目 · 新登場</span>
         <div class="vmeta"><h3>Seedance 2.5<br>Image to Video</h3><p><span>bytedance · 1080p · t2v + i2v</span><i>Early access</i></p></div>
       </a>
-      <a class="vcard" href="/playground.html">
+      <a class="vcard" href="/playground">
         <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.2.jpg" src="/assets/video/v1.2.mp4"></video>
         <div class="vshade"></div>
         <div class="vmeta"><h3>Seedance 2.0<br>Image to Video</h3><p><span>bytedance · i2v</span><i><span style="font-size:inherit" data-i18n="md.usage" data-orig="Usage-based">従量課金</span></i></p></div>
       </a>
-      <a class="vcard" href="/playground.html">
+      <a class="vcard" href="/playground">
         <video autoplay="" muted="" loop="" playsinline="" preload="auto" poster="assets/video/v1.3.jpg" src="/assets/video/v1.3.mp4"></video>
         <div class="vshade"></div>
         <div class="vmeta"><h3>Veo 3.1<br>Text to Video</h3><p><span>google · t2v + audio</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></p></div>
       </a>
     </div>
     <div class="mgrid" style="margin-top:16px">
-      <div class="mcard"><b>sora-2</b><span>openai · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>kling-2.5-pro</b><span>kuaishou · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>wan-2.7</b><span>alibaba · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>hailuo-02</b><span>minimax · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/openai.svg" alt="">sora-2</b><span>openai · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/kuaishou.svg" alt="">kling-2.5-pro</b><span>kuaishou · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/alibabacloud.svg" alt="">wan-2.7</b><span>alibaba · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/minimax.svg" alt="">hailuo-02</b><span>minimax · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
       <div class="mcard"><b>pixverse-v6</b><span>pixverse · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>seedance-2.0-lite</b><span>bytedance · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/bytedance.svg" alt="">seedance-2.0-lite</b><span>bytedance · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
       <div class="mcard"><b>ltx-2.3</b><span>lightricks · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard more"><a href="/models.html" data-i18n="vid.more" data-orig="+ 20 more video models →">+ さらに 20 の動画モデル →</a></div>
+      <div class="mcard more"><a href="/models" data-i18n="vid.more" data-orig="+ 20 more video models →">+ さらに 20 の動画モデル →</a></div>
     </div>
   </div></section>
 
@@ -402,14 +485,14 @@ client.chat.completions.create(
     <h2 class="display" data-i18n="aud.h2" data-orig="Speech, on the record too.">音声も、記録に残る。</h2>
     <p class="sub" style="margin-top:12px;max-width:620px" data-i18n="aud.sub" data-orig="Realtime voice, TTS and transcription from the official labs — same key, same ledger, priced per minute or per million characters.">公式ラボのリアルタイム音声・TTS・文字起こし——同じキー、同じ台帳、分単位または百万文字単位で課金。</p>
     <div class="mgrid five">
-      <div class="mcard"><b>gpt-realtime</b><span>openai · speech ⇄ speech</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>whisper-v4</b><span>openai · transcription</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>elevenlabs-v3-turbo</b><span>elevenlabs · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>minimax-speech-2.6</b><span>minimax · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>cosyvoice-3</b><span>alibaba · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>seed-tts-2</b><span>bytedance · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
-      <div class="mcard"><b>gemini-2.5-flash-tts</b><span>google · tts</span><i>$0.50/M in · $10/M out</i></div>
-      <div class="mcard more"><a href="/models.html" data-i18n="aud.more" data-orig="+ 12 more audio models →">+ さらに 12 の音声モデル →</a></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/openai.svg" alt="">gpt-realtime</b><span>openai · speech ⇄ speech</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/openai.svg" alt="">whisper-v4</b><span>openai · transcription</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/elevenlabs.svg" alt="">elevenlabs-v3-turbo</b><span>elevenlabs · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/minimax.svg" alt="">minimax-speech-2.6</b><span>minimax · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/alibabacloud.svg" alt="">cosyvoice-3</b><span>alibaba · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/bytedance.svg" alt="">seed-tts-2</b><span>bytedance · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">近日公開</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/googlegemini.svg" alt="">gemini-2.5-flash-tts</b><span>google · tts</span><i>$0.50/M in · $10/M out</i></div>
+      <div class="mcard more"><a href="/models" data-i18n="aud.more" data-orig="+ 12 more audio models →">+ さらに 12 の音声モデル →</a></div>
     </div>
   </div>
 </section>
@@ -465,7 +548,7 @@ client.chat.completions.create(
         <i style="color:#C7CCFF" data-i18n="sup.dc.i" data-orig="Builders answering builders — the team is in the channels daily">ビルダー同士の助け合い——チームも毎日チャンネルにいます</i>
       </a>
       <a class="ch" href="mailto:support@flatkey.ai"><b data-i18n="sup.email" data-orig="Email">メール</b><span>support@flatkey.ai</span><i data-i18n="sup.email.i" data-orig="Reply within 1 business day">1 営業日以内に返信</i></a>
-      <a class="ch" href="/contact.html"><b data-i18n="sup.chat" data-orig="Live chat">ライブチャット</b><span data-i18n="sup.chat.s" data-orig="Start chatting →">チャットを開始 →</span><i data-i18n="sup.chat.i" data-orig="Fastest answer, on the site">サイト内で最速回答</i></a>
+      <a class="ch" href="/contact"><b data-i18n="sup.chat" data-orig="Live chat">ライブチャット</b><span data-i18n="sup.chat.s" data-orig="Start chatting →">チャットを開始 →</span><i data-i18n="sup.chat.i" data-orig="Fastest answer, on the site">サイト内で最速回答</i></a>
       
       <a class="ch" href="https://x.com/flatkey101"><b data-i18n="sup.x" data-orig="X (Twitter)">X (Twitter)</b><span>@flatkey101</span><i data-i18n="sup.x.i" data-orig="Follow or DM">フォローまたは DM</i></a>
     </div>
@@ -480,7 +563,7 @@ client.chat.completions.create(
     <div class="ctaIn">
       <h2 data-i18n="cta.h" data-orig="More AI, less cost —&lt;br&gt;on every official model">More AI, less cost —<br>すべての公式モデルの上で</h2>
       <p data-i18n="cta.sub" data-orig="Whether you ship an agent today or route billions of tokens a month — one key, a signed SLA, and prices that drop as you grow.">今日エージェントを出すのも、月数十億トークンを流すのも——ひとつのキー、署名済み SLA、成長するほど下がる価格。</p>
-      <div class="ctaBtns"><a class="btn white big" href="/login.html" data-i18n="cta.b1" data-orig="Get started">始める</a><a class="btn black big" href="/contact.html" data-i18n="cta.b2" data-orig="Contact Sales">営業に相談</a></div>
+      <div class="ctaBtns"><a class="btn white big" href="/login" data-i18n="cta.b1" data-orig="Get started">始める</a><a class="btn black big" href="/contact" data-i18n="cta.b2" data-orig="Contact Sales">営業に相談</a></div>
     </div>
   </div>
 </section>
@@ -491,10 +574,10 @@ client.chat.completions.create(
       <a class="logo" href="/"><img src="/assets/flatkey-mark.svg?v=4" alt="flatkey">flatkey</a>
       <p data-i18n="ft.brand" data-orig="The official-model gateway. More AI, less cost — every frontier model behind one key, verified hourly.">公式モデルのゲートウェイ。More AI, less cost——すべてのフロンティアモデルをひとつのキーで、毎時検証。</p>
     </div>
-    <div class="col"><h5 data-i18n="ft.product" data-orig="Product">プロダクト</h5><a href="/models.html" data-i18n="nav.models" data-orig="Models">モデル</a><a href="/playground.html" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/rankings" data-i18n="nav.rankings" data-orig="Rankings">ランキング</a><a href="/topup.html" data-i18n="nav.pricing" data-orig="Pricing">料金</a><a href="/usecases.html" data-i18n="nav.usecases" data-orig="Use cases">ユースケース</a><a href="https://console.flatkey.ai/dashboard" data-i18n="ft.console" data-orig="Console ↗">コンソール ↗</a></div>
-    <div class="col"><h5 data-i18n="ft.dev" data-orig="Developers">開発者</h5><a href="/docs.html" data-i18n="nav.docs" data-orig="Docs">ドキュメント</a><a href="/docs.html#community">gateway-bench</a><a href="/status.html" data-i18n="nav.status" data-orig="API status">ステータス</a><a href="https://docs.flatkey.ai/llms.txt">llms.txt</a><a href="/blog" data-i18n="nav.blog" data-orig="Blog ↗">Blog</a></div>
-    <div class="col"><h5 data-i18n="ft.company" data-orig="Company">会社</h5><a href="/contact.html" data-i18n="ft.contact" data-orig="Contact us">お問い合わせ</a><a href="/about" data-i18n="ft.about" data-orig="About">会社概要</a><a href="/terms.html" data-i18n="ft.terms" data-orig="Terms of Service">利用規約</a><a href="/privacy.html" data-i18n="ft.privacy" data-orig="Privacy Policy">プライバシーポリシー</a><a href="/sla.html" data-i18n="ft.sla" data-orig="Service Level Agreement">SLA</a><a href="/refund-policy.html" data-i18n="ft.refund" data-orig="Refund Policy">返金ポリシー</a></div>
-    <div class="col"><h5 data-i18n="ft.social" data-orig="Socials">ソーシャル</h5><a href="https://x.com/flatkey101">X @flatkey101</a><a href="mailto:support@flatkey.ai">support@flatkey.ai</a><a href="/docs.html#community">GitHub</a><a href="https://www.linkedin.com/company/flatkey/">LinkedIn</a><a href="https://discord.gg/VrbZFDXj5g">Discord</a></div>
+    <div class="col"><h5 data-i18n="ft.product" data-orig="Product">プロダクト</h5><a href="/models" data-i18n="nav.models" data-orig="Models">モデル</a><a href="/playground" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/rankings" data-i18n="nav.rankings" data-orig="Rankings">ランキング</a><a href="/pricing" data-i18n="nav.pricing" data-orig="Pricing">料金</a><a href="/usecases" data-i18n="nav.usecases" data-orig="Use cases">ユースケース</a><a href="https://console.flatkey.ai/dashboard" data-i18n="ft.console" data-orig="Console ↗">コンソール ↗</a></div>
+    <div class="col"><h5 data-i18n="ft.dev" data-orig="Developers">開発者</h5><a href="/docs" data-i18n="nav.docs" data-orig="Docs">ドキュメント</a><a href="/docs#community">gateway-bench</a><a href="/status" data-i18n="nav.status" data-orig="API status">ステータス</a><a href="https://docs.flatkey.ai/llms.txt">llms.txt</a><a href="/blog" data-i18n="nav.blog" data-orig="Blog ↗">Blog</a></div>
+    <div class="col"><h5 data-i18n="ft.company" data-orig="Company">会社</h5><a href="/contact" data-i18n="ft.contact" data-orig="Contact us">お問い合わせ</a><a href="/about" data-i18n="ft.about" data-orig="About">会社概要</a><a href="/terms" data-i18n="ft.terms" data-orig="Terms of Service">利用規約</a><a href="/privacy" data-i18n="ft.privacy" data-orig="Privacy Policy">プライバシーポリシー</a><a href="/sla" data-i18n="ft.sla" data-orig="Service Level Agreement">SLA</a><a href="/refund-policy" data-i18n="ft.refund" data-orig="Refund Policy">返金ポリシー</a></div>
+    <div class="col"><h5 data-i18n="ft.social" data-orig="Socials">ソーシャル</h5><a href="https://x.com/flatkey101">X @flatkey101</a><a href="mailto:support@flatkey.ai">support@flatkey.ai</a><a href="/docs#community">GitHub</a><a href="https://www.linkedin.com/company/flatkey/">LinkedIn</a><a href="https://discord.gg/VrbZFDXj5g">Discord</a></div>
   </div>
   <div class="trustrow"><span data-i18n="ft.trusted" data-orig="TRUSTED &amp;amp; VERIFIED BY">認証・検証</span>
     <a href="https://www.cert-assure.com/serchresult.php?type=Management+System+Certification&amp;certificate=USA-SOC2-220513">SOC 2 Type II</a>
@@ -504,14 +587,30 @@ client.chat.completions.create(
     <span class="b" data-i18n="ft.zeroret" data-orig="Zero retention of request content">リクエスト内容は保存しません</span>
   </div>
   <div class="bottom">
-    <div class="legal" data-i18n="ft.legal" data-orig="© 2026 flatkey.ai · VOC AI INC, San Jose, CA. All rights reserved. &lt;a href=&quot;terms.html&quot;&gt;Terms&lt;/a&gt; · &lt;a href=&quot;privacy.html&quot;&gt;Privacy&lt;/a&gt; · &lt;a href=&quot;legal-sla.html&quot;&gt;SLA&lt;/a&gt; · &lt;a href=&quot;refund-policy.html&quot;&gt;Refunds&lt;/a&gt;">© 2026 flatkey.ai · VOC AI INC (San Jose, CA). All rights reserved. <a href="/terms.html">規約</a> · <a href="/privacy.html">プライバシー</a> · <a href="legal-sla.html">SLA</a> · <a href="/refund-policy.html">返金</a></div>
+    <div class="legal" data-i18n="ft.legal" data-orig="© 2026 flatkey.ai · VOC AI INC, San Jose, CA. All rights reserved. &lt;a href=&quot;/terms&quot;&gt;Terms&lt;/a&gt; · &lt;a href=&quot;/privacy&quot;&gt;Privacy&lt;/a&gt; · &lt;a href=&quot;/sla&quot;&gt;SLA&lt;/a&gt; · &lt;a href=&quot;/refund-policy&quot;&gt;Refunds&lt;/a&gt;">© 2026 flatkey.ai · VOC AI INC (San Jose, CA). All rights reserved. <a href="/terms">規約</a> · <a href="/privacy">プライバシー</a> · <a href="/sla">SLA</a> · <a href="/refund-policy">返金</a></div>
     <div class="word"><img src="/assets/flatkey-mark.svg?v=4" alt="">flatkey</div>
   </div>
 </footer>
 <div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
 <script src="/assets/pixels.js?v=719h"></script>
 <script>try{localStorage.setItem("fk-lang","ja")}catch(e){}</script>
-<script src="/assets/i18n.js?v=720b"></script>
-<script src="/assets/track.js?v=716b"></script>
+<script src="/assets/i18n.js?v=724a"></script>
+<script src="/assets/track.js?v=721a"></script>
+<script>
+(function(){
+  var wrap=document.querySelector(".heroSlides");if(!wrap)return;
+  var slides=wrap.querySelectorAll(".hslide"),dots=wrap.querySelectorAll(".hdots i"),idx=0,timer;
+  function show(i){idx=(i+slides.length)%slides.length;
+    slides.forEach(function(s,j){s.classList.toggle("on",j===idx);});
+    dots.forEach(function(d,j){d.classList.toggle("on",j===idx);});}
+  wrap.querySelector(".hprev").addEventListener("click",function(){show(idx-1);});
+  wrap.querySelector(".hnext").addEventListener("click",function(){show(idx+1);});
+  dots.forEach(function(d,j){d.addEventListener("click",function(){show(j);});});
+  function auto(){timer=setInterval(function(){show(idx+1);},6500);}
+  wrap.addEventListener("mouseenter",function(){clearInterval(timer);});
+  wrap.addEventListener("mouseleave",auto);
+  auto();
+})();
+</script>
 <script src="assets/site-shell.js?v=720a"></script>
 </body></html>

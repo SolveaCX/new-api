@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -35,6 +36,7 @@ import (
 )
 
 var stripeAdaptor = &StripeAdaptor{}
+var stripeCheckoutSessionGetter = session.Get
 
 // StripePayRequest represents a payment request for Stripe checkout.
 type StripePayRequest struct {
@@ -567,6 +569,64 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 			"pay_link": checkoutSession.URL,
 		},
 	})
+}
+
+// ResumeStripeTopUpCheckout returns the still-open Stripe Checkout session for
+// a pending order owned by the current user. It never creates a second order or
+// session, so retrying the endpoint cannot double-charge the customer.
+func ResumeStripeTopUpCheckout(c *gin.Context) {
+	tradeNo := strings.TrimSpace(c.Param("trade_no"))
+	topUp := model.GetTopUpByTradeNo(tradeNo)
+	if topUp == nil || topUp.UserId != c.GetInt("id") || topUp.PaymentProvider != model.PaymentProviderStripe {
+		common.ApiErrorI18n(c, i18n.MsgTopupOrderNotExists)
+		return
+	}
+	if topUp.Status != common.TopUpStatusPending {
+		common.ApiErrorI18n(c, i18n.MsgTopupOrderStatus)
+		return
+	}
+	sessionID := strings.TrimSpace(topUp.GatewayTradeNo)
+	if sessionID == "" {
+		common.ApiErrorI18n(c, i18n.MsgPaymentStartFailed)
+		return
+	}
+	if err := ensureStripeKey(); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgPaymentStripeNotConfig)
+		return
+	}
+	checkoutSession, err := stripeCheckoutSessionGetter(sessionID, nil)
+	if err != nil || checkoutSession == nil {
+		common.ApiErrorI18n(c, i18n.MsgPaymentStartFailed)
+		return
+	}
+	if string(checkoutSession.Status) == "expired" || (checkoutSession.ExpiresAt > 0 && checkoutSession.ExpiresAt <= time.Now().Unix()) {
+		_ = model.UpdatePendingTopUpStatus(topUp.TradeNo, model.PaymentProviderStripe, common.TopUpStatusExpired)
+		common.ApiErrorI18n(c, i18n.MsgTopupOrderStatus)
+		return
+	}
+	if string(checkoutSession.PaymentStatus) == "paid" || string(checkoutSession.Status) == "complete" {
+		common.ApiErrorI18n(c, i18n.MsgTopupOrderStatus)
+		return
+	}
+
+	data := gin.H{}
+	if secret := strings.TrimSpace(checkoutSession.ClientSecret); secret != "" && strings.TrimSpace(setting.StripePublishableKey) != "" {
+		data["client_secret"] = secret
+		data["publishable_key"] = setting.StripePublishableKey
+		data["topup_summary"] = gin.H{
+			"pay_amount":    topUp.Amount,
+			"bonus_amount":  topUp.BonusAmount,
+			"credit_amount": topUp.Amount + topUp.BonusAmount,
+			"show_amounts":  operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(topUp.PaymentCurrency, "USD"),
+		}
+	} else if payLink := strings.TrimSpace(checkoutSession.URL); payLink != "" {
+		data["pay_link"] = payLink
+	} else {
+		common.ApiErrorI18n(c, i18n.MsgPaymentStartFailed)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "success", "data": data})
 }
 
 func RequestStripeTopUpInvoice(c *gin.Context) {

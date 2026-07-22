@@ -168,7 +168,7 @@ test("updates navigation and mega-footer links with safe external attributes", a
 test("keeps the local documentation fallback when no safe setting is available", async () => {
   const api = loadApi();
   const link = {
-    href: "docs.html",
+    href: "/docs",
     setAttribute(name, value) {
       this[name] = value;
     },
@@ -182,7 +182,7 @@ test("keeps the local documentation fallback when no safe setting is available",
 
   assert.equal(result, null);
   assert.deepEqual(link, {
-    href: "docs.html",
+    href: "/docs",
     setAttribute: link.setAttribute,
   });
 });

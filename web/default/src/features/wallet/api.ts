@@ -111,6 +111,18 @@ export async function requestStripePayment(
   return res.data
 }
 
+/** Reopen the existing Stripe session for a pending top-up. */
+export async function resumeStripeTopup(
+  tradeNo: string
+): Promise<StripePaymentResponse> {
+  const res = await api.post(
+    `/api/user/topup/${encodeURIComponent(tradeNo)}/resume`,
+    {},
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
 /**
  * Get current user's default invoice profile
  */

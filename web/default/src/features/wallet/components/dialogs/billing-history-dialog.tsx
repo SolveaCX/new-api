@@ -86,6 +86,7 @@ interface BillingHistoryDialogProps {
 interface BillingHistoryPanelProps {
   scrollAreaClassName?: string
   onAvailabilityChange?: (available: boolean) => void
+  onResumeStripeCheckout?: (record: TopupRecord) => Promise<void>
 }
 
 function isPendingPaddleRecord(record: TopupRecord): boolean {
@@ -104,6 +105,16 @@ function isPaidStripeRecord(record: TopupRecord): boolean {
     return false
   }
 
+  return (
+    isStripePayment(record.payment_method?.trim().toLowerCase() ?? '') ||
+    isStripePayment(record.payment_provider?.trim().toLowerCase() ?? '')
+  )
+}
+
+function isPendingStripeRecord(record: TopupRecord): boolean {
+  if (record.status !== 'pending' || !record.gateway_trade_no?.trim()) {
+    return false
+  }
   return (
     isStripePayment(record.payment_method?.trim().toLowerCase() ?? '') ||
     isStripePayment(record.payment_provider?.trim().toLowerCase() ?? '')
@@ -208,6 +219,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
   }, [loading, onAvailabilityChange, total])
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
+  const [resumingTradeNo, setResumingTradeNo] = useState<string | null>(null)
   const [invoiceTradeNo, setInvoiceTradeNo] = useState<string | null>(null)
   const [invoiceProfile, setInvoiceProfile] = useState<InvoiceProfile>(
     EMPTY_INVOICE_PROFILE
@@ -309,6 +321,18 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
     )
   }
 
+  const handleReopenStripeCheckout = async (
+    record: TopupRecord
+  ): Promise<void> => {
+    if (!props.onResumeStripeCheckout || resumingTradeNo) return
+    setResumingTradeNo(record.trade_no)
+    try {
+      await props.onResumeStripeCheckout(record)
+    } finally {
+      setResumingTradeNo(null)
+    }
+  }
+
   return (
     <>
       <div className='min-h-0 space-y-3'>
@@ -393,6 +417,9 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                 const canReopenPaddleCheckout =
                   isPendingPaddleRecord(record) &&
                   getPaddleGatewayTradeNo(record) !== ''
+                const canReopenStripeCheckout =
+                  !!props.onResumeStripeCheckout &&
+                  isPendingStripeRecord(record)
                 const invoice = record.invoice
                 const hasInvoice = invoice?.invoice_requested === true
                 const invoiceUrl = invoice?.stripe_invoice_url?.trim()
@@ -403,6 +430,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                   (!hasExistingInvoice(record) || canRetryInvoice(record))
                 const showActions =
                   canReopenPaddleCheckout ||
+                  canReopenStripeCheckout ||
                   canRequestInvoice ||
                   (isAdmin && record.status === 'pending') ||
                   !!invoiceUrl ||
@@ -604,6 +632,23 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                             onClick={() => handleReopenPaddleCheckout(record)}
                           >
                             <ExternalLink className='mr-1.5 h-3.5 w-3.5' />
+                            {t('Reopen Checkout')}
+                          </Button>
+                        )}
+                        {canReopenStripeCheckout && (
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            onClick={() =>
+                              void handleReopenStripeCheckout(record)
+                            }
+                            disabled={resumingTradeNo === record.trade_no}
+                          >
+                            {resumingTradeNo === record.trade_no ? (
+                              <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+                            ) : (
+                              <ExternalLink className='mr-1.5 h-3.5 w-3.5' />
+                            )}
                             {t('Reopen Checkout')}
                           </Button>
                         )}

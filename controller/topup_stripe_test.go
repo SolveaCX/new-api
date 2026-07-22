@@ -466,6 +466,112 @@ func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 	require.NotNil(t, params.CancelURL)
 }
 
+func TestResumeStripeTopUpCheckoutReturnsExistingHostedSession(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalSecret := setting.StripeApiSecret
+	originalKey := stripe.Key
+	originalGetter := stripeCheckoutSessionGetter
+	t.Cleanup(func() {
+		setting.StripeApiSecret = originalSecret
+		stripe.Key = originalKey
+		stripeCheckoutSessionGetter = originalGetter
+	})
+	setting.StripeApiSecret = "sk_test_resume"
+	require.NoError(t, model.DB.Create(&model.TopUp{
+		UserId: 41, TradeNo: "resume_hosted", GatewayTradeNo: "cs_resume_hosted",
+		PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusPending,
+	}).Error)
+	stripeCheckoutSessionGetter = func(id string, _ *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		require.Equal(t, "cs_resume_hosted", id)
+		return &stripe.CheckoutSession{
+			Status:        stripe.CheckoutSessionStatusOpen,
+			PaymentStatus: stripe.CheckoutSessionPaymentStatusUnpaid,
+			URL:           "https://checkout.stripe.test/resume",
+		}, nil
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/user/topup/:trade_no/resume", func(c *gin.Context) {
+		c.Set("id", 41)
+		ResumeStripeTopUpCheckout(c)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/user/topup/resume_hosted/resume", nil)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{"success":true,"message":"success","data":{"pay_link":"https://checkout.stripe.test/resume"}}`, recorder.Body.String())
+}
+
+func TestResumeStripeTopUpCheckoutRejectsAnotherUsersOrderBeforeStripeLookup(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalGetter := stripeCheckoutSessionGetter
+	t.Cleanup(func() { stripeCheckoutSessionGetter = originalGetter })
+	require.NoError(t, model.DB.Create(&model.TopUp{
+		UserId: 42, TradeNo: "resume_owned", GatewayTradeNo: "cs_resume_owned",
+		PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusPending,
+	}).Error)
+	lookedUp := false
+	stripeCheckoutSessionGetter = func(_ string, _ *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		lookedUp = true
+		return nil, errors.New("must not be called")
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/user/topup/:trade_no/resume", func(c *gin.Context) {
+		c.Set("id", 99)
+		ResumeStripeTopUpCheckout(c)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/user/topup/resume_owned/resume", nil)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.False(t, lookedUp)
+	require.Contains(t, recorder.Body.String(), `"success":false`)
+}
+
+func TestResumeStripeTopUpCheckoutExpiresStaleLocalOrder(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalSecret := setting.StripeApiSecret
+	originalKey := stripe.Key
+	originalGetter := stripeCheckoutSessionGetter
+	t.Cleanup(func() {
+		setting.StripeApiSecret = originalSecret
+		stripe.Key = originalKey
+		stripeCheckoutSessionGetter = originalGetter
+	})
+	setting.StripeApiSecret = "sk_test_resume"
+	require.NoError(t, model.DB.Create(&model.TopUp{
+		UserId: 43, TradeNo: "resume_expired", GatewayTradeNo: "cs_resume_expired",
+		PaymentProvider: model.PaymentProviderStripe, Status: common.TopUpStatusPending,
+	}).Error)
+	stripeCheckoutSessionGetter = func(_ string, _ *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		return &stripe.CheckoutSession{
+			Status:        stripe.CheckoutSessionStatusOpen,
+			PaymentStatus: stripe.CheckoutSessionPaymentStatusUnpaid,
+			ExpiresAt:     time.Now().Add(-time.Minute).Unix(),
+		}, nil
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/user/topup/:trade_no/resume", func(c *gin.Context) {
+		c.Set("id", 43)
+		ResumeStripeTopUpCheckout(c)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/user/topup/resume_expired/resume", nil)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	reloaded := model.GetTopUpByTradeNo("resume_expired")
+	require.NotNil(t, reloaded)
+	require.Equal(t, common.TopUpStatusExpired, reloaded.Status)
+}
+
 func TestStripeCheckoutSessionPassesSelectedCurrency(t *testing.T) {
 	params := buildStripeCheckoutSessionParams(
 		"trade_inr",

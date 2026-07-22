@@ -527,6 +527,64 @@ func TestSearchTokensMasksKeyInResponse(t *testing.T) {
 	}
 }
 
+func TestTokenListEndpointsIncludeUserStatusStats(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	enabled := seedToken(t, db, 1, "stats-enabled", "stat-enabled-key")
+	disabled := seedToken(t, db, 1, "stats-disabled", "stat-disabled-key")
+	expired := seedToken(t, db, 1, "stats-expired", "stat-expired-key")
+	exhausted := seedToken(t, db, 1, "stats-exhausted", "stat-exhausted-key")
+	seedToken(t, db, 2, "other-user", "stat-other-user-key")
+
+	statusByTokenID := map[int]int{
+		enabled.Id:   common.TokenStatusEnabled,
+		disabled.Id:  common.TokenStatusDisabled,
+		expired.Id:   common.TokenStatusExpired,
+		exhausted.Id: common.TokenStatusExhausted,
+	}
+	for tokenID, status := range statusByTokenID {
+		if err := db.Model(&model.Token{}).Where("id = ?", tokenID).Update("status", status).Error; err != nil {
+			t.Fatalf("failed to update token status: %v", err)
+		}
+	}
+
+	expectedStats := model.UserTokenStats{
+		Total:     4,
+		Enabled:   1,
+		Disabled:  1,
+		Expired:   1,
+		Exhausted: 1,
+	}
+
+	assertStats := func(t *testing.T, recorder *httptest.ResponseRecorder, expectedPageTotal int) {
+		t.Helper()
+		response := decodeAPIResponse(t, recorder)
+		if !response.Success {
+			t.Fatalf("expected success response, got message: %s", response.Message)
+		}
+		var page struct {
+			Total int                  `json:"total"`
+			Stats model.UserTokenStats `json:"stats"`
+		}
+		if err := common.Unmarshal(response.Data, &page); err != nil {
+			t.Fatalf("failed to decode token page response: %v", err)
+		}
+		require.Equal(t, expectedPageTotal, page.Total)
+		require.Equal(t, expectedStats, page.Stats)
+	}
+
+	t.Run("list", func(t *testing.T) {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/?p=1&size=10", nil, 1)
+		GetAllTokens(ctx)
+		assertStats(t, recorder, 4)
+	})
+
+	t.Run("search keeps account-wide stats", func(t *testing.T) {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/search?keyword=stats-enabled&p=1&size=10", nil, 1)
+		SearchTokens(ctx)
+		assertStats(t, recorder, 1)
+	})
+}
+
 func TestGetTokenMasksKeyInResponse(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "detail-token", "qrst1234uvwx5678")

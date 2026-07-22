@@ -39,7 +39,7 @@ import { Separator } from '@/components/ui/separator'
 import { TitledCard } from '@/components/ui/titled-card'
 import { SectionPageLayout } from '@/components/layout'
 import { getCardStatus } from '@/features/onboarding/api'
-import { getPaddleTopUpStatus, isApiSuccess } from './api'
+import { getPaddleTopUpStatus, isApiSuccess, resumeStripeTopup } from './api'
 import { BillingHistoryPanel } from './components/dialogs/billing-history-dialog'
 import { StripeEmbeddedCheckoutDialog } from './components/dialogs/stripe-embedded-checkout-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
@@ -64,7 +64,7 @@ import {
   type WalletCheckoutSearch,
 } from './lib'
 import { openPaddleCheckoutForTransaction } from './lib/paddle-checkout'
-import type { UserWalletData, PresetAmount } from './types'
+import type { UserWalletData, PresetAmount, TopupRecord } from './types'
 
 interface WalletProps {
   initialShowHistory?: boolean
@@ -172,7 +172,26 @@ export function Wallet(props: WalletProps) {
     processPayment,
     embeddedCheckout,
     closeEmbeddedCheckout,
+    openStripeCheckoutResponse,
   } = usePayment()
+
+  const handleResumeStripeCheckout = useCallback(
+    async (record: TopupRecord) => {
+      try {
+        const response = await resumeStripeTopup(record.trade_no)
+        if (!isApiSuccess(response)) {
+          toast.error(t('Payment request failed'))
+          return
+        }
+        if (!openStripeCheckoutResponse(response)) {
+          toast.error(t('Payment request failed'))
+        }
+      } catch (_error) {
+        toast.error(t('Payment request failed'))
+      }
+    },
+    [openStripeCheckoutResponse, t]
+  )
 
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
@@ -737,6 +756,7 @@ export function Wallet(props: WalletProps) {
                 <BillingHistoryPanel
                   scrollAreaClassName='max-h-none pr-0 sm:pr-0'
                   onAvailabilityChange={handleRechargeHistoryAvailability}
+                  onResumeStripeCheckout={handleResumeStripeCheckout}
                 />
               </div>
             </TitledCard>

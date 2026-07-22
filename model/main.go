@@ -298,7 +298,11 @@ func migrateDB() error {
 		&CodexModelGovernanceProbeState{},
 		&CodexModelGovernanceAlertCooldownRecord{},
 		&TemporaryChannelModelSpend{},
+		&ComputeNode{},
 		&AdsSpendDaily{},
+		&AdsDailyKeyword{},
+		&AdsDailyCreative{},
+		&AdsDailyLanding{},
 		&AdsPilotCampaignDaily{},
 		&AdsPilotInsight{},
 		&AdsPilotAction{},
@@ -368,6 +372,7 @@ func migrateDBFast() error {
 		{&CodexModelGovernanceProbeState{}, "CodexModelGovernanceProbeState"},
 		{&CodexModelGovernanceAlertCooldownRecord{}, "CodexModelGovernanceAlertCooldownRecord"},
 		{&TemporaryChannelModelSpend{}, "TemporaryChannelModelSpend"},
+		{&ComputeNode{}, "ComputeNode"},
 	}
 	// GORM also migrates associations, so parallel AutoMigrate calls can race
 	// when related models share a table dependency.

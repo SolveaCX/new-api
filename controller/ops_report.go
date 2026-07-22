@@ -61,7 +61,8 @@ type opsFunnelRow struct {
 }
 
 // opsDailyRow is a funnel row for the daily table, prefixed with the day's
-// paid-ads totals (all campaigns) so spend/clicks line up with the
+// paid-ads totals (flatkey-* campaigns only; the shared ads account's other
+// business lines are excluded at sync time) so spend/clicks line up with the
 // registrations they produced. Ads dates are the ads account timezone
 // (America/New_York), joined to the Pacific funnel days by date string —
 // a 3-hour edge skew day-level stats can tolerate.
@@ -470,7 +471,13 @@ func parseOpsAttribution(a *opsUserAgg) {
 		a.keyword = str("utm_term")
 	}
 	a.lng = str("lng")
-	a.landing = str("landing_path")
+	a.landing = str("first_landing_path")
+	if a.landing == "" {
+		a.landing = str("landing_path")
+	}
+	if strings.HasPrefix(a.landing, "/oauth/") || a.landing == "/sign-in" || a.landing == "/sign-up" {
+		a.landing = ""
+	}
 	a.referrer = str("referrer")
 	a.matchType = str("hsa_mt")
 }
