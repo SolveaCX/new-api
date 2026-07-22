@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  isRecallSpecifiedEmail,
   mergeRecallAudienceUserOptions,
   parseRecallSpecifiedEmails,
   recallLocalDateTimeToUnix,
@@ -39,6 +40,36 @@ describe('recall audience input helpers', () => {
     ).toEqual({
       emails: ['good@example.com'],
       invalid: ['bad-email', 'missing@domain'],
+    })
+  })
+
+  test('rejects mailbox forms that backend address equality rejects', () => {
+    const invalidEmails = [
+      'a..b@example.com',
+      'a@example..com',
+      'a@example.com.',
+      'Alice <a@example.com>',
+      'a@example.com (Alice)',
+      'a@example.com; b@example.com',
+      'a@-example.com',
+      'a@example-.com',
+    ]
+
+    expect(parseRecallSpecifiedEmails(invalidEmails.join('\n'))).toEqual({
+      emails: [],
+      invalid: invalidEmails.map((email) => email.toLowerCase()),
+    })
+    for (const email of invalidEmails) {
+      expect(isRecallSpecifiedEmail(email.toLowerCase())).toBe(false)
+    }
+  })
+
+  test('accepts common specified email local punctuation and plus tags', () => {
+    const input = "User+tag@example.com, first.last_o'hara@example.co.uk"
+
+    expect(parseRecallSpecifiedEmails(input)).toEqual({
+      emails: ['user+tag@example.com', "first.last_o'hara@example.co.uk"],
+      invalid: [],
     })
   })
 

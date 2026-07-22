@@ -260,6 +260,34 @@ describe('recallCampaignDraftSchema', () => {
     }
   })
 
+  test('rejects backend-incompatible specified_users email shapes', () => {
+    for (const email of [
+      'a..b@example.com',
+      'a@example..com',
+      'a@example.com.',
+      'Alice <a@example.com>',
+      'a@example.com (Alice)',
+      'a@example.com; b@example.com',
+      'a@-example.com',
+      'a@example-.com',
+    ]) {
+      const draft = makeDraft()
+      draft.audience_template = 'specified_users'
+      draft.audience_config.specified_emails = [email]
+
+      const result = recallCampaignDraftSchema.safeParse(draft)
+
+      expect(result.success, email).toBe(false)
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(
+          expect.objectContaining({
+            path: ['audience_config', 'specified_emails'],
+          })
+        )
+      }
+    }
+  })
+
   test('does not validate hidden template-specific fields for other audiences', () => {
     const firstPurchase = makeDraft()
     firstPurchase.audience_config.registration_start_at = 200
