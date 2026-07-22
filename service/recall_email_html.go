@@ -164,6 +164,9 @@ func walkRecallEmailHTML(node *html.Node, inHead bool, inStyle bool, document *r
 		}
 	}
 	if node.Type != html.ElementNode && node.Data != "" {
+		if node.Type == html.CommentNode && isRecallEmailHTMLConditionalComment(node.Data) {
+			return fmt.Errorf("recall email html rejects conditional comment")
+		}
 		actions, err := recallEmailHTMLURLActionsInTemplate(node.Data)
 		if err != nil {
 			return err
@@ -396,6 +399,14 @@ func validateRecallEmailHTMLAttribute(element string, attr html.Attribute) error
 	}
 	switch key {
 	case "href", "src", "background", "poster":
+		hasAction, err := recallEmailHTMLHasTemplateAction(attr.Val)
+		if err != nil {
+			return err
+		}
+		value := strings.TrimSpace(attr.Val)
+		if hasAction && (element != "a" || key != "href" || (value != "{{.ClaimURL}}" && value != "{{.UnsubscribeURL}}")) {
+			return fmt.Errorf("recall email html rejects template action in URL attribute")
+		}
 		if err := validateRecallEmailURL(attr.Val, element == "a" && key == "href"); err != nil {
 			return err
 		}
@@ -420,6 +431,9 @@ func validateRecallEmailURL(raw string, allowDynamic bool) error {
 }
 
 func validateRecallEmailCSS(raw string) error {
+	if recallEmailCSSHasBackslashEscape(raw) {
+		return fmt.Errorf("recall email html contains unsafe css")
+	}
 	normalized := normalizeRecallEmailCSS(raw)
 	unsafe := []string{"expression(", "javascript:", "vbscript:", "data:", "@import", "behavior:", "-moz-binding"}
 	for _, token := range unsafe {
@@ -428,6 +442,35 @@ func validateRecallEmailCSS(raw string) error {
 		}
 	}
 	return nil
+}
+
+func recallEmailCSSHasBackslashEscape(raw string) bool {
+	inComment := false
+	for index := 0; index < len(raw); index++ {
+		if inComment {
+			if raw[index] == '*' && index+1 < len(raw) && raw[index+1] == '/' {
+				inComment = false
+				index++
+			}
+			continue
+		}
+		if raw[index] == '/' && index+1 < len(raw) && raw[index+1] == '*' {
+			inComment = true
+			index++
+			continue
+		}
+		if raw[index] == '\\' {
+			return true
+		}
+	}
+	return false
+}
+
+func isRecallEmailHTMLConditionalComment(raw string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	return strings.HasPrefix(normalized, "[if") ||
+		strings.Contains(normalized, "<![if") ||
+		strings.Contains(normalized, "<![endif]")
 }
 
 func validateRecallEmailTemplateActions(source string) error {
