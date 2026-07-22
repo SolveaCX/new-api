@@ -193,7 +193,7 @@ export function buildSidebarData(
             icon: CreditCard,
           },
           {
-            title: t('Recall Campaigns'),
+            title: t('Activity Configuration'),
             url: '/recall-campaigns',
             icon: MailCheck,
           },

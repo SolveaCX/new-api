@@ -20,10 +20,12 @@ export function RecallCampaigns() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Recall Campaigns')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>
+        {t('Activity Configuration')}
+      </SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <Button onClick={() => setCreating(true)}>
-          {t('Create campaign')}
+          {t('Create activity configuration')}
         </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
@@ -31,7 +33,7 @@ export function RecallCampaigns() {
         <Dialog open={creating} onOpenChange={setCreating}>
           <DialogContent className='max-h-[92vh] overflow-y-auto sm:max-w-5xl'>
             <DialogHeader>
-              <DialogTitle>{t('Create recall campaign')}</DialogTitle>
+              <DialogTitle>{t('Create activity configuration')}</DialogTitle>
               <DialogDescription>
                 {t(
                   'Configure a reviewed audience template, Stripe discount, schedule, and email sequence.'

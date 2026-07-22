@@ -138,7 +138,7 @@ function validateRegisteredOnlyAudience(
     context.addIssue({
       code: 'custom',
       path: ['audience_config', 'registration_end_at'],
-      message: 'Registration end must be after start',
+      message: 'Registration end must be on or after start',
     })
   }
   validateAudienceGroups(audience, context)

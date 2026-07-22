@@ -148,9 +148,16 @@ describe('recallCampaignDraftSchema', () => {
       expect(reversedResult.error.issues).toContainEqual(
         expect.objectContaining({
           path: ['audience_config', 'registration_end_at'],
+          message: 'Registration end must be on or after start',
         })
       )
     }
+
+    const sameBoundary = makeDraft()
+    sameBoundary.audience_template = 'registered_only'
+    sameBoundary.audience_config.registration_start_at = 100
+    sameBoundary.audience_config.registration_end_at = 100
+    expect(recallCampaignDraftSchema.safeParse(sameBoundary).success).toBe(true)
 
     const valid = makeDraft()
     valid.audience_template = 'registered_only'
