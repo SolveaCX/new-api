@@ -53,3 +53,27 @@ func TestSubscriptionLegacyPurchaseRoutesAreBlockedWhileCallbacksAndTopupsRemain
 		require.False(t, strings.Contains(handler, "SubscriptionPurchasePendingMigration"), "wallet topup route %s was blocked", routeKey)
 	}
 }
+
+func TestSubscriptionSelfLifecycleRoutesUseLocalContractHandlers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+
+	SetApiRouter(engine)
+
+	routes := map[string]string{}
+	for _, route := range engine.Routes() {
+		routes[route.Method+" "+route.Path] = route.Handler
+	}
+
+	expectedHandlers := map[string]string{
+		"GET /api/subscription/self":                               "controller.GetSubscriptionSelf",
+		"POST /api/subscription/self/change-plan":                  "controller.ChangeSubscriptionPlan",
+		"POST /api/subscription/self/recurring/:binding_id/cancel": "controller.CancelRecurringSubscription",
+		"POST /api/subscription/self/recurring/:binding_id/resume": "controller.ResumeRecurringSubscription",
+	}
+	for routeKey, expectedHandler := range expectedHandlers {
+		handler, ok := routes[routeKey]
+		require.True(t, ok, "missing %s", routeKey)
+		require.Contains(t, handler, expectedHandler)
+	}
+}

@@ -12,12 +12,42 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // ---- Shared types ----
 
 type SubscriptionPlanDTO struct {
+	Plan     SubscriptionPlanPublicDTO `json:"plan"`
+	TierRank *int                      `json:"tier_rank"`
+	Relation string                    `json:"relation"`
+}
+
+type AdminSubscriptionPlanDTO struct {
 	Plan model.SubscriptionPlan `json:"plan"`
+}
+
+type SubscriptionPlanPublicDTO struct {
+	Id                      int      `json:"id"`
+	Title                   string   `json:"title"`
+	Subtitle                string   `json:"subtitle"`
+	PriceAmount             float64  `json:"price_amount"`
+	Currency                string   `json:"currency"`
+	DurationUnit            string   `json:"duration_unit"`
+	DurationValue           int      `json:"duration_value"`
+	CustomSeconds           int64    `json:"custom_seconds"`
+	Enabled                 bool     `json:"enabled"`
+	SortOrder               int      `json:"sort_order"`
+	TierRank                *int     `json:"tier_rank"`
+	AllowBalancePay         *bool    `json:"allow_balance_pay"`
+	PaymentModes            []string `json:"payment_modes"`
+	MaxPurchasePerUser      int      `json:"max_purchase_per_user"`
+	UpgradeGroup            string   `json:"upgrade_group"`
+	TotalAmount             int64    `json:"total_amount"`
+	QuotaResetPeriod        string   `json:"quota_reset_period"`
+	QuotaResetCustomSeconds int64    `json:"quota_reset_custom_seconds"`
+	CreatedAt               int64    `json:"created_at"`
+	UpdatedAt               int64    `json:"updated_at"`
 }
 
 type BillingPreferenceRequest struct {
@@ -49,6 +79,95 @@ type RecurringSubscriptionDTO struct {
 	RequiresSupport    bool   `json:"requires_support"`
 }
 
+type SubscriptionSelfResponse struct {
+	BillingPreference      string                        `json:"billing_preference"`
+	Contract               *SubscriptionContractDTO      `json:"contract,omitempty"`
+	CurrentEntitlement     *SubscriptionEntitlementDTO   `json:"current_entitlement,omitempty"`
+	CurrentPeriod          SubscriptionCurrentPeriodDTO  `json:"current_period"`
+	Quota                  SubscriptionQuotaDTO          `json:"quota"`
+	PendingChange          *SubscriptionPendingChangeDTO `json:"pending_change,omitempty"`
+	Capabilities           SubscriptionCapabilitiesDTO   `json:"capabilities"`
+	Migration              SubscriptionMigrationDTO      `json:"migration"`
+	Subscriptions          []model.SubscriptionSummary   `json:"subscriptions"`
+	AllSubscriptions       []model.SubscriptionSummary   `json:"all_subscriptions"`
+	RecurringSubscriptions []RecurringSubscriptionDTO    `json:"recurring_subscriptions"`
+}
+
+type SubscriptionContractDTO struct {
+	ContractID               int64  `json:"contract_id"`
+	Status                   string `json:"status"`
+	PaymentMode              string `json:"payment_mode"`
+	CurrentPlanID            int    `json:"current_plan_id"`
+	CurrentEntitlementID     int    `json:"current_entitlement_id"`
+	CurrentProviderBindingID int64  `json:"current_provider_binding_id"`
+	LatestChangeIntentID     int64  `json:"latest_change_intent_id"`
+	PendingPlanID            int    `json:"pending_plan_id"`
+	PendingEffectiveAt       int64  `json:"pending_effective_at"`
+	ChangeVersion            int64  `json:"change_version"`
+}
+
+type SubscriptionEntitlementDTO struct {
+	EntitlementID     int    `json:"entitlement_id"`
+	PlanID            int    `json:"plan_id"`
+	ProviderBindingID int64  `json:"provider_binding_id"`
+	Status            string `json:"status"`
+	PaymentMode       string `json:"payment_mode"`
+	StartTime         int64  `json:"start_time"`
+	EndTime           int64  `json:"end_time"`
+	AccessEndTime     int64  `json:"access_end_time"`
+}
+
+type SubscriptionCurrentPeriodDTO struct {
+	Start          int64 `json:"start"`
+	End            int64 `json:"end"`
+	GracePeriodEnd int64 `json:"grace_period_end"`
+}
+
+type SubscriptionQuotaDTO struct {
+	AmountTotal     int64 `json:"amount_total"`
+	AmountUsed      int64 `json:"amount_used"`
+	AmountRemaining int64 `json:"amount_remaining"`
+	Unlimited       bool  `json:"unlimited"`
+}
+
+type SubscriptionPendingChangeDTO struct {
+	IntentID          int64  `json:"intent_id"`
+	Kind              string `json:"kind"`
+	Status            string `json:"status"`
+	FromPlanID        int    `json:"from_plan_id"`
+	ToPlanID          int    `json:"to_plan_id"`
+	ProviderBindingID int64  `json:"provider_binding_id"`
+	EffectiveAt       int64  `json:"effective_at"`
+	PaymentMode       string `json:"payment_mode"`
+}
+
+type SubscriptionCapabilitiesDTO struct {
+	CanChangePlan          bool `json:"can_change_plan"`
+	CanUseStripeRecurring  bool `json:"can_use_stripe_recurring"`
+	CanUseBalanceOnePeriod bool `json:"can_use_balance_one_period"`
+	CanCancel              bool `json:"can_cancel"`
+	CanResume              bool `json:"can_resume"`
+	RequiresSupport        bool `json:"requires_support"`
+	HasPendingIntent       bool `json:"has_pending_intent"`
+	IsGrace                bool `json:"is_grace"`
+	IsCancelAtPeriodEnd    bool `json:"is_cancel_at_period_end"`
+	HasMigrationConflict   bool `json:"has_migration_conflict"`
+}
+
+type SubscriptionMigrationDTO struct {
+	RequiresAdminReview bool   `json:"requires_admin_review"`
+	Classification      string `json:"classification"`
+	Reason              string `json:"reason"`
+}
+
+type ChangeSubscriptionPlanResponse struct {
+	Status           string                        `json:"status"`
+	Contract         *SubscriptionContractDTO      `json:"contract,omitempty"`
+	Intent           *SubscriptionPendingChangeDTO `json:"intent,omitempty"`
+	CheckoutURL      string                        `json:"checkout_url,omitempty"`
+	HostedInvoiceURL string                        `json:"hosted_invoice_url,omitempty"`
+}
+
 var ErrSubscriptionPurchasePendingMigration = errors.New("subscription purchase initiation is pending migration")
 
 // ---- User APIs ----
@@ -64,14 +183,57 @@ func GetSubscriptionPlans(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	contract, _ := getSubscriptionSelfContract(c.GetInt("id"))
+	currentTierRank := currentSubscriptionTierRank(contract)
 	result := make([]SubscriptionPlanDTO, 0, len(plans))
 	for _, p := range plans {
 		p.NormalizeDefaults()
 		result = append(result, SubscriptionPlanDTO{
-			Plan: p,
+			Plan:     subscriptionPlanPublicDTO(&p),
+			TierRank: p.TierRank,
+			Relation: subscriptionPlanRelation(contract, currentTierRank, &p),
 		})
 	}
 	common.ApiSuccess(c, result)
+}
+
+func subscriptionPlanPublicDTO(plan *model.SubscriptionPlan) SubscriptionPlanPublicDTO {
+	if plan == nil {
+		return SubscriptionPlanPublicDTO{}
+	}
+	return SubscriptionPlanPublicDTO{
+		Id:                      plan.Id,
+		Title:                   plan.Title,
+		Subtitle:                plan.Subtitle,
+		PriceAmount:             plan.PriceAmount,
+		Currency:                plan.Currency,
+		DurationUnit:            plan.DurationUnit,
+		DurationValue:           plan.DurationValue,
+		CustomSeconds:           plan.CustomSeconds,
+		Enabled:                 plan.Enabled,
+		SortOrder:               plan.SortOrder,
+		TierRank:                plan.TierRank,
+		AllowBalancePay:         plan.AllowBalancePay,
+		PaymentModes:            subscriptionPlanPaymentModes(plan),
+		MaxPurchasePerUser:      plan.MaxPurchasePerUser,
+		UpgradeGroup:            plan.UpgradeGroup,
+		TotalAmount:             plan.TotalAmount,
+		QuotaResetPeriod:        plan.QuotaResetPeriod,
+		QuotaResetCustomSeconds: plan.QuotaResetCustomSeconds,
+		CreatedAt:               plan.CreatedAt,
+		UpdatedAt:               plan.UpdatedAt,
+	}
+}
+
+func subscriptionPlanPaymentModes(plan *model.SubscriptionPlan) []string {
+	modes := make([]string, 0, 2)
+	if strings.TrimSpace(plan.StripePriceId) != "" {
+		modes = append(modes, model.SubscriptionPaymentModeStripeRecurring)
+	}
+	if plan.AllowBalancePay == nil || *plan.AllowBalancePay {
+		modes = append(modes, model.SubscriptionPaymentModeBalanceOnePeriod)
+	}
+	return modes
 }
 
 func GetSubscriptionSelf(c *gin.Context) {
@@ -92,16 +254,291 @@ func GetSubscriptionSelf(c *gin.Context) {
 	}
 
 	recurringSubscriptions := []RecurringSubscriptionDTO{}
+	rawRecurringBindings := []model.SubscriptionProviderBinding{}
 	if bindings, err := model.GetRecurringSubscriptionBindingsForUser(userId); err == nil {
+		rawRecurringBindings = bindings
 		recurringSubscriptions = recurringSubscriptionDTOs(bindings)
 	}
 
-	common.ApiSuccess(c, gin.H{
-		"billing_preference":      pref,
-		"subscriptions":           activeSubscriptions, // all active subscriptions
-		"all_subscriptions":       allSubscriptions,    // all subscriptions including expired
-		"recurring_subscriptions": recurringSubscriptions,
+	contract, _ := getSubscriptionSelfContract(userId)
+	currentEntitlement, _ := getSubscriptionSelfCurrentEntitlement(userId, contract)
+	pendingChange, _ := getSubscriptionSelfPendingChange(userId, contract)
+	migration := buildSubscriptionMigrationDTO(activeSubscriptions, rawRecurringBindings, contract)
+	common.ApiSuccess(c, buildSubscriptionSelfResponse(
+		pref,
+		contract,
+		currentEntitlement,
+		pendingChange,
+		migration,
+		activeSubscriptions,
+		allSubscriptions,
+		recurringSubscriptions,
+	))
+}
+
+func buildSubscriptionSelfResponse(
+	pref string,
+	contract *model.UserSubscriptionContract,
+	currentEntitlement *model.UserSubscription,
+	pendingChange *model.SubscriptionChangeIntent,
+	migration SubscriptionMigrationDTO,
+	activeSubscriptions []model.SubscriptionSummary,
+	allSubscriptions []model.SubscriptionSummary,
+	recurringSubscriptions []RecurringSubscriptionDTO,
+) SubscriptionSelfResponse {
+	response := SubscriptionSelfResponse{
+		BillingPreference:      pref,
+		CurrentPeriod:          SubscriptionCurrentPeriodDTO{},
+		Quota:                  SubscriptionQuotaDTO{},
+		Migration:              migration,
+		Subscriptions:          activeSubscriptions,
+		AllSubscriptions:       allSubscriptions,
+		RecurringSubscriptions: recurringSubscriptions,
+	}
+	if contract != nil && contract.Id > 0 {
+		response.Contract = subscriptionContractDTO(contract)
+		response.CurrentPeriod = SubscriptionCurrentPeriodDTO{
+			Start:          contract.CurrentPeriodStart,
+			End:            contract.CurrentPeriodEnd,
+			GracePeriodEnd: contract.GracePeriodEnd,
+		}
+	}
+	if currentEntitlement != nil && currentEntitlement.Id > 0 {
+		response.CurrentEntitlement = &SubscriptionEntitlementDTO{
+			EntitlementID:     currentEntitlement.Id,
+			PlanID:            currentEntitlement.PlanId,
+			ProviderBindingID: currentEntitlement.ProviderBindingId,
+			Status:            currentEntitlement.Status,
+			PaymentMode:       currentEntitlement.PaymentMode,
+			StartTime:         currentEntitlement.StartTime,
+			EndTime:           currentEntitlement.EndTime,
+			AccessEndTime:     currentEntitlement.AccessEndTime,
+		}
+		response.Quota = SubscriptionQuotaDTO{
+			AmountTotal:     currentEntitlement.AmountTotal,
+			AmountUsed:      currentEntitlement.AmountUsed,
+			AmountRemaining: subscriptionQuotaRemaining(currentEntitlement.AmountTotal, currentEntitlement.AmountUsed),
+			Unlimited:       currentEntitlement.AmountTotal == 0,
+		}
+	}
+	if pendingChange != nil && pendingChange.Id > 0 {
+		response.PendingChange = subscriptionPendingChangeDTO(pendingChange)
+	}
+	response.Capabilities = buildSubscriptionCapabilitiesDTO(contract, pendingChange, recurringSubscriptions, migration)
+	return response
+}
+
+func subscriptionContractDTO(contract *model.UserSubscriptionContract) *SubscriptionContractDTO {
+	if contract == nil || contract.Id <= 0 {
+		return nil
+	}
+	return &SubscriptionContractDTO{
+		ContractID:               contract.Id,
+		Status:                   contract.Status,
+		PaymentMode:              contract.PaymentMode,
+		CurrentPlanID:            contract.CurrentPlanId,
+		CurrentEntitlementID:     contract.CurrentEntitlementId,
+		CurrentProviderBindingID: contract.CurrentProviderBindingId,
+		LatestChangeIntentID:     contract.LatestChangeIntentId,
+		PendingPlanID:            contract.PendingPlanId,
+		PendingEffectiveAt:       contract.PendingEffectiveAt,
+		ChangeVersion:            contract.ChangeVersion,
+	}
+}
+
+func subscriptionPendingChangeDTO(intent *model.SubscriptionChangeIntent) *SubscriptionPendingChangeDTO {
+	if intent == nil || intent.Id <= 0 {
+		return nil
+	}
+	return &SubscriptionPendingChangeDTO{
+		IntentID:          intent.Id,
+		Kind:              intent.Kind,
+		Status:            intent.Status,
+		FromPlanID:        intent.FromPlanId,
+		ToPlanID:          intent.ToPlanId,
+		ProviderBindingID: intent.ProviderBindingId,
+		EffectiveAt:       intent.EffectiveAt,
+		PaymentMode:       intent.PaymentMode,
+	}
+}
+
+func getSubscriptionSelfContract(userID int) (*model.UserSubscriptionContract, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	var contract model.UserSubscriptionContract
+	err := model.DB.Where("user_id = ?", userID).Limit(1).Find(&contract).Error
+	if err != nil {
+		return nil, err
+	}
+	if contract.Id <= 0 {
+		return nil, nil
+	}
+	return &contract, nil
+}
+
+func getSubscriptionSelfCurrentEntitlement(userID int, contract *model.UserSubscriptionContract) (*model.UserSubscription, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	var entitlement model.UserSubscription
+	var query *gorm.DB
+	if contract != nil && contract.CurrentEntitlementId > 0 {
+		query = model.DB.Where("id = ? AND user_id = ?", contract.CurrentEntitlementId, userID).Limit(1).Find(&entitlement)
+	} else {
+		query = model.DB.Where("user_id = ? AND status = ? AND access_end_time > ?",
+			userID, model.SubscriptionEntitlementStatusActive, common.GetTimestamp()).
+			Order("access_end_time desc, id desc").
+			Limit(1).
+			Find(&entitlement)
+	}
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &entitlement, nil
+}
+
+func getSubscriptionSelfPendingChange(userID int, contract *model.UserSubscriptionContract) (*model.SubscriptionChangeIntent, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	query := model.DB.Where("user_id = ? AND status IN ?", userID, []string{
+		model.SubscriptionChangeIntentStatusCreated,
+		model.SubscriptionChangeIntentStatusSyncing,
+		model.SubscriptionChangeIntentStatusAwaitingPayment,
+		model.SubscriptionChangeIntentStatusScheduled,
+		model.SubscriptionChangeIntentStatusCompensationRequired,
 	})
+	if contract != nil && contract.Id > 0 {
+		query = query.Where("contract_id = ?", contract.Id)
+	}
+	var intent model.SubscriptionChangeIntent
+	result := query.Order("id desc").Limit(1).Find(&intent)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &intent, nil
+}
+
+func subscriptionQuotaRemaining(total int64, used int64) int64 {
+	if total == 0 {
+		return 0
+	}
+	remaining := total - used
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+func buildSubscriptionCapabilitiesDTO(
+	contract *model.UserSubscriptionContract,
+	pendingChange *model.SubscriptionChangeIntent,
+	recurringSubscriptions []RecurringSubscriptionDTO,
+	migration SubscriptionMigrationDTO,
+) SubscriptionCapabilitiesDTO {
+	hasPendingIntent := pendingChange != nil && pendingChange.Id > 0
+	capabilities := SubscriptionCapabilitiesDTO{
+		CanChangePlan:          !hasPendingIntent && !migration.RequiresAdminReview,
+		CanUseStripeRecurring:  !hasPendingIntent && !migration.RequiresAdminReview,
+		CanUseBalanceOnePeriod: !hasPendingIntent && !migration.RequiresAdminReview,
+		RequiresSupport:        migration.RequiresAdminReview,
+		HasPendingIntent:       hasPendingIntent,
+		HasMigrationConflict:   migration.RequiresAdminReview,
+	}
+	if contract != nil && contract.Id > 0 {
+		capabilities.IsGrace = contract.Status == model.SubscriptionContractStatusGrace
+		if contract.PaymentMode == model.SubscriptionPaymentModeBalanceOnePeriod || contract.Status == model.SubscriptionContractStatusGrace {
+			capabilities.CanUseBalanceOnePeriod = false
+		}
+	}
+	for _, recurring := range recurringSubscriptions {
+		if contract != nil && contract.CurrentProviderBindingId > 0 && recurring.BindingId != contract.CurrentProviderBindingId {
+			continue
+		}
+		capabilities.CanCancel = recurring.CanCancel && !hasPendingIntent && !migration.RequiresAdminReview
+		capabilities.CanResume = recurring.CanResume && !hasPendingIntent && !migration.RequiresAdminReview
+		capabilities.IsCancelAtPeriodEnd = recurring.CancelAtPeriodEnd
+		capabilities.RequiresSupport = capabilities.RequiresSupport || recurring.RequiresSupport
+		break
+	}
+	return capabilities
+}
+
+func buildSubscriptionMigrationDTO(
+	activeSubscriptions []model.SubscriptionSummary,
+	recurringBindings []model.SubscriptionProviderBinding,
+	contract *model.UserSubscriptionContract,
+) SubscriptionMigrationDTO {
+	classification := service.SubscriptionMigrationClassificationNoActive
+	reason := ""
+	activeCount := len(activeSubscriptions)
+	activeRecurringCount := 0
+	for _, binding := range recurringBindings {
+		if isTerminalRecurringProviderStatus(binding.ProviderStatus) || binding.EndedAt > 0 {
+			continue
+		}
+		activeRecurringCount++
+	}
+	switch {
+	case contract != nil && contract.Status == model.SubscriptionContractStatusNeedsAttention:
+		classification = service.SubscriptionMigrationClassificationMultipleActiveEntitlements
+		reason = "contract already needs attention"
+	case activeRecurringCount > 1:
+		classification = service.SubscriptionMigrationClassificationMultipleRecurringBindings
+	case activeCount > 1:
+		classification = service.SubscriptionMigrationClassificationMultipleActiveEntitlements
+	case activeCount == 1 && activeSubscriptions[0].Subscription != nil &&
+		(activeSubscriptions[0].Subscription.ProviderBindingId > 0 ||
+			activeSubscriptions[0].Subscription.PaymentMode == model.SubscriptionPaymentModeStripeRecurring) &&
+		activeRecurringCount != 1:
+		classification = service.SubscriptionMigrationClassificationMissingBinding
+	}
+	if reason == "" {
+		reason = classification
+	}
+	return SubscriptionMigrationDTO{
+		RequiresAdminReview: service.IsLegacySubscriptionMigrationBlocking(classification),
+		Classification:      classification,
+		Reason:              reason,
+	}
+}
+
+func currentSubscriptionTierRank(contract *model.UserSubscriptionContract) *int {
+	if contract == nil || contract.CurrentPlanId <= 0 {
+		return nil
+	}
+	var plan model.SubscriptionPlan
+	result := model.DB.Where("id = ?", contract.CurrentPlanId).Limit(1).Find(&plan)
+	if result.Error != nil || result.RowsAffected == 0 || plan.TierRank == nil {
+		return nil
+	}
+	return plan.TierRank
+}
+
+func subscriptionPlanRelation(contract *model.UserSubscriptionContract, currentTierRank *int, plan *model.SubscriptionPlan) string {
+	if plan == nil || plan.TierRank == nil || *plan.TierRank <= 0 {
+		return "unavailable"
+	}
+	if contract == nil || contract.CurrentPlanId <= 0 || currentTierRank == nil {
+		return "upgrade"
+	}
+	if plan.Id == contract.CurrentPlanId {
+		return "current"
+	}
+	if *plan.TierRank > *currentTierRank {
+		return "upgrade"
+	}
+	if *plan.TierRank < *currentTierRank {
+		return "downgrade"
+	}
+	return "unavailable"
 }
 
 func recurringSubscriptionDTOs(bindings []model.SubscriptionProviderBinding) []RecurringSubscriptionDTO {
@@ -186,7 +623,7 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, result)
+	common.ApiSuccess(c, sanitizedChangeSubscriptionPlanResponse(result))
 }
 
 func SubscriptionPurchasePendingMigration(c *gin.Context) {
@@ -233,7 +670,25 @@ func ChangeSubscriptionPlan(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, result)
+	common.ApiSuccess(c, sanitizedChangeSubscriptionPlanResponse(result))
+}
+
+func sanitizedChangeSubscriptionPlanResponse(result *service.ChangePlanResult) ChangeSubscriptionPlanResponse {
+	if result == nil {
+		return ChangeSubscriptionPlanResponse{}
+	}
+	response := ChangeSubscriptionPlanResponse{
+		Status:           result.Status,
+		CheckoutURL:      strings.TrimSpace(result.CheckoutURL),
+		HostedInvoiceURL: strings.TrimSpace(result.HostedInvoiceURL),
+	}
+	if result.Contract != nil && result.Contract.Id > 0 {
+		response.Contract = subscriptionContractDTO(result.Contract)
+	}
+	if result.Intent != nil && result.Intent.Id > 0 {
+		response.Intent = subscriptionPendingChangeDTO(result.Intent)
+	}
+	return response
 }
 
 func isStableSubscriptionRequestID(requestID string) bool {
@@ -252,10 +707,10 @@ func AdminListSubscriptionPlans(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	result := make([]SubscriptionPlanDTO, 0, len(plans))
+	result := make([]AdminSubscriptionPlanDTO, 0, len(plans))
 	for _, p := range plans {
 		p.NormalizeDefaults()
-		result = append(result, SubscriptionPlanDTO{
+		result = append(result, AdminSubscriptionPlanDTO{
 			Plan: p,
 		})
 	}
