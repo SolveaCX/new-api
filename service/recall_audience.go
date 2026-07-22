@@ -193,9 +193,6 @@ func (selector *RecallAudienceSelector) iterate(
 	if err := ValidateRecallAudience(draft.AudienceTemplate, draft.Audience); err != nil {
 		return exclusions, err
 	}
-	if !recallAudienceSelectorSupportsTemplate(draft.AudienceTemplate) {
-		return exclusions, fmt.Errorf("recall audience template %q is not supported by recall audience selector yet", draft.AudienceTemplate)
-	}
 	query := recallCandidateQuery(draft, now, selector.MainBatchSize)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -226,7 +223,7 @@ func (selector *RecallAudienceSelector) iterate(
 		}
 
 		recentlyActive := make(map[int]struct{})
-		if draft.Audience.LastAPICallAgeDays > 0 && len(candidates) > 0 {
+		if recallAudienceUsesRecentAPILookup(draft.AudienceTemplate) && draft.Audience.LastAPICallAgeDays > 0 && len(candidates) > 0 {
 			userIDs := make([]int, len(candidates))
 			for i := range candidates {
 				userIDs[i] = candidates[i].Candidate.UserID
@@ -263,6 +260,15 @@ func (selector *RecallAudienceSelector) iterate(
 
 func recallAudienceSelectorSupportsTemplate(template string) bool {
 	switch template {
+	case "first_purchase", "lapsed_payer", "expired_subscription", "registered_only", "specified_users":
+		return true
+	default:
+		return false
+	}
+}
+
+func recallAudienceUsesRecentAPILookup(template string) bool {
+	switch template {
 	case "first_purchase", "lapsed_payer", "expired_subscription":
 		return true
 	default:
@@ -289,6 +295,8 @@ func recallCandidateQuery(draft RecallCampaignDraft, now int64, limit int) model
 		Template:              draft.AudienceTemplate,
 		Now:                   now,
 		RegistrationBefore:    now - int64(cfg.RegistrationAgeDays)*recallDaySeconds,
+		RegistrationStartAt:   cfg.RegistrationStartAt,
+		RegistrationEndAt:     cfg.RegistrationEndAt,
 		LastPaymentBefore:     now - int64(cfg.LastPaymentAgeDays)*recallDaySeconds,
 		SubscriptionBefore:    now - int64(cfg.SubscriptionExpiredDays)*recallDaySeconds,
 		MaxQuota:              cfg.MaxQuota,
@@ -297,6 +305,8 @@ func recallCandidateQuery(draft RecallCampaignDraft, now int64, limit int) model
 		MinSubscriptionAmount: cfg.MinSubscriptionAmount,
 		MinSubscriptionCount:  cfg.MinSubscriptionCount,
 		PaymentProviders:      paymentProviders,
+		SpecifiedUserIDs:      normalizeRecallUserIDs(cfg.SpecifiedUserIDs),
+		SpecifiedEmails:       normalizeRecallEmails(cfg.SpecifiedEmails),
 		Groups:                append([]string(nil), cfg.Groups...),
 		GroupMode:             cfg.GroupMode,
 		Limit:                 limit,
@@ -337,7 +347,7 @@ func recallAudienceCandidate(draft RecallCampaignDraft, fact model.RecallCandida
 	if draft.Audience.RequireVerifiedEmail && user.EmailVerifiedAt <= 0 {
 		return recallAudienceSelection{}, "unverified_email", nil
 	}
-	if !recallAudienceGroupAllowed(user.Group, draft.Audience.Groups, draft.Audience.GroupMode) {
+	if draft.AudienceTemplate != "specified_users" && !recallAudienceGroupAllowed(user.Group, draft.Audience.Groups, draft.Audience.GroupMode) {
 		return recallAudienceSelection{}, "group_filtered", nil
 	}
 	if reason := recallTemplateExclusion(draft, fact, now); reason != "" {
@@ -394,6 +404,15 @@ func recallTemplateExclusion(draft RecallCampaignDraft, fact model.RecallCandida
 			fact.LastSubscriptionEndAt == 0 ||
 			fact.LastSubscriptionEndAt > now-int64(cfg.SubscriptionExpiredDays)*recallDaySeconds ||
 			(len(cfg.PaymentProviders) > 0 && fact.SubscriptionAmount <= 0) {
+			return "threshold_not_met"
+		}
+	case "registered_only":
+		if fact.HasPayment {
+			return "payment_exists"
+		}
+		if fact.User.CreatedAt < cfg.RegistrationStartAt ||
+			fact.User.CreatedAt > cfg.RegistrationEndAt ||
+			fact.User.RequestCount != 0 {
 			return "threshold_not_met"
 		}
 	}

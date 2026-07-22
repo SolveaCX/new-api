@@ -3,9 +3,11 @@ package model
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
@@ -85,6 +87,143 @@ func newRecallRepositoryCampaign(name string) RecallCampaign {
 		ProductScope:        `[]`,
 		EmailSequenceConfig: `[]`,
 	}
+}
+
+func createRecallRepositoryCandidateUser(t *testing.T, suffix string, createdAt int64, requestCount int) User {
+	t.Helper()
+	user := User{
+		Username:        "recall_candidate_" + suffix,
+		AffCode:         "recall_candidate_aff_" + suffix,
+		Password:        "hashed-password",
+		Status:          common.UserStatusEnabled,
+		Email:           suffix + "@example.com",
+		EmailVerifiedAt: createdAt,
+		RequestCount:    requestCount,
+		CreatedAt:       createdAt,
+	}
+	require.NoError(t, DB.Create(&user).Error)
+	return user
+}
+
+func recallRepositoryUserIDs(facts []RecallCandidateFact) []int {
+	ids := make([]int, len(facts))
+	for i := range facts {
+		ids[i] = facts[i].User.Id
+	}
+	return ids
+}
+
+func TestListRecallCandidateFactsNewAudiencePredicates(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	const startAt int64 = 1_000
+	const endAt int64 = 2_000
+	before := createRecallRepositoryCandidateUser(t, "registered_before", startAt-1, 0)
+	start := createRecallRepositoryCandidateUser(t, "registered_start", startAt, 0)
+	end := createRecallRepositoryCandidateUser(t, "registered_end", endAt, 0)
+	after := createRecallRepositoryCandidateUser(t, "registered_after", endAt+1, 0)
+	used := createRecallRepositoryCandidateUser(t, "registered_used", startAt+100, 1)
+	paid := createRecallRepositoryCandidateUser(t, "registered_paid", startAt+200, 0)
+	require.NoError(t, DB.Create(&SubscriptionOrder{
+		UserId:          paid.Id,
+		Money:           10,
+		TradeNo:         "registered-paid-any-provider",
+		PaymentProvider: PaymentProviderPaddle,
+		CompleteTime:    startAt + 300,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+
+	var userSQL []string
+	callbackName := "recall_candidate_registered_predicates_" + strings.ReplaceAll(t.Name(), "/", "_")
+	require.NoError(t, DB.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == "users" {
+			userSQL = append(userSQL, tx.Statement.SQL.String())
+		}
+	}))
+	t.Cleanup(func() { _ = DB.Callback().Query().Remove(callbackName) })
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:            "registered_only",
+		Now:                 endAt,
+		RegistrationStartAt: startAt,
+		RegistrationEndAt:   endAt,
+		AfterUserID:         before.Id,
+		Limit:               10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{start.Id, end.Id, paid.Id}, recallRepositoryUserIDs(facts))
+	require.True(t, facts[2].HasPayment, "registered_only must load successful payments across providers")
+	require.NotContains(t, recallRepositoryUserIDs(facts), before.Id)
+	require.NotContains(t, recallRepositoryUserIDs(facts), after.Id)
+	require.NotContains(t, recallRepositoryUserIDs(facts), used.Id)
+	require.Len(t, userSQL, 1)
+	require.Contains(t, userSQL[0], "created_at >= ?")
+	require.Contains(t, userSQL[0], "created_at <= ?")
+	require.Contains(t, userSQL[0], "request_count = ?")
+	require.Contains(t, userSQL[0], "id > ?")
+	require.Contains(t, userSQL[0], "ORDER BY id ASC")
+	require.Contains(t, userSQL[0], "LIMIT")
+}
+
+func TestListRecallCandidateFactsSpecifiedUnion(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	idOnly := createRecallRepositoryCandidateUser(t, "specified_id", 100, 4)
+	emailOnly := createRecallRepositoryCandidateUser(t, "specified_email", 100, 4)
+	overlap := createRecallRepositoryCandidateUser(t, "specified_overlap", 100, 4)
+	unknown := createRecallRepositoryCandidateUser(t, "specified_unknown", 100, 4)
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idOnly.Id, overlap.Id, 999_999},
+		SpecifiedEmails:  []string{strings.ToUpper(emailOnly.Email), overlap.Email, "missing@example.com"},
+		Limit:            10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id}, recallRepositoryUserIDs(facts))
+	require.NotContains(t, recallRepositoryUserIDs(facts), unknown.Id)
+
+	pageOne, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idOnly.Id, emailOnly.Id, overlap.Id},
+		Limit:            2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id}, recallRepositoryUserIDs(pageOne))
+
+	pageTwo, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idOnly.Id, emailOnly.Id, overlap.Id},
+		AfterUserID:      pageOne[len(pageOne)-1].User.Id,
+		Limit:            2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{overlap.Id}, recallRepositoryUserIDs(pageTwo))
+
+	idFacts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idOnly.Id},
+		Limit:            10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{idOnly.Id}, recallRepositoryUserIDs(idFacts))
+
+	emailFacts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:        "specified_users",
+		SpecifiedEmails: []string{strings.ToUpper(emailOnly.Email)},
+		Limit:           10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{emailOnly.Id}, recallRepositoryUserIDs(emailFacts))
+
+	emptyFacts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template: "specified_users",
+		Limit:    10,
+	})
+	require.NoError(t, err)
+	require.Empty(t, emptyFacts)
 }
 
 func TestRecallRepositoryMigrationCreatesMainDBTablesAndUniqueIndexes(t *testing.T) {

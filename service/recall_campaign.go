@@ -729,9 +729,6 @@ func (s *RecallCampaignService) Activate(ctx context.Context, actorID int, id in
 	if err != nil {
 		return err
 	}
-	if !recallAudienceSelectorSupportsTemplate(draft.AudienceTemplate) {
-		return fmt.Errorf("recall audience template %q is not supported by recall audience selector yet", draft.AudienceTemplate)
-	}
 	resolved, err := s.stripe.ValidateAndResolveProducts(ctx, draft.Products)
 	if err != nil {
 		return err

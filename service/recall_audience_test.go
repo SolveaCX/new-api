@@ -256,41 +256,153 @@ func TestNormalizeRecallAudienceSpecifiedUsers(t *testing.T) {
 	require.NotNil(t, normalizeRecallEmails(nil))
 }
 
-func TestRecallAudienceSelectorRejectsNewTemplatesUntilSupported(t *testing.T) {
-	mainDB, _ := setupRecallAudienceTestDBs(t)
+func TestRecallAudienceRegisteredOnlySelectsInclusiveUnusedRegistrations(t *testing.T) {
+	mainDB, logDB := setupRecallAudienceTestDBs(t)
 	const now int64 = 2_000_000_000
-	createRecallAudienceUser(t, mainDB, now, "new_template_guard", nil)
-	userQueries := 0
-	callbackName := "recall_new_template_guard_" + strings.ReplaceAll(t.Name(), "/", "_")
-	require.NoError(t, mainDB.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
-		if tx.Statement.Table == "users" {
-			userQueries++
-		}
-	}))
-	t.Cleanup(func() { _ = mainDB.Callback().Query().Remove(callbackName) })
+	const startAt int64 = now - 10_000
+	const endAt int64 = now - 1_000
+	start := createRecallAudienceUser(t, mainDB, now, "registered_start", func(user *model.User) {
+		user.CreatedAt = startAt
+		user.RequestCount = 0
+	})
+	end := createRecallAudienceUser(t, mainDB, now, "registered_end", func(user *model.User) {
+		user.CreatedAt = endAt
+		user.RequestCount = 0
+	})
+	createRecallAudienceUser(t, mainDB, now, "registered_before", func(user *model.User) {
+		user.CreatedAt = startAt - 1
+		user.RequestCount = 0
+	})
+	createRecallAudienceUser(t, mainDB, now, "registered_after", func(user *model.User) {
+		user.CreatedAt = endAt + 1
+		user.RequestCount = 0
+	})
+	used := createRecallAudienceUser(t, mainDB, now, "registered_used", func(user *model.User) {
+		user.CreatedAt = startAt + 1
+		user.RequestCount = 1
+	})
+	paid := createRecallAudienceUser(t, mainDB, now, "registered_paid", func(user *model.User) {
+		user.CreatedAt = startAt + 2
+		user.RequestCount = 0
+	})
+	require.NoError(t, mainDB.Create(&model.TopUp{
+		UserId:          paid.Id,
+		Money:           25,
+		TradeNo:         "registered-only-paid",
+		PaymentProvider: model.PaymentProviderPaddle,
+		CompleteTime:    startAt + 10,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+	require.NoError(t, logDB.Create(&model.Log{UserId: start.Id, Type: model.LogTypeConsume, CreatedAt: now - 60}).Error)
 
-	tests := []struct {
-		template string
-		cfg      RecallAudienceConfig
-	}{
-		{template: "registered_only", cfg: RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}},
-		{template: "specified_users", cfg: RecallAudienceConfig{SpecifiedUserIDs: []int{7}}},
+	selector := NewRecallAudienceSelector()
+	selector.MainBatchSize = 1
+	preview, err := selector.Preview(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "registered_only",
+		Audience: RecallAudienceConfig{
+			RegistrationStartAt: startAt,
+			RegistrationEndAt:   endAt,
+			LastAPICallAgeDays:  30,
+		},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, preview.EligibleTotal)
+	require.Equal(t, []RecallAudienceCandidate{
+		{UserID: start.Id, EmailMasked: "r***@example.com", Language: "zh"},
+		{UserID: end.Id, EmailMasked: "r***@example.com", Language: "zh"},
+	}, preview.Sample)
+	require.EqualValues(t, 1, preview.Exclusions["payment_exists"])
+	require.Zero(t, preview.Exclusions["recent_api_activity"], "registered_only must not use stale LastAPICallAgeDays")
+	require.NotContains(t, []int{preview.Sample[0].UserID, preview.Sample[1].UserID}, used.Id)
+}
+
+func TestRecallAudienceSpecifiedUsersUsesExactUnionAndSafetyExclusions(t *testing.T) {
+	mainDB, logDB := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	idOnly := createRecallAudienceUser(t, mainDB, now, "specified_id", func(user *model.User) {
+		user.RequestCount = 0
+		user.CreatedAt = now
+		user.Group = "blocked"
+	})
+	emailOnly := createRecallAudienceUser(t, mainDB, now, "specified_email", func(user *model.User) {
+		user.RequestCount = 1
+		user.CreatedAt = now
+		user.Group = "blocked"
+	})
+	overlap := createRecallAudienceUser(t, mainDB, now, "specified_overlap", func(user *model.User) {
+		user.Email = "SpecifiedOverlap@Example.COM"
+		user.RequestCount = 1
+		user.CreatedAt = now
+		user.Group = "blocked"
+	})
+	disabled := createRecallAudienceUser(t, mainDB, now, "specified_disabled", func(user *model.User) {
+		user.Status = common.UserStatusDisabled
+	})
+	invalid := createRecallAudienceUser(t, mainDB, now, "specified_invalid", func(user *model.User) {
+		user.Email = "not-an-email"
+	})
+	optOutJSON, err := common.Marshal(dto.UserSetting{RecallMarketingOptOut: true})
+	require.NoError(t, err)
+	optedOut := createRecallAudienceUser(t, mainDB, now, "specified_opted_out", func(user *model.User) {
+		user.Setting = string(optOutJSON)
+	})
+	unverified := createRecallAudienceUser(t, mainDB, now, "specified_unverified", func(user *model.User) {
+		user.EmailVerifiedAt = 0
+	})
+	createRecallAudienceUser(t, mainDB, now, "specified_unlisted", nil)
+	require.NoError(t, logDB.Create(&model.Log{UserId: idOnly.Id, Type: model.LogTypeConsume, CreatedAt: now - 60}).Error)
+	require.NoError(t, mainDB.Create(&model.TopUp{
+		UserId:          emailOnly.Id,
+		Money:           25,
+		TradeNo:         "specified-paid",
+		PaymentProvider: model.PaymentProviderStripe,
+		CompleteTime:    now - 60,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+
+	selector := NewRecallAudienceSelector()
+	selector.MainBatchSize = 2
+	recipients, exclusions, err := selector.Snapshot(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "specified_users",
+		Audience: RecallAudienceConfig{
+			RegistrationStartAt:     now - 100,
+			RegistrationEndAt:       now - 50,
+			MinRequestCount:         99,
+			LastAPICallAgeDays:      30,
+			Groups:                  []string{"plg"},
+			GroupMode:               "allow",
+			RequireVerifiedEmail:    true,
+			SpecifiedUserIDs:        []int{idOnly.Id, overlap.Id, disabled.Id, invalid.Id, optedOut.Id, unverified.Id, 999_999},
+			SpecifiedEmails:         []string{strings.ToUpper(emailOnly.Email), strings.ToLower(overlap.Email), "missing@example.com"},
+			PaymentProviders:        []string{model.PaymentProviderPaddle},
+			LastPaymentAgeDays:      999,
+			MinPaidAmount:           999,
+			SubscriptionExpiredDays: 999,
+			MinSubscriptionAmount:   999,
+			MinSubscriptionCount:    999,
+		},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	gotUserIDs := make([]int, len(recipients))
+	for i := range recipients {
+		gotUserIDs[i] = recipients[i].UserId
+		require.NotContains(t, recipients[i].EligibilitySnapshot, "missing@example.com")
+		var snapshot map[string]any
+		require.NoError(t, common.Unmarshal([]byte(recipients[i].EligibilitySnapshot), &snapshot))
+		require.ElementsMatch(t, []string{
+			"template", "user_id", "registered_at", "quota", "request_count", "paid_amount",
+			"last_payment_at", "subscription_amount", "subscription_count", "last_subscription_end_at",
+		}, recallAudienceJSONKeys(snapshot))
 	}
-	for _, test := range tests {
-		t.Run(test.template, func(t *testing.T) {
-			userQueries = 0
-			draft := RecallCampaignDraft{AudienceTemplate: test.template, Audience: test.cfg}
-
-			preview, err := NewRecallAudienceSelector().Preview(context.Background(), draft, 10, time.Unix(now, 0))
-			require.ErrorContains(t, err, "not supported by recall audience selector")
-			require.Zero(t, preview.EligibleTotal)
-			require.Zero(t, userQueries, "preview must reject before candidate queries")
-
-			_, _, err = NewRecallAudienceSelector().Snapshot(context.Background(), draft, 10, time.Unix(now, 0))
-			require.ErrorContains(t, err, "not supported by recall audience selector")
-			require.Zero(t, userQueries, "snapshot must reject before candidate queries")
-		})
-	}
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id}, gotUserIDs)
+	require.EqualValues(t, 1, exclusions["disabled"])
+	require.EqualValues(t, 1, exclusions["invalid_email"])
+	require.EqualValues(t, 1, exclusions["opted_out"])
+	require.EqualValues(t, 1, exclusions["unverified_email"])
+	require.Zero(t, exclusions["group_filtered"], "specified_users must ignore hidden group config")
+	require.Zero(t, exclusions["recent_api_activity"], "specified_users must not use stale LastAPICallAgeDays")
+	require.Zero(t, exclusions["payment_exists"], "specified_users payment facts must not exclude exact users")
+	require.Zero(t, exclusions["threshold_not_met"], "specified_users must bypass behavioral thresholds")
 }
 
 func TestRecallAudienceValidationRejectsInvalidBoundaries(t *testing.T) {

@@ -767,6 +767,8 @@ type RecallCandidateQuery struct {
 	Template              string
 	Now                   int64
 	RegistrationBefore    int64
+	RegistrationStartAt   int64
+	RegistrationEndAt     int64
 	LastPaymentBefore     int64
 	SubscriptionBefore    int64
 	MaxQuota              int
@@ -775,6 +777,8 @@ type RecallCandidateQuery struct {
 	MinSubscriptionAmount float64
 	MinSubscriptionCount  int
 	PaymentProviders      []string
+	SpecifiedUserIDs      []int
+	SpecifiedEmails       []string
 	Groups                []string
 	GroupMode             string
 	AfterUserID           int
@@ -812,7 +816,27 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 		return facts, nil
 	}
 	var users []User
-	if err := DB.WithContext(ctx).Where("id > ?", query.AfterUserID).
+	userQuery := DB.WithContext(ctx).Where("id > ?", query.AfterUserID)
+	switch query.Template {
+	case "registered_only":
+		userQuery = userQuery.
+			Where("created_at >= ? AND created_at <= ?", query.RegistrationStartAt, query.RegistrationEndAt).
+			Where("request_count = ?", 0)
+	case "specified_users":
+		ids := normalizeRecallCandidateUserIDs(query.SpecifiedUserIDs)
+		emails := normalizeRecallCandidateEmails(query.SpecifiedEmails)
+		switch {
+		case len(ids) > 0 && len(emails) > 0:
+			userQuery = userQuery.Where("(id IN ? OR LOWER(email) IN ?)", ids, emails)
+		case len(ids) > 0:
+			userQuery = userQuery.Where("id IN ?", ids)
+		case len(emails) > 0:
+			userQuery = userQuery.Where("LOWER(email) IN ?", emails)
+		default:
+			return facts, nil
+		}
+	}
+	if err := userQuery.
 		Order("id ASC").
 		Limit(query.Limit).
 		Find(&users).Error; err != nil {
@@ -831,7 +855,7 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 		factByUserID[users[i].Id] = &facts[i]
 	}
 
-	providerFilter := query.Template != "first_purchase" && len(query.PaymentProviders) > 0
+	providerFilter := (query.Template == "lapsed_payer" || query.Template == "expired_subscription") && len(query.PaymentProviders) > 0
 	topupQuery := DB.WithContext(ctx).Model(&TopUp{}).
 		Select("id", "user_id", "money", "payment_provider", "trade_no", "create_time", "complete_time").
 		Where("user_id IN ? AND status = ?", userIDs, common.TopUpStatusSuccess)
@@ -909,6 +933,39 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 		}
 	}
 	return facts, nil
+}
+
+func normalizeRecallCandidateUserIDs(values []int) []int {
+	normalized := make([]int, 0, len(values))
+	seen := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
+func normalizeRecallCandidateEmails(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
 }
 
 func HasRecallPaymentAfter(userID int, after int64) (bool, error) {
