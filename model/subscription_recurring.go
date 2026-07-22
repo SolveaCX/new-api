@@ -172,6 +172,111 @@ func FindBindingByIDForUser(bindingID int64, userID int) (*SubscriptionProviderB
 	return &binding, nil
 }
 
+func GetRecurringSubscriptionBindingsForUser(userID int) ([]SubscriptionProviderBinding, error) {
+	if userID <= 0 {
+		return nil, errors.New("invalid user id")
+	}
+	var bindings []SubscriptionProviderBinding
+	if err := DB.Where("user_id = ?", userID).
+		Order("current_period_end desc, id desc").
+		Find(&bindings).Error; err != nil {
+		return nil, err
+	}
+	return bindings, nil
+}
+
+func ApplyProviderSubscriptionSnapshot(bindingID int64, snapshot ProviderSubscriptionSnapshot) (*SubscriptionProviderBinding, error) {
+	if bindingID <= 0 {
+		return nil, errors.New("invalid binding id")
+	}
+	var binding SubscriptionProviderBinding
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", bindingID).First(&binding).Error; err != nil {
+			return err
+		}
+		if strings.TrimSpace(snapshot.ProviderSubscriptionId) != "" && strings.TrimSpace(snapshot.ProviderSubscriptionId) != binding.ProviderSubscriptionId {
+			return ErrSubscriptionProviderBindingConflict
+		}
+		updates := map[string]interface{}{
+			"provider_customer_id":       strings.TrimSpace(snapshot.ProviderCustomerId),
+			"provider_price_id":          strings.TrimSpace(snapshot.ProviderPriceId),
+			"provider_latest_invoice_id": strings.TrimSpace(snapshot.ProviderLatestInvoiceId),
+			"provider_status":            strings.TrimSpace(snapshot.ProviderStatus),
+			"cancel_at_period_end":       snapshot.CancelAtPeriodEnd,
+			"current_period_start":       snapshot.CurrentPeriodStart,
+			"current_period_end":         snapshot.CurrentPeriodEnd,
+			"grace_period_end":           snapshot.GracePeriodEnd,
+			"canceled_at":                snapshot.CanceledAt,
+			"ended_at":                   snapshot.EndedAt,
+			"livemode":                   snapshot.Livemode,
+			"last_synced_at":             common.GetTimestamp(),
+			"updated_at":                 common.GetTimestamp(),
+		}
+		if err := tx.Model(&binding).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", bindingID).First(&binding).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &binding, nil
+}
+
+func ApplyProviderSubscriptionTermination(bindingID int64, snapshot ProviderSubscriptionSnapshot) (*SubscriptionProviderBinding, error) {
+	if bindingID <= 0 {
+		return nil, errors.New("invalid binding id")
+	}
+	now := common.GetTimestamp()
+	if snapshot.EndedAt <= 0 {
+		snapshot.EndedAt = now
+	}
+	if strings.TrimSpace(snapshot.ProviderStatus) == "" {
+		snapshot.ProviderStatus = "canceled"
+	}
+	var binding SubscriptionProviderBinding
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", bindingID).First(&binding).Error; err != nil {
+			return err
+		}
+		if strings.TrimSpace(snapshot.ProviderSubscriptionId) != "" && strings.TrimSpace(snapshot.ProviderSubscriptionId) != binding.ProviderSubscriptionId {
+			return ErrSubscriptionProviderBindingConflict
+		}
+		updates := map[string]interface{}{
+			"provider_customer_id":       strings.TrimSpace(snapshot.ProviderCustomerId),
+			"provider_price_id":          strings.TrimSpace(snapshot.ProviderPriceId),
+			"provider_latest_invoice_id": strings.TrimSpace(snapshot.ProviderLatestInvoiceId),
+			"provider_status":            strings.TrimSpace(snapshot.ProviderStatus),
+			"cancel_at_period_end":       false,
+			"current_period_start":       snapshot.CurrentPeriodStart,
+			"current_period_end":         snapshot.CurrentPeriodEnd,
+			"grace_period_end":           snapshot.GracePeriodEnd,
+			"canceled_at":                snapshot.CanceledAt,
+			"ended_at":                   snapshot.EndedAt,
+			"livemode":                   snapshot.Livemode,
+			"last_synced_at":             now,
+			"updated_at":                 now,
+		}
+		if err := tx.Model(&binding).Updates(updates).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&UserSubscription{}).
+			Where("provider_binding_id = ? AND status = ?", bindingID, "active").
+			Updates(map[string]interface{}{
+				"status":     "cancelled",
+				"end_time":   now,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", bindingID).First(&binding).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &binding, nil
+}
+
 func createOrLoadProviderBindingTx(tx *gorm.DB, order *SubscriptionOrder, snapshot ProviderSubscriptionSnapshot) (*SubscriptionProviderBinding, error) {
 	if tx == nil || order == nil {
 		return nil, errors.New("invalid provider binding args")

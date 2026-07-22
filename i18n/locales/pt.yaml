@@ -131,6 +131,7 @@ subscription.reset_cycle_gt_zero: "O ciclo de redefinição personalizado deve s
 subscription.purchase_max: "O limite de compra deste plano foi atingido"
 subscription.invalid_id: "ID de assinatura inválido"
 subscription.invalid_user_id: "ID de usuário inválido"
+subscription.invalid_recurring_id: "ID de assinatura recorrente inválido"
 
 # Payment messages
 payment.not_configured: "As informações de pagamento não foram configuradas pelo administrador"

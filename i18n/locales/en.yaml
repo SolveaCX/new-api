@@ -130,6 +130,7 @@ subscription.reset_cycle_gt_zero: "Custom reset cycle must be greater than 0 sec
 subscription.purchase_max: "Purchase limit for this plan has been reached"
 subscription.invalid_id: "Invalid subscription ID"
 subscription.invalid_user_id: "Invalid user ID"
+subscription.invalid_recurring_id: "Invalid recurring subscription ID"
 
 # Payment messages
 payment.not_configured: "Payment information has not been configured by administrator"

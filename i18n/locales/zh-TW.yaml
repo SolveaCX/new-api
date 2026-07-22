@@ -131,6 +131,7 @@ subscription.reset_cycle_gt_zero: "自訂重置週期需大於0秒"
 subscription.purchase_max: "已達到該訂閱方案購買上限"
 subscription.invalid_id: "無效的訂閱ID"
 subscription.invalid_user_id: "無效的使用者ID"
+subscription.invalid_recurring_id: "無效的週期訂閱ID"
 
 # Payment messages
 payment.not_configured: "當前管理員未設定支付資訊"

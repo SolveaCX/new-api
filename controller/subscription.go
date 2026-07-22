@@ -26,6 +26,20 @@ type SubscriptionBalancePayRequest struct {
 	PlanId int `json:"plan_id"`
 }
 
+type RecurringSubscriptionDTO struct {
+	BindingId          int64  `json:"binding_id"`
+	Provider           string `json:"provider"`
+	PlanId             int    `json:"plan_id"`
+	ProviderStatus     string `json:"provider_status"`
+	CancelAtPeriodEnd  bool   `json:"cancel_at_period_end"`
+	CurrentPeriodStart int64  `json:"current_period_start"`
+	CurrentPeriodEnd   int64  `json:"current_period_end"`
+	GracePeriodEnd     int64  `json:"grace_period_end"`
+	CanCancel          bool   `json:"can_cancel"`
+	CanResume          bool   `json:"can_resume"`
+	RequiresSupport    bool   `json:"requires_support"`
+}
+
 // ---- User APIs ----
 
 func GetSubscriptionPlans(c *gin.Context) {
@@ -66,11 +80,49 @@ func GetSubscriptionSelf(c *gin.Context) {
 		activeSubscriptions = []model.SubscriptionSummary{}
 	}
 
+	recurringSubscriptions := []RecurringSubscriptionDTO{}
+	if bindings, err := model.GetRecurringSubscriptionBindingsForUser(userId); err == nil {
+		recurringSubscriptions = recurringSubscriptionDTOs(bindings)
+	}
+
 	common.ApiSuccess(c, gin.H{
-		"billing_preference": pref,
-		"subscriptions":      activeSubscriptions, // all active subscriptions
-		"all_subscriptions":  allSubscriptions,    // all subscriptions including expired
+		"billing_preference":      pref,
+		"subscriptions":           activeSubscriptions, // all active subscriptions
+		"all_subscriptions":       allSubscriptions,    // all subscriptions including expired
+		"recurring_subscriptions": recurringSubscriptions,
 	})
+}
+
+func recurringSubscriptionDTOs(bindings []model.SubscriptionProviderBinding) []RecurringSubscriptionDTO {
+	result := make([]RecurringSubscriptionDTO, 0, len(bindings))
+	for _, binding := range bindings {
+		provider := strings.TrimSpace(binding.Provider)
+		complete := provider == model.PaymentProviderStripe && strings.TrimSpace(binding.ProviderSubscriptionId) != ""
+		terminal := isTerminalRecurringProviderStatus(binding.ProviderStatus) || binding.EndedAt > 0
+		result = append(result, RecurringSubscriptionDTO{
+			BindingId:          binding.Id,
+			Provider:           provider,
+			PlanId:             binding.PlanId,
+			ProviderStatus:     binding.ProviderStatus,
+			CancelAtPeriodEnd:  binding.CancelAtPeriodEnd,
+			CurrentPeriodStart: binding.CurrentPeriodStart,
+			CurrentPeriodEnd:   binding.CurrentPeriodEnd,
+			GracePeriodEnd:     binding.GracePeriodEnd,
+			CanCancel:          complete && !terminal && !binding.CancelAtPeriodEnd,
+			CanResume:          complete && !terminal && binding.CancelAtPeriodEnd,
+			RequiresSupport:    !complete,
+		})
+	}
+	return result
+}
+
+func isTerminalRecurringProviderStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "canceled", "incomplete_expired", "unpaid":
+		return true
+	default:
+		return false
+	}
 }
 
 func UpdateSubscriptionPreference(c *gin.Context) {

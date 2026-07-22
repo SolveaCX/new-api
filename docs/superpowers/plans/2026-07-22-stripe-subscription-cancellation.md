@@ -116,25 +116,25 @@ Commit with Lore message:
 - Modify: `i18n/keys.go`, `i18n/locales/en.yaml`, `i18n/locales/zh-CN.yaml`, `i18n/locales/zh-TW.yaml`, `i18n/locales/pt.yaml`
 - Test: `service/stripe_subscription_lifecycle_test.go`, `controller/subscription_stripe_lifecycle_test.go`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add tests for normal cancel, resume, repeated cancel/resume no-op, foreign binding denial, non-Stripe no Stripe call, incomplete binding no Stripe call, terminal resume denial, snapshot mismatch failure, and `past_due` immediate cancel ending local entitlement.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `go test ./service ./controller -run 'TestStripeSubscriptionLifecycle|TestCancelRecurring|TestResumeRecurring' -count=1`
 Expected: FAIL because lifecycle service and routes do not exist.
 
-- [ ] **Step 3: Implement minimal service/controller**
+- [x] **Step 3: Implement minimal service/controller**
 
 Inject Stripe operations behind variables/interfaces for tests. Use deterministic idempotency keys containing binding ID, desired action, and current period end. Return backend capability DTO without real Stripe subscription ID.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: `go test ./service ./controller -run 'TestStripeSubscriptionLifecycle|TestCancelRecurring|TestResumeRecurring' -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit with Lore message:
 `Gate recurring self-service actions on precise Stripe bindings`
