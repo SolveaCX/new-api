@@ -1,10 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"html"
+	htmltemplate "html/template"
 	"net/url"
 	"strings"
 	"time"
@@ -39,6 +41,15 @@ type RecallEmailRenderInput struct {
 	PromotionCodeMasked string
 	ExpiresAt           int64
 	ProductSummary      string
+	ClaimURL            string
+	UnsubscribeURL      string
+}
+
+type recallEmailHTMLRenderData struct {
+	RecipientName       string
+	PromotionCodeMasked string
+	ProductSummary      string
+	ExpiresAt           string
 	ClaimURL            string
 	UnsubscribeURL      string
 }
@@ -607,6 +618,13 @@ func RenderRecallEmail(input RecallEmailRenderInput) (subject string, htmlBody s
 	if strings.ContainsAny(input.Template.Subject, "\r\n") {
 		return "", "", fmt.Errorf("recall email subject must not contain CR or LF")
 	}
+	if strings.TrimSpace(input.Template.BodyHTML) != "" {
+		body, renderErr := renderRecallEmailHTML(input.Template.BodyHTML, input)
+		if renderErr != nil {
+			return "", "", renderErr
+		}
+		return input.Template.Subject, body, nil
+	}
 	paragraphs := make([]string, 0)
 	bodyText := strings.ReplaceAll(input.Template.BodyText, "\r\n", "\n")
 	bodyText = strings.ReplaceAll(bodyText, "\r", "\n")
@@ -628,4 +646,30 @@ func RenderRecallEmail(input RecallEmailRenderInput) (subject string, htmlBody s
 		"<p><a href=\"" + html.EscapeString(input.UnsubscribeURL) + "\">" + copy.UnsubscribeLabel + "</a></p>" +
 		"</body></html>"
 	return input.Template.Subject, htmlBody, nil
+}
+
+func renderRecallEmailHTML(source string, input RecallEmailRenderInput) (string, error) {
+	if _, err := parseRecallEmailHTML(source); err != nil {
+		return "", fmt.Errorf("recall email html: %w", err)
+	}
+	compiled, err := htmltemplate.New("recall_email_html").Option("missingkey=error").Parse(source)
+	if err != nil {
+		return "", fmt.Errorf("parse recall email html template: %w", err)
+	}
+	data := recallEmailHTMLRenderData{
+		RecipientName:       input.RecipientName,
+		PromotionCodeMasked: input.PromotionCodeMasked,
+		ProductSummary:      input.ProductSummary,
+		ExpiresAt:           time.Unix(input.ExpiresAt, 0).UTC().Format("2006-01-02 15:04 UTC"),
+		ClaimURL:            input.ClaimURL,
+		UnsubscribeURL:      input.UnsubscribeURL,
+	}
+	var rendered bytes.Buffer
+	if err := compiled.Execute(&rendered, data); err != nil {
+		return "", fmt.Errorf("render recall email html: %w", err)
+	}
+	if rendered.Len() > recallEmailHTMLMaxBytes {
+		return "", fmt.Errorf("recall email html must contain at most %d bytes", recallEmailHTMLMaxBytes)
+	}
+	return rendered.String(), nil
 }

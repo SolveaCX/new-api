@@ -83,7 +83,7 @@ func requireRecallCampaignCanonicalLanguages(t *testing.T, stages []RecallEmailS
 			template, ok := stage.Templates[language]
 			require.True(t, ok, "missing language %s", language)
 			require.NotEmpty(t, template.Subject)
-			require.NotEmpty(t, template.BodyText)
+			require.True(t, template.BodyText != "" || template.BodyHTML != "", "missing body for language %s", language)
 		}
 	}
 }
@@ -604,7 +604,11 @@ func TestRecallCampaignActivatedTranslatedEmailUpdateIncrementsVersionOnce(t *te
 	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
 	recipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 9001, EligibilitySnapshot: `{}`, EmailSnapshot: "snapshot@example.com", LanguageSnapshot: "fr", State: model.RecallRecipientContacting}
 	require.NoError(t, db.Create(&recipient).Error)
-	message := model.RecallMessage{RecipientId: recipient.Id, StageNo: 1, TemplateVersion: 1, TemplateSnapshot: `{"fr":{"subject":"old snapshot","body_text":"old body"}}`, State: model.RecallMessageScheduled}
+	messageSnapshot, err := common.Marshal(map[string]RecallEmailTemplate{
+		"fr": {Subject: "old snapshot", BodyHTML: validRecallHTML},
+	})
+	require.NoError(t, err)
+	message := model.RecallMessage{RecipientId: recipient.Id, StageNo: 1, TemplateVersion: 1, TemplateSnapshot: string(messageSnapshot), State: model.RecallMessageScheduled}
 	require.NoError(t, db.Create(&message).Error)
 	draft.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "Updated once", BodyText: "Updated body once"}
 
@@ -627,6 +631,16 @@ func TestRecallCampaignActivatedTranslatedEmailUpdateIncrementsVersionOnce(t *te
 	require.Equal(t, 2, translator.callCount(), "same English content must not be translated again")
 	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
 	require.Equal(t, 2, stages[0].TemplateVersion, "name-only edits must not bump template version")
+
+	draft.Name = "Second active template update"
+	draft.Emails[0].Templates["en"] = RecallEmailTemplate{Subject: "Updated twice", BodyText: "Updated body twice"}
+	updated, err = service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+	require.NoError(t, err)
+	require.NoError(t, common.Unmarshal([]byte(updated.EmailSequenceConfig), &stages))
+	require.Equal(t, 3, stages[0].TemplateVersion)
+	require.NoError(t, db.First(&preserved, message.Id).Error)
+	require.Equal(t, message.TemplateSnapshot, preserved.TemplateSnapshot)
+	require.Equal(t, 1, preserved.TemplateVersion)
 }
 
 func TestRecallCampaignConcurrentEmailEditsUseConfigRevisionFenceAfterTranslation(t *testing.T) {
@@ -721,6 +735,58 @@ func TestRecallCampaignSaveDraftRejectsInvalidEnglishTemplateBoundaries(t *testi
 			var count int64
 			require.NoError(t, db.Model(&model.RecallCampaign{}).Count(&count).Error)
 			require.Zero(t, count)
+		})
+	}
+}
+
+func TestNormalizeRecallEmailTemplateRequiresExactlyOneBody(t *testing.T) {
+	tests := []struct {
+		name     string
+		template RecallEmailTemplate
+		wantErr  string
+	}{
+		{
+			name:     "accepts text body",
+			template: RecallEmailTemplate{Subject: "Return", BodyText: "Plain offer body"},
+		},
+		{
+			name:     "accepts html body",
+			template: RecallEmailTemplate{Subject: "Return", BodyHTML: validRecallHTML},
+		},
+		{
+			name:     "rejects neither body",
+			template: RecallEmailTemplate{Subject: "Return"},
+			wantErr:  "requires exactly one of body_text or body_html",
+		},
+		{
+			name:     "rejects both bodies",
+			template: RecallEmailTemplate{Subject: "Return", BodyText: "Plain offer body", BodyHTML: validRecallHTML},
+			wantErr:  "requires exactly one of body_text or body_html",
+		},
+		{
+			name:     "rejects invalid html",
+			template: RecallEmailTemplate{Subject: "Return", BodyHTML: `<html><body><p>No required links</p></body></html>`},
+			wantErr:  `stage 2 language "en" body_html`,
+		},
+		{
+			name:     "text body keeps rune limit",
+			template: RecallEmailTemplate{Subject: "Return", BodyText: strings.Repeat("界", recallEmailBodyMaxRunes+1)},
+			wantErr:  "body must contain at most",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := normalizeRecallEmailTemplate(2, "en", testCase.template)
+
+			if testCase.wantErr == "" {
+				require.NoError(t, err)
+				require.Equal(t, strings.TrimSpace(testCase.template.Subject), got.Subject)
+				require.Equal(t, strings.TrimSpace(testCase.template.BodyText), got.BodyText)
+				require.Equal(t, strings.TrimSpace(testCase.template.BodyHTML), got.BodyHTML)
+				return
+			}
+			require.ErrorContains(t, err, testCase.wantErr)
 		})
 	}
 }
