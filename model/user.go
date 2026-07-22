@@ -278,6 +278,75 @@ func GetRecallCandidates(minCalls int, maxQuota int, limit int) ([]*User, error)
 	return users, err
 }
 
+type RecallAudienceUserLookup struct {
+	Keyword  string
+	PageSize int
+	IDs      []int
+}
+
+func ListRecallAudienceUserOptionsWithContext(ctx context.Context, lookup RecallAudienceUserLookup) ([]*User, error) {
+	keyword := strings.TrimSpace(lookup.Keyword)
+	ids, err := normalizeRecallAudienceUserIDs(lookup.IDs)
+	if err != nil {
+		return nil, err
+	}
+	if keyword == "" && len(ids) == 0 {
+		return []*User{}, nil
+	}
+	if keyword != "" && len(ids) > 0 {
+		return nil, errors.New("recall audience user lookup requires exactly one mode")
+	}
+
+	query := DB.WithContext(ctx).Model(&User{}).Select("id", "username", "display_name", "email", "status")
+	if len(ids) > 0 {
+		var users []*User
+		err = query.Where("id IN ?", ids).Order("id ASC").Find(&users).Error
+		return users, err
+	}
+
+	pageSize := lookup.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 50 {
+		pageSize = 50
+	}
+	pattern := recallAudienceUserLikePattern(keyword)
+	var users []*User
+	err = query.
+		Where("(username LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!')", pattern, pattern, pattern).
+		Order("id ASC").
+		Limit(pageSize).
+		Find(&users).Error
+	return users, err
+}
+
+func normalizeRecallAudienceUserIDs(ids []int) ([]int, error) {
+	if len(ids) > 500 {
+		return nil, errors.New("recall audience user lookup supports at most 500 ids")
+	}
+	seen := make(map[int]struct{}, len(ids))
+	deduped := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return nil, errors.New("recall audience user lookup ids must be positive")
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		deduped = append(deduped, id)
+	}
+	return deduped, nil
+}
+
+func recallAudienceUserLikePattern(keyword string) string {
+	escaped := strings.ReplaceAll(keyword, "!", "!!")
+	escaped = strings.ReplaceAll(escaped, "%", "!%")
+	escaped = strings.ReplaceAll(escaped, "_", "!_")
+	return "%" + escaped + "%"
+}
+
 func SearchUsers(keyword string, group string, role *int, status *int, language string, startIdx int, num int) ([]*User, int64, error) {
 	var users []*User
 	var total int64

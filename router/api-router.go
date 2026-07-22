@@ -187,6 +187,7 @@ func SetApiRouter(router *gin.Engine) {
 			recallCampaignRoute.POST("/", controller.CreateRecallCampaign)
 			recallCampaignRoute.POST("/stripe/validate", controller.ValidateRecallStripeConfig)
 			recallCampaignRoute.POST("/email-preview", controller.PreviewRecallEmailTemplate)
+			recallCampaignRoute.GET("/audience-users", controller.ListRecallAudienceUsers)
 			recallCampaignRoute.GET("/:id", controller.GetRecallCampaign)
 			recallCampaignRoute.PUT("/:id", controller.UpdateRecallCampaign)
 			recallCampaignRoute.POST("/:id/preview", controller.PreviewRecallCampaign)
