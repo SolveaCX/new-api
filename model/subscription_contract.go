@@ -8,32 +8,39 @@ import (
 )
 
 const (
-	SubscriptionContractStatusActive   = "active"
-	SubscriptionContractStatusPastDue  = "past_due"
-	SubscriptionContractStatusCanceled = "canceled"
-	SubscriptionContractStatusExpired  = "expired"
+	SubscriptionContractStatusActive         = "active"
+	SubscriptionContractStatusGrace          = "grace"
+	SubscriptionContractStatusEnded          = "ended"
+	SubscriptionContractStatusNeedsAttention = "needs_attention"
 
-	SubscriptionPaymentModeOneTime   = "one_time"
-	SubscriptionPaymentModeRecurring = "recurring"
+	SubscriptionPaymentModeStripeRecurring   = "stripe_recurring"
+	SubscriptionPaymentModeBalanceOnePeriod  = "balance_one_period"
+	SubscriptionPaymentModeExternalOnePeriod = "external_one_period"
 
-	SubscriptionChangeIntentKindCreate    = "create"
+	SubscriptionChangeIntentKindPurchase  = "purchase"
 	SubscriptionChangeIntentKindUpgrade   = "upgrade"
 	SubscriptionChangeIntentKindDowngrade = "downgrade"
 	SubscriptionChangeIntentKindCancel    = "cancel"
+	SubscriptionChangeIntentKindResume    = "resume"
+	SubscriptionChangeIntentKindTerminate = "terminate"
 
-	SubscriptionChangeIntentStatusPending    = "pending"
-	SubscriptionChangeIntentStatusProcessing = "processing"
-	SubscriptionChangeIntentStatusSucceeded  = "succeeded"
-	SubscriptionChangeIntentStatusFailed     = "failed"
-	SubscriptionChangeIntentStatusSuperseded = "superseded"
+	SubscriptionChangeIntentStatusCreated              = "created"
+	SubscriptionChangeIntentStatusSyncing              = "syncing"
+	SubscriptionChangeIntentStatusAwaitingPayment      = "awaiting_payment"
+	SubscriptionChangeIntentStatusScheduled            = "scheduled"
+	SubscriptionChangeIntentStatusApplied              = "applied"
+	SubscriptionChangeIntentStatusFailed               = "failed"
+	SubscriptionChangeIntentStatusExpired              = "expired"
+	SubscriptionChangeIntentStatusSuperseded           = "superseded"
+	SubscriptionChangeIntentStatusCompensationRequired = "compensation_required"
 )
 
 type UserSubscriptionContract struct {
 	Id int64 `json:"id"`
 
 	UserId      int    `json:"user_id" gorm:"not null;uniqueIndex"`
-	Status      string `json:"status" gorm:"type:varchar(32);not null;default:'active';index"`
-	PaymentMode string `json:"payment_mode" gorm:"type:varchar(32);not null;default:'one_time';index"`
+	Status      string `json:"status" gorm:"type:varchar(32);not null;default:'ended';index"`
+	PaymentMode string `json:"payment_mode" gorm:"type:varchar(32);not null;default:'external_one_period';index"`
 
 	CurrentPlanId            int    `json:"current_plan_id" gorm:"default:0;index"`
 	CurrentEntitlementId     int    `json:"current_entitlement_id" gorm:"default:0;index"`
@@ -43,7 +50,7 @@ type UserSubscriptionContract struct {
 	PendingEffectiveAt       int64  `json:"pending_effective_at" gorm:"type:bigint;default:0;index"`
 	CurrentPeriodStart       int64  `json:"current_period_start" gorm:"type:bigint;default:0"`
 	CurrentPeriodEnd         int64  `json:"current_period_end" gorm:"type:bigint;default:0;index"`
-	GraceEndsAt              int64  `json:"grace_ends_at" gorm:"type:bigint;default:0"`
+	GracePeriodEnd           int64  `json:"grace_period_end" gorm:"type:bigint;default:0"`
 	ChangeVersion            int64  `json:"change_version" gorm:"type:bigint;not null;default:0"`
 	BaseUserGroup            string `json:"base_user_group" gorm:"type:varchar(64);default:''"`
 
@@ -78,8 +85,8 @@ type SubscriptionChangeIntent struct {
 
 	ChangeVersion int64  `json:"change_version" gorm:"type:bigint;not null;default:0"`
 	Kind          string `json:"kind" gorm:"type:varchar(32);not null;index"`
-	PaymentMode   string `json:"payment_mode" gorm:"type:varchar(32);not null;default:'one_time';index"`
-	Status        string `json:"status" gorm:"type:varchar(32);not null;default:'pending';index"`
+	PaymentMode   string `json:"payment_mode" gorm:"type:varchar(32);not null;default:'external_one_period';index"`
+	Status        string `json:"status" gorm:"type:varchar(32);not null;default:'created';index"`
 
 	FromPlanId        int   `json:"from_plan_id" gorm:"default:0;index"`
 	ToPlanId          int   `json:"to_plan_id" gorm:"default:0;index"`
@@ -115,7 +122,7 @@ func (i *SubscriptionChangeIntent) BeforeUpdate(tx *gorm.DB) error {
 
 func (i *SubscriptionChangeIntent) normalize() {
 	i.RequestId = strings.TrimSpace(i.RequestId)
-	i.Kind = strings.TrimSpace(i.Kind)
+	i.Kind = normalizeSubscriptionChangeIntentKind(i.Kind)
 	i.PaymentMode = normalizeSubscriptionPaymentMode(i.PaymentMode)
 	i.Status = normalizeSubscriptionChangeIntentStatus(i.Status)
 	i.ProviderInvoiceId = strings.TrimSpace(i.ProviderInvoiceId)
@@ -149,27 +156,36 @@ func (r *SubscriptionTierRankReservation) BeforeUpdate(tx *gorm.DB) error {
 
 func normalizeSubscriptionContractStatus(status string) string {
 	switch strings.TrimSpace(status) {
-	case SubscriptionContractStatusPastDue, SubscriptionContractStatusCanceled, SubscriptionContractStatusExpired:
+	case SubscriptionContractStatusActive, SubscriptionContractStatusGrace, SubscriptionContractStatusNeedsAttention:
 		return strings.TrimSpace(status)
 	default:
-		return SubscriptionContractStatusActive
+		return SubscriptionContractStatusEnded
 	}
 }
 
 func normalizeSubscriptionPaymentMode(mode string) string {
 	switch strings.TrimSpace(mode) {
-	case SubscriptionPaymentModeRecurring:
-		return SubscriptionPaymentModeRecurring
+	case SubscriptionPaymentModeStripeRecurring, SubscriptionPaymentModeBalanceOnePeriod:
+		return strings.TrimSpace(mode)
 	default:
-		return SubscriptionPaymentModeOneTime
+		return SubscriptionPaymentModeExternalOnePeriod
+	}
+}
+
+func normalizeSubscriptionChangeIntentKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case SubscriptionChangeIntentKindUpgrade, SubscriptionChangeIntentKindDowngrade, SubscriptionChangeIntentKindCancel, SubscriptionChangeIntentKindResume, SubscriptionChangeIntentKindTerminate:
+		return strings.TrimSpace(kind)
+	default:
+		return SubscriptionChangeIntentKindPurchase
 	}
 }
 
 func normalizeSubscriptionChangeIntentStatus(status string) string {
 	switch strings.TrimSpace(status) {
-	case SubscriptionChangeIntentStatusProcessing, SubscriptionChangeIntentStatusSucceeded, SubscriptionChangeIntentStatusFailed, SubscriptionChangeIntentStatusSuperseded:
+	case SubscriptionChangeIntentStatusSyncing, SubscriptionChangeIntentStatusAwaitingPayment, SubscriptionChangeIntentStatusScheduled, SubscriptionChangeIntentStatusApplied, SubscriptionChangeIntentStatusFailed, SubscriptionChangeIntentStatusExpired, SubscriptionChangeIntentStatusSuperseded, SubscriptionChangeIntentStatusCompensationRequired:
 		return strings.TrimSpace(status)
 	default:
-		return SubscriptionChangeIntentStatusPending
+		return SubscriptionChangeIntentStatusCreated
 	}
 }

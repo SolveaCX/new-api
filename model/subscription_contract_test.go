@@ -14,6 +14,7 @@ func TestSubscriptionContractMigrationCreatesLifecycleTablesAndColumns(t *testin
 	require.True(t, DB.Migrator().HasTable(&UserSubscriptionContract{}))
 	require.True(t, DB.Migrator().HasTable(&SubscriptionChangeIntent{}))
 	require.True(t, DB.Migrator().HasTable(&SubscriptionTierRankReservation{}))
+	require.True(t, DB.Migrator().HasColumn(&UserSubscriptionContract{}, "grace_period_end"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "contract_id"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "grant_key"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "current_slot"))
@@ -31,16 +32,115 @@ func TestSubscriptionContractAllowsOnlyOneContractPerUser(t *testing.T) {
 	require.NoError(t, DB.Create(&UserSubscriptionContract{
 		UserId:      7001,
 		Status:      SubscriptionContractStatusActive,
-		PaymentMode: SubscriptionPaymentModeRecurring,
+		PaymentMode: SubscriptionPaymentModeStripeRecurring,
 	}).Error)
 
 	err := DB.Create(&UserSubscriptionContract{
 		UserId:      7001,
 		Status:      SubscriptionContractStatusActive,
-		PaymentMode: SubscriptionPaymentModeRecurring,
+		PaymentMode: SubscriptionPaymentModeStripeRecurring,
 	}).Error
 
 	require.Error(t, err)
+}
+
+func TestSubscriptionContractEnumValuesRoundTripAndDefaults(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionContractTestDB(t)
+
+	contractStatuses := []string{
+		SubscriptionContractStatusActive,
+		SubscriptionContractStatusGrace,
+		SubscriptionContractStatusEnded,
+		SubscriptionContractStatusNeedsAttention,
+	}
+	paymentModes := []string{
+		SubscriptionPaymentModeStripeRecurring,
+		SubscriptionPaymentModeBalanceOnePeriod,
+		SubscriptionPaymentModeExternalOnePeriod,
+	}
+
+	for i, status := range contractStatuses {
+		for j, paymentMode := range paymentModes {
+			contract := &UserSubscriptionContract{
+				UserId:      8000 + i*10 + j,
+				Status:      status,
+				PaymentMode: paymentMode,
+			}
+			require.NoError(t, DB.Create(contract).Error)
+
+			var stored UserSubscriptionContract
+			require.NoError(t, DB.First(&stored, "id = ?", contract.Id).Error)
+			require.Equal(t, status, stored.Status)
+			require.Equal(t, paymentMode, stored.PaymentMode)
+		}
+	}
+
+	defaultContract := &UserSubscriptionContract{UserId: 8099}
+	require.NoError(t, DB.Create(defaultContract).Error)
+
+	var storedDefault UserSubscriptionContract
+	require.NoError(t, DB.First(&storedDefault, "id = ?", defaultContract.Id).Error)
+	require.Equal(t, SubscriptionContractStatusEnded, storedDefault.Status)
+	require.Equal(t, SubscriptionPaymentModeExternalOnePeriod, storedDefault.PaymentMode)
+}
+
+func TestSubscriptionChangeIntentEnumValuesRoundTripAndDefaults(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionContractTestDB(t)
+
+	intentKinds := []string{
+		SubscriptionChangeIntentKindPurchase,
+		SubscriptionChangeIntentKindUpgrade,
+		SubscriptionChangeIntentKindDowngrade,
+		SubscriptionChangeIntentKindCancel,
+		SubscriptionChangeIntentKindResume,
+		SubscriptionChangeIntentKindTerminate,
+	}
+	intentStatuses := []string{
+		SubscriptionChangeIntentStatusCreated,
+		SubscriptionChangeIntentStatusSyncing,
+		SubscriptionChangeIntentStatusAwaitingPayment,
+		SubscriptionChangeIntentStatusScheduled,
+		SubscriptionChangeIntentStatusApplied,
+		SubscriptionChangeIntentStatusFailed,
+		SubscriptionChangeIntentStatusExpired,
+		SubscriptionChangeIntentStatusSuperseded,
+		SubscriptionChangeIntentStatusCompensationRequired,
+	}
+
+	for i, kind := range intentKinds {
+		for j, status := range intentStatuses {
+			intent := &SubscriptionChangeIntent{
+				ContractId:  9001,
+				UserId:      8100 + i,
+				RequestId:   "intent-round-trip",
+				Kind:        kind,
+				PaymentMode: SubscriptionPaymentModeBalanceOnePeriod,
+				Status:      status,
+			}
+			intent.RequestId = intent.RequestId + "-" + kind + "-" + status + "-" + string(rune('a'+j))
+			require.NoError(t, DB.Create(intent).Error)
+
+			var stored SubscriptionChangeIntent
+			require.NoError(t, DB.First(&stored, "id = ?", intent.Id).Error)
+			require.Equal(t, kind, stored.Kind)
+			require.Equal(t, SubscriptionPaymentModeBalanceOnePeriod, stored.PaymentMode)
+			require.Equal(t, status, stored.Status)
+		}
+	}
+
+	defaultIntent := &SubscriptionChangeIntent{
+		ContractId: 9002,
+		UserId:     8199,
+		RequestId:  "intent-defaults",
+	}
+	require.NoError(t, DB.Create(defaultIntent).Error)
+
+	var storedDefault SubscriptionChangeIntent
+	require.NoError(t, DB.First(&storedDefault, "id = ?", defaultIntent.Id).Error)
+	require.Equal(t, SubscriptionChangeIntentStatusCreated, storedDefault.Status)
+	require.Equal(t, SubscriptionPaymentModeExternalOnePeriod, storedDefault.PaymentMode)
 }
 
 func TestOnlyOneCurrentEntitlementPerContract(t *testing.T) {
