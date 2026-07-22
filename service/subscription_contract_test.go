@@ -163,6 +163,25 @@ func TestSameRequestIDReturnsSameIntent(t *testing.T) {
 	require.Equal(t, int64(1), orderCount)
 }
 
+func TestSameRequestIDIgnoresChangedPlanOnRetry(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7106, 1000)
+	insertContractServicePlan(t, 7209, 1, 1.5, 1500)
+
+	first, err := ChangeSubscriptionPlan(balanceChangeCommand(7106, 7209, "retry-before-plan-validation"))
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", 7209).Update("enabled", false).Error)
+
+	retry := balanceChangeCommand(7106, 999999, "retry-before-plan-validation")
+	retry.PaymentMode = "unsupported_mode"
+	second, err := ChangeSubscriptionPlan(retry)
+
+	require.NoError(t, err)
+	require.Equal(t, first.Intent.Id, second.Intent.Id)
+	require.Equal(t, ChangePlanStatusApplied, second.Status)
+	require.Equal(t, 7209, second.Intent.ToPlanId)
+}
+
 func TestUserPurchasesAreSerializedThroughOneContract(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7103, 2000)
@@ -199,6 +218,32 @@ func TestSameRankOrSamePlanIsRejected(t *testing.T) {
 
 	_, err = ChangeSubscriptionPlan(balanceChangeCommand(7104, 7206, "same-rank"))
 	require.ErrorIs(t, err, ErrSubscriptionPlanUnchanged)
+}
+
+func TestBalanceDowngradeDoesNotApplyImmediately(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7107, 3000)
+	insertContractServicePlan(t, 7210, 1, 1, 1000)
+	insertContractServicePlan(t, 7211, 3, 2, 2000)
+
+	current, err := ChangeSubscriptionPlan(balanceChangeCommand(7107, 7211, "start-high-rank"))
+	require.NoError(t, err)
+	var beforeUser model.User
+	require.NoError(t, model.DB.First(&beforeUser, "id = ?", 7107).Error)
+
+	_, err = ChangeSubscriptionPlan(balanceChangeCommand(7107, 7210, "downgrade-low-rank"))
+
+	require.ErrorIs(t, err, ErrSubscriptionDowngradeDeferred)
+	var afterUser model.User
+	require.NoError(t, model.DB.First(&afterUser, "id = ?", 7107).Error)
+	require.Equal(t, beforeUser.Quota, afterUser.Quota)
+	var contract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&contract, "id = ?", current.Contract.Id).Error)
+	require.Equal(t, 7211, contract.CurrentPlanId)
+	require.Equal(t, current.Contract.CurrentEntitlementId, contract.CurrentEntitlementId)
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 7107).Count(&orderCount).Error)
+	require.Equal(t, int64(1), orderCount)
 }
 
 func TestUnresolvedPurchaseBlocksSecondChange(t *testing.T) {

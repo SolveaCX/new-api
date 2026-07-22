@@ -21,8 +21,9 @@ const (
 )
 
 var (
-	ErrSubscriptionChangeInProgress = errors.New("subscription change in progress")
-	ErrSubscriptionPlanUnchanged    = errors.New("subscription plan unchanged")
+	ErrSubscriptionChangeInProgress  = errors.New("subscription change in progress")
+	ErrSubscriptionPlanUnchanged     = errors.New("subscription plan unchanged")
+	ErrSubscriptionDowngradeDeferred = errors.New("subscription downgrade scheduling is not implemented")
 )
 
 type ChangePlanCommand struct {
@@ -48,14 +49,6 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 
 	var result *ChangePlanResult
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		plan, err := loadEnabledSubscriptionPlanTx(tx, cmd.PlanID)
-		if err != nil {
-			return err
-		}
-		if cmd.PaymentMode == model.SubscriptionPaymentModeBalanceOnePeriod && plan.AllowBalancePay != nil && !*plan.AllowBalancePay {
-			return errors.New("subscription plan does not allow balance payment")
-		}
-
 		var user model.User
 		if err := subscriptionCommandLock(tx).Where("id = ?", cmd.UserID).First(&user).Error; err != nil {
 			return err
@@ -73,8 +66,20 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			return nil
 		}
 
+		if err := validateChangePaymentMode(cmd.PaymentMode); err != nil {
+			return err
+		}
+
 		if err := rejectUnresolvedPlanChangeTx(tx, cmd.UserID); err != nil {
 			return err
+		}
+
+		plan, err := loadEnabledSubscriptionPlanTx(tx, cmd.PlanID)
+		if err != nil {
+			return err
+		}
+		if cmd.PaymentMode == model.SubscriptionPaymentModeBalanceOnePeriod && plan.AllowBalancePay != nil && !*plan.AllowBalancePay {
+			return errors.New("subscription plan does not allow balance payment")
 		}
 
 		kind, err := classifyPlanChangeTx(tx, contract, plan)
@@ -105,6 +110,9 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 
 		switch cmd.PaymentMode {
 		case model.SubscriptionPaymentModeBalanceOnePeriod:
+			if kind == model.SubscriptionChangeIntentKindDowngrade {
+				return ErrSubscriptionDowngradeDeferred
+			}
 			if err := applyBalanceOnePeriodChangeTx(tx, &user, contract, intent, plan); err != nil {
 				return err
 			}
@@ -153,7 +161,11 @@ func (cmd ChangePlanCommand) validate() error {
 	if cmd.RequestID == "" {
 		return errors.New("request_id is required")
 	}
-	switch cmd.PaymentMode {
+	return nil
+}
+
+func validateChangePaymentMode(paymentMode string) error {
+	switch paymentMode {
 	case model.SubscriptionPaymentModeBalanceOnePeriod, model.SubscriptionPaymentModeStripeRecurring:
 		return nil
 	default:
