@@ -5572,6 +5572,22 @@
     "Anthropic Compatible": "Совместимо с Anthropic",
     "Gemini Compatible": "Совместимо с Gemini",
     "This model cannot be called because upstreams no longer support it.": "Эту модель нельзя вызвать, поскольку вышестоящие поставщики больше её не поддерживают.",
-    "Not callable · Officially unsupported": "Вызов недоступен · Официальная поддержка прекращена"
+    "Not callable · Officially unsupported": "Вызов недоступен · Официальная поддержка прекращена",
+    "Label": "Метка",
+    "GPU": "GPU",
+    "Cost per hour": "Стоимость в час",
+    "Model served": "Обслуживаемая модель",
+    "Provisioning": "Развёртывание",
+    "Stopped": "Остановлено",
+    "Total nodes": "Всего узлов",
+    "Est. cost per day": "Оценочная стоимость в день",
+    "No compute nodes yet": "Пока нет вычислительных узлов",
+    "Stop compute node?": "Остановить вычислительный узел?",
+    "This will stop the compute node": "Это остановит вычислительный узел",
+    ". It will stop serving traffic.": ". Он перестанет обслуживать трафик.",
+    "Stopping...": "Остановка...",
+    "Failed to load compute nodes": "Не удалось загрузить вычислительные узлы",
+    "Failed to stop compute node": "Не удалось остановить вычислительный узел",
+    "Compute node stopped": "Вычислительный узел остановлен"
   }
 }

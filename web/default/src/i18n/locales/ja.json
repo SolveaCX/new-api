@@ -5572,6 +5572,22 @@
     "Anthropic Compatible": "Anthropic互換",
     "Gemini Compatible": "Gemini互換",
     "This model cannot be called because upstreams no longer support it.": "このモデルは上流でサポート終了のため呼び出せません。",
-    "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了"
+    "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了",
+    "Label": "ラベル",
+    "GPU": "GPU",
+    "Cost per hour": "1時間あたりのコスト",
+    "Model served": "提供モデル",
+    "Provisioning": "プロビジョニング中",
+    "Stopped": "停止済み",
+    "Total nodes": "ノード総数",
+    "Est. cost per day": "1日あたりの推定コスト",
+    "No compute nodes yet": "コンピュートノードはまだありません",
+    "Stop compute node?": "コンピュートノードを停止しますか？",
+    "This will stop the compute node": "コンピュートノードを停止します",
+    ". It will stop serving traffic.": "。トラフィックの処理を停止します。",
+    "Stopping...": "停止中...",
+    "Failed to load compute nodes": "コンピュートノードの読み込みに失敗しました",
+    "Failed to stop compute node": "コンピュートノードの停止に失敗しました",
+    "Compute node stopped": "コンピュートノードを停止しました"
   }
 }
