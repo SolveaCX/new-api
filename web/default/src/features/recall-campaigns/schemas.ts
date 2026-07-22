@@ -8,6 +8,18 @@ const number = z.number()
 const currencySchema = z.string().regex(/^[A-Z]{3}$/)
 const specifiedEmailSchema = z.string().regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)
 
+function normalizeSpecifiedEmails(emails: string[]): string[] {
+  const normalizedEmails: string[] = []
+  const seen = new Set<string>()
+  for (const email of emails) {
+    const normalized = email.trim().toLowerCase()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    normalizedEmails.push(normalized)
+  }
+  return normalizedEmails
+}
+
 function isIanaTimezone(value: string): boolean {
   if (value === '' || value === 'Local') return false
   try {
@@ -39,6 +51,10 @@ const audienceSchema = z
     specified_emails: z.array(z.string()).default([]),
   })
   .strict()
+  .transform((audience) => ({
+    ...audience,
+    specified_emails: normalizeSpecifiedEmails(audience.specified_emails),
+  }))
 
 const legacyAudienceThresholds = [
   ['registration_age_days', nonNegativeInteger],
@@ -151,11 +167,7 @@ function validateSpecifiedUsersAudience(
 
   const emails = new Set<string>()
   for (const email of audience.specified_emails) {
-    const normalized = email.trim().toLowerCase()
-    if (
-      email !== normalized ||
-      !specifiedEmailSchema.safeParse(email).success
-    ) {
+    if (!specifiedEmailSchema.safeParse(email).success) {
       context.addIssue({
         code: 'custom',
         path: ['audience_config', 'specified_emails'],
@@ -163,7 +175,7 @@ function validateSpecifiedUsersAudience(
       })
       break
     }
-    emails.add(normalized)
+    emails.add(email)
   }
 
   if (userIds.size + emails.size === 0) {
@@ -549,4 +561,4 @@ export const recallCampaignDraftSchema = z
         })
       }
     }
-  })
+  }) as unknown as z.ZodType<RecallCampaignDraft, RecallCampaignDraft>

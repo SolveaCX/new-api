@@ -54,6 +54,12 @@ describe('recall audience input helpers', () => {
     expect(recallUnixToLocalDateTime(timestamp)).toBe('2030-01-02T03:04')
   })
 
+  test('rejects non-exact and calendar-normalized local datetime values', () => {
+    expect(recallLocalDateTimeToUnix('2030-01-02T03:04:05')).toBe(0)
+    expect(recallLocalDateTimeToUnix('2030-01-02 03:04')).toBe(0)
+    expect(recallLocalDateTimeToUnix('2026-02-30T10:00')).toBe(0)
+  })
+
   test('merges selected users before search options and dedupes by id', () => {
     const selected = [
       makeUser(2, { display_name: 'Selected Two' }),

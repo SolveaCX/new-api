@@ -2,7 +2,8 @@ export type RecallAudienceTemplate =
   | 'first_purchase'
   | 'lapsed_payer'
   | 'expired_subscription'
-  | (string & {})
+  | 'registered_only'
+  | 'specified_users'
 
 export type RecallExecutionMode = 'manual' | 'scheduled_once' | 'recurring'
 export type RecallCouponSource = 'automatic' | 'existing'
@@ -25,10 +26,10 @@ export interface RecallAudienceConfig {
   groups: string[]
   group_mode: RecallGroupMode
   require_verified_email: boolean
-  registration_start_at?: number
-  registration_end_at?: number
-  specified_user_ids?: number[]
-  specified_emails?: string[]
+  registration_start_at: number
+  registration_end_at: number
+  specified_user_ids: number[]
+  specified_emails: string[]
 }
 
 export interface RecallAudienceUserOption {

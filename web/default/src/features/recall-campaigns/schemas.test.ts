@@ -223,6 +223,25 @@ describe('recallCampaignDraftSchema', () => {
     }
   })
 
+  test('dedupes specified_users recipients before enforcing the 500 limit', () => {
+    const draft = makeDraft()
+    draft.audience_template = 'specified_users'
+    draft.audience_config.specified_emails = Array.from(
+      { length: 501 },
+      (_, index) =>
+        index % 2 === 0 ? 'Duplicate@Example.com' : 'duplicate@example.com'
+    )
+
+    const result = recallCampaignDraftSchema.safeParse(draft)
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.audience_config.specified_emails).toEqual([
+        'duplicate@example.com',
+      ])
+    }
+  })
+
   test('does not validate hidden template-specific fields for other audiences', () => {
     const firstPurchase = makeDraft()
     firstPurchase.audience_config.registration_start_at = 200
