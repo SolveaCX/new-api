@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	htmltemplate "html/template"
+	"io"
 	"net/url"
 	"strings"
 	texttemplate "text/template"
@@ -40,6 +41,9 @@ func parseRecallEmailHTML(source string) (*recallEmailHTMLDocument, error) {
 		return nil, fmt.Errorf("recall email html must contain at most %d bytes", recallEmailHTMLMaxBytes)
 	}
 	if err := validateRecallEmailTemplateActions(source); err != nil {
+		return nil, err
+	}
+	if err := validateRecallEmailHTMLRawTokens(source); err != nil {
 		return nil, err
 	}
 	root, err := html.Parse(strings.NewReader(source))
@@ -159,7 +163,7 @@ func walkRecallEmailHTML(node *html.Node, inHead bool, inStyle bool, document *r
 			}
 		}
 	}
-	if node.Type == html.TextNode || node.Type == html.CommentNode {
+	if node.Type != html.ElementNode && node.Data != "" {
 		actions, err := recallEmailHTMLURLActionsInTemplate(node.Data)
 		if err != nil {
 			return err
@@ -177,6 +181,28 @@ func walkRecallEmailHTML(node *html.Node, inHead bool, inStyle bool, document *r
 		}
 	}
 	return nil
+}
+
+func validateRecallEmailHTMLRawTokens(source string) error {
+	tokenizer := html.NewTokenizer(strings.NewReader(source))
+	for {
+		tokenType := tokenizer.Next()
+		switch tokenType {
+		case html.ErrorToken:
+			if err := tokenizer.Err(); err != nil && err != io.EOF {
+				return fmt.Errorf("tokenize recall email html: %w", err)
+			}
+			return nil
+		case html.DoctypeToken:
+			actions, err := recallEmailHTMLURLActionsInTemplate(string(tokenizer.Raw()))
+			if err != nil {
+				return err
+			}
+			if actions.claim || actions.unsubscribe {
+				return actions.err()
+			}
+		}
+	}
 }
 
 type recallEmailHTMLURLActions struct {
