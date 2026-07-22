@@ -24,7 +24,7 @@ for (const file of files) {
   const viewports = [...html.matchAll(/<meta\s+name="viewport"\s+content="([^"]+)"/gi)];
   if (viewports.length !== 1) fail(file, `expected one viewport meta, found ${viewports.length}`);
   else if (!viewports[0][1].includes("width=device-width")) fail(file, `non-responsive viewport: ${viewports[0][1]}`);
-  if (!/fk2\.css\?v=722c/.test(html)) fail(file, "missing the current shared CSS cache version");
+  if (!/fk2\.css\?v=723a/.test(html)) fail(file, "missing the current shared CSS cache version");
   if (/\bid=""/.test(html)) fail(file, "contains an empty id");
   if (/<script\b[^>]*\bsrc=""/i.test(html)) fail(file, "contains an empty script src");
   if (/href="(?:#|javascript:[^"]*)"/i.test(html)) fail(file, "contains a placeholder or javascript link");
@@ -190,7 +190,7 @@ if (!nginxConfig.includes("sub_filter 'lang=\"en\"' 'lang=\"en-US\"';")) fail("n
 const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
 if (/\.megafoot\.slim\b/.test(sharedCss)) fail("fk2.css", "contains obsolete slim-footer styles");
 for (const visualSignature of [
-  "--home-acid:#DFFF47",
+  "--home-acid:#D9EF6E",
   "body:has(> header.hero)>.nav",
   "body:has(> header.hero)>header.hero",
   "body:has(> header.hero) .hero .board",

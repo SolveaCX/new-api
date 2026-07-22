@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=3">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/fk2.css?v=722c"><style>
+<link rel="stylesheet" href="/fk2.css?v=723a"><style>
 /* ---------- hero ---------- */
 .hero{background:linear-gradient(180deg,#FFFFFF 0%,#F7F5FD 100%);border-bottom:1px solid var(--line)}
 .heroGrid{max-width:1240px;margin:0 auto;padding:56px 40px 52px;display:grid;grid-template-columns:minmax(0,1fr) 560px;gap:48px;align-items:start}
@@ -25,6 +25,7 @@
 .board h4{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--ink3);display:flex;justify-content:space-between;font-weight:600;padding:14px 24px 10px}
 .board h4 .g{color:var(--green)}
 .brow{display:flex;align-items:baseline;gap:14px;padding:15px 24px;border-bottom:1px solid var(--line2)}
+.brow img.plogo{width:18px;height:18px;flex:none;align-self:center;object-fit:contain}
 .brow:last-of-type{border:none}
 .brow b{font-size:16px;font-weight:700;letter-spacing:-.3px;white-space:nowrap}
 .brow .prov{font-family:var(--mono);font-size:11px;color:var(--ink3)}
@@ -121,7 +122,7 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
 .kcap{position:relative;text-align:center;font-size:12px;color:var(--ink3);margin-top:12px;font-family:var(--mono)}
 .kcats{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
 .kcat{background:#fff;border:1px solid #E9E7F2;border-radius:14px;padding:12px 14px;box-shadow:0 10px 24px -18px rgba(30,27,75,.35)}
-.kcat b{display:block;font-size:13.5px;font-weight:750;letter-spacing:-.2px;margin-bottom:4px}
+.kcat b{display:block;color:var(--ink);font-size:13.5px;font-weight:750;letter-spacing:-.2px;margin-bottom:4px}
 .kcat span{font-family:var(--mono);font-size:10.5px;color:var(--ink3);line-height:1.5;display:block}
 .klink{position:relative;display:block;text-align:center;margin-top:14px;font-weight:700;font-size:13.5px;color:var(--violet-deep);text-decoration:none}
 .hnav{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink2);font-size:16px;user-select:none;box-shadow:0 6px 18px rgba(46,16,101,.14);z-index:5}
@@ -142,6 +143,23 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
   .kcat{padding:10px 12px}
   .hprev{left:8px}.hnext{right:8px}
 }
+
+#trust{color:var(--ink);background:linear-gradient(180deg,#FBFAFE 0%,#F2EEFB 100%)}
+#trust .shade{background:linear-gradient(90deg,rgba(251,250,254,.94) 0%,rgba(251,250,254,.55) 48%,rgba(251,250,254,.08) 100%)}
+#trust .kick{color:var(--violet-deep)}
+#trust h2.big{color:var(--ink)}
+#trust h2.big em{color:var(--violet-deep)}
+#trust .d{color:var(--ink2)}
+#trust .d a{color:var(--violet-deep)!important}
+#trust .radar{background:radial-gradient(circle,#EAE3FA 0%,#F6F3FD 45%,transparent 70%)}
+#trust .radar i{border-color:#7C3AED30}
+#trust .sweep{background:conic-gradient(from 0deg,#8B5CF636,transparent 70deg)}
+#trust .blip{background:#7C3AED;box-shadow:0 0 12px #8B5CF680}
+#trust .rows>div{border-bottom:1px solid rgba(20,16,31,.10);color:var(--ink2)}
+#trust .rows b{color:var(--ink)}
+#trust .rows .ok{color:#15803D}
+#trust .vtag{color:#8A8794}
+#trust .vtag .p{background:#7C3AED14;color:var(--violet-deep)}
 </style><!-- Google Tag Manager -->
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-5T5LPLSZ');</script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NKH9LPX9');</script>
@@ -207,14 +225,14 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
       <div class="hslide on"><div class="board">
         <h4>LIVE MODEL BOARD<span class="g">ALL VERIFIED HOURLY ✓ · REAL 30-DAY TRAFFIC</span></h4>
         <div class="bauto"><div class="ico">A</div><div><b>flatkey-auto</b> <span class="d">picks the best official model per request</span></div><span class="fee">no routing fee</span></div>
-        <div class="brow"><b>gpt-5.5</b><span class="prov">openai</span><span class="hdot" title="96.5% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>claude-sonnet-4-6</b><span class="prov">anthropic</span><span class="hdot" title="98.2% success · 30-day real traffic"></span><span class="pr"><s>$3.00</s><span class="now">$2.00</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>gpt-5.4</b><span class="prov">openai</span><span class="hdot" title="99.8% success · 30-day real traffic"></span><span class="pr"><s>$3.33</s><span class="now">$1.67</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>claude-opus-4-8</b><span class="prov">anthropic</span><span class="hdot" title="93.8% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>kimi-k3</b><span class="prov">moonshot</span><span class="hdot" title="97.4% success · 30-day real traffic"></span><span class="pr"><s>$3.00</s><span class="now">$1.20</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>deepseek-v4-flash</b><span class="prov">deepseek</span><span class="hdot" title="99.4% success · 30-day real traffic"></span><span class="pr"><s>$0.14</s><span class="now">$0.056</span><span class="un">/M in</span></span></div>
-        <div class="brow"><b>glm-5.2</b><span class="prov">z.ai</span><span class="hdot" title="96.6% success · 30-day real traffic"></span><span class="pr"><s>$1.40</s><span class="now">$0.56</span><span class="un">/M in</span></span></div>
-        <div class="brow" style="background:var(--violet-tint);border-radius:10px;margin:4px 14px 2px;padding-left:12px;padding-right:12px;border-bottom:none"><b>seedance-2.5</b><span class="prov">bytedance</span><span style="font-family:var(--mono);font-size:9.5px;background:#fff;color:var(--violet-deep);border-radius:999px;padding:2px 8px;font-weight:600">VIDEO · NEW</span><span class="hdot" title="early access · official bytedance"></span><span class="pr"><span class="now" style="font-size:12.5px" data-i18n="md.early" data-orig="Early access">Früher Zugriff</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/openai.svg" alt=""><b>gpt-5.5</b><span class="prov">openai</span><span class="hdot" title="96.5% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/claude.svg" alt=""><b>claude-sonnet-4-6</b><span class="prov">anthropic</span><span class="hdot" title="98.2% success · 30-day real traffic"></span><span class="pr"><s>$3.00</s><span class="now">$2.00</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/openai.svg" alt=""><b>gpt-5.4</b><span class="prov">openai</span><span class="hdot" title="99.8% success · 30-day real traffic"></span><span class="pr"><s>$3.33</s><span class="now">$1.67</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/claude.svg" alt=""><b>claude-opus-4-8</b><span class="prov">anthropic</span><span class="hdot" title="93.8% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/moonshotai.svg" alt=""><b>kimi-k3</b><span class="prov">moonshot</span><span class="hdot" title="97.4% success · 30-day real traffic"></span><span class="pr"><s>$3.00</s><span class="now">$1.20</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/deepseek.svg" alt=""><b>deepseek-v4-flash</b><span class="prov">deepseek</span><span class="hdot" title="99.4% success · 30-day real traffic"></span><span class="pr"><s>$0.14</s><span class="now">$0.056</span><span class="un">/M in</span></span></div>
+        <div class="brow"><img class="plogo" src="assets/logos/zai.svg" alt=""><b>glm-5.2</b><span class="prov">z.ai</span><span class="hdot" title="96.6% success · 30-day real traffic"></span><span class="pr"><s>$1.40</s><span class="now">$0.56</span><span class="un">/M in</span></span></div>
+        <div class="brow" style="background:var(--violet-tint);border-radius:10px;margin:4px 14px 2px;padding-left:12px;padding-right:12px;border-bottom:none"><img class="plogo" src="assets/logos/bytedance.svg" alt=""><b>seedance-2.5</b><span class="prov">bytedance</span><span style="font-family:var(--mono);font-size:9.5px;background:#fff;color:var(--violet-deep);border-radius:999px;padding:2px 8px;font-weight:600">VIDEO · NEW</span><span class="hdot" title="early access · official bytedance"></span><span class="pr"><span class="now" style="font-size:12.5px" data-i18n="md.early" data-orig="Early access">Früher Zugriff</span></span></div>
         <div class="boardfoot"><a href="/models" data-i18n="board.foot" data-orig="See all 328+ models &amp;amp; live health →">Alle 328+ Modelle &amp; Live-Health ansehen →</a></div>
       </div></div>
       <div class="hslide hs2">
@@ -363,25 +381,24 @@ client.chat.completions.create(
 </section>
 
 <section class="v" id="trust">
-  <div class="pxgrid" data-seed="41" data-cell="24" data-cols="12" data-rows="6" data-n="20" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right: 34px; top: 48px; z-index: 1; width: 288px; height: 144px;"></div>
+  <div class="pxgrid" data-seed="41" data-cell="24" data-cols="12" data-rows="6" data-n="20" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right:34px;top:48px;z-index:1"></div>
   <div class="bgv"><div class="radar"><i></i><i></i><i></i><i></i><div class="sweep"></div>
     <div class="blip" style="left:32%;top:38%"></div><div class="blip" style="left:58%;top:26%;animation-delay:.7s"></div><div class="blip" style="left:47%;top:62%;animation-delay:1.3s"></div><div class="blip" style="left:70%;top:52%;animation-delay:.4s"></div>
   </div></div>
   <div class="shade"></div>
   <div class="in">
-    <div class="kick" data-i18n="trust.kick" data-orig="TRUST · HOURLY MODEL-AUTHENTICITY PROBES">VERTRAUEN · STÜNDLICHE AUTHENTIZITÄTS-PROBES</div>
-    <h2 class="big" data-i18n="trust.h2" data-orig="0 model swaps. &lt;em&gt;Ever.&lt;/em&gt;&lt;br&gt;And we prove it.">0 ausgetauschte Modelle. <em>Niemals.</em><br>Und wir beweisen es.</h2>
-    <p class="d" data-i18n="trust.p" data-orig="Every hour, every model is probed against its official API fingerprint — logits, tokenizer, refusal shape. The log is public. Cheap gateways ask for trust; flatkey shows receipts.">Jede Stunde wird jedes Modell gegen seinen offiziellen API-Fingerprint geprüft — Logits, Tokenizer, Refusal-Muster. Das Log ist öffentlich. Billige Gateways bitten um Vertrauen; flatkey zeigt Belege.</p>
+    <div class="kick" data-i18n="st.kick" data-orig="API STATUS · UPDATED EVERY 60 SECONDS">API-STATUS · ALLE 60 SEKUNDEN AKTUALISIERT</div>
+    <h2 class="big" data-i18n="st.ok" data-orig="All systems operational">Alle Systeme betriebsbereit</h2>
+    <p class="d" data-i18n="st.slaline" data-orig="SLA target 99.5% · &lt;a href=&quot;/sla&quot; style=&quot;color:#fff&quot;&gt;read the public SLA →&lt;/a&gt;">SLA-Ziel 99,5% · <a href="/sla" style="color:#fff">öffentliches SLA lesen →</a></p>
     <div class="rows">
-      <div><span class="t">14:00</span><b>claude-opus-4-8</b> fingerprint ✓ · official anthropic · 388ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>gpt-5.5</b> fingerprint ✓ · official openai · 412ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>glm-5.2</b> fingerprint ✓ · official zhipu · 241ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>kimi-k3</b> fingerprint ✓ · official moonshot · 226ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>seedance-2.0</b> fingerprint ✓ · official bytedance · video<span class="ok">PASS</span></div>
-      <div><span class="t">13:00</span>328+ models probed hourly · 30-day log public<span class="ok">PASS</span></div>
+      <div><b>Router API</b> router.flatkey.ai/v1 · OpenAI-compatible<span class="ok">99.98% · 90d</span></div>
+      <div><b>Anthropic endpoint</b> router.flatkey.ai · Claude Code / Cline<span class="ok">99.97% · 90d</span></div>
+      <div><b>Model failover mesh</b> 5 upstream channel classes · automatic rerouting<span class="ok">100% · 90d</span></div>
+      <div><b>Console &amp; billing</b> console.flatkey.ai · Stripe<span class="ok">99.99% · 90d</span></div>
+      <div><a href="/status" style="color:var(--violet-deep);font-weight:700;text-decoration:none">328+ models probed hourly — full status &amp; incident history →</a><span class="ok" data-i18n="st.today" data-orig="Today">Heute</span></div>
     </div>
   </div>
-  <div class="vtag"><span class="p">▶</span>BACKGROUND VIDEO · hourly-probe radar · 12s loop</div>
+  <div class="vtag"><span class="p">▶</span>LIVE STATUS · 90-day uptime · updated 60s</div>
 </section>
 
 <section class="v" id="compliance">
