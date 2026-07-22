@@ -189,6 +189,33 @@ if (!nginxConfig.includes("sub_filter 'lang=\"en\"' 'lang=\"en-US\"';")) fail("n
 const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
 if (/\.megafoot\.slim\b/.test(sharedCss)) fail("fk2.css", "contains obsolete slim-footer styles");
 
+function mediaBlock(maxWidth) {
+  const marker = `@media (max-width:${maxWidth}px){`;
+  const start = sharedCss.indexOf(marker);
+  if (start === -1) return "";
+  const next = sharedCss.indexOf("\n@media ", start + marker.length);
+  return sharedCss.slice(start, next === -1 ? sharedCss.length : next);
+}
+
+for (const desktopWidth of [1740, 1320]) {
+  const block = mediaBlock(desktopWidth);
+  if (!block) fail("fk2.css", `missing ${desktopWidth}px compact desktop breakpoint`);
+  if (/\.nav>a:not\(\.logo\)[^{]*\{[^}]*display\s*:\s*none/.test(block)) {
+    fail("fk2.css", `${desktopWidth}px desktop breakpoint hides the primary navigation`);
+  }
+  if (/\.nav \.nav-toggle\{[^}]*display\s*:\s*flex/.test(block)) {
+    fail("fk2.css", `${desktopWidth}px desktop breakpoint replaces navigation with the mobile toggle`);
+  }
+}
+
+const mobileNavigationBlock = mediaBlock(1040);
+if (!/\.nav>a:not\(\.logo\)[^{]*\{[^}]*display\s*:\s*none/.test(mobileNavigationBlock)) {
+  fail("fk2.css", "1040px mobile breakpoint does not collapse the primary navigation");
+}
+if (!/\.nav \.nav-toggle\{[^}]*display\s*:\s*flex/.test(mobileNavigationBlock)) {
+  fail("fk2.css", "1040px mobile breakpoint does not expose the navigation toggle");
+}
+
 const i18nSource = fs.readFileSync(path.join(root, "assets/i18n.js"), "utf8");
 for (const requiredLocaleBehavior of [
   "function pathLocale()",
