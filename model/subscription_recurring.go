@@ -1,0 +1,304 @@
+package model
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
+)
+
+const (
+	PaymentWebhookEventStatusProcessing = "processing"
+	PaymentWebhookEventStatusProcessed  = "processed"
+	PaymentWebhookEventStatusFailed     = "failed"
+)
+
+var ErrSubscriptionProviderBindingConflict = errors.New("subscription provider binding conflict")
+
+type SubscriptionProviderBinding struct {
+	Id int64 `json:"id"`
+
+	UserId         int `json:"user_id" gorm:"index"`
+	PlanId         int `json:"plan_id" gorm:"index"`
+	InitialOrderId int `json:"initial_order_id" gorm:"index"`
+
+	Provider                string `json:"provider" gorm:"type:varchar(32);not null;uniqueIndex:idx_provider_subscription,priority:1"`
+	ProviderSubscriptionId  string `json:"provider_subscription_id" gorm:"type:varchar(128);not null;uniqueIndex:idx_provider_subscription,priority:2"`
+	ProviderCustomerId      string `json:"provider_customer_id" gorm:"type:varchar(128);default:''"`
+	ProviderPriceId         string `json:"provider_price_id" gorm:"type:varchar(128);default:''"`
+	ProviderLatestInvoiceId string `json:"provider_latest_invoice_id" gorm:"type:varchar(128);default:''"`
+	ProviderStatus          string `json:"provider_status" gorm:"type:varchar(64);default:'';index"`
+
+	CancelAtPeriodEnd  bool  `json:"cancel_at_period_end" gorm:"default:false"`
+	CurrentPeriodStart int64 `json:"current_period_start" gorm:"type:bigint;default:0"`
+	CurrentPeriodEnd   int64 `json:"current_period_end" gorm:"type:bigint;default:0;index"`
+	GracePeriodEnd     int64 `json:"grace_period_end" gorm:"type:bigint;default:0"`
+	CanceledAt         int64 `json:"canceled_at" gorm:"type:bigint;default:0"`
+	EndedAt            int64 `json:"ended_at" gorm:"type:bigint;default:0"`
+	Livemode           bool  `json:"livemode" gorm:"default:false"`
+	LastSyncedAt       int64 `json:"last_synced_at" gorm:"type:bigint;default:0"`
+
+	CreatedAt int64 `json:"created_at" gorm:"bigint"`
+	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
+}
+
+func (b *SubscriptionProviderBinding) BeforeCreate(tx *gorm.DB) error {
+	now := common.GetTimestamp()
+	b.CreatedAt = now
+	b.UpdatedAt = now
+	if b.LastSyncedAt == 0 {
+		b.LastSyncedAt = now
+	}
+	return nil
+}
+
+func (b *SubscriptionProviderBinding) BeforeUpdate(tx *gorm.DB) error {
+	now := common.GetTimestamp()
+	b.UpdatedAt = now
+	if b.LastSyncedAt == 0 {
+		b.LastSyncedAt = now
+	}
+	return nil
+}
+
+type PaymentWebhookEvent struct {
+	Id int64 `json:"id"`
+
+	Provider         string `json:"provider" gorm:"type:varchar(32);not null;uniqueIndex:idx_payment_webhook_event,priority:1"`
+	EventId          string `json:"event_id" gorm:"type:varchar(128);not null;uniqueIndex:idx_payment_webhook_event,priority:2"`
+	EventType        string `json:"event_type" gorm:"type:varchar(128);default:'';index"`
+	ProviderObjectId string `json:"provider_object_id" gorm:"type:varchar(128);default:'';index"`
+	EventCreated     int64  `json:"event_created" gorm:"type:bigint;default:0"`
+	Status           string `json:"status" gorm:"type:varchar(32);default:'processing';index"`
+	AttemptCount     int    `json:"attempt_count" gorm:"type:int;default:0"`
+	PayloadHash      string `json:"payload_hash" gorm:"type:varchar(128);default:''"`
+	LastError        string `json:"last_error" gorm:"type:text"`
+	ProcessedAt      int64  `json:"processed_at" gorm:"type:bigint;default:0"`
+
+	CreatedAt int64 `json:"created_at" gorm:"bigint"`
+	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
+}
+
+func (e *PaymentWebhookEvent) BeforeCreate(tx *gorm.DB) error {
+	now := common.GetTimestamp()
+	e.CreatedAt = now
+	e.UpdatedAt = now
+	if e.Status == "" {
+		e.Status = PaymentWebhookEventStatusProcessing
+	}
+	if e.AttemptCount == 0 {
+		e.AttemptCount = 1
+	}
+	return nil
+}
+
+func (e *PaymentWebhookEvent) BeforeUpdate(tx *gorm.DB) error {
+	e.UpdatedAt = common.GetTimestamp()
+	return nil
+}
+
+type ProviderSubscriptionSnapshot struct {
+	ProviderSubscriptionId  string
+	ProviderCustomerId      string
+	ProviderPriceId         string
+	ProviderLatestInvoiceId string
+	ProviderStatus          string
+	CancelAtPeriodEnd       bool
+	CurrentPeriodStart      int64
+	CurrentPeriodEnd        int64
+	GracePeriodEnd          int64
+	CanceledAt              int64
+	EndedAt                 int64
+	Livemode                bool
+}
+
+func normalizeProvider(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
+}
+
+func subscriptionProviderBindingFromSnapshot(order *SubscriptionOrder, snapshot ProviderSubscriptionSnapshot) *SubscriptionProviderBinding {
+	return &SubscriptionProviderBinding{
+		UserId:                  order.UserId,
+		PlanId:                  order.PlanId,
+		InitialOrderId:          order.Id,
+		Provider:                PaymentProviderStripe,
+		ProviderSubscriptionId:  strings.TrimSpace(snapshot.ProviderSubscriptionId),
+		ProviderCustomerId:      strings.TrimSpace(snapshot.ProviderCustomerId),
+		ProviderPriceId:         strings.TrimSpace(snapshot.ProviderPriceId),
+		ProviderLatestInvoiceId: strings.TrimSpace(snapshot.ProviderLatestInvoiceId),
+		ProviderStatus:          strings.TrimSpace(snapshot.ProviderStatus),
+		CancelAtPeriodEnd:       snapshot.CancelAtPeriodEnd,
+		CurrentPeriodStart:      snapshot.CurrentPeriodStart,
+		CurrentPeriodEnd:        snapshot.CurrentPeriodEnd,
+		GracePeriodEnd:          snapshot.GracePeriodEnd,
+		CanceledAt:              snapshot.CanceledAt,
+		EndedAt:                 snapshot.EndedAt,
+		Livemode:                snapshot.Livemode,
+		LastSyncedAt:            common.GetTimestamp(),
+	}
+}
+
+func findBindingByProviderSubscriptionIDTx(tx *gorm.DB, provider string, providerSubscriptionID string) (*SubscriptionProviderBinding, error) {
+	if tx == nil {
+		tx = DB
+	}
+	provider = normalizeProvider(provider)
+	providerSubscriptionID = strings.TrimSpace(providerSubscriptionID)
+	if provider == "" || providerSubscriptionID == "" {
+		return nil, errors.New("provider subscription id is empty")
+	}
+	var binding SubscriptionProviderBinding
+	if err := tx.Where("provider = ? AND provider_subscription_id = ?", provider, providerSubscriptionID).
+		First(&binding).Error; err != nil {
+		return nil, err
+	}
+	return &binding, nil
+}
+
+func FindBindingByProviderSubscriptionID(provider string, providerSubscriptionID string) (*SubscriptionProviderBinding, error) {
+	return findBindingByProviderSubscriptionIDTx(nil, provider, providerSubscriptionID)
+}
+
+func FindBindingByIDForUser(bindingID int64, userID int) (*SubscriptionProviderBinding, error) {
+	if bindingID <= 0 || userID <= 0 {
+		return nil, errors.New("invalid binding lookup")
+	}
+	var binding SubscriptionProviderBinding
+	if err := DB.Where("id = ? AND user_id = ?", bindingID, userID).First(&binding).Error; err != nil {
+		return nil, err
+	}
+	return &binding, nil
+}
+
+func createOrLoadProviderBindingTx(tx *gorm.DB, order *SubscriptionOrder, snapshot ProviderSubscriptionSnapshot) (*SubscriptionProviderBinding, error) {
+	if tx == nil || order == nil {
+		return nil, errors.New("invalid provider binding args")
+	}
+	if strings.TrimSpace(snapshot.ProviderSubscriptionId) == "" {
+		return nil, errors.New("provider subscription id is empty")
+	}
+	binding, err := findBindingByProviderSubscriptionIDTx(tx, PaymentProviderStripe, snapshot.ProviderSubscriptionId)
+	if err == nil {
+		if binding.UserId == order.UserId && binding.PlanId == order.PlanId && binding.InitialOrderId == order.Id {
+			return binding, nil
+		}
+		return nil, ErrSubscriptionProviderBindingConflict
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	binding = subscriptionProviderBindingFromSnapshot(order, snapshot)
+	if err := tx.Create(binding).Error; err != nil {
+		existing, findErr := findBindingByProviderSubscriptionIDTx(tx, PaymentProviderStripe, snapshot.ProviderSubscriptionId)
+		if findErr == nil {
+			if existing.UserId == order.UserId && existing.PlanId == order.PlanId && existing.InitialOrderId == order.Id {
+				return existing, nil
+			}
+			return nil, ErrSubscriptionProviderBindingConflict
+		}
+		return nil, err
+	}
+	return binding, nil
+}
+
+func RecordPaymentWebhookEventProcessing(provider string, eventID string, eventType string, providerObjectID string, eventCreated int64, payloadHash string) (bool, error) {
+	provider = normalizeProvider(provider)
+	eventID = strings.TrimSpace(eventID)
+	if provider == "" || eventID == "" {
+		return false, errors.New("provider and event id are required")
+	}
+	event := &PaymentWebhookEvent{
+		Provider:         provider,
+		EventId:          eventID,
+		EventType:        strings.TrimSpace(eventType),
+		ProviderObjectId: strings.TrimSpace(providerObjectID),
+		EventCreated:     eventCreated,
+		Status:           PaymentWebhookEventStatusProcessing,
+		AttemptCount:     1,
+		PayloadHash:      strings.TrimSpace(payloadHash),
+	}
+	if err := DB.Create(event).Error; err != nil {
+		var existing PaymentWebhookEvent
+		if findErr := DB.Where("provider = ? AND event_id = ?", provider, eventID).First(&existing).Error; findErr == nil {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func CompleteSubscriptionOrderWithProviderBinding(tradeNo string, providerPayload string, expectedPaymentProvider string, actualPaymentMethod string, snapshot ProviderSubscriptionSnapshot) (*SubscriptionProviderBinding, error) {
+	if strings.TrimSpace(tradeNo) == "" {
+		return nil, errors.New("tradeNo is empty")
+	}
+	refCol := "`trade_no`"
+	if common.UsingPostgreSQL {
+		refCol = `"trade_no"`
+	}
+	var result *SubscriptionProviderBinding
+	var logUserId int
+	var logPlanTitle string
+	var logMoney float64
+	var logPaymentMethod string
+	var upgradeGroup string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var order SubscriptionOrder
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
+			return ErrSubscriptionOrderNotFound
+		}
+		if expectedPaymentProvider != "" && order.PaymentProvider != expectedPaymentProvider {
+			return ErrPaymentMethodMismatch
+		}
+		binding, err := createOrLoadProviderBindingTx(tx, &order, snapshot)
+		if err != nil {
+			return err
+		}
+		result = binding
+		if order.Status == common.TopUpStatusSuccess {
+			return nil
+		}
+		if order.Status != common.TopUpStatusPending {
+			return ErrSubscriptionOrderStatusInvalid
+		}
+		plan, err := getSubscriptionPlanByIdTx(tx, order.PlanId)
+		if err != nil {
+			return err
+		}
+		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
+		if _, err := createUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order", binding.Id); err != nil {
+			return err
+		}
+		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
+			return err
+		}
+		order.Status = common.TopUpStatusSuccess
+		order.CompleteTime = common.GetTimestamp()
+		if providerPayload != "" {
+			order.ProviderPayload = providerPayload
+		}
+		if actualPaymentMethod != "" && order.PaymentMethod != actualPaymentMethod {
+			order.PaymentMethod = actualPaymentMethod
+		}
+		if err := tx.Save(&order).Error; err != nil {
+			return err
+		}
+		logUserId = order.UserId
+		logPlanTitle = plan.Title
+		logMoney = order.Money
+		logPaymentMethod = order.PaymentMethod
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if upgradeGroup != "" && logUserId > 0 {
+		_ = UpdateUserGroupCache(logUserId, upgradeGroup)
+	}
+	if logUserId > 0 {
+		msg := fmt.Sprintf("Subscription purchase succeeded, plan: %s, amount: %.2f, payment method: %s", logPlanTitle, logMoney, logPaymentMethod)
+		RecordLog(logUserId, LogTypeTopup, msg)
+	}
+	return result, nil
+}
