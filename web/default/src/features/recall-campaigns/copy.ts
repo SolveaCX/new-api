@@ -28,4 +28,8 @@ export const audienceTemplateDescriptionKeys: Record<
     'Targets previous payers who have not paid or used the API recently.',
   expired_subscription:
     'Targets previous subscribers whose subscription is no longer active and expired long enough ago.',
+  registered_only:
+    'Targets users who registered within a selected registration date range.',
+  specified_users:
+    'Targets explicitly selected users by user ID or email address.',
 }

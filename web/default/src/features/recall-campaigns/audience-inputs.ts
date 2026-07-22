@@ -1,6 +1,7 @@
 import type { RecallAudienceUserOption } from './types'
 
 const recallSpecifiedEmailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+const recallLocalDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
 
 function padDatePart(value: number): string {
   return String(value).padStart(2, '0')
@@ -26,12 +27,16 @@ export function recallUnixToLocalDateTime(timestamp: number): string {
 }
 
 export function recallLocalDateTimeToUnix(value: string): number {
-  if (!value.trim()) return 0
+  const trimmed = value.trim()
+  if (!trimmed || !recallLocalDateTimePattern.test(trimmed)) return 0
 
-  const timestamp = new Date(value).getTime()
+  const timestamp = new Date(trimmed).getTime()
   if (!Number.isFinite(timestamp)) return 0
 
-  return Math.floor(timestamp / 60_000) * 60
+  const unix = Math.floor(timestamp / 60_000) * 60
+  if (recallUnixToLocalDateTime(unix) !== trimmed) return 0
+
+  return unix
 }
 
 export function parseRecallSpecifiedEmails(value: string): {

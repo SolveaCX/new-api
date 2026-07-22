@@ -143,6 +143,8 @@ const audienceFields: Record<
       label: 'Last API call age days',
     },
   ],
+  registered_only: [],
+  specified_users: [],
 }
 
 function createRecallCampaignDefaults(): RecallCampaignDraft {
@@ -163,6 +165,10 @@ function createRecallCampaignDefaults(): RecallCampaignDraft {
       groups: [],
       group_mode: '',
       require_verified_email: true,
+      registration_start_at: 0,
+      registration_end_at: 0,
+      specified_user_ids: [],
+      specified_emails: [],
     },
     execution_mode: 'manual',
     schedule: {

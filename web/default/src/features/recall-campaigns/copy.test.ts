@@ -38,6 +38,12 @@ const localeTranslations: Record<string, Record<string, string>> = {
   zh: zh.translation,
 }
 
+const translatedAudienceTemplateDescriptionKeys = [
+  audienceTemplateDescriptionKeys.first_purchase,
+  audienceTemplateDescriptionKeys.lapsed_payer,
+  audienceTemplateDescriptionKeys.expired_subscription,
+] as const
+
 const recallHelpKeys = [
   'Subject must be 200 characters or fewer',
   'Body text must be 2000 characters or fewer',
@@ -51,7 +57,7 @@ const recallHelpKeys = [
   'Failed to load configured user groups.',
   'No configured user groups are available.',
   'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.',
-  ...Object.values(audienceTemplateDescriptionKeys),
+  ...translatedAudienceTemplateDescriptionKeys,
 ] as const
 
 describe('recall campaign copy', () => {
@@ -63,6 +69,10 @@ describe('recall campaign copy', () => {
         'Targets previous payers who have not paid or used the API recently.',
       expired_subscription:
         'Targets previous subscribers whose subscription is no longer active and expired long enough ago.',
+      registered_only:
+        'Targets users who registered within a selected registration date range.',
+      specified_users:
+        'Targets explicitly selected users by user ID or email address.',
     })
   })
 
