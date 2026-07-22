@@ -32,8 +32,10 @@ for (const file of files) {
   }
   const i18nScript = html.indexOf("assets/i18n.js?v=720e");
   const shellScript = html.indexOf("assets/site-shell.js?v=720a");
+  const trackScript = html.indexOf("assets/track.js?v=721a");
   if (i18nScript === -1) fail(file, "missing the current locale-routing script version");
   if (shellScript === -1) fail(file, "missing the current responsive shell version");
+  if (trackScript === -1) fail(file, "missing the current attribution script version");
   if (i18nScript !== -1 && shellScript !== -1 && i18nScript > shellScript) {
     fail(file, "site shell loads before locale state is initialized");
   }
@@ -210,6 +212,22 @@ const shellSource = fs.readFileSync(path.join(root, "assets/site-shell.js"), "ut
 if (!shellSource.includes("function syncPanel()")) fail("assets/site-shell.js", "mobile navigation is not rebuilt after a locale change");
 if (!shellSource.includes('document.addEventListener("flatkey:languagechange"')) {
   fail("assets/site-shell.js", "mobile navigation does not listen for locale changes");
+}
+
+const trackSource = fs.readFileSync(path.join(root, "assets/track.js"), "utf8");
+for (const requiredAttributionBehavior of [
+  "flatkey_ads_attribution",
+  "first_landing_path",
+  "first_captured_at",
+  'path.indexOf("/oauth/") !== 0',
+  'path !== "/sign-in"',
+  'path !== "/sign-up"',
+  "domain=.flatkey.ai",
+  "yclid",
+]) {
+  if (!trackSource.includes(requiredAttributionBehavior)) {
+    fail("assets/track.js", `missing paid attribution behavior: ${requiredAttributionBehavior}`);
+  }
 }
 
 const dictMatch = i18nSource.match(/var DICTS = (\{[\s\S]*?\n\});\n\n  var LEGAL_ROUTES/);
