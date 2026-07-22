@@ -140,6 +140,18 @@ subscription.reset_cycle_gt_zero: "O ciclo de redefinição personalizado deve s
 subscription.purchase_max: "O limite de compra deste plano foi atingido"
 subscription.invalid_id: "ID de assinatura inválido"
 subscription.invalid_user_id: "ID de usuário inválido"
+subscription.invalid_recurring_id: "ID de assinatura recorrente inválido"
+subscription.tier_rank_reserved: "A classificação do plano de assinatura já está reservada"
+subscription.tier_rank_required: "Planos de assinatura habilitados devem definir uma classificação positiva"
+subscription.lifecycle_fields_immutable: "Este plano de assinatura já está referenciado. Desabilite-o ou crie uma nova versão em vez de alterar campos críticos do ciclo de vida."
+subscription.purchase_pending_migration: "O início da compra da assinatura está em migração. Atualize e use o novo fluxo de assinatura."
+subscription.payment_mode_required: "O modo de pagamento é obrigatório"
+subscription.request_id_required: "O ID da solicitação é obrigatório"
+subscription.stripe_price_requires_mode: "O Stripe Price ID requer o modo de pagamento recorrente do Stripe"
+subscription.capability.single_lifecycle: "O ciclo de vida de assinatura única está habilitado"
+subscription.capability.current_entitlement: "O direito atual do contrato está disponível"
+subscription.capability.recurring_binding: "A vinculação recorrente do provedor está disponível"
+subscription.capability.change_intent: "O status da intenção de alteração da assinatura está disponível"
 
 # Payment messages
 payment.not_configured: "As informações de pagamento não foram configuradas pelo administrador"
