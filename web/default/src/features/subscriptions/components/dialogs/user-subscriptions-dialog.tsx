@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Lock, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -109,10 +109,12 @@ export function UserSubscriptionsDialog(props: Props) {
   const [plans, setPlans] = useState<PlanRecord[]>([])
   const [subs, setSubs] = useState<UserSubscriptionRecord[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
+  const [nowSeconds, setNowSeconds] = useState(0)
   const [confirmAction, setConfirmAction] = useState<{
     type: 'invalidate' | 'delete'
     subId: number
   } | null>(null)
+  const userId = props.user?.id
 
   const planTitleMap = useMemo(() => {
     const map = new Map<number, string>()
@@ -123,37 +125,40 @@ export function UserSubscriptionsDialog(props: Props) {
   }, [plans])
 
   const loadData = useCallback(async () => {
-    if (!props.user?.id) return
+    if (!userId) return
     setLoading(true)
     try {
       const [plansRes, subsRes] = await Promise.all([
         getAdminPlans(),
-        getUserSubscriptions(props.user.id),
+        getUserSubscriptions(userId),
       ])
       if (plansRes.success) setPlans(plansRes.data || [])
       if (subsRes.success) setSubs(subsRes.data || [])
+      setNowSeconds(Date.now() / 1000)
     } catch {
       toast.error(t('Loading failed'))
     } finally {
       setLoading(false)
     }
-  }, [props.user?.id, t])
+  }, [userId, t])
 
   useEffect(() => {
-    if (props.open && props.user?.id) {
-      setSelectedPlanId('')
-      loadData()
+    if (props.open && userId) {
+      queueMicrotask(() => {
+        setSelectedPlanId('')
+        void loadData()
+      })
     }
-  }, [props.open, props.user?.id, loadData])
+  }, [props.open, userId, loadData])
 
   const handleCreate = async () => {
-    if (!props.user?.id || !selectedPlanId) {
+    if (!userId || !selectedPlanId) {
       toast.error(t('Please select a subscription plan'))
       return
     }
     setCreating(true)
     try {
-      const res = await createUserSubscription(props.user.id, {
+      const res = await createUserSubscription(userId, {
         plan_id: Number(selectedPlanId),
       })
       if (res.success) {
@@ -252,6 +257,7 @@ export function UserSubscriptionsDialog(props: Props) {
                     <TableHead>ID</TableHead>
                     <TableHead>{t('Plan')}</TableHead>
                     <TableHead>{t('Status')}</TableHead>
+                    <TableHead>{t('Provider')}</TableHead>
                     <TableHead>{t('Validity')}</TableHead>
                     <TableHead>{t('Total Quota')}</TableHead>
                     <TableHead className='text-right'>{t('Actions')}</TableHead>
@@ -260,14 +266,14 @@ export function UserSubscriptionsDialog(props: Props) {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={6} className='py-8 text-center'>
+                      <TableCell colSpan={7} className='py-8 text-center'>
                         {t('Loading...')}
                       </TableCell>
                     </TableRow>
                   ) : subs.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className='text-muted-foreground py-8 text-center'
                       >
                         {t('No subscription records')}
@@ -276,12 +282,13 @@ export function UserSubscriptionsDialog(props: Props) {
                   ) : (
                     subs.map((record) => {
                       const sub = record.subscription
-                      const now = Date.now() / 1000
                       const isExpired =
-                        (sub.end_time || 0) > 0 && sub.end_time < now
+                        (sub.end_time || 0) > 0 && sub.end_time < nowSeconds
                       const isActive = sub.status === 'active' && !isExpired
                       const total = Number(sub.amount_total || 0)
                       const used = Number(sub.amount_used || 0)
+                      const binding = record.provider_binding
+                      const isStripeRecurring = binding?.provider === 'stripe'
 
                       return (
                         <TableRow key={sub.id}>
@@ -301,6 +308,29 @@ export function UserSubscriptionsDialog(props: Props) {
                           </TableCell>
                           <TableCell>
                             <SubscriptionStatusBadge sub={sub} t={t} />
+                          </TableCell>
+                          <TableCell>
+                            {binding ? (
+                              <div className='space-y-1 text-sm'>
+                                <StatusBadge
+                                  label={
+                                    isStripeRecurring
+                                      ? t('Stripe recurring')
+                                      : binding.provider
+                                  }
+                                  variant='info'
+                                  copyable={false}
+                                />
+                                <div className='text-muted-foreground'>
+                                  {binding.provider_status || '-'}
+                                  {binding.cancel_at_period_end
+                                    ? ` / ${t('Cancels at period end')}`
+                                    : ''}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className='text-muted-foreground'>-</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className='text-sm'>
@@ -333,6 +363,7 @@ export function UserSubscriptionsDialog(props: Props) {
                               <Button
                                 size='sm'
                                 variant='destructive'
+                                disabled={isStripeRecurring}
                                 onClick={() =>
                                   setConfirmAction({
                                     type: 'delete',
@@ -340,6 +371,9 @@ export function UserSubscriptionsDialog(props: Props) {
                                   })
                                 }
                               >
+                                {isStripeRecurring && (
+                                  <Lock className='mr-1 h-3.5 w-3.5' />
+                                )}
                                 {t('Delete')}
                               </Button>
                             </div>
@@ -367,7 +401,7 @@ export function UserSubscriptionsDialog(props: Props) {
           desc={
             confirmAction.type === 'invalidate'
               ? t(
-                  'After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?'
+                  'After invalidating, Stripe recurring subscriptions are cancelled remotely before local access is stopped. Continue?'
                 )
               : t(
                   'Deleting will permanently remove this subscription record (including benefit details). Continue?'

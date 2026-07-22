@@ -26,6 +26,7 @@ import type {
   SubscriptionPayResponse,
   SubscriptionPayRequest,
   SelfSubscriptionData,
+  RecurringSubscription,
 } from './types'
 
 // ============================================================================
@@ -180,7 +181,7 @@ export async function paySubscriptionEpay(
 // ============================================================================
 
 export async function getSelfSubscriptions(): Promise<
-  ApiResponse<UserSubscriptionRecord[]>
+  ApiResponse<SelfSubscriptionData>
 > {
   const res = await api.get('/api/subscription/self')
   return res.data
@@ -204,6 +205,24 @@ export async function updateBillingPreference(
   const res = await api.put('/api/subscription/self/preference', {
     billing_preference: preference,
   })
+  return res.data
+}
+
+export async function cancelRecurringSubscription(
+  bindingId: number
+): Promise<ApiResponse<RecurringSubscription>> {
+  const res = await api.post(
+    `/api/subscription/self/recurring/${bindingId}/cancel`
+  )
+  return res.data
+}
+
+export async function resumeRecurringSubscription(
+  bindingId: number
+): Promise<ApiResponse<RecurringSubscription>> {
+  const res = await api.post(
+    `/api/subscription/self/recurring/${bindingId}/resume`
+  )
   return res.data
 }
 

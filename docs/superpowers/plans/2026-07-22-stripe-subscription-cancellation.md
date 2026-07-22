@@ -243,25 +243,25 @@ Commit with Lore message:
 - Modify: `web/default/src/i18n/locales/{en,zh,fr,ru,ja,vi,es,pt}.json`
 - Test: frontend typecheck/build/i18n sync and focused component tests if present.
 
-- [ ] **Step 1: Write failing frontend tests or type assertions**
+- [x] **Step 1: Write failing frontend tests or type assertions**
 
 Add tests where existing test harness supports it; otherwise add type-level consumption and run typecheck RED before implementation.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `bun run typecheck`
 Expected: FAIL while API/types/components are missing.
 
-- [ ] **Step 3: Implement minimal UI**
+- [x] **Step 3: Implement minimal UI**
 
 Render every backend-manageable recurring item, pending action state, cancel/resume confirmation, backend message toasts, and admin delete disablement. Do not render `sub_xxx`.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run from `web/default`: `bun run typecheck`, `bun run lint`, `bun run build:check`, `bun run i18n:sync`
 Expected: PASS or documented unrelated baseline issue.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit with Lore message:
 `Expose recurring lifecycle capabilities without leaking Stripe IDs`

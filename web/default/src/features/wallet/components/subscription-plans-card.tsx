@@ -17,7 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Crown, RefreshCw, Sparkles, Check } from 'lucide-react'
+import {
+  Crown,
+  RefreshCw,
+  Sparkles,
+  Check,
+  PauseCircle,
+  PlayCircle,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuota } from '@/lib/format'
@@ -50,11 +57,15 @@ import {
   getPublicPlans,
   getSelfSubscriptionFull,
   updateBillingPreference,
+  cancelRecurringSubscription,
+  resumeRecurringSubscription,
 } from '@/features/subscriptions/api'
+import { RecurringSubscriptionActionDialog } from '@/features/subscriptions/components/dialogs/recurring-subscription-action-dialog'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import { formatDuration, formatResetPeriod } from '@/features/subscriptions/lib'
 import type {
   PlanRecord,
+  RecurringSubscription,
   UserSubscriptionRecord,
 } from '@/features/subscriptions/types'
 import { PAYMENT_TYPES } from '../constants'
@@ -110,10 +121,21 @@ export function SubscriptionPlansCard({
   const [allSubscriptions, setAllSubscriptions] = useState<
     UserSubscriptionRecord[]
   >([])
+  const [recurringSubscriptions, setRecurringSubscriptions] = useState<
+    RecurringSubscription[]
+  >([])
   const [billingPreference, setBillingPreference] =
     useState('subscription_first')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [nowSeconds, setNowSeconds] = useState(0)
+  const [recurringAction, setRecurringAction] = useState<{
+    action: 'cancel' | 'resume'
+    subscription: RecurringSubscription
+  } | null>(null)
+  const [pendingRecurringBindingId, setPendingRecurringBindingId] = useState<
+    number | null
+  >(null)
 
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<PlanRecord | null>(null)
@@ -147,6 +169,8 @@ export function SubscriptionPlansCard({
         )
         setActiveSubscriptions(res.data.subscriptions || [])
         setAllSubscriptions(res.data.all_subscriptions || [])
+        setRecurringSubscriptions(res.data.recurring_subscriptions || [])
+        setNowSeconds(Date.now() / 1000)
       }
     } catch {
       // ignore
@@ -190,6 +214,30 @@ export function SubscriptionPlansCard({
     }
   }
 
+  const handleRecurringAction = async () => {
+    if (!recurringAction) return
+    const bindingId = recurringAction.subscription.binding_id
+    setPendingRecurringBindingId(bindingId)
+    try {
+      const res =
+        recurringAction.action === 'cancel'
+          ? await cancelRecurringSubscription(bindingId)
+          : await resumeRecurringSubscription(bindingId)
+      if (res.success) {
+        toast.success(res.message || t('Updated successfully'))
+        setRecurringAction(null)
+        await fetchSelfSubscription()
+        await onPurchaseSuccess?.()
+      } else {
+        toast.error(res.message || t('Update failed'))
+      }
+    } catch {
+      toast.error(t('Request failed'))
+    } finally {
+      setPendingRecurringBindingId(null)
+    }
+  }
+
   const hasActive = activeSubscriptions.length > 0
   const hasAny = allSubscriptions.length > 0
   const isAvailable = loading || plans.length > 0 || hasAny
@@ -227,8 +275,7 @@ export function SubscriptionPlansCard({
   const getRemainingDays = (sub: UserSubscriptionRecord) => {
     const endTime = sub?.subscription?.end_time || 0
     if (!endTime) return 0
-    const now = Date.now() / 1000
-    return Math.max(0, Math.ceil((endTime - now) / 86400))
+    return Math.max(0, Math.ceil((endTime - nowSeconds) / 86400))
   }
 
   const getUsagePercent = (sub: UserSubscriptionRecord) => {
@@ -408,8 +455,7 @@ export function SubscriptionPlansCard({
                     planTitleMap.get(subscription?.plan_id) || ''
                   const remainDays = getRemainingDays(sub)
                   const usagePercent = getUsagePercent(sub)
-                  const now = Date.now() / 1000
-                  const isExpired = (subscription?.end_time || 0) < now
+                  const isExpired = (subscription?.end_time || 0) < nowSeconds
                   const isCancelled = subscription?.status === 'cancelled'
                   const isActive =
                     subscription?.status === 'active' && !isExpired
@@ -499,6 +545,81 @@ export function SubscriptionPlansCard({
                       </div>
                       {totalAmount > 0 && isActive && (
                         <Progress value={usagePercent} className='mt-2 h-1.5' />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {recurringSubscriptions.length > 0 && (
+            <>
+              <Separator className='my-3' />
+              <div className='space-y-2'>
+                {recurringSubscriptions.map((item) => {
+                  const planTitle = planTitleMap.get(item.plan_id)
+                  const periodEndText = item.current_period_end
+                    ? new Date(item.current_period_end * 1000).toLocaleString()
+                    : '-'
+                  const canAct = item.can_cancel || item.can_resume
+                  const action = item.can_resume ? 'resume' : 'cancel'
+                  const isPending =
+                    pendingRecurringBindingId === item.binding_id
+
+                  return (
+                    <div
+                      key={item.binding_id}
+                      className='bg-background flex flex-col gap-2 rounded-md border p-3 text-xs sm:flex-row sm:items-center sm:justify-between'
+                    >
+                      <div className='min-w-0 space-y-1'>
+                        <div className='flex min-w-0 flex-wrap items-center gap-2'>
+                          <span className='font-medium'>
+                            {planTitle || t('Subscription')} #{item.binding_id}
+                          </span>
+                          <StatusBadge
+                            label={
+                              item.cancel_at_period_end
+                                ? t('Cancels at period end')
+                                : t('Auto-renewing')
+                            }
+                            variant={
+                              item.cancel_at_period_end ? 'warning' : 'success'
+                            }
+                            copyable={false}
+                          />
+                        </div>
+                        <div className='text-muted-foreground'>
+                          {item.cancel_at_period_end
+                            ? t('Access ends at {{date}}', {
+                                date: periodEndText,
+                              })
+                            : t('Renews at {{date}}', {
+                                date: periodEndText,
+                              })}
+                        </div>
+                      </div>
+                      {canAct && (
+                        <Button
+                          size='sm'
+                          variant={item.can_cancel ? 'outline' : 'default'}
+                          disabled={isPending}
+                          onClick={() =>
+                            setRecurringAction({
+                              action,
+                              subscription: item,
+                            })
+                          }
+                        >
+                          {item.can_cancel ? (
+                            <PauseCircle className='mr-1 h-3.5 w-3.5' />
+                          ) : (
+                            <PlayCircle className='mr-1 h-3.5 w-3.5' />
+                          )}
+                          {item.can_cancel
+                            ? t('Cancel auto-renewal')
+                            : t('Resume auto-renewal')}
+                        </Button>
                       )}
                     </div>
                   )
@@ -654,6 +775,22 @@ export function SubscriptionPlansCard({
             ? planPurchaseCountMap.get(selectedPlan.plan.id)
             : undefined
         }
+      />
+      <RecurringSubscriptionActionDialog
+        open={!!recurringAction}
+        onOpenChange={(open) => !open && setRecurringAction(null)}
+        action={recurringAction?.action || 'cancel'}
+        subscription={recurringAction?.subscription || null}
+        planTitle={
+          recurringAction
+            ? planTitleMap.get(recurringAction.subscription.plan_id)
+            : undefined
+        }
+        isLoading={
+          !!recurringAction &&
+          pendingRecurringBindingId === recurringAction.subscription.binding_id
+        }
+        onConfirm={handleRecurringAction}
       />
     </>
   )

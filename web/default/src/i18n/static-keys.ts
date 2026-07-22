@@ -322,6 +322,14 @@ export const STATIC_I18N_KEYS = [
   'Received',
   'Payment initiated',
   'Payment page opened',
+  'Auto-renewing',
+  'Cancels at period end',
+  'Cancel auto-renewal',
+  'Resume auto-renewal',
+  'Access ends at {{date}}',
+  'Renews at {{date}}',
+  'This subscription will remain active until {{date}} and will not renew after that.',
+  'This subscription will renew automatically again after {{date}}.',
 
   // Paddle review website footer links
   'footer.newapi.projectAttributionSuffix',
@@ -453,6 +461,9 @@ export const STATIC_I18N_KEYS = [
   'Deleted',
   'Validity',
   'Actions',
+  'Provider',
+  'Stripe recurring',
+  'After invalidating, Stripe recurring subscriptions are cancelled remotely before local access is stopped. Continue?',
 
   // Sidebar modules
   'Chat Area',

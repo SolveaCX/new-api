@@ -60,6 +60,7 @@ export const userSubscriptionSchema = z.object({
   plan_id: z.number(),
   status: z.string(),
   source: z.string().optional(),
+  provider_binding_id: z.number().optional(),
   start_time: z.number(),
   end_time: z.number(),
   amount_total: z.number(),
@@ -69,8 +70,17 @@ export const userSubscriptionSchema = z.object({
 
 export type UserSubscription = z.infer<typeof userSubscriptionSchema>
 
+export interface SubscriptionProviderBindingSummary {
+  binding_id: number
+  provider: string
+  provider_status: string
+  cancel_at_period_end: boolean
+  current_period_end: number
+}
+
 export interface UserSubscriptionRecord {
   subscription: UserSubscription
+  provider_binding?: SubscriptionProviderBindingSummary
 }
 
 // ============================================================================
@@ -115,6 +125,20 @@ export interface CreateUserSubscriptionRequest {
   plan_id: number
 }
 
+export interface RecurringSubscription {
+  binding_id: number
+  provider: string
+  plan_id: number
+  provider_status: string
+  cancel_at_period_end: boolean
+  current_period_start: number
+  current_period_end: number
+  grace_period_end: number
+  can_cancel: boolean
+  can_resume: boolean
+  requires_support: boolean
+}
+
 // ============================================================================
 // Self Subscription Data (user-facing)
 // ============================================================================
@@ -123,6 +147,7 @@ export interface SelfSubscriptionData {
   billing_preference: string
   subscriptions: UserSubscriptionRecord[]
   all_subscriptions: UserSubscriptionRecord[]
+  recurring_subscriptions: RecurringSubscription[]
 }
 
 // ============================================================================

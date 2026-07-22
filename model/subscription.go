@@ -279,7 +279,16 @@ func (s *UserSubscription) BeforeUpdate(tx *gorm.DB) error {
 }
 
 type SubscriptionSummary struct {
-	Subscription *UserSubscription `json:"subscription"`
+	Subscription    *UserSubscription                   `json:"subscription"`
+	ProviderBinding *SubscriptionProviderBindingSummary `json:"provider_binding,omitempty"`
+}
+
+type SubscriptionProviderBindingSummary struct {
+	BindingId         int64  `json:"binding_id"`
+	Provider          string `json:"provider"`
+	ProviderStatus    string `json:"provider_status"`
+	CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
+	CurrentPeriodEnd  int64  `json:"current_period_end"`
 }
 
 func calcPlanEndTime(start time.Time, plan *SubscriptionPlan) (int64, error) {
@@ -842,12 +851,37 @@ func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 	if len(subs) == 0 {
 		return []SubscriptionSummary{}
 	}
+	bindingIDs := make([]int64, 0, len(subs))
+	for _, sub := range subs {
+		if sub.ProviderBindingId > 0 {
+			bindingIDs = append(bindingIDs, sub.ProviderBindingId)
+		}
+	}
+	bindingMap := map[int64]SubscriptionProviderBinding{}
+	if len(bindingIDs) > 0 {
+		var bindings []SubscriptionProviderBinding
+		if err := DB.Where("id IN ?", bindingIDs).Find(&bindings).Error; err == nil {
+			for _, binding := range bindings {
+				bindingMap[binding.Id] = binding
+			}
+		}
+	}
 	result := make([]SubscriptionSummary, 0, len(subs))
 	for _, sub := range subs {
 		subCopy := sub
-		result = append(result, SubscriptionSummary{
+		summary := SubscriptionSummary{
 			Subscription: &subCopy,
-		})
+		}
+		if binding, ok := bindingMap[sub.ProviderBindingId]; ok {
+			summary.ProviderBinding = &SubscriptionProviderBindingSummary{
+				BindingId:         binding.Id,
+				Provider:          binding.Provider,
+				ProviderStatus:    binding.ProviderStatus,
+				CancelAtPeriodEnd: binding.CancelAtPeriodEnd,
+				CurrentPeriodEnd:  binding.CurrentPeriodEnd,
+			}
+		}
+		result = append(result, summary)
 	}
 	return result
 }
