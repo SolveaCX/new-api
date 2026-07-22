@@ -215,10 +215,30 @@ func ReconcilePaidInvoice(ctx context.Context, invoiceID string) (*PaidInvoiceRe
 	if err != nil {
 		return nil, err
 	}
+	recurringUpgrade, err := isStripeRecurringSubscriptionUpgrade(facts)
+	if err != nil {
+		return nil, err
+	}
+	if recurringUpgrade {
+		facts, err = resumeStripeSubscriptionUpgradeIfNeeded(facts)
+		if err != nil {
+			return nil, err
+		}
+	}
 	result := &PaidInvoiceReconcileResult{}
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var existingBinding model.SubscriptionProviderBinding
 		if err := tx.Where("provider = ? AND provider_subscription_id = ?", model.PaymentProviderStripe, facts.SubscriptionID).First(&existingBinding).Error; err == nil {
+			if recurringUpgrade {
+				handled, err := reconcilePaidInvoiceUpgradeTx(tx, facts, result)
+				if err != nil {
+					return err
+				}
+				if !handled {
+					return PermanentPaidInvoiceError(errors.New("Stripe paid invoice upgrade intent mismatch"))
+				}
+				return nil
+			}
 			return reconcilePaidInvoiceRenewalTx(tx, facts, result)
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err

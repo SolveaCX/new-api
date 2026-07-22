@@ -194,6 +194,9 @@ func SubscriptionPurchasePendingMigration(c *gin.Context) {
 }
 
 func rejectSubscriptionPurchasePendingMigration(c *gin.Context) bool {
+	if !common.SubscriptionSingleContractEnabled {
+		return false
+	}
 	SubscriptionPurchasePendingMigration(c)
 	return true
 }
