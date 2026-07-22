@@ -433,6 +433,63 @@ type TokenBatch struct {
 	Ids []int `json:"ids"`
 }
 
+type tokenGroupBatchUpdateRequest struct {
+	Ids   []int  `json:"ids"`
+	Group string `json:"group"`
+}
+
+func UpdateTokenGroupBatch(c *gin.Context) {
+	if !common.GetEnvOrDefaultBool("TOKEN_BATCH_GROUP_ENABLED", false) {
+		common.ApiErrorI18n(c, i18n.MsgFeatureDisabled)
+		return
+	}
+
+	request := tokenGroupBatchUpdateRequest{}
+	if err := c.ShouldBindJSON(&request); err != nil || len(request.Ids) == 0 || len(request.Ids) > 100 || strings.TrimSpace(request.Group) == "" {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	request.Group = strings.TrimSpace(request.Group)
+
+	seen := make(map[int]struct{}, len(request.Ids))
+	for _, id := range request.Ids {
+		if id <= 0 {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		if _, exists := seen[id]; exists {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		seen[id] = struct{}{}
+	}
+
+	userId := c.GetInt("id")
+	canUseGroups, err := userCanUseGroups(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !canUseGroups {
+		request.Group = plgGroup
+	}
+
+	count, err := model.BatchUpdateTokenGroup(request.Ids, userId, request.Group)
+	if errors.Is(err, model.ErrTokenBatchInvalid) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if errors.Is(err, model.ErrTokenBatchCacheInvalidation) {
+		common.ApiErrorI18n(c, i18n.MsgUpdateFailed)
+		return
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, count)
+}
+
 func DeleteTokenBatch(c *gin.Context) {
 	tokenBatch := TokenBatch{}
 	if err := c.ShouldBindJSON(&tokenBatch); err != nil || len(tokenBatch.Ids) == 0 {

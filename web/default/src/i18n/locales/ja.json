@@ -5566,6 +5566,11 @@
     "Anthropic Compatible": "Anthropic互換",
     "Gemini Compatible": "Gemini互換",
     "This model cannot be called because upstreams no longer support it.": "このモデルは上流でサポート終了のため呼び出せません。",
-    "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了"
+    "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了",
+    "Choose a group for the selected API keys.": "選択した API キーのグループを選択してください。",
+    "Failed to update selected API key groups": "選択した API キーのグループを更新できませんでした",
+    "Update group": "グループを更新",
+    "Update group for {{count}} API key(s)": "{{count}} 個の API キーのグループを更新",
+    "Updated the group for {{count}} API key(s)": "{{count}} 個の API キーのグループを更新しました"
   }
 }

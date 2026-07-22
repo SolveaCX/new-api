@@ -5566,6 +5566,11 @@
     "Anthropic Compatible": "Compatível com Anthropic",
     "Gemini Compatible": "Compatível com Gemini",
     "This model cannot be called because upstreams no longer support it.": "Este modelo não pode ser chamado porque os provedores upstream não oferecem mais suporte.",
-    "Not callable · Officially unsupported": "Não pode ser chamado · Sem suporte oficial"
+    "Not callable · Officially unsupported": "Não pode ser chamado · Sem suporte oficial",
+    "Choose a group for the selected API keys.": "Escolha um grupo para as chaves de API selecionadas.",
+    "Failed to update selected API key groups": "Não foi possível atualizar os grupos das chaves de API selecionadas",
+    "Update group": "Atualizar grupo",
+    "Update group for {{count}} API key(s)": "Atualizar o grupo de {{count}} chave(s) de API",
+    "Updated the group for {{count}} API key(s)": "O grupo de {{count}} chave(s) de API foi atualizado"
   }
 }

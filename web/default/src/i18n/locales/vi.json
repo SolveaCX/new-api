@@ -5566,6 +5566,11 @@
     "Anthropic Compatible": "Tương thích Anthropic",
     "Gemini Compatible": "Tương thích Gemini",
     "This model cannot be called because upstreams no longer support it.": "Không thể gọi mô hình này vì nhà cung cấp thượng nguồn không còn hỗ trợ.",
-    "Not callable · Officially unsupported": "Không thể gọi · Không còn được hỗ trợ chính thức"
+    "Not callable · Officially unsupported": "Không thể gọi · Không còn được hỗ trợ chính thức",
+    "Choose a group for the selected API keys.": "Chọn một nhóm cho các khóa API đã chọn.",
+    "Failed to update selected API key groups": "Không thể cập nhật nhóm cho các khóa API đã chọn",
+    "Update group": "Cập nhật nhóm",
+    "Update group for {{count}} API key(s)": "Cập nhật nhóm cho {{count}} khóa API",
+    "Updated the group for {{count}} API key(s)": "Đã cập nhật nhóm cho {{count}} khóa API"
   }
 }

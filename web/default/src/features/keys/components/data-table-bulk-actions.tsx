@@ -16,12 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useCallback } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { type Table } from '@tanstack/react-table'
+import { FolderEditIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { Copy, Trash2, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import { useCanUseGroups } from '@/hooks/use-enterprise'
+import { useStatus } from '@/hooks/use-status'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -29,7 +33,12 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { DataTableBulkActions as BulkActionsToolbar } from '@/components/data-table'
+import {
+  canBatchUpdateApiKeyGroup,
+  getBatchGroupOptions,
+} from '../lib/api-key-batch-group'
 import { type ApiKey } from '../types'
+import { ApiKeysBatchGroupDialog } from './api-keys-batch-group-dialog'
 import { ApiKeysMultiDeleteDialog } from './api-keys-multi-delete-dialog'
 import { useApiKeys } from './api-keys-provider'
 
@@ -41,10 +50,22 @@ export function DataTableBulkActions<TData>({
   table,
 }: DataTableBulkActionsProps<TData>) {
   const { t } = useTranslation()
-  const { resolveRealKeysBatch } = useApiKeys()
+  const { modelAccessQuery, resolveRealKeysBatch } = useApiKeys()
+  const canUseGroups = useCanUseGroups()
+  const { status } = useStatus()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showBatchGroupDialog, setShowBatchGroupDialog] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
   const selectedRows = table.getFilteredSelectedRowModel().rows
+  const groupOptions = useMemo(
+    () => getBatchGroupOptions(modelAccessQuery.data),
+    [modelAccessQuery.data]
+  )
+  const showGroupAction = canBatchUpdateApiKeyGroup(
+    status?.token_batch_group_enabled === true,
+    canUseGroups,
+    modelAccessQuery.data
+  )
 
   const handleBatchCopy = useCallback(async () => {
     if (selectedRows.length === 0) return
@@ -105,6 +126,31 @@ export function DataTableBulkActions<TData>({
           </TooltipContent>
         </Tooltip>
 
+        {showGroupAction && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant='outline'
+                  size='icon'
+                  className='size-8'
+                  onClick={() => setShowBatchGroupDialog(true)}
+                  aria-label={t('Update group')}
+                />
+              }
+            >
+              <HugeiconsIcon
+                icon={FolderEditIcon}
+                data-icon='inline-start'
+                aria-hidden='true'
+              />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('Update group')}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         <Tooltip>
           <TooltipTrigger
             render={
@@ -125,6 +171,13 @@ export function DataTableBulkActions<TData>({
           </TooltipContent>
         </Tooltip>
       </BulkActionsToolbar>
+
+      <ApiKeysBatchGroupDialog
+        open={showBatchGroupDialog}
+        onOpenChange={setShowBatchGroupDialog}
+        options={groupOptions}
+        table={table}
+      />
 
       <ApiKeysMultiDeleteDialog
         open={showDeleteConfirm}
