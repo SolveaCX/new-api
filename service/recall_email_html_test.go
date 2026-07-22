@@ -100,6 +100,8 @@ func TestRecallEmailHTMLValidate(t *testing.T) {
 		{name: "rejects url action in attribute names", source: injectBeforeBodyEnd(`<p {{.ClaimURL}}="x">Dynamic attribute</p>`), wantErr: "template action in attribute name"},
 		{name: "rejects ordinary field action in attribute names", source: injectBeforeBodyEnd(`<p {{.RecipientName}}="x">Dynamic attribute</p>`), wantErr: "template action in attribute name"},
 		{name: "rejects trim-marker field action in attribute names", source: injectBeforeBodyEnd(`<p {{- .RecipientName -}}="x">Dynamic attribute</p>`), wantErr: "template action in attribute name"},
+		{name: "rejects url action in end tags", source: strings.Replace(validRecallHTML, "</p>", `</p {{.ClaimURL}}>`, 1), wantErr: "template action in end tag"},
+		{name: "rejects trim-marker ordinary field action in end tags", source: strings.Replace(validRecallHTML, "</p>", `</p {{- .RecipientName -}}>`, 1), wantErr: "template action in end tag"},
 		{name: "rejects claim action in doctype", source: strings.Replace(validRecallHTML, "<!doctype html>", "<!doctype html {{.ClaimURL}}>", 1), wantErr: "ClaimURL action must appear in an anchor href"},
 		{name: "rejects trim-marker unsubscribe action in doctype", source: strings.Replace(validRecallHTML, "<!doctype html>", "<!doctype html {{- .UnsubscribeURL -}}>", 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
 	}
