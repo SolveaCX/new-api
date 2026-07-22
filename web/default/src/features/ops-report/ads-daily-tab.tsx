@@ -50,10 +50,12 @@ const MATCH_LABELS: Record<string, string> = {
 
 // Landing-page thumbnail via the thum.io screenshot service — keyless free
 // tier, cached on their side. The first-ever request for a URL returns a
-// placeholder that becomes the real screenshot on later loads. Admin-only
-// page with a handful of distinct URLs, so the free tier is plenty.
+// placeholder that becomes the real screenshot on later loads. Only the
+// width option is free — crop/wait/fullpage return an "Image not authorized"
+// placeholder. Admin-only page with a handful of distinct URLs, so the free
+// tier is plenty.
 const landingThumb = (url: string, width: number): string =>
-  `https://image.thum.io/get/width/${width}/crop/${width * 2}/${url}`
+  `https://image.thum.io/get/width/${width}/${url}`
 
 // row tinting per change type, readable in light and dark themes
 const CHANGE_ROW_CLASS: Record<string, string> = {
@@ -146,74 +148,70 @@ function CreativeCard(props: {
           <StatusBadge status={row.status} />
         </div>
       </div>
-      {hasContent ? (
-        <>
-          <div className='mt-1 font-medium break-words text-blue-700 dark:text-blue-400'>
-            {finalUrl ? (
-              <a
-                href={finalUrl}
-                target='_blank'
-                rel='noreferrer'
-                className='hover:underline'
-              >
-                {(row.headlines ?? []).slice(0, 3).join(' | ')}
-              </a>
-            ) : (
-              (row.headlines ?? []).slice(0, 3).join(' | ')
-            )}
-          </div>
-          {(row.headlines ?? []).length > 3 && (
-            <div className='text-muted-foreground mt-0.5 text-xs break-words'>
-              {(row.headlines ?? []).slice(3).join(' | ')}
+      <div className='mt-2 flex items-start gap-3'>
+        {finalUrl && (
+          <a
+            href={finalUrl}
+            target='_blank'
+            rel='noreferrer'
+            className='shrink-0'
+            title={finalUrl}
+          >
+            <img
+              src={landingThumb(finalUrl, 320)}
+              alt=''
+              loading='lazy'
+              className='h-24 w-28 rounded border object-cover object-top transition-opacity hover:opacity-80'
+            />
+          </a>
+        )}
+        <div className='min-w-0 flex-1'>
+          {hasContent ? (
+            <>
+              <div className='font-medium break-words text-blue-700 dark:text-blue-400'>
+                {finalUrl ? (
+                  <a
+                    href={finalUrl}
+                    target='_blank'
+                    rel='noreferrer'
+                    className='hover:underline'
+                  >
+                    {(row.headlines ?? []).slice(0, 3).join(' | ')}
+                  </a>
+                ) : (
+                  (row.headlines ?? []).slice(0, 3).join(' | ')
+                )}
+              </div>
+              {(row.headlines ?? []).length > 3 && (
+                <div className='text-muted-foreground mt-0.5 text-xs break-words'>
+                  {(row.headlines ?? []).slice(3).join(' | ')}
+                </div>
+              )}
+              <div className='mt-1 text-xs break-words'>
+                {(row.descriptions ?? []).join(' ')}
+              </div>
+              {(row.image_urls ?? []).length > 0 && (
+                <div className='mt-2 flex flex-wrap gap-1'>
+                  {(row.image_urls ?? []).map((img) => (
+                    <img
+                      key={img}
+                      src={img}
+                      alt=''
+                      loading='lazy'
+                      className='h-16 rounded border object-cover'
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className='text-muted-foreground text-xs'>
+              {t('Creative content is captured from the first sync onward.')} (#
+              {row.ad_id})
             </div>
           )}
-          <div className='mt-1 text-xs break-words'>
-            {(row.descriptions ?? []).join(' ')}
-          </div>
-          {(row.image_urls ?? []).length > 0 && (
-            <div className='mt-2 flex flex-wrap gap-1'>
-              {(row.image_urls ?? []).map((img) => (
-                <img
-                  key={img}
-                  src={img}
-                  alt=''
-                  loading='lazy'
-                  className='h-16 rounded border object-cover'
-                />
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        <div className='text-muted-foreground mt-1 text-xs'>
-          {t('Creative content is captured from the first sync onward.')} (#
-          {row.ad_id})
         </div>
-      )}
-      {finalUrl && (
-        <a
-          href={finalUrl}
-          target='_blank'
-          rel='noreferrer'
-          className='bg-muted/30 hover:bg-muted/60 mt-2 flex items-center gap-2 rounded border p-1.5'
-          title={finalUrl}
-        >
-          <img
-            src={landingThumb(finalUrl, 240)}
-            alt=''
-            loading='lazy'
-            className='h-14 w-24 shrink-0 rounded border object-cover object-top'
-          />
-          <span className='min-w-0'>
-            <span className='text-muted-foreground block text-xs'>
-              {t('Landing Pages')}
-            </span>
-            <span className='text-primary block truncate text-xs'>
-              {finalUrl.replace(/^https?:\/\//, '')}
-            </span>
-          </span>
-        </a>
-      )}
+      </div>
       <div className='text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs'>
         <span className='truncate'>
           {row.campaign_name}
