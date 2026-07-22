@@ -20,8 +20,6 @@ import { useTranslation, Trans } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { Zap } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
-import { useSystemConfig } from '@/hooks/use-system-config'
-import { isCardBindEligible } from '@/components/layout/components/card-bind-eligibility'
 import { formatQuota } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
@@ -42,16 +40,10 @@ const LOW_BALANCE_QUOTA = 0.5 * QUOTA_PER_UNIT // < $0.50
  */
 export function TopupBonusBanner() {
   const { t } = useTranslation()
-  const config = useSystemConfig()
   const user = useAuthStore((s) => s.auth.user)
   const remainQuota = Number(user?.quota ?? 0)
 
   if (remainQuota >= LOW_BALANCE_QUOTA) return null
-
-  // Defer to the new-user card-bind promo banner (rendered in the app layout): when it is
-  // showing, this low-balance warning must stay hidden so the two banners never stack. Shares
-  // isCardBindEligible with CardBindBanner so the two conditions can't drift.
-  if (isCardBindEligible(user, config.enableStripeCardBind)) return null
 
   const balanceLabel = formatQuota(remainQuota)
 
@@ -68,7 +60,7 @@ export function TopupBonusBanner() {
         </div>
         <div className='text-muted-foreground mt-0.5 text-[13px]'>
           <Trans
-            i18nKey='Top up $10 → the <z>full $10 lands, zero fee</z> + bonus. On OpenRouter, $10 only loads $9.45.'
+            i18nKey='Top up $10 → the <z>full $10 lands, zero fee</z>. On OpenRouter, $10 only loads $9.45.'
             components={{
               z: (
                 <b className='text-emerald-600 dark:text-emerald-400' />

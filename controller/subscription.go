@@ -199,6 +199,10 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "媒体额度不能为负数")
 		return
 	}
+	if req.Plan.Window5hAmount < 0 || req.Plan.WindowWeekAmount < 0 {
+		common.ApiErrorMsg(c, "窗口限额不能为负数")
+		return
+	}
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
 	if req.Plan.UpgradeGroup != "" {
 		if _, ok := ratio_setting.GetGroupRatioCopy()[req.Plan.UpgradeGroup]; !ok {
@@ -270,6 +274,10 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "媒体额度不能为负数")
 		return
 	}
+	if req.Plan.Window5hAmount < 0 || req.Plan.WindowWeekAmount < 0 {
+		common.ApiErrorMsg(c, "窗口限额不能为负数")
+		return
+	}
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
 	if req.Plan.UpgradeGroup != "" {
 		if _, ok := ratio_setting.GetGroupRatioCopy()[req.Plan.UpgradeGroup]; !ok {
@@ -301,6 +309,8 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"max_purchase_per_user":      req.Plan.MaxPurchasePerUser,
 			"total_amount":               req.Plan.TotalAmount,
 			"media_credits_monthly":      req.Plan.MediaCreditsMonthly,
+			"window_5h_amount":           req.Plan.Window5hAmount,
+			"window_week_amount":         req.Plan.WindowWeekAmount,
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
+	stripecoupon "github.com/stripe/stripe-go/v81/coupon"
 	"github.com/thanhpk/randstr"
 )
 
@@ -83,17 +85,18 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	reference := fmt.Sprintf("sub-stripe-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "sub_ref_" + common.Sha1([]byte(reference))
 
+	// 被邀用户首次订阅：首月立减（前端与邀请页承诺的口径）。折扣判定与
+	// 订单创建同事务、锁用户行——并发多开 checkout 只有一单能占到折扣。
 	order := &model.SubscriptionOrder{
 		UserId:          userId,
 		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
 		TradeNo:         referenceId,
 		PaymentMethod:   model.PaymentMethodStripe,
 		PaymentProvider: model.PaymentProviderStripe,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := order.Insert(); err != nil {
+	if err := model.CreateSubscriptionOrderWithInviteDiscount(order, plan.PriceAmount, 0); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
 		return
 	}
@@ -116,7 +119,21 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		}
 	}
 
-	payLink, err := genStripeSubscriptionLink(referenceId, user.StripeCustomer, user.Email, plan.StripePriceId, recallDiscount)
+	// Stripe Checkout accepts only one discount. A targeted recall promotion
+	// takes precedence over the generic invitee first-subscription discount;
+	// release the invite slot and keep the recorded amount aligned with Stripe.
+	if recallDiscount != nil && order.DiscountUSD > 0 {
+		order.Money = plan.PriceAmount
+		order.DiscountUSD = 0
+		if err := order.Update(); err != nil {
+			order.Status = common.TopUpStatusFailed
+			_ = order.Update()
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": "更新订单折扣失败"})
+			return
+		}
+	}
+
+	payLink, err := genStripeSubscriptionLink(referenceId, user.StripeCustomer, user.Email, plan.StripePriceId, recallDiscount, order.DiscountUSD)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 订阅支付链接创建失败 trade_no=%s plan_id=%d error=%q", referenceId, plan.Id, err.Error()))
 		order.Status = common.TopUpStatusFailed
@@ -133,7 +150,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	})
 }
 
-func genStripeSubscriptionLink(referenceId string, customerId string, email string, priceId string, recall *service.RecallCheckoutDiscount) (string, error) {
+func genStripeSubscriptionLink(referenceId string, customerId string, email string, priceId string, recall *service.RecallCheckoutDiscount, discountUSD float64) (string, error) {
 	stripe.Key = setting.StripeApiSecret
 
 	params := &stripe.CheckoutSessionParams{
@@ -156,9 +173,7 @@ func genStripeSubscriptionLink(referenceId string, customerId string, email stri
 			},
 		},
 	}
-	if recall == nil {
-		params.AllowPromotionCodes = stripe.Bool(true)
-	} else {
+	if recall != nil {
 		params.Discounts = []*stripe.CheckoutSessionDiscountParams{{
 			PromotionCode: stripe.String(recall.PromotionCodeID),
 		}}
@@ -166,15 +181,36 @@ func genStripeSubscriptionLink(referenceId string, customerId string, email stri
 			"recall_campaign_id":  strconv.FormatInt(recall.CampaignID, 10),
 			"recall_recipient_id": strconv.FormatInt(recall.RecipientID, 10),
 		}
+	} else if discountUSD <= 0 {
+		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 
 	if "" == customerId {
 		if "" != email {
 			params.CustomerEmail = stripe.String(email)
 		}
-		params.CustomerCreation = stripe.String(string(stripe.CheckoutSessionCustomerCreationAlways))
+		// Do NOT set CustomerCreation here: Stripe rejects it outside payment
+		// mode ("customer_creation can only be used in payment mode"), and
+		// subscription-mode checkouts always create a customer anyway.
 	} else {
 		params.Customer = stripe.String(customerId)
+	}
+
+	// 被邀首订折扣：一次性 coupon 只作用于首期账单，续费恢复原价。
+	if recall == nil && discountUSD > 0 {
+		couponParams := &stripe.CouponParams{
+			AmountOff: stripe.Int64(int64(math.Round(discountUSD * 100))),
+			Currency:  stripe.String(string(stripe.CurrencyUSD)),
+			Duration:  stripe.String(string(stripe.CouponDurationOnce)),
+			Name:      stripe.String("Invite first-month discount"),
+		}
+		cp, err := stripecoupon.New(couponParams)
+		if err != nil {
+			return "", fmt.Errorf("create invite discount coupon: %w", err)
+		}
+		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
+			{Coupon: stripe.String(cp.ID)},
+		}
 	}
 
 	result, err := session.New(params)

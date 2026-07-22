@@ -53,7 +53,7 @@ func setupSubscriptionStripeRecordingBackend(t *testing.T) *subscriptionStripeRe
 func TestSubscriptionStripeOrdinaryPromotionCodes(t *testing.T) {
 	backend := setupSubscriptionStripeRecordingBackend(t)
 
-	link, err := genStripeSubscriptionLink("sub_ref_ordinary", "", "buyer@example.com", "price_subscription", nil)
+	link, err := genStripeSubscriptionLink("sub_ref_ordinary", "", "buyer@example.com", "price_subscription", nil, 0)
 
 	require.NoError(t, err)
 	require.Equal(t, "https://checkout.stripe.test/subscription", link)
@@ -64,14 +64,14 @@ func TestSubscriptionStripeOrdinaryPromotionCodes(t *testing.T) {
 	require.Empty(t, params.Discounts)
 }
 
-func TestSubscriptionStripeRecallPromotionCode(t *testing.T) {
+func TestSubscriptionStripeRecallPromotionCodeTakesPrecedence(t *testing.T) {
 	backend := setupSubscriptionStripeRecordingBackend(t)
 
 	link, err := genStripeSubscriptionLink("sub_ref_recall", "cus_123", "buyer@example.com", "price_subscription", &service.RecallCheckoutDiscount{
 		PromotionCodeID: "promo_subscription_recall",
 		CampaignID:      42,
 		RecipientID:     84,
-	})
+	}, 5)
 
 	require.NoError(t, err)
 	require.Equal(t, "https://checkout.stripe.test/subscription", link)

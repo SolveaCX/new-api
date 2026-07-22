@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import type { TFunction } from 'i18next'
 import { Crown, RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatQuota } from '@/lib/format'
@@ -37,6 +36,7 @@ import {
   getSelfSubscriptionFull,
 } from '@/features/subscriptions/api'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
+import { formatMediaValue } from '@/features/subscriptions/lib'
 import type {
   CurrentSubscriptionRecord,
   PlanRecord,
@@ -81,29 +81,6 @@ function usagePercent(used: number, limit: number): number {
   return Math.min(100, Math.max(0, Math.round((used / limit) * 100)))
 }
 
-// 300 credits ≈ 100 images / 75s standard video — anchored on the standard
-// tier of the public media price table (image 3 credits, video 4 credits/s).
-const IMAGE_CREDITS_PER_UNIT = 3
-const VIDEO_CREDITS_PER_SECOND = 4
-
-function formatMediaValue(credits: number, t: TFunction): string {
-  let images = Math.floor(credits / IMAGE_CREDITS_PER_UNIT)
-  if (images >= 200) {
-    images = Math.floor(images / 100) * 100
-  }
-  const seconds = Math.floor(credits / VIDEO_CREDITS_PER_SECOND)
-  if (seconds >= 120) {
-    return t('≈ {{images}} images or {{minutes}} min of video', {
-      images,
-      minutes: Math.floor(seconds / 60),
-    })
-  }
-  return t('≈ {{images}} images or {{seconds}}s of video', {
-    images,
-    seconds,
-  })
-}
-
 function getPlanAudience(title: string, t: (key: string) => string): string {
   switch (title.trim().toLowerCase()) {
     case 'go':
@@ -126,9 +103,6 @@ export function SubscriptionPlansCard({
   const { t } = useTranslation()
 
   const [plans, setPlans] = useState<PlanRecord[]>([])
-  const [activeSubscriptions, setActiveSubscriptions] = useState<
-    UserSubscriptionRecord[]
-  >([])
   const [allSubscriptions, setAllSubscriptions] = useState<
     UserSubscriptionRecord[]
   >([])
@@ -165,7 +139,6 @@ export function SubscriptionPlansCard({
       const res = await getSelfSubscriptionFull()
       if (res.success && res.data) {
         setCurrentSubscription(res.data.current_subscription || null)
-        setActiveSubscriptions(res.data.subscriptions || [])
         setAllSubscriptions(res.data.all_subscriptions || [])
       }
     } catch {
@@ -222,16 +195,6 @@ export function SubscriptionPlansCard({
   useEffect(() => {
     onAvailabilityChange?.(isAvailable)
   }, [isAvailable, onAvailabilityChange])
-
-  // 当前用户已持有的套餐 id 集合（用于在套餐网格标记「当前档」）
-  const ownedPlanIds = useMemo(() => {
-    const set = new Set<number>()
-    for (const sub of activeSubscriptions) {
-      const planId = sub?.subscription?.plan_id
-      if (planId) set.add(planId)
-    }
-    return set
-  }, [activeSubscriptions])
 
   const openPurchase = (p: PlanRecord) => {
     setSelectedPlan(p)
@@ -432,12 +395,19 @@ export function SubscriptionPlansCard({
               const price = formatPlanPrice(Number(plan.price_amount || 0))
               const includedValue =
                 totalAmount > 0 ? formatQuota(totalAmount) : t('Unlimited')
+              // Recommend Go only to users without an active plan — once
+              // subscribed, no tier gets promotional emphasis (never nudge a
+              // downgrade); non-current tiers keep plain outline buttons.
               const isRecommended =
-                plan.title.trim().toLowerCase() === 'go' && plans.length > 1
+                !currentPlan &&
+                plan.title.trim().toLowerCase() === 'go' &&
+                plans.length > 1
               const limit = Number(plan.max_purchase_per_user || 0)
               const count = planPurchaseCountMap.get(plan.id) || 0
               const reached = limit > 0 && count >= limit
-              const isOwned = ownedPlanIds.has(plan.id)
+              // Only the primary plan (highest-priced active subscription) is
+              // "current"; other still-active lower tiers show as owned.
+              const isCurrent = currentPlan?.id === plan.id
               const window5h = Number(plan.window_5h_amount || 0)
               const windowWeek = Number(plan.window_week_amount || 0)
               const mediaCredits = Number(plan.media_credits_monthly || 0)
@@ -448,9 +418,10 @@ export function SubscriptionPlansCard({
                 <Card
                   key={plan.id}
                   className={cn(
-                    'border-border/70 relative transition-colors hover:border-[#8b5cf6]/45',
-                    isRecommended &&
-                      'border-[#8b5cf6]/45 shadow-[0_10px_30px_-28px_rgba(91,33,182,0.8)]'
+                    'ring-border relative rounded-2xl shadow-none transition-shadow',
+                    isRecommended
+                      ? 'ring-2 ring-[#8b5cf6]/60 shadow-[0_0_0_6px_rgba(139,92,246,0.1)] dark:shadow-[0_0_0_6px_rgba(139,92,246,0.18)]'
+                      : 'hover:ring-foreground/20'
                   )}
                 >
                   <CardContent className='flex h-full flex-col p-5'>
@@ -481,7 +452,7 @@ export function SubscriptionPlansCard({
                         {t('per month')}
                       </span>
                     </div>
-                    <div className='mt-4 rounded-xl bg-[#f7f5fc] p-3.5 dark:bg-white/5'>
+                    <div className='mt-5 border-t pt-4'>
                       <p className='text-muted-foreground text-[10px] font-semibold tracking-widest uppercase'>
                         {t('Text models')}
                       </p>
@@ -504,7 +475,7 @@ export function SubscriptionPlansCard({
                         </p>
                       )}
                       {mediaCredits > 0 && (
-                        <div className='mt-3 border-t border-[#5b21b6]/10 pt-3 dark:border-white/10'>
+                        <div className='mt-4 border-t pt-3'>
                           <p className='text-muted-foreground text-[10px] font-semibold tracking-widest uppercase'>
                             {t('Image & video models')}
                           </p>
@@ -523,7 +494,7 @@ export function SubscriptionPlansCard({
                     <div className='flex-1' />
 
                     <div className='mt-5'>
-                      {isOwned ? (
+                      {isCurrent ? (
                         <Button className='w-full' variant='secondary' disabled>
                           {t('Current Plan')}
                         </Button>

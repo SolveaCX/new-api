@@ -674,7 +674,9 @@ export function Wallet(props: WalletProps) {
   return (
     <>
       <SectionPageLayout>
-        <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
+        <SectionPageLayout.Title>
+          <span className='mx-auto block w-full max-w-7xl'>{t('Wallet')}</span>
+        </SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
             {paddleCheckoutNotice ? (

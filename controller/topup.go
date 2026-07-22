@@ -32,6 +32,18 @@ func GetTopUpInfo(c *gin.Context) {
 	if !complianceConfirmed {
 		payMethods = []map[string]string{}
 	}
+	// PayMethods 携带 epay 档位（含代码默认的 支付宝/微信/自定义 占位）。epay 网关
+	// 未配置时这些方式点了也走不通，不下发；其余网关（Stripe/Creem/Paddle）各有
+	// 独立开关，Paddle 条目已由 buildTopUpPayMethods 按 enablePaddle 过滤。
+	if !isEpayTopUpEnabled() {
+		kept := make([]map[string]string, 0, len(payMethods))
+		for _, method := range payMethods {
+			if strings.TrimSpace(method["type"]) == model.PaymentMethodPaddle {
+				kept = append(kept, method)
+			}
+		}
+		payMethods = kept
+	}
 
 	// 如果启用了 Stripe 支付，添加到支付方法列表
 	if isStripeTopUpEnabled() {

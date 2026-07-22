@@ -4624,7 +4624,7 @@
     "Top up & get <hl>up to 50% OFF</hl><br/>＋ bonus credit on every plan": "Nạp tiền và nhận <hl>giảm tới 50%</hl><br/>＋ tín dụng thưởng cho mọi gói",
     "Top up & get bonus credit — up to 50% OFF": "Nạp tiền nhận tín dụng thưởng — giảm tới 50%",
     "Top up ${{amount}} → get ${{total}}": "Nạp ${{amount}} → nhận ${{total}}",
-    "Top up $10 → the <z>full $10 lands, zero fee</z> + bonus. On OpenRouter, $10 only loads $9.45.": "Nạp $10 → <z>nhận đủ $10, miễn phí</z> + thưởng. Trên OpenRouter, $10 chỉ vào $9.45.",
+    "Top up $10 → the <z>full $10 lands, zero fee</z>. On OpenRouter, $10 only loads $9.45.": "Nạp $10 → <z>nhận đủ $10, miễn phí</z>. Trên OpenRouter, $10 chỉ vào $9.45.",
     "Top up $1000 get $500": "Nạp $1000 nhận $500",
     "Top up $200 get $100": "Nạp $200 nhận $100",
     "Top up balance and view billing history.": "Nạp tiền vào tài khoản và xem lịch sử thanh toán.",
@@ -5289,13 +5289,9 @@
     "tried": "thử",
     "PLG users only (group=plg, internal and enterprise accounts excluded). All dates are UTC. Real browse = playground chats excluding the auto-fired signup request; manual keys = API keys created 2+ minutes after signup; key users = any API key request including auto-provisioned keys.": "Chỉ người dùng PLG (group=plg, đã loại trừ tài khoản nội bộ và doanh nghiệp). Mọi ngày đều theo UTC. Duyệt thực = trò chuyện playground trừ yêu cầu tự động khi đăng ký; khóa tạo thủ công = khóa API tạo sau đăng ký 2 phút trở lên; người dùng khóa = mọi yêu cầu qua khóa API, kể cả khóa tự cấp.",
     "Shown": "Phương thức hiển thị",
-    "Every top-up earns bonus credit": "Mỗi lần nạp đều được tặng credit",
-    "Top up & get <hl>bonus credit</hl> — every time": "Nạp tiền nhận <hl>credit thưởng</hl> — mọi lần nạp",
     "Models are priced at 60–90% of the official list. Top up $200 and get $100 free — both discounts stack, as low as 50% of the official price.": "Giá model bằng 60-90% giá chính thức. Nạp $200 tặng thêm $100 — hai ưu đãi cộng dồn, thấp nhất bằng 50% giá chính thức.",
     "You get ${{total}} in credit": "Bạn nhận ${{total}} credit",
     "+${{bonus}} free": "+${{bonus}} miễn phí",
-    "Top-up bonus": "Thưởng nạp tiền",
-    "Every top-up <hl>earns bonus credit</hl> · same models, up to 50% off the official price": "Mỗi lần nạp <hl>đều tặng credit</hl> · cùng model, rẻ hơn tới 50% so với giá chính thức",
     "Pay $20, get $28 in credit": "Nạp $20, nhận $28 credit",
     "Pay $200, get $300 in credit": "Nạp $200, nhận $300 credit",
     "Best for trying real API workloads.": "Phù hợp nhất cho workload API thực tế.",
@@ -5541,6 +5537,8 @@
     "Text models": "Mô hình văn bản",
     "Image & video models": "Mô hình hình ảnh & video",
     "One key, 328+ frontier models: GPT, Claude, Gemini, DeepSeek, GLM for text, plus Seedance 2.5 and more for image & video generation.": "Một khóa, hơn 328 mô hình hàng đầu: GPT, Claude, Gemini, DeepSeek, GLM cho văn bản, cùng Seedance 2.5 và nhiều mô hình tạo ảnh & video khác.",
+    "Pay with card (Stripe)": "Thanh toán bằng thẻ (Stripe)",
+    "Plan subscription": "Đăng ký gói",
     "≈ {{images}} images or {{seconds}}s of video": "≈ {{images}} ảnh hoặc {{seconds}} giây video",
     "≈ {{images}} images or {{minutes}} min of video": "≈ {{images}} ảnh hoặc {{minutes}} phút video",
     "Media credits": "Tín dụng media",
@@ -6018,5 +6016,9 @@
     "statusCenter.actor.admin": "Quản trị viên",
     "statusCenter.actor.root": "Người vận hành Root",
     "statusCenter.actor.system": "Hệ thống"
+,
+    "5-hour window limit": "Giới hạn cửa sổ 5 giờ",
+    "7-day window limit": "Giới hạn cửa sổ 7 ngày",
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 sẽ tắt giới hạn cửa sổ này. Giá trị được quy đổi sang đơn vị hạn mức khi lưu."
   }
 }

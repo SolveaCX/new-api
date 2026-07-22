@@ -7,7 +7,7 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useTranslation } from 'react-i18next'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatInvitationUSD } from '../lib/usd'
 import type { InvitationSummary } from '../types'
@@ -63,10 +63,10 @@ export function InvitationStats(props: InvitationStatsProps) {
   ]
 
   return (
-    <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'>
-      {stats.map((stat) => (
-        <Card key={stat.label} size='sm'>
-          <CardContent>
+    <Card size='sm' className='py-0'>
+      <div className='divide-border grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-y-0 sm:divide-x xl:grid-cols-4'>
+        {stats.map((stat) => (
+          <div key={stat.label} className='px-4 py-4 sm:px-5'>
             <p className='text-muted-foreground text-xs font-medium'>
               {stat.label}
             </p>
@@ -82,9 +82,9 @@ export function InvitationStats(props: InvitationStatsProps) {
                 {stat.description}
               </p>
             )}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }

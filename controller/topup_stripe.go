@@ -24,6 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v81"
+	stripecharge "github.com/stripe/stripe-go/v81/charge"
 	"github.com/stripe/stripe-go/v81/checkout/session"
 	stripecustomer "github.com/stripe/stripe-go/v81/customer"
 	stripeinvoice "github.com/stripe/stripe-go/v81/invoice"
@@ -189,12 +190,19 @@ func validateStripeTopUpPriceContract(priceId string, requestedCurrency string, 
 
 func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64, bool) {
 	switch strings.ToUpper(strings.TrimSpace(currency)) {
+	// 50/100 tiers: USD is exact face value; JPY/BRL/INR follow the pricing
+	// pattern of the existing tiers (JPY ×150, BRL/INR psychological endings)
+	// — confirm with ops before enabling those currencies in production.
 	case "USD":
 		switch packageAmount {
 		case 10:
 			return 1000, true
 		case 20:
 			return 2000, true
+		case 50:
+			return 5000, true
+		case 100:
+			return 10000, true
 		case 200:
 			return 20000, true
 		}
@@ -204,6 +212,10 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 			return 1500, true
 		case 20:
 			return 3000, true
+		case 50:
+			return 7500, true
+		case 100:
+			return 15000, true
 		case 200:
 			return 30000, true
 		}
@@ -213,6 +225,10 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 			return 4990, true
 		case 20:
 			return 9990, true
+		case 50:
+			return 24990, true
+		case 100:
+			return 49900, true
 		case 200:
 			return 99000, true
 		}
@@ -222,6 +238,10 @@ func expectedStripeTopUpAmountMinor(currency string, packageAmount int64) (int64
 			return 89900, true
 		case 20:
 			return 179900, true
+		case 50:
+			return 449900, true
+		case 100:
+			return 899900, true
 		case 200:
 			return 1799000, true
 		}
@@ -1308,42 +1328,83 @@ func backfillCardFingerprintFromTopUp(ctx context.Context, topUp *model.TopUp, c
 }
 
 // chargeReversed handles charge.refunded / charge.dispute.created. Its only
-// job today is invite-reward-v2 clawback: map the charge back to the checkout
-// session's client_reference_id (our trade_no) and revoke any subscription
-// invite reward tied to that order. Top-up refund bookkeeping stays a manual
-// ops process, unchanged.
+// job today is invite-reward-v2 clawback: map the reversed charge back to the
+// checkout session's client_reference_id (our trade_no) and revoke any
+// subscription invite reward tied to that order. Top-up refund bookkeeping
+// stays a manual ops process, unchanged.
+//
+// Deliberately NOT gated on common.InviteRewardSubscriptionMode: rewards
+// created while the mode was enabled must remain clawback-able even after the
+// flag is turned off; Revoke is a cheap no-op when no reward exists.
+//
+// Lookup covers both checkout modes:
+//   - mode=payment: the session carries the charge's payment_intent directly.
+//   - mode=subscription: the session has no payment_intent (the charge belongs
+//     to the subscription invoice), so walk charge → invoice → subscription and
+//     list sessions by subscription id.
 func chargeReversed(ctx context.Context, event stripe.Event, reason string, callerIp string) error {
-	if !common.InviteRewardSubscriptionMode {
-		return nil
-	}
-	paymentIntentId := event.GetObjectValue("payment_intent")
-	if paymentIntentId == "" {
-		logger.LogWarn(ctx, fmt.Sprintf("Stripe %s 事件缺少 payment_intent，跳过邀请奖励回收 client_ip=%s", string(event.Type), callerIp))
-		return nil
-	}
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		logger.LogWarn(ctx, "Stripe API 密钥未配置，无法回查 checkout session，跳过邀请奖励回收")
 		return nil
 	}
 	stripe.Key = setting.StripeApiSecret
-	listParams := &stripe.CheckoutSessionListParams{
-		PaymentIntent: stripe.String(paymentIntentId),
+
+	paymentIntentId := event.GetObjectValue("payment_intent")
+	// charge.refunded delivers a charge object (its id IS the charge id);
+	// charge.dispute.created delivers a dispute pointing at its charge.
+	chargeId := event.GetObjectValue("id")
+	if event.Type == stripe.EventTypeChargeDisputeCreated {
+		chargeId = event.GetObjectValue("charge")
 	}
-	listParams.Limit = stripe.Int64(1)
-	iter := session.List(listParams)
+
 	referenceId := ""
-	for iter.Next() {
-		if s := iter.CheckoutSession(); s != nil {
-			referenceId = s.ClientReferenceID
+	if paymentIntentId != "" {
+		listParams := &stripe.CheckoutSessionListParams{
+			PaymentIntent: stripe.String(paymentIntentId),
 		}
-		break
+		listParams.Limit = stripe.Int64(1)
+		iter := session.List(listParams)
+		for iter.Next() {
+			if s := iter.CheckoutSession(); s != nil {
+				referenceId = s.ClientReferenceID
+			}
+			break
+		}
+		if err := iter.Err(); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("Stripe 回查 checkout session 失败 payment_intent=%s error=%q", paymentIntentId, err.Error()))
+			// 4xx（权限/对象不存在/参数）重投也不会好，标记永久防止 Stripe 长期重投；
+			// 网络/5xx/限流保持可重试，回收不丢。
+			return classifyStripeLookupError(err)
+		}
 	}
-	if err := iter.Err(); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("Stripe 回查 checkout session 失败 payment_intent=%s error=%q", paymentIntentId, err.Error()))
-		return err // retryable: let Stripe redeliver so the clawback is not lost
+
+	if referenceId == "" && chargeId != "" {
+		subscriptionId, err := stripeSubscriptionIdForCharge(chargeId)
+		if err != nil {
+			logger.LogError(ctx, fmt.Sprintf("Stripe 回查 charge→invoice→subscription 失败 charge=%s error=%q", chargeId, err.Error()))
+			return classifyStripeLookupError(err)
+		}
+		if subscriptionId != "" {
+			listParams := &stripe.CheckoutSessionListParams{
+				Subscription: stripe.String(subscriptionId),
+			}
+			listParams.Limit = stripe.Int64(1)
+			iter := session.List(listParams)
+			for iter.Next() {
+				if s := iter.CheckoutSession(); s != nil {
+					referenceId = s.ClientReferenceID
+				}
+				break
+			}
+			if err := iter.Err(); err != nil {
+				logger.LogError(ctx, fmt.Sprintf("Stripe 按 subscription 回查 checkout session 失败 subscription=%s error=%q", subscriptionId, err.Error()))
+				return classifyStripeLookupError(err)
+			}
+		}
 	}
+
 	if referenceId == "" {
-		logger.LogInfo(ctx, fmt.Sprintf("Stripe %s 未关联 checkout session，跳过邀请奖励回收 payment_intent=%s", string(event.Type), paymentIntentId))
+		logger.LogInfo(ctx, fmt.Sprintf("Stripe %s 未关联 checkout session，跳过邀请奖励回收 payment_intent=%s charge=%s", string(event.Type), paymentIntentId, chargeId))
 		return nil
 	}
 	revoked, err := model.RevokeInviteSubscriptionRewardByTradeNo(referenceId, reason)
@@ -1355,6 +1416,41 @@ func chargeReversed(ctx context.Context, event stripe.Event, reason string, call
 		logger.LogInfo(ctx, fmt.Sprintf("邀请奖励已回收 trade_no=%s reason=%s client_ip=%s", referenceId, reason, callerIp))
 	}
 	return nil
+}
+
+// classifyStripeLookupError marks non-recoverable Stripe API failures (4xx
+// other than 429: bad key permissions, missing/cross-account objects, bad
+// params) as permanent so the webhook is acknowledged instead of redelivered
+// forever; everything else (network, 5xx, 429) stays retryable.
+func classifyStripeLookupError(err error) error {
+	var sErr *stripe.Error
+	if errors.As(err, &sErr) {
+		code := sErr.HTTPStatusCode
+		if code >= 400 && code < 500 && code != http.StatusTooManyRequests {
+			return stripeWebhookPermanentError{err: err}
+		}
+	}
+	return err
+}
+
+// stripeSubscriptionIdForCharge resolves charge → invoice → subscription.
+// Returns "" (no error) when the charge is not tied to a subscription invoice.
+func stripeSubscriptionIdForCharge(chargeId string) (string, error) {
+	ch, err := stripecharge.Get(chargeId, nil)
+	if err != nil {
+		return "", err
+	}
+	if ch == nil || ch.Invoice == nil || ch.Invoice.ID == "" {
+		return "", nil
+	}
+	inv, err := stripeinvoice.Get(ch.Invoice.ID, nil)
+	if err != nil {
+		return "", err
+	}
+	if inv == nil || inv.Subscription == nil {
+		return "", nil
+	}
+	return inv.Subscription.ID, nil
 }
 
 func sessionExpired(ctx context.Context, event stripe.Event) {

@@ -150,6 +150,19 @@ func (s *BillingSession) needsRefundLocked() bool {
 }
 
 // GetPreConsumedQuota 返回实际预扣的额度。
+// SubscriptionTaskSnapshot exports the subscription weight and window-guard
+// ledger for persistence on an async task, so its later refund/recalculation
+// can convert list-quota deltas to weighted pool units and compensate the
+// original window counters. Returns (0, nil) for non-subscription funding.
+func (s *BillingSession) SubscriptionTaskSnapshot() (float64, *model.TaskSubscriptionWindow) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sf, ok := s.funding.(*SubscriptionFunding); ok {
+		return sf.Weight(), sf.WindowSnapshot()
+	}
+	return 0, nil
+}
+
 func (s *BillingSession) GetPreConsumedQuota() int {
 	return s.preConsumedQuota
 }

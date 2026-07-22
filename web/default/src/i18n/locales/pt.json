@@ -4624,7 +4624,7 @@
     "Top up & get <hl>up to 50% OFF</hl><br/>＋ bonus credit on every plan": "Recarregue e ganhe <hl>até 50% OFF</hl><br/>＋ crédito bônus em todos os planos",
     "Top up & get bonus credit — up to 50% OFF": "Recarregue e ganhe crédito bônus — até 50% OFF",
     "Top up ${{amount}} → get ${{total}}": "Recarregue ${{amount}} → receba ${{total}}",
-    "Top up $10 → the <z>full $10 lands, zero fee</z> + bonus. On OpenRouter, $10 only loads $9.45.": "Recarregue $10 → <z>os $10 completos entram, sem taxa</z> + bônus. No OpenRouter, $10 só creditam $9.45.",
+    "Top up $10 → the <z>full $10 lands, zero fee</z>. On OpenRouter, $10 only loads $9.45.": "Recarregue $10 → <z>os $10 completos entram, sem taxa</z>. No OpenRouter, $10 só creditam $9.45.",
     "Top up $1000 get $500": "Recarregue $1000 ganhe $500",
     "Top up $200 get $100": "Recarregue $200 ganhe $100",
     "Top up balance and view billing history.": "Recarregue o saldo e visualize o histórico de faturamento.",
@@ -5289,13 +5289,9 @@
     "tried": "tentativas",
     "PLG users only (group=plg, internal and enterprise accounts excluded). All dates are UTC. Real browse = playground chats excluding the auto-fired signup request; manual keys = API keys created 2+ minutes after signup; key users = any API key request including auto-provisioned keys.": "Somente usuários PLG (group=plg, contas internas e corporativas excluídas). Todas as datas em UTC. Navegação real = conversas no playground excluindo a solicitação automática do cadastro; chaves manuais = chaves de API criadas 2+ minutos após o cadastro; usuários de chaves = qualquer solicitação via chave de API, incluindo chaves provisionadas automaticamente.",
     "Shown": "Métodos exibidos",
-    "Every top-up earns bonus credit": "Cada recarga rende crédito bônus",
-    "Top up & get <hl>bonus credit</hl> — every time": "Recarregue e ganhe <hl>crédito bônus</hl> — sempre",
     "Models are priced at 60–90% of the official list. Top up $200 and get $100 free — both discounts stack, as low as 50% of the official price.": "Os modelos custam 60-90% do preço oficial. Recarregue $200 e ganhe $100 grátis — os dois descontos se somam, até 50% do preço oficial.",
     "You get ${{total}} in credit": "Você recebe ${{total}} em crédito",
     "+${{bonus}} free": "+${{bonus}} grátis",
-    "Top-up bonus": "Bônus de recarga",
-    "Every top-up <hl>earns bonus credit</hl> · same models, up to 50% off the official price": "Cada recarga <hl>rende crédito bônus</hl> · mesmos modelos, até 50% menos que o preço oficial",
     "Pay $20, get $28 in credit": "Pague $20, receba $28 em crédito",
     "Pay $200, get $300 in credit": "Pague $200, receba $300 em crédito",
     "Best for trying real API workloads.": "Ideal para workloads reais de API.",
@@ -5541,6 +5537,8 @@
     "Text models": "Modelos de texto",
     "Image & video models": "Modelos de imagem e vídeo",
     "One key, 328+ frontier models: GPT, Claude, Gemini, DeepSeek, GLM for text, plus Seedance 2.5 and more for image & video generation.": "Uma única chave, mais de 328 modelos de ponta: GPT, Claude, Gemini, DeepSeek, GLM para texto, além do Seedance 2.5 e outros para geração de imagens e vídeo.",
+    "Pay with card (Stripe)": "Pagar com cartão (Stripe)",
+    "Plan subscription": "Assinatura do plano",
     "≈ {{images}} images or {{seconds}}s of video": "≈ {{images}} imagens ou {{seconds}} s de vídeo",
     "≈ {{images}} images or {{minutes}} min of video": "≈ {{images}} imagens ou {{minutes}} min de vídeo",
     "Media credits": "Créditos de mídia",
@@ -6018,5 +6016,9 @@
     "statusCenter.actor.admin": "Administrador",
     "statusCenter.actor.root": "Operador Root",
     "statusCenter.actor.system": "Sistema"
+,
+    "5-hour window limit": "Limite da janela de 5 horas",
+    "7-day window limit": "Limite da janela de 7 dias",
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 desativa este limite de janela. O valor é convertido em unidades de cota ao salvar."
   }
 }

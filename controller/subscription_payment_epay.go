@@ -83,17 +83,18 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		return
 	}
 
+	// 被邀首订折扣：epay 是金额制网关，按折后价拉起。金额制网关拉不起 0 元
+	// 支付，minCharge=0.01 保证实付至少一分；折扣判定与订单创建同事务。
 	order := &model.SubscriptionOrder{
 		UserId:          userId,
 		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
 		TradeNo:         tradeNo,
 		PaymentMethod:   req.PaymentMethod,
 		PaymentProvider: model.PaymentProviderEpay,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := order.Insert(); err != nil {
+	if err := model.CreateSubscriptionOrderWithInviteDiscount(order, plan.PriceAmount, 0.01); err != nil {
 		common.ApiErrorMsg(c, "创建订单失败")
 		return
 	}
@@ -101,7 +102,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		Type:           req.PaymentMethod,
 		ServiceTradeNo: tradeNo,
 		Name:           fmt.Sprintf("SUB:%s", plan.Title),
-		Money:          strconv.FormatFloat(plan.PriceAmount, 'f', 2, 64),
+		Money:          strconv.FormatFloat(order.Money, 'f', 2, 64),
 		Device:         epay.PC,
 		NotifyUrl:      notifyUrl,
 		ReturnUrl:      returnUrl,

@@ -23,6 +23,7 @@ export {
   formatModelCount,
   formatSpeedSpecs,
   formatWindowSummary,
+  formatMediaValue,
   parseFeatureLines,
 } from './format'
 export {
