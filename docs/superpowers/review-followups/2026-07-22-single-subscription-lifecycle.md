@@ -19,6 +19,10 @@ This file records review findings intentionally deferred to keep the release pat
 - Grace-expiry fallback currently treats an authoritative `uncollectible` invoice like a successfully voided invoice, although Stripe can still allow manual payment of an uncollectible invoice. Define an explicit compensation policy later; only `void` is the irreversible cancellation fence.
 - Grace-invoice void tests currently assert that an idempotency key is present, not its exact lifecycle-derived value. Add an exact-value assertion when lifecycle key formatting is stabilized.
 
+## Task 9
+
+- When upgrade crash recovery finds that Stripe already applied the target Price and its latest invoice is paid, the command persists the recovered invoice/snapshot but may leave the intent `syncing` until the webhook, reconciliation worker, or a same-request replay applies the entitlement. Monitor stale `syncing` upgrade age and consider reconciling the paid invoice in the original command response path during a later hardening pass.
+
 ## Task 12
 
 - Concurrent first-run migration audits can surface a database unique-constraint error instead of returning the already-created audit result. Normalize that race into a stable idempotent response in a later hardening pass.
