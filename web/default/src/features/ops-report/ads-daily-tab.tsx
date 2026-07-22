@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -55,8 +55,8 @@ const MATCH_LABELS: Record<string, string> = {
 // screenshot service directly. Fetched as a blob because <img> cannot carry
 // the console's auth header. While the screenshot service is still generating
 // it returns a GIF placeholder — keep polling until the real image lands.
-// Object URLs are intentionally not revoked: react-query caches one per
-// distinct landing URL for the session, a handful on this admin page.
+// The query holds the Blob; the object URL lives in an effect so every
+// replaced/unmounted URL is revoked and polling can't accumulate blobs.
 function LandingThumbImg(props: { url: string; className: string }) {
   const thumbQuery = useQuery({
     queryKey: ['ops-landing-thumb', props.url],
@@ -65,20 +65,27 @@ function LandingThumbImg(props: { url: string; className: string }) {
         params: { url: props.url, width: 320 },
         responseType: 'blob',
       })
-      const blob = res.data as Blob
-      return {
-        src: URL.createObjectURL(blob),
-        placeholder: blob.type === 'image/gif',
-      }
+      return res.data as Blob
     },
     staleTime: Infinity,
     retry: 1,
-    refetchInterval: (query) => (query.state.data?.placeholder ? 8000 : false),
+    refetchInterval: (query) =>
+      query.state.data?.type.startsWith('image/gif') ? 8000 : false,
   })
-  if (!thumbQuery.data) {
+  const blob = thumbQuery.data
+  const src = useMemo(
+    () => (blob ? URL.createObjectURL(blob) : undefined),
+    [blob]
+  )
+  useEffect(() => {
+    return () => {
+      if (src) URL.revokeObjectURL(src)
+    }
+  }, [src])
+  if (!src) {
     return <div className={`bg-muted animate-pulse ${props.className}`} />
   }
-  return <img src={thumbQuery.data.src} alt='' className={props.className} />
+  return <img src={src} alt='' className={props.className} />
 }
 
 // row tinting per change type, readable in light and dark themes

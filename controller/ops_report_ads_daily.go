@@ -191,11 +191,18 @@ func adsDailyFilterCreatives(rows []*model.AdsDailyCreative) []*model.AdsDailyCr
 	return out
 }
 
-// adsDailyIsFlatkeyLanding matches by exact URL host (bare domain or www),
-// not substring — "evilflatkey.ai" or "?next=flatkey.ai" must not slip in.
+// adsDailyIsFlatkeyLanding accepts only http(s) URLs whose exact host is the
+// flatkey.ai bare domain or www — no substring matching ("evilflatkey.ai",
+// "?next=flatkey.ai") and no other schemes ("javascript://flatkey.ai/…" and
+// "file://flatkey.ai/…" parse a hostname too). Also the thumbnail proxy's
+// allowlist, so it must reject everything that is not a real landing URL.
 func adsDailyIsFlatkeyLanding(rawUrl string) bool {
 	u, err := url.Parse(rawUrl)
 	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
 		return false
 	}
 	host := strings.ToLower(u.Hostname())

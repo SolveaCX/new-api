@@ -138,6 +138,9 @@ func TestAdsDailyFlatkeyFilter(t *testing.T) {
 		{Url: "https://evilflatkey.ai/phish"},
 		{Url: "https://not-flatkey.ai/path?next=flatkey.ai"},
 		{Url: "https://evil.example/?u=https://flatkey.ai"},
+		{Url: "javascript://flatkey.ai/%0aalert(1)"},
+		{Url: "file://flatkey.ai/etc/passwd"},
+		{Url: "//flatkey.ai/scheme-relative"},
 	})
 	if len(lps) != 2 ||
 		lps[0].Url != "https://flatkey.ai/pt/models/gemini-api" ||

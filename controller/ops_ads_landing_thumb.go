@@ -32,13 +32,14 @@ import (
 // optimization; nodes never coordinate and serve identical content.
 
 const (
-	adsThumbTimeout  = 20 * time.Second
-	adsThumbCacheTTL = 24 * time.Hour
-	adsThumbCacheMax = 500     // entries; cache resets when exceeded
-	adsThumbMaxBytes = 4 << 20 // response size cap
-	adsThumbMinWidth = 80
-	adsThumbMaxWidth = 640
-	adsThumbDefWidth = 320
+	adsThumbTimeout       = 20 * time.Second
+	adsThumbCacheTTL      = 24 * time.Hour
+	adsThumbCacheMax      = 500      // entry cap
+	adsThumbMaxBytes      = 4 << 20  // per-response size cap
+	adsThumbCacheMaxBytes = 64 << 20 // total cached bytes cap
+	adsThumbMinWidth      = 80
+	adsThumbMaxWidth      = 640
+	adsThumbDefWidth      = 320
 )
 
 // adsThumbTarget escapes the characters that would otherwise make the target
@@ -58,8 +59,9 @@ type adsThumbEntry struct {
 }
 
 var (
-	adsThumbMu    sync.Mutex
-	adsThumbCache = map[string]*adsThumbEntry{}
+	adsThumbMu         sync.Mutex
+	adsThumbCache      = map[string]*adsThumbEntry{}
+	adsThumbCacheBytes int
 )
 
 // GetOpsAdsLandingThumb handles
@@ -100,25 +102,41 @@ func GetOpsAdsLandingThumb(c *gin.Context) {
 		return
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, adsThumbMaxBytes))
+	// read one sentinel byte past the cap so an at-limit read is
+	// distinguishable from a truncated oversized response
+	body, err := io.ReadAll(io.LimitReader(resp.Body, adsThumbMaxBytes+1))
 	if err != nil {
 		common.SysError("landing thumb read: " + err.Error())
 		c.Status(http.StatusBadGateway)
 		return
 	}
-	contentType := resp.Header.Get("Content-Type")
+	if len(body) > adsThumbMaxBytes {
+		common.SysError("landing thumb response exceeds size limit")
+		c.Status(http.StatusBadGateway)
+		return
+	}
+	contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
 	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(contentType, "image/") {
 		common.SysError(fmt.Sprintf("landing thumb upstream status %d (%s)", resp.StatusCode, contentType))
 		c.Status(http.StatusBadGateway)
 		return
 	}
-	// GIF = "still generating" placeholder; only real screenshots are cached
-	if contentType != "image/gif" {
+	// GIF (any parameter/case variant) = "still generating" placeholder;
+	// only real screenshots are cached
+	if !strings.HasPrefix(contentType, "image/gif") {
 		adsThumbMu.Lock()
-		if len(adsThumbCache) >= adsThumbCacheMax {
+		// bounded by entries and total bytes; a full reset is fine here —
+		// a page shows a handful of thumbnails and refills instantly
+		if len(adsThumbCache) >= adsThumbCacheMax ||
+			adsThumbCacheBytes+len(body) > adsThumbCacheMaxBytes {
 			adsThumbCache = map[string]*adsThumbEntry{}
+			adsThumbCacheBytes = 0
+		}
+		if old, ok := adsThumbCache[key]; ok {
+			adsThumbCacheBytes -= len(old.data)
 		}
 		adsThumbCache[key] = &adsThumbEntry{data: body, contentType: contentType, fetchedAt: time.Now()}
+		adsThumbCacheBytes += len(body)
 		adsThumbMu.Unlock()
 	}
 	c.Data(http.StatusOK, contentType, body)
