@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -50,6 +51,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 
 	var result *ChangePlanResult
 	var balanceEffects *balanceOnePeriodSideEffects
+	var checkoutInput *StripeSubscriptionCheckoutInput
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var user model.User
 		if err := subscriptionCommandLock(tx).Where("id = ?", cmd.UserID).First(&user).Error; err != nil {
@@ -65,15 +67,44 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 				First(&contract).Error; err != nil {
 				return err
 			}
-			result = buildChangePlanResult(existing, &contract)
+			result = buildChangePlanResultTx(tx, existing, &contract)
+			if existing.PaymentMode == model.SubscriptionPaymentModeStripeRecurring &&
+				existing.Status == model.SubscriptionChangeIntentStatusAwaitingPayment &&
+				strings.TrimSpace(result.CheckoutURL) == "" {
+				var order model.SubscriptionOrder
+				if err := subscriptionCommandLock(tx).
+					Where("change_intent_id = ? AND payment_provider = ?", existing.Id, model.PaymentProviderStripe).
+					Order("id desc").
+					First(&order).Error; err != nil {
+					return err
+				}
+				var plan model.SubscriptionPlan
+				if err := tx.Where("id = ?", existing.ToPlanId).First(&plan).Error; err != nil {
+					return err
+				}
+				if strings.TrimSpace(existing.ProviderIdempotencyKey) == "" {
+					existing.ProviderIdempotencyKey = stripeSubscriptionCheckoutIdempotencyKey(contract.Id, existing.ChangeVersion, existing.Id)
+					if err := tx.Model(existing).Update("provider_idempotency_key", existing.ProviderIdempotencyKey).Error; err != nil {
+						return err
+					}
+				}
+				checkoutInput = &StripeSubscriptionCheckoutInput{
+					TradeNo:        order.TradeNo,
+					UserID:         user.Id,
+					PlanID:         plan.Id,
+					ContractID:     contract.Id,
+					ChangeIntentID: existing.Id,
+					CustomerID:     strings.TrimSpace(user.StripeCustomer),
+					Email:          strings.TrimSpace(user.Email),
+					PriceID:        strings.TrimSpace(plan.StripePriceId),
+					IdempotencyKey: existing.ProviderIdempotencyKey,
+				}
+			}
 			return nil
 		}
 
 		if err := validateChangePaymentMode(cmd.PaymentMode); err != nil {
 			return err
-		}
-		if cmd.PaymentMode == model.SubscriptionPaymentModeStripeRecurring {
-			return ErrStripeCheckoutPendingMigration
 		}
 
 		contract, err := getOrCreateContractForUserTx(tx, cmd.UserID)
@@ -139,12 +170,48 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			}
 			return nil
 		case model.SubscriptionPaymentModeStripeRecurring:
+			if kind != model.SubscriptionChangeIntentKindPurchase {
+				return ErrStripeCheckoutPendingMigration
+			}
+			if strings.TrimSpace(plan.StripePriceId) == "" {
+				return errors.New("subscription plan Stripe price id is required")
+			}
 			intent.Status = model.SubscriptionChangeIntentStatusAwaitingPayment
+			tradeNo := fmt.Sprintf("SUBSTRUSR%dINT%dNO%s%d", user.Id, intent.Id, common.GetRandomString(6), time.Now().UnixNano())
+			idempotencyKey := stripeSubscriptionCheckoutIdempotencyKey(contract.Id, intent.ChangeVersion, intent.Id)
 			if err := tx.Model(intent).Updates(map[string]interface{}{
-				"status":     intent.Status,
-				"updated_at": common.GetTimestamp(),
+				"status":                   intent.Status,
+				"provider_idempotency_key": idempotencyKey,
+				"updated_at":               common.GetTimestamp(),
 			}).Error; err != nil {
 				return err
+			}
+			intent.ProviderIdempotencyKey = idempotencyKey
+			order := &model.SubscriptionOrder{
+				UserId:          user.Id,
+				PlanId:          plan.Id,
+				Money:           plan.PriceAmount,
+				TradeNo:         tradeNo,
+				PaymentMethod:   model.PaymentMethodStripe,
+				PaymentProvider: model.PaymentProviderStripe,
+				Status:          common.TopUpStatusPending,
+				CreateTime:      common.GetTimestamp(),
+				ProviderPayload: fmt.Sprintf("change_intent_id=%d", intent.Id),
+				ChangeIntentId:  intent.Id,
+			}
+			if err := tx.Create(order).Error; err != nil {
+				return err
+			}
+			checkoutInput = &StripeSubscriptionCheckoutInput{
+				TradeNo:        tradeNo,
+				UserID:         user.Id,
+				PlanID:         plan.Id,
+				ContractID:     contract.Id,
+				ChangeIntentID: intent.Id,
+				CustomerID:     strings.TrimSpace(user.StripeCustomer),
+				Email:          strings.TrimSpace(user.Email),
+				PriceID:        strings.TrimSpace(plan.StripePriceId),
+				IdempotencyKey: idempotencyKey,
 			}
 			result = &ChangePlanResult{
 				Status:   ChangePlanStatusCheckoutRequired,
@@ -158,6 +225,17 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if checkoutInput != nil {
+		checkout, err := stripeSubscriptionCheckoutCreator(context.Background(), *checkoutInput)
+		if err != nil {
+			_ = TerminatePendingStripePurchase(context.Background(), checkoutInput.TradeNo, model.SubscriptionChangeIntentStatusFailed)
+			return nil, err
+		}
+		if err := persistStripeCheckoutSession(checkoutInput.ChangeIntentID, checkout.ID, checkout.URL); err != nil {
+			return nil, err
+		}
+		result.CheckoutURL = checkout.URL
 	}
 	applyBalanceOnePeriodSideEffects(balanceEffects)
 	return result, nil
@@ -469,12 +547,27 @@ func previousEntitlementEndReason(kind string) string {
 }
 
 func buildChangePlanResult(intent *model.SubscriptionChangeIntent, contract *model.UserSubscriptionContract) *ChangePlanResult {
+	return buildChangePlanResultTx(model.DB, intent, contract)
+}
+
+func buildChangePlanResultTx(tx *gorm.DB, intent *model.SubscriptionChangeIntent, contract *model.UserSubscriptionContract) *ChangePlanResult {
 	status := changePlanResultStatus(intent.Status)
-	return &ChangePlanResult{
+	result := &ChangePlanResult{
 		Status:   status,
 		Contract: contract,
 		Intent:   intent,
 	}
+	if tx != nil && intent != nil && intent.PaymentMode == model.SubscriptionPaymentModeStripeRecurring && status == ChangePlanStatusCheckoutRequired {
+		var order model.SubscriptionOrder
+		query := tx.Where("change_intent_id = ? AND payment_provider = ?", intent.Id, model.PaymentProviderStripe).
+			Order("id desc").
+			Limit(1).
+			Find(&order)
+		if query.Error == nil && query.RowsAffected > 0 {
+			result.CheckoutURL = strings.TrimSpace(order.ProviderSessionURL)
+		}
+	}
+	return result
 }
 
 func changePlanResultStatus(intentStatus string) string {
@@ -488,4 +581,35 @@ func changePlanResultStatus(intentStatus string) string {
 	default:
 		return intentStatus
 	}
+}
+
+func stripeSubscriptionCheckoutIdempotencyKey(contractID int64, changeVersion int64, intentID int64) string {
+	return fmt.Sprintf("newapi:stripe-subscription-checkout:contract:%d:version:%d:intent:%d", contractID, changeVersion, intentID)
+}
+
+func persistStripeCheckoutSession(intentID int64, sessionID string, sessionURL string) error {
+	if intentID <= 0 {
+		return errors.New("invalid change intent id")
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	sessionURL = strings.TrimSpace(sessionURL)
+	if sessionID == "" || sessionURL == "" {
+		return errors.New("Stripe checkout session id and url are required")
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var order model.SubscriptionOrder
+		if err := subscriptionCommandLock(tx).
+			Where("change_intent_id = ? AND payment_provider = ?", intentID, model.PaymentProviderStripe).
+			Order("id desc").
+			First(&order).Error; err != nil {
+			return err
+		}
+		if order.ProviderSessionId != "" && order.ProviderSessionId != sessionID {
+			return errors.New("Stripe checkout session mismatch")
+		}
+		return tx.Model(&order).Updates(map[string]interface{}{
+			"provider_session_id":  sessionID,
+			"provider_session_url": sessionURL,
+		}).Error
+	})
 }

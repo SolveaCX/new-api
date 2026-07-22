@@ -998,6 +998,184 @@ func TestBuildStripeSubscriptionCheckoutSessionParamsIncludesNewAPIMetadata(t *t
 	require.Equal(t, "801", params.SubscriptionData.Metadata["newapi_plan_id"])
 }
 
+func TestStripeInvoicePaidWebhookCallsPaidInvoiceReconcile(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalReconcile := reconcilePaidStripeInvoice
+	t.Cleanup(func() { reconcilePaidStripeInvoice = originalReconcile })
+	var reconciledInvoiceID string
+	reconcilePaidStripeInvoice = func(ctx context.Context, invoiceID string) (*service.PaidInvoiceReconcileResult, error) {
+		reconciledInvoiceID = invoiceID
+		return &service.PaidInvoiceReconcileResult{}, nil
+	}
+
+	event := stripe.Event{
+		ID:   "evt_invoice_paid",
+		Type: stripe.EventTypeInvoicePaid,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id": "in_route_paid",
+		}},
+	}
+
+	require.NoError(t, handleStripeInvoicePaid(context.Background(), event))
+	require.Equal(t, "in_route_paid", reconciledInvoiceID)
+}
+
+func TestStripeRecurringCheckoutCompletedUsesInvoiceReconcile(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalReconcile := reconcilePaidStripeInvoice
+	t.Cleanup(func() { reconcilePaidStripeInvoice = originalReconcile })
+	var reconciledInvoiceID string
+	reconcilePaidStripeInvoice = func(ctx context.Context, invoiceID string) (*service.PaidInvoiceReconcileResult, error) {
+		reconciledInvoiceID = invoiceID
+		return &service.PaidInvoiceReconcileResult{}, nil
+	}
+
+	event := stripe.Event{
+		Type: stripe.EventTypeCheckoutSessionCompleted,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_recurring",
+			"mode":                string(stripe.CheckoutSessionModeSubscription),
+			"status":              "complete",
+			"payment_status":      "paid",
+			"client_reference_id": "sub_recurring_route",
+			"invoice":             "in_from_checkout",
+		}},
+	}
+
+	require.NoError(t, sessionCompleted(context.Background(), event, "127.0.0.1"))
+	require.Equal(t, "in_from_checkout", reconciledInvoiceID)
+}
+
+func TestStripeRecurringTerminalCheckoutUsesPendingPurchaseTerminator(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalTerminate := terminatePendingStripePurchase
+	t.Cleanup(func() { terminatePendingStripePurchase = originalTerminate })
+	var tradeNo string
+	var status string
+	terminatePendingStripePurchase = func(ctx context.Context, referenceID string, intentStatus string) error {
+		tradeNo = referenceID
+		status = intentStatus
+		return nil
+	}
+
+	expired := stripe.Event{
+		Type: stripe.EventTypeCheckoutSessionExpired,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_expired",
+			"mode":                string(stripe.CheckoutSessionModeSubscription),
+			"status":              "expired",
+			"client_reference_id": "sub_expired_route",
+		}},
+	}
+	sessionExpired(context.Background(), expired)
+	require.Equal(t, "sub_expired_route", tradeNo)
+	require.Equal(t, model.SubscriptionChangeIntentStatusExpired, status)
+
+	failed := stripe.Event{
+		Type: stripe.EventTypeCheckoutSessionAsyncPaymentFailed,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_failed",
+			"mode":                string(stripe.CheckoutSessionModeSubscription),
+			"client_reference_id": "sub_failed_route",
+		}},
+	}
+	sessionAsyncPaymentFailed(context.Background(), failed, "127.0.0.1")
+	require.Equal(t, "sub_failed_route", tradeNo)
+	require.Equal(t, model.SubscriptionChangeIntentStatusFailed, status)
+}
+
+func TestStripeRecurringTerminalCheckoutPropagatesTerminatorError(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalTerminate := terminatePendingStripePurchase
+	t.Cleanup(func() { terminatePendingStripePurchase = originalTerminate })
+	terminatePendingStripePurchase = func(ctx context.Context, referenceID string, intentStatus string) error {
+		return errors.New("terminator unavailable")
+	}
+
+	expired := stripe.Event{
+		Type: stripe.EventTypeCheckoutSessionExpired,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_expired_error",
+			"mode":                string(stripe.CheckoutSessionModeSubscription),
+			"status":              "expired",
+			"client_reference_id": "sub_expired_error",
+		}},
+	}
+	require.ErrorContains(t, sessionExpired(context.Background(), expired), "terminator unavailable")
+
+	failed := stripe.Event{
+		Type: stripe.EventTypeCheckoutSessionAsyncPaymentFailed,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_failed_error",
+			"mode":                string(stripe.CheckoutSessionModeSubscription),
+			"client_reference_id": "sub_failed_error",
+		}},
+	}
+	require.ErrorContains(t, sessionAsyncPaymentFailed(context.Background(), failed, "127.0.0.1"), "terminator unavailable")
+}
+
+func TestStripeWebhookRetriesRecurringTerminalTerminatorError(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	confirmPaymentComplianceForTest(t)
+	originalSecret := setting.StripeWebhookSecret
+	originalTerminate := terminatePendingStripePurchase
+	t.Cleanup(func() {
+		setting.StripeWebhookSecret = originalSecret
+		terminatePendingStripePurchase = originalTerminate
+	})
+	setting.StripeWebhookSecret = "whsec_test_recurring_terminal_retry"
+	terminatePendingStripePurchase = func(ctx context.Context, referenceID string, intentStatus string) error {
+		return errors.New("terminator unavailable")
+	}
+
+	testCases := []struct {
+		name    string
+		payload []byte
+	}{
+		{
+			name: "expired",
+			payload: []byte(`{
+				"id": "evt_recurring_expired_retry",
+				"object": "event",
+				"type": "checkout.session.expired",
+				"data": {
+					"object": {
+						"id": "cs_recurring_expired_retry",
+						"object": "checkout.session",
+						"mode": "subscription",
+						"status": "expired",
+						"client_reference_id": "sub_recurring_expired_retry"
+					}
+				}
+			}`),
+		},
+		{
+			name: "async_failed",
+			payload: []byte(`{
+				"id": "evt_recurring_async_failed_retry",
+				"object": "event",
+				"type": "checkout.session.async_payment_failed",
+				"data": {
+					"object": {
+						"id": "cs_recurring_async_failed_retry",
+						"object": "checkout.session",
+						"mode": "subscription",
+						"client_reference_id": "sub_recurring_async_failed_retry"
+					}
+				}
+			}`),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := performSignedStripeWebhookRequest(t, tc.payload, setting.StripeWebhookSecret)
+
+			require.Equal(t, http.StatusInternalServerError, recorder.Code)
+			require.Equal(t, "retry", recorder.Body.String())
+		})
+	}
+}
+
 func TestFulfillSubscriptionOrderRequiresCheckoutSubscriptionID(t *testing.T) {
 	setupStripeFulfillmentTestDB(t)
 	insertStripeFulfillmentUser(t, 701)

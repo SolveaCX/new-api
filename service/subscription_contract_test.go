@@ -328,7 +328,7 @@ func TestBalancePurchaseRejectsNegativePlanPrice(t *testing.T) {
 	require.Zero(t, intentCount)
 }
 
-func TestStripeRecurringChangePlanPendingMigrationDoesNotPersistState(t *testing.T) {
+func TestStripeRecurringChangePlanRequiresStripePriceBeforePersistingState(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7110, 3000)
 	insertContractServicePlan(t, 7214, 1, 1, 1000)
@@ -341,7 +341,7 @@ func TestStripeRecurringChangePlanPendingMigrationDoesNotPersistState(t *testing
 	})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "stripe checkout pending migration")
+	require.Contains(t, err.Error(), "Stripe price id")
 	var user model.User
 	require.NoError(t, model.DB.First(&user, "id = ?", 7110).Error)
 	require.Equal(t, 3000, user.Quota)

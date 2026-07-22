@@ -213,7 +213,7 @@ func TestSubscriptionStripePayReturnsUnsupportedWithoutLegacyState(t *testing.T)
 	require.Zero(t, intentCount)
 }
 
-func TestChangeSubscriptionPlanStripeRecurringPendingMigrationDoesNotPersistState(t *testing.T) {
+func TestChangeSubscriptionPlanStripeRecurringRequiresStripePriceBeforePersistingState(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
 	insertSubscriptionControllerUser(t, 903)
@@ -233,7 +233,7 @@ func TestChangeSubscriptionPlanStripeRecurringPendingMigrationDoesNotPersistStat
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), `"success":false`)
-	require.Contains(t, recorder.Body.String(), "stripe checkout pending migration")
+	require.Contains(t, recorder.Body.String(), "Stripe price id")
 	var user model.User
 	require.NoError(t, model.DB.First(&user, "id = ?", 903).Error)
 	require.Zero(t, user.Quota)

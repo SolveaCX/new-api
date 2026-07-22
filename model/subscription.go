@@ -531,7 +531,10 @@ type SubscriptionOrder struct {
 	CreateTime      int64  `json:"create_time"`
 	CompleteTime    int64  `json:"complete_time"`
 
-	ProviderPayload string `json:"provider_payload" gorm:"type:text"`
+	ProviderPayload    string `json:"provider_payload" gorm:"type:text"`
+	ChangeIntentId     int64  `json:"change_intent_id" gorm:"type:bigint;default:0;index"`
+	ProviderSessionId  string `json:"provider_session_id" gorm:"type:varchar(128);default:'';index"`
+	ProviderSessionURL string `json:"provider_session_url" gorm:"type:text"`
 }
 
 func (o *SubscriptionOrder) Insert() error {
