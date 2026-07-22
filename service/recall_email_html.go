@@ -163,13 +163,15 @@ func walkRecallEmailHTML(node *html.Node, inHead bool, inStyle bool, document *r
 			}
 		}
 	}
-	if node.Type == html.TextNode && !inHead && !inStyle && strings.TrimSpace(node.Data) != "" {
+	if node.Type == html.TextNode || node.Type == html.CommentNode {
 		if strings.Contains(node.Data, "{{.ClaimURL}}") {
 			return fmt.Errorf("ClaimURL action must appear in an anchor href")
 		}
 		if strings.Contains(node.Data, "{{.UnsubscribeURL}}") {
 			return fmt.Errorf("UnsubscribeURL action must appear in an anchor href")
 		}
+	}
+	if node.Type == html.TextNode && !inHead && !inStyle && strings.TrimSpace(node.Data) != "" {
 		document.slots = append(document.slots, recallEmailHTMLSlot{node: node, attrIndex: -1, value: node.Data})
 	}
 	for child := node.FirstChild; child != nil; child = child.NextSibling {
