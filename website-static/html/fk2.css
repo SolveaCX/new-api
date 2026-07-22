@@ -249,6 +249,16 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
   .nav>.btn{min-height:40px;padding:9px 12px}
 }
 
+@media (max-width:1480px){
+  .nav{gap:10px;padding:0 16px}
+  .nav>a.logo{margin-right:6px}
+  .nav>.logo{font-size:28px;letter-spacing:-1.2px}
+  .nav>.logo img{width:36px;height:36px}
+  .nav>a:not(.logo){font-size:12.5px}
+  .nav>.langsel{max-width:92px;padding:7px 5px;font-size:12px}
+  .nav>.btn{min-height:38px;padding:8px 9px}
+}
+
 @media (max-width:1320px){
   .nav{height:72px;padding:0 14px;gap:6px;position:sticky;top:0;z-index:50}
   .nav>.logo{font-size:28px;letter-spacing:-1.2px;gap:8px}
@@ -266,7 +276,7 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
   .dbar+.mobile-nav-panel{top:72px}
 }
 
-@media (max-width:1040px){
+@media (max-width:1180px){
   .nav>a:not(.logo),.nav>.sp{display:none}
   .nav>.langsel{margin-left:auto;max-width:104px;padding:8px 7px}
   .nav .nav-toggle{display:flex}

@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=3">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/fk2.css?v=723b"><style>
+<link rel="stylesheet" href="/fk2.css?v=723c"><style>
 /* ---------- hero ---------- */
 .hero{background:linear-gradient(180deg,#FFFFFF 0%,#F7F5FD 100%);border-bottom:1px solid var(--line)}
 .heroGrid{max-width:1240px;margin:0 auto;padding:56px 40px 52px;display:grid;grid-template-columns:minmax(0,1fr) 560px;gap:48px;align-items:start}
@@ -200,7 +200,7 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
 
 <nav class="nav">
   <a class="logo" href="/"><img src="/assets/flatkey-mark.svg?v=4" alt="flatkey">flatkey</a>
-  <a href="/models" data-i18n="nav.models" data-orig="Models">Модели</a><a href="/docs" data-i18n="nav.docs" data-orig="Docs">Документация</a><a href="/playground" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/models#leaderboard" data-i18n="nav.rankings" data-orig="Rankings">Рейтинги</a><a href="/pricing" data-i18n="nav.pricing" data-orig="Pricing">Цены</a><a href="/compute" data-i18n="nav.compute" data-orig="Compute">Compute</a><a href="/usecases" data-i18n="nav.usecases" data-orig="Use cases">Сценарии</a>
+  <a href="/models" data-i18n="nav.models" data-orig="Models">Модели</a><a href="/docs" data-i18n="nav.docs" data-orig="Docs">Документация</a><a href="/playground" data-i18n="nav.playground" data-orig="Playground">Playground</a><a href="/models#leaderboard" data-i18n="nav.rankings" data-orig="Rankings">Рейтинги</a><a href="/pricing" data-i18n="nav.pricing" data-orig="Pricing">Цены</a><a href="/compute" data-i18n="nav.compute" data-orig="Compute">Compute</a><a href="/usecases" data-i18n="nav.usecases" data-orig="Use cases">Сценарии</a><a href="/status" data-i18n="nav.status" data-orig="Status">Статус</a>
   <div class="sp"></div>
   <a href="/login" data-i18n="nav.signin" data-orig="Sign in">Войти</a>
   <a class="btn white" href="/contact" data-i18n="nav.contact" data-orig="Contact sales">Связаться с продажами</a>
@@ -220,7 +220,7 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
         <a class="btn black big" href="/login" data-i18n="hero.cta1" data-orig="Start building — free $1 credit">Начать — $1 в подарок</a>
         <a class="btn white big" href="/playground" data-i18n="hero.cta2" data-orig="Try in Playground, no signup">Playground без регистрации</a>
       </div>
-      <p class="proofline" data-i18n="hero.proof" data-orig="&lt;b class=&quot;num&quot;&gt;46B&lt;/b&gt; tokens/month · &lt;b class=&quot;num&quot;&gt;4K+&lt;/b&gt; paying users · &lt;b class=&quot;num&quot;&gt;100+&lt;/b&gt; enterprises in production · &lt;b class=&quot;num&quot;&gt;0&lt;/b&gt; model swaps — &lt;a href=&quot;#trust&quot; style=&quot;color:var(--violet-deep);font-weight:600&quot;&gt;public audit log ↗&lt;/a&gt;"><b class="num">46B</b> токенов/мес · <b class="num">4K+</b> платящих пользователей · <b class="num">100+</b> компаний в проде · <b class="num">0</b> подмен моделей — <a href="#trust" style="color:var(--violet-deep);font-weight:600">публичный журнал аудита ↗</a></p>
+      <p class="proofline" data-i18n="hero.proof" data-orig="&lt;b class=&quot;num&quot;&gt;46B&lt;/b&gt; tokens/month · &lt;b class=&quot;num&quot;&gt;4K+&lt;/b&gt; paying users · &lt;b class=&quot;num&quot;&gt;100+&lt;/b&gt; enterprises in production · &lt;b class=&quot;num&quot;&gt;0&lt;/b&gt; model swaps — &lt;a href=&quot;#trust&quot; style=&quot;color:var(--violet-deep);font-weight:600&quot;&gt;public audit log ↗&lt;/a&gt;"><b class="num">46B</b> токенов/мес · <b class="num">4K+</b> платящих пользователей · <b class="num">100+</b> компаний в проде · <b class="num">0</b> подмен моделей — <a href="/status" style="color:var(--violet-deep);font-weight:600">публичный журнал аудита ↗</a></p>
     </div>
     <div>
       <div class="heroSlides">
@@ -387,18 +387,18 @@ client.chat.completions.create(
   </div></div>
   <div class="shade"></div>
   <div class="in">
-    <div class="kick" data-i18n="st.kick" data-orig="API STATUS · UPDATED EVERY 60 SECONDS">СТАТУС API · ОБНОВЛЯЕТСЯ КАЖДЫЕ 60 СЕКУНД</div>
-    <h2 class="big" data-i18n="st.ok" data-orig="All systems operational">Все системы работают</h2>
-    <p class="d" data-i18n="st.slaline" data-orig="SLA target 99.5% · &lt;a href=&quot;/sla&quot; style=&quot;color:#fff&quot;&gt;read the public SLA →&lt;/a&gt;">Цель SLA 99,5% · <a href="/sla" style="color:#fff">публичный SLA →</a></p>
+    <div class="kick" data-i18n="st2.kick" data-orig="API STATUS · PUBLIC STATUS PAGE">СТАТУС API · ПУБЛИЧНАЯ СТРАНИЦА СТАТУСА</div>
+    <h2 class="big" data-i18n="st2.h2" data-orig="Uptime, on the record.">Аптайм — в открытом доступе.</h2>
+    <p class="d" data-i18n="st2.sub" data-orig="SLA target 99.5% · 90-day uptime log and incident history, published on the &lt;a href=&quot;/status&quot;&gt;public status page →&lt;/a&gt;">Цель SLA 99,5% · 90-дневный журнал аптайма и история инцидентов на <a href="/status">публичной странице статуса →</a></p>
     <div class="rows">
-      <div><b>Router API</b> router.flatkey.ai/v1 · OpenAI-compatible<span class="ok">99.98% · 90d</span></div>
-      <div><b>Anthropic endpoint</b> router.flatkey.ai · Claude Code / Cline<span class="ok">99.97% · 90d</span></div>
-      <div><b>Model failover mesh</b> 5 upstream channel classes · automatic rerouting<span class="ok">100% · 90d</span></div>
-      <div><b>Console &amp; billing</b> console.flatkey.ai · Stripe<span class="ok">99.99% · 90d</span></div>
-      <div><a href="/status" style="color:var(--violet-deep);font-weight:700;text-decoration:none">328+ models probed hourly — full status &amp; incident history →</a><span class="ok" data-i18n="st.today" data-orig="Today">Сегодня</span></div>
+      <div><b>Router API</b> router.flatkey.ai/v1 · OpenAI-compatible<span class="ok"><a href="/status" style="color:inherit;text-decoration:none" data-i18n="st2.live" data-orig="live →">онлайн →</a></span></div>
+      <div><b>Anthropic endpoint</b> router.flatkey.ai · Claude Code / Cline<span class="ok"><a href="/status" style="color:inherit;text-decoration:none" data-i18n="st2.live" data-orig="live →">онлайн →</a></span></div>
+      <div><b>Model failover mesh</b> 5 upstream channel classes · automatic rerouting<span class="ok"><a href="/status" style="color:inherit;text-decoration:none" data-i18n="st2.live" data-orig="live →">онлайн →</a></span></div>
+      <div><b>Console &amp; billing</b> console.flatkey.ai · Stripe<span class="ok"><a href="/status" style="color:inherit;text-decoration:none" data-i18n="st2.live" data-orig="live →">онлайн →</a></span></div>
+      <div><a href="/status" style="color:var(--violet-deep);font-weight:700;text-decoration:none" data-i18n="st2.more" data-orig="See full status &amp;amp; incident history →">Полный статус и история инцидентов →</a></div>
     </div>
   </div>
-  <div class="vtag"><span class="p">▶</span>LIVE STATUS · 90-day uptime · updated 60s</div>
+  <div class="vtag"><span class="p">▶</span>PUBLIC STATUS · 90-DAY LOG</div>
 </section>
 
 <section class="v" id="compliance">
@@ -594,7 +594,7 @@ client.chat.completions.create(
 <div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
 <script src="/assets/pixels.js?v=719h"></script>
 <script>try{localStorage.setItem("fk-lang","ru")}catch(e){}</script>
-<script src="/assets/i18n.js?v=723a"></script>
+<script src="/assets/i18n.js?v=724a"></script>
 <script src="/assets/track.js?v=721a"></script>
 <script>
 (function(){
