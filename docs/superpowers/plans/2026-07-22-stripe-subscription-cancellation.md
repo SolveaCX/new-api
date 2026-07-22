@@ -208,25 +208,25 @@ Commit with Lore message:
 - Modify: `main.go`
 - Test: `service/stripe_subscription_lifecycle_test.go`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add tests for master-only guard and invoice collection reconciliation only touching invoices mapped to active NewAPI recurring bindings.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `go test ./service -run 'TestStripeSubscriptionReconciliation' -count=1`
 Expected: FAIL because reconciliation entry does not exist.
 
-- [ ] **Step 3: Implement minimal reconciliation**
+- [x] **Step 3: Implement minimal reconciliation**
 
 Start only on master node. Scan non-terminal bindings, fetch Stripe snapshots, apply snapshot/termination, and run invoice reconciliation with exact binding mapping only.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: `go test ./service -run 'TestStripeSubscriptionReconciliation' -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit with Lore message:
 `Repair Stripe recurring state from master reconciliation`

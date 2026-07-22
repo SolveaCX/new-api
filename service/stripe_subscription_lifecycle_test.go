@@ -55,12 +55,16 @@ func setupStripeSubscriptionLifecycleTestDB(t *testing.T) {
 }
 
 func insertStripeLifecycleBinding(t *testing.T, userID int, status string, cancelAtPeriodEnd bool) *model.SubscriptionProviderBinding {
+	return insertStripeLifecycleBindingWithSubscriptionID(t, userID, "sub_lifecycle", status, cancelAtPeriodEnd)
+}
+
+func insertStripeLifecycleBindingWithSubscriptionID(t *testing.T, userID int, providerSubscriptionID string, status string, cancelAtPeriodEnd bool) *model.SubscriptionProviderBinding {
 	t.Helper()
 	require.NoError(t, model.DB.Create(&model.User{
 		Id:       userID,
-		Username: "stripe_lifecycle_user",
+		Username: "stripe_lifecycle_user_" + providerSubscriptionID,
 		Status:   common.UserStatusEnabled,
-		AffCode:  "stripe_lifecycle_aff",
+		AffCode:  "stripe_lifecycle_aff_" + providerSubscriptionID,
 	}).Error)
 	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
 		Id:            900 + userID,
@@ -77,7 +81,7 @@ func insertStripeLifecycleBinding(t *testing.T, userID int, status string, cance
 		PlanId:                 900 + userID,
 		InitialOrderId:         1000 + userID,
 		Provider:               model.PaymentProviderStripe,
-		ProviderSubscriptionId: "sub_lifecycle",
+		ProviderSubscriptionId: providerSubscriptionID,
 		ProviderCustomerId:     "cus_lifecycle",
 		ProviderPriceId:        "price_lifecycle",
 		ProviderStatus:         status,
@@ -183,6 +187,73 @@ func TestStripeSubscriptionLifecyclePastDueCancelTerminatesLocalEntitlement(t *t
 	require.Equal(t, "canceled", updated.ProviderStatus)
 	var sub model.UserSubscription
 	require.NoError(t, model.DB.Where("provider_binding_id = ?", binding.Id).First(&sub).Error)
+	require.Equal(t, "cancelled", sub.Status)
+}
+
+func TestStripeSubscriptionReconciliationSkipsSlaveNode(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	originalIsMaster := common.IsMasterNode
+	originalFetch := stripeSubscriptionSnapshotForReconciliation
+	t.Cleanup(func() {
+		common.IsMasterNode = originalIsMaster
+		stripeSubscriptionSnapshotForReconciliation = originalFetch
+	})
+	common.IsMasterNode = false
+	stripeSubscriptionSnapshotForReconciliation = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+		t.Fatal("slave node must not fetch Stripe subscriptions")
+		return model.ProviderSubscriptionSnapshot{}, nil
+	}
+
+	count, err := RunStripeSubscriptionReconciliationOnce()
+
+	require.NoError(t, err)
+	require.Equal(t, 0, count)
+}
+
+func TestStripeSubscriptionReconciliationAppliesExactBindingSnapshots(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	target := insertStripeLifecycleBindingWithSubscriptionID(t, 810, "sub_reconcile_target", "active", false)
+	ended := insertStripeLifecycleBindingWithSubscriptionID(t, 811, "sub_reconcile_ended", "canceled", false)
+	require.NoError(t, model.DB.Model(ended).Updates(map[string]interface{}{
+		"ended_at":        int64(1500),
+		"provider_status": "canceled",
+	}).Error)
+	originalIsMaster := common.IsMasterNode
+	originalFetch := stripeSubscriptionSnapshotForReconciliation
+	originalReconcileInvoices := reconcileStripeInvoiceCollectionForCanceledBinding
+	t.Cleanup(func() {
+		common.IsMasterNode = originalIsMaster
+		stripeSubscriptionSnapshotForReconciliation = originalFetch
+		reconcileStripeInvoiceCollectionForCanceledBinding = originalReconcileInvoices
+	})
+	common.IsMasterNode = true
+	var fetched []string
+	stripeSubscriptionSnapshotForReconciliation = func(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {
+		fetched = append(fetched, providerSubscriptionID)
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId: providerSubscriptionID,
+			ProviderCustomerId:     "cus_lifecycle",
+			ProviderStatus:         "canceled",
+			EndedAt:                2500,
+		}, nil
+	}
+	var reconciled []int64
+	reconcileStripeInvoiceCollectionForCanceledBinding = func(binding model.SubscriptionProviderBinding) error {
+		reconciled = append(reconciled, binding.Id)
+		return nil
+	}
+
+	count, err := RunStripeSubscriptionReconciliationOnce()
+
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	require.Equal(t, []string{"sub_reconcile_target"}, fetched)
+	require.Equal(t, []int64{target.Id}, reconciled)
+	var updated model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&updated, target.Id).Error)
+	require.Equal(t, "canceled", updated.ProviderStatus)
+	var sub model.UserSubscription
+	require.NoError(t, model.DB.Where("provider_binding_id = ?", target.Id).First(&sub).Error)
 	require.Equal(t, "cancelled", sub.Status)
 }
 
