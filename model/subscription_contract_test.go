@@ -327,5 +327,6 @@ func migrateSubscriptionContractTestDB(t *testing.T) {
 		&UserSubscriptionContract{},
 		&SubscriptionChangeIntent{},
 		&SubscriptionTierRankReservation{},
+		&SubscriptionPreConsumeRecord{},
 	))
 }

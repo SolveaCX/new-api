@@ -1158,13 +1158,7 @@ func HasActiveUserSubscription(userId int) (bool, error) {
 		return false, errors.New("invalid userId")
 	}
 	now := common.GetTimestamp()
-	var count int64
-	if err := DB.Model(&UserSubscription{}).
-		Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
-		Count(&count).Error; err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return hasActiveUserSubscriptionTx(DB, userId, now)
 }
 
 // GetAllUserSubscriptions returns all subscriptions (active and expired) for a user.
@@ -1499,15 +1493,12 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			return nil
 		}
 
-		var subs []UserSubscription
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
-			Order("end_time asc, id asc").
-			Find(&subs).Error; err != nil {
-			return errors.New("no active subscription")
+		subs, hasContract, err := getPreConsumableSubscriptionCandidatesTx(tx, userId, now)
+		if err != nil {
+			return err
 		}
 		if len(subs) == 0 {
-			return errors.New("no active subscription")
+			return noActiveSubscriptionError(hasContract)
 		}
 		for _, candidate := range subs {
 			sub := candidate
@@ -1558,7 +1549,7 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			returnValue.AmountUsedAfter = sub.AmountUsed
 			return nil
 		}
-		return fmt.Errorf("subscription quota insufficient, need=%d", amount)
+		return insufficientSubscriptionQuotaError(amount)
 	})
 	if err != nil {
 		return nil, err
