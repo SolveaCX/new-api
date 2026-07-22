@@ -90,7 +90,7 @@ type UserSubscriptionContract struct {
     PendingEffectiveAt       int64
     CurrentPeriodStart       int64
     CurrentPeriodEnd         int64
-    GraceEndsAt              int64
+    GracePeriodEnd           int64
     ChangeVersion            int64
     BaseUserGroup            string
     CreatedAt                int64
@@ -117,10 +117,31 @@ type SubscriptionChangeIntent struct {
 }
 
 type SubscriptionTierRankReservation struct {
-    Id int64 `gorm:"primaryKey"`
-    TierRank int `gorm:"uniqueIndex;not null"`
-    PlanID int64 `gorm:"uniqueIndex;not null"`
+    TierRank int `gorm:"primaryKey;type:int"`
+    ActivePlanId int `gorm:"uniqueIndex;not null"`
 }
+```
+
+Persist only the accepted lifecycle vocabulary:
+
+```go
+const (
+    ContractActive = "active"
+    ContractGrace = "grace"
+    ContractEnded = "ended"
+    ContractNeedsAttention = "needs_attention"
+    PaymentStripeRecurring = "stripe_recurring"
+    PaymentBalanceOnePeriod = "balance_one_period"
+    PaymentExternalOnePeriod = "external_one_period"
+)
+```
+
+Intent kinds are `purchase`, `upgrade`, `downgrade`, `cancel`, `resume`, and `terminate`; statuses are `created`, `syncing`, `awaiting_payment`, `scheduled`, `applied`, `failed`, `expired`, `superseded`, and `compensation_required`.
+
+Add nullable rank to `SubscriptionPlan`; legacy/unconfigured plans must persist SQL `NULL`, not `0`:
+
+```go
+TierRank *int `json:"tier_rank" gorm:"type:int;index"`
 ```
 
 Add to `UserSubscription`:
@@ -194,11 +215,13 @@ func TestReferencedPlanCannotChangeLifecycleFields(t *testing.T) {
     require.NotZero(t, contract.Id)
 }
 
-func TestTierRankReservationSurvivesPlanDisable(t *testing.T) {
+func TestTierRankReservationMovesBetweenActivePlanVersions(t *testing.T) {
     old := seedPlan(t, 10, false)
-    require.NoError(t, DisableSubscriptionPlan(old.Id))
-    err := CreateSubscriptionPlan(&SubscriptionPlan{TierRank: 10})
-    require.ErrorIs(t, err, ErrSubscriptionTierRankReserved)
+    require.NoError(t, SetSubscriptionPlanEnabled(old.Id, true))
+    staged := seedPlan(t, 10, false)
+    require.ErrorIs(t, SetSubscriptionPlanEnabled(staged.Id, true), ErrSubscriptionTierRankReserved)
+    require.NoError(t, SetSubscriptionPlanEnabled(old.Id, false))
+    require.NoError(t, SetSubscriptionPlanEnabled(staged.Id, true))
 }
 ```
 
@@ -221,7 +244,7 @@ func lifecycleFieldsChanged(before, after *SubscriptionPlan) bool {
 }
 ```
 
-Create the reservation in the same transaction as plan creation. Reject lifecycle-field edits when any contract, entitlement, order, or intent references the plan. Keep name, description, display price, ordering, and enabled state editable.
+For enabled plans, occupy `SubscriptionTierRankReservation` in the same transaction as creation/enabling; disabling releases only the reservation owned by that plan. Disabled historical and staged versions may share a rank, while only one enabled plan can own its reservation. Reject lifecycle-field edits when any contract, entitlement, order, or intent references the plan. Keep name, description, display price, ordering, and enabled state editable.
 
 - [ ] **Step 4: Run tests and commit**
 
@@ -233,7 +256,7 @@ Expected: PASS.
 Protect plan identity across subscription history
 
 Constraint: Rank determines upgrade and downgrade semantics for the life of a contract.
-Rejected: Reusing disabled ranks | makes historical intent ordering ambiguous
+Rejected: Permanently reserving disabled ranks | prevents version replacement required by the accepted design
 Confidence: high
 Scope-risk: narrow
 Tested: go test ./model ./controller -run Plan -count=1
