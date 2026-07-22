@@ -891,15 +891,24 @@ func setupStripeFulfillmentTestDB(t *testing.T) {
 	originalDB := model.DB
 	originalLogDB := model.LOG_DB
 	originalRedisEnabled := common.RedisEnabled
+	originalUsingSQLite := common.UsingSQLite
+	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalUsingMySQL := common.UsingMySQL
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	model.DB = db
 	model.LOG_DB = db
 	common.RedisEnabled = false
+	common.UsingSQLite = true
+	common.UsingPostgreSQL = false
+	common.UsingMySQL = false
 	t.Cleanup(func() {
 		model.DB = originalDB
 		model.LOG_DB = originalLogDB
 		common.RedisEnabled = originalRedisEnabled
+		common.UsingSQLite = originalUsingSQLite
+		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.UsingMySQL = originalUsingMySQL
 	})
 	require.NoError(t, db.AutoMigrate(
 		&model.User{},
@@ -910,7 +919,122 @@ func setupStripeFulfillmentTestDB(t *testing.T) {
 		&model.SubscriptionPlan{},
 		&model.SubscriptionOrder{},
 		&model.UserSubscription{},
+		&model.SubscriptionProviderBinding{},
+		&model.PaymentWebhookEvent{},
 	))
+}
+
+func insertStripeFulfillmentSubscriptionPlan(t *testing.T, id int) {
+	t.Helper()
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:            id,
+		Title:         "Stripe Subscription Plan",
+		PriceAmount:   9.99,
+		Currency:      "USD",
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   1000,
+		StripePriceId: "price_subscription",
+	}).Error)
+}
+
+func insertStripeFulfillmentSubscriptionOrder(t *testing.T, tradeNo string, userID int, planID int) {
+	t.Helper()
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:          userID,
+		PlanId:          planID,
+		Money:           9.99,
+		TradeNo:         tradeNo,
+		PaymentMethod:   model.PaymentMethodStripe,
+		PaymentProvider: model.PaymentProviderStripe,
+		CreateTime:      time.Now().Unix(),
+		Status:          common.TopUpStatusPending,
+	}).Error)
+}
+
+func TestBuildStripeSubscriptionCheckoutSessionParamsIncludesNewAPIMetadata(t *testing.T) {
+	params := buildStripeSubscriptionCheckoutSessionParams("sub_ref_metadata", "cus_123", "buyer@example.com", "price_subscription", 701, 801)
+
+	require.NotNil(t, params.ClientReferenceID)
+	require.Equal(t, "sub_ref_metadata", *params.ClientReferenceID)
+	require.Equal(t, "sub_ref_metadata", params.Metadata["newapi_trade_no"])
+	require.Equal(t, "701", params.Metadata["newapi_user_id"])
+	require.Equal(t, "801", params.Metadata["newapi_plan_id"])
+	require.NotNil(t, params.SubscriptionData)
+	require.Equal(t, "sub_ref_metadata", params.SubscriptionData.Metadata["newapi_trade_no"])
+	require.Equal(t, "701", params.SubscriptionData.Metadata["newapi_user_id"])
+	require.Equal(t, "801", params.SubscriptionData.Metadata["newapi_plan_id"])
+}
+
+func TestFulfillSubscriptionOrderRequiresCheckoutSubscriptionID(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	insertStripeFulfillmentUser(t, 701)
+	insertStripeFulfillmentSubscriptionPlan(t, 801)
+	insertStripeFulfillmentSubscriptionOrder(t, "sub_ref_missing_subscription", 701, 801)
+
+	event := stripe.Event{
+		Type: stripe.EventTypeCheckoutSessionCompleted,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_missing_subscription",
+			"status":              "complete",
+			"payment_status":      "paid",
+			"client_reference_id": "sub_ref_missing_subscription",
+			"customer":            "cus_subscription",
+		}},
+	}
+	err := fulfillOrder(context.Background(), event, "sub_ref_missing_subscription", "cus_subscription", "127.0.0.1")
+
+	require.Error(t, err)
+	var count int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 701).Count(&count).Error)
+	require.EqualValues(t, 0, count)
+}
+
+func TestFulfillSubscriptionOrderBindsCheckoutSubscriptionOnce(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalSnapshot := stripeSubscriptionSnapshotFromCheckoutSession
+	t.Cleanup(func() {
+		stripeSubscriptionSnapshotFromCheckoutSession = originalSnapshot
+	})
+	stripeSubscriptionSnapshotFromCheckoutSession = func(event stripe.Event, order *model.SubscriptionOrder) (model.ProviderSubscriptionSnapshot, error) {
+		require.Equal(t, "sub_ref_bind_once", order.TradeNo)
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId:  "sub_bind_once",
+			ProviderCustomerId:      "cus_subscription",
+			ProviderPriceId:         "price_subscription",
+			ProviderLatestInvoiceId: "in_subscription",
+			ProviderStatus:          "active",
+			CurrentPeriodStart:      1000,
+			CurrentPeriodEnd:        2000,
+			Livemode:                false,
+		}, nil
+	}
+	insertStripeFulfillmentUser(t, 702)
+	insertStripeFulfillmentSubscriptionPlan(t, 802)
+	insertStripeFulfillmentSubscriptionOrder(t, "sub_ref_bind_once", 702, 802)
+
+	event := stripe.Event{
+		Type: stripe.EventTypeCheckoutSessionCompleted,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_bind_once",
+			"status":              "complete",
+			"payment_status":      "paid",
+			"client_reference_id": "sub_ref_bind_once",
+			"customer":            "cus_subscription",
+			"subscription":        "sub_bind_once",
+		}},
+	}
+
+	require.NoError(t, fulfillOrder(context.Background(), event, "sub_ref_bind_once", "cus_subscription", "127.0.0.1"))
+	require.NoError(t, fulfillOrder(context.Background(), event, "sub_ref_bind_once", "cus_subscription", "127.0.0.1"))
+
+	var bindingCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("provider_subscription_id = ?", "sub_bind_once").Count(&bindingCount).Error)
+	require.EqualValues(t, 1, bindingCount)
+	var subCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 702).Count(&subCount).Error)
+	require.EqualValues(t, 1, subCount)
 }
 
 func insertStripeFulfillmentUser(t *testing.T, id int) {

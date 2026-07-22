@@ -80,28 +80,28 @@ Commit with Lore message:
 - Modify: `model/subscription.go`
 - Test: `controller/topup_stripe_test.go`, `model/subscription_recurring_test.go`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add tests for:
 - Checkout subscription completion requires event `subscription=sub_xxx`; empty subscription returns retryable error and creates no entitlement.
 - session metadata and subscription metadata include `newapi_trade_no`, `newapi_user_id`, `newapi_plan_id`.
 - replay of `checkout.session.completed` fills a missing binding without creating another entitlement.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `go test ./controller -run 'TestStripeSubscriptionCheckout|TestFulfillSubscriptionOrder' -count=1`
 Expected: FAIL because metadata/binding completion is missing.
 
-- [ ] **Step 3: Implement minimal completion flow**
+- [x] **Step 3: Implement minimal completion flow**
 
 Use only the session `subscription` ID. Fetch Stripe subscription snapshot through injectable package-level function. Validate customer, price, livemode, and metadata against the local order and plan. Complete order, binding, and first entitlement in one DB transaction.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: `go test ./controller -run 'TestStripeSubscriptionCheckout|TestFulfillSubscriptionOrder' -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit with Lore message:
 `Bind Stripe checkout subscriptions from authoritative session state`
