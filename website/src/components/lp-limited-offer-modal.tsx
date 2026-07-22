@@ -1,12 +1,11 @@
 "use client";
 
-import { ArrowRight, BadgeCheck, Clock3, X } from "lucide-react";
+import { ArrowRight, BadgeCheck, Sparkles, X } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { type Locale, withIdFallback } from "@/lib/locales";
 
 const OFFER_DELAY_MS = 5_000;
-const OFFER_DURATION_SECONDS = 10 * 60;
 
 type OfferModalCopy = {
   timerLabel: string;
@@ -18,7 +17,7 @@ type OfferModalCopy = {
   fabLabel: string;
   fabValue: string;
   closeLabel: string;
-  reopenLabel: (countdown: string) => string;
+  reopenLabel: string;
 };
 
 export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
@@ -32,7 +31,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "Plans",
     fabValue: "from USD10/mo",
     closeLabel: "Close plans panel",
-    reopenLabel: (countdown) => `Reopen plans panel, ${countdown} left`,
+    reopenLabel: "Reopen plans panel",
   },
   zh: {
     timerLabel: "全新套餐",
@@ -44,7 +43,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "套餐",
     fabValue: "$10/月起",
     closeLabel: "关闭套餐面板",
-    reopenLabel: (countdown) => `重新打开套餐面板，剩余 ${countdown}`,
+    reopenLabel: "重新打开套餐面板",
   },
   es: {
     timerLabel: "Nuevos planes",
@@ -56,7 +55,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "Planes",
     fabValue: "desde USD10/mes",
     closeLabel: "Cerrar panel de planes",
-    reopenLabel: (countdown) => `Reabrir panel de planes, quedan ${countdown}`,
+    reopenLabel: "Reabrir panel de planes",
   },
   fr: {
     timerLabel: "Nouveaux plans",
@@ -68,7 +67,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "Plans",
     fabValue: "dès USD10/mois",
     closeLabel: "Fermer le panneau des plans",
-    reopenLabel: (countdown) => `Rouvrir le panneau des plans, ${countdown} restantes`,
+    reopenLabel: "Rouvrir le panneau des plans",
   },
   pt: {
     timerLabel: "Novos planos",
@@ -80,7 +79,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "Planos",
     fabValue: "desde USD10/mês",
     closeLabel: "Fechar painel de planos",
-    reopenLabel: (countdown) => `Reabrir painel de planos, restam ${countdown}`,
+    reopenLabel: "Reabrir painel de planos",
   },
   ru: {
     timerLabel: "Новые планы",
@@ -92,7 +91,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "Планы",
     fabValue: "от USD10/мес",
     closeLabel: "Закрыть панель планов",
-    reopenLabel: (countdown) => `Открыть панель планов снова, осталось ${countdown}`,
+    reopenLabel: "Открыть панель планов снова",
   },
   ja: {
     timerLabel: "新プラン",
@@ -104,7 +103,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "プラン",
     fabValue: "月額 USD10 から",
     closeLabel: "プランパネルを閉じる",
-    reopenLabel: (countdown) => `プランパネルを再表示、残り ${countdown}`,
+    reopenLabel: "プランパネルを再表示",
   },
   vi: {
     timerLabel: "Gói mới",
@@ -116,7 +115,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "Gói",
     fabValue: "từ USD10/tháng",
     closeLabel: "Đóng bảng gói",
-    reopenLabel: (countdown) => `Mở lại bảng gói, còn ${countdown}`,
+    reopenLabel: "Mở lại bảng gói",
   },
   de: {
     timerLabel: "Neue Pläne",
@@ -128,7 +127,7 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
     fabLabel: "Pläne",
     fabValue: "ab USD10/Monat",
     closeLabel: "Plan-Panel schließen",
-    reopenLabel: (countdown) => `Plan-Panel erneut öffnen, ${countdown} verbleibend`,
+    reopenLabel: "Plan-Panel erneut öffnen",
   },
 });
 
@@ -136,22 +135,11 @@ export function shouldShowOfferModal(elapsedMs: number) {
   return elapsedMs >= OFFER_DELAY_MS;
 }
 
-export function getOfferCountdownSeconds(elapsedMs: number) {
-  return Math.max(0, OFFER_DURATION_SECONDS - Math.floor(elapsedMs / 1_000));
-}
-
-export function formatOfferCountdown(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
-}
-
 export function shouldShowOfferFab(state: {
   hasOfferStarted: boolean;
   isCollapsed: boolean;
-  secondsLeft: number;
 }) {
-  return state.hasOfferStarted && state.isCollapsed && state.secondsLeft > 0;
+  return state.hasOfferStarted && state.isCollapsed;
 }
 
 type Props = {
@@ -166,10 +154,8 @@ export function LpLimitedOfferModal({ ctaLabel, ctaUrl, locale }: Props) {
   const copy = OFFER_MODAL_COPY[locale] ?? OFFER_MODAL_COPY.en;
 
   const hasOfferStarted = shouldShowOfferModal(elapsedMs);
-  const secondsLeft = getOfferCountdownSeconds(Math.max(0, elapsedMs - OFFER_DELAY_MS));
-  const isVisible = hasOfferStarted && !isCollapsed && secondsLeft > 0;
-  const showFab = shouldShowOfferFab({ hasOfferStarted, isCollapsed, secondsLeft });
-  const countdown = useMemo(() => formatOfferCountdown(secondsLeft), [secondsLeft]);
+  const isVisible = hasOfferStarted && !isCollapsed;
+  const showFab = shouldShowOfferFab({ hasOfferStarted, isCollapsed });
 
   useEffect(() => {
     const startedAt = Date.now();
@@ -184,15 +170,15 @@ export function LpLimitedOfferModal({ ctaLabel, ctaUrl, locale }: Props) {
     return (
       <button
         type="button"
-        aria-label={copy.reopenLabel(countdown)}
+        aria-label={copy.reopenLabel}
         onClick={() => setIsCollapsed(false)}
-        className="fixed right-4 bottom-20 z-50 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-left text-slate-950 shadow-[0_18px_50px_-22px_rgba(15,23,42,0.45)] transition hover:bg-slate-50 dark:border-yellow-300/40 dark:bg-slate-950 dark:text-white dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.9)] dark:hover:bg-slate-900"
+        className="fixed right-4 bottom-20 z-50 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-left text-slate-950 shadow-[0_18px_50px_-22px_rgba(15,23,42,0.45)] transition hover:bg-slate-50 dark:border-violet-300/40 dark:bg-slate-950 dark:text-white dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.9)] dark:hover:bg-slate-900"
       >
-        <span className="flex size-10 items-center justify-center rounded-full bg-red-600 text-sm font-black tabular-nums">
-          {countdown}
+        <span className="flex size-10 items-center justify-center rounded-full bg-violet-600 text-sm font-black text-white">
+          4.5×
         </span>
         <span className="grid">
-          <span className="text-xs font-black tracking-[0.14em] text-red-600 uppercase dark:text-yellow-300">{copy.fabLabel}</span>
+          <span className="text-xs font-black tracking-[0.14em] text-violet-600 uppercase dark:text-violet-300">{copy.fabLabel}</span>
           <span className="text-sm font-extrabold">{copy.fabValue}</span>
         </span>
       </button>
@@ -222,12 +208,9 @@ export function LpLimitedOfferModal({ ctaLabel, ctaUrl, locale }: Props) {
 
         <div className="p-6 pr-14 md:p-7 md:pr-10">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 text-xs font-black tracking-[0.2em] text-red-600 uppercase dark:text-yellow-300">
-              <Clock3 className="size-4" />
+            <span className="inline-flex items-center gap-1.5 text-xs font-black tracking-[0.2em] text-violet-600 uppercase dark:text-violet-300">
+              <Sparkles className="size-4" />
               {copy.timerLabel}
-            </span>
-            <span className="inline-flex items-center rounded-full bg-red-600 px-3 py-1.5 text-sm font-black text-white tabular-nums">
-              {countdown}
             </span>
           </div>
 
