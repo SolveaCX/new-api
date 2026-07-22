@@ -55,6 +55,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { DateTimePicker } from '@/components/datetime-picker'
 import { MultiSelect } from '@/components/multi-select'
+import { OperationDocumentationLink } from '@/components/operation-documentation-link'
 import { resolveCreateScope } from '@/features/available-models'
 import { ModelAccessPreview } from '@/features/available-models/components/model-access-preview'
 import { createApiKey, updateApiKey, getApiKey } from '../api'
@@ -465,6 +466,7 @@ export function ApiKeysMutateDrawer({
         scopeTitle={previewScopeTitle}
         scopeDescription={previewScopeDescription}
         summary={previewSummary}
+        headerAction={<OperationDocumentationLink size='xs' />}
         emptyTitle={previewCopy ? t(previewCopy.emptyTitleKey) : undefined}
         emptyDescription={
           previewCopy ? t(previewCopy.emptyDescriptionKey) : undefined
