@@ -36,25 +36,38 @@ func NewRecallAudienceSelector() *RecallAudienceSelector {
 
 func ValidateRecallAudience(template string, cfg RecallAudienceConfig) error {
 	switch template {
-	case "first_purchase", "lapsed_payer", "expired_subscription", "registered_only", "specified_users":
-	default:
-		return fmt.Errorf("unknown recall audience template %q", template)
-	}
-	switch template {
+	case "first_purchase", "lapsed_payer", "expired_subscription":
+		return validateRecallLegacyAudienceConfig(cfg)
 	case "registered_only":
 		if cfg.RegistrationStartAt <= 0 || cfg.RegistrationEndAt <= 0 || cfg.RegistrationEndAt < cfg.RegistrationStartAt {
 			return fmt.Errorf("recall audience registration time range must have positive start and end with end at or after start")
 		}
+		return validateRecallAudienceGroups(cfg)
 	case "specified_users":
-		if err := validateRecallSpecifiedAudience(cfg); err != nil {
-			return err
-		}
+		return validateRecallSpecifiedAudience(cfg)
+	default:
+		return fmt.Errorf("unknown recall audience template %q", template)
 	}
+}
+
+func validateRecallLegacyAudienceConfig(cfg RecallAudienceConfig) error {
 	if cfg.RegistrationAgeDays < 0 || cfg.MinRequestCount < 0 || cfg.MaxQuota < 0 ||
 		cfg.MinPaidAmount < 0 || cfg.LastAPICallAgeDays < 0 || cfg.LastPaymentAgeDays < 0 ||
 		cfg.SubscriptionExpiredDays < 0 || cfg.MinSubscriptionAmount < 0 || cfg.MinSubscriptionCount < 0 {
 		return fmt.Errorf("recall audience thresholds must not be negative")
 	}
+	if err := validateRecallAudienceGroups(cfg); err != nil {
+		return err
+	}
+	for _, provider := range cfg.PaymentProviders {
+		if strings.TrimSpace(provider) == "" {
+			return fmt.Errorf("recall audience payment providers must not contain empty values")
+		}
+	}
+	return nil
+}
+
+func validateRecallAudienceGroups(cfg RecallAudienceConfig) error {
 	if cfg.GroupMode != "" && cfg.GroupMode != "allow" && cfg.GroupMode != "block" {
 		return fmt.Errorf("unknown recall audience group mode %q", cfg.GroupMode)
 	}
@@ -67,11 +80,6 @@ func ValidateRecallAudience(template string, cfg RecallAudienceConfig) error {
 	for _, group := range cfg.Groups {
 		if strings.TrimSpace(group) == "" {
 			return fmt.Errorf("recall audience groups must not contain empty values")
-		}
-	}
-	for _, provider := range cfg.PaymentProviders {
-		if strings.TrimSpace(provider) == "" {
-			return fmt.Errorf("recall audience payment providers must not contain empty values")
 		}
 	}
 	return nil
@@ -185,6 +193,9 @@ func (selector *RecallAudienceSelector) iterate(
 	if err := ValidateRecallAudience(draft.AudienceTemplate, draft.Audience); err != nil {
 		return exclusions, err
 	}
+	if !recallAudienceSelectorSupportsTemplate(draft.AudienceTemplate) {
+		return exclusions, fmt.Errorf("recall audience template %q is not supported by recall audience selector yet", draft.AudienceTemplate)
+	}
 	query := recallCandidateQuery(draft, now, selector.MainBatchSize)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -247,6 +258,15 @@ func (selector *RecallAudienceSelector) iterate(
 		if len(facts) < selector.MainBatchSize {
 			return exclusions, nil
 		}
+	}
+}
+
+func recallAudienceSelectorSupportsTemplate(template string) bool {
+	switch template {
+	case "first_purchase", "lapsed_payer", "expired_subscription":
+		return true
+	default:
+		return false
 	}
 }
 
