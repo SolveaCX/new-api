@@ -1,4 +1,8 @@
 import type { UseFormReturn } from 'react-hook-form'
+import {
+  RECALL_EMAIL_STARTER_HTML,
+  convertRecallBodyTextToHtml,
+} from './email-html'
 import type {
   RecallCampaignDraft,
   RecallCouponSource,
@@ -7,6 +11,13 @@ import type {
   RecallFixedCurrency,
   RecallRecipient,
 } from './types'
+
+export {
+  RECALL_EMAIL_ACTIONS,
+  RECALL_EMAIL_STARTER_HTML,
+  convertRecallBodyTextToHtml,
+  insertRecallEmailAction,
+} from './email-html'
 
 export const recallFixedCurrencies = ['USD', 'INR', 'BRL', 'JPY'] as const
 
@@ -113,6 +124,32 @@ export function prepareRecallCampaignSubmitDraft(
         draft.audience_config.group_mode
       ),
     },
+    email_sequence: draft.email_sequence.map((stage) => ({
+      ...stage,
+      templates: Object.fromEntries(
+        Object.entries(stage.templates).map(([locale, template]) => {
+          if (locale !== 'en') return [locale, template]
+          const bodyHtml = template.body_html?.trim()
+          if (bodyHtml) {
+            return [
+              locale,
+              { ...template, body_text: '', body_html: template.body_html },
+            ]
+          }
+          const bodyText = template.body_text?.trim()
+          return [
+            locale,
+            {
+              ...template,
+              body_text: '',
+              body_html: bodyText
+                ? convertRecallBodyTextToHtml(template.body_text ?? '')
+                : RECALL_EMAIL_STARTER_HTML,
+            },
+          ]
+        })
+      ),
+    })),
   }
 }
 

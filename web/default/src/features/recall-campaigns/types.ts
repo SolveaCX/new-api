@@ -70,7 +70,17 @@ export interface RecallSubscriptionProductRecord {
 
 export interface RecallEmailTemplate {
   subject: string
-  body_text: string
+  body_text?: string
+  body_html?: string
+}
+
+export interface RecallEmailPreviewRequest {
+  template: RecallEmailTemplate
+}
+
+export interface RecallEmailPreviewResponse {
+  subject: string
+  body_html: string
 }
 
 export interface RecallEmailStage {

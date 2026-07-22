@@ -12,6 +12,7 @@ import {
   listRecallCampaigns,
   listRecallEvents,
   listRecallRecipients,
+  previewRecallEmail,
   previewRecallCampaign,
   retryRecallRecipient,
   runRecallCampaignAction,
@@ -87,6 +88,13 @@ describe('recall campaign API contracts', () => {
     ['detail', () => getRecallCampaign(1)],
     ['update', () => updateRecallCampaign(1, draft)],
     ['preview', () => previewRecallCampaign(1)],
+    [
+      'email preview',
+      () =>
+        previewRecallEmail({
+          template: { subject: 'Subject', body_html: '<p>Hello</p>' },
+        }),
+    ],
     ['Stripe validation', () => validateRecallStripeConfig(draft)],
     ['action', () => runRecallCampaignAction(1, 'pause')],
     ['recipients', () => listRecallRecipients(1, 1)],
@@ -114,5 +122,21 @@ describe('recall campaign API contracts', () => {
     )
 
     await expect(exportRecallCampaign(1)).rejects.toThrow('Export unavailable')
+  })
+
+  test('posts email preview requests with the template wrapper', async () => {
+    respondWith({
+      success: true,
+      data: { subject: 'Subject', body_html: '<p>Hello</p>' },
+    })
+
+    await previewRecallEmail({
+      template: { subject: 'Subject', body_html: '<p>Hello</p>' },
+    })
+
+    expect(capturedConfig?.url).toBe('/api/recall-campaigns/email-preview')
+    expect(JSON.parse(String(capturedConfig?.data))).toEqual({
+      template: { subject: 'Subject', body_html: '<p>Hello</p>' },
+    })
   })
 })
