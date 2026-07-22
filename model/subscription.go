@@ -159,6 +159,7 @@ type SubscriptionPlan struct {
 
 	Enabled   bool `json:"enabled" gorm:"default:true"`
 	SortOrder int  `json:"sort_order" gorm:"type:int;default:0"`
+	TierRank  int  `json:"tier_rank" gorm:"type:int;default:0;index"`
 
 	AllowBalancePay *bool `json:"allow_balance_pay" gorm:"default:true"`
 
@@ -242,17 +243,22 @@ func GetSubscriptionOrderByTradeNo(tradeNo string) *SubscriptionOrder {
 
 // User subscription instance
 type UserSubscription struct {
-	Id                int   `json:"id"`
-	UserId            int   `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
-	PlanId            int   `json:"plan_id" gorm:"index"`
-	ProviderBindingId int64 `json:"provider_binding_id" gorm:"type:bigint;default:0;index"`
+	Id                int     `json:"id"`
+	UserId            int     `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
+	PlanId            int     `json:"plan_id" gorm:"index"`
+	ContractId        int64   `json:"contract_id" gorm:"type:bigint;default:0;uniqueIndex:idx_contract_current_slot,priority:1"`
+	ProviderBindingId int64   `json:"provider_binding_id" gorm:"type:bigint;default:0;index"`
+	GrantKey          *string `json:"grant_key" gorm:"type:varchar(128);uniqueIndex"`
+	CurrentSlot       *int    `json:"current_slot" gorm:"uniqueIndex:idx_contract_current_slot,priority:2"`
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
 
-	StartTime int64  `json:"start_time" gorm:"bigint"`
-	EndTime   int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
-	Status    string `json:"status" gorm:"type:varchar(32);index;index:idx_user_sub_active,priority:2"` // active/expired/cancelled
+	StartTime     int64  `json:"start_time" gorm:"bigint"`
+	EndTime       int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
+	AccessEndTime int64  `json:"access_end_time" gorm:"type:bigint;default:0;index"`
+	EndReason     string `json:"end_reason" gorm:"type:varchar(64);default:''"`
+	Status        string `json:"status" gorm:"type:varchar(32);index;index:idx_user_sub_active,priority:2"` // active/expired/cancelled
 
 	Source string `json:"source" gorm:"type:varchar(32);default:'order'"` // order/admin
 
@@ -270,12 +276,26 @@ func (s *UserSubscription) BeforeCreate(tx *gorm.DB) error {
 	now := common.GetTimestamp()
 	s.CreatedAt = now
 	s.UpdatedAt = now
+	s.normalizeLifecycleFields()
 	return nil
 }
 
 func (s *UserSubscription) BeforeUpdate(tx *gorm.DB) error {
 	s.UpdatedAt = common.GetTimestamp()
+	s.normalizeLifecycleFields()
 	return nil
+}
+
+func (s *UserSubscription) normalizeLifecycleFields() {
+	if s.GrantKey != nil {
+		grantKey := strings.TrimSpace(*s.GrantKey)
+		if grantKey == "" {
+			s.GrantKey = nil
+		} else {
+			s.GrantKey = &grantKey
+		}
+	}
+	s.EndReason = strings.TrimSpace(s.EndReason)
 }
 
 type SubscriptionSummary struct {

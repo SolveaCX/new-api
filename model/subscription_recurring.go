@@ -20,16 +20,19 @@ var ErrSubscriptionProviderBindingConflict = errors.New("subscription provider b
 type SubscriptionProviderBinding struct {
 	Id int64 `json:"id"`
 
-	UserId         int `json:"user_id" gorm:"index"`
-	PlanId         int `json:"plan_id" gorm:"index"`
-	InitialOrderId int `json:"initial_order_id" gorm:"index"`
+	UserId         int   `json:"user_id" gorm:"index"`
+	PlanId         int   `json:"plan_id" gorm:"index"`
+	InitialOrderId int   `json:"initial_order_id" gorm:"index"`
+	ContractId     int64 `json:"contract_id" gorm:"type:bigint;default:0;index"`
 
-	Provider                string `json:"provider" gorm:"type:varchar(32);not null;uniqueIndex:idx_provider_subscription,priority:1"`
-	ProviderSubscriptionId  string `json:"provider_subscription_id" gorm:"type:varchar(128);not null;uniqueIndex:idx_provider_subscription,priority:2"`
-	ProviderCustomerId      string `json:"provider_customer_id" gorm:"type:varchar(128);default:''"`
-	ProviderPriceId         string `json:"provider_price_id" gorm:"type:varchar(128);default:''"`
-	ProviderLatestInvoiceId string `json:"provider_latest_invoice_id" gorm:"type:varchar(128);default:''"`
-	ProviderStatus          string `json:"provider_status" gorm:"type:varchar(64);default:'';index"`
+	Provider                   string `json:"provider" gorm:"type:varchar(32);not null;uniqueIndex:idx_provider_subscription,priority:1"`
+	ProviderSubscriptionId     string `json:"provider_subscription_id" gorm:"type:varchar(128);not null;uniqueIndex:idx_provider_subscription,priority:2"`
+	ProviderSubscriptionItemId string `json:"-" gorm:"type:varchar(128);default:''"`
+	ProviderScheduleId         string `json:"-" gorm:"type:varchar(128);default:''"`
+	ProviderCustomerId         string `json:"provider_customer_id" gorm:"type:varchar(128);default:''"`
+	ProviderPriceId            string `json:"provider_price_id" gorm:"type:varchar(128);default:''"`
+	ProviderLatestInvoiceId    string `json:"provider_latest_invoice_id" gorm:"type:varchar(128);default:''"`
+	ProviderStatus             string `json:"provider_status" gorm:"type:varchar(64);default:'';index"`
 
 	CancelAtPeriodEnd  bool  `json:"cancel_at_period_end" gorm:"default:false"`
 	CurrentPeriodStart int64 `json:"current_period_start" gorm:"type:bigint;default:0"`
@@ -101,18 +104,20 @@ func (e *PaymentWebhookEvent) BeforeUpdate(tx *gorm.DB) error {
 }
 
 type ProviderSubscriptionSnapshot struct {
-	ProviderSubscriptionId  string
-	ProviderCustomerId      string
-	ProviderPriceId         string
-	ProviderLatestInvoiceId string
-	ProviderStatus          string
-	CancelAtPeriodEnd       bool
-	CurrentPeriodStart      int64
-	CurrentPeriodEnd        int64
-	GracePeriodEnd          int64
-	CanceledAt              int64
-	EndedAt                 int64
-	Livemode                bool
+	ProviderSubscriptionId     string
+	ProviderSubscriptionItemId string
+	ProviderScheduleId         string
+	ProviderCustomerId         string
+	ProviderPriceId            string
+	ProviderLatestInvoiceId    string
+	ProviderStatus             string
+	CancelAtPeriodEnd          bool
+	CurrentPeriodStart         int64
+	CurrentPeriodEnd           int64
+	GracePeriodEnd             int64
+	CanceledAt                 int64
+	EndedAt                    int64
+	Livemode                   bool
 }
 
 func normalizeProvider(provider string) string {
@@ -121,23 +126,25 @@ func normalizeProvider(provider string) string {
 
 func subscriptionProviderBindingFromSnapshot(order *SubscriptionOrder, snapshot ProviderSubscriptionSnapshot) *SubscriptionProviderBinding {
 	return &SubscriptionProviderBinding{
-		UserId:                  order.UserId,
-		PlanId:                  order.PlanId,
-		InitialOrderId:          order.Id,
-		Provider:                PaymentProviderStripe,
-		ProviderSubscriptionId:  strings.TrimSpace(snapshot.ProviderSubscriptionId),
-		ProviderCustomerId:      strings.TrimSpace(snapshot.ProviderCustomerId),
-		ProviderPriceId:         strings.TrimSpace(snapshot.ProviderPriceId),
-		ProviderLatestInvoiceId: strings.TrimSpace(snapshot.ProviderLatestInvoiceId),
-		ProviderStatus:          strings.TrimSpace(snapshot.ProviderStatus),
-		CancelAtPeriodEnd:       snapshot.CancelAtPeriodEnd,
-		CurrentPeriodStart:      snapshot.CurrentPeriodStart,
-		CurrentPeriodEnd:        snapshot.CurrentPeriodEnd,
-		GracePeriodEnd:          snapshot.GracePeriodEnd,
-		CanceledAt:              snapshot.CanceledAt,
-		EndedAt:                 snapshot.EndedAt,
-		Livemode:                snapshot.Livemode,
-		LastSyncedAt:            common.GetTimestamp(),
+		UserId:                     order.UserId,
+		PlanId:                     order.PlanId,
+		InitialOrderId:             order.Id,
+		Provider:                   PaymentProviderStripe,
+		ProviderSubscriptionId:     strings.TrimSpace(snapshot.ProviderSubscriptionId),
+		ProviderSubscriptionItemId: strings.TrimSpace(snapshot.ProviderSubscriptionItemId),
+		ProviderScheduleId:         strings.TrimSpace(snapshot.ProviderScheduleId),
+		ProviderCustomerId:         strings.TrimSpace(snapshot.ProviderCustomerId),
+		ProviderPriceId:            strings.TrimSpace(snapshot.ProviderPriceId),
+		ProviderLatestInvoiceId:    strings.TrimSpace(snapshot.ProviderLatestInvoiceId),
+		ProviderStatus:             strings.TrimSpace(snapshot.ProviderStatus),
+		CancelAtPeriodEnd:          snapshot.CancelAtPeriodEnd,
+		CurrentPeriodStart:         snapshot.CurrentPeriodStart,
+		CurrentPeriodEnd:           snapshot.CurrentPeriodEnd,
+		GracePeriodEnd:             snapshot.GracePeriodEnd,
+		CanceledAt:                 snapshot.CanceledAt,
+		EndedAt:                    snapshot.EndedAt,
+		Livemode:                   snapshot.Livemode,
+		LastSyncedAt:               common.GetTimestamp(),
 	}
 }
 
@@ -213,6 +220,12 @@ func ApplyProviderSubscriptionSnapshot(bindingID int64, snapshot ProviderSubscri
 			"last_synced_at":             common.GetTimestamp(),
 			"updated_at":                 common.GetTimestamp(),
 		}
+		if providerSubscriptionItemID := strings.TrimSpace(snapshot.ProviderSubscriptionItemId); providerSubscriptionItemID != "" {
+			updates["provider_subscription_item_id"] = providerSubscriptionItemID
+		}
+		if providerScheduleID := strings.TrimSpace(snapshot.ProviderScheduleId); providerScheduleID != "" {
+			updates["provider_schedule_id"] = providerScheduleID
+		}
 		if snapshot.CancelAtPeriodEnd != binding.CancelAtPeriodEnd {
 			updates["lifecycle_action_seq"] = binding.LifecycleActionSeq + 1
 		}
@@ -260,6 +273,12 @@ func ApplyProviderSubscriptionTermination(bindingID int64, snapshot ProviderSubs
 			"livemode":                   snapshot.Livemode,
 			"last_synced_at":             now,
 			"updated_at":                 now,
+		}
+		if providerSubscriptionItemID := strings.TrimSpace(snapshot.ProviderSubscriptionItemId); providerSubscriptionItemID != "" {
+			updates["provider_subscription_item_id"] = providerSubscriptionItemID
+		}
+		if providerScheduleID := strings.TrimSpace(snapshot.ProviderScheduleId); providerScheduleID != "" {
+			updates["provider_schedule_id"] = providerScheduleID
 		}
 		if binding.CancelAtPeriodEnd {
 			updates["lifecycle_action_seq"] = binding.LifecycleActionSeq + 1

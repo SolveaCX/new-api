@@ -1046,17 +1046,19 @@ func stripeSubscriptionSnapshotFromSubscription(event stripe.Event, sub *stripe.
 		latestInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
 	}
 	return model.ProviderSubscriptionSnapshot{
-		ProviderSubscriptionId:  strings.TrimSpace(sub.ID),
-		ProviderCustomerId:      customerID,
-		ProviderPriceId:         priceID,
-		ProviderLatestInvoiceId: latestInvoiceID,
-		ProviderStatus:          string(sub.Status),
-		CancelAtPeriodEnd:       sub.CancelAtPeriodEnd,
-		CurrentPeriodStart:      sub.CurrentPeriodStart,
-		CurrentPeriodEnd:        sub.CurrentPeriodEnd,
-		CanceledAt:              sub.CanceledAt,
-		EndedAt:                 sub.EndedAt,
-		Livemode:                sub.Livemode,
+		ProviderSubscriptionId:     strings.TrimSpace(sub.ID),
+		ProviderSubscriptionItemId: stripeSubscriptionFirstItemID(sub),
+		ProviderScheduleId:         stripeSubscriptionScheduleID(sub),
+		ProviderCustomerId:         customerID,
+		ProviderPriceId:            priceID,
+		ProviderLatestInvoiceId:    latestInvoiceID,
+		ProviderStatus:             string(sub.Status),
+		CancelAtPeriodEnd:          sub.CancelAtPeriodEnd,
+		CurrentPeriodStart:         sub.CurrentPeriodStart,
+		CurrentPeriodEnd:           sub.CurrentPeriodEnd,
+		CanceledAt:                 sub.CanceledAt,
+		EndedAt:                    sub.EndedAt,
+		Livemode:                   sub.Livemode,
 	}, nil
 }
 
@@ -1065,6 +1067,20 @@ func stripeSubscriptionFirstPriceID(sub *stripe.Subscription) string {
 		return ""
 	}
 	return strings.TrimSpace(sub.Items.Data[0].Price.ID)
+}
+
+func stripeSubscriptionFirstItemID(sub *stripe.Subscription) string {
+	if sub == nil || sub.Items == nil || len(sub.Items.Data) == 0 || sub.Items.Data[0] == nil {
+		return ""
+	}
+	return strings.TrimSpace(sub.Items.Data[0].ID)
+}
+
+func stripeSubscriptionScheduleID(sub *stripe.Subscription) string {
+	if sub == nil || sub.Schedule == nil {
+		return ""
+	}
+	return strings.TrimSpace(sub.Schedule.ID)
 }
 
 func getStripeSubscriptionSnapshotFromSubscriptionEvent(event stripe.Event) (model.ProviderSubscriptionSnapshot, error) {
@@ -1099,17 +1115,19 @@ func stripeSubscriptionSnapshotFromStripeSubscription(sub *stripe.Subscription) 
 		latestInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
 	}
 	return model.ProviderSubscriptionSnapshot{
-		ProviderSubscriptionId:  strings.TrimSpace(sub.ID),
-		ProviderCustomerId:      customerID,
-		ProviderPriceId:         stripeSubscriptionFirstPriceID(sub),
-		ProviderLatestInvoiceId: latestInvoiceID,
-		ProviderStatus:          string(sub.Status),
-		CancelAtPeriodEnd:       sub.CancelAtPeriodEnd,
-		CurrentPeriodStart:      sub.CurrentPeriodStart,
-		CurrentPeriodEnd:        sub.CurrentPeriodEnd,
-		CanceledAt:              sub.CanceledAt,
-		EndedAt:                 sub.EndedAt,
-		Livemode:                sub.Livemode,
+		ProviderSubscriptionId:     strings.TrimSpace(sub.ID),
+		ProviderSubscriptionItemId: stripeSubscriptionFirstItemID(sub),
+		ProviderScheduleId:         stripeSubscriptionScheduleID(sub),
+		ProviderCustomerId:         customerID,
+		ProviderPriceId:            stripeSubscriptionFirstPriceID(sub),
+		ProviderLatestInvoiceId:    latestInvoiceID,
+		ProviderStatus:             string(sub.Status),
+		CancelAtPeriodEnd:          sub.CancelAtPeriodEnd,
+		CurrentPeriodStart:         sub.CurrentPeriodStart,
+		CurrentPeriodEnd:           sub.CurrentPeriodEnd,
+		CanceledAt:                 sub.CanceledAt,
+		EndedAt:                    sub.EndedAt,
+		Livemode:                   sub.Livemode,
 	}
 }
 

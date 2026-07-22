@@ -191,21 +191,31 @@ func providerSubscriptionSnapshotFromStripe(sub *stripe.Subscription) model.Prov
 	if sub.Items != nil && len(sub.Items.Data) > 0 && sub.Items.Data[0] != nil && sub.Items.Data[0].Price != nil {
 		priceID = strings.TrimSpace(sub.Items.Data[0].Price.ID)
 	}
+	itemID := ""
+	if sub.Items != nil && len(sub.Items.Data) > 0 && sub.Items.Data[0] != nil {
+		itemID = strings.TrimSpace(sub.Items.Data[0].ID)
+	}
+	scheduleID := ""
+	if sub.Schedule != nil {
+		scheduleID = strings.TrimSpace(sub.Schedule.ID)
+	}
 	latestInvoiceID := ""
 	if sub.LatestInvoice != nil {
 		latestInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
 	}
 	return model.ProviderSubscriptionSnapshot{
-		ProviderSubscriptionId:  strings.TrimSpace(sub.ID),
-		ProviderCustomerId:      customerID,
-		ProviderPriceId:         priceID,
-		ProviderLatestInvoiceId: latestInvoiceID,
-		ProviderStatus:          string(sub.Status),
-		CancelAtPeriodEnd:       sub.CancelAtPeriodEnd,
-		CurrentPeriodStart:      sub.CurrentPeriodStart,
-		CurrentPeriodEnd:        sub.CurrentPeriodEnd,
-		CanceledAt:              sub.CanceledAt,
-		EndedAt:                 sub.EndedAt,
-		Livemode:                sub.Livemode,
+		ProviderSubscriptionId:     strings.TrimSpace(sub.ID),
+		ProviderSubscriptionItemId: itemID,
+		ProviderScheduleId:         scheduleID,
+		ProviderCustomerId:         customerID,
+		ProviderPriceId:            priceID,
+		ProviderLatestInvoiceId:    latestInvoiceID,
+		ProviderStatus:             string(sub.Status),
+		CancelAtPeriodEnd:          sub.CancelAtPeriodEnd,
+		CurrentPeriodStart:         sub.CurrentPeriodStart,
+		CurrentPeriodEnd:           sub.CurrentPeriodEnd,
+		CanceledAt:                 sub.CanceledAt,
+		EndedAt:                    sub.EndedAt,
+		Livemode:                   sub.Livemode,
 	}
 }
