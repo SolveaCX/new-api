@@ -178,25 +178,25 @@ Commit with Lore message:
 - Modify: `model/subscription.go`
 - Test: `controller/subscription_test.go`, `service/stripe_subscription_lifecycle_test.go`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add tests for Stripe recurring admin invalidate requiring successful remote cancel before local cancel, remote failure keeping local active, non-Stripe retaining local invalidate, and Delete rejecting Stripe recurring history.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `go test ./controller ./service -run 'TestAdmin.*Subscription' -count=1`
 Expected: FAIL because admin still does local-only invalidate/delete.
 
-- [ ] **Step 3: Implement minimal admin policy**
+- [x] **Step 3: Implement minimal admin policy**
 
 Route admin invalidate through lifecycle service when a Stripe recurring binding exists; keep existing local semantics otherwise. Hard delete returns business error for Stripe recurring bindings.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: `go test ./controller ./service -run 'TestAdmin.*Subscription' -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit with Lore message:
 `Protect Stripe recurring contracts during admin invalidation`

@@ -185,3 +185,125 @@ func TestStripeSubscriptionLifecyclePastDueCancelTerminatesLocalEntitlement(t *t
 	require.NoError(t, model.DB.Where("provider_binding_id = ?", binding.Id).First(&sub).Error)
 	require.Equal(t, "cancelled", sub.Status)
 }
+
+func TestAdminInvalidateStripeRecurringSubscriptionCancelsRemoteBeforeLocal(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBinding(t, 806, "active", false)
+	sub := stripeLifecycleUserSubscriptionForBinding(t, binding.Id)
+	originalCancelNow := stripeCancelSubscriptionNow
+	t.Cleanup(func() { stripeCancelSubscriptionNow = originalCancelNow })
+	var called bool
+	stripeCancelSubscriptionNow = func(providerSubscriptionID string, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		called = true
+		require.Equal(t, "sub_lifecycle", providerSubscriptionID)
+		require.Contains(t, idempotencyKey, "admin_invalidate")
+		var before model.UserSubscription
+		require.NoError(t, model.DB.First(&before, sub.Id).Error)
+		require.Equal(t, "active", before.Status)
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId: providerSubscriptionID,
+			ProviderStatus:         "canceled",
+			EndedAt:                common.GetTimestamp(),
+		}, nil
+	}
+
+	_, err := AdminInvalidateUserSubscriptionWithRecurringPolicy(sub.Id)
+
+	require.NoError(t, err)
+	require.True(t, called)
+	var updated model.UserSubscription
+	require.NoError(t, model.DB.First(&updated, sub.Id).Error)
+	require.Equal(t, "cancelled", updated.Status)
+	var updatedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&updatedBinding, binding.Id).Error)
+	require.Equal(t, "canceled", updatedBinding.ProviderStatus)
+}
+
+func TestAdminInvalidateStripeRecurringSubscriptionRemoteFailureKeepsLocalActive(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBinding(t, 807, "active", false)
+	sub := stripeLifecycleUserSubscriptionForBinding(t, binding.Id)
+	originalCancelNow := stripeCancelSubscriptionNow
+	t.Cleanup(func() { stripeCancelSubscriptionNow = originalCancelNow })
+	stripeCancelSubscriptionNow = func(providerSubscriptionID string, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		return model.ProviderSubscriptionSnapshot{}, assertAnErrorForAdminLifecycleTest
+	}
+
+	_, err := AdminInvalidateUserSubscriptionWithRecurringPolicy(sub.Id)
+
+	require.ErrorIs(t, err, assertAnErrorForAdminLifecycleTest)
+	var updated model.UserSubscription
+	require.NoError(t, model.DB.First(&updated, sub.Id).Error)
+	require.Equal(t, "active", updated.Status)
+	var updatedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&updatedBinding, binding.Id).Error)
+	require.Equal(t, "active", updatedBinding.ProviderStatus)
+}
+
+func TestAdminInvalidateNonStripeSubscriptionKeepsLocalBehavior(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       808,
+		Username: "local_admin_user",
+		Status:   common.UserStatusEnabled,
+		AffCode:  "local_admin_aff",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:            1708,
+		Title:         "Local Admin Plan",
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   1000,
+	}).Error)
+	sub := &model.UserSubscription{
+		UserId:      808,
+		PlanId:      1708,
+		AmountTotal: 1000,
+		StartTime:   1000,
+		EndTime:     2000,
+		Status:      "active",
+		Source:      "admin",
+	}
+	require.NoError(t, model.DB.Create(sub).Error)
+	originalCancelNow := stripeCancelSubscriptionNow
+	t.Cleanup(func() { stripeCancelSubscriptionNow = originalCancelNow })
+	stripeCancelSubscriptionNow = func(providerSubscriptionID string, idempotencyKey string) (model.ProviderSubscriptionSnapshot, error) {
+		t.Fatal("non-Stripe admin invalidate must not call Stripe")
+		return model.ProviderSubscriptionSnapshot{}, nil
+	}
+
+	_, err := AdminInvalidateUserSubscriptionWithRecurringPolicy(sub.Id)
+
+	require.NoError(t, err)
+	var updated model.UserSubscription
+	require.NoError(t, model.DB.First(&updated, sub.Id).Error)
+	require.Equal(t, "cancelled", updated.Status)
+}
+
+func TestAdminDeleteStripeRecurringSubscriptionHistoryIsRejected(t *testing.T) {
+	setupStripeSubscriptionLifecycleTestDB(t)
+	binding := insertStripeLifecycleBinding(t, 809, "active", false)
+	sub := stripeLifecycleUserSubscriptionForBinding(t, binding.Id)
+
+	_, err := AdminDeleteUserSubscriptionWithRecurringPolicy(sub.Id)
+
+	require.Error(t, err)
+	var existing model.UserSubscription
+	require.NoError(t, model.DB.First(&existing, sub.Id).Error)
+}
+
+var assertAnErrorForAdminLifecycleTest = errAdminLifecycleTest{}
+
+type errAdminLifecycleTest struct{}
+
+func (errAdminLifecycleTest) Error() string {
+	return "admin lifecycle failure"
+}
+
+func stripeLifecycleUserSubscriptionForBinding(t *testing.T, bindingID int64) model.UserSubscription {
+	t.Helper()
+	var sub model.UserSubscription
+	require.NoError(t, model.DB.Where("provider_binding_id = ?", bindingID).First(&sub).Error)
+	return sub
+}

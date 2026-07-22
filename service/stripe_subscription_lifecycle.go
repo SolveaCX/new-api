@@ -55,6 +55,38 @@ func ResumeStripeRecurringSubscription(userID int, bindingID int64) (*model.Subs
 	return model.ApplyProviderSubscriptionSnapshot(binding.Id, snapshot)
 }
 
+func AdminInvalidateUserSubscriptionWithRecurringPolicy(userSubscriptionID int) (string, error) {
+	sub, binding, managed, err := adminRecurringPolicyTarget(userSubscriptionID)
+	if err != nil {
+		return "", err
+	}
+	if !managed {
+		return model.AdminInvalidateUserSubscription(userSubscriptionID)
+	}
+	snapshot, err := stripeCancelSubscriptionNow(binding.ProviderSubscriptionId, recurringLifecycleIdempotencyKey(binding, "admin_invalidate"))
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(snapshot.ProviderSubscriptionId) == "" {
+		snapshot.ProviderSubscriptionId = binding.ProviderSubscriptionId
+	}
+	if _, err := model.ApplyProviderSubscriptionTermination(binding.Id, snapshot); err != nil {
+		return "", err
+	}
+	return model.AdminInvalidateUserSubscription(sub.Id)
+}
+
+func AdminDeleteUserSubscriptionWithRecurringPolicy(userSubscriptionID int) (string, error) {
+	_, _, managed, err := adminRecurringPolicyTarget(userSubscriptionID)
+	if err != nil {
+		return "", err
+	}
+	if managed {
+		return "", errors.New("Stripe recurring subscription history cannot be deleted")
+	}
+	return model.AdminDeleteUserSubscription(userSubscriptionID)
+}
+
 func recurringBindingForUser(userID int, bindingID int64) (*model.SubscriptionProviderBinding, error) {
 	binding, err := model.FindBindingByIDForUser(bindingID, userID)
 	if err != nil {
@@ -67,6 +99,25 @@ func recurringBindingForUser(userID int, bindingID int64) (*model.SubscriptionPr
 		return nil, errors.New("Stripe subscription binding is incomplete")
 	}
 	return binding, nil
+}
+
+func adminRecurringPolicyTarget(userSubscriptionID int) (*model.UserSubscription, *model.SubscriptionProviderBinding, bool, error) {
+	if userSubscriptionID <= 0 {
+		return nil, nil, false, errors.New("invalid userSubscriptionId")
+	}
+	var sub model.UserSubscription
+	if err := model.DB.Where("id = ?", userSubscriptionID).First(&sub).Error; err != nil {
+		return nil, nil, false, err
+	}
+	if sub.ProviderBindingId <= 0 {
+		return &sub, nil, false, nil
+	}
+	var binding model.SubscriptionProviderBinding
+	if err := model.DB.Where("id = ?", sub.ProviderBindingId).First(&binding).Error; err != nil {
+		return &sub, nil, false, err
+	}
+	managed := binding.Provider == model.PaymentProviderStripe && strings.TrimSpace(binding.ProviderSubscriptionId) != ""
+	return &sub, &binding, managed, nil
 }
 
 func recurringLifecycleIdempotencyKey(binding *model.SubscriptionProviderBinding, action string) string {
