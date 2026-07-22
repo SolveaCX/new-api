@@ -406,6 +406,7 @@
     "API key is required": "Требуется ключ API",
     "API Key mode (does not support batch creation)": "Режим API-ключа (не поддерживает пакетное создание)",
     "API Key mode: use APIKey|Region": "Режим API Key: use APIKey|Region",
+    "API Key Statistics": "Статистика API-ключей",
     "API Key updated successfully": "API ключ успешно обновлен",
     "API Keys": "Ключи API",
     "API keys must be the full Paddle key, not just the ID: {{sandboxPrefix}}..._..._... for sandbox or {{livePrefix}}..._..._... for live. Values starting with only {{incompletePrefix}} or missing the secret suffix are incomplete.": "API-ключи должны быть полным ключом Paddle, а не только ID: {{sandboxPrefix}}..._..._... для sandbox или {{livePrefix}}..._..._... для live. Значения, начинающиеся только с {{incompletePrefix}} или без секретного суффикса, неполные.",

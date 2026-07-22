@@ -588,6 +588,49 @@ func CountUserTokens(userId int) (int64, error) {
 	return total, err
 }
 
+// UserTokenStats contains account-wide API token counts grouped by status.
+type UserTokenStats struct {
+	Total     int64 `json:"total"`
+	Enabled   int64 `json:"enabled"`
+	Disabled  int64 `json:"disabled"`
+	Expired   int64 `json:"expired"`
+	Exhausted int64 `json:"exhausted"`
+}
+
+// GetUserTokenStats returns status counts for one user without loading token rows.
+func GetUserTokenStats(userId int) (UserTokenStats, error) {
+	type tokenStatusCount struct {
+		Status int
+		Count  int64
+	}
+
+	var rows []tokenStatusCount
+	err := DB.Model(&Token{}).
+		Select("status, COUNT(*) AS count").
+		Where("user_id = ?", userId).
+		Group("status").
+		Scan(&rows).Error
+	if err != nil {
+		return UserTokenStats{}, err
+	}
+
+	var stats UserTokenStats
+	for _, row := range rows {
+		stats.Total += row.Count
+		switch row.Status {
+		case common.TokenStatusEnabled:
+			stats.Enabled = row.Count
+		case common.TokenStatusDisabled:
+			stats.Disabled = row.Count
+		case common.TokenStatusExpired:
+			stats.Expired = row.Count
+		case common.TokenStatusExhausted:
+			stats.Exhausted = row.Count
+		}
+	}
+	return stats, nil
+}
+
 // BatchDeleteTokens 删除指定用户的一组令牌，返回成功删除数量
 func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	if len(ids) == 0 {

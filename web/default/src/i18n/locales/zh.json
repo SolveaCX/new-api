@@ -406,6 +406,7 @@
     "API key is required": "需要 API 密钥",
     "API Key mode (does not support batch creation)": "API Key 模式（不支持批量创建）",
     "API Key mode: use APIKey|Region": "API Key 模式：使用 APIKey|Region",
+    "API Key Statistics": "API 密钥统计",
     "API Key updated successfully": "API 密钥更新成功",
     "API Keys": "API 密钥",
     "API keys must be the full Paddle key, not just the ID: {{sandboxPrefix}}..._..._... for sandbox or {{livePrefix}}..._..._... for live. Values starting with only {{incompletePrefix}} or missing the secret suffix are incomplete.": "API key 必须是完整 Paddle key，而不只是 ID：沙盒使用 {{sandboxPrefix}}..._..._...，正式使用 {{livePrefix}}..._..._...。仅以 {{incompletePrefix}} 开头或缺少 secret 后缀的值是不完整的。",

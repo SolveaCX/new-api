@@ -27,6 +27,7 @@ import zh from '@/i18n/locales/zh.json'
 import { describe, expect, test } from 'bun:test'
 
 const EDIT_API_KEY = 'Edit API key'
+const API_KEY_STATISTICS = 'API Key Statistics'
 
 const expectedTranslations = {
   en: 'Edit API key',
@@ -50,6 +51,17 @@ const translations = {
   zh: zh.translation,
 } as const
 
+const expectedStatisticsTranslations = {
+  en: 'API Key Statistics',
+  es: 'Estadísticas de claves API',
+  fr: 'Statistiques des clés API',
+  ja: 'APIキー統計',
+  pt: 'Estatísticas das chaves de API',
+  ru: 'Статистика API-ключей',
+  vi: 'Thống kê khóa API',
+  zh: 'API 密钥统计',
+} as const
+
 describe('API key dialog translations', () => {
   test('provides a reviewed edit title in every supported locale', () => {
     for (const locale of Object.keys(expectedTranslations)) {
@@ -69,6 +81,17 @@ describe('API key dialog translations', () => {
       >
       expect(translations[typedLocale][EDIT_API_KEY]).not.toBe(
         expectedTranslations.en
+      )
+    }
+  })
+})
+
+describe('API key statistics translations', () => {
+  test('provides a reviewed title in every supported locale', () => {
+    for (const locale of Object.keys(expectedStatisticsTranslations)) {
+      const typedLocale = locale as keyof typeof expectedStatisticsTranslations
+      expect(translations[typedLocale][API_KEY_STATISTICS]).toBe(
+        expectedStatisticsTranslations[typedLocale]
       )
     }
   })

@@ -406,6 +406,7 @@
     "API key is required": "APIキーが必要です",
     "API Key mode (does not support batch creation)": "APIキー モード（一括作成には対応していません）",
     "API Key mode: use APIKey|Region": "APIキーモード: use APIKey | Region",
+    "API Key Statistics": "APIキー統計",
     "API Key updated successfully": "APIキーが正常に更新されました",
     "API Keys": "APIキー",
     "API keys must be the full Paddle key, not just the ID: {{sandboxPrefix}}..._..._... for sandbox or {{livePrefix}}..._..._... for live. Values starting with only {{incompletePrefix}} or missing the secret suffix are incomplete.": "API キーは ID だけではなく、Paddle の完全なキーである必要があります。サンドボックスは {{sandboxPrefix}}..._..._...、ライブは {{livePrefix}}..._..._... を使用します。{{incompletePrefix}} だけで始まる値やシークレット接尾辞がない値は不完全です。",

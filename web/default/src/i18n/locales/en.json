@@ -406,6 +406,7 @@
     "API key is required": "API key is required",
     "API Key mode (does not support batch creation)": "API Key mode (does not support batch creation)",
     "API Key mode: use APIKey|Region": "API Key mode: use APIKey|Region",
+    "API Key Statistics": "API Key Statistics",
     "API Key updated successfully": "API Key updated successfully",
     "API Keys": "API Keys",
     "API keys must be the full Paddle key, not just the ID: {{sandboxPrefix}}..._..._... for sandbox or {{livePrefix}}..._..._... for live. Values starting with only {{incompletePrefix}} or missing the secret suffix are incomplete.": "API keys must be the full Paddle key, not just the ID: {{sandboxPrefix}}..._..._... for sandbox or {{livePrefix}}..._..._... for live. Values starting with only {{incompletePrefix}} or missing the secret suffix are incomplete.",
