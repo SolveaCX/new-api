@@ -39,6 +39,20 @@ test("static HTML receives one shared configuration script and keeps local docs 
   assert.doesNotMatch(indexHtml, /href="[^"]*\.html/);
 });
 
+test("OpenRouter-style homepages keep proof cards readable on mobile", () => {
+  const css = read("../html/fk2.css");
+  const homepages = [
+    "index.html", "zh.html", "es.html", "pt.html", "fr.html",
+    "id.html", "de.html", "vi.html", "ru.html", "ja.html",
+  ];
+
+  assert.match(css, /grid-template-columns:1fr 1fr!important;padding:0 24px!important/);
+  assert.match(css, /grid-template-columns:1fr!important/);
+  for (const homepage of homepages) {
+    assert.match(read(`../html/${homepage}`), /fk2\.css\?v=725a/);
+  }
+});
+
 test("public static pages use one extensionless canonical route", () => {
   const nginx = read("../nginx.conf");
   const sitemap = read("../html/sitemap-v2.xml");
