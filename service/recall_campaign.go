@@ -1420,14 +1420,26 @@ func canonicalRecallEmailTemplates(stageNo int, english RecallEmailTemplate, tar
 func normalizeRecallEmailTemplate(stageNo int, language string, template RecallEmailTemplate) (RecallEmailTemplate, error) {
 	template.Subject = strings.TrimSpace(template.Subject)
 	template.BodyText = strings.TrimSpace(template.BodyText)
-	if template.Subject == "" || template.BodyText == "" {
-		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q requires subject and body", stageNo, language)
+	template.BodyHTML = strings.TrimSpace(template.BodyHTML)
+	if template.Subject == "" {
+		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q requires subject", stageNo, language)
 	}
 	if strings.ContainsAny(template.Subject, "\r\n") {
 		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q subject must be single line", stageNo, language)
 	}
 	if utf8.RuneCountInString(template.Subject) > recallEmailSubjectMaxRunes {
 		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q subject must contain at most %d characters", stageNo, language, recallEmailSubjectMaxRunes)
+	}
+	hasText := template.BodyText != ""
+	hasHTML := template.BodyHTML != ""
+	if hasText == hasHTML {
+		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q requires exactly one of body_text or body_html", stageNo, language)
+	}
+	if hasHTML {
+		if _, err := parseRecallEmailHTML(template.BodyHTML); err != nil {
+			return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q body_html: %w", stageNo, language, err)
+		}
+		return template, nil
 	}
 	if utf8.RuneCountInString(template.BodyText) > recallEmailBodyMaxRunes {
 		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q body must contain at most %d characters", stageNo, language, recallEmailBodyMaxRunes)

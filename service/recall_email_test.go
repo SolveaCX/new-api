@@ -69,6 +69,29 @@ func TestRecallEmailRenderEscapesStoredContentAndOwnsActionMarkup(t *testing.T) 
 	require.Contains(t, body, "claim=raw_token&amp;next=&#34;bad&#34;")
 }
 
+func TestRecallEmailRenderExecutesHTMLTemplateWithoutLegacyWrapper(t *testing.T) {
+	template := RecallEmailTemplate{Subject: "Return", BodyHTML: validRecallHTML}
+	subject, body, err := RenderRecallEmail(RecallEmailRenderInput{
+		Language:            "en",
+		Template:            template,
+		RecipientName:       `<Admin & Co>`,
+		PromotionCodeMasked: `SAVE****25`,
+		ProductSummary:      `Top-ups & subscriptions`,
+		ExpiresAt:           1_900_000_000,
+		ClaimURL:            `https://flatkey.ai/claim?a=1&b=2`,
+		UnsubscribeURL:      `https://flatkey.ai/unsubscribe?a=1&b=2`,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Return", subject)
+	require.Contains(t, body, `&lt;Admin &amp; Co&gt;`)
+	require.Contains(t, body, `SAVE****25`)
+	require.Contains(t, body, `Top-ups &amp; subscriptions`)
+	require.Contains(t, body, time.Unix(1_900_000_000, 0).UTC().Format("2006-01-02 15:04 UTC"))
+	require.Contains(t, body, `href="https://flatkey.ai/claim?a=1&amp;b=2"`)
+	require.Contains(t, body, `href="https://flatkey.ai/unsubscribe?a=1&amp;b=2"`)
+	require.NotContains(t, body, recallEmailCopyByLanguage["en"].GreetingPrefix+`&lt;Admin &amp; Co&gt;,`)
+}
+
 func TestRecallEmailRenderUsesLanguageSpecificWrapperAndProductSummary(t *testing.T) {
 	tests := []struct {
 		language         string
