@@ -56,7 +56,7 @@ export const RECALL_EMAIL_STARTER_HTML = `<!doctype html>
   <body>
     <main class="container">
       <p>Hello {{.RecipientName}},</p>
-      <p>Example account URL: https://example.com/account</p>
+      <p>Your account offer is ready to review.</p>
       <p>We saved an offer for {{.ProductSummary}}. Use promotion code {{.PromotionCodeMasked}} before {{.ExpiresAt}}.</p>
       <p><a class="button" href="{{.ClaimURL}}">Claim your offer</a></p>
       <p class="footer"><a href="{{.UnsubscribeURL}}">Unsubscribe</a></p>

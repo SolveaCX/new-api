@@ -150,6 +150,32 @@ describe('recall campaign editor normalization', () => {
     )
   })
 
+  test('clones hidden localized templates when preserving their values', () => {
+    const draft = makeValidDraft()
+    draft.email_sequence[0].templates = {
+      en: { subject: 'English subject', body_text: 'English body' },
+      fr: {
+        subject: 'Localized subject',
+        body_text: 'Localized text',
+        body_html: '<p>Localized HTML</p>',
+      },
+    }
+
+    const normalized = prepareRecallCampaignSubmitDraft(draft)
+
+    expect(normalized.email_sequence[0].templates.fr).toEqual(
+      draft.email_sequence[0].templates.fr
+    )
+    expect(normalized.email_sequence[0].templates.fr).not.toBe(
+      draft.email_sequence[0].templates.fr
+    )
+
+    normalized.email_sequence[0].templates.fr.body_html = '<p>Changed</p>'
+    expect(draft.email_sequence[0].templates.fr.body_html).toBe(
+      '<p>Localized HTML</p>'
+    )
+  })
+
   test('preserves English HTML drafts and clears submitted body text', () => {
     const draft = makeValidDraft()
     draft.email_sequence[0].templates.en = {
