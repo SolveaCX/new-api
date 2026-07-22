@@ -37,6 +37,7 @@ var (
 	ErrSubscriptionOrderNotFound                = errors.New("subscription order not found")
 	ErrSubscriptionOrderStatusInvalid           = errors.New("subscription order status invalid")
 	ErrSubscriptionTierRankReserved             = errors.New("subscription tier rank reserved")
+	ErrSubscriptionTierRankRequired             = errors.New("subscription tier rank required")
 	ErrSubscriptionPlanLifecycleFieldsImmutable = errors.New("subscription plan lifecycle fields immutable")
 )
 
@@ -161,7 +162,7 @@ type SubscriptionPlan struct {
 
 	Enabled   bool `json:"enabled" gorm:"default:true"`
 	SortOrder int  `json:"sort_order" gorm:"type:int;default:0"`
-	TierRank  int  `json:"tier_rank" gorm:"type:int;default:0;index"`
+	TierRank  *int `json:"tier_rank" gorm:"type:int;index"`
 
 	AllowBalancePay *bool `json:"allow_balance_pay" gorm:"default:true"`
 
@@ -209,14 +210,47 @@ func CreateSubscriptionPlan(plan *SubscriptionPlan) error {
 		return errors.New("subscription plan is nil")
 	}
 	plan.NormalizeDefaults()
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(plan).Error; err != nil {
+	intendedEnabled := plan.Enabled
+	if intendedEnabled {
+		if err := validateSubscriptionPlanActiveRank(plan); err != nil {
 			return err
 		}
-		if err := reserveSubscriptionTierRankTx(tx, plan.TierRank, plan.Id, false); err != nil {
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select("*").Create(plan).Error; err != nil {
 			return err
+		}
+		if !intendedEnabled {
+			plan.Enabled = false
+			if err := tx.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Update("enabled", false).Error; err != nil {
+				return err
+			}
+		}
+		if intendedEnabled {
+			if err := occupySubscriptionTierRankTx(tx, *plan.TierRank, plan.Id); err != nil {
+				return err
+			}
 		}
 		InvalidateSubscriptionPlanCache(plan.Id)
+		return nil
+	})
+}
+
+func SetSubscriptionPlanEnabled(planId int, enabled bool) error {
+	if planId <= 0 {
+		return errors.New("invalid plan id")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var before SubscriptionPlan
+		if err := tx.Where("id = ?", planId).First(&before).Error; err != nil {
+			return err
+		}
+		after := before
+		after.Enabled = enabled
+		if err := updateSubscriptionPlanTx(tx, &before, &after); err != nil {
+			return err
+		}
+		InvalidateSubscriptionPlanCache(planId)
 		return nil
 	})
 }
@@ -235,22 +269,7 @@ func UpdateSubscriptionPlan(plan *SubscriptionPlan) error {
 			return err
 		}
 		before.NormalizeDefaults()
-		if lifecycleFieldsChanged(&before, plan) {
-			referenced, err := subscriptionPlanHasLifecycleReferenceTx(tx, plan.Id)
-			if err != nil {
-				return err
-			}
-			if referenced {
-				return ErrSubscriptionPlanLifecycleFieldsImmutable
-			}
-			if plan.TierRank != before.TierRank {
-				if err := ReserveSubscriptionTierRank(tx, plan.TierRank, plan.Id); err != nil {
-					return err
-				}
-			}
-		}
-		updateMap := subscriptionPlanUpdateMap(plan)
-		if err := tx.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(updateMap).Error; err != nil {
+		if err := updateSubscriptionPlanTx(tx, &before, plan); err != nil {
 			return err
 		}
 		InvalidateSubscriptionPlanCache(plan.Id)
@@ -258,13 +277,57 @@ func UpdateSubscriptionPlan(plan *SubscriptionPlan) error {
 	})
 }
 
-func ReserveSubscriptionTierRank(tx *gorm.DB, tierRank int, planId int) error {
-	return reserveSubscriptionTierRankTx(tx, tierRank, planId, true)
+func updateSubscriptionPlanTx(tx *gorm.DB, before *SubscriptionPlan, plan *SubscriptionPlan) error {
+	if plan.Enabled {
+		if err := validateSubscriptionPlanActiveRank(plan); err != nil {
+			return err
+		}
+	}
+	if before.Enabled && !subscriptionPlanTierRanksEqual(before.TierRank, plan.TierRank) {
+		if err := releaseSubscriptionTierRankTx(tx, before.TierRank, before.Id); err != nil {
+			return err
+		}
+	}
+	if before.Enabled && !plan.Enabled {
+		if err := releaseSubscriptionTierRankTx(tx, before.TierRank, before.Id); err != nil {
+			return err
+		}
+	}
+	if lifecycleFieldsChanged(before, plan) {
+		referenced, err := subscriptionPlanHasLifecycleReferenceTx(tx, plan.Id)
+		if err != nil {
+			return err
+		}
+		if referenced {
+			return ErrSubscriptionPlanLifecycleFieldsImmutable
+		}
+	}
+	if plan.Enabled && (!before.Enabled || !subscriptionPlanTierRanksEqual(before.TierRank, plan.TierRank)) {
+		if err := occupySubscriptionTierRankTx(tx, *plan.TierRank, plan.Id); err != nil {
+			return err
+		}
+	}
+	updateMap := subscriptionPlanUpdateMap(plan)
+	if err := tx.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(updateMap).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
-func reserveSubscriptionTierRankTx(tx *gorm.DB, tierRank int, planId int, allowSamePlan bool) error {
+func validateSubscriptionPlanActiveRank(plan *SubscriptionPlan) error {
+	if plan == nil || plan.TierRank == nil || *plan.TierRank <= 0 {
+		return ErrSubscriptionTierRankRequired
+	}
+	return nil
+}
+
+func ReserveSubscriptionTierRank(tx *gorm.DB, tierRank int, planId int) error {
+	return occupySubscriptionTierRankTx(tx, tierRank, planId)
+}
+
+func occupySubscriptionTierRankTx(tx *gorm.DB, tierRank int, planId int) error {
 	if tierRank <= 0 {
-		return nil
+		return ErrSubscriptionTierRankRequired
 	}
 	if planId <= 0 {
 		return errors.New("invalid subscription tier rank reservation plan id")
@@ -275,24 +338,49 @@ func reserveSubscriptionTierRankTx(tx *gorm.DB, tierRank int, planId int, allowS
 	var existing SubscriptionTierRankReservation
 	err := tx.Where("tier_rank = ?", tierRank).First(&existing).Error
 	if err == nil {
-		if existing.PlanId == planId && allowSamePlan {
+		if existing.ActivePlanId == planId {
 			return nil
 		}
+		return ErrSubscriptionTierRankReserved
+	}
+	if isSubscriptionRankContentionError(err) {
+		return ErrSubscriptionTierRankReserved
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	var existingForPlan SubscriptionTierRankReservation
+	err = tx.Where("active_plan_id = ?", planId).First(&existingForPlan).Error
+	if err == nil {
+		if existingForPlan.TierRank == tierRank {
+			return nil
+		}
+		return ErrSubscriptionTierRankReserved
+	}
+	if isSubscriptionRankContentionError(err) {
 		return ErrSubscriptionTierRankReserved
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
 	reservation := &SubscriptionTierRankReservation{
-		TierRank: tierRank,
-		PlanId:   planId,
+		TierRank:     tierRank,
+		ActivePlanId: planId,
 	}
 	if err := tx.Create(reservation).Error; err != nil {
-		var afterCreate SubscriptionTierRankReservation
-		if lookupErr := tx.Where("tier_rank = ?", tierRank).First(&afterCreate).Error; lookupErr == nil {
-			if afterCreate.PlanId == planId {
+		if lookupErr := tx.Where("tier_rank = ?", tierRank).First(&existing).Error; lookupErr == nil {
+			if existing.ActivePlanId == planId {
 				return nil
 			}
+			return ErrSubscriptionTierRankReserved
+		}
+		if lookupErr := tx.Where("active_plan_id = ?", planId).First(&existingForPlan).Error; lookupErr == nil {
+			if existingForPlan.TierRank == tierRank {
+				return nil
+			}
+			return ErrSubscriptionTierRankReserved
+		}
+		if isSubscriptionRankContentionError(err) {
 			return ErrSubscriptionTierRankReserved
 		}
 		return err
@@ -300,11 +388,38 @@ func reserveSubscriptionTierRankTx(tx *gorm.DB, tierRank int, planId int, allowS
 	return nil
 }
 
+func isSubscriptionRankContentionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database table is locked") ||
+		strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database is deadlocked")
+}
+
+func releaseSubscriptionTierRankTx(tx *gorm.DB, tierRank *int, planId int) error {
+	if tierRank == nil || *tierRank <= 0 || planId <= 0 {
+		return nil
+	}
+	if tx == nil {
+		tx = DB
+	}
+	return tx.Where("tier_rank = ? AND active_plan_id = ?", *tierRank, planId).Delete(&SubscriptionTierRankReservation{}).Error
+}
+
+func subscriptionPlanTierRanksEqual(a *int, b *int) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
 func lifecycleFieldsChanged(before *SubscriptionPlan, after *SubscriptionPlan) bool {
 	if before == nil || after == nil {
 		return false
 	}
-	return before.TierRank != after.TierRank ||
+	return !subscriptionPlanTierRanksEqual(before.TierRank, after.TierRank) ||
 		before.DurationUnit != after.DurationUnit ||
 		before.DurationValue != after.DurationValue ||
 		before.CustomSeconds != after.CustomSeconds ||

@@ -326,6 +326,8 @@ func apiSubscriptionPlanLifecycleError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, model.ErrSubscriptionTierRankReserved):
 		common.ApiErrorMsg(c, "套餐等级已被占用")
+	case errors.Is(err, model.ErrSubscriptionTierRankRequired):
+		common.ApiErrorMsg(c, "启用套餐必须设置正数等级")
 	case errors.Is(err, model.ErrSubscriptionPlanLifecycleFieldsImmutable):
 		common.ApiErrorMsg(c, "套餐已被引用，不能修改生命周期字段")
 	default:
@@ -352,11 +354,10 @@ func AdminUpdateSubscriptionPlanStatus(c *gin.Context) {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
-	if err := model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", id).Update("enabled", *req.Enabled).Error; err != nil {
-		common.ApiError(c, err)
+	if err := model.SetSubscriptionPlanEnabled(id, *req.Enabled); err != nil {
+		apiSubscriptionPlanLifecycleError(c, err)
 		return
 	}
-	model.InvalidateSubscriptionPlanCache(id)
 	common.ApiSuccess(c, nil)
 }
 

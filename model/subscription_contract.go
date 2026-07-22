@@ -133,25 +133,8 @@ func (i *SubscriptionChangeIntent) normalize() {
 }
 
 type SubscriptionTierRankReservation struct {
-	Id int64 `json:"id"`
-
-	TierRank int `json:"tier_rank" gorm:"not null;uniqueIndex"`
-	PlanId   int `json:"plan_id" gorm:"not null;index"`
-
-	CreatedAt int64 `json:"created_at" gorm:"bigint"`
-	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
-}
-
-func (r *SubscriptionTierRankReservation) BeforeCreate(tx *gorm.DB) error {
-	now := common.GetTimestamp()
-	r.CreatedAt = now
-	r.UpdatedAt = now
-	return nil
-}
-
-func (r *SubscriptionTierRankReservation) BeforeUpdate(tx *gorm.DB) error {
-	r.UpdatedAt = common.GetTimestamp()
-	return nil
+	TierRank     int `json:"tier_rank" gorm:"primaryKey;type:int"`
+	ActivePlanId int `json:"active_plan_id" gorm:"uniqueIndex;not null"`
 }
 
 func normalizeSubscriptionContractStatus(status string) string {

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -16,99 +17,119 @@ func setupSubscriptionPlanLifecycleTestDB(t *testing.T) {
 	migrateSubscriptionContractTestDB(t)
 }
 
-func lifecycleTestPlan(rank int) *SubscriptionPlan {
+func lifecycleRank(rank int) *int {
+	return common.GetPointer(rank)
+}
+
+func lifecycleTestPlan(rank *int, enabled bool) *SubscriptionPlan {
+	titleRank := "nil"
+	if rank != nil {
+		titleRank = fmt.Sprintf("%d", *rank)
+	}
 	return &SubscriptionPlan{
-		Title:         fmt.Sprintf("Lifecycle Rank %d", rank),
+		Title:         "Lifecycle Rank " + titleRank,
 		Subtitle:      "initial",
 		PriceAmount:   9.99,
 		Currency:      "USD",
 		DurationUnit:  SubscriptionDurationMonth,
 		DurationValue: 1,
-		Enabled:       true,
-		SortOrder:     rank,
+		Enabled:       enabled,
+		SortOrder:     1,
 		TierRank:      rank,
-		StripePriceId: fmt.Sprintf("price_%d", rank),
+		StripePriceId: "price_" + titleRank,
 		UpgradeGroup:  "",
 		TotalAmount:   1000,
 	}
 }
 
-func requireReservation(t *testing.T, rank int, planID int) {
+func requireActiveReservation(t *testing.T, rank int, planID int) {
 	t.Helper()
 	var reservation SubscriptionTierRankReservation
 	require.NoError(t, DB.First(&reservation, "tier_rank = ?", rank).Error)
-	require.Equal(t, planID, reservation.PlanId)
+	require.Equal(t, planID, reservation.ActivePlanId)
 }
 
-func TestTierRankReservationCreatedForEnabledAndDisabledPlans(t *testing.T) {
+func requireNoActiveReservation(t *testing.T, rank int) {
+	t.Helper()
+	var count int64
+	require.NoError(t, DB.Model(&SubscriptionTierRankReservation{}).Where("tier_rank = ?", rank).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestSubscriptionPlanCreateReservesOnlyEnabledPositiveRank(t *testing.T) {
 	setupSubscriptionPlanLifecycleTestDB(t)
 
-	enabledPlan := lifecycleTestPlan(10)
+	enabledPlan := lifecycleTestPlan(lifecycleRank(10), true)
 	require.NoError(t, CreateSubscriptionPlan(enabledPlan))
-	requireReservation(t, 10, enabledPlan.Id)
+	requireActiveReservation(t, 10, enabledPlan.Id)
 
-	disabledPlan := lifecycleTestPlan(11)
-	disabledPlan.Enabled = false
-	require.NoError(t, CreateSubscriptionPlan(disabledPlan))
-	requireReservation(t, 11, disabledPlan.Id)
+	disabledSameRank := lifecycleTestPlan(lifecycleRank(10), false)
+	require.NoError(t, CreateSubscriptionPlan(disabledSameRank))
+	requireActiveReservation(t, 10, enabledPlan.Id)
+
+	disabledNilRank := lifecycleTestPlan(nil, false)
+	require.NoError(t, CreateSubscriptionPlan(disabledNilRank))
+
+	var storedRank sql.NullInt64
+	require.NoError(t, DB.Raw("SELECT tier_rank FROM subscription_plans WHERE id = ?", disabledNilRank.Id).Scan(&storedRank).Error)
+	require.False(t, storedRank.Valid)
 }
 
-func TestTierRankReservationRejectsDuplicateAfterDisableAndDelete(t *testing.T) {
+func TestSubscriptionPlanEnabledCreateRequiresPositiveRank(t *testing.T) {
 	setupSubscriptionPlanLifecycleTestDB(t)
 
-	plan := lifecycleTestPlan(20)
+	err := CreateSubscriptionPlan(lifecycleTestPlan(nil, true))
+	require.ErrorIs(t, err, ErrSubscriptionTierRankRequired)
+
+	err = CreateSubscriptionPlan(lifecycleTestPlan(lifecycleRank(0), true))
+	require.ErrorIs(t, err, ErrSubscriptionTierRankRequired)
+}
+
+func TestSubscriptionPlanEnableConflictAndReplacementFlow(t *testing.T) {
+	setupSubscriptionPlanLifecycleTestDB(t)
+
+	activePlan := lifecycleTestPlan(lifecycleRank(20), true)
+	require.NoError(t, CreateSubscriptionPlan(activePlan))
+	requireActiveReservation(t, 20, activePlan.Id)
+
+	stagedReplacement := lifecycleTestPlan(lifecycleRank(20), false)
+	require.NoError(t, CreateSubscriptionPlan(stagedReplacement))
+	requireActiveReservation(t, 20, activePlan.Id)
+
+	err := SetSubscriptionPlanEnabled(stagedReplacement.Id, true)
+	require.ErrorIs(t, err, ErrSubscriptionTierRankReserved)
+	requireActiveReservation(t, 20, activePlan.Id)
+
+	require.NoError(t, SetSubscriptionPlanEnabled(activePlan.Id, false))
+	requireNoActiveReservation(t, 20)
+
+	require.NoError(t, SetSubscriptionPlanEnabled(stagedReplacement.Id, true))
+	requireActiveReservation(t, 20, stagedReplacement.Id)
+}
+
+func TestSubscriptionPlanDisableReferencedPlanReleasesReservationAndAllowsMetadata(t *testing.T) {
+	setupSubscriptionPlanLifecycleTestDB(t)
+
+	plan := lifecycleTestPlan(lifecycleRank(30), true)
 	require.NoError(t, CreateSubscriptionPlan(plan))
-	requireReservation(t, 20, plan.Id)
+	require.NoError(t, DB.Create(&UserSubscription{UserId: 5030, PlanId: plan.Id, Status: "active"}).Error)
 
-	disabled := *plan
-	disabled.Enabled = false
-	require.NoError(t, UpdateSubscriptionPlan(&disabled))
+	metadata := *plan
+	metadata.Title = "Renamed"
+	metadata.Subtitle = "metadata"
+	metadata.PriceAmount = 19.99
+	metadata.SortOrder = 99
+	require.NoError(t, UpdateSubscriptionPlan(&metadata))
+	requireActiveReservation(t, 30, plan.Id)
 
-	duplicateAfterDisable := lifecycleTestPlan(20)
-	err := CreateSubscriptionPlan(duplicateAfterDisable)
-	require.ErrorIs(t, err, ErrSubscriptionTierRankReserved)
+	require.NoError(t, SetSubscriptionPlanEnabled(plan.Id, false))
+	requireNoActiveReservation(t, 30)
 
-	require.NoError(t, DB.Delete(&SubscriptionPlan{}, "id = ?", plan.Id).Error)
-	requireReservation(t, 20, plan.Id)
-
-	duplicateAfterDelete := lifecycleTestPlan(20)
-	err = CreateSubscriptionPlan(duplicateAfterDelete)
-	require.ErrorIs(t, err, ErrSubscriptionTierRankReserved)
-	requireReservation(t, 20, plan.Id)
-}
-
-func TestTierRankReservationIdempotentRepairForSamePlanRank(t *testing.T) {
-	setupSubscriptionPlanLifecycleTestDB(t)
-
-	plan := lifecycleTestPlan(30)
-	require.NoError(t, DB.Create(plan).Error)
-
-	require.NoError(t, ReserveSubscriptionTierRank(DB, plan.TierRank, plan.Id))
-	require.NoError(t, ReserveSubscriptionTierRank(DB, plan.TierRank, plan.Id))
-	requireReservation(t, 30, plan.Id)
-}
-
-func TestSubscriptionPlanLifecycleCanCorrectRankBeforeReferenceWithoutReusingOldRank(t *testing.T) {
-	setupSubscriptionPlanLifecycleTestDB(t)
-
-	plan := lifecycleTestPlan(40)
-	require.NoError(t, CreateSubscriptionPlan(plan))
-
-	corrected := *plan
-	corrected.TierRank = 41
-	corrected.DurationValue = 2
-	corrected.TotalAmount = 2000
-	require.NoError(t, UpdateSubscriptionPlan(&corrected))
-	requireReservation(t, 40, plan.Id)
-	requireReservation(t, 41, plan.Id)
-
-	duplicateOldRank := lifecycleTestPlan(40)
-	err := CreateSubscriptionPlan(duplicateOldRank)
-	require.ErrorIs(t, err, ErrSubscriptionTierRankReserved)
-
-	duplicateNewRank := lifecycleTestPlan(41)
-	err = CreateSubscriptionPlan(duplicateNewRank)
-	require.ErrorIs(t, err, ErrSubscriptionTierRankReserved)
+	var stored SubscriptionPlan
+	require.NoError(t, DB.First(&stored, "id = ?", plan.Id).Error)
+	require.False(t, stored.Enabled)
+	require.NotNil(t, stored.TierRank)
+	require.Equal(t, 30, *stored.TierRank)
 }
 
 func TestSubscriptionPlanLifecycleFieldsImmutableAfterReference(t *testing.T) {
@@ -124,7 +145,7 @@ func TestSubscriptionPlanLifecycleFieldsImmutableAfterReference(t *testing.T) {
 			reference: func(t *testing.T, planID int) {
 				require.NoError(t, DB.Create(&UserSubscriptionContract{UserId: 5001, CurrentPlanId: planID}).Error)
 			},
-			mutatePlan: func(plan *SubscriptionPlan) { plan.TierRank++ },
+			mutatePlan: func(plan *SubscriptionPlan) { plan.TierRank = lifecycleRank(41) },
 		},
 		{
 			name: "contract pending plan freezes duration",
@@ -170,7 +191,7 @@ func TestSubscriptionPlanLifecycleFieldsImmutableAfterReference(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			setupSubscriptionPlanLifecycleTestDB(t)
 
-			plan := lifecycleTestPlan(50 + i)
+			plan := lifecycleTestPlan(lifecycleRank(40+i), true)
 			require.NoError(t, CreateSubscriptionPlan(plan))
 			tt.reference(t, plan.Id)
 
@@ -182,65 +203,72 @@ func TestSubscriptionPlanLifecycleFieldsImmutableAfterReference(t *testing.T) {
 	}
 }
 
-func TestReferencedSubscriptionPlanAllowsMetadataAndDisableEdits(t *testing.T) {
+func TestEnabledLegacyNilRankRequiresExplicitRankBeforeMutation(t *testing.T) {
 	setupSubscriptionPlanLifecycleTestDB(t)
 
-	plan := lifecycleTestPlan(70)
-	require.NoError(t, CreateSubscriptionPlan(plan))
-	require.NoError(t, DB.Create(&UserSubscription{UserId: 5070, PlanId: plan.Id, Status: "active"}).Error)
+	legacy := lifecycleTestPlan(nil, true)
+	require.NoError(t, DB.Select("*").Create(legacy).Error)
 
-	updated := *plan
-	updated.Title = "Renamed"
-	updated.Subtitle = "metadata"
-	updated.PriceAmount = 19.99
-	updated.Enabled = false
-	updated.SortOrder = 99
+	renamed := *legacy
+	renamed.Title = "Legacy renamed"
+	err := UpdateSubscriptionPlan(&renamed)
+	require.ErrorIs(t, err, ErrSubscriptionTierRankRequired)
 
-	require.NoError(t, UpdateSubscriptionPlan(&updated))
-
+	require.NoError(t, SetSubscriptionPlanEnabled(legacy.Id, false))
 	var stored SubscriptionPlan
-	require.NoError(t, DB.First(&stored, "id = ?", plan.Id).Error)
-	require.Equal(t, "Renamed", stored.Title)
-	require.Equal(t, "metadata", stored.Subtitle)
-	require.Equal(t, 19.99, stored.PriceAmount)
+	require.NoError(t, DB.First(&stored, "id = ?", legacy.Id).Error)
 	require.False(t, stored.Enabled)
-	require.Equal(t, 99, stored.SortOrder)
-	requireReservation(t, 70, plan.Id)
+	require.Nil(t, stored.TierRank)
 }
 
-func TestLegacyTierRankZeroPlanCanUpdateMetadataWithoutReservation(t *testing.T) {
-	setupSubscriptionPlanLifecycleTestDB(t)
+func TestConcurrentCreateAndEnableSameTierRankReturnsReservedError(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		setupSubscriptionPlanLifecycleTestDB(t)
 
-	plan := lifecycleTestPlan(0)
-	require.NoError(t, DB.Create(plan).Error)
+		const rank = 90
+		var wg sync.WaitGroup
+		createErrs := make([]error, 2)
+		for i := range createErrs {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				plan := lifecycleTestPlan(lifecycleRank(rank), true)
+				plan.Title = fmt.Sprintf("Concurrent Create %d", i)
+				createErrs[i] = CreateSubscriptionPlan(plan)
+			}(i)
+		}
+		wg.Wait()
+		requireOneSuccessOneReserved(t, createErrs)
+	})
 
-	updated := *plan
-	updated.Title = "Legacy renamed"
-	updated.Enabled = false
-	require.NoError(t, UpdateSubscriptionPlan(&updated))
+	t.Run("enable", func(t *testing.T) {
+		setupSubscriptionPlanLifecycleTestDB(t)
 
-	var count int64
-	require.NoError(t, DB.Model(&SubscriptionTierRankReservation{}).Where("plan_id = ?", plan.Id).Count(&count).Error)
-	require.Zero(t, count)
+		const rank = 90
+		staged := make([]SubscriptionPlan, 2)
+		for i := range staged {
+			plan := lifecycleTestPlan(lifecycleRank(rank), false)
+			plan.Title = fmt.Sprintf("Concurrent Enable %d", i)
+			require.NoError(t, CreateSubscriptionPlan(plan))
+			staged[i] = *plan
+		}
+
+		var wg sync.WaitGroup
+		enableErrs := make([]error, 2)
+		for i := range staged {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				enableErrs[i] = SetSubscriptionPlanEnabled(staged[i].Id, true)
+			}(i)
+		}
+		wg.Wait()
+		requireOneSuccessOneReserved(t, enableErrs)
+	})
 }
 
-func TestConcurrentCreateSubscriptionPlanSameTierRankReturnsReservedError(t *testing.T) {
-	setupSubscriptionPlanLifecycleTestDB(t)
-
-	const rank = 90
-	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	for i := range errs {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			plan := lifecycleTestPlan(rank)
-			plan.Title = fmt.Sprintf("Concurrent %d", i)
-			errs[i] = CreateSubscriptionPlan(plan)
-		}(i)
-	}
-	wg.Wait()
-
+func requireOneSuccessOneReserved(t *testing.T, errs []error) {
+	t.Helper()
 	successes := 0
 	reserved := 0
 	for _, err := range errs {
