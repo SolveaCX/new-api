@@ -107,6 +107,7 @@ type ProviderSubscriptionSnapshot struct {
 	ProviderSubscriptionId     string
 	ProviderSubscriptionItemId string
 	ProviderScheduleId         string
+	ProviderScheduleIdObserved bool
 	ProviderCustomerId         string
 	ProviderPriceId            string
 	ProviderLatestInvoiceId    string
@@ -223,8 +224,8 @@ func ApplyProviderSubscriptionSnapshot(bindingID int64, snapshot ProviderSubscri
 		if providerSubscriptionItemID := strings.TrimSpace(snapshot.ProviderSubscriptionItemId); providerSubscriptionItemID != "" {
 			updates["provider_subscription_item_id"] = providerSubscriptionItemID
 		}
-		if providerScheduleID := strings.TrimSpace(snapshot.ProviderScheduleId); providerScheduleID != "" {
-			updates["provider_schedule_id"] = providerScheduleID
+		if snapshot.ProviderScheduleIdObserved {
+			updates["provider_schedule_id"] = strings.TrimSpace(snapshot.ProviderScheduleId)
 		}
 		if snapshot.CancelAtPeriodEnd != binding.CancelAtPeriodEnd {
 			updates["lifecycle_action_seq"] = binding.LifecycleActionSeq + 1
@@ -277,8 +278,8 @@ func ApplyProviderSubscriptionTermination(bindingID int64, snapshot ProviderSubs
 		if providerSubscriptionItemID := strings.TrimSpace(snapshot.ProviderSubscriptionItemId); providerSubscriptionItemID != "" {
 			updates["provider_subscription_item_id"] = providerSubscriptionItemID
 		}
-		if providerScheduleID := strings.TrimSpace(snapshot.ProviderScheduleId); providerScheduleID != "" {
-			updates["provider_schedule_id"] = providerScheduleID
+		if snapshot.ProviderScheduleIdObserved {
+			updates["provider_schedule_id"] = strings.TrimSpace(snapshot.ProviderScheduleId)
 		}
 		if binding.CancelAtPeriodEnd {
 			updates["lifecycle_action_seq"] = binding.LifecycleActionSeq + 1

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -226,6 +227,48 @@ func TestSubscriptionEntitlementBlankGrantKeyPersistsAsNull(t *testing.T) {
 	require.Nil(t, stored.GrantKey)
 }
 
+func TestSubscriptionEntitlementGrantKeySupportsDesignLengthAndUniqueConstraint(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionContractTestDB(t)
+
+	columnTypes, err := DB.Migrator().ColumnTypes(&UserSubscription{})
+	require.NoError(t, err)
+	grantKeyDeclaredAsVarchar255 := false
+	for _, columnType := range columnTypes {
+		length, hasLength := columnType.Length()
+		if columnType.Name() == "grant_key" &&
+			strings.Contains(strings.ToLower(columnType.DatabaseTypeName()), "varchar") &&
+			hasLength && length == 255 {
+			grantKeyDeclaredAsVarchar255 = true
+		}
+	}
+	require.True(t, grantKeyDeclaredAsVarchar255)
+
+	grantKey := strings.Repeat("g", 200)
+	require.NoError(t, DB.Create(&UserSubscription{
+		UserId:     7271,
+		PlanId:     7371,
+		ContractId: 7471,
+		GrantKey:   &grantKey,
+		Status:     "expired",
+	}).Error)
+
+	var stored UserSubscription
+	require.NoError(t, DB.First(&stored, "user_id = ?", 7271).Error)
+	require.NotNil(t, stored.GrantKey)
+	require.Equal(t, grantKey, *stored.GrantKey)
+
+	duplicateGrantKey := grantKey
+	err = DB.Create(&UserSubscription{
+		UserId:     7272,
+		PlanId:     7372,
+		ContractId: 7472,
+		GrantKey:   &duplicateGrantKey,
+		Status:     "expired",
+	}).Error
+	require.Error(t, err)
+}
+
 func TestProviderSubscriptionSnapshotPersistsItemScheduleAndContractFields(t *testing.T) {
 	setupSubscriptionRecurringTestDB(t)
 	migrateSubscriptionContractTestDB(t)
@@ -258,6 +301,7 @@ func TestProviderSubscriptionSnapshotPersistsItemScheduleAndContractFields(t *te
 		ProviderSubscriptionId:     "sub_contract",
 		ProviderSubscriptionItemId: "si_contract_updated",
 		ProviderScheduleId:         "sub_sched_updated",
+		ProviderScheduleIdObserved: true,
 		ProviderCustomerId:         "cus_contract",
 		ProviderPriceId:            "price_recurring",
 		ProviderStatus:             "active",

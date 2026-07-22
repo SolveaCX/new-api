@@ -207,6 +207,7 @@ func providerSubscriptionSnapshotFromStripe(sub *stripe.Subscription) model.Prov
 		ProviderSubscriptionId:     strings.TrimSpace(sub.ID),
 		ProviderSubscriptionItemId: itemID,
 		ProviderScheduleId:         scheduleID,
+		ProviderScheduleIdObserved: true,
 		ProviderCustomerId:         customerID,
 		ProviderPriceId:            priceID,
 		ProviderLatestInvoiceId:    latestInvoiceID,

@@ -248,7 +248,7 @@ type UserSubscription struct {
 	PlanId            int     `json:"plan_id" gorm:"index"`
 	ContractId        int64   `json:"contract_id" gorm:"type:bigint;default:0;uniqueIndex:idx_contract_current_slot,priority:1"`
 	ProviderBindingId int64   `json:"provider_binding_id" gorm:"type:bigint;default:0;index"`
-	GrantKey          *string `json:"grant_key" gorm:"type:varchar(128);uniqueIndex"`
+	GrantKey          *string `json:"grant_key" gorm:"type:varchar(255);uniqueIndex"`
 	CurrentSlot       *int    `json:"current_slot" gorm:"uniqueIndex:idx_contract_current_slot,priority:2"`
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`

@@ -239,6 +239,81 @@ func TestSubscriptionProviderBindingAllowsMultipleStripeSubscriptionsForSameUser
 	require.EqualValues(t, 2, count)
 }
 
+func TestProviderSubscriptionSnapshotClearsScheduleWhenAuthoritativeStripeObjectHasNone(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionRecurringTestDB(t)
+	insertUserForSubscriptionRecurringTest(t, 505)
+	insertPlanForSubscriptionRecurringTest(t, 605, "price_recurring")
+	insertOrderForSubscriptionRecurringTest(t, "recurring-order-schedule-clear", 505, 605)
+
+	binding, err := CompleteSubscriptionOrderWithProviderBinding(
+		"recurring-order-schedule-clear",
+		"{}",
+		PaymentProviderStripe,
+		PaymentMethodStripe,
+		ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId:     "sub_schedule_clear",
+			ProviderSubscriptionItemId: "si_schedule_clear",
+			ProviderScheduleId:         "sub_sched_stale",
+			ProviderScheduleIdObserved: true,
+			ProviderCustomerId:         "cus_schedule_clear",
+			ProviderPriceId:            "price_recurring",
+			ProviderStatus:             "active",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "sub_sched_stale", binding.ProviderScheduleId)
+
+	updated, err := ApplyProviderSubscriptionSnapshot(binding.Id, ProviderSubscriptionSnapshot{
+		ProviderSubscriptionId:     "sub_schedule_clear",
+		ProviderSubscriptionItemId: "si_schedule_clear",
+		ProviderScheduleId:         "",
+		ProviderScheduleIdObserved: true,
+		ProviderCustomerId:         "cus_schedule_clear",
+		ProviderPriceId:            "price_recurring",
+		ProviderStatus:             "active",
+	})
+	require.NoError(t, err)
+	require.Empty(t, updated.ProviderScheduleId)
+}
+
+func TestProviderSubscriptionSnapshotOmittedSchedulePreservesExistingBindingValue(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionRecurringTestDB(t)
+	insertUserForSubscriptionRecurringTest(t, 506)
+	insertPlanForSubscriptionRecurringTest(t, 606, "price_recurring")
+	insertOrderForSubscriptionRecurringTest(t, "recurring-order-schedule-preserve", 506, 606)
+
+	binding, err := CompleteSubscriptionOrderWithProviderBinding(
+		"recurring-order-schedule-preserve",
+		"{}",
+		PaymentProviderStripe,
+		PaymentMethodStripe,
+		ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId:     "sub_schedule_preserve",
+			ProviderSubscriptionItemId: "si_schedule_preserve",
+			ProviderScheduleId:         "sub_sched_existing",
+			ProviderScheduleIdObserved: true,
+			ProviderCustomerId:         "cus_schedule_preserve",
+			ProviderPriceId:            "price_recurring",
+			ProviderStatus:             "active",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "sub_sched_existing", binding.ProviderScheduleId)
+
+	updated, err := ApplyProviderSubscriptionSnapshot(binding.Id, ProviderSubscriptionSnapshot{
+		ProviderSubscriptionId:     "sub_schedule_preserve",
+		ProviderSubscriptionItemId: "si_schedule_preserve_updated",
+		ProviderCustomerId:         "cus_schedule_preserve",
+		ProviderPriceId:            "price_recurring",
+		ProviderStatus:             "active",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sub_sched_existing", updated.ProviderScheduleId)
+	require.Equal(t, "si_schedule_preserve_updated", updated.ProviderSubscriptionItemId)
+}
+
 func TestCompleteSubscriptionOrderWithProviderBindingReturnsNotFoundForUnknownOrder(t *testing.T) {
 	setupSubscriptionRecurringTestDB(t)
 	migrateSubscriptionRecurringTestDB(t)
