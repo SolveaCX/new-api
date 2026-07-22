@@ -116,6 +116,21 @@ func TestValidateRecallAudienceNewTemplates(t *testing.T) {
 	for i := range tooManyUserIDs {
 		tooManyUserIDs[i] = i + 1
 	}
+	combinedLimitIDs := make([]int, 250)
+	for i := range combinedLimitIDs {
+		combinedLimitIDs[i] = i + 1
+	}
+	combinedLimitEmails := make([]string, 251)
+	for i := range combinedLimitEmails {
+		combinedLimitEmails[i] = fmt.Sprintf("limit-%03d@example.com", i)
+	}
+	duplicateHeavyIDs := make([]int, 0, 500)
+	duplicateHeavyEmails := make([]string, 0, 500)
+	for i := 0; i < 250; i++ {
+		duplicateHeavyIDs = append(duplicateHeavyIDs, i+1, i+1)
+		email := fmt.Sprintf("duplicate-%03d@example.com", i)
+		duplicateHeavyEmails = append(duplicateHeavyEmails, email, strings.ToUpper(email))
+	}
 
 	tests := []struct {
 		template string
@@ -133,6 +148,8 @@ func TestValidateRecallAudienceNewTemplates(t *testing.T) {
 		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{-1}}, "positive"},
 		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"not-an-email"}}, "email"},
 		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: tooManyUserIDs}, "500"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: combinedLimitIDs, SpecifiedEmails: combinedLimitEmails}, "500"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: duplicateHeavyIDs, SpecifiedEmails: duplicateHeavyEmails}, ""},
 	}
 	for _, test := range tests {
 		t.Run(test.template+"/"+test.wantErr, func(t *testing.T) {
@@ -220,6 +237,30 @@ func TestRecallAudienceContractsUseStableJSONNames(t *testing.T) {
 		"campaign_id", "recipient_id", "campaign_name", "promotion_code_masked",
 		"expires_at", "discount", "products", "redeemed",
 	}, recallAudienceJSONKeys(claimJSON))
+}
+
+func TestRecallAudienceConfigJSONContractIncludesActivityFields(t *testing.T) {
+	raw, err := common.Marshal(RecallAudienceConfig{
+		RegistrationStartAt: 100,
+		RegistrationEndAt:   200,
+		SpecifiedUserIDs:    []int{7, 3},
+		SpecifiedEmails:     []string{"ops@example.com", "alerts@example.com"},
+	})
+	require.NoError(t, err)
+
+	var cfgJSON map[string]any
+	require.NoError(t, common.Unmarshal(raw, &cfgJSON))
+	require.ElementsMatch(t, []string{
+		"registration_age_days", "registration_start_at", "registration_end_at",
+		"min_request_count", "max_quota", "min_paid_amount", "last_api_call_age_days",
+		"last_payment_age_days", "subscription_expired_days", "min_subscription_amount",
+		"min_subscription_count", "payment_providers", "groups", "group_mode",
+		"require_verified_email", "specified_user_ids", "specified_emails",
+	}, recallAudienceJSONKeys(cfgJSON))
+	require.IsType(t, float64(0), cfgJSON["registration_start_at"])
+	require.IsType(t, float64(0), cfgJSON["registration_end_at"])
+	require.IsType(t, []any{}, cfgJSON["specified_user_ids"])
+	require.IsType(t, []any{}, cfgJSON["specified_emails"])
 }
 
 func recallAudienceJSONKeys(value map[string]any) []string {
