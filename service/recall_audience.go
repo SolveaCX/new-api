@@ -258,15 +258,6 @@ func (selector *RecallAudienceSelector) iterate(
 	}
 }
 
-func recallAudienceSelectorSupportsTemplate(template string) bool {
-	switch template {
-	case "first_purchase", "lapsed_payer", "expired_subscription", "registered_only", "specified_users":
-		return true
-	default:
-		return false
-	}
-}
-
 func recallAudienceUsesRecentAPILookup(template string) bool {
 	switch template {
 	case "first_purchase", "lapsed_payer", "expired_subscription":
