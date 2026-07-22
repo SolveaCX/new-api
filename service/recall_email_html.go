@@ -199,6 +199,9 @@ func recallEmailHTMLURLActionsInTemplate(raw string) (recallEmailHTMLURLActions,
 	if err != nil {
 		return recallEmailHTMLURLActions{}, fmt.Errorf("parse recall email html template fragment: %w", err)
 	}
+	if err := validateRecallEmailTemplateDefinitions(template.Name(), template.Templates()); err != nil {
+		return recallEmailHTMLURLActions{}, err
+	}
 	actions := recallEmailHTMLURLActions{}
 	collectRecallEmailHTMLURLActions(template.Tree.Root, &actions)
 	return actions, nil
@@ -315,10 +318,26 @@ func validateRecallEmailTemplateActions(source string) error {
 	if err != nil {
 		return fmt.Errorf("parse recall email html template: %w", err)
 	}
+	if err := validateRecallEmailTemplateDefinitions(template.Name(), template.Templates()); err != nil {
+		return err
+	}
 	if template.Tree == nil || template.Tree.Root == nil {
 		return nil
 	}
 	return validateRecallEmailTemplateNode(template.Tree.Root)
+}
+
+type recallEmailTemplateDefinition interface {
+	Name() string
+}
+
+func validateRecallEmailTemplateDefinitions[T recallEmailTemplateDefinition](rootName string, templates []T) error {
+	for _, template := range templates {
+		if template.Name() != rootName {
+			return fmt.Errorf("unsupported template definition")
+		}
+	}
+	return nil
 }
 
 func validateRecallEmailTemplateNode(node parse.Node) error {
