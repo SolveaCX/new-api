@@ -88,6 +88,9 @@ func TestRecallEmailHTMLValidate(t *testing.T) {
 		{name: "rejects template pipelines", source: strings.Replace(validRecallHTML, "{{.RecipientName}}", `{{.RecipientName | .ProductSummary}}`, 1), wantErr: "unsupported template command"},
 		{name: "rejects claim action outside anchor href", source: strings.Replace(validRecallHTML, `<a class="cta" href="{{.ClaimURL}}">Claim offer</a>`, `<span data-url="{{.ClaimURL}}">Claim offer</span>`, 1), wantErr: "ClaimURL action must appear in an anchor href"},
 		{name: "rejects unsubscribe action outside anchor href", source: strings.Replace(validRecallHTML, `<a href="{{.UnsubscribeURL}}">Unsubscribe</a>`, `<span title="{{.UnsubscribeURL}}">Unsubscribe</span>`, 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
+		{name: "rejects claim action in style text", source: strings.Replace(validRecallHTML, "</style>", " {{.ClaimURL}}</style>", 1), wantErr: "ClaimURL action must appear in an anchor href"},
+		{name: "rejects unsubscribe action in head text", source: strings.Replace(validRecallHTML, "<head>", "<head>{{.UnsubscribeURL}}", 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
+		{name: "rejects claim action in html comments", source: injectBeforeBodyEnd(`<!-- {{.ClaimURL}} -->`), wantErr: "ClaimURL action must appear in an anchor href"},
 	}
 
 	for _, testCase := range tests {
