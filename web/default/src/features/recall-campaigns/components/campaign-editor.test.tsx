@@ -23,7 +23,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { recallCampaignKeys } from '../api'
 import type { RecallAudienceTemplate, RecallCampaignDraft } from '../types'
-import { CampaignEditor } from './campaign-editor'
+import {
+  CampaignEditor,
+  createRecallCampaignFormDraft,
+} from './campaign-editor'
 
 const commonHelp =
   'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.'
@@ -268,23 +271,24 @@ describe('CampaignEditor audience rules', () => {
 })
 
 describe('CampaignEditor email sequence', () => {
-  test('renders only English template fields', () => {
+  test('renders only English HTML template fields', () => {
     const draft = makeDraft('first_purchase')
     const html = renderEditor('first_purchase', draft)
 
     expect(html).not.toContain('Template language')
     expect(html).toContain('name="email_sequence.0.templates.en.subject"')
-    expect(html).toContain('name="email_sequence.0.templates.en.body_text"')
+    expect(html).toContain('name="email_sequence.0.templates.en.body_html"')
+    expect(html).not.toContain('name="email_sequence.0.templates.en.body_text"')
     expect(html).not.toContain('templates.fr')
   })
 
-  test('explains automatic localization without UTF-16 native limits', () => {
+  test('loads legacy text as visible editable HTML without UTF-16 native limits', () => {
     const html = renderEditor('first_purchase')
     const subjectInput = html.match(
       /<input[^>]*name="email_sequence\.0\.templates\.en\.subject"[^>]*>/
     )?.[0]
     const bodyInput = html.match(
-      /<textarea[^>]*name="email_sequence\.0\.templates\.en\.body_text"[^>]*>/
+      /<textarea[^>]*name="email_sequence\.0\.templates\.en\.body_html"[^>]*>/
     )?.[0]
 
     expect(html.replaceAll('&#x27;', "'")).toContain(automaticTranslationHelp)
@@ -292,6 +296,7 @@ describe('CampaignEditor email sequence', () => {
     expect(subjectInput?.toLowerCase()).not.toContain('maxlength')
     expect(bodyInput).toBeTruthy()
     expect(bodyInput?.toLowerCase()).not.toContain('maxlength')
+    expect(html).toContain('&lt;p&gt;English body&lt;/p&gt;')
   })
 
   test('associates email labels and validation state with stable field IDs', () => {
@@ -300,16 +305,39 @@ describe('CampaignEditor email sequence', () => {
       /<input[^>]*name="email_sequence\.0\.templates\.en\.subject"[^>]*>/
     )?.[0]
     const bodyInput = html.match(
-      /<textarea[^>]*name="email_sequence\.0\.templates\.en\.body_text"[^>]*>/
+      /<textarea[^>]*name="email_sequence\.0\.templates\.en\.body_html"[^>]*>/
     )?.[0]
 
     expect(html).toContain('for="recall-email-0-subject"')
     expect(subjectInput).toContain('id="recall-email-0-subject"')
     expect(subjectInput).toContain('aria-invalid="false"')
     expect(subjectInput).not.toContain('aria-describedby')
-    expect(html).toContain('for="recall-email-0-body-text"')
-    expect(bodyInput).toContain('id="recall-email-0-body-text"')
+    expect(html).toContain('for="recall-email-0-body-html"')
+    expect(bodyInput).toContain('id="recall-email-0-body-html"')
     expect(bodyInput).toContain('aria-invalid="false"')
     expect(bodyInput).not.toContain('aria-describedby')
+  })
+
+  test('normalizes submitted drafts from the current edited HTML field', () => {
+    const draft = makeDraft('first_purchase')
+    draft.email_sequence[0].templates.en.body_text = 'stale legacy body'
+    draft.email_sequence[0].templates.en.body_html = '<p>Edited HTML</p>'
+
+    const normalized = createRecallCampaignFormDraft(draft)
+
+    expect(normalized.email_sequence[0].templates.en.body_text).toBe('')
+    expect(normalized.email_sequence[0].templates.en.body_html).toBe(
+      '<p>Edited HTML</p>'
+    )
+  })
+
+  test('loads empty legacy drafts with starter HTML on the active editor field', () => {
+    const draft = createRecallCampaignFormDraft(makeDraft('first_purchase'))
+    draft.email_sequence[0].templates.en.body_html = ''
+    const html = renderEditor('first_purchase', draft)
+
+    expect(html).toContain('name="email_sequence.0.templates.en.body_html"')
+    expect(html).toContain('&lt;!doctype html&gt;')
+    expect(html).not.toContain('name="email_sequence.0.templates.en.body_text"')
   })
 })

@@ -15,10 +15,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { useRecallCampaignMutations } from '../api'
 import { audienceTemplateDescriptionKeys } from '../copy'
 import {
+  RECALL_EMAIL_STARTER_HTML,
   formatRecallMinorAmount,
   normalizeRecallCouponSource,
   normalizeRecallDiscountType,
@@ -39,6 +39,7 @@ import type {
   RecallDiscountConfig,
   RecallFixedCurrency,
 } from '../types'
+import { CampaignEmailHtmlEditor } from './campaign-email-html-editor'
 import { CampaignGroupSelector } from './campaign-group-selector'
 import { CampaignProductSelector } from './campaign-product-selector'
 
@@ -76,7 +77,8 @@ function createRecallFixedAmountInputs(
   ) as RecallFixedAmountInputs
 }
 
-function createRecallCampaignFormDraft(
+// eslint-disable-next-line react-refresh/only-export-components
+export function createRecallCampaignFormDraft(
   draft: RecallCampaignDraft
 ): RecallCampaignDraft {
   const normalizedDraft =
@@ -192,7 +194,13 @@ function createRecallCampaignDefaults(): RecallCampaignDraft {
         stage_no: 1,
         delay_seconds: 0,
         template_version: 1,
-        templates: { en: { subject: '', body_text: '' } },
+        templates: {
+          en: {
+            subject: '',
+            body_text: '',
+            body_html: RECALL_EMAIL_STARTER_HTML,
+          },
+        },
       },
     ],
   }
@@ -851,17 +859,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
           {stages.fields.map((stage, index) => {
             const subjectPath =
               `email_sequence.${index}.templates.en.subject` as FieldPath<RecallCampaignDraft>
-            const bodyPath =
-              `email_sequence.${index}.templates.en.body_text` as FieldPath<RecallCampaignDraft>
             const subjectId = `recall-email-${index}-subject`
             const subjectErrorId = `${subjectId}-error`
             const subjectError = form.getFieldState(
               subjectPath,
               form.formState
             ).error
-            const bodyId = `recall-email-${index}-body-text`
-            const bodyErrorId = `${bodyId}-error`
-            const bodyError = form.getFieldState(bodyPath, form.formState).error
             return (
               <div className='space-y-3 rounded-lg border p-3' key={stage.id}>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
@@ -908,26 +911,11 @@ export function CampaignEditor(props: CampaignEditorProps) {
                     ) : null}
                   </div>
                 </div>
-                <div className='space-y-2'>
-                  <Label htmlFor={bodyId}>{t('Body text')}</Label>
-                  <Textarea
-                    id={bodyId}
-                    rows={5}
-                    disabled={terminal}
-                    aria-invalid={Boolean(bodyError)}
-                    aria-describedby={bodyError ? bodyErrorId : undefined}
-                    {...form.register(bodyPath)}
-                  />
-                  {bodyError ? (
-                    <p
-                      id={bodyErrorId}
-                      role='alert'
-                      className='text-destructive text-sm'
-                    >
-                      {t(String(bodyError.message))}
-                    </p>
-                  ) : null}
-                </div>
+                <CampaignEmailHtmlEditor
+                  form={form}
+                  index={index}
+                  disabled={terminal}
+                />
                 {stages.fields.length > 1 && !immutable ? (
                   <Button
                     type='button'
@@ -956,7 +944,13 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   stage_no: stages.fields.length + 1,
                   delay_seconds: stages.fields.length * 86400,
                   template_version: 1,
-                  templates: { en: { subject: '', body_text: '' } },
+                  templates: {
+                    en: {
+                      subject: '',
+                      body_text: '',
+                      body_html: RECALL_EMAIL_STARTER_HTML,
+                    },
+                  },
                 })
               }
             >
