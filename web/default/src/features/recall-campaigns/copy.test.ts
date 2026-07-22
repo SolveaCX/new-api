@@ -43,6 +43,47 @@ const translatedAudienceTemplateDescriptionKeys = [
   audienceTemplateDescriptionKeys.first_purchase,
   audienceTemplateDescriptionKeys.lapsed_payer,
   audienceTemplateDescriptionKeys.expired_subscription,
+  audienceTemplateDescriptionKeys.registered_only,
+  audienceTemplateDescriptionKeys.specified_users,
+] as const
+
+const activityConfigurationKeys = [
+  'Activity Configuration',
+  'Create activity configuration',
+  'No activity configurations',
+  'Back to Activity Configuration',
+] as const
+
+const exactAudienceControlKeys = [
+  'Registered only',
+  'Specified users',
+  'Registration start',
+  'Registration end',
+  'Registration start is required',
+  'Registration end is required',
+  'Registration end must be on or after start',
+  'At least one user or email is required',
+  'User IDs are invalid',
+  'Emails are invalid',
+  'Up to 500 users or emails are supported',
+] as const
+
+const dynamicAudienceTemplateValueKeys = [
+  'registered_only',
+  'specified_users',
+] as const
+
+const specifiedUsersSelectorKeys = [
+  'Specified users',
+  'Manual emails',
+  'Search users by name, username, or email',
+  'No selected users.',
+  'Loading matching users...',
+  'Failed to load matching users.',
+  'No matching users',
+  'Invalid email entries',
+  'Unavailable',
+  'one@example.com, two@example.com',
 ] as const
 
 const recallHelpKeys = [
@@ -58,7 +99,18 @@ const recallHelpKeys = [
   'Failed to load configured user groups.',
   'No configured user groups are available.',
   'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.',
+  ...activityConfigurationKeys,
+  ...exactAudienceControlKeys,
+  ...dynamicAudienceTemplateValueKeys,
+  ...specifiedUsersSelectorKeys,
   ...translatedAudienceTemplateDescriptionKeys,
+] as const
+
+const legacyActivityConfigurationKeys = [
+  'Recall Campaigns',
+  'Create recall campaign',
+  'No recall campaigns',
+  'Back to Recall Campaigns',
 ] as const
 
 describe('recall campaign copy', () => {
@@ -84,19 +136,9 @@ describe('recall campaign copy', () => {
           recallCampaignEditorCopyKeys?: readonly string[]
         }
       ).recallCampaignEditorCopyKeys
-    ).toEqual(
-      expect.arrayContaining([
-        'Registered only',
-        'Specified users',
-        'Registration start',
-        'Registration end',
-        'Registration start is required',
-        'Registration end is required',
-        'Registration end must be after start',
-        'At least one user or email is required',
-        'Emails are invalid',
-        'Up to 500 users or emails are supported',
-      ])
+    ).toEqual(expect.arrayContaining([...exactAudienceControlKeys]))
+    expect(recallCopy.recallCampaignEditorCopyKeys).not.toContain(
+      'Registration end must be after start'
     )
   })
 
@@ -117,7 +159,24 @@ describe('recall campaign copy', () => {
             translations[key],
             `${locale} should translate ${key}`
           ).not.toBe(key)
+          expect(
+            translations[key],
+            `${locale} should not use placeholder punctuation for ${key}`
+          ).not.toContain('?')
         }
+      }
+    })
+
+    test(`${locale} uses Activity Configuration instead of legacy Recall Campaign copy`, () => {
+      for (const key of activityConfigurationKeys) {
+        expect(translations[key], `${locale} is missing ${key}`).toBeTruthy()
+      }
+
+      for (const key of legacyActivityConfigurationKeys) {
+        expect(
+          Object.prototype.hasOwnProperty.call(translations, key),
+          `${locale} should not keep legacy visible key ${key}`
+        ).toBe(false)
       }
     })
   }

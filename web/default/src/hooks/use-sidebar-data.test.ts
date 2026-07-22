@@ -109,18 +109,31 @@ describe('buildSidebarData', () => {
       expect(inviteItem?.badge).toBeUndefined()
     }
   )
-  test('shows Recall Campaigns by default', () => {
+  test('shows Activity Configuration by default', () => {
     const admin = buildSidebarData(t).navGroups.find(
       (group) => group.id === 'admin'
     )
-    expect(
-      admin?.items.some(
-        (item) => 'url' in item && item.url === '/recall-campaigns'
-      )
-    ).toBe(true)
+    const item = admin?.items.find(
+      (item) => 'url' in item && item.url === '/recall-campaigns'
+    )
+
+    expect(item).toMatchObject({
+      title: 'Activity Configuration',
+      url: '/recall-campaigns',
+    })
   })
 
-  test('hides Recall Campaigns when the admin config disables it', () => {
+  test('does not expose legacy Recall Campaigns navigation copy', () => {
+    const admin = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'admin'
+    )
+
+    expect(admin?.items.some((item) => item.title === 'Recall Campaigns')).toBe(
+      false
+    )
+  })
+
+  test('hides Activity Configuration when the admin config disables it', () => {
     const groups = filterSidebarGroups(
       buildSidebarData(t).navGroups,
       JSON.stringify({ admin: { enabled: true, recall_campaigns: false } }),
@@ -134,7 +147,7 @@ describe('buildSidebarData', () => {
     ).toBe(false)
   })
 
-  test('allows the user config to narrow Recall Campaigns visibility', () => {
+  test('allows the user config to narrow Activity Configuration visibility', () => {
     const groups = filterSidebarGroups(
       buildSidebarData(t).navGroups,
       null,

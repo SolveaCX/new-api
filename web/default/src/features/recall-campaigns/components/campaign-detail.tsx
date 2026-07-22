@@ -125,7 +125,7 @@ export function CampaignDetail(props: CampaignDetailProps) {
     <SectionPageLayout>
       <SectionPageLayout.Breadcrumb>
         <Button variant='link' render={<Link to='/recall-campaigns' />}>
-          {t('Back to Recall Campaigns')}
+          {t('Back to Activity Configuration')}
         </Button>
       </SectionPageLayout.Breadcrumb>
       <SectionPageLayout.Title>{detail.name}</SectionPageLayout.Title>

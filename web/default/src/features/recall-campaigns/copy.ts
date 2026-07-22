@@ -41,7 +41,7 @@ export const recallCampaignEditorCopyKeys = [
   'Registration end',
   'Registration start is required',
   'Registration end is required',
-  'Registration end must be after start',
+  'Registration end must be on or after start',
   'At least one user or email is required',
   'User IDs are invalid',
   'Emails are invalid',
