@@ -39,7 +39,7 @@ test("static HTML receives one shared configuration script and keeps local docs 
   assert.doesNotMatch(indexHtml, /href="[^"]*\.html/);
 });
 
-test("OpenRouter-style homepages omit the removed proof-card block", () => {
+test("OpenRouter-style homepages omit removed proof and price-comparison blocks", () => {
   const homepages = [
     "index.html", "zh.html", "es.html", "pt.html", "fr.html",
     "id.html", "de.html", "vi.html", "ru.html", "ja.html",
@@ -49,6 +49,8 @@ test("OpenRouter-style homepages omit the removed proof-card block", () => {
     const html = read(`../html/${homepage}`);
     assert.doesNotMatch(html, /<section class="proof">/);
     assert.doesNotMatch(html, /data-i18n="proof\.(?:t|h|p)[1-4]"/);
+    assert.doesNotMatch(html, /<section class="compare">/);
+    assert.doesNotMatch(html, /data-i18n="cmp\.(?:h2|sub|foot)"/);
   }
 });
 
