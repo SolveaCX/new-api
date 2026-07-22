@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import vm from "node:vm";
 
 function read(relativePath) {
   return readFileSync(new URL(relativePath, import.meta.url), "utf8");
@@ -100,4 +101,68 @@ test("the production workflow passes and smoke-tests the console origin", () => 
       `grep -Eq '"success"[[:space:]]*:[[:space:]]*true'`,
     ),
   );
+});
+
+function runTrackingScript({ pathname, search, cookie = "" }) {
+  let browserCookie = cookie;
+  const document = {
+    referrer: "",
+    addEventListener() {},
+    querySelector() { return null; },
+  };
+  Object.defineProperty(document, "cookie", {
+    get() { return browserCookie; },
+    set(value) { browserCookie = value; },
+  });
+  const location = {
+    pathname,
+    search,
+    hostname: "flatkey.ai",
+    origin: "https://flatkey.ai",
+    protocol: "https:",
+  };
+  vm.runInNewContext(read("../html/assets/track.js"), {
+    Date,
+    JSON,
+    Object,
+    URLSearchParams,
+    decodeURIComponent,
+    document,
+    encodeURIComponent,
+    location,
+    window: {},
+  });
+  const pair = browserCookie.split(";", 1)[0];
+  const payload = JSON.parse(decodeURIComponent(pair.slice(pair.indexOf("=") + 1)));
+  return { browserCookie, cookieHeader: pair, payload };
+}
+
+test("paid attribution keeps an immutable first landing across the console handoff", () => {
+  const first = runTrackingScript({
+    pathname: "/pt",
+    search: "?utm_source=google&utm_campaign=flatkey-pt&gclid=click-1&yclid=yandex-1",
+  });
+  assert.equal(first.payload.first_landing_path, "/pt");
+  assert.equal(first.payload.landing_path, "/pt");
+  assert.equal(first.payload.yclid, "yandex-1");
+  assert.match(first.browserCookie, /domain=\.flatkey\.ai/);
+  assert.match(first.browserCookie, /SameSite=Lax/);
+
+  const later = runTrackingScript({
+    pathname: "/pricing",
+    search: "?utm_source=google&utm_campaign=pricing&gclid=click-2",
+    cookie: first.cookieHeader,
+  });
+  assert.equal(later.payload.first_landing_path, "/pt");
+  assert.equal(later.payload.landing_path, "/pricing");
+  assert.equal(later.payload.gclid, "click-2");
+});
+
+test("authentication routes never become acquisition landers", () => {
+  const captured = runTrackingScript({
+    pathname: "/sign-up",
+    search: "?utm_source=google&gclid=click-auth",
+  });
+  assert.equal(captured.payload.first_landing_path, undefined);
+  assert.equal(captured.payload.landing_path, "");
 });
