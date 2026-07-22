@@ -470,7 +470,13 @@ func parseOpsAttribution(a *opsUserAgg) {
 		a.keyword = str("utm_term")
 	}
 	a.lng = str("lng")
-	a.landing = str("landing_path")
+	a.landing = str("first_landing_path")
+	if a.landing == "" {
+		a.landing = str("landing_path")
+	}
+	if strings.HasPrefix(a.landing, "/oauth/") || a.landing == "/sign-in" || a.landing == "/sign-up" {
+		a.landing = ""
+	}
 	a.referrer = str("referrer")
 	a.matchType = str("hsa_mt")
 }

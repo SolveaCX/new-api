@@ -27,6 +27,22 @@ import (
 
 const maxAdsAttributionLength = 4096
 
+var allowedAdsAttributionKeys = map[string]struct{}{
+	"aff": {}, "fbclid": {}, "gad_campaignid": {}, "gad_source": {},
+	"gbraid": {}, "gclid": {}, "lng": {}, "msclkid": {}, "ttclid": {},
+	"wbraid": {}, "yclid": {}, "landing_path": {}, "captured_at": {},
+	"first_landing_path": {}, "first_captured_at": {}, "referrer": {},
+	"source_type": {}, "source": {}, "medium": {}, "campaign": {},
+	"keyword": {}, "is_paid": {}, "rule_version": {},
+}
+
+func isAllowedAdsAttributionKey(key string) bool {
+	if _, ok := allowedAdsAttributionKeys[key]; ok {
+		return true
+	}
+	return strings.HasPrefix(key, "utm_") || strings.HasPrefix(key, "hsa_")
+}
+
 func sanitizeAdsAttribution(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(raw) > maxAdsAttributionLength {
@@ -39,7 +55,7 @@ func sanitizeAdsAttribution(raw string) string {
 	cleaned := make(map[string]string, len(payload))
 	for key, value := range payload {
 		key = strings.TrimSpace(key)
-		if key == "" || len(key) > 64 {
+		if key == "" || len(key) > 64 || !isAllowedAdsAttributionKey(key) {
 			continue
 		}
 		stringValue, ok := value.(string)
