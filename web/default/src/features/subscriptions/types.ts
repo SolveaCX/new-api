@@ -42,6 +42,12 @@ export const subscriptionPlanSchema = z.object({
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),
+  tier_rank: z.number().optional().nullable(),
+  payment_modes: z
+    .array(
+      z.enum(['stripe_recurring', 'balance_one_period', 'external_one_period'])
+    )
+    .optional(),
 })
 
 export type SubscriptionPlan = z.infer<typeof subscriptionPlanSchema>
@@ -60,9 +66,13 @@ export const userSubscriptionSchema = z.object({
   plan_id: z.number(),
   status: z.string(),
   source: z.string().optional(),
+  payment_mode: z.string().optional(),
   provider_binding_id: z.number().optional(),
+  contract_id: z.number().optional(),
+  current_slot: z.number().optional().nullable(),
   start_time: z.number(),
   end_time: z.number(),
+  access_end_time: z.number().optional(),
   amount_total: z.number(),
   amount_used: z.number(),
   next_reset_time: z.number().optional(),
@@ -121,6 +131,121 @@ export interface SubscriptionPayResponse {
   url?: string
 }
 
+export type SubscriptionPaymentMode =
+  | 'stripe_recurring'
+  | 'balance_one_period'
+  | 'external_one_period'
+
+export type ChangePlanPaymentMode = 'stripe_recurring' | 'balance_one_period'
+
+export type SubscriptionContractStatus =
+  | 'active'
+  | 'grace'
+  | 'ended'
+  | 'needs_attention'
+
+export interface SubscriptionContract {
+  contract_id: number
+  id: number
+  user_id?: number
+  status: SubscriptionContractStatus
+  payment_mode: SubscriptionPaymentMode
+  current_plan_id: number
+  current_entitlement_id: number
+  current_provider_binding_id: number
+  latest_change_intent_id: number
+  pending_plan_id: number
+  pending_effective_at: number
+  current_period_start: number
+  current_period_end: number
+  grace_period_end: number
+  change_version: number
+  base_user_group?: string
+  created_at?: number
+  updated_at?: number
+}
+
+export interface SubscriptionContractDTO {
+  contract_id: number
+  status: SubscriptionContractStatus
+  payment_mode: SubscriptionPaymentMode
+  current_plan_id: number
+  current_entitlement_id: number
+  current_provider_binding_id: number
+  latest_change_intent_id: number
+  pending_plan_id: number
+  pending_effective_at: number
+  change_version: number
+}
+
+export interface SubscriptionEntitlement {
+  entitlement_id: number
+  plan_id: number
+  provider_binding_id: number
+  status: string
+  payment_mode: string
+  start_time: number
+  end_time: number
+  access_end_time: number
+}
+
+export interface SubscriptionCurrentPeriod {
+  start: number
+  end: number
+  grace_period_end: number
+}
+
+export interface SubscriptionQuota {
+  amount_total: number
+  amount_used: number
+  amount_remaining: number
+  unlimited: boolean
+}
+
+export interface SubscriptionPendingChange {
+  intent_id: number
+  request_id: string
+  kind: 'purchase' | 'upgrade' | 'downgrade' | 'cancel' | 'resume' | 'terminate'
+  status:
+    | 'created'
+    | 'syncing'
+    | 'awaiting_payment'
+    | 'scheduled'
+    | 'applied'
+    | 'failed'
+    | 'expired'
+    | 'superseded'
+    | 'compensation_required'
+  from_plan_id: number
+  to_plan_id: number
+  provider_binding_id: number
+  effective_at: number
+  payment_mode: SubscriptionPaymentMode
+}
+
+export type SubscriptionPendingChangeDTO = Omit<
+  SubscriptionPendingChange,
+  'request_id'
+>
+
+export interface ChangePlanRequest {
+  plan_id: number
+  payment_mode: ChangePlanPaymentMode
+  request_id: string
+}
+
+export interface ChangePlanResponse {
+  status:
+    | 'applied'
+    | 'scheduled'
+    | 'checkout_required'
+    | 'payment_action_required'
+  contract: SubscriptionContract
+  intent: SubscriptionPendingChange
+  checkout_url?: string
+  hosted_invoice_url?: string
+}
+
 export interface CreateUserSubscriptionRequest {
   plan_id: number
 }
@@ -143,11 +268,71 @@ export interface RecurringSubscription {
 // Self Subscription Data (user-facing)
 // ============================================================================
 
+export interface SelfSubscriptionCapabilities {
+  can_change_plan: boolean
+  can_use_stripe_recurring: boolean
+  can_use_balance_one_period: boolean
+  can_cancel?: boolean
+  can_resume?: boolean
+  requires_support?: boolean
+  has_pending_intent?: boolean
+  is_grace?: boolean
+  is_cancel_at_period_end?: boolean
+  has_migration_conflict?: boolean
+  migration_required: boolean
+  migration_blocked_reason?: string
+}
+
+export interface SelfSubscriptionMigration {
+  required: boolean
+  blocked: boolean
+  reason?: string
+  requires_admin_review?: boolean
+  classification?: string
+}
+
+export interface SubscriptionMigration {
+  requires_admin_review: boolean
+  classification: string
+  reason: string
+}
+
 export interface SelfSubscriptionData {
   billing_preference: string
+  contract?: SubscriptionContract | null
+  current_entitlement?: SubscriptionEntitlement | null
+  current_period?: SubscriptionCurrentPeriod
+  quota?: SubscriptionQuota
+  pending_change?: SubscriptionPendingChange | null
+  capabilities: SelfSubscriptionCapabilities
+  migration: SelfSubscriptionMigration
   subscriptions: UserSubscriptionRecord[]
   all_subscriptions: UserSubscriptionRecord[]
   recurring_subscriptions: RecurringSubscription[]
+}
+
+export interface SelfSubscriptionDataResponse extends Partial<
+  Omit<SelfSubscriptionData, 'capabilities' | 'migration'>
+> {
+  capabilities?: Partial<SelfSubscriptionCapabilities> & {
+    has_migration_conflict?: boolean
+  }
+  migration?: Partial<SelfSubscriptionMigration> & {
+    requires_admin_review?: boolean
+    has_migration_conflict?: boolean
+    classification?: string
+  }
+}
+
+export interface AdminUserSubscriptionsResponse {
+  contract?: SubscriptionContractDTO | null
+  current_entitlement?: SubscriptionEntitlement | null
+  current_period: SubscriptionCurrentPeriod
+  quota: SubscriptionQuota
+  current_binding?: RecurringSubscription | null
+  pending_change?: SubscriptionPendingChangeDTO | null
+  migration: SubscriptionMigration
+  history: UserSubscriptionRecord[]
 }
 
 // ============================================================================

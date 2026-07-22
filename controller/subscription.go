@@ -12,7 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // ---- Shared types ----
@@ -91,6 +90,17 @@ type SubscriptionSelfResponse struct {
 	Subscriptions          []model.SubscriptionSummary   `json:"subscriptions"`
 	AllSubscriptions       []model.SubscriptionSummary   `json:"all_subscriptions"`
 	RecurringSubscriptions []RecurringSubscriptionDTO    `json:"recurring_subscriptions"`
+}
+
+type AdminUserSubscriptionsResponse struct {
+	Contract           *SubscriptionContractDTO      `json:"contract,omitempty"`
+	CurrentEntitlement *SubscriptionEntitlementDTO   `json:"current_entitlement,omitempty"`
+	CurrentPeriod      SubscriptionCurrentPeriodDTO  `json:"current_period"`
+	Quota              SubscriptionQuotaDTO          `json:"quota"`
+	CurrentBinding     *RecurringSubscriptionDTO     `json:"current_binding,omitempty"`
+	PendingChange      *SubscriptionPendingChangeDTO `json:"pending_change,omitempty"`
+	Migration          SubscriptionMigrationDTO      `json:"migration"`
+	History            []model.SubscriptionSummary   `json:"history"`
 }
 
 type SubscriptionContractDTO struct {
@@ -377,21 +387,34 @@ func getSubscriptionSelfContract(userID int) (*model.UserSubscriptionContract, e
 	return &contract, nil
 }
 
+func getSubscriptionCanonicalCurrentEntitlement(userID int, contract *model.UserSubscriptionContract) (*model.UserSubscription, error) {
+	if userID <= 0 || contract == nil || contract.CurrentEntitlementId <= 0 {
+		return nil, nil
+	}
+	var entitlement model.UserSubscription
+	query := model.DB.Where("id = ? AND user_id = ?", contract.CurrentEntitlementId, userID).Limit(1).Find(&entitlement)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &entitlement, nil
+}
+
 func getSubscriptionSelfCurrentEntitlement(userID int, contract *model.UserSubscriptionContract) (*model.UserSubscription, error) {
 	if userID <= 0 {
 		return nil, nil
 	}
-	var entitlement model.UserSubscription
-	var query *gorm.DB
 	if contract != nil && contract.CurrentEntitlementId > 0 {
-		query = model.DB.Where("id = ? AND user_id = ?", contract.CurrentEntitlementId, userID).Limit(1).Find(&entitlement)
-	} else {
-		query = model.DB.Where("user_id = ? AND status = ? AND access_end_time > ?",
-			userID, model.SubscriptionEntitlementStatusActive, common.GetTimestamp()).
-			Order("access_end_time desc, id desc").
-			Limit(1).
-			Find(&entitlement)
+		return getSubscriptionCanonicalCurrentEntitlement(userID, contract)
 	}
+	var entitlement model.UserSubscription
+	query := model.DB.Where("user_id = ? AND status = ? AND access_end_time > ?",
+		userID, model.SubscriptionEntitlementStatusActive, common.GetTimestamp()).
+		Order("access_end_time desc, id desc").
+		Limit(1).
+		Find(&entitlement)
 	if query.Error != nil {
 		return nil, query.Error
 	}
@@ -926,12 +949,79 @@ func AdminListUserSubscriptions(c *gin.Context) {
 		common.ApiErrorMsg(c, "无效的用户ID")
 		return
 	}
-	subs, err := model.GetAllUserSubscriptions(userId)
+	allSubscriptions, err := model.GetAllUserSubscriptions(userId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, subs)
+	activeSubscriptions, err := model.GetAllActiveUserSubscriptions(userId)
+	if err != nil {
+		activeSubscriptions = []model.SubscriptionSummary{}
+	}
+	recurringSubscriptions := []RecurringSubscriptionDTO{}
+	rawRecurringBindings := []model.SubscriptionProviderBinding{}
+	if bindings, err := model.GetRecurringSubscriptionBindingsForUser(userId); err == nil {
+		rawRecurringBindings = bindings
+		recurringSubscriptions = recurringSubscriptionDTOs(bindings)
+	}
+	contract, _ := getSubscriptionSelfContract(userId)
+	currentEntitlement, _ := getSubscriptionCanonicalCurrentEntitlement(userId, contract)
+	pendingChange, _ := getSubscriptionSelfPendingChange(userId, contract)
+	migration := buildSubscriptionMigrationDTO(activeSubscriptions, rawRecurringBindings, contract)
+	common.ApiSuccess(c, buildAdminUserSubscriptionsResponse(
+		contract,
+		currentEntitlement,
+		pendingChange,
+		migration,
+		recurringSubscriptions,
+		allSubscriptions,
+	))
+}
+
+func buildAdminUserSubscriptionsResponse(
+	contract *model.UserSubscriptionContract,
+	currentEntitlement *model.UserSubscription,
+	pendingChange *model.SubscriptionChangeIntent,
+	migration SubscriptionMigrationDTO,
+	recurringSubscriptions []RecurringSubscriptionDTO,
+	history []model.SubscriptionSummary,
+) AdminUserSubscriptionsResponse {
+	self := buildSubscriptionSelfResponse(
+		"",
+		contract,
+		currentEntitlement,
+		pendingChange,
+		migration,
+		nil,
+		history,
+		recurringSubscriptions,
+	)
+	return AdminUserSubscriptionsResponse{
+		Contract:           self.Contract,
+		CurrentEntitlement: self.CurrentEntitlement,
+		CurrentPeriod:      self.CurrentPeriod,
+		Quota:              self.Quota,
+		CurrentBinding:     currentRecurringSubscriptionDTO(contract, recurringSubscriptions),
+		PendingChange:      self.PendingChange,
+		Migration:          self.Migration,
+		History:            history,
+	}
+}
+
+func currentRecurringSubscriptionDTO(
+	contract *model.UserSubscriptionContract,
+	recurringSubscriptions []RecurringSubscriptionDTO,
+) *RecurringSubscriptionDTO {
+	if contract == nil || contract.CurrentProviderBindingId <= 0 {
+		return nil
+	}
+	for _, binding := range recurringSubscriptions {
+		if binding.BindingId == contract.CurrentProviderBindingId {
+			current := binding
+			return &current
+		}
+	}
+	return nil
 }
 
 type AdminCreateUserSubscriptionRequest struct {

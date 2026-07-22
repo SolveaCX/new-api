@@ -32,3 +32,8 @@ This file records review findings intentionally deferred to keep the release pat
 
 - Concurrent first-run migration audits can surface a database unique-constraint error instead of returning the already-created audit result. Normalize that race into a stable idempotent response in a later hardening pass.
 - Migration-conflict observability currently records the broad audit classification but not enough structured detail to distinguish every operator remediation path. Add metrics/log fields for the exact conflict reason and affected local record IDs.
+
+## Final Task 14-15 review deferrals
+
+- `AdminListUserSubscriptions` currently ignores read errors from the active-entitlement, recurring-binding, contract, current-entitlement, and pending-change lookups. A database failure can therefore return HTTP 200 with an incomplete canonical lifecycle payload. Change the admin endpoint to fail closed with `common.ApiError` for canonical lifecycle read failures, while keeping `/self` legacy compatibility behavior separate; add explicit database-error regression coverage.
+- `SelfSubscriptionMigration` in `web/default/src/features/subscriptions/types.ts` still exposes the legacy required `required` and `blocked` fields, and `single-contract.typecheck.ts` asserts that shape. The wallet runtime no longer depends on `migration.blocked`, but a later contract cleanup should remove the legacy fields and keep only canonical migration state such as `requires_admin_review`, `has_migration_conflict`, `classification`, and `reason` after backend compatibility is confirmed.

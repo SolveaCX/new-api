@@ -21,6 +21,16 @@ export const recurringSubscriptionContract = {
 
 export const recurringSelfSubscriptionContract: SelfSubscriptionData = {
   billing_preference: 'subscription_first',
+  capabilities: {
+    can_change_plan: true,
+    can_use_stripe_recurring: true,
+    can_use_balance_one_period: true,
+    migration_required: false,
+  },
+  migration: {
+    required: false,
+    blocked: false,
+  },
   subscriptions: [],
   all_subscriptions: [],
   recurring_subscriptions: [recurringSubscriptionContract],
