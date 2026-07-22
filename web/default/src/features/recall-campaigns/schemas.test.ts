@@ -106,6 +106,142 @@ describe('recallCampaignDraftSchema', () => {
     }
   )
 
+  test('defaults new audience fields for legacy drafts', () => {
+    const draft = makeDraft()
+
+    const result = recallCampaignDraftSchema.safeParse(draft)
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.audience_config.registration_start_at).toBe(0)
+      expect(result.data.audience_config.registration_end_at).toBe(0)
+      expect(result.data.audience_config.specified_user_ids).toEqual([])
+      expect(result.data.audience_config.specified_emails).toEqual([])
+    }
+  })
+
+  test('validates registered_only registration range on active controls', () => {
+    const missing = makeDraft()
+    missing.audience_template = 'registered_only'
+    const missingResult = recallCampaignDraftSchema.safeParse(missing)
+    expect(missingResult.success).toBe(false)
+    if (!missingResult.success) {
+      expect(missingResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['audience_config', 'registration_start_at'],
+        })
+      )
+      expect(missingResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['audience_config', 'registration_end_at'],
+        })
+      )
+    }
+
+    const reversed = makeDraft()
+    reversed.audience_template = 'registered_only'
+    reversed.audience_config.registration_start_at = 200
+    reversed.audience_config.registration_end_at = 100
+    const reversedResult = recallCampaignDraftSchema.safeParse(reversed)
+    expect(reversedResult.success).toBe(false)
+    if (!reversedResult.success) {
+      expect(reversedResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['audience_config', 'registration_end_at'],
+        })
+      )
+    }
+
+    const valid = makeDraft()
+    valid.audience_template = 'registered_only'
+    valid.audience_config.registration_start_at = 100
+    valid.audience_config.registration_end_at = 200
+    expect(recallCampaignDraftSchema.safeParse(valid).success).toBe(true)
+  })
+
+  test('validates specified_users active IDs and emails', () => {
+    const empty = makeDraft()
+    empty.audience_template = 'specified_users'
+    const emptyResult = recallCampaignDraftSchema.safeParse(empty)
+    expect(emptyResult.success).toBe(false)
+    if (!emptyResult.success) {
+      expect(emptyResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['audience_config', 'specified_user_ids'],
+        })
+      )
+    }
+
+    const invalidId = makeDraft()
+    invalidId.audience_template = 'specified_users'
+    invalidId.audience_config.specified_user_ids = [1, 0]
+    expect(recallCampaignDraftSchema.safeParse(invalidId).success).toBe(false)
+
+    const invalidEmail = makeDraft()
+    invalidEmail.audience_template = 'specified_users'
+    invalidEmail.audience_config.specified_emails = ['valid@example.com', 'bad']
+    const invalidEmailResult = recallCampaignDraftSchema.safeParse(invalidEmail)
+    expect(invalidEmailResult.success).toBe(false)
+    if (!invalidEmailResult.success) {
+      expect(invalidEmailResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['audience_config', 'specified_emails'],
+        })
+      )
+    }
+
+    const valid = makeDraft()
+    valid.audience_template = 'specified_users'
+    valid.audience_config.specified_user_ids = [1, 2]
+    valid.audience_config.specified_emails = ['a@example.com']
+    expect(recallCampaignDraftSchema.safeParse(valid).success).toBe(true)
+  })
+
+  test('limits specified_users to 500 normalized recipients', () => {
+    const valid = makeDraft()
+    valid.audience_template = 'specified_users'
+    valid.audience_config.specified_user_ids = Array.from(
+      { length: 250 },
+      (_, index) => index + 1
+    )
+    valid.audience_config.specified_emails = Array.from(
+      { length: 250 },
+      (_, index) => `user-${index}@example.com`
+    )
+    expect(recallCampaignDraftSchema.safeParse(valid).success).toBe(true)
+
+    const tooMany = structuredClone(valid)
+    tooMany.audience_config.specified_emails.push('overflow@example.com')
+    const result = recallCampaignDraftSchema.safeParse(tooMany)
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['audience_config', 'specified_emails'],
+        })
+      )
+    }
+  })
+
+  test('does not validate hidden template-specific fields for other audiences', () => {
+    const firstPurchase = makeDraft()
+    firstPurchase.audience_config.registration_start_at = 200
+    firstPurchase.audience_config.registration_end_at = 100
+    firstPurchase.audience_config.specified_user_ids = [0]
+    firstPurchase.audience_config.specified_emails = ['bad-email']
+    expect(recallCampaignDraftSchema.safeParse(firstPurchase).success).toBe(
+      true
+    )
+
+    const specified = makeDraft()
+    specified.audience_template = 'specified_users'
+    specified.audience_config.specified_user_ids = [1]
+    specified.audience_config.registration_start_at = 200
+    specified.audience_config.registration_end_at = 100
+    specified.audience_config.registration_age_days = -1
+    expect(recallCampaignDraftSchema.safeParse(specified).success).toBe(true)
+  })
+
   test.each([
     'registration_age_days',
     'min_request_count',

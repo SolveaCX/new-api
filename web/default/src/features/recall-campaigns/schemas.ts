@@ -3,7 +3,10 @@ import type { RecallCampaignDraft } from './types'
 
 const nonNegativeInteger = z.number().int().min(0)
 const nonNegativeNumber = z.number().min(0)
+const integer = z.number().int()
+const number = z.number()
 const currencySchema = z.string().regex(/^[A-Z]{3}$/)
+const specifiedEmailSchema = z.string().regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)
 
 function isIanaTimezone(value: string): boolean {
   if (value === '' || value === 'Local') return false
@@ -17,37 +20,167 @@ function isIanaTimezone(value: string): boolean {
 
 const audienceSchema = z
   .object({
-    registration_age_days: nonNegativeInteger,
-    min_request_count: nonNegativeInteger,
-    max_quota: nonNegativeInteger,
-    min_paid_amount: nonNegativeNumber,
-    last_api_call_age_days: nonNegativeInteger,
-    last_payment_age_days: nonNegativeInteger,
-    subscription_expired_days: nonNegativeInteger,
-    min_subscription_amount: nonNegativeNumber,
-    min_subscription_count: nonNegativeInteger,
-    payment_providers: z.array(z.string().trim().min(1)),
-    groups: z.array(z.string().trim().min(1)),
+    registration_age_days: integer,
+    min_request_count: integer,
+    max_quota: integer,
+    min_paid_amount: number,
+    last_api_call_age_days: integer,
+    last_payment_age_days: integer,
+    subscription_expired_days: integer,
+    min_subscription_amount: number,
+    min_subscription_count: integer,
+    payment_providers: z.array(z.string()),
+    groups: z.array(z.string()),
     group_mode: z.enum(['', 'allow', 'block']),
     require_verified_email: z.boolean(),
+    registration_start_at: integer.default(0),
+    registration_end_at: integer.default(0),
+    specified_user_ids: z.array(z.number()).default([]),
+    specified_emails: z.array(z.string()).default([]),
   })
   .strict()
-  .superRefine((audience, context) => {
-    if (audience.groups.length === 0 && audience.group_mode !== '') {
+
+const legacyAudienceThresholds = [
+  ['registration_age_days', nonNegativeInteger],
+  ['min_request_count', nonNegativeInteger],
+  ['max_quota', nonNegativeInteger],
+  ['min_paid_amount', nonNegativeNumber],
+  ['last_api_call_age_days', nonNegativeInteger],
+  ['last_payment_age_days', nonNegativeInteger],
+  ['subscription_expired_days', nonNegativeInteger],
+  ['min_subscription_amount', nonNegativeNumber],
+  ['min_subscription_count', nonNegativeInteger],
+] as const
+
+function validateAudienceGroups(
+  audience: z.infer<typeof audienceSchema>,
+  context: z.RefinementCtx
+): void {
+  if (audience.groups.some((group) => group.trim() === '')) {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'groups'],
+      message: 'Groups are invalid',
+    })
+  }
+  if (audience.groups.length === 0 && audience.group_mode !== '') {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'group_mode'],
+      message: 'Groups are required',
+    })
+  }
+  if (audience.groups.length > 0 && audience.group_mode === '') {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'group_mode'],
+      message: 'Group mode is required',
+    })
+  }
+}
+
+function validateLegacyAudience(
+  audience: z.infer<typeof audienceSchema>,
+  context: z.RefinementCtx
+): void {
+  for (const [field, schema] of legacyAudienceThresholds) {
+    if (!schema.safeParse(audience[field]).success) {
       context.addIssue({
         code: 'custom',
-        path: ['group_mode'],
-        message: 'Groups are required',
+        path: ['audience_config', field],
+        message: 'Audience threshold is invalid',
       })
     }
-    if (audience.groups.length > 0 && audience.group_mode === '') {
+  }
+  if (audience.payment_providers.some((provider) => provider.trim() === '')) {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'payment_providers'],
+      message: 'Payment providers are invalid',
+    })
+  }
+  validateAudienceGroups(audience, context)
+}
+
+function validateRegisteredOnlyAudience(
+  audience: z.infer<typeof audienceSchema>,
+  context: z.RefinementCtx
+): void {
+  if (audience.registration_start_at <= 0) {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'registration_start_at'],
+      message: 'Registration start is required',
+    })
+  }
+  if (audience.registration_end_at <= 0) {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'registration_end_at'],
+      message: 'Registration end is required',
+    })
+  } else if (
+    audience.registration_start_at > 0 &&
+    audience.registration_end_at < audience.registration_start_at
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'registration_end_at'],
+      message: 'Registration end must be after start',
+    })
+  }
+  validateAudienceGroups(audience, context)
+}
+
+function validateSpecifiedUsersAudience(
+  audience: z.infer<typeof audienceSchema>,
+  context: z.RefinementCtx
+): void {
+  const userIds = new Set<number>()
+  for (const userId of audience.specified_user_ids) {
+    if (!Number.isInteger(userId) || userId <= 0) {
       context.addIssue({
         code: 'custom',
-        path: ['group_mode'],
-        message: 'Group mode is required',
+        path: ['audience_config', 'specified_user_ids'],
+        message: 'User IDs are invalid',
       })
+      break
     }
-  })
+    userIds.add(userId)
+  }
+
+  const emails = new Set<string>()
+  for (const email of audience.specified_emails) {
+    const normalized = email.trim().toLowerCase()
+    if (
+      email !== normalized ||
+      !specifiedEmailSchema.safeParse(email).success
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['audience_config', 'specified_emails'],
+        message: 'Emails are invalid',
+      })
+      break
+    }
+    emails.add(normalized)
+  }
+
+  if (userIds.size + emails.size === 0) {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'specified_user_ids'],
+      message: 'At least one user or email is required',
+    })
+  }
+  if (userIds.size + emails.size > 500) {
+    context.addIssue({
+      code: 'custom',
+      path: ['audience_config', 'specified_emails'],
+      message: 'Up to 500 users or emails are supported',
+    })
+  }
+}
 
 const scheduleSchema = z
   .object({
@@ -273,6 +406,8 @@ export const recallCampaignDraftSchema = z
       'first_purchase',
       'lapsed_payer',
       'expired_subscription',
+      'registered_only',
+      'specified_users',
     ]),
     audience_config: audienceSchema,
     execution_mode: z.enum(['manual', 'scheduled_once', 'recurring']),
@@ -288,6 +423,19 @@ export const recallCampaignDraftSchema = z
   })
   .strict()
   .superRefine((draft, context) => {
+    if (
+      draft.audience_template === 'first_purchase' ||
+      draft.audience_template === 'lapsed_payer' ||
+      draft.audience_template === 'expired_subscription'
+    ) {
+      validateLegacyAudience(draft.audience_config, context)
+    }
+    if (draft.audience_template === 'registered_only') {
+      validateRegisteredOnlyAudience(draft.audience_config, context)
+    }
+    if (draft.audience_template === 'specified_users') {
+      validateSpecifiedUsersAudience(draft.audience_config, context)
+    }
     if (
       draft.coupon_source === 'automatic' &&
       draft.existing_coupon_id.trim() !== ''

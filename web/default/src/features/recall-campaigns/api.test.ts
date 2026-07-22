@@ -9,6 +9,7 @@ import {
   getRecallUserGroups,
   getRecallCampaign,
   getRecallCampaignMetrics,
+  listRecallAudienceUsers,
   listRecallCampaigns,
   listRecallEvents,
   listRecallRecipients,
@@ -63,6 +64,27 @@ describe('recall campaign API contracts', () => {
     expect(capturedConfig?.params).toEqual({ type: 'user' })
   })
 
+  test('loads recall audience users by trimmed keyword', async () => {
+    respondWith({ success: true, data: [] })
+
+    await listRecallAudienceUsers({ keyword: '  alice  ', ids: [1, 2] })
+
+    expect(capturedConfig?.url).toBe('/api/recall-campaigns/audience-users')
+    expect(capturedConfig?.params).toEqual({
+      keyword: 'alice',
+      page_size: 50,
+    })
+  })
+
+  test('loads recall audience users by exact IDs', async () => {
+    respondWith({ success: true, data: [] })
+
+    await listRecallAudienceUsers({ ids: [2, 5] })
+
+    expect(capturedConfig?.url).toBe('/api/recall-campaigns/audience-users')
+    expect(capturedConfig?.params).toEqual({ ids: '2,5' })
+  })
+
   test('uses p and ps for campaign list pagination', async () => {
     respondWith({ success: true, data: { items: [], total: 0 } })
 
@@ -101,6 +123,7 @@ describe('recall campaign API contracts', () => {
     ['events', () => listRecallEvents(1, 1)],
     ['metrics', () => getRecallCampaignMetrics(1)],
     ['retry', () => retryRecallRecipient(1, 2, false)],
+    ['audience users', () => listRecallAudienceUsers({ keyword: 'alice' })],
     ['top-up product configuration', getRecallTopUpProductConfiguration],
     [
       'subscription product configuration',
