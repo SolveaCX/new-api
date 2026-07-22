@@ -231,7 +231,6 @@ func grantMatchesInput(existing *UserSubscription, input GrantEntitlementInput) 
 		existing.AmountTotal == input.AmountTotal &&
 		existing.StartTime == input.PeriodStart &&
 		existing.EndTime == input.PeriodEnd &&
-		existing.AccessEndTime == input.PeriodEnd &&
 		normalizeSubscriptionPaymentMode(existing.PaymentMode) == input.PaymentMode &&
 		strings.TrimSpace(existing.Source) == input.Source
 }
@@ -361,6 +360,24 @@ func noActiveSubscriptionError(hasContract bool) error {
 
 func insufficientSubscriptionQuotaError(amount int64) error {
 	return fmt.Errorf("subscription quota insufficient, need=%d", amount)
+}
+
+func isGraceContractCurrentEntitlementTx(tx *gorm.DB, sub *UserSubscription) (bool, error) {
+	if tx == nil || sub == nil || sub.ContractId <= 0 {
+		return false, nil
+	}
+	var count int64
+	err := tx.Model(&UserSubscriptionContract{}).
+		Where("id = ? AND user_id = ? AND status = ? AND current_entitlement_id = ?",
+			sub.ContractId, sub.UserId, SubscriptionContractStatusGrace, sub.Id).
+		Count(&count).Error
+	if err != nil {
+		if isMissingSubscriptionLifecycleTableError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func isMissingSubscriptionLifecycleTableError(err error) bool {

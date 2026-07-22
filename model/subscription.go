@@ -1620,6 +1620,13 @@ func ResetDueSubscriptions(limit int) (int, error) {
 				First(&locked).Error; err != nil {
 				return nil
 			}
+			isGraceCurrent, err := isGraceContractCurrentEntitlementTx(tx, &locked)
+			if err != nil {
+				return err
+			}
+			if isGraceCurrent {
+				return nil
+			}
 			if err := maybeResetUserSubscriptionWithPlanTx(tx, &locked, plan, now); err != nil {
 				return err
 			}

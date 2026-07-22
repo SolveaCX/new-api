@@ -147,6 +147,13 @@ func TestSubscriptionEntitlementGrantIdempotentAndConflict(t *testing.T) {
 	require.False(t, second.Applied)
 	require.Equal(t, first.Entitlement.Id, second.Entitlement.Id)
 
+	require.NoError(t, DB.Model(&UserSubscription{}).Where("id = ?", first.Entitlement.Id).
+		Update("access_end_time", input.PeriodEnd+100).Error)
+	graceReplay, err := RotateCurrentEntitlement(input)
+	require.NoError(t, err)
+	require.False(t, graceReplay.Applied)
+	require.Equal(t, first.Entitlement.Id, graceReplay.Entitlement.Id)
+
 	conflict := grantInput(9311, 9111, 9212, "stripe:idempotent", 200, 300)
 	_, err = RotateCurrentEntitlement(conflict)
 	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
@@ -424,6 +431,48 @@ func TestHasActiveUserSubscriptionFollowsContractRules(t *testing.T) {
 	active, err = HasActiveUserSubscription(9141)
 	require.NoError(t, err)
 	require.False(t, active)
+}
+
+func TestResetDueSubscriptionsSkipsGraceCurrentEntitlement(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9142, "plg")
+	plan := createEntitlementTestPlan(t, 9242, 100, "")
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"quota_reset_period":         SubscriptionResetCustom,
+		"quota_reset_custom_seconds": int64(10),
+	}).Error)
+	now := GetDBTimestamp()
+	current := UserSubscription{
+		UserId:        9142,
+		PlanId:        9242,
+		ContractId:    9342,
+		CurrentSlot:   currentSlotPtr(),
+		AmountTotal:   100,
+		AmountUsed:    90,
+		StartTime:     now - 100,
+		EndTime:       now + 100,
+		AccessEndTime: now + 100,
+		LastResetTime: now - 100,
+		NextResetTime: now - 90,
+		Status:        "active",
+	}
+	require.NoError(t, DB.Create(&current).Error)
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:                   9342,
+		UserId:               9142,
+		Status:               SubscriptionContractStatusGrace,
+		CurrentEntitlementId: current.Id,
+		CurrentPlanId:        9242,
+	}).Error)
+
+	reset, err := ResetDueSubscriptions(10)
+	require.NoError(t, err)
+	require.Zero(t, reset)
+
+	var after UserSubscription
+	require.NoError(t, DB.First(&after, "id = ?", current.Id).Error)
+	require.EqualValues(t, 90, after.AmountUsed)
+	require.EqualValues(t, now-90, after.NextResetTime)
 }
 
 func TestRotateCurrentEntitlementGroupCaptureAndSwitch(t *testing.T) {
