@@ -48,6 +48,13 @@ const MATCH_LABELS: Record<string, string> = {
   BROAD: 'Broad',
 }
 
+// Landing-page thumbnail via the thum.io screenshot service — keyless free
+// tier, cached on their side. The first-ever request for a URL returns a
+// placeholder that becomes the real screenshot on later loads. Admin-only
+// page with a handful of distinct URLs, so the free tier is plenty.
+const landingThumb = (url: string, width: number): string =>
+  `https://image.thum.io/get/width/${width}/crop/${width * 2}/${url}`
+
 // row tinting per change type, readable in light and dark themes
 const CHANGE_ROW_CLASS: Record<string, string> = {
   added: 'bg-green-50 dark:bg-green-950/40',
@@ -183,6 +190,30 @@ function CreativeCard(props: {
           {row.ad_id})
         </div>
       )}
+      {finalUrl && (
+        <a
+          href={finalUrl}
+          target='_blank'
+          rel='noreferrer'
+          className='bg-muted/30 hover:bg-muted/60 mt-2 flex items-center gap-2 rounded border p-1.5'
+          title={finalUrl}
+        >
+          <img
+            src={landingThumb(finalUrl, 240)}
+            alt=''
+            loading='lazy'
+            className='h-14 w-24 shrink-0 rounded border object-cover object-top'
+          />
+          <span className='min-w-0'>
+            <span className='text-muted-foreground block text-xs'>
+              {t('Landing Pages')}
+            </span>
+            <span className='text-primary block truncate text-xs'>
+              {finalUrl.replace(/^https?:\/\//, '')}
+            </span>
+          </span>
+        </a>
+      )}
       <div className='text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs'>
         <span className='truncate'>
           {row.campaign_name}
@@ -294,9 +325,18 @@ function LandingsTable(props: { rows: AdsDailyLandingRow[] }) {
                   href={row.url}
                   target='_blank'
                   rel='noreferrer'
-                  className='text-primary block truncate hover:underline'
+                  className='flex items-center gap-2'
+                  title={row.url}
                 >
-                  {row.url}
+                  <img
+                    src={landingThumb(row.url, 160)}
+                    alt=''
+                    loading='lazy'
+                    className='h-10 w-16 shrink-0 rounded border object-cover object-top'
+                  />
+                  <span className='text-primary truncate hover:underline'>
+                    {row.url}
+                  </span>
                 </a>
               </TableCell>
               <TableCell className='text-right'>{row.clicks}</TableCell>

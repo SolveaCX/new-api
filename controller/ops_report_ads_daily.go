@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,13 @@ import (
 const (
 	adsDailyKeywordCap  = 200 // per day, changed rows always kept
 	adsDailyCreativeCap = 50
+	// The ads account is shared with other business lines (voc.ai, solvea.cx);
+	// this report only covers flatkey, so rows are filtered to flatkey-*
+	// campaigns and flatkey.ai landing URLs. Day totals sum the filtered
+	// creative metrics — intentionally narrower than the account-wide spend
+	// column on the overview tab.
+	adsDailyCampaignPrefix = "flatkey"
+	adsDailyLandingHost    = "flatkey.ai"
 )
 
 var opsAdsDailySyncMutex sync.Mutex
@@ -136,11 +144,6 @@ func GetOpsAdsDailyReport(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	spend, err := model.GetOpsAdsSpendDaily(since)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
 	lastSync, err := model.GetAdsDailyLastUpdated()
 	if err != nil {
 		common.ApiError(c, err)
@@ -152,16 +155,53 @@ func GetOpsAdsDailyReport(c *gin.Context) {
 		Days:        days,
 		LastSyncAt:  lastSync,
 		Configured:  configured,
-		DaysList:    buildAdsDailyDays(keywords, creatives, landings, spend),
+		DaysList: buildAdsDailyDays(
+			adsDailyFilterKeywords(keywords),
+			adsDailyFilterCreatives(creatives),
+			adsDailyFilterLandings(landings),
+		),
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": report})
+}
+
+func adsDailyIsFlatkeyCampaign(name string) bool {
+	return strings.HasPrefix(strings.ToLower(name), adsDailyCampaignPrefix)
+}
+
+func adsDailyFilterKeywords(rows []*model.AdsDailyKeyword) []*model.AdsDailyKeyword {
+	out := rows[:0:0]
+	for _, r := range rows {
+		if adsDailyIsFlatkeyCampaign(r.CampaignName) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func adsDailyFilterCreatives(rows []*model.AdsDailyCreative) []*model.AdsDailyCreative {
+	out := rows[:0:0]
+	for _, r := range rows {
+		if adsDailyIsFlatkeyCampaign(r.CampaignName) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func adsDailyFilterLandings(rows []*model.AdsDailyLanding) []*model.AdsDailyLanding {
+	out := rows[:0:0]
+	for _, r := range rows {
+		if strings.Contains(strings.ToLower(r.Url), adsDailyLandingHost) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func buildAdsDailyDays(
 	keywords []*model.AdsDailyKeyword,
 	creatives []*model.AdsDailyCreative,
 	landings []*model.AdsDailyLanding,
-	spend []*model.AdsSpendDaily,
 ) []*adsDailyDay {
 	kwByDate := map[string]map[string]*model.AdsDailyKeyword{}
 	for _, k := range keywords {
@@ -180,10 +220,6 @@ func buildAdsDailyDays(
 	landByDate := map[string][]*model.AdsDailyLanding{}
 	for _, l := range landings {
 		landByDate[l.Date] = append(landByDate[l.Date], l)
-	}
-	spendByDate := map[string]*model.AdsSpendDaily{}
-	for _, s := range spend {
-		spendByDate[s.Date] = s
 	}
 
 	dateSet := map[string]bool{}
@@ -222,18 +258,13 @@ func buildAdsDailyDays(
 	prevSnap := ""
 	for _, d := range dates {
 		day := &adsDailyDay{Date: d, Snapshot: isSnapshotDay(d)}
-		if s := spendByDate[d]; s != nil {
-			day.CostUSD = s.CostUSD
-			day.Clicks = s.Clicks
-			day.Impressions = s.Impressions
-			day.Conversions = s.Conversions
-		} else {
-			for _, a := range adByDate[d] {
-				day.CostUSD += a.CostUSD
-				day.Clicks += a.Clicks
-				day.Impressions += a.Impressions
-				day.Conversions += a.Conversions
-			}
+		// totals = sum of the (flatkey-filtered) per-ad metrics, so the day
+		// row matches the detail below it
+		for _, a := range adByDate[d] {
+			day.CostUSD += a.CostUSD
+			day.Clicks += a.Clicks
+			day.Impressions += a.Impressions
+			day.Conversions += a.Conversions
 		}
 		day.Keywords = buildAdsDailyKeywords(kwByDate[d], kwByDate[prevSnap], day)
 		day.Creatives = buildAdsDailyCreatives(adByDate[d], adByDate[prevSnap], day)

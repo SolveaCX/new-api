@@ -49,7 +49,7 @@ func TestBuildAdsDailyDaysDiffs(t *testing.T) {
 		adsTestAd("2026-07-18", "a1", true, `["h1","h2"]`, 3.0),
 		adsTestAd("2026-07-19", "a1", true, `["h1","h2-edited"]`, 2.5),
 	}
-	days := buildAdsDailyDays(keywords, creatives, nil, nil)
+	days := buildAdsDailyDays(keywords, creatives, nil)
 	if len(days) != 2 {
 		t.Fatalf("expected 2 days, got %d", len(days))
 	}
@@ -64,9 +64,9 @@ func TestBuildAdsDailyDaysDiffs(t *testing.T) {
 	if d1.Changes != (adsDailyChangeSummary{}) {
 		t.Errorf("first snapshot day must report no changes, got %+v", d1.Changes)
 	}
-	// no spend rows → totals fall back to creative sums
+	// totals sum the per-ad metrics
 	if d1.CostUSD != 3.0 {
-		t.Errorf("day1 cost fallback = %v, want 3.0", d1.CostUSD)
+		t.Errorf("day1 cost = %v, want 3.0", d1.CostUSD)
 	}
 
 	d2 := adsDailyFindDay(t, days, "2026-07-19")
@@ -99,9 +99,7 @@ func TestBuildAdsDailyDaysMetricsOnlyHistory(t *testing.T) {
 		adsTestKw("2026-07-01", "g1", "k1", "claude api", false, 0, 1.0, 2, ""),
 		adsTestKw("2026-07-02", "g1", "k1", "claude api", false, 0, 2.0, 3, ""),
 	}
-	days := buildAdsDailyDays(keywords, nil, nil, []*model.AdsSpendDaily{
-		{Date: "2026-07-02", CostUSD: 9.5, Clicks: 10},
-	})
+	days := buildAdsDailyDays(keywords, nil, nil)
 	if len(days) != 2 {
 		t.Fatalf("expected 2 days, got %d", len(days))
 	}
@@ -113,8 +111,31 @@ func TestBuildAdsDailyDaysMetricsOnlyHistory(t *testing.T) {
 			t.Errorf("day %s changes = %+v, want none", d.Date, d.Changes)
 		}
 	}
-	if d := adsDailyFindDay(t, days, "2026-07-02"); d.CostUSD != 9.5 || d.Clicks != 10 {
-		t.Errorf("spend join failed: %+v", d)
+}
+
+func TestAdsDailyFlatkeyFilter(t *testing.T) {
+	kws := adsDailyFilterKeywords([]*model.AdsDailyKeyword{
+		{CampaignName: "flatkey-PT-Search", Keyword: "kimi 3.0"},
+		{CampaignName: "VOC-API-MCP-Dev-US", Keyword: "amazon review api"},
+		{CampaignName: "solvea-USCA-Search-Verticals", Keyword: "ai receptionist"},
+	})
+	if len(kws) != 1 || kws[0].Keyword != "kimi 3.0" {
+		t.Errorf("keyword filter = %+v, want flatkey only", kws)
+	}
+	ads := adsDailyFilterCreatives([]*model.AdsDailyCreative{
+		{CampaignName: "flatkey-SEA-Search", AdId: "a1"},
+		{CampaignName: "Android US App Installs - AI Receptionist Translation", AdId: "a2"},
+	})
+	if len(ads) != 1 || ads[0].AdId != "a1" {
+		t.Errorf("creative filter = %+v, want flatkey only", ads)
+	}
+	lps := adsDailyFilterLandings([]*model.AdsDailyLanding{
+		{Url: "https://flatkey.ai/pt/models/gemini-api"},
+		{Url: "https://www.voc.ai/api/amazon-data"},
+		{Url: "https://solvea.cx/receptionist"},
+	})
+	if len(lps) != 1 || lps[0].Url != "https://flatkey.ai/pt/models/gemini-api" {
+		t.Errorf("landing filter = %+v, want flatkey.ai only", lps)
 	}
 }
 
