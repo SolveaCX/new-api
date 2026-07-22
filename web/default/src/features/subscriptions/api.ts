@@ -21,11 +21,14 @@ import type {
   ApiResponse,
   PlanRecord,
   PlanPayload,
-  UserSubscriptionRecord,
+  AdminUserSubscriptionsResponse,
   CreateUserSubscriptionRequest,
   SubscriptionPayResponse,
   SubscriptionPayRequest,
-  SelfSubscriptionData,
+  SelfSubscriptionDataResponse,
+  RecurringSubscription,
+  ChangePlanRequest,
+  ChangePlanResponse,
 } from './types'
 
 // ============================================================================
@@ -68,7 +71,7 @@ export async function patchPlanStatus(
 
 export async function getUserSubscriptions(
   userId: number
-): Promise<ApiResponse<UserSubscriptionRecord[]>> {
+): Promise<ApiResponse<AdminUserSubscriptionsResponse>> {
   const res = await api.get(
     `/api/subscription/admin/users/${userId}/subscriptions`
   )
@@ -136,6 +139,13 @@ export async function paySubscriptionBalance(
   return res.data
 }
 
+export async function changeSubscriptionPlan(
+  data: ChangePlanRequest
+): Promise<ApiResponse<ChangePlanResponse>> {
+  const res = await api.post('/api/subscription/self/change-plan', data)
+  return res.data
+}
+
 // Mints a Pancake OnetimeProduct (see controller for the OnetimeProduct vs
 // SubscriptionProduct rationale) using persisted creds + StoreID.
 export async function createWaffoPancakeSubscriptionProduct(data: {
@@ -180,14 +190,14 @@ export async function paySubscriptionEpay(
 // ============================================================================
 
 export async function getSelfSubscriptions(): Promise<
-  ApiResponse<UserSubscriptionRecord[]>
+  ApiResponse<SelfSubscriptionDataResponse>
 > {
   const res = await api.get('/api/subscription/self')
   return res.data
 }
 
 export async function getSelfSubscriptionFull(): Promise<
-  ApiResponse<SelfSubscriptionData>
+  ApiResponse<SelfSubscriptionDataResponse>
 > {
   const res = await api.get('/api/subscription/self')
   return res.data
@@ -204,6 +214,24 @@ export async function updateBillingPreference(
   const res = await api.put('/api/subscription/self/preference', {
     billing_preference: preference,
   })
+  return res.data
+}
+
+export async function cancelRecurringSubscription(
+  bindingId: number
+): Promise<ApiResponse<RecurringSubscription>> {
+  const res = await api.post(
+    `/api/subscription/self/recurring/${bindingId}/cancel`
+  )
+  return res.data
+}
+
+export async function resumeRecurringSubscription(
+  bindingId: number
+): Promise<ApiResponse<RecurringSubscription>> {
+  const res = await api.post(
+    `/api/subscription/self/recurring/${bindingId}/resume`
+  )
   return res.data
 }
 

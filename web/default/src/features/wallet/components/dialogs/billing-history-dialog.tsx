@@ -58,8 +58,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog } from '@/components/dialog'
-import { StatusBadge } from '@/components/status-badge'
-import type { StatusVariant } from '@/components/status-badge'
+import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { getInvoiceProfile, isApiSuccess } from '../../api'
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import {
@@ -86,6 +85,7 @@ interface BillingHistoryDialogProps {
 
 interface BillingHistoryPanelProps {
   scrollAreaClassName?: string
+  onAvailabilityChange?: (available: boolean) => void
   onResumeStripeCheckout?: (record: TopupRecord) => Promise<void>
 }
 
@@ -187,6 +187,7 @@ function getInvoiceStatusVariant(status?: string): StatusVariant {
 }
 
 export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
+  const { onAvailabilityChange, scrollAreaClassName } = props
   const { t } = useTranslation()
   const {
     records,
@@ -212,6 +213,10 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
   useEffect(() => {
     if (records.length) trackSuccessfulTopups(records)
   }, [records])
+
+  useEffect(() => {
+    onAvailabilityChange?.(!loading && total > 0)
+  }, [loading, onAvailabilityChange, total])
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
   const [resumingTradeNo, setResumingTradeNo] = useState<string | null>(null)
@@ -268,6 +273,10 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
       cancelled = true
     }
   }, [invoiceTradeNo, t])
+
+  if (!loading && total === 0) {
+    return null
+  }
 
   const updateInvoiceField = (
     field: keyof InvoiceProfile,
@@ -368,7 +377,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
         <ScrollArea
           className={cn(
             'max-h-[min(54vh,520px)] pr-3 sm:pr-4',
-            props.scrollAreaClassName
+            scrollAreaClassName
           )}
         >
           {loading ? (
@@ -426,6 +435,12 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                   (isAdmin && record.status === 'pending') ||
                   !!invoiceUrl ||
                   !!invoicePdf
+                // Subscription purchases are stored as top-up rows with a
+                // sub_ref_/SUBBAL trade_no and amount=0 (nothing lands in the
+                // wallet). Render them with a friendly title and no $0 column.
+                const isSubscriptionRecord =
+                  record.trade_no?.startsWith('sub_ref_') ||
+                  record.trade_no?.startsWith('SUBBAL')
                 return (
                   <div
                     key={record.id}
@@ -435,9 +450,15 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                     <div className='flex items-start justify-between gap-2'>
                       <div className='flex-1 space-y-1'>
                         <div className='flex min-w-0 items-center gap-2'>
-                          <code className='text-foreground truncate font-mono text-sm'>
-                            {record.trade_no}
-                          </code>
+                          {isSubscriptionRecord ? (
+                            <span className='text-foreground truncate text-sm font-semibold'>
+                              {t('Plan subscription')}
+                            </span>
+                          ) : (
+                            <code className='text-foreground truncate font-mono text-sm'>
+                              {record.trade_no}
+                            </code>
+                          )}
                           <Button
                             variant='ghost'
                             size='sm'
@@ -487,24 +508,27 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                           {getPaymentMethodName(record.payment_method, t)}
                         </div>
                       </div>
-                      <div className='space-y-1'>
-                        <Label className='text-muted-foreground text-xs'>
-                          {t('Amount')}
-                        </Label>
-                        <div className='text-sm font-semibold'>
-                          {formatCurrencyFromUSD(record.amount, {
-                            digitsLarge: 2,
-                            digitsSmall: 2,
-                            abbreviate: false,
-                          })}
+                      {!isSubscriptionRecord && (
+                        <div className='space-y-1'>
+                          <Label className='text-muted-foreground text-xs'>
+                            {t('Amount')}
+                          </Label>
+                          <div className='text-sm font-semibold'>
+                            {formatCurrencyFromUSD(record.amount, {
+                              digitsLarge: 2,
+                              digitsSmall: 2,
+                              abbreviate: false,
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      )}
                       <div className='space-y-1'>
                         <Label className='text-muted-foreground text-xs'>
                           {t('Payment')}
                         </Label>
-                        <div className='text-sm font-semibold text-red-600'>
-                          {formatNumber(record.money)}
+                        <div className='text-sm font-semibold'>
+                          {formatNumber(record.money)}{' '}
+                          {record.payment_currency?.trim() || 'USD'}
                         </div>
                       </div>
                       {record.bonus_amount && record.bonus_amount > 0 ? (

@@ -2,7 +2,9 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,11 +15,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
+	stripecoupon "github.com/stripe/stripe-go/v81/coupon"
 	"github.com/thanhpk/randstr"
 )
 
 type SubscriptionStripePayRequest struct {
-	PlanId int `json:"plan_id"`
+	PlanId    int    `json:"plan_id"`
+	RequestId string `json:"request_id"`
 }
 
 func SubscriptionRequestStripePay(c *gin.Context) {
@@ -82,19 +86,18 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	order := &model.SubscriptionOrder{
 		UserId:          userId,
 		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
 		TradeNo:         referenceId,
 		PaymentMethod:   model.PaymentMethodStripe,
 		PaymentProvider: model.PaymentProviderStripe,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := order.Insert(); err != nil {
+	if err := model.CreateSubscriptionOrderWithInviteDiscount(order, plan.PriceAmount, 0); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
 		return
 	}
 
-	payLink, err := genStripeSubscriptionLink(referenceId, user.StripeCustomer, user.Email, plan.StripePriceId)
+	checkoutSession, err := genStripeSubscriptionLink(referenceId, user.StripeCustomer, user.Email, plan.StripePriceId, userId, plan.Id, order.DiscountUSD)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 订阅支付链接创建失败 trade_no=%s plan_id=%d error=%q", referenceId, plan.Id, err.Error()))
 		order.Status = common.TopUpStatusFailed
@@ -106,14 +109,44 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"data": gin.H{
-			"pay_link": payLink,
+			"pay_link": checkoutSession.URL,
 		},
 	})
 }
 
-func genStripeSubscriptionLink(referenceId string, customerId string, email string, priceId string) (string, error) {
+func genStripeSubscriptionLink(referenceId string, customerId string, email string, priceId string, userId int, planId int, discountUSD float64) (*stripe.CheckoutSession, error) {
 	stripe.Key = setting.StripeApiSecret
 
+	params := buildStripeSubscriptionCheckoutSessionParams(referenceId, customerId, email, priceId, userId, planId)
+	if discountUSD > 0 {
+		couponParams := &stripe.CouponParams{
+			AmountOff: stripe.Int64(int64(math.Round(discountUSD * 100))),
+			Currency:  stripe.String(string(stripe.CurrencyUSD)),
+			Duration:  stripe.String(string(stripe.CouponDurationOnce)),
+			Name:      stripe.String("Invite first-month discount"),
+		}
+		cp, err := stripecoupon.New(couponParams)
+		if err != nil {
+			return nil, fmt.Errorf("create invite discount coupon: %w", err)
+		}
+		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
+			{Coupon: stripe.String(cp.ID)},
+		}
+	}
+
+	result, err := session.New(params)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func buildStripeSubscriptionCheckoutSessionParams(referenceId string, customerId string, email string, priceId string, userId int, planId int) *stripe.CheckoutSessionParams {
+	metadata := map[string]string{
+		"newapi_trade_no": strings.TrimSpace(referenceId),
+		"newapi_user_id":  strconv.Itoa(userId),
+		"newapi_plan_id":  strconv.Itoa(planId),
+	}
 	params := &stripe.CheckoutSessionParams{
 		ClientReferenceID: stripe.String(referenceId),
 		SuccessURL:        stripe.String(consolePaymentReturnPath("/console/topup")),
@@ -124,10 +157,11 @@ func genStripeSubscriptionLink(referenceId string, customerId string, email stri
 				Quantity: stripe.Int64(1),
 			},
 		},
-		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		// Same 3DS posture as top-up checkouts (see buildStripeCheckoutSessionParams):
-		// request the cardholder challenge whenever the card is enrolled so stolen-card
-		// traffic can't open subscriptions, with issuer-side liability shift.
+		Mode:     stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		Metadata: metadata,
+		SubscriptionData: &stripe.CheckoutSessionSubscriptionDataParams{
+			Metadata: metadata,
+		},
 		PaymentMethodOptions: &stripe.CheckoutSessionPaymentMethodOptionsParams{
 			Card: &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
 				RequestThreeDSecure: stripe.String(string(stripe.CheckoutSessionPaymentMethodOptionsCardRequestThreeDSecureAny)),
@@ -139,14 +173,9 @@ func genStripeSubscriptionLink(referenceId string, customerId string, email stri
 		if "" != email {
 			params.CustomerEmail = stripe.String(email)
 		}
-		params.CustomerCreation = stripe.String(string(stripe.CheckoutSessionCustomerCreationAlways))
 	} else {
 		params.Customer = stripe.String(customerId)
 	}
 
-	result, err := session.New(params)
-	if err != nil {
-		return "", err
-	}
-	return result.URL, nil
+	return params
 }
