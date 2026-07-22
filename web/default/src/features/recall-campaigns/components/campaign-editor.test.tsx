@@ -463,17 +463,21 @@ function createQueryClient() {
 
 function renderEditor(
   template: RecallAudienceTemplate,
-  draft = makeDraft(template)
+  draft = makeDraft(template),
+  options: { injectSpecifiedUsersSelector?: boolean } = {}
 ): string {
   const queryClient = createQueryClient()
+  const editorProps =
+    options.injectSpecifiedUsersSelector === false
+      ? {}
+      : {
+          specifiedUsersSelector: MockSpecifiedUsersSelector,
+        }
 
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={testI18n}>
-        <CampaignEditor
-          initialDraft={draft}
-          specifiedUsersSelector={MockSpecifiedUsersSelector}
-        />
+        <CampaignEditor initialDraft={draft} {...editorProps} />
       </I18nextProvider>
     </QueryClientProvider>
   )
@@ -717,6 +721,16 @@ describe('CampaignEditor audience rules', () => {
     expect(html).not.toContain('Payment providers (comma separated)')
   })
 
+  test('disables native validation so registered-only empty dates reach schema errors', () => {
+    const html = renderEditor('registered_only')
+
+    expect(html).toContain('<form')
+    expect(html).toContain('noValidate=""')
+    expect(html).toContain('required=""')
+    expect(html).toContain('name="audience_config.registration_start_at"')
+    expect(html).toContain('name="audience_config.registration_end_at"')
+  })
+
   test('wires registration datetime edits to submitted Unix seconds', async () => {
     const draft = makeDraft('registered_only')
     const { root, container } = renderEditorDom(draft)
@@ -767,6 +781,16 @@ describe('CampaignEditor audience rules', () => {
     expect(html).not.toContain('Payment providers (comma separated)')
     expect(html).not.toContain('Group mode')
     expect(html).not.toContain('type="datetime-local"')
+  })
+
+  test('uses a translated live status while specified-users selector is loading', () => {
+    const html = renderEditor('specified_users', makeDraft('specified_users'), {
+      injectSpecifiedUsersSelector: false,
+    })
+
+    expect(html).toContain('role="status"')
+    expect(html).toContain('aria-live="polite"')
+    expect(html).toContain('Loading...')
   })
 
   test('specified-users callbacks update form values and survive template switches', async () => {

@@ -406,7 +406,11 @@ export function CampaignEditor(props: CampaignEditorProps) {
   }
 
   return (
-    <form className='space-y-4' onSubmit={form.handleSubmit(onSubmit)}>
+    <form
+      className='space-y-4'
+      noValidate
+      onSubmit={form.handleSubmit(onSubmit)}
+    >
       <Card>
         <CardHeader>
           <CardTitle>{t('1. Campaign and audience')}</CardTitle>
@@ -578,7 +582,17 @@ export function CampaignEditor(props: CampaignEditorProps) {
           ) : null}
           {audienceTemplate === 'specified_users' ? (
             <div className='space-y-3 md:col-span-3'>
-              <Suspense fallback={null}>
+              <Suspense
+                fallback={
+                  <p
+                    role='status'
+                    aria-live='polite'
+                    className='text-muted-foreground text-sm'
+                  >
+                    {t('Loading...')}
+                  </p>
+                }
+              >
                 <SpecifiedUsersSelector
                   userIDs={specifiedUserIDs}
                   emails={specifiedEmails}
