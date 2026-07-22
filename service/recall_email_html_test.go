@@ -84,6 +84,8 @@ func TestRecallEmailHTMLValidate(t *testing.T) {
 		{name: "rejects unknown actions", source: strings.Replace(validRecallHTML, "https://flatkey.ai/help", "{{.MagicURL}}", 1), wantErr: "unsupported template field"},
 		{name: "rejects template functions", source: strings.Replace(validRecallHTML, "{{.RecipientName}}", `{{printf "%s" .RecipientName}}`, 1), wantErr: "unsupported template command"},
 		{name: "rejects template control structures", source: strings.Replace(validRecallHTML, "{{.RecipientName}}", `{{if .RecipientName}}{{.RecipientName}}{{end}}`, 1), wantErr: "unsupported template control"},
+		{name: "rejects template variable declarations", source: strings.Replace(validRecallHTML, "{{.RecipientName}}", `{{$x := .RecipientName}}`, 1), wantErr: "unsupported template variable"},
+		{name: "rejects template pipelines", source: strings.Replace(validRecallHTML, "{{.RecipientName}}", `{{.RecipientName | .ProductSummary}}`, 1), wantErr: "unsupported template command"},
 		{name: "rejects claim action outside anchor href", source: strings.Replace(validRecallHTML, `<a class="cta" href="{{.ClaimURL}}">Claim offer</a>`, `<span data-url="{{.ClaimURL}}">Claim offer</span>`, 1), wantErr: "ClaimURL action must appear in an anchor href"},
 		{name: "rejects unsubscribe action outside anchor href", source: strings.Replace(validRecallHTML, `<a href="{{.UnsubscribeURL}}">Unsubscribe</a>`, `<span title="{{.UnsubscribeURL}}">Unsubscribe</span>`, 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
 	}

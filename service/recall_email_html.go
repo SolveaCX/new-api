@@ -281,20 +281,25 @@ func validateRecallEmailTemplateNode(node parse.Node) error {
 		if typed.Pipe == nil {
 			return fmt.Errorf("unsupported template command")
 		}
-		for _, command := range typed.Pipe.Cmds {
-			if len(command.Args) != 1 {
-				return fmt.Errorf("unsupported template command")
-			}
-			field, ok := command.Args[0].(*parse.FieldNode)
-			if !ok {
-				return fmt.Errorf("unsupported template command")
-			}
-			if len(field.Ident) != 1 {
-				return fmt.Errorf("unsupported template field")
-			}
-			if _, allowed := recallEmailHTMLTemplateFields[field.Ident[0]]; !allowed {
-				return fmt.Errorf("unsupported template field %q", field.Ident[0])
-			}
+		if len(typed.Pipe.Decl) != 0 {
+			return fmt.Errorf("unsupported template variable")
+		}
+		if len(typed.Pipe.Cmds) != 1 {
+			return fmt.Errorf("unsupported template command")
+		}
+		command := typed.Pipe.Cmds[0]
+		if len(command.Args) != 1 {
+			return fmt.Errorf("unsupported template command")
+		}
+		field, ok := command.Args[0].(*parse.FieldNode)
+		if !ok {
+			return fmt.Errorf("unsupported template command")
+		}
+		if len(field.Ident) != 1 {
+			return fmt.Errorf("unsupported template field")
+		}
+		if _, allowed := recallEmailHTMLTemplateFields[field.Ident[0]]; !allowed {
+			return fmt.Errorf("unsupported template field %q", field.Ident[0])
 		}
 	case *parse.IfNode, *parse.RangeNode, *parse.WithNode, *parse.TemplateNode:
 		return fmt.Errorf("unsupported template control")
