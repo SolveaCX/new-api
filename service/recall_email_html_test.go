@@ -91,6 +91,10 @@ func TestRecallEmailHTMLValidate(t *testing.T) {
 		{name: "rejects claim action in style text", source: strings.Replace(validRecallHTML, "</style>", " {{.ClaimURL}}</style>", 1), wantErr: "ClaimURL action must appear in an anchor href"},
 		{name: "rejects unsubscribe action in head text", source: strings.Replace(validRecallHTML, "<head>", "<head>{{.UnsubscribeURL}}", 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
 		{name: "rejects claim action in html comments", source: injectBeforeBodyEnd(`<!-- {{.ClaimURL}} -->`), wantErr: "ClaimURL action must appear in an anchor href"},
+		{name: "rejects spaced claim action in visible text", source: injectBeforeBodyEnd(`<p>{{ .ClaimURL }}</p>`), wantErr: "ClaimURL action must appear in an anchor href"},
+		{name: "rejects trim-marker unsubscribe action in style text", source: strings.Replace(validRecallHTML, "</style>", " {{- .UnsubscribeURL -}}</style>", 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
+		{name: "rejects trim-marker claim action in html comments", source: injectBeforeBodyEnd(`<!-- {{- .ClaimURL -}} -->`), wantErr: "ClaimURL action must appear in an anchor href"},
+		{name: "rejects spaced unsubscribe action in attributes", source: strings.Replace(validRecallHTML, `<a href="https://flatkey.ai/help">Help</a>`, `<a href="https://flatkey.ai/help" title="{{ .UnsubscribeURL }}">Help</a>`, 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
 	}
 
 	for _, testCase := range tests {
