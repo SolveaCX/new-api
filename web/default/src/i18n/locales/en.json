@@ -5835,8 +5835,7 @@
     "Anthropic Compatible": "Anthropic Compatible",
     "Gemini Compatible": "Gemini Compatible",
     "This model cannot be called because upstreams no longer support it.": "This model cannot be called because upstreams no longer support it.",
-    "Not callable · Officially unsupported": "Not callable · Officially unsupported"
-,
+    "Not callable · Officially unsupported": "Not callable · Officially unsupported",
     "statusCenter.title": "Status Center",
     "statusCenter.description": "Operate incidents, maintenance, notifications, overrides, and audit history from one guarded workspace.",
     "statusCenter.tabs.label": "Status Center sections",
@@ -6020,10 +6019,14 @@
     "statusCenter.actor.automation": "Automation",
     "statusCenter.actor.admin": "Administrator",
     "statusCenter.actor.root": "Root operator",
-    "statusCenter.actor.system": "System"
-,
+    "statusCenter.actor.system": "System",
     "5-hour window limit": "5-hour window limit",
     "7-day window limit": "7-day window limit",
-    "0 disables this window limit. The value is converted to quota units when saved.": "0 disables this window limit. The value is converted to quota units when saved."
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 disables this window limit. The value is converted to quota units when saved.",
+    "Choose a group for the selected API keys.": "Choose a group for the selected API keys.",
+    "Failed to update selected API key groups": "Failed to update selected API key groups",
+    "Update group": "Update group",
+    "Update group for {{count}} API key(s)": "Update group for {{count}} API key(s)",
+    "Updated the group for {{count}} API key(s)": "Updated the group for {{count}} API key(s)"
   }
 }

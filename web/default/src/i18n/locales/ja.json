@@ -5835,8 +5835,7 @@
     "Anthropic Compatible": "Anthropic互換",
     "Gemini Compatible": "Gemini互換",
     "This model cannot be called because upstreams no longer support it.": "このモデルは上流でサポート終了のため呼び出せません。",
-    "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了"
-,
+    "Not callable · Officially unsupported": "呼び出し不可 · 公式サポート終了",
     "statusCenter.title": "ステータスセンター",
     "statusCenter.description": "保護されたワークスペースでインシデント、メンテナンス、通知、上書き、監査を管理します。",
     "statusCenter.tabs.label": "ステータスセンターのセクション",
@@ -6020,10 +6019,14 @@
     "statusCenter.actor.automation": "自動化",
     "statusCenter.actor.admin": "管理者",
     "statusCenter.actor.root": "Root オペレーター",
-    "statusCenter.actor.system": "システム"
-,
+    "statusCenter.actor.system": "システム",
     "5-hour window limit": "5時間ウィンドウ上限",
     "7-day window limit": "7日間ウィンドウ上限",
-    "0 disables this window limit. The value is converted to quota units when saved.": "0 でこのウィンドウ制限を無効にします。保存時にクォータ単位へ換算されます。"
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 でこのウィンドウ制限を無効にします。保存時にクォータ単位へ換算されます。",
+    "Choose a group for the selected API keys.": "選択した API キーのグループを選択してください。",
+    "Failed to update selected API key groups": "選択した API キーのグループを更新できませんでした",
+    "Update group": "グループを更新",
+    "Update group for {{count}} API key(s)": "{{count}} 個の API キーのグループを更新",
+    "Updated the group for {{count}} API key(s)": "{{count}} 個の API キーのグループを更新しました"
   }
 }

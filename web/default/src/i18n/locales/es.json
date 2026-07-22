@@ -5835,8 +5835,7 @@
     "Anthropic Compatible": "Compatible con Anthropic",
     "Gemini Compatible": "Compatible con Gemini",
     "This model cannot be called because upstreams no longer support it.": "Este modelo no se puede invocar porque los proveedores ascendentes ya no lo admiten.",
-    "Not callable · Officially unsupported": "No invocable · Ya no cuenta con soporte oficial"
-,
+    "Not callable · Officially unsupported": "No invocable · Ya no cuenta con soporte oficial",
     "statusCenter.title": "Centro de estado",
     "statusCenter.description": "Gestiona incidentes, mantenimiento, notificaciones, anulaciones y auditoría desde un espacio protegido.",
     "statusCenter.tabs.label": "Secciones del Centro de estado",
@@ -6020,10 +6019,14 @@
     "statusCenter.actor.automation": "Automatización",
     "statusCenter.actor.admin": "Administrador",
     "statusCenter.actor.root": "Operador Root",
-    "statusCenter.actor.system": "Sistema"
-,
+    "statusCenter.actor.system": "Sistema",
     "5-hour window limit": "Límite de ventana de 5 horas",
     "7-day window limit": "Límite de ventana de 7 días",
-    "0 disables this window limit. The value is converted to quota units when saved.": "0 desactiva este límite de ventana. El valor se convierte a unidades de cuota al guardar."
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 desactiva este límite de ventana. El valor se convierte a unidades de cuota al guardar.",
+    "Choose a group for the selected API keys.": "Elige un grupo para las claves de API seleccionadas.",
+    "Failed to update selected API key groups": "No se pudieron actualizar los grupos de las claves de API seleccionadas",
+    "Update group": "Actualizar grupo",
+    "Update group for {{count}} API key(s)": "Actualizar el grupo de {{count}} clave(s) de API",
+    "Updated the group for {{count}} API key(s)": "Se actualizó el grupo de {{count}} clave(s) de API"
   }
 }

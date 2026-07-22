@@ -5835,8 +5835,7 @@
     "Anthropic Compatible": "Tương thích Anthropic",
     "Gemini Compatible": "Tương thích Gemini",
     "This model cannot be called because upstreams no longer support it.": "Không thể gọi mô hình này vì nhà cung cấp thượng nguồn không còn hỗ trợ.",
-    "Not callable · Officially unsupported": "Không thể gọi · Không còn được hỗ trợ chính thức"
-,
+    "Not callable · Officially unsupported": "Không thể gọi · Không còn được hỗ trợ chính thức",
     "statusCenter.title": "Trung tâm trạng thái",
     "statusCenter.description": "Quản lý sự cố, bảo trì, thông báo, ghi đè và lịch sử kiểm toán trong một không gian được bảo vệ.",
     "statusCenter.tabs.label": "Các mục của Trung tâm trạng thái",
@@ -6020,10 +6019,14 @@
     "statusCenter.actor.automation": "Tự động hóa",
     "statusCenter.actor.admin": "Quản trị viên",
     "statusCenter.actor.root": "Người vận hành Root",
-    "statusCenter.actor.system": "Hệ thống"
-,
+    "statusCenter.actor.system": "Hệ thống",
     "5-hour window limit": "Giới hạn cửa sổ 5 giờ",
     "7-day window limit": "Giới hạn cửa sổ 7 ngày",
-    "0 disables this window limit. The value is converted to quota units when saved.": "0 sẽ tắt giới hạn cửa sổ này. Giá trị được quy đổi sang đơn vị hạn mức khi lưu."
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 sẽ tắt giới hạn cửa sổ này. Giá trị được quy đổi sang đơn vị hạn mức khi lưu.",
+    "Choose a group for the selected API keys.": "Chọn một nhóm cho các khóa API đã chọn.",
+    "Failed to update selected API key groups": "Không thể cập nhật nhóm cho các khóa API đã chọn",
+    "Update group": "Cập nhật nhóm",
+    "Update group for {{count}} API key(s)": "Cập nhật nhóm cho {{count}} khóa API",
+    "Updated the group for {{count}} API key(s)": "Đã cập nhật nhóm cho {{count}} khóa API"
   }
 }

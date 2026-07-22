@@ -5835,8 +5835,7 @@
     "Anthropic Compatible": "Совместимо с Anthropic",
     "Gemini Compatible": "Совместимо с Gemini",
     "This model cannot be called because upstreams no longer support it.": "Эту модель нельзя вызвать, поскольку вышестоящие поставщики больше её не поддерживают.",
-    "Not callable · Officially unsupported": "Вызов недоступен · Официальная поддержка прекращена"
-,
+    "Not callable · Officially unsupported": "Вызов недоступен · Официальная поддержка прекращена",
     "statusCenter.title": "Центр состояния",
     "statusCenter.description": "Управляйте инцидентами, обслуживанием, уведомлениями, переопределениями и аудитом в защищённом пространстве.",
     "statusCenter.tabs.label": "Разделы Центра состояния",
@@ -6020,10 +6019,14 @@
     "statusCenter.actor.automation": "Автоматизация",
     "statusCenter.actor.admin": "Администратор",
     "statusCenter.actor.root": "Оператор Root",
-    "statusCenter.actor.system": "Система"
-,
+    "statusCenter.actor.system": "Система",
     "5-hour window limit": "Лимит 5-часового окна",
     "7-day window limit": "Лимит 7-дневного окна",
-    "0 disables this window limit. The value is converted to quota units when saved.": "0 отключает этот лимит окна. При сохранении значение конвертируется в единицы квоты."
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 отключает этот лимит окна. При сохранении значение конвертируется в единицы квоты.",
+    "Choose a group for the selected API keys.": "Выберите группу для выбранных API-ключей.",
+    "Failed to update selected API key groups": "Не удалось обновить группы выбранных API-ключей",
+    "Update group": "Обновить группу",
+    "Update group for {{count}} API key(s)": "Обновить группу для {{count}} API-ключей",
+    "Updated the group for {{count}} API key(s)": "Группа обновлена для {{count}} API-ключей"
   }
 }

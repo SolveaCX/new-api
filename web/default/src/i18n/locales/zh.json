@@ -5835,8 +5835,7 @@
     "Anthropic Compatible": "Anthropic 兼容",
     "Gemini Compatible": "Gemini 兼容",
     "This model cannot be called because upstreams no longer support it.": "该模型已不再受上游支持，无法调用。",
-    "Not callable · Officially unsupported": "不可调用 · 官方不再支持"
-,
+    "Not callable · Officially unsupported": "不可调用 · 官方不再支持",
     "statusCenter.title": "状态中心",
     "statusCenter.description": "在一个受控工作区中处理事件、维护、通知、状态覆盖和审计记录。",
     "statusCenter.tabs.label": "状态中心分区",
@@ -6020,10 +6019,14 @@
     "statusCenter.actor.automation": "自动化",
     "statusCenter.actor.admin": "管理员",
     "statusCenter.actor.root": "Root 操作员",
-    "statusCenter.actor.system": "系统"
-,
+    "statusCenter.actor.system": "系统",
     "5-hour window limit": "5 小时窗口上限",
     "7-day window limit": "7 天窗口上限",
-    "0 disables this window limit. The value is converted to quota units when saved.": "0 表示不启用该窗口限制。保存时会按当前显示金额换算为额度单位。"
+    "0 disables this window limit. The value is converted to quota units when saved.": "0 表示不启用该窗口限制。保存时会按当前显示金额换算为额度单位。",
+    "Choose a group for the selected API keys.": "请选择所选 API 密钥要使用的分组。",
+    "Failed to update selected API key groups": "无法更新所选 API 密钥的分组",
+    "Update group": "更新分组",
+    "Update group for {{count}} API key(s)": "更新 {{count}} 个 API 密钥的分组",
+    "Updated the group for {{count}} API key(s)": "已更新 {{count}} 个 API 密钥的分组"
   }
 }
