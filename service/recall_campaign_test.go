@@ -514,6 +514,39 @@ func TestRecallCampaignDraftSerializesEmptySpecifiedAudienceLists(t *testing.T) 
 	require.Contains(t, campaign.AudienceConfig, `"specified_emails":[]`)
 }
 
+func TestRecallCampaignSaveAndUpdateDraftAllowNewAudienceTemplates(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	service.now = func() time.Time { return now }
+
+	tests := []struct {
+		template string
+		audience RecallAudienceConfig
+	}{
+		{template: "registered_only", audience: RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}},
+		{template: "specified_users", audience: RecallAudienceConfig{SpecifiedUserIDs: []int{7}}},
+	}
+	for _, test := range tests {
+		t.Run(test.template, func(t *testing.T) {
+			draft := validRecallCampaignDraft(now)
+			draft.Name = "Persist " + test.template
+			draft.AudienceTemplate = test.template
+			draft.Audience = test.audience
+			campaign, err := service.SaveDraft(context.Background(), 7, draft)
+			require.NoError(t, err)
+
+			draft.Name = "Updated " + test.template
+			updated, err := service.UpdateDraft(context.Background(), 7, campaign.Id, draft)
+
+			require.NoError(t, err)
+			require.Equal(t, draft.Name, updated.Name)
+			require.Equal(t, test.template, updated.AudienceTemplate)
+		})
+	}
+}
+
 func TestRecallCampaignSaveDraftTranslatesAndPersistsAllLanguages(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)
@@ -1142,6 +1175,77 @@ func TestRecallCampaignPreviewValidatesExistingCouponWithGET(t *testing.T) {
 	require.Equal(t, "coupon_existing", preview.CouponID)
 	require.Equal(t, 1, calls.getCoupon)
 	require.Zero(t, calls.createCoupon)
+}
+
+func TestRecallCampaignActivationRejectsNewTemplatesBeforeStripeAndStateChange(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	service.now = func() time.Time { return now }
+
+	tests := []struct {
+		name      string
+		template  string
+		audience  RecallAudienceConfig
+		configure func(*RecallCampaignDraft)
+	}{
+		{name: "registered manual", template: "registered_only", audience: RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}},
+		{name: "registered scheduled once", template: "registered_only", audience: RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}, configure: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "scheduled_once"
+			d.Schedule.ScheduledAt = now.Add(time.Hour).Unix()
+		}},
+		{name: "registered recurring", template: "registered_only", audience: RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}, configure: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "recurring"
+			d.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9}
+		}},
+		{name: "specified manual", template: "specified_users", audience: RecallAudienceConfig{SpecifiedUserIDs: []int{7}}},
+		{name: "specified scheduled once", template: "specified_users", audience: RecallAudienceConfig{SpecifiedEmails: []string{"ops@example.com"}}, configure: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "scheduled_once"
+			d.Schedule.ScheduledAt = now.Add(time.Hour).Unix()
+		}},
+		{name: "specified recurring", template: "specified_users", audience: RecallAudienceConfig{SpecifiedUserIDs: []int{7}}, configure: func(d *RecallCampaignDraft) {
+			d.ExecutionMode = "recurring"
+			d.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			draft := validRecallCampaignDraft(now)
+			draft.AudienceTemplate = test.template
+			draft.Audience = test.audience
+			if test.configure != nil {
+				test.configure(&draft)
+			}
+			calls := &recallCampaignStripeCalls{}
+			service.stripe = newRecallCampaignStripeService(t, calls)
+			campaign, err := service.SaveDraft(context.Background(), 7, draft)
+			require.NoError(t, err)
+			beforeActivation, err := model.GetRecallCampaignByID(campaign.Id)
+			require.NoError(t, err)
+
+			err = service.Activate(context.Background(), 7, campaign.Id)
+
+			require.ErrorContains(t, err, "not supported by recall audience selector")
+			require.Zero(t, calls.getPrice, "activation must reject before Stripe product validation")
+			require.Zero(t, calls.createCoupon, "activation must reject before Stripe coupon creation")
+			stored, err := model.GetRecallCampaignByID(campaign.Id)
+			require.NoError(t, err)
+			require.Equal(t, model.RecallCampaignDraft, stored.Status)
+			require.Empty(t, stored.StripeCouponId)
+			require.Equal(t, beforeActivation.ScheduledAt, stored.ScheduledAt)
+			require.Equal(t, beforeActivation.NextRunAt, stored.NextRunAt)
+			var recipientCount int64
+			var messageCount int64
+			var eventCount int64
+			require.NoError(t, db.Model(&model.RecallRecipient{}).Count(&recipientCount).Error)
+			require.NoError(t, db.Model(&model.RecallMessage{}).Count(&messageCount).Error)
+			require.NoError(t, db.Model(&model.RecallEvent{}).Count(&eventCount).Error)
+			require.Zero(t, recipientCount)
+			require.Zero(t, messageCount)
+			require.Zero(t, eventCount)
+		})
+	}
 }
 
 func TestRecallCampaignManualActivationSnapshotsOnce(t *testing.T) {
