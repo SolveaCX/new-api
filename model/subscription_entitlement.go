@@ -139,6 +139,7 @@ func rotateCurrentEntitlementTx(tx *gorm.DB, input GrantEntitlementInput) (*Gran
 		AccessEndTime:     input.PeriodEnd,
 		Status:            SubscriptionEntitlementStatusActive,
 		Source:            input.Source,
+		PaymentMode:       input.PaymentMode,
 		UpgradeGroup:      strings.TrimSpace(plan.UpgradeGroup),
 	}
 	if err := tx.Create(sub).Error; err != nil {
@@ -225,7 +226,14 @@ func grantMatchesInput(existing *UserSubscription, input GrantEntitlementInput) 
 	return existing != nil &&
 		existing.ContractId == input.ContractId &&
 		existing.UserId == input.UserId &&
-		existing.PlanId == input.PlanId
+		existing.PlanId == input.PlanId &&
+		existing.ProviderBindingId == input.ProviderBindingId &&
+		existing.AmountTotal == input.AmountTotal &&
+		existing.StartTime == input.PeriodStart &&
+		existing.EndTime == input.PeriodEnd &&
+		existing.AccessEndTime == input.PeriodEnd &&
+		normalizeSubscriptionPaymentMode(existing.PaymentMode) == input.PaymentMode &&
+		strings.TrimSpace(existing.Source) == input.Source
 }
 
 func applyEntitlementGroupChangeTx(tx *gorm.DB, contract *UserSubscriptionContract, plan *SubscriptionPlan, userId int, contractUpdates map[string]interface{}) error {
@@ -264,7 +272,7 @@ func contractAllowsEntitlementConsumption(status string) bool {
 	}
 }
 
-func findContractCurrentEntitlementForUserTx(tx *gorm.DB, userId int, now int64, lock bool) (*UserSubscription, bool, error) {
+func findContractCurrentEntitlementForUserTx(tx *gorm.DB, userId int, now int64, lock bool) (*UserSubscription, bool, string, error) {
 	if tx == nil {
 		tx = DB
 	}
@@ -272,15 +280,15 @@ func findContractCurrentEntitlementForUserTx(tx *gorm.DB, userId int, now int64,
 	query := tx.Where("user_id = ?", userId).Limit(1).Find(&contract)
 	if query.Error != nil {
 		if isMissingSubscriptionLifecycleTableError(query.Error) {
-			return nil, false, nil
+			return nil, false, "", nil
 		}
-		return nil, false, query.Error
+		return nil, false, "", query.Error
 	}
 	if query.RowsAffected == 0 {
-		return nil, false, nil
+		return nil, false, "", nil
 	}
 	if !contractAllowsEntitlementConsumption(contract.Status) || contract.CurrentEntitlementId <= 0 {
-		return nil, true, nil
+		return nil, true, contract.Status, nil
 	}
 
 	subQuery := tx
@@ -298,37 +306,37 @@ func findContractCurrentEntitlementForUserTx(tx *gorm.DB, userId int, now int64,
 		now,
 	).Limit(1).Find(&sub)
 	if entitlementQuery.Error != nil {
-		return nil, true, entitlementQuery.Error
+		return nil, true, contract.Status, entitlementQuery.Error
 	}
 	if entitlementQuery.RowsAffected == 0 {
-		return nil, true, nil
+		return nil, true, contract.Status, nil
 	}
-	return &sub, true, nil
+	return &sub, true, contract.Status, nil
 }
 
-func getPreConsumableSubscriptionCandidatesTx(tx *gorm.DB, userId int, now int64) ([]UserSubscription, bool, error) {
-	current, hasContract, err := findContractCurrentEntitlementForUserTx(tx, userId, now, true)
+func getPreConsumableSubscriptionCandidatesTx(tx *gorm.DB, userId int, now int64) ([]UserSubscription, bool, string, error) {
+	current, hasContract, contractStatus, err := findContractCurrentEntitlementForUserTx(tx, userId, now, true)
 	if err != nil {
-		return nil, hasContract, err
+		return nil, hasContract, contractStatus, err
 	}
 	if hasContract {
 		if current == nil {
-			return nil, true, nil
+			return nil, true, contractStatus, nil
 		}
-		return []UserSubscription{*current}, true, nil
+		return []UserSubscription{*current}, true, contractStatus, nil
 	}
 	var subs []UserSubscription
 	if err := lockQuery(tx).
 		Where("user_id = ? AND status = ? AND end_time > ?", userId, SubscriptionEntitlementStatusActive, now).
 		Order("end_time asc, id asc").
 		Find(&subs).Error; err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
-	return subs, false, nil
+	return subs, false, "", nil
 }
 
 func hasActiveUserSubscriptionTx(tx *gorm.DB, userId int, now int64) (bool, error) {
-	current, hasContract, err := findContractCurrentEntitlementForUserTx(tx, userId, now, false)
+	current, hasContract, _, err := findContractCurrentEntitlementForUserTx(tx, userId, now, false)
 	if err != nil {
 		return false, err
 	}

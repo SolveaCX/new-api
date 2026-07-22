@@ -575,7 +575,8 @@ type UserSubscription struct {
 	EndReason     string `json:"end_reason" gorm:"type:varchar(64);default:''"`
 	Status        string `json:"status" gorm:"type:varchar(32);index;index:idx_user_sub_active,priority:2"` // active/expired/cancelled
 
-	Source string `json:"source" gorm:"type:varchar(32);default:'order'"` // order/admin
+	Source      string `json:"source" gorm:"type:varchar(32);default:'order'"` // order/admin
+	PaymentMode string `json:"payment_mode" gorm:"type:varchar(32);default:''"`
 
 	LastResetTime int64 `json:"last_reset_time" gorm:"type:bigint;default:0"`
 	NextResetTime int64 `json:"next_reset_time" gorm:"type:bigint;default:0;index"`
@@ -611,6 +612,7 @@ func (s *UserSubscription) normalizeLifecycleFields() {
 		}
 	}
 	s.EndReason = strings.TrimSpace(s.EndReason)
+	s.PaymentMode = normalizeSubscriptionPaymentMode(s.PaymentMode)
 }
 
 type SubscriptionSummary struct {
@@ -1481,33 +1483,27 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			if existing.Status == "refunded" {
 				return errors.New("subscription pre-consume already refunded")
 			}
-			var sub UserSubscription
-			if err := tx.Where("id = ?", existing.UserSubscriptionId).First(&sub).Error; err != nil {
-				return err
-			}
-			returnValue.UserSubscriptionId = sub.Id
-			returnValue.PreConsumed = existing.PreConsumed
-			returnValue.AmountTotal = sub.AmountTotal
-			returnValue.AmountUsedBefore = sub.AmountUsed
-			returnValue.AmountUsedAfter = sub.AmountUsed
-			return nil
+			return fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, existing)
 		}
 
-		subs, hasContract, err := getPreConsumableSubscriptionCandidatesTx(tx, userId, now)
+		subs, hasContract, contractStatus, err := getPreConsumableSubscriptionCandidatesTx(tx, userId, now)
 		if err != nil {
 			return err
 		}
 		if len(subs) == 0 {
 			return noActiveSubscriptionError(hasContract)
 		}
+		allowReset := !hasContract || normalizeSubscriptionContractStatus(contractStatus) != SubscriptionContractStatusGrace
 		for _, candidate := range subs {
 			sub := candidate
 			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
 			if err != nil {
 				return err
 			}
-			if err := maybeResetUserSubscriptionWithPlanTx(tx, &sub, plan, now); err != nil {
-				return err
+			if allowReset {
+				if err := maybeResetUserSubscriptionWithPlanTx(tx, &sub, plan, now); err != nil {
+					return err
+				}
 			}
 			usedBefore := sub.AmountUsed
 			if sub.AmountTotal > 0 {
@@ -1529,12 +1525,7 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 					if dup.Status == "refunded" {
 						return errors.New("subscription pre-consume already refunded")
 					}
-					returnValue.UserSubscriptionId = sub.Id
-					returnValue.PreConsumed = dup.PreConsumed
-					returnValue.AmountTotal = sub.AmountTotal
-					returnValue.AmountUsedBefore = sub.AmountUsed
-					returnValue.AmountUsedAfter = sub.AmountUsed
-					return nil
+					return fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, dup)
 				}
 				return err
 			}
@@ -1555,6 +1546,22 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		return nil, err
 	}
 	return returnValue, nil
+}
+
+func fillSubscriptionPreConsumeReturnFromRecordTx(tx *gorm.DB, out *SubscriptionPreConsumeResult, record SubscriptionPreConsumeRecord) error {
+	if tx == nil || out == nil {
+		return errors.New("invalid subscription pre-consume return args")
+	}
+	var sub UserSubscription
+	if err := tx.Where("id = ?", record.UserSubscriptionId).First(&sub).Error; err != nil {
+		return err
+	}
+	out.UserSubscriptionId = sub.Id
+	out.PreConsumed = record.PreConsumed
+	out.AmountTotal = sub.AmountTotal
+	out.AmountUsedBefore = sub.AmountUsed
+	out.AmountUsedAfter = sub.AmountUsed
+	return nil
 }
 
 // RefundSubscriptionPreConsume is idempotent and refunds pre-consumed subscription quota by requestId.

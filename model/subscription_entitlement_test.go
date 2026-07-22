@@ -150,6 +150,26 @@ func TestSubscriptionEntitlementGrantIdempotentAndConflict(t *testing.T) {
 	conflict := grantInput(9311, 9111, 9212, "stripe:idempotent", 200, 300)
 	_, err = RotateCurrentEntitlement(conflict)
 	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+
+	amountConflict := input
+	amountConflict.AmountTotal = input.AmountTotal + 1
+	_, err = RotateCurrentEntitlement(amountConflict)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+
+	periodConflict := input
+	periodConflict.PeriodEnd = input.PeriodEnd + 10
+	_, err = RotateCurrentEntitlement(periodConflict)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+
+	sourceConflict := input
+	sourceConflict.Source = "manual"
+	_, err = RotateCurrentEntitlement(sourceConflict)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+
+	paymentModeConflict := input
+	paymentModeConflict.PaymentMode = SubscriptionPaymentModeBalanceOnePeriod
+	_, err = RotateCurrentEntitlement(paymentModeConflict)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
 }
 
 func TestSubscriptionPreConsumeContractCurrentEntitlement(t *testing.T) {
@@ -288,6 +308,48 @@ func TestSubscriptionPreConsumeContractCurrentEntitlement(t *testing.T) {
 
 		_, err = PreConsumeUserSubscription("no-stack-on-insufficient", 9124, "gpt-test", 0, 999)
 		require.Error(t, err)
+	})
+
+	t.Run("grace does not reset amount used when reset is due", func(t *testing.T) {
+		setupSubscriptionEntitlementTestDB(t)
+		createEntitlementTestUser(t, 9125, "plg")
+		plan := createEntitlementTestPlan(t, 9227, 100, "")
+		require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+			"quota_reset_period":         SubscriptionResetCustom,
+			"quota_reset_custom_seconds": int64(10),
+		}).Error)
+		now := GetDBTimestamp()
+		current := UserSubscription{
+			UserId:        9125,
+			PlanId:        9227,
+			ContractId:    9325,
+			CurrentSlot:   currentSlotPtr(),
+			AmountTotal:   100,
+			AmountUsed:    90,
+			StartTime:     now - 100,
+			EndTime:       now + 100,
+			AccessEndTime: now + 100,
+			LastResetTime: now - 100,
+			NextResetTime: now - 90,
+			Status:        "active",
+		}
+		require.NoError(t, DB.Create(&current).Error)
+		require.NoError(t, DB.Create(&UserSubscriptionContract{
+			Id:                   9325,
+			UserId:               9125,
+			Status:               SubscriptionContractStatusGrace,
+			CurrentEntitlementId: current.Id,
+			CurrentPlanId:        9227,
+		}).Error)
+
+		res, err := PreConsumeUserSubscription("grace-no-reset", 9125, "gpt-test", 0, 5)
+		require.NoError(t, err)
+		require.Equal(t, current.Id, res.UserSubscriptionId)
+
+		var after UserSubscription
+		require.NoError(t, DB.First(&after, "id = ?", current.Id).Error)
+		require.EqualValues(t, 95, after.AmountUsed)
+		require.EqualValues(t, now-90, after.NextResetTime)
 	})
 }
 
