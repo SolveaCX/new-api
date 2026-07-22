@@ -128,7 +128,7 @@ export function prepareRecallCampaignSubmitDraft(
       ...stage,
       templates: Object.fromEntries(
         Object.entries(stage.templates).map(([locale, template]) => {
-          if (locale !== 'en') return [locale, template]
+          if (locale !== 'en') return [locale, { ...template }]
           const bodyHtml = template.body_html?.trim()
           if (bodyHtml) {
             return [

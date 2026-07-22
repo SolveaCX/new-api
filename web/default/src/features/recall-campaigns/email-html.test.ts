@@ -19,9 +19,10 @@ describe('recall email HTML helpers', () => {
   })
 
   test('provides editable starter HTML with required action links', () => {
-    expect(RECALL_EMAIL_STARTER_HTML).toContain('https://example.com')
+    expect(RECALL_EMAIL_STARTER_HTML).not.toContain('example.com')
     expect(RECALL_EMAIL_STARTER_HTML).toContain('href="{{.ClaimURL}}"')
     expect(RECALL_EMAIL_STARTER_HTML).toContain('href="{{.UnsubscribeURL}}"')
+    expect([...RECALL_EMAIL_STARTER_HTML.matchAll(/\shref="/g)]).toHaveLength(2)
   })
 
   test('converts legacy text paragraphs into escaped editable HTML', () => {
