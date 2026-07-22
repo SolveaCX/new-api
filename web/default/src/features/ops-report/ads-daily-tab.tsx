@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -53,10 +53,10 @@ const MATCH_LABELS: Record<string, string> = {
 // Landing-page thumbnail, loaded through the app's same-origin proxy
 // (/api/data/ops_report_landing_thumb) so the browser never talks to the
 // screenshot service directly. Fetched as a blob because <img> cannot carry
-// the console's auth header. While the screenshot service is still generating
-// it returns a GIF placeholder — keep polling until the real image lands.
-// The query holds the Blob; the object URL lives in an effect so every
-// replaced/unmounted URL is revoked and polling can't accumulate blobs.
+// the console's auth header, then converted to a data URL inside the query —
+// plain data with no object-URL lifecycle to leak, safe under concurrent
+// rendering. While the screenshot service is still generating it returns a
+// GIF placeholder — keep polling until the real image lands.
 function LandingThumbImg(props: { url: string; className: string }) {
   const thumbQuery = useQuery({
     queryKey: ['ops-landing-thumb', props.url],
@@ -65,27 +65,26 @@ function LandingThumbImg(props: { url: string; className: string }) {
         params: { url: props.url, width: 320 },
         responseType: 'blob',
       })
-      return res.data as Blob
+      const blob = res.data as Blob
+      const src = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(blob)
+      })
+      return {
+        src,
+        placeholder: blob.type.toLowerCase().startsWith('image/gif'),
+      }
     },
     staleTime: Infinity,
     retry: 1,
-    refetchInterval: (query) =>
-      query.state.data?.type.startsWith('image/gif') ? 8000 : false,
+    refetchInterval: (query) => (query.state.data?.placeholder ? 8000 : false),
   })
-  const blob = thumbQuery.data
-  const src = useMemo(
-    () => (blob ? URL.createObjectURL(blob) : undefined),
-    [blob]
-  )
-  useEffect(() => {
-    return () => {
-      if (src) URL.revokeObjectURL(src)
-    }
-  }, [src])
-  if (!src) {
+  if (!thumbQuery.data) {
     return <div className={`bg-muted animate-pulse ${props.className}`} />
   }
-  return <img src={src} alt='' className={props.className} />
+  return <img src={thumbQuery.data.src} alt='' className={props.className} />
 }
 
 // row tinting per change type, readable in light and dark themes
