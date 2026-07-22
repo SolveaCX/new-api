@@ -24,7 +24,14 @@ type BillingPreferenceRequest struct {
 }
 
 type SubscriptionBalancePayRequest struct {
-	PlanId int `json:"plan_id"`
+	PlanId    int    `json:"plan_id"`
+	RequestId string `json:"request_id"`
+}
+
+type ChangeSubscriptionPlanRequest struct {
+	PlanId      int    `json:"plan_id"`
+	PaymentMode string `json:"payment_mode"`
+	RequestId   string `json:"request_id"`
 }
 
 type RecurringSubscriptionDTO struct {
@@ -162,11 +169,69 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 		return
 	}
 
-	if err := model.PurchaseSubscriptionWithBalance(userId, req.PlanId); err != nil {
+	requestID := strings.TrimSpace(req.RequestId)
+	if requestID == "" {
+		requestID = "legacy-balance-pay-" + common.GetRandomString(16)
+	}
+	result, err := service.ChangeSubscriptionPlan(service.ChangePlanCommand{
+		UserID:      userId,
+		PlanID:      req.PlanId,
+		PaymentMode: model.SubscriptionPaymentModeBalanceOnePeriod,
+		RequestID:   requestID,
+	})
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, nil)
+	common.ApiSuccess(c, result)
+}
+
+func ChangeSubscriptionPlan(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+
+	userId := c.GetInt("id")
+	var req ChangeSubscriptionPlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
+		common.ApiErrorMsg(c, "鍙傛暟閿欒")
+		return
+	}
+	req.RequestId = strings.TrimSpace(req.RequestId)
+	req.PaymentMode = strings.TrimSpace(req.PaymentMode)
+	if !isStableSubscriptionRequestID(req.RequestId) {
+		common.ApiErrorMsg(c, "request_id is required")
+		return
+	}
+	if req.PaymentMode == "" {
+		common.ApiErrorMsg(c, "payment_mode is required")
+		return
+	}
+
+	result, err := service.ChangeSubscriptionPlan(service.ChangePlanCommand{
+		UserID:      userId,
+		PlanID:      req.PlanId,
+		PaymentMode: req.PaymentMode,
+		RequestID:   req.RequestId,
+	})
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, result)
+}
+
+func isStableSubscriptionRequestID(requestID string) bool {
+	if len(requestID) < 8 || len(requestID) > 128 {
+		return false
+	}
+	for _, r := range requestID {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // ---- Admin APIs ----

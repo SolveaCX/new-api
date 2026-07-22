@@ -63,6 +63,10 @@ func RotateCurrentEntitlement(input GrantEntitlementInput) (*GrantEntitlementRes
 	return result, nil
 }
 
+func RotateCurrentEntitlementTx(tx *gorm.DB, input GrantEntitlementInput) (*GrantEntitlementResult, error) {
+	return rotateCurrentEntitlementTx(tx, input)
+}
+
 func rotateCurrentEntitlementTx(tx *gorm.DB, input GrantEntitlementInput) (*GrantEntitlementResult, error) {
 	if tx == nil {
 		return nil, errors.New("tx is nil")

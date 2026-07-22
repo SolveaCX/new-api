@@ -575,7 +575,7 @@ type UserSubscription struct {
 	EndReason     string `json:"end_reason" gorm:"type:varchar(64);default:''"`
 	Status        string `json:"status" gorm:"type:varchar(32);index;index:idx_user_sub_active,priority:2"` // active/expired/cancelled
 
-	Source      string `json:"source" gorm:"type:varchar(32);default:'order'"` // order/admin
+	Source      string `json:"source" gorm:"type:varchar(32);default:'order'"` // order/admin/balance/stripe/subscription
 	PaymentMode string `json:"payment_mode" gorm:"type:varchar(32);default:''"`
 
 	LastResetTime int64 `json:"last_reset_time" gorm:"type:bigint;default:0"`

@@ -65,6 +65,7 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM top_ups")
+		model.DB.Exec("DELETE FROM user_subscription_contracts")
 		model.DB.Exec("DELETE FROM user_subscriptions")
 	})
 }
