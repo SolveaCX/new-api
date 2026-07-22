@@ -9,6 +9,8 @@ import type { RecallCampaignDraft } from '../types'
 import {
   CampaignEmailHtmlEditor,
   RecallEmailPreviewFrame,
+  clearRecallEmailPreviewError,
+  shouldApplyRecallEmailPreviewResult,
 } from './campaign-email-html-editor'
 
 const testI18n = createInstance()
@@ -111,6 +113,71 @@ beforeAll(async () => {
     fallbackLng: 'en',
     resources: { en: { translation: {} } },
     interpolation: { escapeValue: false },
+  })
+})
+
+describe('recall email preview race guard', () => {
+  const latest = {
+    requestId: 2,
+    subject: 'Current subject',
+    bodyHTML: '<p>Current body</p>',
+  }
+
+  test('ignores stale success and stale error when current values changed', () => {
+    expect(
+      shouldApplyRecallEmailPreviewResult({
+        candidate: latest,
+        latest,
+        currentSubject: 'Edited subject',
+        currentBodyHTML: latest.bodyHTML,
+      })
+    ).toBe(false)
+    expect(
+      shouldApplyRecallEmailPreviewResult({
+        candidate: latest,
+        latest,
+        currentSubject: latest.subject,
+        currentBodyHTML: '<p>Edited body</p>',
+      })
+    ).toBe(false)
+  })
+
+  test('ignores rapid out-of-order A when B is the latest request', () => {
+    expect(
+      shouldApplyRecallEmailPreviewResult({
+        candidate: {
+          requestId: 1,
+          subject: 'Older subject',
+          bodyHTML: '<p>Older body</p>',
+        },
+        latest,
+        currentSubject: latest.subject,
+        currentBodyHTML: latest.bodyHTML,
+      })
+    ).toBe(false)
+  })
+
+  test('accepts unchanged latest success and error results', () => {
+    expect(
+      shouldApplyRecallEmailPreviewResult({
+        candidate: latest,
+        latest,
+        currentSubject: latest.subject,
+        currentBodyHTML: latest.bodyHTML,
+      })
+    ).toBe(true)
+  })
+
+  test('clears backend errors for local validation without removing last preview', () => {
+    expect(
+      clearRecallEmailPreviewError({
+        previewHTML: '<p>Last successful preview</p>',
+        latestError: 'Previous backend error',
+      })
+    ).toEqual({
+      previewHTML: '<p>Last successful preview</p>',
+      latestError: '',
+    })
   })
 })
 

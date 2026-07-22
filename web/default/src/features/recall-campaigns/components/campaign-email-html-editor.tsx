@@ -20,6 +20,41 @@ interface RecallEmailPreviewFrameProps {
   errorMessage: string
 }
 
+interface RecallEmailPreviewSnapshot {
+  requestId: number
+  subject: string
+  bodyHTML: string
+}
+
+interface RecallEmailPreviewState {
+  previewHTML: string
+  latestError: string
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function shouldApplyRecallEmailPreviewResult(props: {
+  candidate: RecallEmailPreviewSnapshot
+  latest: RecallEmailPreviewSnapshot | null
+  currentSubject: string
+  currentBodyHTML: string
+}): boolean {
+  return (
+    props.latest !== null &&
+    props.candidate.requestId === props.latest.requestId &&
+    props.candidate.subject === props.latest.subject &&
+    props.candidate.bodyHTML === props.latest.bodyHTML &&
+    props.currentSubject === props.candidate.subject &&
+    props.currentBodyHTML === props.candidate.bodyHTML
+  )
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function clearRecallEmailPreviewError(
+  state: RecallEmailPreviewState
+): RecallEmailPreviewState {
+  return { ...state, latestError: '' }
+}
+
 function getRecallEditorErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
   return 'Recall email preview failed'
@@ -54,8 +89,14 @@ export function CampaignEmailHtmlEditor(
 ): React.JSX.Element {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const [previewHTML, setPreviewHTML] = useState('')
-  const [latestError, setLatestError] = useState('')
+  const previewRequestIdRef = useRef(0)
+  const latestPreviewRequestRef = useRef<RecallEmailPreviewSnapshot | null>(
+    null
+  )
+  const [previewState, setPreviewState] = useState<RecallEmailPreviewState>({
+    previewHTML: '',
+    latestError: '',
+  })
   const subjectPath =
     `email_sequence.${props.index}.templates.en.subject` as FieldPath<RecallCampaignDraft>
   const bodyPath =
@@ -102,19 +143,49 @@ export function CampaignEmailHtmlEditor(
   }
 
   const previewEmail = async () => {
+    setPreviewState(clearRecallEmailPreviewError)
     const valid = await props.form.trigger([subjectPath, bodyPath])
     if (!valid) return
+    const snapshot = {
+      requestId: (previewRequestIdRef.current += 1),
+      subject: String(props.form.getValues(subjectPath) ?? ''),
+      bodyHTML: String(props.form.getValues(bodyPath) ?? ''),
+    }
+    latestPreviewRequestRef.current = snapshot
     try {
-      setLatestError('')
       const response = await previewMutation.mutateAsync({
         template: {
-          subject: String(props.form.getValues(subjectPath) ?? ''),
-          body_html: String(props.form.getValues(bodyPath) ?? ''),
+          subject: snapshot.subject,
+          body_html: snapshot.bodyHTML,
         },
       })
-      setPreviewHTML(response.data?.body_html ?? '')
+      if (
+        shouldApplyRecallEmailPreviewResult({
+          candidate: snapshot,
+          latest: latestPreviewRequestRef.current,
+          currentSubject: String(props.form.getValues(subjectPath) ?? ''),
+          currentBodyHTML: String(props.form.getValues(bodyPath) ?? ''),
+        })
+      ) {
+        setPreviewState({
+          previewHTML: response.data?.body_html ?? '',
+          latestError: '',
+        })
+      }
     } catch (error) {
-      setLatestError(getRecallEditorErrorMessage(error))
+      if (
+        shouldApplyRecallEmailPreviewResult({
+          candidate: snapshot,
+          latest: latestPreviewRequestRef.current,
+          currentSubject: String(props.form.getValues(subjectPath) ?? ''),
+          currentBodyHTML: String(props.form.getValues(bodyPath) ?? ''),
+        })
+      ) {
+        setPreviewState((current) => ({
+          ...current,
+          latestError: getRecallEditorErrorMessage(error),
+        }))
+      }
     }
   }
 
@@ -165,8 +236,8 @@ export function CampaignEmailHtmlEditor(
         {previewMutation.isPending ? t('Previewing') : t('Preview email')}
       </Button>
       <RecallEmailPreviewFrame
-        previewHTML={previewHTML}
-        errorMessage={latestError}
+        previewHTML={previewState.previewHTML}
+        errorMessage={previewState.latestError}
       />
     </div>
   )
