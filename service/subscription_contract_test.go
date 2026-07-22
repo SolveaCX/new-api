@@ -163,6 +163,43 @@ func TestSameRequestIDReturnsSameIntent(t *testing.T) {
 	require.Equal(t, int64(1), orderCount)
 }
 
+func TestSameRequestIDStripeReplayReturnsExistingBalanceIntentBeforePendingMigration(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7111, 3000)
+	insertContractServicePlan(t, 7215, 1, 1, 1000)
+	insertContractServicePlan(t, 7216, 2, 2, 2000)
+
+	first, err := ChangeSubscriptionPlan(balanceChangeCommand(7111, 7215, "existing-before-stripe-mode"))
+	require.NoError(t, err)
+	var afterFirstUser model.User
+	require.NoError(t, model.DB.First(&afterFirstUser, "id = ?", 7111).Error)
+
+	replay, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      7111,
+		PlanID:      7216,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "existing-before-stripe-mode",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, first.Intent.Id, replay.Intent.Id)
+	require.Equal(t, first.Contract.Id, replay.Contract.Id)
+	require.Equal(t, ChangePlanStatusApplied, replay.Status)
+	require.Equal(t, 7215, replay.Intent.ToPlanId)
+	var afterReplayUser model.User
+	require.NoError(t, model.DB.First(&afterReplayUser, "id = ?", 7111).Error)
+	require.Equal(t, afterFirstUser.Quota, afterReplayUser.Quota)
+	var intentCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 7111).Count(&intentCount).Error)
+	require.Equal(t, int64(1), intentCount)
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 7111).Count(&orderCount).Error)
+	require.Equal(t, int64(1), orderCount)
+	var entitlementCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 7111).Count(&entitlementCount).Error)
+	require.Equal(t, int64(1), entitlementCount)
+}
+
 func TestSameRequestIDIgnoresChangedPlanOnRetry(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7106, 1000)

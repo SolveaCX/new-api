@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // ---- Shared types ----
@@ -205,7 +206,7 @@ func ChangeSubscriptionPlan(c *gin.Context) {
 	userId := c.GetInt("id")
 	var req ChangeSubscriptionPlanRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
-		common.ApiErrorMsg(c, "鍙傛暟閿欒")
+		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
 	req.RequestId = strings.TrimSpace(req.RequestId)
@@ -233,16 +234,11 @@ func ChangeSubscriptionPlan(c *gin.Context) {
 }
 
 func isStableSubscriptionRequestID(requestID string) bool {
-	if len(requestID) < 8 || len(requestID) > 128 {
+	parsed, err := uuid.Parse(requestID)
+	if err != nil {
 		return false
 	}
-	for _, r := range requestID {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			continue
-		}
-		return false
-	}
-	return true
+	return parsed.String() == requestID
 }
 
 // ---- Admin APIs ----

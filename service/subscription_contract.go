@@ -47,9 +47,6 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 	if err := cmd.validate(); err != nil {
 		return nil, err
 	}
-	if cmd.PaymentMode == model.SubscriptionPaymentModeStripeRecurring {
-		return nil, ErrStripeCheckoutPendingMigration
-	}
 
 	var result *ChangePlanResult
 	var balanceEffects *balanceOnePeriodSideEffects
@@ -59,19 +56,28 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			return err
 		}
 
-		contract, err := getOrCreateContractForUserTx(tx, cmd.UserID)
-		if err != nil {
-			return err
-		}
-
 		if existing, found, err := findIntentByRequestTx(tx, cmd.UserID, cmd.RequestID); err != nil {
 			return err
 		} else if found {
-			result = buildChangePlanResult(existing, contract)
+			var contract model.UserSubscriptionContract
+			if err := subscriptionCommandLock(tx).
+				Where("id = ? AND user_id = ?", existing.ContractId, cmd.UserID).
+				First(&contract).Error; err != nil {
+				return err
+			}
+			result = buildChangePlanResult(existing, &contract)
 			return nil
 		}
 
 		if err := validateChangePaymentMode(cmd.PaymentMode); err != nil {
+			return err
+		}
+		if cmd.PaymentMode == model.SubscriptionPaymentModeStripeRecurring {
+			return ErrStripeCheckoutPendingMigration
+		}
+
+		contract, err := getOrCreateContractForUserTx(tx, cmd.UserID)
+		if err != nil {
 			return err
 		}
 

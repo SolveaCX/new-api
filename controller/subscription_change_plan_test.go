@@ -127,6 +127,43 @@ func TestChangeSubscriptionPlanRejectsInvalidRequestID(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "request_id")
 }
 
+func TestChangeSubscriptionPlanRejectsNonCanonicalStableRequestID(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 905)
+	insertSubscriptionControllerPlan(t, 9905)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 905)
+	ctx.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/subscription/self/change-plan",
+		strings.NewReader(`{"plan_id":9905,"payment_mode":"balance_one_period","request_id":"stable-request-id"}`),
+	)
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ChangeSubscriptionPlan(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"success":false`)
+	require.Contains(t, recorder.Body.String(), "request_id")
+	var intentCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 905).Count(&intentCount).Error)
+	require.Zero(t, intentCount)
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 905).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
+}
+
+func TestStableSubscriptionRequestIDRequiresCanonicalUUID(t *testing.T) {
+	require.True(t, isStableSubscriptionRequestID("550e8400-e29b-41d4-a716-446655440000"))
+	require.False(t, isStableSubscriptionRequestID("stable-request-id"))
+	require.False(t, isStableSubscriptionRequestID("550E8400-E29B-41D4-A716-446655440000"))
+	require.False(t, isStableSubscriptionRequestID("550e8400e29b41d4a716446655440000"))
+	require.False(t, isStableSubscriptionRequestID("{550e8400-e29b-41d4-a716-446655440000}"))
+}
+
 func TestSubscriptionStripePayReturnsUnsupportedWithoutLegacyState(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
@@ -188,7 +225,7 @@ func TestChangeSubscriptionPlanStripeRecurringPendingMigrationDoesNotPersistStat
 	ctx.Request = httptest.NewRequest(
 		http.MethodPost,
 		"/api/subscription/self/change-plan",
-		strings.NewReader(`{"plan_id":9903,"payment_mode":"stripe_recurring","request_id":"stripe-change-1"}`),
+		strings.NewReader(`{"plan_id":9903,"payment_mode":"stripe_recurring","request_id":"550e8400-e29b-41d4-a716-446655440001"}`),
 	)
 	ctx.Request.Header.Set("Content-Type", "application/json")
 
