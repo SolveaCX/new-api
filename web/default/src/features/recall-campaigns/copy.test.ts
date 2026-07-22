@@ -26,6 +26,7 @@ import ru from '../../i18n/locales/ru.json'
 import vi from '../../i18n/locales/vi.json'
 import zh from '../../i18n/locales/zh.json'
 import { audienceTemplateDescriptionKeys } from './copy'
+import * as recallCopy from './copy'
 
 const localeTranslations: Record<string, Record<string, string>> = {
   en: en.translation,
@@ -74,6 +75,29 @@ describe('recall campaign copy', () => {
       specified_users:
         'Targets explicitly selected users by user ID or email address.',
     })
+  })
+
+  test('exposes source copy for exact audience controls', () => {
+    expect(
+      (
+        recallCopy as typeof recallCopy & {
+          recallCampaignEditorCopyKeys?: readonly string[]
+        }
+      ).recallCampaignEditorCopyKeys
+    ).toEqual(
+      expect.arrayContaining([
+        'Registered only',
+        'Specified users',
+        'Registration start',
+        'Registration end',
+        'Registration start is required',
+        'Registration end is required',
+        'Registration end must be after start',
+        'At least one user or email is required',
+        'Emails are invalid',
+        'Up to 500 users or emails are supported',
+      ])
+    )
   })
 
   for (const [locale, translations] of Object.entries(localeTranslations)) {

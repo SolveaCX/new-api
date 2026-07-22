@@ -33,3 +33,17 @@ export const audienceTemplateDescriptionKeys: Record<
   specified_users:
     'Targets explicitly selected users by user ID or email address.',
 }
+
+export const recallCampaignEditorCopyKeys = [
+  'Registered only',
+  'Specified users',
+  'Registration start',
+  'Registration end',
+  'Registration start is required',
+  'Registration end is required',
+  'Registration end must be after start',
+  'At least one user or email is required',
+  'User IDs are invalid',
+  'Emails are invalid',
+  'Up to 500 users or emails are supported',
+] as const

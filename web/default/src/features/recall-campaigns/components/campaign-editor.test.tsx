@@ -16,17 +16,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import * as React from 'react'
+import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeAll, describe, expect, test } from 'bun:test'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
-import { recallCampaignKeys } from '../api'
+import { recallLocalDateTimeToUnix } from '../audience-inputs'
 import type { RecallAudienceTemplate, RecallCampaignDraft } from '../types'
-import {
-  CampaignEditor,
-  createRecallCampaignFormDraft,
-} from './campaign-editor'
 
 const commonHelp =
   'Audience templates define the base audience. The rules shown below narrow it further, and built-in eligibility filters also apply. Preview the audience before activation.'
@@ -37,6 +43,174 @@ const groupHelp =
 const automaticTranslationHelp =
   "Email content is translated automatically when saved, sent in each user's language, and falls back to English when unavailable."
 const testI18n = createInstance()
+const createMutation = mock(async (draft: RecallCampaignDraft) => ({
+  success: true,
+  data: { id: 123, name: draft.name },
+}))
+let latestSpecifiedUsersProps:
+  | {
+      userIDs: number[]
+      emails: string[]
+      onUserIDsChange: (value: number[]) => void
+      onEmailsChange: (value: string[]) => void
+      immutable: boolean
+    }
+  | undefined
+let latestAudienceTemplateChange: ((value: string) => void) | undefined
+const latestInputProps: Record<
+  string,
+  React.InputHTMLAttributes<HTMLInputElement>
+> = {}
+
+const recallCampaignKeys = {
+  all: ['recall-campaigns'] as const,
+  userGroups: ['recall-campaigns', 'audience-options', 'user-groups'] as const,
+  topUpProductConfiguration: [
+    'recall-campaigns',
+    'product-options',
+    'top-up',
+  ] as const,
+  subscriptionProductConfiguration: [
+    'recall-campaigns',
+    'product-options',
+    'subscription',
+  ] as const,
+}
+
+mock.module('../api', () => ({
+  recallCampaignKeys,
+  getRecallUserGroups: async () => ({ success: true, data: ['default'] }),
+  getRecallTopUpProductConfiguration: async () => ({
+    success: true,
+    data: { stripe_price_ids: { USD: 'price_topup_usd' } },
+  }),
+  getRecallSubscriptionProductConfiguration: async () => ({
+    success: true,
+    data: [],
+  }),
+  previewRecallEmail: async () => ({
+    success: true,
+    data: { subject: 'Preview subject', body_html: '<p>Preview</p>' },
+  }),
+  useRecallCampaignMutations: () => ({
+    create: { isPending: false, mutateAsync: createMutation },
+    update: { isPending: false, mutateAsync: createMutation },
+  }),
+}))
+
+mock.module('@/components/ui/select', () => ({
+  Select: (props: {
+    children: React.ReactNode
+    disabled?: boolean
+    items?: { label: string; value: string }[]
+    onValueChange?: (value: string) => void
+    value?: string
+  }) => {
+    const name = props.items?.some((item) => item.value === 'first_purchase')
+      ? 'audience_template'
+      : undefined
+    if (name === 'audience_template') {
+      latestAudienceTemplateChange = props.onValueChange
+    }
+    return (
+      <>
+        <select
+          disabled={props.disabled}
+          name={name}
+          onChange={(event) => props.onValueChange?.(event.target.value)}
+          value={props.value}
+        >
+          {props.items?.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <div>{props.children}</div>
+      </>
+    )
+  },
+  SelectContent: (props: { children: React.ReactNode }) => (
+    <div>{props.children}</div>
+  ),
+  SelectGroup: (props: { children: React.ReactNode }) => (
+    <div>{props.children}</div>
+  ),
+  SelectItem: (props: { children: React.ReactNode; value: string }) => (
+    <div data-value={props.value}>{props.children}</div>
+  ),
+  SelectTrigger: (props: {
+    'aria-describedby'?: string
+    children: React.ReactNode
+    className?: string
+  }) => (
+    <button
+      aria-describedby={props['aria-describedby']}
+      className={props.className}
+      type='button'
+    >
+      {props.children}
+    </button>
+  ),
+  SelectValue: () => <span />,
+}))
+
+mock.module('@/components/ui/input', () => ({
+  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => {
+    if (props.id) latestInputProps[props.id] = props
+    return <input {...props} />
+  },
+}))
+
+mock.module('@/components/multi-select', () => ({
+  MultiSelect: (props: {
+    disabled?: boolean
+    id?: string
+    onChange?: (value: string[]) => void
+    options?: { label: string; value: string }[]
+    placeholder?: string
+    selected?: string[]
+  }) => (
+    <div>
+      <input
+        aria-label={props.placeholder}
+        disabled={props.disabled}
+        id={props.id}
+        readOnly
+        value={props.disabled ? '' : (props.selected ?? []).join(',')}
+      />
+      {props.options?.map((option) => (
+        <span key={option.value}>{option.label}</span>
+      ))}
+    </div>
+  ),
+}))
+
+const { CampaignEditor, createRecallCampaignFormDraft } =
+  await import('./campaign-editor')
+
+function MockSpecifiedUsersSelector(
+  props: NonNullable<typeof latestSpecifiedUsersProps>
+) {
+  // eslint-disable-next-line react-hooks/globals
+  latestSpecifiedUsersProps = props
+  return (
+    <div data-testid='specified-users-selector'>
+      <input
+        id='recall-specified-users'
+        disabled={props.immutable}
+        readOnly
+        value={props.userIDs.join(',')}
+      />
+      <textarea
+        id='recall-specified-emails'
+        disabled={props.immutable}
+        readOnly
+        value={props.emails.join('\n')}
+      />
+    </div>
+  )
+}
 
 function makeDraft(template: RecallAudienceTemplate): RecallCampaignDraft {
   return {
@@ -56,6 +230,10 @@ function makeDraft(template: RecallAudienceTemplate): RecallCampaignDraft {
       groups: [],
       group_mode: '',
       require_verified_email: true,
+      registration_start_at: 0,
+      registration_end_at: 0,
+      specified_user_ids: [],
+      specified_emails: [],
     },
     execution_mode: 'manual',
     schedule: {
@@ -78,7 +256,10 @@ function makeDraft(template: RecallAudienceTemplate): RecallCampaignDraft {
       minimum_amount_currency: '',
       coupon_redeem_by: 0,
     },
-    product_scope: { topup_price_ids: [], subscription_price_ids: [] },
+    product_scope: {
+      topup_price_ids: ['price_topup_usd'],
+      subscription_price_ids: [],
+    },
     promotion_valid_seconds: 604800,
     enrollment_limit: 1000,
     worker_concurrency: 5,
@@ -96,10 +277,180 @@ function makeDraft(template: RecallAudienceTemplate): RecallCampaignDraft {
   }
 }
 
-function renderEditor(
-  template: RecallAudienceTemplate,
-  draft = makeDraft(template)
-): string {
+function setupDom() {
+  if (typeof document !== 'undefined') return
+
+  class NodeShim {
+    childNodes: NodeShim[] = []
+    nodeType = 0
+    nodeName = ''
+    parentNode: NodeShim | null = null
+    ownerDocument = globalThis.document
+    private listeners: Record<string, EventListener[]> = {}
+
+    appendChild(node: NodeShim) {
+      this.childNodes.push(node)
+      ;(this as unknown as Record<number, NodeShim>)[
+        this.childNodes.length - 1
+      ] = node
+      node.parentNode = this
+      return node
+    }
+
+    insertBefore(node: NodeShim, before: NodeShim | null) {
+      const index = before ? this.childNodes.indexOf(before) : -1
+      if (index < 0) return this.appendChild(node)
+      this.childNodes.splice(index, 0, node)
+      node.parentNode = this
+      return node
+    }
+
+    removeChild(node: NodeShim) {
+      this.childNodes = this.childNodes.filter((child) => child !== node)
+      node.parentNode = null
+      return node
+    }
+
+    addEventListener(type: string, listener: EventListener) {
+      this.listeners[type] ??= []
+      this.listeners[type].push(listener)
+    }
+
+    removeEventListener(type: string, listener: EventListener) {
+      this.listeners[type] = (this.listeners[type] ?? []).filter(
+        (current) => current !== listener
+      )
+    }
+
+    dispatchEvent(event: Event) {
+      if (!('target' in event) || event.target === null) {
+        Object.defineProperty(event, 'target', { value: this })
+      }
+      Object.defineProperty(event, 'currentTarget', {
+        configurable: true,
+        value: this,
+      })
+      for (const listener of this.listeners[event.type] ?? []) {
+        listener.call(this, event)
+      }
+      if (event.bubbles && this.parentNode) {
+        this.parentNode.dispatchEvent(event)
+      }
+      return !event.defaultPrevented
+    }
+  }
+
+  class ElementShim extends NodeShim {
+    attributes: Record<string, string> = {}
+    disabled = false
+    localName: string
+    namespaceURI = 'http://www.w3.org/1999/xhtml'
+    style = {}
+    tagName: string
+    value = ''
+    defaultSelected = false
+    selected = false
+    private text = ''
+
+    constructor(tagName: string) {
+      super()
+      this.nodeType = 1
+      this.localName = tagName
+      this.tagName = tagName.toUpperCase()
+      this.nodeName = this.tagName
+    }
+
+    set textContent(value: string) {
+      this.text = String(value)
+      this.childNodes = []
+    }
+
+    get textContent() {
+      return (
+        this.text ||
+        this.childNodes
+          .map((node) => ('textContent' in node ? node.textContent : ''))
+          .join('')
+      )
+    }
+
+    get length() {
+      return this.childNodes.length
+    }
+
+    get options() {
+      return this
+    }
+
+    setAttribute(key: string, value: string) {
+      this.attributes[key] = String(value)
+      if (key === 'disabled') this.disabled = true
+      if (key === 'value') this.value = String(value)
+    }
+
+    removeAttribute(key: string) {
+      delete this.attributes[key]
+      if (key === 'disabled') this.disabled = false
+    }
+
+    querySelector(selector: string): ElementShim | null {
+      if (selector.startsWith('#')) {
+        const id = selector.slice(1)
+        if (this.attributes.id === id) return this
+      }
+      for (const child of this.childNodes) {
+        if (child instanceof ElementShim) {
+          const match = child.querySelector(selector)
+          if (match) return match
+        }
+      }
+      return null
+    }
+  }
+
+  class TextShim extends NodeShim {
+    textContent: string
+
+    constructor(text: string) {
+      super()
+      this.nodeType = 3
+      this.nodeName = '#text'
+      this.textContent = text
+    }
+  }
+
+  const head = new ElementShim('head')
+  const shimDocument = {
+    nodeType: 9,
+    head,
+    createElement: (tagName: string) => new ElementShim(tagName),
+    createElementNS: (_namespace: string, tagName: string) =>
+      new ElementShim(tagName),
+    createTextNode: (text: string) => new TextShim(text),
+    getElementsByTagName: (tagName: string) =>
+      tagName.toLowerCase() === 'head' ? [head] : [],
+    addEventListener() {},
+    removeEventListener() {},
+    defaultView: globalThis,
+  }
+  globalThis.document = shimDocument as unknown as Document
+  globalThis.window = globalThis as unknown as Window & typeof globalThis
+  window.location = { href: 'http://localhost/' } as Location
+  globalThis.localStorage = {
+    getItem: () => null,
+    removeItem: () => undefined,
+    setItem: () => undefined,
+  } as unknown as Storage
+  window.localStorage = globalThis.localStorage
+  globalThis.HTMLElement = ElementShim as unknown as typeof HTMLElement
+  globalThis.HTMLIFrameElement = class {} as typeof HTMLIFrameElement
+  globalThis.Node = NodeShim as unknown as typeof Node
+}
+
+setupDom()
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+function createQueryClient() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -114,14 +465,74 @@ function renderEditor(
     success: true,
     data: ['admin', 'default', 'plg'],
   })
+  queryClient.setQueryData(recallCampaignKeys.topUpProductConfiguration, {
+    success: true,
+    data: { stripe_price_ids: { USD: 'price_topup_usd' } },
+  })
+  queryClient.setQueryData(
+    recallCampaignKeys.subscriptionProductConfiguration,
+    {
+      success: true,
+      data: [],
+    }
+  )
+  return queryClient
+}
+
+function renderEditor(
+  template: RecallAudienceTemplate,
+  draft = makeDraft(template)
+): string {
+  const queryClient = createQueryClient()
 
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={testI18n}>
-        <CampaignEditor initialDraft={draft} />
+        <CampaignEditor
+          initialDraft={draft}
+          specifiedUsersSelector={MockSpecifiedUsersSelector}
+        />
       </I18nextProvider>
     </QueryClientProvider>
   )
+}
+
+function renderEditorDom(
+  draft: RecallCampaignDraft,
+  props: Partial<React.ComponentProps<typeof CampaignEditor>> = {}
+): { root: Root; container: HTMLElement } {
+  const queryClient = createQueryClient()
+  const container = document.createElement('div')
+  const root = createRoot(container)
+
+  React.act(() => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={testI18n}>
+          <CampaignEditor
+            initialDraft={draft}
+            specifiedUsersSelector={MockSpecifiedUsersSelector}
+            {...props}
+          />
+        </I18nextProvider>
+      </QueryClientProvider>
+    )
+  })
+
+  return { root, container }
+}
+
+function dispose(root: Root) {
+  React.act(() => {
+    root.unmount()
+  })
+}
+
+async function submit(container: HTMLElement) {
+  const form = container.childNodes[0] as HTMLFormElement
+  await React.act(async () => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
 }
 
 const audienceThresholdFields = [
@@ -168,7 +579,42 @@ beforeAll(async () => {
   })
 })
 
+beforeEach(() => {
+  latestSpecifiedUsersProps = undefined
+  latestAudienceTemplateChange = undefined
+  for (const key of Object.keys(latestInputProps)) {
+    delete latestInputProps[key]
+  }
+  createMutation.mockClear()
+})
+
+afterAll(() => {
+  mock.restore()
+})
+
 describe('CampaignEditor audience rules', () => {
+  test('offers all five audience template values with source descriptions', () => {
+    const html = renderEditor('first_purchase')
+
+    for (const [value, label] of [
+      ['first_purchase', 'First purchase'],
+      ['lapsed_payer', 'Lapsed payer'],
+      ['expired_subscription', 'Expired subscription'],
+      ['registered_only', 'Registered only'],
+      ['specified_users', 'Specified users'],
+    ] as const) {
+      expect(html).toContain(`value="${value}"`)
+      expect(html).toContain(label)
+    }
+
+    expect(renderEditor('registered_only')).toContain(
+      'Targets users who registered within a selected registration date range.'
+    )
+    expect(renderEditor('specified_users')).toContain(
+      'Targets explicitly selected users by user ID or email address.'
+    )
+  })
+
   test('integrates the configured group selector with a stable id', () => {
     const html = renderEditor('first_purchase')
 
@@ -267,6 +713,161 @@ describe('CampaignEditor audience rules', () => {
       'min_subscription_count',
     ])
     expect(html).toContain('Payment providers (comma separated)')
+  })
+
+  test('shows registration dates, group controls, and verified email only for registered-only audiences', () => {
+    const draft = makeDraft('registered_only')
+    draft.audience_config.registration_start_at =
+      recallLocalDateTimeToUnix('2031-01-02T03:04')
+    draft.audience_config.registration_end_at =
+      recallLocalDateTimeToUnix('2031-01-03T03:04')
+    const html = renderEditor('registered_only', draft)
+
+    expect(html).toContain('for="recall-registration-start-at"')
+    expect(html).toContain('for="recall-registration-end-at"')
+    expect(html).toContain('type="datetime-local"')
+    expect(html).toContain('value="2031-01-02T03:04"')
+    expect(html).toContain('value="2031-01-03T03:04"')
+    expect(html).toContain('for="recall-groups"')
+    expect(html).toContain('Group mode')
+    expect(html).toContain('Require verified email')
+    expectAudienceThresholds(html, [])
+    expect(html).not.toContain('Payment providers (comma separated)')
+  })
+
+  test('wires registration datetime edits to submitted Unix seconds', async () => {
+    const draft = makeDraft('registered_only')
+    const { root, container } = renderEditorDom(draft)
+
+    React.act(() => {
+      latestInputProps['recall-registration-start-at'].onChange?.({
+        target: {
+          name: 'audience_config.registration_start_at',
+          value: '2031-01-02T03:04',
+        },
+        type: 'change',
+      } as React.ChangeEvent<HTMLInputElement>)
+      latestInputProps['recall-registration-end-at'].onChange?.({
+        target: {
+          name: 'audience_config.registration_end_at',
+          value: '2031-01-03T03:04',
+        },
+        type: 'change',
+      } as React.ChangeEvent<HTMLInputElement>)
+    })
+    await submit(container)
+
+    expect(createMutation).toHaveBeenCalledTimes(1)
+    const submitted = createMutation.mock.calls[0][0] as RecallCampaignDraft
+    expect(submitted.audience_config.registration_start_at).toBe(
+      recallLocalDateTimeToUnix('2031-01-02T03:04')
+    )
+    expect(submitted.audience_config.registration_end_at).toBe(
+      recallLocalDateTimeToUnix('2031-01-03T03:04')
+    )
+    dispose(root)
+  })
+
+  test('renders specified-users selector with current values and hides unrelated audience controls', () => {
+    const draft = makeDraft('specified_users')
+    draft.audience_config.specified_user_ids = [12, 34]
+    draft.audience_config.specified_emails = ['one@example.com']
+
+    const html = renderEditor('specified_users', draft)
+
+    expect(latestSpecifiedUsersProps?.userIDs).toEqual([12, 34])
+    expect(latestSpecifiedUsersProps?.emails).toEqual(['one@example.com'])
+    expect(latestSpecifiedUsersProps?.immutable).toBe(false)
+    expect(html).toContain('Require verified email')
+    expect(html).toContain('id="recall-specified-users"')
+    expect(html).toContain('id="recall-specified-emails"')
+    expectAudienceThresholds(html, [])
+    expect(html).not.toContain('Payment providers (comma separated)')
+    expect(html).not.toContain('Group mode')
+    expect(html).not.toContain('type="datetime-local"')
+  })
+
+  test('specified-users callbacks update form values and survive template switches', async () => {
+    const draft = makeDraft('specified_users')
+    const { root, container } = renderEditorDom(draft)
+
+    React.act(() => {
+      latestSpecifiedUsersProps?.onUserIDsChange([9, 10])
+      latestSpecifiedUsersProps?.onEmailsChange(['two@example.com'])
+    })
+    expect(latestSpecifiedUsersProps?.userIDs).toEqual([9, 10])
+    expect(latestSpecifiedUsersProps?.emails).toEqual(['two@example.com'])
+
+    React.act(() => {
+      latestAudienceTemplateChange?.('first_purchase')
+    })
+    React.act(() => {
+      latestAudienceTemplateChange?.('specified_users')
+    })
+
+    expect(latestSpecifiedUsersProps?.userIDs).toEqual([9, 10])
+    expect(latestSpecifiedUsersProps?.emails).toEqual(['two@example.com'])
+    await submit(container)
+    expect(createMutation).toHaveBeenCalledTimes(1)
+    const submitted = createMutation.mock.calls[0][0] as RecallCampaignDraft
+    expect(submitted.audience_config.specified_user_ids).toEqual([9, 10])
+    expect(submitted.audience_config.specified_emails).toEqual([
+      'two@example.com',
+    ])
+    dispose(root)
+  })
+
+  test('loads registered-only and specified-users drafts with preserved defaults', () => {
+    const registeredDraft = makeDraft('registered_only')
+    const specifiedDraft = makeDraft('specified_users')
+
+    expect(registeredDraft.audience_config.registration_start_at).toBe(0)
+    expect(registeredDraft.audience_config.registration_end_at).toBe(0)
+    expect(specifiedDraft.audience_config.specified_user_ids).toEqual([])
+    expect(specifiedDraft.audience_config.specified_emails).toEqual([])
+    expect(renderEditor('registered_only', registeredDraft)).toContain(
+      'name="audience_config.registration_start_at"'
+    )
+    renderEditor('specified_users', specifiedDraft)
+    expect(latestSpecifiedUsersProps?.userIDs).toEqual([])
+    expect(latestSpecifiedUsersProps?.emails).toEqual([])
+  })
+
+  test('blocks schema submission for invalid registered-only and specified-users audience controls', async () => {
+    for (const draft of [
+      makeDraft('registered_only'),
+      (() => {
+        const value = makeDraft('registered_only')
+        value.audience_config.registration_start_at =
+          recallLocalDateTimeToUnix('2031-01-03T03:04')
+        value.audience_config.registration_end_at =
+          recallLocalDateTimeToUnix('2031-01-02T03:04')
+        return value
+      })(),
+      makeDraft('specified_users'),
+      (() => {
+        const value = makeDraft('specified_users')
+        value.audience_config.specified_emails = ['invalid-email']
+        return value
+      })(),
+      (() => {
+        const value = makeDraft('specified_users')
+        value.audience_config.specified_user_ids = Array.from(
+          { length: 501 },
+          (_, index) => index + 1
+        )
+        return value
+      })(),
+    ]) {
+      createMutation.mockClear()
+      const { root, container } = renderEditorDom(draft)
+      await submit(container)
+      expect(createMutation).not.toHaveBeenCalled()
+      expect(container.textContent).toContain(
+        'Please correct the highlighted fields.'
+      )
+      dispose(root)
+    }
   })
 })
 
