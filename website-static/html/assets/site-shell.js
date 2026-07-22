@@ -48,7 +48,6 @@
   document.addEventListener("flatkey:languagechange", function () {
     updateLabel();
     syncPanel();
-    syncCollapse();
   });
   button.innerHTML = "<span></span><span></span><span></span>";
 
@@ -56,19 +55,6 @@
     panel.hidden = true;
     button.setAttribute("aria-expanded", "false");
     document.body.classList.remove("mobile-nav-open");
-  }
-
-  var collapseFrame = 0;
-  function syncCollapse() {
-    if (isDocs) return;
-    if (collapseFrame) cancelAnimationFrame(collapseFrame);
-    collapseFrame = requestAnimationFrame(function () {
-      collapseFrame = 0;
-      shell.classList.remove("nav-collapsed");
-      var needsCollapse = shell.scrollWidth > shell.clientWidth + 1;
-      shell.classList.toggle("nav-collapsed", needsCollapse);
-      if (!needsCollapse) close();
-    });
   }
 
   button.addEventListener("click", function () {
@@ -83,7 +69,4 @@
 
   shell.appendChild(button);
   shell.insertAdjacentElement("afterend", panel);
-  syncCollapse();
-  window.addEventListener("resize", syncCollapse, { passive: true });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncCollapse);
 })();
