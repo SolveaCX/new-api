@@ -133,6 +133,11 @@ const (
 	MsgQuotaInviterRewardLimitInvalid = "quota.inviter_reward_limit_invalid"
 )
 
+// Log related messages
+const (
+	MsgLogInvalidUserId = "log.invalid_user_id"
+)
+
 // Subscription related messages
 const (
 	MsgSubscriptionNotEnabled       = "subscription.not_enabled"

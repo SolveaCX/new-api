@@ -123,6 +123,9 @@ quota.subscription_insufficient: "订阅额度不足或未配置订阅: {{.Detai
 quota.token_insufficient: "令牌额度不足, 令牌剩余额度: {{.Remain}}, 需要额度: {{.Required}}"
 quota.user_insufficient_need: "用户额度不足, 用户额度: {{.Quota}}, 需要额度: {{.Required}}"
 
+# Log messages
+log.invalid_user_id: "无效的用户ID"
+
 # Subscription messages
 subscription.not_enabled: "套餐未启用"
 subscription.title_empty: "套餐标题不能为空"

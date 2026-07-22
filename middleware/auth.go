@@ -370,6 +370,7 @@ func TokenAuth() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusInternalServerError,
 					common.TranslateMessage(c, i18n.MsgDatabaseError))
 			} else {
+				logTokenAuthFailure(c, token, err)
 				statusCode, message, code := tokenAuthErrorResponse(c, err)
 				abortWithOpenAiMessage(c, statusCode, message, code...)
 			}
@@ -435,6 +436,22 @@ func TokenAuth() func(c *gin.Context) {
 		}
 		c.Next()
 	}
+}
+
+func logTokenAuthFailure(c *gin.Context, token *model.Token, err error) {
+	if token == nil {
+		return
+	}
+	logger.LogError(c.Request.Context(), fmt.Sprintf(
+		"token auth failed: user_id=%d token_id=%d token_name=%q status=%d remain_quota=%s unlimited_quota=%t error=%s",
+		token.UserId,
+		token.Id,
+		token.Name,
+		token.Status,
+		logger.FormatQuota(token.RemainQuota),
+		token.UnlimitedQuota,
+		err.Error(),
+	))
 }
 
 func tokenAuthErrorResponse(c *gin.Context, err error) (int, string, []types.ErrorCode) {

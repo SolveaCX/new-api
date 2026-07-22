@@ -32,6 +32,11 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 	return maskedTokens
 }
 
+type tokenPageWithStats struct {
+	*common.PageInfo
+	Stats model.UserTokenStats `json:"stats"`
+}
+
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
@@ -40,10 +45,14 @@ func GetAllTokens(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	total, _ := model.CountUserTokens(userId)
-	pageInfo.SetTotal(int(total))
+	stats, err := model.GetUserTokenStats(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(stats.Total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
-	common.ApiSuccess(c, pageInfo)
+	common.ApiSuccess(c, tokenPageWithStats{PageInfo: pageInfo, Stats: stats})
 }
 
 func SearchTokens(c *gin.Context) {
@@ -58,9 +67,14 @@ func SearchTokens(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	stats, err := model.GetUserTokenStats(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
-	common.ApiSuccess(c, pageInfo)
+	common.ApiSuccess(c, tokenPageWithStats{PageInfo: pageInfo, Stats: stats})
 }
 
 func GetToken(c *gin.Context) {
