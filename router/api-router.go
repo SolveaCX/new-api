@@ -313,6 +313,16 @@ func SetApiRouter(router *gin.Engine) {
 			codexModelGovernanceRoute.POST("/rules/test", controller.TestCodexModelGovernanceRule)
 			codexModelGovernanceRoute.POST("/:id/review", controller.ReviewCodexModelGovernanceRecord)
 		}
+		// flatkey Compute (GPU rental) admin dashboard. Admin-only, same guard as
+		// channels. Whitelabel: responses expose only flatkey-branded fields.
+		computeRoute := apiRouter.Group("/compute")
+		computeRoute.Use(middleware.AdminAuth())
+		{
+			computeRoute.GET("/nodes", controller.GetComputeNodes)
+			computeRoute.GET("/nodes/:id", controller.GetComputeNode)
+			computeRoute.POST("/nodes/:id/stop", controller.StopComputeNode)
+			computeRoute.GET("/offers", controller.GetComputeOffers)
+		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
