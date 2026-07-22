@@ -10,6 +10,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/cachex"
+	mysqlDriver "github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/samber/hot"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -145,6 +147,14 @@ func InvalidateSubscriptionPlanCache(planId int) {
 	_ = infoCache.Purge()
 }
 
+func invalidateSubscriptionPlanCacheOnSuccess(planId int, err error) error {
+	if err != nil {
+		return err
+	}
+	InvalidateSubscriptionPlanCache(planId)
+	return nil
+}
+
 // Subscription plan
 type SubscriptionPlan struct {
 	Id int `json:"id"`
@@ -216,7 +226,7 @@ func CreateSubscriptionPlan(plan *SubscriptionPlan) error {
 			return err
 		}
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Select("*").Create(plan).Error; err != nil {
 			return err
 		}
@@ -231,16 +241,16 @@ func CreateSubscriptionPlan(plan *SubscriptionPlan) error {
 				return err
 			}
 		}
-		InvalidateSubscriptionPlanCache(plan.Id)
 		return nil
 	})
+	return invalidateSubscriptionPlanCacheOnSuccess(plan.Id, err)
 }
 
 func SetSubscriptionPlanEnabled(planId int, enabled bool) error {
 	if planId <= 0 {
 		return errors.New("invalid plan id")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var before SubscriptionPlan
 		if err := tx.Where("id = ?", planId).First(&before).Error; err != nil {
 			return err
@@ -250,9 +260,9 @@ func SetSubscriptionPlanEnabled(planId int, enabled bool) error {
 		if err := updateSubscriptionPlanTx(tx, &before, &after); err != nil {
 			return err
 		}
-		InvalidateSubscriptionPlanCache(planId)
 		return nil
 	})
+	return invalidateSubscriptionPlanCacheOnSuccess(planId, err)
 }
 
 func UpdateSubscriptionPlan(plan *SubscriptionPlan) error {
@@ -263,7 +273,7 @@ func UpdateSubscriptionPlan(plan *SubscriptionPlan) error {
 		return errors.New("invalid plan id")
 	}
 	plan.NormalizeDefaults()
-	return DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var before SubscriptionPlan
 		if err := tx.Where("id = ?", plan.Id).First(&before).Error; err != nil {
 			return err
@@ -272,9 +282,9 @@ func UpdateSubscriptionPlan(plan *SubscriptionPlan) error {
 		if err := updateSubscriptionPlanTx(tx, &before, plan); err != nil {
 			return err
 		}
-		InvalidateSubscriptionPlanCache(plan.Id)
 		return nil
 	})
+	return invalidateSubscriptionPlanCacheOnSuccess(plan.Id, err)
 }
 
 func updateSubscriptionPlanTx(tx *gorm.DB, before *SubscriptionPlan, plan *SubscriptionPlan) error {
@@ -368,6 +378,9 @@ func occupySubscriptionTierRankTx(tx *gorm.DB, tierRank int, planId int) error {
 		ActivePlanId: planId,
 	}
 	if err := tx.Create(reservation).Error; err != nil {
+		if isSubscriptionTierRankDuplicateError(err) {
+			return ErrSubscriptionTierRankReserved
+		}
 		if lookupErr := tx.Where("tier_rank = ?", tierRank).First(&existing).Error; lookupErr == nil {
 			if existing.ActivePlanId == planId {
 				return nil
@@ -386,6 +399,28 @@ func occupySubscriptionTierRankTx(tx *gorm.DB, tierRank int, planId int) error {
 		return err
 	}
 	return nil
+}
+
+func isSubscriptionTierRankDuplicateError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	var mysqlErr *mysqlDriver.MySQLError
+	if errors.As(err, &mysqlErr) {
+		return mysqlErr.Number == 1062
+	}
+	var sqliteErr interface{ Code() int }
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.Code()&0xff == 19
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate") ||
+		strings.Contains(msg, "unique constraint") ||
+		strings.Contains(msg, "constraint failed: unique")
 }
 
 func isSubscriptionRankContentionError(err error) bool {

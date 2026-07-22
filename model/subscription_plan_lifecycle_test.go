@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	mysqlDriver "github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -283,4 +285,36 @@ func requireOneSuccessOneReserved(t *testing.T, errs []error) {
 	}
 	require.Equal(t, 1, successes)
 	require.Equal(t, 1, reserved)
+}
+
+func TestSubscriptionTierRankDuplicateErrorClassifier(t *testing.T) {
+	require.True(t, isSubscriptionTierRankDuplicateError(&pgconn.PgError{Code: "23505"}))
+	require.True(t, isSubscriptionTierRankDuplicateError(&mysqlDriver.MySQLError{Number: 1062, Message: "Duplicate entry '90' for key 'PRIMARY'"}))
+	require.True(t, isSubscriptionTierRankDuplicateError(errors.New("constraint failed: UNIQUE constraint failed: subscription_tier_rank_reservations.tier_rank")))
+	require.True(t, isSubscriptionTierRankDuplicateError(errors.New("UNIQUE constraint failed: subscription_tier_rank_reservations.active_plan_id")))
+
+	require.False(t, isSubscriptionTierRankDuplicateError(&pgconn.PgError{Code: "23503"}))
+	require.False(t, isSubscriptionTierRankDuplicateError(&mysqlDriver.MySQLError{Number: 1452, Message: "foreign key constraint fails"}))
+	require.False(t, isSubscriptionTierRankDuplicateError(errors.New("database table is locked")))
+}
+
+func TestInvalidateSubscriptionPlanCacheOnSuccessOnlyInvalidatesNilTransactionError(t *testing.T) {
+	setupSubscriptionPlanLifecycleTestDB(t)
+
+	const planID = 8801
+	cache := getSubscriptionPlanCache()
+	cached := SubscriptionPlan{Id: planID, Title: "cached"}
+	require.NoError(t, cache.SetWithTTL(subscriptionPlanCacheKey(planID), cached, subscriptionPlanCacheTTL()))
+
+	err := invalidateSubscriptionPlanCacheOnSuccess(planID, errors.New("rollback"))
+	require.Error(t, err)
+	got, found, err := cache.Get(subscriptionPlanCacheKey(planID))
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "cached", got.Title)
+
+	require.NoError(t, invalidateSubscriptionPlanCacheOnSuccess(planID, nil))
+	_, found, err = cache.Get(subscriptionPlanCacheKey(planID))
+	require.NoError(t, err)
+	require.False(t, found)
 }
