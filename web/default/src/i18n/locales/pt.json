@@ -5561,6 +5561,22 @@
     "▶ Sign in to run": "▶ Entrar para executar",
     "、": ", ",
     "，": ", ",
-    "，and ": "e"
+    "，and ": "e",
+    "Label": "Rótulo",
+    "GPU": "GPU",
+    "Cost per hour": "Custo por hora",
+    "Model served": "Modelo servido",
+    "Provisioning": "Provisionando",
+    "Stopped": "Parado",
+    "Total nodes": "Total de nós",
+    "Est. cost per day": "Custo estimado por dia",
+    "No compute nodes yet": "Ainda não há nós de computação",
+    "Stop compute node?": "Parar o nó de computação?",
+    "This will stop the compute node": "Isso irá parar o nó de computação",
+    ". It will stop serving traffic.": ". Ele deixará de atender ao tráfego.",
+    "Stopping...": "Parando...",
+    "Failed to load compute nodes": "Falha ao carregar os nós de computação",
+    "Failed to stop compute node": "Falha ao parar o nó de computação",
+    "Compute node stopped": "Nó de computação parado"
   }
 }

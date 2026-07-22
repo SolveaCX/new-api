@@ -5561,6 +5561,22 @@
     "▶ Sign in to run": "▶ Sign in to run",
     "、": ", ",
     "，": ", ",
-    "，and ": ", and "
+    "，and ": ", and ",
+    "Label": "Label",
+    "GPU": "GPU",
+    "Cost per hour": "Cost per hour",
+    "Model served": "Model served",
+    "Provisioning": "Provisioning",
+    "Stopped": "Stopped",
+    "Total nodes": "Total nodes",
+    "Est. cost per day": "Est. cost per day",
+    "No compute nodes yet": "No compute nodes yet",
+    "Stop compute node?": "Stop compute node?",
+    "This will stop the compute node": "This will stop the compute node",
+    ". It will stop serving traffic.": ". It will stop serving traffic.",
+    "Stopping...": "Stopping...",
+    "Failed to load compute nodes": "Failed to load compute nodes",
+    "Failed to stop compute node": "Failed to stop compute node",
+    "Compute node stopped": "Compute node stopped"
   }
 }

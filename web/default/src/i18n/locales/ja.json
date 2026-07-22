@@ -5561,6 +5561,22 @@
     "▶ Sign in to run": "▶ サインインして実行",
     "、": ", ",
     "，": ", ",
-    "，and ": ", and "
+    "，and ": ", and ",
+    "Label": "ラベル",
+    "GPU": "GPU",
+    "Cost per hour": "1時間あたりのコスト",
+    "Model served": "提供モデル",
+    "Provisioning": "プロビジョニング中",
+    "Stopped": "停止済み",
+    "Total nodes": "ノード総数",
+    "Est. cost per day": "1日あたりの推定コスト",
+    "No compute nodes yet": "コンピュートノードはまだありません",
+    "Stop compute node?": "コンピュートノードを停止しますか？",
+    "This will stop the compute node": "コンピュートノードを停止します",
+    ". It will stop serving traffic.": "。トラフィックの処理を停止します。",
+    "Stopping...": "停止中...",
+    "Failed to load compute nodes": "コンピュートノードの読み込みに失敗しました",
+    "Failed to stop compute node": "コンピュートノードの停止に失敗しました",
+    "Compute node stopped": "コンピュートノードを停止しました"
   }
 }

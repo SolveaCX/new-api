@@ -5561,6 +5561,22 @@
     "▶ Sign in to run": "▶ 登录即可运行",
     "、": "、",
     "，": "，",
-    "，and ": "，"
+    "，and ": "，",
+    "Label": "名称",
+    "GPU": "GPU",
+    "Cost per hour": "每小时成本",
+    "Model served": "服务模型",
+    "Provisioning": "部署中",
+    "Stopped": "已停止",
+    "Total nodes": "节点总数",
+    "Est. cost per day": "预计每日成本",
+    "No compute nodes yet": "暂无算力节点",
+    "Stop compute node?": "停止算力节点？",
+    "This will stop the compute node": "这将停止算力节点",
+    ". It will stop serving traffic.": "。它将停止提供服务。",
+    "Stopping...": "停止中...",
+    "Failed to load compute nodes": "加载算力节点失败",
+    "Failed to stop compute node": "停止算力节点失败",
+    "Compute node stopped": "算力节点已停止"
   }
 }

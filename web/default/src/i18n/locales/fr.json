@@ -5561,6 +5561,22 @@
     "▶ Sign in to run": "▶ Connectez-vous pour exécuter",
     "、": ", ",
     "，": ", ",
-    "，and ": ", and "
+    "，and ": ", and ",
+    "Label": "Libellé",
+    "GPU": "GPU",
+    "Cost per hour": "Coût par heure",
+    "Model served": "Modèle servi",
+    "Provisioning": "Approvisionnement",
+    "Stopped": "Arrêté",
+    "Total nodes": "Nombre de nœuds",
+    "Est. cost per day": "Coût estimé par jour",
+    "No compute nodes yet": "Aucun nœud de calcul pour le moment",
+    "Stop compute node?": "Arrêter le nœud de calcul ?",
+    "This will stop the compute node": "Cela arrêtera le nœud de calcul",
+    ". It will stop serving traffic.": ". Il cessera de traiter le trafic.",
+    "Stopping...": "Arrêt en cours...",
+    "Failed to load compute nodes": "Échec du chargement des nœuds de calcul",
+    "Failed to stop compute node": "Échec de l'arrêt du nœud de calcul",
+    "Compute node stopped": "Nœud de calcul arrêté"
   }
 }
