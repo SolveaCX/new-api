@@ -136,7 +136,7 @@ type SubscriptionTierRankReservation struct {
 	Id int64 `json:"id"`
 
 	TierRank int `json:"tier_rank" gorm:"not null;uniqueIndex"`
-	PlanId   int `json:"plan_id" gorm:"not null;uniqueIndex"`
+	PlanId   int `json:"plan_id" gorm:"not null;index"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`

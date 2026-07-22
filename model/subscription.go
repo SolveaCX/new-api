@@ -34,8 +34,10 @@ const (
 )
 
 var (
-	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
-	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
+	ErrSubscriptionOrderNotFound                = errors.New("subscription order not found")
+	ErrSubscriptionOrderStatusInvalid           = errors.New("subscription order status invalid")
+	ErrSubscriptionTierRankReserved             = errors.New("subscription tier rank reserved")
+	ErrSubscriptionPlanLifecycleFieldsImmutable = errors.New("subscription plan lifecycle fields immutable")
 )
 
 const (
@@ -200,6 +202,169 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	if p.AllowBalancePay == nil {
 		p.AllowBalancePay = common.GetPointer(true)
 	}
+}
+
+func CreateSubscriptionPlan(plan *SubscriptionPlan) error {
+	if plan == nil {
+		return errors.New("subscription plan is nil")
+	}
+	plan.NormalizeDefaults()
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(plan).Error; err != nil {
+			return err
+		}
+		if err := reserveSubscriptionTierRankTx(tx, plan.TierRank, plan.Id, false); err != nil {
+			return err
+		}
+		InvalidateSubscriptionPlanCache(plan.Id)
+		return nil
+	})
+}
+
+func UpdateSubscriptionPlan(plan *SubscriptionPlan) error {
+	if plan == nil {
+		return errors.New("subscription plan is nil")
+	}
+	if plan.Id <= 0 {
+		return errors.New("invalid plan id")
+	}
+	plan.NormalizeDefaults()
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var before SubscriptionPlan
+		if err := tx.Where("id = ?", plan.Id).First(&before).Error; err != nil {
+			return err
+		}
+		before.NormalizeDefaults()
+		if lifecycleFieldsChanged(&before, plan) {
+			referenced, err := subscriptionPlanHasLifecycleReferenceTx(tx, plan.Id)
+			if err != nil {
+				return err
+			}
+			if referenced {
+				return ErrSubscriptionPlanLifecycleFieldsImmutable
+			}
+			if plan.TierRank != before.TierRank {
+				if err := ReserveSubscriptionTierRank(tx, plan.TierRank, plan.Id); err != nil {
+					return err
+				}
+			}
+		}
+		updateMap := subscriptionPlanUpdateMap(plan)
+		if err := tx.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(updateMap).Error; err != nil {
+			return err
+		}
+		InvalidateSubscriptionPlanCache(plan.Id)
+		return nil
+	})
+}
+
+func ReserveSubscriptionTierRank(tx *gorm.DB, tierRank int, planId int) error {
+	return reserveSubscriptionTierRankTx(tx, tierRank, planId, true)
+}
+
+func reserveSubscriptionTierRankTx(tx *gorm.DB, tierRank int, planId int, allowSamePlan bool) error {
+	if tierRank <= 0 {
+		return nil
+	}
+	if planId <= 0 {
+		return errors.New("invalid subscription tier rank reservation plan id")
+	}
+	if tx == nil {
+		tx = DB
+	}
+	var existing SubscriptionTierRankReservation
+	err := tx.Where("tier_rank = ?", tierRank).First(&existing).Error
+	if err == nil {
+		if existing.PlanId == planId && allowSamePlan {
+			return nil
+		}
+		return ErrSubscriptionTierRankReserved
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	reservation := &SubscriptionTierRankReservation{
+		TierRank: tierRank,
+		PlanId:   planId,
+	}
+	if err := tx.Create(reservation).Error; err != nil {
+		var afterCreate SubscriptionTierRankReservation
+		if lookupErr := tx.Where("tier_rank = ?", tierRank).First(&afterCreate).Error; lookupErr == nil {
+			if afterCreate.PlanId == planId {
+				return nil
+			}
+			return ErrSubscriptionTierRankReserved
+		}
+		return err
+	}
+	return nil
+}
+
+func lifecycleFieldsChanged(before *SubscriptionPlan, after *SubscriptionPlan) bool {
+	if before == nil || after == nil {
+		return false
+	}
+	return before.TierRank != after.TierRank ||
+		before.DurationUnit != after.DurationUnit ||
+		before.DurationValue != after.DurationValue ||
+		before.CustomSeconds != after.CustomSeconds ||
+		before.TotalAmount != after.TotalAmount ||
+		before.StripePriceId != after.StripePriceId ||
+		before.UpgradeGroup != after.UpgradeGroup
+}
+
+func subscriptionPlanHasLifecycleReferenceTx(tx *gorm.DB, planId int) (bool, error) {
+	if tx == nil {
+		tx = DB
+	}
+	checks := []struct {
+		model interface{}
+		where string
+		args  []interface{}
+	}{
+		{model: &UserSubscriptionContract{}, where: "current_plan_id = ? OR pending_plan_id = ?", args: []interface{}{planId, planId}},
+		{model: &UserSubscription{}, where: "plan_id = ?", args: []interface{}{planId}},
+		{model: &SubscriptionOrder{}, where: "plan_id = ?", args: []interface{}{planId}},
+		{model: &SubscriptionChangeIntent{}, where: "from_plan_id = ? OR to_plan_id = ?", args: []interface{}{planId, planId}},
+	}
+	for _, check := range checks {
+		var count int64
+		if err := tx.Model(check.model).Where(check.where, check.args...).Limit(1).Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func subscriptionPlanUpdateMap(plan *SubscriptionPlan) map[string]interface{} {
+	updateMap := map[string]interface{}{
+		"title":                      plan.Title,
+		"subtitle":                   plan.Subtitle,
+		"price_amount":               plan.PriceAmount,
+		"currency":                   plan.Currency,
+		"duration_unit":              plan.DurationUnit,
+		"duration_value":             plan.DurationValue,
+		"custom_seconds":             plan.CustomSeconds,
+		"enabled":                    plan.Enabled,
+		"sort_order":                 plan.SortOrder,
+		"tier_rank":                  plan.TierRank,
+		"stripe_price_id":            plan.StripePriceId,
+		"creem_product_id":           plan.CreemProductId,
+		"waffo_pancake_product_id":   plan.WaffoPancakeProductId,
+		"max_purchase_per_user":      plan.MaxPurchasePerUser,
+		"total_amount":               plan.TotalAmount,
+		"upgrade_group":              plan.UpgradeGroup,
+		"quota_reset_period":         plan.QuotaResetPeriod,
+		"quota_reset_custom_seconds": plan.QuotaResetCustomSeconds,
+		"updated_at":                 common.GetTimestamp(),
+	}
+	if plan.AllowBalancePay != nil {
+		updateMap["allow_balance_pay"] = *plan.AllowBalancePay
+	}
+	return updateMap
 }
 
 // Subscription order (payment -> webhook -> create UserSubscription)
