@@ -5572,6 +5572,22 @@
     "Anthropic Compatible": "Compatible con Anthropic",
     "Gemini Compatible": "Compatible con Gemini",
     "This model cannot be called because upstreams no longer support it.": "Este modelo no se puede invocar porque los proveedores ascendentes ya no lo admiten.",
-    "Not callable · Officially unsupported": "No invocable · Ya no cuenta con soporte oficial"
+    "Not callable · Officially unsupported": "No invocable · Ya no cuenta con soporte oficial",
+    "Label": "Etiqueta",
+    "GPU": "GPU",
+    "Cost per hour": "Costo por hora",
+    "Model served": "Modelo servido",
+    "Provisioning": "Aprovisionando",
+    "Stopped": "Detenido",
+    "Total nodes": "Nodos totales",
+    "Est. cost per day": "Costo estimado por día",
+    "No compute nodes yet": "Aún no hay nodos de cómputo",
+    "Stop compute node?": "¿Detener el nodo de cómputo?",
+    "This will stop the compute node": "Esto detendrá el nodo de cómputo",
+    ". It will stop serving traffic.": ". Dejará de atender tráfico.",
+    "Stopping...": "Deteniendo...",
+    "Failed to load compute nodes": "Error al cargar los nodos de cómputo",
+    "Failed to stop compute node": "Error al detener el nodo de cómputo",
+    "Compute node stopped": "Nodo de cómputo detenido"
   }
 }
