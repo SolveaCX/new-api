@@ -410,57 +410,6 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 /* Homepage visual restoration — keep Flatkey's original violet/pixel DNA,
    but give the hero a bolder, more ownable presence than the FAL reference. */
 body:has(> header.hero){--home-acid:#DFFF47;--home-violet:#6D28D9;--home-violet-deep:#3B0764}
-body:has(> header.hero)>.nav{
-  color:#fff;
-  background:#2E1065;
-  border-bottom:1px solid rgba(255,255,255,.14);
-  box-shadow:none;
-}
-body:has(> header.hero)>.nav a{color:rgba(255,255,255,.84)}
-body:has(> header.hero)>.nav a:hover,
-body:has(> header.hero)>.nav a.on{color:#fff}
-body:has(> header.hero)>.nav>a.logo{color:#fff}
-body:has(> header.hero)>.nav>a.logo+a{margin-left:auto}
-body:has(> header.hero)>.nav>.sp{flex:0}
-body:has(> header.hero)>.nav>a[href="/models"]:before,
-body:has(> header.hero)>.nav>a[href="/usecases"]:before{
-  content:"";
-  display:inline-block;
-  width:7px;
-  height:7px;
-  margin-right:8px;
-  border-radius:50%;
-  background:var(--home-acid);
-  vertical-align:1px;
-}
-body:has(> header.hero)>.nav>a.logo img{
-  padding:5px;
-  border-radius:14px;
-  background:#fff;
-  box-shadow:0 5px 18px rgba(13,4,27,.26);
-}
-body:has(> header.hero)>.nav>.langsel{
-  color:#fff;
-  border-color:rgba(255,255,255,.28);
-  background:rgba(255,255,255,.1);
-}
-body:has(> header.hero)>.nav>.langsel:hover{border-color:rgba(255,255,255,.7)}
-body:has(> header.hero)>.nav>.langsel option{color:var(--ink);background:#fff}
-body:has(> header.hero)>.nav>.btn.white{
-  color:#1D1230;
-  background:#fff;
-  box-shadow:0 7px 20px rgba(13,4,27,.18);
-}
-body:has(> header.hero)>.nav>.btn.black{
-  color:#15101E;
-  background:var(--home-acid);
-  box-shadow:4px 4px 0 rgba(15,4,31,.55);
-}
-body:has(> header.hero)>.nav>.nav-toggle{
-  border-color:rgba(255,255,255,.32);
-  background:rgba(255,255,255,.1);
-}
-body:has(> header.hero)>.nav>.nav-toggle span{background:var(--home-acid)}
 body:has(> header.hero)>header.hero{
   isolation:isolate;
   color:#fff;
