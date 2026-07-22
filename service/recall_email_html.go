@@ -201,8 +201,63 @@ func validateRecallEmailHTMLRawTokens(source string) error {
 			if actions.claim || actions.unsubscribe {
 				return actions.err()
 			}
+		case html.StartTagToken, html.SelfClosingTagToken:
+			if err := validateRecallEmailHTMLRawTag(tokenizer.Raw()); err != nil {
+				return err
+			}
 		}
 	}
+}
+
+func validateRecallEmailHTMLRawTag(raw []byte) error {
+	var quote byte
+	for index := 0; index < len(raw)-1; index++ {
+		if quote != 0 {
+			if raw[index] == quote {
+				quote = 0
+				continue
+			}
+			if raw[index] == '{' && raw[index+1] == '{' {
+				index = skipRecallEmailHTMLTemplateAction(raw, index)
+			}
+			continue
+		}
+		switch raw[index] {
+		case '\'', '"':
+			quote = raw[index]
+		case '{':
+			if raw[index+1] != '{' {
+				continue
+			}
+			previous := previousRecallEmailHTMLNonSpace(raw, index)
+			if previous < 0 || raw[previous] != '=' {
+				return fmt.Errorf("recall email html rejects template action in attribute name")
+			}
+			index = skipRecallEmailHTMLTemplateAction(raw, index)
+		}
+	}
+	return nil
+}
+
+func skipRecallEmailHTMLTemplateAction(raw []byte, start int) int {
+	for index := start + 2; index < len(raw)-1; index++ {
+		if raw[index] == '}' && raw[index+1] == '}' {
+			return index + 1
+		}
+	}
+	return len(raw) - 1
+}
+
+func previousRecallEmailHTMLNonSpace(raw []byte, before int) int {
+	for index := before - 1; index >= 0; index-- {
+		switch raw[index] {
+		case ' ', '\t', '\n', '\r', '\f':
+			continue
+		default:
+			return index
+		}
+	}
+	return -1
 }
 
 type recallEmailHTMLURLActions struct {

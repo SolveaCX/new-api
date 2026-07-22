@@ -97,6 +97,9 @@ func TestRecallEmailHTMLValidate(t *testing.T) {
 		{name: "rejects trim-marker unsubscribe action in style text", source: strings.Replace(validRecallHTML, "</style>", " {{- .UnsubscribeURL -}}</style>", 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
 		{name: "rejects trim-marker claim action in html comments", source: injectBeforeBodyEnd(`<!-- {{- .ClaimURL -}} -->`), wantErr: "ClaimURL action must appear in an anchor href"},
 		{name: "rejects spaced unsubscribe action in attributes", source: strings.Replace(validRecallHTML, `<a href="https://flatkey.ai/help">Help</a>`, `<a href="https://flatkey.ai/help" title="{{ .UnsubscribeURL }}">Help</a>`, 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
+		{name: "rejects url action in attribute names", source: injectBeforeBodyEnd(`<p {{.ClaimURL}}="x">Dynamic attribute</p>`), wantErr: "template action in attribute name"},
+		{name: "rejects ordinary field action in attribute names", source: injectBeforeBodyEnd(`<p {{.RecipientName}}="x">Dynamic attribute</p>`), wantErr: "template action in attribute name"},
+		{name: "rejects trim-marker field action in attribute names", source: injectBeforeBodyEnd(`<p {{- .RecipientName -}}="x">Dynamic attribute</p>`), wantErr: "template action in attribute name"},
 		{name: "rejects claim action in doctype", source: strings.Replace(validRecallHTML, "<!doctype html>", "<!doctype html {{.ClaimURL}}>", 1), wantErr: "ClaimURL action must appear in an anchor href"},
 		{name: "rejects trim-marker unsubscribe action in doctype", source: strings.Replace(validRecallHTML, "<!doctype html>", "<!doctype html {{- .UnsubscribeURL -}}>", 1), wantErr: "UnsubscribeURL action must appear in an anchor href"},
 	}
