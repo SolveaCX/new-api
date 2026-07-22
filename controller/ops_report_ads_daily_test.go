@@ -118,6 +118,7 @@ func TestAdsDailyFlatkeyFilter(t *testing.T) {
 		{CampaignName: "flatkey-PT-Search", Keyword: "kimi 3.0"},
 		{CampaignName: "VOC-API-MCP-Dev-US", Keyword: "amazon review api"},
 		{CampaignName: "solvea-USCA-Search-Verticals", Keyword: "ai receptionist"},
+		{CampaignName: "flatkeyboard-US", Keyword: "mechanical keyboard"},
 	})
 	if len(kws) != 1 || kws[0].Keyword != "kimi 3.0" {
 		t.Errorf("keyword filter = %+v, want flatkey only", kws)
@@ -131,11 +132,17 @@ func TestAdsDailyFlatkeyFilter(t *testing.T) {
 	}
 	lps := adsDailyFilterLandings([]*model.AdsDailyLanding{
 		{Url: "https://flatkey.ai/pt/models/gemini-api"},
+		{Url: "https://www.flatkey.ai/chinese-ai"},
 		{Url: "https://www.voc.ai/api/amazon-data"},
 		{Url: "https://solvea.cx/receptionist"},
+		{Url: "https://evilflatkey.ai/phish"},
+		{Url: "https://not-flatkey.ai/path?next=flatkey.ai"},
+		{Url: "https://evil.example/?u=https://flatkey.ai"},
 	})
-	if len(lps) != 1 || lps[0].Url != "https://flatkey.ai/pt/models/gemini-api" {
-		t.Errorf("landing filter = %+v, want flatkey.ai only", lps)
+	if len(lps) != 2 ||
+		lps[0].Url != "https://flatkey.ai/pt/models/gemini-api" ||
+		lps[1].Url != "https://www.flatkey.ai/chinese-ai" {
+		t.Errorf("landing filter = %+v, want exact flatkey.ai hosts only", lps)
 	}
 }
 
@@ -162,5 +169,13 @@ func TestBuildAdsDailyLandingsDiff(t *testing.T) {
 	}
 	if day.Changes.LandingChanges != 2 {
 		t.Errorf("landing changes = %d, want 2", day.Changes.LandingChanges)
+	}
+}
+
+func TestAdsThumbTarget(t *testing.T) {
+	got := adsThumbTarget("https://flatkey.ai/sign-up?lng=pt&a=b#frag one")
+	want := "https://flatkey.ai/sign-up%3Flng%3Dpt%26a%3Db%23frag%20one"
+	if got != want {
+		t.Errorf("adsThumbTarget = %q, want %q", got, want)
 	}
 }

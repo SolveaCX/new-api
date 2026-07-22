@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -165,7 +166,9 @@ func GetOpsAdsDailyReport(c *gin.Context) {
 }
 
 func adsDailyIsFlatkeyCampaign(name string) bool {
-	return strings.HasPrefix(strings.ToLower(name), adsDailyCampaignPrefix)
+	// "flatkey-" with the dash, so unrelated names sharing the prefix
+	// (e.g. "flatkeyboard") can never slip in
+	return strings.HasPrefix(strings.ToLower(name), adsDailyCampaignPrefix+"-")
 }
 
 func adsDailyFilterKeywords(rows []*model.AdsDailyKeyword) []*model.AdsDailyKeyword {
@@ -188,10 +191,21 @@ func adsDailyFilterCreatives(rows []*model.AdsDailyCreative) []*model.AdsDailyCr
 	return out
 }
 
+// adsDailyIsFlatkeyLanding matches by exact URL host (bare domain or www),
+// not substring — "evilflatkey.ai" or "?next=flatkey.ai" must not slip in.
+func adsDailyIsFlatkeyLanding(rawUrl string) bool {
+	u, err := url.Parse(rawUrl)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == adsDailyLandingHost || host == "www."+adsDailyLandingHost
+}
+
 func adsDailyFilterLandings(rows []*model.AdsDailyLanding) []*model.AdsDailyLanding {
 	out := rows[:0:0]
 	for _, r := range rows {
-		if strings.Contains(strings.ToLower(r.Url), adsDailyLandingHost) {
+		if adsDailyIsFlatkeyLanding(r.Url) {
 			out = append(out, r)
 		}
 	}

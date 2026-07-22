@@ -17,8 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -48,14 +50,36 @@ const MATCH_LABELS: Record<string, string> = {
   BROAD: 'Broad',
 }
 
-// Landing-page thumbnail via the thum.io screenshot service — keyless free
-// tier, cached on their side. The first-ever request for a URL returns a
-// placeholder that becomes the real screenshot on later loads. Only the
-// width option is free — crop/wait/fullpage return an "Image not authorized"
-// placeholder. Admin-only page with a handful of distinct URLs, so the free
-// tier is plenty.
-const landingThumb = (url: string, width: number): string =>
-  `https://image.thum.io/get/width/${width}/${url}`
+// Landing-page thumbnail, loaded through the app's same-origin proxy
+// (/api/data/ops_report_landing_thumb) so the browser never talks to the
+// screenshot service directly. Fetched as a blob because <img> cannot carry
+// the console's auth header. While the screenshot service is still generating
+// it returns a GIF placeholder — keep polling until the real image lands.
+// Object URLs are intentionally not revoked: react-query caches one per
+// distinct landing URL for the session, a handful on this admin page.
+function LandingThumbImg(props: { url: string; className: string }) {
+  const thumbQuery = useQuery({
+    queryKey: ['ops-landing-thumb', props.url],
+    queryFn: async () => {
+      const res = await api.get('/api/data/ops_report_landing_thumb', {
+        params: { url: props.url, width: 320 },
+        responseType: 'blob',
+      })
+      const blob = res.data as Blob
+      return {
+        src: URL.createObjectURL(blob),
+        placeholder: blob.type === 'image/gif',
+      }
+    },
+    staleTime: Infinity,
+    retry: 1,
+    refetchInterval: (query) => (query.state.data?.placeholder ? 8000 : false),
+  })
+  if (!thumbQuery.data) {
+    return <div className={`bg-muted animate-pulse ${props.className}`} />
+  }
+  return <img src={thumbQuery.data.src} alt='' className={props.className} />
+}
 
 // row tinting per change type, readable in light and dark themes
 const CHANGE_ROW_CLASS: Record<string, string> = {
@@ -157,10 +181,8 @@ function CreativeCard(props: {
             className='shrink-0'
             title={finalUrl}
           >
-            <img
-              src={landingThumb(finalUrl, 320)}
-              alt=''
-              loading='lazy'
+            <LandingThumbImg
+              url={finalUrl}
               className='h-24 w-28 rounded border object-cover object-top transition-opacity hover:opacity-80'
             />
           </a>
@@ -326,10 +348,8 @@ function LandingsTable(props: { rows: AdsDailyLandingRow[] }) {
                   className='flex items-center gap-2'
                   title={row.url}
                 >
-                  <img
-                    src={landingThumb(row.url, 160)}
-                    alt=''
-                    loading='lazy'
+                  <LandingThumbImg
+                    url={row.url}
                     className='h-10 w-16 shrink-0 rounded border object-cover object-top'
                   />
                   <span className='text-primary truncate hover:underline'>
@@ -474,7 +494,19 @@ function DayRow(props: {
     // date label only
   }
   const keywords = day.keywords ?? []
-  const topKw = keywords.find((k) => k.cost_usd > 0)
+  // active = same scope as the creatives/landings counts: spent, clicked or
+  // currently enabled; diff-only "removed" rows are excluded. Top keyword is
+  // the day's highest spend — the backend list puts changed rows first, so
+  // "first with cost" would pick the wrong one.
+  const activeKeywords = keywords.filter(
+    (k) =>
+      k.change !== 'removed' &&
+      (k.clicks > 0 || k.cost_usd > 0 || k.status === 'ENABLED')
+  )
+  const topKw = activeKeywords.reduce<AdsDailyKeywordRow | undefined>(
+    (best, k) => (!best || k.cost_usd > best.cost_usd ? k : best),
+    undefined
+  )
   const creatives = day.creatives ?? []
   const activeAds = creatives.filter(
     (c) => c.clicks > 0 || c.cost_usd > 0 || c.status === 'ENABLED'
@@ -513,10 +545,10 @@ function DayRow(props: {
           {day.conversions > 0 ? day.conversions.toFixed(1) : '-'}
         </TableCell>
         <TableCell className='max-w-56'>
-          {keywords.length > 0 ? (
+          {activeKeywords.length > 0 ? (
             <span className='flex items-center gap-1 whitespace-nowrap'>
               <span className='text-muted-foreground text-xs'>
-                {keywords.length}
+                {activeKeywords.length}
               </span>
               {topKw && (
                 <span className='truncate'>

@@ -167,7 +167,7 @@ func opsFetchAdsSpendDaily(creds opsAdsCreds) ([]*model.AdsSpendDaily, error) {
 	start := end.AddDate(0, 0, -(opsAdsSyncDays - 1))
 	query := fmt.Sprintf(`SELECT segments.date, metrics.cost_micros, metrics.clicks,
 		metrics.impressions, metrics.conversions
-		FROM campaign WHERE campaign.name LIKE 'flatkey%%'
+		FROM campaign WHERE campaign.name LIKE 'flatkey-%%'
 		AND segments.date BETWEEN '%s' AND '%s'`,
 		start.Format("2006-01-02"), end.Format("2006-01-02"))
 	endpoint := fmt.Sprintf("https://googleads.googleapis.com/%s/customers/%s/googleAds:search",
@@ -235,8 +235,17 @@ func opsFetchAdsSpendDaily(creds opsAdsCreds) ([]*model.AdsSpendDaily, error) {
 			break
 		}
 	}
-	rows := make([]*model.AdsSpendDaily, 0, len(byDate))
-	for _, row := range byDate {
+	// emit a row for every day in the window, zero-filled when no flatkey
+	// campaign had activity — otherwise stale rows from before the flatkey
+	// scoping (account-wide totals) would survive in ads_spend_daily on days
+	// the filtered query no longer returns
+	rows := make([]*model.AdsSpendDaily, 0, opsAdsSyncDays)
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		date := d.Format("2006-01-02")
+		row, ok := byDate[date]
+		if !ok {
+			row = &model.AdsSpendDaily{Date: date, UpdatedAt: now}
+		}
 		rows = append(rows, row)
 	}
 	return rows, nil
