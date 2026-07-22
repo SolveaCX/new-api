@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/stripe/stripe-go/v81"
 	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
+	"gorm.io/gorm"
 )
 
 const (
@@ -66,18 +68,40 @@ func RunStripeSubscriptionReconciliationOnce() (int, error) {
 	}
 	defer stripeSubscriptionReconciliationRunning.Store(false)
 
+	ctx := context.Background()
 	var bindings []model.SubscriptionProviderBinding
+	processed := 0
+	for _, scan := range []func(context.Context) (int, error){
+		reconcileExpiredStripeGraceContracts,
+		resetExpiredStripeWebhookLeases,
+		reconcileUnresolvedStripeInvoiceIntents,
+		reconcileStalePendingStripePurchases,
+		reconcileStripeBindingPointerDrift,
+	} {
+		count, err := scan(ctx)
+		processed += count
+		if err != nil {
+			return processed, err
+		}
+	}
+
 	if err := model.DB.Where("provider = ? AND provider_subscription_id <> ? AND ended_at = ?",
 		model.PaymentProviderStripe, "", 0).
 		Where("provider_status NOT IN ?", []string{"canceled", "incomplete_expired", "unpaid"}).
 		Order("id asc").
 		Limit(stripeSubscriptionReconciliationBatchSize).
 		Find(&bindings).Error; err != nil {
-		return 0, err
+		return processed, err
 	}
 
-	processed := 0
 	for _, binding := range bindings {
+		skip, err := skipStripeBindingSnapshotForContractState(binding)
+		if err != nil {
+			return processed, err
+		}
+		if skip {
+			continue
+		}
 		snapshot, err := stripeSubscriptionSnapshotForReconciliation(binding.ProviderSubscriptionId)
 		if err != nil {
 			return processed, err
@@ -101,6 +125,476 @@ func RunStripeSubscriptionReconciliationOnce() (int, error) {
 		processed++
 	}
 	return processed, nil
+}
+
+func skipStripeBindingSnapshotForContractState(binding model.SubscriptionProviderBinding) (bool, error) {
+	if binding.ContractId <= 0 || !stripeReconciliationTableAvailable(&model.UserSubscriptionContract{}) {
+		return false, nil
+	}
+	var contract model.UserSubscriptionContract
+	err := model.DB.Where("id = ? AND user_id = ?", binding.ContractId, binding.UserId).First(&contract).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	switch contract.Status {
+	case model.SubscriptionContractStatusActive, model.SubscriptionContractStatusGrace:
+		return false, nil
+	default:
+		return true, nil
+	}
+}
+
+func reconcileExpiredStripeGraceContracts(ctx context.Context) (int, error) {
+	if !stripeReconciliationTableAvailable(&model.UserSubscriptionContract{}) ||
+		!stripeReconciliationTableAvailable(&model.SubscriptionProviderBinding{}) ||
+		!stripeReconciliationTableAvailable(&model.UserSubscription{}) {
+		return 0, nil
+	}
+	now := common.GetTimestamp()
+	var contracts []model.UserSubscriptionContract
+	if err := model.DB.
+		Where("status = ? AND payment_mode = ? AND grace_period_end > ? AND grace_period_end <= ? AND current_provider_binding_id > ?",
+			model.SubscriptionContractStatusGrace,
+			model.SubscriptionPaymentModeStripeRecurring,
+			0,
+			now,
+			0).
+		Order("id asc").
+		Limit(stripeSubscriptionReconciliationBatchSize).
+		Find(&contracts).Error; err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, contract := range contracts {
+		applied, err := reconcileExpiredStripeGraceContract(ctx, contract)
+		if err != nil {
+			return processed, err
+		}
+		if applied {
+			processed++
+		}
+	}
+	return processed, nil
+}
+
+func reconcileExpiredStripeGraceContract(ctx context.Context, contract model.UserSubscriptionContract) (bool, error) {
+	binding, entitlement, ok, err := currentStripeGraceFacts(contract)
+	if err != nil || !ok {
+		return false, err
+	}
+	if binding.EndedAt > 0 || isTerminalStripeSubscriptionStatus(binding.ProviderStatus) {
+		return true, closeExpiredStripeGraceContract(contract, binding, entitlement)
+	}
+	invoiceID := strings.TrimSpace(binding.ProviderLatestInvoiceId)
+	if invoiceID == "" {
+		return false, markStripeGraceContractNeedsAttention(contract.Id, "Stripe grace deadline reached without latest invoice id")
+	}
+	inv, err := stripeInvoiceGetter(ctx, invoiceID)
+	if err != nil {
+		return false, err
+	}
+	if inv == nil || strings.TrimSpace(inv.ID) == "" {
+		return false, errors.New("Stripe invoice is missing")
+	}
+	subscriptionID := stripeInvoiceSubscriptionID(inv)
+	if subscriptionID == "" {
+		return false, PermanentPaidInvoiceError(errors.New("Stripe invoice subscription id is missing"))
+	}
+	if subscriptionID != strings.TrimSpace(binding.ProviderSubscriptionId) {
+		return false, PermanentPaidInvoiceError(errors.New("Stripe invoice subscription mismatch"))
+	}
+	sub, err := stripeSubscriptionGetter(ctx, subscriptionID)
+	if err != nil {
+		return false, err
+	}
+	if sub == nil || strings.TrimSpace(sub.ID) == "" {
+		return false, errors.New("Stripe subscription is missing")
+	}
+	if strings.TrimSpace(sub.ID) != subscriptionID {
+		return false, PermanentPaidInvoiceError(errors.New("Stripe subscription mismatch"))
+	}
+	if err := validateStripeGraceRemoteFacts(inv, sub, binding); err != nil {
+		return true, markStripeGraceContractNeedsAttention(contract.Id, err.Error())
+	}
+	if inv.Paid && inv.Status == stripe.InvoiceStatusPaid {
+		_, err := ReconcilePaidInvoice(ctx, invoiceID)
+		return err == nil, err
+	}
+	shouldCancel, err := fenceStripeGraceInvoiceBeforeCancel(ctx, invoiceID, binding)
+	if err != nil {
+		return false, err
+	}
+	if !shouldCancel {
+		return true, nil
+	}
+	snapshot, err := stripeCancelSubscriptionNow(binding.ProviderSubscriptionId, recurringLifecycleIdempotencyKey(&binding, "grace_expired"))
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(snapshot.ProviderSubscriptionId) == "" {
+		snapshot.ProviderSubscriptionId = binding.ProviderSubscriptionId
+	}
+	if strings.TrimSpace(snapshot.ProviderLatestInvoiceId) == "" {
+		snapshot.ProviderLatestInvoiceId = invoiceID
+	}
+	if _, err := model.ApplyProviderSubscriptionTermination(binding.Id, snapshot); err != nil {
+		return false, err
+	}
+	return true, closeExpiredStripeGraceContract(contract, binding, entitlement)
+}
+
+func fenceStripeGraceInvoiceBeforeCancel(ctx context.Context, invoiceID string, binding model.SubscriptionProviderBinding) (bool, error) {
+	voided, voidErr := stripeInvoiceVoider(ctx, invoiceID, recurringLifecycleIdempotencyKey(&binding, "grace_invoice_void"))
+	if voidErr == nil {
+		if voided == nil || strings.TrimSpace(voided.ID) != invoiceID || voided.Status != stripe.InvoiceStatusVoid {
+			return false, errors.New("Stripe grace invoice void returned invalid state")
+		}
+		return true, nil
+	}
+
+	authoritative, fetchErr := stripeInvoiceGetter(ctx, invoiceID)
+	if fetchErr != nil {
+		return false, fmt.Errorf("Stripe grace invoice void failed: %v; authoritative refetch failed: %w", voidErr, fetchErr)
+	}
+	if authoritative == nil || strings.TrimSpace(authoritative.ID) != invoiceID {
+		return false, errors.New("Stripe grace invoice is missing after void failure")
+	}
+	if authoritative.Paid && authoritative.Status == stripe.InvoiceStatusPaid {
+		_, err := ReconcilePaidInvoice(ctx, invoiceID)
+		return false, err
+	}
+	if isTerminalStripeInvoiceStatus(authoritative.Status) {
+		return true, nil
+	}
+	return false, voidErr
+}
+
+func currentStripeGraceFacts(contract model.UserSubscriptionContract) (model.SubscriptionProviderBinding, model.UserSubscription, bool, error) {
+	if contract.Id <= 0 || contract.CurrentProviderBindingId <= 0 || contract.CurrentEntitlementId <= 0 {
+		return model.SubscriptionProviderBinding{}, model.UserSubscription{}, false, nil
+	}
+	var binding model.SubscriptionProviderBinding
+	if err := model.DB.Where("id = ? AND contract_id = ? AND user_id = ? AND provider = ?",
+		contract.CurrentProviderBindingId,
+		contract.Id,
+		contract.UserId,
+		model.PaymentProviderStripe).
+		First(&binding).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.SubscriptionProviderBinding{}, model.UserSubscription{}, false, markStripeGraceContractNeedsAttention(contract.Id, "Stripe grace current binding is missing")
+		}
+		return model.SubscriptionProviderBinding{}, model.UserSubscription{}, false, err
+	}
+	var entitlement model.UserSubscription
+	if err := model.DB.Where("id = ? AND contract_id = ? AND user_id = ?",
+		contract.CurrentEntitlementId,
+		contract.Id,
+		contract.UserId).
+		First(&entitlement).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.SubscriptionProviderBinding{}, model.UserSubscription{}, false, markStripeGraceContractNeedsAttention(contract.Id, "Stripe grace current entitlement is missing")
+		}
+		return model.SubscriptionProviderBinding{}, model.UserSubscription{}, false, err
+	}
+	return binding, entitlement, true, nil
+}
+
+func validateStripeGraceRemoteFacts(inv *stripe.Invoice, sub *stripe.Subscription, binding model.SubscriptionProviderBinding) error {
+	if inv == nil || sub == nil {
+		return errors.New("Stripe grace remote facts are missing")
+	}
+	invoiceCustomer := stripeCustomerID(inv.Customer)
+	subscriptionCustomer := stripeCustomerID(sub.Customer)
+	if invoiceCustomer == "" || subscriptionCustomer == "" || invoiceCustomer != subscriptionCustomer {
+		return errors.New("Stripe grace customer mismatch")
+	}
+	if strings.TrimSpace(binding.ProviderCustomerId) == "" || strings.TrimSpace(binding.ProviderCustomerId) != invoiceCustomer {
+		return errors.New("local Stripe customer mismatch")
+	}
+	if inv.Livemode != sub.Livemode || binding.Livemode != inv.Livemode {
+		return errors.New("Stripe grace livemode mismatch")
+	}
+	var user model.User
+	if err := model.DB.Where("id = ?", binding.UserId).First(&user).Error; err != nil {
+		return err
+	}
+	if strings.TrimSpace(user.StripeCustomer) != "" && strings.TrimSpace(user.StripeCustomer) != invoiceCustomer {
+		return errors.New("local Stripe customer mismatch")
+	}
+	return nil
+}
+
+func closeExpiredStripeGraceContract(contract model.UserSubscriptionContract, binding model.SubscriptionProviderBinding, entitlement model.UserSubscription) error {
+	now := common.GetTimestamp()
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var locked model.UserSubscriptionContract
+		if err := subscriptionCommandLock(tx).Where("id = ?", contract.Id).First(&locked).Error; err != nil {
+			return err
+		}
+		if locked.Status == model.SubscriptionContractStatusEnded && locked.CurrentProviderBindingId == 0 && locked.CurrentEntitlementId == 0 {
+			return nil
+		}
+		if locked.Status != model.SubscriptionContractStatusGrace || locked.CurrentProviderBindingId != binding.Id || locked.CurrentEntitlementId != entitlement.Id {
+			return nil
+		}
+		if err := tx.Model(&model.UserSubscription{}).
+			Where("id = ? AND contract_id = ? AND user_id = ?", entitlement.Id, contract.Id, contract.UserId).
+			Updates(map[string]interface{}{
+				"current_slot":    nil,
+				"status":          model.SubscriptionEntitlementStatusHistorical,
+				"end_time":        now,
+				"access_end_time": now,
+				"end_reason":      model.SubscriptionEntitlementEndReasonExpired,
+				"updated_at":      now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.UserSubscriptionContract{}).
+			Where("id = ?", contract.Id).
+			Updates(map[string]interface{}{
+				"status":                      model.SubscriptionContractStatusEnded,
+				"current_entitlement_id":      0,
+				"current_provider_binding_id": 0,
+				"pending_plan_id":             0,
+				"pending_effective_at":        0,
+				"grace_period_end":            0,
+				"updated_at":                  now,
+			}).Error
+	})
+}
+
+func markStripeGraceContractNeedsAttention(contractID int64, reason string) error {
+	if contractID <= 0 {
+		return nil
+	}
+	return model.DB.Model(&model.UserSubscriptionContract{}).
+		Where("id = ? AND status = ?", contractID, model.SubscriptionContractStatusGrace).
+		Updates(map[string]interface{}{
+			"status":     model.SubscriptionContractStatusNeedsAttention,
+			"updated_at": common.GetTimestamp(),
+		}).Error
+}
+
+func resetExpiredStripeWebhookLeases(ctx context.Context) (int, error) {
+	if !stripeReconciliationTableAvailable(&model.PaymentWebhookEvent{}) {
+		return 0, nil
+	}
+	now := common.GetTimestamp()
+	result := model.DB.Model(&model.PaymentWebhookEvent{}).
+		Where("provider = ? AND status = ? AND processing_until > ? AND processing_until <= ?",
+			model.PaymentProviderStripe,
+			model.PaymentWebhookEventStatusProcessing,
+			0,
+			now).
+		Updates(map[string]interface{}{
+			"status":           model.PaymentWebhookEventStatusFailed,
+			"processing_token": "",
+			"processing_until": int64(0),
+			"last_error":       "Stripe webhook processing lease expired; queued for reconciliation retry",
+			"updated_at":       now,
+		})
+	return int(result.RowsAffected), result.Error
+}
+
+func reconcileUnresolvedStripeInvoiceIntents(ctx context.Context) (int, error) {
+	if !stripeReconciliationTableAvailable(&model.SubscriptionChangeIntent{}) {
+		return 0, nil
+	}
+	var intents []model.SubscriptionChangeIntent
+	if err := model.DB.
+		Where("payment_mode = ? AND status IN ? AND provider_invoice_id <> ?",
+			model.SubscriptionPaymentModeStripeRecurring,
+			[]string{
+				model.SubscriptionChangeIntentStatusAwaitingPayment,
+				model.SubscriptionChangeIntentStatusSyncing,
+				model.SubscriptionChangeIntentStatusCompensationRequired,
+			},
+			"").
+		Order("id asc").
+		Limit(stripeSubscriptionReconciliationBatchSize).
+		Find(&intents).Error; err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, intent := range intents {
+		invoiceID := strings.TrimSpace(intent.ProviderInvoiceId)
+		if invoiceID == "" {
+			continue
+		}
+		inv, err := stripeInvoiceGetter(ctx, invoiceID)
+		if err != nil {
+			return processed, err
+		}
+		if inv == nil || strings.TrimSpace(inv.ID) == "" {
+			return processed, errors.New("Stripe invoice is missing")
+		}
+		if inv.Paid && inv.Status == stripe.InvoiceStatusPaid {
+			if _, err := ReconcilePaidInvoice(ctx, invoiceID); err != nil {
+				return processed, err
+			}
+			processed++
+			continue
+		}
+		subscriptionID := stripeInvoiceSubscriptionID(inv)
+		if subscriptionID != "" {
+			if _, err := stripeSubscriptionGetter(ctx, subscriptionID); err != nil {
+				return processed, err
+			}
+		}
+	}
+	return processed, nil
+}
+
+func reconcileStalePendingStripePurchases(ctx context.Context) (int, error) {
+	if !stripeReconciliationTableAvailable(&model.SubscriptionOrder{}) ||
+		!stripeReconciliationTableAvailable(&model.SubscriptionChangeIntent{}) {
+		return 0, nil
+	}
+	var orders []model.SubscriptionOrder
+	if err := model.DB.
+		Where("payment_provider = ? AND status = ? AND provider_payload LIKE ?",
+			model.PaymentProviderStripe,
+			common.TopUpStatusPending,
+			"%invoice_id=%").
+		Order("id asc").
+		Limit(stripeSubscriptionReconciliationBatchSize).
+		Find(&orders).Error; err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, order := range orders {
+		invoiceID := parseInvoiceIDFromPayload(order.ProviderPayload)
+		if invoiceID == "" {
+			continue
+		}
+		inv, err := stripeInvoiceGetter(ctx, invoiceID)
+		if err != nil {
+			return processed, err
+		}
+		if inv == nil || strings.TrimSpace(inv.ID) == "" {
+			return processed, errors.New("Stripe invoice is missing")
+		}
+		if inv.Paid && inv.Status == stripe.InvoiceStatusPaid {
+			if _, err := ReconcilePaidInvoice(ctx, invoiceID); err != nil {
+				return processed, err
+			}
+			processed++
+			continue
+		}
+		if subscriptionID := stripeInvoiceSubscriptionID(inv); subscriptionID != "" {
+			sub, err := stripeSubscriptionGetter(ctx, subscriptionID)
+			if err != nil {
+				return processed, err
+			}
+			if sub != nil && isTerminalStripeSubscriptionStatus(string(sub.Status)) {
+				if err := TerminatePendingStripePurchase(ctx, order.TradeNo, model.SubscriptionChangeIntentStatusFailed); err != nil {
+					return processed, err
+				}
+				processed++
+				continue
+			}
+		}
+		if !isTerminalStripeInvoiceStatus(inv.Status) {
+			continue
+		}
+		if err := TerminatePendingStripePurchase(ctx, order.TradeNo, model.SubscriptionChangeIntentStatusFailed); err != nil {
+			return processed, err
+		}
+		processed++
+	}
+	return processed, nil
+}
+
+func parseInvoiceIDFromPayload(payload string) string {
+	for _, part := range strings.Split(payload, ";") {
+		key, value, ok := strings.Cut(part, "=")
+		if !ok || strings.TrimSpace(key) != "invoice_id" {
+			continue
+		}
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func isTerminalStripeInvoiceStatus(status stripe.InvoiceStatus) bool {
+	switch strings.ToLower(strings.TrimSpace(string(status))) {
+	case "void", "uncollectible":
+		return true
+	default:
+		return false
+	}
+}
+
+func reconcileStripeBindingPointerDrift(ctx context.Context) (int, error) {
+	if !stripeReconciliationTableAvailable(&model.UserSubscriptionContract{}) ||
+		!stripeReconciliationTableAvailable(&model.SubscriptionProviderBinding{}) {
+		return 0, nil
+	}
+	var contracts []model.UserSubscriptionContract
+	if err := model.DB.
+		Where("payment_mode = ? AND status IN ? AND current_provider_binding_id > ?",
+			model.SubscriptionPaymentModeStripeRecurring,
+			[]string{model.SubscriptionContractStatusActive, model.SubscriptionContractStatusGrace},
+			0).
+		Order("id asc").
+		Limit(stripeSubscriptionReconciliationBatchSize).
+		Find(&contracts).Error; err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, contract := range contracts {
+		var binding model.SubscriptionProviderBinding
+		err := model.DB.Where("id = ? AND provider = ?", contract.CurrentProviderBindingId, model.PaymentProviderStripe).First(&binding).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := markStripeContractNeedsAttention(contract.Id); err != nil {
+				return processed, err
+			}
+			processed++
+			continue
+		}
+		if err != nil {
+			return processed, err
+		}
+		if binding.ContractId != contract.Id || binding.UserId != contract.UserId || isTerminalStripeSubscriptionStatus(binding.ProviderStatus) || binding.EndedAt > 0 {
+			if err := markStripeContractNeedsAttention(contract.Id); err != nil {
+				return processed, err
+			}
+			processed++
+			continue
+		}
+		if strings.TrimSpace(binding.ProviderScheduleId) != "" {
+			snapshot, err := stripeSubscriptionSnapshotForReconciliation(binding.ProviderSubscriptionId)
+			if err != nil {
+				return processed, err
+			}
+			if snapshot.ProviderScheduleIdObserved && strings.TrimSpace(snapshot.ProviderScheduleId) != strings.TrimSpace(binding.ProviderScheduleId) {
+				if _, err := model.ApplyProviderSubscriptionSnapshot(binding.Id, snapshot); err != nil {
+					return processed, err
+				}
+				processed++
+			}
+		}
+	}
+	return processed, nil
+}
+
+func markStripeContractNeedsAttention(contractID int64) error {
+	if contractID <= 0 {
+		return nil
+	}
+	return model.DB.Model(&model.UserSubscriptionContract{}).
+		Where("id = ? AND status <> ?", contractID, model.SubscriptionContractStatusEnded).
+		Updates(map[string]interface{}{
+			"status":     model.SubscriptionContractStatusNeedsAttention,
+			"updated_at": common.GetTimestamp(),
+		}).Error
+}
+
+func stripeReconciliationTableAvailable(value interface{}) bool {
+	return model.DB != nil && model.DB.Migrator().HasTable(value)
 }
 
 func getStripeSubscriptionSnapshotForReconciliation(providerSubscriptionID string) (model.ProviderSubscriptionSnapshot, error) {

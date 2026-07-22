@@ -122,6 +122,8 @@ func TestSubscriptionProviderBindingMigrationCreatesRecurringTablesAndColumn(t *
 	require.True(t, DB.Migrator().HasTable(&SubscriptionProviderBinding{}))
 	require.True(t, DB.Migrator().HasTable(&PaymentWebhookEvent{}))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "provider_binding_id"))
+	require.True(t, DB.Migrator().HasColumn(&PaymentWebhookEvent{}, "processing_token"))
+	require.True(t, DB.Migrator().HasColumn(&PaymentWebhookEvent{}, "processing_until"))
 }
 
 func TestCompleteSubscriptionOrderWithProviderBindingIsIdempotentForSameOrder(t *testing.T) {
@@ -219,6 +221,78 @@ func TestPaymentWebhookEventFailedRetryClaimRequiresConditionalUpdate(t *testing
 	require.False(t, secondClaimed)
 }
 
+func TestPaymentWebhookEventLeaseClaimIsSingleOwnerAndTakeoverSafe(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionRecurringTestDB(t)
+	now := common.GetTimestamp()
+
+	claimed, err := ClaimPaymentWebhookEventLease(PaymentProviderStripe, "evt_lease_single", "invoice.paid", "in_lease", now, "hash-a", "worker-a", now+60)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	second, err := ClaimPaymentWebhookEventLease(PaymentProviderStripe, "evt_lease_single", "invoice.paid", "in_lease", now, "hash-a", "worker-b", now+60)
+	require.NoError(t, err)
+	require.False(t, second)
+
+	var event PaymentWebhookEvent
+	require.NoError(t, DB.First(&event, "provider = ? AND event_id = ?", PaymentProviderStripe, "evt_lease_single").Error)
+	require.Equal(t, "worker-a", event.ProcessingToken)
+	require.Equal(t, now+60, event.ProcessingUntil)
+	require.Equal(t, 1, event.AttemptCount)
+
+	require.NoError(t, DB.Create(&PaymentWebhookEvent{
+		Provider:         PaymentProviderStripe,
+		EventId:          "evt_lease_expired",
+		EventType:        "invoice.paid",
+		ProviderObjectId: "in_expired",
+		Status:           PaymentWebhookEventStatusProcessing,
+		ProcessingToken:  "stale-worker",
+		ProcessingUntil:  now - 1,
+		AttemptCount:     1,
+	}).Error)
+	taken, err := ClaimPaymentWebhookEventLease(PaymentProviderStripe, "evt_lease_expired", "invoice.paid", "in_expired", now, "hash-b", "worker-fresh", now+120)
+	require.NoError(t, err)
+	require.True(t, taken)
+	event = PaymentWebhookEvent{}
+	require.NoError(t, DB.First(&event, "provider = ? AND event_id = ?", PaymentProviderStripe, "evt_lease_expired").Error)
+	require.Equal(t, "worker-fresh", event.ProcessingToken)
+	require.Equal(t, now+120, event.ProcessingUntil)
+	require.Equal(t, 2, event.AttemptCount)
+
+	require.NoError(t, DB.Create(&PaymentWebhookEvent{
+		Provider:         PaymentProviderStripe,
+		EventId:          "evt_lease_processed",
+		EventType:        "invoice.paid",
+		ProviderObjectId: "in_processed",
+		Status:           PaymentWebhookEventStatusProcessed,
+		ProcessedAt:      now,
+	}).Error)
+	processed, err := ClaimPaymentWebhookEventLease(PaymentProviderStripe, "evt_lease_processed", "invoice.paid", "in_processed", now, "hash-c", "worker-c", now+60)
+	require.NoError(t, err)
+	require.False(t, processed)
+}
+
+func TestPaymentWebhookEventFailedByTokenReleasesOnlyOwnedLease(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionRecurringTestDB(t)
+	now := common.GetTimestamp()
+
+	claimed, err := ClaimPaymentWebhookEventLease(PaymentProviderStripe, "evt_failed_release", "invoice.paid", "in_failed_release", now, "hash-a", "worker-a", now+60)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	require.NoError(t, MarkPaymentWebhookEventFailedByToken(PaymentProviderStripe, "evt_failed_release", "worker-a", errors.New("retryable failure")))
+
+	reclaimed, err := ClaimPaymentWebhookEventLease(PaymentProviderStripe, "evt_failed_release", "invoice.paid", "in_failed_release", now, "hash-b", "worker-b", now+120)
+	require.NoError(t, err)
+	require.True(t, reclaimed)
+	require.NoError(t, MarkPaymentWebhookEventFailedByToken(PaymentProviderStripe, "evt_failed_release", "worker-a", errors.New("stale failure")))
+
+	var event PaymentWebhookEvent
+	require.NoError(t, DB.First(&event, "provider = ? AND event_id = ?", PaymentProviderStripe, "evt_failed_release").Error)
+	require.Equal(t, PaymentWebhookEventStatusProcessing, event.Status)
+	require.Equal(t, "worker-b", event.ProcessingToken)
+	require.Equal(t, now+120, event.ProcessingUntil)
+}
+
 func TestSubscriptionProviderBindingAllowsMultipleStripeSubscriptionsForSameUser(t *testing.T) {
 	setupSubscriptionRecurringTestDB(t)
 	migrateSubscriptionRecurringTestDB(t)
@@ -312,6 +386,55 @@ func TestProviderSubscriptionSnapshotOmittedSchedulePreservesExistingBindingValu
 	require.NoError(t, err)
 	require.Equal(t, "sub_sched_existing", updated.ProviderScheduleId)
 	require.Equal(t, "si_schedule_preserve_updated", updated.ProviderSubscriptionItemId)
+}
+
+func TestApplyProviderSubscriptionSnapshotDoesNotReviveTerminalBinding(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionRecurringTestDB(t)
+	insertUserForSubscriptionRecurringTest(t, 507)
+	insertPlanForSubscriptionRecurringTest(t, 607, "price_recurring")
+	insertOrderForSubscriptionRecurringTest(t, "recurring-order-terminal", 507, 607)
+
+	binding, err := CompleteSubscriptionOrderWithProviderBinding(
+		"recurring-order-terminal",
+		"{}",
+		PaymentProviderStripe,
+		PaymentMethodStripe,
+		stripeSnapshotForSubscriptionRecurringTest("sub_terminal"),
+	)
+	require.NoError(t, err)
+
+	terminated, err := ApplyProviderSubscriptionTermination(binding.Id, ProviderSubscriptionSnapshot{
+		ProviderSubscriptionId:  "sub_terminal",
+		ProviderCustomerId:      "cus_recurring",
+		ProviderPriceId:         "price_recurring",
+		ProviderLatestInvoiceId: "in_terminal",
+		ProviderStatus:          "canceled",
+		CurrentPeriodStart:      1000,
+		CurrentPeriodEnd:        2000,
+		CanceledAt:              1500,
+		EndedAt:                 1500,
+	})
+	require.NoError(t, err)
+
+	updated, err := ApplyProviderSubscriptionSnapshot(binding.Id, ProviderSubscriptionSnapshot{
+		ProviderSubscriptionId:  "sub_terminal",
+		ProviderCustomerId:      "cus_stale_update",
+		ProviderPriceId:         "price_stale_update",
+		ProviderLatestInvoiceId: "in_stale_update",
+		ProviderStatus:          "active",
+		CurrentPeriodStart:      2000,
+		CurrentPeriodEnd:        3000,
+	})
+	require.NoError(t, err)
+	require.Equal(t, terminated.ProviderStatus, updated.ProviderStatus)
+	require.Equal(t, terminated.EndedAt, updated.EndedAt)
+	require.Equal(t, terminated.CanceledAt, updated.CanceledAt)
+	require.Equal(t, terminated.ProviderCustomerId, updated.ProviderCustomerId)
+	require.Equal(t, terminated.ProviderPriceId, updated.ProviderPriceId)
+	require.Equal(t, terminated.ProviderLatestInvoiceId, updated.ProviderLatestInvoiceId)
+	require.Equal(t, terminated.CurrentPeriodStart, updated.CurrentPeriodStart)
+	require.Equal(t, terminated.CurrentPeriodEnd, updated.CurrentPeriodEnd)
 }
 
 func TestCompleteSubscriptionOrderWithProviderBindingReturnsNotFoundForUnknownOrder(t *testing.T) {

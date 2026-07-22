@@ -1020,6 +1020,196 @@ func TestStripeInvoicePaidWebhookCallsPaidInvoiceReconcile(t *testing.T) {
 	require.Equal(t, "in_route_paid", reconciledInvoiceID)
 }
 
+func TestStripeInvoicePaidDuplicateActiveLeaseRetriesWithoutReconcile(t *testing.T) {
+	testCases := []struct {
+		name   string
+		status string
+	}{
+		{name: "processing", status: model.PaymentWebhookEventStatusProcessing},
+		{name: "failed with active lease", status: model.PaymentWebhookEventStatusFailed},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			setupStripeFulfillmentTestDB(t)
+			originalReconcile := reconcilePaidStripeInvoice
+			t.Cleanup(func() { reconcilePaidStripeInvoice = originalReconcile })
+			called := false
+			reconcilePaidStripeInvoice = func(ctx context.Context, invoiceID string) (*service.PaidInvoiceReconcileResult, error) {
+				called = true
+				return &service.PaidInvoiceReconcileResult{}, nil
+			}
+			require.NoError(t, model.DB.Create(&model.PaymentWebhookEvent{
+				Provider:         model.PaymentProviderStripe,
+				EventId:          "evt_invoice_paid_active_" + tc.name,
+				EventType:        string(stripe.EventTypeInvoicePaid),
+				ProviderObjectId: "in_active_lease",
+				Status:           tc.status,
+				ProcessingToken:  "worker-a",
+				ProcessingUntil:  common.GetTimestamp() + 300,
+				AttemptCount:     1,
+			}).Error)
+
+			err := handleStripeInvoicePaid(context.Background(), stripe.Event{
+				ID:   "evt_invoice_paid_active_" + tc.name,
+				Type: stripe.EventTypeInvoicePaid,
+				Data: &stripe.EventData{Object: map[string]interface{}{
+					"id": "in_active_lease",
+				}},
+			})
+
+			require.Error(t, err)
+			require.False(t, called)
+		})
+	}
+}
+
+func TestStripeInvoicePaidDuplicateProcessedAckWithoutReconcile(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalReconcile := reconcilePaidStripeInvoice
+	t.Cleanup(func() { reconcilePaidStripeInvoice = originalReconcile })
+	called := false
+	reconcilePaidStripeInvoice = func(ctx context.Context, invoiceID string) (*service.PaidInvoiceReconcileResult, error) {
+		called = true
+		return &service.PaidInvoiceReconcileResult{}, nil
+	}
+	require.NoError(t, model.DB.Create(&model.PaymentWebhookEvent{
+		Provider:         model.PaymentProviderStripe,
+		EventId:          "evt_invoice_paid_processed",
+		EventType:        string(stripe.EventTypeInvoicePaid),
+		ProviderObjectId: "in_processed_duplicate",
+		Status:           model.PaymentWebhookEventStatusProcessed,
+		ProcessedAt:      common.GetTimestamp(),
+		AttemptCount:     1,
+	}).Error)
+
+	err := handleStripeInvoicePaid(context.Background(), stripe.Event{
+		ID:   "evt_invoice_paid_processed",
+		Type: stripe.EventTypeInvoicePaid,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id": "in_processed_duplicate",
+		}},
+	})
+
+	require.NoError(t, err)
+	require.False(t, called)
+}
+
+func TestStripeInvoicePaymentFailedWebhookCallsFailedInvoiceReconcile(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalReconcile := reconcileFailedStripeInvoice
+	t.Cleanup(func() { reconcileFailedStripeInvoice = originalReconcile })
+	var reconciledInvoiceID string
+	reconcileFailedStripeInvoice = func(ctx context.Context, invoiceID string) error {
+		reconciledInvoiceID = invoiceID
+		return nil
+	}
+
+	event := stripe.Event{
+		ID:   "evt_invoice_failed",
+		Type: stripe.EventTypeInvoicePaymentFailed,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id": "in_route_failed",
+		}},
+	}
+
+	require.NoError(t, handleStripeInvoicePaymentFailed(context.Background(), event))
+	require.Equal(t, "in_route_failed", reconciledInvoiceID)
+}
+
+func TestStripeWebhookRoutesInvoicePaymentFailedToRetryableReconcile(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	confirmPaymentComplianceForTest(t)
+	originalSecret := setting.StripeWebhookSecret
+	originalReconcile := reconcileFailedStripeInvoice
+	t.Cleanup(func() {
+		setting.StripeWebhookSecret = originalSecret
+		reconcileFailedStripeInvoice = originalReconcile
+	})
+	setting.StripeWebhookSecret = "whsec_test_invoice_failed"
+	reconcileFailedStripeInvoice = func(ctx context.Context, invoiceID string) error {
+		require.Equal(t, "in_signed_failed", invoiceID)
+		return errors.New("retry failed invoice")
+	}
+	payload := []byte(`{
+		"id": "evt_invoice_failed_signed",
+		"object": "event",
+		"type": "invoice.payment_failed",
+		"data": {
+			"object": {
+				"id": "in_signed_failed",
+				"object": "invoice"
+			}
+		}
+	}`)
+
+	recorder := performSignedStripeWebhookRequest(t, payload, setting.StripeWebhookSecret)
+
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	require.Equal(t, "retry", recorder.Body.String())
+}
+
+func TestStripeWebhookAcksInvoicePaidNoOpReconcile(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	confirmPaymentComplianceForTest(t)
+	originalSecret := setting.StripeWebhookSecret
+	originalReconcile := reconcilePaidStripeInvoice
+	t.Cleanup(func() {
+		setting.StripeWebhookSecret = originalSecret
+		reconcilePaidStripeInvoice = originalReconcile
+	})
+	setting.StripeWebhookSecret = "whsec_test_invoice_paid_noop"
+	reconcilePaidStripeInvoice = func(ctx context.Context, invoiceID string) (*service.PaidInvoiceReconcileResult, error) {
+		require.Equal(t, "in_signed_paid_noop", invoiceID)
+		return &service.PaidInvoiceReconcileResult{Applied: false}, nil
+	}
+	payload := []byte(`{
+		"id": "evt_invoice_paid_noop",
+		"object": "event",
+		"type": "invoice.paid",
+		"data": {
+			"object": {
+				"id": "in_signed_paid_noop",
+				"object": "invoice"
+			}
+		}
+	}`)
+
+	recorder := performSignedStripeWebhookRequest(t, payload, setting.StripeWebhookSecret)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+}
+
+func TestStripeWebhookAcksInvoicePaymentFailedNoOpReconcile(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	confirmPaymentComplianceForTest(t)
+	originalSecret := setting.StripeWebhookSecret
+	originalReconcile := reconcileFailedStripeInvoice
+	t.Cleanup(func() {
+		setting.StripeWebhookSecret = originalSecret
+		reconcileFailedStripeInvoice = originalReconcile
+	})
+	setting.StripeWebhookSecret = "whsec_test_invoice_failed_noop"
+	reconcileFailedStripeInvoice = func(ctx context.Context, invoiceID string) error {
+		require.Equal(t, "in_signed_failed_noop", invoiceID)
+		return nil
+	}
+	payload := []byte(`{
+		"id": "evt_invoice_failed_noop",
+		"object": "event",
+		"type": "invoice.payment_failed",
+		"data": {
+			"object": {
+				"id": "in_signed_failed_noop",
+				"object": "invoice"
+			}
+		}
+	}`)
+
+	recorder := performSignedStripeWebhookRequest(t, payload, setting.StripeWebhookSecret)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+}
+
 func TestStripeRecurringCheckoutCompletedUsesInvoiceReconcile(t *testing.T) {
 	setupStripeFulfillmentTestDB(t)
 	originalReconcile := reconcilePaidStripeInvoice

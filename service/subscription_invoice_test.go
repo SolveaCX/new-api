@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -161,6 +163,79 @@ func stripeSubscriptionFixture(subscriptionID string, metadata map[string]string
 	}
 }
 
+func seedStripeRenewalContract(t *testing.T, userID int, planID int, providerSubscriptionID string) (model.UserSubscriptionContract, model.SubscriptionProviderBinding, model.UserSubscription) {
+	t.Helper()
+	rank := 1
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:             userID,
+		Username:       "renewal_user",
+		Email:          "renewal-user@example.com",
+		Status:         common.UserStatusEnabled,
+		Group:          "plg",
+		AffCode:        "renewal_aff",
+		StripeCustomer: "cus_invoice",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:              planID,
+		Title:           "Renewal Plan",
+		PriceAmount:     12.34,
+		Currency:        "USD",
+		DurationUnit:    model.SubscriptionDurationMonth,
+		DurationValue:   1,
+		Enabled:         true,
+		TierRank:        &rank,
+		AllowBalancePay: common.GetPointer(true),
+		TotalAmount:     1234,
+		StripePriceId:   "price_invoice_plan",
+	}).Error)
+	contract := model.UserSubscriptionContract{
+		UserId:      userID,
+		Status:      model.SubscriptionContractStatusActive,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	binding := model.SubscriptionProviderBinding{
+		UserId:                 userID,
+		PlanId:                 planID,
+		ContractId:             contract.Id,
+		Provider:               model.PaymentProviderStripe,
+		ProviderSubscriptionId: providerSubscriptionID,
+		ProviderCustomerId:     "cus_invoice",
+		ProviderPriceId:        "price_invoice_plan",
+		ProviderStatus:         "active",
+		CurrentPeriodStart:     1700000000,
+		CurrentPeriodEnd:       1702592000,
+	}
+	require.NoError(t, model.DB.Create(&binding).Error)
+	currentSlot := 1
+	grantKey := "stripe:in_old"
+	entitlement := model.UserSubscription{
+		UserId:            userID,
+		PlanId:            planID,
+		ContractId:        contract.Id,
+		ProviderBindingId: binding.Id,
+		GrantKey:          &grantKey,
+		CurrentSlot:       &currentSlot,
+		AmountTotal:       1234,
+		AmountUsed:        777,
+		StartTime:         1700000000,
+		EndTime:           1702592000,
+		AccessEndTime:     1702592000,
+		Status:            model.SubscriptionEntitlementStatusActive,
+		PaymentMode:       model.SubscriptionPaymentModeStripeRecurring,
+		Source:            model.PaymentMethodStripe,
+	}
+	require.NoError(t, model.DB.Create(&entitlement).Error)
+	require.NoError(t, model.DB.Model(&contract).Updates(map[string]interface{}{
+		"current_plan_id":             planID,
+		"current_entitlement_id":      entitlement.Id,
+		"current_provider_binding_id": binding.Id,
+		"current_period_start":        entitlement.StartTime,
+		"current_period_end":          entitlement.EndTime,
+	}).Error)
+	return contract, binding, entitlement
+}
+
 func TestReconcilePaidInvoiceGrantsInvoiceFirstPurchase(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	contract, intent := seedStripeInvoicePurchase(t, 8101, 8201, "sub_invoice_first")
@@ -220,6 +295,404 @@ func TestReconcilePaidInvoiceIsIdempotentForDuplicateAndCheckoutFirst(t *testing
 	var bindingCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("user_id = ?", 8102).Count(&bindingCount).Error)
 	require.Equal(t, int64(1), bindingCount)
+}
+
+func TestReconcilePaidInvoiceRenewsExistingStripeBindingWithoutCheckoutOrder(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8120, 8220, "sub_renewal_paid")
+	invoice := stripeInvoiceFixture("in_renewal", "sub_renewal_paid")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	subscription := stripeSubscriptionFixture("sub_renewal_paid", map[string]string{})
+	subscription.CurrentPeriodStart = oldEntitlement.EndTime
+	subscription.CurrentPeriodEnd = oldEntitlement.EndTime + 2592000
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	first, err := ReconcilePaidInvoice(context.Background(), "in_renewal")
+	require.NoError(t, err)
+	second, err := ReconcilePaidInvoice(context.Background(), "in_renewal")
+	require.NoError(t, err)
+
+	require.True(t, first.Applied)
+	require.False(t, second.Applied)
+	var grants []model.UserSubscription
+	require.NoError(t, model.DB.Where("contract_id = ?", contract.Id).Order("id asc").Find(&grants).Error)
+	require.Len(t, grants, 2)
+	require.Equal(t, int64(777), grants[0].AmountUsed)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, grants[0].Status)
+	require.Equal(t, model.SubscriptionEntitlementEndReasonRenewed, grants[0].EndReason)
+	require.Equal(t, int64(0), grants[1].AmountUsed)
+	require.Equal(t, int64(1234), grants[1].AmountTotal)
+	require.Equal(t, "stripe:in_renewal", *grants[1].GrantKey)
+	require.Equal(t, binding.Id, grants[1].ProviderBindingId)
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusActive, reloadedContract.Status)
+	require.Equal(t, grants[1].Id, reloadedContract.CurrentEntitlementId)
+	require.Equal(t, oldEntitlement.EndTime, reloadedContract.CurrentPeriodStart)
+	require.Equal(t, oldEntitlement.EndTime+2592000, reloadedContract.CurrentPeriodEnd)
+}
+
+func TestReconcilePaidInvoiceRenewsExistingStripeBindingForDisabledBoundPlan(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8123, 8223, "sub_renewal_disabled_plan")
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", binding.PlanId).Update("enabled", false).Error)
+	invoice := stripeInvoiceFixture("in_renewal_disabled_plan", "sub_renewal_disabled_plan")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	subscription := stripeSubscriptionFixture("sub_renewal_disabled_plan", map[string]string{})
+	subscription.CurrentPeriodStart = oldEntitlement.EndTime
+	subscription.CurrentPeriodEnd = oldEntitlement.EndTime + 2592000
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	first, err := ReconcilePaidInvoice(context.Background(), "in_renewal_disabled_plan")
+	require.NoError(t, err)
+	second, err := ReconcilePaidInvoice(context.Background(), "in_renewal_disabled_plan")
+	require.NoError(t, err)
+
+	require.True(t, first.Applied)
+	require.False(t, second.Applied)
+	var grants []model.UserSubscription
+	require.NoError(t, model.DB.Where("contract_id = ?", contract.Id).Order("id asc").Find(&grants).Error)
+	require.Len(t, grants, 2)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, grants[0].Status)
+	require.Equal(t, model.SubscriptionEntitlementStatusActive, grants[1].Status)
+	require.Equal(t, int64(0), grants[1].AmountUsed)
+	require.Equal(t, int64(1234), grants[1].AmountTotal)
+	require.Equal(t, "stripe:in_renewal_disabled_plan", *grants[1].GrantKey)
+	require.Equal(t, binding.Id, grants[1].ProviderBindingId)
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusActive, reloadedContract.Status)
+	require.Equal(t, grants[1].Id, reloadedContract.CurrentEntitlementId)
+}
+
+func TestReconcilePaidInvoiceIgnoresOlderRenewalAfterNewerPeriodApplied(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8124, 8224, "sub_renewal_out_of_order")
+	period1Start := oldEntitlement.EndTime
+	period1End := period1Start + 2592000
+	period2Start := period1End
+	period2End := period2Start + 2592000
+	period1Invoice := stripeInvoiceFixture("in_renewal_period1_late", "sub_renewal_out_of_order")
+	period1Invoice.Lines.Data[0].Period = &stripe.Period{Start: period1Start, End: period1End}
+	period2Invoice := stripeInvoiceFixture("in_renewal_period2_first", "sub_renewal_out_of_order")
+	period2Invoice.Lines.Data[0].Period = &stripe.Period{Start: period2Start, End: period2End}
+	subscription := stripeSubscriptionFixture("sub_renewal_out_of_order", map[string]string{})
+	subscription.CurrentPeriodStart = period2Start
+	subscription.CurrentPeriodEnd = period2End
+	originalInvoiceGetter := stripeInvoiceGetter
+	originalSubscriptionGetter := stripeSubscriptionGetter
+	stripeInvoiceGetter = func(ctx context.Context, invoiceID string) (*stripe.Invoice, error) {
+		switch invoiceID {
+		case "in_renewal_period2_first":
+			return period2Invoice, nil
+		case "in_renewal_period1_late":
+			return period1Invoice, nil
+		default:
+			return nil, errors.New("unexpected invoice id")
+		}
+	}
+	stripeSubscriptionGetter = func(ctx context.Context, subscriptionID string) (*stripe.Subscription, error) {
+		return subscription, nil
+	}
+	defer func() {
+		stripeInvoiceGetter = originalInvoiceGetter
+		stripeSubscriptionGetter = originalSubscriptionGetter
+	}()
+
+	first, err := ReconcilePaidInvoice(context.Background(), "in_renewal_period2_first")
+	require.NoError(t, err)
+	second, err := ReconcilePaidInvoice(context.Background(), "in_renewal_period1_late")
+	require.NoError(t, err)
+
+	require.True(t, first.Applied)
+	require.False(t, second.Applied)
+	var grants []model.UserSubscription
+	require.NoError(t, model.DB.Where("contract_id = ?", contract.Id).Order("id asc").Find(&grants).Error)
+	require.Len(t, grants, 2)
+	require.Equal(t, period2Start, grants[1].StartTime)
+	require.Equal(t, period2End, grants[1].EndTime)
+	require.Equal(t, "stripe:in_renewal_period2_first", *grants[1].GrantKey)
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusActive, reloadedContract.Status)
+	require.Equal(t, period2Start, reloadedContract.CurrentPeriodStart)
+	require.Equal(t, period2End, reloadedContract.CurrentPeriodEnd)
+	require.Equal(t, grants[1].Id, reloadedContract.CurrentEntitlementId)
+	var reloadedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&reloadedBinding, "id = ?", binding.Id).Error)
+	require.Equal(t, "in_renewal_period2_first", reloadedBinding.ProviderLatestInvoiceId)
+	require.Equal(t, period2Start, reloadedBinding.CurrentPeriodStart)
+	require.Equal(t, period2End, reloadedBinding.CurrentPeriodEnd)
+}
+
+func TestReconcilePaidInvoiceIgnoresLatePaidInvoiceForTerminatedBinding(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, entitlement := seedStripeRenewalContract(t, 8126, 8226, "sub_renewal_terminated")
+	require.NoError(t, model.DB.Model(&contract).Updates(map[string]interface{}{
+		"status":     model.SubscriptionContractStatusEnded,
+		"updated_at": common.GetTimestamp(),
+	}).Error)
+	_, err := model.ApplyProviderSubscriptionTermination(binding.Id, model.ProviderSubscriptionSnapshot{
+		ProviderSubscriptionId:     binding.ProviderSubscriptionId,
+		ProviderSubscriptionItemId: binding.ProviderSubscriptionItemId,
+		ProviderCustomerId:         binding.ProviderCustomerId,
+		ProviderPriceId:            binding.ProviderPriceId,
+		ProviderLatestInvoiceId:    "in_terminal_snapshot",
+		ProviderStatus:             "canceled",
+		CurrentPeriodStart:         binding.CurrentPeriodStart,
+		CurrentPeriodEnd:           binding.CurrentPeriodEnd,
+		EndedAt:                    common.GetTimestamp(),
+	})
+	require.NoError(t, err)
+	invoice := stripeInvoiceFixture("in_terminal_late_paid", "sub_renewal_terminated")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000}
+	subscription := stripeSubscriptionFixture("sub_renewal_terminated", map[string]string{})
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_terminal_late_paid")
+
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+	var grants []model.UserSubscription
+	require.NoError(t, model.DB.Where("contract_id = ?", contract.Id).Order("id asc").Find(&grants).Error)
+	require.Len(t, grants, 1)
+	require.Equal(t, "cancelled", grants[0].Status)
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusEnded, reloadedContract.Status)
+	var reloadedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&reloadedBinding, "id = ?", binding.Id).Error)
+	require.Equal(t, "canceled", reloadedBinding.ProviderStatus)
+	require.NotZero(t, reloadedBinding.EndedAt)
+}
+
+func TestReconcilePaidInvoiceNoBindingWithoutNewAPIMetadataIsNoOp(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	invoice := stripeInvoiceFixture("in_legacy_paid", "sub_legacy_paid")
+	subscription := stripeSubscriptionFixture("sub_legacy_paid", map[string]string{})
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_legacy_paid")
+
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+	var bindingCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Count(&bindingCount).Error)
+	require.Zero(t, bindingCount)
+}
+
+func TestReconcilePaidInvoiceNoBindingWithCompleteNewAPIMetadataRetriesMissingLocalRecords(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	invoice := stripeInvoiceFixture("in_missing_local_paid", "sub_missing_local_paid")
+	subscription := stripeSubscriptionFixture("sub_missing_local_paid", map[string]string{
+		"trade_no":         "sub_missing_local_paid",
+		"user_id":          "8991",
+		"plan_id":          "8992",
+		"contract_id":      "8993",
+		"change_intent_id": "8994",
+	})
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_missing_local_paid")
+
+	require.Error(t, err)
+	require.Nil(t, result)
+}
+
+func TestReconcileFailedInvoiceMovesContractToGraceWithoutResettingUsage(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, _, entitlement := seedStripeRenewalContract(t, 8121, 8221, "sub_payment_failed")
+	invoice := stripeInvoiceFixture("in_failed", "sub_payment_failed")
+	invoice.Paid = false
+	invoice.Status = stripe.InvoiceStatusOpen
+	subscription := stripeSubscriptionFixture("sub_payment_failed", map[string]string{})
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	err := ReconcileFailedInvoice(context.Background(), "in_failed")
+	require.NoError(t, err)
+	require.NoError(t, ReconcileFailedInvoice(context.Background(), "in_failed"))
+
+	var reloaded model.UserSubscription
+	require.NoError(t, model.DB.First(&reloaded, "id = ?", entitlement.Id).Error)
+	require.Equal(t, entitlement.EndTime, reloaded.EndTime)
+	require.Equal(t, entitlement.EndTime+int64((72*time.Hour).Seconds()), reloaded.AccessEndTime)
+	require.Equal(t, int64(777), reloaded.AmountUsed)
+	require.Equal(t, model.SubscriptionEntitlementStatusActive, reloaded.Status)
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusGrace, reloadedContract.Status)
+	require.Equal(t, reloaded.AccessEndTime, reloadedContract.GracePeriodEnd)
+}
+
+func TestReconcileFailedInvoiceWithPaidFreshInvoiceKeepsPaidRenewalActive(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, _, oldEntitlement := seedStripeRenewalContract(t, 8122, 8222, "sub_failed_after_paid")
+	invoice := stripeInvoiceFixture("in_failed_after_paid", "sub_failed_after_paid")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	subscription := stripeSubscriptionFixture("sub_failed_after_paid", map[string]string{})
+	subscription.CurrentPeriodStart = oldEntitlement.EndTime
+	subscription.CurrentPeriodEnd = oldEntitlement.EndTime + 2592000
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	paid, err := ReconcilePaidInvoice(context.Background(), "in_failed_after_paid")
+	require.NoError(t, err)
+	require.True(t, paid.Applied)
+	require.NoError(t, ReconcileFailedInvoice(context.Background(), "in_failed_after_paid"))
+
+	var grants []model.UserSubscription
+	require.NoError(t, model.DB.Where("contract_id = ?", contract.Id).Order("id asc").Find(&grants).Error)
+	require.Len(t, grants, 2)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, grants[0].Status)
+	require.Equal(t, model.SubscriptionEntitlementStatusActive, grants[1].Status)
+	require.Equal(t, int64(0), grants[1].AmountUsed)
+	require.Equal(t, grants[1].EndTime, grants[1].AccessEndTime)
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusActive, reloadedContract.Status)
+	require.Equal(t, int64(0), reloadedContract.GracePeriodEnd)
+	require.Equal(t, grants[1].Id, reloadedContract.CurrentEntitlementId)
+	var binding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&binding, "contract_id = ?", contract.Id).Error)
+	require.Equal(t, int64(0), binding.GracePeriodEnd)
+}
+
+func TestReconcileFailedInvoiceIgnoresOlderFailedInvoiceAfterNewerPaidPeriod(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8125, 8225, "sub_failed_out_of_order")
+	period1Start := oldEntitlement.EndTime
+	period1End := period1Start + 2592000
+	period2Start := period1End
+	period2End := period2Start + 2592000
+	period1FailedInvoice := stripeInvoiceFixture("in_failed_period1_late", "sub_failed_out_of_order")
+	period1FailedInvoice.Paid = false
+	period1FailedInvoice.Status = stripe.InvoiceStatusOpen
+	period1FailedInvoice.Lines.Data[0].Period = &stripe.Period{Start: period1Start, End: period1End}
+	period2PaidInvoice := stripeInvoiceFixture("in_paid_period2_first", "sub_failed_out_of_order")
+	period2PaidInvoice.Lines.Data[0].Period = &stripe.Period{Start: period2Start, End: period2End}
+	subscription := stripeSubscriptionFixture("sub_failed_out_of_order", map[string]string{})
+	subscription.CurrentPeriodStart = period2Start
+	subscription.CurrentPeriodEnd = period2End
+	originalInvoiceGetter := stripeInvoiceGetter
+	originalSubscriptionGetter := stripeSubscriptionGetter
+	stripeInvoiceGetter = func(ctx context.Context, invoiceID string) (*stripe.Invoice, error) {
+		switch invoiceID {
+		case "in_paid_period2_first":
+			return period2PaidInvoice, nil
+		case "in_failed_period1_late":
+			return period1FailedInvoice, nil
+		default:
+			return nil, errors.New("unexpected invoice id")
+		}
+	}
+	stripeSubscriptionGetter = func(ctx context.Context, subscriptionID string) (*stripe.Subscription, error) {
+		return subscription, nil
+	}
+	defer func() {
+		stripeInvoiceGetter = originalInvoiceGetter
+		stripeSubscriptionGetter = originalSubscriptionGetter
+	}()
+
+	paid, err := ReconcilePaidInvoice(context.Background(), "in_paid_period2_first")
+	require.NoError(t, err)
+	require.True(t, paid.Applied)
+	require.NoError(t, ReconcileFailedInvoice(context.Background(), "in_failed_period1_late"))
+
+	var grants []model.UserSubscription
+	require.NoError(t, model.DB.Where("contract_id = ?", contract.Id).Order("id asc").Find(&grants).Error)
+	require.Len(t, grants, 2)
+	require.Equal(t, period2Start, grants[1].StartTime)
+	require.Equal(t, period2End, grants[1].EndTime)
+	require.Equal(t, grants[1].EndTime, grants[1].AccessEndTime)
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusActive, reloadedContract.Status)
+	require.Equal(t, int64(0), reloadedContract.GracePeriodEnd)
+	require.Equal(t, period2Start, reloadedContract.CurrentPeriodStart)
+	require.Equal(t, period2End, reloadedContract.CurrentPeriodEnd)
+	var reloadedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&reloadedBinding, "id = ?", binding.Id).Error)
+	require.Equal(t, "in_paid_period2_first", reloadedBinding.ProviderLatestInvoiceId)
+	require.Equal(t, int64(0), reloadedBinding.GracePeriodEnd)
+	require.Equal(t, period2Start, reloadedBinding.CurrentPeriodStart)
+	require.Equal(t, period2End, reloadedBinding.CurrentPeriodEnd)
+}
+
+func TestReconcileFailedInvoiceNoBindingIsNoOp(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	invoice := stripeInvoiceFixture("in_legacy_failed", "sub_legacy_failed")
+	invoice.Paid = false
+	invoice.Status = stripe.InvoiceStatusOpen
+	subscription := stripeSubscriptionFixture("sub_legacy_failed", map[string]string{})
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	err := ReconcileFailedInvoice(context.Background(), "in_legacy_failed")
+
+	require.NoError(t, err)
+	var bindingCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Count(&bindingCount).Error)
+	require.Zero(t, bindingCount)
+}
+
+func TestReconcileRenewalInvoiceRejectsBindingFactMismatchWithoutStateAdvance(t *testing.T) {
+	testCases := []struct {
+		name   string
+		mutate func(*stripe.Invoice, *stripe.Subscription)
+	}{
+		{
+			name: "customer",
+			mutate: func(inv *stripe.Invoice, sub *stripe.Subscription) {
+				inv.Customer = &stripe.Customer{ID: "cus_other"}
+			},
+		},
+		{
+			name: "price",
+			mutate: func(inv *stripe.Invoice, sub *stripe.Subscription) {
+				sub.Items.Data[0].Price = &stripe.Price{ID: "price_other"}
+				inv.Lines.Data[0].Price = &stripe.Price{ID: "price_other"}
+			},
+		},
+		{
+			name: "livemode",
+			mutate: func(inv *stripe.Invoice, sub *stripe.Subscription) {
+				inv.Livemode = true
+				sub.Livemode = true
+			},
+		},
+	}
+	for index, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			setupSubscriptionInvoiceServiceTestDB(t)
+			contract, _, entitlement := seedStripeRenewalContract(t, 8140+index, 8240+index, "sub_renewal_mismatch_"+tc.name)
+			invoice := stripeInvoiceFixture("in_renewal_mismatch_"+tc.name, "sub_renewal_mismatch_"+tc.name)
+			subscription := stripeSubscriptionFixture("sub_renewal_mismatch_"+tc.name, map[string]string{})
+			tc.mutate(invoice, subscription)
+			restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+			defer restore()
+
+			_, err := ReconcilePaidInvoice(context.Background(), "in_renewal_mismatch_"+tc.name)
+
+			require.Error(t, err)
+			require.True(t, IsPermanentPaidInvoiceError(err))
+			var grantCount int64
+			require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("contract_id = ?", contract.Id).Count(&grantCount).Error)
+			require.Equal(t, int64(1), grantCount)
+			var reloaded model.UserSubscription
+			require.NoError(t, model.DB.First(&reloaded, "id = ?", entitlement.Id).Error)
+			require.Equal(t, int64(777), reloaded.AmountUsed)
+			require.Equal(t, model.SubscriptionEntitlementStatusActive, reloaded.Status)
+			var reloadedContract model.UserSubscriptionContract
+			require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+			require.Equal(t, model.SubscriptionContractStatusActive, reloadedContract.Status)
+		})
+	}
 }
 
 func TestReconcilePaidInvoiceRejectsLocalStripeCustomerMismatch(t *testing.T) {

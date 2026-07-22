@@ -75,6 +75,7 @@ func IsPermanentPaidInvoiceError(err error) bool {
 }
 
 var stripeInvoiceGetter = getStripeInvoiceForReconcile
+var stripeInvoiceVoider = voidStripeInvoiceForReconcile
 var stripeSubscriptionGetter = getStripeSubscriptionForReconcile
 var stripeSubscriptionCheckoutCreator = createStripeSubscriptionCheckout
 
@@ -88,6 +89,18 @@ func getStripeInvoiceForReconcile(ctx context.Context, invoiceID string) (*strip
 	params.AddExpand("subscription")
 	params.AddExpand("customer")
 	return stripeinvoice.Get(strings.TrimSpace(invoiceID), params)
+}
+
+func voidStripeInvoiceForReconcile(ctx context.Context, invoiceID string, idempotencyKey string) (*stripe.Invoice, error) {
+	if err := ensureStripeSecretForSubscription(); err != nil {
+		return nil, err
+	}
+	stripe.Key = setting.StripeApiSecret
+	params := &stripe.InvoiceVoidInvoiceParams{}
+	if strings.TrimSpace(idempotencyKey) != "" {
+		params.SetIdempotencyKey(strings.TrimSpace(idempotencyKey))
+	}
+	return stripeinvoice.VoidInvoice(strings.TrimSpace(invoiceID), params)
 }
 
 func getStripeSubscriptionForReconcile(ctx context.Context, subscriptionID string) (*stripe.Subscription, error) {
@@ -204,6 +217,15 @@ func ReconcilePaidInvoice(ctx context.Context, invoiceID string) (*PaidInvoiceRe
 	}
 	result := &PaidInvoiceReconcileResult{}
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		var existingBinding model.SubscriptionProviderBinding
+		if err := tx.Where("provider = ? AND provider_subscription_id = ?", model.PaymentProviderStripe, facts.SubscriptionID).First(&existingBinding).Error; err == nil {
+			return reconcilePaidInvoiceRenewalTx(tx, facts, result)
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if !facts.hasCompletePurchaseMetadata() {
+			return nil
+		}
 		order, intent, contract, plan, user, err := lockInvoicePurchaseFactsTx(tx, facts)
 		if err != nil {
 			return err
@@ -274,6 +296,81 @@ func ReconcilePaidInvoice(ctx context.Context, invoiceID string) (*PaidInvoiceRe
 	return result, nil
 }
 
+func (f paidInvoiceFacts) hasCompletePurchaseMetadata() bool {
+	return strings.TrimSpace(f.TradeNo) != "" && f.UserID > 0 && f.PlanID > 0 && f.ContractID > 0 && f.ChangeIntentID > 0
+}
+
+func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
+	invoiceID = strings.TrimSpace(invoiceID)
+	if invoiceID == "" {
+		return PermanentPaidInvoiceError(errors.New("Stripe invoice id is required"))
+	}
+	inv, err := stripeInvoiceGetter(ctx, invoiceID)
+	if err != nil {
+		return err
+	}
+	if inv == nil || strings.TrimSpace(inv.ID) == "" {
+		return errors.New("Stripe invoice is missing")
+	}
+	if inv.Paid || inv.Status == stripe.InvoiceStatusPaid {
+		_, err := ReconcilePaidInvoice(ctx, invoiceID)
+		return err
+	}
+	subscriptionID := stripeInvoiceSubscriptionID(inv)
+	if subscriptionID == "" {
+		return PermanentPaidInvoiceError(errors.New("Stripe invoice subscription id is missing"))
+	}
+	sub, err := stripeSubscriptionGetter(ctx, subscriptionID)
+	if err != nil {
+		return err
+	}
+	facts, err := validateStripeInvoiceCommonFacts(inv, sub)
+	if err != nil {
+		return err
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		binding, contract, plan, user, err := lockRenewalBindingFactsTx(tx, facts)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if !canApplyFailedInvoiceToBinding(facts, binding, contract) {
+			return nil
+		}
+		if err := validateRenewalInvoiceFacts(facts, binding, contract, plan, user); err != nil {
+			return PermanentPaidInvoiceError(err)
+		}
+		var entitlement model.UserSubscription
+		if err := subscriptionCommandLock(tx).Where("id = ? AND user_id = ? AND contract_id = ?", contract.CurrentEntitlementId, contract.UserId, contract.Id).First(&entitlement).Error; err != nil {
+			return err
+		}
+		graceEnd := entitlement.EndTime + int64((72 * time.Hour).Seconds())
+		now := common.GetTimestamp()
+		if err := tx.Model(&entitlement).Updates(map[string]interface{}{
+			"access_end_time": graceEnd,
+			"updated_at":      now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(contract).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+			"status":           model.SubscriptionContractStatusGrace,
+			"grace_period_end": graceEnd,
+			"updated_at":       now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(binding).Where("id = ?", binding.Id).Updates(map[string]interface{}{
+			"provider_latest_invoice_id": facts.InvoiceID,
+			"provider_status":            facts.ProviderStatus,
+			"grace_period_end":           graceEnd,
+			"last_synced_at":             now,
+			"updated_at":                 now,
+		}).Error
+	})
+}
+
 type paidInvoiceFacts struct {
 	InvoiceID          string
 	SubscriptionID     string
@@ -294,77 +391,126 @@ type paidInvoiceFacts struct {
 	PeriodEnd          int64
 }
 
+type stripeInvoiceCommonFacts struct {
+	InvoiceID          string
+	SubscriptionID     string
+	SubscriptionItemID string
+	CustomerID         string
+	PriceID            string
+	Amount             int64
+	Currency           string
+	Livemode           bool
+	ProviderStatus     string
+	CancelAtPeriodEnd  bool
+	PeriodStart        int64
+	PeriodEnd          int64
+}
+
 func validatePaidInvoiceFacts(inv *stripe.Invoice, sub *stripe.Subscription) (paidInvoiceFacts, error) {
-	if sub == nil || strings.TrimSpace(sub.ID) == "" {
-		return paidInvoiceFacts{}, errors.New("Stripe subscription is missing")
-	}
-	if strings.TrimSpace(inv.ID) == "" || strings.TrimSpace(sub.ID) == "" {
-		return paidInvoiceFacts{}, errors.New("Stripe invoice facts are incomplete")
-	}
-	if stripeInvoiceSubscriptionID(inv) != strings.TrimSpace(sub.ID) {
-		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe invoice subscription mismatch"))
-	}
-	invoiceCustomer := stripeCustomerID(inv.Customer)
-	subscriptionCustomer := stripeCustomerID(sub.Customer)
-	if invoiceCustomer == "" || subscriptionCustomer == "" {
-		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe invoice customer is missing"))
-	}
-	if invoiceCustomer != "" && subscriptionCustomer != "" && invoiceCustomer != subscriptionCustomer {
-		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe invoice customer mismatch"))
-	}
-	if inv.Livemode != sub.Livemode {
-		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe invoice subscription livemode mismatch"))
-	}
-	if err := validateStripeLivemodeForLocalKey(inv.Livemode); err != nil {
-		return paidInvoiceFacts{}, PermanentPaidInvoiceError(err)
+	commonFacts, err := validateStripeInvoiceCommonFacts(inv, sub)
+	if err != nil {
+		return paidInvoiceFacts{}, err
 	}
 	metadata := sub.Metadata
 	tradeNo := strings.TrimSpace(metadata["trade_no"])
 	if tradeNo == "" {
 		tradeNo = strings.TrimSpace(metadata["newapi_trade_no"])
 	}
-	userID, err := strconv.Atoi(strings.TrimSpace(metadata["user_id"]))
-	if err != nil || userID <= 0 {
-		userID, err = strconv.Atoi(strings.TrimSpace(metadata["newapi_user_id"]))
+	userID := 0
+	if rawUserID := strings.TrimSpace(metadata["user_id"]); rawUserID != "" {
+		userID, err = strconv.Atoi(rawUserID)
 	}
-	if err != nil || userID <= 0 {
+	if userID <= 0 {
+		if rawUserID := strings.TrimSpace(metadata["newapi_user_id"]); rawUserID != "" {
+			userID, err = strconv.Atoi(rawUserID)
+		}
+	}
+	if err != nil {
 		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata user_id is invalid"))
 	}
-	planID, err := strconv.Atoi(strings.TrimSpace(metadata["plan_id"]))
-	if err != nil || planID <= 0 {
-		planID, err = strconv.Atoi(strings.TrimSpace(metadata["newapi_plan_id"]))
+	planID := 0
+	if rawPlanID := strings.TrimSpace(metadata["plan_id"]); rawPlanID != "" {
+		planID, err = strconv.Atoi(rawPlanID)
 	}
-	if err != nil || planID <= 0 {
+	if planID <= 0 {
+		if rawPlanID := strings.TrimSpace(metadata["newapi_plan_id"]); rawPlanID != "" {
+			planID, err = strconv.Atoi(rawPlanID)
+		}
+	}
+	if err != nil {
 		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata plan_id is invalid"))
 	}
-	contractID, err := strconv.ParseInt(strings.TrimSpace(metadata["contract_id"]), 10, 64)
-	if err != nil || contractID <= 0 {
-		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata contract_id is invalid"))
+	contractID := int64(0)
+	if rawContractID := strings.TrimSpace(metadata["contract_id"]); rawContractID != "" {
+		contractID, err = strconv.ParseInt(rawContractID, 10, 64)
+		if err != nil {
+			return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata contract_id is invalid"))
+		}
 	}
-	intentID, err := strconv.ParseInt(strings.TrimSpace(metadata["change_intent_id"]), 10, 64)
-	if err != nil || intentID <= 0 {
-		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata change_intent_id is invalid"))
+	intentID := int64(0)
+	if rawIntentID := strings.TrimSpace(metadata["change_intent_id"]); rawIntentID != "" {
+		intentID, err = strconv.ParseInt(rawIntentID, 10, 64)
+		if err != nil {
+			return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata change_intent_id is invalid"))
+		}
 	}
-	if tradeNo == "" {
-		return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata trade_no is missing"))
+	return paidInvoiceFacts{
+		InvoiceID:          commonFacts.InvoiceID,
+		SubscriptionID:     commonFacts.SubscriptionID,
+		SubscriptionItemID: commonFacts.SubscriptionItemID,
+		CustomerID:         commonFacts.CustomerID,
+		PriceID:            commonFacts.PriceID,
+		TradeNo:            tradeNo,
+		UserID:             userID,
+		PlanID:             planID,
+		ContractID:         contractID,
+		ChangeIntentID:     intentID,
+		AmountPaid:         commonFacts.Amount,
+		Currency:           commonFacts.Currency,
+		Livemode:           commonFacts.Livemode,
+		ProviderStatus:     commonFacts.ProviderStatus,
+		CancelAtPeriodEnd:  commonFacts.CancelAtPeriodEnd,
+		PeriodStart:        commonFacts.PeriodStart,
+		PeriodEnd:          commonFacts.PeriodEnd,
+	}, nil
+}
+
+func validateStripeInvoiceCommonFacts(inv *stripe.Invoice, sub *stripe.Subscription) (stripeInvoiceCommonFacts, error) {
+	if sub == nil || strings.TrimSpace(sub.ID) == "" {
+		return stripeInvoiceCommonFacts{}, errors.New("Stripe subscription is missing")
+	}
+	if strings.TrimSpace(inv.ID) == "" || strings.TrimSpace(sub.ID) == "" {
+		return stripeInvoiceCommonFacts{}, errors.New("Stripe invoice facts are incomplete")
+	}
+	if stripeInvoiceSubscriptionID(inv) != strings.TrimSpace(sub.ID) {
+		return stripeInvoiceCommonFacts{}, PermanentPaidInvoiceError(errors.New("Stripe invoice subscription mismatch"))
+	}
+	invoiceCustomer := stripeCustomerID(inv.Customer)
+	subscriptionCustomer := stripeCustomerID(sub.Customer)
+	if invoiceCustomer == "" || subscriptionCustomer == "" {
+		return stripeInvoiceCommonFacts{}, PermanentPaidInvoiceError(errors.New("Stripe invoice customer is missing"))
+	}
+	if invoiceCustomer != subscriptionCustomer {
+		return stripeInvoiceCommonFacts{}, PermanentPaidInvoiceError(errors.New("Stripe invoice customer mismatch"))
+	}
+	if inv.Livemode != sub.Livemode {
+		return stripeInvoiceCommonFacts{}, PermanentPaidInvoiceError(errors.New("Stripe invoice subscription livemode mismatch"))
+	}
+	if err := validateStripeLivemodeForLocalKey(inv.Livemode); err != nil {
+		return stripeInvoiceCommonFacts{}, PermanentPaidInvoiceError(err)
 	}
 	priceID := stripeSubscriptionFirstPriceID(sub)
 	if priceID == "" {
 		priceID = stripeInvoiceFirstPriceID(inv)
 	}
 	periodStart, periodEnd := stripeInvoicePeriod(inv, sub)
-	return paidInvoiceFacts{
+	return stripeInvoiceCommonFacts{
 		InvoiceID:          strings.TrimSpace(inv.ID),
 		SubscriptionID:     strings.TrimSpace(sub.ID),
 		SubscriptionItemID: stripeSubscriptionFirstItemID(sub),
 		CustomerID:         firstNonEmptyString(subscriptionCustomer, invoiceCustomer),
 		PriceID:            priceID,
-		TradeNo:            tradeNo,
-		UserID:             userID,
-		PlanID:             planID,
-		ContractID:         contractID,
-		ChangeIntentID:     intentID,
-		AmountPaid:         inv.AmountPaid,
+		Amount:             stripeInvoiceAmountForValidation(inv),
 		Currency:           strings.ToUpper(string(inv.Currency)),
 		Livemode:           inv.Livemode,
 		ProviderStatus:     string(sub.Status),
@@ -372,6 +518,19 @@ func validatePaidInvoiceFacts(inv *stripe.Invoice, sub *stripe.Subscription) (pa
 		PeriodStart:        periodStart,
 		PeriodEnd:          periodEnd,
 	}, nil
+}
+
+func stripeInvoiceAmountForValidation(inv *stripe.Invoice) int64 {
+	if inv == nil {
+		return 0
+	}
+	if inv.AmountPaid > 0 {
+		return inv.AmountPaid
+	}
+	if inv.AmountDue > 0 {
+		return inv.AmountDue
+	}
+	return inv.Total
 }
 
 func stripeInvoiceSubscriptionID(inv *stripe.Invoice) string {
@@ -515,6 +674,170 @@ func validateLocalInvoiceFacts(facts paidInvoiceFacts, order *model.Subscription
 	}
 	if expectedMinor != facts.AmountPaid {
 		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.AmountPaid)
+	}
+	return nil
+}
+
+func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *PaidInvoiceReconcileResult) error {
+	commonFacts := stripeInvoiceCommonFacts{
+		InvoiceID:          facts.InvoiceID,
+		SubscriptionID:     facts.SubscriptionID,
+		SubscriptionItemID: facts.SubscriptionItemID,
+		CustomerID:         facts.CustomerID,
+		PriceID:            facts.PriceID,
+		Amount:             facts.AmountPaid,
+		Currency:           facts.Currency,
+		Livemode:           facts.Livemode,
+		ProviderStatus:     facts.ProviderStatus,
+		CancelAtPeriodEnd:  facts.CancelAtPeriodEnd,
+		PeriodStart:        facts.PeriodStart,
+		PeriodEnd:          facts.PeriodEnd,
+	}
+	binding, contract, plan, user, err := lockRenewalBindingFactsTx(tx, commonFacts)
+	if err != nil {
+		return err
+	}
+	if err := validateRenewalInvoiceFacts(commonFacts, binding, contract, plan, user); err != nil {
+		return PermanentPaidInvoiceError(err)
+	}
+	if !canApplyPaidRenewalInvoiceToBinding(commonFacts, binding, contract) {
+		return nil
+	}
+	grant, err := model.RotateCurrentEntitlementTx(tx, model.GrantEntitlementInput{
+		ContractId:           contract.Id,
+		UserId:               binding.UserId,
+		PlanId:               binding.PlanId,
+		ProviderBindingId:    binding.Id,
+		GrantKey:             "stripe:" + facts.InvoiceID,
+		PaymentMode:          model.SubscriptionPaymentModeStripeRecurring,
+		AmountTotal:          plan.TotalAmount,
+		PeriodStart:          facts.PeriodStart,
+		PeriodEnd:            facts.PeriodEnd,
+		EndReasonForPrevious: model.SubscriptionEntitlementEndReasonRenewed,
+		Source:               model.PaymentMethodStripe,
+	})
+	if err != nil {
+		return err
+	}
+	now := common.GetTimestamp()
+	if err := tx.Model(binding).Where("id = ?", binding.Id).Updates(map[string]interface{}{
+		"provider_subscription_item_id": strings.TrimSpace(facts.SubscriptionItemID),
+		"provider_customer_id":          strings.TrimSpace(facts.CustomerID),
+		"provider_price_id":             strings.TrimSpace(facts.PriceID),
+		"provider_latest_invoice_id":    facts.InvoiceID,
+		"provider_status":               strings.TrimSpace(facts.ProviderStatus),
+		"cancel_at_period_end":          facts.CancelAtPeriodEnd,
+		"current_period_start":          facts.PeriodStart,
+		"current_period_end":            facts.PeriodEnd,
+		"grace_period_end":              0,
+		"livemode":                      facts.Livemode,
+		"last_synced_at":                now,
+		"updated_at":                    now,
+	}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(contract).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+		"status":           model.SubscriptionContractStatusActive,
+		"grace_period_end": 0,
+		"updated_at":       now,
+	}).Error; err != nil {
+		return err
+	}
+	result.Binding = binding
+	if grant != nil {
+		result.Entitlement = grant.Entitlement
+		result.Applied = grant.Applied
+	}
+	return nil
+}
+
+func canApplyPaidRenewalInvoiceToBinding(facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract) bool {
+	if !canApplyInvoiceToBinding(binding, contract) {
+		return false
+	}
+	return contract.CurrentPeriodEnd <= 0 || facts.PeriodEnd > contract.CurrentPeriodEnd
+}
+
+func canApplyFailedInvoiceToBinding(facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract) bool {
+	if !canApplyInvoiceToBinding(binding, contract) {
+		return false
+	}
+	return contract.CurrentPeriodEnd <= 0 || facts.PeriodEnd >= contract.CurrentPeriodEnd
+}
+
+func canApplyInvoiceToBinding(binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract) bool {
+	if binding == nil || contract == nil {
+		return false
+	}
+	if binding.EndedAt > 0 || isTerminalStripeSubscriptionStatus(binding.ProviderStatus) {
+		return false
+	}
+	if contract.CurrentProviderBindingId != binding.Id {
+		return false
+	}
+	switch contract.Status {
+	case model.SubscriptionContractStatusActive, model.SubscriptionContractStatusGrace:
+		return true
+	default:
+		return false
+	}
+}
+
+func lockRenewalBindingFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts) (*model.SubscriptionProviderBinding, *model.UserSubscriptionContract, *model.SubscriptionPlan, *model.User, error) {
+	var binding model.SubscriptionProviderBinding
+	if err := subscriptionCommandLock(tx).Where("provider = ? AND provider_subscription_id = ?", model.PaymentProviderStripe, facts.SubscriptionID).First(&binding).Error; err != nil {
+		return nil, nil, nil, nil, err
+	}
+	var contract model.UserSubscriptionContract
+	if err := subscriptionCommandLock(tx).Where("id = ? AND user_id = ?", binding.ContractId, binding.UserId).First(&contract).Error; err != nil {
+		return nil, nil, nil, nil, err
+	}
+	var plan model.SubscriptionPlan
+	if err := tx.Where("id = ?", binding.PlanId).First(&plan).Error; err != nil {
+		return nil, nil, nil, nil, err
+	}
+	plan.NormalizeDefaults()
+	var user model.User
+	if err := subscriptionCommandLock(tx).Where("id = ?", binding.UserId).First(&user).Error; err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return &binding, &contract, &plan, &user, nil
+}
+
+func validateRenewalInvoiceFacts(facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User) error {
+	if binding.ContractId <= 0 || contract.Id != binding.ContractId || contract.UserId != binding.UserId {
+		return errors.New("local contract ownership mismatch")
+	}
+	if contract.PaymentMode != model.SubscriptionPaymentModeStripeRecurring {
+		return errors.New("local contract payment mode mismatch")
+	}
+	if contract.CurrentProviderBindingId != 0 && contract.CurrentProviderBindingId != binding.Id {
+		return errors.New("local contract binding mismatch")
+	}
+	if strings.TrimSpace(binding.ProviderCustomerId) == "" || strings.TrimSpace(binding.ProviderCustomerId) != facts.CustomerID {
+		return errors.New("local Stripe customer mismatch")
+	}
+	if strings.TrimSpace(user.StripeCustomer) != "" && strings.TrimSpace(user.StripeCustomer) != facts.CustomerID {
+		return errors.New("local Stripe customer mismatch")
+	}
+	if binding.Livemode != facts.Livemode {
+		return errors.New("Stripe invoice livemode mismatch")
+	}
+	if plan.Id != binding.PlanId {
+		return errors.New("local plan mismatch")
+	}
+	if strings.TrimSpace(plan.StripePriceId) == "" || strings.TrimSpace(plan.StripePriceId) != facts.PriceID || strings.TrimSpace(binding.ProviderPriceId) != facts.PriceID {
+		return errors.New("Stripe price mismatch")
+	}
+	if strings.ToUpper(strings.TrimSpace(plan.Currency)) != facts.Currency {
+		return errors.New("Stripe invoice currency mismatch")
+	}
+	expectedMinor, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, facts.Currency)
+	if err != nil {
+		return err
+	}
+	if expectedMinor != facts.Amount {
+		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.Amount)
 	}
 	return nil
 }

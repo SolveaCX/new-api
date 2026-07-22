@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -77,12 +78,21 @@ type PaymentWebhookEvent struct {
 	EventCreated     int64  `json:"event_created" gorm:"type:bigint;default:0"`
 	Status           string `json:"status" gorm:"type:varchar(32);default:'processing';index"`
 	AttemptCount     int    `json:"attempt_count" gorm:"type:int;default:0"`
+	ProcessingToken  string `json:"processing_token" gorm:"type:varchar(128);default:'';index"`
+	ProcessingUntil  int64  `json:"processing_until" gorm:"type:bigint;default:0;index"`
 	PayloadHash      string `json:"payload_hash" gorm:"type:varchar(128);default:''"`
 	LastError        string `json:"last_error" gorm:"type:text"`
 	ProcessedAt      int64  `json:"processed_at" gorm:"type:bigint;default:0"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
+}
+
+type PaymentWebhookEventClaimState struct {
+	Exists          bool
+	Status          string
+	ProcessingToken string
+	ProcessingUntil int64
 }
 
 func (e *PaymentWebhookEvent) BeforeCreate(tx *gorm.DB) error {
@@ -123,6 +133,15 @@ type ProviderSubscriptionSnapshot struct {
 
 func normalizeProvider(provider string) string {
 	return strings.ToLower(strings.TrimSpace(provider))
+}
+
+func isTerminalProviderSubscriptionStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "canceled", "incomplete_expired", "unpaid":
+		return true
+	default:
+		return false
+	}
 }
 
 func subscriptionProviderBindingFromSnapshot(order *SubscriptionOrder, snapshot ProviderSubscriptionSnapshot) *SubscriptionProviderBinding {
@@ -205,6 +224,9 @@ func ApplyProviderSubscriptionSnapshot(bindingID int64, snapshot ProviderSubscri
 		}
 		if strings.TrimSpace(snapshot.ProviderSubscriptionId) != "" && strings.TrimSpace(snapshot.ProviderSubscriptionId) != binding.ProviderSubscriptionId {
 			return ErrSubscriptionProviderBindingConflict
+		}
+		if binding.EndedAt > 0 || isTerminalProviderSubscriptionStatus(binding.ProviderStatus) {
+			return nil
 		}
 		updates := map[string]interface{}{
 			"provider_customer_id":       strings.TrimSpace(snapshot.ProviderCustomerId),
@@ -362,10 +384,23 @@ func RecordPaymentWebhookEventProcessing(provider string, eventID string, eventT
 }
 
 func ClaimPaymentWebhookEventProcessing(provider string, eventID string, eventType string, providerObjectID string, eventCreated int64, payloadHash string) (bool, error) {
+	now := common.GetTimestamp()
+	return ClaimPaymentWebhookEventLease(provider, eventID, eventType, providerObjectID, eventCreated, payloadHash, eventID, now+300)
+}
+
+func ClaimPaymentWebhookEventLease(provider string, eventID string, eventType string, providerObjectID string, eventCreated int64, payloadHash string, processingToken string, processingUntil int64) (bool, error) {
 	provider = normalizeProvider(provider)
 	eventID = strings.TrimSpace(eventID)
 	if provider == "" || eventID == "" {
 		return false, errors.New("provider and event id are required")
+	}
+	processingToken = strings.TrimSpace(processingToken)
+	if processingToken == "" {
+		return false, errors.New("processing token is required")
+	}
+	now := common.GetTimestamp()
+	if processingUntil <= now {
+		processingUntil = now + 300
 	}
 	event := &PaymentWebhookEvent{
 		Provider:         provider,
@@ -375,19 +410,60 @@ func ClaimPaymentWebhookEventProcessing(provider string, eventID string, eventTy
 		EventCreated:     eventCreated,
 		Status:           PaymentWebhookEventStatusProcessing,
 		AttemptCount:     1,
+		ProcessingToken:  processingToken,
+		ProcessingUntil:  processingUntil,
 		PayloadHash:      strings.TrimSpace(payloadHash),
 	}
-	if err := DB.Create(event).Error; err == nil {
+	insert := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(event)
+	if insert.Error != nil {
+		return false, insert.Error
+	}
+	if insert.RowsAffected == 1 {
 		return true, nil
 	}
-	var existing PaymentWebhookEvent
-	if err := DB.Where("provider = ? AND event_id = ?", provider, eventID).First(&existing).Error; err != nil {
-		return false, err
+	updates := map[string]interface{}{
+		"event_type":         strings.TrimSpace(eventType),
+		"provider_object_id": strings.TrimSpace(providerObjectID),
+		"event_created":      eventCreated,
+		"status":             PaymentWebhookEventStatusProcessing,
+		"attempt_count":      gorm.Expr("attempt_count + ?", 1),
+		"processing_token":   processingToken,
+		"processing_until":   processingUntil,
+		"payload_hash":       strings.TrimSpace(payloadHash),
+		"last_error":         "",
+		"updated_at":         now,
 	}
-	if existing.Status != PaymentWebhookEventStatusFailed {
-		return false, nil
+	result := DB.Model(&PaymentWebhookEvent{}).
+		Where("provider = ? AND event_id = ? AND status <> ?", provider, eventID, PaymentWebhookEventStatusProcessed).
+		Where("processing_token = ? OR processing_until <= ?", "", now).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
 	}
-	return claimFailedPaymentWebhookEventForRetry(existing, eventType, providerObjectID, eventCreated, payloadHash)
+	return result.RowsAffected == 1, nil
+}
+
+func GetPaymentWebhookEventClaimState(provider string, eventID string) (PaymentWebhookEventClaimState, error) {
+	provider = normalizeProvider(provider)
+	eventID = strings.TrimSpace(eventID)
+	if provider == "" || eventID == "" {
+		return PaymentWebhookEventClaimState{}, errors.New("provider and event id are required")
+	}
+	var event PaymentWebhookEvent
+	if err := DB.Select("status", "processing_token", "processing_until").
+		Where("provider = ? AND event_id = ?", provider, eventID).
+		First(&event).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return PaymentWebhookEventClaimState{}, nil
+		}
+		return PaymentWebhookEventClaimState{}, err
+	}
+	return PaymentWebhookEventClaimState{
+		Exists:          true,
+		Status:          event.Status,
+		ProcessingToken: event.ProcessingToken,
+		ProcessingUntil: event.ProcessingUntil,
+	}, nil
 }
 
 func claimFailedPaymentWebhookEventForRetry(existing PaymentWebhookEvent, eventType string, providerObjectID string, eventCreated int64, payloadHash string) (bool, error) {
@@ -414,22 +490,36 @@ func claimFailedPaymentWebhookEventForRetry(existing PaymentWebhookEvent, eventT
 }
 
 func MarkPaymentWebhookEventProcessed(provider string, eventID string) error {
+	return MarkPaymentWebhookEventProcessedByToken(provider, eventID, "")
+}
+
+func MarkPaymentWebhookEventProcessedByToken(provider string, eventID string, processingToken string) error {
 	provider = normalizeProvider(provider)
 	eventID = strings.TrimSpace(eventID)
 	if provider == "" || eventID == "" {
 		return nil
 	}
 	now := common.GetTimestamp()
-	return DB.Model(&PaymentWebhookEvent{}).
+	query := DB.Model(&PaymentWebhookEvent{}).
 		Where("provider = ? AND event_id = ?", provider, eventID).
-		Updates(map[string]interface{}{
-			"status":       PaymentWebhookEventStatusProcessed,
-			"processed_at": now,
-			"updated_at":   now,
-		}).Error
+		Where("status <> ?", PaymentWebhookEventStatusProcessed)
+	if strings.TrimSpace(processingToken) != "" {
+		query = query.Where("processing_token = ?", strings.TrimSpace(processingToken))
+	}
+	return query.Updates(map[string]interface{}{
+		"status":           PaymentWebhookEventStatusProcessed,
+		"processed_at":     now,
+		"processing_token": "",
+		"processing_until": 0,
+		"updated_at":       now,
+	}).Error
 }
 
 func MarkPaymentWebhookEventFailed(provider string, eventID string, processingErr error) error {
+	return MarkPaymentWebhookEventFailedByToken(provider, eventID, "", processingErr)
+}
+
+func MarkPaymentWebhookEventFailedByToken(provider string, eventID string, processingToken string, processingErr error) error {
 	provider = normalizeProvider(provider)
 	eventID = strings.TrimSpace(eventID)
 	if provider == "" || eventID == "" {
@@ -440,13 +530,19 @@ func MarkPaymentWebhookEventFailed(provider string, eventID string, processingEr
 	if processingErr != nil {
 		lastError = processingErr.Error()
 	}
-	return DB.Model(&PaymentWebhookEvent{}).
+	query := DB.Model(&PaymentWebhookEvent{}).
 		Where("provider = ? AND event_id = ?", provider, eventID).
-		Updates(map[string]interface{}{
-			"status":     PaymentWebhookEventStatusFailed,
-			"last_error": lastError,
-			"updated_at": now,
-		}).Error
+		Where("status <> ?", PaymentWebhookEventStatusProcessed)
+	if strings.TrimSpace(processingToken) != "" {
+		query = query.Where("processing_token = ?", strings.TrimSpace(processingToken))
+	}
+	return query.Updates(map[string]interface{}{
+		"status":           PaymentWebhookEventStatusFailed,
+		"processing_token": "",
+		"processing_until": 0,
+		"last_error":       lastError,
+		"updated_at":       now,
+	}).Error
 }
 
 func CompleteSubscriptionOrderWithProviderBinding(tradeNo string, providerPayload string, expectedPaymentProvider string, actualPaymentMethod string, snapshot ProviderSubscriptionSnapshot) (*SubscriptionProviderBinding, error) {

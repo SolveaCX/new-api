@@ -675,6 +675,8 @@ func StripeWebhook(c *gin.Context) {
 		processingErr = sessionAsyncPaymentFailed(ctx, event, callerIp)
 	case stripe.EventTypeInvoicePaid:
 		processingErr = handleStripeInvoicePaid(ctx, event)
+	case stripe.EventTypeInvoicePaymentFailed:
+		processingErr = handleStripeInvoicePaymentFailed(ctx, event)
 	case stripe.EventTypeCustomerSubscriptionUpdated:
 		processingErr = handleStripeSubscriptionUpdated(ctx, event)
 	case stripe.EventTypeCustomerSubscriptionDeleted:
@@ -898,19 +900,37 @@ var stripeSubscriptionSnapshotFromCheckoutSession = getStripeSubscriptionSnapsho
 var stripeSubscriptionSnapshotFromSubscriptionEvent = getStripeSubscriptionSnapshotFromSubscriptionEvent
 var notifyStripePaymentProcessingFailure = service.NotifyDingTalkPaymentProcessingFailure
 var reconcilePaidStripeInvoice = service.ReconcilePaidInvoice
+var reconcileFailedStripeInvoice = service.ReconcileFailedInvoice
 var terminatePendingStripePurchase = service.TerminatePendingStripePurchase
 
 func handleStripeInvoicePaid(ctx context.Context, event stripe.Event) (err error) {
-	first, err := recordStripeSubscriptionWebhookEvent(event)
+	first, processingToken, err := recordStripeSubscriptionWebhookEvent(event)
 	if err != nil || !first {
 		return err
 	}
-	defer finishStripeSubscriptionWebhookEvent(event, &err)
+	defer finishStripeSubscriptionWebhookEvent(event, processingToken, &err)
 	invoiceID := strings.TrimSpace(stripeEventObjectValue(event, "id"))
 	if invoiceID == "" {
 		return permanentStripeWebhookProcessingError(errors.New("Stripe invoice.paid missing invoice id"))
 	}
 	_, err = reconcilePaidStripeInvoice(ctx, invoiceID)
+	if service.IsPermanentPaidInvoiceError(err) {
+		return permanentStripeWebhookProcessingError(err)
+	}
+	return err
+}
+
+func handleStripeInvoicePaymentFailed(ctx context.Context, event stripe.Event) (err error) {
+	first, processingToken, err := recordStripeSubscriptionWebhookEvent(event)
+	if err != nil || !first {
+		return err
+	}
+	defer finishStripeSubscriptionWebhookEvent(event, processingToken, &err)
+	invoiceID := strings.TrimSpace(stripeEventObjectValue(event, "id"))
+	if invoiceID == "" {
+		return permanentStripeWebhookProcessingError(errors.New("Stripe invoice.payment_failed missing invoice id"))
+	}
+	err = reconcileFailedStripeInvoice(ctx, invoiceID)
 	if service.IsPermanentPaidInvoiceError(err) {
 		return permanentStripeWebhookProcessingError(err)
 	}
@@ -957,11 +977,11 @@ func stripeCheckoutSessionInvoiceID(event stripe.Event) (string, error) {
 }
 
 func handleStripeSubscriptionUpdated(ctx context.Context, event stripe.Event) (err error) {
-	first, err := recordStripeSubscriptionWebhookEvent(event)
+	first, processingToken, err := recordStripeSubscriptionWebhookEvent(event)
 	if err != nil || !first {
 		return err
 	}
-	defer finishStripeSubscriptionWebhookEvent(event, &err)
+	defer finishStripeSubscriptionWebhookEvent(event, processingToken, &err)
 	snapshot, err := stripeSubscriptionSnapshotFromSubscriptionEvent(event)
 	if err != nil {
 		return err
@@ -986,11 +1006,11 @@ func handleStripeSubscriptionUpdated(ctx context.Context, event stripe.Event) (e
 }
 
 func handleStripeSubscriptionDeleted(ctx context.Context, event stripe.Event) (err error) {
-	first, err := recordStripeSubscriptionWebhookEvent(event)
+	first, processingToken, err := recordStripeSubscriptionWebhookEvent(event)
 	if err != nil || !first {
 		return err
 	}
-	defer finishStripeSubscriptionWebhookEvent(event, &err)
+	defer finishStripeSubscriptionWebhookEvent(event, processingToken, &err)
 	snapshot := stripeSubscriptionSnapshotFromDeletedEvent(event)
 	binding, err := model.FindBindingByProviderSubscriptionID(model.PaymentProviderStripe, snapshot.ProviderSubscriptionId)
 	if err != nil {
@@ -1007,31 +1027,45 @@ func handleStripeSubscriptionDeleted(ctx context.Context, event stripe.Event) (e
 	return err
 }
 
-func recordStripeSubscriptionWebhookEvent(event stripe.Event) (bool, error) {
+func recordStripeSubscriptionWebhookEvent(event stripe.Event) (bool, string, error) {
 	eventID := strings.TrimSpace(event.ID)
 	if eventID == "" {
-		return true, nil
+		return true, "", nil
 	}
-	return model.ClaimPaymentWebhookEventProcessing(
+	processingToken := eventID + ":" + common.GetRandomString(12)
+	claimed, err := model.ClaimPaymentWebhookEventLease(
 		model.PaymentProviderStripe,
 		eventID,
 		string(event.Type),
 		strings.TrimSpace(stripeEventObjectValue(event, "id")),
 		event.Created,
 		"",
+		processingToken,
+		common.GetTimestamp()+300,
 	)
+	if err != nil || claimed {
+		return claimed, processingToken, err
+	}
+	state, err := model.GetPaymentWebhookEventClaimState(model.PaymentProviderStripe, eventID)
+	if err != nil {
+		return false, processingToken, err
+	}
+	if state.Exists && state.Status == model.PaymentWebhookEventStatusProcessed {
+		return false, processingToken, nil
+	}
+	return false, processingToken, errors.New("Stripe webhook event is already processing")
 }
 
-func finishStripeSubscriptionWebhookEvent(event stripe.Event, processingErr *error) {
+func finishStripeSubscriptionWebhookEvent(event stripe.Event, processingToken string, processingErr *error) {
 	eventID := strings.TrimSpace(event.ID)
 	if eventID == "" || processingErr == nil {
 		return
 	}
 	if *processingErr != nil {
-		_ = model.MarkPaymentWebhookEventFailed(model.PaymentProviderStripe, eventID, *processingErr)
+		_ = model.MarkPaymentWebhookEventFailedByToken(model.PaymentProviderStripe, eventID, processingToken, *processingErr)
 		return
 	}
-	if err := model.MarkPaymentWebhookEventProcessed(model.PaymentProviderStripe, eventID); err != nil {
+	if err := model.MarkPaymentWebhookEventProcessedByToken(model.PaymentProviderStripe, eventID, processingToken); err != nil {
 		*processingErr = err
 	}
 }
