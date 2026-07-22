@@ -21,9 +21,10 @@ const (
 )
 
 var (
-	ErrSubscriptionChangeInProgress  = errors.New("subscription change in progress")
-	ErrSubscriptionPlanUnchanged     = errors.New("subscription plan unchanged")
-	ErrSubscriptionDowngradeDeferred = errors.New("subscription downgrade scheduling is not implemented")
+	ErrSubscriptionChangeInProgress   = errors.New("subscription change in progress")
+	ErrSubscriptionPlanUnchanged      = errors.New("subscription plan unchanged")
+	ErrSubscriptionDowngradeDeferred  = errors.New("subscription downgrade scheduling is not implemented")
+	ErrStripeCheckoutPendingMigration = errors.New("stripe checkout pending migration")
 )
 
 type ChangePlanCommand struct {
@@ -45,6 +46,9 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 	cmd.normalize()
 	if err := cmd.validate(); err != nil {
 		return nil, err
+	}
+	if cmd.PaymentMode == model.SubscriptionPaymentModeStripeRecurring {
+		return nil, ErrStripeCheckoutPendingMigration
 	}
 
 	var result *ChangePlanResult

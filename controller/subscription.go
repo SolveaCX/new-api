@@ -48,6 +48,8 @@ type RecurringSubscriptionDTO struct {
 	RequiresSupport    bool   `json:"requires_support"`
 }
 
+var ErrSubscriptionPurchasePendingMigration = errors.New("subscription purchase initiation is pending migration")
+
 // ---- User APIs ----
 
 func GetSubscriptionPlans(c *gin.Context) {
@@ -184,6 +186,15 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, result)
+}
+
+func SubscriptionPurchasePendingMigration(c *gin.Context) {
+	common.ApiError(c, ErrSubscriptionPurchasePendingMigration)
+}
+
+func rejectSubscriptionPurchasePendingMigration(c *gin.Context) bool {
+	SubscriptionPurchasePendingMigration(c)
+	return true
 }
 
 func ChangeSubscriptionPlan(c *gin.Context) {

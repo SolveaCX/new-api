@@ -291,6 +291,37 @@ func TestBalancePurchaseRejectsNegativePlanPrice(t *testing.T) {
 	require.Zero(t, intentCount)
 }
 
+func TestStripeRecurringChangePlanPendingMigrationDoesNotPersistState(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7110, 3000)
+	insertContractServicePlan(t, 7214, 1, 1, 1000)
+
+	_, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      7110,
+		PlanID:      7214,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "stripe-pending-migration",
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stripe checkout pending migration")
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", 7110).Error)
+	require.Equal(t, 3000, user.Quota)
+	var contractCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("user_id = ?", 7110).Count(&contractCount).Error)
+	require.Zero(t, contractCount)
+	var intentCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 7110).Count(&intentCount).Error)
+	require.Zero(t, intentCount)
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 7110).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
+	var entitlementCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 7110).Count(&entitlementCount).Error)
+	require.Zero(t, entitlementCount)
+}
+
 func TestUnresolvedPurchaseBlocksSecondChange(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7105, 2000)

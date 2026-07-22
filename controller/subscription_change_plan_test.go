@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -71,6 +72,39 @@ func setupSubscriptionControllerTestDB(t *testing.T) {
 		&model.UserSubscriptionContract{},
 		&model.SubscriptionChangeIntent{},
 	))
+}
+
+func insertSubscriptionControllerUser(t *testing.T, id int) {
+	t.Helper()
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       id,
+		Username: "subscription_controller_user",
+		Email:    "subscription-controller@example.com",
+		Status:   common.UserStatusEnabled,
+		Group:    "plg",
+		AffCode:  "subscription_controller_aff",
+	}).Error)
+}
+
+func insertSubscriptionControllerPlan(t *testing.T, id int) {
+	t.Helper()
+	rank := 1
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:                    id,
+		Title:                 "Legacy Subscription Plan",
+		PriceAmount:           9.99,
+		Currency:              "USD",
+		DurationUnit:          model.SubscriptionDurationMonth,
+		DurationValue:         1,
+		Enabled:               true,
+		TierRank:              &rank,
+		TotalAmount:           1000,
+		CreemProductId:        "creem_product",
+		WaffoPancakeProductId: "waffo_product",
+		AllowBalancePay:       common.GetPointer(true),
+		MaxPurchasePerUser:    0,
+		QuotaResetPeriod:      model.SubscriptionResetNever,
+	}).Error)
 }
 
 func TestChangeSubscriptionPlanRejectsInvalidRequestID(t *testing.T) {
@@ -140,4 +174,134 @@ func TestSubscriptionStripePayReturnsUnsupportedWithoutLegacyState(t *testing.T)
 	var intentCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 902).Count(&intentCount).Error)
 	require.Zero(t, intentCount)
+}
+
+func TestChangeSubscriptionPlanStripeRecurringPendingMigrationDoesNotPersistState(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 903)
+	insertSubscriptionControllerPlan(t, 9903)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 903)
+	ctx.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/subscription/self/change-plan",
+		strings.NewReader(`{"plan_id":9903,"payment_mode":"stripe_recurring","request_id":"stripe-change-1"}`),
+	)
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ChangeSubscriptionPlan(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"success":false`)
+	require.Contains(t, recorder.Body.String(), "stripe checkout pending migration")
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", 903).Error)
+	require.Zero(t, user.Quota)
+	var contractCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("user_id = ?", 903).Count(&contractCount).Error)
+	require.Zero(t, contractCount)
+	var intentCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 903).Count(&intentCount).Error)
+	require.Zero(t, intentCount)
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 903).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
+	var entitlementCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 903).Count(&entitlementCount).Error)
+	require.Zero(t, entitlementCount)
+}
+
+func TestLegacySubscriptionPurchaseInitiationHandlersAreBlockedBeforeOrderCreation(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 904)
+	insertSubscriptionControllerPlan(t, 9904)
+	configureLegacySubscriptionPaymentSettingsForBlockTest(t)
+
+	tests := []struct {
+		name    string
+		body    string
+		handler func(*gin.Context)
+	}{
+		{
+			name:    "epay",
+			body:    `{"plan_id":9904,"payment_method":"alipay"}`,
+			handler: SubscriptionRequestEpay,
+		},
+		{
+			name:    "creem",
+			body:    `{"plan_id":9904}`,
+			handler: SubscriptionRequestCreemPay,
+		},
+		{
+			name:    "waffo_pancake",
+			body:    `{"plan_id":9904}`,
+			handler: SubscriptionRequestWaffoPancakePay,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Set("id", 904)
+			ctx.Request = httptest.NewRequest(
+				http.MethodPost,
+				"/api/subscription/"+strings.ReplaceAll(tt.name, "_", "-")+"/pay",
+				strings.NewReader(tt.body),
+			)
+			ctx.Request.Header.Set("Content-Type", "application/json")
+
+			tt.handler(ctx)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.Contains(t, recorder.Body.String(), `"success":false`)
+			require.Contains(t, recorder.Body.String(), "subscription purchase initiation is pending migration")
+			var orderCount int64
+			require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 904).Count(&orderCount).Error)
+			require.Zero(t, orderCount)
+			var intentCount int64
+			require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", 904).Count(&intentCount).Error)
+			require.Zero(t, intentCount)
+			var entitlementCount int64
+			require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 904).Count(&entitlementCount).Error)
+			require.Zero(t, entitlementCount)
+		})
+	}
+}
+
+func configureLegacySubscriptionPaymentSettingsForBlockTest(t *testing.T) {
+	t.Helper()
+	originalPayAddress := operation_setting.PayAddress
+	originalEpayID := operation_setting.EpayId
+	originalEpayKey := operation_setting.EpayKey
+	originalPayMethods := operation_setting.PayMethods
+	originalCreemAPIKey := setting.CreemApiKey
+	originalCreemTestMode := setting.CreemTestMode
+	originalCreemWebhookSecret := setting.CreemWebhookSecret
+	originalWaffoMerchantID := setting.WaffoPancakeMerchantID
+	originalWaffoPrivateKey := setting.WaffoPancakePrivateKey
+	t.Cleanup(func() {
+		operation_setting.PayAddress = originalPayAddress
+		operation_setting.EpayId = originalEpayID
+		operation_setting.EpayKey = originalEpayKey
+		operation_setting.PayMethods = originalPayMethods
+		setting.CreemApiKey = originalCreemAPIKey
+		setting.CreemTestMode = originalCreemTestMode
+		setting.CreemWebhookSecret = originalCreemWebhookSecret
+		setting.WaffoPancakeMerchantID = originalWaffoMerchantID
+		setting.WaffoPancakePrivateKey = originalWaffoPrivateKey
+	})
+	operation_setting.PayAddress = "https://pay.example.com"
+	operation_setting.EpayId = "epay_id"
+	operation_setting.EpayKey = "epay_key"
+	operation_setting.PayMethods = []map[string]string{{"type": "alipay"}}
+	setting.CreemApiKey = ""
+	setting.CreemTestMode = true
+	setting.CreemWebhookSecret = ""
+	setting.WaffoPancakeMerchantID = "merchant"
+	setting.WaffoPancakePrivateKey = "private"
 }
