@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=3">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/fk2.css?v=723a"><style>
+<link rel="stylesheet" href="/fk2.css?v=723b"><style>
 /* ---------- hero ---------- */
 .hero{background:linear-gradient(180deg,#FFFFFF 0%,#F7F5FD 100%);border-bottom:1px solid var(--line)}
 .heroGrid{max-width:1240px;margin:0 auto;padding:56px 40px 52px;display:grid;grid-template-columns:minmax(0,1fr) 560px;gap:48px;align-items:start}
@@ -39,7 +39,7 @@
 .bauto b{font-size:14.5px;color:var(--violet-deep)}
 .bauto .d{font-family:var(--mono);font-size:11px;color:var(--ink3)}
 .bauto .fee{margin-left:auto;font-family:var(--mono);font-size:12.5px;color:var(--violet-deep);font-weight:600;white-space:nowrap}
-.boardfoot{text-align:center;padding:10px 0 10px}
+.boardfoot{text-align:center;padding:12px 0 8px;border-bottom:1px solid var(--line2)}
 .boardfoot a{color:var(--violet-deep);font-size:13px;font-weight:650;text-decoration:none}
 /* ---------- proof bar (新洞察价值点) ---------- */
 .proof{border-bottom:1px solid var(--line);background:#fff}
@@ -107,9 +107,9 @@ p.d{font-size:17.5px;line-height:1.65;color:#C9C9CF;margin-top:20px;max-width:62
 .heroSlides{position:relative;display:grid}
 .heroSlides .hslide{grid-area:1/1;visibility:hidden;opacity:0;transition:opacity .35s ease;display:flex;flex-direction:column;justify-content:center}
 .heroSlides .hslide.on{visibility:visible;opacity:1}
-.hs2{position:relative;display:flex;flex-direction:column;justify-content:center;background:linear-gradient(180deg,#FBFAFF 0%,#F3EFFC 100%);border:1px solid var(--line);border-radius:14px;padding:28px 26px 20px;box-shadow:0 24px 60px -18px rgba(46,16,101,.18)}
+.hs2{position:relative;display:flex;flex-direction:column;justify-content:center;background:linear-gradient(180deg,#FBFAFF 0%,#F3EFFC 100%);border:1px solid var(--line);border-radius:14px;padding:18px 22px 14px;box-shadow:0 24px 60px -18px rgba(46,16,101,.18)}
 .hs2::before{content:"";position:absolute;inset:-40px;background:radial-gradient(closest-side,rgba(168,85,247,.10),transparent 70%);pointer-events:none}
-.kwall{position:relative;display:grid;grid-template-columns:repeat(5,1fr);gap:11px;max-width:470px;margin:0 auto;width:100%}
+.kwall{position:relative;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-width:420px;margin:0 auto;width:100%}
 .kcol{display:flex;flex-direction:column;gap:11px}
 .kcol:nth-child(1),.kcol:nth-child(5){padding-top:16px}
 .kcol:nth-child(2),.kcol:nth-child(4){padding-top:44px}
@@ -223,8 +223,7 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
     <div>
       <div class="heroSlides">
       <div class="hslide on"><div class="board">
-        <h4>LIVE MODEL BOARD<span class="g">ALL VERIFIED HOURLY ✓ · REAL 30-DAY TRAFFIC</span></h4>
-        <div class="bauto"><div class="ico">A</div><div><b>flatkey-auto</b> <span class="d">picks the best official model per request</span></div><span class="fee">no routing fee</span></div>
+        <div class="boardfoot"><a href="/models" data-i18n="board.foot" data-orig="See all 328+ models &amp;amp; live health →">Xem 328+ mô hình &amp; tình trạng trực tiếp →</a></div>
         <div class="brow"><img class="plogo" src="assets/logos/openai.svg" alt=""><b>gpt-5.5</b><span class="prov">openai</span><span class="hdot" title="96.5% success · 30-day real traffic"></span><span class="pr"><s>$5.00</s><span class="now">$3.33</span><span class="un">/M in</span></span></div>
         <div class="brow"><img class="plogo" src="assets/logos/claude.svg" alt=""><b>claude-sonnet-4-6</b><span class="prov">anthropic</span><span class="hdot" title="98.2% success · 30-day real traffic"></span><span class="pr"><s>$3.00</s><span class="now">$2.00</span><span class="un">/M in</span></span></div>
         <div class="brow"><img class="plogo" src="assets/logos/openai.svg" alt=""><b>gpt-5.4</b><span class="prov">openai</span><span class="hdot" title="99.8% success · 30-day real traffic"></span><span class="pr"><s>$3.33</s><span class="now">$1.67</span><span class="un">/M in</span></span></div>
@@ -233,7 +232,6 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
         <div class="brow"><img class="plogo" src="assets/logos/deepseek.svg" alt=""><b>deepseek-v4-flash</b><span class="prov">deepseek</span><span class="hdot" title="99.4% success · 30-day real traffic"></span><span class="pr"><s>$0.14</s><span class="now">$0.056</span><span class="un">/M in</span></span></div>
         <div class="brow"><img class="plogo" src="assets/logos/zai.svg" alt=""><b>glm-5.2</b><span class="prov">z.ai</span><span class="hdot" title="96.6% success · 30-day real traffic"></span><span class="pr"><s>$1.40</s><span class="now">$0.56</span><span class="un">/M in</span></span></div>
         <div class="brow" style="background:var(--violet-tint);border-radius:10px;margin:4px 14px 2px;padding-left:12px;padding-right:12px;border-bottom:none"><img class="plogo" src="assets/logos/bytedance.svg" alt=""><b>seedance-2.5</b><span class="prov">bytedance</span><span style="font-family:var(--mono);font-size:9.5px;background:#fff;color:var(--violet-deep);border-radius:999px;padding:2px 8px;font-weight:600">VIDEO · NEW</span><span class="hdot" title="early access · official bytedance"></span><span class="pr"><span class="now" style="font-size:12.5px" data-i18n="md.early" data-orig="Early access">Truy cập sớm</span></span></div>
-        <div class="boardfoot"><a href="/models" data-i18n="board.foot" data-orig="See all 328+ models &amp;amp; live health →">Xem 328+ mô hình &amp; tình trạng trực tiếp →</a></div>
       </div></div>
       <div class="hslide hs2">
         <div class="kwall">
@@ -244,7 +242,7 @@ claude = Anthropic(<span class="k">base_url</span>=<span class="s">"https://rout
           <div class="kcol"><div class="kt"><img src="assets/logos/minimax.svg" alt="MiniMax"></div><div class="kt"><img src="assets/logos/ollama.svg" alt="Ollama"></div><div class="kt"><img src="assets/logos/nvidia.svg" alt="NVIDIA"></div></div>
         </div>
         <svg class="kfun" viewBox="0 0 240 34" aria-hidden="true"><path d="M16 0 C 16 26, 120 8, 120 34 M120 0 L 120 34 M224 0 C 224 26, 120 8, 120 34" fill="none" stroke="#D9D2EE" stroke-width="1.5"/></svg>
-        <div class="keypill"><img src="assets/logos/flatkey-mark-dark.svg" alt=""> sk-fk-••••••••</div>
+        <div class="keypill"><img src="assets/logos/flatkey-mark-dark.svg" alt=""> only one key</div>
         <p class="kcap" data-i18n="hero.v2cap">Một key · endpoint chính thức · SLA ký kết</p>
         <div class="kcats">
           <div class="kcat"><b data-i18n="hero.cat1" data-orig="Text &amp; coding">Văn bản &amp; lập trình</b><span>claude-sonnet · gpt-5.5</span></div>
@@ -467,12 +465,12 @@ client.chat.completions.create(
       </a>
     </div>
     <div class="mgrid" style="margin-top:16px">
-      <div class="mcard"><b>sora-2</b><span>openai · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>kling-2.5-pro</b><span>kuaishou · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>wan-2.7</b><span>alibaba · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>hailuo-02</b><span>minimax · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/openai.svg" alt="">sora-2</b><span>openai · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/kuaishou.svg" alt="">kling-2.5-pro</b><span>kuaishou · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/alibabacloud.svg" alt="">wan-2.7</b><span>alibaba · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/minimax.svg" alt="">hailuo-02</b><span>minimax · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
       <div class="mcard"><b>pixverse-v6</b><span>pixverse · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>seedance-2.0-lite</b><span>bytedance · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/bytedance.svg" alt="">seedance-2.0-lite</b><span>bytedance · t2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
       <div class="mcard"><b>ltx-2.3</b><span>lightricks · i2v</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
       <div class="mcard more"><a href="/models" data-i18n="vid.more" data-orig="+ 20 more video models →">+ 20 mô hình video nữa →</a></div>
     </div>
@@ -485,13 +483,13 @@ client.chat.completions.create(
     <h2 class="display" data-i18n="aud.h2" data-orig="Speech, on the record too.">Giọng nói, cũng có sổ sách.</h2>
     <p class="sub" style="margin-top:12px;max-width:620px" data-i18n="aud.sub" data-orig="Realtime voice, TTS and transcription from the official labs — same key, same ledger, priced per minute or per million characters.">Giọng realtime, TTS và phiên âm từ các lab chính thức — cùng key, cùng sổ cái, tính theo phút hoặc triệu ký tự.</p>
     <div class="mgrid five">
-      <div class="mcard"><b>gpt-realtime</b><span>openai · speech ⇄ speech</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>whisper-v4</b><span>openai · transcription</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>elevenlabs-v3-turbo</b><span>elevenlabs · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>minimax-speech-2.6</b><span>minimax · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>cosyvoice-3</b><span>alibaba · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>seed-tts-2</b><span>bytedance · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
-      <div class="mcard"><b>gemini-2.5-flash-tts</b><span>google · tts</span><i>$0.50/M in · $10/M out</i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/openai.svg" alt="">gpt-realtime</b><span>openai · speech ⇄ speech</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/openai.svg" alt="">whisper-v4</b><span>openai · transcription</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/elevenlabs.svg" alt="">elevenlabs-v3-turbo</b><span>elevenlabs · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/minimax.svg" alt="">minimax-speech-2.6</b><span>minimax · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/alibabacloud.svg" alt="">cosyvoice-3</b><span>alibaba · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/bytedance.svg" alt="">seed-tts-2</b><span>bytedance · tts</span><i><span data-i18n="md.soon" data-orig="Coming soon">Sắp ra mắt</span></i></div>
+      <div class="mcard"><b><img class="plogo" src="assets/logos/googlegemini.svg" alt="">gemini-2.5-flash-tts</b><span>google · tts</span><i>$0.50/M in · $10/M out</i></div>
       <div class="mcard more"><a href="/models" data-i18n="aud.more" data-orig="+ 12 more audio models →">+ 12 mô hình âm thanh nữa →</a></div>
     </div>
   </div>
