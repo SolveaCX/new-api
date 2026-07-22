@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useQueries, useQueryClient } from '@tanstack/react-query'
+import { useQueries } from '@tanstack/react-query'
 import { useDebounce } from '@/hooks'
 import { useTranslation } from 'react-i18next'
 import { Label } from '@/components/ui/label'
@@ -63,7 +63,6 @@ export function CampaignSpecifiedUsersSelector(
   props: CampaignSpecifiedUsersSelectorProps
 ) {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
   const [search, setSearch] = React.useState('')
   const [emailText, setEmailText] = React.useState(() =>
     normalizeEmailText(props.emails)
@@ -120,23 +119,7 @@ export function CampaignSpecifiedUsersSelector(
   const selectedQueryIndex = props.userIDs.length > 0 ? 0 : -1
   const searchQueryIndex = props.userIDs.length > 0 ? 1 : 0
   const selectedUsers = queryUsers(userQueries[selectedQueryIndex])
-  const liveSearchUsers = queryUsers(userQueries[searchQueryIndex])
-  const cachedSearchUsers = queryClient
-    .getQueriesData<{ data?: RecallAudienceUserOption[] }>({
-      predicate: (query) => {
-        const key = query.queryKey
-        return (
-          key[0] === 'recall-campaigns' &&
-          key[1] === 'audience-options' &&
-          key[2] === 'users' &&
-          typeof (key[3] as { keyword?: unknown } | undefined)?.keyword ===
-            'string'
-        )
-      },
-    })
-    .flatMap(([, data]) => data?.data ?? [])
-  const searchUsers =
-    liveSearchUsers.length > 0 ? liveSearchUsers : cachedSearchUsers
+  const searchUsers = queryUsers(userQueries[searchQueryIndex])
   const mergedUsers = mergeRecallAudienceUserOptions(selectedUsers, searchUsers)
   const mergedUserIDs = new Set(mergedUsers.map((user) => user.id))
   const unavailableLabel = t('Unavailable')
