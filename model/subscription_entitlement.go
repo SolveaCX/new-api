@@ -276,11 +276,12 @@ func findContractCurrentEntitlementForUserTx(tx *gorm.DB, userId int, now int64,
 		tx = DB
 	}
 	var contract UserSubscriptionContract
-	query := tx.Where("user_id = ?", userId).Limit(1).Find(&contract)
+	contractQuery := tx
+	if lock {
+		contractQuery = lockQuery(tx)
+	}
+	query := contractQuery.Where("user_id = ?", userId).Limit(1).Find(&contract)
 	if query.Error != nil {
-		if isMissingSubscriptionLifecycleTableError(query.Error) {
-			return nil, false, "", nil
-		}
 		return nil, false, "", query.Error
 	}
 	if query.RowsAffected == 0 {
@@ -372,20 +373,7 @@ func isGraceContractCurrentEntitlementTx(tx *gorm.DB, sub *UserSubscription) (bo
 			sub.ContractId, sub.UserId, SubscriptionContractStatusGrace, sub.Id).
 		Count(&count).Error
 	if err != nil {
-		if isMissingSubscriptionLifecycleTableError(err) {
-			return false, nil
-		}
 		return false, err
 	}
 	return count > 0, nil
-}
-
-func isMissingSubscriptionLifecycleTableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "no such table: user_subscription_contracts") ||
-		strings.Contains(msg, "table user_subscription_contracts doesn't exist") ||
-		strings.Contains(msg, "relation \"user_subscription_contracts\" does not exist")
 }

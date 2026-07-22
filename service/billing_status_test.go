@@ -47,7 +47,12 @@ func resetBillingStatusTables(t *testing.T) {
 
 	modelCommonKeyCol = "`key`"
 	require.NoError(t, i18n2.Init())
-	require.NoError(t, model.DB.AutoMigrate(&model.SubscriptionPreConsumeRecord{}))
+	require.NoError(t, model.DB.AutoMigrate(
+		&model.UserSubscription{},
+		&model.UserSubscriptionContract{},
+		&model.SubscriptionPreConsumeRecord{},
+	))
+	require.NoError(t, model.DB.Exec("DELETE FROM user_subscription_contracts").Error)
 	require.NoError(t, model.DB.Exec("DELETE FROM subscription_pre_consume_records").Error)
 	require.NoError(t, model.DB.Exec("DELETE FROM user_subscriptions").Error)
 	require.NoError(t, model.DB.Exec("DELETE FROM tokens").Error)
