@@ -87,6 +87,53 @@ func calculateAudioQuota(info QuotaInfo) int {
 	return int(quota.Round(0).IntPart())
 }
 
+func calculateSupplierAudioOfficialListUSD(relayInfo *relaycommon.RelayInfo, input TokenDetails, output TokenDetails, tieredResult *billingexpr.TieredResult) (decimal.Decimal, bool, string, string) {
+	if relayInfo == nil || !relayInfo.SupplierOfficialPricingSnapshot.Loaded {
+		return decimal.Zero, false, "supplier_accounting.official_pricing_snapshot.missing", "ratio"
+	}
+	pricing := relayInfo.SupplierOfficialPricingSnapshot
+	if pricing.TieredBillingSnapshot != nil {
+		if tieredResult == nil || math.IsNaN(tieredResult.ActualQuotaBeforeGroup) || math.IsInf(tieredResult.ActualQuotaBeforeGroup, 0) {
+			return decimal.Zero, false, "supplier_accounting.tiered_settlement.fallback", "tiered_expr"
+		}
+		quotaPerUnit, err := decimal.NewFromString(pricing.QuotaPerUnit)
+		if err != nil || quotaPerUnit.LessThanOrEqual(decimal.Zero) {
+			return decimal.Zero, false, "supplier_accounting.quota_per_unit_snapshot.invalid_divisor", "tiered_expr"
+		}
+		return decimal.NewFromFloat(tieredResult.ActualQuotaBeforeGroup).Div(quotaPerUnit), true, "", "tiered_expr"
+	}
+	if relayInfo.TieredBillingSnapshot != nil {
+		return decimal.Zero, false, "supplier_accounting.tiered_pricing_snapshot.missing", "tiered_expr"
+	}
+	priceData := pricing.PriceData
+	if priceData.UsePrice {
+		return decimal.NewFromFloat(priceData.ModelPrice), true, "", "price"
+	}
+	quotaPerUnit, err := decimal.NewFromString(pricing.QuotaPerUnit)
+	if err != nil || quotaPerUnit.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, false, "supplier_accounting.quota_per_unit_snapshot.invalid_divisor", "ratio"
+	}
+	weightedTokens := decimal.NewFromInt(int64(input.TextTokens)).
+		Add(decimal.NewFromInt(int64(output.TextTokens)).Mul(decimal.NewFromFloat(priceData.CompletionRatio))).
+		Add(decimal.NewFromInt(int64(input.AudioTokens)).Mul(decimal.NewFromFloat(priceData.AudioRatio))).
+		Add(decimal.NewFromInt(int64(output.AudioTokens)).Mul(decimal.NewFromFloat(priceData.AudioRatio)).Mul(decimal.NewFromFloat(priceData.AudioCompletionRatio)))
+	amount := weightedTokens.Mul(decimal.NewFromFloat(priceData.ModelRatio)).Div(quotaPerUnit)
+	return amount, true, "", "ratio"
+}
+
+func supplierTieredResultForUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage, isClaudeUsageSemantic bool) *billingexpr.TieredResult {
+	if relayInfo == nil || usage == nil || relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot == nil {
+		return nil
+	}
+	snapshot := relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot
+	params := BuildTieredTokenParams(usage, isClaudeUsageSemantic, billingexpr.UsedVars(snapshot.ExprString))
+	result, err := calculateSupplierTieredResult(relayInfo, params)
+	if err != nil {
+		return nil
+	}
+	return result
+}
+
 func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.RealtimeUsage) error {
 	if relayInfo.UsePrice {
 		return nil
@@ -199,6 +246,15 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredOk {
 		quota = tieredQuota
 	}
+	supplierUsage := &dto.Usage{
+		PromptTokens:           usage.InputTokens,
+		CompletionTokens:       usage.OutputTokens,
+		TotalTokens:            usage.TotalTokens,
+		PromptTokensDetails:    usage.InputTokenDetails,
+		CompletionTokenDetails: usage.OutputTokenDetails,
+	}
+	supplierTieredResult := supplierTieredResultForUsage(relayInfo, supplierUsage, false)
+	officialListUSD, officialKnown, officialReason, pricingMode := calculateSupplierAudioOfficialListUSD(relayInfo, quotaInfo.InputDetails, quotaInfo.OutputDetails, supplierTieredResult)
 
 	totalTokens := usage.TotalTokens
 	var logContent string
@@ -222,9 +278,19 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	settlement := SettleBillingResult(ctx, relayInfo, quota)
+	if settlement.Err != nil {
+		logger.LogError(ctx, "error settling billing: "+settlement.Err.Error())
 	}
+	var officialListUSDPointer *decimal.Decimal
+	if officialKnown {
+		frozenOfficialListUSD := officialListUSD
+		officialListUSDPointer = &frozenOfficialListUSD
+	}
+	if usage != nil {
+		officialReason = supplierFinalUsageEvidenceReason(ctx, usage.TotalTokens, officialReason)
+	}
+	supplierAccountingSnapshot := buildSupplierAccountingSnapshotForFinalUsage(relayInfo, settlement, officialListUSDPointer, officialReason, pricingMode, totalTokens)
 
 	logModel := modelName
 	if extraContent != "" {
@@ -235,6 +301,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	InjectSupplierAccountingLogSnapshotV1(other, supplierAccountingSnapshot)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.InputTokens,
@@ -320,6 +387,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredOk {
 		quota = tieredQuota
 	}
+	supplierTieredResult := supplierTieredResultForUsage(relayInfo, usage, usageSemanticFromUsage(relayInfo, usage) == "anthropic")
+	officialListUSD, officialKnown, officialReason, pricingMode := calculateSupplierAudioOfficialListUSD(relayInfo, quotaInfo.InputDetails, quotaInfo.OutputDetails, supplierTieredResult)
 
 	totalTokens := usage.TotalTokens
 	var logContent string
@@ -343,9 +412,17 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	settlement := SettleBillingResult(ctx, relayInfo, quota)
+	if settlement.Err != nil {
+		logger.LogError(ctx, "error settling billing: "+settlement.Err.Error())
 	}
+	var officialListUSDPointer *decimal.Decimal
+	if officialKnown {
+		frozenOfficialListUSD := officialListUSD
+		officialListUSDPointer = &frozenOfficialListUSD
+	}
+	officialReason = supplierFinalUsageEvidenceReason(ctx, totalTokens, officialReason)
+	supplierAccountingSnapshot := buildSupplierAccountingSnapshotForFinalUsage(relayInfo, settlement, officialListUSDPointer, officialReason, pricingMode, totalTokens)
 
 	logModel := relayInfo.OriginModelName
 	if extraContent != "" {
@@ -356,6 +433,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	InjectSupplierAccountingLogSnapshotV1(other, supplierAccountingSnapshot)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,
@@ -372,6 +450,16 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	})
 	perfmetrics.RecordChannelTokens(relayInfo, int64(usage.PromptTokens), int64(usage.CompletionTokens))
 	perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens), nil)
+}
+
+func supplierFinalUsageEvidenceReason(ctx *gin.Context, totalTokens int, current string) string {
+	if totalTokens == 0 {
+		current = appendSupplierQualityReason(current, "supplier_accounting.usage.empty")
+	}
+	if common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens) {
+		current = appendSupplierQualityReason(current, "supplier_accounting.usage.local_estimate")
+	}
+	return current
 }
 
 // ErrInsufficientTokenQuota marks a genuine token-quota-exhausted condition
@@ -413,40 +501,57 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 	return nil
 }
 
-func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool) (err error) {
+type postConsumeQuotaResult struct {
+	FundingCommitted bool
+	Err              error
+}
+
+func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool) error {
+	return postConsumeQuotaWithResult(relayInfo, quota, preConsumedQuota, sendEmail).Err
+}
+
+func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool) postConsumeQuotaResult {
+	if relayInfo == nil {
+		return postConsumeQuotaResult{Err: errors.New("relay info is nil")}
+	}
 
 	// 1) Consume from wallet quota OR subscription item
-	if relayInfo != nil && relayInfo.BillingSource == BillingSourceSubscription {
+	if relayInfo.BillingSource == BillingSourceSubscription {
 		if relayInfo.SubscriptionId == 0 {
-			return errors.New("subscription id is missing")
+			return postConsumeQuotaResult{Err: errors.New("subscription id is missing")}
 		}
 		delta := int64(quota)
 		if delta != 0 {
 			if err := model.PostConsumeUserSubscriptionDelta(relayInfo.SubscriptionId, delta); err != nil {
-				return err
+				return postConsumeQuotaResult{Err: err}
 			}
 			relayInfo.SubscriptionPostDelta += delta
 		}
 	} else {
 		// Wallet
 		if quota > 0 {
-			err = model.DecreaseUserQuota(relayInfo.UserId, quota, false)
+			if err := model.DecreaseUserQuota(relayInfo.UserId, quota, false); err != nil {
+				return postConsumeQuotaResult{Err: err}
+			}
 		} else {
-			err = model.IncreaseUserQuota(relayInfo.UserId, -quota, false)
-		}
-		if err != nil {
-			return err
+			if err := model.IncreaseUserQuota(relayInfo.UserId, -quota, false); err != nil {
+				return postConsumeQuotaResult{Err: err}
+			}
 		}
 	}
+	result := postConsumeQuotaResult{FundingCommitted: true}
 
 	if !relayInfo.IsPlayground {
 		if quota > 0 {
-			err = model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota)
+			if err := model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota); err != nil {
+				result.Err = err
+				return result
+			}
 		} else {
-			err = model.IncreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, -quota)
-		}
-		if err != nil {
-			return err
+			if err := model.IncreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, -quota); err != nil {
+				result.Err = err
+				return result
+			}
 		}
 	}
 
@@ -456,7 +561,7 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 		}
 	}
 
-	return nil
+	return result
 }
 
 // notifyLang resolves the language for a background notification (no gin

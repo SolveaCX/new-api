@@ -97,6 +97,11 @@ func main() {
 		}()
 
 		go model.SyncChannelCache(common.SyncFrequency)
+	} else {
+		if err := model.RefreshSupplierCache(); err != nil {
+			common.SysError("initial supplier cache refresh failed: " + err.Error())
+		}
+		go model.SyncSupplierCache(common.SyncFrequency)
 	}
 
 	// Subscribe to peer config-change notifications. Each message triggers the
@@ -397,6 +402,15 @@ func InitResources() error {
 		common.FatalLog("failed to initialize database: " + err.Error())
 		return err
 	}
+	if err = model.EnsureSupplierUsageGenerationSchema(model.DB); err != nil {
+		return fmt.Errorf("initialize supplier usage generation schema: %w", err)
+	}
+	if err = model.RefreshSupplierCache(); err != nil {
+		return fmt.Errorf("initialize supplier cache: %w", err)
+	}
+	if _, err = service.InitializeSupplierAccountingCoverageStart(context.Background(), model.DB); err != nil {
+		return fmt.Errorf("initialize supplier accounting coverage start: %w", err)
+	}
 
 	model.CheckSetup()
 
@@ -414,7 +428,6 @@ func InitResources() error {
 	if err != nil {
 		return err
 	}
-
 	// Initialize Redis
 	err = common.InitRedisClient()
 	if err != nil {

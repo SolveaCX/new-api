@@ -43,6 +43,10 @@ type RealtimeUsage struct {
 	OutputTokens       int                `json:"output_tokens"`
 	InputTokenDetails  InputTokenDetails  `json:"input_token_details"`
 	OutputTokenDetails OutputTokenDetails `json:"output_token_details"`
+	// LocalEstimatedTokens and FinalResponseCount are internal accounting
+	// provenance and are never sent to clients or upstreams.
+	LocalEstimatedTokens int `json:"-"`
+	FinalResponseCount   int `json:"-"`
 }
 
 type RealtimeSession struct {

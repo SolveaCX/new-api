@@ -108,4 +108,17 @@ describe('buildSidebarData', () => {
       expect(inviteItem?.badge).toBeUndefined()
     }
   )
+  test('places the supply chain workspace beside operational reporting', () => {
+    const adminGroup = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'admin'
+    )
+    const urls = adminGroup?.items.flatMap((item) =>
+      'url' in item && item.url ? [item.url] : []
+    )
+
+    expect(urls).toContain('/supply-chain')
+    expect(urls?.indexOf('/supply-chain')).toBe(
+      (urls?.indexOf('/ops-report') ?? -2) + 1
+    )
+  })
 })

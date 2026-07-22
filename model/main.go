@@ -302,6 +302,15 @@ func migrateDB() error {
 		&AdsPilotAction{},
 		&AdsPilotProposal{},
 		&AdsPilotMeta{},
+		&UpstreamSupplier{},
+		&SupplierContract{},
+		&SupplierContractRateVersion{},
+		&SupplierChannelBindingVersion{},
+		&SupplierInventoryAdjustment{},
+		&SupplierStatisticsExclusionRule{},
+		&SupplierAdminCommand{},
+		&SupplierUsageDailySummary{},
+		&SupplierUsageDailyBatchRun{},
 	)
 	if err != nil {
 		return err
@@ -364,6 +373,15 @@ func migrateDBFast() error {
 		{&CodexModelGovernanceProbeState{}, "CodexModelGovernanceProbeState"},
 		{&CodexModelGovernanceAlertCooldownRecord{}, "CodexModelGovernanceAlertCooldownRecord"},
 		{&TemporaryChannelModelSpend{}, "TemporaryChannelModelSpend"},
+		{&UpstreamSupplier{}, "UpstreamSupplier"},
+		{&SupplierContract{}, "SupplierContract"},
+		{&SupplierContractRateVersion{}, "SupplierContractRateVersion"},
+		{&SupplierChannelBindingVersion{}, "SupplierChannelBindingVersion"},
+		{&SupplierInventoryAdjustment{}, "SupplierInventoryAdjustment"},
+		{&SupplierStatisticsExclusionRule{}, "SupplierStatisticsExclusionRule"},
+		{&SupplierAdminCommand{}, "SupplierAdminCommand"},
+		{&SupplierUsageDailySummary{}, "SupplierUsageDailySummary"},
+		{&SupplierUsageDailyBatchRun{}, "SupplierUsageDailyBatchRun"},
 	}
 	// GORM also migrates associations, so parallel AutoMigrate calls can race
 	// when related models share a table dependency.

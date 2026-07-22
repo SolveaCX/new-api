@@ -169,6 +169,7 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		if otherMap != nil {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
+			delete(otherMap, "supplier_accounting_v1")
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
 		}

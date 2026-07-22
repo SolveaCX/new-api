@@ -263,6 +263,20 @@ const (
 	MsgSettingSaved            = "setting.saved"
 )
 
+// Supply chain management and reporting messages.
+const (
+	MsgSupplyChainInvalidInput           = "supply_chain.invalid_input"
+	MsgSupplyChainInvalidRate            = "supply_chain.invalid_rate"
+	MsgSupplyChainInvalidMoney           = "supply_chain.invalid_money"
+	MsgSupplyChainIdempotencyKeyRequired = "supply_chain.idempotency_key_required"
+	MsgSupplyChainNotFound               = "supply_chain.not_found"
+	MsgSupplyChainConflict               = "supply_chain.conflict"
+	MsgSupplyChainInternalError          = "supply_chain.internal_error"
+	MsgSupplyChainInvalidReportRange     = "supply_chain.invalid_report_range"
+	MsgSupplyChainInvalidReportFilter    = "supply_chain.invalid_report_filter"
+	MsgSupplyChainReportUnavailable      = "supply_chain.report_unavailable"
+)
+
 // Deployment related messages (io.net)
 const (
 	MsgDeploymentNotEnabled     = "deployment.not_enabled"

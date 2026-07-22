@@ -30,6 +30,9 @@ const (
 )
 
 func InitChannelCache() {
+	if err := RefreshSupplierCache(); err != nil {
+		common.SysError("supplier cache refresh failed; retaining previous snapshot: " + err.Error())
+	}
 	if !common.MemoryCacheEnabled {
 		return
 	}
@@ -37,6 +40,8 @@ func InitChannelCache() {
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
+		channel.SupplierCostSnapshot, _ = GetSupplierCostSnapshot(channel.Id)
+		channel.SupplierCostSnapshotLoaded = true
 		newChannelId2channel[channel.Id] = channel
 	}
 	newGroup2model2channels := make(map[string]map[string][]int)

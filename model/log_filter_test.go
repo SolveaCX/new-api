@@ -3,7 +3,75 @@ package model
 import (
 	"testing"
 	"time"
+
+	"github.com/QuantumNous/new-api/common"
 )
+
+func TestFormatUserLogsRemovesSupplierAccountingSnapshot(t *testing.T) {
+	logs := []*Log{{Other: common.MapToJsonStr(map[string]interface{}{
+		"supplier_accounting_v1": map[string]interface{}{"s": 1, "c": 2, "pm": 700000},
+		"matched_tier":           "standard",
+	})}}
+	formatUserLogs(logs, 0)
+	other, err := common.StrToMap(logs[0].Other)
+	if err != nil {
+		t.Fatalf("parse sanitized log: %v", err)
+	}
+	if _, ok := other["supplier_accounting_v1"]; ok {
+		t.Fatalf("supplier accounting snapshot leaked to user log: %s", logs[0].Other)
+	}
+	if other["matched_tier"] != "standard" {
+		t.Fatalf("unrelated user-visible log metadata was removed: %s", logs[0].Other)
+	}
+}
+
+func TestUserLogQueriesStripSupplierAccountingAndRetainOtherMetadata(t *testing.T) {
+	resetUsageTables(t)
+	const (
+		userID  = 88001
+		tokenID = 88002
+	)
+	mustCreateUsage(t, &Log{
+		UserId: userID, TokenId: tokenID, Type: LogTypeConsume, CreatedAt: time.Now().Unix(),
+		ModelName: "supplier-private", Other: common.MapToJsonStr(map[string]interface{}{
+			"supplier_accounting_v1": map[string]interface{}{"s": 1, "c": 2, "pm": 700000},
+			"matched_tier":           "standard",
+			"trace_id":               "public-trace",
+		}),
+	})
+
+	assertSanitized := func(t *testing.T, logs []*Log) {
+		t.Helper()
+		if len(logs) != 1 {
+			t.Fatalf("logs len = %d, want 1", len(logs))
+		}
+		other, err := common.StrToMap(logs[0].Other)
+		if err != nil {
+			t.Fatalf("parse sanitized other: %v", err)
+		}
+		if _, exists := other["supplier_accounting_v1"]; exists {
+			t.Fatalf("supplier snapshot leaked: %s", logs[0].Other)
+		}
+		if other["matched_tier"] != "standard" || other["trace_id"] != "public-trace" {
+			t.Fatalf("unrelated metadata removed: %s", logs[0].Other)
+		}
+	}
+
+	userLogs, total, err := GetUserLogs(userID, LogTypeConsume, 0, 0, "", "", 0, 20, "", "", "")
+	if err != nil {
+		t.Fatalf("GetUserLogs: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("GetUserLogs total = %d, want 1", total)
+	}
+	assertSanitized(t, userLogs)
+
+	tokenLogs, err := GetLogByTokenId(tokenID)
+	if err != nil {
+		t.Fatalf("GetLogByTokenId: %v", err)
+	}
+	assertSanitized(t, tokenLogs)
+}
 
 func TestGetAllLogsFiltersExplicitUserID(t *testing.T) {
 	resetUsageTables(t)

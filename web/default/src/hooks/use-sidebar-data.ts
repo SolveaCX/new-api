@@ -16,6 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { createElement, type ComponentProps } from 'react'
+import { ChartLineData01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { type TFunction } from 'i18next'
 import {
   Activity,
@@ -52,6 +55,16 @@ function formatInvitationRewardBadge(rewardUSD?: number): string | undefined {
     useGrouping: false,
   }).format(rewardUSD)
   return `+${amount}$`
+}
+
+function SupplyChainIcon(
+  props: Omit<ComponentProps<typeof HugeiconsIcon>, 'icon'>
+) {
+  return createElement(HugeiconsIcon, {
+    ...props,
+    icon: ChartLineData01Icon,
+    strokeWidth: 2,
+  })
 }
 
 /**
@@ -171,6 +184,11 @@ export function buildSidebarData(
             title: t('Ops Daily Report'),
             url: '/ops-report',
             icon: CalendarRange,
+          },
+          {
+            title: t('Supply Chain'),
+            url: '/supply-chain',
+            icon: SupplyChainIcon,
           },
           {
             title: t('Redemption Codes'),

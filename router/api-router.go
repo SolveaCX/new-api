@@ -306,6 +306,43 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/upstream_updates/detect", controller.DetectChannelUpstreamModelUpdates)
 			channelRoute.POST("/upstream_updates/detect_all", controller.DetectAllChannelUpstreamModelUpdates)
 		}
+		supplyChainRoute := apiRouter.Group("/supply-chain")
+		supplyChainRoute.Use(middleware.AdminAuth())
+		{
+			supplyChainRoute.GET("/commands/result", controller.GetSupplyChainCommandResult)
+			supplyChainRoute.GET("/suppliers", controller.ListSupplyChainSuppliers)
+			supplyChainRoute.GET("/suppliers/:id", controller.GetSupplyChainSupplier)
+			supplyChainRoute.POST("/suppliers", middleware.CriticalRateLimit(), controller.CreateSupplyChainSupplier)
+			supplyChainRoute.PATCH("/suppliers/:id", middleware.CriticalRateLimit(), controller.UpdateSupplyChainSupplier)
+			supplyChainRoute.POST("/suppliers/:id/inactivate", middleware.CriticalRateLimit(), controller.InactivateSupplyChainSupplier)
+
+			supplyChainRoute.GET("/contracts", controller.ListSupplyChainContracts)
+			supplyChainRoute.GET("/contracts/:id", controller.GetSupplyChainContract)
+			supplyChainRoute.POST("/contracts", middleware.CriticalRateLimit(), controller.CreateSupplyChainContract)
+			supplyChainRoute.PATCH("/contracts/:id", middleware.CriticalRateLimit(), controller.UpdateSupplyChainContract)
+			supplyChainRoute.POST("/contracts/:id/inactivate", middleware.CriticalRateLimit(), controller.InactivateSupplyChainContract)
+			supplyChainRoute.GET("/contracts/:id/rates", controller.ListSupplyChainRateVersions)
+			supplyChainRoute.POST("/contracts/:id/rates", middleware.CriticalRateLimit(), controller.CreateSupplyChainRateVersion)
+			supplyChainRoute.GET("/contracts/:id/inventory-adjustments", controller.ListSupplyChainInventoryAdjustments)
+			supplyChainRoute.POST("/contracts/:id/inventory-adjustments", middleware.CriticalRateLimit(), controller.CreateSupplyChainInventoryAdjustment)
+
+			supplyChainRoute.GET("/exclusions", controller.ListSupplyChainExclusionRules)
+			supplyChainRoute.POST("/exclusions", middleware.CriticalRateLimit(), controller.CreateSupplyChainExclusionRule)
+			supplyChainRoute.GET("/channel-bindings", controller.ListSupplyChainChannelBindings)
+			supplyChainRoute.GET("/channel-bindings/:channel_id", controller.GetSupplyChainChannelBinding)
+			supplyChainRoute.PUT("/channel-bindings/:channel_id", middleware.CriticalRateLimit(), controller.BindSupplyChainChannel)
+			supplyChainRoute.DELETE("/channel-bindings/:channel_id", middleware.CriticalRateLimit(), controller.UnbindSupplyChainChannel)
+
+			supplyChainRoute.GET("/reports/overview", controller.GetSupplyChainReportOverview)
+			supplyChainRoute.GET("/reports/trend", controller.GetSupplyChainReportTrend)
+			supplyChainRoute.GET("/reports/contracts", controller.ListSupplyChainReportContracts)
+			supplyChainRoute.GET("/reports/contracts/:id", controller.GetSupplyChainReportContract)
+			supplyChainRoute.GET("/reports/channels", controller.ListSupplyChainReportChannels)
+			supplyChainRoute.GET("/reports/breakdown", controller.ListSupplyChainReportBreakdown)
+			supplyChainRoute.GET("/reports/freshness", controller.GetSupplyChainReportFreshness)
+
+		}
+		registerSupplierDailyBatchCatchUpRoute(apiRouter, controller.TriggerSupplierDailyBatchCatchUp)
 		codexModelGovernanceRoute := apiRouter.Group("/codex_model_governance")
 		codexModelGovernanceRoute.Use(middleware.AdminAuth())
 		{
@@ -458,4 +495,10 @@ func SetApiRouter(router *gin.Engine) {
 			deploymentsRoute.DELETE("/:id", controller.DeleteDeployment)
 		}
 	}
+}
+
+func registerSupplierDailyBatchCatchUpRoute(apiRouter *gin.RouterGroup, handler gin.HandlerFunc) {
+	supplierBatchRoute := apiRouter.Group("/supply-chain")
+	supplierBatchRoute.Use(middleware.RootAuth())
+	supplierBatchRoute.POST("/daily-batches/catch-up", middleware.CriticalRateLimit(), handler)
 }

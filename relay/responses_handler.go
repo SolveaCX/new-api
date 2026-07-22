@@ -64,6 +64,11 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
+	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
+		if err := helper.RefreshSupplierOfficialPricingSnapshotForCurrentModel(c, info, info.GetEstimatePromptTokens(), &types.TokenCountMeta{}); err != nil {
+			logger.LogWarn(c, "failed to freeze supplier compact pricing snapshot: "+err.Error())
+		}
+	}
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {

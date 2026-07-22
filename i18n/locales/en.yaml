@@ -315,3 +315,15 @@ notify.subscription_quota_warning_title: "Your subscription quota is running low
 notify.quota_warning_email: "{{.Warning}}. Your current remaining quota is {{.Quota}}. To avoid service interruption, please top up in time.<br/>Top-up link: <a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}. Remaining quota: {{.Quota}}. Please top up in time."
 notify.quota_warning_gotify: "{{.Warning}}. Your current remaining quota is {{.Quota}}. Please top up in time."
+
+# Supply chain management
+supply_chain.invalid_input: "Invalid supply chain request"
+supply_chain.invalid_rate: "The procurement multiplier must be an integer between 0 and 1,000,000 ppm"
+supply_chain.invalid_money: "The amount must be a non-zero integer in micro-USD"
+supply_chain.idempotency_key_required: "A valid Idempotency-Key header is required"
+supply_chain.not_found: "The requested supply chain resource was not found"
+supply_chain.conflict: "The operation conflicts with the current supply chain state"
+supply_chain.internal_error: "The supply chain service is temporarily unavailable"
+supply_chain.invalid_report_range: "Use either one Asia/Shanghai month or a valid date range of at most 366 days"
+supply_chain.invalid_report_filter: "One or more supply chain report filters are invalid"
+supply_chain.report_unavailable: "The requested report cannot be produced safely for this range"
