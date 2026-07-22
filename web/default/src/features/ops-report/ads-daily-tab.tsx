@@ -122,7 +122,7 @@ function CreativeCard(props: {
   const hasContent = (row.headlines ?? []).length > 0
   return (
     <div
-      className={`rounded-md border p-3 text-sm ${CHANGE_ROW_CLASS[row.change] ?? ''}`}
+      className={`min-w-0 overflow-hidden rounded-md border p-3 text-sm ${CHANGE_ROW_CLASS[row.change] ?? ''}`}
     >
       <div className='flex items-center justify-between gap-2'>
         <div className='text-muted-foreground truncate text-xs'>
@@ -141,7 +141,7 @@ function CreativeCard(props: {
       </div>
       {hasContent ? (
         <>
-          <div className='mt-1 font-medium text-blue-700 dark:text-blue-400'>
+          <div className='mt-1 font-medium break-words text-blue-700 dark:text-blue-400'>
             {finalUrl ? (
               <a
                 href={finalUrl}
@@ -156,11 +156,11 @@ function CreativeCard(props: {
             )}
           </div>
           {(row.headlines ?? []).length > 3 && (
-            <div className='text-muted-foreground mt-0.5 text-xs'>
+            <div className='text-muted-foreground mt-0.5 text-xs break-words'>
               {(row.headlines ?? []).slice(3).join(' | ')}
             </div>
           )}
-          <div className='mt-1 text-xs'>
+          <div className='mt-1 text-xs break-words'>
             {(row.descriptions ?? []).join(' ')}
           </div>
           {(row.image_urls ?? []).length > 0 && (
@@ -376,13 +376,55 @@ function ChangeSummaryBadges(props: { day: AdsDailyDay }) {
   )
 }
 
-function DayCard(props: {
+// DayDetail is the drill-down content rendered inside the master table when a
+// day row is expanded: creatives, keywords and landing pages of that day.
+function DayDetail(props: {
+  day: AdsDailyDay
+  contentByAdId: Map<string, AdsDailyCreativeRow>
+}) {
+  const { t } = useTranslation()
+  const day = props.day
+  return (
+    <div className='space-y-4 py-2'>
+      {(day.creatives ?? []).length > 0 && (
+        <div>
+          <h4 className='mb-2 text-sm font-medium'>{t('Creatives')}</h4>
+          <div className='grid gap-2 lg:grid-cols-2'>
+            {(day.creatives ?? []).map((row) => (
+              <CreativeCard
+                key={`${row.ad_id}-${row.change}`}
+                row={row}
+                fallback={props.contentByAdId.get(row.ad_id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {(day.keywords ?? []).length > 0 && (
+        <div>
+          <h4 className='mb-2 text-sm font-medium'>{t('Keywords')}</h4>
+          <KeywordsTable rows={day.keywords ?? []} />
+        </div>
+      )}
+      {(day.landings ?? []).length > 0 && (
+        <div>
+          <h4 className='mb-2 text-sm font-medium'>{t('Landing Pages')}</h4>
+          <LandingsTable rows={day.landings ?? []} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// One row per day in the master table. The keywords cell shows the count plus
+// the day's top-spend keyword with its CPC so trends read without expanding.
+function DayRow(props: {
   day: AdsDailyDay
   expanded: boolean
   onToggle: () => void
   contentByAdId: Map<string, AdsDailyCreativeRow>
 }) {
-  const { t, i18n } = useTranslation()
+  const { i18n } = useTranslation()
   const day = props.day
   let weekday = ''
   try {
@@ -393,85 +435,87 @@ function DayCard(props: {
   } catch {
     // date label only
   }
+  const keywords = day.keywords ?? []
+  const topKw = keywords.find((k) => k.cost_usd > 0)
+  const creatives = day.creatives ?? []
+  const activeAds = creatives.filter(
+    (c) => c.clicks > 0 || c.cost_usd > 0 || c.status === 'ENABLED'
+  ).length
+  const landings = (day.landings ?? []).filter(
+    (l) => l.clicks > 0 || l.cost_usd > 0
+  ).length
   return (
-    <Card>
-      <CardContent className='pt-4'>
-        <button
-          type='button'
-          onClick={props.onToggle}
-          aria-expanded={props.expanded}
-          className='flex w-full flex-wrap items-center gap-2 text-left'
-        >
-          {props.expanded ? (
-            <ChevronDown className='size-4 shrink-0' aria-hidden='true' />
-          ) : (
-            <ChevronRight className='size-4 shrink-0' aria-hidden='true' />
-          )}
-          <span className='font-semibold whitespace-nowrap'>
+    <>
+      <TableRow
+        onClick={props.onToggle}
+        aria-expanded={props.expanded}
+        className='cursor-pointer'
+      >
+        <TableCell className='whitespace-nowrap'>
+          <span className='inline-flex items-center gap-1 font-medium'>
+            {props.expanded ? (
+              <ChevronDown className='size-3.5 shrink-0' aria-hidden='true' />
+            ) : (
+              <ChevronRight className='size-3.5 shrink-0' aria-hidden='true' />
+            )}
             {day.date}
-            {weekday && (
-              <span className='text-muted-foreground ml-1 text-xs font-normal'>
-                {weekday}
+            <span className='text-muted-foreground text-xs font-normal'>
+              {weekday}
+            </span>
+          </span>
+        </TableCell>
+        <TableCell className='text-right whitespace-nowrap'>
+          {day.cost_usd > 0 ? usd(day.cost_usd) : '-'}
+        </TableCell>
+        <TableCell className='text-right'>{day.clicks || '-'}</TableCell>
+        <TableCell className='text-right whitespace-nowrap'>
+          {cpc(day.cost_usd, day.clicks)}
+        </TableCell>
+        <TableCell className='text-right'>
+          {day.conversions > 0 ? day.conversions.toFixed(1) : '-'}
+        </TableCell>
+        <TableCell className='max-w-56'>
+          {keywords.length > 0 ? (
+            <span className='flex items-center gap-1 whitespace-nowrap'>
+              <span className='text-muted-foreground text-xs'>
+                {keywords.length}
               </span>
-            )}
-          </span>
-          <span className='text-muted-foreground text-sm whitespace-nowrap'>
-            {usd(day.cost_usd)} · {day.clicks} {t('clicks')} · CPC{' '}
-            {cpc(day.cost_usd, day.clicks)}
-            {day.conversions > 0 && (
-              <>
-                {' '}
-                · {day.conversions.toFixed(1)} {t('conv.')}
-              </>
-            )}
-          </span>
+              {topKw && (
+                <span className='truncate'>
+                  {topKw.keyword}
+                  <span className='text-muted-foreground ml-1 text-xs'>
+                    {cpc(topKw.cost_usd, topKw.clicks)}
+                  </span>
+                </span>
+              )}
+            </span>
+          ) : (
+            '-'
+          )}
+        </TableCell>
+        <TableCell className='text-right'>{activeAds || '-'}</TableCell>
+        <TableCell className='text-right'>{landings || '-'}</TableCell>
+        <TableCell>
           <span className='flex flex-wrap gap-1'>
             <ChangeSummaryBadges day={day} />
           </span>
-        </button>
-        {props.expanded && (
-          <div className='mt-4 space-y-4'>
-            {(day.creatives ?? []).length > 0 && (
-              <div>
-                <h4 className='mb-2 text-sm font-medium'>{t('Creatives')}</h4>
-                <div className='grid gap-2 lg:grid-cols-2'>
-                  {(day.creatives ?? []).map((row) => (
-                    <CreativeCard
-                      key={`${row.ad_id}-${row.change}`}
-                      row={row}
-                      fallback={props.contentByAdId.get(row.ad_id)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-            {(day.keywords ?? []).length > 0 && (
-              <div>
-                <h4 className='mb-2 text-sm font-medium'>{t('Keywords')}</h4>
-                <KeywordsTable rows={day.keywords ?? []} />
-              </div>
-            )}
-            {(day.landings ?? []).length > 0 && (
-              <div>
-                <h4 className='mb-2 text-sm font-medium'>
-                  {t('Landing Pages')}
-                </h4>
-                <LandingsTable rows={day.landings ?? []} />
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        </TableCell>
+      </TableRow>
+      {props.expanded && (
+        <TableRow className='hover:bg-transparent'>
+          <TableCell colSpan={9} className='bg-muted/20 p-3 whitespace-normal'>
+            <DayDetail day={day} contentByAdId={props.contentByAdId} />
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   )
 }
 
 export function AdsDailyTab(props: { report: AdsDailyReport }) {
   const { t } = useTranslation()
   const days = props.report.days_list ?? []
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(days.slice(0, 1).map((d) => d.date))
-  )
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // latest known content per ad, used as a stand-in on pre-snapshot days
   // (days_list is newest-first, so the first hit wins)
   const contentByAdId = new Map<string, AdsDailyCreativeRow>()
@@ -509,27 +553,50 @@ export function AdsDailyTab(props: { report: AdsDailyReport }) {
   }
 
   return (
-    <div className='space-y-3'>
-      <p className='text-muted-foreground text-sm'>
-        {t(
-          'One card per day: spend, clicks and CPC, plus that day’s keywords, creatives and landing pages. Change badges compare against the previous synced day — bid, keyword, creative and landing page adjustments are tracked from the first sync onward.'
-        )}{' '}
-        {props.report.last_sync_at > 0 && (
-          <>
-            {t('Last synced')}:{' '}
-            {new Date(props.report.last_sync_at * 1000).toLocaleString()}
-          </>
-        )}
-      </p>
-      {days.map((day) => (
-        <DayCard
-          key={day.date}
-          day={day}
-          expanded={expanded.has(day.date)}
-          onToggle={() => toggle(day.date)}
-          contentByAdId={contentByAdId}
-        />
-      ))}
-    </div>
+    <Card>
+      <CardContent className='space-y-3 pt-4'>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'One row per day: spend, clicks, CPC and conversions, plus counts of active keywords, creatives and landing pages. Click a row to drill into that day’s creatives, keyword CPCs and landing pages. Change badges compare against the previous synced day — bid, keyword, creative and landing page adjustments are tracked from the first sync onward.'
+          )}{' '}
+          {props.report.last_sync_at > 0 && (
+            <>
+              {t('Last synced')}:{' '}
+              {new Date(props.report.last_sync_at * 1000).toLocaleString()}
+            </>
+          )}
+        </p>
+        <div className='overflow-x-auto'>
+          <Table className='[&_td]:border-border/60 [&_th]:border-border/70 [&_th]:bg-muted/50 [&_td]:border [&_th]:border'>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('Date')}</TableHead>
+                <TableHead className='text-right'>{t('Ad Spend')}</TableHead>
+                <TableHead className='text-right'>{t('Clicks')}</TableHead>
+                <TableHead className='text-right'>CPC</TableHead>
+                <TableHead className='text-right'>{t('Conversions')}</TableHead>
+                <TableHead>{t('Keywords')}</TableHead>
+                <TableHead className='text-right'>{t('Creatives')}</TableHead>
+                <TableHead className='text-right'>
+                  {t('Landing Pages')}
+                </TableHead>
+                <TableHead>{t('Change')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {days.map((day) => (
+                <DayRow
+                  key={day.date}
+                  day={day}
+                  expanded={expanded.has(day.date)}
+                  onToggle={() => toggle(day.date)}
+                  contentByAdId={contentByAdId}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
