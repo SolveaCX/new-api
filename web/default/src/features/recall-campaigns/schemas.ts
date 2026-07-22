@@ -51,10 +51,6 @@ const audienceSchema = z
     specified_emails: z.array(z.string()).default([]),
   })
   .strict()
-  .transform((audience) => ({
-    ...audience,
-    specified_emails: normalizeSpecifiedEmails(audience.specified_emails),
-  }))
 
 const legacyAudienceThresholds = [
   ['registration_age_days', nonNegativeInteger],
@@ -167,7 +163,8 @@ function validateSpecifiedUsersAudience(
 
   const emails = new Set<string>()
   for (const email of audience.specified_emails) {
-    if (!specifiedEmailSchema.safeParse(email).success) {
+    const normalized = email.trim().toLowerCase()
+    if (!normalized || !specifiedEmailSchema.safeParse(normalized).success) {
       context.addIssue({
         code: 'custom',
         path: ['audience_config', 'specified_emails'],
@@ -175,7 +172,7 @@ function validateSpecifiedUsersAudience(
       })
       break
     }
-    emails.add(email)
+    emails.add(normalized)
   }
 
   if (userIds.size + emails.size === 0) {
@@ -561,4 +558,17 @@ export const recallCampaignDraftSchema = z
         })
       }
     }
-  }) as unknown as z.ZodType<RecallCampaignDraft, RecallCampaignDraft>
+  })
+  .transform((draft) =>
+    draft.audience_template === 'specified_users'
+      ? {
+          ...draft,
+          audience_config: {
+            ...draft.audience_config,
+            specified_emails: normalizeSpecifiedEmails(
+              draft.audience_config.specified_emails
+            ),
+          },
+        }
+      : draft
+  ) as unknown as z.ZodType<RecallCampaignDraft, RecallCampaignDraft>
