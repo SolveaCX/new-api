@@ -16,11 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
-import { ComputeDeploy } from '@/features/compute-deploy'
+import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useAuthStore } from '@/stores/auth-store'
+import { ROLE } from '@/lib/roles'
+import { Compute } from '@/features/compute'
 
-// User-facing compute product line: any authenticated user can deploy compute
-// and reach the model catalog. Admin fleet management lives at /compute/nodes.
-export const Route = createFileRoute('/_authenticated/compute/')({
-  component: ComputeDeploy,
+// Admin fleet management: the compute nodes table (provider-agnostic).
+export const Route = createFileRoute('/_authenticated/compute/nodes/')({
+  beforeLoad: () => {
+    const { auth } = useAuthStore.getState()
+
+    if (!auth.user || auth.user.role < ROLE.ADMIN) {
+      throw redirect({
+        to: '/403',
+      })
+    }
+  },
+  component: Compute,
 })
