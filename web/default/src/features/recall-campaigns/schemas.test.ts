@@ -242,6 +242,24 @@ describe('recallCampaignDraftSchema', () => {
     }
   })
 
+  test('rejects blank specified_users emails before normalized dedupe', () => {
+    const draft = makeDraft()
+    draft.audience_template = 'specified_users'
+    draft.audience_config.specified_user_ids = [1]
+    draft.audience_config.specified_emails = ['   ']
+
+    const result = recallCampaignDraftSchema.safeParse(draft)
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['audience_config', 'specified_emails'],
+        })
+      )
+    }
+  })
+
   test('does not validate hidden template-specific fields for other audiences', () => {
     const firstPurchase = makeDraft()
     firstPurchase.audience_config.registration_start_at = 200
