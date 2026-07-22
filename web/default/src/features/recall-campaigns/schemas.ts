@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isRecallSpecifiedEmail } from './audience-inputs'
 import type { RecallCampaignDraft } from './types'
 
 const nonNegativeInteger = z.number().int().min(0)
@@ -6,7 +7,6 @@ const nonNegativeNumber = z.number().min(0)
 const integer = z.number().int()
 const number = z.number()
 const currencySchema = z.string().regex(/^[A-Z]{3}$/)
-const specifiedEmailSchema = z.string().regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)
 
 function normalizeSpecifiedEmails(emails: string[]): string[] {
   const normalizedEmails: string[] = []
@@ -164,7 +164,7 @@ function validateSpecifiedUsersAudience(
   const emails = new Set<string>()
   for (const email of audience.specified_emails) {
     const normalized = email.trim().toLowerCase()
-    if (!normalized || !specifiedEmailSchema.safeParse(normalized).success) {
+    if (!normalized || !isRecallSpecifiedEmail(normalized)) {
       context.addIssue({
         code: 'custom',
         path: ['audience_config', 'specified_emails'],

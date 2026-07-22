@@ -1,7 +1,9 @@
 import type { RecallAudienceUserOption } from './types'
 
-const recallSpecifiedEmailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const recallLocalDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
+const recallSpecifiedEmailLocalPattern = /^[a-z0-9!#$%&'*+/=?^_`{|}~.-]+$/
+const recallSpecifiedEmailDomainLabelPattern =
+  /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 
 function padDatePart(value: number): string {
   return String(value).padStart(2, '0')
@@ -39,6 +41,29 @@ export function recallLocalDateTimeToUnix(value: string): number {
   return unix
 }
 
+export function isRecallSpecifiedEmail(value: string): boolean {
+  const email = value.trim().toLowerCase()
+  if (!email || /\s/.test(email)) return false
+
+  const parts = email.split('@')
+  if (parts.length !== 2) return false
+
+  const [local, domain] = parts
+  if (!local || !domain || !domain.includes('.')) return false
+  if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) {
+    return false
+  }
+  if (!recallSpecifiedEmailLocalPattern.test(local)) return false
+  if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
+    return false
+  }
+
+  const labels = domain.split('.')
+  return labels.every((label) =>
+    recallSpecifiedEmailDomainLabelPattern.test(label)
+  )
+}
+
 export function parseRecallSpecifiedEmails(value: string): {
   emails: string[]
   invalid: string[]
@@ -52,7 +77,7 @@ export function parseRecallSpecifiedEmails(value: string): {
     const normalized = token.trim().toLowerCase()
     if (!normalized) continue
 
-    if (!recallSpecifiedEmailPattern.test(normalized)) {
+    if (!isRecallSpecifiedEmail(normalized)) {
       if (!seenInvalid.has(normalized)) {
         seenInvalid.add(normalized)
         invalid.push(normalized)
