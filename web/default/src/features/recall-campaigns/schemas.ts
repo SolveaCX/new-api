@@ -165,6 +165,8 @@ const productScopeSchema = z
     { message: 'At least one Stripe Price is required' }
   )
 
+const MAX_BODY_HTML_BYTES = 100 * 1024
+
 const emailTemplateSchema = z
   .object({
     subject: z
@@ -176,13 +178,39 @@ const emailTemplateSchema = z
       }),
     body_text: z
       .string()
-      .trim()
-      .min(1)
-      .refine((value) => Array.from(value).length <= 2_000, {
-        message: 'Body text must be 2000 characters or fewer',
-      }),
+      .optional()
+      .default('')
+      .refine(
+        (value) => value.trim() === '' || Array.from(value).length <= 2_000,
+        {
+          message: 'Body text must be 2000 characters or fewer',
+        }
+      ),
+    body_html: z
+      .string()
+      .optional()
+      .default('')
+      .refine(
+        (value) =>
+          new TextEncoder().encode(value).length <= MAX_BODY_HTML_BYTES,
+        {
+          message: 'Body HTML must be 100 KiB or smaller',
+        }
+      ),
   })
   .strict()
+  .superRefine((template, context) => {
+    const bodyCount = [template.body_text, template.body_html].filter(
+      (value) => value.trim() !== ''
+    ).length
+    if (bodyCount !== 1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['body_html'],
+        message: 'Exactly one email body is required',
+      })
+    }
+  })
 
 const emailStageSchema = z
   .object({

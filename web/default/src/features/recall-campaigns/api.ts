@@ -9,6 +9,8 @@ import type {
   RecallCampaignPreview,
   RecallCampaignSearch,
   RecallCampaignSummary,
+  RecallEmailPreviewRequest,
+  RecallEmailPreviewResponse,
   RecallEvent,
   RecallPage,
   RecallRecipient,
@@ -83,6 +85,16 @@ export async function previewRecallCampaign(
   const response = await api.post(`/api/recall-campaigns/${id}/preview`, null, {
     params: { sample_size: sampleSize },
   })
+  return requireRecallSuccess(response.data)
+}
+
+export async function previewRecallEmail(
+  request: RecallEmailPreviewRequest
+): Promise<ApiResponse<RecallEmailPreviewResponse>> {
+  const response = await api.post(
+    '/api/recall-campaigns/email-preview',
+    request
+  )
   return requireRecallSuccess(response.data)
 }
 
