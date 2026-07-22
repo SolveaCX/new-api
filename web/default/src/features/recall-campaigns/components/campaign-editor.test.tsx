@@ -26,11 +26,13 @@ import {
   describe,
   expect,
   mock,
+  spyOn,
   test,
 } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import * as recallApi from '../api'
 import { recallLocalDateTimeToUnix } from '../audience-inputs'
 import type { RecallAudienceTemplate, RecallCampaignDraft } from '../types'
 
@@ -62,40 +64,17 @@ const latestInputProps: Record<
   React.InputHTMLAttributes<HTMLInputElement>
 > = {}
 
-const recallCampaignKeys = {
-  all: ['recall-campaigns'] as const,
-  userGroups: ['recall-campaigns', 'audience-options', 'user-groups'] as const,
-  topUpProductConfiguration: [
-    'recall-campaigns',
-    'product-options',
-    'top-up',
-  ] as const,
-  subscriptionProductConfiguration: [
-    'recall-campaigns',
-    'product-options',
-    'subscription',
-  ] as const,
-}
-
-mock.module('../api', () => ({
-  recallCampaignKeys,
-  getRecallUserGroups: async () => ({ success: true, data: ['default'] }),
-  getRecallTopUpProductConfiguration: async () => ({
-    success: true,
-    data: { stripe_price_ids: { USD: 'price_topup_usd' } },
-  }),
-  getRecallSubscriptionProductConfiguration: async () => ({
-    success: true,
-    data: [],
-  }),
-  previewRecallEmail: async () => ({
-    success: true,
-    data: { subject: 'Preview subject', body_html: '<p>Preview</p>' },
-  }),
-  useRecallCampaignMutations: () => ({
-    create: { isPending: false, mutateAsync: createMutation },
-    update: { isPending: false, mutateAsync: createMutation },
-  }),
+spyOn(recallApi, 'useRecallCampaignMutations').mockImplementation(() => ({
+  create: { isPending: false, mutateAsync: createMutation },
+  update: { isPending: false, mutateAsync: createMutation },
+  action: {
+    isPending: false,
+    mutateAsync: mock(async () => ({ success: true })),
+  },
+  retry: {
+    isPending: false,
+    mutateAsync: mock(async () => ({ success: true })),
+  },
 }))
 
 mock.module('@/components/ui/select', () => ({
@@ -461,16 +440,19 @@ function createQueryClient() {
       },
     },
   })
-  queryClient.setQueryData(recallCampaignKeys.userGroups, {
+  queryClient.setQueryData(recallApi.recallCampaignKeys.userGroups, {
     success: true,
     data: ['admin', 'default', 'plg'],
   })
-  queryClient.setQueryData(recallCampaignKeys.topUpProductConfiguration, {
-    success: true,
-    data: { stripe_price_ids: { USD: 'price_topup_usd' } },
-  })
   queryClient.setQueryData(
-    recallCampaignKeys.subscriptionProductConfiguration,
+    recallApi.recallCampaignKeys.topUpProductConfiguration,
+    {
+      success: true,
+      data: { stripe_price_ids: { USD: 'price_topup_usd' } },
+    }
+  )
+  queryClient.setQueryData(
+    recallApi.recallCampaignKeys.subscriptionProductConfiguration,
     {
       success: true,
       data: [],
