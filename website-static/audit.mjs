@@ -24,7 +24,7 @@ for (const file of files) {
   const viewports = [...html.matchAll(/<meta\s+name="viewport"\s+content="([^"]+)"/gi)];
   if (viewports.length !== 1) fail(file, `expected one viewport meta, found ${viewports.length}`);
   else if (!viewports[0][1].includes("width=device-width")) fail(file, `non-responsive viewport: ${viewports[0][1]}`);
-  if (!/fk2\.css\?v=723c/.test(html)) fail(file, "missing the current shared CSS cache version");
+  if (!/fk2\.css\?v=723d/.test(html)) fail(file, "missing the current shared CSS cache version");
   if (/\bid=""/.test(html)) fail(file, "contains an empty id");
   if (/<script\b[^>]*\bsrc=""/i.test(html)) fail(file, "contains an empty script src");
   if (/href="(?:#|javascript:[^"]*)"/i.test(html)) fail(file, "contains a placeholder or javascript link");
@@ -32,7 +32,7 @@ for (const file of files) {
     fail(file, "uses i18n keys without loading assets/i18n.js");
   }
   const i18nScript = html.indexOf("assets/i18n.js?v=724a");
-  const shellScript = html.indexOf("assets/site-shell.js?v=720a");
+  const shellScript = html.indexOf("assets/site-shell.js?v=722e");
   const trackScript = html.indexOf("assets/track.js?v=721a");
   if (i18nScript === -1) fail(file, "missing the current locale-routing script version");
   if (shellScript === -1) fail(file, "missing the current responsive shell version");
@@ -191,7 +191,6 @@ const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
 if (/\.megafoot\.slim\b/.test(sharedCss)) fail("fk2.css", "contains obsolete slim-footer styles");
 for (const visualSignature of [
   "--home-acid:#D9EF6E",
-  "body:has(> header.hero)>.nav",
   "body:has(> header.hero)>header.hero",
   "body:has(> header.hero) .hero .board",
   "body:has(> header.hero) .proofGrid",
@@ -199,31 +198,11 @@ for (const visualSignature of [
   if (!sharedCss.includes(visualSignature)) fail("fk2.css", `missing restored homepage visual signature: ${visualSignature}`);
 }
 
-function mediaBlock(maxWidth) {
-  const marker = `@media (max-width:${maxWidth}px){`;
-  const start = sharedCss.indexOf(marker);
-  if (start === -1) return "";
-  const next = sharedCss.indexOf("\n@media ", start + marker.length);
-  return sharedCss.slice(start, next === -1 ? sharedCss.length : next);
+if (!sharedCss.includes(".nav.nav-collapsed>a:not(.logo),.nav.nav-collapsed>.sp{display:none}")) {
+  fail("fk2.css", "measured overflow state does not collapse the primary navigation");
 }
-
-for (const desktopWidth of [1740, 1320]) {
-  const block = mediaBlock(desktopWidth);
-  if (!block) fail("fk2.css", `missing ${desktopWidth}px compact desktop breakpoint`);
-  if (/\.nav>a:not\(\.logo\)[^{]*\{[^}]*display\s*:\s*none/.test(block)) {
-    fail("fk2.css", `${desktopWidth}px desktop breakpoint hides the primary navigation`);
-  }
-  if (/\.nav \.nav-toggle\{[^}]*display\s*:\s*flex/.test(block)) {
-    fail("fk2.css", `${desktopWidth}px desktop breakpoint replaces navigation with the mobile toggle`);
-  }
-}
-
-const mobileNavigationBlock = mediaBlock(1180);
-if (!/\.nav>a:not\(\.logo\)[^{]*\{[^}]*display\s*:\s*none/.test(mobileNavigationBlock)) {
-  fail("fk2.css", "1180px mobile breakpoint does not collapse the primary navigation");
-}
-if (!/\.nav \.nav-toggle\{[^}]*display\s*:\s*flex/.test(mobileNavigationBlock)) {
-  fail("fk2.css", "1180px mobile breakpoint does not expose the navigation toggle");
+if (/\.nav>a:not\(\.logo\),\.nav>\.sp\{display:none\}/.test(sharedCss)) {
+  fail("fk2.css", "a fixed CSS breakpoint collapses navigation before overflow is measured");
 }
 
 const i18nSource = fs.readFileSync(path.join(root, "assets/i18n.js"), "utf8");
@@ -249,6 +228,16 @@ const shellSource = fs.readFileSync(path.join(root, "assets/site-shell.js"), "ut
 if (!shellSource.includes("function syncPanel()")) fail("assets/site-shell.js", "mobile navigation is not rebuilt after a locale change");
 if (!shellSource.includes('document.addEventListener("flatkey:languagechange"')) {
   fail("assets/site-shell.js", "mobile navigation does not listen for locale changes");
+}
+for (const requiredOverflowBehavior of [
+  "function syncCollapse()",
+  "shell.scrollWidth > shell.clientWidth + 1",
+  'shell.classList.toggle("nav-collapsed", needsCollapse)',
+  'window.addEventListener("resize", syncCollapse',
+]) {
+  if (!shellSource.includes(requiredOverflowBehavior)) {
+    fail("assets/site-shell.js", `missing measured-overflow behavior: ${requiredOverflowBehavior}`);
+  }
 }
 
 const trackSource = fs.readFileSync(path.join(root, "assets/track.js"), "utf8");
