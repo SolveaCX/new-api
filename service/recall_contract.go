@@ -77,7 +77,8 @@ type RecallEmailStage struct {
 
 type RecallEmailTemplate struct {
 	Subject  string `json:"subject"`
-	BodyText string `json:"body_text"`
+	BodyText string `json:"body_text,omitempty"`
+	BodyHTML string `json:"body_html,omitempty"`
 }
 
 type RecallClaimView struct {
