@@ -473,6 +473,47 @@ func TestRecallCampaignSaveDraftValidatesAndNormalizes(t *testing.T) {
 	require.Equal(t, 1, emails[0].TemplateVersion)
 }
 
+func TestRecallCampaignDraftCanonicalizesSpecifiedAudienceBeforeSave(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	draft.AudienceTemplate = "specified_users"
+	draft.Audience = RecallAudienceConfig{
+		SpecifiedUserIDs: []int{7, 3, 7},
+		SpecifiedEmails:  []string{" Ops@Example.COM ", "ops@example.com", "alerts@example.com"},
+	}
+
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+
+	require.NoError(t, err)
+	var stored RecallAudienceConfig
+	require.NoError(t, common.Unmarshal([]byte(campaign.AudienceConfig), &stored))
+	require.Equal(t, []int{7, 3}, stored.SpecifiedUserIDs)
+	require.Equal(t, []string{"ops@example.com", "alerts@example.com"}, stored.SpecifiedEmails)
+	require.Contains(t, campaign.AudienceConfig, `"specified_user_ids":[7,3]`)
+	require.Contains(t, campaign.AudienceConfig, `"specified_emails":["ops@example.com","alerts@example.com"]`)
+}
+
+func TestRecallCampaignDraftSerializesEmptySpecifiedAudienceLists(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), nil)
+	service.now = func() time.Time { return now }
+	draft := validRecallCampaignDraft(now)
+	draft.AudienceTemplate = "registered_only"
+	draft.Audience = RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}
+
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+
+	require.NoError(t, err)
+	require.Contains(t, campaign.AudienceConfig, `"specified_user_ids":[]`)
+	require.Contains(t, campaign.AudienceConfig, `"specified_emails":[]`)
+}
+
 func TestRecallCampaignSaveDraftTranslatesAndPersistsAllLanguages(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)

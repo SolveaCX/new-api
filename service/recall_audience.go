@@ -12,6 +12,7 @@ import (
 )
 
 const recallDaySeconds int64 = 24 * 60 * 60
+const recallSpecifiedAudienceIdentifierLimit = 500
 
 var recallAudienceExclusionKeys = []string{
 	"payment_exists",
@@ -35,9 +36,19 @@ func NewRecallAudienceSelector() *RecallAudienceSelector {
 
 func ValidateRecallAudience(template string, cfg RecallAudienceConfig) error {
 	switch template {
-	case "first_purchase", "lapsed_payer", "expired_subscription":
+	case "first_purchase", "lapsed_payer", "expired_subscription", "registered_only", "specified_users":
 	default:
 		return fmt.Errorf("unknown recall audience template %q", template)
+	}
+	switch template {
+	case "registered_only":
+		if cfg.RegistrationStartAt <= 0 || cfg.RegistrationEndAt <= 0 || cfg.RegistrationEndAt < cfg.RegistrationStartAt {
+			return fmt.Errorf("recall audience registration time range must have positive start and end with end at or after start")
+		}
+	case "specified_users":
+		if err := validateRecallSpecifiedAudience(cfg); err != nil {
+			return err
+		}
 	}
 	if cfg.RegistrationAgeDays < 0 || cfg.MinRequestCount < 0 || cfg.MaxQuota < 0 ||
 		cfg.MinPaidAmount < 0 || cfg.LastAPICallAgeDays < 0 || cfg.LastPaymentAgeDays < 0 ||
@@ -64,6 +75,59 @@ func ValidateRecallAudience(template string, cfg RecallAudienceConfig) error {
 		}
 	}
 	return nil
+}
+
+func validateRecallSpecifiedAudience(cfg RecallAudienceConfig) error {
+	for _, userID := range cfg.SpecifiedUserIDs {
+		if userID <= 0 {
+			return fmt.Errorf("recall specified audience user IDs must be positive")
+		}
+	}
+	for _, email := range cfg.SpecifiedEmails {
+		if _, ok := recallAudienceEmail(strings.ToLower(strings.TrimSpace(email))); !ok {
+			return fmt.Errorf("recall specified audience email is invalid")
+		}
+	}
+	userIDs := normalizeRecallUserIDs(cfg.SpecifiedUserIDs)
+	emails := normalizeRecallEmails(cfg.SpecifiedEmails)
+	identifierCount := len(userIDs) + len(emails)
+	if identifierCount == 0 {
+		return fmt.Errorf("recall specified audience requires at least one user ID or email")
+	}
+	if identifierCount > recallSpecifiedAudienceIdentifierLimit {
+		return fmt.Errorf("recall specified audience must contain at most %d identifiers", recallSpecifiedAudienceIdentifierLimit)
+	}
+	return nil
+}
+
+func normalizeRecallUserIDs(values []int) []int {
+	normalized := make([]int, 0, len(values))
+	seen := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
+func normalizeRecallEmails(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
 }
 
 func (selector *RecallAudienceSelector) Preview(ctx context.Context, draft RecallCampaignDraft, sampleSize int, now time.Time) (RecallAudiencePreview, error) {

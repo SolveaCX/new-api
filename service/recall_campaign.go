@@ -1270,6 +1270,8 @@ func normalizeRecallAudienceConfig(cfg RecallAudienceConfig) RecallAudienceConfi
 	cfg.Groups = normalizeRecallStrings(cfg.Groups)
 	cfg.PaymentProviders = normalizeRecallStrings(cfg.PaymentProviders)
 	cfg.GroupMode = strings.ToLower(strings.TrimSpace(cfg.GroupMode))
+	cfg.SpecifiedUserIDs = normalizeRecallUserIDs(cfg.SpecifiedUserIDs)
+	cfg.SpecifiedEmails = normalizeRecallEmails(cfg.SpecifiedEmails)
 	return cfg
 }
 
