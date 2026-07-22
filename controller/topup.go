@@ -25,6 +25,7 @@ import (
 func GetTopUpInfo(c *gin.Context) {
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
 	enablePaddle := isPaddleTopUpEnabled()
+	amountOptions := operation_setting.GetPaymentSetting().AmountOptions
 
 	// 获取支付方式
 	payMethods := buildTopUpPayMethods(operation_setting.PayMethods, enablePaddle)
@@ -147,8 +148,9 @@ func GetTopUpInfo(c *gin.Context) {
 			}
 			return ""
 		}(),
-		"amount_options": operation_setting.GetPaymentSetting().AmountOptions,
-		"discount":       operation_setting.GetPaymentSetting().AmountDiscount,
+		"amount_options":   amountOptions,
+		"stripe_price_ids": buildStripeTopUpPriceIDs(amountOptions),
+		"discount":         operation_setting.GetPaymentSetting().AmountDiscount,
 		// 仅下发当前用户组可享的赠送档位，避免「看得到拿不到」（实际是否发放仍以支付回调时后端判定为准）。
 		"bonus":       visibleTopUpBonusForUser(c, operation_setting.GetPaymentSetting().AmountBonus),
 		"bonus_limit": operation_setting.GetPaymentSetting().AmountBonusLimit,
@@ -166,6 +168,17 @@ func GetTopUpInfo(c *gin.Context) {
 		"client_region": opsIPCountry(c.ClientIP()),
 	}
 	common.ApiSuccess(c, data)
+}
+
+func buildStripeTopUpPriceIDs(amountOptions []int) map[int]string {
+	priceIDs := make(map[int]string, len(amountOptions))
+	for _, amount := range amountOptions {
+		priceID := strings.TrimSpace(setting.StripeTopUpPriceIDForAmount(int64(amount)))
+		if priceID != "" {
+			priceIDs[amount] = priceID
+		}
+	}
+	return priceIDs
 }
 
 func buildTopUpPayMethods(payMethods []map[string]string, enablePaddle bool) []map[string]string {

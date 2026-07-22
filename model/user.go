@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const UserNameMaxLength = 20
@@ -31,6 +33,7 @@ type User struct {
 	Role                    int            `json:"role" gorm:"type:int;default:1"`   // admin, common
 	Status                  int            `json:"status" gorm:"type:int;default:1"` // enabled, disabled
 	Email                   string         `json:"email" gorm:"index" validate:"max=50"`
+	EmailVerifiedAt         int64          `json:"email_verified_at" gorm:"default:0;column:email_verified_at;index"`
 	EmailDomain             string         `json:"-" gorm:"type:varchar(253);column:email_domain;index"`
 	GitHubId                string         `json:"github_id" gorm:"column:github_id;index"`
 	DiscordId               string         `json:"discord_id" gorm:"column:discord_id;index"`
@@ -372,6 +375,44 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 	return &user, err
 }
 
+func GetUserByIdWithContext(ctx context.Context, id int) (*User, error) {
+	if id <= 0 {
+		return nil, errors.New("id is empty")
+	}
+	user := &User{}
+	if err := DB.WithContext(ctx).Omit("password").First(user, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+func SetUserStripeCustomerIfEmptyOrMatches(userID int, expected string, replacement string) (bool, error) {
+	return SetUserStripeCustomerIfEmptyOrMatchesWithContext(context.Background(), userID, expected, replacement)
+}
+
+func SetUserStripeCustomerIfEmptyOrMatchesWithContext(ctx context.Context, userID int, expected string, replacement string) (bool, error) {
+	if userID <= 0 {
+		return false, errors.New("user ID must be positive")
+	}
+	replacement = strings.TrimSpace(replacement)
+	if replacement == "" {
+		return false, errors.New("Stripe Customer ID must not be empty")
+	}
+	result := DB.WithContext(ctx).Model(&User{}).
+		Where("id = ? AND (stripe_customer IS NULL OR stripe_customer = '' OR stripe_customer = ?)", userID, expected).
+		Update("stripe_customer", replacement)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return false, nil
+	}
+	if err := invalidateUserCache(userID); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
 func GetUserIdByAffCode(affCode string) (int, error) {
 	if affCode == "" {
 		return 0, errors.New("affCode 为空！")
@@ -576,6 +617,22 @@ func (user *User) Update(updatePassword bool) error {
 		}
 	}
 	newUser := *user
+	if newUser.Setting != "" {
+		err = DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(user, user.Id).Error; err != nil {
+				return err
+			}
+			newUser.Setting, err = preserveRecallMarketingOptOut(user.Setting, newUser.Setting)
+			if err != nil {
+				return err
+			}
+			return tx.Model(user).Updates(newUser).Error
+		})
+		if err != nil {
+			return err
+		}
+		return invalidateUserCache(user.Id)
+	}
 	DB.First(&user, user.Id)
 	if err = DB.Model(user).Updates(newUser).Error; err != nil {
 		return err
@@ -583,6 +640,23 @@ func (user *User) Update(updatePassword bool) error {
 
 	// Update cache
 	return updateUserCache(*user)
+}
+
+func preserveRecallMarketingOptOut(currentSetting string, pendingSetting string) (string, error) {
+	current := dto.UserSetting{}
+	if currentSetting == "" || json.Unmarshal([]byte(currentSetting), &current) != nil || !current.RecallMarketingOptOut {
+		return pendingSetting, nil
+	}
+	pending := dto.UserSetting{}
+	if err := json.Unmarshal([]byte(pendingSetting), &pending); err != nil {
+		return "", err
+	}
+	pending.RecallMarketingOptOut = true
+	settingJSON, err := json.Marshal(pending)
+	if err != nil {
+		return "", err
+	}
+	return string(settingJSON), nil
 }
 
 func (user *User) Edit(updatePassword bool) error {
@@ -635,7 +709,14 @@ func (user *User) ClearBinding(bindingType string) error {
 		return errors.New("invalid binding type")
 	}
 
-	if err := DB.Model(&User{}).Where("id = ?", user.Id).Update(column, "").Error; err != nil {
+	update := DB.Model(&User{}).Where("id = ?", user.Id)
+	var err error
+	if bindingType == "email" {
+		err = update.Updates(map[string]any{"email": "", "email_verified_at": 0}).Error
+	} else {
+		err = update.Update(column, "").Error
+	}
+	if err != nil {
 		return err
 	}
 

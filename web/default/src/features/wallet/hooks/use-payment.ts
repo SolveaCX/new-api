@@ -30,6 +30,7 @@ import {
   requestStripePayment,
   isApiSuccess,
 } from '../api'
+import type { StripeEmbeddedCheckoutSession } from '../components/dialogs/stripe-embedded-checkout-dialog'
 import {
   isStripePayment,
   isPaddlePayment,
@@ -45,7 +46,6 @@ import type {
   PaymentOptions,
   StripeTopupSummary,
 } from '../types'
-import type { StripeEmbeddedCheckoutSession } from '../components/dialogs/stripe-embedded-checkout-dialog'
 
 // ============================================================================
 // Payment Hook
@@ -218,6 +218,7 @@ export function usePayment() {
           invoiceRequested: options?.invoiceRequested,
           invoiceProfile: options?.invoiceProfile,
           preferEmbeddedCheckout: options?.preferEmbeddedCheckout,
+          recallClaim: isStripe ? options?.recallClaim : undefined,
         })
 
         const response = isStripe

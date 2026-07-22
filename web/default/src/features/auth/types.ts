@@ -221,4 +221,6 @@ export interface CustomOAuthProviderInfo {
 
 export interface AuthFormProps extends React.HTMLAttributes<HTMLFormElement> {
   redirectTo?: string
+  visibleRedirectTo?: string
+  recallRedirectNonce?: string
 }
