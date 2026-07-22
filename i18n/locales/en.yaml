@@ -122,6 +122,9 @@ quota.subscription_insufficient: "Insufficient subscription quota or no subscrip
 quota.token_insufficient: "Token quota is not enough, token remaining quota: {{.Remain}}, required quota: {{.Required}}"
 quota.user_insufficient_need: "User quota is not enough, user quota: {{.Quota}}, required quota: {{.Required}}"
 
+# Log messages
+log.invalid_user_id: "Invalid user ID"
+
 # Subscription messages
 subscription.not_enabled: "Subscription plan is not enabled"
 subscription.title_empty: "Subscription plan title cannot be empty"
