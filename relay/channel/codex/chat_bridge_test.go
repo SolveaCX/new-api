@@ -604,6 +604,42 @@ func TestChatBridge_StripsAllCodexBannedFields(t *testing.T) {
 	assert.Contains(t, bodyStr, `"stream":true`)
 }
 
+func TestConvertOpenAIRequest_ServiceTierFastPreserved(t *testing.T) {
+	stream := true
+	req := &dto.GeneralOpenAIRequest{
+		Model:       "gpt-5.5",
+		ServiceTier: json.RawMessage(`"fast"`),
+		Stream:      &stream,
+		Messages:    []dto.Message{{Role: "user", Content: json.RawMessage(`"hi"`)}},
+	}
+
+	out, err := (&Adaptor{}).ConvertOpenAIRequest(nil, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}, req)
+	require.NoError(t, err)
+	body, ok := out.(map[string]any)
+	require.True(t, ok)
+
+	assert.Equal(t, "gpt-5.5", body["model"])
+	assert.Equal(t, "fast", body["service_tier"])
+}
+
+func TestConvertOpenAIResponsesRequest_ServiceTierFastPreserved(t *testing.T) {
+	stream := true
+	req := dto.OpenAIResponsesRequest{
+		Model:       "gpt-5.5",
+		Input:       json.RawMessage(`"hi"`),
+		ServiceTier: "fast",
+		Stream:      &stream,
+	}
+
+	out, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}, req)
+	require.NoError(t, err)
+	body, ok := out.(map[string]any)
+	require.True(t, ok)
+
+	assert.Equal(t, "gpt-5.5", body["model"])
+	assert.Equal(t, "fast", body["service_tier"])
+}
+
 // 锁定 SSE 规范行为：一个事件内的多条 data: 行必须按 "\n" 拼接，
 // 而不是被后一条覆盖。Codex 实测是单行，但留出防御能力。
 func TestRelayChatOverCodex_MultiLineDataLinesAreJoined(t *testing.T) {
