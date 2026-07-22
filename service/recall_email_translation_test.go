@@ -45,7 +45,7 @@ func TestRecallEmailTranslatorTranslatesMultipleStagesInOneStructuredRequest(t *
 		require.Contains(t, requestText, "First subject")
 		require.Contains(t, requestText, "Second body")
 
-		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1, 2}))
+		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResultFromRequest(t, request, []int{1, 2}))
 	}))
 	defer server.Close()
 
@@ -126,11 +126,13 @@ func TestRecallEmailTranslationSendsOnlyVisibleHTMLSegments(t *testing.T) {
 	require.Contains(t, htmlTemplate.BodyHTML, `href="{{.ClaimURL}}"`)
 	require.Contains(t, htmlTemplate.BodyHTML, `href="https://flatkey.ai/help"`)
 	require.Contains(t, htmlTemplate.BodyHTML, `href="{{.UnsubscribeURL}}"`)
+	require.NotContains(t, htmlTemplate.BodyHTML, "__RECALL_EMAIL_SEGMENT_")
 	require.Equal(t, 6, strings.Count(htmlTemplate.BodyHTML, "{{."))
 	require.Contains(t, htmlTemplate.BodyHTML, `title="zh:Support center"`)
 	require.Contains(t, htmlTemplate.BodyHTML, `aria-label="zh:Get help"`)
 	require.Contains(t, htmlTemplate.BodyHTML, ">zh:Claim offer</a>")
 	require.Equal(t, RecallEmailTemplate{Subject: "zh:Legacy subject", BodyText: "zh:Legacy plain body"}, translated[2]["zh"])
+	require.NotContains(t, translated[2]["zh"].BodyText, "__RECALL_EMAIL_SEGMENT_")
 }
 
 func TestRecallEmailTranslationRejectsWrongBodySegmentCount(t *testing.T) {
@@ -149,6 +151,138 @@ func TestRecallEmailTranslationRejectsWrongBodySegmentCount(t *testing.T) {
 	}})
 
 	require.ErrorContains(t, err, "invalid recall email translation output: stage 1 language zh returned 1 body segments; expected 5")
+}
+
+func TestRecallEmailTranslationRejectsChangedMarkerFreeSegmentIdentity(t *testing.T) {
+	allowRecallEmailTranslationTestServer(t)
+	tests := []struct {
+		name   string
+		mutate func([]string)
+		want   string
+	}{
+		{name: "swapped", mutate: func(segments []string) {
+			segments[0], segments[3] = segments[3], segments[0]
+		}, want: "segment identity changed"},
+		{name: "duplicated", mutate: func(segments []string) {
+			segments[3] = segments[0]
+		}, want: "segment identity changed"},
+		{name: "emptied", mutate: func(segments []string) {
+			segments[3] = recallEmailTranslationExtractSegmentIdentityForTest(segments[3])
+		}, want: "body segment 4 is empty"},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request map[string]any
+				require.NoError(t, common.DecodeJson(r.Body, &request))
+				stages := recallEmailTranslationRequestStages(t, request)
+				segments := recallEmailTranslationRequestBodySegments(t, stages[0])
+				testCase.mutate(segments)
+				writeRecallEmailTranslationResponse(t, w, recallEmailTranslationSegmentsResult(map[int][]string{1: segments}))
+			}))
+			defer server.Close()
+
+			translator := newRecallEmailTranslationTestTranslator(server, RecallEmailTranslatorOptions{})
+			_, err := translator.Translate(context.Background(), []RecallEmailStage{{
+				StageNo: 1,
+				Templates: map[string]RecallEmailTemplate{"en": {
+					Subject:  "HTML subject",
+					BodyHTML: recallEmailTranslationHTMLWithAttributes(),
+				}},
+			}})
+
+			require.ErrorContains(t, err, testCase.want)
+		})
+	}
+}
+
+func TestRecallEmailTranslationRejectsProtectedValueChangesAcrossHTMLSegments(t *testing.T) {
+	allowRecallEmailTranslationTestServer(t)
+	tests := []struct {
+		name   string
+		mutate func([]string, []string)
+	}{
+		{name: "moved", mutate: func(segments []string, sentinels []string) {
+			sourceIndex := recallEmailTranslationSegmentIndexContainingForTest(segments, sentinels[0])
+			targetIndex := recallEmailTranslationSegmentIndexContainingForTest(segments, sentinels[1])
+			segments[sourceIndex] = strings.ReplaceAll(segments[sourceIndex], sentinels[0], "")
+			segments[targetIndex] += " " + sentinels[0]
+		}},
+		{name: "deleted", mutate: func(segments []string, sentinels []string) {
+			sourceIndex := recallEmailTranslationSegmentIndexContainingForTest(segments, sentinels[0])
+			segments[sourceIndex] = strings.ReplaceAll(segments[sourceIndex], sentinels[0], "")
+		}},
+		{name: "copied", mutate: func(segments []string, sentinels []string) {
+			targetIndex := recallEmailTranslationSegmentIndexContainingForTest(segments, sentinels[1])
+			segments[targetIndex] += " " + sentinels[0]
+		}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request map[string]any
+				require.NoError(t, common.DecodeJson(r.Body, &request))
+				stages := recallEmailTranslationRequestStages(t, request)
+				segments := recallEmailTranslationRequestBodySegments(t, stages[0])
+				sentinels := regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9a-f]{32}_[0-9]{4}__`).FindAllString(strings.Join(segments, "\n"), -1)
+				require.GreaterOrEqual(t, len(sentinels), 2)
+				testCase.mutate(segments, sentinels)
+				writeRecallEmailTranslationResponse(t, w, recallEmailTranslationSegmentsResult(map[int][]string{1: segments}))
+			}))
+			defer server.Close()
+
+			translator := newRecallEmailTranslationTestTranslator(server, RecallEmailTranslatorOptions{})
+			_, err := translator.Translate(context.Background(), []RecallEmailStage{{
+				StageNo:   1,
+				Templates: map[string]RecallEmailTemplate{"en": {Subject: "HTML subject", BodyHTML: validRecallHTML}},
+			}})
+
+			require.ErrorContains(t, err, "protected marker sequence changed")
+		})
+	}
+}
+
+func TestRecallEmailTranslationPreflightLimitsBeforeProviderRequest(t *testing.T) {
+	allowRecallEmailTranslationTestServer(t)
+	tests := []struct {
+		name         string
+		bodyHTML     string
+		wantErr      string
+		wantRequests int32
+	}{
+		{name: "segment count limit", bodyHTML: recallEmailTranslationHTMLWithTextSegments(118, "x"), wantRequests: 1},
+		{name: "segment count over limit", bodyHTML: recallEmailTranslationHTMLWithTextSegments(119, "x"), wantErr: "segment count limit"},
+		{name: "source bytes limit", bodyHTML: recallEmailTranslationHTMLWithTextSegments(2, strings.Repeat("x", 9999)), wantRequests: 1},
+		{name: "source bytes over limit", bodyHTML: recallEmailTranslationHTMLWithTextSegments(2, strings.Repeat("x", 10000)), wantErr: "source translatable bytes limit"},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				var request map[string]any
+				require.NoError(t, common.DecodeJson(r.Body, &request))
+				stages := recallEmailTranslationRequestStages(t, request)
+				writeRecallEmailTranslationResponse(t, w, recallEmailTranslationSegmentsResult(map[int][]string{
+					1: recallEmailTranslationRequestBodySegments(t, stages[0]),
+				}))
+			}))
+			defer server.Close()
+
+			translator := newRecallEmailTranslationTestTranslator(server, RecallEmailTranslatorOptions{})
+			_, err := translator.Translate(context.Background(), []RecallEmailStage{{
+				StageNo:   1,
+				Templates: map[string]RecallEmailTemplate{"en": {Subject: "HTML subject", BodyHTML: testCase.bodyHTML}},
+			}})
+
+			if testCase.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, testCase.wantErr)
+			}
+			require.Equal(t, testCase.wantRequests, requests.Load())
+		})
+	}
 }
 
 func TestRecallEmailTranslationRejectsChangedProtectedActionsInSegments(t *testing.T) {
@@ -209,7 +343,7 @@ func TestRecallEmailTranslatorFromMonitorSettingsResolvesUpdatedConfigPerTransla
 		var request map[string]any
 		require.NoError(t, common.DecodeJson(r.Body, &request))
 		require.Equal(t, "gpt-monitor-first", request["model"])
-		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResultFromRequest(t, request, []int{1}))
 	}))
 	defer firstServer.Close()
 	var secondRequests atomic.Int32
@@ -219,7 +353,7 @@ func TestRecallEmailTranslatorFromMonitorSettingsResolvesUpdatedConfigPerTransla
 		var request map[string]any
 		require.NoError(t, common.DecodeJson(r.Body, &request))
 		require.Equal(t, "gpt-monitor-second", request["model"])
-		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResultFromRequest(t, request, []int{1}))
 	}))
 	defer secondServer.Close()
 
@@ -254,7 +388,7 @@ func TestRecallEmailTranslatorExplicitOptionsRemainStaticAfterMonitorSettingsCha
 		var request map[string]any
 		require.NoError(t, common.DecodeJson(r.Body, &request))
 		require.Equal(t, "gpt-explicit", request["model"])
-		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+		writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResultFromRequest(t, request, []int{1}))
 	}))
 	defer server.Close()
 	translator := NewRecallEmailTranslator(RecallEmailTranslatorOptions{
@@ -311,14 +445,16 @@ func TestRecallEmailTranslatorRetriesTemporaryHTTPFailures(t *testing.T) {
 	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var requests atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				attempt := requests.Add(1)
 				if attempt < 3 {
 					w.Header().Set("Retry-After", "0")
 					w.WriteHeader(status)
 					return
 				}
-				writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+				var request map[string]any
+				require.NoError(t, common.DecodeJson(r.Body, &request))
+				writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResultFromRequest(t, request, []int{1}))
 			}))
 			defer server.Close()
 
@@ -334,12 +470,14 @@ func TestRecallEmailTranslatorRetriesTemporaryHTTPFailures(t *testing.T) {
 
 func TestRecallEmailTranslatorRetriesTemporaryNetworkFailures(t *testing.T) {
 	var requests atomic.Int32
-	client := &http.Client{Transport: recallEmailTranslationRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: recallEmailTranslationRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		attempt := requests.Add(1)
 		if attempt < 3 {
 			return nil, temporaryTranslationNetworkError{}
 		}
-		payload := recallEmailTranslationHTTPPayload(t, validRecallEmailTranslationResult([]int{1}))
+		var request map[string]any
+		require.NoError(t, common.DecodeJson(r.Body, &request))
+		payload := recallEmailTranslationHTTPPayload(t, validRecallEmailTranslationResultFromRequest(t, request, []int{1}))
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
@@ -460,12 +598,17 @@ func TestRecallEmailTranslationProtectsAndRestoresTokensAndURLs(t *testing.T) {
 		require.NotContains(t, requestText, "{{coupon}}")
 		sentinels := sentinelPattern.FindAllString(requestText, -1)
 		require.GreaterOrEqual(t, len(sentinels), 3)
+		var request map[string]any
+		require.NoError(t, common.Unmarshal(raw, &request))
+		stages := recallEmailTranslationRequestStages(t, request)
+		bodyMarker := recallEmailTranslationExtractSegmentIdentityForTest(recallEmailTranslationRequestBodySegments(t, stages[0])[0])
+		require.NotEmpty(t, bodyMarker)
 
 		translations := make(map[string]recallEmailTranslatedTemplate, len(recallEmailTranslationTestLanguages))
 		for _, language := range recallEmailTranslationTestLanguages {
 			translations[language] = recallEmailTranslatedTemplate{
 				Subject:      language + " hello " + sentinels[0],
-				BodySegments: []string{language + " visit " + sentinels[1] + " use " + sentinels[2]},
+				BodySegments: []string{bodyMarker + " " + language + " visit " + sentinels[1] + " use " + sentinels[2]},
 			}
 		}
 		writeRecallEmailTranslationResponse(t, w, map[string]any{"stages": []map[string]any{{"stage_no": 1, "translations": translations}}})
@@ -494,12 +637,17 @@ func TestRecallEmailTranslationDoesNotRecursivelyRestoreSentinelLikeText(t *test
 		require.NoError(t, err)
 		sentinels := sentinelPattern.FindAllString(string(raw), -1)
 		require.Len(t, sentinels, 2)
+		var request map[string]any
+		require.NoError(t, common.Unmarshal(raw, &request))
+		stages := recallEmailTranslationRequestStages(t, request)
+		bodyMarker := recallEmailTranslationExtractSegmentIdentityForTest(recallEmailTranslationRequestBodySegments(t, stages[0])[0])
+		require.NotEmpty(t, bodyMarker)
 
 		translations := make(map[string]recallEmailTranslatedTemplate, len(recallEmailTranslationTestLanguages))
 		for _, language := range recallEmailTranslationTestLanguages {
 			translations[language] = recallEmailTranslatedTemplate{
 				Subject:      language + " subject",
-				BodySegments: []string{sentinels[0] + " then " + sentinels[1]},
+				BodySegments: []string{bodyMarker + " " + sentinels[0] + " then " + sentinels[1]},
 			}
 		}
 		writeRecallEmailTranslationResponse(t, w, map[string]any{"stages": []map[string]any{{"stage_no": 1, "translations": translations}}})
@@ -535,9 +683,11 @@ func TestRecallEmailTranslationValidatesEnglishTemplateRuneLimitsBeforeRequest(t
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var requests atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
-				writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResult([]int{1}))
+				var request map[string]any
+				require.NoError(t, common.DecodeJson(r.Body, &request))
+				writeRecallEmailTranslationResponse(t, w, validRecallEmailTranslationResultFromRequest(t, request, []int{1}))
 			}))
 			defer server.Close()
 
@@ -618,6 +768,39 @@ func validRecallEmailTranslationResult(stageNumbers []int) map[string]any {
 	return map[string]any{"stages": stages}
 }
 
+func validRecallEmailTranslationResultFromRequest(t *testing.T, request map[string]any, stageNumbers []int) map[string]any {
+	t.Helper()
+	requestStages := recallEmailTranslationRequestStages(t, request)
+	requestByStage := make(map[int]map[string]any, len(requestStages))
+	for _, stage := range requestStages {
+		stageNo, ok := stage["stage_no"].(float64)
+		require.True(t, ok)
+		requestByStage[int(stageNo)] = stage
+	}
+
+	stages := make([]map[string]any, 0, len(stageNumbers))
+	for _, stageNo := range stageNumbers {
+		requestStage, exists := requestByStage[stageNo]
+		require.True(t, exists)
+		requestSegments := recallEmailTranslationRequestBodySegments(t, requestStage)
+		translations := make(map[string]recallEmailTranslatedTemplate, len(recallEmailTranslationTestLanguages))
+		for _, language := range recallEmailTranslationTestLanguages {
+			bodySegments := make([]string, len(requestSegments))
+			for index, segment := range requestSegments {
+				marker := recallEmailTranslationExtractSegmentIdentityForTest(segment)
+				require.NotEmpty(t, marker)
+				bodySegments[index] = marker + " " + language + " body " + strconv.Itoa(stageNo)
+			}
+			translations[language] = recallEmailTranslatedTemplate{
+				Subject:      language + " subject " + strconv.Itoa(stageNo),
+				BodySegments: bodySegments,
+			}
+		}
+		stages = append(stages, map[string]any{"stage_no": stageNo, "translations": translations})
+	}
+	return map[string]any{"stages": stages}
+}
+
 func recallEmailTranslationSegmentsResult(stageSegments map[int][]string) map[string]any {
 	stages := make([]map[string]any, 0, len(stageSegments))
 	for stageNo, segments := range stageSegments {
@@ -625,6 +808,15 @@ func recallEmailTranslationSegmentsResult(stageSegments map[int][]string) map[st
 		for _, language := range recallEmailTranslationTestLanguages {
 			localizedSegments := make([]string, len(segments))
 			for index, segment := range segments {
+				if recallEmailTranslationSegmentIsOnlyIdentityForTest(segment) {
+					localizedSegments[index] = segment
+					continue
+				}
+				if marker := recallEmailTranslationExtractSegmentIdentityForTest(segment); marker != "" {
+					withoutMarker := strings.TrimSpace(strings.Replace(segment, marker, "", 1))
+					localizedSegments[index] = marker + " " + language + ":" + withoutMarker
+					continue
+				}
 				localizedSegments[index] = language + ":" + segment
 			}
 			translations[language] = map[string]any{
@@ -661,6 +853,18 @@ func recallEmailTranslationHTMLWithAttributes() string {
 		`<a href="https://flatkey.ai/help" title="Support center" aria-label="Get help">Help</a>`,
 		1,
 	)
+}
+
+func recallEmailTranslationHTMLWithTextSegments(count int, text string) string {
+	var builder strings.Builder
+	builder.WriteString(`<!doctype html><html><head><style>.cta{background:#111;color:#fff}</style></head><body>`)
+	for i := 0; i < count; i++ {
+		builder.WriteString("<p>")
+		builder.WriteString(text)
+		builder.WriteString("</p>")
+	}
+	builder.WriteString(`<a class="cta" href="{{.ClaimURL}}">C</a><a href="{{.UnsubscribeURL}}">U</a></body></html>`)
+	return builder.String()
 }
 
 func recallEmailTranslationHTMLSegments(t *testing.T, body string) []string {
@@ -742,11 +946,31 @@ func recallEmailTranslationRequestBodySegments(t *testing.T, stage map[string]an
 	return segments
 }
 
+func recallEmailTranslationExtractSegmentIdentityForTest(segment string) string {
+	marker := regexp.MustCompile(`__RECALL_EMAIL_SEGMENT_[0-9a-f]{32}_S[0-9]{4}_I[0-9]{4}__`).FindString(segment)
+	return marker
+}
+
+func recallEmailTranslationSegmentIsOnlyIdentityForTest(segment string) bool {
+	marker := recallEmailTranslationExtractSegmentIdentityForTest(segment)
+	return marker != "" && strings.TrimSpace(segment) == marker
+}
+
+func recallEmailTranslationSegmentIndexContainingForTest(segments []string, token string) int {
+	for index, segment := range segments {
+		if strings.Contains(segment, token) {
+			return index
+		}
+	}
+	return -1
+}
+
 func recallEmailTranslationNormalizeProtectedForTest(value string) string {
 	templateAction := regexp.MustCompile(`\{\{[^{}\r\n]+\}\}|\$\{[^{}\r\n]+\}|https?://[^\s<>"']+`)
 	value = templateAction.ReplaceAllString(value, "{PROTECTED}")
 	value = regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9a-f]{32}_[0-9]{4}__`).ReplaceAllString(value, "{PROTECTED}")
-	return value
+	value = regexp.MustCompile(`__RECALL_EMAIL_SEGMENT_[0-9a-f]{32}_S[0-9]{4}_I[0-9]{4}__`).ReplaceAllString(value, "")
+	return strings.TrimSpace(value)
 }
 
 func recallEmailTranslationMapKeys(object map[string]any) []string {

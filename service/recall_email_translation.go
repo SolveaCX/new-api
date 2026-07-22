@@ -29,12 +29,15 @@ const (
 	recallEmailSubjectMaxRunes            = 200
 	recallEmailBodyMaxRunes               = 2000
 	recallEmailTranslationMaxOutputTokens = 32768
+	recallEmailTranslationMaxSegments     = 120
+	recallEmailTranslationMaxSourceBytes  = 20000
 )
 
 var (
-	recallEmailTranslationLanguages = []string{"zh", "es", "fr", "pt", "ru", "ja", "vi"}
-	recallEmailProtectedPattern     = regexp.MustCompile(`https?://[^\s<>"']+|\{\{[^{}\r\n]+\}\}|\$\{[^{}\r\n]+\}`)
-	recallEmailSentinelPattern      = regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9a-f]{32}_[0-9]{4}__`)
+	recallEmailTranslationLanguages   = []string{"zh", "es", "fr", "pt", "ru", "ja", "vi"}
+	recallEmailProtectedPattern       = regexp.MustCompile(`https?://[^\s<>"']+|\{\{[^{}\r\n]+\}\}|\$\{[^{}\r\n]+\}`)
+	recallEmailSentinelPattern        = regexp.MustCompile(`__RECALL_EMAIL_PROTECTED_[0-9a-f]{32}_[0-9]{4}__`)
+	recallEmailSegmentIdentityPattern = regexp.MustCompile(`__RECALL_EMAIL_SEGMENT_[0-9a-f]{32}_S[0-9]{4}_I[0-9]{4}__`)
 )
 
 type RecallEmailTranslator interface {
@@ -127,6 +130,7 @@ type recallEmailProtectedStage struct {
 	BodySegments   []string `json:"body_segments"`
 	subjectValues  []recallEmailProtectedValue
 	segmentValues  [][]recallEmailProtectedValue
+	segmentMarkers []string
 	htmlDocument   *recallEmailHTMLDocument
 	legacyBodyText bool
 }
@@ -290,6 +294,8 @@ func protectRecallEmailTranslationStages(stages []RecallEmailStage) ([]recallEma
 	}
 	seen := make(map[int]struct{}, len(stages))
 	originalValues := make([]string, 0, len(stages)*2)
+	totalSegments := 0
+	totalSourceBytes := 0
 	for _, stage := range stages {
 		if stage.StageNo <= 0 {
 			return nil, fmt.Errorf("recall email translation stage number must be positive")
@@ -316,6 +322,24 @@ func protectRecallEmailTranslationStages(stages []RecallEmailStage) ([]recallEma
 		if err != nil {
 			return nil, err
 		}
+		if strings.Contains(english.Subject, "__RECALL_EMAIL_SEGMENT_") {
+			return nil, fmt.Errorf("recall email translation stage %d contains reserved segment identity marker text", stage.StageNo)
+		}
+		for _, segment := range segments {
+			if strings.Contains(segment, "__RECALL_EMAIL_SEGMENT_") {
+				return nil, fmt.Errorf("recall email translation stage %d contains reserved segment identity marker text", stage.StageNo)
+			}
+		}
+		totalSegments += len(segments)
+		if totalSegments > recallEmailTranslationMaxSegments {
+			return nil, fmt.Errorf("recall email translation segment count limit exceeded: %d segments; maximum %d", totalSegments, recallEmailTranslationMaxSegments)
+		}
+		for _, segment := range segments {
+			totalSourceBytes += len([]byte(segment))
+		}
+		if totalSourceBytes > recallEmailTranslationMaxSourceBytes {
+			return nil, fmt.Errorf("recall email translation source translatable bytes limit exceeded: %d bytes; maximum %d", totalSourceBytes, recallEmailTranslationMaxSourceBytes)
+		}
 		originalValues = append(originalValues, english.Subject)
 		originalValues = append(originalValues, segments...)
 	}
@@ -337,16 +361,25 @@ func protectRecallEmailTranslationStages(stages []RecallEmailStage) ([]recallEma
 		subject, subjectValues := protectRecallEmailValue(english.Subject, nonce, &counter)
 		protectedSegments := make([]string, len(segments))
 		segmentValues := make([][]recallEmailProtectedValue, len(segments))
+		segmentMarkers := make([]string, len(segments))
 		for index, segment := range segments {
-			protectedSegments[index], segmentValues[index] = protectRecallEmailValue(segment, nonce, &counter)
+			protectedSegment, values := protectRecallEmailValue(segment, nonce, &counter)
+			marker := recallEmailSegmentIdentityMarker(nonce, stage.StageNo, index)
+			protectedSegments[index] = marker + " " + protectedSegment
+			segmentValues[index] = values
+			segmentMarkers[index] = marker
 		}
 		protected = append(protected, recallEmailProtectedStage{
 			StageNo: stage.StageNo, Subject: subject, BodySegments: protectedSegments,
-			subjectValues: subjectValues, segmentValues: segmentValues,
+			subjectValues: subjectValues, segmentValues: segmentValues, segmentMarkers: segmentMarkers,
 			htmlDocument: htmlDocument, legacyBodyText: english.BodyText != "",
 		})
 	}
 	return protected, nil
+}
+
+func recallEmailSegmentIdentityMarker(nonce string, stageNo int, segmentIndex int) string {
+	return fmt.Sprintf("__RECALL_EMAIL_SEGMENT_%s_S%04d_I%04d__", nonce, stageNo, segmentIndex+1)
 }
 
 func recallEmailTranslationSegmentsForTemplate(template RecallEmailTemplate) ([]string, *recallEmailHTMLDocument, error) {
@@ -403,6 +436,7 @@ func buildRecallEmailTranslationRequest(modelName string, stages []recallEmailPr
 			{Role: "system", Content: strings.Join([]string{
 				"Translate recall marketing email templates from English into Simplified Chinese, Spanish, French, Portuguese, Russian, Japanese, and Vietnamese.",
 				"Each stage contains only a subject and ordered body_segments array of visible text; no HTML, URLs, CSS, images, or markup are provided.",
+				"Every body segment starts with a protected segment identity marker; keep that exact marker in the same body_segments array index.",
 				"Return exactly the same number of body_segments for every language as the source stage, preserving item order and every protected marker exactly in the same order within its segment.",
 				"Do not add markup, URLs, claims, or content. Subjects must be single-line. Return JSON only following the schema.",
 			}, " ")},
@@ -594,7 +628,15 @@ func validateAndRestoreRecallEmailTranslations(result recallEmailTranslationResu
 			}
 			restoredSegments := make([]string, len(translated.BodySegments))
 			for index, segment := range translated.BodySegments {
-				restored, err := restoreRecallEmailProtectedValue(segment, protected.segmentValues[index])
+				segmentWithoutIdentity, err := restoreRecallEmailSegmentIdentity(segment, protected.segmentMarkers[index], stage.StageNo, language, index)
+				if err != nil {
+					return nil, err
+				}
+				segmentWithoutIdentity = strings.TrimSpace(segmentWithoutIdentity)
+				if segmentWithoutIdentity == "" {
+					return nil, fmt.Errorf("invalid recall email translation output: stage %d language %s body segment %d is empty after segment identity marker removal", stage.StageNo, language, index+1)
+				}
+				restored, err := restoreRecallEmailProtectedValue(segmentWithoutIdentity, protected.segmentValues[index])
 				if err != nil {
 					return nil, fmt.Errorf("recall email translation stage %d language %s body segment %d: %w", stage.StageNo, language, index+1, err)
 				}
@@ -619,6 +661,18 @@ func validateAndRestoreRecallEmailTranslations(result recallEmailTranslationResu
 		translated[stage.StageNo] = translations
 	}
 	return translated, nil
+}
+
+func restoreRecallEmailSegmentIdentity(value string, expected string, stageNo int, language string, segmentIndex int) (string, error) {
+	found := recallEmailSegmentIdentityPattern.FindAllString(value, -1)
+	if len(found) != 1 || found[0] != expected {
+		return "", fmt.Errorf("invalid recall email translation output: stage %d language %s body segment %d segment identity changed", stageNo, language, segmentIndex+1)
+	}
+	restored := strings.Replace(value, expected, "", 1)
+	if recallEmailSegmentIdentityPattern.MatchString(restored) {
+		return "", fmt.Errorf("invalid recall email translation output: stage %d language %s body segment %d segment identity changed", stageNo, language, segmentIndex+1)
+	}
+	return restored, nil
 }
 
 func restoreRecallEmailProtectedValue(value string, protected []recallEmailProtectedValue) (string, error) {
