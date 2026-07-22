@@ -23,6 +23,11 @@ This file records review findings intentionally deferred to keep the release pat
 
 - When upgrade crash recovery finds that Stripe already applied the target Price and its latest invoice is paid, the command persists the recovered invoice/snapshot but may leave the intent `syncing` until the webhook, reconciliation worker, or a same-request replay applies the entitlement. Monitor stale `syncing` upgrade age and consider reconciling the paid invoice in the original command response path during a later hardening pass.
 
+## Task 10
+
+- The synchronous downgrade writer caps latest-choice convergence at four Stripe schedule updates. A burst with more replacements can return a transient error, while the persisted `syncing` intent and reconciliation worker still converge later. Add a race/stress test and convergence-attempt telemetry in a later hardening pass.
+- Broad `go test ./service` remains blocked by the pre-existing `users.aff_code` unique-fixture failure in `TestRefundTaskQuota_Wallet`; Task 10 targeted tests, compile-only checks, and vet pass. Repair the shared fixture isolation separately.
+
 ## Task 12
 
 - Concurrent first-run migration audits can surface a database unique-constraint error instead of returning the already-created audit result. Normalize that race into a stable idempotent response in a later hardening pass.

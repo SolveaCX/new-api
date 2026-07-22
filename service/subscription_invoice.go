@@ -356,6 +356,10 @@ func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
 			}
 			return err
 		}
+		plan, _, err = resolveExpectedRenewalPlanTx(tx, facts, binding, contract, plan)
+		if err != nil {
+			return err
+		}
 		if !canApplyFailedInvoiceToBinding(facts, binding, contract) {
 			return nil
 		}
@@ -717,6 +721,10 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	if err != nil {
 		return err
 	}
+	plan, pendingDowngrade, err := resolveExpectedRenewalPlanTx(tx, commonFacts, binding, contract, plan)
+	if err != nil {
+		return err
+	}
 	if err := validateRenewalInvoiceFacts(commonFacts, binding, contract, plan, user); err != nil {
 		return PermanentPaidInvoiceError(err)
 	}
@@ -726,7 +734,7 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	grant, err := model.RotateCurrentEntitlementTx(tx, model.GrantEntitlementInput{
 		ContractId:           contract.Id,
 		UserId:               binding.UserId,
-		PlanId:               binding.PlanId,
+		PlanId:               plan.Id,
 		ProviderBindingId:    binding.Id,
 		GrantKey:             "stripe:" + facts.InvoiceID,
 		PaymentMode:          model.SubscriptionPaymentModeStripeRecurring,
@@ -740,7 +748,7 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		return err
 	}
 	now := common.GetTimestamp()
-	if err := tx.Model(binding).Where("id = ?", binding.Id).Updates(map[string]interface{}{
+	bindingUpdates := map[string]interface{}{
 		"provider_subscription_item_id": strings.TrimSpace(facts.SubscriptionItemID),
 		"provider_customer_id":          strings.TrimSpace(facts.CustomerID),
 		"provider_price_id":             strings.TrimSpace(facts.PriceID),
@@ -753,14 +761,40 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		"livemode":                      facts.Livemode,
 		"last_synced_at":                now,
 		"updated_at":                    now,
-	}).Error; err != nil {
+	}
+	if pendingDowngrade {
+		bindingUpdates["plan_id"] = plan.Id
+	}
+	if err := tx.Model(binding).Where("id = ?", binding.Id).Updates(bindingUpdates).Error; err != nil {
 		return err
 	}
-	if err := tx.Model(contract).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+	contractUpdates := map[string]interface{}{
 		"status":           model.SubscriptionContractStatusActive,
 		"grace_period_end": 0,
 		"updated_at":       now,
-	}).Error; err != nil {
+	}
+	if pendingDowngrade {
+		contractUpdates["pending_plan_id"] = 0
+		contractUpdates["pending_effective_at"] = 0
+		if contract.LatestChangeIntentId > 0 {
+			var intent model.SubscriptionChangeIntent
+			err := subscriptionCommandLock(tx).Where("id = ? AND contract_id = ? AND kind = ?", contract.LatestChangeIntentId, contract.Id, model.SubscriptionChangeIntentKindDowngrade).First(&intent).Error
+			if err == nil && intent.ToPlanId == plan.Id {
+				if err := tx.Model(&intent).Updates(map[string]interface{}{
+					"status":              model.SubscriptionChangeIntentStatusApplied,
+					"provider_invoice_id": facts.InvoiceID,
+					"effective_at":        facts.PeriodStart,
+					"last_error":          "",
+					"updated_at":          now,
+				}).Error; err != nil {
+					return err
+				}
+			} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
+	}
+	if err := tx.Model(contract).Where("id = ?", contract.Id).Updates(contractUpdates).Error; err != nil {
 		return err
 	}
 	result.Binding = binding
@@ -843,10 +877,17 @@ func validateRenewalInvoiceFacts(facts stripeInvoiceCommonFacts, binding *model.
 	if binding.Livemode != facts.Livemode {
 		return errors.New("Stripe invoice livemode mismatch")
 	}
-	if plan.Id != binding.PlanId {
+	pendingPlanAllowed := contract.PendingPlanId > 0 &&
+		plan.Id == contract.PendingPlanId &&
+		contract.PendingEffectiveAt > 0 &&
+		facts.PeriodStart >= contract.PendingEffectiveAt
+	if plan.Id != binding.PlanId && !pendingPlanAllowed {
 		return errors.New("local plan mismatch")
 	}
-	if strings.TrimSpace(plan.StripePriceId) == "" || strings.TrimSpace(plan.StripePriceId) != facts.PriceID || strings.TrimSpace(binding.ProviderPriceId) != facts.PriceID {
+	if strings.TrimSpace(plan.StripePriceId) == "" || strings.TrimSpace(plan.StripePriceId) != facts.PriceID {
+		return errors.New("Stripe price mismatch")
+	}
+	if strings.TrimSpace(binding.ProviderPriceId) != facts.PriceID && !pendingPlanAllowed {
 		return errors.New("Stripe price mismatch")
 	}
 	if strings.ToUpper(strings.TrimSpace(plan.Currency)) != facts.Currency {
@@ -860,6 +901,57 @@ func validateRenewalInvoiceFacts(facts stripeInvoiceCommonFacts, binding *model.
 		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.Amount)
 	}
 	return nil
+}
+
+func resolveExpectedRenewalPlanTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, currentPlan *model.SubscriptionPlan) (*model.SubscriptionPlan, bool, error) {
+	if tx == nil || binding == nil || contract == nil || currentPlan == nil {
+		return currentPlan, false, nil
+	}
+	if contract.PendingPlanId <= 0 || contract.PendingEffectiveAt <= 0 || facts.PeriodStart < contract.PendingEffectiveAt {
+		return currentPlan, false, nil
+	}
+	if contract.LatestChangeIntentId <= 0 {
+		return currentPlan, false, nil
+	}
+	var intent model.SubscriptionChangeIntent
+	err := tx.Where("id = ? AND contract_id = ? AND kind = ? AND status IN ?",
+		contract.LatestChangeIntentId,
+		contract.Id,
+		model.SubscriptionChangeIntentKindDowngrade,
+		[]string{
+			model.SubscriptionChangeIntentStatusScheduled,
+			model.SubscriptionChangeIntentStatusSyncing,
+			model.SubscriptionChangeIntentStatusApplied,
+		},
+	).First(&intent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return currentPlan, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if intent.ToPlanId != contract.PendingPlanId || intent.ProviderBindingId != binding.Id {
+		return currentPlan, false, nil
+	}
+	var pendingPlan model.SubscriptionPlan
+	if err := tx.Where("id = ?", contract.PendingPlanId).First(&pendingPlan).Error; err != nil {
+		return nil, false, err
+	}
+	pendingPlan.NormalizeDefaults()
+	if strings.TrimSpace(pendingPlan.StripePriceId) == "" || strings.TrimSpace(pendingPlan.StripePriceId) != facts.PriceID {
+		return currentPlan, false, nil
+	}
+	if strings.ToUpper(strings.TrimSpace(pendingPlan.Currency)) != facts.Currency {
+		return currentPlan, false, nil
+	}
+	expectedMinor, err := stripeMinorUnitAmountForSubscription(pendingPlan.PriceAmount, facts.Currency)
+	if err != nil {
+		return nil, false, err
+	}
+	if expectedMinor != facts.Amount {
+		return currentPlan, false, nil
+	}
+	return &pendingPlan, true, nil
 }
 
 func providerSnapshotFromPaidInvoice(facts paidInvoiceFacts, invoiceID string) model.ProviderSubscriptionSnapshot {

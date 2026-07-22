@@ -76,6 +76,7 @@ func RunStripeSubscriptionReconciliationOnce() (int, error) {
 		resetExpiredStripeWebhookLeases,
 		reconcileUnresolvedStripeInvoiceIntents,
 		reconcileStalePendingStripePurchases,
+		reconcilePendingStripeDowngrades,
 		reconcileStripeBindingPointerDrift,
 	} {
 		count, err := scan(ctx)
@@ -125,6 +126,101 @@ func RunStripeSubscriptionReconciliationOnce() (int, error) {
 		processed++
 	}
 	return processed, nil
+}
+
+func reconcilePendingStripeDowngrades(ctx context.Context) (int, error) {
+	if !stripeReconciliationTableAvailable(&model.UserSubscriptionContract{}) ||
+		!stripeReconciliationTableAvailable(&model.SubscriptionChangeIntent{}) ||
+		!stripeReconciliationTableAvailable(&model.SubscriptionProviderBinding{}) {
+		return 0, nil
+	}
+	var contracts []model.UserSubscriptionContract
+	if err := model.DB.
+		Where("payment_mode = ? AND status = ? AND pending_plan_id > ? AND pending_effective_at > ? AND latest_change_intent_id > ?",
+			model.SubscriptionPaymentModeStripeRecurring,
+			model.SubscriptionContractStatusActive,
+			0,
+			0,
+			0).
+		Order("id asc").
+		Limit(stripeSubscriptionReconciliationBatchSize).
+		Find(&contracts).Error; err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, contract := range contracts {
+		applied, err := reconcilePendingStripeDowngrade(ctx, contract)
+		if err != nil {
+			return processed, err
+		}
+		if applied {
+			processed++
+		}
+	}
+	return processed, nil
+}
+
+func reconcilePendingStripeDowngrade(ctx context.Context, contract model.UserSubscriptionContract) (bool, error) {
+	var intent model.SubscriptionChangeIntent
+	err := model.DB.Where("id = ? AND contract_id = ? AND kind = ? AND status IN ?",
+		contract.LatestChangeIntentId,
+		contract.Id,
+		model.SubscriptionChangeIntentKindDowngrade,
+		[]string{model.SubscriptionChangeIntentStatusSyncing, model.SubscriptionChangeIntentStatusScheduled},
+	).First(&intent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var binding model.SubscriptionProviderBinding
+	if err := model.DB.Where("id = ? AND contract_id = ? AND user_id = ? AND provider = ?",
+		intent.ProviderBindingId,
+		contract.Id,
+		contract.UserId,
+		model.PaymentProviderStripe,
+	).First(&binding).Error; err != nil {
+		return false, err
+	}
+	var currentPlan model.SubscriptionPlan
+	if err := model.DB.Where("id = ?", contract.CurrentPlanId).First(&currentPlan).Error; err != nil {
+		return false, err
+	}
+	var targetPlan model.SubscriptionPlan
+	if err := model.DB.Where("id = ?", intent.ToPlanId).First(&targetPlan).Error; err != nil {
+		return false, err
+	}
+	idempotencyKey := strings.TrimSpace(intent.ProviderIdempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = stripeSubscriptionDowngradeIntentIdempotencyKey(contract.Id, intent.ChangeVersion, intent.ToPlanId, intent.Id)
+	}
+	result, err := stripeSubscriptionDowngradeExecutor(ctx, StripeSubscriptionDowngradeInput{
+		UserID:                     intent.UserId,
+		ContractID:                 contract.Id,
+		ChangeIntentID:             intent.Id,
+		ChangeVersion:              intent.ChangeVersion,
+		CurrentPlanID:              contract.CurrentPlanId,
+		TargetPlanID:               intent.ToPlanId,
+		CurrentPriceID:             firstNonEmptyString(binding.ProviderPriceId, currentPlan.StripePriceId),
+		TargetPriceID:              strings.TrimSpace(targetPlan.StripePriceId),
+		ProviderSubscriptionID:     strings.TrimSpace(binding.ProviderSubscriptionId),
+		ProviderSubscriptionItemID: strings.TrimSpace(binding.ProviderSubscriptionItemId),
+		ProviderScheduleID:         strings.TrimSpace(binding.ProviderScheduleId),
+		CurrentPeriodStart:         firstPositiveInt64(binding.CurrentPeriodStart, contract.CurrentPeriodStart),
+		CurrentPeriodEnd:           firstPositiveInt64(contract.PendingEffectiveAt, binding.CurrentPeriodEnd, contract.CurrentPeriodEnd),
+		IdempotencyKey:             idempotencyKey,
+	})
+	if err != nil {
+		if markErr := markStripeSubscriptionDowngradeFailed(intent.Id, err); markErr != nil {
+			return false, markErr
+		}
+		return false, nil
+	}
+	if err := persistStripeSubscriptionDowngradeResult(intent.Id, result); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func skipStripeBindingSnapshotForContractState(binding model.SubscriptionProviderBinding) (bool, error) {
