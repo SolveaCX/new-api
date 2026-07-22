@@ -37,5 +37,3 @@ Codex Fast is an explicit higher-credit service tier. GPT-5.5 consumes about 2.5
 ## Final model decision
 
 Codex OAuth channel type `57` Fast support is limited to `gpt-5.4` and `gpt-5.5` requests that preserve the independent `service_tier: "fast"` field.
-
-GPT-5.5 Instant uses the standard OpenAI channel with the official API model ID `chat-latest`. Do not register `gpt-5.5-instant`, and do not emulate Instant by mapping it to `gpt-5.5` with `reasoning.effort: "none"`.
