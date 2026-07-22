@@ -31,6 +31,7 @@ func opsDayBucketExpr(dayStarts []int64) string {
 // user_id index, which keeps every query an index lookup instead of a scan.
 
 const opsReportChunkSize = 500
+const opsExternalAPIKeyLogPredicate = "token_id > 0 AND token_name NOT LIKE 'playground%'"
 
 type OpsPlgUser struct {
 	Id             int    `json:"id"`
@@ -138,12 +139,12 @@ func GetOpsUserLogStats(userIds []int) ([]*OpsUserLogStats, error) {
 			SELECT user_id,
 			       COALESCE(MIN(CASE WHEN token_name LIKE 'playground%%' THEN created_at END), 0) AS first_playground_at,
 			       COALESCE(SUM(CASE WHEN token_name LIKE 'playground%%' THEN 1 ELSE 0 END), 0) AS playground_count,
-			       COALESCE(MIN(CASE WHEN token_id > 0 THEN created_at END), 0) AS first_api_key_at,
-			       COALESCE(SUM(CASE WHEN token_id > 0 THEN 1 ELSE 0 END), 0) AS api_key_count,
+			       COALESCE(MIN(CASE WHEN %s THEN created_at END), 0) AS first_api_key_at,
+			       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS api_key_count,
 			       COALESCE(MAX(created_at), 0) AS last_request_at
 			FROM logs%s
 			WHERE type = ? AND user_id IN ?
-			GROUP BY user_id`, logsForceIndexHint())
+			GROUP BY user_id`, opsExternalAPIKeyLogPredicate, opsExternalAPIKeyLogPredicate, logsForceIndexHint())
 		if err := LOG_DB.Raw(sql, LogTypeConsume, chunk).Scan(&batch).Error; err != nil {
 			return nil, err
 		}
@@ -172,8 +173,8 @@ func GetOpsKeyDailyUsage(userIds []int, dayStarts []int64) ([]*OpsKeyDaily, erro
 			       COUNT(*) AS req_count,
 			       COALESCE(SUM(quota), 0) AS quota
 			FROM logs%s
-			WHERE type = ? AND token_id > 0 AND created_at >= ? AND user_id IN ?
-			GROUP BY user_id, %s`, dayExpr, logsForceIndexHint(), dayExpr)
+			WHERE type = ? AND %s AND created_at >= ? AND user_id IN ?
+			GROUP BY user_id, %s`, dayExpr, logsForceIndexHint(), opsExternalAPIKeyLogPredicate, dayExpr)
 		if err := LOG_DB.Raw(sql, LogTypeConsume, startTs, chunk).Scan(&batch).Error; err != nil {
 			return nil, err
 		}
