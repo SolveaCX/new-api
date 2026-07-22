@@ -42,6 +42,11 @@ function normalizeEmailText(emails: string[]): string {
   return emails.join('\n')
 }
 
+function emailArraySignature(emails: string[]): string {
+  const parsed = parseRecallSpecifiedEmails(normalizeEmailText(emails))
+  return [...parsed.emails, ...parsed.invalid].join('\u0000')
+}
+
 type UserQuery =
   | {
       isSuccess: boolean
@@ -64,10 +69,33 @@ export function CampaignSpecifiedUsersSelector(
     normalizeEmailText(props.emails)
   )
   const [emailTextDirty, setEmailTextDirty] = React.useState(false)
+  const propsEmailSignature = React.useMemo(
+    () => emailArraySignature(props.emails),
+    [props.emails]
+  )
+  const lastLoadedEmailSignatureRef = React.useRef(propsEmailSignature)
+  const lastEmittedEmailSignatureRef = React.useRef<string | null>(null)
   const debouncedSearch = useDebounce(search.trim(), 300)
-  const displayedEmailText = emailTextDirty
-    ? emailText
-    : normalizeEmailText(props.emails)
+  const displayedEmailText = emailText
+
+  React.useLayoutEffect(() => {
+    if (propsEmailSignature === lastLoadedEmailSignatureRef.current) return
+
+    if (emailTextDirty) {
+      const isParentEcho =
+        propsEmailSignature === lastEmittedEmailSignatureRef.current ||
+        propsEmailSignature === lastLoadedEmailSignatureRef.current
+
+      if (isParentEcho) return
+    }
+
+    // Props do not include a campaign id, so a new normalized email signature
+    // is the external-load boundary that replaces an active local draft.
+    lastLoadedEmailSignatureRef.current = propsEmailSignature
+    lastEmittedEmailSignatureRef.current = null
+    setEmailText(normalizeEmailText(props.emails))
+    setEmailTextDirty(false)
+  }, [emailTextDirty, props.emails, propsEmailSignature])
 
   const queryConfigs = React.useMemo(() => {
     const configs = []
@@ -135,19 +163,23 @@ export function CampaignSpecifiedUsersSelector(
     setEmailTextDirty(true)
     setEmailText(value)
     const parsed = parseRecallSpecifiedEmails(value)
-    props.onEmailsChange(
+    const emittedEmails =
       parsed.invalid.length > 0
         ? [...parsed.emails, ...parsed.invalid]
         : parsed.emails
-    )
+    lastEmittedEmailSignatureRef.current = emailArraySignature(emittedEmails)
+    props.onEmailsChange(emittedEmails)
   }
 
   const handleEmailBlur = () => {
     const parsed = parseRecallSpecifiedEmails(displayedEmailText)
     if (parsed.invalid.length === 0) {
+      const normalizedEmails = parsed.emails
+      lastEmittedEmailSignatureRef.current =
+        emailArraySignature(normalizedEmails)
       setEmailTextDirty(false)
-      setEmailText(normalizeEmailText(parsed.emails))
-      props.onEmailsChange(parsed.emails)
+      setEmailText(normalizeEmailText(normalizedEmails))
+      props.onEmailsChange(normalizedEmails)
     }
   }
 
