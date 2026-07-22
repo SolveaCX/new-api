@@ -205,6 +205,14 @@ func validateRecallEmailHTMLRawTokens(source string) error {
 			if err := validateRecallEmailHTMLRawTag(tokenizer.Raw()); err != nil {
 				return err
 			}
+		case html.EndTagToken:
+			hasAction, err := recallEmailHTMLHasTemplateAction(string(tokenizer.Raw()))
+			if err != nil {
+				return err
+			}
+			if hasAction {
+				return fmt.Errorf("recall email html rejects template action in end tag")
+			}
 		}
 	}
 }
@@ -258,6 +266,34 @@ func previousRecallEmailHTMLNonSpace(raw []byte, before int) int {
 		}
 	}
 	return -1
+}
+
+func recallEmailHTMLHasTemplateAction(raw string) (bool, error) {
+	if !strings.Contains(raw, "{{") {
+		return false, nil
+	}
+	template, err := texttemplate.New("recall-email-html-structure").Parse(raw)
+	if err != nil {
+		return false, fmt.Errorf("parse recall email html template fragment: %w", err)
+	}
+	if err := validateRecallEmailTemplateDefinitions(template.Name(), template.Templates()); err != nil {
+		return false, err
+	}
+	return recallEmailHTMLTemplateNodeHasAction(template.Tree.Root), nil
+}
+
+func recallEmailHTMLTemplateNodeHasAction(node parse.Node) bool {
+	switch typed := node.(type) {
+	case *parse.ListNode:
+		for _, child := range typed.Nodes {
+			if recallEmailHTMLTemplateNodeHasAction(child) {
+				return true
+			}
+		}
+	case *parse.ActionNode:
+		return true
+	}
+	return false
 }
 
 type recallEmailHTMLURLActions struct {
