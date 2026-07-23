@@ -136,6 +136,34 @@ func GetRecallRecipientByCampaignWithContext(ctx context.Context, campaignID int
 	return recipient, nil
 }
 
+func GetRecallRecipientByIDWithContext(ctx context.Context, recipientID int64) (*RecallRecipient, bool, error) {
+	if recipientID <= 0 {
+		return nil, false, nil
+	}
+	recipient := &RecallRecipient{}
+	if err := DB.WithContext(ctx).First(recipient, recipientID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return recipient, true, nil
+}
+
+func GetRecallClaimUserWithContext(ctx context.Context, userID int) (*User, bool, error) {
+	if userID <= 0 {
+		return nil, false, nil
+	}
+	user, err := GetUserByIdWithContext(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return user, true, nil
+}
+
 func BindRecallRecipientUserWithContext(ctx context.Context, recipientID int64, userID int, normalizedEmail string) (*RecallRecipient, bool, error) {
 	if recipientID <= 0 {
 		return nil, false, gorm.ErrRecordNotFound

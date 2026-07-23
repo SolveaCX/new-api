@@ -277,6 +277,30 @@ func TestRecallClaimValidateEmailOnlyRejectsMismatchDisabledAndCompetingUsers(t 
 	require.Equal(t, first.Id, stored.UserId)
 }
 
+func TestRecallClaimValidateEmailOnlyMapsMissingUserButPropagatesUserLoadErrors(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Unix(1_721_000_000, 0).UTC()
+	fixture := createRecallEmailOnlyClaimFixture(t, now, "missing-user@example.com")
+	claimService := NewRecallClaimService()
+	claimService.now = func() time.Time { return now }
+
+	_, err := claimService.ValidateClaim(context.Background(), 999_999, fixture.claim)
+	require.ErrorIs(t, err, ErrRecallClaimWrongUser)
+
+	sentinel := errors.New("user load failed")
+	callbackName := "recall_claim_user_load_error_" + strings.ReplaceAll(t.Name(), "/", "_")
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == "users" {
+			tx.AddError(sentinel)
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
+
+	_, err = claimService.ValidateClaim(context.Background(), 999_999, fixture.claim)
+	require.ErrorIs(t, err, sentinel)
+}
+
 func TestRecallClaimValidateRejectsInvalidClaimsWithTypedErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -658,6 +682,41 @@ func TestRecallClaimRecipientUnsubscribeBoundRecipientUsesGlobalOptOut(t *testin
 	var storedOtherUser model.User
 	require.NoError(t, db.First(&storedOtherUser, otherUser.Id).Error)
 	require.False(t, storedOtherUser.GetSetting().RecallMarketingOptOut)
+}
+
+func TestRecallClaimRecipientUnsubscribeMapsMissingRecipientButPropagatesLoadErrors(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	now := time.Unix(1_721_000_000, 0).UTC()
+	originalSecret := common.CryptoSecret
+	common.CryptoSecret = "recall-test-secret"
+	t.Cleanup(func() { common.CryptoSecret = originalSecret })
+	claimService := NewRecallClaimService()
+	claimService.now = func() time.Time { return now }
+
+	missingToken, err := claimService.CreateRecipientUnsubscribeToken(999_999, now.Add(time.Hour))
+	require.NoError(t, err)
+	require.ErrorIs(t, claimService.Unsubscribe(context.Background(), missingToken), ErrRecallUnsubscribeInvalid)
+
+	campaign := model.RecallCampaign{Name: "recipient load error", Status: model.RecallCampaignRunning, AudienceTemplate: "specified_users", AudienceConfig: `{}`, ExecutionMode: "manual", CouponSource: "automatic", DiscountConfig: `{}`, ProductScope: `{}`, EmailSequenceConfig: `[]`}
+	require.NoError(t, db.Create(&campaign).Error)
+	recipient := model.RecallRecipient{CampaignId: campaign.Id, UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "load-error@example.com", LanguageSnapshot: "en", State: model.RecallRecipientContacting}
+	require.NoError(t, db.Create(&recipient).Error)
+	token, err := claimService.CreateRecipientUnsubscribeToken(recipient.Id, now.Add(time.Hour))
+	require.NoError(t, err)
+
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.ErrorIs(t, claimService.Unsubscribe(cancelledCtx, token), context.Canceled)
+
+	sentinel := errors.New("recipient load failed")
+	callbackName := "recall_unsubscribe_recipient_load_error_" + strings.ReplaceAll(t.Name(), "/", "_")
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == "recall_recipients" {
+			tx.AddError(sentinel)
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
+	require.ErrorIs(t, claimService.Unsubscribe(context.Background(), token), sentinel)
 }
 
 func TestRecallClaimUnsubscribeRejectsInvalidVersionsAndMixedFields(t *testing.T) {
