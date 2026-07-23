@@ -17,8 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
-import { SectionPageLayout } from '@/components/layout'
+import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SectionPageLayout } from '@/components/layout'
 import { BalanceBar } from './components/balance-bar'
 import { DeployWizard } from './components/deploy-wizard'
 import { GpuInstances } from './components/gpu-instances'
@@ -37,7 +38,15 @@ export function ComputeDeploy() {
           <TabsList>
             <TabsTrigger value='deploy'>{t('Deploy')}</TabsTrigger>
             <TabsTrigger value='endpoints'>{t('My Endpoints')}</TabsTrigger>
-            <TabsTrigger value='instances'>{t('GPU Instances')}</TabsTrigger>
+            <TabsTrigger value='instances'>
+              {t('GPU Instances')}
+              <Badge
+                variant='secondary'
+                className='ml-1 h-4 px-1.5 text-[10px] leading-none font-semibold'
+              >
+                {t('Coming soon')}
+              </Badge>
+            </TabsTrigger>
           </TabsList>
           <TabsContent value='deploy'>
             <DeployWizard />
