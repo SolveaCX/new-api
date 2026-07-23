@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -134,6 +135,81 @@ func TestPurchaseSubscriptionStripeRecurringForcesOneMonth(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "stripe_recurring")
 	require.Contains(t, err.Error(), "1")
+}
+
+func TestPurchaseSubscriptionStripeRecurringReturnsCheckoutURL(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	insertPurchaseServiceUser(t, 7318, 5000)
+	plan := insertPurchaseServicePlan(t, 7421, 1, 19.99, 100)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).
+		Update("stripe_price_id", "price_purchase_checkout").Error)
+
+	originalCreator := stripeSubscriptionCheckoutCreator
+	t.Cleanup(func() { stripeSubscriptionCheckoutCreator = originalCreator })
+	stripeSubscriptionCheckoutCreator = func(_ context.Context, _ StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+		return &StripeSubscriptionCheckoutSession{
+			ID:  "cs_purchase_checkout",
+			URL: "https://checkout.stripe.test/purchase-subscription",
+		}, nil
+	}
+
+	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+		UserID:        7318,
+		PlanID:        plan.Id,
+		PaymentChoice: SubscriptionPaymentChoiceStripeRecurring,
+		Months:        1,
+		RequestID:     "stripe-purchase-checkout",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ChangePlanStatusCheckoutRequired, result.Status)
+	require.Equal(t, "https://checkout.stripe.test/purchase-subscription", result.CheckoutURL)
+}
+
+func TestPurchaseSubscriptionStripeRecurringReturnsHostedInvoiceURL(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	insertPurchaseServiceUser(t, 7319, 5000)
+	currentPlan := insertPurchaseServicePlan(t, 7422, 1, 9.99, 100)
+	targetPlan := insertPurchaseServicePlan(t, 7423, 2, 19.99, 200)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", currentPlan.Id).
+		Update("stripe_price_id", "price_purchase_current").Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", targetPlan.Id).
+		Update("stripe_price_id", "price_purchase_target").Error)
+	currentPlan.StripePriceId = "price_purchase_current"
+	targetPlan.StripePriceId = "price_purchase_target"
+	_, binding, _ := seedStripeUpgradeContract(t, 7319, currentPlan)
+
+	originalUpgrade := stripeSubscriptionUpgradeExecutor
+	t.Cleanup(func() { stripeSubscriptionUpgradeExecutor = originalUpgrade })
+	stripeSubscriptionUpgradeExecutor = func(_ context.Context, input StripeSubscriptionUpgradeInput) (*StripeSubscriptionUpgradeResult, error) {
+		return &StripeSubscriptionUpgradeResult{
+			Status:            model.SubscriptionChangeIntentStatusAwaitingPayment,
+			ProviderInvoiceID: "in_purchase_upgrade",
+			HostedInvoiceURL:  "https://invoice.stripe.test/purchase-upgrade",
+			Snapshot: model.ProviderSubscriptionSnapshot{
+				ProviderSubscriptionId:     input.ProviderSubscriptionID,
+				ProviderSubscriptionItemId: input.ProviderSubscriptionItemID,
+				ProviderCustomerId:         binding.ProviderCustomerId,
+				ProviderPriceId:            currentPlan.StripePriceId,
+				ProviderLatestInvoiceId:    "in_purchase_upgrade",
+				ProviderStatus:             "active",
+				CurrentPeriodStart:         binding.CurrentPeriodStart,
+				CurrentPeriodEnd:           binding.CurrentPeriodEnd,
+			},
+		}, nil
+	}
+
+	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+		UserID:        7319,
+		PlanID:        targetPlan.Id,
+		PaymentChoice: SubscriptionPaymentChoiceStripeRecurring,
+		Months:        1,
+		RequestID:     "stripe-purchase-upgrade",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ChangePlanStatusPaymentActionRequired, result.Status)
+	require.Equal(t, "https://invoice.stripe.test/purchase-upgrade", result.HostedInvoiceURL)
 }
 
 func TestPurchaseSubscriptionBalanceThreeMonthsChargesFullPriceOnce(t *testing.T) {

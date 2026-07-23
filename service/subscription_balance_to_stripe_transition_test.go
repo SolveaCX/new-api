@@ -8,7 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func TestBalanceCurrentUpgradeToStripeRecurringCreatesReplayableCheckout(t *testing.T) {
@@ -172,7 +172,7 @@ func TestBalanceCurrentUpgradeToStripeRecurringPaidInvoiceRotatesThroughCheckout
 	invoice.AmountDue = 1234
 	invoice.Total = 1234
 	invoice.Customer = &stripe.Customer{ID: "cus_balance_to_stripe_paid"}
-	invoice.Lines.Data[0].Price = &stripe.Price{ID: "price_invoice_plan"}
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_invoice_plan")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
 	subscription := stripeSubscriptionFixture("sub_balance_to_stripe_paid", map[string]string{
 		"trade_no":         order.TradeNo,
@@ -184,8 +184,7 @@ func TestBalanceCurrentUpgradeToStripeRecurringPaidInvoiceRotatesThroughCheckout
 	subscription.Customer = &stripe.Customer{ID: "cus_balance_to_stripe_paid"}
 	subscription.Items.Data[0].ID = "si_balance_to_stripe_paid"
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_invoice_plan"}
-	subscription.CurrentPeriodStart = 3000
-	subscription.CurrentPeriodEnd = 4000
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	restoreReconcilers := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restoreReconcilers()
 

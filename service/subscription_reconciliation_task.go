@@ -13,8 +13,8 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/bytedance/gopkg/util/gopool"
-	"github.com/stripe/stripe-go/v81"
-	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
+	"github.com/stripe/stripe-go/v86"
+	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
 	"gorm.io/gorm"
 )
 
@@ -317,7 +317,7 @@ func reconcileExpiredStripeGraceContract(ctx context.Context, contract model.Use
 	if err := validateStripeGraceRemoteFacts(inv, sub, binding); err != nil {
 		return true, markStripeGraceContractNeedsAttention(contract.Id, err.Error())
 	}
-	if inv.Paid && inv.Status == stripe.InvoiceStatusPaid {
+	if stripeInvoiceIsPaid(inv) {
 		_, err := ReconcilePaidInvoice(ctx, invoiceID)
 		return err == nil, err
 	}
@@ -360,7 +360,7 @@ func fenceStripeGraceInvoiceBeforeCancel(ctx context.Context, invoiceID string, 
 	if authoritative == nil || strings.TrimSpace(authoritative.ID) != invoiceID {
 		return false, errors.New("Stripe grace invoice is missing after void failure")
 	}
-	if authoritative.Paid && authoritative.Status == stripe.InvoiceStatusPaid {
+	if stripeInvoiceIsPaid(authoritative) {
 		_, err := ReconcilePaidInvoice(ctx, invoiceID)
 		return false, err
 	}
@@ -529,7 +529,7 @@ func reconcileUnresolvedStripeInvoiceIntents(ctx context.Context) (int, error) {
 		if inv == nil || strings.TrimSpace(inv.ID) == "" {
 			return processed, errors.New("Stripe invoice is missing")
 		}
-		if inv.Paid && inv.Status == stripe.InvoiceStatusPaid {
+		if stripeInvoiceIsPaid(inv) {
 			if _, err := ReconcilePaidInvoice(ctx, invoiceID); err != nil {
 				return processed, err
 			}
@@ -575,7 +575,7 @@ func reconcileStalePendingStripePurchases(ctx context.Context) (int, error) {
 		if inv == nil || strings.TrimSpace(inv.ID) == "" {
 			return processed, errors.New("Stripe invoice is missing")
 		}
-		if inv.Paid && inv.Status == stripe.InvoiceStatusPaid {
+		if stripeInvoiceIsPaid(inv) {
 			if _, err := ReconcilePaidInvoice(ctx, invoiceID); err != nil {
 				return processed, err
 			}

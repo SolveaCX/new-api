@@ -1069,6 +1069,99 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 	return tx.Save(&topup).Error
 }
 
+// SyncSubscriptionOrderTopUpHistory mirrors the current SubscriptionOrder payment
+// state into TopUp history so existing billing-history and resume flows can use it.
+func SyncSubscriptionOrderTopUpHistory(tradeNo string) error {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if tradeNo == "" {
+		return errors.New("tradeNo is empty")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var order SubscriptionOrder
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSubscriptionOrderNotFound
+			}
+			return err
+		}
+		return syncSubscriptionOrderTopUpHistoryTx(tx, &order)
+	})
+}
+
+func syncSubscriptionOrderTopUpHistoryTx(tx *gorm.DB, order *SubscriptionOrder) error {
+	if tx == nil || order == nil {
+		return errors.New("invalid subscription order")
+	}
+	status := strings.TrimSpace(order.Status)
+	switch status {
+	case common.TopUpStatusPending:
+		if strings.TrimSpace(order.ProviderSessionId) == "" {
+			return errors.New("pending subscription order checkout session is missing")
+		}
+	case common.TopUpStatusSuccess, common.TopUpStatusFailed, common.TopUpStatusExpired:
+	default:
+		return ErrSubscriptionOrderStatusInvalid
+	}
+
+	var topup TopUp
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no = ?", order.TradeNo).First(&topup).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(subscriptionOrderTopUpHistory(order, status)).Error
+		}
+		return err
+	}
+	if topup.UserId != order.UserId ||
+		(strings.TrimSpace(topup.PaymentMethod) != "" && topup.PaymentMethod != order.PaymentMethod) ||
+		(strings.TrimSpace(topup.PaymentProvider) != "" && topup.PaymentProvider != order.PaymentProvider) {
+		return ErrPaymentMethodMismatch
+	}
+	if topup.Status == common.TopUpStatusSuccess && status != common.TopUpStatusSuccess {
+		return nil
+	}
+	topup.UserId = order.UserId
+	topup.Money = order.Money
+	topup.PaymentMethod = order.PaymentMethod
+	topup.PaymentProvider = order.PaymentProvider
+	topup.PaymentCurrency = strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
+	topup.PaymentAmountMinor = order.PaymentAmountMinor
+	if strings.TrimSpace(order.ProviderSessionId) != "" {
+		topup.GatewayTradeNo = strings.TrimSpace(order.ProviderSessionId)
+	}
+	if topup.CreateTime == 0 {
+		topup.CreateTime = order.CreateTime
+	}
+	topup.Status = status
+	topup.CompleteTime = subscriptionOrderTopUpCompleteTime(order, status)
+	return tx.Save(&topup).Error
+}
+
+func subscriptionOrderTopUpHistory(order *SubscriptionOrder, status string) *TopUp {
+	return &TopUp{
+		UserId:             order.UserId,
+		Amount:             0,
+		Money:              order.Money,
+		TradeNo:            strings.TrimSpace(order.TradeNo),
+		GatewayTradeNo:     strings.TrimSpace(order.ProviderSessionId),
+		PaymentMethod:      order.PaymentMethod,
+		PaymentProvider:    order.PaymentProvider,
+		PaymentCurrency:    strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)),
+		PaymentAmountMinor: order.PaymentAmountMinor,
+		CreateTime:         order.CreateTime,
+		CompleteTime:       subscriptionOrderTopUpCompleteTime(order, status),
+		Status:             status,
+	}
+}
+
+func subscriptionOrderTopUpCompleteTime(order *SubscriptionOrder, status string) int64 {
+	if status == common.TopUpStatusPending {
+		return 0
+	}
+	if order.CompleteTime > 0 {
+		return order.CompleteTime
+	}
+	return common.GetTimestamp()
+}
+
 func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) error {
 	if tradeNo == "" {
 		return errors.New("tradeNo is empty")

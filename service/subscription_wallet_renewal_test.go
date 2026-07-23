@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -11,6 +13,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+type walletRenewalTxOptionsRecorder struct {
+	*sql.DB
+	options *sql.TxOptions
+}
+
+func (recorder *walletRenewalTxOptionsRecorder) BeginTx(ctx context.Context, options *sql.TxOptions) (*sql.Tx, error) {
+	if options != nil {
+		copied := *options
+		recorder.options = &copied
+	}
+	return recorder.DB.BeginTx(ctx, options)
+}
 
 func seedWalletRenewalContract(t *testing.T, userID int, quota int, plan model.SubscriptionPlan, periodEnd int64) (model.UserSubscriptionContract, model.UserSubscription) {
 	t.Helper()
@@ -318,15 +333,22 @@ func TestRenewWalletSubscriptionContractReportsIncompletePostgresDuplicateFacts(
 		RenewalSource:   model.SubscriptionRenewalSourceWallet,
 	}).Error)
 	require.NoError(t, model.DB.Create(&model.UserSubscription{
-		UserId:      contract.UserId,
-		PlanId:      plan.Id,
-		ContractId:  contract.Id,
-		GrantKey:    &renewalKey,
-		StartTime:   periodEnd,
-		EndTime:     time.Unix(periodEnd, 0).AddDate(0, 1, 0).Unix(),
-		Status:      model.SubscriptionEntitlementStatusHistorical,
-		PaymentMode: model.SubscriptionPaymentModePrepaid,
-		Source:      model.PaymentMethodBalance,
+		UserId:            contract.UserId,
+		PlanId:            plan.Id,
+		ContractId:        contract.Id,
+		ProviderBindingId: 0,
+		GrantKey:          &renewalKey,
+		AmountTotal:       plan.TotalAmount,
+		MediaCreditsTotal: plan.MediaCreditsMonthly,
+		Window5hAmount:    common.GetPointer(plan.Window5hAmount),
+		WindowWeekAmount:  common.GetPointer(plan.WindowWeekAmount),
+		StartTime:         periodEnd,
+		EndTime:           time.Unix(periodEnd, 0).AddDate(0, 1, 0).Unix(),
+		AccessEndTime:     time.Unix(periodEnd, 0).AddDate(0, 1, 0).Unix(),
+		Status:            model.SubscriptionEntitlementStatusHistorical,
+		PaymentMode:       model.SubscriptionPaymentModePrepaid,
+		Source:            model.PaymentMethodBalance,
+		UpgradeGroup:      plan.UpgradeGroup,
 	}).Error)
 	common.UsingPostgreSQL = true
 
@@ -334,6 +356,145 @@ func TestRenewWalletSubscriptionContractReportsIncompletePostgresDuplicateFacts(
 
 	require.ErrorContains(t, err, "wallet renewal duplicate facts are incomplete")
 	require.ErrorContains(t, err, "debit ledger")
+}
+
+func TestRecoverPostgresWalletRenewalDuplicateRejectsGrantMismatchDespiteCorrectLedger(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7810, 1, 7, 700)
+	plan.MediaCreditsMonthly = 35
+	plan.Window5hAmount = 75
+	plan.WindowWeekAmount = 650
+	plan.UpgradeGroup = "renewal_group"
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"media_credits_monthly": plan.MediaCreditsMonthly,
+		"window_5h_amount":      plan.Window5hAmount,
+		"window_week_amount":    plan.WindowWeekAmount,
+		"upgrade_group":         plan.UpgradeGroup,
+	}).Error)
+	periodEnd := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7912, 700, plan, periodEnd)
+	attempt := seedCompletedWalletRenewalDuplicateFacts(t, contract, plan, periodEnd)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).
+		Where("grant_key = ?", attempt.RenewalKey).
+		Update("amount_total", plan.TotalAmount+1).Error)
+
+	_, err := recoverPostgresWalletRenewalDuplicate(attempt)
+
+	require.ErrorContains(t, err, "wallet renewal duplicate facts are incomplete")
+	require.ErrorContains(t, err, "entitlement grant")
+}
+
+func TestRecoverPostgresWalletRenewalDuplicateRejectsContractThatOnlyAdvancesPeriodEnd(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7811, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, oldEntitlement := seedWalletRenewalContract(t, 7913, 700, plan, periodEnd)
+	attempt := seedCompletedWalletRenewalDuplicateFacts(t, contract, plan, periodEnd)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).
+		Where("grant_key = ?", attempt.RenewalKey).
+		Updates(map[string]interface{}{
+			"current_slot": nil,
+			"status":       model.SubscriptionEntitlementStatusHistorical,
+			"end_reason":   model.SubscriptionEntitlementEndReasonRenewed,
+		}).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+		"current_period_start":   contract.CurrentPeriodStart,
+		"current_period_end":     time.Unix(attempt.PeriodEnd, 0).AddDate(0, 1, 0).Unix(),
+		"current_entitlement_id": oldEntitlement.Id,
+	}).Error)
+
+	_, err := recoverPostgresWalletRenewalDuplicate(attempt)
+
+	require.ErrorContains(t, err, "wallet renewal duplicate facts are incomplete")
+	require.ErrorContains(t, err, "contract")
+}
+
+func TestRecoverPostgresWalletRenewalDuplicateRejectsSamePeriodHistoricalGrantWithoutCurrentSlot(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7812, 1, 7, 700)
+	periodStart := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7914, 700, plan, periodStart)
+	attempt := seedCompletedWalletRenewalDuplicateFacts(t, contract, plan, periodStart)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).
+		Where("grant_key = ?", attempt.RenewalKey).
+		Updates(map[string]interface{}{
+			"current_slot": nil,
+			"status":       model.SubscriptionEntitlementStatusHistorical,
+			"end_reason":   model.SubscriptionEntitlementEndReasonRenewed,
+		}).Error)
+
+	_, err := recoverPostgresWalletRenewalDuplicate(attempt)
+
+	require.ErrorContains(t, err, "wallet renewal duplicate facts are incomplete")
+	require.ErrorContains(t, err, "entitlement grant")
+}
+
+func TestRecoverPostgresWalletRenewalDuplicateAcceptsHistoricalGrantAfterContractAdvances(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7813, 1, 7, 700)
+	periodStart := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7915, 700, plan, periodStart)
+	attempt := seedCompletedWalletRenewalDuplicateFacts(t, contract, plan, periodStart)
+	nextGrantInput := attempt.GrantInput
+	nextGrantInput.GrantKey = walletRenewalKey(contract.Id, attempt.PeriodEnd, plan.Id)
+	nextGrantInput.PeriodStart = attempt.PeriodEnd
+	nextGrantInput.PeriodEnd = time.Unix(nextGrantInput.PeriodStart, 0).AddDate(0, 1, 0).Unix()
+	var nextGrant *model.GrantEntitlementResult
+	require.NoError(t, model.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		nextGrant, err = model.RotateCurrentEntitlementTx(tx, nextGrantInput)
+		return err
+	}))
+	var attemptedEntitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&attemptedEntitlement, "grant_key = ?", attempt.RenewalKey).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, attemptedEntitlement.Status)
+	require.Nil(t, attemptedEntitlement.CurrentSlot)
+
+	result, err := recoverPostgresWalletRenewalDuplicate(attempt)
+
+	require.NoError(t, err)
+	require.Equal(t, attemptedEntitlement.Id, result.EntitlementID)
+	require.NotNil(t, nextGrant)
+	require.NotEqual(t, attemptedEntitlement.Id, nextGrant.Entitlement.Id)
+}
+
+func TestRecoverPostgresWalletRenewalDuplicateUsesReadOnlyRepeatableReadTransaction(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7814, 1, 7, 700)
+	periodStart := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7916, 700, plan, periodStart)
+	attempt := seedCompletedWalletRenewalDuplicateFacts(t, contract, plan, periodStart)
+	sqlDB, err := model.DB.DB()
+	require.NoError(t, err)
+	recorder := &walletRenewalTxOptionsRecorder{DB: sqlDB}
+	originalConnPool := model.DB.Statement.ConnPool
+	model.DB.Statement.ConnPool = recorder
+	t.Cleanup(func() {
+		model.DB.Statement.ConnPool = originalConnPool
+	})
+
+	_, err = recoverPostgresWalletRenewalDuplicate(attempt)
+
+	require.NoError(t, err)
+	require.NotNil(t, recorder.options)
+	require.True(t, recorder.options.ReadOnly)
+	require.Equal(t, sql.LevelRepeatableRead, recorder.options.Isolation)
+}
+
+func TestRecoverPostgresWalletRenewalDuplicateRejectsContractBehindAttemptPeriodWithCompleteWinnerFacts(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7815, 1, 7, 700)
+	periodStart := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7917, 700, plan, periodStart)
+	attempt := seedCompletedWalletRenewalDuplicateFacts(t, contract, plan, periodStart)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).
+		Where("id = ?", contract.Id).
+		Update("current_period_end", attempt.PeriodEnd-1).Error)
+
+	_, err := recoverPostgresWalletRenewalDuplicate(attempt)
+
+	require.ErrorContains(t, err, "wallet renewal duplicate facts are incomplete")
+	require.ErrorContains(t, err, "was not advanced through")
 }
 
 func TestRunSubscriptionTermSegmentAdvanceOnceCompletesExpiredActiveAndActivatesDueTerms(t *testing.T) {
@@ -361,4 +522,105 @@ func TestRunSubscriptionTermSegmentAdvanceOnceCompletesExpiredActiveAndActivates
 	require.Equal(t, subscriptionTermStatusCompleted, terms[0].Status)
 	require.Equal(t, model.SubscriptionTermStatusActive, terms[1].Status)
 	require.Equal(t, model.SubscriptionTermStatusNotStarted, terms[2].Status)
+}
+
+func seedCompletedWalletRenewalDuplicateFacts(t *testing.T, contract model.UserSubscriptionContract, plan model.SubscriptionPlan, periodStart int64) walletRenewalAttempt {
+	t.Helper()
+	renewalKey := walletRenewalKey(contract.Id, periodStart, plan.Id)
+	tradeNo := walletRenewalTradeNo(contract.Id, periodStart, plan.Id)
+	periodEnd := time.Unix(periodStart, 0).AddDate(0, 1, 0).Unix()
+	planSnapshot, err := subscriptionPurchasePlanSnapshot(&plan)
+	require.NoError(t, err)
+	attempt := walletRenewalAttempt{
+		ContractID:      contract.Id,
+		UserID:          contract.UserId,
+		PlanID:          plan.Id,
+		PeriodStart:     periodStart,
+		PeriodEnd:       periodEnd,
+		RenewalKey:      renewalKey,
+		TradeNo:         tradeNo,
+		RequiredQuota:   700,
+		PriceAmount:     plan.PriceAmount,
+		PaymentCurrency: plan.Currency,
+		PlanSnapshot:    planSnapshot,
+		GrantInput: model.GrantEntitlementInput{
+			ContractId:           contract.Id,
+			UserId:               contract.UserId,
+			PlanId:               plan.Id,
+			ProviderBindingId:    0,
+			GrantKey:             renewalKey,
+			PaymentMode:          model.SubscriptionPaymentModePrepaid,
+			AmountTotal:          plan.TotalAmount,
+			MediaCreditsTotal:    plan.MediaCreditsMonthly,
+			Window5hAmount:       common.GetPointer(plan.Window5hAmount),
+			WindowWeekAmount:     common.GetPointer(plan.WindowWeekAmount),
+			UpgradeGroup:         common.GetPointer(plan.UpgradeGroup),
+			PeriodStart:          periodStart,
+			PeriodEnd:            periodEnd,
+			EndReasonForPrevious: model.SubscriptionEntitlementEndReasonRenewed,
+			Source:               model.PaymentMethodBalance,
+		},
+	}
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:          contract.UserId,
+		PlanId:          plan.Id,
+		Money:           plan.PriceAmount,
+		TradeNo:         tradeNo,
+		PaymentMethod:   model.PaymentMethodBalance,
+		PaymentProvider: model.PaymentProviderBalance,
+		Status:          common.TopUpStatusSuccess,
+		PurchaseMonths:  1,
+		UnitPrice:       plan.PriceAmount,
+		PaymentCurrency: plan.Currency,
+		PlanSnapshot:    planSnapshot,
+		ProviderPayload: fmt.Sprintf("charged_quota=700;contract_id=%d;renewal_key=%s", contract.Id, renewalKey),
+		RenewalSource:   model.SubscriptionRenewalSourceWallet,
+	}).Error)
+	var order model.SubscriptionOrder
+	require.NoError(t, model.DB.First(&order, "trade_no = ?", tradeNo).Error)
+	require.NoError(t, model.DB.Create(&model.WalletLedgerEntry{
+		UserId:      contract.UserId,
+		EntryKey:    renewalKey,
+		QuotaDelta:  -700,
+		MoneyAmount: plan.PriceAmount,
+		EntryType:   model.WalletLedgerEntryTypePrepaidDebit,
+		OrderId:     order.Id,
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).
+		Where("contract_id = ? AND current_slot = ?", contract.Id, 1).
+		Updates(map[string]interface{}{
+			"current_slot": nil,
+			"status":       model.SubscriptionEntitlementStatusHistorical,
+			"end_reason":   model.SubscriptionEntitlementEndReasonRenewed,
+		}).Error)
+	currentSlot := 1
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		UserId:            contract.UserId,
+		PlanId:            plan.Id,
+		ContractId:        contract.Id,
+		ProviderBindingId: 0,
+		GrantKey:          &renewalKey,
+		CurrentSlot:       &currentSlot,
+		AmountTotal:       plan.TotalAmount,
+		MediaCreditsTotal: plan.MediaCreditsMonthly,
+		Window5hAmount:    common.GetPointer(plan.Window5hAmount),
+		WindowWeekAmount:  common.GetPointer(plan.WindowWeekAmount),
+		StartTime:         periodStart,
+		EndTime:           periodEnd,
+		AccessEndTime:     periodEnd,
+		Status:            model.SubscriptionEntitlementStatusActive,
+		Source:            model.PaymentMethodBalance,
+		PaymentMode:       model.SubscriptionPaymentModePrepaid,
+		UpgradeGroup:      plan.UpgradeGroup,
+	}).Error)
+	var entitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&entitlement, "grant_key = ?", renewalKey).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+		"current_period_start":   periodStart,
+		"current_period_end":     periodEnd,
+		"current_entitlement_id": entitlement.Id,
+		"current_plan_id":        plan.Id,
+		"payment_mode":           model.SubscriptionPaymentModePrepaid,
+	}).Error)
+	return attempt
 }

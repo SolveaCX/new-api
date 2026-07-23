@@ -428,7 +428,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 		if stripeInvoiceSubscriptionID(invoice) != upgradeReplaySubscriptionID {
 			return nil, errors.New("Stripe upgrade invoice subscription mismatch")
 		}
-		if invoice.Paid {
+		if stripeInvoiceIsPaid(invoice) {
 			if _, err := ReconcilePaidInvoice(context.Background(), upgradeReplayInvoiceID); err != nil {
 				return nil, err
 			}

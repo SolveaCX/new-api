@@ -13,10 +13,10 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/shopspring/decimal"
-	"github.com/stripe/stripe-go/v81"
-	"github.com/stripe/stripe-go/v81/checkout/session"
-	stripeinvoice "github.com/stripe/stripe-go/v81/invoice"
-	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
+	"github.com/stripe/stripe-go/v86"
+	"github.com/stripe/stripe-go/v86/checkout/session"
+	stripeinvoice "github.com/stripe/stripe-go/v86/invoice"
+	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
 	"gorm.io/gorm"
 )
 
@@ -85,8 +85,8 @@ func getStripeInvoiceForReconcile(ctx context.Context, invoiceID string) (*strip
 	}
 	stripe.Key = setting.StripeApiSecret
 	params := &stripe.InvoiceParams{}
-	params.AddExpand("lines.data.price")
-	params.AddExpand("subscription")
+	params.AddExpand("lines.data.pricing.price_details.price")
+	params.AddExpand("parent.subscription_details.subscription")
 	params.AddExpand("customer")
 	return stripeinvoice.Get(strings.TrimSpace(invoiceID), params)
 }
@@ -205,7 +205,7 @@ func ReconcilePaidInvoice(ctx context.Context, invoiceID string) (*PaidInvoiceRe
 	if inv == nil || strings.TrimSpace(inv.ID) == "" {
 		return nil, errors.New("Stripe invoice is missing")
 	}
-	if !inv.Paid || inv.Status != stripe.InvoiceStatusPaid {
+	if !stripeInvoiceIsPaid(inv) {
 		return nil, errors.New("Stripe invoice is not paid")
 	}
 	subscriptionID := stripeInvoiceSubscriptionID(inv)
@@ -345,7 +345,7 @@ func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
 	if inv == nil || strings.TrimSpace(inv.ID) == "" {
 		return errors.New("Stripe invoice is missing")
 	}
-	if inv.Paid || inv.Status == stripe.InvoiceStatusPaid {
+	if stripeInvoiceIsPaid(inv) {
 		_, err := ReconcilePaidInvoice(ctx, invoiceID)
 		return err
 	}
@@ -580,11 +580,38 @@ func stripeInvoiceAmountForValidation(inv *stripe.Invoice) int64 {
 	return inv.Total
 }
 
+func stripeInvoiceIsPaid(inv *stripe.Invoice) bool {
+	if inv == nil {
+		return false
+	}
+	return inv.Status == stripe.InvoiceStatusPaid || inv.AmountPaid > 0
+}
+
 func stripeInvoiceSubscriptionID(inv *stripe.Invoice) string {
-	if inv == nil || inv.Subscription == nil {
+	if inv == nil {
 		return ""
 	}
-	return strings.TrimSpace(inv.Subscription.ID)
+	if inv.Parent != nil && inv.Parent.SubscriptionDetails != nil && inv.Parent.SubscriptionDetails.Subscription != nil {
+		if id := strings.TrimSpace(inv.Parent.SubscriptionDetails.Subscription.ID); id != "" {
+			return id
+		}
+	}
+	if inv.Lines != nil {
+		for _, line := range inv.Lines.Data {
+			if line == nil {
+				continue
+			}
+			if line.Subscription != nil && strings.TrimSpace(line.Subscription.ID) != "" {
+				return strings.TrimSpace(line.Subscription.ID)
+			}
+			if line.Parent != nil && line.Parent.SubscriptionItemDetails != nil {
+				if id := strings.TrimSpace(line.Parent.SubscriptionItemDetails.Subscription); id != "" {
+					return id
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func stripeCustomerID(customer *stripe.Customer) string {
@@ -613,8 +640,8 @@ func stripeInvoiceFirstPriceID(inv *stripe.Invoice) string {
 		return ""
 	}
 	for _, line := range inv.Lines.Data {
-		if line != nil && line.Price != nil && strings.TrimSpace(line.Price.ID) != "" {
-			return strings.TrimSpace(line.Price.ID)
+		if line != nil && line.Pricing != nil && line.Pricing.PriceDetails != nil && line.Pricing.PriceDetails.Price != nil && strings.TrimSpace(line.Pricing.PriceDetails.Price.ID) != "" {
+			return strings.TrimSpace(line.Pricing.PriceDetails.Price.ID)
 		}
 	}
 	return ""
@@ -628,11 +655,23 @@ func stripeInvoicePeriod(inv *stripe.Invoice, sub *stripe.Subscription) (int64, 
 			}
 		}
 	}
-	if sub != nil && sub.CurrentPeriodStart > 0 && sub.CurrentPeriodEnd > sub.CurrentPeriodStart {
-		return sub.CurrentPeriodStart, sub.CurrentPeriodEnd
+	if start, end := stripeSubscriptionCurrentPeriod(sub); start > 0 && end > start {
+		return start, end
 	}
 	now := common.GetTimestamp()
 	return now, now + int64((30 * 24 * time.Hour).Seconds())
+}
+
+func stripeSubscriptionCurrentPeriod(sub *stripe.Subscription) (int64, int64) {
+	if sub == nil || sub.Items == nil {
+		return 0, 0
+	}
+	for _, item := range sub.Items.Data {
+		if item != nil && item.CurrentPeriodStart > 0 && item.CurrentPeriodEnd > item.CurrentPeriodStart {
+			return item.CurrentPeriodStart, item.CurrentPeriodEnd
+		}
+	}
+	return 0, 0
 }
 
 func firstNonEmptyString(values ...string) string {
@@ -1266,6 +1305,11 @@ func CompleteOneTimeStripeSubscriptionPurchase(ctx context.Context, tradeNo stri
 		}
 		return nil, err
 	}
+	if result.Order != nil {
+		if err := model.SyncSubscriptionOrderTopUpHistory(tradeNo); err != nil {
+			return nil, err
+		}
+	}
 	if result.Order != nil && result.Order.Status == common.TopUpStatusSuccess {
 		if err := model.TryGrantInviteSubscriptionRewardAfterOrderCompleted(tradeNo); err != nil {
 			common.SysError(fmt.Sprintf("invite subscription reward grant failed for one-time order %s: %v", tradeNo, err))
@@ -1356,7 +1400,8 @@ func TerminatePendingStripePurchase(ctx context.Context, tradeNo string, intentS
 	if intentStatus == model.SubscriptionChangeIntentStatusExpired {
 		orderStatus = common.TopUpStatusExpired
 	}
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	shouldSyncTopUpHistory := false
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var order model.SubscriptionOrder
 		if err := subscriptionCommandLock(tx).Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1367,6 +1412,7 @@ func TerminatePendingStripePurchase(ctx context.Context, tradeNo string, intentS
 		if order.PaymentProvider != model.PaymentProviderStripe {
 			return nil
 		}
+		shouldSyncTopUpHistory = true
 		if order.Status == common.TopUpStatusPending {
 			if err := tx.Model(&order).Updates(map[string]interface{}{
 				"status":        orderStatus,
@@ -1402,6 +1448,10 @@ func TerminatePendingStripePurchase(ctx context.Context, tradeNo string, intentS
 				"updated_at":              common.GetTimestamp(),
 			}).Error
 	})
+	if err != nil || !shouldSyncTopUpHistory {
+		return err
+	}
+	return model.SyncSubscriptionOrderTopUpHistory(tradeNo)
 }
 
 func parseChangeIntentIDFromPayload(payload string) int64 {

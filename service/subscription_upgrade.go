@@ -9,9 +9,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/stripe/stripe-go/v81"
-	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
-	stripeschedule "github.com/stripe/stripe-go/v81/subscriptionschedule"
+	"github.com/stripe/stripe-go/v86"
+	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
+	stripeschedule "github.com/stripe/stripe-go/v86/subscriptionschedule"
 	"gorm.io/gorm"
 )
 
@@ -244,7 +244,7 @@ func stripeSubscriptionUpgradeResultFromSubscription(sub *stripe.Subscription, p
 	if sub != nil && sub.LatestInvoice != nil {
 		result.ProviderInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
 		result.HostedInvoiceURL = strings.TrimSpace(sub.LatestInvoice.HostedInvoiceURL)
-		if sub.LatestInvoice.Paid && sub.LatestInvoice.Status == stripe.InvoiceStatusPaid {
+		if stripeInvoiceIsPaid(sub.LatestInvoice) {
 			result.Status = model.SubscriptionChangeIntentStatusSyncing
 		} else {
 			result.Status = model.SubscriptionChangeIntentStatusAwaitingPayment

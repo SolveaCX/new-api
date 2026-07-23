@@ -755,6 +755,7 @@ export function Wallet(props: WalletProps) {
                   scrollAreaClassName='max-h-none pr-0 sm:pr-0'
                   onAvailabilityChange={handleRechargeHistoryAvailability}
                   onResumeStripeCheckout={handleResumeStripeCheckout}
+                  onRefundSuccess={fetchUser}
                 />
               </div>
             </TitledCard>

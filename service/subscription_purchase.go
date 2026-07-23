@@ -31,11 +31,13 @@ type PurchaseSubscriptionCommand struct {
 }
 
 type PurchaseSubscriptionResult struct {
-	Status      string
-	Contract    *model.UserSubscriptionContract
-	Intent      *model.SubscriptionChangeIntent
-	Order       *model.SubscriptionOrder
-	Entitlement *model.UserSubscription
+	Status           string
+	Contract         *model.UserSubscriptionContract
+	Intent           *model.SubscriptionChangeIntent
+	CheckoutURL      string
+	HostedInvoiceURL string
+	Order            *model.SubscriptionOrder
+	Entitlement      *model.UserSubscription
 }
 
 type SubscriptionPurchaseQuote struct {
@@ -146,9 +148,11 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 			return nil, err
 		}
 		return &PurchaseSubscriptionResult{
-			Status:   change.Status,
-			Contract: change.Contract,
-			Intent:   change.Intent,
+			Status:           change.Status,
+			Contract:         change.Contract,
+			Intent:           change.Intent,
+			CheckoutURL:      change.CheckoutURL,
+			HostedInvoiceURL: change.HostedInvoiceURL,
 		}, nil
 	}
 

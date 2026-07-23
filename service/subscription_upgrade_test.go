@@ -13,7 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func insertStripeUpgradePlan(t *testing.T, id int, rank int, price float64, amount int64, priceID string) model.SubscriptionPlan {
@@ -460,7 +460,7 @@ func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
 	invoice.AmountPaid = 2500
 	invoice.AmountDue = 2500
 	invoice.Total = 2500
-	invoice.Lines.Data[0].Price = &stripe.Price{ID: "price_target_paid"}
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_paid")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
 	subscription := stripeSubscriptionFixture("sub_upgrade", map[string]string{
 		"trade_no":         "",
@@ -473,8 +473,7 @@ func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = "si_current_item"
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_paid"}
-	subscription.CurrentPeriodStart = 3000
-	subscription.CurrentPeriodEnd = 4000
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	subscription.CancelAtPeriodEnd = true
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
@@ -582,7 +581,7 @@ func TestStripeUpgradePaidInvoiceUsesFrozenUpgradeOrderPlanSnapshotAfterPlanEdit
 	invoice.AmountPaid = 2500
 	invoice.AmountDue = 2500
 	invoice.Total = 2500
-	invoice.Lines.Data[0].Price = &stripe.Price{ID: "price_target_snapshot"}
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_snapshot")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
 	subscription := stripeSubscriptionFixture("sub_upgrade", map[string]string{
 		"user_id":          "7138",
@@ -594,8 +593,7 @@ func TestStripeUpgradePaidInvoiceUsesFrozenUpgradeOrderPlanSnapshotAfterPlanEdit
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = "si_current_item"
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_snapshot"}
-	subscription.CurrentPeriodStart = 3000
-	subscription.CurrentPeriodEnd = 4000
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 

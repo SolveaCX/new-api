@@ -11,7 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func TestStripeDowngradeLatestSelectionSupersedesPreviousAndKeepsOnlyLatestPending(t *testing.T) {
@@ -354,14 +354,13 @@ func TestStripeDowngradePaidTargetInvoiceSwitchesPlanAndClearsPending(t *testing
 	invoice.AmountDue = 1000
 	invoice.Total = 1000
 	invoice.Customer = &stripe.Customer{ID: "cus_upgrade"}
-	invoice.Lines.Data[0].Price = &stripe.Price{ID: "price_target_down_paid"}
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_down_paid")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
 	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = binding.ProviderSubscriptionItemId
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_down_paid"}
-	subscription.CurrentPeriodStart = oldEntitlement.EndTime
-	subscription.CurrentPeriodEnd = oldEntitlement.EndTime + 2592000
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime + 2592000)
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 
@@ -409,20 +408,19 @@ func TestStripeDowngradeFailedTargetInvoiceKeepsCurrentPlanAndPending(t *testing
 	require.NoError(t, model.DB.Create(intent).Error)
 	require.NoError(t, model.DB.Model(contract).Updates(map[string]interface{}{"latest_change_intent_id": intent.Id, "pending_plan_id": targetPlan.Id, "pending_effective_at": oldEntitlement.EndTime}).Error)
 	invoice := stripeInvoiceFixture("in_down_failed", binding.ProviderSubscriptionId)
-	invoice.Paid = false
+	markStripeInvoiceUnpaid(invoice)
 	invoice.Status = stripe.InvoiceStatusOpen
 	invoice.AmountPaid = 0
 	invoice.AmountDue = 1000
 	invoice.Total = 1000
 	invoice.Customer = &stripe.Customer{ID: "cus_upgrade"}
-	invoice.Lines.Data[0].Price = &stripe.Price{ID: "price_target_down_failed"}
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_down_failed")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
 	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = binding.ProviderSubscriptionItemId
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_down_failed"}
-	subscription.CurrentPeriodStart = oldEntitlement.EndTime
-	subscription.CurrentPeriodEnd = oldEntitlement.EndTime + 2592000
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime + 2592000)
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 

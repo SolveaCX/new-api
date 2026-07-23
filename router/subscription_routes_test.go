@@ -66,10 +66,12 @@ func TestSubscriptionSelfLifecycleRoutesUseLocalContractHandlers(t *testing.T) {
 	}
 
 	expectedHandlers := map[string]string{
-		"GET /api/subscription/self":              "controller.GetSubscriptionSelf",
-		"POST /api/subscription/self/quote":       "controller.QuoteSubscriptionSelfPurchase",
-		"POST /api/subscription/self/purchase":    "controller.PurchaseSubscriptionSelf",
-		"POST /api/subscription/self/change-plan": "controller.ChangeSubscriptionPlan",
+		"GET /api/subscription/self":                                           "controller.GetSubscriptionSelf",
+		"GET /api/subscription/self/refundable-terms":                          "controller.GetRefundableSubscriptionTerms",
+		"POST /api/subscription/self/refundable-terms/:term_segment_id/refund": "controller.RefundSubscriptionTerm",
+		"POST /api/subscription/self/quote":                                    "controller.QuoteSubscriptionSelfPurchase",
+		"POST /api/subscription/self/purchase":                                 "controller.PurchaseSubscriptionSelf",
+		"POST /api/subscription/self/change-plan":                              "controller.ChangeSubscriptionPlan",
 	}
 	for routeKey, expectedHandler := range expectedHandlers {
 		handler, ok := routes[routeKey]

@@ -16,9 +16,9 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
-	"github.com/stripe/stripe-go/v81"
-	"github.com/stripe/stripe-go/v81/checkout/session"
-	stripecoupon "github.com/stripe/stripe-go/v81/coupon"
+	"github.com/stripe/stripe-go/v86"
+	"github.com/stripe/stripe-go/v86/checkout/session"
+	stripecoupon "github.com/stripe/stripe-go/v86/coupon"
 	"github.com/thanhpk/randstr"
 	"gorm.io/gorm"
 )
@@ -36,6 +36,9 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	var req SubscriptionStripePayRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
 		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if rejectSubscriptionPurchasePendingMigration(c) {
 		return
 	}
 
@@ -272,6 +275,10 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 	if !isOneTimePlanStripeMethod(method) {
 		return nil, errors.New("unsupported one-time Stripe payment method")
 	}
+	stripeMethodType, err := stripePaymentMethodTypeForOneTimePlan(method)
+	if err != nil {
+		return nil, err
+	}
 	productName, productDescription := oneTimePlanProductText(order)
 	metadata := oneTimePlanMetadata(order, method)
 	params := &stripe.CheckoutSessionParams{
@@ -280,7 +287,7 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 		CancelURL:         stripe.String(consolePaymentReturnPath("/console/topup")),
 		Mode:              stripe.String(string(stripe.CheckoutSessionModePayment)),
 		PaymentMethodTypes: []*string{
-			stripe.String(method),
+			stripe.String(string(stripeMethodType)),
 		},
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
@@ -343,6 +350,19 @@ func validateOneTimePlanMethodCurrency(method string, currency string) error {
 		return errors.New("unsupported one-time Stripe payment method")
 	}
 	return nil
+}
+
+func stripePaymentMethodTypeForOneTimePlan(method string) (stripe.PaymentMethodType, error) {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case service.SubscriptionPaymentChoiceAlipay:
+		return stripe.PaymentMethodTypeAlipay, nil
+	case service.SubscriptionPaymentChoicePix:
+		return stripe.PaymentMethodTypePix, nil
+	case service.SubscriptionPaymentChoiceUPI:
+		return stripe.PaymentMethodTypeUpi, nil
+	default:
+		return "", errors.New("unsupported one-time Stripe payment method")
+	}
 }
 
 func isOneTimePlanStripeMethod(method string) bool {

@@ -23,16 +23,17 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
-	"github.com/stripe/stripe-go/v81"
-	stripecharge "github.com/stripe/stripe-go/v81/charge"
-	"github.com/stripe/stripe-go/v81/checkout/session"
-	stripecustomer "github.com/stripe/stripe-go/v81/customer"
-	stripeinvoice "github.com/stripe/stripe-go/v81/invoice"
-	stripeinvoiceitem "github.com/stripe/stripe-go/v81/invoiceitem"
-	stripeprice "github.com/stripe/stripe-go/v81/price"
-	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
-	stripetaxid "github.com/stripe/stripe-go/v81/taxid"
-	"github.com/stripe/stripe-go/v81/webhook"
+	"github.com/stripe/stripe-go/v86"
+	stripecharge "github.com/stripe/stripe-go/v86/charge"
+	"github.com/stripe/stripe-go/v86/checkout/session"
+	stripecustomer "github.com/stripe/stripe-go/v86/customer"
+	stripeinvoice "github.com/stripe/stripe-go/v86/invoice"
+	stripeinvoiceitem "github.com/stripe/stripe-go/v86/invoiceitem"
+	stripeinvoicepayment "github.com/stripe/stripe-go/v86/invoicepayment"
+	stripeprice "github.com/stripe/stripe-go/v86/price"
+	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
+	stripetaxid "github.com/stripe/stripe-go/v86/taxid"
+	"github.com/stripe/stripe-go/v86/webhook"
 	"github.com/thanhpk/randstr"
 	"gorm.io/gorm"
 )
@@ -1476,6 +1477,7 @@ func stripeSubscriptionSnapshotFromSubscription(event stripe.Event, sub *stripe.
 	if sub.LatestInvoice != nil {
 		latestInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
 	}
+	periodStart, periodEnd := stripeSubscriptionCurrentPeriod(sub)
 	return model.ProviderSubscriptionSnapshot{
 		ProviderSubscriptionId:     strings.TrimSpace(sub.ID),
 		ProviderSubscriptionItemId: stripeSubscriptionFirstItemID(sub),
@@ -1486,8 +1488,8 @@ func stripeSubscriptionSnapshotFromSubscription(event stripe.Event, sub *stripe.
 		ProviderLatestInvoiceId:    latestInvoiceID,
 		ProviderStatus:             string(sub.Status),
 		CancelAtPeriodEnd:          sub.CancelAtPeriodEnd,
-		CurrentPeriodStart:         sub.CurrentPeriodStart,
-		CurrentPeriodEnd:           sub.CurrentPeriodEnd,
+		CurrentPeriodStart:         periodStart,
+		CurrentPeriodEnd:           periodEnd,
 		CanceledAt:                 sub.CanceledAt,
 		EndedAt:                    sub.EndedAt,
 		Livemode:                   sub.Livemode,
@@ -1506,6 +1508,18 @@ func stripeSubscriptionFirstItemID(sub *stripe.Subscription) string {
 		return ""
 	}
 	return strings.TrimSpace(sub.Items.Data[0].ID)
+}
+
+func stripeSubscriptionCurrentPeriod(sub *stripe.Subscription) (int64, int64) {
+	if sub == nil || sub.Items == nil {
+		return 0, 0
+	}
+	for _, item := range sub.Items.Data {
+		if item != nil && item.CurrentPeriodStart > 0 && item.CurrentPeriodEnd > item.CurrentPeriodStart {
+			return item.CurrentPeriodStart, item.CurrentPeriodEnd
+		}
+	}
+	return 0, 0
 }
 
 func stripeSubscriptionScheduleID(sub *stripe.Subscription) string {
@@ -1546,6 +1560,7 @@ func stripeSubscriptionSnapshotFromStripeSubscription(sub *stripe.Subscription) 
 	if sub.LatestInvoice != nil {
 		latestInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
 	}
+	periodStart, periodEnd := stripeSubscriptionCurrentPeriod(sub)
 	return model.ProviderSubscriptionSnapshot{
 		ProviderSubscriptionId:     strings.TrimSpace(sub.ID),
 		ProviderSubscriptionItemId: stripeSubscriptionFirstItemID(sub),
@@ -1556,8 +1571,8 @@ func stripeSubscriptionSnapshotFromStripeSubscription(sub *stripe.Subscription) 
 		ProviderLatestInvoiceId:    latestInvoiceID,
 		ProviderStatus:             string(sub.Status),
 		CancelAtPeriodEnd:          sub.CancelAtPeriodEnd,
-		CurrentPeriodStart:         sub.CurrentPeriodStart,
-		CurrentPeriodEnd:           sub.CurrentPeriodEnd,
+		CurrentPeriodStart:         periodStart,
+		CurrentPeriodEnd:           periodEnd,
 		CanceledAt:                 sub.CanceledAt,
 		EndedAt:                    sub.EndedAt,
 		Livemode:                   sub.Livemode,
@@ -1565,20 +1580,30 @@ func stripeSubscriptionSnapshotFromStripeSubscription(sub *stripe.Subscription) 
 }
 
 func stripeSubscriptionSnapshotFromDeletedEvent(event stripe.Event) model.ProviderSubscriptionSnapshot {
+	periodStart, periodEnd := stripeSubscriptionDeletedCurrentPeriod(event)
 	return model.ProviderSubscriptionSnapshot{
 		ProviderSubscriptionId: strings.TrimSpace(stripeEventObjectValue(event, "id")),
 		ProviderCustomerId:     strings.TrimSpace(stripeEventObjectValue(event, "customer")),
 		ProviderStatus:         strings.TrimSpace(stripeEventObjectValue(event, "status")),
-		CurrentPeriodStart:     stripeEventUnix(event, "current_period_start"),
-		CurrentPeriodEnd:       stripeEventUnix(event, "current_period_end"),
+		CurrentPeriodStart:     periodStart,
+		CurrentPeriodEnd:       periodEnd,
 		CanceledAt:             stripeEventUnix(event, "canceled_at"),
 		EndedAt:                stripeEventUnix(event, "ended_at"),
 		Livemode:               event.Livemode,
 	}
 }
 
-func stripeEventUnix(event stripe.Event, key string) int64 {
-	raw := strings.TrimSpace(stripeEventObjectValue(event, key))
+func stripeSubscriptionDeletedCurrentPeriod(event stripe.Event) (int64, int64) {
+	itemStart := stripeEventUnix(event, "items", "data", "0", "current_period_start")
+	itemEnd := stripeEventUnix(event, "items", "data", "0", "current_period_end")
+	if itemStart > 0 && itemEnd > itemStart {
+		return itemStart, itemEnd
+	}
+	return stripeEventUnix(event, "current_period_start"), stripeEventUnix(event, "current_period_end")
+}
+
+func stripeEventUnix(event stripe.Event, keys ...string) int64 {
+	raw := strings.TrimSpace(stripeEventObjectValue(event, keys...))
 	if raw == "" {
 		return 0
 	}
@@ -1945,7 +1970,7 @@ func chargeReversed(ctx context.Context, event stripe.Event, reason string, call
 	if referenceId == "" && chargeId != "" {
 		subscriptionId, err := stripeSubscriptionIdForCharge(chargeId)
 		if err != nil {
-			logger.LogError(ctx, fmt.Sprintf("Stripe 回查 charge→invoice→subscription 失败 charge=%s error=%q", chargeId, err.Error()))
+			logger.LogError(ctx, fmt.Sprintf("Stripe 回查 charge→invoice_payment→subscription 失败 charge=%s error=%q", chargeId, err.Error()))
 			return classifyStripeLookupError(err)
 		}
 		if subscriptionId != "" {
@@ -1997,24 +2022,64 @@ func classifyStripeLookupError(err error) error {
 	return err
 }
 
-// stripeSubscriptionIdForCharge resolves charge → invoice → subscription.
+// stripeSubscriptionIdForCharge resolves charge → payment_intent → invoice_payment → subscription.
 // Returns "" (no error) when the charge is not tied to a subscription invoice.
 func stripeSubscriptionIdForCharge(chargeId string) (string, error) {
 	ch, err := stripecharge.Get(chargeId, nil)
 	if err != nil {
 		return "", err
 	}
-	if ch == nil || ch.Invoice == nil || ch.Invoice.ID == "" {
+	if ch == nil || ch.PaymentIntent == nil || strings.TrimSpace(ch.PaymentIntent.ID) == "" {
 		return "", nil
 	}
-	inv, err := stripeinvoice.Get(ch.Invoice.ID, nil)
-	if err != nil {
+	params := &stripe.InvoicePaymentListParams{
+		Payment: &stripe.InvoicePaymentListPaymentParams{
+			PaymentIntent: stripe.String(strings.TrimSpace(ch.PaymentIntent.ID)),
+			Type:          stripe.String(string(stripe.InvoicePaymentPaymentTypePaymentIntent)),
+		},
+	}
+	params.Limit = stripe.Int64(2)
+	params.AddExpand("data.invoice.parent.subscription_details.subscription")
+	iter := stripeinvoicepayment.List(params)
+	subscriptionID := ""
+	for iter.Next() {
+		invoicePayment := iter.InvoicePayment()
+		if invoicePayment == nil {
+			continue
+		}
+		currentID, err := stripeSubscriptionIdFromInvoice(invoicePayment.Invoice)
+		if err != nil {
+			return "", err
+		}
+		if currentID == "" {
+			continue
+		}
+		if subscriptionID != "" && subscriptionID != currentID {
+			return "", fmt.Errorf("Stripe charge maps to multiple subscription invoices")
+		}
+		subscriptionID = currentID
+	}
+	if err := iter.Err(); err != nil {
 		return "", err
 	}
-	if inv == nil || inv.Subscription == nil {
+	return subscriptionID, nil
+}
+
+func stripeSubscriptionIdFromInvoice(inv *stripe.Invoice) (string, error) {
+	if inv == nil || inv.Parent == nil || inv.Parent.SubscriptionDetails == nil || inv.Parent.SubscriptionDetails.Subscription == nil {
+		if inv == nil || strings.TrimSpace(inv.ID) == "" {
+			return "", nil
+		}
+		fetched, err := stripeinvoice.Get(strings.TrimSpace(inv.ID), nil)
+		if err != nil {
+			return "", err
+		}
+		inv = fetched
+	}
+	if inv == nil || inv.Parent == nil || inv.Parent.SubscriptionDetails == nil || inv.Parent.SubscriptionDetails.Subscription == nil {
 		return "", nil
 	}
-	return inv.Subscription.ID, nil
+	return strings.TrimSpace(inv.Parent.SubscriptionDetails.Subscription.ID), nil
 }
 
 func sessionExpired(ctx context.Context, event stripe.Event) error {
@@ -2461,7 +2526,7 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 		// Embedded sessions reject success_url/cancel_url. return_url is still required
 		// because redirect-based payment methods (Alipay, WeChat Pay, Pix...) leave the
 		// page and need somewhere to land; the success URL is the natural target.
-		params.UIMode = stripe.String(string(stripe.CheckoutSessionUIModeEmbedded))
+		params.UIMode = stripe.String(string(stripe.CheckoutSessionUIModeEmbeddedPage))
 		// Carry the Stripe session id and our trade_no back so the frontend can
 		// locate this Checkout Session / order and recover status when a
 		// redirect-based method returns to the page. {CHECKOUT_SESSION_ID} is

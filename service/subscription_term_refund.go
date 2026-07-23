@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -11,6 +12,8 @@ import (
 
 const subscriptionTermStatusCompleted = "completed"
 
+var ErrInvalidSubscriptionTermSegmentID = errors.New("invalid term segment id")
+
 type SubscriptionTermRefundResult struct {
 	TermSegmentID int64
 	RefundedQuota int64
@@ -18,12 +21,138 @@ type SubscriptionTermRefundResult struct {
 	RefundKey     string
 }
 
+type RefundableSubscriptionTermItem struct {
+	TermSegmentID int64   `json:"term_segment_id"`
+	OrderID       int64   `json:"order_id"`
+	PlanID        int64   `json:"plan_id"`
+	PlanTitle     string  `json:"plan_title"`
+	StartTime     int64   `json:"start_time"`
+	EndTime       int64   `json:"end_time"`
+	RemainingDays int64   `json:"remaining_days"`
+	RefundMoney   float64 `json:"refund_money"`
+	RefundQuota   int64   `json:"refund_quota"`
+	Status        string  `json:"status"`
+}
+
+type RefundableSubscriptionTermsResult struct {
+	Items            []RefundableSubscriptionTermItem `json:"items"`
+	TotalRefundMoney float64                          `json:"total_refund_money"`
+	TotalRefundQuota int64                            `json:"total_refund_quota"`
+}
+
+func ListRefundableSubscriptionTerms(userID int) (*RefundableSubscriptionTermsResult, error) {
+	if userID <= 0 {
+		return nil, errors.New("invalid user id")
+	}
+
+	var orders []model.SubscriptionOrder
+	if err := model.DB.
+		Where("user_id = ?", userID).
+		Where("status = ?", common.TopUpStatusSuccess).
+		Where("NOT (payment_provider = ? AND payment_method = ?)", model.PaymentProviderStripe, model.PaymentMethodStripe).
+		Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	if len(orders) == 0 {
+		return &RefundableSubscriptionTermsResult{Items: []RefundableSubscriptionTermItem{}}, nil
+	}
+	ordersByID := make(map[int]model.SubscriptionOrder, len(orders))
+	orderIDs := make([]int, 0, len(orders))
+	planIDs := make([]int, 0, len(orders))
+	seenPlans := map[int]struct{}{}
+	for _, order := range orders {
+		ordersByID[order.Id] = order
+		orderIDs = append(orderIDs, order.Id)
+		if _, ok := seenPlans[order.PlanId]; !ok {
+			seenPlans[order.PlanId] = struct{}{}
+			planIDs = append(planIDs, order.PlanId)
+		}
+	}
+
+	var plans []model.SubscriptionPlan
+	if len(planIDs) > 0 {
+		if err := model.DB.Where("id IN ?", planIDs).Find(&plans).Error; err != nil {
+			return nil, err
+		}
+	}
+	plansByID := make(map[int]model.SubscriptionPlan, len(plans))
+	for _, plan := range plans {
+		plansByID[plan.Id] = plan
+	}
+
+	now := common.GetTimestamp()
+	var terms []model.SubscriptionTermSegment
+	if err := model.DB.
+		Where("order_id IN ?", orderIDs).
+		Where("status = ?", model.SubscriptionTermStatusNotStarted).
+		Where("start_time > ?", now).
+		Order("start_time asc, id asc").
+		Find(&terms).Error; err != nil {
+		return nil, err
+	}
+
+	result := &RefundableSubscriptionTermsResult{Items: make([]RefundableSubscriptionTermItem, 0, len(terms))}
+	for _, term := range terms {
+		order, ok := ordersByID[term.OrderId]
+		if !ok {
+			continue
+		}
+		plan := plansByID[term.PlanId]
+		refundQuota, err := subscriptionMoneyQuota(term.AllocatedMoney)
+		if err != nil {
+			return nil, err
+		}
+		item := RefundableSubscriptionTermItem{
+			TermSegmentID: term.Id,
+			OrderID:       int64(order.Id),
+			PlanID:        int64(term.PlanId),
+			PlanTitle:     plan.Title,
+			StartTime:     term.StartTime,
+			EndTime:       term.EndTime,
+			RemainingDays: refundableTermRemainingDays(now, term.StartTime, term.EndTime),
+			RefundMoney:   term.AllocatedMoney,
+			RefundQuota:   int64(refundQuota),
+			Status:        term.Status,
+		}
+		result.Items = append(result.Items, item)
+		result.TotalRefundMoney += item.RefundMoney
+		result.TotalRefundQuota += item.RefundQuota
+	}
+	return result, nil
+}
+
+func refundableTermRemainingDays(now int64, startTime int64, endTime int64) int64 {
+	if endTime <= startTime || endTime <= now {
+		return 0
+	}
+	remainingFrom := now
+	if startTime > now {
+		remainingFrom = startTime
+	}
+	fullDays := ceilSecondsToDays(endTime - startTime)
+	remainingDays := ceilSecondsToDays(endTime - remainingFrom)
+	if remainingDays < 0 {
+		return 0
+	}
+	if fullDays > 0 && remainingDays > fullDays {
+		return fullDays
+	}
+	return remainingDays
+}
+
+func ceilSecondsToDays(seconds int64) int64 {
+	if seconds <= 0 {
+		return 0
+	}
+	return int64(math.Ceil(float64(seconds) / 86400))
+}
+
 func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*SubscriptionTermRefundResult, error) {
 	if userID <= 0 {
 		return nil, errors.New("invalid user id")
 	}
 	if termSegmentID <= 0 {
-		return nil, errors.New("invalid term segment id")
+		return nil, ErrInvalidSubscriptionTermSegmentID
 	}
 
 	var result *SubscriptionTermRefundResult
@@ -38,6 +167,9 @@ func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*Subscripti
 			Where("id = ? AND user_id = ?", term.OrderId, userID).
 			First(&order).Error; err != nil {
 			return err
+		}
+		if order.Status != common.TopUpStatusSuccess {
+			return errors.New("subscription order must be successful")
 		}
 		if order.PaymentProvider == model.PaymentProviderStripe && order.PaymentMethod == model.PaymentMethodStripe {
 			return errors.New("subscription term refund only supports one-time terms")
@@ -68,13 +200,17 @@ func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*Subscripti
 		if term.Status != model.SubscriptionTermStatusNotStarted {
 			return fmt.Errorf("subscription term must be not_started, got %s", term.Status)
 		}
+		now := common.GetTimestamp()
+		if term.StartTime <= now {
+			return errors.New("subscription term has already started")
+		}
 		refundQuota, err := subscriptionMoneyQuota(term.AllocatedMoney)
 		if err != nil {
 			return err
 		}
 		refundKey := fmt.Sprintf("subscription:term:refund:%d", term.Id)
 		termUpdate := tx.Model(&model.SubscriptionTermSegment{}).
-			Where("id = ? AND status = ?", term.Id, model.SubscriptionTermStatusNotStarted).
+			Where("id = ? AND status = ? AND start_time > ?", term.Id, model.SubscriptionTermStatusNotStarted, now).
 			Updates(map[string]interface{}{
 				"status":     model.SubscriptionTermStatusRefunded,
 				"refund_key": refundKey,

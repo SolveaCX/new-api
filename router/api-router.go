@@ -185,7 +185,9 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			subscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
+			subscriptionRoute.GET("/self/refundable-terms", controller.GetRefundableSubscriptionTerms)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
+			subscriptionRoute.POST("/self/refundable-terms/:term_segment_id/refund", middleware.CriticalRateLimit(), controller.RefundSubscriptionTerm)
 			subscriptionRoute.POST("/self/quote", middleware.CriticalRateLimit(), controller.QuoteSubscriptionSelfPurchase)
 			subscriptionRoute.POST("/self/purchase", middleware.CriticalRateLimit(), controller.PurchaseSubscriptionSelf)
 			subscriptionRoute.POST("/self/change-plan", middleware.CriticalRateLimit(), controller.ChangeSubscriptionPlan)

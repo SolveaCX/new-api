@@ -191,7 +191,25 @@ func PurchaseSubscriptionSelf(c *gin.Context) {
 		common.ApiSuccess(c, subscriptionSelfPurchaseResponse(result, checkoutURL))
 		return
 	}
+	if err := syncSubscriptionSelfRecurringCheckoutHistory(result); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, subscriptionSelfPurchaseResponse(result, ""))
+}
+
+func syncSubscriptionSelfRecurringCheckoutHistory(result *service.PurchaseSubscriptionResult) error {
+	if result == nil || result.Status != service.ChangePlanStatusCheckoutRequired || result.Intent == nil ||
+		result.Intent.PaymentMode != model.SubscriptionPaymentModeStripeRecurring {
+		return nil
+	}
+	var order model.SubscriptionOrder
+	if err := model.DB.Where("change_intent_id = ? AND payment_provider = ?", result.Intent.Id, model.PaymentProviderStripe).
+		Order("id desc").
+		First(&order).Error; err != nil {
+		return err
+	}
+	return model.SyncSubscriptionOrderTopUpHistory(order.TradeNo)
 }
 
 func validateSubscriptionSelfPurchaseQuote(req SubscriptionSelfPurchaseRequest, userID int, choice string) (service.SubscriptionPurchaseQuoteTokenClaims, error) {
@@ -237,6 +255,9 @@ func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.Purch
 	}
 	order := result.Order
 	if strings.TrimSpace(order.ProviderSessionURL) != "" {
+		if err := model.SyncSubscriptionOrderTopUpHistory(order.TradeNo); err != nil {
+			return "", err
+		}
 		return strings.TrimSpace(order.ProviderSessionURL), nil
 	}
 	user, err := model.GetUserById(order.UserId, false)
@@ -258,6 +279,9 @@ func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.Purch
 	}
 	order.ProviderSessionId = strings.TrimSpace(checkoutSession.ID)
 	order.ProviderSessionURL = strings.TrimSpace(checkoutSession.URL)
+	if err := model.SyncSubscriptionOrderTopUpHistory(order.TradeNo); err != nil {
+		return "", err
+	}
 	return order.ProviderSessionURL, nil
 }
 
@@ -265,9 +289,14 @@ func subscriptionSelfPurchaseResponse(result *service.PurchaseSubscriptionResult
 	if result == nil {
 		return SubscriptionSelfPurchaseResponse{}
 	}
+	checkoutURL = strings.TrimSpace(checkoutURL)
+	if checkoutURL == "" {
+		checkoutURL = strings.TrimSpace(result.CheckoutURL)
+	}
 	response := SubscriptionSelfPurchaseResponse{
-		Status:      result.Status,
-		CheckoutURL: strings.TrimSpace(checkoutURL),
+		Status:           result.Status,
+		CheckoutURL:      checkoutURL,
+		HostedInvoiceURL: strings.TrimSpace(result.HostedInvoiceURL),
 	}
 	if result.Contract != nil && result.Contract.Id > 0 {
 		response.Contract = subscriptionContractDTO(result.Contract)

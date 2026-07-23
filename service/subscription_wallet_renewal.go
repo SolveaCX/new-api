@@ -34,6 +34,8 @@ type walletRenewalAttempt struct {
 	RequiredQuota   int
 	PriceAmount     float64
 	PaymentCurrency string
+	PlanSnapshot    string
+	GrantInput      model.GrantEntitlementInput
 }
 
 func RunWalletSubscriptionRenewalOnce(limit int) (int, error) {
@@ -114,6 +116,23 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		if err != nil {
 			return err
 		}
+		grantInput := model.GrantEntitlementInput{
+			ContractId:           contract.Id,
+			UserId:               user.Id,
+			PlanId:               plan.Id,
+			ProviderBindingId:    0,
+			GrantKey:             renewalKey,
+			PaymentMode:          model.SubscriptionPaymentModePrepaid,
+			AmountTotal:          plan.TotalAmount,
+			MediaCreditsTotal:    plan.MediaCreditsMonthly,
+			Window5hAmount:       common.GetPointer(plan.Window5hAmount),
+			WindowWeekAmount:     common.GetPointer(plan.WindowWeekAmount),
+			UpgradeGroup:         common.GetPointer(plan.UpgradeGroup),
+			PeriodStart:          periodStart,
+			PeriodEnd:            periodEnd,
+			EndReasonForPrevious: model.SubscriptionEntitlementEndReasonRenewed,
+			Source:               model.PaymentMethodBalance,
+		}
 		attempt = &walletRenewalAttempt{
 			ContractID:      contract.Id,
 			UserID:          user.Id,
@@ -125,6 +144,8 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 			RequiredQuota:   requiredQuota,
 			PriceAmount:     plan.PriceAmount,
 			PaymentCurrency: plan.Currency,
+			PlanSnapshot:    planSnapshot,
+			GrantInput:      grantInput,
 		}
 		order := &model.SubscriptionOrder{
 			UserId:          user.Id,
@@ -173,23 +194,7 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 				return handleExistingWalletRenewalTx(tx, &contract, renewalKey, result, err)
 			}
 		}
-		grant, err := model.RotateCurrentEntitlementTx(tx, model.GrantEntitlementInput{
-			ContractId:           contract.Id,
-			UserId:               user.Id,
-			PlanId:               plan.Id,
-			ProviderBindingId:    0,
-			GrantKey:             renewalKey,
-			PaymentMode:          model.SubscriptionPaymentModePrepaid,
-			AmountTotal:          plan.TotalAmount,
-			MediaCreditsTotal:    plan.MediaCreditsMonthly,
-			Window5hAmount:       common.GetPointer(plan.Window5hAmount),
-			WindowWeekAmount:     common.GetPointer(plan.WindowWeekAmount),
-			UpgradeGroup:         common.GetPointer(plan.UpgradeGroup),
-			PeriodStart:          periodStart,
-			PeriodEnd:            periodEnd,
-			EndReasonForPrevious: model.SubscriptionEntitlementEndReasonRenewed,
-			Source:               model.PaymentMethodBalance,
-		})
+		grant, err := model.RotateCurrentEntitlementTx(tx, grantInput)
 		if err != nil {
 			return handleExistingWalletRenewalTx(tx, &contract, renewalKey, result, err)
 		}
@@ -235,7 +240,8 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 
 func recoverPostgresWalletRenewalDuplicate(attempt walletRenewalAttempt) (*WalletSubscriptionRenewalResult, error) {
 	if attempt.ContractID <= 0 || attempt.UserID <= 0 || attempt.PlanID <= 0 || attempt.PeriodEnd <= attempt.PeriodStart ||
-		strings.TrimSpace(attempt.TradeNo) == "" || strings.TrimSpace(attempt.RenewalKey) == "" || attempt.RequiredQuota < 0 {
+		strings.TrimSpace(attempt.TradeNo) == "" || strings.TrimSpace(attempt.RenewalKey) == "" || attempt.RequiredQuota < 0 ||
+		strings.TrimSpace(attempt.PlanSnapshot) == "" || !walletRenewalAttemptGrantInputMatches(attempt) {
 		return nil, errors.New("wallet renewal duplicate recovery input is invalid")
 	}
 
@@ -257,7 +263,7 @@ func recoverPostgresWalletRenewalDuplicate(attempt walletRenewalAttempt) (*Walle
 			order.Status != common.TopUpStatusSuccess || order.PurchaseMonths != 1 || order.Money != attempt.PriceAmount ||
 			order.UnitPrice != attempt.PriceAmount || order.PaymentCurrency != attempt.PaymentCurrency ||
 			order.RenewalSource != model.SubscriptionRenewalSourceWallet || order.ProviderPayload != expectedPayload ||
-			strings.TrimSpace(order.PlanSnapshot) == "" {
+			order.PlanSnapshot != attempt.PlanSnapshot {
 			return walletRenewalDuplicateFactsError("success order %q is inconsistent", attempt.TradeNo)
 		}
 
@@ -268,10 +274,7 @@ func recoverPostgresWalletRenewalDuplicate(attempt walletRenewalAttempt) (*Walle
 			}
 			return fmt.Errorf("read wallet renewal duplicate entitlement: %w", err)
 		}
-		if entitlement.GrantKey == nil || *entitlement.GrantKey != attempt.RenewalKey ||
-			entitlement.ContractId != attempt.ContractID || entitlement.UserId != attempt.UserID || entitlement.PlanId != attempt.PlanID ||
-			entitlement.PaymentMode != model.SubscriptionPaymentModePrepaid || entitlement.Source != model.PaymentMethodBalance ||
-			entitlement.StartTime != attempt.PeriodStart || entitlement.EndTime != attempt.PeriodEnd ||
+		if !walletRenewalEntitlementMatchesGrantInput(&entitlement, attempt.GrantInput) ||
 			(entitlement.Status != model.SubscriptionEntitlementStatusActive && entitlement.Status != model.SubscriptionEntitlementStatusHistorical) {
 			return walletRenewalDuplicateFactsError("entitlement grant %q is inconsistent", attempt.RenewalKey)
 		}
@@ -303,15 +306,127 @@ func recoverPostgresWalletRenewalDuplicate(attempt walletRenewalAttempt) (*Walle
 		if contract.CurrentPeriodEnd < attempt.PeriodEnd {
 			return walletRenewalDuplicateFactsError("contract %d was not advanced through %d", attempt.ContractID, attempt.PeriodEnd)
 		}
+		if !walletRenewalEntitlementLifecycleMatchesContractPeriod(&entitlement, &contract, attempt) {
+			return walletRenewalDuplicateFactsError("entitlement grant %q is inconsistent", attempt.RenewalKey)
+		}
+
+		var currentEntitlement model.UserSubscription
+		if err := tx.Where("id = ? AND user_id = ? AND contract_id = ?", contract.CurrentEntitlementId, attempt.UserID, attempt.ContractID).
+			First(&currentEntitlement).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return walletRenewalDuplicateFactsError("current entitlement %d is missing", contract.CurrentEntitlementId)
+			}
+			return fmt.Errorf("read wallet renewal duplicate current entitlement: %w", err)
+		}
+		if !walletRenewalContractMatchesRecoveredGrant(&contract, &entitlement, &currentEntitlement, attempt) {
+			return walletRenewalDuplicateFactsError("contract %d is inconsistent", attempt.ContractID)
+		}
 
 		recovered.OrderID = order.Id
 		recovered.EntitlementID = entitlement.Id
 		return nil
-	}, &sql.TxOptions{ReadOnly: true})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	return recovered, nil
+}
+
+func walletRenewalAttemptGrantInputMatches(attempt walletRenewalAttempt) bool {
+	input := attempt.GrantInput
+	return input.ContractId == attempt.ContractID &&
+		input.UserId == attempt.UserID &&
+		input.PlanId == attempt.PlanID &&
+		input.ProviderBindingId == 0 &&
+		strings.TrimSpace(input.GrantKey) == attempt.RenewalKey &&
+		input.PaymentMode == model.SubscriptionPaymentModePrepaid &&
+		input.PeriodStart == attempt.PeriodStart &&
+		input.PeriodEnd == attempt.PeriodEnd &&
+		input.EndReasonForPrevious == model.SubscriptionEntitlementEndReasonRenewed &&
+		input.Source == model.PaymentMethodBalance &&
+		input.AmountTotal >= 0 &&
+		input.MediaCreditsTotal >= 0 &&
+		input.Window5hAmount != nil &&
+		*input.Window5hAmount >= 0 &&
+		input.WindowWeekAmount != nil &&
+		*input.WindowWeekAmount >= 0 &&
+		input.UpgradeGroup != nil
+}
+
+func walletRenewalEntitlementMatchesGrantInput(entitlement *model.UserSubscription, input model.GrantEntitlementInput) bool {
+	return entitlement != nil &&
+		entitlement.GrantKey != nil &&
+		strings.TrimSpace(*entitlement.GrantKey) == strings.TrimSpace(input.GrantKey) &&
+		entitlement.ContractId == input.ContractId &&
+		entitlement.UserId == input.UserId &&
+		entitlement.PlanId == input.PlanId &&
+		entitlement.ProviderBindingId == input.ProviderBindingId &&
+		entitlement.AmountTotal == input.AmountTotal &&
+		entitlement.MediaCreditsTotal == input.MediaCreditsTotal &&
+		walletRenewalWindowAmountMatches(entitlement.Window5hAmount, input.Window5hAmount) &&
+		walletRenewalWindowAmountMatches(entitlement.WindowWeekAmount, input.WindowWeekAmount) &&
+		strings.TrimSpace(entitlement.UpgradeGroup) == strings.TrimSpace(*input.UpgradeGroup) &&
+		entitlement.StartTime == input.PeriodStart &&
+		entitlement.EndTime == input.PeriodEnd &&
+		entitlement.AccessEndTime == input.PeriodEnd &&
+		entitlement.PaymentMode == input.PaymentMode &&
+		strings.TrimSpace(entitlement.Source) == input.Source
+}
+
+func walletRenewalWindowAmountMatches(existing *int64, expected *int64) bool {
+	return existing != nil && expected != nil && *existing == *expected
+}
+
+func walletRenewalEntitlementLifecycleMatchesContractPeriod(entitlement *model.UserSubscription, contract *model.UserSubscriptionContract, attempt walletRenewalAttempt) bool {
+	if entitlement == nil || contract == nil {
+		return false
+	}
+	if contract.CurrentPeriodEnd == attempt.PeriodEnd {
+		return entitlement.Status == model.SubscriptionEntitlementStatusActive &&
+			entitlement.CurrentSlot != nil && *entitlement.CurrentSlot == 1
+	}
+	return contract.CurrentPeriodEnd > attempt.PeriodEnd &&
+		entitlement.Status == model.SubscriptionEntitlementStatusHistorical &&
+		entitlement.CurrentSlot == nil
+}
+
+func walletRenewalContractMatchesRecoveredGrant(contract *model.UserSubscriptionContract, entitlement *model.UserSubscription, currentEntitlement *model.UserSubscription, attempt walletRenewalAttempt) bool {
+	if contract == nil || entitlement == nil ||
+		contract.Id != attempt.ContractID ||
+		contract.UserId != attempt.UserID ||
+		contract.Status != model.SubscriptionContractStatusActive ||
+		!walletRenewalCurrentEntitlementMatchesContract(currentEntitlement, contract) {
+		return false
+	}
+	if contract.CurrentPeriodEnd == attempt.PeriodEnd {
+		return contract.RenewalSource == model.SubscriptionRenewalSourceWallet &&
+			contract.RenewalStatus == model.SubscriptionRenewalStatusEnabled &&
+			contract.CurrentPlanId == attempt.PlanID &&
+			contract.CurrentEntitlementId == entitlement.Id &&
+			contract.CurrentProviderBindingId == attempt.GrantInput.ProviderBindingId &&
+			contract.CurrentPeriodStart == attempt.PeriodStart &&
+			contract.PaymentMode == attempt.GrantInput.PaymentMode
+	}
+	return contract.CurrentPeriodEnd > attempt.PeriodEnd &&
+		contract.CurrentPeriodStart >= attempt.PeriodEnd &&
+		contract.CurrentPeriodStart < contract.CurrentPeriodEnd &&
+		contract.CurrentEntitlementId != entitlement.Id
+}
+
+func walletRenewalCurrentEntitlementMatchesContract(entitlement *model.UserSubscription, contract *model.UserSubscriptionContract) bool {
+	return entitlement != nil &&
+		contract != nil &&
+		entitlement.Id == contract.CurrentEntitlementId &&
+		entitlement.ContractId == contract.Id &&
+		entitlement.UserId == contract.UserId &&
+		entitlement.Status == model.SubscriptionEntitlementStatusActive &&
+		entitlement.CurrentSlot != nil &&
+		*entitlement.CurrentSlot == 1 &&
+		entitlement.PlanId == contract.CurrentPlanId &&
+		entitlement.ProviderBindingId == contract.CurrentProviderBindingId &&
+		entitlement.StartTime == contract.CurrentPeriodStart &&
+		entitlement.EndTime == contract.CurrentPeriodEnd &&
+		entitlement.PaymentMode == contract.PaymentMode
 }
 
 func walletRenewalDuplicateFactsError(format string, args ...interface{}) error {

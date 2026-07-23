@@ -12,7 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func oneTimeStripeOrderForTest(method string, currency string, amountMinor int64, months int) *model.SubscriptionOrder {
@@ -48,7 +48,7 @@ func TestBuildOneTimePlanCheckoutUsesPaymentModeAndRequestedMethod(t *testing.T)
 	require.NoError(t, err)
 	require.NotNil(t, params.Mode)
 	require.Equal(t, string(stripe.CheckoutSessionModePayment), *params.Mode)
-	require.Equal(t, []string{service.SubscriptionPaymentChoiceAlipay}, stripeStringSliceValues(params.PaymentMethodTypes))
+	require.Equal(t, []string{string(stripe.PaymentMethodTypeAlipay)}, stripeStringSliceValues(params.PaymentMethodTypes))
 	require.NotNil(t, params.ClientReferenceID)
 	require.Equal(t, order.TradeNo, *params.ClientReferenceID)
 	require.Equal(t, order.TradeNo, params.Metadata["trade_no"])
@@ -99,7 +99,7 @@ func TestOneTimePlanCheckoutDoesNotSilentlyFallbackToCard(t *testing.T) {
 	params, err := buildOneTimePlanCheckoutSessionParams(order, &model.User{Id: 501})
 
 	require.NoError(t, err)
-	require.Equal(t, []string{service.SubscriptionPaymentChoiceUPI}, stripeStringSliceValues(params.PaymentMethodTypes))
+	require.Equal(t, []string{string(stripe.PaymentMethodTypeUpi)}, stripeStringSliceValues(params.PaymentMethodTypes))
 	require.NotContains(t, stripeStringSliceValues(params.PaymentMethodTypes), "card")
 }
 

@@ -182,6 +182,7 @@ func TestSubscriptionSelfPurchaseRejectsTamperedQuotePayload(t *testing.T) {
 func TestSubscriptionSelfPurchaseCreatesOneTimeStripeCheckoutAndReplaysURL(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.TopUp{}))
 	originalSecret := common.CryptoSecret
 	common.CryptoSecret = "controller-subscription-quote-secret"
 	t.Cleanup(func() { common.CryptoSecret = originalSecret })
@@ -221,6 +222,77 @@ func TestSubscriptionSelfPurchaseCreatesOneTimeStripeCheckoutAndReplaysURL(t *te
 	require.Equal(t, "INR", order.PaymentCurrency)
 	require.Equal(t, int64(79950), order.PaymentAmountMinor)
 	require.Equal(t, "https://checkout.example/self-purchase", order.ProviderSessionURL)
+
+	var topUps []model.TopUp
+	require.NoError(t, model.DB.Where("trade_no = ?", order.TradeNo).Find(&topUps).Error)
+	require.Len(t, topUps, 1)
+	require.Equal(t, 9104, topUps[0].UserId)
+	require.Equal(t, service.SubscriptionPaymentChoiceUPI, topUps[0].PaymentMethod)
+	require.Equal(t, model.PaymentProviderStripe, topUps[0].PaymentProvider)
+	require.Equal(t, "INR", topUps[0].PaymentCurrency)
+	require.Equal(t, int64(79950), topUps[0].PaymentAmountMinor)
+	require.Equal(t, float64(799.50), topUps[0].Money)
+	require.Equal(t, common.TopUpStatusPending, topUps[0].Status)
+	require.Equal(t, "cs_test_self_purchase", topUps[0].GatewayTradeNo)
+}
+
+func TestSyncSubscriptionSelfRecurringCheckoutHistoryCreatesPendingTopUp(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.TopUp{}))
+	insertSubscriptionControllerUser(t, 9110)
+	insertSubscriptionSelfPurchasePlan(t, 9210)
+
+	intent := model.SubscriptionChangeIntent{
+		UserId:      9110,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		Status:      model.SubscriptionChangeIntentStatusAwaitingPayment,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	order := model.SubscriptionOrder{
+		UserId:             9110,
+		PlanId:             9210,
+		Money:              19.99,
+		TradeNo:            "SUBSTRUSR9110INT1",
+		PaymentMethod:      model.PaymentMethodStripe,
+		PaymentProvider:    model.PaymentProviderStripe,
+		PaymentCurrency:    "USD",
+		PaymentAmountMinor: 1999,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		ChangeIntentId:     intent.Id,
+		ProviderSessionId:  "cs_recurring_history",
+		ProviderSessionURL: "https://checkout.example/recurring-history",
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+
+	err := syncSubscriptionSelfRecurringCheckoutHistory(&service.PurchaseSubscriptionResult{
+		Status: service.ChangePlanStatusCheckoutRequired,
+		Intent: &intent,
+	})
+
+	require.NoError(t, err)
+	var topUp model.TopUp
+	require.NoError(t, model.DB.Where("trade_no = ?", order.TradeNo).First(&topUp).Error)
+	require.Equal(t, common.TopUpStatusPending, topUp.Status)
+	require.Equal(t, "cs_recurring_history", topUp.GatewayTradeNo)
+}
+
+func TestSubscriptionSelfPurchaseResponseUsesRecurringCheckoutURL(t *testing.T) {
+	response := subscriptionSelfPurchaseResponse(&service.PurchaseSubscriptionResult{
+		Status:      service.ChangePlanStatusCheckoutRequired,
+		CheckoutURL: "https://checkout.example/recurring-purchase",
+	}, "")
+
+	require.Equal(t, "https://checkout.example/recurring-purchase", response.CheckoutURL)
+}
+
+func TestSubscriptionSelfPurchaseResponseUsesRecurringHostedInvoiceURL(t *testing.T) {
+	response := subscriptionSelfPurchaseResponse(&service.PurchaseSubscriptionResult{
+		Status:           service.ChangePlanStatusPaymentActionRequired,
+		HostedInvoiceURL: "https://invoice.example/recurring-upgrade",
+	}, "")
+
+	require.Equal(t, "https://invoice.example/recurring-upgrade", response.HostedInvoiceURL)
 }
 
 func TestSubscriptionSelfPurchaseRejectsExpiredQuote(t *testing.T) {
