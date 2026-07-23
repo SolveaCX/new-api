@@ -1,14 +1,19 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 )
 
@@ -165,6 +170,209 @@ func TestGetSubscriptionSelfReturnsCanonicalContractWithoutProviderIDs(t *testin
 
 	migration := data["migration"].(map[string]any)
 	require.Equal(t, false, migration["requires_admin_review"])
+}
+
+func TestGetSubscriptionSelfReturnsCurrentEntitlementQuotaReadModel(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 915)
+	now := common.GetTimestamp()
+	planWindow5h := int64(999)
+	planWindowWeek := int64(9999)
+	entitlementWindow5h := int64(125)
+	entitlementWindowWeek := int64(900)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:                  9930,
+		Title:               "Snapshot Plan",
+		PriceAmount:         20,
+		Currency:            "USD",
+		DurationUnit:        model.SubscriptionDurationMonth,
+		DurationValue:       1,
+		Enabled:             true,
+		TotalAmount:         999999,
+		Window5hAmount:      planWindow5h,
+		WindowWeekAmount:    planWindowWeek,
+		MediaCreditsMonthly: 999,
+		QuotaResetPeriod:    model.SubscriptionResetMonthly,
+		AllowBalancePay:     common.GetPointer(true),
+	}).Error)
+	contract := model.UserSubscriptionContract{
+		UserId:             915,
+		Status:             model.SubscriptionContractStatusActive,
+		PaymentMode:        model.SubscriptionPaymentModeBalanceOnePeriod,
+		RenewalSource:      model.SubscriptionRenewalSourceWallet,
+		RenewalStatus:      model.SubscriptionRenewalStatusPausedInsufficientBalance,
+		CurrentPlanId:      9930,
+		CurrentPeriodStart: now - 60,
+		CurrentPeriodEnd:   now + 49*3600 + 1,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	entitlement := model.UserSubscription{
+		UserId:            915,
+		PlanId:            9930,
+		ContractId:        contract.Id,
+		AmountTotal:       2000,
+		AmountUsed:        450,
+		MediaCreditsTotal: 20,
+		MediaCreditsUsed:  25,
+		Window5hAmount:    &entitlementWindow5h,
+		WindowWeekAmount:  &entitlementWindowWeek,
+		StartTime:         now - 60,
+		EndTime:           now + 49*3600 + 1,
+		AccessEndTime:     now + 49*3600 + 1,
+		Status:            model.SubscriptionEntitlementStatusActive,
+		PaymentMode:       model.SubscriptionPaymentModeBalanceOnePeriod,
+		NextResetTime:     now + 3600,
+	}
+	require.NoError(t, model.DB.Create(&entitlement).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).
+		Where("id = ?", contract.Id).
+		Update("current_entitlement_id", entitlement.Id).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 915)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/self", nil)
+
+	GetSubscriptionSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	data := envelope["data"].(map[string]any)
+	require.Equal(t, float64(3), data["remaining_days"])
+	require.Equal(t, model.SubscriptionRenewalSourceWallet, data["renewal_source"])
+	require.Equal(t, model.SubscriptionRenewalStatusPausedInsufficientBalance, data["renewal_status"])
+
+	monthly := data["monthly_bucket"].(map[string]any)
+	require.Equal(t, float64(450), monthly["used"])
+	require.Equal(t, float64(2000), monthly["total"])
+	require.Equal(t, float64(1550), monthly["remaining"])
+	require.Equal(t, float64(now+3600), monthly["reset_at"])
+	require.Equal(t, false, monthly["unlimited"])
+
+	window5h := data["window_5h"].(map[string]any)
+	require.Equal(t, float64(0), window5h["used"])
+	require.Equal(t, float64(entitlementWindow5h), window5h["total"])
+	require.Equal(t, float64(entitlementWindow5h), window5h["remaining"])
+	require.Equal(t, false, window5h["unlimited"])
+
+	window7d := data["window_7d"].(map[string]any)
+	require.Equal(t, float64(0), window7d["used"])
+	require.Equal(t, float64(entitlementWindowWeek), window7d["total"])
+	require.Equal(t, float64(entitlementWindowWeek), window7d["remaining"])
+	require.Equal(t, false, window7d["unlimited"])
+
+	media := data["media_credits"].(map[string]any)
+	require.Equal(t, float64(25), media["used"])
+	require.Equal(t, float64(20), media["total"])
+	require.Equal(t, float64(0), media["remaining"])
+	require.Equal(t, float64(now+3600), media["reset_at"])
+	require.Equal(t, false, media["unlimited"])
+}
+
+func TestGetSubscriptionSelfReturnsZeroQuotaReadModelWithoutSubscription(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 916)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 916)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/self", nil)
+
+	GetSubscriptionSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	data := envelope["data"].(map[string]any)
+	require.Equal(t, float64(0), data["remaining_days"])
+	require.Equal(t, "", data["renewal_source"])
+	require.Equal(t, "", data["renewal_status"])
+	for _, key := range []string{"monthly_bucket", "window_5h", "window_7d", "media_credits"} {
+		bucket := data[key].(map[string]any)
+		require.Equal(t, float64(0), bucket["used"], key)
+		require.Equal(t, float64(0), bucket["total"], key)
+		require.Equal(t, float64(0), bucket["remaining"], key)
+		require.Equal(t, float64(0), bucket["reset_at"], key)
+		require.Equal(t, false, bucket["unlimited"], key)
+	}
+	require.Nil(t, data["current_subscription"])
+}
+
+func TestGetSubscriptionSelfReadsWindowUsageCounters(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 917)
+	mr, err := miniredis.Run()
+	require.NoError(t, err)
+	t.Cleanup(mr.Close)
+	previousRDB := common.RDB
+	previousRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = previousRDB
+		common.RedisEnabled = previousRedisEnabled
+	})
+
+	now := common.GetTimestamp()
+	window5h := int64(500)
+	window7d := int64(1000)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:               9931,
+		Title:            "Counter Plan",
+		PriceAmount:      20,
+		Currency:         "USD",
+		DurationUnit:     model.SubscriptionDurationMonth,
+		DurationValue:    1,
+		Enabled:          true,
+		Window5hAmount:   999,
+		WindowWeekAmount: 9999,
+	}).Error)
+	contract := model.UserSubscriptionContract{
+		UserId:             917,
+		Status:             model.SubscriptionContractStatusActive,
+		PaymentMode:        model.SubscriptionPaymentModeStripeRecurring,
+		CurrentPlanId:      9931,
+		CurrentPeriodStart: now - 3600,
+		CurrentPeriodEnd:   now + 3600,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	entitlement := model.UserSubscription{
+		UserId:           917,
+		PlanId:           9931,
+		ContractId:       contract.Id,
+		Window5hAmount:   &window5h,
+		WindowWeekAmount: &window7d,
+		StartTime:        now - 3600,
+		EndTime:          now + 3600,
+		AccessEndTime:    now + 3600,
+		Status:           model.SubscriptionEntitlementStatusActive,
+	}
+	require.NoError(t, model.DB.Create(&entitlement).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).
+		Where("id = ?", contract.Id).
+		Update("current_entitlement_id", entitlement.Id).Error)
+	identity := int(contract.Id)
+	currentBucket := now / int64(1800) * int64(1800)
+	require.NoError(t, common.RDB.Set(context.Background(), "sub:win:5h:"+strconv.Itoa(identity)+":"+strconv.FormatInt(currentBucket, 10), "75", time.Hour).Err())
+	require.NoError(t, common.RDB.Set(context.Background(), "sub:win:w:"+strconv.Itoa(identity)+":0", "250", time.Hour).Err())
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 917)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/self", nil)
+
+	GetSubscriptionSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	data := envelope["data"].(map[string]any)
+	require.Equal(t, float64(75), data["window_5h"].(map[string]any)["used"])
+	require.Equal(t, float64(425), data["window_5h"].(map[string]any)["remaining"])
+	require.Equal(t, float64(250), data["window_7d"].(map[string]any)["used"])
+	require.Equal(t, float64(750), data["window_7d"].(map[string]any)["remaining"])
 }
 
 func TestGetSubscriptionPlansAnnotatesTierRankAndRelation(t *testing.T) {

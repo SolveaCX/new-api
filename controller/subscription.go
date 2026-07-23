@@ -86,6 +86,13 @@ type SubscriptionSelfResponse struct {
 	CurrentEntitlement     *SubscriptionEntitlementDTO   `json:"current_entitlement,omitempty"`
 	CurrentPeriod          SubscriptionCurrentPeriodDTO  `json:"current_period"`
 	Quota                  SubscriptionQuotaDTO          `json:"quota"`
+	MonthlyBucket          SubscriptionUsageWindowDTO    `json:"monthly_bucket"`
+	Window5h               SubscriptionUsageWindowDTO    `json:"window_5h"`
+	Window7d               SubscriptionUsageWindowDTO    `json:"window_7d"`
+	MediaCredits           SubscriptionUsageWindowDTO    `json:"media_credits"`
+	RemainingDays          int64                         `json:"remaining_days"`
+	RenewalSource          string                        `json:"renewal_source"`
+	RenewalStatus          string                        `json:"renewal_status"`
 	PendingChange          *SubscriptionPendingChangeDTO `json:"pending_change,omitempty"`
 	Capabilities           SubscriptionCapabilitiesDTO   `json:"capabilities"`
 	Migration              SubscriptionMigrationDTO      `json:"migration"`
@@ -140,6 +147,14 @@ type SubscriptionQuotaDTO struct {
 	AmountUsed      int64 `json:"amount_used"`
 	AmountRemaining int64 `json:"amount_remaining"`
 	Unlimited       bool  `json:"unlimited"`
+}
+
+type SubscriptionUsageWindowDTO struct {
+	Used      int64 `json:"used"`
+	Total     int64 `json:"total"`
+	Remaining int64 `json:"remaining"`
+	ResetAt   int64 `json:"reset_at"`
+	Unlimited bool  `json:"unlimited"`
 }
 
 type SubscriptionPendingChangeDTO struct {
@@ -318,6 +333,9 @@ func buildSubscriptionSelfResponse(
 			End:            contract.CurrentPeriodEnd,
 			GracePeriodEnd: contract.GracePeriodEnd,
 		}
+		response.RemainingDays = subscriptionRemainingDays(contract.CurrentPeriodEnd)
+		response.RenewalSource = contract.RenewalSource
+		response.RenewalStatus = contract.RenewalStatus
 	}
 	if currentEntitlement != nil && currentEntitlement.Id > 0 {
 		response.CurrentEntitlement = &SubscriptionEntitlementDTO{
@@ -335,6 +353,41 @@ func buildSubscriptionSelfResponse(
 			AmountUsed:      currentEntitlement.AmountUsed,
 			AmountRemaining: subscriptionQuotaRemaining(currentEntitlement.AmountTotal, currentEntitlement.AmountUsed),
 			Unlimited:       currentEntitlement.AmountTotal == 0,
+		}
+		if contract == nil || contract.Id <= 0 {
+			response.CurrentPeriod = SubscriptionCurrentPeriodDTO{
+				Start:          currentEntitlement.StartTime,
+				End:            currentEntitlement.EndTime,
+				GracePeriodEnd: currentEntitlement.AccessEndTime,
+			}
+			response.RemainingDays = subscriptionRemainingDays(currentEntitlement.EndTime)
+		}
+		response.MonthlyBucket = subscriptionUsageWindowDTO(
+			currentEntitlement.AmountUsed,
+			currentEntitlement.AmountTotal,
+			currentEntitlement.NextResetTime,
+			currentEntitlement.AmountTotal == 0,
+		)
+		response.MediaCredits = subscriptionUsageWindowDTO(
+			currentEntitlement.MediaCreditsUsed,
+			currentEntitlement.MediaCreditsTotal,
+			currentEntitlement.NextResetTime,
+			false,
+		)
+		if windowInfo, err := model.GetSubscriptionWindowInfoBySubId(currentEntitlement.Id); err == nil && windowInfo != nil {
+			usage := service.GetSubscriptionWindowUsage(windowInfo)
+			response.Window5h = subscriptionUsageWindowDTO(
+				usage.Window5hUsed,
+				windowInfo.Window5hAmount,
+				usage.Window5hResetAt,
+				windowInfo.Window5hAmount == 0,
+			)
+			response.Window7d = subscriptionUsageWindowDTO(
+				usage.WindowWeekUsed,
+				windowInfo.WindowWeekAmount,
+				usage.WindowWeekResetAt,
+				windowInfo.WindowWeekAmount == 0,
+			)
 		}
 	}
 	if pendingChange != nil && pendingChange.Id > 0 {
@@ -500,6 +553,33 @@ func subscriptionQuotaRemaining(total int64, used int64) int64 {
 	return remaining
 }
 
+func subscriptionUsageWindowDTO(used int64, total int64, resetAt int64, unlimited bool) SubscriptionUsageWindowDTO {
+	if used < 0 {
+		used = 0
+	}
+	if total < 0 {
+		total = 0
+	}
+	return SubscriptionUsageWindowDTO{
+		Used:      used,
+		Total:     total,
+		Remaining: subscriptionQuotaRemaining(total, used),
+		ResetAt:   resetAt,
+		Unlimited: unlimited,
+	}
+}
+
+func subscriptionRemainingDays(endTime int64) int64 {
+	if endTime <= 0 {
+		return 0
+	}
+	remainingSeconds := endTime - common.GetTimestamp()
+	if remainingSeconds <= 0 {
+		return 0
+	}
+	return (remainingSeconds + 24*3600 - 1) / (24 * 3600)
+}
+
 func buildSubscriptionCapabilitiesDTO(
 	contract *model.UserSubscriptionContract,
 	pendingChange *model.SubscriptionChangeIntent,
@@ -525,8 +605,6 @@ func buildSubscriptionCapabilitiesDTO(
 		if contract != nil && contract.CurrentProviderBindingId > 0 && recurring.BindingId != contract.CurrentProviderBindingId {
 			continue
 		}
-		capabilities.CanCancel = recurring.CanCancel && !hasPendingIntent && !migration.RequiresAdminReview
-		capabilities.CanResume = recurring.CanResume && !hasPendingIntent && !migration.RequiresAdminReview
 		capabilities.IsCancelAtPeriodEnd = recurring.CancelAtPeriodEnd
 		capabilities.RequiresSupport = capabilities.RequiresSupport || recurring.RequiresSupport
 		break
