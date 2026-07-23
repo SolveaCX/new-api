@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { BalanceBar } from './components/balance-bar'
 import { DeployWizard } from './components/deploy-wizard'
 import { GpuInstances } from './components/gpu-instances'
 import { MyEndpoints } from './components/my-endpoints'
@@ -28,6 +29,9 @@ export function ComputeDeploy() {
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Compute')}</SectionPageLayout.Title>
+      <SectionPageLayout.Actions>
+        <BalanceBar />
+      </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <Tabs defaultValue='deploy' className='gap-4'>
           <TabsList>

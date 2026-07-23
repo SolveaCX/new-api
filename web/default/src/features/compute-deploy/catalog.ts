@@ -175,61 +175,6 @@ export const GPU_OPTIONS: GpuOption[] = [
   },
 ]
 
-/** Raw GPU instances for the advanced "rent a whole card" line (not yet live). */
-export interface GpuInstance {
-  id: string
-  name: string
-  vram: string
-  vcpu: string
-  ram: string
-  maxCuda: string
-  onDemand: string
-  spot?: string
-  availability: 'high' | 'low'
-}
-
-export const GPU_INSTANCES: GpuInstance[] = [
-  {
-    id: 'rtx4090',
-    name: 'RTX 4090 24GB',
-    vram: '24 GB',
-    vcpu: '16',
-    ram: '125 GB',
-    maxCuda: '13.0',
-    onDemand: '$0.55',
-    spot: '$0.29',
-    availability: 'high',
-  },
-  {
-    id: 'rtx5090',
-    name: 'RTX 5090 32GB',
-    vram: '32 GB',
-    vcpu: '16',
-    ram: '58 GB',
-    maxCuda: '13.0',
-    onDemand: '$0.49',
-    spot: '$0.26',
-    availability: 'high',
-  },
-  {
-    id: 'l40s',
-    name: 'L40S 48GB',
-    vram: '48 GB',
-    vcpu: '22',
-    ram: '125 GB',
-    maxCuda: '12.9',
-    onDemand: '$0.49',
-    availability: 'high',
-  },
-  {
-    id: 'h100',
-    name: 'H100 SXM 80GB',
-    vram: '80 GB',
-    vcpu: '16',
-    ram: '128 GB',
-    maxCuda: '13.0',
-    onDemand: '$2.99',
-    spot: '$1.60',
-    availability: 'low',
-  },
-]
+// GPU instance rental now uses live upstream offers (see features/compute-deploy/api.ts:
+// getComputeOffers). The former static preview list was removed with the real
+// GpuInstances implementation.

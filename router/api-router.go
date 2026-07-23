@@ -326,6 +326,21 @@ func SetApiRouter(router *gin.Engine) {
 			computeRoute.POST("/nodes/:id/stop", controller.StopComputeNode)
 			computeRoute.GET("/offers", controller.GetComputeOffers)
 		}
+		// flatkey Compute (GPU rental) user-facing endpoints. UserAuth: every
+		// handler is scoped to c.GetInt("id") so a customer only ever sees /
+		// controls their own rented instances. Whitelabel: responses expose only
+		// flatkey-branded fields (provider fields are json:"-").
+		computeUserRoute := apiRouter.Group("/compute/instances")
+		computeUserRoute.Use(middleware.UserAuth())
+		{
+			computeUserRoute.GET("", controller.GetComputeInstances)
+			computeUserRoute.POST("", controller.CreateComputeInstance)
+			computeUserRoute.GET("/:id/connection", controller.GetComputeInstanceConnection)
+			computeUserRoute.POST("/:id/stop", controller.StopComputeInstance)
+		}
+		// User-facing GPU offer catalog (whitelabeled). Standalone route to avoid
+		// a Gin static/param conflict with /compute/instances/:id.
+		apiRouter.GET("/compute/gpu-offers", middleware.UserAuth(), controller.GetComputeOffers)
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
