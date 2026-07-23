@@ -163,8 +163,10 @@ type SubscriptionPlan struct {
 	Subtitle string `json:"subtitle" gorm:"type:varchar(255);default:''"`
 
 	// Display money amount (follow existing code style: float64 for money)
-	PriceAmount float64 `json:"price_amount" gorm:"type:decimal(10,6);not null;default:0"`
-	Currency    string  `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
+	PriceAmount float64  `json:"price_amount" gorm:"type:decimal(10,6);not null;default:0"`
+	Currency    string   `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
+	PixPriceBRL *float64 `json:"pix_price_brl" gorm:"type:decimal(10,6)"`
+	UpiPriceINR *float64 `json:"upi_price_inr" gorm:"type:decimal(10,6)"`
 
 	DurationUnit  string `json:"duration_unit" gorm:"type:varchar(16);not null;default:'month'"`
 	DurationValue int    `json:"duration_value" gorm:"type:int;not null;default:1"`
@@ -523,6 +525,8 @@ func subscriptionPlanUpdateMap(plan *SubscriptionPlan) map[string]interface{} {
 		"subtitle":                   plan.Subtitle,
 		"price_amount":               plan.PriceAmount,
 		"currency":                   plan.Currency,
+		"pix_price_brl":              plan.PixPriceBRL,
+		"upi_price_inr":              plan.UpiPriceINR,
 		"duration_unit":              plan.DurationUnit,
 		"duration_value":             plan.DurationValue,
 		"custom_seconds":             plan.CustomSeconds,

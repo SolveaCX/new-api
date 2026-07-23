@@ -182,6 +182,8 @@ type ChangeSubscriptionPlanResponse struct {
 
 var ErrSubscriptionPurchasePendingMigration = errors.New("subscription purchase initiation is pending migration")
 
+const maxSubscriptionPlanLocalPrice = 9999.999999
+
 // ---- User APIs ----
 
 func GetSubscriptionPlans(c *gin.Context) {
@@ -792,6 +794,9 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "价格不能超过9999")
 		return
 	}
+	if !validateSubscriptionPlanLocalPrices(c, &req.Plan) {
+		return
+	}
 	if req.Plan.Currency == "" {
 		req.Plan.Currency = "USD"
 	}
@@ -868,6 +873,9 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "价格不能超过9999")
 		return
 	}
+	if !validateSubscriptionPlanLocalPrices(c, &req.Plan) {
+		return
+	}
 	req.Plan.Id = id
 	if req.Plan.Currency == "" {
 		req.Plan.Currency = "USD"
@@ -927,6 +935,28 @@ func apiSubscriptionPlanLifecycleError(c *gin.Context, err error) {
 	default:
 		common.ApiError(c, err)
 	}
+}
+
+func validateSubscriptionPlanLocalPrices(c *gin.Context, plan *model.SubscriptionPlan) bool {
+	if !validateSubscriptionPlanLocalPrice(c, plan.PixPriceBRL, "Pix") {
+		return false
+	}
+	return validateSubscriptionPlanLocalPrice(c, plan.UpiPriceINR, "UPI")
+}
+
+func validateSubscriptionPlanLocalPrice(c *gin.Context, price *float64, label string) bool {
+	if price == nil {
+		return true
+	}
+	if *price <= 0 {
+		common.ApiErrorMsg(c, label+" local price must be greater than zero")
+		return false
+	}
+	if *price > maxSubscriptionPlanLocalPrice {
+		common.ApiErrorMsg(c, label+" local price cannot exceed 9999.999999")
+		return false
+	}
+	return true
 }
 
 type AdminUpdateSubscriptionPlanStatusRequest struct {

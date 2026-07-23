@@ -111,3 +111,119 @@ func TestAdminUpdateSubscriptionPlanStatusUsesLifecycleValidation(t *testing.T) 
 	require.NoError(t, model.DB.Model(&model.SubscriptionTierRankReservation{}).Count(&reservations).Error)
 	require.Zero(t, reservations)
 }
+
+func TestAdminCreateSubscriptionPlanValidatesLocalPrices(t *testing.T) {
+	setupSubscriptionPlanControllerLifecycleTestDB(t)
+	confirmSubscriptionPlanPaymentComplianceForTest(t)
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		name        string
+		pixPrice    *float64
+		upiPrice    *float64
+		wantSuccess bool
+	}{
+		{name: "blank local prices are unavailable", wantSuccess: true},
+		{name: "positive local prices are accepted", pixPrice: common.GetPointer(49.90), upiPrice: common.GetPointer(799.50), wantSuccess: true},
+		{name: "zero pix price is rejected", pixPrice: common.GetPointer(0.0), wantSuccess: false},
+		{name: "negative upi price is rejected", upiPrice: common.GetPointer(-1.0), wantSuccess: false},
+		{name: "over bound pix price is rejected", pixPrice: common.GetPointer(10000.0), wantSuccess: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := AdminUpsertSubscriptionPlanRequest{Plan: model.SubscriptionPlan{
+				Title:         "Local price plan",
+				PriceAmount:   9.99,
+				Currency:      "USD",
+				DurationUnit:  model.SubscriptionDurationMonth,
+				DurationValue: 1,
+				Enabled:       false,
+				TotalAmount:   1000,
+				PixPriceBRL:   tt.pixPrice,
+				UpiPriceINR:   tt.upiPrice,
+			}}
+			recorder := performAdminCreateSubscriptionPlan(t, req)
+			require.Equal(t, http.StatusOK, recorder.Code)
+
+			var resp struct {
+				Success bool                   `json:"success"`
+				Data    model.SubscriptionPlan `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+			require.Equal(t, tt.wantSuccess, resp.Success, recorder.Body.String())
+			if !tt.wantSuccess {
+				return
+			}
+			require.Equal(t, tt.pixPrice, resp.Data.PixPriceBRL)
+			require.Equal(t, tt.upiPrice, resp.Data.UpiPriceINR)
+		})
+	}
+}
+
+func TestAdminUpdateSubscriptionPlanClearsAndValidatesLocalPrices(t *testing.T) {
+	setupSubscriptionPlanControllerLifecycleTestDB(t)
+	confirmSubscriptionPlanPaymentComplianceForTest(t)
+	gin.SetMode(gin.TestMode)
+
+	pixPrice := 49.90
+	upiPrice := 799.50
+	plan := &model.SubscriptionPlan{
+		Title:         "Local price plan",
+		PriceAmount:   9.99,
+		Currency:      "USD",
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       false,
+		TotalAmount:   1000,
+		PixPriceBRL:   &pixPrice,
+		UpiPriceINR:   &upiPrice,
+	}
+	require.NoError(t, model.CreateSubscriptionPlan(plan))
+
+	req := AdminUpsertSubscriptionPlanRequest{Plan: *plan}
+	req.Plan.PixPriceBRL = nil
+	req.Plan.UpiPriceINR = common.GetPointer(899.25)
+	recorder := performAdminUpdateSubscriptionPlan(t, plan.Id, req)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.True(t, resp.Success, recorder.Body.String())
+
+	var stored model.SubscriptionPlan
+	require.NoError(t, model.DB.First(&stored, "id = ?", plan.Id).Error)
+	require.Nil(t, stored.PixPriceBRL)
+	require.NotNil(t, stored.UpiPriceINR)
+	require.InDelta(t, 899.25, *stored.UpiPriceINR, 0.000001)
+
+	req.Plan.UpiPriceINR = common.GetPointer(0.0)
+	recorder = performAdminUpdateSubscriptionPlan(t, plan.Id, req)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.False(t, resp.Success, recorder.Body.String())
+}
+
+func performAdminCreateSubscriptionPlan(t *testing.T, req AdminUpsertSubscriptionPlanRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/subscription/plans", bytes.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	AdminCreateSubscriptionPlan(ctx)
+	return recorder
+}
+
+func performAdminUpdateSubscriptionPlan(t *testing.T, id int, req AdminUpsertSubscriptionPlanRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(id)}}
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/subscription/plans/"+strconv.Itoa(id), bytes.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	AdminUpdateSubscriptionPlan(ctx)
+	return recorder
+}
