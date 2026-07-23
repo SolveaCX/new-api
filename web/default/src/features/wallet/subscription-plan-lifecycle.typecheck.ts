@@ -42,6 +42,13 @@ const basePlan = {
   allow_balance_pay: true,
   max_purchase_per_user: 0,
   total_amount: 100,
+  window_5h_amount: 0,
+  window_week_amount: 0,
+  media_credits_monthly: 0,
+  model_count: 0,
+  rpm: 0,
+  concurrency: 0,
+  feature_lines: '',
 } satisfies SubscriptionPlan
 
 const topupInfo = {
