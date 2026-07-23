@@ -5,9 +5,9 @@
 Rename the administrator-facing recall campaign area to **Activity Configuration** and add two explicit audience templates for operational use:
 
 1. **Registered only** selects users who have registered, have never paid, and have never made an API request within an operator-configured registration time range.
-2. **Specified users** selects an exact union of user IDs and email addresses so operators can run controlled tests.
+2. **Specified users** selects an exact union of user IDs and email addresses so operators can run controlled tests, including addresses that do not yet belong to a Flatkey account.
 
-The existing recall delivery, coupon, email, activation, and audit behavior remains unchanged.
+Existing user-backed recipients retain their current delivery, coupon, email, activation, claim, unsubscribe, and audit behavior. Email-only recipients use the same pipeline with an explicit recipient identity and account-free delivery rules described below.
 
 ## Product terminology
 
@@ -53,13 +53,15 @@ Operators do not need to discover or type numeric user IDs. The user picker sear
 
 The backend trims values, lowercases email addresses for matching, removes duplicates, and treats the two lists as a union. A user selected in the picker and also matched by a manually entered email appears once. At least one selected user or valid email is required, and the combined normalized list is limited to 500 identifiers per campaign.
 
-Specified users bypass the behavioral audience thresholds and registration-time filters, but they do not bypass the global delivery safety rules. The account must still be enabled, the stored email must be valid, recall marketing opt-out must be false, and verified-email enforcement follows the existing campaign switch. Optional user-group allow/block filtering is hidden for this template so an exact test list cannot be silently narrowed by unrelated audience configuration.
+Specified users bypass the behavioral audience thresholds and registration-time filters. For an email that resolves to an existing account, the account must still be enabled, the stored email must be valid, recall marketing opt-out must be false, and verified-email enforcement follows the existing campaign switch. Optional user-group allow/block filtering is hidden for this template so an exact test list cannot be silently narrowed by unrelated audience configuration.
 
-Unknown IDs and emails are ignored during preview and snapshot. The preview reports the normal eligible total and samples only resolved eligible users; it does not reveal whether a missing email belongs to an account.
+Unknown user IDs are ignored. A valid normalized email that does not resolve to an account becomes an email-only recipient: it is included in preview, snapshot, activation, Promotion Code provisioning, and delivery. Because there is no account record to verify or consult for status, payment, API activity, or global marketing preferences, the explicit administrator selection is authoritative until that recipient unsubscribes or becomes bound to an account. Preview exposes `user_id = 0` and only a masked address; eligibility snapshots never contain the full address.
+
+If an entered email resolves to an existing account, the recipient uses the account identity even when the same account was also selected in the picker. A disabled, opted-out, invalid, or unverified matching account is excluded and must not be reintroduced as an email-only fallback.
 
 ## Data contract
 
-Extend the existing JSON-backed audience configuration without a database migration:
+Extend the existing JSON-backed audience configuration:
 
 ```json
 {
@@ -72,18 +74,30 @@ Extend the existing JSON-backed audience configuration without a database migrat
 
 The fields are inactive for all other templates. Existing campaign JSON continues to decode with zero values and retains its current behavior.
 
-Eligibility snapshots continue to store the selected template and resolved user facts. Specified-user campaigns store only resolved user facts in recipient snapshots, not the operator's full identifier input.
+Add `recipient_identity` to `recall_recipients` and make it the stable per-campaign identity:
+
+- existing-account recipients use `user:<id>`;
+- email-only recipients use `email:<sha256(lowercase(trim(email)))>`;
+- the unique constraint moves from `(campaign_id, user_id)` to `(campaign_id, recipient_identity)`;
+- `user_id = 0` means the recipient is not yet associated with an account; binding an account later does not change `recipient_identity`;
+- existing rows are backfilled to `user:<id>` before the new unique index is enabled and the old unique index is removed.
+
+The migration must be idempotent and compatible with SQLite, MySQL, and PostgreSQL. No synthetic `users` rows are created.
+
+Eligibility snapshots continue to store the selected template and non-sensitive eligibility facts. `email_snapshot` stores the delivery address, while `eligibility_snapshot` and events must not store the full email or the operator's complete identifier input.
 
 ## Backend flow
 
 1. Validate the template-specific audience configuration before preview, create, update, or activation.
 2. Build a bounded candidate query:
    - `registered_only` applies the inclusive `created_at` range, no-payment condition, and `request_count = 0` at the database boundary where possible.
-   - `specified_users` resolves the normalized ID/email union in bounded batches and deduplicates by user ID.
-3. Apply shared account, email, opt-out, verification, and template-specific checks in the existing selector.
-4. Reuse the current preview, snapshot, recipient, email, audit, and attribution pipelines.
-
-No new dependency or database migration is required.
+   - `specified_users` resolves the normalized ID/email union in bounded batches, deduplicates resolved accounts by user ID, and emits one email-only fact for every unmatched valid email.
+3. Apply shared account safety checks only to account-backed facts. Email-only facts retain a valid normalized delivery address, default language `en`, zero-valued account activity facts, and a hashed recipient identity.
+4. Preview, snapshot, activation, and recurring execution align recipients and messages by `recipient_identity`, not `user_id`. Recurring runs deduplicate by both stable identity and normalized email so an email-only recipient that later becomes an account cannot be enrolled twice in the same campaign.
+5. The recipient worker skips Stripe Customer lookup/creation for email-only recipients and creates a Customer-unbound Promotion Code with `max_redemptions = 1`. Existing-account recipients keep Customer-bound codes.
+6. The email worker sends an unbound recipient to `email_snapshot`, uses the language snapshot, and skips account-only payment/API/status/opt-out checks. Campaign state, recipient state, code expiry, and per-recipient unsubscribe suppression still apply.
+7. Claim validation for an unbound recipient requires the authenticated account's normalized email to equal `email_snapshot`. A successful match atomically binds `user_id`; a mismatched account is rejected. Checkout and paid conversion attribution then use the bound account while the recipient identity remains stable.
+8. New unsubscribe tokens identify the recipient. If it is still unbound, unsubscribe suppresses only that recipient and cancels its pending messages. If it is account-backed or has since been bound, unsubscribe preserves the existing global recall-marketing opt-out behavior for that user. Previously issued user-based unsubscribe tokens remain valid.
 
 ## Frontend flow
 
@@ -99,7 +113,10 @@ No new dependency or database migration is required.
 
 - Reject malformed email tokens, invalid selected user IDs received by the API, more than 500 combined identifiers, reversed registration ranges, and missing template-required fields.
 - Do not fall back from an empty or invalid specified-user list to a broad audience.
-- Do not expose exact-match misses as account enumeration details.
+- Do not expose whether an entered address matched an account; preview represents both cases with the same masked-email shape.
+- Never log full email-only identities, raw claim tokens, full Promotion Codes, or email bodies. `recipient_identity` contains only a one-way email hash for unbound recipients.
+- A Customer-unbound Promotion Code remains single-use but can be manually copied; the claim button is protected by authenticated matching-email binding. This is the explicit trade-off required to support recipients who do not yet have a Stripe Customer or Flatkey account.
+- Claim binding must use a conditional database update so competing nodes cannot bind the same recipient to different accounts.
 - Preserve admin-only access for viewing, editing, previewing, saving, and activating Activity Configuration.
 
 ## Verification
@@ -109,8 +126,12 @@ Backend tests must cover:
 - exact registered-only boundaries;
 - exclusion of users with any payment;
 - exclusion of users with `request_count > 0`;
-- specified IDs, specified emails, union deduplication, unknown identifiers, case-insensitive email matching, and the 500-identifier limit;
+- specified IDs, account-backed emails, email-only recipients, union deduplication, unknown IDs, case-insensitive email matching, and the 500-identifier limit;
 - shared disabled, invalid-email, opt-out, and verified-email exclusions;
+- recipient identity generation, legacy backfill, unique-index replacement, and multiple `user_id = 0` recipients;
+- preview/activation/message alignment by identity and recurring email/user double deduplication;
+- Customer-unbound single-use Promotion Codes and email delivery without a `users` row;
+- matching-email claim binding, mismatched-email rejection, concurrent binding, recipient-only unsubscribe before binding, global unsubscribe after binding, and legacy unsubscribe tokens;
 - compatibility of every existing audience template and stored draft.
 
 Frontend tests must cover:
