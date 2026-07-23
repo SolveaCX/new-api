@@ -691,32 +691,25 @@ func defaultSubscriptionPurchaseQuote(plan model.SubscriptionPlan, choice string
 		if plan.PixPriceBRL == nil {
 			return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: Pix local quote is not configured", ErrSubscriptionPurchaseQuoteUnavailable)
 		}
-		total := subscriptionPurchaseMoney(*plan.PixPriceBRL, months)
-		return SubscriptionPurchaseQuote{
-			Currency:           "BRL",
-			UnitPrice:          *plan.PixPriceBRL,
-			Total:              total,
-			PaymentAmountMinor: subscriptionPurchaseMinorAmount(total),
-		}, nil
+		return subscriptionPurchaseQuoteFromUnitPrice("BRL", *plan.PixPriceBRL, months), nil
 	case SubscriptionPaymentChoiceUPI:
 		if plan.UpiPriceINR == nil {
 			return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: UPI local quote is not configured", ErrSubscriptionPurchaseQuoteUnavailable)
 		}
-		total := subscriptionPurchaseMoney(*plan.UpiPriceINR, months)
-		return SubscriptionPurchaseQuote{
-			Currency:           "INR",
-			UnitPrice:          *plan.UpiPriceINR,
-			Total:              total,
-			PaymentAmountMinor: subscriptionPurchaseMinorAmount(total),
-		}, nil
+		return subscriptionPurchaseQuoteFromUnitPrice("INR", *plan.UpiPriceINR, months), nil
 	default:
-		total := subscriptionPurchaseMoney(plan.PriceAmount, months)
-		return SubscriptionPurchaseQuote{
-			Currency:           plan.Currency,
-			UnitPrice:          plan.PriceAmount,
-			Total:              total,
-			PaymentAmountMinor: subscriptionPurchaseMinorAmount(total),
-		}, nil
+		return subscriptionPurchaseQuoteFromUnitPrice(plan.Currency, plan.PriceAmount, months), nil
+	}
+}
+
+func subscriptionPurchaseQuoteFromUnitPrice(currency string, unitPrice float64, months int) SubscriptionPurchaseQuote {
+	unitAmountMinor := subscriptionPurchaseMinorAmount(unitPrice)
+	totalAmountMinor := unitAmountMinor * int64(months)
+	return SubscriptionPurchaseQuote{
+		Currency:           currency,
+		UnitPrice:          float64(unitAmountMinor) / 100,
+		Total:              float64(totalAmountMinor) / 100,
+		PaymentAmountMinor: totalAmountMinor,
 	}
 }
 

@@ -90,6 +90,43 @@ func TestSubscriptionSelfQuoteSignsPixBRLQuote(t *testing.T) {
 	require.Equal(t, subscriptionPurchasePlanRevision(&plan), claims.PlanRevision)
 }
 
+func TestSubscriptionSelfQuoteRoundsMonthlyLocalPriceBeforeMultiplyingMonths(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	originalSecret := common.CryptoSecret
+	common.CryptoSecret = "controller-subscription-quote-secret"
+	t.Cleanup(func() { common.CryptoSecret = originalSecret })
+	insertSubscriptionControllerUser(t, 9108)
+	plan := insertSubscriptionSelfPurchasePlan(t, 9208)
+	priceWithSixDecimals := 49.905001
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("pix_price_brl", priceWithSixDecimals).Error)
+	model.InvalidateSubscriptionPlanCache(plan.Id)
+
+	recorder := performSubscriptionSelfPurchaseRequest(
+		`{"plan_id":9208,"payment_method":"pix","months":3,"request_id":"quote-rounded-pix-request"}`,
+		QuoteSubscriptionSelfPurchase,
+		9108,
+	)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope struct {
+		Message string `json:"message"`
+		Data    struct {
+			PaymentQuotes map[string]SubscriptionSelfPaymentQuote `json:"payment_quotes"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	require.Empty(t, envelope.Message)
+	pixQuote := envelope.Data.PaymentQuotes["pix"]
+	require.Equal(t, float64(49.91), pixQuote.UnitPrice)
+	require.Equal(t, float64(149.73), pixQuote.Total)
+
+	claims, err := service.VerifySubscriptionPurchaseQuoteToken(pixQuote.QuoteID, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, int64(4991), claims.UnitAmountMinor)
+	require.Equal(t, int64(14973), claims.TotalAmountMinor)
+}
+
 func TestSubscriptionSelfQuoteRejectsStripeRecurringQuote(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
