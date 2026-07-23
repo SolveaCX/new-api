@@ -894,6 +894,9 @@ func sessionCompleted(ctx context.Context, event stripe.Event, callerIp string) 
 	if event.GetObjectValue("mode") == string(stripe.CheckoutSessionModeSubscription) {
 		return reconcileStripeRecurringCheckoutSession(ctx, event)
 	}
+	if order := model.GetSubscriptionOrderByTradeNo(referenceId); isOneTimePlanStripeOrder(order) {
+		return handleStripeOneTimePlanPaid(ctx, event, referenceId, callerIp)
+	}
 	return fulfillOrder(ctx, event, referenceId, customerId, callerIp)
 }
 
@@ -906,6 +909,9 @@ func sessionAsyncPaymentSucceeded(ctx context.Context, event stripe.Event, calle
 
 	if event.GetObjectValue("mode") == string(stripe.CheckoutSessionModeSubscription) {
 		return reconcileStripeRecurringCheckoutSession(ctx, event)
+	}
+	if order := model.GetSubscriptionOrderByTradeNo(referenceId); isOneTimePlanStripeOrder(order) {
+		return handleStripeOneTimePlanPaid(ctx, event, referenceId, callerIp)
 	}
 	return fulfillOrder(ctx, event, referenceId, customerId, callerIp)
 }
@@ -927,6 +933,9 @@ func sessionAsyncPaymentFailed(ctx context.Context, event stripe.Event, callerIp
 			return err
 		}
 		return nil
+	}
+	if order := model.GetSubscriptionOrderByTradeNo(referenceId); isOneTimePlanStripeOrder(order) {
+		return handleStripeOneTimePlanTerminal(ctx, event, referenceId, model.SubscriptionChangeIntentStatusFailed)
 	}
 
 	LockOrder(referenceId)
@@ -1057,6 +1066,7 @@ var notifyStripePaymentProcessingFailure = service.NotifyDingTalkPaymentProcessi
 var reconcilePaidStripeInvoice = service.ReconcilePaidInvoice
 var reconcileFailedStripeInvoice = service.ReconcileFailedInvoice
 var terminatePendingStripePurchase = service.TerminatePendingStripePurchase
+var fulfillOneTimeStripeSubscriptionPurchase = service.CompleteOneTimeStripeSubscriptionPurchase
 
 func handleStripeInvoicePaid(ctx context.Context, event stripe.Event) (err error) {
 	first, processingToken, err := recordStripeSubscriptionWebhookEvent(event)
@@ -1102,6 +1112,163 @@ func reconcileStripeRecurringCheckoutSession(ctx context.Context, event stripe.E
 		return permanentStripeWebhookProcessingError(err)
 	}
 	return err
+}
+
+func handleStripeOneTimePlanPaid(ctx context.Context, event stripe.Event, referenceId string, callerIp string) (err error) {
+	first, processingToken, err := recordStripeSubscriptionWebhookEvent(event)
+	if err != nil || !first {
+		return err
+	}
+	defer finishStripeSubscriptionWebhookEvent(event, processingToken, &err)
+	order := model.GetSubscriptionOrderByTradeNo(referenceId)
+	if !isOneTimePlanStripeOrder(order) {
+		return permanentStripeWebhookProcessingError(model.ErrSubscriptionOrderNotFound)
+	}
+	if err := validateOneTimePlanStripeSessionEvent(event, order); err != nil {
+		return permanentStripeWebhookProcessingError(err)
+	}
+	payload := oneTimePlanStripeProviderPayload(event)
+	_, err = fulfillOneTimeStripeSubscriptionPurchase(ctx, referenceId, payload)
+	if errors.Is(err, model.ErrSubscriptionOrderStatusInvalid) || errors.Is(err, model.ErrSubscriptionOrderNotFound) {
+		return permanentStripeWebhookProcessingError(err)
+	}
+	if err == nil {
+		logger.LogInfo(ctx, fmt.Sprintf("Stripe one-time subscription order processed trade_no=%s event_type=%s client_ip=%s", referenceId, string(event.Type), callerIp))
+	}
+	return err
+}
+
+func handleStripeOneTimePlanTerminal(ctx context.Context, event stripe.Event, referenceId string, intentStatus string) (err error) {
+	first, processingToken, err := recordStripeSubscriptionWebhookEvent(event)
+	if err != nil || !first {
+		return err
+	}
+	defer finishStripeSubscriptionWebhookEvent(event, processingToken, &err)
+	order := model.GetSubscriptionOrderByTradeNo(referenceId)
+	if !isOneTimePlanStripeOrder(order) {
+		return nil
+	}
+	if err := validateOneTimePlanStripeSessionIdentity(event, order); err != nil {
+		return permanentStripeWebhookProcessingError(err)
+	}
+	return terminatePendingStripePurchase(ctx, referenceId, intentStatus)
+}
+
+func isOneTimePlanStripeOrder(order *model.SubscriptionOrder) bool {
+	return order != nil && order.PaymentProvider == model.PaymentProviderStripe && isOneTimePlanStripeMethod(order.PaymentMethod)
+}
+
+func validateOneTimePlanStripeSessionEvent(event stripe.Event, order *model.SubscriptionOrder) error {
+	if err := validateOneTimePlanStripeSessionIdentity(event, order); err != nil {
+		return err
+	}
+	if event.GetObjectValue("mode") != string(stripe.CheckoutSessionModePayment) {
+		return errors.New("Stripe one-time checkout mode mismatch")
+	}
+	paymentStatus := strings.TrimSpace(event.GetObjectValue("payment_status"))
+	if paymentStatus != "paid" {
+		return errors.New("Stripe one-time checkout is not paid")
+	}
+	actualAmount := stripeEventAmountMinor(event, "amount_total")
+	if actualAmount != order.PaymentAmountMinor {
+		return fmt.Errorf("Stripe one-time checkout amount mismatch: expected %d got %d", order.PaymentAmountMinor, actualAmount)
+	}
+	actualCurrency := strings.ToUpper(strings.TrimSpace(event.GetObjectValue("currency")))
+	if actualCurrency != strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)) {
+		return fmt.Errorf("Stripe one-time checkout currency mismatch: expected %s got %s", strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)), actualCurrency)
+	}
+	actualMethod := strings.ToLower(strings.TrimSpace(stripeEventObjectValue(event, "payment_method_types", "0")))
+	if actualMethod != strings.ToLower(strings.TrimSpace(order.PaymentMethod)) {
+		return fmt.Errorf("Stripe one-time checkout payment method mismatch: expected %s got %s", order.PaymentMethod, actualMethod)
+	}
+	expectedMetadata := []struct {
+		key      string
+		expected string
+		foldCase bool
+	}{
+		{key: "user_id", expected: strconv.Itoa(order.UserId)},
+		{key: "plan_id", expected: strconv.Itoa(order.PlanId)},
+		{key: "change_intent_id", expected: strconv.FormatInt(order.ChangeIntentId, 10)},
+		{key: "purchase_intent", expected: strings.TrimSpace(order.PurchaseIntent)},
+		{key: "purchase_months", expected: strconv.Itoa(order.PurchaseMonths)},
+		{key: "payment_method", expected: strings.ToLower(strings.TrimSpace(order.PaymentMethod)), foldCase: true},
+	}
+	for _, item := range expectedMetadata {
+		actual := strings.TrimSpace(stripeEventObjectValue(event, "metadata", item.key))
+		if actual == "" {
+			return fmt.Errorf("Stripe one-time checkout metadata %s is missing", item.key)
+		}
+		if item.foldCase {
+			actual = strings.ToLower(actual)
+		}
+		if actual != item.expected {
+			return fmt.Errorf("Stripe one-time checkout metadata %s mismatch", item.key)
+		}
+	}
+	return nil
+}
+
+func validateOneTimePlanStripeSessionIdentity(event stripe.Event, order *model.SubscriptionOrder) error {
+	if order == nil {
+		return errors.New("subscription order is missing")
+	}
+	sessionID := strings.TrimSpace(event.GetObjectValue("id"))
+	if sessionID == "" {
+		return errors.New("Stripe one-time checkout session id is missing")
+	}
+	if expectedSessionID := strings.TrimSpace(order.ProviderSessionId); expectedSessionID != "" && sessionID != expectedSessionID {
+		return fmt.Errorf("Stripe one-time checkout session mismatch: expected %s got %s", expectedSessionID, sessionID)
+	}
+	if strings.TrimSpace(event.GetObjectValue("client_reference_id")) != strings.TrimSpace(order.TradeNo) {
+		return errors.New("Stripe one-time checkout client reference mismatch")
+	}
+	if strings.TrimSpace(stripeEventObjectValue(event, "metadata", "trade_no")) != "" &&
+		strings.TrimSpace(stripeEventObjectValue(event, "metadata", "trade_no")) != strings.TrimSpace(order.TradeNo) {
+		return errors.New("Stripe one-time checkout metadata trade_no mismatch")
+	}
+	if strings.TrimSpace(stripeEventObjectValue(event, "metadata", "user_id")) != "" &&
+		strings.TrimSpace(stripeEventObjectValue(event, "metadata", "user_id")) != strconv.Itoa(order.UserId) {
+		return errors.New("Stripe one-time checkout metadata user_id mismatch")
+	}
+	if strings.TrimSpace(stripeEventObjectValue(event, "metadata", "plan_id")) != "" &&
+		strings.TrimSpace(stripeEventObjectValue(event, "metadata", "plan_id")) != strconv.Itoa(order.PlanId) {
+		return errors.New("Stripe one-time checkout metadata plan_id mismatch")
+	}
+	if order.ChangeIntentId > 0 && strings.TrimSpace(stripeEventObjectValue(event, "metadata", "change_intent_id")) != "" &&
+		strings.TrimSpace(stripeEventObjectValue(event, "metadata", "change_intent_id")) != strconv.FormatInt(order.ChangeIntentId, 10) {
+		return errors.New("Stripe one-time checkout metadata change_intent_id mismatch")
+	}
+	if err := validateStripeCheckoutLivemodeForLocalKey(event.Livemode); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateStripeCheckoutLivemodeForLocalKey(livemode bool) error {
+	key := strings.TrimSpace(setting.StripeApiSecret)
+	if strings.HasPrefix(key, "sk_live_") || strings.HasPrefix(key, "rk_live_") {
+		if !livemode {
+			return errors.New("Stripe checkout livemode mismatch")
+		}
+	}
+	if strings.HasPrefix(key, "sk_test_") || strings.HasPrefix(key, "rk_test_") {
+		if livemode {
+			return errors.New("Stripe checkout livemode mismatch")
+		}
+	}
+	return nil
+}
+
+func oneTimePlanStripeProviderPayload(event stripe.Event) string {
+	payload := map[string]any{
+		"session_id":           strings.TrimSpace(event.GetObjectValue("id")),
+		"payment_intent":       strings.TrimSpace(event.GetObjectValue("payment_intent")),
+		"amount_total":         event.GetObjectValue("amount_total"),
+		"currency":             strings.ToUpper(strings.TrimSpace(event.GetObjectValue("currency"))),
+		"payment_method_types": stripeEventObjectValue(event, "payment_method_types", "0"),
+		"event_type":           string(event.Type),
+	}
+	return common.GetJsonString(payload)
 }
 
 func stripeCheckoutSessionInvoiceID(event stripe.Event) (string, error) {
@@ -1869,6 +2036,9 @@ func sessionExpired(ctx context.Context, event stripe.Event) error {
 			return err
 		}
 		return nil
+	}
+	if order := model.GetSubscriptionOrderByTradeNo(referenceId); isOneTimePlanStripeOrder(order) {
+		return handleStripeOneTimePlanTerminal(ctx, event, referenceId, model.SubscriptionChangeIntentStatusExpired)
 	}
 
 	// Subscription order expiration

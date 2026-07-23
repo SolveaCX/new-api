@@ -1039,6 +1039,191 @@ func createOrLoadStripeInvoiceBindingTx(tx *gorm.DB, order *model.SubscriptionOr
 	return &binding, nil
 }
 
+func CompleteOneTimeStripeSubscriptionPurchase(ctx context.Context, tradeNo string, providerPayload string) (*PurchaseSubscriptionResult, error) {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if tradeNo == "" {
+		return nil, errors.New("tradeNo is empty")
+	}
+	result := &PurchaseSubscriptionResult{}
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var order model.SubscriptionOrder
+		if err := subscriptionCommandLock(tx).Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return model.ErrSubscriptionOrderNotFound
+			}
+			return err
+		}
+		if !isOneTimeStripeSubscriptionOrder(&order) {
+			return model.ErrPaymentMethodMismatch
+		}
+		if order.Status == common.TopUpStatusSuccess {
+			result.Order = &order
+			if order.ChangeIntentId > 0 {
+				var intent model.SubscriptionChangeIntent
+				if err := tx.Where("id = ?", order.ChangeIntentId).First(&intent).Error; err == nil {
+					result.Intent = &intent
+				}
+			}
+			return nil
+		}
+		if order.Status != common.TopUpStatusPending {
+			return model.ErrSubscriptionOrderStatusInvalid
+		}
+		var intent model.SubscriptionChangeIntent
+		if err := subscriptionCommandLock(tx).Where("id = ? AND user_id = ? AND to_plan_id = ?", order.ChangeIntentId, order.UserId, order.PlanId).First(&intent).Error; err != nil {
+			return err
+		}
+		if intent.PaymentMode != model.SubscriptionPaymentModePrepaid {
+			return errors.New("local change intent payment mode mismatch")
+		}
+		if intent.Status != model.SubscriptionChangeIntentStatusAwaitingPayment && intent.Status != model.SubscriptionChangeIntentStatusApplied {
+			return errors.New("local change intent status mismatch")
+		}
+		var contract model.UserSubscriptionContract
+		if err := subscriptionCommandLock(tx).Where("id = ? AND user_id = ?", intent.ContractId, order.UserId).First(&contract).Error; err != nil {
+			return err
+		}
+		snapshot, err := oneTimeStripePlanSnapshotFromOrder(&order)
+		if err != nil {
+			return PermanentPaidInvoiceError(err)
+		}
+		if err := validateOneTimeStripeLocalOrderFacts(&order, &intent, snapshot); err != nil {
+			return PermanentPaidInvoiceError(err)
+		}
+		if err := enforcePrepaidReplacementLimitTx(tx, contract.Id, order.PurchaseMonths); err != nil {
+			return err
+		}
+		if _, err := refundPrepaidNotStartedTermsTx(tx, order.UserId, contract.Id); err != nil {
+			return err
+		}
+		now := common.GetTimestamp()
+		periodStart := now
+		periodEnd := time.Unix(periodStart, 0).AddDate(0, order.PurchaseMonths, 0).Unix()
+		grant, err := model.RotateCurrentEntitlementTx(tx, model.GrantEntitlementInput{
+			ContractId:           contract.Id,
+			UserId:               order.UserId,
+			PlanId:               order.PlanId,
+			ProviderBindingId:    0,
+			GrantKey:             "stripe-one-time:" + order.TradeNo,
+			PaymentMode:          model.SubscriptionPaymentModePrepaid,
+			AmountTotal:          snapshot.TotalAmount,
+			MediaCreditsTotal:    snapshot.MediaCreditsMonthly,
+			PeriodStart:          periodStart,
+			PeriodEnd:            periodEnd,
+			EndReasonForPrevious: previousEntitlementEndReason(intent.Kind),
+			Source:               strings.TrimSpace(order.PaymentMethod),
+		})
+		if err != nil {
+			return err
+		}
+		if err := createPrepaidTermSegmentsTx(tx, contract.Id, order.Id, order.PlanId, snapshot.PriceAmount, periodStart, order.PurchaseMonths); err != nil {
+			return err
+		}
+		plan := model.SubscriptionPlan{Id: order.PlanId}
+		if err := markPrepaidPurchaseAppliedTx(tx, &contract, &intent, &plan, periodStart, periodEnd, order.TradeNo); err != nil {
+			return err
+		}
+		order.Status = common.TopUpStatusSuccess
+		order.CompleteTime = now
+		if strings.TrimSpace(providerPayload) != "" {
+			order.ProviderPayload = providerPayload
+		}
+		if err := tx.Save(&order).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ?", contract.Id).First(&contract).Error; err != nil {
+			return err
+		}
+		result.Status = ChangePlanStatusApplied
+		result.Contract = &contract
+		result.Intent = &intent
+		result.Order = &order
+		if grant != nil {
+			result.Entitlement = grant.Entitlement
+		}
+		return nil
+	})
+	if err != nil {
+		if IsPermanentPaidInvoiceError(err) {
+			return nil, err
+		}
+		return nil, err
+	}
+	if result.Order != nil && result.Order.Status == common.TopUpStatusSuccess {
+		if err := model.TryGrantInviteSubscriptionRewardAfterOrderCompleted(tradeNo); err != nil {
+			common.SysError(fmt.Sprintf("invite subscription reward grant failed for one-time order %s: %v", tradeNo, err))
+		}
+	}
+	return result, nil
+}
+
+func oneTimeStripePlanSnapshotFromOrder(order *model.SubscriptionOrder) (purchasePlanSnapshot, error) {
+	if order == nil || strings.TrimSpace(order.PlanSnapshot) == "" {
+		return purchasePlanSnapshot{}, errors.New("local one-time subscription plan snapshot is missing")
+	}
+	var snapshot purchasePlanSnapshot
+	if err := common.Unmarshal([]byte(order.PlanSnapshot), &snapshot); err != nil {
+		return purchasePlanSnapshot{}, err
+	}
+	if snapshot.PlanID == 0 {
+		snapshot.PlanID = order.PlanId
+	}
+	return snapshot, nil
+}
+
+func validateOneTimeStripeLocalOrderFacts(order *model.SubscriptionOrder, intent *model.SubscriptionChangeIntent, snapshot purchasePlanSnapshot) error {
+	if order == nil || intent == nil {
+		return errors.New("local one-time subscription facts are missing")
+	}
+	if order.UserId != intent.UserId || order.PlanId != intent.ToPlanId {
+		return errors.New("local one-time subscription ownership mismatch")
+	}
+	if order.PaymentProvider != model.PaymentProviderStripe {
+		return model.ErrPaymentMethodMismatch
+	}
+	if order.PurchaseMonths < 1 || order.PurchaseMonths > 12 {
+		return errors.New("local one-time subscription months mismatch")
+	}
+	if snapshot.PlanID != order.PlanId {
+		return errors.New("local one-time subscription plan snapshot mismatch")
+	}
+	if snapshot.PriceAmount < 0 || snapshot.TotalAmount < 0 || snapshot.MediaCreditsMonthly < 0 {
+		return errors.New("local one-time subscription plan snapshot values are invalid")
+	}
+	if strings.TrimSpace(order.PaymentCurrency) == "" || order.PaymentAmountMinor <= 0 {
+		return errors.New("local one-time subscription payment quote is missing")
+	}
+	switch strings.TrimSpace(order.PaymentMethod) {
+	case SubscriptionPaymentChoicePix:
+		if strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)) != "BRL" {
+			return errors.New("Pix subscription purchase quote must be BRL")
+		}
+	case SubscriptionPaymentChoiceUPI:
+		if strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)) != "INR" {
+			return errors.New("UPI subscription purchase quote must be INR")
+		}
+	case SubscriptionPaymentChoiceAlipay:
+	default:
+		return errors.New("unsupported one-time subscription payment method")
+	}
+	return nil
+}
+
+func isOneTimeStripeSubscriptionOrder(order *model.SubscriptionOrder) bool {
+	if order == nil {
+		return false
+	}
+	if order.PaymentProvider != model.PaymentProviderStripe {
+		return false
+	}
+	switch strings.TrimSpace(order.PaymentMethod) {
+	case SubscriptionPaymentChoiceAlipay, SubscriptionPaymentChoicePix, SubscriptionPaymentChoiceUPI:
+		return true
+	default:
+		return false
+	}
+}
+
 func TerminatePendingStripePurchase(ctx context.Context, tradeNo string, intentStatus string) error {
 	tradeNo = strings.TrimSpace(tradeNo)
 	if tradeNo == "" {

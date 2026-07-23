@@ -62,6 +62,8 @@ func setupSubscriptionInvoiceServiceTestDB(t *testing.T) {
 		&model.SubscriptionProviderBinding{},
 		&model.UserSubscriptionContract{},
 		&model.SubscriptionChangeIntent{},
+		&model.SubscriptionTermSegment{},
+		&model.WalletLedgerEntry{},
 	))
 }
 
@@ -909,6 +911,218 @@ func TestStripeMinorUnitAmountForSubscriptionUsesDecimalRounding(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, int64(101), actual)
+}
+
+func TestCompleteOneTimeStripeSubscriptionPurchaseAppliesPendingOrderOnce(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	userID := 8301
+	planID := 8401
+	rank := 1
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       userID,
+		Username: "one_time_user",
+		Email:    "one-time@example.com",
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:                  planID,
+		Title:               "One Time Plan",
+		PriceAmount:         12.34,
+		Currency:            "BRL",
+		DurationUnit:        model.SubscriptionDurationMonth,
+		DurationValue:       1,
+		Enabled:             true,
+		TierRank:            &rank,
+		AllowBalancePay:     common.GetPointer(true),
+		TotalAmount:         1234,
+		MediaCreditsMonthly: 55,
+	}).Error)
+	contract := model.UserSubscriptionContract{
+		UserId:      userID,
+		Status:      model.SubscriptionContractStatusEnded,
+		PaymentMode: model.SubscriptionPaymentModeExternalOnePeriod,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	intent := model.SubscriptionChangeIntent{
+		ContractId:    contract.Id,
+		UserId:        userID,
+		RequestId:     "550e8400-e29b-41d4-a716-446655440200",
+		Kind:          model.SubscriptionChangeIntentKindPurchase,
+		PaymentMode:   model.SubscriptionPaymentModePrepaid,
+		Status:        model.SubscriptionChangeIntentStatusAwaitingPayment,
+		ToPlanId:      planID,
+		ChangeVersion: contract.ChangeVersion + 1,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Update("latest_change_intent_id", intent.Id).Error)
+	order := model.SubscriptionOrder{
+		UserId:             userID,
+		PlanId:             planID,
+		Money:              12.34,
+		TradeNo:            "sub_one_time_service",
+		PaymentMethod:      SubscriptionPaymentChoicePix,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		PurchaseMonths:     1,
+		UnitPrice:          12.34,
+		PaymentCurrency:    "BRL",
+		PaymentAmountMinor: 1234,
+		PlanSnapshot:       `{"plan_id":8401,"title":"One Time Plan","price_amount":12.34,"currency":"BRL","duration_unit":"month","duration_value":1,"total_amount":1234,"media_credits_monthly":55}`,
+		PurchaseIntent:     model.SubscriptionChangeIntentKindPurchase,
+		RenewalSource:      model.SubscriptionRenewalSourceWallet,
+		ChangeIntentId:     intent.Id,
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", planID).Updates(map[string]interface{}{
+		"price_amount":          99.99,
+		"total_amount":          999999,
+		"media_credits_monthly": 999,
+		"enabled":               false,
+	}).Error)
+
+	first, err := CompleteOneTimeStripeSubscriptionPurchase(context.Background(), order.TradeNo, `{"session_id":"cs_once"}`)
+	require.NoError(t, err)
+	second, err := CompleteOneTimeStripeSubscriptionPurchase(context.Background(), order.TradeNo, `{"session_id":"cs_once"}`)
+	require.NoError(t, err)
+
+	require.NotNil(t, first.Entitlement)
+	require.Equal(t, int64(1234), first.Entitlement.AmountTotal)
+	require.Equal(t, int64(55), first.Entitlement.MediaCreditsTotal)
+	require.Nil(t, second.Entitlement)
+	var entitlementCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", userID).Count(&entitlementCount).Error)
+	require.Equal(t, int64(1), entitlementCount)
+	var terms []model.SubscriptionTermSegment
+	require.NoError(t, model.DB.Where("contract_id = ?", contract.Id).Find(&terms).Error)
+	require.Len(t, terms, 1)
+	var debitCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("user_id = ? AND entry_type = ?", userID, model.WalletLedgerEntryTypePrepaidDebit).Count(&debitCount).Error)
+	require.Zero(t, debitCount)
+	var reloaded model.SubscriptionOrder
+	require.NoError(t, model.DB.First(&reloaded, "trade_no = ?", order.TradeNo).Error)
+	require.Equal(t, common.TopUpStatusSuccess, reloaded.Status)
+	require.Equal(t, "BRL", reloaded.PaymentCurrency)
+	require.Equal(t, int64(1234), reloaded.PaymentAmountMinor)
+}
+
+func TestCompleteOneTimeStripeSubscriptionPurchaseUsesSnapshotWalletBasisForBRLTerms(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	userID := 8303
+	planID := 8403
+	rank := 1
+	require.NoError(t, model.DB.Create(&model.User{Id: userID, Username: "one_time_brl_basis", Status: common.UserStatusEnabled, Group: "default"}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:                  planID,
+		Title:               "Canonical Plan",
+		PriceAmount:         10,
+		Currency:            "USD",
+		DurationUnit:        model.SubscriptionDurationMonth,
+		DurationValue:       1,
+		Enabled:             true,
+		TierRank:            &rank,
+		AllowBalancePay:     common.GetPointer(true),
+		TotalAmount:         1000,
+		MediaCreditsMonthly: 25,
+	}).Error)
+	contract := model.UserSubscriptionContract{UserId: userID, Status: model.SubscriptionContractStatusEnded}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	intent := model.SubscriptionChangeIntent{
+		ContractId:    contract.Id,
+		UserId:        userID,
+		RequestId:     "550e8400-e29b-41d4-a716-446655440202",
+		Kind:          model.SubscriptionChangeIntentKindPurchase,
+		PaymentMode:   model.SubscriptionPaymentModePrepaid,
+		Status:        model.SubscriptionChangeIntentStatusAwaitingPayment,
+		ToPlanId:      planID,
+		ChangeVersion: contract.ChangeVersion + 1,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:             userID,
+		PlanId:             planID,
+		Money:              49.90,
+		TradeNo:            "sub_one_time_brl_term_basis",
+		PaymentMethod:      SubscriptionPaymentChoicePix,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		PurchaseMonths:     2,
+		UnitPrice:          49.90,
+		PaymentCurrency:    "BRL",
+		PaymentAmountMinor: 9980,
+		PlanSnapshot:       `{"plan_id":8403,"title":"Canonical Plan","price_amount":10,"currency":"USD","duration_unit":"month","duration_value":1,"total_amount":1000,"media_credits_monthly":25}`,
+		PurchaseIntent:     model.SubscriptionChangeIntentKindPurchase,
+		ChangeIntentId:     intent.Id,
+	}).Error)
+
+	_, err := CompleteOneTimeStripeSubscriptionPurchase(context.Background(), "sub_one_time_brl_term_basis", `{"session_id":"cs_brl_basis"}`)
+
+	require.NoError(t, err)
+	var terms []model.SubscriptionTermSegment
+	require.NoError(t, model.DB.Where("contract_id = ?", contract.Id).Order("segment_index asc").Find(&terms).Error)
+	require.Len(t, terms, 2)
+	require.Equal(t, float64(10), terms[0].AllocatedMoney)
+	require.Equal(t, float64(10), terms[1].AllocatedMoney)
+}
+
+func TestCompleteOneTimeStripeSubscriptionPurchaseRejectsCurrencyMethodMismatch(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	userID := 8302
+	planID := 8402
+	rank := 1
+	require.NoError(t, model.DB.Create(&model.User{Id: userID, Username: "one_time_mismatch", Status: common.UserStatusEnabled, Group: "default"}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:              planID,
+		Title:           "Mismatch Plan",
+		PriceAmount:     12.34,
+		Currency:        "USD",
+		DurationUnit:    model.SubscriptionDurationMonth,
+		DurationValue:   1,
+		Enabled:         true,
+		TierRank:        &rank,
+		AllowBalancePay: common.GetPointer(true),
+		TotalAmount:     1234,
+	}).Error)
+	contract := model.UserSubscriptionContract{UserId: userID, Status: model.SubscriptionContractStatusEnded}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	intent := model.SubscriptionChangeIntent{
+		ContractId:  contract.Id,
+		UserId:      userID,
+		RequestId:   "550e8400-e29b-41d4-a716-446655440201",
+		Kind:        model.SubscriptionChangeIntentKindPurchase,
+		PaymentMode: model.SubscriptionPaymentModePrepaid,
+		Status:      model.SubscriptionChangeIntentStatusAwaitingPayment,
+		ToPlanId:    planID,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:             userID,
+		PlanId:             planID,
+		Money:              12.34,
+		TradeNo:            "sub_one_time_currency_mismatch",
+		PaymentMethod:      SubscriptionPaymentChoicePix,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		PurchaseMonths:     1,
+		UnitPrice:          12.34,
+		PaymentCurrency:    "USD",
+		PaymentAmountMinor: 1234,
+		PlanSnapshot:       `{"plan_id":8402,"title":"Mismatch Plan","price_amount":12.34,"currency":"USD","duration_unit":"month","duration_value":1,"total_amount":1234}`,
+		PurchaseIntent:     model.SubscriptionChangeIntentKindPurchase,
+		ChangeIntentId:     intent.Id,
+	}).Error)
+
+	_, err := CompleteOneTimeStripeSubscriptionPurchase(context.Background(), "sub_one_time_currency_mismatch", "{}")
+
+	require.Error(t, err)
+	require.True(t, IsPermanentPaidInvoiceError(err))
+	require.Contains(t, err.Error(), "Pix subscription purchase quote must be BRL")
+	var entitlementCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", userID).Count(&entitlementCount).Error)
+	require.Zero(t, entitlementCount)
 }
 
 func replaceStripeInvoiceReconcilers(t *testing.T, invoice *stripe.Invoice, subscription *stripe.Subscription) func() {
