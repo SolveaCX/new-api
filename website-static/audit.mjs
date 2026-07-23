@@ -11,7 +11,6 @@ const warnings = [];
 const fail = (file, message) => errors.push(`${file}: ${message}`);
 
 const appOnly = new Set(["console.html", "login.html", "onboarding.html", "signup.html"]);
-const localizedHomepages = new Set(["index.html", "zh.html", "es.html", "fr.html", "pt.html", "ru.html", "ja.html", "vi.html", "de.html", "id.html"]);
 const legacyRoutes = new Set(["/blog", "/models", "/pricing", "/rankings"]);
 const requiredNavRoutes = ["models", "docs", "playground", "pricing", "compute", "usecases"];
 const languageTags = new Set(["en-US", "zh-CN", "es-ES", "fr-FR", "pt-PT", "ru-RU", "ja-JP", "vi-VN", "de-DE", "id-ID"]);
@@ -25,7 +24,7 @@ for (const file of files) {
   const viewports = [...html.matchAll(/<meta\s+name="viewport"\s+content="([^"]+)"/gi)];
   if (viewports.length !== 1) fail(file, `expected one viewport meta, found ${viewports.length}`);
   else if (!viewports[0][1].includes("width=device-width")) fail(file, `non-responsive viewport: ${viewports[0][1]}`);
-  const cssVersion = localizedHomepages.has(file) ? "725a" : "723c";
+  const cssVersion = "728b";
   if (!html.includes(`fk2.css?v=${cssVersion}`)) fail(file, "missing the current shared CSS cache version");
   if (/\bid=""/.test(html)) fail(file, "contains an empty id");
   if (/<script\b[^>]*\bsrc=""/i.test(html)) fail(file, "contains an empty script src");

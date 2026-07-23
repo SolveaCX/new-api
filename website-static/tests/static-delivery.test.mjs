@@ -39,6 +39,40 @@ test("static HTML receives one shared configuration script and keeps local docs 
   assert.doesNotMatch(indexHtml, /href="[^"]*\.html/);
 });
 
+test("website navigation applies the shared responsive Flatkey lockup", () => {
+  const css = read("../html/fk2.css");
+
+  assert.match(
+    css,
+    /\.nav>a\.logo\{font-size:30px;letter-spacing:-1\.3px;gap:9px\}/,
+  );
+  assert.match(
+    css,
+    /\.nav>a\.logo img\{width:38px;height:38px\}/,
+  );
+  assert.doesNotMatch(css, /\.nav>\.logo\{/);
+  assert.doesNotMatch(css, /\.nav>\.logo img\{/);
+
+  for (const page of [
+    "index.html",
+    "models.html",
+    "model.html",
+    "playground.html",
+    "topup.html",
+    "terms.html",
+    "privacy.html",
+    "about.html",
+    "careers.html",
+  ]) {
+    const html = read(`../html/${page}`);
+    assert.match(
+      html,
+      /<a class="logo" href="\/"><img src="\/?assets\/flatkey-mark\.svg\?v=4" alt="[^"]*">flatkey<\/a>/,
+      `${page} must use the shared Flatkey mark and lowercase wordmark`,
+    );
+  }
+});
+
 test("OpenRouter-style homepages omit removed proof and price-comparison blocks", () => {
   const homepages = [
     "index.html", "zh.html", "es.html", "pt.html", "fr.html",

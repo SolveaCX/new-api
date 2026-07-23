@@ -241,8 +241,8 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 @media (max-width:1740px){
   .nav{height:76px;padding:0 20px;gap:18px;position:sticky;top:0;z-index:50}
   .nav>a.logo{margin-right:10px}
-  .nav>.logo{font-size:32px;letter-spacing:-1.4px;gap:9px}
-  .nav>.logo img{width:40px;height:40px}
+  .nav>a.logo{font-size:32px;letter-spacing:-1.4px;gap:9px}
+  .nav>a.logo img{width:40px;height:40px}
   .nav>a:not(.logo){font-size:13.5px}
   .nav>.sp{min-width:0}
   .nav>.langsel{max-width:104px;padding:7px 6px;font-size:12.5px}
@@ -252,8 +252,8 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 @media (max-width:1480px){
   .nav{gap:10px;padding:0 16px}
   .nav>a.logo{margin-right:6px}
-  .nav>.logo{font-size:28px;letter-spacing:-1.2px}
-  .nav>.logo img{width:36px;height:36px}
+  .nav>a.logo{font-size:28px;letter-spacing:-1.2px}
+  .nav>a.logo img{width:36px;height:36px}
   .nav>a:not(.logo){font-size:12.5px}
   .nav>.langsel{max-width:92px;padding:7px 5px;font-size:12px}
   .nav>.btn{min-height:38px;padding:8px 9px}
@@ -261,8 +261,8 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 
 @media (max-width:1320px){
   .nav{height:72px;padding:0 14px;gap:6px;position:sticky;top:0;z-index:50}
-  .nav>.logo{font-size:28px;letter-spacing:-1.2px;gap:8px}
-  .nav>.logo img{width:36px;height:36px}
+  .nav>a.logo{font-size:28px;letter-spacing:-1.2px;gap:8px}
+  .nav>a.logo img{width:36px;height:36px}
   .nav>a:not(.logo){font-size:12px}
   .nav>.sp{min-width:0}
   .nav>.langsel{max-width:86px;padding:7px 6px;font-size:12px}
@@ -290,8 +290,8 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 @media (max-width:900px){
   html,body{max-width:100%;overflow-x:clip}
   .nav{height:72px;padding:0 18px;gap:10px;position:sticky;top:0;z-index:50}
-  .nav>.logo{font-size:30px;letter-spacing:-1.3px;gap:9px}
-  .nav>.logo img{width:38px;height:38px}
+  .nav>a.logo{font-size:30px;letter-spacing:-1.3px;gap:9px}
+  .nav>a.logo img{width:38px;height:38px}
   .nav>a:not(.logo),.nav>.sp{display:none}
   .nav>.langsel{margin-left:auto;max-width:104px;padding:8px 7px}
   .nav-toggle{display:flex}
