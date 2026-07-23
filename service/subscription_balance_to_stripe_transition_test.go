@@ -88,6 +88,60 @@ func TestBalanceCurrentUpgradeToStripeRecurringCreatesReplayableCheckout(t *test
 	require.Equal(t, targetPlan.Id, orders[0].PlanId)
 }
 
+func TestExternalCurrentUpgradeToStripeRecurringCreatesCheckoutWithoutMutatingCurrentContract(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 8162, 5000)
+	currentPlan := insertContractServicePlan(t, 8264, 1, 10, 1000)
+	targetPlan := insertStripeUpgradePlan(t, 8265, 2, 12.34, 1234, "price_invoice_plan")
+	contract, oldEntitlement := seedExternalOnePeriodContract(t, 8162, currentPlan)
+
+	originalCreator := stripeSubscriptionCheckoutCreator
+	t.Cleanup(func() { stripeSubscriptionCheckoutCreator = originalCreator })
+	creatorCalls := 0
+	stripeSubscriptionCheckoutCreator = func(ctx context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+		creatorCalls++
+		require.Equal(t, 8162, input.UserID)
+		require.Equal(t, targetPlan.Id, input.PlanID)
+		require.Equal(t, contract.Id, input.ContractID)
+		require.Equal(t, "price_invoice_plan", input.PriceID)
+		return &StripeSubscriptionCheckoutSession{ID: "cs_external_to_stripe", URL: "https://checkout.stripe.test/external-to-stripe"}, nil
+	}
+
+	result, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      8162,
+		PlanID:      targetPlan.Id,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "external-to-stripe-upgrade",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ChangePlanStatusCheckoutRequired, result.Status)
+	require.Equal(t, "https://checkout.stripe.test/external-to-stripe", result.CheckoutURL)
+	require.Equal(t, model.SubscriptionChangeIntentKindUpgrade, result.Intent.Kind)
+	require.Equal(t, model.SubscriptionChangeIntentStatusAwaitingPayment, result.Intent.Status)
+	require.Zero(t, result.Intent.ProviderBindingId)
+	require.Equal(t, 1, creatorCalls)
+
+	var reloadedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, currentPlan.Id, reloadedContract.CurrentPlanId)
+	require.Equal(t, oldEntitlement.Id, reloadedContract.CurrentEntitlementId)
+	require.Zero(t, reloadedContract.CurrentProviderBindingId)
+	require.Equal(t, model.SubscriptionPaymentModeExternalOnePeriod, reloadedContract.PaymentMode)
+	require.Equal(t, result.Intent.Id, reloadedContract.LatestChangeIntentId)
+
+	var reloadedEntitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&reloadedEntitlement, "id = ?", oldEntitlement.Id).Error)
+	require.Equal(t, currentPlan.Id, reloadedEntitlement.PlanId)
+	require.Equal(t, int64(77), reloadedEntitlement.AmountUsed)
+	require.NotNil(t, reloadedEntitlement.CurrentSlot)
+	require.Equal(t, model.SubscriptionPaymentModeExternalOnePeriod, reloadedEntitlement.PaymentMode)
+
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("change_intent_id = ? AND payment_provider = ?", result.Intent.Id, model.PaymentProviderStripe).Count(&orderCount).Error)
+	require.Equal(t, int64(1), orderCount)
+}
+
 func TestBalanceCurrentUpgradeToStripeRecurringPaidInvoiceRotatesThroughCheckoutBinding(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 8161, 5000)
@@ -177,4 +231,40 @@ func TestBalanceCurrentUpgradeToStripeRecurringPaidInvoiceRotatesThroughCheckout
 	var bindingCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("provider_subscription_id = ?", "sub_balance_to_stripe_paid").Count(&bindingCount).Error)
 	require.Equal(t, int64(1), bindingCount)
+}
+
+func seedExternalOnePeriodContract(t *testing.T, userID int, currentPlan model.SubscriptionPlan) (*model.UserSubscriptionContract, model.UserSubscription) {
+	t.Helper()
+	contract := &model.UserSubscriptionContract{
+		UserId:      userID,
+		Status:      model.SubscriptionContractStatusActive,
+		PaymentMode: model.SubscriptionPaymentModeExternalOnePeriod,
+	}
+	require.NoError(t, model.DB.Create(contract).Error)
+	currentSlot := 1
+	grantKey := "external:current"
+	entitlement := model.UserSubscription{
+		UserId:        userID,
+		PlanId:        currentPlan.Id,
+		ContractId:    contract.Id,
+		GrantKey:      &grantKey,
+		CurrentSlot:   &currentSlot,
+		AmountTotal:   currentPlan.TotalAmount,
+		AmountUsed:    77,
+		StartTime:     1000,
+		EndTime:       2000,
+		AccessEndTime: 2000,
+		Status:        model.SubscriptionEntitlementStatusActive,
+		Source:        model.SubscriptionPaymentModeExternalOnePeriod,
+		PaymentMode:   model.SubscriptionPaymentModeExternalOnePeriod,
+	}
+	require.NoError(t, model.DB.Create(&entitlement).Error)
+	require.NoError(t, model.DB.Model(contract).Updates(map[string]interface{}{
+		"current_plan_id":        currentPlan.Id,
+		"current_entitlement_id": entitlement.Id,
+		"current_period_start":   1000,
+		"current_period_end":     2000,
+	}).Error)
+	require.NoError(t, model.DB.First(contract, "id = ?", contract.Id).Error)
+	return contract, entitlement
 }
