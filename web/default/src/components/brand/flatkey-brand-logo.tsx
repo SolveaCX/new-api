@@ -18,28 +18,32 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { cn } from '@/lib/utils'
 
-// Brand v5 (design doc "Flatkey Logo 方案" card 5a): gradient shield-key mark +
-// single-color "flatkey.ai" wordmark in Space Grotesk SemiBold, lowercase.
-// Wordmark color is #1E1B4B on light, near-white on dark — no gradient text.
+// Single brand standard (matches the official website's compact navigation):
+// the gradient "flatkey-mark" tile + a single-color "flatkey" wordmark (no ".ai")
+// in Public Sans Bold, lowercase. Its responsive 38/30, 36/28, and 40/32
+// mark/wordmark pairings mirror the website navigation at the same viewport.
 export const FLATKEY_LOGO_LIGHT = '/flatkey-lockup-light.svg'
 export const FLATKEY_LOGO_DARK_BG = '/flatkey-lockup-dark.svg'
 export const FLATKEY_MARK = '/flatkey-mark.svg'
 
-const WORDMARK_FONT_FAMILY =
-  "'Space Grotesk', Inter, 'SF Pro Display', Arial, sans-serif"
+const WORDMARK_FONT_FAMILY = "'Public Sans', Inter, -apple-system, sans-serif"
 
 type FlatkeyBrandLogoProps = {
   alt?: string
   className?: string
   imageClassName?: string
+  markClassName?: string
   variant?: 'lockup' | 'full'
+  wordmarkClassName?: string
 }
 
 export function FlatkeyBrandLogo({
-  alt = 'Flatkey',
+  alt = 'flatkey',
   className,
   imageClassName,
+  markClassName,
   variant = 'lockup',
+  wordmarkClassName,
 }: FlatkeyBrandLogoProps) {
   const imageClass = cn('h-full w-full object-contain', imageClassName)
 
@@ -61,18 +65,31 @@ export function FlatkeyBrandLogo({
   }
 
   return (
-    <span className={cn('inline-flex items-center gap-2.5', className)}>
+    <span
+      data-flatkey-brand='lockup'
+      className={cn(
+        'inline-flex items-center gap-[9px] min-[901px]:gap-2 min-[1481px]:gap-[9px]',
+        className
+      )}
+    >
       <img
         src={FLATKEY_MARK}
         alt=''
         aria-hidden
-        className='h-8 w-8 shrink-0'
+        className={cn(
+          'h-[38px] w-[38px] shrink-0 min-[901px]:h-9 min-[901px]:w-9 min-[1481px]:h-10 min-[1481px]:w-10',
+          markClassName
+        )}
       />
       <span
-        className='text-[20px] leading-none font-semibold text-[#1E1B4B] dark:text-slate-50'
-        style={{ fontFamily: WORDMARK_FONT_FAMILY }}
+        data-flatkey-wordmark
+        className={cn(
+          'text-[30px] leading-none font-bold text-[#0B0B0F] min-[901px]:text-[28px] min-[1481px]:text-[32px] dark:text-[#F5F5F2]',
+          wordmarkClassName
+        )}
+        style={{ fontFamily: WORDMARK_FONT_FAMILY, letterSpacing: '-0.043em' }}
       >
-        flatkey.ai
+        flatkey
       </span>
     </span>
   )

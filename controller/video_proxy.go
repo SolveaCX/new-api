@@ -17,6 +17,7 @@ import (
 	taskblockrunseedance "github.com/QuantumNous/new-api/relay/channel/task/blockrunseedance"
 	taskjimengzhizinan "github.com/QuantumNous/new-api/relay/channel/task/jimengzhizinan"
 	tasktechmobi "github.com/QuantumNous/new-api/relay/channel/task/techmobi"
+	taskxaigrok "github.com/QuantumNous/new-api/relay/channel/task/xaigrok"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
@@ -134,6 +135,10 @@ func VideoProxy(c *gin.Context) {
 		videoURL = taskjimengzhizinan.ExtractUpstreamVideoURL(task.Data)
 	case constant.ChannelTypeTechMobiVideo:
 		videoURL = tasktechmobi.ExtractUpstreamVideoURL(task.Data)
+	case constant.ChannelTypeBytePlus:
+		videoURL = extractBytePlusVideoURL(task)
+	case constant.ChannelTypeXaiGrokVideo:
+		videoURL = taskxaigrok.ExtractUpstreamVideoURL(task.Data)
 	default:
 		// Video URL is stored in PrivateData.ResultURL (fallback to FailReason for old data)
 		videoURL = task.GetResultURL()

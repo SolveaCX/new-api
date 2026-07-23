@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DEFAULT_LOCALE, LOCALES, type Locale, localeAlternates, localizePath } from "./locales";
+import { DEFAULT_LOCALE, LOCALES, type Locale, localeAlternates, localeLanguageTag, localizePath } from "./locales";
 
 export const SITE_ORIGIN = "https://flatkey.ai";
 export const SITE_NAME = "flatkey.ai";
@@ -40,7 +40,7 @@ export function buildMetadata(input: SeoInput): Metadata {
               ...(input.locales && input.locales.length < LOCALES.length
                 ? Object.fromEntries(
                     input.locales.map((altLocale) => [
-                      altLocale,
+                      localeLanguageTag(altLocale),
                       `${SITE_ORIGIN}${localizePath(input.pathname, altLocale)}`,
                     ])
                   )

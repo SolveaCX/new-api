@@ -78,3 +78,11 @@ describe("footer copy", () => {
     expect(getCopy("de").footer.tagline).toBe("Sicher, zuverlässig und günstig");
   });
 });
+
+describe("documentation copy", () => {
+  test("provides a documentation label for every supported locale", () => {
+    for (const locale of LOCALES) {
+      expect(getCopy(locale).nav.docs).toBeTruthy();
+    }
+  });
+});

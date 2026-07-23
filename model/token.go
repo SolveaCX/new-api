@@ -13,6 +13,8 @@ import (
 )
 
 var ErrUserTokenLimitReached = errors.New("user token limit reached")
+var ErrTokenBatchInvalid = errors.New("token batch contains missing or unauthorized token")
+var ErrTokenBatchCacheInvalidation = errors.New("token cache invalidation failed")
 
 type Token struct {
 	Id                 int            `json:"id"`
@@ -194,13 +196,13 @@ func ValidateUserToken(key string) (token *Token, err error) {
 	}
 	token, err = GetTokenByKey(key, false)
 	if err == nil {
-		if token.Status == common.TokenStatusExhausted {
+		if token.Status == common.TokenStatusExhausted && !token.UnlimitedQuota {
 			return token, ErrTokenExhausted
 		}
 		if token.Status == common.TokenStatusExpired {
 			return token, ErrTokenExpired
 		}
-		if token.Status != common.TokenStatusEnabled {
+		if token.Status != common.TokenStatusEnabled && !(token.Status == common.TokenStatusExhausted && token.UnlimitedQuota) {
 			return token, ErrTokenUnavailable
 		}
 		if token.ExpiredTime != -1 && token.ExpiredTime < common.GetTimestamp() {
@@ -247,11 +249,19 @@ func GetTokenById(id int) (*Token, error) {
 		return nil, errors.New("id 为空！")
 	}
 	token := Token{Id: id}
+	fillFence := ""
+	if common.RedisEnabled {
+		var fenceErr error
+		fillFence, fenceErr = captureTokenCacheFillFence()
+		if fenceErr != nil {
+			common.SysLog("failed to capture token cache fill fence: " + fenceErr.Error())
+		}
+	}
 	var err error = nil
 	err = DB.First(&token, "id = ?", id).Error
-	if shouldUpdateRedis(true, err) {
+	if shouldUpdateRedis(true, err) && fillFence != "" {
 		gopool.Go(func() {
-			if err := cacheSetToken(token); err != nil {
+			if err := cacheSetToken(token, fillFence); err != nil {
 				common.SysLog("failed to update user status cache: " + err.Error())
 			}
 		})
@@ -260,11 +270,12 @@ func GetTokenById(id int) (*Token, error) {
 }
 
 func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
+	fillFence := ""
 	defer func() {
 		// Update Redis cache asynchronously on successful DB read
-		if shouldUpdateRedis(fromDB, err) && token != nil {
+		if shouldUpdateRedis(fromDB, err) && token != nil && fillFence != "" {
 			gopool.Go(func() {
-				if err := cacheSetToken(*token); err != nil {
+				if err := cacheSetToken(*token, fillFence); err != nil {
 					common.SysLog("failed to update user status cache: " + err.Error())
 				}
 			})
@@ -277,6 +288,13 @@ func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 			return token, nil
 		}
 		// Don't return error - fall through to DB
+	}
+	if common.RedisEnabled {
+		fillFence, err = captureTokenCacheFillFence()
+		if err != nil {
+			common.SysLog("failed to capture token cache fill fence: " + err.Error())
+			fillFence = ""
+		}
 	}
 	fromDB = true
 	err = DB.Where(commonKeyCol+" = ?", key).First(&token).Error
@@ -412,34 +430,62 @@ func ensureInitialUserTokenInTx(tx *gorm.DB, userId int, token *Token, maxTokens
 
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (token *Token) Update() (err error) {
+	fillFence := ""
+	if common.RedisEnabled {
+		fillFence, err = captureTokenCacheFillFence()
+		if err != nil {
+			common.SysLog("failed to capture token cache fill fence: " + err.Error())
+			fillFence = ""
+		}
+	}
+	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry").Updates(token).Error
+	if shouldUpdateRedis(true, err) && fillFence != "" {
+		if _, cacheErr := cachePatchTokenAfterUpdate(*token, fillFence); cacheErr != nil {
+			common.SysLog("failed to update token cache: " + cacheErr.Error())
+		}
+	}
+	return err
+}
+
+// UpdateNonModelFields atomically updates form fields unrelated to model access.
+// When forcePLGGroup is true, it also enforces the PLG group invariant without
+// replaying the allowlist from a potentially stale client snapshot.
+func (token *Token) UpdateNonModelFields(forcePLGGroup bool) (err error) {
 	defer func() {
 		if shouldUpdateRedis(true, err) {
 			gopool.Go(func() {
-				err := cacheSetToken(*token)
-				if err != nil {
-					common.SysLog("failed to update token cache: " + err.Error())
+				if err := cacheDeleteToken(token.Key); err != nil {
+					common.SysLog("failed to invalidate token cache: " + err.Error())
 				}
 			})
 		}
 	}()
-	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry").Updates(token).Error
+	columns := []string{"name", "expired_time", "remain_quota", "unlimited_quota", "allow_ips"}
+	if forcePLGGroup {
+		columns = append(columns, "group", "cross_group_retry")
+	}
+	err = DB.Model(token).Select(columns).Updates(token).Error
 	return err
 }
 
 func (token *Token) SelectUpdate() (err error) {
-	defer func() {
-		if shouldUpdateRedis(true, err) {
-			gopool.Go(func() {
-				err := cacheSetToken(*token)
-				if err != nil {
-					common.SysLog("failed to update token cache: " + err.Error())
-				}
-			})
+	fillFence := ""
+	if common.RedisEnabled {
+		fillFence, err = captureTokenCacheFillFence()
+		if err != nil {
+			common.SysLog("failed to capture token cache fill fence: " + err.Error())
+			fillFence = ""
 		}
-	}()
+	}
 	// This can update zero values
-	return DB.Model(token).Select("accessed_time", "status").Updates(token).Error
+	err = DB.Model(token).Select("accessed_time", "status").Updates(token).Error
+	if shouldUpdateRedis(true, err) && fillFence != "" {
+		if _, cacheErr := cachePatchTokenAfterSelectUpdate(*token, fillFence); cacheErr != nil {
+			common.SysLog("failed to update token cache: " + cacheErr.Error())
+		}
+	}
+	return err
 }
 
 func (token *Token) Delete() (err error) {
@@ -567,6 +613,137 @@ func CountUserTokens(userId int) (int64, error) {
 	return total, err
 }
 
+func BatchUpdateTokenGroup(ids []int, userId int, group string) (int, error) {
+	if len(ids) == 0 || userId == 0 || group == "" {
+		return 0, ErrTokenBatchInvalid
+	}
+
+	var tokenKeys []string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var tokens []Token
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "key").
+			Where("user_id = ? AND id IN ?", userId, ids).
+			Find(&tokens).Error; err != nil {
+			return err
+		}
+		if len(tokens) != len(ids) {
+			return ErrTokenBatchInvalid
+		}
+
+		tokenKeys = make([]string, 0, len(tokens))
+		for _, token := range tokens {
+			tokenKeys = append(tokenKeys, token.Key)
+		}
+		updates := map[string]interface{}{"group": group}
+		if group == plgUserGroup {
+			updates["cross_group_retry"] = false
+		}
+		result := tx.Model(&Token{}).
+			Where("user_id = ? AND id IN ?", userId, ids).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	if common.RedisEnabled {
+		if err := cachePatchTokenGroups(tokenKeys, group); err != nil {
+			common.SysLog(fmt.Sprintf("failed to invalidate %d token caches after batch group update", len(tokenKeys)))
+			return len(ids), ErrTokenBatchCacheInvalidation
+		}
+	}
+	return len(ids), nil
+}
+
+// UserTokenStats contains account-wide API token counts grouped by status.
+type UserTokenStats struct {
+	Total     int64 `json:"total"`
+	Enabled   int64 `json:"enabled"`
+	Disabled  int64 `json:"disabled"`
+	Expired   int64 `json:"expired"`
+	Exhausted int64 `json:"exhausted"`
+}
+
+// GetEffectiveTokenStatus returns the status enforced by ValidateUserToken without
+// persisting lifecycle transitions. Explicitly disabled tokens stay disabled;
+// expiration takes precedence over quota exhaustion for otherwise usable tokens.
+func GetEffectiveTokenStatus(token *Token, now int64) int {
+	if token == nil {
+		return common.TokenStatusDisabled
+	}
+	if token.Status == common.TokenStatusExhausted && !token.UnlimitedQuota {
+		return common.TokenStatusExhausted
+	}
+	if token.Status == common.TokenStatusExpired {
+		return common.TokenStatusExpired
+	}
+	if token.Status != common.TokenStatusEnabled &&
+		!(token.Status == common.TokenStatusExhausted && token.UnlimitedQuota) {
+		return common.TokenStatusDisabled
+	}
+	if token.ExpiredTime != -1 && token.ExpiredTime < now {
+		return common.TokenStatusExpired
+	}
+	if !token.UnlimitedQuota && token.RemainQuota <= 0 {
+		return common.TokenStatusExhausted
+	}
+	return common.TokenStatusEnabled
+}
+
+// GetUserTokenStats returns account-wide effective status counts for one user.
+func GetUserTokenStats(userId int) (UserTokenStats, error) {
+	now := common.GetTimestamp()
+	var stats UserTokenStats
+	err := DB.Model(&Token{}).
+		Select(`
+			COUNT(*) AS total,
+			COALESCE(SUM(CASE
+				WHEN (status = ? OR (status = ? AND unlimited_quota = ?))
+					AND (expired_time = -1 OR expired_time >= ?)
+					AND (unlimited_quota = ? OR remain_quota > 0)
+				THEN 1 ELSE 0 END), 0) AS enabled,
+			COALESCE(SUM(CASE
+				WHEN status = ?
+					OR ((status = ? OR (status = ? AND unlimited_quota = ?))
+						AND expired_time != -1 AND expired_time < ?)
+				THEN 1 ELSE 0 END), 0) AS expired,
+			COALESCE(SUM(CASE
+				WHEN (status = ? AND unlimited_quota = ?)
+					OR (status = ?
+						AND (expired_time = -1 OR expired_time >= ?)
+						AND unlimited_quota = ? AND remain_quota <= 0)
+				THEN 1 ELSE 0 END), 0) AS exhausted`,
+			common.TokenStatusEnabled,
+			common.TokenStatusExhausted,
+			true,
+			now,
+			true,
+			common.TokenStatusExpired,
+			common.TokenStatusEnabled,
+			common.TokenStatusExhausted,
+			true,
+			now,
+			common.TokenStatusExhausted,
+			false,
+			common.TokenStatusEnabled,
+			now,
+			false,
+		).
+		Where("user_id = ?", userId).
+		Scan(&stats).Error
+	if err != nil {
+		return UserTokenStats{}, err
+	}
+
+	stats.Disabled = stats.Total - stats.Enabled - stats.Expired - stats.Exhausted
+	return stats, nil
+}
+
 // BatchDeleteTokens 删除指定用户的一组令牌，返回成功删除数量
 func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	if len(ids) == 0 {
@@ -592,8 +769,12 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 
 	if common.RedisEnabled {
 		gopool.Go(func() {
-			for _, t := range tokens {
-				_ = cacheDeleteToken(t.Key)
+			keys := make([]string, 0, len(tokens))
+			for _, token := range tokens {
+				keys = append(keys, token.Key)
+			}
+			if err := cacheDeleteTokens(keys); err != nil {
+				common.SysLog("failed to invalidate deleted token caches: " + err.Error())
 			}
 		})
 	}
@@ -626,14 +807,12 @@ func InvalidateUserTokensCache(userId int) error {
 		Find(&tokens).Error; err != nil {
 		return err
 	}
-	var firstErr error
+	keys := make([]string, 0, len(tokens))
 	for _, t := range tokens {
 		if t.Key == "" {
 			continue
 		}
-		if err := cacheDeleteToken(t.Key); err != nil && firstErr == nil {
-			firstErr = err
-		}
+		keys = append(keys, t.Key)
 	}
-	return firstErr
+	return cacheDeleteTokens(keys)
 }

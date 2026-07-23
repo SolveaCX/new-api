@@ -109,21 +109,19 @@ func applyLogUsernameFilter(tx *gorm.DB, usernameColumn string, userIDColumn str
 	if strings.Contains(value, "%") {
 		return applyFuzzyUsernameFilter(tx, usernameColumn, userIDColumn, value)
 	}
-	// 纯数字：按 user_id 精确匹配，用于 /users「使用日志」行内跳转以及按 ID
-	// 精确定位单个用户（用户名唯一，但管理员也可能直接输 ID）。
-	if userID, err := strconv.Atoi(value); err == nil {
-		return tx.Where("("+usernameColumn+" = ? OR "+userIDColumn+" = ?)", value, userID), nil
-	}
-	// 纯文本关键词：精确匹配 logs.username 快照，并经 user 表把用户名解析成
-	// user_id，补齐用户改名前写入的历史日志。精确查询走索引、无前导通配扫描，
-	// 不会像 "%kw%" 那样在大日志表上全表扫描（#222）。需要模糊时由用户在输入
-	// 框显式输入 % 触发，走上面的 strings.Contains(value, "%") 分支。
+	// 精确用户名（包括纯数字用户名）：先经 user 表把当前用户名解析成 user_id，
+	// 再只按 user_id 查询。按用户 ID 查询使用独立的 user_id API 参数，不在这里
+	// 猜测同一个字符串究竟表示用户名还是 ID。
+	// 这样既能补齐用户改名前写入的历史日志，也能让日志查询使用
+	// (user_id, created_at, type) 组合索引，避免 username OR user_id 的索引合并。
+	// 无法解析到当前用户时，才回退到 logs.username 快照精确匹配。需要模糊时由
+	// 用户在输入框显式输入 %，走上面的 strings.Contains(value, "%") 分支。
 	userIDs, err := getUserIDsByUsernameFilter(value, false)
 	if err != nil {
 		return nil, err
 	}
 	if len(userIDs) > 0 {
-		return tx.Where("("+usernameColumn+" = ? OR "+userIDColumn+" IN ?)", value, userIDs), nil
+		return tx.Where(userIDColumn+" IN ?", userIDs), nil
 	}
 	return tx.Where(usernameColumn+" = ?", value), nil
 }
@@ -316,9 +314,19 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+// TemporaryChannelSpendHook, when set, is invoked for every consume log with the
+// channel id, model name and quota (units). The service layer uses it to accumulate
+// per-model spend on temporary channels and alert the supply chain. It is a package
+// variable set by the service layer at init to avoid an import cycle (model must not
+// import service). Keep the callback cheap; it runs on the settlement path.
+var TemporaryChannelSpendHook func(channelId int, modelName string, quota int)
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
+	}
+	if TemporaryChannelSpendHook != nil {
+		TemporaryChannelSpendHook(params.ChannelId, params.ModelName, params.Quota)
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
 	username := c.GetString("username")
@@ -421,7 +429,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
-func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, excludeUserId int) (logs []*Log, total int64, err error) {
+func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, searchUserId int, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, excludeUserId int) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
@@ -432,8 +440,12 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
 		return nil, 0, err
 	}
-	if tx, err = applyLogUsernameFilter(tx, "logs.username", "logs.user_id", username); err != nil {
-		return nil, 0, err
+	if searchUserId != 0 {
+		tx = tx.Where("logs.user_id = ?", searchUserId)
+	} else {
+		if tx, err = applyLogUsernameFilter(tx, "logs.username", "logs.user_id", username); err != nil {
+			return nil, 0, err
+		}
 	}
 	if excludeUserId != 0 {
 		tx = tx.Where("logs.user_id != ?", excludeUserId)
@@ -513,6 +525,17 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 
 const logSearchCountLimit = 10000
 
+func limitedLogCountQuery(db *gorm.DB, filteredQuery *gorm.DB, limit int) *gorm.DB {
+	limitedLogs := filteredQuery.Session(&gorm.Session{}).Model(&Log{}).Select("logs.id").Limit(limit)
+	return db.Session(&gorm.Session{NewDB: true}).Table("(?) AS limited_logs", limitedLogs)
+}
+
+func countLogsUpTo(db *gorm.DB, filteredQuery *gorm.DB, limit int) (int64, error) {
+	var total int64
+	err := limitedLogCountQuery(db, filteredQuery, limit).Count(&total).Error
+	return total, err
+}
+
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
@@ -542,7 +565,7 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
-	err = tx.Model(&Log{}).Limit(logSearchCountLimit).Count(&total).Error
+	total, err = countLogsUpTo(LOG_DB, tx, logSearchCountLimit)
 	if err != nil {
 		common.SysError("failed to count user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")
@@ -570,6 +593,7 @@ type CodexChannelUsageStat struct {
 }
 
 func GetCodexChannelUsageStats(
+	ctx context.Context,
 	channelIds []int,
 	startTimestamp int64,
 	endTimestamp int64,
@@ -580,7 +604,7 @@ func GetCodexChannelUsageStats(
 	}
 
 	var stats []CodexChannelUsageStat
-	tx := LOG_DB.Table("logs").Select(
+	tx := LOG_DB.WithContext(ctx).Table("logs").Select(
 		"channel_id, COALESCE(SUM(prompt_tokens), 0) + COALESCE(SUM(completion_tokens), 0) AS token_used, COALESCE(SUM(quota), 0) AS quota",
 	).Where("type = ?", LogTypeConsume).Where("channel_id IN ?", channelIds)
 	if startTimestamp > 0 {
@@ -603,9 +627,9 @@ func GetCodexChannelUsageStats(
 // SumUsedQuota 聚合用量统计。
 //
 // selfUserId 用于「查自己」场景的身份约束：非 0 时强制 user_id = selfUserId 精确
-// 过滤，且忽略 username 模糊搜索（username 自 fuzzy 化后会把 alice2/malice 等带进
-// alice 的统计，绝不能用于身份约束）。管理员搜索路径传 0，按 username 模糊匹配。
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, excludeUserId int, selfUserId int) (stat Stat, err error) {
+// 过滤，并忽略管理员搜索条件。管理员可通过 searchUserId 精确按 ID 查询；未提供
+// searchUserId 时，username 按用户名语义处理（仅显式包含 % 时才模糊匹配）。
+func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, searchUserId int, tokenName string, channel int, group string, excludeUserId int, selfUserId int) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("sum(quota) quota")
 
 	// 为rpm和tpm创建单独的查询
@@ -615,6 +639,9 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		// 身份约束：只统计本人日志，精确按 user_id，不掺入 username 模糊匹配。
 		tx = tx.Where("user_id = ?", selfUserId)
 		rpmTpmQuery = rpmTpmQuery.Where("user_id = ?", selfUserId)
+	} else if searchUserId != 0 {
+		tx = tx.Where("user_id = ?", searchUserId)
+		rpmTpmQuery = rpmTpmQuery.Where("user_id = ?", searchUserId)
 	} else {
 		if tx, err = applyLogUsernameFilter(tx, "username", "user_id", username); err != nil {
 			return stat, err

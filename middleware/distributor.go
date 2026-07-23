@@ -102,8 +102,7 @@ func Distribute() func(c *gin.Context) {
 				if !ok {
 					tokenModelLimit = map[string]bool{}
 				}
-				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model) // match gpts & thinking-*
-				if _, ok := tokenModelLimit[matchName]; !ok {
+				if !service.TokenAllowsModel(tokenModelLimit, modelRequest.Model) {
 					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
 					return
 				}
@@ -331,6 +330,24 @@ func getJSONStringValue(result gjson.Result, field string) (string, error) {
 	return result.String(), nil
 }
 
+// elevenLabsPathModel maps an ElevenLabs native endpoint path to the billing model
+// registered as an ability on the ElevenLabs channel. Kept as string literals to
+// avoid importing relay/channel from middleware.
+func elevenLabsPathModel(path string) (string, bool) {
+	switch {
+	case strings.HasPrefix(path, "/v1/text-to-speech/"):
+		return "eleven_multilingual_v2", true
+	case path == "/v1/sound-generation":
+		return "eleven_sound_v1", true
+	case path == "/v1/music":
+		return "eleven_music_v1", true
+	case path == "/v1/voices":
+		// Listing voices still needs a channel to proxy through; not billed.
+		return "eleven_multilingual_v2", true
+	}
+	return "", false
+}
+
 func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 	var modelRequest ModelRequest
 	shouldSelectChannel := true
@@ -374,6 +391,11 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		}
 		c.Set("platform", string(constant.TaskPlatformSuno))
 		c.Set("relay_mode", relayMode)
+	} else if elModel, ok := elevenLabsPathModel(c.Request.URL.Path); ok {
+		// ElevenLabs native voice/music/SFX endpoints resolve their billing model from
+		// the path (like /suno/ above), since the request body carries no OpenAI "model"
+		// field. The resolved model is registered as an ability on the ElevenLabs channel.
+		modelRequest.Model = elModel
 	} else if strings.Contains(c.Request.URL.Path, "/v1/videos/") && strings.HasSuffix(c.Request.URL.Path, "/remix") {
 		relayMode := relayconstant.RelayModeVideoSubmit
 		c.Set("relay_mode", relayMode)

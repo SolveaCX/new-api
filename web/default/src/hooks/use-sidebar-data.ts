@@ -21,6 +21,7 @@ import {
   Activity,
   Box,
   CalendarRange,
+  Cpu,
   CreditCard,
   FileText,
   FlaskConical,
@@ -39,6 +40,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { type SidebarData } from '@/components/layout/types'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -46,7 +48,10 @@ import { type SidebarData } from '@/components/layout/types'
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
  */
-export function buildSidebarData(t: TFunction): SidebarData {
+export function buildSidebarData(
+  t: TFunction,
+  options?: { inviteBadge?: string }
+): SidebarData {
   return {
     navGroups: [
       {
@@ -80,6 +85,16 @@ export function buildSidebarData(t: TFunction): SidebarData {
             icon: LayoutDashboard,
           },
           {
+            title: t('Available Models'),
+            url: '/available-models',
+            icon: Box,
+          },
+          {
+            title: t('Compute'),
+            url: '/compute',
+            icon: Cpu,
+          },
+          {
             title: t('API Keys'),
             url: '/keys',
             icon: Key,
@@ -111,7 +126,7 @@ export function buildSidebarData(t: TFunction): SidebarData {
             title: t('Invite'),
             url: '/invite',
             icon: UserPlus,
-            badge: t('Earn More Credits!'),
+            badge: options?.inviteBadge ?? t('Earn More Credits!'),
             badgeVariant: 'promotion',
           },
           {
@@ -129,6 +144,11 @@ export function buildSidebarData(t: TFunction): SidebarData {
             title: t('Channels'),
             url: '/channels',
             icon: Radio,
+          },
+          {
+            title: t('Compute Nodes'),
+            url: '/compute/nodes',
+            icon: Cpu,
           },
           {
             title: t('Models'),
@@ -174,6 +194,15 @@ export function buildSidebarData(t: TFunction): SidebarData {
 
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const badgeUsd = useSystemConfigStore(
+    (state) => state.config.inviteRewardBadgeUsd
+  )
+  // Direct money stimulus beats prose: show "+$50" when the reward amount is
+  // known, fall back to the generic promo text otherwise.
+  const inviteBadge =
+    badgeUsd && badgeUsd > 0
+      ? `+$${Math.round(badgeUsd)}`
+      : undefined
 
-  return buildSidebarData(t)
+  return buildSidebarData(t, { inviteBadge })
 }

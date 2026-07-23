@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/coze"
 	"github.com/QuantumNous/new-api/relay/channel/deepseek"
 	"github.com/QuantumNous/new-api/relay/channel/dify"
+	"github.com/QuantumNous/new-api/relay/channel/elevenlabs"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/jimeng"
 	"github.com/QuantumNous/new-api/relay/channel/jina"
@@ -34,6 +35,7 @@ import (
 	taskali "github.com/QuantumNous/new-api/relay/channel/task/ali"
 	taskblockrunseedance "github.com/QuantumNous/new-api/relay/channel/task/blockrunseedance"
 	taskblockrunvideo "github.com/QuantumNous/new-api/relay/channel/task/blockrunvideo"
+	taskbyteplus "github.com/QuantumNous/new-api/relay/channel/task/byteplus"
 	taskdoubao "github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	taskGemini "github.com/QuantumNous/new-api/relay/channel/task/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/task/hailuo"
@@ -47,6 +49,7 @@ import (
 	tasktechmobi "github.com/QuantumNous/new-api/relay/channel/task/techmobi"
 	taskvertex "github.com/QuantumNous/new-api/relay/channel/task/vertex"
 	taskVidu "github.com/QuantumNous/new-api/relay/channel/task/vidu"
+	taskxaigrok "github.com/QuantumNous/new-api/relay/channel/task/xaigrok"
 	"github.com/QuantumNous/new-api/relay/channel/tencent"
 	"github.com/QuantumNous/new-api/relay/channel/vertex"
 	"github.com/QuantumNous/new-api/relay/channel/volcengine"
@@ -59,6 +62,8 @@ import (
 
 func GetAdaptor(apiType int) channel.Adaptor {
 	switch apiType {
+	case constant.APITypeElevenLabs:
+		return &elevenlabs.Adaptor{}
 	case constant.APITypeAli:
 		return &ali.Adaptor{}
 	case constant.APITypeAnthropic:
@@ -180,6 +185,10 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 			return &taskblockrunseedance.TaskAdaptor{}
 		case constant.ChannelTypeTechMobiVideo:
 			return &tasktechmobi.TaskAdaptor{}
+		case constant.ChannelTypeBytePlus:
+			return &taskbyteplus.TaskAdaptor{}
+		case constant.ChannelTypeXaiGrokVideo:
+			return &taskxaigrok.TaskAdaptor{}
 		}
 	}
 	return nil

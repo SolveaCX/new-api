@@ -12,6 +12,7 @@ func TestModelListKeepsLegacyImageAndLatestModels(t *testing.T) {
 	require.Contains(t, ModelList, "gpt-image-2")
 	require.Contains(t, ModelList, "gpt-5.4-mini")
 	require.Contains(t, ModelList, "gpt-5.5")
+	require.Contains(t, ModelList, ratio_setting.WithCompactModelSuffix("gpt-5.5"))
 	require.Contains(t, ModelList, "gpt-5.6-sol")
 	require.Contains(t, ModelList, "gpt-5.6-terra")
 	require.Contains(t, ModelList, "gpt-5.6-luna")

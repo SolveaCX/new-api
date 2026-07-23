@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
+import { SiteConfigProvider } from "@/components/site-config-provider";
 import { MIXPANEL_BROWSER_SCRIPT } from "@/lib/mixpanel";
-import type { Locale } from "@/lib/locales";
+import { localeLanguageTag, type Locale } from "@/lib/locales";
 
 const GTM_IDS = ["GTM-NKH9LPX9", "GTM-5T5LPLSZ"] as const;
 
@@ -33,7 +34,7 @@ export const LIVECHAT_BOOTSTRAP_SCRIPT = `(function(){
   idle();
 })();`;
 
-export const ATTRIBUTION_COOKIE_SCRIPT = `(function(){try{var keep={aff:1,fbclid:1,gad_campaignid:1,gad_source:1,gbraid:1,gclid:1,lng:1,msclkid:1,ttclid:1,wbraid:1,yclid:1};var params=new URLSearchParams(window.location.search||"");var values={};params.forEach(function(value,key){if(!value)return;if(keep[key]||key.indexOf("utm_")===0||key.indexOf("hsa_")===0){values[key]=value;}});if(!Object.keys(values).length)return;values.landing_path=window.location.pathname||"/";values.captured_at=new Date().toISOString();var host=window.location.hostname;var attrs=["path=/","max-age=7776000","SameSite=Lax"];if(host==="flatkey.ai"||host.endsWith(".flatkey.ai"))attrs.push("domain=.flatkey.ai");if(window.location.protocol==="https:")attrs.push("Secure");document.cookie="flatkey_ads_attribution="+encodeURIComponent(JSON.stringify(values))+"; "+attrs.join("; ");}catch(e){}})();`;
+export const ATTRIBUTION_COOKIE_SCRIPT = `(function(){try{var keep={aff:1,fbclid:1,gad_campaignid:1,gad_source:1,gbraid:1,gclid:1,lng:1,msclkid:1,ttclid:1,wbraid:1,yclid:1};var params=new URLSearchParams(window.location.search||"");var values={};params.forEach(function(value,key){if(!value)return;if(keep[key]||key.indexOf("utm_")===0||key.indexOf("hsa_")===0){values[key]=value;}});if(!Object.keys(values).length)return;var existing={};var prefix="flatkey_ads_attribution=";var part=(document.cookie||"").split(";").map(function(v){return v.trim();}).find(function(v){return v.indexOf(prefix)===0;});if(part){try{existing=JSON.parse(decodeURIComponent(part.slice(prefix.length)))||{};}catch(e){existing={};}}var path=window.location.pathname||"/";var acquisition=path.indexOf("/oauth/")!==0&&path!=="/sign-in"&&path.indexOf("/sign-in/")!==0&&path!=="/sign-up"&&path.indexOf("/sign-up/")!==0;var previous=existing.first_landing_path||existing.landing_path||"";var previousValid=previous&&previous.indexOf("/oauth/")!==0&&previous!=="/sign-in"&&previous.indexOf("/sign-in/")!==0&&previous!=="/sign-up"&&previous.indexOf("/sign-up/")!==0;var first=previousValid?previous:(acquisition?path:"");var now=new Date().toISOString();values.landing_path=acquisition?path:(existing.landing_path||"");values.captured_at=now;if(first){values.first_landing_path=first;values.first_captured_at=existing.first_captured_at||existing.captured_at||now;}var host=window.location.hostname;var attrs=["path=/","max-age=7776000","SameSite=Lax"];if(host==="flatkey.ai"||host.endsWith(".flatkey.ai"))attrs.push("domain=.flatkey.ai");if(window.location.protocol==="https:")attrs.push("Secure");document.cookie="flatkey_ads_attribution="+encodeURIComponent(JSON.stringify(values))+"; "+attrs.join("; ");}catch(e){}})();`;
 
 export const rootMetadata: Metadata = {
   applicationName: "flatkey.ai",
@@ -46,12 +47,13 @@ export const rootMetadata: Metadata = {
 type RootDocumentProps = {
   bodyStart?: ReactNode;
   children: ReactNode;
+  docsUrl: string | null;
   lang: Locale;
 };
 
-export function RootDocument({ bodyStart, children, lang }: RootDocumentProps) {
+export function RootDocument({ bodyStart, children, docsUrl, lang }: RootDocumentProps) {
   return (
-    <html lang={lang} suppressHydrationWarning>
+    <html lang={localeLanguageTag(lang)} suppressHydrationWarning>
       <body>
         {bodyStart}
         <Script id="google-tag-manager" strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.gtmStrategy}>
@@ -86,7 +88,7 @@ export function RootDocument({ bodyStart, children, lang }: RootDocumentProps) {
             />
           ))}
         </noscript>
-        {children}
+        <SiteConfigProvider docsUrl={docsUrl}>{children}</SiteConfigProvider>
         <Script id="solvea-livechat-bootstrap" strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.livechatStrategy}>
           {LIVECHAT_BOOTSTRAP_SCRIPT}
         </Script>

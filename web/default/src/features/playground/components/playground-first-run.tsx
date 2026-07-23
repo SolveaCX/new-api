@@ -23,25 +23,45 @@ import { Button } from '@/components/ui/button'
 
 // Example prompts shown as one-click chips during the first run. They fill the
 // input and send immediately so a brand-new user can make their first API call
-// with zero typing. Keys are translated via t().
-const FIRST_RUN_EXAMPLE_PROMPTS = [
-  'Hello!',
-  'Write a quicksort in Python',
-  'Explain Transformers',
-] as const
+// with zero typing. `text` is a translation key rendered via t(). An optional
+// `model` forces that example to run against a specific model — used for image
+// generation, which requires a chat-capable image model (nano-banana / Gemini
+// flash image) rather than the default text chat model.
+const FIRST_RUN_EXAMPLE_PROMPTS: ReadonlyArray<{
+  text: string
+  model?: string
+}> = [
+  { text: 'How do I try flatkey?' },
+  {
+    text: 'Generate an image of a cat astronaut',
+    model: 'gemini-2.5-flash-image',
+  },
+  {
+    text: 'Generate a video of a cat astronaut',
+    model: 'veo-3.1-fast-generate-preview',
+  },
+  { text: 'Write a quicksort in Python' },
+  { text: 'Explain Transformers' },
+]
 
 interface FirstRunWelcomeProps {
-  onPickExample: (prompt: string) => void
+  onPickExample: (prompt: string, model?: string) => void
   disabled?: boolean
+  // New users (via `?first=1`) get the "make your first call in 30s" banner;
+  // everyone else lands here on an empty Playground and gets a neutral header
+  // with the same one-click example prompts.
+  firstRun?: boolean
 }
 
 /**
- * Welcome banner + example-prompt chips shown at the top of the empty Playground
- * when a user lands via `?first=1` and has not sent any message yet.
+ * Welcome banner + example-prompt chips shown at the top of the empty Playground.
+ * Shown whenever there is no conversation yet — for new users (with the first-run
+ * banner) and for returning users (with a neutral "try one of these" header).
  */
 export function FirstRunWelcome({
   onPickExample,
   disabled = false,
+  firstRun = false,
 }: FirstRunWelcomeProps) {
   const { t } = useTranslation()
   return (
@@ -52,21 +72,23 @@ export function FirstRunWelcome({
             <Sparkles className='size-4' />
           </span>
           <p className='text-foreground text-sm leading-relaxed'>
-            {t(
-              'Welcome to flatkey! Send a message to make your first API call in 30 seconds — no key or setup needed.'
-            )}
+            {firstRun
+              ? t(
+                  'Welcome to flatkey! Send a message to make your first API call in 30 seconds — no key or setup needed.'
+                )
+              : t('Try one of these to get started:')}
           </p>
         </div>
         <div className='mt-4 flex flex-wrap gap-2'>
-          {FIRST_RUN_EXAMPLE_PROMPTS.map((prompt) => (
+          {FIRST_RUN_EXAMPLE_PROMPTS.map(({ text, model }) => (
             <button
-              key={prompt}
+              key={text}
               type='button'
               disabled={disabled}
-              onClick={() => onPickExample(prompt)}
+              onClick={() => onPickExample(t(text), model)}
               className='rounded-full border border-violet-200 bg-white px-3 py-1.5 text-sm text-violet-700 transition-colors hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-900/40 dark:bg-transparent dark:text-violet-300 dark:hover:bg-violet-950/30'
             >
-              {t(prompt)}
+              {t(text)}
             </button>
           ))}
         </div>

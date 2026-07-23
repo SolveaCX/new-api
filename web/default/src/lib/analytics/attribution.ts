@@ -28,10 +28,12 @@ const ATTRIBUTION_KEYS = new Set([
   'msclkid',
   'ttclid',
   'wbraid',
+  'yclid',
 ])
 
 const ATTRIBUTION_STORAGE_KEY = 'ads:attribution'
 const SHARED_ATTRIBUTION_COOKIE_KEY = 'flatkey_ads_attribution'
+export const PT_POST_SIGNUP_TOPUP_EXPERIMENT_ID = 'pt_post_signup_topup_v1'
 const PAID_CLICK_IDS = new Set([
   'fbclid',
   'gbraid',
@@ -79,6 +81,11 @@ const SEARCH_ENGINE_HOSTS: Array<{ source: string; hosts: string[] }> = [
   { source: 'sogou', hosts: ['sogou.com'] },
 ]
 const SEARCH_QUERY_KEYS = ['q', 'query', 'p', 'wd', 'word', 'keyword', 'text']
+const NON_ACQUISITION_PATH_PREFIXES = [
+  '/oauth/',
+  '/sign-in',
+  '/sign-up',
+] as const
 
 export type AttributionValues = Record<string, string>
 
@@ -220,6 +227,14 @@ function hasCampaignSignal(values: AttributionValues): boolean {
   )
 }
 
+export function isAcquisitionLandingPath(path: string): boolean {
+  const normalized = path.trim()
+  if (!normalized || !normalized.startsWith('/')) return false
+  return !NON_ACQUISITION_PATH_PREFIXES.some(
+    (prefix) => normalized === prefix || normalized.startsWith(prefix)
+  )
+}
+
 export function normalizeAttribution(
   values: AttributionValues
 ): AttributionValues {
@@ -330,6 +345,25 @@ export function mergeAttributionValues(
     ...cleanExisting,
     ...cleanCurrent,
   }
+  const existingFirstLanding =
+    cleanExisting.first_landing_path ||
+    (isAcquisitionLandingPath(cleanExisting.landing_path || '')
+      ? cleanExisting.landing_path
+      : '')
+  const currentFirstLanding = isAcquisitionLandingPath(
+    cleanCurrent.first_landing_path || cleanCurrent.landing_path || ''
+  )
+    ? cleanCurrent.first_landing_path || cleanCurrent.landing_path
+    : ''
+  if (existingFirstLanding || currentFirstLanding) {
+    merged.first_landing_path = existingFirstLanding || currentFirstLanding
+    merged.first_captured_at =
+      cleanExisting.first_captured_at ||
+      cleanExisting.captured_at ||
+      cleanCurrent.first_captured_at ||
+      cleanCurrent.captured_at ||
+      ''
+  }
   return {
     ...merged,
     ...normalizeAttribution(merged),
@@ -364,6 +398,39 @@ export function getAttributionPayload(values: AttributionValues): string {
   return JSON.stringify(merged)
 }
 
+export function isPtGooglePaidAttribution(values: AttributionValues): boolean {
+  const cleaned = cleanAttributionValues(values)
+  const landingPath = cleaned.first_landing_path || cleaned.landing_path || ''
+  const isPortugueseLanding =
+    landingPath === '/pt' || landingPath.startsWith('/pt/')
+  const isPortugueseLocale =
+    cleaned.lng?.toLowerCase().split(/[-_]/)[0] === 'pt'
+  const hasGoogleClickId = Boolean(
+    cleaned.gclid || cleaned.gbraid || cleaned.wbraid
+  )
+
+  return hasGoogleClickId && (isPortugueseLanding || isPortugueseLocale)
+}
+
+export function applyPtPostSignupTopupExperiment(
+  values: AttributionValues
+): AttributionValues {
+  const cleaned = cleanAttributionValues(values)
+  if (!isPtGooglePaidAttribution(cleaned)) {
+    return cleaned
+  }
+  return {
+    ...cleaned,
+    experiment_id: PT_POST_SIGNUP_TOPUP_EXPERIMENT_ID,
+  }
+}
+
+export function isPtPostSignupTopupExperiment(
+  values: AttributionValues
+): boolean {
+  return values.experiment_id === PT_POST_SIGNUP_TOPUP_EXPERIMENT_ID
+}
+
 export function getStoredAdsAttribution(): Record<string, string> {
   if (typeof window === 'undefined') {
     return {}
@@ -394,18 +461,35 @@ export function captureAdsAttribution(): Record<string, string> {
 
   const queryAttribution = collectAttributionFromSearch(window.location.search)
   const sharedAttribution = getSharedAdsAttribution()
+  const currentPath = window.location.pathname
+  const validCurrentPath = isAcquisitionLandingPath(currentPath)
+  const firstLandingPath =
+    sharedAttribution.first_landing_path ||
+    (isAcquisitionLandingPath(sharedAttribution.landing_path || '')
+      ? sharedAttribution.landing_path
+      : '') ||
+    (validCurrentPath ? currentPath : '')
+  const firstCapturedAt =
+    sharedAttribution.first_captured_at ||
+    sharedAttribution.captured_at ||
+    (firstLandingPath ? new Date().toISOString() : '')
   const current: AttributionValues = {
     ...(hasCampaignSignal(queryAttribution)
       ? { ...sharedAttribution, ...queryAttribution }
       : { ...queryAttribution, ...sharedAttribution }),
     landing_path:
-      hasCampaignSignal(queryAttribution) || !sharedAttribution.landing_path
-        ? window.location.pathname
+      (hasCampaignSignal(queryAttribution) && validCurrentPath) ||
+      !sharedAttribution.landing_path
+        ? validCurrentPath
+          ? currentPath
+          : sharedAttribution.landing_path || ''
         : sharedAttribution.landing_path,
     captured_at:
       hasCampaignSignal(queryAttribution) || !sharedAttribution.captured_at
         ? new Date().toISOString()
         : sharedAttribution.captured_at,
+    first_landing_path: firstLandingPath,
+    first_captured_at: firstCapturedAt,
   }
   if (isExternalReferrer(document.referrer)) {
     const keyword = getSearchKeyword(document.referrer)
@@ -419,7 +503,9 @@ export function captureAdsAttribution(): Record<string, string> {
     }
   }
 
-  const merged = mergeAttributionValues(getStoredAdsAttribution(), current)
+  const merged = applyPtPostSignupTopupExperiment(
+    mergeAttributionValues(getStoredAdsAttribution(), current)
+  )
 
   try {
     window.localStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(merged))

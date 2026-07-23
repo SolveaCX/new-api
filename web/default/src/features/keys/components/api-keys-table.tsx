@@ -59,14 +59,23 @@ import {
   API_KEY_STATUSES,
   ERROR_MESSAGES,
 } from '../constants'
-import { type ApiKey } from '../types'
-import { ApiKeyCell } from './api-keys-cells'
+import { type ApiKey, type ApiKeyStats } from '../types'
+import { ApiKeyStatistics } from './api-key-statistics'
+import { ApiKeyCell, ModelLimitsCell } from './api-keys-cells'
 import { useApiKeysColumns } from './api-keys-columns'
 import { useApiKeys } from './api-keys-provider'
 import { DataTableBulkActions } from './data-table-bulk-actions'
 import { DataTableRowActions } from './data-table-row-actions'
 
 const route = getRouteApi('/_authenticated/keys/')
+
+const EMPTY_API_KEY_STATS: ApiKeyStats = {
+  total: 0,
+  enabled: 0,
+  disabled: 0,
+  expired: 0,
+  exhausted: 0,
+}
 
 function isDisabledApiKeyRow(apiKey: ApiKey) {
   return apiKey.status !== API_KEY_STATUS.ENABLED
@@ -181,6 +190,13 @@ function ApiKeysMobileList({
                 </span>
               )}
             </div>
+
+            <div className='flex items-center justify-between gap-2 text-xs'>
+              <span className='text-muted-foreground'>
+                {t('Callable Models')}
+              </span>
+              <ModelLimitsCell apiKey={apiKey} />
+            </div>
           </div>
         )
       })}
@@ -271,12 +287,17 @@ export function ApiKeysTable() {
                 : ERROR_MESSAGES.LOAD_FAILED
             )
         )
-        return { items: [], total: 0 }
+        return { items: [], total: 0, stats: EMPTY_API_KEY_STATS }
       }
 
       return {
         items: result.data?.items || [],
         total: result.data?.total || 0,
+        stats:
+          result.data?.stats ||
+          (shouldSearch
+            ? EMPTY_API_KEY_STATS
+            : { ...EMPTY_API_KEY_STATS, total: result.data?.total || 0 }),
       }
     },
     placeholderData: (previousData) => previousData,
@@ -319,41 +340,47 @@ export function ApiKeysTable() {
   }, [pageCount, ensurePageInRange])
 
   return (
-    <DataTablePage
-      table={table}
-      columns={columns}
-      isLoading={isLoading}
-      isFetching={isFetching}
-      emptyTitle={t('No API Keys Found')}
-      emptyDescription={t(
-        'No API keys available. Create your first API key to get started.'
-      )}
-      skeletonKeyPrefix='api-keys-skeleton'
-      toolbarProps={{
-        searchPlaceholder: t('Filter by name...'),
-        additionalSearch: (
-          <Input
-            placeholder={t('Filter by API key...')}
-            aria-label={t('Filter by API key...')}
-            value={tokenFilterInput}
-            onChange={(e) => setTokenFilterInput(e.target.value)}
-            className='w-full sm:w-50 lg:w-60'
-          />
-        ),
-        filters: [
-          {
-            columnId: 'status',
-            title: t('Status'),
-            options: API_KEY_STATUS_OPTIONS,
-            singleSelect: true,
-          },
-        ],
-      }}
-      mobile={<ApiKeysMobileList table={table} isLoading={isLoading} />}
-      getRowClassName={(row) =>
-        isDisabledApiKeyRow(row.original) ? DISABLED_ROW_DESKTOP : undefined
-      }
-      bulkActions={<DataTableBulkActions table={table} />}
-    />
+    <div className='flex flex-col gap-4'>
+      <ApiKeyStatistics
+        stats={data?.stats || EMPTY_API_KEY_STATS}
+        isLoading={isLoading}
+      />
+      <DataTablePage
+        table={table}
+        columns={columns}
+        isLoading={isLoading}
+        isFetching={isFetching}
+        emptyTitle={t('No API Keys Found')}
+        emptyDescription={t(
+          'No API keys available. Create your first API key to get started.'
+        )}
+        skeletonKeyPrefix='api-keys-skeleton'
+        toolbarProps={{
+          searchPlaceholder: t('Filter by name...'),
+          additionalSearch: (
+            <Input
+              placeholder={t('Filter by API key...')}
+              aria-label={t('Filter by API key...')}
+              value={tokenFilterInput}
+              onChange={(e) => setTokenFilterInput(e.target.value)}
+              className='w-full sm:w-50 lg:w-60'
+            />
+          ),
+          filters: [
+            {
+              columnId: 'status',
+              title: t('Status'),
+              options: API_KEY_STATUS_OPTIONS,
+              singleSelect: true,
+            },
+          ],
+        }}
+        mobile={<ApiKeysMobileList table={table} isLoading={isLoading} />}
+        getRowClassName={(row) =>
+          isDisabledApiKeyRow(row.original) ? DISABLED_ROW_DESKTOP : undefined
+        }
+        bulkActions={<DataTableBulkActions table={table} />}
+      />
+    </div>
   )
 }

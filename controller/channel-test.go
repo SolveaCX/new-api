@@ -763,7 +763,24 @@ func validatePongTestResponseBody(respBody []byte) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("model availability probe expected pong, got %q", common.LocalLogPreview(strings.Join(candidates, " ")))
+	// Tolerant fallback: chat and reasoning models rarely reply exactly "pong" —
+	// they explain the "ping" instruction, or (thinking models) return empty content
+	// with the reasoning held in a separate field. detectErrorFromTestResponseBody
+	// already ran (validateTestResponseBody at the call site) and rejected genuine
+	// upstream errors, so any body reaching here is a successful 200 from the model.
+	// Treat a substantive answer as available.
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate) != "" {
+			return nil
+		}
+	}
+	// All extracted content was empty but the upstream still returned a completion
+	// object (JSON body or an SSE stream) — e.g. a reasoning model that spent its
+	// token budget on hidden reasoning. The model is reachable, so pass.
+	if b[0] == '{' || bytes.Contains(b, []byte("data:")) {
+		return nil
+	}
+	return fmt.Errorf("model availability probe returned no usable completion, got %q", common.LocalLogPreview(strings.Join(candidates, " ")))
 }
 
 func shouldUseStreamForAutomaticChannelTest(channel *model.Channel) bool {

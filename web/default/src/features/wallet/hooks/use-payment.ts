@@ -30,6 +30,7 @@ import {
   requestStripePayment,
   isApiSuccess,
 } from '../api'
+import type { StripeEmbeddedCheckoutSession } from '../components/dialogs/stripe-embedded-checkout-dialog'
 import {
   isStripePayment,
   isPaddlePayment,
@@ -43,9 +44,8 @@ import type {
   ApiResponse,
   PaddlePaymentResponse,
   PaymentOptions,
-  StripeTopupSummary,
+  StripePaymentResponse,
 } from '../types'
-import type { StripeEmbeddedCheckoutSession } from '../components/dialogs/stripe-embedded-checkout-dialog'
 
 // ============================================================================
 // Payment Hook
@@ -157,6 +157,26 @@ export function usePayment() {
     setEmbeddedCheckout(null)
   }, [])
 
+  const openStripeCheckoutResponse = useCallback(
+    (response: StripePaymentResponse): 'embedded' | 'hosted' | null => {
+      const stripeData = response.data
+      if (stripeData?.client_secret && stripeData?.publishable_key) {
+        setEmbeddedCheckout({
+          clientSecret: stripeData.client_secret,
+          publishableKey: stripeData.publishable_key,
+          summary: stripeData.topup_summary ?? null,
+        })
+        return 'embedded'
+      }
+      if (stripeData?.pay_link) {
+        navigateToPaymentPage(stripeData.pay_link)
+        return 'hosted'
+      }
+      return null
+    },
+    []
+  )
+
   // Calculate payment amount
   const calculatePaymentAmount = useCallback(
     async (topupAmount: number, paymentType: string) => {
@@ -237,30 +257,11 @@ export function usePayment() {
 
         // Handle Stripe payment
         if (isStripe) {
-          const stripeData = response.data as
-            | {
-                pay_link?: string
-                client_secret?: string
-                publishable_key?: string
-                topup_summary?: StripeTopupSummary
-              }
-            | undefined
-          // Embedded session: mount Checkout in-console. The server only returns a
-          // client_secret when the publishable key is configured, so a missing secret
-          // falls through to the hosted pay_link redirect.
-          if (stripeData?.client_secret && stripeData?.publishable_key) {
-            setEmbeddedCheckout({
-              clientSecret: stripeData.client_secret,
-              publishableKey: stripeData.publishable_key,
-              summary: stripeData.topup_summary ?? null,
-            })
-            return true
-          }
-          if (stripeData?.pay_link) {
-            keepProcessing = true
-            navigateToPaymentPage(stripeData.pay_link)
-            return true
-          }
+          const opened = openStripeCheckoutResponse(
+            response as StripePaymentResponse
+          )
+          if (opened === 'hosted') keepProcessing = true
+          if (opened) return true
         }
 
         if (isPaddle) {
@@ -302,7 +303,7 @@ export function usePayment() {
         }
       }
     },
-    []
+    [openStripeCheckoutResponse]
   )
 
   return {
@@ -311,6 +312,7 @@ export function usePayment() {
     processing,
     embeddedCheckout,
     closeEmbeddedCheckout,
+    openStripeCheckoutResponse,
     calculatePaymentAmount,
     processPayment,
     setAmount,

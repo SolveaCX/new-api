@@ -27,6 +27,22 @@ import (
 
 const maxAdsAttributionLength = 4096
 
+var allowedAdsAttributionKeys = map[string]struct{}{
+	"aff": {}, "fbclid": {}, "gad_campaignid": {}, "gad_source": {},
+	"gbraid": {}, "gclid": {}, "lng": {}, "msclkid": {}, "ttclid": {},
+	"wbraid": {}, "yclid": {}, "landing_path": {}, "captured_at": {},
+	"first_landing_path": {}, "first_captured_at": {}, "referrer": {},
+	"source_type": {}, "source": {}, "medium": {}, "campaign": {},
+	"keyword": {}, "is_paid": {}, "rule_version": {},
+}
+
+func isAllowedAdsAttributionKey(key string) bool {
+	if _, ok := allowedAdsAttributionKeys[key]; ok {
+		return true
+	}
+	return strings.HasPrefix(key, "utm_") || strings.HasPrefix(key, "hsa_")
+}
+
 func sanitizeAdsAttribution(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(raw) > maxAdsAttributionLength {
@@ -39,7 +55,7 @@ func sanitizeAdsAttribution(raw string) string {
 	cleaned := make(map[string]string, len(payload))
 	for key, value := range payload {
 		key = strings.TrimSpace(key)
-		if key == "" || len(key) > 64 {
+		if key == "" || len(key) > 64 || !isAllowedAdsAttributionKey(key) {
 			continue
 		}
 		stringValue, ok := value.(string)
@@ -202,6 +218,49 @@ func Logout(c *gin.Context) {
 	})
 }
 
+// ensureDefaultUserToken idempotently creates the initial API key for a newly
+// registered user so that BOTH email and OAuth signups land with a working key
+// (issue #406 — the majority sign up via Google, and previously only email
+// registration created a default token, leaving OAuth users in an empty backend).
+//
+// Idempotent and multi-node safe: EnsureInitialUserToken takes a SELECT ... FOR
+// UPDATE lock on the user row and skips creation when the user already has any
+// token, so concurrent OAuth callbacks (or a retried register) create at most one
+// key. A no-op when the default-token feature is disabled.
+func ensureDefaultUserToken(user *model.User) error {
+	if !constant.GenerateDefaultToken || user == nil || user.Id == 0 {
+		return nil
+	}
+	key, err := common.GenerateKey()
+	if err != nil {
+		common.SysLog("failed to generate default token key: " + err.Error())
+		return err
+	}
+	token := model.Token{
+		UserId:             user.Id,
+		Name:               user.Username + "的初始令牌",
+		Key:                key,
+		CreatedTime:        common.GetTimestamp(),
+		AccessedTime:       common.GetTimestamp(),
+		ExpiredTime:        -1,     // 永不过期
+		RemainQuota:        500000, // 示例额度
+		UnlimitedQuota:     true,
+		ModelLimitsEnabled: false,
+	}
+	if user.Group == plgGroup {
+		token.Group = plgGroup
+		token.CrossGroupRetry = false
+	} else if setting.DefaultUseAutoGroup {
+		token.Group = "auto"
+		token.CrossGroupRetry = true
+	}
+	if _, _, err := model.EnsureInitialUserToken(user.Id, token, operation_setting.GetMaxUserTokens()); err != nil && !errors.Is(err, model.ErrUserTokenLimitReached) {
+		common.SysLog("failed to ensure default token for user " + strconv.Itoa(user.Id) + ": " + err.Error())
+		return err
+	}
+	return nil
+}
+
 func Register(c *gin.Context) {
 	if !common.RegisterEnabled {
 		common.ApiErrorI18n(c, i18n.MsgUserRegisterDisabled)
@@ -299,37 +358,10 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
 		return
 	}
-	// 生成默认令牌
-	if constant.GenerateDefaultToken {
-		key, err := common.GenerateKey()
-		if err != nil {
-			common.ApiErrorI18n(c, i18n.MsgUserDefaultTokenFailed)
-			common.SysLog("failed to generate token key: " + err.Error())
-			return
-		}
-		// 生成默认令牌
-		token := model.Token{
-			UserId:             insertedUser.Id, // 使用插入后的用户ID
-			Name:               cleanUser.Username + "的初始令牌",
-			Key:                key,
-			CreatedTime:        common.GetTimestamp(),
-			AccessedTime:       common.GetTimestamp(),
-			ExpiredTime:        -1,     // 永不过期
-			RemainQuota:        500000, // 示例额度
-			UnlimitedQuota:     true,
-			ModelLimitsEnabled: false,
-		}
-		if insertedUser.Group == plgGroup {
-			token.Group = plgGroup
-			token.CrossGroupRetry = false
-		} else if setting.DefaultUseAutoGroup {
-			token.Group = "auto"
-			token.CrossGroupRetry = true
-		}
-		if err := model.CreateUserToken(insertedUser.Id, &token, operation_setting.GetMaxUserTokens()); err != nil && !errors.Is(err, model.ErrUserTokenLimitReached) {
-			common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
-			return
-		}
+	// 生成默认令牌（幂等；与 OAuth 注册共用同一路径，见 ensureDefaultUserToken / issue #406）
+	if err := ensureDefaultUserToken(&insertedUser); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
+		return
 	}
 
 	gaClientID, gaSessionID := service.ResolveGAIdentifiers(c.Request, user.GAClientID, user.GASessionID)

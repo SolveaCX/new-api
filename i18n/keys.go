@@ -56,6 +56,7 @@ const (
 	MsgTokenExhausted            = "token.exhausted"
 	MsgTokenStatusUnavailable    = "token.status_unavailable"
 	MsgTokenDbError              = "token.db_error"
+	MsgTokenBatchCachePending    = "token.batch_group_cache_sync_pending"
 )
 
 // Redemption related messages
@@ -133,6 +134,11 @@ const (
 	MsgQuotaInviterRewardLimitInvalid = "quota.inviter_reward_limit_invalid"
 )
 
+// Log related messages
+const (
+	MsgLogInvalidUserId = "log.invalid_user_id"
+)
+
 // Subscription related messages
 const (
 	MsgSubscriptionNotEnabled       = "subscription.not_enabled"
@@ -146,6 +152,7 @@ const (
 	MsgSubscriptionPurchaseMax      = "subscription.purchase_max"
 	MsgSubscriptionInvalidId        = "subscription.invalid_id"
 	MsgSubscriptionInvalidUserId    = "subscription.invalid_user_id"
+	MsgSubscriptionInvalidRecurring = "subscription.invalid_recurring_id"
 )
 
 // Payment related messages

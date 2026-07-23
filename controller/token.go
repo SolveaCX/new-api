@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -21,6 +22,7 @@ func buildMaskedTokenResponse(token *model.Token) *model.Token {
 	}
 	maskedToken := *token
 	maskedToken.Key = token.GetMaskedKey()
+	maskedToken.Status = model.GetEffectiveTokenStatus(token, common.GetTimestamp())
 	return &maskedToken
 }
 
@@ -32,6 +34,11 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 	return maskedTokens
 }
 
+type tokenPageWithStats struct {
+	*common.PageInfo
+	Stats model.UserTokenStats `json:"stats"`
+}
+
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
@@ -40,10 +47,14 @@ func GetAllTokens(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	total, _ := model.CountUserTokens(userId)
-	pageInfo.SetTotal(int(total))
+	stats, err := model.GetUserTokenStats(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(stats.Total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
-	common.ApiSuccess(c, pageInfo)
+	common.ApiSuccess(c, tokenPageWithStats{PageInfo: pageInfo, Stats: stats})
 }
 
 func SearchTokens(c *gin.Context) {
@@ -58,9 +69,14 @@ func SearchTokens(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	stats, err := model.GetUserTokenStats(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
-	common.ApiSuccess(c, pageInfo)
+	common.ApiSuccess(c, tokenPageWithStats{PageInfo: pageInfo, Stats: stats})
 }
 
 func GetToken(c *gin.Context) {
@@ -336,15 +352,21 @@ func DeleteToken(c *gin.Context) {
 	})
 }
 
+type tokenUpdateRequest struct {
+	model.Token
+	PreserveModelAccess bool `json:"preserve_model_access"`
+}
+
 func UpdateToken(c *gin.Context) {
 	userId := c.GetInt("id")
 	statusOnly := c.Query("status_only")
-	token := model.Token{}
-	err := c.ShouldBindJSON(&token)
+	request := tokenUpdateRequest{}
+	err := c.ShouldBindJSON(&request)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	token := request.Token
 	if len(token.Name) > 50 {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
@@ -375,6 +397,7 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 	}
+	forcePLGGroup := false
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
@@ -383,23 +406,34 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ExpiredTime = token.ExpiredTime
 		cleanToken.RemainQuota = token.RemainQuota
 		cleanToken.UnlimitedQuota = token.UnlimitedQuota
-		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
-		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
-		cleanToken.Group = token.Group
-		cleanToken.CrossGroupRetry = token.CrossGroupRetry
-		// PLG users cannot pick a group — force every token onto plg.
 		canUseGroups, err := userCanUseGroups(userId)
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
+		if !request.PreserveModelAccess {
+			cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
+			cleanToken.ModelLimits = token.ModelLimits
+			cleanToken.Group = token.Group
+			cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		}
+		// PLG users cannot retain or pick a non-PLG group, including when the
+		// client requests preservation of the other model-access fields.
 		if !canUseGroups {
+			forcePLGGroup = true
 			cleanToken.Group = plgGroup
 			cleanToken.CrossGroupRetry = false
 		}
 	}
-	err = cleanToken.Update()
+	if statusOnly == "" && request.PreserveModelAccess {
+		err = cleanToken.UpdateNonModelFields(forcePLGGroup)
+		if err == nil {
+			cleanToken, err = model.GetTokenByIds(token.Id, userId)
+		}
+	} else {
+		err = cleanToken.Update()
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -413,6 +447,66 @@ func UpdateToken(c *gin.Context) {
 
 type TokenBatch struct {
 	Ids []int `json:"ids"`
+}
+
+type tokenGroupBatchUpdateRequest struct {
+	Ids   []int  `json:"ids"`
+	Group string `json:"group"`
+}
+
+func UpdateTokenGroupBatch(c *gin.Context) {
+	if !common.GetEnvOrDefaultBool("TOKEN_BATCH_GROUP_ENABLED", false) {
+		common.ApiErrorI18n(c, i18n.MsgFeatureDisabled)
+		return
+	}
+
+	request := tokenGroupBatchUpdateRequest{}
+	if err := c.ShouldBindJSON(&request); err != nil || len(request.Ids) == 0 || len(request.Ids) > 100 || strings.TrimSpace(request.Group) == "" {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	request.Group = strings.TrimSpace(request.Group)
+
+	seen := make(map[int]struct{}, len(request.Ids))
+	for _, id := range request.Ids {
+		if id <= 0 {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		if _, exists := seen[id]; exists {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		seen[id] = struct{}{}
+	}
+
+	userId := c.GetInt("id")
+	userGroup, err := model.GetUserGroup(userId, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if userGroup == "" || userGroup == plgGroup {
+		request.Group = plgGroup
+	} else if !service.GroupInUserUsableGroups(userGroup, request.Group) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+
+	count, err := model.BatchUpdateTokenGroup(request.Ids, userId, request.Group)
+	if errors.Is(err, model.ErrTokenBatchInvalid) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if errors.Is(err, model.ErrTokenBatchCacheInvalidation) {
+		common.ApiErrorI18n(c, i18n.MsgTokenBatchCachePending)
+		return
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, count)
 }
 
 func DeleteTokenBatch(c *gin.Context) {

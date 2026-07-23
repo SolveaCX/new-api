@@ -167,6 +167,15 @@ func HandleOAuth(c *gin.Context) {
 		return
 	}
 
+	// OAuth attribution/state are one-shot values. setupLogin saves the session
+	// below, so deleting them here prevents a later login in the same browser
+	// from inheriting a previous user's acquisition data.
+	session.Delete("oauth_state")
+	session.Delete("ads_attribution")
+	session.Delete("aff")
+	session.Delete("ga_client_id")
+	session.Delete("ga_session_id")
+
 	// 9. Setup login. Pass isNewUser so the frontend can trigger first-login onboarding for
 	// OAuth registrations (mirrors password registration's route-level Playground first-run contract).
 	setupLogin(user, c, isNewUser)
@@ -359,6 +368,12 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		return nil, false, err
 	}
 	user.FinalizeOAuthUserCreation(inviterId)
+	// Give OAuth signups the same idempotent default API key as email signups so
+	// Google/GitHub users don't land in an empty backend (issue #406). Best-effort:
+	// a transient key-creation failure must not block a successful OAuth login.
+	if err := ensureDefaultUserToken(user); err != nil {
+		common.SysLog("oauth default token creation failed for user " + strconv.Itoa(user.Id) + ": " + err.Error())
+	}
 
 	gaClientID, _ := session.Get("ga_client_id").(string)
 	gaSessionID, _ := session.Get("ga_session_id").(string)

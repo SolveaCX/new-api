@@ -64,6 +64,14 @@ export interface GetApiKeysParams {
   size?: number
 }
 
+export interface ApiKeyStats {
+  total: number
+  enabled: number
+  disabled: number
+  expired: number
+  exhausted: number
+}
+
 export interface GetApiKeysResponse {
   success: boolean
   message?: string
@@ -72,6 +80,7 @@ export interface GetApiKeysResponse {
     total: number
     page: number
     page_size: number
+    stats?: ApiKeyStats
   }
 }
 
@@ -92,6 +101,7 @@ export interface ApiKeyFormData {
   allow_ips: string
   group: string
   cross_group_retry: boolean
+  preserve_model_access?: boolean
 }
 
 export interface EnsureInitialApiKeyResponse {

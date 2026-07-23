@@ -195,6 +195,48 @@ export function PlaygroundChat({
                                 />
                               )
 
+                              // Video-generation messages render their own way:
+                              // an error alert on failure, an inline <video> once
+                              // the blob object URL is ready, or a progress
+                              // spinner while the async task is still running.
+                              if (message.isVideo) {
+                                if (message.status === 'error') {
+                                  return (
+                                    <>
+                                      <MessageError
+                                        message={message}
+                                        className='mb-2'
+                                      />
+                                      {actions}
+                                    </>
+                                  )
+                                }
+                                if (message.videoUrl) {
+                                  return (
+                                    <>
+                                      <video
+                                        src={message.videoUrl}
+                                        controls
+                                        className='rounded-lg max-w-full'
+                                      />
+                                      {actions}
+                                    </>
+                                  )
+                                }
+                                return (
+                                  <div className='flex items-center gap-2 py-2'>
+                                    <Loader />
+                                    <Shimmer className='text-sm' duration={1}>
+                                      {message.videoProgress
+                                        ? t('Generating video… {{progress}}%', {
+                                            progress: message.videoProgress,
+                                          })
+                                        : t('Generating video…')}
+                                    </Shimmer>
+                                  </div>
+                                )
+                              }
+
                               return (
                                 <>
                                   {/* Sources */}

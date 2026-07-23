@@ -66,8 +66,10 @@ import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedInviteIndexRouteImport } from './routes/_authenticated/invite/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
+import { Route as AuthenticatedComputeIndexRouteImport } from './routes/_authenticated/compute/index'
 import { Route as AuthenticatedCodexModelGovernanceIndexRouteImport } from './routes/_authenticated/codex-model-governance/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
+import { Route as AuthenticatedAvailableModelsIndexRouteImport } from './routes/_authenticated/available-models/index'
 import { Route as LocaleRankingsIndexRouteImport } from './routes/$locale/rankings/index'
 import { Route as LocalePricingIndexRouteImport } from './routes/$locale/pricing/index'
 import { Route as LocaleBlogIndexRouteImport } from './routes/$locale/blog/index'
@@ -90,6 +92,7 @@ import { Route as AuthenticatedSystemSettingsModelsIndexRouteImport } from './ro
 import { Route as AuthenticatedSystemSettingsContentIndexRouteImport } from './routes/_authenticated/system-settings/content/index'
 import { Route as AuthenticatedSystemSettingsBillingIndexRouteImport } from './routes/_authenticated/system-settings/billing/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
+import { Route as AuthenticatedComputeNodesIndexRouteImport } from './routes/_authenticated/compute/nodes/index'
 import { Route as LocalePricingModelIdIndexRouteImport } from './routes/$locale/pricing/$modelId/index'
 import { Route as AuthenticatedSystemSettingsSiteSectionRouteImport } from './routes/_authenticated/system-settings/site/$section'
 import { Route as AuthenticatedSystemSettingsSecuritySectionRouteImport } from './routes/_authenticated/system-settings/security/$section'
@@ -395,6 +398,12 @@ const AuthenticatedDashboardIndexRoute =
     path: '/dashboard/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedComputeIndexRoute =
+  AuthenticatedComputeIndexRouteImport.update({
+    id: '/compute/',
+    path: '/compute/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCodexModelGovernanceIndexRoute =
   AuthenticatedCodexModelGovernanceIndexRouteImport.update({
     id: '/codex-model-governance/',
@@ -405,6 +414,12 @@ const AuthenticatedChannelsIndexRoute =
   AuthenticatedChannelsIndexRouteImport.update({
     id: '/channels/',
     path: '/channels/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAvailableModelsIndexRoute =
+  AuthenticatedAvailableModelsIndexRouteImport.update({
+    id: '/available-models/',
+    path: '/available-models/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const LocaleRankingsIndexRoute = LocaleRankingsIndexRouteImport.update({
@@ -528,6 +543,12 @@ const AuthenticatedSystemSettingsAuthIndexRoute =
     path: '/auth/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
   } as any)
+const AuthenticatedComputeNodesIndexRoute =
+  AuthenticatedComputeNodesIndexRouteImport.update({
+    id: '/compute/nodes/',
+    path: '/compute/nodes/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const LocalePricingModelIdIndexRoute =
   LocalePricingModelIdIndexRouteImport.update({
     id: '/$locale/pricing/$modelId/',
@@ -639,8 +660,10 @@ export interface FileRoutesByFullPath {
   '/$locale/blog/': typeof LocaleBlogIndexRoute
   '/$locale/pricing/': typeof LocalePricingIndexRoute
   '/$locale/rankings/': typeof LocaleRankingsIndexRoute
+  '/available-models/': typeof AuthenticatedAvailableModelsIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/compute/': typeof AuthenticatedComputeIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/invite/': typeof AuthenticatedInviteIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
@@ -664,6 +687,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId/': typeof LocalePricingModelIdIndexRoute
+  '/compute/nodes/': typeof AuthenticatedComputeNodesIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -728,8 +752,10 @@ export interface FileRoutesByTo {
   '/$locale/blog': typeof LocaleBlogIndexRoute
   '/$locale/pricing': typeof LocalePricingIndexRoute
   '/$locale/rankings': typeof LocaleRankingsIndexRoute
+  '/available-models': typeof AuthenticatedAvailableModelsIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/compute': typeof AuthenticatedComputeIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/invite': typeof AuthenticatedInviteIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
@@ -753,6 +779,7 @@ export interface FileRoutesByTo {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId': typeof LocalePricingModelIdIndexRoute
+  '/compute/nodes': typeof AuthenticatedComputeNodesIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -821,8 +848,10 @@ export interface FileRoutesById {
   '/$locale/blog/': typeof LocaleBlogIndexRoute
   '/$locale/pricing/': typeof LocalePricingIndexRoute
   '/$locale/rankings/': typeof LocaleRankingsIndexRoute
+  '/_authenticated/available-models/': typeof AuthenticatedAvailableModelsIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/_authenticated/compute/': typeof AuthenticatedComputeIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/invite/': typeof AuthenticatedInviteIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
@@ -846,6 +875,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/_authenticated/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId/': typeof LocalePricingModelIdIndexRoute
+  '/_authenticated/compute/nodes/': typeof AuthenticatedComputeNodesIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/_authenticated/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/_authenticated/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -913,8 +943,10 @@ export interface FileRouteTypes {
     | '/$locale/blog/'
     | '/$locale/pricing/'
     | '/$locale/rankings/'
+    | '/available-models/'
     | '/channels/'
     | '/codex-model-governance/'
+    | '/compute/'
     | '/dashboard/'
     | '/invite/'
     | '/keys/'
@@ -938,6 +970,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/$locale/pricing/$modelId/'
+    | '/compute/nodes/'
     | '/system-settings/auth/'
     | '/system-settings/billing/'
     | '/system-settings/content/'
@@ -1002,8 +1035,10 @@ export interface FileRouteTypes {
     | '/$locale/blog'
     | '/$locale/pricing'
     | '/$locale/rankings'
+    | '/available-models'
     | '/channels'
     | '/codex-model-governance'
+    | '/compute'
     | '/dashboard'
     | '/invite'
     | '/keys'
@@ -1027,6 +1062,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/$locale/pricing/$modelId'
+    | '/compute/nodes'
     | '/system-settings/auth'
     | '/system-settings/billing'
     | '/system-settings/content'
@@ -1094,8 +1130,10 @@ export interface FileRouteTypes {
     | '/$locale/blog/'
     | '/$locale/pricing/'
     | '/$locale/rankings/'
+    | '/_authenticated/available-models/'
     | '/_authenticated/channels/'
     | '/_authenticated/codex-model-governance/'
+    | '/_authenticated/compute/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/invite/'
     | '/_authenticated/keys/'
@@ -1119,6 +1157,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/security/$section'
     | '/_authenticated/system-settings/site/$section'
     | '/$locale/pricing/$modelId/'
+    | '/_authenticated/compute/nodes/'
     | '/_authenticated/system-settings/auth/'
     | '/_authenticated/system-settings/billing/'
     | '/_authenticated/system-settings/content/'
@@ -1576,6 +1615,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/compute/': {
+      id: '/_authenticated/compute/'
+      path: '/compute'
+      fullPath: '/compute/'
+      preLoaderRoute: typeof AuthenticatedComputeIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/codex-model-governance/': {
       id: '/_authenticated/codex-model-governance/'
       path: '/codex-model-governance'
@@ -1588,6 +1634,13 @@ declare module '@tanstack/react-router' {
       path: '/channels'
       fullPath: '/channels/'
       preLoaderRoute: typeof AuthenticatedChannelsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/available-models/': {
+      id: '/_authenticated/available-models/'
+      path: '/available-models'
+      fullPath: '/available-models/'
+      preLoaderRoute: typeof AuthenticatedAvailableModelsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/$locale/rankings/': {
@@ -1743,6 +1796,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/system-settings/auth/'
       preLoaderRoute: typeof AuthenticatedSystemSettingsAuthIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
+    }
+    '/_authenticated/compute/nodes/': {
+      id: '/_authenticated/compute/nodes/'
+      path: '/compute/nodes'
+      fullPath: '/compute/nodes/'
+      preLoaderRoute: typeof AuthenticatedComputeNodesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/$locale/pricing/$modelId/': {
       id: '/$locale/pricing/$modelId/'
@@ -1904,8 +1964,10 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
+  AuthenticatedAvailableModelsIndexRoute: typeof AuthenticatedAvailableModelsIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedCodexModelGovernanceIndexRoute: typeof AuthenticatedCodexModelGovernanceIndexRoute
+  AuthenticatedComputeIndexRoute: typeof AuthenticatedComputeIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedInviteIndexRoute: typeof AuthenticatedInviteIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
@@ -1918,6 +1980,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
+  AuthenticatedComputeNodesIndexRoute: typeof AuthenticatedComputeNodesIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -1930,9 +1993,12 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
+  AuthenticatedAvailableModelsIndexRoute:
+    AuthenticatedAvailableModelsIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedCodexModelGovernanceIndexRoute:
     AuthenticatedCodexModelGovernanceIndexRoute,
+  AuthenticatedComputeIndexRoute: AuthenticatedComputeIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedInviteIndexRoute: AuthenticatedInviteIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
@@ -1946,6 +2012,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
+  AuthenticatedComputeNodesIndexRoute: AuthenticatedComputeNodesIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

@@ -194,6 +194,7 @@ resource "google_monitoring_alert_policy" "redis_cpu_high" {
   project      = var.project_id
   display_name = "new-api Redis CPU high"
   combiner     = "OR"
+  severity     = "WARNING"
 
   conditions {
     display_name = "Redis CPU utilization is high"
@@ -203,14 +204,16 @@ resource "google_monitoring_alert_policy" "redis_cpu_high" {
         "resource.type=\"redis_instance\"",
         "resource.label.instance_id=\"${var.redis_instance_id}\"",
         "resource.label.region=\"${var.region}\"",
+        "metric.label.role=\"primary\"",
+        "metric.label.relationship=\"parent\"",
       ])
       duration        = "300s"
       comparison      = "COMPARISON_GT"
       threshold_value = var.redis_cpu_threshold
       aggregations {
         alignment_period     = "60s"
-        per_series_aligner   = "ALIGN_MAX"
-        cross_series_reducer = "REDUCE_MAX"
+        per_series_aligner   = "ALIGN_RATE"
+        cross_series_reducer = "REDUCE_SUM"
         group_by_fields      = ["resource.label.instance_id"]
       }
       trigger {

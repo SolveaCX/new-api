@@ -23,7 +23,40 @@ import { buildSidebarData } from './use-sidebar-data'
 const t = ((key: string) => key) as TFunction
 
 describe('buildSidebarData', () => {
-  test('highlights the invitation entry with localized credit copy', () => {
+  test('places available models between dashboard and API keys', () => {
+    const generalGroup = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'general'
+    )
+    const urls = generalGroup?.items.flatMap((item) =>
+      'url' in item && item.url ? [item.url] : []
+    )
+
+    expect(urls).toEqual([
+      '/dashboard/overview',
+      '/dashboard/models',
+      '/available-models',
+      '/keys',
+      '/usage-logs/common',
+      '/usage-logs/task',
+    ])
+  })
+
+  test('highlights the invitation entry with the configured badge', () => {
+    const personalGroup = buildSidebarData(t, {
+      inviteBadge: '+$10',
+    }).navGroups.find((group) => group.id === 'personal')
+    const inviteItem = personalGroup?.items.find(
+      (item) => 'url' in item && item.url === '/invite'
+    )
+
+    expect(inviteItem).toMatchObject({
+      title: 'Invite',
+      badge: '+$10',
+      badgeVariant: 'promotion',
+    })
+  })
+
+  test('falls back to the generic promo text without a configured badge', () => {
     const personalGroup = buildSidebarData(t).navGroups.find(
       (group) => group.id === 'personal'
     )
@@ -31,10 +64,22 @@ describe('buildSidebarData', () => {
       (item) => 'url' in item && item.url === '/invite'
     )
 
+    expect(inviteItem?.badge).toBe('Earn More Credits!')
+  })
+
+  test('keeps the badge language independent of the title translation', () => {
+    const translateToChinese = ((key: string) =>
+      key === 'Invite' ? '邀请' : key) as TFunction
+    const personalGroup = buildSidebarData(translateToChinese, {
+      inviteBadge: '+$10',
+    }).navGroups.find((group) => group.id === 'personal')
+    const inviteItem = personalGroup?.items.find(
+      (item) => 'url' in item && item.url === '/invite'
+    )
+
     expect(inviteItem).toMatchObject({
-      title: 'Invite',
-      badge: 'Earn More Credits!',
-      badgeVariant: 'promotion',
+      title: '邀请',
+      badge: '+$10',
     })
   })
 })

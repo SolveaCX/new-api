@@ -316,18 +316,9 @@ func ListModels(c *gin.Context, modelType int) {
 }
 
 func AvailableModels(c *gin.Context) {
-	groups, err := getModelListGroups(c)
+	access, err := resolveTokenModelAccessFromContext(c)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": "get user group failed",
-		})
-		return
-	}
-
-	modelNames, err := model.GetAvailableModelsForGroups(groups.ownerGroups)
-	if err != nil {
-		common.SysLog(fmt.Sprintf("GetAvailableModelsForGroups error: %v", err))
+		common.SysLog(fmt.Sprintf("ResolveTokenModelAccess error: %v", err))
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "get available models failed",
@@ -335,29 +326,19 @@ func AvailableModels(c *gin.Context) {
 		return
 	}
 
-	if common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled) {
-		tokenModelLimit := map[string]bool{}
-		if value, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit); ok {
-			if limits, ok := value.(map[string]bool); ok {
-				tokenModelLimit = limits
-			}
+	availableModels := make([]dto.OpenAIModels, 0, len(access.Models))
+	for _, accessModel := range access.Models {
+		owner := "custom"
+		if accessModel.Vendor != nil && accessModel.Vendor.Name != "" {
+			owner = accessModel.Vendor.Name
 		}
-		filtered := make([]string, 0, len(modelNames))
-		for _, modelName := range modelNames {
-			if tokenModelLimit[modelName] {
-				filtered = append(filtered, modelName)
-			}
-		}
-		modelNames = filtered
-	}
-
-	ownerByModel := map[string]string{}
-	if len(groups.ownerGroups) > 0 {
-		ownerByModel = getPreferredModelOwners(modelNames, groups.ownerGroups)
-	}
-	availableModels := make([]dto.OpenAIModels, 0, len(modelNames))
-	for _, modelName := range modelNames {
-		availableModels = append(availableModels, buildOpenAIModel(modelName, ownerByModel))
+		availableModels = append(availableModels, dto.OpenAIModels{
+			Id:                     accessModel.ID,
+			Object:                 "model",
+			Created:                1626777600,
+			OwnedBy:                owner,
+			SupportedEndpointTypes: accessModel.SupportedEndpointTypes,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{

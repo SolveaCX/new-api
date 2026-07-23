@@ -333,6 +333,20 @@ export const STATIC_I18N_KEYS = [
   'Received',
   'Payment initiated',
   'Payment page opened',
+  'Auto-renewing',
+  'Cancels at period end',
+  'Cancel auto-renewal',
+  'Resume auto-renewal',
+  'Access ends at {{date}}',
+  'Renews at {{date}}',
+  'This subscription will remain active until {{date}} and will not renew after that.',
+  'This subscription will renew automatically again after {{date}}.',
+  'Subscription purchase initiation is pending migration. Please refresh and use the new subscription flow.',
+  'Subscription API capabilities',
+  'Single subscription lifecycle',
+  'Current contract entitlement',
+  'Recurring provider binding',
+  'Change intent status',
 
   // Paddle review website footer links
   'footer.newapi.projectAttributionSuffix',
@@ -401,6 +415,15 @@ export const STATIC_I18N_KEYS = [
   'Price',
   'Priority',
   'Payment Channel',
+  'Tier Rank',
+  'Payment Modes',
+  'Balance one period',
+  'External one period',
+  'Tier rank must be a positive integer',
+  'Stripe recurring payment mode requires Stripe Price ID.',
+  'Stripe Price ID requires Stripe recurring payment mode.',
+  'Stripe Price ID requires at least one payment mode.',
+  'This plan already has lifecycle references. Disable it or create a new version instead of changing lifecycle-critical fields.',
   'No Upgrade',
   'Unlimited',
   'Update plan info',
@@ -464,6 +487,18 @@ export const STATIC_I18N_KEYS = [
   'Deleted',
   'Validity',
   'Actions',
+  'Provider',
+  'Stripe recurring',
+  'Current Entitlement',
+  'Read-only History',
+  'Binding State',
+  'Pending Intent',
+  'Grace Period',
+  'Migration Conflict',
+  'No current entitlement',
+  'No pending intent',
+  'Detected',
+  'After invalidating, Stripe recurring subscriptions are cancelled remotely before local access is stopped. Continue?',
 
   // Sidebar modules
   'Chat Area',
@@ -532,11 +567,24 @@ export const STATIC_I18N_KEYS = [
   'Batch detection failed',
   'Batch detection complete: {{channels}} channels, {{add}} to add, {{remove}} to remove, {{fails}} failed',
 
-  // Playground first-run example prompts (rendered via t(prompt) from the
-  // FIRST_RUN_EXAMPLE_PROMPTS constant, so the t('...') regex can't pick them up)
-  'Hello!',
+  // Playground first-run example prompts, input suggestions, and message action
+  // labels — all rendered via t(variable) from constants/arrays, so the t('...')
+  // regex can't pick them up. ('Regenerate', 'Edit', 'Delete', 'More' are already
+  // registered below; 'An unknown error occurred' is a literal the regex catches.)
+  'How do I try flatkey?',
+  'Generate an image of a cat astronaut',
+  'Generate a video of a cat astronaut',
   'Write a quicksort in Python',
   'Explain Transformers',
+  'Analyze data',
+  'Surprise me',
+  'Summarize text',
+  'Code',
+  'Get advice',
+  'Copy',
+  'Copied!',
+  'No content to copy',
+  'Please wait for the current generation to complete',
 
   // Misc
   'Cancel',
