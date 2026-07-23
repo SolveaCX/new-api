@@ -2,6 +2,7 @@ import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
+  afterAll,
   beforeAll,
   beforeEach,
   describe,
@@ -61,17 +62,38 @@ const listRecallAudienceUsers = mock(
   }
 )
 
+const originalGlobalPropertyDescriptors = new Map<
+  PropertyKey,
+  PropertyDescriptor | undefined
+>()
+
+function defineTestGlobal(key: PropertyKey, value: unknown) {
+  if (!originalGlobalPropertyDescriptors.has(key)) {
+    originalGlobalPropertyDescriptors.set(
+      key,
+      Object.getOwnPropertyDescriptor(globalThis, key)
+    )
+  }
+  Object.defineProperty(globalThis, key, {
+    configurable: true,
+    value,
+    writable: true,
+  })
+}
+
+function restoreTestGlobals() {
+  for (const [key, descriptor] of originalGlobalPropertyDescriptors) {
+    if (descriptor) {
+      Object.defineProperty(globalThis, key, descriptor)
+    } else {
+      Reflect.deleteProperty(globalThis, key)
+    }
+  }
+}
+
 function setupDom() {
   if (typeof document !== 'undefined') {
-    globalThis.localStorage = {
-      getItem: () => null,
-      removeItem: () => undefined,
-      setItem: () => undefined,
-    } as unknown as Storage
-    if (typeof window !== 'undefined') {
-      window.localStorage = globalThis.localStorage
-      window.location ??= { href: 'http://localhost/' } as Location
-    }
+    defineTestGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     return
   }
 
@@ -175,22 +197,25 @@ function setupDom() {
     removeEventListener() {},
     defaultView: globalThis,
   }
-  globalThis.document = shimDocument as unknown as Document
-  globalThis.window = globalThis as unknown as Window & typeof globalThis
-  window.location = { href: 'http://localhost/' } as Location
-  globalThis.localStorage = {
+  defineTestGlobal('document', shimDocument as unknown as Document)
+  defineTestGlobal(
+    'window',
+    globalThis as unknown as Window & typeof globalThis
+  )
+  defineTestGlobal('location', { href: 'http://localhost/' } as Location)
+  const localStorage = {
     getItem: () => null,
     removeItem: () => undefined,
     setItem: () => undefined,
   } as unknown as Storage
-  window.localStorage = globalThis.localStorage
-  globalThis.HTMLElement = ElementShim as unknown as typeof HTMLElement
-  globalThis.HTMLIFrameElement = class {} as typeof HTMLIFrameElement
-  globalThis.Node = NodeShim as unknown as typeof Node
+  defineTestGlobal('localStorage', localStorage)
+  defineTestGlobal('HTMLElement', ElementShim as unknown as typeof HTMLElement)
+  defineTestGlobal('HTMLIFrameElement', class {} as typeof HTMLIFrameElement)
+  defineTestGlobal('Node', NodeShim as unknown as typeof Node)
+  defineTestGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 }
 
 setupDom()
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 mock.module('../api', () => ({
   listRecallAudienceUsers,
@@ -259,6 +284,10 @@ beforeEach(() => {
   listRecallAudienceUsers.mockClear()
   latestMultiSelectProps = undefined
   latestTextareaProps = undefined
+})
+
+afterAll(() => {
+  restoreTestGlobals()
 })
 
 function user(id: number, overrides: Partial<MockUser> = {}): MockUser {
