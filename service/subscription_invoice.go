@@ -183,7 +183,7 @@ func consoleSubscriptionReturnPath() string {
 	} else {
 		base = system_setting.ServerAddress
 	}
-	return strings.TrimRight(strings.TrimSpace(base), "/") + "/subscriptions"
+	return strings.TrimRight(strings.TrimSpace(base), "/") + "/wallet"
 }
 
 func ensureStripeSecretForSubscription() error {

@@ -894,14 +894,14 @@ func TestConsoleSubscriptionReturnPathUsesConfiguredAppConsoleOrigin(t *testing.
 	restore := replaceSubscriptionReturnPathSettings(t, "https://router.flatkey.ai", " https://console.example.test/ ")
 	defer restore()
 
-	require.Equal(t, "https://console.example.test/subscriptions", consoleSubscriptionReturnPath())
+	require.Equal(t, "https://console.example.test/wallet", consoleSubscriptionReturnPath())
 }
 
 func TestConsoleSubscriptionReturnPathFallsBackToServerAddressWhenAppConsoleOriginInvalid(t *testing.T) {
 	restore := replaceSubscriptionReturnPathSettings(t, "https://router.flatkey.ai/", "https://console.example.test/path")
 	defer restore()
 
-	require.Equal(t, "https://router.flatkey.ai/subscriptions", consoleSubscriptionReturnPath())
+	require.Equal(t, "https://router.flatkey.ai/wallet", consoleSubscriptionReturnPath())
 }
 
 func TestStripeMinorUnitAmountForSubscriptionUsesDecimalRounding(t *testing.T) {
