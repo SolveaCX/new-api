@@ -43,6 +43,10 @@ type SubscriptionPurchaseQuote struct {
 	PaymentAmountMinor int64
 }
 
+type PrepaidTermAllocation struct {
+	CanonicalWalletUnitPrice float64
+}
+
 var subscriptionPurchaseQuoteResolver = defaultSubscriptionPurchaseQuote
 
 var ErrSubscriptionPurchaseQuoteUnavailable = errors.New("subscription purchase quote unavailable")
@@ -459,6 +463,9 @@ func applyBalancePrepaidPurchaseTx(tx *gorm.DB, user *model.User, contract *mode
 		PaymentMode:          model.SubscriptionPaymentModePrepaid,
 		AmountTotal:          plan.TotalAmount,
 		MediaCreditsTotal:    plan.MediaCreditsMonthly,
+		Window5hAmount:       common.GetPointer(plan.Window5hAmount),
+		WindowWeekAmount:     common.GetPointer(plan.WindowWeekAmount),
+		UpgradeGroup:         common.GetPointer(plan.UpgradeGroup),
 		PeriodStart:          periodStart,
 		PeriodEnd:            periodEnd,
 		EndReasonForPrevious: previousEntitlementEndReason(intent.Kind),
@@ -467,7 +474,9 @@ func applyBalancePrepaidPurchaseTx(tx *gorm.DB, user *model.User, contract *mode
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := createPrepaidTermSegmentsTx(tx, contract.Id, order.Id, plan.Id, quote.UnitPrice, periodStart, cmd.Months); err != nil {
+	if err := createPrepaidTermSegmentsTx(tx, contract.Id, order.Id, plan.Id, PrepaidTermAllocation{
+		CanonicalWalletUnitPrice: plan.PriceAmount,
+	}, periodStart, cmd.Months); err != nil {
 		return nil, nil, err
 	}
 	if err := markPrepaidPurchaseAppliedTx(tx, contract, intent, plan, periodStart, periodEnd, order.TradeNo); err != nil {
@@ -546,7 +555,10 @@ func refundPrepaidNotStartedTermsTx(tx *gorm.DB, userID int, contractID int64) (
 	return totalQuota, nil
 }
 
-func createPrepaidTermSegmentsTx(tx *gorm.DB, contractID int64, orderID int, planID int, unitPrice float64, periodStart int64, months int) error {
+func createPrepaidTermSegmentsTx(tx *gorm.DB, contractID int64, orderID int, planID int, allocation PrepaidTermAllocation, periodStart int64, months int) error {
+	if allocation.CanonicalWalletUnitPrice < 0 {
+		return errors.New("canonical wallet unit price cannot be negative")
+	}
 	start := time.Unix(periodStart, 0)
 	for i := 0; i < months; i++ {
 		status := model.SubscriptionTermStatusNotStarted
@@ -560,7 +572,7 @@ func createPrepaidTermSegmentsTx(tx *gorm.DB, contractID int64, orderID int, pla
 			SegmentIndex:   i,
 			StartTime:      start.AddDate(0, i, 0).Unix(),
 			EndTime:        start.AddDate(0, i+1, 0).Unix(),
-			AllocatedMoney: unitPrice,
+			AllocatedMoney: allocation.CanonicalWalletUnitPrice,
 			Status:         status,
 		}
 		if err := tx.Create(segment).Error; err != nil {
@@ -694,7 +706,7 @@ func paymentProviderForPurchaseChoice(choice string) string {
 	case SubscriptionPaymentChoiceBalance:
 		return model.PaymentProviderBalance
 	case SubscriptionPaymentChoiceAlipay, SubscriptionPaymentChoicePix, SubscriptionPaymentChoiceUPI:
-		return "one_time"
+		return model.PaymentProviderStripe
 	default:
 		return ""
 	}

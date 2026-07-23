@@ -1108,6 +1108,9 @@ func CompleteOneTimeStripeSubscriptionPurchase(ctx context.Context, tradeNo stri
 			PaymentMode:          model.SubscriptionPaymentModePrepaid,
 			AmountTotal:          snapshot.TotalAmount,
 			MediaCreditsTotal:    snapshot.MediaCreditsMonthly,
+			Window5hAmount:       common.GetPointer(snapshot.Window5hAmount),
+			WindowWeekAmount:     common.GetPointer(snapshot.WindowWeekAmount),
+			UpgradeGroup:         common.GetPointer(snapshot.UpgradeGroup),
 			PeriodStart:          periodStart,
 			PeriodEnd:            periodEnd,
 			EndReasonForPrevious: previousEntitlementEndReason(intent.Kind),
@@ -1116,7 +1119,9 @@ func CompleteOneTimeStripeSubscriptionPurchase(ctx context.Context, tradeNo stri
 		if err != nil {
 			return err
 		}
-		if err := createPrepaidTermSegmentsTx(tx, contract.Id, order.Id, order.PlanId, snapshot.PriceAmount, periodStart, order.PurchaseMonths); err != nil {
+		if err := createPrepaidTermSegmentsTx(tx, contract.Id, order.Id, order.PlanId, PrepaidTermAllocation{
+			CanonicalWalletUnitPrice: snapshot.PriceAmount,
+		}, periodStart, order.PurchaseMonths); err != nil {
 			return err
 		}
 		plan := model.SubscriptionPlan{Id: order.PlanId}
@@ -1187,7 +1192,8 @@ func validateOneTimeStripeLocalOrderFacts(order *model.SubscriptionOrder, intent
 	if snapshot.PlanID != order.PlanId {
 		return errors.New("local one-time subscription plan snapshot mismatch")
 	}
-	if snapshot.PriceAmount < 0 || snapshot.TotalAmount < 0 || snapshot.MediaCreditsMonthly < 0 {
+	if snapshot.PriceAmount < 0 || snapshot.TotalAmount < 0 || snapshot.Window5hAmount < 0 ||
+		snapshot.WindowWeekAmount < 0 || snapshot.MediaCreditsMonthly < 0 {
 		return errors.New("local one-time subscription plan snapshot values are invalid")
 	}
 	if strings.TrimSpace(order.PaymentCurrency) == "" || order.PaymentAmountMinor <= 0 {

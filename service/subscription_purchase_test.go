@@ -251,6 +251,71 @@ func TestPurchaseSubscriptionReplacementCreditsOnlyNotStartedSegments(t *testing
 	require.Equal(t, int64(500), refundLedgers[0].QuotaDelta)
 }
 
+func TestRefundPrepaidTermsUsesCanonicalWalletMoneyForLocalCurrencyOrders(t *testing.T) {
+	tests := []struct {
+		name          string
+		paymentMethod string
+		currency      string
+		localPrice    float64
+	}{
+		{name: "pix_brl", paymentMethod: SubscriptionPaymentChoicePix, currency: "BRL", localPrice: 49.90},
+		{name: "upi_inr", paymentMethod: SubscriptionPaymentChoiceUPI, currency: "INR", localPrice: 830},
+	}
+
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupSubscriptionPurchaseServiceTestDB(t)
+			userID := 7330 + index
+			planID := 7430 + index
+			insertPurchaseServiceUser(t, userID, 0)
+			plan := insertPurchaseServicePlan(t, planID, index+1, 10, 1000)
+			contract := model.UserSubscriptionContract{
+				UserId:        userID,
+				Status:        model.SubscriptionContractStatusActive,
+				PaymentMode:   model.SubscriptionPaymentModePrepaid,
+				CurrentPlanId: plan.Id,
+			}
+			require.NoError(t, model.DB.Create(&contract).Error)
+			order := model.SubscriptionOrder{
+				UserId:             userID,
+				PlanId:             plan.Id,
+				Money:              subscriptionPurchaseMoney(test.localPrice, 2),
+				TradeNo:            "local-currency-refund-" + test.name,
+				PaymentMethod:      test.paymentMethod,
+				PaymentProvider:    model.PaymentProviderStripe,
+				Status:             common.TopUpStatusSuccess,
+				CreateTime:         common.GetTimestamp(),
+				PurchaseMonths:     2,
+				UnitPrice:          test.localPrice,
+				PaymentCurrency:    test.currency,
+				PaymentAmountMinor: subscriptionPurchaseMinorAmount(subscriptionPurchaseMoney(test.localPrice, 2)),
+			}
+			require.NoError(t, model.DB.Create(&order).Error)
+
+			periodStart := common.GetTimestamp()
+			require.NoError(t, createPrepaidTermSegmentsTx(
+				model.DB,
+				contract.Id,
+				order.Id,
+				plan.Id,
+				PrepaidTermAllocation{CanonicalWalletUnitPrice: plan.PriceAmount},
+				periodStart,
+				2,
+			))
+
+			refundedQuota, err := refundPrepaidNotStartedTermsTx(model.DB, userID, contract.Id)
+
+			require.NoError(t, err)
+			require.Equal(t, int64(1000), refundedQuota)
+			var ledger model.WalletLedgerEntry
+			require.NoError(t, model.DB.Where("user_id = ? AND entry_type = ?", userID, model.WalletLedgerEntryTypePrepaidRefund).First(&ledger).Error)
+			require.Equal(t, float64(10), ledger.MoneyAmount)
+			require.Equal(t, int64(1000), ledger.QuotaDelta)
+			require.NotEqual(t, test.localPrice, ledger.MoneyAmount)
+		})
+	}
+}
+
 func TestPurchaseSubscriptionReplayReturnsOriginalResult(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	insertPurchaseServiceUser(t, 7307, 1000)
@@ -369,6 +434,51 @@ func TestPurchaseSubscriptionUPIPersistsConfiguredINRQuote(t *testing.T) {
 	require.Equal(t, int64(54000), result.Order.PaymentAmountMinor)
 	require.Equal(t, float64(180), result.Order.UnitPrice)
 	require.Equal(t, float64(540), result.Order.Money)
+}
+
+func TestPurchaseSubscriptionOneTimeChoicesUseStripeProvider(t *testing.T) {
+	tests := []struct {
+		name     string
+		choice   string
+		currency string
+		price    float64
+	}{
+		{name: "alipay", choice: SubscriptionPaymentChoiceAlipay, currency: "USD", price: 2},
+		{name: "pix", choice: SubscriptionPaymentChoicePix, currency: "BRL", price: 11},
+		{name: "upi", choice: SubscriptionPaymentChoiceUPI, currency: "INR", price: 180},
+	}
+
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupSubscriptionPurchaseServiceTestDB(t)
+			userID := 7320 + index
+			planID := 7420 + index
+			insertPurchaseServiceUser(t, userID, 1000)
+			plan := insertPurchaseServicePlan(t, planID, index+1, 2, 200)
+			originalResolver := subscriptionPurchaseQuoteResolver
+			t.Cleanup(func() { subscriptionPurchaseQuoteResolver = originalResolver })
+			subscriptionPurchaseQuoteResolver = func(plan model.SubscriptionPlan, choice string, months int) (SubscriptionPurchaseQuote, error) {
+				return SubscriptionPurchaseQuote{
+					Currency:           test.currency,
+					UnitPrice:          test.price,
+					Total:              test.price,
+					PaymentAmountMinor: subscriptionPurchaseMinorAmount(test.price),
+				}, nil
+			}
+
+			result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+				UserID:        userID,
+				PlanID:        plan.Id,
+				PaymentChoice: test.choice,
+				Months:        1,
+				RequestID:     "stripe-provider-" + test.name,
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, common.TopUpStatusPending, result.Order.Status)
+			require.Equal(t, model.PaymentProviderStripe, result.Order.PaymentProvider)
+		})
+	}
 }
 
 func TestQuoteSubscriptionPurchaseReturnsStructuredUnavailableForMissingLocalQuote(t *testing.T) {

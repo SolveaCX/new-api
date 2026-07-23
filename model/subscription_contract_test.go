@@ -30,6 +30,8 @@ func TestSubscriptionContractMigrationCreatesLifecycleTablesAndColumns(t *testin
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "current_slot"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "access_end_time"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "end_reason"))
+	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "window_5h_amount"))
+	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "window_week_amount"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "contract_id"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "provider_subscription_item_id"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "provider_schedule_id"))

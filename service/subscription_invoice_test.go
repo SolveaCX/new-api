@@ -937,6 +937,9 @@ func TestCompleteOneTimeStripeSubscriptionPurchaseAppliesPendingOrderOnce(t *tes
 		AllowBalancePay:     common.GetPointer(true),
 		TotalAmount:         1234,
 		MediaCreditsMonthly: 55,
+		Window5hAmount:      125,
+		WindowWeekAmount:    900,
+		UpgradeGroup:        "snapshot_group",
 	}).Error)
 	contract := model.UserSubscriptionContract{
 		UserId:      userID,
@@ -969,7 +972,7 @@ func TestCompleteOneTimeStripeSubscriptionPurchaseAppliesPendingOrderOnce(t *tes
 		UnitPrice:          12.34,
 		PaymentCurrency:    "BRL",
 		PaymentAmountMinor: 1234,
-		PlanSnapshot:       `{"plan_id":8401,"title":"One Time Plan","price_amount":12.34,"currency":"BRL","duration_unit":"month","duration_value":1,"total_amount":1234,"media_credits_monthly":55}`,
+		PlanSnapshot:       `{"plan_id":8401,"title":"One Time Plan","price_amount":12.34,"currency":"BRL","duration_unit":"month","duration_value":1,"total_amount":1234,"window_5h_amount":125,"window_week_amount":900,"media_credits_monthly":55,"upgrade_group":"snapshot_group"}`,
 		PurchaseIntent:     model.SubscriptionChangeIntentKindPurchase,
 		RenewalSource:      model.SubscriptionRenewalSourceWallet,
 		ChangeIntentId:     intent.Id,
@@ -979,6 +982,9 @@ func TestCompleteOneTimeStripeSubscriptionPurchaseAppliesPendingOrderOnce(t *tes
 		"price_amount":          99.99,
 		"total_amount":          999999,
 		"media_credits_monthly": 999,
+		"window_5h_amount":      999,
+		"window_week_amount":    888,
+		"upgrade_group":         "edited_group",
 		"enabled":               false,
 	}).Error)
 
@@ -990,6 +996,14 @@ func TestCompleteOneTimeStripeSubscriptionPurchaseAppliesPendingOrderOnce(t *tes
 	require.NotNil(t, first.Entitlement)
 	require.Equal(t, int64(1234), first.Entitlement.AmountTotal)
 	require.Equal(t, int64(55), first.Entitlement.MediaCreditsTotal)
+	require.NotNil(t, first.Entitlement.Window5hAmount)
+	require.NotNil(t, first.Entitlement.WindowWeekAmount)
+	require.Equal(t, int64(125), *first.Entitlement.Window5hAmount)
+	require.Equal(t, int64(900), *first.Entitlement.WindowWeekAmount)
+	require.Equal(t, "snapshot_group", first.Entitlement.UpgradeGroup)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", userID).Error)
+	require.Equal(t, "snapshot_group", user.Group)
 	require.Nil(t, second.Entitlement)
 	var entitlementCount int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", userID).Count(&entitlementCount).Error)
@@ -1123,6 +1137,50 @@ func TestCompleteOneTimeStripeSubscriptionPurchaseRejectsCurrencyMethodMismatch(
 	var entitlementCount int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", userID).Count(&entitlementCount).Error)
 	require.Zero(t, entitlementCount)
+}
+
+func TestValidateOneTimeStripeLocalOrderFactsRejectsNegativeWindowSnapshots(t *testing.T) {
+	tests := []struct {
+		name     string
+		mutate   func(*purchasePlanSnapshot)
+		contains string
+	}{
+		{
+			name: "five hour window",
+			mutate: func(snapshot *purchasePlanSnapshot) {
+				snapshot.Window5hAmount = -1
+			},
+			contains: "snapshot values are invalid",
+		},
+		{
+			name: "weekly window",
+			mutate: func(snapshot *purchasePlanSnapshot) {
+				snapshot.WindowWeekAmount = -1
+			},
+			contains: "snapshot values are invalid",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			order := model.SubscriptionOrder{
+				UserId:             1,
+				PlanId:             2,
+				PaymentMethod:      SubscriptionPaymentChoicePix,
+				PaymentProvider:    model.PaymentProviderStripe,
+				PurchaseMonths:     1,
+				PaymentCurrency:    "BRL",
+				PaymentAmountMinor: 100,
+			}
+			intent := model.SubscriptionChangeIntent{UserId: 1, ToPlanId: 2}
+			snapshot := purchasePlanSnapshot{PlanID: 2}
+			test.mutate(&snapshot)
+
+			err := validateOneTimeStripeLocalOrderFacts(&order, &intent, snapshot)
+
+			require.ErrorContains(t, err, test.contains)
+		})
+	}
 }
 
 func replaceStripeInvoiceReconcilers(t *testing.T, invoice *stripe.Invoice, subscription *stripe.Subscription) func() {

@@ -625,6 +625,10 @@ type UserSubscription struct {
 	MediaCreditsTotal int64 `json:"media_credits_total" gorm:"type:bigint;not null;default:0"`
 	MediaCreditsUsed  int64 `json:"media_credits_used" gorm:"type:bigint;not null;default:0"`
 
+	// Nil means a legacy entitlement created before window limits were snapshotted.
+	Window5hAmount   *int64 `json:"window_5h_amount,omitempty" gorm:"column:window_5h_amount;type:bigint"`
+	WindowWeekAmount *int64 `json:"window_week_amount,omitempty" gorm:"column:window_week_amount;type:bigint"`
+
 	StartTime     int64  `json:"start_time" gorm:"bigint"`
 	EndTime       int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
 	AccessEndTime int64  `json:"access_end_time" gorm:"type:bigint;default:0;index"`
@@ -808,8 +812,15 @@ func getUserGroupByIdTx(tx *gorm.DB, userId int) (string, error) {
 	if tx == nil {
 		tx = DB
 	}
+	groupCol := commonGroupCol
+	if strings.TrimSpace(groupCol) == "" {
+		groupCol = "`group`"
+		if common.UsingPostgreSQL {
+			groupCol = `"group"`
+		}
+	}
 	var group string
-	if err := tx.Model(&User{}).Where("id = ?", userId).Select(commonGroupCol).Find(&group).Error; err != nil {
+	if err := tx.Model(&User{}).Where("id = ?", userId).Select(groupCol).Find(&group).Error; err != nil {
 		return "", err
 	}
 	return group, nil
@@ -902,6 +913,8 @@ func createUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			}
 		}
 	}
+	window5hAmount := plan.Window5hAmount
+	windowWeekAmount := plan.WindowWeekAmount
 	sub := &UserSubscription{
 		UserId:            userId,
 		PlanId:            plan.Id,
@@ -910,6 +923,8 @@ func createUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		AmountUsed:        0,
 		MediaCreditsTotal: plan.MediaCreditsMonthly,
 		MediaCreditsUsed:  0,
+		Window5hAmount:    &window5hAmount,
+		WindowWeekAmount:  &windowWeekAmount,
 		StartTime:         now.Unix(),
 		EndTime:           endUnix,
 		Status:            "active",
@@ -1348,9 +1363,25 @@ func subscriptionWindowInfoForSub(sub *UserSubscription) (*SubscriptionWindowInf
 	if sub == nil {
 		return nil, nil
 	}
-	plan, err := GetSubscriptionPlanById(sub.PlanId)
-	if err != nil {
-		return nil, err
+	var window5hAmount int64
+	var windowWeekAmount int64
+	if sub.Window5hAmount != nil {
+		window5hAmount = *sub.Window5hAmount
+	}
+	if sub.WindowWeekAmount != nil {
+		windowWeekAmount = *sub.WindowWeekAmount
+	}
+	if sub.Window5hAmount == nil || sub.WindowWeekAmount == nil {
+		plan, err := GetSubscriptionPlanById(sub.PlanId)
+		if err != nil {
+			return nil, err
+		}
+		if sub.Window5hAmount == nil {
+			window5hAmount = plan.Window5hAmount
+		}
+		if sub.WindowWeekAmount == nil {
+			windowWeekAmount = plan.WindowWeekAmount
+		}
 	}
 	anchor := sub.StartTime
 	if sub.ContractId > 0 {
@@ -1367,8 +1398,8 @@ func subscriptionWindowInfoForSub(sub *UserSubscription) (*SubscriptionWindowInf
 		UserSubscriptionId: sub.Id,
 		ContractId:         sub.ContractId,
 		SubscriptionStart:  anchor,
-		Window5hAmount:     plan.Window5hAmount,
-		WindowWeekAmount:   plan.WindowWeekAmount,
+		Window5hAmount:     window5hAmount,
+		WindowWeekAmount:   windowWeekAmount,
 	}, nil
 }
 

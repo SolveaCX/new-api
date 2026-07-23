@@ -32,6 +32,9 @@ type GrantEntitlementInput struct {
 	PaymentMode          string
 	AmountTotal          int64
 	MediaCreditsTotal    int64
+	Window5hAmount       *int64
+	WindowWeekAmount     *int64
+	UpgradeGroup         *string
 	PeriodStart          int64
 	PeriodEnd            int64
 	EndReasonForPrevious string
@@ -80,6 +83,7 @@ func rotateCurrentEntitlementTx(tx *gorm.DB, input GrantEntitlementInput) (*Gran
 	if err != nil {
 		return nil, err
 	}
+	input.applyPlanSnapshotDefaults(plan)
 
 	if existing, found, err := findGrantEntitlementByKeyTx(tx, input.GrantKey); err != nil {
 		return nil, err
@@ -141,13 +145,15 @@ func rotateCurrentEntitlementTx(tx *gorm.DB, input GrantEntitlementInput) (*Gran
 		AmountUsed:        0,
 		MediaCreditsTotal: input.MediaCreditsTotal,
 		MediaCreditsUsed:  0,
+		Window5hAmount:    input.Window5hAmount,
+		WindowWeekAmount:  input.WindowWeekAmount,
 		StartTime:         input.PeriodStart,
 		EndTime:           input.PeriodEnd,
 		AccessEndTime:     input.PeriodEnd,
 		Status:            SubscriptionEntitlementStatusActive,
 		Source:            input.Source,
 		PaymentMode:       input.PaymentMode,
-		UpgradeGroup:      strings.TrimSpace(plan.UpgradeGroup),
+		UpgradeGroup:      *input.UpgradeGroup,
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
@@ -164,7 +170,11 @@ func rotateCurrentEntitlementTx(tx *gorm.DB, input GrantEntitlementInput) (*Gran
 		"change_version":              contract.ChangeVersion + 1,
 		"updated_at":                  common.GetTimestamp(),
 	}
-	if err := applyEntitlementGroupChangeTx(tx, &contract, plan, input.UserId, contractUpdates); err != nil {
+	if input.PaymentMode == SubscriptionPaymentModeStripeRecurring {
+		contractUpdates["renewal_source"] = SubscriptionRenewalSourceProvider
+		contractUpdates["renewal_status"] = SubscriptionRenewalStatusEnabled
+	}
+	if err := applyEntitlementGroupChangeTx(tx, &contract, *input.UpgradeGroup, input.UserId, contractUpdates); err != nil {
 		return nil, err
 	}
 	if err := tx.Model(&UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(contractUpdates).Error; err != nil {
@@ -180,6 +190,28 @@ func (input *GrantEntitlementInput) normalize() {
 	input.Source = strings.TrimSpace(input.Source)
 	if input.Source == "" {
 		input.Source = "subscription"
+	}
+	if input.UpgradeGroup != nil {
+		value := strings.TrimSpace(*input.UpgradeGroup)
+		input.UpgradeGroup = &value
+	}
+}
+
+func (input *GrantEntitlementInput) applyPlanSnapshotDefaults(plan *SubscriptionPlan) {
+	if input == nil || plan == nil {
+		return
+	}
+	if input.Window5hAmount == nil {
+		value := plan.Window5hAmount
+		input.Window5hAmount = &value
+	}
+	if input.WindowWeekAmount == nil {
+		value := plan.WindowWeekAmount
+		input.WindowWeekAmount = &value
+	}
+	if input.UpgradeGroup == nil {
+		value := strings.TrimSpace(plan.UpgradeGroup)
+		input.UpgradeGroup = &value
 	}
 }
 
@@ -204,6 +236,12 @@ func (input GrantEntitlementInput) validate() error {
 	}
 	if input.MediaCreditsTotal < 0 {
 		return errors.New("media credits total must be >= 0")
+	}
+	if input.Window5hAmount != nil && *input.Window5hAmount < 0 {
+		return errors.New("window 5h amount must be >= 0")
+	}
+	if input.WindowWeekAmount != nil && *input.WindowWeekAmount < 0 {
+		return errors.New("window week amount must be >= 0")
 	}
 	return nil
 }
@@ -240,14 +278,32 @@ func grantMatchesInput(existing *UserSubscription, input GrantEntitlementInput) 
 		existing.ProviderBindingId == input.ProviderBindingId &&
 		existing.AmountTotal == input.AmountTotal &&
 		existing.MediaCreditsTotal == input.MediaCreditsTotal &&
+		grantWindowAmountMatches(existing.Window5hAmount, input.Window5hAmount) &&
+		grantWindowAmountMatches(existing.WindowWeekAmount, input.WindowWeekAmount) &&
+		grantUpgradeGroupMatches(existing.UpgradeGroup, input.UpgradeGroup) &&
 		existing.StartTime == input.PeriodStart &&
 		existing.EndTime == input.PeriodEnd &&
 		normalizeSubscriptionPaymentMode(existing.PaymentMode) == input.PaymentMode &&
 		strings.TrimSpace(existing.Source) == input.Source
 }
 
-func applyEntitlementGroupChangeTx(tx *gorm.DB, contract *UserSubscriptionContract, plan *SubscriptionPlan, userId int, contractUpdates map[string]interface{}) error {
-	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
+func grantWindowAmountMatches(existing *int64, input *int64) bool {
+	if existing == nil {
+		return true
+	}
+	return input != nil && *existing == *input
+}
+
+func grantUpgradeGroupMatches(existing string, input *string) bool {
+	existing = strings.TrimSpace(existing)
+	if existing == "" {
+		return true
+	}
+	return input != nil && existing == strings.TrimSpace(*input)
+}
+
+func applyEntitlementGroupChangeTx(tx *gorm.DB, contract *UserSubscriptionContract, upgradeGroup string, userId int, contractUpdates map[string]interface{}) error {
+	upgradeGroup = strings.TrimSpace(upgradeGroup)
 	if upgradeGroup == "" {
 		return nil
 	}
