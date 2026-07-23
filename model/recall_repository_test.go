@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -442,6 +443,103 @@ func TestRecallRecipientIdentityBeforeCreateAndUniqueness(t *testing.T) {
 	displayName.EmailSnapshot = "Display Name <one@example.com>"
 	displayName.RecipientIdentity = ""
 	require.Error(t, DB.Create(&displayName).Error)
+}
+
+func TestRecallRecipientJSONDoesNotExposeIdentity(t *testing.T) {
+	recipient := RecallRecipient{
+		CampaignId:          41,
+		UserId:              77,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "hidden@example.com",
+		RecipientIdentity:   RecallRecipientIdentityForUser(77),
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientQueued,
+	}
+
+	payload, err := json.Marshal(recipient)
+
+	require.NoError(t, err)
+	require.NotContains(t, string(payload), "recipient_identity")
+	require.NotContains(t, string(payload), "user:77")
+}
+
+func TestListRecallCampaignRecipientKeysWithContext(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("recipient keys")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	otherCampaign := newRecallRepositoryCampaign("other keys")
+	require.NoError(t, CreateRecallCampaign(&otherCampaign))
+	recipients := []RecallRecipient{
+		{
+			CampaignId:          campaign.Id,
+			UserId:              0,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       " EmailOnly@example.com ",
+			RecipientIdentity:   RecallRecipientIdentityForEmail("emailonly@example.com"),
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		},
+		{
+			CampaignId:          campaign.Id,
+			UserId:              77,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "Bound@example.com",
+			RecipientIdentity:   RecallRecipientIdentityForUser(77),
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		},
+		{
+			CampaignId:          campaign.Id,
+			UserId:              0,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "Display Name <invalid@example.com>",
+			RecipientIdentity:   "email:invalid-snapshot",
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		},
+		{
+			CampaignId:          otherCampaign.Id,
+			UserId:              88,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "other@example.com",
+			RecipientIdentity:   RecallRecipientIdentityForUser(88),
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		},
+	}
+	require.NoError(t, DB.Create(&recipients).Error)
+
+	keys, err := ListRecallCampaignRecipientKeysWithContext(context.Background(), campaign.Id)
+
+	require.NoError(t, err)
+	require.NotNil(t, keys.Identities)
+	require.NotNil(t, keys.UserIDs)
+	require.NotNil(t, keys.Emails)
+	require.Contains(t, keys.Identities, RecallRecipientIdentityForEmail("emailonly@example.com"))
+	require.Contains(t, keys.Identities, RecallRecipientIdentityForUser(77))
+	require.Contains(t, keys.Identities, "email:invalid-snapshot")
+	require.NotContains(t, keys.Identities, RecallRecipientIdentityForUser(88))
+	require.Contains(t, keys.UserIDs, 77)
+	require.NotContains(t, keys.UserIDs, 0)
+	require.NotContains(t, keys.UserIDs, 88)
+	require.Contains(t, keys.Emails, "emailonly@example.com")
+	require.Contains(t, keys.Emails, "bound@example.com")
+	require.NotContains(t, keys.Emails, "Display Name <invalid@example.com>")
+}
+
+func TestListRecallCampaignRecipientKeysWithContextReturnsNonNilEmptyMaps(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	keys, err := ListRecallCampaignRecipientKeysWithContext(context.Background(), 999)
+
+	require.NoError(t, err)
+	require.NotNil(t, keys.Identities)
+	require.NotNil(t, keys.UserIDs)
+	require.NotNil(t, keys.Emails)
+	require.Empty(t, keys.Identities)
+	require.Empty(t, keys.UserIDs)
+	require.Empty(t, keys.Emails)
 }
 
 func TestRecallRecipientMigrationBackfillsIdentityAndReplacesLegacyIndex(t *testing.T) {
