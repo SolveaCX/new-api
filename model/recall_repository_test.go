@@ -463,6 +463,216 @@ func TestRecallRecipientJSONDoesNotExposeIdentity(t *testing.T) {
 	require.NotContains(t, string(payload), "user:77")
 }
 
+func TestRecallRecipientBindCASMatchesNormalizedEmailAndPreservesIdentity(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          47,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "EmailBind@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	originalIdentity := recipient.RecipientIdentity
+
+	bound, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7001, " emailbind@EXAMPLE.com ")
+
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.Equal(t, 7001, bound.UserId)
+	require.Equal(t, originalIdentity, bound.RecipientIdentity)
+	require.Equal(t, "EmailBind@example.com", bound.EmailSnapshot)
+}
+
+func TestRecallRecipientBindCASRejectsMismatchAndOtherUserWithoutChangingIdentity(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          48,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "owner@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	originalIdentity := recipient.RecipientIdentity
+
+	bound, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7002, "other@example.com")
+	require.Error(t, err)
+	require.False(t, inserted)
+	require.Nil(t, bound)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Zero(t, stored.UserId)
+	require.Equal(t, originalIdentity, stored.RecipientIdentity)
+
+	first, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7003, "owner@example.com")
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.Equal(t, 7003, first.UserId)
+	second, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7004, "owner@example.com")
+	require.Error(t, err)
+	require.False(t, inserted)
+	require.Nil(t, second)
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, 7003, stored.UserId)
+	require.Equal(t, originalIdentity, stored.RecipientIdentity)
+}
+
+func TestRecallRecipientBindCASIsIdempotentForSameUser(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          49,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "repeat@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+
+	first, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7005, "repeat@example.com")
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.Equal(t, 7005, first.UserId)
+	second, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7005, "repeat@example.com")
+	require.NoError(t, err)
+	require.False(t, inserted)
+	require.Equal(t, 7005, second.UserId)
+	require.Equal(t, first.RecipientIdentity, second.RecipientIdentity)
+}
+
+func TestSuppressRecallRecipientOnlySuppressesUnboundRecipientAndCancelsPendingMessages(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	const now int64 = 1_721_000_000
+
+	unbound := RecallRecipient{
+		CampaignId:          50,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "local@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+		LeaseOwner:          "recipient-worker",
+		LeaseExpiresAt:      now + 60,
+	}
+	other := RecallRecipient{
+		CampaignId:          50,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "other-local@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&unbound).Error)
+	require.NoError(t, DB.Create(&other).Error)
+
+	states := []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased, RecallMessageSending, RecallMessageAccepted, RecallMessageFailed, RecallMessageCancelled}
+	for index, state := range states {
+		message := RecallMessage{
+			RecipientId:      unbound.Id,
+			StageNo:          index + 1,
+			TemplateSnapshot: `{}`,
+			State:            state,
+			NextAttemptAt:    now + 10,
+			LeaseOwner:       "message-worker",
+			LeaseExpiresAt:   now + 30,
+		}
+		require.NoError(t, DB.Create(&message).Error)
+	}
+	otherMessage := RecallMessage{RecipientId: other.Id, StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageScheduled, NextAttemptAt: now + 10}
+	require.NoError(t, DB.Create(&otherMessage).Error)
+
+	suppressed, err := SuppressRecallRecipientWithContext(context.Background(), unbound.Id, now)
+
+	require.NoError(t, err)
+	require.True(t, suppressed)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, unbound.Id).Error)
+	require.Equal(t, RecallRecipientSuppressed, stored.State)
+	require.Empty(t, stored.LeaseOwner)
+	require.Zero(t, stored.LeaseExpiresAt)
+	require.Zero(t, stored.UserId)
+
+	var messages []RecallMessage
+	require.NoError(t, DB.Where("recipient_id = ?", unbound.Id).Order("stage_no ASC").Find(&messages).Error)
+	require.Len(t, messages, len(states))
+	for index, message := range messages {
+		switch states[index] {
+		case RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased, RecallMessageSending:
+			require.Equal(t, RecallMessageCancelled, message.State)
+			require.Equal(t, "recipient_unsubscribed", message.LastErrorCode)
+			require.Equal(t, now, message.FailedAt)
+			require.Zero(t, message.NextAttemptAt)
+			require.Empty(t, message.LeaseOwner)
+			require.Zero(t, message.LeaseExpiresAt)
+		default:
+			require.Equal(t, states[index], message.State)
+		}
+	}
+	var storedOtherMessage RecallMessage
+	require.NoError(t, DB.First(&storedOtherMessage, otherMessage.Id).Error)
+	require.Equal(t, RecallMessageScheduled, storedOtherMessage.State)
+
+	again, err := SuppressRecallRecipientWithContext(context.Background(), unbound.Id, now+1)
+	require.NoError(t, err)
+	require.True(t, again)
+}
+
+func TestSuppressRecallRecipientDoesNotLocallySuppressBoundRecipient(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          51,
+		UserId:              7100,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "bound@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+
+	suppressed, err := SuppressRecallRecipientWithContext(context.Background(), recipient.Id, 1_721_000_000)
+
+	require.NoError(t, err)
+	require.False(t, suppressed)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, 7100, stored.UserId)
+	require.Equal(t, RecallRecipientContacting, stored.State)
+}
+
+func TestRecallRecipientBindCASDoesNotBindAlreadySuppressedRecipient(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          52,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "suppressed-bind@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	suppressed, err := SuppressRecallRecipientWithContext(context.Background(), recipient.Id, 1_721_000_000)
+	require.NoError(t, err)
+	require.True(t, suppressed)
+
+	bound, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7200, "suppressed-bind@example.com")
+
+	require.Error(t, err)
+	require.False(t, inserted)
+	require.Nil(t, bound)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Zero(t, stored.UserId)
+	require.Equal(t, RecallRecipientSuppressed, stored.State)
+}
+
 func TestListRecallCampaignRecipientKeysWithContext(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 

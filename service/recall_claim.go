@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -111,8 +112,31 @@ func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, clai
 	if !found || subtle.ConstantTimeCompare([]byte(record.ClaimTokenHash), []byte(claimHash)) != 1 {
 		return nil, nil, ErrRecallClaimUnknown
 	}
-	if record.Recipient.UserId != userID {
-		return nil, nil, ErrRecallClaimWrongUser
+	if record.Recipient.UserId > 0 {
+		if record.Recipient.UserId != userID {
+			return nil, nil, ErrRecallClaimWrongUser
+		}
+	} else {
+		user := model.User{}
+		if err := model.DB.WithContext(ctx).First(&user, userID).Error; err != nil {
+			return nil, nil, ErrRecallClaimWrongUser
+		}
+		recipientEmail, ok := normalizeRecallClaimEmail(record.Recipient.EmailSnapshot)
+		if !ok || user.Status != common.UserStatusEnabled {
+			return nil, nil, ErrRecallClaimWrongUser
+		}
+		userEmail, ok := normalizeRecallClaimEmail(user.Email)
+		if !ok || userEmail != recipientEmail {
+			return nil, nil, ErrRecallClaimWrongUser
+		}
+		bound, _, err := model.BindRecallRecipientUserWithContext(ctx, record.Recipient.Id, userID, recipientEmail)
+		if err != nil {
+			if errors.Is(err, model.ErrRecallRecipientBindingConflict) {
+				return nil, nil, ErrRecallClaimWrongUser
+			}
+			return nil, nil, err
+		}
+		record.Recipient = *bound
 	}
 	if record.Campaign.Id != record.Recipient.CampaignId || !activeRecallCampaignStatus(record.Campaign.Status) {
 		return nil, nil, ErrRecallClaimInactive
@@ -194,9 +218,10 @@ func (s *RecallClaimService) BuildCheckoutDiscount(ctx context.Context, userID i
 }
 
 type recallUnsubscribePayload struct {
-	Version   int   `json:"v"`
-	UserID    int   `json:"u"`
-	ExpiresAt int64 `json:"e"`
+	Version     int   `json:"v"`
+	UserID      int   `json:"u"`
+	RecipientID int64 `json:"r"`
+	ExpiresAt   int64 `json:"e"`
 }
 
 func (s *RecallClaimService) CreateUnsubscribeToken(userID int, expiresAt time.Time) (string, error) {
@@ -204,6 +229,19 @@ func (s *RecallClaimService) CreateUnsubscribeToken(userID int, expiresAt time.T
 		return "", ErrRecallUnsubscribeInvalid
 	}
 	payload, err := common.Marshal(recallUnsubscribePayload{Version: 1, UserID: userID, ExpiresAt: expiresAt.Unix()})
+	if err != nil {
+		return "", err
+	}
+	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
+	signature := common.GenerateHMACWithKey([]byte(common.CryptoSecret), encodedPayload)
+	return encodedPayload + "." + signature, nil
+}
+
+func (s *RecallClaimService) CreateRecipientUnsubscribeToken(recipientID int64, expiresAt time.Time) (string, error) {
+	if recipientID <= 0 {
+		return "", ErrRecallUnsubscribeInvalid
+	}
+	payload, err := common.Marshal(recallUnsubscribePayload{Version: 2, RecipientID: recipientID, ExpiresAt: expiresAt.Unix()})
 	if err != nil {
 		return "", err
 	}
@@ -230,13 +268,30 @@ func (s *RecallClaimService) Unsubscribe(ctx context.Context, token string) erro
 		return ErrRecallUnsubscribeInvalid
 	}
 	payload := recallUnsubscribePayload{}
-	if err := common.Unmarshal(payloadJSON, &payload); err != nil || payload.Version != 1 || payload.UserID <= 0 {
+	if err := common.Unmarshal(payloadJSON, &payload); err != nil {
 		return ErrRecallUnsubscribeInvalid
 	}
 	if payload.ExpiresAt <= s.now().Unix() {
 		return ErrRecallUnsubscribeExpired
 	}
-	found, err := model.SetRecallMarketingOptOutWithContext(ctx, payload.UserID, s.now().Unix())
+	switch payload.Version {
+	case 1:
+		if payload.UserID <= 0 || payload.RecipientID != 0 {
+			return ErrRecallUnsubscribeInvalid
+		}
+		return s.unsubscribeUser(ctx, payload.UserID)
+	case 2:
+		if payload.RecipientID <= 0 || payload.UserID != 0 {
+			return ErrRecallUnsubscribeInvalid
+		}
+		return s.unsubscribeRecipient(ctx, payload.RecipientID)
+	default:
+		return ErrRecallUnsubscribeInvalid
+	}
+}
+
+func (s *RecallClaimService) unsubscribeUser(ctx context.Context, userID int) error {
+	found, err := model.SetRecallMarketingOptOutWithContext(ctx, userID, s.now().Unix())
 	if err != nil {
 		return err
 	}
@@ -244,6 +299,54 @@ func (s *RecallClaimService) Unsubscribe(ctx context.Context, token string) erro
 		return ErrRecallUnsubscribeInvalid
 	}
 	return nil
+}
+
+func (s *RecallClaimService) unsubscribeRecipient(ctx context.Context, recipientID int64) error {
+	recipient, err := loadRecallUnsubscribeRecipient(ctx, recipientID)
+	if err != nil {
+		return err
+	}
+	if recipient.UserId > 0 {
+		return s.unsubscribeUser(ctx, recipient.UserId)
+	}
+	suppressed, err := model.SuppressRecallRecipientWithContext(ctx, recipientID, s.now().Unix())
+	if err != nil && !errors.Is(err, model.ErrRecallRecipientBindingConflict) {
+		return err
+	}
+	if suppressed {
+		return nil
+	}
+	recipient, err = loadRecallUnsubscribeRecipient(ctx, recipientID)
+	if err != nil {
+		return err
+	}
+	if recipient.UserId > 0 {
+		return s.unsubscribeUser(ctx, recipient.UserId)
+	}
+	if recipient.State == model.RecallRecipientSuppressed {
+		return nil
+	}
+	return ErrRecallUnsubscribeInvalid
+}
+
+func loadRecallUnsubscribeRecipient(ctx context.Context, recipientID int64) (*model.RecallRecipient, error) {
+	recipient := model.RecallRecipient{}
+	if err := model.DB.WithContext(ctx).First(&recipient, recipientID).Error; err != nil {
+		return nil, ErrRecallUnsubscribeInvalid
+	}
+	return &recipient, nil
+}
+
+func normalizeRecallClaimEmail(email string) (string, bool) {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" {
+		return "", false
+	}
+	parsed, err := mail.ParseAddress(trimmed)
+	if err != nil || parsed.Address != trimmed {
+		return "", false
+	}
+	return strings.ToLower(trimmed), true
 }
 
 func recallClaimTokenHash(claim string) string {
