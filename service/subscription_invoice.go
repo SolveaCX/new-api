@@ -177,7 +177,13 @@ func stripeSubscriptionAuthoritativeMetadata(tradeNo string, userID int, planID 
 }
 
 func consoleSubscriptionReturnPath() string {
-	return strings.TrimRight(system_setting.ServerAddress, "/") + "/console/subscription"
+	base := strings.TrimSpace(system_setting.GetAppConsoleSettings().Origin)
+	if normalized, err := system_setting.NormalizeAppConsoleOrigin(base); err == nil && normalized != "" {
+		base = normalized
+	} else {
+		base = system_setting.ServerAddress
+	}
+	return strings.TrimRight(strings.TrimSpace(base), "/") + "/subscriptions"
 }
 
 func ensureStripeSecretForSubscription() error {

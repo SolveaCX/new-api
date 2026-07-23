@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v81"
@@ -889,6 +890,20 @@ func TestStripeRecurringChangePlanCreatesAndReplaysCheckoutSession(t *testing.T)
 	require.Equal(t, int64(1), orderCount)
 }
 
+func TestConsoleSubscriptionReturnPathUsesConfiguredAppConsoleOrigin(t *testing.T) {
+	restore := replaceSubscriptionReturnPathSettings(t, "https://router.flatkey.ai", " https://console.example.test/ ")
+	defer restore()
+
+	require.Equal(t, "https://console.example.test/subscriptions", consoleSubscriptionReturnPath())
+}
+
+func TestConsoleSubscriptionReturnPathFallsBackToServerAddressWhenAppConsoleOriginInvalid(t *testing.T) {
+	restore := replaceSubscriptionReturnPathSettings(t, "https://router.flatkey.ai/", "https://console.example.test/path")
+	defer restore()
+
+	require.Equal(t, "https://router.flatkey.ai/subscriptions", consoleSubscriptionReturnPath())
+}
+
 func TestStripeMinorUnitAmountForSubscriptionUsesDecimalRounding(t *testing.T) {
 	actual, err := stripeMinorUnitAmountForSubscription(1.005, "USD")
 
@@ -932,5 +947,17 @@ func replaceStripeAPISecretForInvoiceTest(t *testing.T, secret string) func() {
 	setting.StripeApiSecret = secret
 	return func() {
 		setting.StripeApiSecret = originalSecret
+	}
+}
+
+func replaceSubscriptionReturnPathSettings(t *testing.T, serverAddress string, appConsoleOrigin string) func() {
+	t.Helper()
+	originalServerAddress := system_setting.ServerAddress
+	originalAppConsoleOrigin := system_setting.GetAppConsoleSettings().Origin
+	system_setting.ServerAddress = serverAddress
+	system_setting.GetAppConsoleSettings().Origin = appConsoleOrigin
+	return func() {
+		system_setting.ServerAddress = originalServerAddress
+		system_setting.GetAppConsoleSettings().Origin = originalAppConsoleOrigin
 	}
 }
