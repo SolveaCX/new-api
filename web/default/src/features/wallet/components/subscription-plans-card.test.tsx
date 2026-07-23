@@ -220,6 +220,62 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('0 remaining')
   })
 
+  test('defaults absent current media credits to not included while keeping rolling windows unlimited', () => {
+    const html = renderWalletCard(
+      normalizeSelfSubscriptionData({
+        contract: {
+          contract_id: 12,
+          id: 12,
+          status: 'active',
+          payment_mode: 'prepaid',
+          current_plan_id: 2,
+          current_entitlement_id: 20,
+          current_provider_binding_id: 0,
+          latest_change_intent_id: 0,
+          pending_plan_id: 0,
+          pending_effective_at: 0,
+          current_period_start: 1717200000,
+          current_period_end: 1719792000,
+          grace_period_end: 0,
+          change_version: 1,
+        },
+      })
+    )
+    const mediaMeterStart = html.indexOf(
+      'data-wallet-usage-meter="Image + video"'
+    )
+    const mediaMeter = html.slice(mediaMeterStart, mediaMeterStart + 900)
+
+    expect(mediaMeter).toContain('Not included')
+    expect(mediaMeter).not.toContain('Unlimited')
+    expect(html).toContain('data-wallet-usage-meter="5-hour"')
+    expect(html).toContain('No usage limit')
+  })
+
+  test('shows not included for zero media credits on plan cards', () => {
+    const noMediaPlan = {
+      ...plans[0],
+      plan: {
+        ...plans[0].plan,
+        media_credits_monthly: 0,
+      },
+    }
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <SubscriptionPlansCard
+          topupInfo={topupInfo}
+          initialPlans={[noMediaPlan]}
+          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialLoading={false}
+          userQuota={12345}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain('Image + video: Not included')
+    expect(html).not.toContain('Image + video: Unlimited')
+  })
+
   test('uses repurchase for the same plan and switch for every other active plan without next-period copy', () => {
     const html = renderWalletCard(
       normalizeSelfSubscriptionData({

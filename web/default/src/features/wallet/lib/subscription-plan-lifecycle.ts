@@ -151,6 +151,14 @@ const EMPTY_USAGE_WINDOW: SubscriptionUsageWindow = {
   unlimited: true,
 }
 
+const EMPTY_MEDIA_USAGE_WINDOW: SubscriptionUsageWindow = {
+  used: 0,
+  total: 0,
+  remaining: 0,
+  reset_at: 0,
+  unlimited: false,
+}
+
 const DEFAULT_MIGRATION: WalletSelfSubscriptionData['migration'] = {
   requires_admin_review: true,
   classification: 'unknown',
@@ -199,6 +207,17 @@ function normalizeContract(
   }
 }
 
+function normalizeMediaUsageWindow(
+  window: SubscriptionUsageWindow | undefined
+): SubscriptionUsageWindow {
+  const normalized = window ?? EMPTY_MEDIA_USAGE_WINDOW
+  if (Number(normalized.total ?? 0) > 0) return normalized
+  return {
+    ...normalized,
+    unlimited: false,
+  }
+}
+
 export function normalizeSelfSubscriptionData(
   data: SelfSubscriptionDataResponse | undefined
 ): WalletSelfSubscriptionData {
@@ -218,7 +237,7 @@ export function normalizeSelfSubscriptionData(
     monthly_bucket: data?.monthly_bucket ?? data?.quota ?? DEFAULT_QUOTA,
     window_5h: data?.window_5h ?? EMPTY_USAGE_WINDOW,
     window_7d: data?.window_7d ?? EMPTY_USAGE_WINDOW,
-    media_credits: data?.media_credits ?? EMPTY_USAGE_WINDOW,
+    media_credits: normalizeMediaUsageWindow(data?.media_credits),
     remaining_days: data?.remaining_days,
     renewal_source: data?.renewal_source,
     renewal_status: data?.renewal_status,

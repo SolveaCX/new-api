@@ -223,6 +223,45 @@ describe('normalizeSelfSubscriptionData', () => {
     expect(normalized.contract?.current_period_end).toBe(2000)
     expect(normalized.contract?.grace_period_end).toBe(2100)
   })
+
+  test('normalizes zero media usage as not included while preserving legacy unlimited windows', () => {
+    const normalized = normalizeSelfSubscriptionData({
+      ...createBackendSelfData(false, false),
+      monthly_bucket: {
+        amount_total: 0,
+        amount_used: 0,
+        amount_remaining: 0,
+        unlimited: true,
+      },
+      window_5h: {
+        used: 0,
+        total: 0,
+        remaining: 0,
+        reset_at: 0,
+        unlimited: true,
+      },
+      window_7d: {
+        used: 0,
+        total: 0,
+        remaining: 0,
+        reset_at: 0,
+        unlimited: true,
+      },
+      media_credits: {
+        used: 0,
+        total: 0,
+        remaining: 0,
+        reset_at: 0,
+        unlimited: true,
+      },
+    } as SelfSubscriptionDataResponse)
+
+    expect(normalized.monthly_bucket?.unlimited).toBe(true)
+    expect(normalized.window_5h?.unlimited).toBe(true)
+    expect(normalized.window_7d?.unlimited).toBe(true)
+    expect(normalized.media_credits?.total).toBe(0)
+    expect(normalized.media_credits?.unlimited).toBe(false)
+  })
 })
 
 describe('getAllowedPaymentModes', () => {

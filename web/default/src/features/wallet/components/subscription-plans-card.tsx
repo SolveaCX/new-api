@@ -157,7 +157,9 @@ function getPlanEntitlements(plan: PlanRecord['plan'], t: Translate) {
     }),
     t('Image + video: {{value}}', {
       value:
-        media > 0 ? t('{{count}} credits', { count: media }) : t('Unlimited'),
+        media > 0
+          ? t('{{count}} credits', { count: media })
+          : t('Not included'),
     }),
   ]
 }
