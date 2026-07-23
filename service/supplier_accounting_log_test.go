@@ -36,24 +36,26 @@ func supplierAccountingTestRelayInfo() *relaycommon.RelayInfo {
 
 func TestSupplierAccountingLogSnapshotFreezesNominalRequestMultiplierAcrossPricingModes(t *testing.T) {
 	tests := []struct {
-		name       string
-		mode       string
-		groupRatio float64
-		configure  func(*relaycommon.RelayInfo)
+		name        string
+		mode        string
+		groupRatio  float64
+		expectedPpm int64
+		configure   func(*relaycommon.RelayInfo)
 	}{
-		{name: "fixed", mode: "fixed", groupRatio: 0.7},
-		{name: "ratio_cache", mode: "ratio", groupRatio: 0.67, configure: func(info *relaycommon.RelayInfo) {
+		{name: "fixed", mode: "fixed", groupRatio: 0.7, expectedPpm: 700_000},
+		{name: "ratio_cache", mode: "ratio", groupRatio: 0.67, expectedPpm: 670_000, configure: func(info *relaycommon.RelayInfo) {
 			info.SupplierOfficialPricingSnapshot.PriceData.OtherRatios = map[string]float64{"cache": 0.1}
 		}},
-		{name: "tiered_final_retry_group", mode: "tiered_expr", groupRatio: 0.9, configure: func(info *relaycommon.RelayInfo) {
+		{name: "tiered_final_retry_group", mode: "tiered_expr", groupRatio: 0.9, expectedPpm: 900_000, configure: func(info *relaycommon.RelayInfo) {
 			info.PriceData.GroupRatioInfo.GroupRatio = 0.9
 			info.SupplierOfficialPricingSnapshot.PriceData.GroupRatioInfo.GroupRatio = 0.8
 			info.SupplierOfficialPricingSnapshot.TieredBillingSnapshot = &billingexpr.BillingSnapshot{GroupRatio: 0.6}
 		}},
-		{name: "other_ratios", mode: "ratio", groupRatio: 0.8, configure: func(info *relaycommon.RelayInfo) {
+		{name: "other_ratios", mode: "ratio", groupRatio: 0.8, expectedPpm: 800_000, configure: func(info *relaycommon.RelayInfo) {
 			info.SupplierOfficialPricingSnapshot.PriceData.OtherRatios = map[string]float64{"duration": 2, "resolution": 1.5}
 		}},
-		{name: "small_quota_rounding", mode: "ratio", groupRatio: 0.3},
+		{name: "small_quota_rounding", mode: "ratio", groupRatio: 0.3, expectedPpm: 300_000},
+		{name: "seven_decimal_places_round_half_up", mode: "ratio", groupRatio: 0.6666667, expectedPpm: 666_667},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,7 +71,7 @@ func TestSupplierAccountingLogSnapshotFreezesNominalRequestMultiplierAcrossPrici
 			}, &official, "", tt.mode)
 			require.NotNil(t, snapshot)
 			require.NotNil(t, snapshot.SalesMultiplierPpm)
-			require.EqualValues(t, int64(tt.groupRatio*1_000_000), *snapshot.SalesMultiplierPpm)
+			require.EqualValues(t, tt.expectedPpm, *snapshot.SalesMultiplierPpm)
 		})
 	}
 }
@@ -225,7 +227,7 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 	require.EqualValues(t, 500_000, summary.ProcurementCostMicroUsd)
 }
 
-func TestPostTextConsumeQuotaPersistsZeroTokenLogWithoutSupplierSnapshot(t *testing.T) {
+func TestPostTextConsumeQuotaPersistsZeroUsageEnvelope(t *testing.T) {
 	const tokenID = 987654
 	require.NoError(t, model.LOG_DB.Where("token_id = ?", tokenID).Delete(&model.Log{}).Error)
 	t.Cleanup(func() { _ = model.LOG_DB.Where("token_id = ?", tokenID).Delete(&model.Log{}).Error })
@@ -248,8 +250,10 @@ func TestPostTextConsumeQuotaPersistsZeroTokenLogWithoutSupplierSnapshot(t *test
 	var persisted model.Log
 	require.NoError(t, model.LOG_DB.Where("token_id = ?", tokenID).First(&persisted).Error)
 	require.Equal(t, model.LogTypeConsume, persisted.Type)
-	other, err := common.StrToMap(persisted.Other)
-	require.NoError(t, err)
-	_, leaked := other["supplier_accounting_v1"]
-	require.False(t, leaked, persisted.Other)
+	var other struct {
+		Envelope types.SupplierAccountingEnvelopeV1 `json:"supplier_accounting_v1"`
+	}
+	require.NoError(t, common.UnmarshalJsonStr(persisted.Other, &other))
+	require.Equal(t, types.SupplierAccountingDispositionZeroUsage, other.Envelope.Disposition)
+	require.Nil(t, other.Envelope.Captured)
 }

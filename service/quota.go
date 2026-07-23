@@ -87,6 +87,10 @@ func calculateAudioQuota(info QuotaInfo) int {
 	return int(quota.Round(0).IntPart())
 }
 
+func supplierAudioHasPositiveFinalUsage(totalTokens int, settlement types.BillingSettlementResult) bool {
+	return settlement.FinanciallyCommitted && (totalTokens > 0 || settlement.FinalSalesQuota > 0)
+}
+
 func calculateSupplierAudioOfficialListUSD(relayInfo *relaycommon.RelayInfo, input TokenDetails, output TokenDetails, tieredResult *billingexpr.TieredResult) (decimal.Decimal, bool, string, string) {
 	if relayInfo == nil || !relayInfo.SupplierOfficialPricingSnapshot.Loaded {
 		return decimal.Zero, false, "supplier_accounting.official_pricing_snapshot.missing", "ratio"
@@ -287,11 +291,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		frozenOfficialListUSD := officialListUSD
 		officialListUSDPointer = &frozenOfficialListUSD
 	}
-	if usage != nil {
-		officialReason = supplierFinalUsageEvidenceReason(ctx, usage.TotalTokens, officialReason)
-	}
-	supplierAccountingSnapshot := buildSupplierAccountingSnapshotForFinalUsage(relayInfo, settlement, officialListUSDPointer, officialReason, pricingMode, totalTokens)
-
+	officialReason = supplierFinalUsageEvidenceReason(ctx, totalTokens, officialReason)
 	logModel := modelName
 	if extraContent != "" {
 		logContent += ", " + extraContent
@@ -301,7 +301,31 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	InjectSupplierAccountingLogSnapshotV1(other, supplierAccountingSnapshot)
+	var supplierTieredParams *billingexpr.TokenParams
+	audioPricingApplied := pricingMode != "price" && (audioInputTokens > 0 || audioOutTokens > 0)
+	if pricingMode == "tiered_expr" && relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot != nil {
+		usedVars := billingexpr.UsedVars(relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot.ExprString)
+		params := BuildTieredTokenParams(supplierUsage, false, usedVars)
+		supplierTieredParams = &params
+		audioPricingApplied = (audioInputTokens > 0 && usedVars["ai"]) || (audioOutTokens > 0 && usedVars["ao"])
+	}
+	unknownOfficialAmountCount := uint32(0)
+	if !officialKnown {
+		unknownOfficialAmountCount = 1
+	}
+	InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
+		RelayInfo:             relayInfo,
+		Settlement:            settlement,
+		HasPositiveFinalUsage: supplierAudioHasPositiveFinalUsage(totalTokens, settlement),
+		Capture: SupplierAccountingCaptureInputV1{
+			OfficialListUSD:            officialListUSDPointer,
+			OfficialEvidenceReason:     officialReason,
+			PricingMode:                pricingMode,
+			TieredTokenParams:          supplierTieredParams,
+			AudioPricingApplied:        audioPricingApplied,
+			UnknownOfficialAmountCount: unknownOfficialAmountCount,
+		},
+	})
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.InputTokens,
@@ -422,8 +446,6 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		officialListUSDPointer = &frozenOfficialListUSD
 	}
 	officialReason = supplierFinalUsageEvidenceReason(ctx, totalTokens, officialReason)
-	supplierAccountingSnapshot := buildSupplierAccountingSnapshotForFinalUsage(relayInfo, settlement, officialListUSDPointer, officialReason, pricingMode, totalTokens)
-
 	logModel := relayInfo.OriginModelName
 	if extraContent != "" {
 		logContent += ", " + extraContent
@@ -433,7 +455,31 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	InjectSupplierAccountingLogSnapshotV1(other, supplierAccountingSnapshot)
+	var supplierTieredParams *billingexpr.TokenParams
+	audioPricingApplied := pricingMode != "price" && (audioInputTokens > 0 || audioOutTokens > 0)
+	if pricingMode == "tiered_expr" && relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot != nil {
+		usedVars := billingexpr.UsedVars(relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot.ExprString)
+		params := BuildTieredTokenParams(usage, usageSemanticFromUsage(relayInfo, usage) == "anthropic", usedVars)
+		supplierTieredParams = &params
+		audioPricingApplied = (audioInputTokens > 0 && usedVars["ai"]) || (audioOutTokens > 0 && usedVars["ao"])
+	}
+	unknownOfficialAmountCount := uint32(0)
+	if !officialKnown {
+		unknownOfficialAmountCount = 1
+	}
+	InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
+		RelayInfo:             relayInfo,
+		Settlement:            settlement,
+		HasPositiveFinalUsage: supplierAudioHasPositiveFinalUsage(totalTokens, settlement),
+		Capture: SupplierAccountingCaptureInputV1{
+			OfficialListUSD:            officialListUSDPointer,
+			OfficialEvidenceReason:     officialReason,
+			PricingMode:                pricingMode,
+			TieredTokenParams:          supplierTieredParams,
+			AudioPricingApplied:        audioPricingApplied,
+			UnknownOfficialAmountCount: unknownOfficialAmountCount,
+		},
+	})
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,

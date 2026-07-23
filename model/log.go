@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -322,8 +323,91 @@ type RecordConsumeLogParams struct {
 // import service). Keep the callback cheap; it runs on the settlement path.
 var TemporaryChannelSpendHook func(channelId int, modelName string, quota int)
 
+type SupplierAccountingConsumeLogWriteOutcome string
+
+const (
+	SupplierAccountingConsumeLogWriteSuccess  SupplierAccountingConsumeLogWriteOutcome = "success"
+	SupplierAccountingConsumeLogWriteFailure  SupplierAccountingConsumeLogWriteOutcome = "failure"
+	SupplierAccountingConsumeLogWriteDisabled SupplierAccountingConsumeLogWriteOutcome = "disabled"
+)
+
+type SupplierAccountingConsumeLogWriteObserver func(types.SupplierAccountingDisposition, SupplierAccountingConsumeLogWriteOutcome)
+
+type supplierAccountingConsumeLogWriteObserverHolder struct {
+	observe SupplierAccountingConsumeLogWriteObserver
+}
+
+var supplierAccountingConsumeLogWriteObserver atomic.Pointer[supplierAccountingConsumeLogWriteObserverHolder]
+
+// InstallSupplierAccountingConsumeLogWriteObserver installs the process-wide
+// observer exactly once. RecordConsumeLog reads it lock-free on the hot path.
+func InstallSupplierAccountingConsumeLogWriteObserver(observer SupplierAccountingConsumeLogWriteObserver) bool {
+	if observer == nil {
+		return false
+	}
+	return supplierAccountingConsumeLogWriteObserver.CompareAndSwap(nil, &supplierAccountingConsumeLogWriteObserverHolder{observe: observer})
+}
+
+func supplierAccountingConsumeLogDisposition(other map[string]interface{}) (types.SupplierAccountingDisposition, bool) {
+	if other == nil {
+		return "", false
+	}
+	raw, ok := other[types.SupplierAccountingEnvelopeKeyV1]
+	if !ok {
+		return "", false
+	}
+	var envelope types.SupplierAccountingEnvelopeV1
+	switch value := raw.(type) {
+	case types.SupplierAccountingEnvelopeV1:
+		envelope = value
+	case *types.SupplierAccountingEnvelopeV1:
+		if value == nil {
+			return "", false
+		}
+		envelope = *value
+	default:
+		return "", false
+	}
+	if envelope.EnvelopeSchemaVersion != types.SupplierAccountingEnvelopeSchemaVersionV1 ||
+		envelope.ProducerCapabilityVersion != types.SupplierAccountingProducerCapabilityV1 {
+		return "", false
+	}
+	switch envelope.Disposition {
+	case types.SupplierAccountingDispositionUnsupportedPath,
+		types.SupplierAccountingDispositionNotFinanciallyCommitted,
+		types.SupplierAccountingDispositionZeroUsage,
+		types.SupplierAccountingDispositionUnbound,
+		types.SupplierAccountingDispositionCaptured,
+		types.SupplierAccountingDispositionProducerError:
+		return envelope.Disposition, true
+	default:
+		return "", false
+	}
+}
+
+func observeSupplierAccountingConsumeLogWrite(disposition types.SupplierAccountingDisposition, outcome SupplierAccountingConsumeLogWriteOutcome) {
+	if observer := supplierAccountingConsumeLogWriteObserver.Load(); observer != nil {
+		observer.observe(disposition, outcome)
+	}
+}
+
+func marshalLogOther(other map[string]interface{}, preserveSupplierEnvelope bool) (string, error, error) {
+	otherJSON, err := common.Marshal(other)
+	if err == nil || !preserveSupplierEnvelope {
+		return string(otherJSON), err, nil
+	}
+	supplierOnlyJSON, supplierOnlyErr := common.Marshal(map[string]interface{}{
+		types.SupplierAccountingEnvelopeKeyV1: other[types.SupplierAccountingEnvelopeKeyV1],
+	})
+	return string(supplierOnlyJSON), err, supplierOnlyErr
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	disposition, observeSupplierWrite := supplierAccountingConsumeLogDisposition(params.Other)
 	if !common.LogConsumeEnabled {
+		if observeSupplierWrite {
+			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteDisabled)
+		}
 		return
 	}
 	if TemporaryChannelSpendHook != nil {
@@ -333,7 +417,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
-	otherStr := common.MapToJsonStr(params.Other)
+	otherStr, otherMarshalErr, supplierOnlyMarshalErr := marshalLogOther(params.Other, observeSupplierWrite)
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -367,11 +451,26 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
-	err := LOG_DB.Create(log).Error
-	if err != nil {
-		logger.LogError(c, "failed to record log: "+err.Error())
+	var createErr error
+	if supplierOnlyMarshalErr == nil {
+		createErr = LOG_DB.Create(log).Error
+		if createErr != nil {
+			logger.LogError(c, "failed to record log: "+createErr.Error())
+		} else {
+			maybeRecordLogRequestSample(c, userId, params, log)
+		}
 	} else {
-		maybeRecordLogRequestSample(c, userId, params, log)
+		logger.LogError(c, "failed to serialize supplier accounting consume log envelope: "+supplierOnlyMarshalErr.Error())
+	}
+	if otherMarshalErr != nil {
+		logger.LogError(c, "failed to serialize consume log other: "+otherMarshalErr.Error())
+	}
+	if observeSupplierWrite {
+		if createErr != nil || otherMarshalErr != nil || supplierOnlyMarshalErr != nil {
+			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteFailure)
+		} else {
+			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteSuccess)
+		}
 	}
 	if common.DataExportEnabled {
 		gopool.Go(func() {
@@ -400,7 +499,11 @@ type RecordTaskBillingLogParams struct {
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
+	disposition, observeSupplierWrite := supplierAccountingConsumeLogDisposition(params.Other)
 	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled {
+		if observeSupplierWrite {
+			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteDisabled)
+		}
 		return
 	}
 	username, _ := GetUsernameById(params.UserId, false)
@@ -410,6 +513,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 			tokenName = token.Name
 		}
 	}
+	preserveSupplierEnvelope := params.LogType == LogTypeConsume && observeSupplierWrite
+	otherStr, otherMarshalErr, supplierOnlyMarshalErr := marshalLogOther(params.Other, preserveSupplierEnvelope)
 	log := &Log{
 		UserId:    params.UserId,
 		Username:  username,
@@ -422,11 +527,26 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		ChannelId: params.ChannelId,
 		TokenId:   params.TokenId,
 		Group:     params.Group,
-		Other:     common.MapToJsonStr(params.Other),
+		Other:     otherStr,
 	}
-	err := LOG_DB.Create(log).Error
-	if err != nil {
-		common.SysLog("failed to record task billing log: " + err.Error())
+	var createErr error
+	if supplierOnlyMarshalErr == nil {
+		createErr = LOG_DB.Create(log).Error
+		if createErr != nil {
+			common.SysLog("failed to record task billing log: " + createErr.Error())
+		}
+	} else {
+		common.SysLog("failed to serialize supplier accounting task billing log envelope: " + supplierOnlyMarshalErr.Error())
+	}
+	if otherMarshalErr != nil {
+		common.SysLog("failed to serialize task billing log other: " + otherMarshalErr.Error())
+	}
+	if params.LogType == LogTypeConsume && observeSupplierWrite {
+		if createErr != nil || otherMarshalErr != nil || supplierOnlyMarshalErr != nil {
+			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteFailure)
+		} else {
+			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteSuccess)
+		}
 	}
 }
 

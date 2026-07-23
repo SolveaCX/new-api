@@ -1,12 +1,36 @@
 package types
 
-import "github.com/QuantumNous/new-api/pkg/billingexpr"
+import (
+	"math"
+	"math/bits"
+
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
+)
 
 type SupplierStatisticsScope string
+
+type SupplierAccountingDisposition string
+
+type SupplierPricingModeV1 string
 
 const (
 	SupplierStatisticsScopeBusiness SupplierStatisticsScope = "business"
 	SupplierStatisticsScopeInternal SupplierStatisticsScope = "internal"
+
+	SupplierAccountingEnvelopeKeyV1           = "supplier_accounting_v1"
+	SupplierAccountingEnvelopeSchemaVersionV1 = 1
+	SupplierAccountingProducerCapabilityV1    = 1
+
+	SupplierAccountingDispositionUnsupportedPath         SupplierAccountingDisposition = "unsupported_path"
+	SupplierAccountingDispositionNotFinanciallyCommitted SupplierAccountingDisposition = "not_financially_committed"
+	SupplierAccountingDispositionZeroUsage               SupplierAccountingDisposition = "zero_usage"
+	SupplierAccountingDispositionUnbound                 SupplierAccountingDisposition = "unbound"
+	SupplierAccountingDispositionCaptured                SupplierAccountingDisposition = "captured"
+	SupplierAccountingDispositionProducerError           SupplierAccountingDisposition = "producer_error"
+
+	SupplierPricingModeRatio  SupplierPricingModeV1 = "ratio"
+	SupplierPricingModeFixed  SupplierPricingModeV1 = "fixed"
+	SupplierPricingModeTiered SupplierPricingModeV1 = "tiered"
 )
 
 // SupplierCostSnapshot is copied by value at channel selection time.
@@ -90,23 +114,112 @@ type SupplierStatisticsScopeSnapshot struct {
 // under Log.Other["supplier_accounting_v1"]. Pointer-valued amounts preserve
 // the distinction between unknown and a known zero.
 type SupplierAccountingLogSnapshotV1 struct {
-	BindingVersionId         int     `json:"bv"`
-	SupplierId               int     `json:"s"`
-	ContractId               int     `json:"c"`
-	RateVersionId            int     `json:"rv"`
-	ProcurementMultiplierPpm int64   `json:"pm"`
-	SalesMultiplierPpm       *int64  `json:"sm,omitempty"`
-	OfficialListMicroUsd     *int64  `json:"ol,omitempty"`
-	SalesMicroUsd            *int64  `json:"sa,omitempty"`
-	ProcurementCostMicroUsd  *int64  `json:"pc,omitempty"`
-	GrossProfitMicroUsd      *int64  `json:"gp,omitempty"`
-	StatisticsScope          string  `json:"ss"`
-	ExclusionDecision        string  `json:"ed"`
-	ExclusionRuleId          *int    `json:"er,omitempty"`
-	QuotaPerUnit             *string `json:"q,omitempty"`
-	PricingMode              *string `json:"p,omitempty"`
-	FinanciallyCommittedAt   int64   `json:"fc"`
-	QualityReason            string  `json:"qr,omitempty"`
+	BindingVersionId         int                          `json:"bv"`
+	SupplierId               int                          `json:"s"`
+	ContractId               int                          `json:"c"`
+	RateVersionId            int                          `json:"rv"`
+	ProcurementMultiplierPpm int64                        `json:"pm"`
+	SalesMultiplierPpm       *int64                       `json:"sm,omitempty"`
+	OfficialListMicroUsd     *int64                       `json:"ol,omitempty"`
+	SalesMicroUsd            *int64                       `json:"sa,omitempty"`
+	ProcurementCostMicroUsd  *int64                       `json:"pc,omitempty"`
+	GrossProfitMicroUsd      *int64                       `json:"gp,omitempty"`
+	StatisticsScope          string                       `json:"ss"`
+	ExclusionDecision        string                       `json:"ed"`
+	ExclusionRuleId          *int                         `json:"er,omitempty"`
+	QuotaPerUnit             *string                      `json:"q,omitempty"`
+	PricingMode              *string                      `json:"p,omitempty"`
+	FinanciallyCommittedAt   int64                        `json:"fc"`
+	QualityReason            string                       `json:"qr,omitempty"`
+	PricingProvenance        *SupplierPricingProvenanceV1 `json:"pv,omitempty"`
+	UnknownOfficialCount     uint32                       `json:"uo,omitempty"`
+}
+
+// SupplierAccountingEnvelopeV1 is the complete bounded producer marker stored
+// under logs.other.supplier_accounting_v1. Captured is present only when the
+// disposition is captured.
+type SupplierAccountingEnvelopeV1 struct {
+	EnvelopeSchemaVersion     int                              `json:"v"`
+	ProducerCapabilityVersion int                              `json:"c"`
+	ActivationStateVersion    int64                            `json:"a"`
+	Disposition               SupplierAccountingDisposition    `json:"d"`
+	Captured                  *SupplierAccountingLogSnapshotV1 `json:"s,omitempty"`
+}
+
+// SupplierPricingProvenanceV1 is a strict union: exactly one member is set.
+// Dimensions are present only when the named dimension affected settlement.
+type SupplierPricingProvenanceV1 struct {
+	Ratio      *SupplierRatioPricingProvenanceV1  `json:"r,omitempty"`
+	Fixed      *SupplierFixedPricingProvenanceV1  `json:"f,omitempty"`
+	Tiered     *SupplierTieredPricingProvenanceV1 `json:"t,omitempty"`
+	Dimensions *SupplierPricingDimensionsV1       `json:"x,omitempty"`
+}
+
+type SupplierRatioPricingProvenanceV1 struct {
+	ModelRatioPpm     int64 `json:"m"`
+	GroupRatioPpm     int64 `json:"g"`
+	ModelRatioVersion int64 `json:"mv"`
+	GroupRatioVersion int64 `json:"gv"`
+}
+
+type SupplierFixedPricingProvenanceV1 struct {
+	Source             string `json:"s"`
+	Key                string `json:"k"`
+	PriceVersion       int64  `json:"v"`
+	GroupMultiplierPpm int64  `json:"g"`
+	GroupRatioVersion  int64  `json:"gv"`
+}
+
+type SupplierTieredPricingProvenanceV1 struct {
+	ExpressionFingerprint     uint64                           `json:"e"`
+	ExpressionFingerprintTail uint64                           `json:"et"`
+	ExpressionVersion         int64                            `json:"v"`
+	GroupMultiplierPpm        int64                            `json:"g"`
+	GroupRatioVersion         int64                            `json:"gv"`
+	NormalizedInputs          SupplierTieredNormalizedInputsV1 `json:"n"`
+}
+
+type SupplierTieredNormalizedInputsV1 struct {
+	Prompt        int64 `json:"p"`
+	Completion    int64 `json:"c"`
+	ContextLength int64 `json:"l"`
+	CacheRead     int64 `json:"r"`
+	CacheCreate   int64 `json:"w"`
+	CacheCreate1H int64 `json:"h"`
+	ImageInput    int64 `json:"i"`
+	ImageOutput   int64 `json:"o"`
+	AudioInput    int64 `json:"a"`
+	AudioOutput   int64 `json:"b"`
+}
+
+type SupplierPricingDimensionsV1 struct {
+	Audio bool `json:"a,omitempty"`
+	Tool  bool `json:"t,omitempty"`
+	Image bool `json:"i,omitempty"`
+}
+
+// CalculateSupplierProcurementMicroV1 applies the canonical non-negative
+// ROUND_HALF_UP procurement formula without overflowing the int64 product.
+func CalculateSupplierProcurementMicroV1(officialMicroUSD int64, procurementMultiplierPpm int64) (int64, bool) {
+	if officialMicroUSD < 0 || procurementMultiplierPpm < 0 {
+		return 0, false
+	}
+	const scale uint64 = 1_000_000
+	high, low := bits.Mul64(uint64(officialMicroUSD), uint64(procurementMultiplierPpm))
+	if high >= scale {
+		return 0, false
+	}
+	quotient, remainder := bits.Div64(high, low, scale)
+	if quotient > math.MaxInt64 {
+		return 0, false
+	}
+	if remainder >= scale/2 {
+		if quotient == math.MaxInt64 {
+			return 0, false
+		}
+		quotient++
+	}
+	return int64(quotient), true
 }
 
 func BusinessSupplierStatisticsScopeSnapshot() SupplierStatisticsScopeSnapshot {

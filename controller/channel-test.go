@@ -539,6 +539,7 @@ func testChannelWithOptions(channel *model.Channel, testUserID int, testModel st
 	consumedTime := float64(milliseconds) / 1000.0
 	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
 	if !options.SkipLog {
+		service.InjectUnsupportedSupplierAccountingEnvelopeV1(other)
 		tokenName := options.TokenName
 		if tokenName == "" {
 			tokenName = "模型测试"

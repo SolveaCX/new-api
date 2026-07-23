@@ -38,8 +38,8 @@ official_list =
   使用请求时冻结的官方定价输入，按实际定价模式和最终用量证据
   计算出的分组倍率前官方金额
 
-procurement_cost =
-  official_list_micro_usd × procurement_multiplier_ppm / 1,000,000
+procurement_cost_micro_usd =
+  ROUND_HALF_UP(official_list_micro_usd × procurement_multiplier_ppm / 1,000,000)
 
 sales =
   final_sales_quota / 请求时 quota_per_unit × 1,000,000
@@ -54,8 +54,9 @@ gross_margin = eligible_gross_profit / eligible_sales
 - `official_list` 是未乘用户分组倍率的官方原价口径，也是库存扣减口径；
 - `official_list` 不能在所有模式下简化为“单价 × token”：ratio、固定价、阶梯表达式，以及工具调用、音频等附加项，分别沿用现有定价模式的计算规则；
 - `procurement_multiplier_ppm` 是采购折扣，6.5 折记为 `650000`；
+- 采购成本必须严格按 `ROUND_HALF_UP(official_micro × procurement_ppm / 1,000,000)` 计算；中间乘法和最终结果都要检查溢出，持久化值与公式不一致视为篡改，两者都不得生成财务快照；
 - `sales` 直接使用现有计费链路最终结算的 Quota 换算，不用“官方价 × 分组倍率”反推，因此兼容固定价、阶梯价和其他现有定价模式；
-- `sales_multiplier_ppm` 仅作为请求时销售倍率维度保留，不参与销售额的二次计算；
+- `sales_multiplier_ppm = ROUND_HALF_UP(最终成功尝试的 GroupRatio × 1,000,000)`；倍率小数位不超过 6 位时等价于精确换算，超过 6 位时按 PPM 确定性量化；该值仅作为请求时销售倍率维度保留，不参与销售额的二次计算；
 - 指针金额用于区分“未知”和“已知为 0”，报表同时展示金额及 `known_count`，不会把未知强行当作 0。
 
 示例：官方原价为 100 美元，采购折扣为 6.5 折，最终对外结算为 7 折时：
@@ -69,13 +70,13 @@ gross_margin = eligible_gross_profit / eligible_sales
 
 ### 2.2 统计范围
 
-只统计与现有消费日志口径一致、最终已成功完成财务结算的同步请求。生成快照必须同时满足：
+只统计与现有消费日志口径一致、最终已成功完成财务结算的同步请求。生成 `captured` 财务快照必须同时满足：
 
 - 最终选择的渠道已绑定供应商合同；
 - `FinanciallyCommitted=true` 且财务确认时间大于 0；
-- 最终实际用量 `totalTokens > 0`。
+- 存在正向最终用量证据：文本路径可由 `totalTokens > 0`、`FinalSalesQuota > 0` 或明确的工具/图片调用证明；音频/WSS 路径只接受 `totalTokens > 0` 或 `FinalSalesQuota > 0`。fixed/price 定价模式本身与财务已提交状态都不构成正用量证据。
 
-失败、未最终结算、未绑定供应商合同或零用量请求不会生成供应链快照。异步任务类计费路径当前也不生成供应链快照或日报数据。
+每条已覆盖的消费日志都会写入一个有界 disposition marker，判定顺序固定为 `unsupported_path → not_financially_committed → zero_usage → unbound → captured → producer_error`。只有 `captured` 携带财务快照并进入金额汇总；异步任务等 V1 尚未支持的路径写 `unsupported_path`，不会伪装成已核算数据。
 
 ## 3. 请求时事实快照
 
@@ -89,7 +90,13 @@ gross_margin = eligible_gross_profit / eligible_sales
 
 ### 3.2 快照字段
 
-`types.SupplierAccountingLogSnapshotV1` 使用短 JSON key 降低 7000 万行级日志库的新增存储量：
+当前持久化协议的外层控制字段保持可读：`v`（envelope schema）、`c`（producer capability）、`a`（activation state version）、`d`（disposition）以及仅在 `captured` 时出现的 `s`。`s` 使用 capability-V1 固定宽度二进制布局和 canonical Raw URL Base64，避免 7000 万行级日志库产生冗长 JSON。包含 112-bit 阶梯表达式指纹的最坏 business/internal payload 分别精确为 330/320 字节，硬上限仍为 384/320 字节；disposition-only 上限为 160 字节。
+
+倍率统一量化为 `ROUND_HALF_UP(GroupRatio × 1,000,000)`。阶梯定价指纹取请求时冻结的精确 UTF-8 `ExprString` 的 SHA-256 前 112 bits（前 8 字节加后续 6 字节，均为大端序），不做空格归一化；已有非空 `ExprHash` 必须与完整 canonical SHA-256 一致。该短指纹只用于批处理关联和核验，不是认证、唯一键，也不能替代表达式历史。
+
+定价模式本身不能证明存在正用量。文本路径只接受正 token、正 `FinalSalesQuota` 或明确工具/图片调用；音频/WSS 路径只接受正 token 或正 `FinalSalesQuota`。不满足这些条件的 fixed/price 请求必须写成 `zero_usage`，不能生成官方金额和采购成本后再形成销售额为 0 的虚假负利润。
+
+`types.SupplierAccountingLogSnapshotV1` 是解码后的逻辑财务快照。下表短 key 仅用于读取切换前已经写入的 legacy direct-snapshot，当前 envelope 不再把这些字段逐项展开为 JSON：
 
 | Key | 含义 |
 | --- | --- |
@@ -126,7 +133,7 @@ gross_margin = eligible_gross_profit / eligible_sales
 
 ## 5. 数据模型
 
-V1 新增恰好九张供应链表：
+V1 新增恰好十张供应链表：
 
 | 表 | 职责 |
 | --- | --- |
@@ -139,6 +146,7 @@ V1 新增恰好九张供应链表：
 | `supplier_admin_commands` | 创建类管理操作的幂等命令记录 |
 | `supplier_usage_daily_summaries` | 唯一的供应链日汇总事实表 |
 | `supplier_usage_daily_batch_runs` | 每个自然日的租约、游标、fence 和发布状态 |
+| `supplier_accounting_coverage_gaps` | 低频控制面覆盖缺口台账；保存可重叠、可跨日的具名 gap epoch |
 
 现有 `channels` 表新增 nullable `supplier_contract_id` 及索引，作为路由和管理查询的当前绑定投影；不可变历史保存在绑定版本表。
 
@@ -269,16 +277,16 @@ remaining = total_inventory - consumed
 - `LogConsumeEnabled` 必须为 `true`；关闭消费日志后不会产生供应链事实；
 - 现有消费日志写失败只记录错误，不会回滚已经完成的客户结算，批处理无法发现“整条消费日志未落库”的请求；
 - malformed 供应链快照会令当日日结失败并等待修复/重试，不会静默吞掉；
-- 没有官方原价证据时仍可记录带 `quality_reason` 的部分事实，但对应未知金额不参与金额和库存合计。
+- 官方原价必须来自请求时实际计费链路的权威定价证据；本地 token 估算、启发式缓存或其他非权威回退不能用于财务快照。权威官方金额缺失或无法校验时必须 fail closed 为仅 disposition 的 `producer_error`，不持久 `s`、`quality_reason` 或任何部分财务事实。
 
 ## 12. 发布方案
 
 发布前最低要求：
 
-1. 在 staging 使用真实 MySQL/PostgreSQL 验证九张表和 `channels.supplier_contract_id` 迁移；
+1. 在 staging 使用真实 MySQL/PostgreSQL 验证十张表和 `channels.supplier_contract_id` 迁移；
 2. 验证 Router 与 Console 使用同一主库，日志库配置与当前环境一致；
 3. 给所有参与首次初始化的 Go 服务预设同一个未来 `SUPPLIER_ACCOUNTING_CUTOVER_AT`，该时间点必须晚于全部 Router 新版本完成切流；
-4. 先部署 `newapi-console`/master，确认九张表、`channels` 列及索引、coverage option 均已建立，再部署全部 `newapi-router`。Router/slave 不执行 AutoMigrate，但启动时会立即修复/校验汇总索引、刷新供应商缓存并读取 coverage，因此不能先于迁移启动；
+4. 先部署 `newapi-console`/master，确认十张表、`channels` 列及索引、coverage option 均已建立，再部署全部 `newapi-router`。Router/slave 不执行 AutoMigrate，但启动时会立即修复/校验汇总索引、刷新供应商缓存并读取 coverage，因此不能先于迁移启动；
 5. 验证多节点/多实例 fence 接管、任务中断恢复、RootAuth、限流和 scheduler 重试；
 6. 配置北京时间 02:00 后的外部 scheduler，并让其循环到 `remaining_work=false`；
 7. canary 核对消费日志快照、日报、合同库存和报表账实一致性。

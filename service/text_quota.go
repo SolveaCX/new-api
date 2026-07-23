@@ -22,49 +22,59 @@ import (
 )
 
 type textQuotaSummary struct {
-	PromptTokens             int
-	CompletionTokens         int
-	TotalTokens              int
-	CacheTokens              int
-	CacheCreationTokens      int
-	CacheCreationTokens5m    int
-	CacheCreationTokens1h    int
-	ImageTokens              int
-	AudioTokens              int
-	ModelName                string
-	TokenName                string
-	UseTimeSeconds           int64
-	CompletionRatio          float64
-	CacheRatio               float64
-	ImageRatio               float64
-	ModelRatio               float64
-	GroupRatio               float64
-	ModelPrice               float64
-	CacheCreationRatio       float64
-	CacheCreationRatio5m     float64
-	CacheCreationRatio1h     float64
-	Quota                    int
-	IsClaudeUsageSemantic    bool
-	UsageSemantic            string
-	WebSearchPrice           float64
-	WebSearchCallCount       int
-	ClaudeWebSearchPrice     float64
-	ClaudeWebSearchCallCount int
-	FileSearchPrice          float64
-	FileSearchCallCount      int
-	AudioInputPrice          float64
-	ImageGenerationCallPrice float64
-	ToolCallSurchargeQuota   decimal.Decimal
-	OfficialToolSurchargeUSD decimal.Decimal
-	OfficialAudioInputUSD    decimal.Decimal
-	OfficialListUSD          decimal.Decimal
-	OfficialListUSDKnown     bool
-	OfficialEvidenceReason   string
-	UsedHeuristicCacheTokens bool
-	UsageWasEstimated        bool
-	LegacyClaudeDerived      bool
-	PricingMode              string
-	SupplierTieredParams     *billingexpr.TokenParams
+	PromptTokens               int
+	CompletionTokens           int
+	TotalTokens                int
+	CacheTokens                int
+	CacheCreationTokens        int
+	CacheCreationTokens5m      int
+	CacheCreationTokens1h      int
+	ImageTokens                int
+	AudioTokens                int
+	ModelName                  string
+	TokenName                  string
+	UseTimeSeconds             int64
+	CompletionRatio            float64
+	CacheRatio                 float64
+	ImageRatio                 float64
+	ModelRatio                 float64
+	GroupRatio                 float64
+	ModelPrice                 float64
+	CacheCreationRatio         float64
+	CacheCreationRatio5m       float64
+	CacheCreationRatio1h       float64
+	Quota                      int
+	IsClaudeUsageSemantic      bool
+	UsageSemantic              string
+	WebSearchPrice             float64
+	WebSearchCallCount         int
+	ClaudeWebSearchPrice       float64
+	ClaudeWebSearchCallCount   int
+	FileSearchPrice            float64
+	FileSearchCallCount        int
+	AudioInputPrice            float64
+	ImageGenerationCallPrice   float64
+	ImageGenerationCallApplied bool
+	ToolCallSurchargeQuota     decimal.Decimal
+	OfficialToolSurchargeUSD   decimal.Decimal
+	OfficialAudioInputUSD      decimal.Decimal
+	OfficialListUSD            decimal.Decimal
+	OfficialListUSDKnown       bool
+	OfficialEvidenceReason     string
+	UsedHeuristicCacheTokens   bool
+	UsageWasEstimated          bool
+	LegacyClaudeDerived        bool
+	PricingMode                string
+	SupplierTieredParams       *billingexpr.TokenParams
+}
+
+func supplierTextHasPositiveFinalUsage(summary textQuotaSummary, settlement types.BillingSettlementResult) bool {
+	if !settlement.FinanciallyCommitted {
+		return false
+	}
+	return summary.TotalTokens > 0 || settlement.FinalSalesQuota > 0 ||
+		summary.WebSearchCallCount > 0 || summary.ClaudeWebSearchCallCount > 0 ||
+		summary.FileSearchCallCount > 0 || summary.ImageGenerationCallApplied
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -155,6 +165,7 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 	}
 
 	if ctx.GetBool("image_generation_call") {
+		summary.ImageGenerationCallApplied = true
 		quality := ctx.GetString("image_generation_call_quality")
 		size := ctx.GetString("image_generation_call_size")
 		summary.ImageGenerationCallPrice = operation_setting.GetGPTImage1PriceOnceCall(quality, size)
@@ -553,11 +564,6 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		frozenOfficialListUSD := summary.OfficialListUSD
 		officialListUSD = &frozenOfficialListUSD
 	}
-	if summary.TotalTokens == 0 {
-		summary.OfficialEvidenceReason = appendSupplierQualityReason(summary.OfficialEvidenceReason, "supplier_accounting.usage.empty")
-	}
-	supplierAccountingSnapshot := buildSupplierAccountingSnapshotForFinalUsage(relayInfo, settlement, officialListUSD, summary.OfficialEvidenceReason, summary.PricingMode, summary.TotalTokens)
-
 	logModel := summary.ModelName
 	if strings.HasPrefix(logModel, "gpt-4-gizmo") {
 		logModel = "gpt-4-gizmo-*"
@@ -642,7 +648,37 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
-	InjectSupplierAccountingLogSnapshotV1(other, supplierAccountingSnapshot)
+	unknownOfficialAmountCount := uint32(0)
+	if !summary.OfficialListUSDKnown {
+		unknownOfficialAmountCount = 1
+	}
+	supplierPricingMode := supplierAccountingOfficialPricingModeV1(relayInfo)
+	audioPricingApplied := summary.AudioTokens > 0 && (summary.AudioInputPrice > 0 || relayInfo.SupplierOfficialPricingSnapshot.GeminiInputAudioPricePerMillionTokens > 0)
+	imagePricingApplied := summary.ImageGenerationCallApplied || (summary.ImageTokens > 0 && supplierPricingMode != "fixed")
+	if supplierPricingMode == "tiered_expr" && summary.SupplierTieredParams != nil && relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot != nil {
+		usedVars := billingexpr.UsedVars(relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot.ExprString)
+		audioPricingApplied = (summary.SupplierTieredParams.AI > 0 && usedVars["ai"]) ||
+			(summary.SupplierTieredParams.AO > 0 && usedVars["ao"])
+		imagePricingApplied = summary.ImageGenerationCallApplied ||
+			(summary.SupplierTieredParams.Img > 0 && usedVars["img"]) ||
+			(summary.SupplierTieredParams.ImgO > 0 && usedVars["img_o"])
+	}
+	toolPricingApplied := summary.WebSearchCallCount > 0 || summary.ClaudeWebSearchCallCount > 0 || summary.FileSearchCallCount > 0
+	InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
+		RelayInfo:             relayInfo,
+		Settlement:            settlement,
+		HasPositiveFinalUsage: supplierTextHasPositiveFinalUsage(summary, settlement),
+		Capture: SupplierAccountingCaptureInputV1{
+			OfficialListUSD:            officialListUSD,
+			OfficialEvidenceReason:     summary.OfficialEvidenceReason,
+			PricingMode:                supplierPricingMode,
+			TieredTokenParams:          summary.SupplierTieredParams,
+			AudioPricingApplied:        audioPricingApplied,
+			ToolPricingApplied:         toolPricingApplied,
+			ImagePricingApplied:        imagePricingApplied,
+			UnknownOfficialAmountCount: unknownOfficialAmountCount,
+		},
+	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

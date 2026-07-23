@@ -263,6 +263,35 @@ func parseSupplierAccountingLog(other string) (types.SupplierAccountingLogSnapsh
 	if len(envelope.SupplierAccountingV1) == 0 || string(envelope.SupplierAccountingV1) == "null" {
 		return types.SupplierAccountingLogSnapshotV1{}, false, nil
 	}
+	parsedEnvelope, envelopeErr := types.ParseSupplierAccountingEnvelopeV1JSON(envelope.SupplierAccountingV1)
+	if envelopeErr == nil {
+		if err := ValidateSupplierAccountingEnvelopeV1(parsedEnvelope); err != nil {
+			return types.SupplierAccountingLogSnapshotV1{}, false, err
+		}
+		if parsedEnvelope.Disposition != types.SupplierAccountingDispositionCaptured {
+			return types.SupplierAccountingLogSnapshotV1{}, false, nil
+		}
+		return *parsedEnvelope.Captured, true, nil
+	}
+
+	// Legacy snapshots remain readable only until WP4 installs capability-aware
+	// completeness classification. The legacy snapshot shares the short keys
+	// "c" and "s" with the current envelope, so only current-only control fields
+	// may reject fallback. A malformed current envelope must still fail closed.
+	var shape map[string]any
+	if err := common.Unmarshal(envelope.SupplierAccountingV1, &shape); err != nil {
+		return types.SupplierAccountingLogSnapshotV1{}, false, envelopeErr
+	}
+	for _, field := range []string{"v", "a", "d"} {
+		if _, present := shape[field]; present {
+			return types.SupplierAccountingLogSnapshotV1{}, false, envelopeErr
+		}
+	}
+	for _, field := range []string{"bv", "s", "c", "rv", "pm", "ss", "ed", "fc"} {
+		if _, present := shape[field]; !present {
+			return types.SupplierAccountingLogSnapshotV1{}, false, envelopeErr
+		}
+	}
 	var snapshot types.SupplierAccountingLogSnapshotV1
 	if err := common.Unmarshal(envelope.SupplierAccountingV1, &snapshot); err != nil {
 		return types.SupplierAccountingLogSnapshotV1{}, false, err
