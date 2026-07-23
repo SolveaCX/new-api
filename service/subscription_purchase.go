@@ -688,6 +688,8 @@ func validateSubscriptionPurchaseQuoteForChoice(quote SubscriptionPurchaseQuote,
 			return SubscriptionPurchaseQuote{}, errors.New("UPI subscription purchase quote must be INR")
 		}
 	}
+	quote.UnitPrice = float64(unitAmountMinor) / 100
+	quote.Total = float64(quote.PaymentAmountMinor) / 100
 	return quote, nil
 }
 

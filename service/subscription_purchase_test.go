@@ -468,6 +468,31 @@ func TestPurchaseSubscriptionRejectsQuoteNotDerivedFromRoundedMonthlyMinorAmount
 	require.Zero(t, orderCount)
 }
 
+func TestPurchaseSubscriptionNormalizesVerifiedQuoteDisplayAmountsToMinorUnits(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	insertPurchaseServiceUser(t, 7317, 1000)
+	plan := insertPurchaseServicePlan(t, 7420, 1, 2, 200)
+
+	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+		UserID:        7317,
+		PlanID:        plan.Id,
+		PaymentChoice: SubscriptionPaymentChoicePix,
+		Months:        3,
+		RequestID:     "normalize-verified-pix-quote",
+		VerifiedQuote: &SubscriptionPurchaseQuote{
+			Currency:           "BRL",
+			UnitPrice:          49.904999,
+			Total:              149.699999,
+			PaymentAmountMinor: 14970,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, float64(49.90), result.Order.UnitPrice)
+	require.Equal(t, float64(149.70), result.Order.Money)
+	require.Equal(t, int64(14970), result.Order.PaymentAmountMinor)
+}
+
 func TestPurchaseSubscriptionUPIPersistsConfiguredINRQuote(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	insertPurchaseServiceUser(t, 7312, 1000)
