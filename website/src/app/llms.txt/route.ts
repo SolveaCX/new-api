@@ -1,8 +1,10 @@
 import { getBlogCategories, getBlogPosts } from "@/lib/blog";
 import { ROUTER_ORIGIN, SITE_ORIGIN } from "@/lib/origins";
+import { getDocsUrl } from "@/lib/public-site-settings";
 
 export async function GET() {
-  const [posts, categories] = await Promise.all([getBlogPosts(), getBlogCategories()]);
+  const [posts, categories, docsUrl] = await Promise.all([getBlogPosts(), getBlogCategories(), getDocsUrl()]);
+  const docsOrigin = docsUrl ? new URL(docsUrl).origin : null;
   const lines = [
     "# flatkey.ai",
     "",
@@ -15,6 +17,7 @@ export async function GET() {
     `- OpenAI-compatible Responses: POST ${ROUTER_ORIGIN}/v1/responses`,
     `- Anthropic Messages: POST ${ROUTER_ORIGIN}/v1/messages`,
     `- Gemini native generateContent: POST ${ROUTER_ORIGIN}/v1beta/models/{model}:generateContent`,
+    `- Asynchronous video generation: POST ${ROUTER_ORIGIN}/v1/videos`,
     "",
     "## Gemini Image Models",
     "",
@@ -22,6 +25,20 @@ export async function GET() {
     "- With Gemini native generateContent, generated images are returned in candidates[].content.parts[].inlineData.",
     "- With Chat Completions, generated images are returned in choices[0].message.content as Markdown data URIs.",
     "- These Gemini image-model paths currently do not use /v1/images/generations; do not infer lack of Gemini support from that endpoint.",
+    "",
+    "## Seedance Video Models",
+    "",
+    "- Seedance models use the official multimodal content[] request format.",
+    `- Create a video task with POST ${ROUTER_ORIGIN}/v1/videos.`,
+    `- Poll task status with GET ${ROUTER_ORIGIN}/v1/videos/{task_id}.`,
+    `- Download completed video content with GET ${ROUTER_ORIGIN}/v1/videos/{task_id}/content.`,
+    "- Use GET /v1/models to discover the Seedance model IDs currently available to your account.",
+    ...(docsOrigin
+      ? [
+          `- Documentation: ${docsOrigin}/api-reference/seedance-video-generation`,
+          `- Chinese documentation: ${docsOrigin}/zh/api-reference/seedance-video-generation`,
+        ]
+      : []),
     "",
     "## Core Pages",
     "",
