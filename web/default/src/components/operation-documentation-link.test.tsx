@@ -48,7 +48,7 @@ describe('OperationDocumentationLink', () => {
     )
 
     expect(html).toContain('Operation documentation')
-    expect(html).toContain('href="/docs"')
+    expect(html).toContain('href="https://docs.flatkey.ai/"')
     expect(html).toContain('target="_blank"')
     expect(html).toContain('rel="noreferrer noopener"')
   })
