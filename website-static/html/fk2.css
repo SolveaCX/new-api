@@ -611,7 +611,9 @@ body:has(> header.hero.heroUnified) .heroUnified .heroGrid{width:100%;max-width:
 body:has(> header.hero.heroUnified) .heroUnified .heroCopy{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;align-items:center}
 body:has(> header.hero.heroUnified) .heroUnified .eyebrow{margin:0 0 28px;padding:8px 16px;border:1px solid rgba(109,40,217,.12);background:rgba(255,255,255,.68);box-shadow:0 12px 34px -28px rgba(76,29,149,.75);backdrop-filter:blur(12px);color:var(--violet-deep)}
 body:has(> header.hero.heroUnified) .heroUnified h1.display{max-width:1040px;margin:0;color:var(--ink);font-size:clamp(68px,8.3vw,118px);line-height:.9;letter-spacing:-.07em;text-shadow:none}
-body:has(> header.hero.heroUnified) .heroUnified h1 .price{display:inline-block;margin-top:10px;background:linear-gradient(100deg,#6d28d9 0%,#8b5cf6 45%,#c026d3 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+body:has(> header.hero.heroUnified) .heroUnified h1 .price{display:inline-block;margin-top:10px;background:linear-gradient(100deg,#6d28d9 0%,#8b5cf6 45%,#c026d3 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+body:has(> header.hero.heroUnified) .heroUnified h1 .price::selection{background:#e9ddff;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+body:has(> header.hero.heroUnified) .heroUnified h1 .price::-moz-selection{background:#e9ddff;color:var(--ink)}
 body:has(> header.hero.heroUnified) .heroUnified .sub{max-width:780px;margin:30px auto 0;color:var(--ink2);font-size:18px;line-height:1.65;text-wrap:balance}
 body:has(> header.hero.heroUnified) .heroUnified .heroCtas{display:flex;justify-content:center;gap:12px;margin-top:34px}
 body:has(> header.hero.heroUnified) .heroUnified .heroCtas .btn{min-width:190px;min-height:50px;justify-content:center;border-radius:12px;font-size:14px;font-weight:700;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
