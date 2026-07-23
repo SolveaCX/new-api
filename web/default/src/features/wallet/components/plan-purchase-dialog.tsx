@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { formatTimestampToDate } from '@/lib/format'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -29,7 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import type {
   FlexiblePaymentChoice,
   PlanRecord,
@@ -73,6 +73,13 @@ const PAYMENT_CHOICES: FlexiblePaymentChoice[] = [
   'upi',
   'balance',
 ]
+const MONTH_SHORTCUTS = [1, 3, 12]
+
+export function normalizePurchaseMonths(value: number | string): number {
+  const parsed = Math.floor(Number(value))
+  if (!Number.isFinite(parsed)) return 1
+  return Math.min(12, Math.max(1, parsed))
+}
 
 function getPaymentChoiceLabel(
   choice: FlexiblePaymentChoice,
@@ -151,8 +158,13 @@ export function PlanPurchaseDialogContent(props: PlanPurchaseDialogContentProps)
   )
   const [months, setMonths] = useState(props.months ?? 1)
   const selectedChoice = props.selectedPaymentChoice ?? choice
-  const selectedMonths = props.months ?? months
+  const selectedMonths = normalizePurchaseMonths(props.months ?? months)
   const showMonths = selectedChoice !== 'stripe_recurring'
+  const setPurchaseMonths = (value: number | string) => {
+    const nextMonths = normalizePurchaseMonths(value)
+    setMonths(nextMonths)
+    props.onQuoteRequest?.(selectedChoice, nextMonths)
+  }
   const selectedQuote = getMatchingPaymentQuote(
     selectedChoice,
     props.paymentQuotes,
@@ -224,24 +236,32 @@ export function PlanPurchaseDialogContent(props: PlanPurchaseDialogContentProps)
         {showMonths ? (
           <label className='grid gap-1.5 text-sm'>
             <span className='font-medium'>{t('Months')}</span>
-            <NativeSelect
-              className='w-full'
+            <Input
+              type='number'
+              min={1}
+              max={12}
+              step={1}
               value={selectedMonths}
               onChange={(event) => {
-                const nextMonths = Number(event.target.value)
-                setMonths(nextMonths)
-                props.onQuoteRequest?.(selectedChoice, nextMonths)
+                setPurchaseMonths(event.target.value)
               }}
               aria-label={t('Months')}
-            >
-              {Array.from({ length: 12 }, (_, index) => index + 1).map(
-                (month) => (
-                  <NativeSelectOption key={month} value={month}>
-                    {getMonthLabel(month, t)}
-                  </NativeSelectOption>
-                )
-              )}
-            </NativeSelect>
+            />
+            <span className='flex flex-wrap gap-2'>
+              {MONTH_SHORTCUTS.map((month) => (
+                <Button
+                  key={month}
+                  type='button'
+                  variant={selectedMonths === month ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => {
+                    setPurchaseMonths(month)
+                  }}
+                >
+                  {getMonthLabel(month, t)}
+                </Button>
+              ))}
+            </span>
           </label>
         ) : null}
 
@@ -312,7 +332,12 @@ export function PlanPurchaseDialogContent(props: PlanPurchaseDialogContentProps)
             selectedDisabledReason.length > 0 ||
             selectedQuoteReadinessReason.length > 0
           }
-          onClick={() => props.onConfirm(selectedChoice, selectedMonths)}
+          onClick={() =>
+            props.onConfirm(
+              selectedChoice,
+              normalizePurchaseMonths(selectedMonths)
+            )
+          }
         >
           {t('Continue')}
         </Button>
