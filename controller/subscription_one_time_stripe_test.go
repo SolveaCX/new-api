@@ -284,6 +284,56 @@ func TestOneTimePlanPaidWebhookReturnsPermanentErrorForValidationMismatch(t *tes
 	require.False(t, isRetryableStripeWebhookProcessingError(err))
 }
 
+func TestOneTimePlanPaidWebhookDoesNotFulfillSupersededCheckout(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.UserSubscriptionContract{}, &model.SubscriptionChangeIntent{}))
+	insertStripeFulfillmentUser(t, 505)
+	insertStripeFulfillmentSubscriptionPlan(t, 905)
+	contract := model.UserSubscriptionContract{
+		UserId:      505,
+		Status:      model.SubscriptionContractStatusEnded,
+		PaymentMode: model.SubscriptionPaymentModePrepaid,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	intent := model.SubscriptionChangeIntent{
+		ContractId:     contract.Id,
+		UserId:         505,
+		RequestId:      "superseded-one-time",
+		Kind:           model.SubscriptionChangeIntentKindPurchase,
+		PaymentMode:    model.SubscriptionPaymentModePrepaid,
+		Status:         model.SubscriptionChangeIntentStatusSuperseded,
+		ToPlanId:       905,
+		SupersededById: 999,
+		ChangeVersion:  1,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
+	order.UserId = 505
+	order.PlanId = 905
+	order.TradeNo = "sub_one_time_superseded"
+	order.ProviderSessionId = "cs_one_time_superseded"
+	order.ChangeIntentId = intent.Id
+	order.Status = common.TopUpStatusExpired
+	require.NoError(t, model.DB.Create(order).Error)
+	originalFulfill := fulfillOneTimeStripeSubscriptionPurchase
+	t.Cleanup(func() { fulfillOneTimeStripeSubscriptionPurchase = originalFulfill })
+	fulfillCalls := 0
+	fulfillOneTimeStripeSubscriptionPurchase = func(ctx context.Context, tradeNo string, providerPayload string) (*service.PurchaseSubscriptionResult, error) {
+		fulfillCalls++
+		return &service.PurchaseSubscriptionResult{}, nil
+	}
+
+	err := handleStripeOneTimePlanPaid(
+		context.Background(),
+		stripe.Event{ID: "evt_one_time_superseded", Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: oneTimeStripePaidSessionObject(order)}},
+		order.TradeNo,
+		"127.0.0.1",
+	)
+
+	require.NoError(t, err)
+	require.Zero(t, fulfillCalls)
+}
+
 func oneTimeStripePaidSessionObject(order *model.SubscriptionOrder) map[string]interface{} {
 	quote, _ := oneTimePlanQuoteFromOrder(order)
 	return map[string]interface{}{

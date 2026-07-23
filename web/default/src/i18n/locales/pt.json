@@ -1,4 +1,4 @@
-{
+﻿{
   "translation": {
     "360": "360",
     "1000": "1000",
@@ -6192,14 +6192,14 @@
     "Available balance": "Saldo disponível",
     "Top-ups": "Recargas",
     "Current plan": "Plano atual",
-    "Auto-renew enabled": "Renovação automática ativada",
+    "Auto-renew on": "Renovação automática ativada",
     "Start date": "Data de início",
     "End date": "Data de término",
     "Remaining days": "Dias restantes",
     "Monthly model quota": "Cota mensal de modelos",
-    "5-hour": "5 horas",
-    "7-day": "7 dias",
-    "Image + video": "Imagem + vídeo",
+    "5-hour limit": "Limite de 5 horas",
+    "7-day limit": "Limite de 7 dias",
+    "Media generation credits": "Créditos de geração de mídia",
     "{{used}} / {{total}} used": "{{used}} / {{total}} usados",
     "No usage limit": "Sem limite de uso",
     "{{remaining}} remaining, resets {{date}}": "{{remaining}} restantes, reinicia em {{date}}",
@@ -6241,10 +6241,6 @@
     "The active started term is not refunded. Monthly and Image + video usage reset; 5-hour and 7-day rolling usage is retained and re-evaluated.": "O período ativo já iniciado não é reembolsado. O uso mensal e de Imagem + vídeo é reiniciado; o uso móvel de 5 horas e 7 dias é mantido e reavaliado.",
     "Refundable not-started value: {{value}}": "Valor reembolsável não iniciado: {{value}}",
     "Monthly model quota: {{value}}": "Cota mensal de modelos: {{value}}",
-    "5-hour: {{value}}": "5 horas: {{value}}",
-    "7-day: {{value}}": "7 dias: {{value}}",
-    "Image + video: {{value}}": "Imagem + vídeo: {{value}}",
-    "{{count}} credits": "{{count}} créditos",
     "24h": "24 h",
     "30d": "30 d",
     "7d": "7 d",
@@ -6303,6 +6299,10 @@
     "{{success}} successful final requests": "{{success}} solicitações finais bem-sucedidas",
     "{{value}} ms": "{{value}} ms",
     "{{value}}%": "{{value}}%",
-    "{{value}}% healthy threshold": "Limite saudável de {{value}}%"
+    "{{value}}% healthy threshold": "Limite saudável de {{value}}%",
+    "5-hour limit: {{value}}": "Limite de 5 horas: {{value}}",
+    "7-day limit: {{value}}": "Limite de 7 dias: {{value}}",
+    "Media generation credits: {{value}}": "Créditos de geração de mídia: {{value}}",
+    "{{count}} credits": "{{count}} créditos"
   }
 }

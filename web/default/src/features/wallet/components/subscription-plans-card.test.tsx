@@ -16,10 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import zh from '@/i18n/locales/zh.json'
 import type {
   PlanRecord,
   SubscriptionPaymentQuote,
@@ -32,7 +34,7 @@ import {
   requiresSignedCheckoutQuote,
 } from '../lib/subscription-plan-lifecycle'
 import type { TopupInfo } from '../types'
-import { PlanPurchaseDialog } from './plan-purchase-dialog'
+import { PlanPurchaseDialogContent } from './plan-purchase-dialog'
 import { SubscriptionPlansCard } from './subscription-plans-card'
 
 const testI18n = createInstance()
@@ -41,7 +43,7 @@ beforeAll(async () => {
   await testI18n.use(initReactI18next).init({
     lng: 'en',
     fallbackLng: 'en',
-    resources: { en: { translation: {} } },
+    resources: { en: { translation: {} }, zh },
     interpolation: { escapeValue: false },
   })
 })
@@ -152,7 +154,23 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('Buy now')
   })
 
-  test('renders a read-only current card with correct badges and exactly four usage meters', () => {
+  test('keeps the refresh control in the subscription card header action', () => {
+    const html = renderWalletCard()
+    const headerStart = html.indexOf('data-slot="card-header"')
+    const contentStart = html.indexOf('data-slot="card-content"', headerStart)
+    const refreshButton = html.indexOf(
+      'aria-label="Refresh subscription plans"'
+    )
+
+    expect(headerStart).toBeGreaterThanOrEqual(0)
+    expect(contentStart).toBeGreaterThan(headerStart)
+    expect(refreshButton).toBeGreaterThan(headerStart)
+    expect(refreshButton).toBeLessThan(contentStart)
+    expect(html).toContain('size-7')
+    expect(html).not.toContain('min-h-11 min-w-11')
+  })
+
+  test('renders a read-only current card with correct badges and only the three active usage meters', () => {
     const html = renderWalletCard(
       normalizeSelfSubscriptionData({
         contract: {
@@ -198,9 +216,19 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('Current plan')
     expect(html).toContain('Pro')
     expect(html).toContain('Active')
-    expect(html).toContain('Auto-renew enabled')
-    expect(html.match(/data-wallet-usage-meter=/g)?.length).toBe(4)
+    expect(html).toContain('Auto-renew on')
+    expect(html).not.toContain('Auto-renew enabled')
+    expect(html).not.toContain('Renewal time')
+    expect(html).not.toContain('future charge')
+    expect(html.match(/data-wallet-usage-meter=/g)?.length).toBe(3)
     expect(html.match(/data-wallet-secondary-meter=/g)?.length).toBe(3)
+    expect(html).not.toContain('data-wallet-usage-meter="Monthly model quota"')
+    expect(html).toContain('data-wallet-usage-meter="5-hour limit"')
+    expect(html).toContain('data-wallet-usage-meter="7-day limit"')
+    expect(html).toContain('data-wallet-usage-meter="Media generation credits"')
+    expect(html).toContain('$0.0004 / $0.004 used')
+    expect(html).toContain('$0.002 / $0.01 used')
+    expect(html).toContain('3 / 20 used')
     expect(html).not.toContain('Cancel auto-renewal')
     expect(html).not.toContain('Resume auto-renewal')
     expect(html).not.toContain('Manage')
@@ -233,6 +261,39 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('Active')
     expect(html).not.toContain('Auto-renew enabled')
+    expect(html).not.toContain('Auto-renew on')
+  })
+
+  test('renders Chinese remaining days without a replacement question mark', async () => {
+    await testI18n.changeLanguage('zh')
+    try {
+      const html = renderWalletCard(
+        normalizeSelfSubscriptionData({
+          contract: {
+            contract_id: 13,
+            id: 13,
+            status: 'active',
+            payment_mode: 'prepaid',
+            current_plan_id: 2,
+            current_entitlement_id: 20,
+            current_provider_binding_id: 0,
+            latest_change_intent_id: 0,
+            pending_plan_id: 0,
+            pending_effective_at: 0,
+            current_period_start: 1717200000,
+            current_period_end: 1719792000,
+            grace_period_end: 0,
+            change_version: 1,
+          },
+          remaining_days: 31,
+        })
+      )
+
+      expect(html).toContain('31 天')
+      expect(html).not.toContain('31 ?')
+    } finally {
+      await testI18n.changeLanguage('en')
+    }
   })
 
   test('renders zero media credits as not included instead of unlimited', () => {
@@ -290,13 +351,13 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
     const mediaMeterStart = html.indexOf(
-      'data-wallet-usage-meter="Image + video"'
+      'data-wallet-usage-meter="Media generation credits"'
     )
     const mediaMeter = html.slice(mediaMeterStart, mediaMeterStart + 900)
 
     expect(mediaMeter).toContain('Not included')
     expect(mediaMeter).not.toContain('Unlimited')
-    expect(html).toContain('data-wallet-usage-meter="5-hour"')
+    expect(html).toContain('data-wallet-usage-meter="5-hour limit"')
     expect(html).toContain('No usage limit')
   })
 
@@ -320,8 +381,38 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       </I18nextProvider>
     )
 
-    expect(html).toContain('Image + video: Not included')
-    expect(html).not.toContain('Image + video: Unlimited')
+    expect(html).toContain('Media generation credits: Not included')
+    expect(html).not.toContain('Media generation credits: Unlimited')
+  })
+
+  test('labels plan card rolling quotas and media credits explicitly', () => {
+    const html = renderWalletCard()
+
+    expect(html).toContain('5-hour limit: $0.002')
+    expect(html).toContain('7-day limit: $0.005')
+    expect(html).toContain('Media generation credits: 10 credits')
+    expect(html).not.toContain('5-hour: $0.002')
+    expect(html).not.toContain('7-day: $0.005')
+    expect(html).not.toContain('Image + video: 10 credits')
+  })
+
+  test('keeps media generation credits visible when the plan field is absent', () => {
+    const { media_credits_monthly: _media, ...planWithoutMedia } =
+      plans[0].plan
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <SubscriptionPlansCard
+          topupInfo={topupInfo}
+          initialPlans={[{ ...plans[0], plan: planWithoutMedia }]}
+          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialLoading={false}
+          userQuota={12345}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain('Media generation credits: Not included')
+    expect(html).not.toContain('Image + video: Not included')
   })
 
   test('uses repurchase for the same plan and switch for every other active plan without next-period copy', () => {
@@ -354,11 +445,27 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 })
 
 describe('PlanPurchaseDialog payment choices', () => {
+  test('wraps the purchase review in the shared Dialog modal surface', () => {
+    const source = readFileSync(
+      new URL('./plan-purchase-dialog.tsx', import.meta.url),
+      'utf8'
+    )
+
+    expect(source).toContain(
+      "import {\n  Dialog,\n  DialogContent,\n  DialogDescription,\n  DialogFooter,\n  DialogHeader,\n  DialogTitle,\n} from '@/components/ui/dialog'"
+    )
+    expect(source).toContain(
+      '<Dialog open={props.open} onOpenChange={props.onOpenChange}>'
+    )
+    expect(source).toContain(
+      "<DialogContent className='sm:max-w-xl' showCloseButton={false}>"
+    )
+  })
+
   test('defaults to Stripe recurring and hides the month selector', () => {
     const html = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <PlanPurchaseDialog
-          open
+        <PlanPurchaseDialogContent
           plan={plans[1]}
           currentPlanId={0}
           paymentAvailability={{}}
@@ -390,8 +497,7 @@ describe('PlanPurchaseDialog payment choices', () => {
     ] as const) {
       const html = renderToStaticMarkup(
         <I18nextProvider i18n={testI18n}>
-          <PlanPurchaseDialog
-            open
+          <PlanPurchaseDialogContent
             plan={plans[1]}
             currentPlanId={2}
             paymentAvailability={{}}
@@ -413,8 +519,7 @@ describe('PlanPurchaseDialog payment choices', () => {
   test('does not render future-month refund value in the purchase review', () => {
     const html = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <PlanPurchaseDialog
-          open
+        <PlanPurchaseDialogContent
           plan={plans[1]}
           currentPlanId={2}
           paymentAvailability={{}}
@@ -434,8 +539,7 @@ describe('PlanPurchaseDialog payment choices', () => {
   test('uses backend quote snapshots for Pix BRL and UPI INR display amounts', () => {
     const pixHtml = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <PlanPurchaseDialog
-          open
+        <PlanPurchaseDialogContent
           plan={plans[1]}
           currentPlanId={0}
           paymentAvailability={{}}
@@ -466,8 +570,7 @@ describe('PlanPurchaseDialog payment choices', () => {
     )
     const upiHtml = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <PlanPurchaseDialog
-          open
+        <PlanPurchaseDialogContent
           plan={plans[1]}
           currentPlanId={0}
           paymentAvailability={{}}
@@ -511,8 +614,7 @@ describe('PlanPurchaseDialog payment choices', () => {
   test('keeps Pix selectable when a quote is missing and disables only Continue', () => {
     const html = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <PlanPurchaseDialog
-          open
+        <PlanPurchaseDialogContent
           plan={plans[1]}
           currentPlanId={0}
           paymentAvailability={{}}
@@ -535,8 +637,7 @@ describe('PlanPurchaseDialog payment choices', () => {
   test('shows local quote loading while keeping the selected choice active', () => {
     const html = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <PlanPurchaseDialog
-          open
+        <PlanPurchaseDialogContent
           plan={plans[1]}
           currentPlanId={0}
           paymentAvailability={{}}
@@ -575,8 +676,7 @@ describe('PlanPurchaseDialog payment choices', () => {
     for (const { name, quote } of invalidQuotes) {
       const html = renderToStaticMarkup(
         <I18nextProvider i18n={testI18n}>
-          <PlanPurchaseDialog
-            open
+          <PlanPurchaseDialogContent
             plan={plans[1]}
             currentPlanId={0}
             paymentAvailability={{}}
@@ -599,8 +699,7 @@ describe('PlanPurchaseDialog payment choices', () => {
   test('enables Alipay checkout for a future signed same-month quote', () => {
     const html = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <PlanPurchaseDialog
-          open
+        <PlanPurchaseDialogContent
           plan={plans[1]}
           currentPlanId={0}
           paymentAvailability={{}}
@@ -626,8 +725,7 @@ describe('PlanPurchaseDialog payment choices', () => {
     ] as const) {
       const html = renderToStaticMarkup(
         <I18nextProvider i18n={testI18n}>
-          <PlanPurchaseDialog
-            open
+          <PlanPurchaseDialogContent
             plan={plans[1]}
             currentPlanId={0}
             paymentAvailability={{}}
@@ -686,8 +784,7 @@ describe('PlanPurchaseDialog payment choices', () => {
     for (const { name, choice, quote } of invalidQuotes) {
       const html = renderToStaticMarkup(
         <I18nextProvider i18n={testI18n}>
-          <PlanPurchaseDialog
-            open
+          <PlanPurchaseDialogContent
             plan={plans[1]}
             currentPlanId={0}
             paymentAvailability={{}}

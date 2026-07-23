@@ -1196,6 +1196,10 @@ func handleStripeOneTimePlanPaid(ctx context.Context, event stripe.Event, refere
 	if !isOneTimePlanStripeOrder(order) {
 		return permanentStripeWebhookProcessingError(model.ErrSubscriptionOrderNotFound)
 	}
+	if !canFulfillOneTimeStripeOrder(order) {
+		logger.LogInfo(ctx, fmt.Sprintf("Stripe one-time subscription checkout ignored because local order is not fulfillable trade_no=%s status=%s client_ip=%s", referenceId, order.Status, callerIp))
+		return nil
+	}
 	if err := validateOneTimePlanStripeSessionEvent(event, order); err != nil {
 		return permanentStripeWebhookProcessingError(err)
 	}
@@ -1224,6 +1228,13 @@ func handleStripeOneTimePlanTerminal(ctx context.Context, event stripe.Event, re
 		return permanentStripeWebhookProcessingError(err)
 	}
 	return terminatePendingStripePurchase(ctx, referenceId, intentStatus)
+}
+
+func canFulfillOneTimeStripeOrder(order *model.SubscriptionOrder) bool {
+	if order == nil {
+		return false
+	}
+	return order.Status == common.TopUpStatusPending || order.Status == common.TopUpStatusSuccess
 }
 
 func isOneTimePlanStripeOrder(order *model.SubscriptionOrder) bool {

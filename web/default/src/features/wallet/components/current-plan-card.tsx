@@ -83,7 +83,7 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
           <div className='flex flex-wrap gap-2'>
             <Badge>{t('Active')}</Badge>
             {isWalletAutoRenew(props.selfData) ? (
-              <Badge variant='secondary'>{t('Auto-renew enabled')}</Badge>
+              <Badge variant='secondary'>{t('Auto-renew on')}</Badge>
             ) : null}
           </div>
         </div>
@@ -112,35 +112,23 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
           </div>
         </div>
 
-        <div className='space-y-3'>
+        <div className='grid gap-3 lg:grid-cols-3'>
           <UsageWindowMeter
-            label={t('Monthly model quota')}
-            window={{
-              used: props.selfData.monthly_bucket?.amount_used,
-              total: props.selfData.monthly_bucket?.amount_total,
-              remaining: props.selfData.monthly_bucket?.amount_remaining,
-              reset_at: props.selfData.monthly_bucket?.reset_at,
-              unlimited: props.selfData.monthly_bucket?.unlimited,
-            }}
+            label={t('5-hour limit')}
+            window={props.selfData.window_5h}
+            secondary
           />
-          <div className='grid gap-3 lg:grid-cols-3'>
-            <UsageWindowMeter
-              label={t('5-hour')}
-              window={props.selfData.window_5h}
-              secondary
-            />
-            <UsageWindowMeter
-              label={t('7-day')}
-              window={props.selfData.window_7d}
-              secondary
-            />
-            <UsageWindowMeter
-              label={t('Image + video')}
-              window={props.selfData.media_credits}
-              secondary
-              media
-            />
-          </div>
+          <UsageWindowMeter
+            label={t('7-day limit')}
+            window={props.selfData.window_7d}
+            secondary
+          />
+          <UsageWindowMeter
+            label={t('Media generation credits')}
+            window={props.selfData.media_credits}
+            secondary
+            media
+          />
         </div>
       </CardContent>
     </Card>
