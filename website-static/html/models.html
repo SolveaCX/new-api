@@ -5,13 +5,15 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="fk2.css?v=723c"><style>
+<link rel="stylesheet" href="fk2.css?v=728b"><style>
 .wrap{max-width:1560px;margin:0 auto;padding:52px 48px}
 .search{display:flex;gap:14px;margin:26px 0 18px}
 .search input{flex:1;height:56px;border:1.5px solid var(--line);border-radius:14px;padding:0 22px;font-size:16.5px;background:#fff;color:var(--ink3)}
 .chips{display:flex;gap:10px;margin-bottom:30px;flex-wrap:wrap}
-.chip{padding:9px 16px;border-radius:999px;border:1.5px solid var(--line);font-size:13.5px;font-weight:700;color:var(--ink2);background:#fff}
+.chip{padding:9px 16px;border-radius:999px;border:1.5px solid var(--line);font:inherit;font-size:13.5px;font-weight:700;color:var(--ink2);background:#fff;cursor:pointer}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip:focus-visible{outline:3px solid var(--violet-hi);outline-offset:2px}
+.result-status{min-height:20px;margin:-8px 0 18px;font-family:var(--mono);font-size:12px;color:var(--ink3)}
 .hl{background:linear-gradient(90deg,#F4F1FF,#FDFFF2);border:1.5px solid #E4DEFF;border-radius:18px;padding:20px 26px;display:flex;gap:34px;align-items:center;margin-bottom:34px}
 .hl b{font-size:15px}
 td .m{display:flex;align-items:center;gap:10px}
@@ -24,6 +26,8 @@ td .m span{font-size:12.5px;color:var(--ink3);font-family:var(--mono)}
 .off{font-family:var(--mono);color:var(--ink3);text-decoration:line-through;font-size:12.5px;display:block}
 .ours{font-family:var(--mono);font-weight:800;color:var(--violet-deep);font-size:14.5px}
 .try{font-size:13px;font-weight:800;color:var(--violet-deep);text-decoration:none}
+.model-link{color:inherit;text-decoration:none}
+.model-link:hover,.try:hover{text-decoration:underline;text-underline-offset:3px}
 tr:hover td{background:#FBFAFF}
 table{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.1)}
 th{background:#fff}
@@ -70,7 +74,10 @@ td{padding:9px 14px}
 <div class="wrap">
   <h2 class="display" data-i18n="mo.h2">328+ official models. Priced in the open.</h2>
   <div class="search"><input type="search" id="msearch" data-i18n-ph="mo.search" placeholder="Search models, providers, capabilities…  ( ⌘K )"></div>
-  <div class="chips"><div class="chip on">All</div><div class="chip">Chat / Agents</div><div class="chip">Coding</div><div class="chip">Reasoning</div><div class="chip">Vision</div><div class="chip">Image · Video</div><div class="chip">Embeddings</div><div class="chip">≤ $1 / M tokens</div><div class="chip">China models</div></div>
+  <div class="chips" role="group" aria-label="Filter models by capability">
+    <button class="chip on" type="button" data-filter="all" aria-pressed="true">All</button><button class="chip" type="button" data-filter="chat" aria-pressed="false">Chat / Agents</button><button class="chip" type="button" data-filter="coding" aria-pressed="false">Coding</button><button class="chip" type="button" data-filter="reasoning" aria-pressed="false">Reasoning</button><button class="chip" type="button" data-filter="vision" aria-pressed="false">Vision</button><button class="chip" type="button" data-filter="image-video" aria-pressed="false">Image · Video</button><button class="chip" type="button" data-filter="under-1" aria-pressed="false">≤ $1 / M tokens</button><button class="chip" type="button" data-filter="china" aria-pressed="false">China models</button>
+  </div>
+  <p class="result-status" id="model-result-status" aria-live="polite"></p>
   <div class="hl"><div><b data-i18n="mo.hlb">Model authenticity, audited.</b><br><span style="font-size:13.5px;color:var(--ink2)" data-i18n="mo.hlp">Every model is probed hourly against its official API fingerprint. Public log — because "cheap gateways" that silently swap models are why you can't trust cheap gateways.</span></div><div style="flex:1"></div><a class="try" href="/status" data-i18n="mo.hll">View audit log →</a></div>
   <table>
     <tr><th>Model</th><th>Provider</th><th>Health · 30d</th><th>Avg latency</th><th>Official</th><th>flatkey self-serve</th><th></th></tr>
@@ -102,6 +109,15 @@ td{padding:9px 14px}
     <tr><td><div class="m"><img class="plogo" src="assets/logos/alibabacloud.svg" alt=""><div><b>wan-2.7</b><span>alibaba</span></div></div></td><td class="mono">Alibaba</td><td class="mono">t2v</td><td class="mono">720p</td><td><span class="ours" data-i18n="md.soon">Coming soon</span></td><td><a class="try" href="/playground?model=wan-2.7">Try ↗</a></td></tr>
     <tr><td><div class="m"><img class="plogo" src="assets/logos/minimax.svg" alt=""><div><b>hailuo-02</b><span>minimax</span></div></div></td><td class="mono">MiniMax</td><td class="mono">i2v</td><td class="mono">1080p</td><td><span class="ours" data-i18n="md.soon">Coming soon</span></td><td><a class="try" href="/playground?model=hailuo-02">Try ↗</a></td></tr>
     <tr><td><div class="m"><div><b>pixverse-v6</b><span>pixverse</span></div></div></td><td class="mono">PixVerse</td><td class="mono">t2v</td><td class="mono">1080p</td><td><span class="ours" data-i18n="md.soon">Coming soon</span></td><td><a class="try" href="/playground?model=pixverse-v6">Try ↗</a></td></tr>
+  </table>
+</div>
+<div class="wrap" style="padding-top:8px">
+  <h2 class="display" style="font-size:32px;margin:26px 0 6px">Image models · <span style="color:var(--violet)">Grok Imagine new</span></h2>
+  <p style="font-size:13.5px;color:var(--ink3);margin-bottom:18px">Prompt-to-image generation on the same Flatkey API key and prepaid balance</p>
+  <table>
+    <tr><th>Model</th><th>Provider</th><th>Type</th><th>flatkey</th><th>Status</th><th></th></tr>
+    <tr style="background:#FBFAFF"><td><div class="m"><div><b>grok-imagine-image</b><span>xai · NEW</span></div></div></td><td class="mono">xAI</td><td class="mono">text to image</td><td><span class="ours">$0.02 / image</span></td><td><span class="ours" style="color:#A16207">Verification pending</span></td><td><a class="try" href="/playground?model=grok-imagine-image">View →</a></td></tr>
+    <tr><td><div class="m"><div><b>grok-imagine-image-quality</b><span>xai · QUALITY</span></div></div></td><td class="mono">xAI</td><td class="mono">text to image</td><td><span class="ours">$0.05 / image</span></td><td><span class="ours" style="color:#A16207">Verification pending</span></td><td><a class="try" href="/playground?model=grok-imagine-image-quality">View →</a></td></tr>
   </table>
 </div>
 <div class="wrap" style="padding-top:8px">
@@ -159,17 +175,69 @@ td{padding:9px 14px}
 <script src="assets/pixels.js?v=719h"></script>
 <script src="assets/i18n.js?v=724a"></script>
 <script src="assets/track.js?v=721a"></script>
+<script src="assets/model-catalog.js?v=726a"></script>
 <script>
 (function(){
   var inp = document.getElementById("msearch");
-  if(!inp) return;
-  inp.addEventListener("input", function(){
+  var catalog = window.FLATKEY_MODEL_CATALOG || {};
+  var chips = Array.prototype.slice.call(document.querySelectorAll(".chip[data-filter]"));
+  var rows = Array.prototype.slice.call(document.querySelectorAll("table tr")).filter(function(tr){ return tr.querySelector("td"); });
+  var status = document.getElementById("model-result-status");
+  var activeFilter = "all";
+  if(!inp || !chips.length || !rows.length) return;
+
+  function modelForRow(tr){
+    var label = tr.querySelector(".m b");
+    return label ? label.textContent.trim() : "";
+  }
+  rows.forEach(function(tr){
+    var model = modelForRow(tr);
+    if(!catalog[model]) return;
+    var label = tr.querySelector(".m b");
+    var detail = document.createElement("a");
+    detail.className = "model-link";
+    detail.href = "/models/" + encodeURIComponent(model);
+    label.replaceWith(detail);
+    detail.appendChild(label);
+    var action = tr.querySelector("a.try[href^='/playground?model=']");
+    if(action){
+      action.href = detail.href;
+      action.textContent = "View →";
+      action.setAttribute("aria-label", "View " + model + " details and API examples");
+    }
+  });
+  function update(){
     var q = inp.value.trim().toLowerCase();
-    document.querySelectorAll("table tr").forEach(function(tr){
-      if(!tr.querySelector("td")) return;
-      tr.style.display = !q || tr.textContent.toLowerCase().indexOf(q) > -1 ? "" : "none";
+    var visible = 0;
+    rows.forEach(function(tr){
+      var model = modelForRow(tr);
+      var meta = catalog[model] || {tags:[]};
+      var categoryMatch = activeFilter === "all" || meta.tags.indexOf(activeFilter) > -1;
+      var searchMatch = !q || tr.textContent.toLowerCase().indexOf(q) > -1 || model.toLowerCase().indexOf(q) > -1;
+      var show = categoryMatch && searchMatch;
+      tr.hidden = !show;
+      if(show) visible += 1;
+    });
+    Array.prototype.slice.call(document.querySelectorAll("table")).forEach(function(table, index){
+      if(index === 0) return;
+      var section = table.closest(".wrap");
+      if(section) section.hidden = !Array.prototype.some.call(table.querySelectorAll("tr"), function(tr){ return tr.querySelector("td") && !tr.hidden; });
+    });
+    status.textContent = visible ? "Showing " + visible + " model" + (visible === 1 ? "" : "s") + (activeFilter === "all" ? "" : " in this category") + "." : "No models match this filter yet.";
+  }
+  chips.forEach(function(chip){
+    chip.addEventListener("click", function(){
+      activeFilter = chip.dataset.filter;
+      chips.forEach(function(item){
+        var on = item === chip;
+        item.classList.toggle("on", on);
+        item.setAttribute("aria-pressed", String(on));
+      });
+      update();
     });
   });
+  inp.addEventListener("input", update);
+  update();
 })();
 </script>
 <script src="assets/site-shell.js?v=720a"></script>

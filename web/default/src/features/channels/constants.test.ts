@@ -20,6 +20,12 @@ test('TechMobiVideo channel is selectable but not model-fetchable', () => {
   expect(getDefaultBaseUrl(105)).toBe('https://api.chatgpttech.mobi')
 })
 
+test('Codex model discovery is limited to channel creation', () => {
+  expect(CHANNEL_TYPES[57]).toBe('Codex')
+  expect(CREATE_MODEL_FETCHABLE_TYPES.has(57)).toBe(true)
+  expect(MODEL_FETCHABLE_TYPES.has(57)).toBe(false)
+})
+
 test('BytePlus channel is selectable with its regional Ark base URL', () => {
   expect(CHANNEL_TYPES[107]).toBe('BytePlus')
   expect(CHANNEL_TYPE_OPTIONS.some((option) => option.value === 107)).toBe(true)

@@ -95,6 +95,7 @@ import { Route as AuthenticatedSystemSettingsModelsIndexRouteImport } from './ro
 import { Route as AuthenticatedSystemSettingsContentIndexRouteImport } from './routes/_authenticated/system-settings/content/index'
 import { Route as AuthenticatedSystemSettingsBillingIndexRouteImport } from './routes/_authenticated/system-settings/billing/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
+import { Route as AuthenticatedComputeNodesIndexRouteImport } from './routes/_authenticated/compute/nodes/index'
 import { Route as LocalePricingModelIdIndexRouteImport } from './routes/$locale/pricing/$modelId/index'
 import { Route as AuthenticatedSystemSettingsSiteSectionRouteImport } from './routes/_authenticated/system-settings/site/$section'
 import { Route as AuthenticatedSystemSettingsSecuritySectionRouteImport } from './routes/_authenticated/system-settings/security/$section'
@@ -563,6 +564,12 @@ const AuthenticatedSystemSettingsAuthIndexRoute =
     path: '/auth/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
   } as any)
+const AuthenticatedComputeNodesIndexRoute =
+  AuthenticatedComputeNodesIndexRouteImport.update({
+    id: '/compute/nodes/',
+    path: '/compute/nodes/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const LocalePricingModelIdIndexRoute =
   LocalePricingModelIdIndexRouteImport.update({
     id: '/$locale/pricing/$modelId/',
@@ -704,6 +711,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId/': typeof LocalePricingModelIdIndexRoute
+  '/compute/nodes/': typeof AuthenticatedComputeNodesIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -798,6 +806,7 @@ export interface FileRoutesByTo {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId': typeof LocalePricingModelIdIndexRoute
+  '/compute/nodes': typeof AuthenticatedComputeNodesIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -896,6 +905,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/_authenticated/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId/': typeof LocalePricingModelIdIndexRoute
+  '/_authenticated/compute/nodes/': typeof AuthenticatedComputeNodesIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/_authenticated/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/_authenticated/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -993,6 +1003,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/$locale/pricing/$modelId/'
+    | '/compute/nodes/'
     | '/system-settings/auth/'
     | '/system-settings/billing/'
     | '/system-settings/content/'
@@ -1087,6 +1098,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/$locale/pricing/$modelId'
+    | '/compute/nodes'
     | '/system-settings/auth'
     | '/system-settings/billing'
     | '/system-settings/content'
@@ -1184,6 +1196,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/security/$section'
     | '/_authenticated/system-settings/site/$section'
     | '/$locale/pricing/$modelId/'
+    | '/_authenticated/compute/nodes/'
     | '/_authenticated/system-settings/auth/'
     | '/_authenticated/system-settings/billing/'
     | '/_authenticated/system-settings/content/'
@@ -1844,6 +1857,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSystemSettingsAuthIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
     }
+    '/_authenticated/compute/nodes/': {
+      id: '/_authenticated/compute/nodes/'
+      path: '/compute/nodes'
+      fullPath: '/compute/nodes/'
+      preLoaderRoute: typeof AuthenticatedComputeNodesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/$locale/pricing/$modelId/': {
       id: '/$locale/pricing/$modelId/'
       path: '/$locale/pricing/$modelId'
@@ -2023,6 +2043,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
+  AuthenticatedComputeNodesIndexRoute: typeof AuthenticatedComputeNodesIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -2059,6 +2080,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
+  AuthenticatedComputeNodesIndexRoute: AuthenticatedComputeNodesIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

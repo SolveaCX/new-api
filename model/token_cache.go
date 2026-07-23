@@ -92,6 +92,9 @@ for index = 2, #KEYS do
   if key_type == 'hash' then
     if redis.call('HGET', KEYS[index], ARGV[2]) == ARGV[3] then
       redis.call('HSET', KEYS[index], ARGV[4], ARGV[5])
+	  if ARGV[6] ~= '' then
+	    redis.call('HSET', KEYS[index], ARGV[6], ARGV[7])
+	  end
       patched = patched + 1
     else
       redis.call('DEL', KEYS[index])
@@ -215,8 +218,11 @@ func cacheSetToken(token Token, fillFence string) error {
 }
 
 func cacheDeleteTokens(keys []string) error {
-	if len(keys) == 0 {
+	if len(keys) == 0 || !common.RedisEnabled {
 		return nil
+	}
+	if common.RDB == nil {
+		return errors.New("cannot invalidate token cache: Redis client is nil")
 	}
 	redisKeys := make([]string, 1, len(keys)+1)
 	redisKeys[0] = tokenCacheFillFenceKey
@@ -239,6 +245,18 @@ func cacheDeleteToken(key string) error {
 }
 
 func cachePatchTokenGroups(keys []string, group string) error {
+	if len(keys) == 0 || !common.RedisEnabled {
+		return nil
+	}
+	if common.RDB == nil {
+		return errors.New("cannot patch token cache groups: Redis client is nil")
+	}
+	crossGroupRetryField := ""
+	crossGroupRetryValue := ""
+	if group == plgUserGroup {
+		crossGroupRetryField = "CrossGroupRetry"
+		crossGroupRetryValue = "false"
+	}
 	redisKeys := make([]string, 1, len(keys)+1)
 	redisKeys[0] = tokenCacheFillFenceKey
 	for _, key := range keys {
@@ -253,6 +271,8 @@ func cachePatchTokenGroups(keys []string, group string) error {
 		"1",
 		"Group",
 		group,
+		crossGroupRetryField,
+		crossGroupRetryValue,
 	).Err(); err != nil {
 		return fmt.Errorf("failed to patch token cache groups: %w", err)
 	}

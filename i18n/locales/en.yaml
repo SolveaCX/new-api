@@ -48,6 +48,7 @@ token.expired: "This token has expired"
 token.exhausted: "This token has insufficient quota"
 token.status_unavailable: "This token status is unavailable"
 token.db_error: "Invalid token, database query error, please contact administrator"
+token.batch_group_cache_sync_pending: "Token groups were updated, but cache synchronization is pending. Retry the same request."
 
 # Redemption messages
 redemption.name_length: "Redemption code name length must be between 1-20"

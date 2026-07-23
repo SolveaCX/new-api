@@ -241,8 +241,8 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 @media (max-width:1740px){
   .nav{height:76px;padding:0 20px;gap:18px;position:sticky;top:0;z-index:50}
   .nav>a.logo{margin-right:10px}
-  .nav>.logo{font-size:32px;letter-spacing:-1.4px;gap:9px}
-  .nav>.logo img{width:40px;height:40px}
+  .nav>a.logo{font-size:32px;letter-spacing:-1.4px;gap:9px}
+  .nav>a.logo img{width:40px;height:40px}
   .nav>a:not(.logo){font-size:13.5px}
   .nav>.sp{min-width:0}
   .nav>.langsel{max-width:104px;padding:7px 6px;font-size:12.5px}
@@ -252,8 +252,8 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 @media (max-width:1480px){
   .nav{gap:10px;padding:0 16px}
   .nav>a.logo{margin-right:6px}
-  .nav>.logo{font-size:28px;letter-spacing:-1.2px}
-  .nav>.logo img{width:36px;height:36px}
+  .nav>a.logo{font-size:28px;letter-spacing:-1.2px}
+  .nav>a.logo img{width:36px;height:36px}
   .nav>a:not(.logo){font-size:12.5px}
   .nav>.langsel{max-width:92px;padding:7px 5px;font-size:12px}
   .nav>.btn{min-height:38px;padding:8px 9px}
@@ -261,8 +261,8 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 
 @media (max-width:1320px){
   .nav{height:72px;padding:0 14px;gap:6px;position:sticky;top:0;z-index:50}
-  .nav>.logo{font-size:28px;letter-spacing:-1.2px;gap:8px}
-  .nav>.logo img{width:36px;height:36px}
+  .nav>a.logo{font-size:28px;letter-spacing:-1.2px;gap:8px}
+  .nav>a.logo img{width:36px;height:36px}
   .nav>a:not(.logo){font-size:12px}
   .nav>.sp{min-width:0}
   .nav>.langsel{max-width:86px;padding:7px 6px;font-size:12px}
@@ -290,8 +290,8 @@ body>.megafoot,body>.stripe{grid-column:1/-1}
 @media (max-width:900px){
   html,body{max-width:100%;overflow-x:clip}
   .nav{height:72px;padding:0 18px;gap:10px;position:sticky;top:0;z-index:50}
-  .nav>.logo{font-size:30px;letter-spacing:-1.3px;gap:9px}
-  .nav>.logo img{width:38px;height:38px}
+  .nav>a.logo{font-size:30px;letter-spacing:-1.3px;gap:9px}
+  .nav>a.logo img{width:38px;height:38px}
   .nav>a:not(.logo),.nav>.sp{display:none}
   .nav>.langsel{margin-left:auto;max-width:104px;padding:8px 7px}
   .nav-toggle{display:flex}
@@ -595,3 +595,34 @@ body:has(> header.hero) .proofGrid .tagline{color:#6943A7}
   body:has(> header.hero) .proofGrid{grid-template-columns:1fr;margin-left:18px;margin-right:18px;transform:translateY(-18px);box-shadow:6px 6px 0 #CAB8EE}
   body:has(> header.hero) .proofGrid>div{padding:26px 24px!important}
 }
+
+/* OpenRouter-aligned homepage. Scope the reset to this single hero so the
+   subscription, pricing, and other marketing pages retain their main-branch
+   treatment. */
+body:has(> header.hero.heroUnified)>.nav{background:#fff;border-bottom:1px solid var(--line);box-shadow:none}
+body:has(> header.hero.heroUnified)>.nav a,body:has(> header.hero.heroUnified)>.nav>a.logo{color:var(--ink2)}
+body:has(> header.hero.heroUnified)>.nav>a.logo{color:var(--ink)}
+body:has(> header.hero.heroUnified)>.nav>a.logo img{padding:0;border-radius:0;box-shadow:none}
+body:has(> header.hero.heroUnified)>.nav>.langsel{color:var(--ink2);border-color:var(--line);background:#fff}
+body:has(> header.hero.heroUnified)>.nav>.btn.black{color:#fff;background:#070707;box-shadow:none}
+body:has(> header.hero.heroUnified)>header.hero.heroUnified{min-height:min(720px,calc(100svh - 64px));display:flex;align-items:center;color:var(--ink);background:radial-gradient(ellipse 62% 52% at 50% 8%,rgba(124,58,237,.18),transparent 72%),linear-gradient(180deg,#fbfaff 0%,#f7f4ff 58%,#fff 100%)}
+body:has(> header.hero.heroUnified)>header.hero.heroUnified:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,rgba(124,58,237,.065) 1px,transparent 1px),linear-gradient(to bottom,rgba(124,58,237,.065) 1px,transparent 1px);background-size:72px 72px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.78),transparent 88%)}
+body:has(> header.hero.heroUnified) .heroUnified .heroGrid{width:100%;max-width:1180px;margin:0 auto;padding:88px 40px 104px;display:block;text-align:center}
+body:has(> header.hero.heroUnified) .heroUnified .heroCopy{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;align-items:center}
+body:has(> header.hero.heroUnified) .heroUnified .eyebrow{margin:0 0 28px;padding:8px 16px;border:1px solid rgba(109,40,217,.12);background:rgba(255,255,255,.68);box-shadow:0 12px 34px -28px rgba(76,29,149,.75);backdrop-filter:blur(12px);color:var(--violet-deep)}
+body:has(> header.hero.heroUnified) .heroUnified h1.display{max-width:1040px;margin:0;color:var(--ink);font-size:clamp(68px,8.3vw,118px);line-height:.9;letter-spacing:-.07em;text-shadow:none}
+body:has(> header.hero.heroUnified) .heroUnified h1 .price{display:inline-block;margin-top:10px;background:linear-gradient(100deg,#6d28d9 0%,#8b5cf6 45%,#c026d3 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+body:has(> header.hero.heroUnified) .heroUnified h1 .price::selection{background:#e9ddff;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+body:has(> header.hero.heroUnified) .heroUnified h1 .price::-moz-selection{background:#e9ddff;color:var(--ink)}
+body:has(> header.hero.heroUnified) .heroUnified .sub{max-width:780px;margin:30px auto 0;color:var(--ink2);font-size:18px;line-height:1.65;text-wrap:balance}
+body:has(> header.hero.heroUnified) .heroUnified .heroCtas{display:flex;justify-content:center;gap:12px;margin-top:34px}
+body:has(> header.hero.heroUnified) .heroUnified .heroCtas .btn{min-width:190px;min-height:50px;justify-content:center;border-radius:12px;font-size:14px;font-weight:700;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+body:has(> header.hero.heroUnified) .heroUnified .heroCtas .btn:hover{transform:translateY(-2px)}
+body:has(> header.hero.heroUnified) .heroUnified .heroPrimary{border-color:transparent;background:linear-gradient(135deg,#6d28d9 0%,#7c3aed 48%,#a21caf 100%);color:#fff!important;box-shadow:0 20px 46px -22px rgba(109,40,217,.92)}
+body:has(> header.hero.heroUnified) .heroUnified .heroSecondary{border-color:rgba(76,29,149,.13);background:rgba(255,255,255,.76);box-shadow:0 16px 38px -30px rgba(30,27,75,.45);backdrop-filter:blur(12px)}
+body:has(> header.hero.heroUnified) .proof{background:#fff;border-bottom:1px solid var(--line);overflow:hidden}
+body:has(> header.hero.heroUnified) .proofGrid{max-width:1240px;margin:0 auto;padding:0 40px;background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible;transform:none}
+body:has(> header.hero.heroUnified) .proofGrid>div{padding:26px 28px 28px}
+body:has(> header.hero.heroUnified) .proofGrid .tagline{color:var(--ink3)}
+@media (max-width:900px){body:has(> header.hero.heroUnified) .proofGrid{grid-template-columns:1fr 1fr!important;padding:0 24px!important;margin:0;transform:none}body:has(> header.hero.heroUnified) .proofGrid>div{padding:24px!important}}
+@media (max-width:620px){body:has(> header.hero.heroUnified)>header.hero.heroUnified{min-height:auto}body:has(> header.hero.heroUnified)>header.hero.heroUnified:before{background-size:48px 48px}body:has(> header.hero.heroUnified) .heroUnified .heroGrid{padding:72px 20px 82px}body:has(> header.hero.heroUnified) .heroUnified .eyebrow{margin-bottom:22px;font-size:10.5px;letter-spacing:.3px}body:has(> header.hero.heroUnified) .heroUnified h1.display{font-size:clamp(48px,15vw,70px);line-height:.94;letter-spacing:-.055em}body:has(> header.hero.heroUnified) .heroUnified .sub{margin-top:24px;font-size:15.5px;line-height:1.65}body:has(> header.hero.heroUnified) .heroUnified .heroCtas{width:100%;flex-direction:column;margin-top:28px}body:has(> header.hero.heroUnified) .heroUnified .heroCtas .btn{width:100%;min-width:0}body:has(> header.hero.heroUnified) .proofGrid{grid-template-columns:1fr!important}}

@@ -33,6 +33,7 @@ const ATTRIBUTION_KEYS = new Set([
 
 const ATTRIBUTION_STORAGE_KEY = 'ads:attribution'
 const SHARED_ATTRIBUTION_COOKIE_KEY = 'flatkey_ads_attribution'
+export const PT_POST_SIGNUP_TOPUP_EXPERIMENT_ID = 'pt_post_signup_topup_v1'
 const PAID_CLICK_IDS = new Set([
   'fbclid',
   'gbraid',
@@ -397,6 +398,39 @@ export function getAttributionPayload(values: AttributionValues): string {
   return JSON.stringify(merged)
 }
 
+export function isPtGooglePaidAttribution(values: AttributionValues): boolean {
+  const cleaned = cleanAttributionValues(values)
+  const landingPath = cleaned.first_landing_path || cleaned.landing_path || ''
+  const isPortugueseLanding =
+    landingPath === '/pt' || landingPath.startsWith('/pt/')
+  const isPortugueseLocale =
+    cleaned.lng?.toLowerCase().split(/[-_]/)[0] === 'pt'
+  const hasGoogleClickId = Boolean(
+    cleaned.gclid || cleaned.gbraid || cleaned.wbraid
+  )
+
+  return hasGoogleClickId && (isPortugueseLanding || isPortugueseLocale)
+}
+
+export function applyPtPostSignupTopupExperiment(
+  values: AttributionValues
+): AttributionValues {
+  const cleaned = cleanAttributionValues(values)
+  if (!isPtGooglePaidAttribution(cleaned)) {
+    return cleaned
+  }
+  return {
+    ...cleaned,
+    experiment_id: PT_POST_SIGNUP_TOPUP_EXPERIMENT_ID,
+  }
+}
+
+export function isPtPostSignupTopupExperiment(
+  values: AttributionValues
+): boolean {
+  return values.experiment_id === PT_POST_SIGNUP_TOPUP_EXPERIMENT_ID
+}
+
 export function getStoredAdsAttribution(): Record<string, string> {
   if (typeof window === 'undefined') {
     return {}
@@ -469,7 +503,9 @@ export function captureAdsAttribution(): Record<string, string> {
     }
   }
 
-  const merged = mergeAttributionValues(getStoredAdsAttribution(), current)
+  const merged = applyPtPostSignupTopupExperiment(
+    mergeAttributionValues(getStoredAdsAttribution(), current)
+  )
 
   try {
     window.localStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(merged))

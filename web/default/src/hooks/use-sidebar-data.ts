@@ -91,6 +91,11 @@ export function buildSidebarData(
             icon: Box,
           },
           {
+            title: t('Compute'),
+            url: '/compute',
+            icon: Cpu,
+          },
+          {
             title: t('API Keys'),
             url: '/keys',
             icon: Key,
@@ -142,8 +147,8 @@ export function buildSidebarData(
             icon: Radio,
           },
           {
-            title: t('Compute'),
-            url: '/compute',
+            title: t('Compute Nodes'),
+            url: '/compute/nodes',
             icon: Cpu,
           },
           {

@@ -56,6 +56,7 @@ const (
 	MsgTokenExhausted            = "token.exhausted"
 	MsgTokenStatusUnavailable    = "token.status_unavailable"
 	MsgTokenDbError              = "token.db_error"
+	MsgTokenBatchCachePending    = "token.batch_group_cache_sync_pending"
 )
 
 // Redemption related messages

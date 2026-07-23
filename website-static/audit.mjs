@@ -24,7 +24,8 @@ for (const file of files) {
   const viewports = [...html.matchAll(/<meta\s+name="viewport"\s+content="([^"]+)"/gi)];
   if (viewports.length !== 1) fail(file, `expected one viewport meta, found ${viewports.length}`);
   else if (!viewports[0][1].includes("width=device-width")) fail(file, `non-responsive viewport: ${viewports[0][1]}`);
-  if (!/fk2\.css\?v=723c/.test(html)) fail(file, "missing the current shared CSS cache version");
+  const cssVersion = "728b";
+  if (!html.includes(`fk2.css?v=${cssVersion}`)) fail(file, "missing the current shared CSS cache version");
   if (/\bid=""/.test(html)) fail(file, "contains an empty id");
   if (/<script\b[^>]*\bsrc=""/i.test(html)) fail(file, "contains an empty script src");
   if (/href="(?:#|javascript:[^"]*)"/i.test(html)) fail(file, "contains a placeholder or javascript link");
@@ -114,6 +115,20 @@ if (sitemapV2.includes("https://flatkey.ai/login")) fail("sitemap-v2.xml", "cont
 const sitemapV2Locations = [...sitemapV2.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 const duplicateSitemapLocations = [...new Set(sitemapV2Locations.filter((url, index) => sitemapV2Locations.indexOf(url) !== index))];
 if (duplicateSitemapLocations.length) fail("sitemap-v2.xml", `duplicate URLs: ${duplicateSitemapLocations.join(", ")}`);
+
+const llmsTxt = fs.readFileSync(path.join(root, "llms.txt"), "utf8");
+for (const requiredLlmsContent of [
+  "Gemini native generateContent: POST https://router.flatkey.ai/v1beta/models/{model}:generateContent",
+  "nano-banana-pro-preview supports both Gemini native generateContent and OpenAI-compatible Chat Completions.",
+  "currently do not use /v1/images/generations",
+  "Create a video task with POST https://router.flatkey.ai/v1/videos.",
+  "Poll task status with GET https://router.flatkey.ai/v1/videos/{task_id}.",
+  "Download completed video content with GET https://router.flatkey.ai/v1/videos/{task_id}/content.",
+  "https://docs.flatkey.ai/api-reference/seedance-video-generation",
+  "https://docs.flatkey.ai/zh/api-reference/seedance-video-generation",
+]) {
+  if (!llmsTxt.includes(requiredLlmsContent)) fail("llms.txt", `missing API documentation: ${requiredLlmsContent}`);
+}
 
 const about = fs.readFileSync(path.join(root, "about.html"), "utf8");
 for (const requiredAboutContent of [
