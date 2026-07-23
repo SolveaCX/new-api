@@ -17,6 +17,17 @@ const (
 	SubscriptionPaymentModeBalanceOnePeriod  = "balance_one_period"
 	SubscriptionPaymentModeExternalOnePeriod = "external_one_period"
 
+	SubscriptionPaymentMethodAlipay = "alipay"
+	SubscriptionPaymentMethodPix    = "pix"
+	SubscriptionPaymentMethodUPI    = "upi"
+
+	SubscriptionRenewalSourceWallet   = "wallet_auto"
+	SubscriptionRenewalSourceProvider = "provider_recurring"
+
+	SubscriptionRenewalStatusEnabled                   = "enabled"
+	SubscriptionRenewalStatusPausedInsufficientBalance = "paused_insufficient_balance"
+	SubscriptionRenewalStatusPausedPlanUnavailable     = "paused_plan_unavailable"
+
 	SubscriptionChangeIntentKindPurchase  = "purchase"
 	SubscriptionChangeIntentKindUpgrade   = "upgrade"
 	SubscriptionChangeIntentKindDowngrade = "downgrade"
@@ -41,6 +52,9 @@ type UserSubscriptionContract struct {
 	UserId      int    `json:"user_id" gorm:"not null;uniqueIndex"`
 	Status      string `json:"status" gorm:"type:varchar(32);not null;default:'ended';index"`
 	PaymentMode string `json:"payment_mode" gorm:"type:varchar(32);not null;default:'external_one_period';index"`
+
+	RenewalSource string `json:"renewal_source" gorm:"type:varchar(32);default:'';index"`
+	RenewalStatus string `json:"renewal_status" gorm:"type:varchar(64);default:'';index"`
 
 	CurrentPlanId            int    `json:"current_plan_id" gorm:"default:0;index"`
 	CurrentEntitlementId     int    `json:"current_entitlement_id" gorm:"default:0;index"`

@@ -572,6 +572,12 @@ type SubscriptionOrder struct {
 	CreateTime      int64  `json:"create_time"`
 	CompleteTime    int64  `json:"complete_time"`
 
+	PurchaseMonths int     `json:"purchase_months" gorm:"type:int;not null;default:0"`
+	UnitPrice      float64 `json:"unit_price" gorm:"type:decimal(10,6);not null;default:0"`
+	PlanSnapshot   string  `json:"plan_snapshot" gorm:"type:text"`
+	PurchaseIntent string  `json:"purchase_intent" gorm:"type:varchar(32);default:'';index"`
+	RenewalSource  string  `json:"renewal_source" gorm:"type:varchar(32);default:'';index"`
+
 	ProviderPayload    string `json:"provider_payload" gorm:"type:text"`
 	ChangeIntentId     int64  `json:"change_intent_id" gorm:"type:bigint;default:0;index"`
 	ProviderSessionId  string `json:"provider_session_id" gorm:"type:varchar(128);default:'';index"`

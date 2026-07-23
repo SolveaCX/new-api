@@ -86,6 +86,25 @@ func TestSubscriptionContractEnumValuesRoundTripAndDefaults(t *testing.T) {
 	require.Equal(t, SubscriptionPaymentModeExternalOnePeriod, storedDefault.PaymentMode)
 }
 
+func TestSubscriptionContractWalletRenewalSourceAndStatusPersist(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionContractTestDB(t)
+
+	contract := &UserSubscriptionContract{
+		UserId:        8110,
+		Status:        SubscriptionContractStatusActive,
+		PaymentMode:   SubscriptionPaymentModeBalanceOnePeriod,
+		RenewalSource: SubscriptionRenewalSourceWallet,
+		RenewalStatus: SubscriptionRenewalStatusPausedInsufficientBalance,
+	}
+	require.NoError(t, DB.Create(contract).Error)
+
+	var stored UserSubscriptionContract
+	require.NoError(t, DB.First(&stored, "id = ?", contract.Id).Error)
+	require.Equal(t, SubscriptionRenewalSourceWallet, stored.RenewalSource)
+	require.Equal(t, SubscriptionRenewalStatusPausedInsufficientBalance, stored.RenewalStatus)
+}
+
 func TestSubscriptionChangeIntentEnumValuesRoundTripAndDefaults(t *testing.T) {
 	setupSubscriptionRecurringTestDB(t)
 	migrateSubscriptionContractTestDB(t)
@@ -327,6 +346,8 @@ func migrateSubscriptionContractTestDB(t *testing.T) {
 		&UserSubscriptionContract{},
 		&SubscriptionChangeIntent{},
 		&SubscriptionTierRankReservation{},
+		&SubscriptionTermSegment{},
+		&WalletLedgerEntry{},
 		&SubscriptionPreConsumeRecord{},
 	))
 }
