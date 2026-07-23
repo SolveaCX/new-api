@@ -1199,7 +1199,14 @@ func TestRecallCampaignActivationSupportsSpecifiedUsersWithoutWidening(t *testin
 
 	audiencePreview, _, err := service.Preview(context.Background(), campaign.Id, 10)
 	require.NoError(t, err)
-	require.EqualValues(t, 2, audiencePreview.EligibleTotal)
+	require.EqualValues(t, 3, audiencePreview.EligibleTotal)
+	require.Len(t, audiencePreview.Sample, 3)
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, 0}, []int{
+		audiencePreview.Sample[0].UserID,
+		audiencePreview.Sample[1].UserID,
+		audiencePreview.Sample[2].UserID,
+	})
+	require.Contains(t, audiencePreview.Sample[2].EmailMasked, "@example.com")
 
 	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
 
@@ -1209,13 +1216,26 @@ func TestRecallCampaignActivationSupportsSpecifiedUsersWithoutWidening(t *testin
 	require.NoError(t, err)
 	require.Equal(t, model.RecallCampaignRunning, stored.Status)
 	var recipients []model.RecallRecipient
-	require.NoError(t, db.Order("user_id ASC").Find(&recipients).Error)
-	require.Len(t, recipients, 2)
-	require.Equal(t, []int{idOnly.Id, emailOnly.Id}, []int{recipients[0].UserId, recipients[1].UserId})
+	require.NoError(t, db.Order("user_id ASC, id ASC").Find(&recipients).Error)
+	require.Len(t, recipients, 3)
+	recipientsByIdentity := make(map[string]model.RecallRecipient, len(recipients))
 	for _, recipient := range recipients {
-		require.NotContains(t, recipient.EligibilitySnapshot, "missing@example.com")
+		recipientsByIdentity[recipient.RecipientIdentity] = recipient
 		require.NotContains(t, recipient.EligibilitySnapshot, "999999")
 	}
+	idRecipient := recipientsByIdentity[model.RecallRecipientIdentityForUser(idOnly.Id)]
+	require.Equal(t, idOnly.Id, idRecipient.UserId)
+	require.Equal(t, strings.ToLower(idOnly.Email), idRecipient.EmailSnapshot)
+	emailRecipient := recipientsByIdentity[model.RecallRecipientIdentityForUser(emailOnly.Id)]
+	require.Equal(t, emailOnly.Id, emailRecipient.UserId)
+	require.Equal(t, strings.ToLower(emailOnly.Email), emailRecipient.EmailSnapshot)
+	externalRecipient := recipientsByIdentity[model.RecallRecipientIdentityForEmail("missing@example.com")]
+	require.Zero(t, externalRecipient.UserId)
+	require.Equal(t, "missing@example.com", externalRecipient.EmailSnapshot)
+	require.Contains(t, externalRecipient.EligibilitySnapshot, `"user_id":0`)
+	var messageCount int64
+	require.NoError(t, db.Model(&model.RecallMessage{}).Count(&messageCount).Error)
+	require.Zero(t, messageCount)
 }
 
 func TestRecallCampaignActivationSupportsRegisteredOnlyWithoutWidening(t *testing.T) {
@@ -2103,6 +2123,147 @@ func TestRecallCampaignRecurringSkipsAlreadyEnrolledUsersBeforeApplyingRemaining
 	require.NoError(t, db.Where("campaign_id = ?", campaign.Id).Order("user_id ASC").Find(&recipients).Error)
 	require.Len(t, recipients, 2)
 	require.Equal(t, second.Id, recipients[1].UserId)
+}
+
+func TestRecallCampaignRecurringSkipsExistingEmailIdentityWhenUserLaterRegisters(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 0, 30, 0, 0, time.UTC)
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	draft.ExecutionMode = "recurring"
+	draft.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+	existing := model.RecallRecipient{
+		CampaignId:          campaign.Id,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "person@example.com",
+		RecipientIdentity:   model.RecallRecipientIdentityForEmail("person@example.com"),
+		LanguageSnapshot:    "en",
+		State:               model.RecallRecipientQueued,
+	}
+	require.NoError(t, db.Create(&existing).Error)
+	createRecallAudienceUser(t, db, now.Unix(), "recurring_registered_person", func(user *model.User) {
+		user.CreatedAt = now.Add(-30 * 24 * time.Hour).Unix()
+		user.RequestCount = 10
+		user.Quota = 0
+		user.Group = "plg"
+		user.Email = "PERSON@example.com"
+	})
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, mustRunDueCampaigns(t, service, time.Unix(stored.NextRunAt, 0)))
+
+	var recipients []model.RecallRecipient
+	require.NoError(t, db.Where("campaign_id = ?", campaign.Id).Find(&recipients).Error)
+	require.Len(t, recipients, 1)
+	require.Equal(t, existing.Id, recipients[0].Id)
+	var messageCount int64
+	require.NoError(t, db.Model(&model.RecallMessage{}).Where("recipient_id = ?", existing.Id).Count(&messageCount).Error)
+	require.Zero(t, messageCount)
+}
+
+func TestRecallCampaignRecurringSkipsExistingPositiveUserIDWhenEmailChanges(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 0, 30, 0, 0, time.UTC)
+	user := createRecallCampaignEligibleUser(t, db, now, "recurring_changed_email")
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	draft.ExecutionMode = "recurring"
+	draft.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	service.now = func() time.Time { return now }
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	require.NoError(t, service.Activate(context.Background(), 7, campaign.Id))
+	existing := model.RecallRecipient{
+		CampaignId:          campaign.Id,
+		UserId:              user.Id,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "old-recurring@example.com",
+		RecipientIdentity:   model.RecallRecipientIdentityForUser(user.Id),
+		LanguageSnapshot:    "en",
+		State:               model.RecallRecipientQueued,
+	}
+	require.NoError(t, db.Create(&existing).Error)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", user.Id).Update("email", "changed-recurring@example.com").Error)
+	stored, err := model.GetRecallCampaignByID(campaign.Id)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, mustRunDueCampaigns(t, service, time.Unix(stored.NextRunAt, 0)))
+
+	var recipientCount int64
+	require.NoError(t, db.Model(&model.RecallRecipient{}).Where("campaign_id = ?", campaign.Id).Count(&recipientCount).Error)
+	require.EqualValues(t, 1, recipientCount)
+}
+
+func TestRecallCampaignRecurringSnapshotSkipsExistingIdentityBeforeInsert(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 0, 30, 0, 0, time.UTC)
+	draft := validRecallCampaignDraft(now)
+	draft.AudienceTemplate = "specified_users"
+	draft.Audience = RecallAudienceConfig{SpecifiedEmails: []string{"direct-repeat@example.com"}}
+	draft.ExecutionMode = "recurring"
+	draft.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	existing := model.RecallRecipient{
+		CampaignId:          campaign.Id,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "other@example.com",
+		RecipientIdentity:   model.RecallRecipientIdentityForEmail("direct-repeat@example.com"),
+		LanguageSnapshot:    "en",
+		State:               model.RecallRecipientQueued,
+	}
+	require.NoError(t, db.Create(&existing).Error)
+
+	recipients, _, err := service.snapshotRecurringAudience(context.Background(), campaign.Id, draft, 10, now)
+
+	require.NoError(t, err)
+	require.Empty(t, recipients)
+}
+
+func TestRecallCampaignRecurringSnapshotDeduplicatesNormalizedEmailWithinRun(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 16, 0, 30, 0, 0, time.UTC)
+	createRecallAudienceUser(t, db, now.Unix(), "recurring_same_email_first", func(user *model.User) {
+		user.CreatedAt = now.Add(-30 * 24 * time.Hour).Unix()
+		user.RequestCount = 10
+		user.Quota = 0
+		user.Group = "plg"
+		user.Email = "same-run@example.com"
+	})
+	createRecallAudienceUser(t, db, now.Unix(), "recurring_same_email_second", func(user *model.User) {
+		user.CreatedAt = now.Add(-30 * 24 * time.Hour).Unix()
+		user.RequestCount = 10
+		user.Quota = 0
+		user.Group = "plg"
+		user.Email = "SAME-RUN@example.com"
+	})
+	draft := validRecallCampaignDraft(now)
+	draft.Audience.LastAPICallAgeDays = 0
+	draft.ExecutionMode = "recurring"
+	draft.Schedule = RecallScheduleConfig{Timezone: "Asia/Shanghai", Frequency: "daily", Hour: 9}
+	service := NewRecallCampaignService(NewRecallAudienceSelector(), newRecallCampaignStripeService(t, &recallCampaignStripeCalls{}))
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	recipients, _, err := service.snapshotRecurringAudience(context.Background(), campaign.Id, draft, 10, now)
+
+	require.NoError(t, err)
+	require.Len(t, recipients, 1)
+	require.Equal(t, "same-run@example.com", recipients[0].EmailSnapshot)
 }
 
 func mustRunDueCampaigns(t *testing.T, service *RecallCampaignService, now time.Time) int {

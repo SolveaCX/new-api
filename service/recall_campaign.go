@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"net/mail"
 	"reflect"
 	"strconv"
 	"strings"
@@ -1126,26 +1127,66 @@ func (s *RecallCampaignService) snapshotRecurringAudience(
 	limit int,
 	runAt time.Time,
 ) ([]model.RecallRecipient, map[string]int64, error) {
-	existing, err := model.ListRecallCampaignRecipientUserIDsWithContext(ctx, campaignID)
+	existing, err := model.ListRecallCampaignRecipientKeysWithContext(ctx, campaignID)
 	if err != nil {
 		return nil, nil, err
 	}
 	recipients := make([]model.RecallRecipient, 0, limit)
 	exclusions, err := s.audience.iterate(ctx, draft, runAt.Unix(), func(selection recallAudienceSelection) bool {
 		candidate := selection.Candidate
-		if _, enrolled := existing[candidate.UserID]; enrolled || len(recipients) >= limit {
+		if len(recipients) >= limit {
 			return true
+		}
+		identity := strings.TrimSpace(selection.RecipientIdentity)
+		if identity == "" {
+			identity = model.RecallRecipientIdentityForUser(candidate.UserID)
+		}
+		if _, enrolled := existing.Identities[identity]; enrolled && identity != "" {
+			return true
+		}
+		if candidate.UserID > 0 {
+			if _, enrolled := existing.UserIDs[candidate.UserID]; enrolled {
+				return true
+			}
+		}
+		email, hasEmail := normalizeRecallCampaignRecipientEmailKey(selection.Email)
+		if hasEmail {
+			if _, enrolled := existing.Emails[email]; enrolled {
+				return true
+			}
 		}
 		recipients = append(recipients, model.RecallRecipient{
 			UserId:              candidate.UserID,
 			EligibilitySnapshot: candidate.SnapshotJSON,
 			EmailSnapshot:       selection.Email,
+			RecipientIdentity:   identity,
 			LanguageSnapshot:    candidate.Language,
 			State:               model.RecallRecipientQueued,
 		})
+		if identity != "" {
+			existing.Identities[identity] = struct{}{}
+		}
+		if candidate.UserID > 0 {
+			existing.UserIDs[candidate.UserID] = struct{}{}
+		}
+		if hasEmail {
+			existing.Emails[email] = struct{}{}
+		}
 		return true
 	})
 	return recipients, exclusions, err
+}
+
+func normalizeRecallCampaignRecipientEmailKey(email string) (string, bool) {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" {
+		return "", false
+	}
+	parsed, err := mail.ParseAddress(trimmed)
+	if err != nil || parsed.Address != trimmed {
+		return "", false
+	}
+	return strings.ToLower(trimmed), true
 }
 
 func recallCampaignActivationFields(draft RecallCampaignDraft, couponID string, activatedAt int64) (map[string]any, error) {
