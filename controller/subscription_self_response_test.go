@@ -801,6 +801,41 @@ func TestGetSubscriptionPlansAnnotatesTierRankAndRelation(t *testing.T) {
 	require.Equal(t, []string{model.SubscriptionPaymentModeStripeRecurring}, paymentModes[9913])
 }
 
+func TestGetSubscriptionPlansExposesConfiguredUsageLimits(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:                  9932,
+		Title:               "Configured Limits",
+		PriceAmount:         30,
+		Currency:            "USD",
+		DurationUnit:        model.SubscriptionDurationMonth,
+		DurationValue:       1,
+		Enabled:             true,
+		TotalAmount:         3000,
+		Window5hAmount:      500,
+		WindowWeekAmount:    2000,
+		MediaCreditsMonthly: 75,
+		QuotaResetPeriod:    model.SubscriptionResetMonthly,
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/plans", nil)
+
+	GetSubscriptionPlans(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	items := envelope["data"].([]any)
+	require.Len(t, items, 1)
+	plan := items[0].(map[string]any)["plan"].(map[string]any)
+	require.Equal(t, float64(500), plan["window_5h_amount"])
+	require.Equal(t, float64(2000), plan["window_week_amount"])
+	require.Equal(t, float64(75), plan["media_credits_monthly"])
+}
+
 func TestSubscriptionPlanRelationLimitsDowngradesToActiveBoundStripeRecurring(t *testing.T) {
 	currentRank := 20
 	lowerRank := 10
