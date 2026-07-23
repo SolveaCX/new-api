@@ -146,7 +146,6 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		if strings.TrimSpace(input.Email) != "" {
 			params.CustomerEmail = stripe.String(strings.TrimSpace(input.Email))
 		}
-		params.CustomerCreation = stripe.String(string(stripe.CheckoutSessionCustomerCreationAlways))
 	}
 	if strings.TrimSpace(input.IdempotencyKey) != "" {
 		params.SetIdempotencyKey(strings.TrimSpace(input.IdempotencyKey))
