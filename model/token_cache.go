@@ -218,8 +218,11 @@ func cacheSetToken(token Token, fillFence string) error {
 }
 
 func cacheDeleteTokens(keys []string) error {
-	if len(keys) == 0 || !common.RedisEnabled || common.RDB == nil {
+	if len(keys) == 0 || !common.RedisEnabled {
 		return nil
+	}
+	if common.RDB == nil {
+		return errors.New("cannot invalidate token cache: Redis client is nil")
 	}
 	redisKeys := make([]string, 1, len(keys)+1)
 	redisKeys[0] = tokenCacheFillFenceKey

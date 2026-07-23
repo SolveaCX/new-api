@@ -401,7 +401,7 @@ func TestTokenCacheDeleteAndPatchHandleUnavailableRedis(t *testing.T) {
 	require.NoError(t, cachePatchTokenGroups([]string{"disabled"}, "vip"))
 
 	common.RedisEnabled = true
-	require.NoError(t, cacheDeleteTokens([]string{"missing-client"}))
+	require.ErrorContains(t, cacheDeleteTokens([]string{"missing-client"}), "Redis client is nil")
 	require.ErrorContains(t, cachePatchTokenGroups([]string{"missing-client"}, "vip"), "Redis client is nil")
 }
 
