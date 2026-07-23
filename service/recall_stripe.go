@@ -14,12 +14,12 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/stripe/stripe-go/v81"
-	checkoutsession "github.com/stripe/stripe-go/v81/checkout/session"
-	"github.com/stripe/stripe-go/v81/coupon"
-	"github.com/stripe/stripe-go/v81/customer"
-	"github.com/stripe/stripe-go/v81/price"
-	"github.com/stripe/stripe-go/v81/promotioncode"
+	"github.com/stripe/stripe-go/v86"
+	checkoutsession "github.com/stripe/stripe-go/v86/checkout/session"
+	"github.com/stripe/stripe-go/v86/coupon"
+	"github.com/stripe/stripe-go/v86/customer"
+	"github.com/stripe/stripe-go/v86/price"
+	"github.com/stripe/stripe-go/v86/promotioncode"
 )
 
 type RecallStripeClient interface {
@@ -803,7 +803,10 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 
 func buildRecallPromotionParams(ctx context.Context, campaignID int64, recipientID int64, userID int, attempt int, couponID string, customerID string, code string, expiresAt int64, discount RecallDiscountConfig) *stripe.PromotionCodeParams {
 	params := &stripe.PromotionCodeParams{
-		Coupon:         stripe.String(couponID),
+		Promotion: &stripe.PromotionCodePromotionParams{
+			Coupon: stripe.String(couponID),
+			Type:   stripe.String(string(stripe.PromotionCodePromotionTypeCoupon)),
+		},
 		Customer:       stripe.String(customerID),
 		Code:           stripe.String(code),
 		ExpiresAt:      stripe.Int64(expiresAt),
@@ -882,7 +885,7 @@ func validateExistingRecallPromotion(existing *stripe.PromotionCode, recipient m
 	if !existing.Active {
 		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s is inactive", existing.ID)
 	}
-	if existing.Coupon == nil || existing.Coupon.ID != couponID {
+	if existing.Promotion == nil || existing.Promotion.Coupon == nil || existing.Promotion.Coupon.ID != couponID {
 		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s coupon does not match", existing.ID)
 	}
 	if existing.Customer == nil || existing.Customer.ID != customerID {

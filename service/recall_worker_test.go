@@ -14,7 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 	"gorm.io/gorm"
 )
 
@@ -271,7 +271,9 @@ func TestRecallWorkerReusesCustomerCreatesBoundPromotionAndSchedulesStageOne(t *
 	require.Equal(t, []string{"current@example.com"}, updateEmails)
 	require.NotNil(t, promotionParams)
 	require.Equal(t, "cus_existing", *promotionParams.Customer)
-	require.Equal(t, "coupon_worker", *promotionParams.Coupon)
+	require.NotNil(t, promotionParams.Promotion)
+	require.Equal(t, "coupon_worker", *promotionParams.Promotion.Coupon)
+	require.Equal(t, string(stripe.PromotionCodePromotionTypeCoupon), *promotionParams.Promotion.Type)
 	require.Equal(t, int64(1), *promotionParams.MaxRedemptions)
 	require.Equal(t, int64(2500), *promotionParams.Restrictions.MinimumAmount)
 	require.Equal(t, "usd", *promotionParams.Restrictions.MinimumAmountCurrency)
@@ -369,7 +371,7 @@ func TestRecallWorkerReconcilesExistingPromotionWithoutCreate(t *testing.T) {
 			getCalls++
 			require.Equal(t, promotionID, id)
 			return &stripe.PromotionCode{
-				ID: id, Active: true, Code: "FKEXXST234", Coupon: &stripe.Coupon{ID: "coupon_worker"}, Customer: &stripe.Customer{ID: "cus_existing"},
+				ID: id, Active: true, Code: "FKEXXST234", Promotion: &stripe.PromotionCodePromotion{Type: stripe.PromotionCodePromotionTypeCoupon, Coupon: &stripe.Coupon{ID: "coupon_worker"}}, Customer: &stripe.Customer{ID: "cus_existing"},
 				ExpiresAt: 1_900_000_000, MaxRedemptions: 1,
 				Restrictions: &stripe.PromotionCodeRestrictions{MinimumAmount: 2500, MinimumAmountCurrency: stripe.CurrencyUSD},
 			}, nil
@@ -407,7 +409,7 @@ func TestRecallWorkerRejectsMismatchedPersistedPromotionID(t *testing.T) {
 		getPromotionCodeFn: func(_ context.Context, id string) (*stripe.PromotionCode, error) {
 			require.Equal(t, persistedPromotionID, id)
 			return &stripe.PromotionCode{
-				ID: "promo_other", Active: true, Code: "FKEXXST234", Coupon: &stripe.Coupon{ID: "coupon_worker"}, Customer: &stripe.Customer{ID: "cus_expected"},
+				ID: "promo_other", Active: true, Code: "FKEXXST234", Promotion: &stripe.PromotionCodePromotion{Type: stripe.PromotionCodePromotionTypeCoupon, Coupon: &stripe.Coupon{ID: "coupon_worker"}}, Customer: &stripe.Customer{ID: "cus_expected"},
 				ExpiresAt: 1_900_000_000, MaxRedemptions: 1,
 				Restrictions: &stripe.PromotionCodeRestrictions{MinimumAmount: 2500, MinimumAmountCurrency: stripe.CurrencyUSD},
 			}, nil
@@ -1453,7 +1455,7 @@ func createRecallWorkerRecipient(t *testing.T, campaignID int64, userID int, sta
 
 func recallWorkerPromotionFromParams(id string, params *stripe.PromotionCodeParams) *stripe.PromotionCode {
 	promotion := &stripe.PromotionCode{
-		ID: id, Active: true, Code: *params.Code, Coupon: &stripe.Coupon{ID: *params.Coupon}, Customer: &stripe.Customer{ID: *params.Customer},
+		ID: id, Active: true, Code: *params.Code, Promotion: &stripe.PromotionCodePromotion{Type: stripe.PromotionCodePromotionTypeCoupon, Coupon: &stripe.Coupon{ID: *params.Promotion.Coupon}}, Customer: &stripe.Customer{ID: *params.Customer},
 		ExpiresAt: *params.ExpiresAt, MaxRedemptions: *params.MaxRedemptions,
 	}
 	if params.Restrictions != nil {

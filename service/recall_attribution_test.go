@@ -10,7 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func TestParseRecallPaymentReadsCheckoutDiscountShapes(t *testing.T) {
@@ -264,7 +264,7 @@ func TestRecallPaymentFactReadsExpandedBreakdownDiscountIdentity(t *testing.T) {
 		},
 		{
 			name:         "coupon only discount",
-			discountJSON: `{"id":"di_coupon","coupon":{"id":"coupon_only"},"promotion_code":null}`,
+			discountJSON: `{"id":"di_coupon","source":{"type":"coupon","coupon":{"id":"coupon_only"}},"promotion_code":null}`,
 		},
 	}
 	for _, test := range tests {
@@ -446,6 +446,7 @@ func TestRecallAttributionReconcileUsesOnlyRecoverableSuccessfulStripeOrders(t *
 		UserId: topUpRecipient.UserId, TradeNo: "trade_topup_reconcile", GatewayTradeNo: "cs_topup_reconcile",
 		PaymentProvider: model.PaymentProviderStripe, Status: "success", CreateTime: 1_700_000_100, CompleteTime: 1_700_000_200,
 	}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{Id: 1, Title: "reconcile plan"}).Error)
 	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
 		UserId: subRecipient.UserId, PlanId: 1, TradeNo: "trade_sub_reconcile", PaymentProvider: model.PaymentProviderStripe,
 		Status: "success", CreateTime: 1_700_000_110, CompleteTime: 1_700_000_210,
