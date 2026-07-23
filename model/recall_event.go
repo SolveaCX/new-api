@@ -139,6 +139,9 @@ func CommitRecallCampaignRun(
 	}
 	for i := range recipients {
 		recipients[i].CampaignId = campaignID
+		if err := normalizeRecallRecipientIdentity(&recipients[i]); err != nil {
+			return false, 0, err
+		}
 	}
 	runEvent.CampaignId = campaignID
 	owned := false
@@ -167,7 +170,7 @@ func CommitRecallCampaignRun(
 		}
 		if len(recipients) > 0 {
 			result := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "campaign_id"}, {Name: "user_id"}},
+				Columns:   []clause.Column{{Name: "campaign_id"}, {Name: "recipient_identity"}},
 				DoNothing: true,
 			}).CreateInBatches(&recipients, recallRunBatchSize)
 			if result.Error != nil {
@@ -179,32 +182,32 @@ func CommitRecallCampaignRun(
 			return nil
 		}
 
-		userIDs := make([]int, len(recipients))
+		identities := make([]string, len(recipients))
 		for i := range recipients {
-			userIDs[i] = recipients[i].UserId
+			identities[i] = recipients[i].RecipientIdentity
 		}
-		storedRecipients := make([]RecallRecipient, 0, len(userIDs))
-		for start := 0; start < len(userIDs); start += recallRunBatchSize {
+		storedRecipients := make([]RecallRecipient, 0, len(identities))
+		for start := 0; start < len(identities); start += recallRunBatchSize {
 			end := start + recallRunBatchSize
-			if end > len(userIDs) {
-				end = len(userIDs)
+			if end > len(identities) {
+				end = len(identities)
 			}
 			var batch []RecallRecipient
-			if err := tx.Select("id", "user_id").
-				Where("campaign_id = ? AND user_id IN ?", campaignID, userIDs[start:end]).
+			if err := tx.Select("id", "recipient_identity").
+				Where("campaign_id = ? AND recipient_identity IN ?", campaignID, identities[start:end]).
 				Find(&batch).Error; err != nil {
 				return err
 			}
 			storedRecipients = append(storedRecipients, batch...)
 		}
-		recipientIDsByUserID := make(map[int]int64, len(storedRecipients))
+		recipientIDsByIdentity := make(map[string]int64, len(storedRecipients))
 		for _, recipient := range storedRecipients {
-			recipientIDsByUserID[recipient.UserId] = recipient.Id
+			recipientIDsByIdentity[recipient.RecipientIdentity] = recipient.Id
 		}
 		for i := range messages {
-			recipientID, ok := recipientIDsByUserID[recipients[i].UserId]
+			recipientID, ok := recipientIDsByIdentity[recipients[i].RecipientIdentity]
 			if !ok {
-				return fmt.Errorf("recall recipient for campaign %d user %d was not persisted", campaignID, recipients[i].UserId)
+				return fmt.Errorf("recall recipient for campaign %d identity %s was not persisted", campaignID, recipients[i].RecipientIdentity)
 			}
 			messages[i].RecipientId = recipientID
 		}

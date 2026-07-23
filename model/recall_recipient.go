@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -31,8 +32,9 @@ const (
 
 type RecallRecipient struct {
 	Id                    int64   `json:"id" gorm:"primaryKey"`
-	CampaignId            int64   `json:"campaign_id" gorm:"uniqueIndex:idx_recall_campaign_user,priority:1;index"`
-	UserId                int     `json:"user_id" gorm:"uniqueIndex:idx_recall_campaign_user,priority:2;index"`
+	CampaignId            int64   `json:"campaign_id" gorm:"uniqueIndex:idx_recall_campaign_identity,priority:1;index"`
+	RecipientIdentity     string  `json:"-" gorm:"type:varchar(80);not null;default:'';uniqueIndex:idx_recall_campaign_identity,priority:2"`
+	UserId                int     `json:"user_id" gorm:"default:0;index"`
 	EligibilitySnapshot   string  `json:"eligibility_snapshot" gorm:"type:text;not null"`
 	EmailSnapshot         string  `json:"email_snapshot" gorm:"type:varchar(254);not null"`
 	LanguageSnapshot      string  `json:"language_snapshot" gorm:"type:varchar(16);not null"`
@@ -57,6 +59,10 @@ type RecallRecipient struct {
 	LastErrorMessage      string  `json:"last_error_message" gorm:"type:varchar(512)"`
 	CreatedAt             int64   `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt             int64   `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (recipient *RecallRecipient) BeforeCreate(tx *gorm.DB) error {
+	return normalizeRecallRecipientIdentity(recipient)
 }
 
 type RecallRecipientExportSnapshot struct {
@@ -582,6 +588,9 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 	}
 	for i := range recipients {
 		recipients[i].CampaignId = campaignID
+		if err := normalizeRecallRecipientIdentity(&recipients[i]); err != nil {
+			return 0, err
+		}
 	}
 	runEvent.CampaignId = campaignID
 
@@ -599,7 +608,7 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 
 		if len(recipients) > 0 {
 			result := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "campaign_id"}, {Name: "user_id"}},
+				Columns:   []clause.Column{{Name: "campaign_id"}, {Name: "recipient_identity"}},
 				DoNothing: true,
 			}).Create(&recipients)
 			if result.Error != nil {
@@ -609,27 +618,27 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 		}
 
 		if hasAlignedMessages {
-			userIDs := make([]int, len(recipients))
+			identities := make([]string, len(recipients))
 			for i := range recipients {
-				userIDs[i] = recipients[i].UserId
+				identities[i] = recipients[i].RecipientIdentity
 			}
 			var storedRecipients []RecallRecipient
-			if err := tx.Select("id", "user_id").
-				Where("campaign_id = ? AND user_id IN ?", campaignID, userIDs).
+			if err := tx.Select("id", "recipient_identity").
+				Where("campaign_id = ? AND recipient_identity IN ?", campaignID, identities).
 				Find(&storedRecipients).Error; err != nil {
 				return err
 			}
-			recipientIDsByUserID := make(map[int]int64, len(storedRecipients))
+			recipientIDsByIdentity := make(map[string]int64, len(storedRecipients))
 			for _, recipient := range storedRecipients {
-				recipientIDsByUserID[recipient.UserId] = recipient.Id
+				recipientIDsByIdentity[recipient.RecipientIdentity] = recipient.Id
 			}
 			for i, aligned := range alignedMessages {
 				if !aligned {
 					continue
 				}
-				recipientID, ok := recipientIDsByUserID[recipients[i].UserId]
+				recipientID, ok := recipientIDsByIdentity[recipients[i].RecipientIdentity]
 				if !ok {
-					return fmt.Errorf("recall recipient for campaign %d user %d was not persisted", campaignID, recipients[i].UserId)
+					return fmt.Errorf("recall recipient for campaign %d identity %s was not persisted", campaignID, recipients[i].RecipientIdentity)
 				}
 				messages[i].RecipientId = recipientID
 			}
@@ -984,6 +993,37 @@ func RecallRecipientIdentityForEmail(email string) string {
 	}
 	sum := sha256.Sum256([]byte(email))
 	return fmt.Sprintf("email:%x", sum)
+}
+
+func normalizeRecallRecipientIdentity(recipient *RecallRecipient) error {
+	if recipient == nil {
+		return fmt.Errorf("recall recipient is required")
+	}
+	if strings.TrimSpace(recipient.RecipientIdentity) != "" {
+		return nil
+	}
+	if identity := RecallRecipientIdentityForUser(recipient.UserId); identity != "" {
+		recipient.RecipientIdentity = identity
+		return nil
+	}
+	email, ok := normalizeRecallRecipientEmail(recipient.EmailSnapshot)
+	if !ok {
+		return fmt.Errorf("recall recipient for campaign %d requires a positive user id or valid email snapshot", recipient.CampaignId)
+	}
+	recipient.RecipientIdentity = RecallRecipientIdentityForEmail(email)
+	return nil
+}
+
+func normalizeRecallRecipientEmail(email string) (string, bool) {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" {
+		return "", false
+	}
+	parsed, err := mail.ParseAddress(trimmed)
+	if err != nil || parsed.Address != trimmed {
+		return "", false
+	}
+	return strings.ToLower(trimmed), true
 }
 
 func normalizeRecallCandidateUserIDs(values []int) []int {

@@ -171,6 +171,7 @@ func (selector *RecallAudienceSelector) Snapshot(ctx context.Context, draft Reca
 				UserId:              candidate.UserID,
 				EligibilitySnapshot: candidate.SnapshotJSON,
 				EmailSnapshot:       selection.Email,
+				RecipientIdentity:   selection.RecipientIdentity,
 				LanguageSnapshot:    candidate.Language,
 				State:               model.RecallRecipientQueued,
 			})
