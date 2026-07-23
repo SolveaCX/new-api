@@ -102,6 +102,35 @@ func useStripeUpgradeTestServer(t *testing.T, handler http.Handler) {
 	})
 }
 
+func TestCreateStripeSubscriptionCheckoutOmitsCustomerCreationInSubscriptionMode(t *testing.T) {
+	var checkoutForm url.Values
+	useStripeUpgradeTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/v1/checkout/sessions", r.URL.Path)
+		require.NoError(t, r.ParseForm())
+		checkoutForm = r.PostForm
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"cs_subscription","object":"checkout.session","url":"https://checkout.stripe.test/subscription"}`))
+	}))
+
+	created, err := createStripeSubscriptionCheckout(context.Background(), StripeSubscriptionCheckoutInput{
+		TradeNo:        "sub_test_checkout",
+		UserID:         7130,
+		PlanID:         7230,
+		ContractID:     7330,
+		ChangeIntentID: 7430,
+		Email:          "buyer@example.com",
+		PriceID:        "price_subscription",
+		IdempotencyKey: "stripe-checkout-test",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "cs_subscription", created.ID)
+	require.Equal(t, string(stripe.CheckoutSessionModeSubscription), checkoutForm.Get("mode"))
+	require.Equal(t, "buyer@example.com", checkoutForm.Get("customer_email"))
+	require.NotContains(t, checkoutForm, "customer_creation")
+}
+
 func TestStripeUpgradeExecuteWritesAuthoritativeMetadata(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7130, 0)
