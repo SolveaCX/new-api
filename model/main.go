@@ -252,6 +252,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if err := migrateRecallRecipientIdentity(); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
@@ -341,6 +344,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := migrateRecallRecipientIdentity(); err != nil {
+		return err
+	}
 
 	migrations := []struct {
 		model interface{}
@@ -423,6 +429,59 @@ func migrateDBFast() error {
 		return err
 	}
 	common.SysLog("database migrated")
+	return nil
+}
+
+func migrateRecallRecipientIdentity() error {
+	if DB == nil || !DB.Migrator().HasTable(&RecallRecipient{}) {
+		return nil
+	}
+	if !DB.Migrator().HasColumn(&RecallRecipient{}, "recipient_identity") {
+		if err := DB.Migrator().AddColumn(&RecallRecipient{}, "RecipientIdentity"); err != nil {
+			return fmt.Errorf("failed to add recall recipient identity column: %w", err)
+		}
+	}
+
+	type recipientIdentityRow struct {
+		Id                int64
+		UserId            int
+		EmailSnapshot     string
+		RecipientIdentity string
+	}
+	var rows []recipientIdentityRow
+	if err := DB.Table("recall_recipients").
+		Select("id", "user_id", "email_snapshot", "recipient_identity").
+		Where("recipient_identity = '' OR recipient_identity IS NULL").
+		Order("id ASC").
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("failed to load recall recipients for identity backfill: %w", err)
+	}
+	for _, row := range rows {
+		identity := RecallRecipientIdentityForUser(row.UserId)
+		if identity == "" {
+			email, ok := normalizeRecallRecipientEmail(row.EmailSnapshot)
+			if !ok {
+				return fmt.Errorf("recall recipient %d cannot derive recipient identity", row.Id)
+			}
+			identity = RecallRecipientIdentityForEmail(email)
+		}
+		if err := DB.Table("recall_recipients").
+			Where("id = ? AND (recipient_identity = '' OR recipient_identity IS NULL)", row.Id).
+			Update("recipient_identity", identity).Error; err != nil {
+			return fmt.Errorf("failed to backfill recall recipient %d identity: %w", row.Id, err)
+		}
+	}
+
+	if !DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_identity") {
+		if err := DB.Migrator().CreateIndex(&RecallRecipient{}, "idx_recall_campaign_identity"); err != nil {
+			return fmt.Errorf("failed to create recall campaign identity index: %w", err)
+		}
+	}
+	if DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user") {
+		if err := DB.Migrator().DropIndex(&RecallRecipient{}, "idx_recall_campaign_user"); err != nil {
+			return fmt.Errorf("failed to drop legacy recall campaign user index: %w", err)
+		}
+	}
 	return nil
 }
 
