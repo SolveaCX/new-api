@@ -691,7 +691,15 @@ export function Wallet(props: WalletProps) {
     <>
       <SectionPageLayout>
         <SectionPageLayout.Title>
-          <span className='mx-auto block w-full max-w-7xl'>{t('Wallet')}</span>
+          <span className='mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3'>
+            <span>{t('Plans & wallet')}</span>
+            <span className='text-muted-foreground inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium'>
+              <span>{t('Available balance')}:</span>
+              <span className='font-mono tabular-nums'>
+                {userLoading ? '-' : formatQuota(user?.quota ?? 0)}
+              </span>
+            </span>
+          </span>
         </SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
@@ -704,16 +712,14 @@ export function Wallet(props: WalletProps) {
               </Alert>
             ) : null}
 
-            {/* 第一屏先展示套餐价值与档位，钱包统计降到套餐之后 */}
             <SubscriptionPlansCard
               topupInfo={topupInfo}
               userQuota={user?.quota}
               onPurchaseSuccess={fetchUser}
             />
 
-            {/* 第二部分：余额、加油包与充值历史。 */}
             <TitledCard
-              title={t('Balance and Top-ups')}
+              title={t('Top-ups')}
               description={t(
                 'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
               )}
@@ -721,15 +727,7 @@ export function Wallet(props: WalletProps) {
               iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
               contentClassName='space-y-4'
             >
-              <div className='flex flex-wrap items-center justify-between gap-4 rounded-xl border px-4 py-3'>
-                <div>
-                  <div className='text-muted-foreground text-xs font-medium'>
-                    {t('Current Balance')}
-                  </div>
-                  <div className='mt-1 font-mono text-2xl font-bold tabular-nums'>
-                    {userLoading ? '—' : formatQuota(user?.quota ?? 0)}
-                  </div>
-                </div>
+              <div className='flex justify-end'>
                 <Button
                   className='bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black'
                   onClick={() => setTopupDialogOpen(true)}

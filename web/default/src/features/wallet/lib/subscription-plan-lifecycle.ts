@@ -21,6 +21,13 @@ import type {
   PlanRecord,
   SelfSubscriptionData,
   SelfSubscriptionDataResponse,
+  FlexiblePaymentChoice,
+  FlexiblePurchaseRequest,
+  FlexiblePurchaseResponse,
+  SubscriptionPaymentAvailability,
+  SubscriptionPaymentQuote,
+  SubscriptionPaymentQuotes,
+  SubscriptionUsageWindow,
   SubscriptionContract,
   SubscriptionCurrentPeriod,
   SubscriptionQuota,
@@ -32,6 +39,8 @@ export type PlanAction =
   | 'upgrade_now'
   | 'downgrade_next_period'
   | 'unavailable'
+
+export type FlexiblePlanAction = 'buy' | 'repurchase' | 'switch'
 
 type PlanRelation = 'current' | 'upgrade' | 'downgrade' | 'unavailable'
 
@@ -76,6 +85,18 @@ export type WalletSubscriptionContract = SubscriptionContract & {
   grace_period_end?: number
 }
 
+export type FlexibleQuoteRequest = Omit<
+  FlexiblePurchaseRequest,
+  'quote_id' | 'order_id'
+>
+
+export type FlexibleQuoteSnapshotRequest = {
+  sequence: number
+  paymentChoice: FlexiblePaymentChoice
+  months: number
+  requestId: string
+}
+
 export type WalletSelfSubscriptionData = Omit<
   SelfSubscriptionData,
   'capabilities' | 'contract' | 'current_period' | 'migration' | 'quota'
@@ -83,6 +104,15 @@ export type WalletSelfSubscriptionData = Omit<
   contract?: WalletSubscriptionContract | null
   current_period?: SubscriptionCurrentPeriod
   quota?: SubscriptionQuota
+  monthly_bucket?: SubscriptionQuota
+  window_5h?: SubscriptionUsageWindow
+  window_7d?: SubscriptionUsageWindow
+  media_credits?: SubscriptionUsageWindow
+  remaining_days?: number
+  renewal_source?: string
+  renewal_status?: string
+  payment_availability?: SubscriptionPaymentAvailability
+  payment_quotes?: SubscriptionPaymentQuotes
   capabilities: WalletSubscriptionCapabilities
   migration: WalletSubscriptionMigration
 }
@@ -110,6 +140,14 @@ const DEFAULT_QUOTA: SubscriptionQuota = {
   amount_total: 0,
   amount_used: 0,
   amount_remaining: 0,
+  unlimited: true,
+}
+
+const EMPTY_USAGE_WINDOW: SubscriptionUsageWindow = {
+  used: 0,
+  total: 0,
+  remaining: 0,
+  reset_at: 0,
   unlimited: true,
 }
 
@@ -177,6 +215,15 @@ export function normalizeSelfSubscriptionData(
     current_entitlement: data?.current_entitlement ?? null,
     current_period: data?.current_period ?? DEFAULT_CURRENT_PERIOD,
     quota: data?.quota ?? DEFAULT_QUOTA,
+    monthly_bucket: data?.monthly_bucket ?? data?.quota ?? DEFAULT_QUOTA,
+    window_5h: data?.window_5h ?? EMPTY_USAGE_WINDOW,
+    window_7d: data?.window_7d ?? EMPTY_USAGE_WINDOW,
+    media_credits: data?.media_credits ?? EMPTY_USAGE_WINDOW,
+    remaining_days: data?.remaining_days,
+    renewal_source: data?.renewal_source,
+    renewal_status: data?.renewal_status,
+    payment_availability: data?.payment_availability ?? {},
+    payment_quotes: data?.payment_quotes ?? {},
     pending_change: data?.pending_change ?? null,
     capabilities: {
       ...DEFAULT_CAPABILITIES,
@@ -197,6 +244,131 @@ export function normalizeSelfSubscriptionData(
     subscriptions: data?.subscriptions || [],
     all_subscriptions: data?.all_subscriptions || [],
     recurring_subscriptions: data?.recurring_subscriptions || [],
+  }
+}
+
+export function getFlexiblePlanAction(args: {
+  planId: number
+  currentPlanId: number
+  relation?: string
+}): FlexiblePlanAction {
+  if (!args.currentPlanId) return 'buy'
+  if (args.planId === args.currentPlanId) return 'repurchase'
+  return 'switch'
+}
+
+export function buildFlexiblePurchaseRequest(args: {
+  planId: number
+  paymentChoice: FlexiblePaymentChoice
+  months: number
+  requestId: string
+  quoteId?: string
+  orderId?: string
+}): FlexiblePurchaseRequest {
+  return {
+    plan_id: args.planId,
+    payment_choice: args.paymentChoice,
+    months:
+      args.paymentChoice === 'stripe_recurring'
+        ? 1
+        : Math.min(12, Math.max(1, Math.round(args.months))),
+    request_id: args.requestId,
+    ...(args.quoteId ? { quote_id: args.quoteId } : {}),
+    ...(args.orderId ? { order_id: args.orderId } : {}),
+  }
+}
+
+function normalizeFlexibleMonths(
+  paymentChoice: FlexiblePaymentChoice,
+  months: number
+): number {
+  if (paymentChoice === 'stripe_recurring') return 1
+  return Math.min(12, Math.max(1, Math.round(months)))
+}
+
+export function buildFlexibleQuoteRequest(args: {
+  planId: number
+  paymentChoice: FlexiblePaymentChoice
+  months: number
+  requestId: string
+}): FlexibleQuoteRequest {
+  return {
+    plan_id: args.planId,
+    payment_choice: args.paymentChoice,
+    months: normalizeFlexibleMonths(args.paymentChoice, args.months),
+    request_id: args.requestId,
+  }
+}
+
+export function requiresLocalCurrencyQuote(
+  paymentChoice: FlexiblePaymentChoice
+): boolean {
+  return paymentChoice === 'pix' || paymentChoice === 'upi'
+}
+
+export function getMatchingPaymentQuote(
+  paymentChoice: FlexiblePaymentChoice,
+  quotes: SubscriptionPaymentQuotes | undefined,
+  months: number
+): SubscriptionPaymentQuote | undefined {
+  const quote = quotes?.[paymentChoice]
+  if (!quote) return undefined
+  if (!requiresLocalCurrencyQuote(paymentChoice)) return quote
+  return quote.months === normalizeFlexibleMonths(paymentChoice, months)
+    ? quote
+    : undefined
+}
+
+function normalizeQuoteForRequest(
+  quote: SubscriptionPaymentQuote | undefined,
+  request: FlexibleQuoteSnapshotRequest
+): SubscriptionPaymentQuote | undefined {
+  if (!quote) return undefined
+  if (typeof quote.months === 'number' && quote.months !== request.months) {
+    return undefined
+  }
+  return { ...quote, months: request.months }
+}
+
+export function mergeFlexibleQuoteProjection(
+  current: FlexiblePurchaseResponse | null,
+  response: Pick<
+    FlexiblePurchaseResponse,
+    'payment_quotes' | 'start_time' | 'end_time' | 'remaining_days'
+  >,
+  responseRequest: FlexibleQuoteSnapshotRequest,
+  latestRequest: FlexibleQuoteSnapshotRequest | null
+): FlexiblePurchaseResponse | null {
+  if (
+    !latestRequest ||
+    responseRequest.sequence !== latestRequest.sequence ||
+    responseRequest.paymentChoice !== latestRequest.paymentChoice ||
+    responseRequest.months !== latestRequest.months ||
+    responseRequest.requestId !== latestRequest.requestId
+  ) {
+    return current
+  }
+
+  const selectedQuote = normalizeQuoteForRequest(
+    response.payment_quotes?.[responseRequest.paymentChoice],
+    responseRequest
+  )
+  const nextQuotes: SubscriptionPaymentQuotes = {
+    ...(current?.payment_quotes ?? {}),
+    ...(response.payment_quotes ?? {}),
+  }
+  if (selectedQuote) {
+    nextQuotes[responseRequest.paymentChoice] = selectedQuote
+  } else {
+    delete nextQuotes[responseRequest.paymentChoice]
+  }
+
+  return {
+    ...(current ?? { status: 'applied' }),
+    payment_quotes: nextQuotes,
+    start_time: response.start_time ?? current?.start_time,
+    end_time: response.end_time ?? current?.end_time,
+    remaining_days: response.remaining_days ?? current?.remaining_days,
   }
 }
 
@@ -250,10 +422,13 @@ export function getAllowedPaymentModes(
     modes.push('stripe_recurring')
   }
   if (
-    configuredModes.includes('balance_one_period') &&
+    (configuredModes.includes('prepaid') ||
+      configuredModes.includes('balance_one_period')) &&
     capabilities.can_use_balance_one_period
   ) {
-    modes.push('balance_one_period')
+    modes.push(
+      configuredModes.includes('prepaid') ? 'prepaid' : 'balance_one_period'
+    )
   }
   return modes
 }

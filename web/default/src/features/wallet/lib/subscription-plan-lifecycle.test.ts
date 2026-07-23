@@ -25,6 +25,8 @@ import type {
 import type { TopupInfo } from '../types'
 import {
   type WalletSelfSubscriptionData,
+  buildFlexiblePurchaseRequest,
+  getFlexiblePlanAction,
   getDisplayedPlanAction,
   getAllowedPaymentModes,
   normalizeSelfSubscriptionData,
@@ -385,5 +387,59 @@ describe('getDisplayedPlanAction', () => {
         normalizeSelfSubscriptionData(createBackendSelfData(false, false))
       )
     ).toBe('unavailable')
+  })
+})
+
+describe('getFlexiblePlanAction', () => {
+  test('uses purchase, repurchase, and immediate switch actions without disabling same plan', () => {
+    expect(getFlexiblePlanAction({ planId: 1, currentPlanId: 0 })).toBe('buy')
+    expect(getFlexiblePlanAction({ planId: 1, currentPlanId: 1 })).toBe(
+      'repurchase'
+    )
+    expect(getFlexiblePlanAction({ planId: 2, currentPlanId: 1 })).toBe(
+      'switch'
+    )
+  })
+
+  test('does not expose next-period downgrade behavior for flexible wallet plan changes', () => {
+    expect(
+      getFlexiblePlanAction({
+        planId: 1,
+        currentPlanId: 2,
+        relation: 'downgrade',
+      })
+    ).toBe('switch')
+  })
+})
+
+describe('buildFlexiblePurchaseRequest', () => {
+  test('includes the selected backend quote identifier for checkout consistency', () => {
+    expect(
+      buildFlexiblePurchaseRequest({
+        planId: 2,
+        paymentChoice: 'pix',
+        months: 3,
+        requestId: 'request-1',
+        quoteId: 'quote-pix-3',
+      })
+    ).toEqual({
+      plan_id: 2,
+      payment_choice: 'pix',
+      months: 3,
+      request_id: 'request-1',
+      quote_id: 'quote-pix-3',
+    })
+  })
+
+  test('forces Stripe recurring to one month while preserving the quote id', () => {
+    expect(
+      buildFlexiblePurchaseRequest({
+        planId: 2,
+        paymentChoice: 'stripe_recurring',
+        months: 6,
+        requestId: 'request-2',
+        quoteId: 'quote-stripe',
+      }).months
+    ).toBe(1)
   })
 })

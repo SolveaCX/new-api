@@ -36,6 +36,7 @@ export type _SelfContractIncludesSingleContract = Assert<
       status: 'active' | 'grace' | 'ended' | 'needs_attention'
       payment_mode:
         | 'stripe_recurring'
+        | 'prepaid'
         | 'balance_one_period'
         | 'external_one_period'
       current_plan_id: number
@@ -75,7 +76,7 @@ export type _ChangePlanRequestShape = Assert<
     ChangePlanRequest,
     {
       plan_id: number
-      payment_mode: 'stripe_recurring' | 'balance_one_period'
+      payment_mode: 'stripe_recurring' | 'prepaid' | 'balance_one_period'
       request_id: string
     }
   >
@@ -95,6 +96,7 @@ export type _ChangePlanResponseShape = Assert<
         request_id: string
         payment_mode:
           | 'stripe_recurring'
+          | 'prepaid'
           | 'balance_one_period'
           | 'external_one_period'
       }
