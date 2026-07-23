@@ -110,8 +110,8 @@ func TestSetWebRouterRedirectsLegacyConsoleSubscriptionPath(t *testing.T) {
 	if rec.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := rec.Header().Get("Location"); got != "/subscriptions" {
-		t.Fatalf("Location=%q, want /subscriptions", got)
+	if got := rec.Header().Get("Location"); got != "/wallet" {
+		t.Fatalf("Location=%q, want /wallet", got)
 	}
 }
 
