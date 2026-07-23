@@ -11,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service/compute"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -172,14 +171,11 @@ func CreateComputeInstance(c *gin.Context) {
 		return
 	}
 
-	// Cost = duration(h) × $/hr × group multiplier, converted to quota units.
-	group, err := model.GetUserGroup(userId, false)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	dollars := float64(req.DurationHours) * offer.CostPerHour * groupRatio
+	// Cost = duration(h) × customer $/hr, where the customer price is the raw
+	// upstream cost marked up by ComputeRentalMarkup. Group discounts are NOT
+	// applied here — a discount on raw hardware could sell below our cost.
+	pricePerHour := compute.CustomerHourlyPrice(offer.CostPerHour)
+	dollars := float64(req.DurationHours) * pricePerHour
 	quotaToCharge := int(math.Ceil(dollars * common.QuotaPerUnit))
 	if quotaToCharge < 0 {
 		quotaToCharge = 0
@@ -221,7 +217,7 @@ func CreateComputeInstance(c *gin.Context) {
 		UserId:      userId,
 		Label:       label,
 		GpuName:     offer.GpuName,
-		CostPerHour: offer.CostPerHour,
+		CostPerHour: pricePerHour,
 		Status:      model.ComputeNodeStatusProvisioning,
 		// Internal-only whitelabel fields.
 		Provider:           result.Provider,
@@ -369,6 +365,30 @@ func GetComputeOffers(c *gin.Context) {
 		}
 		common.ApiError(c, err)
 		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    gin.H{"items": offers},
+	})
+}
+
+// GetUserGpuOffers is the user-facing offer catalog. Unlike the admin
+// GetComputeOffers (which shows the raw upstream cost), it applies
+// ComputeRentalMarkup so the displayed price equals what the customer is
+// billed — the estimate on the rent form always matches the charge.
+func GetUserGpuOffers(c *gin.Context) {
+	offers, err := compute.SearchOffers(c.Query("gpu"))
+	if err != nil {
+		if errors.Is(err, compute.ErrProviderNotConfigured) {
+			common.ApiErrorMsg(c, "compute provider is not configured")
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	for i := range offers {
+		offers[i].CostPerHour = compute.CustomerHourlyPrice(offers[i].CostPerHour)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

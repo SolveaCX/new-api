@@ -155,3 +155,24 @@ func TestMapUpstreamStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomerHourlyPrice_MarksUpAndNeverLoses(t *testing.T) {
+	for _, raw := range []float64{0.10, 0.40, 0.55, 2.99} {
+		got := CustomerHourlyPrice(raw)
+		want := raw * ComputeRentalMarkup
+		d := got - want
+		if d < 0 {
+			d = -d
+		}
+		if d > 1e-9 {
+			t.Fatalf("CustomerHourlyPrice(%v) = %v, want %v", raw, got, want)
+		}
+		// Core invariant: the customer always pays more than our upstream cost.
+		if got <= raw {
+			t.Fatalf("customer price %v must exceed raw cost %v", got, raw)
+		}
+	}
+	if ComputeRentalMarkup < 1.30 {
+		t.Fatalf("markup %v is below the required 30%%", ComputeRentalMarkup)
+	}
+}
