@@ -5792,6 +5792,7 @@
     "Terminating stops billing and destroys the instance and its data.": "终止会停止计费并销毁实例及其数据。",
     "Terminating...": "终止中…",
     "This destroys the instance and its data, and stops billing. This cannot be undone.": "这会销毁实例及其数据并停止计费，不可撤销。",
-    "Your public key is added to the box so you can SSH in.": "你的公钥会写进机器，以便你 SSH 登录。"
+    "Your public key is added to the box so you can SSH in.": "你的公钥会写进机器，以便你 SSH 登录。",
+    "Top up to deploy": "充值后部署"
   }
 }

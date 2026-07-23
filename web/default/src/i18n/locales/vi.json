@@ -5792,6 +5792,7 @@
     "Terminating stops billing and destroys the instance and its data.": "Chấm dứt sẽ ngừng tính phí và hủy máy chủ cùng dữ liệu của nó.",
     "Terminating...": "Đang chấm dứt...",
     "This destroys the instance and its data, and stops billing. This cannot be undone.": "Thao tác này hủy máy chủ cùng dữ liệu của nó và ngừng tính phí. Không thể hoàn tác.",
-    "Your public key is added to the box so you can SSH in.": "Khóa công khai của bạn được thêm vào máy để bạn có thể kết nối SSH."
+    "Your public key is added to the box so you can SSH in.": "Khóa công khai của bạn được thêm vào máy để bạn có thể kết nối SSH.",
+    "Top up to deploy": "Nạp tiền để triển khai"
   }
 }

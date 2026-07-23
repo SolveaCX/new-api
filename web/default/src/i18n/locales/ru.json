@@ -5792,6 +5792,7 @@
     "Terminating stops billing and destroys the instance and its data.": "Завершение останавливает списание средств и уничтожает инстанс и его данные.",
     "Terminating...": "Завершение...",
     "This destroys the instance and its data, and stops billing. This cannot be undone.": "Это уничтожит инстанс и его данные и остановит списание средств. Отменить будет нельзя.",
-    "Your public key is added to the box so you can SSH in.": "Ваш открытый ключ добавляется на машину, чтобы вы могли подключиться по SSH."
+    "Your public key is added to the box so you can SSH in.": "Ваш открытый ключ добавляется на машину, чтобы вы могли подключиться по SSH.",
+    "Top up to deploy": "Пополните для развёртывания"
   }
 }
