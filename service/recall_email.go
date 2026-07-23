@@ -176,11 +176,13 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 			continue
 		}
 		leased = append(leased, leasedEmail{item: item})
-		activityChecks = append(activityChecks, model.RecallAPIActivityCheck{
-			MessageId: item.Message.Id,
-			UserId:    item.Recipient.UserId,
-			After:     item.Recipient.CreatedAt,
-		})
+		if item.Recipient.UserId > 0 {
+			activityChecks = append(activityChecks, model.RecallAPIActivityCheck{
+				MessageId: item.Message.Id,
+				UserId:    item.Recipient.UserId,
+				After:     item.Recipient.CreatedAt,
+			})
+		}
 	}
 
 	activeMessageIDs, activityErr := model.FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx, activityChecks, w.audience.LogBatchSize)
@@ -210,13 +212,16 @@ func (w *RecallEmailWorker) ProcessLeased(ctx context.Context, messageID int64) 
 		}
 		return err
 	}
-	activeMessageIDs, err := model.FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx, []model.RecallAPIActivityCheck{{
-		MessageId: item.Message.Id,
-		UserId:    item.Recipient.UserId,
-		After:     item.Recipient.CreatedAt,
-	}}, w.audience.LogBatchSize)
-	if err != nil {
-		return err
+	activeMessageIDs := make(map[int64]struct{})
+	if item.Recipient.UserId > 0 {
+		activeMessageIDs, err = model.FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx, []model.RecallAPIActivityCheck{{
+			MessageId: item.Message.Id,
+			UserId:    item.Recipient.UserId,
+			After:     item.Recipient.CreatedAt,
+		}}, w.audience.LogBatchSize)
+		if err != nil {
+			return err
+		}
 	}
 	_, recentlyActive := activeMessageIDs[item.Message.Id]
 	return w.processLeasedItem(ctx, item, recentlyActive)
@@ -287,7 +292,7 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		}
 		return w.finishPreAcceptError(ctx, item, "claim_issue_failed", true)
 	}
-	unsubscribeToken, err := w.claims.CreateUnsubscribeToken(item.User.Id, time.Unix(item.Recipient.PromotionExpiresAt, 0))
+	unsubscribeToken, err := w.createUnsubscribeToken(item)
 	if err != nil {
 		return w.finishPreAcceptError(ctx, item, "unsubscribe_token_failed", true)
 	}
@@ -326,13 +331,16 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		}
 		return err
 	}
-	activeMessageIDs, err := model.FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx, []model.RecallAPIActivityCheck{{
-		MessageId: item.Message.Id,
-		UserId:    item.Recipient.UserId,
-		After:     item.Recipient.CreatedAt,
-	}}, w.audience.LogBatchSize)
-	if err != nil {
-		return err
+	activeMessageIDs := make(map[int64]struct{})
+	if item.Recipient.UserId > 0 {
+		activeMessageIDs, err = model.FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx, []model.RecallAPIActivityCheck{{
+			MessageId: item.Message.Id,
+			UserId:    item.Recipient.UserId,
+			After:     item.Recipient.CreatedAt,
+		}}, w.audience.LogBatchSize)
+		if err != nil {
+			return err
+		}
 	}
 	_, recentlyActive = activeMessageIDs[item.Message.Id]
 	fenceNow := w.now().Unix()
@@ -417,6 +425,14 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 	return nil
 }
 
+func (w *RecallEmailWorker) createUnsubscribeToken(item *model.RecallEmailWorkItem) (string, error) {
+	expiresAt := time.Unix(item.Recipient.PromotionExpiresAt, 0)
+	if item.Recipient.UserId == 0 {
+		return w.claims.CreateRecipientUnsubscribeToken(item.Recipient.Id, expiresAt)
+	}
+	return w.claims.CreateUnsubscribeToken(item.User.Id, expiresAt)
+}
+
 func (w *RecallEmailWorker) recallEmailStopReason(ctx context.Context, item *model.RecallEmailWorkItem, recentlyActive bool, now int64) (string, error) {
 	switch item.Campaign.Status {
 	case model.RecallCampaignScheduled, model.RecallCampaignRunning, model.RecallCampaignCompleted:
@@ -442,12 +458,18 @@ func (w *RecallEmailWorker) recallEmailStopReason(ctx context.Context, item *mod
 	if item.Recipient.StripePromotionCodeId == nil || strings.TrimSpace(*item.Recipient.StripePromotionCodeId) == "" || strings.TrimSpace(item.Recipient.PromotionCode) == "" {
 		return "promotion_unavailable", nil
 	}
+	snapshotEmail, snapshotOK := recallAudienceEmail(item.Recipient.EmailSnapshot)
+	if !snapshotOK || snapshotEmail == "" {
+		return "email_unavailable", nil
+	}
+	if item.Recipient.UserId == 0 {
+		return "", nil
+	}
 	if item.User.Status != common.UserStatusEnabled {
 		return "user_disabled", nil
 	}
-	snapshotEmail, snapshotOK := recallAudienceEmail(item.Recipient.EmailSnapshot)
 	currentEmail, currentOK := recallAudienceEmail(item.User.Email)
-	if !snapshotOK || !currentOK || !strings.EqualFold(snapshotEmail, currentEmail) {
+	if !currentOK || !strings.EqualFold(snapshotEmail, currentEmail) {
 		return "email_unavailable", nil
 	}
 	if item.User.GetSetting().RecallMarketingOptOut {
