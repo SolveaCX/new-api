@@ -57,6 +57,14 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 	var downgradeInput *StripeSubscriptionDowngradeInput
 	var upgradeReplayInvoiceID string
 	var upgradeReplaySubscriptionID string
+	var supersededCheckouts []supersededStripeCheckout
+	if cmd.PaymentMode == model.SubscriptionPaymentModeStripeRecurring {
+		var err error
+		supersededCheckouts, err = supersedeReplaceablePendingStripeCheckouts(context.Background(), cmd.UserID, cmd.RequestID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var user model.User
 		if err := subscriptionCommandLock(tx).Where("id = ?", cmd.UserID).First(&user).Error; err != nil {
@@ -273,6 +281,21 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 		if err := tx.Create(intent).Error; err != nil {
 			return err
 		}
+		if len(supersededCheckouts) > 0 {
+			var ids []int64
+			for _, superseded := range supersededCheckouts {
+				if superseded.IntentID > 0 {
+					ids = append(ids, superseded.IntentID)
+				}
+			}
+			if len(ids) > 0 {
+				if err := tx.Model(&model.SubscriptionChangeIntent{}).
+					Where("id IN ? AND status = ?", ids, model.SubscriptionChangeIntentStatusSuperseded).
+					Update("superseded_by_id", intent.Id).Error; err != nil {
+					return err
+				}
+			}
+		}
 		if err := tx.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).
 			Update("latest_change_intent_id", intent.Id).Error; err != nil {
 			return err
@@ -416,6 +439,13 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, superseded := range supersededCheckouts {
+		if strings.TrimSpace(superseded.TradeNo) != "" {
+			if err := model.SyncSubscriptionOrderTopUpHistory(superseded.TradeNo); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if upgradeReplayInvoiceID != "" {
 		invoice, err := stripeInvoiceGetter(context.Background(), upgradeReplayInvoiceID)

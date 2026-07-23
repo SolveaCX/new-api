@@ -149,13 +149,13 @@ function getPlanEntitlements(plan: PlanRecord['plan'], t: Translate) {
     t('Monthly model quota: {{value}}', {
       value: monthly > 0 ? formatQuota(monthly) : t('Unlimited'),
     }),
-    t('5-hour: {{value}}', {
+    t('5-hour limit: {{value}}', {
       value: window5h > 0 ? formatQuota(window5h) : t('Unlimited'),
     }),
-    t('7-day: {{value}}', {
+    t('7-day limit: {{value}}', {
       value: window7d > 0 ? formatQuota(window7d) : t('Unlimited'),
     }),
-    t('Image + video: {{value}}', {
+    t('Media generation credits: {{value}}', {
       value:
         media > 0
           ? t('{{count}} credits', { count: media })
@@ -411,12 +411,10 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         icon={<Crown className='h-4 w-4' />}
         iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
         contentClassName='space-y-4 sm:space-y-5'
-      >
-        <div className='flex items-center justify-end'>
+        action={
           <Button
             variant='ghost'
-            size='icon'
-            className='min-h-11 min-w-11'
+            size='icon-sm'
             onClick={handleRefresh}
             disabled={refreshing}
             aria-label={t('Refresh subscription plans')}
@@ -425,8 +423,8 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               className={cn('h-4 w-4', refreshing && 'animate-spin')}
             />
           </Button>
-        </div>
-
+        }
+      >
         {hasActivePlan && currentPlan ? (
           <CurrentPlanCard plan={currentPlan} selfData={selfData} />
         ) : null}
@@ -437,7 +435,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const plan = item.plan
               const price = formatPlanPrice(Number(plan.price_amount || 0))
               const isRecommended =
-                !hasActivePlan &&
                 plan.title.trim().toLowerCase() === 'go' &&
                 orderedPlans.length > 1
               const audience =
