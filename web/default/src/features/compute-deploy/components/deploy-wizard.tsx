@@ -22,6 +22,7 @@ import { Check, Info, Rocket } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { COMPUTE_MODELS, GPU_OPTIONS, type ComputeModel, type GpuOption } from '../catalog'
+import { LowBalanceNotice } from './balance-bar'
 import { EndpointPanel } from './endpoint-panel'
 import { GpuPicker } from './gpu-picker'
 import { ModelPicker } from './model-picker'
@@ -104,6 +105,7 @@ export function DeployWizard() {
 
   return (
     <div className='flex flex-col gap-6'>
+      <LowBalanceNotice />
       <Stepper step={step} />
 
       {step === 1 && (

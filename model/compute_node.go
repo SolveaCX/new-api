@@ -31,7 +31,11 @@ const (
 // response payload, and do not log them.
 type ComputeNode struct {
 	// ---- Public fields (safe to serialize to clients) ----
-	Id          int     `json:"id"`
+	Id int `json:"id"`
+	// UserId is the flatkey user who owns (rented) this node. User-facing
+	// endpoints filter strictly by this column so a customer only ever sees
+	// their own instances. 0 for admin/system-provisioned nodes.
+	UserId      int     `json:"user_id" gorm:"column:user_id;index;default:0"`
 	Label       string  `json:"label" gorm:"type:varchar(191);index"`
 	GpuName     string  `json:"gpu_name" gorm:"column:gpu_name;type:varchar(191)"`
 	CostPerHour float64 `json:"cost_per_hour" gorm:"column:cost_per_hour;default:0"`
@@ -144,6 +148,45 @@ func GetComputeNodeStats() (ComputeNodeStats, error) {
 	}
 	stats.EstCostPerDay = sumPerHour * 24
 	return stats, nil
+}
+
+// GetComputeNodesByUserId returns a page of a single user's compute nodes,
+// newest first. Used by the user-facing "my instances" endpoint.
+func GetComputeNodesByUserId(userId int, startIdx int, num int) ([]*ComputeNode, error) {
+	var nodes []*ComputeNode
+	err := DB.Where("user_id = ?", userId).
+		Order("id desc").Limit(num).Offset(startIdx).Find(&nodes).Error
+	return nodes, err
+}
+
+// CountComputeNodesByUserId returns how many nodes a user owns.
+func CountComputeNodesByUserId(userId int) (int64, error) {
+	var total int64
+	err := DB.Model(&ComputeNode{}).Where("user_id = ?", userId).Count(&total).Error
+	return total, err
+}
+
+// GetUserComputeNodeById returns a node only if it belongs to userId. Ownership
+// is enforced in the WHERE clause so a user can never read/stop another user's
+// instance by guessing an id.
+func GetUserComputeNodeById(id int, userId int) (*ComputeNode, error) {
+	if id == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var node ComputeNode
+	if err := DB.First(&node, "id = ? AND user_id = ?", id, userId).Error; err != nil {
+		return nil, err
+	}
+	return &node, nil
+}
+
+// UpdateComputeNodeConnection persists the upstream connection info (host ip /
+// ssh port) discovered after an instance finishes booting. Scoped single-row
+// column write — safe under multi-node concurrency (Rule 11).
+func UpdateComputeNodeConnection(id int, hostIP string, hostPort int) error {
+	return DB.Model(&ComputeNode{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"host_ip": hostIP, "host_port": hostPort}).Error
 }
 
 // ListSyncableComputeNodes returns nodes that have an upstream contract id, for

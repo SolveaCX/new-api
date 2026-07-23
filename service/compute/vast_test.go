@@ -73,6 +73,72 @@ func TestBuildOffersQuery(t *testing.T) {
 	}
 }
 
+// TestConnectionWhitelabelSerialization asserts the owner-facing Connection
+// exposes ssh host/port (their own rented card) but keeps the internal
+// persistence mirrors and provider identity out of the JSON.
+func TestConnectionWhitelabelSerialization(t *testing.T) {
+	conn := Connection{
+		SSHHost:  "ssh5.example.net",
+		SSHPort:  41022,
+		Status:   "running",
+		Username: "root",
+		HostIP:   "ssh5.example.net",
+		HostPort: 41022,
+	}
+	raw, err := common.Marshal(conn)
+	if err != nil {
+		t.Fatalf("marshal connection: %v", err)
+	}
+	out := string(raw)
+	for _, want := range []string{`"ssh_host":"ssh5.example.net"`, `"ssh_port":41022`, `"status":"running"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected owner-visible field %s, got: %s", want, out)
+		}
+	}
+	// Internal persistence mirrors and any provider name must not appear as keys.
+	for _, leak := range []string{"host_ip", "hostport", "vast", "contract"} {
+		if strings.Contains(strings.ToLower(out), strings.ToLower(leak)) {
+			t.Errorf("whitelabel leak: connection JSON contains %q: %s", leak, out)
+		}
+	}
+}
+
+func TestLooksLikeSSHPublicKey(t *testing.T) {
+	valid := []string{
+		"ssh-rsa AAAAB3NzaC1yc2E user@host",
+		"ssh-ed25519 AAAAC3NzaC1lZDI1 user@host",
+		"ecdsa-sha2-nistp256 AAAA...",
+	}
+	for _, k := range valid {
+		if !looksLikeSSHPublicKey(k) {
+			t.Errorf("expected %q to be recognized as an SSH public key", k)
+		}
+	}
+	invalid := []string{"", "not a key", "rm -rf /", "AAAAB3NzaC1yc2E"}
+	for _, k := range invalid {
+		if looksLikeSSHPublicKey(k) {
+			t.Errorf("did not expect %q to be recognized as an SSH public key", k)
+		}
+	}
+}
+
+func TestBuildAuthorizedKeysOnStart(t *testing.T) {
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1 user@host"
+	script := buildAuthorizedKeysOnStart(key)
+	if !strings.Contains(script, key) {
+		t.Errorf("onstart script should embed the public key, got: %s", script)
+	}
+	if !strings.Contains(script, "authorized_keys") {
+		t.Errorf("onstart script should write authorized_keys, got: %s", script)
+	}
+	// Single quotes in the key must be stripped so they cannot break the
+	// single-quoted shell command.
+	inj := buildAuthorizedKeysOnStart("ssh-rsa AAA'; rm -rf / #")
+	if strings.Contains(inj, "'; rm -rf") {
+		t.Errorf("onstart script must strip single quotes to prevent injection, got: %s", inj)
+	}
+}
+
 func TestMapUpstreamStatus(t *testing.T) {
 	cases := map[string]string{
 		"running": "running",
