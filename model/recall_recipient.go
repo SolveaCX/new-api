@@ -844,9 +844,7 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 		default:
 			return facts, nil
 		}
-		if identifierCount := len(ids) + len(emails); query.Limit > identifierCount {
-			query.Limit = identifierCount
-		}
+		query.Limit = len(ids) + len(emails)
 	}
 	if err := userQuery.
 		Order("id ASC").
