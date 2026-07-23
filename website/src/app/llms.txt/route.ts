@@ -1,4 +1,5 @@
 import { getBlogCategories, getBlogPosts } from "@/lib/blog";
+import { ROUTER_ORIGIN, SITE_ORIGIN } from "@/lib/origins";
 
 export async function GET() {
   const [posts, categories] = await Promise.all([getBlogPosts(), getBlogCategories()]);
@@ -7,26 +8,41 @@ export async function GET() {
     "",
     "flatkey.ai is a unified AI API gateway, model routing, billing, and operations platform.",
     "",
+    "## API Protocols",
+    "",
+    `- Router base URL: ${ROUTER_ORIGIN}`,
+    `- OpenAI-compatible Chat Completions: POST ${ROUTER_ORIGIN}/v1/chat/completions`,
+    `- OpenAI-compatible Responses: POST ${ROUTER_ORIGIN}/v1/responses`,
+    `- Anthropic Messages: POST ${ROUTER_ORIGIN}/v1/messages`,
+    `- Gemini native generateContent: POST ${ROUTER_ORIGIN}/v1beta/models/{model}:generateContent`,
+    "",
+    "## Gemini Image Models",
+    "",
+    "- nano-banana-pro-preview supports both Gemini native generateContent and OpenAI-compatible Chat Completions.",
+    "- With Gemini native generateContent, generated images are returned in candidates[].content.parts[].inlineData.",
+    "- With Chat Completions, generated images are returned in choices[0].message.content as Markdown data URIs.",
+    "- These Gemini image-model paths currently do not use /v1/images/generations; do not infer lack of Gemini support from that endpoint.",
+    "",
     "## Core Pages",
     "",
-    "- Home: https://flatkey.ai/",
-    "- Model pricing: https://flatkey.ai/pricing",
-    "- Rankings: https://flatkey.ai/rankings",
-    "- Blog: https://flatkey.ai/blog",
-    "- Sitemap: https://flatkey.ai/sitemap.xml",
+    `- Home: ${SITE_ORIGIN}/`,
+    `- Model pricing: ${SITE_ORIGIN}/pricing`,
+    `- Rankings: ${SITE_ORIGIN}/rankings`,
+    `- Blog: ${SITE_ORIGIN}/blog`,
+    `- Sitemap: ${SITE_ORIGIN}/sitemap.xml`,
   ];
 
   if (categories.length > 0) {
     lines.push("", "## Blog Categories", "");
     for (const category of categories) {
-      lines.push(`- ${category.name}: https://flatkey.ai/blog/category/${category.slug}`);
+      lines.push(`- ${category.name}: ${SITE_ORIGIN}/blog/category/${category.slug}`);
     }
   }
 
   if (posts.list.length > 0) {
     lines.push("", "## Blog Articles", "");
     for (const post of posts.list) {
-      lines.push(`- ${post.title}: https://flatkey.ai/blog/${post.slug}${post.summary ? ` - ${post.summary}` : ""}`);
+      lines.push(`- ${post.title}: ${SITE_ORIGIN}/blog/${post.slug}${post.summary ? ` - ${post.summary}` : ""}`);
     }
   }
 
