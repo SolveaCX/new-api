@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -656,6 +657,9 @@ func quoteForSubscriptionPurchase(plan model.SubscriptionPlan, cmd PurchaseSubsc
 }
 
 func validateSubscriptionPurchaseQuoteForChoice(quote SubscriptionPurchaseQuote, choice string, months int) (SubscriptionPurchaseQuote, error) {
+	if months < 1 {
+		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote months must be positive")
+	}
 	quote.Currency = strings.ToUpper(strings.TrimSpace(quote.Currency))
 	if quote.Currency == "" {
 		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote currency is required")
@@ -669,8 +673,10 @@ func validateSubscriptionPurchaseQuoteForChoice(quote SubscriptionPurchaseQuote,
 	if quote.PaymentAmountMinor != subscriptionPurchaseMinorAmount(quote.Total) {
 		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote minor amount does not match total")
 	}
-	if quote.PaymentAmountMinor != subscriptionPurchaseMinorAmount(subscriptionPurchaseMoney(quote.UnitPrice, months)) {
-		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote total does not match months")
+	unitAmountMinor := subscriptionPurchaseMinorAmount(quote.UnitPrice)
+	if unitAmountMinor > math.MaxInt64/int64(months) ||
+		quote.PaymentAmountMinor != unitAmountMinor*int64(months) {
+		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote total does not match rounded monthly minor amount")
 	}
 	switch choice {
 	case SubscriptionPaymentChoicePix:
