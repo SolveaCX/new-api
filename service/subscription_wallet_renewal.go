@@ -1,6 +1,7 @@
 package service
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -20,6 +21,19 @@ type WalletSubscriptionRenewalResult struct {
 	ChargedQuota  int64
 	EntitlementID int
 	OrderID       int
+}
+
+type walletRenewalAttempt struct {
+	ContractID      int64
+	UserID          int
+	PlanID          int
+	PeriodStart     int64
+	PeriodEnd       int64
+	RenewalKey      string
+	TradeNo         string
+	RequiredQuota   int
+	PriceAmount     float64
+	PaymentCurrency string
 }
 
 func RunWalletSubscriptionRenewalOnce(limit int) (int, error) {
@@ -58,6 +72,7 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		return nil, errors.New("invalid contract id")
 	}
 	var result *WalletSubscriptionRenewalResult
+	var attempt *walletRenewalAttempt
 	invalidateUserID := 0
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var contract model.UserSubscriptionContract
@@ -99,6 +114,18 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		if err != nil {
 			return err
 		}
+		attempt = &walletRenewalAttempt{
+			ContractID:      contract.Id,
+			UserID:          user.Id,
+			PlanID:          plan.Id,
+			PeriodStart:     periodStart,
+			PeriodEnd:       periodEnd,
+			RenewalKey:      renewalKey,
+			TradeNo:         tradeNo,
+			RequiredQuota:   requiredQuota,
+			PriceAmount:     plan.PriceAmount,
+			PaymentCurrency: plan.Currency,
+		}
 		order := &model.SubscriptionOrder{
 			UserId:          user.Id,
 			PlanId:          plan.Id,
@@ -126,6 +153,13 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 				return res.Error
 			}
 			if res.RowsAffected != 1 {
+				deleted := tx.Where("id = ? AND trade_no = ?", order.Id, order.TradeNo).Delete(&model.SubscriptionOrder{})
+				if deleted.Error != nil {
+					return deleted.Error
+				}
+				if deleted.RowsAffected != 1 {
+					return errors.New("wallet renewal success order cleanup failed")
+				}
 				return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedInsufficientBalance, result)
 			}
 			if err := tx.Create(&model.WalletLedgerEntry{
@@ -182,7 +216,14 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		if !common.UsingPostgreSQL || attempt == nil || !isWalletRenewalDuplicateError(err) {
+			return nil, err
+		}
+		result, err = recoverPostgresWalletRenewalDuplicate(*attempt)
+		if err != nil {
+			return nil, err
+		}
+		invalidateUserID = attempt.UserID
 	}
 	if invalidateUserID > 0 {
 		if err := model.InvalidateUserCache(invalidateUserID); err != nil {
@@ -190,6 +231,91 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		}
 	}
 	return result, nil
+}
+
+func recoverPostgresWalletRenewalDuplicate(attempt walletRenewalAttempt) (*WalletSubscriptionRenewalResult, error) {
+	if attempt.ContractID <= 0 || attempt.UserID <= 0 || attempt.PlanID <= 0 || attempt.PeriodEnd <= attempt.PeriodStart ||
+		strings.TrimSpace(attempt.TradeNo) == "" || strings.TrimSpace(attempt.RenewalKey) == "" || attempt.RequiredQuota < 0 {
+		return nil, errors.New("wallet renewal duplicate recovery input is invalid")
+	}
+
+	recovered := &WalletSubscriptionRenewalResult{
+		ContractID:   attempt.ContractID,
+		ChargedQuota: int64(attempt.RequiredQuota),
+	}
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var order model.SubscriptionOrder
+		if err := tx.Where("trade_no = ?", attempt.TradeNo).First(&order).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return walletRenewalDuplicateFactsError("success order %q is missing", attempt.TradeNo)
+			}
+			return fmt.Errorf("read wallet renewal duplicate order: %w", err)
+		}
+		expectedPayload := fmt.Sprintf("charged_quota=%d;contract_id=%d;renewal_key=%s", attempt.RequiredQuota, attempt.ContractID, attempt.RenewalKey)
+		if order.UserId != attempt.UserID || order.PlanId != attempt.PlanID || order.TradeNo != attempt.TradeNo ||
+			order.PaymentMethod != model.PaymentMethodBalance || order.PaymentProvider != model.PaymentProviderBalance ||
+			order.Status != common.TopUpStatusSuccess || order.PurchaseMonths != 1 || order.Money != attempt.PriceAmount ||
+			order.UnitPrice != attempt.PriceAmount || order.PaymentCurrency != attempt.PaymentCurrency ||
+			order.RenewalSource != model.SubscriptionRenewalSourceWallet || order.ProviderPayload != expectedPayload ||
+			strings.TrimSpace(order.PlanSnapshot) == "" {
+			return walletRenewalDuplicateFactsError("success order %q is inconsistent", attempt.TradeNo)
+		}
+
+		var entitlement model.UserSubscription
+		if err := tx.Where("grant_key = ?", attempt.RenewalKey).First(&entitlement).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return walletRenewalDuplicateFactsError("entitlement grant %q is missing", attempt.RenewalKey)
+			}
+			return fmt.Errorf("read wallet renewal duplicate entitlement: %w", err)
+		}
+		if entitlement.GrantKey == nil || *entitlement.GrantKey != attempt.RenewalKey ||
+			entitlement.ContractId != attempt.ContractID || entitlement.UserId != attempt.UserID || entitlement.PlanId != attempt.PlanID ||
+			entitlement.PaymentMode != model.SubscriptionPaymentModePrepaid || entitlement.Source != model.PaymentMethodBalance ||
+			entitlement.StartTime != attempt.PeriodStart || entitlement.EndTime != attempt.PeriodEnd ||
+			(entitlement.Status != model.SubscriptionEntitlementStatusActive && entitlement.Status != model.SubscriptionEntitlementStatusHistorical) {
+			return walletRenewalDuplicateFactsError("entitlement grant %q is inconsistent", attempt.RenewalKey)
+		}
+
+		var ledger model.WalletLedgerEntry
+		ledgerQuery := tx.Where("entry_key = ?", attempt.RenewalKey).Limit(1).Find(&ledger)
+		if ledgerQuery.Error != nil {
+			return fmt.Errorf("read wallet renewal duplicate ledger: %w", ledgerQuery.Error)
+		}
+		if attempt.RequiredQuota == 0 {
+			if ledgerQuery.RowsAffected != 0 {
+				return walletRenewalDuplicateFactsError("zero-cost renewal ledger %q is inconsistent", attempt.RenewalKey)
+			}
+		} else if ledgerQuery.RowsAffected != 1 {
+			return walletRenewalDuplicateFactsError("debit ledger %q is missing", attempt.RenewalKey)
+		} else if ledger.UserId != attempt.UserID || ledger.EntryKey != attempt.RenewalKey ||
+			ledger.QuotaDelta != -int64(attempt.RequiredQuota) || ledger.MoneyAmount != attempt.PriceAmount ||
+			ledger.EntryType != model.WalletLedgerEntryTypePrepaidDebit || ledger.OrderId != order.Id {
+			return walletRenewalDuplicateFactsError("debit ledger %q is inconsistent", attempt.RenewalKey)
+		}
+
+		var contract model.UserSubscriptionContract
+		if err := tx.Where("id = ? AND user_id = ?", attempt.ContractID, attempt.UserID).First(&contract).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return walletRenewalDuplicateFactsError("contract %d is missing", attempt.ContractID)
+			}
+			return fmt.Errorf("read wallet renewal duplicate contract: %w", err)
+		}
+		if contract.CurrentPeriodEnd < attempt.PeriodEnd {
+			return walletRenewalDuplicateFactsError("contract %d was not advanced through %d", attempt.ContractID, attempt.PeriodEnd)
+		}
+
+		recovered.OrderID = order.Id
+		recovered.EntitlementID = entitlement.Id
+		return nil
+	}, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	return recovered, nil
+}
+
+func walletRenewalDuplicateFactsError(format string, args ...interface{}) error {
+	return fmt.Errorf("wallet renewal duplicate facts are incomplete or inconsistent: "+format, args...)
 }
 
 func walletContractIsRenewable(contract model.UserSubscriptionContract) bool {

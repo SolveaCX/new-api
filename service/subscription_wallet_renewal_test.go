@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func seedWalletRenewalContract(t *testing.T, userID int, quota int, plan model.SubscriptionPlan, periodEnd int64) (model.UserSubscriptionContract, model.UserSubscription) {
@@ -112,6 +113,53 @@ func TestRenewWalletSubscriptionContractPausesWithoutExtendingOnInsufficientBala
 	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, storedEntitlement.Status)
 }
 
+func TestRenewWalletSubscriptionContractDoesNotPersistSuccessFactsWhenConditionalDebitLoses(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7807, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, entitlement := seedWalletRenewalContract(t, 7908, 700, plan, periodEnd)
+	renewalKey := walletRenewalKey(contract.Id, periodEnd, plan.Id)
+	tradeNo := walletRenewalTradeNo(contract.Id, periodEnd, plan.Id)
+
+	callbackName := "test:wallet_renewal_conditional_debit_loses"
+	fired := false
+	require.NoError(t, model.DB.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if fired || tx.Statement == nil || tx.Statement.Table != "users" {
+			return
+		}
+		fired = true
+		require.NoError(t, tx.Session(&gorm.Session{NewDB: true}).
+			Model(&model.User{}).
+			Where("id = ?", contract.UserId).
+			Update("quota", 0).Error)
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, model.DB.Callback().Update().Remove(callbackName))
+	})
+
+	result, err := RenewWalletSubscriptionContract(contract.Id)
+
+	require.NoError(t, err)
+	require.True(t, fired)
+	require.False(t, result.Renewed)
+	require.Equal(t, model.SubscriptionRenewalStatusPausedInsufficientBalance, result.PausedStatus)
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("trade_no = ?", tradeNo).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
+	var ledgerCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("entry_key = ?", renewalKey).Count(&ledgerCount).Error)
+	require.Zero(t, ledgerCount)
+	var renewalEntitlementCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("grant_key = ?", renewalKey).Count(&renewalEntitlementCount).Error)
+	require.Zero(t, renewalEntitlementCount)
+	var storedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&storedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionContractStatusEnded, storedContract.Status)
+	var storedEntitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&storedEntitlement, "id = ?", entitlement.Id).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, storedEntitlement.Status)
+}
+
 func TestRenewWalletSubscriptionContractPausesWithoutExtendingWhenPlanUnavailable(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	plan := insertPurchaseServicePlan(t, 7805, 1, 7, 700)
@@ -183,6 +231,109 @@ func TestHandleExistingWalletRenewalDoesNotQueryAbortedPostgresTransaction(t *te
 	err := handleExistingWalletRenewalTx(model.DB, &model.UserSubscriptionContract{Id: 1}, "missing-key", nil, originalErr)
 
 	require.ErrorIs(t, err, originalErr)
+}
+
+func TestRunWalletSubscriptionRenewalOnceRecoversCompletedPostgresDuplicateAndContinues(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7808, 1, 7, 700)
+	originalPeriodEnd := common.GetTimestamp() - 15
+	staleContract, _ := seedWalletRenewalContract(t, 7909, 1400, plan, originalPeriodEnd)
+
+	winner, err := RenewWalletSubscriptionContract(staleContract.Id)
+	require.NoError(t, err)
+	require.True(t, winner.Renewed)
+	var committedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&committedContract, "id = ?", staleContract.Id).Error)
+	require.Greater(t, committedContract.CurrentPeriodEnd, originalPeriodEnd)
+
+	followerContract, _ := seedWalletRenewalContract(t, 7910, 700, plan, originalPeriodEnd)
+	common.UsingPostgreSQL = true
+
+	callbackName := "test:wallet_renewal_postgres_stale_snapshot"
+	batchInjected := false
+	contractInjected := false
+	require.NoError(t, model.DB.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement == nil || tx.Statement.Table != "user_subscription_contracts" {
+			return
+		}
+		switch destination := tx.Statement.Dest.(type) {
+		case *[]model.UserSubscriptionContract:
+			if !batchInjected {
+				*destination = append([]model.UserSubscriptionContract{staleContract}, (*destination)...)
+				batchInjected = true
+			}
+		case *model.UserSubscriptionContract:
+			if batchInjected && !contractInjected && destination.Id == staleContract.Id {
+				*destination = staleContract
+				contractInjected = true
+			}
+		}
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, model.DB.Callback().Query().Remove(callbackName))
+	})
+
+	renewed, err := RunWalletSubscriptionRenewalOnce(10)
+
+	require.NoError(t, err)
+	require.True(t, batchInjected)
+	require.True(t, contractInjected)
+	require.Equal(t, 1, renewed)
+	var winnerUser model.User
+	require.NoError(t, model.DB.First(&winnerUser, "id = ?", staleContract.UserId).Error)
+	require.Equal(t, 700, winnerUser.Quota)
+	var winnerOrderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("trade_no = ?", walletRenewalTradeNo(staleContract.Id, originalPeriodEnd, plan.Id)).Count(&winnerOrderCount).Error)
+	require.Equal(t, int64(1), winnerOrderCount)
+	var winnerLedgerCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("entry_key = ?", walletRenewalKey(staleContract.Id, originalPeriodEnd, plan.Id)).Count(&winnerLedgerCount).Error)
+	require.Equal(t, int64(1), winnerLedgerCount)
+	var followerStored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&followerStored, "id = ?", followerContract.Id).Error)
+	require.Greater(t, followerStored.CurrentPeriodEnd, originalPeriodEnd)
+}
+
+func TestRenewWalletSubscriptionContractReportsIncompletePostgresDuplicateFacts(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7809, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7911, 700, plan, periodEnd)
+	renewalKey := walletRenewalKey(contract.Id, periodEnd, plan.Id)
+	tradeNo := walletRenewalTradeNo(contract.Id, periodEnd, plan.Id)
+	planSnapshot, err := subscriptionPurchasePlanSnapshot(&plan)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:          contract.UserId,
+		PlanId:          plan.Id,
+		Money:           plan.PriceAmount,
+		TradeNo:         tradeNo,
+		PaymentMethod:   model.PaymentMethodBalance,
+		PaymentProvider: model.PaymentProviderBalance,
+		Status:          common.TopUpStatusSuccess,
+		PurchaseMonths:  1,
+		UnitPrice:       plan.PriceAmount,
+		PaymentCurrency: plan.Currency,
+		PlanSnapshot:    planSnapshot,
+		ProviderPayload: fmt.Sprintf("charged_quota=700;contract_id=%d;renewal_key=%s", contract.Id, renewalKey),
+		RenewalSource:   model.SubscriptionRenewalSourceWallet,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		UserId:      contract.UserId,
+		PlanId:      plan.Id,
+		ContractId:  contract.Id,
+		GrantKey:    &renewalKey,
+		StartTime:   periodEnd,
+		EndTime:     time.Unix(periodEnd, 0).AddDate(0, 1, 0).Unix(),
+		Status:      model.SubscriptionEntitlementStatusHistorical,
+		PaymentMode: model.SubscriptionPaymentModePrepaid,
+		Source:      model.PaymentMethodBalance,
+	}).Error)
+	common.UsingPostgreSQL = true
+
+	_, err = RenewWalletSubscriptionContract(contract.Id)
+
+	require.ErrorContains(t, err, "wallet renewal duplicate facts are incomplete")
+	require.ErrorContains(t, err, "debit ledger")
 }
 
 func TestRunSubscriptionTermSegmentAdvanceOnceCompletesExpiredActiveAndActivatesDueTerms(t *testing.T) {
