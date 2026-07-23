@@ -13,20 +13,33 @@ function catalog() {
   return window.FLATKEY_MODEL_CATALOG;
 }
 
-test("Grok Imagine is registered as an image model without claiming verified availability", () => {
+test("the public image catalog exactly matches the six callable platform models", () => {
   const models = catalog();
   const html = read("../html/models.html");
   const detail = read("../html/assets/model-detail.js");
+  const expected = [
+    "gemini-2.5-flash-image",
+    "gemini-3-pro-image",
+    "gemini-3.1-flash-image",
+    "gemini-3.1-flash-lite-image",
+    "gpt-image-2",
+    "nano-banana-pro-preview",
+  ];
 
   assert.deepEqual(
-    Object.keys(models).filter((id) => id.startsWith("grok-imagine-image")).sort(),
-    ["grok-imagine-image", "grok-imagine-image-quality"],
+    Object.keys(models).filter((id) => models[id].kind === "image").sort(),
+    expected,
   );
-  assert.equal(models["grok-imagine-image"].kind, "image");
-  assert.equal(models["grok-imagine-image-quality"].kind, "image");
-  assert.match(html, /grok-imagine-image[\s\S]*Verification pending/);
-  assert.match(detail, /New · verifying/);
-  assert.match(detail, /provider metadata and health verification are still pending/);
+  for (const model of expected) {
+    assert.equal(models[model].kind, "image");
+    assert.match(html, new RegExp(`<b>${model.replaceAll(".", "\\.")}</b>[\\s\\S]*?Available`));
+  }
+  assert.equal(models["gpt-image-2"].api, "images");
+  for (const model of expected.filter((id) => id !== "gpt-image-2")) {
+    assert.equal(models[model].api, "chat-image");
+  }
+  assert.doesNotMatch(html, /grok-imagine-image/i);
+  assert.doesNotMatch(detail, /grok-imagine-image/i);
 });
 
 test("every displayed model receives a detail destination", () => {
@@ -35,7 +48,7 @@ test("every displayed model receives a detail destination", () => {
   const listed = [...html.matchAll(/<div class="m">[\s\S]*?<b>([^<]+)<\/b>[\s\S]*?<\/tr>/g)]
     .map((match) => match[1]);
 
-  assert.ok(listed.length >= 27);
+  assert.ok(listed.length >= 31);
   for (const model of new Set(listed)) {
     assert.ok(models[model], model + " must exist in the shared model catalog");
   }
@@ -57,10 +70,7 @@ test("detail examples use the production endpoint for every modality", () => {
   ]) {
     assert.ok(detail.includes(endpoint), endpoint + " example is missing");
   }
-  assert.doesNotMatch(
-    detail,
-    /imageBody[\s\S]{0,300}\b(?:size|quality|style)\s*:/,
-    "xAI image examples must not send unsupported size/quality/style fields",
-  );
+  assert.match(detail, /api === "chat-image"/);
+  assert.match(detail, /Generated image is returned as a Markdown data URI/);
   assert.match(nginx, /location ~ \^\/models\/\[a-zA-Z0-9\._-\]\+\/\?\$/);
 });
