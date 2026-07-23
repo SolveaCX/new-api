@@ -26,7 +26,11 @@ main{margin-top:24px}
    hydration, but replace its visible rendering with the canonical "flatkey"
    wordmark through CSS. The mark file itself is overridden to the v2 pixel key. */
 header.fixed nav a.group>span:first-child>span{gap:8px !important}
-header.fixed nav a.group img{width:36px !important;height:36px !important}
+header.fixed nav a.group img{
+  width:36px !important;
+  height:36px !important;
+  content:url("/assets/flatkey-mark.svg?v=4") !important;
+}
 header.fixed nav a.group span[style]{
   font-size:0 !important;
   font-weight:700 !important;
