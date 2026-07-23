@@ -23,7 +23,11 @@ import {
   type HeaderNavModules,
   parseHeaderNavModulesFromStatus,
 } from '@/lib/nav-modules'
-import { consoleWebsitePath, officialWebsiteUrl } from '@/lib/origins'
+import {
+  OFFICIAL_DOCUMENTATION_URL,
+  consoleWebsitePath,
+  officialWebsiteUrl,
+} from '@/lib/origins'
 import { useStatus } from '@/hooks/use-status'
 
 export type TopNavLink = {
@@ -57,7 +61,11 @@ export function buildTopNavLinks(
   links.push(websiteLink(options.translate('Home'), '/'))
   links.push(websiteLink(options.translate('Blog'), '/blog'))
   links.push(websiteLink(options.translate('Models'), '/models'))
-  links.push(websiteLink(options.translate('Docs'), '/docs'))
+  links.push({
+    title: options.translate('Docs'),
+    href: OFFICIAL_DOCUMENTATION_URL,
+    external: true,
+  })
   links.push(
     websiteLink(
       options.translate('Playground (website navigation)'),
@@ -102,8 +110,9 @@ export function buildTopNavLinks(
  *   pricing: { enabled: true, requireAuth: false },
  *   rankings: { enabled: true, requireAuth: false }
  * }
- * Website entries resolve through OFFICIAL_WEBSITE_ORIGIN. Pricing and
- * Rankings retain their existing enable/require-auth controls.
+ * Website entries resolve through OFFICIAL_WEBSITE_ORIGIN, while Docs uses
+ * the standalone documentation site. Pricing and Rankings retain their
+ * existing enable/require-auth controls.
  */
 export function useTopNavLinks(): TopNavLink[] {
   const { t, i18n } = useTranslation()

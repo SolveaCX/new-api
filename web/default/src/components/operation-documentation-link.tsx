@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { LinkSquare02Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
-import { officialWebsiteUrl } from '@/lib/origins'
+import { OFFICIAL_DOCUMENTATION_URL } from '@/lib/origins'
 import { Button } from '@/components/ui/button'
 
 type OperationDocumentationLinkProps = {
@@ -37,7 +37,7 @@ export function OperationDocumentationLink(
       className='shadow-primary/25 shadow-sm'
       render={
         <a
-          href={officialWebsiteUrl('/docs')}
+          href={OFFICIAL_DOCUMENTATION_URL}
           target='_blank'
           rel='noreferrer noopener'
         />
