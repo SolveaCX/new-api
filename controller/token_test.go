@@ -2,14 +2,17 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -17,8 +20,10 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -122,6 +127,66 @@ func setupTokenControllerTestDB(t *testing.T) *gorm.DB {
 	db := openTokenControllerTestDB(t)
 	migrateTokenControllerTestDB(t, db)
 	return db
+}
+
+func setupTokenControllerRedisTest(t *testing.T) *miniredis.Miniredis {
+	t.Helper()
+
+	previousRedisEnabled := common.RedisEnabled
+	previousRDB := common.RDB
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	common.RDB = client
+	t.Cleanup(func() {
+		require.NoError(t, client.Close())
+		common.RedisEnabled = previousRedisEnabled
+		common.RDB = previousRDB
+	})
+	return mr
+}
+
+type failingTokenCacheInvalidationHook struct {
+	mu                   sync.Mutex
+	failInvalidation     bool
+	invalidationAttempts int
+	err                  error
+}
+
+func (hook *failingTokenCacheInvalidationHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	if strings.EqualFold(cmd.Name(), "evalsha") || strings.EqualFold(cmd.Name(), "eval") {
+		hook.mu.Lock()
+		defer hook.mu.Unlock()
+		hook.invalidationAttempts++
+		if hook.failInvalidation {
+			return ctx, hook.err
+		}
+	}
+	return ctx, nil
+}
+
+func (hook *failingTokenCacheInvalidationHook) AfterProcess(context.Context, redis.Cmder) error {
+	return nil
+}
+
+func (hook *failingTokenCacheInvalidationHook) BeforeProcessPipeline(ctx context.Context, _ []redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+
+func (hook *failingTokenCacheInvalidationHook) AfterProcessPipeline(context.Context, []redis.Cmder) error {
+	return nil
+}
+
+func (hook *failingTokenCacheInvalidationHook) setFailInvalidation(fail bool) {
+	hook.mu.Lock()
+	defer hook.mu.Unlock()
+	hook.failInvalidation = fail
+}
+
+func (hook *failingTokenCacheInvalidationHook) attempts() int {
+	hook.mu.Lock()
+	defer hook.mu.Unlock()
+	return hook.invalidationAttempts
 }
 
 func setupInitialTokenControllerTestDB(t *testing.T) *gorm.DB {
@@ -998,6 +1063,31 @@ func TestAddTokenAllowsNonPlgUserToChooseGroupWithoutEnterpriseFlag(t *testing.T
 	}
 }
 
+func TestAddTokenForcesPLGGroupForPLGUser(t *testing.T) {
+	db := setupInitialTokenControllerTestDB(t)
+	user := seedTokenUser(t, db, 17)
+
+	body := map[string]any{
+		"name":                 "restricted-key",
+		"expired_time":         -1,
+		"remain_quota":         0,
+		"unlimited_quota":      true,
+		"model_limits_enabled": false,
+		"model_limits":         "",
+		"group":                "premium",
+		"cross_group_retry":    true,
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, user.Id)
+	AddToken(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+	var stored model.Token
+	require.NoError(t, db.First(&stored, "user_id = ? AND name = ?", user.Id, "restricted-key").Error)
+	require.Equal(t, plgGroup, stored.Group)
+	require.False(t, stored.CrossGroupRetry)
+}
+
 func TestAddTokenDoesNotTriggerInviteReward(t *testing.T) {
 	db := setupInviteRewardTokenControllerTestDB(t)
 	inviter, invitee := seedInvitedTokenUser(t, db, 201, 202)
@@ -1328,5 +1418,349 @@ func TestEnsureInitialTokenRespectsMaxUserTokensZero(t *testing.T) {
 	}
 	if total != 0 {
 		t.Fatalf("expected no token to be created when max user tokens is zero, got %d", total)
+	}
+}
+
+func TestUpdateTokenGroupBatchUpdatesOnlyGroup(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	db := setupInitialTokenControllerTestDB(t)
+	user := seedTokenUser(t, db, 31)
+	user.Group = "Enterprise"
+	require.NoError(t, db.Save(user).Error)
+
+	first := seedToken(t, db, user.Id, "first", "batch-group-first")
+	first.RemainQuota = 321
+	first.ModelLimitsEnabled = true
+	first.ModelLimits = "gpt-4o"
+	first.CrossGroupRetry = true
+	require.NoError(t, db.Save(first).Error)
+	second := seedToken(t, db, user.Id, "second", "batch-group-second")
+	second.Status = common.TokenStatusDisabled
+	second.CrossGroupRetry = true
+	require.NoError(t, db.Save(second).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
+		"ids":   []int{first.Id, second.Id},
+		"group": "  vip  ",
+	}, user.Id)
+	UpdateTokenGroupBatch(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+	var updated int
+	require.NoError(t, common.Unmarshal(response.Data, &updated))
+	require.Equal(t, 2, updated)
+
+	var storedFirst, storedSecond model.Token
+	require.NoError(t, db.First(&storedFirst, first.Id).Error)
+	require.NoError(t, db.First(&storedSecond, second.Id).Error)
+	require.Equal(t, "vip", storedFirst.Group)
+	require.Equal(t, "vip", storedSecond.Group)
+	require.Equal(t, 321, storedFirst.RemainQuota)
+	require.True(t, storedFirst.ModelLimitsEnabled)
+	require.Equal(t, "gpt-4o", storedFirst.ModelLimits)
+	require.True(t, storedFirst.CrossGroupRetry)
+	require.Equal(t, common.TokenStatusDisabled, storedSecond.Status)
+	require.True(t, storedSecond.CrossGroupRetry)
+}
+
+func TestUpdateTokenGroupBatchIsDisabledByDefault(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "false")
+	require.NoError(t, backendI18n.Init())
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
+		"ids":   []int{1},
+		"group": "premium",
+	}, 1)
+
+	UpdateTokenGroupBatch(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.False(t, response.Success)
+	require.Equal(t, backendI18n.Translate(backendI18n.LangEn, backendI18n.MsgFeatureDisabled), response.Message)
+}
+
+func TestUpdateTokenGroupBatchAllowsIdempotentGroups(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	for _, existingTargetCount := range []int{1, 2} {
+		t.Run(fmt.Sprintf("existing_%d", existingTargetCount), func(t *testing.T) {
+			db := setupInitialTokenControllerTestDB(t)
+			user := seedTokenUser(t, db, 40+existingTargetCount)
+			user.Group = "Enterprise"
+			require.NoError(t, db.Save(user).Error)
+
+			first := seedToken(t, db, user.Id, "first", fmt.Sprintf("idempotent-first-%d", existingTargetCount))
+			second := seedToken(t, db, user.Id, "second", fmt.Sprintf("idempotent-second-%d", existingTargetCount))
+			first.Group = "vip"
+			first.CrossGroupRetry = true
+			first.RemainQuota = 123
+			if existingTargetCount == 2 {
+				second.Group = "vip"
+			}
+			require.NoError(t, db.Save(first).Error)
+			require.NoError(t, db.Save(second).Error)
+
+			ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
+				"ids":   []int{first.Id, second.Id},
+				"group": "vip",
+			}, user.Id)
+			UpdateTokenGroupBatch(ctx)
+
+			response := decodeAPIResponse(t, recorder)
+			require.True(t, response.Success, response.Message)
+			var updated int
+			require.NoError(t, common.Unmarshal(response.Data, &updated))
+			require.Equal(t, 2, updated)
+
+			var storedFirst, storedSecond model.Token
+			require.NoError(t, db.First(&storedFirst, first.Id).Error)
+			require.NoError(t, db.First(&storedSecond, second.Id).Error)
+			require.Equal(t, "vip", storedFirst.Group)
+			require.Equal(t, "vip", storedSecond.Group)
+			require.True(t, storedFirst.CrossGroupRetry)
+			require.Equal(t, 123, storedFirst.RemainQuota)
+		})
+	}
+}
+
+func TestUpdateTokenGroupBatchRepairsUnsafeTokenCaches(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	db := setupInitialTokenControllerTestDB(t)
+	mr := setupTokenControllerRedisTest(t)
+	user := seedTokenUser(t, db, 50)
+	user.Group = "Enterprise"
+	require.NoError(t, db.Save(user).Error)
+	first := seedToken(t, db, user.Id, "first", "cache-success-first")
+	second := seedToken(t, db, user.Id, "second", "cache-success-second")
+	cacheKeys := []string{
+		"token:" + common.GenerateHMAC(first.Key),
+		"token:" + common.GenerateHMAC(second.Key),
+	}
+	for _, cacheKey := range cacheKeys {
+		mr.Set(cacheKey, "stale")
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
+		"ids":   []int{first.Id, second.Id},
+		"group": "vip",
+	}, user.Id)
+	UpdateTokenGroupBatch(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+	for _, cacheKey := range cacheKeys {
+		require.False(t, mr.Exists(cacheKey))
+	}
+}
+
+func TestUpdateTokenGroupBatchCacheFailureReturnsStableErrorAndRetrySucceeds(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	require.NoError(t, backendI18n.Init())
+	db := setupInitialTokenControllerTestDB(t)
+	mr := setupTokenControllerRedisTest(t)
+	var systemLog bytes.Buffer
+	common.LogWriterMu.Lock()
+	previousLogWriter := gin.DefaultWriter
+	gin.DefaultWriter = &systemLog
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultWriter = previousLogWriter
+		common.LogWriterMu.Unlock()
+	})
+	user := seedTokenUser(t, db, 51)
+	user.Group = "Enterprise"
+	require.NoError(t, db.Save(user).Error)
+	first := seedToken(t, db, user.Id, "first", "cache-retry-first")
+	second := seedToken(t, db, user.Id, "second", "cache-retry-second")
+	first.CrossGroupRetry = true
+	first.RemainQuota = 456
+	require.NoError(t, db.Save(first).Error)
+	cacheKeys := []string{
+		"token:" + common.GenerateHMAC(first.Key),
+		"token:" + common.GenerateHMAC(second.Key),
+	}
+	for _, cacheKey := range cacheKeys {
+		mr.Set(cacheKey, "stale")
+	}
+
+	requestBody := map[string]any{
+		"ids":   []int{first.Id, second.Id},
+		"group": "vip",
+	}
+	internalFailure := "redis://user:secret@10.0.0.5:6379 unavailable"
+	invalidationHook := &failingTokenCacheInvalidationHook{
+		failInvalidation: true,
+		err:              errors.New(internalFailure),
+	}
+	common.RDB.AddHook(invalidationHook)
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", requestBody, user.Id)
+	UpdateTokenGroupBatch(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.False(t, response.Success)
+	require.Equal(t, backendI18n.Translate(backendI18n.LangEn, backendI18n.MsgTokenBatchCachePending), response.Message)
+	require.NotContains(t, recorder.Body.String(), "10.0.0.5")
+	require.NotContains(t, recorder.Body.String(), "user:secret")
+	require.Contains(t, systemLog.String(), "failed to invalidate 2 token caches after batch group update")
+	require.NotContains(t, systemLog.String(), "10.0.0.5")
+	require.NotContains(t, systemLog.String(), "user:secret")
+	require.Equal(t, 1, invalidationHook.attempts())
+	for _, cacheKey := range cacheKeys {
+		require.True(t, mr.Exists(cacheKey))
+	}
+
+	var committedFirst, committedSecond model.Token
+	require.NoError(t, db.First(&committedFirst, first.Id).Error)
+	require.NoError(t, db.First(&committedSecond, second.Id).Error)
+	require.Equal(t, "vip", committedFirst.Group)
+	require.Equal(t, "vip", committedSecond.Group)
+	require.True(t, committedFirst.CrossGroupRetry)
+	require.Equal(t, 456, committedFirst.RemainQuota)
+
+	invalidationHook.setFailInvalidation(false)
+	retryCtx, retryRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", requestBody, user.Id)
+	UpdateTokenGroupBatch(retryCtx)
+	retryResponse := decodeAPIResponse(t, retryRecorder)
+	require.True(t, retryResponse.Success, retryResponse.Message)
+	for _, cacheKey := range cacheKeys {
+		require.False(t, mr.Exists(cacheKey))
+	}
+}
+
+func TestUpdateTokenGroupBatchRollsBackForMissingOrForeignToken(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	testCases := []struct {
+		name      string
+		invalidID func(t *testing.T, db *gorm.DB) int
+	}{
+		{
+			name: "missing",
+			invalidID: func(t *testing.T, db *gorm.DB) int {
+				return 999999
+			},
+		},
+		{
+			name: "foreign",
+			invalidID: func(t *testing.T, db *gorm.DB) int {
+				return seedToken(t, db, 999, "foreign", "batch-group-foreign").Id
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := setupInitialTokenControllerTestDB(t)
+			user := seedTokenUser(t, db, 32)
+			user.Group = "Enterprise"
+			require.NoError(t, db.Save(user).Error)
+			owned := seedToken(t, db, user.Id, "owned", "batch-group-owned-"+testCase.name)
+
+			ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
+				"ids":   []int{owned.Id, testCase.invalidID(t, db)},
+				"group": "vip",
+			}, user.Id)
+			UpdateTokenGroupBatch(ctx)
+
+			response := decodeAPIResponse(t, recorder)
+			require.False(t, response.Success)
+			var stored model.Token
+			require.NoError(t, db.First(&stored, owned.Id).Error)
+			require.Equal(t, "default", stored.Group)
+		})
+	}
+}
+
+func TestUpdateTokenGroupBatchRejectsGroupOutsideUserWhitelist(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	db := setupInitialTokenControllerTestDB(t)
+	user := seedTokenUser(t, db, 34)
+	user.Group = "Enterprise"
+	require.NoError(t, db.Save(user).Error)
+	token := seedToken(t, db, user.Id, "owned", "batch-group-disallowed")
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
+		"ids":   []int{token.Id},
+		"group": "not-usable-by-user",
+	}, user.Id)
+	UpdateTokenGroupBatch(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.False(t, response.Success)
+	var stored model.Token
+	require.NoError(t, db.First(&stored, token.Id).Error)
+	require.Equal(t, "default", stored.Group)
+}
+
+func TestUpdateTokenGroupBatchRejectsInvalidPayloads(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	testCases := []struct {
+		name string
+		body map[string]any
+	}{
+		{name: "empty group", body: map[string]any{"ids": []int{1}, "group": ""}},
+		{name: "whitespace group", body: map[string]any{"ids": []int{1}, "group": "   "}},
+		{name: "too many", body: map[string]any{"ids": make([]int, 101), "group": "premium"}},
+		{name: "duplicate ids", body: map[string]any{"ids": []int{1, 1}, "group": "premium"}},
+		{name: "non-positive id", body: map[string]any{"ids": []int{0}, "group": "premium"}},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", testCase.body, 1)
+			UpdateTokenGroupBatch(ctx)
+			response := decodeAPIResponse(t, recorder)
+			require.False(t, response.Success)
+		})
+	}
+}
+
+func TestUpdateTokenGroupBatchForcesPLGForRestrictedUser(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	for index, userGroup := range []string{plgGroup, ""} {
+		name := userGroup
+		if name == "" {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			db := setupInitialTokenControllerTestDB(t)
+			mr := setupTokenControllerRedisTest(t)
+			user := seedTokenUser(t, db, 33+index)
+			require.NoError(t, db.Model(user).Update("group", userGroup).Error)
+			first := seedToken(t, db, user.Id, "first", "batch-group-first-"+name)
+			second := seedToken(t, db, user.Id, "second", "batch-group-second-"+name)
+			first.Group = "legacy"
+			second.Group = "legacy"
+			first.CrossGroupRetry = true
+			second.CrossGroupRetry = true
+			require.NoError(t, db.Save(first).Error)
+			require.NoError(t, db.Save(second).Error)
+			cacheKeys := []string{
+				"token:" + common.GenerateHMAC(first.Key),
+				"token:" + common.GenerateHMAC(second.Key),
+			}
+			for _, cacheKey := range cacheKeys {
+				mr.HSet(cacheKey, "__complete", "1", "Group", "legacy", "CrossGroupRetry", "true")
+			}
+
+			ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
+				"ids":   []int{first.Id, second.Id},
+				"group": "premium",
+			}, user.Id)
+			UpdateTokenGroupBatch(ctx)
+
+			response := decodeAPIResponse(t, recorder)
+			require.True(t, response.Success, response.Message)
+			var stored []model.Token
+			require.NoError(t, db.Order("id").Find(&stored, []int{first.Id, second.Id}).Error)
+			require.Len(t, stored, 2)
+			for _, token := range stored {
+				require.Equal(t, plgGroup, token.Group)
+				require.False(t, token.CrossGroupRetry)
+			}
+			for _, cacheKey := range cacheKeys {
+				require.Equal(t, plgGroup, mr.HGet(cacheKey, "Group"))
+				require.Equal(t, "false", mr.HGet(cacheKey, "CrossGroupRetry"))
+			}
+		})
 	}
 }

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { buildBatchGroupPayload } from './lib/api-key-batch-group'
 import type {
   ApiKey,
   ApiResponse,
@@ -95,6 +96,17 @@ export async function batchDeleteApiKeys(
   ids: number[]
 ): Promise<ApiResponse<number>> {
   const res = await api.post('/api/token/batch', { ids })
+  return res.data
+}
+
+export async function batchUpdateApiKeyGroup(
+  ids: number[],
+  group: string
+): Promise<ApiResponse<number>> {
+  const res = await api.put(
+    '/api/token/batch/group',
+    buildBatchGroupPayload(ids, group)
+  )
   return res.data
 }
 
