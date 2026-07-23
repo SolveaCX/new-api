@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -479,13 +480,16 @@ func UpdateTokenGroupBatch(c *gin.Context) {
 	}
 
 	userId := c.GetInt("id")
-	canUseGroups, err := userCanUseGroups(userId)
+	userGroup, err := model.GetUserGroup(userId, true)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if !canUseGroups {
+	if userGroup == "" || userGroup == plgGroup {
 		request.Group = plgGroup
+	} else if !service.GroupInUserUsableGroups(userGroup, request.Group) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
 	}
 
 	count, err := model.BatchUpdateTokenGroup(request.Ids, userId, request.Group)
@@ -494,7 +498,7 @@ func UpdateTokenGroupBatch(c *gin.Context) {
 		return
 	}
 	if errors.Is(err, model.ErrTokenBatchCacheInvalidation) {
-		common.ApiErrorI18n(c, i18n.MsgUpdateFailed)
+		common.ApiErrorI18n(c, i18n.MsgTokenBatchCachePending)
 		return
 	}
 	if err != nil {

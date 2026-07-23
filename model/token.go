@@ -635,9 +635,13 @@ func BatchUpdateTokenGroup(ids []int, userId int, group string) (int, error) {
 		for _, token := range tokens {
 			tokenKeys = append(tokenKeys, token.Key)
 		}
+		updates := map[string]interface{}{"group": group}
+		if group == plgUserGroup {
+			updates["cross_group_retry"] = false
+		}
 		result := tx.Model(&Token{}).
 			Where("user_id = ? AND id IN ?", userId, ids).
-			Update("group", group)
+			Updates(updates)
 		if result.Error != nil {
 			return result.Error
 		}

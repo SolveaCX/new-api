@@ -1359,7 +1359,7 @@ func TestUpdateTokenGroupBatchUpdatesOnlyGroup(t *testing.T) {
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
 		"ids":   []int{first.Id, second.Id},
-		"group": "  premium  ",
+		"group": "  vip  ",
 	}, user.Id)
 	UpdateTokenGroupBatch(ctx)
 
@@ -1372,8 +1372,8 @@ func TestUpdateTokenGroupBatchUpdatesOnlyGroup(t *testing.T) {
 	var storedFirst, storedSecond model.Token
 	require.NoError(t, db.First(&storedFirst, first.Id).Error)
 	require.NoError(t, db.First(&storedSecond, second.Id).Error)
-	require.Equal(t, "premium", storedFirst.Group)
-	require.Equal(t, "premium", storedSecond.Group)
+	require.Equal(t, "vip", storedFirst.Group)
+	require.Equal(t, "vip", storedSecond.Group)
 	require.Equal(t, 321, storedFirst.RemainQuota)
 	require.True(t, storedFirst.ModelLimitsEnabled)
 	require.Equal(t, "gpt-4o", storedFirst.ModelLimits)
@@ -1408,18 +1408,18 @@ func TestUpdateTokenGroupBatchAllowsIdempotentGroups(t *testing.T) {
 
 			first := seedToken(t, db, user.Id, "first", fmt.Sprintf("idempotent-first-%d", existingTargetCount))
 			second := seedToken(t, db, user.Id, "second", fmt.Sprintf("idempotent-second-%d", existingTargetCount))
-			first.Group = "premium"
+			first.Group = "vip"
 			first.CrossGroupRetry = true
 			first.RemainQuota = 123
 			if existingTargetCount == 2 {
-				second.Group = "premium"
+				second.Group = "vip"
 			}
 			require.NoError(t, db.Save(first).Error)
 			require.NoError(t, db.Save(second).Error)
 
 			ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
 				"ids":   []int{first.Id, second.Id},
-				"group": "premium",
+				"group": "vip",
 			}, user.Id)
 			UpdateTokenGroupBatch(ctx)
 
@@ -1432,8 +1432,8 @@ func TestUpdateTokenGroupBatchAllowsIdempotentGroups(t *testing.T) {
 			var storedFirst, storedSecond model.Token
 			require.NoError(t, db.First(&storedFirst, first.Id).Error)
 			require.NoError(t, db.First(&storedSecond, second.Id).Error)
-			require.Equal(t, "premium", storedFirst.Group)
-			require.Equal(t, "premium", storedSecond.Group)
+			require.Equal(t, "vip", storedFirst.Group)
+			require.Equal(t, "vip", storedSecond.Group)
 			require.True(t, storedFirst.CrossGroupRetry)
 			require.Equal(t, 123, storedFirst.RemainQuota)
 		})
@@ -1459,7 +1459,7 @@ func TestUpdateTokenGroupBatchRepairsUnsafeTokenCaches(t *testing.T) {
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
 		"ids":   []int{first.Id, second.Id},
-		"group": "premium",
+		"group": "vip",
 	}, user.Id)
 	UpdateTokenGroupBatch(ctx)
 
@@ -1503,7 +1503,7 @@ func TestUpdateTokenGroupBatchCacheFailureReturnsStableErrorAndRetrySucceeds(t *
 
 	requestBody := map[string]any{
 		"ids":   []int{first.Id, second.Id},
-		"group": "premium",
+		"group": "vip",
 	}
 	internalFailure := "redis://user:secret@10.0.0.5:6379 unavailable"
 	invalidationHook := &failingTokenCacheInvalidationHook{
@@ -1516,7 +1516,7 @@ func TestUpdateTokenGroupBatchCacheFailureReturnsStableErrorAndRetrySucceeds(t *
 
 	response := decodeAPIResponse(t, recorder)
 	require.False(t, response.Success)
-	require.Equal(t, backendI18n.Translate(backendI18n.LangEn, backendI18n.MsgUpdateFailed), response.Message)
+	require.Equal(t, backendI18n.Translate(backendI18n.LangEn, backendI18n.MsgTokenBatchCachePending), response.Message)
 	require.NotContains(t, recorder.Body.String(), "10.0.0.5")
 	require.NotContains(t, recorder.Body.String(), "user:secret")
 	require.Contains(t, systemLog.String(), "failed to invalidate 2 token caches after batch group update")
@@ -1530,8 +1530,8 @@ func TestUpdateTokenGroupBatchCacheFailureReturnsStableErrorAndRetrySucceeds(t *
 	var committedFirst, committedSecond model.Token
 	require.NoError(t, db.First(&committedFirst, first.Id).Error)
 	require.NoError(t, db.First(&committedSecond, second.Id).Error)
-	require.Equal(t, "premium", committedFirst.Group)
-	require.Equal(t, "premium", committedSecond.Group)
+	require.Equal(t, "vip", committedFirst.Group)
+	require.Equal(t, "vip", committedSecond.Group)
 	require.True(t, committedFirst.CrossGroupRetry)
 	require.Equal(t, 456, committedFirst.RemainQuota)
 
@@ -1575,7 +1575,7 @@ func TestUpdateTokenGroupBatchRollsBackForMissingOrForeignToken(t *testing.T) {
 
 			ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
 				"ids":   []int{owned.Id, testCase.invalidID(t, db)},
-				"group": "premium",
+				"group": "vip",
 			}, user.Id)
 			UpdateTokenGroupBatch(ctx)
 
@@ -1586,6 +1586,27 @@ func TestUpdateTokenGroupBatchRollsBackForMissingOrForeignToken(t *testing.T) {
 			require.Equal(t, "default", stored.Group)
 		})
 	}
+}
+
+func TestUpdateTokenGroupBatchRejectsGroupOutsideUserWhitelist(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	db := setupInitialTokenControllerTestDB(t)
+	user := seedTokenUser(t, db, 34)
+	user.Group = "Enterprise"
+	require.NoError(t, db.Save(user).Error)
+	token := seedToken(t, db, user.Id, "owned", "batch-group-disallowed")
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
+		"ids":   []int{token.Id},
+		"group": "not-usable-by-user",
+	}, user.Id)
+	UpdateTokenGroupBatch(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.False(t, response.Success)
+	var stored model.Token
+	require.NoError(t, db.First(&stored, token.Id).Error)
+	require.Equal(t, "default", stored.Group)
 }
 
 func TestUpdateTokenGroupBatchRejectsInvalidPayloads(t *testing.T) {
@@ -1620,6 +1641,7 @@ func TestUpdateTokenGroupBatchForcesPLGForRestrictedUser(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			db := setupInitialTokenControllerTestDB(t)
+			mr := setupTokenControllerRedisTest(t)
 			user := seedTokenUser(t, db, 33+index)
 			require.NoError(t, db.Model(user).Update("group", userGroup).Error)
 			first := seedToken(t, db, user.Id, "first", "batch-group-first-"+name)
@@ -1630,6 +1652,13 @@ func TestUpdateTokenGroupBatchForcesPLGForRestrictedUser(t *testing.T) {
 			second.CrossGroupRetry = true
 			require.NoError(t, db.Save(first).Error)
 			require.NoError(t, db.Save(second).Error)
+			cacheKeys := []string{
+				"token:" + common.GenerateHMAC(first.Key),
+				"token:" + common.GenerateHMAC(second.Key),
+			}
+			for _, cacheKey := range cacheKeys {
+				mr.HSet(cacheKey, "__complete", "1", "Group", "legacy", "CrossGroupRetry", "true")
+			}
 
 			ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch/group", map[string]any{
 				"ids":   []int{first.Id, second.Id},
@@ -1644,7 +1673,11 @@ func TestUpdateTokenGroupBatchForcesPLGForRestrictedUser(t *testing.T) {
 			require.Len(t, stored, 2)
 			for _, token := range stored {
 				require.Equal(t, plgGroup, token.Group)
-				require.True(t, token.CrossGroupRetry)
+				require.False(t, token.CrossGroupRetry)
+			}
+			for _, cacheKey := range cacheKeys {
+				require.Equal(t, plgGroup, mr.HGet(cacheKey, "Group"))
+				require.Equal(t, "false", mr.HGet(cacheKey, "CrossGroupRetry"))
 			}
 		})
 	}

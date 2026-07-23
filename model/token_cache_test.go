@@ -372,6 +372,39 @@ func TestTokenCacheGroupPatchPreservesCompleteHashQuotaMarkerAndTTL(t *testing.T
 	require.Equal(t, 37*time.Second, mr.TTL(redisKey))
 }
 
+func TestTokenCachePLGGroupPatchDisablesCrossGroupRetry(t *testing.T) {
+	setupTokenCacheRedis(t)
+	token := testCachedToken("plg-group-patch")
+	fence, err := captureTokenCacheFillFence()
+	require.NoError(t, err)
+	require.NoError(t, cacheSetToken(token, fence))
+
+	require.NoError(t, cachePatchTokenGroups([]string{token.Key}, plgUserGroup))
+
+	hash, err := common.RDB.HGetAll(context.Background(), redisTokenCacheKey(token.Key)).Result()
+	require.NoError(t, err)
+	require.Equal(t, plgUserGroup, hash["Group"])
+	require.Equal(t, "false", hash["CrossGroupRetry"])
+}
+
+func TestTokenCacheDeleteAndPatchHandleUnavailableRedis(t *testing.T) {
+	previousRedisEnabled := common.RedisEnabled
+	previousRDB := common.RDB
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+		common.RDB = previousRDB
+	})
+
+	common.RedisEnabled = false
+	common.RDB = nil
+	require.NoError(t, cacheDeleteTokens([]string{"disabled"}))
+	require.NoError(t, cachePatchTokenGroups([]string{"disabled"}, "vip"))
+
+	common.RedisEnabled = true
+	require.NoError(t, cacheDeleteTokens([]string{"missing-client"}))
+	require.ErrorContains(t, cachePatchTokenGroups([]string{"missing-client"}, "vip"), "Redis client is nil")
+}
+
 func TestTokenCacheGroupAndQuotaUpdatesCommute(t *testing.T) {
 	for _, testCase := range []struct {
 		name       string
