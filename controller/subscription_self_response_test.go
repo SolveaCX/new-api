@@ -242,6 +242,122 @@ func TestGetSubscriptionPlansAnnotatesTierRankAndRelation(t *testing.T) {
 	require.Equal(t, []string{model.SubscriptionPaymentModeStripeRecurring}, paymentModes[9913])
 }
 
+func TestSubscriptionPlanRelationLimitsDowngradesToActiveBoundStripeRecurring(t *testing.T) {
+	currentRank := 20
+	lowerRank := 10
+	currentPlanID := 9920
+	lowerPlan := &model.SubscriptionPlan{Id: 9921, TierRank: &lowerRank}
+	currentPlan := &model.SubscriptionPlan{Id: currentPlanID, TierRank: &currentRank}
+	higherRank := 30
+	higherPlan := &model.SubscriptionPlan{Id: 9922, TierRank: &higherRank}
+
+	testCases := []struct {
+		name     string
+		contract model.UserSubscriptionContract
+		want     string
+	}{
+		{
+			name: "balance one period",
+			contract: model.UserSubscriptionContract{
+				Status:        model.SubscriptionContractStatusActive,
+				PaymentMode:   model.SubscriptionPaymentModeBalanceOnePeriod,
+				CurrentPlanId: currentPlanID,
+			},
+			want: "unavailable",
+		},
+		{
+			name: "external one period",
+			contract: model.UserSubscriptionContract{
+				Status:        model.SubscriptionContractStatusActive,
+				PaymentMode:   model.SubscriptionPaymentModeExternalOnePeriod,
+				CurrentPlanId: currentPlanID,
+			},
+			want: "unavailable",
+		},
+		{
+			name: "active bound stripe recurring",
+			contract: model.UserSubscriptionContract{
+				Status:                   model.SubscriptionContractStatusActive,
+				PaymentMode:              model.SubscriptionPaymentModeStripeRecurring,
+				CurrentPlanId:            currentPlanID,
+				CurrentProviderBindingId: 99,
+			},
+			want: "downgrade",
+		},
+		{
+			name: "stripe recurring missing binding",
+			contract: model.UserSubscriptionContract{
+				Status:        model.SubscriptionContractStatusActive,
+				PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+				CurrentPlanId: currentPlanID,
+			},
+			want: "unavailable",
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, subscriptionPlanRelation(&tt.contract, &currentRank, lowerPlan))
+			require.Equal(t, "current", subscriptionPlanRelation(&tt.contract, &currentRank, currentPlan))
+			require.Equal(t, "upgrade", subscriptionPlanRelation(&tt.contract, &currentRank, higherPlan))
+		})
+	}
+}
+
+func TestGetSubscriptionPlansMarksLowerTierUnavailableForOnePeriodContract(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 914)
+	lowRank := 10
+	highRank := 20
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:            9923,
+		Title:         "Lower",
+		PriceAmount:   10,
+		Currency:      "USD",
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TierRank:      &lowRank,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:            9924,
+		Title:         "Current",
+		PriceAmount:   20,
+		Currency:      "USD",
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		TierRank:      &highRank,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscriptionContract{
+		UserId:        914,
+		Status:        model.SubscriptionContractStatusActive,
+		PaymentMode:   model.SubscriptionPaymentModeBalanceOnePeriod,
+		CurrentPlanId: 9924,
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 914)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/plans", nil)
+
+	GetSubscriptionPlans(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	items := envelope["data"].([]any)
+	relations := map[int]string{}
+	for _, item := range items {
+		row := item.(map[string]any)
+		plan := row["plan"].(map[string]any)
+		relations[int(plan["id"].(float64))] = row["relation"].(string)
+	}
+	require.Equal(t, "unavailable", relations[9923])
+	require.Equal(t, "current", relations[9924])
+}
+
 func requireNoProviderIDStrings(t *testing.T, value any) {
 	t.Helper()
 	switch typed := value.(type) {

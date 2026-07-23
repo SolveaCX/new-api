@@ -597,7 +597,12 @@ func subscriptionPlanRelation(contract *model.UserSubscriptionContract, currentT
 		return "upgrade"
 	}
 	if *plan.TierRank < *currentTierRank {
-		return "downgrade"
+		if contract.Status == model.SubscriptionContractStatusActive &&
+			contract.PaymentMode == model.SubscriptionPaymentModeStripeRecurring &&
+			contract.CurrentProviderBindingId > 0 {
+			return "downgrade"
+		}
+		return "unavailable"
 	}
 	return "unavailable"
 }

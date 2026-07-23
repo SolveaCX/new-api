@@ -59,6 +59,11 @@ type WalletSubscriptionMigration = {
   reason: string
 }
 
+type WalletPlanLifecycle = Pick<
+  WalletSelfSubscriptionData,
+  'capabilities' | 'contract' | 'migration'
+>
+
 export type LifecyclePlanRecord = PlanRecord & {
   relation?: PlanRelation | string
   tier_rank?: number | null
@@ -199,9 +204,7 @@ export function getDisplayedPlanAction(
   planRecord: LifecyclePlanRecord,
   currentPlanId: number,
   allowedPaymentModes: ChangePlanPaymentMode[],
-  lifecycle:
-    | WalletSelfSubscriptionData['capabilities']
-    | Pick<WalletSelfSubscriptionData, 'capabilities' | 'migration'>
+  lifecycle: WalletSelfSubscriptionData['capabilities'] | WalletPlanLifecycle
 ): PlanAction {
   if (planRecord.relation === 'current' || planRecord.plan.id === currentPlanId)
     return 'current'
@@ -209,7 +212,7 @@ export function getDisplayedPlanAction(
   const capabilities = hasLifecycle ? lifecycle.capabilities : lifecycle
   const migrationRequiresAdminReview = hasLifecycle
     ? lifecycle.migration.requires_admin_review
-    : true
+    : false
   if (
     allowedPaymentModes.length === 0 ||
     capabilities.can_change_plan !== true ||
@@ -219,7 +222,15 @@ export function getDisplayedPlanAction(
     return 'unavailable'
   }
   if (planRecord.relation === 'upgrade') return 'upgrade_now'
-  if (planRecord.relation === 'downgrade') return 'downgrade_next_period'
+  if (planRecord.relation === 'downgrade') {
+    if (
+      hasLifecycle &&
+      lifecycle.contract?.payment_mode !== 'stripe_recurring'
+    ) {
+      return 'unavailable'
+    }
+    return 'downgrade_next_period'
+  }
   return 'unavailable'
 }
 

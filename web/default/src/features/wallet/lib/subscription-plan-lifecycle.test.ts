@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'bun:test'
 import type {
   SelfSubscriptionDataResponse,
+  SubscriptionPaymentMode,
   SubscriptionPlan,
 } from '@/features/subscriptions/types'
 import type { TopupInfo } from '../types'
@@ -90,6 +91,30 @@ function createBackendSelfData(
     all_subscriptions: [],
     recurring_subscriptions: [],
   }
+}
+
+function createCanonicalLifecycleWithContract(
+  paymentMode: SubscriptionPaymentMode
+): WalletSelfSubscriptionData {
+  return normalizeSelfSubscriptionData({
+    ...createBackendSelfData(false, false),
+    contract: {
+      contract_id: 10,
+      id: 10,
+      status: 'active',
+      payment_mode: paymentMode,
+      current_plan_id: 1,
+      current_entitlement_id: 11,
+      current_provider_binding_id: 12,
+      latest_change_intent_id: 0,
+      pending_plan_id: 0,
+      pending_effective_at: 0,
+      current_period_start: 1000,
+      current_period_end: 2000,
+      grace_period_end: 0,
+      change_version: 1,
+    },
+  } satisfies SelfSubscriptionDataResponse)
 }
 
 describe('normalizeSelfSubscriptionData', () => {
@@ -253,7 +278,7 @@ describe('getDisplayedPlanAction', () => {
     ).toBe('unavailable')
   })
 
-  test('uses backend plan relation instead of local rank calculations', () => {
+  test('preserves capability-only downgrade behavior without local rank calculations', () => {
     const plan = {
       plan: {
         ...basePlan,
@@ -270,7 +295,75 @@ describe('getDisplayedPlanAction', () => {
         plan,
         1,
         ['balance_one_period'],
+        enabledCapabilities
+      )
+    ).toBe('downgrade_next_period')
+  })
+
+  test('fails closed for stale downgrade relations when canonical contract is missing', () => {
+    const plan = {
+      plan: {
+        ...basePlan,
+        id: 2,
+        payment_modes: ['balance_one_period'],
+      },
+      relation: 'downgrade',
+    }
+
+    expect(
+      getDisplayedPlanAction(
+        plan,
+        1,
+        ['balance_one_period'],
         normalizeSelfSubscriptionData(createBackendSelfData(false, false))
+      )
+    ).toBe('unavailable')
+  })
+
+  test('ignores stale downgrade relations for canonical non-recurring contracts', () => {
+    const plan = {
+      plan: {
+        ...basePlan,
+        id: 2,
+        payment_modes: ['balance_one_period'],
+      },
+      relation: 'downgrade',
+    }
+
+    expect(
+      getDisplayedPlanAction(
+        plan,
+        1,
+        ['balance_one_period'],
+        createCanonicalLifecycleWithContract('balance_one_period')
+      )
+    ).toBe('unavailable')
+    expect(
+      getDisplayedPlanAction(
+        plan,
+        1,
+        ['balance_one_period'],
+        createCanonicalLifecycleWithContract('external_one_period')
+      )
+    ).toBe('unavailable')
+  })
+
+  test('preserves next-period downgrades for canonical Stripe recurring contracts', () => {
+    const plan = {
+      plan: {
+        ...basePlan,
+        id: 2,
+        payment_modes: ['stripe_recurring'],
+      },
+      relation: 'downgrade',
+    }
+
+    expect(
+      getDisplayedPlanAction(
+        plan,
+        1,
+        ['stripe_recurring'],
+        createCanonicalLifecycleWithContract('stripe_recurring')
       )
     ).toBe('downgrade_next_period')
   })
