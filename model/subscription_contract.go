@@ -14,6 +14,7 @@ const (
 	SubscriptionContractStatusNeedsAttention = "needs_attention"
 
 	SubscriptionPaymentModeStripeRecurring   = "stripe_recurring"
+	SubscriptionPaymentModePrepaid           = "prepaid"
 	SubscriptionPaymentModeBalanceOnePeriod  = "balance_one_period"
 	SubscriptionPaymentModeExternalOnePeriod = "external_one_period"
 
@@ -28,12 +29,13 @@ const (
 	SubscriptionRenewalStatusPausedInsufficientBalance = "paused_insufficient_balance"
 	SubscriptionRenewalStatusPausedPlanUnavailable     = "paused_plan_unavailable"
 
-	SubscriptionChangeIntentKindPurchase  = "purchase"
-	SubscriptionChangeIntentKindUpgrade   = "upgrade"
-	SubscriptionChangeIntentKindDowngrade = "downgrade"
-	SubscriptionChangeIntentKindCancel    = "cancel"
-	SubscriptionChangeIntentKindResume    = "resume"
-	SubscriptionChangeIntentKindTerminate = "terminate"
+	SubscriptionChangeIntentKindPurchase   = "purchase"
+	SubscriptionChangeIntentKindRepurchase = "repurchase"
+	SubscriptionChangeIntentKindUpgrade    = "upgrade"
+	SubscriptionChangeIntentKindDowngrade  = "downgrade"
+	SubscriptionChangeIntentKindCancel     = "cancel"
+	SubscriptionChangeIntentKindResume     = "resume"
+	SubscriptionChangeIntentKindTerminate  = "terminate"
 
 	SubscriptionChangeIntentStatusCreated              = "created"
 	SubscriptionChangeIntentStatusSyncing              = "syncing"
@@ -162,7 +164,7 @@ func normalizeSubscriptionContractStatus(status string) string {
 
 func normalizeSubscriptionPaymentMode(mode string) string {
 	switch strings.TrimSpace(mode) {
-	case SubscriptionPaymentModeStripeRecurring, SubscriptionPaymentModeBalanceOnePeriod:
+	case SubscriptionPaymentModeStripeRecurring, SubscriptionPaymentModePrepaid, SubscriptionPaymentModeBalanceOnePeriod:
 		return strings.TrimSpace(mode)
 	default:
 		return SubscriptionPaymentModeExternalOnePeriod
@@ -171,7 +173,7 @@ func normalizeSubscriptionPaymentMode(mode string) string {
 
 func normalizeSubscriptionChangeIntentKind(kind string) string {
 	switch strings.TrimSpace(kind) {
-	case SubscriptionChangeIntentKindUpgrade, SubscriptionChangeIntentKindDowngrade, SubscriptionChangeIntentKindCancel, SubscriptionChangeIntentKindResume, SubscriptionChangeIntentKindTerminate:
+	case SubscriptionChangeIntentKindRepurchase, SubscriptionChangeIntentKindUpgrade, SubscriptionChangeIntentKindDowngrade, SubscriptionChangeIntentKindCancel, SubscriptionChangeIntentKindResume, SubscriptionChangeIntentKindTerminate:
 		return strings.TrimSpace(kind)
 	default:
 		return SubscriptionChangeIntentKindPurchase

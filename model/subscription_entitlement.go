@@ -31,6 +31,7 @@ type GrantEntitlementInput struct {
 	GrantKey             string
 	PaymentMode          string
 	AmountTotal          int64
+	MediaCreditsTotal    int64
 	PeriodStart          int64
 	PeriodEnd            int64
 	EndReasonForPrevious string
@@ -138,6 +139,8 @@ func rotateCurrentEntitlementTx(tx *gorm.DB, input GrantEntitlementInput) (*Gran
 		CurrentSlot:       &currentSlot,
 		AmountTotal:       input.AmountTotal,
 		AmountUsed:        0,
+		MediaCreditsTotal: input.MediaCreditsTotal,
+		MediaCreditsUsed:  0,
 		StartTime:         input.PeriodStart,
 		EndTime:           input.PeriodEnd,
 		AccessEndTime:     input.PeriodEnd,
@@ -199,6 +202,9 @@ func (input GrantEntitlementInput) validate() error {
 	if input.AmountTotal < 0 {
 		return errors.New("amount total must be >= 0")
 	}
+	if input.MediaCreditsTotal < 0 {
+		return errors.New("media credits total must be >= 0")
+	}
 	return nil
 }
 
@@ -233,6 +239,7 @@ func grantMatchesInput(existing *UserSubscription, input GrantEntitlementInput) 
 		existing.PlanId == input.PlanId &&
 		existing.ProviderBindingId == input.ProviderBindingId &&
 		existing.AmountTotal == input.AmountTotal &&
+		existing.MediaCreditsTotal == input.MediaCreditsTotal &&
 		existing.StartTime == input.PeriodStart &&
 		existing.EndTime == input.PeriodEnd &&
 		normalizeSubscriptionPaymentMode(existing.PaymentMode) == input.PaymentMode &&

@@ -1,5 +1,15 @@
 package model
 
+const (
+	SubscriptionTermStatusActive     = "active"
+	SubscriptionTermStatusNotStarted = "not_started"
+	SubscriptionTermStatusReplaced   = "replaced"
+	SubscriptionTermStatusRefunded   = "refunded"
+
+	WalletLedgerEntryTypePrepaidDebit  = "prepaid_debit"
+	WalletLedgerEntryTypePrepaidRefund = "prepaid_refund"
+)
+
 type SubscriptionTermSegment struct {
 	Id int64 `json:"id"`
 

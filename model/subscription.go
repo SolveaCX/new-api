@@ -572,11 +572,13 @@ type SubscriptionOrder struct {
 	CreateTime      int64  `json:"create_time"`
 	CompleteTime    int64  `json:"complete_time"`
 
-	PurchaseMonths int     `json:"purchase_months" gorm:"type:int;not null;default:0"`
-	UnitPrice      float64 `json:"unit_price" gorm:"type:decimal(10,6);not null;default:0"`
-	PlanSnapshot   string  `json:"plan_snapshot" gorm:"type:text"`
-	PurchaseIntent string  `json:"purchase_intent" gorm:"type:varchar(32);default:'';index"`
-	RenewalSource  string  `json:"renewal_source" gorm:"type:varchar(32);default:'';index"`
+	PurchaseMonths     int     `json:"purchase_months" gorm:"type:int;not null;default:0"`
+	UnitPrice          float64 `json:"unit_price" gorm:"type:decimal(10,6);not null;default:0"`
+	PaymentCurrency    string  `json:"payment_currency" gorm:"type:varchar(8);not null;default:'USD';index"`
+	PaymentAmountMinor int64   `json:"payment_amount_minor" gorm:"type:bigint;not null;default:0"`
+	PlanSnapshot       string  `json:"plan_snapshot" gorm:"type:text"`
+	PurchaseIntent     string  `json:"purchase_intent" gorm:"type:varchar(32);default:'';index"`
+	RenewalSource      string  `json:"renewal_source" gorm:"type:varchar(32);default:'';index"`
 
 	ProviderPayload    string `json:"provider_payload" gorm:"type:text"`
 	ChangeIntentId     int64  `json:"change_intent_id" gorm:"type:bigint;default:0;index"`
@@ -1242,9 +1244,20 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 // (5h rolling + weekly anchored at subscription start) before pre-consume.
 type SubscriptionWindowInfo struct {
 	UserSubscriptionId int
+	ContractId         int64
 	SubscriptionStart  int64
 	Window5hAmount     int64
 	WindowWeekAmount   int64
+}
+
+func (i *SubscriptionWindowInfo) WindowIdentity() int {
+	if i == nil {
+		return 0
+	}
+	if i.ContractId > 0 {
+		return int(i.ContractId)
+	}
+	return i.UserSubscriptionId
 }
 
 // GetActiveSubscriptionWindowInfo returns window limits for the user's first
@@ -1264,16 +1277,7 @@ func GetActiveSubscriptionWindowInfo(userId int) (*SubscriptionWindowInfo, error
 	if query.RowsAffected == 0 {
 		return nil, nil
 	}
-	plan, err := GetSubscriptionPlanById(sub.PlanId)
-	if err != nil {
-		return nil, err
-	}
-	return &SubscriptionWindowInfo{
-		UserSubscriptionId: sub.Id,
-		SubscriptionStart:  sub.StartTime,
-		Window5hAmount:     plan.Window5hAmount,
-		WindowWeekAmount:   plan.WindowWeekAmount,
-	}, nil
+	return subscriptionWindowInfoForSub(&sub)
 }
 
 // GetChargeableSubscriptionWindowInfo predicts which active subscription
@@ -1288,6 +1292,16 @@ func GetChargeableSubscriptionWindowInfo(userId int, amount int64) (*Subscriptio
 		return nil, errors.New("invalid userId")
 	}
 	now := common.GetTimestamp()
+	current, hasContract, _, err := findContractCurrentEntitlementForUserTx(DB, userId, now, false)
+	if err != nil {
+		return nil, err
+	}
+	if hasContract {
+		if current == nil {
+			return nil, nil
+		}
+		return subscriptionWindowInfoForSub(current)
+	}
 	var subs []UserSubscription
 	if err := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
 		Order("end_time asc, id asc").
@@ -1338,9 +1352,21 @@ func subscriptionWindowInfoForSub(sub *UserSubscription) (*SubscriptionWindowInf
 	if err != nil {
 		return nil, err
 	}
+	anchor := sub.StartTime
+	if sub.ContractId > 0 {
+		var contract UserSubscriptionContract
+		query := DB.Where("id = ? AND user_id = ?", sub.ContractId, sub.UserId).Limit(1).Find(&contract)
+		if query.Error != nil {
+			return nil, query.Error
+		}
+		if query.RowsAffected > 0 && contract.CreatedAt > 0 {
+			anchor = contract.CreatedAt
+		}
+	}
 	return &SubscriptionWindowInfo{
 		UserSubscriptionId: sub.Id,
-		SubscriptionStart:  sub.StartTime,
+		ContractId:         sub.ContractId,
+		SubscriptionStart:  anchor,
 		Window5hAmount:     plan.Window5hAmount,
 		WindowWeekAmount:   plan.WindowWeekAmount,
 	}, nil
