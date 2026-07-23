@@ -117,8 +117,11 @@ func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, clai
 			return nil, nil, ErrRecallClaimWrongUser
 		}
 	} else {
-		user := model.User{}
-		if err := model.DB.WithContext(ctx).First(&user, userID).Error; err != nil {
+		user, found, err := model.GetRecallClaimUserWithContext(ctx, userID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !found {
 			return nil, nil, ErrRecallClaimWrongUser
 		}
 		recipientEmail, ok := normalizeRecallClaimEmail(record.Recipient.EmailSnapshot)
@@ -330,11 +333,14 @@ func (s *RecallClaimService) unsubscribeRecipient(ctx context.Context, recipient
 }
 
 func loadRecallUnsubscribeRecipient(ctx context.Context, recipientID int64) (*model.RecallRecipient, error) {
-	recipient := model.RecallRecipient{}
-	if err := model.DB.WithContext(ctx).First(&recipient, recipientID).Error; err != nil {
+	recipient, found, err := model.GetRecallRecipientByIDWithContext(ctx, recipientID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
 		return nil, ErrRecallUnsubscribeInvalid
 	}
-	return &recipient, nil
+	return recipient, nil
 }
 
 func normalizeRecallClaimEmail(email string) (string, bool) {

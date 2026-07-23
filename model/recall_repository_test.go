@@ -546,6 +546,63 @@ func TestRecallRecipientBindCASIsIdempotentForSameUser(t *testing.T) {
 	require.Equal(t, first.RecipientIdentity, second.RecipientIdentity)
 }
 
+func TestRecallRecipientBindCASAllowsOnlyOneCompetingUser(t *testing.T) {
+	setupRecallRepositoryFileDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          50,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "race-bind@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	originalIdentity := recipient.RecipientIdentity
+
+	start := make(chan struct{})
+	type bindResult struct {
+		userID   int
+		bound    *RecallRecipient
+		inserted bool
+		err      error
+	}
+	results := make(chan bindResult, 2)
+	var wg sync.WaitGroup
+	for _, userID := range []int{7006, 7007} {
+		userID := userID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			bound, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, userID, "race-bind@example.com")
+			results <- bindResult{userID: userID, bound: bound, inserted: inserted, err: err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	winners := 0
+	for result := range results {
+		if result.inserted {
+			winners++
+			require.NoError(t, result.err)
+			require.NotNil(t, result.bound)
+			require.Equal(t, result.userID, result.bound.UserId)
+			require.Equal(t, originalIdentity, result.bound.RecipientIdentity)
+			continue
+		}
+		require.ErrorIs(t, result.err, ErrRecallRecipientBindingConflict)
+		require.Nil(t, result.bound)
+	}
+	require.Equal(t, 1, winners)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Contains(t, []int{7006, 7007}, stored.UserId)
+	require.Equal(t, originalIdentity, stored.RecipientIdentity)
+}
+
 func TestSuppressRecallRecipientOnlySuppressesUnboundRecipientAndCancelsPendingMessages(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 	const now int64 = 1_721_000_000
