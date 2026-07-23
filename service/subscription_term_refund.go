@@ -33,9 +33,6 @@ func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*Subscripti
 		if err := subscriptionCommandLock(tx).Where("id = ?", termSegmentID).First(&term).Error; err != nil {
 			return err
 		}
-		if term.Status != model.SubscriptionTermStatusNotStarted {
-			return fmt.Errorf("subscription term must be not_started, got %s", term.Status)
-		}
 		var order model.SubscriptionOrder
 		if err := subscriptionCommandLock(tx).
 			Where("id = ? AND user_id = ?", term.OrderId, userID).
@@ -44,6 +41,32 @@ func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*Subscripti
 		}
 		if order.PaymentProvider == model.PaymentProviderStripe && order.PaymentMethod == model.PaymentMethodStripe {
 			return errors.New("subscription term refund only supports one-time terms")
+		}
+		if term.Status == model.SubscriptionTermStatusRefunded {
+			if term.RefundKey == nil || *term.RefundKey == "" {
+				return errors.New("subscription term must be not_started or have a completed refund ledger")
+			}
+			var ledger model.WalletLedgerEntry
+			if err := tx.Where(
+				"entry_key = ? AND user_id = ? AND order_id = ? AND term_segment_id = ? AND entry_type = ?",
+				*term.RefundKey,
+				userID,
+				order.Id,
+				term.Id,
+				model.WalletLedgerEntryTypePrepaidRefund,
+			).First(&ledger).Error; err != nil {
+				return err
+			}
+			result = &SubscriptionTermRefundResult{
+				TermSegmentID: term.Id,
+				RefundedQuota: ledger.QuotaDelta,
+				RefundedMoney: ledger.MoneyAmount,
+				RefundKey:     ledger.EntryKey,
+			}
+			return nil
+		}
+		if term.Status != model.SubscriptionTermStatusNotStarted {
+			return fmt.Errorf("subscription term must be not_started, got %s", term.Status)
 		}
 		refundQuota, err := subscriptionMoneyQuota(term.AllocatedMoney)
 		if err != nil {

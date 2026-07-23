@@ -113,6 +113,52 @@ func TestRefundSubscriptionTermSegmentInvalidatesUserCacheAfterCredit(t *testing
 	require.False(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7603)))
 }
 
+func TestRefundSubscriptionTermSegmentReplaysCompletedRefundWithoutCreditingTwice(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	insertPurchaseServiceUser(t, 7605, 25)
+	plan := insertPurchaseServicePlan(t, 7705, 1, 12, 1200)
+	contract := model.UserSubscriptionContract{
+		UserId:        7605,
+		Status:        model.SubscriptionContractStatusActive,
+		PaymentMode:   model.SubscriptionPaymentModePrepaid,
+		CurrentPlanId: plan.Id,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	order := model.SubscriptionOrder{
+		UserId:          7605,
+		PlanId:          plan.Id,
+		TradeNo:         "term-refund-replay",
+		PaymentMethod:   model.PaymentMethodBalance,
+		PaymentProvider: model.PaymentProviderBalance,
+		Status:          common.TopUpStatusSuccess,
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+	term := model.SubscriptionTermSegment{
+		ContractId:     contract.Id,
+		OrderId:        order.Id,
+		PlanId:         plan.Id,
+		SegmentIndex:   1,
+		StartTime:      common.GetTimestamp() + 3600,
+		EndTime:        common.GetTimestamp() + 7200,
+		AllocatedMoney: plan.PriceAmount,
+		Status:         model.SubscriptionTermStatusNotStarted,
+	}
+	require.NoError(t, model.DB.Create(&term).Error)
+
+	first, err := RefundSubscriptionTermSegment(7605, term.Id)
+	require.NoError(t, err)
+	second, err := RefundSubscriptionTermSegment(7605, term.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", 7605).Error)
+	require.Equal(t, 1225, user.Quota)
+	var ledgerCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("term_segment_id = ?", term.Id).Count(&ledgerCount).Error)
+	require.Equal(t, int64(1), ledgerCount)
+}
+
 func TestRefundSubscriptionTermSegmentDoesNotLedgerOrCreditWhenStatusCASLoses(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	insertPurchaseServiceUser(t, 7604, 25)
