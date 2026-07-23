@@ -506,6 +506,14 @@ func recallAudienceOptionKeys(option map[string]json.RawMessage) []string {
 	return keys
 }
 
+func recallMapKeys(values map[string]any) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 func TestRecallCampaignEmailPreviewRejectsInvalidHTMLWithoutPersistence(t *testing.T) {
 	harness := setupRecallControllerHarness(t)
 	beforeCampaigns := countRecallControllerRows[model.RecallCampaign](t, harness.db)
@@ -613,6 +621,32 @@ func TestRecallCampaignPreviewReturnsAudienceAndStripeWithoutCreateOrSend(t *tes
 	require.Zero(t, harness.stripe.createCustomer)
 	require.Zero(t, harness.stripe.createPromotionCode)
 	require.Zero(t, harness.sendCount)
+}
+
+func TestRecallCampaignPreviewSpecifiedUsersMissingEmailMasksOnlyAndOmitsRecipientIdentity(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	draft := recallControllerDraft()
+	draft.AudienceTemplate = "specified_users"
+	draft.Audience = service.RecallAudienceConfig{
+		SpecifiedEmails: []string{"missing@example.com"},
+	}
+	campaign, err := harness.runtime.Campaigns.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	recorder := invokeRecallHandler(t, PreviewRecallCampaign, http.MethodPost, "/?sample_size=5", nil, 7, gin.Params{{Key: "id", Value: fmt.Sprint(campaign.Id)}})
+	payload := decodeRecallEnvelope(t, recorder)
+	require.Equal(t, true, payload["success"])
+	data := payload["data"].(map[string]any)
+	require.Equal(t, float64(1), data["eligible_total"])
+	sample := data["sample"].([]any)
+	require.Len(t, sample, 1)
+	candidate := sample[0].(map[string]any)
+	require.ElementsMatch(t, []string{"user_id", "email_masked", "language"}, recallMapKeys(candidate))
+	require.Equal(t, float64(0), candidate["user_id"])
+	require.Equal(t, "m***@example.com", candidate["email_masked"])
+	require.Equal(t, "en", candidate["language"])
+	require.NotContains(t, recorder.Body.String(), "missing@example.com")
+	require.NotContains(t, recorder.Body.String(), "recipient_identity")
 }
 
 func TestRecallCampaignReadsMaskCodesAndOmitClaimAndTemplateSecrets(t *testing.T) {
