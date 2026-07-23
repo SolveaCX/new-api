@@ -611,6 +611,12 @@ func TestTokenListEndpointsIncludeUserStatusStats(t *testing.T) {
 			t.Fatalf("failed to update token status: %v", err)
 		}
 	}
+	if err := db.Model(&model.Token{}).Where("id = ?", exhausted.Id).Updates(map[string]any{
+		"remain_quota":    0,
+		"unlimited_quota": false,
+	}).Error; err != nil {
+		t.Fatalf("failed to exhaust token quota: %v", err)
+	}
 
 	expectedStats := model.UserTokenStats{
 		Total:     4,
@@ -647,6 +653,50 @@ func TestTokenListEndpointsIncludeUserStatusStats(t *testing.T) {
 		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/search?keyword=stats-enabled&p=1&size=10", nil, 1)
 		SearchTokens(ctx)
 		assertStats(t, recorder, 1)
+	})
+}
+
+func TestTokenReadEndpointsReturnEffectiveExhaustedStatus(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	token := seedToken(t, db, 1, "quota-exhausted", "quota-exhausted-key")
+	require.NoError(t, db.Model(&model.Token{}).Where("id = ?", token.Id).Updates(map[string]any{
+		"status":          common.TokenStatusEnabled,
+		"remain_quota":    -1,
+		"unlimited_quota": false,
+	}).Error)
+
+	assertPageStatus := func(t *testing.T, recorder *httptest.ResponseRecorder) {
+		t.Helper()
+		response := decodeAPIResponse(t, recorder)
+		require.True(t, response.Success, response.Message)
+		var page tokenPageResponse
+		require.NoError(t, common.Unmarshal(response.Data, &page))
+		require.Len(t, page.Items, 1)
+		require.Equal(t, common.TokenStatusExhausted, page.Items[0].Status)
+	}
+
+	t.Run("list", func(t *testing.T) {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/?p=1&size=10", nil, 1)
+		GetAllTokens(ctx)
+		assertPageStatus(t, recorder)
+	})
+
+	t.Run("search", func(t *testing.T) {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/search?keyword=quota-exhausted&p=1&size=10", nil, 1)
+		SearchTokens(ctx)
+		assertPageStatus(t, recorder)
+	})
+
+	t.Run("detail", func(t *testing.T) {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/"+strconv.Itoa(token.Id), nil, 1)
+		ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(token.Id)}}
+		GetToken(ctx)
+
+		response := decodeAPIResponse(t, recorder)
+		require.True(t, response.Success, response.Message)
+		var detail tokenResponseItem
+		require.NoError(t, common.Unmarshal(response.Data, &detail))
+		require.Equal(t, common.TokenStatusExhausted, detail.Status)
 	})
 }
 

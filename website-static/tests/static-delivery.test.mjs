@@ -39,6 +39,73 @@ test("static HTML receives one shared configuration script and keeps local docs 
   assert.doesNotMatch(indexHtml, /href="[^"]*\.html/);
 });
 
+test("website navigation applies the shared responsive Flatkey lockup", () => {
+  const css = read("../html/fk2.css");
+
+  assert.match(
+    css,
+    /\.nav>a\.logo\{font-size:30px;letter-spacing:-1\.3px;gap:9px\}/,
+  );
+  assert.match(
+    css,
+    /\.nav>a\.logo img\{width:38px;height:38px\}/,
+  );
+  assert.doesNotMatch(css, /\.nav>\.logo\{/);
+  assert.doesNotMatch(css, /\.nav>\.logo img\{/);
+
+  for (const page of [
+    "index.html",
+    "models.html",
+    "model.html",
+    "playground.html",
+    "topup.html",
+    "terms.html",
+    "privacy.html",
+    "about.html",
+    "careers.html",
+  ]) {
+    const html = read(`../html/${page}`);
+    assert.match(
+      html,
+      /<a class="logo" href="\/"><img src="\/?assets\/flatkey-mark\.svg\?v=4" alt="[^"]*">flatkey<\/a>/,
+      `${page} must use the shared Flatkey mark and lowercase wordmark`,
+    );
+  }
+});
+
+test("legacy proxied pages visually use the shared responsive Flatkey lockup", () => {
+  const css = read("../html/assets/legacy-skin.css");
+  const nginx = read("../nginx.conf");
+
+  assert.match(nginx, /legacy-skin\.css\?v=723b/);
+  assert.match(css, /width:36px !important/);
+  assert.match(css, /height:36px !important/);
+  assert.match(css, /content:url\("\/assets\/flatkey-mark\.svg\?v=4"\) !important/);
+  assert.match(css, /header\.fixed nav a\.group span\[style\]::after\{/);
+  assert.match(css, /content:"flatkey"/);
+  assert.match(css, /font-family:"Public Sans",Inter,-apple-system,sans-serif/);
+  assert.match(css, /font-size:28px/);
+  assert.match(css, /font-weight:700/);
+  assert.match(css, /gap:8px !important/);
+  assert.match(css, /@media \(max-width:420px\)/);
+  assert.doesNotMatch(css, /content:"flatkey\.ai"/);
+});
+
+test("OpenRouter-style homepages omit removed proof and price-comparison blocks", () => {
+  const homepages = [
+    "index.html", "zh.html", "es.html", "pt.html", "fr.html",
+    "id.html", "de.html", "vi.html", "ru.html", "ja.html",
+  ];
+
+  for (const homepage of homepages) {
+    const html = read(`../html/${homepage}`);
+    assert.doesNotMatch(html, /<section class="proof">/);
+    assert.doesNotMatch(html, /data-i18n="proof\.(?:t|h|p)[1-4]"/);
+    assert.doesNotMatch(html, /<section class="compare">/);
+    assert.doesNotMatch(html, /data-i18n="cmp\.(?:h2|sub|foot)"/);
+  }
+});
+
 test("public static pages use one extensionless canonical route", () => {
   const nginx = read("../nginx.conf");
   const sitemap = read("../html/sitemap-v2.xml");

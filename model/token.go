@@ -669,37 +669,78 @@ type UserTokenStats struct {
 	Exhausted int64 `json:"exhausted"`
 }
 
-// GetUserTokenStats returns status counts for one user without loading token rows.
-func GetUserTokenStats(userId int) (UserTokenStats, error) {
-	type tokenStatusCount struct {
-		Status int
-		Count  int64
+// GetEffectiveTokenStatus returns the status enforced by ValidateUserToken without
+// persisting lifecycle transitions. Explicitly disabled tokens stay disabled;
+// expiration takes precedence over quota exhaustion for otherwise usable tokens.
+func GetEffectiveTokenStatus(token *Token, now int64) int {
+	if token == nil {
+		return common.TokenStatusDisabled
 	}
+	if token.Status == common.TokenStatusExhausted && !token.UnlimitedQuota {
+		return common.TokenStatusExhausted
+	}
+	if token.Status == common.TokenStatusExpired {
+		return common.TokenStatusExpired
+	}
+	if token.Status != common.TokenStatusEnabled &&
+		!(token.Status == common.TokenStatusExhausted && token.UnlimitedQuota) {
+		return common.TokenStatusDisabled
+	}
+	if token.ExpiredTime != -1 && token.ExpiredTime < now {
+		return common.TokenStatusExpired
+	}
+	if !token.UnlimitedQuota && token.RemainQuota <= 0 {
+		return common.TokenStatusExhausted
+	}
+	return common.TokenStatusEnabled
+}
 
-	var rows []tokenStatusCount
+// GetUserTokenStats returns account-wide effective status counts for one user.
+func GetUserTokenStats(userId int) (UserTokenStats, error) {
+	now := common.GetTimestamp()
+	var stats UserTokenStats
 	err := DB.Model(&Token{}).
-		Select("status, COUNT(*) AS count").
+		Select(`
+			COUNT(*) AS total,
+			COALESCE(SUM(CASE
+				WHEN (status = ? OR (status = ? AND unlimited_quota = ?))
+					AND (expired_time = -1 OR expired_time >= ?)
+					AND (unlimited_quota = ? OR remain_quota > 0)
+				THEN 1 ELSE 0 END), 0) AS enabled,
+			COALESCE(SUM(CASE
+				WHEN status = ?
+					OR ((status = ? OR (status = ? AND unlimited_quota = ?))
+						AND expired_time != -1 AND expired_time < ?)
+				THEN 1 ELSE 0 END), 0) AS expired,
+			COALESCE(SUM(CASE
+				WHEN (status = ? AND unlimited_quota = ?)
+					OR (status = ?
+						AND (expired_time = -1 OR expired_time >= ?)
+						AND unlimited_quota = ? AND remain_quota <= 0)
+				THEN 1 ELSE 0 END), 0) AS exhausted`,
+			common.TokenStatusEnabled,
+			common.TokenStatusExhausted,
+			true,
+			now,
+			true,
+			common.TokenStatusExpired,
+			common.TokenStatusEnabled,
+			common.TokenStatusExhausted,
+			true,
+			now,
+			common.TokenStatusExhausted,
+			false,
+			common.TokenStatusEnabled,
+			now,
+			false,
+		).
 		Where("user_id = ?", userId).
-		Group("status").
-		Scan(&rows).Error
+		Scan(&stats).Error
 	if err != nil {
 		return UserTokenStats{}, err
 	}
 
-	var stats UserTokenStats
-	for _, row := range rows {
-		stats.Total += row.Count
-		switch row.Status {
-		case common.TokenStatusEnabled:
-			stats.Enabled = row.Count
-		case common.TokenStatusDisabled:
-			stats.Disabled = row.Count
-		case common.TokenStatusExpired:
-			stats.Expired = row.Count
-		case common.TokenStatusExhausted:
-			stats.Exhausted = row.Count
-		}
-	}
+	stats.Disabled = stats.Total - stats.Enabled - stats.Expired - stats.Exhausted
 	return stats, nil
 }
 

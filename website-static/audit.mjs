@@ -24,14 +24,15 @@ for (const file of files) {
   const viewports = [...html.matchAll(/<meta\s+name="viewport"\s+content="([^"]+)"/gi)];
   if (viewports.length !== 1) fail(file, `expected one viewport meta, found ${viewports.length}`);
   else if (!viewports[0][1].includes("width=device-width")) fail(file, `non-responsive viewport: ${viewports[0][1]}`);
-  if (!/fk2\.css\?v=722c/.test(html)) fail(file, "missing the current shared CSS cache version");
+  const cssVersion = "728b";
+  if (!html.includes(`fk2.css?v=${cssVersion}`)) fail(file, "missing the current shared CSS cache version");
   if (/\bid=""/.test(html)) fail(file, "contains an empty id");
   if (/<script\b[^>]*\bsrc=""/i.test(html)) fail(file, "contains an empty script src");
   if (/href="(?:#|javascript:[^"]*)"/i.test(html)) fail(file, "contains a placeholder or javascript link");
   if (/\bdata-i18n(?:-ph)?=/.test(html) && !/assets\/i18n\.js\?v=/.test(html)) {
     fail(file, "uses i18n keys without loading assets/i18n.js");
   }
-  const i18nScript = html.indexOf("assets/i18n.js?v=720e");
+  const i18nScript = html.indexOf("assets/i18n.js?v=724a");
   const shellScript = html.indexOf("assets/site-shell.js?v=720a");
   const trackScript = html.indexOf("assets/track.js?v=721a");
   if (i18nScript === -1) fail(file, "missing the current locale-routing script version");
@@ -115,6 +116,20 @@ const sitemapV2Locations = [...sitemapV2.matchAll(/<loc>([^<]+)<\/loc>/g)].map((
 const duplicateSitemapLocations = [...new Set(sitemapV2Locations.filter((url, index) => sitemapV2Locations.indexOf(url) !== index))];
 if (duplicateSitemapLocations.length) fail("sitemap-v2.xml", `duplicate URLs: ${duplicateSitemapLocations.join(", ")}`);
 
+const llmsTxt = fs.readFileSync(path.join(root, "llms.txt"), "utf8");
+for (const requiredLlmsContent of [
+  "Gemini native generateContent: POST https://router.flatkey.ai/v1beta/models/{model}:generateContent",
+  "nano-banana-pro-preview supports both Gemini native generateContent and OpenAI-compatible Chat Completions.",
+  "currently do not use /v1/images/generations",
+  "Create a video task with POST https://router.flatkey.ai/v1/videos.",
+  "Poll task status with GET https://router.flatkey.ai/v1/videos/{task_id}.",
+  "Download completed video content with GET https://router.flatkey.ai/v1/videos/{task_id}/content.",
+  "https://docs.flatkey.ai/api-reference/seedance-video-generation",
+  "https://docs.flatkey.ai/zh/api-reference/seedance-video-generation",
+]) {
+  if (!llmsTxt.includes(requiredLlmsContent)) fail("llms.txt", `missing API documentation: ${requiredLlmsContent}`);
+}
+
 const about = fs.readFileSync(path.join(root, "about.html"), "utf8");
 for (const requiredAboutContent of [
   "Hunter Guo",
@@ -190,7 +205,7 @@ if (!nginxConfig.includes("sub_filter 'lang=\"en\"' 'lang=\"en-US\"';")) fail("n
 const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
 if (/\.megafoot\.slim\b/.test(sharedCss)) fail("fk2.css", "contains obsolete slim-footer styles");
 for (const visualSignature of [
-  "--home-acid:#DFFF47",
+  "--home-acid:#D9EF6E",
   "body:has(> header.hero)>.nav",
   "body:has(> header.hero)>header.hero",
   "body:has(> header.hero) .hero .board",
@@ -218,12 +233,12 @@ for (const desktopWidth of [1740, 1320]) {
   }
 }
 
-const mobileNavigationBlock = mediaBlock(1040);
+const mobileNavigationBlock = mediaBlock(1180);
 if (!/\.nav>a:not\(\.logo\)[^{]*\{[^}]*display\s*:\s*none/.test(mobileNavigationBlock)) {
-  fail("fk2.css", "1040px mobile breakpoint does not collapse the primary navigation");
+  fail("fk2.css", "1180px mobile breakpoint does not collapse the primary navigation");
 }
 if (!/\.nav \.nav-toggle\{[^}]*display\s*:\s*flex/.test(mobileNavigationBlock)) {
-  fail("fk2.css", "1040px mobile breakpoint does not expose the navigation toggle");
+  fail("fk2.css", "1180px mobile breakpoint does not expose the navigation toggle");
 }
 
 const i18nSource = fs.readFileSync(path.join(root, "assets/i18n.js"), "utf8");

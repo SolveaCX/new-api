@@ -186,11 +186,14 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
+			subscriptionRoute.POST("/self/change-plan", middleware.CriticalRateLimit(), controller.ChangeSubscriptionPlan)
+			subscriptionRoute.POST("/self/recurring/:binding_id/cancel", middleware.CriticalRateLimit(), controller.CancelRecurringSubscription)
+			subscriptionRoute.POST("/self/recurring/:binding_id/resume", middleware.CriticalRateLimit(), controller.ResumeRecurringSubscription)
 			subscriptionRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestBalancePay)
-			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestEpay)
+			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.SubscriptionPurchasePendingMigration)
 			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestStripePay)
-			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestCreemPay)
-			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestWaffoPancakePay)
+			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.SubscriptionPurchasePendingMigration)
+			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.SubscriptionPurchasePendingMigration)
 		}
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")
 		subscriptionAdminRoute.Use(middleware.AdminAuth())
@@ -313,6 +316,31 @@ func SetApiRouter(router *gin.Engine) {
 			codexModelGovernanceRoute.POST("/rules/test", controller.TestCodexModelGovernanceRule)
 			codexModelGovernanceRoute.POST("/:id/review", controller.ReviewCodexModelGovernanceRecord)
 		}
+		// flatkey Compute (GPU rental) admin dashboard. Admin-only, same guard as
+		// channels. Whitelabel: responses expose only flatkey-branded fields.
+		computeRoute := apiRouter.Group("/compute")
+		computeRoute.Use(middleware.AdminAuth())
+		{
+			computeRoute.GET("/nodes", controller.GetComputeNodes)
+			computeRoute.GET("/nodes/:id", controller.GetComputeNode)
+			computeRoute.POST("/nodes/:id/stop", controller.StopComputeNode)
+			computeRoute.GET("/offers", controller.GetComputeOffers)
+		}
+		// flatkey Compute (GPU rental) user-facing endpoints. UserAuth: every
+		// handler is scoped to c.GetInt("id") so a customer only ever sees /
+		// controls their own rented instances. Whitelabel: responses expose only
+		// flatkey-branded fields (provider fields are json:"-").
+		computeUserRoute := apiRouter.Group("/compute/instances")
+		computeUserRoute.Use(middleware.UserAuth())
+		{
+			computeUserRoute.GET("", controller.GetComputeInstances)
+			computeUserRoute.POST("", controller.CreateComputeInstance)
+			computeUserRoute.GET("/:id/connection", controller.GetComputeInstanceConnection)
+			computeUserRoute.POST("/:id/stop", controller.StopComputeInstance)
+		}
+		// User-facing GPU offer catalog (whitelabeled). Standalone route to avoid
+		// a Gin static/param conflict with /compute/instances/:id.
+		apiRouter.GET("/compute/gpu-offers", middleware.UserAuth(), controller.GetUserGpuOffers)
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
@@ -371,6 +399,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/ops_report", middleware.AdminAuth(), controller.GetOpsReport)
 		dataRoute.GET("/ops_report_stripe", middleware.AdminAuth(), controller.GetOpsStripeReport)
 		dataRoute.GET("/ops_report_ads", middleware.AdminAuth(), controller.GetOpsAdsPilotReport)
+		dataRoute.GET("/ops_report_ads_daily", middleware.AdminAuth(), controller.GetOpsAdsDailyReport)
+		dataRoute.GET("/ops_report_landing_thumb", middleware.AdminAuth(), controller.GetOpsAdsLandingThumb)
 
 		adsPilotRoute := apiRouter.Group("/ads_pilot")
 		adsPilotRoute.Use(middleware.AdminAuth())

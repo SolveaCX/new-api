@@ -315,6 +315,11 @@ var defaultModelPrice = map[string]float64{
 	"veo-3.0-fast-generate-001":      0.15,
 	"veo-3.1-generate-preview":       0.4,
 	"veo-3.1-fast-generate-preview":  0.15,
+	// xAI Grok Imagine video (per-call default; calibrate later).
+	// Per-second USD rate (billed × requested seconds via EstimateBilling).
+	// Upstream cost is $0.05/s (480p) – $0.07/s (720p); these cover 720p with margin.
+	"grok-imagine-video":     0.09,
+	"grok-imagine-video-1.5": 0.11,
 }
 
 var defaultAudioRatio = map[string]float64{
