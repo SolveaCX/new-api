@@ -43,6 +43,9 @@ type SubscriptionPlanPublicDTO struct {
 	MaxPurchasePerUser      int      `json:"max_purchase_per_user"`
 	UpgradeGroup            string   `json:"upgrade_group"`
 	TotalAmount             int64    `json:"total_amount"`
+	Window5hAmount          int64    `json:"window_5h_amount"`
+	WindowWeekAmount        int64    `json:"window_week_amount"`
+	MediaCreditsMonthly     int64    `json:"media_credits_monthly"`
 	QuotaResetPeriod        string   `json:"quota_reset_period"`
 	QuotaResetCustomSeconds int64    `json:"quota_reset_custom_seconds"`
 	CreatedAt               int64    `json:"created_at"`
@@ -357,6 +360,9 @@ func subscriptionPlanPublicDTO(plan *model.SubscriptionPlan) SubscriptionPlanPub
 		MaxPurchasePerUser:      plan.MaxPurchasePerUser,
 		UpgradeGroup:            plan.UpgradeGroup,
 		TotalAmount:             plan.TotalAmount,
+		Window5hAmount:          plan.Window5hAmount,
+		WindowWeekAmount:        plan.WindowWeekAmount,
+		MediaCreditsMonthly:     plan.MediaCreditsMonthly,
 		QuotaResetPeriod:        plan.QuotaResetPeriod,
 		QuotaResetCustomSeconds: plan.QuotaResetCustomSeconds,
 		CreatedAt:               plan.CreatedAt,

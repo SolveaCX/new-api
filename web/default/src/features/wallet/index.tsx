@@ -728,17 +728,18 @@ export function Wallet(props: WalletProps) {
               )}
               icon={<Wallet2 className='h-4 w-4' />}
               iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
-              contentClassName='space-y-4'
-            >
-              <div className='flex justify-end'>
+              action={
                 <Button
                   className='bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black'
                   onClick={() => setTopupDialogOpen(true)}
                 >
                   {t('Top up')}
                 </Button>
-              </div>
-
+              }
+              contentClassName={
+                hasRechargeHistory ? 'space-y-4' : 'hidden'
+              }
+            >
               <div
                 id='wallet-billing-history'
                 className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
