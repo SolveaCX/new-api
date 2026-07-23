@@ -25,8 +25,8 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
-	stripewebhook "github.com/stripe/stripe-go/v81/webhook"
+	"github.com/stripe/stripe-go/v86"
+	stripewebhook "github.com/stripe/stripe-go/v86/webhook"
 	"gorm.io/gorm"
 )
 
@@ -618,7 +618,7 @@ func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 	)
 
 	require.NotNil(t, params.UIMode)
-	require.Equal(t, "embedded", *params.UIMode)
+	require.Equal(t, string(stripe.CheckoutSessionUIModeEmbeddedPage), *params.UIMode)
 	require.NotNil(t, params.ReturnURL, "redirect payment methods need a landing page")
 	require.Equal(t, "https://example.com/success?session_id={CHECKOUT_SESSION_ID}&trade_no=trade_embedded", *params.ReturnURL)
 	require.Nil(t, params.SuccessURL, "embedded sessions reject success_url")
@@ -2290,6 +2290,37 @@ func TestStripeSubscriptionWebhookDeletedTerminatesBinding(t *testing.T) {
 	var sub model.UserSubscription
 	require.NoError(t, model.DB.Where("provider_binding_id = ?", binding.Id).First(&sub).Error)
 	require.Equal(t, "cancelled", sub.Status)
+}
+
+func TestStripeSubscriptionWebhookDeletedUsesItemCurrentPeriod(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	binding := insertStripeFulfillmentSubscriptionBinding(t, 705, "sub_webhook_deleted_v86", "active", false)
+	event := stripe.Event{
+		ID:   "evt_subscription_deleted_v86",
+		Type: stripe.EventTypeCustomerSubscriptionDeleted,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":       "sub_webhook_deleted_v86",
+			"customer": "cus_subscription",
+			"status":   "canceled",
+			"ended_at": float64(2500),
+			"items": map[string]interface{}{
+				"data": []interface{}{
+					map[string]interface{}{
+						"id":                   "si_deleted_v86",
+						"current_period_start": float64(3000),
+						"current_period_end":   float64(4000),
+					},
+				},
+			},
+		}},
+	}
+
+	require.NoError(t, handleStripeSubscriptionDeleted(context.Background(), event))
+
+	var updated model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&updated, binding.Id).Error)
+	require.Equal(t, int64(3000), updated.CurrentPeriodStart)
+	require.Equal(t, int64(4000), updated.CurrentPeriodEnd)
 }
 
 func TestStripeSubscriptionWebhookAcknowledgesUnrelatedSignedEvent(t *testing.T) {

@@ -66,14 +66,23 @@ func TestSubscriptionSelfLifecycleRoutesUseLocalContractHandlers(t *testing.T) {
 	}
 
 	expectedHandlers := map[string]string{
-		"GET /api/subscription/self":                               "controller.GetSubscriptionSelf",
-		"POST /api/subscription/self/change-plan":                  "controller.ChangeSubscriptionPlan",
-		"POST /api/subscription/self/recurring/:binding_id/cancel": "controller.CancelRecurringSubscription",
-		"POST /api/subscription/self/recurring/:binding_id/resume": "controller.ResumeRecurringSubscription",
+		"GET /api/subscription/self":                                           "controller.GetSubscriptionSelf",
+		"GET /api/subscription/self/refundable-terms":                          "controller.GetRefundableSubscriptionTerms",
+		"POST /api/subscription/self/refundable-terms/:term_segment_id/refund": "controller.RefundSubscriptionTerm",
+		"POST /api/subscription/self/quote":                                    "controller.QuoteSubscriptionSelfPurchase",
+		"POST /api/subscription/self/purchase":                                 "controller.PurchaseSubscriptionSelf",
+		"POST /api/subscription/self/change-plan":                              "controller.ChangeSubscriptionPlan",
 	}
 	for routeKey, expectedHandler := range expectedHandlers {
 		handler, ok := routes[routeKey]
 		require.True(t, ok, "missing %s", routeKey)
 		require.Contains(t, handler, expectedHandler)
+	}
+	for _, routeKey := range []string{
+		"POST /api/subscription/self/recurring/:binding_id/cancel",
+		"POST /api/subscription/self/recurring/:binding_id/resume",
+	} {
+		_, ok := routes[routeKey]
+		require.False(t, ok, "user lifecycle route should not be public: %s", routeKey)
 	}
 }

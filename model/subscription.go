@@ -164,8 +164,10 @@ type SubscriptionPlan struct {
 	Subtitle string `json:"subtitle" gorm:"type:varchar(255);default:''"`
 
 	// Display money amount (follow existing code style: float64 for money)
-	PriceAmount float64 `json:"price_amount" gorm:"type:decimal(10,6);not null;default:0"`
-	Currency    string  `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
+	PriceAmount float64  `json:"price_amount" gorm:"type:decimal(10,6);not null;default:0"`
+	Currency    string   `json:"currency" gorm:"type:varchar(8);not null;default:'USD'"`
+	PixPriceBRL *float64 `json:"pix_price_brl" gorm:"type:decimal(10,6)"`
+	UpiPriceINR *float64 `json:"upi_price_inr" gorm:"type:decimal(10,6)"`
 
 	DurationUnit  string `json:"duration_unit" gorm:"type:varchar(16);not null;default:'month'"`
 	DurationValue int    `json:"duration_value" gorm:"type:int;not null;default:1"`
@@ -524,6 +526,8 @@ func subscriptionPlanUpdateMap(plan *SubscriptionPlan) map[string]interface{} {
 		"subtitle":                   plan.Subtitle,
 		"price_amount":               plan.PriceAmount,
 		"currency":                   plan.Currency,
+		"pix_price_brl":              plan.PixPriceBRL,
+		"upi_price_inr":              plan.UpiPriceINR,
 		"duration_unit":              plan.DurationUnit,
 		"duration_value":             plan.DurationValue,
 		"custom_seconds":             plan.CustomSeconds,
@@ -572,6 +576,14 @@ type SubscriptionOrder struct {
 	Status          string `json:"status"`
 	CreateTime      int64  `json:"create_time"`
 	CompleteTime    int64  `json:"complete_time"`
+
+	PurchaseMonths     int     `json:"purchase_months" gorm:"type:int;not null;default:0"`
+	UnitPrice          float64 `json:"unit_price" gorm:"type:decimal(10,6);not null;default:0"`
+	PaymentCurrency    string  `json:"payment_currency" gorm:"type:varchar(8);not null;default:'USD';index"`
+	PaymentAmountMinor int64   `json:"payment_amount_minor" gorm:"type:bigint;not null;default:0"`
+	PlanSnapshot       string  `json:"plan_snapshot" gorm:"type:text"`
+	PurchaseIntent     string  `json:"purchase_intent" gorm:"type:varchar(32);default:'';index"`
+	RenewalSource      string  `json:"renewal_source" gorm:"type:varchar(32);default:'';index"`
 
 	ProviderPayload    string `json:"provider_payload" gorm:"type:text"`
 	ChangeIntentId     int64  `json:"change_intent_id" gorm:"type:bigint;default:0;index"`
@@ -627,6 +639,10 @@ type UserSubscription struct {
 	// Media (image/video) credits pool, snapshot from plan at purchase; resets with the quota cycle
 	MediaCreditsTotal int64 `json:"media_credits_total" gorm:"type:bigint;not null;default:0"`
 	MediaCreditsUsed  int64 `json:"media_credits_used" gorm:"type:bigint;not null;default:0"`
+
+	// Nil means a legacy entitlement created before window limits were snapshotted.
+	Window5hAmount   *int64 `json:"window_5h_amount,omitempty" gorm:"column:window_5h_amount;type:bigint"`
+	WindowWeekAmount *int64 `json:"window_week_amount,omitempty" gorm:"column:window_week_amount;type:bigint"`
 
 	StartTime     int64  `json:"start_time" gorm:"bigint"`
 	EndTime       int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
@@ -841,8 +857,15 @@ func getUserGroupByIdTx(tx *gorm.DB, userId int) (string, error) {
 	if tx == nil {
 		tx = DB
 	}
+	groupCol := commonGroupCol
+	if strings.TrimSpace(groupCol) == "" {
+		groupCol = "`group`"
+		if common.UsingPostgreSQL {
+			groupCol = `"group"`
+		}
+	}
 	var group string
-	if err := tx.Model(&User{}).Where("id = ?", userId).Select(commonGroupCol).Find(&group).Error; err != nil {
+	if err := tx.Model(&User{}).Where("id = ?", userId).Select(groupCol).Find(&group).Error; err != nil {
 		return "", err
 	}
 	return group, nil
@@ -935,6 +958,8 @@ func createUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			}
 		}
 	}
+	window5hAmount := plan.Window5hAmount
+	windowWeekAmount := plan.WindowWeekAmount
 	sub := &UserSubscription{
 		UserId:            userId,
 		PlanId:            plan.Id,
@@ -943,6 +968,8 @@ func createUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		AmountUsed:        0,
 		MediaCreditsTotal: plan.MediaCreditsMonthly,
 		MediaCreditsUsed:  0,
+		Window5hAmount:    &window5hAmount,
+		WindowWeekAmount:  &windowWeekAmount,
 		StartTime:         now.Unix(),
 		EndTime:           endUnix,
 		Status:            "active",
@@ -1081,6 +1108,99 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 	topup.CompleteTime = now
 	topup.Status = common.TopUpStatusSuccess
 	return tx.Save(&topup).Error
+}
+
+// SyncSubscriptionOrderTopUpHistory mirrors the current SubscriptionOrder payment
+// state into TopUp history so existing billing-history and resume flows can use it.
+func SyncSubscriptionOrderTopUpHistory(tradeNo string) error {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if tradeNo == "" {
+		return errors.New("tradeNo is empty")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var order SubscriptionOrder
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSubscriptionOrderNotFound
+			}
+			return err
+		}
+		return syncSubscriptionOrderTopUpHistoryTx(tx, &order)
+	})
+}
+
+func syncSubscriptionOrderTopUpHistoryTx(tx *gorm.DB, order *SubscriptionOrder) error {
+	if tx == nil || order == nil {
+		return errors.New("invalid subscription order")
+	}
+	status := strings.TrimSpace(order.Status)
+	switch status {
+	case common.TopUpStatusPending:
+		if strings.TrimSpace(order.ProviderSessionId) == "" {
+			return errors.New("pending subscription order checkout session is missing")
+		}
+	case common.TopUpStatusSuccess, common.TopUpStatusFailed, common.TopUpStatusExpired:
+	default:
+		return ErrSubscriptionOrderStatusInvalid
+	}
+
+	var topup TopUp
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no = ?", order.TradeNo).First(&topup).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(subscriptionOrderTopUpHistory(order, status)).Error
+		}
+		return err
+	}
+	if topup.UserId != order.UserId ||
+		(strings.TrimSpace(topup.PaymentMethod) != "" && topup.PaymentMethod != order.PaymentMethod) ||
+		(strings.TrimSpace(topup.PaymentProvider) != "" && topup.PaymentProvider != order.PaymentProvider) {
+		return ErrPaymentMethodMismatch
+	}
+	if topup.Status == common.TopUpStatusSuccess && status != common.TopUpStatusSuccess {
+		return nil
+	}
+	topup.UserId = order.UserId
+	topup.Money = order.Money
+	topup.PaymentMethod = order.PaymentMethod
+	topup.PaymentProvider = order.PaymentProvider
+	topup.PaymentCurrency = strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
+	topup.PaymentAmountMinor = order.PaymentAmountMinor
+	if strings.TrimSpace(order.ProviderSessionId) != "" {
+		topup.GatewayTradeNo = strings.TrimSpace(order.ProviderSessionId)
+	}
+	if topup.CreateTime == 0 {
+		topup.CreateTime = order.CreateTime
+	}
+	topup.Status = status
+	topup.CompleteTime = subscriptionOrderTopUpCompleteTime(order, status)
+	return tx.Save(&topup).Error
+}
+
+func subscriptionOrderTopUpHistory(order *SubscriptionOrder, status string) *TopUp {
+	return &TopUp{
+		UserId:             order.UserId,
+		Amount:             0,
+		Money:              order.Money,
+		TradeNo:            strings.TrimSpace(order.TradeNo),
+		GatewayTradeNo:     strings.TrimSpace(order.ProviderSessionId),
+		PaymentMethod:      order.PaymentMethod,
+		PaymentProvider:    order.PaymentProvider,
+		PaymentCurrency:    strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)),
+		PaymentAmountMinor: order.PaymentAmountMinor,
+		CreateTime:         order.CreateTime,
+		CompleteTime:       subscriptionOrderTopUpCompleteTime(order, status),
+		Status:             status,
+	}
+}
+
+func subscriptionOrderTopUpCompleteTime(order *SubscriptionOrder, status string) int64 {
+	if status == common.TopUpStatusPending {
+		return 0
+	}
+	if order.CompleteTime > 0 {
+		return order.CompleteTime
+	}
+	return common.GetTimestamp()
 }
 
 func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) error {
@@ -1277,9 +1397,20 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 // (5h rolling + weekly anchored at subscription start) before pre-consume.
 type SubscriptionWindowInfo struct {
 	UserSubscriptionId int
+	ContractId         int64
 	SubscriptionStart  int64
 	Window5hAmount     int64
 	WindowWeekAmount   int64
+}
+
+func (i *SubscriptionWindowInfo) WindowIdentity() int {
+	if i == nil {
+		return 0
+	}
+	if i.ContractId > 0 {
+		return int(i.ContractId)
+	}
+	return i.UserSubscriptionId
 }
 
 // GetActiveSubscriptionWindowInfo returns window limits for the user's first
@@ -1299,16 +1430,7 @@ func GetActiveSubscriptionWindowInfo(userId int) (*SubscriptionWindowInfo, error
 	if query.RowsAffected == 0 {
 		return nil, nil
 	}
-	plan, err := GetSubscriptionPlanById(sub.PlanId)
-	if err != nil {
-		return nil, err
-	}
-	return &SubscriptionWindowInfo{
-		UserSubscriptionId: sub.Id,
-		SubscriptionStart:  sub.StartTime,
-		Window5hAmount:     plan.Window5hAmount,
-		WindowWeekAmount:   plan.WindowWeekAmount,
-	}, nil
+	return subscriptionWindowInfoForSub(&sub)
 }
 
 // GetChargeableSubscriptionWindowInfo predicts which active subscription
@@ -1323,6 +1445,16 @@ func GetChargeableSubscriptionWindowInfo(userId int, amount int64) (*Subscriptio
 		return nil, errors.New("invalid userId")
 	}
 	now := common.GetTimestamp()
+	current, hasContract, _, err := findContractCurrentEntitlementForUserTx(DB, userId, now, false)
+	if err != nil {
+		return nil, err
+	}
+	if hasContract {
+		if current == nil {
+			return nil, nil
+		}
+		return subscriptionWindowInfoForSub(current)
+	}
 	var subs []UserSubscription
 	if err := DB.Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
 		Order("end_time asc, id asc").
@@ -1369,15 +1501,43 @@ func subscriptionWindowInfoForSub(sub *UserSubscription) (*SubscriptionWindowInf
 	if sub == nil {
 		return nil, nil
 	}
-	plan, err := GetSubscriptionPlanById(sub.PlanId)
-	if err != nil {
-		return nil, err
+	var window5hAmount int64
+	var windowWeekAmount int64
+	if sub.Window5hAmount != nil {
+		window5hAmount = *sub.Window5hAmount
+	}
+	if sub.WindowWeekAmount != nil {
+		windowWeekAmount = *sub.WindowWeekAmount
+	}
+	if sub.Window5hAmount == nil || sub.WindowWeekAmount == nil {
+		plan, err := GetSubscriptionPlanById(sub.PlanId)
+		if err != nil {
+			return nil, err
+		}
+		if sub.Window5hAmount == nil {
+			window5hAmount = plan.Window5hAmount
+		}
+		if sub.WindowWeekAmount == nil {
+			windowWeekAmount = plan.WindowWeekAmount
+		}
+	}
+	anchor := sub.StartTime
+	if sub.ContractId > 0 {
+		var contract UserSubscriptionContract
+		query := DB.Where("id = ? AND user_id = ?", sub.ContractId, sub.UserId).Limit(1).Find(&contract)
+		if query.Error != nil {
+			return nil, query.Error
+		}
+		if query.RowsAffected > 0 && contract.CreatedAt > 0 {
+			anchor = contract.CreatedAt
+		}
 	}
 	return &SubscriptionWindowInfo{
 		UserSubscriptionId: sub.Id,
-		SubscriptionStart:  sub.StartTime,
-		Window5hAmount:     plan.Window5hAmount,
-		WindowWeekAmount:   plan.WindowWeekAmount,
+		ContractId:         sub.ContractId,
+		SubscriptionStart:  anchor,
+		Window5hAmount:     window5hAmount,
+		WindowWeekAmount:   windowWeekAmount,
 	}, nil
 }
 

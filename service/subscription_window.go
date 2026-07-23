@@ -128,7 +128,8 @@ func subscriptionWindowWeekKey(subId int, idx int64) string {
 
 func subscriptionWindowKeys(info *model.SubscriptionWindowInfo, now int64) (weekKey string, bucketKeys []string, weekExpireAt int64) {
 	idx := subscriptionWindowWeekIndex(info.SubscriptionStart, now)
-	weekKey = subscriptionWindowWeekKey(info.UserSubscriptionId, idx)
+	identity := info.WindowIdentity()
+	weekKey = subscriptionWindowWeekKey(identity, idx)
 	base := info.SubscriptionStart
 	if base <= 0 {
 		base = 0
@@ -139,7 +140,7 @@ func subscriptionWindowKeys(info *model.SubscriptionWindowInfo, now int64) (week
 	bucketKeys = make([]string, 0, subscriptionWindowBucketCount)
 	for i := subscriptionWindowBucketCount - 1; i >= 0; i-- {
 		ts := currentBucket - int64(i)*subscriptionWindowBucketSeconds
-		bucketKeys = append(bucketKeys, subscriptionWindowBucketKey(info.UserSubscriptionId, ts))
+		bucketKeys = append(bucketKeys, subscriptionWindowBucketKey(identity, ts))
 	}
 	return weekKey, bucketKeys, weekExpireAt
 }
@@ -228,7 +229,7 @@ func reserveSubscriptionWindows(info *model.SubscriptionWindowInfo, weightedAmou
 	which, _ := vals[1].(int64)
 	if allowed == 1 {
 		guard := &subscriptionWindowGuard{
-			subId:      info.UserSubscriptionId,
+			subId:      info.WindowIdentity(),
 			subStart:   info.SubscriptionStart,
 			limit5h:    info.Window5hAmount,
 			limitWeek:  info.WindowWeekAmount,

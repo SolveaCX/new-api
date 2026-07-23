@@ -9,8 +9,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/stripe/stripe-go/v81"
-	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
+	"github.com/stripe/stripe-go/v86"
+	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
 	"gorm.io/gorm"
 )
 

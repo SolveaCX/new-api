@@ -134,6 +134,69 @@ func TestSubscriptionPlanDisableReferencedPlanReleasesReservationAndAllowsMetada
 	require.Equal(t, 30, *stored.TierRank)
 }
 
+func TestSubscriptionPlanPersistsNullableLocalPrices(t *testing.T) {
+	setupSubscriptionPlanLifecycleTestDB(t)
+
+	pixPrice := 49.90
+	upiPrice := 799.50
+	plan := lifecycleTestPlan(lifecycleRank(35), true)
+	plan.PixPriceBRL = &pixPrice
+	plan.UpiPriceINR = nil
+	require.NoError(t, CreateSubscriptionPlan(plan))
+
+	var stored SubscriptionPlan
+	require.NoError(t, DB.First(&stored, "id = ?", plan.Id).Error)
+	require.NotNil(t, stored.PixPriceBRL)
+	require.InDelta(t, pixPrice, *stored.PixPriceBRL, 0.000001)
+	require.Nil(t, stored.UpiPriceINR)
+
+	updated := stored
+	updated.PixPriceBRL = nil
+	updated.UpiPriceINR = &upiPrice
+	require.NoError(t, UpdateSubscriptionPlan(&updated))
+
+	var reloaded SubscriptionPlan
+	require.NoError(t, DB.First(&reloaded, "id = ?", plan.Id).Error)
+	require.Nil(t, reloaded.PixPriceBRL)
+	require.NotNil(t, reloaded.UpiPriceINR)
+	require.InDelta(t, upiPrice, *reloaded.UpiPriceINR, 0.000001)
+}
+
+func TestEnsureSubscriptionPlanTableSQLiteIncludesNullableLocalPrices(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+
+	require.NoError(t, ensureSubscriptionPlanTableSQLite())
+	requireSubscriptionPlanColumnNullable(t, "pix_price_brl")
+	requireSubscriptionPlanColumnNullable(t, "upi_price_inr")
+}
+
+func TestEnsureSubscriptionPlanTableSQLiteAddsLocalPricesToExistingTable(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+
+	require.NoError(t, DB.Exec("CREATE TABLE `subscription_plans` (`id` integer PRIMARY KEY, `title` varchar(128) NOT NULL, `price_amount` decimal(10,6) NOT NULL)").Error)
+	require.NoError(t, ensureSubscriptionPlanTableSQLite())
+	requireSubscriptionPlanColumnNullable(t, "pix_price_brl")
+	requireSubscriptionPlanColumnNullable(t, "upi_price_inr")
+}
+
+func requireSubscriptionPlanColumnNullable(t *testing.T, name string) {
+	t.Helper()
+	var cols []struct {
+		Name    string `gorm:"column:name"`
+		Type    string `gorm:"column:type"`
+		NotNull int    `gorm:"column:notnull"`
+	}
+	require.NoError(t, DB.Raw("PRAGMA table_info(`subscription_plans`)").Scan(&cols).Error)
+	for _, col := range cols {
+		if col.Name == name {
+			require.Equal(t, "decimal(10,6)", col.Type)
+			require.Zero(t, col.NotNull)
+			return
+		}
+	}
+	t.Fatalf("missing subscription_plans.%s", name)
+}
+
 func TestSubscriptionPlanLifecycleFieldsImmutableAfterReference(t *testing.T) {
 	setupSubscriptionPlanLifecycleTestDB(t)
 

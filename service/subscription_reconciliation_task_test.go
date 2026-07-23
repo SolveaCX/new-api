@@ -9,7 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func TestStripeSubscriptionReconciliationClosesExpiredGraceAfterAuthoritativeUnpaidFetch(t *testing.T) {
@@ -49,23 +49,10 @@ func TestStripeSubscriptionReconciliationClosesExpiredGraceAfterAuthoritativeUnp
 	stripeInvoiceGetter = func(ctx context.Context, invoiceID string) (*stripe.Invoice, error) {
 		require.Equal(t, "in_grace_unpaid", invoiceID)
 		fetchedInvoice = true
-		return &stripe.Invoice{
-			ID:           invoiceID,
-			Paid:         false,
-			Status:       stripe.InvoiceStatusOpen,
-			AmountDue:    1234,
-			Total:        1234,
-			Currency:     stripe.CurrencyUSD,
-			Customer:     &stripe.Customer{ID: "cus_invoice"},
-			Livemode:     false,
-			Subscription: &stripe.Subscription{ID: "sub_grace_expired"},
-			Lines: &stripe.InvoiceLineItemList{Data: []*stripe.InvoiceLineItem{{
-				Amount:   1234,
-				Currency: stripe.CurrencyUSD,
-				Price:    &stripe.Price{ID: "price_invoice_plan"},
-				Period:   &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000},
-			}}},
-		}, nil
+		inv := stripeInvoiceFixture(invoiceID, "sub_grace_expired")
+		markStripeInvoiceUnpaid(inv)
+		inv.Lines.Data[0].Period = &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000}
+		return inv, nil
 	}
 	stripeSubscriptionGetter = func(ctx context.Context, subscriptionID string) (*stripe.Subscription, error) {
 		require.Equal(t, "sub_grace_expired", subscriptionID)
@@ -150,23 +137,10 @@ func TestStripeSubscriptionReconciliationDoesNotCancelWhenGraceInvoicePaysBefore
 	stripeInvoiceGetter = func(ctx context.Context, invoiceID string) (*stripe.Invoice, error) {
 		require.Equal(t, "in_grace_paid_race", invoiceID)
 		if !paymentArrived {
-			return &stripe.Invoice{
-				ID:           invoiceID,
-				Paid:         false,
-				Status:       stripe.InvoiceStatusOpen,
-				AmountDue:    1234,
-				Total:        1234,
-				Currency:     stripe.CurrencyUSD,
-				Customer:     &stripe.Customer{ID: "cus_invoice"},
-				Livemode:     false,
-				Subscription: &stripe.Subscription{ID: "sub_grace_paid_race"},
-				Lines: &stripe.InvoiceLineItemList{Data: []*stripe.InvoiceLineItem{{
-					Amount:   1234,
-					Currency: stripe.CurrencyUSD,
-					Price:    &stripe.Price{ID: "price_invoice_plan"},
-					Period:   &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000},
-				}}},
-			}, nil
+			inv := stripeInvoiceFixture(invoiceID, "sub_grace_paid_race")
+			markStripeInvoiceUnpaid(inv)
+			inv.Lines.Data[0].Period = &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000}
+			return inv, nil
 		}
 		paid := stripeInvoiceFixture(invoiceID, "sub_grace_paid_race")
 		paid.Lines.Data[0].Period = &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000}
@@ -174,8 +148,7 @@ func TestStripeSubscriptionReconciliationDoesNotCancelWhenGraceInvoicePaysBefore
 	}
 	stripeSubscriptionGetter = func(ctx context.Context, subscriptionID string) (*stripe.Subscription, error) {
 		sub := stripeSubscriptionFixture(subscriptionID, map[string]string{})
-		sub.CurrentPeriodStart = entitlement.EndTime
-		sub.CurrentPeriodEnd = entitlement.EndTime + 2592000
+		setStripeSubscriptionCurrentPeriod(sub, entitlement.EndTime, entitlement.EndTime+2592000)
 		sub.LatestInvoice = &stripe.Invoice{ID: "in_grace_paid_race"}
 		return sub, nil
 	}
@@ -298,23 +271,11 @@ func TestStripeSubscriptionReconciliationMarksGraceNeedsAttentionOnAuthoritative
 	})
 	common.IsMasterNode = true
 	stripeInvoiceGetter = func(ctx context.Context, invoiceID string) (*stripe.Invoice, error) {
-		return &stripe.Invoice{
-			ID:           invoiceID,
-			Paid:         false,
-			Status:       stripe.InvoiceStatusOpen,
-			AmountDue:    1234,
-			Total:        1234,
-			Currency:     stripe.CurrencyUSD,
-			Customer:     &stripe.Customer{ID: "cus_other"},
-			Livemode:     false,
-			Subscription: &stripe.Subscription{ID: "sub_grace_mismatch"},
-			Lines: &stripe.InvoiceLineItemList{Data: []*stripe.InvoiceLineItem{{
-				Amount:   1234,
-				Currency: stripe.CurrencyUSD,
-				Price:    &stripe.Price{ID: "price_invoice_plan"},
-				Period:   &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000},
-			}}},
-		}, nil
+		inv := stripeInvoiceFixture(invoiceID, "sub_grace_mismatch")
+		markStripeInvoiceUnpaid(inv)
+		inv.Customer = &stripe.Customer{ID: "cus_other"}
+		inv.Lines.Data[0].Period = &stripe.Period{Start: entitlement.EndTime, End: entitlement.EndTime + 2592000}
+		return inv, nil
 	}
 	stripeSubscriptionGetter = func(ctx context.Context, subscriptionID string) (*stripe.Subscription, error) {
 		subscription := stripeSubscriptionFixture("sub_grace_mismatch", map[string]string{})
@@ -361,22 +322,9 @@ func TestStripeSubscriptionReconciliationKeepsPendingPurchaseForOpenInvoiceActiv
 	common.IsMasterNode = true
 	stripeInvoiceGetter = func(ctx context.Context, invoiceID string) (*stripe.Invoice, error) {
 		require.Equal(t, "in_pending_open", invoiceID)
-		return &stripe.Invoice{
-			ID:           invoiceID,
-			Paid:         false,
-			Status:       stripe.InvoiceStatusOpen,
-			AmountDue:    1234,
-			Total:        1234,
-			Currency:     stripe.CurrencyUSD,
-			Customer:     &stripe.Customer{ID: "cus_invoice"},
-			Livemode:     false,
-			Subscription: &stripe.Subscription{ID: "sub_pending_open"},
-			Lines: &stripe.InvoiceLineItemList{Data: []*stripe.InvoiceLineItem{{
-				Amount:   1234,
-				Currency: stripe.CurrencyUSD,
-				Price:    &stripe.Price{ID: "price_invoice_plan"},
-			}}},
-		}, nil
+		inv := stripeInvoiceFixture(invoiceID, "sub_pending_open")
+		markStripeInvoiceUnpaid(inv)
+		return inv, nil
 	}
 	stripeSubscriptionGetter = func(ctx context.Context, subscriptionID string) (*stripe.Subscription, error) {
 		require.Equal(t, "sub_pending_open", subscriptionID)

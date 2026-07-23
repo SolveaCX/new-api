@@ -14,15 +14,28 @@ const (
 	SubscriptionContractStatusNeedsAttention = "needs_attention"
 
 	SubscriptionPaymentModeStripeRecurring   = "stripe_recurring"
+	SubscriptionPaymentModePrepaid           = "prepaid"
 	SubscriptionPaymentModeBalanceOnePeriod  = "balance_one_period"
 	SubscriptionPaymentModeExternalOnePeriod = "external_one_period"
 
-	SubscriptionChangeIntentKindPurchase  = "purchase"
-	SubscriptionChangeIntentKindUpgrade   = "upgrade"
-	SubscriptionChangeIntentKindDowngrade = "downgrade"
-	SubscriptionChangeIntentKindCancel    = "cancel"
-	SubscriptionChangeIntentKindResume    = "resume"
-	SubscriptionChangeIntentKindTerminate = "terminate"
+	SubscriptionPaymentMethodAlipay = "alipay"
+	SubscriptionPaymentMethodPix    = "pix"
+	SubscriptionPaymentMethodUPI    = "upi"
+
+	SubscriptionRenewalSourceWallet   = "wallet_auto"
+	SubscriptionRenewalSourceProvider = "provider_recurring"
+
+	SubscriptionRenewalStatusEnabled                   = "enabled"
+	SubscriptionRenewalStatusPausedInsufficientBalance = "paused_insufficient_balance"
+	SubscriptionRenewalStatusPausedPlanUnavailable     = "paused_plan_unavailable"
+
+	SubscriptionChangeIntentKindPurchase   = "purchase"
+	SubscriptionChangeIntentKindRepurchase = "repurchase"
+	SubscriptionChangeIntentKindUpgrade    = "upgrade"
+	SubscriptionChangeIntentKindDowngrade  = "downgrade"
+	SubscriptionChangeIntentKindCancel     = "cancel"
+	SubscriptionChangeIntentKindResume     = "resume"
+	SubscriptionChangeIntentKindTerminate  = "terminate"
 
 	SubscriptionChangeIntentStatusCreated              = "created"
 	SubscriptionChangeIntentStatusSyncing              = "syncing"
@@ -41,6 +54,9 @@ type UserSubscriptionContract struct {
 	UserId      int    `json:"user_id" gorm:"not null;uniqueIndex"`
 	Status      string `json:"status" gorm:"type:varchar(32);not null;default:'ended';index"`
 	PaymentMode string `json:"payment_mode" gorm:"type:varchar(32);not null;default:'external_one_period';index"`
+
+	RenewalSource string `json:"renewal_source" gorm:"type:varchar(32);default:'';index"`
+	RenewalStatus string `json:"renewal_status" gorm:"type:varchar(64);default:'';index"`
 
 	CurrentPlanId            int    `json:"current_plan_id" gorm:"default:0;index"`
 	CurrentEntitlementId     int    `json:"current_entitlement_id" gorm:"default:0;index"`
@@ -148,7 +164,7 @@ func normalizeSubscriptionContractStatus(status string) string {
 
 func normalizeSubscriptionPaymentMode(mode string) string {
 	switch strings.TrimSpace(mode) {
-	case SubscriptionPaymentModeStripeRecurring, SubscriptionPaymentModeBalanceOnePeriod:
+	case SubscriptionPaymentModeStripeRecurring, SubscriptionPaymentModePrepaid, SubscriptionPaymentModeBalanceOnePeriod:
 		return strings.TrimSpace(mode)
 	default:
 		return SubscriptionPaymentModeExternalOnePeriod
@@ -157,7 +173,7 @@ func normalizeSubscriptionPaymentMode(mode string) string {
 
 func normalizeSubscriptionChangeIntentKind(kind string) string {
 	switch strings.TrimSpace(kind) {
-	case SubscriptionChangeIntentKindUpgrade, SubscriptionChangeIntentKindDowngrade, SubscriptionChangeIntentKindCancel, SubscriptionChangeIntentKindResume, SubscriptionChangeIntentKindTerminate:
+	case SubscriptionChangeIntentKindRepurchase, SubscriptionChangeIntentKindUpgrade, SubscriptionChangeIntentKindDowngrade, SubscriptionChangeIntentKindCancel, SubscriptionChangeIntentKindResume, SubscriptionChangeIntentKindTerminate:
 		return strings.TrimSpace(kind)
 	default:
 		return SubscriptionChangeIntentKindPurchase

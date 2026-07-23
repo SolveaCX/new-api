@@ -453,6 +453,50 @@ export function SubscriptionsMutateDrawer({
               </div>
 
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+                <FormField
+                  control={form.control}
+                  name='pix_price_brl'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Pix monthly price (BRL)')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          step='0.000001'
+                          min={0}
+                          value={field.value || ''}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='upi_price_inr'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('UPI monthly price (INR)')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          step='0.000001'
+                          min={0}
+                          value={field.value || ''}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormItem>
                   <FormLabel>{t('Tier Rank')}</FormLabel>
                   <FormControl>
@@ -654,9 +698,7 @@ export function SubscriptionsMutateDrawer({
                         />
                       </FormControl>
                       <FormDescription>
-                        {t(
-                          'Credits for image & video generation. 0 hides it.'
-                        )}
+                        {t('Credits for image & video generation. 0 hides it.')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

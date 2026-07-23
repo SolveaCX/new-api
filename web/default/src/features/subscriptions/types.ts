@@ -28,6 +28,8 @@ export const subscriptionPlanSchema = z.object({
   subtitle: z.string().optional(),
   price_amount: z.number(),
   currency: z.string().default('USD'),
+  pix_price_brl: z.number().nullable().optional(),
+  upi_price_inr: z.number().nullable().optional(),
   duration_unit: z.enum(['year', 'month', 'day', 'hour', 'custom']),
   duration_value: z.number(),
   custom_seconds: z.number().optional(),
@@ -53,7 +55,12 @@ export const subscriptionPlanSchema = z.object({
   tier_rank: z.number().optional().nullable(),
   payment_modes: z
     .array(
-      z.enum(['stripe_recurring', 'balance_one_period', 'external_one_period'])
+      z.enum([
+        'stripe_recurring',
+        'prepaid',
+        'balance_one_period',
+        'external_one_period',
+      ])
     )
     .optional(),
 })
@@ -156,10 +163,57 @@ export interface SubscriptionPayResponse {
 
 export type SubscriptionPaymentMode =
   | 'stripe_recurring'
+  | 'prepaid'
   | 'balance_one_period'
   | 'external_one_period'
 
-export type ChangePlanPaymentMode = 'stripe_recurring' | 'balance_one_period'
+export type ChangePlanPaymentMode =
+  | 'stripe_recurring'
+  | 'prepaid'
+  | 'balance_one_period'
+
+export type FlexiblePaymentChoice =
+  | 'stripe_recurring'
+  | 'alipay'
+  | 'pix'
+  | 'upi'
+  | 'balance'
+
+export interface FlexiblePurchaseRequest {
+  plan_id: number
+  payment_choice: FlexiblePaymentChoice
+  months: number
+  request_id: string
+  quote_id?: string
+  order_id?: string
+}
+
+export interface FlexiblePurchaseResponse {
+  status: 'applied' | 'checkout_required' | 'payment_action_required' | 'failed'
+  contract?: SubscriptionContract
+  intent?: SubscriptionPendingChange
+  checkout_url?: string
+  hosted_invoice_url?: string
+  start_time?: number
+  end_time?: number
+  remaining_days?: number
+  refundable_not_started_value?: number
+  payment_quotes?: SubscriptionPaymentQuotes
+}
+
+export interface SubscriptionPaymentQuote {
+  currency: string
+  months: number
+  unit_price: number
+  total: number
+  quote_id?: string
+  order_id?: string
+  expires_at?: number
+}
+
+export type SubscriptionPaymentQuotes = Partial<
+  Record<FlexiblePaymentChoice, SubscriptionPaymentQuote>
+>
 
 export type SubscriptionContractStatus =
   | 'active'
@@ -223,7 +277,27 @@ export interface SubscriptionQuota {
   amount_used: number
   amount_remaining: number
   unlimited: boolean
+  reset_at?: number
 }
+
+export interface SubscriptionUsageWindow {
+  used?: number
+  total?: number
+  remaining?: number
+  reset_at?: number
+  unlimited?: boolean
+}
+
+export type SubscriptionPaymentAvailability = Partial<
+  Record<
+    FlexiblePaymentChoice,
+    {
+      available?: boolean
+      disabled_reason?: string
+      reason?: string
+    }
+  >
+>
 
 export interface SubscriptionPendingChange {
   intent_id: number
@@ -328,6 +402,15 @@ export interface SelfSubscriptionData {
   current_entitlement?: SubscriptionEntitlement | null
   current_period?: SubscriptionCurrentPeriod
   quota?: SubscriptionQuota
+  monthly_bucket?: SubscriptionQuota
+  window_5h?: SubscriptionUsageWindow
+  window_7d?: SubscriptionUsageWindow
+  media_credits?: SubscriptionUsageWindow
+  remaining_days?: number
+  renewal_source?: string
+  renewal_status?: string
+  payment_availability?: SubscriptionPaymentAvailability
+  payment_quotes?: SubscriptionPaymentQuotes
   pending_change?: SubscriptionPendingChange | null
   capabilities: SelfSubscriptionCapabilities
   migration: SelfSubscriptionMigration

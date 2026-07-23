@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -15,10 +17,11 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
-	"github.com/stripe/stripe-go/v81"
-	"github.com/stripe/stripe-go/v81/checkout/session"
-	stripecoupon "github.com/stripe/stripe-go/v81/coupon"
+	"github.com/stripe/stripe-go/v86"
+	"github.com/stripe/stripe-go/v86/checkout/session"
+	stripecoupon "github.com/stripe/stripe-go/v86/coupon"
 	"github.com/thanhpk/randstr"
+	"gorm.io/gorm"
 )
 
 type SubscriptionStripePayRequest struct {
@@ -237,4 +240,232 @@ func buildStripeSubscriptionCheckoutSessionParams(referenceId string, customerId
 	}
 
 	return params
+}
+
+type oneTimePlanSnapshot struct {
+	Title            string  `json:"title"`
+	PriceAmount      float64 `json:"price_amount"`
+	Currency         string  `json:"currency"`
+	DurationUnit     string  `json:"duration_unit"`
+	DurationValue    int     `json:"duration_value"`
+	TotalAmount      int64   `json:"total_amount"`
+	UpgradeGroup     string  `json:"upgrade_group"`
+	QuotaResetPeriod string  `json:"quota_reset_period"`
+}
+
+type oneTimePlanPaymentQuote struct {
+	Currency         string
+	TotalAmountMinor int64
+}
+
+type oneTimeStripeCheckoutSession struct {
+	ID  string
+	URL string
+}
+
+var stripeOneTimeCheckoutSessionCreator = createOneTimeStripeCheckoutSession
+
+func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.SubscriptionOrder, user *model.User) (*oneTimeStripeCheckoutSession, error) {
+	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
+		return nil, errors.New("invalid Stripe API key")
+	}
+	params, err := buildOneTimePlanCheckoutSessionParams(order, user)
+	if err != nil {
+		return nil, err
+	}
+	stripe.Key = setting.StripeApiSecret
+	created, err := session.New(params)
+	if err != nil {
+		return nil, err
+	}
+	if created == nil || strings.TrimSpace(created.ID) == "" || strings.TrimSpace(created.URL) == "" {
+		return nil, errors.New("Stripe checkout session missing id or url")
+	}
+	if err := persistOneTimeStripeCheckoutSession(order.TradeNo, created.ID, created.URL); err != nil {
+		return nil, err
+	}
+	return &oneTimeStripeCheckoutSession{ID: strings.TrimSpace(created.ID), URL: strings.TrimSpace(created.URL)}, nil
+}
+
+func persistOneTimeStripeCheckoutSession(tradeNo string, sessionID string, sessionURL string) error {
+	tradeNo = strings.TrimSpace(tradeNo)
+	sessionID = strings.TrimSpace(sessionID)
+	sessionURL = strings.TrimSpace(sessionURL)
+	if tradeNo == "" || sessionID == "" || sessionURL == "" {
+		return errors.New("Stripe checkout session id and url are required")
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var order model.SubscriptionOrder
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
+			return err
+		}
+		if !isOneTimePlanStripeMethod(order.PaymentMethod) {
+			return errors.New("subscription order is not a one-time Stripe checkout order")
+		}
+		if strings.TrimSpace(order.ProviderSessionId) != "" && strings.TrimSpace(order.ProviderSessionId) != sessionID {
+			return errors.New("Stripe checkout session mismatch")
+		}
+		return tx.Model(&order).Updates(map[string]interface{}{
+			"provider_session_id":  sessionID,
+			"provider_session_url": sessionURL,
+		}).Error
+	})
+}
+
+func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user *model.User) (*stripe.CheckoutSessionParams, error) {
+	if order == nil {
+		return nil, errors.New("subscription order is required")
+	}
+	if strings.TrimSpace(order.TradeNo) == "" {
+		return nil, errors.New("subscription order trade_no is required")
+	}
+	quote, err := oneTimePlanQuoteFromOrder(order)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOneTimePlanMethodCurrency(order.PaymentMethod, quote.Currency); err != nil {
+		return nil, err
+	}
+	method := strings.ToLower(strings.TrimSpace(order.PaymentMethod))
+	if !isOneTimePlanStripeMethod(method) {
+		return nil, errors.New("unsupported one-time Stripe payment method")
+	}
+	stripeMethodType, err := stripePaymentMethodTypeForOneTimePlan(method)
+	if err != nil {
+		return nil, err
+	}
+	productName, productDescription := oneTimePlanProductText(order)
+	metadata := oneTimePlanMetadata(order, method)
+	params := &stripe.CheckoutSessionParams{
+		ClientReferenceID: stripe.String(strings.TrimSpace(order.TradeNo)),
+		SuccessURL:        stripe.String(consolePaymentReturnPath("/console/topup")),
+		CancelURL:         stripe.String(consolePaymentReturnPath("/console/topup")),
+		Mode:              stripe.String(string(stripe.CheckoutSessionModePayment)),
+		PaymentMethodTypes: []*string{
+			stripe.String(string(stripeMethodType)),
+		},
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				Quantity: stripe.Int64(1),
+				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+					Currency:   stripe.String(strings.ToLower(quote.Currency)),
+					UnitAmount: stripe.Int64(quote.TotalAmountMinor),
+					ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+						Name:        stripe.String(productName),
+						Description: stripe.String(productDescription),
+					},
+				},
+			},
+		},
+		Metadata: metadata,
+		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
+			Metadata: metadata,
+		},
+	}
+	if user != nil {
+		if strings.TrimSpace(user.StripeCustomer) != "" {
+			params.Customer = stripe.String(strings.TrimSpace(user.StripeCustomer))
+		} else if strings.TrimSpace(user.Email) != "" {
+			params.CustomerEmail = stripe.String(strings.TrimSpace(user.Email))
+		}
+	}
+	params.SetIdempotencyKey("subscription-one-time:" + strings.TrimSpace(order.TradeNo))
+	return params, nil
+}
+
+func oneTimePlanQuoteFromOrder(order *model.SubscriptionOrder) (oneTimePlanPaymentQuote, error) {
+	if order == nil {
+		return oneTimePlanPaymentQuote{}, errors.New("subscription order is required")
+	}
+	currency := strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
+	if currency == "" || order.PaymentAmountMinor <= 0 {
+		return oneTimePlanPaymentQuote{}, errors.New("one-time subscription quote is unavailable")
+	}
+	return oneTimePlanPaymentQuote{
+		Currency:         currency,
+		TotalAmountMinor: order.PaymentAmountMinor,
+	}, nil
+}
+
+func validateOneTimePlanMethodCurrency(method string, currency string) error {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case service.SubscriptionPaymentChoicePix:
+		if strings.ToUpper(strings.TrimSpace(currency)) != "BRL" {
+			return errors.New("Pix requires BRL quote")
+		}
+	case service.SubscriptionPaymentChoiceUPI:
+		if strings.ToUpper(strings.TrimSpace(currency)) != "INR" {
+			return errors.New("UPI requires INR quote")
+		}
+	case service.SubscriptionPaymentChoiceAlipay:
+		if strings.ToUpper(strings.TrimSpace(currency)) == "" {
+			return errors.New("Alipay quote currency is required")
+		}
+	default:
+		return errors.New("unsupported one-time Stripe payment method")
+	}
+	return nil
+}
+
+func stripePaymentMethodTypeForOneTimePlan(method string) (stripe.PaymentMethodType, error) {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case service.SubscriptionPaymentChoiceAlipay:
+		return stripe.PaymentMethodTypeAlipay, nil
+	case service.SubscriptionPaymentChoicePix:
+		return stripe.PaymentMethodTypePix, nil
+	case service.SubscriptionPaymentChoiceUPI:
+		return stripe.PaymentMethodTypeUpi, nil
+	default:
+		return "", errors.New("unsupported one-time Stripe payment method")
+	}
+}
+
+func isOneTimePlanStripeMethod(method string) bool {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case service.SubscriptionPaymentChoiceAlipay, service.SubscriptionPaymentChoicePix, service.SubscriptionPaymentChoiceUPI:
+		return true
+	default:
+		return false
+	}
+}
+
+func oneTimePlanMetadata(order *model.SubscriptionOrder, method string) map[string]string {
+	return map[string]string{
+		"trade_no":             strings.TrimSpace(order.TradeNo),
+		"user_id":              strconv.Itoa(order.UserId),
+		"plan_id":              strconv.Itoa(order.PlanId),
+		"change_intent_id":     strconv.FormatInt(order.ChangeIntentId, 10),
+		"purchase_intent":      strings.TrimSpace(order.PurchaseIntent),
+		"purchase_months":      strconv.Itoa(order.PurchaseMonths),
+		"payment_method":       method,
+		"payment_currency":     strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)),
+		"payment_amount_minor": strconv.FormatInt(order.PaymentAmountMinor, 10),
+		"newapi_trade_no":      strings.TrimSpace(order.TradeNo),
+		"newapi_user_id":       strconv.Itoa(order.UserId),
+		"newapi_plan_id":       strconv.Itoa(order.PlanId),
+	}
+}
+
+func oneTimePlanProductText(order *model.SubscriptionOrder) (string, string) {
+	snapshot := oneTimePlanSnapshotFromOrder(order)
+	name := strings.TrimSpace(snapshot.Title)
+	if name == "" {
+		name = fmt.Sprintf("Subscription plan %d", order.PlanId)
+	}
+	description := fmt.Sprintf("%d month subscription", order.PurchaseMonths)
+	if order.PurchaseMonths != 1 {
+		description = fmt.Sprintf("%d months subscription", order.PurchaseMonths)
+	}
+	return name, description
+}
+
+func oneTimePlanSnapshotFromOrder(order *model.SubscriptionOrder) oneTimePlanSnapshot {
+	if order == nil || strings.TrimSpace(order.PlanSnapshot) == "" {
+		return oneTimePlanSnapshot{}
+	}
+	var snapshot oneTimePlanSnapshot
+	if err := common.Unmarshal([]byte(order.PlanSnapshot), &snapshot); err != nil {
+		return oneTimePlanSnapshot{}
+	}
+	return snapshot
 }

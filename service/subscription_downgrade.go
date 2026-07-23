@@ -9,9 +9,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/stripe/stripe-go/v81"
-	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
-	stripeschedule "github.com/stripe/stripe-go/v81/subscriptionschedule"
+	"github.com/stripe/stripe-go/v86"
+	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
+	stripeschedule "github.com/stripe/stripe-go/v86/subscriptionschedule"
 	"gorm.io/gorm"
 )
 
@@ -372,17 +372,13 @@ func sameStripeDowngradeVersion(left StripeSubscriptionDowngradeInput, right Str
 }
 
 func stripeSubscriptionCurrentPeriodStart(sub *stripe.Subscription) int64 {
-	if sub == nil {
-		return 0
-	}
-	return sub.CurrentPeriodStart
+	start, _ := stripeSubscriptionCurrentPeriod(sub)
+	return start
 }
 
 func stripeSubscriptionCurrentPeriodEnd(sub *stripe.Subscription) int64 {
-	if sub == nil {
-		return 0
-	}
-	return sub.CurrentPeriodEnd
+	_, end := stripeSubscriptionCurrentPeriod(sub)
+	return end
 }
 
 func firstPositiveInt64(values ...int64) int64 {

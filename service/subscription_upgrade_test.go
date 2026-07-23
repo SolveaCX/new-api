@@ -13,7 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func insertStripeUpgradePlan(t *testing.T, id int, rank int, price float64, amount int64, priceID string) model.SubscriptionPlan {
@@ -460,7 +460,7 @@ func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
 	invoice.AmountPaid = 2500
 	invoice.AmountDue = 2500
 	invoice.Total = 2500
-	invoice.Lines.Data[0].Price = &stripe.Price{ID: "price_target_paid"}
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_paid")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
 	subscription := stripeSubscriptionFixture("sub_upgrade", map[string]string{
 		"trade_no":         "",
@@ -473,8 +473,7 @@ func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = "si_current_item"
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_paid"}
-	subscription.CurrentPeriodStart = 3000
-	subscription.CurrentPeriodEnd = 4000
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	subscription.CancelAtPeriodEnd = true
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
@@ -525,4 +524,92 @@ func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
 	var bindingCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("provider_subscription_id = ?", binding.ProviderSubscriptionId).Count(&bindingCount).Error)
 	require.Equal(t, int64(1), bindingCount)
+}
+
+func TestStripeUpgradePaidInvoiceUsesFrozenUpgradeOrderPlanSnapshotAfterPlanEdit(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7138, 0)
+	currentPlan := insertStripeUpgradePlan(t, 7248, 1, 10, 1000, "price_current_snapshot")
+	targetPlan := insertStripeUpgradePlan(t, 7249, 2, 25, 2500, "price_target_snapshot")
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", targetPlan.Id).Updates(map[string]interface{}{
+		"media_credits_monthly": int64(55),
+		"window_5h_amount":      int64(125),
+		"window_week_amount":    int64(900),
+		"upgrade_group":         "snapshot_group",
+	}).Error)
+	contract, binding, _ := seedStripeUpgradeContract(t, 7138, currentPlan)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:             contract.Id,
+		UserId:                 7138,
+		RequestId:              "stripe-upgrade-snapshot",
+		ChangeVersion:          1,
+		Kind:                   model.SubscriptionChangeIntentKindUpgrade,
+		PaymentMode:            model.SubscriptionPaymentModeStripeRecurring,
+		Status:                 model.SubscriptionChangeIntentStatusAwaitingPayment,
+		FromPlanId:             currentPlan.Id,
+		ToPlanId:               targetPlan.Id,
+		ProviderBindingId:      binding.Id,
+		ProviderInvoiceId:      "in_upgrade_snapshot",
+		ProviderIdempotencyKey: "subscription-upgrade:1:1:7249",
+		EffectiveAt:            common.GetTimestamp(),
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	order := model.SubscriptionOrder{
+		UserId:          7138,
+		PlanId:          targetPlan.Id,
+		Money:           25,
+		TradeNo:         "sub_upgrade_snapshot_order",
+		PaymentMethod:   model.PaymentMethodStripe,
+		PaymentProvider: model.PaymentProviderStripe,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      common.GetTimestamp(),
+		PlanSnapshot:    `{"plan_id":7249,"title":"Entitlement Plan","price_amount":25,"currency":"USD","duration_unit":"month","duration_value":1,"total_amount":2500,"window_5h_amount":125,"window_week_amount":900,"media_credits_monthly":55,"upgrade_group":"snapshot_group"}`,
+		PurchaseIntent:  model.SubscriptionChangeIntentKindUpgrade,
+		ChangeIntentId:  intent.Id,
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+	require.NoError(t, model.DB.Model(contract).Update("latest_change_intent_id", intent.Id).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", targetPlan.Id).Updates(map[string]interface{}{
+		"price_amount":          99.99,
+		"total_amount":          int64(999999),
+		"media_credits_monthly": int64(999),
+		"window_5h_amount":      int64(999),
+		"window_week_amount":    int64(888),
+		"upgrade_group":         "edited_group",
+	}).Error)
+	invoice := stripeInvoiceFixture("in_upgrade_snapshot", "sub_upgrade")
+	invoice.AmountPaid = 2500
+	invoice.AmountDue = 2500
+	invoice.Total = 2500
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_snapshot")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
+	subscription := stripeSubscriptionFixture("sub_upgrade", map[string]string{
+		"user_id":          "7138",
+		"plan_id":          fmt.Sprintf("%d", targetPlan.Id),
+		"contract_id":      fmt.Sprintf("%d", contract.Id),
+		"change_intent_id": fmt.Sprintf("%d", intent.Id),
+	})
+	invoice.Customer = &stripe.Customer{ID: "cus_upgrade"}
+	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
+	subscription.Items.Data[0].ID = "si_current_item"
+	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_snapshot"}
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	reconciled, err := ReconcilePaidInvoice(context.Background(), "in_upgrade_snapshot")
+
+	require.NoError(t, err)
+	require.True(t, reconciled.Applied)
+	require.NotNil(t, reconciled.Entitlement)
+	require.Equal(t, int64(2500), reconciled.Entitlement.AmountTotal)
+	require.Equal(t, int64(55), reconciled.Entitlement.MediaCreditsTotal)
+	require.NotNil(t, reconciled.Entitlement.Window5hAmount)
+	require.NotNil(t, reconciled.Entitlement.WindowWeekAmount)
+	require.Equal(t, int64(125), *reconciled.Entitlement.Window5hAmount)
+	require.Equal(t, int64(900), *reconciled.Entitlement.WindowWeekAmount)
+	require.Equal(t, "snapshot_group", reconciled.Entitlement.UpgradeGroup)
+	var reloadedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&reloadedBinding, "id = ?", binding.Id).Error)
+	require.Equal(t, order.Id, reloadedBinding.InitialOrderId)
 }
