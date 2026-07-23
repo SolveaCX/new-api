@@ -72,6 +72,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			}
 			if existing.Kind == model.SubscriptionChangeIntentKindUpgrade &&
 				existing.PaymentMode == model.SubscriptionPaymentModeStripeRecurring &&
+				existing.ProviderBindingId > 0 &&
 				(existing.Status == model.SubscriptionChangeIntentStatusSyncing ||
 					existing.Status == model.SubscriptionChangeIntentStatusAwaitingPayment) {
 				var binding model.SubscriptionProviderBinding
@@ -329,44 +330,92 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 				if strings.TrimSpace(plan.StripePriceId) == "" {
 					return errors.New("subscription plan Stripe price id is required")
 				}
-				if contract.PaymentMode != model.SubscriptionPaymentModeStripeRecurring || contract.CurrentProviderBindingId <= 0 {
+				if contract.PaymentMode == model.SubscriptionPaymentModeStripeRecurring && contract.CurrentProviderBindingId > 0 {
+					var binding model.SubscriptionProviderBinding
+					if err := subscriptionCommandLock(tx).
+						Where("id = ? AND user_id = ? AND contract_id = ? AND provider = ?",
+							contract.CurrentProviderBindingId, cmd.UserID, contract.Id, model.PaymentProviderStripe).
+						First(&binding).Error; err != nil {
+						return err
+					}
+					if strings.TrimSpace(binding.ProviderSubscriptionId) == "" || strings.TrimSpace(binding.ProviderSubscriptionItemId) == "" {
+						return errors.New("Stripe subscription binding is incomplete")
+					}
+					intent.Status = model.SubscriptionChangeIntentStatusSyncing
+					intent.ProviderBindingId = binding.Id
+					idempotencyKey := stripeSubscriptionUpgradeIntentIdempotencyKey(contract.Id, intent.ChangeVersion, plan.Id, intent.Id)
+					if err := tx.Model(intent).Updates(map[string]interface{}{
+						"status":                   intent.Status,
+						"provider_binding_id":      intent.ProviderBindingId,
+						"provider_idempotency_key": idempotencyKey,
+						"updated_at":               common.GetTimestamp(),
+					}).Error; err != nil {
+						return err
+					}
+					intent.ProviderIdempotencyKey = idempotencyKey
+					upgradeInput = &StripeSubscriptionUpgradeInput{
+						ContractID:                 contract.Id,
+						ChangeVersion:              intent.ChangeVersion,
+						TargetPlanID:               plan.Id,
+						TargetPriceID:              strings.TrimSpace(plan.StripePriceId),
+						ProviderSubscriptionID:     binding.ProviderSubscriptionId,
+						ProviderSubscriptionItemID: binding.ProviderSubscriptionItemId,
+						ProviderScheduleID:         binding.ProviderScheduleId,
+						CancelAtPeriodEnd:          binding.CancelAtPeriodEnd,
+						IdempotencyKey:             idempotencyKey,
+					}
+					result = &ChangePlanResult{
+						Status:   ChangePlanStatusPaymentActionRequired,
+						Contract: contract,
+						Intent:   intent,
+					}
+					return nil
+				}
+				if contract.Status != model.SubscriptionContractStatusActive ||
+					contract.CurrentProviderBindingId != 0 ||
+					(contract.PaymentMode != model.SubscriptionPaymentModeBalanceOnePeriod &&
+						contract.PaymentMode != model.SubscriptionPaymentModeExternalOnePeriod) {
 					return errors.New("current subscription is not Stripe recurring")
 				}
-				var binding model.SubscriptionProviderBinding
-				if err := subscriptionCommandLock(tx).
-					Where("id = ? AND user_id = ? AND contract_id = ? AND provider = ?",
-						contract.CurrentProviderBindingId, cmd.UserID, contract.Id, model.PaymentProviderStripe).
-					First(&binding).Error; err != nil {
-					return err
-				}
-				if strings.TrimSpace(binding.ProviderSubscriptionId) == "" || strings.TrimSpace(binding.ProviderSubscriptionItemId) == "" {
-					return errors.New("Stripe subscription binding is incomplete")
-				}
-				intent.Status = model.SubscriptionChangeIntentStatusSyncing
-				intent.ProviderBindingId = binding.Id
-				idempotencyKey := stripeSubscriptionUpgradeIntentIdempotencyKey(contract.Id, intent.ChangeVersion, plan.Id, intent.Id)
+				intent.Status = model.SubscriptionChangeIntentStatusAwaitingPayment
+				tradeNo := fmt.Sprintf("SUBSTRUSR%dINT%dNO%s%d", user.Id, intent.Id, common.GetRandomString(6), time.Now().UnixNano())
+				idempotencyKey := stripeSubscriptionCheckoutIdempotencyKey(contract.Id, intent.ChangeVersion, intent.Id)
 				if err := tx.Model(intent).Updates(map[string]interface{}{
 					"status":                   intent.Status,
-					"provider_binding_id":      intent.ProviderBindingId,
 					"provider_idempotency_key": idempotencyKey,
 					"updated_at":               common.GetTimestamp(),
 				}).Error; err != nil {
 					return err
 				}
 				intent.ProviderIdempotencyKey = idempotencyKey
-				upgradeInput = &StripeSubscriptionUpgradeInput{
-					ContractID:                 contract.Id,
-					ChangeVersion:              intent.ChangeVersion,
-					TargetPlanID:               plan.Id,
-					TargetPriceID:              strings.TrimSpace(plan.StripePriceId),
-					ProviderSubscriptionID:     binding.ProviderSubscriptionId,
-					ProviderSubscriptionItemID: binding.ProviderSubscriptionItemId,
-					ProviderScheduleID:         binding.ProviderScheduleId,
-					CancelAtPeriodEnd:          binding.CancelAtPeriodEnd,
-					IdempotencyKey:             idempotencyKey,
+				order := &model.SubscriptionOrder{
+					UserId:          user.Id,
+					PlanId:          plan.Id,
+					Money:           plan.PriceAmount,
+					TradeNo:         tradeNo,
+					PaymentMethod:   model.PaymentMethodStripe,
+					PaymentProvider: model.PaymentProviderStripe,
+					Status:          common.TopUpStatusPending,
+					CreateTime:      common.GetTimestamp(),
+					ProviderPayload: fmt.Sprintf("change_intent_id=%d", intent.Id),
+					ChangeIntentId:  intent.Id,
+				}
+				if err := tx.Create(order).Error; err != nil {
+					return err
+				}
+				checkoutInput = &StripeSubscriptionCheckoutInput{
+					TradeNo:        tradeNo,
+					UserID:         user.Id,
+					PlanID:         plan.Id,
+					ContractID:     contract.Id,
+					ChangeIntentID: intent.Id,
+					CustomerID:     strings.TrimSpace(user.StripeCustomer),
+					Email:          strings.TrimSpace(user.Email),
+					PriceID:        strings.TrimSpace(plan.StripePriceId),
+					IdempotencyKey: idempotencyKey,
 				}
 				result = &ChangePlanResult{
-					Status:   ChangePlanStatusPaymentActionRequired,
+					Status:   ChangePlanStatusCheckoutRequired,
 					Contract: contract,
 					Intent:   intent,
 				}
