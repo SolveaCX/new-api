@@ -592,6 +592,9 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 			return 0, err
 		}
 	}
+	if err := validateRecallRecipientIdentitiesUnique(recipients); err != nil {
+		return 0, err
+	}
 	runEvent.CampaignId = campaignID
 
 	inserted := int64(0)
@@ -1011,6 +1014,18 @@ func normalizeRecallRecipientIdentity(recipient *RecallRecipient) error {
 		return fmt.Errorf("recall recipient for campaign %d requires a positive user id or valid email snapshot", recipient.CampaignId)
 	}
 	recipient.RecipientIdentity = RecallRecipientIdentityForEmail(email)
+	return nil
+}
+
+func validateRecallRecipientIdentitiesUnique(recipients []RecallRecipient) error {
+	seen := make(map[string]int, len(recipients))
+	for i, recipient := range recipients {
+		identity := recipient.RecipientIdentity
+		if previous, ok := seen[identity]; ok {
+			return fmt.Errorf("duplicate recipient identity %s at recipient indexes %d and %d", identity, previous, i)
+		}
+		seen[identity] = i
+	}
 	return nil
 }
 

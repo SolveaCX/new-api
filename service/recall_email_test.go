@@ -729,6 +729,7 @@ func TestRecallEmailRunBatchLeasesOnlyDueMessages(t *testing.T) {
 	}).Error)
 	futureRecipient := fixture.recipient
 	futureRecipient.Id = 0
+	futureRecipient.RecipientIdentity = ""
 	futureRecipient.UserId++
 	futureRecipient.EmailSnapshot = "future@example.com"
 	futurePromotionID := "promo_future"
@@ -787,6 +788,7 @@ func TestRecallEmailRunBatchRefreshesStopInputsBeforeEachSend(t *testing.T) {
 			require.NoError(t, model.DB.Create(&secondUser).Error)
 			secondRecipient := fixture.recipient
 			secondRecipient.Id = 0
+			secondRecipient.RecipientIdentity = ""
 			secondRecipient.UserId = secondUser.Id
 			secondRecipient.EmailSnapshot = secondUser.Email
 			secondPromotionID := "promo_batch_second"
