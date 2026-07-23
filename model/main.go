@@ -432,6 +432,8 @@ func migrateDBFast() error {
 	return nil
 }
 
+const recallRecipientIdentityMigrationBatchSize = 500
+
 func migrateRecallRecipientIdentity() error {
 	if DB == nil || !DB.Migrator().HasTable(&RecallRecipient{}) {
 		return nil
@@ -448,27 +450,35 @@ func migrateRecallRecipientIdentity() error {
 		EmailSnapshot     string
 		RecipientIdentity string
 	}
-	var rows []recipientIdentityRow
-	if err := DB.Table("recall_recipients").
-		Select("id", "user_id", "email_snapshot", "recipient_identity").
-		Where("recipient_identity = '' OR recipient_identity IS NULL").
-		Order("id ASC").
-		Find(&rows).Error; err != nil {
-		return fmt.Errorf("failed to load recall recipients for identity backfill: %w", err)
-	}
-	for _, row := range rows {
-		identity := RecallRecipientIdentityForUser(row.UserId)
-		if identity == "" {
-			email, ok := normalizeRecallRecipientEmail(row.EmailSnapshot)
-			if !ok {
-				return fmt.Errorf("recall recipient %d cannot derive recipient identity", row.Id)
-			}
-			identity = RecallRecipientIdentityForEmail(email)
-		}
+	lastID := int64(0)
+	for {
+		var rows []recipientIdentityRow
 		if err := DB.Table("recall_recipients").
-			Where("id = ? AND (recipient_identity = '' OR recipient_identity IS NULL)", row.Id).
-			Update("recipient_identity", identity).Error; err != nil {
-			return fmt.Errorf("failed to backfill recall recipient %d identity: %w", row.Id, err)
+			Select("id", "user_id", "email_snapshot", "recipient_identity").
+			Where("id > ? AND (recipient_identity = '' OR recipient_identity IS NULL)", lastID).
+			Order("id ASC").
+			Limit(recallRecipientIdentityMigrationBatchSize).
+			Find(&rows).Error; err != nil {
+			return fmt.Errorf("failed to load recall recipients for identity backfill: %w", err)
+		}
+		if len(rows) == 0 {
+			break
+		}
+		for _, row := range rows {
+			identity := RecallRecipientIdentityForUser(row.UserId)
+			if identity == "" {
+				email, ok := normalizeRecallRecipientEmail(row.EmailSnapshot)
+				if !ok {
+					return fmt.Errorf("recall recipient %d cannot derive recipient identity", row.Id)
+				}
+				identity = RecallRecipientIdentityForEmail(email)
+			}
+			if err := DB.Table("recall_recipients").
+				Where("id = ? AND (recipient_identity = '' OR recipient_identity IS NULL)", row.Id).
+				Update("recipient_identity", identity).Error; err != nil {
+				return fmt.Errorf("failed to backfill recall recipient %d identity: %w", row.Id, err)
+			}
+			lastID = row.Id
 		}
 	}
 

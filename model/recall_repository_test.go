@@ -115,6 +115,16 @@ func recallRepositoryUserIDs(facts []RecallCandidateFact) []int {
 	return ids
 }
 
+func requireRecallRunTablesEmpty(t *testing.T) {
+	t.Helper()
+
+	for _, table := range []any{&RecallRecipient{}, &RecallMessage{}, &RecallEvent{}} {
+		var count int64
+		require.NoError(t, DB.Model(table).Count(&count).Error)
+		require.Zero(t, count)
+	}
+}
+
 func TestListRecallCandidateFactsNewAudiencePredicates(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
@@ -474,6 +484,57 @@ func TestRecallRecipientMigrationBackfillsIdentityAndReplacesLegacyIndex(t *test
 	require.NoError(t, migrateRecallRecipientIdentity())
 	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_identity"))
 	require.False(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+}
+
+func TestRecallRecipientMigrationBackfillsIdentityInKeysetBatches(t *testing.T) {
+	originalDB := DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+	})
+
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_recipients (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		campaign_id bigint NOT NULL,
+		user_id integer NOT NULL,
+		eligibility_snapshot text NOT NULL,
+		email_snapshot varchar(254) NOT NULL,
+		language_snapshot varchar(16) NOT NULL,
+		state varchar(24) NOT NULL
+	)`).Error)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX idx_recall_campaign_user ON recall_recipients (campaign_id, user_id)`).Error)
+	const keysetRows = 501
+	for i := 1; i <= keysetRows; i++ {
+		require.NoError(t, DB.Exec(`INSERT INTO recall_recipients (campaign_id, user_id, eligibility_snapshot, email_snapshot, language_snapshot, state) VALUES (?, ?, '{}', ?, 'en', 'queued')`, 72, i, fmt.Sprintf("batch-%d@example.com", i)).Error)
+	}
+
+	var backfillSelects []string
+	callbackName := "recall_identity_keyset_test"
+	require.NoError(t, DB.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		sql := tx.Statement.SQL.String()
+		if strings.Contains(sql, "FROM `recall_recipients`") && strings.Contains(sql, "recipient_identity") && strings.Contains(sql, "user_id") {
+			backfillSelects = append(backfillSelects, sql)
+		}
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, DB.Callback().Query().Remove(callbackName))
+	})
+
+	require.NoError(t, migrateRecallRecipientIdentity())
+
+	require.GreaterOrEqual(t, len(backfillSelects), 2)
+	for _, sql := range backfillSelects {
+		require.Contains(t, sql, "id >")
+		require.Contains(t, sql, "LIMIT")
+	}
+	var missing int64
+	require.NoError(t, DB.Table("recall_recipients").Where("recipient_identity = '' OR recipient_identity IS NULL").Count(&missing).Error)
+	require.Zero(t, missing)
 }
 
 func TestRecallRecipientMigrationKeepsLegacyIndexWhenIdentityIndexFails(t *testing.T) {
@@ -1220,6 +1281,28 @@ func TestRecallRunIdentityAlignsEmailOnlyRecipientsAndReplays(t *testing.T) {
 	require.Equal(t, RecallRecipientIdentityForEmail("beta@example.com"), messageIdentities[`{"recipient":"beta"}`])
 }
 
+func TestRecallRunRejectsDuplicateIdentityInputsBeforeWrites(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("duplicate identity run")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	recipients := []RecallRecipient{
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "duplicate@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: " DUPLICATE@example.com ", LanguageSnapshot: "en", State: RecallRecipientQueued},
+	}
+	messages := []RecallMessage{
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"first"}`, State: RecallMessageScheduled},
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"second"}`, State: RecallMessageScheduled},
+	}
+	runEvent := RecallEvent{EventType: "campaign_run", Source: "scheduler", SourceEventId: "identity:duplicate", EventData: `{}`}
+
+	inserted, err := InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, messages, runEvent)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate recipient identity")
+	require.Zero(t, inserted)
+	requireRecallRunTablesEmpty(t)
+}
+
 func TestRecallRunCommitIdentityAlignsEmailOnlyRecipientsAndReplays(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 
@@ -1286,6 +1369,47 @@ func TestRecallRunCommitIdentityAlignsEmailOnlyRecipientsAndReplays(t *testing.T
 	}
 	require.Equal(t, RecallRecipientIdentityForEmail("commit-alpha@example.com"), messageIdentities[`{"recipient":"commit-alpha"}`])
 	require.Equal(t, RecallRecipientIdentityForEmail("commit-beta@example.com"), messageIdentities[`{"recipient":"commit-beta"}`])
+}
+
+func TestRecallCampaignRunRejectsDuplicateIdentityInputsBeforeWrites(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("duplicate identity commit")
+	campaign.Status = RecallCampaignScheduled
+	campaign.NextRunAt = 1_721_000_000
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	recipients := []RecallRecipient{
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "commit-duplicate@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: " COMMIT-DUPLICATE@example.com ", LanguageSnapshot: "en", State: RecallRecipientQueued},
+	}
+	messages := []RecallMessage{
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"first"}`, State: RecallMessageScheduled},
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"second"}`, State: RecallMessageScheduled},
+	}
+	expectedNextRunAt := campaign.NextRunAt
+	runEvent := RecallEvent{EventType: "campaign_run", Source: "scheduler", SourceEventId: "identity:duplicate-commit", EventData: `{}`}
+
+	committed, inserted, err := CommitRecallCampaignRun(
+		context.Background(),
+		campaign.Id,
+		[]string{RecallCampaignScheduled},
+		RecallCampaignRunning,
+		&expectedNextRunAt,
+		campaign.ConfigRevision,
+		map[string]any{"next_run_at": int64(0)},
+		recipients,
+		messages,
+		runEvent,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate recipient identity")
+	require.False(t, committed)
+	require.Zero(t, inserted)
+
+	var storedCampaign RecallCampaign
+	require.NoError(t, DB.First(&storedCampaign, campaign.Id).Error)
+	require.Equal(t, RecallCampaignScheduled, storedCampaign.Status)
+	requireRecallRunTablesEmpty(t)
 }
 
 func TestRecallRunIdempotencyCommitsLargeSnapshotsInBoundedBatches(t *testing.T) {

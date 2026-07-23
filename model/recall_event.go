@@ -143,6 +143,9 @@ func CommitRecallCampaignRun(
 			return false, 0, err
 		}
 	}
+	if err := validateRecallRecipientIdentitiesUnique(recipients); err != nil {
+		return false, 0, err
+	}
 	runEvent.CampaignId = campaignID
 	owned := false
 	inserted := int64(0)
