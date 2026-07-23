@@ -1,7 +1,7 @@
 import * as React from 'react'
-import { createRoot, type Root } from 'react-dom/client'
 import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createInstance } from 'i18next'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 
 type ComboboxRootProps = {
@@ -16,117 +16,6 @@ type ComboboxRootProps = {
 let latestComboboxProps: ComboboxRootProps | undefined
 let latestInputChange: ((value: string) => void) | undefined
 let selectOption: ((value: string) => void) | undefined
-
-function setupDom() {
-  if (typeof document !== 'undefined') {
-    globalThis.IS_REACT_ACT_ENVIRONMENT = true
-    return
-  }
-
-  class NodeShim {
-    childNodes: NodeShim[] = []
-    nodeType = 0
-    nodeName = ''
-    parentNode: NodeShim | null = null
-    ownerDocument = globalThis.document
-
-    appendChild(node: NodeShim) {
-      this.childNodes.push(node)
-      node.parentNode = this
-      return node
-    }
-
-    insertBefore(node: NodeShim, before: NodeShim | null) {
-      const index = before ? this.childNodes.indexOf(before) : -1
-      if (index < 0) return this.appendChild(node)
-      this.childNodes.splice(index, 0, node)
-      node.parentNode = this
-      return node
-    }
-
-    removeChild(node: NodeShim) {
-      this.childNodes = this.childNodes.filter((child) => child !== node)
-      node.parentNode = null
-      return node
-    }
-
-    addEventListener() {}
-    removeEventListener() {}
-  }
-
-  class ElementShim extends NodeShim {
-    attributes: Record<string, string> = {}
-    localName: string
-    namespaceURI = 'http://www.w3.org/1999/xhtml'
-    style = {}
-    tagName: string
-    private text = ''
-
-    constructor(tagName: string) {
-      super()
-      this.nodeType = 1
-      this.localName = tagName
-      this.tagName = tagName.toUpperCase()
-      this.nodeName = this.tagName
-    }
-
-    set textContent(value: string) {
-      this.text = String(value)
-      this.childNodes = []
-    }
-
-    get textContent() {
-      return (
-        this.text ||
-        this.childNodes
-          .map((node) => ('textContent' in node ? node.textContent : ''))
-          .join('')
-      )
-    }
-
-    setAttribute(key: string, value: string) {
-      this.attributes[key] = String(value)
-    }
-
-    removeAttribute(key: string) {
-      delete this.attributes[key]
-    }
-  }
-
-  class TextShim extends NodeShim {
-    textContent: string
-
-    constructor(text: string) {
-      super()
-      this.nodeType = 3
-      this.nodeName = '#text'
-      this.textContent = text
-    }
-  }
-
-  const head = new ElementShim('head')
-  const shimDocument = {
-    nodeType: 9,
-    head,
-    createElement: (tagName: string) => new ElementShim(tagName),
-    createElementNS: (_namespace: string, tagName: string) =>
-      new ElementShim(tagName),
-    createTextNode: (text: string) => new TextShim(text),
-    getElementsByTagName: (tagName: string) =>
-      tagName.toLowerCase() === 'head' ? [head] : [],
-    addEventListener() {},
-    removeEventListener() {},
-    defaultView: globalThis,
-  }
-  globalThis.document = shimDocument as unknown as Document
-  globalThis.window = globalThis as unknown as Window & typeof globalThis
-  globalThis.HTMLElement = ElementShim as unknown as typeof HTMLElement
-  globalThis.HTMLIFrameElement = class {} as typeof HTMLIFrameElement
-  globalThis.Node = NodeShim as unknown as typeof Node
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true
-}
-
-setupDom()
 
 mock.module('@/components/ui/combobox', () => ({
   Combobox: (props: ComboboxRootProps) => {
@@ -200,42 +89,17 @@ beforeEach(() => {
 })
 
 function renderMultiSelect(props: React.ComponentProps<typeof MultiSelect>) {
-  const container = document.createElement('div')
-  const root = createRoot(container)
-  React.act(() => {
-    root.render(
-      <I18nextProvider i18n={testI18n}>
-        <MultiSelect {...props} />
-      </I18nextProvider>
-    )
-  })
-  return root
-}
-
-function wait(ms = 0) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function waitFor(predicate: () => boolean, timeout = 1000) {
-  const startedAt = Date.now()
-  while (!predicate()) {
-    if (Date.now() - startedAt > timeout) {
-      throw new Error('Timed out waiting for assertion')
-    }
-    await wait(10)
-  }
-}
-
-function dispose(root: Root) {
-  React.act(() => {
-    root.unmount()
-  })
+  renderToStaticMarkup(
+    <I18nextProvider i18n={testI18n}>
+      <MultiSelect {...props} />
+    </I18nextProvider>
+  )
 }
 
 describe('MultiSelect search notifications', () => {
-  test('notifies when the combobox input value changes', async () => {
+  test('notifies when the combobox input value changes', () => {
     const searches: string[] = []
-    const root = renderMultiSelect({
+    renderMultiSelect({
       options: [{ label: 'Ada Lovelace', value: '1' }],
       selected: [],
       onChange: () => undefined,
@@ -243,19 +107,15 @@ describe('MultiSelect search notifications', () => {
       placeholder: 'Search users',
     })
 
-    await waitFor(() => latestInputChange !== undefined)
-    React.act(() => {
-      latestInputChange?.('ada')
-    })
+    latestInputChange?.('ada')
 
     expect(searches).toEqual(['ada'])
-    dispose(root)
   })
 
-  test('notifies with an empty search after selecting an option', async () => {
+  test('notifies with an empty search after selecting an option', () => {
     const searches: string[] = []
     const selected: string[][] = []
-    const root = renderMultiSelect({
+    renderMultiSelect({
       options: [{ label: 'Ada Lovelace', value: '1' }],
       selected: [],
       onChange: (values) => selected.push(values),
@@ -263,16 +123,10 @@ describe('MultiSelect search notifications', () => {
       placeholder: 'Search users',
     })
 
-    await waitFor(
-      () => latestInputChange !== undefined && selectOption !== undefined
-    )
-    React.act(() => {
-      latestInputChange?.('ada')
-      selectOption?.('1')
-    })
+    latestInputChange?.('ada')
+    selectOption?.('1')
 
     expect(selected).toEqual([['1']])
     expect(searches.at(-1)).toBe('')
-    dispose(root)
   })
 })
