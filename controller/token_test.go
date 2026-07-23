@@ -700,6 +700,38 @@ func TestTokenReadEndpointsReturnEffectiveExhaustedStatus(t *testing.T) {
 	})
 }
 
+func TestSearchTokensFiltersEffectiveStatusBeforePagination(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	expired := seedToken(t, db, 1, "expired-outside-first-page", "expired-outside-first-page-key")
+	require.NoError(t, db.Model(&model.Token{}).Where("id = ?", expired.Id).Updates(map[string]any{
+		"status":       common.TokenStatusEnabled,
+		"expired_time": common.GetTimestamp() - 1,
+	}).Error)
+	otherUserExpired := seedToken(t, db, 2, "other-user-expired", "other-user-expired-key")
+	require.NoError(t, db.Model(&model.Token{}).Where("id = ?", otherUserExpired.Id).Update(
+		"expired_time",
+		common.GetTimestamp()-1,
+	).Error)
+	for index := 0; index < 20; index++ {
+		seedToken(t, db, 1, fmt.Sprintf("enabled-%02d", index), fmt.Sprintf("enabled-key-%02d", index))
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/search?status=3&p=1&size=10", nil, 1)
+	SearchTokens(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+	var page struct {
+		Items []tokenResponseItem `json:"items"`
+		Total int                 `json:"total"`
+	}
+	require.NoError(t, common.Unmarshal(response.Data, &page))
+	require.Equal(t, 1, page.Total)
+	require.Len(t, page.Items, 1)
+	require.Equal(t, expired.Id, page.Items[0].ID)
+	require.Equal(t, common.TokenStatusExpired, page.Items[0].Status)
+}
+
 func TestGetTokenMasksKeyInResponse(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "detail-token", "qrst1234uvwx5678")

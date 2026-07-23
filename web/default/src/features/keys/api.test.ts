@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { api } from '@/lib/api'
-import { batchUpdateApiKeyGroup } from './api'
+import { batchUpdateApiKeyGroup, searchApiKeys } from './api'
 
 const originalAdapter = api.defaults.adapter
 
@@ -50,5 +50,26 @@ describe('batchUpdateApiKeyGroup', () => {
       group: 'premium',
     })
     expect(result).toEqual({ success: true, data: 2 })
+  })
+})
+
+describe('searchApiKeys', () => {
+  test('sends the status filter with pagination', async () => {
+    let request: InternalAxiosRequestConfig | undefined
+    api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
+      request = config
+      return {
+        data: { success: true, data: { items: [], total: 0 } },
+        status: 200,
+        statusText: 'OK',
+        headers: new AxiosHeaders(),
+        config,
+      }
+    }
+
+    await searchApiKeys({ status: 3, p: 1, size: 20 })
+
+    expect(request?.method).toBe('get')
+    expect(request?.url).toBe('/api/token/search?status=3&p=1&size=20')
   })
 })
