@@ -1982,6 +1982,55 @@ func TestRecallTransitionMessageFencesSameOwnerReacquisition(t *testing.T) {
 	require.Zero(t, stored.LeaseExpiresAt)
 }
 
+func TestRecallEmailWorkItemLoadsEmailOnlyRecipientWithoutUserRow(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("email only work item")
+	campaign.Status = RecallCampaignRunning
+	require.NoError(t, DB.Create(&campaign).Error)
+	recipient := RecallRecipient{
+		CampaignId:          campaign.Id,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "email-only-work-item@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	message := RecallMessage{
+		RecipientId:      recipient.Id,
+		StageNo:          1,
+		TemplateVersion:  1,
+		TemplateSnapshot: `{"en":{"subject":"Return","body_text":"Body"}}`,
+		State:            RecallMessageLeased,
+		LeaseOwner:       "email-worker",
+		LeaseExpiresAt:   1_721_000_060,
+	}
+	require.NoError(t, DB.Create(&message).Error)
+
+	item, err := GetRecallEmailWorkItemForLeaseWithContext(context.Background(), message.Id, "email-worker")
+
+	require.NoError(t, err)
+	require.Equal(t, message.Id, item.Message.Id)
+	require.Equal(t, recipient.Id, item.Recipient.Id)
+	require.Equal(t, campaign.Id, item.Campaign.Id)
+	require.Zero(t, item.User.Id)
+
+	boundRecipient := recipient
+	boundRecipient.Id = 0
+	boundRecipient.RecipientIdentity = ""
+	boundRecipient.UserId = 999_999
+	boundRecipient.EmailSnapshot = "missing-bound-user@example.com"
+	require.NoError(t, DB.Create(&boundRecipient).Error)
+	boundMessage := message
+	boundMessage.Id = 0
+	boundMessage.RecipientId = boundRecipient.Id
+	require.NoError(t, DB.Create(&boundMessage).Error)
+
+	_, err = GetRecallEmailWorkItemForLeaseWithContext(context.Background(), boundMessage.Id, "email-worker")
+	require.Error(t, err)
+}
+
 func TestRecallTransitionMessageRejectsUnsupportedCompletionFieldsWithoutWrite(t *testing.T) {
 	for _, field := range []string{
 		"id",
