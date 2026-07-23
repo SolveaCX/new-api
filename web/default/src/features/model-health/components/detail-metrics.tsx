@@ -80,7 +80,7 @@ export function GroupBreakdown(props: { detail: ModelHealthDetail }) {
         <TableHeader>
           <TableRow>
             <TableHead>{t('Group')}</TableHead>
-            <TableHead>{t('State')}</TableHead>
+            <TableHead>{t('Health status')}</TableHead>
             <TableHead>{t('Final requests')}</TableHead>
             <TableHead>{t('Observed success')}</TableHead>
             <TableHead>{t('Average duration')}</TableHead>

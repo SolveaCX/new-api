@@ -33,6 +33,26 @@ function renderTable(models: ModelHealthModel[]) {
 }
 
 describe('FleetTable', () => {
+  test('uses the dedicated health status label for the sortable column', () => {
+    const html = renderTable([
+      {
+        model_name: 'healthy-model',
+        health: 'healthy',
+        request_count: 20,
+        success_count: 20,
+        success_rate: 100,
+        avg_latency_ms: 500,
+        avg_ttft_ms: 100,
+        avg_tps: 30,
+        first_observed_at: 1_700_000_000,
+        last_observed_at: 1_700_003_600,
+      },
+    ])
+
+    expect(html).toContain('aria-label="Sort by Health status"')
+    expect(html).not.toContain('aria-label="Sort by State"')
+  })
+
   test('renders unavailable TTFT and TPS as bare em dashes', () => {
     const html = renderTable([
       {

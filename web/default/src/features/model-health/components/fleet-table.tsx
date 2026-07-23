@@ -48,7 +48,7 @@ import type {
 import { HealthBadge } from './health-badge'
 
 const COLUMNS: Array<{ key: ModelHealthSortKey; label: string }> = [
-  { key: 'health', label: 'State' },
+  { key: 'health', label: 'Health status' },
   { key: 'model_name', label: 'Model' },
   { key: 'request_count', label: 'Final requests' },
   { key: 'success_rate', label: 'Observed success' },

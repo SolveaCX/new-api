@@ -5878,6 +5878,7 @@
     "Fleet summary": "フリート概要",
     "Group breakdown": "グループ別内訳",
     "Health time window": "稼働状態の時間範囲",
+    "Health status": "健康状態",
     "Healthy among sufficiently sampled models": "十分なサンプルがあるモデルのうち正常なモデル",
     "Healthy sampled models": "十分なサンプルがある正常なモデル",
     "Insufficient data": "データ不足",
