@@ -249,6 +249,32 @@ func TestSubscriptionEntitlementGrantSnapshotMismatchConflicts(t *testing.T) {
 	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
 }
 
+func TestSubscriptionEntitlementGrantEmptyUpgradeGroupReplayConflictsWithNonEmptyInput(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9120, "plg")
+	createEntitlementTestPlan(t, 9220, 100, "")
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:          9320,
+		UserId:      9120,
+		Status:      SubscriptionContractStatusActive,
+		PaymentMode: SubscriptionPaymentModeStripeRecurring,
+	}).Error)
+	emptyGroup := ""
+	input := grantInput(9320, 9120, 9220, "stripe:empty-group-conflict", 100, 200)
+	input.UpgradeGroup = &emptyGroup
+	first, err := RotateCurrentEntitlement(input)
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+	require.Empty(t, first.Entitlement.UpgradeGroup)
+
+	groupConflict := input
+	nonEmptyGroup := "vip"
+	groupConflict.UpgradeGroup = &nonEmptyGroup
+	_, err = RotateCurrentEntitlement(groupConflict)
+
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+}
+
 func TestSubscriptionEntitlementGrantLegacyNilWindowReplayStillMatches(t *testing.T) {
 	setupSubscriptionEntitlementTestDB(t)
 	createEntitlementTestUser(t, 9119, "plg")

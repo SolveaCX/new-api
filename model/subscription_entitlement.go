@@ -296,10 +296,54 @@ func grantWindowAmountMatches(existing *int64, input *int64) bool {
 
 func grantUpgradeGroupMatches(existing string, input *string) bool {
 	existing = strings.TrimSpace(existing)
-	if existing == "" {
-		return true
-	}
 	return input != nil && existing == strings.TrimSpace(*input)
+}
+
+func (o *SubscriptionOrder) BeforeCreate(tx *gorm.DB) error {
+	if o == nil || tx == nil || strings.TrimSpace(o.PlanSnapshot) != "" || o.PlanId <= 0 {
+		return nil
+	}
+	if !tx.Migrator().HasTable(&SubscriptionPlan{}) {
+		return nil
+	}
+	var plan SubscriptionPlan
+	if err := tx.Where("id = ?", o.PlanId).First(&plan).Error; err != nil {
+		return err
+	}
+	plan.NormalizeDefaults()
+	payload := struct {
+		PlanID              int     `json:"plan_id"`
+		Title               string  `json:"title"`
+		PriceAmount         float64 `json:"price_amount"`
+		Currency            string  `json:"currency"`
+		DurationUnit        string  `json:"duration_unit"`
+		DurationValue       int     `json:"duration_value"`
+		TotalAmount         int64   `json:"total_amount"`
+		Window5hAmount      int64   `json:"window_5h_amount"`
+		WindowWeekAmount    int64   `json:"window_week_amount"`
+		MediaCreditsMonthly int64   `json:"media_credits_monthly"`
+		QuotaResetPeriod    string  `json:"quota_reset_period"`
+		UpgradeGroup        string  `json:"upgrade_group"`
+	}{
+		PlanID:              plan.Id,
+		Title:               plan.Title,
+		PriceAmount:         plan.PriceAmount,
+		Currency:            plan.Currency,
+		DurationUnit:        plan.DurationUnit,
+		DurationValue:       plan.DurationValue,
+		TotalAmount:         plan.TotalAmount,
+		Window5hAmount:      plan.Window5hAmount,
+		WindowWeekAmount:    plan.WindowWeekAmount,
+		MediaCreditsMonthly: plan.MediaCreditsMonthly,
+		QuotaResetPeriod:    plan.QuotaResetPeriod,
+		UpgradeGroup:        plan.UpgradeGroup,
+	}
+	data, err := common.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	o.PlanSnapshot = string(data)
+	return nil
 }
 
 func applyEntitlementGroupChangeTx(tx *gorm.DB, contract *UserSubscriptionContract, upgradeGroup string, userId int, contractUpdates map[string]interface{}) error {

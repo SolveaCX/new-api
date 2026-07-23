@@ -255,7 +255,11 @@ func ReconcilePaidInvoice(ctx context.Context, invoiceID string) (*PaidInvoiceRe
 		if err != nil {
 			return err
 		}
-		if err := validateLocalInvoiceFacts(facts, order, intent, contract, plan, user); err != nil {
+		planSnapshot, err := recurringPlanSnapshotFromOrder(order)
+		if err != nil {
+			return PermanentPaidInvoiceError(err)
+		}
+		if err := validateLocalInvoiceFacts(facts, order, intent, contract, plan, user, planSnapshot); err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
 		binding, err := createOrLoadStripeInvoiceBindingTx(tx, order, contract.Id, providerSnapshotFromPaidInvoice(facts, invoiceID))
@@ -269,7 +273,11 @@ func ReconcilePaidInvoice(ctx context.Context, invoiceID string) (*PaidInvoiceRe
 			ProviderBindingId:    binding.Id,
 			GrantKey:             "stripe:" + invoiceID,
 			PaymentMode:          model.SubscriptionPaymentModeStripeRecurring,
-			AmountTotal:          plan.TotalAmount,
+			AmountTotal:          recurringInvoiceGrantAmountTotal(plan, planSnapshot),
+			MediaCreditsTotal:    recurringInvoiceGrantMediaCredits(plan, planSnapshot),
+			Window5hAmount:       recurringInvoiceGrantWindow5h(plan, planSnapshot),
+			WindowWeekAmount:     recurringInvoiceGrantWindowWeek(plan, planSnapshot),
+			UpgradeGroup:         recurringInvoiceGrantUpgradeGroup(plan, planSnapshot),
 			PeriodStart:          facts.PeriodStart,
 			PeriodEnd:            facts.PeriodEnd,
 			EndReasonForPrevious: previousEntitlementEndReason(intent.Kind),
@@ -368,7 +376,11 @@ func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
 		if !canApplyFailedInvoiceToBinding(facts, binding, contract) {
 			return nil
 		}
-		if err := validateRenewalInvoiceFacts(facts, binding, contract, plan, user); err != nil {
+		planSnapshot, err := recurringPlanSnapshotFromBindingTx(tx, binding)
+		if err != nil {
+			return PermanentPaidInvoiceError(err)
+		}
+		if err := validateRenewalInvoiceFacts(facts, binding, contract, plan, user, planSnapshot); err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
 		var entitlement model.UserSubscription
@@ -433,6 +445,12 @@ type stripeInvoiceCommonFacts struct {
 	CancelAtPeriodEnd  bool
 	PeriodStart        int64
 	PeriodEnd          int64
+}
+
+type recurringInvoicePlanSnapshot struct {
+	Snapshot purchasePlanSnapshot
+	Found    bool
+	OrderID  int
 }
 
 func validatePaidInvoiceFacts(inv *stripe.Invoice, sub *stripe.Subscription) (paidInvoiceFacts, error) {
@@ -666,7 +684,77 @@ func lockInvoicePurchaseFactsTx(tx *gorm.DB, facts paidInvoiceFacts) (*model.Sub
 	return &order, &intent, &contract, &plan, &user, nil
 }
 
-func validateLocalInvoiceFacts(facts paidInvoiceFacts, order *model.SubscriptionOrder, intent *model.SubscriptionChangeIntent, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User) error {
+func recurringPlanSnapshotFromOrder(order *model.SubscriptionOrder) (recurringInvoicePlanSnapshot, error) {
+	if order == nil || strings.TrimSpace(order.PlanSnapshot) == "" {
+		return recurringInvoicePlanSnapshot{}, nil
+	}
+	var snapshot purchasePlanSnapshot
+	if err := common.Unmarshal([]byte(order.PlanSnapshot), &snapshot); err != nil {
+		return recurringInvoicePlanSnapshot{}, err
+	}
+	if snapshot.PlanID == 0 {
+		snapshot.PlanID = order.PlanId
+	}
+	if snapshot.PlanID != order.PlanId {
+		return recurringInvoicePlanSnapshot{}, errors.New("local subscription plan snapshot mismatch")
+	}
+	if snapshot.PriceAmount < 0 || snapshot.TotalAmount < 0 || snapshot.MediaCreditsMonthly < 0 ||
+		snapshot.Window5hAmount < 0 || snapshot.WindowWeekAmount < 0 {
+		return recurringInvoicePlanSnapshot{}, errors.New("local subscription plan snapshot values are invalid")
+	}
+	return recurringInvoicePlanSnapshot{Snapshot: snapshot, Found: true, OrderID: order.Id}, nil
+}
+
+func recurringPlanSnapshotFromBindingTx(tx *gorm.DB, binding *model.SubscriptionProviderBinding) (recurringInvoicePlanSnapshot, error) {
+	if tx == nil || binding == nil || binding.InitialOrderId <= 0 {
+		return recurringInvoicePlanSnapshot{}, nil
+	}
+	var order model.SubscriptionOrder
+	if err := tx.Where("id = ? AND user_id = ? AND plan_id = ?", binding.InitialOrderId, binding.UserId, binding.PlanId).First(&order).Error; err != nil {
+		return recurringInvoicePlanSnapshot{}, err
+	}
+	return recurringPlanSnapshotFromOrder(&order)
+}
+
+func recurringInvoiceGrantAmountTotal(plan *model.SubscriptionPlan, planSnapshot recurringInvoicePlanSnapshot) int64 {
+	if planSnapshot.Found {
+		return planSnapshot.Snapshot.TotalAmount
+	}
+	return plan.TotalAmount
+}
+
+func recurringInvoiceGrantMediaCredits(plan *model.SubscriptionPlan, planSnapshot recurringInvoicePlanSnapshot) int64 {
+	if planSnapshot.Found {
+		return planSnapshot.Snapshot.MediaCreditsMonthly
+	}
+	return plan.MediaCreditsMonthly
+}
+
+func recurringInvoiceGrantWindow5h(plan *model.SubscriptionPlan, planSnapshot recurringInvoicePlanSnapshot) *int64 {
+	value := plan.Window5hAmount
+	if planSnapshot.Found {
+		value = planSnapshot.Snapshot.Window5hAmount
+	}
+	return common.GetPointer(value)
+}
+
+func recurringInvoiceGrantWindowWeek(plan *model.SubscriptionPlan, planSnapshot recurringInvoicePlanSnapshot) *int64 {
+	value := plan.WindowWeekAmount
+	if planSnapshot.Found {
+		value = planSnapshot.Snapshot.WindowWeekAmount
+	}
+	return common.GetPointer(value)
+}
+
+func recurringInvoiceGrantUpgradeGroup(plan *model.SubscriptionPlan, planSnapshot recurringInvoicePlanSnapshot) *string {
+	value := strings.TrimSpace(plan.UpgradeGroup)
+	if planSnapshot.Found {
+		value = strings.TrimSpace(planSnapshot.Snapshot.UpgradeGroup)
+	}
+	return common.GetPointer(value)
+}
+
+func validateLocalInvoiceFacts(facts paidInvoiceFacts, order *model.SubscriptionOrder, intent *model.SubscriptionChangeIntent, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot) error {
 	if order.UserId != facts.UserID || order.PlanId != facts.PlanID || order.ChangeIntentId != 0 && order.ChangeIntentId != facts.ChangeIntentID {
 		return errors.New("local order ownership mismatch")
 	}
@@ -688,16 +776,24 @@ func validateLocalInvoiceFacts(facts paidInvoiceFacts, order *model.Subscription
 	if strings.TrimSpace(user.StripeCustomer) != "" && strings.TrimSpace(user.StripeCustomer) != facts.CustomerID {
 		return errors.New("local Stripe customer mismatch")
 	}
-	if plan.Id != facts.PlanID || !plan.Enabled {
+	if plan.Id != facts.PlanID || (!plan.Enabled && !planSnapshot.Found) {
 		return errors.New("local plan is not enabled")
 	}
 	if strings.TrimSpace(plan.StripePriceId) == "" || strings.TrimSpace(plan.StripePriceId) != facts.PriceID {
 		return errors.New("Stripe price mismatch")
 	}
-	if strings.ToUpper(strings.TrimSpace(plan.Currency)) != facts.Currency {
+	expectedCurrency := strings.ToUpper(strings.TrimSpace(plan.Currency))
+	if planSnapshot.Found {
+		expectedCurrency = strings.ToUpper(strings.TrimSpace(planSnapshot.Snapshot.Currency))
+	}
+	if expectedCurrency != facts.Currency {
 		return errors.New("Stripe invoice currency mismatch")
 	}
-	expectedMinor, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, facts.Currency)
+	expectedPrice := plan.PriceAmount
+	if planSnapshot.Found {
+		expectedPrice = planSnapshot.Snapshot.PriceAmount
+	}
+	expectedMinor, err := stripeMinorUnitAmountForSubscription(expectedPrice, facts.Currency)
 	if err != nil {
 		return err
 	}
@@ -730,7 +826,11 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	if err != nil {
 		return err
 	}
-	if err := validateRenewalInvoiceFacts(commonFacts, binding, contract, plan, user); err != nil {
+	planSnapshot, err := recurringPlanSnapshotFromBindingTx(tx, binding)
+	if err != nil {
+		return PermanentPaidInvoiceError(err)
+	}
+	if err := validateRenewalInvoiceFacts(commonFacts, binding, contract, plan, user, planSnapshot); err != nil {
 		return PermanentPaidInvoiceError(err)
 	}
 	if !canApplyPaidRenewalInvoiceToBinding(commonFacts, binding, contract) {
@@ -743,7 +843,11 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		ProviderBindingId:    binding.Id,
 		GrantKey:             "stripe:" + facts.InvoiceID,
 		PaymentMode:          model.SubscriptionPaymentModeStripeRecurring,
-		AmountTotal:          plan.TotalAmount,
+		AmountTotal:          recurringInvoiceGrantAmountTotal(plan, planSnapshot),
+		MediaCreditsTotal:    recurringInvoiceGrantMediaCredits(plan, planSnapshot),
+		Window5hAmount:       recurringInvoiceGrantWindow5h(plan, planSnapshot),
+		WindowWeekAmount:     recurringInvoiceGrantWindowWeek(plan, planSnapshot),
+		UpgradeGroup:         recurringInvoiceGrantUpgradeGroup(plan, planSnapshot),
 		PeriodStart:          facts.PeriodStart,
 		PeriodEnd:            facts.PeriodEnd,
 		EndReasonForPrevious: model.SubscriptionEntitlementEndReasonRenewed,
@@ -863,7 +967,7 @@ func lockRenewalBindingFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts) (*mo
 	return &binding, &contract, &plan, &user, nil
 }
 
-func validateRenewalInvoiceFacts(facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User) error {
+func validateRenewalInvoiceFacts(facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot) error {
 	if binding.ContractId <= 0 || contract.Id != binding.ContractId || contract.UserId != binding.UserId {
 		return errors.New("local contract ownership mismatch")
 	}
@@ -895,10 +999,18 @@ func validateRenewalInvoiceFacts(facts stripeInvoiceCommonFacts, binding *model.
 	if strings.TrimSpace(binding.ProviderPriceId) != facts.PriceID && !pendingPlanAllowed {
 		return errors.New("Stripe price mismatch")
 	}
-	if strings.ToUpper(strings.TrimSpace(plan.Currency)) != facts.Currency {
+	expectedCurrency := strings.ToUpper(strings.TrimSpace(plan.Currency))
+	if planSnapshot.Found {
+		expectedCurrency = strings.ToUpper(strings.TrimSpace(planSnapshot.Snapshot.Currency))
+	}
+	if expectedCurrency != facts.Currency {
 		return errors.New("Stripe invoice currency mismatch")
 	}
-	expectedMinor, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, facts.Currency)
+	expectedPrice := plan.PriceAmount
+	if planSnapshot.Found {
+		expectedPrice = planSnapshot.Snapshot.PriceAmount
+	}
+	expectedMinor, err := stripeMinorUnitAmountForSubscription(expectedPrice, facts.Currency)
 	if err != nil {
 		return err
 	}

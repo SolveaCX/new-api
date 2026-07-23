@@ -273,6 +273,49 @@ func TestReconcilePaidInvoiceGrantsInvoiceFirstPurchase(t *testing.T) {
 	require.Equal(t, "in_first", applied.ProviderInvoiceId)
 }
 
+func TestReconcilePaidInvoiceFirstPurchaseUsesFrozenOrderPlanSnapshotAfterPlanEdit(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, intent := seedStripeInvoicePurchase(t, 8130, 8230, "sub_invoice_snapshot_first")
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", 8230).Updates(map[string]interface{}{
+		"media_credits_monthly": int64(55),
+		"window_5h_amount":      int64(125),
+		"window_week_amount":    int64(900),
+		"upgrade_group":         "snapshot_group",
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("trade_no = ?", "sub_invoice_snapshot_first").Updates(map[string]interface{}{
+		"plan_snapshot": `{"plan_id":8230,"title":"Invoice Plan","price_amount":12.34,"currency":"USD","duration_unit":"month","duration_value":1,"total_amount":1234,"window_5h_amount":125,"window_week_amount":900,"media_credits_monthly":55,"upgrade_group":"snapshot_group"}`,
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", 8230).Updates(map[string]interface{}{
+		"price_amount":          99.99,
+		"total_amount":          int64(999999),
+		"media_credits_monthly": int64(999),
+		"window_5h_amount":      int64(999),
+		"window_week_amount":    int64(888),
+		"upgrade_group":         "edited_group",
+	}).Error)
+	restore := replaceStripeInvoiceReconcilers(t, stripeInvoiceFixture("in_first_snapshot", "sub_invoice_snapshot_first"), stripeSubscriptionFixture("sub_invoice_snapshot_first", map[string]string{
+		"trade_no":         "sub_invoice_snapshot_first",
+		"user_id":          "8130",
+		"plan_id":          "8230",
+		"contract_id":      strconv.FormatInt(contract.Id, 10),
+		"change_intent_id": strconv.FormatInt(intent.Id, 10),
+	}))
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_first_snapshot")
+
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.NotNil(t, result.Entitlement)
+	require.Equal(t, int64(1234), result.Entitlement.AmountTotal)
+	require.Equal(t, int64(55), result.Entitlement.MediaCreditsTotal)
+	require.NotNil(t, result.Entitlement.Window5hAmount)
+	require.NotNil(t, result.Entitlement.WindowWeekAmount)
+	require.Equal(t, int64(125), *result.Entitlement.Window5hAmount)
+	require.Equal(t, int64(900), *result.Entitlement.WindowWeekAmount)
+	require.Equal(t, "snapshot_group", result.Entitlement.UpgradeGroup)
+}
+
 func TestReconcilePaidInvoiceIsIdempotentForDuplicateAndCheckoutFirst(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	contract, intent := seedStripeInvoicePurchase(t, 8102, 8202, "sub_duplicate_invoice")
@@ -334,6 +377,54 @@ func TestReconcilePaidInvoiceRenewsExistingStripeBindingWithoutCheckoutOrder(t *
 	require.Equal(t, grants[1].Id, reloadedContract.CurrentEntitlementId)
 	require.Equal(t, oldEntitlement.EndTime, reloadedContract.CurrentPeriodStart)
 	require.Equal(t, oldEntitlement.EndTime+2592000, reloadedContract.CurrentPeriodEnd)
+}
+
+func TestReconcilePaidInvoiceRenewalUsesFrozenBindingOrderPlanSnapshotAfterPlanEdit(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8131, 8231, "sub_renewal_snapshot")
+	order := model.SubscriptionOrder{
+		UserId:          8131,
+		PlanId:          8231,
+		Money:           12.34,
+		TradeNo:         "sub_renewal_snapshot_order",
+		PaymentMethod:   model.PaymentMethodStripe,
+		PaymentProvider: model.PaymentProviderStripe,
+		Status:          common.TopUpStatusSuccess,
+		CreateTime:      common.GetTimestamp(),
+		CompleteTime:    common.GetTimestamp(),
+		PlanSnapshot:    `{"plan_id":8231,"title":"Renewal Plan","price_amount":12.34,"currency":"USD","duration_unit":"month","duration_value":1,"total_amount":1234,"window_5h_amount":125,"window_week_amount":900,"media_credits_monthly":55,"upgrade_group":"snapshot_group"}`,
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+	require.NoError(t, model.DB.Model(&binding).Updates(map[string]interface{}{"initial_order_id": order.Id}).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", 8231).Updates(map[string]interface{}{
+		"price_amount":          99.99,
+		"total_amount":          int64(999999),
+		"media_credits_monthly": int64(999),
+		"window_5h_amount":      int64(999),
+		"window_week_amount":    int64(888),
+		"upgrade_group":         "edited_group",
+	}).Error)
+	invoice := stripeInvoiceFixture("in_renewal_snapshot", "sub_renewal_snapshot")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	subscription := stripeSubscriptionFixture("sub_renewal_snapshot", map[string]string{})
+	subscription.CurrentPeriodStart = oldEntitlement.EndTime
+	subscription.CurrentPeriodEnd = oldEntitlement.EndTime + 2592000
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_renewal_snapshot")
+
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.NotNil(t, result.Entitlement)
+	require.Equal(t, int64(1234), result.Entitlement.AmountTotal)
+	require.Equal(t, int64(55), result.Entitlement.MediaCreditsTotal)
+	require.NotNil(t, result.Entitlement.Window5hAmount)
+	require.NotNil(t, result.Entitlement.WindowWeekAmount)
+	require.Equal(t, int64(125), *result.Entitlement.Window5hAmount)
+	require.Equal(t, int64(900), *result.Entitlement.WindowWeekAmount)
+	require.Equal(t, "snapshot_group", result.Entitlement.UpgradeGroup)
+	require.Equal(t, contract.Id, result.Entitlement.ContractId)
 }
 
 func TestReconcilePaidInvoiceRenewsExistingStripeBindingForDisabledBoundPlan(t *testing.T) {
