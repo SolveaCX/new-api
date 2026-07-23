@@ -65,6 +65,7 @@ import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedOpsReportIndexRouteImport } from './routes/_authenticated/ops-report/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
+import { Route as AuthenticatedModelHealthIndexRouteImport } from './routes/_authenticated/model-health/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedInviteIndexRouteImport } from './routes/_authenticated/invite/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
@@ -396,6 +397,12 @@ const AuthenticatedModelsIndexRoute =
     path: '/models/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedModelHealthIndexRoute =
+  AuthenticatedModelHealthIndexRouteImport.update({
+    id: '/model-health/',
+    path: '/model-health/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
   id: '/keys/',
   path: '/keys/',
@@ -689,6 +696,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/invite/': typeof AuthenticatedInviteIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
+  '/model-health/': typeof AuthenticatedModelHealthIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/ops-report/': typeof AuthenticatedOpsReportIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -784,6 +792,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/invite': typeof AuthenticatedInviteIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
+  '/model-health': typeof AuthenticatedModelHealthIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/ops-report': typeof AuthenticatedOpsReportIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
@@ -883,6 +892,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/invite/': typeof AuthenticatedInviteIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
+  '/_authenticated/model-health/': typeof AuthenticatedModelHealthIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/ops-report/': typeof AuthenticatedOpsReportIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -981,6 +991,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/invite/'
     | '/keys/'
+    | '/model-health/'
     | '/models/'
     | '/ops-report/'
     | '/playground/'
@@ -1076,6 +1087,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/invite'
     | '/keys'
+    | '/model-health'
     | '/models'
     | '/ops-report'
     | '/playground'
@@ -1174,6 +1186,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/'
     | '/_authenticated/invite/'
     | '/_authenticated/keys/'
+    | '/_authenticated/model-health/'
     | '/_authenticated/models/'
     | '/_authenticated/ops-report/'
     | '/_authenticated/playground/'
@@ -1647,6 +1660,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedModelsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/model-health/': {
+      id: '/_authenticated/model-health/'
+      path: '/model-health'
+      fullPath: '/model-health/'
+      preLoaderRoute: typeof AuthenticatedModelHealthIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/keys/': {
       id: '/_authenticated/keys/'
       path: '/keys'
@@ -2032,6 +2052,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedInviteIndexRoute: typeof AuthenticatedInviteIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
+  AuthenticatedModelHealthIndexRoute: typeof AuthenticatedModelHealthIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedOpsReportIndexRoute: typeof AuthenticatedOpsReportIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
@@ -2067,6 +2088,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedInviteIndexRoute: AuthenticatedInviteIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
+  AuthenticatedModelHealthIndexRoute: AuthenticatedModelHealthIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedOpsReportIndexRoute: AuthenticatedOpsReportIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,

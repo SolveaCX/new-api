@@ -25,6 +25,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  HeartPulse,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -155,6 +156,11 @@ export function buildSidebarData(
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,
+          },
+          {
+            title: t('Model Health'),
+            url: '/model-health',
+            icon: HeartPulse,
           },
           {
             title: t('Codex model governance'),

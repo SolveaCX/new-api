@@ -287,6 +287,12 @@ const (
 	MsgPerfGcExecuted       = "performance.gc_executed"
 )
 
+// Model health related messages
+const (
+	MsgModelHealthInvalidHours  = "model_health.invalid_hours"
+	MsgModelHealthModelRequired = "model_health.model_required"
+)
+
 // Ability related messages
 const (
 	MsgAbilityDbCorrupted   = "ability.db_corrupted"

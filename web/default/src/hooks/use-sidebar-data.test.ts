@@ -35,6 +35,7 @@ describe('buildSidebarData', () => {
       '/dashboard/overview',
       '/dashboard/models',
       '/available-models',
+      '/compute',
       '/keys',
       '/usage-logs/common',
       '/usage-logs/task',
@@ -95,5 +96,26 @@ describe('buildSidebarData', () => {
       title: '邀请',
       badge: '+$10',
     })
+  })
+
+  test('places model health in the centrally role-gated admin group', () => {
+    const sidebarData = buildSidebarData(t)
+    const adminGroup = sidebarData.navGroups.find(
+      (group) => group.id === 'admin'
+    )
+    const modelHealthItem = adminGroup?.items.find(
+      (item) => 'url' in item && item.url === '/model-health'
+    )
+
+    expect(modelHealthItem).toMatchObject({
+      title: 'Model Health',
+      url: '/model-health',
+    })
+    expect(
+      sidebarData.navGroups
+        .filter((group) => group.id !== 'admin')
+        .flatMap((group) => group.items)
+        .some((item) => 'url' in item && item.url === '/model-health')
+    ).toBe(false)
   })
 })

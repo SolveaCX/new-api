@@ -260,6 +260,10 @@ performance.disk_cache_cleared: "不活跃的磁盘缓存已清理"
 performance.stats_reset: "统计信息已重置"
 performance.gc_executed: "GC 已执行"
 
+# Model health messages
+model_health.invalid_hours: "查询时长必须为 24、168 或 720 小时"
+model_health.model_required: "必须指定模型"
+
 # Ability messages
 ability.db_corrupted: "数据库一致性被破坏"
 ability.repair_running: "已经有一个修复任务在运行中，请稍后再试"
