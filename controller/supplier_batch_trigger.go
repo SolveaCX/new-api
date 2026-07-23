@@ -3,80 +3,135 @@ package controller
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-type supplierDailyBatchCatchUpFunc func(context.Context, *gorm.DB, *gorm.DB, string, time.Time) (service.SupplierDailyBatchCatchUpResult, error)
+const supplierBatchRequestIDMaxBytes = 128
+
+type supplierDailyBatchCatchUpByRequestFunc func(context.Context, *gorm.DB, *gorm.DB, dto.SupplierBatchSchedulerPrincipal, dto.SupplierBatchCatchUpRequest, time.Time) (dto.SupplierBatchStatusResponse, error)
+type supplierDailyBatchStatusFunc func(context.Context, *gorm.DB, dto.SupplierBatchSchedulerPrincipal, string, time.Time) (dto.SupplierBatchStatusResponse, error)
+
+var catchUpSupplierDailyBatchesByRequest = service.CatchUpSupplierDailyBatchesByRequest
+var getSupplierDailyBatchRequestStatus supplierDailyBatchStatusFunc = supplierDailyBatchRequestStatusFromService
+
+func supplierDailyBatchRequestStatusFromService(ctx context.Context, mainDB *gorm.DB, principal dto.SupplierBatchSchedulerPrincipal, requestID string, now time.Time) (dto.SupplierBatchStatusResponse, error) {
+	return service.GetSupplierDailyBatchRequestStatus(ctx, mainDB, principal, requestID, now)
+}
 
 func TriggerSupplierDailyBatchCatchUp(c *gin.Context) {
-	triggerSupplierDailyBatchCatchUp(
-		c,
-		service.CatchUpSupplierDailyBatches,
-		model.DB,
-		model.LOG_DB,
-		common.GetReplicaID()+":supplier-daily-batch:"+common.GetUUID(),
-		time.Now(),
-	)
+	triggerSupplierDailyBatchCatchUp(c, catchUpSupplierDailyBatchesByRequest, model.DB, model.LOG_DB, time.Now())
 }
 
-func triggerSupplierDailyBatchCatchUp(c *gin.Context, catchUp supplierDailyBatchCatchUpFunc, mainDB, logDB *gorm.DB, owner string, now time.Time) {
-	if mainDB == nil || logDB == nil {
-		supplierDailyBatchCatchUpError(c, model.ErrDatabase, owner, now)
+func GetSupplierDailyBatchStatus(c *gin.Context) {
+	getSupplierDailyBatchStatus(c, getSupplierDailyBatchRequestStatus, model.DB, time.Now())
+}
+
+func triggerSupplierDailyBatchCatchUp(c *gin.Context, catchUp supplierDailyBatchCatchUpByRequestFunc, mainDB, logDB *gorm.DB, now time.Time) {
+	principal, ok := middleware.SupplierBatchPrincipalFromContext(c)
+	if !ok {
+		supplierBatchHTTPError(c, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	result, err := catchUp(c.Request.Context(), mainDB, logDB, owner, now)
+	requestID, ok := supplierBatchIdempotencyKey(c)
+	if !ok {
+		return
+	}
+	if mainDB == nil || logDB == nil || catchUp == nil {
+		supplierBatchHTTPError(c, http.StatusServiceUnavailable, "config_unavailable")
+		return
+	}
+	result, err := catchUp(c.Request.Context(), mainDB, logDB, principal, dto.SupplierBatchCatchUpRequest{RequestID: requestID}, now)
+	supplierDailyBatchResult(c, result, err)
+}
+
+func getSupplierDailyBatchStatus(c *gin.Context, getStatus supplierDailyBatchStatusFunc, mainDB *gorm.DB, now time.Time) {
+	principal, ok := middleware.SupplierBatchPrincipalFromContext(c)
+	if !ok {
+		supplierBatchHTTPError(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	requestID, ok := supplierBatchStatusRequestID(c)
+	if !ok {
+		return
+	}
+	if mainDB == nil || getStatus == nil {
+		supplierBatchHTTPError(c, http.StatusServiceUnavailable, "config_unavailable")
+		return
+	}
+	result, err := getStatus(c.Request.Context(), mainDB, principal, requestID, now)
+	supplierDailyBatchResult(c, result, err)
+}
+
+func supplierDailyBatchResult(c *gin.Context, result dto.SupplierBatchStatusResponse, err error) {
 	if err == nil {
-		common.ApiSuccess(c, result)
+		if validationErr := result.Validate(); validationErr != nil {
+			logger.LogError(c.Request.Context(), "supplier batch service returned an invalid status payload")
+			supplierBatchHTTPError(c, http.StatusInternalServerError, "internal_error")
+			return
+		}
+		c.JSON(http.StatusOK, result)
 		return
 	}
-	supplierDailyBatchCatchUpError(c, err, owner, now)
-}
-
-func supplierDailyBatchCatchUpError(c *gin.Context, err error, owner string, now time.Time) {
-	if errors.Is(err, model.ErrSupplierDailyBatchBusy) {
-		supplierDailyBatchTriggerError(c, http.StatusConflict, "busy", i18n.MsgSupplyChainConflict)
-		return
-	}
-	logger.LogError(c.Request.Context(), fmt.Sprintf(
-		"supplier daily batch catch-up trigger failed target_batch_date=%s owner=%q triggered_at=%q error_category=%s error_type=%T",
-		supplierDailyBatchTargetDate(now), owner, now.Format(time.RFC3339Nano), supplierDailyBatchErrorCategory(err), err,
-	))
-	supplierDailyBatchTriggerError(c, http.StatusInternalServerError, "error", i18n.MsgSupplyChainInternalError)
-}
-
-func supplierDailyBatchErrorCategory(err error) string {
 	switch {
-	case errors.Is(err, model.ErrDatabase):
-		return "database"
-	case errors.Is(err, model.ErrSupplierDailyBatchFenceLost):
-		return "fence_lost"
+	case errors.Is(err, service.ErrSupplierBatchRequestNotFound):
+		supplierBatchHTTPError(c, http.StatusNotFound, "not_found")
+	case errors.Is(err, service.ErrSupplierBatchBusy):
+		supplierBatchHTTPError(c, http.StatusConflict, "busy")
+	case errors.Is(err, service.ErrSupplierBatchIdempotencyConflict):
+		supplierBatchHTTPError(c, http.StatusConflict, "idempotency_conflict")
+	case errors.Is(err, service.ErrSupplierBatchConfigUnavailable):
+		supplierBatchHTTPError(c, http.StatusServiceUnavailable, "config_unavailable")
 	default:
-		return "internal"
+		logger.LogError(c.Request.Context(), "supplier batch request failed")
+		supplierBatchHTTPError(c, http.StatusInternalServerError, "internal_error")
 	}
 }
 
-func supplierDailyBatchTargetDate(now time.Time) string {
-	location, err := time.LoadLocation(service.SupplierDailyBatchTimezone)
-	if err != nil {
-		return "unknown"
+func supplierBatchIdempotencyKey(c *gin.Context) (string, bool) {
+	values := c.Request.Header.Values("Idempotency-Key")
+	if len(values) != 1 || !validSupplierBatchRequestID(values[0]) {
+		supplierBatchHTTPError(c, http.StatusBadRequest, "idempotency_key_required")
+		return "", false
 	}
-	return now.In(location).AddDate(0, 0, -1).Format("2006-01-02")
+	return values[0], true
 }
 
-func supplierDailyBatchTriggerError(c *gin.Context, status int, machineStatus, messageKey string) {
-	c.JSON(status, gin.H{
-		"success": false,
-		"message": common.TranslateMessage(c, messageKey),
-		"data":    gin.H{"status": machineStatus},
-	})
+func supplierBatchStatusRequestID(c *gin.Context) (string, bool) {
+	values := c.Request.URL.Query()["request_id"]
+	if len(values) != 1 || !validSupplierBatchRequestID(values[0]) {
+		supplierBatchHTTPError(c, http.StatusBadRequest, "request_id_required")
+		return "", false
+	}
+	return values[0], true
+}
+
+func validSupplierBatchRequestID(value string) bool {
+	return value != "" && len(value) <= supplierBatchRequestIDMaxBytes && utf8.ValidString(value) && value == strings.TrimSpace(value) && !strings.ContainsFunc(value, unicode.IsControl)
+}
+
+func supplierBatchHTTPError(c *gin.Context, status int, code string) {
+	messageKey := i18n.MsgSupplyChainInternalError
+	switch code {
+	case "idempotency_key_required", "request_id_required", "invalid_request":
+		messageKey = i18n.MsgSupplyChainInvalidInput
+	case "not_found":
+		messageKey = i18n.MsgSupplyChainNotFound
+	case "busy", "idempotency_conflict", "not_eligible", "not_rerunnable", "version_conflict":
+		messageKey = i18n.MsgSupplyChainConflict
+	}
+	c.JSON(status, gin.H{"success": false, "message": common.TranslateMessage(c, messageKey), "code": code})
 }

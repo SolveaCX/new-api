@@ -154,6 +154,18 @@ func nextSupplierDailyBatchDate(ctx context.Context, mainDB *gorm.DB, coverageSt
 }
 
 func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDate, owner string, now time.Time, force bool) (runErr error) {
+	var expectedPublishedFence *int64
+	if force {
+		run, _, err := model.LoadSupplierPublishedDailyBatch(ctx, mainDB, batchDate)
+		if err != nil {
+			return err
+		}
+		expectedPublishedFence = &run.PublishedFenceToken
+	}
+	return runSupplierDailyBatch(ctx, mainDB, logDB, batchDate, owner, now, expectedPublishedFence, nil)
+}
+
+func runSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDate, owner string, now time.Time, expectedPublishedFence *int64, acquired func(model.SupplierDailyBatchLease) error) (runErr error) {
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	if err != nil {
 		return err
@@ -167,25 +179,50 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 	if err != nil {
 		return err
 	}
-	lease, err := model.AcquireSupplierDailyBatch(ctx, mainDB, batchDate, day.Unix(), dayEnd.Unix(), owner, now, supplierDailyLeaseDuration, force)
+	var lease model.SupplierDailyBatchLease
+	if expectedPublishedFence == nil {
+		lease, err = model.AcquireSupplierDailyBatch(ctx, mainDB, batchDate, day.Unix(), dayEnd.Unix(), owner, now, supplierDailyLeaseDuration, false)
+	} else {
+		lease, err = model.AcquireSupplierDailyBatchRerun(ctx, mainDB, batchDate, day.Unix(), dayEnd.Unix(), owner, now, supplierDailyLeaseDuration, *expectedPublishedFence)
+	}
 	if err != nil || lease.AlreadyDone {
 		return err
 	}
-	defer func() {
-		if runErr != nil {
-			_ = model.FailSupplierDailyBatch(context.Background(), mainDB, lease, runErr)
+	if acquired != nil {
+		if err := acquired(lease); err != nil {
+			_ = model.FailSupplierDailyBatch(context.Background(), mainDB, lease, err)
+			return err
 		}
-	}()
+	}
+	return runAcquiredSupplierDailyBatch(ctx, mainDB, logDB, lease, day, cutoverAt, now)
+}
 
+func runAcquiredSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, lease model.SupplierDailyBatchLease, day time.Time, cutoverAt int64, now time.Time) (runErr error) {
+	evidence, err := scanAcquiredSupplierDailyBatch(ctx, mainDB, logDB, lease, day, cutoverAt)
+	if err != nil {
+		_ = model.FailSupplierDailyBatch(context.Background(), mainDB, lease, err)
+		return err
+	}
+	if err = model.PublishSupplierDailyBatch(ctx, mainDB, lease, now, evidence); err != nil {
+		err = fmt.Errorf("publish supplier daily publication: %w", err)
+		_ = model.FailSupplierDailyBatch(context.Background(), mainDB, lease, err)
+		return err
+	}
+	return nil
+}
+
+func scanAcquiredSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, lease model.SupplierDailyBatchLease, day time.Time, cutoverAt int64) (types.SupplierPublishedEvidenceV1, error) {
+	dayEnd := day.AddDate(0, 0, 1)
 	scanStartAt := day.Unix()
 	if cutoverAt > scanStartAt {
 		scanStartAt = cutoverAt
 	}
+	evidenceAccumulator := newSupplierBatchEvidenceAccumulator()
 	if scanStartAt < dayEnd.Unix() {
 		for {
 			rows, pageErr := model.ScanSupplierAccountingLogPage(ctx, logDB, scanStartAt, dayEnd.Unix(), lease.CursorCreatedAt, lease.CursorId, model.SupplierDailyLogPageSize)
 			if pageErr != nil {
-				return pageErr
+				return types.SupplierPublishedEvidenceV1{}, fmt.Errorf("scan supplier accounting logs: %w", pageErr)
 			}
 			if len(rows) == 0 {
 				break
@@ -193,15 +230,13 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 			accumulators := make(map[string]*model.SupplierUsageDailySummary, len(rows))
 			var snapshotCount int64
 			for _, logRow := range rows {
-				snapshot, ok, parseErr := parseSupplierAccountingLog(logRow.Other)
-				if parseErr != nil {
-					return fmt.Errorf("parse supplier accounting log %d: %w", logRow.Id, parseErr)
-				}
-				if !ok {
+				classification := classifySupplierAccountingLog(logRow.Other)
+				evidenceAccumulator.observe(classification)
+				if classification.snapshot == nil {
 					continue
 				}
-				if err := addSupplierDailySnapshot(accumulators, batchDate, day.Unix(), logRow, snapshot); err != nil {
-					return fmt.Errorf("aggregate supplier accounting log %d: %w", logRow.Id, err)
+				if err := addSupplierDailySnapshot(accumulators, lease.BatchDate, day.Unix(), logRow, *classification.snapshot); err != nil {
+					return types.SupplierPublishedEvidenceV1{}, fmt.Errorf("aggregate supplier accounting log %d: %w", logRow.Id, err)
 				}
 				snapshotCount++
 			}
@@ -211,7 +246,7 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 			}
 			last := rows[len(rows)-1]
 			if err := model.PersistSupplierDailyBatchPage(ctx, mainDB, lease, summaries, last.CreatedAt, last.Id, int64(len(rows)), snapshotCount, supplierDailyLeaseDuration); err != nil {
-				return err
+				return types.SupplierPublishedEvidenceV1{}, err
 			}
 			lease.CursorCreatedAt = last.CreatedAt
 			lease.CursorId = last.Id
@@ -220,7 +255,11 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 			}
 		}
 	}
-	return model.CompleteSupplierDailyBatch(ctx, mainDB, lease, now)
+	evidence, err := evidenceAccumulator.publishedEvidence()
+	if err != nil {
+		return types.SupplierPublishedEvidenceV1{}, fmt.Errorf("build supplier daily publication evidence: %w", err)
+	}
+	return evidence, nil
 }
 
 func supplierAccountingBatchCutover(ctx context.Context, mainDB *gorm.DB) (int64, error) {
@@ -303,6 +342,10 @@ func parseSupplierAccountingLog(other string) (types.SupplierAccountingLogSnapsh
 }
 
 func addSupplierDailySnapshot(accumulators map[string]*model.SupplierUsageDailySummary, batchDate string, bucketStart int64, logRow model.SupplierAccountingLogRow, snapshot types.SupplierAccountingLogSnapshotV1) error {
+	pricingMode, err := supplierPricingModeFromProvenance(snapshot.PricingProvenance)
+	if err != nil {
+		return err
+	}
 	quality := SupplierDataQualityAuthoritative
 	if strings.TrimSpace(snapshot.QualityReason) != "" {
 		quality = SupplierDataQualityUnattributed
@@ -313,7 +356,7 @@ func addSupplierDailySnapshot(accumulators map[string]*model.SupplierUsageDailyS
 	}
 	keyText := strings.Join([]string{
 		batchDate, strconv.Itoa(snapshot.SupplierId), strconv.Itoa(snapshot.ContractId), strconv.Itoa(snapshot.BindingVersionId),
-		strconv.Itoa(snapshot.RateVersionId), strconv.Itoa(logRow.ChannelId), modelName, pointerInt64String(snapshot.SalesMultiplierPpm), pointerString(snapshot.PricingMode), snapshot.StatisticsScope, quality,
+		strconv.Itoa(snapshot.RateVersionId), strconv.Itoa(logRow.ChannelId), modelName, pointerInt64String(snapshot.SalesMultiplierPpm), pricingMode, snapshot.StatisticsScope, quality,
 	}, "|")
 	digest := sha256.Sum256([]byte(keyText))
 	key := hex.EncodeToString(digest[:])
@@ -323,7 +366,7 @@ func addSupplierDailySnapshot(accumulators map[string]*model.SupplierUsageDailyS
 			BatchDate: batchDate, DimensionKey: key, BucketStart: bucketStart,
 			SupplierId: snapshot.SupplierId, ContractId: snapshot.ContractId, BindingVersionId: snapshot.BindingVersionId,
 			RateVersionId: snapshot.RateVersionId, ChannelId: logRow.ChannelId, ModelName: modelName,
-			SalesMultiplierPpm: cloneSupplierInt64(snapshot.SalesMultiplierPpm), PricingMode: pointerString(snapshot.PricingMode), StatisticsScope: snapshot.StatisticsScope, DataQuality: quality,
+			SalesMultiplierPpm: cloneSupplierInt64(snapshot.SalesMultiplierPpm), PricingMode: pricingMode, StatisticsScope: snapshot.StatisticsScope, DataQuality: quality,
 		}
 		accumulators[key] = row
 	}
@@ -363,6 +406,32 @@ func addSupplierDailySnapshot(accumulators map[string]*model.SupplierUsageDailyS
 	return nil
 }
 
+func supplierPricingModeFromProvenance(provenance *types.SupplierPricingProvenanceV1) (string, error) {
+	if provenance == nil {
+		return "", errors.New("missing supplier pricing provenance")
+	}
+	mode := ""
+	if provenance.Ratio != nil {
+		mode = string(types.SupplierPricingModeRatio)
+	}
+	if provenance.Fixed != nil {
+		if mode != "" {
+			return "", errors.New("ambiguous supplier pricing provenance")
+		}
+		mode = string(types.SupplierPricingModeFixed)
+	}
+	if provenance.Tiered != nil {
+		if mode != "" {
+			return "", errors.New("ambiguous supplier pricing provenance")
+		}
+		mode = string(types.SupplierPricingModeTiered)
+	}
+	if mode == "" {
+		return "", errors.New("missing supplier pricing provenance mode")
+	}
+	return mode, nil
+}
+
 func addKnownAmount(count, total *int64, value *int64) error {
 	if value == nil {
 		return nil
@@ -379,13 +448,6 @@ func addInt64(target *int64, value int64) error {
 	}
 	*target += value
 	return nil
-}
-
-func pointerString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return strings.TrimSpace(*value)
 }
 
 func pointerInt64String(value *int64) string {

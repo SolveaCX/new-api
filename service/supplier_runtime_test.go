@@ -88,20 +88,26 @@ func degradeSupplierAccountingForBatch(t *testing.T, db *gorm.DB, active model.S
 
 func supplierDailyLogOther(t *testing.T, snapshot types.SupplierAccountingLogSnapshotV1) string {
 	t.Helper()
-	payload, err := common.Marshal(map[string]any{"supplier_accounting_v1": snapshot})
+	payload, err := common.Marshal(map[string]any{types.SupplierAccountingEnvelopeKeyV1: types.SupplierAccountingEnvelopeV1{
+		EnvelopeSchemaVersion: types.SupplierAccountingEnvelopeSchemaVersionV1, ProducerCapabilityVersion: types.SupplierAccountingProducerCapabilityV1,
+		ActivationStateVersion: 1, Disposition: types.SupplierAccountingDispositionCaptured, Captured: &snapshot,
+	}})
 	require.NoError(t, err)
 	return string(payload)
 }
 
 func supplierDailySnapshot(day time.Time, multiplier int64) types.SupplierAccountingLogSnapshotV1 {
 	official, sales, procurement, gross := int64(1_000), int64(2_000), int64(700), int64(1_300)
-	pricing := "ratio"
 	return types.SupplierAccountingLogSnapshotV1{
 		BindingVersionId: 8, SupplierId: 1, ContractId: 2, RateVersionId: 3,
-		SalesMultiplierPpm: &multiplier, OfficialListMicroUsd: &official, SalesMicroUsd: &sales,
+		ProcurementMultiplierPpm: 700_000,
+		SalesMultiplierPpm:       &multiplier, OfficialListMicroUsd: &official, SalesMicroUsd: &sales,
 		ProcurementCostMicroUsd: &procurement, GrossProfitMicroUsd: &gross,
-		StatisticsScope: string(types.SupplierStatisticsScopeBusiness), PricingMode: &pricing,
+		StatisticsScope: string(types.SupplierStatisticsScopeBusiness), ExclusionDecision: "included",
 		FinanciallyCommittedAt: day.Add(time.Hour).Unix(),
+		PricingProvenance: &types.SupplierPricingProvenanceV1{Ratio: &types.SupplierRatioPricingProvenanceV1{
+			ModelRatioPpm: 1_000_000, GroupRatioPpm: multiplier, ModelRatioVersion: 1, GroupRatioVersion: 1,
+		}},
 	}
 }
 
@@ -176,6 +182,12 @@ func TestRunSupplierDailyBatchInternalSnapshotRetainsInventoryOnly(t *testing.T)
 	activateSupplierAccountingForBatch(t, mainDB, day.Unix())
 	snapshot := supplierDailySnapshot(day, 300_000)
 	snapshot.StatisticsScope = string(types.SupplierStatisticsScopeInternal)
+	snapshot.ExclusionDecision = "excluded"
+	ruleID := 9
+	snapshot.ExclusionRuleId = &ruleID
+	snapshot.SalesMultiplierPpm = nil
+	snapshot.SalesMicroUsd = nil
+	snapshot.GrossProfitMicroUsd = nil
 	require.NoError(t, logDB.Create(&model.Log{
 		Type: model.LogTypeConsume, CreatedAt: day.Add(time.Hour).Unix(), ChannelId: 4,
 		ModelName: "must-not-be-dimensional", Other: supplierDailyLogOther(t, snapshot),
@@ -489,11 +501,20 @@ func TestSupplierDailyBatchForceRerunKeepsPublishedGenerationUntilAtomicPublish(
 	day := time.Date(2026, 12, 6, 0, 0, 0, 0, time.UTC)
 	leaseA, err := model.AcquireSupplierDailyBatch(ctx, db, "2026-12-06", day.Unix(), day.AddDate(0, 0, 1).Unix(), "node-a", time.Time{}, time.Minute, false)
 	require.NoError(t, err)
-	require.NoError(t, model.PersistSupplierDailyBatchPage(ctx, db, leaseA, []model.SupplierUsageDailySummary{supplierFencingSummary(leaseA.BatchDate, "published-a", 11)}, 100, 1, 1, 1, time.Minute))
+	require.NoError(t, model.PersistSupplierDailyBatchPage(ctx, db, leaseA, []model.SupplierUsageDailySummary{supplierFencingSummary(leaseA.BatchDate, "published-a", 11)}, 100, 1, 2, 1, time.Minute))
 	leaseA.CursorCreatedAt, leaseA.CursorId = 100, 1
-	require.NoError(t, model.CompleteSupplierDailyBatch(ctx, db, leaseA, time.Now()))
+	require.NoError(t, model.PublishSupplierDailyBatch(ctx, db, leaseA, time.Now(), types.SupplierPublishedEvidenceV1{
+		SchemaVersion: types.SupplierPublishedEvidenceSchemaVersion, LogsScanned: 2,
+		ProducerMarkersPresent: 1, CapturedSnapshotCount: 1,
+		DispositionCounts:                types.SupplierPublishedDispositionCountsV1{Captured: 1},
+		FailureCounts:                    types.SupplierPublishedFailureCountsV1{AbsentMarkerAfterCutover: 1},
+		PersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessIncomplete,
+		Warnings: []types.SupplierPublishedWarningV1{{
+			Code: types.SupplierPublishedWarningAbsentMarker, MessageKey: "supply_chain.warning.absent_marker_after_cutover", Count: 1,
+		}},
+	}))
 
-	leaseB, err := model.AcquireSupplierDailyBatch(ctx, db, leaseA.BatchDate, day.Unix(), day.AddDate(0, 0, 1).Unix(), "node-b", time.Time{}, time.Minute, true)
+	leaseB, err := model.AcquireSupplierDailyBatchRerun(ctx, db, leaseA.BatchDate, day.Unix(), day.AddDate(0, 0, 1).Unix(), "node-b", time.Time{}, time.Minute, leaseA.FenceToken)
 	require.NoError(t, err)
 	require.Greater(t, leaseB.FenceToken, leaseA.FenceToken)
 	require.NoError(t, model.PersistSupplierDailyBatchPage(ctx, db, leaseB, []model.SupplierUsageDailySummary{supplierFencingSummary(leaseB.BatchDate, "candidate-b", 22)}, 200, 2, 1, 1, time.Minute))
@@ -525,10 +546,7 @@ func TestCatchUpSupplierDailyBatchesSkipsCompletedHistory(t *testing.T) {
 	for offset := 0; offset < 200; offset++ {
 		day := firstDay.AddDate(0, 0, offset)
 		completedAt := day.AddDate(0, 0, 1).Unix()
-		runs = append(runs, model.SupplierUsageDailyBatchRun{
-			BatchDate: day.Format("2006-01-02"), DayStart: day.Unix(), DayEnd: completedAt,
-			Status: model.SupplierDailyBatchStatusCompleted, CompletedAt: &completedAt,
-		})
+		runs = append(runs, supplierReportPublishedRun(t, day.Format("2006-01-02"), day.Unix(), completedAt, 1, 0))
 	}
 	require.NoError(t, mainDB.CreateInBatches(runs, 100).Error)
 
@@ -545,7 +563,7 @@ func TestCatchUpSupplierDailyBatchesSkipsCompletedHistory(t *testing.T) {
 	require.NoError(t, mainDB.Model(&model.SupplierUsageDailyBatchRun{}).Count(&count).Error)
 	require.EqualValues(t, 201, count, "only D-1 after the latest completed date should be acquired")
 	var historicalChanged int64
-	require.NoError(t, mainDB.Model(&model.SupplierUsageDailyBatchRun{}).Where("batch_date < ? AND fence_token <> 0", today.AddDate(0, 0, -1).Format("2006-01-02")).Count(&historicalChanged).Error)
+	require.NoError(t, mainDB.Model(&model.SupplierUsageDailyBatchRun{}).Where("batch_date < ? AND fence_token <> published_fence_token", today.AddDate(0, 0, -1).Format("2006-01-02")).Count(&historicalChanged).Error)
 	require.Zero(t, historicalChanged, "completed history must not be reacquired")
 }
 
@@ -563,10 +581,7 @@ func TestCatchUpSupplierDailyBatchesDoesNotWalkCompletedHistoryAfterFailedDate(t
 	for offset := 1; offset <= 200; offset++ {
 		day := firstDay.AddDate(0, 0, offset)
 		completedAt := day.AddDate(0, 0, 1).Unix()
-		runs = append(runs, model.SupplierUsageDailyBatchRun{
-			BatchDate: day.Format("2006-01-02"), DayStart: day.Unix(), DayEnd: completedAt,
-			Status: model.SupplierDailyBatchStatusCompleted, CompletedAt: &completedAt,
-		})
+		runs = append(runs, supplierReportPublishedRun(t, day.Format("2006-01-02"), day.Unix(), completedAt, 1, 0))
 	}
 	require.NoError(t, mainDB.CreateInBatches(runs, 100).Error)
 
@@ -581,7 +596,7 @@ func TestCatchUpSupplierDailyBatchesDoesNotWalkCompletedHistoryAfterFailedDate(t
 	require.Equal(t, []string{firstDay.Format("2006-01-02")}, invokedDates, "selection must jump over completed history after repairing the failed date")
 	var completedReacquired int64
 	require.NoError(t, mainDB.Model(&model.SupplierUsageDailyBatchRun{}).
-		Where("batch_date > ? AND fence_token <> 0", firstDay.Format("2006-01-02")).Count(&completedReacquired).Error)
+		Where("batch_date > ? AND fence_token <> published_fence_token", firstDay.Format("2006-01-02")).Count(&completedReacquired).Error)
 	require.Zero(t, completedReacquired)
 	var repaired model.SupplierUsageDailyBatchRun
 	require.NoError(t, mainDB.Where("batch_date = ?", firstDay.Format("2006-01-02")).First(&repaired).Error)
@@ -626,9 +641,20 @@ func assertSupplierStaleLeaseCannotMutateNewOwner(t *testing.T, db *gorm.DB, bat
 	require.Equal(t, leaseB.FenceToken, run.FenceToken)
 
 	winner := supplierFencingSummary(batchDate, "node-b-winner", 31)
-	require.NoError(t, model.PersistSupplierDailyBatchPage(ctx, db, leaseB, []model.SupplierUsageDailySummary{winner}, 100, 1, 3, 1, time.Minute))
+	require.NoError(t, model.PersistSupplierDailyBatchPage(ctx, db, leaseB, []model.SupplierUsageDailySummary{winner}, 100, 1, 3, 2, time.Minute))
 	leaseB.CursorCreatedAt, leaseB.CursorId = 100, 1
-	require.NoError(t, model.CompleteSupplierDailyBatch(ctx, db, leaseB, time.Now()))
+	require.NoError(t, model.PublishSupplierDailyBatch(ctx, db, leaseB, time.Now(), types.SupplierPublishedEvidenceV1{
+		SchemaVersion:                    types.SupplierPublishedEvidenceSchemaVersion,
+		LogsScanned:                      3,
+		ProducerMarkersPresent:           2,
+		CapturedSnapshotCount:            2,
+		DispositionCounts:                types.SupplierPublishedDispositionCountsV1{Captured: 2},
+		FailureCounts:                    types.SupplierPublishedFailureCountsV1{AbsentMarkerAfterCutover: 1},
+		PersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessIncomplete,
+		Warnings: []types.SupplierPublishedWarningV1{{
+			Code: types.SupplierPublishedWarningAbsentMarker, Count: 1, MessageKey: "supply_chain.warning.absent_marker_after_cutover",
+		}},
+	}))
 	require.NoError(t, db.Where("batch_date = ?", batchDate).Find(&summaries).Error)
 	require.Len(t, summaries, 2)
 	dimensionKeys := []string{summaries[0].DimensionKey, summaries[1].DimensionKey}
@@ -637,7 +663,7 @@ func assertSupplierStaleLeaseCannotMutateNewOwner(t *testing.T, db *gorm.DB, bat
 	require.Equal(t, model.SupplierDailyBatchStatusCompleted, run.Status)
 	require.EqualValues(t, 2, run.SummaryCount)
 	require.EqualValues(t, 3, run.LogsScanned)
-	require.EqualValues(t, 1, run.SnapshotCount)
+	require.EqualValues(t, 2, run.SnapshotCount)
 }
 
 func supplierFencingSummary(batchDate, dimensionKey string, requestCount int64) model.SupplierUsageDailySummary {

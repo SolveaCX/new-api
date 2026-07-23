@@ -340,10 +340,11 @@ func SetApiRouter(router *gin.Engine) {
 			supplyChainRoute.GET("/reports/channels", controller.ListSupplyChainReportChannels)
 			supplyChainRoute.GET("/reports/breakdown", controller.ListSupplyChainReportBreakdown)
 			supplyChainRoute.GET("/reports/freshness", controller.GetSupplyChainReportFreshness)
+			supplyChainRoute.POST("/reports/daily/:date/rerun", supplierSupplyChainMutation(controller.RerunSupplyChainDailyReport)...)
 
 		}
 		registerSupplierAccountingControlRoutes(apiRouter)
-		registerSupplierDailyBatchCatchUpRoute(apiRouter, controller.TriggerSupplierDailyBatchCatchUp)
+		registerSupplierDailyBatchRoutes(apiRouter, controller.TriggerSupplierDailyBatchCatchUp, controller.GetSupplierDailyBatchStatus)
 		codexModelGovernanceRoute := apiRouter.Group("/codex_model_governance")
 		codexModelGovernanceRoute.Use(middleware.AdminAuth())
 		{
@@ -526,8 +527,9 @@ func registerSupplierAccountingControlRoutes(apiRouter *gin.RouterGroup) {
 	mutationRoute.POST("/adopt-legacy", controller.AdoptLegacySupplierAccounting)
 }
 
-func registerSupplierDailyBatchCatchUpRoute(apiRouter *gin.RouterGroup, handler gin.HandlerFunc) {
-	supplierBatchRoute := apiRouter.Group("/supply-chain")
-	supplierBatchRoute.Use(middleware.RootAuth())
-	supplierBatchRoute.POST("/daily-batches/catch-up", middleware.CriticalRateLimit(), handler)
+func registerSupplierDailyBatchRoutes(apiRouter *gin.RouterGroup, catchUpHandler, statusHandler gin.HandlerFunc) {
+	supplierBatchRoute := apiRouter.Group("/supply-chain/daily-batches")
+	supplierBatchRoute.Use(middleware.SupplierBatchAuth())
+	supplierBatchRoute.POST("/catch-up", middleware.CriticalRateLimit(), catchUpHandler)
+	supplierBatchRoute.GET("/status", statusHandler)
 }

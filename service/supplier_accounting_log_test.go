@@ -175,6 +175,7 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 	}
 	info.SupplierOfficialPricingSnapshot.TieredBillingSnapshot = &billingexpr.BillingSnapshot{
 		GroupRatio: 0.3, EstimatedQuotaBeforeGroup: 1_000_000, EstimatedQuotaAfterGroup: 300_000,
+		ExprString: "p+c", ExprHash: billingexpr.ExprHashString("p+c"), ExprVersion: 1,
 	}
 
 	// Simulate the successful retry selecting a different supplier binding and
@@ -185,12 +186,19 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 	}
 	helper.ApplyResolvedGroupRatio(info, types.GroupRatioInfo{GroupRatio: 0.9})
 	official := decimal.RequireFromString("2")
-	snapshot := BuildSupplierAccountingLogSnapshotV1(info, types.BillingSettlementResult{
+	settlement := types.BillingSettlementResult{
 		FinanciallyCommitted: true, FinanciallyCommittedAt: day.Add(time.Hour).Unix(), FinalSalesQuota: 900_000,
-	}, &official, "", "tiered_expr")
-	require.NotNil(t, snapshot)
-
-	other, err := common.Marshal(map[string]any{"supplier_accounting_v1": snapshot, "matched_tier": "final"})
+	}
+	envelope := BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{
+		RelayInfo: info, Settlement: settlement, HasPositiveFinalUsage: true,
+		Capture: SupplierAccountingCaptureInputV1{
+			OfficialListUSD: &official, PricingMode: "tiered_expr",
+			TieredTokenParams: &billingexpr.TokenParams{P: 1, C: 1, Len: 2},
+		},
+	})
+	require.NoError(t, ValidateSupplierAccountingEnvelopeV1(envelope))
+	require.NotNil(t, envelope.Captured)
+	other, err := common.Marshal(map[string]any{types.SupplierAccountingEnvelopeKeyV1: envelope, "matched_tier": "final"})
 	require.NoError(t, err)
 	require.NoError(t, logDB.Create(&model.Log{
 		Type: model.LogTypeConsume, CreatedAt: day.Add(time.Hour).Unix(), ChannelId: 99,
@@ -200,10 +208,12 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 
 	var persisted model.Log
 	require.NoError(t, logDB.First(&persisted).Error)
-	var envelope supplierAccountingLogEnvelope
-	require.NoError(t, common.Unmarshal([]byte(persisted.Other), &envelope))
+	var persistedEnvelope supplierAccountingLogEnvelope
+	require.NoError(t, common.Unmarshal([]byte(persisted.Other), &persistedEnvelope))
 	var persistedSnapshot types.SupplierAccountingLogSnapshotV1
-	require.NoError(t, common.Unmarshal(envelope.SupplierAccountingV1, &persistedSnapshot))
+	require.NoError(t, common.Unmarshal(persistedEnvelope.SupplierAccountingV1, &envelope))
+	require.NotNil(t, envelope.Captured)
+	persistedSnapshot = *envelope.Captured
 	require.Equal(t, 201, persistedSnapshot.BindingVersionId)
 	require.Equal(t, 21, persistedSnapshot.SupplierId)
 	require.Equal(t, 22, persistedSnapshot.ContractId)

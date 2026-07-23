@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -163,8 +164,17 @@ func insertSupplierAccountingE2EPerfRows(t *testing.T, db *gorm.DB, day time.Tim
 	require.NoError(t, err)
 	defer func() { require.NoError(t, statement.Close()) }()
 
-	const businessSnapshot = `{"supplier_accounting_v1":{"bv":1,"s":1,"c":1,"rv":1,"pm":650000,"sm":700000,"ol":1000,"sa":700,"pc":650,"gp":50,"ss":"business","ed":"included","q":"1000000","p":"ratio","fc":1784476801}}`
-	const internalSnapshot = `{"supplier_accounting_v1":{"bv":1,"s":1,"c":1,"rv":1,"pm":650000,"ol":1000,"pc":650,"ss":"internal","ed":"excluded","er":99,"fc":1784476801}}`
+	business := supplierDailySnapshot(day, 700_000)
+	businessSnapshot := supplierDailyLogOther(t, business)
+	internal := business
+	internal.StatisticsScope = string(types.SupplierStatisticsScopeInternal)
+	internal.ExclusionDecision = "excluded"
+	ruleID := 99
+	internal.ExclusionRuleId = &ruleID
+	internal.SalesMultiplierPpm = nil
+	internal.SalesMicroUsd = nil
+	internal.GrossProfitMicroUsd = nil
+	internalSnapshot := supplierDailyLogOther(t, internal)
 	for row := 0; row < totalRows; row++ {
 		pattern := row % 4
 		other := businessSnapshot
@@ -193,7 +203,7 @@ func insertSupplierAccountingHighCardinalityRows(t *testing.T, db *gorm.DB, day 
 	statement, err := tx.Prepare(`INSERT INTO logs(type, created_at, channel_id, model_name, other) VALUES (?, ?, ?, ?, ?)`)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, statement.Close()) }()
-	const snapshot = `{"supplier_accounting_v1":{"bv":1,"s":1,"c":1,"rv":1,"pm":650000,"sm":700000,"ol":1000,"sa":700,"pc":650,"gp":50,"ss":"business","ed":"included","q":"1000000","p":"ratio","fc":1784476801}}`
+	snapshot := supplierDailyLogOther(t, supplierDailySnapshot(day, 700_000))
 	for row := 0; row < totalRows; row++ {
 		_, err = statement.Exec(model.LogTypeConsume, day.Unix()+1+int64(row/1000), 1, fmt.Sprintf("high-cardinality-model-%d", row), snapshot)
 		require.NoError(t, err)

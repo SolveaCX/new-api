@@ -2,10 +2,12 @@ package model
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/types"
 	"gorm.io/gorm"
 )
 
@@ -60,6 +62,25 @@ func NewSupplierReportStore(mainDB *gorm.DB) *SupplierReportStore {
 }
 
 func DefaultSupplierReportStore() *SupplierReportStore { return NewSupplierReportStore(DB) }
+
+// ReadSnapshot runs one composed report against a single database snapshot.
+// MySQL and PostgreSQL need an explicit repeatable-read transaction because a
+// report issues multiple SELECTs. SQLite's deferred transaction establishes a
+// stable snapshot on its first read; passing read-only transaction options is
+// intentionally avoided because the SQLite driver does not support them.
+func (s *SupplierReportStore) ReadSnapshot(ctx context.Context, read func(*SupplierReportStore) error) error {
+	if s == nil || s.mainDB == nil || read == nil {
+		return ErrDatabase
+	}
+	db := s.mainDB.WithContext(ctx)
+	txOptions := &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
+	if db.Dialector.Name() == "sqlite" {
+		txOptions = nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		return read(NewSupplierReportStore(tx))
+	}, txOptions)
+}
 
 type SupplierReportContractCatalogRow struct {
 	ContractId               int
@@ -189,10 +210,47 @@ type SupplierReportFreshnessSnapshot struct {
 	KnownCoverageGaps   []SupplierAccountingCoverageGap
 }
 
+type SupplierPublishedDailyBatch struct {
+	BatchDate           string
+	DayStart            int64
+	DayEnd              int64
+	PublishedFenceToken int64
+	PublishedAt         int64
+	Evidence            types.SupplierPublishedEvidenceV1
+}
+
+// QueryPublishedEvidence returns only the immutable published side of each
+// daily row. Candidate status, counters, warnings, cursor, and errors are not
+// projected and therefore cannot leak into a financial report.
+func (s *SupplierReportStore) QueryPublishedEvidence(ctx context.Context, startAt, endAt int64) ([]SupplierPublishedDailyBatch, error) {
+	if s == nil || s.mainDB == nil || startAt <= 0 || endAt <= startAt {
+		return nil, ErrInvalidSupplierReportFilter
+	}
+	var runs []SupplierUsageDailyBatchRun
+	if err := s.mainDB.WithContext(ctx).
+		Where("day_start < ? AND day_end > ? AND published_fence_token > ?", endAt, startAt, 0).
+		Order("batch_date ASC").Find(&runs).Error; err != nil {
+		return nil, err
+	}
+	result := make([]SupplierPublishedDailyBatch, 0, len(runs))
+	for i := range runs {
+		evidence, err := types.ParseSupplierPublishedEvidenceV1(runs[i].PublishedEvidenceV1)
+		if err != nil || runs[i].PublishedAt == nil || *runs[i].PublishedAt <= 0 || runs[i].PublishedPersistedLogSnapshotCompleteness != evidence.PersistedLogSnapshotCompleteness {
+			return nil, ErrSupplierDailyBatchPublicationInvalid
+		}
+		result = append(result, SupplierPublishedDailyBatch{
+			BatchDate: runs[i].BatchDate, DayStart: runs[i].DayStart, DayEnd: runs[i].DayEnd,
+			PublishedFenceToken: runs[i].PublishedFenceToken, PublishedAt: *runs[i].PublishedAt, Evidence: evidence,
+		})
+	}
+	return result, nil
+}
+
 func (s *SupplierReportStore) ListContractCatalog(ctx context.Context, filter SupplierReportFilter, page *SupplierReportPage) ([]SupplierReportContractCatalogRow, bool, error) {
 	query := s.mainDB.WithContext(ctx).Table("supplier_contracts AS c").
-		Select("c.id AS contract_id, c.supplier_id, s.name AS supplier_name, s.status AS supplier_status, c.name AS contract_name, c.contract_no, c.status AS contract_status, c.remark, c.current_rate_version_id, rv.procurement_multiplier_ppm, c.rpm_limit, c.tpm_limit, c.max_concurrency, c.created_at, c.updated_at").
-		Joins("JOIN upstream_suppliers AS s ON s.id = c.supplier_id").Joins("LEFT JOIN supplier_contract_rate_versions AS rv ON rv.id = c.current_rate_version_id")
+		Select("c.id AS contract_id, c.supplier_id, s.name AS supplier_name, s.status AS supplier_status, c.name AS contract_name, c.contract_no, c.status AS contract_status, c.remark, rv.id AS current_rate_version_id, rv.procurement_multiplier_ppm, c.rpm_limit, c.tpm_limit, c.max_concurrency, c.created_at, c.updated_at").
+		Joins("JOIN upstream_suppliers AS s ON s.id = c.supplier_id").
+		Joins("LEFT JOIN supplier_contract_rate_versions AS rv ON rv.id = (SELECT eligible_rv.id FROM supplier_contract_rate_versions AS eligible_rv WHERE eligible_rv.contract_id = c.id AND eligible_rv.effective_at < ? ORDER BY eligible_rv.effective_at DESC, eligible_rv.id DESC LIMIT 1)", filter.EndAt)
 	if len(filter.SupplierIds) > 0 {
 		query = query.Where("c.supplier_id IN ?", filter.SupplierIds)
 	}
@@ -201,7 +259,7 @@ func (s *SupplierReportStore) ListContractCatalog(ctx context.Context, filter Su
 	}
 	if len(filter.ChannelIds) > 0 {
 		query = query.Where(
-			"EXISTS (SELECT 1 FROM supplier_usage_daily_summaries uds JOIN supplier_usage_daily_batch_runs udr ON udr.batch_date = uds.batch_date AND udr.published_fence_token = uds.batch_fence_token WHERE uds.contract_id = c.id AND uds.bucket_start >= ? AND uds.bucket_start < ? AND uds.channel_id IN ?)",
+			"EXISTS (SELECT 1 FROM supplier_usage_daily_summaries uds JOIN supplier_usage_daily_batch_runs udr ON udr.batch_date = uds.batch_date AND udr.published_fence_token > 0 AND udr.published_fence_token = uds.batch_fence_token WHERE uds.contract_id = c.id AND uds.bucket_start >= ? AND uds.bucket_start < ? AND uds.channel_id IN ?)",
 			filter.StartAt, filter.EndAt, filter.ChannelIds,
 		)
 	}
@@ -270,9 +328,10 @@ FROM (
     UNION
     SELECT DISTINCT uds.channel_id, COALESCE(ch.name, '') AS channel_name, COALESCE(ch.status, 0) AS channel_status, uds.contract_id AS supplier_contract_id
     FROM supplier_usage_daily_summaries uds
-    JOIN supplier_usage_daily_batch_runs udr
-      ON udr.batch_date = uds.batch_date
-     AND udr.published_fence_token = uds.batch_fence_token
+	    JOIN supplier_usage_daily_batch_runs udr
+	      ON udr.batch_date = uds.batch_date
+	     AND udr.published_fence_token > 0
+	     AND udr.published_fence_token = uds.batch_fence_token
     LEFT JOIN channels ch ON ch.id = uds.channel_id
     WHERE ` + strings.Join(historyConditions, " AND ") + `
 ) catalog
@@ -300,20 +359,23 @@ func (s *SupplierReportStore) QueryLinkedChannelCounts(ctx context.Context, cont
 	err := query.Group("supplier_contract_id").Scan(&rows).Error
 	return rows, err
 }
-func (s *SupplierReportStore) ListInventoryAdjustments(ctx context.Context, contractIds []int) ([]SupplierReportInventoryAdjustmentRow, error) {
+func (s *SupplierReportStore) ListInventoryAdjustments(ctx context.Context, contractIds []int, endAt int64) ([]SupplierReportInventoryAdjustmentRow, error) {
 	var rows []SupplierReportInventoryAdjustmentRow
-	err := s.mainDB.WithContext(ctx).Model(&SupplierInventoryAdjustment{}).Where("contract_id IN ?", contractIds).Order("id ASC").Scan(&rows).Error
+	err := s.mainDB.WithContext(ctx).Model(&SupplierInventoryAdjustment{}).
+		Where("contract_id IN ? AND created_at < ?", contractIds, endAt).Order("id ASC").Scan(&rows).Error
 	return rows, err
 }
-func (s *SupplierReportStore) ListRateVersions(ctx context.Context, contractId int) ([]SupplierReportRateVersionRow, error) {
+func (s *SupplierReportStore) ListRateVersions(ctx context.Context, contractId int, endAt int64) ([]SupplierReportRateVersionRow, error) {
 	var rows []SupplierReportRateVersionRow
-	err := s.mainDB.WithContext(ctx).Model(&SupplierContractRateVersion{}).Where("contract_id = ?", contractId).Order("effective_at ASC, id ASC").Scan(&rows).Error
+	err := s.mainDB.WithContext(ctx).Model(&SupplierContractRateVersion{}).
+		Where("contract_id = ? AND effective_at < ?", contractId, endAt).
+		Order("effective_at ASC, id ASC").Scan(&rows).Error
 	return rows, err
 }
 
 func (s *SupplierReportStore) publishedSupplierSummaryQuery(ctx context.Context) *gorm.DB {
 	return s.mainDB.WithContext(ctx).Table("supplier_usage_daily_summaries AS uds").
-		Joins("JOIN supplier_usage_daily_batch_runs AS udr ON udr.batch_date = uds.batch_date AND udr.published_fence_token = uds.batch_fence_token")
+		Joins("JOIN supplier_usage_daily_batch_runs AS udr ON udr.batch_date = uds.batch_date AND udr.published_fence_token > 0 AND udr.published_fence_token = uds.batch_fence_token")
 }
 
 func applySupplierSummaryFilter(query *gorm.DB, filter SupplierReportFilter) *gorm.DB {
@@ -356,8 +418,10 @@ func (s *SupplierReportStore) QueryInternalUsage(ctx context.Context, filter Sup
 	err := query.Select(selectSQL).Group(group).Scan(&rows).Error
 	return rows, err
 }
-func (s *SupplierReportStore) QueryInventoryConsumption(ctx context.Context, contractIds []int) ([]SupplierReportInventoryConsumptionRow, error) {
-	query := s.publishedSupplierSummaryQuery(ctx).Select("uds.contract_id, SUM(uds.official_list_micro_usd) AS inventory_affecting_official_list_micro_usd")
+func (s *SupplierReportStore) QueryInventoryConsumption(ctx context.Context, contractIds []int, endAt int64) ([]SupplierReportInventoryConsumptionRow, error) {
+	query := s.publishedSupplierSummaryQuery(ctx).
+		Select("uds.contract_id, SUM(uds.official_list_micro_usd) AS inventory_affecting_official_list_micro_usd").
+		Where("uds.bucket_start < ?", endAt)
 	if len(contractIds) > 0 {
 		query = query.Where("uds.contract_id IN ?", contractIds)
 	}
@@ -429,24 +493,21 @@ func (s *SupplierReportStore) QueryFreshness(ctx context.Context) (SupplierRepor
 			return result, err
 		}
 	}
-	var latest SupplierUsageDailyBatchRun
-	err = s.mainDB.WithContext(ctx).Order("batch_date DESC").First(&latest).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return result, err
-	}
-	if err == nil {
-		result.LatestBatchDate = latest.BatchDate
-		result.LatestStatus = latest.Status
-		result.ErrorMessage = latest.ErrorMessage
-	}
 	var completed SupplierUsageDailyBatchRun
 	completedErr := s.mainDB.WithContext(ctx).
-		Where("published_fence_token > 0 OR (published_fence_token = 0 AND status = ?)", SupplierDailyBatchStatusCompleted).
+		Where("published_fence_token > 0").
 		Order("batch_date DESC").First(&completed).Error
 	if completedErr != nil && !errors.Is(completedErr, gorm.ErrRecordNotFound) {
 		return result, completedErr
 	}
 	if completedErr == nil {
+		evidence, parseErr := types.ParseSupplierPublishedEvidenceV1(completed.PublishedEvidenceV1)
+		if parseErr != nil || completed.PublishedAt == nil || *completed.PublishedAt <= 0 || completed.PublishedPersistedLogSnapshotCompleteness != evidence.PersistedLogSnapshotCompleteness {
+			return result, ErrSupplierDailyBatchPublicationInvalid
+		}
+		result.LatestBatchDate = completed.BatchDate
+		result.LatestStatus = SupplierDailyBatchStatusCompleted
+		result.ErrorMessage = ""
 		complete := completed.DayEnd
 		lag := now - complete
 		if lag < 0 {

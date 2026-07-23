@@ -155,8 +155,13 @@ func TestSupplierAccountingRouteMiddlewareClassificationIsStatic(t *testing.T) {
 	require.Contains(t, text, `accountingRoute.Use(middleware.FinanceAuth())`)
 	require.Contains(t, text, `accountingRoute.POST("/mutation-gate", middleware.CriticalRateLimit(), middleware.SecureVerificationRequired(), controller.ToggleSupplierAccountingMutationGate)`)
 	require.Contains(t, text, `mutationRoute.Use(middleware.CriticalRateLimit(), middleware.SupplierMutationGate(), middleware.SecureVerificationRequired())`)
+	require.Contains(t, text, `supplyChainRoute.POST("/reports/daily/:date/rerun", supplierSupplyChainMutation(controller.RerunSupplyChainDailyReport)...)`)
+	require.Contains(t, text, `supplierBatchRoute.Use(middleware.SupplierBatchAuth())`)
+	require.Contains(t, text, `supplierBatchRoute.POST("/catch-up", middleware.CriticalRateLimit(), catchUpHandler)`)
+	require.Contains(t, text, `supplierBatchRoute.GET("/status", statusHandler)`)
+	require.NotContains(t, text, `supplierBatchRoute.Use(middleware.RootAuth())`)
 	require.NotContains(t, text, `accountingRoute.POST("/mutation-gate", middleware.SupplierMutationGate()`)
-	require.Equal(t, 12, strings.Count(text, "supplierSupplyChainMutation("), "eleven existing mutation routes plus the helper definition must remain classified")
+	require.Equal(t, 13, strings.Count(text, "supplierSupplyChainMutation("), "twelve mutation routes plus the helper definition must remain classified")
 
 	expected := map[string]string{
 		http.MethodPost + " /api/supply-chain/suppliers":                           "CreateSupplyChainSupplier",
@@ -180,6 +185,7 @@ func TestSupplierAccountingRouteMiddlewareClassificationIsStatic(t *testing.T) {
 		http.MethodPost + " /api/supply-chain/accounting/reactivate":               "ReactivateSupplierAccounting",
 		http.MethodPost + " /api/supply-chain/accounting/adopt-legacy":             "AdoptLegacySupplierAccounting",
 		http.MethodPost + " /api/supply-chain/daily-batches/catch-up":              "TriggerSupplierDailyBatchCatchUp",
+		http.MethodPost + " /api/supply-chain/reports/daily/:date/rerun":           "RerunSupplyChainDailyReport",
 	}
 	engine := newSupplyChainRouteTestEngine(t)
 	found := make(map[string]bool, len(expected))
@@ -216,6 +222,7 @@ func TestExistingSupplyChainMutationClassesRequireGateAndFreshVerification(t *te
 		{method: http.MethodPost, path: "/api/supply-chain/exclusions", body: `{"user_id":1,"action":"exclude","reason":"internal"}`},
 		{method: http.MethodPut, path: "/api/supply-chain/channel-bindings/1", body: `{"contract_id":1,"expected_contract_id":null}`},
 		{method: http.MethodDelete, path: "/api/supply-chain/channel-bindings/1", body: `{"expected_contract_id":1}`},
+		{method: http.MethodPost, path: "/api/supply-chain/reports/daily/2026-07-22/rerun", body: `{"reason":"retry incomplete day","expected_published_fence_token":7}`},
 	}
 
 	_, err := model.CASSupplierAccountingMutationState(model.DB, 1, false, 91, "test disabled gate", time.Now().Unix())

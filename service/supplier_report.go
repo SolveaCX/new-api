@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -29,6 +31,12 @@ type SupplierReportQuery struct {
 	SupplierIds []int
 	ContractIds []int
 	ChannelIds  []int
+
+	eligibilityResolved bool
+	hasEligibleDays     bool
+	eligibleStartAt     int64
+	eligibleEndAt       int64
+	eligibleNow         time.Time
 }
 
 type SupplierReportRange struct {
@@ -88,6 +96,10 @@ func (q SupplierReportQuery) modelFilter() (SupplierReportRange, model.SupplierR
 	if err := filter.Validate(); err != nil {
 		return SupplierReportRange{}, model.SupplierReportFilter{}, err
 	}
+	if q.eligibilityResolved {
+		filter.StartAt = q.eligibleStartAt
+		filter.EndAt = q.eligibleEndAt
+	}
 	return reportRange, filter, nil
 }
 
@@ -110,14 +122,28 @@ type SupplierReportMetrics struct {
 }
 
 type SupplierReportFreshness struct {
-	LatestBatchDate     string                                `json:"latest_batch_date"`
-	BatchStatus         string                                `json:"batch_status"`
-	FreshThrough        *int64                                `json:"fresh_through"`
-	FreshnessLagSeconds *int64                                `json:"freshness_lag_seconds"`
-	ErrorMessage        string                                `json:"error_message"`
-	SyncOnly            bool                                  `json:"sync_only"`
-	CoverageStartAt     int64                                 `json:"coverage_start_at"`
-	KnownCoverageGaps   []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	LatestBatchDate          string                                `json:"latest_batch_date"`
+	BatchStatus              string                                `json:"batch_status"`
+	FreshThrough             *int64                                `json:"fresh_through"`
+	FreshnessLagSeconds      *int64                                `json:"freshness_lag_seconds"`
+	ErrorMessage             string                                `json:"error_message"`
+	SyncOnly                 bool                                  `json:"sync_only"`
+	CoverageStartAt          int64                                 `json:"coverage_start_at"`
+	KnownCoverageGaps        []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	PublishedEvidence        SupplierReportPublishedEvidence       `json:"published_evidence"`
+	FinanceAttentionRequired bool                                  `json:"finance_attention_required"`
+}
+
+type SupplierReportPublishedEvidence struct {
+	PublishedDays                    int                                        `json:"published_days"`
+	ExpectedDays                     int                                        `json:"expected_days"`
+	LogsScanned                      int64                                      `json:"logs_scanned"`
+	ProducerMarkersPresent           int64                                      `json:"producer_markers_present"`
+	CapturedSnapshotCount            int64                                      `json:"captured_snapshot_count"`
+	DispositionCounts                types.SupplierPublishedDispositionCountsV1 `json:"disposition_counts"`
+	FailureCounts                    types.SupplierPublishedFailureCountsV1     `json:"failure_counts"`
+	PersistedLogSnapshotCompleteness string                                     `json:"persisted_log_snapshot_completeness"`
+	Warnings                         []types.SupplierPublishedWarningV1         `json:"warnings"`
 }
 
 type SupplierReportOverview struct {
@@ -130,6 +156,8 @@ type SupplierReportOverview struct {
 	OfficialListConsumedMicroUsd int64                                 `json:"official_list_consumed_micro_usd"`
 	RemainingInventoryMicroUsd   int64                                 `json:"remaining_inventory_micro_usd"`
 	InternalDimensionAvailable   bool                                  `json:"internal_dimension_available"`
+	PublishedEvidence            SupplierReportPublishedEvidence       `json:"published_evidence"`
+	FinanceAttentionRequired     bool                                  `json:"finance_attention_required"`
 }
 
 type SupplierReportTrendPoint struct {
@@ -141,9 +169,11 @@ type SupplierReportTrendPoint struct {
 }
 
 type SupplierReportTrend struct {
-	Range             SupplierReportRange                   `json:"range"`
-	KnownCoverageGaps []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
-	Points            []SupplierReportTrendPoint            `json:"points"`
+	Range                    SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps        []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Points                   []SupplierReportTrendPoint            `json:"points"`
+	PublishedEvidence        SupplierReportPublishedEvidence       `json:"published_evidence"`
+	FinanceAttentionRequired bool                                  `json:"finance_attention_required"`
 }
 
 type SupplierReportContractRow struct {
@@ -173,12 +203,14 @@ type SupplierReportContractRow struct {
 }
 
 type SupplierReportContractList struct {
-	Range             SupplierReportRange                   `json:"range"`
-	KnownCoverageGaps []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
-	Items             []SupplierReportContractRow           `json:"items"`
-	Limit             int                                   `json:"limit"`
-	Offset            int                                   `json:"offset"`
-	HasMore           bool                                  `json:"has_more"`
+	Range                    SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps        []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Items                    []SupplierReportContractRow           `json:"items"`
+	Limit                    int                                   `json:"limit"`
+	Offset                   int                                   `json:"offset"`
+	HasMore                  bool                                  `json:"has_more"`
+	PublishedEvidence        SupplierReportPublishedEvidence       `json:"published_evidence"`
+	FinanceAttentionRequired bool                                  `json:"finance_attention_required"`
 }
 
 type SupplierReportRateVersion struct {
@@ -209,12 +241,14 @@ type SupplierReportChannelRow struct {
 }
 
 type SupplierReportChannelList struct {
-	Range             SupplierReportRange                   `json:"range"`
-	KnownCoverageGaps []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
-	Items             []SupplierReportChannelRow            `json:"items"`
-	Limit             int                                   `json:"limit"`
-	Offset            int                                   `json:"offset"`
-	HasMore           bool                                  `json:"has_more"`
+	Range                    SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps        []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Items                    []SupplierReportChannelRow            `json:"items"`
+	Limit                    int                                   `json:"limit"`
+	Offset                   int                                   `json:"offset"`
+	HasMore                  bool                                  `json:"has_more"`
+	PublishedEvidence        SupplierReportPublishedEvidence       `json:"published_evidence"`
+	FinanceAttentionRequired bool                                  `json:"finance_attention_required"`
 }
 
 type SupplierReportBreakdownItem struct {
@@ -239,33 +273,87 @@ type SupplierReportBreakdownList struct {
 	TotalBusinessCount         int64                                 `json:"total_business_count"`
 	BreakdownCoverageRate      *string                               `json:"breakdown_coverage_rate"`
 	BreakdownCoverageAvailable bool                                  `json:"breakdown_coverage_available"`
+	PublishedEvidence          SupplierReportPublishedEvidence       `json:"published_evidence"`
+	FinanceAttentionRequired   bool                                  `json:"finance_attention_required"`
 }
 
 type SupplierReportContractDetail struct {
-	Range                SupplierReportRange                   `json:"range"`
-	KnownCoverageGaps    []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
-	Summary              SupplierReportContractRow             `json:"summary"`
-	RateVersions         []SupplierReportRateVersion           `json:"rate_versions"`
-	InventoryAdjustments []SupplierReportInventoryAdjustment   `json:"inventory_adjustments"`
-	Channels             SupplierReportChannelList             `json:"channels"`
-	InternalTrend        []SupplierReportTrendPoint            `json:"internal_trend"`
-	Breakdown            SupplierReportBreakdownList           `json:"breakdown"`
+	Range                    SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps        []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Summary                  SupplierReportContractRow             `json:"summary"`
+	RateVersions             []SupplierReportRateVersion           `json:"rate_versions"`
+	InventoryAdjustments     []SupplierReportInventoryAdjustment   `json:"inventory_adjustments"`
+	Channels                 SupplierReportChannelList             `json:"channels"`
+	InternalTrend            []SupplierReportTrendPoint            `json:"internal_trend"`
+	Breakdown                SupplierReportBreakdownList           `json:"breakdown"`
+	PublishedEvidence        SupplierReportPublishedEvidence       `json:"published_evidence"`
+	FinanceAttentionRequired bool                                  `json:"finance_attention_required"`
 }
 
 type SupplierReportService struct {
 	store *model.SupplierReportStore
+	now   func() time.Time
 }
 
 func NewSupplierReportService(store *model.SupplierReportStore) *SupplierReportService {
-	return &SupplierReportService{store: store}
+	return &SupplierReportService{store: store, now: time.Now}
 }
 
 func DefaultSupplierReportService() *SupplierReportService {
 	return NewSupplierReportService(model.DefaultSupplierReportStore())
 }
 
+func withSupplierReportSnapshot[T any](ctx context.Context, service *SupplierReportService, read func(*SupplierReportService) (T, error)) (T, error) {
+	var result T
+	if service == nil || service.store == nil || read == nil {
+		return result, model.ErrDatabase
+	}
+	err := service.store.ReadSnapshot(ctx, func(store *model.SupplierReportStore) error {
+		snapshotService := &SupplierReportService{store: store, now: service.now}
+		var readErr error
+		result, readErr = read(snapshotService)
+		return readErr
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return result, nil
+}
+
+func (s *SupplierReportService) prepareQuery(query SupplierReportQuery) (SupplierReportQuery, error) {
+	if query.eligibilityResolved {
+		return query, nil
+	}
+	reportRange, err := ParseSupplierReportRange(query.Month, query.StartDate, query.EndDate)
+	if err != nil {
+		return SupplierReportQuery{}, err
+	}
+	now := time.Now()
+	if s != nil && s.now != nil {
+		now = s.now()
+	}
+	eligibleRange, hasEligibleDays, err := supplierReportEligibleRange(reportRange, now)
+	if err != nil {
+		return SupplierReportQuery{}, err
+	}
+	query.eligibilityResolved = true
+	query.hasEligibleDays = hasEligibleDays
+	query.eligibleStartAt = eligibleRange.StartAt
+	query.eligibleEndAt = eligibleRange.EndAt
+	query.eligibleNow = now
+	return query, nil
+}
+
 func (s *SupplierReportService) GetOverview(ctx context.Context, query SupplierReportQuery) (SupplierReportOverview, error) {
-	return s.getOverview(ctx, query, nil)
+	var err error
+	query, err = s.prepareQuery(query)
+	if err != nil {
+		return SupplierReportOverview{}, err
+	}
+	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierReportOverview, error) {
+		return snapshot.getOverview(ctx, query, nil)
+	})
 }
 
 func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierReportQuery, coverage *supplierReportCoverageProjection) (SupplierReportOverview, error) {
@@ -273,13 +361,14 @@ func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierR
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
-	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	coverage, err = s.resolveCoverageProjectionForQuery(ctx, query, reportRange, coverage)
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
 	result := SupplierReportOverview{
 		Range: reportRange, KnownCoverageGaps: coverage.gaps,
 		InternalDimensionAvailable: len(filter.ChannelIds) == 0,
+		PublishedEvidence:          coverage.evidence, FinanceAttentionRequired: coverage.financeAttentionRequired,
 	}
 	if len(catalog) == 0 {
 		return result, nil
@@ -288,7 +377,7 @@ func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierR
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
-	runtime, err := s.loadInventoryRuntime(ctx, catalog, filter.ChannelIds)
+	runtime, err := s.loadInventoryRuntime(ctx, catalog, filter.ChannelIds, filter.EndAt)
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
@@ -316,7 +405,14 @@ func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierR
 }
 
 func (s *SupplierReportService) GetTrend(ctx context.Context, query SupplierReportQuery) (SupplierReportTrend, error) {
-	return s.getTrend(ctx, query, nil)
+	var err error
+	query, err = s.prepareQuery(query)
+	if err != nil {
+		return SupplierReportTrend{}, err
+	}
+	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierReportTrend, error) {
+		return snapshot.getTrend(ctx, query, nil)
+	})
 }
 
 func (s *SupplierReportService) getTrend(ctx context.Context, query SupplierReportQuery, coverage *supplierReportCoverageProjection) (SupplierReportTrend, error) {
@@ -324,11 +420,11 @@ func (s *SupplierReportService) getTrend(ctx context.Context, query SupplierRepo
 	if err != nil {
 		return SupplierReportTrend{}, err
 	}
-	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	coverage, err = s.resolveCoverageProjectionForQuery(ctx, query, reportRange, coverage)
 	if err != nil {
 		return SupplierReportTrend{}, err
 	}
-	result := SupplierReportTrend{Range: reportRange, KnownCoverageGaps: coverage.gaps, Points: []SupplierReportTrendPoint{}}
+	result := SupplierReportTrend{Range: reportRange, KnownCoverageGaps: coverage.gaps, Points: []SupplierReportTrendPoint{}, PublishedEvidence: coverage.evidence, FinanceAttentionRequired: coverage.financeAttentionRequired}
 	if len(catalog) == 0 {
 		return result, nil
 	}
@@ -375,7 +471,14 @@ func (s *SupplierReportService) getTrend(ctx context.Context, query SupplierRepo
 }
 
 func (s *SupplierReportService) ListContracts(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage) (SupplierReportContractList, error) {
-	return s.listContracts(ctx, query, page, nil)
+	var err error
+	query, err = s.prepareQuery(query)
+	if err != nil {
+		return SupplierReportContractList{}, err
+	}
+	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierReportContractList, error) {
+		return snapshot.listContracts(ctx, query, page, nil)
+	})
 }
 
 func (s *SupplierReportService) listContracts(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage, coverage *supplierReportCoverageProjection) (SupplierReportContractList, error) {
@@ -383,12 +486,12 @@ func (s *SupplierReportService) listContracts(ctx context.Context, query Supplie
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
-	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	coverage, err = s.resolveCoverageProjectionForQuery(ctx, query, reportRange, coverage)
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
 	page = page.Normalize()
-	result := SupplierReportContractList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportContractRow{}}
+	result := SupplierReportContractList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportContractRow{}, PublishedEvidence: coverage.evidence, FinanceAttentionRequired: coverage.financeAttentionRequired}
 	result.HasMore = hasMore
 	if len(catalog) == 0 {
 		return result, nil
@@ -398,7 +501,7 @@ func (s *SupplierReportService) listContracts(ctx context.Context, query Supplie
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
-	runtime, err := s.loadInventoryRuntime(ctx, catalog, filter.ChannelIds)
+	runtime, err := s.loadInventoryRuntime(ctx, catalog, filter.ChannelIds, filter.EndAt)
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
@@ -421,11 +524,21 @@ func (s *SupplierReportService) GetContractDetail(ctx context.Context, contractI
 		return SupplierReportContractDetail{}, model.ErrInvalidSupplierReportFilter
 	}
 	query.ContractIds = []int{contractId}
+	query, err := s.prepareQuery(query)
+	if err != nil {
+		return SupplierReportContractDetail{}, err
+	}
+	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierReportContractDetail, error) {
+		return snapshot.getContractDetail(ctx, contractId, query, page)
+	})
+}
+
+func (s *SupplierReportService) getContractDetail(ctx context.Context, contractId int, query SupplierReportQuery, page model.SupplierReportPage) (SupplierReportContractDetail, error) {
 	reportRange, _, err := query.modelFilter()
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	coverage, err := s.resolveCoverageProjection(ctx, reportRange, nil)
+	coverage, err := s.resolveCoverageProjectionForQuery(ctx, query, reportRange, nil)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
@@ -436,11 +549,11 @@ func (s *SupplierReportService) GetContractDetail(ctx context.Context, contractI
 	if len(list.Items) == 0 {
 		return SupplierReportContractDetail{}, ErrSupplierReportContractNotFound
 	}
-	rates, err := s.store.ListRateVersions(ctx, contractId)
+	rates, err := s.store.ListRateVersions(ctx, contractId, query.eligibleEndAt)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	adjustments, err := s.store.ListInventoryAdjustments(ctx, []int{contractId})
+	adjustments, err := s.store.ListInventoryAdjustments(ctx, []int{contractId}, query.eligibleEndAt)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
@@ -456,7 +569,7 @@ func (s *SupplierReportService) GetContractDetail(ctx context.Context, contractI
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	result := SupplierReportContractDetail{Range: list.Range, KnownCoverageGaps: coverage.gaps, Summary: list.Items[0], Channels: channels, Breakdown: breakdown}
+	result := SupplierReportContractDetail{Range: list.Range, KnownCoverageGaps: coverage.gaps, Summary: list.Items[0], Channels: channels, Breakdown: breakdown, PublishedEvidence: coverage.evidence, FinanceAttentionRequired: coverage.financeAttentionRequired}
 	for _, rate := range rates {
 		result.RateVersions = append(result.RateVersions, SupplierReportRateVersion{Id: rate.Id, ProcurementMultiplierPpm: rate.ProcurementMultiplierPpm, EffectiveAt: rate.EffectiveAt, CreatedBy: rate.CreatedBy, Reason: rate.Reason, CreatedAt: rate.CreatedAt})
 	}
@@ -471,7 +584,14 @@ func (s *SupplierReportService) GetContractDetail(ctx context.Context, contractI
 }
 
 func (s *SupplierReportService) ListChannels(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage) (SupplierReportChannelList, error) {
-	return s.listChannels(ctx, query, page, nil)
+	var err error
+	query, err = s.prepareQuery(query)
+	if err != nil {
+		return SupplierReportChannelList{}, err
+	}
+	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierReportChannelList, error) {
+		return snapshot.listChannels(ctx, query, page, nil)
+	})
 }
 
 func (s *SupplierReportService) listChannels(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage, coverage *supplierReportCoverageProjection) (SupplierReportChannelList, error) {
@@ -479,12 +599,12 @@ func (s *SupplierReportService) listChannels(ctx context.Context, query Supplier
 	if err != nil {
 		return SupplierReportChannelList{}, err
 	}
-	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	coverage, err = s.resolveCoverageProjectionForQuery(ctx, query, reportRange, coverage)
 	if err != nil {
 		return SupplierReportChannelList{}, err
 	}
 	page = page.Normalize()
-	result := SupplierReportChannelList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportChannelRow{}}
+	result := SupplierReportChannelList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportChannelRow{}, PublishedEvidence: coverage.evidence, FinanceAttentionRequired: coverage.financeAttentionRequired}
 	if len(catalog) == 0 {
 		return result, nil
 	}
@@ -532,7 +652,14 @@ func (s *SupplierReportService) listChannels(ctx context.Context, query Supplier
 }
 
 func (s *SupplierReportService) ListBreakdown(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage) (SupplierReportBreakdownList, error) {
-	return s.listBreakdown(ctx, query, page, nil)
+	var err error
+	query, err = s.prepareQuery(query)
+	if err != nil {
+		return SupplierReportBreakdownList{}, err
+	}
+	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierReportBreakdownList, error) {
+		return snapshot.listBreakdown(ctx, query, page, nil)
+	})
 }
 
 func (s *SupplierReportService) listBreakdown(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage, coverage *supplierReportCoverageProjection) (SupplierReportBreakdownList, error) {
@@ -540,12 +667,12 @@ func (s *SupplierReportService) listBreakdown(ctx context.Context, query Supplie
 	if err != nil {
 		return SupplierReportBreakdownList{}, err
 	}
-	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	coverage, err = s.resolveCoverageProjectionForQuery(ctx, query, reportRange, coverage)
 	if err != nil {
 		return SupplierReportBreakdownList{}, err
 	}
 	page = page.Normalize()
-	result := SupplierReportBreakdownList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportBreakdownItem{}}
+	result := SupplierReportBreakdownList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportBreakdownItem{}, PublishedEvidence: coverage.evidence, FinanceAttentionRequired: coverage.financeAttentionRequired}
 	if len(catalog) == 0 {
 		return result, nil
 	}
@@ -588,6 +715,13 @@ func (s *SupplierReportService) listBreakdown(ctx context.Context, query Supplie
 }
 
 func (s *SupplierReportService) GetFreshness(ctx context.Context) (SupplierReportFreshness, error) {
+	now := time.Now()
+	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierReportFreshness, error) {
+		return snapshot.getFreshnessAt(ctx, now)
+	})
+}
+
+func (s *SupplierReportService) getFreshnessAt(ctx context.Context, now time.Time) (SupplierReportFreshness, error) {
 	if s == nil || s.store == nil {
 		return SupplierReportFreshness{}, model.ErrDatabase
 	}
@@ -595,30 +729,215 @@ func (s *SupplierReportService) GetFreshness(ctx context.Context) (SupplierRepor
 	if err != nil {
 		return SupplierReportFreshness{}, err
 	}
-	return SupplierReportFreshness{
-		LatestBatchDate: snapshot.LatestBatchDate, BatchStatus: snapshot.LatestStatus,
-		FreshThrough: snapshot.FreshThrough, FreshnessLagSeconds: snapshot.FreshnessLagSeconds,
-		ErrorMessage: snapshot.ErrorMessage, SyncOnly: snapshot.SyncOnly, CoverageStartAt: snapshot.CoverageStartAt,
-		KnownCoverageGaps: snapshot.KnownCoverageGaps,
-	}, nil
+	result := SupplierReportFreshness{SyncOnly: snapshot.SyncOnly, CoverageStartAt: snapshot.CoverageStartAt}
+	if snapshot.CoverageStartAt <= 0 {
+		result.PublishedEvidence.PersistedLogSnapshotCompleteness = types.SupplierPersistedLogCompletenessNotScanned
+		result.PublishedEvidence.Warnings = []types.SupplierPublishedWarningV1{}
+		result.KnownCoverageGaps = []model.SupplierAccountingCoverageGap{}
+		result.FinanceAttentionRequired = false
+		return result, nil
+	}
+	nowUnix := now.Unix()
+	reportRange := SupplierReportRange{StartAt: snapshot.CoverageStartAt, EndAt: nowUnix, Timezone: SupplierReportTimezone}
+	eligibleRange, hasEligibleDays, err := supplierReportEligibleRange(reportRange, now)
+	if err != nil {
+		return SupplierReportFreshness{}, err
+	}
+	var published []model.SupplierPublishedDailyBatch
+	if hasEligibleDays {
+		for _, gap := range snapshot.KnownCoverageGaps {
+			if gap.StartAt < eligibleRange.EndAt && (gap.EndAt == nil || *gap.EndAt > eligibleRange.StartAt) {
+				result.KnownCoverageGaps = append(result.KnownCoverageGaps, gap)
+			}
+		}
+		published, err = s.store.QueryPublishedEvidence(ctx, eligibleRange.StartAt, eligibleRange.EndAt)
+		if err != nil {
+			return SupplierReportFreshness{}, err
+		}
+	}
+	result.PublishedEvidence, err = aggregateSupplierReportPublishedEvidenceAt(reportRange, published, now)
+	if err != nil {
+		return SupplierReportFreshness{}, err
+	}
+	result.FinanceAttentionRequired = supplierReportNeedsFinanceAttention(result.PublishedEvidence, result.KnownCoverageGaps)
+	if len(published) > 0 {
+		latest := published[len(published)-1]
+		result.LatestBatchDate = latest.BatchDate
+		result.BatchStatus = model.SupplierDailyBatchStatusCompleted
+		freshThrough := latest.DayEnd
+		result.FreshThrough = &freshThrough
+		lag := nowUnix - freshThrough
+		if lag < 0 {
+			lag = 0
+		}
+		result.FreshnessLagSeconds = &lag
+	}
+	return result, nil
 }
 
 type supplierReportCoverageProjection struct {
-	gaps []model.SupplierAccountingCoverageGap
+	gaps                     []model.SupplierAccountingCoverageGap
+	evidence                 SupplierReportPublishedEvidence
+	financeAttentionRequired bool
 }
 
 func (s *SupplierReportService) resolveCoverageProjection(ctx context.Context, reportRange SupplierReportRange, current *supplierReportCoverageProjection) (*supplierReportCoverageProjection, error) {
+	return s.resolveCoverageProjectionAt(ctx, reportRange, current, time.Now())
+}
+
+func (s *SupplierReportService) resolveCoverageProjectionForQuery(ctx context.Context, query SupplierReportQuery, reportRange SupplierReportRange, current *supplierReportCoverageProjection) (*supplierReportCoverageProjection, error) {
+	now := query.eligibleNow
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return s.resolveCoverageProjectionAt(ctx, reportRange, current, now)
+}
+
+func (s *SupplierReportService) resolveCoverageProjectionAt(ctx context.Context, reportRange SupplierReportRange, current *supplierReportCoverageProjection, now time.Time) (*supplierReportCoverageProjection, error) {
 	if current != nil {
 		return current, nil
 	}
 	if s == nil || s.store == nil {
 		return nil, model.ErrDatabase
 	}
-	gaps, err := s.store.QueryCoverageGaps(ctx, reportRange.StartAt, reportRange.EndAt)
+	eligibleRange, hasEligibleDays, err := supplierReportEligibleRange(reportRange, now)
 	if err != nil {
 		return nil, err
 	}
-	return &supplierReportCoverageProjection{gaps: gaps}, nil
+	var gaps []model.SupplierAccountingCoverageGap
+	var published []model.SupplierPublishedDailyBatch
+	if hasEligibleDays {
+		gaps, err = s.store.QueryCoverageGaps(ctx, eligibleRange.StartAt, eligibleRange.EndAt)
+		if err != nil {
+			return nil, err
+		}
+		published, err = s.store.QueryPublishedEvidence(ctx, eligibleRange.StartAt, eligibleRange.EndAt)
+		if err != nil {
+			return nil, err
+		}
+	}
+	evidence, err := aggregateSupplierReportPublishedEvidenceAt(reportRange, published, now)
+	if err != nil {
+		return nil, err
+	}
+	return &supplierReportCoverageProjection{
+		gaps: gaps, evidence: evidence,
+		financeAttentionRequired: supplierReportNeedsFinanceAttention(evidence, gaps),
+	}, nil
+}
+
+func aggregateSupplierReportPublishedEvidence(reportRange SupplierReportRange, batches []model.SupplierPublishedDailyBatch) (SupplierReportPublishedEvidence, error) {
+	return aggregateSupplierReportPublishedEvidenceAt(reportRange, batches, time.Now())
+}
+
+func aggregateSupplierReportPublishedEvidenceAt(reportRange SupplierReportRange, batches []model.SupplierPublishedDailyBatch, now time.Time) (SupplierReportPublishedEvidence, error) {
+	eligibleRange, hasEligibleDays, err := supplierReportEligibleRange(reportRange, now)
+	if err != nil {
+		return SupplierReportPublishedEvidence{}, err
+	}
+	expectedDays := 0
+	if hasEligibleDays {
+		location, loadErr := time.LoadLocation(SupplierReportTimezone)
+		if loadErr != nil {
+			return SupplierReportPublishedEvidence{}, loadErr
+		}
+		start := time.Unix(eligibleRange.StartAt, 0).In(location)
+		end := time.Unix(eligibleRange.EndAt, 0).In(location)
+		for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+			expectedDays++
+		}
+	}
+	result := SupplierReportPublishedEvidence{
+		PublishedDays: len(batches), ExpectedDays: expectedDays,
+		PersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessNotScanned,
+		Warnings:                         []types.SupplierPublishedWarningV1{},
+	}
+	warningCounts := make(map[string]types.SupplierPublishedWarningV1)
+	allComplete := len(batches) == expectedDays && expectedDays > 0
+	for _, batch := range batches {
+		evidence := batch.Evidence
+		if evidence.PersistedLogSnapshotCompleteness != types.SupplierPersistedLogCompletenessComplete {
+			allComplete = false
+		}
+		for target, value := range map[*int64]int64{
+			&result.LogsScanned: evidence.LogsScanned, &result.ProducerMarkersPresent: evidence.ProducerMarkersPresent, &result.CapturedSnapshotCount: evidence.CapturedSnapshotCount,
+			&result.DispositionCounts.Captured: evidence.DispositionCounts.Captured, &result.DispositionCounts.UnsupportedPath: evidence.DispositionCounts.UnsupportedPath,
+			&result.DispositionCounts.NotFinanciallyCommitted: evidence.DispositionCounts.NotFinanciallyCommitted, &result.DispositionCounts.ZeroUsage: evidence.DispositionCounts.ZeroUsage,
+			&result.DispositionCounts.Unbound: evidence.DispositionCounts.Unbound, &result.DispositionCounts.ProducerError: evidence.DispositionCounts.ProducerError,
+			&result.FailureCounts.UnknownProducerCapability:      evidence.FailureCounts.UnknownProducerCapability,
+			&result.FailureCounts.IncompatibleProducerCapability: evidence.FailureCounts.IncompatibleProducerCapability,
+			&result.FailureCounts.AbsentMarkerAfterCutover:       evidence.FailureCounts.AbsentMarkerAfterCutover,
+			&result.FailureCounts.InvalidCapturedSnapshot:        evidence.FailureCounts.InvalidCapturedSnapshot,
+			&result.FailureCounts.UnknownOfficialAmount:          evidence.FailureCounts.UnknownOfficialAmount,
+		} {
+			*target, err = checkedAddInt64(*target, value)
+			if err != nil {
+				return SupplierReportPublishedEvidence{}, err
+			}
+		}
+		for _, warning := range evidence.Warnings {
+			current := warningCounts[warning.Code]
+			if current.Code == "" {
+				current = warning
+			} else {
+				current.Count, err = checkedAddInt64(current.Count, warning.Count)
+				if err != nil {
+					return SupplierReportPublishedEvidence{}, err
+				}
+			}
+			warningCounts[warning.Code] = current
+		}
+	}
+	if len(batches) > 0 {
+		result.PersistedLogSnapshotCompleteness = types.SupplierPersistedLogCompletenessIncomplete
+		if allComplete {
+			result.PersistedLogSnapshotCompleteness = types.SupplierPersistedLogCompletenessComplete
+		}
+	}
+	codes := make([]string, 0, len(warningCounts))
+	for code := range warningCounts {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	for _, code := range codes {
+		result.Warnings = append(result.Warnings, warningCounts[code])
+	}
+	return result, nil
+}
+
+func supplierReportEligibleRange(reportRange SupplierReportRange, now time.Time) (SupplierReportRange, bool, error) {
+	location, err := time.LoadLocation(SupplierReportTimezone)
+	if err != nil {
+		return SupplierReportRange{}, false, err
+	}
+	start := beginningOfSupplierDay(time.Unix(reportRange.StartAt, 0).In(location))
+	requestedEnd := time.Unix(reportRange.EndAt, 0).In(location)
+	today := beginningOfSupplierDay(now.In(location))
+	eligibleEnd := today
+	if now.In(location).Before(today.Add(SupplierDailyCloseGrace)) {
+		eligibleEnd = today.AddDate(0, 0, -1)
+	}
+	if requestedEnd.Before(eligibleEnd) {
+		eligibleEnd = requestedEnd
+	}
+	result := SupplierReportRange{
+		StartAt: start.Unix(), EndAt: eligibleEnd.Unix(), Timezone: SupplierReportTimezone, Month: reportRange.Month,
+	}
+	if !eligibleEnd.After(start) {
+		result.EndAt = result.StartAt
+		return result, false, nil
+	}
+	return result, true, nil
+}
+
+func supplierReportNeedsFinanceAttention(evidence SupplierReportPublishedEvidence, gaps []model.SupplierAccountingCoverageGap) bool {
+	if len(gaps) > 0 {
+		return true
+	}
+	if evidence.ExpectedDays == 0 && evidence.PublishedDays == 0 {
+		return false
+	}
+	return evidence.PersistedLogSnapshotCompleteness != types.SupplierPersistedLogCompletenessComplete
 }
 
 type contractRuntime struct {
@@ -631,9 +950,16 @@ func (s *SupplierReportService) resolveContracts(ctx context.Context, query Supp
 	if s == nil || s.store == nil {
 		return SupplierReportRange{}, model.SupplierReportFilter{}, nil, false, model.ErrDatabase
 	}
+	query, err := s.prepareQuery(query)
+	if err != nil {
+		return SupplierReportRange{}, model.SupplierReportFilter{}, nil, false, err
+	}
 	reportRange, filter, err := query.modelFilter()
 	if err != nil {
 		return SupplierReportRange{}, model.SupplierReportFilter{}, nil, false, err
+	}
+	if !query.hasEligibleDays {
+		return reportRange, filter, []model.SupplierReportContractCatalogRow{}, false, nil
 	}
 	catalog, hasMore, err := s.store.ListContractCatalog(ctx, filter, page)
 	if err != nil {
@@ -670,17 +996,17 @@ func (s *SupplierReportService) loadUsage(ctx context.Context, filter model.Supp
 	return usage, nil
 }
 
-func (s *SupplierReportService) loadInventoryRuntime(ctx context.Context, catalog []model.SupplierReportContractCatalogRow, channelIds []int) (map[int]contractRuntime, error) {
+func (s *SupplierReportService) loadInventoryRuntime(ctx context.Context, catalog []model.SupplierReportContractCatalogRow, channelIds []int, endAt int64) (map[int]contractRuntime, error) {
 	contractIds := catalogContractIds(catalog)
 	channelCounts, err := s.store.QueryLinkedChannelCounts(ctx, contractIds, channelIds)
 	if err != nil {
 		return nil, err
 	}
-	adjustments, err := s.store.ListInventoryAdjustments(ctx, contractIds)
+	adjustments, err := s.store.ListInventoryAdjustments(ctx, contractIds, endAt)
 	if err != nil {
 		return nil, err
 	}
-	consumption, err := s.store.QueryInventoryConsumption(ctx, contractIds)
+	consumption, err := s.store.QueryInventoryConsumption(ctx, contractIds, endAt)
 	if err != nil {
 		return nil, err
 	}

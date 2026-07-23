@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -61,4 +64,92 @@ func TestFinanceAuthAllowsOnlyRoot(t *testing.T) {
 	root := common.RoleRootUser
 	require.Equal(t, http.StatusNoContent, request(&root).Code)
 	require.Equal(t, 1, calls)
+}
+
+func TestSupplierBatchAuthTokenRotationUsesStableIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	current := supplierBatchTestToken(1)
+	next := supplierBatchTestToken(2)
+	t.Setenv(SupplierBatchCurrentVerifierHashEnv, supplierBatchTestVerifier(current))
+	t.Setenv(SupplierBatchNextVerifierHashEnv, supplierBatchTestVerifier(next))
+	t.Setenv(SupplierBatchTrustedIdentityEnv, "supplier-daily-runner")
+
+	engine := gin.New()
+	engine.GET("/batch", SupplierBatchAuth(), func(c *gin.Context) {
+		principal, ok := SupplierBatchPrincipalFromContext(c)
+		require.True(t, ok)
+		c.JSON(http.StatusOK, gin.H{"identity": principal.TrustedJobIdentity, "slot": principal.AuditSlot})
+	})
+
+	for _, test := range []struct {
+		name, token, slot string
+	}{
+		{name: "current", token: current, slot: "current"},
+		{name: "next", token: next, slot: "next"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/batch", nil)
+			request.Header.Set("Authorization", "Bearer "+test.token)
+			engine.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.JSONEq(t, `{"identity":"supplier-daily-runner","slot":"`+test.slot+`"}`, recorder.Body.String())
+		})
+	}
+}
+
+func TestSupplierBatchAuthFailsClosed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	token := supplierBatchTestToken(7)
+	verifier := supplierBatchTestVerifier(token)
+	tests := []struct {
+		name, currentVerifier, identity, bearer, code string
+		wantStatus                                    int
+	}{
+		{name: "missing verifier", identity: "runner", bearer: token, wantStatus: http.StatusServiceUnavailable, code: "verifier_unavailable"},
+		{name: "malformed verifier", currentVerifier: "not-a-sha256", identity: "runner", bearer: token, wantStatus: http.StatusServiceUnavailable, code: "verifier_unavailable"},
+		{name: "missing identity", currentVerifier: verifier, bearer: token, wantStatus: http.StatusServiceUnavailable, code: "config_unavailable"},
+		{name: "missing bearer", currentVerifier: verifier, identity: "runner", wantStatus: http.StatusUnauthorized, code: "unauthorized"},
+		{name: "invalid bearer", currentVerifier: verifier, identity: "runner", bearer: supplierBatchTestToken(8), wantStatus: http.StatusUnauthorized, code: "unauthorized"},
+		{name: "verifier hash as bearer", currentVerifier: verifier, identity: "runner", bearer: verifier, wantStatus: http.StatusUnauthorized, code: "unauthorized"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(SupplierBatchCurrentVerifierHashEnv, test.currentVerifier)
+			t.Setenv(SupplierBatchNextVerifierHashEnv, "")
+			t.Setenv(SupplierBatchTrustedIdentityEnv, test.identity)
+			called := false
+			engine := gin.New()
+			engine.GET("/batch", SupplierBatchAuth(), func(c *gin.Context) { called = true })
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/batch", nil)
+			if test.bearer != "" {
+				request.Header.Set("Authorization", "Bearer "+test.bearer)
+			}
+			engine.ServeHTTP(recorder, request)
+			require.Equal(t, test.wantStatus, recorder.Code)
+			require.Contains(t, recorder.Body.String(), `"code":"`+test.code+`"`)
+			require.False(t, called)
+			require.NotContains(t, recorder.Body.String(), token)
+			require.NotContains(t, recorder.Body.String(), verifier)
+		})
+	}
+}
+
+func supplierBatchTestToken(fill byte) string {
+	return base64.RawURLEncoding.EncodeToString([]byte{
+		fill, fill, fill, fill, fill, fill, fill, fill,
+		fill, fill, fill, fill, fill, fill, fill, fill,
+		fill, fill, fill, fill, fill, fill, fill, fill,
+		fill, fill, fill, fill, fill, fill, fill, fill,
+	})
+}
+
+func supplierBatchTestVerifier(token string) string {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		panic(err)
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
 }

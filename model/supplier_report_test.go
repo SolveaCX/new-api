@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -61,10 +62,15 @@ func TestListChannelCatalogDatabasePaginationAndPublishedGeneration(t *testing.T
 		dayStart       = int64(1_774_281_600)
 		dayEnd         = dayStart + 86_400
 	)
+	publishedAt := dayEnd
+	publishedEvidence, err := types.EncodeSupplierPublishedEvidenceV1(completePublishedEvidence(240))
+	require.NoError(t, err)
 	require.NoError(t, db.Create(&SupplierUsageDailyBatchRun{
 		BatchDate: "2026-03-23", DayStart: dayStart, DayEnd: dayEnd,
 		Status: SupplierDailyBatchStatusRunning, FenceToken: runningFence,
-		PublishedFenceToken: publishedFence,
+		PublishedFenceToken: publishedFence, PublishedAt: &publishedAt,
+		PublishedPersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessComplete,
+		PublishedEvidenceV1:                       publishedEvidence,
 	}).Error)
 
 	channels := make([]Channel, 0, 300)
@@ -154,7 +160,7 @@ func TestListChannelCatalogDatabasePaginationAndPublishedGeneration(t *testing.T
 
 	freshness, err := store.QueryFreshness(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, SupplierDailyBatchStatusRunning, freshness.LatestStatus)
+	require.Equal(t, SupplierDailyBatchStatusCompleted, freshness.LatestStatus, "freshness projects the published generation, not mutable rerun status")
 	require.NotNil(t, freshness.FreshThrough)
 	require.Equal(t, dayEnd, *freshness.FreshThrough, "the previously published generation remains fresh while its force rerun is running")
 }
@@ -214,4 +220,73 @@ func TestQueryBreakdownPaginationOrdersEveryGroupedDimension(t *testing.T) {
 	second, _, err := store.QueryBreakdown(context.Background(), filter, SupplierReportPage{Limit: 2, Offset: 2})
 	require.NoError(t, err)
 	require.Equal(t, first, second)
+}
+
+func TestSupplierReportStoreBoundsCatalogHistoryAndInventoryAtClosedEnd(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{}, &SupplierInventoryAdjustment{},
+		&Channel{}, &SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
+	))
+	const (
+		closedStart = int64(1_784_044_800) // 2026-07-15 00:00:00 Asia/Shanghai
+		closedEnd   = closedStart + 86_400
+		futureEnd   = closedEnd + 86_400
+	)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&UpstreamSupplier{Id: 1, Name: "supplier", Status: SupplierStatusActive}).Error)
+	futureRateID := 2
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&SupplierContract{
+		Id: 1, SupplierId: 1, Name: "contract", ContractNo: "C-1", Status: SupplierContractStatusActive, CurrentRateVersionId: &futureRateID,
+	}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]SupplierContractRateVersion{
+		{Id: 1, ContractId: 1, ProcurementMultiplierPpm: 600_000, EffectiveAt: closedStart + 1, CreatedBy: 1, CreatedAt: closedStart + 1},
+		{Id: futureRateID, ContractId: 1, ProcurementMultiplierPpm: 900_000, EffectiveAt: closedEnd + 1, CreatedBy: 1, CreatedAt: closedEnd + 1},
+	}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]SupplierInventoryAdjustment{
+		{ContractId: 1, DeltaMicroUsd: 5_000, Type: SupplierInventoryAdjustmentTypeInitial, IdempotencyKey: "closed", CreatedBy: 1, CreatedAt: closedStart + 1},
+		{ContractId: 1, DeltaMicroUsd: 8_000, Type: SupplierInventoryAdjustmentTypeReplenishment, IdempotencyKey: "future", CreatedBy: 1, CreatedAt: closedEnd + 1},
+	}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]Channel{
+		{Id: 10, Name: "closed-history"}, {Id: 20, Name: "future-history"},
+	}).Error)
+	publishedAt := futureEnd
+	evidence, err := types.EncodeSupplierPublishedEvidenceV1(completePublishedEvidence(2))
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&[]SupplierUsageDailyBatchRun{
+		{BatchDate: "2026-07-15", DayStart: closedStart, DayEnd: closedEnd, Status: SupplierDailyBatchStatusCompleted, FenceToken: 1, PublishedFenceToken: 1, PublishedAt: &publishedAt, PublishedPersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessComplete, PublishedEvidenceV1: evidence},
+		{BatchDate: "2026-07-16", DayStart: closedEnd, DayEnd: futureEnd, Status: SupplierDailyBatchStatusCompleted, FenceToken: 2, PublishedFenceToken: 2, PublishedAt: &publishedAt, PublishedPersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessComplete, PublishedEvidenceV1: evidence},
+	}).Error)
+	require.NoError(t, db.Create(&[]SupplierUsageDailySummary{
+		{BatchDate: "2026-07-15", BatchFenceToken: 1, DimensionKey: "closed", BucketStart: closedStart, SupplierId: 1, ContractId: 1, ChannelId: 10, ModelName: "closed", StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 1, OfficialListMicroUsd: 1_000},
+		{BatchDate: "2026-07-16", BatchFenceToken: 2, DimensionKey: "future", BucketStart: closedEnd, SupplierId: 1, ContractId: 1, ChannelId: 20, ModelName: "future", StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 10, OfficialListMicroUsd: 10_000},
+	}).Error)
+
+	store := NewSupplierReportStore(db)
+	filter := SupplierReportFilter{StartAt: closedStart, EndAt: closedEnd, ContractIds: []int{1}}
+	catalog, _, err := store.ListContractCatalog(context.Background(), filter, nil)
+	require.NoError(t, err)
+	require.Len(t, catalog, 1)
+	require.NotNil(t, catalog[0].CurrentRateVersionId)
+	require.Equal(t, 1, *catalog[0].CurrentRateVersionId, "catalog projects the latest rate effective before the closed end")
+
+	channels, _, err := store.ListChannelCatalog(context.Background(), filter, nil)
+	require.NoError(t, err)
+	require.Len(t, channels, 1)
+	require.Equal(t, 10, channels[0].ChannelId)
+
+	rates, err := store.ListRateVersions(context.Background(), 1, closedEnd)
+	require.NoError(t, err)
+	require.Len(t, rates, 1)
+	require.Equal(t, 1, rates[0].Id)
+
+	adjustments, err := store.ListInventoryAdjustments(context.Background(), []int{1}, closedEnd)
+	require.NoError(t, err)
+	require.Len(t, adjustments, 1)
+	require.Equal(t, int64(5_000), adjustments[0].DeltaMicroUsd)
+
+	consumption, err := store.QueryInventoryConsumption(context.Background(), []int{1}, closedEnd)
+	require.NoError(t, err)
+	require.Len(t, consumption, 1)
+	require.Equal(t, int64(1_000), consumption[0].InventoryAffectingOfficialListMicroUsd)
 }

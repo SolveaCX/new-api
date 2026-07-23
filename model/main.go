@@ -318,6 +318,9 @@ func migrateDB() error {
 	if err := MigrateSupplierAdminCommandLedger(DB); err != nil {
 		return err
 	}
+	if err := MigrateSupplierUsageDailyBatchPublication(DB); err != nil {
+		return err
+	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -394,6 +397,9 @@ func migrateDBFast() error {
 		}
 	}
 	if err := MigrateSupplierAdminCommandLedger(DB); err != nil {
+		return err
+	}
+	if err := MigrateSupplierUsageDailyBatchPublication(DB); err != nil {
 		return err
 	}
 	if common.UsingSQLite {

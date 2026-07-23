@@ -84,6 +84,8 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 	require.Equal(t, columnsBefore, columnsAfter, "supplier migration must not alter logs columns")
 	require.Equal(t, indexesBefore, indexesAfter, "supplier migration must not alter logs indexes")
 	t.Logf("%s migration: supplier_tables=10 logs_columns=%d logs_indexes=%d unchanged=true", dialect, len(columnsAfter), len(indexesAfter))
+	cleanupSupplierAccountingCrossDBGate(t, db)
+	t.Cleanup(func() { cleanupSupplierAccountingCrossDBGate(t, db) })
 
 	beforeDBTime := crossDBUnix(t, db, dialect)
 	leaseDay := time.Date(1999, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -105,7 +107,7 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
-	day := beginningOfSupplierDay(time.Now().In(location)).AddDate(0, 0, -1)
+	day := beginningOfSupplierDay(time.Now().In(location)).AddDate(0, 0, -2)
 	startAt, endAt := day.Unix(), day.AddDate(0, 0, 1).Unix()
 	persistLegacySupplierAccountingCoverageStart(t, db, startAt)
 	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", fmt.Sprintf("%d", startAt+1))
@@ -130,18 +132,18 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 	t.Logf("%s consume keyset: rows=%d page_sizes=%v ordered_without_gaps=true", dialect, scanned, pageSizes)
 
 	salesMultiplier, officialList, sales, procurement, profit := int64(700_000), int64(1_000_000), int64(700_000), int64(650_000), int64(50_000)
-	pricingMode := "ratio"
 	snapshot := types.SupplierAccountingLogSnapshotV1{
 		BindingVersionId: 4, SupplierId: 1, ContractId: 2, RateVersionId: 3,
 		ProcurementMultiplierPpm: 650_000, SalesMultiplierPpm: &salesMultiplier,
 		OfficialListMicroUsd: &officialList, SalesMicroUsd: &sales,
 		ProcurementCostMicroUsd: &procurement, GrossProfitMicroUsd: &profit,
-		StatisticsScope: string(types.SupplierStatisticsScopeBusiness), PricingMode: &pricingMode,
+		StatisticsScope: string(types.SupplierStatisticsScopeBusiness), ExclusionDecision: "included",
 		FinanciallyCommittedAt: startAt + 3,
+		PricingProvenance: &types.SupplierPricingProvenanceV1{Ratio: &types.SupplierRatioPricingProvenanceV1{
+			ModelRatioPpm: 1_000_000, GroupRatioPpm: salesMultiplier, ModelRatioVersion: 1, GroupRatioVersion: 1,
+		}},
 	}
-	payload, err := common.Marshal(map[string]any{"supplier_accounting_v1": snapshot})
-	require.NoError(t, err)
-	require.NoError(t, db.Create(&model.Log{Type: model.LogTypeConsume, CreatedAt: startAt + 3, ChannelId: 7, ModelName: "cross-db-model", Other: string(payload)}).Error)
+	require.NoError(t, db.Create(&model.Log{Type: model.LogTypeConsume, CreatedAt: startAt + 3, ChannelId: 7, ModelName: "cross-db-model", Other: supplierDailyLogOther(t, snapshot)}).Error)
 	stableCoverageStart, err := model.SupplierAccountingCoverageStart(ctx, db)
 	require.NoError(t, err)
 	require.Equal(t, startAt, stableCoverageStart, "coverage cutover must remain first-writer-wins")
@@ -162,23 +164,76 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.UpstreamSupplier{
 		Id: 1, Name: dialect + " report supplier", Status: model.SupplierStatusActive,
 	}).Error)
+	futureRateID := 30
 	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]model.SupplierContract{
-		{Id: 2, SupplierId: 1, Name: "historical contract", ContractNo: dialect + "-historical", Status: model.SupplierContractStatusActive},
+		{Id: 2, SupplierId: 1, Name: "historical contract", ContractNo: dialect + "-historical", Status: model.SupplierContractStatusActive, CurrentRateVersionId: &futureRateID},
 		{Id: 20, SupplierId: 1, Name: "current contract", ContractNo: dialect + "-current", Status: model.SupplierContractStatusActive},
 	}).Error)
-	currentContractId := 20
-	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.Channel{
-		Id: 7, Name: dialect + " rebound channel", Status: common.ChannelStatusEnabled, SupplierContractId: &currentContractId,
+	reportNow := day.AddDate(0, 0, 2).Add(3 * time.Hour)
+	openDay := beginningOfSupplierDay(reportNow.In(location))
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]model.SupplierContractRateVersion{
+		{Id: 3, ContractId: 2, ProcurementMultiplierPpm: 650_000, EffectiveAt: startAt + 2, CreatedBy: 1, CreatedAt: startAt + 2},
+		{Id: futureRateID, ContractId: 2, ProcurementMultiplierPpm: 900_000, EffectiveAt: openDay.Unix() + 2, CreatedBy: 1, CreatedAt: openDay.Unix() + 2},
 	}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]model.SupplierInventoryAdjustment{
+		{ContractId: 2, DeltaMicroUsd: 5_000_000, Type: model.SupplierInventoryAdjustmentTypeInitial, IdempotencyKey: dialect + "-closed-inventory", CreatedBy: 1, CreatedAt: startAt + 2},
+		{ContractId: 2, DeltaMicroUsd: 9_000_000, Type: model.SupplierInventoryAdjustmentTypeReplenishment, IdempotencyKey: dialect + "-open-inventory", CreatedBy: 1, CreatedAt: openDay.Unix() + 2},
+	}).Error)
+	currentContractId := 20
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]model.Channel{
+		{Id: 7, Name: dialect + " rebound channel", Status: common.ChannelStatusEnabled, SupplierContractId: &currentContractId},
+		{Id: 8, Name: dialect + " future history only", Status: common.ChannelStatusEnabled},
+	}).Error)
+	const futureFence = int64(9007)
+	openDayEnd := openDay.AddDate(0, 0, 1)
+	require.NoError(t, db.Create(&model.SupplierUsageDailySummary{
+		BatchDate: openDay.Format("2006-01-02"), BatchFenceToken: futureFence, DimensionKey: dialect + "-open-day",
+		BucketStart: openDay.Unix(), SupplierId: 1, ContractId: 2, RateVersionId: futureRateID, ChannelId: 8,
+		ModelName: "open-day-model", PricingMode: "ratio", StatisticsScope: "business", DataQuality: "authoritative",
+		RequestCount: 9, OfficialListKnownCount: 9, OfficialListMicroUsd: 9_000_000,
+	}).Error)
+	futureRun := supplierReportPublishedRun(t, openDay.Format("2006-01-02"), openDay.Unix(), openDayEnd.Unix(), futureFence, 9)
+	require.NoError(t, db.Create(&futureRun).Error)
 
 	reportQuery := SupplierReportQuery{StartDate: day.Format("2006-01-02"), EndDate: day.Format("2006-01-02")}
 	reports := NewSupplierReportService(model.NewSupplierReportStore(db))
+	reports.now = func() time.Time { return reportNow }
+	reportFilter := model.SupplierReportFilter{StartAt: startAt, EndAt: endAt, ContractIds: []int{2, 20}}
+	reportStore := model.NewSupplierReportStore(db)
+	catalog, _, err := reportStore.ListContractCatalog(ctx, reportFilter, nil)
+	require.NoError(t, err)
+	require.Len(t, catalog, 2)
+	require.NotNil(t, catalog[0].CurrentRateVersionId)
+	require.Equal(t, 3, *catalog[0].CurrentRateVersionId, "correlated catalog join must select the latest rate before the closed end")
+	rates, err := reportStore.ListRateVersions(ctx, 2, endAt)
+	require.NoError(t, err)
+	require.Len(t, rates, 1)
+	require.Equal(t, 3, rates[0].Id)
+	adjustments, err := reportStore.ListInventoryAdjustments(ctx, []int{2}, endAt)
+	require.NoError(t, err)
+	require.Len(t, adjustments, 1)
+	require.Equal(t, int64(5_000_000), adjustments[0].DeltaMicroUsd)
+	consumption, err := reportStore.QueryInventoryConsumption(ctx, []int{2}, endAt)
+	require.NoError(t, err)
+	require.Len(t, consumption, 1)
+	require.Equal(t, officialList, consumption[0].InventoryAffectingOfficialListMicroUsd)
+	catalogChannels, _, err := reportStore.ListChannelCatalog(ctx, reportFilter, nil)
+	require.NoError(t, err)
+	require.Len(t, catalogChannels, 2, "closed history plus current rebind must exclude the published open-day channel history")
+	for _, row := range catalogChannels {
+		require.NotEqual(t, 8, row.ChannelId)
+	}
+	t.Logf("%s closed-day store cutoff: eligible_rate=3 rate_rows=1 adjustment_rows=1 consumption=%d channel_rows=%d", dialect, consumption[0].InventoryAffectingOfficialListMicroUsd, len(catalogChannels))
 	contractReport, err := reports.ListContracts(ctx, SupplierReportQuery{
 		StartDate: reportQuery.StartDate, EndDate: reportQuery.EndDate, ChannelIds: []int{7},
 	}, model.SupplierReportPage{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, contractReport.Items, 1)
 	require.Equal(t, 2, contractReport.Items[0].ContractId, "channel filtering must use the historical daily-summary contract")
+	require.NotNil(t, contractReport.Items[0].CurrentRateVersionId)
+	require.Equal(t, 3, *contractReport.Items[0].CurrentRateVersionId)
+	require.Equal(t, int64(5_000_000), contractReport.Items[0].TotalInventoryMicroUsd)
+	require.Equal(t, officialList, contractReport.Items[0].OfficialListConsumedMicroUsd)
 
 	channelReport, err := reports.ListChannels(ctx, reportQuery, model.SupplierReportPage{Limit: 10})
 	require.NoError(t, err)
@@ -196,6 +251,28 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 	require.Equal(t, 2, channelReport.Items[0].ContractId)
 	require.Equal(t, 7, channelReport.Items[0].ChannelId)
 	t.Logf("%s historical report ownership: rebound_rows=2 unbound_rows=1 historical_contract=2", dialect)
+}
+
+func cleanupSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	tables := []any{
+		&model.SupplierUsageDailySummary{},
+		&model.SupplierUsageDailyBatchRun{},
+		&model.SupplierAccountingCoverageGap{},
+		&model.SupplierAdminCommand{},
+		&model.SupplierStatisticsExclusionRule{},
+		&model.SupplierInventoryAdjustment{},
+		&model.SupplierChannelBindingVersion{},
+		&model.Channel{},
+		&model.SupplierContractRateVersion{},
+		&model.SupplierContract{},
+		&model.UpstreamSupplier{},
+		&model.Option{},
+		&model.Log{},
+	}
+	for _, table := range tables {
+		require.NoError(t, db.Session(&gorm.Session{AllowGlobalUpdate: true, SkipHooks: true}).Delete(table).Error)
+	}
 }
 
 func insertCrossDBKeysetRows(t *testing.T, db *gorm.DB, startAt int64) []int {

@@ -3,10 +3,13 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -17,11 +20,15 @@ const (
 	SupplierDailyBatchStatusFailed           = "failed"
 	SupplierDailyLogPageSize                 = 5000
 	SupplierAccountingCoverageStartOptionKey = "supplier_accounting_v1.coverage_start_at"
+	supplierDailyBatchTimezone               = "Asia/Shanghai"
+	supplierDailyBatchCandidateInsertSize    = 256
 )
 
 var (
-	ErrSupplierDailyBatchBusy      = errors.New("supplier daily batch is already leased")
-	ErrSupplierDailyBatchFenceLost = errors.New("supplier daily batch lease fence lost")
+	ErrSupplierDailyBatchBusy               = errors.New("supplier daily batch is already leased")
+	ErrSupplierDailyBatchFenceLost          = errors.New("supplier daily batch lease fence lost")
+	ErrSupplierDailyBatchNotRerunnable      = errors.New("supplier daily batch publication is not rerunnable")
+	ErrSupplierDailyBatchPublicationInvalid = errors.New("supplier daily batch publication is invalid")
 )
 
 // SupplierUsageDailySummary is the only supplier accounting aggregate table.
@@ -62,25 +69,29 @@ type SupplierUsageDailySummary struct {
 // SupplierUsageDailyBatchRun provides one unique, fenced, cross-node lease per
 // Asia/Shanghai accounting date.
 type SupplierUsageDailyBatchRun struct {
-	Id                  int64  `json:"id"`
-	BatchDate           string `json:"batch_date" gorm:"type:varchar(10);not null;uniqueIndex"`
-	DayStart            int64  `json:"day_start" gorm:"not null"`
-	DayEnd              int64  `json:"day_end" gorm:"not null"`
-	Status              string `json:"status" gorm:"type:varchar(16);not null;index"`
-	LeaseOwner          string `json:"lease_owner" gorm:"type:varchar(128);not null;default:''"`
-	FenceToken          int64  `json:"fence_token" gorm:"not null;default:0"`
-	PublishedFenceToken int64  `json:"published_fence_token" gorm:"not null;default:0"`
-	LockedUntil         int64  `json:"locked_until" gorm:"not null;default:0"`
-	CursorCreatedAt     int64  `json:"cursor_created_at" gorm:"not null;default:0"`
-	CursorId            int    `json:"cursor_id" gorm:"not null;default:0"`
-	LogsScanned         int64  `json:"logs_scanned" gorm:"not null;default:0"`
-	SnapshotCount       int64  `json:"snapshot_count" gorm:"not null;default:0"`
-	SummaryCount        int64  `json:"summary_count" gorm:"not null;default:0"`
-	ErrorMessage        string `json:"error_message" gorm:"type:text"`
-	StartedAt           int64  `json:"started_at" gorm:"not null;default:0"`
-	CompletedAt         *int64 `json:"completed_at"`
-	CreatedAt           int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt           int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	Id                                        int64  `json:"id"`
+	BatchDate                                 string `json:"batch_date" gorm:"type:varchar(10);not null;uniqueIndex"`
+	DayStart                                  int64  `json:"day_start" gorm:"not null"`
+	DayEnd                                    int64  `json:"day_end" gorm:"not null"`
+	Status                                    string `json:"status" gorm:"type:varchar(16);not null;index"`
+	LeaseOwner                                string `json:"lease_owner" gorm:"type:varchar(128);not null;default:''"`
+	FenceToken                                int64  `json:"fence_token" gorm:"not null;default:0"`
+	PublishedFenceToken                       int64  `json:"published_fence_token" gorm:"not null;default:0"`
+	PublishedAt                               *int64 `json:"published_at"`
+	PublishedPersistedLogSnapshotCompleteness string `json:"published_persisted_log_snapshot_completeness" gorm:"type:varchar(16);not null;default:''"`
+	PublishedEvidenceV1                       string `json:"-" gorm:"type:text"`
+	ActiveLeaseSlot                           *int   `json:"-" gorm:"uniqueIndex:ux_supplier_daily_active_lease_slot"`
+	LockedUntil                               int64  `json:"locked_until" gorm:"not null;default:0"`
+	CursorCreatedAt                           int64  `json:"cursor_created_at" gorm:"not null;default:0"`
+	CursorId                                  int    `json:"cursor_id" gorm:"not null;default:0"`
+	LogsScanned                               int64  `json:"logs_scanned" gorm:"not null;default:0"`
+	SnapshotCount                             int64  `json:"snapshot_count" gorm:"not null;default:0"`
+	SummaryCount                              int64  `json:"summary_count" gorm:"not null;default:0"`
+	ErrorMessage                              string `json:"error_message" gorm:"type:text"`
+	StartedAt                                 int64  `json:"started_at" gorm:"not null;default:0"`
+	CompletedAt                               *int64 `json:"completed_at"`
+	CreatedAt                                 int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                                 int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 type SupplierDailyBatchLease struct {
@@ -165,6 +176,20 @@ func supplierUsageIndexColumns(db *gorm.DB, indexName string) ([]string, error) 
 }
 
 func AcquireSupplierDailyBatch(ctx context.Context, db *gorm.DB, batchDate string, dayStart, dayEnd int64, owner string, _ time.Time, leaseDuration time.Duration, force bool) (SupplierDailyBatchLease, error) {
+	if force {
+		return SupplierDailyBatchLease{}, ErrSupplierDailyBatchNotRerunnable
+	}
+	return acquireSupplierDailyBatch(ctx, db, batchDate, dayStart, dayEnd, owner, leaseDuration, nil)
+}
+
+func AcquireSupplierDailyBatchRerun(ctx context.Context, db *gorm.DB, batchDate string, dayStart, dayEnd int64, owner string, _ time.Time, leaseDuration time.Duration, expectedPublishedFence int64) (SupplierDailyBatchLease, error) {
+	if expectedPublishedFence <= 0 {
+		return SupplierDailyBatchLease{}, ErrSupplierDailyBatchNotRerunnable
+	}
+	return acquireSupplierDailyBatch(ctx, db, batchDate, dayStart, dayEnd, owner, leaseDuration, &expectedPublishedFence)
+}
+
+func acquireSupplierDailyBatch(ctx context.Context, db *gorm.DB, batchDate string, dayStart, dayEnd int64, owner string, leaseDuration time.Duration, expectedPublishedFence *int64) (SupplierDailyBatchLease, error) {
 	if db == nil || batchDate == "" || dayStart <= 0 || dayEnd <= dayStart || owner == "" || leaseDuration <= 0 {
 		return SupplierDailyBatchLease{}, ErrDatabase
 	}
@@ -174,8 +199,25 @@ func AcquireSupplierDailyBatch(ctx context.Context, db *gorm.DB, batchDate strin
 		if err != nil {
 			return err
 		}
-		var run SupplierUsageDailyBatchRun
+		var active SupplierUsageDailyBatchRun
 		query := tx
+		if tx.Dialector.Name() != "sqlite" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		err = query.Where("active_lease_slot = ?", 1).First(&active).Error
+		if err == nil {
+			if active.LockedUntil >= nowUnix {
+				return ErrSupplierDailyBatchBusy
+			}
+			if err = invalidateExpiredSupplierDailyBatchCandidate(tx, active); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		var run SupplierUsageDailyBatchRun
+		query = tx
 		if tx.Dialector.Name() != "sqlite" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
@@ -188,17 +230,28 @@ func AcquireSupplierDailyBatch(ctx context.Context, db *gorm.DB, batchDate strin
 		} else if err != nil {
 			return err
 		}
-		if run.Status == SupplierDailyBatchStatusCompleted && !force {
+		if expectedPublishedFence == nil && run.PublishedFenceToken > 0 {
 			lease = SupplierDailyBatchLease{RunId: run.Id, BatchDate: batchDate, FenceToken: run.PublishedFenceToken, AlreadyDone: true}
 			return nil
+		}
+		if expectedPublishedFence != nil {
+			if run.PublishedFenceToken != *expectedPublishedFence || run.PublishedPersistedLogSnapshotCompleteness != types.SupplierPersistedLogCompletenessIncomplete {
+				return ErrSupplierDailyBatchNotRerunnable
+			}
+			published, parseErr := types.ParseSupplierPublishedEvidenceV1(run.PublishedEvidenceV1)
+			if parseErr != nil || published.PersistedLogSnapshotCompleteness != types.SupplierPersistedLogCompletenessIncomplete {
+				return ErrSupplierDailyBatchPublicationInvalid
+			}
 		}
 		if run.Status == SupplierDailyBatchStatusRunning && run.LockedUntil >= nowUnix {
 			return ErrSupplierDailyBatchBusy
 		}
 		fence := run.FenceToken + 1
+		activeSlot := 1
 		result := tx.Model(&SupplierUsageDailyBatchRun{}).Where("id = ? AND fence_token = ?", run.Id, run.FenceToken).Updates(map[string]any{
 			"day_start": dayStart, "day_end": dayEnd, "status": SupplierDailyBatchStatusRunning,
 			"lease_owner": owner, "fence_token": fence, "locked_until": nowUnix + int64(leaseDuration/time.Second),
+			"active_lease_slot": &activeSlot,
 			"cursor_created_at": 0, "cursor_id": 0, "logs_scanned": 0, "snapshot_count": 0, "summary_count": 0, "error_message": "",
 			"started_at": nowUnix, "completed_at": nil,
 		})
@@ -214,7 +267,41 @@ func AcquireSupplierDailyBatch(ctx context.Context, db *gorm.DB, batchDate strin
 		lease = SupplierDailyBatchLease{RunId: run.Id, BatchDate: batchDate, Owner: owner, FenceToken: fence}
 		return nil
 	})
+	if isSupplierDailyBatchAcquireRace(err) {
+		return SupplierDailyBatchLease{}, ErrSupplierDailyBatchBusy
+	}
 	return lease, err
+}
+
+func invalidateExpiredSupplierDailyBatchCandidate(tx *gorm.DB, run SupplierUsageDailyBatchRun) error {
+	result := tx.Model(&SupplierUsageDailyBatchRun{}).Where("id = ? AND fence_token = ? AND active_lease_slot = ?", run.Id, run.FenceToken, 1).Updates(map[string]any{
+		"status": SupplierDailyBatchStatusFailed, "active_lease_slot": nil, "locked_until": 0,
+		"lease_owner": "", "cursor_created_at": 0, "cursor_id": 0, "logs_scanned": 0,
+		"snapshot_count": 0, "summary_count": 0, "error_message": "lease expired",
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrSupplierDailyBatchBusy
+	}
+	if run.FenceToken == run.PublishedFenceToken {
+		return nil
+	}
+	return tx.Where("batch_date = ? AND batch_fence_token = ?", run.BatchDate, run.FenceToken).Delete(&SupplierUsageDailySummary{}).Error
+}
+
+func isSupplierDailyBatchAcquireRace(err error) bool {
+	if err == nil || errors.Is(err, ErrSupplierDailyBatchBusy) {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, fragment := range []string{"unique constraint", "duplicate key", "duplicate entry", "serialization failure", "could not serialize", "deadlock", "database is locked", "database table is locked"} {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 func PersistSupplierDailyBatchPage(ctx context.Context, db *gorm.DB, lease SupplierDailyBatchLease, summaries []SupplierUsageDailySummary, nextCursorCreatedAt int64, nextCursorId int, logsScanned, snapshotCount int64, leaseDuration time.Duration) error {
@@ -236,6 +323,13 @@ func PersistSupplierDailyBatchPage(ctx context.Context, db *gorm.DB, lease Suppl
 			}
 			return err
 		}
+		nowUnix, err := supplierDBUnix(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if run.LockedUntil < nowUnix {
+			return ErrSupplierDailyBatchFenceLost
+		}
 		for index := range summaries {
 			summaries[index].BatchDate = lease.BatchDate
 			summaries[index].BatchFenceToken = lease.FenceToken
@@ -243,12 +337,8 @@ func PersistSupplierDailyBatchPage(ctx context.Context, db *gorm.DB, lease Suppl
 		if err := upsertSupplierDailySummaries(tx, summaries); err != nil {
 			return err
 		}
-		nowUnix, err := supplierDBUnix(ctx, tx)
-		if err != nil {
-			return err
-		}
 		result := tx.Model(&SupplierUsageDailyBatchRun{}).
-			Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ? AND cursor_created_at = ? AND cursor_id = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken, lease.CursorCreatedAt, lease.CursorId).
+			Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ? AND cursor_created_at = ? AND cursor_id = ? AND locked_until >= "+supplierDBUnixSQL(tx), lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken, lease.CursorCreatedAt, lease.CursorId).
 			Updates(map[string]any{
 				"cursor_created_at": nextCursorCreatedAt, "cursor_id": nextCursorId,
 				"logs_scanned":   gorm.Expr("logs_scanned + ?", logsScanned),
@@ -298,37 +388,83 @@ func supplierDailySummaryIncrementExpression(dialect, column string) string {
 }
 
 func CompleteSupplierDailyBatch(ctx context.Context, db *gorm.DB, lease SupplierDailyBatchLease, completedAt time.Time) error {
-	if db == nil || lease.RunId <= 0 || lease.FenceToken <= 0 || lease.Owner == "" {
+	var run SupplierUsageDailyBatchRun
+	if err := db.WithContext(ctx).Where("id = ?", lease.RunId).First(&run).Error; err != nil {
+		return err
+	}
+	evidence, err := legacySupplierPublishedEvidence(run.LogsScanned, run.SnapshotCount)
+	if err != nil {
+		return err
+	}
+	return PublishSupplierDailyBatch(ctx, db, lease, completedAt, evidence)
+}
+
+func PublishSupplierDailyBatch(ctx context.Context, db *gorm.DB, lease SupplierDailyBatchLease, completedAt time.Time, evidence types.SupplierPublishedEvidenceV1) error {
+	if db == nil {
 		return ErrSupplierDailyBatchFenceLost
 	}
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var run SupplierUsageDailyBatchRun
-		query := tx
-		if tx.Dialector.Name() != "sqlite" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
-		if err := query.Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).First(&run).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrSupplierDailyBatchFenceLost
-			}
-			return err
-		}
-		var summaryCount int64
-		if err := tx.Model(&SupplierUsageDailySummary{}).Where("batch_date = ? AND batch_fence_token = ?", lease.BatchDate, lease.FenceToken).Count(&summaryCount).Error; err != nil {
-			return err
-		}
-		completedUnix := completedAt.Unix()
-		result := tx.Model(&SupplierUsageDailyBatchRun{}).
-			Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).
-			Updates(map[string]any{"status": SupplierDailyBatchStatusCompleted, "published_fence_token": lease.FenceToken, "locked_until": 0, "summary_count": summaryCount, "completed_at": completedUnix})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
+		return PublishSupplierDailyBatchTx(ctx, tx, lease, completedAt, evidence)
+	})
+}
+
+// PublishSupplierDailyBatchTx publishes a generated summary through the
+// caller's main-database transaction. It intentionally opens no transaction of
+// its own so the publication pointer and command-ledger terminal state can
+// share one commit or rollback.
+func PublishSupplierDailyBatchTx(ctx context.Context, tx *gorm.DB, lease SupplierDailyBatchLease, completedAt time.Time, evidence types.SupplierPublishedEvidenceV1) error {
+	if tx == nil || lease.RunId <= 0 || lease.FenceToken <= 0 || lease.Owner == "" {
+		return ErrSupplierDailyBatchFenceLost
+	}
+	if evidence.PersistedLogSnapshotCompleteness == types.SupplierPersistedLogCompletenessNotScanned {
+		return ErrSupplierDailyBatchPublicationInvalid
+	}
+	encodedEvidence, err := types.EncodeSupplierPublishedEvidenceV1(evidence)
+	if err != nil {
+		return fmt.Errorf("encode supplier daily publication: %w", err)
+	}
+	tx = tx.WithContext(ctx)
+	var run SupplierUsageDailyBatchRun
+	query := tx
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).First(&run).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrSupplierDailyBatchFenceLost
 		}
-		return tx.Where("batch_date = ? AND batch_fence_token <> ?", lease.BatchDate, lease.FenceToken).Delete(&SupplierUsageDailySummary{}).Error
-	})
+		return err
+	}
+	nowUnix, err := supplierDBUnix(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if run.LockedUntil < nowUnix {
+		return ErrSupplierDailyBatchFenceLost
+	}
+	summaryCount, err := validateSupplierPublishedSummaryGeneration(tx, lease.BatchDate, lease.FenceToken, evidence.CapturedSnapshotCount)
+	if err != nil {
+		return err
+	}
+	completedUnix := completedAt.Unix()
+	if completedUnix <= 0 || run.LogsScanned != evidence.LogsScanned || run.SnapshotCount != evidence.CapturedSnapshotCount {
+		return ErrSupplierDailyBatchPublicationInvalid
+	}
+	result := tx.Model(&SupplierUsageDailyBatchRun{}).
+		Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ? AND locked_until >= "+supplierDBUnixSQL(tx), lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).
+		Updates(map[string]any{
+			"status": SupplierDailyBatchStatusCompleted, "published_fence_token": lease.FenceToken,
+			"published_at": completedUnix, "published_persisted_log_snapshot_completeness": evidence.PersistedLogSnapshotCompleteness,
+			"published_evidence_v1": encodedEvidence, "active_lease_slot": nil, "locked_until": 0,
+			"lease_owner": "", "summary_count": summaryCount, "completed_at": completedUnix,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrSupplierDailyBatchFenceLost
+	}
+	return tx.Where("batch_date = ? AND batch_fence_token <> ?", lease.BatchDate, lease.FenceToken).Delete(&SupplierUsageDailySummary{}).Error
 }
 
 func RenewSupplierDailyBatchLease(ctx context.Context, db *gorm.DB, lease SupplierDailyBatchLease, leaseDuration time.Duration) error {
@@ -337,7 +473,7 @@ func RenewSupplierDailyBatchLease(ctx context.Context, db *gorm.DB, lease Suppli
 		return err
 	}
 	result := db.WithContext(ctx).Model(&SupplierUsageDailyBatchRun{}).
-		Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).
+		Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ? AND locked_until >= "+supplierDBUnixSQL(db), lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).
 		Update("locked_until", nowUnix+int64(leaseDuration/time.Second))
 	if result.Error != nil {
 		return result.Error
@@ -350,7 +486,7 @@ func RenewSupplierDailyBatchLease(ctx context.Context, db *gorm.DB, lease Suppli
 	// weakening lease ownership or depending on clientFoundRows DSN behavior.
 	var matched int64
 	err = db.WithContext(ctx).Model(&SupplierUsageDailyBatchRun{}).
-		Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).
+		Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ? AND locked_until >= "+supplierDBUnixSQL(db), lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).
 		Count(&matched).Error
 	if err != nil {
 		return err
@@ -362,41 +498,62 @@ func RenewSupplierDailyBatchLease(ctx context.Context, db *gorm.DB, lease Suppli
 }
 
 func FailSupplierDailyBatch(ctx context.Context, db *gorm.DB, lease SupplierDailyBatchLease, cause error) error {
+	if db == nil {
+		return ErrSupplierDailyBatchFenceLost
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return FailSupplierDailyBatchTx(ctx, tx, lease, cause)
+	})
+}
+
+// FailSupplierDailyBatchTx cleans up an unpublished candidate through the
+// caller's main-database transaction. It intentionally opens no transaction of
+// its own so cleanup and command-ledger finalization are atomic.
+func FailSupplierDailyBatchTx(ctx context.Context, tx *gorm.DB, lease SupplierDailyBatchLease, cause error) error {
+	if tx == nil || lease.RunId <= 0 || lease.FenceToken <= 0 || lease.Owner == "" {
+		return ErrSupplierDailyBatchFenceLost
+	}
 	message := ""
 	if cause != nil {
 		message = cause.Error()
 	}
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var run SupplierUsageDailyBatchRun
-		query := tx
-		if tx.Dialector.Name() != "sqlite" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
-		if err := query.Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).First(&run).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrSupplierDailyBatchFenceLost
-			}
-			return err
-		}
-		result := tx.Model(&SupplierUsageDailyBatchRun{}).
-			Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).
-			Updates(map[string]any{"status": SupplierDailyBatchStatusFailed, "locked_until": 0, "error_message": message})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
+	tx = tx.WithContext(ctx)
+	var run SupplierUsageDailyBatchRun
+	query := tx
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ?", lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).First(&run).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrSupplierDailyBatchFenceLost
 		}
-		if lease.FenceToken == run.PublishedFenceToken {
-			return nil
-		}
-		return tx.Where("batch_date = ? AND batch_fence_token = ?", lease.BatchDate, lease.FenceToken).Delete(&SupplierUsageDailySummary{}).Error
-	})
+		return err
+	}
+	nowUnix, err := supplierDBUnix(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if run.LockedUntil < nowUnix {
+		return ErrSupplierDailyBatchFenceLost
+	}
+	result := tx.Model(&SupplierUsageDailyBatchRun{}).
+		Where("id = ? AND status = ? AND lease_owner = ? AND fence_token = ? AND locked_until >= "+supplierDBUnixSQL(tx), lease.RunId, SupplierDailyBatchStatusRunning, lease.Owner, lease.FenceToken).
+		Updates(map[string]any{"status": SupplierDailyBatchStatusFailed, "active_lease_slot": nil, "locked_until": 0, "lease_owner": "", "error_message": message})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrSupplierDailyBatchFenceLost
+	}
+	if lease.FenceToken == run.PublishedFenceToken {
+		return nil
+	}
+	return tx.Where("batch_date = ? AND batch_fence_token = ?", lease.BatchDate, lease.FenceToken).Delete(&SupplierUsageDailySummary{}).Error
 }
 
 func LatestCompletedSupplierDailyBatch(ctx context.Context, db *gorm.DB) (*SupplierUsageDailyBatchRun, error) {
 	var run SupplierUsageDailyBatchRun
-	err := db.WithContext(ctx).Where("status = ?", SupplierDailyBatchStatusCompleted).Order("batch_date DESC").First(&run).Error
+	err := db.WithContext(ctx).Where("published_fence_token > ?", 0).Order("batch_date DESC").First(&run).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -405,11 +562,179 @@ func LatestCompletedSupplierDailyBatch(ctx context.Context, db *gorm.DB) (*Suppl
 
 func EarliestIncompleteSupplierDailyBatch(ctx context.Context, db *gorm.DB) (*SupplierUsageDailyBatchRun, error) {
 	var run SupplierUsageDailyBatchRun
-	err := db.WithContext(ctx).Where("status <> ?", SupplierDailyBatchStatusCompleted).Order("batch_date ASC").First(&run).Error
+	err := db.WithContext(ctx).Where("published_fence_token = ?", 0).Order("batch_date ASC").First(&run).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &run, err
+}
+
+// EnsureSupplierDailyBatchCandidates materializes the bounded Shanghai-date
+// universe on the supplied database handle. Callers that need the scheduler
+// claim and candidate creation to be atomic must pass the same transaction to
+// this function and OldestNeverPublishedSupplierDailyBatchDate.
+func EnsureSupplierDailyBatchCandidates(ctx context.Context, db *gorm.DB, startDate, throughDate string) error {
+	if db == nil {
+		return ErrDatabase
+	}
+	start, through, err := supplierDailyBatchDateRange(startDate, throughDate)
+	if err != nil {
+		return err
+	}
+	if err = validateSupplierDailyBatchFenceRange(ctx, db, startDate, throughDate); err != nil {
+		return err
+	}
+
+	candidates := make([]SupplierUsageDailyBatchRun, 0, supplierDailyBatchCandidateInsertSize)
+	var expectedCount int64
+	insertCandidates := func() error {
+		if len(candidates) == 0 {
+			return nil
+		}
+		err := db.WithContext(ctx).
+			Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "batch_date"}}, DoNothing: true}).
+			CreateInBatches(&candidates, supplierDailyBatchCandidateInsertSize).Error
+		candidates = candidates[:0]
+		return err
+	}
+	for day := start; !day.After(through); day = day.AddDate(0, 0, 1) {
+		nextDay := day.AddDate(0, 0, 1)
+		candidates = append(candidates, SupplierUsageDailyBatchRun{
+			BatchDate:           day.Format("2006-01-02"),
+			DayStart:            day.Unix(),
+			DayEnd:              nextDay.Unix(),
+			Status:              SupplierDailyBatchStatusFailed,
+			FenceToken:          0,
+			PublishedFenceToken: 0,
+			LockedUntil:         0,
+		})
+		expectedCount++
+		if len(candidates) == supplierDailyBatchCandidateInsertSize {
+			if err = insertCandidates(); err != nil {
+				return err
+			}
+		}
+	}
+	if err = insertCandidates(); err != nil {
+		return err
+	}
+	if err = validateSupplierDailyBatchFenceRange(ctx, db, startDate, throughDate); err != nil {
+		return err
+	}
+	var actualCount int64
+	if err = db.WithContext(ctx).Model(&SupplierUsageDailyBatchRun{}).
+		Where("batch_date >= ? AND batch_date <= ?", startDate, throughDate).
+		Count(&actualCount).Error; err != nil {
+		return err
+	}
+	if actualCount != expectedCount {
+		return ErrSupplierDailyBatchPublicationInvalid
+	}
+	return nil
+}
+
+func OldestNeverPublishedSupplierDailyBatchDate(ctx context.Context, db *gorm.DB, startDate, throughDate string) (string, bool, error) {
+	if db == nil {
+		return "", false, ErrDatabase
+	}
+	if _, _, err := supplierDailyBatchDateRange(startDate, throughDate); err != nil {
+		return "", false, err
+	}
+	var candidate struct {
+		BatchDate string
+	}
+	err := oldestNeverPublishedSupplierDailyBatchQuery(db.WithContext(ctx), startDate, throughDate).Scan(&candidate).Error
+	if err != nil {
+		return "", false, err
+	}
+	if candidate.BatchDate == "" {
+		return "", false, nil
+	}
+	return candidate.BatchDate, true, nil
+}
+
+func oldestNeverPublishedSupplierDailyBatchQuery(db *gorm.DB, startDate, throughDate string) *gorm.DB {
+	return db.Model(&SupplierUsageDailyBatchRun{}).
+		Select("batch_date").
+		Where("batch_date >= ? AND batch_date <= ?", startDate, throughDate).
+		Where("published_fence_token = ?", 0).
+		Order("batch_date ASC").
+		Limit(1)
+}
+
+func supplierDailyBatchDateRange(startDate, throughDate string) (time.Time, time.Time, error) {
+	location, err := time.LoadLocation(supplierDailyBatchTimezone)
+	if err != nil {
+		return time.Time{}, time.Time{}, ErrDatabase
+	}
+	start, err := time.ParseInLocation("2006-01-02", startDate, location)
+	if err != nil || start.Format("2006-01-02") != startDate {
+		return time.Time{}, time.Time{}, ErrDatabase
+	}
+	through, err := time.ParseInLocation("2006-01-02", throughDate, location)
+	if err != nil || through.Format("2006-01-02") != throughDate || through.Before(start) {
+		return time.Time{}, time.Time{}, ErrDatabase
+	}
+	return start, through, nil
+}
+
+func validateSupplierDailyBatchFenceRange(ctx context.Context, db *gorm.DB, startDate, throughDate string) error {
+	var invalidCount int64
+	err := db.WithContext(ctx).Model(&SupplierUsageDailyBatchRun{}).
+		Where("batch_date >= ? AND batch_date <= ?", startDate, throughDate).
+		Where("fence_token < ? OR published_fence_token < ? OR published_fence_token > fence_token", 0, 0).
+		Count(&invalidCount).Error
+	if err != nil {
+		return err
+	}
+	if invalidCount != 0 {
+		return ErrSupplierDailyBatchPublicationInvalid
+	}
+	return nil
+}
+
+func LoadSupplierPublishedDailyBatch(ctx context.Context, db *gorm.DB, batchDate string) (*SupplierUsageDailyBatchRun, *types.SupplierPublishedEvidenceV1, error) {
+	if db == nil || batchDate == "" {
+		return nil, nil, ErrDatabase
+	}
+	var run SupplierUsageDailyBatchRun
+	if err := db.WithContext(ctx).Where("batch_date = ? AND published_fence_token > ?", batchDate, 0).First(&run).Error; err != nil {
+		return nil, nil, err
+	}
+	evidence, err := types.ParseSupplierPublishedEvidenceV1(run.PublishedEvidenceV1)
+	if err != nil || run.PublishedAt == nil || *run.PublishedAt <= 0 || run.PublishedPersistedLogSnapshotCompleteness != evidence.PersistedLogSnapshotCompleteness {
+		return nil, nil, ErrSupplierDailyBatchPublicationInvalid
+	}
+	return &run, &evidence, nil
+}
+
+func legacySupplierPublishedEvidence(logsScanned, captured int64) (types.SupplierPublishedEvidenceV1, error) {
+	if logsScanned < 0 || captured < 0 || captured > logsScanned || captured != logsScanned {
+		return types.SupplierPublishedEvidenceV1{}, ErrSupplierDailyBatchPublicationInvalid
+	}
+	return types.SupplierPublishedEvidenceV1{
+		SchemaVersion: types.SupplierPublishedEvidenceSchemaVersion, LogsScanned: logsScanned,
+		ProducerMarkersPresent: captured, CapturedSnapshotCount: captured,
+		DispositionCounts:                types.SupplierPublishedDispositionCountsV1{Captured: captured},
+		PersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessComplete,
+		Warnings:                         []types.SupplierPublishedWarningV1{},
+	}, nil
+}
+
+func validateSupplierPublishedSummaryGeneration(db *gorm.DB, batchDate string, fenceToken, captured int64) (int64, error) {
+	if db == nil || batchDate == "" || fenceToken <= 0 || captured < 0 {
+		return 0, ErrSupplierDailyBatchPublicationInvalid
+	}
+	var summaryCount int64
+	if err := db.Model(&SupplierUsageDailySummary{}).
+		Where("batch_date = ? AND batch_fence_token = ?", batchDate, fenceToken).
+		Count(&summaryCount).Error; err != nil {
+		return 0, err
+	}
+	if (captured == 0 && summaryCount != 0) || (captured > 0 && (summaryCount <= 0 || summaryCount > captured)) {
+		return 0, ErrSupplierDailyBatchPublicationInvalid
+	}
+	return summaryCount, nil
 }
 
 func SupplierAccountingCoverageStart(ctx context.Context, db *gorm.DB) (int64, error) {
@@ -504,4 +829,29 @@ func supplierDBUnix(ctx context.Context, db *gorm.DB) (int64, error) {
 		return 0, ErrDatabase
 	}
 	return timestamp, nil
+}
+
+func SupplierDailyBatchLeaseExpired(ctx context.Context, db *gorm.DB, lockedUntil int64) (bool, error) {
+	if db == nil || lockedUntil <= 0 {
+		return false, ErrDatabase
+	}
+	nowUnix, err := supplierDBUnix(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	return lockedUntil < nowUnix, nil
+}
+
+// supplierDBUnixSQL returns the database clock expression used in fenced
+// mutation predicates. Evaluating expiry in the write statement closes the
+// gap between an earlier clock read and the actual cross-node CAS.
+func supplierDBUnixSQL(db *gorm.DB) string {
+	switch db.Dialector.Name() {
+	case "postgres":
+		return "EXTRACT(EPOCH FROM NOW())::bigint"
+	case "sqlite":
+		return "CAST(strftime('%s','now') AS INTEGER)"
+	default:
+		return "UNIX_TIMESTAMP()"
+	}
 }

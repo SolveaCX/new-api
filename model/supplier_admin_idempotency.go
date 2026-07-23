@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/types"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -32,9 +33,10 @@ const (
 	maxSupplierAdminIdempotencyKeyBytes = 128
 	maxSupplierAdminCommandResultBytes  = 8 * 1024
 
-	legacySupplierAdminCommandScopeKeyIndex      = "ux_supplier_admin_command_scope_key"
-	legacySupplierAdminCommandActorScopeKeyIndex = "idx_supplier_admin_command_actor_scope_key"
-	supplierAdminCommandActorScopeDigestIndex    = "ux_supplier_admin_command_actor_scope_digest"
+	legacySupplierAdminCommandScopeKeyIndex        = "ux_supplier_admin_command_scope_key"
+	legacySupplierAdminCommandActorScopeKeyIndex   = "idx_supplier_admin_command_actor_scope_key"
+	supplierAdminCommandActorScopeDigestIndex      = "ux_supplier_admin_command_actor_scope_digest"
+	supplierBatchSchedulerIdentityScopeDigestIndex = "ux_supplier_batch_scheduler_identity_scope_digest"
 )
 
 var (
@@ -45,18 +47,24 @@ var (
 )
 
 type SupplierAdminCommand struct {
-	Id                   int    `json:"id"`
-	ActorId              int    `json:"-" gorm:"not null;default:0"`
-	Scope                string `json:"scope" gorm:"type:varchar(64);not null"`
-	IdempotencyKey       string `json:"idempotency_key" gorm:"type:varchar(128);not null"`
-	IdempotencyKeyDigest []byte `json:"-" gorm:"size:32"`
-	PayloadVersion       int    `json:"payload_version" gorm:"not null;default:1"`
-	PayloadDigest        string `json:"payload_digest" gorm:"type:varchar(64);not null"`
-	ResourceType         string `json:"resource_type" gorm:"type:varchar(32);not null;index:idx_supplier_admin_command_resource,priority:1"`
-	ResourceId           int    `json:"resource_id" gorm:"not null;default:0;index:idx_supplier_admin_command_resource,priority:2"`
-	ResultJson           string `json:"-" gorm:"type:text"`
-	ClaimToken           string `json:"-" gorm:"type:varchar(32);not null"`
-	CreatedAt            int64  `json:"created_at" gorm:"autoCreateTime"`
+	Id                       int     `json:"id"`
+	ActorId                  int     `json:"-" gorm:"not null;default:0"`
+	Scope                    string  `json:"scope" gorm:"type:varchar(64);not null"`
+	IdempotencyKey           string  `json:"idempotency_key" gorm:"type:varchar(128);not null"`
+	IdempotencyKeyDigest     []byte  `json:"-" gorm:"size:32"`
+	TrustedJobIdentityDigest *string `json:"-" gorm:"type:varchar(64)"`
+	SchedulerRequestDigest   *string `json:"-" gorm:"type:varchar(64)"`
+	SchedulerScopeCode       *int    `json:"-"`
+	SchedulerSlot            string  `json:"-" gorm:"type:varchar(16);not null;default:''"`
+	PayloadVersion           int     `json:"payload_version" gorm:"not null;default:1"`
+	PayloadDigest            string  `json:"payload_digest" gorm:"type:varchar(64);not null"`
+	ResourceType             string  `json:"resource_type" gorm:"type:varchar(32);not null;index:idx_supplier_admin_command_resource,priority:1"`
+	ResourceId               int     `json:"resource_id" gorm:"not null;default:0;index:idx_supplier_admin_command_resource,priority:2"`
+	ResultJson               string  `json:"-" gorm:"type:text"`
+	StatusJson               string  `json:"-" gorm:"type:text"`
+	ClaimToken               string  `json:"-" gorm:"type:varchar(32);not null"`
+	CreatedAt                int64   `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                int64   `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (c *SupplierAdminCommand) BeforeCreate(_ *gorm.DB) error {
@@ -69,6 +77,24 @@ func (c *SupplierAdminCommand) BeforeCreate(_ *gorm.DB) error {
 		c.IdempotencyKeyDigest = keyDigest
 	}
 	if c.ActorId < 0 || c.Scope == "" || len(c.Scope) > 64 || c.IdempotencyKey == "" || len(c.IdempotencyKey) > maxSupplierAdminIdempotencyKeyBytes || !equalDigest(c.IdempotencyKeyDigest, keyDigest) || c.PayloadVersion != supplierAdminCommandPayloadVersion || len(c.PayloadDigest) != sha256.Size*2 || c.ResourceType == "" || len(c.ResourceType) > 32 || len(c.ClaimToken) != 32 {
+		return ErrSupplierAdminIdempotencyKeyRequired
+	}
+	if c.Scope == SupplierBatchSchedulerCommandScopeCatchUp {
+		if c.ActorId != 0 || c.TrustedJobIdentityDigest == nil || len(*c.TrustedJobIdentityDigest) != sha256.Size*2 || c.SchedulerRequestDigest == nil || len(*c.SchedulerRequestDigest) != sha256.Size*2 || c.SchedulerScopeCode == nil || *c.SchedulerScopeCode != supplierBatchSchedulerScopeCodeCatchUp ||
+			!validSupplierBatchSchedulerAuditSlot(c.SchedulerSlot) || c.ResourceType != supplierBatchSchedulerCommandResource {
+			return ErrSupplierAdminIdempotencyKeyRequired
+		}
+		if _, err := types.ParseSupplierBatchCommandStateV1(c.StatusJson); err != nil {
+			return ErrSupplierAdminCommandIncomplete
+		}
+	} else if isSupplierDailyReportRerunScope(c.Scope) {
+		if c.ActorId <= 0 || c.TrustedJobIdentityDigest != nil || c.SchedulerRequestDigest != nil || c.SchedulerScopeCode != nil || c.SchedulerSlot != "" || c.ResourceType != supplierDailyReportRerunCommandResource {
+			return ErrSupplierAdminIdempotencyKeyRequired
+		}
+		if _, err := types.ParseSupplierBatchCommandStateV1(c.StatusJson); err != nil {
+			return ErrSupplierAdminCommandIncomplete
+		}
+	} else if c.TrustedJobIdentityDigest != nil || c.SchedulerRequestDigest != nil || c.SchedulerScopeCode != nil || c.SchedulerSlot != "" || c.StatusJson != "" {
 		return ErrSupplierAdminIdempotencyKeyRequired
 	}
 	return nil
@@ -294,7 +320,9 @@ func equalDigest(left []byte, right []byte) bool {
 type SupplierAdminCommandLedgerMigrationStatus struct {
 	HasDigestColumn          bool
 	HasResultColumn          bool
+	HasSchedulerColumns      bool
 	HasActorDigestIndex      bool
+	HasSchedulerDigestIndex  bool
 	LegacyScopeKeyIndex      bool
 	LegacyActorScopeKeyIndex bool
 	InvalidDigestRows        int64
@@ -319,10 +347,18 @@ func MigrateSupplierAdminCommandLedger(db *gorm.DB) error {
 	if err := ensureSupplierAdminCommandLedgerColumn(db, "ResultJson"); err != nil {
 		return err
 	}
+	for _, field := range []string{"TrustedJobIdentityDigest", "SchedulerRequestDigest", "SchedulerScopeCode", "SchedulerSlot", "StatusJson", "UpdatedAt"} {
+		if err := ensureSupplierAdminCommandLedgerColumn(db, field); err != nil {
+			return err
+		}
+	}
 	if err := backfillAndValidateSupplierAdminCommandDigests(db); err != nil {
 		return err
 	}
 	if err := ensureSupplierAdminCommandActorDigestIndex(db); err != nil {
+		return err
+	}
+	if err := ensureSupplierBatchSchedulerDigestIndex(db); err != nil {
 		return err
 	}
 	return nil
@@ -355,6 +391,7 @@ func GetSupplierAdminCommandLedgerMigrationStatus(db *gorm.DB) (SupplierAdminCom
 	status := SupplierAdminCommandLedgerMigrationStatus{
 		HasDigestColumn:          migrator.HasColumn(&SupplierAdminCommand{}, "IdempotencyKeyDigest"),
 		HasResultColumn:          migrator.HasColumn(&SupplierAdminCommand{}, "ResultJson"),
+		HasSchedulerColumns:      migrator.HasColumn(&SupplierAdminCommand{}, "TrustedJobIdentityDigest") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerRequestDigest") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerScopeCode") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerSlot") && migrator.HasColumn(&SupplierAdminCommand{}, "StatusJson"),
 		LegacyScopeKeyIndex:      migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandScopeKeyIndex),
 		LegacyActorScopeKeyIndex: migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandActorScopeKeyIndex),
 	}
@@ -364,12 +401,16 @@ func GetSupplierAdminCommandLedgerMigrationStatus(db *gorm.DB) (SupplierAdminCom
 			return status, err
 		}
 		status.HasActorDigestIndex = valid
+		status.HasSchedulerDigestIndex, err = supplierAdminCommandIndexMatches(db, supplierBatchSchedulerIdentityScopeDigestIndex, []string{"trusted_job_identity_digest", "scheduler_scope_code", "scheduler_request_digest"})
+		if err != nil {
+			return status, err
+		}
 		status.InvalidDigestRows, err = countInvalidSupplierAdminCommandDigests(db)
 		if err != nil {
 			return status, err
 		}
 	}
-	status.Finalized = status.HasDigestColumn && status.HasResultColumn && status.HasActorDigestIndex &&
+	status.Finalized = status.HasDigestColumn && status.HasResultColumn && status.HasSchedulerColumns && status.HasActorDigestIndex && status.HasSchedulerDigestIndex &&
 		!status.LegacyScopeKeyIndex && !status.LegacyActorScopeKeyIndex && status.InvalidDigestRows == 0
 	return status, nil
 }
@@ -478,6 +519,31 @@ func ensureSupplierAdminCommandActorDigestIndex(db *gorm.DB) error {
 		matches, verifyErr := supplierAdminCommandIndexMatches(db, supplierAdminCommandActorScopeDigestIndex, expected)
 		if verifyErr != nil || !matches {
 			return fmt.Errorf("create supplier admin command actor digest index: %w", err)
+		}
+	}
+	return nil
+}
+
+func ensureSupplierBatchSchedulerDigestIndex(db *gorm.DB) error {
+	expected := []string{"trusted_job_identity_digest", "scheduler_scope_code", "scheduler_request_digest"}
+	matches, err := supplierAdminCommandIndexMatches(db, supplierBatchSchedulerIdentityScopeDigestIndex, expected)
+	if err != nil || matches {
+		return err
+	}
+	if db.Migrator().HasIndex(&SupplierAdminCommand{}, supplierBatchSchedulerIdentityScopeDigestIndex) {
+		return fmt.Errorf("supplier batch scheduler digest index has unexpected definition: %w", ErrSupplierAdminCommandIncomplete)
+	}
+	quote := `"`
+	if db.Dialector.Name() == "mysql" {
+		quote = "`"
+	}
+	identifier := func(value string) string { return quote + value + quote }
+	statement := "CREATE UNIQUE INDEX " + identifier(supplierBatchSchedulerIdentityScopeDigestIndex) + " ON " + identifier("supplier_admin_commands") +
+		" (" + identifier("trusted_job_identity_digest") + ", " + identifier("scheduler_scope_code") + ", " + identifier("scheduler_request_digest") + ")"
+	if err := db.Exec(statement).Error; err != nil {
+		matches, verifyErr := supplierAdminCommandIndexMatches(db, supplierBatchSchedulerIdentityScopeDigestIndex, expected)
+		if verifyErr != nil || !matches {
+			return fmt.Errorf("create supplier batch scheduler digest index: %w", err)
 		}
 	}
 	return nil
