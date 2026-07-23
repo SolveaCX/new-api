@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -787,6 +788,9 @@ type RecallCandidateQuery struct {
 
 type RecallCandidateFact struct {
 	User                  User
+	RecipientIdentity     string
+	Email                 string
+	EmailOnly             bool
 	HasPayment            bool
 	PaidAmount            float64
 	LastPaymentAt         int64
@@ -815,8 +819,12 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 	if query.Limit <= 0 {
 		return facts, nil
 	}
+	if query.Template == "specified_users" && query.AfterUserID > 0 {
+		return facts, nil
+	}
 	var users []User
 	userQuery := DB.WithContext(ctx).Where("id > ?", query.AfterUserID)
+	specifiedEmails := make([]string, 0)
 	switch query.Template {
 	case "registered_only":
 		userQuery = userQuery.
@@ -825,15 +833,19 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 	case "specified_users":
 		ids := normalizeRecallCandidateUserIDs(query.SpecifiedUserIDs)
 		emails := normalizeRecallCandidateEmails(query.SpecifiedEmails)
+		specifiedEmails = emails
 		switch {
 		case len(ids) > 0 && len(emails) > 0:
-			userQuery = userQuery.Where("(id IN ? OR LOWER(email) IN ?)", ids, emails)
+			userQuery = DB.WithContext(ctx).Where("(id IN ? OR LOWER(email) IN ?)", ids, emails)
 		case len(ids) > 0:
-			userQuery = userQuery.Where("id IN ?", ids)
+			userQuery = DB.WithContext(ctx).Where("id IN ?", ids)
 		case len(emails) > 0:
-			userQuery = userQuery.Where("LOWER(email) IN ?", emails)
+			userQuery = DB.WithContext(ctx).Where("LOWER(email) IN ?", emails)
 		default:
 			return facts, nil
+		}
+		if identifierCount := len(ids) + len(emails); query.Limit > identifierCount {
+			query.Limit = identifierCount
 		}
 	}
 	if err := userQuery.
@@ -842,17 +854,42 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 		Find(&users).Error; err != nil {
 		return nil, err
 	}
-	if len(users) == 0 {
-		return facts, nil
-	}
 
 	userIDs := make([]int, len(users))
 	facts = make([]RecallCandidateFact, len(users))
 	factByUserID := make(map[int]*RecallCandidateFact, len(users))
+	matchedSpecifiedEmails := make(map[string]struct{}, len(users))
 	for i := range users {
 		userIDs[i] = users[i].Id
-		facts[i] = RecallCandidateFact{User: users[i]}
+		email := strings.ToLower(strings.TrimSpace(users[i].Email))
+		if query.Template == "specified_users" {
+			for _, specifiedEmail := range specifiedEmails {
+				if email == specifiedEmail {
+					matchedSpecifiedEmails[specifiedEmail] = struct{}{}
+				}
+			}
+		}
+		facts[i] = RecallCandidateFact{
+			User:              users[i],
+			RecipientIdentity: RecallRecipientIdentityForUser(users[i].Id),
+			Email:             email,
+		}
 		factByUserID[users[i].Id] = &facts[i]
+	}
+	if query.Template == "specified_users" {
+		for _, email := range specifiedEmails {
+			if _, matched := matchedSpecifiedEmails[email]; matched {
+				continue
+			}
+			facts = append(facts, RecallCandidateFact{
+				RecipientIdentity: RecallRecipientIdentityForEmail(email),
+				Email:             email,
+				EmailOnly:         true,
+			})
+		}
+	}
+	if len(userIDs) == 0 {
+		return facts, nil
 	}
 
 	providerFilter := (query.Template == "lapsed_payer" || query.Template == "expired_subscription") && len(query.PaymentProviders) > 0
@@ -933,6 +970,22 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 		}
 	}
 	return facts, nil
+}
+
+func RecallRecipientIdentityForUser(userID int) string {
+	if userID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("user:%d", userID)
+}
+
+func RecallRecipientIdentityForEmail(email string) string {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(email))
+	return fmt.Sprintf("email:%x", sum)
 }
 
 func normalizeRecallCandidateUserIDs(values []int) []int {

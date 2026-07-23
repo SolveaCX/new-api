@@ -224,21 +224,25 @@ func (selector *RecallAudienceSelector) iterate(
 
 		recentlyActive := make(map[int]struct{})
 		if recallAudienceUsesRecentAPILookup(draft.AudienceTemplate) && draft.Audience.LastAPICallAgeDays > 0 && len(candidates) > 0 {
-			userIDs := make([]int, len(candidates))
+			userIDs := make([]int, 0, len(candidates))
 			for i := range candidates {
-				userIDs[i] = candidates[i].Candidate.UserID
+				if candidates[i].Candidate.UserID > 0 {
+					userIDs = append(userIDs, candidates[i].Candidate.UserID)
+				}
 			}
-			if err := ctx.Err(); err != nil {
-				return exclusions, err
-			}
-			recentlyActive, err = model.FindRecentlyActiveRecallUserIDsWithContext(
-				ctx,
-				userIDs,
-				now-int64(draft.Audience.LastAPICallAgeDays)*recallDaySeconds,
-				selector.LogBatchSize,
-			)
-			if err != nil {
-				return exclusions, err
+			if len(userIDs) > 0 {
+				if err := ctx.Err(); err != nil {
+					return exclusions, err
+				}
+				recentlyActive, err = model.FindRecentlyActiveRecallUserIDsWithContext(
+					ctx,
+					userIDs,
+					now-int64(draft.Audience.LastAPICallAgeDays)*recallDaySeconds,
+					selector.LogBatchSize,
+				)
+				if err != nil {
+					return exclusions, err
+				}
 			}
 		}
 		for _, candidate := range candidates {
@@ -253,6 +257,9 @@ func (selector *RecallAudienceSelector) iterate(
 
 		query.AfterUserID = facts[len(facts)-1].User.Id
 		if len(facts) < selector.MainBatchSize {
+			return exclusions, nil
+		}
+		if draft.AudienceTemplate == "specified_users" {
 			return exclusions, nil
 		}
 	}
@@ -282,7 +289,7 @@ func recallCandidateQuery(draft RecallCampaignDraft, now int64, limit int) model
 	for i, provider := range cfg.PaymentProviders {
 		paymentProviders[i] = strings.TrimSpace(provider)
 	}
-	return model.RecallCandidateQuery{
+	query := model.RecallCandidateQuery{
 		Template:              draft.AudienceTemplate,
 		Now:                   now,
 		RegistrationBefore:    now - int64(cfg.RegistrationAgeDays)*recallDaySeconds,
@@ -302,6 +309,10 @@ func recallCandidateQuery(draft RecallCampaignDraft, now int64, limit int) model
 		GroupMode:             cfg.GroupMode,
 		Limit:                 limit,
 	}
+	if draft.AudienceTemplate == "specified_users" {
+		query.Limit = len(query.SpecifiedUserIDs) + len(query.SpecifiedEmails)
+	}
+	return query
 }
 
 type recallEligibilitySnapshot struct {
@@ -318,11 +329,35 @@ type recallEligibilitySnapshot struct {
 }
 
 type recallAudienceSelection struct {
-	Candidate RecallAudienceCandidate
-	Email     string
+	Candidate         RecallAudienceCandidate
+	Email             string
+	RecipientIdentity string
 }
 
 func recallAudienceCandidate(draft RecallCampaignDraft, fact model.RecallCandidateFact, now int64) (recallAudienceSelection, string, error) {
+	if fact.EmailOnly {
+		email, ok := recallAudienceEmail(fact.Email)
+		if !ok {
+			return recallAudienceSelection{}, "invalid_email", nil
+		}
+		snapshot, err := common.Marshal(recallEligibilitySnapshot{
+			Template: draft.AudienceTemplate,
+			UserID:   0,
+		})
+		if err != nil {
+			return recallAudienceSelection{}, "", err
+		}
+		return recallAudienceSelection{
+			Candidate: RecallAudienceCandidate{
+				UserID:       0,
+				EmailMasked:  model.MaskInvitationIdentity(email, ""),
+				Language:     "en",
+				SnapshotJSON: string(snapshot),
+			},
+			Email:             email,
+			RecipientIdentity: fact.RecipientIdentity,
+		}, "", nil
+	}
 	user := fact.User
 	if user.Status != common.UserStatusEnabled {
 		return recallAudienceSelection{}, "disabled", nil
@@ -366,7 +401,8 @@ func recallAudienceCandidate(draft RecallCampaignDraft, fact model.RecallCandida
 			Language:     recallAudienceLanguage(setting.Language, user.BrowserLang),
 			SnapshotJSON: string(snapshot),
 		},
-		Email: email,
+		Email:             email,
+		RecipientIdentity: fact.RecipientIdentity,
 	}, "", nil
 }
 
