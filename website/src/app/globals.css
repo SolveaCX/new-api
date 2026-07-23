@@ -443,18 +443,6 @@ a {
   letter-spacing: 0;
 }
 
-.flatkey-gradient-text::selection {
-  background: rgb(124 58 237 / 0.16);
-  color: var(--foreground);
-  -webkit-text-fill-color: var(--foreground);
-}
-
-.dark .flatkey-gradient-text::selection {
-  background: rgb(167 139 250 / 0.24);
-  color: var(--foreground);
-  -webkit-text-fill-color: var(--foreground);
-}
-
 @keyframes landing-fade-up {
   from {
     opacity: 0;
