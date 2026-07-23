@@ -289,6 +289,68 @@ func TestRecallWorkerReusesCustomerCreatesBoundPromotionAndSchedulesStageOne(t *
 	require.Equal(t, model.RecallMessageScheduled, message.State)
 }
 
+func TestRecallWorkerEmailOnlyRecipientSkipsCustomerAndSchedulesStageOne(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	campaign := createRecallWorkerCampaign(t, model.RecallCampaignRunning)
+	recipient := createRecallWorkerRecipient(t, campaign.Id, 0, model.RecallRecipientQueued)
+
+	getCustomerCalls := 0
+	createCustomerCalls := 0
+	updateCustomerCalls := 0
+	var promotionParams *stripe.PromotionCodeParams
+	client := &recallStripeFakeClient{
+		getCustomerFn: func(_ context.Context, id string) (*stripe.Customer, error) {
+			getCustomerCalls++
+			return &stripe.Customer{ID: id}, nil
+		},
+		createCustomerFn: func(context.Context, *stripe.CustomerParams) (*stripe.Customer, error) {
+			createCustomerCalls++
+			return &stripe.Customer{ID: "cus_unexpected"}, nil
+		},
+		updateCustomerFn: func(_ context.Context, id string, params *stripe.CustomerParams) (*stripe.Customer, error) {
+			updateCustomerCalls++
+			return &stripe.Customer{ID: id, Email: *params.Email}, nil
+		},
+		createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+			promotionParams = params
+			return &stripe.PromotionCode{
+				ID: "promo_email_only", Active: true, Code: *params.Code, Coupon: &stripe.Coupon{ID: *params.Coupon},
+				ExpiresAt: *params.ExpiresAt, MaxRedemptions: *params.MaxRedemptions,
+			}, nil
+		},
+	}
+	worker := newRecallWorkerForTest(client, "node-a")
+
+	processed, err := worker.RunBatch(context.Background(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Zero(t, getCustomerCalls)
+	require.Zero(t, createCustomerCalls)
+	require.Zero(t, updateCustomerCalls)
+	require.NotNil(t, promotionParams)
+	require.Nil(t, promotionParams.Customer)
+	require.Equal(t, int64(1), *promotionParams.MaxRedemptions)
+	require.Equal(t, "coupon_worker", *promotionParams.Coupon)
+	require.NotNil(t, promotionParams.Restrictions)
+	require.Equal(t, int64(2500), *promotionParams.Restrictions.MinimumAmount)
+	require.Equal(t, "usd", *promotionParams.Restrictions.MinimumAmountCurrency)
+	require.NotContains(t, promotionParams.Metadata, "flatkey_user_id")
+	require.Equal(t, fmt.Sprint(campaign.Id), promotionParams.Metadata["recall_campaign_id"])
+	require.Equal(t, fmt.Sprint(recipient.Id), promotionParams.Metadata["recall_recipient_id"])
+
+	var stored model.RecallRecipient
+	require.NoError(t, model.DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientContacting, stored.State)
+	require.Empty(t, stored.StripeCustomerId)
+	require.NotNil(t, stored.StripePromotionCodeId)
+	require.Equal(t, "promo_email_only", *stored.StripePromotionCodeId)
+	require.Equal(t, "FKWXRKER234", stored.PromotionCode)
+	var message model.RecallMessage
+	require.NoError(t, model.DB.Where("recipient_id = ? AND stage_no = 1", stored.Id).First(&message).Error)
+	require.Equal(t, model.RecallMessageScheduled, message.State)
+}
+
 func TestRecallWorkerResolvesCompetingCustomerWinnerByReloadAndValidation(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)

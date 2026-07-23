@@ -956,6 +956,29 @@ func TestRecallStripePromotionParamsAndRetries(t *testing.T) {
 	}
 }
 
+func TestCreateRecipientPromotionEmailOnlyAllowsCustomerlessPromotion(t *testing.T) {
+	campaign := model.RecallCampaign{Id: 11, PromotionValidSeconds: 3600}
+	recipient := model.RecallRecipient{Id: 22, UserId: 0, PromotionCode: "FKBASE234", PromotionExpiresAt: 1_900_000_000}
+	coupon := &stripe.Coupon{ID: "coupon_11", Valid: true}
+	discount := RecallDiscountConfig{MinimumAmount: 2500, MinimumAmountCurrency: "usd"}
+	var captured *stripe.PromotionCodeParams
+	client := &recallStripeFakeClient{createPromotionCodeFn: func(_ context.Context, params *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
+		captured = params
+		return &stripe.PromotionCode{ID: "promo_email_only", Code: *params.Code}, nil
+	}}
+
+	promotion, err := NewRecallStripeService(client).CreateRecipientPromotion(context.Background(), campaign, recipient, model.User{}, coupon, discount)
+
+	require.NoError(t, err)
+	require.Equal(t, "promo_email_only", promotion.ID)
+	require.NotNil(t, captured)
+	require.Nil(t, captured.Customer)
+	require.Equal(t, int64(1), *captured.MaxRedemptions)
+	require.Equal(t, "11", captured.Metadata["recall_campaign_id"])
+	require.Equal(t, "22", captured.Metadata["recall_recipient_id"])
+	require.NotContains(t, captured.Metadata, "flatkey_user_id")
+}
+
 func TestRecallStripePromotionCollisionStopsAfterFiveCodes(t *testing.T) {
 	calls := 0
 	client := &recallStripeFakeClient{createPromotionCodeFn: func(context.Context, *stripe.PromotionCodeParams) (*stripe.PromotionCode, error) {
@@ -995,6 +1018,23 @@ func TestRecallStripeExistingPromotionIsReconciledWithoutCreate(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, existing, promotion)
 	require.False(t, created)
+}
+
+func TestValidateExistingRecallPromotionEmailOnlyRequiresCustomerlessPromotion(t *testing.T) {
+	recipient := model.RecallRecipient{
+		Id: 2, UserId: 0, PromotionCode: "FKABC234", PromotionExpiresAt: 1_900_000_000,
+	}
+	existing := &stripe.PromotionCode{
+		ID: "promo_existing", Active: true, Code: "FKABC234", Coupon: &stripe.Coupon{ID: "coupon"},
+		ExpiresAt: 1_900_000_000, MaxRedemptions: 1, Restrictions: &stripe.PromotionCodeRestrictions{},
+	}
+
+	require.NoError(t, validateExistingRecallPromotion(existing, recipient, "coupon", "", 1_900_000_000, RecallDiscountConfig{}))
+
+	existing.Customer = &stripe.Customer{ID: "cus_unexpected"}
+	err := validateExistingRecallPromotion(existing, recipient, "coupon", "", 1_900_000_000, RecallDiscountConfig{})
+	require.ErrorContains(t, err, "customer")
+	require.Equal(t, RecallStripeErrorPermanent, ClassifyRecallStripeError(err))
 }
 
 func TestRecallStripeExistingPromotionRequiresExactRestrictions(t *testing.T) {

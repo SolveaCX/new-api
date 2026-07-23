@@ -230,6 +230,18 @@ func (w *RecallRecipientWorker) ProcessLeased(ctx context.Context, recipientID i
 }
 
 func (w *RecallRecipientWorker) ensureRecipientCustomer(ctx context.Context, recipient *model.RecallRecipient) error {
+	if recipient.UserId == 0 {
+		won, err := model.AdvanceRecallRecipientLease(ctx, recipient.Id, w.owner, recipient.LeaseExpiresAt,
+			[]string{model.RecallRecipientQueued}, model.RecallRecipientCustomerReady,
+			map[string]any{"last_error_code": "", "last_error_message": ""})
+		if err != nil {
+			return err
+		}
+		if !won {
+			return ErrRecallRecipientLeaseLost
+		}
+		return nil
+	}
 	user, err := model.GetUserByIdWithContext(ctx, recipient.UserId)
 	if err != nil {
 		return recallStripePermanent("load recall user", "user %d is unavailable", recipient.UserId)
@@ -307,9 +319,12 @@ func (w *RecallRecipientWorker) ensureRecipientPromotion(ctx context.Context, re
 	if err := common.Unmarshal([]byte(campaign.DiscountConfig), &discount); err != nil {
 		return recallStripePermanent("decode recall discount", "campaign %d discount is invalid", campaign.Id)
 	}
-	user, err := model.GetUserByIdWithContext(ctx, recipient.UserId)
-	if err != nil {
-		return recallStripePermanent("load recall user", "user %d is unavailable", recipient.UserId)
+	user := &model.User{}
+	if recipient.UserId > 0 {
+		user, err = model.GetUserByIdWithContext(ctx, recipient.UserId)
+		if err != nil {
+			return recallStripePermanent("load recall user", "user %d is unavailable", recipient.UserId)
+		}
 	}
 	coupon := &stripe.Coupon{ID: strings.TrimSpace(campaign.StripeCouponId), RedeemBy: discount.CouponRedeemBy, Valid: true}
 	guardedStripe := w.guardedStripe(recipient.CampaignId)

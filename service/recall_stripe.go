@@ -720,8 +720,8 @@ func isRecallStripeMissing(err error) bool {
 }
 
 func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, campaign model.RecallCampaign, recipient model.RecallRecipient, user model.User, coupon *stripe.Coupon, discount RecallDiscountConfig) (*stripe.PromotionCode, error) {
-	if campaign.Id <= 0 || recipient.Id <= 0 || user.Id <= 0 {
-		return nil, recallStripePermanent("create Stripe Promotion Code", "campaign, recipient, and user IDs must be positive")
+	if campaign.Id <= 0 || recipient.Id <= 0 || (recipient.UserId > 0 && user.Id <= 0) {
+		return nil, recallStripePermanent("create Stripe Promotion Code", "campaign, recipient, and bound user IDs must be positive")
 	}
 	if coupon == nil || strings.TrimSpace(coupon.ID) == "" {
 		return nil, recallStripePermanent("create Stripe Promotion Code", "Stripe Coupon is required")
@@ -739,7 +739,9 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 	if customerID == "" {
 		customerID = strings.TrimSpace(user.StripeCustomer)
 	}
-	if customerID == "" {
+	if recipient.UserId == 0 {
+		customerID = ""
+	} else if customerID == "" {
 		return nil, recallStripePermanent("create Stripe Promotion Code", "Stripe Customer is required")
 	}
 	expiresAt := recipient.PromotionExpiresAt
@@ -751,6 +753,10 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 	}
 	if coupon.RedeemBy > 0 && expiresAt > coupon.RedeemBy {
 		return nil, recallStripePermanent("create Stripe Promotion Code", "persisted promotion expiration must not exceed Coupon redeem_by")
+	}
+	promotionUserID := 0
+	if recipient.UserId > 0 {
+		promotionUserID = user.Id
 	}
 	normalizedDiscount, err := normalizeRecallDiscount(discount)
 	if err != nil {
@@ -780,7 +786,7 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 		if attempt > 1 {
 			code = deriveRecallPromotionCode(baseCode, campaign.Id, recipient.Id, attempt)
 		}
-		params := buildRecallPromotionParams(ctx, campaign.Id, recipient.Id, user.Id, attempt, coupon.ID, customerID, code, expiresAt, normalizedDiscount)
+		params := buildRecallPromotionParams(ctx, campaign.Id, recipient.Id, promotionUserID, attempt, coupon.ID, customerID, code, expiresAt, normalizedDiscount)
 		created, createErr := recallStripeCreateWithRetry("create Stripe Promotion Code", func() (*stripe.PromotionCode, error) {
 			if guardErr := s.beforeExternalCall(ctx); guardErr != nil {
 				return nil, guardErr
@@ -804,15 +810,19 @@ func (s *RecallStripeService) CreateRecipientPromotion(ctx context.Context, camp
 func buildRecallPromotionParams(ctx context.Context, campaignID int64, recipientID int64, userID int, attempt int, couponID string, customerID string, code string, expiresAt int64, discount RecallDiscountConfig) *stripe.PromotionCodeParams {
 	params := &stripe.PromotionCodeParams{
 		Coupon:         stripe.String(couponID),
-		Customer:       stripe.String(customerID),
 		Code:           stripe.String(code),
 		ExpiresAt:      stripe.Int64(expiresAt),
 		MaxRedemptions: stripe.Int64(1),
 		Metadata: map[string]string{
 			"recall_campaign_id":  strconv.FormatInt(campaignID, 10),
 			"recall_recipient_id": strconv.FormatInt(recipientID, 10),
-			"flatkey_user_id":     strconv.Itoa(userID),
 		},
+	}
+	if customerID != "" {
+		params.Customer = stripe.String(customerID)
+	}
+	if userID > 0 {
+		params.Metadata["flatkey_user_id"] = strconv.Itoa(userID)
 	}
 	params.Context = ctx
 	if discount.MinimumAmount > 0 {
@@ -885,7 +895,11 @@ func validateExistingRecallPromotion(existing *stripe.PromotionCode, recipient m
 	if existing.Coupon == nil || existing.Coupon.ID != couponID {
 		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s coupon does not match", existing.ID)
 	}
-	if existing.Customer == nil || existing.Customer.ID != customerID {
+	if customerID == "" {
+		if existing.Customer != nil {
+			return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s customer does not match", existing.ID)
+		}
+	} else if existing.Customer == nil || existing.Customer.ID != customerID {
 		return recallStripePermanent("reconcile Stripe Promotion Code", "Stripe Promotion Code %s customer does not match", existing.ID)
 	}
 	if existing.ExpiresAt != expiresAt {
