@@ -27,12 +27,22 @@ import {
 import i18next from 'i18next'
 import { toast } from 'sonner'
 import { useAuthStore, type AuthUser } from '@/stores/auth-store'
-import { api, getSelf } from '@/lib/api'
-import { getAdsAttributionPayload } from '@/lib/analytics/attribution'
-import { trackAdsFunnelEvent, trackSignupConversion } from '@/lib/analytics/gtag'
+import {
+  getAdsAttributionPayload,
+  isPtPostSignupTopupExperiment,
+  parseAttributionPayload,
+} from '@/lib/analytics/attribution'
+import {
+  trackAdsFunnelEvent,
+  trackSignupConversion,
+} from '@/lib/analytics/gtag'
+import {
+  identifyMixpanelUser,
+  trackMixpanelEvent,
+} from '@/lib/analytics/mixpanel'
 import { trackPixelsSignup } from '@/lib/analytics/pixels'
-import { identifyMixpanelUser, trackMixpanelEvent } from '@/lib/analytics/mixpanel'
 import { trackYahooSignupConversion } from '@/lib/analytics/yahoo'
+import { api, getSelf } from '@/lib/api'
 import { OAuthCallbackScreen } from '@/features/auth/components/oauth-callback-screen'
 import { OAUTH_BIND_STORAGE_KEY } from '@/features/auth/constants'
 import {
@@ -173,7 +183,10 @@ function OAuthCallback() {
         return ''
       }
 
-      const trackOAuthResult = (result: 'success' | 'error', message?: string) => {
+      const trackOAuthResult = (
+        result: 'success' | 'error',
+        message?: string
+      ) => {
         const signupProvider = consumeSignupOAuthStart()
         trackAdsFunnelEvent(`flatkey_oauth_${result}`, {
           provider,
@@ -255,6 +268,9 @@ function OAuthCallback() {
 
       try {
         const adsAttribution = getAdsAttributionPayload()
+        const shouldShowPtTopupOnboarding = isPtPostSignupTopupExperiment(
+          parseAttributionPayload(adsAttribution)
+        )
         const config: OAuthRequestConfig = {
           params: {
             code: search.code,
@@ -300,12 +316,14 @@ function OAuthCallback() {
               void _error
             }
             trackOAuthResult('success')
-            // Brand-new standard OAuth registrations follow the same activation-first
-            // contract as password sign-up: land in Playground first-run once, before
-            // any card-bind/top-up prompt can compete for attention.
+            // Apply the same PT paid-search experiment to brand-new OAuth users.
             if (isNewUser) {
               trackYahooSignupConversion()
-              redirectAfterLogin('/playground?first=1')
+              redirectAfterLogin(
+                shouldShowPtTopupOnboarding
+                  ? '/onboarding'
+                  : '/playground?first=1'
+              )
               return
             }
             redirectAfterLogin()
