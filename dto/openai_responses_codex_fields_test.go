@@ -13,7 +13,7 @@ func TestOpenAIResponsesRequestPreservesCodexMetadataAndReasoning(t *testing.T) 
 		"model":"gpt-5.6-sol",
 		"client_metadata":{"client_version":"1.2.3"},
 		"prompt_cache_options":{"mode":"explicit","ttl":"30m"},
-		"reasoning":{"effort":"high","summary":"auto","mode":"extended","context":{"turn_id":"turn_1"}}
+		"reasoning":{"effort":"high","summary":"auto","mode":"standard","context":"all_turns"}
 	}`)
 
 	var request OpenAIResponsesRequest
@@ -24,8 +24,8 @@ func TestOpenAIResponsesRequestPreservesCodexMetadataAndReasoning(t *testing.T) 
 	require.Equal(t, "1.2.3", gjson.GetBytes(encoded, "client_metadata.client_version").String())
 	require.Equal(t, "explicit", gjson.GetBytes(encoded, "prompt_cache_options.mode").String())
 	require.Equal(t, "30m", gjson.GetBytes(encoded, "prompt_cache_options.ttl").String())
-	require.Equal(t, "extended", gjson.GetBytes(encoded, "reasoning.mode").String())
-	require.Equal(t, "turn_1", gjson.GetBytes(encoded, "reasoning.context.turn_id").String())
+	require.Equal(t, "standard", gjson.GetBytes(encoded, "reasoning.mode").String())
+	require.Equal(t, "all_turns", gjson.GetBytes(encoded, "reasoning.context").String())
 }
 
 func TestOpenAIResponsesCompactionRequestPreservesCodexFields(t *testing.T) {
@@ -41,7 +41,7 @@ func TestOpenAIResponsesCompactionRequestPreservesCodexFields(t *testing.T) {
 		"tools":[{"type":"function","name":"lookup"}],
 		"tool_choice":{"type":"function","name":"lookup"},
 		"parallel_tool_calls":false,
-		"reasoning":{"mode":"extended","context":{"turn_id":"turn_1"}},
+		"reasoning":{"mode":"standard","context":"all_turns"},
 		"service_tier":"priority",
 		"prompt_cache_key":"cache-key",
 		"prompt_cache_options":{"mode":"explicit","ttl":"30m"},
@@ -66,7 +66,8 @@ func TestOpenAIResponsesCompactionRequestPreservesCodexFields(t *testing.T) {
 	}
 	require.Equal(t, "conv_1", gjson.GetBytes(encoded, "conversation.id").String())
 	require.Equal(t, "compaction", gjson.GetBytes(encoded, "context_management.type").String())
-	require.Equal(t, "extended", gjson.GetBytes(encoded, "reasoning.mode").String())
+	require.Equal(t, "standard", gjson.GetBytes(encoded, "reasoning.mode").String())
+	require.Equal(t, "all_turns", gjson.GetBytes(encoded, "reasoning.context").String())
 	require.Equal(t, "priority", gjson.GetBytes(encoded, "service_tier").String())
 	require.Equal(t, "cache-key", gjson.GetBytes(encoded, "prompt_cache_key").String())
 	require.Equal(t, "explicit", gjson.GetBytes(encoded, "prompt_cache_options.mode").String())
