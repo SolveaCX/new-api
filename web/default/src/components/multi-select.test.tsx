@@ -1,8 +1,17 @@
 import * as React from 'react'
-import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import * as comboboxUi from '@/components/ui/combobox'
 
 type ComboboxRootProps = {
   children: React.ReactNode
@@ -17,58 +26,71 @@ let latestComboboxProps: ComboboxRootProps | undefined
 let latestInputChange: ((value: string) => void) | undefined
 let selectOption: ((value: string) => void) | undefined
 
-mock.module('@/components/ui/combobox', () => ({
-  Combobox: (props: ComboboxRootProps) => {
-    latestComboboxProps = props
-    return <div>{props.children}</div>
-  },
-  ComboboxChip: ({ children }: { children: React.ReactNode }) => (
-    <span>{children}</span>
-  ),
-  ComboboxChips: React.forwardRef<
-    HTMLDivElement,
-    { children: React.ReactNode }
-  >(({ children }, _ref) => <div>{children}</div>),
-  ComboboxChipsInput: (props: { disabled?: boolean; id?: string }) => {
-    latestInputChange = (value: string) =>
-      latestComboboxProps?.onInputValueChange(value)
-    return <input id={props.id} disabled={props.disabled} />
-  },
-  ComboboxCollection: ({
-    children,
-  }: {
-    children: (value: string) => React.ReactNode
-  }) => <>{latestComboboxProps?.items.map(children)}</>,
-  ComboboxContent: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ComboboxEmpty: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ComboboxItem: ({
-    children,
-    value,
-  }: {
-    children: React.ReactNode
-    value: string
-  }) => {
-    selectOption = (nextValue: string) =>
-      latestComboboxProps?.onValueChange([
-        ...(latestComboboxProps.value ?? []),
-        nextValue,
-      ])
-    return <button value={value}>{children}</button>
-  },
-  ComboboxList: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ComboboxValue: ({
-    children,
-  }: {
-    children: (value: string[]) => React.ReactNode
-  }) => <>{children(latestComboboxProps?.value ?? [])}</>,
-  useComboboxAnchor: () => React.createRef<HTMLDivElement>(),
-}))
+spyOn(comboboxUi, 'Combobox').mockImplementation(((
+  props: ComboboxRootProps
+) => {
+  latestComboboxProps = props
+  return <div>{props.children}</div>
+}) as never)
+spyOn(comboboxUi, 'ComboboxChip').mockImplementation((({
+  children,
+}: {
+  children: React.ReactNode
+}) => <span>{children}</span>) as never)
+spyOn(comboboxUi, 'ComboboxChips').mockImplementation((({
+  children,
+}: {
+  children: React.ReactNode
+}) => <div>{children}</div>) as never)
+spyOn(comboboxUi, 'ComboboxChipsInput').mockImplementation(((props: {
+  disabled?: boolean
+  id?: string
+}) => {
+  latestInputChange = (value: string) =>
+    latestComboboxProps?.onInputValueChange(value)
+  return <input id={props.id} disabled={props.disabled} />
+}) as never)
+spyOn(comboboxUi, 'ComboboxCollection').mockImplementation((({
+  children,
+}: {
+  children: (value: string) => React.ReactNode
+}) => <>{latestComboboxProps?.items.map(children)}</>) as never)
+spyOn(comboboxUi, 'ComboboxContent').mockImplementation((({
+  children,
+}: {
+  children: React.ReactNode
+}) => <div>{children}</div>) as never)
+spyOn(comboboxUi, 'ComboboxEmpty').mockImplementation((({
+  children,
+}: {
+  children: React.ReactNode
+}) => <div>{children}</div>) as never)
+spyOn(comboboxUi, 'ComboboxItem').mockImplementation((({
+  children,
+  value,
+}: {
+  children: React.ReactNode
+  value: string
+}) => {
+  selectOption = (nextValue: string) =>
+    latestComboboxProps?.onValueChange([
+      ...(latestComboboxProps.value ?? []),
+      nextValue,
+    ])
+  return <button value={value}>{children}</button>
+}) as never)
+spyOn(comboboxUi, 'ComboboxList').mockImplementation((({
+  children,
+}: {
+  children: React.ReactNode
+}) => <div>{children}</div>) as never)
+spyOn(comboboxUi, 'ComboboxValue').mockImplementation((({
+  children,
+}: {
+  children: (value: string[]) => React.ReactNode
+}) => <>{children(latestComboboxProps?.value ?? [])}</>) as never)
+spyOn(comboboxUi, 'useComboboxAnchor').mockImplementation((() =>
+  React.createRef<HTMLDivElement>()) as never)
 
 const { MultiSelect } = await import('./multi-select')
 const testI18n = createInstance()
@@ -86,6 +108,18 @@ beforeEach(() => {
   latestComboboxProps = undefined
   latestInputChange = undefined
   selectOption = undefined
+})
+
+afterAll(() => {
+  for (const exportedValue of Object.values(comboboxUi)) {
+    if (
+      typeof exportedValue === 'function' &&
+      'mockRestore' in exportedValue &&
+      typeof exportedValue.mockRestore === 'function'
+    ) {
+      exportedValue.mockRestore()
+    }
+  }
 })
 
 function renderMultiSelect(props: React.ComponentProps<typeof MultiSelect>) {
