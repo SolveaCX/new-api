@@ -195,7 +195,7 @@ func TestListRecallCandidateFactsSpecifiedUnion(t *testing.T) {
 		Limit:            2,
 	})
 	require.NoError(t, err)
-	require.Equal(t, []int{idOnly.Id, emailOnly.Id}, recallRepositoryUserIDs(pageOne))
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id}, recallRepositoryUserIDs(pageOne))
 
 	pageTwo, err := ListRecallCandidateFacts(RecallCandidateQuery{
 		Template:         "specified_users",
@@ -277,6 +277,48 @@ func TestListRecallCandidateFactsSpecifiedUnionIncludesUnmatchedEmails(t *testin
 	}
 	require.Equal(t, 1, disabledRealFacts)
 	require.Zero(t, disabledEmailOnlyFallbacks)
+}
+
+func TestListRecallCandidateFactsSpecifiedUnionIgnoresSmallLimitForSafetyMatches(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	first := createRecallRepositoryCandidateUser(t, "specified_small_limit_first", 100, 4)
+	second := createRecallRepositoryCandidateUser(t, "specified_small_limit_second", 100, 4)
+	disabled := createRecallRepositoryCandidateUser(t, "specified_small_limit_disabled", 100, 4)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", disabled.Id).Update("status", common.UserStatusDisabled).Error)
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template: "specified_users",
+		SpecifiedEmails: []string{
+			strings.ToUpper(first.Email),
+			strings.ToUpper(second.Email),
+			strings.ToUpper(disabled.Email),
+			"missing-small-limit@example.com",
+		},
+		Limit: 2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{first.Id, second.Id, disabled.Id, 0}, recallRepositoryUserIDs(facts))
+
+	disabledRealFacts := 0
+	disabledEmailOnlyFallbacks := 0
+	for _, fact := range facts {
+		if fact.Email != strings.ToLower(disabled.Email) {
+			continue
+		}
+		if fact.EmailOnly {
+			disabledEmailOnlyFallbacks++
+			continue
+		}
+		if fact.User.Id == disabled.Id {
+			disabledRealFacts++
+		}
+	}
+	require.Equal(t, 1, disabledRealFacts)
+	require.Zero(t, disabledEmailOnlyFallbacks)
+	require.Equal(t, "missing-small-limit@example.com", facts[len(facts)-1].Email)
+	require.True(t, facts[len(facts)-1].EmailOnly)
 }
 
 func TestRecallRepositoryMigrationCreatesMainDBTablesAndUniqueIndexes(t *testing.T) {
