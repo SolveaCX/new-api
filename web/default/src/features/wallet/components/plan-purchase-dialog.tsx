@@ -21,6 +21,14 @@ import { useTranslation } from 'react-i18next'
 import { formatTimestampToDate } from '@/lib/format'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import type {
   FlexiblePaymentChoice,
@@ -52,6 +60,10 @@ type PlanPurchaseDialogProps = {
   onOpenChange: (open: boolean) => void
   onConfirm: (choice: FlexiblePaymentChoice, months: number) => void
   onQuoteRequest?: (choice: FlexiblePaymentChoice, months: number) => void
+}
+
+type PlanPurchaseDialogContentProps = Omit<PlanPurchaseDialogProps, 'open'> & {
+  plan: PlanRecord
 }
 
 const PAYMENT_CHOICES: FlexiblePaymentChoice[] = [
@@ -132,7 +144,7 @@ function getMonthLabel(
   return t('{{count}} months', { count })
 }
 
-export function PlanPurchaseDialog(props: PlanPurchaseDialogProps) {
+export function PlanPurchaseDialogContent(props: PlanPurchaseDialogContentProps) {
   const { t } = useTranslation()
   const [choice, setChoice] = useState<FlexiblePaymentChoice>(
     props.selectedPaymentChoice ?? 'stripe_recurring'
@@ -167,27 +179,8 @@ export function PlanPurchaseDialog(props: PlanPurchaseDialogProps) {
     ? '—'
     : formatPlanPrice(totalPrice, selectedQuote?.currency)
 
-  if (!props.open || !props.plan) return null
-
   return (
-    <div
-      role='dialog'
-      aria-modal='true'
-      aria-labelledby='wallet-plan-purchase-title'
-      className='bg-popover text-popover-foreground ring-foreground/10 grid w-full gap-4 rounded-xl p-4 text-sm ring-1 sm:max-w-xl'
-    >
-      <div className='flex flex-col gap-2'>
-        <h2
-          id='wallet-plan-purchase-title'
-          className='text-base leading-none font-medium'
-        >
-          {t('Purchase plan')}
-        </h2>
-        <p className='text-muted-foreground text-sm'>
-          {t('Review the payment choice and term before continuing.')}
-        </p>
-      </div>
-
+    <>
       <div className='space-y-4'>
         <div className='grid gap-2' role='radiogroup'>
           {PAYMENT_CHOICES.map((paymentChoice) => {
@@ -311,7 +304,7 @@ export function PlanPurchaseDialog(props: PlanPurchaseDialogProps) {
         ) : null}
       </div>
 
-      <div className='bg-muted/50 -mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t p-4 sm:flex-row sm:justify-end'>
+      <DialogFooter>
         <Button
           className='min-h-11'
           disabled={
@@ -331,7 +324,27 @@ export function PlanPurchaseDialog(props: PlanPurchaseDialogProps) {
         >
           {t('Close')}
         </Button>
-      </div>
-    </div>
+      </DialogFooter>
+    </>
+  )
+}
+
+export function PlanPurchaseDialog(props: PlanPurchaseDialogProps) {
+  const { t } = useTranslation()
+
+  if (!props.plan) return null
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className='sm:max-w-xl' showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{t('Purchase plan')}</DialogTitle>
+          <DialogDescription>
+            {t('Review the payment choice and term before continuing.')}
+          </DialogDescription>
+        </DialogHeader>
+        <PlanPurchaseDialogContent {...props} plan={props.plan} />
+      </DialogContent>
+    </Dialog>
   )
 }

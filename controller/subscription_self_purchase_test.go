@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func insertSubscriptionSelfPurchasePlan(t *testing.T, id int) model.SubscriptionPlan {
@@ -234,6 +236,97 @@ func TestSubscriptionSelfPurchaseCreatesOneTimeStripeCheckoutAndReplaysURL(t *te
 	require.Equal(t, float64(799.50), topUps[0].Money)
 	require.Equal(t, common.TopUpStatusPending, topUps[0].Status)
 	require.Equal(t, "cs_test_self_purchase", topUps[0].GatewayTradeNo)
+}
+
+func TestSubscriptionSelfPurchaseReplacesPendingOneTimeStripeCheckoutForNewRequest(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.TopUp{}))
+	originalSecret := common.CryptoSecret
+	common.CryptoSecret = "controller-subscription-replace-secret"
+	t.Cleanup(func() { common.CryptoSecret = originalSecret })
+	insertSubscriptionControllerUser(t, 9109)
+	firstPlan := insertSubscriptionSelfPurchasePlan(t, 9209)
+	secondPlan := insertSubscriptionSelfPurchasePlan(t, 9211)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", secondPlan.Id).Updates(map[string]interface{}{
+		"title":        "Replacement Plan",
+		"price_amount": 19.99,
+	}).Error)
+	model.InvalidateSubscriptionPlanCache(firstPlan.Id)
+	model.InvalidateSubscriptionPlanCache(secondPlan.Id)
+	originalCreator := stripeOneTimeCheckoutSessionCreator
+	var createdTradeNos []string
+	t.Cleanup(func() { stripeOneTimeCheckoutSessionCreator = originalCreator })
+	var expiredSessionIDs []string
+	restoreStripeAccessors := service.ReplaceStripeCheckoutSessionAccessorsForTest(
+		func(_ context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+			return &stripe.CheckoutSession{ID: sessionID, Status: stripe.CheckoutSessionStatusOpen}, nil
+		},
+		func(_ context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+			expiredSessionIDs = append(expiredSessionIDs, sessionID)
+			return &stripe.CheckoutSession{ID: sessionID, Status: stripe.CheckoutSessionStatusExpired}, nil
+		},
+	)
+	t.Cleanup(restoreStripeAccessors)
+	stripeOneTimeCheckoutSessionCreator = func(_ context.Context, order *model.SubscriptionOrder, _ *model.User) (*oneTimeStripeCheckoutSession, error) {
+		createdTradeNos = append(createdTradeNos, order.TradeNo)
+		return &oneTimeStripeCheckoutSession{
+			ID:  "cs_replace_" + strconv.Itoa(len(createdTradeNos)),
+			URL: "https://checkout.example/replace/" + strconv.Itoa(len(createdTradeNos)),
+		}, nil
+	}
+
+	firstQuote := performSubscriptionSelfPurchaseRequest(
+		`{"plan_id":9209,"payment_method":"alipay","months":1,"request_id":"replace-first"}`,
+		QuoteSubscriptionSelfPurchase,
+		9109,
+	)
+	var firstQuoteEnvelope struct {
+		Data struct {
+			PaymentQuotes map[string]SubscriptionSelfPaymentQuote `json:"payment_quotes"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(firstQuote.Body.Bytes(), &firstQuoteEnvelope))
+	firstBody := `{"plan_id":9209,"payment_method":"alipay","months":1,"request_id":"replace-first","quote_id":"` + firstQuoteEnvelope.Data.PaymentQuotes["alipay"].QuoteID + `"}`
+	firstPurchase := performSubscriptionSelfPurchaseRequest(firstBody, PurchaseSubscriptionSelf, 9109)
+	require.Equal(t, http.StatusOK, firstPurchase.Code)
+	require.Contains(t, firstPurchase.Body.String(), "https://checkout.example/replace/1")
+
+	secondQuote := performSubscriptionSelfPurchaseRequest(
+		`{"plan_id":9211,"payment_method":"alipay","months":1,"request_id":"replace-second"}`,
+		QuoteSubscriptionSelfPurchase,
+		9109,
+	)
+	var secondQuoteEnvelope struct {
+		Data struct {
+			PaymentQuotes map[string]SubscriptionSelfPaymentQuote `json:"payment_quotes"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(secondQuote.Body.Bytes(), &secondQuoteEnvelope))
+	secondBody := `{"plan_id":9211,"payment_method":"alipay","months":1,"request_id":"replace-second","quote_id":"` + secondQuoteEnvelope.Data.PaymentQuotes["alipay"].QuoteID + `"}`
+	secondPurchase := performSubscriptionSelfPurchaseRequest(secondBody, PurchaseSubscriptionSelf, 9109)
+
+	require.Equal(t, http.StatusOK, secondPurchase.Code)
+	require.Contains(t, secondPurchase.Body.String(), "https://checkout.example/replace/2")
+	require.Len(t, createdTradeNos, 2)
+	require.Equal(t, []string{"cs_replace_1"}, expiredSessionIDs)
+
+	var firstIntent model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.Where("user_id = ? AND request_id = ?", 9109, "replace-first").First(&firstIntent).Error)
+	var secondIntent model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.Where("user_id = ? AND request_id = ?", 9109, "replace-second").First(&secondIntent).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusSuperseded, firstIntent.Status)
+	require.Equal(t, secondIntent.Id, firstIntent.SupersededById)
+	require.Equal(t, model.SubscriptionChangeIntentStatusAwaitingPayment, secondIntent.Status)
+
+	var oldOrder model.SubscriptionOrder
+	require.NoError(t, model.DB.Where("trade_no = ?", createdTradeNos[0]).First(&oldOrder).Error)
+	require.Equal(t, common.TopUpStatusExpired, oldOrder.Status)
+	require.Equal(t, "cs_replace_1", oldOrder.ProviderSessionId)
+	var newOrder model.SubscriptionOrder
+	require.NoError(t, model.DB.Where("trade_no = ?", createdTradeNos[1]).First(&newOrder).Error)
+	require.Equal(t, common.TopUpStatusPending, newOrder.Status)
+	require.Equal(t, "cs_replace_2", newOrder.ProviderSessionId)
 }
 
 func TestSyncSubscriptionSelfRecurringCheckoutHistoryCreatesPendingTopUp(t *testing.T) {

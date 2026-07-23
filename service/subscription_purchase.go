@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -156,6 +157,14 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 		}, nil
 	}
 
+	var supersededCheckouts []supersededStripeCheckout
+	if cmd.PaymentChoice == SubscriptionPaymentChoiceAlipay || cmd.PaymentChoice == SubscriptionPaymentChoicePix || cmd.PaymentChoice == SubscriptionPaymentChoiceUPI || cmd.PaymentChoice == SubscriptionPaymentChoiceBalance {
+		var err error
+		supersededCheckouts, err = supersedeReplaceablePendingStripeCheckouts(context.Background(), cmd.UserID, cmd.RequestID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var result *PurchaseSubscriptionResult
 	var effects *balanceOnePeriodSideEffects
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
@@ -213,6 +222,21 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 		if err := tx.Create(intent).Error; err != nil {
 			return err
 		}
+		if len(supersededCheckouts) > 0 {
+			var ids []int64
+			for _, superseded := range supersededCheckouts {
+				if superseded.IntentID > 0 {
+					ids = append(ids, superseded.IntentID)
+				}
+			}
+			if len(ids) > 0 {
+				if err := tx.Model(&model.SubscriptionChangeIntent{}).
+					Where("id IN ? AND status = ?", ids, model.SubscriptionChangeIntentStatusSuperseded).
+					Update("superseded_by_id", intent.Id).Error; err != nil {
+					return err
+				}
+			}
+		}
 		if err := tx.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).
 			Update("latest_change_intent_id", intent.Id).Error; err != nil {
 			return err
@@ -254,6 +278,13 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, superseded := range supersededCheckouts {
+		if strings.TrimSpace(superseded.TradeNo) != "" {
+			if err := model.SyncSubscriptionOrderTopUpHistory(superseded.TradeNo); err != nil {
+				return nil, err
+			}
+		}
 	}
 	applyBalanceOnePeriodSideEffects(effects)
 	return result, nil
