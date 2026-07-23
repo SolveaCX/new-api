@@ -45,7 +45,7 @@ describe('top navigation links', () => {
         ['Home', '/'],
         ['Blog', '/blog'],
         ['Models', '/models'],
-        ['Docs', '/docs'],
+        ['Docs', 'https://docs.flatkey.ai/'],
         ['Playground', '/playground'],
         ['Rankings', '/models#leaderboard'],
         ['Pricing', '/pricing'],
