@@ -129,6 +129,7 @@ func InitOptionMap() {
 	common.OptionMap["StripeAutoChargeEnabled"] = strconv.FormatBool(setting.StripeAutoChargeEnabled)
 	common.OptionMap["StripeAutoChargeThreshold"] = strconv.Itoa(setting.StripeAutoChargeThreshold)
 	common.OptionMap["StripeAutoChargeAmount"] = strconv.Itoa(setting.StripeAutoChargeAmount)
+	common.OptionMap["StripeAutoTopUpDailyMaxCharges"] = strconv.Itoa(setting.StripeAutoTopUpDailyMaxCharges)
 	common.OptionMap["StripeNewUserBonusAmount"] = strconv.Itoa(setting.StripeNewUserBonusAmount)
 	common.OptionMap["CreemApiKey"] = setting.CreemApiKey
 	common.OptionMap["CreemProducts"] = setting.CreemProducts
@@ -770,6 +771,8 @@ func applyOptionMapValue(key string, value string) (err error) {
 		setting.StripeAutoChargeThreshold, _ = strconv.Atoi(value)
 	case "StripeAutoChargeAmount":
 		setting.StripeAutoChargeAmount, _ = strconv.Atoi(value)
+	case "StripeAutoTopUpDailyMaxCharges":
+		setting.StripeAutoTopUpDailyMaxCharges, _ = strconv.Atoi(value)
 	case "StripeNewUserBonusAmount":
 		setting.StripeNewUserBonusAmount, _ = strconv.Atoi(value)
 	case "CreemApiKey":

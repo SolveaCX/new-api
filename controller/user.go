@@ -1538,6 +1538,11 @@ func UpdateUserSetting(c *gin.Context) {
 		AcceptUnsetRatioModel:            req.AcceptUnsetModelRatioModel,
 		RecordIpLog:                      req.RecordIpLog,
 		Language:                         existingSettings.Language,
+		// Auto top-up is managed by its own endpoint (stripe/auto_topup); a notify-settings
+		// save must not silently wipe it.
+		AutoTopUpEnabled:      existingSettings.AutoTopUpEnabled,
+		AutoTopUpThresholdUSD: existingSettings.AutoTopUpThresholdUSD,
+		AutoTopUpAmountUSD:    existingSettings.AutoTopUpAmountUSD,
 	}
 
 	// 如果是webhook类型,添加webhook相关设置

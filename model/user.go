@@ -983,6 +983,28 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 	return userBase.GetSetting(), nil
 }
 
+// SaveUserSetting persists only the user's setting JSON column and refreshes the
+// setting cache field. Unlike User.Update (whole-struct Updates), it cannot revert
+// concurrently changing columns such as quota, so it is safe to call from paths that
+// race with billing (e.g. auto top-up disabling a user's opt-in after a card decline).
+func SaveUserSetting(userId int, setting dto.UserSetting) error {
+	if userId <= 0 {
+		return errors.New("invalid user id")
+	}
+	settingBytes, err := common.Marshal(setting)
+	if err != nil {
+		return err
+	}
+	settingJSON := string(settingBytes)
+	if err := DB.Model(&User{}).Where("id = ?", userId).Update("setting", settingJSON).Error; err != nil {
+		return err
+	}
+	if cacheErr := updateUserSettingCache(userId, settingJSON); cacheErr != nil {
+		common.SysLog("failed to update user setting cache: " + cacheErr.Error())
+	}
+	return nil
+}
+
 func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")

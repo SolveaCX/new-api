@@ -18,6 +18,9 @@ type UserSetting struct {
 	SidebarModules                   string  `json:"sidebar_modules,omitempty"`                      // SidebarModules 左侧边栏模块配置
 	BillingPreference                string  `json:"billing_preference,omitempty"`                   // BillingPreference 扣费策略（订阅/钱包）
 	Language                         string  `json:"language,omitempty"`                             // Language 用户语言偏好 (zh, en, es, fr, pt, ru, ja, vi)
+	AutoTopUpEnabled                 bool    `json:"auto_topup_enabled,omitempty"`                   // AutoTopUpEnabled 低余额自动充值开关（需已绑卡，默认关闭）
+	AutoTopUpThresholdUSD            int     `json:"auto_topup_threshold_usd,omitempty"`             // AutoTopUpThresholdUSD 触发自动充值的余额阈值（美元）
+	AutoTopUpAmountUSD               int     `json:"auto_topup_amount_usd,omitempty"`                // AutoTopUpAmountUSD 每次自动充值的金额（美元）
 }
 
 var supportedUserLanguagePreferences = map[string]struct{}{
