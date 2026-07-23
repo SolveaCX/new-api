@@ -82,7 +82,7 @@ export async function HomePage(props: Props) {
               <h1 className="landing-animate-fade-up text-[clamp(2.25rem,4.5vw,3.25rem)] leading-[1.15] font-bold tracking-tight" style={{ animationDelay: "60ms" }}>
                 {home.hero.titleLine1}
                 <br />
-                <span className="flatkey-gradient-text bg-gradient-to-r from-violet-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent dark:from-violet-200 dark:via-fuchsia-300 dark:to-indigo-300">
+                <span className="bg-gradient-to-r from-violet-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent dark:from-violet-200 dark:via-fuchsia-300 dark:to-indigo-300">
                   {home.hero.titleLine2}
                 </span>
               </h1>
@@ -182,7 +182,7 @@ export async function HomePage(props: Props) {
             <h2 className="text-2xl leading-tight font-bold tracking-tight md:text-4xl">
               {copy.home.cta.titleLine1}
               <br />
-              <span className="flatkey-gradient-text bg-gradient-to-r from-violet-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent dark:from-violet-200 dark:via-fuchsia-300 dark:to-indigo-300">{copy.home.cta.titleLine2}</span>
+              <span className="bg-gradient-to-r from-violet-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent dark:from-violet-200 dark:via-fuchsia-300 dark:to-indigo-300">{copy.home.cta.titleLine2}</span>
             </h2>
             <p className="text-muted-foreground/80 mx-auto mt-5 max-w-md text-sm leading-relaxed md:text-base">{ctaDescription}</p>
             <div className="mt-8 flex items-center justify-center gap-3">
