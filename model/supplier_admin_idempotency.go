@@ -30,25 +30,33 @@ const (
 
 	supplierAdminCommandPayloadVersion  = 1
 	maxSupplierAdminIdempotencyKeyBytes = 128
+	maxSupplierAdminCommandResultBytes  = 8 * 1024
+
+	legacySupplierAdminCommandScopeKeyIndex      = "ux_supplier_admin_command_scope_key"
+	legacySupplierAdminCommandActorScopeKeyIndex = "idx_supplier_admin_command_actor_scope_key"
+	supplierAdminCommandActorScopeDigestIndex    = "ux_supplier_admin_command_actor_scope_digest"
 )
 
 var (
-	ErrSupplierAdminIdempotencyKeyRequired = errors.New("supplier admin idempotency key is required")
-	ErrSupplierAdminIdempotencyConflict    = errors.New("supplier admin idempotency key payload conflict")
-	ErrSupplierAdminCommandIncomplete      = errors.New("supplier admin idempotency command is incomplete")
+	ErrSupplierAdminIdempotencyKeyRequired    = errors.New("supplier admin idempotency key is required")
+	ErrSupplierAdminIdempotencyConflict       = errors.New("supplier admin idempotency key payload conflict")
+	ErrSupplierAdminCommandIncomplete         = errors.New("supplier admin idempotency command is incomplete")
+	ErrSupplierAdminCommandLedgerNotFinalized = errors.New("supplier admin command ledger migration is not finalized")
 )
 
 type SupplierAdminCommand struct {
-	Id             int    `json:"id"`
-	ActorId        int    `json:"-" gorm:"not null;default:0;index:idx_supplier_admin_command_actor_scope_key,priority:1"`
-	Scope          string `json:"scope" gorm:"type:varchar(64);not null;uniqueIndex:ux_supplier_admin_command_scope_key,priority:1;index:idx_supplier_admin_command_actor_scope_key,priority:2"`
-	IdempotencyKey string `json:"idempotency_key" gorm:"type:varchar(128);not null;uniqueIndex:ux_supplier_admin_command_scope_key,priority:2;index:idx_supplier_admin_command_actor_scope_key,priority:3"`
-	PayloadVersion int    `json:"payload_version" gorm:"not null;default:1"`
-	PayloadDigest  string `json:"payload_digest" gorm:"type:varchar(64);not null"`
-	ResourceType   string `json:"resource_type" gorm:"type:varchar(32);not null;index:idx_supplier_admin_command_resource,priority:1"`
-	ResourceId     int    `json:"resource_id" gorm:"not null;default:0;index:idx_supplier_admin_command_resource,priority:2"`
-	ClaimToken     string `json:"-" gorm:"type:varchar(32);not null"`
-	CreatedAt      int64  `json:"created_at" gorm:"autoCreateTime"`
+	Id                   int    `json:"id"`
+	ActorId              int    `json:"-" gorm:"not null;default:0"`
+	Scope                string `json:"scope" gorm:"type:varchar(64);not null"`
+	IdempotencyKey       string `json:"idempotency_key" gorm:"type:varchar(128);not null"`
+	IdempotencyKeyDigest []byte `json:"-" gorm:"size:32"`
+	PayloadVersion       int    `json:"payload_version" gorm:"not null;default:1"`
+	PayloadDigest        string `json:"payload_digest" gorm:"type:varchar(64);not null"`
+	ResourceType         string `json:"resource_type" gorm:"type:varchar(32);not null;index:idx_supplier_admin_command_resource,priority:1"`
+	ResourceId           int    `json:"resource_id" gorm:"not null;default:0;index:idx_supplier_admin_command_resource,priority:2"`
+	ResultJson           string `json:"-" gorm:"type:text"`
+	ClaimToken           string `json:"-" gorm:"type:varchar(32);not null"`
+	CreatedAt            int64  `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (c *SupplierAdminCommand) BeforeCreate(_ *gorm.DB) error {
@@ -56,7 +64,11 @@ func (c *SupplierAdminCommand) BeforeCreate(_ *gorm.DB) error {
 	c.IdempotencyKey = strings.TrimSpace(c.IdempotencyKey)
 	c.PayloadDigest = strings.TrimSpace(c.PayloadDigest)
 	c.ResourceType = strings.TrimSpace(c.ResourceType)
-	if c.Scope == "" || c.IdempotencyKey == "" || len(c.IdempotencyKey) > maxSupplierAdminIdempotencyKeyBytes || c.PayloadVersion != supplierAdminCommandPayloadVersion || len(c.PayloadDigest) != sha256.Size*2 || c.ResourceType == "" || len(c.ClaimToken) != 32 {
+	keyDigest := supplierAdminIdempotencyKeyDigest(c.IdempotencyKey)
+	if len(c.IdempotencyKeyDigest) == 0 {
+		c.IdempotencyKeyDigest = keyDigest
+	}
+	if c.ActorId < 0 || c.Scope == "" || len(c.Scope) > 64 || c.IdempotencyKey == "" || len(c.IdempotencyKey) > maxSupplierAdminIdempotencyKeyBytes || !equalDigest(c.IdempotencyKeyDigest, keyDigest) || c.PayloadVersion != supplierAdminCommandPayloadVersion || len(c.PayloadDigest) != sha256.Size*2 || c.ResourceType == "" || len(c.ResourceType) > 32 || len(c.ClaimToken) != 32 {
 		return ErrSupplierAdminIdempotencyKeyRequired
 	}
 	return nil
@@ -70,48 +82,76 @@ func (c *SupplierAdminCommand) BeforeDelete(_ *gorm.DB) error {
 	return ErrSupplierAppendOnly
 }
 
-type supplierAdminCommandClaim struct {
+type SupplierAdminCommandClaim struct {
 	Command  SupplierAdminCommand
 	Claimed  bool
 	Replayed bool
 }
 
-func claimSupplierAdminCommand(tx *gorm.DB, actorId int, scope string, idempotencyKey string, payloadDigest string, resourceType string) (*supplierAdminCommandClaim, error) {
+func (c *SupplierAdminCommandClaim) DecodeResult(out any) error {
+	if c == nil || c.Command.ResourceId <= 0 || c.Command.ResultJson == "" || out == nil {
+		return ErrSupplierAdminCommandIncomplete
+	}
+	if err := common.UnmarshalJsonStr(c.Command.ResultJson, out); err != nil {
+		return fmt.Errorf("decode supplier admin command result: %w", err)
+	}
+	return nil
+}
+
+// ClaimSupplierAdminCommandTx claims an actor-local command inside the caller's
+// transaction. Exact replay returns the stored command and conflicting payloads
+// fail without exposing commands owned by another actor.
+func ClaimSupplierAdminCommandTx(tx *gorm.DB, actorId int, scope string, idempotencyKey string, payload any, resourceType string) (*SupplierAdminCommandClaim, error) {
+	payloadDigest, err := supplierAdminPayloadDigest(payload)
+	if err != nil {
+		return nil, err
+	}
+	return claimSupplierAdminCommand(tx, actorId, scope, idempotencyKey, payloadDigest, resourceType)
+}
+
+func claimSupplierAdminCommand(tx *gorm.DB, actorId int, scope string, idempotencyKey string, payloadDigest string, resourceType string) (*SupplierAdminCommandClaim, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("claim supplier admin command: %w", ErrDatabase)
+	}
+	scope = strings.TrimSpace(scope)
 	key := strings.TrimSpace(idempotencyKey)
-	if actorId < 0 || key == "" || len(key) > maxSupplierAdminIdempotencyKeyBytes {
+	resourceType = strings.TrimSpace(resourceType)
+	if actorId < 0 || scope == "" || len(scope) > 64 || key == "" || len(key) > maxSupplierAdminIdempotencyKeyBytes || resourceType == "" || len(resourceType) > 32 || len(payloadDigest) != sha256.Size*2 {
 		return nil, ErrSupplierAdminIdempotencyKeyRequired
 	}
+	keyDigest := supplierAdminIdempotencyKeyDigest(key)
 	claimToken, err := newSupplierAdminClaimToken()
 	if err != nil {
 		return nil, err
 	}
 	candidate := SupplierAdminCommand{
-		ActorId:        actorId,
-		Scope:          scope,
-		IdempotencyKey: key,
-		PayloadVersion: supplierAdminCommandPayloadVersion,
-		PayloadDigest:  payloadDigest,
-		ResourceType:   resourceType,
-		ClaimToken:     claimToken,
+		ActorId:              actorId,
+		Scope:                scope,
+		IdempotencyKey:       key,
+		IdempotencyKeyDigest: keyDigest,
+		PayloadVersion:       supplierAdminCommandPayloadVersion,
+		PayloadDigest:        payloadDigest,
+		ResourceType:         resourceType,
+		ClaimToken:           claimToken,
 	}
 	if err := tx.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "scope"}, {Name: "idempotency_key"}},
+		Columns:   []clause.Column{{Name: "actor_id"}, {Name: "scope"}, {Name: "idempotency_key_digest"}},
 		DoNothing: true,
 	}).Create(&candidate).Error; err != nil {
 		return nil, err
 	}
 	var persisted SupplierAdminCommand
-	if err := tx.Where("scope = ? AND idempotency_key = ?", scope, key).First(&persisted).Error; err != nil {
+	if err := tx.Where("actor_id = ? AND scope = ? AND idempotency_key_digest = ?", actorId, scope, keyDigest).First(&persisted).Error; err != nil {
 		return nil, err
 	}
-	if persisted.ActorId != actorId || persisted.PayloadVersion != supplierAdminCommandPayloadVersion || persisted.PayloadDigest != payloadDigest || persisted.ResourceType != resourceType {
+	if persisted.IdempotencyKey != key || persisted.PayloadVersion != supplierAdminCommandPayloadVersion || persisted.PayloadDigest != payloadDigest || persisted.ResourceType != resourceType {
 		return nil, ErrSupplierAdminIdempotencyConflict
 	}
 	claimed := persisted.ClaimToken == claimToken
 	if !claimed && persisted.ResourceId <= 0 {
 		return nil, ErrSupplierAdminCommandIncomplete
 	}
-	return &supplierAdminCommandClaim{Command: persisted, Claimed: claimed, Replayed: !claimed}, nil
+	return &SupplierAdminCommandClaim{Command: persisted, Claimed: claimed, Replayed: !claimed}, nil
 }
 
 type SupplierAdminCommandResult struct {
@@ -187,13 +227,30 @@ func GetSupplierAdminCommandResult(actorId int, scope string, idempotencyKey str
 	}, nil
 }
 
-func completeSupplierAdminCommand(tx *gorm.DB, claim *supplierAdminCommandClaim, resourceId int) error {
+// CompleteSupplierAdminCommandTx stores the authoritative replay result in the
+// same transaction as the domain mutation. A transaction rollback removes both
+// the claim and completion, so failed commands never leave partial ledger rows.
+func CompleteSupplierAdminCommandTx(tx *gorm.DB, claim *SupplierAdminCommandClaim, resourceId int, commandResult any) error {
 	if claim == nil || !claim.Claimed || claim.Command.Id <= 0 || resourceId <= 0 {
 		return ErrSupplierAdminCommandIncomplete
 	}
+	if tx == nil {
+		return fmt.Errorf("complete supplier admin command: %w", ErrDatabase)
+	}
+	resultJson := ""
+	if commandResult != nil {
+		encoded, err := common.Marshal(commandResult)
+		if err != nil {
+			return fmt.Errorf("encode supplier admin command result: %w", err)
+		}
+		if len(encoded) == 0 || len(encoded) > maxSupplierAdminCommandResultBytes {
+			return ErrSupplierAdminCommandIncomplete
+		}
+		resultJson = string(encoded)
+	}
 	result := tx.Model(&SupplierAdminCommand{}).
 		Where("id = ? AND claim_token = ? AND resource_id = 0", claim.Command.Id, claim.Command.ClaimToken).
-		UpdateColumn("resource_id", resourceId)
+		UpdateColumns(map[string]any{"resource_id": resourceId, "result_json": resultJson})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -201,7 +258,12 @@ func completeSupplierAdminCommand(tx *gorm.DB, claim *supplierAdminCommandClaim,
 		return ErrSupplierAdminCommandIncomplete
 	}
 	claim.Command.ResourceId = resourceId
+	claim.Command.ResultJson = resultJson
 	return nil
+}
+
+func completeSupplierAdminCommand(tx *gorm.DB, claim *SupplierAdminCommandClaim, resourceId int) error {
+	return CompleteSupplierAdminCommandTx(tx, claim, resourceId, nil)
 }
 
 func supplierAdminPayloadDigest(payload any) (string, error) {
@@ -211,6 +273,301 @@ func supplierAdminPayloadDigest(payload any) (string, error) {
 	}
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func supplierAdminIdempotencyKeyDigest(idempotencyKey string) []byte {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(idempotencyKey)))
+	return digest[:]
+}
+
+func equalDigest(left []byte, right []byte) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	var different byte
+	for i := range left {
+		different |= left[i] ^ right[i]
+	}
+	return different == 0
+}
+
+type SupplierAdminCommandLedgerMigrationStatus struct {
+	HasDigestColumn          bool
+	HasResultColumn          bool
+	HasActorDigestIndex      bool
+	LegacyScopeKeyIndex      bool
+	LegacyActorScopeKeyIndex bool
+	InvalidDigestRows        int64
+	Finalized                bool
+}
+
+// MigrateSupplierAdminCommandLedger bridges old and new writers. It adds only
+// nullable ledger columns, strictly backfills and validates every digest, and
+// creates the actor-local digest index while retaining both legacy indexes.
+func MigrateSupplierAdminCommandLedger(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("migrate supplier admin command ledger: %w", ErrDatabase)
+	}
+	if !db.Migrator().HasTable(&SupplierAdminCommand{}) {
+		if err := db.Migrator().CreateTable(&SupplierAdminCommand{}); err != nil && !db.Migrator().HasTable(&SupplierAdminCommand{}) {
+			return fmt.Errorf("create supplier admin command ledger: %w", err)
+		}
+	}
+	if err := ensureSupplierAdminCommandLedgerColumn(db, "IdempotencyKeyDigest"); err != nil {
+		return err
+	}
+	if err := ensureSupplierAdminCommandLedgerColumn(db, "ResultJson"); err != nil {
+		return err
+	}
+	if err := backfillAndValidateSupplierAdminCommandDigests(db); err != nil {
+		return err
+	}
+	if err := ensureSupplierAdminCommandActorDigestIndex(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// FinalizeSupplierAdminCommandLedgerMigration is the explicit post-drain
+// cutover. It revalidates the bridge, then removes legacy uniqueness and proves
+// the resulting schema/data state. It is safe to rerun across application nodes.
+func FinalizeSupplierAdminCommandLedgerMigration(db *gorm.DB) error {
+	if err := MigrateSupplierAdminCommandLedger(db); err != nil {
+		return err
+	}
+	migrator := db.Migrator()
+	for _, legacyIndex := range []string{legacySupplierAdminCommandScopeKeyIndex, legacySupplierAdminCommandActorScopeKeyIndex} {
+		if !migrator.HasIndex(&SupplierAdminCommand{}, legacyIndex) {
+			continue
+		}
+		if err := migrator.DropIndex(&SupplierAdminCommand{}, legacyIndex); err != nil && migrator.HasIndex(&SupplierAdminCommand{}, legacyIndex) {
+			return fmt.Errorf("drop legacy supplier admin command index %s: %w", legacyIndex, err)
+		}
+	}
+	return ValidateSupplierAdminCommandLedgerFinalized(db)
+}
+
+func GetSupplierAdminCommandLedgerMigrationStatus(db *gorm.DB) (SupplierAdminCommandLedgerMigrationStatus, error) {
+	if db == nil {
+		return SupplierAdminCommandLedgerMigrationStatus{}, fmt.Errorf("get supplier admin command ledger migration status: %w", ErrDatabase)
+	}
+	migrator := db.Migrator()
+	status := SupplierAdminCommandLedgerMigrationStatus{
+		HasDigestColumn:          migrator.HasColumn(&SupplierAdminCommand{}, "IdempotencyKeyDigest"),
+		HasResultColumn:          migrator.HasColumn(&SupplierAdminCommand{}, "ResultJson"),
+		LegacyScopeKeyIndex:      migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandScopeKeyIndex),
+		LegacyActorScopeKeyIndex: migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandActorScopeKeyIndex),
+	}
+	if status.HasDigestColumn {
+		valid, err := supplierAdminCommandIndexMatches(db, supplierAdminCommandActorScopeDigestIndex, []string{"actor_id", "scope", "idempotency_key_digest"})
+		if err != nil {
+			return status, err
+		}
+		status.HasActorDigestIndex = valid
+		status.InvalidDigestRows, err = countInvalidSupplierAdminCommandDigests(db)
+		if err != nil {
+			return status, err
+		}
+	}
+	status.Finalized = status.HasDigestColumn && status.HasResultColumn && status.HasActorDigestIndex &&
+		!status.LegacyScopeKeyIndex && !status.LegacyActorScopeKeyIndex && status.InvalidDigestRows == 0
+	return status, nil
+}
+
+func ValidateSupplierAdminCommandLedgerFinalized(db *gorm.DB) error {
+	status, err := GetSupplierAdminCommandLedgerMigrationStatus(db)
+	if err != nil {
+		return err
+	}
+	if !status.Finalized {
+		return fmt.Errorf("validate supplier admin command ledger: %+v: %w", status, ErrSupplierAdminCommandLedgerNotFinalized)
+	}
+	return nil
+}
+
+func ensureSupplierAdminCommandLedgerColumn(db *gorm.DB, field string) error {
+	migrator := db.Migrator()
+	if migrator.HasColumn(&SupplierAdminCommand{}, field) {
+		return nil
+	}
+	if err := migrator.AddColumn(&SupplierAdminCommand{}, field); err != nil && !migrator.HasColumn(&SupplierAdminCommand{}, field) {
+		return fmt.Errorf("add supplier admin command ledger column %s: %w", field, err)
+	}
+	return nil
+}
+
+func backfillAndValidateSupplierAdminCommandDigests(db *gorm.DB) error {
+	lastId := 0
+	for {
+		var commands []SupplierAdminCommand
+		if err := db.Where("id > ?", lastId).Order("id ASC").Limit(500).Find(&commands).Error; err != nil {
+			return fmt.Errorf("load supplier admin command digests: %w", err)
+		}
+		if len(commands) == 0 {
+			break
+		}
+		for i := range commands {
+			key := strings.TrimSpace(commands[i].IdempotencyKey)
+			if commands[i].Id <= 0 || key == "" || key != commands[i].IdempotencyKey || len(key) > maxSupplierAdminIdempotencyKeyBytes {
+				return fmt.Errorf("validate supplier admin command digest source %d: %w", commands[i].Id, ErrSupplierAdminCommandIncomplete)
+			}
+			expected := supplierAdminIdempotencyKeyDigest(commands[i].IdempotencyKey)
+			if !equalDigest(commands[i].IdempotencyKeyDigest, expected) {
+				result := db.Session(&gorm.Session{SkipHooks: true}).Model(&SupplierAdminCommand{}).
+					Where("id = ?", commands[i].Id).
+					UpdateColumn("idempotency_key_digest", expected)
+				if result.Error != nil {
+					return fmt.Errorf("backfill supplier admin command digest %d: %w", commands[i].Id, result.Error)
+				}
+				if result.RowsAffected != 1 {
+					var persisted SupplierAdminCommand
+					if err := db.Select("idempotency_key_digest").First(&persisted, commands[i].Id).Error; err != nil || !equalDigest(persisted.IdempotencyKeyDigest, expected) {
+						return fmt.Errorf("backfill supplier admin command digest %d: %w", commands[i].Id, ErrSupplierAdminCommandIncomplete)
+					}
+				}
+			}
+			lastId = commands[i].Id
+		}
+	}
+	invalid, err := countInvalidSupplierAdminCommandDigests(db)
+	if err != nil {
+		return err
+	}
+	if invalid != 0 {
+		return fmt.Errorf("validate supplier admin command digests: %d invalid rows: %w", invalid, ErrSupplierAdminCommandIncomplete)
+	}
+	return nil
+}
+
+func countInvalidSupplierAdminCommandDigests(db *gorm.DB) (int64, error) {
+	var commands []SupplierAdminCommand
+	if err := db.Select("id", "idempotency_key", "idempotency_key_digest").Order("id ASC").Find(&commands).Error; err != nil {
+		return 0, fmt.Errorf("validate supplier admin command digests: %w", err)
+	}
+	var invalid int64
+	for i := range commands {
+		key := strings.TrimSpace(commands[i].IdempotencyKey)
+		if commands[i].Id <= 0 || key == "" || key != commands[i].IdempotencyKey || len(key) > maxSupplierAdminIdempotencyKeyBytes ||
+			!equalDigest(commands[i].IdempotencyKeyDigest, supplierAdminIdempotencyKeyDigest(key)) {
+			invalid++
+		}
+	}
+	return invalid, nil
+}
+
+func ensureSupplierAdminCommandActorDigestIndex(db *gorm.DB) error {
+	expected := []string{"actor_id", "scope", "idempotency_key_digest"}
+	matches, err := supplierAdminCommandIndexMatches(db, supplierAdminCommandActorScopeDigestIndex, expected)
+	if err != nil {
+		return err
+	}
+	if matches {
+		return nil
+	}
+	if db.Migrator().HasIndex(&SupplierAdminCommand{}, supplierAdminCommandActorScopeDigestIndex) {
+		return fmt.Errorf("supplier admin command actor digest index has unexpected definition: %w", ErrSupplierAdminCommandIncomplete)
+	}
+	quote := `"`
+	if db.Dialector.Name() == "mysql" {
+		quote = "`"
+	}
+	identifier := func(value string) string { return quote + value + quote }
+	statement := "CREATE UNIQUE INDEX " + identifier(supplierAdminCommandActorScopeDigestIndex) + " ON " + identifier("supplier_admin_commands") +
+		" (" + identifier("actor_id") + ", " + identifier("scope") + ", " + identifier("idempotency_key_digest") + ")"
+	if err := db.Exec(statement).Error; err != nil {
+		matches, verifyErr := supplierAdminCommandIndexMatches(db, supplierAdminCommandActorScopeDigestIndex, expected)
+		if verifyErr != nil || !matches {
+			return fmt.Errorf("create supplier admin command actor digest index: %w", err)
+		}
+	}
+	return nil
+}
+
+func supplierAdminCommandIndexMatches(db *gorm.DB, indexName string, expected []string) (bool, error) {
+	columns := make([]string, 0, len(expected))
+	switch db.Dialector.Name() {
+	case "sqlite":
+		var indexes []struct {
+			Name    string `gorm:"column:name"`
+			Unique  int    `gorm:"column:unique"`
+			Partial int    `gorm:"column:partial"`
+		}
+		if err := db.Raw("PRAGMA index_list('supplier_admin_commands')").Scan(&indexes).Error; err != nil {
+			return false, err
+		}
+		validDefinition := false
+		for _, index := range indexes {
+			if index.Name == indexName {
+				validDefinition = index.Unique == 1 && index.Partial == 0
+				break
+			}
+		}
+		if !validDefinition {
+			return false, nil
+		}
+		var rows []struct {
+			Cid  int     `gorm:"column:cid"`
+			Name *string `gorm:"column:name"`
+		}
+		if err := db.Raw("PRAGMA index_info('" + indexName + "')").Scan(&rows).Error; err != nil {
+			return false, err
+		}
+		for _, row := range rows {
+			if row.Cid < 0 || row.Name == nil {
+				return false, nil
+			}
+			columns = append(columns, *row.Name)
+		}
+	case "mysql":
+		var rows []struct {
+			ColumnName *string `gorm:"column:COLUMN_NAME"`
+			NonUnique  int     `gorm:"column:NON_UNIQUE"`
+			SubPart    *int64  `gorm:"column:SUB_PART"`
+		}
+		if err := db.Raw("SELECT column_name, non_unique, sub_part FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? ORDER BY seq_in_index", "supplier_admin_commands", indexName).Scan(&rows).Error; err != nil {
+			return false, err
+		}
+		for _, row := range rows {
+			// A NULL column identifies a functional key part on MySQL versions
+			// that support expression indexes. sub_part identifies a prefix key.
+			if row.NonUnique != 0 || row.ColumnName == nil || row.SubPart != nil {
+				return false, nil
+			}
+			columns = append(columns, *row.ColumnName)
+		}
+	case "postgres":
+		var rows []struct {
+			ColumnName string `gorm:"column:column_name"`
+		}
+		query := `SELECT a.attname AS column_name
+FROM pg_class t
+JOIN pg_namespace ns ON ns.oid = t.relnamespace
+JOIN pg_index ix ON t.oid = ix.indrelid
+JOIN pg_class i ON i.oid = ix.indexrelid
+JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON TRUE
+JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+WHERE ns.nspname = current_schema() AND t.relname = ? AND i.relname = ?
+  AND ix.indisunique = TRUE AND ix.indisvalid = TRUE AND ix.indisready = TRUE
+  AND ix.indpred IS NULL AND ix.indexprs IS NULL
+ORDER BY k.ord`
+		if err := db.Raw(query, "supplier_admin_commands", indexName).Scan(&rows).Error; err != nil {
+			return false, err
+		}
+		for _, row := range rows {
+			columns = append(columns, row.ColumnName)
+		}
+	default:
+		return false, fmt.Errorf("unsupported supplier admin command ledger dialect %q: %w", db.Dialector.Name(), ErrDatabase)
+	}
+	if len(columns) != len(expected) {
+		return false, nil
+	}
+	for i := range expected {
+		if columns[i] != expected[i] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func newSupplierAdminClaimToken() (string, error) {

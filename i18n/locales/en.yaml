@@ -225,6 +225,7 @@ setting.gotify_token_empty: "Gotify token cannot be empty"
 setting.gotify_url_invalid: "Invalid Gotify server URL"
 setting.url_must_http: "URL must start with http:// or https://"
 setting.saved: "Settings updated"
+setting.reserved_option: "This setting cannot be modified through the general settings API"
 
 # Deployment messages (io.net)
 deployment.not_enabled: "io.net model deployment is not enabled or API key is missing"
@@ -327,3 +328,18 @@ supply_chain.internal_error: "The supply chain service is temporarily unavailabl
 supply_chain.invalid_report_range: "Use either one Asia/Shanghai month or a valid date range of at most 366 days"
 supply_chain.invalid_report_filter: "One or more supply chain report filters are invalid"
 supply_chain.report_unavailable: "The requested report cannot be produced safely for this range"
+
+# Supplier accounting control plane
+supplier_accounting.not_ready: "supplier accounting is not ready"
+supplier_accounting.invalid_request: "invalid supplier accounting request"
+supplier_accounting.command_fields_required: "expected_state_version and reason are required"
+supplier_accounting.idempotency_key_required: "a valid Idempotency-Key is required"
+supplier_accounting.idempotency_conflict: "idempotency key payload conflict"
+supplier_accounting.version_conflict: "supplier accounting version conflict"
+supplier_accounting.invalid_transition: "supplier accounting transition is not allowed"
+supplier_accounting.coverage_unresolved: "supplier accounting coverage gaps remain unresolved"
+supplier_accounting.coverage_gap_not_found: "supplier accounting coverage gap was not found"
+supplier_accounting.state_malformed: "supplier accounting state is malformed"
+supplier_accounting.control_plane_unavailable: "supplier accounting control plane is unavailable"
+supplier_accounting.mutation_gate_unavailable: "supplier mutation gate is unavailable"
+supplier_accounting.mutations_disabled: "supplier mutations are disabled"

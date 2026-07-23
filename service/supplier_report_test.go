@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,13 +12,39 @@ import (
 	"gorm.io/gorm"
 )
 
+func createSupplierReportCoverageGap(t *testing.T, db *gorm.DB, label string, startAt, endAt int64) model.SupplierAccountingCoverageGap {
+	t.Helper()
+	opened, err := model.OpenSupplierAccountingCoverageGap(db, model.OpenSupplierAccountingCoverageGapInput{
+		StartAt: startAt, ReasonCategory: model.SupplierCoverageGapReasonOperatorDeclared,
+		ReasonText: "report gap " + label, ExpectedCapabilityVersion: 1,
+		ActivationStateVersionBefore: 3, ActivationStateVersionAfter: 4,
+		OpenCommandID: "report-open-" + label, OpenedBy: 1, EvidenceRefs: []string{"incident:" + label},
+	})
+	require.NoError(t, err)
+	closed, err := model.CloseSupplierAccountingCoverageGap(db, model.CloseSupplierAccountingCoverageGapInput{
+		ID: opened.Id, EndAt: endAt, CloseCommandID: "report-close-" + label,
+		ClosedBy: 1, FinanceDisposition: model.SupplierCoverageGapFinanceNoImpact,
+		ExpectedVersion: opened.RecordVersion,
+	})
+	require.NoError(t, err)
+	return *closed
+}
+
+func supplierReportGapIDs(gaps []model.SupplierAccountingCoverageGap) []int64 {
+	ids := make([]int64, len(gaps))
+	for index := range gaps {
+		ids[index] = gaps[index].Id
+	}
+	return ids
+}
+
 func TestSupplierReportsReadDailyBatchSummariesAcrossPreservedSurfaces(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.Option{},
 		&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierContractRateVersion{},
-		&model.SupplierInventoryAdjustment{}, &model.Channel{}, &model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{},
+		&model.SupplierInventoryAdjustment{}, &model.Channel{}, &model.SupplierAccountingCoverageGap{}, &model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{},
 	))
 	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.UpstreamSupplier{Id: 1, Name: "supplier", Status: model.SupplierStatusActive}).Error)
 	rateID := 3
@@ -36,40 +63,72 @@ func TestSupplierReportsReadDailyBatchSummariesAcrossPreservedSurfaces(t *testin
 	}
 	require.NoError(t, db.Create(&rows).Error)
 	completed := day.AddDate(0, 0, 1).Unix()
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), db, day.Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, db, day.Unix())
 	require.NoError(t, db.Create(&model.SupplierUsageDailyBatchRun{BatchDate: "2026-07-20", DayStart: day.Unix(), DayEnd: completed, Status: model.SupplierDailyBatchStatusCompleted, CompletedAt: &completed}).Error)
+	crossDay := createSupplierReportCoverageGap(t, db, "cross-day", day.Add(-time.Hour).Unix(), day.Add(time.Hour).Unix())
+	firstSameDay := createSupplierReportCoverageGap(t, db, "same-day-a", day.Add(2*time.Hour).Unix(), day.Add(3*time.Hour).Unix())
+	secondSameDay := createSupplierReportCoverageGap(t, db, "same-day-b", day.Add(5*time.Hour).Unix(), day.Add(6*time.Hour).Unix())
+	expectedGapIDs := []int64{crossDay.Id, firstSameDay.Id, secondSameDay.Id}
+	gapQueryCount := 0
+	callbackName := fmt.Sprintf("test:count_supplier_report_gap_queries:%s", t.Name())
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "supplier_accounting_coverage_gaps" {
+			gapQueryCount++
+		}
+	}))
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
 
 	reports := NewSupplierReportService(model.NewSupplierReportStore(db))
 	query := SupplierReportQuery{StartDate: "2026-07-20", EndDate: "2026-07-20"}
+	beforeGapQueries := gapQueryCount
 	overview, err := reports.GetOverview(context.Background(), query)
 	require.NoError(t, err)
+	require.Equal(t, beforeGapQueries+1, gapQueryCount)
+	require.Equal(t, expectedGapIDs, supplierReportGapIDs(overview.KnownCoverageGaps))
 	require.Equal(t, int64(1), overview.Business.RequestCount)
 	require.Equal(t, int64(1), overview.Internal.RequestCount)
 	require.Equal(t, int64(1_300), overview.Business.GrossProfit.MicroUsd)
 	require.Zero(t, overview.Internal.GrossProfit.MicroUsd)
 	require.Equal(t, int64(1_400), overview.TotalProcurementCost.MicroUsd)
 	require.Equal(t, int64(3_000), overview.RemainingInventoryMicroUsd)
+	beforeGapQueries = gapQueryCount
 	freshness, err := reports.GetFreshness(context.Background())
 	require.NoError(t, err)
+	require.Equal(t, beforeGapQueries+1, gapQueryCount)
+	require.Equal(t, expectedGapIDs, supplierReportGapIDs(freshness.KnownCoverageGaps))
 	require.Equal(t, "2026-07-20", freshness.LatestBatchDate)
 	require.True(t, freshness.SyncOnly)
 	require.Equal(t, day.Unix(), freshness.CoverageStartAt)
 
+	beforeGapQueries = gapQueryCount
 	trend, err := reports.GetTrend(context.Background(), query)
 	require.NoError(t, err)
+	require.Equal(t, beforeGapQueries+1, gapQueryCount)
+	require.Equal(t, expectedGapIDs, supplierReportGapIDs(trend.KnownCoverageGaps))
 	require.Len(t, trend.Points, 1)
+	beforeGapQueries = gapQueryCount
 	contracts, err := reports.ListContracts(context.Background(), query, model.SupplierReportPage{Limit: 10})
 	require.NoError(t, err)
+	require.Equal(t, beforeGapQueries+1, gapQueryCount)
+	require.Equal(t, expectedGapIDs, supplierReportGapIDs(contracts.KnownCoverageGaps))
 	require.Len(t, contracts.Items, 1)
+	beforeGapQueries = gapQueryCount
 	channels, err := reports.ListChannels(context.Background(), query, model.SupplierReportPage{Limit: 10})
 	require.NoError(t, err)
+	require.Equal(t, beforeGapQueries+1, gapQueryCount)
+	require.Equal(t, expectedGapIDs, supplierReportGapIDs(channels.KnownCoverageGaps))
 	require.Len(t, channels.Items, 1)
+	beforeGapQueries = gapQueryCount
 	breakdown, err := reports.ListBreakdown(context.Background(), query, model.SupplierReportPage{Limit: 10})
 	require.NoError(t, err)
+	require.Equal(t, beforeGapQueries+1, gapQueryCount)
+	require.Equal(t, expectedGapIDs, supplierReportGapIDs(breakdown.KnownCoverageGaps))
 	require.Len(t, breakdown.Items, 1)
+	beforeGapQueries = gapQueryCount
 	detail, err := reports.GetContractDetail(context.Background(), 2, query, model.SupplierReportPage{Limit: 10})
 	require.NoError(t, err)
+	require.Equal(t, beforeGapQueries+1, gapQueryCount, "composed detail response must load the requested gap range once")
+	require.Equal(t, expectedGapIDs, supplierReportGapIDs(detail.KnownCoverageGaps))
 	require.Equal(t, 2, detail.Summary.ContractId)
 }
 
@@ -78,7 +137,7 @@ func TestSupplierReportHistoricalChannelOwnershipSurvivesRebindAndUnbind(t *test
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierContractRateVersion{},
-		&model.SupplierInventoryAdjustment{}, &model.Channel{}, &model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{},
+		&model.SupplierInventoryAdjustment{}, &model.Channel{}, &model.SupplierAccountingCoverageGap{}, &model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{},
 	))
 	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.UpstreamSupplier{Id: 1, Name: "supplier", Status: model.SupplierStatusActive}).Error)
 	contracts := []model.SupplierContract{

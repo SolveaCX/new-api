@@ -186,6 +186,7 @@ type SupplierReportFreshnessSnapshot struct {
 	FreshnessLagSeconds *int64
 	SyncOnly            bool
 	CoverageStartAt     int64
+	KnownCoverageGaps   []SupplierAccountingCoverageGap
 }
 
 func (s *SupplierReportStore) ListContractCatalog(ctx context.Context, filter SupplierReportFilter, page *SupplierReportPage) ([]SupplierReportContractCatalogRow, bool, error) {
@@ -394,13 +395,40 @@ func (s *SupplierReportStore) QueryChannelUsage(ctx context.Context, filter Supp
 	err := query.Select(selectSQL).Group("contract_id, channel_id, data_quality").Scan(&rows).Error
 	return rows, err
 }
+
+func (s *SupplierReportStore) QueryCoverageGaps(ctx context.Context, startAt, endAt int64) ([]SupplierAccountingCoverageGap, error) {
+	if s == nil || s.mainDB == nil {
+		return nil, ErrDatabase
+	}
+	gaps, err := QuerySupplierAccountingCoverageGapsOverlapping(s.mainDB.WithContext(ctx), startAt, endAt)
+	if err != nil {
+		return nil, err
+	}
+	if gaps == nil {
+		gaps = []SupplierAccountingCoverageGap{}
+	}
+	return gaps, nil
+}
+
 func (s *SupplierReportStore) QueryFreshness(ctx context.Context) (SupplierReportFreshnessSnapshot, error) {
-	result := SupplierReportFreshnessSnapshot{SyncOnly: true}
-	coverageStartAt, err := SupplierAccountingCoverageStart(ctx, s.mainDB)
+	result := SupplierReportFreshnessSnapshot{SyncOnly: true, KnownCoverageGaps: []SupplierAccountingCoverageGap{}}
+	if s == nil || s.mainDB == nil {
+		return result, ErrDatabase
+	}
+	activation, err := ReadSupplierAccountingActivationState(s.mainDB.WithContext(ctx))
 	if err != nil {
 		return result, err
 	}
-	result.CoverageStartAt = coverageStartAt
+	if activation.CutoverAt != nil {
+		result.CoverageStartAt = *activation.CutoverAt
+	}
+	now := time.Now().Unix()
+	if result.CoverageStartAt > 0 && result.CoverageStartAt < now {
+		result.KnownCoverageGaps, err = s.QueryCoverageGaps(ctx, result.CoverageStartAt, now)
+		if err != nil {
+			return result, err
+		}
+	}
 	var latest SupplierUsageDailyBatchRun
 	err = s.mainDB.WithContext(ctx).Order("batch_date DESC").First(&latest).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -420,7 +448,7 @@ func (s *SupplierReportStore) QueryFreshness(ctx context.Context) (SupplierRepor
 	}
 	if completedErr == nil {
 		complete := completed.DayEnd
-		lag := time.Now().Unix() - complete
+		lag := now - complete
 		if lag < 0 {
 			lag = 0
 		}

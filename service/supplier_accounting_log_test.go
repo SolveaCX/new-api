@@ -164,8 +164,7 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, day.Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, mainDB, day.Unix())
 
 	info := supplierAccountingTestRelayInfo()
 	info.SupplierCostSnapshot = types.SupplierCostSnapshot{

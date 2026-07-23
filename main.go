@@ -408,10 +408,6 @@ func InitResources() error {
 	if err = model.RefreshSupplierCache(); err != nil {
 		return fmt.Errorf("initialize supplier cache: %w", err)
 	}
-	if _, err = service.InitializeSupplierAccountingCoverageStart(context.Background(), model.DB); err != nil {
-		return fmt.Errorf("initialize supplier accounting coverage start: %w", err)
-	}
-
 	model.CheckSetup()
 
 	// Initialize options, should after model.InitDB()

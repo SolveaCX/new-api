@@ -4,11 +4,51 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestSupplierReportFreshnessUsesCanonicalCutoverGapRange(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}, &SupplierAccountingCoverageGap{}, &SupplierUsageDailyBatchRun{}))
+	now := time.Now().Unix()
+	activation := activationState(3, SupplierAccountingActivationActive, now)
+	cutoverAt := *activation.CutoverAt
+	encoded, err := common.Marshal(activation)
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&Option{Key: SupplierAccountingActivationOptionKey, Value: string(encoded)}).Error)
+
+	createClosed := func(label string, startAt, endAt int64) SupplierAccountingCoverageGap {
+		input := validSupplierCoverageGapInput("freshness-open-"+label, startAt)
+		opened, openErr := OpenSupplierAccountingCoverageGap(db, input)
+		require.NoError(t, openErr)
+		closed, closeErr := CloseSupplierAccountingCoverageGap(db, CloseSupplierAccountingCoverageGapInput{
+			ID: opened.Id, EndAt: endAt, CloseCommandID: "freshness-close-" + label,
+			ClosedBy: 1, FinanceDisposition: SupplierCoverageGapFinanceNoImpact,
+			ExpectedVersion: opened.RecordVersion,
+		})
+		require.NoError(t, closeErr)
+		return *closed
+	}
+
+	createClosed("before", cutoverAt-20, cutoverAt-1)
+	overlapping := createClosed("overlap", cutoverAt-10, cutoverAt+1)
+	inside := createClosed("inside", cutoverAt+2, now-1)
+	futureInput := validSupplierCoverageGapInput("freshness-open-future", now+3600)
+	_, err = OpenSupplierAccountingCoverageGap(db, futureInput)
+	require.NoError(t, err)
+
+	freshness, err := NewSupplierReportStore(db).QueryFreshness(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, cutoverAt, freshness.CoverageStartAt)
+	require.Len(t, freshness.KnownCoverageGaps, 2)
+	require.Equal(t, []int64{overlapping.Id, inside.Id}, []int64{freshness.KnownCoverageGaps[0].Id, freshness.KnownCoverageGaps[1].Id})
+}
 
 func TestListChannelCatalogDatabasePaginationAndPublishedGeneration(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})

@@ -412,24 +412,6 @@ func EarliestIncompleteSupplierDailyBatch(ctx context.Context, db *gorm.DB) (*Su
 	return &run, err
 }
 
-func GetOrCreateSupplierAccountingCoverageStart(ctx context.Context, db *gorm.DB, configuredAt int64) (int64, error) {
-	if db == nil || configuredAt < 0 {
-		return 0, ErrDatabase
-	}
-	if configuredAt == 0 {
-		var err error
-		configuredAt, err = supplierDBUnix(ctx, db)
-		if err != nil {
-			return 0, err
-		}
-	}
-	option := Option{Key: SupplierAccountingCoverageStartOptionKey, Value: strconv.FormatInt(configuredAt, 10)}
-	if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
-		return 0, err
-	}
-	return SupplierAccountingCoverageStart(ctx, db)
-}
-
 func SupplierAccountingCoverageStart(ctx context.Context, db *gorm.DB) (int64, error) {
 	if db == nil {
 		return 0, ErrDatabase

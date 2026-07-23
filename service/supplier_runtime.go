@@ -28,16 +28,51 @@ const (
 	SupplierDataQualityUnattributed  = "unattributed"
 )
 
+var ErrSupplierAccountingNotActive = errors.New("supplier accounting is not active")
+
 type supplierAccountingLogEnvelope struct {
 	SupplierAccountingV1 json.RawMessage `json:"supplier_accounting_v1"`
 }
 
+// InitializeSupplierAccountingCoverageStart is retained for compatibility with
+// legacy readers. It is intentionally read-only; adoption is an explicit
+// control-plane command.
 func InitializeSupplierAccountingCoverageStart(ctx context.Context, db *gorm.DB) (int64, error) {
-	configuredAt, err := configuredSupplierAccountingCoverageStart()
+	return model.SupplierAccountingCoverageStart(ctx, db)
+}
+
+// CheckSupplierAccountingReadiness performs fail-closed, strongly consistent
+// reads of both strict control documents. SUPPLIER_ACCOUNTING_CUTOVER_AT is an
+// assertion only; it never creates or mutates activation or legacy state.
+func CheckSupplierAccountingReadiness() error {
+	activation, err := model.ReadSupplierAccountingActivationState(model.DB)
 	if err != nil {
-		return 0, err
+		return fmt.Errorf("supplier accounting readiness activation state: %w", err)
 	}
-	return model.GetOrCreateSupplierAccountingCoverageStart(ctx, db, configuredAt)
+	mutation, err := model.ReadSupplierAccountingMutationState(model.DB)
+	if err != nil {
+		return fmt.Errorf("supplier accounting readiness mutation state: %w", err)
+	}
+	if mutation.Enabled {
+		if err := model.ValidateSupplierAdminCommandLedgerFinalized(model.DB); err != nil {
+			return fmt.Errorf("supplier accounting readiness command ledger: %w", err)
+		}
+	}
+
+	configuredCutover, err := configuredSupplierAccountingCoverageStart()
+	if err != nil {
+		return fmt.Errorf("supplier accounting readiness: %w", err)
+	}
+	if configuredCutover == 0 {
+		return nil
+	}
+	if activation.CutoverAt == nil {
+		return errors.New("supplier accounting readiness: SUPPLIER_ACCOUNTING_CUTOVER_AT requires a persisted activation cutover")
+	}
+	if *activation.CutoverAt != configuredCutover {
+		return fmt.Errorf("supplier accounting readiness: SUPPLIER_ACCOUNTING_CUTOVER_AT mismatch: configured=%d persisted=%d", configuredCutover, *activation.CutoverAt)
+	}
+	return nil
 }
 
 type SupplierDailyBatchCatchUpResult struct {
@@ -47,9 +82,8 @@ type SupplierDailyBatchCatchUpResult struct {
 }
 
 // CatchUpSupplierDailyBatches processes at most one missing Shanghai calendar
-// day through D-1. Callers repeat while RemainingWork is true. The stable
-// coverage cutover is created during application initialization, before any
-// service traffic is accepted.
+// day through D-1. Callers repeat while RemainingWork is true. The canonical
+// activation state must already be active or degraded.
 func CatchUpSupplierDailyBatches(ctx context.Context, mainDB, logDB *gorm.DB, owner string, now time.Time) (SupplierDailyBatchCatchUpResult, error) {
 	return catchUpSupplierDailyBatches(ctx, mainDB, logDB, owner, now, RunSupplierDailyBatch)
 }
@@ -70,14 +104,11 @@ func catchUpSupplierDailyBatches(ctx context.Context, mainDB, logDB *gorm.DB, ow
 		return result, nil
 	}
 	target := today.AddDate(0, 0, -1)
-	coverageStartAt, err := model.SupplierAccountingCoverageStart(ctx, mainDB)
+	cutoverAt, err := supplierAccountingBatchCutover(ctx, mainDB)
 	if err != nil {
 		return result, err
 	}
-	if coverageStartAt <= 0 {
-		return result, errors.New("supplier accounting coverage start is not initialized")
-	}
-	next, err := nextSupplierDailyBatchDate(ctx, mainDB, coverageStartAt, location)
+	next, err := nextSupplierDailyBatchDate(ctx, mainDB, cutoverAt, location)
 	if err != nil {
 		return result, err
 	}
@@ -88,7 +119,7 @@ func catchUpSupplierDailyBatches(ctx context.Context, mainDB, logDB *gorm.DB, ow
 		return result, err
 	}
 	result.ProcessedDays = SupplierDailyCatchUpMaxDays
-	next, err = nextSupplierDailyBatchDate(ctx, mainDB, coverageStartAt, location)
+	next, err = nextSupplierDailyBatchDate(ctx, mainDB, cutoverAt, location)
 	if err != nil {
 		return result, err
 	}
@@ -132,6 +163,10 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 		return fmt.Errorf("invalid supplier batch date %q", batchDate)
 	}
 	dayEnd := day.AddDate(0, 0, 1)
+	cutoverAt, err := supplierAccountingBatchCutover(ctx, mainDB)
+	if err != nil {
+		return err
+	}
 	lease, err := model.AcquireSupplierDailyBatch(ctx, mainDB, batchDate, day.Unix(), dayEnd.Unix(), owner, now, supplierDailyLeaseDuration, force)
 	if err != nil || lease.AlreadyDone {
 		return err
@@ -142,16 +177,9 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 		}
 	}()
 
-	coverageStartAt, err := model.SupplierAccountingCoverageStart(ctx, mainDB)
-	if err != nil {
-		return err
-	}
-	if coverageStartAt <= 0 {
-		return errors.New("supplier accounting coverage start is not initialized")
-	}
 	scanStartAt := day.Unix()
-	if coverageStartAt > scanStartAt {
-		scanStartAt = coverageStartAt
+	if cutoverAt > scanStartAt {
+		scanStartAt = cutoverAt
 	}
 	if scanStartAt < dayEnd.Unix() {
 		for {
@@ -193,6 +221,23 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 		}
 	}
 	return model.CompleteSupplierDailyBatch(ctx, mainDB, lease, now)
+}
+
+func supplierAccountingBatchCutover(ctx context.Context, mainDB *gorm.DB) (int64, error) {
+	if mainDB == nil {
+		return 0, model.ErrDatabase
+	}
+	state, err := model.ReadSupplierAccountingActivationState(mainDB.WithContext(ctx))
+	if err != nil {
+		return 0, err
+	}
+	if state.Phase != model.SupplierAccountingActivationActive && state.Phase != model.SupplierAccountingActivationDegraded {
+		return 0, fmt.Errorf("%w: phase %q", ErrSupplierAccountingNotActive, state.Phase)
+	}
+	if state.CutoverAt == nil || *state.CutoverAt <= 0 {
+		return 0, fmt.Errorf("%w: canonical cutover is missing", ErrSupplierAccountingNotActive)
+	}
+	return *state.CutoverAt, nil
 }
 
 func configuredSupplierAccountingCoverageStart() (int64, error) {

@@ -308,11 +308,14 @@ func migrateDB() error {
 		&SupplierChannelBindingVersion{},
 		&SupplierInventoryAdjustment{},
 		&SupplierStatisticsExclusionRule{},
-		&SupplierAdminCommand{},
+		&SupplierAccountingCoverageGap{},
 		&SupplierUsageDailySummary{},
 		&SupplierUsageDailyBatchRun{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := MigrateSupplierAdminCommandLedger(DB); err != nil {
 		return err
 	}
 	if common.UsingSQLite {
@@ -379,7 +382,7 @@ func migrateDBFast() error {
 		{&SupplierChannelBindingVersion{}, "SupplierChannelBindingVersion"},
 		{&SupplierInventoryAdjustment{}, "SupplierInventoryAdjustment"},
 		{&SupplierStatisticsExclusionRule{}, "SupplierStatisticsExclusionRule"},
-		{&SupplierAdminCommand{}, "SupplierAdminCommand"},
+		{&SupplierAccountingCoverageGap{}, "SupplierAccountingCoverageGap"},
 		{&SupplierUsageDailySummary{}, "SupplierUsageDailySummary"},
 		{&SupplierUsageDailyBatchRun{}, "SupplierUsageDailyBatchRun"},
 	}
@@ -389,6 +392,9 @@ func migrateDBFast() error {
 		if err := DB.AutoMigrate(m.model); err != nil {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
 		}
+	}
+	if err := MigrateSupplierAdminCommandLedger(DB); err != nil {
+		return err
 	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {

@@ -226,6 +226,7 @@ setting.gotify_token_empty: "O token Gotify não pode ficar vazio"
 setting.gotify_url_invalid: "URL do servidor Gotify inválida"
 setting.url_must_http: "A URL deve começar com http:// ou https://"
 setting.saved: "Configurações atualizadas"
+setting.reserved_option: "Esta configuração não pode ser alterada pela API de configurações gerais"
 
 # Deployment messages (io.net)
 deployment.not_enabled: "A implantação de modelo io.net não está habilitada ou a chave de API está ausente"
@@ -328,3 +329,18 @@ supply_chain.internal_error: "O serviço da cadeia de fornecimento está tempora
 supply_chain.invalid_report_range: "Use um mês no fuso horário da Ásia/Xangai ou um intervalo válido de até 366 dias"
 supply_chain.invalid_report_filter: "Um ou mais filtros do relatório da cadeia de fornecimento são inválidos"
 supply_chain.report_unavailable: "O relatório solicitado não pode ser produzido com segurança para este intervalo"
+
+# Plano de controle da contabilização de fornecedores
+supplier_accounting.not_ready: "A contabilização de fornecedores ainda não está pronta"
+supplier_accounting.invalid_request: "Solicitação de contabilização de fornecedores inválida"
+supplier_accounting.command_fields_required: "expected_state_version e reason são obrigatórios"
+supplier_accounting.idempotency_key_required: "É necessário fornecer um Idempotency-Key válido"
+supplier_accounting.idempotency_conflict: "Conflito entre a chave de idempotência e o conteúdo da solicitação"
+supplier_accounting.version_conflict: "Conflito de versão na contabilização de fornecedores"
+supplier_accounting.invalid_transition: "A transição da contabilização de fornecedores não é permitida"
+supplier_accounting.coverage_unresolved: "Ainda existem lacunas não resolvidas na cobertura da contabilização de fornecedores"
+supplier_accounting.coverage_gap_not_found: "A lacuna de cobertura da contabilização de fornecedores não foi encontrada"
+supplier_accounting.state_malformed: "O estado da contabilização de fornecedores é inválido"
+supplier_accounting.control_plane_unavailable: "O plano de controle da contabilização de fornecedores está indisponível"
+supplier_accounting.mutation_gate_unavailable: "O controle de alterações de fornecedores está indisponível"
+supplier_accounting.mutations_disabled: "As alterações de fornecedores estão desabilitadas"

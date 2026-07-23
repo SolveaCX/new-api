@@ -377,6 +377,9 @@ func UpdateOptionsBulk(values map[string]string) error {
 }
 
 func validateAndNormalizeOptionValue(key string, value string) (string, error) {
+	if IsSupplierAccountingReservedOptionKey(key) {
+		return "", ErrSupplierAccountingReservedOption
+	}
 	if err := setting.ValidatePaddleOption(key, value); err != nil {
 		return "", err
 	}

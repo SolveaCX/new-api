@@ -42,6 +42,8 @@ func setupSupplierTestDB(t *testing.T, name string) *gorm.DB {
 		&SupplierStatisticsExclusionRule{},
 		&SupplierAdminCommand{},
 	))
+	require.NoError(t, MigrateSupplierAdminCommandLedger(db))
+	require.NoError(t, FinalizeSupplierAdminCommandLedgerMigration(db))
 	DB = db
 	common.UsingSQLite = true
 	common.MemoryCacheEnabled = false

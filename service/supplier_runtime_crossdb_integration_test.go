@@ -70,10 +70,11 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 		&model.SupplierInventoryAdjustment{},
 		&model.SupplierStatisticsExclusionRule{},
 		&model.SupplierAdminCommand{},
+		&model.SupplierAccountingCoverageGap{},
 		&model.SupplierUsageDailySummary{},
 		&model.SupplierUsageDailyBatchRun{},
 	}
-	require.Len(t, supplierTables, 9)
+	require.Len(t, supplierTables, 10)
 	require.NoError(t, db.AutoMigrate(append([]any{&model.Option{}, &model.Channel{}}, supplierTables...)...))
 	require.NoError(t, model.EnsureSupplierUsageGenerationSchema(db))
 	for _, table := range supplierTables {
@@ -82,7 +83,7 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 	columnsAfter, indexesAfter := crossDBLogSchema(t, db, dialect)
 	require.Equal(t, columnsBefore, columnsAfter, "supplier migration must not alter logs columns")
 	require.Equal(t, indexesBefore, indexesAfter, "supplier migration must not alter logs indexes")
-	t.Logf("%s migration: supplier_tables=9 logs_columns=%d logs_indexes=%d unchanged=true", dialect, len(columnsAfter), len(indexesAfter))
+	t.Logf("%s migration: supplier_tables=10 logs_columns=%d logs_indexes=%d unchanged=true", dialect, len(columnsAfter), len(indexesAfter))
 
 	beforeDBTime := crossDBUnix(t, db, dialect)
 	leaseDay := time.Date(1999, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -106,10 +107,11 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 	require.NoError(t, err)
 	day := beginningOfSupplierDay(time.Now().In(location)).AddDate(0, 0, -1)
 	startAt, endAt := day.Unix(), day.AddDate(0, 0, 1).Unix()
-	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", fmt.Sprintf("%d", startAt))
+	persistLegacySupplierAccountingCoverageStart(t, db, startAt)
+	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", fmt.Sprintf("%d", startAt+1))
 	coverageStartAt, err := InitializeSupplierAccountingCoverageStart(ctx, db)
 	require.NoError(t, err)
-	require.Equal(t, startAt, coverageStartAt)
+	require.Equal(t, startAt, coverageStartAt, "legacy initializer is read-only and ignores assertion env")
 	createdIDs := insertCrossDBKeysetRows(t, db, startAt)
 	var scannedIDs []int
 	var pageSizes []int
@@ -140,9 +142,10 @@ func runSupplierAccountingCrossDBGate(t *testing.T, db *gorm.DB, dialect string)
 	payload, err := common.Marshal(map[string]any{"supplier_accounting_v1": snapshot})
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&model.Log{Type: model.LogTypeConsume, CreatedAt: startAt + 3, ChannelId: 7, ModelName: "cross-db-model", Other: string(payload)}).Error)
-	stableCoverageStart, err := model.GetOrCreateSupplierAccountingCoverageStart(ctx, db, day.Unix())
+	stableCoverageStart, err := model.SupplierAccountingCoverageStart(ctx, db)
 	require.NoError(t, err)
 	require.Equal(t, startAt, stableCoverageStart, "coverage cutover must remain first-writer-wins")
+	activateSupplierAccountingForBatch(t, db, startAt)
 	require.NoError(t, RunSupplierDailyBatch(ctx, db, db, day.Format("2006-01-02"), dialect+"-summary-owner", day.AddDate(0, 0, 2), false))
 
 	var summary model.SupplierUsageDailySummary

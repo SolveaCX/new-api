@@ -6,13 +6,18 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	backendi18n "github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
@@ -21,11 +26,25 @@ func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	previousRateLimit := common.GlobalApiRateLimitEnable
 	common.GlobalApiRateLimitEnable = false
-	t.Cleanup(func() { common.GlobalApiRateLimitEnable = previousRateLimit })
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.SupplierAdminCommand{}, &model.SupplierAccountingCoverageGap{}, &model.SupplierUsageDailyBatchRun{}))
+	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
+	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
+	_, err = model.CASSupplierAccountingMutationState(db, 0, true, 17, "route tests", time.Now().Unix())
+	require.NoError(t, err)
+	previousDB := model.DB
+	model.DB = db
+	t.Cleanup(func() {
+		common.GlobalApiRateLimitEnable = previousRateLimit
+		model.DB = previousDB
+		sqlDB, _ := db.DB()
+		_ = sqlDB.Close()
+	})
 
 	engine := gin.New()
 	engine.Use(sessions.Sessions("session", cookie.NewStore([]byte("supply-chain-route-test"))))
-	engine.GET("/test-login/:role", func(c *gin.Context) {
+	engine.GET("/test-login/:role/:verified", func(c *gin.Context) {
 		role, _ := strconv.Atoi(c.Param("role"))
 		session := sessions.Default(c)
 		session.Set("username", "route-tester")
@@ -33,6 +52,9 @@ func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
 		session.Set("id", 17)
 		session.Set("status", common.UserStatusEnabled)
 		session.Set("group", "default")
+		if c.Param("verified") == "true" {
+			session.Set(middleware.SecureVerificationSessionKey, time.Now().Unix())
+		}
 		require.NoError(t, session.Save())
 		c.Status(http.StatusNoContent)
 	})
@@ -41,9 +63,13 @@ func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
 }
 
 func supplyChainRouteTestCookies(t *testing.T, engine *gin.Engine, role int) []*http.Cookie {
+	return supplyChainRouteTestCookiesWithVerification(t, engine, role, false)
+}
+
+func supplyChainRouteTestCookiesWithVerification(t *testing.T, engine *gin.Engine, role int, verified bool) []*http.Cookie {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/test-login/"+strconv.Itoa(role), nil))
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/test-login/"+strconv.Itoa(role)+"/"+strconv.FormatBool(verified), nil))
 	require.Equal(t, http.StatusNoContent, recorder.Code)
 	return recorder.Result().Cookies()
 }
@@ -68,6 +94,8 @@ func performSupplyChainRouteTestRequestAt(engine *gin.Engine, cookies []*http.Co
 func TestSupplyChainSensitiveRoutesRequireAdmin(t *testing.T) {
 	engine := newSupplyChainRouteTestEngine(t)
 	userCookies := supplyChainRouteTestCookies(t, engine, common.RoleCommonUser)
+	adminCookies := supplyChainRouteTestCookies(t, engine, common.RoleAdminUser)
+	rootCookies := supplyChainRouteTestCookies(t, engine, common.RoleRootUser)
 	tests := []struct {
 		method string
 		path   string
@@ -84,6 +112,13 @@ func TestSupplyChainSensitiveRoutesRequireAdmin(t *testing.T) {
 			user := performSupplyChainRouteTestRequestAt(engine, userCookies, test.method, test.path, test.body)
 			require.Equal(t, http.StatusOK, user.Code)
 			require.Contains(t, user.Body.String(), `"success":false`)
+
+			admin := performSupplyChainRouteTestRequestAt(engine, adminCookies, test.method, test.path, test.body)
+			require.Equal(t, http.StatusOK, admin.Code)
+			require.Contains(t, admin.Body.String(), `"success":false`)
+
+			root := performSupplyChainRouteTestRequestAt(engine, rootCookies, test.method, test.path, test.body)
+			require.NotEqual(t, http.StatusUnauthorized, root.Code, "Root reads must not require fresh verification")
 		})
 	}
 }
@@ -100,7 +135,11 @@ func TestSupplyChainRoutesRequireAdmin(t *testing.T) {
 	require.Contains(t, user.Body.String(), `"success":false`)
 
 	admin := performSupplyChainRouteTestRequest(engine, supplyChainRouteTestCookies(t, engine, common.RoleAdminUser))
-	require.Equal(t, http.StatusBadRequest, admin.Code, "admin must reach the supplier controller")
+	require.Equal(t, http.StatusOK, admin.Code)
+	require.Contains(t, admin.Body.String(), `"success":false`)
+
+	root := performSupplyChainRouteTestRequest(engine, supplyChainRouteTestCookies(t, engine, common.RoleRootUser))
+	require.Equal(t, http.StatusBadRequest, root.Code, "Root must reach the supplier controller without step-up for reads")
 }
 
 func TestSupplierDailyBatchCatchUpRouteRequiresRoot(t *testing.T) {
@@ -112,7 +151,7 @@ func TestSupplierDailyBatchCatchUpRouteRequiresRoot(t *testing.T) {
 
 	engine := gin.New()
 	engine.Use(sessions.Sessions("session", cookie.NewStore([]byte("supplier-batch-trigger-route-test"))))
-	engine.GET("/test-login/:role", func(c *gin.Context) {
+	engine.GET("/test-login/:role/:verified", func(c *gin.Context) {
 		role, _ := strconv.Atoi(c.Param("role"))
 		session := sessions.Default(c)
 		session.Set("username", "route-tester")
@@ -183,7 +222,7 @@ func TestSupplyChainWriteRoutesUseCriticalRateLimit(t *testing.T) {
 	})
 
 	engine := newSupplyChainRouteTestEngine(t)
-	cookies := supplyChainRouteTestCookies(t, engine, common.RoleAdminUser)
+	cookies := supplyChainRouteTestCookiesWithVerification(t, engine, common.RoleRootUser, true)
 	statuses := make([]int, 0, 2)
 	for range 2 {
 		recorder := httptest.NewRecorder()

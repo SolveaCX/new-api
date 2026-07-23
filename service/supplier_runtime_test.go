@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -30,9 +29,61 @@ func supplierDailyTestDBs(t *testing.T) (*gorm.DB, *gorm.DB) {
 	t.Helper()
 	mainDB := supplierDailyTestDB(t, t.Name()+"-main")
 	logDB := supplierDailyTestDB(t, t.Name()+"-log")
-	require.NoError(t, mainDB.AutoMigrate(&model.Option{}, &model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{}))
+	require.NoError(t, mainDB.AutoMigrate(&model.Option{}, &model.SupplierAccountingCoverageGap{}, &model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{}))
 	require.NoError(t, logDB.AutoMigrate(&model.Log{}))
 	return mainDB, logDB
+}
+
+func persistLegacySupplierAccountingCoverageStart(t *testing.T, db *gorm.DB, cutoverAt int64) {
+	t.Helper()
+	require.Greater(t, cutoverAt, int64(0))
+	require.NoError(t, db.Create(&model.Option{
+		Key:   model.SupplierAccountingCoverageStartOptionKey,
+		Value: fmt.Sprint(cutoverAt),
+	}).Error)
+}
+
+func armSupplierAccountingForBatch(t *testing.T, db *gorm.DB, cutoverAt int64) model.SupplierAccountingActivationState {
+	t.Helper()
+	preparedAt := cutoverAt - 2
+	preparedBy := 7
+	shadow, err := model.CASSupplierAccountingActivationState(db, 0, model.SupplierAccountingActivationState{
+		Phase: model.SupplierAccountingActivationShadow, AcceptedCapabilityVersions: []int{1},
+		PreparedAt: &preparedAt, PreparedBy: &preparedBy, Reason: "prepare supplier batch test",
+	}, preparedAt)
+	require.NoError(t, err)
+	armed := shadow
+	armed.Phase = model.SupplierAccountingActivationArmed
+	armed.CutoverAt = &cutoverAt
+	armed.Reason = "arm supplier batch test"
+	armed, err = model.CASSupplierAccountingActivationState(db, shadow.StateVersion, armed, cutoverAt-1)
+	require.NoError(t, err)
+	return armed
+}
+
+func activateSupplierAccountingForBatch(t *testing.T, db *gorm.DB, cutoverAt int64) model.SupplierAccountingActivationState {
+	t.Helper()
+	armed := armSupplierAccountingForBatch(t, db, cutoverAt)
+	activatedAt := cutoverAt
+	active := armed
+	active.Phase = model.SupplierAccountingActivationActive
+	active.ActivatedAt = &activatedAt
+	active.Reason = "activate supplier batch test"
+	active, err := model.CASSupplierAccountingActivationState(db, armed.StateVersion, active, activatedAt)
+	require.NoError(t, err)
+	return active
+}
+
+func degradeSupplierAccountingForBatch(t *testing.T, db *gorm.DB, active model.SupplierAccountingActivationState) model.SupplierAccountingActivationState {
+	t.Helper()
+	degradedAt := *active.ActivatedAt + 1
+	degraded := active
+	degraded.Phase = model.SupplierAccountingActivationDegraded
+	degraded.DegradedAt = &degradedAt
+	degraded.Reason = "degrade supplier batch test"
+	degraded, err := model.CASSupplierAccountingActivationState(db, active.StateVersion, degraded, degradedAt)
+	require.NoError(t, err)
+	return degraded
 }
 
 func supplierDailyLogOther(t *testing.T, snapshot types.SupplierAccountingLogSnapshotV1) string {
@@ -59,8 +110,10 @@ func TestRunSupplierDailyBatchAggregatesSalesMultiplierAsDimension(t *testing.T)
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, day.Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, mainDB, day.Unix())
+	var legacyCoverageRows int64
+	require.NoError(t, mainDB.Model(&model.Option{}).Where("key = ?", model.SupplierAccountingCoverageStartOptionKey).Count(&legacyCoverageRows).Error)
+	require.Zero(t, legacyCoverageRows, "prepare-to-arm-to-active must not require legacy coverage evidence")
 	for index, multiplier := range []int64{300_000, 900_000} {
 		snapshot := supplierDailySnapshot(day, multiplier)
 		require.NoError(t, logDB.Create(&model.Log{
@@ -82,8 +135,7 @@ func TestRunSupplierDailyBatchAttributesAccountingDayByConsumeLogCreatedAt(t *te
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, day.Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, mainDB, day.Unix())
 
 	rows := []struct {
 		createdAt              int64
@@ -121,8 +173,7 @@ func TestRunSupplierDailyBatchInternalSnapshotRetainsInventoryOnly(t *testing.T)
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, day.Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, mainDB, day.Unix())
 	snapshot := supplierDailySnapshot(day, 300_000)
 	snapshot.StatisticsScope = string(types.SupplierStatisticsScopeInternal)
 	require.NoError(t, logDB.Create(&model.Log{
@@ -154,7 +205,6 @@ func TestSupplierDailyBatchUsesStableExactCutoverAndConsumeLogsOnly(t *testing.T
 	require.NoError(t, err)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
 	cutover := day.Add(90 * time.Minute).Unix()
-	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", fmt.Sprint(cutover))
 
 	snapshot := supplierDailySnapshot(day, 300_000)
 	for _, row := range []model.Log{
@@ -165,9 +215,14 @@ func TestSupplierDailyBatchUsesStableExactCutoverAndConsumeLogsOnly(t *testing.T
 	} {
 		require.NoError(t, logDB.Create(&row).Error)
 	}
-	initialized, err := InitializeSupplierAccountingCoverageStart(context.Background(), mainDB)
-	require.NoError(t, err)
-	require.Equal(t, cutover, initialized)
+	active := activateSupplierAccountingForBatch(t, mainDB, cutover)
+	legacyCutover := day.Add(3 * time.Hour).Unix()
+	persistLegacySupplierAccountingCoverageStart(t, mainDB, legacyCutover)
+	globalDB := supplierDailyTestDB(t, t.Name()+"-disabled-global")
+	require.NoError(t, globalDB.AutoMigrate(&model.Option{}))
+	originalDB := model.DB
+	model.DB = globalDB
+	t.Cleanup(func() { model.DB = originalDB })
 	catchUp, err := CatchUpSupplierDailyBatches(context.Background(), mainDB, logDB, "console", day.AddDate(0, 0, 2).Add(12*time.Hour))
 	require.NoError(t, err)
 	require.Equal(t, SupplierDailyBatchCatchUpResult{ProcessedDays: 1, RemainingWork: true, NextBatchDate: day.AddDate(0, 0, 1).Format("2006-01-02")}, catchUp)
@@ -175,85 +230,75 @@ func TestSupplierDailyBatchUsesStableExactCutoverAndConsumeLogsOnly(t *testing.T
 	var summary model.SupplierUsageDailySummary
 	require.NoError(t, mainDB.First(&summary).Error)
 	require.EqualValues(t, 1, summary.RequestCount)
-	persisted, err := model.SupplierAccountingCoverageStart(context.Background(), mainDB)
+	persisted, err := model.ReadSupplierAccountingActivationState(mainDB)
 	require.NoError(t, err)
-	require.Equal(t, cutover, persisted)
+	require.Equal(t, active.StateVersion, persisted.StateVersion)
+	require.Equal(t, cutover, *persisted.CutoverAt)
 	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", fmt.Sprint(day.Add(3*time.Hour).Unix()))
-	stable, err := model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, day.Add(3*time.Hour).Unix())
+	stable, err := model.SupplierAccountingCoverageStart(context.Background(), mainDB)
 	require.NoError(t, err)
-	require.Equal(t, cutover, stable)
+	require.Equal(t, legacyCutover, stable)
 }
 
-func TestInitializeSupplierAccountingCoverageStartUsesDBTimeBeforeCloseGrace(t *testing.T) {
-	mainDB, logDB := supplierDailyTestDBs(t)
-	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", "")
-	before := time.Now().Unix()
-	coverageStartAt, err := InitializeSupplierAccountingCoverageStart(context.Background(), mainDB)
-	after := time.Now().Unix()
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, coverageStartAt, before)
-	require.LessOrEqual(t, coverageStartAt, after)
+func TestSupplierDailyBatchBlocksLegacyOnlyAndPreActivePhases(t *testing.T) {
+	for _, phase := range []string{"legacy-only", "shadow", "armed", "retired"} {
+		t.Run(phase, func(t *testing.T) {
+			mainDB, logDB := supplierDailyTestDBs(t)
+			location, err := time.LoadLocation(SupplierDailyBatchTimezone)
+			require.NoError(t, err)
+			day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
+			persistLegacySupplierAccountingCoverageStart(t, mainDB, day.Unix())
 
+			switch phase {
+			case "shadow":
+				preparedAt := day.Unix() - 2
+				preparedBy := 7
+				_, err = model.CASSupplierAccountingActivationState(mainDB, 0, model.SupplierAccountingActivationState{
+					Phase: model.SupplierAccountingActivationShadow, AcceptedCapabilityVersions: []int{1},
+					PreparedAt: &preparedAt, PreparedBy: &preparedBy, Reason: "prepare without activate",
+				}, preparedAt)
+				require.NoError(t, err)
+			case "armed":
+				armSupplierAccountingForBatch(t, mainDB, day.Unix())
+			case "retired":
+				active := activateSupplierAccountingForBatch(t, mainDB, day.Unix())
+				retired := active
+				retired.Phase = model.SupplierAccountingActivationRetired
+				retired.Reason = "retire supplier batch test"
+				_, err = model.CASSupplierAccountingActivationState(mainDB, active.StateVersion, retired, day.Unix()+1)
+				require.NoError(t, err)
+			}
+
+			err = RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "blocked", day.AddDate(0, 0, 2), false)
+			require.ErrorIs(t, err, ErrSupplierAccountingNotActive)
+			var runs int64
+			require.NoError(t, mainDB.Model(&model.SupplierUsageDailyBatchRun{}).Count(&runs).Error)
+			require.Zero(t, runs, "phase eligibility must be checked before acquiring a batch lease")
+		})
+	}
+}
+
+func TestSupplierDailyBatchAllowsDegradedCanonicalActivation(t *testing.T) {
+	mainDB, logDB := supplierDailyTestDBs(t)
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
-	early := beginningOfSupplierDay(time.Now().In(location)).Add(time.Hour)
-	catchUp, err := CatchUpSupplierDailyBatches(context.Background(), mainDB, logDB, "console", early)
-	require.NoError(t, err)
-	require.Equal(t, SupplierDailyBatchCatchUpResult{}, catchUp)
-	persisted, err := model.SupplierAccountingCoverageStart(context.Background(), mainDB)
-	require.NoError(t, err)
-	require.Equal(t, coverageStartAt, persisted)
+	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
+	active := activateSupplierAccountingForBatch(t, mainDB, day.Unix())
+	degradeSupplierAccountingForBatch(t, mainDB, active)
+
+	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "degraded", day.AddDate(0, 0, 2), false))
 }
 
-func TestSupplierAccountingCoverageStartFirstWriterWinsAcrossNodes(t *testing.T) {
+func TestInitializeSupplierAccountingCoverageStartDoesNotInventDBTime(t *testing.T) {
 	mainDB, _ := supplierDailyTestDBs(t)
-	firstCandidate := int64(1_800_000_123)
-	secondCandidate := int64(1_900_000_456)
-	first, err := model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, firstCandidate)
+	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", "1800000000")
+	coverageStartAt, err := InitializeSupplierAccountingCoverageStart(context.Background(), mainDB)
 	require.NoError(t, err)
-	second, err := model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, secondCandidate)
-	require.NoError(t, err)
-	require.Equal(t, firstCandidate, first)
-	require.Equal(t, first, second)
-}
+	require.Zero(t, coverageStartAt)
 
-func TestSupplierAccountingCoverageStartConcurrentFirstWriterWins(t *testing.T) {
-	mainDB, _ := supplierDailyTestDBs(t)
-	const writers = 16
-	start := make(chan struct{})
-	results := make(chan int64, writers)
-	errs := make(chan error, writers)
-	var wait sync.WaitGroup
-	for index := range writers {
-		wait.Add(1)
-		go func(candidate int64) {
-			defer wait.Done()
-			<-start
-			result, err := model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, candidate)
-			results <- result
-			errs <- err
-		}(1_800_000_000 + int64(index))
-	}
-	close(start)
-	wait.Wait()
-	close(results)
-	close(errs)
-
-	for err := range errs {
-		require.NoError(t, err)
-	}
-	var winner int64
-	for result := range results {
-		if winner == 0 {
-			winner = result
-		}
-		require.Equal(t, winner, result)
-	}
-	require.GreaterOrEqual(t, winner, int64(1_800_000_000))
-	require.Less(t, winner, int64(1_800_000_000+writers))
 	var optionCount int64
-	require.NoError(t, mainDB.Model(&model.Option{}).Where("key = ?", model.SupplierAccountingCoverageStartOptionKey).Count(&optionCount).Error)
-	require.EqualValues(t, 1, optionCount)
+	require.NoError(t, mainDB.Model(&model.Option{}).Count(&optionCount).Error)
+	require.Zero(t, optionCount)
 }
 
 func TestCatchUpSupplierDailyBatchesWaitsForCloseGrace(t *testing.T) {
@@ -261,8 +306,7 @@ func TestCatchUpSupplierDailyBatchesWaitsForCloseGrace(t *testing.T) {
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
 	today := time.Date(2026, 7, 22, 0, 0, 0, 0, location)
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, today.AddDate(0, 0, -1).Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, mainDB, today.AddDate(0, 0, -1).Unix())
 	result, err := CatchUpSupplierDailyBatches(context.Background(), mainDB, logDB, "console", today.Add(SupplierDailyCloseGrace-time.Second))
 	require.NoError(t, err)
 	require.Equal(t, SupplierDailyBatchCatchUpResult{}, result, "before close grace there is no eligible work and no next batch date")
@@ -282,8 +326,7 @@ func TestCatchUpSupplierDailyBatchesProcessesOneMissingDayPerInvocation(t *testi
 	require.NoError(t, err)
 	today := time.Date(2026, 7, 23, 3, 0, 0, 0, location)
 	firstMissing := today.AddDate(0, 0, -10)
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, firstMissing.Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, mainDB, firstMissing.Unix())
 
 	result, err := CatchUpSupplierDailyBatches(context.Background(), mainDB, logDB, "bounded-call-1", today)
 	require.NoError(t, err)
@@ -309,11 +352,10 @@ func TestCatchUpSupplierDailyBatchesProcessesOneMissingDayPerInvocation(t *testi
 
 func TestAsyncTaskSuccessAndFailureDoNotCreateSupplierSnapshotsOrSummaries(t *testing.T) {
 	mainDB, logDB := supplierDailyTestDBs(t)
-	_, err := InitializeSupplierAccountingCoverageStart(context.Background(), mainDB)
-	require.NoError(t, err)
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
+	activateSupplierAccountingForBatch(t, mainDB, day.Unix())
 	for index, status := range []model.TaskStatus{model.TaskStatusSuccess, model.TaskStatusFailure} {
 		task := &model.Task{TaskID: fmt.Sprintf("async-%d", index), Status: status, ChannelId: 4, Properties: model.Properties{OriginModelName: "video"}}
 		other := taskBillingOther(task)
@@ -329,11 +371,10 @@ func TestAsyncTaskSuccessAndFailureDoNotCreateSupplierSnapshotsOrSummaries(t *te
 	require.Zero(t, summaryCount)
 }
 
-func TestSupplierFreshnessExposesSyncOnlyAndPersistedCoverageStart(t *testing.T) {
+func TestSupplierFreshnessExposesSyncOnlyAndCanonicalCutover(t *testing.T) {
 	mainDB, _ := supplierDailyTestDBs(t)
-	coverageStartAt := int64(1_800_000_123)
-	_, err := model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, coverageStartAt)
-	require.NoError(t, err)
+	coverageStartAt := time.Now().Add(-time.Hour).Unix()
+	activateSupplierAccountingForBatch(t, mainDB, coverageStartAt)
 	result, err := NewSupplierReportService(model.NewSupplierReportStore(mainDB)).GetFreshness(context.Background())
 	require.NoError(t, err)
 	require.True(t, result.SyncOnly)
@@ -479,8 +520,7 @@ func TestCatchUpSupplierDailyBatchesSkipsCompletedHistory(t *testing.T) {
 	require.NoError(t, err)
 	today := time.Date(2026, 7, 23, 3, 0, 0, 0, location)
 	firstDay := today.AddDate(0, 0, -201)
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, firstDay.Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, mainDB, firstDay.Unix())
 	runs := make([]model.SupplierUsageDailyBatchRun, 0, 200)
 	for offset := 0; offset < 200; offset++ {
 		day := firstDay.AddDate(0, 0, offset)
@@ -515,8 +555,7 @@ func TestCatchUpSupplierDailyBatchesDoesNotWalkCompletedHistoryAfterFailedDate(t
 	require.NoError(t, err)
 	today := time.Date(2026, 7, 23, 3, 0, 0, 0, location)
 	firstDay := today.AddDate(0, 0, -201)
-	_, err = model.GetOrCreateSupplierAccountingCoverageStart(context.Background(), mainDB, firstDay.Unix())
-	require.NoError(t, err)
+	activateSupplierAccountingForBatch(t, mainDB, firstDay.Unix())
 	runs := []model.SupplierUsageDailyBatchRun{{
 		BatchDate: firstDay.Format("2006-01-02"), DayStart: firstDay.Unix(), DayEnd: firstDay.AddDate(0, 0, 1).Unix(),
 		Status: model.SupplierDailyBatchStatusFailed,

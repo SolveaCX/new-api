@@ -371,7 +371,7 @@ func getSupplierDBTimestamp(tx *gorm.DB) (int64, error) {
 	var err error
 	switch tx.Dialector.Name() {
 	case "postgres":
-		err = tx.Raw("SELECT EXTRACT(EPOCH FROM clock_timestamp())::bigint").Scan(&timestamp).Error
+		err = tx.Raw("SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()))::bigint").Scan(&timestamp).Error
 	case "sqlite":
 		err = tx.Raw("SELECT CAST(strftime('%s', 'now') AS INTEGER)").Scan(&timestamp).Error
 	case "mysql":

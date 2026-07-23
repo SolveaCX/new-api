@@ -41,3 +41,39 @@ func TestJsonRawMessageToString(t *testing.T) {
 		})
 	}
 }
+
+func TestUnmarshalJsonObjectStrict(t *testing.T) {
+	allowed := map[string]struct{}{"name": {}, "metadata": {}}
+
+	t.Run("valid nested values", func(t *testing.T) {
+		fields, err := UnmarshalJsonObjectStrict(`{"name":"supplier","metadata":{"regions":["us","eu"],"enabled":true}}`, allowed)
+		require.NoError(t, err)
+		require.JSONEq(t, `"supplier"`, string(fields["name"]))
+		require.JSONEq(t, `{"regions":["us","eu"],"enabled":true}`, string(fields["metadata"]))
+	})
+
+	t.Run("duplicate allowed field", func(t *testing.T) {
+		_, err := UnmarshalJsonObjectStrict(`{"name":"first","name":"second"}`, allowed)
+		require.EqualError(t, err, `duplicate field "name"`)
+	})
+
+	t.Run("duplicate unknown field takes precedence", func(t *testing.T) {
+		_, err := UnmarshalJsonObjectStrict(`{"name":"supplier","extra":1,"extra":2}`, allowed)
+		require.EqualError(t, err, `duplicate field "extra"`)
+	})
+
+	t.Run("unknown field", func(t *testing.T) {
+		_, err := UnmarshalJsonObjectStrict(`{"name":"supplier","extra":1}`, allowed)
+		require.EqualError(t, err, `unknown field "extra"`)
+	})
+
+	t.Run("non-object document", func(t *testing.T) {
+		_, err := UnmarshalJsonObjectStrict(`["supplier"]`, allowed)
+		require.EqualError(t, err, "document must be an object")
+	})
+
+	t.Run("trailing document", func(t *testing.T) {
+		_, err := UnmarshalJsonObjectStrict(`{"name":"supplier"} {"name":"second"}`, allowed)
+		require.EqualError(t, err, "unexpected trailing token {")
+	})
+}

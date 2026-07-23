@@ -132,6 +132,8 @@ func TestGetSupplyChainCommandResultContract(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:supply-chain-command-result-controller?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierInventoryAdjustment{}, &model.SupplierStatisticsExclusionRule{}, &model.SupplierAdminCommand{}))
+	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
+	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
 	model.DB = db
 	t.Cleanup(func() { model.DB = previousDB })
 

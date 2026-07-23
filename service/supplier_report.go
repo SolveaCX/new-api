@@ -110,24 +110,26 @@ type SupplierReportMetrics struct {
 }
 
 type SupplierReportFreshness struct {
-	LatestBatchDate     string `json:"latest_batch_date"`
-	BatchStatus         string `json:"batch_status"`
-	FreshThrough        *int64 `json:"fresh_through"`
-	FreshnessLagSeconds *int64 `json:"freshness_lag_seconds"`
-	ErrorMessage        string `json:"error_message"`
-	SyncOnly            bool   `json:"sync_only"`
-	CoverageStartAt     int64  `json:"coverage_start_at"`
+	LatestBatchDate     string                                `json:"latest_batch_date"`
+	BatchStatus         string                                `json:"batch_status"`
+	FreshThrough        *int64                                `json:"fresh_through"`
+	FreshnessLagSeconds *int64                                `json:"freshness_lag_seconds"`
+	ErrorMessage        string                                `json:"error_message"`
+	SyncOnly            bool                                  `json:"sync_only"`
+	CoverageStartAt     int64                                 `json:"coverage_start_at"`
+	KnownCoverageGaps   []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
 }
 
 type SupplierReportOverview struct {
-	Range                        SupplierReportRange   `json:"range"`
-	Business                     SupplierReportMetrics `json:"business"`
-	Internal                     SupplierReportMetrics `json:"internal"`
-	TotalProcurementCost         SupplierReportMoney   `json:"total_estimated_procurement_cost"`
-	TotalInventoryMicroUsd       int64                 `json:"total_inventory_micro_usd"`
-	OfficialListConsumedMicroUsd int64                 `json:"official_list_consumed_micro_usd"`
-	RemainingInventoryMicroUsd   int64                 `json:"remaining_inventory_micro_usd"`
-	InternalDimensionAvailable   bool                  `json:"internal_dimension_available"`
+	Range                        SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps            []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Business                     SupplierReportMetrics                 `json:"business"`
+	Internal                     SupplierReportMetrics                 `json:"internal"`
+	TotalProcurementCost         SupplierReportMoney                   `json:"total_estimated_procurement_cost"`
+	TotalInventoryMicroUsd       int64                                 `json:"total_inventory_micro_usd"`
+	OfficialListConsumedMicroUsd int64                                 `json:"official_list_consumed_micro_usd"`
+	RemainingInventoryMicroUsd   int64                                 `json:"remaining_inventory_micro_usd"`
+	InternalDimensionAvailable   bool                                  `json:"internal_dimension_available"`
 }
 
 type SupplierReportTrendPoint struct {
@@ -139,8 +141,9 @@ type SupplierReportTrendPoint struct {
 }
 
 type SupplierReportTrend struct {
-	Range  SupplierReportRange        `json:"range"`
-	Points []SupplierReportTrendPoint `json:"points"`
+	Range             SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Points            []SupplierReportTrendPoint            `json:"points"`
 }
 
 type SupplierReportContractRow struct {
@@ -170,11 +173,12 @@ type SupplierReportContractRow struct {
 }
 
 type SupplierReportContractList struct {
-	Range   SupplierReportRange         `json:"range"`
-	Items   []SupplierReportContractRow `json:"items"`
-	Limit   int                         `json:"limit"`
-	Offset  int                         `json:"offset"`
-	HasMore bool                        `json:"has_more"`
+	Range             SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Items             []SupplierReportContractRow           `json:"items"`
+	Limit             int                                   `json:"limit"`
+	Offset            int                                   `json:"offset"`
+	HasMore           bool                                  `json:"has_more"`
 }
 
 type SupplierReportRateVersion struct {
@@ -205,11 +209,12 @@ type SupplierReportChannelRow struct {
 }
 
 type SupplierReportChannelList struct {
-	Range   SupplierReportRange        `json:"range"`
-	Items   []SupplierReportChannelRow `json:"items"`
-	Limit   int                        `json:"limit"`
-	Offset  int                        `json:"offset"`
-	HasMore bool                       `json:"has_more"`
+	Range             SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Items             []SupplierReportChannelRow            `json:"items"`
+	Limit             int                                   `json:"limit"`
+	Offset            int                                   `json:"offset"`
+	HasMore           bool                                  `json:"has_more"`
 }
 
 type SupplierReportBreakdownItem struct {
@@ -224,25 +229,27 @@ type SupplierReportBreakdownItem struct {
 }
 
 type SupplierReportBreakdownList struct {
-	Range                      SupplierReportRange           `json:"range"`
-	Items                      []SupplierReportBreakdownItem `json:"items"`
-	Limit                      int                           `json:"limit"`
-	Offset                     int                           `json:"offset"`
-	HasMore                    bool                          `json:"has_more"`
-	BreakdownEligibleCount     int64                         `json:"breakdown_eligible_count"`
-	TotalBusinessCount         int64                         `json:"total_business_count"`
-	BreakdownCoverageRate      *string                       `json:"breakdown_coverage_rate"`
-	BreakdownCoverageAvailable bool                          `json:"breakdown_coverage_available"`
+	Range                      SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps          []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Items                      []SupplierReportBreakdownItem         `json:"items"`
+	Limit                      int                                   `json:"limit"`
+	Offset                     int                                   `json:"offset"`
+	HasMore                    bool                                  `json:"has_more"`
+	BreakdownEligibleCount     int64                                 `json:"breakdown_eligible_count"`
+	TotalBusinessCount         int64                                 `json:"total_business_count"`
+	BreakdownCoverageRate      *string                               `json:"breakdown_coverage_rate"`
+	BreakdownCoverageAvailable bool                                  `json:"breakdown_coverage_available"`
 }
 
 type SupplierReportContractDetail struct {
-	Range                SupplierReportRange                 `json:"range"`
-	Summary              SupplierReportContractRow           `json:"summary"`
-	RateVersions         []SupplierReportRateVersion         `json:"rate_versions"`
-	InventoryAdjustments []SupplierReportInventoryAdjustment `json:"inventory_adjustments"`
-	Channels             SupplierReportChannelList           `json:"channels"`
-	InternalTrend        []SupplierReportTrendPoint          `json:"internal_trend"`
-	Breakdown            SupplierReportBreakdownList         `json:"breakdown"`
+	Range                SupplierReportRange                   `json:"range"`
+	KnownCoverageGaps    []model.SupplierAccountingCoverageGap `json:"known_coverage_gaps"`
+	Summary              SupplierReportContractRow             `json:"summary"`
+	RateVersions         []SupplierReportRateVersion           `json:"rate_versions"`
+	InventoryAdjustments []SupplierReportInventoryAdjustment   `json:"inventory_adjustments"`
+	Channels             SupplierReportChannelList             `json:"channels"`
+	InternalTrend        []SupplierReportTrendPoint            `json:"internal_trend"`
+	Breakdown            SupplierReportBreakdownList           `json:"breakdown"`
 }
 
 type SupplierReportService struct {
@@ -258,12 +265,24 @@ func DefaultSupplierReportService() *SupplierReportService {
 }
 
 func (s *SupplierReportService) GetOverview(ctx context.Context, query SupplierReportQuery) (SupplierReportOverview, error) {
+	return s.getOverview(ctx, query, nil)
+}
+
+func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierReportQuery, coverage *supplierReportCoverageProjection) (SupplierReportOverview, error) {
 	reportRange, filter, catalog, _, err := s.resolveContracts(ctx, query, nil)
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
+	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	if err != nil {
+		return SupplierReportOverview{}, err
+	}
+	result := SupplierReportOverview{
+		Range: reportRange, KnownCoverageGaps: coverage.gaps,
+		InternalDimensionAvailable: len(filter.ChannelIds) == 0,
+	}
 	if len(catalog) == 0 {
-		return SupplierReportOverview{Range: reportRange, InternalDimensionAvailable: len(filter.ChannelIds) == 0}, nil
+		return result, nil
 	}
 	usage, err := s.loadUsage(ctx, filter, false)
 	if err != nil {
@@ -273,10 +292,9 @@ func (s *SupplierReportService) GetOverview(ctx context.Context, query SupplierR
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
-	result := SupplierReportOverview{
-		Range: reportRange, Business: usage.business.metrics(), Internal: usage.internal.metrics(),
-		InternalDimensionAvailable: usage.internalDimensionAvailable,
-	}
+	result.Business = usage.business.metrics()
+	result.Internal = usage.internal.metrics()
+	result.InternalDimensionAvailable = usage.internalDimensionAvailable
 	result.TotalProcurementCost, err = combinedSupplierReportMoney(result.Business.ProcurementCost, result.Internal.ProcurementCost)
 	if err != nil {
 		return SupplierReportOverview{}, err
@@ -298,11 +316,19 @@ func (s *SupplierReportService) GetOverview(ctx context.Context, query SupplierR
 }
 
 func (s *SupplierReportService) GetTrend(ctx context.Context, query SupplierReportQuery) (SupplierReportTrend, error) {
+	return s.getTrend(ctx, query, nil)
+}
+
+func (s *SupplierReportService) getTrend(ctx context.Context, query SupplierReportQuery, coverage *supplierReportCoverageProjection) (SupplierReportTrend, error) {
 	reportRange, filter, catalog, _, err := s.resolveContracts(ctx, query, nil)
 	if err != nil {
 		return SupplierReportTrend{}, err
 	}
-	result := SupplierReportTrend{Range: reportRange, Points: []SupplierReportTrendPoint{}}
+	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	if err != nil {
+		return SupplierReportTrend{}, err
+	}
+	result := SupplierReportTrend{Range: reportRange, KnownCoverageGaps: coverage.gaps, Points: []SupplierReportTrendPoint{}}
 	if len(catalog) == 0 {
 		return result, nil
 	}
@@ -349,12 +375,20 @@ func (s *SupplierReportService) GetTrend(ctx context.Context, query SupplierRepo
 }
 
 func (s *SupplierReportService) ListContracts(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage) (SupplierReportContractList, error) {
+	return s.listContracts(ctx, query, page, nil)
+}
+
+func (s *SupplierReportService) listContracts(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage, coverage *supplierReportCoverageProjection) (SupplierReportContractList, error) {
 	reportRange, filter, catalog, hasMore, err := s.resolveContracts(ctx, query, &page)
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
+	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	if err != nil {
+		return SupplierReportContractList{}, err
+	}
 	page = page.Normalize()
-	result := SupplierReportContractList{Range: reportRange, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportContractRow{}}
+	result := SupplierReportContractList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportContractRow{}}
 	result.HasMore = hasMore
 	if len(catalog) == 0 {
 		return result, nil
@@ -387,7 +421,15 @@ func (s *SupplierReportService) GetContractDetail(ctx context.Context, contractI
 		return SupplierReportContractDetail{}, model.ErrInvalidSupplierReportFilter
 	}
 	query.ContractIds = []int{contractId}
-	list, err := s.ListContracts(ctx, query, model.SupplierReportPage{Limit: 1})
+	reportRange, _, err := query.modelFilter()
+	if err != nil {
+		return SupplierReportContractDetail{}, err
+	}
+	coverage, err := s.resolveCoverageProjection(ctx, reportRange, nil)
+	if err != nil {
+		return SupplierReportContractDetail{}, err
+	}
+	list, err := s.listContracts(ctx, query, model.SupplierReportPage{Limit: 1}, coverage)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
@@ -402,19 +444,19 @@ func (s *SupplierReportService) GetContractDetail(ctx context.Context, contractI
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	channels, err := s.ListChannels(ctx, query, model.SupplierReportPage{Limit: model.SupplierReportMaxPageSize})
+	channels, err := s.listChannels(ctx, query, model.SupplierReportPage{Limit: model.SupplierReportMaxPageSize}, coverage)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	breakdown, err := s.ListBreakdown(ctx, query, page)
+	breakdown, err := s.listBreakdown(ctx, query, page, coverage)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	trend, err := s.GetTrend(ctx, query)
+	trend, err := s.getTrend(ctx, query, coverage)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	result := SupplierReportContractDetail{Range: list.Range, Summary: list.Items[0], Channels: channels, Breakdown: breakdown}
+	result := SupplierReportContractDetail{Range: list.Range, KnownCoverageGaps: coverage.gaps, Summary: list.Items[0], Channels: channels, Breakdown: breakdown}
 	for _, rate := range rates {
 		result.RateVersions = append(result.RateVersions, SupplierReportRateVersion{Id: rate.Id, ProcurementMultiplierPpm: rate.ProcurementMultiplierPpm, EffectiveAt: rate.EffectiveAt, CreatedBy: rate.CreatedBy, Reason: rate.Reason, CreatedAt: rate.CreatedAt})
 	}
@@ -429,12 +471,20 @@ func (s *SupplierReportService) GetContractDetail(ctx context.Context, contractI
 }
 
 func (s *SupplierReportService) ListChannels(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage) (SupplierReportChannelList, error) {
+	return s.listChannels(ctx, query, page, nil)
+}
+
+func (s *SupplierReportService) listChannels(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage, coverage *supplierReportCoverageProjection) (SupplierReportChannelList, error) {
 	reportRange, filter, catalog, _, err := s.resolveContracts(ctx, query, nil)
 	if err != nil {
 		return SupplierReportChannelList{}, err
 	}
+	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	if err != nil {
+		return SupplierReportChannelList{}, err
+	}
 	page = page.Normalize()
-	result := SupplierReportChannelList{Range: reportRange, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportChannelRow{}}
+	result := SupplierReportChannelList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportChannelRow{}}
 	if len(catalog) == 0 {
 		return result, nil
 	}
@@ -482,12 +532,20 @@ func (s *SupplierReportService) ListChannels(ctx context.Context, query Supplier
 }
 
 func (s *SupplierReportService) ListBreakdown(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage) (SupplierReportBreakdownList, error) {
+	return s.listBreakdown(ctx, query, page, nil)
+}
+
+func (s *SupplierReportService) listBreakdown(ctx context.Context, query SupplierReportQuery, page model.SupplierReportPage, coverage *supplierReportCoverageProjection) (SupplierReportBreakdownList, error) {
 	reportRange, filter, catalog, _, err := s.resolveContracts(ctx, query, nil)
 	if err != nil {
 		return SupplierReportBreakdownList{}, err
 	}
+	coverage, err = s.resolveCoverageProjection(ctx, reportRange, coverage)
+	if err != nil {
+		return SupplierReportBreakdownList{}, err
+	}
 	page = page.Normalize()
-	result := SupplierReportBreakdownList{Range: reportRange, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportBreakdownItem{}}
+	result := SupplierReportBreakdownList{Range: reportRange, KnownCoverageGaps: coverage.gaps, Limit: page.Limit, Offset: page.Offset, Items: []SupplierReportBreakdownItem{}}
 	if len(catalog) == 0 {
 		return result, nil
 	}
@@ -541,7 +599,26 @@ func (s *SupplierReportService) GetFreshness(ctx context.Context) (SupplierRepor
 		LatestBatchDate: snapshot.LatestBatchDate, BatchStatus: snapshot.LatestStatus,
 		FreshThrough: snapshot.FreshThrough, FreshnessLagSeconds: snapshot.FreshnessLagSeconds,
 		ErrorMessage: snapshot.ErrorMessage, SyncOnly: snapshot.SyncOnly, CoverageStartAt: snapshot.CoverageStartAt,
+		KnownCoverageGaps: snapshot.KnownCoverageGaps,
 	}, nil
+}
+
+type supplierReportCoverageProjection struct {
+	gaps []model.SupplierAccountingCoverageGap
+}
+
+func (s *SupplierReportService) resolveCoverageProjection(ctx context.Context, reportRange SupplierReportRange, current *supplierReportCoverageProjection) (*supplierReportCoverageProjection, error) {
+	if current != nil {
+		return current, nil
+	}
+	if s == nil || s.store == nil {
+		return nil, model.ErrDatabase
+	}
+	gaps, err := s.store.QueryCoverageGaps(ctx, reportRange.StartAt, reportRange.EndAt)
+	if err != nil {
+		return nil, err
+	}
+	return &supplierReportCoverageProjection{gaps: gaps}, nil
 }
 
 type contractRuntime struct {
