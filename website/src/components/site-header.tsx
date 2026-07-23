@@ -59,6 +59,7 @@ export function SiteHeader(props: Props) {
     { href: "/blog", label: copy.nav.blog, publicPath: true },
     { href: "/pricing", label: copy.nav.pricing, publicPath: true },
     { href: "/models", label: copy.nav.modelPricing, publicPath: true },
+    { href: "/compute", label: copy.nav.compute, publicPath: true },
     ...(docsUrl ? [{ href: docsUrl, label: copy.nav.docs, external: true }] : []),
     // Rankings is the website's own daily-updated data page (same pipeline
     // as the console chart) — the single public rankings surface.
