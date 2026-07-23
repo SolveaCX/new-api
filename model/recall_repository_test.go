@@ -290,6 +290,29 @@ func TestListRecallCandidateFactsSpecifiedUnionIncludesUnmatchedEmails(t *testin
 	require.Zero(t, disabledEmailOnlyFallbacks)
 }
 
+func TestListRecallCandidateFactsSpecifiedUnionPreservesIDsWithDuplicateEmails(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	sharedFirst := createRecallRepositoryCandidateUser(t, "specified_duplicate_email_first", 100, 4)
+	sharedSecond := createRecallRepositoryCandidateUser(t, "specified_duplicate_email_second", 100, 4)
+	explicit := createRecallRepositoryCandidateUser(t, "specified_duplicate_email_explicit", 100, 4)
+	otherEmail := createRecallRepositoryCandidateUser(t, "specified_duplicate_email_other", 100, 4)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", sharedSecond.Id).Update("email", sharedFirst.Email).Error)
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{explicit.Id},
+		SpecifiedEmails:  []string{strings.ToUpper(sharedFirst.Email), strings.ToUpper(otherEmail.Email)},
+		Limit:            3,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{sharedFirst.Id, explicit.Id, otherEmail.Id}, recallRepositoryUserIDs(facts))
+	for _, fact := range facts {
+		require.False(t, fact.EmailOnly)
+	}
+}
+
 func TestListRecallCandidateFactsSpecifiedUnionIgnoresSmallLimitForSafetyMatches(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))

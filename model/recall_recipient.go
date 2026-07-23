@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -938,6 +939,11 @@ type recallPaymentFactRow struct {
 	CompleteTime    int64
 }
 
+type recallSpecifiedEmailUserRow struct {
+	Email  string `gorm:"column:email"`
+	UserId int    `gorm:"column:user_id"`
+}
+
 func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact, error) {
 	return ListRecallCandidateFactsWithContext(context.Background(), query)
 }
@@ -962,23 +968,90 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 		ids := normalizeRecallCandidateUserIDs(query.SpecifiedUserIDs)
 		emails := normalizeRecallCandidateEmails(query.SpecifiedEmails)
 		specifiedEmails = emails
-		switch {
-		case len(ids) > 0 && len(emails) > 0:
-			userQuery = DB.WithContext(ctx).Where("(id IN ? OR LOWER(email) IN ?)", ids, emails)
-		case len(ids) > 0:
-			userQuery = DB.WithContext(ctx).Where("id IN ?", ids)
-		case len(emails) > 0:
-			userQuery = DB.WithContext(ctx).Where("LOWER(email) IN ?", emails)
-		default:
+		if len(ids)+len(emails) > 500 {
+			remaining := 500
+			if len(ids) > remaining {
+				ids = ids[:remaining]
+				emails = nil
+			} else {
+				remaining -= len(ids)
+				if len(emails) > remaining {
+					emails = emails[:remaining]
+				}
+			}
+			specifiedEmails = emails
+		}
+		if len(ids) == 0 && len(emails) == 0 {
 			return facts, nil
 		}
-		query.Limit = len(ids) + len(emails)
+		resolvedUserIDs := make([]int, 0, len(ids)+len(emails))
+		seenUserIDs := make(map[int]struct{}, len(ids)+len(emails))
+		matchedSpecifiedEmails := make(map[string]struct{}, len(emails))
+		if len(ids) > 0 {
+			var explicitUsers []User
+			if err := DB.WithContext(ctx).
+				Select("id", "email").
+				Where("id IN ?", ids).
+				Find(&explicitUsers).Error; err != nil {
+				return nil, err
+			}
+			for _, user := range explicitUsers {
+				if _, exists := seenUserIDs[user.Id]; !exists {
+					seenUserIDs[user.Id] = struct{}{}
+					resolvedUserIDs = append(resolvedUserIDs, user.Id)
+				}
+				if email := strings.ToLower(strings.TrimSpace(user.Email)); email != "" {
+					matchedSpecifiedEmails[email] = struct{}{}
+				}
+			}
+		}
+		remainingEmails := make([]string, 0, len(emails))
+		for _, email := range emails {
+			if _, matched := matchedSpecifiedEmails[email]; matched {
+				continue
+			}
+			remainingEmails = append(remainingEmails, email)
+		}
+		if len(remainingEmails) > 0 {
+			var emailUserRows []recallSpecifiedEmailUserRow
+			if err := DB.WithContext(ctx).Model(&User{}).
+				Select("LOWER(email) AS email, MIN(id) AS user_id").
+				Where("LOWER(email) IN ?", remainingEmails).
+				Group("LOWER(email)").
+				Scan(&emailUserRows).Error; err != nil {
+				return nil, err
+			}
+			for _, row := range emailUserRows {
+				email := strings.ToLower(strings.TrimSpace(row.Email))
+				if email != "" {
+					matchedSpecifiedEmails[email] = struct{}{}
+				}
+				if row.UserId <= 0 {
+					continue
+				}
+				if _, exists := seenUserIDs[row.UserId]; exists {
+					continue
+				}
+				seenUserIDs[row.UserId] = struct{}{}
+				resolvedUserIDs = append(resolvedUserIDs, row.UserId)
+			}
+		}
+		sort.Ints(resolvedUserIDs)
+		if len(resolvedUserIDs) > 0 {
+			userQuery = DB.WithContext(ctx).Where("id IN ?", resolvedUserIDs)
+			query.Limit = len(resolvedUserIDs)
+		} else {
+			users = nil
+			query.Limit = 0
+		}
 	}
-	if err := userQuery.
-		Order("id ASC").
-		Limit(query.Limit).
-		Find(&users).Error; err != nil {
-		return nil, err
+	if query.Limit > 0 {
+		if err := userQuery.
+			Order("id ASC").
+			Limit(query.Limit).
+			Find(&users).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	userIDs := make([]int, len(users))
