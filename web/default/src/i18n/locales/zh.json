@@ -6260,6 +6260,7 @@
     "Fleet summary": "模型总体摘要",
     "Group breakdown": "分组明细",
     "Health time window": "健康状态时间窗口",
+    "Health status": "健康状态",
     "Healthy among sufficiently sampled models": "样本量充足的模型中状态健康的数量",
     "Healthy sampled models": "健康且样本量充足的模型",
     "Insufficient data": "数据不足",
