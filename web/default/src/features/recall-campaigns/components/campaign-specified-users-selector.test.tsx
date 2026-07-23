@@ -444,6 +444,26 @@ describe('CampaignSpecifiedUsersSelector', () => {
     dispose(root)
   })
 
+  test('formats selected user option labels with stable separators', async () => {
+    userFixtures.set('ids:42,99', [
+      user(42, {
+        username: 'ada',
+        display_name: 'Ada',
+        email: 'ada@example.com',
+      }),
+    ])
+    const { root } = renderSelector({ userIDs: [42, 99] })
+
+    await waitFor(() => optionLabels().some((label) => label.includes('Ada')))
+
+    expect(optionLabels()).toEqual([
+      'Ada - ada@example.com - #42',
+      'Unavailable - #99',
+    ])
+    expect(optionLabels().join(' ')).not.toContain('路')
+    dispose(root)
+  })
+
   test('treats empty and cleared keyword searches as authoritative for unselected options', async () => {
     userFixtures.set('keyword:ada', [
       user(1, {

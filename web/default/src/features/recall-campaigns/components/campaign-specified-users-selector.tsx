@@ -22,12 +22,12 @@ interface CampaignSpecifiedUsersSelectorProps {
 
 function userLabel(user: RecallAudienceUserOption): string {
   const name = user.display_name || user.username
-  return `${name} · ${user.email} · #${user.id}`
+  return `${name} - ${user.email} - #${user.id}`
 }
 
 function unavailableUserOption(id: number, unavailable: string): Option {
   return {
-    label: `${unavailable} · #${id}`,
+    label: `${unavailable} - #${id}`,
     value: String(id),
   }
 }
