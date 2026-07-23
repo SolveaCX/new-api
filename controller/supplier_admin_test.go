@@ -62,6 +62,38 @@ func TestSupplyChainContractUpdateRejectsInvariantOnlyMassAssignment(t *testing.
 	require.Contains(t, recorder.Body.String(), `"success":false`)
 }
 
+func TestSupplyChainSupplierUpdateRequiresVersionAndReplaysExactlyOnce(t *testing.T) {
+	previousDB := model.DB
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierInventoryAdjustment{}, &model.SupplierAdminCommand{}))
+	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
+	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
+	model.DB = db
+	t.Cleanup(func() { model.DB = previousDB })
+	supplier := model.UpstreamSupplier{Name: "controller version supplier"}
+	require.NoError(t, db.Create(&supplier).Error)
+	list := performSupplyChainControllerRequest(http.MethodGet, "/suppliers", "", ListSupplyChainSuppliers)
+	require.Equal(t, http.StatusOK, list.Code)
+	require.Contains(t, list.Body.String(), `"row_version":1`, "supplier list projection exposes the CAS token required by clients")
+
+	missingVersion := performSupplyChainControllerRequestWithHeaders(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated"}`, map[string]string{"Idempotency-Key": "update-command"}, UpdateSupplyChainSupplier)
+	require.Equal(t, http.StatusBadRequest, missingVersion.Code)
+	missingKey := performSupplyChainControllerRequestAt(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated","expected_version":1}`, UpdateSupplyChainSupplier)
+	require.Equal(t, http.StatusBadRequest, missingKey.Code)
+
+	headers := map[string]string{"Idempotency-Key": "update-command"}
+	first := performSupplyChainControllerRequestWithHeaders(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated","expected_version":1}`, headers, UpdateSupplyChainSupplier)
+	require.Equal(t, http.StatusOK, first.Code)
+	require.Contains(t, first.Body.String(), `"row_version":2`)
+	replay := performSupplyChainControllerRequestWithHeaders(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated","expected_version":1}`, headers, UpdateSupplyChainSupplier)
+	require.Equal(t, http.StatusOK, replay.Code)
+	require.Equal(t, "true", replay.Header().Get("Idempotent-Replayed"))
+	require.JSONEq(t, first.Body.String(), replay.Body.String())
+	stale := performSupplyChainControllerRequestWithHeaders(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"stale","expected_version":1}`, map[string]string{"Idempotency-Key": "stale-command"}, UpdateSupplyChainSupplier)
+	require.Equal(t, http.StatusConflict, stale.Code)
+}
+
 func TestSupplierChannelBindingRequestHasCASAllowlistedFields(t *testing.T) {
 	typeOf := reflect.TypeOf(dto.SupplierChannelBindingRequest{})
 	require.Equal(t, 2, typeOf.NumField())

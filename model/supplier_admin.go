@@ -20,17 +20,19 @@ type SupplierPage struct {
 }
 
 type UpdateUpstreamSupplierInput struct {
-	Name   *string
-	Remark *string
+	Name            *string
+	Remark          *string
+	ExpectedVersion int64
 }
 
 type UpdateSupplierContractInput struct {
-	Name           *string
-	ContractNo     *string
-	Remark         *string
-	RpmLimit       *int64
-	TpmLimit       *int64
-	MaxConcurrency *int
+	Name            *string
+	ContractNo      *string
+	Remark          *string
+	RpmLimit        *int64
+	TpmLimit        *int64
+	MaxConcurrency  *int
+	ExpectedVersion int64
 }
 
 type SupplierChannelBinding struct {
@@ -388,7 +390,7 @@ func CreateSupplierInventoryAdjustment(adjustment *SupplierInventoryAdjustment) 
 			return err
 		}
 		result := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "contract_id"}, {Name: "idempotency_key"}},
+			Columns:   []clause.Column{{Name: "contract_id"}, {Name: "created_by"}, {Name: "idempotency_key"}},
 			DoNothing: true,
 		}).Create(adjustment)
 		if result.Error != nil {
@@ -396,10 +398,10 @@ func CreateSupplierInventoryAdjustment(adjustment *SupplierInventoryAdjustment) 
 		}
 		created = result.RowsAffected == 1 && adjustment.Id > 0
 		var existing SupplierInventoryAdjustment
-		if err := tx.Where("contract_id = ? AND idempotency_key = ?", adjustment.ContractId, strings.TrimSpace(adjustment.IdempotencyKey)).First(&existing).Error; err != nil {
+		if err := tx.Where("contract_id = ? AND created_by = ? AND idempotency_key = ?", adjustment.ContractId, adjustment.CreatedBy, strings.TrimSpace(adjustment.IdempotencyKey)).First(&existing).Error; err != nil {
 			return err
 		}
-		if existing.DeltaMicroUsd != adjustment.DeltaMicroUsd || existing.Type != strings.TrimSpace(adjustment.Type) || existing.Reason != strings.TrimSpace(adjustment.Reason) || existing.CreatedBy != adjustment.CreatedBy {
+		if existing.DeltaMicroUsd != adjustment.DeltaMicroUsd || existing.Type != strings.TrimSpace(adjustment.Type) || existing.Reason != strings.TrimSpace(adjustment.Reason) {
 			return ErrSupplierIdempotencyConflict
 		}
 		*adjustment = existing

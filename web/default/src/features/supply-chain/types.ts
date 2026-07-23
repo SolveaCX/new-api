@@ -25,6 +25,10 @@ export type SupplierInventoryAdjustmentType =
 export type SupplierStatisticsAction = 'exclude' | 'include'
 export type SupplierDataQuality = 'authoritative' | 'unattributed'
 export type SupplierReportBatchStatus = 'running' | 'completed' | 'failed' | ''
+export type SupplierPersistedLogCompleteness =
+  | 'complete'
+  | 'incomplete'
+  | 'not_scanned'
 export type NullableRatio = string | null
 export type MicroUsd = number
 
@@ -84,6 +88,7 @@ export interface UpstreamSupplier {
   active_contract_count: number
   linked_channel_count: number
   inventory_total_micro_usd: MicroUsd
+  row_version: number
   created_at: number
   updated_at: number
 }
@@ -96,6 +101,11 @@ export interface SupplierCreateRequest {
 export interface SupplierUpdateRequest {
   name?: string
   remark?: string
+  expected_version: number
+}
+
+export interface SupplierInactivateRequest {
+  expected_version: number
 }
 
 export interface SupplierContract {
@@ -114,6 +124,7 @@ export interface SupplierContract {
   rpm_limit: number
   tpm_limit: number
   max_concurrency: number
+  row_version: number
   created_at: number
   updated_at: number
 }
@@ -135,6 +146,11 @@ export interface SupplierContractUpdateRequest {
   rpm_limit?: number
   tpm_limit?: number
   max_concurrency?: number
+  expected_version: number
+}
+
+export interface SupplierContractInactivateRequest {
+  expected_version: number
 }
 
 export interface SupplierContractRateVersion {
@@ -238,6 +254,11 @@ export interface SupplierChannelUnbindResult {
   supplier_contract_id: null
 }
 
+export interface SupplierChannelUnbindVariables {
+  expectedContractId: number
+  idempotencyKey: string
+}
+
 export interface IdempotentMutationVariables<T> {
   data: T
   idempotencyKey: string
@@ -278,6 +299,101 @@ export interface SupplierReportRange {
   end_at: number
   timezone: 'Asia/Shanghai'
   month?: string
+}
+
+export interface SupplierPublishedDispositionCounts {
+  captured: number
+  unsupported_path: number
+  not_financially_committed: number
+  zero_usage: number
+  unbound: number
+  producer_error: number
+}
+
+export interface SupplierPublishedFailureCounts {
+  unknown_producer_capability: number
+  incompatible_producer_capability: number
+  absent_marker_after_cutover: number
+  invalid_captured_snapshot: number
+  unknown_official_amount: number
+}
+
+export interface SupplierPublishedWarning {
+  code: string
+  count: number
+  message_key: string
+}
+
+export interface SupplierAccountingCoverageGap {
+  id: number
+  start_at: number
+  end_at: number | null
+  reason_category: string
+  reason_text: string
+  expected_capability_version: number
+  affected_capability_version: number | null
+  affected_oci_digest: string | null
+  affected_build_commit: string | null
+  activation_state_version_before: number
+  activation_state_version_after: number
+  open_command_id: string
+  close_command_id: string | null
+  opened_by: number
+  closed_by: number | null
+  finance_disposition: string
+  evidence_refs: string[]
+  record_version: number
+  created_at: number
+  updated_at: number
+}
+
+export interface SupplierDailyReportDay {
+  batch_date: string
+  published: boolean
+  published_fence_token: number
+  published_at: number | null
+  persisted_log_snapshot_completeness: SupplierPersistedLogCompleteness
+  finance_attention_required: boolean
+  logs_scanned: number
+  producer_markers_present: number
+  captured_snapshot_count: number
+  disposition_counts: SupplierPublishedDispositionCounts
+  failure_counts: SupplierPublishedFailureCounts
+  warnings: SupplierPublishedWarning[]
+  known_coverage_gaps: SupplierAccountingCoverageGap[]
+}
+
+export interface SupplierDailyReportProjection {
+  range: SupplierReportRange
+  persisted_log_universe: 'successfully_persisted_consume_logs_for_final_successful_settlement'
+  days: SupplierDailyReportDay[]
+}
+
+export interface SupplierDailyReportRerunRequest {
+  reason: string
+  expected_published_fence_token: number
+}
+
+export interface SupplierDailyReportRerunVariables {
+  batchDate: string
+  data: SupplierDailyReportRerunRequest
+  idempotencyKey: string
+}
+
+export interface SupplierDailyReportRerunResult {
+  request_id: string
+  batch_date: string | null
+  run_id: number | null
+  status: 'running' | 'completed' | 'failed'
+  fence_token: number
+  published_fence_token: number
+  locked_until: string | null
+  error_category: string
+  result: {
+    processed_days: number
+    remaining_work: boolean
+    next_batch_date: string | null
+  } | null
 }
 
 export interface SupplierReportMoney {

@@ -106,6 +106,20 @@ func GetSupplyChainReportFreshness(c *gin.Context) {
 	supplyChainReportResult(c, result, err)
 }
 
+func GetSupplyChainDailyReports(c *gin.Context) {
+	query := service.SupplierReportQuery{
+		Month:     strings.TrimSpace(c.Query("month")),
+		StartDate: strings.TrimSpace(c.Query("start_date")),
+		EndDate:   strings.TrimSpace(c.Query("end_date")),
+	}
+	if _, err := service.ParseSupplierReportRange(query.Month, query.StartDate, query.EndDate); err != nil {
+		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidReportRange)
+		return
+	}
+	result, err := newSupplyChainReportService().GetDaily(c.Request.Context(), query)
+	supplyChainReportResult(c, result, err)
+}
+
 func RerunSupplyChainDailyReport(c *gin.Context) {
 	rerunSupplyChainDailyReport(c, rerunSupplierDailyReport, model.DB, model.LOG_DB, time.Now())
 }

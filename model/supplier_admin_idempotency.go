@@ -17,17 +17,24 @@ import (
 )
 
 const (
-	SupplierAdminCommandScopeCreateSupplier  = "supplier.create"
-	SupplierAdminCommandScopeCreateContract  = "supplier_contract.create"
-	SupplierAdminCommandScopeCreateRate      = "supplier_rate.create"
-	SupplierAdminCommandScopeCreateInventory = "supplier_inventory.create"
-	SupplierAdminCommandScopeCreateExclusion = "supplier_exclusion.create"
+	SupplierAdminCommandScopeCreateSupplier     = "supplier.create"
+	SupplierAdminCommandScopeCreateContract     = "supplier_contract.create"
+	SupplierAdminCommandScopeCreateRate         = "supplier_rate.create"
+	SupplierAdminCommandScopeCreateInventory    = "supplier_inventory.create"
+	SupplierAdminCommandScopeCreateExclusion    = "supplier_exclusion.create"
+	SupplierAdminCommandScopeUpdateSupplier     = "supplier.update"
+	SupplierAdminCommandScopeInactivateSupplier = "supplier.inactivate"
+	SupplierAdminCommandScopeUpdateContract     = "supplier_contract.update"
+	SupplierAdminCommandScopeInactivateContract = "supplier_contract.inactivate"
+	SupplierAdminCommandScopeBindChannel        = "supplier_channel.bind"
+	SupplierAdminCommandScopeUnbindChannel      = "supplier_channel.unbind"
 
 	supplierAdminCommandResourceSupplier  = "supplier"
 	supplierAdminCommandResourceContract  = "supplier_contract"
 	supplierAdminCommandResourceRate      = "supplier_rate"
 	supplierAdminCommandResourceInventory = "supplier_inventory_adjustment"
 	supplierAdminCommandResourceExclusion = "supplier_exclusion_rule"
+	supplierAdminCommandResourceBinding   = "supplier_channel_binding"
 
 	supplierAdminCommandPayloadVersion  = 1
 	maxSupplierAdminIdempotencyKeyBytes = 128
@@ -37,6 +44,8 @@ const (
 	legacySupplierAdminCommandActorScopeKeyIndex   = "idx_supplier_admin_command_actor_scope_key"
 	supplierAdminCommandActorScopeDigestIndex      = "ux_supplier_admin_command_actor_scope_digest"
 	supplierBatchSchedulerIdentityScopeDigestIndex = "ux_supplier_batch_scheduler_identity_scope_digest"
+	legacySupplierInventoryContractKeyIndex        = "ux_supplier_inventory_contract_idempotency"
+	supplierInventoryActorLocalIndex               = "ux_supplier_inventory_actor_idempotency"
 )
 
 var (
@@ -197,6 +206,25 @@ func SupplierInventoryCommandScope(contractId int) string {
 	return SupplierAdminCommandScopeCreateInventory + "/" + strconv.Itoa(contractId)
 }
 
+func SupplierUpdateCommandScope(id int) string {
+	return SupplierAdminCommandScopeUpdateSupplier + "/" + strconv.Itoa(id)
+}
+func SupplierInactivateCommandScope(id int) string {
+	return SupplierAdminCommandScopeInactivateSupplier + "/" + strconv.Itoa(id)
+}
+func SupplierContractUpdateCommandScope(id int) string {
+	return SupplierAdminCommandScopeUpdateContract + "/" + strconv.Itoa(id)
+}
+func SupplierContractInactivateCommandScope(id int) string {
+	return SupplierAdminCommandScopeInactivateContract + "/" + strconv.Itoa(id)
+}
+func SupplierChannelBindCommandScope(id int) string {
+	return SupplierAdminCommandScopeBindChannel + "/" + strconv.Itoa(id)
+}
+func SupplierChannelUnbindCommandScope(id int) string {
+	return SupplierAdminCommandScopeUnbindChannel + "/" + strconv.Itoa(id)
+}
+
 func parseSupplierAdminCommandScope(scope string) (string, int, bool) {
 	scope = strings.TrimSpace(scope)
 	switch scope {
@@ -205,15 +233,30 @@ func parseSupplierAdminCommandScope(scope string) (string, int, bool) {
 	case SupplierAdminCommandScopeCreateExclusion:
 		return scope, 0, true
 	}
-	prefix := SupplierAdminCommandScopeCreateInventory + "/"
-	if !strings.HasPrefix(scope, prefix) {
-		return "", 0, false
+	dynamic := []struct {
+		base      string
+		canonical func(int) string
+	}{
+		{SupplierAdminCommandScopeCreateInventory, SupplierInventoryCommandScope},
+		{SupplierAdminCommandScopeUpdateSupplier, SupplierUpdateCommandScope},
+		{SupplierAdminCommandScopeInactivateSupplier, SupplierInactivateCommandScope},
+		{SupplierAdminCommandScopeUpdateContract, SupplierContractUpdateCommandScope},
+		{SupplierAdminCommandScopeInactivateContract, SupplierContractInactivateCommandScope},
+		{SupplierAdminCommandScopeBindChannel, SupplierChannelBindCommandScope},
+		{SupplierAdminCommandScopeUnbindChannel, SupplierChannelUnbindCommandScope},
 	}
-	contractId, err := strconv.Atoi(strings.TrimPrefix(scope, prefix))
-	if err != nil || contractId <= 0 || scope != SupplierInventoryCommandScope(contractId) {
-		return "", 0, false
+	for _, candidate := range dynamic {
+		prefix := candidate.base + "/"
+		if !strings.HasPrefix(scope, prefix) {
+			continue
+		}
+		subjectID, err := strconv.Atoi(strings.TrimPrefix(scope, prefix))
+		if err != nil || subjectID <= 0 || scope != candidate.canonical(subjectID) {
+			return "", 0, false
+		}
+		return candidate.base, subjectID, true
 	}
-	return SupplierAdminCommandScopeCreateInventory, contractId, true
+	return "", 0, false
 }
 
 // GetSupplierAdminCommandResult returns only completed commands owned by the
@@ -325,13 +368,16 @@ type SupplierAdminCommandLedgerMigrationStatus struct {
 	HasSchedulerDigestIndex  bool
 	LegacyScopeKeyIndex      bool
 	LegacyActorScopeKeyIndex bool
+	HasInventoryActorIndex   bool
+	LegacyInventoryKeyIndex  bool
 	InvalidDigestRows        int64
 	Finalized                bool
 }
 
 // MigrateSupplierAdminCommandLedger bridges old and new writers. It adds only
 // nullable ledger columns, strictly backfills and validates every digest, and
-// creates the actor-local digest index while retaining both legacy indexes.
+// creates actor-local indexes while retaining legacy indexes for mixed-version
+// writers until the explicit post-drain finalization step.
 func MigrateSupplierAdminCommandLedger(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("migrate supplier admin command ledger: %w", ErrDatabase)
@@ -340,6 +386,12 @@ func MigrateSupplierAdminCommandLedger(db *gorm.DB) error {
 		if err := db.Migrator().CreateTable(&SupplierAdminCommand{}); err != nil && !db.Migrator().HasTable(&SupplierAdminCommand{}) {
 			return fmt.Errorf("create supplier admin command ledger: %w", err)
 		}
+	}
+	if err := migrateSupplierOptimisticConcurrency(db); err != nil {
+		return err
+	}
+	if err := ensureSupplierInventoryActorLocalIndex(db); err != nil {
+		return err
 	}
 	if err := ensureSupplierAdminCommandLedgerColumn(db, "IdempotencyKeyDigest"); err != nil {
 		return err
@@ -380,6 +432,9 @@ func FinalizeSupplierAdminCommandLedgerMigration(db *gorm.DB) error {
 			return fmt.Errorf("drop legacy supplier admin command index %s: %w", legacyIndex, err)
 		}
 	}
+	if err := dropSupplierIndexIfPresent(db, legacySupplierInventoryContractKeyIndex); err != nil {
+		return fmt.Errorf("drop legacy supplier inventory index %s: %w", legacySupplierInventoryContractKeyIndex, err)
+	}
 	return ValidateSupplierAdminCommandLedgerFinalized(db)
 }
 
@@ -388,12 +443,21 @@ func GetSupplierAdminCommandLedgerMigrationStatus(db *gorm.DB) (SupplierAdminCom
 		return SupplierAdminCommandLedgerMigrationStatus{}, fmt.Errorf("get supplier admin command ledger migration status: %w", ErrDatabase)
 	}
 	migrator := db.Migrator()
+	var err error
 	status := SupplierAdminCommandLedgerMigrationStatus{
 		HasDigestColumn:          migrator.HasColumn(&SupplierAdminCommand{}, "IdempotencyKeyDigest"),
 		HasResultColumn:          migrator.HasColumn(&SupplierAdminCommand{}, "ResultJson"),
 		HasSchedulerColumns:      migrator.HasColumn(&SupplierAdminCommand{}, "TrustedJobIdentityDigest") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerRequestDigest") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerScopeCode") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerSlot") && migrator.HasColumn(&SupplierAdminCommand{}, "StatusJson"),
 		LegacyScopeKeyIndex:      migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandScopeKeyIndex),
 		LegacyActorScopeKeyIndex: migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandActorScopeKeyIndex),
+	}
+	status.HasInventoryActorIndex = !migrator.HasTable(&SupplierInventoryAdjustment{})
+	if !status.HasInventoryActorIndex {
+		status.HasInventoryActorIndex, err = supplierUniqueIndexMatches(db, "supplier_inventory_adjustments", supplierInventoryActorLocalIndex, []string{"contract_id", "created_by", "idempotency_key"})
+		if err != nil {
+			return status, err
+		}
+		status.LegacyInventoryKeyIndex = migrator.HasIndex(&SupplierInventoryAdjustment{}, legacySupplierInventoryContractKeyIndex)
 	}
 	if status.HasDigestColumn {
 		valid, err := supplierAdminCommandIndexMatches(db, supplierAdminCommandActorScopeDigestIndex, []string{"actor_id", "scope", "idempotency_key_digest"})
@@ -410,8 +474,8 @@ func GetSupplierAdminCommandLedgerMigrationStatus(db *gorm.DB) (SupplierAdminCom
 			return status, err
 		}
 	}
-	status.Finalized = status.HasDigestColumn && status.HasResultColumn && status.HasSchedulerColumns && status.HasActorDigestIndex && status.HasSchedulerDigestIndex &&
-		!status.LegacyScopeKeyIndex && !status.LegacyActorScopeKeyIndex && status.InvalidDigestRows == 0
+	status.Finalized = status.HasDigestColumn && status.HasResultColumn && status.HasSchedulerColumns && status.HasActorDigestIndex && status.HasSchedulerDigestIndex && status.HasInventoryActorIndex &&
+		!status.LegacyScopeKeyIndex && !status.LegacyActorScopeKeyIndex && !status.LegacyInventoryKeyIndex && status.InvalidDigestRows == 0
 	return status, nil
 }
 
@@ -550,6 +614,10 @@ func ensureSupplierBatchSchedulerDigestIndex(db *gorm.DB) error {
 }
 
 func supplierAdminCommandIndexMatches(db *gorm.DB, indexName string, expected []string) (bool, error) {
+	return supplierUniqueIndexMatches(db, "supplier_admin_commands", indexName, expected)
+}
+
+func supplierUniqueIndexMatches(db *gorm.DB, tableName, indexName string, expected []string) (bool, error) {
 	columns := make([]string, 0, len(expected))
 	switch db.Dialector.Name() {
 	case "sqlite":
@@ -558,7 +626,7 @@ func supplierAdminCommandIndexMatches(db *gorm.DB, indexName string, expected []
 			Unique  int    `gorm:"column:unique"`
 			Partial int    `gorm:"column:partial"`
 		}
-		if err := db.Raw("PRAGMA index_list('supplier_admin_commands')").Scan(&indexes).Error; err != nil {
+		if err := db.Raw("PRAGMA index_list('" + tableName + "')").Scan(&indexes).Error; err != nil {
 			return false, err
 		}
 		validDefinition := false
@@ -590,7 +658,7 @@ func supplierAdminCommandIndexMatches(db *gorm.DB, indexName string, expected []
 			NonUnique  int     `gorm:"column:NON_UNIQUE"`
 			SubPart    *int64  `gorm:"column:SUB_PART"`
 		}
-		if err := db.Raw("SELECT column_name, non_unique, sub_part FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? ORDER BY seq_in_index", "supplier_admin_commands", indexName).Scan(&rows).Error; err != nil {
+		if err := db.Raw("SELECT column_name, non_unique, sub_part FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? ORDER BY seq_in_index", tableName, indexName).Scan(&rows).Error; err != nil {
 			return false, err
 		}
 		for _, row := range rows {
@@ -616,7 +684,7 @@ WHERE ns.nspname = current_schema() AND t.relname = ? AND i.relname = ?
   AND ix.indisunique = TRUE AND ix.indisvalid = TRUE AND ix.indisready = TRUE
   AND ix.indpred IS NULL AND ix.indexprs IS NULL
 ORDER BY k.ord`
-		if err := db.Raw(query, "supplier_admin_commands", indexName).Scan(&rows).Error; err != nil {
+		if err := db.Raw(query, tableName, indexName).Scan(&rows).Error; err != nil {
 			return false, err
 		}
 		for _, row := range rows {
@@ -634,6 +702,93 @@ ORDER BY k.ord`
 		}
 	}
 	return true, nil
+}
+
+func migrateSupplierOptimisticConcurrency(db *gorm.DB) error {
+	for _, target := range []struct {
+		model any
+		field string
+	}{{&UpstreamSupplier{}, "RowVersion"}, {&SupplierContract{}, "RowVersion"}} {
+		if !db.Migrator().HasTable(target.model) {
+			continue
+		}
+		if !db.Migrator().HasColumn(target.model, target.field) {
+			if err := db.Migrator().AddColumn(target.model, target.field); err != nil && !db.Migrator().HasColumn(target.model, target.field) {
+				return err
+			}
+		}
+		if err := db.Session(&gorm.Session{SkipHooks: true}).Model(target.model).Where("row_version IS NULL OR row_version <= ?", 0).UpdateColumn("row_version", 1).Error; err != nil {
+			return err
+		}
+		var invalid int64
+		if err := db.Model(target.model).Where("row_version IS NULL OR row_version <= ?", 0).Count(&invalid).Error; err != nil {
+			return err
+		}
+		if invalid != 0 {
+			return ErrSupplierVersionConflict
+		}
+	}
+	return nil
+}
+
+func ensureSupplierInventoryActorLocalIndex(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&SupplierInventoryAdjustment{}) {
+		return nil
+	}
+	expected := []string{"contract_id", "created_by", "idempotency_key"}
+	return ensureSupplierInventoryUniqueIndex(db, supplierInventoryActorLocalIndex, expected)
+}
+
+func ensureSupplierInventoryUniqueIndex(db *gorm.DB, indexName string, expected []string) error {
+	matches, err := supplierUniqueIndexMatches(db, "supplier_inventory_adjustments", indexName, expected)
+	if err != nil || matches {
+		return err
+	}
+	statement, err := supplierCreateUniqueIndexStatement(db.Dialector.Name(), "supplier_inventory_adjustments", indexName, expected)
+	if err != nil {
+		return err
+	}
+	if err := db.Exec(statement).Error; err != nil {
+		verified, verifyErr := supplierUniqueIndexMatches(db, "supplier_inventory_adjustments", indexName, expected)
+		if verifyErr != nil || !verified {
+			return err
+		}
+	}
+	verified, err := supplierUniqueIndexMatches(db, "supplier_inventory_adjustments", indexName, expected)
+	if err != nil || !verified {
+		if err != nil {
+			return err
+		}
+		return ErrSupplierAdminCommandIncomplete
+	}
+	return nil
+}
+
+func supplierCreateUniqueIndexStatement(dialect, tableName, indexName string, columns []string) (string, error) {
+	quote := `"`
+	switch dialect {
+	case "mysql":
+		quote = "`"
+	case "sqlite", "postgres":
+	default:
+		return "", fmt.Errorf("unsupported supplier inventory index dialect %q: %w", dialect, ErrDatabase)
+	}
+	q := func(value string) string { return quote + value + quote }
+	quotedColumns := make([]string, len(columns))
+	for index, column := range columns {
+		quotedColumns[index] = q(column)
+	}
+	return "CREATE UNIQUE INDEX " + q(indexName) + " ON " + q(tableName) + " (" + strings.Join(quotedColumns, ", ") + ")", nil
+}
+
+func dropSupplierIndexIfPresent(db *gorm.DB, indexName string) error {
+	if !db.Migrator().HasIndex(&SupplierInventoryAdjustment{}, indexName) {
+		return nil
+	}
+	if err := db.Migrator().DropIndex(&SupplierInventoryAdjustment{}, indexName); err != nil && db.Migrator().HasIndex(&SupplierInventoryAdjustment{}, indexName) {
+		return err
+	}
+	return nil
 }
 
 func newSupplierAdminClaimToken() (string, error) {

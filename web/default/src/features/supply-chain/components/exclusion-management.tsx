@@ -48,6 +48,8 @@ import {
   useEffectiveExclusionList,
   useExclusionHistoryList,
   useSupplyChainAdminMutation,
+  useSupplyChainSecurity,
+  type SupplyChainSecurity,
 } from '../hooks/use-supply-chain-admin'
 import { exclusionFormSchema, type ExclusionFormValues } from '../lib/schemas'
 import { formatTime } from '../lib/time'
@@ -62,12 +64,15 @@ import {
   ManagementStatus,
   ManagementToolbar,
   PendingConfirmationAlert,
+  SupplyChainVerificationDialog,
 } from './management-common'
 import { ProgressiveList } from './progressive-list'
 
 function ExclusionRuleDialog(props: {
   row?: SupplierEffectiveExclusion
   defaultAction?: SupplierStatisticsAction
+  security: SupplyChainSecurity
+  onSaved: () => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -90,6 +95,7 @@ function ExclusionRuleDialog(props: {
     mutationFn: ({ values, key }) =>
       createExclusionRule({ data: values, idempotencyKey: key }),
     invalidate: [supplyChainQueryKeys.exclusions.all()],
+    security: props.security,
   })
 
   useEffect(() => {
@@ -103,6 +109,17 @@ function ExclusionRuleDialog(props: {
     }
   }, [form, open, props.defaultAction, props.row])
 
+  function finishAppend(): void {
+    toast.success(t('Exclusion rule appended'))
+    setConfirmation(null)
+    setOpen(false)
+    props.onSaved()
+  }
+
+  async function reconcilePending(): Promise<void> {
+    if ((await intent.reconcilePending()) === 'reconciled') finishAppend()
+  }
+
   async function confirm(): Promise<void> {
     if (!confirmation) return
     const result = await intent.run({
@@ -111,9 +128,7 @@ function ExclusionRuleDialog(props: {
         isSupplyChainCommandCommitted('supplier_exclusion.create', key),
     })
     if (result === 'success' || result === 'reconciled') {
-      toast.success(t('Exclusion rule appended'))
-      setConfirmation(null)
-      setOpen(false)
+      finishAppend()
     } else if (result === 'rate_limited') {
       toast.error(t('Too many requests. Retry later with the same operation.'))
     } else if (result === 'pending_confirmation') {
@@ -155,7 +170,7 @@ function ExclusionRuleDialog(props: {
           </DialogHeader>
           <PendingConfirmationAlert
             visible={intent.isPendingConfirmation}
-            onReconcile={() => void intent.reconcilePending()}
+            onReconcile={() => void reconcilePending()}
           />
           <form
             id={`exclusion-form-${props.row?.user_id ?? 'new'}`}
@@ -312,6 +327,7 @@ function identityLabel(
 
 export function ExclusionManagement(props: SupplyChainManagementProps) {
   const { t } = useTranslation()
+  const security = useSupplyChainSecurity()
   const params = {
     p: props.search.page,
     page_size: props.search.pageSize,
@@ -325,7 +341,12 @@ export function ExclusionManagement(props: SupplyChainManagementProps) {
       <ManagementToolbar
         search={props.search}
         onSearchChange={props.onSearchChange}
-        actions={<ExclusionRuleDialog />}
+        actions={
+          <ExclusionRuleDialog
+            security={security}
+            onSaved={() => query.refetch()}
+          />
+        }
       />
       <ManagementStatus
         isLoading={query.isLoading}
@@ -384,6 +405,8 @@ export function ExclusionManagement(props: SupplyChainManagementProps) {
                       <ExclusionRuleDialog
                         row={row}
                         defaultAction={row.excluded ? 'include' : 'exclude'}
+                        security={security}
+                        onSaved={() => query.refetch()}
                       />
                     </div>
                   </TableCell>
@@ -399,6 +422,7 @@ export function ExclusionManagement(props: SupplyChainManagementProps) {
         total={query.data?.total ?? 0}
         onSearchChange={props.onSearchChange}
       />
+      <SupplyChainVerificationDialog security={security} />
     </div>
   )
 }

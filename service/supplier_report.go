@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	SupplierReportTimezone     = "Asia/Shanghai"
-	SupplierReportMaxRangeDays = 366
+	SupplierReportTimezone             = "Asia/Shanghai"
+	SupplierReportMaxRangeDays         = 366
+	SupplierReportPersistedLogUniverse = "successfully_persisted_consume_logs_for_final_successful_settlement"
 )
 
 var (
@@ -144,6 +145,28 @@ type SupplierReportPublishedEvidence struct {
 	FailureCounts                    types.SupplierPublishedFailureCountsV1     `json:"failure_counts"`
 	PersistedLogSnapshotCompleteness string                                     `json:"persisted_log_snapshot_completeness"`
 	Warnings                         []types.SupplierPublishedWarningV1         `json:"warnings"`
+}
+
+type SupplierDailyReportProjection struct {
+	Range                SupplierReportRange      `json:"range"`
+	PersistedLogUniverse string                   `json:"persisted_log_universe"`
+	Days                 []SupplierDailyReportDay `json:"days"`
+}
+
+type SupplierDailyReportDay struct {
+	BatchDate                        string                                     `json:"batch_date"`
+	Published                        bool                                       `json:"published"`
+	PublishedFenceToken              int64                                      `json:"published_fence_token"`
+	PublishedAt                      *int64                                     `json:"published_at"`
+	PersistedLogSnapshotCompleteness string                                     `json:"persisted_log_snapshot_completeness"`
+	FinanceAttentionRequired         bool                                       `json:"finance_attention_required"`
+	LogsScanned                      int64                                      `json:"logs_scanned"`
+	ProducerMarkersPresent           int64                                      `json:"producer_markers_present"`
+	CapturedSnapshotCount            int64                                      `json:"captured_snapshot_count"`
+	DispositionCounts                types.SupplierPublishedDispositionCountsV1 `json:"disposition_counts"`
+	FailureCounts                    types.SupplierPublishedFailureCountsV1     `json:"failure_counts"`
+	Warnings                         []types.SupplierPublishedWarningV1         `json:"warnings"`
+	KnownCoverageGaps                []model.SupplierAccountingCoverageGap      `json:"known_coverage_gaps"`
 }
 
 type SupplierReportOverview struct {
@@ -354,6 +377,84 @@ func (s *SupplierReportService) GetOverview(ctx context.Context, query SupplierR
 	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierReportOverview, error) {
 		return snapshot.getOverview(ctx, query, nil)
 	})
+}
+
+func (s *SupplierReportService) GetDaily(ctx context.Context, query SupplierReportQuery) (SupplierDailyReportProjection, error) {
+	var err error
+	query, err = s.prepareQuery(query)
+	if err != nil {
+		return SupplierDailyReportProjection{}, err
+	}
+	return withSupplierReportSnapshot(ctx, s, func(snapshot *SupplierReportService) (SupplierDailyReportProjection, error) {
+		return snapshot.getDaily(ctx, query)
+	})
+}
+
+func (s *SupplierReportService) getDaily(ctx context.Context, query SupplierReportQuery) (SupplierDailyReportProjection, error) {
+	reportRange, err := ParseSupplierReportRange(query.Month, query.StartDate, query.EndDate)
+	if err != nil {
+		return SupplierDailyReportProjection{}, err
+	}
+	result := SupplierDailyReportProjection{
+		Range: reportRange, PersistedLogUniverse: SupplierReportPersistedLogUniverse,
+		Days: []SupplierDailyReportDay{},
+	}
+	if !query.hasEligibleDays {
+		return result, nil
+	}
+	published, err := s.store.QueryPublishedEvidence(ctx, query.eligibleStartAt, query.eligibleEndAt)
+	if err != nil {
+		return SupplierDailyReportProjection{}, err
+	}
+	gaps, err := s.store.QueryCoverageGaps(ctx, query.eligibleStartAt, query.eligibleEndAt)
+	if err != nil {
+		return SupplierDailyReportProjection{}, err
+	}
+	publishedByDate := make(map[string]model.SupplierPublishedDailyBatch, len(published))
+	for _, batch := range published {
+		publishedByDate[batch.BatchDate] = batch
+	}
+	location, err := time.LoadLocation(SupplierReportTimezone)
+	if err != nil {
+		return SupplierDailyReportProjection{}, err
+	}
+	start := time.Unix(query.eligibleStartAt, 0).In(location)
+	end := time.Unix(query.eligibleEndAt, 0).In(location)
+	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+		dayEnd := day.AddDate(0, 0, 1)
+		row := SupplierDailyReportDay{
+			BatchDate:                        day.Format("2006-01-02"),
+			PersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessNotScanned,
+			Warnings:                         []types.SupplierPublishedWarningV1{},
+			KnownCoverageGaps:                supplierDailyReportOverlappingGaps(gaps, day.Unix(), dayEnd.Unix()),
+		}
+		if batch, ok := publishedByDate[row.BatchDate]; ok {
+			publishedAt := batch.PublishedAt
+			row.Published = true
+			row.PublishedFenceToken = batch.PublishedFenceToken
+			row.PublishedAt = &publishedAt
+			row.PersistedLogSnapshotCompleteness = batch.Evidence.PersistedLogSnapshotCompleteness
+			row.LogsScanned = batch.Evidence.LogsScanned
+			row.ProducerMarkersPresent = batch.Evidence.ProducerMarkersPresent
+			row.CapturedSnapshotCount = batch.Evidence.CapturedSnapshotCount
+			row.DispositionCounts = batch.Evidence.DispositionCounts
+			row.FailureCounts = batch.Evidence.FailureCounts
+			row.Warnings = append([]types.SupplierPublishedWarningV1(nil), batch.Evidence.Warnings...)
+		}
+		row.FinanceAttentionRequired = row.PersistedLogSnapshotCompleteness != types.SupplierPersistedLogCompletenessComplete || len(row.KnownCoverageGaps) > 0
+		result.Days = append(result.Days, row)
+	}
+	return result, nil
+}
+
+func supplierDailyReportOverlappingGaps(gaps []model.SupplierAccountingCoverageGap, startAt, endAt int64) []model.SupplierAccountingCoverageGap {
+	result := make([]model.SupplierAccountingCoverageGap, 0)
+	for _, gap := range gaps {
+		if gap.StartAt < endAt && (gap.EndAt == nil || *gap.EndAt > startAt) {
+			result = append(result, gap)
+		}
+	}
+	return result
 }
 
 func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierReportQuery, coverage *supplierReportCoverageProjection) (SupplierReportOverview, error) {

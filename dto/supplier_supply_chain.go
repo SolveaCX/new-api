@@ -8,8 +8,13 @@ type SupplierCreateRequest struct {
 }
 
 type SupplierUpdateRequest struct {
-	Name   *string `json:"name,omitempty"`
-	Remark *string `json:"remark,omitempty"`
+	Name            *string `json:"name,omitempty"`
+	Remark          *string `json:"remark,omitempty"`
+	ExpectedVersion *int64  `json:"expected_version"`
+}
+
+type SupplierInactivateRequest struct {
+	ExpectedVersion *int64 `json:"expected_version"`
 }
 
 // SupplierContractCreateRequest does not expose status or
@@ -28,12 +33,17 @@ type SupplierContractCreateRequest struct {
 // SupplierContractUpdateRequest deliberately omits supplier_id, status, and
 // current_rate_version_id to prevent mass assignment of invariant fields.
 type SupplierContractUpdateRequest struct {
-	Name           *string `json:"name,omitempty"`
-	ContractNo     *string `json:"contract_no,omitempty"`
-	Remark         *string `json:"remark,omitempty"`
-	RpmLimit       *int64  `json:"rpm_limit,omitempty"`
-	TpmLimit       *int64  `json:"tpm_limit,omitempty"`
-	MaxConcurrency *int    `json:"max_concurrency,omitempty"`
+	Name            *string `json:"name,omitempty"`
+	ContractNo      *string `json:"contract_no,omitempty"`
+	Remark          *string `json:"remark,omitempty"`
+	RpmLimit        *int64  `json:"rpm_limit,omitempty"`
+	TpmLimit        *int64  `json:"tpm_limit,omitempty"`
+	MaxConcurrency  *int    `json:"max_concurrency,omitempty"`
+	ExpectedVersion *int64  `json:"expected_version"`
+}
+
+type SupplierContractInactivateRequest struct {
+	ExpectedVersion *int64 `json:"expected_version"`
 }
 
 type SupplierRateVersionCreateRequest struct {

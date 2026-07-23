@@ -223,6 +223,7 @@ func TestSupplierContractRateVersionActivationPreservesHistory(t *testing.T) {
 	require.NoError(t, db.First(&refreshedContract, contract.Id).Error)
 	require.NotNil(t, refreshedContract.CurrentRateVersionId)
 	require.Equal(t, second.Id, *refreshedContract.CurrentRateVersionId)
+	require.Equal(t, int64(3), refreshedContract.RowVersion, "each non-idempotent current-rate advance increments the contract CAS version")
 
 	var persistedFirst SupplierContractRateVersion
 	require.NoError(t, db.First(&persistedFirst, first.Id).Error)

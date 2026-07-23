@@ -340,6 +340,7 @@ func SetApiRouter(router *gin.Engine) {
 			supplyChainRoute.GET("/reports/channels", controller.ListSupplyChainReportChannels)
 			supplyChainRoute.GET("/reports/breakdown", controller.ListSupplyChainReportBreakdown)
 			supplyChainRoute.GET("/reports/freshness", controller.GetSupplyChainReportFreshness)
+			supplyChainRoute.GET("/reports/daily", controller.GetSupplyChainDailyReports)
 			supplyChainRoute.POST("/reports/daily/:date/rerun", supplierSupplyChainMutation(controller.RerunSupplyChainDailyReport)...)
 
 		}

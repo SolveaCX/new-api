@@ -24,9 +24,11 @@ import type {
   SupplierChannelBindingListParams,
   SupplierChannelBindingRequest,
   SupplierChannelUnbindResult,
+  SupplierChannelUnbindVariables,
   SupplierContract,
   SupplierContractChildListParams,
   SupplierContractCreateRequest,
+  SupplierContractInactivateRequest,
   SupplierContractListParams,
   SupplierContractRateVersion,
   SupplierContractUpdateRequest,
@@ -36,6 +38,10 @@ import type {
   SupplierExclusionRuleCreateRequest,
   SupplierInventoryAdjustment,
   SupplierInventoryAdjustmentCreateRequest,
+  SupplierInactivateRequest,
+  SupplierDailyReportProjection,
+  SupplierDailyReportRerunResult,
+  SupplierDailyReportRerunVariables,
   SupplierListParams,
   SupplierRateVersionCreateRequest,
   SupplierReportBreakdownList,
@@ -52,7 +58,6 @@ import type {
   SupplyChainAdminPage,
   SupplyChainApiResponse,
   SupplyChainCommandResult,
-  SupplyChainStatusResult,
   UpstreamSupplier,
 } from './types'
 
@@ -64,6 +69,23 @@ type SupplierReportFreshnessWire = Omit<
 > & {
   sync_only?: unknown
   coverage_start_at?: unknown
+}
+
+type SupplierDailyReportProjectionWire = Omit<
+  SupplierDailyReportProjection,
+  'days'
+> & {
+  days: Array<
+    Omit<
+      SupplierDailyReportProjection['days'][number],
+      'warnings' | 'known_coverage_gaps'
+    > & {
+      warnings: SupplierDailyReportProjection['days'][number]['warnings'] | null
+      known_coverage_gaps:
+        | SupplierDailyReportProjection['days'][number]['known_coverage_gaps']
+        | null
+    }
+  > | null
 }
 
 export async function isSupplyChainCommandCommitted(
@@ -172,20 +194,24 @@ export async function createSupplier(
 
 export async function updateSupplier(
   supplierId: number,
-  data: SupplierUpdateRequest
+  variables: IdempotentMutationVariables<SupplierUpdateRequest>
 ): Promise<SupplyChainApiResponse<UpstreamSupplier>> {
   const response = await api.patch(
     `${SUPPLY_CHAIN_API}/suppliers/${supplierId}`,
-    data
+    variables.data,
+    { headers: idempotencyHeaders(variables.idempotencyKey) }
   )
   return response.data
 }
 
 export async function inactivateSupplier(
-  supplierId: number
-): Promise<SupplyChainApiResponse<SupplyChainStatusResult>> {
+  supplierId: number,
+  variables: IdempotentMutationVariables<SupplierInactivateRequest>
+): Promise<SupplyChainApiResponse<UpstreamSupplier>> {
   const response = await api.post(
-    `${SUPPLY_CHAIN_API}/suppliers/${supplierId}/inactivate`
+    `${SUPPLY_CHAIN_API}/suppliers/${supplierId}/inactivate`,
+    variables.data,
+    { headers: idempotencyHeaders(variables.idempotencyKey) }
   )
   return response.data
 }
@@ -210,20 +236,24 @@ export async function createContract(
 
 export async function updateContract(
   contractId: number,
-  data: SupplierContractUpdateRequest
+  variables: IdempotentMutationVariables<SupplierContractUpdateRequest>
 ): Promise<SupplyChainApiResponse<SupplierContract>> {
   const response = await api.patch(
     `${SUPPLY_CHAIN_API}/contracts/${contractId}`,
-    data
+    variables.data,
+    { headers: idempotencyHeaders(variables.idempotencyKey) }
   )
   return response.data
 }
 
 export async function inactivateContract(
-  contractId: number
-): Promise<SupplyChainApiResponse<SupplyChainStatusResult>> {
+  contractId: number,
+  variables: IdempotentMutationVariables<SupplierContractInactivateRequest>
+): Promise<SupplyChainApiResponse<SupplierContract>> {
   const response = await api.post(
-    `${SUPPLY_CHAIN_API}/contracts/${contractId}/inactivate`
+    `${SUPPLY_CHAIN_API}/contracts/${contractId}/inactivate`,
+    variables.data,
+    { headers: idempotencyHeaders(variables.idempotencyKey) }
   )
   return response.data
 }
@@ -320,22 +350,26 @@ export async function listChannelBindings(
 
 export async function bindChannel(
   channelId: number,
-  data: SupplierChannelBindingRequest
+  variables: IdempotentMutationVariables<SupplierChannelBindingRequest>
 ): Promise<SupplyChainApiResponse<SupplierChannelBinding>> {
   const response = await api.put(
     `${SUPPLY_CHAIN_API}/channel-bindings/${channelId}`,
-    data
+    variables.data,
+    { headers: idempotencyHeaders(variables.idempotencyKey) }
   )
   return response.data
 }
 
 export async function unbindChannel(
   channelId: number,
-  expectedContractId: number
+  variables: SupplierChannelUnbindVariables
 ): Promise<SupplyChainApiResponse<SupplierChannelUnbindResult>> {
   const response = await api.delete(
     `${SUPPLY_CHAIN_API}/channel-bindings/${channelId}`,
-    { params: { expected_contract_id: expectedContractId } }
+    {
+      params: { expected_contract_id: variables.expectedContractId },
+      headers: idempotencyHeaders(variables.idempotencyKey),
+    }
   )
   return response.data
 }
@@ -417,4 +451,44 @@ export async function getReportFreshness(): Promise<
           : null,
     },
   }
+}
+
+export async function getDailyReports(
+  query: SupplierReportQuery
+): Promise<SupplyChainApiResponse<SupplierDailyReportProjection>> {
+  const response = await api.get<
+    SupplyChainApiResponse<SupplierDailyReportProjectionWire>
+  >(`${SUPPLY_CHAIN_API}/reports/daily`, {
+    params: buildSupplierReportQueryParams(query),
+  })
+  const days = response.data.data.days
+  if (days !== null && !Array.isArray(days)) {
+    throw new TypeError(
+      'Invalid supply-chain daily report: days must be an array or null'
+    )
+  }
+  return {
+    ...response.data,
+    data: {
+      ...response.data.data,
+      days: (days ?? []).map((day) => ({
+        ...day,
+        warnings: day.warnings ?? [],
+        known_coverage_gaps: day.known_coverage_gaps ?? [],
+      })),
+    },
+  }
+}
+
+export async function rerunDailyReport(
+  variables: SupplierDailyReportRerunVariables
+): Promise<SupplierDailyReportRerunResult> {
+  const response = await api.post<
+    SupplyChainApiResponse<SupplierDailyReportRerunResult>
+  >(
+    `${SUPPLY_CHAIN_API}/reports/daily/${variables.batchDate}/rerun`,
+    variables.data,
+    { headers: idempotencyHeaders(variables.idempotencyKey) }
+  )
+  return response.data.data
 }

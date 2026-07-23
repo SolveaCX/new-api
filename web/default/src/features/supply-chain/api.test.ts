@@ -383,13 +383,19 @@ describe('idempotent mutation variables', () => {
 describe('channel binding compare-and-swap contract', () => {
   it('sends the observed contract for bind and unbind operations', async () => {
     const requests = captureRequests()
+    const idempotencyKey = 'stable-binding-key'
 
-    await bindChannel(7, { contract_id: 12, expected_contract_id: 0 })
-    await unbindChannel(7, 12)
+    await bindChannel(7, {
+      idempotencyKey,
+      data: { contract_id: 12, expected_contract_id: 0 },
+    })
+    await unbindChannel(7, { idempotencyKey, expectedContractId: 12 })
 
     expect(requests[0]?.data).toBe(
       JSON.stringify({ contract_id: 12, expected_contract_id: 0 })
     )
     expect(requests[1]?.params).toEqual({ expected_contract_id: 12 })
+    expect(requests[0]?.headers.get('Idempotency-Key')).toBe(idempotencyKey)
+    expect(requests[1]?.headers.get('Idempotency-Key')).toBe(idempotencyKey)
   })
 })

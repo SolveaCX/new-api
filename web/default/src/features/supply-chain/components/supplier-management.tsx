@@ -50,7 +50,9 @@ import type { SupplyChainManagementProps } from '../contracts'
 import { useIdempotentIntent } from '../hooks/use-idempotent-intent'
 import {
   useSupplierAdminList,
+  useSupplyChainSecurity,
   useSupplyChainAdminMutation,
+  type SupplyChainSecurity,
 } from '../hooks/use-supply-chain-admin'
 import { formatMicroUsd } from '../lib/format'
 import { supplierFormSchema, type SupplierFormValues } from '../lib/schemas'
@@ -63,6 +65,7 @@ import {
   ManagementToolbar,
   PendingConfirmationAlert,
   StatusBadge,
+  SupplyChainVerificationDialog,
 } from './management-common'
 
 const EMPTY_FORM: SupplierFormValues = { name: '', remark: '' }
@@ -70,6 +73,7 @@ const EMPTY_FORM: SupplierFormValues = { name: '', remark: '' }
 function SupplierFormDialog(props: {
   supplier?: UpstreamSupplier
   onSaved: () => void
+  security: SupplyChainSecurity
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -80,16 +84,23 @@ function SupplierFormDialog(props: {
   })
   const mutation = useSupplyChainAdminMutation<{
     values: SupplierFormValues
-    idempotencyKey?: string
+    idempotencyKey: string
   }>({
     mutationFn: async ({ values, idempotencyKey }) =>
       props.supplier
-        ? updateSupplier(props.supplier.id, values)
+        ? updateSupplier(props.supplier.id, {
+            data: {
+              ...values,
+              expected_version: props.supplier.row_version,
+            },
+            idempotencyKey,
+          })
         : createSupplier({
             data: values,
-            idempotencyKey: idempotencyKey ?? '',
+            idempotencyKey,
           }),
     invalidate: [supplyChainQueryKeys.suppliers.all()],
+    security: props.security,
   })
 
   useEffect(() => {
@@ -101,27 +112,32 @@ function SupplierFormDialog(props: {
     )
   }, [form, open, props.supplier])
 
+  function finishSave(): void {
+    toast.success(
+      props.supplier ? t('Supplier updated') : t('Supplier created')
+    )
+    setOpen(false)
+    props.onSaved()
+  }
+
+  async function reconcilePending(): Promise<void> {
+    if ((await intent.reconcilePending()) === 'reconciled') finishSave()
+  }
+
   async function submit(values: SupplierFormValues): Promise<void> {
-    if (props.supplier) {
-      try {
-        await mutation.mutateAsync({ values })
-        toast.success(t('Supplier updated'))
-        setOpen(false)
-        props.onSaved()
-      } catch {
-        toast.error(t('Unable to save supplier'))
-      }
-      return
-    }
     const result = await intent.run({
       execute: async (idempotencyKey) =>
         mutation.mutateAsync({ values, idempotencyKey }),
-      reconcile: (key) => isSupplyChainCommandCommitted('supplier.create', key),
+      reconcile: (key) =>
+        isSupplyChainCommandCommitted(
+          props.supplier
+            ? `supplier.update/${props.supplier.id}`
+            : 'supplier.create',
+          key
+        ),
     })
     if (result === 'success' || result === 'reconciled') {
-      toast.success(t('Supplier created'))
-      setOpen(false)
-      props.onSaved()
+      finishSave()
     } else if (result === 'rate_limited') {
       toast.error(t('Too many requests. Retry later with the same operation.'))
     } else if (result === 'pending_confirmation') {
@@ -162,7 +178,7 @@ function SupplierFormDialog(props: {
         </DialogHeader>
         <PendingConfirmationAlert
           visible={intent.isPendingConfirmation}
-          onReconcile={() => void intent.reconcilePending()}
+          onReconcile={() => void reconcilePending()}
         />
         <form id='supplier-form' onSubmit={form.handleSubmit(submit)}>
           <FieldGroup>
@@ -202,6 +218,8 @@ function SupplierFormDialog(props: {
 
 export function SupplierManagement(props: SupplyChainManagementProps) {
   const { t } = useTranslation()
+  const security = useSupplyChainSecurity()
+  const inactivateIntent = useIdempotentIntent()
   const [inactivateTarget, setInactivateTarget] =
     useState<UpstreamSupplier | null>(null)
   const params = {
@@ -211,21 +229,50 @@ export function SupplierManagement(props: SupplyChainManagementProps) {
     keyword: props.search.filter || undefined,
   }
   const query = useSupplierAdminList(params)
-  const inactivate = useSupplyChainAdminMutation<number>({
-    mutationFn: inactivateSupplier,
+  const inactivate = useSupplyChainAdminMutation<{
+    supplier: UpstreamSupplier
+    idempotencyKey: string
+  }>({
+    mutationFn: ({ supplier, idempotencyKey }) =>
+      inactivateSupplier(supplier.id, {
+        data: { expected_version: supplier.row_version },
+        idempotencyKey,
+      }),
     invalidate: [
       supplyChainQueryKeys.suppliers.all(),
       supplyChainQueryKeys.contracts.all(),
     ],
+    security,
   })
+
+  function finishInactivate(): void {
+    toast.success(t('Supplier inactivated'))
+    setInactivateTarget(null)
+    void query.refetch()
+  }
+
+  async function reconcilePendingInactivate(): Promise<void> {
+    if ((await inactivateIntent.reconcilePending()) === 'reconciled') {
+      finishInactivate()
+    }
+  }
 
   async function confirmInactivate(): Promise<void> {
     if (!inactivateTarget) return
-    try {
-      await inactivate.mutateAsync(inactivateTarget.id)
-      toast.success(t('Supplier inactivated'))
-      setInactivateTarget(null)
-    } catch {
+    const target = inactivateTarget
+    const result = await inactivateIntent.run({
+      execute: (idempotencyKey) =>
+        inactivate.mutateAsync({ supplier: target, idempotencyKey }),
+      reconcile: (key) =>
+        isSupplyChainCommandCommitted(`supplier.inactivate/${target.id}`, key),
+    })
+    if (result === 'success' || result === 'reconciled') {
+      finishInactivate()
+    } else if (result === 'rate_limited') {
+      toast.error(t('Too many requests. Retry later with the same operation.'))
+    } else if (result === 'pending_confirmation') {
+      toast.warning(t('The result is pending confirmation.'))
+    } else if (result !== 'blocked') {
       toast.error(
         t(
           'Unbind channels and inactivate every contract before inactivating this supplier.'
@@ -239,7 +286,12 @@ export function SupplierManagement(props: SupplyChainManagementProps) {
       <ManagementToolbar
         search={props.search}
         onSearchChange={props.onSearchChange}
-        actions={<SupplierFormDialog onSaved={() => query.refetch()} />}
+        actions={
+          <SupplierFormDialog
+            onSaved={() => query.refetch()}
+            security={security}
+          />
+        }
       />
       <ManagementStatus
         isLoading={query.isLoading}
@@ -287,6 +339,7 @@ export function SupplierManagement(props: SupplyChainManagementProps) {
                       <SupplierFormDialog
                         supplier={supplier}
                         onSaved={() => query.refetch()}
+                        security={security}
                       />
                       {supplier.status === 'active' ? (
                         <Button
@@ -322,10 +375,15 @@ export function SupplierManagement(props: SupplyChainManagementProps) {
           'Status will change from Active to Inactive. This is only allowed after all contracts are inactive and channels are unbound.'
         )}
         confirmLabel={t('Inactivate')}
-        pending={inactivate.isPending}
+        pending={inactivate.isPending || inactivateIntent.isSubmitting}
         destructive
         onConfirm={confirmInactivate}
       />
+      <PendingConfirmationAlert
+        visible={inactivateIntent.isPendingConfirmation}
+        onReconcile={() => void reconcilePendingInactivate()}
+      />
+      <SupplyChainVerificationDialog security={security} />
     </div>
   )
 }

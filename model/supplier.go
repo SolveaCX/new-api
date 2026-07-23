@@ -41,15 +41,17 @@ var (
 	ErrSupplierHasChannelBindings  = errors.New("supplier still has channel bindings")
 	ErrSupplierCurrentRateRequired = errors.New("supplier contract current rate is required")
 	ErrSupplierIdempotencyConflict = errors.New("supplier idempotency key payload conflict")
+	ErrSupplierVersionConflict     = errors.New("supplier row version conflict")
 )
 
 type UpstreamSupplier struct {
-	Id        int    `json:"id"`
-	Name      string `json:"name" gorm:"type:varchar(128);not null;uniqueIndex:ux_upstream_suppliers_name"`
-	Status    string `json:"status" gorm:"type:varchar(32);not null;default:'active'"`
-	Remark    string `json:"remark" gorm:"type:text"`
-	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	Id         int    `json:"id"`
+	Name       string `json:"name" gorm:"type:varchar(128);not null;uniqueIndex:ux_upstream_suppliers_name"`
+	Status     string `json:"status" gorm:"type:varchar(32);not null;default:'active'"`
+	Remark     string `json:"remark" gorm:"type:text"`
+	RowVersion int64  `json:"row_version" gorm:"not null;default:1"`
+	CreatedAt  int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt  int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (s *UpstreamSupplier) BeforeCreate(_ *gorm.DB) error {
@@ -89,6 +91,7 @@ type SupplierContract struct {
 	RpmLimit             int64  `json:"rpm_limit" gorm:"not null;default:0"`
 	TpmLimit             int64  `json:"tpm_limit" gorm:"not null;default:0"`
 	MaxConcurrency       int    `json:"max_concurrency" gorm:"not null;default:0"`
+	RowVersion           int64  `json:"row_version" gorm:"not null;default:1"`
 	CreatedAt            int64  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt            int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -190,12 +193,12 @@ func (v *SupplierContractRateVersion) BeforeDelete(_ *gorm.DB) error {
 
 type SupplierInventoryAdjustment struct {
 	Id             int    `json:"id" gorm:"index:idx_supplier_inventory_contract_id,priority:2"`
-	ContractId     int    `json:"contract_id" gorm:"not null;uniqueIndex:ux_supplier_inventory_contract_idempotency,priority:1;index:idx_supplier_inventory_contract_id,priority:1"`
+	ContractId     int    `json:"contract_id" gorm:"not null;uniqueIndex:ux_supplier_inventory_actor_idempotency,priority:1;index:idx_supplier_inventory_contract_id,priority:1"`
 	DeltaMicroUsd  int64  `json:"delta_micro_usd" gorm:"not null"`
 	Type           string `json:"type" gorm:"type:varchar(32);not null"`
 	Reason         string `json:"reason" gorm:"type:text"`
-	IdempotencyKey string `json:"idempotency_key" gorm:"type:varchar(128);not null;uniqueIndex:ux_supplier_inventory_contract_idempotency,priority:2"`
-	CreatedBy      int    `json:"created_by" gorm:"not null"`
+	IdempotencyKey string `json:"idempotency_key" gorm:"type:varchar(128);not null;uniqueIndex:ux_supplier_inventory_actor_idempotency,priority:3"`
+	CreatedBy      int    `json:"created_by" gorm:"not null;uniqueIndex:ux_supplier_inventory_actor_idempotency,priority:2"`
 	CreatedAt      int64  `json:"created_at" gorm:"autoCreateTime"`
 }
 
@@ -286,6 +289,7 @@ func createAndActivateSupplierContractRateVersionTx(tx *gorm.DB, contractId int,
 	}
 	if err := tx.Model(&SupplierContract{}).Where("id = ?", contractId).UpdateColumns(map[string]any{
 		"current_rate_version_id": version.Id,
+		"row_version":             gorm.Expr("row_version + ?", 1),
 		"updated_at":              version.EffectiveAt,
 	}).Error; err != nil {
 		return nil, err

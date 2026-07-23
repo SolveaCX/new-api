@@ -23,17 +23,47 @@ interface RunIntentOptions {
   reconcile: (idempotencyKey: string) => Promise<boolean>
 }
 
+export type IntentErrorDisposition =
+  | 'verification_cancelled'
+  | 'conflict'
+  | 'rate_limited'
+  | 'unknown'
+  | 'failed'
+
 function createIntentKey(): string {
   return globalThis.crypto.randomUUID()
 }
 
-function responseStatus(error: unknown): number | undefined {
-  return axios.isAxiosError(error) ? error.response?.status : undefined
+export function getOrCreateIntentKey(
+  current: string | null,
+  createKey: () => string = createIntentKey
+): string {
+  return current ?? createKey()
 }
 
-function hasUnknownOutcome(error: unknown): boolean {
-  if (!axios.isAxiosError(error)) return false
-  return error.response === undefined || error.response.status >= 500
+export function classifyIntentError(error: unknown): IntentErrorDisposition {
+  if (
+    error instanceof Error &&
+    error.name === 'SupplyChainVerificationCancelledError'
+  ) {
+    return 'verification_cancelled'
+  }
+  if (!axios.isAxiosError(error)) return 'failed'
+  const status = error.response?.status
+  if (status === 409) return 'conflict'
+  if (status === 429) return 'rate_limited'
+  if (status === undefined || status === 408 || status >= 500) return 'unknown'
+  return 'failed'
+}
+
+export async function reconcileIntentResult(
+  reconcile: () => Promise<boolean>
+): Promise<IntentRunResult> {
+  try {
+    return (await reconcile()) ? 'reconciled' : 'failed'
+  } catch {
+    return 'pending_confirmation'
+  }
 }
 
 export function useIdempotentIntent() {
@@ -51,7 +81,7 @@ export function useIdempotentIntent() {
 
   async function run(options: RunIntentOptions): Promise<IntentRunResult> {
     if (runningRef.current || isPendingConfirmation) return 'blocked'
-    const key = keyRef.current ?? createIntentKey()
+    const key = getOrCreateIntentKey(keyRef.current)
     keyRef.current = key
     reconcileRef.current = () => options.reconcile(key)
     runningRef.current = true
@@ -61,8 +91,12 @@ export function useIdempotentIntent() {
       clearIntent()
       return 'success'
     } catch (error) {
-      const status = responseStatus(error)
-      if (status === 409) {
+      const disposition = classifyIntentError(error)
+      if (disposition === 'verification_cancelled') {
+        clearIntent()
+        return 'blocked'
+      }
+      if (disposition === 'conflict') {
         try {
           await options.reconcile(key)
         } catch {
@@ -71,10 +105,10 @@ export function useIdempotentIntent() {
         clearIntent()
         return 'conflict'
       }
-      if (status === 429) {
+      if (disposition === 'rate_limited') {
         return 'rate_limited'
       }
-      if (hasUnknownOutcome(error)) {
+      if (disposition === 'unknown') {
         setIsPendingConfirmation(true)
         try {
           if (await options.reconcile(key)) {
@@ -94,16 +128,17 @@ export function useIdempotentIntent() {
     }
   }
 
-  async function reconcilePending(): Promise<void> {
+  async function reconcilePending(): Promise<IntentRunResult> {
     const reconcile = reconcileRef.current
-    if (!reconcile) return
+    if (!reconcile || runningRef.current) return 'blocked'
     runningRef.current = true
     setIsSubmitting(true)
     try {
-      if (await reconcile()) clearIntent()
-      else setIsPendingConfirmation(false)
-    } catch {
-      setIsPendingConfirmation(true)
+      const result = await reconcileIntentResult(reconcile)
+      if (result === 'reconciled') clearIntent()
+      else if (result === 'failed') setIsPendingConfirmation(false)
+      else setIsPendingConfirmation(true)
+      return result
     } finally {
       runningRef.current = false
       setIsSubmitting(false)

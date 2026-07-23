@@ -98,16 +98,21 @@ func UpdateSupplyChainSupplier(c *gin.Context) {
 	if !ok {
 		return
 	}
+	idempotencyKey, ok := supplyChainIdempotencyKey(c)
+	if !ok {
+		return
+	}
 	var request dto.SupplierUpdateRequest
-	if c.ShouldBindJSON(&request) != nil || (request.Name == nil && request.Remark == nil) || (request.Name != nil && strings.TrimSpace(*request.Name) == "") {
+	if c.ShouldBindJSON(&request) != nil || request.ExpectedVersion == nil || *request.ExpectedVersion <= 0 || (request.Name == nil && request.Remark == nil) || (request.Name != nil && strings.TrimSpace(*request.Name) == "") {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 		return
 	}
-	item, err := model.UpdateUpstreamSupplier(id, model.UpdateUpstreamSupplierInput{Name: request.Name, Remark: request.Remark})
+	item, replayed, err := model.UpdateUpstreamSupplierIdempotentForActor(id, model.UpdateUpstreamSupplierInput{Name: request.Name, Remark: request.Remark, ExpectedVersion: *request.ExpectedVersion}, idempotencyKey, c.GetInt("id"))
 	if err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
+	supplyChainReplayHeader(c, replayed)
 	common.ApiSuccess(c, item)
 }
 
@@ -116,11 +121,22 @@ func InactivateSupplyChainSupplier(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := model.InactivateUpstreamSupplier(id); err != nil {
+	idempotencyKey, ok := supplyChainIdempotencyKey(c)
+	if !ok {
+		return
+	}
+	var request dto.SupplierInactivateRequest
+	if c.ShouldBindJSON(&request) != nil || request.ExpectedVersion == nil || *request.ExpectedVersion <= 0 {
+		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
+		return
+	}
+	item, replayed, err := model.InactivateUpstreamSupplierIdempotentForActor(id, *request.ExpectedVersion, idempotencyKey, c.GetInt("id"))
+	if err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"id": id, "status": model.SupplierStatusInactive})
+	supplyChainReplayHeader(c, replayed)
+	common.ApiSuccess(c, item)
 }
 
 func ListSupplyChainContracts(c *gin.Context) {
@@ -191,19 +207,24 @@ func UpdateSupplyChainContract(c *gin.Context) {
 	if !ok {
 		return
 	}
+	idempotencyKey, ok := supplyChainIdempotencyKey(c)
+	if !ok {
+		return
+	}
 	var request dto.SupplierContractUpdateRequest
-	if c.ShouldBindJSON(&request) != nil || supplierContractUpdateEmpty(request) || !validSupplierContractUpdate(request) {
+	if c.ShouldBindJSON(&request) != nil || request.ExpectedVersion == nil || *request.ExpectedVersion <= 0 || supplierContractUpdateEmpty(request) || !validSupplierContractUpdate(request) {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 		return
 	}
-	item, err := model.UpdateSupplierContract(id, model.UpdateSupplierContractInput{
+	item, replayed, err := model.UpdateSupplierContractIdempotentForActor(id, model.UpdateSupplierContractInput{
 		Name: request.Name, ContractNo: request.ContractNo, Remark: request.Remark,
-		RpmLimit: request.RpmLimit, TpmLimit: request.TpmLimit, MaxConcurrency: request.MaxConcurrency,
-	})
+		RpmLimit: request.RpmLimit, TpmLimit: request.TpmLimit, MaxConcurrency: request.MaxConcurrency, ExpectedVersion: *request.ExpectedVersion,
+	}, idempotencyKey, c.GetInt("id"))
 	if err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
+	supplyChainReplayHeader(c, replayed)
 	common.ApiSuccess(c, item)
 }
 
@@ -212,11 +233,22 @@ func InactivateSupplyChainContract(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := model.InactivateSupplierContract(id); err != nil {
+	idempotencyKey, ok := supplyChainIdempotencyKey(c)
+	if !ok {
+		return
+	}
+	var request dto.SupplierContractInactivateRequest
+	if c.ShouldBindJSON(&request) != nil || request.ExpectedVersion == nil || *request.ExpectedVersion <= 0 {
+		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
+		return
+	}
+	item, replayed, err := model.InactivateSupplierContractIdempotentForActor(id, *request.ExpectedVersion, idempotencyKey, c.GetInt("id"))
+	if err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"id": id, "status": model.SupplierContractStatusInactive})
+	supplyChainReplayHeader(c, replayed)
+	common.ApiSuccess(c, item)
 }
 
 func ListSupplyChainRateVersions(c *gin.Context) {
@@ -288,14 +320,15 @@ func CreateSupplyChainInventoryAdjustment(c *gin.Context) {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidMoney)
 		return
 	}
-	item, err := model.CreateSupplierInventoryAdjustment(&model.SupplierInventoryAdjustment{
+	item, replayed, err := model.CreateSupplierInventoryAdjustmentIdempotentForActor(&model.SupplierInventoryAdjustment{
 		ContractId: contractID, DeltaMicroUsd: *request.DeltaMicroUsd, Type: request.Type,
 		Reason: request.Reason, IdempotencyKey: idempotencyKey, CreatedBy: c.GetInt("id"),
-	})
+	}, idempotencyKey, c.GetInt("id"))
 	if err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
+	supplyChainReplayHeader(c, replayed)
 	common.ApiSuccess(c, item)
 }
 
@@ -349,11 +382,12 @@ func CreateSupplyChainExclusionRule(c *gin.Context) {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 		return
 	}
-	item, err := model.CreateSupplierStatisticsExclusionRule(request.UserId, request.Action, c.GetInt("id"), request.Reason, idempotencyKey)
+	item, replayed, err := model.CreateSupplierStatisticsExclusionRuleIdempotentForActor(request.UserId, request.Action, c.GetInt("id"), request.Reason, idempotencyKey)
 	if err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
+	supplyChainReplayHeader(c, replayed)
 	common.ApiSuccess(c, item)
 }
 
@@ -406,20 +440,21 @@ func BindSupplyChainChannel(c *gin.Context) {
 	if !ok {
 		return
 	}
+	idempotencyKey, ok := supplyChainIdempotencyKey(c)
+	if !ok {
+		return
+	}
 	var request dto.SupplierChannelBindingRequest
 	if c.ShouldBindJSON(&request) != nil || request.ContractId == nil || *request.ContractId <= 0 || request.ExpectedContractId == nil || *request.ExpectedContractId < 0 {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 		return
 	}
-	if err := model.SetChannelSupplierContractCASForActor(channelID, *request.ExpectedContractId, request.ContractId, c.GetInt("id")); err != nil {
-		supplyChainModelError(c, err)
-		return
-	}
-	item, err := model.GetChannelSupplierContractBinding(channelID)
+	item, replayed, err := model.SetChannelSupplierContractCASIdempotentForActor(channelID, *request.ExpectedContractId, request.ContractId, idempotencyKey, c.GetInt("id"))
 	if err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
+	supplyChainReplayHeader(c, replayed)
 	common.ApiSuccess(c, item)
 }
 
@@ -428,15 +463,21 @@ func UnbindSupplyChainChannel(c *gin.Context) {
 	if !ok {
 		return
 	}
+	idempotencyKey, ok := supplyChainIdempotencyKey(c)
+	if !ok {
+		return
+	}
 	expectedContractID, ok := supplyChainRequiredNonNegativeQueryInt(c, "expected_contract_id")
 	if !ok {
 		return
 	}
-	if err := model.SetChannelSupplierContractCASForActor(channelID, expectedContractID, nil, c.GetInt("id")); err != nil {
+	item, replayed, err := model.SetChannelSupplierContractCASIdempotentForActor(channelID, expectedContractID, nil, idempotencyKey, c.GetInt("id"))
+	if err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"channel_id": channelID, "supplier_contract_id": nil})
+	supplyChainReplayHeader(c, replayed)
+	common.ApiSuccess(c, item)
 }
 
 func supplyChainAdminKeyword(c *gin.Context) (string, bool) {
@@ -512,6 +553,7 @@ func supplyChainModelError(c *gin.Context, err error) {
 		errors.Is(err, model.ErrSupplierContractBound), errors.Is(err, model.ErrSupplierHasActiveContracts),
 		errors.Is(err, model.ErrSupplierHasChannelBindings), errors.Is(err, model.ErrSupplierCurrentRateRequired),
 		errors.Is(err, model.ErrSupplierBindingChanged), errors.Is(err, model.ErrSupplierIdempotencyConflict),
+		errors.Is(err, model.ErrSupplierVersionConflict),
 		errors.Is(err, model.ErrSupplierAdminIdempotencyConflict), errors.Is(err, model.ErrSupplierAdminCommandIncomplete),
 		errors.Is(err, model.ErrSupplierImmutableField), errors.Is(err, model.ErrSupplierAppendOnly), errors.Is(err, gorm.ErrDuplicatedKey):
 		supplyChainError(c, http.StatusConflict, i18n.MsgSupplyChainConflict)

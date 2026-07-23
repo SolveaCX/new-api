@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { ChannelBindingManagement } from './components/channel-binding-management'
 import { ContractManagement } from './components/contract-management'
+import { DailyReportSection } from './components/daily-report-section'
 import { ExclusionManagement } from './components/exclusion-management'
 import { ReportBreakdownTable } from './components/report-breakdown-table'
 import { ReportChannelTable } from './components/report-channel-table'
@@ -168,6 +169,7 @@ export function SupplyChain(props: SupplyChainManagementProps) {
             {freshness.data ? (
               <ReportFreshnessAlert freshness={freshness.data} />
             ) : null}
+            <DailyReportSection query={reportQuery} enabled={reportEnabled} />
             <ReportOverview
               data={overview.data}
               isLoading={overview.isLoading}

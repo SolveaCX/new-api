@@ -24,6 +24,7 @@ import {
   useSupplyChainReportBreakdown,
   useSupplyChainReportChannels,
   useSupplyChainReportContracts,
+  useSupplyChainDailyReports,
   useSupplyChainReportFreshness,
   useSupplyChainReportOverview,
   useSupplyChainReportTrend,
@@ -42,6 +43,7 @@ function DisabledReportProbe() {
   const channels = useSupplyChainReportChannels(query, false)
   const breakdown = useSupplyChainReportBreakdown(query, false)
   const freshness = useSupplyChainReportFreshness(false)
+  const daily = useSupplyChainDailyReports(query, false)
   const disabled = [
     overview,
     trend,
@@ -49,6 +51,7 @@ function DisabledReportProbe() {
     channels,
     breakdown,
     freshness,
+    daily,
   ].every((result) => !result.isEnabled && result.fetchStatus === 'idle')
   return <span>{disabled ? 'all-disabled' : 'query-enabled'}</span>
 }

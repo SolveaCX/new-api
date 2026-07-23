@@ -6,12 +6,15 @@ it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
+import { useCallback, useState } from 'react'
 import {
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
+import { isVerificationRequiredError } from '@/lib/secure-verification'
+import { useSecureVerification } from '@/features/auth/secure-verification'
 import {
   listChannelBindings,
   listContracts,
@@ -32,6 +35,138 @@ import type {
 } from '../types'
 
 const ADMIN_STALE_TIME = 15_000
+
+const VERIFICATION_CANCELLED_ERROR = 'SupplyChainVerificationCancelledError'
+
+interface PendingVerification {
+  promise: Promise<unknown>
+  resolve: (value: unknown) => void
+  reject: (reason: unknown) => void
+  verificationActive: boolean
+}
+
+interface VerificationBridge {
+  withVerification: (apiCall: () => Promise<unknown>) => Promise<unknown | null>
+  reset: () => void
+}
+
+export function createSupplyChainSecurityLifecycle(
+  onPendingChange: (pending: boolean) => void = () => undefined
+) {
+  let pending: PendingVerification | null = null
+
+  function finish(
+    target: PendingVerification,
+    result: 'resolve' | 'reject',
+    value: unknown
+  ): void {
+    if (pending !== target) return
+    pending = null
+    onPendingChange(false)
+    if (result === 'resolve') target.resolve(value)
+    else target.reject(value)
+  }
+
+  function execute(
+    apiCall: () => Promise<unknown>,
+    verification: VerificationBridge
+  ): Promise<unknown> {
+    if (pending) {
+      return Promise.reject(new Error('A secure mutation is already pending'))
+    }
+
+    let resolvePromise!: (value: unknown) => void
+    let rejectPromise!: (reason: unknown) => void
+    const promise = new Promise<unknown>((resolve, reject) => {
+      resolvePromise = resolve
+      rejectPromise = reject
+    })
+    const target: PendingVerification = {
+      promise,
+      resolve: resolvePromise,
+      reject: rejectPromise,
+      verificationActive: false,
+    }
+    pending = target
+    onPendingChange(true)
+
+    void verification
+      .withVerification(async () => {
+        try {
+          const result = await apiCall()
+          finish(target, 'resolve', result)
+          return result
+        } catch (error) {
+          if (!isVerificationRequiredError(error)) {
+            finish(target, 'reject', error)
+            verification.reset()
+          }
+          throw error
+        }
+      })
+      .then((result) => {
+        if (result === null) {
+          if (pending === target) target.verificationActive = true
+          return
+        }
+        finish(target, 'resolve', result)
+      })
+      .catch((error: unknown) => {
+        finish(target, 'reject', error)
+      })
+
+    return promise
+  }
+
+  function handleVerificationError(error: unknown): void {
+    if (pending && !pending.verificationActive) {
+      finish(pending, 'reject', error)
+    }
+  }
+
+  function cancel(): void {
+    if (!pending) return
+    const error = new Error('Secure verification was cancelled')
+    error.name = VERIFICATION_CANCELLED_ERROR
+    finish(pending, 'reject', error)
+  }
+
+  return {
+    execute,
+    handleVerificationError,
+    cancel,
+    isPending: () => pending !== null,
+  }
+}
+
+export function useSupplyChainSecurity() {
+  const [isPending, setIsPending] = useState(false)
+  const [lifecycle] = useState(() =>
+    createSupplyChainSecurityLifecycle(setIsPending)
+  )
+
+  const verification = useSecureVerification({
+    onError: lifecycle.handleVerificationError,
+  })
+
+  const execute = useCallback(
+    (apiCall: () => Promise<unknown>) =>
+      lifecycle.execute(apiCall, {
+        withVerification: verification.withVerification,
+        reset: verification.reset,
+      }),
+    [lifecycle, verification]
+  )
+
+  const cancel = useCallback(() => {
+    lifecycle.cancel()
+    verification.cancel()
+  }, [lifecycle, verification])
+
+  return { execute, cancel, verification, isPending }
+}
+
+export type SupplyChainSecurity = ReturnType<typeof useSupplyChainSecurity>
 
 export function useSupplierAdminList(params: SupplierListParams) {
   return useQuery({
@@ -150,10 +285,12 @@ export function useChannelBindingAdminList(
 export function useSupplyChainAdminMutation<TVariables>(options: {
   mutationFn: (variables: TVariables) => Promise<unknown>
   invalidate: readonly (readonly unknown[])[]
+  security: SupplyChainSecurity
 }) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: options.mutationFn,
+    mutationFn: (variables: TVariables) =>
+      options.security.execute(() => options.mutationFn(variables)),
     retry: false,
     onSuccess: async () => {
       await Promise.all(

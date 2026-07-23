@@ -44,6 +44,7 @@ type SupplierAdminRow struct {
 	Name                   string `json:"name"`
 	Status                 string `json:"status"`
 	Remark                 string `json:"remark"`
+	RowVersion             int64  `json:"row_version"`
 	ContractCount          int64  `json:"contract_count"`
 	ActiveContractCount    int64  `json:"active_contract_count"`
 	LinkedChannelCount     int64  `json:"linked_channel_count"`
@@ -60,6 +61,7 @@ type SupplierContractAdminRow struct {
 	ContractNo                      string `json:"contract_no"`
 	Remark                          string `json:"remark"`
 	Status                          string `json:"status"`
+	RowVersion                      int64  `json:"row_version"`
 	CurrentRateVersionId            *int   `json:"current_rate_version_id"`
 	CurrentProcurementMultiplierPpm *int64 `json:"current_procurement_multiplier_ppm"`
 	CurrentRateEffectiveAt          *int64 `json:"current_rate_effective_at"`
@@ -142,7 +144,7 @@ func ListSupplierAdminRows(filter SupplierAdminListFilter) ([]SupplierAdminRow, 
 	for index, supplier := range suppliers {
 		ids[index] = supplier.Id
 		byId[supplier.Id] = index
-		rows[index] = SupplierAdminRow{Id: supplier.Id, Name: supplier.Name, Status: supplier.Status, Remark: supplier.Remark, CreatedAt: supplier.CreatedAt, UpdatedAt: supplier.UpdatedAt}
+		rows[index] = SupplierAdminRow{Id: supplier.Id, Name: supplier.Name, Status: supplier.Status, Remark: supplier.Remark, RowVersion: supplier.RowVersion, CreatedAt: supplier.CreatedAt, UpdatedAt: supplier.UpdatedAt}
 	}
 	if len(ids) == 0 {
 		return rows, total, nil
@@ -221,7 +223,7 @@ func ListSupplierContractAdminRows(filter SupplierContractAdminListFilter) ([]Su
 	rows := make([]SupplierContractAdminRow, 0)
 	if err := supplierContractAdminBaseQuery(filter).
 		Select(`contract.id, contract.supplier_id, supplier.name AS supplier_name, contract.name, contract.contract_no,
-			contract.remark, contract.status, contract.current_rate_version_id,
+			contract.remark, contract.status, contract.row_version, contract.current_rate_version_id,
 			rate.procurement_multiplier_ppm AS current_procurement_multiplier_ppm,
 			rate.effective_at AS current_rate_effective_at,
 			contract.rpm_limit, contract.tpm_limit, contract.max_concurrency, contract.created_at, contract.updated_at`).
@@ -409,6 +411,25 @@ func SetChannelSupplierContractCASForActor(channelId int, expectedContractId int
 	}
 	changed := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		changed, err = setChannelSupplierContractCASTx(tx, channelId, expectedContractId, desiredContractId, createdBy)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
+		refreshLocalChannelCacheAndPublishChanged()
+	}
+	return nil
+}
+
+func setChannelSupplierContractCASTx(tx *gorm.DB, channelId int, expectedContractId int, desiredContractId *int, createdBy int) (bool, error) {
+	if tx == nil {
+		return false, ErrDatabase
+	}
+	changed := false
+	err := func() error {
 		if desiredContractId != nil {
 			if _, _, _, err := lockActiveSupplierContractChain(tx, *desiredContractId, true); err != nil {
 				return err
@@ -422,14 +443,14 @@ func SetChannelSupplierContractCASForActor(channelId int, expectedContractId int
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "supplier_contract_id").First(&channel, channelId).Error; err != nil {
 			return err
 		}
+		if !supplierContractIdMatchesExpected(channel.SupplierContractId, expectedContractId) {
+			return ErrSupplierBindingChanged
+		}
 		if desiredContractId != nil && channel.SupplierContractId != nil && *channel.SupplierContractId == *desiredContractId {
 			return nil
 		}
 		if desiredContractId == nil && channel.SupplierContractId == nil {
 			return nil
-		}
-		if !supplierContractIdMatchesExpected(channel.SupplierContractId, expectedContractId) {
-			return ErrSupplierBindingChanged
 		}
 		query := tx.Model(&Channel{}).Where("id = ?", channelId)
 		if expectedContractId == 0 {
@@ -455,14 +476,8 @@ func SetChannelSupplierContractCASForActor(channelId int, expectedContractId int
 		}
 		changed = true
 		return nil
-	})
-	if err != nil {
-		return err
-	}
-	if changed {
-		refreshLocalChannelCacheAndPublishChanged()
-	}
-	return nil
+	}()
+	return changed, err
 }
 
 func ListSupplierChannelBindingVersions(channelId int, page SupplierPage) ([]SupplierChannelBindingVersion, int64, error) {

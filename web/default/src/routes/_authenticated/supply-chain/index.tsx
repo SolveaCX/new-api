@@ -32,6 +32,10 @@ import {
 
 const positiveId = z.number().int().positive().optional().catch(undefined)
 
+export function canAccessSupplyChain(role?: number): boolean {
+  return role !== undefined && role >= ROLE.SUPER_ADMIN
+}
+
 export const supplyChainSearchSchema = z.object({
   tab: z.enum(SUPPLY_CHAIN_TABS).default('report').catch('report'),
   month: z
@@ -52,7 +56,7 @@ export const supplyChainSearchSchema = z.object({
 export const Route = createFileRoute('/_authenticated/supply-chain/')({
   beforeLoad: () => {
     const { auth } = useAuthStore.getState()
-    if (!auth.user || auth.user.role < ROLE.ADMIN) {
+    if (!canAccessSupplyChain(auth.user?.role)) {
       throw redirect({ to: '/403' })
     }
   },

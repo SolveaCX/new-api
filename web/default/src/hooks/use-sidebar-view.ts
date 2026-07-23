@@ -28,6 +28,26 @@ import { useSidebarData } from './use-sidebar-data'
 
 /** Sentinel key used for the root navigation in animation `key=` props */
 const ROOT_VIEW_KEY = '__root'
+const SUPPLY_CHAIN_URL = '/supply-chain'
+
+export function filterRootNavGroupsByRole(
+  navGroups: NavGroup[],
+  userRole?: number
+): NavGroup[] {
+  const isAdmin = userRole !== undefined && userRole >= ROLE.ADMIN
+  const isRoot = userRole !== undefined && userRole >= ROLE.SUPER_ADMIN
+  return navGroups
+    .filter((group) => (group.id === 'admin' ? isAdmin : true))
+    .map((group) => {
+      if (group.id !== 'admin' || isRoot) return group
+      return {
+        ...group,
+        items: group.items.filter(
+          (item) => !('url' in item) || item.url !== SUPPLY_CHAIN_URL
+        ),
+      }
+    })
+}
 
 /**
  * Resolve the active sidebar view for the current location.
@@ -50,10 +70,7 @@ export function useSidebarView(): ResolvedSidebarView {
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
-    const isAdmin = userRole !== undefined && userRole >= ROLE.ADMIN
-    return configFilteredRoot.filter((group) =>
-      group.id === 'admin' ? isAdmin : true
-    )
+    return filterRootNavGroupsByRole(configFilteredRoot, userRole)
   }, [configFilteredRoot, userRole])
 
   const view = resolveSidebarView(pathname)
