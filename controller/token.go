@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -446,6 +447,66 @@ func UpdateToken(c *gin.Context) {
 
 type TokenBatch struct {
 	Ids []int `json:"ids"`
+}
+
+type tokenGroupBatchUpdateRequest struct {
+	Ids   []int  `json:"ids"`
+	Group string `json:"group"`
+}
+
+func UpdateTokenGroupBatch(c *gin.Context) {
+	if !common.GetEnvOrDefaultBool("TOKEN_BATCH_GROUP_ENABLED", false) {
+		common.ApiErrorI18n(c, i18n.MsgFeatureDisabled)
+		return
+	}
+
+	request := tokenGroupBatchUpdateRequest{}
+	if err := c.ShouldBindJSON(&request); err != nil || len(request.Ids) == 0 || len(request.Ids) > 100 || strings.TrimSpace(request.Group) == "" {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	request.Group = strings.TrimSpace(request.Group)
+
+	seen := make(map[int]struct{}, len(request.Ids))
+	for _, id := range request.Ids {
+		if id <= 0 {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		if _, exists := seen[id]; exists {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		seen[id] = struct{}{}
+	}
+
+	userId := c.GetInt("id")
+	userGroup, err := model.GetUserGroup(userId, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if userGroup == "" || userGroup == plgGroup {
+		request.Group = plgGroup
+	} else if !service.GroupInUserUsableGroups(userGroup, request.Group) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+
+	count, err := model.BatchUpdateTokenGroup(request.Ids, userId, request.Group)
+	if errors.Is(err, model.ErrTokenBatchInvalid) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if errors.Is(err, model.ErrTokenBatchCacheInvalidation) {
+		common.ApiErrorI18n(c, i18n.MsgTokenBatchCachePending)
+		return
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, count)
 }
 
 func DeleteTokenBatch(c *gin.Context) {

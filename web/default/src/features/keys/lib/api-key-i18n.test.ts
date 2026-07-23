@@ -27,6 +27,13 @@ import zh from '@/i18n/locales/zh.json'
 import { describe, expect, test } from 'bun:test'
 
 const EDIT_API_KEY = 'Edit API key'
+const BATCH_GROUP_KEYS = [
+  'Choose a group for the selected API keys.',
+  'Failed to update selected API key groups',
+  'Update group',
+  'Update group for {{count}} API key(s)',
+  'Updated the group for {{count}} API key(s)',
+] as const
 const API_KEY_STATISTICS = 'API Key Statistics'
 
 const expectedTranslations = {
@@ -82,6 +89,23 @@ describe('API key dialog translations', () => {
       expect(translations[typedLocale][EDIT_API_KEY]).not.toBe(
         expectedTranslations.en
       )
+    }
+  })
+
+  test('provides batch group copy in every supported locale', () => {
+    for (const translation of Object.values(translations)) {
+      for (const key of BATCH_GROUP_KEYS) {
+        expect(translation[key]).toBeTruthy()
+      }
+    }
+  })
+
+  test('does not copy batch group English into translated locales', () => {
+    for (const [locale, translation] of Object.entries(translations)) {
+      if (locale === 'en') continue
+      for (const key of BATCH_GROUP_KEYS) {
+        expect(translation[key]).not.toBe(en.translation[key])
+      }
     }
   })
 })
