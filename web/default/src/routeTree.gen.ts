@@ -68,6 +68,7 @@ import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedInviteIndexRouteImport } from './routes/_authenticated/invite/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
+import { Route as AuthenticatedComputeIndexRouteImport } from './routes/_authenticated/compute/index'
 import { Route as AuthenticatedCodexModelGovernanceIndexRouteImport } from './routes/_authenticated/codex-model-governance/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedAvailableModelsIndexRouteImport } from './routes/_authenticated/available-models/index'
@@ -411,6 +412,12 @@ const AuthenticatedDashboardIndexRoute =
     path: '/dashboard/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedComputeIndexRoute =
+  AuthenticatedComputeIndexRouteImport.update({
+    id: '/compute/',
+    path: '/compute/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCodexModelGovernanceIndexRoute =
   AuthenticatedCodexModelGovernanceIndexRouteImport.update({
     id: '/codex-model-governance/',
@@ -671,6 +678,7 @@ export interface FileRoutesByFullPath {
   '/available-models/': typeof AuthenticatedAvailableModelsIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/compute/': typeof AuthenticatedComputeIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/invite/': typeof AuthenticatedInviteIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
@@ -764,6 +772,7 @@ export interface FileRoutesByTo {
   '/available-models': typeof AuthenticatedAvailableModelsIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/compute': typeof AuthenticatedComputeIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/invite': typeof AuthenticatedInviteIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
@@ -861,6 +870,7 @@ export interface FileRoutesById {
   '/_authenticated/available-models/': typeof AuthenticatedAvailableModelsIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/_authenticated/compute/': typeof AuthenticatedComputeIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/invite/': typeof AuthenticatedInviteIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
@@ -957,6 +967,7 @@ export interface FileRouteTypes {
     | '/available-models/'
     | '/channels/'
     | '/codex-model-governance/'
+    | '/compute/'
     | '/dashboard/'
     | '/invite/'
     | '/keys/'
@@ -1050,6 +1061,7 @@ export interface FileRouteTypes {
     | '/available-models'
     | '/channels'
     | '/codex-model-governance'
+    | '/compute'
     | '/dashboard'
     | '/invite'
     | '/keys'
@@ -1146,6 +1158,7 @@ export interface FileRouteTypes {
     | '/_authenticated/available-models/'
     | '/_authenticated/channels/'
     | '/_authenticated/codex-model-governance/'
+    | '/_authenticated/compute/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/invite/'
     | '/_authenticated/keys/'
@@ -1642,6 +1655,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/compute/': {
+      id: '/_authenticated/compute/'
+      path: '/compute'
+      fullPath: '/compute/'
+      preLoaderRoute: typeof AuthenticatedComputeIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/codex-model-governance/': {
       id: '/_authenticated/codex-model-governance/'
       path: '/codex-model-governance'
@@ -1988,6 +2008,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAvailableModelsIndexRoute: typeof AuthenticatedAvailableModelsIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedCodexModelGovernanceIndexRoute: typeof AuthenticatedCodexModelGovernanceIndexRoute
+  AuthenticatedComputeIndexRoute: typeof AuthenticatedComputeIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedInviteIndexRoute: typeof AuthenticatedInviteIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
@@ -2021,6 +2042,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedCodexModelGovernanceIndexRoute:
     AuthenticatedCodexModelGovernanceIndexRoute,
+  AuthenticatedComputeIndexRoute: AuthenticatedComputeIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedInviteIndexRoute: AuthenticatedInviteIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,

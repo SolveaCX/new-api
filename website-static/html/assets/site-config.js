@@ -2,10 +2,8 @@
   "use strict";
 
   const DOCS_LINK_SELECTOR = [
-    '.nav a[href="docs.html"]',
-    '.nav a[href="/docs.html"]',
-    '.megafoot .col a[href="docs.html"]',
-    '.megafoot .col a[href="/docs.html"]',
+    '.nav a[href="/docs"]',
+    '.megafoot .col a[href="/docs"]',
   ].join(",");
 
   function normalizeDocsUrl(value) {

@@ -106,6 +106,9 @@ func testSubscriptionStripeWrongScopePromotionClaimStopsBeforeCheckout(t *testin
 	setupSubscriptionRecallClaimDB(t)
 	confirmPaymentComplianceForTest(t)
 	enableRecallCampaignForControllerTest(t)
+	originalGate := common.SubscriptionSingleContractEnabled
+	common.SubscriptionSingleContractEnabled = false
+	t.Cleanup(func() { common.SubscriptionSingleContractEnabled = originalGate })
 
 	originalWebhookSecret := setting.StripeWebhookSecret
 	setting.StripeWebhookSecret = "whsec_subscription_test"

@@ -1,11 +1,11 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8">
+<!doctype html><html lang="en-US"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>flatkey — Console</title>
 <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png?v=3">
 <link rel="icon" type="image/svg+xml" href="assets/flatkey-mark.svg?v=4">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="fk2.css?v=719h"><style>
+<link rel="stylesheet" href="fk2.css?v=723c"><style>
 body{background:var(--paper2);display:grid;grid-template-columns:240px 1fr;min-height:100vh}
 .megafoot,.stripe{grid-column:1/-1}
 .side{background:#fff;border-right:1px solid var(--line);padding:22px 16px;display:flex;flex-direction:column;gap:4px}
@@ -53,10 +53,10 @@ body{background:var(--paper2);display:grid;grid-template-columns:240px 1fr;min-h
 <noscript><iframe title="Google Tag Manager" src="https://www.googletagmanager.com/ns.html?id=GTM-5T5LPLSZ" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
 <div class="side">
-  <a class="logo" href="index.html" style="padding:8px 14px 20px"><img src="assets/flatkey-mark.svg?v=4" alt="">flatkey</a>
-  <a class="on" href="console.html">Overview</a><a>API Keys</a><a>Usage & Logs</a><a>Model Health</a><a href="playground.html">Playground</a>
+  <a class="logo" href="/" style="padding:8px 14px 20px"><img src="assets/flatkey-mark.svg?v=4" alt="">flatkey</a>
+  <a class="on" href="console.html">Overview</a><a>API Keys</a><a>Usage & Logs</a><a>Model Health</a><a href="/playground">Playground</a>
   <div class="sec">BILLING</div>
-  <a href="topup.html">Balance & Top-up</a><a>Invoices</a>
+  <a href="/pricing">Balance & Top-up</a><a>Invoices</a>
   <div class="sec">SCALE</div>
   <a>Rate limits</a><a>Team</a><a>Settings</a>
   <div style="flex:1"></div>
@@ -84,7 +84,7 @@ body{background:var(--paper2);display:grid;grid-template-columns:240px 1fr;min-h
       <div class="legend"><span><i style="background:#6D5CFF"></i>gpt-5.5</span><span><i style="background:#A4CC3E"></i>deepseek-v4-flash</span><span><i style="background:#E8A15D"></i>claude-sonnet-4-6</span><span><i style="background:#8B5CF6"></i>seedance-2.5</span><span style="margin-left:auto">per-request logs →</span></div>
     </div>
     <div style="display:flex;flex-direction:column;gap:18px">
-      <div class="bal"><span style="font-size:12.5px;font-weight:750;letter-spacing:.6px;color:#B9B3D6">BALANCE</span><b>$61.88</b><span style="font-size:12.5px;color:#B9B3D6">≈ 19 days at current burn · auto top-up OFF</span><div style="display:flex;gap:10px;margin-top:16px"><a class="btn lime" style="flex:1;justify-content:center" href="topup.html">Top up</a><a class="btn ghost ondark" style="flex:1;justify-content:center">Auto top-up</a></div></div>
+      <div class="bal"><span style="font-size:12.5px;font-weight:750;letter-spacing:.6px;color:#B9B3D6">BALANCE</span><b>$61.88</b><span style="font-size:12.5px;color:#B9B3D6">≈ 19 days at current burn · auto top-up OFF</span><div style="display:flex;gap:10px;margin-top:16px"><a class="btn lime" style="flex:1;justify-content:center" href="/pricing">Top up</a><a class="btn ghost ondark" style="flex:1;justify-content:center">Auto top-up</a></div></div>
       <div class="panel"><h4>API keys <span>3 active</span></h4>
         <div class="krow"><code>fk-live-8f3a…2e91</code> default <div style="flex:1"></div><span class="mono" style="color:var(--ink3)">2m ago</span></div>
         <div class="krow"><code>fk-live-c119…77ab</code> cline-agent <div style="flex:1"></div><span class="mono" style="color:var(--ink3)">1h ago</span></div>
@@ -96,13 +96,13 @@ body{background:var(--paper2);display:grid;grid-template-columns:240px 1fr;min-h
 <footer class="megafoot">
   <div class="cols">
     <div class="col brandcol">
-      <a class="logo" href="index.html"><img src="assets/flatkey-mark.svg?v=4" alt="flatkey">flatkey</a>
+      <a class="logo" href="/"><img src="assets/flatkey-mark.svg?v=4" alt="flatkey">flatkey</a>
       <p data-i18n="ft.brand">The official-model gateway. More AI, less cost — every frontier model behind one key, verified hourly.</p>
     </div>
-    <div class="col"><h5 data-i18n="ft.product">Product</h5><a href="models.html">Models</a><a href="playground.html">Playground</a><a href="/rankings">Rankings</a><a href="topup.html">Pricing</a><a href="compute.html">Compute</a><a href="usecases.html">Use cases</a><a href="https://console.flatkey.ai/dashboard" data-i18n="ft.console">Console ↗</a></div>
-    <div class="col"><h5 data-i18n="ft.dev">Developers</h5><a href="docs.html">Docs</a><a href="docs.html#community">gateway-bench</a><a href="status.html">API status</a><a href="https://docs.flatkey.ai/llms.txt">llms.txt</a><a href="/blog">Blog ↗</a></div>
-    <div class="col"><h5 data-i18n="ft.company">Company</h5><a href="careers.html" data-i18n="ft.careers">Careers</a><a href="contact.html" data-i18n="ft.contact">Contact us</a><a href="/about" data-i18n="ft.about">About</a><a href="terms.html" data-i18n="ft.terms">Terms of Service</a><a href="privacy.html" data-i18n="ft.privacy">Privacy Policy</a><a href="sla.html" data-i18n="ft.sla">Service Level Agreement</a><a href="refund-policy.html" data-i18n="ft.refund">Refund Policy</a></div>
-    <div class="col"><h5 data-i18n="ft.social">Socials</h5><a href="https://x.com/flatkey101">X @flatkey101</a><a href="mailto:support@flatkey.ai">support@flatkey.ai</a><a href="docs.html#community">GitHub</a><a href="https://www.linkedin.com/company/flatkey/">LinkedIn</a><a href="https://discord.gg/VrbZFDXj5g">Discord</a></div>
+    <div class="col"><h5 data-i18n="ft.product">Product</h5><a href="/models">Models</a><a href="/playground">Playground</a><a href="/rankings">Rankings</a><a href="/pricing">Pricing</a><a href="/compute">Compute</a><a href="/usecases">Use cases</a><a href="https://console.flatkey.ai/dashboard" data-i18n="ft.console">Console ↗</a></div>
+    <div class="col"><h5 data-i18n="ft.dev">Developers</h5><a href="/docs">Docs</a><a href="/docs#community">gateway-bench</a><a href="/status">API status</a><a href="https://docs.flatkey.ai/llms.txt">llms.txt</a><a href="/blog">Blog ↗</a></div>
+    <div class="col"><h5 data-i18n="ft.company">Company</h5><a href="/careers" data-i18n="ft.careers">Careers</a><a href="/contact" data-i18n="ft.contact">Contact us</a><a href="/about" data-i18n="ft.about">About</a><a href="/terms" data-i18n="ft.terms">Terms of Service</a><a href="/privacy" data-i18n="ft.privacy">Privacy Policy</a><a href="/sla" data-i18n="ft.sla">Service Level Agreement</a><a href="/refund-policy" data-i18n="ft.refund">Refund Policy</a></div>
+    <div class="col"><h5 data-i18n="ft.social">Socials</h5><a href="https://x.com/flatkey101">X @flatkey101</a><a href="mailto:support@flatkey.ai">support@flatkey.ai</a><a href="/docs#community">GitHub</a><a href="https://www.linkedin.com/company/flatkey/">LinkedIn</a><a href="https://discord.gg/VrbZFDXj5g">Discord</a></div>
   </div>
   <div class="trustrow"><span data-i18n="ft.trusted">TRUSTED &amp; VERIFIED BY</span>
     <a href="https://www.cert-assure.com/serchresult.php?type=Management+System+Certification&certificate=USA-SOC2-220513">SOC 2 Type II</a>
@@ -112,14 +112,14 @@ body{background:var(--paper2);display:grid;grid-template-columns:240px 1fr;min-h
     <span class="b" data-i18n="ft.zeroret">Zero retention of request content</span>
   </div>
   <div class="bottom">
-    <div class="legal" data-i18n="ft.legal">© 2026 flatkey.ai · VOC AI INC, San Jose, CA. All rights reserved. <a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="legal-sla.html">SLA</a> · <a href="refund-policy.html">Refunds</a></div>
+    <div class="legal" data-i18n="ft.legal">© 2026 flatkey.ai · VOC AI INC, San Jose, CA. All rights reserved. <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/sla">SLA</a> · <a href="/refund-policy">Refunds</a></div>
     <div class="word"><img src="assets/flatkey-mark.svg?v=4" alt="">flatkey</div>
   </div>
 </footer>
 <div class="stripe"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
 <div class="pxgrid" data-seed="73" data-cell="16" data-cols="7" data-rows="3" data-n="8" style="top:20px;right:36px;opacity:.55"></div>
 <script src="assets/pixels.js?v=719h"></script>
-<script src="assets/i18n.js?v=720b"></script>
-<script src="assets/track.js?v=716b"></script>
+<script src="assets/i18n.js?v=724a"></script>
+<script src="assets/track.js?v=721a"></script>
 <script src="assets/site-shell.js?v=720a"></script>
 </body></html>

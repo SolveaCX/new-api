@@ -143,6 +143,7 @@ func main() {
 
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
+	service.StartStripeSubscriptionReconciliationTask()
 
 	// Stripe user win-back campaign scheduler (master node, default-off)
 	service.StartRecallCampaignTasks()

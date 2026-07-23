@@ -17,4 +17,5 @@ func TestModelListKeepsLegacyImageAndLatestModels(t *testing.T) {
 	require.Contains(t, ModelList, "gpt-5.6-luna")
 	require.NotContains(t, ModelList, "codex-auto-review")
 	require.NotContains(t, ModelList, ratio_setting.WithCompactModelSuffix("codex-auto-review"))
+	require.Contains(t, ModelList, ratio_setting.WithCompactModelSuffix("gpt-5.5"))
 }

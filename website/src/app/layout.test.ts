@@ -4,7 +4,7 @@ import {
   LIVECHAT_BOOTSTRAP_SCRIPT,
   ROOT_DOCUMENT_PERFORMANCE_POLICY,
 } from "@/components/root-document";
-import { resolveLocaleFromPathname } from "@/lib/locales";
+import { LOCALES, localeAlternates, localeLanguageTag, resolveLocaleFromPathname } from "@/lib/locales";
 
 describe("resolveLocaleFromPathname", () => {
   test("defaults to English without a supported path locale", () => {
@@ -23,6 +23,23 @@ describe("resolveLocaleFromPathname", () => {
   });
 });
 
+describe("regional language metadata", () => {
+  test("maps every route locale to one stable BCP47 tag", () => {
+    expect(LOCALES.map(localeLanguageTag)).toEqual([
+      "en-US", "zh-CN", "es-ES", "fr-FR", "pt-PT",
+      "ru-RU", "ja-JP", "vi-VN", "de-DE", "id-ID",
+    ]);
+  });
+
+  test("uses regional tags as hreflang keys without changing URL segments", () => {
+    expect(localeAlternates("/pricing")).toMatchObject({
+      "en-US": "https://flatkey.ai/pricing",
+      "zh-CN": "https://flatkey.ai/zh/pricing",
+      "ja-JP": "https://flatkey.ai/ja/pricing",
+    });
+  });
+});
+
 describe("ATTRIBUTION_COOKIE_SCRIPT", () => {
   test("stores campaign parameters in a shared flatkey cookie", () => {
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("flatkey_ads_attribution");
@@ -30,6 +47,11 @@ describe("ATTRIBUTION_COOKIE_SCRIPT", () => {
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("yclid");
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("domain=.flatkey.ai");
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("SameSite=Lax");
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("first_landing_path");
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("existing.landing_path");
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path!=="/sign-in"');
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path!=="/sign-up"');
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path.indexOf("/oauth/")!==0');
   });
 });
 

@@ -34,6 +34,7 @@ const BATCH_GROUP_KEYS = [
   'Update group for {{count}} API key(s)',
   'Updated the group for {{count}} API key(s)',
 ] as const
+const API_KEY_STATISTICS = 'API Key Statistics'
 
 const expectedTranslations = {
   en: 'Edit API key',
@@ -55,6 +56,17 @@ const translations = {
   ru: ru.translation,
   vi: vi.translation,
   zh: zh.translation,
+} as const
+
+const expectedStatisticsTranslations = {
+  en: 'API Key Statistics',
+  es: 'Estadísticas de claves API',
+  fr: 'Statistiques des clés API',
+  ja: 'APIキー統計',
+  pt: 'Estatísticas das chaves de API',
+  ru: 'Статистика API-ключей',
+  vi: 'Thống kê khóa API',
+  zh: 'API 密钥统计',
 } as const
 
 describe('API key dialog translations', () => {
@@ -94,6 +106,17 @@ describe('API key dialog translations', () => {
       for (const key of BATCH_GROUP_KEYS) {
         expect(translation[key]).not.toBe(en.translation[key])
       }
+    }
+  })
+})
+
+describe('API key statistics translations', () => {
+  test('provides a reviewed title in every supported locale', () => {
+    for (const locale of Object.keys(expectedStatisticsTranslations)) {
+      const typedLocale = locale as keyof typeof expectedStatisticsTranslations
+      expect(translations[typedLocale][API_KEY_STATISTICS]).toBe(
+        expectedStatisticsTranslations[typedLocale]
+      )
     }
   })
 })

@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
-import { LOCALES, type Locale, localizePath } from "@/lib/locales";
+import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingPathnames } from "@/lib/model-landing";
 import { modelPublicPath } from "@/lib/model-public";
@@ -22,7 +22,7 @@ function entry(
     changeFrequency,
     priority,
     alternates: {
-      languages: Object.fromEntries(locales.map((locale) => [locale, `${base}${localizePath(pathname, locale)}`])),
+      languages: Object.fromEntries(locales.map((locale) => [localeLanguageTag(locale), `${base}${localizePath(pathname, locale)}`])),
     },
   }));
 }
@@ -39,7 +39,7 @@ function queryEntry(
     changeFrequency,
     priority,
     alternates: {
-      languages: Object.fromEntries(LOCALES.map((locale) => [locale, `${base}${localizePath(pathname, locale)}?${query}`])),
+      languages: Object.fromEntries(LOCALES.map((locale) => [localeLanguageTag(locale), `${base}${localizePath(pathname, locale)}?${query}`])),
     },
   }));
 }
@@ -109,7 +109,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         alternates: {
           languages: Object.fromEntries(
             availableLocales.map((availableLocale) => [
-              availableLocale,
+              localeLanguageTag(availableLocale),
               `${base}${localizePath(`/blog/${slug}`, availableLocale)}`,
             ])
           ),

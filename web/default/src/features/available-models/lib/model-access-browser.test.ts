@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'bun:test'
 import type { TFunction } from 'i18next'
 import type { UserModelAccess } from '../types'
+import { resolveModelRatioContext } from './model-access'
 import {
   ALL_MODEL_VENDORS,
   createModelVendorFilterState,
@@ -118,6 +119,27 @@ describe('available models browser scope selection', () => {
     expect(getModelAccessScopeModels(access).map((model) => model.id)).toEqual([
       'identity-model',
     ])
+  })
+
+  test('keeps identity ratios when an identity-only account uses the fixed layout', () => {
+    const access = buildAccess({
+      groups: [],
+      create_default_scope: null,
+      identity_model_ratios: { 'identity-model': 0.5 },
+      identity_default_ratio: 0,
+      account_model_ratios: { 'identity-model': 9 },
+      account_default_ratio: 9,
+    })
+    const activeScopeId = resolveModelAccessScope(access, null)
+
+    expect(isFixedModelAccessView(access)).toBe(true)
+    expect(
+      getModelAccessScopeModels(access, activeScopeId).map((model) => model.id)
+    ).toEqual(['identity-model'])
+    expect(resolveModelRatioContext(access, activeScopeId)).toEqual({
+      modelRatios: { 'identity-model': 0.5 },
+      defaultRatio: 0,
+    })
   })
 
   test('uses account models for fixed accounts regardless of group state', () => {

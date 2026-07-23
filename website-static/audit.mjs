@@ -12,25 +12,31 @@ const fail = (file, message) => errors.push(`${file}: ${message}`);
 
 const appOnly = new Set(["console.html", "login.html", "onboarding.html", "signup.html"]);
 const legacyRoutes = new Set(["/blog", "/models", "/pricing", "/rankings"]);
-const requiredNavRoutes = ["models.html", "docs.html", "playground.html", "topup.html", "compute.html", "usecases.html"];
+const requiredNavRoutes = ["models", "docs", "playground", "pricing", "compute", "usecases"];
+const languageTags = new Set(["en-US", "zh-CN", "es-ES", "fr-FR", "pt-PT", "ru-RU", "ja-JP", "vi-VN", "de-DE", "id-ID"]);
 
 for (const file of files) {
   const html = fs.readFileSync(path.join(root, file), "utf8");
 
-  if (!/<html\b[^>]*\blang="[^"]+"/i.test(html)) fail(file, "missing html lang");
+  const htmlLanguage = html.match(/<html\b[^>]*\blang="([^"]+)"/i)?.[1];
+  if (!htmlLanguage) fail(file, "missing html lang");
+  else if (!languageTags.has(htmlLanguage)) fail(file, `html lang is not a supported regional BCP47 tag: ${htmlLanguage}`);
   const viewports = [...html.matchAll(/<meta\s+name="viewport"\s+content="([^"]+)"/gi)];
   if (viewports.length !== 1) fail(file, `expected one viewport meta, found ${viewports.length}`);
   else if (!viewports[0][1].includes("width=device-width")) fail(file, `non-responsive viewport: ${viewports[0][1]}`);
+  if (!/fk2\.css\?v=723c/.test(html)) fail(file, "missing the current shared CSS cache version");
   if (/\bid=""/.test(html)) fail(file, "contains an empty id");
   if (/<script\b[^>]*\bsrc=""/i.test(html)) fail(file, "contains an empty script src");
   if (/href="(?:#|javascript:[^"]*)"/i.test(html)) fail(file, "contains a placeholder or javascript link");
   if (/\bdata-i18n(?:-ph)?=/.test(html) && !/assets\/i18n\.js\?v=/.test(html)) {
     fail(file, "uses i18n keys without loading assets/i18n.js");
   }
-  const i18nScript = html.indexOf("assets/i18n.js?v=720b");
+  const i18nScript = html.indexOf("assets/i18n.js?v=724a");
   const shellScript = html.indexOf("assets/site-shell.js?v=720a");
+  const trackScript = html.indexOf("assets/track.js?v=721a");
   if (i18nScript === -1) fail(file, "missing the current locale-routing script version");
   if (shellScript === -1) fail(file, "missing the current responsive shell version");
+  if (trackScript === -1) fail(file, "missing the current attribution script version");
   if (i18nScript !== -1 && shellScript !== -1 && i18nScript > shellScript) {
     fail(file, "site shell loads before locale state is initialized");
   }
@@ -60,6 +66,18 @@ for (const file of files) {
   const hreflangs = [...html.matchAll(/hreflang="([^"]+)"/g)].map((match) => match[1]);
   const duplicateHreflangs = [...new Set(hreflangs.filter((lang, index) => hreflangs.indexOf(lang) !== index))];
   if (duplicateHreflangs.length) fail(file, `duplicate hreflang values: ${duplicateHreflangs.join(", ")}`);
+  for (const hreflang of hreflangs) {
+    if (hreflang !== "x-default" && !languageTags.has(hreflang)) fail(file, `non-regional hreflang: ${hreflang}`);
+  }
+
+  for (const image of html.matchAll(/<img\b([^>]*)>/gi)) {
+    if (!/\balt="[^"]*"/i.test(image[1])) fail(file, `image is missing alt: ${image[0].slice(0, 100)}`);
+  }
+
+  if (!appOnly.has(file)) {
+    if (/href="[^"]*\.html(?:[?#][^"]*)?"/i.test(html)) fail(file, "public navigation still exposes a .html URL");
+    if (/rel="canonical" href="[^"]*\.html(?:[?#][^"]*)?"/i.test(html)) fail(file, "canonical still uses a .html URL");
+  }
 
   if (!appOnly.has(file)) {
     if (!/<nav\b|class="dbar"/.test(html)) fail(file, "public page is missing navigation");
@@ -68,7 +86,7 @@ for (const file of files) {
   const nav = html.match(/<nav class="nav"[^>]*>([\s\S]*?)<\/nav>/);
   if (nav) {
     for (const route of requiredNavRoutes) {
-      if (!new RegExp(`href="/?${route.replace(".", "\\.")}`).test(nav[1])) fail(file, `navigation is missing ${route}`);
+      if (!new RegExp(`href="/${route}(?:[?#\"]|$)`).test(nav[1])) fail(file, `navigation is missing /${route}`);
     }
     const navComputeLinks = [...nav[1].matchAll(/data-i18n="nav\.compute"/g)].length;
     if (navComputeLinks > 1) fail(file, `navigation contains ${navComputeLinks} Compute links`);
@@ -89,6 +107,13 @@ const expectedTermNumbers = Array.from({ length: 19 }, (_, index) => index + 1);
 if (JSON.stringify(termNumbers) !== JSON.stringify(expectedTermNumbers)) {
   fail("terms.html", `section sequence is ${termNumbers.join(", ")}; expected 1–19 exactly once`);
 }
+
+const sitemapV2 = fs.readFileSync(path.join(root, "sitemap-v2.xml"), "utf8");
+if (/\.html(?:<|\?)/.test(sitemapV2)) fail("sitemap-v2.xml", "contains legacy .html URLs");
+if (sitemapV2.includes("https://flatkey.ai/login")) fail("sitemap-v2.xml", "contains a non-indexable login URL");
+const sitemapV2Locations = [...sitemapV2.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+const duplicateSitemapLocations = [...new Set(sitemapV2Locations.filter((url, index) => sitemapV2Locations.indexOf(url) !== index))];
+if (duplicateSitemapLocations.length) fail("sitemap-v2.xml", `duplicate URLs: ${duplicateSitemapLocations.join(", ")}`);
 
 const about = fs.readFileSync(path.join(root, "about.html"), "utf8");
 for (const requiredAboutContent of [
@@ -143,9 +168,63 @@ if (!nginxConfig.includes("location = /about { try_files /about.html =404; }")) 
 if (!nginxConfig.includes("location = /zh/about { try_files /about-zh.html =404; }")) {
   fail("nginx.conf", "/zh/about does not serve the localized static founder story");
 }
+for (const [legacyPath, canonicalPath] of [
+  ["/models.html", "/models"],
+  ["/docs.html", "/docs"],
+  ["/playground.html", "/playground"],
+  ["/topup.html", "/pricing"],
+  ["/terms.html", "/terms"],
+  ["/about-zh.html", "/zh/about"],
+  ["/careers-zh.html", "/zh/careers"],
+]) {
+  const escapedLegacy = legacyPath.replace(".", "\\.");
+  const exact = new RegExp(`location = ${escapedLegacy} \\{ return 301 ${canonicalPath}; \\}`);
+  const grouped = legacyPath === "/topup.html" || legacyPath.endsWith("-zh.html") ? false : nginxConfig.includes(`|${legacyPath.slice(1, -5)}|`) || nginxConfig.includes(`(${legacyPath.slice(1, -5)}|`);
+  if (!exact.test(nginxConfig) && !grouped) fail("nginx.conf", `${legacyPath} does not permanently redirect to ${canonicalPath}`);
+}
+for (const [route, file] of [["models", "models.html"], ["docs", "docs.html"], ["playground", "playground.html"], ["pricing", "topup.html"], ["terms", "terms.html"]]) {
+  if (!nginxConfig.includes(`location = /${route} { try_files /${file} =404; }`)) fail("nginx.conf", `/${route} does not serve ${file}`);
+}
+if (!nginxConfig.includes("sub_filter 'lang=\"en\"' 'lang=\"en-US\"';")) fail("nginx.conf", "legacy HTML/XML does not normalize language tags");
 
 const sharedCss = fs.readFileSync(path.join(root, "fk2.css"), "utf8");
 if (/\.megafoot\.slim\b/.test(sharedCss)) fail("fk2.css", "contains obsolete slim-footer styles");
+for (const visualSignature of [
+  "--home-acid:#D9EF6E",
+  "body:has(> header.hero)>.nav",
+  "body:has(> header.hero)>header.hero",
+  "body:has(> header.hero) .hero .board",
+  "body:has(> header.hero) .proofGrid",
+]) {
+  if (!sharedCss.includes(visualSignature)) fail("fk2.css", `missing restored homepage visual signature: ${visualSignature}`);
+}
+
+function mediaBlock(maxWidth) {
+  const marker = `@media (max-width:${maxWidth}px){`;
+  const start = sharedCss.indexOf(marker);
+  if (start === -1) return "";
+  const next = sharedCss.indexOf("\n@media ", start + marker.length);
+  return sharedCss.slice(start, next === -1 ? sharedCss.length : next);
+}
+
+for (const desktopWidth of [1740, 1320]) {
+  const block = mediaBlock(desktopWidth);
+  if (!block) fail("fk2.css", `missing ${desktopWidth}px compact desktop breakpoint`);
+  if (/\.nav>a:not\(\.logo\)[^{]*\{[^}]*display\s*:\s*none/.test(block)) {
+    fail("fk2.css", `${desktopWidth}px desktop breakpoint hides the primary navigation`);
+  }
+  if (/\.nav \.nav-toggle\{[^}]*display\s*:\s*flex/.test(block)) {
+    fail("fk2.css", `${desktopWidth}px desktop breakpoint replaces navigation with the mobile toggle`);
+  }
+}
+
+const mobileNavigationBlock = mediaBlock(1180);
+if (!/\.nav>a:not\(\.logo\)[^{]*\{[^}]*display\s*:\s*none/.test(mobileNavigationBlock)) {
+  fail("fk2.css", "1180px mobile breakpoint does not collapse the primary navigation");
+}
+if (!/\.nav \.nav-toggle\{[^}]*display\s*:\s*flex/.test(mobileNavigationBlock)) {
+  fail("fk2.css", "1180px mobile breakpoint does not expose the navigation toggle");
+}
 
 const i18nSource = fs.readFileSync(path.join(root, "assets/i18n.js"), "utf8");
 for (const requiredLocaleBehavior of [
@@ -155,7 +234,7 @@ for (const requiredLocaleBehavior of [
   "function syncLocaleRoutes(locale)",
   'document.documentElement.dataset.locale = l',
   'new CustomEvent("flatkey:languagechange"',
-  '"sla.html": "sla"',
+  'sla: "sla"',
   'locale === "zh" ? "/zh/careers" : "/careers"',
 ]) {
   if (!i18nSource.includes(requiredLocaleBehavior)) {
@@ -172,6 +251,22 @@ if (!shellSource.includes('document.addEventListener("flatkey:languagechange"'))
   fail("assets/site-shell.js", "mobile navigation does not listen for locale changes");
 }
 
+const trackSource = fs.readFileSync(path.join(root, "assets/track.js"), "utf8");
+for (const requiredAttributionBehavior of [
+  "flatkey_ads_attribution",
+  "first_landing_path",
+  "first_captured_at",
+  'path.indexOf("/oauth/") !== 0',
+  'path !== "/sign-in"',
+  'path !== "/sign-up"',
+  "domain=.flatkey.ai",
+  "yclid",
+]) {
+  if (!trackSource.includes(requiredAttributionBehavior)) {
+    fail("assets/track.js", `missing paid attribution behavior: ${requiredAttributionBehavior}`);
+  }
+}
+
 const dictMatch = i18nSource.match(/var DICTS = (\{[\s\S]*?\n\});\n\n  var LEGAL_ROUTES/);
 if (!dictMatch) {
   fail("assets/i18n.js", "cannot parse dictionaries");
@@ -185,6 +280,15 @@ if (!dictMatch) {
   for (const [locale, dictionary] of Object.entries(dicts)) {
     const missing = [...referenced].filter((key) => !(key in dictionary));
     if (missing.length) fail("assets/i18n.js", `${locale} is missing ${missing.length} referenced keys: ${missing.join(", ")}`);
+    if (!dictionary["rel.s1"]?.includes('href="/sla"')) {
+      fail("assets/i18n.js", `${locale} rel.s1 does not link to the canonical /sla route`);
+    }
+    if (!dictionary["rel.s1"]?.includes("white-space:nowrap")) {
+      fail("assets/i18n.js", `${locale} rel.s1 allows its nested link hit target to split across lines`);
+    }
+    if (/href="[^"]*\.html/.test(dictionary["rel.s1"] || "")) {
+      fail("assets/i18n.js", `${locale} rel.s1 still exposes a legacy .html route`);
+    }
   }
 }
 
