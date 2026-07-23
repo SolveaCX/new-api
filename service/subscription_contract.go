@@ -22,10 +22,11 @@ const (
 )
 
 var (
-	ErrSubscriptionChangeInProgress   = errors.New("subscription change in progress")
-	ErrSubscriptionPlanUnchanged      = errors.New("subscription plan unchanged")
-	ErrSubscriptionDowngradeDeferred  = errors.New("subscription downgrade scheduling is not implemented")
-	ErrStripeCheckoutPendingMigration = errors.New("stripe checkout pending migration")
+	ErrSubscriptionChangeInProgress     = errors.New("subscription change in progress")
+	ErrSubscriptionPlanUnchanged        = errors.New("subscription plan unchanged")
+	ErrSubscriptionDowngradeUnsupported = errors.New("subscription downgrade scheduling is only supported for active Stripe recurring subscriptions")
+	ErrSubscriptionDowngradeDeferred    = ErrSubscriptionDowngradeUnsupported
+	ErrStripeCheckoutPendingMigration   = errors.New("stripe checkout pending migration")
 )
 
 type ChangePlanCommand struct {
@@ -248,6 +249,9 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 		}
 		if err := rejectUnresolvedPlanChangeTx(tx, cmd.UserID, kind == model.SubscriptionChangeIntentKindDowngrade); err != nil {
 			return err
+		}
+		if kind == model.SubscriptionChangeIntentKindDowngrade && !canScheduleSubscriptionDowngrade(contract) {
+			return ErrSubscriptionDowngradeUnsupported
 		}
 
 		intentPaymentMode := cmd.PaymentMode
@@ -670,13 +674,20 @@ func rejectUnresolvedPlanChangeTx(tx *gorm.DB, userID int, allowDowngradeReplace
 	return nil
 }
 
+func canScheduleSubscriptionDowngrade(contract *model.UserSubscriptionContract) bool {
+	return contract != nil &&
+		contract.Status == model.SubscriptionContractStatusActive &&
+		contract.PaymentMode == model.SubscriptionPaymentModeStripeRecurring &&
+		contract.CurrentProviderBindingId > 0
+}
+
 func prepareStripeSubscriptionDowngradeTx(tx *gorm.DB, userID int, contract *model.UserSubscriptionContract, intent *model.SubscriptionChangeIntent, targetPlan *model.SubscriptionPlan) (*StripeSubscriptionDowngradeInput, error) {
 	if tx == nil || contract == nil || intent == nil || targetPlan == nil {
 		return nil, errors.New("subscription downgrade facts are incomplete")
 	}
 	if contract.Status != model.SubscriptionContractStatusActive || contract.PaymentMode != model.SubscriptionPaymentModeStripeRecurring || contract.CurrentProviderBindingId <= 0 {
 		if contract.PaymentMode == model.SubscriptionPaymentModeBalanceOnePeriod || contract.PaymentMode == model.SubscriptionPaymentModeExternalOnePeriod {
-			return nil, ErrSubscriptionDowngradeDeferred
+			return nil, ErrSubscriptionDowngradeUnsupported
 		}
 		return nil, errors.New("current subscription is not active Stripe recurring")
 	}
