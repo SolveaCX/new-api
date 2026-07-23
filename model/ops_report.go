@@ -281,6 +281,8 @@ type OpsUserLastIP struct {
 // GetOpsUsersLastIP returns the most recent non-empty request IP per user.
 // One indexed MAX(id) pass plus one primary-key lookup; used for the full plg
 // user set (~thousands) by the ops report region funnel.
+// Topup/refund rows are written by the Stripe webhook handler and manage rows
+// by admins, so their IP is not the user's — only user-initiated rows count.
 func GetOpsUsersLastIP(userIds []int) ([]*OpsUserLastIP, error) {
 	if len(userIds) == 0 {
 		return nil, nil
@@ -288,9 +290,9 @@ func GetOpsUsersLastIP(userIds []int) ([]*OpsUserLastIP, error) {
 	var maxIds []int64
 	sql := fmt.Sprintf(`
 		SELECT MAX(id) FROM logs%s
-		WHERE user_id IN ? AND ip <> ''
+		WHERE user_id IN ? AND ip <> '' AND type NOT IN (?, ?, ?)
 		GROUP BY user_id`, logsForceIndexHint())
-	if err := LOG_DB.Raw(sql, userIds).Scan(&maxIds).Error; err != nil {
+	if err := LOG_DB.Raw(sql, userIds, LogTypeTopup, LogTypeManage, LogTypeRefund).Scan(&maxIds).Error; err != nil {
 		return nil, err
 	}
 	if len(maxIds) == 0 {
