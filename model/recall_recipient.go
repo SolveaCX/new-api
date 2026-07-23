@@ -14,6 +14,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+var ErrRecallRecipientBindingConflict = errors.New("recall recipient binding conflict")
+
 const (
 	RecallRecipientQueued        = "queued"
 	RecallRecipientCustomerReady = "customer_ready"
@@ -132,6 +134,36 @@ func GetRecallRecipientByCampaignWithContext(ctx context.Context, campaignID int
 		return nil, err
 	}
 	return recipient, nil
+}
+
+func BindRecallRecipientUserWithContext(ctx context.Context, recipientID int64, userID int, normalizedEmail string) (*RecallRecipient, bool, error) {
+	if recipientID <= 0 {
+		return nil, false, gorm.ErrRecordNotFound
+	}
+	if userID <= 0 {
+		return nil, false, fmt.Errorf("recall recipient bind requires a positive user id")
+	}
+	email, ok := normalizeRecallRecipientEmail(normalizedEmail)
+	if !ok {
+		return nil, false, fmt.Errorf("recall recipient bind requires a normalized email")
+	}
+	result := DB.WithContext(ctx).Model(&RecallRecipient{}).
+		Where("id = ? AND user_id = 0 AND LOWER(email_snapshot) = ? AND state <> ?", recipientID, email, RecallRecipientSuppressed).
+		Update("user_id", userID)
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	var stored RecallRecipient
+	if err := DB.WithContext(ctx).First(&stored, recipientID).Error; err != nil {
+		return nil, false, err
+	}
+	if result.RowsAffected == 1 {
+		return &stored, true, nil
+	}
+	if stored.UserId == userID {
+		return &stored, false, nil
+	}
+	return nil, false, ErrRecallRecipientBindingConflict
 }
 
 func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
@@ -564,6 +596,62 @@ func SetRecallMarketingOptOutWithContext(ctx context.Context, userID int, now in
 		return found, err
 	}
 	return true, invalidateUserCache(userID)
+}
+
+func SuppressRecallRecipientWithContext(ctx context.Context, recipientID int64, now int64) (bool, error) {
+	if recipientID <= 0 {
+		return false, gorm.ErrRecordNotFound
+	}
+	suppressed := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var recipient RecallRecipient
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recipient, recipientID).Error; err != nil {
+			return err
+		}
+		if recipient.UserId > 0 {
+			return nil
+		}
+		if recipient.State != RecallRecipientSuppressed {
+			result := tx.Model(&RecallRecipient{}).
+				Where("id = ? AND user_id = 0", recipientID).
+				Updates(map[string]any{
+					"state":              RecallRecipientSuppressed,
+					"lease_owner":        "",
+					"lease_expires_at":   int64(0),
+					"last_error_code":    "",
+					"last_error_message": "",
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				var refreshed RecallRecipient
+				if err := tx.First(&refreshed, recipientID).Error; err != nil {
+					return err
+				}
+				if refreshed.UserId > 0 {
+					return nil
+				}
+				return ErrRecallRecipientBindingConflict
+			}
+		}
+		if err := tx.Model(&RecallMessage{}).
+			Where("recipient_id = ? AND state IN ?", recipientID, []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased, RecallMessageSending}).
+			Updates(map[string]any{
+				"state":              RecallMessageCancelled,
+				"next_attempt_at":    int64(0),
+				"lease_owner":        "",
+				"lease_expires_at":   int64(0),
+				"failed_at":          now,
+				"last_error_code":    "recipient_unsubscribed",
+				"last_error_message": "",
+			}).Error; err != nil {
+			return err
+		}
+		suppressed = true
+		return nil
+	})
+	return suppressed, err
 }
 
 func insertRecallRunEvent(tx *gorm.DB, runEvent *RecallEvent) *gorm.DB {
