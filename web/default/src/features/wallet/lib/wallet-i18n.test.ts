@@ -123,7 +123,7 @@ describe('wallet recharge i18n', () => {
   test('keeps new wallet plan translations free of replacement question marks', () => {
     const walletPlanKeys = [
       'Plans & wallet',
-      'Auto-renew enabled',
+      'Auto-renew on',
       'Loading local currency quote...',
     ] as const
 

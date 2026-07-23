@@ -78,6 +78,26 @@ var stripeInvoiceGetter = getStripeInvoiceForReconcile
 var stripeInvoiceVoider = voidStripeInvoiceForReconcile
 var stripeSubscriptionGetter = getStripeSubscriptionForReconcile
 var stripeSubscriptionCheckoutCreator = createStripeSubscriptionCheckout
+var stripeCheckoutSessionGetter = getStripeCheckoutSessionForSubscription
+var stripeCheckoutSessionExpirer = expireStripeCheckoutSessionForSubscription
+
+func ReplaceStripeCheckoutSessionAccessorsForTest(
+	getter func(context.Context, string) (*stripe.CheckoutSession, error),
+	expirer func(context.Context, string) (*stripe.CheckoutSession, error),
+) func() {
+	originalGetter := stripeCheckoutSessionGetter
+	originalExpirer := stripeCheckoutSessionExpirer
+	if getter != nil {
+		stripeCheckoutSessionGetter = getter
+	}
+	if expirer != nil {
+		stripeCheckoutSessionExpirer = expirer
+	}
+	return func() {
+		stripeCheckoutSessionGetter = originalGetter
+		stripeCheckoutSessionExpirer = originalExpirer
+	}
+}
 
 func getStripeInvoiceForReconcile(ctx context.Context, invoiceID string) (*stripe.Invoice, error) {
 	if err := ensureStripeSecretForSubscription(); err != nil {
@@ -161,6 +181,22 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		ID:  strings.TrimSpace(created.ID),
 		URL: strings.TrimSpace(created.URL),
 	}, nil
+}
+
+func getStripeCheckoutSessionForSubscription(ctx context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+	if err := ensureStripeSecretForSubscription(); err != nil {
+		return nil, err
+	}
+	stripe.Key = setting.StripeApiSecret
+	return session.Get(strings.TrimSpace(sessionID), nil)
+}
+
+func expireStripeCheckoutSessionForSubscription(ctx context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+	if err := ensureStripeSecretForSubscription(); err != nil {
+		return nil, err
+	}
+	stripe.Key = setting.StripeApiSecret
+	return session.Expire(strings.TrimSpace(sessionID), nil)
 }
 
 func stripeSubscriptionAuthoritativeMetadata(tradeNo string, userID int, planID int, contractID int64, changeIntentID int64) map[string]string {
@@ -840,6 +876,134 @@ func validateLocalInvoiceFacts(facts paidInvoiceFacts, order *model.Subscription
 		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.AmountPaid)
 	}
 	return nil
+}
+
+type supersededStripeCheckout struct {
+	IntentID int64
+	TradeNo  string
+}
+
+func supersedeReplaceablePendingStripeCheckouts(ctx context.Context, userID int, requestID string) ([]supersededStripeCheckout, error) {
+	if userID <= 0 || strings.TrimSpace(requestID) == "" {
+		return nil, nil
+	}
+	if existing, found, err := findIntentByRequestTx(model.DB, userID, requestID); err != nil {
+		return nil, err
+	} else if found && existing != nil {
+		return nil, nil
+	}
+	var intents []model.SubscriptionChangeIntent
+	if err := model.DB.
+		Where("user_id = ? AND request_id <> ? AND payment_mode IN ? AND status = ? AND kind IN ?",
+			userID,
+			strings.TrimSpace(requestID),
+			[]string{model.SubscriptionPaymentModeStripeRecurring, model.SubscriptionPaymentModePrepaid},
+			model.SubscriptionChangeIntentStatusAwaitingPayment,
+			[]string{model.SubscriptionChangeIntentKindPurchase, model.SubscriptionChangeIntentKindRepurchase, model.SubscriptionChangeIntentKindUpgrade},
+		).
+		Order("id asc").
+		Find(&intents).Error; err != nil {
+		return nil, err
+	}
+	var superseded []supersededStripeCheckout
+	for _, intent := range intents {
+		var order model.SubscriptionOrder
+		query := model.DB.
+			Where("change_intent_id = ? AND user_id = ? AND payment_provider = ?",
+				intent.Id, userID, model.PaymentProviderStripe).
+			Order("id desc").
+			Limit(1).
+			Find(&order)
+		if query.Error != nil {
+			return nil, query.Error
+		}
+		if query.RowsAffected == 0 || order.Status != common.TopUpStatusPending || strings.TrimSpace(order.ProviderSessionId) == "" {
+			continue
+		}
+		if err := expireReplaceableStripeCheckout(ctx, order.ProviderSessionId); err != nil {
+			return nil, err
+		}
+		if err := supersedePendingStripeCheckoutLocally(&intent, &order); err != nil {
+			return nil, err
+		}
+		superseded = append(superseded, supersededStripeCheckout{IntentID: intent.Id, TradeNo: order.TradeNo})
+	}
+	return superseded, nil
+}
+
+func expireReplaceableStripeCheckout(ctx context.Context, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	checkoutSession, err := stripeCheckoutSessionGetter(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if stripeCheckoutSessionIsPaidOrComplete(checkoutSession) {
+		return ErrSubscriptionChangeInProgress
+	}
+	if stripeCheckoutSessionIsOpen(checkoutSession) {
+		expiredSession, expireErr := stripeCheckoutSessionExpirer(ctx, sessionID)
+		if expireErr != nil {
+			refreshed, getErr := stripeCheckoutSessionGetter(ctx, sessionID)
+			if getErr != nil {
+				return expireErr
+			}
+			if stripeCheckoutSessionIsPaidOrComplete(refreshed) {
+				return ErrSubscriptionChangeInProgress
+			}
+			if !stripeCheckoutSessionIsExpired(refreshed) {
+				return expireErr
+			}
+		} else if stripeCheckoutSessionIsPaidOrComplete(expiredSession) {
+			return ErrSubscriptionChangeInProgress
+		} else if !stripeCheckoutSessionIsExpired(expiredSession) {
+			return errors.New("Stripe checkout did not expire")
+		}
+	} else if !stripeCheckoutSessionIsExpired(checkoutSession) {
+		return ErrSubscriptionChangeInProgress
+	}
+	return nil
+}
+
+func supersedePendingStripeCheckoutLocally(intent *model.SubscriptionChangeIntent, order *model.SubscriptionOrder) error {
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		return supersedePendingStripeCheckoutLocallyTx(tx, intent, order)
+	})
+}
+
+func supersedePendingStripeCheckoutLocallyTx(tx *gorm.DB, intent *model.SubscriptionChangeIntent, order *model.SubscriptionOrder) error {
+	now := common.GetTimestamp()
+	if err := tx.Model(order).Where("id = ? AND status = ?", order.Id, common.TopUpStatusPending).
+		Updates(map[string]interface{}{"status": common.TopUpStatusExpired, "complete_time": now}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(intent).Where("id = ? AND status IN ?", intent.Id, []string{
+		model.SubscriptionChangeIntentStatusAwaitingPayment,
+		model.SubscriptionChangeIntentStatusExpired,
+	}).
+		Updates(map[string]interface{}{
+			"status":     model.SubscriptionChangeIntentStatusSuperseded,
+			"last_error": "Stripe checkout was superseded by a newer purchase request",
+			"updated_at": now,
+		}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.UserSubscriptionContract{}).
+		Where("id = ? AND latest_change_intent_id = ?", intent.ContractId, intent.Id).
+		Updates(map[string]interface{}{"latest_change_intent_id": 0, "updated_at": now}).Error
+}
+
+func stripeCheckoutSessionIsOpen(checkoutSession *stripe.CheckoutSession) bool {
+	return checkoutSession != nil && checkoutSession.Status == stripe.CheckoutSessionStatusOpen
+}
+
+func stripeCheckoutSessionIsExpired(checkoutSession *stripe.CheckoutSession) bool {
+	return checkoutSession != nil && checkoutSession.Status == stripe.CheckoutSessionStatusExpired
+}
+
+func stripeCheckoutSessionIsPaidOrComplete(checkoutSession *stripe.CheckoutSession) bool {
+	return checkoutSession != nil &&
+		(checkoutSession.Status == stripe.CheckoutSessionStatusComplete ||
+			checkoutSession.PaymentStatus == stripe.CheckoutSessionPaymentStatusPaid)
 }
 
 func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *PaidInvoiceReconcileResult) error {

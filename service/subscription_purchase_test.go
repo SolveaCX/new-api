@@ -675,8 +675,12 @@ func TestQuoteSubscriptionPurchaseUsesPlanLocalPricesForPixAndUPI(t *testing.T) 
 		wantUnit     float64
 		wantMinor    int64
 	}{
-		{name: "pix", choice: SubscriptionPaymentChoicePix, months: 2, pixPrice: common.GetPointer(49.90), wantCurrency: "BRL", wantUnit: 49.90, wantMinor: 9980},
-		{name: "upi", choice: SubscriptionPaymentChoiceUPI, months: 3, upiPrice: common.GetPointer(799.50), wantCurrency: "INR", wantUnit: 799.50, wantMinor: 239850},
+		{name: "pix_go_three_months", choice: SubscriptionPaymentChoicePix, months: 3, pixPrice: common.GetPointer(49.90), wantCurrency: "BRL", wantUnit: 49.90, wantMinor: 14970},
+		{name: "pix_pro_three_months", choice: SubscriptionPaymentChoicePix, months: 3, pixPrice: common.GetPointer(149.90), wantCurrency: "BRL", wantUnit: 149.90, wantMinor: 44970},
+		{name: "pix_max_three_months", choice: SubscriptionPaymentChoicePix, months: 3, pixPrice: common.GetPointer(499.00), wantCurrency: "BRL", wantUnit: 499.00, wantMinor: 149700},
+		{name: "upi_go_twelve_months", choice: SubscriptionPaymentChoiceUPI, months: 12, upiPrice: common.GetPointer(899.00), wantCurrency: "INR", wantUnit: 899.00, wantMinor: 1078800},
+		{name: "upi_pro_twelve_months", choice: SubscriptionPaymentChoiceUPI, months: 12, upiPrice: common.GetPointer(2699.00), wantCurrency: "INR", wantUnit: 2699.00, wantMinor: 3238800},
+		{name: "upi_max_twelve_months", choice: SubscriptionPaymentChoiceUPI, months: 12, upiPrice: common.GetPointer(8999.00), wantCurrency: "INR", wantUnit: 8999.00, wantMinor: 10798800},
 	}
 
 	for index, test := range tests {
@@ -702,6 +706,7 @@ func TestQuoteSubscriptionPurchaseUsesPlanLocalPricesForPixAndUPI(t *testing.T) 
 			require.True(t, quote.Available)
 			require.Equal(t, test.wantCurrency, quote.Currency)
 			require.Equal(t, test.wantUnit, quote.UnitPrice)
+			require.Equal(t, float64(test.wantMinor)/100, quote.Total)
 			require.Equal(t, test.wantMinor, quote.PaymentAmountMinor)
 		})
 	}
