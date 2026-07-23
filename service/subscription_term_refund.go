@@ -27,6 +27,7 @@ func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*Subscripti
 	}
 
 	var result *SubscriptionTermRefundResult
+	invalidateUserID := 0
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var term model.SubscriptionTermSegment
 		if err := subscriptionCommandLock(tx).Where("id = ?", termSegmentID).First(&term).Error; err != nil {
@@ -49,6 +50,18 @@ func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*Subscripti
 			return err
 		}
 		refundKey := fmt.Sprintf("subscription:term:refund:%d", term.Id)
+		termUpdate := tx.Model(&model.SubscriptionTermSegment{}).
+			Where("id = ? AND status = ?", term.Id, model.SubscriptionTermStatusNotStarted).
+			Updates(map[string]interface{}{
+				"status":     model.SubscriptionTermStatusRefunded,
+				"refund_key": refundKey,
+			})
+		if termUpdate.Error != nil {
+			return termUpdate.Error
+		}
+		if termUpdate.RowsAffected != 1 {
+			return errors.New("subscription term refund state changed")
+		}
 		if err := tx.Create(&model.WalletLedgerEntry{
 			UserId:        userID,
 			EntryKey:      refundKey,
@@ -58,14 +71,6 @@ func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*Subscripti
 			OrderId:       term.OrderId,
 			TermSegmentId: term.Id,
 		}).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.SubscriptionTermSegment{}).
-			Where("id = ? AND status = ?", term.Id, model.SubscriptionTermStatusNotStarted).
-			Updates(map[string]interface{}{
-				"status":     model.SubscriptionTermStatusRefunded,
-				"refund_key": refundKey,
-			}).Error; err != nil {
 			return err
 		}
 		if refundQuota > 0 {
@@ -80,10 +85,16 @@ func RefundSubscriptionTermSegment(userID int, termSegmentID int64) (*Subscripti
 			RefundedMoney: term.AllocatedMoney,
 			RefundKey:     refundKey,
 		}
+		invalidateUserID = userID
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if invalidateUserID > 0 {
+		if err := model.InvalidateUserCache(invalidateUserID); err != nil {
+			common.SysLog("failed to invalidate user cache after subscription term refund: " + err.Error())
+		}
 	}
 	return result, nil
 }

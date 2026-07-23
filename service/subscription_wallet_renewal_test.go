@@ -1,17 +1,26 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
 func seedWalletRenewalContract(t *testing.T, userID int, quota int, plan model.SubscriptionPlan, periodEnd int64) (model.UserSubscriptionContract, model.UserSubscription) {
 	t.Helper()
-	insertPurchaseServiceUser(t, userID, quota)
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       userID,
+		Username: fmt.Sprintf("wallet_renewal_user_%s_%d", t.Name(), userID),
+		Status:   common.UserStatusEnabled,
+		Quota:    quota,
+		Group:    "plg",
+		AffCode:  fmt.Sprintf("wallet_renewal_aff_%s_%d", t.Name(), userID),
+	}).Error)
 	contract := model.UserSubscriptionContract{
 		UserId:               userID,
 		Status:               model.SubscriptionContractStatusActive,
@@ -47,7 +56,7 @@ func seedWalletRenewalContract(t *testing.T, userID int, quota int, plan model.S
 func TestRenewWalletSubscriptionContractChargesCurrentOneMonthPlanAndExtendsOnce(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	plan := insertPurchaseServicePlan(t, 7801, 1, 7, 700)
-	periodEnd := common.GetTimestamp() + 15
+	periodEnd := common.GetTimestamp() - 15
 	contract, oldEntitlement := seedWalletRenewalContract(t, 7901, 1000, plan, periodEnd)
 	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("price_amount", 9).Error)
 
@@ -68,6 +77,11 @@ func TestRenewWalletSubscriptionContractChargesCurrentOneMonthPlanAndExtendsOnce
 	var ledgerCount int64
 	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("user_id = ? AND entry_type = ?", 7901, model.WalletLedgerEntryTypePrepaidDebit).Count(&ledgerCount).Error)
 	require.Equal(t, int64(1), ledgerCount)
+	var order model.SubscriptionOrder
+	require.NoError(t, model.DB.First(&order, "id = ?", result.OrderID).Error)
+	require.NotEmpty(t, order.PlanSnapshot)
+	require.Contains(t, order.PlanSnapshot, `"plan_id":7801`)
+	require.Contains(t, order.PlanSnapshot, `"price_amount":9`)
 
 	replay, err := RenewWalletSubscriptionContract(contract.Id)
 	require.NoError(t, err)
@@ -79,7 +93,7 @@ func TestRenewWalletSubscriptionContractChargesCurrentOneMonthPlanAndExtendsOnce
 func TestRenewWalletSubscriptionContractPausesWithoutExtendingOnInsufficientBalance(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	plan := insertPurchaseServicePlan(t, 7802, 1, 7, 700)
-	periodEnd := common.GetTimestamp() + 15
+	periodEnd := common.GetTimestamp() - 15
 	contract, entitlement := seedWalletRenewalContract(t, 7902, 699, plan, periodEnd)
 
 	result, err := RenewWalletSubscriptionContract(contract.Id)
@@ -90,14 +104,18 @@ func TestRenewWalletSubscriptionContractPausesWithoutExtendingOnInsufficientBala
 	var stored model.UserSubscriptionContract
 	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
 	require.Equal(t, model.SubscriptionRenewalStatusPausedInsufficientBalance, stored.RenewalStatus)
+	require.Equal(t, model.SubscriptionContractStatusEnded, stored.Status)
 	require.Equal(t, periodEnd, stored.CurrentPeriodEnd)
 	require.Equal(t, entitlement.Id, stored.CurrentEntitlementId)
+	var storedEntitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&storedEntitlement, "id = ?", entitlement.Id).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, storedEntitlement.Status)
 }
 
 func TestRenewWalletSubscriptionContractPausesWithoutExtendingWhenPlanUnavailable(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	plan := insertPurchaseServicePlan(t, 7805, 1, 7, 700)
-	periodEnd := common.GetTimestamp() + 15
+	periodEnd := common.GetTimestamp() - 15
 	contract, entitlement := seedWalletRenewalContract(t, 7905, 700, plan, periodEnd)
 	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("enabled", false).Error)
 
@@ -109,23 +127,62 @@ func TestRenewWalletSubscriptionContractPausesWithoutExtendingWhenPlanUnavailabl
 	var stored model.UserSubscriptionContract
 	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
 	require.Equal(t, model.SubscriptionRenewalStatusPausedPlanUnavailable, stored.RenewalStatus)
+	require.Equal(t, model.SubscriptionContractStatusEnded, stored.Status)
 	require.Equal(t, periodEnd, stored.CurrentPeriodEnd)
 	require.Equal(t, entitlement.Id, stored.CurrentEntitlementId)
 }
 
-func TestRunWalletSubscriptionRenewalOnceRunsBeforeExpiryAndBeforeExpireTask(t *testing.T) {
+func TestRunWalletSubscriptionRenewalOnceSkipsFuturePeriodsAndCatchesUpExpiredPeriods(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	plan := insertPurchaseServicePlan(t, 7803, 1, 3, 300)
-	periodEnd := common.GetTimestamp() + 30
-	contract, _ := seedWalletRenewalContract(t, 7903, 300, plan, periodEnd)
+	now := common.GetTimestamp()
+	futureEnd := now + 30
+	futureContract, _ := seedWalletRenewalContract(t, 7903, 300, plan, futureEnd)
+	expiredEnd := now - 90
+	expiredContract, _ := seedWalletRenewalContract(t, 7906, 300, plan, expiredEnd)
 
 	renewed, err := RunWalletSubscriptionRenewalOnce(10)
 
 	require.NoError(t, err)
 	require.Equal(t, 1, renewed)
-	var stored model.UserSubscriptionContract
-	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
-	require.Greater(t, stored.CurrentPeriodEnd, periodEnd)
+	var futureStored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&futureStored, "id = ?", futureContract.Id).Error)
+	require.Equal(t, futureEnd, futureStored.CurrentPeriodEnd)
+	var expiredStored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&expiredStored, "id = ?", expiredContract.Id).Error)
+	require.Greater(t, expiredStored.CurrentPeriodEnd, expiredEnd)
+}
+
+func TestRenewWalletSubscriptionContractInvalidatesUserCacheAfterDebit(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	mr := setupWalletRenewalRedis(t)
+	plan := insertPurchaseServicePlan(t, 7806, 1, 3, 300)
+	periodEnd := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7907, 300, plan, periodEnd)
+	cacheUserQuota(t, 7907, 300)
+	require.True(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7907)))
+
+	_, err := RenewWalletSubscriptionContract(contract.Id)
+
+	require.NoError(t, err)
+	require.False(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7907)))
+}
+
+func TestHandleExistingWalletRenewalDoesNotQueryAbortedPostgresTransaction(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalUsingSQLite := common.UsingSQLite
+	common.UsingPostgreSQL = true
+	common.UsingSQLite = false
+	t.Cleanup(func() {
+		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.UsingSQLite = originalUsingSQLite
+	})
+	originalErr := &pgconn.PgError{Code: "23505", Message: "duplicate key value violates unique constraint"}
+
+	err := handleExistingWalletRenewalTx(model.DB, &model.UserSubscriptionContract{Id: 1}, "missing-key", nil, originalErr)
+
+	require.ErrorIs(t, err, originalErr)
 }
 
 func TestRunSubscriptionTermSegmentAdvanceOnceCompletesExpiredActiveAndActivatesDueTerms(t *testing.T) {

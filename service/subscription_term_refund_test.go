@@ -1,12 +1,40 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func setupWalletRenewalRedis(t *testing.T) *miniredis.Miniredis {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	prevRDB := common.RDB
+	prevRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = prevRDB
+		common.RedisEnabled = prevRedisEnabled
+	})
+	return mr
+}
+
+func cacheUserQuota(t *testing.T, userID int, quota int) {
+	t.Helper()
+	require.NoError(t, common.RedisHSetObj(
+		fmt.Sprintf("user:v2:%d", userID),
+		&model.UserBase{Id: userID, Quota: quota, Status: common.UserStatusEnabled, Group: "plg"},
+		0,
+	))
+}
 
 func TestRefundSubscriptionTermSegmentCreditsOnlyNotStartedOneTimeCanonicalValue(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
@@ -63,6 +91,64 @@ func TestRefundSubscriptionTermSegmentCreditsOnlyNotStartedOneTimeCanonicalValue
 	require.Equal(t, int64(1200), ledger.QuotaDelta)
 	require.Equal(t, float64(12), ledger.MoneyAmount)
 	require.Equal(t, model.WalletLedgerEntryTypePrepaidRefund, ledger.EntryType)
+}
+
+func TestRefundSubscriptionTermSegmentInvalidatesUserCacheAfterCredit(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	mr := setupWalletRenewalRedis(t)
+	insertPurchaseServiceUser(t, 7603, 25)
+	plan := insertPurchaseServicePlan(t, 7703, 1, 12, 1200)
+	contract := model.UserSubscriptionContract{UserId: 7603, Status: model.SubscriptionContractStatusActive, PaymentMode: model.SubscriptionPaymentModePrepaid, CurrentPlanId: plan.Id}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	order := model.SubscriptionOrder{UserId: 7603, PlanId: plan.Id, TradeNo: "term-refund-cache", PaymentProvider: model.PaymentProviderBalance, Status: common.TopUpStatusSuccess}
+	require.NoError(t, model.DB.Create(&order).Error)
+	term := model.SubscriptionTermSegment{ContractId: contract.Id, OrderId: order.Id, PlanId: plan.Id, SegmentIndex: 0, AllocatedMoney: plan.PriceAmount, Status: model.SubscriptionTermStatusNotStarted}
+	require.NoError(t, model.DB.Create(&term).Error)
+	cacheUserQuota(t, 7603, 25)
+	require.True(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7603)))
+
+	_, err := RefundSubscriptionTermSegment(7603, term.Id)
+
+	require.NoError(t, err)
+	require.False(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7603)))
+}
+
+func TestRefundSubscriptionTermSegmentDoesNotLedgerOrCreditWhenStatusCASLoses(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	insertPurchaseServiceUser(t, 7604, 25)
+	plan := insertPurchaseServicePlan(t, 7704, 1, 12, 1200)
+	contract := model.UserSubscriptionContract{UserId: 7604, Status: model.SubscriptionContractStatusActive, PaymentMode: model.SubscriptionPaymentModePrepaid, CurrentPlanId: plan.Id}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	order := model.SubscriptionOrder{UserId: 7604, PlanId: plan.Id, TradeNo: "term-refund-cas", PaymentProvider: model.PaymentProviderBalance, Status: common.TopUpStatusSuccess}
+	require.NoError(t, model.DB.Create(&order).Error)
+	term := model.SubscriptionTermSegment{ContractId: contract.Id, OrderId: order.Id, PlanId: plan.Id, SegmentIndex: 0, AllocatedMoney: plan.PriceAmount, Status: model.SubscriptionTermStatusNotStarted}
+	require.NoError(t, model.DB.Create(&term).Error)
+
+	callbackName := "test:term_refund_cas_loses"
+	fired := false
+	require.NoError(t, model.DB.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if fired || tx.Statement == nil || tx.Statement.Table != "subscription_term_segments" {
+			return
+		}
+		fired = true
+		require.NoError(t, tx.Session(&gorm.Session{NewDB: true}).
+			Model(&model.SubscriptionTermSegment{}).
+			Where("id = ?", term.Id).
+			Update("status", model.SubscriptionTermStatusActive).Error)
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, model.DB.Callback().Update().Remove(callbackName))
+	})
+
+	_, err := RefundSubscriptionTermSegment(7604, term.Id)
+
+	require.Error(t, err)
+	var ledgerCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("term_segment_id = ?", term.Id).Count(&ledgerCount).Error)
+	require.Equal(t, int64(0), ledgerCount)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", 7604).Error)
+	require.Equal(t, 25, user.Quota)
 }
 
 func TestRefundSubscriptionTermSegmentRejectsNonNotStartedStatuses(t *testing.T) {
