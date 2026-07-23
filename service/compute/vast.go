@@ -41,6 +41,20 @@ var ErrProviderNotConfigured = errors.New("compute provider is not configured")
 // ErrOfferNotFound is returned when a requested offer is no longer rentable.
 var ErrOfferNotFound = errors.New("compute offer is no longer available")
 
+// ComputeRentalMarkup is the multiplier applied to the raw upstream GPU cost to
+// set the customer price for a rental. Group discounts are intentionally NOT
+// applied to raw hardware rental — a discount could push the price below what
+// we pay upstream and lose money. This markup guarantees a fixed margin on
+// every rental regardless of the customer's group.
+const ComputeRentalMarkup = 1.30
+
+// CustomerHourlyPrice converts the raw upstream $/hr we pay into the customer
+// $/hr we charge (raw × markup). Single source of truth so the displayed price,
+// the estimate, and the amount billed all agree.
+func CustomerHourlyPrice(rawCostPerHour float64) float64 {
+	return rawCostPerHour * ComputeRentalMarkup
+}
+
 // Offer is the whitelabeled view of an upstream GPU offer.
 //
 // Only GPU / price / spec fields are serialized. The upstream contract/host/

@@ -340,7 +340,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		// User-facing GPU offer catalog (whitelabeled). Standalone route to avoid
 		// a Gin static/param conflict with /compute/instances/:id.
-		apiRouter.GET("/compute/gpu-offers", middleware.UserAuth(), controller.GetComputeOffers)
+		apiRouter.GET("/compute/gpu-offers", middleware.UserAuth(), controller.GetUserGpuOffers)
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
