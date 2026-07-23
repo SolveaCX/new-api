@@ -405,6 +405,43 @@ func TestPurchaseSubscriptionPixPersistsConfiguredBRLQuote(t *testing.T) {
 	require.Equal(t, float64(22), result.Order.Money)
 }
 
+func TestPurchaseSubscriptionOneTimeUsesVerifiedQuoteWithoutReResolving(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	insertPurchaseServiceUser(t, 7315, 1000)
+	plan := insertPurchaseServicePlan(t, 7418, 1, 2, 200)
+	originalResolver := subscriptionPurchaseQuoteResolver
+	t.Cleanup(func() { subscriptionPurchaseQuoteResolver = originalResolver })
+	subscriptionPurchaseQuoteResolver = func(plan model.SubscriptionPlan, choice string, months int) (SubscriptionPurchaseQuote, error) {
+		return SubscriptionPurchaseQuote{
+			Currency:           "BRL",
+			UnitPrice:          88.88,
+			Total:              177.76,
+			PaymentAmountMinor: 17776,
+		}, nil
+	}
+
+	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+		UserID:        7315,
+		PlanID:        plan.Id,
+		PaymentChoice: SubscriptionPaymentChoicePix,
+		Months:        2,
+		RequestID:     "verified-pix-quote",
+		VerifiedQuote: &SubscriptionPurchaseQuote{
+			Currency:           "BRL",
+			UnitPrice:          49.90,
+			Total:              99.80,
+			PaymentAmountMinor: 9980,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionPaymentChoicePix, result.Order.PaymentMethod)
+	require.Equal(t, "BRL", result.Order.PaymentCurrency)
+	require.Equal(t, float64(49.90), result.Order.UnitPrice)
+	require.Equal(t, float64(99.80), result.Order.Money)
+	require.Equal(t, int64(9980), result.Order.PaymentAmountMinor)
+}
+
 func TestPurchaseSubscriptionUPIPersistsConfiguredINRQuote(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	insertPurchaseServiceUser(t, 7312, 1000)
@@ -498,6 +535,49 @@ func TestQuoteSubscriptionPurchaseReturnsStructuredUnavailableForMissingLocalQuo
 	require.Contains(t, quote.UnavailableReason, "quote")
 	require.Empty(t, quote.Currency)
 	require.Zero(t, quote.PaymentAmountMinor)
+}
+
+func TestQuoteSubscriptionPurchaseUsesPlanLocalPricesForPixAndUPI(t *testing.T) {
+	tests := []struct {
+		name         string
+		choice       string
+		months       int
+		pixPrice     *float64
+		upiPrice     *float64
+		wantCurrency string
+		wantUnit     float64
+		wantMinor    int64
+	}{
+		{name: "pix", choice: SubscriptionPaymentChoicePix, months: 2, pixPrice: common.GetPointer(49.90), wantCurrency: "BRL", wantUnit: 49.90, wantMinor: 9980},
+		{name: "upi", choice: SubscriptionPaymentChoiceUPI, months: 3, upiPrice: common.GetPointer(799.50), wantCurrency: "INR", wantUnit: 799.50, wantMinor: 239850},
+	}
+
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupSubscriptionPurchaseServiceTestDB(t)
+			userID := 7340 + index
+			planID := 7440 + index
+			insertPurchaseServiceUser(t, userID, 1000)
+			plan := insertPurchaseServicePlan(t, planID, index+1, 9.99, 1000)
+			require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+				"pix_price_brl": test.pixPrice,
+				"upi_price_inr": test.upiPrice,
+			}).Error)
+
+			quote, err := QuoteSubscriptionPurchase(PurchaseSubscriptionCommand{
+				UserID:        userID,
+				PlanID:        plan.Id,
+				PaymentChoice: test.choice,
+				Months:        test.months,
+			})
+
+			require.NoError(t, err)
+			require.True(t, quote.Available)
+			require.Equal(t, test.wantCurrency, quote.Currency)
+			require.Equal(t, test.wantUnit, quote.UnitPrice)
+			require.Equal(t, test.wantMinor, quote.PaymentAmountMinor)
+		})
+	}
 }
 
 func TestQuoteSubscriptionPurchaseReturnsDisplayQuoteAndRequotesMonths(t *testing.T) {

@@ -67,6 +67,8 @@ func TestSubscriptionSelfLifecycleRoutesUseLocalContractHandlers(t *testing.T) {
 
 	expectedHandlers := map[string]string{
 		"GET /api/subscription/self":                               "controller.GetSubscriptionSelf",
+		"POST /api/subscription/self/quote":                        "controller.QuoteSubscriptionSelfPurchase",
+		"POST /api/subscription/self/purchase":                     "controller.PurchaseSubscriptionSelf",
 		"POST /api/subscription/self/change-plan":                  "controller.ChangeSubscriptionPlan",
 		"POST /api/subscription/self/recurring/:binding_id/cancel": "controller.CancelRecurringSubscription",
 		"POST /api/subscription/self/recurring/:binding_id/resume": "controller.ResumeRecurringSubscription",

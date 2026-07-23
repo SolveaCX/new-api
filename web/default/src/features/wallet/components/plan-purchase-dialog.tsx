@@ -32,6 +32,7 @@ import type {
 import {
   getMatchingPaymentQuote,
   requiresLocalCurrencyQuote,
+  requiresSignedCheckoutQuote,
 } from '../lib/subscription-plan-lifecycle'
 
 type PlanPurchaseDialogProps = {
@@ -115,9 +116,12 @@ function getQuoteReadinessReason(
   isQuoteLoading: boolean,
   t: (key: string) => string
 ): string {
-  if (!requiresLocalCurrencyQuote(choice) || quote) return ''
-  if (isQuoteLoading) return t('Loading local currency quote...')
-  return t('Local currency quote is unavailable.')
+  if (!requiresSignedCheckoutQuote(choice) || quote) return ''
+  if (requiresLocalCurrencyQuote(choice)) {
+    if (isQuoteLoading) return t('Loading local currency quote...')
+    return t('Local currency quote is unavailable.')
+  }
+  return t('Payment choice is unavailable')
 }
 
 function getMonthLabel(
@@ -158,7 +162,8 @@ export function PlanPurchaseDialog(props: PlanPurchaseDialogProps) {
     props.isQuoteLoading === true,
     t
   )
-  const totalPriceLabel = selectedQuoteReadinessReason
+  const totalPriceLabel =
+    requiresLocalCurrencyQuote(selectedChoice) && selectedQuoteReadinessReason
     ? '—'
     : formatPlanPrice(totalPrice, selectedQuote?.currency)
 

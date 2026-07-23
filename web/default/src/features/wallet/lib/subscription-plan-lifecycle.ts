@@ -325,17 +325,42 @@ export function requiresLocalCurrencyQuote(
   return paymentChoice === 'pix' || paymentChoice === 'upi'
 }
 
+export function requiresSignedCheckoutQuote(
+  paymentChoice: FlexiblePaymentChoice
+): boolean {
+  return paymentChoice === 'alipay' || requiresLocalCurrencyQuote(paymentChoice)
+}
+
 export function getMatchingPaymentQuote(
   paymentChoice: FlexiblePaymentChoice,
   quotes: SubscriptionPaymentQuotes | undefined,
-  months: number
+  months: number,
+  nowUnixSeconds = Math.floor(Date.now() / 1000)
 ): SubscriptionPaymentQuote | undefined {
   const quote = quotes?.[paymentChoice]
   if (!quote) return undefined
-  if (!requiresLocalCurrencyQuote(paymentChoice)) return quote
-  return quote.months === normalizeFlexibleMonths(paymentChoice, months)
-    ? quote
-    : undefined
+  if (!requiresSignedCheckoutQuote(paymentChoice)) return quote
+
+  if (quote.months !== normalizeFlexibleMonths(paymentChoice, months)) {
+    return undefined
+  }
+  if (typeof quote.quote_id !== 'string' || quote.quote_id.trim().length === 0) {
+    return undefined
+  }
+  if (
+    typeof quote.expires_at !== 'number' ||
+    !Number.isFinite(quote.expires_at) ||
+    quote.expires_at <= nowUnixSeconds
+  ) {
+    return undefined
+  }
+
+  if (requiresLocalCurrencyQuote(paymentChoice)) {
+    const expectedCurrency = paymentChoice === 'pix' ? 'BRL' : 'INR'
+    if (quote.currency !== expectedCurrency) return undefined
+  }
+
+  return quote
 }
 
 function normalizeQuoteForRequest(

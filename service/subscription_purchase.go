@@ -26,6 +26,7 @@ type PurchaseSubscriptionCommand struct {
 	PaymentChoice string
 	Months        int
 	RequestID     string
+	VerifiedQuote *SubscriptionPurchaseQuote
 }
 
 type PurchaseSubscriptionResult struct {
@@ -234,7 +235,7 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 			return nil
 		}
 
-		quote, err := resolveSubscriptionPurchaseQuote(*plan, cmd.PaymentChoice, cmd.Months)
+		quote, err := quoteForSubscriptionPurchase(*plan, cmd)
 		if err != nil {
 			return err
 		}
@@ -359,7 +360,7 @@ func createPendingOneTimePurchaseOrderTx(tx *gorm.DB, user *model.User, contract
 	if err != nil {
 		return nil, err
 	}
-	quote, err := resolveSubscriptionPurchaseQuote(*plan, cmd.PaymentChoice, cmd.Months)
+	quote, err := quoteForSubscriptionPurchase(*plan, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -641,6 +642,20 @@ func resolveSubscriptionPurchaseQuote(plan model.SubscriptionPlan, choice string
 	if err != nil {
 		return SubscriptionPurchaseQuote{}, err
 	}
+	return validateSubscriptionPurchaseQuoteForChoice(quote, choice, months)
+}
+
+func quoteForSubscriptionPurchase(plan model.SubscriptionPlan, cmd PurchaseSubscriptionCommand) (SubscriptionPurchaseQuote, error) {
+	if cmd.VerifiedQuote == nil {
+		return resolveSubscriptionPurchaseQuote(plan, cmd.PaymentChoice, cmd.Months)
+	}
+	if cmd.PaymentChoice == SubscriptionPaymentChoiceStripeRecurring {
+		return SubscriptionPurchaseQuote{}, errors.New("stripe_recurring does not accept a one-time quote")
+	}
+	return validateSubscriptionPurchaseQuoteForChoice(*cmd.VerifiedQuote, cmd.PaymentChoice, cmd.Months)
+}
+
+func validateSubscriptionPurchaseQuoteForChoice(quote SubscriptionPurchaseQuote, choice string, months int) (SubscriptionPurchaseQuote, error) {
 	quote.Currency = strings.ToUpper(strings.TrimSpace(quote.Currency))
 	if quote.Currency == "" {
 		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote currency is required")
@@ -650,6 +665,12 @@ func resolveSubscriptionPurchaseQuote(plan model.SubscriptionPlan, choice string
 	}
 	if quote.Total > 0 && quote.PaymentAmountMinor == 0 {
 		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote minor amount is required")
+	}
+	if quote.PaymentAmountMinor != subscriptionPurchaseMinorAmount(quote.Total) {
+		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote minor amount does not match total")
+	}
+	if quote.PaymentAmountMinor != subscriptionPurchaseMinorAmount(subscriptionPurchaseMoney(quote.UnitPrice, months)) {
+		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote total does not match months")
 	}
 	switch choice {
 	case SubscriptionPaymentChoicePix:
@@ -666,8 +687,28 @@ func resolveSubscriptionPurchaseQuote(plan model.SubscriptionPlan, choice string
 
 func defaultSubscriptionPurchaseQuote(plan model.SubscriptionPlan, choice string, months int) (SubscriptionPurchaseQuote, error) {
 	switch choice {
-	case SubscriptionPaymentChoicePix, SubscriptionPaymentChoiceUPI:
-		return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: local quote is not configured", ErrSubscriptionPurchaseQuoteUnavailable)
+	case SubscriptionPaymentChoicePix:
+		if plan.PixPriceBRL == nil {
+			return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: Pix local quote is not configured", ErrSubscriptionPurchaseQuoteUnavailable)
+		}
+		total := subscriptionPurchaseMoney(*plan.PixPriceBRL, months)
+		return SubscriptionPurchaseQuote{
+			Currency:           "BRL",
+			UnitPrice:          *plan.PixPriceBRL,
+			Total:              total,
+			PaymentAmountMinor: subscriptionPurchaseMinorAmount(total),
+		}, nil
+	case SubscriptionPaymentChoiceUPI:
+		if plan.UpiPriceINR == nil {
+			return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: UPI local quote is not configured", ErrSubscriptionPurchaseQuoteUnavailable)
+		}
+		total := subscriptionPurchaseMoney(*plan.UpiPriceINR, months)
+		return SubscriptionPurchaseQuote{
+			Currency:           "INR",
+			UnitPrice:          *plan.UpiPriceINR,
+			Total:              total,
+			PaymentAmountMinor: subscriptionPurchaseMinorAmount(total),
+		}, nil
 	default:
 		total := subscriptionPurchaseMoney(plan.PriceAmount, months)
 		return SubscriptionPurchaseQuote{
