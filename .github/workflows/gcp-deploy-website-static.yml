@@ -52,6 +52,9 @@ jobs:
       - name: Audit static website
         run: node website-static/audit.mjs
 
+      - name: Regression test static website interactions
+        run: node --test website-static/tests/*.test.mjs
+
       - name: Auth to GCP (WIF)
         uses: google-github-actions/auth@v2
         with:
