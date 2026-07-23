@@ -21,6 +21,8 @@
     "wan-2.7": { provider: "Alibaba", price: "usage-based video pricing", kind: "video", tags: ["image-video", "china"] },
     "hailuo-02": { provider: "MiniMax", price: "usage-based video pricing", kind: "video", tags: ["image-video", "china"] },
     "pixverse-v6": { provider: "PixVerse", price: "usage-based video pricing", kind: "video", tags: ["image-video", "china"] },
+    "grok-imagine-image": { provider: "xAI", price: "$0.02 / image", kind: "image", tags: ["image-video", "vision"] },
+    "grok-imagine-image-quality": { provider: "xAI", price: "$0.05 / image", kind: "image", tags: ["image-video", "vision"] },
     "gpt-realtime": { provider: "OpenAI", price: "realtime audio pricing", kind: "realtime", tags: ["chat", "vision"] },
     "whisper-v4": { provider: "OpenAI", price: "audio transcription pricing", kind: "transcription", tags: ["audio", "under-1"] },
     "elevenlabs-v3-turbo": { provider: "ElevenLabs", price: "text-to-speech pricing", kind: "speech", tags: ["audio"] },
