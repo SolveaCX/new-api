@@ -1,4 +1,4 @@
-﻿{
+{
   "translation": {
     "360": "360",
     "1000": "1000",
@@ -6202,6 +6202,7 @@
     "Media generation credits": "Tín dụng tạo phương tiện",
     "{{used}} / {{total}} used": "Đã dùng {{used}} / {{total}}",
     "No usage limit": "Không giới hạn sử dụng",
+    "Not included": "Không bao gồm",
     "{{remaining}} remaining, resets {{date}}": "Còn {{remaining}}, đặt lại vào {{date}}",
     "{{remaining}} remaining": "Còn {{remaining}}",
     "Buy now": "Mua ngay",

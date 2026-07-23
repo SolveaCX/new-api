@@ -1,4 +1,4 @@
-﻿{
+{
   "translation": {
     "360": "360",
     "1000": "1000",
@@ -6202,6 +6202,7 @@
     "Media generation credits": "Кредиты генерации медиа",
     "{{used}} / {{total}} used": "Использовано {{used}} / {{total}}",
     "No usage limit": "Без ограничений использования",
+    "Not included": "Не включено",
     "{{remaining}} remaining, resets {{date}}": "Осталось {{remaining}}, сброс {{date}}",
     "{{remaining}} remaining": "Осталось {{remaining}}",
     "Buy now": "Купить сейчас",

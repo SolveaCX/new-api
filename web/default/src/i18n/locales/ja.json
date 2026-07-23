@@ -1,4 +1,4 @@
-﻿{
+{
   "translation": {
     "360": "360",
     "1000": "1000",
@@ -6202,6 +6202,7 @@
     "Media generation credits": "メディア生成クレジット",
     "{{used}} / {{total}} used": "使用済み {{used}} / {{total}}",
     "No usage limit": "使用上限なし",
+    "Not included": "含まれていません",
     "{{remaining}} remaining, resets {{date}}": "{{remaining}} 残り、{{date}} にリセット",
     "{{remaining}} remaining": "{{remaining}} 残り",
     "Buy now": "今すぐ購入",
