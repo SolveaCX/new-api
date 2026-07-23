@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -281,6 +282,84 @@ func TestBalanceDowngradeDoesNotApplyImmediately(t *testing.T) {
 	var orderCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 7107).Count(&orderCount).Error)
 	require.Equal(t, int64(1), orderCount)
+}
+
+func TestOnePeriodDowngradeReturnsUnsupportedWithoutSideEffects(t *testing.T) {
+	testCases := []struct {
+		name        string
+		userID      int
+		paymentMode string
+	}{
+		{
+			name:        "balance one period",
+			userID:      7120,
+			paymentMode: model.SubscriptionPaymentModeBalanceOnePeriod,
+		},
+		{
+			name:        "external one period",
+			userID:      7121,
+			paymentMode: model.SubscriptionPaymentModeExternalOnePeriod,
+		},
+	}
+
+	for index, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			setupSubscriptionContractServiceTestDB(t)
+			insertContractServiceUser(t, tc.userID, 3000)
+			lowPlan := insertContractServicePlan(t, 7230+index*10, 1, 1, 1000)
+			highPlan := insertContractServicePlan(t, 7231+index*10, 3, 2, 2000)
+			now := common.GetTimestamp()
+			contract := model.UserSubscriptionContract{
+				UserId:               tc.userID,
+				Status:               model.SubscriptionContractStatusActive,
+				PaymentMode:          tc.paymentMode,
+				CurrentPlanId:        highPlan.Id,
+				CurrentEntitlementId: 9000 + index,
+				CurrentPeriodStart:   now - 100,
+				CurrentPeriodEnd:     now + 3600,
+				ChangeVersion:        7,
+			}
+			require.NoError(t, model.DB.Create(&contract).Error)
+			entitlement := model.UserSubscription{
+				Id:            9000 + index,
+				UserId:        tc.userID,
+				PlanId:        highPlan.Id,
+				ContractId:    contract.Id,
+				AmountTotal:   highPlan.TotalAmount,
+				Status:        model.SubscriptionEntitlementStatusActive,
+				PaymentMode:   tc.paymentMode,
+				StartTime:     now - 100,
+				EndTime:       now + 3600,
+				AccessEndTime: now + 3600,
+			}
+			require.NoError(t, model.DB.Create(&entitlement).Error)
+
+			_, err := ChangeSubscriptionPlan(ChangePlanCommand{
+				UserID:      tc.userID,
+				PlanID:      lowPlan.Id,
+				PaymentMode: model.SubscriptionPaymentModeBalanceOnePeriod,
+				RequestID:   "unsupported-one-period-downgrade-" + tc.name,
+			})
+
+			require.ErrorIs(t, err, ErrSubscriptionDowngradeUnsupported)
+			require.True(t, errors.Is(err, ErrSubscriptionDowngradeDeferred))
+			require.Equal(t, "subscription downgrade scheduling is only supported for active Stripe recurring subscriptions", err.Error())
+			var orderCount int64
+			require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", tc.userID).Count(&orderCount).Error)
+			require.Zero(t, orderCount)
+			var intentCount int64
+			require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("user_id = ?", tc.userID).Count(&intentCount).Error)
+			require.Zero(t, intentCount)
+			var reloadedContract model.UserSubscriptionContract
+			require.NoError(t, model.DB.First(&reloadedContract, "id = ?", contract.Id).Error)
+			require.Equal(t, highPlan.Id, reloadedContract.CurrentPlanId)
+			require.Equal(t, entitlement.Id, reloadedContract.CurrentEntitlementId)
+			require.Zero(t, reloadedContract.LatestChangeIntentId)
+			require.Zero(t, reloadedContract.PendingPlanId)
+			require.Zero(t, reloadedContract.PendingEffectiveAt)
+			require.Equal(t, int64(7), reloadedContract.ChangeVersion)
+		})
+	}
 }
 
 func TestBalancePurchaseEnforcesMaxPurchasePerUser(t *testing.T) {
