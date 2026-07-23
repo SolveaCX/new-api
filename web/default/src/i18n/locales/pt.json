@@ -5826,6 +5826,7 @@
     "UPI": "UPI",
     "Flatkey balance": "Saldo Flatkey",
     "Local currency quote is unavailable.": "A cotação em moeda local não está disponível.",
+    "Loading local currency quote...": "Carregando cotação em moeda local...",
     "Months": "Meses",
     "{{count}} month": "{{count}} mês",
     "{{count}} months": "{{count}} meses",

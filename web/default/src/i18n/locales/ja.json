@@ -5826,6 +5826,7 @@
     "UPI": "UPI",
     "Flatkey balance": "Flatkey 残高",
     "Local currency quote is unavailable.": "現地通貨の見積もりを利用できません。",
+    "Loading local currency quote...": "現地通貨の見積もりを読み込んでいます...",
     "Months": "月数",
     "{{count}} month": "{{count}}か月",
     "{{count}} months": "{{count}}か月",

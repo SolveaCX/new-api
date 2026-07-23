@@ -5826,6 +5826,7 @@
     "UPI": "UPI",
     "Flatkey balance": "Flatkey balance",
     "Local currency quote is unavailable.": "Local currency quote is unavailable.",
+    "Loading local currency quote...": "Loading local currency quote...",
     "Months": "Months",
     "{{count}} month": "{{count}} month",
     "{{count}} months": "{{count}} months",

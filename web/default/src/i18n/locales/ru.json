@@ -5826,6 +5826,7 @@
     "UPI": "UPI",
     "Flatkey balance": "Баланс Flatkey",
     "Local currency quote is unavailable.": "Расчёт в местной валюте недоступен.",
+    "Loading local currency quote...": "Загрузка расчёта в местной валюте...",
     "Months": "Месяцы",
     "{{count}} month": "{{count}} мес.",
     "{{count}} months": "{{count}} мес.",

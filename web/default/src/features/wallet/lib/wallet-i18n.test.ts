@@ -104,15 +104,24 @@ describe('wallet recharge i18n', () => {
   })
 
   test('keeps new wallet plan translations free of replacement question marks', () => {
-    const walletPlanKeys = ['Plans & wallet', 'Auto-renew enabled'] as const
+    const walletPlanKeys = [
+      'Plans & wallet',
+      'Auto-renew enabled',
+      'Loading local currency quote...',
+    ] as const
 
     for (const [locale, translations] of Object.entries(localeTranslations)) {
-      if (locale === 'en') continue
-
       for (const key of walletPlanKeys) {
-        expect(translations[key], `${locale} should translate ${key}`).not.toBe(
-          key
-        )
+        expect(
+          Object.prototype.hasOwnProperty.call(translations, key),
+          `${locale} is missing ${key}`
+        ).toBe(true)
+        if (locale !== 'en') {
+          expect(
+            translations[key],
+            `${locale} should translate ${key}`
+          ).not.toBe(key)
+        }
         expect(
           translations[key],
           `${locale} contains mojibake for ${key}`

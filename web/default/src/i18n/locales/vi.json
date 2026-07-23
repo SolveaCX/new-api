@@ -5826,6 +5826,7 @@
     "UPI": "UPI",
     "Flatkey balance": "Số dư Flatkey",
     "Local currency quote is unavailable.": "Báo giá bằng nội tệ không khả dụng.",
+    "Loading local currency quote...": "Đang tải báo giá bằng nội tệ...",
     "Months": "Tháng",
     "{{count}} month": "{{count}} tháng",
     "{{count}} months": "{{count}} tháng",

@@ -5826,6 +5826,7 @@
     "UPI": "UPI",
     "Flatkey balance": "Solde Flatkey",
     "Local currency quote is unavailable.": "Le devis en devise locale est indisponible.",
+    "Loading local currency quote...": "Chargement du devis en devise locale...",
     "Months": "Mois",
     "{{count}} month": "{{count}} mois",
     "{{count}} months": "{{count}} mois",

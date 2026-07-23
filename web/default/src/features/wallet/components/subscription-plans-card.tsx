@@ -551,9 +551,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         projectedStart={purchaseProjection?.start_time}
         projectedEnd={purchaseProjection?.end_time}
         projectedRemainingDays={purchaseProjection?.remaining_days}
-        refundableNotStartedValue={
-          purchaseProjection?.refundable_not_started_value
-        }
         paymentQuotes={
           purchaseProjection?.payment_quotes ?? selfData.payment_quotes
         }

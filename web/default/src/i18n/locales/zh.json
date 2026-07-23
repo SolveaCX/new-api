@@ -5826,6 +5826,7 @@
     "UPI": "UPI",
     "Flatkey balance": "Flatkey 余额",
     "Local currency quote is unavailable.": "本地货币报价不可用。",
+    "Loading local currency quote...": "正在加载本地货币报价...",
     "Months": "月数",
     "{{count}} month": "{{count}} 个月",
     "{{count}} months": "{{count}} 个月",

@@ -410,6 +410,27 @@ describe('PlanPurchaseDialog payment choices', () => {
     }
   })
 
+  test('does not render future-month refund value in the purchase review', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlanPurchaseDialog
+          open
+          plan={plans[1]}
+          currentPlanId={2}
+          paymentAvailability={{}}
+          selectedPaymentChoice='balance'
+          months={3}
+          refundableNotStartedValue={12345}
+          onOpenChange={() => undefined}
+          onConfirm={() => undefined}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).not.toContain('Refundable not-started value')
+    expect(html).not.toContain('12,345')
+  })
+
   test('uses backend quote snapshots for Pix BRL and UPI INR display amounts', () => {
     const pixHtml = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>

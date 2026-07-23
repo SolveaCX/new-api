@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { formatQuota, formatTimestampToDate } from '@/lib/format'
+import { formatTimestampToDate } from '@/lib/format'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -306,11 +306,6 @@ export function PlanPurchaseDialog(props: PlanPurchaseDialogProps) {
               {t(
                 'The active started term is not refunded. Monthly and Image + video usage reset; 5-hour and 7-day rolling usage is retained and re-evaluated.'
               )}
-              {typeof props.refundableNotStartedValue === 'number'
-                ? ` ${t('Refundable not-started value: {{value}}', {
-                    value: formatQuota(props.refundableNotStartedValue),
-                  })}`
-                : ''}
             </AlertDescription>
           </Alert>
         ) : null}
