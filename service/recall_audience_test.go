@@ -384,9 +384,15 @@ func TestRecallAudienceSpecifiedUsersUsesExactUnionAndSafetyExclusions(t *testin
 	}, 10, time.Unix(now, 0))
 	require.NoError(t, err)
 	gotUserIDs := make([]int, len(recipients))
+	emailOnlyRecipientFound := false
 	for i := range recipients {
 		gotUserIDs[i] = recipients[i].UserId
 		require.NotContains(t, recipients[i].EligibilitySnapshot, "missing@example.com")
+		if recipients[i].UserId == 0 {
+			emailOnlyRecipientFound = true
+			require.Equal(t, "missing@example.com", recipients[i].EmailSnapshot)
+			require.Equal(t, "en", recipients[i].LanguageSnapshot)
+		}
 		var snapshot map[string]any
 		require.NoError(t, common.Unmarshal([]byte(recipients[i].EligibilitySnapshot), &snapshot))
 		require.ElementsMatch(t, []string{
@@ -394,7 +400,8 @@ func TestRecallAudienceSpecifiedUsersUsesExactUnionAndSafetyExclusions(t *testin
 			"last_payment_at", "subscription_amount", "subscription_count", "last_subscription_end_at",
 		}, recallAudienceJSONKeys(snapshot))
 	}
-	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id}, gotUserIDs)
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id, 0}, gotUserIDs)
+	require.True(t, emailOnlyRecipientFound)
 	require.EqualValues(t, 1, exclusions["disabled"])
 	require.EqualValues(t, 1, exclusions["invalid_email"])
 	require.EqualValues(t, 1, exclusions["opted_out"])

@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -182,7 +184,9 @@ func TestListRecallCandidateFactsSpecifiedUnion(t *testing.T) {
 		Limit:            10,
 	})
 	require.NoError(t, err)
-	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id}, recallRepositoryUserIDs(facts))
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id, 0}, recallRepositoryUserIDs(facts))
+	require.True(t, facts[len(facts)-1].EmailOnly)
+	require.Equal(t, "missing@example.com", facts[len(facts)-1].Email)
 	require.NotContains(t, recallRepositoryUserIDs(facts), unknown.Id)
 
 	pageOne, err := ListRecallCandidateFacts(RecallCandidateQuery{
@@ -200,7 +204,7 @@ func TestListRecallCandidateFactsSpecifiedUnion(t *testing.T) {
 		Limit:            2,
 	})
 	require.NoError(t, err)
-	require.Equal(t, []int{overlap.Id}, recallRepositoryUserIDs(pageTwo))
+	require.Empty(t, pageTwo)
 
 	idFacts, err := ListRecallCandidateFacts(RecallCandidateQuery{
 		Template:         "specified_users",
@@ -224,6 +228,55 @@ func TestListRecallCandidateFactsSpecifiedUnion(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Empty(t, emptyFacts)
+}
+
+func TestListRecallCandidateFactsSpecifiedUnionIncludesUnmatchedEmails(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	idSelected := createRecallRepositoryCandidateUser(t, "specified_unmatched_id", 100, 4)
+	emailMatched := createRecallRepositoryCandidateUser(t, "specified_unmatched_email", 100, 4)
+	overlap := createRecallRepositoryCandidateUser(t, "specified_unmatched_overlap", 100, 4)
+	disabled := createRecallRepositoryCandidateUser(t, "specified_unmatched_disabled", 100, 4)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", disabled.Id).Update("status", common.UserStatusDisabled).Error)
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idSelected.Id, overlap.Id},
+		SpecifiedEmails: []string{
+			strings.ToUpper(emailMatched.Email),
+			strings.ToUpper(overlap.Email),
+			strings.ToUpper(disabled.Email),
+			"missing@example.com",
+		},
+		Limit: 5,
+	})
+	require.NoError(t, err)
+	require.Len(t, facts, 5)
+	require.Equal(t, []int{idSelected.Id, emailMatched.Id, overlap.Id, disabled.Id, 0}, recallRepositoryUserIDs(facts))
+
+	missingFact := facts[4]
+	require.Equal(t, "missing@example.com", missingFact.Email)
+	require.Zero(t, missingFact.User.Id)
+	require.True(t, missingFact.EmailOnly)
+	require.Equal(t, fmt.Sprintf("email:%x", sha256.Sum256([]byte("missing@example.com"))), missingFact.RecipientIdentity)
+
+	disabledEmailOnlyFallbacks := 0
+	disabledRealFacts := 0
+	for _, fact := range facts {
+		if fact.Email != strings.ToLower(disabled.Email) {
+			continue
+		}
+		if fact.EmailOnly {
+			disabledEmailOnlyFallbacks++
+			continue
+		}
+		if fact.User.Id == disabled.Id {
+			disabledRealFacts++
+		}
+	}
+	require.Equal(t, 1, disabledRealFacts)
+	require.Zero(t, disabledEmailOnlyFallbacks)
 }
 
 func TestRecallRepositoryMigrationCreatesMainDBTablesAndUniqueIndexes(t *testing.T) {
