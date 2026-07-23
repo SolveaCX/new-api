@@ -21,6 +21,7 @@ func buildMaskedTokenResponse(token *model.Token) *model.Token {
 	}
 	maskedToken := *token
 	maskedToken.Key = token.GetMaskedKey()
+	maskedToken.Status = model.GetEffectiveTokenStatus(token, common.GetTimestamp())
 	return &maskedToken
 }
 
