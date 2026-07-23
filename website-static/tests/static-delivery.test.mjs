@@ -77,8 +77,10 @@ test("legacy proxied pages visually use the shared responsive Flatkey lockup", (
   const css = read("../html/assets/legacy-skin.css");
   const nginx = read("../nginx.conf");
 
-  assert.match(nginx, /legacy-skin\.css\?v=723a/);
-  assert.match(css, /header\.fixed nav a\.group img\{width:36px !important;height:36px !important\}/);
+  assert.match(nginx, /legacy-skin\.css\?v=723b/);
+  assert.match(css, /width:36px !important/);
+  assert.match(css, /height:36px !important/);
+  assert.match(css, /content:url\("\/assets\/flatkey-mark\.svg\?v=4"\) !important/);
   assert.match(css, /header\.fixed nav a\.group span\[style\]::after\{/);
   assert.match(css, /content:"flatkey"/);
   assert.match(css, /font-family:"Public Sans",Inter,-apple-system,sans-serif/);
