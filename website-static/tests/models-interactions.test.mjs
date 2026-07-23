@@ -52,7 +52,7 @@ test("required capability filters are interactive and return registered models",
 test("Playground renders the API method that matches the selected model modality", () => {
   const html = read("../html/playground.html");
 
-  assert.match(html, /assets\/model-catalog\.js\?v=726a/);
+  assert.match(html, /assets\/model-catalog\.js\?v=727b/);
   assert.match(html, /OpenAI-compatible Chat Completions/);
   assert.match(html, /OpenAI-compatible Images API/);
   assert.match(html, /Task-based Video Generation API/);
@@ -64,6 +64,35 @@ test("Playground renders the API method that matches the selected model modality
   assert.match(html, /\/v1\/audio\/speech/);
   assert.match(html, /\/v1\/audio\/transcriptions/);
   assert.match(html, /\/v1\/realtime/);
+  assert.ok(
+    html.includes('replace(/\\n\\++(?=  -)/g,"\\n")'),
+    "rendered cURL snippets must strip stray diff markers",
+  );
+});
+
+test("the public Playground allows three persistent previews before sign-up", () => {
+  const html = read("../html/playground.html");
+  const window = {};
+  vm.runInNewContext(read("../html/assets/playground-preview.js"), { window, Number, Object, String });
+  const preview = window.FLATKEY_PLAYGROUND_PREVIEW;
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key, value) { values.set(key, value); },
+  };
+
+  assert.equal(preview.state(storage).remaining, 3);
+  assert.equal(preview.consume(storage).remaining, 2);
+  assert.equal(preview.consume(storage).remaining, 1);
+  assert.equal(preview.consume(storage).remaining, 0);
+  assert.equal(preview.consume(storage).accepted, false);
+  assert.equal(preview.state(storage).remaining, 0, "refreshing must not reset the preview allowance");
+  assert.match(html, /<button class="btn primary big" id="run-preview" type="button" data-action="run-preview">/);
+  assert.doesNotMatch(html, /id="run-preview"[^>]*href="\/login"/);
+  assert.match(html, /previewButton\.addEventListener\("click", runPreview\)/);
+  assert.match(html, /previewInput\.addEventListener\("keydown"/);
+  assert.match(html, /if\(current\.remaining === 0\)\{\s*location\.assign\("\/login"\)/);
+  assert.match(preview.response("gpt-image-2", "image", "a cat").meta, /no paid API request sent/);
 });
 
 test("every public static website button has a reachable destination or form action", () => {
@@ -88,7 +117,7 @@ test("every public static website button has a reachable destination or form act
       const tag = button[0];
       const type = tag.match(/\btype="([^"]+)"/)?.[1] ?? "submit";
       assert.ok(["button", "submit"].includes(type), `${file} button has an unsupported type`);
-      if (type === "button") assert.match(tag, /data-filter=/, `${file} button needs an explicit interaction contract`);
+      if (type === "button") assert.match(tag, /data-(?:filter|action)=/, `${file} button needs an explicit interaction contract`);
       if (type === "submit") assert.match(html, /<form\b[^>]*\baction="[^"#][^"]*"[^>]*>/i, `${file} submit button needs a form action`);
     }
   }

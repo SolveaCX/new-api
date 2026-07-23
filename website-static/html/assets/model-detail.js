@@ -8,8 +8,12 @@
   var key = "sk-fk-…";
 
   var specialSummaries = {
-    "grok-imagine-image": "Grok Imagine's standard image-generation model for prompt-driven creative production.",
-    "grok-imagine-image-quality": "The quality-focused Grok Imagine image variant for higher-fidelity final assets.",
+    "gpt-image-2": "OpenAI image generation for prompt-driven creative production through the Flatkey Images API.",
+    "gemini-2.5-flash-image": "Google's fast Gemini image model for prompt-to-image workflows through compatible chat output.",
+    "gemini-3-pro-image": "Google's quality-focused Gemini image model for high-fidelity creative and product imagery.",
+    "gemini-3.1-flash-image": "Google's fast Gemini 3.1 image model for production creative workflows.",
+    "gemini-3.1-flash-lite-image": "Google's lightweight Gemini 3.1 image model for efficient, high-volume generation.",
+    "nano-banana-pro-preview": "Google's Nano Banana Pro preview for prompt-driven image generation and visual iteration.",
     "seedance-2.5": "Text-to-video and image-to-video generation with 1080p output and optional reference media.",
     "seedance-2.0-i2v": "Image-to-video generation that animates a supplied first frame using a natural-language prompt.",
     "gpt-realtime": "Realtime speech-to-speech sessions over WebSocket for low-latency conversational interfaces.",
@@ -21,14 +25,8 @@
   }
 
   function statusFor(model, kind) {
-    if (model.indexOf("grok-imagine-image") === 0) {
-      return {
-        id: "verification_pending", label: "New · verifying", cls: "soon",
-        note: "Listed in the Flatkey account catalog; provider metadata and health verification are still pending. Do not use for production until the status turns available."
-      };
-    }
     if (model === "seedance-2.5") return { id: "early_access", label: "Early access", cls: "early", note: "Available to approved early-access accounts." };
-    if (kind === "chat" || model === "seedance-2.0-i2v") return { id: "available", label: "Available", cls: "live", note: "Available through Flatkey now." };
+    if (kind === "chat" || kind === "image" || model === "seedance-2.0-i2v") return { id: "available", label: "Available", cls: "live", note: "Available through Flatkey now." };
     return { id: "coming_soon", label: "Coming soon", cls: "soon", note: "Not callable through Flatkey yet. The API below is a contract preview, not a live endpoint guarantee." };
   }
 
@@ -74,7 +72,7 @@
     return { model: model, content: content, resolution: model === "seedance-2.0-i2v" ? "720p" : "1080p", duration: 5 };
   }
 
-  function examples(model, kind) {
+  function examples(model, kind, api) {
     if (kind === "chat") {
       var chatBody = JSON.stringify({ model: model, messages: [{ role: "user", content: "Hello" }] });
       return {
@@ -94,6 +92,14 @@
       };
     }
     if (kind === "image") {
+      if (api === "chat-image") {
+        var imageChatBody = JSON.stringify({ model: model, messages: [{ role: "user", content: "Generate a chrome key floating above a violet city, editorial lighting" }] });
+        return {
+          curl: "curl " + base + "/v1/chat/completions -H \"Authorization: Bearer " + key + "\" -H \"Content-Type: application/json\" -d '" + imageChatBody + "'",
+          python: ["from openai import OpenAI", "", "client = OpenAI(base_url=\"https://router.flatkey.ai/v1\", api_key=\"" + key + "\")", "response = client.chat.completions.create(", "    model=\"" + model + "\",", "    messages=[{\"role\": \"user\", \"content\": \"Generate a chrome key floating above a violet city\"}],", ")", "# Generated image is returned as a Markdown data URI.", "print(response.choices[0].message.content)"].join("\n"),
+          javascript: ["import OpenAI from \"openai\";", "", "const client = new OpenAI({ baseURL: \"https://router.flatkey.ai/v1\", apiKey: \"" + key + "\" });", "const response = await client.chat.completions.create({", "  model: \"" + model + "\",", "  messages: [{ role: \"user\", content: \"Generate a chrome key floating above a violet city\" }],", "});", "// Generated image is returned as a Markdown data URI.", "console.log(response.choices[0].message.content);"].join("\n")
+        };
+      }
       var imageBody = JSON.stringify({ model: model, prompt: "A chrome key floating above a violet city, editorial lighting", n: 1, response_format: "url" });
       return {
         curl: "curl " + base + "/v1/images/generations -H \"Authorization: Bearer " + key + "\" -H \"Content-Type: application/json\" -d '" + imageBody + "'",
@@ -131,7 +137,7 @@
 
   var details = detailsFor(slug, meta);
   var status = statusFor(slug, meta.kind);
-  var code = examples(slug, meta.kind);
+  var code = examples(slug, meta.kind, meta.api);
   document.title = slug + " API — Flatkey Models";
   document.querySelector('link[rel="canonical"]').href = "https://flatkey.ai/models/" + encodeURIComponent(slug);
   document.querySelector('meta[name="description"]').content = details.summary + " View the Flatkey API request format and code examples.";
