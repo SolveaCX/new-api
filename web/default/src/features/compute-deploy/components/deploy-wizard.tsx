@@ -18,10 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Info, Rocket } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Check, Info, Rocket, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { COMPUTE_MODELS, GPU_OPTIONS, type ComputeModel, type GpuOption } from '../catalog'
+import { useComputeBalance } from '../use-compute-balance'
 import { LowBalanceNotice } from './balance-bar'
 import { EndpointPanel } from './endpoint-panel'
 import { GpuPicker } from './gpu-picker'
@@ -95,6 +97,7 @@ function Hint(props: { children: React.ReactNode; variant?: 'info' | 'warning' }
 
 export function DeployWizard() {
   const { t } = useTranslation()
+  const { isEmpty } = useComputeBalance()
   const [step, setStep] = useState<Step>(1)
   const [model, setModel] = useState<ComputeModel>(
     COMPUTE_MODELS.find((m) => m.recommended) ?? COMPUTE_MODELS[0]
@@ -148,10 +151,17 @@ export function DeployWizard() {
               <Button variant='outline' onClick={() => setStep(1)}>
                 {t('Back')}
               </Button>
-              <Button onClick={() => setStep(3)}>
-                <Rocket className='size-4' />
-                {t('Deploy')}
-              </Button>
+              {isEmpty ? (
+                <Button render={<Link to='/wallet' />}>
+                  <Wallet className='size-4' />
+                  {t('Top up to deploy')}
+                </Button>
+              ) : (
+                <Button onClick={() => setStep(3)}>
+                  <Rocket className='size-4' />
+                  {t('Deploy')}
+                </Button>
+              )}
             </div>
           </div>
         </>

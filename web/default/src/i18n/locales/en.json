@@ -5792,6 +5792,7 @@
     "Terminating stops billing and destroys the instance and its data.": "Terminating stops billing and destroys the instance and its data.",
     "Terminating...": "Terminating...",
     "This destroys the instance and its data, and stops billing. This cannot be undone.": "This destroys the instance and its data, and stops billing. This cannot be undone.",
-    "Your public key is added to the box so you can SSH in.": "Your public key is added to the box so you can SSH in."
+    "Your public key is added to the box so you can SSH in.": "Your public key is added to the box so you can SSH in.",
+    "Top up to deploy": "Top up to deploy"
   }
 }

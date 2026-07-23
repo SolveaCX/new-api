@@ -5792,6 +5792,7 @@
     "Terminating stops billing and destroys the instance and its data.": "Encerrar interrompe a cobrança e destrói a instância e seus dados.",
     "Terminating...": "Encerrando...",
     "This destroys the instance and its data, and stops billing. This cannot be undone.": "Isso destrói a instância e seus dados e interrompe a cobrança. Não é possível desfazer.",
-    "Your public key is added to the box so you can SSH in.": "Sua chave pública é adicionada à máquina para que você possa se conectar via SSH."
+    "Your public key is added to the box so you can SSH in.": "Sua chave pública é adicionada à máquina para que você possa se conectar via SSH.",
+    "Top up to deploy": "Recarregue para implantar"
   }
 }

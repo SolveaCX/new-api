@@ -5792,6 +5792,7 @@
     "Terminating stops billing and destroys the instance and its data.": "終了すると課金が停止し、インスタンスとそのデータが破棄されます。",
     "Terminating...": "終了中...",
     "This destroys the instance and its data, and stops billing. This cannot be undone.": "これによりインスタンスとそのデータが破棄され、課金が停止します。この操作は取り消せません。",
-    "Your public key is added to the box so you can SSH in.": "公開鍵がマシンに追加され、SSH で接続できるようになります。"
+    "Your public key is added to the box so you can SSH in.": "公開鍵がマシンに追加され、SSH で接続できるようになります。",
+    "Top up to deploy": "チャージしてデプロイ"
   }
 }
