@@ -435,7 +435,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const plan = item.plan
               const price = formatPlanPrice(Number(plan.price_amount || 0))
               const isRecommended =
-                !hasActivePlan &&
                 plan.title.trim().toLowerCase() === 'go' &&
                 orderedPlans.length > 1
               const audience =

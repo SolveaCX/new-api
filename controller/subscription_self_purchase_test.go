@@ -21,7 +21,7 @@ func insertSubscriptionSelfPurchasePlan(t *testing.T, id int) model.Subscription
 	t.Helper()
 	rank := 1
 	pixPrice := 49.90
-	upiPrice := 799.50
+	upiPrice := 899.00
 	plan := model.SubscriptionPlan{
 		Id:                 id,
 		Title:              "Self Purchase Plan",
@@ -92,6 +92,48 @@ func TestSubscriptionSelfQuoteSignsPixBRLQuote(t *testing.T) {
 	require.Equal(t, subscriptionPurchasePlanRevision(&plan), claims.PlanRevision)
 }
 
+func TestSubscriptionSelfQuoteSignsUPIINRQuoteForTwelveMonths(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	originalSecret := common.CryptoSecret
+	common.CryptoSecret = "controller-subscription-quote-secret"
+	t.Cleanup(func() { common.CryptoSecret = originalSecret })
+	insertSubscriptionControllerUser(t, 9112)
+	plan := insertSubscriptionSelfPurchasePlan(t, 9212)
+
+	recorder := performSubscriptionSelfPurchaseRequest(
+		`{"plan_id":9212,"payment_method":"upi","months":12,"request_id":"quote-upi-twelve-request"}`,
+		QuoteSubscriptionSelfPurchase,
+		9112,
+	)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope struct {
+		Message string `json:"message"`
+		Data    struct {
+			PaymentQuotes map[string]SubscriptionSelfPaymentQuote `json:"payment_quotes"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	require.Empty(t, envelope.Message)
+	upiQuote := envelope.Data.PaymentQuotes["upi"]
+	require.NotEmpty(t, upiQuote.QuoteID)
+	require.Equal(t, "INR", upiQuote.Currency)
+	require.Equal(t, float64(899), upiQuote.UnitPrice)
+	require.Equal(t, float64(10788), upiQuote.Total)
+	require.Equal(t, 12, upiQuote.Months)
+
+	claims, err := service.VerifySubscriptionPurchaseQuoteToken(upiQuote.QuoteID, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, 9112, claims.UserID)
+	require.Equal(t, plan.Id, claims.PlanID)
+	require.Equal(t, service.SubscriptionPaymentChoiceUPI, claims.PaymentChoice)
+	require.Equal(t, int64(89900), claims.UnitAmountMinor)
+	require.Equal(t, int64(1078800), claims.TotalAmountMinor)
+	require.Equal(t, "quote-upi-twelve-request", claims.RequestID)
+	require.Equal(t, subscriptionPurchasePlanRevision(&plan), claims.PlanRevision)
+}
+
 func TestSubscriptionSelfQuoteRoundsMonthlyLocalPriceBeforeMultiplyingMonths(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
@@ -127,6 +169,43 @@ func TestSubscriptionSelfQuoteRoundsMonthlyLocalPriceBeforeMultiplyingMonths(t *
 	require.NoError(t, err)
 	require.Equal(t, int64(4991), claims.UnitAmountMinor)
 	require.Equal(t, int64(14973), claims.TotalAmountMinor)
+}
+
+func TestSubscriptionSelfQuoteReturnsUnavailableWhenLocalPriceMissing(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 9113)
+	plan := insertSubscriptionSelfPurchasePlan(t, 9213)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"pix_price_brl": nil,
+		"upi_price_inr": nil,
+	}).Error)
+	model.InvalidateSubscriptionPlanCache(plan.Id)
+
+	tests := []struct {
+		name   string
+		method string
+		reason string
+	}{
+		{name: "pix", method: "pix", reason: "Pix local quote is not configured"},
+		{name: "upi", method: "upi", reason: "UPI local quote is not configured"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := performSubscriptionSelfPurchaseRequest(
+				`{"plan_id":9213,"payment_method":"`+test.method+`","months":1,"request_id":"missing-`+test.method+`-quote"}`,
+				QuoteSubscriptionSelfPurchase,
+				9113,
+			)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.Contains(t, recorder.Body.String(), "subscription purchase quote unavailable")
+			require.Contains(t, recorder.Body.String(), test.reason)
+			require.NotContains(t, recorder.Body.String(), `"currency":"USD"`)
+			require.NotContains(t, recorder.Body.String(), `"quote_id"`)
+		})
+	}
 }
 
 func TestSubscriptionSelfQuoteRejectsStripeRecurringQuote(t *testing.T) {
@@ -222,7 +301,7 @@ func TestSubscriptionSelfPurchaseCreatesOneTimeStripeCheckoutAndReplaysURL(t *te
 	require.NoError(t, model.DB.Where("user_id = ?", 9104).First(&order).Error)
 	require.Equal(t, service.SubscriptionPaymentChoiceUPI, order.PaymentMethod)
 	require.Equal(t, "INR", order.PaymentCurrency)
-	require.Equal(t, int64(79950), order.PaymentAmountMinor)
+	require.Equal(t, int64(89900), order.PaymentAmountMinor)
 	require.Equal(t, "https://checkout.example/self-purchase", order.ProviderSessionURL)
 
 	var topUps []model.TopUp
@@ -232,8 +311,8 @@ func TestSubscriptionSelfPurchaseCreatesOneTimeStripeCheckoutAndReplaysURL(t *te
 	require.Equal(t, service.SubscriptionPaymentChoiceUPI, topUps[0].PaymentMethod)
 	require.Equal(t, model.PaymentProviderStripe, topUps[0].PaymentProvider)
 	require.Equal(t, "INR", topUps[0].PaymentCurrency)
-	require.Equal(t, int64(79950), topUps[0].PaymentAmountMinor)
-	require.Equal(t, float64(799.50), topUps[0].Money)
+	require.Equal(t, int64(89900), topUps[0].PaymentAmountMinor)
+	require.Equal(t, float64(899), topUps[0].Money)
 	require.Equal(t, common.TopUpStatusPending, topUps[0].Status)
 	require.Equal(t, "cs_test_self_purchase", topUps[0].GatewayTradeNo)
 }

@@ -34,7 +34,10 @@ import {
   requiresSignedCheckoutQuote,
 } from '../lib/subscription-plan-lifecycle'
 import type { TopupInfo } from '../types'
-import { PlanPurchaseDialogContent } from './plan-purchase-dialog'
+import {
+  PlanPurchaseDialogContent,
+  normalizePurchaseMonths,
+} from './plan-purchase-dialog'
 import { SubscriptionPlansCard } from './subscription-plans-card'
 
 const testI18n = createInstance()
@@ -152,6 +155,61 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html.indexOf('Go')).toBeLessThan(html.indexOf('Pro'))
     expect(html.indexOf('Pro')).toBeLessThan(html.indexOf('Max'))
     expect(html).toContain('Buy now')
+  })
+
+  test('shows localized plan positioning and recommends Go only', async () => {
+    await testI18n.changeLanguage('zh')
+    try {
+      const html = renderWalletCard()
+      const goStart = html.indexOf('Go')
+      const proStart = html.indexOf('Pro')
+      const maxStart = html.indexOf('Max')
+
+      expect(html).toContain('适合个人与轻量日常使用')
+      expect(html).toContain('适合日常开发与高频请求')
+      expect(html).toContain('适合团队与高强度任务')
+      expect(goStart).toBeGreaterThanOrEqual(0)
+      expect(proStart).toBeGreaterThan(goStart)
+      expect(maxStart).toBeGreaterThan(proStart)
+      expect(html.slice(goStart, proStart)).toContain('推荐')
+      expect(html.slice(proStart, maxStart)).not.toContain('推荐')
+      expect(html.match(/推荐/g)?.length).toBe(1)
+    } finally {
+      await testI18n.changeLanguage('en')
+    }
+  })
+
+  test('keeps the Go recommendation badge visible when there is an active plan', () => {
+    const html = renderWalletCard(
+      normalizeSelfSubscriptionData({
+        contract: {
+          contract_id: 14,
+          id: 14,
+          status: 'active',
+          payment_mode: 'prepaid',
+          current_plan_id: 2,
+          current_entitlement_id: 20,
+          current_provider_binding_id: 0,
+          latest_change_intent_id: 0,
+          pending_plan_id: 0,
+          pending_effective_at: 0,
+          current_period_start: 1717200000,
+          current_period_end: 1719792000,
+          grace_period_end: 0,
+          change_version: 1,
+        },
+      })
+    )
+    const goStart = html.indexOf('Go')
+    const proStart = html.indexOf('Pro', goStart)
+    const maxStart = html.indexOf('Max', proStart)
+
+    expect(goStart).toBeGreaterThanOrEqual(0)
+    expect(proStart).toBeGreaterThan(goStart)
+    expect(maxStart).toBeGreaterThan(proStart)
+    expect(html.slice(goStart, proStart)).toContain('Recommended')
+    expect(html.slice(proStart, maxStart)).not.toContain('Recommended')
+    expect(html.match(/Recommended/g)?.length).toBe(1)
   })
 
   test('keeps the refresh control in the subscription card header action', () => {
@@ -488,7 +546,7 @@ describe('PlanPurchaseDialog payment choices', () => {
     expect(html).not.toContain('12 months')
   })
 
-  test('reveals a 1-12 month selector for one-time payment choices', () => {
+  test('reveals a direct month input with common shortcuts for one-time payment choices', () => {
     for (const selectedPaymentChoice of [
       'alipay',
       'pix',
@@ -510,10 +568,24 @@ describe('PlanPurchaseDialog payment choices', () => {
       )
 
       expect(html).toContain('1 month')
+      expect(html).toContain('3 months')
       expect(html).toContain('12 months')
+      expect(html).toContain('type="number"')
+      expect(html).toContain('min="1"')
+      expect(html).toContain('max="12"')
+      expect(html).not.toContain('<select')
       expect(html).toContain('No prorating or credit is applied.')
       expect(html).not.toContain('future months')
     }
+  })
+
+  test('normalizes purchase months to whole months between 1 and 12', () => {
+    expect(normalizePurchaseMonths('')).toBe(1)
+    expect(normalizePurchaseMonths('0')).toBe(1)
+    expect(normalizePurchaseMonths('-2')).toBe(1)
+    expect(normalizePurchaseMonths('2.5')).toBe(2)
+    expect(normalizePurchaseMonths('13')).toBe(12)
+    expect(normalizePurchaseMonths(12)).toBe(12)
   })
 
   test('does not render future-month refund value in the purchase review', () => {
