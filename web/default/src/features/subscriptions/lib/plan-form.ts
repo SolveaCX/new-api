@@ -21,11 +21,35 @@ import type { TFunction } from 'i18next'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 import type { SubscriptionPlan, PlanPayload } from '../types'
 
+const maxLocalPrice = 9999.999999
+
+const localPriceSchema = (t: TFunction) =>
+  z
+    .string()
+    .trim()
+    .refine((value) => value === '' || Number(value) > 0, {
+      message: t('Local price must be greater than zero'),
+    })
+    .refine((value) => value === '' || Number(value) <= maxLocalPrice, {
+      message: t('Local price cannot exceed 9999.999999'),
+    })
+
+function localPriceToFormValue(value: number | null | undefined): string {
+  return value == null ? '' : String(value)
+}
+
+function localPriceToPayload(value: string | null | undefined): number | null {
+  const normalized = String(value ?? '').trim()
+  return normalized === '' ? null : Number(normalized)
+}
+
 export function getPlanFormSchema(t: TFunction) {
   return z.object({
     title: z.string().min(1, t('Please enter plan title')),
     subtitle: z.string().optional(),
     price_amount: z.coerce.number().min(0, t('Please enter amount')),
+    pix_price_brl: localPriceSchema(t),
+    upi_price_inr: localPriceSchema(t),
     duration_unit: z.enum(['year', 'month', 'day', 'hour', 'custom']),
     duration_value: z.coerce.number().min(1),
     custom_seconds: z.coerce.number().min(0).optional(),
@@ -62,6 +86,8 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   title: '',
   subtitle: '',
   price_amount: 0,
+  pix_price_brl: '',
+  upi_price_inr: '',
   duration_unit: 'month',
   duration_value: 1,
   custom_seconds: 0,
@@ -90,6 +116,8 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     title: plan.title || '',
     subtitle: plan.subtitle || '',
     price_amount: Number(plan.price_amount || 0),
+    pix_price_brl: localPriceToFormValue(plan.pix_price_brl),
+    upi_price_inr: localPriceToFormValue(plan.upi_price_inr),
     duration_unit: plan.duration_unit || 'month',
     duration_value: Number(plan.duration_value || 1),
     custom_seconds: Number(plan.custom_seconds || 0),
@@ -122,6 +150,8 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       ...values,
       price_amount: Number(values.price_amount || 0),
       currency: 'USD',
+      pix_price_brl: localPriceToPayload(values.pix_price_brl),
+      upi_price_inr: localPriceToPayload(values.upi_price_inr),
       duration_value: Number(values.duration_value || 0),
       custom_seconds: Number(values.custom_seconds || 0),
       quota_reset_period: values.quota_reset_period || 'never',

@@ -9,9 +9,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/stripe/stripe-go/v81"
-	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
-	stripeschedule "github.com/stripe/stripe-go/v81/subscriptionschedule"
+	"github.com/stripe/stripe-go/v86"
+	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
+	stripeschedule "github.com/stripe/stripe-go/v86/subscriptionschedule"
 	"gorm.io/gorm"
 )
 
@@ -605,6 +605,7 @@ func providerSubscriptionSnapshotFromStripe(sub *stripe.Subscription) model.Prov
 	if sub.LatestInvoice != nil {
 		latestInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
 	}
+	periodStart, periodEnd := stripeSubscriptionCurrentPeriod(sub)
 	return model.ProviderSubscriptionSnapshot{
 		ProviderSubscriptionId:     strings.TrimSpace(sub.ID),
 		ProviderSubscriptionItemId: itemID,
@@ -615,8 +616,8 @@ func providerSubscriptionSnapshotFromStripe(sub *stripe.Subscription) model.Prov
 		ProviderLatestInvoiceId:    latestInvoiceID,
 		ProviderStatus:             string(sub.Status),
 		CancelAtPeriodEnd:          sub.CancelAtPeriodEnd,
-		CurrentPeriodStart:         sub.CurrentPeriodStart,
-		CurrentPeriodEnd:           sub.CurrentPeriodEnd,
+		CurrentPeriodStart:         periodStart,
+		CurrentPeriodEnd:           periodEnd,
 		CanceledAt:                 sub.CanceledAt,
 		EndedAt:                    sub.EndedAt,
 		Livemode:                   sub.Livemode,

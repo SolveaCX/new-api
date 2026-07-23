@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -436,6 +437,35 @@ func TestStripeRecurringChangePlanRequiresStripePriceBeforePersistingState(t *te
 	var entitlementCount int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 7110).Count(&entitlementCount).Error)
 	require.Zero(t, entitlementCount)
+}
+
+func TestStripeRecurringCheckoutLeavesProviderRenewalUnsetUntilInvoiceApplies(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7112, 3000)
+	plan := insertContractServicePlan(t, 7217, 1, 12.34, 1234)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).
+		Update("stripe_price_id", "price_pending_renewal_state").Error)
+	originalCreator := stripeSubscriptionCheckoutCreator
+	t.Cleanup(func() { stripeSubscriptionCheckoutCreator = originalCreator })
+	stripeSubscriptionCheckoutCreator = func(ctx context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+		return &StripeSubscriptionCheckoutSession{ID: "cs_pending_renewal_state", URL: "https://checkout.example/pending"}, nil
+	}
+
+	result, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      7112,
+		PlanID:      plan.Id,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "stripe-pending-renewal-state",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ChangePlanStatusCheckoutRequired, result.Status)
+	var contract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&contract, "id = ?", result.Contract.Id).Error)
+	require.Empty(t, contract.RenewalSource)
+	require.Empty(t, contract.RenewalStatus)
+	require.Equal(t, model.SubscriptionPaymentModeExternalOnePeriod, contract.PaymentMode)
+	require.Equal(t, model.SubscriptionContractStatusEnded, contract.Status)
 }
 
 func TestUnresolvedPurchaseBlocksSecondChange(t *testing.T) {

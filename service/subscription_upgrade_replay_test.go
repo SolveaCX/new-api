@@ -9,7 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v86"
 )
 
 func TestStripeUpgradeExecutorRecoversAppliedTargetPriceWithLatestInvoiceWithoutUpdate(t *testing.T) {
@@ -112,7 +112,7 @@ func TestStripeUpgradeReplayReturnsHostedInvoiceWithoutReexecutingUpgrade(t *tes
 	require.Equal(t, 1, upgradeCalls)
 
 	invoice := stripeInvoiceFixture("in_upgrade_replay", "sub_upgrade")
-	invoice.Paid = false
+	markStripeInvoiceUnpaid(invoice)
 	invoice.Status = stripe.InvoiceStatusOpen
 	invoice.HostedInvoiceURL = "https://stripe.test/invoice/in_upgrade_replay"
 	invoiceGets := 0
@@ -249,7 +249,7 @@ func TestStripeUpgradeReplayUsesOpenInvoiceBeforeExecutorForSyncingIntent(t *tes
 	require.NoError(t, model.DB.Model(contract).Update("latest_change_intent_id", intent.Id).Error)
 
 	invoice := stripeInvoiceFixture("in_upgrade_syncing_open", binding.ProviderSubscriptionId)
-	invoice.Paid = false
+	markStripeInvoiceUnpaid(invoice)
 	invoice.Status = stripe.InvoiceStatusOpen
 	invoice.HostedInvoiceURL = "https://stripe.test/invoice/in_upgrade_syncing_open"
 	originalInvoiceGetter := stripeInvoiceGetter
@@ -324,7 +324,7 @@ func TestStripeUpgradeReplayUsesPaidInvoiceBeforeExecutorForSyncingIntent(t *tes
 	invoice.AmountDue = 2500
 	invoice.Total = 2500
 	invoice.Customer = &stripe.Customer{ID: "cus_upgrade"}
-	invoice.Lines.Data[0].Price = &stripe.Price{ID: "price_target_syncing_paid"}
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_syncing_paid")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
 	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{
 		"trade_no":         "",
@@ -336,8 +336,7 @@ func TestStripeUpgradeReplayUsesPaidInvoiceBeforeExecutorForSyncingIntent(t *tes
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = binding.ProviderSubscriptionItemId
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_syncing_paid"}
-	subscription.CurrentPeriodStart = 3000
-	subscription.CurrentPeriodEnd = 4000
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 
@@ -396,7 +395,7 @@ func TestStripeUpgradeReplayReconcilesPaidInvoice(t *testing.T) {
 	invoice.AmountDue = 2500
 	invoice.Total = 2500
 	invoice.Customer = &stripe.Customer{ID: "cus_upgrade"}
-	invoice.Lines.Data[0].Price = &stripe.Price{ID: "price_target_paid_replay"}
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_paid_replay")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
 	subscription := stripeSubscriptionFixture("sub_upgrade", map[string]string{
 		"trade_no":         "",
@@ -408,8 +407,7 @@ func TestStripeUpgradeReplayReconcilesPaidInvoice(t *testing.T) {
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = "si_current_item"
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_paid_replay"}
-	subscription.CurrentPeriodStart = 3000
-	subscription.CurrentPeriodEnd = 4000
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 

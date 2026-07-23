@@ -55,6 +55,13 @@ describe('subscription admin lifecycle guards', () => {
     )
   })
 
+  test('renders admin local price inputs for Pix and UPI', () => {
+    expect(mutateDrawerSource).toContain("name='pix_price_brl'")
+    expect(mutateDrawerSource).toContain("t('Pix monthly price (BRL)')")
+    expect(mutateDrawerSource).toContain("name='upi_price_inr'")
+    expect(mutateDrawerSource).toContain("t('UPI monthly price (INR)')")
+  })
+
   test('derives payment modes without treating payment_modes as persisted plan data', () => {
     expect(mutateDrawerSource).not.toContain('payment_modes')
   })

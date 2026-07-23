@@ -76,22 +76,98 @@ type RecurringSubscriptionDTO struct {
 	CanCancel          bool   `json:"can_cancel"`
 	CanResume          bool   `json:"can_resume"`
 	RequiresSupport    bool   `json:"requires_support"`
+	Terminal           bool   `json:"-"`
 }
 
 type SubscriptionSelfResponse struct {
-	BillingPreference      string                        `json:"billing_preference"`
-	BillingOrder           []string                      `json:"billing_order"`
-	CurrentSubscription    gin.H                         `json:"current_subscription,omitempty"`
-	Contract               *SubscriptionContractDTO      `json:"contract,omitempty"`
-	CurrentEntitlement     *SubscriptionEntitlementDTO   `json:"current_entitlement,omitempty"`
-	CurrentPeriod          SubscriptionCurrentPeriodDTO  `json:"current_period"`
-	Quota                  SubscriptionQuotaDTO          `json:"quota"`
-	PendingChange          *SubscriptionPendingChangeDTO `json:"pending_change,omitempty"`
-	Capabilities           SubscriptionCapabilitiesDTO   `json:"capabilities"`
-	Migration              SubscriptionMigrationDTO      `json:"migration"`
-	Subscriptions          []model.SubscriptionSummary   `json:"subscriptions"`
-	AllSubscriptions       []model.SubscriptionSummary   `json:"all_subscriptions"`
-	RecurringSubscriptions []RecurringSubscriptionDTO    `json:"recurring_subscriptions"`
+	BillingPreference      string                                     `json:"billing_preference"`
+	BillingOrder           []string                                   `json:"billing_order"`
+	CurrentSubscription    *SubscriptionSelfCurrentSubscriptionDTO    `json:"current_subscription,omitempty"`
+	Contract               *SubscriptionSelfContractDTO               `json:"contract,omitempty"`
+	CurrentEntitlement     *SubscriptionSelfEntitlementDTO            `json:"current_entitlement,omitempty"`
+	CurrentPeriod          SubscriptionCurrentPeriodDTO               `json:"current_period"`
+	Quota                  SubscriptionQuotaDTO                       `json:"quota"`
+	MonthlyBucket          SubscriptionUsageWindowDTO                 `json:"monthly_bucket"`
+	Window5h               SubscriptionUsageWindowDTO                 `json:"window_5h"`
+	Window7d               SubscriptionUsageWindowDTO                 `json:"window_7d"`
+	MediaCredits           SubscriptionUsageWindowDTO                 `json:"media_credits"`
+	RemainingDays          int64                                      `json:"remaining_days"`
+	RenewalSource          string                                     `json:"renewal_source"`
+	RenewalStatus          string                                     `json:"renewal_status"`
+	PendingChange          *SubscriptionSelfPendingChangeDTO          `json:"pending_change,omitempty"`
+	Capabilities           SubscriptionCapabilitiesDTO                `json:"capabilities"`
+	Migration              SubscriptionMigrationDTO                   `json:"migration"`
+	Subscriptions          []SubscriptionSelfSummaryDTO               `json:"subscriptions"`
+	AllSubscriptions       []SubscriptionSelfSummaryDTO               `json:"all_subscriptions"`
+	RecurringSubscriptions []SubscriptionSelfRecurringSubscriptionDTO `json:"recurring_subscriptions"`
+}
+
+type SubscriptionSelfSubscriptionDTO struct {
+	Id                int    `json:"id"`
+	UserId            int    `json:"user_id"`
+	PlanId            int    `json:"plan_id"`
+	ContractId        int64  `json:"contract_id"`
+	CurrentSlot       *int   `json:"current_slot"`
+	AmountTotal       int64  `json:"amount_total"`
+	AmountUsed        int64  `json:"amount_used"`
+	MediaCreditsTotal int64  `json:"media_credits_total"`
+	MediaCreditsUsed  int64  `json:"media_credits_used"`
+	Window5hAmount    *int64 `json:"window_5h_amount,omitempty"`
+	WindowWeekAmount  *int64 `json:"window_week_amount,omitempty"`
+	StartTime         int64  `json:"start_time"`
+	EndTime           int64  `json:"end_time"`
+	AccessEndTime     int64  `json:"access_end_time"`
+	EndReason         string `json:"end_reason"`
+	Status            string `json:"status"`
+	Source            string `json:"source"`
+	PaymentMode       string `json:"payment_mode"`
+	LastResetTime     int64  `json:"last_reset_time"`
+	NextResetTime     int64  `json:"next_reset_time"`
+	UpgradeGroup      string `json:"upgrade_group"`
+	PrevUserGroup     string `json:"prev_user_group"`
+	CreatedAt         int64  `json:"created_at"`
+	UpdatedAt         int64  `json:"updated_at"`
+}
+
+type SubscriptionSelfPlanDTO struct {
+	Id                      int      `json:"id"`
+	Title                   string   `json:"title"`
+	Subtitle                string   `json:"subtitle"`
+	PriceAmount             float64  `json:"price_amount"`
+	Currency                string   `json:"currency"`
+	PixPriceBRL             *float64 `json:"pix_price_brl"`
+	UpiPriceINR             *float64 `json:"upi_price_inr"`
+	DurationUnit            string   `json:"duration_unit"`
+	DurationValue           int      `json:"duration_value"`
+	CustomSeconds           int64    `json:"custom_seconds"`
+	Enabled                 bool     `json:"enabled"`
+	SortOrder               int      `json:"sort_order"`
+	TierRank                *int     `json:"tier_rank"`
+	AllowBalancePay         *bool    `json:"allow_balance_pay"`
+	MaxPurchasePerUser      int      `json:"max_purchase_per_user"`
+	UpgradeGroup            string   `json:"upgrade_group"`
+	TotalAmount             int64    `json:"total_amount"`
+	Window5hAmount          int64    `json:"window_5h_amount"`
+	WindowWeekAmount        int64    `json:"window_week_amount"`
+	MediaCreditsMonthly     int64    `json:"media_credits_monthly"`
+	QuotaResetPeriod        string   `json:"quota_reset_period"`
+	QuotaResetCustomSeconds int64    `json:"quota_reset_custom_seconds"`
+	ModelCount              int      `json:"model_count"`
+	Rpm                     int      `json:"rpm"`
+	Concurrency             int      `json:"concurrency"`
+	FeatureLines            string   `json:"feature_lines"`
+	CreatedAt               int64    `json:"created_at"`
+	UpdatedAt               int64    `json:"updated_at"`
+}
+
+type SubscriptionSelfSummaryDTO struct {
+	Subscription *SubscriptionSelfSubscriptionDTO `json:"subscription"`
+}
+
+type SubscriptionSelfCurrentSubscriptionDTO struct {
+	Subscription *SubscriptionSelfSubscriptionDTO `json:"subscription"`
+	Plan         *SubscriptionSelfPlanDTO         `json:"plan"`
+	UsageLimits  service.SubscriptionWindowUsage  `json:"usage_limits"`
 }
 
 type AdminUserSubscriptionsResponse struct {
@@ -118,6 +194,18 @@ type SubscriptionContractDTO struct {
 	ChangeVersion            int64  `json:"change_version"`
 }
 
+type SubscriptionSelfContractDTO struct {
+	ContractID           int64  `json:"contract_id"`
+	Status               string `json:"status"`
+	PaymentMode          string `json:"payment_mode"`
+	CurrentPlanID        int    `json:"current_plan_id"`
+	CurrentEntitlementID int    `json:"current_entitlement_id"`
+	LatestChangeIntentID int64  `json:"latest_change_intent_id"`
+	PendingPlanID        int    `json:"pending_plan_id"`
+	PendingEffectiveAt   int64  `json:"pending_effective_at"`
+	ChangeVersion        int64  `json:"change_version"`
+}
+
 type SubscriptionEntitlementDTO struct {
 	EntitlementID     int    `json:"entitlement_id"`
 	PlanID            int    `json:"plan_id"`
@@ -127,6 +215,16 @@ type SubscriptionEntitlementDTO struct {
 	StartTime         int64  `json:"start_time"`
 	EndTime           int64  `json:"end_time"`
 	AccessEndTime     int64  `json:"access_end_time"`
+}
+
+type SubscriptionSelfEntitlementDTO struct {
+	EntitlementID int    `json:"entitlement_id"`
+	PlanID        int    `json:"plan_id"`
+	Status        string `json:"status"`
+	PaymentMode   string `json:"payment_mode"`
+	StartTime     int64  `json:"start_time"`
+	EndTime       int64  `json:"end_time"`
+	AccessEndTime int64  `json:"access_end_time"`
 }
 
 type SubscriptionCurrentPeriodDTO struct {
@@ -142,6 +240,14 @@ type SubscriptionQuotaDTO struct {
 	Unlimited       bool  `json:"unlimited"`
 }
 
+type SubscriptionUsageWindowDTO struct {
+	Used      int64 `json:"used"`
+	Total     int64 `json:"total"`
+	Remaining int64 `json:"remaining"`
+	ResetAt   int64 `json:"reset_at"`
+	Unlimited bool  `json:"unlimited"`
+}
+
 type SubscriptionPendingChangeDTO struct {
 	IntentID          int64  `json:"intent_id"`
 	Kind              string `json:"kind"`
@@ -151,6 +257,25 @@ type SubscriptionPendingChangeDTO struct {
 	ProviderBindingID int64  `json:"provider_binding_id"`
 	EffectiveAt       int64  `json:"effective_at"`
 	PaymentMode       string `json:"payment_mode"`
+}
+
+type SubscriptionSelfPendingChangeDTO struct {
+	IntentID    int64  `json:"intent_id"`
+	Kind        string `json:"kind"`
+	Status      string `json:"status"`
+	FromPlanID  int    `json:"from_plan_id"`
+	ToPlanID    int    `json:"to_plan_id"`
+	EffectiveAt int64  `json:"effective_at"`
+	PaymentMode string `json:"payment_mode"`
+}
+
+type SubscriptionSelfRecurringSubscriptionDTO struct {
+	PlanId             int   `json:"plan_id"`
+	CancelAtPeriodEnd  bool  `json:"cancel_at_period_end"`
+	CurrentPeriodStart int64 `json:"current_period_start"`
+	CurrentPeriodEnd   int64 `json:"current_period_end"`
+	GracePeriodEnd     int64 `json:"grace_period_end"`
+	RequiresSupport    bool  `json:"requires_support"`
 }
 
 type SubscriptionCapabilitiesDTO struct {
@@ -181,6 +306,8 @@ type ChangeSubscriptionPlanResponse struct {
 }
 
 var ErrSubscriptionPurchasePendingMigration = errors.New("subscription purchase initiation is pending migration")
+
+const maxSubscriptionPlanLocalPrice = 9999.999999
 
 // ---- User APIs ----
 
@@ -298,6 +425,8 @@ func buildSubscriptionSelfResponse(
 	allSubscriptions []model.SubscriptionSummary,
 	recurringSubscriptions []RecurringSubscriptionDTO,
 ) SubscriptionSelfResponse {
+	selfActiveSubscriptions := subscriptionSelfSummaryDTOs(activeSubscriptions)
+	selfAllSubscriptions := subscriptionSelfSummaryDTOs(allSubscriptions)
 	response := SubscriptionSelfResponse{
 		BillingPreference:      pref,
 		BillingOrder:           []string{"subscription", "wallet"},
@@ -305,28 +434,29 @@ func buildSubscriptionSelfResponse(
 		CurrentPeriod:          SubscriptionCurrentPeriodDTO{},
 		Quota:                  SubscriptionQuotaDTO{},
 		Migration:              migration,
-		Subscriptions:          activeSubscriptions,
-		AllSubscriptions:       allSubscriptions,
-		RecurringSubscriptions: recurringSubscriptions,
+		Subscriptions:          selfActiveSubscriptions,
+		AllSubscriptions:       selfAllSubscriptions,
+		RecurringSubscriptions: selfRecurringSubscriptionDTOs(recurringSubscriptions),
 	}
 	if contract != nil && contract.Id > 0 {
-		response.Contract = subscriptionContractDTO(contract)
+		response.Contract = subscriptionSelfContractDTO(contract)
 		response.CurrentPeriod = SubscriptionCurrentPeriodDTO{
 			Start:          contract.CurrentPeriodStart,
 			End:            contract.CurrentPeriodEnd,
 			GracePeriodEnd: contract.GracePeriodEnd,
 		}
+		response.RemainingDays = subscriptionRemainingDays(contract.CurrentPeriodEnd)
 	}
+	response.RenewalSource, response.RenewalStatus = subscriptionSelfRenewalState(contract, currentEntitlement, recurringSubscriptions)
 	if currentEntitlement != nil && currentEntitlement.Id > 0 {
-		response.CurrentEntitlement = &SubscriptionEntitlementDTO{
-			EntitlementID:     currentEntitlement.Id,
-			PlanID:            currentEntitlement.PlanId,
-			ProviderBindingID: currentEntitlement.ProviderBindingId,
-			Status:            currentEntitlement.Status,
-			PaymentMode:       currentEntitlement.PaymentMode,
-			StartTime:         currentEntitlement.StartTime,
-			EndTime:           currentEntitlement.EndTime,
-			AccessEndTime:     currentEntitlement.AccessEndTime,
+		response.CurrentEntitlement = &SubscriptionSelfEntitlementDTO{
+			EntitlementID: currentEntitlement.Id,
+			PlanID:        currentEntitlement.PlanId,
+			Status:        currentEntitlement.Status,
+			PaymentMode:   currentEntitlement.PaymentMode,
+			StartTime:     currentEntitlement.StartTime,
+			EndTime:       currentEntitlement.EndTime,
+			AccessEndTime: currentEntitlement.AccessEndTime,
 		}
 		response.Quota = SubscriptionQuotaDTO{
 			AmountTotal:     currentEntitlement.AmountTotal,
@@ -334,15 +464,50 @@ func buildSubscriptionSelfResponse(
 			AmountRemaining: subscriptionQuotaRemaining(currentEntitlement.AmountTotal, currentEntitlement.AmountUsed),
 			Unlimited:       currentEntitlement.AmountTotal == 0,
 		}
+		if contract == nil || contract.Id <= 0 {
+			response.CurrentPeriod = SubscriptionCurrentPeriodDTO{
+				Start:          currentEntitlement.StartTime,
+				End:            currentEntitlement.EndTime,
+				GracePeriodEnd: currentEntitlement.AccessEndTime,
+			}
+			response.RemainingDays = subscriptionRemainingDays(currentEntitlement.EndTime)
+		}
+		response.MonthlyBucket = subscriptionUsageWindowDTO(
+			currentEntitlement.AmountUsed,
+			currentEntitlement.AmountTotal,
+			currentEntitlement.NextResetTime,
+			currentEntitlement.AmountTotal == 0,
+		)
+		response.MediaCredits = subscriptionUsageWindowDTO(
+			currentEntitlement.MediaCreditsUsed,
+			currentEntitlement.MediaCreditsTotal,
+			currentEntitlement.NextResetTime,
+			false,
+		)
+		if windowInfo, err := model.GetSubscriptionWindowInfoBySubId(currentEntitlement.Id); err == nil && windowInfo != nil {
+			usage := service.GetSubscriptionWindowUsage(windowInfo)
+			response.Window5h = subscriptionUsageWindowDTO(
+				usage.Window5hUsed,
+				windowInfo.Window5hAmount,
+				usage.Window5hResetAt,
+				windowInfo.Window5hAmount == 0,
+			)
+			response.Window7d = subscriptionUsageWindowDTO(
+				usage.WindowWeekUsed,
+				windowInfo.WindowWeekAmount,
+				usage.WindowWeekResetAt,
+				windowInfo.WindowWeekAmount == 0,
+			)
+		}
 	}
 	if pendingChange != nil && pendingChange.Id > 0 {
-		response.PendingChange = subscriptionPendingChangeDTO(pendingChange)
+		response.PendingChange = subscriptionSelfPendingChangeDTO(pendingChange)
 	}
 	response.Capabilities = buildSubscriptionCapabilitiesDTO(contract, pendingChange, recurringSubscriptions, migration)
 	return response
 }
 
-func buildCurrentSubscriptionSnapshot(activeSubscriptions []model.SubscriptionSummary) gin.H {
+func buildCurrentSubscriptionSnapshot(activeSubscriptions []model.SubscriptionSummary) *SubscriptionSelfCurrentSubscriptionDTO {
 	var currentPlan *model.SubscriptionPlan
 	var currentSub *model.UserSubscription
 	for _, summary := range activeSubscriptions {
@@ -369,10 +534,88 @@ func buildCurrentSubscriptionSnapshot(activeSubscriptions []model.SubscriptionSu
 		Window5hAmount:     currentPlan.Window5hAmount,
 		WindowWeekAmount:   currentPlan.WindowWeekAmount,
 	}
-	return gin.H{
-		"subscription": currentSub,
-		"plan":         currentPlan,
-		"usage_limits": service.GetSubscriptionWindowUsage(windowInfo),
+	return &SubscriptionSelfCurrentSubscriptionDTO{
+		Subscription: subscriptionSelfSubscriptionDTO(currentSub),
+		Plan:         subscriptionSelfPlanDTO(currentPlan),
+		UsageLimits:  service.GetSubscriptionWindowUsage(windowInfo),
+	}
+}
+
+func subscriptionSelfSummaryDTOs(summaries []model.SubscriptionSummary) []SubscriptionSelfSummaryDTO {
+	result := make([]SubscriptionSelfSummaryDTO, 0, len(summaries))
+	for _, summary := range summaries {
+		result = append(result, SubscriptionSelfSummaryDTO{
+			Subscription: subscriptionSelfSubscriptionDTO(summary.Subscription),
+		})
+	}
+	return result
+}
+
+func subscriptionSelfSubscriptionDTO(subscription *model.UserSubscription) *SubscriptionSelfSubscriptionDTO {
+	if subscription == nil {
+		return nil
+	}
+	return &SubscriptionSelfSubscriptionDTO{
+		Id:                subscription.Id,
+		UserId:            subscription.UserId,
+		PlanId:            subscription.PlanId,
+		ContractId:        subscription.ContractId,
+		CurrentSlot:       subscription.CurrentSlot,
+		AmountTotal:       subscription.AmountTotal,
+		AmountUsed:        subscription.AmountUsed,
+		MediaCreditsTotal: subscription.MediaCreditsTotal,
+		MediaCreditsUsed:  subscription.MediaCreditsUsed,
+		Window5hAmount:    subscription.Window5hAmount,
+		WindowWeekAmount:  subscription.WindowWeekAmount,
+		StartTime:         subscription.StartTime,
+		EndTime:           subscription.EndTime,
+		AccessEndTime:     subscription.AccessEndTime,
+		EndReason:         subscription.EndReason,
+		Status:            subscription.Status,
+		Source:            subscription.Source,
+		PaymentMode:       subscription.PaymentMode,
+		LastResetTime:     subscription.LastResetTime,
+		NextResetTime:     subscription.NextResetTime,
+		UpgradeGroup:      subscription.UpgradeGroup,
+		PrevUserGroup:     subscription.PrevUserGroup,
+		CreatedAt:         subscription.CreatedAt,
+		UpdatedAt:         subscription.UpdatedAt,
+	}
+}
+
+func subscriptionSelfPlanDTO(plan *model.SubscriptionPlan) *SubscriptionSelfPlanDTO {
+	if plan == nil {
+		return nil
+	}
+	return &SubscriptionSelfPlanDTO{
+		Id:                      plan.Id,
+		Title:                   plan.Title,
+		Subtitle:                plan.Subtitle,
+		PriceAmount:             plan.PriceAmount,
+		Currency:                plan.Currency,
+		PixPriceBRL:             plan.PixPriceBRL,
+		UpiPriceINR:             plan.UpiPriceINR,
+		DurationUnit:            plan.DurationUnit,
+		DurationValue:           plan.DurationValue,
+		CustomSeconds:           plan.CustomSeconds,
+		Enabled:                 plan.Enabled,
+		SortOrder:               plan.SortOrder,
+		TierRank:                plan.TierRank,
+		AllowBalancePay:         plan.AllowBalancePay,
+		MaxPurchasePerUser:      plan.MaxPurchasePerUser,
+		UpgradeGroup:            plan.UpgradeGroup,
+		TotalAmount:             plan.TotalAmount,
+		Window5hAmount:          plan.Window5hAmount,
+		WindowWeekAmount:        plan.WindowWeekAmount,
+		MediaCreditsMonthly:     plan.MediaCreditsMonthly,
+		QuotaResetPeriod:        plan.QuotaResetPeriod,
+		QuotaResetCustomSeconds: plan.QuotaResetCustomSeconds,
+		ModelCount:              plan.ModelCount,
+		Rpm:                     plan.Rpm,
+		Concurrency:             plan.Concurrency,
+		FeatureLines:            plan.FeatureLines,
+		CreatedAt:               plan.CreatedAt,
+		UpdatedAt:               plan.UpdatedAt,
 	}
 }
 
@@ -394,6 +637,23 @@ func subscriptionContractDTO(contract *model.UserSubscriptionContract) *Subscrip
 	}
 }
 
+func subscriptionSelfContractDTO(contract *model.UserSubscriptionContract) *SubscriptionSelfContractDTO {
+	if contract == nil || contract.Id <= 0 {
+		return nil
+	}
+	return &SubscriptionSelfContractDTO{
+		ContractID:           contract.Id,
+		Status:               contract.Status,
+		PaymentMode:          contract.PaymentMode,
+		CurrentPlanID:        contract.CurrentPlanId,
+		CurrentEntitlementID: contract.CurrentEntitlementId,
+		LatestChangeIntentID: contract.LatestChangeIntentId,
+		PendingPlanID:        contract.PendingPlanId,
+		PendingEffectiveAt:   contract.PendingEffectiveAt,
+		ChangeVersion:        contract.ChangeVersion,
+	}
+}
+
 func subscriptionPendingChangeDTO(intent *model.SubscriptionChangeIntent) *SubscriptionPendingChangeDTO {
 	if intent == nil || intent.Id <= 0 {
 		return nil
@@ -407,6 +667,21 @@ func subscriptionPendingChangeDTO(intent *model.SubscriptionChangeIntent) *Subsc
 		ProviderBindingID: intent.ProviderBindingId,
 		EffectiveAt:       intent.EffectiveAt,
 		PaymentMode:       intent.PaymentMode,
+	}
+}
+
+func subscriptionSelfPendingChangeDTO(intent *model.SubscriptionChangeIntent) *SubscriptionSelfPendingChangeDTO {
+	if intent == nil || intent.Id <= 0 {
+		return nil
+	}
+	return &SubscriptionSelfPendingChangeDTO{
+		IntentID:    intent.Id,
+		Kind:        intent.Kind,
+		Status:      intent.Status,
+		FromPlanID:  intent.FromPlanId,
+		ToPlanID:    intent.ToPlanId,
+		EffectiveAt: intent.EffectiveAt,
+		PaymentMode: intent.PaymentMode,
 	}
 }
 
@@ -498,6 +773,33 @@ func subscriptionQuotaRemaining(total int64, used int64) int64 {
 	return remaining
 }
 
+func subscriptionUsageWindowDTO(used int64, total int64, resetAt int64, unlimited bool) SubscriptionUsageWindowDTO {
+	if used < 0 {
+		used = 0
+	}
+	if total < 0 {
+		total = 0
+	}
+	return SubscriptionUsageWindowDTO{
+		Used:      used,
+		Total:     total,
+		Remaining: subscriptionQuotaRemaining(total, used),
+		ResetAt:   resetAt,
+		Unlimited: unlimited,
+	}
+}
+
+func subscriptionRemainingDays(endTime int64) int64 {
+	if endTime <= 0 {
+		return 0
+	}
+	remainingSeconds := endTime - common.GetTimestamp()
+	if remainingSeconds <= 0 {
+		return 0
+	}
+	return (remainingSeconds + 24*3600 - 1) / (24 * 3600)
+}
+
 func buildSubscriptionCapabilitiesDTO(
 	contract *model.UserSubscriptionContract,
 	pendingChange *model.SubscriptionChangeIntent,
@@ -523,8 +825,6 @@ func buildSubscriptionCapabilitiesDTO(
 		if contract != nil && contract.CurrentProviderBindingId > 0 && recurring.BindingId != contract.CurrentProviderBindingId {
 			continue
 		}
-		capabilities.CanCancel = recurring.CanCancel && !hasPendingIntent && !migration.RequiresAdminReview
-		capabilities.CanResume = recurring.CanResume && !hasPendingIntent && !migration.RequiresAdminReview
 		capabilities.IsCancelAtPeriodEnd = recurring.CancelAtPeriodEnd
 		capabilities.RequiresSupport = capabilities.RequiresSupport || recurring.RequiresSupport
 		break
@@ -625,9 +925,153 @@ func recurringSubscriptionDTOs(bindings []model.SubscriptionProviderBinding) []R
 			CanCancel:          complete && !terminal && !binding.CancelAtPeriodEnd,
 			CanResume:          complete && !terminal && binding.CancelAtPeriodEnd,
 			RequiresSupport:    !complete,
+			Terminal:           terminal,
 		})
 	}
 	return result
+}
+
+func selfRecurringSubscriptionDTOs(recurringSubscriptions []RecurringSubscriptionDTO) []SubscriptionSelfRecurringSubscriptionDTO {
+	result := make([]SubscriptionSelfRecurringSubscriptionDTO, 0, len(recurringSubscriptions))
+	for _, recurring := range recurringSubscriptions {
+		result = append(result, SubscriptionSelfRecurringSubscriptionDTO{
+			PlanId:             recurring.PlanId,
+			CancelAtPeriodEnd:  recurring.CancelAtPeriodEnd,
+			CurrentPeriodStart: recurring.CurrentPeriodStart,
+			CurrentPeriodEnd:   recurring.CurrentPeriodEnd,
+			GracePeriodEnd:     recurring.GracePeriodEnd,
+			RequiresSupport:    recurring.RequiresSupport,
+		})
+	}
+	return result
+}
+
+func subscriptionSelfRenewalState(
+	contract *model.UserSubscriptionContract,
+	currentEntitlement *model.UserSubscription,
+	recurringSubscriptions []RecurringSubscriptionDTO,
+) (string, string) {
+	storedSource, storedStatus := "", ""
+	if contract != nil && contract.Id > 0 {
+		storedSource = strings.TrimSpace(contract.RenewalSource)
+		storedStatus = strings.TrimSpace(contract.RenewalStatus)
+	}
+	activeRecurring := hasActiveRecurringRenewal(contract, currentEntitlement, recurringSubscriptions)
+	if isValidSubscriptionRenewalPair(storedSource, storedStatus) {
+		if storedSource == model.SubscriptionRenewalSourceProvider && !activeRecurring {
+			return "", ""
+		}
+		return storedSource, storedStatus
+	}
+	if activeRecurring {
+		return model.SubscriptionRenewalSourceProvider, model.SubscriptionRenewalStatusEnabled
+	}
+	return "", ""
+}
+
+func isValidSubscriptionRenewalPair(source string, status string) bool {
+	switch source {
+	case model.SubscriptionRenewalSourceProvider:
+		return status == model.SubscriptionRenewalStatusEnabled
+	case model.SubscriptionRenewalSourceWallet:
+		switch status {
+		case model.SubscriptionRenewalStatusEnabled,
+			model.SubscriptionRenewalStatusPausedInsufficientBalance,
+			model.SubscriptionRenewalStatusPausedPlanUnavailable:
+			return true
+		}
+	}
+	return false
+}
+
+func hasActiveRecurringRenewal(
+	contract *model.UserSubscriptionContract,
+	currentEntitlement *model.UserSubscription,
+	recurringSubscriptions []RecurringSubscriptionDTO,
+) bool {
+	now := common.GetTimestamp()
+	if !isActiveRecurringEntitlement(currentEntitlement, now) {
+		return false
+	}
+	if contract != nil && contract.Id > 0 {
+		if !isActiveRecurringContract(contract, now) ||
+			contract.PaymentMode != model.SubscriptionPaymentModeStripeRecurring {
+			return false
+		}
+	}
+	for _, recurring := range recurringSubscriptions {
+		if !recurringMatchesCurrentSubscription(contract, currentEntitlement, recurring) ||
+			!isActiveRecurringBinding(recurring, now) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func isActiveRecurringContract(contract *model.UserSubscriptionContract, now int64) bool {
+	if contract == nil || contract.Id <= 0 {
+		return true
+	}
+	switch contract.Status {
+	case model.SubscriptionContractStatusActive,
+		model.SubscriptionContractStatusGrace,
+		model.SubscriptionContractStatusNeedsAttention:
+	default:
+		return false
+	}
+	periodEnd := contract.CurrentPeriodEnd
+	if contract.GracePeriodEnd > periodEnd {
+		periodEnd = contract.GracePeriodEnd
+	}
+	return periodEnd <= 0 || periodEnd > now
+}
+
+func isActiveRecurringEntitlement(entitlement *model.UserSubscription, now int64) bool {
+	if entitlement == nil || entitlement.Id <= 0 ||
+		entitlement.Status != model.SubscriptionEntitlementStatusActive ||
+		entitlement.PaymentMode != model.SubscriptionPaymentModeStripeRecurring {
+		return false
+	}
+	accessEnd := entitlement.EndTime
+	if entitlement.AccessEndTime > accessEnd {
+		accessEnd = entitlement.AccessEndTime
+	}
+	return accessEnd > now
+}
+
+func recurringMatchesCurrentSubscription(
+	contract *model.UserSubscriptionContract,
+	entitlement *model.UserSubscription,
+	recurring RecurringSubscriptionDTO,
+) bool {
+	bindingID := entitlement.ProviderBindingId
+	planID := entitlement.PlanId
+	if contract != nil && contract.Id > 0 {
+		if contract.CurrentProviderBindingId > 0 {
+			bindingID = contract.CurrentProviderBindingId
+		}
+		if contract.CurrentPlanId > 0 {
+			planID = contract.CurrentPlanId
+		}
+	}
+	if bindingID > 0 && recurring.BindingId != bindingID {
+		return false
+	}
+	return planID <= 0 || recurring.PlanId == planID
+}
+
+func isActiveRecurringBinding(recurring RecurringSubscriptionDTO, now int64) bool {
+	if strings.TrimSpace(recurring.Provider) != model.PaymentProviderStripe ||
+		recurring.RequiresSupport || recurring.Terminal ||
+		isTerminalRecurringProviderStatus(recurring.ProviderStatus) {
+		return false
+	}
+	periodEnd := recurring.CurrentPeriodEnd
+	if recurring.GracePeriodEnd > periodEnd {
+		periodEnd = recurring.GracePeriodEnd
+	}
+	return periodEnd > now
 }
 
 func isTerminalRecurringProviderStatus(status string) bool {
@@ -792,6 +1236,9 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "价格不能超过9999")
 		return
 	}
+	if !validateSubscriptionPlanLocalPrices(c, &req.Plan) {
+		return
+	}
 	if req.Plan.Currency == "" {
 		req.Plan.Currency = "USD"
 	}
@@ -868,6 +1315,9 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "价格不能超过9999")
 		return
 	}
+	if !validateSubscriptionPlanLocalPrices(c, &req.Plan) {
+		return
+	}
 	req.Plan.Id = id
 	if req.Plan.Currency == "" {
 		req.Plan.Currency = "USD"
@@ -927,6 +1377,28 @@ func apiSubscriptionPlanLifecycleError(c *gin.Context, err error) {
 	default:
 		common.ApiError(c, err)
 	}
+}
+
+func validateSubscriptionPlanLocalPrices(c *gin.Context, plan *model.SubscriptionPlan) bool {
+	if !validateSubscriptionPlanLocalPrice(c, plan.PixPriceBRL, "Pix") {
+		return false
+	}
+	return validateSubscriptionPlanLocalPrice(c, plan.UpiPriceINR, "UPI")
+}
+
+func validateSubscriptionPlanLocalPrice(c *gin.Context, price *float64, label string) bool {
+	if price == nil {
+		return true
+	}
+	if *price <= 0 {
+		common.ApiErrorMsg(c, label+" local price must be greater than zero")
+		return false
+	}
+	if *price > maxSubscriptionPlanLocalPrice {
+		common.ApiErrorMsg(c, label+" local price cannot exceed 9999.999999")
+		return false
+	}
+	return true
 }
 
 type AdminUpdateSubscriptionPlanStatusRequest struct {
@@ -1037,13 +1509,26 @@ func buildAdminUserSubscriptionsResponse(
 		history,
 		recurringSubscriptions,
 	)
+	var entitlementDTO *SubscriptionEntitlementDTO
+	if currentEntitlement != nil && currentEntitlement.Id > 0 {
+		entitlementDTO = &SubscriptionEntitlementDTO{
+			EntitlementID:     currentEntitlement.Id,
+			PlanID:            currentEntitlement.PlanId,
+			ProviderBindingID: currentEntitlement.ProviderBindingId,
+			Status:            currentEntitlement.Status,
+			PaymentMode:       currentEntitlement.PaymentMode,
+			StartTime:         currentEntitlement.StartTime,
+			EndTime:           currentEntitlement.EndTime,
+			AccessEndTime:     currentEntitlement.AccessEndTime,
+		}
+	}
 	return AdminUserSubscriptionsResponse{
-		Contract:           self.Contract,
-		CurrentEntitlement: self.CurrentEntitlement,
+		Contract:           subscriptionContractDTO(contract),
+		CurrentEntitlement: entitlementDTO,
 		CurrentPeriod:      self.CurrentPeriod,
 		Quota:              self.Quota,
 		CurrentBinding:     currentRecurringSubscriptionDTO(contract, recurringSubscriptions),
-		PendingChange:      self.PendingChange,
+		PendingChange:      subscriptionPendingChangeDTO(pendingChange),
 		Migration:          self.Migration,
 		History:            history,
 	}

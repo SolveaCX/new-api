@@ -57,6 +57,39 @@ func grantInput(contractId int64, userId int, planId int, key string, start int6
 	}
 }
 
+func TestGrantEntitlementInputRejectsNegativeWindowLimits(t *testing.T) {
+	tests := []struct {
+		name      string
+		setWindow func(*GrantEntitlementInput, *int64)
+		wantError string
+	}{
+		{
+			name: "five hour window",
+			setWindow: func(input *GrantEntitlementInput, value *int64) {
+				input.Window5hAmount = value
+			},
+			wantError: "window 5h amount must be >= 0",
+		},
+		{
+			name: "weekly window",
+			setWindow: func(input *GrantEntitlementInput, value *int64) {
+				input.WindowWeekAmount = value
+			},
+			wantError: "window week amount must be >= 0",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := grantInput(1, 1, 1, "stripe:negative-window", 100, 200)
+			negative := int64(-1)
+			test.setWindow(&input, &negative)
+
+			require.EqualError(t, input.validate(), test.wantError)
+		})
+	}
+}
+
 func TestRotateCurrentEntitlementArchivesOldAndCreatesSingleCurrent(t *testing.T) {
 	setupSubscriptionEntitlementTestDB(t)
 	createEntitlementTestUser(t, 9101, "plg")
@@ -116,6 +149,8 @@ func TestRotateCurrentEntitlementArchivesOldAndCreatesSingleCurrent(t *testing.T
 	require.Equal(t, int64(300), contract.CurrentPeriodEnd)
 	require.Equal(t, SubscriptionContractStatusActive, contract.Status)
 	require.Equal(t, SubscriptionPaymentModeStripeRecurring, contract.PaymentMode)
+	require.Equal(t, SubscriptionRenewalSourceProvider, contract.RenewalSource)
+	require.Equal(t, SubscriptionRenewalStatusEnabled, contract.RenewalStatus)
 
 	var currentCount int64
 	require.NoError(t, DB.Model(&UserSubscription{}).
@@ -177,6 +212,240 @@ func TestSubscriptionEntitlementGrantIdempotentAndConflict(t *testing.T) {
 	paymentModeConflict.PaymentMode = SubscriptionPaymentModeBalanceOnePeriod
 	_, err = RotateCurrentEntitlement(paymentModeConflict)
 	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+}
+
+func TestSubscriptionEntitlementGrantSnapshotMismatchConflicts(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9118, "plg")
+	createEntitlementTestPlan(t, 9218, 100, "snap-a")
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:          9318,
+		UserId:      9118,
+		Status:      SubscriptionContractStatusActive,
+		PaymentMode: SubscriptionPaymentModeStripeRecurring,
+	}).Error)
+	window5h := int64(125)
+	windowWeek := int64(900)
+	group := "snap-a"
+	input := grantInput(9318, 9118, 9218, "stripe:snapshot-conflict", 100, 200)
+	input.Window5hAmount = &window5h
+	input.WindowWeekAmount = &windowWeek
+	input.UpgradeGroup = &group
+
+	first, err := RotateCurrentEntitlement(input)
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+
+	windowConflict := input
+	otherWindow := int64(126)
+	windowConflict.Window5hAmount = &otherWindow
+	_, err = RotateCurrentEntitlement(windowConflict)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+
+	groupConflict := input
+	otherGroup := "snap-b"
+	groupConflict.UpgradeGroup = &otherGroup
+	_, err = RotateCurrentEntitlement(groupConflict)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+}
+
+func TestSubscriptionEntitlementGrantEmptyUpgradeGroupReplayConflictsWithNonEmptyInput(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9120, "plg")
+	createEntitlementTestPlan(t, 9220, 100, "")
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:          9320,
+		UserId:      9120,
+		Status:      SubscriptionContractStatusActive,
+		PaymentMode: SubscriptionPaymentModeStripeRecurring,
+	}).Error)
+	emptyGroup := ""
+	input := grantInput(9320, 9120, 9220, "stripe:empty-group-conflict", 100, 200)
+	input.UpgradeGroup = &emptyGroup
+	first, err := RotateCurrentEntitlement(input)
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+	require.Empty(t, first.Entitlement.UpgradeGroup)
+
+	groupConflict := input
+	nonEmptyGroup := "vip"
+	groupConflict.UpgradeGroup = &nonEmptyGroup
+	_, err = RotateCurrentEntitlement(groupConflict)
+
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementGrantConflict)
+}
+
+func TestSubscriptionEntitlementGrantLegacyNilWindowReplayStillMatches(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9119, "plg")
+	plan := createEntitlementTestPlan(t, 9219, 100, "")
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"window_5h_amount":   int64(125),
+		"window_week_amount": int64(900),
+	}).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:          9319,
+		UserId:      9119,
+		Status:      SubscriptionContractStatusActive,
+		PaymentMode: SubscriptionPaymentModeStripeRecurring,
+	}).Error)
+	input := grantInput(9319, 9119, plan.Id, "stripe:legacy-window-replay", 100, 200)
+
+	first, err := RotateCurrentEntitlement(input)
+	require.NoError(t, err)
+	require.True(t, first.Applied)
+	require.NoError(t, DB.Model(&UserSubscription{}).Where("id = ?", first.Entitlement.Id).Updates(map[string]interface{}{
+		"window_5h_amount":   nil,
+		"window_week_amount": nil,
+	}).Error)
+
+	replay, err := RotateCurrentEntitlement(input)
+
+	require.NoError(t, err)
+	require.False(t, replay.Applied)
+	require.Equal(t, first.Entitlement.Id, replay.Entitlement.Id)
+}
+
+func TestRotateCurrentEntitlementSnapshotsPlanWindowLimits(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9113, "plg")
+	plan := createEntitlementTestPlan(t, 9213, 1000, "")
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"window_5h_amount":   int64(125),
+		"window_week_amount": int64(900),
+	}).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:          9313,
+		UserId:      9113,
+		Status:      SubscriptionContractStatusEnded,
+		PaymentMode: SubscriptionPaymentModeExternalOnePeriod,
+	}).Error)
+
+	grant, err := RotateCurrentEntitlement(grantInput(9313, 9113, plan.Id, "stripe:window-snapshot", 100, 200))
+	require.NoError(t, err)
+	require.True(t, grant.Applied)
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"window_5h_amount":   int64(999),
+		"window_week_amount": int64(888),
+	}).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+
+	info, err := GetSubscriptionWindowInfoBySubId(grant.Entitlement.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(125), info.Window5hAmount)
+	require.Equal(t, int64(900), info.WindowWeekAmount)
+}
+
+func TestRotateCurrentEntitlementPreservesExplicitZeroWindowLimits(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9116, "plg")
+	plan := createEntitlementTestPlan(t, 9216, 1000, "")
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"window_5h_amount":   int64(125),
+		"window_week_amount": int64(900),
+	}).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:          9316,
+		UserId:      9116,
+		Status:      SubscriptionContractStatusEnded,
+		PaymentMode: SubscriptionPaymentModeExternalOnePeriod,
+	}).Error)
+	zero := int64(0)
+	input := grantInput(9316, 9116, plan.Id, "stripe:window-zero-snapshot", 100, 200)
+	input.Window5hAmount = &zero
+	input.WindowWeekAmount = &zero
+
+	grant, err := RotateCurrentEntitlement(input)
+
+	require.NoError(t, err)
+	require.NotNil(t, grant.Entitlement.Window5hAmount)
+	require.NotNil(t, grant.Entitlement.WindowWeekAmount)
+	require.Zero(t, *grant.Entitlement.Window5hAmount)
+	require.Zero(t, *grant.Entitlement.WindowWeekAmount)
+	info, err := GetSubscriptionWindowInfoBySubId(grant.Entitlement.Id)
+	require.NoError(t, err)
+	require.Zero(t, info.Window5hAmount)
+	require.Zero(t, info.WindowWeekAmount)
+}
+
+func TestSubscriptionWindowInfoLegacyEntitlementFallsBackToLivePlan(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9117, "plg")
+	plan := createEntitlementTestPlan(t, 9217, 1000, "")
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"window_5h_amount":   int64(75),
+		"window_week_amount": int64(525),
+	}).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+	legacy := UserSubscription{
+		UserId:        9117,
+		PlanId:        plan.Id,
+		AmountTotal:   1000,
+		StartTime:     100,
+		EndTime:       200,
+		AccessEndTime: 200,
+		Status:        SubscriptionEntitlementStatusActive,
+		Source:        "order",
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+
+	info, err := GetSubscriptionWindowInfoBySubId(legacy.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(75), info.Window5hAmount)
+	require.Equal(t, int64(525), info.WindowWeekAmount)
+}
+
+func TestRotateCurrentEntitlementUsesExplicitUpgradeGroupSnapshot(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9114, "plg")
+	plan := createEntitlementTestPlan(t, 9214, 1000, "edited_group")
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:          9314,
+		UserId:      9114,
+		Status:      SubscriptionContractStatusEnded,
+		PaymentMode: SubscriptionPaymentModeExternalOnePeriod,
+	}).Error)
+	snapshotGroup := "snapshot_group"
+	input := grantInput(9314, 9114, plan.Id, "stripe:group-snapshot", 100, 200)
+	input.UpgradeGroup = &snapshotGroup
+
+	grant, err := RotateCurrentEntitlement(input)
+
+	require.NoError(t, err)
+	require.Equal(t, snapshotGroup, grant.Entitlement.UpgradeGroup)
+	var user User
+	require.NoError(t, DB.First(&user, "id = ?", 9114).Error)
+	require.Equal(t, snapshotGroup, user.Group)
+}
+
+func TestCreateUserSubscriptionFromPlanSnapshotsWindowLimits(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9115, "plg")
+	plan := createEntitlementTestPlan(t, 9215, 1000, "")
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"window_5h_amount":   int64(75),
+		"window_week_amount": int64(525),
+	}).Error)
+	require.NoError(t, DB.First(&plan, "id = ?", plan.Id).Error)
+
+	sub, err := CreateUserSubscriptionFromPlanTx(DB, 9115, &plan, "order")
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"window_5h_amount":   int64(975),
+		"window_week_amount": int64(925),
+	}).Error)
+	InvalidateSubscriptionPlanCache(plan.Id)
+
+	info, err := GetSubscriptionWindowInfoBySubId(sub.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(75), info.Window5hAmount)
+	require.Equal(t, int64(525), info.WindowWeekAmount)
 }
 
 func TestSubscriptionPreConsumeContractCurrentEntitlement(t *testing.T) {

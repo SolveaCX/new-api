@@ -15,12 +15,23 @@ func TestSubscriptionContractMigrationCreatesLifecycleTablesAndColumns(t *testin
 	require.True(t, DB.Migrator().HasTable(&UserSubscriptionContract{}))
 	require.True(t, DB.Migrator().HasTable(&SubscriptionChangeIntent{}))
 	require.True(t, DB.Migrator().HasTable(&SubscriptionTierRankReservation{}))
+	require.True(t, DB.Migrator().HasTable(&SubscriptionTermSegment{}))
+	require.True(t, DB.Migrator().HasTable(&WalletLedgerEntry{}))
+	require.True(t, DB.Migrator().HasColumn(&SubscriptionOrder{}, "purchase_months"))
+	require.True(t, DB.Migrator().HasColumn(&SubscriptionOrder{}, "unit_price"))
+	require.True(t, DB.Migrator().HasColumn(&SubscriptionOrder{}, "plan_snapshot"))
+	require.True(t, DB.Migrator().HasColumn(&SubscriptionOrder{}, "purchase_intent"))
+	require.True(t, DB.Migrator().HasColumn(&SubscriptionOrder{}, "renewal_source"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscriptionContract{}, "grace_period_end"))
+	require.True(t, DB.Migrator().HasColumn(&UserSubscriptionContract{}, "renewal_source"))
+	require.True(t, DB.Migrator().HasColumn(&UserSubscriptionContract{}, "renewal_status"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "contract_id"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "grant_key"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "current_slot"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "access_end_time"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "end_reason"))
+	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "window_5h_amount"))
+	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "window_week_amount"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "contract_id"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "provider_subscription_item_id"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "provider_schedule_id"))
@@ -84,6 +95,25 @@ func TestSubscriptionContractEnumValuesRoundTripAndDefaults(t *testing.T) {
 	require.NoError(t, DB.First(&storedDefault, "id = ?", defaultContract.Id).Error)
 	require.Equal(t, SubscriptionContractStatusEnded, storedDefault.Status)
 	require.Equal(t, SubscriptionPaymentModeExternalOnePeriod, storedDefault.PaymentMode)
+}
+
+func TestSubscriptionContractWalletRenewalSourceAndStatusPersist(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionContractTestDB(t)
+
+	contract := &UserSubscriptionContract{
+		UserId:        8110,
+		Status:        SubscriptionContractStatusActive,
+		PaymentMode:   SubscriptionPaymentModeBalanceOnePeriod,
+		RenewalSource: SubscriptionRenewalSourceWallet,
+		RenewalStatus: SubscriptionRenewalStatusPausedInsufficientBalance,
+	}
+	require.NoError(t, DB.Create(contract).Error)
+
+	var stored UserSubscriptionContract
+	require.NoError(t, DB.First(&stored, "id = ?", contract.Id).Error)
+	require.Equal(t, SubscriptionRenewalSourceWallet, stored.RenewalSource)
+	require.Equal(t, SubscriptionRenewalStatusPausedInsufficientBalance, stored.RenewalStatus)
 }
 
 func TestSubscriptionChangeIntentEnumValuesRoundTripAndDefaults(t *testing.T) {
@@ -327,6 +357,8 @@ func migrateSubscriptionContractTestDB(t *testing.T) {
 		&UserSubscriptionContract{},
 		&SubscriptionChangeIntent{},
 		&SubscriptionTierRankReservation{},
+		&SubscriptionTermSegment{},
+		&WalletLedgerEntry{},
 		&SubscriptionPreConsumeRecord{},
 	))
 }

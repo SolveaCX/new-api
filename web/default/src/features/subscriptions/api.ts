@@ -29,6 +29,9 @@ import type {
   RecurringSubscription,
   ChangePlanRequest,
   ChangePlanResponse,
+  FlexiblePurchaseRequest,
+  FlexiblePurchaseResponse,
+  SubscriptionPaymentQuotes,
 } from './types'
 
 // ============================================================================
@@ -143,6 +146,27 @@ export async function changeSubscriptionPlan(
   data: ChangePlanRequest
 ): Promise<ApiResponse<ChangePlanResponse>> {
   const res = await api.post('/api/subscription/self/change-plan', data)
+  return res.data
+}
+
+export async function purchaseSubscriptionPlanFlexible(
+  data: FlexiblePurchaseRequest
+): Promise<ApiResponse<FlexiblePurchaseResponse>> {
+  const res = await api.post('/api/subscription/self/purchase', data)
+  return res.data
+}
+
+export async function quoteSubscriptionPlanFlexible(
+  data: Omit<FlexiblePurchaseRequest, 'quote_id' | 'order_id'>
+): Promise<
+  ApiResponse<{
+    payment_quotes?: SubscriptionPaymentQuotes
+    start_time?: number
+    end_time?: number
+    remaining_days?: number
+  }>
+> {
+  const res = await api.post('/api/subscription/self/quote', data)
   return res.data
 }
 

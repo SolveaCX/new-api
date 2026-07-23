@@ -1,14 +1,19 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,7 +145,7 @@ func TestGetSubscriptionSelfReturnsCanonicalContractWithoutProviderIDs(t *testin
 	require.Equal(t, "grace", contractDTO["status"])
 	require.Equal(t, "stripe_recurring", contractDTO["payment_mode"])
 	require.Equal(t, float64(9910), contractDTO["current_plan_id"])
-	require.Equal(t, float64(binding.Id), contractDTO["current_provider_binding_id"])
+	require.NotContains(t, contractDTO, "current_provider_binding_id")
 	require.NotContains(t, contractDTO, "provider_subscription_id")
 
 	quota := data["quota"].(map[string]any)
@@ -153,6 +158,7 @@ func TestGetSubscriptionSelfReturnsCanonicalContractWithoutProviderIDs(t *testin
 	require.Equal(t, "downgrade", pending["kind"])
 	require.Equal(t, "scheduled", pending["status"])
 	require.Equal(t, float64(9911), pending["to_plan_id"])
+	require.NotContains(t, pending, "provider_binding_id")
 	require.NotContains(t, pending, "provider_schedule_id")
 
 	capabilities := data["capabilities"].(map[string]any)
@@ -165,6 +171,559 @@ func TestGetSubscriptionSelfReturnsCanonicalContractWithoutProviderIDs(t *testin
 
 	migration := data["migration"].(map[string]any)
 	require.Equal(t, false, migration["requires_admin_review"])
+}
+
+func TestGetSubscriptionSelfReturnsProviderNeutralRecurringReviewShape(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 918)
+	insertSubscriptionControllerPlan(t, 9932)
+	insertSubscriptionControllerPlan(t, 9933)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).
+		Where("id = ?", 9932).
+		Updates(map[string]any{
+			"stripe_price_id":          "price_self_plan_should_not_leak",
+			"creem_product_id":         "prod_self_plan_should_not_leak",
+			"waffo_pancake_product_id": "waffo_self_plan_should_not_leak",
+		}).Error)
+	now := common.GetTimestamp()
+	binding := model.SubscriptionProviderBinding{
+		UserId:                 918,
+		PlanId:                 9932,
+		Provider:               model.PaymentProviderStripe,
+		ProviderSubscriptionId: "sub_self_shape_should_not_leak",
+		ProviderCustomerId:     "cus_self_shape_should_not_leak",
+		ProviderStatus:         "active",
+		CancelAtPeriodEnd:      true,
+		CurrentPeriodStart:     now - 60,
+		CurrentPeriodEnd:       now + 3600,
+	}
+	require.NoError(t, model.DB.Create(&binding).Error)
+	contract := model.UserSubscriptionContract{
+		UserId:                   918,
+		Status:                   model.SubscriptionContractStatusActive,
+		PaymentMode:              model.SubscriptionPaymentModeStripeRecurring,
+		CurrentPlanId:            9932,
+		CurrentProviderBindingId: binding.Id,
+		PendingPlanId:            9933,
+		PendingEffectiveAt:       now + 3600,
+		CurrentPeriodStart:       now - 60,
+		CurrentPeriodEnd:         now + 3600,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("contract_id", contract.Id).Error)
+	grantKey := "grant_self_should_not_leak"
+	entitlement := model.UserSubscription{
+		UserId:            918,
+		PlanId:            9932,
+		ContractId:        contract.Id,
+		ProviderBindingId: binding.Id,
+		GrantKey:          &grantKey,
+		AmountTotal:       1000,
+		StartTime:         now - 60,
+		EndTime:           now + 3600,
+		AccessEndTime:     now + 3600,
+		Status:            model.SubscriptionEntitlementStatusActive,
+		PaymentMode:       model.SubscriptionPaymentModeStripeRecurring,
+	}
+	require.NoError(t, model.DB.Create(&entitlement).Error)
+	intent := model.SubscriptionChangeIntent{
+		ContractId:        contract.Id,
+		UserId:            918,
+		RequestId:         "550e8400-e29b-41d4-a716-446655440018",
+		Kind:              model.SubscriptionChangeIntentKindDowngrade,
+		PaymentMode:       model.SubscriptionPaymentModeStripeRecurring,
+		Status:            model.SubscriptionChangeIntentStatusScheduled,
+		FromPlanId:        9932,
+		ToPlanId:          9933,
+		ProviderBindingId: binding.Id,
+		EffectiveAt:       now + 3600,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).
+		Where("id = ?", contract.Id).
+		Updates(map[string]any{"current_entitlement_id": entitlement.Id, "latest_change_intent_id": intent.Id}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 918)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/self", nil)
+
+	GetSubscriptionSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	data := envelope["data"].(map[string]any)
+	require.Equal(t, model.SubscriptionRenewalSourceProvider, data["renewal_source"])
+	require.Equal(t, model.SubscriptionRenewalStatusEnabled, data["renewal_status"])
+
+	contractDTO := data["contract"].(map[string]any)
+	require.NotContains(t, contractDTO, "current_provider_binding_id")
+	entitlementDTO := data["current_entitlement"].(map[string]any)
+	require.NotContains(t, entitlementDTO, "provider_binding_id")
+	pendingDTO := data["pending_change"].(map[string]any)
+	require.NotContains(t, pendingDTO, "provider_binding_id")
+	capabilities := data["capabilities"].(map[string]any)
+	require.Equal(t, false, capabilities["can_cancel"])
+	require.Equal(t, false, capabilities["can_resume"])
+
+	recurring := data["recurring_subscriptions"].([]any)
+	require.Len(t, recurring, 1)
+	recurringDTO := recurring[0].(map[string]any)
+	for _, key := range []string{"binding_id", "provider", "provider_status", "can_cancel", "can_resume"} {
+		require.NotContains(t, recurringDTO, key)
+	}
+	require.Equal(t, true, recurringDTO["cancel_at_period_end"])
+
+	current := data["current_subscription"].(map[string]any)
+	currentSubscription := current["subscription"].(map[string]any)
+	require.NotContains(t, currentSubscription, "provider_binding_id")
+	require.NotContains(t, currentSubscription, "grant_key")
+	currentPlan := current["plan"].(map[string]any)
+	for _, key := range []string{"stripe_price_id", "creem_product_id", "waffo_pancake_product_id"} {
+		require.NotContains(t, currentPlan, key)
+	}
+	for _, key := range []string{"subscriptions", "all_subscriptions"} {
+		summaries := data[key].([]any)
+		require.NotEmpty(t, summaries)
+		summary := summaries[0].(map[string]any)
+		require.NotContains(t, summary, "provider_binding")
+		subscription := summary["subscription"].(map[string]any)
+		require.NotContains(t, subscription, "provider_binding_id")
+		require.NotContains(t, subscription, "grant_key")
+	}
+}
+
+func TestGetSubscriptionSelfFallsBackRecurringRenewalForLegacyBindingWithoutContract(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 919)
+	insertSubscriptionControllerPlan(t, 9934)
+	now := common.GetTimestamp()
+	require.NoError(t, model.DB.Create(&model.SubscriptionProviderBinding{
+		UserId:                 919,
+		PlanId:                 9934,
+		Provider:               model.PaymentProviderStripe,
+		ProviderSubscriptionId: "sub_self_no_contract",
+		ProviderStatus:         "active",
+		CurrentPeriodStart:     now - 60,
+		CurrentPeriodEnd:       now + 3600,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		UserId:        919,
+		PlanId:        9934,
+		AmountTotal:   1000,
+		StartTime:     now - 60,
+		EndTime:       now + 3600,
+		AccessEndTime: now + 3600,
+		Status:        model.SubscriptionEntitlementStatusActive,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 919)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/self", nil)
+
+	GetSubscriptionSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	data := envelope["data"].(map[string]any)
+	require.Equal(t, model.SubscriptionRenewalSourceProvider, data["renewal_source"])
+	require.Equal(t, model.SubscriptionRenewalStatusEnabled, data["renewal_status"])
+}
+
+func TestSubscriptionSelfRenewalStateDoesNotEnableTerminalRecurringState(t *testing.T) {
+	now := common.GetTimestamp()
+	activeContract := model.UserSubscriptionContract{
+		Id:                   1,
+		Status:               model.SubscriptionContractStatusActive,
+		PaymentMode:          model.SubscriptionPaymentModeStripeRecurring,
+		CurrentPlanId:        9935,
+		CurrentEntitlementId: 2,
+		CurrentPeriodEnd:     now + 3600,
+	}
+	activeEntitlement := model.UserSubscription{
+		Id:            2,
+		PlanId:        9935,
+		Status:        model.SubscriptionEntitlementStatusActive,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+		EndTime:       now + 3600,
+		AccessEndTime: now + 3600,
+	}
+	activeBinding := RecurringSubscriptionDTO{
+		BindingId:        3,
+		Provider:         model.PaymentProviderStripe,
+		PlanId:           9935,
+		ProviderStatus:   "active",
+		CurrentPeriodEnd: now + 3600,
+	}
+
+	testCases := []struct {
+		name        string
+		contract    *model.UserSubscriptionContract
+		entitlement *model.UserSubscription
+		bindings    []RecurringSubscriptionDTO
+	}{
+		{
+			name: "ended contract with stored enabled pair",
+			contract: func() *model.UserSubscriptionContract {
+				contract := activeContract
+				contract.Status = model.SubscriptionContractStatusEnded
+				contract.RenewalSource = model.SubscriptionRenewalSourceProvider
+				contract.RenewalStatus = model.SubscriptionRenewalStatusEnabled
+				return &contract
+			}(),
+			entitlement: &activeEntitlement,
+			bindings:    []RecurringSubscriptionDTO{activeBinding},
+		},
+		{
+			name:     "expired entitlement",
+			contract: &activeContract,
+			entitlement: func() *model.UserSubscription {
+				entitlement := activeEntitlement
+				entitlement.EndTime = now - 1
+				entitlement.AccessEndTime = now - 1
+				return &entitlement
+			}(),
+			bindings: []RecurringSubscriptionDTO{activeBinding},
+		},
+		{
+			name:        "terminal provider binding",
+			contract:    &activeContract,
+			entitlement: &activeEntitlement,
+			bindings: []RecurringSubscriptionDTO{func() RecurringSubscriptionDTO {
+				binding := activeBinding
+				binding.ProviderStatus = "canceled"
+				return binding
+			}()},
+		},
+		{
+			name:        "expired provider binding",
+			contract:    &activeContract,
+			entitlement: &activeEntitlement,
+			bindings: []RecurringSubscriptionDTO{func() RecurringSubscriptionDTO {
+				binding := activeBinding
+				binding.CurrentPeriodEnd = now - 1
+				return binding
+			}()},
+		},
+		{
+			name:        "ended provider binding",
+			contract:    &activeContract,
+			entitlement: &activeEntitlement,
+			bindings: recurringSubscriptionDTOs([]model.SubscriptionProviderBinding{{
+				Id:                     3,
+				Provider:               model.PaymentProviderStripe,
+				ProviderSubscriptionId: "sub_ended_binding",
+				PlanId:                 9935,
+				ProviderStatus:         "active",
+				CurrentPeriodEnd:       now + 3600,
+				EndedAt:                now,
+			}}),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			source, status := subscriptionSelfRenewalState(testCase.contract, testCase.entitlement, testCase.bindings)
+			require.Empty(t, source)
+			require.Empty(t, status)
+		})
+	}
+}
+
+func TestSubscriptionSelfRenewalStateSafelyDerivesPartialStoredPair(t *testing.T) {
+	now := common.GetTimestamp()
+	activeEntitlement := &model.UserSubscription{
+		Id:            2,
+		PlanId:        9936,
+		Status:        model.SubscriptionEntitlementStatusActive,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+		EndTime:       now + 3600,
+		AccessEndTime: now + 3600,
+	}
+	activeBinding := []RecurringSubscriptionDTO{{
+		BindingId:        3,
+		Provider:         model.PaymentProviderStripe,
+		PlanId:           9936,
+		ProviderStatus:   "active",
+		CurrentPeriodEnd: now + 3600,
+	}}
+
+	testCases := []struct {
+		name       string
+		contract   model.UserSubscriptionContract
+		bindings   []RecurringSubscriptionDTO
+		wantSource string
+		wantStatus string
+	}{
+		{
+			name: "provider source without status derives active recurring pair",
+			contract: model.UserSubscriptionContract{
+				Id:               1,
+				Status:           model.SubscriptionContractStatusActive,
+				PaymentMode:      model.SubscriptionPaymentModeStripeRecurring,
+				CurrentPlanId:    9936,
+				CurrentPeriodEnd: now + 3600,
+				RenewalSource:    model.SubscriptionRenewalSourceProvider,
+			},
+			bindings:   activeBinding,
+			wantSource: model.SubscriptionRenewalSourceProvider,
+			wantStatus: model.SubscriptionRenewalStatusEnabled,
+		},
+		{
+			name: "enabled status without source derives active recurring pair",
+			contract: model.UserSubscriptionContract{
+				Id:               1,
+				Status:           model.SubscriptionContractStatusActive,
+				PaymentMode:      model.SubscriptionPaymentModeStripeRecurring,
+				CurrentPlanId:    9936,
+				CurrentPeriodEnd: now + 3600,
+				RenewalStatus:    model.SubscriptionRenewalStatusEnabled,
+			},
+			bindings:   activeBinding,
+			wantSource: model.SubscriptionRenewalSourceProvider,
+			wantStatus: model.SubscriptionRenewalStatusEnabled,
+		},
+		{
+			name: "wallet source without status is discarded without wallet evidence",
+			contract: model.UserSubscriptionContract{
+				Id:            1,
+				Status:        model.SubscriptionContractStatusActive,
+				PaymentMode:   model.SubscriptionPaymentModeBalanceOnePeriod,
+				RenewalSource: model.SubscriptionRenewalSourceWallet,
+			},
+			bindings:   nil,
+			wantSource: "",
+			wantStatus: "",
+		},
+		{
+			name: "invalid complete pair is discarded",
+			contract: model.UserSubscriptionContract{
+				Id:            1,
+				Status:        model.SubscriptionContractStatusActive,
+				PaymentMode:   model.SubscriptionPaymentModeBalanceOnePeriod,
+				RenewalSource: model.SubscriptionRenewalSourceWallet,
+				RenewalStatus: "unknown",
+			},
+			bindings:   nil,
+			wantSource: "",
+			wantStatus: "",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			source, status := subscriptionSelfRenewalState(&testCase.contract, activeEntitlement, testCase.bindings)
+			require.Equal(t, testCase.wantSource, source)
+			require.Equal(t, testCase.wantStatus, status)
+		})
+	}
+}
+
+func TestGetSubscriptionSelfReturnsCurrentEntitlementQuotaReadModel(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 915)
+	now := common.GetTimestamp()
+	planWindow5h := int64(999)
+	planWindowWeek := int64(9999)
+	entitlementWindow5h := int64(125)
+	entitlementWindowWeek := int64(900)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:                  9930,
+		Title:               "Snapshot Plan",
+		PriceAmount:         20,
+		Currency:            "USD",
+		DurationUnit:        model.SubscriptionDurationMonth,
+		DurationValue:       1,
+		Enabled:             true,
+		TotalAmount:         999999,
+		Window5hAmount:      planWindow5h,
+		WindowWeekAmount:    planWindowWeek,
+		MediaCreditsMonthly: 999,
+		QuotaResetPeriod:    model.SubscriptionResetMonthly,
+		AllowBalancePay:     common.GetPointer(true),
+	}).Error)
+	contract := model.UserSubscriptionContract{
+		UserId:             915,
+		Status:             model.SubscriptionContractStatusActive,
+		PaymentMode:        model.SubscriptionPaymentModeBalanceOnePeriod,
+		RenewalSource:      model.SubscriptionRenewalSourceWallet,
+		RenewalStatus:      model.SubscriptionRenewalStatusPausedInsufficientBalance,
+		CurrentPlanId:      9930,
+		CurrentPeriodStart: now - 60,
+		CurrentPeriodEnd:   now + 49*3600 + 1,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	entitlement := model.UserSubscription{
+		UserId:            915,
+		PlanId:            9930,
+		ContractId:        contract.Id,
+		AmountTotal:       2000,
+		AmountUsed:        450,
+		MediaCreditsTotal: 20,
+		MediaCreditsUsed:  25,
+		Window5hAmount:    &entitlementWindow5h,
+		WindowWeekAmount:  &entitlementWindowWeek,
+		StartTime:         now - 60,
+		EndTime:           now + 49*3600 + 1,
+		AccessEndTime:     now + 49*3600 + 1,
+		Status:            model.SubscriptionEntitlementStatusActive,
+		PaymentMode:       model.SubscriptionPaymentModeBalanceOnePeriod,
+		NextResetTime:     now + 3600,
+	}
+	require.NoError(t, model.DB.Create(&entitlement).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).
+		Where("id = ?", contract.Id).
+		Update("current_entitlement_id", entitlement.Id).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 915)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/self", nil)
+
+	GetSubscriptionSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	data := envelope["data"].(map[string]any)
+	require.Equal(t, float64(3), data["remaining_days"])
+	require.Equal(t, model.SubscriptionRenewalSourceWallet, data["renewal_source"])
+	require.Equal(t, model.SubscriptionRenewalStatusPausedInsufficientBalance, data["renewal_status"])
+
+	monthly := data["monthly_bucket"].(map[string]any)
+	require.Equal(t, float64(450), monthly["used"])
+	require.Equal(t, float64(2000), monthly["total"])
+	require.Equal(t, float64(1550), monthly["remaining"])
+	require.Equal(t, float64(now+3600), monthly["reset_at"])
+	require.Equal(t, false, monthly["unlimited"])
+
+	window5h := data["window_5h"].(map[string]any)
+	require.Equal(t, float64(0), window5h["used"])
+	require.Equal(t, float64(entitlementWindow5h), window5h["total"])
+	require.Equal(t, float64(entitlementWindow5h), window5h["remaining"])
+	require.Equal(t, false, window5h["unlimited"])
+
+	window7d := data["window_7d"].(map[string]any)
+	require.Equal(t, float64(0), window7d["used"])
+	require.Equal(t, float64(entitlementWindowWeek), window7d["total"])
+	require.Equal(t, float64(entitlementWindowWeek), window7d["remaining"])
+	require.Equal(t, false, window7d["unlimited"])
+
+	media := data["media_credits"].(map[string]any)
+	require.Equal(t, float64(25), media["used"])
+	require.Equal(t, float64(20), media["total"])
+	require.Equal(t, float64(0), media["remaining"])
+	require.Equal(t, float64(now+3600), media["reset_at"])
+	require.Equal(t, false, media["unlimited"])
+}
+
+func TestGetSubscriptionSelfReturnsZeroQuotaReadModelWithoutSubscription(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 916)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 916)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/self", nil)
+
+	GetSubscriptionSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	data := envelope["data"].(map[string]any)
+	require.Equal(t, float64(0), data["remaining_days"])
+	require.Equal(t, "", data["renewal_source"])
+	require.Equal(t, "", data["renewal_status"])
+	for _, key := range []string{"monthly_bucket", "window_5h", "window_7d", "media_credits"} {
+		bucket := data[key].(map[string]any)
+		require.Equal(t, float64(0), bucket["used"], key)
+		require.Equal(t, float64(0), bucket["total"], key)
+		require.Equal(t, float64(0), bucket["remaining"], key)
+		require.Equal(t, float64(0), bucket["reset_at"], key)
+		require.Equal(t, false, bucket["unlimited"], key)
+	}
+	require.Nil(t, data["current_subscription"])
+}
+
+func TestGetSubscriptionSelfReadsWindowUsageCounters(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	insertSubscriptionControllerUser(t, 917)
+	mr, err := miniredis.Run()
+	require.NoError(t, err)
+	t.Cleanup(mr.Close)
+	previousRDB := common.RDB
+	previousRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		_ = common.RDB.Close()
+		common.RDB = previousRDB
+		common.RedisEnabled = previousRedisEnabled
+	})
+
+	now := common.GetTimestamp()
+	window5h := int64(500)
+	window7d := int64(1000)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:               9931,
+		Title:            "Counter Plan",
+		PriceAmount:      20,
+		Currency:         "USD",
+		DurationUnit:     model.SubscriptionDurationMonth,
+		DurationValue:    1,
+		Enabled:          true,
+		Window5hAmount:   999,
+		WindowWeekAmount: 9999,
+	}).Error)
+	contract := model.UserSubscriptionContract{
+		UserId:             917,
+		Status:             model.SubscriptionContractStatusActive,
+		PaymentMode:        model.SubscriptionPaymentModeStripeRecurring,
+		CurrentPlanId:      9931,
+		CurrentPeriodStart: now - 3600,
+		CurrentPeriodEnd:   now + 3600,
+	}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	entitlement := model.UserSubscription{
+		UserId:           917,
+		PlanId:           9931,
+		ContractId:       contract.Id,
+		Window5hAmount:   &window5h,
+		WindowWeekAmount: &window7d,
+		StartTime:        now - 3600,
+		EndTime:          now + 3600,
+		AccessEndTime:    now + 3600,
+		Status:           model.SubscriptionEntitlementStatusActive,
+	}
+	require.NoError(t, model.DB.Create(&entitlement).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).
+		Where("id = ?", contract.Id).
+		Update("current_entitlement_id", entitlement.Id).Error)
+	identity := int(contract.Id)
+	currentBucket := now / int64(1800) * int64(1800)
+	require.NoError(t, common.RDB.Set(context.Background(), "sub:win:5h:"+strconv.Itoa(identity)+":"+strconv.FormatInt(currentBucket, 10), "75", time.Hour).Err())
+	require.NoError(t, common.RDB.Set(context.Background(), "sub:win:w:"+strconv.Itoa(identity)+":0", "250", time.Hour).Err())
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 917)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/subscription/self", nil)
+
+	GetSubscriptionSelf(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var envelope map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	data := envelope["data"].(map[string]any)
+	require.Equal(t, float64(75), data["window_5h"].(map[string]any)["used"])
+	require.Equal(t, float64(425), data["window_5h"].(map[string]any)["remaining"])
+	require.Equal(t, float64(250), data["window_7d"].(map[string]any)["used"])
+	require.Equal(t, float64(750), data["window_7d"].(map[string]any)["remaining"])
 }
 
 func TestGetSubscriptionPlansAnnotatesTierRankAndRelation(t *testing.T) {

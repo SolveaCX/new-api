@@ -9,9 +9,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/stripe/stripe-go/v81"
-	stripesubscription "github.com/stripe/stripe-go/v81/subscription"
-	stripeschedule "github.com/stripe/stripe-go/v81/subscriptionschedule"
+	"github.com/stripe/stripe-go/v86"
+	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
+	stripeschedule "github.com/stripe/stripe-go/v86/subscriptionschedule"
 	"gorm.io/gorm"
 )
 
@@ -76,6 +76,14 @@ func executeStripeSubscriptionUpgrade(ctx context.Context, input StripeSubscript
 		return nil, err
 	}
 	if err := resolveStripeSubscriptionUpgradeOwnership(&input); err != nil {
+		return nil, err
+	}
+	var targetPlan model.SubscriptionPlan
+	if err := model.DB.Where("id = ?", input.TargetPlanID).First(&targetPlan).Error; err != nil {
+		return nil, err
+	}
+	targetPlan.NormalizeDefaults()
+	if _, err := ensureStripeSubscriptionUpgradeSnapshotOrder(input, &targetPlan); err != nil {
 		return nil, err
 	}
 	if err := ensureStripeSecretForSubscription(); err != nil {
@@ -165,6 +173,60 @@ func executeStripeSubscriptionUpgrade(ctx context.Context, input StripeSubscript
 	return stripeSubscriptionUpgradeResultFromSubscription(updated, previousScheduleSnapshot, input.CancelAtPeriodEnd), nil
 }
 
+func ensureStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgradeInput, plan *model.SubscriptionPlan) (*model.SubscriptionOrder, error) {
+	if input.ChangeIntentID <= 0 || input.UserID <= 0 || input.TargetPlanID <= 0 || plan == nil {
+		return nil, errors.New("Stripe subscription upgrade snapshot facts are incomplete")
+	}
+	var order model.SubscriptionOrder
+	query := model.DB.Where(
+		"change_intent_id = ? AND payment_provider = ? AND purchase_intent = ?",
+		input.ChangeIntentID,
+		model.PaymentProviderStripe,
+		model.SubscriptionChangeIntentKindUpgrade,
+	).Order("id desc").Limit(1).Find(&order)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	if query.RowsAffected > 0 {
+		return &order, nil
+	}
+	snapshot, err := subscriptionPurchasePlanSnapshot(plan)
+	if err != nil {
+		return nil, err
+	}
+	minorAmount, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, plan.Currency)
+	if err != nil {
+		return nil, err
+	}
+	order = model.SubscriptionOrder{
+		UserId:             input.UserID,
+		PlanId:             input.TargetPlanID,
+		Money:              plan.PriceAmount,
+		TradeNo:            fmt.Sprintf("SUBUPGINT%d", input.ChangeIntentID),
+		PaymentMethod:      model.PaymentMethodStripe,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		PurchaseMonths:     1,
+		UnitPrice:          plan.PriceAmount,
+		PaymentCurrency:    strings.ToUpper(strings.TrimSpace(plan.Currency)),
+		PaymentAmountMinor: minorAmount,
+		PlanSnapshot:       snapshot,
+		PurchaseIntent:     model.SubscriptionChangeIntentKindUpgrade,
+		RenewalSource:      model.SubscriptionRenewalSourceProvider,
+		ProviderPayload:    fmt.Sprintf("contract_id=%d;change_intent_id=%d", input.ContractID, input.ChangeIntentID),
+		ChangeIntentId:     input.ChangeIntentID,
+	}
+	if err := model.DB.Create(&order).Error; err != nil {
+		var existing model.SubscriptionOrder
+		if findErr := model.DB.Where("trade_no = ?", order.TradeNo).First(&existing).Error; findErr == nil {
+			return &existing, nil
+		}
+		return nil, err
+	}
+	return &order, nil
+}
+
 func stripeSubscriptionUpgradeTargetAppliedWithInvoice(sub *stripe.Subscription, input StripeSubscriptionUpgradeInput) bool {
 	return strings.TrimSpace(stripeSubscriptionFirstPriceID(sub)) == input.TargetPriceID &&
 		sub != nil &&
@@ -182,7 +244,7 @@ func stripeSubscriptionUpgradeResultFromSubscription(sub *stripe.Subscription, p
 	if sub != nil && sub.LatestInvoice != nil {
 		result.ProviderInvoiceID = strings.TrimSpace(sub.LatestInvoice.ID)
 		result.HostedInvoiceURL = strings.TrimSpace(sub.LatestInvoice.HostedInvoiceURL)
-		if sub.LatestInvoice.Paid && sub.LatestInvoice.Status == stripe.InvoiceStatusPaid {
+		if stripeInvoiceIsPaid(sub.LatestInvoice) {
 			result.Status = model.SubscriptionChangeIntentStatusSyncing
 		} else {
 			result.Status = model.SubscriptionChangeIntentStatusAwaitingPayment
@@ -530,11 +592,15 @@ func resumeStripeSubscriptionUpgradeIfNeeded(facts paidInvoiceFacts) (paidInvoic
 		return facts, err
 	}
 	plan.NormalizeDefaults()
+	planSnapshot, err := recurringPlanSnapshotForUpgradeIntentTx(model.DB, &intent)
+	if err != nil {
+		return facts, PermanentPaidInvoiceError(err)
+	}
 	var user model.User
 	if err := model.DB.Where("id = ?", intent.UserId).First(&user).Error; err != nil {
 		return facts, err
 	}
-	if err := validateStripeUpgradePaidInvoiceFacts(facts, &intent, &contract, &binding, &plan, &user); err != nil {
+	if err := validateStripeUpgradePaidInvoiceFacts(facts, &intent, &contract, &binding, &plan, &user, planSnapshot); err != nil {
 		return facts, PermanentPaidInvoiceError(err)
 	}
 	if !binding.CancelAtPeriodEnd {
@@ -636,11 +702,15 @@ func reconcilePaidInvoiceUpgradeTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		return true, err
 	}
 	plan.NormalizeDefaults()
+	planSnapshot, err := recurringPlanSnapshotForUpgradeIntentTx(tx, &intent)
+	if err != nil {
+		return true, PermanentPaidInvoiceError(err)
+	}
 	var user model.User
 	if err := subscriptionCommandLock(tx).Where("id = ?", intent.UserId).First(&user).Error; err != nil {
 		return true, err
 	}
-	if err := validateStripeUpgradePaidInvoiceFacts(facts, &intent, &contract, &binding, &plan, &user); err != nil {
+	if err := validateStripeUpgradePaidInvoiceFacts(facts, &intent, &contract, &binding, &plan, &user, planSnapshot); err != nil {
 		return true, PermanentPaidInvoiceError(err)
 	}
 
@@ -651,7 +721,11 @@ func reconcilePaidInvoiceUpgradeTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		ProviderBindingId:    binding.Id,
 		GrantKey:             "stripe:" + facts.InvoiceID,
 		PaymentMode:          model.SubscriptionPaymentModeStripeRecurring,
-		AmountTotal:          plan.TotalAmount,
+		AmountTotal:          recurringInvoiceGrantAmountTotal(&plan, planSnapshot),
+		MediaCreditsTotal:    recurringInvoiceGrantMediaCredits(&plan, planSnapshot),
+		Window5hAmount:       recurringInvoiceGrantWindow5h(&plan, planSnapshot),
+		WindowWeekAmount:     recurringInvoiceGrantWindowWeek(&plan, planSnapshot),
+		UpgradeGroup:         recurringInvoiceGrantUpgradeGroup(&plan, planSnapshot),
 		PeriodStart:          facts.PeriodStart,
 		PeriodEnd:            facts.PeriodEnd,
 		EndReasonForPrevious: model.SubscriptionEntitlementEndReasonUpgraded,
@@ -663,6 +737,7 @@ func reconcilePaidInvoiceUpgradeTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	now := common.GetTimestamp()
 	if err := tx.Model(&binding).Where("id = ?", binding.Id).Updates(map[string]interface{}{
 		"plan_id":                       plan.Id,
+		"initial_order_id":              recurringInvoiceInitialOrderID(binding.InitialOrderId, planSnapshot),
 		"provider_subscription_item_id": strings.TrimSpace(facts.SubscriptionItemID),
 		"provider_customer_id":          strings.TrimSpace(facts.CustomerID),
 		"provider_price_id":             strings.TrimSpace(facts.PriceID),
@@ -727,7 +802,34 @@ func validateStripeUpgradeIntentForPaidInvoice(facts paidInvoiceFacts, intent *m
 	return nil
 }
 
-func validateStripeUpgradePaidInvoiceFacts(facts paidInvoiceFacts, intent *model.SubscriptionChangeIntent, contract *model.UserSubscriptionContract, binding *model.SubscriptionProviderBinding, plan *model.SubscriptionPlan, user *model.User) error {
+func recurringPlanSnapshotForUpgradeIntentTx(tx *gorm.DB, intent *model.SubscriptionChangeIntent) (recurringInvoicePlanSnapshot, error) {
+	if tx == nil || intent == nil || intent.Id <= 0 {
+		return recurringInvoicePlanSnapshot{}, nil
+	}
+	var order model.SubscriptionOrder
+	query := tx.Where(
+		"change_intent_id = ? AND payment_provider = ? AND purchase_intent = ?",
+		intent.Id,
+		model.PaymentProviderStripe,
+		model.SubscriptionChangeIntentKindUpgrade,
+	).Order("id desc").Limit(1).Find(&order)
+	if query.Error != nil {
+		return recurringInvoicePlanSnapshot{}, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return recurringInvoicePlanSnapshot{}, nil
+	}
+	return recurringPlanSnapshotFromOrder(&order)
+}
+
+func recurringInvoiceInitialOrderID(current int, planSnapshot recurringInvoicePlanSnapshot) int {
+	if planSnapshot.Found && planSnapshot.OrderID > 0 {
+		return planSnapshot.OrderID
+	}
+	return current
+}
+
+func validateStripeUpgradePaidInvoiceFacts(facts paidInvoiceFacts, intent *model.SubscriptionChangeIntent, contract *model.UserSubscriptionContract, binding *model.SubscriptionProviderBinding, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot) error {
 	if contract.PaymentMode != model.SubscriptionPaymentModeStripeRecurring {
 		return errors.New("local contract payment mode mismatch")
 	}
@@ -749,16 +851,24 @@ func validateStripeUpgradePaidInvoiceFacts(facts paidInvoiceFacts, intent *model
 	if binding.Livemode != facts.Livemode {
 		return errors.New("Stripe invoice livemode mismatch")
 	}
-	if plan.Id != intent.ToPlanId || !plan.Enabled {
+	if plan.Id != intent.ToPlanId || (!plan.Enabled && !planSnapshot.Found) {
 		return errors.New("local plan is not enabled")
 	}
 	if strings.TrimSpace(plan.StripePriceId) == "" || strings.TrimSpace(plan.StripePriceId) != facts.PriceID {
 		return errors.New("Stripe price mismatch")
 	}
-	if strings.ToUpper(strings.TrimSpace(plan.Currency)) != facts.Currency {
+	expectedCurrency := strings.ToUpper(strings.TrimSpace(plan.Currency))
+	if planSnapshot.Found {
+		expectedCurrency = strings.ToUpper(strings.TrimSpace(planSnapshot.Snapshot.Currency))
+	}
+	if expectedCurrency != facts.Currency {
 		return errors.New("Stripe invoice currency mismatch")
 	}
-	expectedMinor, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, facts.Currency)
+	expectedPrice := plan.PriceAmount
+	if planSnapshot.Found {
+		expectedPrice = planSnapshot.Snapshot.PriceAmount
+	}
+	expectedMinor, err := stripeMinorUnitAmountForSubscription(expectedPrice, facts.Currency)
 	if err != nil {
 		return err
 	}
