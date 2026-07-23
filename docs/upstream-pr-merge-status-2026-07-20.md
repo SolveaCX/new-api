@@ -93,6 +93,14 @@
 - `bun run build:check`：通过。
 - `bun run i18n:sync`：8 种语言的 missing、extras、untranslated 均为 0。
 
+### Staging Codex 实测补充（2026-07-23）
+
+- GPT-5.6 sol/terra/luna 的 Responses 流式调用、Compact 调用，以及 Chat Completions 流式/非流式桥接均通过。
+- `client_metadata` 与合法的 `reasoning.mode/context` 可正常透传；当前有效值为 `mode=standard/pro`、`context=auto/current_turn/all_turns`，且 `pro` 受模型能力限制。
+- 真实 Codex 上游会拒绝 `prompt_cache_options`，并拒绝 Compact 的 `temperature`、`top_p`、`max_output_tokens`、`max_tool_calls`、`top_logprobs`；Codex adaptor 已按实测结果过滤这些字段，DTO 仍保留完整字段供其他 provider 使用。
+- Compact 的 `parallel_tool_calls:false` 可正常使用。
+- 重复长提示第二次命中 `cached_tokens=3840`，日志和结算按缓存读取价格计算；两次 `cache_write_tokens` 都为 0，当前上游未返回非零写入量。
+
 ## 7. 生产上线前只读核对
 
 核对时间：2026-07-20（Asia/Shanghai）。本次仅查看生产状态，没有修改 Cloud Run、控制台设置、渠道、模型价格、流量或 Terraform。
