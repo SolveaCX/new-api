@@ -243,6 +243,11 @@ var (
 	SearchRateLimitEnable         = true
 	SearchRateLimitNum            = 10
 	SearchRateLimitDuration int64 = 60
+
+	// Per-user subscription payment rate limit for quote/purchase/change-plan.
+	SubscriptionPaymentRateLimitEnable         = true
+	SubscriptionPaymentRateLimitNum            = 120
+	SubscriptionPaymentRateLimitDuration int64 = 20 * 60
 )
 
 var RateLimitKeyExpirationDuration = 20 * time.Minute

@@ -899,7 +899,7 @@ func supersedeReplaceablePendingStripeCheckouts(ctx context.Context, userID int,
 			strings.TrimSpace(requestID),
 			[]string{model.SubscriptionPaymentModeStripeRecurring, model.SubscriptionPaymentModePrepaid},
 			model.SubscriptionChangeIntentStatusAwaitingPayment,
-			[]string{model.SubscriptionChangeIntentKindPurchase, model.SubscriptionChangeIntentKindRepurchase, model.SubscriptionChangeIntentKindUpgrade},
+			[]string{model.SubscriptionChangeIntentKindPurchase, model.SubscriptionChangeIntentKindRepurchase, model.SubscriptionChangeIntentKindUpgrade, model.SubscriptionChangeIntentKindDowngrade},
 		).
 		Order("id asc").
 		Find(&intents).Error; err != nil {

@@ -1065,6 +1065,98 @@ func TestStripeRecurringChangePlanCreatesAndReplaysCheckoutSession(t *testing.T)
 	require.Equal(t, int64(1), orderCount)
 }
 
+func TestStripeDowngradeRequestSupersedesPendingDowngradeStripeCheckout(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	insertContractServiceUser(t, 8108, 0)
+	currentPlan := insertStripeUpgradePlan(t, 8208, 3, 30, 3000, "price_current_pending_downgrade_checkout")
+	oldTarget := insertStripeUpgradePlan(t, 8209, 2, 20, 2000, "price_old_pending_downgrade_checkout")
+	newTarget := insertStripeUpgradePlan(t, 8210, 1, 10, 1000, "price_new_pending_downgrade_checkout")
+	contract, binding, _ := seedStripeUpgradeContract(t, 8108, currentPlan)
+	oldIntent := model.SubscriptionChangeIntent{
+		ContractId:        contract.Id,
+		UserId:            8108,
+		RequestId:         "old-pending-downgrade-checkout",
+		Kind:              model.SubscriptionChangeIntentKindDowngrade,
+		PaymentMode:       model.SubscriptionPaymentModePrepaid,
+		Status:            model.SubscriptionChangeIntentStatusAwaitingPayment,
+		FromPlanId:        currentPlan.Id,
+		ToPlanId:          oldTarget.Id,
+		ProviderBindingId: binding.Id,
+		ChangeVersion:     contract.ChangeVersion + 1,
+	}
+	require.NoError(t, model.DB.Create(&oldIntent).Error)
+	require.NoError(t, model.DB.Model(contract).Updates(map[string]interface{}{
+		"latest_change_intent_id": oldIntent.Id,
+		"pending_plan_id":         oldTarget.Id,
+		"pending_effective_at":    int64(2000),
+	}).Error)
+	oldOrder := model.SubscriptionOrder{
+		UserId:            8108,
+		PlanId:            oldTarget.Id,
+		Money:             20,
+		TradeNo:           "sub_old_pending_downgrade_checkout",
+		PaymentMethod:     SubscriptionPaymentChoicePix,
+		PaymentProvider:   model.PaymentProviderStripe,
+		Status:            common.TopUpStatusPending,
+		CreateTime:        common.GetTimestamp(),
+		ProviderSessionId: "cs_old_pending_downgrade_checkout",
+		PurchaseIntent:    model.SubscriptionChangeIntentKindDowngrade,
+		ChangeIntentId:    oldIntent.Id,
+	}
+	require.NoError(t, model.DB.Create(&oldOrder).Error)
+
+	var expiredSessionIDs []string
+	restoreStripeAccessors := ReplaceStripeCheckoutSessionAccessorsForTest(
+		func(_ context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+			return &stripe.CheckoutSession{ID: sessionID, Status: stripe.CheckoutSessionStatusOpen}, nil
+		},
+		func(_ context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+			expiredSessionIDs = append(expiredSessionIDs, sessionID)
+			return &stripe.CheckoutSession{ID: sessionID, Status: stripe.CheckoutSessionStatusExpired}, nil
+		},
+	)
+	t.Cleanup(restoreStripeAccessors)
+	originalExecutor := stripeSubscriptionDowngradeExecutor
+	t.Cleanup(func() { stripeSubscriptionDowngradeExecutor = originalExecutor })
+	stripeSubscriptionDowngradeExecutor = func(_ context.Context, input StripeSubscriptionDowngradeInput) (*StripeSubscriptionDowngradeResult, error) {
+		return &StripeSubscriptionDowngradeResult{
+			Status:             model.SubscriptionChangeIntentStatusScheduled,
+			ProviderScheduleID: "sched_replaced_pending_downgrade_checkout",
+			Snapshot: model.ProviderSubscriptionSnapshot{
+				ProviderSubscriptionId:     input.ProviderSubscriptionID,
+				ProviderSubscriptionItemId: input.ProviderSubscriptionItemID,
+				ProviderPriceId:            input.CurrentPriceID,
+				ProviderScheduleId:         "sched_replaced_pending_downgrade_checkout",
+				ProviderScheduleIdObserved: true,
+				ProviderStatus:             "active",
+				CurrentPeriodStart:         1000,
+				CurrentPeriodEnd:           2000,
+			},
+		}, nil
+	}
+
+	result, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      8108,
+		PlanID:      newTarget.Id,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "new-downgrade-replaces-checkout",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ChangePlanStatusScheduled, result.Status)
+	require.Equal(t, []string{"cs_old_pending_downgrade_checkout"}, expiredSessionIDs)
+	var reloadedOldOrder model.SubscriptionOrder
+	require.NoError(t, model.DB.First(&reloadedOldOrder, "id = ?", oldOrder.Id).Error)
+	require.Equal(t, common.TopUpStatusExpired, reloadedOldOrder.Status)
+	var reloadedOldIntent model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&reloadedOldIntent, "id = ?", oldIntent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusSuperseded, reloadedOldIntent.Status)
+	require.Equal(t, result.Intent.Id, reloadedOldIntent.SupersededById)
+	var pendingOrders int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ? AND status = ?", 8108, common.TopUpStatusPending).Count(&pendingOrders).Error)
+	require.Zero(t, pendingOrders)
+}
+
 func TestConsoleSubscriptionReturnPathUsesConfiguredAppConsoleOriginForWallet(t *testing.T) {
 	restore := replaceSubscriptionReturnPathSettings(t, "https://router.flatkey.ai", " https://console.example.test/ ")
 	defer restore()
