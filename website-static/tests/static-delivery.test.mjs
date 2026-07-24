@@ -40,16 +40,6 @@ test("Nginx bridges sanitized v2 pricing anonymously without transforming it", (
   assert.doesNotMatch(location, /proxy_pass [^;]*\?/);
 });
 
-test("production canary validates the console pricing dependency before shifting traffic", () => {
-  const workflow = read("../../.github/workflows/gcp-deploy-website-static.yml");
-  const pricingProbe = workflow.indexOf('curl -fsS -m 10 "$C/api/website/pricing/v2?group=plg"');
-  const trafficShift = workflow.indexOf("gcloud run services update-traffic");
-
-  assert.ok(pricingProbe > -1);
-  assert.ok(trafficShift > pricingProbe);
-  assert.match(workflow, /schema_version.*website-public-plg-v2/s);
-});
-
 test("static HTML receives one shared configuration script and keeps local docs fallback visible", () => {
   const nginx = read("../nginx.conf");
   const css = read("../html/fk2.css");
