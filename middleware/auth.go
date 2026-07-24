@@ -347,11 +347,11 @@ func TokenAuthReadOnlyForModelList() func(c *gin.Context) {
 			clientIp := c.ClientIP()
 			ip := net.ParseIP(clientIp)
 			if ip == nil {
-				abortWithOpenAiMessage(c, http.StatusForbidden, "Unable to parse client IP address")
+				abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgTokenClientIPInvalid))
 				return
 			}
 			if !common.IsIpInCIDRList(ip, allowIps) {
-				abortWithOpenAiMessage(c, http.StatusForbidden, "Your IP is not allowed by this token", types.ErrorCodeAccessDenied)
+				abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgTokenIPNotAllowed), types.ErrorCodeAccessDenied)
 				return
 			}
 		}
@@ -372,11 +372,11 @@ func TokenAuthReadOnlyForModelList() func(c *gin.Context) {
 		common.SetContextKey(c, constant.ContextKeyUserGroup, userGroup)
 		if tokenGroup != "" {
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
-				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("No permission to access group %s", tokenGroup))
+				abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgTokenGroupNoPermission, map[string]any{"Group": tokenGroup}))
 				return
 			}
 			if !ratio_setting.ContainsGroupRatio(tokenGroup) && tokenGroup != "auto" {
-				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("Group %s is deprecated", tokenGroup))
+				abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgTokenGroupDeprecated, map[string]any{"Group": tokenGroup}))
 				return
 			}
 			userGroup = tokenGroup

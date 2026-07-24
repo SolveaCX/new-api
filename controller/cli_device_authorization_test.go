@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,4 +107,56 @@ func TestCreateCliDeviceAuthorizationUsesConfiguredConsoleOrigin(t *testing.T) {
 	require.Equal(t, "https://console.flatkey.ai/cli/authorize", response.Data.VerificationURI)
 	require.True(t, strings.HasPrefix(response.Data.VerificationURIComplete, "https://console.flatkey.ai/cli/authorize?user_code="))
 	require.NotContains(t, response.Data.VerificationURIComplete, "attacker.example")
+}
+
+func TestCreateCliDeviceAuthorizationThrottlesCleanup(t *testing.T) {
+	require.NoError(t, backendI18n.Init())
+	setupCliDeviceAuthorizationControllerTestDB(t)
+
+	originalNextCleanup := nextCliDeviceAuthorizationCleanupAt.Load()
+	originalCleanup := cleanupExpiredCliDeviceAuthorizations
+	t.Cleanup(func() {
+		nextCliDeviceAuthorizationCleanupAt.Store(originalNextCleanup)
+		cleanupExpiredCliDeviceAuthorizations = originalCleanup
+	})
+	nextCliDeviceAuthorizationCleanupAt.Store(0)
+	calls := 0
+	cleanupExpiredCliDeviceAuthorizations = func(before int64, limit int) (int64, error) {
+		calls++
+		require.Equal(t, cliDeviceAuthorizationCleanupBatchSize, limit)
+		return 0, nil
+	}
+
+	ctx, firstRecorder := newCliDeviceAuthorizationRequestContext(t, `{"device_id":"device-1"}`)
+	CreateCliDeviceAuthorization(ctx)
+	require.Equal(t, http.StatusOK, firstRecorder.Code)
+
+	ctx, secondRecorder := newCliDeviceAuthorizationRequestContext(t, `{"device_id":"device-2"}`)
+	CreateCliDeviceAuthorization(ctx)
+	require.Equal(t, http.StatusOK, secondRecorder.Code)
+
+	require.Equal(t, 1, calls)
+}
+
+func TestCreateCliDeviceAuthorizationContinuesWhenCleanupFails(t *testing.T) {
+	require.NoError(t, backendI18n.Init())
+	setupCliDeviceAuthorizationControllerTestDB(t)
+
+	originalNextCleanup := nextCliDeviceAuthorizationCleanupAt.Load()
+	originalCleanup := cleanupExpiredCliDeviceAuthorizations
+	t.Cleanup(func() {
+		nextCliDeviceAuthorizationCleanupAt.Store(originalNextCleanup)
+		cleanupExpiredCliDeviceAuthorizations = originalCleanup
+	})
+	nextCliDeviceAuthorizationCleanupAt.Store(0)
+	cleanupExpiredCliDeviceAuthorizations = func(before int64, limit int) (int64, error) {
+		return 0, errors.New("cleanup failed")
+	}
+
+	ctx, recorder := newCliDeviceAuthorizationRequestContext(t, `{"device_id":"device"}`)
+	CreateCliDeviceAuthorization(ctx)
+
+	var response cliDeviceAuthorizationResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, response.Message)
 }

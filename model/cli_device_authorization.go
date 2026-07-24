@@ -75,10 +75,30 @@ func GetCliDeviceAuthorizationByDeviceCodeHash(deviceCodeHash string) (*CliDevic
 	return &auth, nil
 }
 
-func ExpireCliDeviceAuthorization(id int) error {
-	return DB.Model(&CliDeviceAuthorization{}).
-		Where("id = ? AND status = ?", id, CliDeviceAuthorizationStatusPending).
-		Update("status", CliDeviceAuthorizationStatusExpired).Error
+func ExpireCliDeviceAuthorization(id int, now int64) (*CliDeviceAuthorization, error) {
+	result := &CliDeviceAuthorization{}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var auth CliDeviceAuthorization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&auth, id).Error; err != nil {
+			return err
+		}
+		if auth.Status != CliDeviceAuthorizationStatusPending || auth.ExpiresAt > now {
+			*result = auth
+			return nil
+		}
+		if err := tx.Model(&auth).Update("status", CliDeviceAuthorizationStatusExpired).Error; err != nil {
+			return err
+		}
+		if err := tx.First(&auth, id).Error; err != nil {
+			return err
+		}
+		*result = auth
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func ApproveCliDeviceAuthorizationWithToken(id int, userId int, token Token, maxTokens int, triggerType string, now int64) (*CliDeviceAuthorizationApproval, error) {
@@ -276,6 +296,21 @@ func DenyCliDeviceAuthorization(id int, now int64) (*CliDeviceAuthorization, err
 	return result, nil
 }
 
-func CleanupExpiredCliDeviceAuthorizations(before int64) error {
-	return DB.Where("expires_at < ?", before).Delete(&CliDeviceAuthorization{}).Error
+func CleanupExpiredCliDeviceAuthorizations(before int64, limit int) (int64, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	var ids []int
+	if err := DB.Model(&CliDeviceAuthorization{}).
+		Where("expires_at < ?", before).
+		Order("id asc").
+		Limit(limit).
+		Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := DB.Where("id IN ?", ids).Delete(&CliDeviceAuthorization{})
+	return result.RowsAffected, result.Error
 }

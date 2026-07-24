@@ -49,6 +49,10 @@ token.exhausted: "This token has insufficient quota"
 token.status_unavailable: "This token status is unavailable"
 token.db_error: "Invalid token, database query error, please contact administrator"
 token.batch_group_cache_sync_pending: "Token groups were updated, but cache synchronization is pending. Retry the same request."
+token.client_ip_invalid: "Unable to parse client IP address"
+token.ip_not_allowed: "Your IP is not allowed by this token"
+token.group_no_permission: "No permission to access group {{.Group}}"
+token.group_deprecated: "Group {{.Group}} is deprecated"
 
 # CLI device authorization messages
 cli.device_id_missing: "Device ID is required"

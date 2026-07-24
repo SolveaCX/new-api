@@ -202,6 +202,27 @@ func TestDenyCliDeviceAuthorizationReturnsPersistedApprovedState(t *testing.T) {
 	require.Equal(t, 2, denied.TokenId)
 }
 
+func TestExpireCliDeviceAuthorizationReturnsPersistedApprovedState(t *testing.T) {
+	setupCliDeviceAuthorizationTestDB(t)
+	auth := CliDeviceAuthorization{
+		DeviceCodeHash: "expire-approved-device-code-hash",
+		UserCodeHash:   "expire-approved-user-code-hash",
+		Status:         CliDeviceAuthorizationStatusApproved,
+		UserId:         1,
+		TokenId:        2,
+		DeviceIdHash:   "expire-approved-device-id-hash",
+		CreatedTime:    100,
+		ExpiresAt:      100,
+		ApprovedAt:     101,
+	}
+	require.NoError(t, CreateCliDeviceAuthorization(&auth))
+
+	expired, err := ExpireCliDeviceAuthorization(auth.Id, 200)
+	require.NoError(t, err)
+	require.Equal(t, CliDeviceAuthorizationStatusApproved, expired.Status)
+	require.Equal(t, 2, expired.TokenId)
+}
+
 func TestCleanupExpiredCliDeviceAuthorizationsDeletesOnlyTerminalOldRows(t *testing.T) {
 	setupCliDeviceAuthorizationTestDB(t)
 	rows := []CliDeviceAuthorization{
@@ -214,10 +235,32 @@ func TestCleanupExpiredCliDeviceAuthorizationsDeletesOnlyTerminalOldRows(t *test
 		require.NoError(t, CreateCliDeviceAuthorization(&rows[i]))
 	}
 
-	require.NoError(t, CleanupExpiredCliDeviceAuthorizations(200))
+	deleted, err := CleanupExpiredCliDeviceAuthorizations(200, 10)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), deleted)
 
 	var remaining []CliDeviceAuthorization
 	require.NoError(t, DB.Order("device_code_hash").Find(&remaining).Error)
 	require.Len(t, remaining, 1)
 	require.Equal(t, "new-denied", remaining[0].DeviceCodeHash)
+}
+
+func TestCleanupExpiredCliDeviceAuthorizationsHonorsBatchLimit(t *testing.T) {
+	setupCliDeviceAuthorizationTestDB(t)
+	for i := 0; i < 3; i++ {
+		require.NoError(t, CreateCliDeviceAuthorization(&CliDeviceAuthorization{
+			DeviceCodeHash: "batch-old-device-code-hash-" + string(rune('a'+i)),
+			UserCodeHash:   "batch-old-user-code-hash-" + string(rune('a'+i)),
+			Status:         CliDeviceAuthorizationStatusDenied,
+			ExpiresAt:      100,
+		}))
+	}
+
+	deleted, err := CleanupExpiredCliDeviceAuthorizations(200, 2)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), deleted)
+
+	var count int64
+	require.NoError(t, DB.Model(&CliDeviceAuthorization{}).Count(&count).Error)
+	require.Equal(t, int64(1), count)
 }

@@ -50,6 +50,10 @@ token.exhausted: "Este token não tem cota suficiente"
 token.status_unavailable: "O status deste token está indisponível"
 token.db_error: "Token inválido: erro de consulta ao banco de dados, entre em contato com o administrador"
 token.batch_group_cache_sync_pending: "Os grupos de tokens foram atualizados, mas a sincronização do cache está pendente. Repita a mesma solicitação."
+token.client_ip_invalid: "Não foi possível analisar o endereço IP do cliente"
+token.ip_not_allowed: "Seu IP não tem permissão para usar este token"
+token.group_no_permission: "Sem permissão para acessar o grupo {{.Group}}"
+token.group_deprecated: "O grupo {{.Group}} está obsoleto"
 
 # CLI device authorization messages
 cli.device_id_missing: "ID do dispositivo é obrigatório"

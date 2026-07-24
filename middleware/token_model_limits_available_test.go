@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/dto"
+	backendI18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -130,6 +131,46 @@ func TestAvailableModelsReadOnlyAuthAllowsExhaustedToken(t *testing.T) {
 	require.Equal(t, "list", payload.Object)
 	require.Len(t, payload.Data, 1)
 	require.Equal(t, "scope-model", payload.Data[0].Id)
+}
+
+func TestAvailableModelsReadOnlyAuthTranslatesTokenGroupErrors(t *testing.T) {
+	require.NoError(t, backendI18n.Init())
+	setupTokenAvailableModelsContractDB(t)
+	gin.SetMode(gin.TestMode)
+
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:       24002,
+		Username: "available-models-zh-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.Token{
+		Id:             24002,
+		UserId:         24002,
+		Key:            "availablemodelszhtoken",
+		Status:         common.TokenStatusEnabled,
+		UnlimitedQuota: true,
+		Group:          "blocked",
+	}).Error)
+
+	engine := gin.New()
+	engine.GET("/v1/available_models", middleware.TokenAuthReadOnlyForModelList(), controller.AvailableModels)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/available_models", nil)
+	request.Header.Set("Authorization", "Bearer sk-availablemodelszhtoken")
+	request.Header.Set("Accept-Language", "zh-CN")
+	engine.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Contains(t, payload.Error.Message, "无权访问分组 blocked")
 }
 
 func TestEnabledEmptyTokenAllowlistRemainsEnabledAndReturnsZeroAvailableModels(t *testing.T) {

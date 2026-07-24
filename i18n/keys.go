@@ -57,6 +57,10 @@ const (
 	MsgTokenStatusUnavailable    = "token.status_unavailable"
 	MsgTokenDbError              = "token.db_error"
 	MsgTokenBatchCachePending    = "token.batch_group_cache_sync_pending"
+	MsgTokenClientIPInvalid      = "token.client_ip_invalid"
+	MsgTokenIPNotAllowed         = "token.ip_not_allowed"
+	MsgTokenGroupNoPermission    = "token.group_no_permission"
+	MsgTokenGroupDeprecated      = "token.group_deprecated"
 )
 
 // CLI device authorization messages

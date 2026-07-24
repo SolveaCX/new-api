@@ -6,7 +6,9 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -22,11 +24,18 @@ const (
 	cliDeviceAuthorizationTTL              = 10 * 60
 	cliDeviceAuthorizationInterval         = 5
 	cliDeviceAuthorizationRetention        = 24 * 60 * 60
+	cliDeviceAuthorizationCleanupInterval  = 5 * 60
+	cliDeviceAuthorizationCleanupBatchSize = 100
 	cliDeviceAuthorizationMaxClientName    = 64
 	cliDeviceAuthorizationMaxClientVersion = 32
 	cliDeviceAuthorizationMaxDeviceId      = 128
 	defaultCliClientName                   = "flatkey-cli"
 	cliUserCodeChars                       = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+)
+
+var (
+	nextCliDeviceAuthorizationCleanupAt   atomic.Int64
+	cleanupExpiredCliDeviceAuthorizations = model.CleanupExpiredCliDeviceAuthorizations
 )
 
 type createCliDeviceAuthorizationRequest struct {
@@ -73,7 +82,7 @@ func CreateCliDeviceAuthorization(c *gin.Context) {
 	if clientName == "" {
 		clientName = defaultCliClientName
 	}
-	_ = model.CleanupExpiredCliDeviceAuthorizations(now - cliDeviceAuthorizationRetention)
+	maybeCleanupExpiredCliDeviceAuthorizations(now)
 	auth := model.CliDeviceAuthorization{
 		DeviceCodeHash: hashCliDeviceCode(deviceCode),
 		UserCodeHash:   hashCliUserCode(userCode),
@@ -147,11 +156,12 @@ func ApproveCliDeviceAuthorization(c *gin.Context) {
 		return
 	}
 	if auth.ExpiresAt <= now {
-		if err := model.ExpireCliDeviceAuthorization(auth.Id); err != nil {
+		var err error
+		auth, err = model.ExpireCliDeviceAuthorization(auth.Id, now)
+		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
-		auth.Status = model.CliDeviceAuthorizationStatusExpired
 		common.ApiSuccess(c, cliAuthorizationResponse(auth, now))
 		return
 	}
@@ -250,6 +260,21 @@ func cliAuthorizationResponse(auth *model.CliDeviceAuthorization, now int64) gin
 		"client_version": auth.ClientVersion,
 		"expires_at":     auth.ExpiresAt,
 		"approved_at":    auth.ApprovedAt,
+	}
+}
+
+func maybeCleanupExpiredCliDeviceAuthorizations(now int64) {
+	next := nextCliDeviceAuthorizationCleanupAt.Load()
+	if now < next || !nextCliDeviceAuthorizationCleanupAt.CompareAndSwap(next, now+cliDeviceAuthorizationCleanupInterval) {
+		return
+	}
+	deleted, err := cleanupExpiredCliDeviceAuthorizations(now-cliDeviceAuthorizationRetention, cliDeviceAuthorizationCleanupBatchSize)
+	if err != nil {
+		common.SysLog("failed to cleanup expired cli device authorizations: " + err.Error())
+		return
+	}
+	if deleted > 0 {
+		common.SysLog("cleaned expired cli device authorizations: " + strconv.FormatInt(deleted, 10))
 	}
 }
 
