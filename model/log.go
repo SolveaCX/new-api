@@ -179,6 +179,26 @@ func formatUserLogs(logs []*Log, startIdx int) {
 	}
 }
 
+// RedactSupplierAccountingFromLogs removes Root-only supplier finance facts
+// while preserving every unrelated admin log field. It mutates only the
+// response projection; the durable log row remains unchanged.
+func RedactSupplierAccountingFromLogs(logs []*Log) {
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		otherMap, err := common.StrToMap(log.Other)
+		if err != nil || otherMap == nil {
+			continue
+		}
+		if _, exists := otherMap["supplier_accounting_v1"]; !exists {
+			continue
+		}
+		delete(otherMap, "supplier_accounting_v1")
+		log.Other = common.MapToJsonStr(otherMap)
+	}
+}
+
 func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order("id desc").Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)

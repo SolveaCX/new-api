@@ -49,6 +49,7 @@ func TestSupplierReportMicroUsdResponsesUseExactDecimalStrings(t *testing.T) {
 	require.Equal(t, exactMax, string(overview["total_inventory_micro_usd"]))
 	require.Equal(t, exactMax, string(overview["official_list_consumed_micro_usd"]))
 	require.Equal(t, exactMax, string(overview["remaining_inventory_micro_usd"]))
+	require.Equal(t, "null", string(overview["internal"]))
 	require.Equal(t, "null", string(overview["total_estimated_procurement_cost"]))
 
 	contract := supplierReportJSONFields(t, SupplierReportContractRow{
@@ -61,6 +62,7 @@ func TestSupplierReportMicroUsdResponsesUseExactDecimalStrings(t *testing.T) {
 	require.Equal(t, exactMax, string(contract["official_list_consumed_micro_usd"]))
 	require.Equal(t, exactMax, string(contract["remaining_inventory_micro_usd"]))
 	require.Equal(t, "19", string(contract["rpm_limit"]))
+	require.Equal(t, "null", string(contract["internal"]))
 	require.Equal(t, "null", string(contract["total_estimated_procurement_cost"]))
 
 	adjustment := supplierReportJSONFields(t, SupplierReportInventoryAdjustment{

@@ -167,6 +167,7 @@ export function ReportContractTable(props: ReportContractTableProps) {
               </TableCell>
               <TableCell className='text-right'>
                 {item.internal_dimension_available &&
+                item.internal !== null &&
                 item.total_estimated_procurement_cost !== null
                   ? formatMicroUsd(
                       knownMoneyValue(

@@ -105,6 +105,8 @@ gross_margin = gross_profit_micro_usd / sales_micro_usd
 
 内部快照不保存销售额、销售倍率或毛利润。日报也不得通过其他日志字段反推这些值。
 
+`supplier_accounting_v1` 属于 Root 财务数据。Root 可通过供应链报表和通用日志查看完整快照；Admin 与普通用户的日志响应必须删除该对象，同时保留与供应链无关的日志元数据。该脱敏只作用于响应，不改写持久化日志。
+
 ## 4. 数据模型
 
 V1 新增恰好八张表：
@@ -156,6 +158,8 @@ V1 新增恰好八张表：
 - 唯一约束和幂等聚合保证重复 ticker、进程重启和响应丢失不会重复记账。
 
 V1 不依赖 Redis 锁或单实例部署假设。
+
+Router/Slave 不执行数据库迁移。若新 Router 修订早于 Console/Master 的加法迁移启动，Router 必须保持供应商缓存 blocking、跳过供应商快照并继续提供原有 API 服务；迁移完成后由现有缓存刷新循环自动恢复，不要求重启 Router。
 
 ## 6. 管理报表与自动历史 catch-up
 

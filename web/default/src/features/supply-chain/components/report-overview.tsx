@@ -124,6 +124,7 @@ export function ReportOverview(props: ReportOverviewProps) {
   const internal = props.data.internal
   const internalDimensionAvailable =
     props.data.internal_dimension_available &&
+    internal !== null &&
     props.data.total_estimated_procurement_cost !== null
 
   return (

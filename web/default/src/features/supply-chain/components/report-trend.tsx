@@ -104,13 +104,16 @@ export function ReportTrend(props: ReportTrendProps) {
         point.business
       ),
       profit: knownMoneyValue(point.business.gross_profit, point.business),
-      internalProcurement: point.internal_dimension_available
-        ? knownMoneyValue(point.internal.procurement_cost, point.internal)
-        : null,
+      internalProcurement:
+        point.internal_dimension_available && point.internal !== null
+          ? knownMoneyValue(point.internal.procurement_cost, point.internal)
+          : null,
     }))
   }, [props.data])
   const hasInternalSeries = Boolean(
-    props.data?.points.some((point) => point.internal_dimension_available)
+    props.data?.points.some(
+      (point) => point.internal_dimension_available && point.internal !== null
+    )
   )
   const visibleMode =
     mode === 'internal' && !hasInternalSeries ? 'business' : mode

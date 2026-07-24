@@ -303,7 +303,7 @@ export interface SupplierReportMetrics {
 export interface SupplierReportOverview {
   range: SupplierReportRange
   business: SupplierReportMetrics
-  internal: SupplierReportMetrics
+  internal: SupplierReportMetrics | null
   total_estimated_procurement_cost: SupplierReportMoney | null
   total_inventory_micro_usd: MicroUsd
   official_list_consumed_micro_usd: MicroUsd
@@ -315,7 +315,7 @@ interface SupplierReportTrendPoint {
   bucket_start: number
   date: string
   business: SupplierReportMetrics
-  internal: SupplierReportMetrics
+  internal: SupplierReportMetrics | null
   internal_dimension_available: boolean
 }
 
@@ -356,7 +356,7 @@ interface SupplierReportContractRow {
   utilization_rate: NullableRatio
   oversold: boolean
   business: SupplierReportMetrics
-  internal: SupplierReportMetrics
+  internal: SupplierReportMetrics | null
   total_estimated_procurement_cost: SupplierReportMoney | null
   internal_dimension_available: boolean
 }

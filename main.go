@@ -407,11 +407,8 @@ func InitResources() error {
 		common.FatalLog("failed to initialize database: " + err.Error())
 		return err
 	}
-	if err = model.EnsureSupplierUsageGenerationSchema(model.DB); err != nil {
-		return fmt.Errorf("initialize supplier usage generation schema: %w", err)
-	}
-	if err = model.RefreshSupplierCache(); err != nil {
-		return fmt.Errorf("initialize supplier cache: %w", err)
+	if err = initializeSupplierRuntime(); err != nil {
+		return err
 	}
 	model.CheckSetup()
 
@@ -458,5 +455,24 @@ func InitResources() error {
 		// Don't return error, custom OAuth is not critical
 	}
 
+	return nil
+}
+
+func initializeSupplierRuntime() error {
+	// Slave/router nodes deliberately skip schema migrations. Production
+	// revisions can overlap, so a router may start before the master has created
+	// the additive supplier tables. Keep accounting fail-closed and let the
+	// existing cache refresh loop recover after the master migration completes.
+	if common.IsMasterNode {
+		if err := model.EnsureSupplierUsageGenerationSchema(model.DB); err != nil {
+			return fmt.Errorf("initialize supplier usage generation schema: %w", err)
+		}
+	}
+	if err := model.RefreshSupplierCache(); err != nil {
+		if common.IsMasterNode {
+			return fmt.Errorf("initialize supplier cache: %w", err)
+		}
+		common.SysError("initial supplier cache refresh failed on slave; accounting remains disabled until retry: " + err.Error())
+	}
 	return nil
 }

@@ -106,22 +106,22 @@ type SupplierReportMetrics struct {
 }
 
 type SupplierReportOverview struct {
-	Range                        SupplierReportRange   `json:"range"`
-	Business                     SupplierReportMetrics `json:"business"`
-	Internal                     SupplierReportMetrics `json:"internal"`
-	TotalProcurementCost         *SupplierReportMoney  `json:"total_estimated_procurement_cost"`
-	TotalInventoryMicroUsd       int64                 `json:"total_inventory_micro_usd,string"`
-	OfficialListConsumedMicroUsd int64                 `json:"official_list_consumed_micro_usd,string"`
-	RemainingInventoryMicroUsd   int64                 `json:"remaining_inventory_micro_usd,string"`
-	InternalDimensionAvailable   bool                  `json:"internal_dimension_available"`
+	Range                        SupplierReportRange    `json:"range"`
+	Business                     SupplierReportMetrics  `json:"business"`
+	Internal                     *SupplierReportMetrics `json:"internal"`
+	TotalProcurementCost         *SupplierReportMoney   `json:"total_estimated_procurement_cost"`
+	TotalInventoryMicroUsd       int64                  `json:"total_inventory_micro_usd,string"`
+	OfficialListConsumedMicroUsd int64                  `json:"official_list_consumed_micro_usd,string"`
+	RemainingInventoryMicroUsd   int64                  `json:"remaining_inventory_micro_usd,string"`
+	InternalDimensionAvailable   bool                   `json:"internal_dimension_available"`
 }
 
 type SupplierReportTrendPoint struct {
-	BucketStart                int64                 `json:"bucket_start"`
-	Date                       string                `json:"date"`
-	Business                   SupplierReportMetrics `json:"business"`
-	Internal                   SupplierReportMetrics `json:"internal"`
-	InternalDimensionAvailable bool                  `json:"internal_dimension_available"`
+	BucketStart                int64                  `json:"bucket_start"`
+	Date                       string                 `json:"date"`
+	Business                   SupplierReportMetrics  `json:"business"`
+	Internal                   *SupplierReportMetrics `json:"internal"`
+	InternalDimensionAvailable bool                   `json:"internal_dimension_available"`
 }
 type SupplierReportDayStatus struct {
 	Date   string `json:"date"`
@@ -137,29 +137,29 @@ type SupplierReportTrend struct {
 }
 
 type SupplierReportContractRow struct {
-	ContractId                   int                   `json:"contract_id"`
-	SupplierId                   int                   `json:"supplier_id"`
-	SupplierName                 string                `json:"supplier_name"`
-	SupplierStatus               string                `json:"supplier_status"`
-	ContractName                 string                `json:"contract_name"`
-	ContractNo                   string                `json:"contract_no"`
-	ContractStatus               string                `json:"contract_status"`
-	Remark                       string                `json:"remark"`
-	CurrentRateVersionId         *int                  `json:"current_rate_version_id"`
-	ProcurementMultiplierPpm     *int64                `json:"procurement_multiplier_ppm"`
-	RpmLimit                     int64                 `json:"rpm_limit"`
-	TpmLimit                     int64                 `json:"tpm_limit"`
-	MaxConcurrency               int                   `json:"max_concurrency"`
-	LinkedChannelCount           int                   `json:"linked_channel_count"`
-	TotalInventoryMicroUsd       int64                 `json:"total_inventory_micro_usd,string"`
-	OfficialListConsumedMicroUsd int64                 `json:"official_list_consumed_micro_usd,string"`
-	RemainingInventoryMicroUsd   int64                 `json:"remaining_inventory_micro_usd,string"`
-	UtilizationRate              *string               `json:"utilization_rate"`
-	Oversold                     bool                  `json:"oversold"`
-	Business                     SupplierReportMetrics `json:"business"`
-	Internal                     SupplierReportMetrics `json:"internal"`
-	TotalProcurementCost         *SupplierReportMoney  `json:"total_estimated_procurement_cost"`
-	InternalDimensionAvailable   bool                  `json:"internal_dimension_available"`
+	ContractId                   int                    `json:"contract_id"`
+	SupplierId                   int                    `json:"supplier_id"`
+	SupplierName                 string                 `json:"supplier_name"`
+	SupplierStatus               string                 `json:"supplier_status"`
+	ContractName                 string                 `json:"contract_name"`
+	ContractNo                   string                 `json:"contract_no"`
+	ContractStatus               string                 `json:"contract_status"`
+	Remark                       string                 `json:"remark"`
+	CurrentRateVersionId         *int                   `json:"current_rate_version_id"`
+	ProcurementMultiplierPpm     *int64                 `json:"procurement_multiplier_ppm"`
+	RpmLimit                     int64                  `json:"rpm_limit"`
+	TpmLimit                     int64                  `json:"tpm_limit"`
+	MaxConcurrency               int                    `json:"max_concurrency"`
+	LinkedChannelCount           int                    `json:"linked_channel_count"`
+	TotalInventoryMicroUsd       int64                  `json:"total_inventory_micro_usd,string"`
+	OfficialListConsumedMicroUsd int64                  `json:"official_list_consumed_micro_usd,string"`
+	RemainingInventoryMicroUsd   int64                  `json:"remaining_inventory_micro_usd,string"`
+	UtilizationRate              *string                `json:"utilization_rate"`
+	Oversold                     bool                   `json:"oversold"`
+	Business                     SupplierReportMetrics  `json:"business"`
+	Internal                     *SupplierReportMetrics `json:"internal"`
+	TotalProcurementCost         *SupplierReportMoney   `json:"total_estimated_procurement_cost"`
+	InternalDimensionAvailable   bool                   `json:"internal_dimension_available"`
 }
 type SupplierReportContractList struct {
 	Range   SupplierReportRange         `json:"range"`
@@ -277,9 +277,11 @@ func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierR
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
-	result := SupplierReportOverview{Range: reportRange, Business: usage.business.metrics(), Internal: usage.internal.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0}
+	result := SupplierReportOverview{Range: reportRange, Business: usage.business.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0}
 	if result.InternalDimensionAvailable {
-		totalProcurementCost, combineErr := combineMoney(result.Business.ProcurementCost, result.Internal.ProcurementCost)
+		internal := usage.internal.metrics()
+		result.Internal = &internal
+		totalProcurementCost, combineErr := combineMoney(result.Business.ProcurementCost, internal.ProcurementCost)
 		if combineErr != nil {
 			return SupplierReportOverview{}, combineErr
 		}
@@ -353,7 +355,12 @@ func (s *SupplierReportService) getTrend(ctx context.Context, query SupplierRepo
 			if item == nil {
 				item = &usageAccumulator{}
 			}
-			result.Points = append(result.Points, SupplierReportTrendPoint{BucketStart: day, Date: date, Business: item.business.metrics(), Internal: item.internal.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0})
+			point := SupplierReportTrendPoint{BucketStart: day, Date: date, Business: item.business.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0}
+			if point.InternalDimensionAvailable {
+				internal := item.internal.metrics()
+				point.Internal = &internal
+			}
+			result.Points = append(result.Points, point)
 			completedDate := date
 			result.LatestCompletedDate = &completedDate
 		} else {
@@ -711,9 +718,11 @@ func buildContractRow(c model.SupplierReportContractCatalogRow, r contractRuntim
 	if err != nil {
 		return SupplierReportContractRow{}, err
 	}
-	row := SupplierReportContractRow{ContractId: c.ContractId, SupplierId: c.SupplierId, SupplierName: c.SupplierName, SupplierStatus: c.SupplierStatus, ContractName: c.ContractName, ContractNo: c.ContractNo, ContractStatus: c.ContractStatus, Remark: c.Remark, CurrentRateVersionId: c.CurrentRateVersionId, ProcurementMultiplierPpm: c.ProcurementMultiplierPpm, RpmLimit: c.RpmLimit, TpmLimit: c.TpmLimit, MaxConcurrency: c.MaxConcurrency, LinkedChannelCount: r.channelCount, TotalInventoryMicroUsd: r.inventory, OfficialListConsumedMicroUsd: r.consumed, RemainingInventoryMicroUsd: remaining, UtilizationRate: ratioString(r.consumed, r.inventory), Oversold: remaining < 0, Business: u.business.metrics(), Internal: u.internal.metrics(), InternalDimensionAvailable: internalDimensionAvailable}
+	row := SupplierReportContractRow{ContractId: c.ContractId, SupplierId: c.SupplierId, SupplierName: c.SupplierName, SupplierStatus: c.SupplierStatus, ContractName: c.ContractName, ContractNo: c.ContractNo, ContractStatus: c.ContractStatus, Remark: c.Remark, CurrentRateVersionId: c.CurrentRateVersionId, ProcurementMultiplierPpm: c.ProcurementMultiplierPpm, RpmLimit: c.RpmLimit, TpmLimit: c.TpmLimit, MaxConcurrency: c.MaxConcurrency, LinkedChannelCount: r.channelCount, TotalInventoryMicroUsd: r.inventory, OfficialListConsumedMicroUsd: r.consumed, RemainingInventoryMicroUsd: remaining, UtilizationRate: ratioString(r.consumed, r.inventory), Oversold: remaining < 0, Business: u.business.metrics(), InternalDimensionAvailable: internalDimensionAvailable}
 	if internalDimensionAvailable {
-		totalProcurementCost, combineErr := combineMoney(row.Business.ProcurementCost, row.Internal.ProcurementCost)
+		internal := u.internal.metrics()
+		row.Internal = &internal
+		totalProcurementCost, combineErr := combineMoney(row.Business.ProcurementCost, internal.ProcurementCost)
 		if combineErr != nil {
 			return SupplierReportContractRow{}, combineErr
 		}

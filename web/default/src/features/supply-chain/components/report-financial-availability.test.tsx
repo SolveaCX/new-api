@@ -24,9 +24,11 @@ import type {
   SupplierReportContractList,
   SupplierReportMetrics,
   SupplierReportOverview,
+  SupplierReportTrend,
 } from '../types'
 import { ReportContractTable } from './report-contract-table'
 import { ReportOverview } from './report-overview'
+import { ReportTrend } from './report-trend'
 
 const testI18n = createInstance()
 
@@ -63,7 +65,7 @@ describe('supply-chain unavailable financial dimensions', () => {
     const data: SupplierReportOverview = {
       range: { start_at: 1, end_at: 2, timezone: 'Asia/Shanghai' },
       business: emptyMetrics,
-      internal: emptyMetrics,
+      internal: null,
       total_estimated_procurement_cost: null,
       total_inventory_micro_usd: '0',
       official_list_consumed_micro_usd: '0',
@@ -102,7 +104,7 @@ describe('supply-chain unavailable financial dimensions', () => {
           utilization_rate: null,
           oversold: false,
           business: emptyMetrics,
-          internal: emptyMetrics,
+          internal: null,
           total_estimated_procurement_cost: null,
           internal_dimension_available: false,
         },
@@ -115,5 +117,28 @@ describe('supply-chain unavailable financial dimensions', () => {
     const html = render(<ReportContractTable data={data} />)
 
     expect(html).toMatch(/Internal cost[\s\S]*<td[^>]*>—<\/td>/)
+  })
+
+  test('renders a null internal trend dimension as unavailable', () => {
+    const data: SupplierReportTrend = {
+      range: { start_at: 1, end_at: 2, timezone: 'Asia/Shanghai' },
+      points: [
+        {
+          bucket_start: 1,
+          date: '2026-07-20',
+          business: emptyMetrics,
+          internal: null,
+          internal_dimension_available: false,
+        },
+      ],
+      day_statuses: [{ date: '2026-07-20', status: 'completed' }],
+      latest_completed_date: '2026-07-20',
+      has_incomplete_days: false,
+      incomplete_day_count: 0,
+    }
+
+    const html = render(<ReportTrend data={data} />)
+
+    expect(html).toContain('Internal / test: Unavailable')
   })
 })
