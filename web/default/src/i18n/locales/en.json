@@ -5920,7 +5920,6 @@
     "{{value}} ms": "{{value}} ms",
     "{{value}}%": "{{value}}%",
     "{{value}}% healthy threshold": "{{value}}% healthy threshold",
-    "Not included": "Not included",
     "Flatkey CLI wants to connect": "Flatkey CLI wants to connect",
     "Approve terminal login": "Approve terminal login",
     "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.",

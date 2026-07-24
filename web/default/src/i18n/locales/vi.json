@@ -5920,7 +5920,6 @@
     "{{value}} ms": "{{value}} mili giây",
     "{{value}}%": "{{value}}%",
     "{{value}}% healthy threshold": "Ngưỡng khỏe mạnh {{value}}%",
-    "Not included": "Không bao gồm",
     "Flatkey CLI wants to connect": "Flatkey CLI muốn kết nối",
     "Approve terminal login": "Phê duyệt đăng nhập từ terminal",
     "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Thao tác này sẽ tạo hoặc dùng lại API key Flatkey cho thiết bị này. Các yêu cầu CLI sau đó sẽ dùng credits từ tài khoản này.",

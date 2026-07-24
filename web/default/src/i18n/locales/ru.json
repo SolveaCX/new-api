@@ -5920,7 +5920,6 @@
     "{{value}} ms": "{{value}} мс",
     "{{value}}%": "{{value}}%",
     "{{value}}% healthy threshold": "Порог исправности: {{value}}%",
-    "Not included": "Не включено",
     "Flatkey CLI wants to connect": "Flatkey CLI запрашивает подключение",
     "Approve terminal login": "Подтвердить вход из терминала",
     "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Будет создан или повторно использован API-ключ Flatkey для этого устройства. Будущие запросы CLI будут расходовать кредиты этого аккаунта.",

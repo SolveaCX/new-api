@@ -5920,7 +5920,6 @@
     "{{value}} ms": "{{value}} 毫秒",
     "{{value}}%": "{{value}}%",
     "{{value}}% healthy threshold": "{{value}}% 健康阈值",
-    "Not included": "不包含",
     "Flatkey CLI wants to connect": "Flatkey CLI 请求连接",
     "Approve terminal login": "批准终端登录",
     "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "这会为此设备创建或复用一个 Flatkey API key。之后 CLI 请求将消耗此账号的 credits。",
