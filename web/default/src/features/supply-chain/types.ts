@@ -40,7 +40,7 @@ export interface SupplyChainAdminPage<T> {
   items: T[]
 }
 
-export interface SupplyChainAdminPageParams {
+interface SupplyChainAdminPageParams {
   p: number
   page_size: number
 }
@@ -231,11 +231,6 @@ export interface SupplierChannelBindingRequest {
   expected_contract_id: number
 }
 
-export interface SupplyChainStatusResult {
-  id: number
-  status: SupplierStatus
-}
-
 export interface SupplierChannelUnbindResult {
   channel_id: number
   supplier_contract_id: null
@@ -250,23 +245,23 @@ export interface IdempotentMutationVariables<T> {
   idempotencyKey: string
 }
 
-export interface SupplierReportMonthRange {
+interface SupplierReportMonthRange {
   month: string
   startDate?: never
   endDate?: never
 }
 
-export interface SupplierReportDateRange {
+interface SupplierReportDateRange {
   month?: never
   startDate: string
   endDate: string
 }
 
-export type SupplierReportRangeParams =
+type SupplierReportRangeParams =
   | SupplierReportMonthRange
   | SupplierReportDateRange
 
-export interface SupplierReportFilters {
+interface SupplierReportFilters {
   supplierIds?: readonly number[]
   contractIds?: readonly number[]
   channelIds?: readonly number[]
@@ -280,7 +275,7 @@ export type SupplierReportPageQuery = SupplierReportQuery & {
   offset?: number
 }
 
-export interface SupplierReportRange {
+interface SupplierReportRange {
   start_at: number
   end_at: number
   timezone: 'Asia/Shanghai'
@@ -316,7 +311,7 @@ export interface SupplierReportOverview {
   internal_dimension_available: boolean
 }
 
-export interface SupplierReportTrendPoint {
+interface SupplierReportTrendPoint {
   bucket_start: number
   date: string
   business: SupplierReportMetrics
@@ -333,18 +328,18 @@ export interface SupplierReportTrend {
   incomplete_day_count: number
 }
 
-export type SupplierReportDayStatus =
+type SupplierReportDayStatus =
   | 'completed'
   | 'running'
   | 'failed'
   | 'missing'
 
-export interface SupplierReportDayState {
+interface SupplierReportDayState {
   date: string
   status: SupplierReportDayStatus
 }
 
-export interface SupplierReportContractRow {
+interface SupplierReportContractRow {
   contract_id: number
   supplier_id: number
   supplier_name: string
@@ -378,26 +373,7 @@ export interface SupplierReportContractList {
   has_more: boolean
 }
 
-export interface SupplierReportRateVersion {
-  id: number
-  procurement_multiplier_ppm: number
-  effective_at: number
-  created_by: number
-  reason: string
-  created_at: number
-}
-
-export interface SupplierReportInventoryAdjustment {
-  id: number
-  delta_micro_usd: MicroUsd
-  type: SupplierInventoryAdjustmentType
-  reason: string
-  idempotency_key: string
-  created_by: number
-  created_at: number
-}
-
-export interface SupplierReportChannelRow {
+interface SupplierReportChannelRow {
   channel_id: number
   channel_name: string
   channel_status: number
@@ -413,7 +389,7 @@ export interface SupplierReportChannelList {
   has_more: boolean
 }
 
-export interface SupplierReportBreakdownItem {
+interface SupplierReportBreakdownItem {
   contract_id: number
   channel_id: number
   model_name: string
@@ -434,14 +410,4 @@ export interface SupplierReportBreakdownList {
   total_business_count: number
   breakdown_coverage_rate: NullableRatio
   breakdown_coverage_available: boolean
-}
-
-export interface SupplierReportContractDetail {
-  range: SupplierReportRange
-  summary: SupplierReportContractRow
-  rate_versions: SupplierReportRateVersion[]
-  inventory_adjustments: SupplierReportInventoryAdjustment[]
-  channels: SupplierReportChannelList
-  internal_trend: SupplierReportTrendPoint[]
-  breakdown: SupplierReportBreakdownList
 }

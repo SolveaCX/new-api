@@ -42,7 +42,6 @@ import type {
   SupplierRateVersionCreateRequest,
   SupplierReportBreakdownList,
   SupplierReportChannelList,
-  SupplierReportContractDetail,
   SupplierReportContractList,
   SupplierReportOverview,
   SupplierReportPageQuery,
@@ -87,7 +86,7 @@ function appendCsv(
   }
 }
 
-export function buildSupplierReportQueryParams(
+function buildSupplierReportQueryParams(
   query: SupplierReportQuery | SupplierReportPageQuery
 ): Record<string, string | number> {
   const params: Record<string, string | number> = {}
@@ -323,17 +322,6 @@ export async function listReportContracts(
   const response = await api.get(`${SUPPLY_CHAIN_API}/reports/contracts`, {
     params: buildSupplierReportQueryParams(query),
   })
-  return response.data
-}
-
-export async function getReportContract(
-  contractId: number,
-  query: SupplierReportPageQuery
-): Promise<SupplyChainApiResponse<SupplierReportContractDetail>> {
-  const response = await api.get(
-    `${SUPPLY_CHAIN_API}/reports/contracts/${contractId}`,
-    { params: buildSupplierReportQueryParams(query) }
-  )
   return response.data
 }
 

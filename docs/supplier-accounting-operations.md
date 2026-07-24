@@ -36,7 +36,6 @@
 | --- | --- | --- |
 | `newapi-router` | Slave | 处理 API 流量并写成功请求快照；不运行 ticker |
 | `newapi-console` | Master | 管理接口、报表和 T+1 ticker |
-| legacy `newapi` | 取决于是否仍承载流量 | 若处理 API 流量，必须具备相同快照写入能力；若为 Master，也会竞争数据库租约 |
 | `newapi-web` | 网站 | 无供应商核算职责 |
 
 即使只有一个预期 Console 实例，也必须保留数据库租约与 fence；Cloud Run 重叠修订和扩缩容会产生并发实例。
@@ -59,7 +58,7 @@
 ## 3. 发布顺序
 
 1. 先完成主库的加法迁移，确认旧版本应用可忽略新增表和 `logs.other` 中的新增对象。
-2. 部署 Router，使新的成功请求开始保存核算快照。若 legacy `newapi` 仍处理 API 流量，一并部署。
+2. 部署 Router，使新的成功请求开始保存核算快照。
 3. 部署 Console，使管理接口、报表和 Master ticker 使用相同协议。
 4. 检查所有在服 Router 修订均已更新；混合版本期间，旧 Router 产生的日志没有标记，日结不会推断或补造这些事实。
 5. 在下一个北京时间关账窗口后检查首个批次和管理报表。

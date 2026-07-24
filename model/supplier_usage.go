@@ -146,8 +146,8 @@ func supplierUsageIndexColumns(db *gorm.DB, indexName string) ([]string, error) 
 	return columns, nil
 }
 
-func AcquireSupplierDailyBatch(ctx context.Context, db *gorm.DB, batchDate string, dayStart, dayEnd int64, owner string, _ time.Time, leaseDuration time.Duration, force bool) (SupplierDailyBatchLease, error) {
-	if db == nil || force || batchDate == "" || dayStart <= 0 || dayEnd <= dayStart || owner == "" || leaseDuration <= 0 {
+func AcquireSupplierDailyBatch(ctx context.Context, db *gorm.DB, batchDate string, dayStart, dayEnd int64, owner string, leaseDuration time.Duration) (SupplierDailyBatchLease, error) {
+	if db == nil || batchDate == "" || dayStart <= 0 || dayEnd <= dayStart || owner == "" || leaseDuration <= 0 {
 		return SupplierDailyBatchLease{}, ErrSupplierDailyBatchPublicationInvalid
 	}
 	var lease SupplierDailyBatchLease

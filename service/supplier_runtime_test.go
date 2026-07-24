@@ -68,7 +68,7 @@ func TestRunSupplierDailyBatchAggregatesCapturedSnapshot(t *testing.T) {
 		Other: supplierDailyLogOther(t, supplierDailySnapshot(day, 1_500_000)),
 	}).Error)
 
-	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2), false))
+	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2)))
 	var summary model.SupplierUsageDailySummary
 	require.NoError(t, mainDB.First(&summary).Error)
 	require.EqualValues(t, 1, summary.RequestCount)
@@ -103,7 +103,7 @@ func TestRunSupplierDailyBatchNeutralizesInternalCustomerAndRoutingDimensions(t 
 		}).Error)
 	}
 
-	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2), false))
+	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2)))
 	var summaries []model.SupplierUsageDailySummary
 	require.NoError(t, mainDB.Find(&summaries).Error)
 	require.Len(t, summaries, 1, "internal rows differing only by customer/routing dimensions must coalesce")
@@ -138,12 +138,12 @@ func TestSupplierDailyBatchLeaseUsesDatabaseTimeAndFencesStaleOwner(t *testing.T
 	db := supplierDailyTestDB(t, t.Name())
 	require.NoError(t, db.AutoMigrate(&model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{}))
 	now := time.Now()
-	first, err := model.AcquireSupplierDailyBatch(context.Background(), db, "2026-12-01", now.Add(-24*time.Hour).Unix(), now.Unix(), "node-a", time.Unix(1, 0), time.Minute, false)
+	first, err := model.AcquireSupplierDailyBatch(context.Background(), db, "2026-12-01", now.Add(-24*time.Hour).Unix(), now.Unix(), "node-a", time.Minute)
 	require.NoError(t, err)
-	_, err = model.AcquireSupplierDailyBatch(context.Background(), db, "2026-12-01", now.Add(-24*time.Hour).Unix(), now.Unix(), "node-b", time.Unix(4_102_444_800, 0), time.Minute, false)
+	_, err = model.AcquireSupplierDailyBatch(context.Background(), db, "2026-12-01", now.Add(-24*time.Hour).Unix(), now.Unix(), "node-b", time.Minute)
 	require.ErrorIs(t, err, model.ErrSupplierDailyBatchBusy)
 	require.NoError(t, db.Model(&model.SupplierUsageDailyBatchRun{}).Where("id = ?", first.RunId).Update("locked_until", 0).Error)
-	second, err := model.AcquireSupplierDailyBatch(context.Background(), db, "2026-12-01", now.Add(-24*time.Hour).Unix(), now.Unix(), "node-b", time.Time{}, time.Minute, false)
+	second, err := model.AcquireSupplierDailyBatch(context.Background(), db, "2026-12-01", now.Add(-24*time.Hour).Unix(), now.Unix(), "node-b", time.Minute)
 	require.NoError(t, err)
 	require.Greater(t, second.FenceToken, first.FenceToken)
 	require.ErrorIs(t, model.RenewSupplierDailyBatchLease(context.Background(), db, first, time.Minute), model.ErrSupplierDailyBatchFenceLost)

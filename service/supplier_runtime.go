@@ -60,7 +60,7 @@ func CatchUpSupplierDailyBatches(ctx context.Context, mainDB, logDB *gorm.DB, ow
 	if next.After(target) {
 		return result, nil
 	}
-	if err := RunSupplierDailyBatch(ctx, mainDB, logDB, next.Format("2006-01-02"), owner, now, false); err != nil {
+	if err := RunSupplierDailyBatch(ctx, mainDB, logDB, next.Format("2006-01-02"), owner, now); err != nil {
 		if errors.Is(err, model.ErrSupplierDailyBatchBusy) {
 			return result, nil
 		}
@@ -117,17 +117,17 @@ func configuredSupplierAccountingCutover() (int64, bool, error) {
 	return value, true, nil
 }
 
-func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDate, owner string, now time.Time, force bool) error {
+func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDate, owner string, now time.Time) error {
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	if err != nil {
 		return err
 	}
 	day, err := time.ParseInLocation("2006-01-02", batchDate, location)
-	if err != nil || force || !day.Before(beginningOfSupplierDay(now.In(location))) {
+	if err != nil || !day.Before(beginningOfSupplierDay(now.In(location))) {
 		return fmt.Errorf("invalid supplier batch date %q", batchDate)
 	}
 	dayEnd := day.AddDate(0, 0, 1)
-	lease, err := model.AcquireSupplierDailyBatch(ctx, mainDB, batchDate, day.Unix(), dayEnd.Unix(), owner, now, supplierDailyLeaseDuration, false)
+	lease, err := model.AcquireSupplierDailyBatch(ctx, mainDB, batchDate, day.Unix(), dayEnd.Unix(), owner, supplierDailyLeaseDuration)
 	if err != nil || lease.AlreadyDone {
 		return err
 	}

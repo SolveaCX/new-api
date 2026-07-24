@@ -212,7 +212,7 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 		Type: model.LogTypeConsume, CreatedAt: day.Add(time.Hour).Unix(), ChannelId: 99,
 		ModelName: "retry-model", Other: string(other),
 	}).Error)
-	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "node-final", day.AddDate(0, 0, 2), false))
+	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "node-final", day.AddDate(0, 0, 2)))
 
 	var persisted model.Log
 	require.NoError(t, logDB.First(&persisted).Error)
