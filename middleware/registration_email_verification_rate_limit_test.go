@@ -45,6 +45,43 @@ func TestRegistrationEmailVerificationStatusRateLimitUsesSeparateBucket(t *testi
 	require.Equal(t, http.StatusNoContent, criticalResponse.Code)
 }
 
+func TestCliDeviceAuthorizationPollRateLimitUsesSeparateBucket(t *testing.T) {
+	previousRedisEnabled := common.RedisEnabled
+	previousCriticalEnabled := common.CriticalRateLimitEnable
+	previousCriticalLimit := common.CriticalRateLimitNum
+	common.RedisEnabled = false
+	common.CriticalRateLimitEnable = true
+	common.CriticalRateLimitNum = 1
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+		common.CriticalRateLimitEnable = previousCriticalEnabled
+		common.CriticalRateLimitNum = previousCriticalLimit
+	})
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.POST("/critical", CriticalRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	engine.POST("/cli-poll", CliDeviceAuthorizationPollRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	criticalRequest := httptest.NewRequest(http.MethodPost, "/critical", nil)
+	criticalRequest.RemoteAddr = "192.0.2.11:1234"
+	criticalResponse := httptest.NewRecorder()
+	engine.ServeHTTP(criticalResponse, criticalRequest)
+	require.Equal(t, http.StatusNoContent, criticalResponse.Code)
+
+	for i := 0; i < 2; i++ {
+		pollRequest := httptest.NewRequest(http.MethodPost, "/cli-poll", nil)
+		pollRequest.RemoteAddr = "192.0.2.11:1235"
+		pollResponse := httptest.NewRecorder()
+		engine.ServeHTTP(pollResponse, pollRequest)
+		require.Equal(t, http.StatusNoContent, pollResponse.Code)
+	}
+}
+
 func TestSubscriptionPaymentRateLimitUsesUserBucketSeparateFromCritical(t *testing.T) {
 	previousRedisEnabled := common.RedisEnabled
 	previousCriticalEnabled := common.CriticalRateLimitEnable

@@ -61,8 +61,8 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/user/reset", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ResetPassword)
 		cliAuthRoute := apiRouter.Group("/cli/device_authorizations")
 		{
-			cliAuthRoute.POST("", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.CreateCliDeviceAuthorization)
-			cliAuthRoute.POST("/token", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.PollCliDeviceAuthorization)
+			cliAuthRoute.POST("", middleware.CliDeviceAuthorizationCreateRateLimit(), anonymousRequestBodyLimit, controller.CreateCliDeviceAuthorization)
+			cliAuthRoute.POST("/token", middleware.CliDeviceAuthorizationPollRateLimit(), anonymousRequestBodyLimit, controller.PollCliDeviceAuthorization)
 			cliAuthRoute.GET("/:user_code", middleware.UserAuth(), controller.GetCliDeviceAuthorization)
 			cliAuthRoute.POST("/:user_code/approve", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.ApproveCliDeviceAuthorization)
 			cliAuthRoute.POST("/:user_code/deny", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.DenyCliDeviceAuthorization)
