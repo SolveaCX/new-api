@@ -30,7 +30,7 @@ export function ReferralLinkCard({
   const links = buildInvitationShareLinks(
     affiliateLink,
     t(
-      'Join NewAPI with my referral link. Referral rewards are processed after your first successful top-up.'
+      'Join Flatkey with my referral link. Referral rewards are processed after your first successful top-up.'
     )
   )
 
