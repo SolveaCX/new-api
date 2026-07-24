@@ -28,4 +28,22 @@ export const audienceTemplateDescriptionKeys: Record<
     'Targets previous payers who have not paid or used the API recently.',
   expired_subscription:
     'Targets previous subscribers whose subscription is no longer active and expired long enough ago.',
+  registered_only:
+    'Targets users who registered within a selected registration date range.',
+  specified_users:
+    'Targets explicitly selected users by user ID or email address.',
 }
+
+export const recallCampaignEditorCopyKeys = [
+  'Registered only',
+  'Specified users',
+  'Registration start',
+  'Registration end',
+  'Registration start is required',
+  'Registration end is required',
+  'Registration end must be on or after start',
+  'At least one user or email is required',
+  'User IDs are invalid',
+  'Emails are invalid',
+  'Up to 500 users or emails are supported',
+] as const

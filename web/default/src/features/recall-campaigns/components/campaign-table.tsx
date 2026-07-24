@@ -117,7 +117,7 @@ export function CampaignTable() {
       columns={columns}
       isLoading={query.isLoading}
       isFetching={query.isFetching}
-      emptyTitle={t('No recall campaigns')}
+      emptyTitle={t('No activity configurations')}
       emptyDescription={t(
         'Create a campaign to safely win back eligible Stripe customers.'
       )}

@@ -29,6 +29,8 @@ type RecallCampaignDraft struct {
 
 type RecallAudienceConfig struct {
 	RegistrationAgeDays     int      `json:"registration_age_days"`
+	RegistrationStartAt     int64    `json:"registration_start_at"`
+	RegistrationEndAt       int64    `json:"registration_end_at"`
 	MinRequestCount         int      `json:"min_request_count"`
 	MaxQuota                int      `json:"max_quota"`
 	MinPaidAmount           float64  `json:"min_paid_amount"`
@@ -41,6 +43,8 @@ type RecallAudienceConfig struct {
 	Groups                  []string `json:"groups"`
 	GroupMode               string   `json:"group_mode"`
 	RequireVerifiedEmail    bool     `json:"require_verified_email"`
+	SpecifiedUserIDs        []int    `json:"specified_user_ids"`
+	SpecifiedEmails         []string `json:"specified_emails"`
 }
 
 type RecallScheduleConfig struct {
@@ -77,7 +81,44 @@ type RecallEmailStage struct {
 
 type RecallEmailTemplate struct {
 	Subject  string `json:"subject"`
-	BodyText string `json:"body_text"`
+	BodyText string `json:"body_text,omitempty"`
+	BodyHTML string `json:"body_html,omitempty"`
+}
+
+type RecallEmailPreviewRequest struct {
+	Template RecallEmailTemplate `json:"template"`
+}
+
+type RecallEmailPreviewResponse struct {
+	Subject  string `json:"subject"`
+	BodyHTML string `json:"body_html"`
+}
+
+func PreviewRecallEmail(request RecallEmailPreviewRequest) (RecallEmailPreviewResponse, error) {
+	stages, err := normalizeRecallEmailStages([]RecallEmailStage{{
+		StageNo:      1,
+		DelaySeconds: 0,
+		Templates: map[string]RecallEmailTemplate{
+			"en": request.Template,
+		},
+	}})
+	if err != nil {
+		return RecallEmailPreviewResponse{}, err
+	}
+	subject, bodyHTML, err := RenderRecallEmail(RecallEmailRenderInput{
+		Language:            "en",
+		Template:            stages[0].Templates["en"],
+		RecipientName:       "Ada",
+		PromotionCodeMasked: "SAVE****25",
+		ExpiresAt:           1_900_000_000,
+		ProductSummary:      "Flatkey top-ups and subscriptions",
+		ClaimURL:            "https://flatkey.ai/recall/claim?preview=1",
+		UnsubscribeURL:      "https://flatkey.ai/recall/unsubscribe?preview=1",
+	})
+	if err != nil {
+		return RecallEmailPreviewResponse{}, err
+	}
+	return RecallEmailPreviewResponse{Subject: subject, BodyHTML: bodyHTML}, nil
 }
 
 type RecallClaimView struct {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +28,16 @@ type recallPreviewResponse struct {
 	service.RecallAudiencePreview
 	Stripe service.RecallStripePreview `json:"stripe"`
 }
+
+type recallAudienceUserOption struct {
+	ID          int    `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	Status      int    `json:"status"`
+}
+
+const maxRecallAudienceUserKeywordRunes = 128
 
 func ListRecallCampaigns(c *gin.Context) {
 	runtime, err := recallControllerRuntime()
@@ -132,6 +143,48 @@ func PreviewRecallCampaign(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, recallPreviewResponse{RecallAudiencePreview: audience, Stripe: stripePreview})
+}
+
+func PreviewRecallEmailTemplate(c *gin.Context) {
+	var request service.RecallEmailPreviewRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	preview, err := service.PreviewRecallEmail(request)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, preview)
+}
+
+func ListRecallAudienceUsers(c *gin.Context) {
+	lookup, empty, err := recallAudienceUserLookupQuery(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if empty {
+		common.ApiSuccess(c, []recallAudienceUserOption{})
+		return
+	}
+	users, err := model.ListRecallAudienceUserOptionsWithContext(c.Request.Context(), lookup)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	options := make([]recallAudienceUserOption, 0, len(users))
+	for _, user := range users {
+		options = append(options, recallAudienceUserOption{
+			ID:          user.Id,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+			Email:       user.Email,
+			Status:      user.Status,
+		})
+	}
+	common.ApiSuccess(c, options)
 }
 
 func ActivateRecallCampaign(c *gin.Context) {
@@ -275,6 +328,66 @@ func RetryRecallRecipient(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+func recallAudienceUserLookupQuery(c *gin.Context) (model.RecallAudienceUserLookup, bool, error) {
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	rawIDs := strings.TrimSpace(c.Query("ids"))
+	hasKeyword := keyword != ""
+	hasIDs := rawIDs != ""
+	if hasKeyword && hasIDs {
+		return model.RecallAudienceUserLookup{}, false, fmt.Errorf("recall audience users require exactly one lookup mode")
+	}
+	if !hasKeyword && !hasIDs {
+		return model.RecallAudienceUserLookup{}, true, nil
+	}
+	if hasKeyword && len([]rune(keyword)) > maxRecallAudienceUserKeywordRunes {
+		return model.RecallAudienceUserLookup{}, false, fmt.Errorf("recall audience users keyword must be at most %d characters", maxRecallAudienceUserKeywordRunes)
+	}
+	if hasIDs {
+		ids, err := parseRecallAudienceUserIDs(rawIDs)
+		if err != nil {
+			return model.RecallAudienceUserLookup{}, false, err
+		}
+		return model.RecallAudienceUserLookup{IDs: ids}, false, nil
+	}
+	pageSize := 20
+	if rawPageSize := strings.TrimSpace(c.Query("page_size")); rawPageSize != "" {
+		parsed, err := strconv.Atoi(rawPageSize)
+		if err != nil || parsed <= 0 {
+			return model.RecallAudienceUserLookup{}, false, fmt.Errorf("recall audience users page_size must be positive")
+		}
+		pageSize = parsed
+	}
+	if pageSize > 50 {
+		pageSize = 50
+	}
+	return model.RecallAudienceUserLookup{Keyword: keyword, PageSize: pageSize}, false, nil
+}
+
+func parseRecallAudienceUserIDs(raw string) ([]int, error) {
+	parts := strings.Split(raw, ",")
+	if len(parts) == 0 || len(parts) > 500 {
+		return nil, fmt.Errorf("recall audience users ids must include 1 to 500 positive integers")
+	}
+	seen := make(map[int]struct{}, len(parts))
+	ids := make([]int, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		id, err := strconv.Atoi(part)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("recall audience users ids must be positive integers")
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("recall audience users ids must include positive integers")
+	}
+	return ids, nil
 }
 
 func ValidateRecallStripeConfig(c *gin.Context) {

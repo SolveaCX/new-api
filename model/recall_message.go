@@ -158,8 +158,10 @@ func getRecallEmailWorkItemForLeaseWithContext(ctx context.Context, id int64, ow
 	if err := DB.WithContext(ctx).First(&item.Campaign, item.Recipient.CampaignId).Error; err != nil {
 		return nil, err
 	}
-	if err := DB.WithContext(ctx).First(&item.User, item.Recipient.UserId).Error; err != nil {
-		return nil, err
+	if item.Recipient.UserId > 0 {
+		if err := DB.WithContext(ctx).First(&item.User, item.Recipient.UserId).Error; err != nil {
+			return nil, err
+		}
 	}
 	return item, nil
 }

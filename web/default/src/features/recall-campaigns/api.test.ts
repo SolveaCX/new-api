@@ -9,9 +9,11 @@ import {
   getRecallUserGroups,
   getRecallCampaign,
   getRecallCampaignMetrics,
+  listRecallAudienceUsers,
   listRecallCampaigns,
   listRecallEvents,
   listRecallRecipients,
+  previewRecallEmail,
   previewRecallCampaign,
   retryRecallRecipient,
   runRecallCampaignAction,
@@ -62,6 +64,27 @@ describe('recall campaign API contracts', () => {
     expect(capturedConfig?.params).toEqual({ type: 'user' })
   })
 
+  test('loads recall audience users by trimmed keyword', async () => {
+    respondWith({ success: true, data: [] })
+
+    await listRecallAudienceUsers({ keyword: '  alice  ', ids: [1, 2] })
+
+    expect(capturedConfig?.url).toBe('/api/recall-campaigns/audience-users')
+    expect(capturedConfig?.params).toEqual({
+      keyword: 'alice',
+      page_size: 50,
+    })
+  })
+
+  test('loads recall audience users by exact IDs', async () => {
+    respondWith({ success: true, data: [] })
+
+    await listRecallAudienceUsers({ ids: [2, 5] })
+
+    expect(capturedConfig?.url).toBe('/api/recall-campaigns/audience-users')
+    expect(capturedConfig?.params).toEqual({ ids: '2,5' })
+  })
+
   test('uses p and ps for campaign list pagination', async () => {
     respondWith({ success: true, data: { items: [], total: 0 } })
 
@@ -87,12 +110,20 @@ describe('recall campaign API contracts', () => {
     ['detail', () => getRecallCampaign(1)],
     ['update', () => updateRecallCampaign(1, draft)],
     ['preview', () => previewRecallCampaign(1)],
+    [
+      'email preview',
+      () =>
+        previewRecallEmail({
+          template: { subject: 'Subject', body_html: '<p>Hello</p>' },
+        }),
+    ],
     ['Stripe validation', () => validateRecallStripeConfig(draft)],
     ['action', () => runRecallCampaignAction(1, 'pause')],
     ['recipients', () => listRecallRecipients(1, 1)],
     ['events', () => listRecallEvents(1, 1)],
     ['metrics', () => getRecallCampaignMetrics(1)],
     ['retry', () => retryRecallRecipient(1, 2, false)],
+    ['audience users', () => listRecallAudienceUsers({ keyword: 'alice' })],
     ['top-up product configuration', getRecallTopUpProductConfiguration],
     [
       'subscription product configuration',
@@ -114,5 +145,21 @@ describe('recall campaign API contracts', () => {
     )
 
     await expect(exportRecallCampaign(1)).rejects.toThrow('Export unavailable')
+  })
+
+  test('posts email preview requests with the template wrapper', async () => {
+    respondWith({
+      success: true,
+      data: { subject: 'Subject', body_html: '<p>Hello</p>' },
+    })
+
+    await previewRecallEmail({
+      template: { subject: 'Subject', body_html: '<p>Hello</p>' },
+    })
+
+    expect(capturedConfig?.url).toBe('/api/recall-campaigns/email-preview')
+    expect(JSON.parse(String(capturedConfig?.data))).toEqual({
+      template: { subject: 'Subject', body_html: '<p>Hello</p>' },
+    })
   })
 })

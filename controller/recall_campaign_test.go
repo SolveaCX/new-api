@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -295,6 +297,241 @@ func seedRecallControllerUser(t *testing.T, harness *recallControllerHarness, id
 	return user
 }
 
+const recallControllerEmailPreviewHTML = `<!doctype html><html><body>
+<p>Hello {{.RecipientName}}</p>
+<p>{{.PromotionCodeMasked}} - {{.ProductSummary}} - {{.ExpiresAt}}</p>
+<p><a href="{{.ClaimURL}}">Claim offer</a></p>
+<p><a href="{{.UnsubscribeURL}}">Unsubscribe</a></p>
+</body></html>`
+
+func countRecallControllerRows[T any](t *testing.T, db *gorm.DB) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, db.Model(new(T)).Count(&count).Error)
+	return count
+}
+
+func TestRecallCampaignEmailPreviewRendersUnsavedTemplateWithoutPersistence(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	beforeCampaigns := countRecallControllerRows[model.RecallCampaign](t, harness.db)
+	beforeMessages := countRecallControllerRows[model.RecallMessage](t, harness.db)
+	body := recallControllerJSON(t, service.RecallEmailPreviewRequest{
+		Template: service.RecallEmailTemplate{
+			Subject:  "Preview subject",
+			BodyHTML: recallControllerEmailPreviewHTML,
+		},
+	})
+
+	recorder := invokeRecallHandler(t, PreviewRecallEmailTemplate, http.MethodPost, "/", body, 0, nil)
+
+	payload := decodeRecallEnvelope(t, recorder)
+	require.Equal(t, true, payload["success"])
+	data := payload["data"].(map[string]any)
+	require.Equal(t, "Preview subject", data["subject"])
+	bodyHTML := data["body_html"].(string)
+	require.Contains(t, bodyHTML, "Ada")
+	require.Contains(t, bodyHTML, "SAVE****25")
+	require.Contains(t, bodyHTML, "Flatkey top-ups and subscriptions")
+	require.Contains(t, bodyHTML, time.Unix(1_900_000_000, 0).UTC().Format("2006-01-02 15:04 UTC"))
+	require.Contains(t, bodyHTML, `href="https://flatkey.ai/recall/claim?preview=1"`)
+	require.Contains(t, bodyHTML, `href="https://flatkey.ai/recall/unsubscribe?preview=1"`)
+	require.Equal(t, beforeCampaigns, countRecallControllerRows[model.RecallCampaign](t, harness.db))
+	require.Equal(t, beforeMessages, countRecallControllerRows[model.RecallMessage](t, harness.db))
+}
+
+func TestListRecallAudienceUsersSearchesByKeywordWithBounds(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	users := []model.User{
+		{Id: 101, Username: "ada-keyword", Password: "hash", DisplayName: "Ada Lovelace", Email: "first@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-101"},
+		{Id: 102, Username: "display-hit", Password: "hash", DisplayName: "Grace Ada", Email: "second@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-102"},
+		{Id: 103, Username: "email-hit", Password: "hash", DisplayName: "Email Match", Email: "ada-email@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-103"},
+		{Id: 104, Username: "no-match", Password: "hash", DisplayName: "No Match", Email: "none@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-104"},
+	}
+	for id := 105; id < 165; id++ {
+		users = append(users, model.User{
+			Id: id, Username: fmt.Sprintf("ada-extra-%03d", id), Password: "hash", DisplayName: "Extra Match", Email: fmt.Sprintf("extra-%03d@example.com", id),
+			Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: fmt.Sprintf("aud-%03d", id),
+		})
+	}
+	require.NoError(t, harness.db.Create(&users).Error)
+
+	recorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword=%20ada%20&page_size=2", nil, 7, nil)
+
+	options := decodeRecallAudienceUserOptions(t, recorder)
+	require.Equal(t, []int{101, 102}, recallAudienceOptionIDs(options))
+
+	defaultRecorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword=a", nil, 7, nil)
+	require.Len(t, decodeRecallAudienceUserOptions(t, defaultRecorder), 20)
+
+	cappedRecorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword=a&page_size=500", nil, 7, nil)
+	require.Len(t, decodeRecallAudienceUserOptions(t, cappedRecorder), 50)
+
+	invalidRecorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword=a&page_size=0", nil, 7, nil)
+	requireRecallFailure(t, invalidRecorder, "page_size")
+}
+
+func TestListRecallAudienceUsersLimitsTrimmedKeywordTo128Runes(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	exactLimitKeyword := strings.Repeat("界", 128)
+	require.NoError(t, harness.db.Create(&model.User{
+		Id: 171, Username: "keyword-limit-user", Password: "hash", DisplayName: exactLimitKeyword, Email: "keyword-limit@example.com",
+		Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-171",
+	}).Error)
+
+	exactLimit := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword="+url.QueryEscape("  "+exactLimitKeyword+"  "), nil, 7, nil)
+	require.Equal(t, []int{171}, recallAudienceOptionIDs(decodeRecallAudienceUserOptions(t, exactLimit)))
+
+	overLimitKeyword := strings.Repeat("界", 129)
+	overLimit := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword="+url.QueryEscape(overLimitKeyword), nil, 7, nil)
+	requireRecallFailure(t, overLimit, "keyword")
+	requireRecallFailure(t, overLimit, "128")
+}
+
+func TestListRecallAudienceUsersEscapesKeywordWildcardsAsLiterals(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	users := []model.User{
+		{Id: 181, Username: "percent-user", Password: "hash", DisplayName: "Literal 100% User", Email: "percent@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-181"},
+		{Id: 182, Username: "underscore_user", Password: "hash", DisplayName: "Literal Underscore User", Email: "underscore@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-182"},
+		{Id: 183, Username: "bang-user", Password: "hash", DisplayName: "Literal Bang! User", Email: "bang@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-183"},
+		{Id: 184, Username: "plain-user", Password: "hash", DisplayName: "Plain Wildcard Decoy", Email: "plain@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-184"},
+	}
+	require.NoError(t, harness.db.Create(&users).Error)
+
+	for _, test := range []struct {
+		name    string
+		keyword string
+		wantIDs []int
+	}{
+		{name: "percent", keyword: "%", wantIDs: []int{181}},
+		{name: "underscore", keyword: "_", wantIDs: []int{182}},
+		{name: "bang", keyword: "!", wantIDs: []int{183}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?keyword="+url.QueryEscape(test.keyword), nil, 7, nil)
+			require.Equal(t, test.wantIDs, recallAudienceOptionIDs(decodeRecallAudienceUserOptions(t, recorder)))
+		})
+	}
+}
+
+func TestListRecallAudienceUsersResolvesIDsSafely(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	users := []model.User{
+		{Id: 201, Username: "enabled-user", Password: "hash", DisplayName: "Enabled User", Email: "enabled@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-201"},
+		{Id: 202, Username: "disabled-user", Password: "hash", DisplayName: "Disabled User", Email: "disabled@example.com", Status: common.UserStatusDisabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-202"},
+	}
+	require.NoError(t, harness.db.Create(&users).Error)
+
+	recorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?ids=202,%20201,202,999", nil, 7, nil)
+
+	options := decodeRecallAudienceUserOptions(t, recorder)
+	require.Equal(t, []int{201, 202}, recallAudienceOptionIDs(options))
+	require.Equal(t, common.UserStatusDisabled, int(options[1]["status"].(float64)))
+	require.Equal(t, "disabled@example.com", options[1]["email"])
+}
+
+func TestListRecallAudienceUsersRejectsUnsafeInputAndEmptyRequestDoesNotEnumerate(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	require.NoError(t, harness.db.Create(&[]model.User{
+		{Id: 301, Username: "seed-one", Password: "hash", DisplayName: "Seed One", Email: "one@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-301"},
+		{Id: 302, Username: "seed-two", Password: "hash", DisplayName: "Seed Two", Email: "two@example.com", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Group: "plg", AffCode: "aud-302"},
+	}).Error)
+
+	empty := decodeRecallAudienceUserOptions(t, invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/", nil, 7, nil))
+	require.Empty(t, empty)
+
+	for _, target := range []string{
+		"/?ids=abc",
+		"/?ids=0",
+		"/?ids=-1",
+		"/?ids=" + strings.TrimRight(strings.Repeat("1,", 501), ","),
+		"/?ids=301&keyword=seed",
+	} {
+		recorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, target, nil, 7, nil)
+		requireRecallFailure(t, recorder, "audience")
+	}
+}
+
+func TestListRecallAudienceUsersResponseOnlyExposesOptionFields(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	require.NoError(t, harness.db.Create(&model.User{
+		Id: 401, Username: "shape-user", Password: "secret-password", DisplayName: "Shape User", Email: "shape@example.com",
+		Status: common.UserStatusEnabled, Role: common.RoleAdminUser, Group: "default", Quota: 1000, RequestCount: 77,
+		StripeCustomer: "cus_secret", StripeCardBound: true, AffCode: "aud-401",
+	}).Error)
+
+	recorder := invokeRecallHandler(t, ListRecallAudienceUsers, http.MethodGet, "/?ids=401", nil, 7, nil)
+
+	rawOptions := decodeRecallAudienceRawOptions(t, recorder)
+	require.Len(t, rawOptions, 1)
+	require.ElementsMatch(t, []string{"id", "username", "display_name", "email", "status"}, recallAudienceOptionKeys(rawOptions[0]))
+}
+
+func decodeRecallAudienceRawOptions(t *testing.T, recorder *httptest.ResponseRecorder) []map[string]json.RawMessage {
+	t.Helper()
+	var payload struct {
+		Success bool                         `json:"success"`
+		Message string                       `json:"message"`
+		Data    []map[string]json.RawMessage `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success, payload.Message)
+	return payload.Data
+}
+
+func decodeRecallAudienceUserOptions(t *testing.T, recorder *httptest.ResponseRecorder) []map[string]any {
+	t.Helper()
+	var payload struct {
+		Success bool             `json:"success"`
+		Message string           `json:"message"`
+		Data    []map[string]any `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success, payload.Message)
+	return payload.Data
+}
+
+func recallAudienceOptionIDs(options []map[string]any) []int {
+	ids := make([]int, 0, len(options))
+	for _, option := range options {
+		ids = append(ids, int(option["id"].(float64)))
+	}
+	return ids
+}
+
+func recallAudienceOptionKeys(option map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(option))
+	for key := range option {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func recallMapKeys(values map[string]any) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func TestRecallCampaignEmailPreviewRejectsInvalidHTMLWithoutPersistence(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	beforeCampaigns := countRecallControllerRows[model.RecallCampaign](t, harness.db)
+	beforeMessages := countRecallControllerRows[model.RecallMessage](t, harness.db)
+	body := recallControllerJSON(t, service.RecallEmailPreviewRequest{
+		Template: service.RecallEmailTemplate{
+			Subject:  "Preview subject",
+			BodyHTML: `<html><body><script>alert(1)</script></body></html>`,
+		},
+	})
+
+	recorder := invokeRecallHandler(t, PreviewRecallEmailTemplate, http.MethodPost, "/", body, 0, nil)
+
+	requireRecallFailure(t, recorder, "body_html")
+	require.Equal(t, beforeCampaigns, countRecallControllerRows[model.RecallCampaign](t, harness.db))
+	require.Equal(t, beforeMessages, countRecallControllerRows[model.RecallMessage](t, harness.db))
+}
+
 func TestRecallCampaignDisabledRejectsMutationAndWorkerAffectingHandlers(t *testing.T) {
 	harness := setupRecallControllerHarness(t)
 	setRecallControllerEnabled(t, false)
@@ -384,6 +621,32 @@ func TestRecallCampaignPreviewReturnsAudienceAndStripeWithoutCreateOrSend(t *tes
 	require.Zero(t, harness.stripe.createCustomer)
 	require.Zero(t, harness.stripe.createPromotionCode)
 	require.Zero(t, harness.sendCount)
+}
+
+func TestRecallCampaignPreviewSpecifiedUsersMissingEmailMasksOnlyAndOmitsRecipientIdentity(t *testing.T) {
+	harness := setupRecallControllerHarness(t)
+	draft := recallControllerDraft()
+	draft.AudienceTemplate = "specified_users"
+	draft.Audience = service.RecallAudienceConfig{
+		SpecifiedEmails: []string{"missing@example.com"},
+	}
+	campaign, err := harness.runtime.Campaigns.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+
+	recorder := invokeRecallHandler(t, PreviewRecallCampaign, http.MethodPost, "/?sample_size=5", nil, 7, gin.Params{{Key: "id", Value: fmt.Sprint(campaign.Id)}})
+	payload := decodeRecallEnvelope(t, recorder)
+	require.Equal(t, true, payload["success"])
+	data := payload["data"].(map[string]any)
+	require.Equal(t, float64(1), data["eligible_total"])
+	sample := data["sample"].([]any)
+	require.Len(t, sample, 1)
+	candidate := sample[0].(map[string]any)
+	require.ElementsMatch(t, []string{"user_id", "email_masked", "language"}, recallMapKeys(candidate))
+	require.Equal(t, float64(0), candidate["user_id"])
+	require.Equal(t, "m***@example.com", candidate["email_masked"])
+	require.Equal(t, "en", candidate["language"])
+	require.NotContains(t, recorder.Body.String(), "missing@example.com")
+	require.NotContains(t, recorder.Body.String(), "recipient_identity")
 }
 
 func TestRecallCampaignReadsMaskCodesAndOmitClaimAndTemplateSecrets(t *testing.T) {

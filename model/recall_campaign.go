@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -263,16 +264,51 @@ func CountRecallCampaignRecipientsWithContext(ctx context.Context, campaignID in
 	return count, err
 }
 
-func ListRecallCampaignRecipientUserIDsWithContext(ctx context.Context, campaignID int64) (map[int]struct{}, error) {
-	userIDs := make([]int, 0)
+type RecallCampaignRecipientKeys struct {
+	Identities map[string]struct{}
+	UserIDs    map[int]struct{}
+	Emails     map[string]struct{}
+}
+
+func ListRecallCampaignRecipientKeysWithContext(ctx context.Context, campaignID int64) (RecallCampaignRecipientKeys, error) {
+	keys := RecallCampaignRecipientKeys{
+		Identities: make(map[string]struct{}),
+		UserIDs:    make(map[int]struct{}),
+		Emails:     make(map[string]struct{}),
+	}
+	rows := make([]struct {
+		RecipientIdentity string
+		UserId            int
+		EmailSnapshot     string
+	}, 0)
 	if err := DB.WithContext(ctx).
 		Model(&RecallRecipient{}).
 		Where("campaign_id = ?", campaignID).
-		Pluck("user_id", &userIDs).Error; err != nil {
+		Select("recipient_identity", "user_id", "email_snapshot").
+		Find(&rows).Error; err != nil {
+		return keys, err
+	}
+	for _, row := range rows {
+		if identity := strings.TrimSpace(row.RecipientIdentity); identity != "" {
+			keys.Identities[identity] = struct{}{}
+		}
+		if row.UserId > 0 {
+			keys.UserIDs[row.UserId] = struct{}{}
+		}
+		if email, ok := normalizeRecallRecipientEmail(row.EmailSnapshot); ok {
+			keys.Emails[email] = struct{}{}
+		}
+	}
+	return keys, nil
+}
+
+func ListRecallCampaignRecipientUserIDsWithContext(ctx context.Context, campaignID int64) (map[int]struct{}, error) {
+	keys, err := ListRecallCampaignRecipientKeysWithContext(ctx, campaignID)
+	if err != nil {
 		return nil, err
 	}
-	existing := make(map[int]struct{}, len(userIDs))
-	for _, userID := range userIDs {
+	existing := make(map[int]struct{}, len(keys.UserIDs))
+	for userID := range keys.UserIDs {
 		existing[userID] = struct{}{}
 	}
 	return existing, nil

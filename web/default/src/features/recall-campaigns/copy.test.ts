@@ -26,6 +26,7 @@ import ru from '../../i18n/locales/ru.json'
 import vi from '../../i18n/locales/vi.json'
 import zh from '../../i18n/locales/zh.json'
 import { audienceTemplateDescriptionKeys } from './copy'
+import * as recallCopy from './copy'
 
 const localeTranslations: Record<string, Record<string, string>> = {
   en: en.translation,
@@ -37,6 +38,53 @@ const localeTranslations: Record<string, Record<string, string>> = {
   vi: vi.translation,
   zh: zh.translation,
 }
+
+const translatedAudienceTemplateDescriptionKeys = [
+  audienceTemplateDescriptionKeys.first_purchase,
+  audienceTemplateDescriptionKeys.lapsed_payer,
+  audienceTemplateDescriptionKeys.expired_subscription,
+  audienceTemplateDescriptionKeys.registered_only,
+  audienceTemplateDescriptionKeys.specified_users,
+] as const
+
+const activityConfigurationKeys = [
+  'Activity Configuration',
+  'Create activity configuration',
+  'No activity configurations',
+  'Back to Activity Configuration',
+] as const
+
+const exactAudienceControlKeys = [
+  'Registered only',
+  'Specified users',
+  'Registration start',
+  'Registration end',
+  'Registration start is required',
+  'Registration end is required',
+  'Registration end must be on or after start',
+  'At least one user or email is required',
+  'User IDs are invalid',
+  'Emails are invalid',
+  'Up to 500 users or emails are supported',
+] as const
+
+const dynamicAudienceTemplateValueKeys = [
+  'registered_only',
+  'specified_users',
+] as const
+
+const specifiedUsersSelectorKeys = [
+  'Specified users',
+  'Manual emails',
+  'Search users by name, username, or email',
+  'No selected users.',
+  'Loading matching users...',
+  'Failed to load matching users.',
+  'No matching users',
+  'Invalid email entries',
+  'Unavailable',
+  'one@example.com, two@example.com',
+] as const
 
 const recallHelpKeys = [
   'Subject must be 200 characters or fewer',
@@ -51,7 +99,18 @@ const recallHelpKeys = [
   'Failed to load configured user groups.',
   'No configured user groups are available.',
   'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.',
-  ...Object.values(audienceTemplateDescriptionKeys),
+  ...activityConfigurationKeys,
+  ...exactAudienceControlKeys,
+  ...dynamicAudienceTemplateValueKeys,
+  ...specifiedUsersSelectorKeys,
+  ...translatedAudienceTemplateDescriptionKeys,
+] as const
+
+const legacyActivityConfigurationKeys = [
+  'Recall Campaigns',
+  'Create recall campaign',
+  'No recall campaigns',
+  'Back to Recall Campaigns',
 ] as const
 
 describe('recall campaign copy', () => {
@@ -63,7 +122,24 @@ describe('recall campaign copy', () => {
         'Targets previous payers who have not paid or used the API recently.',
       expired_subscription:
         'Targets previous subscribers whose subscription is no longer active and expired long enough ago.',
+      registered_only:
+        'Targets users who registered within a selected registration date range.',
+      specified_users:
+        'Targets explicitly selected users by user ID or email address.',
     })
+  })
+
+  test('exposes source copy for exact audience controls', () => {
+    expect(
+      (
+        recallCopy as typeof recallCopy & {
+          recallCampaignEditorCopyKeys?: readonly string[]
+        }
+      ).recallCampaignEditorCopyKeys
+    ).toEqual(expect.arrayContaining([...exactAudienceControlKeys]))
+    expect(recallCopy.recallCampaignEditorCopyKeys).not.toContain(
+      'Registration end must be after start'
+    )
   })
 
   for (const [locale, translations] of Object.entries(localeTranslations)) {
@@ -83,7 +159,24 @@ describe('recall campaign copy', () => {
             translations[key],
             `${locale} should translate ${key}`
           ).not.toBe(key)
+          expect(
+            translations[key],
+            `${locale} should not use placeholder punctuation for ${key}`
+          ).not.toContain('?')
         }
+      }
+    })
+
+    test(`${locale} uses Activity Configuration instead of legacy Recall Campaign copy`, () => {
+      for (const key of activityConfigurationKeys) {
+        expect(translations[key], `${locale} is missing ${key}`).toBeTruthy()
+      }
+
+      for (const key of legacyActivityConfigurationKeys) {
+        expect(
+          Object.prototype.hasOwnProperty.call(translations, key),
+          `${locale} should not keep legacy visible key ${key}`
+        ).toBe(false)
       }
     })
   }

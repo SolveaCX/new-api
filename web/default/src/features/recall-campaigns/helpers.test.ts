@@ -2,9 +2,11 @@ import { createFormControl } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { describe, expect, test } from 'bun:test'
 import {
+  convertRecallBodyTextToHtml,
   formatRecallMinorAmount,
   getRecallPageCount,
   getRecallRecipientRetry,
+  insertRecallEmailAction,
   normalizeRecallGroupsForMode,
   normalizeRecallCouponSource,
   normalizeRecallDiscountType,
@@ -123,6 +125,176 @@ function makeRecipient(
 }
 
 describe('recall campaign editor normalization', () => {
+  test('normalizes legacy English text to HTML without changing hidden translations', () => {
+    const draft = makeValidDraft()
+    draft.email_sequence[0].templates = {
+      en: { subject: 'English subject', body_text: 'English body' },
+      fr: {
+        subject: 'Localized subject',
+        body_text: 'Localized text',
+        body_html: '<p>Localized HTML</p>',
+      },
+    }
+
+    const normalized = prepareRecallCampaignSubmitDraft(draft)
+
+    expect(normalized.email_sequence[0].templates.en).toMatchObject({
+      subject: 'English subject',
+      body_text: '',
+    })
+    expect(normalized.email_sequence[0].templates.en.body_html).toContain(
+      '<p>English body</p>'
+    )
+    expect(normalized.email_sequence[0].templates.fr).toEqual(
+      draft.email_sequence[0].templates.fr
+    )
+  })
+
+  test('clones hidden localized templates when preserving their values', () => {
+    const draft = makeValidDraft()
+    draft.email_sequence[0].templates = {
+      en: { subject: 'English subject', body_text: 'English body' },
+      fr: {
+        subject: 'Localized subject',
+        body_text: 'Localized text',
+        body_html: '<p>Localized HTML</p>',
+      },
+    }
+
+    const normalized = prepareRecallCampaignSubmitDraft(draft)
+
+    expect(normalized.email_sequence[0].templates.fr).toEqual(
+      draft.email_sequence[0].templates.fr
+    )
+    expect(normalized.email_sequence[0].templates.fr).not.toBe(
+      draft.email_sequence[0].templates.fr
+    )
+
+    normalized.email_sequence[0].templates.fr.body_html = '<p>Changed</p>'
+    expect(draft.email_sequence[0].templates.fr.body_html).toBe(
+      '<p>Localized HTML</p>'
+    )
+  })
+
+  test('preserves English HTML drafts and clears submitted body text', () => {
+    const draft = makeValidDraft()
+    draft.email_sequence[0].templates.en = {
+      subject: 'English subject',
+      body_text: 'stale text',
+      body_html: '<p>Editable HTML</p>',
+    }
+
+    const normalized = prepareRecallCampaignSubmitDraft(draft)
+
+    expect(normalized.email_sequence[0].templates.en).toEqual({
+      subject: 'English subject',
+      body_text: '',
+      body_html: '<p>Editable HTML</p>',
+    })
+  })
+
+  test('validates exactly one email body and preserves hidden localized HTML', () => {
+    const validHtml = makeValidDraft()
+    validHtml.audience_config.groups = []
+    validHtml.email_sequence[0].templates = {
+      en: { subject: 'English subject', body_html: '<p>English body</p>' },
+      fr: { subject: 'Localized subject', body_html: '<p>Localized HTML</p>' },
+    }
+    const htmlResult = recallCampaignDraftSchema.safeParse(validHtml)
+    expect(htmlResult.success).toBe(true)
+    if (htmlResult.success) {
+      expect(htmlResult.data.email_sequence[0].templates.fr.body_html).toBe(
+        '<p>Localized HTML</p>'
+      )
+    }
+
+    const validText = makeValidDraft()
+    validText.audience_config.groups = []
+    validText.email_sequence[0].templates.en = {
+      subject: 'English subject',
+      body_text: 'English body',
+    }
+    expect(recallCampaignDraftSchema.safeParse(validText).success).toBe(true)
+
+    const neither = makeValidDraft()
+    neither.audience_config.groups = []
+    neither.email_sequence[0].templates.en = {
+      subject: 'English subject',
+      body_text: ' ',
+      body_html: '',
+    }
+    const neitherResult = recallCampaignDraftSchema.safeParse(neither)
+    expect(neitherResult.success).toBe(false)
+    if (!neitherResult.success) {
+      expect(neitherResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['email_sequence', 0, 'templates', 'en', 'body_html'],
+        })
+      )
+    }
+
+    const both = makeValidDraft()
+    both.audience_config.groups = []
+    both.email_sequence[0].templates.en = {
+      subject: 'English subject',
+      body_text: 'English body',
+      body_html: '<p>English body</p>',
+    }
+    const bothResult = recallCampaignDraftSchema.safeParse(both)
+    expect(bothResult.success).toBe(false)
+    if (!bothResult.success) {
+      expect(bothResult.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['email_sequence', 0, 'templates', 'en', 'body_html'],
+        })
+      )
+    }
+  })
+
+  test('rejects HTML bodies over 100 KiB by UTF-8 byte length', () => {
+    const valid = makeValidDraft()
+    valid.audience_config.groups = []
+    valid.email_sequence[0].templates.en = {
+      subject: 'English subject',
+      body_html: '界'.repeat(Math.floor(102_400 / 3)),
+    }
+    expect(recallCampaignDraftSchema.safeParse(valid).success).toBe(true)
+
+    const tooLarge = makeValidDraft()
+    tooLarge.audience_config.groups = []
+    tooLarge.email_sequence[0].templates.en = {
+      subject: 'English subject',
+      body_html: `${'界'.repeat(Math.floor(102_400 / 3))}界`,
+    }
+    const result = recallCampaignDraftSchema.safeParse(tooLarge)
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['email_sequence', 0, 'templates', 'en', 'body_html'],
+          message: 'Body HTML must be 100 KiB or smaller',
+        })
+      )
+    }
+  })
+
+  test('converts legacy recall body text to HTML with required actions', () => {
+    expect(convertRecallBodyTextToHtml('Hello\nSecond line')).toContain(
+      '<p>Hello</p>'
+    )
+    expect(convertRecallBodyTextToHtml('Hello')).toContain('{{.ClaimURL}}')
+    expect(convertRecallBodyTextToHtml('Hello')).toContain(
+      '{{.UnsubscribeURL}}'
+    )
+  })
+
+  test('inserts recall email actions at the active selection', () => {
+    expect(insertRecallEmailAction('abc', 1, 2, '{{.ClaimURL}}')).toEqual({
+      value: 'a{{.ClaimURL}}c',
+      selection: 14,
+    })
+  })
+
   test('canonicalizes no-filter groups at the editor submission boundary without dropping translations', () => {
     const draft = makeDraft()
     draft.audience_config = {
@@ -157,8 +329,12 @@ describe('recall campaign editor normalization', () => {
     expect(normalized).not.toBe(draft)
     expect(draft.audience_config.groups).toEqual(['stale-group'])
     expect(normalized.audience_config.groups).toEqual([])
-    expect(normalized.email_sequence[0].templates).toEqual(
-      draft.email_sequence[0].templates
+    expect(normalized.email_sequence[0].templates.en).toMatchObject({
+      subject: 'English subject',
+      body_text: '',
+    })
+    expect(normalized.email_sequence[0].templates.en.body_html).toContain(
+      '<p>English body</p>'
     )
     expect(normalized.email_sequence[0].templates.fr).toEqual({
       subject: 'Sujet français',

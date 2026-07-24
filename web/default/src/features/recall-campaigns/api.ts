@@ -9,8 +9,11 @@ import type {
   RecallCampaignPreview,
   RecallCampaignSearch,
   RecallCampaignSummary,
+  RecallEmailPreviewRequest,
+  RecallEmailPreviewResponse,
   RecallEvent,
   RecallPage,
+  RecallAudienceUserOption,
   RecallRecipient,
   RecallSubscriptionProductRecord,
   RecallStripePreview,
@@ -38,6 +41,8 @@ export const recallCampaignKeys = {
     'subscription',
   ] as const,
   userGroups: ['recall-campaigns', 'audience-options', 'user-groups'] as const,
+  audienceUsers: (params: { keyword?: string; ids?: number[] }) =>
+    ['recall-campaigns', 'audience-options', 'users', params] as const,
 }
 
 function requireRecallSuccess<T>(response: ApiResponse<T>): ApiResponse<T> {
@@ -86,6 +91,16 @@ export async function previewRecallCampaign(
   return requireRecallSuccess(response.data)
 }
 
+export async function previewRecallEmail(
+  request: RecallEmailPreviewRequest
+): Promise<ApiResponse<RecallEmailPreviewResponse>> {
+  const response = await api.post(
+    '/api/recall-campaigns/email-preview',
+    request
+  )
+  return requireRecallSuccess(response.data)
+}
+
 export async function validateRecallStripeConfig(
   draft: RecallCampaignDraft
 ): Promise<ApiResponse<RecallStripePreview>> {
@@ -112,6 +127,26 @@ export async function getRecallSubscriptionProductConfiguration(): Promise<
 
 export async function getRecallUserGroups(): Promise<ApiResponse<string[]>> {
   const response = await api.get('/api/group/', { params: { type: 'user' } })
+  return requireRecallSuccess(response.data)
+}
+
+export async function listRecallAudienceUsers(params: {
+  keyword?: string
+  ids?: number[]
+}): Promise<ApiResponse<RecallAudienceUserOption[]>> {
+  const keyword = params.keyword?.trim()
+  const requestParams: Record<string, string | number> = {}
+
+  if (keyword) {
+    requestParams.keyword = keyword
+    requestParams.page_size = 50
+  } else if (params.ids?.length) {
+    requestParams.ids = params.ids.join(',')
+  }
+
+  const response = await api.get('/api/recall-campaigns/audience-users', {
+    params: requestParams,
+  })
   return requireRecallSuccess(response.data)
 }
 

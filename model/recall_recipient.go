@@ -2,8 +2,11 @@ package model
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net/mail"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,6 +14,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+var ErrRecallRecipientBindingConflict = errors.New("recall recipient binding conflict")
 
 const (
 	RecallRecipientQueued        = "queued"
@@ -30,8 +35,9 @@ const (
 
 type RecallRecipient struct {
 	Id                    int64   `json:"id" gorm:"primaryKey"`
-	CampaignId            int64   `json:"campaign_id" gorm:"uniqueIndex:idx_recall_campaign_user,priority:1;index"`
-	UserId                int     `json:"user_id" gorm:"uniqueIndex:idx_recall_campaign_user,priority:2;index"`
+	CampaignId            int64   `json:"campaign_id" gorm:"uniqueIndex:idx_recall_campaign_identity,priority:1;index"`
+	RecipientIdentity     string  `json:"-" gorm:"type:varchar(80);not null;default:'';uniqueIndex:idx_recall_campaign_identity,priority:2"`
+	UserId                int     `json:"user_id" gorm:"default:0;index"`
 	EligibilitySnapshot   string  `json:"eligibility_snapshot" gorm:"type:text;not null"`
 	EmailSnapshot         string  `json:"email_snapshot" gorm:"type:varchar(254);not null"`
 	LanguageSnapshot      string  `json:"language_snapshot" gorm:"type:varchar(16);not null"`
@@ -56,6 +62,10 @@ type RecallRecipient struct {
 	LastErrorMessage      string  `json:"last_error_message" gorm:"type:varchar(512)"`
 	CreatedAt             int64   `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt             int64   `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (recipient *RecallRecipient) BeforeCreate(tx *gorm.DB) error {
+	return normalizeRecallRecipientIdentity(recipient)
 }
 
 type RecallRecipientExportSnapshot struct {
@@ -125,6 +135,64 @@ func GetRecallRecipientByCampaignWithContext(ctx context.Context, campaignID int
 		return nil, err
 	}
 	return recipient, nil
+}
+
+func GetRecallRecipientByIDWithContext(ctx context.Context, recipientID int64) (*RecallRecipient, bool, error) {
+	if recipientID <= 0 {
+		return nil, false, nil
+	}
+	recipient := &RecallRecipient{}
+	if err := DB.WithContext(ctx).First(recipient, recipientID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return recipient, true, nil
+}
+
+func GetRecallClaimUserWithContext(ctx context.Context, userID int) (*User, bool, error) {
+	if userID <= 0 {
+		return nil, false, nil
+	}
+	user, err := GetUserByIdWithContext(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return user, true, nil
+}
+
+func BindRecallRecipientUserWithContext(ctx context.Context, recipientID int64, userID int, normalizedEmail string) (*RecallRecipient, bool, error) {
+	if recipientID <= 0 {
+		return nil, false, gorm.ErrRecordNotFound
+	}
+	if userID <= 0 {
+		return nil, false, fmt.Errorf("recall recipient bind requires a positive user id")
+	}
+	email, ok := normalizeRecallRecipientEmail(normalizedEmail)
+	if !ok {
+		return nil, false, fmt.Errorf("recall recipient bind requires a normalized email")
+	}
+	result := DB.WithContext(ctx).Model(&RecallRecipient{}).
+		Where("id = ? AND user_id = 0 AND LOWER(email_snapshot) = ? AND state <> ?", recipientID, email, RecallRecipientSuppressed).
+		Update("user_id", userID)
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	var stored RecallRecipient
+	if err := DB.WithContext(ctx).First(&stored, recipientID).Error; err != nil {
+		return nil, false, err
+	}
+	if result.RowsAffected == 1 {
+		return &stored, true, nil
+	}
+	if stored.UserId == userID {
+		return &stored, false, nil
+	}
+	return nil, false, ErrRecallRecipientBindingConflict
 }
 
 func ListDueRecallRecipientIDs(now int64, limit int) ([]int64, error) {
@@ -559,6 +627,62 @@ func SetRecallMarketingOptOutWithContext(ctx context.Context, userID int, now in
 	return true, invalidateUserCache(userID)
 }
 
+func SuppressRecallRecipientWithContext(ctx context.Context, recipientID int64, now int64) (bool, error) {
+	if recipientID <= 0 {
+		return false, gorm.ErrRecordNotFound
+	}
+	suppressed := false
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var recipient RecallRecipient
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recipient, recipientID).Error; err != nil {
+			return err
+		}
+		if recipient.UserId > 0 {
+			return nil
+		}
+		if recipient.State != RecallRecipientSuppressed {
+			result := tx.Model(&RecallRecipient{}).
+				Where("id = ? AND user_id = 0", recipientID).
+				Updates(map[string]any{
+					"state":              RecallRecipientSuppressed,
+					"lease_owner":        "",
+					"lease_expires_at":   int64(0),
+					"last_error_code":    "",
+					"last_error_message": "",
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				var refreshed RecallRecipient
+				if err := tx.First(&refreshed, recipientID).Error; err != nil {
+					return err
+				}
+				if refreshed.UserId > 0 {
+					return nil
+				}
+				return ErrRecallRecipientBindingConflict
+			}
+		}
+		if err := tx.Model(&RecallMessage{}).
+			Where("recipient_id = ? AND state IN ?", recipientID, []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased, RecallMessageSending}).
+			Updates(map[string]any{
+				"state":              RecallMessageCancelled,
+				"next_attempt_at":    int64(0),
+				"lease_owner":        "",
+				"lease_expires_at":   int64(0),
+				"failed_at":          now,
+				"last_error_code":    "recipient_unsubscribed",
+				"last_error_message": "",
+			}).Error; err != nil {
+			return err
+		}
+		suppressed = true
+		return nil
+	})
+	return suppressed, err
+}
+
 func insertRecallRunEvent(tx *gorm.DB, runEvent *RecallEvent) *gorm.DB {
 	if tx.Dialector.Name() == "mysql" {
 		// A duplicate INSERT IGNORE reports zero affected rows; unlike UPDATE, this ownership signal is not changed by clientFoundRows.
@@ -581,6 +705,12 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 	}
 	for i := range recipients {
 		recipients[i].CampaignId = campaignID
+		if err := normalizeRecallRecipientIdentity(&recipients[i]); err != nil {
+			return 0, err
+		}
+	}
+	if err := validateRecallRecipientIdentitiesUnique(recipients); err != nil {
+		return 0, err
 	}
 	runEvent.CampaignId = campaignID
 
@@ -598,7 +728,7 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 
 		if len(recipients) > 0 {
 			result := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "campaign_id"}, {Name: "user_id"}},
+				Columns:   []clause.Column{{Name: "campaign_id"}, {Name: "recipient_identity"}},
 				DoNothing: true,
 			}).Create(&recipients)
 			if result.Error != nil {
@@ -608,27 +738,27 @@ func InsertRecallRecipientsAndRunEvent(campaignID int64, recipients []RecallReci
 		}
 
 		if hasAlignedMessages {
-			userIDs := make([]int, len(recipients))
+			identities := make([]string, len(recipients))
 			for i := range recipients {
-				userIDs[i] = recipients[i].UserId
+				identities[i] = recipients[i].RecipientIdentity
 			}
 			var storedRecipients []RecallRecipient
-			if err := tx.Select("id", "user_id").
-				Where("campaign_id = ? AND user_id IN ?", campaignID, userIDs).
+			if err := tx.Select("id", "recipient_identity").
+				Where("campaign_id = ? AND recipient_identity IN ?", campaignID, identities).
 				Find(&storedRecipients).Error; err != nil {
 				return err
 			}
-			recipientIDsByUserID := make(map[int]int64, len(storedRecipients))
+			recipientIDsByIdentity := make(map[string]int64, len(storedRecipients))
 			for _, recipient := range storedRecipients {
-				recipientIDsByUserID[recipient.UserId] = recipient.Id
+				recipientIDsByIdentity[recipient.RecipientIdentity] = recipient.Id
 			}
 			for i, aligned := range alignedMessages {
 				if !aligned {
 					continue
 				}
-				recipientID, ok := recipientIDsByUserID[recipients[i].UserId]
+				recipientID, ok := recipientIDsByIdentity[recipients[i].RecipientIdentity]
 				if !ok {
-					return fmt.Errorf("recall recipient for campaign %d user %d was not persisted", campaignID, recipients[i].UserId)
+					return fmt.Errorf("recall recipient for campaign %d identity %s was not persisted", campaignID, recipients[i].RecipientIdentity)
 				}
 				messages[i].RecipientId = recipientID
 			}
@@ -767,6 +897,8 @@ type RecallCandidateQuery struct {
 	Template              string
 	Now                   int64
 	RegistrationBefore    int64
+	RegistrationStartAt   int64
+	RegistrationEndAt     int64
 	LastPaymentBefore     int64
 	SubscriptionBefore    int64
 	MaxQuota              int
@@ -775,6 +907,8 @@ type RecallCandidateQuery struct {
 	MinSubscriptionAmount float64
 	MinSubscriptionCount  int
 	PaymentProviders      []string
+	SpecifiedUserIDs      []int
+	SpecifiedEmails       []string
 	Groups                []string
 	GroupMode             string
 	AfterUserID           int
@@ -783,6 +917,9 @@ type RecallCandidateQuery struct {
 
 type RecallCandidateFact struct {
 	User                  User
+	RecipientIdentity     string
+	Email                 string
+	EmailOnly             bool
 	HasPayment            bool
 	PaidAmount            float64
 	LastPaymentAt         int64
@@ -802,6 +939,11 @@ type recallPaymentFactRow struct {
 	CompleteTime    int64
 }
 
+type recallSpecifiedEmailUserRow struct {
+	Email  string `gorm:"column:email"`
+	UserId int    `gorm:"column:user_id"`
+}
+
 func ListRecallCandidateFacts(query RecallCandidateQuery) ([]RecallCandidateFact, error) {
 	return ListRecallCandidateFactsWithContext(context.Background(), query)
 }
@@ -811,27 +953,145 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 	if query.Limit <= 0 {
 		return facts, nil
 	}
-	var users []User
-	if err := DB.WithContext(ctx).Where("id > ?", query.AfterUserID).
-		Order("id ASC").
-		Limit(query.Limit).
-		Find(&users).Error; err != nil {
-		return nil, err
-	}
-	if len(users) == 0 {
+	if query.Template == "specified_users" && query.AfterUserID > 0 {
 		return facts, nil
+	}
+	var users []User
+	userQuery := DB.WithContext(ctx).Where("id > ?", query.AfterUserID)
+	specifiedEmails := make([]string, 0)
+	switch query.Template {
+	case "registered_only":
+		userQuery = userQuery.
+			Where("created_at >= ? AND created_at <= ?", query.RegistrationStartAt, query.RegistrationEndAt).
+			Where("request_count = ?", 0)
+	case "specified_users":
+		ids := normalizeRecallCandidateUserIDs(query.SpecifiedUserIDs)
+		emails := normalizeRecallCandidateEmails(query.SpecifiedEmails)
+		specifiedEmails = emails
+		if len(ids)+len(emails) > 500 {
+			remaining := 500
+			if len(ids) > remaining {
+				ids = ids[:remaining]
+				emails = nil
+			} else {
+				remaining -= len(ids)
+				if len(emails) > remaining {
+					emails = emails[:remaining]
+				}
+			}
+			specifiedEmails = emails
+		}
+		if len(ids) == 0 && len(emails) == 0 {
+			return facts, nil
+		}
+		resolvedUserIDs := make([]int, 0, len(ids)+len(emails))
+		seenUserIDs := make(map[int]struct{}, len(ids)+len(emails))
+		matchedSpecifiedEmails := make(map[string]struct{}, len(emails))
+		if len(ids) > 0 {
+			var explicitUsers []User
+			if err := DB.WithContext(ctx).
+				Select("id", "email").
+				Where("id IN ?", ids).
+				Find(&explicitUsers).Error; err != nil {
+				return nil, err
+			}
+			for _, user := range explicitUsers {
+				if _, exists := seenUserIDs[user.Id]; !exists {
+					seenUserIDs[user.Id] = struct{}{}
+					resolvedUserIDs = append(resolvedUserIDs, user.Id)
+				}
+				if email := strings.ToLower(strings.TrimSpace(user.Email)); email != "" {
+					matchedSpecifiedEmails[email] = struct{}{}
+				}
+			}
+		}
+		remainingEmails := make([]string, 0, len(emails))
+		for _, email := range emails {
+			if _, matched := matchedSpecifiedEmails[email]; matched {
+				continue
+			}
+			remainingEmails = append(remainingEmails, email)
+		}
+		if len(remainingEmails) > 0 {
+			var emailUserRows []recallSpecifiedEmailUserRow
+			if err := DB.WithContext(ctx).Model(&User{}).
+				Select("LOWER(email) AS email, MIN(id) AS user_id").
+				Where("LOWER(email) IN ?", remainingEmails).
+				Group("LOWER(email)").
+				Scan(&emailUserRows).Error; err != nil {
+				return nil, err
+			}
+			for _, row := range emailUserRows {
+				email := strings.ToLower(strings.TrimSpace(row.Email))
+				if email != "" {
+					matchedSpecifiedEmails[email] = struct{}{}
+				}
+				if row.UserId <= 0 {
+					continue
+				}
+				if _, exists := seenUserIDs[row.UserId]; exists {
+					continue
+				}
+				seenUserIDs[row.UserId] = struct{}{}
+				resolvedUserIDs = append(resolvedUserIDs, row.UserId)
+			}
+		}
+		sort.Ints(resolvedUserIDs)
+		if len(resolvedUserIDs) > 0 {
+			userQuery = DB.WithContext(ctx).Where("id IN ?", resolvedUserIDs)
+			query.Limit = len(resolvedUserIDs)
+		} else {
+			users = nil
+			query.Limit = 0
+		}
+	}
+	if query.Limit > 0 {
+		if err := userQuery.
+			Order("id ASC").
+			Limit(query.Limit).
+			Find(&users).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	userIDs := make([]int, len(users))
 	facts = make([]RecallCandidateFact, len(users))
 	factByUserID := make(map[int]*RecallCandidateFact, len(users))
+	matchedSpecifiedEmails := make(map[string]struct{}, len(users))
 	for i := range users {
 		userIDs[i] = users[i].Id
-		facts[i] = RecallCandidateFact{User: users[i]}
+		email := strings.ToLower(strings.TrimSpace(users[i].Email))
+		if query.Template == "specified_users" {
+			for _, specifiedEmail := range specifiedEmails {
+				if email == specifiedEmail {
+					matchedSpecifiedEmails[specifiedEmail] = struct{}{}
+				}
+			}
+		}
+		facts[i] = RecallCandidateFact{
+			User:              users[i],
+			RecipientIdentity: RecallRecipientIdentityForUser(users[i].Id),
+			Email:             email,
+		}
 		factByUserID[users[i].Id] = &facts[i]
 	}
+	if query.Template == "specified_users" {
+		for _, email := range specifiedEmails {
+			if _, matched := matchedSpecifiedEmails[email]; matched {
+				continue
+			}
+			facts = append(facts, RecallCandidateFact{
+				RecipientIdentity: RecallRecipientIdentityForEmail(email),
+				Email:             email,
+				EmailOnly:         true,
+			})
+		}
+	}
+	if len(userIDs) == 0 {
+		return facts, nil
+	}
 
-	providerFilter := query.Template != "first_purchase" && len(query.PaymentProviders) > 0
+	providerFilter := (query.Template == "lapsed_payer" || query.Template == "expired_subscription") && len(query.PaymentProviders) > 0
 	topupQuery := DB.WithContext(ctx).Model(&TopUp{}).
 		Select("id", "user_id", "money", "payment_provider", "trade_no", "create_time", "complete_time").
 		Where("user_id IN ? AND status = ?", userIDs, common.TopUpStatusSuccess)
@@ -909,6 +1169,98 @@ func ListRecallCandidateFactsWithContext(ctx context.Context, query RecallCandid
 		}
 	}
 	return facts, nil
+}
+
+func RecallRecipientIdentityForUser(userID int) string {
+	if userID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("user:%d", userID)
+}
+
+func RecallRecipientIdentityForEmail(email string) string {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(email))
+	return fmt.Sprintf("email:%x", sum)
+}
+
+func normalizeRecallRecipientIdentity(recipient *RecallRecipient) error {
+	if recipient == nil {
+		return fmt.Errorf("recall recipient is required")
+	}
+	if strings.TrimSpace(recipient.RecipientIdentity) != "" {
+		return nil
+	}
+	if identity := RecallRecipientIdentityForUser(recipient.UserId); identity != "" {
+		recipient.RecipientIdentity = identity
+		return nil
+	}
+	email, ok := normalizeRecallRecipientEmail(recipient.EmailSnapshot)
+	if !ok {
+		return fmt.Errorf("recall recipient for campaign %d requires a positive user id or valid email snapshot", recipient.CampaignId)
+	}
+	recipient.RecipientIdentity = RecallRecipientIdentityForEmail(email)
+	return nil
+}
+
+func validateRecallRecipientIdentitiesUnique(recipients []RecallRecipient) error {
+	seen := make(map[string]int, len(recipients))
+	for i, recipient := range recipients {
+		identity := recipient.RecipientIdentity
+		if previous, ok := seen[identity]; ok {
+			return fmt.Errorf("duplicate recipient identity %s at recipient indexes %d and %d", identity, previous, i)
+		}
+		seen[identity] = i
+	}
+	return nil
+}
+
+func normalizeRecallRecipientEmail(email string) (string, bool) {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" {
+		return "", false
+	}
+	parsed, err := mail.ParseAddress(trimmed)
+	if err != nil || parsed.Address != trimmed {
+		return "", false
+	}
+	return strings.ToLower(trimmed), true
+}
+
+func normalizeRecallCandidateUserIDs(values []int) []int {
+	normalized := make([]int, 0, len(values))
+	seen := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
+func normalizeRecallCandidateEmails(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
 }
 
 func HasRecallPaymentAfter(userID int, after int64) (bool, error) {

@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"net/mail"
 	"reflect"
 	"strconv"
 	"strings"
@@ -1126,26 +1127,66 @@ func (s *RecallCampaignService) snapshotRecurringAudience(
 	limit int,
 	runAt time.Time,
 ) ([]model.RecallRecipient, map[string]int64, error) {
-	existing, err := model.ListRecallCampaignRecipientUserIDsWithContext(ctx, campaignID)
+	existing, err := model.ListRecallCampaignRecipientKeysWithContext(ctx, campaignID)
 	if err != nil {
 		return nil, nil, err
 	}
 	recipients := make([]model.RecallRecipient, 0, limit)
 	exclusions, err := s.audience.iterate(ctx, draft, runAt.Unix(), func(selection recallAudienceSelection) bool {
 		candidate := selection.Candidate
-		if _, enrolled := existing[candidate.UserID]; enrolled || len(recipients) >= limit {
+		if len(recipients) >= limit {
 			return true
+		}
+		identity := strings.TrimSpace(selection.RecipientIdentity)
+		if identity == "" {
+			identity = model.RecallRecipientIdentityForUser(candidate.UserID)
+		}
+		if _, enrolled := existing.Identities[identity]; enrolled && identity != "" {
+			return true
+		}
+		if candidate.UserID > 0 {
+			if _, enrolled := existing.UserIDs[candidate.UserID]; enrolled {
+				return true
+			}
+		}
+		email, hasEmail := normalizeRecallCampaignRecipientEmailKey(selection.Email)
+		if hasEmail {
+			if _, enrolled := existing.Emails[email]; enrolled {
+				return true
+			}
 		}
 		recipients = append(recipients, model.RecallRecipient{
 			UserId:              candidate.UserID,
 			EligibilitySnapshot: candidate.SnapshotJSON,
 			EmailSnapshot:       selection.Email,
+			RecipientIdentity:   identity,
 			LanguageSnapshot:    candidate.Language,
 			State:               model.RecallRecipientQueued,
 		})
+		if identity != "" {
+			existing.Identities[identity] = struct{}{}
+		}
+		if candidate.UserID > 0 {
+			existing.UserIDs[candidate.UserID] = struct{}{}
+		}
+		if hasEmail {
+			existing.Emails[email] = struct{}{}
+		}
 		return true
 	})
 	return recipients, exclusions, err
+}
+
+func normalizeRecallCampaignRecipientEmailKey(email string) (string, bool) {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" {
+		return "", false
+	}
+	parsed, err := mail.ParseAddress(trimmed)
+	if err != nil || parsed.Address != trimmed {
+		return "", false
+	}
+	return strings.ToLower(trimmed), true
 }
 
 func recallCampaignActivationFields(draft RecallCampaignDraft, couponID string, activatedAt int64) (map[string]any, error) {
@@ -1270,6 +1311,8 @@ func normalizeRecallAudienceConfig(cfg RecallAudienceConfig) RecallAudienceConfi
 	cfg.Groups = normalizeRecallStrings(cfg.Groups)
 	cfg.PaymentProviders = normalizeRecallStrings(cfg.PaymentProviders)
 	cfg.GroupMode = strings.ToLower(strings.TrimSpace(cfg.GroupMode))
+	cfg.SpecifiedUserIDs = normalizeRecallUserIDs(cfg.SpecifiedUserIDs)
+	cfg.SpecifiedEmails = normalizeRecallEmails(cfg.SpecifiedEmails)
 	return cfg
 }
 
@@ -1420,14 +1463,26 @@ func canonicalRecallEmailTemplates(stageNo int, english RecallEmailTemplate, tar
 func normalizeRecallEmailTemplate(stageNo int, language string, template RecallEmailTemplate) (RecallEmailTemplate, error) {
 	template.Subject = strings.TrimSpace(template.Subject)
 	template.BodyText = strings.TrimSpace(template.BodyText)
-	if template.Subject == "" || template.BodyText == "" {
-		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q requires subject and body", stageNo, language)
+	template.BodyHTML = strings.TrimSpace(template.BodyHTML)
+	if template.Subject == "" {
+		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q requires subject", stageNo, language)
 	}
 	if strings.ContainsAny(template.Subject, "\r\n") {
 		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q subject must be single line", stageNo, language)
 	}
 	if utf8.RuneCountInString(template.Subject) > recallEmailSubjectMaxRunes {
 		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q subject must contain at most %d characters", stageNo, language, recallEmailSubjectMaxRunes)
+	}
+	hasText := template.BodyText != ""
+	hasHTML := template.BodyHTML != ""
+	if hasText == hasHTML {
+		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q requires exactly one of body_text or body_html", stageNo, language)
+	}
+	if hasHTML {
+		if _, err := parseRecallEmailHTML(template.BodyHTML); err != nil {
+			return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q body_html: %w", stageNo, language, err)
+		}
+		return template, nil
 	}
 	if utf8.RuneCountInString(template.BodyText) > recallEmailBodyMaxRunes {
 		return RecallEmailTemplate{}, fmt.Errorf("recall email stage %d language %q body must contain at most %d characters", stageNo, language, recallEmailBodyMaxRunes)

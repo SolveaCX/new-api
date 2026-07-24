@@ -111,6 +111,307 @@ func TestRecallAudienceValidationAcceptsSupportedTemplates(t *testing.T) {
 	}
 }
 
+func TestValidateRecallAudienceNewTemplates(t *testing.T) {
+	tooManyUserIDs := make([]int, 501)
+	for i := range tooManyUserIDs {
+		tooManyUserIDs[i] = i + 1
+	}
+	combinedLimitIDs := make([]int, 250)
+	for i := range combinedLimitIDs {
+		combinedLimitIDs[i] = i + 1
+	}
+	combinedLimitEmails := make([]string, 251)
+	for i := range combinedLimitEmails {
+		combinedLimitEmails[i] = fmt.Sprintf("limit-%03d@example.com", i)
+	}
+	duplicateHeavyIDs := make([]int, 0, 500)
+	duplicateHeavyEmails := make([]string, 0, 500)
+	for i := 0; i < 250; i++ {
+		duplicateHeavyIDs = append(duplicateHeavyIDs, i+1, i+1)
+		email := fmt.Sprintf("duplicate-%03d@example.com", i)
+		duplicateHeavyEmails = append(duplicateHeavyEmails, email, strings.ToUpper(email))
+	}
+
+	tests := []struct {
+		template string
+		cfg      RecallAudienceConfig
+		wantErr  string
+	}{
+		{"registered_only", RecallAudienceConfig{RegistrationStartAt: 100, RegistrationEndAt: 200}, ""},
+		{"registered_only", RecallAudienceConfig{RegistrationEndAt: 200}, "registration time range"},
+		{"registered_only", RecallAudienceConfig{RegistrationStartAt: 100}, "registration time range"},
+		{"registered_only", RecallAudienceConfig{RegistrationStartAt: 200, RegistrationEndAt: 100}, "registration time range"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{7}}, ""},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"ops@example.com"}}, ""},
+		{"specified_users", RecallAudienceConfig{}, "at least one"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{0}}, "positive"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: []int{-1}}, "positive"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"not-an-email"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"Display Name <ops@example.com>"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"ops@example.com (ops)"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"ops@example.com, alerts@example.com"}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedEmails: []string{"   "}}, "email"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: tooManyUserIDs}, "500"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: combinedLimitIDs, SpecifiedEmails: combinedLimitEmails}, "500"},
+		{"specified_users", RecallAudienceConfig{SpecifiedUserIDs: duplicateHeavyIDs, SpecifiedEmails: duplicateHeavyEmails}, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.template+"/"+test.wantErr, func(t *testing.T) {
+			err := ValidateRecallAudience(test.template, test.cfg)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestValidateRecallAudienceNewTemplatesIgnoreInactiveLegacyFields(t *testing.T) {
+	staleLegacy := RecallAudienceConfig{
+		RegistrationAgeDays:     -1,
+		MinRequestCount:         -1,
+		MaxQuota:                -1,
+		MinPaidAmount:           -1,
+		LastAPICallAgeDays:      -1,
+		LastPaymentAgeDays:      -1,
+		SubscriptionExpiredDays: -1,
+		MinSubscriptionAmount:   -1,
+		MinSubscriptionCount:    -1,
+		PaymentProviders:        []string{""},
+	}
+
+	registeredOnly := staleLegacy
+	registeredOnly.RegistrationStartAt = 100
+	registeredOnly.RegistrationEndAt = 200
+	require.NoError(t, ValidateRecallAudience("registered_only", registeredOnly))
+
+	specifiedUsers := staleLegacy
+	specifiedUsers.Groups = []string{"plg"}
+	specifiedUsers.GroupMode = "unsupported"
+	specifiedUsers.SpecifiedUserIDs = []int{7}
+	require.NoError(t, ValidateRecallAudience("specified_users", specifiedUsers))
+}
+
+func TestValidateRecallAudienceNewTemplatesRespectActiveGroupFields(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  RecallAudienceConfig
+	}{
+		{name: "unknown group mode", cfg: RecallAudienceConfig{
+			RegistrationStartAt: 100,
+			RegistrationEndAt:   200,
+			Groups:              []string{"plg"},
+			GroupMode:           "unsupported",
+		}},
+		{name: "groups without mode", cfg: RecallAudienceConfig{
+			RegistrationStartAt: 100,
+			RegistrationEndAt:   200,
+			Groups:              []string{"plg"},
+		}},
+		{name: "mode without groups", cfg: RecallAudienceConfig{
+			RegistrationStartAt: 100,
+			RegistrationEndAt:   200,
+			GroupMode:           "allow",
+		}},
+		{name: "empty group", cfg: RecallAudienceConfig{
+			RegistrationStartAt: 100,
+			RegistrationEndAt:   200,
+			Groups:              []string{""},
+			GroupMode:           "allow",
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Error(t, ValidateRecallAudience("registered_only", test.cfg))
+		})
+	}
+}
+
+func TestValidateRecallAudienceExistingTemplatesIgnoreNewFields(t *testing.T) {
+	cfg := RecallAudienceConfig{
+		RegistrationStartAt: 200,
+		RegistrationEndAt:   100,
+		SpecifiedUserIDs:    []int{0},
+		SpecifiedEmails:     []string{"Display Name <ops@example.com>"},
+	}
+
+	for _, template := range []string{"first_purchase", "lapsed_payer", "expired_subscription"} {
+		t.Run(template, func(t *testing.T) {
+			require.NoError(t, ValidateRecallAudience(template, cfg))
+		})
+	}
+}
+
+func TestNormalizeRecallAudienceSpecifiedUsers(t *testing.T) {
+	require.Equal(t, []int{7, 3, 9}, normalizeRecallUserIDs([]int{7, 3, 7, 9, 3}))
+	require.Equal(t, []string{"ops@example.com", "alerts@example.com"}, normalizeRecallEmails([]string{
+		" Ops@Example.COM ",
+		"ops@example.com",
+		"ALERTS@example.com",
+		" alerts@example.com ",
+		" ",
+	}))
+	require.NotNil(t, normalizeRecallUserIDs(nil))
+	require.NotNil(t, normalizeRecallEmails(nil))
+}
+
+func TestRecallAudienceRegisteredOnlySelectsInclusiveUnusedRegistrations(t *testing.T) {
+	mainDB, logDB := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	const startAt int64 = now - 10_000
+	const endAt int64 = now - 1_000
+	start := createRecallAudienceUser(t, mainDB, now, "registered_start", func(user *model.User) {
+		user.CreatedAt = startAt
+		user.RequestCount = 0
+	})
+	end := createRecallAudienceUser(t, mainDB, now, "registered_end", func(user *model.User) {
+		user.CreatedAt = endAt
+		user.RequestCount = 0
+	})
+	createRecallAudienceUser(t, mainDB, now, "registered_before", func(user *model.User) {
+		user.CreatedAt = startAt - 1
+		user.RequestCount = 0
+	})
+	createRecallAudienceUser(t, mainDB, now, "registered_after", func(user *model.User) {
+		user.CreatedAt = endAt + 1
+		user.RequestCount = 0
+	})
+	used := createRecallAudienceUser(t, mainDB, now, "registered_used", func(user *model.User) {
+		user.CreatedAt = startAt + 1
+		user.RequestCount = 1
+	})
+	paid := createRecallAudienceUser(t, mainDB, now, "registered_paid", func(user *model.User) {
+		user.CreatedAt = startAt + 2
+		user.RequestCount = 0
+	})
+	require.NoError(t, mainDB.Create(&model.TopUp{
+		UserId:          paid.Id,
+		Money:           25,
+		TradeNo:         "registered-only-paid",
+		PaymentProvider: model.PaymentProviderPaddle,
+		CompleteTime:    startAt + 10,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+	require.NoError(t, logDB.Create(&model.Log{UserId: start.Id, Type: model.LogTypeConsume, CreatedAt: now - 60}).Error)
+
+	selector := NewRecallAudienceSelector()
+	selector.MainBatchSize = 1
+	preview, err := selector.Preview(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "registered_only",
+		Audience: RecallAudienceConfig{
+			RegistrationStartAt: startAt,
+			RegistrationEndAt:   endAt,
+			LastAPICallAgeDays:  30,
+		},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, preview.EligibleTotal)
+	require.Equal(t, []RecallAudienceCandidate{
+		{UserID: start.Id, EmailMasked: "r***@example.com", Language: "zh"},
+		{UserID: end.Id, EmailMasked: "r***@example.com", Language: "zh"},
+	}, preview.Sample)
+	require.EqualValues(t, 1, preview.Exclusions["payment_exists"])
+	require.Zero(t, preview.Exclusions["recent_api_activity"], "registered_only must not use stale LastAPICallAgeDays")
+	require.NotContains(t, []int{preview.Sample[0].UserID, preview.Sample[1].UserID}, used.Id)
+}
+
+func TestRecallAudienceSpecifiedUsersUsesExactUnionAndSafetyExclusions(t *testing.T) {
+	mainDB, logDB := setupRecallAudienceTestDBs(t)
+	const now int64 = 2_000_000_000
+	idOnly := createRecallAudienceUser(t, mainDB, now, "specified_id", func(user *model.User) {
+		user.RequestCount = 0
+		user.CreatedAt = now
+		user.Group = "blocked"
+	})
+	emailOnly := createRecallAudienceUser(t, mainDB, now, "specified_email", func(user *model.User) {
+		user.RequestCount = 1
+		user.CreatedAt = now
+		user.Group = "blocked"
+	})
+	overlap := createRecallAudienceUser(t, mainDB, now, "specified_overlap", func(user *model.User) {
+		user.Email = "SpecifiedOverlap@Example.COM"
+		user.RequestCount = 1
+		user.CreatedAt = now
+		user.Group = "blocked"
+	})
+	disabled := createRecallAudienceUser(t, mainDB, now, "specified_disabled", func(user *model.User) {
+		user.Status = common.UserStatusDisabled
+	})
+	invalid := createRecallAudienceUser(t, mainDB, now, "specified_invalid", func(user *model.User) {
+		user.Email = "not-an-email"
+	})
+	optOutJSON, err := common.Marshal(dto.UserSetting{RecallMarketingOptOut: true})
+	require.NoError(t, err)
+	optedOut := createRecallAudienceUser(t, mainDB, now, "specified_opted_out", func(user *model.User) {
+		user.Setting = string(optOutJSON)
+	})
+	unverified := createRecallAudienceUser(t, mainDB, now, "specified_unverified", func(user *model.User) {
+		user.EmailVerifiedAt = 0
+	})
+	createRecallAudienceUser(t, mainDB, now, "specified_unlisted", nil)
+	require.NoError(t, logDB.Create(&model.Log{UserId: idOnly.Id, Type: model.LogTypeConsume, CreatedAt: now - 60}).Error)
+	require.NoError(t, mainDB.Create(&model.TopUp{
+		UserId:          emailOnly.Id,
+		Money:           25,
+		TradeNo:         "specified-paid",
+		PaymentProvider: model.PaymentProviderStripe,
+		CompleteTime:    now - 60,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+
+	selector := NewRecallAudienceSelector()
+	selector.MainBatchSize = 2
+	recipients, exclusions, err := selector.Snapshot(context.Background(), RecallCampaignDraft{
+		AudienceTemplate: "specified_users",
+		Audience: RecallAudienceConfig{
+			RegistrationStartAt:     now - 100,
+			RegistrationEndAt:       now - 50,
+			MinRequestCount:         99,
+			LastAPICallAgeDays:      30,
+			Groups:                  []string{"plg"},
+			GroupMode:               "allow",
+			RequireVerifiedEmail:    true,
+			SpecifiedUserIDs:        []int{idOnly.Id, overlap.Id, disabled.Id, invalid.Id, optedOut.Id, unverified.Id, 999_999},
+			SpecifiedEmails:         []string{strings.ToUpper(emailOnly.Email), strings.ToLower(overlap.Email), "missing@example.com"},
+			PaymentProviders:        []string{model.PaymentProviderPaddle},
+			LastPaymentAgeDays:      999,
+			MinPaidAmount:           999,
+			SubscriptionExpiredDays: 999,
+			MinSubscriptionAmount:   999,
+			MinSubscriptionCount:    999,
+		},
+	}, 10, time.Unix(now, 0))
+	require.NoError(t, err)
+	gotUserIDs := make([]int, len(recipients))
+	emailOnlyRecipientFound := false
+	for i := range recipients {
+		gotUserIDs[i] = recipients[i].UserId
+		require.NotContains(t, recipients[i].EligibilitySnapshot, "missing@example.com")
+		if recipients[i].UserId == 0 {
+			emailOnlyRecipientFound = true
+			require.Equal(t, "missing@example.com", recipients[i].EmailSnapshot)
+			require.Equal(t, "en", recipients[i].LanguageSnapshot)
+		}
+		var snapshot map[string]any
+		require.NoError(t, common.Unmarshal([]byte(recipients[i].EligibilitySnapshot), &snapshot))
+		require.ElementsMatch(t, []string{
+			"template", "user_id", "registered_at", "quota", "request_count", "paid_amount",
+			"last_payment_at", "subscription_amount", "subscription_count", "last_subscription_end_at",
+		}, recallAudienceJSONKeys(snapshot))
+	}
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id, 0}, gotUserIDs)
+	require.True(t, emailOnlyRecipientFound)
+	require.EqualValues(t, 1, exclusions["disabled"])
+	require.EqualValues(t, 1, exclusions["invalid_email"])
+	require.EqualValues(t, 1, exclusions["opted_out"])
+	require.EqualValues(t, 1, exclusions["unverified_email"])
+	require.Zero(t, exclusions["group_filtered"], "specified_users must ignore hidden group config")
+	require.Zero(t, exclusions["recent_api_activity"], "specified_users must not use stale LastAPICallAgeDays")
+	require.Zero(t, exclusions["payment_exists"], "specified_users payment facts must not exclude exact users")
+	require.Zero(t, exclusions["threshold_not_met"], "specified_users must bypass behavioral thresholds")
+}
+
 func TestRecallAudienceValidationRejectsInvalidBoundaries(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -172,6 +473,30 @@ func TestRecallAudienceContractsUseStableJSONNames(t *testing.T) {
 		"campaign_id", "recipient_id", "campaign_name", "promotion_code_masked",
 		"expires_at", "discount", "products", "redeemed",
 	}, recallAudienceJSONKeys(claimJSON))
+}
+
+func TestRecallAudienceConfigJSONContractIncludesActivityFields(t *testing.T) {
+	raw, err := common.Marshal(RecallAudienceConfig{
+		RegistrationStartAt: 100,
+		RegistrationEndAt:   200,
+		SpecifiedUserIDs:    []int{7, 3},
+		SpecifiedEmails:     []string{"ops@example.com", "alerts@example.com"},
+	})
+	require.NoError(t, err)
+
+	var cfgJSON map[string]any
+	require.NoError(t, common.Unmarshal(raw, &cfgJSON))
+	require.ElementsMatch(t, []string{
+		"registration_age_days", "registration_start_at", "registration_end_at",
+		"min_request_count", "max_quota", "min_paid_amount", "last_api_call_age_days",
+		"last_payment_age_days", "subscription_expired_days", "min_subscription_amount",
+		"min_subscription_count", "payment_providers", "groups", "group_mode",
+		"require_verified_email", "specified_user_ids", "specified_emails",
+	}, recallAudienceJSONKeys(cfgJSON))
+	require.IsType(t, float64(0), cfgJSON["registration_start_at"])
+	require.IsType(t, float64(0), cfgJSON["registration_end_at"])
+	require.IsType(t, []any{}, cfgJSON["specified_user_ids"])
+	require.IsType(t, []any{}, cfgJSON["specified_emails"])
 }
 
 func recallAudienceJSONKeys(value map[string]any) []string {

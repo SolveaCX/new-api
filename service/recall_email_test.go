@@ -6,10 +6,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +70,29 @@ func TestRecallEmailRenderEscapesStoredContentAndOwnsActionMarkup(t *testing.T) 
 	require.Contains(t, body, "Claim your offer</a>")
 	require.Contains(t, body, "Unsubscribe</a>")
 	require.Contains(t, body, "claim=raw_token&amp;next=&#34;bad&#34;")
+}
+
+func TestRecallEmailRenderExecutesHTMLTemplateWithoutLegacyWrapper(t *testing.T) {
+	template := RecallEmailTemplate{Subject: "Return", BodyHTML: validRecallHTML}
+	subject, body, err := RenderRecallEmail(RecallEmailRenderInput{
+		Language:            "en",
+		Template:            template,
+		RecipientName:       `<Admin & Co>`,
+		PromotionCodeMasked: `SAVE****25`,
+		ProductSummary:      `Top-ups & subscriptions`,
+		ExpiresAt:           1_900_000_000,
+		ClaimURL:            `https://flatkey.ai/claim?a=1&b=2`,
+		UnsubscribeURL:      `https://flatkey.ai/unsubscribe?a=1&b=2`,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Return", subject)
+	require.Contains(t, body, `&lt;Admin &amp; Co&gt;`)
+	require.Contains(t, body, `SAVE****25`)
+	require.Contains(t, body, `Top-ups &amp; subscriptions`)
+	require.Contains(t, body, time.Unix(1_900_000_000, 0).UTC().Format("2006-01-02 15:04 UTC"))
+	require.Contains(t, body, `href="https://flatkey.ai/claim?a=1&amp;b=2"`)
+	require.Contains(t, body, `href="https://flatkey.ai/unsubscribe?a=1&amp;b=2"`)
+	require.NotContains(t, body, recallEmailCopyByLanguage["en"].GreetingPrefix+`&lt;Admin &amp; Co&gt;,`)
 }
 
 func TestRecallEmailRenderUsesLanguageSpecificWrapperAndProductSummary(t *testing.T) {
@@ -310,6 +336,16 @@ func TestRecallEmailAcceptedSchedulesVersionedStagesRelativeToFirstAcceptance(t 
 	var stageTwoCount int64
 	require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("recipient_id = ? AND stage_no = ?", fixture.recipient.Id, 2).Count(&stageTwoCount).Error)
 	require.EqualValues(t, 1, stageTwoCount)
+}
+
+func TestRecallEmailAccountBackedRecipientUsesRecipientUnsubscribeToken(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+
+	require.NoError(t, fixture.worker.ProcessLeased(context.Background(), fixture.message.Id))
+
+	require.Len(t, *fixture.sent, 1)
+	unsubscribeToken := recallEmailRawUnsubscribeToken(t, (*fixture.sent)[0].htmlBody)
+	requireRecallEmailUnsubscribePayload(t, unsubscribeToken, 2, 0, fixture.recipient.Id, fixture.recipient.PromotionExpiresAt)
 }
 
 func TestRecallEmailAcceptedTimestampUsesSMTPAcceptanceTime(t *testing.T) {
@@ -706,6 +742,7 @@ func TestRecallEmailRunBatchLeasesOnlyDueMessages(t *testing.T) {
 	}).Error)
 	futureRecipient := fixture.recipient
 	futureRecipient.Id = 0
+	futureRecipient.RecipientIdentity = ""
 	futureRecipient.UserId++
 	futureRecipient.EmailSnapshot = "future@example.com"
 	futurePromotionID := "promo_future"
@@ -764,6 +801,7 @@ func TestRecallEmailRunBatchRefreshesStopInputsBeforeEachSend(t *testing.T) {
 			require.NoError(t, model.DB.Create(&secondUser).Error)
 			secondRecipient := fixture.recipient
 			secondRecipient.Id = 0
+			secondRecipient.RecipientIdentity = ""
 			secondRecipient.UserId = secondUser.Id
 			secondRecipient.EmailSnapshot = secondUser.Email
 			secondPromotionID := "promo_batch_second"
@@ -797,6 +835,95 @@ func TestRecallEmailRunBatchRefreshesStopInputsBeforeEachSend(t *testing.T) {
 			require.Equal(t, testCase.stopReason, secondStored.LastErrorCode)
 		})
 	}
+}
+
+func TestRecallEmailRunBatchEmailOnlySendsWithSnapshotAndRecipientUnsubscribe(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	emailOnlyAddress := "snapshot-only@example.com"
+	require.NoError(t, model.DB.Delete(&model.User{}, fixture.user.Id).Error)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", fixture.recipient.Id).Updates(map[string]any{
+		"user_id":           0,
+		"email_snapshot":    emailOnlyAddress,
+		"language_snapshot": "",
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Updates(map[string]any{
+		"state":            model.RecallMessageScheduled,
+		"lease_owner":      "",
+		"lease_expires_at": int64(0),
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.TopUp{UserId: 0, TradeNo: "email-only-noise", Status: common.TopUpStatusSuccess, CompleteTime: fixture.recipient.CreatedAt + 1}).Error)
+	require.NoError(t, model.LOG_DB.Create(&model.Log{UserId: 0, Type: model.LogTypeConsume, CreatedAt: fixture.recipient.CreatedAt + 1}).Error)
+
+	processed, err := fixture.worker.RunBatch(context.Background(), 10)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Len(t, *fixture.sent, 1)
+	sent := (*fixture.sent)[0]
+	require.Equal(t, emailOnlyAddress, sent.receiver)
+	require.Equal(t, "Return stage 1", sent.subject)
+	require.Contains(t, sent.htmlBody, "Hello ,")
+	require.Contains(t, sent.htmlBody, "Offer body 1")
+	require.Contains(t, sent.htmlBody, "Valid for: Top-ups and subscriptions")
+	require.Contains(t, sent.htmlBody, "/console/topup?recall_claim=")
+	require.Equal(t, fmt.Sprintf("<recall-%d-1@notify.example.com>", fixture.recipient.Id), sent.messageID)
+
+	unsubscribeToken := recallEmailRawUnsubscribeToken(t, sent.htmlBody)
+	requireRecallEmailUnsubscribePayload(t, unsubscribeToken, 2, 0, fixture.recipient.Id, fixture.recipient.PromotionExpiresAt)
+	fixture.claims.now = func() time.Time { return time.Unix(recallEmailTestNow, 0).UTC() }
+	require.NoError(t, fixture.claims.Unsubscribe(context.Background(), unsubscribeToken))
+
+	var recipient model.RecallRecipient
+	require.NoError(t, model.DB.First(&recipient, fixture.recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientSuppressed, recipient.State)
+	var message model.RecallMessage
+	require.NoError(t, model.DB.First(&message, fixture.message.Id).Error)
+	require.Equal(t, model.RecallMessageAccepted, message.State)
+	require.NotNil(t, message.ClaimTokenHash)
+	require.Equal(t, recallEmailHash(recallEmailRawClaim(t, sent.htmlBody)), *message.ClaimTokenHash)
+}
+
+func TestRecallEmailProcessLeasedEmailOnlyIgnoresFenceAPIActivityForUserZero(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", fixture.recipient.Id).Updates(map[string]any{
+		"user_id":        0,
+		"email_snapshot": "single-email-only@example.com",
+	}).Error)
+	require.NoError(t, model.LOG_DB.Create(&model.Log{UserId: 0, Type: model.LogTypeConsume, CreatedAt: fixture.recipient.CreatedAt + 1}).Error)
+
+	require.NoError(t, fixture.worker.ProcessLeased(context.Background(), fixture.message.Id))
+
+	require.Len(t, *fixture.sent, 1)
+	require.Equal(t, "single-email-only@example.com", (*fixture.sent)[0].receiver)
+	require.Equal(t, model.RecallMessageAccepted, loadRecallEmailMessageByID(t, fixture.message.Id).State)
+}
+
+func TestRecallEmailEmailOnlyInvalidSnapshotCancelsWithoutSMTP(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	require.NoError(t, model.DB.Delete(&model.User{}, fixture.user.Id).Error)
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", fixture.recipient.Id).Updates(map[string]any{
+		"user_id":        0,
+		"email_snapshot": "Display Name <invalid@example.com>",
+	}).Error)
+
+	require.NoError(t, fixture.worker.ProcessLeased(context.Background(), fixture.message.Id))
+
+	require.Empty(t, *fixture.sent)
+	stored := loadRecallEmailMessageByID(t, fixture.message.Id)
+	require.Equal(t, model.RecallMessageCancelled, stored.State)
+	require.Equal(t, "email_unavailable", stored.LastErrorCode)
+}
+
+func TestRecallEmailBoundUserStillCancelsOnCurrentEmailMismatch(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", fixture.user.Id).Update("email", "changed@example.com").Error)
+
+	require.NoError(t, fixture.worker.ProcessLeased(context.Background(), fixture.message.Id))
+
+	require.Empty(t, *fixture.sent)
+	stored := loadRecallEmailMessageByID(t, fixture.message.Id)
+	require.Equal(t, model.RecallMessageCancelled, stored.State)
+	require.Equal(t, "email_unavailable", stored.LastErrorCode)
 }
 
 func newRecallEmailFixture(t *testing.T, stageCount int, sender RecallEmailSender) recallEmailFixture {
@@ -897,6 +1024,34 @@ func recallEmailRawClaim(t *testing.T, body string) string {
 	match := regexp.MustCompile(`claim=([A-Za-z0-9_-]+)`).FindStringSubmatch(body)
 	require.Len(t, match, 2)
 	return match[1]
+}
+
+func recallEmailRawUnsubscribeToken(t *testing.T, body string) string {
+	t.Helper()
+	match := regexp.MustCompile(`token=([^"&]+)`).FindStringSubmatch(body)
+	require.Len(t, match, 2)
+	token, err := url.QueryUnescape(strings.ReplaceAll(match[1], "&amp;", "&"))
+	require.NoError(t, err)
+	return token
+}
+
+func requireRecallEmailUnsubscribePayload(t *testing.T, token string, version int, userID int, recipientID int64, expiresAt int64) {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 2)
+	payloadJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	require.NoError(t, err)
+	var payload struct {
+		Version     int   `json:"v"`
+		UserID      int   `json:"u"`
+		RecipientID int64 `json:"r"`
+		ExpiresAt   int64 `json:"e"`
+	}
+	require.NoError(t, json.Unmarshal(payloadJSON, &payload))
+	require.Equal(t, version, payload.Version)
+	require.Equal(t, userID, payload.UserID)
+	require.Equal(t, recipientID, payload.RecipientID)
+	require.Equal(t, expiresAt, payload.ExpiresAt)
 }
 
 func recallEmailHash(raw string) string {

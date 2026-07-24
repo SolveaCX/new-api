@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react'
 import { useFieldArray, useForm, type FieldPath } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
@@ -15,10 +15,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { useRecallCampaignMutations } from '../api'
+import {
+  recallLocalDateTimeToUnix,
+  recallUnixToLocalDateTime,
+} from '../audience-inputs'
 import { audienceTemplateDescriptionKeys } from '../copy'
 import {
+  RECALL_EMAIL_STARTER_HTML,
   formatRecallMinorAmount,
   normalizeRecallCouponSource,
   normalizeRecallDiscountType,
@@ -39,8 +43,24 @@ import type {
   RecallDiscountConfig,
   RecallFixedCurrency,
 } from '../types'
+import { CampaignEmailHtmlEditor } from './campaign-email-html-editor'
 import { CampaignGroupSelector } from './campaign-group-selector'
 import { CampaignProductSelector } from './campaign-product-selector'
+
+interface CampaignSpecifiedUsersSelectorProps {
+  userIDs: number[]
+  emails: string[]
+  onUserIDsChange: (value: number[]) => void
+  onEmailsChange: (value: string[]) => void
+  immutable: boolean
+}
+
+const LazyCampaignSpecifiedUsersSelector = lazy(async () => {
+  const module = await import('./campaign-specified-users-selector')
+  return {
+    default: module.CampaignSpecifiedUsersSelector,
+  }
+})
 
 type RecallFixedAmountInputs = Record<RecallFixedCurrency, string>
 
@@ -76,7 +96,8 @@ function createRecallFixedAmountInputs(
   ) as RecallFixedAmountInputs
 }
 
-function createRecallCampaignFormDraft(
+// eslint-disable-next-line react-refresh/only-export-components
+export function createRecallCampaignFormDraft(
   draft: RecallCampaignDraft
 ): RecallCampaignDraft {
   const normalizedDraft =
@@ -141,6 +162,8 @@ const audienceFields: Record<
       label: 'Last API call age days',
     },
   ],
+  registered_only: [],
+  specified_users: [],
 }
 
 function createRecallCampaignDefaults(): RecallCampaignDraft {
@@ -161,6 +184,10 @@ function createRecallCampaignDefaults(): RecallCampaignDraft {
       groups: [],
       group_mode: '',
       require_verified_email: true,
+      registration_start_at: 0,
+      registration_end_at: 0,
+      specified_user_ids: [],
+      specified_emails: [],
     },
     execution_mode: 'manual',
     schedule: {
@@ -192,7 +219,13 @@ function createRecallCampaignDefaults(): RecallCampaignDraft {
         stage_no: 1,
         delay_seconds: 0,
         template_version: 1,
-        templates: { en: { subject: '', body_text: '' } },
+        templates: {
+          en: {
+            subject: '',
+            body_text: '',
+            body_html: RECALL_EMAIL_STARTER_HTML,
+          },
+        },
       },
     ],
   }
@@ -203,6 +236,7 @@ interface CampaignEditorProps {
   initialDraft?: RecallCampaignDraft
   status?: RecallCampaignStatus
   onSaved?: (campaignId: number) => void
+  specifiedUsersSelector?: ComponentType<CampaignSpecifiedUsersSelectorProps>
 }
 
 export function CampaignEditor(props: CampaignEditorProps) {
@@ -234,6 +268,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const groups = form.watch('audience_config.groups')
   const groupMode = form.watch('audience_config.group_mode')
   const providers = form.watch('audience_config.payment_providers')
+  const registrationStartAt = form.watch(
+    'audience_config.registration_start_at'
+  )
+  const registrationEndAt = form.watch('audience_config.registration_end_at')
+  const specifiedUserIDs = form.watch('audience_config.specified_user_ids')
+  const specifiedEmails = form.watch('audience_config.specified_emails')
   const topUpPrices = form.watch('product_scope.topup_price_ids')
   const subscriptionPrices = form.watch('product_scope.subscription_price_ids')
   const immutable = Boolean(props.status && props.status !== 'draft')
@@ -241,6 +281,28 @@ export function CampaignEditor(props: CampaignEditorProps) {
     couponSource === 'automatic' && discountType === 'fixed'
   const terminal = props.status === 'cancelled' || props.status === 'completed'
   const isSaving = mutations.create.isPending || mutations.update.isPending
+  const SpecifiedUsersSelector =
+    props.specifiedUsersSelector ?? LazyCampaignSpecifiedUsersSelector
+  const showGroupFilter = audienceTemplate !== 'specified_users'
+  const showPaymentProviders =
+    audienceTemplate === 'lapsed_payer' ||
+    audienceTemplate === 'expired_subscription'
+  const registrationStartError = form.getFieldState(
+    'audience_config.registration_start_at',
+    form.formState
+  ).error
+  const registrationEndError = form.getFieldState(
+    'audience_config.registration_end_at',
+    form.formState
+  ).error
+  const specifiedUserIDsError = form.getFieldState(
+    'audience_config.specified_user_ids',
+    form.formState
+  ).error
+  const specifiedEmailsError = form.getFieldState(
+    'audience_config.specified_emails',
+    form.formState
+  ).error
 
   useEffect(() => {
     if (props.initialDraft) {
@@ -275,6 +337,18 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const setGroups = (value: string[]) => {
     void setRecallCampaignGroups(form, value).catch(() => {
       toast.error(t('Something went wrong!'))
+    })
+  }
+
+  const setRegistrationDateTime = (
+    path:
+      | 'audience_config.registration_start_at'
+      | 'audience_config.registration_end_at',
+    value: string
+  ) => {
+    form.setValue(path, recallLocalDateTimeToUnix(value), {
+      shouldDirty: true,
+      shouldValidate: true,
     })
   }
 
@@ -332,7 +406,11 @@ export function CampaignEditor(props: CampaignEditorProps) {
   }
 
   return (
-    <form className='space-y-4' onSubmit={form.handleSubmit(onSubmit)}>
+    <form
+      className='space-y-4'
+      noValidate
+      onSubmit={form.handleSubmit(onSubmit)}
+    >
       <Card>
         <CardHeader>
           <CardTitle>{t('1. Campaign and audience')}</CardTitle>
@@ -355,7 +433,8 @@ export function CampaignEditor(props: CampaignEditorProps) {
                 value &&
                 form.setValue(
                   'audience_template',
-                  value as RecallCampaignDraft['audience_template']
+                  value as RecallCampaignDraft['audience_template'],
+                  { shouldDirty: true, shouldValidate: true }
                 )
               }
               items={[
@@ -365,6 +444,8 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   value: 'expired_subscription',
                   label: t('Expired subscription'),
                 },
+                { value: 'registered_only', label: t('Registered only') },
+                { value: 'specified_users', label: t('Specified users') },
               ]}
             >
               <SelectTrigger
@@ -383,6 +464,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   </SelectItem>
                   <SelectItem value='expired_subscription'>
                     {t('Expired subscription')}
+                  </SelectItem>
+                  <SelectItem value='registered_only'>
+                    {t('Registered only')}
+                  </SelectItem>
+                  <SelectItem value='specified_users'>
+                    {t('Specified users')}
                   </SelectItem>
                 </SelectGroup>
               </SelectContent>
@@ -421,47 +508,166 @@ export function CampaignEditor(props: CampaignEditorProps) {
               />
             </div>
           ))}
-          <CampaignGroupSelector
-            groups={groups}
-            groupMode={groupMode}
-            onChange={setGroups}
-            immutable={immutable}
-          />
-          <div className='space-y-2'>
-            <Label>{t('Group mode')}</Label>
-            <Select
-              disabled={immutable}
-              value={groupMode}
-              onValueChange={(value) =>
-                setGroupMode(
-                  (value ??
-                    '') as RecallCampaignDraft['audience_config']['group_mode']
-                )
-              }
-              items={[
-                { value: '', label: t('No group filter') },
-                { value: 'allow', label: t('Allow groups') },
-                { value: 'block', label: t('Block groups') },
-              ]}
-            >
-              <SelectTrigger className='w-full'>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value=''>{t('No group filter')}</SelectItem>
-                  <SelectItem value='allow'>{t('Allow groups')}</SelectItem>
-                  <SelectItem value='block'>{t('Block groups')}</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <p className='text-muted-foreground text-sm md:col-span-3'>
-            {t(
-              'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.'
-            )}
-          </p>
-          {audienceTemplate !== 'first_purchase' && (
+          {audienceTemplate === 'registered_only' ? (
+            <>
+              <div className='space-y-2'>
+                <Label htmlFor='recall-registration-start-at'>
+                  {t('Registration start')}
+                </Label>
+                <Input
+                  id='recall-registration-start-at'
+                  type='datetime-local'
+                  required
+                  disabled={immutable}
+                  aria-invalid={Boolean(registrationStartError)}
+                  aria-describedby={
+                    registrationStartError
+                      ? 'recall-registration-start-at-error'
+                      : undefined
+                  }
+                  value={recallUnixToLocalDateTime(registrationStartAt)}
+                  {...form.register('audience_config.registration_start_at', {
+                    onChange: (event) =>
+                      setRegistrationDateTime(
+                        'audience_config.registration_start_at',
+                        event.target.value
+                      ),
+                  })}
+                />
+                {registrationStartError ? (
+                  <p
+                    id='recall-registration-start-at-error'
+                    role='alert'
+                    className='text-destructive text-sm'
+                  >
+                    {t(String(registrationStartError.message))}
+                  </p>
+                ) : null}
+              </div>
+              <div className='space-y-2'>
+                <Label htmlFor='recall-registration-end-at'>
+                  {t('Registration end')}
+                </Label>
+                <Input
+                  id='recall-registration-end-at'
+                  type='datetime-local'
+                  required
+                  disabled={immutable}
+                  aria-invalid={Boolean(registrationEndError)}
+                  aria-describedby={
+                    registrationEndError
+                      ? 'recall-registration-end-at-error'
+                      : undefined
+                  }
+                  value={recallUnixToLocalDateTime(registrationEndAt)}
+                  {...form.register('audience_config.registration_end_at', {
+                    onChange: (event) =>
+                      setRegistrationDateTime(
+                        'audience_config.registration_end_at',
+                        event.target.value
+                      ),
+                  })}
+                />
+                {registrationEndError ? (
+                  <p
+                    id='recall-registration-end-at-error'
+                    role='alert'
+                    className='text-destructive text-sm'
+                  >
+                    {t(String(registrationEndError.message))}
+                  </p>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+          {audienceTemplate === 'specified_users' ? (
+            <div className='space-y-3 md:col-span-3'>
+              <Suspense
+                fallback={
+                  <p
+                    role='status'
+                    aria-live='polite'
+                    className='text-muted-foreground text-sm'
+                  >
+                    {t('Loading...')}
+                  </p>
+                }
+              >
+                <SpecifiedUsersSelector
+                  userIDs={specifiedUserIDs}
+                  emails={specifiedEmails}
+                  onUserIDsChange={(value) =>
+                    form.setValue('audience_config.specified_user_ids', value, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                  onEmailsChange={(value) =>
+                    form.setValue('audience_config.specified_emails', value, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                  immutable={immutable}
+                />
+              </Suspense>
+              {specifiedUserIDsError ? (
+                <p role='alert' className='text-destructive text-sm'>
+                  {t(String(specifiedUserIDsError.message))}
+                </p>
+              ) : null}
+              {specifiedEmailsError ? (
+                <p role='alert' className='text-destructive text-sm'>
+                  {t(String(specifiedEmailsError.message))}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {showGroupFilter ? (
+            <>
+              <CampaignGroupSelector
+                groups={groups}
+                groupMode={groupMode}
+                onChange={setGroups}
+                immutable={immutable}
+              />
+              <div className='space-y-2'>
+                <Label>{t('Group mode')}</Label>
+                <Select
+                  disabled={immutable}
+                  value={groupMode}
+                  onValueChange={(value) =>
+                    setGroupMode(
+                      (value ??
+                        '') as RecallCampaignDraft['audience_config']['group_mode']
+                    )
+                  }
+                  items={[
+                    { value: '', label: t('No group filter') },
+                    { value: 'allow', label: t('Allow groups') },
+                    { value: 'block', label: t('Block groups') },
+                  ]}
+                >
+                  <SelectTrigger className='w-full'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value=''>{t('No group filter')}</SelectItem>
+                      <SelectItem value='allow'>{t('Allow groups')}</SelectItem>
+                      <SelectItem value='block'>{t('Block groups')}</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className='text-muted-foreground text-sm md:col-span-3'>
+                {t(
+                  'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.'
+                )}
+              </p>
+            </>
+          ) : null}
+          {showPaymentProviders && (
             <div className='space-y-2'>
               <Label>{t('Payment providers (comma separated)')}</Label>
               <Input
@@ -851,17 +1057,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
           {stages.fields.map((stage, index) => {
             const subjectPath =
               `email_sequence.${index}.templates.en.subject` as FieldPath<RecallCampaignDraft>
-            const bodyPath =
-              `email_sequence.${index}.templates.en.body_text` as FieldPath<RecallCampaignDraft>
             const subjectId = `recall-email-${index}-subject`
             const subjectErrorId = `${subjectId}-error`
             const subjectError = form.getFieldState(
               subjectPath,
               form.formState
             ).error
-            const bodyId = `recall-email-${index}-body-text`
-            const bodyErrorId = `${bodyId}-error`
-            const bodyError = form.getFieldState(bodyPath, form.formState).error
             return (
               <div className='space-y-3 rounded-lg border p-3' key={stage.id}>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
@@ -908,26 +1109,11 @@ export function CampaignEditor(props: CampaignEditorProps) {
                     ) : null}
                   </div>
                 </div>
-                <div className='space-y-2'>
-                  <Label htmlFor={bodyId}>{t('Body text')}</Label>
-                  <Textarea
-                    id={bodyId}
-                    rows={5}
-                    disabled={terminal}
-                    aria-invalid={Boolean(bodyError)}
-                    aria-describedby={bodyError ? bodyErrorId : undefined}
-                    {...form.register(bodyPath)}
-                  />
-                  {bodyError ? (
-                    <p
-                      id={bodyErrorId}
-                      role='alert'
-                      className='text-destructive text-sm'
-                    >
-                      {t(String(bodyError.message))}
-                    </p>
-                  ) : null}
-                </div>
+                <CampaignEmailHtmlEditor
+                  form={form}
+                  index={index}
+                  disabled={terminal}
+                />
                 {stages.fields.length > 1 && !immutable ? (
                   <Button
                     type='button'
@@ -956,7 +1142,13 @@ export function CampaignEditor(props: CampaignEditorProps) {
                   stage_no: stages.fields.length + 1,
                   delay_seconds: stages.fields.length * 86400,
                   template_version: 1,
-                  templates: { en: { subject: '', body_text: '' } },
+                  templates: {
+                    en: {
+                      subject: '',
+                      body_text: '',
+                      body_html: RECALL_EMAIL_STARTER_HTML,
+                    },
+                  },
                 })
               }
             >

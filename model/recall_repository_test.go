@@ -2,10 +2,16 @@ package model
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
@@ -87,6 +93,269 @@ func newRecallRepositoryCampaign(name string) RecallCampaign {
 	}
 }
 
+func createRecallRepositoryCandidateUser(t *testing.T, suffix string, createdAt int64, requestCount int) User {
+	t.Helper()
+	user := User{
+		Username:        "recall_candidate_" + suffix,
+		AffCode:         "recall_candidate_aff_" + suffix,
+		Password:        "hashed-password",
+		Status:          common.UserStatusEnabled,
+		Email:           suffix + "@example.com",
+		EmailVerifiedAt: createdAt,
+		RequestCount:    requestCount,
+		CreatedAt:       createdAt,
+	}
+	require.NoError(t, DB.Create(&user).Error)
+	return user
+}
+
+func recallRepositoryUserIDs(facts []RecallCandidateFact) []int {
+	ids := make([]int, len(facts))
+	for i := range facts {
+		ids[i] = facts[i].User.Id
+	}
+	return ids
+}
+
+func requireRecallRunTablesEmpty(t *testing.T) {
+	t.Helper()
+
+	for _, table := range []any{&RecallRecipient{}, &RecallMessage{}, &RecallEvent{}} {
+		var count int64
+		require.NoError(t, DB.Model(table).Count(&count).Error)
+		require.Zero(t, count)
+	}
+}
+
+func TestListRecallCandidateFactsNewAudiencePredicates(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	const startAt int64 = 1_000
+	const endAt int64 = 2_000
+	before := createRecallRepositoryCandidateUser(t, "registered_before", startAt-1, 0)
+	start := createRecallRepositoryCandidateUser(t, "registered_start", startAt, 0)
+	end := createRecallRepositoryCandidateUser(t, "registered_end", endAt, 0)
+	after := createRecallRepositoryCandidateUser(t, "registered_after", endAt+1, 0)
+	used := createRecallRepositoryCandidateUser(t, "registered_used", startAt+100, 1)
+	paid := createRecallRepositoryCandidateUser(t, "registered_paid", startAt+200, 0)
+	require.NoError(t, DB.Create(&SubscriptionOrder{
+		UserId:          paid.Id,
+		Money:           10,
+		TradeNo:         "registered-paid-any-provider",
+		PaymentProvider: PaymentProviderPaddle,
+		CompleteTime:    startAt + 300,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+
+	var userSQL []string
+	callbackName := "recall_candidate_registered_predicates_" + strings.ReplaceAll(t.Name(), "/", "_")
+	require.NoError(t, DB.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == "users" {
+			userSQL = append(userSQL, tx.Statement.SQL.String())
+		}
+	}))
+	t.Cleanup(func() { _ = DB.Callback().Query().Remove(callbackName) })
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:            "registered_only",
+		Now:                 endAt,
+		RegistrationStartAt: startAt,
+		RegistrationEndAt:   endAt,
+		AfterUserID:         before.Id,
+		Limit:               10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{start.Id, end.Id, paid.Id}, recallRepositoryUserIDs(facts))
+	require.True(t, facts[2].HasPayment, "registered_only must load successful payments across providers")
+	require.NotContains(t, recallRepositoryUserIDs(facts), before.Id)
+	require.NotContains(t, recallRepositoryUserIDs(facts), after.Id)
+	require.NotContains(t, recallRepositoryUserIDs(facts), used.Id)
+	require.Len(t, userSQL, 1)
+	require.Contains(t, userSQL[0], "created_at >= ?")
+	require.Contains(t, userSQL[0], "created_at <= ?")
+	require.Contains(t, userSQL[0], "request_count = ?")
+	require.Contains(t, userSQL[0], "id > ?")
+	require.Contains(t, userSQL[0], "ORDER BY id ASC")
+	require.Contains(t, userSQL[0], "LIMIT")
+}
+
+func TestListRecallCandidateFactsSpecifiedUnion(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	idOnly := createRecallRepositoryCandidateUser(t, "specified_id", 100, 4)
+	emailOnly := createRecallRepositoryCandidateUser(t, "specified_email", 100, 4)
+	overlap := createRecallRepositoryCandidateUser(t, "specified_overlap", 100, 4)
+	unknown := createRecallRepositoryCandidateUser(t, "specified_unknown", 100, 4)
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idOnly.Id, overlap.Id, 999_999},
+		SpecifiedEmails:  []string{strings.ToUpper(emailOnly.Email), overlap.Email, "missing@example.com"},
+		Limit:            10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id, 0}, recallRepositoryUserIDs(facts))
+	require.True(t, facts[len(facts)-1].EmailOnly)
+	require.Equal(t, "missing@example.com", facts[len(facts)-1].Email)
+	require.NotContains(t, recallRepositoryUserIDs(facts), unknown.Id)
+
+	pageOne, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idOnly.Id, emailOnly.Id, overlap.Id},
+		Limit:            2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{idOnly.Id, emailOnly.Id, overlap.Id}, recallRepositoryUserIDs(pageOne))
+
+	pageTwo, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idOnly.Id, emailOnly.Id, overlap.Id},
+		AfterUserID:      pageOne[len(pageOne)-1].User.Id,
+		Limit:            2,
+	})
+	require.NoError(t, err)
+	require.Empty(t, pageTwo)
+
+	idFacts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idOnly.Id},
+		Limit:            10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{idOnly.Id}, recallRepositoryUserIDs(idFacts))
+
+	emailFacts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:        "specified_users",
+		SpecifiedEmails: []string{strings.ToUpper(emailOnly.Email)},
+		Limit:           10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{emailOnly.Id}, recallRepositoryUserIDs(emailFacts))
+
+	emptyFacts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template: "specified_users",
+		Limit:    10,
+	})
+	require.NoError(t, err)
+	require.Empty(t, emptyFacts)
+}
+
+func TestListRecallCandidateFactsSpecifiedUnionIncludesUnmatchedEmails(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	idSelected := createRecallRepositoryCandidateUser(t, "specified_unmatched_id", 100, 4)
+	emailMatched := createRecallRepositoryCandidateUser(t, "specified_unmatched_email", 100, 4)
+	overlap := createRecallRepositoryCandidateUser(t, "specified_unmatched_overlap", 100, 4)
+	disabled := createRecallRepositoryCandidateUser(t, "specified_unmatched_disabled", 100, 4)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", disabled.Id).Update("status", common.UserStatusDisabled).Error)
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{idSelected.Id, overlap.Id},
+		SpecifiedEmails: []string{
+			strings.ToUpper(emailMatched.Email),
+			strings.ToUpper(overlap.Email),
+			strings.ToUpper(disabled.Email),
+			"missing@example.com",
+		},
+		Limit: 5,
+	})
+	require.NoError(t, err)
+	require.Len(t, facts, 5)
+	require.Equal(t, []int{idSelected.Id, emailMatched.Id, overlap.Id, disabled.Id, 0}, recallRepositoryUserIDs(facts))
+
+	missingFact := facts[4]
+	require.Equal(t, "missing@example.com", missingFact.Email)
+	require.Zero(t, missingFact.User.Id)
+	require.True(t, missingFact.EmailOnly)
+	require.Equal(t, fmt.Sprintf("email:%x", sha256.Sum256([]byte("missing@example.com"))), missingFact.RecipientIdentity)
+
+	disabledEmailOnlyFallbacks := 0
+	disabledRealFacts := 0
+	for _, fact := range facts {
+		if fact.Email != strings.ToLower(disabled.Email) {
+			continue
+		}
+		if fact.EmailOnly {
+			disabledEmailOnlyFallbacks++
+			continue
+		}
+		if fact.User.Id == disabled.Id {
+			disabledRealFacts++
+		}
+	}
+	require.Equal(t, 1, disabledRealFacts)
+	require.Zero(t, disabledEmailOnlyFallbacks)
+}
+
+func TestListRecallCandidateFactsSpecifiedUnionPreservesIDsWithDuplicateEmails(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	sharedFirst := createRecallRepositoryCandidateUser(t, "specified_duplicate_email_first", 100, 4)
+	sharedSecond := createRecallRepositoryCandidateUser(t, "specified_duplicate_email_second", 100, 4)
+	explicit := createRecallRepositoryCandidateUser(t, "specified_duplicate_email_explicit", 100, 4)
+	otherEmail := createRecallRepositoryCandidateUser(t, "specified_duplicate_email_other", 100, 4)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", sharedSecond.Id).Update("email", sharedFirst.Email).Error)
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template:         "specified_users",
+		SpecifiedUserIDs: []int{explicit.Id},
+		SpecifiedEmails:  []string{strings.ToUpper(sharedFirst.Email), strings.ToUpper(otherEmail.Email)},
+		Limit:            3,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{sharedFirst.Id, explicit.Id, otherEmail.Id}, recallRepositoryUserIDs(facts))
+	for _, fact := range facts {
+		require.False(t, fact.EmailOnly)
+	}
+}
+
+func TestListRecallCandidateFactsSpecifiedUnionIgnoresSmallLimitForSafetyMatches(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &UserSubscription{}))
+
+	first := createRecallRepositoryCandidateUser(t, "specified_small_limit_first", 100, 4)
+	second := createRecallRepositoryCandidateUser(t, "specified_small_limit_second", 100, 4)
+	disabled := createRecallRepositoryCandidateUser(t, "specified_small_limit_disabled", 100, 4)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", disabled.Id).Update("status", common.UserStatusDisabled).Error)
+
+	facts, err := ListRecallCandidateFacts(RecallCandidateQuery{
+		Template: "specified_users",
+		SpecifiedEmails: []string{
+			strings.ToUpper(first.Email),
+			strings.ToUpper(second.Email),
+			strings.ToUpper(disabled.Email),
+			"missing-small-limit@example.com",
+		},
+		Limit: 2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int{first.Id, second.Id, disabled.Id, 0}, recallRepositoryUserIDs(facts))
+
+	disabledRealFacts := 0
+	disabledEmailOnlyFallbacks := 0
+	for _, fact := range facts {
+		if fact.Email != strings.ToLower(disabled.Email) {
+			continue
+		}
+		if fact.EmailOnly {
+			disabledEmailOnlyFallbacks++
+			continue
+		}
+		if fact.User.Id == disabled.Id {
+			disabledRealFacts++
+		}
+	}
+	require.Equal(t, 1, disabledRealFacts)
+	require.Zero(t, disabledEmailOnlyFallbacks)
+	require.Equal(t, "missing-small-limit@example.com", facts[len(facts)-1].Email)
+	require.True(t, facts[len(facts)-1].EmailOnly)
+}
+
 func TestRecallRepositoryMigrationCreatesMainDBTablesAndUniqueIndexes(t *testing.T) {
 	mainDB, logDB := setupRecallRepositoryTestDB(t)
 
@@ -134,6 +403,749 @@ func TestRecallRepositoryMigrationCreatesMainDBTablesAndUniqueIndexes(t *testing
 	duplicateEvent.Id = 0
 	duplicateEvent.EventType = "duplicate"
 	require.Error(t, mainDB.Create(&duplicateEvent).Error)
+}
+
+func TestRecallRecipientIdentityBeforeCreateAndUniqueness(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	firstEmailOnly := RecallRecipient{
+		CampaignId:          41,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "first@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientQueued,
+	}
+	secondEmailOnly := firstEmailOnly
+	secondEmailOnly.EmailSnapshot = "second@example.com"
+	require.NoError(t, DB.Create(&firstEmailOnly).Error)
+	require.NoError(t, DB.Create(&secondEmailOnly).Error)
+	require.Equal(t, RecallRecipientIdentityForEmail("first@example.com"), firstEmailOnly.RecipientIdentity)
+	require.Equal(t, RecallRecipientIdentityForEmail("second@example.com"), secondEmailOnly.RecipientIdentity)
+
+	spaceUpper := firstEmailOnly
+	spaceUpper.Id = 0
+	spaceUpper.CampaignId = 42
+	spaceUpper.EmailSnapshot = " ONE@example.com "
+	spaceUpper.RecipientIdentity = ""
+	require.NoError(t, DB.Create(&spaceUpper).Error)
+	require.Equal(t, RecallRecipientIdentityForEmail("one@example.com"), spaceUpper.RecipientIdentity)
+	duplicateEmail := spaceUpper
+	duplicateEmail.Id = 0
+	duplicateEmail.EmailSnapshot = "one@example.com"
+	duplicateEmail.RecipientIdentity = ""
+	require.Error(t, DB.Create(&duplicateEmail).Error)
+
+	userBacked := firstEmailOnly
+	userBacked.Id = 0
+	userBacked.CampaignId = 43
+	userBacked.UserId = 77
+	userBacked.EmailSnapshot = ""
+	userBacked.RecipientIdentity = ""
+	require.NoError(t, DB.Create(&userBacked).Error)
+	require.Equal(t, "user:77", userBacked.RecipientIdentity)
+
+	explicit := firstEmailOnly
+	explicit.Id = 0
+	explicit.CampaignId = 44
+	explicit.UserId = 88
+	explicit.EmailSnapshot = "explicit@example.com"
+	explicit.RecipientIdentity = "email:precomputed"
+	require.NoError(t, DB.Create(&explicit).Error)
+	require.Equal(t, "email:precomputed", explicit.RecipientIdentity)
+
+	missingIdentitySource := firstEmailOnly
+	missingIdentitySource.Id = 0
+	missingIdentitySource.CampaignId = 45
+	missingIdentitySource.EmailSnapshot = ""
+	missingIdentitySource.RecipientIdentity = ""
+	require.Error(t, DB.Create(&missingIdentitySource).Error)
+
+	displayName := firstEmailOnly
+	displayName.Id = 0
+	displayName.CampaignId = 46
+	displayName.EmailSnapshot = "Display Name <one@example.com>"
+	displayName.RecipientIdentity = ""
+	require.Error(t, DB.Create(&displayName).Error)
+}
+
+func TestRecallRecipientJSONDoesNotExposeIdentity(t *testing.T) {
+	recipient := RecallRecipient{
+		CampaignId:          41,
+		UserId:              77,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "hidden@example.com",
+		RecipientIdentity:   RecallRecipientIdentityForUser(77),
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientQueued,
+	}
+
+	payload, err := json.Marshal(recipient)
+
+	require.NoError(t, err)
+	require.NotContains(t, string(payload), "recipient_identity")
+	require.NotContains(t, string(payload), "user:77")
+}
+
+func TestRecallRecipientBindCASMatchesNormalizedEmailAndPreservesIdentity(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          47,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "EmailBind@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	originalIdentity := recipient.RecipientIdentity
+
+	bound, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7001, " emailbind@EXAMPLE.com ")
+
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.Equal(t, 7001, bound.UserId)
+	require.Equal(t, originalIdentity, bound.RecipientIdentity)
+	require.Equal(t, "EmailBind@example.com", bound.EmailSnapshot)
+}
+
+func TestRecallRecipientBindCASRejectsMismatchAndOtherUserWithoutChangingIdentity(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          48,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "owner@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	originalIdentity := recipient.RecipientIdentity
+
+	bound, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7002, "other@example.com")
+	require.Error(t, err)
+	require.False(t, inserted)
+	require.Nil(t, bound)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Zero(t, stored.UserId)
+	require.Equal(t, originalIdentity, stored.RecipientIdentity)
+
+	first, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7003, "owner@example.com")
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.Equal(t, 7003, first.UserId)
+	second, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7004, "owner@example.com")
+	require.Error(t, err)
+	require.False(t, inserted)
+	require.Nil(t, second)
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, 7003, stored.UserId)
+	require.Equal(t, originalIdentity, stored.RecipientIdentity)
+}
+
+func TestRecallRecipientBindCASIsIdempotentForSameUser(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          49,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "repeat@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+
+	first, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7005, "repeat@example.com")
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.Equal(t, 7005, first.UserId)
+	second, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7005, "repeat@example.com")
+	require.NoError(t, err)
+	require.False(t, inserted)
+	require.Equal(t, 7005, second.UserId)
+	require.Equal(t, first.RecipientIdentity, second.RecipientIdentity)
+}
+
+func TestRecallRecipientBindCASAllowsOnlyOneCompetingUser(t *testing.T) {
+	setupRecallRepositoryFileDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          50,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "race-bind@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	originalIdentity := recipient.RecipientIdentity
+
+	start := make(chan struct{})
+	type bindResult struct {
+		userID   int
+		bound    *RecallRecipient
+		inserted bool
+		err      error
+	}
+	results := make(chan bindResult, 2)
+	var wg sync.WaitGroup
+	for _, userID := range []int{7006, 7007} {
+		userID := userID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			bound, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, userID, "race-bind@example.com")
+			results <- bindResult{userID: userID, bound: bound, inserted: inserted, err: err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	winners := 0
+	for result := range results {
+		if result.inserted {
+			winners++
+			require.NoError(t, result.err)
+			require.NotNil(t, result.bound)
+			require.Equal(t, result.userID, result.bound.UserId)
+			require.Equal(t, originalIdentity, result.bound.RecipientIdentity)
+			continue
+		}
+		require.ErrorIs(t, result.err, ErrRecallRecipientBindingConflict)
+		require.Nil(t, result.bound)
+	}
+	require.Equal(t, 1, winners)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Contains(t, []int{7006, 7007}, stored.UserId)
+	require.Equal(t, originalIdentity, stored.RecipientIdentity)
+}
+
+func TestSuppressRecallRecipientOnlySuppressesUnboundRecipientAndCancelsPendingMessages(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+	const now int64 = 1_721_000_000
+
+	unbound := RecallRecipient{
+		CampaignId:          50,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "local@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+		LeaseOwner:          "recipient-worker",
+		LeaseExpiresAt:      now + 60,
+	}
+	other := RecallRecipient{
+		CampaignId:          50,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "other-local@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&unbound).Error)
+	require.NoError(t, DB.Create(&other).Error)
+
+	states := []string{RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased, RecallMessageSending, RecallMessageAccepted, RecallMessageFailed, RecallMessageCancelled}
+	for index, state := range states {
+		message := RecallMessage{
+			RecipientId:      unbound.Id,
+			StageNo:          index + 1,
+			TemplateSnapshot: `{}`,
+			State:            state,
+			NextAttemptAt:    now + 10,
+			LeaseOwner:       "message-worker",
+			LeaseExpiresAt:   now + 30,
+		}
+		require.NoError(t, DB.Create(&message).Error)
+	}
+	otherMessage := RecallMessage{RecipientId: other.Id, StageNo: 1, TemplateSnapshot: `{}`, State: RecallMessageScheduled, NextAttemptAt: now + 10}
+	require.NoError(t, DB.Create(&otherMessage).Error)
+
+	suppressed, err := SuppressRecallRecipientWithContext(context.Background(), unbound.Id, now)
+
+	require.NoError(t, err)
+	require.True(t, suppressed)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, unbound.Id).Error)
+	require.Equal(t, RecallRecipientSuppressed, stored.State)
+	require.Empty(t, stored.LeaseOwner)
+	require.Zero(t, stored.LeaseExpiresAt)
+	require.Zero(t, stored.UserId)
+
+	var messages []RecallMessage
+	require.NoError(t, DB.Where("recipient_id = ?", unbound.Id).Order("stage_no ASC").Find(&messages).Error)
+	require.Len(t, messages, len(states))
+	for index, message := range messages {
+		switch states[index] {
+		case RecallMessageScheduled, RecallMessageRetryWait, RecallMessageLeased, RecallMessageSending:
+			require.Equal(t, RecallMessageCancelled, message.State)
+			require.Equal(t, "recipient_unsubscribed", message.LastErrorCode)
+			require.Equal(t, now, message.FailedAt)
+			require.Zero(t, message.NextAttemptAt)
+			require.Empty(t, message.LeaseOwner)
+			require.Zero(t, message.LeaseExpiresAt)
+		default:
+			require.Equal(t, states[index], message.State)
+		}
+	}
+	var storedOtherMessage RecallMessage
+	require.NoError(t, DB.First(&storedOtherMessage, otherMessage.Id).Error)
+	require.Equal(t, RecallMessageScheduled, storedOtherMessage.State)
+
+	again, err := SuppressRecallRecipientWithContext(context.Background(), unbound.Id, now+1)
+	require.NoError(t, err)
+	require.True(t, again)
+}
+
+func TestSuppressRecallRecipientDoesNotLocallySuppressBoundRecipient(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          51,
+		UserId:              7100,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "bound@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+
+	suppressed, err := SuppressRecallRecipientWithContext(context.Background(), recipient.Id, 1_721_000_000)
+
+	require.NoError(t, err)
+	require.False(t, suppressed)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Equal(t, 7100, stored.UserId)
+	require.Equal(t, RecallRecipientContacting, stored.State)
+}
+
+func TestRecallRecipientBindCASDoesNotBindAlreadySuppressedRecipient(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	recipient := RecallRecipient{
+		CampaignId:          52,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "suppressed-bind@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	suppressed, err := SuppressRecallRecipientWithContext(context.Background(), recipient.Id, 1_721_000_000)
+	require.NoError(t, err)
+	require.True(t, suppressed)
+
+	bound, inserted, err := BindRecallRecipientUserWithContext(context.Background(), recipient.Id, 7200, "suppressed-bind@example.com")
+
+	require.Error(t, err)
+	require.False(t, inserted)
+	require.Nil(t, bound)
+	var stored RecallRecipient
+	require.NoError(t, DB.First(&stored, recipient.Id).Error)
+	require.Zero(t, stored.UserId)
+	require.Equal(t, RecallRecipientSuppressed, stored.State)
+}
+
+func TestListRecallCampaignRecipientKeysWithContext(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("recipient keys")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	otherCampaign := newRecallRepositoryCampaign("other keys")
+	require.NoError(t, CreateRecallCampaign(&otherCampaign))
+	recipients := []RecallRecipient{
+		{
+			CampaignId:          campaign.Id,
+			UserId:              0,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       " EmailOnly@example.com ",
+			RecipientIdentity:   RecallRecipientIdentityForEmail("emailonly@example.com"),
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		},
+		{
+			CampaignId:          campaign.Id,
+			UserId:              77,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "Bound@example.com",
+			RecipientIdentity:   RecallRecipientIdentityForUser(77),
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		},
+		{
+			CampaignId:          campaign.Id,
+			UserId:              0,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "Display Name <invalid@example.com>",
+			RecipientIdentity:   "email:invalid-snapshot",
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		},
+		{
+			CampaignId:          otherCampaign.Id,
+			UserId:              88,
+			EligibilitySnapshot: `{}`,
+			EmailSnapshot:       "other@example.com",
+			RecipientIdentity:   RecallRecipientIdentityForUser(88),
+			LanguageSnapshot:    "en",
+			State:               RecallRecipientQueued,
+		},
+	}
+	require.NoError(t, DB.Create(&recipients).Error)
+
+	keys, err := ListRecallCampaignRecipientKeysWithContext(context.Background(), campaign.Id)
+
+	require.NoError(t, err)
+	require.NotNil(t, keys.Identities)
+	require.NotNil(t, keys.UserIDs)
+	require.NotNil(t, keys.Emails)
+	require.Contains(t, keys.Identities, RecallRecipientIdentityForEmail("emailonly@example.com"))
+	require.Contains(t, keys.Identities, RecallRecipientIdentityForUser(77))
+	require.Contains(t, keys.Identities, "email:invalid-snapshot")
+	require.NotContains(t, keys.Identities, RecallRecipientIdentityForUser(88))
+	require.Contains(t, keys.UserIDs, 77)
+	require.NotContains(t, keys.UserIDs, 0)
+	require.NotContains(t, keys.UserIDs, 88)
+	require.Contains(t, keys.Emails, "emailonly@example.com")
+	require.Contains(t, keys.Emails, "bound@example.com")
+	require.NotContains(t, keys.Emails, "Display Name <invalid@example.com>")
+}
+
+func TestListRecallCampaignRecipientKeysWithContextReturnsNonNilEmptyMaps(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	keys, err := ListRecallCampaignRecipientKeysWithContext(context.Background(), 999)
+
+	require.NoError(t, err)
+	require.NotNil(t, keys.Identities)
+	require.NotNil(t, keys.UserIDs)
+	require.NotNil(t, keys.Emails)
+	require.Empty(t, keys.Identities)
+	require.Empty(t, keys.UserIDs)
+	require.Empty(t, keys.Emails)
+}
+
+func TestRecallRecipientMigrationRequiresDisabledCampaignsBeforeSchemaSwap(t *testing.T) {
+	originalDB := DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+	})
+
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_recipients (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		campaign_id bigint NOT NULL,
+		user_id integer NOT NULL,
+		eligibility_snapshot text NOT NULL,
+		email_snapshot varchar(254) NOT NULL,
+		language_snapshot varchar(16) NOT NULL,
+		state varchar(24) NOT NULL
+	)`).Error)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX idx_recall_campaign_user ON recall_recipients (campaign_id, user_id)`).Error)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Create(&Option{Key: "recall_campaign_setting.enabled", Value: "true"}).Error)
+
+	err = migrateRecallRecipientIdentity()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "recall_campaign_setting.enabled=false")
+	require.Contains(t, err.Error(), "drain")
+	require.False(t, DB.Migrator().HasColumn(&RecallRecipient{}, "recipient_identity"))
+	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+
+	require.NoError(t, DB.Model(&Option{}).Where(&Option{Key: "recall_campaign_setting.enabled"}).Update("value", "not-a-bool").Error)
+	err = migrateRecallRecipientIdentity()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid stored value")
+	require.False(t, DB.Migrator().HasColumn(&RecallRecipient{}, "recipient_identity"))
+	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+
+	require.NoError(t, DB.Model(&Option{}).Where(&Option{Key: "recall_campaign_setting.enabled"}).Update("value", "false").Error)
+	require.NoError(t, migrateRecallRecipientIdentity())
+	require.True(t, DB.Migrator().HasColumn(&RecallRecipient{}, "recipient_identity"))
+	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_identity"))
+	require.False(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+}
+
+func TestRecallRecipientMigrationRejectsActiveRecipientLeaseBeforeSchemaSwap(t *testing.T) {
+	originalDB := DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+	})
+
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_recipients (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		campaign_id bigint NOT NULL,
+		user_id integer NOT NULL,
+		eligibility_snapshot text NOT NULL,
+		email_snapshot varchar(254) NOT NULL,
+		language_snapshot varchar(16) NOT NULL,
+		state varchar(24) NOT NULL,
+		lease_owner varchar(96) NOT NULL DEFAULT '',
+		lease_expires_at bigint NOT NULL DEFAULT 0
+	)`).Error)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX idx_recall_campaign_user ON recall_recipients (campaign_id, user_id)`).Error)
+	require.NoError(t, DB.Exec(`INSERT INTO recall_recipients (campaign_id, user_id, eligibility_snapshot, email_snapshot, language_snapshot, state, lease_owner, lease_expires_at) VALUES
+		(73, 701, '{}', 'leased-recipient@example.com', 'en', 'queued', 'worker-a', ?)`, time.Now().Unix()+3600).Error)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Create(&Option{Key: "recall_campaign_setting.enabled", Value: "false"}).Error)
+
+	err = migrateRecallRecipientIdentity()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "active recall recipient/message leases")
+	require.False(t, DB.Migrator().HasColumn(&RecallRecipient{}, "recipient_identity"))
+	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+	require.False(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_identity"))
+}
+
+func TestRecallRecipientMigrationRejectsActiveMessageLeaseBeforeSchemaSwap(t *testing.T) {
+	originalDB := DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+	})
+
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_recipients (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		campaign_id bigint NOT NULL,
+		user_id integer NOT NULL,
+		eligibility_snapshot text NOT NULL,
+		email_snapshot varchar(254) NOT NULL,
+		language_snapshot varchar(16) NOT NULL,
+		state varchar(24) NOT NULL,
+		lease_owner varchar(96) NOT NULL DEFAULT '',
+		lease_expires_at bigint NOT NULL DEFAULT 0
+	)`).Error)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX idx_recall_campaign_user ON recall_recipients (campaign_id, user_id)`).Error)
+	require.NoError(t, DB.Exec(`INSERT INTO recall_recipients (campaign_id, user_id, eligibility_snapshot, email_snapshot, language_snapshot, state) VALUES
+		(74, 701, '{}', 'message-recipient@example.com', 'en', 'contacting')`).Error)
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_messages (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		recipient_id bigint NOT NULL,
+		stage_no integer NOT NULL,
+		template_snapshot text NOT NULL,
+		state varchar(24) NOT NULL,
+		lease_owner varchar(96) NOT NULL DEFAULT '',
+		lease_expires_at bigint NOT NULL DEFAULT 0
+	)`).Error)
+	require.NoError(t, DB.Exec(`INSERT INTO recall_messages (recipient_id, stage_no, template_snapshot, state, lease_owner, lease_expires_at) VALUES
+		(1, 1, '{}', 'leased', 'worker-a', ?)`, time.Now().Unix()+3600).Error)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Create(&Option{Key: "recall_campaign_setting.enabled", Value: "false"}).Error)
+
+	err = migrateRecallRecipientIdentity()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "active recall recipient/message leases")
+	require.False(t, DB.Migrator().HasColumn(&RecallRecipient{}, "recipient_identity"))
+	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+	require.False(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_identity"))
+}
+
+func TestMigrateDBRunsRecallIdentityGuardBeforeOtherMigrations(t *testing.T) {
+	originalDB := DB
+	originalUsingSQLite := common.UsingSQLite
+	originalUsingMySQL := common.UsingMySQL
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	common.UsingSQLite = false
+	common.UsingMySQL = true
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+		common.UsingSQLite = originalUsingSQLite
+		common.UsingMySQL = originalUsingMySQL
+	})
+
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_recipients (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		campaign_id bigint NOT NULL,
+		user_id integer NOT NULL,
+		eligibility_snapshot text NOT NULL,
+		email_snapshot varchar(254) NOT NULL,
+		language_snapshot varchar(16) NOT NULL,
+		state varchar(24) NOT NULL
+	)`).Error)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX idx_recall_campaign_user ON recall_recipients (campaign_id, user_id)`).Error)
+	require.NoError(t, DB.Exec(`CREATE TABLE tokens (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		model_limits varchar(1024) NOT NULL DEFAULT ''
+	)`).Error)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Create(&Option{Key: "recall_campaign_setting.enabled", Value: "true"}).Error)
+
+	err = migrateDB()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "recall_campaign_setting.enabled=false")
+	require.False(t, DB.Migrator().HasColumn(&RecallRecipient{}, "recipient_identity"))
+}
+
+func TestRecallRecipientMigrationBackfillsIdentityAndReplacesLegacyIndex(t *testing.T) {
+	originalDB := DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+	})
+
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_recipients (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		campaign_id bigint NOT NULL,
+		user_id integer NOT NULL,
+		eligibility_snapshot text NOT NULL,
+		email_snapshot varchar(254) NOT NULL,
+		language_snapshot varchar(16) NOT NULL,
+		state varchar(24) NOT NULL
+	)`).Error)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX idx_recall_campaign_user ON recall_recipients (campaign_id, user_id)`).Error)
+	require.NoError(t, DB.Exec(`INSERT INTO recall_recipients (campaign_id, user_id, eligibility_snapshot, email_snapshot, language_snapshot, state) VALUES
+		(70, 701, '{}', 'old-one@example.com', 'en', 'queued'),
+		(70, 702, '{}', 'old-two@example.com', 'en', 'queued')`).Error)
+
+	require.NoError(t, migrateRecallRecipientIdentity())
+	require.True(t, DB.Migrator().HasColumn(&RecallRecipient{}, "recipient_identity"))
+	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_identity"))
+	require.False(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+
+	var stored []RecallRecipient
+	require.NoError(t, DB.Order("id ASC").Find(&stored).Error)
+	require.Len(t, stored, 2)
+	require.Equal(t, "user:701", stored[0].RecipientIdentity)
+	require.Equal(t, "user:702", stored[1].RecipientIdentity)
+
+	require.NoError(t, migrateRecallRecipientIdentity())
+	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_identity"))
+	require.False(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+}
+
+func TestRecallRecipientMigrationBackfillsIdentityInKeysetBatches(t *testing.T) {
+	originalDB := DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+	})
+
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_recipients (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		campaign_id bigint NOT NULL,
+		user_id integer NOT NULL,
+		eligibility_snapshot text NOT NULL,
+		email_snapshot varchar(254) NOT NULL,
+		language_snapshot varchar(16) NOT NULL,
+		state varchar(24) NOT NULL
+	)`).Error)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX idx_recall_campaign_user ON recall_recipients (campaign_id, user_id)`).Error)
+	const keysetRows = 501
+	for i := 1; i <= keysetRows; i++ {
+		require.NoError(t, DB.Exec(`INSERT INTO recall_recipients (campaign_id, user_id, eligibility_snapshot, email_snapshot, language_snapshot, state) VALUES (?, ?, '{}', ?, 'en', 'queued')`, 72, i, fmt.Sprintf("batch-%d@example.com", i)).Error)
+	}
+
+	var backfillSelects []string
+	callbackName := "recall_identity_keyset_test"
+	require.NoError(t, DB.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		sql := tx.Statement.SQL.String()
+		if strings.Contains(sql, "FROM `recall_recipients`") && strings.Contains(sql, "recipient_identity") && strings.Contains(sql, "user_id") {
+			backfillSelects = append(backfillSelects, sql)
+		}
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, DB.Callback().Query().Remove(callbackName))
+	})
+
+	require.NoError(t, migrateRecallRecipientIdentity())
+
+	require.GreaterOrEqual(t, len(backfillSelects), 2)
+	for _, sql := range backfillSelects {
+		require.Contains(t, sql, "id >")
+		require.Contains(t, sql, "LIMIT")
+	}
+	var missing int64
+	require.NoError(t, DB.Table("recall_recipients").Where("recipient_identity = '' OR recipient_identity IS NULL").Count(&missing).Error)
+	require.Zero(t, missing)
+}
+
+func TestRecallRecipientMigrationKeepsLegacyIndexWhenIdentityIndexFails(t *testing.T) {
+	originalDB := DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+	})
+
+	require.NoError(t, DB.Exec(`CREATE TABLE recall_recipients (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		campaign_id bigint NOT NULL,
+		recipient_identity varchar(80) NOT NULL DEFAULT '',
+		user_id integer NOT NULL,
+		eligibility_snapshot text NOT NULL,
+		email_snapshot varchar(254) NOT NULL,
+		language_snapshot varchar(16) NOT NULL,
+		state varchar(24) NOT NULL
+	)`).Error)
+	require.NoError(t, DB.Exec(`CREATE UNIQUE INDEX idx_recall_campaign_user ON recall_recipients (campaign_id, user_id)`).Error)
+	require.NoError(t, DB.Exec(`INSERT INTO recall_recipients (campaign_id, recipient_identity, user_id, eligibility_snapshot, email_snapshot, language_snapshot, state) VALUES
+		(71, 'email:duplicate', 701, '{}', 'first@example.com', 'en', 'queued'),
+		(71, 'email:duplicate', 702, '{}', 'second@example.com', 'en', 'queued')`).Error)
+
+	err = migrateRecallRecipientIdentity()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create recall campaign identity index")
+	require.False(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_identity"))
+	require.True(t, DB.Migrator().HasIndex(&RecallRecipient{}, "idx_recall_campaign_user"))
+}
+
+func TestRecallRecipientMigrationMissingTableNoop(t *testing.T) {
+	originalDB := DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	DB = db
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		DB = originalDB
+	})
+
+	require.NoError(t, migrateRecallRecipientIdentity())
+	require.False(t, DB.Migrator().HasTable(&RecallRecipient{}))
 }
 
 func TestRecallRepositoryCampaignCRUDAndConditionalTransition(t *testing.T) {
@@ -790,6 +1802,177 @@ func TestRecallRunIdempotencyMixedRecipientConflictBindsMessagesByUser(t *testin
 	require.Equal(t, 452, messageUsers[`{"recipient":"new"}`])
 }
 
+func TestRecallRunIdentityAlignsEmailOnlyRecipientsAndReplays(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("email identity run")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	recipients := []RecallRecipient{
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "alpha@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "beta@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+	}
+	messages := []RecallMessage{
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"alpha"}`, State: RecallMessageScheduled},
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"beta"}`, State: RecallMessageScheduled},
+	}
+	runEvent := RecallEvent{EventType: "campaign_run", Source: "scheduler", SourceEventId: "identity:insert", EventData: `{}`}
+
+	inserted, err := InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, messages, runEvent)
+	require.NoError(t, err)
+	require.Equal(t, 2, inserted)
+	inserted, err = InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, messages, runEvent)
+	require.NoError(t, err)
+	require.Zero(t, inserted)
+
+	var storedRecipients []RecallRecipient
+	require.NoError(t, DB.Where("campaign_id = ?", campaign.Id).Find(&storedRecipients).Error)
+	require.Len(t, storedRecipients, 2)
+	recipientByID := make(map[int64]RecallRecipient, len(storedRecipients))
+	for _, recipient := range storedRecipients {
+		recipientByID[recipient.Id] = recipient
+	}
+	var storedMessages []RecallMessage
+	require.NoError(t, DB.Order("id ASC").Find(&storedMessages).Error)
+	require.Len(t, storedMessages, 2)
+	messageIdentities := make(map[string]string, len(storedMessages))
+	for _, message := range storedMessages {
+		messageIdentities[message.TemplateSnapshot] = recipientByID[message.RecipientId].RecipientIdentity
+	}
+	require.Equal(t, RecallRecipientIdentityForEmail("alpha@example.com"), messageIdentities[`{"recipient":"alpha"}`])
+	require.Equal(t, RecallRecipientIdentityForEmail("beta@example.com"), messageIdentities[`{"recipient":"beta"}`])
+}
+
+func TestRecallRunRejectsDuplicateIdentityInputsBeforeWrites(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("duplicate identity run")
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	recipients := []RecallRecipient{
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "duplicate@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: " DUPLICATE@example.com ", LanguageSnapshot: "en", State: RecallRecipientQueued},
+	}
+	messages := []RecallMessage{
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"first"}`, State: RecallMessageScheduled},
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"second"}`, State: RecallMessageScheduled},
+	}
+	runEvent := RecallEvent{EventType: "campaign_run", Source: "scheduler", SourceEventId: "identity:duplicate", EventData: `{}`}
+
+	inserted, err := InsertRecallRecipientsAndRunEvent(campaign.Id, recipients, messages, runEvent)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate recipient identity")
+	require.Zero(t, inserted)
+	requireRecallRunTablesEmpty(t)
+}
+
+func TestRecallRunCommitIdentityAlignsEmailOnlyRecipientsAndReplays(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("email identity commit")
+	campaign.Status = RecallCampaignScheduled
+	campaign.NextRunAt = 1_721_000_000
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	recipients := []RecallRecipient{
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "commit-alpha@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "commit-beta@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+	}
+	messages := []RecallMessage{
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"commit-alpha"}`, State: RecallMessageScheduled},
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"commit-beta"}`, State: RecallMessageScheduled},
+	}
+	expectedNextRunAt := campaign.NextRunAt
+	runEvent := RecallEvent{EventType: "campaign_run", Source: "scheduler", SourceEventId: "identity:commit", EventData: `{}`}
+
+	committed, inserted, err := CommitRecallCampaignRun(
+		context.Background(),
+		campaign.Id,
+		[]string{RecallCampaignScheduled},
+		RecallCampaignRunning,
+		&expectedNextRunAt,
+		campaign.ConfigRevision,
+		map[string]any{"next_run_at": int64(0)},
+		recipients,
+		messages,
+		runEvent,
+	)
+	require.NoError(t, err)
+	require.True(t, committed)
+	require.Equal(t, 2, inserted)
+
+	committed, inserted, err = CommitRecallCampaignRun(
+		context.Background(),
+		campaign.Id,
+		[]string{RecallCampaignScheduled},
+		RecallCampaignRunning,
+		&expectedNextRunAt,
+		campaign.ConfigRevision,
+		map[string]any{"next_run_at": int64(0)},
+		recipients,
+		messages,
+		runEvent,
+	)
+	require.NoError(t, err)
+	require.False(t, committed)
+	require.Zero(t, inserted)
+
+	var storedRecipients []RecallRecipient
+	require.NoError(t, DB.Where("campaign_id = ?", campaign.Id).Find(&storedRecipients).Error)
+	require.Len(t, storedRecipients, 2)
+	recipientByID := make(map[int64]RecallRecipient, len(storedRecipients))
+	for _, recipient := range storedRecipients {
+		recipientByID[recipient.Id] = recipient
+	}
+	var storedMessages []RecallMessage
+	require.NoError(t, DB.Order("id ASC").Find(&storedMessages).Error)
+	require.Len(t, storedMessages, 2)
+	messageIdentities := make(map[string]string, len(storedMessages))
+	for _, message := range storedMessages {
+		messageIdentities[message.TemplateSnapshot] = recipientByID[message.RecipientId].RecipientIdentity
+	}
+	require.Equal(t, RecallRecipientIdentityForEmail("commit-alpha@example.com"), messageIdentities[`{"recipient":"commit-alpha"}`])
+	require.Equal(t, RecallRecipientIdentityForEmail("commit-beta@example.com"), messageIdentities[`{"recipient":"commit-beta"}`])
+}
+
+func TestRecallCampaignRunRejectsDuplicateIdentityInputsBeforeWrites(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("duplicate identity commit")
+	campaign.Status = RecallCampaignScheduled
+	campaign.NextRunAt = 1_721_000_000
+	require.NoError(t, CreateRecallCampaign(&campaign))
+	recipients := []RecallRecipient{
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: "commit-duplicate@example.com", LanguageSnapshot: "en", State: RecallRecipientQueued},
+		{UserId: 0, EligibilitySnapshot: `{}`, EmailSnapshot: " COMMIT-DUPLICATE@example.com ", LanguageSnapshot: "en", State: RecallRecipientQueued},
+	}
+	messages := []RecallMessage{
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"first"}`, State: RecallMessageScheduled},
+		{StageNo: 1, TemplateSnapshot: `{"recipient":"second"}`, State: RecallMessageScheduled},
+	}
+	expectedNextRunAt := campaign.NextRunAt
+	runEvent := RecallEvent{EventType: "campaign_run", Source: "scheduler", SourceEventId: "identity:duplicate-commit", EventData: `{}`}
+
+	committed, inserted, err := CommitRecallCampaignRun(
+		context.Background(),
+		campaign.Id,
+		[]string{RecallCampaignScheduled},
+		RecallCampaignRunning,
+		&expectedNextRunAt,
+		campaign.ConfigRevision,
+		map[string]any{"next_run_at": int64(0)},
+		recipients,
+		messages,
+		runEvent,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate recipient identity")
+	require.False(t, committed)
+	require.Zero(t, inserted)
+
+	var storedCampaign RecallCampaign
+	require.NoError(t, DB.First(&storedCampaign, campaign.Id).Error)
+	require.Equal(t, RecallCampaignScheduled, storedCampaign.Status)
+	requireRecallRunTablesEmpty(t)
+}
+
 func TestRecallRunIdempotencyCommitsLargeSnapshotsInBoundedBatches(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 
@@ -993,6 +2176,55 @@ func TestRecallTransitionMessageFencesSameOwnerReacquisition(t *testing.T) {
 	require.Equal(t, int64(170), stored.AcceptedAt)
 	require.Empty(t, stored.LeaseOwner)
 	require.Zero(t, stored.LeaseExpiresAt)
+}
+
+func TestRecallEmailWorkItemLoadsEmailOnlyRecipientWithoutUserRow(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	campaign := newRecallRepositoryCampaign("email only work item")
+	campaign.Status = RecallCampaignRunning
+	require.NoError(t, DB.Create(&campaign).Error)
+	recipient := RecallRecipient{
+		CampaignId:          campaign.Id,
+		UserId:              0,
+		EligibilitySnapshot: `{}`,
+		EmailSnapshot:       "email-only-work-item@example.com",
+		LanguageSnapshot:    "en",
+		State:               RecallRecipientContacting,
+	}
+	require.NoError(t, DB.Create(&recipient).Error)
+	message := RecallMessage{
+		RecipientId:      recipient.Id,
+		StageNo:          1,
+		TemplateVersion:  1,
+		TemplateSnapshot: `{"en":{"subject":"Return","body_text":"Body"}}`,
+		State:            RecallMessageLeased,
+		LeaseOwner:       "email-worker",
+		LeaseExpiresAt:   1_721_000_060,
+	}
+	require.NoError(t, DB.Create(&message).Error)
+
+	item, err := GetRecallEmailWorkItemForLeaseWithContext(context.Background(), message.Id, "email-worker")
+
+	require.NoError(t, err)
+	require.Equal(t, message.Id, item.Message.Id)
+	require.Equal(t, recipient.Id, item.Recipient.Id)
+	require.Equal(t, campaign.Id, item.Campaign.Id)
+	require.Zero(t, item.User.Id)
+
+	boundRecipient := recipient
+	boundRecipient.Id = 0
+	boundRecipient.RecipientIdentity = ""
+	boundRecipient.UserId = 999_999
+	boundRecipient.EmailSnapshot = "missing-bound-user@example.com"
+	require.NoError(t, DB.Create(&boundRecipient).Error)
+	boundMessage := message
+	boundMessage.Id = 0
+	boundMessage.RecipientId = boundRecipient.Id
+	require.NoError(t, DB.Create(&boundMessage).Error)
+
+	_, err = GetRecallEmailWorkItemForLeaseWithContext(context.Background(), boundMessage.Id, "email-worker")
+	require.Error(t, err)
 }
 
 func TestRecallTransitionMessageRejectsUnsupportedCompletionFieldsWithoutWrite(t *testing.T) {

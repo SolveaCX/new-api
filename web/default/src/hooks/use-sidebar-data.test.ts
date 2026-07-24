@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
 import { type TFunction } from 'i18next'
+import { filterSidebarGroups } from './use-sidebar-config'
 import { buildSidebarData } from './use-sidebar-data'
 
 const t = ((key: string) => key) as TFunction
@@ -42,18 +43,58 @@ describe('buildSidebarData', () => {
     ])
   })
 
-  test('keeps recall campaigns in the admin navigation', () => {
+  test('keeps Activity Configuration in the admin navigation', () => {
     const adminGroup = buildSidebarData(t).navGroups.find(
       (group) => group.id === 'admin'
     )
-    const recallItem = adminGroup?.items.find(
+    const activityConfigItem = adminGroup?.items.find(
       (item) => 'url' in item && item.url === '/recall-campaigns'
     )
 
-    expect(recallItem).toMatchObject({
-      title: 'Recall Campaigns',
+    expect(activityConfigItem).toMatchObject({
+      title: 'Activity Configuration',
       url: '/recall-campaigns',
     })
+  })
+
+  test('does not expose legacy Recall Campaigns navigation copy', () => {
+    const adminGroup = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'admin'
+    )
+
+    expect(
+      adminGroup?.items.some((item) => item.title === 'Recall Campaigns')
+    ).toBe(false)
+  })
+
+  test('hides Activity Configuration when the admin config disables it', () => {
+    const groups = filterSidebarGroups(
+      buildSidebarData(t).navGroups,
+      JSON.stringify({ admin: { enabled: true, recall_campaigns: false } }),
+      null
+    )
+    const adminGroup = groups.find((group) => group.id === 'admin')
+
+    expect(
+      adminGroup?.items.some(
+        (item) => 'url' in item && item.url === '/recall-campaigns'
+      )
+    ).toBe(false)
+  })
+
+  test('allows the user config to narrow Activity Configuration visibility', () => {
+    const groups = filterSidebarGroups(
+      buildSidebarData(t).navGroups,
+      null,
+      JSON.stringify({ admin: { enabled: true, recall_campaigns: false } })
+    )
+    const adminGroup = groups.find((group) => group.id === 'admin')
+
+    expect(
+      adminGroup?.items.some(
+        (item) => 'url' in item && item.url === '/recall-campaigns'
+      )
+    ).toBe(false)
   })
 
   test('highlights the invitation entry with the configured badge', () => {
@@ -83,9 +124,9 @@ describe('buildSidebarData', () => {
   })
 
   test('keeps the badge language independent of the title translation', () => {
-    const translateToChinese = ((key: string) =>
-      key === 'Invite' ? '邀请' : key) as TFunction
-    const personalGroup = buildSidebarData(translateToChinese, {
+    const translateInvite = ((key: string) =>
+      key === 'Invite' ? 'Translated Invite' : key) as TFunction
+    const personalGroup = buildSidebarData(translateInvite, {
       inviteBadge: '+$10',
     }).navGroups.find((group) => group.id === 'personal')
     const inviteItem = personalGroup?.items.find(
@@ -93,7 +134,7 @@ describe('buildSidebarData', () => {
     )
 
     expect(inviteItem).toMatchObject({
-      title: '邀请',
+      title: 'Translated Invite',
       badge: '+$10',
     })
   })
