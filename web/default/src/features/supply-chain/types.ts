@@ -304,7 +304,7 @@ export interface SupplierReportOverview {
   range: SupplierReportRange
   business: SupplierReportMetrics
   internal: SupplierReportMetrics
-  total_estimated_procurement_cost: SupplierReportMoney
+  total_estimated_procurement_cost: SupplierReportMoney | null
   total_inventory_micro_usd: MicroUsd
   official_list_consumed_micro_usd: MicroUsd
   remaining_inventory_micro_usd: MicroUsd
@@ -328,11 +328,7 @@ export interface SupplierReportTrend {
   incomplete_day_count: number
 }
 
-type SupplierReportDayStatus =
-  | 'completed'
-  | 'running'
-  | 'failed'
-  | 'missing'
+type SupplierReportDayStatus = 'completed' | 'running' | 'failed' | 'missing'
 
 interface SupplierReportDayState {
   date: string
@@ -361,7 +357,7 @@ interface SupplierReportContractRow {
   oversold: boolean
   business: SupplierReportMetrics
   internal: SupplierReportMetrics
-  total_estimated_procurement_cost: SupplierReportMoney
+  total_estimated_procurement_cost: SupplierReportMoney | null
   internal_dimension_available: boolean
 }
 

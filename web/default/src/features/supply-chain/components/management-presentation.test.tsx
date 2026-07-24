@@ -20,6 +20,7 @@ import {
   listEffectiveExclusions,
 } from '../api'
 import type { SupplyChainManagementProps } from '../contracts'
+import { SecureMutationContext } from '../lib/secure-mutation-context'
 import { supplyChainQueryKeys } from '../query-keys'
 import { ChannelBindingManagement } from './channel-binding-management'
 import { ContractManagement } from './contract-management'
@@ -52,7 +53,11 @@ const search: SupplyChainManagementProps['search'] = {
 function renderWithQuery(queryClient: QueryClient, element: ReactNode): string {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
-      <QueryClientProvider client={queryClient}>{element}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <SecureMutationContext.Provider value={(mutation) => mutation()}>
+          {element}
+        </SecureMutationContext.Provider>
+      </QueryClientProvider>
     </I18nextProvider>
   )
 }

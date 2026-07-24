@@ -51,6 +51,7 @@ describe('supported append idempotent intent lifecycle', () => {
     expect(contract.match(/useIdempotentIntent\(\)/g)).toHaveLength(1)
     expect(contract).toContain('createInventoryAdjustment')
     expect(adminHooks).toContain('retry: false')
-    expect(adminHooks).toContain('onSettled: async () =>')
+    expect(adminHooks).toContain('onSuccess: async () =>')
+    expect(adminHooks).not.toContain('onSettled: async () =>')
   })
 })

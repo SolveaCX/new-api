@@ -32,6 +32,7 @@ import { ReportContractTable } from './components/report-contract-table'
 import { ReportOverview } from './components/report-overview'
 import { ReportTrend } from './components/report-trend'
 import { SupplierManagement } from './components/supplier-management'
+import { SupplyChainSecureVerificationProvider } from './components/supply-chain-secure-verification'
 import {
   SUPPLY_CHAIN_TABS,
   type SupplyChainManagementProps,
@@ -46,7 +47,7 @@ import {
 } from './hooks/use-supply-chain-report'
 import { shiftNaturalMonth } from './lib/time'
 
-export function SupplyChain(props: SupplyChainManagementProps) {
+function SupplyChainContent(props: SupplyChainManagementProps) {
   const { t } = useTranslation()
   const reportQuery = {
     month: props.search.month,
@@ -228,5 +229,13 @@ export function SupplyChain(props: SupplyChainManagementProps) {
         </Tabs>
       </SectionPageLayout.Content>
     </SectionPageLayout>
+  )
+}
+
+export function SupplyChain(props: SupplyChainManagementProps) {
+  return (
+    <SupplyChainSecureVerificationProvider>
+      <SupplyChainContent {...props} />
+    </SupplyChainSecureVerificationProvider>
   )
 }

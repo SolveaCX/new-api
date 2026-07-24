@@ -7,6 +7,7 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import {
+  type QueryClient,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -22,6 +23,10 @@ import {
   listSuppliers,
 } from '../api'
 import { getNextAdminPage, mergeAdminPages } from '../lib/pagination'
+import {
+  type RunSecureMutation,
+  useSupplyChainSecureMutation,
+} from '../lib/secure-mutation-context'
 import { supplyChainQueryKeys } from '../query-keys'
 import type {
   SupplierChannelBindingListParams,
@@ -152,15 +157,34 @@ export function useSupplyChainAdminMutation<TVariables>(options: {
   invalidate: readonly (readonly unknown[])[]
 }) {
   const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: options.mutationFn,
-    retry: false,
-    onSettled: async () => {
+  const runSecureMutation = useSupplyChainSecureMutation()
+  return useMutation(
+    createSupplyChainAdminMutationOptions(
+      options,
+      queryClient,
+      runSecureMutation
+    )
+  )
+}
+
+export function createSupplyChainAdminMutationOptions<TVariables>(
+  options: {
+    mutationFn: (variables: TVariables) => Promise<unknown>
+    invalidate: readonly (readonly unknown[])[]
+  },
+  queryClient: Pick<QueryClient, 'invalidateQueries'>,
+  runSecureMutation: RunSecureMutation
+) {
+  return {
+    mutationFn: (variables: TVariables) =>
+      runSecureMutation(() => options.mutationFn(variables)),
+    retry: false as const,
+    onSuccess: async () => {
       await Promise.all(
         options.invalidate.map((queryKey) =>
           queryClient.invalidateQueries({ queryKey })
         )
       )
     },
-  })
+  }
 }

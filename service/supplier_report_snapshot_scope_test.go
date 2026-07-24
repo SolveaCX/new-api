@@ -133,6 +133,56 @@ func TestSupplierReportTrendDistinguishesPublishedZeroFromIncompleteDays(t *test
 	require.Equal(t, int64(9), report.Points[1].Business.RequestCount)
 }
 
+func TestSupplierReportChannelFilterMarksInternalTotalsIncomplete(t *testing.T) {
+	db := newSupplierReportTestDB(t)
+	location, err := time.LoadLocation(SupplierReportTimezone)
+	require.NoError(t, err)
+	dayStart := time.Date(2026, 7, 20, 0, 0, 0, 0, location).Unix()
+
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.UpstreamSupplier{Id: 1, Name: "supplier", Status: model.SupplierStatusActive}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.SupplierContract{Id: 2, SupplierId: 1, Name: "contract", ContractNo: "C-1", Status: model.SupplierContractStatusActive}).Error)
+	contractID := 2
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.Channel{Id: 4, Name: "channel", Status: 1, SupplierContractId: &contractID}).Error)
+	seedSupplierReportDay(t, db, "2026-07-20", dayStart, 7)
+	require.NoError(t, db.Create(&[]model.SupplierUsageDailySummary{
+		{BatchDate: "2026-07-20", BatchFenceToken: 7, DimensionKey: "business", BucketStart: dayStart, SupplierId: 1, ContractId: 2, ChannelId: 4, StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 1, ProcurementCostKnownCount: 1, ProcurementCostMicroUsd: 700},
+		{BatchDate: "2026-07-20", BatchFenceToken: 7, DimensionKey: "internal", BucketStart: dayStart, SupplierId: 1, ContractId: 2, ChannelId: 4, StatisticsScope: "internal", DataQuality: "authoritative", RequestCount: 2, ProcurementCostKnownCount: 2, ProcurementCostMicroUsd: 300},
+	}).Error)
+
+	reports := NewSupplierReportService(model.NewSupplierReportStore(db))
+	baseQuery := SupplierReportQuery{StartDate: "2026-07-20", EndDate: "2026-07-20"}
+	unfiltered, err := reports.GetOverview(context.Background(), baseQuery)
+	require.NoError(t, err)
+	require.True(t, unfiltered.InternalDimensionAvailable)
+	require.Equal(t, int64(2), unfiltered.Internal.RequestCount)
+	require.Equal(t, &SupplierReportMoney{KnownCount: 3, MicroUsd: 1_000}, unfiltered.TotalProcurementCost)
+
+	filteredQuery := baseQuery
+	filteredQuery.ChannelIds = []int{4}
+	t.Run("overview", func(t *testing.T) {
+		report, err := reports.GetOverview(context.Background(), filteredQuery)
+		require.NoError(t, err)
+		require.False(t, report.InternalDimensionAvailable)
+		require.Zero(t, report.Internal.RequestCount)
+		require.Nil(t, report.TotalProcurementCost, "a business-only subtotal must not be exposed as a combined total")
+	})
+	t.Run("contract list", func(t *testing.T) {
+		report, err := reports.ListContracts(context.Background(), filteredQuery, model.SupplierReportPage{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, report.Items, 1)
+		require.False(t, report.Items[0].InternalDimensionAvailable)
+		require.Zero(t, report.Items[0].Internal.RequestCount)
+		require.Nil(t, report.Items[0].TotalProcurementCost, "a business-only subtotal must not be exposed as a combined total")
+	})
+	t.Run("contract detail", func(t *testing.T) {
+		report, err := reports.GetContractDetail(context.Background(), 2, filteredQuery, model.SupplierReportPage{Limit: 10})
+		require.NoError(t, err)
+		require.False(t, report.Summary.InternalDimensionAvailable)
+		require.Zero(t, report.Summary.Internal.RequestCount)
+		require.Nil(t, report.Summary.TotalProcurementCost, "a business-only subtotal must not be exposed as a combined total")
+	})
+}
+
 func TestSupplierReportChannelPageDoesNotAggregateUsageOutsidePage(t *testing.T) {
 	db := newSupplierReportTestDB(t)
 	location, err := time.LoadLocation(SupplierReportTimezone)

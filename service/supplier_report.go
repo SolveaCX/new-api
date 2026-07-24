@@ -109,7 +109,7 @@ type SupplierReportOverview struct {
 	Range                        SupplierReportRange   `json:"range"`
 	Business                     SupplierReportMetrics `json:"business"`
 	Internal                     SupplierReportMetrics `json:"internal"`
-	TotalProcurementCost         SupplierReportMoney   `json:"total_estimated_procurement_cost"`
+	TotalProcurementCost         *SupplierReportMoney  `json:"total_estimated_procurement_cost"`
 	TotalInventoryMicroUsd       int64                 `json:"total_inventory_micro_usd,string"`
 	OfficialListConsumedMicroUsd int64                 `json:"official_list_consumed_micro_usd,string"`
 	RemainingInventoryMicroUsd   int64                 `json:"remaining_inventory_micro_usd,string"`
@@ -158,7 +158,7 @@ type SupplierReportContractRow struct {
 	Oversold                     bool                  `json:"oversold"`
 	Business                     SupplierReportMetrics `json:"business"`
 	Internal                     SupplierReportMetrics `json:"internal"`
-	TotalProcurementCost         SupplierReportMoney   `json:"total_estimated_procurement_cost"`
+	TotalProcurementCost         *SupplierReportMoney  `json:"total_estimated_procurement_cost"`
 	InternalDimensionAvailable   bool                  `json:"internal_dimension_available"`
 }
 type SupplierReportContractList struct {
@@ -278,9 +278,12 @@ func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierR
 		return SupplierReportOverview{}, err
 	}
 	result := SupplierReportOverview{Range: reportRange, Business: usage.business.metrics(), Internal: usage.internal.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0}
-	result.TotalProcurementCost, err = combineMoney(result.Business.ProcurementCost, result.Internal.ProcurementCost)
-	if err != nil {
-		return SupplierReportOverview{}, err
+	if result.InternalDimensionAvailable {
+		totalProcurementCost, combineErr := combineMoney(result.Business.ProcurementCost, result.Internal.ProcurementCost)
+		if combineErr != nil {
+			return SupplierReportOverview{}, combineErr
+		}
+		result.TotalProcurementCost = &totalProcurementCost
 	}
 	result.TotalInventoryMicroUsd = inventory.TotalInventoryMicroUsd
 	result.OfficialListConsumedMicroUsd = inventory.OfficialListConsumedMicroUsd
@@ -395,8 +398,9 @@ func (s *SupplierReportService) listContracts(ctx context.Context, query Supplie
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
+	internalDimensionAvailable := len(query.ChannelIds) == 0
 	for _, row := range catalog {
-		item, err := buildContractRow(row, runtime[row.ContractId], byContract[row.ContractId])
+		item, err := buildContractRow(row, runtime[row.ContractId], byContract[row.ContractId], internalDimensionAvailable)
 		if err != nil {
 			return SupplierReportContractList{}, err
 		}
@@ -699,7 +703,7 @@ func (a *usageAccumulator) byContract() (map[int]*usageAccumulator, error) {
 	}
 	return result, nil
 }
-func buildContractRow(c model.SupplierReportContractCatalogRow, r contractRuntime, u *usageAccumulator) (SupplierReportContractRow, error) {
+func buildContractRow(c model.SupplierReportContractCatalogRow, r contractRuntime, u *usageAccumulator, internalDimensionAvailable bool) (SupplierReportContractRow, error) {
 	if u == nil {
 		u = &usageAccumulator{}
 	}
@@ -707,9 +711,15 @@ func buildContractRow(c model.SupplierReportContractCatalogRow, r contractRuntim
 	if err != nil {
 		return SupplierReportContractRow{}, err
 	}
-	row := SupplierReportContractRow{ContractId: c.ContractId, SupplierId: c.SupplierId, SupplierName: c.SupplierName, SupplierStatus: c.SupplierStatus, ContractName: c.ContractName, ContractNo: c.ContractNo, ContractStatus: c.ContractStatus, Remark: c.Remark, CurrentRateVersionId: c.CurrentRateVersionId, ProcurementMultiplierPpm: c.ProcurementMultiplierPpm, RpmLimit: c.RpmLimit, TpmLimit: c.TpmLimit, MaxConcurrency: c.MaxConcurrency, LinkedChannelCount: r.channelCount, TotalInventoryMicroUsd: r.inventory, OfficialListConsumedMicroUsd: r.consumed, RemainingInventoryMicroUsd: remaining, UtilizationRate: ratioString(r.consumed, r.inventory), Oversold: remaining < 0, Business: u.business.metrics(), Internal: u.internal.metrics(), InternalDimensionAvailable: true}
-	row.TotalProcurementCost, err = combineMoney(row.Business.ProcurementCost, row.Internal.ProcurementCost)
-	return row, err
+	row := SupplierReportContractRow{ContractId: c.ContractId, SupplierId: c.SupplierId, SupplierName: c.SupplierName, SupplierStatus: c.SupplierStatus, ContractName: c.ContractName, ContractNo: c.ContractNo, ContractStatus: c.ContractStatus, Remark: c.Remark, CurrentRateVersionId: c.CurrentRateVersionId, ProcurementMultiplierPpm: c.ProcurementMultiplierPpm, RpmLimit: c.RpmLimit, TpmLimit: c.TpmLimit, MaxConcurrency: c.MaxConcurrency, LinkedChannelCount: r.channelCount, TotalInventoryMicroUsd: r.inventory, OfficialListConsumedMicroUsd: r.consumed, RemainingInventoryMicroUsd: remaining, UtilizationRate: ratioString(r.consumed, r.inventory), Oversold: remaining < 0, Business: u.business.metrics(), Internal: u.internal.metrics(), InternalDimensionAvailable: internalDimensionAvailable}
+	if internalDimensionAvailable {
+		totalProcurementCost, combineErr := combineMoney(row.Business.ProcurementCost, row.Internal.ProcurementCost)
+		if combineErr != nil {
+			return SupplierReportContractRow{}, combineErr
+		}
+		row.TotalProcurementCost = &totalProcurementCost
+	}
+	return row, nil
 }
 func catalogIDs(rows []model.SupplierReportContractCatalogRow) []int {
 	ids := make([]int, len(rows))

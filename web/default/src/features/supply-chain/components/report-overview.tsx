@@ -122,6 +122,9 @@ export function ReportOverview(props: ReportOverviewProps) {
 
   const business = props.data.business
   const internal = props.data.internal
+  const internalDimensionAvailable =
+    props.data.internal_dimension_available &&
+    props.data.total_estimated_procurement_cost !== null
 
   return (
     <Card>
@@ -217,15 +220,13 @@ export function ReportOverview(props: ReportOverviewProps) {
                 {t('Internal and test consumption')}
               </h3>
               <Badge variant='outline'>
-                {props.data.internal_dimension_available
-                  ? t('Available')
-                  : t('Unavailable')}
+                {internalDimensionAvailable ? t('Available') : t('Unavailable')}
               </Badge>
             </div>
             <LedgerRow
               label={t('Internal requests')}
               value={
-                props.data.internal_dimension_available
+                internalDimensionAvailable
                   ? String(internal.request_count)
                   : unknown
               }
@@ -234,7 +235,7 @@ export function ReportOverview(props: ReportOverviewProps) {
             <LedgerRow
               label={t('Official-list consumption')}
               value={
-                props.data.internal_dimension_available
+                internalDimensionAvailable
                   ? formatMicroUsd(
                       knownMoneyValue(internal.official_list, internal),
                       unknown
@@ -246,7 +247,7 @@ export function ReportOverview(props: ReportOverviewProps) {
             <LedgerRow
               label={t('Estimated procurement cost')}
               value={
-                props.data.internal_dimension_available
+                internalDimensionAvailable
                   ? formatMicroUsd(
                       knownMoneyValue(internal.procurement_cost, internal),
                       unknown
