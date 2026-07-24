@@ -294,6 +294,9 @@ export function buildFlexiblePurchaseRequest(args: {
     request_id: args.requestId,
     ...(args.quoteId ? { quote_id: args.quoteId } : {}),
     ...(args.orderId ? { order_id: args.orderId } : {}),
+    ...(args.paymentChoice !== 'balance'
+      ? { ui_mode: 'embedded' as const }
+      : {}),
   }
 }
 
