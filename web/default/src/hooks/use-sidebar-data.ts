@@ -16,6 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { createElement, type ComponentProps } from 'react'
+import { ChartLineData01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { type TFunction } from 'i18next'
 import {
   Activity,
@@ -40,8 +43,25 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { type SidebarData } from '@/components/layout/types'
 import { useSystemConfigStore } from '@/stores/system-config-store'
+import { ROLE } from '@/lib/roles'
+import { type SidebarData } from '@/components/layout/types'
+
+export function getSidebarItemMinimumRole(
+  item: SidebarData['navGroups'][number]['items'][number]
+): number | undefined {
+  return item.minimumRole
+}
+
+function SupplyChainIcon(
+  props: Omit<ComponentProps<typeof HugeiconsIcon>, 'icon'>
+) {
+  return createElement(HugeiconsIcon, {
+    ...props,
+    icon: ChartLineData01Icon,
+    strokeWidth: 2,
+  })
+}
 
 /**
  * Root navigation groups for the application sidebar.
@@ -177,6 +197,12 @@ export function buildSidebarData(
             icon: CalendarRange,
           },
           {
+            title: t('Supply Chain'),
+            url: '/supply-chain',
+            icon: SupplyChainIcon,
+            minimumRole: ROLE.SUPER_ADMIN,
+          },
+          {
             title: t('Redemption Codes'),
             url: '/redemption-codes',
             icon: Ticket,
@@ -206,9 +232,7 @@ export function useSidebarData(): SidebarData {
   // Direct money stimulus beats prose: show "+$50" when the reward amount is
   // known, fall back to the generic promo text otherwise.
   const inviteBadge =
-    badgeUsd && badgeUsd > 0
-      ? `+$${Math.round(badgeUsd)}`
-      : undefined
+    badgeUsd && badgeUsd > 0 ? `+$${Math.round(badgeUsd)}` : undefined
 
   return buildSidebarData(t, { inviteBadge })
 }

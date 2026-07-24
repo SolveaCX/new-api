@@ -316,6 +316,14 @@ func migrateDB() error {
 		&AdsPilotAction{},
 		&AdsPilotProposal{},
 		&AdsPilotMeta{},
+		&UpstreamSupplier{},
+		&SupplierContract{},
+		&SupplierContractRateVersion{},
+		&SupplierChannelBindingVersion{},
+		&SupplierInventoryAdjustment{},
+		&SupplierStatisticsExclusionRule{},
+		&SupplierUsageDailySummary{},
+		&SupplierUsageDailyBatchRun{},
 	)
 	if err != nil {
 		return err
@@ -388,6 +396,14 @@ func migrateDBFast() error {
 		{&CodexModelGovernanceProbeState{}, "CodexModelGovernanceProbeState"},
 		{&CodexModelGovernanceAlertCooldownRecord{}, "CodexModelGovernanceAlertCooldownRecord"},
 		{&TemporaryChannelModelSpend{}, "TemporaryChannelModelSpend"},
+		{&UpstreamSupplier{}, "UpstreamSupplier"},
+		{&SupplierContract{}, "SupplierContract"},
+		{&SupplierContractRateVersion{}, "SupplierContractRateVersion"},
+		{&SupplierChannelBindingVersion{}, "SupplierChannelBindingVersion"},
+		{&SupplierInventoryAdjustment{}, "SupplierInventoryAdjustment"},
+		{&SupplierStatisticsExclusionRule{}, "SupplierStatisticsExclusionRule"},
+		{&SupplierUsageDailySummary{}, "SupplierUsageDailySummary"},
+		{&SupplierUsageDailyBatchRun{}, "SupplierUsageDailyBatchRun"},
 		{&ComputeNode{}, "ComputeNode"},
 	}
 	// GORM also migrates associations, so parallel AutoMigrate calls can race

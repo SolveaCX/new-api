@@ -29,6 +29,7 @@ type BaseNavItem = {
   badge?: string
   badgeVariant?: NavBadgeVariant
   icon?: React.ElementType
+  minimumRole?: number
   activeUrls?: (LinkProps['to'] | (string & {}))[]
   configUrls?: (LinkProps['to'] | (string & {}))[]
 }

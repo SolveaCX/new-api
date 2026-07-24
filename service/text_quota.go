@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -21,39 +22,59 @@ import (
 )
 
 type textQuotaSummary struct {
-	PromptTokens             int
-	CompletionTokens         int
-	TotalTokens              int
-	CacheTokens              int
-	CacheCreationTokens      int
-	CacheCreationTokens5m    int
-	CacheCreationTokens1h    int
-	ImageTokens              int
-	AudioTokens              int
-	ModelName                string
-	TokenName                string
-	UseTimeSeconds           int64
-	CompletionRatio          float64
-	CacheRatio               float64
-	ImageRatio               float64
-	ModelRatio               float64
-	GroupRatio               float64
-	ModelPrice               float64
-	CacheCreationRatio       float64
-	CacheCreationRatio5m     float64
-	CacheCreationRatio1h     float64
-	Quota                    int
-	IsClaudeUsageSemantic    bool
-	UsageSemantic            string
-	WebSearchPrice           float64
-	WebSearchCallCount       int
-	ClaudeWebSearchPrice     float64
-	ClaudeWebSearchCallCount int
-	FileSearchPrice          float64
-	FileSearchCallCount      int
-	AudioInputPrice          float64
-	ImageGenerationCallPrice float64
-	ToolCallSurchargeQuota   decimal.Decimal
+	PromptTokens               int
+	CompletionTokens           int
+	TotalTokens                int
+	CacheTokens                int
+	CacheCreationTokens        int
+	CacheCreationTokens5m      int
+	CacheCreationTokens1h      int
+	ImageTokens                int
+	AudioTokens                int
+	ModelName                  string
+	TokenName                  string
+	UseTimeSeconds             int64
+	CompletionRatio            float64
+	CacheRatio                 float64
+	ImageRatio                 float64
+	ModelRatio                 float64
+	GroupRatio                 float64
+	ModelPrice                 float64
+	CacheCreationRatio         float64
+	CacheCreationRatio5m       float64
+	CacheCreationRatio1h       float64
+	Quota                      int
+	IsClaudeUsageSemantic      bool
+	UsageSemantic              string
+	WebSearchPrice             float64
+	WebSearchCallCount         int
+	ClaudeWebSearchPrice       float64
+	ClaudeWebSearchCallCount   int
+	FileSearchPrice            float64
+	FileSearchCallCount        int
+	AudioInputPrice            float64
+	ImageGenerationCallPrice   float64
+	ImageGenerationCallApplied bool
+	ToolCallSurchargeQuota     decimal.Decimal
+	OfficialToolSurchargeUSD   decimal.Decimal
+	OfficialAudioInputUSD      decimal.Decimal
+	OfficialListUSD            decimal.Decimal
+	OfficialListUSDKnown       bool
+	OfficialEvidenceReason     string
+	UsedHeuristicCacheTokens   bool
+	UsageWasEstimated          bool
+	LegacyClaudeDerived        bool
+	PricingMode                string
+	SupplierTieredParams       *billingexpr.TokenParams
+}
+
+func supplierTextHasPositiveFinalUsage(summary textQuotaSummary, settlement types.BillingSettlementResult) bool {
+	if !settlement.FinanciallyCommitted {
+		return false
+	}
+	return summary.TotalTokens > 0 || settlement.FinalSalesQuota > 0 ||
+		summary.WebSearchCallCount > 0 || summary.ClaudeWebSearchCallCount > 0 ||
+		summary.FileSearchCallCount > 0 || summary.ImageGenerationCallApplied
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -83,6 +104,7 @@ func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *d
 func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, summary *textQuotaSummary) decimal.Decimal {
 	dGroupRatio := decimal.NewFromFloat(summary.GroupRatio)
 	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	officialPricing := relayInfo.SupplierOfficialPricingSnapshot
 
 	var surcharge decimal.Decimal
 
@@ -90,6 +112,10 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 		if webSearchTool, exists := relayInfo.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolWebSearchPreview]; exists && webSearchTool.CallCount > 0 {
 			summary.WebSearchCallCount = webSearchTool.CallCount
 			summary.WebSearchPrice = operation_setting.GetToolPriceForModel("web_search_preview", summary.ModelName)
+			summary.OfficialToolSurchargeUSD = summary.OfficialToolSurchargeUSD.Add(decimal.NewFromFloat(officialPricing.WebSearchPreviewPricePerThousandCalls).
+				Mul(decimal.NewFromInt(int64(webSearchTool.CallCount))).
+				Div(decimal.NewFromInt(1000)))
+			markMissingOfficialPricingSnapshot(summary, officialPricing.Loaded)
 			surcharge = surcharge.Add(decimal.NewFromFloat(summary.WebSearchPrice).
 				Mul(decimal.NewFromInt(int64(webSearchTool.CallCount))).
 				Div(decimal.NewFromInt(1000)).
@@ -99,6 +125,9 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 	} else if strings.HasSuffix(summary.ModelName, "search-preview") {
 		summary.WebSearchCallCount = 1
 		summary.WebSearchPrice = operation_setting.GetToolPriceForModel("web_search_preview", summary.ModelName)
+		summary.OfficialToolSurchargeUSD = summary.OfficialToolSurchargeUSD.Add(decimal.NewFromFloat(officialPricing.WebSearchPreviewPricePerThousandCalls).
+			Div(decimal.NewFromInt(1000)))
+		markMissingOfficialPricingSnapshot(summary, officialPricing.Loaded)
 		surcharge = surcharge.Add(decimal.NewFromFloat(summary.WebSearchPrice).
 			Div(decimal.NewFromInt(1000)).
 			Mul(dGroupRatio).
@@ -108,6 +137,10 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 	summary.ClaudeWebSearchCallCount = ctx.GetInt("claude_web_search_requests")
 	if summary.ClaudeWebSearchCallCount > 0 {
 		summary.ClaudeWebSearchPrice = operation_setting.GetToolPrice("web_search")
+		summary.OfficialToolSurchargeUSD = summary.OfficialToolSurchargeUSD.Add(decimal.NewFromFloat(officialPricing.ClaudeWebSearchPricePerThousandCalls).
+			Div(decimal.NewFromInt(1000)).
+			Mul(decimal.NewFromInt(int64(summary.ClaudeWebSearchCallCount))))
+		markMissingOfficialPricingSnapshot(summary, officialPricing.Loaded)
 		surcharge = surcharge.Add(decimal.NewFromFloat(summary.ClaudeWebSearchPrice).
 			Div(decimal.NewFromInt(1000)).
 			Mul(dGroupRatio).
@@ -119,6 +152,10 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 		if fileSearchTool, exists := relayInfo.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolFileSearch]; exists && fileSearchTool.CallCount > 0 {
 			summary.FileSearchCallCount = fileSearchTool.CallCount
 			summary.FileSearchPrice = operation_setting.GetToolPrice("file_search")
+			summary.OfficialToolSurchargeUSD = summary.OfficialToolSurchargeUSD.Add(decimal.NewFromFloat(officialPricing.FileSearchPricePerThousandCalls).
+				Mul(decimal.NewFromInt(int64(fileSearchTool.CallCount))).
+				Div(decimal.NewFromInt(1000)))
+			markMissingOfficialPricingSnapshot(summary, officialPricing.Loaded)
 			surcharge = surcharge.Add(decimal.NewFromFloat(summary.FileSearchPrice).
 				Mul(decimal.NewFromInt(int64(fileSearchTool.CallCount))).
 				Div(decimal.NewFromInt(1000)).
@@ -128,7 +165,13 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 	}
 
 	if ctx.GetBool("image_generation_call") {
-		summary.ImageGenerationCallPrice = operation_setting.GetGPTImage1PriceOnceCall(ctx.GetString("image_generation_call_quality"), ctx.GetString("image_generation_call_size"))
+		summary.ImageGenerationCallApplied = true
+		quality := ctx.GetString("image_generation_call_quality")
+		size := ctx.GetString("image_generation_call_size")
+		summary.ImageGenerationCallPrice = operation_setting.GetGPTImage1PriceOnceCall(quality, size)
+		officialImagePrice := officialPricing.ImageGenerationCallPrices.Price(quality, size)
+		summary.OfficialToolSurchargeUSD = summary.OfficialToolSurchargeUSD.Add(decimal.NewFromFloat(officialImagePrice))
+		markMissingOfficialPricingSnapshot(summary, officialPricing.Loaded)
 		surcharge = surcharge.Add(decimal.NewFromFloat(summary.ImageGenerationCallPrice).
 			Mul(dGroupRatio).
 			Mul(dQuotaPerUnit))
@@ -137,7 +180,16 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 	return surcharge
 }
 
-func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaSummary, tieredQuota int, tieredResult *billingexpr.TieredResult) int {
+func markMissingOfficialPricingSnapshot(summary *textQuotaSummary, loaded bool) {
+	if !loaded && summary.OfficialEvidenceReason == "" {
+		summary.OfficialEvidenceReason = "supplier_accounting.official_pricing_snapshot.missing"
+	}
+}
+
+func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary *textQuotaSummary, tieredQuota int, tieredResult *billingexpr.TieredResult) int {
+	summary.PricingMode = "tiered_expr"
+	summary.OfficialListUSD, summary.OfficialListUSDKnown, summary.OfficialEvidenceReason = calculateTextOfficialListUSD(relayInfo, *summary, tieredResult)
+
 	if summary.ToolCallSurchargeQuota.IsZero() {
 		return tieredQuota
 	}
@@ -170,15 +222,27 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		CacheCreationRatio5m: relayInfo.PriceData.CacheCreation5mRatio,
 		CacheCreationRatio1h: relayInfo.PriceData.CacheCreation1hRatio,
 		UsageSemantic:        usageSemanticFromUsage(relayInfo, usage),
+		PricingMode:          "ratio",
+	}
+	if relayInfo.PriceData.UsePrice {
+		summary.PricingMode = "price"
 	}
 	summary.IsClaudeUsageSemantic = summary.UsageSemantic == "anthropic"
 
 	if usage == nil {
+		summary.UsageWasEstimated = true
 		usage = &dto.Usage{
 			PromptTokens:     relayInfo.GetEstimatePromptTokens(),
 			CompletionTokens: 0,
 			TotalTokens:      relayInfo.GetEstimatePromptTokens(),
 		}
+	}
+	if common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens) {
+		summary.UsageWasEstimated = true
+	}
+	if supplierTieredSnapshot := relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot; supplierTieredSnapshot != nil {
+		params := BuildTieredTokenParams(usage, summary.IsClaudeUsageSemantic, billingexpr.UsedVars(supplierTieredSnapshot.ExprString))
+		summary.SupplierTieredParams = &params
 	}
 
 	summary.PromptTokens = usage.PromptTokens
@@ -191,6 +255,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
+	summary.LegacyClaudeDerived = legacyClaudeDerived
 	isOpenRouterClaudeBilling := relayInfo.ChannelMeta != nil &&
 		relayInfo.ChannelType == constant.ChannelTypeOpenRouter &&
 		summary.IsClaudeUsageSemantic
@@ -202,6 +267,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			maybeCacheCreationTokens := CalcOpenRouterCacheCreateTokens(*usage, relayInfo.PriceData)
 			if maybeCacheCreationTokens >= 0 && summary.PromptTokens >= maybeCacheCreationTokens {
 				summary.CacheCreationTokens = maybeCacheCreationTokens
+				summary.UsedHeuristicCacheTokens = true
 			}
 		}
 		summary.PromptTokens -= summary.CacheCreationTokens
@@ -228,6 +294,15 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.ToolCallSurchargeQuota = calculateTextToolCallSurcharge(ctx, relayInfo, &summary)
 
 	var audioInputQuota decimal.Decimal
+	salesAudioInputPrice := operation_setting.GetGeminiInputAudioPricePerMillionTokens(summary.ModelName)
+	var officialAudioInputPrice float64
+	if !dAudioTokens.IsZero() {
+		officialAudioInputPrice = relayInfo.SupplierOfficialPricingSnapshot.GeminiInputAudioPricePerMillionTokens
+		if officialAudioInputPrice > 0 {
+			summary.OfficialAudioInputUSD = decimal.NewFromFloat(officialAudioInputPrice).
+				Div(decimal.NewFromInt(1000000)).Mul(dAudioTokens)
+		}
+	}
 	if !relayInfo.PriceData.UsePrice {
 		baseTokens := dPromptTokens
 
@@ -263,10 +338,10 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		}
 
 		if !dAudioTokens.IsZero() {
-			summary.AudioInputPrice = operation_setting.GetGeminiInputAudioPricePerMillionTokens(summary.ModelName)
-			if summary.AudioInputPrice > 0 {
+			if salesAudioInputPrice > 0 {
+				summary.AudioInputPrice = salesAudioInputPrice
 				baseTokens = baseTokens.Sub(dAudioTokens)
-				audioInputQuota = decimal.NewFromFloat(summary.AudioInputPrice).
+				audioInputQuota = decimal.NewFromFloat(salesAudioInputPrice).
 					Div(decimal.NewFromInt(1000000)).Mul(dAudioTokens).Mul(dGroupRatio).Mul(dQuotaPerUnit)
 			}
 		}
@@ -283,7 +358,6 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		quotaCalculateDecimal := promptQuota.Add(completionQuota).Mul(ratio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(summary.ToolCallSurchargeQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
-
 		if len(relayInfo.PriceData.OtherRatios) > 0 {
 			for _, otherRatio := range relayInfo.PriceData.OtherRatios {
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
@@ -311,8 +385,120 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	} else if !ratio.IsZero() && summary.Quota == 0 {
 		summary.Quota = 1
 	}
+	if relayInfo.TieredBillingSnapshot == nil {
+		summary.OfficialListUSD, summary.OfficialListUSDKnown, summary.OfficialEvidenceReason = calculateTextOfficialListUSD(relayInfo, summary, nil)
+	}
 
 	return summary
+}
+
+func calculateTextOfficialListUSD(relayInfo *relaycommon.RelayInfo, summary textQuotaSummary, tieredResult *billingexpr.TieredResult) (decimal.Decimal, bool, string) {
+	if relayInfo == nil || !relayInfo.SupplierOfficialPricingSnapshot.Loaded {
+		return decimal.Zero, false, "supplier_accounting.official_pricing_snapshot.missing"
+	}
+	pricing := relayInfo.SupplierOfficialPricingSnapshot
+
+	reasons := make([]string, 0, 3)
+	if summary.OfficialEvidenceReason != "" {
+		reasons = append(reasons, summary.OfficialEvidenceReason)
+	}
+	if summary.UsageWasEstimated {
+		reasons = append(reasons, "supplier_accounting.usage.local_estimate")
+	}
+	if summary.UsedHeuristicCacheTokens {
+		reasons = append(reasons, "supplier_accounting.cache_creation_tokens.heuristic")
+	}
+
+	if supplierTieredSnapshot := pricing.TieredBillingSnapshot; supplierTieredSnapshot != nil {
+		if summary.SupplierTieredParams == nil {
+			return decimal.Zero, false, strings.Join(append(reasons, "supplier_accounting.tiered_settlement.params_missing"), ";")
+		}
+		supplierTieredResult, err := calculateSupplierTieredResult(relayInfo, *summary.SupplierTieredParams)
+		if err != nil || math.IsNaN(supplierTieredResult.ActualQuotaBeforeGroup) || math.IsInf(supplierTieredResult.ActualQuotaBeforeGroup, 0) {
+			return decimal.Zero, false, strings.Join(append(reasons, "supplier_accounting.tiered_settlement.fallback"), ";")
+		}
+		quotaPerUnit, err := decimal.NewFromString(pricing.QuotaPerUnit)
+		if err != nil || quotaPerUnit.LessThanOrEqual(decimal.Zero) {
+			return decimal.Zero, false, strings.Join(append(reasons, "supplier_accounting.quota_per_unit_snapshot.invalid_divisor"), ";")
+		}
+		amount := decimal.NewFromFloat(supplierTieredResult.ActualQuotaBeforeGroup).
+			Div(quotaPerUnit).
+			Add(summary.OfficialToolSurchargeUSD)
+		return amount, true, strings.Join(reasons, ";")
+	}
+
+	if relayInfo.TieredBillingSnapshot != nil {
+		return decimal.Zero, false, strings.Join(append(reasons, "supplier_accounting.tiered_pricing_snapshot.missing"), ";")
+	}
+
+	priceData := pricing.PriceData
+	var amount decimal.Decimal
+	if priceData.UsePrice {
+		amount = decimal.NewFromFloat(priceData.ModelPrice).
+			Add(summary.OfficialToolSurchargeUSD).
+			Add(summary.OfficialAudioInputUSD)
+	} else {
+		quotaPerUnit, err := decimal.NewFromString(pricing.QuotaPerUnit)
+		if err != nil || quotaPerUnit.LessThanOrEqual(decimal.Zero) {
+			return decimal.Zero, false, strings.Join(append(reasons, "supplier_accounting.quota_per_unit_snapshot.invalid_divisor"), ";")
+		}
+		baseTokens := decimal.NewFromInt(int64(summary.PromptTokens))
+		cacheTokens := decimal.NewFromInt(int64(summary.CacheTokens))
+		cacheCreationTokens := decimal.NewFromInt(int64(summary.CacheCreationTokens))
+		imageTokens := decimal.NewFromInt(int64(summary.ImageTokens))
+		audioTokens := decimal.NewFromInt(int64(summary.AudioTokens))
+
+		weightedCache := decimal.Zero
+		if !cacheTokens.IsZero() {
+			if !summary.IsClaudeUsageSemantic && !summary.LegacyClaudeDerived {
+				baseTokens = baseTokens.Sub(cacheTokens)
+			}
+			weightedCache = cacheTokens.Mul(decimal.NewFromFloat(priceData.CacheRatio))
+		}
+
+		weightedCacheCreation := decimal.Zero
+		hasSplitCacheCreation := summary.CacheCreationTokens5m > 0 || summary.CacheCreationTokens1h > 0
+		if !cacheCreationTokens.IsZero() || hasSplitCacheCreation {
+			if !summary.IsClaudeUsageSemantic && !summary.LegacyClaudeDerived {
+				baseTokens = baseTokens.Sub(cacheCreationTokens)
+				weightedCacheCreation = cacheCreationTokens.Mul(decimal.NewFromFloat(priceData.CacheCreationRatio))
+			} else {
+				remaining := summary.CacheCreationTokens - summary.CacheCreationTokens5m - summary.CacheCreationTokens1h
+				if remaining < 0 {
+					remaining = 0
+				}
+				weightedCacheCreation = decimal.NewFromInt(int64(remaining)).Mul(decimal.NewFromFloat(priceData.CacheCreationRatio))
+				weightedCacheCreation = weightedCacheCreation.Add(decimal.NewFromInt(int64(summary.CacheCreationTokens5m)).Mul(decimal.NewFromFloat(priceData.CacheCreation5mRatio)))
+				weightedCacheCreation = weightedCacheCreation.Add(decimal.NewFromInt(int64(summary.CacheCreationTokens1h)).Mul(decimal.NewFromFloat(priceData.CacheCreation1hRatio)))
+			}
+		}
+
+		weightedImage := decimal.Zero
+		if !imageTokens.IsZero() {
+			baseTokens = baseTokens.Sub(imageTokens)
+			weightedImage = imageTokens.Mul(decimal.NewFromFloat(priceData.ImageRatio))
+		}
+		if !audioTokens.IsZero() && pricing.GeminiInputAudioPricePerMillionTokens > 0 {
+			baseTokens = baseTokens.Sub(audioTokens)
+		}
+
+		promptWeighted := baseTokens.Add(weightedCache).Add(weightedCacheCreation).Add(weightedImage)
+		completionWeighted := decimal.NewFromInt(int64(summary.CompletionTokens)).Mul(decimal.NewFromFloat(priceData.CompletionRatio))
+		amount = promptWeighted.Add(completionWeighted).
+			Mul(decimal.NewFromFloat(priceData.ModelRatio)).
+			Div(quotaPerUnit).
+			Add(summary.OfficialToolSurchargeUSD).
+			Add(summary.OfficialAudioInputUSD)
+	}
+
+	// OtherRatios are request-local multiplicities (for example requested or
+	// returned image count), not mutable unit-price configuration. They may be
+	// learned from the upstream response, so apply the final request-local values
+	// to the unit prices frozen before the upstream call.
+	for _, otherRatio := range relayInfo.PriceData.OtherRatios {
+		amount = amount.Mul(decimal.NewFromFloat(otherRatio))
+	}
+	return amount, true, strings.Join(reasons, ";")
 }
 
 func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) string {
@@ -348,7 +534,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		if tieredOk {
 			tieredBillingApplied = true
 			tieredResult = tieredRes
-			summary.Quota = composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredRes)
+			summary.Quota = composeTieredTextQuota(relayInfo, &summary, tieredQuota, tieredRes)
 		}
 	}
 
@@ -376,10 +562,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	settlement := SettleBillingResult(ctx, relayInfo, summary.Quota)
+	if settlement.Err != nil {
+		logger.LogError(ctx, "error settling billing: "+settlement.Err.Error())
 	}
-
+	var officialListUSD *decimal.Decimal
+	if summary.OfficialListUSDKnown {
+		frozenOfficialListUSD := summary.OfficialListUSD
+		officialListUSD = &frozenOfficialListUSD
+	}
 	logModel := summary.ModelName
 	if strings.HasPrefix(logModel, "gpt-4-gizmo") {
 		logModel = "gpt-4-gizmo-*"
@@ -464,6 +655,37 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	unknownOfficialAmountCount := uint32(0)
+	if !summary.OfficialListUSDKnown {
+		unknownOfficialAmountCount = 1
+	}
+	supplierPricingMode := supplierAccountingOfficialPricingModeV1(relayInfo)
+	audioPricingApplied := summary.AudioTokens > 0 && (summary.AudioInputPrice > 0 || relayInfo.SupplierOfficialPricingSnapshot.GeminiInputAudioPricePerMillionTokens > 0)
+	imagePricingApplied := summary.ImageGenerationCallApplied || (summary.ImageTokens > 0 && supplierPricingMode != "fixed")
+	if supplierPricingMode == "tiered_expr" && summary.SupplierTieredParams != nil && relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot != nil {
+		usedVars := billingexpr.UsedVars(relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot.ExprString)
+		audioPricingApplied = (summary.SupplierTieredParams.AI > 0 && usedVars["ai"]) ||
+			(summary.SupplierTieredParams.AO > 0 && usedVars["ao"])
+		imagePricingApplied = summary.ImageGenerationCallApplied ||
+			(summary.SupplierTieredParams.Img > 0 && usedVars["img"]) ||
+			(summary.SupplierTieredParams.ImgO > 0 && usedVars["img_o"])
+	}
+	toolPricingApplied := summary.WebSearchCallCount > 0 || summary.ClaudeWebSearchCallCount > 0 || summary.FileSearchCallCount > 0
+	InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
+		RelayInfo:             relayInfo,
+		Settlement:            settlement,
+		HasPositiveFinalUsage: supplierTextHasPositiveFinalUsage(summary, settlement),
+		Capture: SupplierAccountingCaptureInputV1{
+			OfficialListUSD:            officialListUSD,
+			OfficialEvidenceReason:     summary.OfficialEvidenceReason,
+			PricingMode:                supplierPricingMode,
+			TieredTokenParams:          summary.SupplierTieredParams,
+			AudioPricingApplied:        audioPricingApplied,
+			ToolPricingApplied:         toolPricingApplied,
+			ImagePricingApplied:        imagePricingApplied,
+			UnknownOfficialAmountCount: unknownOfficialAmountCount,
+		},
+	})
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

@@ -97,6 +97,11 @@ func main() {
 		}()
 
 		go model.SyncChannelCache(common.SyncFrequency)
+	} else {
+		if err := model.RefreshSupplierCache(); err != nil {
+			common.SysError("initial supplier cache refresh failed: " + err.Error())
+		}
+		go model.SyncSupplierCache(common.SyncFrequency)
 	}
 
 	// Subscribe to peer config-change notifications. Each message triggers the
@@ -144,6 +149,7 @@ func main() {
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 	service.StartStripeSubscriptionReconciliationTask()
+	service.StartSupplierDailyAggregationTask()
 
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
@@ -401,7 +407,9 @@ func InitResources() error {
 		common.FatalLog("failed to initialize database: " + err.Error())
 		return err
 	}
-
+	if err = initializeSupplierRuntime(); err != nil {
+		return err
+	}
 	model.CheckSetup()
 
 	// Initialize options, should after model.InitDB()
@@ -418,7 +426,6 @@ func InitResources() error {
 	if err != nil {
 		return err
 	}
-
 	// Initialize Redis
 	err = common.InitRedisClient()
 	if err != nil {
@@ -448,5 +455,24 @@ func InitResources() error {
 		// Don't return error, custom OAuth is not critical
 	}
 
+	return nil
+}
+
+func initializeSupplierRuntime() error {
+	// Slave/router nodes deliberately skip schema migrations. Production
+	// revisions can overlap, so a router may start before the master has created
+	// the additive supplier tables. Keep accounting fail-closed and let the
+	// existing cache refresh loop recover after the master migration completes.
+	if common.IsMasterNode {
+		if err := model.EnsureSupplierUsageGenerationSchema(model.DB); err != nil {
+			return fmt.Errorf("initialize supplier usage generation schema: %w", err)
+		}
+	}
+	if err := model.RefreshSupplierCache(); err != nil {
+		if common.IsMasterNode {
+			return fmt.Errorf("initialize supplier cache: %w", err)
+		}
+		common.SysError("initial supplier cache refresh failed on slave; accounting remains disabled until retry: " + err.Error())
+	}
 	return nil
 }

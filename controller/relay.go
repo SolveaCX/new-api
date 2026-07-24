@@ -361,7 +361,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 
-	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
+	helper.ApplyResolvedGroupRatio(info, helper.HandleGroupRatio(c, info))
 
 	if err != nil {
 		if errors.Is(err, service.ErrChannelConcurrencyLimit) {
@@ -378,6 +378,8 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		releaseChannelConcurrencyForRequest(c)
 		return nil, newAPIError
 	}
+	info.InitSupplierSnapshots(c)
+	helper.FreezeSupplierOfficialPricingSnapshot(info, info.PriceData)
 	return channel, nil
 }
 

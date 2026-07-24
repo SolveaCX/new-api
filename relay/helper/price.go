@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -45,6 +46,30 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 	}
 
 	return ratio_setting.GetEffectiveGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup, relayInfo.OriginModelName)
+}
+
+// ApplyResolvedGroupRatio freezes the group selected for the current relay
+// attempt into every settlement snapshot that consumes it. Unit prices and
+// tier expressions remain frozen from initial pricing; only the retry-varying
+// group multiplier is advanced to the final attempt.
+func ApplyResolvedGroupRatio(relayInfo *relaycommon.RelayInfo, groupRatioInfo types.GroupRatioInfo) {
+	if relayInfo == nil {
+		return
+	}
+	relayInfo.PriceData.GroupRatioInfo = groupRatioInfo
+	applyTieredGroupRatio(relayInfo.TieredBillingSnapshot, groupRatioInfo.GroupRatio)
+	if relayInfo.SupplierOfficialPricingSnapshot.Loaded {
+		relayInfo.SupplierOfficialPricingSnapshot.PriceData.GroupRatioInfo = groupRatioInfo
+		applyTieredGroupRatio(relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot, groupRatioInfo.GroupRatio)
+	}
+}
+
+func applyTieredGroupRatio(snapshot *billingexpr.BillingSnapshot, groupRatio float64) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.GroupRatio = groupRatio
+	snapshot.EstimatedQuotaAfterGroup = billingexpr.QuotaRound(snapshot.EstimatedQuotaBeforeGroup * groupRatio)
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
@@ -143,6 +168,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		logger.LogDebug(c, "model_price_helper result: %s", priceData.ToSetting())
 	}
 	info.PriceData = priceData
+	FreezeSupplierOfficialPricingSnapshot(info, priceData)
 	return priceData, nil
 }
 
@@ -204,6 +230,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		Quota:          quota,
 		GroupRatioInfo: groupRatioInfo,
 	}
+	FreezeSupplierOfficialPricingSnapshot(info, priceData)
 	return priceData, nil
 }
 
@@ -285,5 +312,85 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 	logger.LogDebug(c, "model_price_helper_tiered result: model=%s preConsume=%d quotaBeforeGroup=%.2f groupRatio=%.2f tier=%s", info.OriginModelName, preConsumedQuota, quotaBeforeGroup, groupRatioInfo.GroupRatio, trace.MatchedTier)
 
 	info.PriceData = priceData
+	FreezeSupplierOfficialPricingSnapshot(info, priceData)
 	return priceData, nil
+}
+
+// FreezeSupplierOfficialPricingSnapshot captures supplier-only unit pricing.
+// It never changes customer PriceData and performs no supplier storage I/O.
+func FreezeSupplierOfficialPricingSnapshot(info *relaycommon.RelayInfo, priceData types.PriceData) {
+	if info == nil || !info.SupplierCostSnapshot.IsBound() || info.SupplierOfficialPricingSnapshot.CaptureAttempted {
+		return
+	}
+	priceData.OtherRatios = cloneSupplierOtherRatios(priceData.OtherRatios)
+	info.SupplierOfficialPricingSnapshot = types.SupplierOfficialPricingSnapshot{
+		CaptureAttempted:                      true,
+		Loaded:                                true,
+		QuotaPerUnit:                          strconv.FormatFloat(common.QuotaPerUnit, 'f', -1, 64),
+		PriceData:                             priceData,
+		TieredBillingSnapshot:                 cloneSupplierBillingSnapshot(info.TieredBillingSnapshot),
+		BillingRequestInput:                   supplierBillingRequestInput(info.TieredBillingSnapshot, info.BillingRequestInput),
+		WebSearchPreviewPricePerThousandCalls: operation_setting.GetToolPriceForModel("web_search_preview", info.OriginModelName),
+		ClaudeWebSearchPricePerThousandCalls:  operation_setting.GetToolPrice("web_search"),
+		FileSearchPricePerThousandCalls:       operation_setting.GetToolPrice("file_search"),
+		GeminiInputAudioPricePerMillionTokens: operation_setting.GetGeminiInputAudioPricePerMillionTokens(info.OriginModelName),
+		ImageGenerationCallPrices: types.SupplierImageGenerationCallPrices{
+			Low1024x1024:    operation_setting.GPTImage1Low1024x1024,
+			Low1024x1536:    operation_setting.GPTImage1Low1024x1536,
+			Low1536x1024:    operation_setting.GPTImage1Low1536x1024,
+			Medium1024x1024: operation_setting.GPTImage1Medium1024x1024,
+			Medium1024x1536: operation_setting.GPTImage1Medium1024x1536,
+			Medium1536x1024: operation_setting.GPTImage1Medium1536x1024,
+			High1024x1024:   operation_setting.GPTImage1High1024x1024,
+			High1024x1536:   operation_setting.GPTImage1High1024x1536,
+			High1536x1024:   operation_setting.GPTImage1High1536x1024,
+		},
+	}
+}
+
+// RefreshSupplierOfficialPricingSnapshotForCurrentModel recalculates only the
+// supplier sidecar on a shallow RelayInfo copy. Responses compact resolves its
+// effective billing model after initial customer pre-consume, so it calls this
+// immediately after model mapping and before the upstream request.
+func RefreshSupplierOfficialPricingSnapshotForCurrentModel(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) error {
+	if info == nil || !info.SupplierCostSnapshot.IsBound() {
+		return nil
+	}
+	shadow := *info
+	shadow.SupplierOfficialPricingSnapshot = types.SupplierOfficialPricingSnapshot{}
+	shadow.TieredBillingSnapshot = nil
+	if _, err := ModelPriceHelper(c, &shadow, promptTokens, meta); err != nil {
+		info.SupplierOfficialPricingSnapshot = types.SupplierOfficialPricingSnapshot{CaptureAttempted: true}
+		return err
+	}
+	info.SupplierOfficialPricingSnapshot = shadow.SupplierOfficialPricingSnapshot
+	return nil
+}
+
+func cloneSupplierBillingSnapshot(snapshot *billingexpr.BillingSnapshot) *billingexpr.BillingSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := *snapshot
+	return &cloned
+}
+
+func supplierBillingRequestInput(snapshot *billingexpr.BillingSnapshot, input *billingexpr.RequestInput) *billingexpr.RequestInput {
+	if snapshot == nil || input == nil {
+		return nil
+	}
+	// ResolveIncomingBillingExprRequestInput creates a request-local immutable
+	// value. Reusing it avoids a second O(body_size) copy on the hot path.
+	return input
+}
+
+func cloneSupplierOtherRatios(source map[string]float64) map[string]float64 {
+	if len(source) == 0 {
+		return nil
+	}
+	cloned := make(map[string]float64, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }

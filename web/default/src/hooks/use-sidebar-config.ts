@@ -59,6 +59,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     channel: true,
     models: true,
     codex_governance: true,
+    supply_chain: true,
     redemption: true,
     user: true,
     setting: true,
@@ -116,6 +117,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/models/metadata': { section: 'admin', module: 'models' },
   '/models/deployments': { section: 'admin', module: 'models' },
   '/users': { section: 'admin', module: 'user' },
+  '/supply-chain': { section: 'admin', module: 'supply_chain' },
   '/redemption-codes': { section: 'admin', module: 'redemption' },
   '/subscriptions': { section: 'admin', module: 'subscription' },
   '/system-settings': { section: 'admin', module: 'setting' },
@@ -280,36 +282,39 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
   const { status } = useStatus()
   const { auth } = useAuthStore()
 
-  const adminConfig = useMemo(
+  return useMemo(
     () =>
-      parseSidebarConfig(
-        status?.SidebarModulesAdmin as string | null | undefined
+      filterSidebarNavGroupsForConfig(
+        navGroups,
+        status?.SidebarModulesAdmin as string | null | undefined,
+        auth?.user?.sidebar_modules,
+        auth?.user?.permissions?.sidebar_settings !== false
       ),
-    [status?.SidebarModulesAdmin]
+    [
+      navGroups,
+      status?.SidebarModulesAdmin,
+      auth?.user?.sidebar_modules,
+      auth?.user?.permissions?.sidebar_settings,
+    ]
   )
+}
 
-  const userConfig = useMemo(() => {
-    // If the backend marks the user as unable to configure the sidebar
-    // (e.g. root accounts), skip the user overlay entirely — a stale
-    // historical sidebar_modules value from a previous role would otherwise
-    // hide admin entries for someone who has no in-product UI to restore
-    // them.
-    if (auth?.user?.permissions?.sidebar_settings === false) {
-      return null
-    }
-    return parseUserSidebarConfig(auth?.user?.sidebar_modules)
-  }, [auth?.user?.permissions?.sidebar_settings, auth?.user?.sidebar_modules])
-
-  const filteredNavGroups = useMemo(
-    () =>
-      navGroups
-        .map((group) => ({
-          ...group,
-          items: filterNavItems(group.items, adminConfig, userConfig),
-        }))
-        .filter((group) => group.items.length > 0), // Only show navigation groups with visible items
-    [navGroups, adminConfig, userConfig]
-  )
-
-  return filteredNavGroups
+export function filterSidebarNavGroupsForConfig(
+  navGroups: NavGroup[],
+  adminConfigValue: string | null | undefined,
+  userConfigValue: string | null | undefined,
+  userCanConfigure: boolean
+): NavGroup[] {
+  const adminConfig = parseSidebarConfig(adminConfigValue)
+  // Root and other accounts without sidebar settings must not be narrowed by
+  // a stale historical user preference they cannot change in the product.
+  const userConfig = userCanConfigure
+    ? parseUserSidebarConfig(userConfigValue)
+    : null
+  return navGroups
+    .map((group) => ({
+      ...group,
+      items: filterNavItems(group.items, adminConfig, userConfig),
+    }))
+    .filter((group) => group.items.length > 0)
 }

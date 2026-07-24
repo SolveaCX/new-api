@@ -651,6 +651,22 @@ export const STATIC_I18N_KEYS = [
   'Expired at',
   'Cancelled at',
 
+  // Supply-chain form validation (schema messages passed to t() dynamically)
+  'This field is required',
+  'Enter zero or a positive integer',
+  'Enter a positive integer',
+  'The multiplier cannot be negative',
+  'The multiplier cannot exceed 100%',
+  'Enter a non-zero USD amount with up to 6 decimal places',
+
+  // Supply-chain enum labels rendered through typed label-key maps
+  'Exclude',
+  'Include',
+  'Initial',
+  'Replenishment',
+  'Correction',
+  'Reversal',
+
   // Ops report — AdPilot board (dynamic status/severity/mode labels)
   'adspilot_status_pending',
   'adspilot_status_approved',
