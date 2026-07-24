@@ -244,19 +244,43 @@ Cloud Run 运行时 SA 持有这些 secret 的 `roles/secretmanager.secretAccess
 | 邮箱 | 用途 | 关键权限 |
 |---|---|---|
 | `newapi-runtime@vocai-gemini-prod.iam.gserviceaccount.com` | Cloud Run revision 运行时身份 | `cloudsql.client`、`logging.logWriter`、`monitoring.metricWriter`、`cloudtrace.agent`、secret accessor |
-| `newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com` | GitHub Actions WIF deployer | `run.developer`、`artifactregistry.writer`、`iam.serviceAccountUser` |
+| `newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com` | GitHub Actions image builder | 仅固定 Artifact Registry repository 的 `roles/artifactregistry.writer`；无 Cloud Run、Job 或 `actAs` |
+| `newapi-prod-console-deployer@vocai-gemini-prod.iam.gserviceaccount.com` | production Console deploy | project-level read-only Run observer、固定 `newapi-console` service mutation、repository reader、仅精确 production runtime SA 的 `actAs` |
+| `newapi-prod-router-deployer@vocai-gemini-prod.iam.gserviceaccount.com` | production Router deploy | project-level read-only Run observer、固定 `newapi-router` service mutation、repository reader、仅精确 production runtime SA 的 `actAs` |
+| `newapi-prod-web-deployer@vocai-gemini-prod.iam.gserviceaccount.com` | production website deploy | project-level read-only Run observer、固定 `newapi-web` service mutation、repository reader、仅精确 website runtime SA 的 `actAs` |
+| `newapi-staging-deployer@vocai-gemini-prod.iam.gserviceaccount.com` | staging app/website deploy | project-level read-only Run observer、固定 staging services mutation、repository reader、仅精确 staging runtime SAs 的 `actAs` |
+| `newapi-prod-console-rollback@vocai-gemini-prod.iam.gserviceaccount.com` | production Console rollback | project-level read-only Run observer 与固定 `newapi-console` service mutation；无 Artifact Registry 和 `actAs` |
+| `newapi-prod-router-rollback@vocai-gemini-prod.iam.gserviceaccount.com` | production Router rollback | project-level read-only Run observer 与固定 `newapi-router` service mutation；无 Artifact Registry 和 `actAs` |
+| `newapi-supplier-batch-runner@vocai-gemini-prod.iam.gserviceaccount.com` | Supplier one-shot Job runtime | 两个 supplier token Secret 的 accessor、`logging.logWriter` |
+| `newapi-supplier-scheduler@vocai-gemini-prod.iam.gserviceaccount.com` | Cloud Scheduler trigger | 仅固定 `newapi-supplier-batch` Job 的 `roles/run.invoker` |
+| `newapi-supplier-promoter@vocai-gemini-prod.iam.gserviceaccount.com` | protected production runner promotion | 固定 Job 的 `run.jobs.get/update/run`、project-level read-only Run/log observer、固定 repository reader、仅精确 runner SA 的 `actAs`；零 `cloudscheduler.*` |
 
-WIF provider：
+WIF trust 按 privilege lane 分池，避免相同 GitHub subject 在共享 pool 内横向 impersonation：
 
 ```text
-projects/528088078482/locations/global/workloadIdentityPools/github-actions/providers/github
+github-actions            # build-only
+github-prod-app-deploy    # production Console/Router deploy
+github-prod-rollback      # production Console/Router rollback
+github-prod-web-deploy    # production website deploy
+github-staging-deploy     # staging app/website deploy
+github-supplier-promote   # supplier Job promotion
 ```
 
-Attribute condition 必须限定：
+每个 provider condition 固定 numeric repository/owner IDs、repository、event、ref、workflow path 和 exact subject。`github-actions` 只可 impersonate build-only `newapi-ci-deployer`；privileged pools 分别绑定上述固定 deploy/rollback/promoter SA。任何 workflow 都不得读取通用 `GCP_DEPLOYER_SA` 或接受可变 service-account input。
+
+首次迁移不能依赖尚未创建的新 WIF identity。必须使用经审查的 Owner ADC 在本地执行 refreshing plan/apply，先创建 service accounts、custom roles、resource-level bindings 和全部 pools/providers，再启用引用固定 provider/SA 的 workflow。`gcp-infra.yml` 没有 OIDC/GCP auth、远端 backend、plan 或 apply；它只执行 `terraform init -backend=false`、validate 与静态安全 contracts。
+
+当前外部 GitHub 配置仍是 fail-closed 前置项，而不是已由 Terraform 或本次代码变更完成的状态：
 
 ```text
-assertion.repository == 'SolveaCX/new-api'
+production / production-console / production-router: 有 reviewer，但无 deployment branch policy，prevent_self_review=false
+staging branch: 未保护
+production-infra Environment: 不存在，且不存在 CI infra identity
+SUPPLIER_DEPLOY_ROOT_ACCESS_TOKEN: 缺失
+SUPPLIER_DEPLOY_ROOT_USER_ID: 缺失
 ```
+
+在 GitHub Settings 中补齐 branch/environment protections 和 production Root secret/variable，并独立复核后才能运行相应 lane；本文不声称这些外部设置已修改。缺失 Root 输入时 promotion/rollback 的非空门禁必须失败。
 
 ## 监控
 
@@ -282,6 +306,14 @@ Alert thresholds in Terraform:
 | `new-api router pending requests` | `run.googleapis.com/pending_queue/pending_requests` | > 5 pending requests for 5 minutes |
 | `new-api router 5xx spike` | `run.googleapis.com/request_count` (`5xx`) | > 100 5xx responses per 5 minutes |
 | `new-api Redis CPU high` | `redis.googleapis.com/stats/cpu_utilization` | > 80% for 5 minutes |
+| `new-api supplier accounting never-published backlog is at least two days` | `prometheus.googleapis.com/newapi_supplier_accounting_never_published_days/gauge` | current DB-derived value > 1 for 60 seconds |
+| `new-api supplier accounting oldest never-published day exceeds 24 hours` | `prometheus.googleapis.com/newapi_supplier_accounting_oldest_never_published_age_seconds/gauge` | current DB-derived value > 86400 for 60 seconds |
+| `new-api supplier accounting prior day unpublished after 08:00 Asia/Shanghai` | `prometheus.googleapis.com/newapi_supplier_accounting_prior_day_unpublished_after_0800/gauge` | current DB-derived value > 0 for 60 seconds |
+| `new-api supplier accounting backlog observer is unhealthy` | `prometheus.googleapis.com/newapi_supplier_accounting_backlog_observer_up/gauge` | service-wide max < 1 or the metric is absent for 120 seconds |
+
+These supplier policies exist only when both `supplier_batch_job_enabled=true` and an alert email is configured. The valid phase-one state (`supplier_batch_job_enabled=false`) creates no supplier alert policy and therefore no expected absence noise. There is no supplier log-based metric: all three SLO/backlog values come from the Router `/metrics` DB snapshot using the same `published_fence_token = 0` eligibility contract. `newapi_supplier_accounting_backlog_observed_at_seconds` exposes when that snapshot was observed for freshness evidence.
+
+Managed Prometheus stores these series on `prometheus_target`. Every policy filters `service=${router_service_name}` and reduces instance/revision series with `REDUCE_MAX`, grouped only by service; current gauges must never be summed across Router instances. The existing RunMonitoring sidecar scrapes every Router instance every 30 seconds, so observer DB-read amplification scales with instance count. G006 must measure the production-equivalent scrape/query load at configured maximum Router scale and retain a live fire/resolve record for every policy before release.
 
 To enable email alerts, set:
 
@@ -292,9 +324,9 @@ alert_emails = [
 ]
 ```
 
-Then run a local Owner-credentialed `terraform plan` and apply only after
-reviewing the Monitoring resources. The CI infra plan/apply workflow is not a
-trusted source of truth yet; see `OPERATIONS.md`.
+Then run a local, refreshing Owner-ADC `terraform plan` and apply only after
+reviewing the Monitoring resources. CI infra is backend-disabled static
+validation only and never plans or applies production; see `OPERATIONS.md`.
 
 生产分流验证常用日志：
 
@@ -331,7 +363,7 @@ gcloud logging read \
 
 ## 已知限制 & 未完成事项
 
-1. **CI Terraform plan/apply IAM 不完整**：`gcp-infra.yml` 的 plan/apply 不能作为唯一依据；本地 Owner ADC 的 `terraform plan` 才是当前生产 infra 变更的可信来源。详见 `OPERATIONS.md`。
+1. **CI 不拥有 production Terraform**：`gcp-infra.yml` 仅做 backend-disabled 静态 validate/contracts；production refreshing plan/apply 只允许在本地以经审查的 Owner ADC 执行。详见 `OPERATIONS.md`。
 2. **Cloud SQL 单区域**：节省成本但不是 HA。升级为 `REGIONAL` 需要单独规划。
 3. **Memorystore Basic 单实例**：Redis 不是 HA。
 4. **Cloud Run ingress 暂为 ALL**：`*.run.app` 直连仍可达。锁到 `INTERNAL_LOAD_BALANCER` 前要确认 CI/CD 健康检查路径和回滚路径。

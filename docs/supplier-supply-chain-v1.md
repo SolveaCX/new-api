@@ -169,11 +169,12 @@ V1 新增恰好十张供应链表：
 - 时区固定为 `Asia/Shanghai`；
 - 02:00 前处于关账缓冲期，调用不做工作；
 - 每次 catch-up 最多处理一个缺失自然日，只处理 D-1 及以前；
-- 外部调度器必须循环调用，直到响应 `remaining_work=false`；
-- Root-only 入口为 `POST /api/supply-chain/daily-batches/catch-up`，同时经过关键接口限流；
-- 仓库内不启动常驻 Worker，也不创建云调度器。
+- Terraform 管理的 Cloud Scheduler 在 `02:05 Asia/Shanghai` 只启动一次 one-shot Cloud Run Job，不直接调用 Console；
+- 每次成功 Job 最多推进一个最早 `published_fence_token = 0` 的自然日；N 个积压日需要 N 次串行成功执行，可由运维手动串行加速；
+- catch-up/status 是 scheduler-only 接口，使用稳定 trusted job identity、current/next 双 token slot 和稳定 `Idempotency-Key`/`request_id`，不接受 Root token；
+- 仓库内不启动常驻 Worker。Runner 在响应不确定时按同一 request ID 查询状态，不创建新 key。
 
-对外接口只处理“最早未完成日期或其后下一天”，不接受指定日期，也不暴露强制重跑已完成日期的能力。代码中的 `force` 参数仅供内部流程和测试使用，不是 V1 运维 API 合同。
+Scheduler 接口只处理最早从未发布的日期，不接受指定日期。已发布但不完整的日期只允许 Root 从日报界面发起受 mutation gate、fresh secure verification、expected published fence 和稳定幂等键保护的 rerun；完整、未扫描、未发布或已有活动任务的日期拒绝 rerun。
 
 每页最多扫描 5000 条消费日志，使用 `(created_at, id)` keyset 分页，避免 offset 在大表上的退化。扫描范围为北京时间自然日对应的 `created_at >= day_start AND created_at < day_end`，并只读取 `id`、`created_at`、`channel_id`、`model_name`、`other`。
 
@@ -185,7 +186,7 @@ V1 新增恰好十张供应链表：
 
 ### 7.2 多节点安全
 
-生产 Console 可运行多个实例，外部调度器也可能并发调用或重试，因此批处理按多节点语义实现：
+生产 Console 可运行多个实例，Cloud Scheduler/Job 也可能重复启动或遇到丢响应，因此批处理按多节点语义实现：
 
 - 使用数据库时间判断租约，不依赖单机时钟；
 - 每个自然日只有一条 batch run；
@@ -196,6 +197,20 @@ V1 新增恰好十张供应链表：
 - 新 owner 接管后，旧 owner 不能覆盖新结果；旧 generation 会被清理。
 
 任务失败或新 owner 接管时，会递增 fence，并从该自然日开头重新计算；旧的已发布 generation 在新 generation 完成前继续供报表读取。持久化游标用于页级 CAS 和阻止旧 owner 继续推进，当前不承诺从失败页面断点续跑。
+
+### 7.3 精确积压监控
+
+现有 Router Managed Prometheus `/metrics` 从数据库当前事实生成五个低基数 gauge：
+
+- `newapi_supplier_accounting_never_published_days`：当前 `published_fence_token = 0` 的可处理自然日数量，>1 表示当前至少积压两天；
+- `newapi_supplier_accounting_oldest_never_published_age_seconds`：最老从未发布日的当前年龄，严格 >86400 表示超过 24 小时；
+- `newapi_supplier_accounting_prior_day_unpublished_after_0800`：北京时间 08:00 后若前一日仍未发布则为 1；
+- `newapi_supplier_accounting_backlog_observer_up`：数据库 snapshot 成功为 1，失败为 0；
+- `newapi_supplier_accounting_backlog_observed_at_seconds`：最近成功 snapshot 的数据库观察时间，用于 freshness 证据。
+
+Terraform policy 只过滤 `prometheus_target` 上的 Router service，并用 max 汇总 instance/revision 副本，绝不求和，因为所有实例观察的是同一组数据库事实。普通阈值持续 60 秒，至少覆盖两个 30 秒 scrape；observer max <1 或 metric 缺失持续 120 秒触发 health 告警。`supplier_batch_job_enabled=false` 时不创建这些 policy，phase one 不产生 absence noise，也不新增 observer Job、Scheduler、SA、secret、log metric、表或索引。
+
+每个 Router 实例每 30 秒被独立抓取，数据库 snapshot 读放大会随实例数增长。G006 必须在 production-equivalent 最大实例规模下验证查询延迟、主库 CPU/连接/锁和 series 基数，并保存 backlog >=2、oldest >24h、08:00 miss、observer down/absence 的 live fire/resolve 与 `observed_at_seconds` 时间线，才能形成生产发布证据。
 
 ## 8. 历史数据边界
 
@@ -245,7 +260,7 @@ remaining = total_inventory - consumed
 
 创建供应商、合同、采购折扣版本、库存调整和排除规则时要求 `Idempotency-Key`，服务端保存命令或唯一台账记录以支持安全重放。渠道绑定变更使用 `expected_contract_id` CAS，避免两个管理员互相覆盖；更新和停用操作遵守各自的状态约束。
 
-管理接口由 AdminAuth 保护；日结入口权限更高，仅允许 RootAuth，并受 CriticalRateLimit 保护。
+所有用户可访问的供应链读取、报表、命令结果和管理入口都由 `FinanceAuth` 限定 Root。全部 mutation（包含不完整日报 rerun）还必须经过版本化 mutation gate 和 fresh secure verification；只有 gate transition 可绕过 gate 本身，但仍要求 Root、fresh verification、expected-version CAS 和 actor-local idempotency。catch-up/status 使用独立 scheduler-only token，不能调用报表 rerun或任何 Root/Admin API。
 
 ### 10.2 报表
 
@@ -276,27 +291,35 @@ remaining = total_inventory - consumed
 
 - `LogConsumeEnabled` 必须为 `true`；关闭消费日志后不会产生供应链事实；
 - 现有消费日志写失败只记录错误，不会回滚已经完成的客户结算，批处理无法发现“整条消费日志未落库”的请求；
-- malformed 供应链快照会令当日日结失败并等待修复/重试，不会静默吞掉；
+- 已持久化行中的 malformed/missing/incompatible 供应链快照属于行数据缺陷：日结发布仍可计算的金额、固定计数和有界 warning，将 `persisted_log_snapshot_completeness` 标为 `incomplete`，并推进 backlog；
+- 日志页读取/扫描错误、fence 丢失、租约错误、主库事务失败或其他执行错误不发布任何新 generation，也不推进 backlog；已有 published generation 保持可见，后续在新 fence 下重试；
 - 官方原价必须来自请求时实际计费链路的权威定价证据；本地 token 估算、启发式缓存或其他非权威回退不能用于财务快照。权威官方金额缺失或无法校验时必须 fail closed 为仅 disposition 的 `producer_error`，不持久 `s`、`quality_reason` 或任何部分财务事实。
 
 ## 12. 发布方案
 
 发布前最低要求：
 
-1. 在 staging 使用真实 MySQL/PostgreSQL 验证十张表和 `channels.supplier_contract_id` 迁移；
-2. 验证 Router 与 Console 使用同一主库，日志库配置与当前环境一致；
-3. 给所有参与首次初始化的 Go 服务预设同一个未来 `SUPPLIER_ACCOUNTING_CUTOVER_AT`，该时间点必须晚于全部 Router 新版本完成切流；
-4. 先部署 `newapi-console`/master，确认十张表、`channels` 列及索引、coverage option 均已建立，再部署全部 `newapi-router`。Router/slave 不执行 AutoMigrate，但启动时会立即修复/校验汇总索引、刷新供应商缓存并读取 coverage，因此不能先于迁移启动；
-5. 验证多节点/多实例 fence 接管、任务中断恢复、RootAuth、限流和 scheduler 重试；
-6. 配置北京时间 02:00 后的外部 scheduler，并让其循环到 `remaining_work=false`；
-7. canary 核对消费日志快照、日报、合同库存和报表账实一致性。
+1. 在 staging 使用真实 MySQL/PostgreSQL 验证十张表、`channels.supplier_contract_id`、candidate/published 双缓冲和不变的 `logs` 物理 schema/index；
+2. 验证 Router 与 Console 使用同一主库，日志库配置与当前环境一致，并给所有 Go 服务预设同一个未来 cutover；
+3. mutation gate 保持 disabled。先部署兼容桥 Console 到 0% tagged URL，完成迁移/readiness/preflight，再直接切至 100%，等待完整 60 分钟管理请求硬超时；
+4. 部署全部兼容 Router；若 legacy `newapi` 仍承载流量也同步部署。证明所有不兼容旧 writer 已排空；
+5. 混合版本期间同时保留命令账本两条 legacy uniqueness bridge 与 `ux_supplier_inventory_contract_idempotency`。新 actor-local/scheduler/inventory 索引必须先有效；
+6. 排空后为非驻留 CLI 显式提供实际物理数据库 identity 与有界、非秘密的 drain-evidence reference；identity 不匹配、options/command/inventory prerequisite 缺失、gate malformed/enabled 都必须在删桥前失败；
+7. 调用 `/app/supplier_admin_finalize finalize`，finalizer 在删桥前后都验证 mutation gate disabled；再以 `verify` 两次证明三条旧桥都消失、三条新索引定义正确、digest 无异常；
+8. 认证状态必须精确返回 `admin_command_ledger_state=finalized`。`bridge` 仅表示三条 legacy bridge 与替代索引同时完整，缺失、部分或未知 prerequisite 一律为 `invalid` 并阻断 promotion；
+9. 只有 finalizer/readiness/preflight 都成功后，Root 才可通过 fresh secure verification 与 expected-version CAS 开启 mutation gate；
+10. 使用 digest-pinned runner image 创建 Terraform Job/Scheduler/IAM/secret containers，验证 32-byte base64url 双 slot 轮换、45/55/>=60/60 分钟 deadline 顺序、多节点 fence/丢响应恢复和 08:00 SLO；
+11. canary 核对消费日志快照、日报、合同库存和报表账实一致性。
 
 部署目标：
 
 - `newapi-router`：必须部署，因为请求选择、结算和日志快照写入发生在 Router；
 - `newapi-console`：必须部署，因为迁移、管理 API、日结入口和控制台页面在 Console；
 - legacy `newapi`：若仍承载 API 或控制台流量，必须同步部署；
-- `newapi-web`、Terraform、Cloudflare：不涉及。
+- Terraform：必须应用 Cloud Run Job、Scheduler、独立 service accounts、最小 IAM 和 current/next Secret 容器；Terraform 不持有 raw token、具体 secret version 或 verifier hash；
+- `newapi-web`、Cloudflare：不涉及。
+
+回滚必须区分 finalizer 前后：finalizer 前可在 gate disabled 状态回到兼容桥版本；finalizer 后不得恢复依赖旧唯一索引的 writer，只能回滚到已证明兼容 finalized schema 的 digest。active 后的不兼容紧急切流必须先原子进入 degraded 并打开具名 coverage gap。完整操作顺序见[供应商核算运维手册](./supplier-accounting-operations.md)。
 
 当前实现尚未因此文档自动部署 staging 或 production。
 
@@ -311,4 +334,5 @@ V1 不做以下事项：
 - 异步任务类请求的供应链快照和日报；
 - 修改现有 7000 万行 `logs` 表结构；
 - 供应链 Redis Stream、独立 Redis、publisher/consumer 或常驻 Worker；
-- 新增 scheduler 的 Terraform、Cloudflare 或 `newapi-web` 部署。
+- Cloud Scheduler 直接长连接调用 Console；它只能启动 Terraform 管理的 one-shot Cloud Run Job；
+- Cloudflare 或 `newapi-web` 部署。

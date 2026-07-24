@@ -38,6 +38,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_uri: ${{ steps.compute_image.outputs.image_uri }}
+      image_ref: ${{ steps.resolve_image.outputs.image_ref }}
+      oci_digest: ${{ steps.resolve_image.outputs.oci_digest }}
+      manifest_sha256: ${{ steps.manifest.outputs.manifest_sha256 }}
+      binding_artifact: ${{ steps.binding.outputs.artifact_name }}
       short_sha: ${{ steps.compute_image.outputs.short_sha }}
     steps:
       - name: Checkout
@@ -49,16 +53,23 @@ jobs:
           short_sha="${GITHUB_SHA::12}"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
           if [[ -n "${{ inputs.image_tag }}" ]]; then
-            echo "image_uri=${AR_REPO_URL}/server:${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
-            echo "SKIP_BUILD=true" >> "$GITHUB_ENV"
-          else
-            echo "image_uri=${AR_REPO_URL}/server:staging-sha-${short_sha}" >> "$GITHUB_OUTPUT"
-            echo "SKIP_BUILD=false" >> "$GITHUB_ENV"
+            echo "Tag-only staging deploy has no immutable manifest/OCI binding and is disabled." >&2
+            exit 1
           fi
+          echo "image_uri=${AR_REPO_URL}/server:staging-sha-${short_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate canonical build manifest
+        id: manifest
+        run: |
+          set -euo pipefail
+          .github/scripts/supplier-build-manifest.sh build-manifest \
+            "${GITHUB_REPOSITORY}" "${GITHUB_SHA}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
+            "gcp-deploy-staging-build" "1" "1"
+          .github/scripts/supplier-deploy-verify.sh manifest build-manifest/manifest_hash_payload.json build-manifest/manifest_sha256.txt
+          echo "manifest_sha256=$(cat build-manifest/manifest_sha256.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Compute cookie domain
         id: compute_cookie_domain
-        if: env.SKIP_BUILD != 'true'
         run: |
           set -euo pipefail
           host="${STAGING_APP_CONSOLE_ORIGIN#http://}"
@@ -77,22 +88,19 @@ jobs:
           echo "cookie_domain=${cookie_domain}" >> "$GITHUB_OUTPUT"
 
       - name: Auth to GCP via WIF
-        if: env.SKIP_BUILD != 'true'
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com
 
       - name: Configure docker for Artifact Registry
-        if: env.SKIP_BUILD != 'true'
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
       - name: Set up Docker buildx
-        if: env.SKIP_BUILD != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build & push
-        if: env.SKIP_BUILD != 'true'
+        id: push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -101,11 +109,44 @@ jobs:
           build-args: |
             VITE_OFFICIAL_WEBSITE_ORIGIN=${{ env.STAGING_OFFICIAL_WEBSITE_ORIGIN }}
             VITE_COOKIE_SESSION_DOMAIN=${{ steps.compute_cookie_domain.outputs.cookie_domain }}
+            BUILD_REPO=${{ github.repository }}
+            BUILD_COMMIT=${{ github.sha }}
+            GITHUB_RUN_ID=${{ github.run_id }}
+            RUN_ATTEMPT=${{ github.run_attempt }}
+            BUILD_JOB_IDENTITY=gcp-deploy-staging-build
           tags: |
             ${{ steps.compute_image.outputs.image_uri }}
             ${{ env.AR_REPO_URL }}/server:staging-latest
           cache-from: type=gha,scope=staging
           cache-to: type=gha,mode=max,scope=staging,ignore-error=true
+
+      - name: Resolve immutable image
+        id: resolve_image
+        run: |
+          set -euo pipefail
+          digest="${{ steps.push.outputs.digest }}"
+          .github/scripts/supplier-deploy-verify.sh oci "${digest}" "${digest}"
+          echo "oci_digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${AR_REPO_URL}/server@${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Create immutable staging binding
+        id: binding
+        run: |
+          set -euo pipefail
+          artifact_name="supplier-staging-binding-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p deployment-binding
+          .github/scripts/supplier-deploy-verify.sh binding-write \
+            "${{ steps.resolve_image.outputs.oci_digest }}" "${{ steps.manifest.outputs.manifest_sha256 }}" deployment-binding/binding.json
+          cp build-manifest/manifest_hash_payload.json build-manifest/manifest_sha256.txt deployment-binding/
+          echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Retain immutable staging binding
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.binding.outputs.artifact_name }}
+          path: deployment-binding/
+          if-no-files-found: error
+          retention-days: 90
 
   deploy:
     needs: build
@@ -115,13 +156,22 @@ jobs:
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-staging-deploy/providers/github
+          service_account: newapi-staging-deployer@vocai-gemini-prod.iam.gserviceaccount.com
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy new revision (direct 100% traffic — staging, no canary)
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download immutable build evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.binding_artifact }}
+          path: deployment-binding
+
+      - name: Deploy new revision with no traffic
         id: deploy
         run: |
           set -euo pipefail
@@ -151,9 +201,10 @@ jobs:
           gcloud run services update "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
-            --image="${{ needs.build.outputs.image_uri }}" \
+            --image="${{ needs.build.outputs.image_ref }}" \
             --update-env-vars="${env_arg}" \
             --revision-suffix="${revision_suffix}" \
+            --no-traffic \
             --quiet
           new_rev="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
@@ -161,25 +212,38 @@ jobs:
           echo "new_revision=${new_rev}" >> "$GITHUB_OUTPUT"
           echo "Deployed revision: ${new_rev}"
 
-      - name: Health check
+      - name: Verify tagged staging revision
         run: |
           set -euo pipefail
+          gcloud run services update-traffic "${RUN_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" \
+            --update-tags=supplier-preflight="${{ steps.deploy.outputs.new_revision }}" --quiet
           url="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
-            --format='value(status.url)')"
+            --format='value(status.traffic[].url)' | tr ';' '\n' | grep supplier-preflight || true)"
           if [[ -z "${url}" ]]; then
             echo "Could not resolve Cloud Run service URL" >&2
             exit 1
           fi
           echo "Probing ${url}/api/status ..."
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "${url}/api/status" || true)
+            code=$(curl -sS -o /tmp/status.json -w '%{http_code}' "${url}/api/status" || true)
             echo "attempt $i → $code"
-            if [[ "${code}" == "200" ]]; then exit 0; fi
+            if [[ "${code}" == "200" ]]; then break; fi
             sleep 5
           done
-          echo "Health check failed" >&2
-          exit 1
+          [[ "${code}" == "200" ]] || { echo "Health check failed" >&2; exit 1; }
+          .github/scripts/supplier-deploy-verify.sh status deployment-binding/manifest_hash_payload.json deployment-binding/manifest_sha256.txt /tmp/status.json
+          .github/scripts/supplier-deploy-verify.sh capabilities /tmp/status.json 1
+          deployed_digest="$(gcloud run revisions describe "${{ steps.deploy.outputs.new_revision }}" \
+            --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.imageDigest)')"
+          .github/scripts/supplier-deploy-verify.sh oci "${{ needs.build.outputs.oci_digest }}" "${deployed_digest}"
+          .github/scripts/supplier-deploy-verify.sh binding-verify deployment-binding/binding.json \
+            "${{ needs.build.outputs.oci_digest }}" "${{ needs.build.outputs.manifest_sha256 }}"
+
+      - name: Promote verified staging revision to 100%
+        run: |
+          gcloud run services update-traffic "${RUN_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" \
+            --to-revisions="${{ steps.deploy.outputs.new_revision }}=100" --quiet
 
       - name: Summary
         run: |
@@ -189,5 +253,5 @@ jobs:
           echo "### Staging backend deployed" >> "$GITHUB_STEP_SUMMARY"
           echo "- Service:  \`${RUN_SERVICE}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Revision: \`${{ steps.deploy.outputs.new_revision }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Image:    \`${{ needs.build.outputs.image_uri }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image:    \`${{ needs.build.outputs.image_ref }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- URL:      ${url}" >> "$GITHUB_STEP_SUMMARY"

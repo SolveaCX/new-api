@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -239,7 +240,7 @@ func TestSupplierAdminCommandSameKeyIsActorLocalAndCannotLeakPayload(t *testing.
 func TestMigrateSupplierAdminCommandLedgerRepairsLegacyIndexWithoutDataLoss(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "legacy-command-ledger.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&legacySupplierAdminCommand{}))
+	require.NoError(t, db.AutoMigrate(&Option{}, &legacySupplierAdminCommand{}, &SupplierInventoryAdjustment{}))
 
 	legacyRows := []legacySupplierAdminCommand{
 		{ActorId: 7, Scope: "activation.transition", IdempotencyKey: "legacy-key", PayloadVersion: 1, PayloadDigest: fmt.Sprintf("%064x", 1), ResourceType: "activation", ResourceId: 3, ClaimToken: fmt.Sprintf("%032x", 1)},
@@ -296,13 +297,100 @@ func TestMigrateSupplierAdminCommandLedgerRepairsLegacyIndexWithoutDataLoss(t *t
 func TestSupplierAdminCommandLedgerCleanBridgeIsFinalizedAndIdempotent(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "clean-command-ledger.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&SupplierAdminCommand{}))
+	require.NoError(t, db.AutoMigrate(&Option{}, &SupplierAdminCommand{}, &SupplierInventoryAdjustment{}))
 	require.Empty(t, supplierSQLiteIndexColumns(t, db, supplierAdminCommandActorScopeDigestIndex))
 
 	require.NoError(t, MigrateSupplierAdminCommandLedger(db))
 	require.NoError(t, MigrateSupplierAdminCommandLedger(db))
 	require.NoError(t, ValidateSupplierAdminCommandLedgerFinalized(db))
 	require.Equal(t, []string{"actor_id", "scope", "idempotency_key_digest"}, supplierSQLiteIndexColumns(t, db, supplierAdminCommandActorScopeDigestIndex))
+}
+
+func TestSupplierAdminCommandLedgerFinalizerRemovesBothBridgesAndFailsClosed(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "dual-bridge-finalizer.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}, &legacySupplierAdminCommand{}, &SupplierInventoryAdjustment{}))
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacySupplierInventoryContractKeyIndex+" ON supplier_inventory_adjustments (contract_id, idempotency_key)").Error)
+
+	legacy := legacySupplierAdminCommand{ActorId: 7, Scope: "activation.transition", IdempotencyKey: "dual-bridge-key", PayloadVersion: 1, PayloadDigest: fmt.Sprintf("%064x", 1), ResourceType: "activation", ResourceId: 1, ClaimToken: fmt.Sprintf("%032x", 1)}
+	require.NoError(t, db.Create(&legacy).Error)
+	require.NoError(t, MigrateSupplierAdminCommandLedger(db))
+
+	bridge, err := GetSupplierAdminCommandLedgerMigrationStatus(db)
+	require.NoError(t, err)
+	require.True(t, bridge.LegacyScopeKeyIndex)
+	require.True(t, bridge.LegacyActorScopeKeyIndex)
+	require.True(t, bridge.LegacyInventoryKeyIndex)
+	require.True(t, bridge.HasActorDigestIndex)
+	require.True(t, bridge.HasInventoryActorIndex)
+	require.False(t, bridge.Finalized)
+
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Model(&SupplierAdminCommand{}).Where("id = ?", legacy.Id).UpdateColumn("idempotency_key", " unsafe ").Error)
+	err = FinalizeSupplierAdminCommandLedgerMigration(db)
+	require.ErrorIs(t, err, ErrSupplierAdminCommandIncomplete)
+	failed, statusErr := GetSupplierAdminCommandLedgerMigrationStatus(db)
+	require.NoError(t, statusErr)
+	require.True(t, failed.LegacyScopeKeyIndex, "validation must fail before dropping command-ledger bridge indexes")
+	require.True(t, failed.LegacyActorScopeKeyIndex)
+	require.True(t, failed.LegacyInventoryKeyIndex, "validation must fail before dropping the inventory bridge index")
+	require.False(t, failed.Finalized)
+
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Model(&SupplierAdminCommand{}).Where("id = ?", legacy.Id).Updates(map[string]any{
+		"idempotency_key":        legacy.IdempotencyKey,
+		"idempotency_key_digest": supplierAdminIdempotencyKeyDigest(legacy.IdempotencyKey),
+	}).Error)
+	require.NoError(t, FinalizeSupplierAdminCommandLedgerMigration(db))
+	require.NoError(t, FinalizeSupplierAdminCommandLedgerMigration(db), "finalizer must be idempotent")
+	finalized, err := GetSupplierAdminCommandLedgerMigrationStatus(db)
+	require.NoError(t, err)
+	require.True(t, finalized.Finalized)
+	require.False(t, finalized.LegacyScopeKeyIndex)
+	require.False(t, finalized.LegacyActorScopeKeyIndex)
+	require.False(t, finalized.LegacyInventoryKeyIndex)
+	require.True(t, finalized.HasActorDigestIndex)
+	require.True(t, finalized.HasSchedulerDigestIndex)
+	require.True(t, finalized.HasInventoryActorIndex)
+}
+
+func TestSupplierAdminCommandLedgerMissingPrerequisitesAreInvalid(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "missing-finalizer-prerequisites.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}, &legacySupplierAdminCommand{}))
+	require.NoError(t, MigrateSupplierAdminCommandLedger(db))
+
+	status, err := GetSupplierAdminCommandLedgerMigrationStatus(db)
+	require.NoError(t, err)
+	require.False(t, status.HasRequiredSupplierSchema)
+	require.False(t, status.Finalized)
+	require.Equal(t, SupplierAdminCommandLedgerStateInvalid, status.State())
+	require.ErrorIs(t, FinalizeSupplierAdminCommandLedgerMigration(db), ErrSupplierAdminCommandLedgerNotFinalized)
+	require.True(t, db.Migrator().HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandScopeKeyIndex), "failed prerequisite validation must not remove a bridge")
+	require.True(t, db.Migrator().HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandActorScopeKeyIndex))
+}
+
+func TestSupplierAdminCommandLedgerFinalizerRequiresDisabledMutationGate(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "enabled-gate-finalizer.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}, &legacySupplierAdminCommand{}, &SupplierInventoryAdjustment{}))
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacySupplierInventoryContractKeyIndex+" ON supplier_inventory_adjustments (contract_id, idempotency_key)").Error)
+	require.NoError(t, MigrateSupplierAdminCommandLedger(db))
+	_, err = CASSupplierAccountingMutationState(db, 0, true, 7, "simulate old writers still enabled", time.Now().Unix())
+	require.NoError(t, err)
+
+	require.ErrorIs(t, FinalizeSupplierAdminCommandLedgerMigration(db), ErrSupplierAdminCommandLedgerGateEnabled)
+	bridge, err := GetSupplierAdminCommandLedgerMigrationStatus(db)
+	require.NoError(t, err)
+	require.Equal(t, SupplierAdminCommandLedgerStateBridge, bridge.State())
+	require.True(t, bridge.LegacyScopeKeyIndex)
+	require.True(t, bridge.LegacyActorScopeKeyIndex)
+	require.True(t, bridge.LegacyInventoryKeyIndex)
+
+	_, err = CASSupplierAccountingMutationState(db, 1, false, 7, "drain complete", time.Now().Unix())
+	require.NoError(t, err)
+	require.NoError(t, FinalizeSupplierAdminCommandLedgerMigration(db))
+	finalized, err := GetSupplierAdminCommandLedgerMigrationStatus(db)
+	require.NoError(t, err)
+	require.Equal(t, SupplierAdminCommandLedgerStateFinalized, finalized.State())
 }
 
 func TestSupplierAdminCommandLedgerBridgeRejectsDuplicateActorScopeDigest(t *testing.T) {
@@ -395,8 +483,8 @@ func TestSupplierAdminCommandLedgerMigrationCrossDB(t *testing.T) {
 				require.NoError(t, db.Raw(query).Scan(&current).Error)
 				require.Equal(t, testCase.expectedDatabase, current, "integration test refuses to mutate a non-isolated database")
 			}
-			require.NoError(t, db.Migrator().DropTable(&SupplierAdminCommand{}))
-			require.NoError(t, db.AutoMigrate(&legacySupplierAdminCommand{}))
+			require.NoError(t, db.Migrator().DropTable(&SupplierInventoryAdjustment{}, &SupplierAdminCommand{}, &Option{}))
+			require.NoError(t, db.AutoMigrate(&Option{}, &legacySupplierAdminCommand{}, &SupplierInventoryAdjustment{}))
 			rows := []legacySupplierAdminCommand{
 				{ActorId: 7, Scope: "activation.transition", IdempotencyKey: "key-a", PayloadVersion: 1, PayloadDigest: fmt.Sprintf("%064x", 1), ResourceType: "activation", ResourceId: 1, ClaimToken: fmt.Sprintf("%032x", 1)},
 				{ActorId: 7, Scope: "activation.transition", IdempotencyKey: "key-b", PayloadVersion: 1, PayloadDigest: fmt.Sprintf("%064x", 2), ResourceType: "activation", ResourceId: 2, ClaimToken: fmt.Sprintf("%032x", 2)},
@@ -442,6 +530,68 @@ func TestSupplierAdminCommandLedgerMigrationCrossDB(t *testing.T) {
 			var count int64
 			require.NoError(t, db.Model(&SupplierAdminCommand{}).Where("scope = ? AND idempotency_key = ?", "activation.transition", "key-a").Count(&count).Error)
 			require.Equal(t, int64(2), count)
+		})
+	}
+}
+
+func TestSupplierAdminFinalizerDualBridgeCrossDB(t *testing.T) {
+	testCases := []struct {
+		name             string
+		dsnEnv           string
+		expectedDatabase string
+		open             func(string) gorm.Dialector
+	}{
+		{name: "sqlite", open: func(_ string) gorm.Dialector {
+			return sqlite.Open(filepath.Join(t.TempDir(), "cross-db-dual-bridge.db"))
+		}},
+		{name: "mysql", dsnEnv: "TEST_MYSQL_DSN", expectedDatabase: "supplier_g009_mysql", open: func(dsn string) gorm.Dialector { return mysql.Open(dsn) }},
+		{name: "postgres", dsnEnv: "TEST_POSTGRES_DSN", expectedDatabase: "supplier_g009_postgres", open: func(dsn string) gorm.Dialector { return postgres.Open(dsn) }},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			dsn := strings.TrimSpace(os.Getenv(testCase.dsnEnv))
+			if testCase.dsnEnv != "" && dsn == "" {
+				t.Skipf("set %s to run the isolated %s dual-bridge finalizer test", testCase.dsnEnv, testCase.name)
+			}
+			db, err := gorm.Open(testCase.open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+			require.NoError(t, err)
+			if testCase.expectedDatabase != "" {
+				query := "SELECT DATABASE()"
+				if testCase.name == "postgres" {
+					query = "SELECT current_database()"
+				}
+				var current string
+				require.NoError(t, db.Raw(query).Scan(&current).Error)
+				require.Equal(t, testCase.expectedDatabase, current, "integration test refuses to mutate a non-isolated database")
+			}
+
+			require.NoError(t, db.Migrator().DropTable(&SupplierInventoryAdjustment{}, &SupplierAdminCommand{}))
+			require.NoError(t, db.AutoMigrate(&Option{}, &legacySupplierAdminCommand{}, &SupplierInventoryAdjustment{}))
+			legacyInventoryStatement, err := supplierCreateUniqueIndexStatement(db.Dialector.Name(), "supplier_inventory_adjustments", legacySupplierInventoryContractKeyIndex, []string{"contract_id", "idempotency_key"})
+			require.NoError(t, err)
+			require.NoError(t, db.Exec(legacyInventoryStatement).Error)
+			require.NoError(t, MigrateSupplierAdminCommandLedger(db))
+
+			bridge, err := GetSupplierAdminCommandLedgerMigrationStatus(db)
+			require.NoError(t, err)
+			require.True(t, bridge.LegacyScopeKeyIndex)
+			require.True(t, bridge.LegacyActorScopeKeyIndex)
+			require.True(t, bridge.LegacyInventoryKeyIndex)
+			require.True(t, bridge.HasActorDigestIndex)
+			require.True(t, bridge.HasSchedulerDigestIndex)
+			require.True(t, bridge.HasInventoryActorIndex)
+			require.False(t, bridge.Finalized)
+
+			require.NoError(t, FinalizeSupplierAdminCommandLedgerMigration(db))
+			require.NoError(t, FinalizeSupplierAdminCommandLedgerMigration(db))
+			require.NoError(t, ValidateSupplierAdminCommandLedgerFinalized(db))
+			finalized, err := GetSupplierAdminCommandLedgerMigrationStatus(db)
+			require.NoError(t, err)
+			require.True(t, finalized.Finalized)
+			require.False(t, finalized.LegacyScopeKeyIndex)
+			require.False(t, finalized.LegacyActorScopeKeyIndex)
+			require.False(t, finalized.LegacyInventoryKeyIndex)
 		})
 	}
 }

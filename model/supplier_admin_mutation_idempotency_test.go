@@ -195,7 +195,7 @@ func (legacyInventoryActorIndex) TableName() string { return "supplier_inventory
 func TestSupplierMutationMigrationBackfillsVersionsAndRepairsActorIndexRerunnably(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&legacySupplierWithoutRowVersion{}, &legacyContractWithoutRowVersion{}, &legacyInventoryActorIndex{}, &SupplierAdminCommand{}))
+	require.NoError(t, db.AutoMigrate(&Option{}, &legacySupplierWithoutRowVersion{}, &legacyContractWithoutRowVersion{}, &legacyInventoryActorIndex{}, &SupplierAdminCommand{}))
 	require.NoError(t, db.Create(&legacySupplierWithoutRowVersion{Id: 1, Name: "legacy", Status: SupplierStatusActive}).Error)
 	require.NoError(t, db.Create(&legacyContractWithoutRowVersion{Id: 1, SupplierId: 1, Name: "legacy", ContractNo: "L-1", Status: SupplierContractStatusActive}).Error)
 	require.NoError(t, db.Create(&legacyInventoryActorIndex{ContractId: 1, DeltaMicroUsd: 1, Type: SupplierInventoryAdjustmentTypeCorrection, IdempotencyKey: "legacy", CreatedBy: 7}).Error)
@@ -219,7 +219,7 @@ func TestSupplierMutationMigrationBackfillsVersionsAndRepairsActorIndexRerunnabl
 func TestSupplierInventoryIndexBridgePreservesOldWriterUntilFinalization(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&legacyInventoryActorIndex{}, &SupplierAdminCommand{}))
+	require.NoError(t, db.AutoMigrate(&Option{}, &legacyInventoryActorIndex{}, &SupplierAdminCommand{}))
 	require.NoError(t, MigrateSupplierAdminCommandLedger(db))
 
 	oldWriter := func(actorID int) error {

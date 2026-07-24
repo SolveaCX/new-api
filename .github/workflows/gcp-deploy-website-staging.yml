@@ -79,8 +79,8 @@ jobs:
         if: env.SKIP_BUILD != 'true'
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com
 
       - name: Configure docker for Artifact Registry
         if: env.SKIP_BUILD != 'true'
@@ -117,8 +117,8 @@ jobs:
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-staging-deploy/providers/github
+          service_account: newapi-staging-deployer@vocai-gemini-prod.iam.gserviceaccount.com
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2

@@ -49,6 +49,11 @@ ENV GO111MODULE=on CGO_ENABLED=0
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG BUILD_REPO="local"
+ARG BUILD_COMMIT="unknown"
+ARG GITHUB_RUN_ID="0"
+ARG RUN_ATTEMPT="0"
+ARG BUILD_JOB_IDENTITY="local"
 ENV GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64}
 ENV GOEXPERIMENT=greenteagc
 
@@ -60,7 +65,15 @@ RUN go mod download
 COPY . .
 COPY --from=builder /build/web/default/dist ./web/default/dist
 COPY --from=builder-classic /build/web/classic/dist ./web/classic/dist
-RUN go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
+RUN .github/scripts/supplier-build-manifest.sh /tmp/build-manifest \
+      "${BUILD_REPO}" "${BUILD_COMMIT}" "${GITHUB_RUN_ID}" "${RUN_ATTEMPT}" "${BUILD_JOB_IDENTITY}" "1" "1" \
+    && manifest_payload="$(cat /tmp/build-manifest/manifest_hash_payload.json)" \
+    && manifest_sha256="$(cat /tmp/build-manifest/manifest_sha256.txt)" \
+    && ldflags="-s -w -X github.com/QuantumNous/new-api/common.Version=$(cat VERSION) -X github.com/QuantumNous/new-api/common.BuildManifestPayload=${manifest_payload} -X github.com/QuantumNous/new-api/common.BuildManifestSHA256=${manifest_sha256}" \
+    && mkdir -p /build/out/app \
+    && go build -ldflags "${ldflags}" -o /build/out/new-api . \
+    && go build -ldflags "${ldflags}" -o /build/out/app/supplier_batch_runner ./cmd/supplier_batch_runner \
+    && go build -ldflags "${ldflags}" -o /build/out/app/supplier_admin_finalize ./cmd/supplier_admin_finalize
 
 FROM debian:bookworm-slim@sha256:f06537653ac770703bc45b4b113475bd402f451e85223f0f2837acbf89ab020a
 
@@ -69,7 +82,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && update-ca-certificates
 
-COPY --from=builder2 /build/new-api /
+COPY --from=builder2 /build/out/new-api /
+COPY --from=builder2 /build/out/app /app
 COPY LICENSE NOTICE THIRD-PARTY-LICENSES.md /licenses/
 EXPOSE 3000
 WORKDIR /data

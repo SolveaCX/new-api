@@ -46,6 +46,9 @@ const (
 	supplierBatchSchedulerIdentityScopeDigestIndex = "ux_supplier_batch_scheduler_identity_scope_digest"
 	legacySupplierInventoryContractKeyIndex        = "ux_supplier_inventory_contract_idempotency"
 	supplierInventoryActorLocalIndex               = "ux_supplier_inventory_actor_idempotency"
+	SupplierAdminCommandLedgerStateBridge          = "bridge"
+	SupplierAdminCommandLedgerStateFinalized       = "finalized"
+	SupplierAdminCommandLedgerStateInvalid         = "invalid"
 )
 
 var (
@@ -53,6 +56,7 @@ var (
 	ErrSupplierAdminIdempotencyConflict       = errors.New("supplier admin idempotency key payload conflict")
 	ErrSupplierAdminCommandIncomplete         = errors.New("supplier admin idempotency command is incomplete")
 	ErrSupplierAdminCommandLedgerNotFinalized = errors.New("supplier admin command ledger migration is not finalized")
+	ErrSupplierAdminCommandLedgerGateEnabled  = errors.New("supplier mutation gate must be disabled for command ledger finalization")
 )
 
 type SupplierAdminCommand struct {
@@ -361,17 +365,40 @@ func equalDigest(left []byte, right []byte) bool {
 }
 
 type SupplierAdminCommandLedgerMigrationStatus struct {
-	HasDigestColumn          bool
-	HasResultColumn          bool
-	HasSchedulerColumns      bool
-	HasActorDigestIndex      bool
-	HasSchedulerDigestIndex  bool
-	LegacyScopeKeyIndex      bool
-	LegacyActorScopeKeyIndex bool
-	HasInventoryActorIndex   bool
-	LegacyInventoryKeyIndex  bool
-	InvalidDigestRows        int64
-	Finalized                bool
+	HasRequiredSupplierSchema bool
+	HasControlOptionTable     bool
+	HasDigestColumn           bool
+	HasResultColumn           bool
+	HasSchedulerColumns       bool
+	HasActorDigestIndex       bool
+	HasSchedulerDigestIndex   bool
+	LegacyScopeKeyIndex       bool
+	LegacyActorScopeKeyIndex  bool
+	HasInventoryActorIndex    bool
+	LegacyInventoryKeyIndex   bool
+	InvalidDigestRows         int64
+	Finalized                 bool
+}
+
+func (status SupplierAdminCommandLedgerMigrationStatus) State() string {
+	validBase := status.HasRequiredSupplierSchema && status.HasControlOptionTable && status.HasDigestColumn && status.HasResultColumn &&
+		status.HasSchedulerColumns && status.HasActorDigestIndex && status.HasSchedulerDigestIndex && status.HasInventoryActorIndex && status.InvalidDigestRows == 0
+	if !validBase {
+		return SupplierAdminCommandLedgerStateInvalid
+	}
+	legacyCount := 0
+	for _, present := range []bool{status.LegacyScopeKeyIndex, status.LegacyActorScopeKeyIndex, status.LegacyInventoryKeyIndex} {
+		if present {
+			legacyCount++
+		}
+	}
+	if legacyCount == 3 {
+		return SupplierAdminCommandLedgerStateBridge
+	}
+	if legacyCount == 0 && status.Finalized {
+		return SupplierAdminCommandLedgerStateFinalized
+	}
+	return SupplierAdminCommandLedgerStateInvalid
 }
 
 // MigrateSupplierAdminCommandLedger bridges old and new writers. It adds only
@@ -420,7 +447,16 @@ func MigrateSupplierAdminCommandLedger(db *gorm.DB) error {
 // cutover. It revalidates the bridge, then removes legacy uniqueness and proves
 // the resulting schema/data state. It is safe to rerun across application nodes.
 func FinalizeSupplierAdminCommandLedgerMigration(db *gorm.DB) error {
+	if err := validateSupplierAdminCommandLedgerPrerequisites(db); err != nil {
+		return err
+	}
+	if err := validateSupplierAccountingMutationGateDisabled(db); err != nil {
+		return err
+	}
 	if err := MigrateSupplierAdminCommandLedger(db); err != nil {
+		return err
+	}
+	if err := validateSupplierAccountingMutationGateDisabled(db); err != nil {
 		return err
 	}
 	migrator := db.Migrator()
@@ -435,7 +471,10 @@ func FinalizeSupplierAdminCommandLedgerMigration(db *gorm.DB) error {
 	if err := dropSupplierIndexIfPresent(db, legacySupplierInventoryContractKeyIndex); err != nil {
 		return fmt.Errorf("drop legacy supplier inventory index %s: %w", legacySupplierInventoryContractKeyIndex, err)
 	}
-	return ValidateSupplierAdminCommandLedgerFinalized(db)
+	if err := ValidateSupplierAdminCommandLedgerFinalized(db); err != nil {
+		return err
+	}
+	return validateSupplierAccountingMutationGateDisabled(db)
 }
 
 func GetSupplierAdminCommandLedgerMigrationStatus(db *gorm.DB) (SupplierAdminCommandLedgerMigrationStatus, error) {
@@ -445,14 +484,15 @@ func GetSupplierAdminCommandLedgerMigrationStatus(db *gorm.DB) (SupplierAdminCom
 	migrator := db.Migrator()
 	var err error
 	status := SupplierAdminCommandLedgerMigrationStatus{
-		HasDigestColumn:          migrator.HasColumn(&SupplierAdminCommand{}, "IdempotencyKeyDigest"),
-		HasResultColumn:          migrator.HasColumn(&SupplierAdminCommand{}, "ResultJson"),
-		HasSchedulerColumns:      migrator.HasColumn(&SupplierAdminCommand{}, "TrustedJobIdentityDigest") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerRequestDigest") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerScopeCode") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerSlot") && migrator.HasColumn(&SupplierAdminCommand{}, "StatusJson"),
-		LegacyScopeKeyIndex:      migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandScopeKeyIndex),
-		LegacyActorScopeKeyIndex: migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandActorScopeKeyIndex),
+		HasRequiredSupplierSchema: supplierAdminCommandLedgerRequiredSchemaPresent(db),
+		HasControlOptionTable:     migrator.HasTable(&Option{}),
+		HasDigestColumn:           migrator.HasColumn(&SupplierAdminCommand{}, "IdempotencyKeyDigest"),
+		HasResultColumn:           migrator.HasColumn(&SupplierAdminCommand{}, "ResultJson"),
+		HasSchedulerColumns:       migrator.HasColumn(&SupplierAdminCommand{}, "TrustedJobIdentityDigest") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerRequestDigest") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerScopeCode") && migrator.HasColumn(&SupplierAdminCommand{}, "SchedulerSlot") && migrator.HasColumn(&SupplierAdminCommand{}, "StatusJson"),
+		LegacyScopeKeyIndex:       migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandScopeKeyIndex),
+		LegacyActorScopeKeyIndex:  migrator.HasIndex(&SupplierAdminCommand{}, legacySupplierAdminCommandActorScopeKeyIndex),
 	}
-	status.HasInventoryActorIndex = !migrator.HasTable(&SupplierInventoryAdjustment{})
-	if !status.HasInventoryActorIndex {
+	if migrator.HasTable(&SupplierInventoryAdjustment{}) {
 		status.HasInventoryActorIndex, err = supplierUniqueIndexMatches(db, "supplier_inventory_adjustments", supplierInventoryActorLocalIndex, []string{"contract_id", "created_by", "idempotency_key"})
 		if err != nil {
 			return status, err
@@ -474,7 +514,7 @@ func GetSupplierAdminCommandLedgerMigrationStatus(db *gorm.DB) (SupplierAdminCom
 			return status, err
 		}
 	}
-	status.Finalized = status.HasDigestColumn && status.HasResultColumn && status.HasSchedulerColumns && status.HasActorDigestIndex && status.HasSchedulerDigestIndex && status.HasInventoryActorIndex &&
+	status.Finalized = status.HasRequiredSupplierSchema && status.HasControlOptionTable && status.HasDigestColumn && status.HasResultColumn && status.HasSchedulerColumns && status.HasActorDigestIndex && status.HasSchedulerDigestIndex && status.HasInventoryActorIndex &&
 		!status.LegacyScopeKeyIndex && !status.LegacyActorScopeKeyIndex && !status.LegacyInventoryKeyIndex && status.InvalidDigestRows == 0
 	return status, nil
 }
@@ -488,6 +528,72 @@ func ValidateSupplierAdminCommandLedgerFinalized(db *gorm.DB) error {
 		return fmt.Errorf("validate supplier admin command ledger: %+v: %w", status, ErrSupplierAdminCommandLedgerNotFinalized)
 	}
 	return nil
+}
+
+func validateSupplierAdminCommandLedgerPrerequisites(db *gorm.DB) error {
+	if db == nil || !supplierAdminCommandLedgerRequiredSchemaPresent(db) || !db.Migrator().HasTable(&Option{}) {
+		return fmt.Errorf("validate supplier admin command ledger prerequisites: %w", ErrSupplierAdminCommandLedgerNotFinalized)
+	}
+	return nil
+}
+
+func supplierAdminCommandLedgerRequiredSchemaPresent(db *gorm.DB) bool {
+	if db == nil {
+		return false
+	}
+	for _, table := range []any{&SupplierAdminCommand{}, &SupplierInventoryAdjustment{}} {
+		if !db.Migrator().HasTable(table) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateSupplierAccountingMutationGateDisabled(db *gorm.DB) error {
+	state, err := ReadSupplierAccountingMutationState(db)
+	if err != nil {
+		return err
+	}
+	if state.Enabled {
+		return ErrSupplierAdminCommandLedgerGateEnabled
+	}
+	return nil
+}
+
+func SupplierDatabaseIdentity(db *gorm.DB) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("read supplier database identity: %w", ErrDatabase)
+	}
+	switch db.Dialector.Name() {
+	case "mysql":
+		var databaseName string
+		if err := db.Raw("SELECT DATABASE()").Scan(&databaseName).Error; err != nil {
+			return "", err
+		}
+		databaseName = strings.TrimSpace(databaseName)
+		if databaseName == "" {
+			return "", fmt.Errorf("read supplier database identity: empty MySQL database: %w", ErrDatabase)
+		}
+		return "mysql:" + databaseName, nil
+	case "postgres":
+		var identity struct {
+			DatabaseName string `gorm:"column:database_name"`
+			SchemaName   string `gorm:"column:schema_name"`
+		}
+		if err := db.Raw("SELECT current_database() AS database_name, current_schema() AS schema_name").Scan(&identity).Error; err != nil {
+			return "", err
+		}
+		identity.DatabaseName = strings.TrimSpace(identity.DatabaseName)
+		identity.SchemaName = strings.TrimSpace(identity.SchemaName)
+		if identity.DatabaseName == "" || identity.SchemaName == "" {
+			return "", fmt.Errorf("read supplier database identity: empty PostgreSQL database/schema: %w", ErrDatabase)
+		}
+		return "postgres:" + identity.DatabaseName + "/" + identity.SchemaName, nil
+	case "sqlite":
+		return "sqlite:main", nil
+	default:
+		return "", fmt.Errorf("read supplier database identity for dialect %q: %w", db.Dialector.Name(), ErrDatabase)
+	}
 }
 
 func ensureSupplierAdminCommandLedgerColumn(db *gorm.DB, field string) error {

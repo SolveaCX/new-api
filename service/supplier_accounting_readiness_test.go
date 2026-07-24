@@ -17,7 +17,11 @@ func setupSupplierAccountingReadinessDB(t *testing.T) *gorm.DB {
 	originalDB := model.DB
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.Option{},
+		&model.SupplierAdminCommand{},
+		&model.SupplierInventoryAdjustment{},
+	))
 	model.DB = db
 	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", "")
 	t.Cleanup(func() { model.DB = originalDB })
@@ -54,15 +58,17 @@ func TestCheckSupplierAccountingReadinessSyntheticDisabledDoesNotPersistState(t 
 
 func TestCheckSupplierAccountingReadinessRequiresFinalizedLedgerOnlyWhenGateEnabled(t *testing.T) {
 	const (
-		legacyScopeIndex = "ux_supplier_admin_command_scope_key"
-		legacyActorIndex = "idx_supplier_admin_command_actor_scope_key"
-		digestIndex      = "ux_supplier_admin_command_actor_scope_digest"
+		legacyScopeIndex     = "ux_supplier_admin_command_scope_key"
+		legacyActorIndex     = "idx_supplier_admin_command_actor_scope_key"
+		legacyInventoryIndex = "ux_supplier_inventory_contract_idempotency"
+		digestIndex          = "ux_supplier_admin_command_actor_scope_digest"
 	)
 	bridgeLedger := func(t *testing.T, db *gorm.DB) {
 		t.Helper()
 		require.NoError(t, db.AutoMigrate(&model.SupplierAdminCommand{}))
 		require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacyScopeIndex+" ON supplier_admin_commands (scope, idempotency_key)").Error)
 		require.NoError(t, db.Exec("CREATE INDEX "+legacyActorIndex+" ON supplier_admin_commands (actor_id, scope, idempotency_key)").Error)
+		require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacyInventoryIndex+" ON supplier_inventory_adjustments (contract_id, idempotency_key)").Error)
 		require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
 	}
 	enableGate := func(t *testing.T, db *gorm.DB) {
@@ -74,6 +80,9 @@ func TestCheckSupplierAccountingReadinessRequiresFinalizedLedgerOnlyWhenGateEnab
 	t.Run("disabled legacy bridge remains ready", func(t *testing.T) {
 		db := setupSupplierAccountingReadinessDB(t)
 		bridgeLedger(t, db)
+		status, err := model.GetSupplierAdminCommandLedgerMigrationStatus(db)
+		require.NoError(t, err)
+		require.Equal(t, model.SupplierAdminCommandLedgerStateBridge, status.State())
 		require.NoError(t, CheckSupplierAccountingReadiness())
 	})
 
@@ -88,13 +97,16 @@ func TestCheckSupplierAccountingReadinessRequiresFinalizedLedgerOnlyWhenGateEnab
 		db := setupSupplierAccountingReadinessDB(t)
 		bridgeLedger(t, db)
 		require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
+		enableGate(t, db)
 		command := model.SupplierAdminCommand{
 			ActorId: 7, Scope: "activation.transition", IdempotencyKey: "null-digest", PayloadVersion: 1,
 			PayloadDigest: fmt.Sprintf("%064x", 1), ResourceType: "activation", ResourceId: 1, ClaimToken: fmt.Sprintf("%032x", 1),
 		}
 		require.NoError(t, db.Create(&command).Error)
 		require.NoError(t, db.Exec("UPDATE supplier_admin_commands SET idempotency_key_digest = NULL WHERE id = ?", command.Id).Error)
-		enableGate(t, db)
+		status, err := model.GetSupplierAdminCommandLedgerMigrationStatus(db)
+		require.NoError(t, err)
+		require.Equal(t, model.SupplierAdminCommandLedgerStateInvalid, status.State())
 		require.ErrorIs(t, CheckSupplierAccountingReadiness(), model.ErrSupplierAdminCommandLedgerNotFinalized)
 	})
 
@@ -102,9 +114,12 @@ func TestCheckSupplierAccountingReadinessRequiresFinalizedLedgerOnlyWhenGateEnab
 		db := setupSupplierAccountingReadinessDB(t)
 		bridgeLedger(t, db)
 		require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
+		enableGate(t, db)
 		require.NoError(t, db.Exec("DROP INDEX "+digestIndex).Error)
 		require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+digestIndex+" ON supplier_admin_commands (scope, actor_id, idempotency_key_digest)").Error)
-		enableGate(t, db)
+		status, err := model.GetSupplierAdminCommandLedgerMigrationStatus(db)
+		require.NoError(t, err)
+		require.Equal(t, model.SupplierAdminCommandLedgerStateInvalid, status.State())
 		require.ErrorIs(t, CheckSupplierAccountingReadiness(), model.ErrSupplierAdminCommandLedgerNotFinalized)
 	})
 
@@ -113,6 +128,9 @@ func TestCheckSupplierAccountingReadinessRequiresFinalizedLedgerOnlyWhenGateEnab
 		bridgeLedger(t, db)
 		require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
 		enableGate(t, db)
+		status, err := model.GetSupplierAdminCommandLedgerMigrationStatus(db)
+		require.NoError(t, err)
+		require.Equal(t, model.SupplierAdminCommandLedgerStateFinalized, status.State())
 		require.NoError(t, CheckSupplierAccountingReadiness())
 	})
 }

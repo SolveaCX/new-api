@@ -68,6 +68,7 @@ func TestFinanceAuthAllowsOnlyRoot(t *testing.T) {
 
 func TestSupplierBatchAuthTokenRotationUsesStableIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	setSupplierBatchTestMasterNode(t, true)
 	current := supplierBatchTestToken(1)
 	next := supplierBatchTestToken(2)
 	t.Setenv(SupplierBatchCurrentVerifierHashEnv, supplierBatchTestVerifier(current))
@@ -100,6 +101,7 @@ func TestSupplierBatchAuthTokenRotationUsesStableIdentity(t *testing.T) {
 
 func TestSupplierBatchAuthFailsClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	setSupplierBatchTestMasterNode(t, true)
 	token := supplierBatchTestToken(7)
 	verifier := supplierBatchTestVerifier(token)
 	tests := []struct {
@@ -134,6 +136,56 @@ func TestSupplierBatchAuthFailsClosed(t *testing.T) {
 			require.NotContains(t, recorder.Body.String(), verifier)
 		})
 	}
+}
+
+func TestSupplierBatchAuthFailsClosedOffMasterNode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setSupplierBatchTestMasterNode(t, false)
+	token := supplierBatchTestToken(9)
+	t.Setenv(SupplierBatchCurrentVerifierHashEnv, supplierBatchTestVerifier(token))
+	t.Setenv(SupplierBatchNextVerifierHashEnv, "")
+	t.Setenv(SupplierBatchTrustedIdentityEnv, "supplier-daily-runner")
+
+	called := false
+	engine := gin.New()
+	engine.GET("/batch", SupplierBatchAuth(), func(c *gin.Context) { called = true })
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/batch", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	engine.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"code":"config_unavailable"`)
+	require.False(t, called)
+}
+
+func TestSupplierBatchAuthRejectsNonDistinctVerifierSlots(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setSupplierBatchTestMasterNode(t, true)
+	token := supplierBatchTestToken(10)
+	verifier := supplierBatchTestVerifier(token)
+	t.Setenv(SupplierBatchCurrentVerifierHashEnv, verifier)
+	t.Setenv(SupplierBatchNextVerifierHashEnv, verifier)
+	t.Setenv(SupplierBatchTrustedIdentityEnv, "supplier-daily-runner")
+
+	called := false
+	engine := gin.New()
+	engine.GET("/batch", SupplierBatchAuth(), func(c *gin.Context) { called = true })
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/batch", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	engine.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"code":"verifier_unavailable"`)
+	require.False(t, called)
+}
+
+func setSupplierBatchTestMasterNode(t *testing.T, master bool) {
+	t.Helper()
+	previous := common.IsMasterNode
+	common.IsMasterNode = master
+	t.Cleanup(func() { common.IsMasterNode = previous })
 }
 
 func supplierBatchTestToken(fill byte) string {

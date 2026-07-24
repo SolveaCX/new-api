@@ -19,7 +19,12 @@ func setupSupplierAccountingControllerTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, backendi18n.Init())
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared&_pragma=busy_timeout(5000)"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.SupplierAdminCommand{}, &model.SupplierAccountingCoverageGap{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.Option{},
+		&model.SupplierAdminCommand{},
+		&model.SupplierInventoryAdjustment{},
+		&model.SupplierAccountingCoverageGap{},
+	))
 	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
 	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
 	previous := model.DB
@@ -139,6 +144,7 @@ func TestSupplierAccountingStatusAndReadinessFailClosed(t *testing.T) {
 	status := performSupplierAccountingControllerRequest(engine, http.MethodGet, "/status", "", "")
 	require.Equal(t, http.StatusOK, status.Code)
 	require.Contains(t, status.Body.String(), `"phase":"disabled"`)
+	require.Contains(t, status.Body.String(), `"admin_command_ledger_state":"finalized"`)
 	ready := performSupplierAccountingControllerRequest(engine, http.MethodGet, "/readiness", "", "")
 	require.Equal(t, http.StatusOK, ready.Code)
 	require.Contains(t, ready.Body.String(), `"ready":true`)

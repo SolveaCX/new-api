@@ -38,9 +38,18 @@ func FinanceAuth() gin.HandlerFunc {
 // reside in the Console configuration.
 func SupplierBatchAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if !common.IsMasterNode {
+			supplierBatchAuthError(c, http.StatusServiceUnavailable, "config_unavailable")
+			return
+		}
+
 		currentHash, currentConfigured, currentValid := supplierBatchVerifierHash(os.Getenv(SupplierBatchCurrentVerifierHashEnv))
 		nextHash, nextConfigured, nextValid := supplierBatchVerifierHash(os.Getenv(SupplierBatchNextVerifierHashEnv))
 		if (!currentConfigured && !nextConfigured) || !currentValid || !nextValid {
+			supplierBatchAuthError(c, http.StatusServiceUnavailable, "verifier_unavailable")
+			return
+		}
+		if currentConfigured && nextConfigured && subtle.ConstantTimeCompare(currentHash, nextHash) == 1 {
 			supplierBatchAuthError(c, http.StatusServiceUnavailable, "verifier_unavailable")
 			return
 		}

@@ -64,3 +64,9 @@ variable "redis_cpu_threshold" {
   description = "Redis CPU utilization alert threshold, expressed as 0.0-1.0."
   default     = 0.8
 }
+
+variable "supplier_batch_monitoring_enabled" {
+  type        = bool
+  description = "Create supplier accounting Managed Prometheus alerts only after the one-shot Job/Scheduler are provisioned."
+  default     = false
+}

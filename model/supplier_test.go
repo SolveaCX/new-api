@@ -32,6 +32,7 @@ func setupSupplierTestDB(t *testing.T, name string) *gorm.DB {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
+		&Option{},
 		&Channel{},
 		&Ability{},
 		&UpstreamSupplier{},

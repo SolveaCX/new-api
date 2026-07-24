@@ -1,0 +1,18 @@
+{
+  "attemptDeadline": "30s",
+  "httpTarget": {
+    "httpMethod": "POST",
+    "http_method": "DELETE",
+    "oauthToken": {
+      "scope": "https://www.googleapis.com/auth/cloud-platform",
+      "serviceAccountEmail": "newapi-supplier-scheduler@vocai-gemini-prod.iam.gserviceaccount.com",
+      "service_account_email": "attacker@vocai-gemini-prod.iam.gserviceaccount.com"
+    },
+    "uri": "https://run.googleapis.com/v2/projects/vocai-gemini-prod/locations/us-west1/jobs/newapi-supplier-batch:run"
+  },
+  "name": "projects/vocai-gemini-prod/locations/us-west1/jobs/newapi-supplier-batch-daily",
+  "retryConfig": {"retryCount": 0, "retry_count": 99},
+  "schedule": "5 2 * * *",
+  "state": "PAUSED",
+  "timeZone": "Asia/Shanghai"
+}

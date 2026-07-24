@@ -85,10 +85,11 @@ type SupplierAccountingControlResult struct {
 }
 
 type SupplierAccountingControlStatus struct {
-	Activation      SupplierAccountingActivationState `json:"activation"`
-	Mutation        SupplierAccountingMutationState   `json:"mutation"`
-	LegacyCutoverAt *int64                            `json:"legacy_cutover_at"`
-	UnresolvedGaps  []SupplierAccountingCoverageGap   `json:"unresolved_gaps"`
+	Activation              SupplierAccountingActivationState `json:"activation"`
+	Mutation                SupplierAccountingMutationState   `json:"mutation"`
+	AdminCommandLedgerState string                            `json:"admin_command_ledger_state"`
+	LegacyCutoverAt         *int64                            `json:"legacy_cutover_at"`
+	UnresolvedGaps          []SupplierAccountingCoverageGap   `json:"unresolved_gaps"`
 }
 
 func GetSupplierAccountingControlStatus() (*SupplierAccountingControlStatus, error) {
@@ -101,6 +102,11 @@ func GetSupplierAccountingControlStatus() (*SupplierAccountingControlStatus, err
 		txOptions = nil
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		ledgerStatus, ledgerErr := GetSupplierAdminCommandLedgerMigrationStatus(tx)
+		ledgerState := SupplierAdminCommandLedgerStateInvalid
+		if ledgerErr == nil {
+			ledgerState = ledgerStatus.State()
+		}
 		activation, err := ReadSupplierAccountingActivationState(tx)
 		if err != nil {
 			return err
@@ -118,7 +124,7 @@ func GetSupplierAccountingControlStatus() (*SupplierAccountingControlStatus, err
 			Order("start_at ASC, id ASC").Find(&unresolved).Error; err != nil {
 			return err
 		}
-		status = SupplierAccountingControlStatus{Activation: activation, Mutation: mutation, UnresolvedGaps: unresolved}
+		status = SupplierAccountingControlStatus{Activation: activation, Mutation: mutation, AdminCommandLedgerState: ledgerState, UnresolvedGaps: unresolved}
 		if legacy > 0 {
 			status.LegacyCutoverAt = &legacy
 		}

@@ -17,7 +17,7 @@ func setupSupplierAccountingControlPlaneTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared&_pragma=busy_timeout(10000)"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Option{}, &SupplierAdminCommand{}, &SupplierAccountingCoverageGap{}))
+	require.NoError(t, db.AutoMigrate(&Option{}, &SupplierAdminCommand{}, &SupplierInventoryAdjustment{}, &SupplierAccountingCoverageGap{}))
 	require.NoError(t, MigrateSupplierAdminCommandLedger(db))
 	require.NoError(t, FinalizeSupplierAdminCommandLedgerMigration(db))
 	sqlDB, err := db.DB()
@@ -87,12 +87,32 @@ func TestSupplierAccountingPrepareArmDisableAndReplay(t *testing.T) {
 	status, err := GetSupplierAccountingControlStatus()
 	require.NoError(t, err)
 	require.Equal(t, disabled.Activation.StateVersion, status.Activation.StateVersion)
+	require.Equal(t, SupplierAdminCommandLedgerStateFinalized, status.AdminCommandLedgerState)
 	require.Nil(t, status.LegacyCutoverAt)
 	require.Empty(t, status.UnresolvedGaps)
 
 	var commandCount int64
 	require.NoError(t, db.Model(&SupplierAdminCommand{}).Count(&commandCount).Error)
 	require.Equal(t, int64(3), commandCount, "replay and conflict must not create extra commands")
+}
+
+func TestSupplierAccountingControlStatusClassifiesLedgerBridgeFinalizedAndInvalid(t *testing.T) {
+	db := setupSupplierAccountingControlPlaneTestDB(t)
+	status, err := GetSupplierAccountingControlStatus()
+	require.NoError(t, err)
+	require.Equal(t, SupplierAdminCommandLedgerStateFinalized, status.AdminCommandLedgerState)
+
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacySupplierAdminCommandScopeKeyIndex+" ON supplier_admin_commands (scope, idempotency_key)").Error)
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacySupplierAdminCommandActorScopeKeyIndex+" ON supplier_admin_commands (actor_id, scope, idempotency_key)").Error)
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacySupplierInventoryContractKeyIndex+" ON supplier_inventory_adjustments (contract_id, idempotency_key)").Error)
+	status, err = GetSupplierAccountingControlStatus()
+	require.NoError(t, err)
+	require.Equal(t, SupplierAdminCommandLedgerStateBridge, status.AdminCommandLedgerState)
+
+	require.NoError(t, db.Migrator().DropTable(&SupplierInventoryAdjustment{}))
+	status, err = GetSupplierAccountingControlStatus()
+	require.NoError(t, err)
+	require.Equal(t, SupplierAdminCommandLedgerStateInvalid, status.AdminCommandLedgerState)
 }
 
 func TestSupplierAccountingActivateAndCommandCompletionRollback(t *testing.T) {
@@ -191,6 +211,27 @@ func TestSupplierAccountingMutationGateRollbackABAReplayAndConcurrentFirstInsert
 func TestSupplierAccountingMutationGateRequiresFinalizedCommandLedgerOnlyWhenEnabling(t *testing.T) {
 	db := setupSupplierAccountingControlPlaneTestDB(t)
 	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacySupplierAdminCommandScopeKeyIndex+" ON supplier_admin_commands (scope, idempotency_key)").Error)
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacySupplierAdminCommandActorScopeKeyIndex+" ON supplier_admin_commands (actor_id, scope, idempotency_key)").Error)
+	require.NoError(t, db.Exec("CREATE UNIQUE INDEX "+legacySupplierInventoryContractKeyIndex+" ON supplier_inventory_adjustments (contract_id, idempotency_key)").Error)
+
+	const oldNodeAttempts = 12
+	var wait sync.WaitGroup
+	orderingErrors := make(chan error, oldNodeAttempts)
+	for index := range oldNodeAttempts {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			_, callErr := ToggleSupplierAccountingMutationGate(SupplierAccountingMutationGateInput{
+				SupplierAccountingControlCommand: controlCommand(100+index, fmt.Sprintf("old-node-enable-%02d", index), 0, "old node tries before drain finalization"), Enabled: true,
+			})
+			orderingErrors <- callErr
+		}()
+	}
+	wait.Wait()
+	close(orderingErrors)
+	for callErr := range orderingErrors {
+		require.ErrorIs(t, callErr, ErrSupplierAdminCommandLedgerNotFinalized)
+	}
 
 	_, err := ToggleSupplierAccountingMutationGate(SupplierAccountingMutationGateInput{
 		SupplierAccountingControlCommand: controlCommand(9, "gate-enable-before-finalize", 0, "enable before ledger finalization"), Enabled: true,
@@ -221,17 +262,31 @@ func TestSupplierAccountingMutationGateRequiresFinalizedCommandLedgerOnlyWhenEna
 	require.ErrorIs(t, err, ErrSupplierAdminCommandLedgerNotFinalized, "enable replay must revalidate before reading the old command")
 	require.NoError(t, db.Model(&SupplierAdminCommand{}).Count(&commandCount).Error)
 	require.Equal(t, commandsAfterEnable, commandCount)
+	require.ErrorIs(t, FinalizeSupplierAdminCommandLedgerMigration(db), ErrSupplierAdminCommandLedgerGateEnabled)
+	disabledForRefinalize, err := ToggleSupplierAccountingMutationGate(SupplierAccountingMutationGateInput{
+		SupplierAccountingControlCommand: controlCommand(9, "gate-disable-for-refinalize", 2, "disable before repairing finalization"), Enabled: false,
+	})
+	require.NoError(t, err)
+	require.False(t, disabledForRefinalize.Mutation.Enabled)
 	require.NoError(t, FinalizeSupplierAdminCommandLedgerMigration(db))
+	reenableInput := SupplierAccountingMutationGateInput{
+		SupplierAccountingControlCommand: controlCommand(9, "gate-reenable-after-refinalize", 3, "reenable after repaired finalization"), Enabled: true,
+	}
+	reenabled, err := ToggleSupplierAccountingMutationGate(reenableInput)
+	require.NoError(t, err)
+	require.True(t, reenabled.Mutation.Enabled)
+	require.NoError(t, db.Model(&SupplierAdminCommand{}).Count(&commandCount).Error)
+	commandsAfterReenable := commandCount
 
 	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Model(&SupplierAdminCommand{}).
-		Where("idempotency_key = ?", enableInput.IdempotencyKey).UpdateColumn("idempotency_key_digest", []byte("wrong")).Error)
-	_, err = ToggleSupplierAccountingMutationGate(enableInput)
+		Where("idempotency_key = ?", reenableInput.IdempotencyKey).UpdateColumn("idempotency_key_digest", []byte("wrong")).Error)
+	_, err = ToggleSupplierAccountingMutationGate(reenableInput)
 	require.ErrorIs(t, err, ErrSupplierAdminCommandLedgerNotFinalized, "enable replay must fail closed on later ledger corruption")
 	require.NoError(t, db.Model(&SupplierAdminCommand{}).Count(&commandCount).Error)
-	require.Equal(t, commandsAfterEnable, commandCount)
+	require.Equal(t, commandsAfterReenable, commandCount)
 
 	recoveryDisable, err := ToggleSupplierAccountingMutationGate(SupplierAccountingMutationGateInput{
-		SupplierAccountingControlCommand: controlCommand(9, "gate-disable-corrupt-ledger", 2, "disable despite ledger corruption"), Enabled: false,
+		SupplierAccountingControlCommand: controlCommand(9, "gate-disable-corrupt-ledger", 4, "disable despite ledger corruption"), Enabled: false,
 	})
 	require.NoError(t, err)
 	require.False(t, recoveryDisable.Mutation.Enabled)

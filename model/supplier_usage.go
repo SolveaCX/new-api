@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
@@ -102,6 +103,15 @@ type SupplierDailyBatchLease struct {
 	CursorCreatedAt int64
 	CursorId        int
 	AlreadyDone     bool
+}
+
+type SupplierAccountingBacklogObservation struct {
+	ObservedAtUnix                 int64
+	NeverPublishedDays             int64
+	OldestNeverPublishedDayEnd     int64
+	OldestNeverPublishedAgeSeconds int64
+	PriorDayPublished              bool
+	PriorDayUnpublishedAfter0800   bool
 }
 
 // EnsureSupplierUsageGenerationSchema repairs the pre-generation unique index
@@ -654,12 +664,139 @@ func OldestNeverPublishedSupplierDailyBatchDate(ctx context.Context, db *gorm.DB
 }
 
 func oldestNeverPublishedSupplierDailyBatchQuery(db *gorm.DB, startDate, throughDate string) *gorm.DB {
-	return db.Model(&SupplierUsageDailyBatchRun{}).
+	return neverPublishedSupplierDailyBatchRangeQuery(db, startDate, throughDate).
 		Select("batch_date").
-		Where("batch_date >= ? AND batch_date <= ?", startDate, throughDate).
-		Where("published_fence_token = ?", 0).
 		Order("batch_date ASC").
 		Limit(1)
+}
+
+func neverPublishedSupplierDailyBatchRangeQuery(db *gorm.DB, startDate, throughDate string) *gorm.DB {
+	return db.Model(&SupplierUsageDailyBatchRun{}).
+		Where("batch_date >= ? AND batch_date <= ?", startDate, throughDate).
+		Where("published_fence_token = ?", 0)
+}
+
+func supplierAccountingBacklogAggregateQuery(db *gorm.DB, startDate, throughDate string) *gorm.DB {
+	return db.Table("supplier_usage_daily_batch_runs AS current_run").
+		Where("current_run.batch_date >= ? AND current_run.batch_date <= ?", startDate, throughDate).
+		Select(`
+			COUNT(*) AS existing_days,
+			COUNT(CASE WHEN current_run.published_fence_token = ? THEN 1 END) AS never_published_existing_days,
+			MIN(current_run.batch_date) AS oldest_existing_date,
+			MAX(current_run.batch_date) AS newest_existing_date,
+			MIN(CASE WHEN current_run.published_fence_token = ? THEN current_run.batch_date END) AS oldest_never_published_date,
+			COUNT(CASE WHEN current_run.batch_date = ? THEN 1 END) AS prior_day_rows,
+			COUNT(CASE WHEN current_run.batch_date = ? AND current_run.published_fence_token = ? THEN 1 END) AS prior_day_never_published_rows
+		`, 0, 0, throughDate, throughDate, 0)
+}
+
+func ObserveSupplierAccountingBacklog(ctx context.Context, db *gorm.DB, coverageStartAt int64) (SupplierAccountingBacklogObservation, error) {
+	if db == nil || coverageStartAt <= 0 {
+		return SupplierAccountingBacklogObservation{}, ErrDatabase
+	}
+	dbNow, err := supplierDBUnix(ctx, db)
+	if err != nil {
+		return SupplierAccountingBacklogObservation{}, err
+	}
+	return observeSupplierAccountingBacklogAt(ctx, db, coverageStartAt, dbNow)
+}
+
+func observeSupplierAccountingBacklogAt(ctx context.Context, db *gorm.DB, coverageStartAt, dbNow int64) (SupplierAccountingBacklogObservation, error) {
+	if db == nil || coverageStartAt <= 0 || dbNow <= 0 {
+		return SupplierAccountingBacklogObservation{}, ErrDatabase
+	}
+	location, err := time.LoadLocation(supplierDailyBatchTimezone)
+	if err != nil {
+		return SupplierAccountingBacklogObservation{}, ErrDatabase
+	}
+	now := time.Unix(dbNow, 0).In(location)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	priorDay := today.AddDate(0, 0, -1)
+	cutover := time.Unix(coverageStartAt, 0).In(location)
+	startDay := time.Date(cutover.Year(), cutover.Month(), cutover.Day(), 0, 0, 0, 0, location)
+	observation := SupplierAccountingBacklogObservation{ObservedAtUnix: dbNow}
+	if startDay.After(priorDay) {
+		return observation, nil
+	}
+	startDate := startDay.Format("2006-01-02")
+	throughDate := priorDay.Format("2006-01-02")
+	var aggregate struct {
+		ExistingDays               int64          `gorm:"column:existing_days"`
+		NeverPublishedExistingDays int64          `gorm:"column:never_published_existing_days"`
+		OldestExistingDate         sql.NullString `gorm:"column:oldest_existing_date"`
+		NewestExistingDate         sql.NullString `gorm:"column:newest_existing_date"`
+		OldestNeverPublishedDate   sql.NullString `gorm:"column:oldest_never_published_date"`
+		PriorDayRows               int64          `gorm:"column:prior_day_rows"`
+		PriorDayNeverPublishedRows int64          `gorm:"column:prior_day_never_published_rows"`
+	}
+	if err = supplierAccountingBacklogAggregateQuery(db.WithContext(ctx), startDate, throughDate).Scan(&aggregate).Error; err != nil {
+		return SupplierAccountingBacklogObservation{}, err
+	}
+	expectedDays := supplierAccountingCalendarDayCount(startDay, priorDay)
+	if aggregate.ExistingDays > expectedDays {
+		return SupplierAccountingBacklogObservation{}, ErrDatabase
+	}
+	missingDays := expectedDays - aggregate.ExistingDays
+	observation.NeverPublishedDays = missingDays + aggregate.NeverPublishedExistingDays
+	oldestMissingDayEnd := int64(0)
+	if aggregate.ExistingDays == 0 {
+		if aggregate.OldestExistingDate.Valid || aggregate.NewestExistingDate.Valid {
+			return SupplierAccountingBacklogObservation{}, ErrDatabase
+		}
+		if missingDays > 0 {
+			oldestMissingDayEnd = startDay.AddDate(0, 0, 1).Unix()
+		}
+	} else {
+		if !aggregate.OldestExistingDate.Valid || !aggregate.NewestExistingDate.Valid || aggregate.OldestExistingDate.String != startDate {
+			return SupplierAccountingBacklogObservation{}, ErrDatabase
+		}
+		oldestExistingDay, newestExistingDay, rangeErr := supplierDailyBatchDateRange(aggregate.OldestExistingDate.String, aggregate.NewestExistingDate.String)
+		if rangeErr != nil || supplierAccountingCalendarDayCount(oldestExistingDay, newestExistingDay) != aggregate.ExistingDays {
+			return SupplierAccountingBacklogObservation{}, ErrDatabase
+		}
+		if missingDays > 0 {
+			oldestMissingDayEnd = newestExistingDay.AddDate(0, 0, 2).Unix()
+		}
+	}
+	oldestNeverPublishedDayEnd := int64(0)
+	if aggregate.NeverPublishedExistingDays > 0 {
+		if !aggregate.OldestNeverPublishedDate.Valid {
+			return SupplierAccountingBacklogObservation{}, ErrDatabase
+		}
+		oldestNeverPublishedDay, _, dateErr := supplierDailyBatchDateRange(aggregate.OldestNeverPublishedDate.String, aggregate.OldestNeverPublishedDate.String)
+		if dateErr != nil {
+			return SupplierAccountingBacklogObservation{}, ErrDatabase
+		}
+		oldestNeverPublishedDayEnd = oldestNeverPublishedDay.AddDate(0, 0, 1).Unix()
+	}
+	observation.OldestNeverPublishedDayEnd = oldestMissingDayEnd
+	if observation.OldestNeverPublishedDayEnd == 0 || oldestNeverPublishedDayEnd > 0 && oldestNeverPublishedDayEnd < observation.OldestNeverPublishedDayEnd {
+		observation.OldestNeverPublishedDayEnd = oldestNeverPublishedDayEnd
+	}
+	if observation.OldestNeverPublishedDayEnd > 0 {
+		observation.OldestNeverPublishedAgeSeconds = supplierAccountingBacklogAgeSeconds(dbNow, observation.OldestNeverPublishedDayEnd)
+	}
+	observation.PriorDayPublished = aggregate.PriorDayRows == 1 && aggregate.PriorDayNeverPublishedRows == 0
+	observation.PriorDayUnpublishedAfter0800 = supplierAccountingPriorDayUnpublishedAfter0800(now, observation.PriorDayPublished)
+	return observation, nil
+}
+
+func supplierAccountingCalendarDayCount(startDay, throughDay time.Time) int64 {
+	startCivil := time.Date(startDay.Year(), startDay.Month(), startDay.Day(), 0, 0, 0, 0, time.UTC)
+	throughCivil := time.Date(throughDay.Year(), throughDay.Month(), throughDay.Day(), 0, 0, 0, 0, time.UTC)
+	return int64(throughCivil.Sub(startCivil)/(24*time.Hour)) + 1
+}
+
+func supplierAccountingBacklogAgeSeconds(dbNow, oldestDayEnd int64) int64 {
+	if oldestDayEnd >= dbNow {
+		return 0
+	}
+	return dbNow - oldestDayEnd
+}
+
+func supplierAccountingPriorDayUnpublishedAfter0800(now time.Time, priorDayPublished bool) bool {
+	boundary := time.Date(now.Year(), now.Month(), now.Day(), 8, 0, 0, 0, now.Location())
+	return !now.Before(boundary) && !priorDayPublished
 }
 
 func supplierDailyBatchDateRange(startDate, throughDate string) (time.Time, time.Time, error) {

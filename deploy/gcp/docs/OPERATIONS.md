@@ -100,50 +100,70 @@ First-time setup runbook: `DEPLOYMENT.md` → "用量对账 token（`BLOCKRUN_US
 
 ---
 
-## `gcp-infra.yml` apply currently does not work (IAM gap)
+## Terraform authority and IAM/WIF bootstrap
 
-**Symptom**: `workflow_dispatch` on `gcp-infra.yml` fails at the very first `terraform apply` step with errors like:
+`gcp-infra.yml` is intentionally static-only. It has `contents: read`, no
+`id-token`, no `google-github-actions/auth`, no production backend access, no
+plan, and no apply. Its init is exactly `terraform init -backend=false
+-input=false`; it then runs validate and the supplier deployment security
+contracts. It cannot report live drift or authorize a production change.
 
-```
-Error 403: Permission denied to list services for consumer container [projects/528088078482]
-reason: AUTH_PERMISSION_DENIED on serviceusage.googleapis.com
-  with module.apis.google_project_service.this["serviceusage.googleapis.com"]
-```
-
-**Cause**: the CI service account `newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com` only has the three minimum roles needed for **app deploy** (`run.developer`, `artifactregistry.writer`, `iam.serviceAccountUser`). `terraform apply` does a full state refresh that reads every module's GCP state — needing read perms across serviceusage, IAM, secretmanager, compute, cloudsql, redis, monitoring, etc. Until those are granted, **infra apply via CI will never succeed**.
-
-**Update 2026-07-09: pull-request plans intentionally use `terraform plan -refresh=false`.** This avoids the deployer SA's refresh-time `AUTH_PERMISSION_DENIED` on serviceusage and other prod resources, but it only checks the desired Terraform diff against the current state file. **Treat CI plan comments as non-authoritative for live drift** — always run a refreshing `terraform plan` locally with Owner ADC before applying.
-
-**Workaround (works today, no Terraform drift)**: when the Terraform code on `main` is already merged with the desired state, just apply via `gcloud` using a user account with Owner / `roles/run.admin`. Terraform's `desired` and reality will reconverge — no drift, no refresh-only needed.
-
-Worked example (2026-05-25 scaling tune, PR #22):
+Production Terraform uses local, reviewed Owner ADC. Always run a refreshing
+plan and inspect it before apply:
 
 ```bash
-gcloud run services update newapi \
-  --region=us-west1 \
-  --project=vocai-gemini-prod \
-  --min-instances=4 \
-  --concurrency=50
-
-# Then redirect traffic to the new revision — see next section.
+gcloud auth application-default login
+terraform -chdir=deploy/gcp/envs/prod init
+terraform -chdir=deploy/gcp/envs/prod plan -input=false -out=newapi.plan
+terraform -chdir=deploy/gcp/envs/prod show newapi.plan
+terraform -chdir=deploy/gcp/envs/prod apply newapi.plan
 ```
 
-**Long-term fix** (separate PR): grant the deployer SA the full set of read + write roles in `modules/service-accounts/main.tf`. Minimum starter list:
+The initial IAM/WIF split has a strict bootstrap order because a new WIF
+identity cannot create itself:
 
-```
-roles/serviceusage.serviceUsageAdmin
-roles/iam.securityReviewer            # read IAM policies across resources
-roles/secretmanager.viewer
-roles/compute.viewer                  # network/LB
-roles/cloudsql.viewer
-roles/redis.viewer
-roles/monitoring.viewer
-roles/iam.workloadIdentityPoolViewer
-roles/artifactregistry.reader
-# plus admin roles per module for the write side: secretmanager.admin, cloudsql.admin, redis.admin, compute.networkAdmin, compute.loadBalancerAdmin, monitoring.admin
-```
+1. Freeze deploy, rollback, and Supplier promotion workflows; harden the
+   external GitHub branch/environment controls listed below.
+2. Review a refreshing Terraform plan from an operator environment with Owner
+   ADC. It must add the fixed service accounts, custom roles, exact
+   service/repository/runtime-SA bindings, and all WIF pools/providers while
+   removing the old project-wide deployer grants and repository-wide WIF
+   impersonation binding.
+3. Apply that saved plan locally. During the short cutover window, old
+   workflows must fail closed because `newapi-ci-deployer` is already
+   build-only while they may still reference it for deployment.
+4. Verify the fixed service-account emails/providers and resource IAM, audit
+   the state-bucket IAM separately, and prove the generic builder has no Run,
+   Job, Scheduler, runtime-SA `actAs`, or Terraform-state access.
+5. Merge/enable the workflows that name the fixed identities, exercise the
+   expected positive lane and cross-lane negative authorization checks, then
+   end the deployment freeze.
 
-This is a meaningful blast radius (broad cross-resource admin) — review carefully and consider splitting into a separate `infra-deployer` SA instead of upgrading the existing `ci-deployer`.
+The historical `newapi-ci-deployer` is an Artifact Registry
+repository-scoped writer only. It has no Cloud Run, Job, Scheduler, or `actAs`.
+Production Console, Router, website and staging deploy each use fixed deploy
+identities with project-level read-only Run observation, exact service mutation, repository
+reader, and exact runtime-SA `actAs`. Console/Router rollback identities have
+only project-level read-only observation plus exact service mutation; they deliberately have
+no Artifact Registry permission and no `actAs`. Do not add a generic
+`GCP_DEPLOYER_SA` escape hatch.
+
+Supplier promotion uses `newapi-supplier-promoter`. Its mutation role is
+exactly `run.jobs.get/update/run`; a separate project-level read-only observer permits the
+required service/revision/execution/operation/log reads. It has reader access
+only on the fixed Artifact Registry repository and `actAs` only on
+`newapi-supplier-batch-runner`. It has zero `cloudscheduler.*` permissions.
+
+External GitHub controls are manual fail-closed prerequisites. Current evidence
+shows that `production`, `production-console`, and `production-router` have
+reviewers but no deployment branch policy and `prevent_self_review=false`; the
+`staging` branch is unprotected; `production-infra` does not exist and there is
+no CI infra identity; `SUPPLIER_DEPLOY_ROOT_ACCESS_TOKEN` and
+`SUPPLIER_DEPLOY_ROOT_USER_ID` are missing. This repository change does not
+claim to have modified those settings. Configure and independently verify the
+branch/environment protections and Root inputs before using the affected lane;
+otherwise the workflow must fail closed. Never copy production Root inputs to
+staging.
 
 ---
 
@@ -178,6 +198,8 @@ To roll back to the prior revision quickly:
 gcloud run services update-traffic newapi --region=us-west1 --project=vocai-gemini-prod \
   --to-revisions=<previous-revision-name>=100
 ```
+
+> **Supplier accounting control-plane warning:** direct `gcloud run services update-traffic` is a separately authorized break-glass path once supplier accounting manifests/capabilities exist. Ordinary production/staging application deploys never inspect or mutate `newapi-supplier-batch`; ordinary Console/Router rollback must use `GCP Rollback`, which reads authenticated `admin_command_ledger_state` and verifies canonical manifest, numeric capabilities, OCI digest, and immutable binding before shifting traffic. Runner image ownership belongs only to `GCP Promote Supplier Runner` after finalization.
 
 The same rule applies to the split production services:
 
@@ -221,6 +243,24 @@ Rollback levers:
 - Bad website host split: set `website_domains = []`, plan, review URL map diff, apply
 
 Host-rule rollback sends new requests to the URL map default backend (`newapi-console-backend`). It does not stop in-flight requests on the previous Cloud Run revision, but it can change application behavior if the fallback service has different image/env. Check logs before choosing host-rule rollback over revision rollback.
+
+---
+
+## Supplier accounting exact backlog monitoring
+
+The existing `newapi-router` Managed Prometheus sidecar scrapes `/metrics` every 30 seconds. Supplier backlog alerting uses only DB-derived current gauges from that surface:
+
+- `newapi_supplier_accounting_never_published_days`: current count of eligible Shanghai dates with `published_fence_token = 0`;
+- `newapi_supplier_accounting_oldest_never_published_age_seconds`: current age of the oldest such date;
+- `newapi_supplier_accounting_prior_day_unpublished_after_0800`: `1` only when the prior Shanghai day is still unpublished at or after 08:00;
+- `newapi_supplier_accounting_backlog_observer_up`: `1` after a successful snapshot, `0` when the snapshot fails;
+- `newapi_supplier_accounting_backlog_observed_at_seconds`: database observation timestamp used to corroborate freshness.
+
+Terraform creates these alert policies only while `supplier_batch_job_enabled=true` and notification email configuration is non-empty. Phase one with the flag false creates no supplier policy and no absence alert. This monitoring adds no Job, Scheduler, service account, IAM edge, secret, log metric, database table/index, or LB/DNS resource.
+
+All alert filters use `resource.type="prometheus_target"` plus `service=newapi-router` (the configured `router_service_name`). They group only by service and apply `REDUCE_MAX` across instance and revision. Never sum these gauges: every Router observes the same shared DB state, so summing would multiply the backlog by instance count. Backlog, age, and 08:00 thresholds must remain true for 60 seconds, covering at least two 30-second scrapes. Observer health pages when the service-wide max stays below one for 120 seconds or the metric is absent for 120 seconds.
+
+Each Router sidecar scrapes independently, so the observer's database read amplification scales with live instance count. Before enabling in production, G006 must capture production-equivalent maximum-scale scrape volume, snapshot latency, connection/CPU/lock impact, and series cardinality. G006 also owns approved live/staging fire-and-resolve evidence for all three backlog/SLO thresholds plus observer-down and metric-absence conditions, including the `observed_at_seconds` timeline. Terraform syntax or plan output alone is not that evidence.
 
 ---
 
@@ -274,10 +314,11 @@ To use Proxied for depth-3 names would require Total TLS ($10/mo) — previously
 
 ## CI/CD constraints
 
-- Workflow: `.github/workflows/deploy.yml` (GitHub Actions), uses Workload Identity Federation — no static keys.
+- Build jobs use the `github-actions` WIF pool and build-only `newapi-ci-deployer`; deploy, rollback, website, staging, and supplier promotion use separate workflow/ref/event/subject-pinned pools and fixed service accounts. No lane accepts a generic deployer SA.
 - Push to `main` triggers `build` automatically.
-- `deploy` job is gated by a `production` Environment with `slZhong` as the sole required reviewer.
-- Don't bypass the approval gate. Don't merge to main without an approved PR (the auto-mode classifier will block direct merges).
+- `GCP Promote Supplier Runner` operates only on the fixed Terraform-owned `newapi-supplier-batch` Job. It verifies the Job association before and after the digest update and then executes it once; it never calls Scheduler and leaves `newapi-supplier-batch-daily` paused.
+- The presence of reviewers is insufficient by itself: configure deployment branch policies and prevent self-review for production environments, protect `staging`, and provision the production Root secret/variable before use. Current observed gaps are listed in “Terraform authority and IAM/WIF bootstrap”; this document does not claim they were fixed.
+- Don't bypass an approval gate or missing prerequisite. Don't merge to main without an approved PR (the auto-mode classifier will block direct merges).
 
 ---
 

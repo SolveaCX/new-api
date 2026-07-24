@@ -31,7 +31,13 @@ func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
 	common.GlobalApiRateLimitEnable = false
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.SupplierAdminCommand{}, &model.SupplierAccountingCoverageGap{}, &model.SupplierUsageDailyBatchRun{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.Option{},
+		&model.SupplierAdminCommand{},
+		&model.SupplierInventoryAdjustment{},
+		&model.SupplierAccountingCoverageGap{},
+		&model.SupplierUsageDailyBatchRun{},
+	))
 	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
 	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
 	_, err = model.CASSupplierAccountingMutationState(db, 0, true, 17, "route tests", time.Now().Unix())
@@ -149,8 +155,13 @@ func TestSupplierDailyBatchRoutesRequireSchedulerToken(t *testing.T) {
 	require.NoError(t, backendi18n.Init())
 	gin.SetMode(gin.TestMode)
 	previousRateLimit := common.CriticalRateLimitEnable
+	previousMaster := common.IsMasterNode
 	common.CriticalRateLimitEnable = false
-	t.Cleanup(func() { common.CriticalRateLimitEnable = previousRateLimit })
+	common.IsMasterNode = true
+	t.Cleanup(func() {
+		common.CriticalRateLimitEnable = previousRateLimit
+		common.IsMasterNode = previousMaster
+	})
 
 	token := supplierBatchRouteTestToken(11)
 	t.Setenv(middleware.SupplierBatchCurrentVerifierHashEnv, supplierBatchRouteTestVerifier(token))
@@ -183,7 +194,36 @@ func TestSupplierDailyBatchRoutesRequireSchedulerToken(t *testing.T) {
 	require.Equal(t, 1, statusCalls)
 }
 
+func TestSupplierDailyBatchRoutesFailClosedOffMasterWithoutChangingFinanceRoutes(t *testing.T) {
+	token := supplierBatchRouteTestToken(14)
+	t.Setenv(middleware.SupplierBatchCurrentVerifierHashEnv, supplierBatchRouteTestVerifier(token))
+	t.Setenv(middleware.SupplierBatchNextVerifierHashEnv, "")
+	t.Setenv(middleware.SupplierBatchTrustedIdentityEnv, "supplier-route-runner")
+	engine := newSupplyChainRouteTestEngine(t)
+	previousMaster := common.IsMasterNode
+	common.IsMasterNode = false
+	t.Cleanup(func() { common.IsMasterNode = previousMaster })
+
+	for _, request := range []struct{ method, path string }{
+		{http.MethodPost, "/api/supply-chain/daily-batches/catch-up"},
+		{http.MethodGet, "/api/supply-chain/daily-batches/status?request_id=route-permission-test"},
+	} {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(request.method, request.path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		engine.ServeHTTP(recorder, req)
+		require.Equal(t, http.StatusServiceUnavailable, recorder.Code, request.method+" "+request.path)
+		require.Contains(t, recorder.Body.String(), `"code":"config_unavailable"`)
+	}
+
+	root := performSupplyChainRouteTestRequestAt(engine, supplyChainRouteTestCookies(t, engine, common.RoleRootUser), http.MethodGet, "/api/supply-chain/reports/freshness", "")
+	require.NotEqual(t, http.StatusServiceUnavailable, root.Code, "ordinary Root finance routes must remain independent of the scheduler node-role gate")
+}
+
 func TestSupplierDailyBatchRoutesRejectFinanceSessions(t *testing.T) {
+	previousMaster := common.IsMasterNode
+	common.IsMasterNode = true
+	t.Cleanup(func() { common.IsMasterNode = previousMaster })
 	token := supplierBatchRouteTestToken(13)
 	t.Setenv(middleware.SupplierBatchCurrentVerifierHashEnv, supplierBatchRouteTestVerifier(token))
 	t.Setenv(middleware.SupplierBatchNextVerifierHashEnv, "")
@@ -222,6 +262,9 @@ func TestSupplyChainRouteRegistryHasNoCollisionsOrHardDeletes(t *testing.T) {
 }
 
 func TestSupplyChainDailyReportRerunDeniesSchedulerToken(t *testing.T) {
+	previousMaster := common.IsMasterNode
+	common.IsMasterNode = true
+	t.Cleanup(func() { common.IsMasterNode = previousMaster })
 	token := supplierBatchRouteTestToken(12)
 	t.Setenv(middleware.SupplierBatchCurrentVerifierHashEnv, supplierBatchRouteTestVerifier(token))
 	t.Setenv(middleware.SupplierBatchNextVerifierHashEnv, "")

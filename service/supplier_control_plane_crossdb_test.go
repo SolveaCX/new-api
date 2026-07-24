@@ -76,6 +76,7 @@ func TestSupplierAccountingControlPlaneCrossDBConcurrency(t *testing.T) {
 			require.NoError(t, db.AutoMigrate(
 				&model.Option{},
 				&model.SupplierAdminCommand{},
+				&model.SupplierInventoryAdjustment{},
 				&model.SupplierAccountingCoverageGap{},
 			))
 			require.NoError(t, model.MigrateSupplierAdminCommandLedger(db), "bridge must precede test-only finalization")
@@ -99,6 +100,7 @@ func resetSupplierControlPlaneConcurrencyTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	require.NoError(t, db.Migrator().DropTable(
 		&model.SupplierAccountingCoverageGap{},
+		&model.SupplierInventoryAdjustment{},
 		&model.SupplierAdminCommand{},
 		&model.Option{},
 	))

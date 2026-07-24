@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	backendi18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/middleware"
@@ -30,8 +31,13 @@ func TestTriggerSupplierDailyBatchCatchUpFixedResponse(t *testing.T) {
 	called := false
 	engine := gin.New()
 	engine.POST("/catch-up", middleware.SupplierBatchAuth(), func(c *gin.Context) {
-		triggerSupplierDailyBatchCatchUp(c, func(_ context.Context, gotMainDB, gotLogDB *gorm.DB, principal dto.SupplierBatchSchedulerPrincipal, request dto.SupplierBatchCatchUpRequest, gotNow time.Time) (dto.SupplierBatchStatusResponse, error) {
+		triggerSupplierDailyBatchCatchUp(c, func(ctx context.Context, gotMainDB, gotLogDB *gorm.DB, principal dto.SupplierBatchSchedulerPrincipal, request dto.SupplierBatchCatchUpRequest, gotNow time.Time) (dto.SupplierBatchStatusResponse, error) {
 			called = true
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok)
+			remaining := time.Until(deadline)
+			require.Greater(t, remaining, 44*time.Minute)
+			require.LessOrEqual(t, remaining, 45*time.Minute)
 			require.Same(t, mainDB, gotMainDB)
 			require.Same(t, logDB, gotLogDB)
 			require.Equal(t, "supplier-controller-runner", principal.TrustedJobIdentity)
@@ -48,6 +54,32 @@ func TestTriggerSupplierDailyBatchCatchUpFixedResponse(t *testing.T) {
 	require.True(t, called)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.JSONEq(t, `{"request_id":"runner-key","batch_date":null,"run_id":null,"status":"completed","fence_token":0,"published_fence_token":0,"locked_until":null,"error_category":"none","result":{"processed_days":0,"remaining_work":false,"next_batch_date":null}}`, recorder.Body.String())
+}
+
+func TestTriggerSupplierDailyBatchCatchUpEnforcesServerHardDeadline(t *testing.T) {
+	token := configureSupplierBatchControllerAuth(t)
+	const testDeadline = 20 * time.Millisecond
+	engine := gin.New()
+	var cancellation error
+	var cancellationElapsed time.Duration
+	engine.POST("/catch-up", middleware.SupplierBatchAuth(), func(c *gin.Context) {
+		triggerSupplierDailyBatchCatchUpWithin(c, func(ctx context.Context, _ *gorm.DB, _ *gorm.DB, _ dto.SupplierBatchSchedulerPrincipal, _ dto.SupplierBatchCatchUpRequest, _ time.Time) (dto.SupplierBatchStatusResponse, error) {
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok)
+			require.LessOrEqual(t, time.Until(deadline), testDeadline)
+			started := time.Now()
+			<-ctx.Done()
+			cancellationElapsed = time.Since(started)
+			cancellation = ctx.Err()
+			return dto.SupplierBatchStatusResponse{}, ctx.Err()
+		}, &gorm.DB{}, &gorm.DB{}, time.Now(), testDeadline)
+	})
+
+	recorder := performSupplierBatchControllerRequest(engine, token, http.MethodPost, "/catch-up", "hard-deadline-key")
+	require.ErrorIs(t, cancellation, context.DeadlineExceeded)
+	require.Less(t, cancellationElapsed, 250*time.Millisecond, "catch-up cancellation must not outlive the server budget")
+	require.Equal(t, http.StatusInternalServerError, recorder.Code, "deadline expiry remains ambiguous and recoverable through status by request ID")
+	require.Contains(t, recorder.Body.String(), `"code":"internal_error"`)
 }
 
 func TestSupplierDailyBatchControllerStableErrors(t *testing.T) {
@@ -140,6 +172,9 @@ func TestSupplierDailyBatchControllerRejectsMissingOrDuplicateRequestID(t *testi
 func configureSupplierBatchControllerAuth(t *testing.T) string {
 	t.Helper()
 	require.NoError(t, backendi18n.Init())
+	previousMaster := common.IsMasterNode
+	common.IsMasterNode = true
+	t.Cleanup(func() { common.IsMasterNode = previousMaster })
 	raw := make([]byte, 32)
 	for index := range raw {
 		raw[index] = 21

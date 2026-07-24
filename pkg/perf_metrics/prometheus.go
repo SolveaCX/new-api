@@ -17,12 +17,13 @@ const (
 	prometheusSeriesIdleRetention       = 6 * time.Hour
 )
 
-func BuildPrometheusText(_ context.Context) (string, error) {
+func BuildPrometheusText(ctx context.Context) (string, error) {
 	series := map[prometheusSeriesKey]prometheusCounters{}
 	mergePrometheusPendingSnapshots(series)
 	channelSnapshots := snapshotPrometheusChannels()
 	channelModelSnapshots := snapshotPrometheusChannelModels()
 	modelPerformanceSnapshots := snapshotPrometheusModelPerformances(time.Now())
+	supplierBacklogSnapshot := collectSupplierAccountingBacklogPrometheusSnapshot(ctx)
 	baseSeriesCount := len(series)
 	for _, snapshot := range channelSnapshots {
 		baseSeriesCount += snapshot.seriesCount()
@@ -31,6 +32,7 @@ func BuildPrometheusText(_ context.Context) (string, error) {
 		baseSeriesCount += snapshot.seriesCount()
 	}
 	baseSeriesCount += supplierAccountingPrometheusSeriesCount()
+	baseSeriesCount += supplierBacklogSnapshot.seriesCount()
 	maxSeries := prometheusMaxSeriesPerScrape()
 	if maxSeries > 0 && baseSeriesCount > maxSeries {
 		return "", fmt.Errorf("prometheus series limit exceeded: %d > %d", baseSeriesCount, maxSeries)
@@ -82,6 +84,7 @@ func BuildPrometheusText(_ context.Context) (string, error) {
 		b.WriteByte('\n')
 	}
 	writeSupplierAccountingPrometheusMetrics(&b)
+	writeSupplierAccountingBacklogPrometheusMetrics(&b, supplierBacklogSnapshot)
 
 	if includeModelHealth {
 		writePrometheusModelPerformanceMetrics(&b, selectedModelPerformanceSnapshots)

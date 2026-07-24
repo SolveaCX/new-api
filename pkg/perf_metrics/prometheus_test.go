@@ -29,6 +29,8 @@ func resetPerfMetricsStateForTest(t *testing.T) {
 	prometheusModelAdmissionMu = sync.Mutex{}
 	prometheusModelDroppedSamples = prometheusModelDropCounters{}
 	supplierAccountingMetricCounters = supplierAccountingCounters{}
+	supplierAccountingBacklogCache.clear(nil)
+	supplierAccountingBacklogSingleflight.Forget(supplierAccountingBacklogSingleflightKey)
 }
 
 func TestRecordRelaySampleCapturesSuccessfulModelLatencyAndTTFT(t *testing.T) {

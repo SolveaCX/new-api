@@ -51,6 +51,17 @@ func performSupplyChainControllerRequestWithHeaders(method, routePath, requestPa
 	return recorder
 }
 
+func setupSupplyChainControllerAdminLedger(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(
+		&model.Option{},
+		&model.SupplierAdminCommand{},
+		&model.SupplierInventoryAdjustment{},
+	))
+	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
+	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
+}
+
 func TestSupplyChainContractUpdateRejectsInvariantOnlyMassAssignment(t *testing.T) {
 	recorder := performSupplyChainControllerRequestAt(http.MethodPatch, "/contracts/:id", "/contracts/12", `{
 		"supplier_id":99,
@@ -66,9 +77,8 @@ func TestSupplyChainSupplierUpdateRequiresVersionAndReplaysExactlyOnce(t *testin
 	previousDB := model.DB
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierInventoryAdjustment{}, &model.SupplierAdminCommand{}))
-	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
-	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.UpstreamSupplier{}, &model.SupplierContract{}))
+	setupSupplyChainControllerAdminLedger(t, db)
 	model.DB = db
 	t.Cleanup(func() { model.DB = previousDB })
 	supplier := model.UpstreamSupplier{Name: "controller version supplier"}
@@ -163,9 +173,8 @@ func TestGetSupplyChainCommandResultContract(t *testing.T) {
 	previousDB := model.DB
 	db, err := gorm.Open(sqlite.Open("file:supply-chain-command-result-controller?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierInventoryAdjustment{}, &model.SupplierStatisticsExclusionRule{}, &model.SupplierAdminCommand{}))
-	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
-	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
+	require.NoError(t, db.AutoMigrate(&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierStatisticsExclusionRule{}))
+	setupSupplyChainControllerAdminLedger(t, db)
 	model.DB = db
 	t.Cleanup(func() { model.DB = previousDB })
 

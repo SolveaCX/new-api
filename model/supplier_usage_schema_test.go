@@ -15,6 +15,7 @@ func TestSupplierV1SchemaHasTenTables(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
+		&Option{},
 		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{},
 		&SupplierChannelBindingVersion{}, &SupplierInventoryAdjustment{}, &SupplierStatisticsExclusionRule{},
 		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},

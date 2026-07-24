@@ -19,6 +19,7 @@ locals {
     "sts.googleapis.com",
     "servicenetworking.googleapis.com",
     "vpcaccess.googleapis.com",
+    "cloudscheduler.googleapis.com",
   ]
 }
 
@@ -175,8 +176,10 @@ resource "google_secret_manager_secret_version" "prometheus_run_monitoring_confi
 }
 
 module "service_accounts" {
-  source     = "../../modules/service-accounts"
-  project_id = var.project_id
+  source                          = "../../modules/service-accounts"
+  project_id                      = var.project_id
+  region                          = var.region
+  artifact_registry_repository_id = module.artifact_registry.repository_id
 
   runtime_secret_ids = concat(
     module.secrets.all_managed_secret_ids,
@@ -188,16 +191,40 @@ module "service_accounts" {
     ],
   )
 
-  depends_on = [module.apis]
+  depends_on = [module.apis, module.artifact_registry]
 }
 
 module "github_wif" {
-  source            = "../../modules/github-wif"
-  project_id        = var.project_id
-  github_repository = var.github_repository
-  deployer_sa_name  = module.service_accounts.deployer_name
+  source                              = "../../modules/github-wif"
+  project_id                          = var.project_id
+  github_repository                   = var.github_repository
+  github_repository_id                = var.github_repository_id
+  github_repository_owner_id          = var.github_repository_owner_id
+  builder_sa_name                     = module.service_accounts.deployer_name
+  production_console_deployer_sa_name = module.service_accounts.production_console_deployer_name
+  production_router_deployer_sa_name  = module.service_accounts.production_router_deployer_name
+  production_console_rollback_sa_name = module.service_accounts.production_console_rollback_name
+  production_router_rollback_sa_name  = module.service_accounts.production_router_rollback_name
+  production_website_deployer_sa_name = module.service_accounts.production_website_deployer_name
+  staging_deployer_sa_name            = module.service_accounts.staging_deployer_name
+  supplier_runner_promoter_sa_name    = module.supplier_batch_job.promoter_service_account_name
 
   depends_on = [module.apis]
+}
+
+module "supplier_batch_job" {
+  source = "../../modules/supplier-batch-job"
+
+  project_id                      = var.project_id
+  region                          = var.region
+  artifact_registry_repository_id = module.artifact_registry.repository_id
+  enabled                         = var.supplier_batch_job_enabled
+  runner_image                    = var.supplier_batch_runner_image
+  console_url                     = var.supplier_batch_console_url
+  active_token_slot               = var.supplier_batch_active_token_slot
+  poll_interval                   = var.supplier_batch_poll_interval
+
+  depends_on = [module.apis, module.artifact_registry]
 }
 
 module "cloud_run" {
@@ -312,18 +339,59 @@ module "cloud_run_console" {
 
   usage_recon_token_secret_id = var.enable_usage_recon_token ? google_secret_manager_secret.blockrun_usage_summary_token.secret_id : ""
 
-  frontend_base_url = ""
-  custom_domains    = []
-  min_instances     = var.console_min_instances
-  max_instances     = var.console_max_instances
-  concurrency       = var.console_concurrency
-  node_type         = "master"
+  frontend_base_url       = ""
+  custom_domains          = []
+  min_instances           = var.console_min_instances
+  max_instances           = var.console_max_instances
+  concurrency             = var.console_concurrency
+  node_type               = "master"
+  request_timeout_seconds = 3600
 
   depends_on = [
     module.apis,
     google_secret_manager_secret_version.sql_dsn,
     google_secret_manager_secret_version.redis_url,
   ]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "production_console_deployer" {
+  count = var.enable_runtime_split ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = module.cloud_run_console[0].service_name
+  role     = module.service_accounts.service_deployer_mutator_custom_role_name
+  member   = "serviceAccount:${module.service_accounts.production_console_deployer_email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "production_router_deployer" {
+  count = var.enable_runtime_split ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = module.cloud_run_router[0].service_name
+  role     = module.service_accounts.service_deployer_mutator_custom_role_name
+  member   = "serviceAccount:${module.service_accounts.production_router_deployer_email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "production_console_rollback" {
+  count = var.enable_runtime_split ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = module.cloud_run_console[0].service_name
+  role     = module.service_accounts.service_deployer_mutator_custom_role_name
+  member   = "serviceAccount:${module.service_accounts.production_console_rollback_email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "production_router_rollback" {
+  count = var.enable_runtime_split ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = module.cloud_run_router[0].service_name
+  role     = module.service_accounts.service_deployer_mutator_custom_role_name
+  member   = "serviceAccount:${module.service_accounts.production_router_rollback_email}"
 }
 
 // External HTTPS LB sitting in front of Cloud Run, used when the operator lacks
@@ -358,6 +426,14 @@ resource "google_project_iam_member" "web_runtime_metric_writer" {
   member  = "serviceAccount:${google_service_account.web_runtime[0].email}"
 }
 
+resource "google_service_account_iam_member" "website_deployer_runtime_sa_user" {
+  count = var.enable_website ? 1 : 0
+
+  service_account_id = google_service_account.web_runtime[0].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${module.service_accounts.production_website_deployer_email}"
+}
+
 module "cloud_run_web" {
   count = var.enable_website ? 1 : 0
 
@@ -372,6 +448,16 @@ module "cloud_run_web" {
   cookie_session_domain = var.website_cookie_session_domain
 
   depends_on = [module.apis]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "production_website_deployer" {
+  count = var.enable_website ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = module.cloud_run_web[0].service_name
+  role     = module.service_accounts.service_deployer_mutator_custom_role_name
+  member   = "serviceAccount:${module.service_accounts.production_website_deployer_email}"
 }
 
 module "cloud_lb" {
@@ -427,14 +513,15 @@ locals {
 }
 
 module "monitoring" {
-  source               = "../../modules/monitoring"
-  project_id           = var.project_id
-  region               = var.region
-  uptime_host          = local.uptime_host
-  alert_email          = var.alert_email
-  alert_emails         = var.alert_emails
-  router_service_name  = var.router_service_name
-  router_max_instances = var.router_max_instances
+  source                            = "../../modules/monitoring"
+  project_id                        = var.project_id
+  region                            = var.region
+  uptime_host                       = local.uptime_host
+  alert_email                       = var.alert_email
+  alert_emails                      = var.alert_emails
+  router_service_name               = var.router_service_name
+  router_max_instances              = var.router_max_instances
+  supplier_batch_monitoring_enabled = var.supplier_batch_job_enabled
   redis_instance_id = format(
     "projects/%s/locations/%s/instances/newapi-redis",
     var.project_id,

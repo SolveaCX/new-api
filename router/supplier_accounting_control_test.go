@@ -26,7 +26,13 @@ func newSupplierAccountingRouteTestEngine(t *testing.T) *gin.Engine {
 	require.NoError(t, backendi18n.Init())
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared&_pragma=busy_timeout(5000)"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.SupplierAdminCommand{}, &model.SupplierAccountingCoverageGap{}, &model.SupplierUsageDailyBatchRun{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.Option{},
+		&model.SupplierAdminCommand{},
+		&model.SupplierInventoryAdjustment{},
+		&model.SupplierAccountingCoverageGap{},
+		&model.SupplierUsageDailyBatchRun{},
+	))
 	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
 	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
 	previousDB := model.DB

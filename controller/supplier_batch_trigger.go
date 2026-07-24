@@ -20,7 +20,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const supplierBatchRequestIDMaxBytes = 128
+const (
+	supplierBatchRequestIDMaxBytes     = 128
+	supplierBatchExecutionHardDeadline = 45 * time.Minute
+)
 
 type supplierDailyBatchCatchUpByRequestFunc func(context.Context, *gorm.DB, *gorm.DB, dto.SupplierBatchSchedulerPrincipal, dto.SupplierBatchCatchUpRequest, time.Time) (dto.SupplierBatchStatusResponse, error)
 type supplierDailyBatchStatusFunc func(context.Context, *gorm.DB, dto.SupplierBatchSchedulerPrincipal, string, time.Time) (dto.SupplierBatchStatusResponse, error)
@@ -41,6 +44,10 @@ func GetSupplierDailyBatchStatus(c *gin.Context) {
 }
 
 func triggerSupplierDailyBatchCatchUp(c *gin.Context, catchUp supplierDailyBatchCatchUpByRequestFunc, mainDB, logDB *gorm.DB, now time.Time) {
+	triggerSupplierDailyBatchCatchUpWithin(c, catchUp, mainDB, logDB, now, supplierBatchExecutionHardDeadline)
+}
+
+func triggerSupplierDailyBatchCatchUpWithin(c *gin.Context, catchUp supplierDailyBatchCatchUpByRequestFunc, mainDB, logDB *gorm.DB, now time.Time, hardDeadline time.Duration) {
 	principal, ok := middleware.SupplierBatchPrincipalFromContext(c)
 	if !ok {
 		supplierBatchHTTPError(c, http.StatusUnauthorized, "unauthorized")
@@ -54,7 +61,9 @@ func triggerSupplierDailyBatchCatchUp(c *gin.Context, catchUp supplierDailyBatch
 		supplierBatchHTTPError(c, http.StatusServiceUnavailable, "config_unavailable")
 		return
 	}
-	result, err := catchUp(c.Request.Context(), mainDB, logDB, principal, dto.SupplierBatchCatchUpRequest{RequestID: requestID}, now)
+	executionContext, cancel := context.WithTimeout(c.Request.Context(), hardDeadline)
+	defer cancel()
+	result, err := catchUp(executionContext, mainDB, logDB, principal, dto.SupplierBatchCatchUpRequest{RequestID: requestID}, now)
 	supplierDailyBatchResult(c, result, err)
 }
 
