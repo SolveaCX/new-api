@@ -159,6 +159,25 @@ jobs:
           curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -m 20 "$C/zh/career" | grep -q "^301 $C/zh/careers$" || { echo "/zh/career redirect broken"; exit 1; }
           curl -s -m 10 "$C/api/status" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' \
             || { echo "public status proxy unavailable"; exit 1; }
+          pricing_response=$(mktemp)
+          curl -fsS -m 10 "$C/api/website/pricing/v2?group=plg" -o "$pricing_response" \
+            || { echo "public pricing proxy unavailable; deploy newapi-console first"; exit 1; }
+          python3 - "$pricing_response" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as response:
+              payload = json.load(response)
+          valid = (
+              payload.get("success") is True
+              and payload.get("schema_version") == "website-public-plg-v2"
+              and payload.get("group") == "plg"
+              and isinstance(payload.get("models"), list)
+              and len(payload["models"]) > 0
+          )
+          if not valid:
+              raise SystemExit("public pricing payload failed canary validation")
+          PY
           # legacy SEO surface through the fallback proxy (must be 200, not redirect/404)
           for p in blog zh models pricing gpt-api-alternative rankings sitemap.xml robots.txt; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$C/$p")

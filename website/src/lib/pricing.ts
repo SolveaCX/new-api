@@ -42,26 +42,6 @@ export type PricingModel = {
   availability_reason?: string;
   availability_detected_at?: number;
   availability_checked_at?: number;
-  display_prices?: WebsiteDisplayPrices;
-  effective_group_ratio?: string;
-  ratio_source?: "group" | "group_group" | "group_model";
-  display_label?: string;
-};
-
-export type WebsitePricePair = {
-  configured: string;
-  plg: string;
-};
-
-export type WebsiteDisplayPrices = {
-  input: WebsitePricePair | null;
-  output: WebsitePricePair | null;
-  cache: WebsitePricePair | null;
-  cache_creation: WebsitePricePair | null;
-  image: WebsitePricePair | null;
-  audio_input: WebsitePricePair | null;
-  audio_output: WebsitePricePair | null;
-  request: WebsitePricePair | null;
 };
 
 type PricingApiResponse = {
@@ -76,46 +56,6 @@ type PricingApiResponse = {
   auto_groups?: string[];
 };
 
-type WebsitePricingV2Response = {
-  success: boolean;
-  schema_version: string;
-  group: string;
-  generated_at: number;
-  models: Array<{
-    model_name: string;
-    description?: string;
-    icon?: string;
-    tags?: string;
-    vendor_id?: number;
-    quota_type: number;
-    enable_groups: string[];
-    supported_endpoint_types: string[];
-    billing_kind: string;
-    display_label?: string;
-    effective_group_ratio: string;
-    ratio_source: "group" | "group_group" | "group_model";
-    prices: WebsiteDisplayPrices;
-    availability_status?: string;
-    availability_reason?: string;
-    availability_detected_at?: number;
-    availability_checked_at?: number;
-  }>;
-  vendors?: PricingVendor[];
-  supported_endpoint?: Record<string, unknown>;
-  auto_groups?: string[];
-};
-
-const WEBSITE_DISPLAY_PRICE_KEYS = [
-  "input",
-  "output",
-  "cache",
-  "cache_creation",
-  "image",
-  "audio_input",
-  "audio_output",
-  "request",
-] as const satisfies ReadonlyArray<keyof WebsiteDisplayPrices>;
-
 export type GroupModelRatio = Record<string, Record<string, number>>;
 
 export type PricingData = {
@@ -126,7 +66,6 @@ export type PricingData = {
   usableGroup: Record<string, string>;
   supportedEndpoint: Record<string, unknown>;
   autoGroups: string[];
-  pricingAvailable?: boolean;
 };
 
 export type PricingSearch = {
@@ -151,16 +90,7 @@ export function publicPricingUrl(apiBaseUrl = API_BASE_URL, group?: string): str
   return url.toString();
 }
 
-export function publicPricingV2Url(apiBaseUrl = API_BASE_URL): string {
-  const url = new URL("/api/website/pricing/v2", apiBaseUrl);
-  url.searchParams.set("group", WEBSITE_PUBLIC_PRICING_GROUP);
-  return url.toString();
-}
-
 export async function getPricingData(group?: string): Promise<PricingData> {
-  if (group === WEBSITE_PUBLIC_PRICING_GROUP) {
-    return getWebsitePricingV2Data();
-  }
   try {
     const response = await fetch(publicPricingUrl(API_BASE_URL, group), {
       cache: "no-store",
@@ -177,121 +107,10 @@ export async function getPricingData(group?: string): Promise<PricingData> {
       usableGroup: payload.usable_group ?? {},
       supportedEndpoint: payload.supported_endpoint ?? {},
       autoGroups: payload.auto_groups ?? [],
-      pricingAvailable: true,
     };
   } catch {
     return emptyPricingData();
   }
-}
-
-async function getWebsitePricingV2Data(): Promise<PricingData> {
-  try {
-    const response = await fetch(publicPricingV2Url(), {
-      next: { revalidate: 60 },
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) return emptyPricingData();
-    return parseWebsitePricingV2((await response.json()) as unknown) ?? emptyPricingData();
-  } catch {
-    return emptyPricingData();
-  }
-}
-
-function parseWebsitePricingV2(value: unknown): PricingData | null {
-  const payload = value as WebsitePricingV2Response;
-  if (
-    !payload ||
-    payload.success !== true ||
-    payload.schema_version !== "website-public-plg-v2" ||
-    payload.group !== WEBSITE_PUBLIC_PRICING_GROUP ||
-    !Number.isInteger(payload.generated_at) ||
-    !Array.isArray(payload.models) ||
-    (payload.vendors !== undefined && !Array.isArray(payload.vendors)) ||
-    (payload.auto_groups !== undefined && !isStringArray(payload.auto_groups)) ||
-    (payload.supported_endpoint !== undefined && !isRecord(payload.supported_endpoint))
-  ) {
-    return null;
-  }
-
-  const seen = new Set<string>();
-  const models: PricingModel[] = [];
-  for (const item of payload.models) {
-    if (
-      !item ||
-      typeof item.model_name !== "string" ||
-      item.model_name.length === 0 ||
-      seen.has(item.model_name) ||
-      (item.quota_type !== QUOTA_TYPE_TOKEN && item.quota_type !== QUOTA_TYPE_REQUEST) ||
-      !isStringArray(item.enable_groups) ||
-      !item.enable_groups.includes(WEBSITE_PUBLIC_PRICING_GROUP) ||
-      !isStringArray(item.supported_endpoint_types) ||
-      !["token_ratio", "request_base", "tiered_expr"].includes(item.billing_kind) ||
-      !validPriceString(item.effective_group_ratio) ||
-      !validWebsiteDisplayPrices(item.prices) ||
-      !["group", "group_group", "group_model"].includes(item.ratio_source)
-    ) {
-      return null;
-    }
-    seen.add(item.model_name);
-    models.push({
-      model_name: item.model_name,
-      description: item.description,
-      icon: item.icon,
-      tags: item.tags,
-      vendor_id: item.vendor_id,
-      quota_type: item.quota_type,
-      model_ratio: 0,
-      completion_ratio: 0,
-      model_price: 0,
-      enable_groups: [WEBSITE_PUBLIC_PRICING_GROUP],
-      supported_endpoint_types: item.supported_endpoint_types ?? [],
-      billing_mode: item.billing_kind,
-      display_label: item.display_label,
-      effective_group_ratio: item.effective_group_ratio,
-      ratio_source: item.ratio_source,
-      display_prices: item.prices,
-      availability_status: item.availability_status,
-      availability_reason: item.availability_reason,
-      availability_detected_at: item.availability_detected_at,
-      availability_checked_at: item.availability_checked_at,
-    });
-  }
-
-  return {
-    models,
-    vendors: payload.vendors ?? [],
-    groupRatio: { [WEBSITE_PUBLIC_PRICING_GROUP]: 1 },
-    groupModelRatio: {},
-    usableGroup: { [WEBSITE_PUBLIC_PRICING_GROUP]: WEBSITE_PUBLIC_PRICING_GROUP },
-    supportedEndpoint: payload.supported_endpoint ?? {},
-    autoGroups: payload.auto_groups ?? [],
-    pricingAvailable: true,
-  };
-}
-
-function validWebsiteDisplayPrices(prices: WebsiteDisplayPrices | undefined): prices is WebsiteDisplayPrices {
-  if (!prices || typeof prices !== "object") return false;
-  return WEBSITE_DISPLAY_PRICE_KEYS.every(
-    (key) => Object.hasOwn(prices, key) && (prices[key] === null || validWebsitePricePair(prices[key]))
-  );
-}
-
-function validWebsitePricePair(pair: WebsitePricePair): boolean {
-  return validPriceString(pair.configured) && validPriceString(pair.plg);
-}
-
-function validPriceString(value: string): boolean {
-  if (typeof value !== "string" || value.trim() === "") return false;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0;
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function buildEffectiveGroupRatio(
@@ -423,10 +242,6 @@ export function isTokenBasedModel(model: PricingModel): boolean {
 }
 
 export function formatModelPrice(model: PricingModel, type: "input" | "output" | "cache" = "input"): string {
-  if (model.display_prices) {
-    const pair = model.quota_type === QUOTA_TYPE_REQUEST ? model.display_prices.request : model.display_prices[type];
-    return pair ? formatUsd(Number(pair.plg)) : model.display_label ?? "-";
-  }
   if (!isTokenBasedModel(model)) {
     return formatUsd(model.model_price ?? 0);
   }
@@ -445,10 +260,6 @@ export function formatModelPrice(model: PricingModel, type: "input" | "output" |
 // Official vendor list price per 1M tokens (ratio convention: model_ratio × $2,
 // calibrated to the vendor's published price), before any group discount.
 export function getOfficialPriceUsd(model: PricingModel, type: "input" | "output" = "input"): number {
-  if (model.display_prices) {
-    const pair = model.quota_type === QUOTA_TYPE_REQUEST ? model.display_prices.request : model.display_prices[type];
-    return pair ? Number(pair.configured) : 0;
-  }
   if (!isTokenBasedModel(model)) return Number(model.model_price ?? 0);
   const base = Number(model.model_ratio ?? 0) * 2;
   return type === "output" ? base * Number(model.completion_ratio ?? 1) : base;
@@ -458,13 +269,6 @@ export function getOfficialPriceUsd(model: PricingModel, type: "input" | "output
 // Group ratios live in the pricing payload's top-level group_ratio map, keyed
 // by the model's enable_groups.
 export function getBestGroupRatio(model: PricingModel, fallbackGroupRatio: Record<string, number>): number {
-  if (model.display_prices) {
-    const pair = model.quota_type === QUOTA_TYPE_REQUEST ? model.display_prices.request : model.display_prices.input;
-    if (!pair) return 1;
-    const configured = Number(pair.configured);
-    const plg = Number(pair.plg);
-    return configured > 0 && Number.isFinite(plg) ? plg / configured : 1;
-  }
   const groups = Array.isArray(model.enable_groups) ? model.enable_groups.filter(isVisibleGroup) : [];
   const names = groups.includes("all") ? Object.keys(fallbackGroupRatio).filter(isVisibleGroup) : groups;
   const ratios = names
@@ -508,10 +312,6 @@ export function formatGroupTokenPrice(
   type: "input" | "output" | "cache" | "create_cache" | "image" | "audio_input" | "audio_output"
 ): string {
   if (!isTokenBasedModel(model)) return "-";
-  if (model.display_prices && group === WEBSITE_PUBLIC_PRICING_GROUP) {
-    const pair = getWebsiteDisplayPricePair(model.display_prices, type);
-    return pair ? formatUsd(Number(pair.plg)) : "-";
-  }
   const ratio = getGroupRatio(model, group, groupRatio);
   const base = Number(model.model_ratio ?? 0) * 2 * ratio;
   const price = calculateTokenPrice(model, base, type);
@@ -520,26 +320,8 @@ export function formatGroupTokenPrice(
 
 export function formatGroupRequestPrice(model: PricingModel, group: string, groupRatio: Record<string, number>): string {
   if (isTokenBasedModel(model)) return "-";
-  if (model.display_prices && group === WEBSITE_PUBLIC_PRICING_GROUP) {
-    const pair = model.display_prices.request;
-    return pair ? formatUsd(Number(pair.plg)) : model.display_label ?? "-";
-  }
   const ratio = getGroupRatio(model, group, groupRatio);
   return formatUsd(Number(model.model_price ?? 0) * ratio);
-}
-
-export function getPublicPriceUsd(model: PricingModel): number | null {
-  if (!model.display_prices) return null;
-  const pair = model.quota_type === QUOTA_TYPE_REQUEST ? model.display_prices.request : model.display_prices.input;
-  return pair ? Number(pair.plg) : null;
-}
-
-function getWebsiteDisplayPricePair(
-  prices: WebsiteDisplayPrices,
-  type: "input" | "output" | "cache" | "create_cache" | "image" | "audio_input" | "audio_output"
-): WebsitePricePair | null {
-  if (type === "create_cache") return prices.cache_creation;
-  return prices[type];
 }
 
 export function formatRatio(value: number | null | undefined): string {
@@ -675,14 +457,5 @@ function formatUsd(value: number): string {
 }
 
 function emptyPricingData(): PricingData {
-  return {
-    models: [],
-    vendors: [],
-    groupRatio: {},
-    groupModelRatio: {},
-    usableGroup: {},
-    supportedEndpoint: {},
-    autoGroups: [],
-    pricingAvailable: false,
-  };
+  return { models: [], vendors: [], groupRatio: {}, groupModelRatio: {}, usableGroup: {}, supportedEndpoint: {}, autoGroups: [] };
 }

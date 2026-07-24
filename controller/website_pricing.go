@@ -11,6 +11,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var buildWebsitePricingV2Payload = func(group string, generatedAt time.Time) (service.WebsitePricingV2, error) {
+	return service.BuildWebsitePricingV2(model.GetPricing(), group, generatedAt)
+}
+
 func GetWebsitePricingV2(c *gin.Context) {
 	group := strings.TrimSpace(c.Query("group"))
 	if group != websitePublicGroup {
@@ -18,19 +22,16 @@ func GetWebsitePricingV2(c *gin.Context) {
 		return
 	}
 
-	payload, err := service.BuildWebsitePricingV2(
-		model.GetPricing(),
-		model.GetVendors(),
-		model.GetSupportedEndpointMap(),
-		service.GetUserAutoGroup(""),
-		group,
-		time.Now(),
-	)
+	payload, err := buildWebsitePricingV2Payload(group, time.Now())
 	if err != nil {
-		common.ApiError(c, err)
+		common.SysError("failed to build public website pricing: " + err.Error())
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"success": false,
+			"message": "pricing temporarily unavailable",
+		})
 		return
 	}
 
-	c.Header("Cache-Control", "public, max-age=30, stale-while-revalidate=60, stale-if-error=300")
+	c.Header("Cache-Control", "public, max-age=30, must-revalidate")
 	c.JSON(http.StatusOK, payload)
 }

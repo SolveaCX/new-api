@@ -3,7 +3,6 @@ import {
   formatUsdPrice,
   getBestGroupRatio,
   getOfficialPriceUsd,
-  getPublicPriceUsd,
   getVendorName,
   isTokenBasedModel,
   sortPricingModelsBySeries,
@@ -106,14 +105,13 @@ export function buildRowsForModels(
     .map((model) => {
       const official = getOfficialPriceUsd(model);
       const listed = official * getBestGroupRatio(model, groupRatio);
-      const publicPrice = getPublicPriceUsd(model);
       const vendor = model.vendor_name ?? getVendorName(model, vendors);
       const suffix = isTokenBasedModel(model) ? "" : " /req";
       return {
         name: model.model_name,
         vendor,
         official: `${formatUsdPrice(official)}${suffix}`,
-        discounted: `${formatUsdPrice(publicPrice ?? discountedPriceUsd(listed))}${suffix}`,
+        discounted: `${formatUsdPrice(discountedPriceUsd(listed))}${suffix}`,
         iconKey: model.icon || model.vendor_icon || modelIconKey(model.model_name, vendor),
       };
     });

@@ -988,7 +988,6 @@ export async function ModelsPage(props: PricingPageProps) {
             usableGroup={pricing.usableGroup}
             endpointMap={pricing.supportedEndpoint}
             autoGroups={pricing.autoGroups}
-            pricingAvailable={pricing.pricingAvailable !== false}
             initialSearch={props.search}
           />
 
