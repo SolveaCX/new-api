@@ -21,7 +21,10 @@ import { isAxiosError } from 'axios'
 import type { Table } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
+import { parseQuotaFromDollars } from '@/lib/format'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -30,10 +33,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import { batchUpdateApiKeyGroup } from '../api'
-import { coordinateBatchGroupUpdate } from '../lib/api-key-batch-group'
+import { batchEditApiKeys } from '../api'
+import {
+  coordinateBatchEditApiKeys,
+  isBatchQuotaInputValid,
+} from '../lib/api-key-batch-group'
 import type { ApiKey } from '../types'
 import {
   ApiKeyGroupCombobox,
@@ -41,10 +53,11 @@ import {
 } from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
 
-type ApiKeysBatchGroupDialogProps<TData> = {
+type ApiKeysBatchEditDialogProps<TData> = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  options: ApiKeyGroupOption[]
+  canEditGroup: boolean
+  groupOptions: ApiKeyGroupOption[]
   table: Table<TData>
 }
 
@@ -55,54 +68,71 @@ function getServerErrorMessage(error: unknown): string | undefined {
   return typeof message === 'string' ? message : undefined
 }
 
-export function ApiKeysBatchGroupDialog<TData>(
-  props: ApiKeysBatchGroupDialogProps<TData>
+export function ApiKeysBatchEditDialog<TData>(
+  props: ApiKeysBatchEditDialogProps<TData>
 ) {
   const { t } = useTranslation()
   const { triggerRefresh } = useApiKeys()
   const [group, setGroup] = useState<string>()
+  const [updateQuota, setUpdateQuota] = useState(false)
+  const [quotaInput, setQuotaInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const selectedRows = props.table.getFilteredSelectedRowModel().rows
+  const { meta: currencyMeta } = getCurrencyDisplay()
+  const currencyLabel = getCurrencyLabel()
+  const tokensOnly = currencyMeta.kind === 'tokens'
+  const parsedQuotaInput = Number(quotaInput)
+  const quotaIsValid =
+    !updateQuota || isBatchQuotaInputValid(quotaInput, tokensOnly)
+  const hasEdit = (props.canEditGroup && group !== undefined) || updateQuota
+
+  const resetForm = () => {
+    setGroup(undefined)
+    setUpdateQuota(false)
+    setQuotaInput('')
+  }
 
   const handleOpenChange = (open: boolean) => {
     if (isSubmitting) return
-    if (!open) setGroup(undefined)
+    if (!open) resetForm()
     props.onOpenChange(open)
   }
 
   const handleConfirm = async () => {
-    if (!group) return
+    if (!hasEdit || !quotaIsValid) return
 
     setIsSubmitting(true)
     try {
       const ids = selectedRows.map((row) => (row.original as ApiKey).id)
-      const result = await coordinateBatchGroupUpdate({
-        request: batchUpdateApiKeyGroup,
-        ids,
-        group,
+      const result = await coordinateBatchEditApiKeys({
+        request: batchEditApiKeys,
+        payload: {
+          ids,
+          group: props.canEditGroup ? group : undefined,
+          remain_quota: updateQuota
+            ? parseQuotaFromDollars(parsedQuotaInput)
+            : undefined,
+        },
         successEffects: {
           resetSelection: () => props.table.resetRowSelection(),
           refresh: triggerRefresh,
-          clearGroup: () => setGroup(undefined),
+          resetForm,
           closeDialog: () => props.onOpenChange(false),
         },
       })
       if (!result.success) {
-        toast.error(
-          result.message || t('Failed to update selected API key groups')
-        )
+        toast.error(result.message || t('Failed to update selected API keys'))
         return
       }
 
       toast.success(
-        t('Updated the group for {{count}} API key(s)', {
+        t('Updated {{count}} API key(s)', {
           count: result.count,
         })
       )
     } catch (error) {
       toast.error(
-        getServerErrorMessage(error) ||
-          t('Failed to update selected API key groups')
+        getServerErrorMessage(error) || t('Failed to update selected API keys')
       )
     } finally {
       setIsSubmitting(false)
@@ -111,29 +141,96 @@ export function ApiKeysBatchGroupDialog<TData>(
 
   return (
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
-      <DialogContent className='sm:max-w-md' showCloseButton={!isSubmitting}>
+      <DialogContent className='sm:max-w-lg' showCloseButton={!isSubmitting}>
         <DialogHeader>
           <DialogTitle>
-            {t('Update group for {{count}} API key(s)', {
+            {t('Batch edit {{count}} API key(s)', {
               count: selectedRows.length,
             })}
           </DialogTitle>
           <DialogDescription>
-            {t('Choose a group for the selected API keys.')}
+            {t(
+              'Choose at least one field to update for the selected API keys.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <FieldGroup className='py-2'>
+          {props.canEditGroup && (
+            <Field data-disabled={isSubmitting || undefined}>
+              <FieldLabel>{t('Group')}</FieldLabel>
+              <ApiKeyGroupCombobox
+                options={props.groupOptions}
+                value={group}
+                onValueChange={setGroup}
+                placeholder={t('Select a group')}
+                ariaLabel={t('Select a group')}
+                disabled={isSubmitting}
+              />
+              <FieldDescription>
+                {t('Leave the group unselected to keep it unchanged.')}
+              </FieldDescription>
+            </Field>
+          )}
+
           <Field data-disabled={isSubmitting || undefined}>
-            <FieldLabel>{t('Group')}</FieldLabel>
-            <ApiKeyGroupCombobox
-              options={props.options}
-              value={group}
-              onValueChange={setGroup}
-              placeholder={t('Select a group')}
-              ariaLabel={t('Select a group')}
-              disabled={isSubmitting}
-            />
+            <div className='flex items-start gap-3 rounded-lg border p-3'>
+              <Checkbox
+                id='batch-update-available-quota'
+                checked={updateQuota}
+                onCheckedChange={setUpdateQuota}
+                disabled={isSubmitting}
+                className='mt-0.5'
+              />
+              <div className='flex min-w-0 flex-1 flex-col gap-1'>
+                <FieldLabel htmlFor='batch-update-available-quota'>
+                  {t('Update available quota')}
+                </FieldLabel>
+                <FieldDescription>
+                  {t(
+                    'This quota applies to each selected finite-quota API key. Unlimited-quota API keys remain unchanged.'
+                  )}
+                </FieldDescription>
+              </div>
+            </div>
+
+            {updateQuota && (
+              <Field data-invalid={!quotaIsValid || undefined}>
+                <FieldLabel htmlFor='batch-available-quota'>
+                  {t('Available quota ({{currency}})', {
+                    currency: currencyLabel,
+                  })}
+                </FieldLabel>
+                <Input
+                  id='batch-available-quota'
+                  type='number'
+                  min={0}
+                  step={tokensOnly ? 1 : 0.01}
+                  value={quotaInput}
+                  onChange={(event) => setQuotaInput(event.target.value)}
+                  placeholder={
+                    tokensOnly
+                      ? t('Enter quota in tokens')
+                      : t('Enter quota in {{currency}}', {
+                          currency: currencyLabel,
+                        })
+                  }
+                  aria-invalid={!quotaIsValid}
+                  disabled={isSubmitting}
+                />
+                {!quotaIsValid && (
+                  <FieldDescription>
+                    {tokensOnly
+                      ? t(
+                          'Enter a whole-number quota greater than or equal to zero.'
+                        )
+                      : t(
+                          'Enter a finite quota greater than or equal to zero.'
+                        )}
+                  </FieldDescription>
+                )}
+              </Field>
+            )}
           </Field>
         </FieldGroup>
 
@@ -149,10 +246,10 @@ export function ApiKeysBatchGroupDialog<TData>(
           <Button
             type='button'
             onClick={() => void handleConfirm()}
-            disabled={!group || isSubmitting}
+            disabled={!hasEdit || !quotaIsValid || isSubmitting}
           >
             {isSubmitting && <Spinner data-icon='inline-start' />}
-            {t('Update group')}
+            {t('Apply changes')}
           </Button>
         </DialogFooter>
       </DialogContent>

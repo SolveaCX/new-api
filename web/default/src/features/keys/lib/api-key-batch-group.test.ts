@@ -19,11 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'bun:test'
 import type { UserModelAccess } from '@/features/available-models'
 import {
-  buildBatchGroupPayload,
-  canBatchUpdateApiKeyGroup,
-  coordinateBatchGroupUpdate,
+  buildBatchEditApiKeysPayload,
+  canBatchEditApiKeyGroup,
+  coordinateBatchEditApiKeys,
   getBatchGroupOptions,
-  type BatchGroupUpdateSuccessEffects,
+  isBatchEditApiKeysAvailable,
+  isBatchQuotaInputValid,
+  type BatchEditApiKeysPayload,
+  type BatchEditApiKeysSuccessEffects,
 } from './api-key-batch-group'
 
 function buildModelAccess(
@@ -58,18 +61,18 @@ function createSuccessEffects() {
   const calls = {
     resetSelection: 0,
     refresh: 0,
-    clearGroup: 0,
+    resetForm: 0,
     closeDialog: 0,
   }
-  const successEffects: BatchGroupUpdateSuccessEffects = {
+  const successEffects: BatchEditApiKeysSuccessEffects = {
     resetSelection: () => {
       calls.resetSelection += 1
     },
     refresh: () => {
       calls.refresh += 1
     },
-    clearGroup: () => {
-      calls.clearGroup += 1
+    resetForm: () => {
+      calls.resetForm += 1
     },
     closeDialog: () => {
       calls.closeDialog += 1
@@ -79,50 +82,70 @@ function createSuccessEffects() {
   return { calls, successEffects }
 }
 
-describe('batch API key group updates', () => {
-  test('builds the exact backend payload and preserves explicit IDs', () => {
-    expect(buildBatchGroupPayload([3, 9], 'premium')).toEqual({
+describe('batch API key edits', () => {
+  test('builds group-only, quota-only, and combined payloads', () => {
+    expect(buildBatchEditApiKeysPayload([3, 9], { group: 'premium' })).toEqual({
       ids: [3, 9],
       group: 'premium',
     })
+    expect(buildBatchEditApiKeysPayload([3, 9], { remain_quota: 0 })).toEqual({
+      ids: [3, 9],
+      remain_quota: 0,
+    })
+    expect(
+      buildBatchEditApiKeysPayload([3, 9], {
+        group: 'premium',
+        remain_quota: 500000,
+      })
+    ).toEqual({ ids: [3, 9], group: 'premium', remain_quota: 500000 })
   })
 
-  test('rejects empty, oversized, and group-less payloads', () => {
-    expect(() => buildBatchGroupPayload([], 'default')).toThrow()
+  test('rejects invalid IDs, empty edits, and invalid finite quotas', () => {
     expect(() =>
-      buildBatchGroupPayload(
+      buildBatchEditApiKeysPayload([], { group: 'default' })
+    ).toThrow()
+    expect(() =>
+      buildBatchEditApiKeysPayload(
         Array.from({ length: 101 }, (_, index) => index + 1),
-        'default'
+        { group: 'default' }
       )
     ).toThrow()
-    expect(() => buildBatchGroupPayload([1], '')).toThrow()
+    expect(() => buildBatchEditApiKeysPayload([1], {})).toThrow()
+    expect(() => buildBatchEditApiKeysPayload([1], { group: '' })).toThrow()
+    expect(() =>
+      buildBatchEditApiKeysPayload([1], { remain_quota: -1 })
+    ).toThrow()
+    expect(() =>
+      buildBatchEditApiKeysPayload([1], { remain_quota: Number.NaN })
+    ).toThrow()
   })
 
-  test('only enables the action for usable selectable groups', () => {
-    const selectable = buildModelAccess()
-    expect(canBatchUpdateApiKeyGroup(true, true, selectable)).toBe(true)
+  test('allows group editing only for usable selectable groups', () => {
+    expect(canBatchEditApiKeyGroup(true, buildModelAccess())).toBe(true)
     expect(
-      canBatchUpdateApiKeyGroup(
-        true,
+      canBatchEditApiKeyGroup(
         true,
         buildModelAccess({ scope_mode: 'fixed_account' })
       )
     ).toBe(false)
     expect(
-      canBatchUpdateApiKeyGroup(true, true, buildModelAccess({ groups: [] }))
+      canBatchEditApiKeyGroup(true, buildModelAccess({ groups: [] }))
     ).toBe(false)
+    expect(canBatchEditApiKeyGroup(false, buildModelAccess())).toBe(false)
   })
 
-  test('hides the bulk group action when PLG gating disallows groups', () => {
-    expect(canBatchUpdateApiKeyGroup(true, false, buildModelAccess())).toBe(
-      false
-    )
+  test('shows quota-only batch editing when the feature is enabled', () => {
+    expect(isBatchEditApiKeysAvailable(true)).toBe(true)
+    expect(isBatchEditApiKeysAvailable(false)).toBe(false)
+    expect(canBatchEditApiKeyGroup(false, buildModelAccess())).toBe(false)
   })
 
-  test('hides the bulk group action until the backend capability is enabled', () => {
-    expect(canBatchUpdateApiKeyGroup(false, true, buildModelAccess())).toBe(
-      false
-    )
+  test('requires whole-number quota input in token display mode', () => {
+    expect(isBatchQuotaInputValid('0', true)).toBe(true)
+    expect(isBatchQuotaInputValid('12', true)).toBe(true)
+    expect(isBatchQuotaInputValid('1.5', true)).toBe(false)
+    expect(isBatchQuotaInputValid('1.5', false)).toBe(true)
+    expect(isBatchQuotaInputValid('', false)).toBe(false)
   })
 
   test('maps model access groups to the shared combobox option shape', () => {
@@ -137,100 +160,55 @@ describe('batch API key group updates', () => {
   })
 
   test('runs all success effects once after the request succeeds', async () => {
-    const requestedPayloads: Array<{ ids: number[]; group: string }> = []
+    const requestedPayloads: BatchEditApiKeysPayload[] = []
     const effects = createSuccessEffects()
+    const payload = { ids: [3, 9], group: 'premium', remain_quota: 0 }
 
-    const result = await coordinateBatchGroupUpdate({
-      request: async (ids, group) => {
-        requestedPayloads.push({ ids: [...ids], group })
+    const result = await coordinateBatchEditApiKeys({
+      request: async (requestPayload) => {
+        requestedPayloads.push(requestPayload)
         return { success: true, data: 2 }
       },
-      ids: [3, 9],
-      group: 'premium',
+      payload,
       successEffects: effects.successEffects,
     })
 
-    expect(requestedPayloads).toEqual([{ ids: [3, 9], group: 'premium' }])
+    expect(requestedPayloads).toEqual([payload])
     expect(result).toEqual({ success: true, count: 2 })
     expect(effects.calls).toEqual({
       resetSelection: 1,
       refresh: 1,
-      clearGroup: 1,
+      resetForm: 1,
       closeDialog: 1,
     })
   })
 
-  test('declared failure retains effects and retries the same payload', async () => {
-    const requestedPayloads: Array<{ ids: number[]; group: string }> = []
+  test('failure retains effects and permits a successful retry', async () => {
+    const requestedPayloads: BatchEditApiKeysPayload[] = []
     const effects = createSuccessEffects()
-    const request = async (ids: number[], group: string) => {
-      requestedPayloads.push({ ids: [...ids], group })
-      return { success: false, message: 'Group update rejected' }
-    }
-    const params = {
-      request,
-      ids: [3, 9],
-      group: 'premium',
-      successEffects: effects.successEffects,
-    }
-
-    const firstResult = await coordinateBatchGroupUpdate(params)
-    const retryResult = await coordinateBatchGroupUpdate(params)
-
-    expect(requestedPayloads).toEqual([
-      { ids: [3, 9], group: 'premium' },
-      { ids: [3, 9], group: 'premium' },
-    ])
-    expect(firstResult).toEqual({
-      success: false,
-      message: 'Group update rejected',
-    })
-    expect(retryResult).toEqual(firstResult)
-    expect(effects.calls).toEqual({
-      resetSelection: 0,
-      refresh: 0,
-      clearGroup: 0,
-      closeDialog: 0,
-    })
-  })
-
-  test('thrown failure retains effects and permits a successful retry', async () => {
-    const requestedPayloads: Array<{ ids: number[]; group: string }> = []
-    const effects = createSuccessEffects()
+    const payload = { ids: [3, 9], remain_quota: 0 }
     let attempt = 0
     const params = {
-      request: async (ids: number[], group: string) => {
-        requestedPayloads.push({ ids: [...ids], group })
+      request: async (requestPayload: BatchEditApiKeysPayload) => {
+        requestedPayloads.push(requestPayload)
         attempt += 1
-        if (attempt === 1) throw new Error('Network unavailable')
+        if (attempt === 1) return { success: false, message: 'Edit rejected' }
         return { success: true, data: 2 }
       },
-      ids: [3, 9],
-      group: 'premium',
+      payload,
       successEffects: effects.successEffects,
     }
 
-    await expect(coordinateBatchGroupUpdate(params)).rejects.toThrow(
-      'Network unavailable'
-    )
-    expect(effects.calls).toEqual({
-      resetSelection: 0,
-      refresh: 0,
-      clearGroup: 0,
-      closeDialog: 0,
-    })
+    const firstResult = await coordinateBatchEditApiKeys(params)
+    const retryResult = await coordinateBatchEditApiKeys(params)
 
-    const retryResult = await coordinateBatchGroupUpdate(params)
-
-    expect(requestedPayloads).toEqual([
-      { ids: [3, 9], group: 'premium' },
-      { ids: [3, 9], group: 'premium' },
-    ])
+    expect(requestedPayloads).toEqual([payload, payload])
+    expect(firstResult).toEqual({ success: false, message: 'Edit rejected' })
     expect(retryResult).toEqual({ success: true, count: 2 })
     expect(effects.calls).toEqual({
       resetSelection: 1,
       refresh: 1,
-      clearGroup: 1,
+      resetForm: 1,
       closeDialog: 1,
     })
   })

@@ -617,9 +617,38 @@ func CountUserTokens(userId int) (int64, error) {
 	return total, err
 }
 
-func BatchUpdateTokenGroup(ids []int, userId int, group string) (int, error) {
-	if len(ids) == 0 || userId == 0 || group == "" {
+type BatchUpdateTokensParams struct {
+	Ids         []int
+	UserId      int
+	Group       *string
+	RemainQuota *int
+}
+
+func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
+	if len(params.Ids) == 0 || len(params.Ids) > 100 || params.UserId <= 0 {
 		return 0, ErrTokenBatchInvalid
+	}
+	if params.Group == nil && params.RemainQuota == nil {
+		return 0, ErrTokenBatchInvalid
+	}
+	if params.Group != nil && *params.Group == "" {
+		return 0, ErrTokenBatchInvalid
+	}
+	seen := make(map[int]struct{}, len(params.Ids))
+	for _, id := range params.Ids {
+		if id <= 0 {
+			return 0, ErrTokenBatchInvalid
+		}
+		if _, exists := seen[id]; exists {
+			return 0, ErrTokenBatchInvalid
+		}
+		seen[id] = struct{}{}
+	}
+	if params.RemainQuota != nil {
+		maxQuotaValue := int(1000000000 * common.QuotaPerUnit)
+		if *params.RemainQuota < 0 || *params.RemainQuota > maxQuotaValue {
+			return 0, ErrTokenBatchInvalid
+		}
 	}
 
 	var tokenKeys []string
@@ -627,11 +656,11 @@ func BatchUpdateTokenGroup(ids []int, userId int, group string) (int, error) {
 		var tokens []Token
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("id", "key").
-			Where("user_id = ? AND id IN ?", userId, ids).
+			Where("user_id = ? AND id IN ?", params.UserId, params.Ids).
 			Find(&tokens).Error; err != nil {
 			return err
 		}
-		if len(tokens) != len(ids) {
+		if len(tokens) != len(params.Ids) {
 			return ErrTokenBatchInvalid
 		}
 
@@ -639,15 +668,28 @@ func BatchUpdateTokenGroup(ids []int, userId int, group string) (int, error) {
 		for _, token := range tokens {
 			tokenKeys = append(tokenKeys, token.Key)
 		}
-		updates := map[string]interface{}{"group": group}
-		if group == plgUserGroup {
-			updates["cross_group_retry"] = false
+		updates := make(map[string]interface{}, 2)
+		if params.Group != nil {
+			updates["group"] = *params.Group
+			if *params.Group == plgUserGroup {
+				updates["cross_group_retry"] = false
+			}
 		}
-		result := tx.Model(&Token{}).
-			Where("user_id = ? AND id IN ?", userId, ids).
-			Updates(updates)
-		if result.Error != nil {
-			return result.Error
+		if len(updates) > 0 {
+			result := tx.Model(&Token{}).
+				Where("user_id = ? AND id IN ?", params.UserId, params.Ids).
+				Updates(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+		}
+		if params.RemainQuota != nil {
+			result := tx.Model(&Token{}).
+				Where("user_id = ? AND id IN ? AND unlimited_quota = ?", params.UserId, params.Ids, false).
+				Update("remain_quota", *params.RemainQuota)
+			if result.Error != nil {
+				return result.Error
+			}
 		}
 		return nil
 	})
@@ -656,12 +698,26 @@ func BatchUpdateTokenGroup(ids []int, userId int, group string) (int, error) {
 	}
 
 	if common.RedisEnabled {
-		if err := cachePatchTokenGroups(tokenKeys, group); err != nil {
-			common.SysLog(fmt.Sprintf("failed to invalidate %d token caches after batch group update", len(tokenKeys)))
-			return len(ids), ErrTokenBatchCacheInvalidation
+		var err error
+		if params.RemainQuota != nil {
+			err = cacheDeleteTokens(tokenKeys)
+		} else {
+			err = cachePatchTokenGroups(tokenKeys, *params.Group)
+		}
+		if err != nil {
+			common.SysLog(fmt.Sprintf("failed to invalidate %d token caches after batch token update", len(tokenKeys)))
+			return len(params.Ids), ErrTokenBatchCacheInvalidation
 		}
 	}
-	return len(ids), nil
+	return len(params.Ids), nil
+}
+
+func BatchUpdateTokenGroup(ids []int, userId int, group string) (int, error) {
+	return BatchUpdateTokens(BatchUpdateTokensParams{
+		Ids:    ids,
+		UserId: userId,
+		Group:  &group,
+	})
 }
 
 // UserTokenStats contains account-wide API token counts grouped by status.
