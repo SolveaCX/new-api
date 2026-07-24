@@ -5631,7 +5631,6 @@
     "Review the API key and model access settings.": "Revisa la configuración de la clave API y del acceso a modelos.",
     "No callable models available for this API key": "No hay modelos invocables disponibles para esta clave API",
     "Select a callable model": "Seleccionar un modelo invocable",
-    "Recall Campaigns": "Campañas de recuperación",
     "Activity Configuration": "Configuración de actividad",
     "Create campaign": "Crear campaña",
     "Create activity configuration": "Crear configuración de actividad",

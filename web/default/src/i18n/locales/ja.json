@@ -5631,7 +5631,6 @@
     "Review the API key and model access settings.": "API キーとモデルアクセスの設定を確認してください。",
     "No callable models available for this API key": "この API キーで呼び出せるモデルはありません",
     "Select a callable model": "呼び出すモデルを選択",
-    "Recall Campaigns": "再獲得キャンペーン",
     "Activity Configuration": "アクティビティ設定",
     "Create campaign": "キャンペーンを作成",
     "Create activity configuration": "アクティビティ設定を作成",

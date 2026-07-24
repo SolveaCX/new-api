@@ -5631,7 +5631,6 @@
     "Review the API key and model access settings.": "Hãy kiểm tra cài đặt khóa API và quyền truy cập mô hình.",
     "No callable models available for this API key": "Không có mô hình nào có thể gọi bằng khóa API này",
     "Select a callable model": "Chọn mô hình có thể gọi",
-    "Recall Campaigns": "Chiến dịch tái thu hút",
     "Activity Configuration": "Cấu hình hoạt động",
     "Create campaign": "Tạo chiến dịch",
     "Create activity configuration": "Tạo cấu hình hoạt động",

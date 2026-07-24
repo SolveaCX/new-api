@@ -5631,7 +5631,6 @@
     "Review the API key and model access settings.": "请检查 API 密钥和模型访问设置。",
     "No callable models available for this API key": "此 API 密钥没有可调用的模型",
     "Select a callable model": "选择可调用的模型",
-    "Recall Campaigns": "召回活动",
     "Activity Configuration": "活动配置",
     "Create campaign": "创建活动",
     "Create activity configuration": "创建活动配置",
