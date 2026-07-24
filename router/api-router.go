@@ -185,12 +185,17 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			subscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
+			subscriptionRoute.GET("/self/refundable-terms", controller.GetRefundableSubscriptionTerms)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
+			subscriptionRoute.POST("/self/refundable-terms/:term_segment_id/refund", middleware.CriticalRateLimit(), controller.RefundSubscriptionTerm)
+			subscriptionRoute.POST("/self/quote", middleware.SubscriptionPaymentRateLimit(), controller.QuoteSubscriptionSelfPurchase)
+			subscriptionRoute.POST("/self/purchase", middleware.SubscriptionPaymentRateLimit(), controller.PurchaseSubscriptionSelf)
+			subscriptionRoute.POST("/self/change-plan", middleware.SubscriptionPaymentRateLimit(), controller.ChangeSubscriptionPlan)
 			subscriptionRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestBalancePay)
-			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestEpay)
+			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.SubscriptionPurchasePendingMigration)
 			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestStripePay)
-			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestCreemPay)
-			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestWaffoPancakePay)
+			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.SubscriptionPurchasePendingMigration)
+			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.SubscriptionPurchasePendingMigration)
 		}
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")
 		subscriptionAdminRoute.Use(middleware.AdminAuth())
@@ -290,8 +295,6 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/:id/codex/refresh", controller.RefreshCodexChannelCredential)
 			channelRoute.GET("/:id/codex/usage", controller.GetCodexChannelUsage)
 			channelRoute.POST("/:id/codex/reset-credit", middleware.CriticalRateLimit(), controller.ConsumeCodexResetCredit)
-			channelRoute.GET("/:id/codex/invite/status", controller.GetCodexInviteStatus)
-			channelRoute.POST("/:id/codex/invite", middleware.CriticalRateLimit(), controller.SendCodexInvite)
 			channelRoute.POST("/ollama/pull", controller.OllamaPullModel)
 			channelRoute.POST("/ollama/pull/stream", controller.OllamaPullModelStream)
 			channelRoute.DELETE("/ollama/delete", controller.OllamaDeleteModel)
@@ -353,6 +356,31 @@ func SetApiRouter(router *gin.Engine) {
 			codexModelGovernanceRoute.POST("/rules/test", controller.TestCodexModelGovernanceRule)
 			codexModelGovernanceRoute.POST("/:id/review", controller.ReviewCodexModelGovernanceRecord)
 		}
+		// flatkey Compute (GPU rental) admin dashboard. Admin-only, same guard as
+		// channels. Whitelabel: responses expose only flatkey-branded fields.
+		computeRoute := apiRouter.Group("/compute")
+		computeRoute.Use(middleware.AdminAuth())
+		{
+			computeRoute.GET("/nodes", controller.GetComputeNodes)
+			computeRoute.GET("/nodes/:id", controller.GetComputeNode)
+			computeRoute.POST("/nodes/:id/stop", controller.StopComputeNode)
+			computeRoute.GET("/offers", controller.GetComputeOffers)
+		}
+		// flatkey Compute (GPU rental) user-facing endpoints. UserAuth: every
+		// handler is scoped to c.GetInt("id") so a customer only ever sees /
+		// controls their own rented instances. Whitelabel: responses expose only
+		// flatkey-branded fields (provider fields are json:"-").
+		computeUserRoute := apiRouter.Group("/compute/instances")
+		computeUserRoute.Use(middleware.UserAuth())
+		{
+			computeUserRoute.GET("", controller.GetComputeInstances)
+			computeUserRoute.POST("", controller.CreateComputeInstance)
+			computeUserRoute.GET("/:id/connection", controller.GetComputeInstanceConnection)
+			computeUserRoute.POST("/:id/stop", controller.StopComputeInstance)
+		}
+		// User-facing GPU offer catalog (whitelabeled). Standalone route to avoid
+		// a Gin static/param conflict with /compute/instances/:id.
+		apiRouter.GET("/compute/gpu-offers", middleware.UserAuth(), controller.GetUserGpuOffers)
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{
@@ -363,6 +391,8 @@ func SetApiRouter(router *gin.Engine) {
 			tokenRoute.POST("/:id/key", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetTokenKey)
 			tokenRoute.POST("/", controller.AddToken)
 			tokenRoute.PUT("/", controller.UpdateToken)
+			tokenRoute.PUT("/batch", controller.UpdateTokenBatch)
+			tokenRoute.PUT("/batch/group", controller.UpdateTokenGroupBatch)
 			tokenRoute.DELETE("/:id", controller.DeleteToken)
 			tokenRoute.POST("/batch", controller.DeleteTokenBatch)
 			tokenRoute.POST("/batch/keys", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetTokenKeysBatch)
@@ -410,6 +440,10 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/ops_report", middleware.AdminAuth(), controller.GetOpsReport)
 		dataRoute.GET("/ops_report_stripe", middleware.AdminAuth(), controller.GetOpsStripeReport)
 		dataRoute.GET("/ops_report_ads", middleware.AdminAuth(), controller.GetOpsAdsPilotReport)
+		dataRoute.GET("/ops_report_ads_daily", middleware.AdminAuth(), controller.GetOpsAdsDailyReport)
+		dataRoute.GET("/ops_report_landing_thumb", middleware.AdminAuth(), controller.GetOpsAdsLandingThumb)
+		dataRoute.GET("/model_health", middleware.AdminAuth(), controller.GetModelHealthOverview)
+		dataRoute.GET("/model_health/detail", middleware.AdminAuth(), controller.GetModelHealthDetail)
 
 		adsPilotRoute := apiRouter.Group("/ads_pilot")
 		adsPilotRoute.Use(middleware.AdminAuth())

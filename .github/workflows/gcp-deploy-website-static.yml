@@ -51,6 +51,9 @@ jobs:
       - name: Audit static website
         run: node website-static/audit.mjs
 
+      - name: Regression test static website interactions
+        run: node --test website-static/tests/*.test.mjs
+
       - name: Auth to GCP (WIF)
         uses: google-github-actions/auth@v2
         with:
@@ -129,7 +132,7 @@ jobs:
         run: |
           C="https://canary---newapi-web-5qjldqffdq-uw.a.run.app"
           # canonical static pages and assets
-          for p in "" models docs playground pricing compute usecases contact status terms privacy refund-policy sla about zh/about careers zh/careers install.sh llms.txt assets/team/amazon-accelerate-team.jpg assets/team/team-dinner.jpg; do
+          for p in "" models models/gpt-5.5 models/grok-imagine-image docs playground pricing compute usecases contact status terms privacy refund-policy sla about zh/about careers zh/careers install.sh llms.txt assets/team/amazon-accelerate-team.jpg assets/team/team-dinner.jpg; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p")
             echo "/$p -> $code"; [ "$code" = "200" ] || exit 1
           done

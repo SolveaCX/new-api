@@ -51,6 +51,14 @@ func SetRelayRouter(router *gin.Engine) {
 		})
 	}
 
+	flatkeyUtilityRouter := router.Group("/v1")
+	flatkeyUtilityRouter.Use(middleware.RouteTag("relay"))
+	flatkeyUtilityRouter.Use(middleware.TokenAuthReadOnly())
+	{
+		flatkeyUtilityRouter.GET("/status", controller.GetFlatkeyStatus)
+		flatkeyUtilityRouter.GET("/credits", controller.GetFlatkeyCredits)
+	}
+
 	geminiRouter := router.Group("/v1beta/models")
 	geminiRouter.Use(middleware.RouteTag("relay"))
 	geminiRouter.Use(middleware.TokenAuth())

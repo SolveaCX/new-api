@@ -13,6 +13,8 @@
 
 Go app workflow 构建同一份 Go 镜像。Console 与 Router 分别使用 `production-console`、`production-router` Environment 和独立部署身份。push 到 `main` 或手动选择 `both` 时严格串行：先审批并发布 Console，等待至少 3600 秒旧管理请求 drain，Console job 成功后才会出现 Router 审批。手动选择单一目标时只进入对应 Environment。不要把 website 变更放到 Go workflow，也不要在 `web/default` 里恢复公开网站页面。
 
+Legacy monolithic `newapi` 已下线（`enable_legacy_runtime=false`），不属于日常发布或回滚目标。生产 Go 服务只发布 `newapi-console` 和 `newapi-router`；URL map 未命中 host rule 时回退到 `newapi-console`。
+
 ## 日常发布
 
 ### 触发方式

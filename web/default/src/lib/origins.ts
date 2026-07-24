@@ -24,6 +24,8 @@ export const OFFICIAL_WEBSITE_ORIGIN = normalizeOrigin(
   import.meta.env.VITE_OFFICIAL_WEBSITE_ORIGIN as string | undefined
 )
 
+export const OFFICIAL_DOCUMENTATION_URL = 'https://docs.flatkey.ai/'
+
 /**
  * Official-site paths stay canonical across console languages. The console
  * locale changes navigation labels, not the website destination.

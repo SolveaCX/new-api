@@ -148,6 +148,7 @@ func main() {
 
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
+	service.StartStripeSubscriptionReconciliationTask()
 
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
@@ -166,6 +167,9 @@ func main() {
 
 	// Codex subscription model governance task
 	controller.StartCodexModelGovernanceTask()
+
+	// Invite reward v2: unlock settled subscription-invite rewards (master only)
+	model.StartInviteSubscriptionRewardUnlocker()
 
 	if common.IsMasterNode && constant.UpdateTask {
 		gopool.Go(func() {

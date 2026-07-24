@@ -64,9 +64,11 @@ import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedOpsReportIndexRouteImport } from './routes/_authenticated/ops-report/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
+import { Route as AuthenticatedModelHealthIndexRouteImport } from './routes/_authenticated/model-health/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedInviteIndexRouteImport } from './routes/_authenticated/invite/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
+import { Route as AuthenticatedComputeIndexRouteImport } from './routes/_authenticated/compute/index'
 import { Route as AuthenticatedCodexModelGovernanceIndexRouteImport } from './routes/_authenticated/codex-model-governance/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedAvailableModelsIndexRouteImport } from './routes/_authenticated/available-models/index'
@@ -92,6 +94,7 @@ import { Route as AuthenticatedSystemSettingsModelsIndexRouteImport } from './ro
 import { Route as AuthenticatedSystemSettingsContentIndexRouteImport } from './routes/_authenticated/system-settings/content/index'
 import { Route as AuthenticatedSystemSettingsBillingIndexRouteImport } from './routes/_authenticated/system-settings/billing/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
+import { Route as AuthenticatedComputeNodesIndexRouteImport } from './routes/_authenticated/compute/nodes/index'
 import { Route as LocalePricingModelIdIndexRouteImport } from './routes/$locale/pricing/$modelId/index'
 import { Route as AuthenticatedSystemSettingsSiteSectionRouteImport } from './routes/_authenticated/system-settings/site/$section'
 import { Route as AuthenticatedSystemSettingsSecuritySectionRouteImport } from './routes/_authenticated/system-settings/security/$section'
@@ -386,6 +389,12 @@ const AuthenticatedModelsIndexRoute =
     path: '/models/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedModelHealthIndexRoute =
+  AuthenticatedModelHealthIndexRouteImport.update({
+    id: '/model-health/',
+    path: '/model-health/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
   id: '/keys/',
   path: '/keys/',
@@ -401,6 +410,12 @@ const AuthenticatedDashboardIndexRoute =
   AuthenticatedDashboardIndexRouteImport.update({
     id: '/dashboard/',
     path: '/dashboard/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedComputeIndexRoute =
+  AuthenticatedComputeIndexRouteImport.update({
+    id: '/compute/',
+    path: '/compute/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedCodexModelGovernanceIndexRoute =
@@ -542,6 +557,12 @@ const AuthenticatedSystemSettingsAuthIndexRoute =
     path: '/auth/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
   } as any)
+const AuthenticatedComputeNodesIndexRoute =
+  AuthenticatedComputeNodesIndexRouteImport.update({
+    id: '/compute/nodes/',
+    path: '/compute/nodes/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const LocalePricingModelIdIndexRoute =
   LocalePricingModelIdIndexRouteImport.update({
     id: '/$locale/pricing/$modelId/',
@@ -656,9 +677,11 @@ export interface FileRoutesByFullPath {
   '/available-models/': typeof AuthenticatedAvailableModelsIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/compute/': typeof AuthenticatedComputeIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/invite/': typeof AuthenticatedInviteIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
+  '/model-health/': typeof AuthenticatedModelHealthIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/ops-report/': typeof AuthenticatedOpsReportIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -680,6 +703,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId/': typeof LocalePricingModelIdIndexRoute
+  '/compute/nodes/': typeof AuthenticatedComputeNodesIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -747,9 +771,11 @@ export interface FileRoutesByTo {
   '/available-models': typeof AuthenticatedAvailableModelsIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/compute': typeof AuthenticatedComputeIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/invite': typeof AuthenticatedInviteIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
+  '/model-health': typeof AuthenticatedModelHealthIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/ops-report': typeof AuthenticatedOpsReportIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
@@ -771,6 +797,7 @@ export interface FileRoutesByTo {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId': typeof LocalePricingModelIdIndexRoute
+  '/compute/nodes': typeof AuthenticatedComputeNodesIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -842,9 +869,11 @@ export interface FileRoutesById {
   '/_authenticated/available-models/': typeof AuthenticatedAvailableModelsIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
+  '/_authenticated/compute/': typeof AuthenticatedComputeIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/invite/': typeof AuthenticatedInviteIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
+  '/_authenticated/model-health/': typeof AuthenticatedModelHealthIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/ops-report/': typeof AuthenticatedOpsReportIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -866,6 +895,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/_authenticated/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId/': typeof LocalePricingModelIdIndexRoute
+  '/_authenticated/compute/nodes/': typeof AuthenticatedComputeNodesIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/_authenticated/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/_authenticated/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -936,9 +966,11 @@ export interface FileRouteTypes {
     | '/available-models/'
     | '/channels/'
     | '/codex-model-governance/'
+    | '/compute/'
     | '/dashboard/'
     | '/invite/'
     | '/keys/'
+    | '/model-health/'
     | '/models/'
     | '/ops-report/'
     | '/playground/'
@@ -960,6 +992,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/$locale/pricing/$modelId/'
+    | '/compute/nodes/'
     | '/system-settings/auth/'
     | '/system-settings/billing/'
     | '/system-settings/content/'
@@ -1027,9 +1060,11 @@ export interface FileRouteTypes {
     | '/available-models'
     | '/channels'
     | '/codex-model-governance'
+    | '/compute'
     | '/dashboard'
     | '/invite'
     | '/keys'
+    | '/model-health'
     | '/models'
     | '/ops-report'
     | '/playground'
@@ -1051,6 +1086,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/$locale/pricing/$modelId'
+    | '/compute/nodes'
     | '/system-settings/auth'
     | '/system-settings/billing'
     | '/system-settings/content'
@@ -1121,9 +1157,11 @@ export interface FileRouteTypes {
     | '/_authenticated/available-models/'
     | '/_authenticated/channels/'
     | '/_authenticated/codex-model-governance/'
+    | '/_authenticated/compute/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/invite/'
     | '/_authenticated/keys/'
+    | '/_authenticated/model-health/'
     | '/_authenticated/models/'
     | '/_authenticated/ops-report/'
     | '/_authenticated/playground/'
@@ -1145,6 +1183,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/security/$section'
     | '/_authenticated/system-settings/site/$section'
     | '/$locale/pricing/$modelId/'
+    | '/_authenticated/compute/nodes/'
     | '/_authenticated/system-settings/auth/'
     | '/_authenticated/system-settings/billing/'
     | '/_authenticated/system-settings/content/'
@@ -1588,6 +1627,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedModelsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/model-health/': {
+      id: '/_authenticated/model-health/'
+      path: '/model-health'
+      fullPath: '/model-health/'
+      preLoaderRoute: typeof AuthenticatedModelHealthIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/keys/': {
       id: '/_authenticated/keys/'
       path: '/keys'
@@ -1607,6 +1653,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard/'
       preLoaderRoute: typeof AuthenticatedDashboardIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/compute/': {
+      id: '/_authenticated/compute/'
+      path: '/compute'
+      fullPath: '/compute/'
+      preLoaderRoute: typeof AuthenticatedComputeIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/codex-model-governance/': {
@@ -1784,6 +1837,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSystemSettingsAuthIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
     }
+    '/_authenticated/compute/nodes/': {
+      id: '/_authenticated/compute/nodes/'
+      path: '/compute/nodes'
+      fullPath: '/compute/nodes/'
+      preLoaderRoute: typeof AuthenticatedComputeNodesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/$locale/pricing/$modelId/': {
       id: '/$locale/pricing/$modelId/'
       path: '/$locale/pricing/$modelId'
@@ -1947,9 +2007,11 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAvailableModelsIndexRoute: typeof AuthenticatedAvailableModelsIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedCodexModelGovernanceIndexRoute: typeof AuthenticatedCodexModelGovernanceIndexRoute
+  AuthenticatedComputeIndexRoute: typeof AuthenticatedComputeIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedInviteIndexRoute: typeof AuthenticatedInviteIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
+  AuthenticatedModelHealthIndexRoute: typeof AuthenticatedModelHealthIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedOpsReportIndexRoute: typeof AuthenticatedOpsReportIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
@@ -1960,6 +2022,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
+  AuthenticatedComputeNodesIndexRoute: typeof AuthenticatedComputeNodesIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -1977,9 +2040,11 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedCodexModelGovernanceIndexRoute:
     AuthenticatedCodexModelGovernanceIndexRoute,
+  AuthenticatedComputeIndexRoute: AuthenticatedComputeIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedInviteIndexRoute: AuthenticatedInviteIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
+  AuthenticatedModelHealthIndexRoute: AuthenticatedModelHealthIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedOpsReportIndexRoute: AuthenticatedOpsReportIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
@@ -1991,6 +2056,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
+  AuthenticatedComputeNodesIndexRoute: AuthenticatedComputeNodesIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

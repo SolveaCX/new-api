@@ -60,6 +60,7 @@ export function ReferralLinkCard({
               <CopyButton
                 value={affiliateLink}
                 variant='outline'
+                size='default'
                 tooltip={t('Copy referral link')}
                 aria-label={t('Copy referral link')}
               >

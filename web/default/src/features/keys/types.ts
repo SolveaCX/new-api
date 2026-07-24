@@ -87,6 +87,7 @@ export interface GetApiKeysResponse {
 export interface SearchApiKeysParams {
   keyword?: string
   token?: string
+  status?: number
   p?: number
   size?: number
 }
