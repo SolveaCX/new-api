@@ -2616,7 +2616,7 @@
     "Mint a fresh pair below — or pick an existing one further down. Click Save when ready.": "Mint a fresh pair below — or pick an existing one further down. Click Save when ready.",
     "Minute": "Minute",
     "minutes": "minutes",
-    "Missing code": "Missing code",
+    "Missing code": "Falta el código",
     "Missing Models": "Missing Models",
     "Missing user data from Passkey login response": "Missing user data from Passkey login response",
     "Mistral": "Mistral",
@@ -6124,6 +6124,21 @@
     "The multiplier cannot exceed 100%": "El multiplicador no puede superar el 100 %",
     "Enter a non-zero USD amount with up to 6 decimal places": "Introduce un importe en USD distinto de cero con hasta 6 decimales",
     "Report data is incomplete": "Los datos del informe están incompletos",
-    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "Días de informe incompletos (ausentes, en curso o fallidos): {{count}}. Último día completado: {{date}}. Los días completados con uso cero se siguen publicando con valor cero."
+    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "Días de informe incompletos (ausentes, en curso o fallidos): {{count}}. Último día completado: {{date}}. Los días completados con uso cero se siguen publicando con valor cero.",
+    "Flatkey CLI wants to connect": "Flatkey CLI quiere conectarse",
+    "Approve terminal login": "Aprobar inicio de sesión en terminal",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Esto creará o reutilizará una clave API de Flatkey para este dispositivo. Las futuras solicitudes del CLI consumirán créditos de esta cuenta.",
+    "Signed in as": "Sesión iniciada como",
+    "Request code": "Código de solicitud",
+    "Client": "Cliente",
+    "Loading authorization request": "Cargando solicitud de autorización",
+    "Missing authorization code.": "Falta el código de autorización.",
+    "Authorization request not found or expired.": "La solicitud de autorización no existe o ha caducado.",
+    "Approved. You can return to the terminal.": "Aprobado. Puedes volver al terminal.",
+    "Denied. You can close this page.": "Denegado. Puedes cerrar esta página.",
+    "Expired. Restart login from the terminal.": "Caducado. Reinicia el inicio de sesión desde el terminal.",
+    "Deny": "Denegar",
+    "CLI authorization approved": "Autorización del CLI aprobada",
+    "CLI authorization denied": "Autorización del CLI denegada"
   }
 }

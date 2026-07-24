@@ -6124,6 +6124,21 @@
     "The multiplier cannot exceed 100%": "倍率不能超过 100%",
     "Enter a non-zero USD amount with up to 6 decimal places": "请输入非零美元金额，最多保留 6 位小数",
     "Report data is incomplete": "报表数据不完整",
-    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "不完整的报表日期（缺失、运行中或失败）：{{count}}。最近完成日期：{{date}}。已完成日期即使用量为零，也会按零值发布。"
+    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "不完整的报表日期（缺失、运行中或失败）：{{count}}。最近完成日期：{{date}}。已完成日期即使用量为零，也会按零值发布。",
+    "Flatkey CLI wants to connect": "Flatkey CLI 请求连接",
+    "Approve terminal login": "批准终端登录",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "这会为此设备创建或复用一个 Flatkey API key。之后 CLI 请求将消耗此账号的额度。",
+    "Signed in as": "当前登录账号",
+    "Request code": "请求代码",
+    "Client": "客户端",
+    "Loading authorization request": "正在加载授权请求",
+    "Missing authorization code.": "缺少授权代码。",
+    "Authorization request not found or expired.": "授权请求不存在或已过期。",
+    "Approved. You can return to the terminal.": "已批准。你可以回到终端。",
+    "Denied. You can close this page.": "已拒绝。你可以关闭此页面。",
+    "Expired. Restart login from the terminal.": "已过期。请在终端重新登录。",
+    "Deny": "拒绝",
+    "CLI authorization approved": "CLI 授权已批准",
+    "CLI authorization denied": "CLI 授权已拒绝"
   }
 }

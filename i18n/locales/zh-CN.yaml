@@ -50,6 +50,18 @@ token.exhausted: "该令牌额度不足"
 token.status_unavailable: "该令牌状态不可用"
 token.db_error: "无效的令牌，数据库查询出错，请联系管理员"
 token.batch_group_cache_sync_pending: "令牌分组已更新，但缓存同步尚未完成，请使用相同请求重试。"
+token.client_ip_invalid: "无法解析客户端 IP 地址"
+token.ip_not_allowed: "此令牌不允许您的 IP 访问"
+token.group_no_permission: "无权访问分组 {{.Group}}"
+token.group_deprecated: "分组 {{.Group}} 已废弃"
+
+# CLI device authorization messages
+cli.device_id_missing: "缺少设备 ID"
+cli.device_metadata_too_long: "CLI 设备信息过长"
+cli.device_code_invalid: "无效的设备代码"
+cli.authorization_code_missing: "缺少授权代码"
+cli.authorization_not_found: "未找到授权请求"
+cli.authorization_token_create_failed: "创建 CLI 令牌失败"
 
 # Redemption messages
 redemption.name_length: "兑换码名称长度必须在1-20之间"

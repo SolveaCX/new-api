@@ -57,6 +57,20 @@ const (
 	MsgTokenStatusUnavailable    = "token.status_unavailable"
 	MsgTokenDbError              = "token.db_error"
 	MsgTokenBatchCachePending    = "token.batch_group_cache_sync_pending"
+	MsgTokenClientIPInvalid      = "token.client_ip_invalid"
+	MsgTokenIPNotAllowed         = "token.ip_not_allowed"
+	MsgTokenGroupNoPermission    = "token.group_no_permission"
+	MsgTokenGroupDeprecated      = "token.group_deprecated"
+)
+
+// CLI device authorization messages
+const (
+	MsgCliDeviceIdMissing              = "cli.device_id_missing"
+	MsgCliDeviceMetadataTooLong        = "cli.device_metadata_too_long"
+	MsgCliDeviceCodeInvalid            = "cli.device_code_invalid"
+	MsgCliAuthorizationCodeMissing     = "cli.authorization_code_missing"
+	MsgCliAuthorizationNotFound        = "cli.authorization_not_found"
+	MsgCliAuthorizationTokenCreateFail = "cli.authorization_token_create_failed"
 )
 
 // Redemption related messages

@@ -6124,6 +6124,21 @@
     "The multiplier cannot exceed 100%": "O multiplicador não pode exceder 100%",
     "Enter a non-zero USD amount with up to 6 decimal places": "Insira um valor em USD diferente de zero com até 6 casas decimais",
     "Report data is incomplete": "Os dados do relatório estão incompletos",
-    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "Dias de relatório incompletos (ausentes, em execução ou com falha): {{count}}. Último dia concluído: {{date}}. Os dias concluídos com uso zero continuam publicados com valor zero."
+    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "Dias de relatório incompletos (ausentes, em execução ou com falha): {{count}}. Último dia concluído: {{date}}. Os dias concluídos com uso zero continuam publicados com valor zero.",
+    "Flatkey CLI wants to connect": "O Flatkey CLI quer se conectar",
+    "Approve terminal login": "Aprovar login pelo terminal",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Isso criará ou reutilizará uma chave de API Flatkey para este dispositivo. Futuras solicitações do CLI gastarão créditos desta conta.",
+    "Signed in as": "Conectado como",
+    "Request code": "Código da solicitação",
+    "Client": "Cliente",
+    "Loading authorization request": "Carregando solicitação de autorização",
+    "Missing authorization code.": "Código de autorização ausente.",
+    "Authorization request not found or expired.": "Solicitação de autorização não encontrada ou expirada.",
+    "Approved. You can return to the terminal.": "Aprovado. Você pode voltar ao terminal.",
+    "Denied. You can close this page.": "Negado. Você pode fechar esta página.",
+    "Expired. Restart login from the terminal.": "Expirado. Reinicie o login pelo terminal.",
+    "Deny": "Negar",
+    "CLI authorization approved": "Autorização do CLI aprovada",
+    "CLI authorization denied": "Autorização do CLI negada"
   }
 }

@@ -2616,7 +2616,7 @@
     "Mint a fresh pair below — or pick an existing one further down. Click Save when ready.": "下で新しいペアを作成するか、さらに下で既存のものを選択してください。準備ができたら保存をクリックします。",
     "Minute": "分",
     "minutes": "分",
-    "Missing code": "コードが不足しています",
+    "Missing code": "コードがありません",
     "Missing Models": "不足しているモデル",
     "Missing user data from Passkey login response": "パスキーログイン応答からユーザーデータが欠落しています",
     "Mistral": "Mistral",
@@ -6124,6 +6124,21 @@
     "The multiplier cannot exceed 100%": "倍率は 100% を超えることはできません",
     "Enter a non-zero USD amount with up to 6 decimal places": "0 以外の米ドル金額を小数点以下 6 桁以内で入力してください",
     "Report data is incomplete": "レポートデータが不完全です",
-    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "不完全なレポート日（欠落、実行中、失敗）：{{count}}。直近の完了日：{{date}}。完了日の使用量がゼロの場合は、ゼロ値として公開されます。"
+    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "不完全なレポート日（欠落、実行中、失敗）：{{count}}。直近の完了日：{{date}}。完了日の使用量がゼロの場合は、ゼロ値として公開されます。",
+    "Flatkey CLI wants to connect": "Flatkey CLI が接続を要求しています",
+    "Approve terminal login": "ターミナルログインを承認",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "このデバイス用の Flatkey API キーを作成または再利用します。今後の CLI リクエストはこのアカウントのクレジットを消費します。",
+    "Signed in as": "ログイン中のアカウント",
+    "Request code": "リクエストコード",
+    "Client": "クライアント",
+    "Loading authorization request": "認可リクエストを読み込み中",
+    "Missing authorization code.": "認可コードがありません。",
+    "Authorization request not found or expired.": "認可リクエストが見つからないか期限切れです。",
+    "Approved. You can return to the terminal.": "承認しました。ターミナルに戻れます。",
+    "Denied. You can close this page.": "拒否しました。このページを閉じられます。",
+    "Expired. Restart login from the terminal.": "期限切れです。ターミナルからログインをやり直してください。",
+    "Deny": "拒否",
+    "CLI authorization approved": "CLI 認可を承認しました",
+    "CLI authorization denied": "CLI 認可を拒否しました"
   }
 }

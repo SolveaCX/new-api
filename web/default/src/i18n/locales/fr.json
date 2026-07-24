@@ -6124,6 +6124,21 @@
     "The multiplier cannot exceed 100%": "Le multiplicateur ne peut pas dépasser 100 %",
     "Enter a non-zero USD amount with up to 6 decimal places": "Saisissez un montant en USD non nul avec au maximum 6 décimales",
     "Report data is incomplete": "Les données du rapport sont incomplètes",
-    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "Jours de rapport incomplets (manquants, en cours ou en échec) : {{count}}. Dernier jour terminé : {{date}}. Les jours terminés sans utilisation restent publiés avec une valeur nulle."
+    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "Jours de rapport incomplets (manquants, en cours ou en échec) : {{count}}. Dernier jour terminé : {{date}}. Les jours terminés sans utilisation restent publiés avec une valeur nulle.",
+    "Flatkey CLI wants to connect": "Flatkey CLI souhaite se connecter",
+    "Approve terminal login": "Approuver la connexion du terminal",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Cela créera ou réutilisera une clé API Flatkey pour cet appareil. Les futures requêtes CLI utiliseront les crédits de ce compte.",
+    "Signed in as": "Connecté en tant que",
+    "Request code": "Code de demande",
+    "Client": "Client",
+    "Loading authorization request": "Chargement de la demande d’autorisation",
+    "Missing authorization code.": "Code d’autorisation manquant.",
+    "Authorization request not found or expired.": "Demande d’autorisation introuvable ou expirée.",
+    "Approved. You can return to the terminal.": "Approuvé. Vous pouvez retourner au terminal.",
+    "Denied. You can close this page.": "Refusé. Vous pouvez fermer cette page.",
+    "Expired. Restart login from the terminal.": "Expiré. Relancez la connexion depuis le terminal.",
+    "Deny": "Refuser",
+    "CLI authorization approved": "Autorisation CLI approuvée",
+    "CLI authorization denied": "Autorisation CLI refusée"
   }
 }

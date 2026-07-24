@@ -60,6 +60,14 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/registration/email-verification/status", middleware.RegistrationEmailVerificationStatusRateLimit(), anonymousRequestBodyLimit, controller.GetRegistrationEmailVerificationStatus)
 		apiRouter.GET("/reset_password", middleware.CriticalRateLimit(), middleware.TurnstileCheck(), controller.SendPasswordResetEmail)
 		apiRouter.POST("/user/reset", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ResetPassword)
+		cliAuthRoute := apiRouter.Group("/cli/device_authorizations")
+		{
+			cliAuthRoute.POST("", middleware.CliDeviceAuthorizationCreateRateLimit(), anonymousRequestBodyLimit, controller.CreateCliDeviceAuthorization)
+			cliAuthRoute.POST("/token", middleware.CliDeviceAuthorizationPollRateLimit(), anonymousRequestBodyLimit, controller.PollCliDeviceAuthorization)
+			cliAuthRoute.GET("/:user_code", middleware.UserAuth(), controller.GetCliDeviceAuthorization)
+			cliAuthRoute.POST("/:user_code/approve", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.ApproveCliDeviceAuthorization)
+			cliAuthRoute.POST("/:user_code/deny", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.DenyCliDeviceAuthorization)
+		}
 		// OAuth routes - specific routes must come before :provider wildcard
 		apiRouter.GET("/oauth/state", middleware.CriticalRateLimit(), controller.GenerateOAuthCode)
 		apiRouter.POST("/oauth/email/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.EmailBind)

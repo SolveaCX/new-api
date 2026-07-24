@@ -6124,6 +6124,21 @@
     "The multiplier cannot exceed 100%": "Hệ số không được vượt quá 100%",
     "Enter a non-zero USD amount with up to 6 decimal places": "Nhập số tiền USD khác 0 với tối đa 6 chữ số thập phân",
     "Report data is incomplete": "Dữ liệu báo cáo chưa đầy đủ",
-    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "Số ngày báo cáo chưa đầy đủ (bị thiếu, đang chạy hoặc thất bại): {{count}}. Ngày hoàn tất gần nhất: {{date}}. Những ngày đã hoàn tất nhưng không có mức sử dụng vẫn được công bố với giá trị bằng 0."
+    "Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.": "Số ngày báo cáo chưa đầy đủ (bị thiếu, đang chạy hoặc thất bại): {{count}}. Ngày hoàn tất gần nhất: {{date}}. Những ngày đã hoàn tất nhưng không có mức sử dụng vẫn được công bố với giá trị bằng 0.",
+    "Flatkey CLI wants to connect": "Flatkey CLI muốn kết nối",
+    "Approve terminal login": "Phê duyệt đăng nhập từ terminal",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Thao tác này sẽ tạo hoặc dùng lại API key Flatkey cho thiết bị này. Các yêu cầu CLI sau đó sẽ sử dụng tín dụng từ tài khoản này.",
+    "Signed in as": "Đang đăng nhập bằng",
+    "Request code": "Mã yêu cầu",
+    "Client": "Ứng dụng",
+    "Loading authorization request": "Đang tải yêu cầu ủy quyền",
+    "Missing authorization code.": "Thiếu mã ủy quyền.",
+    "Authorization request not found or expired.": "Không tìm thấy yêu cầu ủy quyền hoặc yêu cầu đã hết hạn.",
+    "Approved. You can return to the terminal.": "Đã phê duyệt. Bạn có thể quay lại terminal.",
+    "Denied. You can close this page.": "Đã từ chối. Bạn có thể đóng trang này.",
+    "Expired. Restart login from the terminal.": "Đã hết hạn. Hãy đăng nhập lại từ terminal.",
+    "Deny": "Từ chối",
+    "CLI authorization approved": "Đã phê duyệt ủy quyền CLI",
+    "CLI authorization denied": "Đã từ chối ủy quyền CLI"
   }
 }
