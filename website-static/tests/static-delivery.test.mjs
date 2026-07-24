@@ -9,20 +9,35 @@ function read(relativePath) {
 
 test("Nginx proxies the public status response with bounded browser caching", () => {
   const nginx = read("../nginx.conf");
+  const location = nginx.match(/location = \/api\/status\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
 
-  assert.match(nginx, /location = \/api\/status\s*\{/);
+  assert.ok(location);
   assert.match(
-    nginx,
+    location,
     /proxy_pass \$\{APP_CONSOLE_ORIGIN\}\/api\/status;/,
   );
-  assert.match(nginx, /proxy_set_header Cookie "";/);
-  assert.match(nginx, /proxy_set_header Authorization "";/);
+  assert.match(location, /proxy_set_header Cookie "";/);
+  assert.match(location, /proxy_set_header Authorization "";/);
 
   const timeoutNames = [
-    ...nginx.matchAll(/proxy_(connect|read|send)_timeout 3s;/g),
+    ...location.matchAll(/proxy_(connect|read|send)_timeout 3s;/g),
   ].map((match) => match[1]);
   assert.deepEqual(timeoutNames.sort(), ["connect", "read", "send"]);
-  assert.match(nginx, /Cache-Control "public, max-age=60" always;/);
+  assert.match(location, /Cache-Control "public, max-age=60" always;/);
+});
+
+test("Nginx bridges sanitized v2 pricing anonymously without transforming it", () => {
+  const nginx = read("../nginx.conf");
+  const location = nginx.match(/location = \/api\/website\/pricing\/v2\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
+
+  assert.match(location, /proxy_pass \$\{APP_CONSOLE_ORIGIN\}\/api\/website\/pricing\/v2;/);
+  assert.match(location, /proxy_set_header Cookie "";/);
+  assert.match(location, /proxy_set_header Authorization "";/);
+  for (const timeout of ["connect", "read", "send"]) {
+    assert.match(location, new RegExp(`proxy_${timeout}_timeout 3s;`));
+  }
+  assert.doesNotMatch(location, /proxy_hide_header|sub_filter|add_header Cache-Control|proxy_cache/);
+  assert.doesNotMatch(location, /proxy_pass [^;]*\?/);
 });
 
 test("static HTML receives one shared configuration script and keeps local docs fallback visible", () => {
