@@ -17,7 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import { buildBatchGroupPayload } from './lib/api-key-batch-group'
+import {
+  buildBatchEditApiKeysPayload,
+  type BatchEditApiKeysPayload,
+} from './lib/api-key-batch-group'
 import type {
   ApiKey,
   ApiResponse,
@@ -99,13 +102,15 @@ export async function batchDeleteApiKeys(
   return res.data
 }
 
-export async function batchUpdateApiKeyGroup(
-  ids: number[],
-  group: string
+export async function batchEditApiKeys(
+  payload: BatchEditApiKeysPayload
 ): Promise<ApiResponse<number>> {
   const res = await api.put(
-    '/api/token/batch/group',
-    buildBatchGroupPayload(ids, group)
+    '/api/token/batch',
+    buildBatchEditApiKeysPayload(payload.ids, {
+      group: payload.group,
+      remain_quota: payload.remain_quota,
+    })
   )
   return res.data
 }

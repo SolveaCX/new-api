@@ -27,12 +27,19 @@ import zh from '@/i18n/locales/zh.json'
 import { describe, expect, test } from 'bun:test'
 
 const EDIT_API_KEY = 'Edit API key'
-const BATCH_GROUP_KEYS = [
-  'Choose a group for the selected API keys.',
-  'Failed to update selected API key groups',
-  'Update group',
-  'Update group for {{count}} API key(s)',
-  'Updated the group for {{count}} API key(s)',
+const BATCH_EDIT_KEYS = [
+  'Apply changes',
+  'Available quota ({{currency}})',
+  'Batch edit',
+  'Batch edit {{count}} API key(s)',
+  'Choose at least one field to update for the selected API keys.',
+  'Enter a finite quota greater than or equal to zero.',
+  'Enter a whole-number quota greater than or equal to zero.',
+  'Failed to update selected API keys',
+  'Leave the group unselected to keep it unchanged.',
+  'This quota applies to each selected finite-quota API key. Unlimited-quota API keys remain unchanged.',
+  'Update available quota',
+  'Updated {{count}} API key(s)',
 ] as const
 const API_KEY_STATISTICS = 'API Key Statistics'
 
@@ -92,18 +99,18 @@ describe('API key dialog translations', () => {
     }
   })
 
-  test('provides batch group copy in every supported locale', () => {
+  test('provides batch edit copy in every supported locale', () => {
     for (const translation of Object.values(translations)) {
-      for (const key of BATCH_GROUP_KEYS) {
+      for (const key of BATCH_EDIT_KEYS) {
         expect(translation[key]).toBeTruthy()
       }
     }
   })
 
-  test('does not copy batch group English into translated locales', () => {
+  test('does not copy batch edit English into translated locales', () => {
     for (const [locale, translation] of Object.entries(translations)) {
       if (locale === 'en') continue
-      for (const key of BATCH_GROUP_KEYS) {
+      for (const key of BATCH_EDIT_KEYS) {
         expect(translation[key]).not.toBe(en.translation[key])
       }
     }

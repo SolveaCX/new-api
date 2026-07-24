@@ -3751,6 +3751,97 @@
             "Combination1243": []
           }
         ]
+      },
+      "put": {
+        "summary": "批量编辑令牌",
+        "deprecated": false,
+        "description": "🔐 需要登录（User权限）。仅当 TOKEN_BATCH_GROUP_ENABLED=true 时可用；默认关闭。请求必须包含 1-100 个互不重复的正整数令牌 ID，并至少提供 group 或 remain_quota。group 会应用到全部所选令牌；remain_quota 会分别应用到每个有限额度令牌，无限额度令牌保持不变。所有令牌必须属于当前用户。PLG 用户不能选择分组，服务端会保持其令牌为 plg 分组。",
+        "tags": [
+          "令牌管理"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "anyOf": [
+                  {
+                    "required": [
+                      "group"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "remain_quota"
+                    ]
+                  }
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "group": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "可选的目标分组；服务端会去除首尾空白。PLG 用户不能选择该字段。"
+                  },
+                  "remain_quota": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "可选的每令牌可用额度（内部 quota 单位）。该值分别覆盖每个有限额度令牌；无限额度令牌不参与额度更新。"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "统一响应封装。成功时 data 是已处理的所选令牌数量；功能关闭、参数非法、令牌缺失/越权或缓存同步失败时 success=false 并返回稳定的本地化 message。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
       }
     },
     "/api/token/batch/group": {

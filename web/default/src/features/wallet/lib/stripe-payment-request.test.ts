@@ -136,3 +136,56 @@ describe('usePayment Stripe checkout adapter', () => {
     expect(source).toContain('summary: response.data?.topup_summary ?? null')
   })
 })
+
+describe('resolveStripeCheckoutOpening', () => {
+  test('prefers embedded client secret before hosted URLs', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        client_secret: 'cs_test_1',
+        publishable_key: 'pk_test_1',
+        pay_link: 'https://pay.example.com/hosted',
+      })
+    ).toEqual({
+      kind: 'embedded',
+      clientSecret: 'cs_test_1',
+      publishableKey: 'pk_test_1',
+      fallbackUrl: 'https://pay.example.com/hosted',
+    })
+  })
+
+  test('falls back to checkout_url before hosted_invoice_url', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        checkout_url: 'https://checkout.example.com/session',
+        hosted_invoice_url: 'https://invoice.example.com/invoice',
+      })
+    ).toEqual({
+      kind: 'hosted',
+      url: 'https://checkout.example.com/session',
+    })
+  })
+
+  test('falls back to hosted_invoice_url when checkout_url is missing', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        hosted_invoice_url: 'https://invoice.example.com/invoice',
+      })
+    ).toEqual({
+      kind: 'hosted',
+      url: 'https://invoice.example.com/invoice',
+    })
+  })
+})
+
+describe('usePayment Stripe checkout adapter', () => {
+  test('keeps top-up response handling as a thin adapter preserving summary data', () => {
+    const source = readFileSync(
+      new URL('../hooks/use-payment.ts', import.meta.url),
+      'utf8'
+    )
+
+    expect(source).toContain('const openStripeCheckoutResponse = useCallback')
+    expect(source).toContain('openStripeCheckout(response.data, {')
+    expect(source).toContain('summary: response.data?.topup_summary ?? null')
+  })
+})

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useMemo, useState } from 'react'
 import { type Table } from '@tanstack/react-table'
-import { FolderEditIcon } from '@hugeicons/core-free-icons'
+import { Edit02Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Copy, Trash2, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -34,11 +34,12 @@ import {
 } from '@/components/ui/tooltip'
 import { DataTableBulkActions as BulkActionsToolbar } from '@/components/data-table'
 import {
-  canBatchUpdateApiKeyGroup,
+  canBatchEditApiKeyGroup,
   getBatchGroupOptions,
+  isBatchEditApiKeysAvailable,
 } from '../lib/api-key-batch-group'
 import { type ApiKey } from '../types'
-import { ApiKeysBatchGroupDialog } from './api-keys-batch-group-dialog'
+import { ApiKeysBatchEditDialog } from './api-keys-batch-group-dialog'
 import { ApiKeysMultiDeleteDialog } from './api-keys-multi-delete-dialog'
 import { useApiKeys } from './api-keys-provider'
 
@@ -54,17 +55,19 @@ export function DataTableBulkActions<TData>({
   const canUseGroups = useCanUseGroups()
   const { status } = useStatus()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [showBatchGroupDialog, setShowBatchGroupDialog] = useState(false)
+  const [showBatchEditDialog, setShowBatchEditDialog] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
   const selectedRows = table.getFilteredSelectedRowModel().rows
   const groupOptions = useMemo(
     () => getBatchGroupOptions(modelAccessQuery.data),
     [modelAccessQuery.data]
   )
-  const showGroupAction = canBatchUpdateApiKeyGroup(
-    status?.token_batch_group_enabled === true,
+  const canEditGroup = canBatchEditApiKeyGroup(
     canUseGroups,
     modelAccessQuery.data
+  )
+  const showBatchEditAction = isBatchEditApiKeysAvailable(
+    status?.token_batch_group_enabled === true
   )
 
   const handleBatchCopy = useCallback(async () => {
@@ -126,7 +129,7 @@ export function DataTableBulkActions<TData>({
           </TooltipContent>
         </Tooltip>
 
-        {showGroupAction && (
+        {showBatchEditAction && (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -134,19 +137,19 @@ export function DataTableBulkActions<TData>({
                   variant='outline'
                   size='icon'
                   className='size-8'
-                  onClick={() => setShowBatchGroupDialog(true)}
-                  aria-label={t('Update group')}
+                  onClick={() => setShowBatchEditDialog(true)}
+                  aria-label={t('Batch edit')}
                 />
               }
             >
               <HugeiconsIcon
-                icon={FolderEditIcon}
+                icon={Edit02Icon}
                 data-icon='inline-start'
                 aria-hidden='true'
               />
             </TooltipTrigger>
             <TooltipContent>
-              <p>{t('Update group')}</p>
+              <p>{t('Batch edit')}</p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -172,10 +175,11 @@ export function DataTableBulkActions<TData>({
         </Tooltip>
       </BulkActionsToolbar>
 
-      <ApiKeysBatchGroupDialog
-        open={showBatchGroupDialog}
-        onOpenChange={setShowBatchGroupDialog}
-        options={groupOptions}
+      <ApiKeysBatchEditDialog
+        open={showBatchEditDialog}
+        onOpenChange={setShowBatchEditDialog}
+        canEditGroup={canEditGroup}
+        groupOptions={groupOptions}
         table={table}
       />
 

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -463,23 +464,59 @@ type TokenBatch struct {
 	Ids []int `json:"ids"`
 }
 
-type tokenGroupBatchUpdateRequest struct {
-	Ids   []int  `json:"ids"`
-	Group string `json:"group"`
+type tokenBatchUpdateRequest struct {
+	Ids                       []int           `json:"ids"`
+	Group                     *string         `json:"group"`
+	RemainQuota               *int            `json:"remain_quota"`
+	UnsupportedUnlimitedQuota json.RawMessage `json:"unlimited_quota"`
 }
 
 func UpdateTokenGroupBatch(c *gin.Context) {
+	updateTokenBatch(c, true)
+}
+
+func UpdateTokenBatch(c *gin.Context) {
+	updateTokenBatch(c, false)
+}
+
+func updateTokenBatch(c *gin.Context, groupOnly bool) {
 	if !common.GetEnvOrDefaultBool("TOKEN_BATCH_GROUP_ENABLED", false) {
 		common.ApiErrorI18n(c, i18n.MsgFeatureDisabled)
 		return
 	}
 
-	request := tokenGroupBatchUpdateRequest{}
-	if err := c.ShouldBindJSON(&request); err != nil || len(request.Ids) == 0 || len(request.Ids) > 100 || strings.TrimSpace(request.Group) == "" {
+	request := tokenBatchUpdateRequest{}
+	if err := c.ShouldBindJSON(&request); err != nil || len(request.Ids) == 0 || len(request.Ids) > 100 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	request.Group = strings.TrimSpace(request.Group)
+	if len(request.UnsupportedUnlimitedQuota) != 0 || (request.Group == nil && request.RemainQuota == nil) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if groupOnly && (request.Group == nil || request.RemainQuota != nil) {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if request.Group != nil {
+		trimmedGroup := strings.TrimSpace(*request.Group)
+		if trimmedGroup == "" {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		request.Group = &trimmedGroup
+	}
+	if request.RemainQuota != nil {
+		if *request.RemainQuota < 0 {
+			common.ApiErrorI18n(c, i18n.MsgTokenQuotaNegative)
+			return
+		}
+		maxQuotaValue := int(1000000000 * common.QuotaPerUnit)
+		if *request.RemainQuota > maxQuotaValue {
+			common.ApiErrorI18n(c, i18n.MsgTokenQuotaExceedMax, map[string]any{"Max": maxQuotaValue})
+			return
+		}
+	}
 
 	seen := make(map[int]struct{}, len(request.Ids))
 	for _, id := range request.Ids {
@@ -501,13 +538,19 @@ func UpdateTokenGroupBatch(c *gin.Context) {
 		return
 	}
 	if userGroup == "" || userGroup == plgGroup {
-		request.Group = plgGroup
-	} else if !service.GroupInUserUsableGroups(userGroup, request.Group) {
+		forcedGroup := plgGroup
+		request.Group = &forcedGroup
+	} else if request.Group != nil && !service.GroupInUserUsableGroups(userGroup, *request.Group) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
 
-	count, err := model.BatchUpdateTokenGroup(request.Ids, userId, request.Group)
+	count, err := model.BatchUpdateTokens(model.BatchUpdateTokensParams{
+		Ids:         request.Ids,
+		UserId:      userId,
+		Group:       request.Group,
+		RemainQuota: request.RemainQuota,
+	})
 	if errors.Is(err, model.ErrTokenBatchInvalid) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
