@@ -20,7 +20,6 @@ import { useTranslation, Trans } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { Zap } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
-import { formatQuota } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
 
@@ -45,19 +44,12 @@ export function TopupBonusBanner() {
 
   if (remainQuota >= LOW_BALANCE_QUOTA) return null
 
-  const balanceLabel = formatQuota(remainQuota)
-
   return (
     <div className='flex flex-wrap items-center gap-4 rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-50 to-card p-4 sm:p-5 dark:border-amber-400/25 dark:from-amber-400/[0.06] dark:to-card'>
       <div className='flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300'>
         <Zap className='size-5' />
       </div>
       <div className='min-w-0 flex-1'>
-        <div className='text-[15px] font-bold'>
-          {t('Only {{balance}} left — keep using Claude / GPT?', {
-            balance: balanceLabel,
-          })}
-        </div>
         <div className='text-muted-foreground mt-0.5 text-[13px]'>
           <Trans
             i18nKey='Top up $10 → the <z>full $10 lands, zero fee</z>. On OpenRouter, $10 only loads $9.45.'
