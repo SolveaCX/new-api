@@ -58,7 +58,7 @@ export function ReferralLinkCard({
             />
             {affiliateLink ? (
               <CopyButton
-                value={affiliateLink}
+                value={links.clipboard}
                 variant='outline'
                 size='default'
                 tooltip={t('Copy referral link')}
