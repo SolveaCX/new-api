@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"math"
 	"net/http/httptest"
 	"testing"
@@ -94,6 +95,7 @@ func TestSupplierAccountingLogSnapshotSerializationSizeAndInternalOmissions(t *t
 	require.NotContains(t, string(internalJSON), `"p"`)
 	require.NotContains(t, string(internalJSON), `"sa"`)
 	require.NotContains(t, string(internalJSON), `"gp"`)
+	require.NotContains(t, string(internalJSON), `"pv"`)
 }
 
 func TestSupplierAccountingLogSnapshotFreezesKnownValuesAndSalesMultiplier(t *testing.T) {
@@ -131,6 +133,9 @@ func TestSupplierAccountingLogSnapshotReportsUnavailableMultiplierWithoutFabrica
 func TestSupplierAccountingLogSnapshotSkipsUncommittedAndFreezesExclusion(t *testing.T) {
 	info := supplierAccountingTestRelayInfo()
 	require.Nil(t, BuildSupplierAccountingLogSnapshotV1(info, types.BillingSettlementResult{}, nil, "", "ratio"))
+	require.Nil(t, BuildSupplierAccountingLogSnapshotV1(info, types.BillingSettlementResult{
+		FinanciallyCommitted: true, FinanciallyCommittedAt: 456, Err: errors.New("settlement failed"),
+	}, nil, "", "ratio"))
 
 	info.SupplierStatisticsScopeSnapshot = types.SupplierStatisticsScopeSnapshot{
 		Scope: types.SupplierStatisticsScopeInternal, ExclusionRuleId: 99,

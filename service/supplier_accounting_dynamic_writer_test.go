@@ -25,7 +25,7 @@ func (billing *supplierAccountingDispositionBilling) Settle(int) error { return 
 
 func (billing *supplierAccountingDispositionBilling) SettleWithResult(actualQuota int) types.BillingSettlementResult {
 	result := types.BillingSettlementResult{FinalSalesQuota: actualQuota, Err: billing.err}
-	if billing.committed && billing.err == nil {
+	if billing.committed {
 		result.FinanciallyCommitted = true
 		result.FinanciallyCommittedAt = 1_784_801_200
 	}
@@ -84,6 +84,7 @@ func TestDynamicConsumeWritersPersistOnlyCapturedSupplierSnapshots(t *testing.T)
 		positiveUsage bool
 	}{
 		{name: "not_financially_committed", disposition: types.SupplierAccountingDispositionNotFinanciallyCommitted, fixedPrice: true, binding: "valid", settleErr: errors.New("settlement rejected"), positiveUsage: true},
+		{name: "committed_settlement_error", disposition: types.SupplierAccountingDispositionNotFinanciallyCommitted, fixedPrice: true, binding: "valid", committed: true, settleErr: errors.New("token adjustment failed after funding commit"), positiveUsage: true},
 		{name: "zero_usage", disposition: types.SupplierAccountingDispositionZeroUsage, fixedPrice: true, binding: "valid", committed: true},
 		{name: "unbound", disposition: types.SupplierAccountingDispositionUnbound, fixedPrice: true, binding: "absent", committed: true, positiveUsage: true},
 		{name: "captured", disposition: types.SupplierAccountingDispositionCaptured, fixedPrice: true, binding: "valid", committed: true, positiveUsage: true},

@@ -170,7 +170,7 @@ func BuildSupplierAccountingLogSnapshotV1(
 	officialEvidenceReason string,
 	pricingMode string,
 ) *types.SupplierAccountingLogSnapshotV1 {
-	if relayInfo == nil || !settlement.FinanciallyCommitted || settlement.FinanciallyCommittedAt <= 0 || !relayInfo.SupplierCostSnapshot.IsBound() {
+	if relayInfo == nil || !settlement.FinanciallyCommitted || settlement.Err != nil || settlement.FinanciallyCommittedAt <= 0 || !relayInfo.SupplierCostSnapshot.IsBound() {
 		return nil
 	}
 	cost := relayInfo.SupplierCostSnapshot
@@ -280,7 +280,7 @@ func BuildSupplierAccountingEnvelopeV1(input SupplierAccountingEnvelopeInputV1) 
 
 func buildSupplierAccountingEnvelopeV1(input SupplierAccountingEnvelopeInputV1) (types.SupplierAccountingEnvelopeV1, error) {
 	envelope := newSupplierAccountingDispositionEnvelope(types.SupplierAccountingDispositionNotFinanciallyCommitted)
-	if !input.Settlement.FinanciallyCommitted {
+	if !input.Settlement.FinanciallyCommitted || input.Settlement.Err != nil {
 		return envelope, nil
 	}
 	if !input.HasPositiveFinalUsage {
@@ -299,12 +299,17 @@ func buildSupplierAccountingEnvelopeV1(input SupplierAccountingEnvelopeInputV1) 
 		envelope.Disposition = types.SupplierAccountingDispositionProducerError
 		return envelope, newSupplierAccountingError("supplier_binding", SupplierAccountingReasonUnknown, nil)
 	}
-	pricingMode, err := resolvedSupplierAccountingPricingModeV1(input.RelayInfo, input.Capture.PricingMode)
-	if err != nil {
-		envelope.Disposition = types.SupplierAccountingDispositionProducerError
-		return envelope, err
+	internal := input.RelayInfo.SupplierStatisticsScopeSnapshot.Scope == types.SupplierStatisticsScopeInternal
+	pricingMode := ""
+	if !internal {
+		var err error
+		pricingMode, err = resolvedSupplierAccountingPricingModeV1(input.RelayInfo, input.Capture.PricingMode)
+		if err != nil {
+			envelope.Disposition = types.SupplierAccountingDispositionProducerError
+			return envelope, err
+		}
+		input.Capture.PricingMode = pricingMode
 	}
-	input.Capture.PricingMode = pricingMode
 
 	snapshot := BuildSupplierAccountingLogSnapshotV1(
 		input.RelayInfo,
@@ -323,9 +328,15 @@ func buildSupplierAccountingEnvelopeV1(input SupplierAccountingEnvelopeInputV1) 
 		snapshot.PricingMode = nil
 		snapshot.UnknownOfficialCount = input.Capture.UnknownOfficialAmountCount
 		if buildErr == nil {
-			provenance, err := buildSupplierPricingProvenanceV1(input.RelayInfo, input.Capture)
-			if err == nil {
-				snapshot.PricingProvenance = provenance
+			if !internal {
+				provenance, err := buildSupplierPricingProvenanceV1(input.RelayInfo, input.Capture)
+				if err != nil {
+					buildErr = err
+				} else {
+					snapshot.PricingProvenance = provenance
+				}
+			}
+			if buildErr == nil {
 				envelope.Disposition = types.SupplierAccountingDispositionCaptured
 				envelope.Captured = snapshot
 				if validationErr := ValidateSupplierAccountingEnvelopeV1(envelope); validationErr == nil {
@@ -333,8 +344,6 @@ func buildSupplierAccountingEnvelopeV1(input SupplierAccountingEnvelopeInputV1) 
 				} else {
 					buildErr = validationErr
 				}
-			} else {
-				buildErr = err
 			}
 		}
 	}
@@ -602,16 +611,12 @@ func validateSupplierAccountingCapturedV1(snapshot *types.SupplierAccountingLogS
 	if snapshot.QualityReason != "" || snapshot.UnknownOfficialCount != 0 || snapshot.QuotaPerUnit != nil || snapshot.PricingMode != nil {
 		return newSupplierAccountingError("captured_forbidden_field", SupplierAccountingReasonUnknown, nil)
 	}
-	if snapshot.PricingProvenance == nil {
-		return newSupplierAccountingError("pricing_provenance", SupplierAccountingReasonMissing, nil)
-	}
-	internal := types.SupplierStatisticsScope(snapshot.StatisticsScope) == types.SupplierStatisticsScopeInternal
-	groupMultiplier, err := validateSupplierPricingProvenanceV1(snapshot.PricingProvenance, internal)
-	if err != nil {
-		return err
-	}
 	switch types.SupplierStatisticsScope(snapshot.StatisticsScope) {
 	case types.SupplierStatisticsScopeBusiness:
+		groupMultiplier, err := validateSupplierPricingProvenanceV1(snapshot.PricingProvenance)
+		if err != nil {
+			return err
+		}
 		if snapshot.ExclusionDecision != "included" || snapshot.ExclusionRuleId != nil || snapshot.SalesMultiplierPpm == nil ||
 			snapshot.SalesMicroUsd == nil || snapshot.GrossProfitMicroUsd == nil || *snapshot.SalesMultiplierPpm < 0 || *snapshot.SalesMicroUsd < 0 {
 			return newSupplierAccountingError("business_snapshot", SupplierAccountingReasonMissing, nil)
@@ -621,7 +626,8 @@ func validateSupplierAccountingCapturedV1(snapshot *types.SupplierAccountingLogS
 		}
 	case types.SupplierStatisticsScopeInternal:
 		if snapshot.ExclusionDecision != "excluded" || snapshot.ExclusionRuleId == nil || *snapshot.ExclusionRuleId <= 0 ||
-			snapshot.SalesMultiplierPpm != nil || snapshot.SalesMicroUsd != nil || snapshot.GrossProfitMicroUsd != nil {
+			snapshot.SalesMultiplierPpm != nil || snapshot.SalesMicroUsd != nil || snapshot.GrossProfitMicroUsd != nil ||
+			snapshot.PricingProvenance != nil {
 			return newSupplierAccountingError("internal_snapshot", SupplierAccountingReasonUnknown, nil)
 		}
 	default:
@@ -630,7 +636,7 @@ func validateSupplierAccountingCapturedV1(snapshot *types.SupplierAccountingLogS
 	return nil
 }
 
-func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProvenanceV1, internal bool) (int64, error) {
+func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProvenanceV1) (int64, error) {
 	if provenance == nil {
 		return 0, newSupplierAccountingError("pricing_provenance", SupplierAccountingReasonMissing, nil)
 	}
@@ -652,7 +658,7 @@ func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProven
 	}
 	if ratio := provenance.Ratio; ratio != nil {
 		if ratio.ModelRatioPpm < 0 || ratio.ModelRatioVersion != supplierPricingInputVersionV1 ||
-			!supplierGroupPricingEvidenceValidV1(internal, ratio.GroupRatioPpm, ratio.GroupRatioVersion) {
+			!supplierGroupPricingEvidenceValidV1(ratio.GroupRatioPpm, ratio.GroupRatioVersion) {
 			return 0, newSupplierAccountingError("ratio_provenance", SupplierAccountingReasonUnknown, nil)
 		}
 		return ratio.GroupRatioPpm, nil
@@ -660,7 +666,7 @@ func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProven
 	if fixed := provenance.Fixed; fixed != nil {
 		if fixed.Source != "price_data" || fixed.Key != "model_price" ||
 			fixed.PriceVersion != supplierPricingInputVersionV1 ||
-			!supplierGroupPricingEvidenceValidV1(internal, fixed.GroupMultiplierPpm, fixed.GroupRatioVersion) {
+			!supplierGroupPricingEvidenceValidV1(fixed.GroupMultiplierPpm, fixed.GroupRatioVersion) {
 			return 0, newSupplierAccountingError("fixed_provenance", SupplierAccountingReasonUnknown, nil)
 		}
 		return fixed.GroupMultiplierPpm, nil
@@ -668,17 +674,14 @@ func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProven
 	tiered := provenance.Tiered
 	if (tiered.ExpressionFingerprint == 0 && tiered.ExpressionFingerprintTail == 0) ||
 		tiered.ExpressionFingerprintTail > supplierExpressionFingerprintTailMaxV1 ||
-		tiered.ExpressionVersion != 1 || !supplierGroupPricingEvidenceValidV1(internal, tiered.GroupMultiplierPpm, tiered.GroupRatioVersion) ||
+		tiered.ExpressionVersion != 1 || !supplierGroupPricingEvidenceValidV1(tiered.GroupMultiplierPpm, tiered.GroupRatioVersion) ||
 		!supplierTieredInputsNonNegative(tiered.NormalizedInputs) {
 		return 0, newSupplierAccountingError("tiered_provenance", SupplierAccountingReasonUnknown, nil)
 	}
 	return tiered.GroupMultiplierPpm, nil
 }
 
-func supplierGroupPricingEvidenceValidV1(internal bool, multiplier, version int64) bool {
-	if internal {
-		return multiplier == 0 && version == 0
-	}
+func supplierGroupPricingEvidenceValidV1(multiplier, version int64) bool {
 	return multiplier >= 0 && version == supplierPricingInputVersionV1
 }
 

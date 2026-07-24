@@ -32,13 +32,14 @@ func TestSupplierAccountingEnvelopeGoldenPayloadBudgets(t *testing.T) {
 	require.Equal(t, types.SupplierAccountingDispositionCaptured, internal.Disposition)
 	require.NoError(t, ValidateSupplierAccountingEnvelopeV1(internal))
 	internalJSON := marshalSupplierAccountingContractOuter(t, internal)
-	require.Equal(t, 279, len(internalJSON))
+	require.Equal(t, 154, len(internalJSON))
 	require.LessOrEqual(t, len(internalJSON), 320, string(internalJSON))
 	requireSupplierAccountingContractPayloadHasNoDeploymentIdentity(t, internalJSON)
 	require.NotNil(t, internal.Captured)
 	require.Nil(t, internal.Captured.SalesMultiplierPpm)
 	require.Nil(t, internal.Captured.SalesMicroUsd)
 	require.Nil(t, internal.Captured.GrossProfitMicroUsd)
+	require.Nil(t, internal.Captured.PricingProvenance)
 	require.Empty(t, internal.Captured.QualityReason)
 
 	dispositionInputs := []struct {
@@ -166,10 +167,9 @@ func maximizeSupplierAccountingContractEnvelope(envelope types.SupplierAccountin
 	groupMultiplier := int64(math.MaxInt64)
 	groupRatioVersion := int64(1)
 	if snapshot.StatisticsScope == string(types.SupplierStatisticsScopeInternal) {
-		groupMultiplier = 0
-		groupRatioVersion = 0
 		exclusionRuleID := maxInt
 		snapshot.ExclusionRuleId = &exclusionRuleID
+		return envelope
 	} else {
 		sales := int64(0)
 		grossProfit := -int64(math.MaxInt64)

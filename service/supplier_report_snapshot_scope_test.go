@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -130,4 +131,96 @@ func TestSupplierReportTrendDistinguishesPublishedZeroFromIncompleteDays(t *test
 	require.Zero(t, report.Points[0].Business.RequestCount, "published-zero remains an explicit zero point")
 	require.Equal(t, "2026-07-24", report.Points[1].Date)
 	require.Equal(t, int64(9), report.Points[1].Business.RequestCount)
+}
+
+func TestSupplierReportChannelPageDoesNotAggregateUsageOutsidePage(t *testing.T) {
+	db := newSupplierReportTestDB(t)
+	location, err := time.LoadLocation(SupplierReportTimezone)
+	require.NoError(t, err)
+	dayStart := time.Date(2026, 7, 20, 0, 0, 0, 0, location).Unix()
+
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.UpstreamSupplier{Id: 1, Name: "supplier", Status: model.SupplierStatusActive}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.SupplierContract{Id: 2, SupplierId: 1, Name: "contract", ContractNo: "C-1", Status: model.SupplierContractStatusActive}).Error)
+	contractID := 2
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]model.Channel{
+		{Id: 1, Name: "page-channel", Status: 1, SupplierContractId: &contractID},
+		{Id: 2, Name: "outside-page-channel", Status: 1, SupplierContractId: &contractID},
+	}).Error)
+	seedSupplierReportDay(t, db, "2026-07-20", dayStart, 7)
+	require.NoError(t, db.Create(&[]model.SupplierUsageDailySummary{
+		{BatchDate: "2026-07-20", BatchFenceToken: 7, DimensionKey: "page", BucketStart: dayStart, SupplierId: 1, ContractId: 2, ChannelId: 1, StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 7},
+		{BatchDate: "2026-07-20", BatchFenceToken: 7, DimensionKey: "outside-a", BucketStart: dayStart, SupplierId: 1, ContractId: 2, ChannelId: 2, StatisticsScope: "business", DataQuality: "authoritative", OfficialListMicroUsd: math.MaxInt64},
+		{BatchDate: "2026-07-20", BatchFenceToken: 7, DimensionKey: "outside-b", BucketStart: dayStart, SupplierId: 1, ContractId: 2, ChannelId: 2, StatisticsScope: "business", DataQuality: "estimated", OfficialListMicroUsd: 1},
+	}).Error)
+
+	report, err := NewSupplierReportService(model.NewSupplierReportStore(db)).ListChannels(
+		context.Background(),
+		SupplierReportQuery{StartDate: "2026-07-20", EndDate: "2026-07-20"},
+		model.SupplierReportPage{Limit: 1},
+	)
+	require.NoError(t, err, "usage outside the catalog page must not be accumulated")
+	require.True(t, report.HasMore)
+	require.Len(t, report.Items, 1)
+	require.Equal(t, 1, report.Items[0].ChannelId)
+	require.Equal(t, int64(7), report.Items[0].Business.RequestCount)
+}
+
+func TestSupplierReportContractPageDoesNotAggregateInventoryOutsidePage(t *testing.T) {
+	db := newSupplierReportTestDB(t)
+	location, err := time.LoadLocation(SupplierReportTimezone)
+	require.NoError(t, err)
+	dayStart := time.Date(2026, 7, 20, 0, 0, 0, 0, location).Unix()
+
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.UpstreamSupplier{Id: 1, Name: "supplier", Status: model.SupplierStatusActive}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]model.SupplierContract{
+		{Id: 1, SupplierId: 1, Name: "page-contract", ContractNo: "C-1", Status: model.SupplierContractStatusActive},
+		{Id: 2, SupplierId: 1, Name: "outside-page-contract", ContractNo: "C-2", Status: model.SupplierContractStatusActive},
+	}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]model.SupplierInventoryAdjustment{
+		{ContractId: 1, DeltaMicroUsd: 7, Type: model.SupplierInventoryAdjustmentTypeInitial, IdempotencyKey: "page", CreatedBy: 1, CreatedAt: dayStart},
+		{ContractId: 2, DeltaMicroUsd: math.MaxInt64, Type: model.SupplierInventoryAdjustmentTypeInitial, IdempotencyKey: "outside-a", CreatedBy: 1, CreatedAt: dayStart},
+		{ContractId: 2, DeltaMicroUsd: 1, Type: model.SupplierInventoryAdjustmentTypeReplenishment, IdempotencyKey: "outside-b", CreatedBy: 1, CreatedAt: dayStart},
+	}).Error)
+
+	report, err := NewSupplierReportService(model.NewSupplierReportStore(db)).ListContracts(
+		context.Background(),
+		SupplierReportQuery{StartDate: "2026-07-20", EndDate: "2026-07-20"},
+		model.SupplierReportPage{Limit: 1},
+	)
+	require.NoError(t, err, "inventory outside the contract page must not be summed")
+	require.True(t, report.HasMore)
+	require.Len(t, report.Items, 1)
+	require.Equal(t, 1, report.Items[0].ContractId)
+	require.Equal(t, int64(7), report.Items[0].TotalInventoryMicroUsd)
+}
+
+func TestSupplierReportContractDetailPaginatesHistoriesWithHasMoreSignals(t *testing.T) {
+	db := newSupplierReportTestDB(t)
+	location, err := time.LoadLocation(SupplierReportTimezone)
+	require.NoError(t, err)
+	dayStart := time.Date(2026, 7, 20, 0, 0, 0, 0, location).Unix()
+
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.UpstreamSupplier{Id: 1, Name: "supplier", Status: model.SupplierStatusActive}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.SupplierContract{Id: 2, SupplierId: 1, Name: "contract", ContractNo: "C-1", Status: model.SupplierContractStatusActive}).Error)
+	for id := 1; id <= 3; id++ {
+		require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.SupplierContractRateVersion{Id: id, ContractId: 2, ProcurementMultiplierPpm: int64(id) * 100_000, EffectiveAt: dayStart - int64(4-id), CreatedBy: 1, CreatedAt: dayStart - int64(4-id)}).Error)
+		require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.SupplierInventoryAdjustment{ContractId: 2, DeltaMicroUsd: int64(id), Type: model.SupplierInventoryAdjustmentTypeReplenishment, IdempotencyKey: fmt.Sprintf("adjustment-%d", id), CreatedBy: 1, CreatedAt: dayStart - int64(4-id)}).Error)
+	}
+	seedSupplierReportDay(t, db, "2026-07-20", dayStart, 7)
+
+	reports := NewSupplierReportService(model.NewSupplierReportStore(db))
+	query := SupplierReportQuery{StartDate: "2026-07-20", EndDate: "2026-07-20"}
+	first, err := reports.GetContractDetail(context.Background(), 2, query, model.SupplierReportPage{Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, first.RateVersions, 2)
+	require.True(t, first.RateVersionsHasMore)
+	require.Len(t, first.InventoryAdjustments, 2)
+	require.True(t, first.InventoryAdjustmentsHasMore)
+
+	second, err := reports.GetContractDetail(context.Background(), 2, query, model.SupplierReportPage{Limit: 2, Offset: 2})
+	require.NoError(t, err)
+	require.Len(t, second.RateVersions, 1)
+	require.False(t, second.RateVersionsHasMore)
+	require.Len(t, second.InventoryAdjustments, 1)
+	require.False(t, second.InventoryAdjustmentsHasMore)
 }

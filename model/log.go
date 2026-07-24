@@ -403,6 +403,20 @@ func marshalLogOther(other map[string]interface{}, preserveSupplierEnvelope bool
 	return string(supplierOnlyJSON), err, supplierOnlyErr
 }
 
+func consumeLogDiagnosticParams(params RecordConsumeLogParams) RecordConsumeLogParams {
+	diagnostic := params
+	if params.Other == nil {
+		return diagnostic
+	}
+	diagnostic.Other = make(map[string]interface{}, len(params.Other))
+	for key, value := range params.Other {
+		if key != types.SupplierAccountingEnvelopeKeyV1 {
+			diagnostic.Other[key] = value
+		}
+	}
+	return diagnostic
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	disposition, observeSupplierWrite := supplierAccountingConsumeLogDisposition(params.Other)
 	if !common.LogConsumeEnabled {
@@ -414,7 +428,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if TemporaryChannelSpendHook != nil {
 		TemporaryChannelSpendHook(params.ChannelId, params.ModelName, params.Quota)
 	}
-	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
+	diagnosticParams := consumeLogDiagnosticParams(params)
+	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(diagnosticParams)))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)

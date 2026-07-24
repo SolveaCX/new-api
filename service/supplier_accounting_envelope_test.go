@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"math"
 	"testing"
 
@@ -81,6 +82,14 @@ func TestSupplierAccountingEnvelopeDispositionOrder(t *testing.T) {
 	}
 }
 
+func TestSupplierAccountingEnvelopeDoesNotCaptureFailedCommittedSettlement(t *testing.T) {
+	input := supplierEnvelopeTestInput()
+	input.Settlement.Err = errors.New("settlement failed")
+	envelope := BuildSupplierAccountingEnvelopeV1(input)
+	require.Equal(t, types.SupplierAccountingDispositionNotFinanciallyCommitted, envelope.Disposition)
+	require.Nil(t, envelope.Captured)
+}
+
 func TestSupplierAccountingEnvelopeCacheUnavailableFailsClosedAfterFinancialDispositionChecks(t *testing.T) {
 	unavailable := supplierEnvelopeTestInput()
 	unavailable.RelayInfo.SupplierCostSnapshot = types.SupplierCostSnapshot{CacheUnavailable: true}
@@ -118,8 +127,17 @@ func TestSupplierAccountingEnvelopeCapturedScopeAndFormulaContracts(t *testing.T
 	require.Nil(t, internal.Captured.SalesMultiplierPpm)
 	require.Nil(t, internal.Captured.SalesMicroUsd)
 	require.Nil(t, internal.Captured.GrossProfitMicroUsd)
-	require.Zero(t, internal.Captured.PricingProvenance.Ratio.GroupRatioPpm)
-	require.Zero(t, internal.Captured.PricingProvenance.Ratio.GroupRatioVersion)
+	require.Nil(t, internal.Captured.PricingProvenance)
+
+	internalInput.Capture.PricingMode = "not-a-pricing-mode"
+	internalInput.Capture.AudioPricingApplied = true
+	internalInput.Capture.ToolPricingApplied = true
+	internalInput.Capture.ImagePricingApplied = true
+	internalInput.RelayInfo.SupplierOfficialPricingSnapshot.PriceData.ModelRatio = math.NaN()
+	internalWithoutPricingEvidence := BuildSupplierAccountingEnvelopeV1(internalInput)
+	require.Equal(t, types.SupplierAccountingDispositionCaptured, internalWithoutPricingEvidence.Disposition)
+	require.Nil(t, internalWithoutPricingEvidence.Captured.PricingProvenance)
+	require.NoError(t, ValidateSupplierAccountingEnvelopeV1(internalWithoutPricingEvidence))
 
 	badFormula := *business.Captured
 	wrong := *badFormula.GrossProfitMicroUsd + 1

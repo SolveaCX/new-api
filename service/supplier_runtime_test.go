@@ -95,8 +95,7 @@ func TestRunSupplierDailyBatchNeutralizesInternalCustomerAndRoutingDimensions(t 
 		snapshot.SalesMultiplierPpm = nil
 		snapshot.SalesMicroUsd = nil
 		snapshot.GrossProfitMicroUsd = nil
-		snapshot.PricingProvenance.Ratio.GroupRatioPpm = 0
-		snapshot.PricingProvenance.Ratio.GroupRatioVersion = 0
+		snapshot.PricingProvenance = nil
 		require.NoError(t, logDB.Create(&model.Log{
 			Type: model.LogTypeConsume, CreatedAt: day.Add(time.Duration(index+1) * time.Hour).Unix(),
 			ChannelId: channelID, ModelName: "internal-model-" + strconv.Itoa(index), Other: supplierDailyLogOther(t, snapshot),
@@ -115,8 +114,16 @@ func TestRunSupplierDailyBatchNeutralizesInternalCustomerAndRoutingDimensions(t 
 	require.Empty(t, summary.ModelName)
 	require.Nil(t, summary.SalesMultiplierPpm)
 	require.Empty(t, summary.PricingMode)
+	require.EqualValues(t, 1, summary.SupplierId)
+	require.EqualValues(t, 2, summary.ContractId)
 	require.Equal(t, string(types.SupplierStatisticsScopeInternal), summary.StatisticsScope)
 	require.Equal(t, SupplierDataQualityAuthoritative, summary.DataQuality)
+	require.EqualValues(t, 2, summary.OfficialListKnownCount)
+	require.EqualValues(t, 2_000, summary.OfficialListMicroUsd)
+	require.EqualValues(t, 2, summary.ProcurementCostKnownCount)
+	require.EqualValues(t, 1_400, summary.ProcurementCostMicroUsd)
+	require.Zero(t, summary.SalesKnownCount)
+	require.Zero(t, summary.GrossProfitKnownCount)
 }
 
 func TestCatchUpSupplierDailyBatchesWaitsForCloseGrace(t *testing.T) {

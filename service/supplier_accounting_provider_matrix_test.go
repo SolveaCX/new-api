@@ -99,9 +99,13 @@ func TestSupplierAccountingProviderNamedFieldMatrix(t *testing.T) {
 			require.Equal(t, types.SupplierAccountingDispositionCaptured, envelope.Disposition)
 			require.NoError(t, ValidateSupplierAccountingEnvelopeV1(envelope))
 			require.NotNil(t, envelope.Captured)
-			require.NotNil(t, envelope.Captured.PricingProvenance)
-			requireSupplierAccountingProviderPricingUnion(t, testCase, input, envelope.Captured.PricingProvenance)
-			requireSupplierAccountingProviderDimensions(t, testCase.dimension, envelope.Captured.PricingProvenance.Dimensions)
+			if testCase.scope == types.SupplierStatisticsScopeInternal {
+				require.Nil(t, envelope.Captured.PricingProvenance)
+			} else {
+				require.NotNil(t, envelope.Captured.PricingProvenance)
+				requireSupplierAccountingProviderPricingUnion(t, testCase, input, envelope.Captured.PricingProvenance)
+				requireSupplierAccountingProviderDimensions(t, testCase.dimension, envelope.Captured.PricingProvenance.Dimensions)
+			}
 			expectedOfficialMicroUSD, err := SupplierOfficialUSDToMicro(input.Capture.OfficialListUSD)
 			require.NoError(t, err)
 			require.NotNil(t, expectedOfficialMicroUSD)
@@ -286,6 +290,12 @@ func TestSupplierAccountingProviderMatrixRejectsStaleAuthoritativePricingModeCla
 			input := supplierAccountingProviderMatrixProductionFixture(t, testCase.fixture).input
 			testCase.makeMode(&input.RelayInfo.SupplierOfficialPricingSnapshot)
 			envelope := BuildSupplierAccountingEnvelopeV1(input)
+			if testCase.fixture.scope == types.SupplierStatisticsScopeInternal {
+				require.Equal(t, types.SupplierAccountingDispositionCaptured, envelope.Disposition)
+				require.NotNil(t, envelope.Captured)
+				require.Nil(t, envelope.Captured.PricingProvenance)
+				return
+			}
 			require.Equal(t, types.SupplierAccountingDispositionProducerError, envelope.Disposition)
 			require.Nil(t, envelope.Captured)
 		})

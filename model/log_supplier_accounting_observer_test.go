@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"net/http/httptest"
 	"sync"
 	"sync/atomic"
@@ -114,6 +115,34 @@ func TestRecordConsumeLogSupplierAccountingObserverSuccessAfterCreate(t *testing
 	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
 	require.EqualValues(t, 1, count)
 	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteSuccess}}, *observations)
+}
+
+func TestRecordConsumeLogRedactsSupplierAccountingFromDiagnosticLog(t *testing.T) {
+	db := useSupplierAccountingObserverLogDB(t)
+	originalEnabled := common.LogConsumeEnabled
+	common.LogConsumeEnabled = true
+	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
+
+	var output bytes.Buffer
+	common.LogWriterMu.Lock()
+	originalWriter := gin.DefaultWriter
+	gin.DefaultWriter = &output
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultWriter = originalWriter
+		common.LogWriterMu.Unlock()
+	})
+
+	params := supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope())
+	params.Other["ordinary"] = "visible"
+	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, params)
+
+	require.NotContains(t, output.String(), types.SupplierAccountingEnvelopeKeyV1)
+	require.Contains(t, output.String(), `"ordinary":"visible"`)
+	var persisted Log
+	require.NoError(t, db.First(&persisted).Error)
+	require.Contains(t, persisted.Other, types.SupplierAccountingEnvelopeKeyV1)
 }
 
 func TestRecordConsumeLogSupplierAccountingObserverRunsAfterSuccessfulCreate(t *testing.T) {

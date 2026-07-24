@@ -31,8 +31,9 @@ func TestSupplierAccountingEnvelopeV1CodecRoundTripsEveryScopeAndMode(t *testing
 				require.NoError(t, common.Unmarshal(payload, &decoded))
 				require.Equal(t, envelope, decoded)
 				if internal {
-					require.Equal(t, 16, supplierAccountingCapturedBinarySizeV1(false, mode)-len(decodedBinary), "internal layout must contain only the exclusion rule where business stores sales multiplier, sales, and gross")
-					requireSupplierAccountingInternalGroupEvidenceOmittedV1(t, decoded.Captured.PricingProvenance)
+					require.Len(t, decodedBinary, 1+8*9, "internal layout must contain only identities, procurement amounts, commit time, and exclusion rule")
+					require.Equal(t, supplierAccountingCapturedLayoutVersionV1<<supplierAccountingCapturedLayoutShift|supplierAccountingCapturedInternalFlag, decodedBinary[0])
+					require.Nil(t, decoded.Captured.PricingProvenance)
 				}
 
 				reencoded, err := common.Marshal(decoded)
@@ -40,23 +41,6 @@ func TestSupplierAccountingEnvelopeV1CodecRoundTripsEveryScopeAndMode(t *testing
 				require.Equal(t, payload, reencoded, "the persisted protocol must be byte-canonical")
 			})
 		}
-	}
-}
-
-func requireSupplierAccountingInternalGroupEvidenceOmittedV1(t *testing.T, provenance *SupplierPricingProvenanceV1) {
-	t.Helper()
-	switch {
-	case provenance.Ratio != nil:
-		require.Zero(t, provenance.Ratio.GroupRatioPpm)
-		require.Zero(t, provenance.Ratio.GroupRatioVersion)
-	case provenance.Fixed != nil:
-		require.Zero(t, provenance.Fixed.GroupMultiplierPpm)
-		require.Zero(t, provenance.Fixed.GroupRatioVersion)
-	case provenance.Tiered != nil:
-		require.Zero(t, provenance.Tiered.GroupMultiplierPpm)
-		require.Zero(t, provenance.Tiered.GroupRatioVersion)
-	default:
-		t.Fatal("missing pricing provenance")
 	}
 }
 
@@ -200,17 +184,19 @@ func supplierAccountingCodecEnvelopeV1(internal bool, mode SupplierPricingModeV1
 		OfficialListMicroUsd:     &official,
 		ProcurementCostMicroUsd:  &procurement,
 		FinanciallyCommittedAt:   math.MaxInt64,
-		PricingProvenance:        &SupplierPricingProvenanceV1{},
 	}
 	groupMultiplier := int64(math.MaxInt64)
 	groupRatioVersion := int64(1)
 	if internal {
-		groupMultiplier = 0
-		groupRatioVersion = 0
 		exclusionRuleID := maxInt
 		snapshot.StatisticsScope = string(SupplierStatisticsScopeInternal)
 		snapshot.ExclusionDecision = "excluded"
 		snapshot.ExclusionRuleId = &exclusionRuleID
+		return SupplierAccountingEnvelopeV1{
+			EnvelopeSchemaVersion: SupplierAccountingEnvelopeSchemaVersionV1,
+			Disposition:           SupplierAccountingDispositionCaptured,
+			Captured:              snapshot,
+		}
 	} else {
 		sales := int64(0)
 		grossProfit := -int64(math.MaxInt64)
@@ -220,6 +206,7 @@ func supplierAccountingCodecEnvelopeV1(internal bool, mode SupplierPricingModeV1
 		snapshot.SalesMicroUsd = &sales
 		snapshot.GrossProfitMicroUsd = &grossProfit
 	}
+	snapshot.PricingProvenance = &SupplierPricingProvenanceV1{}
 
 	switch mode {
 	case SupplierPricingModeRatio:

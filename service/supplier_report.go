@@ -222,12 +222,14 @@ type SupplierReportBreakdownList struct {
 	BreakdownCoverageAvailable bool                          `json:"breakdown_coverage_available"`
 }
 type SupplierReportContractDetail struct {
-	Range                SupplierReportRange                 `json:"range"`
-	Summary              SupplierReportContractRow           `json:"summary"`
-	RateVersions         []SupplierReportRateVersion         `json:"rate_versions"`
-	InventoryAdjustments []SupplierReportInventoryAdjustment `json:"inventory_adjustments"`
-	Channels             SupplierReportChannelList           `json:"channels"`
-	Breakdown            SupplierReportBreakdownList         `json:"breakdown"`
+	Range                       SupplierReportRange                 `json:"range"`
+	Summary                     SupplierReportContractRow           `json:"summary"`
+	RateVersions                []SupplierReportRateVersion         `json:"rate_versions"`
+	RateVersionsHasMore         bool                                `json:"rate_versions_has_more"`
+	InventoryAdjustments        []SupplierReportInventoryAdjustment `json:"inventory_adjustments"`
+	InventoryAdjustmentsHasMore bool                                `json:"inventory_adjustments_has_more"`
+	Channels                    SupplierReportChannelList           `json:"channels"`
+	Breakdown                   SupplierReportBreakdownList         `json:"breakdown"`
 }
 
 type SupplierReportService struct{ store *model.SupplierReportStore }
@@ -271,11 +273,7 @@ func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierR
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
-	catalog, _, err := s.store.ListContractCatalog(ctx, filter, nil)
-	if err != nil {
-		return SupplierReportOverview{}, err
-	}
-	runtime, err := s.loadInventory(ctx, catalog, query.ChannelIds, reportRange.EndAt)
+	inventory, err := s.store.QueryOverviewInventory(ctx, filter)
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
@@ -284,16 +282,8 @@ func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierR
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
-	for _, item := range runtime {
-		result.TotalInventoryMicroUsd, err = checkedAddInt64(result.TotalInventoryMicroUsd, item.inventory)
-		if err != nil {
-			return SupplierReportOverview{}, err
-		}
-		result.OfficialListConsumedMicroUsd, err = checkedAddInt64(result.OfficialListConsumedMicroUsd, item.consumed)
-		if err != nil {
-			return SupplierReportOverview{}, err
-		}
-	}
+	result.TotalInventoryMicroUsd = inventory.TotalInventoryMicroUsd
+	result.OfficialListConsumedMicroUsd = inventory.OfficialListConsumedMicroUsd
 	result.RemainingInventoryMicroUsd, err = checkedSubInt64(result.TotalInventoryMicroUsd, result.OfficialListConsumedMicroUsd)
 	return result, err
 }
@@ -387,8 +377,13 @@ func (s *SupplierReportService) listContracts(ctx context.Context, query Supplie
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
+	page = page.Normalize()
+	result := SupplierReportContractList{Range: reportRange, Items: []SupplierReportContractRow{}, Limit: page.Limit, Offset: page.Offset, HasMore: hasMore}
+	if len(catalog) == 0 {
+		return result, nil
+	}
 	filter.ContractIds = catalogIDs(catalog)
-	usage, err := s.loadUsage(ctx, filter, false)
+	usage, err := s.loadUsageByContract(ctx, filter)
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
@@ -400,8 +395,6 @@ func (s *SupplierReportService) listContracts(ctx context.Context, query Supplie
 	if err != nil {
 		return SupplierReportContractList{}, err
 	}
-	page = page.Normalize()
-	result := SupplierReportContractList{Range: reportRange, Items: []SupplierReportContractRow{}, Limit: page.Limit, Offset: page.Offset, HasMore: hasMore}
 	for _, row := range catalog {
 		item, err := buildContractRow(row, runtime[row.ContractId], byContract[row.ContractId])
 		if err != nil {
@@ -427,11 +420,11 @@ func (s *SupplierReportService) getContractDetail(ctx context.Context, contractI
 	if len(list.Items) == 0 {
 		return SupplierReportContractDetail{}, ErrSupplierReportContractNotFound
 	}
-	rates, err := s.store.ListRateVersions(ctx, contractId, list.Range.EndAt)
+	rates, ratesHasMore, err := s.store.ListRateVersions(ctx, contractId, list.Range.EndAt, page)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	adjustments, err := s.store.ListInventoryAdjustments(ctx, []int{contractId}, list.Range.EndAt)
+	adjustments, adjustmentsHasMore, err := s.store.ListInventoryAdjustments(ctx, []int{contractId}, list.Range.EndAt, page)
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
@@ -443,7 +436,7 @@ func (s *SupplierReportService) getContractDetail(ctx context.Context, contractI
 	if err != nil {
 		return SupplierReportContractDetail{}, err
 	}
-	result := SupplierReportContractDetail{Range: list.Range, Summary: list.Items[0], Channels: channels, Breakdown: breakdown, RateVersions: []SupplierReportRateVersion{}, InventoryAdjustments: []SupplierReportInventoryAdjustment{}}
+	result := SupplierReportContractDetail{Range: list.Range, Summary: list.Items[0], Channels: channels, Breakdown: breakdown, RateVersions: []SupplierReportRateVersion{}, RateVersionsHasMore: ratesHasMore, InventoryAdjustments: []SupplierReportInventoryAdjustment{}, InventoryAdjustmentsHasMore: adjustmentsHasMore}
 	for _, row := range rates {
 		result.RateVersions = append(result.RateVersions, SupplierReportRateVersion{Id: row.Id, ProcurementMultiplierPpm: row.ProcurementMultiplierPpm, EffectiveAt: row.EffectiveAt, CreatedBy: row.CreatedBy, Reason: row.Reason, CreatedAt: row.CreatedAt})
 	}
@@ -468,7 +461,11 @@ func (s *SupplierReportService) listChannels(ctx context.Context, query Supplier
 	if err != nil {
 		return SupplierReportChannelList{}, err
 	}
-	rows, err := s.store.QueryChannelUsage(ctx, filter)
+	pairs := make([]model.SupplierReportChannelPair, 0, len(catalog))
+	for _, row := range catalog {
+		pairs = append(pairs, model.SupplierReportChannelPair{ContractId: row.SupplierContractId, ChannelId: row.ChannelId})
+	}
+	rows, err := s.store.QueryChannelUsage(ctx, filter, pairs)
 	if err != nil {
 		return SupplierReportChannelList{}, err
 	}
@@ -552,7 +549,7 @@ func (s *SupplierReportService) loadInventory(ctx context.Context, catalog []mod
 	if err != nil {
 		return nil, err
 	}
-	adjustments, err := s.store.ListInventoryAdjustments(ctx, ids, endAt)
+	adjustments, err := s.store.QueryInventoryAdjustmentTotals(ctx, ids, endAt)
 	if err != nil {
 		return nil, err
 	}
@@ -571,10 +568,7 @@ func (s *SupplierReportService) loadInventory(ctx context.Context, catalog []mod
 	}
 	for _, row := range adjustments {
 		r := result[row.ContractId]
-		r.inventory, err = checkedAddInt64(r.inventory, row.DeltaMicroUsd)
-		if err != nil {
-			return nil, err
-		}
+		r.inventory = row.TotalInventoryMicroUsd
 		result[row.ContractId] = r
 	}
 	for _, row := range consumption {
@@ -637,6 +631,32 @@ func (s *SupplierReportService) loadUsage(ctx context.Context, filter model.Supp
 	}
 	if len(filter.ChannelIds) == 0 {
 		internal, err := s.store.QueryInternalUsage(ctx, filter, daily)
+		if err != nil {
+			return nil, err
+		}
+		a.internalRows = internal
+		for _, r := range internal {
+			if err := a.internal.addInternal(r); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return a, nil
+}
+func (s *SupplierReportService) loadUsageByContract(ctx context.Context, filter model.SupplierReportFilter) (*usageAccumulator, error) {
+	a := &usageAccumulator{}
+	rows, err := s.store.QueryBusinessUsageByContract(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	a.businessRows = rows
+	for _, r := range rows {
+		if err := a.business.addBusiness(r); err != nil {
+			return nil, err
+		}
+	}
+	if len(filter.ChannelIds) == 0 {
+		internal, err := s.store.QueryInternalUsageByContract(ctx, filter)
 		if err != nil {
 			return nil, err
 		}

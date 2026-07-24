@@ -106,6 +106,10 @@ type SupplierReportChannelCatalogRow struct {
 	ChannelStatus      int
 	SupplierContractId int
 }
+type SupplierReportChannelPair struct {
+	ContractId int
+	ChannelId  int
+}
 type SupplierReportChannelCountRow struct {
 	ContractId int
 	Count      int64
@@ -161,6 +165,14 @@ type SupplierReportInternalUsageRow struct {
 type SupplierReportInventoryConsumptionRow struct {
 	ContractId                             int
 	InventoryAffectingOfficialListMicroUsd int64
+}
+type SupplierReportInventoryTotalRow struct {
+	ContractId             int
+	TotalInventoryMicroUsd int64
+}
+type SupplierReportOverviewInventoryRow struct {
+	TotalInventoryMicroUsd       int64
+	OfficialListConsumedMicroUsd int64
 }
 type SupplierReportBreakdownRow struct {
 	ContractId                       int
@@ -255,6 +267,12 @@ func (s *SupplierReportStore) ListContractCatalog(ctx context.Context, filter Su
 func (s *SupplierReportStore) ListChannelCatalog(ctx context.Context, filter SupplierReportFilter, page *SupplierReportPage) ([]SupplierReportChannelCatalogRow, bool, error) {
 	currentConditions := []string{"ch.supplier_contract_id IS NOT NULL"}
 	currentArgs := make([]any, 0, 2)
+	currentContractJoin := ""
+	if len(filter.SupplierIds) > 0 {
+		currentContractJoin = "JOIN supplier_contracts c ON c.id = ch.supplier_contract_id"
+		currentConditions = append(currentConditions, "c.supplier_id IN ?")
+		currentArgs = append(currentArgs, filter.SupplierIds)
+	}
 	if len(filter.ContractIds) > 0 {
 		currentConditions = append(currentConditions, "ch.supplier_contract_id IN ?")
 		currentArgs = append(currentArgs, filter.ContractIds)
@@ -295,6 +313,7 @@ SELECT catalog.channel_id, catalog.channel_name, catalog.channel_status, catalog
 FROM (
     SELECT ch.id AS channel_id, ch.name AS channel_name, ch.status AS channel_status, ch.supplier_contract_id
     FROM channels ch
+	` + currentContractJoin + `
     WHERE ` + strings.Join(currentConditions, " AND ") + `
     UNION
     SELECT DISTINCT uds.channel_id, COALESCE(ch.name, '') AS channel_name, COALESCE(ch.status, 0) AS channel_status, uds.contract_id AS supplier_contract_id
@@ -330,18 +349,35 @@ func (s *SupplierReportStore) QueryLinkedChannelCounts(ctx context.Context, cont
 	err := query.Group("supplier_contract_id").Scan(&rows).Error
 	return rows, err
 }
-func (s *SupplierReportStore) ListInventoryAdjustments(ctx context.Context, contractIds []int, endAt int64) ([]SupplierReportInventoryAdjustmentRow, error) {
+func (s *SupplierReportStore) ListInventoryAdjustments(ctx context.Context, contractIds []int, endAt int64, page SupplierReportPage) ([]SupplierReportInventoryAdjustmentRow, bool, error) {
+	p := page.Normalize()
 	var rows []SupplierReportInventoryAdjustmentRow
 	err := s.mainDB.WithContext(ctx).Model(&SupplierInventoryAdjustment{}).
-		Where("contract_id IN ? AND created_at < ?", contractIds, endAt).Order("id ASC").Scan(&rows).Error
-	return rows, err
+		Where("contract_id IN ? AND created_at < ?", contractIds, endAt).
+		Order("id ASC").Offset(p.Offset).Limit(p.Limit + 1).Scan(&rows).Error
+	if err != nil {
+		return nil, false, err
+	}
+	hasMore := len(rows) > p.Limit
+	if hasMore {
+		rows = rows[:p.Limit]
+	}
+	return rows, hasMore, nil
 }
-func (s *SupplierReportStore) ListRateVersions(ctx context.Context, contractId int, endAt int64) ([]SupplierReportRateVersionRow, error) {
+func (s *SupplierReportStore) ListRateVersions(ctx context.Context, contractId int, endAt int64, page SupplierReportPage) ([]SupplierReportRateVersionRow, bool, error) {
+	p := page.Normalize()
 	var rows []SupplierReportRateVersionRow
 	err := s.mainDB.WithContext(ctx).Model(&SupplierContractRateVersion{}).
 		Where("contract_id = ? AND effective_at < ?", contractId, endAt).
-		Order("effective_at ASC, id ASC").Scan(&rows).Error
-	return rows, err
+		Order("effective_at ASC, id ASC").Offset(p.Offset).Limit(p.Limit + 1).Scan(&rows).Error
+	if err != nil {
+		return nil, false, err
+	}
+	hasMore := len(rows) > p.Limit
+	if hasMore {
+		rows = rows[:p.Limit]
+	}
+	return rows, hasMore, nil
 }
 
 func (s *SupplierReportStore) publishedSupplierSummaryQuery(ctx context.Context) *gorm.DB {
@@ -363,31 +399,86 @@ func applySupplierSummaryFilter(query *gorm.DB, filter SupplierReportFilter) *go
 	return query
 }
 
-const businessUsageSelect = "contract_id, data_quality, SUM(request_count) AS business_request_count, SUM(unattributed_request_count) AS unattributed_request_count, SUM(official_list_known_count) AS official_list_known_count, SUM(official_list_micro_usd) AS official_list_micro_usd, SUM(sales_known_count) AS sales_known_count, SUM(sales_micro_usd) AS sales_micro_usd, SUM(procurement_cost_known_count) AS procurement_cost_known_count, SUM(procurement_cost_micro_usd) AS procurement_cost_micro_usd, SUM(gross_profit_known_count) AS gross_profit_known_count, SUM(gross_profit_micro_usd) AS gross_profit_micro_usd, SUM(gross_margin_eligible_count) AS gross_margin_eligible_count, SUM(gross_margin_eligible_sales_micro_usd) AS gross_margin_eligible_sales_micro_usd"
+const businessUsageSelect = "SUM(request_count) AS business_request_count, SUM(unattributed_request_count) AS unattributed_request_count, SUM(official_list_known_count) AS official_list_known_count, SUM(official_list_micro_usd) AS official_list_micro_usd, SUM(sales_known_count) AS sales_known_count, SUM(sales_micro_usd) AS sales_micro_usd, SUM(procurement_cost_known_count) AS procurement_cost_known_count, SUM(procurement_cost_micro_usd) AS procurement_cost_micro_usd, SUM(gross_profit_known_count) AS gross_profit_known_count, SUM(gross_profit_micro_usd) AS gross_profit_micro_usd, SUM(gross_margin_eligible_count) AS gross_margin_eligible_count, SUM(gross_margin_eligible_sales_micro_usd) AS gross_margin_eligible_sales_micro_usd"
+
+const internalUsageSelect = "SUM(request_count) AS internal_request_count, SUM(unattributed_request_count) AS unattributed_request_count, SUM(official_list_known_count) AS official_list_known_count, SUM(official_list_micro_usd) AS official_list_micro_usd, SUM(procurement_cost_known_count) AS procurement_cost_known_count, SUM(procurement_cost_micro_usd) AS procurement_cost_micro_usd"
 
 func (s *SupplierReportStore) QueryBusinessUsage(ctx context.Context, filter SupplierReportFilter, daily bool) ([]SupplierReportBusinessUsageRow, error) {
 	selectSQL := businessUsageSelect
-	group := "contract_id, data_quality"
 	if daily {
 		selectSQL = "bucket_start, " + selectSQL
-		group = "bucket_start, " + group
 	}
 	query := applySupplierSummaryFilter(s.publishedSupplierSummaryQuery(ctx), filter).Where("uds.statistics_scope = ?", "business")
 	var rows []SupplierReportBusinessUsageRow
-	err := query.Select(selectSQL).Group(group).Scan(&rows).Error
+	query = query.Select(selectSQL)
+	if daily {
+		query = query.Group("bucket_start").Order("bucket_start ASC")
+	}
+	err := query.Scan(&rows).Error
+	return rows, err
+}
+func (s *SupplierReportStore) QueryBusinessUsageByContract(ctx context.Context, filter SupplierReportFilter) ([]SupplierReportBusinessUsageRow, error) {
+	var rows []SupplierReportBusinessUsageRow
+	err := applySupplierSummaryFilter(s.publishedSupplierSummaryQuery(ctx), filter).
+		Where("uds.statistics_scope = ?", "business").
+		Select("contract_id, " + businessUsageSelect).Group("contract_id").Scan(&rows).Error
 	return rows, err
 }
 func (s *SupplierReportStore) QueryInternalUsage(ctx context.Context, filter SupplierReportFilter, daily bool) ([]SupplierReportInternalUsageRow, error) {
-	selectSQL := "contract_id, data_quality, SUM(request_count) AS internal_request_count, SUM(unattributed_request_count) AS unattributed_request_count, SUM(official_list_known_count) AS official_list_known_count, SUM(official_list_micro_usd) AS official_list_micro_usd, SUM(procurement_cost_known_count) AS procurement_cost_known_count, SUM(procurement_cost_micro_usd) AS procurement_cost_micro_usd"
-	group := "contract_id, data_quality"
+	selectSQL := internalUsageSelect
 	if daily {
 		selectSQL = "bucket_start, " + selectSQL
-		group = "bucket_start, " + group
 	}
 	query := applySupplierSummaryFilter(s.publishedSupplierSummaryQuery(ctx), filter).Where("uds.statistics_scope = ?", "internal")
 	var rows []SupplierReportInternalUsageRow
-	err := query.Select(selectSQL).Group(group).Scan(&rows).Error
+	query = query.Select(selectSQL)
+	if daily {
+		query = query.Group("bucket_start").Order("bucket_start ASC")
+	}
+	err := query.Scan(&rows).Error
 	return rows, err
+}
+func (s *SupplierReportStore) QueryInternalUsageByContract(ctx context.Context, filter SupplierReportFilter) ([]SupplierReportInternalUsageRow, error) {
+	var rows []SupplierReportInternalUsageRow
+	err := applySupplierSummaryFilter(s.publishedSupplierSummaryQuery(ctx), filter).
+		Where("uds.statistics_scope = ?", "internal").
+		Select("contract_id, " + internalUsageSelect).Group("contract_id").Scan(&rows).Error
+	return rows, err
+}
+func (s *SupplierReportStore) QueryInventoryAdjustmentTotals(ctx context.Context, contractIds []int, endAt int64) ([]SupplierReportInventoryTotalRow, error) {
+	if len(contractIds) == 0 {
+		return []SupplierReportInventoryTotalRow{}, nil
+	}
+	var rows []SupplierReportInventoryTotalRow
+	err := s.mainDB.WithContext(ctx).Model(&SupplierInventoryAdjustment{}).
+		Select("contract_id, SUM(delta_micro_usd) AS total_inventory_micro_usd").
+		Where("contract_id IN ? AND created_at < ?", contractIds, endAt).
+		Group("contract_id").Scan(&rows).Error
+	return rows, err
+}
+func (s *SupplierReportStore) QueryOverviewInventory(ctx context.Context, filter SupplierReportFilter) (SupplierReportOverviewInventoryRow, error) {
+	adjustments := s.mainDB.WithContext(ctx).Model(&SupplierInventoryAdjustment{}).
+		Select("contract_id, SUM(delta_micro_usd) AS total_inventory_micro_usd").
+		Where("created_at < ?", filter.EndAt).Group("contract_id")
+	consumption := s.publishedSupplierSummaryQuery(ctx).
+		Select("uds.contract_id, SUM(uds.official_list_micro_usd) AS official_list_consumed_micro_usd").
+		Where("uds.bucket_start < ?", filter.EndAt).Group("uds.contract_id")
+	query := s.mainDB.WithContext(ctx).Table("supplier_contracts AS c").
+		Select("COALESCE(SUM(adj.total_inventory_micro_usd), 0) AS total_inventory_micro_usd, COALESCE(SUM(cons.official_list_consumed_micro_usd), 0) AS official_list_consumed_micro_usd").
+		Joins("LEFT JOIN (?) AS adj ON adj.contract_id = c.id", adjustments).
+		Joins("LEFT JOIN (?) AS cons ON cons.contract_id = c.id", consumption)
+	if len(filter.SupplierIds) > 0 {
+		query = query.Where("c.supplier_id IN ?", filter.SupplierIds)
+	}
+	if len(filter.ContractIds) > 0 {
+		query = query.Where("c.id IN ?", filter.ContractIds)
+	}
+	if len(filter.ChannelIds) > 0 {
+		query = query.Where("EXISTS (SELECT 1 FROM supplier_usage_daily_summaries uds JOIN supplier_usage_daily_batch_runs udr ON udr.batch_date = uds.batch_date AND udr.published_fence_token > 0 AND udr.published_fence_token = uds.batch_fence_token WHERE uds.contract_id = c.id AND uds.bucket_start >= ? AND uds.bucket_start < ? AND uds.channel_id IN ?)", filter.StartAt, filter.EndAt, filter.ChannelIds)
+	}
+	var row SupplierReportOverviewInventoryRow
+	err := query.Scan(&row).Error
+	return row, err
 }
 func (s *SupplierReportStore) QueryInventoryConsumption(ctx context.Context, contractIds []int, endAt int64) ([]SupplierReportInventoryConsumptionRow, error) {
 	query := s.publishedSupplierSummaryQuery(ctx).
@@ -423,8 +514,18 @@ func (s *SupplierReportStore) QueryBreakdownEligibleCount(ctx context.Context, f
 	err := applySupplierSummaryFilter(s.publishedSupplierSummaryQuery(ctx), filter).Where("uds.statistics_scope = ?", "business").Select("COALESCE(SUM(uds.request_count),0)").Scan(&total).Error
 	return total, err
 }
-func (s *SupplierReportStore) QueryChannelUsage(ctx context.Context, filter SupplierReportFilter) ([]SupplierReportChannelUsageRow, error) {
+func (s *SupplierReportStore) QueryChannelUsage(ctx context.Context, filter SupplierReportFilter, pairs []SupplierReportChannelPair) ([]SupplierReportChannelUsageRow, error) {
+	if len(pairs) == 0 {
+		return []SupplierReportChannelUsageRow{}, nil
+	}
 	query := applySupplierSummaryFilter(s.publishedSupplierSummaryQuery(ctx), filter).Where("uds.statistics_scope = ?", "business")
+	pairConditions := make([]string, 0, len(pairs))
+	pairArgs := make([]any, 0, len(pairs)*2)
+	for _, pair := range pairs {
+		pairConditions = append(pairConditions, "(uds.contract_id = ? AND uds.channel_id = ?)")
+		pairArgs = append(pairArgs, pair.ContractId, pair.ChannelId)
+	}
+	query = query.Where("("+strings.Join(pairConditions, " OR ")+")", pairArgs...)
 	selectSQL := "contract_id, channel_id, data_quality, SUM(request_count) AS business_request_count, SUM(unattributed_request_count) AS unattributed_request_count, SUM(official_list_known_count) AS official_list_known_count, SUM(official_list_micro_usd) AS official_list_micro_usd, SUM(sales_known_count) AS sales_known_count, SUM(sales_micro_usd) AS sales_micro_usd, SUM(procurement_cost_known_count) AS procurement_cost_known_count, SUM(procurement_cost_micro_usd) AS procurement_cost_micro_usd, SUM(gross_profit_known_count) AS gross_profit_known_count, SUM(gross_profit_micro_usd) AS gross_profit_micro_usd, SUM(gross_margin_eligible_count) AS gross_margin_eligible_count, SUM(gross_margin_eligible_sales_micro_usd) AS gross_margin_eligible_sales_micro_usd"
 	var rows []SupplierReportChannelUsageRow
 	err := query.Select(selectSQL).Group("contract_id, channel_id, data_quality").Scan(&rows).Error

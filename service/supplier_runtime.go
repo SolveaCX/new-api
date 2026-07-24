@@ -208,10 +208,6 @@ func parseSupplierAccountingLog(other string) (types.SupplierAccountingLogSnapsh
 }
 
 func addSupplierDailySnapshot(accumulators map[string]*model.SupplierUsageDailySummary, batchDate string, bucketStart int64, logRow model.SupplierAccountingLogRow, snapshot types.SupplierAccountingLogSnapshotV1) error {
-	pricingMode, err := supplierPricingModeFromProvenance(snapshot.PricingProvenance)
-	if err != nil {
-		return err
-	}
 	quality := SupplierDataQualityAuthoritative
 	if strings.TrimSpace(snapshot.QualityReason) != "" {
 		quality = SupplierDataQualityUnattributed
@@ -221,13 +217,19 @@ func addSupplierDailySnapshot(accumulators map[string]*model.SupplierUsageDailyS
 	rateVersionID := snapshot.RateVersionId
 	channelID := logRow.ChannelId
 	salesMultiplier := snapshot.SalesMultiplierPpm
+	pricingMode := ""
 	if snapshot.StatisticsScope == string(types.SupplierStatisticsScopeInternal) {
 		bindingVersionID = 0
 		rateVersionID = 0
 		channelID = 0
 		modelName = ""
 		salesMultiplier = nil
-		pricingMode = ""
+	} else {
+		var err error
+		pricingMode, err = supplierPricingModeFromProvenance(snapshot.PricingProvenance)
+		if err != nil {
+			return err
+		}
 	}
 	keyText := strings.Join([]string{
 		batchDate, strconv.Itoa(snapshot.SupplierId), strconv.Itoa(snapshot.ContractId), strconv.Itoa(bindingVersionID),

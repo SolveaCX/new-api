@@ -156,20 +156,22 @@ func encodeSupplierAccountingCapturedV1(snapshot *SupplierAccountingLogSnapshotV
 		putInt64(*snapshot.GrossProfitMicroUsd)
 	}
 
-	switch plan.mode {
-	case SupplierPricingModeRatio:
-		putInt64(snapshot.PricingProvenance.Ratio.ModelRatioPpm)
-	case SupplierPricingModeTiered:
-		binary.BigEndian.PutUint64(data[offset:offset+8], snapshot.PricingProvenance.Tiered.ExpressionFingerprint)
-		offset += 8
-		supplierAccountingPutUint48BigEndianV1(data[offset:offset+6], snapshot.PricingProvenance.Tiered.ExpressionFingerprintTail)
-		offset += 6
-		inputs := snapshot.PricingProvenance.Tiered.NormalizedInputs
-		for _, value := range []int64{
-			inputs.Prompt, inputs.Completion, inputs.ContextLength, inputs.CacheRead, inputs.CacheCreate,
-			inputs.CacheCreate1H, inputs.ImageInput, inputs.ImageOutput, inputs.AudioInput, inputs.AudioOutput,
-		} {
-			putInt64(value)
+	if !plan.internal {
+		switch plan.mode {
+		case SupplierPricingModeRatio:
+			putInt64(snapshot.PricingProvenance.Ratio.ModelRatioPpm)
+		case SupplierPricingModeTiered:
+			binary.BigEndian.PutUint64(data[offset:offset+8], snapshot.PricingProvenance.Tiered.ExpressionFingerprint)
+			offset += 8
+			supplierAccountingPutUint48BigEndianV1(data[offset:offset+6], snapshot.PricingProvenance.Tiered.ExpressionFingerprintTail)
+			offset += 6
+			inputs := snapshot.PricingProvenance.Tiered.NormalizedInputs
+			for _, value := range []int64{
+				inputs.Prompt, inputs.Completion, inputs.ContextLength, inputs.CacheRead, inputs.CacheCreate,
+				inputs.CacheCreate1H, inputs.ImageInput, inputs.ImageOutput, inputs.AudioInput, inputs.AudioOutput,
+			} {
+				putInt64(value)
+			}
 		}
 	}
 	if offset != len(data) {
@@ -202,10 +204,6 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 	if snapshot.QuotaPerUnit != nil || snapshot.PricingMode != nil || snapshot.QualityReason != "" || snapshot.UnknownOfficialCount != 0 {
 		return supplierAccountingCapturedPlanV1{}, errors.New("unsupported supplier accounting captured compatibility field")
 	}
-	if snapshot.PricingProvenance == nil {
-		return supplierAccountingCapturedPlanV1{}, errors.New("missing supplier accounting pricing provenance")
-	}
-
 	plan := supplierAccountingCapturedPlanV1{flags: supplierAccountingCapturedLayoutVersionV1 << supplierAccountingCapturedLayoutShift}
 	switch SupplierStatisticsScope(snapshot.StatisticsScope) {
 	case SupplierStatisticsScopeBusiness:
@@ -221,8 +219,15 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 		}
 		plan.internal = true
 		plan.flags |= supplierAccountingCapturedInternalFlag
+		if snapshot.PricingProvenance != nil {
+			return supplierAccountingCapturedPlanV1{}, errors.New("internal supplier accounting snapshot contains pricing provenance")
+		}
+		return plan, nil
 	default:
 		return supplierAccountingCapturedPlanV1{}, errors.New("invalid supplier accounting statistics scope")
+	}
+	if snapshot.PricingProvenance == nil {
+		return supplierAccountingCapturedPlanV1{}, errors.New("missing supplier accounting pricing provenance")
 	}
 
 	provenance := snapshot.PricingProvenance
@@ -261,7 +266,7 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 	case SupplierPricingModeRatio:
 		ratio := provenance.Ratio
 		if ratio.ModelRatioPpm < 0 || ratio.ModelRatioVersion != supplierAccountingInputVersionV1 ||
-			!supplierAccountingGroupEvidenceValidV1(plan.internal, ratio.GroupRatioPpm, ratio.GroupRatioVersion) {
+			!supplierAccountingGroupEvidenceValidV1(ratio.GroupRatioPpm, ratio.GroupRatioVersion) {
 			return supplierAccountingCapturedPlanV1{}, errors.New("invalid supplier accounting ratio provenance")
 		}
 		plan.flags |= supplierAccountingCapturedModeRatioCode << supplierAccountingCapturedModeShift
@@ -269,7 +274,7 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 	case SupplierPricingModeFixed:
 		fixed := provenance.Fixed
 		if fixed.Source != supplierAccountingFixedSourceV1 || fixed.Key != supplierAccountingFixedKeyV1 || fixed.PriceVersion != supplierAccountingInputVersionV1 ||
-			!supplierAccountingGroupEvidenceValidV1(plan.internal, fixed.GroupMultiplierPpm, fixed.GroupRatioVersion) {
+			!supplierAccountingGroupEvidenceValidV1(fixed.GroupMultiplierPpm, fixed.GroupRatioVersion) {
 			return supplierAccountingCapturedPlanV1{}, errors.New("invalid supplier accounting fixed provenance")
 		}
 		plan.flags |= supplierAccountingCapturedModeFixedCode << supplierAccountingCapturedModeShift
@@ -279,7 +284,7 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 		if (tiered.ExpressionFingerprint == 0 && tiered.ExpressionFingerprintTail == 0) ||
 			tiered.ExpressionFingerprintTail > supplierAccountingFingerprintTailMaxV1 ||
 			tiered.ExpressionVersion != supplierAccountingTieredExpressionVersionV1 ||
-			!supplierAccountingGroupEvidenceValidV1(plan.internal, tiered.GroupMultiplierPpm, tiered.GroupRatioVersion) ||
+			!supplierAccountingGroupEvidenceValidV1(tiered.GroupMultiplierPpm, tiered.GroupRatioVersion) ||
 			!supplierAccountingTieredInputsNonNegativeV1(tiered.NormalizedInputs) {
 			return supplierAccountingCapturedPlanV1{}, errors.New("invalid supplier accounting tiered provenance")
 		}
@@ -288,16 +293,13 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 	default:
 		return supplierAccountingCapturedPlanV1{}, errors.New("invalid supplier accounting pricing mode")
 	}
-	if !plan.internal && *snapshot.SalesMultiplierPpm != plan.groupMultiplier {
+	if *snapshot.SalesMultiplierPpm != plan.groupMultiplier {
 		return supplierAccountingCapturedPlanV1{}, errors.New("supplier accounting business group multiplier mismatch")
 	}
 	return plan, nil
 }
 
-func supplierAccountingGroupEvidenceValidV1(internal bool, multiplier, version int64) bool {
-	if internal {
-		return multiplier == 0 && version == 0
-	}
+func supplierAccountingGroupEvidenceValidV1(multiplier, version int64) bool {
 	return multiplier >= 0 && version == supplierAccountingInputVersionV1
 }
 
@@ -314,20 +316,30 @@ func decodeSupplierAccountingCapturedV1(encoded string) (*SupplierAccountingLogS
 		return nil, errors.New("unsupported supplier accounting captured layout version")
 	}
 	internal := flags&supplierAccountingCapturedInternalFlag != 0
+	if internal {
+		if flags != supplierAccountingCapturedLayoutVersionV1<<supplierAccountingCapturedLayoutShift|supplierAccountingCapturedInternalFlag {
+			return nil, errors.New("internal supplier accounting captured payload contains pricing flags")
+		}
+		if len(data) != supplierAccountingCapturedBinarySizeV1(true, "") {
+			return nil, fmt.Errorf("invalid supplier accounting captured payload length %d", len(data))
+		}
+	}
 	modeCode := (flags & supplierAccountingCapturedModeMask) >> supplierAccountingCapturedModeShift
 	var mode SupplierPricingModeV1
-	switch modeCode {
-	case supplierAccountingCapturedModeRatioCode:
-		mode = SupplierPricingModeRatio
-	case supplierAccountingCapturedModeFixedCode:
-		mode = SupplierPricingModeFixed
-	case supplierAccountingCapturedModeTieredCode:
-		mode = SupplierPricingModeTiered
-	default:
-		return nil, errors.New("invalid supplier accounting captured pricing mode")
-	}
-	if len(data) != supplierAccountingCapturedBinarySizeV1(internal, mode) {
-		return nil, fmt.Errorf("invalid supplier accounting captured payload length %d", len(data))
+	if !internal {
+		switch modeCode {
+		case supplierAccountingCapturedModeRatioCode:
+			mode = SupplierPricingModeRatio
+		case supplierAccountingCapturedModeFixedCode:
+			mode = SupplierPricingModeFixed
+		case supplierAccountingCapturedModeTieredCode:
+			mode = SupplierPricingModeTiered
+		default:
+			return nil, errors.New("invalid supplier accounting captured pricing mode")
+		}
+		if len(data) != supplierAccountingCapturedBinarySizeV1(false, mode) {
+			return nil, fmt.Errorf("invalid supplier accounting captured payload length %d", len(data))
+		}
 	}
 
 	offset := 1
@@ -386,27 +398,24 @@ func decodeSupplierAccountingCapturedV1(encoded string) (*SupplierAccountingLogS
 		groupMultiplier = salesMultiplier
 	}
 
-	provenance := &SupplierPricingProvenanceV1{
-		Dimensions: supplierAccountingDimensionsFromFlagsV1(flags),
+	if internal {
+		if offset != len(data) {
+			return nil, errors.New("supplier accounting captured decoder length mismatch")
+		}
+		return snapshot, nil
 	}
+
+	provenance := &SupplierPricingProvenanceV1{Dimensions: supplierAccountingDimensionsFromFlagsV1(flags)}
 	switch mode {
 	case SupplierPricingModeRatio:
-		groupVersion := supplierAccountingInputVersionV1
-		if internal {
-			groupVersion = 0
-		}
 		provenance.Ratio = &SupplierRatioPricingProvenanceV1{
 			ModelRatioPpm: readInt64(), GroupRatioPpm: groupMultiplier,
-			ModelRatioVersion: supplierAccountingInputVersionV1, GroupRatioVersion: groupVersion,
+			ModelRatioVersion: supplierAccountingInputVersionV1, GroupRatioVersion: supplierAccountingInputVersionV1,
 		}
 	case SupplierPricingModeFixed:
-		groupVersion := supplierAccountingInputVersionV1
-		if internal {
-			groupVersion = 0
-		}
 		provenance.Fixed = &SupplierFixedPricingProvenanceV1{
 			Source: supplierAccountingFixedSourceV1, Key: supplierAccountingFixedKeyV1,
-			PriceVersion: supplierAccountingInputVersionV1, GroupMultiplierPpm: groupMultiplier, GroupRatioVersion: groupVersion,
+			PriceVersion: supplierAccountingInputVersionV1, GroupMultiplierPpm: groupMultiplier, GroupRatioVersion: supplierAccountingInputVersionV1,
 		}
 	case SupplierPricingModeTiered:
 		fingerprint := binary.BigEndian.Uint64(data[offset : offset+8])
@@ -417,16 +426,12 @@ func decodeSupplierAccountingCapturedV1(encoded string) (*SupplierAccountingLogS
 		for index := range values {
 			values[index] = readInt64()
 		}
-		groupVersion := supplierAccountingInputVersionV1
-		if internal {
-			groupVersion = 0
-		}
 		provenance.Tiered = &SupplierTieredPricingProvenanceV1{
 			ExpressionFingerprint:     fingerprint,
 			ExpressionFingerprintTail: fingerprintTail,
 			ExpressionVersion:         supplierAccountingTieredExpressionVersionV1,
 			GroupMultiplierPpm:        groupMultiplier,
-			GroupRatioVersion:         groupVersion,
+			GroupRatioVersion:         supplierAccountingInputVersionV1,
 			NormalizedInputs: SupplierTieredNormalizedInputsV1{
 				Prompt: values[0], Completion: values[1], ContextLength: values[2], CacheRead: values[3], CacheCreate: values[4],
 				CacheCreate1H: values[5], ImageInput: values[6], ImageOutput: values[7], AudioInput: values[8], AudioOutput: values[9],
@@ -445,9 +450,7 @@ func supplierAccountingCapturedEncodedLengthV1(length int) bool {
 		base64.RawURLEncoding.EncodedLen(supplierAccountingCapturedBinarySizeV1(false, SupplierPricingModeRatio)),
 		base64.RawURLEncoding.EncodedLen(supplierAccountingCapturedBinarySizeV1(false, SupplierPricingModeFixed)),
 		base64.RawURLEncoding.EncodedLen(supplierAccountingCapturedBinarySizeV1(false, SupplierPricingModeTiered)),
-		base64.RawURLEncoding.EncodedLen(supplierAccountingCapturedBinarySizeV1(true, SupplierPricingModeRatio)),
-		base64.RawURLEncoding.EncodedLen(supplierAccountingCapturedBinarySizeV1(true, SupplierPricingModeFixed)),
-		base64.RawURLEncoding.EncodedLen(supplierAccountingCapturedBinarySizeV1(true, SupplierPricingModeTiered)),
+		base64.RawURLEncoding.EncodedLen(supplierAccountingCapturedBinarySizeV1(true, "")),
 	} {
 		if length == candidate {
 			return true
@@ -459,7 +462,7 @@ func supplierAccountingCapturedEncodedLengthV1(length int) bool {
 func supplierAccountingCapturedBinarySizeV1(internal bool, mode SupplierPricingModeV1) int {
 	size := 1 + 8*8
 	if internal {
-		size += 8
+		return size + 8
 	} else {
 		size += 8 * 3
 	}

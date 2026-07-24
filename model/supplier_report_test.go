@@ -183,6 +183,46 @@ func TestQueryBreakdownPaginationOrdersEveryGroupedDimension(t *testing.T) {
 	require.Equal(t, first, second)
 }
 
+func TestQueryChannelUsageBoundsAggregationToCatalogPairs(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	const (
+		dayStart = int64(1_774_281_600)
+		dayEnd   = dayStart + 86_400
+		fence    = int64(9)
+	)
+	publishedAt := dayEnd
+	require.NoError(t, db.Create(&SupplierUsageDailyBatchRun{
+		BatchDate: "2026-03-23", DayStart: dayStart, DayEnd: dayEnd,
+		Status: SupplierDailyBatchStatusCompleted, FenceToken: fence,
+		PublishedFenceToken: fence, PublishedAt: &publishedAt,
+	}).Error)
+	require.NoError(t, db.Create(&[]SupplierUsageDailySummary{
+		{BatchDate: "2026-03-23", BatchFenceToken: fence, DimensionKey: "page-1", BucketStart: dayStart, SupplierId: 1, ContractId: 10, ChannelId: 20, StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 2},
+		{BatchDate: "2026-03-23", BatchFenceToken: fence, DimensionKey: "page-2", BucketStart: dayStart, SupplierId: 1, ContractId: 30, ChannelId: 40, StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 3},
+		{BatchDate: "2026-03-23", BatchFenceToken: fence, DimensionKey: "outside-page", BucketStart: dayStart, SupplierId: 1, ContractId: 10, ChannelId: 40, StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 100},
+	}).Error)
+
+	store := NewSupplierReportStore(db)
+	filter := SupplierReportFilter{StartAt: dayStart, EndAt: dayEnd}
+	rows, err := store.QueryChannelUsage(context.Background(), filter, []SupplierReportChannelPair{
+		{ContractId: 10, ChannelId: 20},
+		{ContractId: 30, ChannelId: 40},
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	requestCounts := map[[2]int]int64{}
+	for _, row := range rows {
+		requestCounts[[2]int{row.ContractId, row.ChannelId}] += row.BusinessRequestCount
+	}
+	require.Equal(t, map[[2]int]int64{{10, 20}: 2, {30, 40}: 3}, requestCounts)
+
+	emptyRows, err := store.QueryChannelUsage(context.Background(), filter, nil)
+	require.NoError(t, err)
+	require.Empty(t, emptyRows)
+}
+
 func TestSupplierReportStoreBoundsCatalogHistoryAndInventoryAtClosedEnd(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
@@ -234,13 +274,15 @@ func TestSupplierReportStoreBoundsCatalogHistoryAndInventoryAtClosedEnd(t *testi
 	require.Len(t, channels, 1)
 	require.Equal(t, 10, channels[0].ChannelId)
 
-	rates, err := store.ListRateVersions(context.Background(), 1, closedEnd)
+	rates, ratesHasMore, err := store.ListRateVersions(context.Background(), 1, closedEnd, SupplierReportPage{Limit: 10})
 	require.NoError(t, err)
+	require.False(t, ratesHasMore)
 	require.Len(t, rates, 1)
 	require.Equal(t, 1, rates[0].Id)
 
-	adjustments, err := store.ListInventoryAdjustments(context.Background(), []int{1}, closedEnd)
+	adjustments, adjustmentsHasMore, err := store.ListInventoryAdjustments(context.Background(), []int{1}, closedEnd, SupplierReportPage{Limit: 10})
 	require.NoError(t, err)
+	require.False(t, adjustmentsHasMore)
 	require.Len(t, adjustments, 1)
 	require.Equal(t, int64(5_000), adjustments[0].DeltaMicroUsd)
 
@@ -248,4 +290,89 @@ func TestSupplierReportStoreBoundsCatalogHistoryAndInventoryAtClosedEnd(t *testi
 	require.NoError(t, err)
 	require.Len(t, consumption, 1)
 	require.Equal(t, int64(1_000), consumption[0].InventoryAffectingOfficialListMicroUsd)
+}
+
+func TestSupplierReportUsageAggregationDropsContractAndQualityDimensions(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	const dayStart = int64(1_784_044_800)
+	for dayOffset := 0; dayOffset < 2; dayOffset++ {
+		start := dayStart + int64(dayOffset)*86_400
+		fence := int64(dayOffset + 1)
+		publishedAt := start + 86_400
+		require.NoError(t, db.Create(&SupplierUsageDailyBatchRun{
+			BatchDate: fmt.Sprintf("2026-07-%02d", 15+dayOffset), DayStart: start, DayEnd: publishedAt,
+			Status: SupplierDailyBatchStatusCompleted, FenceToken: fence, PublishedFenceToken: fence, PublishedAt: &publishedAt,
+		}).Error)
+		rows := make([]SupplierUsageDailySummary, 0, 60)
+		for contractID := 1; contractID <= 10; contractID++ {
+			for qualityID, quality := range []string{"authoritative", "estimated", "unpriced"} {
+				for scopeID, scope := range []string{"business", "internal"} {
+					rows = append(rows, SupplierUsageDailySummary{
+						BatchDate: fmt.Sprintf("2026-07-%02d", 15+dayOffset), BatchFenceToken: fence,
+						DimensionKey: fmt.Sprintf("%d-%d-%d-%d", dayOffset, contractID, qualityID, scopeID), BucketStart: start,
+						SupplierId: 1, ContractId: contractID, ChannelId: 1, StatisticsScope: scope, DataQuality: quality, RequestCount: 1,
+					})
+				}
+			}
+		}
+		require.NoError(t, db.Create(&rows).Error)
+	}
+	store := NewSupplierReportStore(db)
+	filter := SupplierReportFilter{StartAt: dayStart, EndAt: dayStart + 2*86_400}
+
+	overview, err := store.QueryBusinessUsage(context.Background(), filter, false)
+	require.NoError(t, err)
+	require.Len(t, overview, 1, "overview materializes one SQL aggregate row")
+	require.Equal(t, int64(60), overview[0].BusinessRequestCount)
+
+	trend, err := store.QueryBusinessUsage(context.Background(), filter, true)
+	require.NoError(t, err)
+	require.Len(t, trend, 2, "trend materializes at most one row per requested day")
+	require.Equal(t, int64(30), trend[0].BusinessRequestCount)
+	require.Equal(t, int64(30), trend[1].BusinessRequestCount)
+
+	byContract, err := store.QueryBusinessUsageByContract(context.Background(), filter)
+	require.NoError(t, err)
+	require.Len(t, byContract, 10, "contract reports materialize only the requested contract dimension")
+}
+
+func TestQueryOverviewInventoryIncludesContractsBeyondCatalogHardLimit(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&SupplierContract{}, &SupplierInventoryAdjustment{}, &SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	const contractCount = SupplierReportMaxContractRows + 1
+	contracts := make([]SupplierContract, 0, contractCount)
+	adjustments := make([]SupplierInventoryAdjustment, 0, contractCount)
+	for id := 1; id <= contractCount; id++ {
+		contracts = append(contracts, SupplierContract{Id: id, SupplierId: 1, Name: fmt.Sprintf("contract-%d", id), ContractNo: fmt.Sprintf("C-%d", id), Status: SupplierContractStatusActive})
+		adjustments = append(adjustments, SupplierInventoryAdjustment{ContractId: id, DeltaMicroUsd: 1, Type: SupplierInventoryAdjustmentTypeInitial, IdempotencyKey: fmt.Sprintf("inventory-%d", id), CreatedBy: 1, CreatedAt: 10})
+	}
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).CreateInBatches(&contracts, 500).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).CreateInBatches(&adjustments, 500).Error)
+
+	totals, err := NewSupplierReportStore(db).QueryOverviewInventory(context.Background(), SupplierReportFilter{StartAt: 1, EndAt: 20})
+	require.NoError(t, err)
+	require.Equal(t, int64(contractCount), totals.TotalInventoryMicroUsd, "overview must not inherit the 5,000-row catalog cap")
+}
+
+func TestListChannelCatalogCurrentBindingsHonorSupplierFilter(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&SupplierContract{}, &Channel{}, &SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]SupplierContract{
+		{Id: 1, SupplierId: 1, Name: "wanted", ContractNo: "C-1", Status: SupplierContractStatusActive},
+		{Id: 2, SupplierId: 2, Name: "other", ContractNo: "C-2", Status: SupplierContractStatusActive},
+	}).Error)
+	contract1, contract2 := 1, 2
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]Channel{
+		{Id: 11, Name: "wanted-no-usage", SupplierContractId: &contract1},
+		{Id: 22, Name: "other-no-usage", SupplierContractId: &contract2},
+	}).Error)
+
+	rows, hasMore, err := NewSupplierReportStore(db).ListChannelCatalog(context.Background(), SupplierReportFilter{StartAt: 1, EndAt: 2, SupplierIds: []int{1}}, &SupplierReportPage{Limit: 10})
+	require.NoError(t, err)
+	require.False(t, hasMore)
+	require.Equal(t, []SupplierReportChannelCatalogRow{{ChannelId: 11, ChannelName: "wanted-no-usage", ChannelStatus: 1, SupplierContractId: 1}}, rows)
 }
