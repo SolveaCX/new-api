@@ -1065,6 +1065,133 @@ func TestStripeRecurringChangePlanCreatesAndReplaysCheckoutSession(t *testing.T)
 	require.Equal(t, int64(1), orderCount)
 }
 
+func TestStripeRecurringEmbeddedCheckoutAllowsEmptyURLAndReplaysClientSecretFromStripe(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	originalPublishableKey := setting.StripePublishableKey
+	setting.StripePublishableKey = "pk_test_embedded"
+	t.Cleanup(func() { setting.StripePublishableKey = originalPublishableKey })
+	insertContractServiceUser(t, 8114, 0)
+	plan := insertContractServicePlan(t, 8214, 1, 12.34, 1234)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("stripe_price_id", "price_embedded_plan").Error)
+	originalCreator := stripeSubscriptionCheckoutCreator
+	t.Cleanup(func() { stripeSubscriptionCheckoutCreator = originalCreator })
+	createdCount := 0
+	stripeSubscriptionCheckoutCreator = func(_ context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+		createdCount++
+		require.Equal(t, "embedded", input.Presentation.RequestedUIMode)
+		require.True(t, input.Presentation.Embedded)
+		return &StripeSubscriptionCheckoutSession{ID: "cs_embedded_replay", ClientSecret: "cs_secret_created"}, nil
+	}
+	restoreStripeAccessors := ReplaceStripeCheckoutSessionAccessorsForTest(
+		func(_ context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+			require.Equal(t, "cs_embedded_replay", sessionID)
+			return &stripe.CheckoutSession{ID: sessionID, ClientSecret: "cs_secret_replayed", URL: ""}, nil
+		},
+		nil,
+	)
+	t.Cleanup(restoreStripeAccessors)
+
+	first, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      8114,
+		PlanID:      8214,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "550e8400-e29b-41d4-a716-446655440114",
+		UIMode:      "embedded",
+	})
+	require.NoError(t, err)
+	second, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      8114,
+		PlanID:      8214,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "550e8400-e29b-41d4-a716-446655440114",
+		UIMode:      "embedded",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, ChangePlanStatusCheckoutRequired, first.Status)
+	require.Equal(t, "cs_secret_created", first.ClientSecret)
+	require.Empty(t, first.CheckoutURL)
+	require.Equal(t, first.Intent.Id, second.Intent.Id)
+	require.Equal(t, "cs_secret_replayed", second.ClientSecret)
+	require.Empty(t, second.CheckoutURL)
+	require.Equal(t, 1, createdCount)
+	var order model.SubscriptionOrder
+	require.NoError(t, model.DB.Where("change_intent_id = ?", first.Intent.Id).First(&order).Error)
+	require.Equal(t, "cs_embedded_replay", order.ProviderSessionId)
+	require.Empty(t, order.ProviderSessionURL)
+}
+
+func TestStripeRecurringReplayRejectsSessionWithoutURLOrClientSecret(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	originalPublishableKey := setting.StripePublishableKey
+	setting.StripePublishableKey = "pk_test_embedded"
+	t.Cleanup(func() { setting.StripePublishableKey = originalPublishableKey })
+	insertContractServiceUser(t, 8116, 0)
+	plan := insertContractServicePlan(t, 8216, 1, 12.34, 1234)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("stripe_price_id", "price_embedded_missing_secret").Error)
+	originalCreator := stripeSubscriptionCheckoutCreator
+	t.Cleanup(func() { stripeSubscriptionCheckoutCreator = originalCreator })
+	stripeSubscriptionCheckoutCreator = func(_ context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+		return &StripeSubscriptionCheckoutSession{ID: "cs_embedded_missing_secret", ClientSecret: "cs_secret_initial"}, nil
+	}
+	restoreStripeAccessors := ReplaceStripeCheckoutSessionAccessorsForTest(
+		func(_ context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+			require.Equal(t, "cs_embedded_missing_secret", sessionID)
+			return &stripe.CheckoutSession{ID: sessionID}, nil
+		},
+		nil,
+	)
+	t.Cleanup(restoreStripeAccessors)
+
+	first, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      8116,
+		PlanID:      8216,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "550e8400-e29b-41d4-a716-446655440116",
+		UIMode:      "embedded",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "cs_secret_initial", first.ClientSecret)
+
+	second, err := ChangeSubscriptionPlan(ChangePlanCommand{
+		UserID:      8116,
+		PlanID:      8216,
+		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:   "550e8400-e29b-41d4-a716-446655440116",
+		UIMode:      "embedded",
+	})
+
+	require.Error(t, err)
+	require.Nil(t, second)
+	require.Contains(t, err.Error(), "missing url or client secret")
+}
+
+func TestPersistStripeCheckoutSessionDoesNotEraseExistingURLWhenNewURLIsEmpty(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	insertContractServiceUser(t, 8115, 0)
+	insertContractServicePlan(t, 8215, 1, 12.34, 1234)
+	order := model.SubscriptionOrder{
+		UserId:             8115,
+		PlanId:             8215,
+		TradeNo:            "sub_existing_url",
+		PaymentMethod:      model.PaymentMethodStripe,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		ChangeIntentId:     1515,
+		ProviderSessionId:  "cs_existing_url",
+		ProviderSessionURL: "https://checkout.example/existing",
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+
+	require.NoError(t, persistStripeCheckoutSession(1515, "cs_existing_url", ""))
+
+	var reloaded model.SubscriptionOrder
+	require.NoError(t, model.DB.Where("trade_no = ?", order.TradeNo).First(&reloaded).Error)
+	require.Equal(t, "cs_existing_url", reloaded.ProviderSessionId)
+	require.Equal(t, "https://checkout.example/existing", reloaded.ProviderSessionURL)
+}
+
 func TestStripeDowngradeRequestSupersedesPendingDowngradeStripeCheckout(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	insertContractServiceUser(t, 8108, 0)

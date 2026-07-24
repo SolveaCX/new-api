@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -30,11 +31,18 @@ type StripeSubscriptionCheckoutInput struct {
 	Email          string
 	PriceID        string
 	IdempotencyKey string
+	Presentation   StripeCheckoutPresentation
 }
 
 type StripeSubscriptionCheckoutSession struct {
-	ID  string
-	URL string
+	ID           string
+	URL          string
+	ClientSecret string
+}
+
+type StripeCheckoutPresentation struct {
+	RequestedUIMode string
+	Embedded        bool
 }
 
 type PaidInvoiceReconcileResult struct {
@@ -80,6 +88,33 @@ var stripeSubscriptionGetter = getStripeSubscriptionForReconcile
 var stripeSubscriptionCheckoutCreator = createStripeSubscriptionCheckout
 var stripeCheckoutSessionGetter = getStripeCheckoutSessionForSubscription
 var stripeCheckoutSessionExpirer = expireStripeCheckoutSessionForSubscription
+
+func ResolveStripeCheckoutPresentation(uiMode string) StripeCheckoutPresentation {
+	requested := strings.ToLower(strings.TrimSpace(uiMode))
+	return StripeCheckoutPresentation{
+		RequestedUIMode: requested,
+		Embedded:        requested == "embedded" && strings.TrimSpace(setting.StripePublishableKey) != "",
+	}
+}
+
+func ApplyStripeCheckoutPresentation(params *stripe.CheckoutSessionParams, presentation StripeCheckoutPresentation, tradeNo string) {
+	if params == nil || !presentation.Embedded {
+		return
+	}
+	params.UIMode = stripe.String(string(stripe.CheckoutSessionUIModeEmbeddedPage))
+	params.ReturnURL = stripe.String(stripeEmbeddedCheckoutReturnURL(tradeNo))
+	params.SuccessURL = nil
+	params.CancelURL = nil
+}
+
+func stripeEmbeddedCheckoutReturnURL(tradeNo string) string {
+	base := consoleSubscriptionReturnPath()
+	separator := "?"
+	if strings.Contains(base, "?") {
+		separator = "&"
+	}
+	return base + separator + "session_id={CHECKOUT_SESSION_ID}&trade_no=" + url.QueryEscape(strings.TrimSpace(tradeNo))
+}
 
 func ReplaceStripeCheckoutSessionAccessorsForTest(
 	getter func(context.Context, string) (*stripe.CheckoutSession, error),
@@ -160,6 +195,7 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 			Metadata: metadata,
 		},
 	}
+	ApplyStripeCheckoutPresentation(params, input.Presentation, input.TradeNo)
 	if strings.TrimSpace(input.CustomerID) != "" {
 		params.Customer = stripe.String(strings.TrimSpace(input.CustomerID))
 	} else {
@@ -174,12 +210,20 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	if err != nil {
 		return nil, err
 	}
-	if created == nil || strings.TrimSpace(created.ID) == "" || strings.TrimSpace(created.URL) == "" {
-		return nil, errors.New("Stripe checkout session missing id or url")
+	if created == nil || strings.TrimSpace(created.ID) == "" {
+		return nil, errors.New("Stripe checkout session missing id")
+	}
+	if input.Presentation.Embedded {
+		if strings.TrimSpace(created.ClientSecret) == "" {
+			return nil, errors.New("Stripe embedded checkout session missing client secret")
+		}
+	} else if strings.TrimSpace(created.URL) == "" {
+		return nil, errors.New("Stripe checkout session missing url")
 	}
 	return &StripeSubscriptionCheckoutSession{
-		ID:  strings.TrimSpace(created.ID),
-		URL: strings.TrimSpace(created.URL),
+		ID:           strings.TrimSpace(created.ID),
+		URL:          strings.TrimSpace(created.URL),
+		ClientSecret: strings.TrimSpace(created.ClientSecret),
 	}, nil
 }
 

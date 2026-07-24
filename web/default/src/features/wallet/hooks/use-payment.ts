@@ -45,6 +45,7 @@ import type {
   PaddlePaymentResponse,
   PaymentOptions,
   StripePaymentResponse,
+  StripeTopupSummary,
 } from '../types'
 
 // ============================================================================
@@ -82,6 +83,36 @@ function navigateToPaymentPage(url: string): void {
   toast.success(i18next.t('Redirecting to payment page...'))
 }
 
+export type StripeCheckoutData = {
+  client_secret?: string
+  publishable_key?: string
+  pay_link?: string
+  checkout_url?: string
+  hosted_invoice_url?: string
+  topup_summary?: StripeTopupSummary
+}
+
+export type StripeCheckoutPresentation = {
+  title?: string
+  description?: string
+  summary?: StripeTopupSummary | null
+  fallbackUrl?: string
+}
+
+export type StripeCheckoutOpenResult = 'embedded' | 'hosted' | null
+
+export type StripeCheckoutOpening =
+  | {
+      kind: 'embedded'
+      clientSecret: string
+      publishableKey: string
+      fallbackUrl?: string
+    }
+  | {
+      kind: 'hosted'
+      url: string
+    }
+
 function getStripeRedirectUrls(): { success_url: string; cancel_url: string } {
   return {
     success_url: new URL('/wallet?show_history=true', window.location.origin)
@@ -103,8 +134,15 @@ function normalizeCheckoutUrl(url: string | undefined): string | undefined {
     return undefined
   }
 
+  if (isRootRelativeUrl && typeof window === 'undefined') {
+    return undefined
+  }
+
   try {
-    const parsedUrl = new URL(normalizedUrl, window.location.origin)
+    const parsedUrl = new URL(
+      normalizedUrl,
+      typeof window === 'undefined' ? undefined : window.location.origin
+    )
     if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
       return parsedUrl.href
     }
@@ -113,6 +151,33 @@ function normalizeCheckoutUrl(url: string | undefined): string | undefined {
   }
 
   return undefined
+}
+
+export function resolveStripeCheckoutOpening(
+  data: StripeCheckoutData | null | undefined
+): StripeCheckoutOpening | null {
+  const fallbackUrl =
+    normalizeCheckoutUrl(data?.pay_link) ??
+    normalizeCheckoutUrl(data?.checkout_url) ??
+    normalizeCheckoutUrl(data?.hosted_invoice_url)
+
+  if (data?.client_secret && data.publishable_key) {
+    return {
+      kind: 'embedded',
+      clientSecret: data.client_secret,
+      publishableKey: data.publishable_key,
+      ...(fallbackUrl ? { fallbackUrl } : {}),
+    }
+  }
+
+  if (fallbackUrl) {
+    return {
+      kind: 'hosted',
+      url: fallbackUrl,
+    }
+  }
+
+  return null
 }
 
 function getPaddleCheckoutUrl(response: PaddlePaymentResponse): string | null {
@@ -157,24 +222,40 @@ export function usePayment() {
     setEmbeddedCheckout(null)
   }, [])
 
-  const openStripeCheckoutResponse = useCallback(
-    (response: StripePaymentResponse): 'embedded' | 'hosted' | null => {
-      const stripeData = response.data
-      if (stripeData?.client_secret && stripeData?.publishable_key) {
+  const openStripeCheckout = useCallback(
+    (
+      data: StripeCheckoutData | null | undefined,
+      presentation?: StripeCheckoutPresentation
+    ): StripeCheckoutOpenResult => {
+      const opening = resolveStripeCheckoutOpening(data)
+      if (opening?.kind === 'embedded') {
         setEmbeddedCheckout({
-          clientSecret: stripeData.client_secret,
-          publishableKey: stripeData.publishable_key,
-          summary: stripeData.topup_summary ?? null,
+          clientSecret: opening.clientSecret,
+          publishableKey: opening.publishableKey,
+          summary: presentation?.summary ?? data?.topup_summary ?? null,
+          title: presentation?.title,
+          description: presentation?.description,
+          fallbackUrl:
+            normalizeCheckoutUrl(presentation?.fallbackUrl) ??
+            opening.fallbackUrl,
         })
         return 'embedded'
       }
-      if (stripeData?.pay_link) {
-        navigateToPaymentPage(stripeData.pay_link)
+      if (opening?.kind === 'hosted') {
+        navigateToPaymentPage(opening.url)
         return 'hosted'
       }
       return null
     },
     []
+  )
+
+  const openStripeCheckoutResponse = useCallback(
+    (response: StripePaymentResponse): StripeCheckoutOpenResult =>
+      openStripeCheckout(response.data, {
+        summary: response.data?.topup_summary ?? null,
+      }),
+    [openStripeCheckout]
   )
 
   // Calculate payment amount
@@ -312,6 +393,7 @@ export function usePayment() {
     processing,
     embeddedCheckout,
     closeEmbeddedCheckout,
+    openStripeCheckout,
     openStripeCheckoutResponse,
     calculatePaymentAmount,
     processPayment,
