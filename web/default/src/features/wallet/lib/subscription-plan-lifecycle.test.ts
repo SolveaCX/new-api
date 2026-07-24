@@ -467,7 +467,35 @@ describe('buildFlexiblePurchaseRequest', () => {
       months: 3,
       request_id: 'request-1',
       quote_id: 'quote-pix-3',
+      ui_mode: 'embedded',
     })
+  })
+
+  test('requests embedded checkout only for hosted payment choices', () => {
+    for (const paymentChoice of [
+      'stripe_recurring',
+      'alipay',
+      'pix',
+      'upi',
+    ] as const) {
+      expect(
+        buildFlexiblePurchaseRequest({
+          planId: 2,
+          paymentChoice,
+          months: 3,
+          requestId: 'request-embedded',
+        }).ui_mode
+      ).toBe('embedded')
+    }
+
+    expect(
+      buildFlexiblePurchaseRequest({
+        planId: 2,
+        paymentChoice: 'balance',
+        months: 3,
+        requestId: 'request-balance',
+      })
+    ).not.toHaveProperty('ui_mode')
   })
 
   test('forces Stripe recurring to one month while preserving the quote id', () => {

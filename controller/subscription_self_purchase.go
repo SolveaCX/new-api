@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -31,6 +32,7 @@ type SubscriptionSelfPurchaseRequest struct {
 	Months        int    `json:"months"`
 	RequestID     string `json:"request_id"`
 	QuoteID       string `json:"quote_id"`
+	UIMode        string `json:"ui_mode"`
 }
 
 type SubscriptionSelfPurchaseQuoteResponse struct {
@@ -52,6 +54,8 @@ type SubscriptionSelfPurchaseResponse struct {
 	Intent           *SubscriptionPendingChangeDTO `json:"intent,omitempty"`
 	CheckoutURL      string                        `json:"checkout_url,omitempty"`
 	HostedInvoiceURL string                        `json:"hosted_invoice_url,omitempty"`
+	ClientSecret     string                        `json:"client_secret,omitempty"`
+	PublishableKey   string                        `json:"publishable_key,omitempty"`
 }
 
 func QuoteSubscriptionSelfPurchase(c *gin.Context) {
@@ -171,6 +175,7 @@ func PurchaseSubscriptionSelf(c *gin.Context) {
 		Months:        req.Months,
 		RequestID:     req.RequestID,
 		VerifiedQuote: subscriptionPurchaseQuoteFromClaims(claims, requiresQuote),
+		UIMode:        req.UIMode,
 	})
 	if err != nil {
 		common.ApiError(c, err)
@@ -183,7 +188,7 @@ func PurchaseSubscriptionSelf(c *gin.Context) {
 		}
 	}
 	if isOneTimePlanStripeMethod(choice) {
-		checkoutURL, err := ensureSubscriptionSelfOneTimeCheckout(c, result)
+		checkoutURL, err := ensureSubscriptionSelfOneTimeCheckout(c, result, req.UIMode)
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -249,12 +254,33 @@ func subscriptionPurchaseQuoteFromClaims(claims service.SubscriptionPurchaseQuot
 	}
 }
 
-func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.PurchaseSubscriptionResult) (string, error) {
+func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.PurchaseSubscriptionResult, uiMode string) (string, error) {
 	if result == nil || result.Order == nil {
 		return "", errors.New("subscription checkout order is missing")
 	}
 	order := result.Order
+	presentation := service.ResolveStripeCheckoutPresentation(uiMode)
 	if strings.TrimSpace(order.ProviderSessionURL) != "" {
+		if err := model.SyncSubscriptionOrderTopUpHistory(order.TradeNo); err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(order.ProviderSessionURL), nil
+	}
+	if strings.TrimSpace(order.ProviderSessionId) != "" {
+		checkoutSession, err := stripeOneTimeCheckoutSessionGetter(c.Request.Context(), order.ProviderSessionId)
+		if err != nil {
+			return "", err
+		}
+		if checkoutSession == nil || strings.TrimSpace(checkoutSession.ID) != strings.TrimSpace(order.ProviderSessionId) {
+			return "", errors.New("Stripe checkout session could not be authenticated")
+		}
+		if strings.TrimSpace(checkoutSession.URL) != "" {
+			order.ProviderSessionURL = strings.TrimSpace(checkoutSession.URL)
+		}
+		result.ClientSecret = strings.TrimSpace(checkoutSession.ClientSecret)
+		if strings.TrimSpace(order.ProviderSessionURL) == "" && result.ClientSecret == "" {
+			return "", errors.New("Stripe checkout session missing url or client secret")
+		}
 		if err := model.SyncSubscriptionOrderTopUpHistory(order.TradeNo); err != nil {
 			return "", err
 		}
@@ -267,11 +293,18 @@ func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.Purch
 	if user == nil {
 		return "", errors.New("user not found")
 	}
-	checkoutSession, err := stripeOneTimeCheckoutSessionCreator(c.Request.Context(), order, user)
+	checkoutSession, err := stripeOneTimeCheckoutSessionCreator(c.Request.Context(), order, user, presentation)
 	if err != nil {
 		return "", err
 	}
-	if checkoutSession == nil || strings.TrimSpace(checkoutSession.URL) == "" {
+	if checkoutSession == nil || strings.TrimSpace(checkoutSession.ID) == "" {
+		return "", errors.New("Stripe checkout session ID is missing")
+	}
+	if presentation.Embedded {
+		if strings.TrimSpace(checkoutSession.ClientSecret) == "" {
+			return "", errors.New("Stripe embedded checkout session client secret is missing")
+		}
+	} else if strings.TrimSpace(checkoutSession.URL) == "" {
 		return "", errors.New("Stripe checkout session URL is missing")
 	}
 	if err := persistOneTimeStripeCheckoutSession(order.TradeNo, checkoutSession.ID, checkoutSession.URL); err != nil {
@@ -279,6 +312,7 @@ func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.Purch
 	}
 	order.ProviderSessionId = strings.TrimSpace(checkoutSession.ID)
 	order.ProviderSessionURL = strings.TrimSpace(checkoutSession.URL)
+	result.ClientSecret = strings.TrimSpace(checkoutSession.ClientSecret)
 	if err := model.SyncSubscriptionOrderTopUpHistory(order.TradeNo); err != nil {
 		return "", err
 	}
@@ -297,6 +331,10 @@ func subscriptionSelfPurchaseResponse(result *service.PurchaseSubscriptionResult
 		Status:           result.Status,
 		CheckoutURL:      checkoutURL,
 		HostedInvoiceURL: strings.TrimSpace(result.HostedInvoiceURL),
+		ClientSecret:     strings.TrimSpace(result.ClientSecret),
+	}
+	if response.ClientSecret != "" {
+		response.PublishableKey = strings.TrimSpace(setting.StripePublishableKey)
 	}
 	if result.Contract != nil && result.Contract.Id > 0 {
 		response.Contract = subscriptionContractDTO(result.Contract)

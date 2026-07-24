@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -27,6 +27,7 @@ import type {
   SubscriptionPaymentQuote,
 } from '@/features/subscriptions/types'
 import {
+  buildFlexiblePurchaseRequest,
   buildFlexibleQuoteRequest,
   getMatchingPaymentQuote,
   mergeFlexibleQuoteProjection,
@@ -879,6 +880,49 @@ describe('PlanPurchaseDialog payment choices', () => {
 })
 
 describe('flexible payment quote interaction helpers', () => {
+  test('requests embedded checkout for hosted subscription payment choices only', () => {
+    expect(
+      buildFlexiblePurchaseRequest({
+        planId: 2,
+        paymentChoice: 'stripe_recurring',
+        months: 1,
+        requestId: 'request-1',
+      }).ui_mode
+    ).toBe('embedded')
+    expect(
+      buildFlexiblePurchaseRequest({
+        planId: 2,
+        paymentChoice: 'alipay',
+        months: 3,
+        requestId: 'request-1',
+      }).ui_mode
+    ).toBe('embedded')
+    expect(
+      buildFlexiblePurchaseRequest({
+        planId: 2,
+        paymentChoice: 'pix',
+        months: 3,
+        requestId: 'request-1',
+      }).ui_mode
+    ).toBe('embedded')
+    expect(
+      buildFlexiblePurchaseRequest({
+        planId: 2,
+        paymentChoice: 'upi',
+        months: 3,
+        requestId: 'request-1',
+      }).ui_mode
+    ).toBe('embedded')
+    expect(
+      buildFlexiblePurchaseRequest({
+        planId: 2,
+        paymentChoice: 'balance',
+        months: 3,
+        requestId: 'request-1',
+      })
+    ).not.toHaveProperty('ui_mode')
+  })
+
   test('requires signed checkout quotes only for Stripe-hosted one-time choices', () => {
     expect(requiresSignedCheckoutQuote('alipay')).toBe(true)
     expect(requiresSignedCheckoutQuote('pix')).toBe(true)
@@ -1061,5 +1105,44 @@ describe('flexible payment quote interaction helpers', () => {
 
     expect(stale).toBe(current)
     expect(accepted?.payment_quotes?.pix?.quote_id).toBe('quote-pix-3')
+  })
+})
+
+describe('subscription embedded checkout invariants', () => {
+  test('keeps Stripe Embedded Checkout lifecycle only in the existing dialog', () => {
+    const walletRoot = new URL('../', import.meta.url)
+    const filesToScan = (directory: URL): string[] =>
+      readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const child = new URL(
+          `${entry.name}${entry.isDirectory() ? '/' : ''}`,
+          directory
+        )
+        if (entry.isDirectory()) return filesToScan(child)
+        if (!entry.name.match(/\.tsx?$/) || entry.name.includes('.test.')) {
+          return []
+        }
+        return [child.pathname.replace(walletRoot.pathname, '')]
+      })
+
+    const filesWithStripeLifecycle = filesToScan(walletRoot)
+      .filter((file) => {
+        const source = readFileSync(new URL(file, walletRoot), 'utf8')
+        return /createEmbeddedCheckoutPage|\.mount\(|\.destroy\(/.test(source)
+      })
+      .sort()
+
+    expect(filesWithStripeLifecycle).toEqual([
+      'components/dialogs/stripe-embedded-checkout-dialog.tsx',
+    ])
+  })
+
+  test('routes subscription checkout through the shared opener without direct redirect', () => {
+    const cardSource = readFileSync(
+      new URL('./subscription-plans-card.tsx', import.meta.url),
+      'utf8'
+    )
+
+    expect(cardSource).not.toContain('window.location.assign')
+    expect(cardSource).toContain('onOpenStripeCheckout')
   })
 })

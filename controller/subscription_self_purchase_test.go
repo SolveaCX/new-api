@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v86"
@@ -270,11 +271,19 @@ func TestSubscriptionSelfPurchaseCreatesOneTimeStripeCheckoutAndReplaysURL(t *te
 	insertSubscriptionControllerUser(t, 9104)
 	insertSubscriptionSelfPurchasePlan(t, 9204)
 	originalCreator := stripeOneTimeCheckoutSessionCreator
+	originalGetter := stripeOneTimeCheckoutSessionGetter
 	var createdTradeNos []string
-	t.Cleanup(func() { stripeOneTimeCheckoutSessionCreator = originalCreator })
-	stripeOneTimeCheckoutSessionCreator = func(_ context.Context, order *model.SubscriptionOrder, _ *model.User) (*oneTimeStripeCheckoutSession, error) {
+	t.Cleanup(func() {
+		stripeOneTimeCheckoutSessionCreator = originalCreator
+		stripeOneTimeCheckoutSessionGetter = originalGetter
+	})
+	stripeOneTimeCheckoutSessionCreator = func(_ context.Context, order *model.SubscriptionOrder, _ *model.User, _ ...service.StripeCheckoutPresentation) (*oneTimeStripeCheckoutSession, error) {
 		createdTradeNos = append(createdTradeNos, order.TradeNo)
 		return &oneTimeStripeCheckoutSession{ID: "cs_test_self_purchase", URL: "https://checkout.example/self-purchase"}, nil
+	}
+	stripeOneTimeCheckoutSessionGetter = func(_ context.Context, sessionID string) (*oneTimeStripeCheckoutSession, error) {
+		require.Equal(t, "cs_test_self_purchase", sessionID)
+		return &oneTimeStripeCheckoutSession{ID: sessionID, URL: "https://checkout.example/self-purchase"}, nil
 	}
 	quote := performSubscriptionSelfPurchaseRequest(
 		`{"plan_id":9204,"payment_method":"upi","months":1,"request_id":"one-time-checkout"}`,
@@ -317,6 +326,49 @@ func TestSubscriptionSelfPurchaseCreatesOneTimeStripeCheckoutAndReplaysURL(t *te
 	require.Equal(t, "cs_test_self_purchase", topUps[0].GatewayTradeNo)
 }
 
+func TestSubscriptionSelfOneTimeReplayRejectsSessionWithoutURLOrClientSecret(t *testing.T) {
+	enablePaymentComplianceForSubscriptionControllerTest(t)
+	setupSubscriptionControllerTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.TopUp{}))
+	insertSubscriptionControllerUser(t, 9114)
+	insertSubscriptionSelfPurchasePlan(t, 9214)
+	order := model.SubscriptionOrder{
+		UserId:             9114,
+		PlanId:             9214,
+		Money:              9.99,
+		TradeNo:            "SUBPURUSR9114INT1NOreplay",
+		PaymentMethod:      service.SubscriptionPaymentChoiceAlipay,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		PurchaseMonths:     1,
+		UnitPrice:          9.99,
+		PaymentCurrency:    "USD",
+		PaymentAmountMinor: 999,
+		ChangeIntentId:     1,
+		ProviderSessionId:  "cs_one_time_missing_secret",
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+	originalGetter := stripeOneTimeCheckoutSessionGetter
+	t.Cleanup(func() { stripeOneTimeCheckoutSessionGetter = originalGetter })
+	stripeOneTimeCheckoutSessionGetter = func(_ context.Context, sessionID string) (*oneTimeStripeCheckoutSession, error) {
+		require.Equal(t, "cs_one_time_missing_secret", sessionID)
+		return &oneTimeStripeCheckoutSession{ID: sessionID}, nil
+	}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/subscription/self/purchase", strings.NewReader(`{}`))
+
+	checkoutURL, err := ensureSubscriptionSelfOneTimeCheckout(ctx, &service.PurchaseSubscriptionResult{
+		Status: service.ChangePlanStatusCheckoutRequired,
+		Order:  &order,
+	}, "embedded")
+
+	require.Error(t, err)
+	require.Empty(t, checkoutURL)
+	require.Contains(t, err.Error(), "missing url or client secret")
+}
+
 func TestSubscriptionSelfPurchaseReplacesPendingOneTimeStripeCheckoutForNewRequest(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
@@ -347,7 +399,7 @@ func TestSubscriptionSelfPurchaseReplacesPendingOneTimeStripeCheckoutForNewReque
 		},
 	)
 	t.Cleanup(restoreStripeAccessors)
-	stripeOneTimeCheckoutSessionCreator = func(_ context.Context, order *model.SubscriptionOrder, _ *model.User) (*oneTimeStripeCheckoutSession, error) {
+	stripeOneTimeCheckoutSessionCreator = func(_ context.Context, order *model.SubscriptionOrder, _ *model.User, _ ...service.StripeCheckoutPresentation) (*oneTimeStripeCheckoutSession, error) {
 		createdTradeNos = append(createdTradeNos, order.TradeNo)
 		return &oneTimeStripeCheckoutSession{
 			ID:  "cs_replace_" + strconv.Itoa(len(createdTradeNos)),
@@ -456,6 +508,36 @@ func TestSubscriptionSelfPurchaseResponseUsesRecurringCheckoutURL(t *testing.T) 
 	}, "")
 
 	require.Equal(t, "https://checkout.example/recurring-purchase", response.CheckoutURL)
+}
+
+func TestSubscriptionSelfPurchaseResponseIncludesClientSecretAndPublishableKey(t *testing.T) {
+	originalPublishableKey := setting.StripePublishableKey
+	setting.StripePublishableKey = "pk_test_embedded"
+	t.Cleanup(func() { setting.StripePublishableKey = originalPublishableKey })
+
+	response := subscriptionSelfPurchaseResponse(&service.PurchaseSubscriptionResult{
+		Status:       service.ChangePlanStatusCheckoutRequired,
+		ClientSecret: "cs_secret_self_purchase",
+	}, "")
+
+	require.Equal(t, "cs_secret_self_purchase", response.ClientSecret)
+	require.Equal(t, "pk_test_embedded", response.PublishableKey)
+	require.Empty(t, response.CheckoutURL)
+}
+
+func TestSubscriptionSelfPurchaseResponseOmitsPublishableKeyWithoutClientSecret(t *testing.T) {
+	originalPublishableKey := setting.StripePublishableKey
+	setting.StripePublishableKey = "pk_test_hosted"
+	t.Cleanup(func() { setting.StripePublishableKey = originalPublishableKey })
+
+	response := subscriptionSelfPurchaseResponse(&service.PurchaseSubscriptionResult{
+		Status:      service.ChangePlanStatusApplied,
+		CheckoutURL: "https://checkout.example/hosted",
+	}, "")
+
+	require.Empty(t, response.ClientSecret)
+	require.Empty(t, response.PublishableKey)
+	require.Equal(t, "https://checkout.example/hosted", response.CheckoutURL)
 }
 
 func TestSubscriptionSelfPurchaseResponseUsesRecurringHostedInvoiceURL(t *testing.T) {

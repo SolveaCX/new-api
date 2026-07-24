@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v86"
 )
@@ -73,6 +74,63 @@ func TestBuildOneTimePlanCheckoutUsesQuantityOneAndFullOrderAmount(t *testing.T)
 	require.Equal(t, "usd", *item.PriceData.Currency)
 	require.NotNil(t, item.PriceData.ProductData)
 	require.Contains(t, *item.PriceData.ProductData.Name, "Pro Local")
+}
+
+func TestBuildOneTimePlanCheckoutEmbeddedUsesReturnURLWithoutHostedURLs(t *testing.T) {
+	originalPublishableKey := setting.StripePublishableKey
+	setting.StripePublishableKey = "pk_test_embedded"
+	t.Cleanup(func() { setting.StripePublishableKey = originalPublishableKey })
+	presentation := service.ResolveStripeCheckoutPresentation("embedded")
+
+	testCases := []struct {
+		name        string
+		method      string
+		currency    string
+		amountMinor int64
+		stripeType  stripe.PaymentMethodType
+	}{
+		{
+			name:        "alipay-usd",
+			method:      service.SubscriptionPaymentChoiceAlipay,
+			currency:    "USD",
+			amountMinor: 2468,
+			stripeType:  stripe.PaymentMethodTypeAlipay,
+		},
+		{
+			name:        "pix-brl",
+			method:      service.SubscriptionPaymentChoicePix,
+			currency:    "BRL",
+			amountMinor: 4990,
+			stripeType:  stripe.PaymentMethodTypePix,
+		},
+		{
+			name:        "upi-inr",
+			method:      service.SubscriptionPaymentChoiceUPI,
+			currency:    "INR",
+			amountMinor: 89900,
+			stripeType:  stripe.PaymentMethodTypeUpi,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			order := oneTimeStripeOrderForTest(tc.method, tc.currency, tc.amountMinor, 2)
+
+			params, err := buildOneTimePlanCheckoutSessionParams(order, &model.User{Id: 501, Email: "buyer@example.com"}, presentation)
+
+			require.NoError(t, err)
+			require.NotNil(t, params.UIMode)
+			require.Equal(t, string(stripe.CheckoutSessionUIModeEmbeddedPage), *params.UIMode)
+			require.Nil(t, params.SuccessURL)
+			require.Nil(t, params.CancelURL)
+			require.NotNil(t, params.ReturnURL)
+			require.Contains(t, *params.ReturnURL, "session_id={CHECKOUT_SESSION_ID}")
+			require.Contains(t, *params.ReturnURL, "trade_no="+order.TradeNo)
+			require.Equal(t, []string{string(tc.stripeType)}, stripeStringSliceValues(params.PaymentMethodTypes))
+			require.Len(t, params.LineItems, 1)
+			require.Equal(t, strings.ToLower(tc.currency), *params.LineItems[0].PriceData.Currency)
+			require.Equal(t, tc.amountMinor, *params.LineItems[0].PriceData.UnitAmount)
+		})
+	}
 }
 
 func TestOneTimePlanCheckoutRejectsPixOutsideBRL(t *testing.T) {
