@@ -77,8 +77,7 @@ export async function approveCliDeviceAuthorization(
   userCode: string
 ): Promise<ApiResponse & { data?: CliDeviceAuthorization }> {
   const res = await api.post(
-    `/api/cli/device_authorizations/${encodeURIComponent(userCode)}/approve`,
-    { user_code: userCode }
+    `/api/cli/device_authorizations/${encodeURIComponent(userCode)}/approve`
   )
   return res.data
 }
@@ -87,8 +86,7 @@ export async function denyCliDeviceAuthorization(
   userCode: string
 ): Promise<ApiResponse & { data?: CliDeviceAuthorization }> {
   const res = await api.post(
-    `/api/cli/device_authorizations/${encodeURIComponent(userCode)}/deny`,
-    { user_code: userCode }
+    `/api/cli/device_authorizations/${encodeURIComponent(userCode)}/deny`
   )
   return res.data
 }

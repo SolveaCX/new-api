@@ -42,14 +42,13 @@ export const Route = createFileRoute('/cli/authorize')({
   validateSearch: searchSchema,
   beforeLoad: async ({ location }) => {
     const { auth } = useAuthStore.getState()
-    if (auth.user) return
-
     const res = await getSelf().catch(() => null)
     if (res?.success && res.data) {
       auth.setUser(res.data)
       return
     }
 
+    auth.reset()
     throw redirect({
       to: '/sign-in',
       search: { redirect: location.href },

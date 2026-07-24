@@ -51,6 +51,14 @@ token.status_unavailable: "O status deste token está indisponível"
 token.db_error: "Token inválido: erro de consulta ao banco de dados, entre em contato com o administrador"
 token.batch_group_cache_sync_pending: "Os grupos de tokens foram atualizados, mas a sincronização do cache está pendente. Repita a mesma solicitação."
 
+# CLI device authorization messages
+cli.device_id_missing: "ID do dispositivo é obrigatório"
+cli.device_metadata_too_long: "Os metadados do dispositivo CLI são muito longos"
+cli.device_code_invalid: "Código do dispositivo inválido"
+cli.authorization_code_missing: "Código de autorização é obrigatório"
+cli.authorization_not_found: "Solicitação de autorização não encontrada"
+cli.authorization_token_create_failed: "Falha ao criar token CLI"
+
 # Redemption messages
 redemption.name_length: "O nome do código de resgate deve ter entre 1 e 20 caracteres"
 redemption.count_positive: "A quantidade de códigos de resgate deve ser maior que 0"

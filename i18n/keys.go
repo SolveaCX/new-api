@@ -59,6 +59,16 @@ const (
 	MsgTokenBatchCachePending    = "token.batch_group_cache_sync_pending"
 )
 
+// CLI device authorization messages
+const (
+	MsgCliDeviceIdMissing              = "cli.device_id_missing"
+	MsgCliDeviceMetadataTooLong        = "cli.device_metadata_too_long"
+	MsgCliDeviceCodeInvalid            = "cli.device_code_invalid"
+	MsgCliAuthorizationCodeMissing     = "cli.authorization_code_missing"
+	MsgCliAuthorizationNotFound        = "cli.authorization_not_found"
+	MsgCliAuthorizationTokenCreateFail = "cli.authorization_token_create_failed"
+)
+
 // Redemption related messages
 const (
 	MsgRedemptionNameLength        = "redemption.name_length"

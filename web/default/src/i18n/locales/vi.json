@@ -5922,7 +5922,7 @@
     "{{value}}% healthy threshold": "Ngưỡng khỏe mạnh {{value}}%",
     "Flatkey CLI wants to connect": "Flatkey CLI muốn kết nối",
     "Approve terminal login": "Phê duyệt đăng nhập từ terminal",
-    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Thao tác này sẽ tạo hoặc dùng lại API key Flatkey cho thiết bị này. Các yêu cầu CLI sau đó sẽ dùng credits từ tài khoản này.",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Thao tác này sẽ tạo hoặc dùng lại API key Flatkey cho thiết bị này. Các yêu cầu CLI sau đó sẽ sử dụng tín dụng từ tài khoản này.",
     "Signed in as": "Đang đăng nhập bằng",
     "Request code": "Mã yêu cầu",
     "Client": "Ứng dụng",

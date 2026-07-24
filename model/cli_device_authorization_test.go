@@ -108,3 +108,116 @@ func TestApproveCliDeviceAuthorizationWithTokenReusesSameDeviceToken(t *testing.
 	require.NoError(t, DB.Model(&Token{}).Count(&tokenCount).Error)
 	require.Equal(t, int64(1), tokenCount)
 }
+
+func TestConsumeCliDeviceAuthorizationReturnsKeyOnlyOnce(t *testing.T) {
+	setupCliDeviceAuthorizationTestDB(t)
+	user := User{Username: "cli-consume-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	token := Token{
+		UserId:         user.Id,
+		Name:           "Flatkey CLI",
+		Key:            "consume-key",
+		Status:         common.TokenStatusEnabled,
+		ExpiredTime:    -1,
+		UnlimitedQuota: true,
+	}
+	require.NoError(t, DB.Create(&token).Error)
+	auth := CliDeviceAuthorization{
+		DeviceCodeHash: "consume-device-code-hash",
+		UserCodeHash:   "consume-user-code-hash",
+		Status:         CliDeviceAuthorizationStatusApproved,
+		UserId:         user.Id,
+		TokenId:        token.Id,
+		DeviceIdHash:   "consume-device-id-hash",
+		CreatedTime:    100,
+		ExpiresAt:      700,
+		ApprovedAt:     101,
+	}
+	require.NoError(t, CreateCliDeviceAuthorization(&auth))
+
+	first, err := ConsumeCliDeviceAuthorization("consume-device-code-hash", 200)
+	require.NoError(t, err)
+	require.True(t, first.Consumed)
+	require.Equal(t, token.Id, first.Token.Id)
+	require.Equal(t, int64(200), first.Authorization.ConsumedAt)
+
+	second, err := ConsumeCliDeviceAuthorization("consume-device-code-hash", 201)
+	require.NoError(t, err)
+	require.False(t, second.Consumed)
+	require.Zero(t, second.Token.Id)
+	require.Equal(t, int64(200), second.Authorization.ConsumedAt)
+}
+
+func TestConsumeCliDeviceAuthorizationExpiresUnconsumedApprovedCode(t *testing.T) {
+	setupCliDeviceAuthorizationTestDB(t)
+	user := User{Username: "cli-expired-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	token := Token{
+		UserId:         user.Id,
+		Name:           "Flatkey CLI",
+		Key:            "expired-key",
+		Status:         common.TokenStatusEnabled,
+		ExpiredTime:    -1,
+		UnlimitedQuota: true,
+	}
+	require.NoError(t, DB.Create(&token).Error)
+	auth := CliDeviceAuthorization{
+		DeviceCodeHash: "expired-device-code-hash",
+		UserCodeHash:   "expired-user-code-hash",
+		Status:         CliDeviceAuthorizationStatusApproved,
+		UserId:         user.Id,
+		TokenId:        token.Id,
+		DeviceIdHash:   "expired-device-id-hash",
+		CreatedTime:    100,
+		ExpiresAt:      200,
+		ApprovedAt:     101,
+	}
+	require.NoError(t, CreateCliDeviceAuthorization(&auth))
+
+	consumption, err := ConsumeCliDeviceAuthorization("expired-device-code-hash", 201)
+	require.NoError(t, err)
+	require.False(t, consumption.Consumed)
+	require.Zero(t, consumption.Token.Id)
+	require.Equal(t, CliDeviceAuthorizationStatusExpired, consumption.Authorization.Status)
+}
+
+func TestDenyCliDeviceAuthorizationReturnsPersistedApprovedState(t *testing.T) {
+	setupCliDeviceAuthorizationTestDB(t)
+	auth := CliDeviceAuthorization{
+		DeviceCodeHash: "approved-device-code-hash",
+		UserCodeHash:   "approved-user-code-hash",
+		Status:         CliDeviceAuthorizationStatusApproved,
+		UserId:         1,
+		TokenId:        2,
+		DeviceIdHash:   "approved-device-id-hash",
+		CreatedTime:    100,
+		ExpiresAt:      700,
+		ApprovedAt:     101,
+	}
+	require.NoError(t, CreateCliDeviceAuthorization(&auth))
+
+	denied, err := DenyCliDeviceAuthorization(auth.Id, 200)
+	require.NoError(t, err)
+	require.Equal(t, CliDeviceAuthorizationStatusApproved, denied.Status)
+	require.Equal(t, 2, denied.TokenId)
+}
+
+func TestCleanupExpiredCliDeviceAuthorizationsDeletesOnlyTerminalOldRows(t *testing.T) {
+	setupCliDeviceAuthorizationTestDB(t)
+	rows := []CliDeviceAuthorization{
+		{DeviceCodeHash: "old-denied", UserCodeHash: "old-denied-user", Status: CliDeviceAuthorizationStatusDenied, ExpiresAt: 100},
+		{DeviceCodeHash: "old-consumed", UserCodeHash: "old-consumed-user", Status: CliDeviceAuthorizationStatusApproved, ExpiresAt: 100, ConsumedAt: 101},
+		{DeviceCodeHash: "old-pending", UserCodeHash: "old-pending-user", Status: CliDeviceAuthorizationStatusPending, ExpiresAt: 100},
+		{DeviceCodeHash: "new-denied", UserCodeHash: "new-denied-user", Status: CliDeviceAuthorizationStatusDenied, ExpiresAt: 300},
+	}
+	for i := range rows {
+		require.NoError(t, CreateCliDeviceAuthorization(&rows[i]))
+	}
+
+	require.NoError(t, CleanupExpiredCliDeviceAuthorizations(200))
+
+	var remaining []CliDeviceAuthorization
+	require.NoError(t, DB.Order("device_code_hash").Find(&remaining).Error)
+	require.Len(t, remaining, 1)
+	require.Equal(t, "new-denied", remaining[0].DeviceCodeHash)
+}

@@ -5,22 +5,28 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 const (
-	cliDeviceAuthorizationTTL      = 10 * 60
-	cliDeviceAuthorizationInterval = 5
-	defaultCliClientName           = "flatkey-cli"
-	cliUserCodeChars               = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+	cliDeviceAuthorizationTTL              = 10 * 60
+	cliDeviceAuthorizationInterval         = 5
+	cliDeviceAuthorizationRetention        = 24 * 60 * 60
+	cliDeviceAuthorizationMaxClientName    = 64
+	cliDeviceAuthorizationMaxClientVersion = 32
+	cliDeviceAuthorizationMaxDeviceId      = 128
+	defaultCliClientName                   = "flatkey-cli"
+	cliUserCodeChars                       = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 )
 
 type createCliDeviceAuthorizationRequest struct {
@@ -33,18 +39,23 @@ type pollCliDeviceAuthorizationRequest struct {
 	DeviceCode string `json:"device_code"`
 }
 
-type approveCliDeviceAuthorizationRequest struct {
-	UserCode string `json:"user_code"`
-}
-
 func CreateCliDeviceAuthorization(c *gin.Context) {
 	request := createCliDeviceAuthorizationRequest{}
 	if err := c.ShouldBindJSON(&request); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if strings.TrimSpace(request.DeviceId) == "" {
-		common.ApiError(c, errors.New("missing device_id"))
+	clientName := strings.TrimSpace(request.ClientName)
+	clientVersion := strings.TrimSpace(request.ClientVersion)
+	deviceId := strings.TrimSpace(request.DeviceId)
+	if deviceId == "" {
+		common.ApiErrorI18n(c, i18n.MsgCliDeviceIdMissing)
+		return
+	}
+	if len(clientName) > cliDeviceAuthorizationMaxClientName ||
+		len(clientVersion) > cliDeviceAuthorizationMaxClientVersion ||
+		len(deviceId) > cliDeviceAuthorizationMaxDeviceId {
+		common.ApiErrorI18n(c, i18n.MsgCliDeviceMetadataTooLong)
 		return
 	}
 
@@ -59,17 +70,17 @@ func CreateCliDeviceAuthorization(c *gin.Context) {
 		return
 	}
 	now := common.GetTimestamp()
-	clientName := strings.TrimSpace(request.ClientName)
 	if clientName == "" {
 		clientName = defaultCliClientName
 	}
+	_ = model.CleanupExpiredCliDeviceAuthorizations(now - cliDeviceAuthorizationRetention)
 	auth := model.CliDeviceAuthorization{
 		DeviceCodeHash: hashCliDeviceCode(deviceCode),
 		UserCodeHash:   hashCliUserCode(userCode),
 		Status:         model.CliDeviceAuthorizationStatusPending,
 		ClientName:     clientName,
-		ClientVersion:  strings.TrimSpace(request.ClientVersion),
-		DeviceIdHash:   hashCliDeviceId(request.DeviceId),
+		ClientVersion:  clientVersion,
+		DeviceIdHash:   hashCliDeviceId(deviceId),
 		CreatedTime:    now,
 		ExpiresAt:      now + cliDeviceAuthorizationTTL,
 	}
@@ -81,8 +92,8 @@ func CreateCliDeviceAuthorization(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"device_code":               deviceCode,
 		"user_code":                 userCode,
-		"verification_uri":          buildCliVerificationURL(c, ""),
-		"verification_uri_complete": buildCliVerificationURL(c, userCode),
+		"verification_uri":          buildCliVerificationURL(""),
+		"verification_uri_complete": buildCliVerificationURL(userCode),
 		"expires_in":                cliDeviceAuthorizationTTL,
 		"interval":                  cliDeviceAuthorizationInterval,
 	})
@@ -94,38 +105,25 @@ func PollCliDeviceAuthorization(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	auth, err := model.GetCliDeviceAuthorizationByDeviceCodeHash(hashCliDeviceCode(request.DeviceCode))
+	consumption, err := model.ConsumeCliDeviceAuthorization(hashCliDeviceCode(request.DeviceCode), common.GetTimestamp())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			common.ApiError(c, errors.New("invalid device_code"))
+			common.ApiErrorI18n(c, i18n.MsgCliDeviceCodeInvalid)
 			return
 		}
 		common.ApiError(c, err)
 		return
 	}
 
-	now := common.GetTimestamp()
-	if auth.Status == model.CliDeviceAuthorizationStatusPending && auth.ExpiresAt <= now {
-		if err := model.ExpireCliDeviceAuthorization(auth.Id); err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		auth.Status = model.CliDeviceAuthorizationStatusExpired
-	}
-
+	auth := consumption.Authorization
 	data := gin.H{"status": auth.Status}
-	if auth.Status == model.CliDeviceAuthorizationStatusApproved && auth.TokenId > 0 {
-		token, err := model.GetTokenById(auth.TokenId)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
+	if consumption.Consumed {
+		token := consumption.Token
 		data["api_key"] = tokenKeyWithPrefix(token.GetFullKey())
 		data["token_id"] = token.Id
 		data["user_id"] = token.UserId
 		data["expires_at"] = auth.ExpiresAt
-		data["consumed_at"] = now
-		_ = model.DB.Model(auth).Update("consumed_at", now).Error
+		data["consumed_at"] = auth.ConsumedAt
 	}
 	common.ApiSuccess(c, data)
 }
@@ -139,12 +137,7 @@ func GetCliDeviceAuthorization(c *gin.Context) {
 }
 
 func ApproveCliDeviceAuthorization(c *gin.Context) {
-	request := approveCliDeviceAuthorizationRequest{}
-	if err := c.ShouldBindJSON(&request); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	auth, ok := getCliAuthorizationForUserCode(c, request.UserCode)
+	auth, ok := getCliAuthorizationForUserCode(c, c.Param("user_code"))
 	if !ok {
 		return
 	}
@@ -208,55 +201,36 @@ func ApproveCliDeviceAuthorization(c *gin.Context) {
 		return
 	}
 	if approval == nil {
-		common.ApiError(c, errors.New("failed to create cli token"))
+		common.ApiErrorI18n(c, i18n.MsgCliAuthorizationTokenCreateFail)
 		return
 	}
 	common.ApiSuccess(c, cliAuthorizationResponse(&approval.Authorization, now))
 }
 
 func DenyCliDeviceAuthorization(c *gin.Context) {
-	request := approveCliDeviceAuthorizationRequest{}
-	if err := c.ShouldBindJSON(&request); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	auth, ok := getCliAuthorizationForUserCode(c, request.UserCode)
+	auth, ok := getCliAuthorizationForUserCode(c, c.Param("user_code"))
 	if !ok {
 		return
 	}
 	now := common.GetTimestamp()
-	if auth.Status != model.CliDeviceAuthorizationStatusPending {
-		common.ApiSuccess(c, cliAuthorizationResponse(auth, now))
-		return
-	}
-	if auth.ExpiresAt <= now {
-		if err := model.ExpireCliDeviceAuthorization(auth.Id); err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		auth.Status = model.CliDeviceAuthorizationStatusExpired
-		common.ApiSuccess(c, cliAuthorizationResponse(auth, now))
-		return
-	}
-	if err := model.DenyCliDeviceAuthorization(auth.Id, now); err != nil {
+	auth, err := model.DenyCliDeviceAuthorization(auth.Id, now)
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	auth.Status = model.CliDeviceAuthorizationStatusDenied
-	auth.ApprovedAt = now
 	common.ApiSuccess(c, cliAuthorizationResponse(auth, now))
 }
 
 func getCliAuthorizationForUserCode(c *gin.Context, userCode string) (*model.CliDeviceAuthorization, bool) {
 	normalized := normalizeCliUserCode(userCode)
 	if normalized == "" {
-		common.ApiError(c, errors.New("missing user_code"))
+		common.ApiErrorI18n(c, i18n.MsgCliAuthorizationCodeMissing)
 		return nil, false
 	}
 	auth, err := model.GetCliDeviceAuthorizationByUserCodeHash(hashCliUserCode(normalized))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "authorization request not found"})
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": i18n.T(c, i18n.MsgCliAuthorizationNotFound)})
 			return nil, false
 		}
 		common.ApiError(c, err)
@@ -315,18 +289,21 @@ func tokenKeyWithPrefix(key string) string {
 	return "sk-" + key
 }
 
-func buildCliVerificationURL(c *gin.Context, userCode string) string {
-	scheme := c.GetHeader("X-Forwarded-Proto")
-	if scheme == "" {
-		if c.Request.TLS != nil {
-			scheme = "https"
-		} else {
-			scheme = "http"
-		}
-	}
-	base := scheme + "://" + c.Request.Host + "/cli/authorize"
+func buildCliVerificationURL(userCode string) string {
+	base := cliConsoleReturnPath("/cli/authorize")
 	if userCode == "" {
 		return base
 	}
-	return base + "?user_code=" + userCode
+	return base + "?user_code=" + url.QueryEscape(userCode)
+}
+
+func cliConsoleReturnPath(suffix string) string {
+	base, err := system_setting.NormalizeAppConsoleOrigin(system_setting.GetAppConsoleSettings().Origin)
+	if err != nil || base == "" {
+		base, err = system_setting.NormalizeAppConsoleOrigin(system_setting.ServerAddress)
+		if err != nil || base == "" {
+			base = "http://localhost:3000"
+		}
+	}
+	return strings.TrimRight(base, "/") + common.ThemeAwarePath(suffix)
 }

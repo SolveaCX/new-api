@@ -5922,7 +5922,7 @@
     "{{value}}% healthy threshold": "正常しきい値 {{value}}%",
     "Flatkey CLI wants to connect": "Flatkey CLI が接続を要求しています",
     "Approve terminal login": "ターミナルログインを承認",
-    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "このデバイス用の Flatkey API キーを作成または再利用します。今後の CLI リクエストはこのアカウントの credits を消費します。",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "このデバイス用の Flatkey API キーを作成または再利用します。今後の CLI リクエストはこのアカウントのクレジットを消費します。",
     "Signed in as": "ログイン中のアカウント",
     "Request code": "リクエストコード",
     "Client": "クライアント",

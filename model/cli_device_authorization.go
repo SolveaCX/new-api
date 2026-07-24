@@ -40,6 +40,12 @@ type CliDeviceAuthorizationApproval struct {
 	AuthorizationUpdated bool
 }
 
+type CliDeviceAuthorizationConsumption struct {
+	Authorization CliDeviceAuthorization
+	Token         Token
+	Consumed      bool
+}
+
 func CreateCliDeviceAuthorization(auth *CliDeviceAuthorization) error {
 	if auth == nil {
 		return errors.New("cli device authorization is nil")
@@ -73,24 +79,6 @@ func ExpireCliDeviceAuthorization(id int) error {
 	return DB.Model(&CliDeviceAuthorization{}).
 		Where("id = ? AND status = ?", id, CliDeviceAuthorizationStatusPending).
 		Update("status", CliDeviceAuthorizationStatusExpired).Error
-}
-
-func ApproveCliDeviceAuthorization(id int, userId int, tokenId int, now int64) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
-		var auth CliDeviceAuthorization
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&auth, id).Error; err != nil {
-			return err
-		}
-		if auth.Status != CliDeviceAuthorizationStatusPending {
-			return nil
-		}
-		return tx.Model(&auth).Updates(map[string]any{
-			"status":      CliDeviceAuthorizationStatusApproved,
-			"user_id":     userId,
-			"token_id":    tokenId,
-			"approved_at": now,
-		}).Error
-	})
 }
 
 func ApproveCliDeviceAuthorizationWithToken(id int, userId int, token Token, maxTokens int, triggerType string, now int64) (*CliDeviceAuthorizationApproval, error) {
@@ -194,11 +182,100 @@ func ApproveCliDeviceAuthorizationWithToken(id int, userId int, token Token, max
 	return result, nil
 }
 
-func DenyCliDeviceAuthorization(id int, now int64) error {
-	return DB.Model(&CliDeviceAuthorization{}).
-		Where("id = ? AND status = ?", id, CliDeviceAuthorizationStatusPending).
-		Updates(map[string]any{
+func ConsumeCliDeviceAuthorization(deviceCodeHash string, now int64) (*CliDeviceAuthorizationConsumption, error) {
+	if deviceCodeHash == "" {
+		return nil, errors.New("device code is empty")
+	}
+	result := &CliDeviceAuthorizationConsumption{}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var auth CliDeviceAuthorization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("device_code_hash = ?", deviceCodeHash).
+			First(&auth).Error; err != nil {
+			return err
+		}
+		result.Authorization = auth
+		if auth.ExpiresAt <= now && (auth.Status == CliDeviceAuthorizationStatusPending || auth.Status == CliDeviceAuthorizationStatusApproved) && auth.ConsumedAt == 0 {
+			if err := tx.Model(&auth).Updates(map[string]any{
+				"status": CliDeviceAuthorizationStatusExpired,
+			}).Error; err != nil {
+				return err
+			}
+			auth.Status = CliDeviceAuthorizationStatusExpired
+			result.Authorization = auth
+			return nil
+		}
+		if auth.Status != CliDeviceAuthorizationStatusApproved || auth.TokenId == 0 || auth.ConsumedAt != 0 {
+			return nil
+		}
+
+		var token Token
+		if err := tx.First(&token, auth.TokenId).Error; err != nil {
+			return err
+		}
+		update := tx.Model(&CliDeviceAuthorization{}).
+			Where("id = ? AND status = ? AND consumed_at = 0 AND expires_at > ?", auth.Id, CliDeviceAuthorizationStatusApproved, now).
+			Update("consumed_at", now)
+		if update.Error != nil {
+			return update.Error
+		}
+		if update.RowsAffected == 0 {
+			if err := tx.First(&auth, auth.Id).Error; err != nil {
+				return err
+			}
+			result.Authorization = auth
+			return nil
+		}
+		if err := tx.First(&auth, auth.Id).Error; err != nil {
+			return err
+		}
+		result.Authorization = auth
+		result.Token = token
+		result.Consumed = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func DenyCliDeviceAuthorization(id int, now int64) (*CliDeviceAuthorization, error) {
+	result := &CliDeviceAuthorization{}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var auth CliDeviceAuthorization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&auth, id).Error; err != nil {
+			return err
+		}
+		if auth.Status != CliDeviceAuthorizationStatusPending {
+			*result = auth
+			return nil
+		}
+		if auth.ExpiresAt <= now {
+			if err := tx.Model(&auth).Update("status", CliDeviceAuthorizationStatusExpired).Error; err != nil {
+				return err
+			}
+			auth.Status = CliDeviceAuthorizationStatusExpired
+			*result = auth
+			return nil
+		}
+		if err := tx.Model(&auth).Updates(map[string]any{
 			"status":      CliDeviceAuthorizationStatusDenied,
 			"approved_at": now,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		auth.Status = CliDeviceAuthorizationStatusDenied
+		auth.ApprovedAt = now
+		*result = auth
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func CleanupExpiredCliDeviceAuthorizations(before int64) error {
+	return DB.Where("expires_at < ?", before).Delete(&CliDeviceAuthorization{}).Error
 }
