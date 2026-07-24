@@ -33,6 +33,11 @@ type Token struct {
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	Source             string         `json:"source" gorm:"index;default:''"`
+	DeviceIdHash       string         `json:"device_id_hash" gorm:"index;default:''"`
+	ClientName         string         `json:"client_name" gorm:"default:''"`
+	ClientVersion      string         `json:"client_version" gorm:"default:''"`
+	LastUsedClientAt   int64          `json:"last_used_client_at" gorm:"bigint;default:0"`
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
@@ -340,6 +345,8 @@ func CreateUserTokenWithInviteReward(userId int, token *Token, maxTokens int, tr
 	})
 	return err
 }
+
+const TokenSourceCLI = "cli"
 
 func createUserTokenInTx(tx *gorm.DB, userId int, token *Token, maxTokens int) error {
 	var user User
