@@ -130,6 +130,9 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 		other["billing_preference"] = relayInfo.UserSetting.BillingPreference
 	}
 	if relayInfo.BillingSource == "subscription" {
+		if relayInfo.SubscriptionPoolType != "" {
+			other["subscription_pool_type"] = relayInfo.SubscriptionPoolType
+		}
 		if relayInfo.SubscriptionId != 0 {
 			other["subscription_id"] = relayInfo.SubscriptionId
 		}

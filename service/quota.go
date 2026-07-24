@@ -527,6 +527,9 @@ func checkAndSendSubscriptionQuotaNotify(relayInfo *relaycommon.RelayInfo) {
 		if relayInfo == nil {
 			return
 		}
+		if relayInfo.SubscriptionPoolType == model.SubscriptionPoolMedia {
+			return
+		}
 		if relayInfo.SubscriptionId == 0 || relayInfo.SubscriptionAmountTotal <= 0 {
 			return
 		}

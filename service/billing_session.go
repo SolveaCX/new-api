@@ -75,7 +75,11 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	}
 	// 3) 更新 relayInfo 上的订阅 PostDelta（用于日志，与池扣量同为加权单位）
 	if sub, ok := s.funding.(*SubscriptionFunding); ok {
-		s.relayInfo.SubscriptionPostDelta += sub.weighted(int64(delta))
+		if sub.PoolType() == model.SubscriptionPoolMedia {
+			s.relayInfo.SubscriptionPostDelta += sub.SettlementDelta()
+		} else {
+			s.relayInfo.SubscriptionPostDelta += sub.weighted(int64(delta))
+		}
 	}
 	s.settled = true
 	return tokenErr
@@ -263,7 +267,9 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		}
 		// TODO: model 层应定义哨兵错误（如 ErrNoActiveSubscription），用 errors.Is 替代字符串匹配
 		errMsg := err.Error()
-		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
+		if errors.Is(err, model.ErrSubscriptionMediaCreditsInsufficient) ||
+			strings.Contains(errMsg, "no active subscription") ||
+			strings.Contains(errMsg, "subscription quota insufficient") {
 			return types.NewErrorWithStatusCode(fmt.Errorf("%s", common.TranslateMessage(c, "quota.subscription_insufficient", map[string]any{"Detail": errMsg})), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
@@ -287,6 +293,11 @@ func (s *BillingSession) reserveFunding(delta int) error {
 		return nil
 	case *SubscriptionFunding:
 		if err := funding.ReserveExtra(int64(delta)); err != nil {
+			if !errors.Is(err, model.ErrSubscriptionMediaCreditsInsufficient) &&
+				!strings.Contains(err.Error(), "subscription quota insufficient") &&
+				!strings.Contains(err.Error(), "subscription used exceeds total") {
+				return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+			}
 			return types.NewErrorWithStatusCode(
 				fmt.Errorf("%s", i18n.Translate(s.relayInfo.UserSetting.Language, "quota.subscription_insufficient", map[string]any{"Detail": err.Error()})),
 				types.ErrorCodeInsufficientUserQuota,
@@ -380,9 +391,11 @@ func (s *BillingSession) syncRelayInfo() {
 		info.SubscriptionAmountUsedAfterPreConsume = sub.AmountUsedAfter + sub.ExtraWeighted()
 		info.SubscriptionPlanId = sub.PlanId
 		info.SubscriptionPlanTitle = sub.PlanTitle
+		info.SubscriptionPoolType = sub.PoolType()
 	} else {
 		info.SubscriptionId = 0
 		info.SubscriptionPreConsumed = 0
+		info.SubscriptionPoolType = ""
 	}
 }
 
@@ -437,6 +450,10 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		if subConsume <= 0 {
 			subConsume = 1
 		}
+		poolType := model.SubscriptionPoolQuota
+		if isSubscriptionMediaModel(relayInfo.OriginModelName) {
+			poolType = model.SubscriptionPoolMedia
+		}
 		session := &BillingSession{
 			relayInfo: relayInfo,
 			funding: &SubscriptionFunding{
@@ -445,6 +462,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 				modelName: relayInfo.OriginModelName,
 				amount:    subConsume,
 				weight:    setting.GetSubscriptionModelWeight(relayInfo.OriginModelName),
+				poolType:  poolType,
 			},
 		}
 		// 必须传 subConsume 而非 preConsumedQuota，保证 SubscriptionFunding.amount、

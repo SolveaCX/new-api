@@ -16,6 +16,7 @@ import (
 	"github.com/samber/hot"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Subscription duration units
@@ -1727,6 +1728,13 @@ type SubscriptionPreConsumeResult struct {
 	AmountUsedAfter    int64
 }
 
+const (
+	SubscriptionPoolQuota = "quota"
+	SubscriptionPoolMedia = "media"
+)
+
+var ErrSubscriptionMediaCreditsInsufficient = errors.New("subscription media credits insufficient")
+
 // ExpireDueSubscriptions marks expired subscriptions and handles group downgrade.
 func ExpireDueSubscriptions(limit int) (int, error) {
 	if limit <= 0 {
@@ -1820,6 +1828,7 @@ type SubscriptionPreConsumeRecord struct {
 	RequestId          string `json:"request_id" gorm:"type:varchar(64);uniqueIndex"`
 	UserId             int    `json:"user_id" gorm:"index"`
 	UserSubscriptionId int    `json:"user_subscription_id" gorm:"index"`
+	PoolType           string `json:"pool_type" gorm:"type:varchar(16);not null;default:'quota';index"`
 	PreConsumed        int64  `json:"pre_consumed" gorm:"type:bigint;not null;default:0"`
 	Status             string `json:"status" gorm:"type:varchar(32);index"` // consumed/refunded
 	CreatedAt          int64  `json:"created_at" gorm:"bigint"`
@@ -1878,6 +1887,16 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 // PreConsumeUserSubscription pre-consumes quota from the user's current contract entitlement,
 // or from legacy active subscriptions when no contract exists.
 func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64) (*SubscriptionPreConsumeResult, error) {
+	return preConsumeUserSubscriptionPool(requestId, userId, modelName, SubscriptionPoolQuota, amount)
+}
+
+// PreConsumeUserSubscriptionMedia reserves media credits from the active
+// entitlement. One request id can bind to exactly one subscription pool.
+func PreConsumeUserSubscriptionMedia(requestId string, userId int, modelName string, amount int64) (*SubscriptionPreConsumeResult, error) {
+	return preConsumeUserSubscriptionPool(requestId, userId, modelName, SubscriptionPoolMedia, amount)
+}
+
+func preConsumeUserSubscriptionPool(requestId string, userId int, modelName string, poolType string, amount int64) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -1886,6 +1905,10 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 	}
 	if amount <= 0 {
 		return nil, errors.New("amount must be > 0")
+	}
+	poolType = normalizeSubscriptionPoolType(poolType)
+	if poolType != SubscriptionPoolQuota && poolType != SubscriptionPoolMedia {
+		return nil, fmt.Errorf("invalid subscription pool type: %s", poolType)
 	}
 	now := GetDBTimestamp()
 
@@ -1900,6 +1923,9 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		if query.RowsAffected > 0 {
 			if existing.Status == "refunded" {
 				return errors.New("subscription pre-consume already refunded")
+			}
+			if normalizeSubscriptionPoolType(existing.PoolType) != poolType {
+				return fmt.Errorf("subscription pre-consume pool mismatch: existing=%s requested=%s", normalizeSubscriptionPoolType(existing.PoolType), poolType)
 			}
 			return fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, existing)
 		}
@@ -1923,40 +1949,51 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 					return err
 				}
 			}
-			usedBefore := sub.AmountUsed
-			if sub.AmountTotal > 0 {
-				remain := sub.AmountTotal - usedBefore
-				if remain < amount {
-					continue
-				}
+			total, usedBefore := subscriptionPoolAmounts(&sub, poolType)
+			if !subscriptionPoolCanConsume(poolType, total, usedBefore, amount) {
+				continue
 			}
 			record := &SubscriptionPreConsumeRecord{
 				RequestId:          requestId,
 				UserId:             userId,
 				UserSubscriptionId: sub.Id,
+				PoolType:           poolType,
 				PreConsumed:        amount,
 				Status:             "consumed",
 			}
-			if err := tx.Create(record).Error; err != nil {
-				var dup SubscriptionPreConsumeRecord
-				if err2 := tx.Where("request_id = ?", requestId).First(&dup).Error; err2 == nil {
-					if dup.Status == "refunded" {
-						return errors.New("subscription pre-consume already refunded")
-					}
-					return fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, dup)
-				}
-				return err
+			insert := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "request_id"}},
+				DoNothing: true,
+			}).Create(record)
+			if insert.Error != nil {
+				return insert.Error
 			}
-			sub.AmountUsed += amount
+			if insert.RowsAffected == 0 {
+				var dup SubscriptionPreConsumeRecord
+				if err := tx.Where("request_id = ?", requestId).First(&dup).Error; err != nil {
+					return err
+				}
+				if dup.Status == "refunded" {
+					return errors.New("subscription pre-consume already refunded")
+				}
+				if normalizeSubscriptionPoolType(dup.PoolType) != poolType {
+					return fmt.Errorf("subscription pre-consume pool mismatch: existing=%s requested=%s", normalizeSubscriptionPoolType(dup.PoolType), poolType)
+				}
+				return fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, dup)
+			}
+			setSubscriptionPoolUsed(&sub, poolType, usedBefore+amount)
 			if err := tx.Save(&sub).Error; err != nil {
 				return err
 			}
 			returnValue.UserSubscriptionId = sub.Id
 			returnValue.PreConsumed = amount
-			returnValue.AmountTotal = sub.AmountTotal
+			returnValue.AmountTotal = total
 			returnValue.AmountUsedBefore = usedBefore
-			returnValue.AmountUsedAfter = sub.AmountUsed
+			returnValue.AmountUsedAfter = usedBefore + amount
 			return nil
+		}
+		if poolType == SubscriptionPoolMedia {
+			return fmt.Errorf("%w, need=%d", ErrSubscriptionMediaCreditsInsufficient, amount)
 		}
 		return insufficientSubscriptionQuotaError(amount)
 	})
@@ -1974,12 +2011,46 @@ func fillSubscriptionPreConsumeReturnFromRecordTx(tx *gorm.DB, out *Subscription
 	if err := tx.Where("id = ?", record.UserSubscriptionId).First(&sub).Error; err != nil {
 		return err
 	}
+	poolType := normalizeSubscriptionPoolType(record.PoolType)
+	total, used := subscriptionPoolAmounts(&sub, poolType)
 	out.UserSubscriptionId = sub.Id
 	out.PreConsumed = record.PreConsumed
-	out.AmountTotal = sub.AmountTotal
-	out.AmountUsedBefore = sub.AmountUsed
-	out.AmountUsedAfter = sub.AmountUsed
+	out.AmountTotal = total
+	out.AmountUsedBefore = used
+	out.AmountUsedAfter = used
 	return nil
+}
+
+// SetUserSubscriptionMediaPreConsume sets the absolute media-credit reservation
+// for a request. Repeating the same target is a no-op, which makes settlement
+// retries safe across router nodes.
+func SetUserSubscriptionMediaPreConsume(requestId string, amount int64) error {
+	if strings.TrimSpace(requestId) == "" {
+		return errors.New("requestId is empty")
+	}
+	if amount < 0 {
+		return errors.New("amount must be >= 0")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var record SubscriptionPreConsumeRecord
+		if err := lockQuery(tx).Where("request_id = ?", requestId).First(&record).Error; err != nil {
+			return err
+		}
+		if normalizeSubscriptionPoolType(record.PoolType) != SubscriptionPoolMedia {
+			return fmt.Errorf("subscription pre-consume pool is not media: %s", normalizeSubscriptionPoolType(record.PoolType))
+		}
+		if record.Status == "refunded" {
+			return errors.New("subscription pre-consume already refunded")
+		}
+		delta := amount - record.PreConsumed
+		if delta != 0 {
+			if err := postConsumeUserSubscriptionPoolDeltaTx(tx, record.UserSubscriptionId, SubscriptionPoolMedia, delta); err != nil {
+				return err
+			}
+			record.PreConsumed = amount
+		}
+		return tx.Save(&record).Error
+	})
 }
 
 // RefundSubscriptionPreConsume is idempotent and refunds pre-consumed subscription quota by requestId.
@@ -2000,7 +2071,8 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			record.Status = "refunded"
 			return tx.Save(&record).Error
 		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
+		poolType := normalizeSubscriptionPoolType(record.PoolType)
+		if err := postConsumeUserSubscriptionPoolDeltaTx(tx, record.UserSubscriptionId, poolType, -record.PreConsumed); err != nil {
 			return err
 		}
 		record.Status = "refunded"
@@ -2099,6 +2171,14 @@ func GetSubscriptionPlanInfoByUserSubscriptionId(userSubscriptionId int) (*Subsc
 
 // Update subscription used amount by delta (positive consume more, negative refund).
 func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error {
+	return postConsumeUserSubscriptionPoolDelta(userSubscriptionId, SubscriptionPoolQuota, delta)
+}
+
+func PostConsumeUserSubscriptionMediaDelta(userSubscriptionId int, delta int64) error {
+	return postConsumeUserSubscriptionPoolDelta(userSubscriptionId, SubscriptionPoolMedia, delta)
+}
+
+func postConsumeUserSubscriptionPoolDelta(userSubscriptionId int, poolType string, delta int64) error {
 	if userSubscriptionId <= 0 {
 		return errors.New("invalid userSubscriptionId")
 	}
@@ -2106,20 +2186,63 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		return nil
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var sub UserSubscription
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("id = ?", userSubscriptionId).
-			First(&sub).Error; err != nil {
-			return err
-		}
-		newUsed := sub.AmountUsed + delta
-		if newUsed < 0 {
-			newUsed = 0
-		}
-		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
-			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
-		}
-		sub.AmountUsed = newUsed
-		return tx.Save(&sub).Error
+		return postConsumeUserSubscriptionPoolDeltaTx(tx, userSubscriptionId, poolType, delta)
 	})
+}
+
+func postConsumeUserSubscriptionPoolDeltaTx(tx *gorm.DB, userSubscriptionId int, poolType string, delta int64) error {
+	if tx == nil {
+		return errors.New("transaction is nil")
+	}
+	poolType = normalizeSubscriptionPoolType(poolType)
+	var sub UserSubscription
+	if err := lockQuery(tx).Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
+		return err
+	}
+	total, used := subscriptionPoolAmounts(&sub, poolType)
+	newUsed := used + delta
+	if newUsed < 0 {
+		newUsed = 0
+	}
+	if poolType == SubscriptionPoolMedia {
+		if total <= 0 || newUsed > total {
+			return fmt.Errorf("%w: used=%d total=%d", ErrSubscriptionMediaCreditsInsufficient, newUsed, total)
+		}
+	} else if total > 0 && newUsed > total {
+		return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, total)
+	}
+	setSubscriptionPoolUsed(&sub, poolType, newUsed)
+	return tx.Save(&sub).Error
+}
+
+func normalizeSubscriptionPoolType(poolType string) string {
+	if strings.TrimSpace(poolType) == "" {
+		return SubscriptionPoolQuota
+	}
+	return strings.TrimSpace(poolType)
+}
+
+func subscriptionPoolAmounts(sub *UserSubscription, poolType string) (total int64, used int64) {
+	if sub == nil {
+		return 0, 0
+	}
+	if normalizeSubscriptionPoolType(poolType) == SubscriptionPoolMedia {
+		return sub.MediaCreditsTotal, sub.MediaCreditsUsed
+	}
+	return sub.AmountTotal, sub.AmountUsed
+}
+
+func subscriptionPoolCanConsume(poolType string, total, used, amount int64) bool {
+	if normalizeSubscriptionPoolType(poolType) == SubscriptionPoolMedia {
+		return total > 0 && total-used >= amount
+	}
+	return total <= 0 || total-used >= amount
+}
+
+func setSubscriptionPoolUsed(sub *UserSubscription, poolType string, used int64) {
+	if normalizeSubscriptionPoolType(poolType) == SubscriptionPoolMedia {
+		sub.MediaCreditsUsed = used
+		return
+	}
+	sub.AmountUsed = used
 }
