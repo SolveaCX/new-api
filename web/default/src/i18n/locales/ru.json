@@ -5919,6 +5919,21 @@
     "{{success}} successful final requests": "{{success}} успешных итоговых запросов",
     "{{value}} ms": "{{value}} мс",
     "{{value}}%": "{{value}}%",
-    "{{value}}% healthy threshold": "Порог исправности: {{value}}%"
+    "{{value}}% healthy threshold": "Порог исправности: {{value}}%",
+    "Flatkey CLI wants to connect": "Flatkey CLI запрашивает подключение",
+    "Approve terminal login": "Подтвердить вход из терминала",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Будет создан или повторно использован API-ключ Flatkey для этого устройства. Будущие запросы CLI будут расходовать кредиты этого аккаунта.",
+    "Signed in as": "Выполнен вход как",
+    "Request code": "Код запроса",
+    "Client": "Клиент",
+    "Loading authorization request": "Загрузка запроса авторизации",
+    "Missing authorization code.": "Отсутствует код авторизации.",
+    "Authorization request not found or expired.": "Запрос авторизации не найден или истек.",
+    "Approved. You can return to the terminal.": "Подтверждено. Можно вернуться в терминал.",
+    "Denied. You can close this page.": "Отклонено. Можно закрыть страницу.",
+    "Expired. Restart login from the terminal.": "Истекло. Запустите вход заново из терминала.",
+    "Deny": "Отклонить",
+    "CLI authorization approved": "Авторизация CLI подтверждена",
+    "CLI authorization denied": "Авторизация CLI отклонена"
   }
 }

@@ -22,6 +22,14 @@ notify.quota_warning_email: "{{.Warning}}. Ваш текущий остаток 
 notify.quota_warning_bark: "{{.Warning}}. Остаток квоты: {{.Quota}}. Пополните вовремя."
 notify.quota_warning_gotify: "{{.Warning}}. Ваш текущий остаток квоты: {{.Quota}}. Пополните вовремя."
 
+# CLI device authorization messages
+cli.device_id_missing: "Требуется ID устройства"
+cli.device_metadata_too_long: "Метаданные CLI-устройства слишком длинные"
+cli.device_code_invalid: "Недействительный код устройства"
+cli.authorization_code_missing: "Требуется код авторизации"
+cli.authorization_not_found: "Запрос авторизации не найден"
+cli.authorization_token_create_failed: "Не удалось создать CLI-токен"
+
 # Subscription messages
 subscription.tier_rank_reserved: "Ранг плана подписки уже зарезервирован"
 subscription.tier_rank_required: "Включенные планы подписки должны иметь положительный ранг"

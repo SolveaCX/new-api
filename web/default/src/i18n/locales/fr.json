@@ -5919,6 +5919,21 @@
     "{{success}} successful final requests": "{{success}} requêtes finales réussies",
     "{{value}} ms": "{{value}} ms",
     "{{value}}%": "{{value}}%",
-    "{{value}}% healthy threshold": "Seuil de bonne santé : {{value}} %"
+    "{{value}}% healthy threshold": "Seuil de bonne santé : {{value}} %",
+    "Flatkey CLI wants to connect": "Flatkey CLI souhaite se connecter",
+    "Approve terminal login": "Approuver la connexion du terminal",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "Cela créera ou réutilisera une clé API Flatkey pour cet appareil. Les futures requêtes CLI utiliseront les crédits de ce compte.",
+    "Signed in as": "Connecté en tant que",
+    "Request code": "Code de demande",
+    "Client": "Client",
+    "Loading authorization request": "Chargement de la demande d’autorisation",
+    "Missing authorization code.": "Code d’autorisation manquant.",
+    "Authorization request not found or expired.": "Demande d’autorisation introuvable ou expirée.",
+    "Approved. You can return to the terminal.": "Approuvé. Vous pouvez retourner au terminal.",
+    "Denied. You can close this page.": "Refusé. Vous pouvez fermer cette page.",
+    "Expired. Restart login from the terminal.": "Expiré. Relancez la connexion depuis le terminal.",
+    "Deny": "Refuser",
+    "CLI authorization approved": "Autorisation CLI approuvée",
+    "CLI authorization denied": "Autorisation CLI refusée"
   }
 }

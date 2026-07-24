@@ -5919,6 +5919,21 @@
     "{{success}} successful final requests": "{{success}} successful final requests",
     "{{value}} ms": "{{value}} ms",
     "{{value}}%": "{{value}}%",
-    "{{value}}% healthy threshold": "{{value}}% healthy threshold"
+    "{{value}}% healthy threshold": "{{value}}% healthy threshold",
+    "Flatkey CLI wants to connect": "Flatkey CLI wants to connect",
+    "Approve terminal login": "Approve terminal login",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.",
+    "Signed in as": "Signed in as",
+    "Request code": "Request code",
+    "Client": "Client",
+    "Loading authorization request": "Loading authorization request",
+    "Missing authorization code.": "Missing authorization code.",
+    "Authorization request not found or expired.": "Authorization request not found or expired.",
+    "Approved. You can return to the terminal.": "Approved. You can return to the terminal.",
+    "Denied. You can close this page.": "Denied. You can close this page.",
+    "Expired. Restart login from the terminal.": "Expired. Restart login from the terminal.",
+    "Deny": "Deny",
+    "CLI authorization approved": "CLI authorization approved",
+    "CLI authorization denied": "CLI authorization denied"
   }
 }

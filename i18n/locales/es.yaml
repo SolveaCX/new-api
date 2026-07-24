@@ -22,6 +22,14 @@ notify.quota_warning_email: "{{.Warning}}. Su cuota restante actual es {{.Quota}
 notify.quota_warning_bark: "{{.Warning}}. Cuota restante: {{.Quota}}. Recargue a tiempo."
 notify.quota_warning_gotify: "{{.Warning}}. Su cuota restante actual es {{.Quota}}. Recargue a tiempo."
 
+# CLI device authorization messages
+cli.device_id_missing: "El ID del dispositivo es obligatorio"
+cli.device_metadata_too_long: "Los metadatos del dispositivo CLI son demasiado largos"
+cli.device_code_invalid: "Código de dispositivo no válido"
+cli.authorization_code_missing: "El código de autorización es obligatorio"
+cli.authorization_not_found: "No se encontró la solicitud de autorización"
+cli.authorization_token_create_failed: "No se pudo crear el token CLI"
+
 # Subscription messages
 subscription.tier_rank_reserved: "El rango del plan de suscripción ya está reservado"
 subscription.tier_rank_required: "Los planes de suscripción habilitados deben definir un rango positivo"

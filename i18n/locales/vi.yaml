@@ -22,6 +22,14 @@ notify.quota_warning_email: "{{.Warning}}. Hạn mức còn lại hiện tại c
 notify.quota_warning_bark: "{{.Warning}}. Hạn mức còn lại: {{.Quota}}. Vui lòng nạp thêm kịp thời."
 notify.quota_warning_gotify: "{{.Warning}}. Hạn mức còn lại hiện tại của bạn là {{.Quota}}. Vui lòng nạp thêm kịp thời."
 
+# CLI device authorization messages
+cli.device_id_missing: "Bắt buộc có ID thiết bị"
+cli.device_metadata_too_long: "Siêu dữ liệu thiết bị CLI quá dài"
+cli.device_code_invalid: "Mã thiết bị không hợp lệ"
+cli.authorization_code_missing: "Bắt buộc có mã ủy quyền"
+cli.authorization_not_found: "Không tìm thấy yêu cầu ủy quyền"
+cli.authorization_token_create_failed: "Không thể tạo token CLI"
+
 # Subscription messages
 subscription.tier_rank_reserved: "Thứ hạng gói đăng ký đã được giữ chỗ"
 subscription.tier_rank_required: "Gói đăng ký đang bật phải đặt thứ hạng dương"

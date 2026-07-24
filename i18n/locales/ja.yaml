@@ -22,6 +22,14 @@ notify.quota_warning_email: "{{.Warning}}。現在の残高は {{.Quota}} です
 notify.quota_warning_bark: "{{.Warning}}。残高：{{.Quota}}。お早めにチャージしてください。"
 notify.quota_warning_gotify: "{{.Warning}}。現在の残高は {{.Quota}} です。お早めにチャージしてください。"
 
+# CLI device authorization messages
+cli.device_id_missing: "デバイス ID は必須です"
+cli.device_metadata_too_long: "CLI デバイスのメタデータが長すぎます"
+cli.device_code_invalid: "無効なデバイスコードです"
+cli.authorization_code_missing: "認証コードは必須です"
+cli.authorization_not_found: "認証リクエストが見つかりません"
+cli.authorization_token_create_failed: "CLI トークンの作成に失敗しました"
+
 # Subscription messages
 subscription.tier_rank_reserved: "サブスクリプションプランのランクはすでに予約されています"
 subscription.tier_rank_required: "有効なサブスクリプションプランには正のランクが必要です"
