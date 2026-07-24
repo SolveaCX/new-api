@@ -20,50 +20,63 @@ import type { UserModelAccess } from '@/features/available-models'
 import type { ApiKeyGroupOption } from '../components/api-key-group-combobox'
 import type { ApiResponse } from '../types'
 
-export const MAX_BATCH_GROUP_API_KEYS = 100
+export const MAX_BATCH_EDIT_API_KEYS = 100
 
-export type BatchGroupPayload = {
+export type BatchEditApiKeysPayload = {
   ids: number[]
-  group: string
+  group?: string
+  remain_quota?: number
 }
 
-export type BatchGroupUpdateSuccessEffects = {
+export type BatchEditApiKeysSuccessEffects = {
   resetSelection: () => void
   refresh: () => void
-  clearGroup: () => void
+  resetForm: () => void
   closeDialog: () => void
 }
 
-type BatchGroupUpdateRequest = (
-  ids: number[],
-  group: string
+type BatchEditApiKeysRequest = (
+  payload: BatchEditApiKeysPayload
 ) => Promise<ApiResponse<number>>
 
-type BatchGroupUpdateResult =
+type BatchEditApiKeysResult =
   | { success: true; count: number }
   | { success: false; message?: string }
 
-type CoordinateBatchGroupUpdateParams = {
-  request: BatchGroupUpdateRequest
-  ids: number[]
-  group: string
-  successEffects: BatchGroupUpdateSuccessEffects
+type CoordinateBatchEditApiKeysParams = {
+  request: BatchEditApiKeysRequest
+  payload: BatchEditApiKeysPayload
+  successEffects: BatchEditApiKeysSuccessEffects
 }
 
-export function buildBatchGroupPayload(
+export function buildBatchEditApiKeysPayload(
   ids: number[],
-  group: string
-): BatchGroupPayload {
-  if (ids.length === 0 || ids.length > MAX_BATCH_GROUP_API_KEYS) {
+  edits: Omit<BatchEditApiKeysPayload, 'ids'>
+): BatchEditApiKeysPayload {
+  if (ids.length === 0 || ids.length > MAX_BATCH_EDIT_API_KEYS) {
     throw new RangeError(
-      `Batch group updates require 1-${MAX_BATCH_GROUP_API_KEYS} API keys`
+      `Batch edits require 1-${MAX_BATCH_EDIT_API_KEYS} API keys`
     )
   }
-  if (!group) {
-    throw new Error('A group is required for batch group updates')
+  if (edits.group === undefined && edits.remain_quota === undefined) {
+    throw new Error('At least one batch edit is required')
+  }
+  if (edits.group !== undefined && edits.group.length === 0) {
+    throw new Error('The selected group cannot be empty')
+  }
+  if (
+    edits.remain_quota !== undefined &&
+    (!Number.isFinite(edits.remain_quota) || edits.remain_quota < 0)
+  ) {
+    throw new RangeError('Available quota must be a finite non-negative value')
   }
 
-  return { ids: [...ids], group }
+  const payload: BatchEditApiKeysPayload = { ids: [...ids] }
+  if (edits.group !== undefined) payload.group = edits.group
+  if (edits.remain_quota !== undefined) {
+    payload.remain_quota = edits.remain_quota
+  }
+  return payload
 }
 
 export function getBatchGroupOptions(
@@ -79,24 +92,43 @@ export function getBatchGroupOptions(
   )
 }
 
-export function canBatchUpdateApiKeyGroup(
-  featureEnabled: boolean,
+export function canBatchEditApiKeyGroup(
   canUseGroups: boolean,
   modelAccess: UserModelAccess | undefined
 ): boolean {
   return (
-    featureEnabled &&
     canUseGroups &&
     modelAccess?.scope_mode === 'selectable_group' &&
     modelAccess.groups.length > 0
   )
 }
 
-export async function coordinateBatchGroupUpdate(
-  params: CoordinateBatchGroupUpdateParams
-): Promise<BatchGroupUpdateResult> {
-  const payload = buildBatchGroupPayload(params.ids, params.group)
-  const response = await params.request(payload.ids, payload.group)
+export function isBatchEditApiKeysAvailable(featureEnabled: boolean): boolean {
+  return featureEnabled
+}
+
+export function isBatchQuotaInputValid(
+  rawValue: string,
+  tokensOnly: boolean
+): boolean {
+  if (rawValue.trim() === '') return false
+
+  const value = Number(rawValue)
+  return (
+    Number.isFinite(value) &&
+    value >= 0 &&
+    (!tokensOnly || Number.isInteger(value))
+  )
+}
+
+export async function coordinateBatchEditApiKeys(
+  params: CoordinateBatchEditApiKeysParams
+): Promise<BatchEditApiKeysResult> {
+  const payload = buildBatchEditApiKeysPayload(params.payload.ids, {
+    group: params.payload.group,
+    remain_quota: params.payload.remain_quota,
+  })
+  const response = await params.request(payload)
 
   if (!response.success) {
     return { success: false, message: response.message }
@@ -104,7 +136,7 @@ export async function coordinateBatchGroupUpdate(
 
   params.successEffects.resetSelection()
   params.successEffects.refresh()
-  params.successEffects.clearGroup()
+  params.successEffects.resetForm()
   params.successEffects.closeDialog()
 
   return { success: true, count: response.data ?? payload.ids.length }

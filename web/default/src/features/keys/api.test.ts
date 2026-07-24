@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { api } from '@/lib/api'
-import { batchUpdateApiKeyGroup, searchApiKeys } from './api'
+import { batchEditApiKeys, searchApiKeys } from './api'
 
 const originalAdapter = api.defaults.adapter
 
@@ -27,8 +27,8 @@ afterEach(() => {
   api.defaults.adapter = originalAdapter
 })
 
-describe('batchUpdateApiKeyGroup', () => {
-  test('uses PUT with the exact batch group endpoint and payload', async () => {
+describe('batchEditApiKeys', () => {
+  test('uses generic PUT endpoint and preserves explicit zero quota', async () => {
     let request: InternalAxiosRequestConfig | undefined
     api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
       request = config
@@ -41,13 +41,18 @@ describe('batchUpdateApiKeyGroup', () => {
       }
     }
 
-    const result = await batchUpdateApiKeyGroup([4, 8], 'premium')
+    const result = await batchEditApiKeys({
+      ids: [4, 8],
+      group: 'premium',
+      remain_quota: 0,
+    })
 
     expect(request?.method).toBe('put')
-    expect(request?.url).toBe('/api/token/batch/group')
+    expect(request?.url).toBe('/api/token/batch')
     expect(JSON.parse(String(request?.data))).toEqual({
       ids: [4, 8],
       group: 'premium',
+      remain_quota: 0,
     })
     expect(result).toEqual({ success: true, data: 2 })
   })
