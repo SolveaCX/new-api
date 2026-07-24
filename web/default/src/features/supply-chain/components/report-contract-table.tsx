@@ -51,10 +51,12 @@ import {
 } from '../lib/format'
 import type { SupplierReportContractList, SupplierStatus } from '../types'
 import { ProgressiveLoadMoreButton } from './progressive-list'
+import { ReportQueryError } from './report-query-error'
 
 interface ReportContractTableProps {
   data?: SupplierReportContractList | null
   isLoading?: boolean
+  isError?: boolean
   hasMore?: boolean
   isLoadingMore?: boolean
   onLoadMore?: () => void
@@ -84,7 +86,9 @@ export function ReportContractTable(props: ReportContractTableProps) {
   const unknown = t('—')
   let content: ReactNode
 
-  if (props.isLoading) {
+  if (props.isError && !props.data) {
+    content = <ReportQueryError hasData={false} />
+  } else if (props.isLoading) {
     content = <ContractTableSkeleton />
   } else if (!props.data || props.data.items.length === 0) {
     content = (
@@ -189,7 +193,10 @@ export function ReportContractTable(props: ReportContractTableProps) {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent>{content}</CardContent>
+      <CardContent className='flex flex-col gap-4'>
+        {props.isError && props.data ? <ReportQueryError hasData /> : null}
+        {content}
+      </CardContent>
       {props.hasMore ? (
         <CardFooter>
           <ProgressiveLoadMoreButton

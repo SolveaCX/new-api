@@ -565,9 +565,16 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	c.Set("original_model", modelName) // for retry
 	// Channel cost follows the selected channel and must be overwritten on every
 	// attempt. Statistics scope is request-scoped and freezes on first selection.
-	common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, types.SupplierCostSnapshot{})
-	if _, exists := common.GetContextKey(c, constant.ContextKeySupplierStatsScope); !exists {
-		common.SetContextKey(c, constant.ContextKeySupplierStatsScope, model.GetSupplierStatisticsScopeSnapshot(common.GetContextKeyInt(c, constant.ContextKeyUserId)))
+	existingSupplierCost, _ := common.GetContextKeyType[types.SupplierCostSnapshot](c, constant.ContextKeySupplierCostSnapshot)
+	supplierCacheUnavailable := existingSupplierCost.CacheUnavailable || model.IsSupplierCacheBlocking()
+	if supplierCacheUnavailable {
+		common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, types.SupplierCostSnapshot{CacheUnavailable: true})
+		common.SetContextKey(c, constant.ContextKeySupplierStatsScope, types.BusinessSupplierStatisticsScopeSnapshot())
+	} else {
+		common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, types.SupplierCostSnapshot{})
+		if _, exists := common.GetContextKey(c, constant.ContextKeySupplierStatsScope); !exists {
+			common.SetContextKey(c, constant.ContextKeySupplierStatsScope, model.GetSupplierStatisticsScopeSnapshot(common.GetContextKeyInt(c, constant.ContextKeyUserId)))
+		}
 	}
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
@@ -576,7 +583,11 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	// channels cannot because these fields are gorm:-, so project from the same
 	// immutable runtime index with one O(1) map lookup. Neither path performs
 	// request-level supplier DB or Redis I/O.
-	if channel.SupplierCostSnapshotLoaded {
+	if supplierCacheUnavailable {
+		// Preserve the explicit fail-closed marker for this request. A later retry
+		// must not capture supplier accounting from a cache that was unavailable
+		// when any attempt was selected.
+	} else if channel.SupplierCostSnapshotLoaded {
 		common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, channel.SupplierCostSnapshot)
 	} else if snapshot, ok := model.GetSupplierCostSnapshot(channel.Id); ok {
 		common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, snapshot)

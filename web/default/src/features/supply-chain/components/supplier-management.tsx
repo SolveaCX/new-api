@@ -184,16 +184,29 @@ function SupplierFormDialog(props: {
           <FieldGroup>
             <Field data-invalid={Boolean(form.formState.errors.name)}>
               <FieldLabel htmlFor='supplier-name'>{t('Name')}</FieldLabel>
-              <Input id='supplier-name' {...form.register('name')} />
+              <Input
+                id='supplier-name'
+                aria-invalid={Boolean(form.formState.errors.name)}
+                {...form.register('name')}
+              />
               <FieldError>
                 {form.formState.errors.name
                   ? t(form.formState.errors.name.message ?? '')
                   : null}
               </FieldError>
             </Field>
-            <Field>
+            <Field data-invalid={Boolean(form.formState.errors.remark)}>
               <FieldLabel htmlFor='supplier-remark'>{t('Remark')}</FieldLabel>
-              <Textarea id='supplier-remark' {...form.register('remark')} />
+              <Textarea
+                id='supplier-remark'
+                aria-invalid={Boolean(form.formState.errors.remark)}
+                {...form.register('remark')}
+              />
+              <FieldError>
+                {form.formState.errors.remark
+                  ? t(form.formState.errors.remark.message ?? '')
+                  : null}
+              </FieldError>
             </Field>
           </FieldGroup>
         </form>

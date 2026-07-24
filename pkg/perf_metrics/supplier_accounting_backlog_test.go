@@ -96,6 +96,44 @@ func TestWriteSupplierAccountingBacklogPrometheusMetricsExactText(t *testing.T) 
 	require.Zero(t, (supplierAccountingBacklogPrometheusSnapshot{state: supplierAccountingBacklogPrometheusOmitted}).seriesCount())
 }
 
+func TestSupplierAccountingBacklogAlertSignalsFireAndResolve(t *testing.T) {
+	render := func(snapshot supplierAccountingBacklogPrometheusSnapshot) string {
+		var output strings.Builder
+		writeSupplierAccountingBacklogPrometheusMetrics(&output, snapshot)
+		return output.String()
+	}
+
+	firing := render(supplierAccountingBacklogPrometheusSnapshot{
+		state: supplierAccountingBacklogPrometheusUp,
+		observation: model.SupplierAccountingBacklogObservation{
+			ObservedAtUnix: 1_784_854_800, NeverPublishedDays: 2,
+			OldestNeverPublishedAgeSeconds: 86_401, PriorDayUnpublishedAfter0800: true,
+		},
+	})
+	requirePrometheusSampleLine(t, firing, "newapi_supplier_accounting_backlog_observer_up 1")
+	requirePrometheusSampleLine(t, firing, "newapi_supplier_accounting_never_published_days 2")
+	requirePrometheusSampleLine(t, firing, "newapi_supplier_accounting_oldest_never_published_age_seconds 86401")
+	requirePrometheusSampleLine(t, firing, "newapi_supplier_accounting_prior_day_unpublished_after_0800 1")
+	requirePrometheusSampleLine(t, firing, "newapi_supplier_accounting_backlog_observed_at_seconds 1784854800")
+
+	resolved := render(supplierAccountingBacklogPrometheusSnapshot{
+		state: supplierAccountingBacklogPrometheusUp,
+		observation: model.SupplierAccountingBacklogObservation{
+			ObservedAtUnix: 1_784_854_860,
+		},
+	})
+	requirePrometheusSampleLine(t, resolved, "newapi_supplier_accounting_backlog_observer_up 1")
+	requirePrometheusSampleLine(t, resolved, "newapi_supplier_accounting_never_published_days 0")
+	requirePrometheusSampleLine(t, resolved, "newapi_supplier_accounting_oldest_never_published_age_seconds 0")
+	requirePrometheusSampleLine(t, resolved, "newapi_supplier_accounting_prior_day_unpublished_after_0800 0")
+	requirePrometheusSampleLine(t, resolved, "newapi_supplier_accounting_backlog_observed_at_seconds 1784854860")
+
+	observerDown := render(supplierAccountingBacklogPrometheusSnapshot{state: supplierAccountingBacklogPrometheusDown})
+	requirePrometheusSampleLine(t, observerDown, "newapi_supplier_accounting_backlog_observer_up 0")
+	require.NotContains(t, observerDown, "newapi_supplier_accounting_backlog_observed_at_seconds")
+	require.Empty(t, render(supplierAccountingBacklogPrometheusSnapshot{state: supplierAccountingBacklogPrometheusOmitted}), "omitted observation produces the metric-absence input")
+}
+
 func TestBuildPrometheusTextEmitsSupplierAccountingBacklogFixedGauges(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
 	db, cutover := setupSupplierAccountingBacklogPrometheusDB(t)

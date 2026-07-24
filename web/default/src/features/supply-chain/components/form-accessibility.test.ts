@@ -63,4 +63,35 @@ describe('supply-chain form accessibility', () => {
       'binding-contract-${props.binding.channel_id}'
     )
   })
+
+  test('wires validation state to contract capacity controls and messages', async () => {
+    const contract = await readComponent('contract-management.tsx')
+
+    for (const field of ['max_concurrency', 'rpm_limit', 'tpm_limit']) {
+      expect(contract).toContain(
+        `data-invalid={Boolean(form.formState.errors.${field})}`
+      )
+      expect(contract).toMatch(
+        new RegExp(
+          `aria-invalid=\\{Boolean\\(\\s*form\\.formState\\.errors\\.${field}\\s*\\)\\}`
+        )
+      )
+      expect(contract).toContain(`form.formState.errors.${field}.message`)
+    }
+  })
+
+  test('wires validation state to every supply-chain form control', async () => {
+    const sources = await Promise.all([
+      readComponent('supplier-management.tsx'),
+      readComponent('contract-management.tsx'),
+      readComponent('exclusion-management.tsx'),
+      readComponent('channel-binding-management.tsx'),
+    ])
+
+    for (const source of sources) {
+      const validatedFields = source.match(/data-invalid=/g)?.length ?? 0
+      const validatedControls = source.match(/aria-invalid=/g)?.length ?? 0
+      expect(validatedControls).toBe(validatedFields)
+    }
+  })
 })

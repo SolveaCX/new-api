@@ -659,6 +659,14 @@ export const STATIC_I18N_KEYS = [
   'The multiplier cannot exceed 100%',
   'Enter a non-zero USD amount with up to 6 decimal places',
 
+  // Supply-chain enum labels rendered through typed label-key maps
+  'Exclude',
+  'Include',
+  'Initial',
+  'Replenishment',
+  'Correction',
+  'Reversal',
+
   // Ops report — AdPilot board (dynamic status/severity/mode labels)
   'adspilot_status_pending',
   'adspilot_status_approved',

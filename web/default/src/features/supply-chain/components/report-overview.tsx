@@ -39,10 +39,12 @@ import {
   knownMoneyValue,
 } from '../lib/format'
 import type { SupplierReportOverview } from '../types'
+import { ReportQueryError } from './report-query-error'
 
 interface ReportOverviewProps {
   data?: SupplierReportOverview | null
   isLoading?: boolean
+  isError?: boolean
 }
 
 interface LedgerRowProps {
@@ -91,6 +93,10 @@ export function ReportOverview(props: ReportOverviewProps) {
 
   if (props.isLoading) return <OverviewSkeleton />
 
+  if (props.isError && !props.data) {
+    return <ReportQueryError hasData={false} />
+  }
+
   if (!props.data) {
     return (
       <Card>
@@ -127,126 +133,129 @@ export function ReportOverview(props: ReportOverviewProps) {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent className='grid gap-6 lg:grid-cols-3'>
-        <section aria-labelledby='supply-inventory-heading'>
-          <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
-            <h3 id='supply-inventory-heading' className='font-medium'>
-              {t('Inventory remaining')}
-            </h3>
-            <Badge variant='outline'>{t('Official list price')}</Badge>
-          </div>
-          <LedgerRow
-            label={t('Configured inventory')}
-            value={formatMicroUsd(
-              props.data.total_inventory_micro_usd,
-              unknown
-            )}
-          />
-          <Separator />
-          <LedgerRow
-            label={t('Consumed inventory')}
-            value={formatMicroUsd(
-              props.data.official_list_consumed_micro_usd,
-              unknown
-            )}
-          />
-          <Separator />
-          <LedgerRow
-            label={t('Remaining inventory')}
-            value={formatMicroUsd(
-              props.data.remaining_inventory_micro_usd,
-              unknown
-            )}
-          />
-        </section>
-
-        <section aria-labelledby='supply-business-heading'>
-          <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
-            <h3 id='supply-business-heading' className='font-medium'>
-              {t('Business profit')}
-            </h3>
-            <Badge variant='secondary'>
-              {t('{{count}} requests', { count: business.request_count })}
-            </Badge>
-          </div>
-          <LedgerRow
-            label={t('Sales')}
-            value={formatMicroUsd(
-              knownMoneyValue(business.sales, business),
-              unknown
-            )}
-            detail={t('{{known}} settled values known', {
-              known: business.sales.known_count,
-            })}
-          />
-          <Separator />
-          <LedgerRow
-            label={t('Procurement cost')}
-            value={formatMicroUsd(
-              knownMoneyValue(business.procurement_cost, business),
-              unknown
-            )}
-          />
-          <Separator />
-          <LedgerRow
-            label={t('Gross profit')}
-            value={formatMicroUsd(
-              knownMoneyValue(business.gross_profit, business),
-              unknown
-            )}
-            detail={t('Gross margin {{margin}}', {
-              margin: formatNullableRatioPercent(
-                business.gross_margin,
+      <CardContent className='flex flex-col gap-4'>
+        {props.isError ? <ReportQueryError hasData /> : null}
+        <div className='grid gap-6 lg:grid-cols-3'>
+          <section aria-labelledby='supply-inventory-heading'>
+            <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
+              <h3 id='supply-inventory-heading' className='font-medium'>
+                {t('Inventory remaining')}
+              </h3>
+              <Badge variant='outline'>{t('Official list price')}</Badge>
+            </div>
+            <LedgerRow
+              label={t('Configured inventory')}
+              value={formatMicroUsd(
+                props.data.total_inventory_micro_usd,
                 unknown
-              ),
-            })}
-          />
-        </section>
+              )}
+            />
+            <Separator />
+            <LedgerRow
+              label={t('Consumed inventory')}
+              value={formatMicroUsd(
+                props.data.official_list_consumed_micro_usd,
+                unknown
+              )}
+            />
+            <Separator />
+            <LedgerRow
+              label={t('Remaining inventory')}
+              value={formatMicroUsd(
+                props.data.remaining_inventory_micro_usd,
+                unknown
+              )}
+            />
+          </section>
 
-        <section aria-labelledby='supply-internal-heading'>
-          <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
-            <h3 id='supply-internal-heading' className='font-medium'>
-              {t('Internal and test consumption')}
-            </h3>
-            <Badge variant='outline'>
-              {props.data.internal_dimension_available
-                ? t('Available')
-                : t('Unavailable')}
-            </Badge>
-          </div>
-          <LedgerRow
-            label={t('Internal requests')}
-            value={
-              props.data.internal_dimension_available
-                ? String(internal.request_count)
-                : unknown
-            }
-          />
-          <Separator />
-          <LedgerRow
-            label={t('Official-list consumption')}
-            value={
-              props.data.internal_dimension_available
-                ? formatMicroUsd(
-                    knownMoneyValue(internal.official_list, internal),
-                    unknown
-                  )
-                : unknown
-            }
-          />
-          <Separator />
-          <LedgerRow
-            label={t('Estimated procurement cost')}
-            value={
-              props.data.internal_dimension_available
-                ? formatMicroUsd(
-                    knownMoneyValue(internal.procurement_cost, internal),
-                    unknown
-                  )
-                : unknown
-            }
-          />
-        </section>
+          <section aria-labelledby='supply-business-heading'>
+            <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
+              <h3 id='supply-business-heading' className='font-medium'>
+                {t('Business profit')}
+              </h3>
+              <Badge variant='secondary'>
+                {t('{{count}} requests', { count: business.request_count })}
+              </Badge>
+            </div>
+            <LedgerRow
+              label={t('Sales')}
+              value={formatMicroUsd(
+                knownMoneyValue(business.sales, business),
+                unknown
+              )}
+              detail={t('{{known}} settled values known', {
+                known: business.sales.known_count,
+              })}
+            />
+            <Separator />
+            <LedgerRow
+              label={t('Procurement cost')}
+              value={formatMicroUsd(
+                knownMoneyValue(business.procurement_cost, business),
+                unknown
+              )}
+            />
+            <Separator />
+            <LedgerRow
+              label={t('Gross profit')}
+              value={formatMicroUsd(
+                knownMoneyValue(business.gross_profit, business),
+                unknown
+              )}
+              detail={t('Gross margin {{margin}}', {
+                margin: formatNullableRatioPercent(
+                  business.gross_margin,
+                  unknown
+                ),
+              })}
+            />
+          </section>
+
+          <section aria-labelledby='supply-internal-heading'>
+            <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
+              <h3 id='supply-internal-heading' className='font-medium'>
+                {t('Internal and test consumption')}
+              </h3>
+              <Badge variant='outline'>
+                {props.data.internal_dimension_available
+                  ? t('Available')
+                  : t('Unavailable')}
+              </Badge>
+            </div>
+            <LedgerRow
+              label={t('Internal requests')}
+              value={
+                props.data.internal_dimension_available
+                  ? String(internal.request_count)
+                  : unknown
+              }
+            />
+            <Separator />
+            <LedgerRow
+              label={t('Official-list consumption')}
+              value={
+                props.data.internal_dimension_available
+                  ? formatMicroUsd(
+                      knownMoneyValue(internal.official_list, internal),
+                      unknown
+                    )
+                  : unknown
+              }
+            />
+            <Separator />
+            <LedgerRow
+              label={t('Estimated procurement cost')}
+              value={
+                props.data.internal_dimension_available
+                  ? formatMicroUsd(
+                      knownMoneyValue(internal.procurement_cost, internal),
+                      unknown
+                    )
+                  : unknown
+              }
+            />
+          </section>
+        </div>
       </CardContent>
     </Card>
   )

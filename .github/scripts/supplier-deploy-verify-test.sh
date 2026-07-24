@@ -17,6 +17,11 @@ if cmp -s "${tmp}/first/manifest_sha256.txt" "${tmp}/other/manifest_sha256.txt";
   exit 1
 fi
 
+if "${root}/.github/scripts/supplier-build-manifest.sh" "${tmp}/missing-admin-arg" SolveaCX/new-api abc123 100 2 gcp-deploy-build 1 2>/dev/null; then
+  echo "seven-argument manifest invocation unexpectedly passed" >&2
+  exit 1
+fi
+
 if "${root}/.github/scripts/supplier-build-manifest.sh" "${tmp}/missing-current-admin" SolveaCX/new-api abc123 100 2 gcp-deploy-build 1 2 2>/dev/null; then
   echo "manifest without current admin schema capability 1 unexpectedly passed" >&2
   exit 1

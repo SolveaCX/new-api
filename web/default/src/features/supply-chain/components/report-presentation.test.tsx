@@ -243,6 +243,55 @@ describe('supply-chain report presentation', () => {
     expect(trendHtml).toContain('Asia/Shanghai')
   })
 
+  test('renders accessible errors instead of valid empty states when report queries fail', () => {
+    const sections = [
+      render(<ReportOverview isError />),
+      render(<ReportTrend isError />),
+      render(<ReportContractTable isError />),
+      render(<ReportChannelTable isError />),
+      render(<ReportBreakdownTable isError />),
+    ]
+
+    for (const html of sections) {
+      expect(html).toContain('role="alert"')
+      expect(html).toContain('Unable to load supply chain report')
+      expect(html).not.toContain('No report data')
+      expect(html).not.toContain('No trend data')
+      expect(html).not.toContain('No contracts in this report')
+      expect(html).not.toContain('No channel data')
+      expect(html).not.toContain('No pricing breakdown')
+    }
+  })
+
+  test('preserves stale report data with an inline completeness warning', () => {
+    const html = render(<ReportOverview data={overview()} isError />)
+
+    expect(html).toContain('Business profit')
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('Do not treat the visible totals as complete.')
+  })
+
+  test('disables the internal trend selector and explains unavailable data', () => {
+    const html = render(
+      <ReportTrend
+        data={{
+          range: overview().range,
+          points: [
+            {
+              date: '2026-09-01',
+              business: metrics(),
+              internal: metrics(),
+              internal_dimension_available: false,
+            },
+          ],
+        }}
+      />
+    )
+
+    expect(html).toContain('disabled')
+    expect(html).toContain('Internal / test: Unavailable')
+  })
+
   test('renders the same channel under each historical contract', () => {
     const html = render(
       <ReportChannelTable

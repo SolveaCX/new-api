@@ -18,7 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
 import { type TFunction } from 'i18next'
-import { buildSidebarData } from './use-sidebar-data'
+import { ROLE } from '@/lib/roles'
+import { buildSidebarData, getSidebarItemMinimumRole } from './use-sidebar-data'
 
 const t = ((key: string) => key) as TFunction
 
@@ -115,6 +116,12 @@ describe('buildSidebarData', () => {
     expect(urls).toContain('/supply-chain')
     expect(urls?.indexOf('/supply-chain')).toBe(
       (urls?.indexOf('/ops-report') ?? -2) + 1
+    )
+    const supplyChainItem = adminGroup?.items.find(
+      (item) => 'url' in item && item.url === '/supply-chain'
+    )
+    expect(supplyChainItem && getSidebarItemMinimumRole(supplyChainItem)).toBe(
+      ROLE.SUPER_ADMIN
     )
   })
 })

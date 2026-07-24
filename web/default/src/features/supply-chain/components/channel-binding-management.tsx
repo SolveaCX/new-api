@@ -190,6 +190,7 @@ function BindingDialog(props: {
                 <NativeSelect
                   id={`binding-contract-${props.binding.channel_id}`}
                   className='w-full'
+                  aria-invalid={Boolean(form.formState.errors.contract_id)}
                   value={form.watch('contract_id') || ''}
                   onChange={(event) =>
                     form.setValue('contract_id', Number(event.target.value), {

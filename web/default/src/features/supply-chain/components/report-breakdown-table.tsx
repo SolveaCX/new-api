@@ -51,10 +51,12 @@ import {
 } from '../lib/format'
 import type { SupplierReportBreakdownList, SupplierDataQuality } from '../types'
 import { ProgressiveLoadMoreButton } from './progressive-list'
+import { ReportQueryError } from './report-query-error'
 
 interface ReportBreakdownTableProps {
   data?: SupplierReportBreakdownList | null
   isLoading?: boolean
+  isError?: boolean
   hasMore?: boolean
   isLoadingMore?: boolean
   onLoadMore?: () => void
@@ -73,7 +75,9 @@ export function ReportBreakdownTable(props: ReportBreakdownTableProps) {
   const unknown = t('—')
   let content: ReactNode
 
-  if (props.isLoading) {
+  if (props.isError && !props.data) {
+    content = <ReportQueryError hasData={false} />
+  } else if (props.isLoading) {
     content = (
       <div className='flex flex-col gap-2' aria-busy='true'>
         {[0, 1, 2, 3].map((item) => (
@@ -189,7 +193,10 @@ export function ReportBreakdownTable(props: ReportBreakdownTableProps) {
           )}
         </CardDescription>
       </CardHeader>
-      <CardContent>{content}</CardContent>
+      <CardContent className='flex flex-col gap-4'>
+        {props.isError && props.data ? <ReportQueryError hasData /> : null}
+        {content}
+      </CardContent>
       {props.data ? (
         <CardFooter className='text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs'>
           <div className='flex flex-col gap-1'>

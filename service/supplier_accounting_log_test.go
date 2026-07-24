@@ -12,7 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -148,11 +147,15 @@ func TestSupplierAccountingLogSnapshotSkipsUncommittedAndFreezesExclusion(t *tes
 	require.Nil(t, snapshot.GrossProfitMicroUsd)
 }
 
-func TestFinalUsageSnapshotSkipsZeroTokenFailureButKeepsFixedPriceSuccessContract(t *testing.T) {
+func TestAccountingEnvelopeSkipsZeroUsageButKeepsFixedPriceSuccessContract(t *testing.T) {
 	info := supplierAccountingTestRelayInfo()
 	settlement := types.BillingSettlementResult{FinanciallyCommitted: true, FinanciallyCommittedAt: 123, FinalSalesQuota: 1}
 	official := decimal.RequireFromString("1")
-	require.Nil(t, buildSupplierAccountingSnapshotForFinalUsage(info, settlement, &official, "supplier_accounting.usage.empty", "ratio", 0))
+	zeroUsage := BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{
+		RelayInfo: info, Settlement: settlement,
+	})
+	require.Equal(t, types.SupplierAccountingDispositionZeroUsage, zeroUsage.Disposition)
+	require.Nil(t, zeroUsage.Captured)
 
 	// Fixed-price successful calls are not inferred from token count. Their
 	// non-token settlement path continues to use the general snapshot builder.
@@ -184,7 +187,13 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 		BindingVersionId: 201, SupplierId: 21, ContractId: 22,
 		RateVersionId: 23, ProcurementMultiplierPpm: 250_000,
 	}
-	helper.ApplyResolvedGroupRatio(info, types.GroupRatioInfo{GroupRatio: 0.9})
+	finalGroup := types.GroupRatioInfo{GroupRatio: 0.9}
+	info.PriceData.GroupRatioInfo = finalGroup
+	info.SupplierOfficialPricingSnapshot.PriceData.GroupRatioInfo = finalGroup
+	info.SupplierOfficialPricingSnapshot.TieredBillingSnapshot.GroupRatio = finalGroup.GroupRatio
+	info.SupplierOfficialPricingSnapshot.TieredBillingSnapshot.EstimatedQuotaAfterGroup = billingexpr.QuotaRound(
+		info.SupplierOfficialPricingSnapshot.TieredBillingSnapshot.EstimatedQuotaBeforeGroup * finalGroup.GroupRatio,
+	)
 	official := decimal.RequireFromString("2")
 	settlement := types.BillingSettlementResult{
 		FinanciallyCommitted: true, FinanciallyCommittedAt: day.Add(time.Hour).Unix(), FinalSalesQuota: 900_000,

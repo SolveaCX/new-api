@@ -10,6 +10,7 @@ website="${root}/.github/workflows/gcp-deploy-website.yml"
 website_static="${root}/.github/workflows/gcp-deploy-website-static.yml"
 website_staging="${root}/.github/workflows/gcp-deploy-website-staging.yml"
 infra="${root}/.github/workflows/gcp-infra.yml"
+capacity="${root}/.github/workflows/supplier-capacity.yml"
 association_test="${root}/.github/scripts/supplier-resource-association-verify-test.sh"
 
 require_pattern() {
@@ -31,6 +32,21 @@ reject_pattern() {
       echo "invalid workflow contract check ${pattern} in ${file}" >&2
       exit "${status}"
     fi
+  fi
+}
+
+assert_actions_commit_pinned() {
+  local file=$1 label=$2 uses_line found=0
+  while IFS= read -r uses_line; do
+    found=1
+    if [[ ! "${uses_line}" =~ ^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+[^[:space:]@#]+@[0-9a-f]{40}([[:space:]]+#[[:space:]]+v[0-9]+(\.[0-9]+){0,2})?[[:space:]]*$ ]]; then
+      echo "${label} action is not commit-pinned: ${uses_line}" >&2
+      return 1
+    fi
+  done < <(grep -E -- '^[[:space:]]*(-[[:space:]]+)?uses:' "${file}")
+  if [[ "${found}" -eq 0 ]]; then
+    echo "${label} contains no action uses to validate" >&2
+    return 1
   fi
 }
 
@@ -65,7 +81,7 @@ builder_sa='newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com'
 
 all_workflows=(
   "${production}" "${staging}" "${rollback}" "${promotion}"
-  "${website}" "${website_static}" "${website_staging}" "${infra}"
+  "${website}" "${website_static}" "${website_staging}" "${infra}" "${capacity}"
 )
 
 for workflow in "${all_workflows[@]}"; do
@@ -173,6 +189,59 @@ require_pattern 'supplier-resource-association-verify-test\.sh' "${infra}"
 require_pattern 'actions/setup-go@v5' "${infra}"
 require_pattern 'go-version-file: go\.mod' "${infra}"
 require_pattern 'TestSupplierReleaseManifestCapabilitiesTrackSourceV1' "${infra}"
+require_pattern '"\.github/workflows/supplier-capacity\.yml"' "${infra}"
+require_pattern '"capacity/\*\*"' "${infra}"
+require_pattern '"pkg/perf_metrics/supplier_accounting_capacity_test\.go"' "${infra}"
+
+# The capacity gate is manual and hermetic. It may attest only a fully
+# successful local run, while its always-only upload remains diagnostic.
+require_pattern '^  workflow_dispatch:$' "${capacity}"
+reject_pattern '^  (push|pull_request):' "${capacity}"
+require_pattern '^    runs-on: ubuntu-24\.04$' "${capacity}"
+require_pattern 'image: mysql:8\.0\.46@sha256:[0-9a-f]{64}$' "${capacity}"
+require_pattern 'image: postgres:15\.18-alpine@sha256:[0-9a-f]{64}$' "${capacity}"
+reject_pattern 'SUPPLIER_T1_CAPACITY_ALLOW_SMALL_SMOKE' "${capacity}"
+for input in production_p99_daily_logs measurement_window_start measurement_window_end source_reference source_sha256; do
+  require_pattern "^      ${input}:$" "${capacity}"
+  require_pattern "inputs\.${input}" "${capacity}"
+done
+require_pattern 'SUPPLIER_PRODUCTION_P99_DAILY_LOGS:.*inputs\.production_p99_daily_logs' "${capacity}"
+require_pattern 'SUPPLIER_CAPACITY_MEASUREMENT_WINDOW_START:.*inputs\.measurement_window_start' "${capacity}"
+require_pattern 'SUPPLIER_CAPACITY_MEASUREMENT_WINDOW_END:.*inputs\.measurement_window_end' "${capacity}"
+require_pattern 'SUPPLIER_CAPACITY_SOURCE_REFERENCE:.*inputs\.source_reference' "${capacity}"
+require_pattern 'SUPPLIER_CAPACITY_SOURCE_SHA256:.*inputs\.source_sha256' "${capacity}"
+
+assert_actions_commit_pinned "${capacity}" 'capacity workflow'
+
+capacity_attestation=$(sed -n '/- name: Validate and attest successful evidence/,/- name: Upload capacity evidence/p' "${capacity}")
+grep -Fq -- 'if: success()' <<<"${capacity_attestation}"
+for evidence_name in supplier-observer.json supplier-t1-mysql.json supplier-t1-postgres.json; do
+  grep -Fq -- "\"${evidence_name}\"" <<<"${capacity_attestation}" || {
+    echo "capacity attestation omits ${evidence_name}" >&2
+    exit 1
+  }
+done
+grep -Fq -- 'actual_names != expected_names' <<<"${capacity_attestation}"
+grep -Fq -- 'document.get("commit") != commit' <<<"${capacity_attestation}"
+grep -Fq -- 'document.get("working_tree_dirty") is not False' <<<"${capacity_attestation}"
+grep -Fq -- 'not started_at <= generated_at <= validated_at' <<<"${capacity_attestation}"
+grep -Fq -- 'hashlib.sha256' <<<"${capacity_attestation}"
+grep -Fq -- '"attestation_scope": "local_capacity_run_only"' <<<"${capacity_attestation}"
+for runner_field in ImageOS ImageVersion RUNNER_OS RUNNER_ARCH; do
+  grep -Fq -- "\"${runner_field}\"" <<<"${capacity_attestation}"
+done
+
+capacity_upload=$(sed -n '/- name: Upload capacity evidence/,$p' "${capacity}")
+grep -Fq -- 'if: always()' <<<"${capacity_upload}"
+grep -Fq -- 'retention-days: 90' <<<"${capacity_upload}"
+[[ "$(grep -c -- 'actions/upload-artifact@' "${capacity}")" -eq 1 ]] || {
+  echo 'capacity workflow must have exactly one diagnostic artifact upload' >&2
+  exit 1
+}
+require_pattern 'SUCCESS_MANIFEST\.json attests only this local capacity run' "${capacity}"
+require_pattern 'independently retrieve the immutable source' "${capacity}"
+require_pattern 'recompute its SHA-256' "${capacity}"
+require_pattern 'reconcile its V, measurement window, and reference' "${capacity}"
 
 # The association suite is part of infra validation and must retain its hostile
 # alias/body/header/environment coverage.
@@ -190,6 +259,22 @@ done
 
 # Promotion verifies the fixed Job shape immediately before and after its only
 # mutation. Scheduler mutation is deliberately outside the WIF promotion lane.
+assert_actions_commit_pinned "${promotion}" 'promotion workflow'
+mutable_promotion_fixture=$(mktemp)
+trap 'rm -f -- "${mutable_promotion_fixture}"' EXIT
+awk '
+  BEGIN { replaced = 0 }
+  !replaced && /uses: actions\/checkout@/ {
+    sub(/actions\/checkout@[0-9a-f]+/, "actions/checkout@v4")
+    replaced = 1
+  }
+  { print }
+  END { if (!replaced) exit 1 }
+' "${promotion}" >"${mutable_promotion_fixture}"
+if assert_actions_commit_pinned "${mutable_promotion_fixture}" 'hostile mutable promotion fixture' 2>/dev/null; then
+  echo 'promotion action pin guard accepted a mutable ref' >&2
+  exit 1
+fi
 require_pattern 'name: GCP Promote Supplier Runner' "${promotion}"
 require_pattern '^    environment: production$' "${promotion}"
 require_pattern '^      JOB_NAME: newapi-supplier-batch$' "${promotion}"
@@ -224,6 +309,14 @@ for workflow in "${website}" "${website_static}"; do
     echo "website build/deploy identities are not separated in ${workflow}" >&2
     exit 1
   fi
+  require_pattern '^  group: production-newapi-web$' "${workflow}"
+  require_pattern '^  cancel-in-progress: false$' "${workflow}"
+  require_pattern 'sha256:\[0-9a-f\].*64' "${workflow}"
+  require_pattern 'echo "image=.*@.*digest' "${workflow}"
+  require_pattern 'gcloud run revisions describe' "${workflow}"
+  require_pattern '--update-tags=.*new_revision|--update-tags=.*new_rev' "${workflow}"
+  require_pattern '--to-revisions=.*=100' "${workflow}"
+  reject_pattern '--to-latest' "${workflow}"
 done
 web_staging_build=$(section build deploy "${website_staging}")
 web_staging_deploy=$(section deploy '' "${website_staging}")
@@ -239,7 +332,7 @@ require_pattern '"gcp-deploy-staging-build" "1" "1"' "${staging}"
 require_pattern 'supplier-deploy-verify\.sh capabilities /tmp/status\.json 1' "${staging}"
 require_pattern 'BUILD_JOB_IDENTITY.*"1" "1"' "${root}/Dockerfile"
 
-require_pattern 'actions/download-artifact@v4' "${rollback}"
+require_pattern 'actions/download-artifact@[0-9a-f]{40}[[:space:]]+# v4\.3\.0' "${rollback}"
 require_pattern 'activation\.phase == "degraded"' "${rollback}"
 require_pattern 'reason_category == "emergency_rollback"' "${rollback}"
 require_pattern 'affected_oci_digest == \$digest' "${rollback}"

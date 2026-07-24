@@ -95,37 +95,39 @@ export function SupplyChain(props: SupplyChainManagementProps) {
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Supply Chain')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
-        <div className='flex items-center gap-1'>
-          <Button
-            type='button'
-            variant='outline'
-            size='icon-sm'
-            aria-label={t('Previous month')}
-            onClick={() => changeMonth(-1)}
-          >
-            <HugeiconsIcon
-              icon={ArrowLeft01Icon}
-              strokeWidth={2}
-              data-icon='inline-start'
-            />
-          </Button>
-          <div className='min-w-24 text-center text-sm font-medium tabular-nums'>
-            {props.search.month}
+        {reportEnabled ? (
+          <div className='flex items-center gap-1'>
+            <Button
+              type='button'
+              variant='outline'
+              size='icon-sm'
+              aria-label={t('Previous month')}
+              onClick={() => changeMonth(-1)}
+            >
+              <HugeiconsIcon
+                icon={ArrowLeft01Icon}
+                strokeWidth={2}
+                data-icon='inline-start'
+              />
+            </Button>
+            <div className='min-w-24 text-center text-sm font-medium tabular-nums'>
+              {props.search.month}
+            </div>
+            <Button
+              type='button'
+              variant='outline'
+              size='icon-sm'
+              aria-label={t('Next month')}
+              onClick={() => changeMonth(1)}
+            >
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                strokeWidth={2}
+                data-icon='inline-end'
+              />
+            </Button>
           </div>
-          <Button
-            type='button'
-            variant='outline'
-            size='icon-sm'
-            aria-label={t('Next month')}
-            onClick={() => changeMonth(1)}
-          >
-            <HugeiconsIcon
-              icon={ArrowRight01Icon}
-              strokeWidth={2}
-              data-icon='inline-end'
-            />
-          </Button>
-        </div>
+        ) : null}
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <Tabs
@@ -173,11 +175,17 @@ export function SupplyChain(props: SupplyChainManagementProps) {
             <ReportOverview
               data={overview.data}
               isLoading={overview.isLoading}
+              isError={overview.isError}
             />
-            <ReportTrend data={trend.data} isLoading={trend.isLoading} />
+            <ReportTrend
+              data={trend.data}
+              isLoading={trend.isLoading}
+              isError={trend.isError}
+            />
             <ReportContractTable
               data={contracts.data}
               isLoading={contracts.isLoading}
+              isError={contracts.isError}
               hasMore={contracts.hasNextPage}
               isLoadingMore={contracts.isFetchingNextPage}
               onLoadMore={() => void contracts.fetchNextPage()}
@@ -185,6 +193,7 @@ export function SupplyChain(props: SupplyChainManagementProps) {
             <ReportChannelTable
               data={channels.data}
               isLoading={channels.isLoading}
+              isError={channels.isError}
               hasMore={channels.hasNextPage}
               isLoadingMore={channels.isFetchingNextPage}
               onLoadMore={() => void channels.fetchNextPage()}
@@ -192,6 +201,7 @@ export function SupplyChain(props: SupplyChainManagementProps) {
             <ReportBreakdownTable
               data={breakdown.data}
               isLoading={breakdown.isLoading}
+              isError={breakdown.isError}
               hasMore={breakdown.hasNextPage}
               isLoadingMore={breakdown.isFetchingNextPage}
               onLoadMore={() => void breakdown.fetchNextPage()}

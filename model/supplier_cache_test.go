@@ -116,8 +116,10 @@ func TestSupplierCacheMultipleChannelsUnboundAndLatestExclusion(t *testing.T) {
 
 func TestSupplierCacheRefreshIsImmutableAndFailureRetainsPreviousIndex(t *testing.T) {
 	db := setupSupplierCacheTestDB(t, "supplier-cache-refresh")
+	require.True(t, IsSupplierCacheBlocking(), "the request path must fail closed before the initial load")
 	contract, firstRate, channels := createSupplierCacheFixture(t, db)
 	require.NoError(t, RefreshSupplierCache())
+	require.False(t, IsSupplierCacheBlocking())
 	inFlight, ok := GetSupplierCostSnapshot(channels[0].Id)
 	require.True(t, ok)
 	require.Equal(t, firstRate.Id, inFlight.RateVersionId)
@@ -149,8 +151,11 @@ func TestSupplierCacheRefreshIsImmutableAndFailureRetainsPreviousIndex(t *testin
 	require.Equal(t, refreshed, retained)
 	health := GetSupplierCacheHealth()
 	require.True(t, health.Blocking)
+	require.True(t, IsSupplierCacheBlocking())
 	require.NotEmpty(t, health.RefreshError)
 	DB = db
+	require.NoError(t, RefreshSupplierCache())
+	require.False(t, IsSupplierCacheBlocking())
 }
 
 func TestSupplierCacheGettersPerformNoDatabaseWorkAfterRefresh(t *testing.T) {

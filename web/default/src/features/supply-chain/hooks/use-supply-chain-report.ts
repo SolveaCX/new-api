@@ -54,6 +54,7 @@ export function useSupplyChainReportOverview(
     queryFn: async () => (await getReportOverview(query)).data,
     enabled,
     staleTime: REPORT_STALE_TIME,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -66,6 +67,7 @@ export function useSupplyChainReportTrend(
     queryFn: async () => (await getReportTrend(query)).data,
     enabled,
     staleTime: REPORT_STALE_TIME,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -83,6 +85,7 @@ export function useSupplyChainReportContracts(
     select: (data) => mergeOffsetPages(data.pages),
     enabled,
     staleTime: REPORT_STALE_TIME,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -100,6 +103,7 @@ export function useSupplyChainReportChannels(
     select: (data) => mergeOffsetPages(data.pages),
     enabled,
     staleTime: REPORT_STALE_TIME,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -117,6 +121,7 @@ export function useSupplyChainReportBreakdown(
     select: (data) => mergeOffsetPages(data.pages),
     enabled,
     staleTime: REPORT_STALE_TIME,
+    placeholderData: keepPreviousData,
   })
 }
 

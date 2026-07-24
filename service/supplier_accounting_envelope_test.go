@@ -76,6 +76,22 @@ func TestSupplierAccountingEnvelopeDispositionOrder(t *testing.T) {
 	require.Nil(t, producerError.Captured)
 }
 
+func TestSupplierAccountingEnvelopeCacheUnavailableFailsClosedAfterFinancialDispositionChecks(t *testing.T) {
+	unavailable := supplierEnvelopeTestInput()
+	unavailable.RelayInfo.SupplierCostSnapshot = types.SupplierCostSnapshot{CacheUnavailable: true}
+	envelope := BuildSupplierAccountingEnvelopeV1(unavailable)
+	require.Equal(t, types.SupplierAccountingDispositionProducerError, envelope.Disposition)
+	require.Nil(t, envelope.Captured)
+
+	uncommitted := unavailable
+	uncommitted.Settlement.FinanciallyCommitted = false
+	require.Equal(t, types.SupplierAccountingDispositionNotFinanciallyCommitted, BuildSupplierAccountingEnvelopeV1(uncommitted).Disposition)
+
+	zeroUsage := unavailable
+	zeroUsage.HasPositiveFinalUsage = false
+	require.Equal(t, types.SupplierAccountingDispositionZeroUsage, BuildSupplierAccountingEnvelopeV1(zeroUsage).Disposition)
+}
+
 func TestSupplierAccountingEnvelopeCapturedScopeAndFormulaContracts(t *testing.T) {
 	business := BuildSupplierAccountingEnvelopeV1(supplierEnvelopeTestInput())
 	require.NoError(t, ValidateSupplierAccountingEnvelopeV1(business))

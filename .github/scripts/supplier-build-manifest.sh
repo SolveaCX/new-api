@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 7 ] && [ "$#" -ne 8 ]; then
+if [ "$#" -ne 8 ]; then
   echo "usage: $0 OUTPUT_DIR REPO COMMIT RUN_ID RUN_ATTEMPT JOB_IDENTITY PRODUCER_CAPABILITIES_CSV ADMIN_SCHEMA_CAPABILITIES_CSV" >&2
   exit 2
 fi
@@ -13,7 +13,7 @@ run_id=$4
 run_attempt=$5
 job_identity=$6
 capabilities_csv=$7
-admin_schema_capabilities_csv=${8:-1}
+admin_schema_capabilities_csv=$8
 
 validate_text() {
   field=$1

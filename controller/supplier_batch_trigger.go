@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -88,7 +89,7 @@ func getSupplierDailyBatchStatus(c *gin.Context, getStatus supplierDailyBatchSta
 func supplierDailyBatchResult(c *gin.Context, result dto.SupplierBatchStatusResponse, err error) {
 	if err == nil {
 		if validationErr := result.Validate(); validationErr != nil {
-			logger.LogError(c.Request.Context(), "supplier batch service returned an invalid status payload")
+			logger.LogError(c.Request.Context(), fmt.Sprintf("supplier batch service returned an invalid status payload: %v", validationErr))
 			supplierBatchHTTPError(c, http.StatusInternalServerError, "internal_error")
 			return
 		}
@@ -105,7 +106,7 @@ func supplierDailyBatchResult(c *gin.Context, result dto.SupplierBatchStatusResp
 	case errors.Is(err, service.ErrSupplierBatchConfigUnavailable):
 		supplierBatchHTTPError(c, http.StatusServiceUnavailable, "config_unavailable")
 	default:
-		logger.LogError(c.Request.Context(), "supplier batch request failed")
+		logger.LogError(c.Request.Context(), fmt.Sprintf("supplier batch request failed: %v", err))
 		supplierBatchHTTPError(c, http.StatusInternalServerError, "internal_error")
 	}
 }

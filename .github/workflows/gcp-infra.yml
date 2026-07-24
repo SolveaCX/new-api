@@ -5,11 +5,14 @@ on:
     paths:
       - "deploy/gcp/**"
       - ".github/workflows/gcp-*.yml"
+      - ".github/workflows/supplier-capacity.yml"
       - ".github/scripts/supplier-*.sh"
       - ".github/scripts/fixtures/supplier-resource-association/**"
       - "Dockerfile"
       - "common/build_manifest.go"
       - "common/build_manifest_source_contract_test.go"
+      - "capacity/**"
+      - "pkg/perf_metrics/supplier_accounting_capacity_test.go"
   workflow_dispatch:
 
 permissions:

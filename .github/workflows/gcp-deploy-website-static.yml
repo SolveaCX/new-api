@@ -26,6 +26,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: production-newapi-web
+  cancel-in-progress: false
+
 env:
   PROJECT_ID:  ${{ vars.GCP_PROJECT_ID }}
   REGION:      ${{ vars.GCP_REGION }}
@@ -44,6 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.image.outputs.image }}
+      short_sha: ${{ steps.image.outputs.short_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,7 +78,10 @@ jobs:
           image="$AR_REPO_URL/website-static:sha-$short_sha"
           docker build -t "$image" website-static
           docker push "$image"
-          echo "image=$image" >> "$GITHUB_OUTPUT"
+          digest="$(gcloud artifacts docker images describe "$image" --format='value(image_summary.digest)')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "invalid image digest: $digest" >&2; exit 1; }
+          echo "image=${image%%:*}@$digest" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: build
@@ -112,10 +120,31 @@ jobs:
           done
 
       - name: Deploy canary (no traffic)
+        id: deploy
         run: |
+          set -euo pipefail
+          revision_suffix="static-${{ needs.build.outputs.short_sha }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          new_revision="${RUN_SERVICE}-${revision_suffix}"
           gcloud run deploy "$RUN_SERVICE" --project "$PROJECT_ID" --region "$REGION" \
-            --image "${{ needs.build.outputs.image }}" --no-traffic --tag canary --port 8080 \
+            --image "${{ needs.build.outputs.image }}" --revision-suffix "$revision_suffix" \
+            --no-traffic --port 8080 \
             --update-env-vars "APP_CONSOLE_ORIGIN=${APP_CONSOLE_ORIGIN}"
+          created_revision="$(gcloud run revisions describe "$new_revision" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format='value(metadata.name)')"
+          [[ "$created_revision" == "$new_revision" ]] || { echo "created revision mismatch" >&2; exit 1; }
+          new_revision="$created_revision"
+          canary_tag="static-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gcloud run services update-traffic "$RUN_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --update-tags="$canary_tag=$new_revision" --quiet
+          canary_url="$(gcloud run services describe "$RUN_SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format=json | jq -r --arg tag "$canary_tag" \
+            '.status.traffic[] | select(.tag == $tag) | .url')"
+          [[ -n "$canary_url" ]] || { echo "could not resolve canary URL for $new_revision" >&2; exit 1; }
+          echo "new_revision=$new_revision" >> "$GITHUB_OUTPUT"
+          echo "canary_url=$canary_url" >> "$GITHUB_OUTPUT"
 
       - name: Assert liveness probe targets 8080 (before traffic shift)
         run: |
@@ -129,8 +158,10 @@ jobs:
           fi
 
       - name: Smoke test canary
+        env:
+          CANARY_URL: ${{ steps.deploy.outputs.canary_url }}
         run: |
-          C="https://canary---newapi-web-5qjldqffdq-uw.a.run.app"
+          C="$CANARY_URL"
           # canonical static pages and assets
           for p in "" models models/gpt-5.5 models/grok-imagine-image docs playground pricing compute usecases contact status terms privacy refund-policy sla about zh/about careers zh/careers install.sh llms.txt assets/team/amazon-accelerate-team.jpg assets/team/team-dinner.jpg; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p")
@@ -216,7 +247,8 @@ jobs:
           done
           curl -s -m 20 "$C/" | grep -q '\$3.33' || { echo "real plg price missing"; exit 1; }
 
-      - name: Shift traffic to latest
+      - name: Shift traffic to verified revision
         run: |
           gcloud run services update-traffic "$RUN_SERVICE" \
-            --project "$PROJECT_ID" --region "$REGION" --to-latest
+            --project "$PROJECT_ID" --region "$REGION" \
+            --to-revisions="${{ steps.deploy.outputs.new_revision }}=100" --quiet

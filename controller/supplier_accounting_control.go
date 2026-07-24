@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"unicode"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -171,6 +173,7 @@ func supplierAccountingControlError(c *gin.Context, err error) {
 	case errors.Is(err, model.ErrSupplierAccountingOptionMalformed):
 		supplierAccountingHTTPError(c, http.StatusServiceUnavailable, "state_malformed", i18n.MsgSupplierAccountingStateMalformed)
 	default:
+		logger.LogError(c.Request.Context(), fmt.Sprintf("supplier accounting control request failed: %v", err))
 		supplierAccountingHTTPError(c, http.StatusServiceUnavailable, "control_plane_unavailable", i18n.MsgSupplierAccountingControlPlaneUnavailable)
 	}
 }

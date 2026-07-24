@@ -45,10 +45,12 @@ import {
 import { formatMicroUsd, knownMoneyValue } from '../lib/format'
 import type { SupplierReportChannelList } from '../types'
 import { ProgressiveLoadMoreButton } from './progressive-list'
+import { ReportQueryError } from './report-query-error'
 
 interface ReportChannelTableProps {
   data?: SupplierReportChannelList | null
   isLoading?: boolean
+  isError?: boolean
   hasMore?: boolean
   isLoadingMore?: boolean
   onLoadMore?: () => void
@@ -59,7 +61,9 @@ export function ReportChannelTable(props: ReportChannelTableProps) {
   const unknown = t('—')
   let content: ReactNode
 
-  if (props.isLoading) {
+  if (props.isError && !props.data) {
+    content = <ReportQueryError hasData={false} />
+  } else if (props.isLoading) {
     content = (
       <div className='flex flex-col gap-2' aria-busy='true'>
         {[0, 1, 2].map((item) => (
@@ -148,7 +152,10 @@ export function ReportChannelTable(props: ReportChannelTableProps) {
           {t('Settled business values attributed to each upstream channel.')}
         </CardDescription>
       </CardHeader>
-      <CardContent>{content}</CardContent>
+      <CardContent className='flex flex-col gap-4'>
+        {props.isError && props.data ? <ReportQueryError hasData /> : null}
+        {content}
+      </CardContent>
       {props.hasMore ? (
         <CardFooter>
           <ProgressiveLoadMoreButton

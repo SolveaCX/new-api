@@ -245,6 +245,52 @@ func InitLogDB() (err error) {
 	return err
 }
 
+// These migration-only views keep SQLite decimal declarations parseable by
+// the legacy glebarez migrator on repeated AutoMigrate calls. SQLite applies
+// NUMERIC affinity to both decimal and decimal(10,6), while MySQL and
+// PostgreSQL continue to use the precision-bearing production tags.
+type subscriptionOrderSQLiteMigration struct {
+	SubscriptionOrder `gorm:"embedded"`
+	UnitPrice         float64 `gorm:"column:unit_price;type:decimal;not null;default:0"`
+}
+
+func (*subscriptionOrderSQLiteMigration) TableName() string {
+	return "subscription_orders"
+}
+
+type subscriptionTermSegmentSQLiteMigration struct {
+	SubscriptionTermSegment `gorm:"embedded"`
+	AllocatedMoney          float64 `gorm:"column:allocated_money;type:decimal;not null;default:0"`
+}
+
+func (*subscriptionTermSegmentSQLiteMigration) TableName() string {
+	return "subscription_term_segments"
+}
+
+type walletLedgerEntrySQLiteMigration struct {
+	WalletLedgerEntry `gorm:"embedded"`
+	MoneyAmount       float64 `gorm:"column:money_amount;type:decimal;not null;default:0"`
+}
+
+func (*walletLedgerEntrySQLiteMigration) TableName() string {
+	return "wallet_ledger_entries"
+}
+
+func sqliteSafeMigrationModel(model any) any {
+	if !common.UsingSQLite {
+		return model
+	}
+	switch model.(type) {
+	case *SubscriptionOrder:
+		return &subscriptionOrderSQLiteMigration{}
+	case *SubscriptionTermSegment:
+		return &subscriptionTermSegmentSQLiteMigration{}
+	case *WalletLedgerEntry:
+		return &walletLedgerEntrySQLiteMigration{}
+	}
+	return model
+}
+
 func migrateDB() error {
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
@@ -285,7 +331,7 @@ func migrateDB() error {
 		&TwoFA{},
 		&TwoFABackupCode{},
 		&Checkin{},
-		&SubscriptionOrder{},
+		sqliteSafeMigrationModel(&SubscriptionOrder{}),
 		&UserSubscription{},
 		&SubscriptionProviderBinding{},
 		&PaymentWebhookEvent{},
@@ -294,8 +340,8 @@ func migrateDB() error {
 		&UserSubscriptionContract{},
 		&SubscriptionChangeIntent{},
 		&SubscriptionTierRankReservation{},
-		&SubscriptionTermSegment{},
-		&WalletLedgerEntry{},
+		sqliteSafeMigrationModel(&SubscriptionTermSegment{}),
+		sqliteSafeMigrationModel(&WalletLedgerEntry{}),
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
@@ -381,7 +427,7 @@ func migrateDBFast() error {
 		{&TwoFA{}, "TwoFA"},
 		{&TwoFABackupCode{}, "TwoFABackupCode"},
 		{&Checkin{}, "Checkin"},
-		{&SubscriptionOrder{}, "SubscriptionOrder"},
+		{sqliteSafeMigrationModel(&SubscriptionOrder{}), "SubscriptionOrder"},
 		{&UserSubscription{}, "UserSubscription"},
 		{&SubscriptionProviderBinding{}, "SubscriptionProviderBinding"},
 		{&PaymentWebhookEvent{}, "PaymentWebhookEvent"},
@@ -390,8 +436,8 @@ func migrateDBFast() error {
 		{&UserSubscriptionContract{}, "UserSubscriptionContract"},
 		{&SubscriptionChangeIntent{}, "SubscriptionChangeIntent"},
 		{&SubscriptionTierRankReservation{}, "SubscriptionTierRankReservation"},
-		{&SubscriptionTermSegment{}, "SubscriptionTermSegment"},
-		{&WalletLedgerEntry{}, "WalletLedgerEntry"},
+		{sqliteSafeMigrationModel(&SubscriptionTermSegment{}), "SubscriptionTermSegment"},
+		{sqliteSafeMigrationModel(&WalletLedgerEntry{}), "WalletLedgerEntry"},
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},

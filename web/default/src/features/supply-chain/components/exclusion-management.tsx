@@ -51,6 +51,7 @@ import {
   useSupplyChainSecurity,
   type SupplyChainSecurity,
 } from '../hooks/use-supply-chain-admin'
+import { STATISTICS_ACTION_LABEL_KEYS } from '../lib/labels'
 import { exclusionFormSchema, type ExclusionFormValues } from '../lib/schemas'
 import { formatTime } from '../lib/time'
 import { supplyChainQueryKeys } from '../query-keys'
@@ -138,7 +139,7 @@ function ExclusionRuleDialog(props: {
     }
   }
 
-  const oldAction = props.row?.action ?? t('No rule')
+  const oldAction = props.row?.action
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -188,6 +189,7 @@ function ExclusionRuleDialog(props: {
                   type='number'
                   min={1}
                   disabled={Boolean(props.row)}
+                  aria-invalid={Boolean(form.formState.errors.user_id)}
                   {...form.register('user_id', { valueAsNumber: true })}
                 />
                 <FieldError>
@@ -196,7 +198,7 @@ function ExclusionRuleDialog(props: {
                     : null}
                 </FieldError>
               </Field>
-              <Field>
+              <Field data-invalid={Boolean(form.formState.errors.action)}>
                 <FieldLabel
                   htmlFor={`exclusion-action-${props.row?.user_id ?? 'new'}`}
                 >
@@ -205,6 +207,7 @@ function ExclusionRuleDialog(props: {
                 <NativeSelect
                   id={`exclusion-action-${props.row?.user_id ?? 'new'}`}
                   className='w-full'
+                  aria-invalid={Boolean(form.formState.errors.action)}
                   {...form.register('action')}
                 >
                   <NativeSelectOption value='exclude'>
@@ -214,8 +217,13 @@ function ExclusionRuleDialog(props: {
                     {t('Include in profit statistics')}
                   </NativeSelectOption>
                 </NativeSelect>
+                <FieldError>
+                  {form.formState.errors.action
+                    ? t(form.formState.errors.action.message ?? '')
+                    : null}
+                </FieldError>
               </Field>
-              <Field>
+              <Field data-invalid={Boolean(form.formState.errors.reason)}>
                 <FieldLabel
                   htmlFor={`exclusion-reason-${props.row?.user_id ?? 'new'}`}
                 >
@@ -223,8 +231,14 @@ function ExclusionRuleDialog(props: {
                 </FieldLabel>
                 <Textarea
                   id={`exclusion-reason-${props.row?.user_id ?? 'new'}`}
+                  aria-invalid={Boolean(form.formState.errors.reason)}
                   {...form.register('reason')}
                 />
+                <FieldError>
+                  {form.formState.errors.reason
+                    ? t(form.formState.errors.reason.message ?? '')
+                    : null}
+                </FieldError>
               </Field>
             </FieldGroup>
           </form>
@@ -247,9 +261,14 @@ function ExclusionRuleDialog(props: {
         description={
           <span>
             {t('User ID')}: {confirmation?.user_id}. {t('Current')}:{' '}
-            {t(oldAction)} → {t('New')}:{' '}
-            {confirmation ? t(confirmation.action) : '—'}.{' '}
-            {t('This append-only record cannot be edited later.')}
+            {oldAction
+              ? t(STATISTICS_ACTION_LABEL_KEYS[oldAction])
+              : t('No rule')}{' '}
+            → {t('New')}:{' '}
+            {confirmation
+              ? t(STATISTICS_ACTION_LABEL_KEYS[confirmation.action])
+              : '—'}
+            . {t('This append-only record cannot be edited later.')}
           </span>
         }
         confirmLabel={t('Append rule')}
@@ -296,7 +315,7 @@ function ExclusionHistoryDialog(props: { row: SupplierEffectiveExclusion }) {
                       rule.action === 'exclude' ? 'destructive' : 'secondary'
                     }
                   >
-                    {t(rule.action)}
+                    {t(STATISTICS_ACTION_LABEL_KEYS[rule.action])}
                   </Badge>
                   <span className='text-muted-foreground'>
                     {formatTime(rule.effective_at)}

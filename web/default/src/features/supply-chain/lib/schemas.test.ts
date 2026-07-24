@@ -9,6 +9,7 @@ License, or (at your option) any later version.
 import { describe, expect, test } from 'bun:test'
 import {
   channelBindingFormSchema,
+  contractFormSchema,
   inventoryAdjustmentFormSchema,
   rateVersionFormSchema,
   usdInputToMicroUsd,
@@ -39,5 +40,25 @@ describe('supply-chain management schemas', () => {
     expect(
       channelBindingFormSchema.safeParse({ contract_id: 0 }).success
     ).toBeFalse()
+  })
+
+  test('returns field-level errors for every invalid contract capacity limit', () => {
+    const result = contractFormSchema.safeParse({
+      supplier_id: 1,
+      name: 'Primary',
+      contract_no: 'C-1',
+      remark: '',
+      rpm_limit: -1,
+      tpm_limit: 1.5,
+      max_concurrency: Number.NaN,
+    })
+
+    expect(result.success).toBeFalse()
+    if (result.success) return
+    expect(result.error.issues.map((issue) => issue.path[0]).sort()).toEqual([
+      'max_concurrency',
+      'rpm_limit',
+      'tpm_limit',
+    ])
   })
 })

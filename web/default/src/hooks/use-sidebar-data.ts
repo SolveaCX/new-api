@@ -43,8 +43,15 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { type SidebarData } from '@/components/layout/types'
 import { useSystemConfigStore } from '@/stores/system-config-store'
+import { ROLE } from '@/lib/roles'
+import { type SidebarData } from '@/components/layout/types'
+
+export function getSidebarItemMinimumRole(
+  item: SidebarData['navGroups'][number]['items'][number]
+): number | undefined {
+  return item.minimumRole
+}
 
 function SupplyChainIcon(
   props: Omit<ComponentProps<typeof HugeiconsIcon>, 'icon'>
@@ -193,6 +200,7 @@ export function buildSidebarData(
             title: t('Supply Chain'),
             url: '/supply-chain',
             icon: SupplyChainIcon,
+            minimumRole: ROLE.SUPER_ADMIN,
           },
           {
             title: t('Redemption Codes'),
@@ -224,9 +232,7 @@ export function useSidebarData(): SidebarData {
   // Direct money stimulus beats prose: show "+$50" when the reward amount is
   // known, fall back to the generic promo text otherwise.
   const inviteBadge =
-    badgeUsd && badgeUsd > 0
-      ? `+$${Math.round(badgeUsd)}`
-      : undefined
+    badgeUsd && badgeUsd > 0 ? `+$${Math.round(badgeUsd)}` : undefined
 
   return buildSidebarData(t, { inviteBadge })
 }

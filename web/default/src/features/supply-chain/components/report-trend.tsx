@@ -43,12 +43,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatMicroUsd, knownMoneyValue } from '../lib/format'
 import type { MicroUsd, SupplierReportTrend } from '../types'
+import { ReportQueryError } from './report-query-error'
 
 type TrendMode = 'business' | 'internal'
 
 interface ReportTrendProps {
   data?: SupplierReportTrend | null
   isLoading?: boolean
+  isError?: boolean
 }
 
 interface TrendChartRow {
@@ -107,8 +109,17 @@ export function ReportTrend(props: ReportTrendProps) {
         : null,
     }))
   }, [props.data])
+  const hasInternalSeries = Boolean(
+    props.data?.points.some((point) => point.internal_dimension_available)
+  )
+  const visibleMode =
+    mode === 'internal' && !hasInternalSeries ? 'business' : mode
 
   if (props.isLoading) return <TrendSkeleton />
+
+  if (props.isError && !props.data) {
+    return <ReportQueryError hasData={false} />
+  }
 
   return (
     <Card>
@@ -132,8 +143,9 @@ export function ReportTrend(props: ReportTrendProps) {
         </div>
       </CardHeader>
       <CardContent className='flex flex-col gap-4'>
+        {props.isError ? <ReportQueryError hasData /> : null}
         <Tabs
-          value={mode}
+          value={visibleMode}
           onValueChange={(value) => {
             if (value === 'business' || value === 'internal') {
               setMode(value)
@@ -142,9 +154,16 @@ export function ReportTrend(props: ReportTrendProps) {
         >
           <TabsList aria-label={t('Trend series')}>
             <TabsTrigger value='business'>{t('Business')}</TabsTrigger>
-            <TabsTrigger value='internal'>{t('Internal / test')}</TabsTrigger>
+            <TabsTrigger value='internal' disabled={!hasInternalSeries}>
+              {t('Internal / test')}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
+        {!hasInternalSeries ? (
+          <p className='text-muted-foreground text-sm'>
+            {t('Internal / test')}: {t('Unavailable')}
+          </p>
+        ) : null}
 
         {rows.length === 0 ? (
           <Empty>
@@ -198,7 +217,7 @@ export function ReportTrend(props: ReportTrendProps) {
                   />
                 }
               />
-              {mode === 'business' ? (
+              {visibleMode === 'business' ? (
                 <>
                   <Line
                     dataKey='sales'

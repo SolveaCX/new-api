@@ -110,6 +110,13 @@ func GetSupplierCacheHealth() SupplierCacheHealth {
 	return copyHealth
 }
 
+// IsSupplierCacheBlocking is the request-path health check. It is an O(1)
+// atomic read and fails closed until the first successful refresh.
+func IsSupplierCacheBlocking() bool {
+	health := supplierCacheHealthPointer.Load()
+	return health == nil || health.Blocking
+}
+
 type supplierChannelBindingRow struct {
 	Id                 int
 	SupplierContractId *int

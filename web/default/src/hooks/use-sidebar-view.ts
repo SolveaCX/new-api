@@ -24,26 +24,34 @@ import { ROLE } from '@/lib/roles'
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
 import { useSidebarConfig } from './use-sidebar-config'
-import { useSidebarData } from './use-sidebar-data'
+import { getSidebarItemMinimumRole, useSidebarData } from './use-sidebar-data'
 
 /** Sentinel key used for the root navigation in animation `key=` props */
 const ROOT_VIEW_KEY = '__root'
-const SUPPLY_CHAIN_URL = '/supply-chain'
+
+function isSidebarItemVisibleForRole(
+  item: NavGroup['items'][number],
+  userRole?: number
+): boolean {
+  const minimumRole = getSidebarItemMinimumRole(item)
+  return (
+    minimumRole === undefined ||
+    (userRole !== undefined && userRole >= minimumRole)
+  )
+}
 
 export function filterRootNavGroupsByRole(
   navGroups: NavGroup[],
   userRole?: number
 ): NavGroup[] {
   const isAdmin = userRole !== undefined && userRole >= ROLE.ADMIN
-  const isRoot = userRole !== undefined && userRole >= ROLE.SUPER_ADMIN
   return navGroups
     .filter((group) => (group.id === 'admin' ? isAdmin : true))
     .map((group) => {
-      if (group.id !== 'admin' || isRoot) return group
       return {
         ...group,
-        items: group.items.filter(
-          (item) => !('url' in item) || item.url !== SUPPLY_CHAIN_URL
+        items: group.items.filter((item) =>
+          isSidebarItemVisibleForRole(item, userRole)
         ),
       }
     })

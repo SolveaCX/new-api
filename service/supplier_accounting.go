@@ -280,12 +280,6 @@ func supplierSalesMultiplierPpm(multiplier float64) (*int64, error) {
 	return &value, nil
 }
 
-func InjectSupplierAccountingLogSnapshotV1(other map[string]interface{}, snapshot *types.SupplierAccountingLogSnapshotV1) {
-	if other != nil && snapshot != nil {
-		other["supplier_accounting_v1"] = snapshot
-	}
-}
-
 // CurrentSupplierAccountingActivationStateVersion reads only the process-local
 // option cache populated by the normal option reload path. Invalid or absent
 // state fails closed to the valid synthetic disabled version zero.
@@ -323,6 +317,10 @@ func buildSupplierAccountingEnvelopeV1(input SupplierAccountingEnvelopeInputV1) 
 	if !input.HasPositiveFinalUsage {
 		envelope.Disposition = types.SupplierAccountingDispositionZeroUsage
 		return envelope, nil
+	}
+	if input.RelayInfo != nil && input.RelayInfo.SupplierCostSnapshot.CacheUnavailable {
+		envelope.Disposition = types.SupplierAccountingDispositionProducerError
+		return envelope, newSupplierAccountingError("supplier_cache", SupplierAccountingReasonMissing, nil)
 	}
 	if input.RelayInfo == nil || supplierAccountingBindingAbsent(input.RelayInfo.SupplierCostSnapshot) {
 		envelope.Disposition = types.SupplierAccountingDispositionUnbound
@@ -712,20 +710,6 @@ func supplierGrossProfitFormulaValid(sales int64, procurement int64, gross int64
 	// Both inputs are non-negative, so subtraction cannot overflow below
 	// MinInt64. Compare without performing an overflowing addition.
 	return sales-procurement == gross
-}
-
-func buildSupplierAccountingSnapshotForFinalUsage(
-	relayInfo *relaycommon.RelayInfo,
-	settlement types.BillingSettlementResult,
-	officialListUSD *decimal.Decimal,
-	officialEvidenceReason string,
-	pricingMode string,
-	totalTokens int,
-) *types.SupplierAccountingLogSnapshotV1 {
-	if totalTokens <= 0 {
-		return nil
-	}
-	return BuildSupplierAccountingLogSnapshotV1(relayInfo, settlement, officialListUSD, officialEvidenceReason, pricingMode)
 }
 
 func appendSupplierQualityReason(current string, reason string) string {

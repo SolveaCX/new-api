@@ -66,6 +66,7 @@ import {
   formatPpmDiscount,
   formatPpmPercent,
 } from '../lib/format'
+import { INVENTORY_ADJUSTMENT_LABEL_KEYS } from '../lib/labels'
 import {
   contractFormSchema,
   inventoryAdjustmentFormSchema,
@@ -249,6 +250,7 @@ function ContractFormDialog(props: {
                   id={`contract-supplier-${props.contract?.id ?? 'new'}`}
                   className='w-full'
                   disabled={Boolean(props.contract)}
+                  aria-invalid={Boolean(form.formState.errors.supplier_id)}
                   value={form.watch('supplier_id') || ''}
                   onChange={(event) =>
                     form.setValue('supplier_id', Number(event.target.value), {
@@ -280,6 +282,7 @@ function ContractFormDialog(props: {
               </FieldLabel>
               <Input
                 id={`contract-number-${props.contract?.id ?? 'new'}`}
+                aria-invalid={Boolean(form.formState.errors.contract_no)}
                 {...form.register('contract_no')}
               />
               <FieldError>
@@ -296,6 +299,7 @@ function ContractFormDialog(props: {
               </FieldLabel>
               <Input
                 id={`contract-name-${props.contract?.id ?? 'new'}`}
+                aria-invalid={Boolean(form.formState.errors.name)}
                 {...form.register('name')}
               />
               <FieldError>
@@ -304,7 +308,9 @@ function ContractFormDialog(props: {
                   : null}
               </FieldError>
             </Field>
-            <Field>
+            <Field
+              data-invalid={Boolean(form.formState.errors.max_concurrency)}
+            >
               <FieldLabel
                 htmlFor={`contract-concurrency-${props.contract?.id ?? 'new'}`}
               >
@@ -314,10 +320,16 @@ function ContractFormDialog(props: {
                 id={`contract-concurrency-${props.contract?.id ?? 'new'}`}
                 type='number'
                 min={0}
+                aria-invalid={Boolean(form.formState.errors.max_concurrency)}
                 {...form.register('max_concurrency', { valueAsNumber: true })}
               />
+              <FieldError>
+                {form.formState.errors.max_concurrency
+                  ? t(form.formState.errors.max_concurrency.message ?? '')
+                  : null}
+              </FieldError>
             </Field>
-            <Field>
+            <Field data-invalid={Boolean(form.formState.errors.rpm_limit)}>
               <FieldLabel
                 htmlFor={`contract-rpm-${props.contract?.id ?? 'new'}`}
               >
@@ -327,10 +339,16 @@ function ContractFormDialog(props: {
                 id={`contract-rpm-${props.contract?.id ?? 'new'}`}
                 type='number'
                 min={0}
+                aria-invalid={Boolean(form.formState.errors.rpm_limit)}
                 {...form.register('rpm_limit', { valueAsNumber: true })}
               />
+              <FieldError>
+                {form.formState.errors.rpm_limit
+                  ? t(form.formState.errors.rpm_limit.message ?? '')
+                  : null}
+              </FieldError>
             </Field>
-            <Field>
+            <Field data-invalid={Boolean(form.formState.errors.tpm_limit)}>
               <FieldLabel
                 htmlFor={`contract-tpm-${props.contract?.id ?? 'new'}`}
               >
@@ -340,10 +358,19 @@ function ContractFormDialog(props: {
                 id={`contract-tpm-${props.contract?.id ?? 'new'}`}
                 type='number'
                 min={0}
+                aria-invalid={Boolean(form.formState.errors.tpm_limit)}
                 {...form.register('tpm_limit', { valueAsNumber: true })}
               />
+              <FieldError>
+                {form.formState.errors.tpm_limit
+                  ? t(form.formState.errors.tpm_limit.message ?? '')
+                  : null}
+              </FieldError>
             </Field>
-            <Field className='sm:col-span-2'>
+            <Field
+              className='sm:col-span-2'
+              data-invalid={Boolean(form.formState.errors.remark)}
+            >
               <FieldLabel
                 htmlFor={`contract-remark-${props.contract?.id ?? 'new'}`}
               >
@@ -351,8 +378,14 @@ function ContractFormDialog(props: {
               </FieldLabel>
               <Textarea
                 id={`contract-remark-${props.contract?.id ?? 'new'}`}
+                aria-invalid={Boolean(form.formState.errors.remark)}
                 {...form.register('remark')}
               />
+              <FieldError>
+                {form.formState.errors.remark
+                  ? t(form.formState.errors.remark.message ?? '')
+                  : null}
+              </FieldError>
             </Field>
           </FieldGroup>
         </form>
@@ -474,6 +507,9 @@ function RateVersionDialog(props: {
                   type='number'
                   min={0}
                   max={1_000_000}
+                  aria-invalid={Boolean(
+                    form.formState.errors.procurement_multiplier_ppm
+                  )}
                   {...form.register('procurement_multiplier_ppm', {
                     valueAsNumber: true,
                   })}
@@ -499,14 +535,20 @@ function RateVersionDialog(props: {
                     : null}
                 </FieldError>
               </Field>
-              <Field>
+              <Field data-invalid={Boolean(form.formState.errors.reason)}>
                 <FieldLabel htmlFor={`rate-reason-${props.contract.id}`}>
                   {t('Reason')}
                 </FieldLabel>
                 <Textarea
                   id={`rate-reason-${props.contract.id}`}
+                  aria-invalid={Boolean(form.formState.errors.reason)}
                   {...form.register('reason')}
                 />
+                <FieldError>
+                  {form.formState.errors.reason
+                    ? t(form.formState.errors.reason.message ?? '')
+                    : null}
+                </FieldError>
               </Field>
             </FieldGroup>
           </form>
@@ -647,6 +689,7 @@ function InventoryDialog(props: {
                   id={`inventory-delta-${props.contract.id}`}
                   inputMode='decimal'
                   placeholder='200000'
+                  aria-invalid={Boolean(form.formState.errors.delta_usd)}
                   {...form.register('delta_usd')}
                 />
                 <FieldError>
@@ -655,13 +698,14 @@ function InventoryDialog(props: {
                     : null}
                 </FieldError>
               </Field>
-              <Field>
+              <Field data-invalid={Boolean(form.formState.errors.type)}>
                 <FieldLabel htmlFor={`inventory-type-${props.contract.id}`}>
                   {t('Adjustment type')}
                 </FieldLabel>
                 <NativeSelect
                   id={`inventory-type-${props.contract.id}`}
                   className='w-full'
+                  aria-invalid={Boolean(form.formState.errors.type)}
                   {...form.register('type')}
                 >
                   <NativeSelectOption value='initial'>
@@ -677,15 +721,26 @@ function InventoryDialog(props: {
                     {t('Reversal')}
                   </NativeSelectOption>
                 </NativeSelect>
+                <FieldError>
+                  {form.formState.errors.type
+                    ? t(form.formState.errors.type.message ?? '')
+                    : null}
+                </FieldError>
               </Field>
-              <Field>
+              <Field data-invalid={Boolean(form.formState.errors.reason)}>
                 <FieldLabel htmlFor={`inventory-reason-${props.contract.id}`}>
                   {t('Reason')}
                 </FieldLabel>
                 <Textarea
                   id={`inventory-reason-${props.contract.id}`}
+                  aria-invalid={Boolean(form.formState.errors.reason)}
                   {...form.register('reason')}
                 />
+                <FieldError>
+                  {form.formState.errors.reason
+                    ? t(form.formState.errors.reason.message ?? '')
+                    : null}
+                </FieldError>
               </Field>
             </FieldGroup>
           </form>
@@ -796,7 +851,7 @@ function ContractHistoryDialog(props: { contract: SupplierContract }) {
                   >
                     <span>
                       {formatMicroUsd(item.delta_micro_usd, t('Unknown'))} ·{' '}
-                      {t(item.type)}
+                      {t(INVENTORY_ADJUSTMENT_LABEL_KEYS[item.type])}
                     </span>
                     <span className='text-muted-foreground'>
                       {formatTime(item.created_at)}

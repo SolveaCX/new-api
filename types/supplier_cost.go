@@ -37,6 +37,7 @@ const (
 // It intentionally contains only scalar values so a cache refresh cannot mutate
 // requests already in flight.
 type SupplierCostSnapshot struct {
+	CacheUnavailable         bool
 	BindingVersionId         int
 	SupplierId               int
 	SupplierName             string

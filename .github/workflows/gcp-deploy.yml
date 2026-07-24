@@ -151,7 +151,7 @@ jobs:
           echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
 
       - name: Retain immutable binding for rollback lifetime
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.binding.outputs.artifact_name }}
           path: deployment-binding/
@@ -195,7 +195,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Download immutable build evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build.outputs.binding_artifact }}
           path: deployment-binding
@@ -452,7 +452,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Download immutable build evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build.outputs.binding_artifact }}
           path: deployment-binding

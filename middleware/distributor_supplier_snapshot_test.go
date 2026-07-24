@@ -7,6 +7,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -187,4 +189,69 @@ func TestSetupContextNoMemoryCacheDBChannelsUseImmutableBoundAndUnboundSnapshots
 	require.True(t, ok)
 	require.Equal(t, types.SupplierCostSnapshot{}, unboundSnapshot)
 	require.Equal(t, 0, queryCount)
+}
+
+func TestSetupContextSupplierCacheFailureFailsClosedAndRecovers(t *testing.T) {
+	db, bound, _ := setupDistributorSupplierSnapshotTest(t, "distributor-supplier-cache-failure")
+	c := newDistributorSupplierContext(205)
+	require.Nil(t, SetupContextForSelectedChannel(c, bound, "model-a"))
+
+	healthy := &relaycommon.RelayInfo{}
+	healthy.InitSupplierSnapshots(c)
+	require.True(t, healthy.SupplierCostSnapshot.IsBound())
+	require.Equal(t, int64(650_000), healthy.SupplierCostSnapshot.ProcurementMultiplierPpm)
+
+	updatedRate := model.SupplierContractRateVersion{
+		ContractId:               *bound.SupplierContractId,
+		ProcurementMultiplierPpm: 700_000,
+		CreatedBy:                1,
+	}
+	require.NoError(t, db.Create(&updatedRate).Error)
+	require.NoError(t, db.Model(&model.SupplierContract{}).
+		Where("id = ?", *bound.SupplierContractId).
+		UpdateColumn("current_rate_version_id", updatedRate.Id).Error)
+	require.NoError(t, db.Create(&model.SupplierStatisticsExclusionRule{
+		UserId: 205, Action: model.SupplierStatisticsActionExclude,
+		IdempotencyKey: "exclude-205-after-load", CreatedBy: 1,
+	}).Error)
+
+	failedDB, err := gorm.Open(sqlite.Open("file:distributor-supplier-cache-closed?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	failedSQLDB, err := failedDB.DB()
+	require.NoError(t, err)
+	require.NoError(t, failedSQLDB.Close())
+	model.DB = failedDB
+	require.Error(t, model.RefreshSupplierCache())
+
+	require.Nil(t, SetupContextForSelectedChannel(c, bound, "model-a"))
+	unavailable := &relaycommon.RelayInfo{}
+	unavailable.InitSupplierSnapshots(c)
+	require.True(t, unavailable.SupplierCostSnapshot.CacheUnavailable)
+	envelope := service.BuildSupplierAccountingEnvelopeV1(service.SupplierAccountingEnvelopeInputV1{
+		RelayInfo: unavailable,
+		Settlement: types.BillingSettlementResult{
+			FinanciallyCommitted:   true,
+			FinanciallyCommittedAt: 1,
+		},
+		HasPositiveFinalUsage: true,
+	})
+	require.Equal(t, types.SupplierAccountingDispositionProducerError, envelope.Disposition)
+	require.Nil(t, envelope.Captured)
+
+	model.DB = db
+	require.NoError(t, model.RefreshSupplierCache())
+	require.Nil(t, SetupContextForSelectedChannel(c, bound, "model-a"))
+	stillUnavailable := &relaycommon.RelayInfo{}
+	stillUnavailable.InitSupplierSnapshots(c)
+	require.True(t, stillUnavailable.SupplierCostSnapshot.CacheUnavailable, "a request that observed blocking must remain fail-closed across retries")
+
+	recoveredContext := newDistributorSupplierContext(205)
+	require.Nil(t, SetupContextForSelectedChannel(recoveredContext, bound, "model-a"))
+	recovered := &relaycommon.RelayInfo{}
+	recovered.InitSupplierSnapshots(recoveredContext)
+	require.False(t, recovered.SupplierCostSnapshot.CacheUnavailable)
+	require.True(t, recovered.SupplierCostSnapshot.IsBound())
+	require.Equal(t, updatedRate.Id, recovered.SupplierCostSnapshot.RateVersionId)
+	require.Equal(t, int64(700_000), recovered.SupplierCostSnapshot.ProcurementMultiplierPpm)
+	require.Equal(t, types.SupplierStatisticsScopeInternal, recovered.SupplierStatisticsScopeSnapshot.Scope)
 }

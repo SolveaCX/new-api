@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -274,6 +276,7 @@ func supplyChainReportResult(c *gin.Context, result any, err error) {
 	case errors.Is(err, service.ErrSupplierReportOverflow):
 		supplyChainError(c, http.StatusUnprocessableEntity, i18n.MsgSupplyChainReportUnavailable)
 	default:
+		logger.LogError(c.Request.Context(), fmt.Sprintf("supplier report request failed: %v", err))
 		supplyChainError(c, http.StatusInternalServerError, i18n.MsgSupplyChainInternalError)
 	}
 }

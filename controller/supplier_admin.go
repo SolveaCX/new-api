@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -560,6 +562,7 @@ func supplyChainModelError(c *gin.Context, err error) {
 	case errors.Is(err, model.ErrSupplierAdminIdempotencyKeyRequired):
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainIdempotencyKeyRequired)
 	default:
+		logger.LogError(c.Request.Context(), fmt.Sprintf("supplier admin request failed: %v", err))
 		supplyChainError(c, http.StatusInternalServerError, i18n.MsgSupplyChainInternalError)
 	}
 }
@@ -575,15 +578,6 @@ func supplyChainError(c *gin.Context, status int, key string) {
 
 func supplyChainPositivePathInt(c *gin.Context, name string) (int, bool) {
 	value, err := strconv.Atoi(c.Param(name))
-	if err != nil || value <= 0 {
-		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
-		return 0, false
-	}
-	return value, true
-}
-
-func supplyChainPositivePathInt64(c *gin.Context, name string) (int64, bool) {
-	value, err := strconv.ParseInt(c.Param(name), 10, 64)
 	if err != nil || value <= 0 {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 		return 0, false
