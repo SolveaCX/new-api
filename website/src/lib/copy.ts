@@ -5,7 +5,6 @@ type Copy = {
   nav: {
     pricing: string;
     modelPricing: string;
-    compute: string;
     docs: string;
     home: string;
     console: string;
@@ -112,7 +111,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Pricing",
       modelPricing: "Models",
-      compute: "Compute",
       docs: "Documentation",
       home: "Home",
       console: "Console",
@@ -272,7 +270,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "价格",
       modelPricing: "模型",
-      compute: "算力",
       docs: "文档",
       home: "主页",
       console: "控制台",
@@ -429,7 +426,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Precios",
       modelPricing: "Modelos",
-      compute: "Cómputo",
       docs: "Documentación",
       home: "Inicio",
       console: "Consola",
@@ -558,7 +554,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Tarifs",
       modelPricing: "Modèles",
-      compute: "Calcul",
       docs: "Documentation",
       home: "Accueil",
       console: "Console",
@@ -687,7 +682,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Preços",
       modelPricing: "Modelos",
-      compute: "Computação",
       docs: "Documentação",
       home: "Início",
       console: "Console",
@@ -816,7 +810,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Цены",
       modelPricing: "Модели",
-      compute: "Вычисления",
       docs: "Документация",
       home: "Главная",
       console: "Консоль",
@@ -945,7 +938,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "料金",
       modelPricing: "モデル",
-      compute: "コンピュート",
       docs: "ドキュメント",
       home: "ホーム",
       console: "コンソール",
@@ -1074,7 +1066,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Giá",
       modelPricing: "Mô hình",
-      compute: "Điện toán",
       docs: "Tài liệu",
       home: "Trang chủ",
       console: "Bảng điều khiển",
@@ -1203,7 +1194,6 @@ const copies: Record<Locale, BaseCopy> = withIdFallback({
     nav: {
       pricing: "Preise",
       modelPricing: "Modelle",
-      compute: "Rechenleistung",
       docs: "Dokumentation",
       home: "Startseite",
       console: "Konsole",
