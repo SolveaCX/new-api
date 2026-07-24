@@ -238,7 +238,6 @@ func buildStripeSubscriptionCheckoutSessionParams(referenceId string, customerId
 	} else {
 		params.Customer = stripe.String(customerId)
 	}
-
 	return params
 }
 
@@ -259,17 +258,19 @@ type oneTimePlanPaymentQuote struct {
 }
 
 type oneTimeStripeCheckoutSession struct {
-	ID  string
-	URL string
+	ID           string
+	URL          string
+	ClientSecret string
 }
 
 var stripeOneTimeCheckoutSessionCreator = createOneTimeStripeCheckoutSession
+var stripeOneTimeCheckoutSessionGetter = getOneTimeStripeCheckoutSession
 
-func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.SubscriptionOrder, user *model.User) (*oneTimeStripeCheckoutSession, error) {
+func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.SubscriptionOrder, user *model.User, presentations ...service.StripeCheckoutPresentation) (*oneTimeStripeCheckoutSession, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		return nil, errors.New("invalid Stripe API key")
 	}
-	params, err := buildOneTimePlanCheckoutSessionParams(order, user)
+	params, err := buildOneTimePlanCheckoutSessionParams(order, user, presentations...)
 	if err != nil {
 		return nil, err
 	}
@@ -278,21 +279,51 @@ func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.Subscr
 	if err != nil {
 		return nil, err
 	}
-	if created == nil || strings.TrimSpace(created.ID) == "" || strings.TrimSpace(created.URL) == "" {
-		return nil, errors.New("Stripe checkout session missing id or url")
+	presentation := service.StripeCheckoutPresentation{}
+	if len(presentations) > 0 {
+		presentation = presentations[0]
+	}
+	if created == nil || strings.TrimSpace(created.ID) == "" {
+		return nil, errors.New("Stripe checkout session missing id")
+	}
+	if presentation.Embedded {
+		if strings.TrimSpace(created.ClientSecret) == "" {
+			return nil, errors.New("Stripe embedded checkout session missing client secret")
+		}
+	} else if strings.TrimSpace(created.URL) == "" {
+		return nil, errors.New("Stripe checkout session missing url")
 	}
 	if err := persistOneTimeStripeCheckoutSession(order.TradeNo, created.ID, created.URL); err != nil {
 		return nil, err
 	}
-	return &oneTimeStripeCheckoutSession{ID: strings.TrimSpace(created.ID), URL: strings.TrimSpace(created.URL)}, nil
+	return &oneTimeStripeCheckoutSession{ID: strings.TrimSpace(created.ID), URL: strings.TrimSpace(created.URL), ClientSecret: strings.TrimSpace(created.ClientSecret)}, nil
+}
+
+func getOneTimeStripeCheckoutSession(ctx context.Context, sessionID string) (*oneTimeStripeCheckoutSession, error) {
+	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
+		return nil, errors.New("invalid Stripe API key")
+	}
+	stripe.Key = setting.StripeApiSecret
+	checkoutSession, err := session.Get(strings.TrimSpace(sessionID), nil)
+	if err != nil {
+		return nil, err
+	}
+	if checkoutSession == nil {
+		return nil, nil
+	}
+	return &oneTimeStripeCheckoutSession{
+		ID:           strings.TrimSpace(checkoutSession.ID),
+		URL:          strings.TrimSpace(checkoutSession.URL),
+		ClientSecret: strings.TrimSpace(checkoutSession.ClientSecret),
+	}, nil
 }
 
 func persistOneTimeStripeCheckoutSession(tradeNo string, sessionID string, sessionURL string) error {
 	tradeNo = strings.TrimSpace(tradeNo)
 	sessionID = strings.TrimSpace(sessionID)
 	sessionURL = strings.TrimSpace(sessionURL)
-	if tradeNo == "" || sessionID == "" || sessionURL == "" {
-		return errors.New("Stripe checkout session id and url are required")
+	if tradeNo == "" || sessionID == "" {
+		return errors.New("Stripe checkout session id is required")
 	}
 	return model.DB.Transaction(func(tx *gorm.DB) error {
 		var order model.SubscriptionOrder
@@ -305,14 +336,15 @@ func persistOneTimeStripeCheckoutSession(tradeNo string, sessionID string, sessi
 		if strings.TrimSpace(order.ProviderSessionId) != "" && strings.TrimSpace(order.ProviderSessionId) != sessionID {
 			return errors.New("Stripe checkout session mismatch")
 		}
-		return tx.Model(&order).Updates(map[string]interface{}{
-			"provider_session_id":  sessionID,
-			"provider_session_url": sessionURL,
-		}).Error
+		updates := map[string]interface{}{"provider_session_id": sessionID}
+		if sessionURL != "" {
+			updates["provider_session_url"] = sessionURL
+		}
+		return tx.Model(&order).Updates(updates).Error
 	})
 }
 
-func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user *model.User) (*stripe.CheckoutSessionParams, error) {
+func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user *model.User, presentations ...service.StripeCheckoutPresentation) (*stripe.CheckoutSessionParams, error) {
 	if order == nil {
 		return nil, errors.New("subscription order is required")
 	}
@@ -368,6 +400,9 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 		} else if strings.TrimSpace(user.Email) != "" {
 			params.CustomerEmail = stripe.String(strings.TrimSpace(user.Email))
 		}
+	}
+	if len(presentations) > 0 {
+		service.ApplyStripeCheckoutPresentation(params, presentations[0], order.TradeNo)
 	}
 	params.SetIdempotencyKey("subscription-one-time:" + strings.TrimSpace(order.TradeNo))
 	return params, nil

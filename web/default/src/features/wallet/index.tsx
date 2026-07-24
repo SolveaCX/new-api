@@ -175,6 +175,7 @@ export function Wallet(props: WalletProps) {
     processPayment,
     embeddedCheckout,
     closeEmbeddedCheckout,
+    openStripeCheckout,
     openStripeCheckoutResponse,
   } = usePayment()
 
@@ -719,6 +720,7 @@ export function Wallet(props: WalletProps) {
               topupInfo={topupInfo}
               userQuota={user?.quota}
               onPurchaseSuccess={fetchUser}
+              onOpenStripeCheckout={openStripeCheckout}
             />
 
             <TitledCard

@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -164,6 +165,41 @@ func TestPurchaseSubscriptionStripeRecurringReturnsCheckoutURL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ChangePlanStatusCheckoutRequired, result.Status)
 	require.Equal(t, "https://checkout.stripe.test/purchase-subscription", result.CheckoutURL)
+}
+
+func TestPurchaseSubscriptionStripeRecurringPropagatesClientSecret(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	originalPublishableKey := setting.StripePublishableKey
+	setting.StripePublishableKey = "pk_test_embedded"
+	t.Cleanup(func() { setting.StripePublishableKey = originalPublishableKey })
+	insertPurchaseServiceUser(t, 7324, 5000)
+	plan := insertPurchaseServicePlan(t, 7424, 1, 19.99, 100)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).
+		Update("stripe_price_id", "price_purchase_embedded").Error)
+
+	originalCreator := stripeSubscriptionCheckoutCreator
+	t.Cleanup(func() { stripeSubscriptionCheckoutCreator = originalCreator })
+	stripeSubscriptionCheckoutCreator = func(_ context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+		require.Equal(t, "embedded", input.Presentation.RequestedUIMode)
+		return &StripeSubscriptionCheckoutSession{
+			ID:           "cs_purchase_embedded",
+			ClientSecret: "cs_secret_purchase_embedded",
+		}, nil
+	}
+
+	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+		UserID:        7324,
+		PlanID:        plan.Id,
+		PaymentChoice: SubscriptionPaymentChoiceStripeRecurring,
+		Months:        1,
+		RequestID:     "stripe-purchase-embedded",
+		UIMode:        "embedded",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ChangePlanStatusCheckoutRequired, result.Status)
+	require.Empty(t, result.CheckoutURL)
+	require.Equal(t, "cs_secret_purchase_embedded", result.ClientSecret)
 }
 
 func TestPurchaseSubscriptionStripeRecurringReturnsHostedInvoiceURL(t *testing.T) {

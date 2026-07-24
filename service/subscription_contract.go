@@ -34,6 +34,7 @@ type ChangePlanCommand struct {
 	PlanID      int
 	PaymentMode string
 	RequestID   string
+	UIMode      string
 }
 
 type ChangePlanResult struct {
@@ -42,6 +43,7 @@ type ChangePlanResult struct {
 	Intent           *model.SubscriptionChangeIntent `json:"intent"`
 	CheckoutURL      string                          `json:"checkout_url,omitempty"`
 	HostedInvoiceURL string                          `json:"hosted_invoice_url,omitempty"`
+	ClientSecret     string                          `json:"client_secret,omitempty"`
 }
 
 func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
@@ -196,6 +198,9 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 					First(&order).Error; err != nil {
 					return err
 				}
+				if strings.TrimSpace(order.ProviderSessionId) != "" {
+					return nil
+				}
 				var plan model.SubscriptionPlan
 				if err := tx.Where("id = ?", existing.ToPlanId).First(&plan).Error; err != nil {
 					return err
@@ -216,6 +221,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 					Email:          strings.TrimSpace(user.Email),
 					PriceID:        strings.TrimSpace(plan.StripePriceId),
 					IdempotencyKey: existing.ProviderIdempotencyKey,
+					Presentation:   ResolveStripeCheckoutPresentation(cmd.UIMode),
 				}
 			}
 			return nil
@@ -408,6 +414,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 				if err != nil {
 					return err
 				}
+				input.Presentation = ResolveStripeCheckoutPresentation(cmd.UIMode)
 				checkoutInput = input
 				result = &ChangePlanResult{
 					Status:   ChangePlanStatusCheckoutRequired,
@@ -426,6 +433,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			if err != nil {
 				return err
 			}
+			input.Presentation = ResolveStripeCheckoutPresentation(cmd.UIMode)
 			checkoutInput = input
 			result = &ChangePlanResult{
 				Status:   ChangePlanStatusCheckoutRequired,
@@ -509,6 +517,13 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 			return nil, err
 		}
 		result.CheckoutURL = checkout.URL
+		result.ClientSecret = checkout.ClientSecret
+	} else if result != nil && result.Status == ChangePlanStatusCheckoutRequired && result.Intent != nil &&
+		result.Intent.PaymentMode == model.SubscriptionPaymentModeStripeRecurring &&
+		strings.TrimSpace(result.CheckoutURL) == "" {
+		if err := hydrateStripeCheckoutSessionResult(context.Background(), result); err != nil {
+			return nil, err
+		}
 	}
 	if upgradeInput != nil {
 		upgrade, err := stripeSubscriptionUpgradeExecutor(context.Background(), *upgradeInput)
@@ -568,6 +583,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 func (cmd *ChangePlanCommand) normalize() {
 	cmd.PaymentMode = strings.TrimSpace(cmd.PaymentMode)
 	cmd.RequestID = strings.TrimSpace(cmd.RequestID)
+	cmd.UIMode = strings.ToLower(strings.TrimSpace(cmd.UIMode))
 }
 
 func (cmd ChangePlanCommand) validate() error {
@@ -1008,6 +1024,41 @@ func buildChangePlanResultTx(tx *gorm.DB, intent *model.SubscriptionChangeIntent
 	return result
 }
 
+func hydrateStripeCheckoutSessionResult(ctx context.Context, result *ChangePlanResult) error {
+	if result == nil || result.Intent == nil || result.Intent.Id <= 0 {
+		return nil
+	}
+	var order model.SubscriptionOrder
+	query := model.DB.Where("change_intent_id = ? AND payment_provider = ?", result.Intent.Id, model.PaymentProviderStripe).
+		Order("id desc").
+		Limit(1).
+		Find(&order)
+	if query.Error != nil {
+		return query.Error
+	}
+	if query.RowsAffected == 0 || strings.TrimSpace(order.ProviderSessionId) == "" {
+		return nil
+	}
+	checkoutSession, err := stripeCheckoutSessionGetter(ctx, order.ProviderSessionId)
+	if err != nil {
+		return err
+	}
+	if checkoutSession == nil || strings.TrimSpace(checkoutSession.ID) != strings.TrimSpace(order.ProviderSessionId) {
+		return errors.New("Stripe checkout session could not be authenticated")
+	}
+	if strings.TrimSpace(checkoutSession.URL) != "" {
+		result.CheckoutURL = strings.TrimSpace(checkoutSession.URL)
+	}
+	if strings.TrimSpace(result.CheckoutURL) == "" {
+		result.CheckoutURL = strings.TrimSpace(order.ProviderSessionURL)
+	}
+	result.ClientSecret = strings.TrimSpace(checkoutSession.ClientSecret)
+	if strings.TrimSpace(result.CheckoutURL) == "" && result.ClientSecret == "" {
+		return errors.New("Stripe checkout session missing url or client secret")
+	}
+	return nil
+}
+
 func changePlanResultStatus(intentStatus string) string {
 	switch intentStatus {
 	case model.SubscriptionChangeIntentStatusApplied:
@@ -1065,6 +1116,7 @@ func prepareStripeSubscriptionCheckoutPaymentTx(tx *gorm.DB, user *model.User, c
 		Email:          strings.TrimSpace(user.Email),
 		PriceID:        strings.TrimSpace(plan.StripePriceId),
 		IdempotencyKey: idempotencyKey,
+		Presentation:   ResolveStripeCheckoutPresentation(""),
 	}, nil
 }
 
@@ -1074,8 +1126,8 @@ func persistStripeCheckoutSession(intentID int64, sessionID string, sessionURL s
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	sessionURL = strings.TrimSpace(sessionURL)
-	if sessionID == "" || sessionURL == "" {
-		return errors.New("Stripe checkout session id and url are required")
+	if sessionID == "" {
+		return errors.New("Stripe checkout session id is required")
 	}
 	return model.DB.Transaction(func(tx *gorm.DB) error {
 		var order model.SubscriptionOrder
@@ -1088,9 +1140,10 @@ func persistStripeCheckoutSession(intentID int64, sessionID string, sessionURL s
 		if order.ProviderSessionId != "" && order.ProviderSessionId != sessionID {
 			return errors.New("Stripe checkout session mismatch")
 		}
-		return tx.Model(&order).Updates(map[string]interface{}{
-			"provider_session_id":  sessionID,
-			"provider_session_url": sessionURL,
-		}).Error
+		updates := map[string]interface{}{"provider_session_id": sessionID}
+		if sessionURL != "" {
+			updates["provider_session_url"] = sessionURL
+		}
+		return tx.Model(&order).Updates(updates).Error
 	})
 }
