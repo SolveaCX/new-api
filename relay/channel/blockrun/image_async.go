@@ -141,6 +141,11 @@ func pollImageJob(c *gin.Context, info *relaycommon.RelayInfo, pollPath, payment
 	if err != nil {
 		return nil, fmt.Errorf("blockrun: poll http client: %w", err)
 	}
+	if client == nil {
+		// The shared relay client is initialised by InitHttpClient() in main;
+		// fall back for any caller (e.g. tests) running before that.
+		client = http.DefaultClient
+	}
 	deadline := time.Now().Add(imagePollBudget)
 	for {
 		// Bound each round (connect + headers + body) by the overall poll

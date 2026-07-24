@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -48,6 +47,7 @@ func TestSupplierAccountingEnvelopeDispositionOrder(t *testing.T) {
 	unsupported := InjectUnsupportedSupplierAccountingEnvelopeV1(other)
 	require.Equal(t, types.SupplierAccountingDispositionUnsupportedPath, unsupported.Disposition)
 	require.Nil(t, unsupported.Captured)
+	require.NotContains(t, other, types.SupplierAccountingEnvelopeKeyV1)
 
 	uncommittedInput := supplierEnvelopeTestInput()
 	uncommittedInput.Settlement.FinanciallyCommitted = false
@@ -74,6 +74,11 @@ func TestSupplierAccountingEnvelopeDispositionOrder(t *testing.T) {
 	producerError := BuildSupplierAccountingEnvelopeV1(producerErrorInput)
 	require.Equal(t, types.SupplierAccountingDispositionProducerError, producerError.Disposition)
 	require.Nil(t, producerError.Captured)
+	for _, input := range []SupplierAccountingEnvelopeInputV1{uncommittedInput, zeroInput, unboundInput, producerErrorInput} {
+		other := map[string]any{types.SupplierAccountingEnvelopeKeyV1: "stale"}
+		InjectSupplierAccountingEnvelopeV1(other, input)
+		require.NotContains(t, other, types.SupplierAccountingEnvelopeKeyV1)
+	}
 }
 
 func TestSupplierAccountingEnvelopeCacheUnavailableFailsClosedAfterFinancialDispositionChecks(t *testing.T) {
@@ -113,6 +118,8 @@ func TestSupplierAccountingEnvelopeCapturedScopeAndFormulaContracts(t *testing.T
 	require.Nil(t, internal.Captured.SalesMultiplierPpm)
 	require.Nil(t, internal.Captured.SalesMicroUsd)
 	require.Nil(t, internal.Captured.GrossProfitMicroUsd)
+	require.Zero(t, internal.Captured.PricingProvenance.Ratio.GroupRatioPpm)
+	require.Zero(t, internal.Captured.PricingProvenance.Ratio.GroupRatioVersion)
 
 	badFormula := *business.Captured
 	wrong := *badFormula.GrossProfitMicroUsd + 1
@@ -351,29 +358,6 @@ func requireEnvelopePayloadAtMost(t *testing.T, envelope types.SupplierAccountin
 	payload, err := common.Marshal(map[string]any{types.SupplierAccountingEnvelopeKeyV1: envelope})
 	require.NoError(t, err)
 	require.LessOrEqual(t, len(payload), maximum, string(payload))
-}
-
-func TestSupplierAccountingActivationVersionUsesStrictOptionCache(t *testing.T) {
-	common.OptionMapRWMutex.Lock()
-	original := common.OptionMap
-	common.OptionMap = map[string]string{}
-	common.OptionMapRWMutex.Unlock()
-	t.Cleanup(func() {
-		common.OptionMapRWMutex.Lock()
-		common.OptionMap = original
-		common.OptionMapRWMutex.Unlock()
-	})
-
-	require.Zero(t, CurrentSupplierAccountingActivationStateVersion())
-	common.OptionMapRWMutex.Lock()
-	common.OptionMap[model.SupplierAccountingActivationOptionKey] = `{"schema_version":1,"state_version":7,"phase":"disabled","cutover_at":null,"accepted_capability_versions":[],"prepared_at":null,"prepared_by":null,"activated_at":null,"degraded_at":null,"reason":"cached disabled state"}`
-	common.OptionMapRWMutex.Unlock()
-	require.EqualValues(t, 7, CurrentSupplierAccountingActivationStateVersion())
-
-	common.OptionMapRWMutex.Lock()
-	common.OptionMap[model.SupplierAccountingActivationOptionKey] = `{"schema_version":1,"state_version":9,"phase":"disabled","unknown":true}`
-	common.OptionMapRWMutex.Unlock()
-	require.Zero(t, CurrentSupplierAccountingActivationStateVersion())
 }
 
 func TestSupplierProcurementAllowsAboveOneMultiplier(t *testing.T) {

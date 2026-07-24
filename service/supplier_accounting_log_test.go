@@ -169,7 +169,6 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
-	activateSupplierAccountingForBatch(t, mainDB, day.Unix())
 
 	info := supplierAccountingTestRelayInfo()
 	info.SupplierCostSnapshot = types.SupplierCostSnapshot{
@@ -246,7 +245,7 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 	require.EqualValues(t, 500_000, summary.ProcurementCostMicroUsd)
 }
 
-func TestPostTextConsumeQuotaPersistsZeroUsageEnvelope(t *testing.T) {
+func TestPostTextConsumeQuotaOmitsZeroUsageEnvelope(t *testing.T) {
 	const tokenID = 987654
 	require.NoError(t, model.LOG_DB.Where("token_id = ?", tokenID).Delete(&model.Log{}).Error)
 	t.Cleanup(func() { _ = model.LOG_DB.Where("token_id = ?", tokenID).Delete(&model.Log{}).Error })
@@ -269,10 +268,7 @@ func TestPostTextConsumeQuotaPersistsZeroUsageEnvelope(t *testing.T) {
 	var persisted model.Log
 	require.NoError(t, model.LOG_DB.Where("token_id = ?", tokenID).First(&persisted).Error)
 	require.Equal(t, model.LogTypeConsume, persisted.Type)
-	var other struct {
-		Envelope types.SupplierAccountingEnvelopeV1 `json:"supplier_accounting_v1"`
-	}
+	var other map[string]any
 	require.NoError(t, common.UnmarshalJsonStr(persisted.Other, &other))
-	require.Equal(t, types.SupplierAccountingDispositionZeroUsage, other.Envelope.Disposition)
-	require.Nil(t, other.Envelope.Captured)
+	require.NotContains(t, other, types.SupplierAccountingEnvelopeKeyV1)
 }

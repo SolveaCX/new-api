@@ -2,53 +2,23 @@ package model
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
-	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
-func TestSupplierReportFreshnessUsesCanonicalCutoverGapRange(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Option{}, &SupplierAccountingCoverageGap{}, &SupplierUsageDailyBatchRun{}))
-	now := time.Now().Unix()
-	activation := activationState(3, SupplierAccountingActivationActive, now)
-	cutoverAt := *activation.CutoverAt
-	encoded, err := common.Marshal(activation)
-	require.NoError(t, err)
-	require.NoError(t, db.Create(&Option{Key: SupplierAccountingActivationOptionKey, Value: string(encoded)}).Error)
-
-	createClosed := func(label string, startAt, endAt int64) SupplierAccountingCoverageGap {
-		input := validSupplierCoverageGapInput("freshness-open-"+label, startAt)
-		opened, openErr := OpenSupplierAccountingCoverageGap(db, input)
-		require.NoError(t, openErr)
-		closed, closeErr := CloseSupplierAccountingCoverageGap(db, CloseSupplierAccountingCoverageGapInput{
-			ID: opened.Id, EndAt: endAt, CloseCommandID: "freshness-close-" + label,
-			ClosedBy: 1, FinanceDisposition: SupplierCoverageGapFinanceNoImpact,
-			ExpectedVersion: opened.RecordVersion,
-		})
-		require.NoError(t, closeErr)
-		return *closed
+func TestSupplierReportReadTxOptions(t *testing.T) {
+	require.Nil(t, supplierReportReadTxOptions("sqlite"))
+	for _, dialect := range []string{"mysql", "postgres"} {
+		options := supplierReportReadTxOptions(dialect)
+		require.NotNil(t, options)
+		require.Equal(t, sql.LevelRepeatableRead, options.Isolation)
+		require.True(t, options.ReadOnly)
 	}
-
-	createClosed("before", cutoverAt-20, cutoverAt-1)
-	overlapping := createClosed("overlap", cutoverAt-10, cutoverAt+1)
-	inside := createClosed("inside", cutoverAt+2, now-1)
-	futureInput := validSupplierCoverageGapInput("freshness-open-future", now+3600)
-	_, err = OpenSupplierAccountingCoverageGap(db, futureInput)
-	require.NoError(t, err)
-
-	freshness, err := NewSupplierReportStore(db).QueryFreshness(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, cutoverAt, freshness.CoverageStartAt)
-	require.Len(t, freshness.KnownCoverageGaps, 2)
-	require.Equal(t, []int64{overlapping.Id, inside.Id}, []int64{freshness.KnownCoverageGaps[0].Id, freshness.KnownCoverageGaps[1].Id})
 }
 
 func TestListChannelCatalogDatabasePaginationAndPublishedGeneration(t *testing.T) {
@@ -63,14 +33,10 @@ func TestListChannelCatalogDatabasePaginationAndPublishedGeneration(t *testing.T
 		dayEnd         = dayStart + 86_400
 	)
 	publishedAt := dayEnd
-	publishedEvidence, err := types.EncodeSupplierPublishedEvidenceV1(completePublishedEvidence(240))
-	require.NoError(t, err)
 	require.NoError(t, db.Create(&SupplierUsageDailyBatchRun{
 		BatchDate: "2026-03-23", DayStart: dayStart, DayEnd: dayEnd,
 		Status: SupplierDailyBatchStatusRunning, FenceToken: runningFence,
 		PublishedFenceToken: publishedFence, PublishedAt: &publishedAt,
-		PublishedPersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessComplete,
-		PublishedEvidenceV1:                       publishedEvidence,
 	}).Error)
 
 	channels := make([]Channel, 0, 300)
@@ -156,13 +122,8 @@ func TestListChannelCatalogDatabasePaginationAndPublishedGeneration(t *testing.T
 	for _, row := range usageRows {
 		requestCount += row.BusinessRequestCount
 	}
-	require.Equal(t, int64(240), requestCount, "all summary-backed reads must ignore the force-rerun generation")
+	require.Equal(t, int64(240), requestCount, "all summary-backed reads must ignore the unpublished generation")
 
-	freshness, err := store.QueryFreshness(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, SupplierDailyBatchStatusCompleted, freshness.LatestStatus, "freshness projects the published generation, not mutable rerun status")
-	require.NotNil(t, freshness.FreshThrough)
-	require.Equal(t, dayEnd, *freshness.FreshThrough, "the previously published generation remains fresh while its force rerun is running")
 }
 
 func TestQueryBreakdownPaginationOrdersEveryGroupedDimension(t *testing.T) {
@@ -251,11 +212,9 @@ func TestSupplierReportStoreBoundsCatalogHistoryAndInventoryAtClosedEnd(t *testi
 		{Id: 10, Name: "closed-history"}, {Id: 20, Name: "future-history"},
 	}).Error)
 	publishedAt := futureEnd
-	evidence, err := types.EncodeSupplierPublishedEvidenceV1(completePublishedEvidence(2))
-	require.NoError(t, err)
 	require.NoError(t, db.Create(&[]SupplierUsageDailyBatchRun{
-		{BatchDate: "2026-07-15", DayStart: closedStart, DayEnd: closedEnd, Status: SupplierDailyBatchStatusCompleted, FenceToken: 1, PublishedFenceToken: 1, PublishedAt: &publishedAt, PublishedPersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessComplete, PublishedEvidenceV1: evidence},
-		{BatchDate: "2026-07-16", DayStart: closedEnd, DayEnd: futureEnd, Status: SupplierDailyBatchStatusCompleted, FenceToken: 2, PublishedFenceToken: 2, PublishedAt: &publishedAt, PublishedPersistedLogSnapshotCompleteness: types.SupplierPersistedLogCompletenessComplete, PublishedEvidenceV1: evidence},
+		{BatchDate: "2026-07-15", DayStart: closedStart, DayEnd: closedEnd, Status: SupplierDailyBatchStatusCompleted, FenceToken: 1, PublishedFenceToken: 1, PublishedAt: &publishedAt},
+		{BatchDate: "2026-07-16", DayStart: closedEnd, DayEnd: futureEnd, Status: SupplierDailyBatchStatusCompleted, FenceToken: 2, PublishedFenceToken: 2, PublishedAt: &publishedAt},
 	}).Error)
 	require.NoError(t, db.Create(&[]SupplierUsageDailySummary{
 		{BatchDate: "2026-07-15", BatchFenceToken: 1, DimensionKey: "closed", BucketStart: closedStart, SupplierId: 1, ContractId: 1, ChannelId: 10, ModelName: "closed", StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 1, OfficialListMicroUsd: 1_000},

@@ -25,12 +25,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { ChannelBindingManagement } from './components/channel-binding-management'
 import { ContractManagement } from './components/contract-management'
-import { DailyReportSection } from './components/daily-report-section'
 import { ExclusionManagement } from './components/exclusion-management'
 import { ReportBreakdownTable } from './components/report-breakdown-table'
 import { ReportChannelTable } from './components/report-channel-table'
 import { ReportContractTable } from './components/report-contract-table'
-import { ReportFreshnessAlert } from './components/report-freshness-alert'
 import { ReportOverview } from './components/report-overview'
 import { ReportTrend } from './components/report-trend'
 import { SupplierManagement } from './components/supplier-management'
@@ -43,7 +41,6 @@ import {
   useSupplyChainReportBreakdown,
   useSupplyChainReportChannels,
   useSupplyChainReportContracts,
-  useSupplyChainReportFreshness,
   useSupplyChainReportOverview,
   useSupplyChainReportTrend,
 } from './hooks/use-supply-chain-report'
@@ -77,14 +74,12 @@ export function SupplyChain(props: SupplyChainManagementProps) {
     reportPageQuery,
     reportEnabled
   )
-  const freshness = useSupplyChainReportFreshness(reportEnabled)
   const reportFailed =
     overview.isError ||
     trend.isError ||
     contracts.isError ||
     channels.isError ||
-    breakdown.isError ||
-    freshness.isError
+    breakdown.isError
 
   function changeMonth(offset: number) {
     const nextMonth = shiftNaturalMonth(props.search.month, offset)
@@ -168,10 +163,20 @@ export function SupplyChain(props: SupplyChainManagementProps) {
                 </AlertDescription>
               </Alert>
             ) : null}
-            {freshness.data ? (
-              <ReportFreshnessAlert freshness={freshness.data} />
+            {trend.data?.has_incomplete_days ? (
+              <Alert>
+                <AlertTitle>{t('Report data is incomplete')}</AlertTitle>
+                <AlertDescription>
+                  {t(
+                    'Incomplete report days (missing, running, or failed): {{count}}. Latest completed day: {{date}}. Completed days with zero usage remain published as zero.',
+                    {
+                      count: trend.data.incomplete_day_count,
+                      date: trend.data.latest_completed_date ?? t('None'),
+                    }
+                  )}
+                </AlertDescription>
+              </Alert>
             ) : null}
-            <DailyReportSection query={reportQuery} enabled={reportEnabled} />
             <ReportOverview
               data={overview.data}
               isLoading={overview.isLoading}

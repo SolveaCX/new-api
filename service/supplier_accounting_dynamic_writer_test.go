@@ -37,7 +37,7 @@ func (*supplierAccountingDispositionBilling) NeedsRefund() bool        { return 
 func (*supplierAccountingDispositionBilling) GetPreConsumedQuota() int { return 0 }
 func (*supplierAccountingDispositionBilling) Reserve(int) error        { return nil }
 
-func TestDynamicConsumeWritersPersistEverySupplierDisposition(t *testing.T) {
+func TestDynamicConsumeWritersPersistOnlyCapturedSupplierSnapshots(t *testing.T) {
 	originalLogConsumeEnabled := common.LogConsumeEnabled
 	common.LogConsumeEnabled = true
 	t.Cleanup(func() { common.LogConsumeEnabled = originalLogConsumeEnabled })
@@ -112,13 +112,14 @@ func TestDynamicConsumeWritersPersistEverySupplierDisposition(t *testing.T) {
 				var persisted model.Log
 				require.NoError(t, model.LOG_DB.Where("token_id = ?", tokenID).First(&persisted).Error)
 				require.Equal(t, model.LogTypeConsume, persisted.Type)
-				envelope := decodePersistedSupplierAccountingEnvelope(t, persisted.Other)
-				require.Equal(t, testCase.disposition, envelope.Disposition)
 				if testCase.disposition == types.SupplierAccountingDispositionCaptured {
+					envelope := decodePersistedSupplierAccountingEnvelope(t, persisted.Other)
+					require.NotNil(t, envelope)
+					require.Equal(t, testCase.disposition, envelope.Disposition)
 					require.NotNil(t, envelope.Captured)
-					require.NoError(t, ValidateSupplierAccountingEnvelopeV1(envelope))
+					require.NoError(t, ValidateSupplierAccountingEnvelopeV1(*envelope))
 				} else {
-					require.Nil(t, envelope.Captured)
+					require.Nil(t, decodePersistedSupplierAccountingEnvelope(t, persisted.Other))
 				}
 			})
 		}
@@ -164,9 +165,7 @@ func TestDynamicConsumeWritersRejectNonAuthoritativeOfficialEvidence(t *testing.
 
 			var persisted model.Log
 			require.NoError(t, model.LOG_DB.Where("token_id = ?", tokenID).First(&persisted).Error)
-			envelope := decodePersistedSupplierAccountingEnvelope(t, persisted.Other)
-			require.Equal(t, types.SupplierAccountingDispositionProducerError, envelope.Disposition)
-			require.Nil(t, envelope.Captured)
+			require.Nil(t, decodePersistedSupplierAccountingEnvelope(t, persisted.Other))
 		})
 	}
 }
@@ -205,10 +204,10 @@ func supplierAccountingDynamicWriterInfo(tokenID int, fixedPrice bool, binding s
 	return info
 }
 
-func decodePersistedSupplierAccountingEnvelope(t *testing.T, other string) types.SupplierAccountingEnvelopeV1 {
+func decodePersistedSupplierAccountingEnvelope(t *testing.T, other string) *types.SupplierAccountingEnvelopeV1 {
 	t.Helper()
 	var payload struct {
-		Envelope types.SupplierAccountingEnvelopeV1 `json:"supplier_accounting_v1"`
+		Envelope *types.SupplierAccountingEnvelopeV1 `json:"supplier_accounting_v1"`
 	}
 	require.NoError(t, common.UnmarshalJsonStr(other, &payload))
 	return payload.Envelope

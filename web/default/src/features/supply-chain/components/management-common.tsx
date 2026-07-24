@@ -31,9 +31,7 @@ import {
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import { SecureVerificationDialog } from '@/features/auth/secure-verification'
 import type { SupplyChainManagementProps } from '../contracts'
-import type { SupplyChainSecurity } from '../hooks/use-supply-chain-admin'
 import type { SupplierStatus } from '../types'
 
 export function ManagementToolbar(props: {
@@ -157,34 +155,6 @@ export function StatusBadge(props: { status: SupplierStatus }) {
   )
 }
 
-export function PendingConfirmationAlert(props: {
-  visible: boolean
-  onReconcile: () => void
-}) {
-  const { t } = useTranslation()
-  if (!props.visible) return null
-  return (
-    <Alert>
-      <AlertTitle>{t('Pending confirmation')}</AlertTitle>
-      <AlertDescription className='flex flex-wrap items-center justify-between gap-2'>
-        <span>
-          {t(
-            'The server result is unknown. Recheck the latest data before retrying this action.'
-          )}
-        </span>
-        <Button
-          type='button'
-          size='sm'
-          variant='outline'
-          onClick={props.onReconcile}
-        >
-          {t('Recheck status')}
-        </Button>
-      </AlertDescription>
-    </Alert>
-  )
-}
-
 export function ConfirmAction(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -218,27 +188,5 @@ export function ConfirmAction(props: {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  )
-}
-
-export function SupplyChainVerificationDialog(props: {
-  security: SupplyChainSecurity
-}) {
-  const verification = props.security.verification
-  return (
-    <SecureVerificationDialog
-      open={verification.open}
-      onOpenChange={(open) => {
-        if (!open) props.security.cancel()
-      }}
-      methods={verification.methods}
-      state={verification.state}
-      onVerify={async (method, code) => {
-        await verification.executeVerification(method, code)
-      }}
-      onCancel={props.security.cancel}
-      onCodeChange={verification.setCode}
-      onMethodChange={verification.switchMethod}
-    />
   )
 }

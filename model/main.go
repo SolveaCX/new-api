@@ -245,52 +245,6 @@ func InitLogDB() (err error) {
 	return err
 }
 
-// These migration-only views keep SQLite decimal declarations parseable by
-// the legacy glebarez migrator on repeated AutoMigrate calls. SQLite applies
-// NUMERIC affinity to both decimal and decimal(10,6), while MySQL and
-// PostgreSQL continue to use the precision-bearing production tags.
-type subscriptionOrderSQLiteMigration struct {
-	SubscriptionOrder `gorm:"embedded"`
-	UnitPrice         float64 `gorm:"column:unit_price;type:decimal;not null;default:0"`
-}
-
-func (*subscriptionOrderSQLiteMigration) TableName() string {
-	return "subscription_orders"
-}
-
-type subscriptionTermSegmentSQLiteMigration struct {
-	SubscriptionTermSegment `gorm:"embedded"`
-	AllocatedMoney          float64 `gorm:"column:allocated_money;type:decimal;not null;default:0"`
-}
-
-func (*subscriptionTermSegmentSQLiteMigration) TableName() string {
-	return "subscription_term_segments"
-}
-
-type walletLedgerEntrySQLiteMigration struct {
-	WalletLedgerEntry `gorm:"embedded"`
-	MoneyAmount       float64 `gorm:"column:money_amount;type:decimal;not null;default:0"`
-}
-
-func (*walletLedgerEntrySQLiteMigration) TableName() string {
-	return "wallet_ledger_entries"
-}
-
-func sqliteSafeMigrationModel(model any) any {
-	if !common.UsingSQLite {
-		return model
-	}
-	switch model.(type) {
-	case *SubscriptionOrder:
-		return &subscriptionOrderSQLiteMigration{}
-	case *SubscriptionTermSegment:
-		return &subscriptionTermSegmentSQLiteMigration{}
-	case *WalletLedgerEntry:
-		return &walletLedgerEntrySQLiteMigration{}
-	}
-	return model
-}
-
 func migrateDB() error {
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
@@ -331,7 +285,7 @@ func migrateDB() error {
 		&TwoFA{},
 		&TwoFABackupCode{},
 		&Checkin{},
-		sqliteSafeMigrationModel(&SubscriptionOrder{}),
+		&SubscriptionOrder{},
 		&UserSubscription{},
 		&SubscriptionProviderBinding{},
 		&PaymentWebhookEvent{},
@@ -340,8 +294,8 @@ func migrateDB() error {
 		&UserSubscriptionContract{},
 		&SubscriptionChangeIntent{},
 		&SubscriptionTierRankReservation{},
-		sqliteSafeMigrationModel(&SubscriptionTermSegment{}),
-		sqliteSafeMigrationModel(&WalletLedgerEntry{}),
+		&SubscriptionTermSegment{},
+		&WalletLedgerEntry{},
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
@@ -367,17 +321,10 @@ func migrateDB() error {
 		&SupplierChannelBindingVersion{},
 		&SupplierInventoryAdjustment{},
 		&SupplierStatisticsExclusionRule{},
-		&SupplierAccountingCoverageGap{},
 		&SupplierUsageDailySummary{},
 		&SupplierUsageDailyBatchRun{},
 	)
 	if err != nil {
-		return err
-	}
-	if err := MigrateSupplierAdminCommandLedger(DB); err != nil {
-		return err
-	}
-	if err := MigrateSupplierUsageDailyBatchPublication(DB); err != nil {
 		return err
 	}
 	if common.UsingSQLite {
@@ -427,7 +374,7 @@ func migrateDBFast() error {
 		{&TwoFA{}, "TwoFA"},
 		{&TwoFABackupCode{}, "TwoFABackupCode"},
 		{&Checkin{}, "Checkin"},
-		{sqliteSafeMigrationModel(&SubscriptionOrder{}), "SubscriptionOrder"},
+		{&SubscriptionOrder{}, "SubscriptionOrder"},
 		{&UserSubscription{}, "UserSubscription"},
 		{&SubscriptionProviderBinding{}, "SubscriptionProviderBinding"},
 		{&PaymentWebhookEvent{}, "PaymentWebhookEvent"},
@@ -436,8 +383,8 @@ func migrateDBFast() error {
 		{&UserSubscriptionContract{}, "UserSubscriptionContract"},
 		{&SubscriptionChangeIntent{}, "SubscriptionChangeIntent"},
 		{&SubscriptionTierRankReservation{}, "SubscriptionTierRankReservation"},
-		{sqliteSafeMigrationModel(&SubscriptionTermSegment{}), "SubscriptionTermSegment"},
-		{sqliteSafeMigrationModel(&WalletLedgerEntry{}), "WalletLedgerEntry"},
+		{&SubscriptionTermSegment{}, "SubscriptionTermSegment"},
+		{&WalletLedgerEntry{}, "WalletLedgerEntry"},
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},
@@ -453,7 +400,6 @@ func migrateDBFast() error {
 		{&SupplierChannelBindingVersion{}, "SupplierChannelBindingVersion"},
 		{&SupplierInventoryAdjustment{}, "SupplierInventoryAdjustment"},
 		{&SupplierStatisticsExclusionRule{}, "SupplierStatisticsExclusionRule"},
-		{&SupplierAccountingCoverageGap{}, "SupplierAccountingCoverageGap"},
 		{&SupplierUsageDailySummary{}, "SupplierUsageDailySummary"},
 		{&SupplierUsageDailyBatchRun{}, "SupplierUsageDailyBatchRun"},
 		{&ComputeNode{}, "ComputeNode"},
@@ -464,12 +410,6 @@ func migrateDBFast() error {
 		if err := DB.AutoMigrate(m.model); err != nil {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
 		}
-	}
-	if err := MigrateSupplierAdminCommandLedger(DB); err != nil {
-		return err
-	}
-	if err := MigrateSupplierUsageDailyBatchPublication(DB); err != nil {
-		return err
 	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {

@@ -43,10 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_uri: ${{ steps.compute_image.outputs.image_uri }}
-      image_ref: ${{ steps.resolve_image.outputs.image_ref }}
-      oci_digest: ${{ steps.resolve_image.outputs.oci_digest }}
-      manifest_sha256: ${{ steps.manifest.outputs.manifest_sha256 }}
-      binding_artifact: ${{ steps.binding.outputs.artifact_name }}
       short_sha: ${{ steps.compute_image.outputs.short_sha }}
       deploy_target: ${{ steps.compute_target.outputs.deploy_target }}
     steps:
@@ -71,36 +67,30 @@ jobs:
           short_sha="${GITHUB_SHA::12}"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
           if [[ -n "${{ inputs.image_tag }}" ]]; then
-            echo "Tag-only promotion has no immutable manifest/OCI binding and is disabled; use the rollback workflow with binding evidence." >&2
-            exit 1
+            echo "image_uri=${AR_REPO_URL}/server:${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "SKIP_BUILD=true" >> "$GITHUB_ENV"
+          else
+            echo "image_uri=${AR_REPO_URL}/server:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+            echo "SKIP_BUILD=false" >> "$GITHUB_ENV"
           fi
-          echo "image_uri=${AR_REPO_URL}/server:sha-${short_sha}" >> "$GITHUB_OUTPUT"
-
-      - name: Generate canonical build manifest
-        id: manifest
-        run: |
-          set -euo pipefail
-          .github/scripts/supplier-build-manifest.sh build-manifest \
-            "${GITHUB_REPOSITORY}" "${GITHUB_SHA}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
-            "gcp-deploy-build" "1" "1"
-          .github/scripts/supplier-deploy-verify.sh manifest \
-            build-manifest/manifest_hash_payload.json build-manifest/manifest_sha256.txt
-          echo "manifest_sha256=$(cat build-manifest/manifest_sha256.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Auth to GCP via WIF
+        if: env.SKIP_BUILD != 'true'
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
 
       - name: Configure docker for Artifact Registry
+        if: env.SKIP_BUILD != 'true'
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
       - name: Set up Docker buildx
+        if: env.SKIP_BUILD != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build & push
-        id: push
+        if: env.SKIP_BUILD != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -117,52 +107,16 @@ jobs:
             VITE_X_TOPUP_EVENT_ID=${{ vars.VITE_X_TOPUP_EVENT_ID }}
             VITE_OFFICIAL_WEBSITE_ORIGIN=${{ secrets.OFFICIAL_WEBSITE_ORIGIN }}
             VITE_COOKIE_SESSION_DOMAIN=${{ secrets.COOKIE_SESSION_DOMAIN }}
-            BUILD_REPO=${{ github.repository }}
-            BUILD_COMMIT=${{ github.sha }}
-            GITHUB_RUN_ID=${{ github.run_id }}
-            RUN_ATTEMPT=${{ github.run_attempt }}
-            BUILD_JOB_IDENTITY=gcp-deploy-build
           tags: |
             ${{ steps.compute_image.outputs.image_uri }}
             ${{ env.AR_REPO_URL }}/server:main-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
 
-      - name: Resolve immutable image and write binding
-        id: resolve_image
-        run: |
-          set -euo pipefail
-          digest="${{ steps.push.outputs.digest }}"
-          .github/scripts/supplier-deploy-verify.sh oci "${digest}" "${digest}"
-          image_ref="${AR_REPO_URL}/server@${digest}"
-          echo "oci_digest=${digest}" >> "$GITHUB_OUTPUT"
-          echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
-
-      - name: Create immutable deployment binding
-        id: binding
-        run: |
-          set -euo pipefail
-          artifact_name="supplier-deployment-binding-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mkdir -p deployment-binding
-          .github/scripts/supplier-deploy-verify.sh binding-write \
-            "${{ steps.resolve_image.outputs.oci_digest }}" "${{ steps.manifest.outputs.manifest_sha256 }}" \
-            deployment-binding/binding.json
-          cp build-manifest/manifest_hash_payload.json build-manifest/manifest_sha256.txt deployment-binding/
-          echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
-
-      - name: Retain immutable binding for rollback lifetime
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: ${{ steps.binding.outputs.artifact_name }}
-          path: deployment-binding/
-          if-no-files-found: error
-          retention-days: 90
-
       - name: Summary
         run: |
           echo "### Go image build" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Image: \`${{ steps.resolve_image.outputs.image_ref }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Binding: \`${{ steps.binding.outputs.artifact_name }}\` (90-day rollback lifetime)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`${{ steps.compute_image.outputs.image_uri }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Deploy target: \`${{ steps.compute_target.outputs.deploy_target }}\`" >> "$GITHUB_STEP_SUMMARY"
           if [[ "${{ github.event_name }}" == "push" ]]; then
             echo "- Production deploy: approve \`deploy console\` and/or \`deploy router\` in their separate environments." >> "$GITHUB_STEP_SUMMARY"
@@ -188,51 +142,11 @@ jobs:
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-prod-app-deploy/providers/github
-          service_account: newapi-prod-console-deployer@vocai-gemini-prod.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
-
-      - name: Download immutable build evidence
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: ${{ needs.build.outputs.binding_artifact }}
-          path: deployment-binding
-
-      - name: Console mutation-protocol barrier
-        id: console_preflight
-        env:
-          ROOT_ACCESS_TOKEN: ${{ secrets.SUPPLIER_DEPLOY_ROOT_ACCESS_TOKEN }}
-          ROOT_USER_ID: ${{ vars.SUPPLIER_DEPLOY_ROOT_USER_ID }}
-          CONTROL_PLANE_URL: https://console.flatkey.ai
-        run: |
-          set -euo pipefail
-          gcloud run services describe "${RUN_SERVICE}" \
-            --project="${PROJECT_ID}" --region="${REGION}" --format=json > /tmp/current-console-service.json
-          previous_revision="$(jq -er '
-            [.status.traffic[] | select((.percent // 0) == 100) | .revisionName] |
-            if length == 1 and .[0] != null and .[0] != "" then .[0]
-            else error("expected exactly one revision serving 100% traffic") end
-          ' /tmp/current-console-service.json)"
-          echo "previous_revision=${previous_revision}" >> "$GITHUB_OUTPUT"
-          code="$(curl -sS -o /tmp/current-accounting.json -w '%{http_code}' \
-            -H "Authorization: ${ROOT_ACCESS_TOKEN}" -H "New-Api-User: ${ROOT_USER_ID}" \
-            "${CONTROL_PLANE_URL}/api/supply-chain/accounting/status" || true)"
-          if [[ "${code}" == "404" ]]; then
-            echo "Initial route-absence proof passed."
-            echo "control_plane_mode=route-absent" >> "$GITHUB_OUTPUT"
-          elif [[ "${code}" == "200" ]]; then
-            [[ -n "${ROOT_ACCESS_TOKEN}" && -n "${ROOT_USER_ID}" ]] || { echo "shared-gate preflight credentials unavailable" >&2; exit 1; }
-            jq -e '.success == true and .data.mutation.enabled == false' /tmp/current-accounting.json >/dev/null || {
-              echo "current Console does not prove the shared versioned mutation gate is disabled" >&2; exit 1;
-            }
-            echo "Shared-gate bridge proof passed."
-            echo "control_plane_mode=bridge" >> "$GITHUB_OUTPUT"
-          else
-            echo "Cannot prove old route absence or a disabled shared gate (HTTP ${code})." >&2
-            exit 1
-          fi
 
       - name: Deploy new revision with NO traffic
         id: deploy
@@ -299,7 +213,7 @@ jobs:
             --no-traffic \
             --quiet \
             "${container_args[@]}" \
-            --image="${{ needs.build.outputs.image_ref }}" \
+            --image="${{ needs.build.outputs.image_uri }}" \
             "${env_args[@]}"
           new_rev="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
@@ -323,86 +237,29 @@ jobs:
           fi
           echo "Probing ${tag_url}/api/status ..."
           for i in $(seq 1 30); do
-            code=$(curl -sS -o /tmp/status.json -w '%{http_code}' "${tag_url}/api/status" || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${tag_url}/api/status" || true)
             echo "attempt $i -> $code"
-            if [[ "${code}" == "200" ]]; then break; fi
+            if [[ "${code}" == "200" ]]; then exit 0; fi
             sleep 5
           done
-          [[ "${code}" == "200" ]] || { echo "Health check failed" >&2; exit 1; }
-          .github/scripts/supplier-deploy-verify.sh status \
-            deployment-binding/manifest_hash_payload.json deployment-binding/manifest_sha256.txt /tmp/status.json
-          if [[ "${{ steps.console_preflight.outputs.control_plane_mode }}" == "bridge" ]]; then
-            .github/scripts/supplier-deploy-verify.sh control-plane-capabilities \
-              /tmp/status.json /tmp/current-accounting.json 1 1
-          else
-            .github/scripts/supplier-deploy-verify.sh capabilities /tmp/status.json 1
-            .github/scripts/supplier-deploy-verify.sh admin-schema-capabilities /tmp/status.json 1
-          fi
-          deployed_digest="$(gcloud run revisions describe "${{ steps.deploy.outputs.new_revision }}" \
-            --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.imageDigest)')"
-          .github/scripts/supplier-deploy-verify.sh oci "${{ needs.build.outputs.oci_digest }}" "${deployed_digest}"
-          .github/scripts/supplier-deploy-verify.sh binding-verify deployment-binding/binding.json \
-            "${{ needs.build.outputs.oci_digest }}" "${{ needs.build.outputs.manifest_sha256 }}"
+          echo "Health check failed" >&2
+          exit 1
 
-      - name: Promote to 100% and verify fixed Console origin
-        env:
-          ROOT_ACCESS_TOKEN: ${{ secrets.SUPPLIER_DEPLOY_ROOT_ACCESS_TOKEN }}
-          ROOT_USER_ID: ${{ vars.SUPPLIER_DEPLOY_ROOT_USER_ID }}
-          CONTROL_PLANE_URL: https://console.flatkey.ai
+      - name: Canary 10% for 3 minutes
         run: |
-          set -euo pipefail
-          rollback_on_error() {
-            rc=$?
-            trap - ERR
-            echo "Fixed-origin post-promotion verification failed; restoring ${PREVIOUS_REVISION}." >&2
-            gcloud run services update-traffic "${RUN_SERVICE}" \
-              --project="${PROJECT_ID}" --region="${REGION}" \
-              --to-revisions="${PREVIOUS_REVISION}=100" --quiet || \
-              echo "Automatic Console rollback failed; operator intervention is required." >&2
-            exit "${rc}"
-          }
-          PREVIOUS_REVISION="${{ steps.console_preflight.outputs.previous_revision }}"
-          [[ -n "${PREVIOUS_REVISION}" ]] || { echo "previous Console revision is unavailable" >&2; exit 1; }
-          trap rollback_on_error ERR
+          gcloud run services update-traffic "${RUN_SERVICE}" \
+            --project="${PROJECT_ID}" --region="${REGION}" \
+            --to-revisions="${{ steps.deploy.outputs.new_revision }}=10" \
+            --quiet
+          echo "Sleeping 180s while canary observes traffic..."
+          sleep 180
+
+      - name: Promote to 100%
+        run: |
           gcloud run services update-traffic "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
             --to-revisions="${{ steps.deploy.outputs.new_revision }}=100" \
             --quiet
-          for attempt in $(seq 1 30); do
-            code="$(curl -sS -o /tmp/fixed-origin-status.json -w '%{http_code}' "${CONTROL_PLANE_URL}/api/status" || true)"
-            if [[ "${code}" == "200" ]] && \
-              .github/scripts/supplier-deploy-verify.sh status \
-                deployment-binding/manifest_hash_payload.json deployment-binding/manifest_sha256.txt \
-                /tmp/fixed-origin-status.json; then
-              break
-            fi
-            [[ "${attempt}" -lt 30 ]] || { echo "fixed Console origin did not serve the promoted manifest" >&2; false; }
-            sleep 5
-          done
-          .github/scripts/supplier-deploy-verify.sh control-plane-fetch \
-            "${CONTROL_PLANE_URL}" "${ROOT_ACCESS_TOKEN}" "${ROOT_USER_ID}" /tmp/fixed-origin-accounting.json
-          .github/scripts/supplier-deploy-verify.sh control-plane-capabilities \
-            /tmp/fixed-origin-status.json /tmp/fixed-origin-accounting.json 1 1
-          jq -e '.success == true and .data.mutation.enabled == false' /tmp/fixed-origin-accounting.json >/dev/null || {
-            echo "promoted Console mutation gate is not disabled" >&2; false;
-          }
-          readiness_code="$(curl -sS -o /tmp/fixed-origin-readiness.json -w '%{http_code}' \
-            -H "Authorization: ${ROOT_ACCESS_TOKEN}" -H "New-Api-User: ${ROOT_USER_ID}" \
-            "${CONTROL_PLANE_URL}/api/supply-chain/accounting/readiness" || true)"
-          [[ "${readiness_code}" == "200" ]] || { echo "fixed Console accounting readiness failed" >&2; false; }
-          jq -e '.success == true and .data.ready == true' /tmp/fixed-origin-readiness.json >/dev/null || {
-            echo "promoted Console did not report accounting readiness" >&2; false;
-          }
-          trap - ERR
-
-      - name: Drain old Console management requests
-        run: |
-          set -euo pipefail
-          drain_seconds="${{ vars.SUPPLIER_MANAGEMENT_DRAIN_SECONDS || '3600' }}"
-          [[ "${drain_seconds}" =~ ^[1-9][0-9]*$ ]] || { echo "invalid drain barrier" >&2; exit 1; }
-          (( drain_seconds >= 3600 )) || { echo "management drain barrier must be at least 3600 seconds" >&2; exit 1; }
-          sleep "${drain_seconds}"
-          echo "Old-revision management request hard-timeout barrier elapsed. Mutation gate remains operator-enabled by expected-version CAS only."
 
       - name: Summary
         run: |
@@ -411,25 +268,12 @@ jobs:
           echo "- Node type: \`${NODE_TYPE}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- App role: \`${APP_ROLE}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Revision: \`${{ steps.deploy.outputs.new_revision }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Image: \`${{ needs.build.outputs.image_ref }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`${{ needs.build.outputs.image_uri }}\`" >> "$GITHUB_STEP_SUMMARY"
 
   deploy-router:
     name: deploy router
-    if: >-
-      always() &&
-      !cancelled() &&
-      needs.build.result == 'success' &&
-      (
-        (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'router') ||
-        (
-          needs.deploy-console.result == 'success' &&
-          (
-            github.event_name == 'push' ||
-            (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'both')
-          )
-        )
-      )
-    needs: [build, deploy-console]
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.deploy_target == 'router' || inputs.deploy_target == 'both'))
+    needs: build
     runs-on: ubuntu-latest
     environment: production-router
     env:
@@ -445,17 +289,11 @@ jobs:
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-prod-app-deploy/providers/github
-          service_account: newapi-prod-router-deployer@vocai-gemini-prod.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
-
-      - name: Download immutable build evidence
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: ${{ needs.build.outputs.binding_artifact }}
-          path: deployment-binding
 
       - name: Deploy new revision with NO traffic
         id: deploy
@@ -523,7 +361,7 @@ jobs:
             --no-traffic \
             --quiet \
             "${container_args[@]}" \
-            --image="${{ needs.build.outputs.image_ref }}" \
+            --image="${{ needs.build.outputs.image_uri }}" \
             "${env_args[@]}"
           new_rev="$(gcloud run services describe "${RUN_SERVICE}" \
             --project="${PROJECT_ID}" --region="${REGION}" \
@@ -532,10 +370,6 @@ jobs:
           echo "Deployed revision: ${new_rev}"
 
       - name: Health check the new revision
-        env:
-          APP_CONSOLE_ORIGIN: https://console.flatkey.ai
-          ROOT_ACCESS_TOKEN: ${{ secrets.SUPPLIER_DEPLOY_ROOT_ACCESS_TOKEN }}
-          ROOT_USER_ID: ${{ vars.SUPPLIER_DEPLOY_ROOT_USER_ID }}
         run: |
           set -euo pipefail
           gcloud run services update-traffic "${RUN_SERVICE}" \
@@ -551,23 +385,13 @@ jobs:
           fi
           echo "Probing ${tag_url}/api/status ..."
           for i in $(seq 1 30); do
-            code=$(curl -sS -o /tmp/status.json -w '%{http_code}' "${tag_url}/api/status" || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${tag_url}/api/status" || true)
             echo "attempt $i -> $code"
-            if [[ "${code}" == "200" ]]; then break; fi
+            if [[ "${code}" == "200" ]]; then exit 0; fi
             sleep 5
           done
-          [[ "${code}" == "200" ]] || { echo "Health check failed" >&2; exit 1; }
-          .github/scripts/supplier-deploy-verify.sh status \
-            deployment-binding/manifest_hash_payload.json deployment-binding/manifest_sha256.txt /tmp/status.json
-          .github/scripts/supplier-deploy-verify.sh control-plane-fetch \
-            "${APP_CONSOLE_ORIGIN}" "${ROOT_ACCESS_TOKEN}" "${ROOT_USER_ID}" /tmp/console-accounting.json
-          .github/scripts/supplier-deploy-verify.sh control-plane-capabilities \
-            /tmp/status.json /tmp/console-accounting.json 1 1
-          deployed_digest="$(gcloud run revisions describe "${{ steps.deploy.outputs.new_revision }}" \
-            --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.imageDigest)')"
-          .github/scripts/supplier-deploy-verify.sh oci "${{ needs.build.outputs.oci_digest }}" "${deployed_digest}"
-          .github/scripts/supplier-deploy-verify.sh binding-verify deployment-binding/binding.json \
-            "${{ needs.build.outputs.oci_digest }}" "${{ needs.build.outputs.manifest_sha256 }}"
+          echo "Health check failed" >&2
+          exit 1
 
       - name: Canary 10% for 3 minutes
         run: |
@@ -592,4 +416,4 @@ jobs:
           echo "- Node type: \`${NODE_TYPE}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- App role: \`${APP_ROLE}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Revision: \`${{ steps.deploy.outputs.new_revision }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Image: \`${{ needs.build.outputs.image_ref }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`${{ needs.build.outputs.image_uri }}\`" >> "$GITHUB_STEP_SUMMARY"

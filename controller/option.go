@@ -258,10 +258,6 @@ func isBulkOptionUpdateKey(key string) bool {
 }
 
 func prepareOptionUpdate(c *gin.Context, option *OptionUpdateRequest) bool {
-	if model.IsSupplierAccountingReservedOptionKey(option.Key) {
-		common.ApiErrorI18n(c, i18n.MsgSettingReservedOption)
-		return false
-	}
 	var err error
 	switch option.Key {
 	case "codex_model_governance_setting.unsupported_message_patterns":

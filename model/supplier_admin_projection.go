@@ -48,7 +48,7 @@ type SupplierAdminRow struct {
 	ContractCount          int64  `json:"contract_count"`
 	ActiveContractCount    int64  `json:"active_contract_count"`
 	LinkedChannelCount     int64  `json:"linked_channel_count"`
-	InventoryTotalMicroUsd int64  `json:"inventory_total_micro_usd"`
+	InventoryTotalMicroUsd int64  `json:"inventory_total_micro_usd,string"`
 	CreatedAt              int64  `json:"created_at"`
 	UpdatedAt              int64  `json:"updated_at"`
 }
@@ -65,7 +65,7 @@ type SupplierContractAdminRow struct {
 	CurrentRateVersionId            *int   `json:"current_rate_version_id"`
 	CurrentProcurementMultiplierPpm *int64 `json:"current_procurement_multiplier_ppm"`
 	CurrentRateEffectiveAt          *int64 `json:"current_rate_effective_at"`
-	InventoryTotalMicroUsd          int64  `json:"inventory_total_micro_usd"`
+	InventoryTotalMicroUsd          int64  `json:"inventory_total_micro_usd,string"`
 	LinkedChannelCount              int64  `json:"linked_channel_count"`
 	RpmLimit                        int64  `json:"rpm_limit"`
 	TpmLimit                        int64  `json:"tpm_limit"`

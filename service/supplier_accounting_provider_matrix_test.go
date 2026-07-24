@@ -580,9 +580,10 @@ func requireSupplierAccountingProviderPricingUnion(t *testing.T, testCase suppli
 		require.Equal(t, testCase.modelRatioPpm, provenance.Ratio.ModelRatioPpm)
 		require.Equal(t, float64(testCase.modelRatioPpm)/1_000_000, input.RelayInfo.SupplierOfficialPricingSnapshot.PriceData.ModelRatio)
 		require.False(t, input.RelayInfo.SupplierOfficialPricingSnapshot.PriceData.UsePrice)
-		require.Equal(t, testCase.groupMultiplierPpm, provenance.Ratio.GroupRatioPpm)
+		expectedGroupMultiplier, expectedGroupVersion := supplierAccountingProviderExpectedGroupEvidence(testCase)
+		require.Equal(t, expectedGroupMultiplier, provenance.Ratio.GroupRatioPpm)
 		require.Positive(t, provenance.Ratio.ModelRatioVersion)
-		require.Positive(t, provenance.Ratio.GroupRatioVersion)
+		require.Equal(t, expectedGroupVersion, provenance.Ratio.GroupRatioVersion)
 	case types.SupplierPricingModeFixed:
 		require.Nil(t, provenance.Ratio)
 		require.NotNil(t, provenance.Fixed)
@@ -591,17 +592,19 @@ func requireSupplierAccountingProviderPricingUnion(t *testing.T, testCase suppli
 		require.Equal(t, "model_price", provenance.Fixed.Key)
 		require.True(t, input.RelayInfo.SupplierOfficialPricingSnapshot.PriceData.UsePrice)
 		require.Positive(t, input.RelayInfo.SupplierOfficialPricingSnapshot.PriceData.ModelPrice)
-		require.Equal(t, testCase.groupMultiplierPpm, provenance.Fixed.GroupMultiplierPpm)
+		expectedGroupMultiplier, expectedGroupVersion := supplierAccountingProviderExpectedGroupEvidence(testCase)
+		require.Equal(t, expectedGroupMultiplier, provenance.Fixed.GroupMultiplierPpm)
 		require.Positive(t, provenance.Fixed.PriceVersion)
-		require.Positive(t, provenance.Fixed.GroupRatioVersion)
+		require.Equal(t, expectedGroupVersion, provenance.Fixed.GroupRatioVersion)
 	case types.SupplierPricingModeTiered:
 		require.Nil(t, provenance.Ratio)
 		require.Nil(t, provenance.Fixed)
 		require.NotNil(t, provenance.Tiered)
 		require.NotZero(t, provenance.Tiered.ExpressionFingerprint)
 		require.Positive(t, provenance.Tiered.ExpressionVersion)
-		require.Equal(t, testCase.groupMultiplierPpm, provenance.Tiered.GroupMultiplierPpm)
-		require.Positive(t, provenance.Tiered.GroupRatioVersion)
+		expectedGroupMultiplier, expectedGroupVersion := supplierAccountingProviderExpectedGroupEvidence(testCase)
+		require.Equal(t, expectedGroupMultiplier, provenance.Tiered.GroupMultiplierPpm)
+		require.Equal(t, expectedGroupVersion, provenance.Tiered.GroupRatioVersion)
 		require.NotNil(t, input.RelayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot)
 		require.NotNil(t, input.Capture.TieredTokenParams)
 		params := input.Capture.TieredTokenParams
@@ -618,6 +621,13 @@ func requireSupplierAccountingProviderPricingUnion(t *testing.T, testCase suppli
 	default:
 		t.Fatalf("unexpected pricing mode %q", testCase.pricingMode)
 	}
+}
+
+func supplierAccountingProviderExpectedGroupEvidence(testCase supplierAccountingProviderMatrixCase) (int64, int64) {
+	if testCase.scope == types.SupplierStatisticsScopeInternal {
+		return 0, 0
+	}
+	return testCase.groupMultiplierPpm, 1
 }
 
 func requireSupplierAccountingProviderDimensions(t *testing.T, dimension string, actual *types.SupplierPricingDimensionsV1) {

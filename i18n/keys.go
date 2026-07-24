@@ -280,23 +280,6 @@ const (
 	MsgSupplyChainReportUnavailable      = "supply_chain.report_unavailable"
 )
 
-// Supplier accounting control-plane messages.
-const (
-	MsgSupplierAccountingNotReady                = "supplier_accounting.not_ready"
-	MsgSupplierAccountingInvalidRequest          = "supplier_accounting.invalid_request"
-	MsgSupplierAccountingCommandFieldsRequired   = "supplier_accounting.command_fields_required"
-	MsgSupplierAccountingIdempotencyKeyRequired  = "supplier_accounting.idempotency_key_required"
-	MsgSupplierAccountingIdempotencyConflict     = "supplier_accounting.idempotency_conflict"
-	MsgSupplierAccountingVersionConflict         = "supplier_accounting.version_conflict"
-	MsgSupplierAccountingInvalidTransition       = "supplier_accounting.invalid_transition"
-	MsgSupplierAccountingCoverageUnresolved      = "supplier_accounting.coverage_unresolved"
-	MsgSupplierAccountingCoverageGapNotFound     = "supplier_accounting.coverage_gap_not_found"
-	MsgSupplierAccountingStateMalformed          = "supplier_accounting.state_malformed"
-	MsgSupplierAccountingControlPlaneUnavailable = "supplier_accounting.control_plane_unavailable"
-	MsgSupplierAccountingMutationGateUnavailable = "supplier_accounting.mutation_gate_unavailable"
-	MsgSupplierAccountingMutationsDisabled       = "supplier_accounting.mutations_disabled"
-)
-
 // Deployment related messages (io.net)
 const (
 	MsgDeploymentNotEnabled     = "deployment.not_enabled"

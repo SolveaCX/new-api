@@ -47,7 +47,6 @@ import {
   createInventoryAdjustment,
   createRateVersion,
   inactivateContract,
-  isSupplyChainCommandCommitted,
   updateContract,
 } from '../api'
 import type { SupplyChainManagementProps } from '../contracts'
@@ -58,8 +57,6 @@ import {
   useRateVersionList,
   useSupplierAdminInfiniteList,
   useSupplyChainAdminMutation,
-  useSupplyChainSecurity,
-  type SupplyChainSecurity,
 } from '../hooks/use-supply-chain-admin'
 import {
   formatMicroUsd,
@@ -84,9 +81,7 @@ import {
   ManagementPagination,
   ManagementStatus,
   ManagementToolbar,
-  PendingConfirmationAlert,
   StatusBadge,
-  SupplyChainVerificationDialog,
 } from './management-common'
 import { ProgressiveList } from './progressive-list'
 
@@ -103,11 +98,9 @@ const EMPTY_CONTRACT: ContractFormValues = {
 function ContractFormDialog(props: {
   contract?: SupplierContract
   onSaved: () => void
-  security: SupplyChainSecurity
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const intent = useIdempotentIntent()
   const suppliers = useSupplierAdminInfiniteList(
     { page_size: 50, status: 'active' },
     open
@@ -116,28 +109,18 @@ function ContractFormDialog(props: {
     resolver: zodResolver(contractFormSchema),
     defaultValues: EMPTY_CONTRACT,
   })
-  const mutation = useSupplyChainAdminMutation<{
-    values: ContractFormValues
-    idempotencyKey: string
-  }>({
-    mutationFn: async ({ values, idempotencyKey }) =>
+  const mutation = useSupplyChainAdminMutation<ContractFormValues>({
+    mutationFn: async (values) =>
       props.contract
         ? updateContract(props.contract.id, {
-            data: {
-              ...values,
-              expected_version: props.contract.row_version,
-            },
-            idempotencyKey,
+            ...values,
+            expected_version: props.contract.row_version,
           })
-        : createContract({
-            data: values,
-            idempotencyKey,
-          }),
+        : createContract(values),
     invalidate: [
       supplyChainQueryKeys.contracts.all(),
       supplyChainQueryKeys.suppliers.all(),
     ],
-    security: props.security,
   })
 
   useEffect(() => {
@@ -165,29 +148,11 @@ function ContractFormDialog(props: {
     props.onSaved()
   }
 
-  async function reconcilePending(): Promise<void> {
-    if ((await intent.reconcilePending()) === 'reconciled') finishSave()
-  }
-
   async function submit(values: ContractFormValues): Promise<void> {
-    const result = await intent.run({
-      execute: async (idempotencyKey) =>
-        mutation.mutateAsync({ values, idempotencyKey }),
-      reconcile: (key) =>
-        isSupplyChainCommandCommitted(
-          props.contract
-            ? `supplier_contract.update/${props.contract.id}`
-            : 'supplier_contract.create',
-          key
-        ),
-    })
-    if (result === 'success' || result === 'reconciled') {
+    try {
+      await mutation.mutateAsync(values)
       finishSave()
-    } else if (result === 'rate_limited') {
-      toast.error(t('Too many requests. Retry later with the same operation.'))
-    } else if (result === 'pending_confirmation') {
-      toast.warning(t('The result is pending confirmation.'))
-    } else if (result !== 'blocked') {
+    } catch {
       toast.error(t('Unable to save contract'))
     }
   }
@@ -223,10 +188,6 @@ function ContractFormDialog(props: {
             )}
           </DialogDescription>
         </DialogHeader>
-        <PendingConfirmationAlert
-          visible={intent.isPendingConfirmation}
-          onReconcile={() => void reconcilePending()}
-        />
         <form
           id={`contract-form-${props.contract?.id ?? 'new'}`}
           onSubmit={form.handleSubmit(submit)}
@@ -393,13 +354,9 @@ function ContractFormDialog(props: {
           <Button
             type='submit'
             form={`contract-form-${props.contract?.id ?? 'new'}`}
-            disabled={
-              mutation.isPending ||
-              intent.isSubmitting ||
-              intent.isPendingConfirmation
-            }
+            disabled={mutation.isPending}
           >
-            {mutation.isPending || intent.isSubmitting ? <Spinner /> : null}
+            {mutation.isPending ? <Spinner /> : null}
             {t('Save')}
           </Button>
         </DialogFooter>
@@ -411,13 +368,11 @@ function ContractFormDialog(props: {
 function RateVersionDialog(props: {
   contract: SupplierContract
   onSaved: () => void
-  security: SupplyChainSecurity
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [confirmation, setConfirmation] =
     useState<RateVersionFormValues | null>(null)
-  const intent = useIdempotentIntent()
   const form = useForm<RateVersionFormValues>({
     resolver: zodResolver(rateVersionFormSchema),
     defaultValues: {
@@ -426,20 +381,12 @@ function RateVersionDialog(props: {
       reason: '',
     },
   })
-  const mutation = useSupplyChainAdminMutation<{
-    values: RateVersionFormValues
-    key: string
-  }>({
-    mutationFn: ({ values, key }) =>
-      createRateVersion(props.contract.id, {
-        data: values,
-        idempotencyKey: key,
-      }),
+  const mutation = useSupplyChainAdminMutation<RateVersionFormValues>({
+    mutationFn: (values) => createRateVersion(props.contract.id, values),
     invalidate: [
       supplyChainQueryKeys.contracts.all(),
       supplyChainQueryKeys.channelBindings.all(),
     ],
-    security: props.security,
   })
 
   function finishAppend(): void {
@@ -449,25 +396,14 @@ function RateVersionDialog(props: {
     props.onSaved()
   }
 
-  async function reconcilePending(): Promise<void> {
-    if ((await intent.reconcilePending()) === 'reconciled') finishAppend()
-  }
-
   async function confirm(): Promise<void> {
     if (!confirmation) return
-    const result = await intent.run({
-      execute: (key) => mutation.mutateAsync({ values: confirmation, key }),
-      reconcile: (key) =>
-        isSupplyChainCommandCommitted('supplier_rate.create', key),
-    })
-    if (result === 'success' || result === 'reconciled') {
+    try {
+      await mutation.mutateAsync(confirmation)
       finishAppend()
-    } else if (result === 'rate_limited')
-      toast.error(t('Too many requests. Retry later with the same operation.'))
-    else if (result === 'pending_confirmation')
-      toast.warning(t('The result is pending confirmation.'))
-    else if (result !== 'blocked')
+    } catch {
       toast.error(t('Unable to append rate version'))
+    }
   }
 
   return (
@@ -485,10 +421,6 @@ function RateVersionDialog(props: {
               )}
             </DialogDescription>
           </DialogHeader>
-          <PendingConfirmationAlert
-            visible={intent.isPendingConfirmation}
-            onReconcile={() => void reconcilePending()}
-          />
           <form
             id={`rate-form-${props.contract.id}`}
             onSubmit={form.handleSubmit(setConfirmation)}
@@ -584,7 +516,7 @@ function RateVersionDialog(props: {
           </span>
         }
         confirmLabel={t('Append version')}
-        pending={mutation.isPending || intent.isSubmitting}
+        pending={mutation.isPending}
         onConfirm={confirm}
       />
     </>
@@ -594,7 +526,6 @@ function RateVersionDialog(props: {
 function InventoryDialog(props: {
   contract: SupplierContract
   onSaved: () => void
-  security: SupplyChainSecurity
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -622,7 +553,6 @@ function InventoryDialog(props: {
       supplyChainQueryKeys.contracts.all(),
       supplyChainQueryKeys.suppliers.all(),
     ],
-    security: props.security,
   })
 
   function finishAppend(): void {
@@ -632,28 +562,16 @@ function InventoryDialog(props: {
     props.onSaved()
   }
 
-  async function reconcilePending(): Promise<void> {
-    if ((await intent.reconcilePending()) === 'reconciled') finishAppend()
-  }
-
   async function confirm(): Promise<void> {
     if (!confirmation) return
     const result = await intent.run({
       execute: (key) => mutation.mutateAsync({ values: confirmation, key }),
-      reconcile: (key) =>
-        isSupplyChainCommandCommitted(
-          `supplier_inventory.create/${props.contract.id}`,
-          key
-        ),
     })
-    if (result === 'success' || result === 'reconciled') {
+    if (result === 'success') {
       finishAppend()
-    } else if (result === 'rate_limited')
-      toast.error(t('Too many requests. Retry later with the same operation.'))
-    else if (result === 'pending_confirmation')
-      toast.warning(t('The result is pending confirmation.'))
-    else if (result !== 'blocked')
+    } else if (result !== 'blocked') {
       toast.error(t('Unable to append inventory adjustment'))
+    }
   }
 
   const delta = confirmation ? usdInputToMicroUsd(confirmation.delta_usd) : null
@@ -672,10 +590,6 @@ function InventoryDialog(props: {
               )}
             </DialogDescription>
           </DialogHeader>
-          <PendingConfirmationAlert
-            visible={intent.isPendingConfirmation}
-            onReconcile={() => void reconcilePending()}
-          />
           <form
             id={`inventory-form-${props.contract.id}`}
             onSubmit={form.handleSubmit(setConfirmation)}
@@ -870,8 +784,6 @@ function ContractHistoryDialog(props: { contract: SupplierContract }) {
 
 export function ContractManagement(props: SupplyChainManagementProps) {
   const { t } = useTranslation()
-  const security = useSupplyChainSecurity()
-  const inactivateIntent = useIdempotentIntent()
   const [inactivateTarget, setInactivateTarget] =
     useState<SupplierContract | null>(null)
   const query = useContractAdminList({
@@ -881,20 +793,15 @@ export function ContractManagement(props: SupplyChainManagementProps) {
     status: props.search.status,
     keyword: props.search.filter || undefined,
   })
-  const inactivate = useSupplyChainAdminMutation<{
-    contract: SupplierContract
-    idempotencyKey: string
-  }>({
-    mutationFn: ({ contract, idempotencyKey }) =>
+  const inactivate = useSupplyChainAdminMutation<SupplierContract>({
+    mutationFn: (contract) =>
       inactivateContract(contract.id, {
-        data: { expected_version: contract.row_version },
-        idempotencyKey,
+        expected_version: contract.row_version,
       }),
     invalidate: [
       supplyChainQueryKeys.contracts.all(),
       supplyChainQueryKeys.suppliers.all(),
     ],
-    security,
   })
 
   function finishInactivate(): void {
@@ -903,31 +810,13 @@ export function ContractManagement(props: SupplyChainManagementProps) {
     void query.refetch()
   }
 
-  async function reconcilePendingInactivate(): Promise<void> {
-    if ((await inactivateIntent.reconcilePending()) === 'reconciled') {
-      finishInactivate()
-    }
-  }
-
   async function confirmInactivate(): Promise<void> {
     if (!inactivateTarget) return
     const target = inactivateTarget
-    const result = await inactivateIntent.run({
-      execute: (idempotencyKey) =>
-        inactivate.mutateAsync({ contract: target, idempotencyKey }),
-      reconcile: (key) =>
-        isSupplyChainCommandCommitted(
-          `supplier_contract.inactivate/${target.id}`,
-          key
-        ),
-    })
-    if (result === 'success' || result === 'reconciled') {
+    try {
+      await inactivate.mutateAsync(target)
       finishInactivate()
-    } else if (result === 'rate_limited') {
-      toast.error(t('Too many requests. Retry later with the same operation.'))
-    } else if (result === 'pending_confirmation') {
-      toast.warning(t('The result is pending confirmation.'))
-    } else if (result !== 'blocked') {
+    } catch {
       toast.error(t('Unbind every channel before inactivating this contract.'))
     }
   }
@@ -937,12 +826,7 @@ export function ContractManagement(props: SupplyChainManagementProps) {
       <ManagementToolbar
         search={props.search}
         onSearchChange={props.onSearchChange}
-        actions={
-          <ContractFormDialog
-            onSaved={() => query.refetch()}
-            security={security}
-          />
-        }
+        actions={<ContractFormDialog onSaved={() => query.refetch()} />}
       />
       <ManagementStatus
         isLoading={query.isLoading}
@@ -997,17 +881,14 @@ export function ContractManagement(props: SupplyChainManagementProps) {
                       <RateVersionDialog
                         contract={contract}
                         onSaved={() => query.refetch()}
-                        security={security}
                       />
                       <InventoryDialog
                         contract={contract}
                         onSaved={() => query.refetch()}
-                        security={security}
                       />
                       <ContractFormDialog
                         contract={contract}
                         onSaved={() => query.refetch()}
-                        security={security}
                       />
                       {contract.status === 'active' ? (
                         <Button
@@ -1044,15 +925,10 @@ export function ContractManagement(props: SupplyChainManagementProps) {
           'Status will change from Active to Inactive. Bound channels must be removed first.'
         )}
         confirmLabel={t('Inactivate')}
-        pending={inactivate.isPending || inactivateIntent.isSubmitting}
+        pending={inactivate.isPending}
         destructive
         onConfirm={confirmInactivate}
       />
-      <PendingConfirmationAlert
-        visible={inactivateIntent.isPendingConfirmation}
-        onReconcile={() => void reconcilePendingInactivate()}
-      />
-      <SupplyChainVerificationDialog security={security} />
     </div>
   )
 }

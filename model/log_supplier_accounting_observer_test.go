@@ -44,10 +44,8 @@ func supplierAccountingObserverTestEnvelope() types.SupplierAccountingEnvelopeV1
 	salesMicroUSD := int64(10)
 	grossProfitMicroUSD := int64(6)
 	return types.SupplierAccountingEnvelopeV1{
-		EnvelopeSchemaVersion:     types.SupplierAccountingEnvelopeSchemaVersionV1,
-		ProducerCapabilityVersion: types.SupplierAccountingProducerCapabilityV1,
-		ActivationStateVersion:    1,
-		Disposition:               types.SupplierAccountingDispositionCaptured,
+		EnvelopeSchemaVersion: types.SupplierAccountingEnvelopeSchemaVersionV1,
+		Disposition:           types.SupplierAccountingDispositionCaptured,
 		Captured: &types.SupplierAccountingLogSnapshotV1{
 			BindingVersionId:         1,
 			SupplierId:               1,
@@ -169,7 +167,7 @@ func TestRecordConsumeLogSupplierAccountingObserverFailureWhenOtherSerialization
 	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteFailure}}, *observations)
 }
 
-func TestRecordConsumeLogSupplierAccountingObserverSkipsCreateWhenEnvelopeFallbackSerializationFails(t *testing.T) {
+func TestRecordConsumeLogSupplierAccountingObserverOmitsInvalidEnvelopeAndPersistsOrdinaryLog(t *testing.T) {
 	observations := installSupplierAccountingObserverForTest(t)
 	db := useSupplierAccountingObserverLogDB(t)
 	originalEnabled := common.LogConsumeEnabled
@@ -182,8 +180,11 @@ func TestRecordConsumeLogSupplierAccountingObserverSkipsCreateWhenEnvelopeFallba
 
 	var count int64
 	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
-	require.Zero(t, count, "a supplier consume row must not persist without its accounting envelope")
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteFailure}}, *observations)
+	require.EqualValues(t, 1, count)
+	var persisted Log
+	require.NoError(t, db.First(&persisted).Error)
+	require.NotContains(t, persisted.Other, types.SupplierAccountingEnvelopeKeyV1)
+	require.Empty(t, *observations)
 }
 
 func TestRecordConsumeLogSupplierAccountingObserverDisabled(t *testing.T) {
@@ -206,7 +207,7 @@ func TestRecordConsumeLogSupplierAccountingObserverIgnoresMissingInvalidAndNonV1
 	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, RecordConsumeLogParams{})
 	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(map[string]any{"d": "captured"}))
 	nonV1 := supplierAccountingObserverTestEnvelope()
-	nonV1.ProducerCapabilityVersion++
+	nonV1.EnvelopeSchemaVersion++
 	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(nonV1))
 	invalidDisposition := supplierAccountingObserverTestEnvelope()
 	invalidDisposition.Disposition = "request-controlled"
@@ -298,7 +299,7 @@ func TestRecordTaskBillingLogSupplierAccountingObserverFailureWhenOtherSerializa
 	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteFailure}}, *observations)
 }
 
-func TestRecordTaskBillingLogSupplierAccountingObserverSkipsCreateWhenEnvelopeFallbackSerializationFails(t *testing.T) {
+func TestRecordTaskBillingLogSupplierAccountingObserverOmitsInvalidEnvelopeAndPersistsOrdinaryLog(t *testing.T) {
 	observations := installSupplierAccountingObserverForTest(t)
 	db := useSupplierAccountingObserverLogDB(t)
 	originalEnabled := common.LogConsumeEnabled
@@ -314,8 +315,11 @@ func TestRecordTaskBillingLogSupplierAccountingObserverSkipsCreateWhenEnvelopeFa
 
 	var count int64
 	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
-	require.Zero(t, count, "a supplier task consume row must not persist without its accounting envelope")
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteFailure}}, *observations)
+	require.EqualValues(t, 1, count)
+	var persisted Log
+	require.NoError(t, db.First(&persisted).Error)
+	require.NotContains(t, persisted.Other, types.SupplierAccountingEnvelopeKeyV1)
+	require.Empty(t, *observations)
 }
 
 func TestRecordConsumeLogSupplierAccountingObserverConcurrentDisabled(t *testing.T) {

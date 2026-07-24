@@ -5,9 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
-	"time"
 
-	"github.com/QuantumNous/new-api/types"
 	"gorm.io/gorm"
 )
 
@@ -63,6 +61,13 @@ func NewSupplierReportStore(mainDB *gorm.DB) *SupplierReportStore {
 
 func DefaultSupplierReportStore() *SupplierReportStore { return NewSupplierReportStore(DB) }
 
+func supplierReportReadTxOptions(dialect string) *sql.TxOptions {
+	if dialect == "sqlite" {
+		return nil
+	}
+	return &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
+}
+
 // ReadSnapshot runs one composed report against a single database snapshot.
 // MySQL and PostgreSQL need an explicit repeatable-read transaction because a
 // report issues multiple SELECTs. SQLite's deferred transaction establishes a
@@ -73,13 +78,9 @@ func (s *SupplierReportStore) ReadSnapshot(ctx context.Context, read func(*Suppl
 		return ErrDatabase
 	}
 	db := s.mainDB.WithContext(ctx)
-	txOptions := &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
-	if db.Dialector.Name() == "sqlite" {
-		txOptions = nil
-	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		return read(NewSupplierReportStore(tx))
-	}, txOptions)
+	}, supplierReportReadTxOptions(db.Dialector.Name()))
 }
 
 type SupplierReportContractCatalogRow struct {
@@ -199,51 +200,21 @@ type SupplierReportChannelUsageRow struct {
 	GrossMarginEligibleCount         int64
 	GrossMarginEligibleSalesMicroUsd int64
 }
-type SupplierReportFreshnessSnapshot struct {
-	LatestBatchDate     string
-	LatestStatus        string
-	ErrorMessage        string
-	FreshThrough        *int64
-	FreshnessLagSeconds *int64
-	SyncOnly            bool
-	CoverageStartAt     int64
-	KnownCoverageGaps   []SupplierAccountingCoverageGap
-}
 
-type SupplierPublishedDailyBatch struct {
+type SupplierReportDayStatusRow struct {
 	BatchDate           string
 	DayStart            int64
-	DayEnd              int64
+	Status              string
 	PublishedFenceToken int64
-	PublishedAt         int64
-	Evidence            types.SupplierPublishedEvidenceV1
 }
 
-// QueryPublishedEvidence returns only the immutable published side of each
-// daily row. Candidate status, counters, warnings, cursor, and errors are not
-// projected and therefore cannot leak into a financial report.
-func (s *SupplierReportStore) QueryPublishedEvidence(ctx context.Context, startAt, endAt int64) ([]SupplierPublishedDailyBatch, error) {
-	if s == nil || s.mainDB == nil || startAt <= 0 || endAt <= startAt {
-		return nil, ErrInvalidSupplierReportFilter
-	}
-	var runs []SupplierUsageDailyBatchRun
-	if err := s.mainDB.WithContext(ctx).
-		Where("day_start < ? AND day_end > ? AND published_fence_token > ?", endAt, startAt, 0).
-		Order("batch_date ASC").Find(&runs).Error; err != nil {
-		return nil, err
-	}
-	result := make([]SupplierPublishedDailyBatch, 0, len(runs))
-	for i := range runs {
-		evidence, err := types.ParseSupplierPublishedEvidenceV1(runs[i].PublishedEvidenceV1)
-		if err != nil || runs[i].PublishedAt == nil || *runs[i].PublishedAt <= 0 || runs[i].PublishedPersistedLogSnapshotCompleteness != evidence.PersistedLogSnapshotCompleteness {
-			return nil, ErrSupplierDailyBatchPublicationInvalid
-		}
-		result = append(result, SupplierPublishedDailyBatch{
-			BatchDate: runs[i].BatchDate, DayStart: runs[i].DayStart, DayEnd: runs[i].DayEnd,
-			PublishedFenceToken: runs[i].PublishedFenceToken, PublishedAt: *runs[i].PublishedAt, Evidence: evidence,
-		})
-	}
-	return result, nil
+func (s *SupplierReportStore) ListDayStatuses(ctx context.Context, startAt, endAt int64) ([]SupplierReportDayStatusRow, error) {
+	var rows []SupplierReportDayStatusRow
+	err := s.mainDB.WithContext(ctx).Model(&SupplierUsageDailyBatchRun{}).
+		Select("batch_date, day_start, status, published_fence_token").
+		Where("day_start >= ? AND day_start < ?", startAt, endAt).
+		Order("day_start ASC").Scan(&rows).Error
+	return rows, err
 }
 
 func (s *SupplierReportStore) ListContractCatalog(ctx context.Context, filter SupplierReportFilter, page *SupplierReportPage) ([]SupplierReportContractCatalogRow, bool, error) {
@@ -458,63 +429,4 @@ func (s *SupplierReportStore) QueryChannelUsage(ctx context.Context, filter Supp
 	var rows []SupplierReportChannelUsageRow
 	err := query.Select(selectSQL).Group("contract_id, channel_id, data_quality").Scan(&rows).Error
 	return rows, err
-}
-
-func (s *SupplierReportStore) QueryCoverageGaps(ctx context.Context, startAt, endAt int64) ([]SupplierAccountingCoverageGap, error) {
-	if s == nil || s.mainDB == nil {
-		return nil, ErrDatabase
-	}
-	gaps, err := QuerySupplierAccountingCoverageGapsOverlapping(s.mainDB.WithContext(ctx), startAt, endAt)
-	if err != nil {
-		return nil, err
-	}
-	if gaps == nil {
-		gaps = []SupplierAccountingCoverageGap{}
-	}
-	return gaps, nil
-}
-
-func (s *SupplierReportStore) QueryFreshness(ctx context.Context) (SupplierReportFreshnessSnapshot, error) {
-	result := SupplierReportFreshnessSnapshot{SyncOnly: true, KnownCoverageGaps: []SupplierAccountingCoverageGap{}}
-	if s == nil || s.mainDB == nil {
-		return result, ErrDatabase
-	}
-	activation, err := ReadSupplierAccountingActivationState(s.mainDB.WithContext(ctx))
-	if err != nil {
-		return result, err
-	}
-	if activation.CutoverAt != nil {
-		result.CoverageStartAt = *activation.CutoverAt
-	}
-	now := time.Now().Unix()
-	if result.CoverageStartAt > 0 && result.CoverageStartAt < now {
-		result.KnownCoverageGaps, err = s.QueryCoverageGaps(ctx, result.CoverageStartAt, now)
-		if err != nil {
-			return result, err
-		}
-	}
-	var completed SupplierUsageDailyBatchRun
-	completedErr := s.mainDB.WithContext(ctx).
-		Where("published_fence_token > 0").
-		Order("batch_date DESC").First(&completed).Error
-	if completedErr != nil && !errors.Is(completedErr, gorm.ErrRecordNotFound) {
-		return result, completedErr
-	}
-	if completedErr == nil {
-		evidence, parseErr := types.ParseSupplierPublishedEvidenceV1(completed.PublishedEvidenceV1)
-		if parseErr != nil || completed.PublishedAt == nil || *completed.PublishedAt <= 0 || completed.PublishedPersistedLogSnapshotCompleteness != evidence.PersistedLogSnapshotCompleteness {
-			return result, ErrSupplierDailyBatchPublicationInvalid
-		}
-		result.LatestBatchDate = completed.BatchDate
-		result.LatestStatus = SupplierDailyBatchStatusCompleted
-		result.ErrorMessage = ""
-		complete := completed.DayEnd
-		lag := now - complete
-		if lag < 0 {
-			lag = 0
-		}
-		result.FreshThrough = &complete
-		result.FreshnessLagSeconds = &lag
-	}
-	return result, nil
 }

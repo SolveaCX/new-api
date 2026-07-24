@@ -24,9 +24,14 @@ import type {
 } from '../types'
 
 type IntegerDisplayValue = number | bigint | null | undefined
+type MicroUsdDisplayValue = IntegerDisplayValue | string
 
-function toExactInteger(value: IntegerDisplayValue): bigint | null {
+function toExactInteger(value: MicroUsdDisplayValue): bigint | null {
   if (typeof value === 'bigint') return value
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return /^-?\d+$/.test(trimmed) ? BigInt(trimmed) : null
+  }
   if (typeof value !== 'number') return null
   if (!Number.isSafeInteger(value)) return null
   return BigInt(value)

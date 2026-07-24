@@ -117,10 +117,8 @@ const invitationKeys = [
 
 const localeInvariantKeys = new Set<(typeof invitationKeys)[number]>(['FAQ'])
 
-const obsoleteReferralRewardKey = [
-  'Rewards are issued after your referral creates their first ',
-  'API key and successfully calls the API.',
-].join('')
+const obsoleteReferralRewardKey =
+  'Rewards are issued after your referral creates their first API key and successfully calls the API.'
 
 describe('invitation i18n', () => {
   for (const [locale, translations] of Object.entries(localeTranslations)) {

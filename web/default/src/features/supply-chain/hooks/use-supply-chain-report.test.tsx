@@ -24,8 +24,6 @@ import {
   useSupplyChainReportBreakdown,
   useSupplyChainReportChannels,
   useSupplyChainReportContracts,
-  useSupplyChainDailyReports,
-  useSupplyChainReportFreshness,
   useSupplyChainReportOverview,
   useSupplyChainReportTrend,
 } from './use-supply-chain-report'
@@ -42,22 +40,14 @@ function DisabledReportProbe() {
   const contracts = useSupplyChainReportContracts(query, false)
   const channels = useSupplyChainReportChannels(query, false)
   const breakdown = useSupplyChainReportBreakdown(query, false)
-  const freshness = useSupplyChainReportFreshness(false)
-  const daily = useSupplyChainDailyReports(query, false)
-  const disabled = [
-    overview,
-    trend,
-    contracts,
-    channels,
-    breakdown,
-    freshness,
-    daily,
-  ].every((result) => !result.isEnabled && result.fetchStatus === 'idle')
+  const disabled = [overview, trend, contracts, channels, breakdown].every(
+    (result) => !result.isEnabled && result.fetchStatus === 'idle'
+  )
   return <span>{disabled ? 'all-disabled' : 'query-enabled'}</span>
 }
 
 describe('supply-chain report queries', () => {
-  test('disables every report query and freshness polling outside the report tab', () => {
+  test('disables every monthly report query outside the report tab', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })

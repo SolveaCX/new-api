@@ -1,33 +1,23 @@
 package controller
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 const supplierReportMaxFilterIDs = 200
 
-const supplierDailyReportRerunReasonMaxBytes = 512
-
 var newSupplyChainReportService = service.DefaultSupplierReportService
-
-type supplierDailyReportRerunFunc func(context.Context, *gorm.DB, *gorm.DB, int, string, string, dto.SupplierDailyReportRerunRequest, time.Time) (dto.SupplierBatchStatusResponse, error)
-
-var rerunSupplierDailyReport = service.RerunSupplierDailyReport
 
 func GetSupplyChainReportOverview(c *gin.Context) {
 	query, ok := supplyChainReportQuery(c)
@@ -101,82 +91,6 @@ func ListSupplyChainReportBreakdown(c *gin.Context) {
 	}
 	result, err := newSupplyChainReportService().ListBreakdown(c.Request.Context(), query, page)
 	supplyChainReportResult(c, result, err)
-}
-
-func GetSupplyChainReportFreshness(c *gin.Context) {
-	result, err := newSupplyChainReportService().GetFreshness(c.Request.Context())
-	supplyChainReportResult(c, result, err)
-}
-
-func GetSupplyChainDailyReports(c *gin.Context) {
-	query := service.SupplierReportQuery{
-		Month:     strings.TrimSpace(c.Query("month")),
-		StartDate: strings.TrimSpace(c.Query("start_date")),
-		EndDate:   strings.TrimSpace(c.Query("end_date")),
-	}
-	if _, err := service.ParseSupplierReportRange(query.Month, query.StartDate, query.EndDate); err != nil {
-		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidReportRange)
-		return
-	}
-	result, err := newSupplyChainReportService().GetDaily(c.Request.Context(), query)
-	supplyChainReportResult(c, result, err)
-}
-
-func RerunSupplyChainDailyReport(c *gin.Context) {
-	rerunSupplyChainDailyReport(c, rerunSupplierDailyReport, model.DB, model.LOG_DB, time.Now())
-}
-
-func rerunSupplyChainDailyReport(c *gin.Context, rerun supplierDailyReportRerunFunc, mainDB, logDB *gorm.DB, now time.Time) {
-	batchDate := c.Param("date")
-	location, err := time.LoadLocation(service.SupplierDailyBatchTimezone)
-	if err != nil {
-		supplierBatchHTTPError(c, http.StatusServiceUnavailable, "config_unavailable")
-		return
-	}
-	parsedDate, err := time.ParseInLocation("2006-01-02", batchDate, location)
-	if err != nil || parsedDate.Format("2006-01-02") != batchDate {
-		supplierBatchHTTPError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	idempotencyKey, ok := supplierBatchIdempotencyKey(c)
-	if !ok {
-		return
-	}
-	request := dto.SupplierDailyReportRerunRequest{}
-	if err := c.ShouldBindJSON(&request); err != nil {
-		supplierBatchHTTPError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	request.Reason = strings.TrimSpace(request.Reason)
-	if request.Reason == "" || len(request.Reason) > supplierDailyReportRerunReasonMaxBytes || request.ExpectedPublishedFenceToken <= 0 {
-		supplierBatchHTTPError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	actorID := c.GetInt("id")
-	if actorID <= 0 {
-		supplierBatchHTTPError(c, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	if mainDB == nil || logDB == nil || rerun == nil {
-		supplierBatchHTTPError(c, http.StatusServiceUnavailable, "config_unavailable")
-		return
-	}
-	result, err := rerun(c.Request.Context(), mainDB, logDB, actorID, batchDate, idempotencyKey, request, now)
-	switch {
-	case errors.Is(err, service.ErrSupplierDailyReportNotFound):
-		supplierBatchHTTPError(c, http.StatusNotFound, "not_found")
-		return
-	case errors.Is(err, service.ErrSupplierDailyReportInvalid):
-		supplierBatchHTTPError(c, http.StatusBadRequest, "invalid_request")
-		return
-	case errors.Is(err, service.ErrSupplierDailyReportNotEligible):
-		supplierBatchHTTPError(c, http.StatusConflict, "not_eligible")
-		return
-	case errors.Is(err, service.ErrSupplierDailyReportVersionConflict):
-		supplierBatchHTTPError(c, http.StatusConflict, "version_conflict")
-		return
-	}
-	supplierDailyBatchResult(c, result, err)
 }
 
 func supplyChainReportQuery(c *gin.Context) (service.SupplierReportQuery, bool) {

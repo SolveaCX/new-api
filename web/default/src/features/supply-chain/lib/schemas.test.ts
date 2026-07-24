@@ -21,6 +21,7 @@ describe('supply-chain management schemas', () => {
     expect(usdInputToMicroUsd('-1.000001')).toBe(-1_000_001)
     expect(usdInputToMicroUsd('0')).toBeNull()
     expect(usdInputToMicroUsd('1.0000001')).toBeNull()
+    expect(usdInputToMicroUsd('9007199254.740993')).toBeNull()
   })
 
   test('rejects invalid append-only and binding values before submission', () => {

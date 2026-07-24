@@ -312,7 +312,6 @@ func SetApiRouter(router *gin.Engine) {
 		supplyChainRoute := apiRouter.Group("/supply-chain")
 		supplyChainRoute.Use(middleware.FinanceAuth())
 		{
-			supplyChainRoute.GET("/commands/result", controller.GetSupplyChainCommandResult)
 			supplyChainRoute.GET("/suppliers", controller.ListSupplyChainSuppliers)
 			supplyChainRoute.GET("/suppliers/:id", controller.GetSupplyChainSupplier)
 			supplyChainRoute.POST("/suppliers", supplierSupplyChainMutation(controller.CreateSupplyChainSupplier)...)
@@ -342,13 +341,7 @@ func SetApiRouter(router *gin.Engine) {
 			supplyChainRoute.GET("/reports/contracts/:id", controller.GetSupplyChainReportContract)
 			supplyChainRoute.GET("/reports/channels", controller.ListSupplyChainReportChannels)
 			supplyChainRoute.GET("/reports/breakdown", controller.ListSupplyChainReportBreakdown)
-			supplyChainRoute.GET("/reports/freshness", controller.GetSupplyChainReportFreshness)
-			supplyChainRoute.GET("/reports/daily", controller.GetSupplyChainDailyReports)
-			supplyChainRoute.POST("/reports/daily/:date/rerun", supplierSupplyChainMutation(controller.RerunSupplyChainDailyReport)...)
-
 		}
-		registerSupplierAccountingControlRoutes(apiRouter)
-		registerSupplierDailyBatchRoutes(apiRouter, controller.TriggerSupplierDailyBatchCatchUp, controller.GetSupplierDailyBatchStatus)
 		codexModelGovernanceRoute := apiRouter.Group("/codex_model_governance")
 		codexModelGovernanceRoute.Use(middleware.AdminAuth())
 		{
@@ -537,34 +530,7 @@ func SetApiRouter(router *gin.Engine) {
 func supplierSupplyChainMutation(handler gin.HandlerFunc) []gin.HandlerFunc {
 	return []gin.HandlerFunc{
 		middleware.CriticalRateLimit(),
-		middleware.SupplierMutationGate(),
 		middleware.SecureVerificationRequired(),
 		handler,
 	}
-}
-
-func registerSupplierAccountingControlRoutes(apiRouter *gin.RouterGroup) {
-	accountingRoute := apiRouter.Group("/supply-chain/accounting")
-	accountingRoute.Use(middleware.FinanceAuth())
-	accountingRoute.GET("/status", controller.GetSupplierAccountingStatus)
-	accountingRoute.GET("/readiness", controller.GetSupplierAccountingReadiness)
-	accountingRoute.POST("/mutation-gate", middleware.CriticalRateLimit(), middleware.SecureVerificationRequired(), controller.ToggleSupplierAccountingMutationGate)
-
-	mutationRoute := accountingRoute.Group("")
-	mutationRoute.Use(middleware.CriticalRateLimit(), middleware.SupplierMutationGate(), middleware.SecureVerificationRequired())
-	mutationRoute.POST("/prepare", controller.PrepareSupplierAccounting)
-	mutationRoute.POST("/arm", controller.ArmSupplierAccounting)
-	mutationRoute.POST("/activate", controller.ActivateSupplierAccounting)
-	mutationRoute.POST("/disable", controller.DisableSupplierAccountingBeforeCutover)
-	mutationRoute.POST("/degrade", controller.DegradeSupplierAccounting)
-	mutationRoute.POST("/gaps/resolve", controller.ResolveSupplierAccountingGap)
-	mutationRoute.POST("/reactivate", controller.ReactivateSupplierAccounting)
-	mutationRoute.POST("/adopt-legacy", controller.AdoptLegacySupplierAccounting)
-}
-
-func registerSupplierDailyBatchRoutes(apiRouter *gin.RouterGroup, catchUpHandler, statusHandler gin.HandlerFunc) {
-	supplierBatchRoute := apiRouter.Group("/supply-chain/daily-batches")
-	supplierBatchRoute.Use(middleware.SupplierBatchAuth())
-	supplierBatchRoute.POST("/catch-up", middleware.CriticalRateLimit(), catchUpHandler)
-	supplierBatchRoute.GET("/status", statusHandler)
 }

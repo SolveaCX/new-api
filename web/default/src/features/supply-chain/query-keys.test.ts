@@ -43,21 +43,11 @@ describe('supplyChainQueryKeys', () => {
       'contracts',
       query,
     ])
-    expect(supplyChainQueryKeys.reports.freshness()).toEqual([
+    expect(supplyChainQueryKeys.reports.breakdown(query)).toEqual([
       'supply-chain',
       'reports',
-      'freshness',
-    ])
-    expect(supplyChainQueryKeys.reports.daily.list(query)).toEqual([
-      'supply-chain',
-      'reports',
-      'daily',
+      'breakdown',
       query,
-    ])
-    expect(supplyChainQueryKeys.reports.daily.all()).toEqual([
-      'supply-chain',
-      'reports',
-      'daily',
     ])
   })
 })

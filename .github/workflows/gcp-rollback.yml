@@ -15,18 +15,9 @@ on:
         description: "Revision name to roll back to (gcloud run revisions list)"
         required: true
         type: string
-      binding_run_id:
-        description: "GitHub Actions run ID containing the immutable deployment binding"
-        required: true
-        type: string
-      binding_artifact:
-        description: "Immutable supplier-deployment-binding-* artifact name"
-        required: true
-        type: string
 
 permissions:
   contents: read
-  actions: read
   id-token: write
 
 jobs:
@@ -34,88 +25,16 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.rollback_target == 'router' && 'production-router' || 'production-console' }}
     steps:
-      - name: Checkout verification scripts
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Download immutable rollback binding
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: ${{ inputs.binding_artifact }}
-          path: deployment-binding
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.binding_run_id }}
-          github-token: ${{ github.token }}
-
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-prod-rollback/providers/github
-          service_account: ${{ inputs.rollback_target == 'router' && 'newapi-prod-router-rollback@vocai-gemini-prod.iam.gserviceaccount.com' || 'newapi-prod-console-rollback@vocai-gemini-prod.iam.gserviceaccount.com' }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Verify revision, manifest, binding, and compatibility
-        env:
-          RUN_SERVICE: ${{ inputs.rollback_target == 'router' && 'newapi-router' || 'newapi-console' }}
-          ROOT_ACCESS_TOKEN: ${{ secrets.SUPPLIER_DEPLOY_ROOT_ACCESS_TOKEN }}
-          ROOT_USER_ID: ${{ vars.SUPPLIER_DEPLOY_ROOT_USER_ID }}
-          CONTROL_PLANE_URL: https://console.flatkey.ai
-        run: |
-          set -euo pipefail
-          revision="${{ inputs.revision }}"
-          oci_digest="$(gcloud run revisions describe "${revision}" \
-            --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ vars.GCP_REGION }}" \
-            --format='value(status.imageDigest)')"
-          [[ -n "${oci_digest}" ]] || { echo "target revision has no deployed OCI digest" >&2; exit 1; }
-          manifest_sha="$(tr -d '\r\n' < deployment-binding/manifest_sha256.txt)"
-          .github/scripts/supplier-deploy-verify.sh binding-verify deployment-binding/binding.json "${oci_digest}" "${manifest_sha}"
-
-          gcloud run services update-traffic "${RUN_SERVICE}" \
-            --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ vars.GCP_REGION }}" \
-            --update-tags=rollback-preflight="${revision}" --quiet
-          tag_url="$(gcloud run services describe "${RUN_SERVICE}" \
-            --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ vars.GCP_REGION }}" \
-            --format='value(status.traffic[].url)' | tr ';' '\n' | grep rollback-preflight || true)"
-          [[ -n "${tag_url}" ]] || { echo "rollback tagged URL is unavailable" >&2; exit 1; }
-          curl --fail --silent --show-error "${tag_url}/api/status" > /tmp/status.json
-          .github/scripts/supplier-deploy-verify.sh status \
-            deployment-binding/manifest_hash_payload.json deployment-binding/manifest_sha256.txt /tmp/status.json
-
-          [[ -n "${ROOT_ACCESS_TOKEN}" && -n "${ROOT_USER_ID}" && -n "${CONTROL_PLANE_URL}" ]] || {
-            echo "rollback control-plane credentials or URL are unavailable" >&2; exit 1;
-          }
-          curl --fail --silent --show-error \
-            -H "Authorization: ${ROOT_ACCESS_TOKEN}" -H "New-Api-User: ${ROOT_USER_ID}" \
-            "${CONTROL_PLANE_URL%/}/api/supply-chain/accounting/status" > /tmp/accounting.json
-          ledger_state="$(jq -er '.data.admin_command_ledger_state' /tmp/accounting.json)"
-          case "${ledger_state}" in
-            bridge) ;;
-            finalized)
-              .github/scripts/supplier-deploy-verify.sh admin-schema-capabilities /tmp/status.json 1
-              ;;
-            invalid) echo "current supplier admin command ledger is invalid; rollback is forbidden" >&2; exit 1 ;;
-            *) echo "missing or unknown supplier admin command ledger state; rollback is forbidden" >&2; exit 1 ;;
-          esac
-          phase="$(jq -er '.data.activation.phase' /tmp/accounting.json)"
-          if ! .github/scripts/supplier-deploy-verify.sh control-plane-capabilities \
-            /tmp/status.json /tmp/accounting.json 1 1; then
-            case "${phase}" in
-              active|degraded)
-                jq -e --arg digest "${oci_digest}" '
-                  .success == true and .data.activation.phase == "degraded" and
-                  any(.data.unresolved_gaps[];
-                    .reason_category == "emergency_rollback" and .end_at == null and
-                    .affected_oci_digest == $digest and .finance_disposition == "pending")
-                ' /tmp/accounting.json >/dev/null || {
-                  echo "incompatible rollback lacks committed degraded state and matching open gap evidence" >&2; exit 1;
-                }
-                ;;
-              *) echo "rollback capability validation failed in phase ${phase}" >&2; exit 1 ;;
-            esac
-          fi
-
-      - name: Switch 100% traffic to the verified revision
+      - name: Switch 100% traffic to the named revision
         env:
           RUN_SERVICE: ${{ inputs.rollback_target == 'router' && 'newapi-router' || 'newapi-console' }}
         run: |
@@ -129,4 +48,3 @@ jobs:
           echo "- Target: \`${{ inputs.rollback_target }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Service: \`${RUN_SERVICE}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Revision now serving 100%: \`${{ inputs.revision }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Binding artifact: \`${{ inputs.binding_artifact }}\` from run \`${{ inputs.binding_run_id }}\`" >> "$GITHUB_STEP_SUMMARY"

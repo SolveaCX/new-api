@@ -8,10 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync/atomic"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -24,13 +21,6 @@ const supplierMicroUSDScale int64 = 1_000_000
 const supplierPricingInputVersionV1 int64 = 1
 
 const supplierExpressionFingerprintTailMaxV1 uint64 = 1<<48 - 1
-
-type supplierAccountingActivationCacheEntry struct {
-	raw     string
-	version int64
-}
-
-var supplierAccountingActivationVersionCache atomic.Pointer[supplierAccountingActivationCacheEntry]
 
 type SupplierAccountingCaptureInputV1 struct {
 	OfficialListUSD            *decimal.Decimal
@@ -280,27 +270,6 @@ func supplierSalesMultiplierPpm(multiplier float64) (*int64, error) {
 	return &value, nil
 }
 
-// CurrentSupplierAccountingActivationStateVersion reads only the process-local
-// option cache populated by the normal option reload path. Invalid or absent
-// state fails closed to the valid synthetic disabled version zero.
-func CurrentSupplierAccountingActivationStateVersion() int64 {
-	common.OptionMapRWMutex.RLock()
-	raw := common.OptionMap[model.SupplierAccountingActivationOptionKey]
-	common.OptionMapRWMutex.RUnlock()
-	if cached := supplierAccountingActivationVersionCache.Load(); cached != nil && cached.raw == raw {
-		return cached.version
-	}
-	version := int64(0)
-	if strings.TrimSpace(raw) != "" {
-		state, err := model.ParseSupplierAccountingActivationState(raw)
-		if err == nil && state.StateVersion >= 0 {
-			version = state.StateVersion
-		}
-	}
-	supplierAccountingActivationVersionCache.Store(&supplierAccountingActivationCacheEntry{raw: raw, version: version})
-	return version
-}
-
 // BuildSupplierAccountingEnvelopeV1 applies the fixed mutually-exclusive
 // disposition order. Snapshot failures are converted to a snapshot-free
 // producer_error only after all captured preconditions have passed.
@@ -394,29 +363,28 @@ func supplierAccountingErrorFromQualityReason(reason string) error {
 }
 
 func InjectSupplierAccountingEnvelopeV1(other map[string]any, input SupplierAccountingEnvelopeInputV1) types.SupplierAccountingEnvelopeV1 {
-	envelope, buildErr := buildSupplierAccountingEnvelopeV1(input)
-	recordSupplierAccountingSettlementMetrics(envelope.Disposition, buildErr)
+	envelope, _ := buildSupplierAccountingEnvelopeV1(input)
 	if other != nil {
-		other[types.SupplierAccountingEnvelopeKeyV1] = envelope
+		delete(other, types.SupplierAccountingEnvelopeKeyV1)
+		if envelope.Disposition == types.SupplierAccountingDispositionCaptured && ValidateSupplierAccountingEnvelopeV1(envelope) == nil {
+			other[types.SupplierAccountingEnvelopeKeyV1] = envelope
+		}
 	}
 	return envelope
 }
 
 func InjectUnsupportedSupplierAccountingEnvelopeV1(other map[string]any) types.SupplierAccountingEnvelopeV1 {
 	envelope := newSupplierAccountingDispositionEnvelope(types.SupplierAccountingDispositionUnsupportedPath)
-	recordSupplierAccountingSettlementMetrics(envelope.Disposition, nil)
 	if other != nil {
-		other[types.SupplierAccountingEnvelopeKeyV1] = envelope
+		delete(other, types.SupplierAccountingEnvelopeKeyV1)
 	}
 	return envelope
 }
 
 func newSupplierAccountingDispositionEnvelope(disposition types.SupplierAccountingDisposition) types.SupplierAccountingEnvelopeV1 {
 	return types.SupplierAccountingEnvelopeV1{
-		EnvelopeSchemaVersion:     types.SupplierAccountingEnvelopeSchemaVersionV1,
-		ProducerCapabilityVersion: types.SupplierAccountingProducerCapabilityV1,
-		ActivationStateVersion:    CurrentSupplierAccountingActivationStateVersion(),
-		Disposition:               disposition,
+		EnvelopeSchemaVersion: types.SupplierAccountingEnvelopeSchemaVersionV1,
+		Disposition:           disposition,
 	}
 }
 
@@ -465,9 +433,15 @@ func normalizeSupplierAccountingPricingModeV1(mode string) string {
 }
 
 func buildSupplierPricingProvenanceV1(relayInfo *relaycommon.RelayInfo, input SupplierAccountingCaptureInputV1) (*types.SupplierPricingProvenanceV1, error) {
-	groupMultiplier, err := requiredSupplierMultiplierPpm("group_ratio", relayInfo.PriceData.GroupRatioInfo.GroupRatio)
-	if err != nil {
-		return nil, err
+	internal := relayInfo.SupplierStatisticsScopeSnapshot.Scope == types.SupplierStatisticsScopeInternal
+	var groupMultiplier, groupRatioVersion int64
+	if !internal {
+		var err error
+		groupMultiplier, err = requiredSupplierMultiplierPpm("group_ratio", relayInfo.PriceData.GroupRatioInfo.GroupRatio)
+		if err != nil {
+			return nil, err
+		}
+		groupRatioVersion = supplierPricingInputVersionV1
 	}
 	provenance := &types.SupplierPricingProvenanceV1{}
 	switch strings.ToLower(strings.TrimSpace(input.PricingMode)) {
@@ -478,15 +452,15 @@ func buildSupplierPricingProvenanceV1(relayInfo *relaycommon.RelayInfo, input Su
 		}
 		provenance.Ratio = &types.SupplierRatioPricingProvenanceV1{
 			ModelRatioPpm: modelMultiplier, GroupRatioPpm: groupMultiplier,
-			ModelRatioVersion: supplierPricingInputVersionV1, GroupRatioVersion: supplierPricingInputVersionV1,
+			ModelRatioVersion: supplierPricingInputVersionV1, GroupRatioVersion: groupRatioVersion,
 		}
 	case "price", "fixed":
 		provenance.Fixed = &types.SupplierFixedPricingProvenanceV1{
 			Source: "price_data", Key: "model_price", PriceVersion: supplierPricingInputVersionV1,
-			GroupMultiplierPpm: groupMultiplier, GroupRatioVersion: supplierPricingInputVersionV1,
+			GroupMultiplierPpm: groupMultiplier, GroupRatioVersion: groupRatioVersion,
 		}
 	case "tiered", "tiered_expr":
-		tiered, tieredErr := buildSupplierTieredPricingProvenanceV1(relayInfo, groupMultiplier, input.TieredTokenParams)
+		tiered, tieredErr := buildSupplierTieredPricingProvenanceV1(relayInfo, groupMultiplier, groupRatioVersion, input.TieredTokenParams)
 		if tieredErr != nil {
 			return nil, tieredErr
 		}
@@ -502,7 +476,7 @@ func buildSupplierPricingProvenanceV1(relayInfo *relaycommon.RelayInfo, input Su
 	return provenance, nil
 }
 
-func buildSupplierTieredPricingProvenanceV1(relayInfo *relaycommon.RelayInfo, groupMultiplier int64, params *billingexpr.TokenParams) (*types.SupplierTieredPricingProvenanceV1, error) {
+func buildSupplierTieredPricingProvenanceV1(relayInfo *relaycommon.RelayInfo, groupMultiplier int64, groupRatioVersion int64, params *billingexpr.TokenParams) (*types.SupplierTieredPricingProvenanceV1, error) {
 	if relayInfo.SupplierOfficialPricingSnapshot.TieredBillingSnapshot == nil || params == nil {
 		return nil, newSupplierAccountingError("tiered_provenance", SupplierAccountingReasonMissing, nil)
 	}
@@ -534,7 +508,7 @@ func buildSupplierTieredPricingProvenanceV1(relayInfo *relaycommon.RelayInfo, gr
 		ExpressionFingerprintTail: fingerprintTail,
 		ExpressionVersion:         int64(snapshot.ExprVersion),
 		GroupMultiplierPpm:        groupMultiplier,
-		GroupRatioVersion:         supplierPricingInputVersionV1,
+		GroupRatioVersion:         groupRatioVersion,
 		NormalizedInputs:          normalized,
 	}, nil
 }
@@ -589,8 +563,7 @@ func requiredSupplierWholeNonNegative(field string, value float64) (int64, error
 }
 
 func ValidateSupplierAccountingEnvelopeV1(envelope types.SupplierAccountingEnvelopeV1) error {
-	if envelope.EnvelopeSchemaVersion != types.SupplierAccountingEnvelopeSchemaVersionV1 ||
-		envelope.ProducerCapabilityVersion != types.SupplierAccountingProducerCapabilityV1 || envelope.ActivationStateVersion < 0 {
+	if envelope.EnvelopeSchemaVersion != types.SupplierAccountingEnvelopeSchemaVersionV1 {
 		return newSupplierAccountingError("envelope_version", SupplierAccountingReasonUnknown, nil)
 	}
 	switch envelope.Disposition {
@@ -632,7 +605,8 @@ func validateSupplierAccountingCapturedV1(snapshot *types.SupplierAccountingLogS
 	if snapshot.PricingProvenance == nil {
 		return newSupplierAccountingError("pricing_provenance", SupplierAccountingReasonMissing, nil)
 	}
-	groupMultiplier, err := validateSupplierPricingProvenanceV1(snapshot.PricingProvenance)
+	internal := types.SupplierStatisticsScope(snapshot.StatisticsScope) == types.SupplierStatisticsScopeInternal
+	groupMultiplier, err := validateSupplierPricingProvenanceV1(snapshot.PricingProvenance, internal)
 	if err != nil {
 		return err
 	}
@@ -656,7 +630,7 @@ func validateSupplierAccountingCapturedV1(snapshot *types.SupplierAccountingLogS
 	return nil
 }
 
-func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProvenanceV1) (int64, error) {
+func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProvenanceV1, internal bool) (int64, error) {
 	if provenance == nil {
 		return 0, newSupplierAccountingError("pricing_provenance", SupplierAccountingReasonMissing, nil)
 	}
@@ -677,15 +651,16 @@ func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProven
 		return 0, newSupplierAccountingError("pricing_dimensions", SupplierAccountingReasonUnknown, nil)
 	}
 	if ratio := provenance.Ratio; ratio != nil {
-		if ratio.ModelRatioPpm < 0 || ratio.GroupRatioPpm < 0 ||
-			ratio.ModelRatioVersion != supplierPricingInputVersionV1 || ratio.GroupRatioVersion != supplierPricingInputVersionV1 {
+		if ratio.ModelRatioPpm < 0 || ratio.ModelRatioVersion != supplierPricingInputVersionV1 ||
+			!supplierGroupPricingEvidenceValidV1(internal, ratio.GroupRatioPpm, ratio.GroupRatioVersion) {
 			return 0, newSupplierAccountingError("ratio_provenance", SupplierAccountingReasonUnknown, nil)
 		}
 		return ratio.GroupRatioPpm, nil
 	}
 	if fixed := provenance.Fixed; fixed != nil {
 		if fixed.Source != "price_data" || fixed.Key != "model_price" ||
-			fixed.PriceVersion != supplierPricingInputVersionV1 || fixed.GroupMultiplierPpm < 0 || fixed.GroupRatioVersion != supplierPricingInputVersionV1 {
+			fixed.PriceVersion != supplierPricingInputVersionV1 ||
+			!supplierGroupPricingEvidenceValidV1(internal, fixed.GroupMultiplierPpm, fixed.GroupRatioVersion) {
 			return 0, newSupplierAccountingError("fixed_provenance", SupplierAccountingReasonUnknown, nil)
 		}
 		return fixed.GroupMultiplierPpm, nil
@@ -693,11 +668,18 @@ func validateSupplierPricingProvenanceV1(provenance *types.SupplierPricingProven
 	tiered := provenance.Tiered
 	if (tiered.ExpressionFingerprint == 0 && tiered.ExpressionFingerprintTail == 0) ||
 		tiered.ExpressionFingerprintTail > supplierExpressionFingerprintTailMaxV1 ||
-		tiered.ExpressionVersion != 1 || tiered.GroupMultiplierPpm < 0 || tiered.GroupRatioVersion != supplierPricingInputVersionV1 ||
+		tiered.ExpressionVersion != 1 || !supplierGroupPricingEvidenceValidV1(internal, tiered.GroupMultiplierPpm, tiered.GroupRatioVersion) ||
 		!supplierTieredInputsNonNegative(tiered.NormalizedInputs) {
 		return 0, newSupplierAccountingError("tiered_provenance", SupplierAccountingReasonUnknown, nil)
 	}
 	return tiered.GroupMultiplierPpm, nil
+}
+
+func supplierGroupPricingEvidenceValidV1(internal bool, multiplier, version int64) bool {
+	if internal {
+		return multiplier == 0 && version == 0
+	}
+	return multiplier >= 0 && version == supplierPricingInputVersionV1
 }
 
 func supplierTieredInputsNonNegative(input types.SupplierTieredNormalizedInputsV1) bool {

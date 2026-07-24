@@ -29,33 +29,21 @@ const (
 	supplierAccountingInputVersionV1       = int64(1)
 	supplierAccountingFingerprintTailMaxV1 = uint64(1<<48 - 1)
 	// This is a persisted protocol value, not the process default. Never bind
-	// capability-V1 history to billingexpr.DefaultExprVersion.
+	// schema-V1 history to billingexpr.DefaultExprVersion.
 	supplierAccountingTieredExpressionVersionV1 = int64(1)
 )
 
-var supplierAccountingEnvelopeFieldsV1 = map[string]struct{}{
-	"v": {},
-	"c": {},
-	"a": {},
-	"d": {},
-	"s": {},
-}
-
 type supplierAccountingEnvelopeJSONV1 struct {
-	EnvelopeSchemaVersion     int                           `json:"v"`
-	ProducerCapabilityVersion int                           `json:"c"`
-	ActivationStateVersion    int64                         `json:"a"`
-	Disposition               SupplierAccountingDisposition `json:"d"`
-	Captured                  string                        `json:"s,omitempty"`
+	EnvelopeSchemaVersion int                           `json:"v"`
+	Disposition           SupplierAccountingDisposition `json:"d"`
+	Captured              string                        `json:"s,omitempty"`
 }
 
-// MarshalJSON keeps the envelope control fields readable while encoding the
-// captured numeric snapshot as a capability-versioned, fixed-width binary
+// MarshalJSON keeps the envelope metadata readable while encoding the
+// captured numeric snapshot as a schema-versioned, fixed-width binary
 // payload. Raw URL base64 is canonical and avoids padding variance.
 func (envelope SupplierAccountingEnvelopeV1) MarshalJSON() ([]byte, error) {
-	if envelope.EnvelopeSchemaVersion != SupplierAccountingEnvelopeSchemaVersionV1 ||
-		envelope.ProducerCapabilityVersion != SupplierAccountingProducerCapabilityV1 ||
-		envelope.ActivationStateVersion < 0 {
+	if envelope.EnvelopeSchemaVersion != SupplierAccountingEnvelopeSchemaVersionV1 {
 		return nil, errors.New("invalid supplier accounting envelope version")
 	}
 	if !isSupplierAccountingDispositionV1(envelope.Disposition) {
@@ -63,10 +51,8 @@ func (envelope SupplierAccountingEnvelopeV1) MarshalJSON() ([]byte, error) {
 	}
 
 	wire := supplierAccountingEnvelopeJSONV1{
-		EnvelopeSchemaVersion:     envelope.EnvelopeSchemaVersion,
-		ProducerCapabilityVersion: envelope.ProducerCapabilityVersion,
-		ActivationStateVersion:    envelope.ActivationStateVersion,
-		Disposition:               envelope.Disposition,
+		EnvelopeSchemaVersion: envelope.EnvelopeSchemaVersion,
+		Disposition:           envelope.Disposition,
 	}
 	if envelope.Disposition == SupplierAccountingDispositionCaptured {
 		captured, err := encodeSupplierAccountingCapturedV1(envelope.Captured)
@@ -80,9 +66,8 @@ func (envelope SupplierAccountingEnvelopeV1) MarshalJSON() ([]byte, error) {
 	return common.Marshal(wire)
 }
 
-// UnmarshalJSON is intentionally strict because persisted envelopes are an
-// accounting protocol. Unknown, duplicate, missing, non-canonical, truncated,
-// or oversized fields are rejected before the service-layer field validator.
+// UnmarshalJSON applies the envelope wire decoder before the service-layer
+// field validator checks the captured accounting snapshot.
 func (envelope *SupplierAccountingEnvelopeV1) UnmarshalJSON(data []byte) error {
 	if envelope == nil {
 		return errors.New("nil supplier accounting envelope destination")
@@ -96,52 +81,31 @@ func (envelope *SupplierAccountingEnvelopeV1) UnmarshalJSON(data []byte) error {
 }
 
 // ParseSupplierAccountingEnvelopeV1JSON decodes one persisted envelope value.
-// Callers must run their current capability field validator after decoding.
+// Callers must run their current field validator after decoding.
 func ParseSupplierAccountingEnvelopeV1JSON(data []byte) (SupplierAccountingEnvelopeV1, error) {
-	fields, err := common.UnmarshalJsonObjectStrict(string(data), supplierAccountingEnvelopeFieldsV1)
-	if err != nil {
+	var wire supplierAccountingEnvelopeJSONV1
+	if err := common.Unmarshal(data, &wire); err != nil {
 		return SupplierAccountingEnvelopeV1{}, fmt.Errorf("invalid supplier accounting envelope object: %w", err)
 	}
-	for _, required := range []string{"v", "c", "a", "d"} {
-		if _, ok := fields[required]; !ok {
-			return SupplierAccountingEnvelopeV1{}, fmt.Errorf("missing supplier accounting envelope field %q", required)
-		}
-	}
-
-	var envelope SupplierAccountingEnvelopeV1
-	if common.GetJsonType(fields["v"]) != "number" || common.Unmarshal(fields["v"], &envelope.EnvelopeSchemaVersion) != nil {
-		return SupplierAccountingEnvelopeV1{}, errors.New("invalid supplier accounting envelope schema version")
-	}
-	if common.GetJsonType(fields["c"]) != "number" || common.Unmarshal(fields["c"], &envelope.ProducerCapabilityVersion) != nil {
-		return SupplierAccountingEnvelopeV1{}, errors.New("invalid supplier accounting producer capability")
-	}
-	if common.GetJsonType(fields["a"]) != "number" || common.Unmarshal(fields["a"], &envelope.ActivationStateVersion) != nil {
-		return SupplierAccountingEnvelopeV1{}, errors.New("invalid supplier accounting activation version")
-	}
-	if common.GetJsonType(fields["d"]) != "string" || common.Unmarshal(fields["d"], &envelope.Disposition) != nil {
-		return SupplierAccountingEnvelopeV1{}, errors.New("invalid supplier accounting disposition")
+	envelope := SupplierAccountingEnvelopeV1{
+		EnvelopeSchemaVersion: wire.EnvelopeSchemaVersion,
+		Disposition:           wire.Disposition,
 	}
 	if envelope.EnvelopeSchemaVersion != SupplierAccountingEnvelopeSchemaVersionV1 ||
-		envelope.ProducerCapabilityVersion != SupplierAccountingProducerCapabilityV1 ||
-		envelope.ActivationStateVersion < 0 || !isSupplierAccountingDispositionV1(envelope.Disposition) {
+		!isSupplierAccountingDispositionV1(envelope.Disposition) {
 		return SupplierAccountingEnvelopeV1{}, errors.New("unsupported supplier accounting envelope semantics")
 	}
 
-	capturedRaw, hasCaptured := fields["s"]
 	if envelope.Disposition != SupplierAccountingDispositionCaptured {
-		if hasCaptured {
+		if wire.Captured != "" {
 			return SupplierAccountingEnvelopeV1{}, errors.New("non-captured supplier accounting envelope contains field s")
 		}
 		return envelope, nil
 	}
-	if !hasCaptured || common.GetJsonType(capturedRaw) != "string" {
+	if wire.Captured == "" {
 		return SupplierAccountingEnvelopeV1{}, errors.New("captured supplier accounting envelope is missing string field s")
 	}
-	var capturedText string
-	if err := common.Unmarshal(capturedRaw, &capturedText); err != nil || capturedText == "" {
-		return SupplierAccountingEnvelopeV1{}, errors.New("invalid supplier accounting captured payload")
-	}
-	captured, err := decodeSupplierAccountingCapturedV1(capturedText)
+	captured, err := decodeSupplierAccountingCapturedV1(wire.Captured)
 	if err != nil {
 		return SupplierAccountingEnvelopeV1{}, err
 	}
@@ -186,7 +150,6 @@ func encodeSupplierAccountingCapturedV1(snapshot *SupplierAccountingLogSnapshotV
 	putInt64(snapshot.FinanciallyCommittedAt)
 	if plan.internal {
 		putInt64(int64(*snapshot.ExclusionRuleId))
-		putInt64(plan.groupMultiplier)
 	} else {
 		putInt64(*snapshot.SalesMultiplierPpm)
 		putInt64(*snapshot.SalesMicroUsd)
@@ -297,7 +260,8 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 	switch plan.mode {
 	case SupplierPricingModeRatio:
 		ratio := provenance.Ratio
-		if ratio.ModelRatioPpm < 0 || ratio.GroupRatioPpm < 0 || ratio.ModelRatioVersion != supplierAccountingInputVersionV1 || ratio.GroupRatioVersion != supplierAccountingInputVersionV1 {
+		if ratio.ModelRatioPpm < 0 || ratio.ModelRatioVersion != supplierAccountingInputVersionV1 ||
+			!supplierAccountingGroupEvidenceValidV1(plan.internal, ratio.GroupRatioPpm, ratio.GroupRatioVersion) {
 			return supplierAccountingCapturedPlanV1{}, errors.New("invalid supplier accounting ratio provenance")
 		}
 		plan.flags |= supplierAccountingCapturedModeRatioCode << supplierAccountingCapturedModeShift
@@ -305,7 +269,7 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 	case SupplierPricingModeFixed:
 		fixed := provenance.Fixed
 		if fixed.Source != supplierAccountingFixedSourceV1 || fixed.Key != supplierAccountingFixedKeyV1 || fixed.PriceVersion != supplierAccountingInputVersionV1 ||
-			fixed.GroupMultiplierPpm < 0 || fixed.GroupRatioVersion != supplierAccountingInputVersionV1 {
+			!supplierAccountingGroupEvidenceValidV1(plan.internal, fixed.GroupMultiplierPpm, fixed.GroupRatioVersion) {
 			return supplierAccountingCapturedPlanV1{}, errors.New("invalid supplier accounting fixed provenance")
 		}
 		plan.flags |= supplierAccountingCapturedModeFixedCode << supplierAccountingCapturedModeShift
@@ -315,7 +279,7 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 		if (tiered.ExpressionFingerprint == 0 && tiered.ExpressionFingerprintTail == 0) ||
 			tiered.ExpressionFingerprintTail > supplierAccountingFingerprintTailMaxV1 ||
 			tiered.ExpressionVersion != supplierAccountingTieredExpressionVersionV1 ||
-			tiered.GroupMultiplierPpm < 0 || tiered.GroupRatioVersion != supplierAccountingInputVersionV1 ||
+			!supplierAccountingGroupEvidenceValidV1(plan.internal, tiered.GroupMultiplierPpm, tiered.GroupRatioVersion) ||
 			!supplierAccountingTieredInputsNonNegativeV1(tiered.NormalizedInputs) {
 			return supplierAccountingCapturedPlanV1{}, errors.New("invalid supplier accounting tiered provenance")
 		}
@@ -328,6 +292,13 @@ func supplierAccountingCapturedEncodingPlanV1(snapshot *SupplierAccountingLogSna
 		return supplierAccountingCapturedPlanV1{}, errors.New("supplier accounting business group multiplier mismatch")
 	}
 	return plan, nil
+}
+
+func supplierAccountingGroupEvidenceValidV1(internal bool, multiplier, version int64) bool {
+	if internal {
+		return multiplier == 0 && version == 0
+	}
+	return multiplier >= 0 && version == supplierAccountingInputVersionV1
 }
 
 func decodeSupplierAccountingCapturedV1(encoded string) (*SupplierAccountingLogSnapshotV1, error) {
@@ -403,7 +374,6 @@ func decodeSupplierAccountingCapturedV1(encoded string) (*SupplierAccountingLogS
 			return nil, readErr
 		}
 		snapshot.ExclusionRuleId = &exclusionRuleID
-		groupMultiplier = readInt64()
 	} else {
 		snapshot.StatisticsScope = string(SupplierStatisticsScopeBusiness)
 		snapshot.ExclusionDecision = "included"
@@ -421,14 +391,22 @@ func decodeSupplierAccountingCapturedV1(encoded string) (*SupplierAccountingLogS
 	}
 	switch mode {
 	case SupplierPricingModeRatio:
+		groupVersion := supplierAccountingInputVersionV1
+		if internal {
+			groupVersion = 0
+		}
 		provenance.Ratio = &SupplierRatioPricingProvenanceV1{
 			ModelRatioPpm: readInt64(), GroupRatioPpm: groupMultiplier,
-			ModelRatioVersion: supplierAccountingInputVersionV1, GroupRatioVersion: supplierAccountingInputVersionV1,
+			ModelRatioVersion: supplierAccountingInputVersionV1, GroupRatioVersion: groupVersion,
 		}
 	case SupplierPricingModeFixed:
+		groupVersion := supplierAccountingInputVersionV1
+		if internal {
+			groupVersion = 0
+		}
 		provenance.Fixed = &SupplierFixedPricingProvenanceV1{
 			Source: supplierAccountingFixedSourceV1, Key: supplierAccountingFixedKeyV1,
-			PriceVersion: supplierAccountingInputVersionV1, GroupMultiplierPpm: groupMultiplier, GroupRatioVersion: supplierAccountingInputVersionV1,
+			PriceVersion: supplierAccountingInputVersionV1, GroupMultiplierPpm: groupMultiplier, GroupRatioVersion: groupVersion,
 		}
 	case SupplierPricingModeTiered:
 		fingerprint := binary.BigEndian.Uint64(data[offset : offset+8])
@@ -439,12 +417,16 @@ func decodeSupplierAccountingCapturedV1(encoded string) (*SupplierAccountingLogS
 		for index := range values {
 			values[index] = readInt64()
 		}
+		groupVersion := supplierAccountingInputVersionV1
+		if internal {
+			groupVersion = 0
+		}
 		provenance.Tiered = &SupplierTieredPricingProvenanceV1{
 			ExpressionFingerprint:     fingerprint,
 			ExpressionFingerprintTail: fingerprintTail,
 			ExpressionVersion:         supplierAccountingTieredExpressionVersionV1,
 			GroupMultiplierPpm:        groupMultiplier,
-			GroupRatioVersion:         supplierAccountingInputVersionV1,
+			GroupRatioVersion:         groupVersion,
 			NormalizedInputs: SupplierTieredNormalizedInputsV1{
 				Prompt: values[0], Completion: values[1], ContextLength: values[2], CacheRead: values[3], CacheCreate: values[4],
 				CacheCreate1H: values[5], ImageInput: values[6], ImageOutput: values[7], AudioInput: values[8], AudioOutput: values[9],
@@ -477,7 +459,7 @@ func supplierAccountingCapturedEncodedLengthV1(length int) bool {
 func supplierAccountingCapturedBinarySizeV1(internal bool, mode SupplierPricingModeV1) int {
 	size := 1 + 8*8
 	if internal {
-		size += 8 * 2
+		size += 8
 	} else {
 		size += 8 * 3
 	}

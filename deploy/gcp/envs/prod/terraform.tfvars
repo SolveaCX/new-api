@@ -1,11 +1,9 @@
-project_id                 = "vocai-gemini-prod"
-region                     = "us-west1"
-zone                       = "us-west1-a"
-service_name               = "newapi"
-github_repository          = "SolveaCX/new-api"
-github_repository_id       = "1236600074"
-github_repository_owner_id = "279667167"
-enable_legacy_runtime      = false
+project_id            = "vocai-gemini-prod"
+region                = "us-west1"
+zone                  = "us-west1-a"
+service_name          = "newapi"
+github_repository     = "SolveaCX/new-api"
+enable_legacy_runtime = false
 
 // Domain mappings (free, simple) require run.domainmappings.create — the caller lacks it.
 // We use a GCP HTTPS LB instead. Once an org admin grants roles/run.admin, you can switch
@@ -80,12 +78,6 @@ router_memory         = "2Gi"
 console_min_instances = 1
 console_max_instances = 5
 console_concurrency   = 80
-
-// Supplier accounting Job/Scheduler stays fail-closed until operators create
-// both raw token versions out of band and deploy only their hashes to Console.
-// A reviewed apply then sets true and supplies supplier_batch_runner_image as
-// an immutable image@sha256 digest; no tag or raw token belongs in this file.
-supplier_batch_job_enabled = false
 
 // --- Standalone Next.js website (apex flatkey.ai + www → Node) ---
 // website_domains are served through Cloudflare orange-cloud (depth ≤ 2, covered by

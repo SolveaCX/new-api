@@ -123,9 +123,22 @@ func UpdateUpstreamSupplier(id int, input UpdateUpstreamSupplierInput) (*Upstrea
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&supplier, id).Error; err != nil {
 			return err
 		}
+		if supplier.RowVersion != input.ExpectedVersion {
+			return ErrSupplierVersionConflict
+		}
 		if len(updates) > 0 {
-			if err := tx.Model(&supplier).Updates(updates).Error; err != nil {
+			updates["row_version"] = supplier.RowVersion + 1
+			updatedAt, err := getSupplierDBTimestamp(tx)
+			if err != nil {
 				return err
+			}
+			updates["updated_at"] = updatedAt
+			result := tx.Model(&UpstreamSupplier{}).Where("id = ? AND row_version = ?", id, input.ExpectedVersion).UpdateColumns(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return ErrSupplierVersionConflict
 			}
 		}
 		return tx.First(&supplier, id).Error
@@ -137,6 +150,14 @@ func UpdateUpstreamSupplier(id int, input UpdateUpstreamSupplierInput) (*Upstrea
 }
 
 func InactivateUpstreamSupplier(id int) error {
+	supplier, err := GetUpstreamSupplierByID(id)
+	if err != nil {
+		return err
+	}
+	return InactivateUpstreamSupplierCAS(id, supplier.RowVersion)
+}
+
+func InactivateUpstreamSupplierCAS(id int, expectedVersion int64) error {
 	if DB == nil {
 		return fmt.Errorf("inactivate upstream supplier: %w", ErrDatabase)
 	}
@@ -144,6 +165,9 @@ func InactivateUpstreamSupplier(id int) error {
 		var supplier UpstreamSupplier
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&supplier, id).Error; err != nil {
 			return err
+		}
+		if supplier.RowVersion != expectedVersion {
+			return ErrSupplierVersionConflict
 		}
 		alreadyInactive := supplier.Status == SupplierStatusInactive
 		var contracts []SupplierContract
@@ -173,10 +197,18 @@ func InactivateUpstreamSupplier(id int) error {
 		if err != nil {
 			return err
 		}
-		return tx.Model(&UpstreamSupplier{}).Where("id = ? AND status = ?", id, SupplierStatusActive).UpdateColumns(map[string]any{
-			"status":     SupplierStatusInactive,
-			"updated_at": updatedAt,
-		}).Error
+		result := tx.Model(&UpstreamSupplier{}).Where("id = ? AND status = ? AND row_version = ?", id, SupplierStatusActive, expectedVersion).UpdateColumns(map[string]any{
+			"status":      SupplierStatusInactive,
+			"updated_at":  updatedAt,
+			"row_version": expectedVersion + 1,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrSupplierVersionConflict
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -298,9 +330,22 @@ func UpdateSupplierContract(id int, input UpdateSupplierContractInput) (*Supplie
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&contract, id).Error; err != nil {
 			return err
 		}
+		if contract.RowVersion != input.ExpectedVersion {
+			return ErrSupplierVersionConflict
+		}
 		if len(updates) > 0 {
-			if err := tx.Model(&contract).Updates(updates).Error; err != nil {
+			updates["row_version"] = contract.RowVersion + 1
+			updatedAt, err := getSupplierDBTimestamp(tx)
+			if err != nil {
 				return err
+			}
+			updates["updated_at"] = updatedAt
+			result := tx.Model(&SupplierContract{}).Where("id = ? AND row_version = ?", id, input.ExpectedVersion).UpdateColumns(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return ErrSupplierVersionConflict
 			}
 		}
 		return tx.First(&contract, id).Error
@@ -312,6 +357,14 @@ func UpdateSupplierContract(id int, input UpdateSupplierContractInput) (*Supplie
 }
 
 func InactivateSupplierContract(id int) error {
+	contract, err := GetSupplierContractByID(id)
+	if err != nil {
+		return err
+	}
+	return InactivateSupplierContractCAS(id, contract.RowVersion)
+}
+
+func InactivateSupplierContractCAS(id int, expectedVersion int64) error {
 	if DB == nil {
 		return fmt.Errorf("inactivate supplier contract: %w", ErrDatabase)
 	}
@@ -331,6 +384,9 @@ func InactivateSupplierContract(id int) error {
 		if contract.SupplierId != supplier.Id {
 			return ErrSupplierImmutableField
 		}
+		if contract.RowVersion != expectedVersion {
+			return ErrSupplierVersionConflict
+		}
 		alreadyInactive := contract.Status == SupplierContractStatusInactive
 		var bindingCount int64
 		if err := tx.Model(&Channel{}).Where("supplier_contract_id = ?", id).Count(&bindingCount).Error; err != nil {
@@ -346,10 +402,18 @@ func InactivateSupplierContract(id int) error {
 		if err != nil {
 			return err
 		}
-		return tx.Model(&SupplierContract{}).Where("id = ? AND status = ?", id, SupplierContractStatusActive).UpdateColumns(map[string]any{
-			"status":     SupplierContractStatusInactive,
-			"updated_at": updatedAt,
-		}).Error
+		result := tx.Model(&SupplierContract{}).Where("id = ? AND status = ? AND row_version = ?", id, SupplierContractStatusActive, expectedVersion).UpdateColumns(map[string]any{
+			"status":      SupplierContractStatusInactive,
+			"updated_at":  updatedAt,
+			"row_version": expectedVersion + 1,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrSupplierVersionConflict
+		}
+		return nil
 	})
 	if err != nil {
 		return err

@@ -194,7 +194,7 @@ func (v *SupplierContractRateVersion) BeforeDelete(_ *gorm.DB) error {
 type SupplierInventoryAdjustment struct {
 	Id             int    `json:"id" gorm:"index:idx_supplier_inventory_contract_id,priority:2"`
 	ContractId     int    `json:"contract_id" gorm:"not null;uniqueIndex:ux_supplier_inventory_actor_idempotency,priority:1;index:idx_supplier_inventory_contract_id,priority:1"`
-	DeltaMicroUsd  int64  `json:"delta_micro_usd" gorm:"not null"`
+	DeltaMicroUsd  int64  `json:"delta_micro_usd,string" gorm:"not null"`
 	Type           string `json:"type" gorm:"type:varchar(32);not null"`
 	Reason         string `json:"reason" gorm:"type:text"`
 	IdempotencyKey string `json:"idempotency_key" gorm:"type:varchar(128);not null;uniqueIndex:ux_supplier_inventory_actor_idempotency,priority:3"`

@@ -38,7 +38,6 @@ func setupSupplierCacheTestDB(t *testing.T, name string) *gorm.DB {
 		&SupplierContractRateVersion{},
 		&SupplierChannelBindingVersion{},
 		&SupplierStatisticsExclusionRule{},
-		&SupplierAdminCommand{},
 	))
 	DB = db
 	common.UsingSQLite = true

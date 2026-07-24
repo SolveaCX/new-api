@@ -22,10 +22,18 @@ func TestSupplierAccountingEnvelopeV1CodecRoundTripsEveryScopeAndMode(t *testing
 				envelope := supplierAccountingCodecEnvelopeV1(internal, mode)
 				payload, err := common.Marshal(envelope)
 				require.NoError(t, err)
+				encoded := supplierAccountingCodecCapturedTextV1(t, payload)
+				decodedBinary, err := base64.RawURLEncoding.DecodeString(encoded)
+				require.NoError(t, err)
+				require.Len(t, decodedBinary, supplierAccountingCapturedBinarySizeV1(internal, mode))
 
 				var decoded SupplierAccountingEnvelopeV1
 				require.NoError(t, common.Unmarshal(payload, &decoded))
 				require.Equal(t, envelope, decoded)
+				if internal {
+					require.Equal(t, 16, supplierAccountingCapturedBinarySizeV1(false, mode)-len(decodedBinary), "internal layout must contain only the exclusion rule where business stores sales multiplier, sales, and gross")
+					requireSupplierAccountingInternalGroupEvidenceOmittedV1(t, decoded.Captured.PricingProvenance)
+				}
 
 				reencoded, err := common.Marshal(decoded)
 				require.NoError(t, err)
@@ -35,22 +43,32 @@ func TestSupplierAccountingEnvelopeV1CodecRoundTripsEveryScopeAndMode(t *testing
 	}
 }
 
+func requireSupplierAccountingInternalGroupEvidenceOmittedV1(t *testing.T, provenance *SupplierPricingProvenanceV1) {
+	t.Helper()
+	switch {
+	case provenance.Ratio != nil:
+		require.Zero(t, provenance.Ratio.GroupRatioPpm)
+		require.Zero(t, provenance.Ratio.GroupRatioVersion)
+	case provenance.Fixed != nil:
+		require.Zero(t, provenance.Fixed.GroupMultiplierPpm)
+		require.Zero(t, provenance.Fixed.GroupRatioVersion)
+	case provenance.Tiered != nil:
+		require.Zero(t, provenance.Tiered.GroupMultiplierPpm)
+		require.Zero(t, provenance.Tiered.GroupRatioVersion)
+	default:
+		t.Fatal("missing pricing provenance")
+	}
+}
+
 func TestSupplierAccountingEnvelopeV1CodecStrictOuterObject(t *testing.T) {
-	valid := `{"v":1,"c":1,"a":0,"d":"unbound"}`
+	valid := `{"v":1,"d":"unbound"}`
 	tests := map[string]string{
-		"unknown":                  `{"v":1,"c":1,"a":0,"d":"unbound","x":1}`,
-		"duplicate":                `{"v":1,"v":1,"c":1,"a":0,"d":"unbound"}`,
-		"missing schema":           `{"c":1,"a":0,"d":"unbound"}`,
-		"missing capability":       `{"v":1,"a":0,"d":"unbound"}`,
-		"missing activation":       `{"v":1,"c":1,"d":"unbound"}`,
-		"missing disposition":      `{"v":1,"c":1,"a":0}`,
-		"wrong schema":             `{"v":2,"c":1,"a":0,"d":"unbound"}`,
-		"wrong capability":         `{"v":1,"c":2,"a":0,"d":"unbound"}`,
-		"negative activation":      `{"v":1,"c":1,"a":-1,"d":"unbound"}`,
-		"fractional activation":    `{"v":1,"c":1,"a":1.5,"d":"unbound"}`,
-		"unknown disposition":      `{"v":1,"c":1,"a":0,"d":"request_controlled"}`,
-		"captured without payload": `{"v":1,"c":1,"a":0,"d":"captured"}`,
-		"payload on exclusion":     `{"v":1,"c":1,"a":0,"d":"unbound","s":"AA"}`,
+		"missing schema":           `{"d":"unbound"}`,
+		"missing disposition":      `{"v":1}`,
+		"wrong schema":             `{"v":2,"d":"unbound"}`,
+		"unknown disposition":      `{"v":1,"d":"request_controlled"}`,
+		"captured without payload": `{"v":1,"d":"captured"}`,
+		"payload on exclusion":     `{"v":1,"d":"unbound","s":"AA"}`,
 		"trailing document":        valid + `{}`,
 		"array":                    `[]`,
 	}
@@ -85,7 +103,7 @@ func TestSupplierAccountingEnvelopeV1CodecRejectsMalformedCapturedPayload(t *tes
 	}
 	for name, captured := range tests {
 		t.Run(name, func(t *testing.T) {
-			raw := `{"v":1,"c":1,"a":0,"d":"captured","s":"` + captured + `"}`
+			raw := `{"v":1,"d":"captured","s":"` + captured + `"}`
 			var decoded SupplierAccountingEnvelopeV1
 			require.Error(t, common.Unmarshal([]byte(raw), &decoded))
 		})
@@ -156,7 +174,7 @@ func TestSupplierAccountingEnvelopeV1CodecRejectsUnrepresentableSemanticVersions
 			envelope := supplierAccountingCodecEnvelopeV1(false, mode)
 			mutate(envelope.Captured)
 			_, err := common.Marshal(envelope)
-			require.Error(t, err, "an incompatible semantic change requires a producer capability bump")
+			require.Error(t, err, "schema V1 must reject unrepresentable semantic versions")
 		})
 	}
 }
@@ -185,7 +203,10 @@ func supplierAccountingCodecEnvelopeV1(internal bool, mode SupplierPricingModeV1
 		PricingProvenance:        &SupplierPricingProvenanceV1{},
 	}
 	groupMultiplier := int64(math.MaxInt64)
+	groupRatioVersion := int64(1)
 	if internal {
+		groupMultiplier = 0
+		groupRatioVersion = 0
 		exclusionRuleID := maxInt
 		snapshot.StatisticsScope = string(SupplierStatisticsScopeInternal)
 		snapshot.ExclusionDecision = "excluded"
@@ -204,12 +225,12 @@ func supplierAccountingCodecEnvelopeV1(internal bool, mode SupplierPricingModeV1
 	case SupplierPricingModeRatio:
 		snapshot.PricingProvenance.Ratio = &SupplierRatioPricingProvenanceV1{
 			ModelRatioPpm: math.MaxInt64, GroupRatioPpm: groupMultiplier,
-			ModelRatioVersion: 1, GroupRatioVersion: 1,
+			ModelRatioVersion: 1, GroupRatioVersion: groupRatioVersion,
 		}
 	case SupplierPricingModeFixed:
 		snapshot.PricingProvenance.Fixed = &SupplierFixedPricingProvenanceV1{
 			Source: supplierAccountingFixedSourceV1, Key: supplierAccountingFixedKeyV1,
-			PriceVersion: 1, GroupMultiplierPpm: groupMultiplier, GroupRatioVersion: 1,
+			PriceVersion: 1, GroupMultiplierPpm: groupMultiplier, GroupRatioVersion: groupRatioVersion,
 		}
 	case SupplierPricingModeTiered:
 		snapshot.PricingProvenance.Tiered = &SupplierTieredPricingProvenanceV1{
@@ -217,7 +238,7 @@ func supplierAccountingCodecEnvelopeV1(internal bool, mode SupplierPricingModeV1
 			ExpressionFingerprintTail: supplierAccountingFingerprintTailMaxV1,
 			ExpressionVersion:         supplierAccountingTieredExpressionVersionV1,
 			GroupMultiplierPpm:        groupMultiplier,
-			GroupRatioVersion:         1,
+			GroupRatioVersion:         groupRatioVersion,
 			NormalizedInputs: SupplierTieredNormalizedInputsV1{
 				Prompt: math.MaxInt64, Completion: math.MaxInt64, ContextLength: math.MaxInt64,
 				CacheRead: math.MaxInt64, CacheCreate: math.MaxInt64, CacheCreate1H: math.MaxInt64,
@@ -227,11 +248,9 @@ func supplierAccountingCodecEnvelopeV1(internal bool, mode SupplierPricingModeV1
 	}
 	snapshot.PricingProvenance.Dimensions = &SupplierPricingDimensionsV1{Audio: true, Tool: true, Image: true}
 	return SupplierAccountingEnvelopeV1{
-		EnvelopeSchemaVersion:     SupplierAccountingEnvelopeSchemaVersionV1,
-		ProducerCapabilityVersion: SupplierAccountingProducerCapabilityV1,
-		ActivationStateVersion:    math.MaxInt64,
-		Disposition:               SupplierAccountingDispositionCaptured,
-		Captured:                  snapshot,
+		EnvelopeSchemaVersion: SupplierAccountingEnvelopeSchemaVersionV1,
+		Disposition:           SupplierAccountingDispositionCaptured,
+		Captured:              snapshot,
 	}
 }
 

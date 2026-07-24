@@ -1,9 +1,6 @@
 package router
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -32,16 +29,11 @@ func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&model.Option{},
-		&model.SupplierAdminCommand{},
-		&model.SupplierInventoryAdjustment{},
-		&model.SupplierAccountingCoverageGap{},
-		&model.SupplierUsageDailyBatchRun{},
+		&model.Option{}, &model.Channel{},
+		&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierContractRateVersion{},
+		&model.SupplierChannelBindingVersion{}, &model.SupplierInventoryAdjustment{}, &model.SupplierStatisticsExclusionRule{},
+		&model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{},
 	))
-	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
-	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
-	_, err = model.CASSupplierAccountingMutationState(db, 0, true, 17, "route tests", time.Now().Unix())
-	require.NoError(t, err)
 	previousDB := model.DB
 	model.DB = db
 	t.Cleanup(func() {
@@ -83,16 +75,11 @@ func supplyChainRouteTestCookiesWithVerification(t *testing.T, engine *gin.Engin
 	return recorder.Result().Cookies()
 }
 
-func performSupplyChainRouteTestRequest(engine *gin.Engine, cookies []*http.Cookie) *httptest.ResponseRecorder {
-	return performSupplyChainRouteTestRequestAt(engine, cookies, http.MethodGet, "/api/supply-chain/suppliers/not-an-id", "")
-}
-
 func performSupplyChainRouteTestRequestAt(engine *gin.Engine, cookies []*http.Cookie, method, path, body string) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("New-Api-User", "17")
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Idempotency-Key", "route-permission-test")
 	for _, cookie := range cookies {
 		request.AddCookie(cookie)
 	}
@@ -100,198 +87,25 @@ func performSupplyChainRouteTestRequestAt(engine *gin.Engine, cookies []*http.Co
 	return recorder
 }
 
-func TestSupplyChainSensitiveRoutesRequireAdmin(t *testing.T) {
+func TestSupplyChainRoutesRequireFinanceAccess(t *testing.T) {
 	engine := newSupplyChainRouteTestEngine(t)
-	userCookies := supplyChainRouteTestCookies(t, engine, common.RoleCommonUser)
-	adminCookies := supplyChainRouteTestCookies(t, engine, common.RoleAdminUser)
-	rootCookies := supplyChainRouteTestCookies(t, engine, common.RoleRootUser)
-	tests := []struct {
-		method string
-		path   string
-		body   string
-	}{
-		{method: http.MethodGet, path: "/api/supply-chain/commands/result?scope=supplier.invalid"},
-		{method: http.MethodGet, path: "/api/supply-chain/reports/freshness"},
+	path := "/api/supply-chain/suppliers/not-an-id"
+	require.Equal(t, http.StatusUnauthorized, performSupplyChainRouteTestRequestAt(engine, nil, http.MethodGet, path, "").Code)
+	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser} {
+		response := performSupplyChainRouteTestRequestAt(engine, supplyChainRouteTestCookies(t, engine, role), http.MethodGet, path, "")
+		require.Equal(t, http.StatusOK, response.Code)
+		require.Contains(t, response.Body.String(), `"success":false`)
 	}
-	for _, test := range tests {
-		t.Run(test.method+" "+test.path, func(t *testing.T) {
-			unauthenticated := performSupplyChainRouteTestRequestAt(engine, nil, test.method, test.path, test.body)
-			require.Equal(t, http.StatusUnauthorized, unauthenticated.Code)
-
-			user := performSupplyChainRouteTestRequestAt(engine, userCookies, test.method, test.path, test.body)
-			require.Equal(t, http.StatusOK, user.Code)
-			require.Contains(t, user.Body.String(), `"success":false`)
-
-			admin := performSupplyChainRouteTestRequestAt(engine, adminCookies, test.method, test.path, test.body)
-			require.Equal(t, http.StatusOK, admin.Code)
-			require.Contains(t, admin.Body.String(), `"success":false`)
-
-			root := performSupplyChainRouteTestRequestAt(engine, rootCookies, test.method, test.path, test.body)
-			require.NotEqual(t, http.StatusUnauthorized, root.Code, "Root reads must not require fresh verification")
-		})
-	}
+	root := performSupplyChainRouteTestRequestAt(engine, supplyChainRouteTestCookies(t, engine, common.RoleRootUser), http.MethodGet, path, "")
+	require.Equal(t, http.StatusBadRequest, root.Code)
 }
 
-func TestSupplyChainRoutesRequireAdmin(t *testing.T) {
-	engine := newSupplyChainRouteTestEngine(t)
-
-	unauthenticated := httptest.NewRecorder()
-	engine.ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "/api/supply-chain/suppliers/not-an-id", nil))
-	require.Equal(t, http.StatusUnauthorized, unauthenticated.Code)
-
-	user := performSupplyChainRouteTestRequest(engine, supplyChainRouteTestCookies(t, engine, common.RoleCommonUser))
-	require.Equal(t, http.StatusOK, user.Code)
-	require.Contains(t, user.Body.String(), `"success":false`)
-
-	admin := performSupplyChainRouteTestRequest(engine, supplyChainRouteTestCookies(t, engine, common.RoleAdminUser))
-	require.Equal(t, http.StatusOK, admin.Code)
-	require.Contains(t, admin.Body.String(), `"success":false`)
-
-	root := performSupplyChainRouteTestRequest(engine, supplyChainRouteTestCookies(t, engine, common.RoleRootUser))
-	require.Equal(t, http.StatusBadRequest, root.Code, "Root must reach the supplier controller without step-up for reads")
-}
-
-func TestSupplierDailyBatchRoutesRequireSchedulerToken(t *testing.T) {
-	require.NoError(t, backendi18n.Init())
-	gin.SetMode(gin.TestMode)
-	previousRateLimit := common.CriticalRateLimitEnable
-	previousMaster := common.IsMasterNode
-	common.CriticalRateLimitEnable = false
-	common.IsMasterNode = true
-	t.Cleanup(func() {
-		common.CriticalRateLimitEnable = previousRateLimit
-		common.IsMasterNode = previousMaster
-	})
-
-	token := supplierBatchRouteTestToken(11)
-	t.Setenv(middleware.SupplierBatchCurrentVerifierHashEnv, supplierBatchRouteTestVerifier(token))
-	t.Setenv(middleware.SupplierBatchNextVerifierHashEnv, "")
-	t.Setenv(middleware.SupplierBatchTrustedIdentityEnv, "supplier-route-runner")
-	engine := gin.New()
-	var catchUpCalls, statusCalls int
-	registerSupplierDailyBatchRoutes(engine.Group("/api"), func(c *gin.Context) {
-		catchUpCalls++
-		c.JSON(http.StatusOK, gin.H{"success": true})
-	}, func(c *gin.Context) {
-		statusCalls++
-		c.JSON(http.StatusOK, gin.H{"success": true})
-	})
-	catchUpPath := "/api/supply-chain/daily-batches/catch-up"
-	statusPath := "/api/supply-chain/daily-batches/status?request_id=route-permission-test"
-
-	unauthenticated := performSupplyChainRouteTestRequestAt(engine, nil, http.MethodPost, catchUpPath, "")
-	require.Equal(t, http.StatusUnauthorized, unauthenticated.Code)
-	require.Zero(t, catchUpCalls)
-
-	for _, request := range []struct{ method, path string }{{http.MethodPost, catchUpPath}, {http.MethodGet, statusPath}} {
-		recorder := httptest.NewRecorder()
-		req := httptest.NewRequest(request.method, request.path, nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-		engine.ServeHTTP(recorder, req)
-		require.Equal(t, http.StatusOK, recorder.Code)
-	}
-	require.Equal(t, 1, catchUpCalls)
-	require.Equal(t, 1, statusCalls)
-}
-
-func TestSupplierDailyBatchRoutesFailClosedOffMasterWithoutChangingFinanceRoutes(t *testing.T) {
-	token := supplierBatchRouteTestToken(14)
-	t.Setenv(middleware.SupplierBatchCurrentVerifierHashEnv, supplierBatchRouteTestVerifier(token))
-	t.Setenv(middleware.SupplierBatchNextVerifierHashEnv, "")
-	t.Setenv(middleware.SupplierBatchTrustedIdentityEnv, "supplier-route-runner")
-	engine := newSupplyChainRouteTestEngine(t)
-	previousMaster := common.IsMasterNode
-	common.IsMasterNode = false
-	t.Cleanup(func() { common.IsMasterNode = previousMaster })
-
-	for _, request := range []struct{ method, path string }{
-		{http.MethodPost, "/api/supply-chain/daily-batches/catch-up"},
-		{http.MethodGet, "/api/supply-chain/daily-batches/status?request_id=route-permission-test"},
-	} {
-		recorder := httptest.NewRecorder()
-		req := httptest.NewRequest(request.method, request.path, nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-		engine.ServeHTTP(recorder, req)
-		require.Equal(t, http.StatusServiceUnavailable, recorder.Code, request.method+" "+request.path)
-		require.Contains(t, recorder.Body.String(), `"code":"config_unavailable"`)
-	}
-
-	root := performSupplyChainRouteTestRequestAt(engine, supplyChainRouteTestCookies(t, engine, common.RoleRootUser), http.MethodGet, "/api/supply-chain/reports/freshness", "")
-	require.NotEqual(t, http.StatusServiceUnavailable, root.Code, "ordinary Root finance routes must remain independent of the scheduler node-role gate")
-}
-
-func TestSupplierDailyBatchRoutesRejectFinanceSessions(t *testing.T) {
-	previousMaster := common.IsMasterNode
-	common.IsMasterNode = true
-	t.Cleanup(func() { common.IsMasterNode = previousMaster })
-	token := supplierBatchRouteTestToken(13)
-	t.Setenv(middleware.SupplierBatchCurrentVerifierHashEnv, supplierBatchRouteTestVerifier(token))
-	t.Setenv(middleware.SupplierBatchNextVerifierHashEnv, "")
-	t.Setenv(middleware.SupplierBatchTrustedIdentityEnv, "supplier-route-runner")
-	engine := newSupplyChainRouteTestEngine(t)
-	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser} {
-		recorder := performSupplyChainRouteTestRequestAt(engine, supplyChainRouteTestCookies(t, engine, role), http.MethodPost, "/api/supply-chain/daily-batches/catch-up", "")
-		require.Equal(t, http.StatusUnauthorized, recorder.Code)
-		require.Contains(t, recorder.Body.String(), `"code":"unauthorized"`)
-	}
-}
-
-func TestSupplyChainRouteRegistryHasNoCollisionsOrHardDeletes(t *testing.T) {
-	engine := newSupplyChainRouteTestEngine(t)
-	routes := engine.Routes()
-	wantedHandlers := map[string]string{
-		http.MethodPost + " /api/supply-chain/daily-batches/catch-up":    "TriggerSupplierDailyBatchCatchUp",
-		http.MethodGet + " /api/supply-chain/daily-batches/status":       "GetSupplierDailyBatchStatus",
-		http.MethodGet + " /api/supply-chain/commands/result":            "GetSupplyChainCommandResult",
-		http.MethodGet + " /api/supply-chain/reports/freshness":          "GetSupplyChainReportFreshness",
-		http.MethodGet + " /api/supply-chain/reports/contracts/:id":      "GetSupplyChainReportContract",
-		http.MethodPost + " /api/supply-chain/reports/daily/:date/rerun": "RerunSupplyChainDailyReport",
-	}
-	found := make(map[string]string)
-	for _, route := range routes {
-		key := route.Method + " " + route.Path
-		if expected, ok := wantedHandlers[key]; ok {
-			found[key] = route.Handler
-			require.Contains(t, route.Handler, expected)
-		}
+func TestSupplyChainRouteRegistryHasNoHardDeletes(t *testing.T) {
+	for _, route := range newSupplyChainRouteTestEngine(t).Routes() {
 		if route.Method == http.MethodDelete && (strings.Contains(route.Path, "/suppliers") || strings.Contains(route.Path, "/contracts") || strings.Contains(route.Path, "/exclusions")) {
-			t.Fatalf("append-only supply-chain resource unexpectedly exposes hard delete: %s", key)
+			t.Fatalf("append-only supply-chain resource exposes hard delete: %s %s", route.Method, route.Path)
 		}
 	}
-	require.Len(t, found, len(wantedHandlers))
-}
-
-func TestSupplyChainDailyReportRerunDeniesSchedulerToken(t *testing.T) {
-	previousMaster := common.IsMasterNode
-	common.IsMasterNode = true
-	t.Cleanup(func() { common.IsMasterNode = previousMaster })
-	token := supplierBatchRouteTestToken(12)
-	t.Setenv(middleware.SupplierBatchCurrentVerifierHashEnv, supplierBatchRouteTestVerifier(token))
-	t.Setenv(middleware.SupplierBatchNextVerifierHashEnv, "")
-	t.Setenv(middleware.SupplierBatchTrustedIdentityEnv, "supplier-route-runner")
-	engine := newSupplyChainRouteTestEngine(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.User{}))
-	request := httptest.NewRequest(http.MethodPost, "/api/supply-chain/reports/daily/2026-07-22/rerun", strings.NewReader(`{"reason":"retry incomplete day","expected_published_fence_token":7}`))
-	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Idempotency-Key", "rerun-deny-scheduler")
-	request.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, request)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Contains(t, recorder.Body.String(), `"success":false`)
-}
-
-func supplierBatchRouteTestToken(fill byte) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat(string([]byte{fill}), 32)))
-}
-
-func supplierBatchRouteTestVerifier(token string) string {
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		panic(err)
-	}
-	digest := sha256.Sum256(raw)
-	return hex.EncodeToString(digest[:])
 }
 
 func TestSupplyChainWriteRoutesUseCriticalRateLimit(t *testing.T) {
@@ -325,6 +139,6 @@ func TestSupplyChainWriteRoutesUseCriticalRateLimit(t *testing.T) {
 		engine.ServeHTTP(recorder, request)
 		statuses = append(statuses, recorder.Code)
 	}
-	require.Equal(t, http.StatusBadRequest, statuses[0])
+	require.Equal(t, http.StatusOK, statuses[0])
 	require.Equal(t, http.StatusTooManyRequests, statuses[1])
 }

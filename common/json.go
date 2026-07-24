@@ -3,10 +3,7 @@ package common
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
-	"strings"
 )
 
 func Unmarshal(data []byte, v any) error {
@@ -19,68 +16,6 @@ func UnmarshalJsonStr(data string, v any) error {
 
 func DecodeJson(reader io.Reader, v any) error {
 	return json.NewDecoder(reader).Decode(v)
-}
-
-// UnmarshalJsonObjectStrict decodes a JSON object while rejecting duplicate
-// top-level fields, fields outside the allowlist, non-object documents, and
-// trailing JSON values. Keeping the token scan in this package ensures callers
-// do not bypass the project's JSON wrapper contract for strict object parsing.
-func UnmarshalJsonObjectStrict(data string, allowedFields map[string]struct{}) (map[string]json.RawMessage, error) {
-	decoder := json.NewDecoder(strings.NewReader(data))
-	opening, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	if delimiter, ok := opening.(json.Delim); !ok || delimiter != '{' {
-		return nil, errors.New("document must be an object")
-	}
-
-	seen := make(map[string]struct{}, len(allowedFields))
-	unknownField := ""
-	for decoder.More() {
-		keyToken, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		field, ok := keyToken.(string)
-		if !ok {
-			return nil, errors.New("object field name must be a string")
-		}
-		if _, duplicate := seen[field]; duplicate {
-			return nil, fmt.Errorf("duplicate field %q", field)
-		}
-		seen[field] = struct{}{}
-		if _, allowed := allowedFields[field]; !allowed && unknownField == "" {
-			unknownField = field
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return nil, err
-		}
-	}
-
-	closing, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	if delimiter, ok := closing.(json.Delim); !ok || delimiter != '}' {
-		return nil, errors.New("unterminated object")
-	}
-	if trailing, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("unexpected trailing token %v", trailing)
-	}
-	if unknownField != "" {
-		return nil, fmt.Errorf("unknown field %q", unknownField)
-	}
-
-	var fields map[string]json.RawMessage
-	if err := UnmarshalJsonStr(data, &fields); err != nil {
-		return nil, err
-	}
-	return fields, nil
 }
 
 func Marshal(v any) ([]byte, error) {

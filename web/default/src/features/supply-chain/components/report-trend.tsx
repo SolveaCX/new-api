@@ -208,7 +208,8 @@ export function ReportTrend(props: ReportTrendProps) {
                           {chartConfig[String(name)]?.label ?? String(name)}
                         </span>
                         <span className='font-mono font-medium tabular-nums'>
-                          {typeof value === 'number'
+                          {typeof value === 'number' ||
+                          typeof value === 'string'
                             ? formatMicroUsd(value, unknown)
                             : unknown}
                         </span>

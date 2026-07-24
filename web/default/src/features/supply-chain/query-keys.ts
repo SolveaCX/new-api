@@ -76,12 +76,5 @@ export const supplyChainQueryKeys = {
       [...supplyChainQueryKeys.all, 'reports', 'channels', query] as const,
     breakdown: (query: SupplierReportPageQuery) =>
       [...supplyChainQueryKeys.all, 'reports', 'breakdown', query] as const,
-    freshness: () =>
-      [...supplyChainQueryKeys.all, 'reports', 'freshness'] as const,
-    daily: {
-      all: () => [...supplyChainQueryKeys.all, 'reports', 'daily'] as const,
-      list: (query: SupplierReportQuery) =>
-        [...supplyChainQueryKeys.all, 'reports', 'daily', query] as const,
-    },
   },
 }

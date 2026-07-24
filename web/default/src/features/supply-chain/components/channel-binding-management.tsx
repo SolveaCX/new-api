@@ -39,19 +39,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  bindChannel,
-  isSupplyChainCommandCommitted,
-  unbindChannel,
-} from '../api'
+import { bindChannel, unbindChannel } from '../api'
 import type { SupplyChainManagementProps } from '../contracts'
-import { useIdempotentIntent } from '../hooks/use-idempotent-intent'
 import {
   useChannelBindingAdminList,
   useContractAdminInfiniteList,
   useSupplyChainAdminMutation,
-  useSupplyChainSecurity,
-  type SupplyChainSecurity,
 } from '../hooks/use-supply-chain-admin'
 import { formatPpmPercent } from '../lib/format'
 import {
@@ -65,19 +58,12 @@ import {
   ManagementPagination,
   ManagementStatus,
   ManagementToolbar,
-  PendingConfirmationAlert,
-  SupplyChainVerificationDialog,
 } from './management-common'
 import { ProgressiveList } from './progressive-list'
 
-function BindingDialog(props: {
-  binding: SupplierChannelBinding
-  reconcile: (channelId: number, contractId: number) => Promise<boolean>
-  security: SupplyChainSecurity
-}) {
+function BindingDialog(props: { binding: SupplierChannelBinding }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const intent = useIdempotentIntent()
   const contracts = useContractAdminInfiniteList(
     { page_size: 50, status: 'active' },
     open
@@ -86,24 +72,17 @@ function BindingDialog(props: {
     resolver: zodResolver(channelBindingFormSchema),
     defaultValues: { contract_id: props.binding.supplier_contract_id ?? 0 },
   })
-  const mutation = useSupplyChainAdminMutation<{
-    values: ChannelBindingFormValues
-    idempotencyKey: string
-  }>({
-    mutationFn: ({ values, idempotencyKey }) =>
+  const mutation = useSupplyChainAdminMutation<ChannelBindingFormValues>({
+    mutationFn: (values) =>
       bindChannel(props.binding.channel_id, {
-        data: {
-          contract_id: values.contract_id,
-          expected_contract_id: props.binding.supplier_contract_id ?? 0,
-        },
-        idempotencyKey,
+        contract_id: values.contract_id,
+        expected_contract_id: props.binding.supplier_contract_id ?? 0,
       }),
     invalidate: [
       supplyChainQueryKeys.channelBindings.all(),
       supplyChainQueryKeys.contracts.all(),
       supplyChainQueryKeys.suppliers.all(),
     ],
-    security: props.security,
   })
 
   useEffect(() => {
@@ -116,36 +95,11 @@ function BindingDialog(props: {
     setOpen(false)
   }
 
-  async function reconcilePending(): Promise<void> {
-    if ((await intent.reconcilePending()) === 'reconciled') finishBinding()
-  }
-
   async function submit(values: ChannelBindingFormValues): Promise<void> {
-    const result = await intent.run({
-      execute: (idempotencyKey) =>
-        mutation.mutateAsync({ values, idempotencyKey }),
-      reconcile: async (key) => {
-        const committed = await isSupplyChainCommandCommitted(
-          `supplier_channel.bind/${props.binding.channel_id}`,
-          key
-        )
-        await props.reconcile(props.binding.channel_id, values.contract_id)
-        return committed
-      },
-    })
-    if (result === 'success' || result === 'reconciled') {
+    try {
+      await mutation.mutateAsync(values)
       finishBinding()
-    } else if (result === 'conflict') {
-      toast.error(
-        t(
-          'The binding changed elsewhere. Latest data was loaded; review your selection and try again.'
-        )
-      )
-    } else if (result === 'rate_limited') {
-      toast.error(t('Too many requests. Retry later with the same operation.'))
-    } else if (result === 'pending_confirmation') {
-      toast.warning(t('The result is pending confirmation.'))
-    } else if (result !== 'blocked') {
+    } catch {
       toast.error(t('Unable to update channel binding'))
     }
   }
@@ -164,10 +118,6 @@ function BindingDialog(props: {
             {props.binding.contract_name ?? t('Unbound')}
           </DialogDescription>
         </DialogHeader>
-        <PendingConfirmationAlert
-          visible={intent.isPendingConfirmation}
-          onReconcile={() => void reconcilePending()}
-        />
         <form
           id={`binding-form-${props.binding.channel_id}`}
           onSubmit={form.handleSubmit(submit)}
@@ -221,11 +171,7 @@ function BindingDialog(props: {
           <Button
             type='submit'
             form={`binding-form-${props.binding.channel_id}`}
-            disabled={
-              mutation.isPending ||
-              intent.isSubmitting ||
-              intent.isPendingConfirmation
-            }
+            disabled={mutation.isPending}
           >
             {t('Save binding')}
           </Button>
@@ -235,26 +181,19 @@ function BindingDialog(props: {
   )
 }
 
-function UnbindAction(props: {
-  binding: SupplierChannelBinding
-  reconcile: (channelId: number, contractId: number | null) => Promise<boolean>
-  security: SupplyChainSecurity
-}) {
+function UnbindAction(props: { binding: SupplierChannelBinding }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const intent = useIdempotentIntent()
-  const mutation = useSupplyChainAdminMutation<{ idempotencyKey: string }>({
-    mutationFn: ({ idempotencyKey }) =>
+  const mutation = useSupplyChainAdminMutation<void>({
+    mutationFn: () =>
       unbindChannel(props.binding.channel_id, {
         expectedContractId: props.binding.supplier_contract_id ?? 0,
-        idempotencyKey,
       }),
     invalidate: [
       supplyChainQueryKeys.channelBindings.all(),
       supplyChainQueryKeys.contracts.all(),
       supplyChainQueryKeys.suppliers.all(),
     ],
-    security: props.security,
   })
 
   function finishUnbind(): void {
@@ -262,35 +201,11 @@ function UnbindAction(props: {
     setOpen(false)
   }
 
-  async function reconcilePending(): Promise<void> {
-    if ((await intent.reconcilePending()) === 'reconciled') finishUnbind()
-  }
-
   async function confirm(): Promise<void> {
-    const result = await intent.run({
-      execute: (idempotencyKey) => mutation.mutateAsync({ idempotencyKey }),
-      reconcile: async (key) => {
-        const committed = await isSupplyChainCommandCommitted(
-          `supplier_channel.unbind/${props.binding.channel_id}`,
-          key
-        )
-        await props.reconcile(props.binding.channel_id, null)
-        return committed
-      },
-    })
-    if (result === 'success' || result === 'reconciled') {
+    try {
+      await mutation.mutateAsync()
       finishUnbind()
-    } else if (result === 'conflict') {
-      toast.error(
-        t(
-          'The binding changed elsewhere. Latest data was loaded and no change was made.'
-        )
-      )
-    } else if (result === 'pending_confirmation') {
-      toast.warning(t('The result is pending confirmation.'))
-    } else if (result === 'rate_limited') {
-      toast.error(t('Too many requests. Retry later with the same operation.'))
-    } else if (result !== 'blocked') {
+    } catch {
       toast.error(t('Unable to unbind channel'))
     }
   }
@@ -305,10 +220,6 @@ function UnbindAction(props: {
       >
         {t('Unbind')}
       </Button>
-      <PendingConfirmationAlert
-        visible={intent.isPendingConfirmation}
-        onReconcile={() => void reconcilePending()}
-      />
       <ConfirmAction
         open={open}
         onOpenChange={setOpen}
@@ -323,7 +234,7 @@ function UnbindAction(props: {
           </span>
         }
         confirmLabel={t('Unbind')}
-        pending={mutation.isPending || intent.isSubmitting}
+        pending={mutation.isPending}
         destructive
         onConfirm={confirm}
       />
@@ -333,7 +244,6 @@ function UnbindAction(props: {
 
 export function ChannelBindingManagement(props: SupplyChainManagementProps) {
   const { t } = useTranslation()
-  const security = useSupplyChainSecurity()
   const [boundState, setBoundState] = useState<'bound' | 'unbound' | ''>('')
   const query = useChannelBindingAdminList({
     p: props.search.page,
@@ -342,17 +252,6 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
     keyword: props.search.filter || undefined,
     bound_state: boundState || undefined,
   })
-
-  async function reconcile(
-    channelId: number,
-    contractId: number | null
-  ): Promise<boolean> {
-    const result = await query.refetch()
-    const binding = result.data?.items.find(
-      (item) => item.channel_id === channelId
-    )
-    return Boolean(binding && binding.supplier_contract_id === contractId)
-  }
 
   return (
     <div className='flex flex-col gap-3'>
@@ -436,17 +335,9 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
                   </TableCell>
                   <TableCell>
                     <div className='flex justify-end gap-1'>
-                      <BindingDialog
-                        binding={binding}
-                        reconcile={reconcile}
-                        security={security}
-                      />
+                      <BindingDialog binding={binding} />
                       {binding.supplier_contract_id ? (
-                        <UnbindAction
-                          binding={binding}
-                          reconcile={reconcile}
-                          security={security}
-                        />
+                        <UnbindAction binding={binding} />
                       ) : null}
                     </div>
                   </TableCell>
@@ -462,7 +353,6 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
         total={query.data?.total ?? 0}
         onSearchChange={props.onSearchChange}
       />
-      <SupplyChainVerificationDialog security={security} />
     </div>
   )
 }

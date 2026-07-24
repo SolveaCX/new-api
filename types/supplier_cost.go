@@ -19,7 +19,6 @@ const (
 
 	SupplierAccountingEnvelopeKeyV1           = "supplier_accounting_v1"
 	SupplierAccountingEnvelopeSchemaVersionV1 = 1
-	SupplierAccountingProducerCapabilityV1    = 1
 
 	SupplierAccountingDispositionUnsupportedPath         SupplierAccountingDisposition = "unsupported_path"
 	SupplierAccountingDispositionNotFinanciallyCommitted SupplierAccountingDisposition = "not_financially_committed"
@@ -140,11 +139,9 @@ type SupplierAccountingLogSnapshotV1 struct {
 // under logs.other.supplier_accounting_v1. Captured is present only when the
 // disposition is captured.
 type SupplierAccountingEnvelopeV1 struct {
-	EnvelopeSchemaVersion     int                              `json:"v"`
-	ProducerCapabilityVersion int                              `json:"c"`
-	ActivationStateVersion    int64                            `json:"a"`
-	Disposition               SupplierAccountingDisposition    `json:"d"`
-	Captured                  *SupplierAccountingLogSnapshotV1 `json:"s,omitempty"`
+	EnvelopeSchemaVersion int                              `json:"v"`
+	Disposition           SupplierAccountingDisposition    `json:"d"`
+	Captured              *SupplierAccountingLogSnapshotV1 `json:"s,omitempty"`
 }
 
 // SupplierPricingProvenanceV1 is a strict union: exactly one member is set.

@@ -368,21 +368,13 @@ func supplierAccountingConsumeLogDisposition(other map[string]interface{}) (type
 	default:
 		return "", false
 	}
-	if envelope.EnvelopeSchemaVersion != types.SupplierAccountingEnvelopeSchemaVersionV1 ||
-		envelope.ProducerCapabilityVersion != types.SupplierAccountingProducerCapabilityV1 {
+	if envelope.EnvelopeSchemaVersion != types.SupplierAccountingEnvelopeSchemaVersionV1 {
 		return "", false
 	}
-	switch envelope.Disposition {
-	case types.SupplierAccountingDispositionUnsupportedPath,
-		types.SupplierAccountingDispositionNotFinanciallyCommitted,
-		types.SupplierAccountingDispositionZeroUsage,
-		types.SupplierAccountingDispositionUnbound,
-		types.SupplierAccountingDispositionCaptured,
-		types.SupplierAccountingDispositionProducerError:
-		return envelope.Disposition, true
-	default:
+	if envelope.Disposition != types.SupplierAccountingDispositionCaptured || envelope.Captured == nil {
 		return "", false
 	}
+	return envelope.Disposition, true
 }
 
 func observeSupplierAccountingConsumeLogWrite(disposition types.SupplierAccountingDisposition, outcome SupplierAccountingConsumeLogWriteOutcome) {
@@ -392,7 +384,16 @@ func observeSupplierAccountingConsumeLogWrite(disposition types.SupplierAccounti
 }
 
 func marshalLogOther(other map[string]interface{}, preserveSupplierEnvelope bool) (string, error, error) {
-	otherJSON, err := common.Marshal(other)
+	persistedOther := other
+	if other != nil && !preserveSupplierEnvelope {
+		persistedOther = make(map[string]interface{}, len(other))
+		for key, value := range other {
+			if key != types.SupplierAccountingEnvelopeKeyV1 {
+				persistedOther[key] = value
+			}
+		}
+	}
+	otherJSON, err := common.Marshal(persistedOther)
 	if err == nil || !preserveSupplierEnvelope {
 		return string(otherJSON), err, nil
 	}

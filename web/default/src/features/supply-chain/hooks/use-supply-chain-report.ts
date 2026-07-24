@@ -16,34 +16,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import axios from 'axios'
 import {
   keepPreviousData,
   useInfiniteQuery,
-  useMutation,
   useQuery,
-  useQueryClient,
 } from '@tanstack/react-query'
 import {
-  getDailyReports,
-  getReportFreshness,
   getReportOverview,
   getReportTrend,
   listReportBreakdown,
   listReportChannels,
   listReportContracts,
-  rerunDailyReport,
 } from '../api'
 import { getNextOffset, mergeOffsetPages } from '../lib/pagination'
 import { supplyChainQueryKeys } from '../query-keys'
-import type {
-  SupplierDailyReportRerunVariables,
-  SupplierReportPageQuery,
-  SupplierReportQuery,
-} from '../types'
+import type { SupplierReportPageQuery, SupplierReportQuery } from '../types'
 
 const REPORT_STALE_TIME = 30_000
-const FRESHNESS_REFRESH_INTERVAL = 60_000
 
 export function useSupplyChainReportOverview(
   query: SupplierReportQuery,
@@ -122,45 +111,5 @@ export function useSupplyChainReportBreakdown(
     enabled,
     staleTime: REPORT_STALE_TIME,
     placeholderData: keepPreviousData,
-  })
-}
-
-export function useSupplyChainReportFreshness(enabled = true) {
-  return useQuery({
-    queryKey: supplyChainQueryKeys.reports.freshness(),
-    queryFn: async () => (await getReportFreshness()).data,
-    enabled,
-    staleTime: REPORT_STALE_TIME,
-    refetchInterval: enabled ? FRESHNESS_REFRESH_INTERVAL : false,
-  })
-}
-
-export function useSupplyChainDailyReports(
-  query: SupplierReportQuery,
-  enabled = true
-) {
-  return useQuery({
-    queryKey: supplyChainQueryKeys.reports.daily.list(query),
-    queryFn: async () => (await getDailyReports(query)).data,
-    enabled,
-    staleTime: REPORT_STALE_TIME,
-    placeholderData: keepPreviousData,
-  })
-}
-
-export function useSupplyChainDailyReportRerun() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (variables: SupplierDailyReportRerunVariables) =>
-      rerunDailyReport(variables),
-    retry: (failureCount, error) =>
-      failureCount < 1 &&
-      axios.isAxiosError(error) &&
-      error.response === undefined,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: supplyChainQueryKeys.reports.daily.all(),
-      })
-    },
   })
 }

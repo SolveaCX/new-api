@@ -7,8 +7,8 @@ name: GCP Deploy Website Static (v2)
 # Deploy is gated by the "production" GitHub Environment — requires approval.
 #
 # Notes:
-# - Image build uses an Artifact Registry-only identity. The separately gated
-#   website deploy identity can update only the pre-created newapi-web service.
+# - Image is built on the runner and pushed to Artifact Registry (the CI deployer
+#   SA has artifactregistry.writer but NOT Cloud Build permissions).
 # - BLOGGER_ACCESS_KEY lives in Secret Manager (newapi-website-blogger-access-key),
 #   mounted via --set-secrets. No GitHub Secret, no plaintext env var.
 # - The CI deployer SA cannot change IAM policy; legacy service invoker binding
@@ -26,16 +26,14 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: production-newapi-web
-  cancel-in-progress: false
-
 env:
   PROJECT_ID:  ${{ vars.GCP_PROJECT_ID }}
   REGION:      ${{ vars.GCP_REGION }}
   AR_REPO_URL: ${{ vars.GCP_AR_REPO_URL }}
   RUN_SERVICE: ${{ vars.GCP_WEB_RUN_SERVICE }}   # newapi-web
   LEGACY_SERVICE: newapi-website-legacy
+  # Pinned pre-redesign production image (rollback anchor newapi-web-memory-1gi-20260715-103546)
+  LEGACY_IMAGE_DIGEST: sha256:d6c4eac9b29556009f3d4133eb1cc5b7ba83211bdd82c08a5d0d129b8aa4c8c4
   LEGACY_SECRET: newapi-website-blogger-access-key
   RUNTIME_SA: newapi-web-runtime@vocai-gemini-prod.iam.gserviceaccount.com
   APP_CONSOLE_ORIGIN: ${{ vars.WEBSITE_APP_CONSOLE_ORIGIN }}
@@ -44,11 +42,9 @@ env:
   COOKIE_SESSION_DOMAIN: ${{ secrets.COOKIE_SESSION_DOMAIN || '.flatkey.ai' }}
 
 jobs:
-  build:
+  build-deploy:
     runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.image.outputs.image }}
-      short_sha: ${{ steps.image.outputs.short_sha }}
+    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,47 +58,26 @@ jobs:
       - name: Auth to GCP (WIF)
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: newapi-ci-deployer@vocai-gemini-prod.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure docker for Artifact Registry
-        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-
-      - name: Build & push image
-        id: image
+      - name: Ensure legacy SEO service (create or verify)
         run: |
-          short_sha="${GITHUB_SHA::12}"
-          image="$AR_REPO_URL/website-static:sha-$short_sha"
-          docker build -t "$image" website-static
-          docker push "$image"
-          digest="$(gcloud artifacts docker images describe "$image" --format='value(image_summary.digest)')"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "invalid image digest: $digest" >&2; exit 1; }
-          echo "image=${image%%:*}@$digest" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Auth to GCP (WIF)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: projects/528088078482/locations/global/workloadIdentityPools/github-prod-web-deploy/providers/github
-          service_account: newapi-prod-web-deployer@vocai-gemini-prod.iam.gserviceaccount.com
-
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Verify pre-created legacy SEO service
-        run: |
-          gcloud run services describe "$LEGACY_SERVICE" --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1 || {
-            echo "The least-privilege deploy identity cannot create services; pre-create ${LEGACY_SERVICE} before deployment." >&2
-            exit 1
-          }
+          if ! gcloud run services describe "$LEGACY_SERVICE" --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1; then
+            gcloud run deploy "$LEGACY_SERVICE" \
+              --project "$PROJECT_ID" --region "$REGION" \
+              --image "$AR_REPO_URL/website@$LEGACY_IMAGE_DIGEST" \
+              --port 4000 --memory 1Gi --cpu 1 --min-instances 1 --max-instances 4 \
+              --service-account "$RUNTIME_SA" \
+              --set-secrets "BLOGGER_ACCESS_KEY=$LEGACY_SECRET:latest" \
+              --set-env-vars "NODE_ENV=production,TZ=UTC,APP_CONSOLE_ORIGIN=${APP_CONSOLE_ORIGIN},ROUTER_ORIGIN=${ROUTER_ORIGIN},SITE_ORIGIN=${SITE_ORIGIN},COOKIE_SESSION_DOMAIN=${COOKIE_SESSION_DOMAIN}"
+            echo "NOTE: deployer SA cannot grant run.invoker; an operator must run:" \
+                 "gcloud run services add-iam-policy-binding $LEGACY_SERVICE --member=allUsers --role=roles/run.invoker"
+          fi
+          # verify wiring regardless of create/exists path
           sa=$(gcloud run services describe "$LEGACY_SERVICE" --project "$PROJECT_ID" --region "$REGION" \
                --format="value(spec.template.spec.serviceAccountName)")
           [ "$sa" = "$RUNTIME_SA" ] || { echo "wrong service account: $sa"; exit 1; }
@@ -119,32 +94,22 @@ jobs:
             case "$code" in 200|301|302|308) ;; *) echo "legacy smoke failed (403 = missing allUsers invoker binding)"; exit 1 ;; esac
           done
 
-      - name: Deploy canary (no traffic)
-        id: deploy
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build & push image
         run: |
-          set -euo pipefail
-          revision_suffix="static-${{ needs.build.outputs.short_sha }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          new_revision="${RUN_SERVICE}-${revision_suffix}"
+          short_sha="${GITHUB_SHA::12}"
+          IMAGE="$AR_REPO_URL/website-static:sha-$short_sha"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          docker build -t "$IMAGE" website-static
+          docker push "$IMAGE"
+
+      - name: Deploy canary (no traffic)
+        run: |
           gcloud run deploy "$RUN_SERVICE" --project "$PROJECT_ID" --region "$REGION" \
-            --image "${{ needs.build.outputs.image }}" --revision-suffix "$revision_suffix" \
-            --no-traffic --port 8080 \
+            --image "$IMAGE" --no-traffic --tag canary --port 8080 \
             --update-env-vars "APP_CONSOLE_ORIGIN=${APP_CONSOLE_ORIGIN}"
-          created_revision="$(gcloud run revisions describe "$new_revision" \
-            --project "$PROJECT_ID" --region "$REGION" \
-            --format='value(metadata.name)')"
-          [[ "$created_revision" == "$new_revision" ]] || { echo "created revision mismatch" >&2; exit 1; }
-          new_revision="$created_revision"
-          canary_tag="static-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          gcloud run services update-traffic "$RUN_SERVICE" \
-            --project "$PROJECT_ID" --region "$REGION" \
-            --update-tags="$canary_tag=$new_revision" --quiet
-          canary_url="$(gcloud run services describe "$RUN_SERVICE" \
-            --project "$PROJECT_ID" --region "$REGION" \
-            --format=json | jq -r --arg tag "$canary_tag" \
-            '.status.traffic[] | select(.tag == $tag) | .url')"
-          [[ -n "$canary_url" ]] || { echo "could not resolve canary URL for $new_revision" >&2; exit 1; }
-          echo "new_revision=$new_revision" >> "$GITHUB_OUTPUT"
-          echo "canary_url=$canary_url" >> "$GITHUB_OUTPUT"
 
       - name: Assert liveness probe targets 8080 (before traffic shift)
         run: |
@@ -158,10 +123,8 @@ jobs:
           fi
 
       - name: Smoke test canary
-        env:
-          CANARY_URL: ${{ steps.deploy.outputs.canary_url }}
         run: |
-          C="$CANARY_URL"
+          C="https://canary---newapi-web-5qjldqffdq-uw.a.run.app"
           # canonical static pages and assets
           for p in "" models models/gpt-5.5 models/grok-imagine-image docs playground pricing compute usecases contact status terms privacy refund-policy sla about zh/about careers zh/careers install.sh llms.txt assets/team/amazon-accelerate-team.jpg assets/team/team-dinner.jpg; do
             code=$(curl -s -o /dev/null -w "%{http_code}" -m 20 "$C/$p")
@@ -247,8 +210,7 @@ jobs:
           done
           curl -s -m 20 "$C/" | grep -q '\$3.33' || { echo "real plg price missing"; exit 1; }
 
-      - name: Shift traffic to verified revision
+      - name: Shift traffic to latest
         run: |
           gcloud run services update-traffic "$RUN_SERVICE" \
-            --project "$PROJECT_ID" --region "$REGION" \
-            --to-revisions="${{ steps.deploy.outputs.new_revision }}=100" --quiet
+            --project "$PROJECT_ID" --region "$REGION" --to-latest

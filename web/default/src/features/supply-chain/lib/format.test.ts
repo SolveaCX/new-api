@@ -30,6 +30,9 @@ describe('formatMicroUsd', () => {
     expect(formatMicroUsd(200_000_000_000, 'unknown')).toBe('$200,000.00')
     expect(formatMicroUsd(1_234_567, 'unknown')).toBe('$1.234567')
     expect(formatMicroUsd(-650_000, 'unknown')).toBe('-$0.65')
+    expect(formatMicroUsd('9007199254740993', 'unknown')).toBe(
+      '$9,007,199,254.740993'
+    )
   })
 
   it('uses the caller-provided unknown label for unsafe values', () => {
@@ -37,6 +40,7 @@ describe('formatMicroUsd', () => {
     expect(formatMicroUsd(Number.MAX_SAFE_INTEGER + 1, 'unknown')).toBe(
       'unknown'
     )
+    expect(formatMicroUsd('1.5', 'unknown')).toBe('unknown')
   })
 })
 
@@ -56,8 +60,8 @@ describe('ratio formatting', () => {
 describe('knownMoneyValue', () => {
   it('keeps known zero and hides money with no known requests', () => {
     expect(
-      knownMoneyValue({ known_count: 1, micro_usd: 0 }, { request_count: 1 })
-    ).toBe(0)
+      knownMoneyValue({ known_count: 1, micro_usd: '0' }, { request_count: 1 })
+    ).toBe('0')
     expect(
       knownMoneyValue({ known_count: 0, micro_usd: 0 }, { request_count: 1 })
     ).toBeNull()

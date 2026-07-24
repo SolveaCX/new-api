@@ -7,73 +7,50 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { describe, expect, test } from 'bun:test'
-import axios from 'axios'
-import {
-  classifyIntentError,
-  getOrCreateIntentKey,
-  reconcileIntentResult,
-} from './use-idempotent-intent'
+import { getOrCreateIntentKey } from './use-idempotent-intent'
 
-function httpError(status: number): axios.AxiosError {
-  return new axios.AxiosError(
-    `HTTP ${status}`,
-    undefined,
-    undefined,
-    undefined,
-    { status } as never
-  )
-}
-
-describe('shared idempotent intent lifecycle', () => {
-  test('retains the exact key and payload for HTTP 408 reconciliation and retry', () => {
+describe('supported append idempotent intent lifecycle', () => {
+  test('retains the same key for an explicit supported-operation retry', () => {
     const key = getOrCreateIntentKey(null, () => 'stable-408-key')
     const original = {
       idempotencyKey: key,
       values: {
         expected_version: 7,
-        reason: 'exact append-only command',
+        reason: 'append-only inventory adjustment',
       },
     }
 
-    expect(classifyIntentError(httpError(408))).toBe('unknown')
     const retriedKey = getOrCreateIntentKey(key, () => 'replacement-key')
-    const reconciled = { ...original, idempotencyKey: retriedKey }
+    const retried = { ...original, idempotencyKey: retriedKey }
 
     expect(retriedKey).toBe('stable-408-key')
-    expect(reconciled).toEqual(original)
+    expect(retried).toEqual(original)
   })
 
-  test('preserves the existing 429 policy and releases known terminal outcomes', () => {
-    expect(classifyIntentError(httpError(429))).toBe('rate_limited')
-    expect(classifyIntentError(httpError(409))).toBe('conflict')
-    expect(classifyIntentError(httpError(400))).toBe('failed')
-
-    const cancelled = new Error('cancelled')
-    cancelled.name = 'SupplyChainVerificationCancelledError'
-    expect(classifyIntentError(cancelled)).toBe('verification_cancelled')
+  test('creates a new key only for a new logical operation', () => {
+    expect(getOrCreateIntentKey(null, () => 'new-key')).toBe('new-key')
   })
 
-  test('reports committed reconciliation without issuing a second mutation', async () => {
-    let reconcileCalls = 0
-    let mutationCalls = 0
-    const sendMutation = () => {
-      mutationCalls += 1
-    }
-    sendMutation()
-    const result = await reconcileIntentResult(async () => {
-      reconcileCalls += 1
-      return true
-    })
+  test('is not used by mutations without backend idempotency support', async () => {
+    const featureRoot = new URL('../components/', import.meta.url)
+    const supplier = await Bun.file(
+      new URL('supplier-management.tsx', featureRoot)
+    ).text()
+    const contract = await Bun.file(
+      new URL('contract-management.tsx', featureRoot)
+    ).text()
+    const binding = await Bun.file(
+      new URL('channel-binding-management.tsx', featureRoot)
+    ).text()
+    const adminHooks = await Bun.file(
+      new URL('./use-supply-chain-admin.ts', import.meta.url)
+    ).text()
 
-    expect(result).toBe('reconciled')
-    expect(reconcileCalls).toBe(1)
-    expect(mutationCalls).toBe(1)
-
-    expect(await reconcileIntentResult(async () => false)).toBe('failed')
-    expect(
-      await reconcileIntentResult(async () => {
-        throw new Error('still unknown')
-      })
-    ).toBe('pending_confirmation')
+    expect(supplier).not.toContain('useIdempotentIntent')
+    expect(binding).not.toContain('useIdempotentIntent')
+    expect(contract.match(/useIdempotentIntent\(\)/g)).toHaveLength(1)
+    expect(contract).toContain('createInventoryAdjustment')
+    expect(adminHooks).toContain('retry: false')
+    expect(adminHooks).toContain('onSettled: async () =>')
   })
 })

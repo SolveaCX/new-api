@@ -30,28 +30,6 @@ variable "github_repository" {
   default     = "SolveaCX/new-api"
 }
 
-variable "github_repository_id" {
-  type        = string
-  description = "Immutable numeric GitHub repository ID used by WIF claim guards."
-  default     = "1236600074"
-
-  validation {
-    condition     = can(regex("^[1-9][0-9]*$", var.github_repository_id))
-    error_message = "github_repository_id must be a positive decimal GitHub repository ID."
-  }
-}
-
-variable "github_repository_owner_id" {
-  type        = string
-  description = "Immutable numeric GitHub repository owner ID used by WIF claim guards."
-  default     = "279667167"
-
-  validation {
-    condition     = can(regex("^[1-9][0-9]*$", var.github_repository_owner_id))
-    error_message = "github_repository_owner_id must be a positive decimal GitHub owner ID."
-  }
-}
-
 variable "custom_domains" {
   type = list(string)
   default = [
@@ -191,49 +169,6 @@ variable "console_concurrency" {
   type        = number
   description = "Cloud Run request concurrency for the console service."
   default     = 80
-}
-
-// --- Supplier accounting T+1 one-shot runner ---
-
-variable "supplier_batch_job_enabled" {
-  type        = bool
-  description = "Create the supplier batch Job/Scheduler only after current/next secret versions and Console verifier hashes are ready."
-  default     = false
-}
-
-variable "supplier_batch_runner_image" {
-  type        = string
-  description = "Immutable image@sha256 digest containing /app/supplier_batch_runner. Null/empty is allowed only while the Job is disabled."
-  default     = null
-  nullable    = true
-
-  validation {
-    condition     = var.supplier_batch_runner_image == null || trimspace(var.supplier_batch_runner_image) == "" || can(regex("^[^[:space:]@]+@sha256:[0-9a-fA-F]{64}$", var.supplier_batch_runner_image))
-    error_message = "supplier_batch_runner_image must be null/empty while disabled or an immutable image@sha256:<64 hexadecimal characters> reference."
-  }
-}
-
-variable "supplier_batch_console_url" {
-  type        = string
-  description = "HTTPS Console origin used by the supplier batch runner."
-  default     = "https://console.flatkey.ai"
-}
-
-variable "supplier_batch_active_token_slot" {
-  type        = string
-  description = "Active runner token Secret Manager container: current or next."
-  default     = "current"
-
-  validation {
-    condition     = contains(["current", "next"], var.supplier_batch_active_token_slot)
-    error_message = "supplier_batch_active_token_slot must be current or next."
-  }
-}
-
-variable "supplier_batch_poll_interval" {
-  type        = string
-  description = "Go duration used by the runner while polling ambiguous command results."
-  default     = "5s"
 }
 
 // --- Standalone Next.js website (website/) ---

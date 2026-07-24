@@ -154,22 +154,6 @@ resource "google_service_account" "staging_web_runtime" {
   display_name = "new-api STAGING website (Next.js) Cloud Run runtime"
 }
 
-resource "google_service_account_iam_member" "staging_deployer_runtime_sa_user" {
-  count = var.enable_staging ? 1 : 0
-
-  service_account_id = google_service_account.staging_runtime[0].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${module.service_accounts.staging_deployer_email}"
-}
-
-resource "google_service_account_iam_member" "staging_deployer_web_runtime_sa_user" {
-  count = var.enable_staging ? 1 : 0
-
-  service_account_id = google_service_account.staging_web_runtime[0].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${module.service_accounts.staging_deployer_email}"
-}
-
 // 后端 SA：cloudsql client + 读 3 个 staging secret + 日志/监控
 resource "google_project_iam_member" "staging_runtime_cloudsql" {
   count   = var.enable_staging ? 1 : 0
@@ -413,16 +397,6 @@ resource "google_cloud_run_v2_service_iam_member" "staging_public" {
   member   = "allUsers"
 }
 
-resource "google_cloud_run_v2_service_iam_member" "staging_backend_deployer" {
-  count = var.enable_staging ? 1 : 0
-
-  project  = var.project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.staging[0].name
-  role     = module.service_accounts.service_deployer_mutator_custom_role_name
-  member   = "serviceAccount:${module.service_accounts.staging_deployer_email}"
-}
-
 // ---------------------------------------------------------------------------
 // 官网 Cloud Run: newapi-web-staging（复刻 cloud-run-web 范式，端口 4000）
 // ---------------------------------------------------------------------------
@@ -531,16 +505,6 @@ resource "google_cloud_run_v2_service_iam_member" "staging_web_public" {
   name     = google_cloud_run_v2_service.staging_web[0].name
   role     = "roles/run.invoker"
   member   = "allUsers"
-}
-
-resource "google_cloud_run_v2_service_iam_member" "staging_website_deployer" {
-  count = var.enable_staging ? 1 : 0
-
-  project  = var.project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.staging_web[0].name
-  role     = module.service_accounts.service_deployer_mutator_custom_role_name
-  member   = "serviceAccount:${module.service_accounts.staging_deployer_email}"
 }
 
 // ---------------------------------------------------------------------------

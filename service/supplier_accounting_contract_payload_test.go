@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -21,13 +20,11 @@ var (
 )
 
 func TestSupplierAccountingEnvelopeGoldenPayloadBudgets(t *testing.T) {
-	setSupplierAccountingContractActivationCache(t)
-
 	business := maximizeSupplierAccountingContractEnvelope(BuildSupplierAccountingEnvelopeV1(supplierAccountingContractCapturedInput(false)))
 	require.Equal(t, types.SupplierAccountingDispositionCaptured, business.Disposition)
 	require.NoError(t, ValidateSupplierAccountingEnvelopeV1(business))
 	businessJSON := marshalSupplierAccountingContractOuter(t, business)
-	require.Equal(t, 330, len(businessJSON))
+	require.Equal(t, 300, len(businessJSON))
 	require.LessOrEqual(t, len(businessJSON), 384, string(businessJSON))
 	requireSupplierAccountingContractPayloadHasNoDeploymentIdentity(t, businessJSON)
 
@@ -35,7 +32,7 @@ func TestSupplierAccountingEnvelopeGoldenPayloadBudgets(t *testing.T) {
 	require.Equal(t, types.SupplierAccountingDispositionCaptured, internal.Disposition)
 	require.NoError(t, ValidateSupplierAccountingEnvelopeV1(internal))
 	internalJSON := marshalSupplierAccountingContractOuter(t, internal)
-	require.Equal(t, 320, len(internalJSON))
+	require.Equal(t, 279, len(internalJSON))
 	require.LessOrEqual(t, len(internalJSON), 320, string(internalJSON))
 	requireSupplierAccountingContractPayloadHasNoDeploymentIdentity(t, internalJSON)
 	require.NotNil(t, internal.Captured)
@@ -49,27 +46,27 @@ func TestSupplierAccountingEnvelopeGoldenPayloadBudgets(t *testing.T) {
 		envelope     types.SupplierAccountingEnvelopeV1
 		expectedJSON string
 	}{
-		{name: "unsupported", envelope: InjectUnsupportedSupplierAccountingEnvelopeV1(nil), expectedJSON: `{"supplier_accounting_v1":{"v":1,"c":1,"a":0,"d":"unsupported_path"}}`},
-		{name: "not_financially_committed", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{}), expectedJSON: `{"supplier_accounting_v1":{"v":1,"c":1,"a":0,"d":"not_financially_committed"}}`},
-		{name: "zero_usage", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{Settlement: types.BillingSettlementResult{FinanciallyCommitted: true, FinanciallyCommittedAt: 1}}), expectedJSON: `{"supplier_accounting_v1":{"v":1,"c":1,"a":0,"d":"zero_usage"}}`},
-		{name: "unbound", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{RelayInfo: &relaycommon.RelayInfo{}, Settlement: types.BillingSettlementResult{FinanciallyCommitted: true, FinanciallyCommittedAt: 1}, HasPositiveFinalUsage: true}), expectedJSON: `{"supplier_accounting_v1":{"v":1,"c":1,"a":0,"d":"unbound"}}`},
-		{name: "producer_error", envelope: newSupplierAccountingDispositionEnvelope(types.SupplierAccountingDispositionProducerError), expectedJSON: `{"supplier_accounting_v1":{"v":1,"c":1,"a":0,"d":"producer_error"}}`},
+		{name: "unsupported", envelope: InjectUnsupportedSupplierAccountingEnvelopeV1(nil), expectedJSON: `{"v":1,"d":"unsupported_path"}`},
+		{name: "not_financially_committed", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{}), expectedJSON: `{"v":1,"d":"not_financially_committed"}`},
+		{name: "zero_usage", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{Settlement: types.BillingSettlementResult{FinanciallyCommitted: true, FinanciallyCommittedAt: 1}}), expectedJSON: `{"v":1,"d":"zero_usage"}`},
+		{name: "unbound", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{RelayInfo: &relaycommon.RelayInfo{}, Settlement: types.BillingSettlementResult{FinanciallyCommitted: true, FinanciallyCommittedAt: 1}, HasPositiveFinalUsage: true}), expectedJSON: `{"v":1,"d":"unbound"}`},
+		{name: "producer_error", envelope: newSupplierAccountingDispositionEnvelope(types.SupplierAccountingDispositionProducerError), expectedJSON: `{"v":1,"d":"producer_error"}`},
 	}
 	for _, testCase := range dispositionInputs {
 		t.Run(testCase.name, func(t *testing.T) {
 			require.NotEqual(t, types.SupplierAccountingDispositionCaptured, testCase.envelope.Disposition)
 			require.Nil(t, testCase.envelope.Captured)
 			require.NoError(t, ValidateSupplierAccountingEnvelopeV1(testCase.envelope))
-			payload := marshalSupplierAccountingContractOuter(t, testCase.envelope)
+			payload, err := common.Marshal(testCase.envelope)
+			require.NoError(t, err)
 			require.Equal(t, testCase.expectedJSON, string(payload))
-			require.LessOrEqual(t, len(payload), 160, string(payload))
+			require.LessOrEqual(t, len(payload), 96, string(payload))
 			requireSupplierAccountingContractPayloadHasNoDeploymentIdentity(t, payload)
 		})
 	}
 }
 
 func TestSupplierAccountingEnvelopeOuterAndInternalFieldContract(t *testing.T) {
-	setSupplierAccountingContractActivationCache(t)
 	internal := BuildSupplierAccountingEnvelopeV1(supplierAccountingContractCapturedInput(true))
 	payload := marshalSupplierAccountingContractOuter(t, internal)
 
@@ -78,7 +75,7 @@ func TestSupplierAccountingEnvelopeOuterAndInternalFieldContract(t *testing.T) {
 	require.Equal(t, []string{types.SupplierAccountingEnvelopeKeyV1}, sortedSupplierAccountingContractKeys(outer))
 	envelope, ok := outer[types.SupplierAccountingEnvelopeKeyV1].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, []string{"a", "c", "d", "s", "v"}, sortedSupplierAccountingContractKeys(envelope))
+	require.Equal(t, []string{"d", "s", "v"}, sortedSupplierAccountingContractKeys(envelope))
 	_, ok = envelope["s"].(string)
 	require.True(t, ok)
 	var decodedOuter map[string]types.SupplierAccountingEnvelopeV1
@@ -93,26 +90,7 @@ func TestSupplierAccountingEnvelopeOuterAndInternalFieldContract(t *testing.T) {
 	require.Empty(t, decoded.Captured.QualityReason)
 }
 
-func TestSupplierAccountingEnvelopeBuildUsesOnlyCachedActivationState(t *testing.T) {
-	setSupplierAccountingContractActivationCache(t)
-	originalDB := model.DB
-	originalRedisEnabled, originalRDB := common.RedisEnabled, common.RDB
-	model.DB = nil
-	common.RedisEnabled, common.RDB = true, nil
-	t.Cleanup(func() {
-		model.DB = originalDB
-		common.RedisEnabled, common.RDB = originalRedisEnabled, originalRDB
-	})
-
-	require.NotPanics(t, func() {
-		require.Zero(t, CurrentSupplierAccountingActivationStateVersion())
-		envelope := BuildSupplierAccountingEnvelopeV1(supplierAccountingContractCapturedInput(false))
-		require.Equal(t, types.SupplierAccountingDispositionCaptured, envelope.Disposition)
-	})
-}
-
 func TestSupplierAccountingEnvelopeHotPathBudgets(t *testing.T) {
-	setSupplierAccountingContractActivationCache(t)
 	result := testing.Benchmark(benchmarkSupplierAccountingEnvelopeHotPath)
 	t.Logf("supplier envelope hot path: %d ns/op, %d B/op, %d allocs/op", result.NsPerOp(), result.AllocedBytesPerOp(), result.AllocsPerOp())
 	require.LessOrEqual(t, result.NsPerOp(), int64(100_000))
@@ -120,7 +98,6 @@ func TestSupplierAccountingEnvelopeHotPathBudgets(t *testing.T) {
 }
 
 func BenchmarkSupplierAccountingEnvelopeHotPath(b *testing.B) {
-	setSupplierAccountingContractActivationCache(b)
 	benchmarkSupplierAccountingEnvelopeHotPath(b)
 }
 
@@ -176,7 +153,6 @@ func supplierAccountingContractCapturedInput(internal bool) SupplierAccountingEn
 }
 
 func maximizeSupplierAccountingContractEnvelope(envelope types.SupplierAccountingEnvelopeV1) types.SupplierAccountingEnvelopeV1 {
-	envelope.ActivationStateVersion = math.MaxInt64
 	snapshot := envelope.Captured
 	maxInt := int(^uint(0) >> 1)
 	snapshot.BindingVersionId = maxInt
@@ -188,7 +164,10 @@ func maximizeSupplierAccountingContractEnvelope(envelope types.SupplierAccountin
 	*snapshot.ProcurementCostMicroUsd = math.MaxInt64
 	snapshot.FinanciallyCommittedAt = math.MaxInt64
 	groupMultiplier := int64(math.MaxInt64)
+	groupRatioVersion := int64(1)
 	if snapshot.StatisticsScope == string(types.SupplierStatisticsScopeInternal) {
+		groupMultiplier = 0
+		groupRatioVersion = 0
 		exclusionRuleID := maxInt
 		snapshot.ExclusionRuleId = &exclusionRuleID
 	} else {
@@ -203,7 +182,7 @@ func maximizeSupplierAccountingContractEnvelope(envelope types.SupplierAccountin
 	tiered.ExpressionFingerprintTail = supplierExpressionFingerprintTailMaxV1
 	tiered.ExpressionVersion = 1
 	tiered.GroupMultiplierPpm = groupMultiplier
-	tiered.GroupRatioVersion = 1
+	tiered.GroupRatioVersion = groupRatioVersion
 	tiered.NormalizedInputs = types.SupplierTieredNormalizedInputsV1{
 		Prompt: math.MaxInt64, Completion: math.MaxInt64, ContextLength: math.MaxInt64,
 		CacheRead: math.MaxInt64, CacheCreate: math.MaxInt64, CacheCreate1H: math.MaxInt64,
@@ -226,19 +205,6 @@ func requireSupplierAccountingContractPayloadHasNoDeploymentIdentity(t testing.T
 	for _, forbidden := range []string{"artifact", "manifest", "build_commit", "build_provenance", "oci", "model_name", `"model"`} {
 		require.NotContains(t, lower, forbidden)
 	}
-}
-
-func setSupplierAccountingContractActivationCache(t testing.TB) {
-	t.Helper()
-	common.OptionMapRWMutex.Lock()
-	original := common.OptionMap
-	common.OptionMap = map[string]string{}
-	common.OptionMapRWMutex.Unlock()
-	t.Cleanup(func() {
-		common.OptionMapRWMutex.Lock()
-		common.OptionMap = original
-		common.OptionMapRWMutex.Unlock()
-	})
 }
 
 func sortedSupplierAccountingContractKeys(values map[string]any) []string {

@@ -16,81 +16,81 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 
-const isolatedFallbackProbe = String.raw`
-  import { mock } from 'bun:test'
+const assign = mock(() => undefined)
 
-  const element = (type, props, key) => ({ type, props, key })
-  mock.module('react/jsx-dev-runtime', () => ({
-    Fragment: Symbol.for('react.fragment'),
-    jsxDEV: element,
-  }))
-  mock.module('react', () => ({
-    useCallback: (callback) => callback,
-    useEffect: (effect) => effect(),
-    useRef: () => ({ current: {} }),
-    useState: (initialState) => [initialState, () => undefined],
-  }))
-  mock.module('react-i18next', () => ({
-    useTranslation: () => ({ t: (key) => key }),
-  }))
-  mock.module('sonner', () => ({
-    toast: { error: () => undefined, success: () => undefined },
-  }))
-  mock.module('lucide-react', () => ({
-    Gift: () => null,
-    Loader2: () => null,
-  }))
-  mock.module('@/components/dialog', () => ({
-    Dialog: ({ children }) => children,
-  }))
-  mock.module('@stripe/stripe-js', () => ({
-    loadStripe: async () => ({
-      createEmbeddedCheckoutPage: async () => ({
-        mount: () => { throw new Error('mount failed') },
-        destroy: () => undefined,
-      }),
+mock.module('react', () => ({
+  useCallback: (callback: unknown) => callback,
+  useEffect: (effect: () => void) => effect(),
+  useRef: () => ({ current: {} }),
+  useState: <T,>(initialState: T) => [initialState, () => undefined],
+}))
+
+mock.module('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
+
+mock.module('sonner', () => ({
+  toast: {
+    error: mock(() => undefined),
+    success: mock(() => undefined),
+  },
+}))
+
+mock.module('lucide-react', () => ({
+  Gift: () => null,
+  Loader2: () => null,
+}))
+
+mock.module('@/components/dialog', () => ({
+  Dialog: ({ children }: { children: unknown }) => children,
+}))
+
+mock.module('@stripe/stripe-js', () => ({
+  loadStripe: async () => ({
+    createEmbeddedCheckoutPage: async () => ({
+      mount: () => {
+        throw new Error('mount failed')
+      },
+      destroy: () => undefined,
     }),
-  }))
+  }),
+}))
 
-  globalThis.window = {
-    location: { assign: (url) => console.log(url) },
-  }
-
-  const { StripeEmbeddedCheckoutDialog } = await import(
-    './stripe-embedded-checkout-dialog.tsx'
-  )
-  const dialog = StripeEmbeddedCheckoutDialog({
-    session: {
-      clientSecret: 'cs_test',
-      publishableKey: 'pk_test',
-      summary: null,
-      fallbackUrl: 'https://checkout.example.com/session',
-    },
-    onOpenChange: () => undefined,
-  })
-  const frame = dialog.type(dialog.props)
-  frame.type(frame.props)
-  await Promise.resolve()
-  await Promise.resolve()
-`
+afterEach(() => {
+  assign.mockClear()
+})
 
 describe('StripeEmbeddedCheckoutDialog', () => {
   test('opens the fallback URL when embedded checkout mount fails', async () => {
-    const probe = Bun.spawn([process.execPath, '-e', isolatedFallbackProbe], {
-      cwd: import.meta.dir,
-      stdout: 'pipe',
-      stderr: 'pipe',
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: {
+          assign,
+        },
+      },
     })
-    const [exitCode, stdout, stderr] = await Promise.all([
-      probe.exited,
-      new Response(probe.stdout).text(),
-      new Response(probe.stderr).text(),
-    ])
+    const { StripeEmbeddedCheckoutDialog } = await import(
+      './stripe-embedded-checkout-dialog'
+    )
+    const fallbackUrl = 'https://checkout.example.com/session'
+    const dialogElement = StripeEmbeddedCheckoutDialog({
+      session: {
+        clientSecret: 'cs_test',
+        publishableKey: 'pk_test',
+        summary: null,
+        fallbackUrl,
+      },
+      onOpenChange: () => undefined,
+    })
+    const frameElement = dialogElement.type(dialogElement.props)
 
-    expect(stderr).toBe('')
-    expect(exitCode).toBe(0)
-    expect(stdout.trim()).toBe('https://checkout.example.com/session')
+    frameElement.type(frameElement.props)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(assign).toHaveBeenCalledWith(fallbackUrl)
   })
 })

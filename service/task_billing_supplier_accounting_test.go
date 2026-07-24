@@ -23,9 +23,7 @@ func TestRecalculateTaskQuotaSupplierEnvelopeOnlyOnPositiveDelta(t *testing.T) {
 		log := getLastLog(t)
 		require.NotNil(t, log)
 		require.Equal(t, model.LogTypeConsume, log.Type)
-		envelope := taskBillingSupplierEnvelope(t, log.Other)
-		require.NotNil(t, envelope)
-		require.Equal(t, types.SupplierAccountingDispositionUnsupportedPath, envelope.Disposition)
+		require.Nil(t, taskBillingSupplierEnvelope(t, log.Other), "unsupported task accounting must not persist a supplier marker")
 	})
 
 	t.Run("negative refund delta", func(t *testing.T) {

@@ -54,12 +54,8 @@ func performSupplyChainControllerRequestWithHeaders(method, routePath, requestPa
 func setupSupplyChainControllerAdminLedger(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	require.NoError(t, db.AutoMigrate(
-		&model.Option{},
-		&model.SupplierAdminCommand{},
 		&model.SupplierInventoryAdjustment{},
 	))
-	require.NoError(t, model.MigrateSupplierAdminCommandLedger(db))
-	require.NoError(t, model.FinalizeSupplierAdminCommandLedgerMigration(db))
 }
 
 func TestSupplyChainContractUpdateRejectsInvariantOnlyMassAssignment(t *testing.T) {
@@ -73,7 +69,7 @@ func TestSupplyChainContractUpdateRejectsInvariantOnlyMassAssignment(t *testing.
 	require.Contains(t, recorder.Body.String(), `"success":false`)
 }
 
-func TestSupplyChainSupplierUpdateRequiresVersionAndReplaysExactlyOnce(t *testing.T) {
+func TestSupplyChainSupplierUpdateRequiresVersionAndRejectsStaleWrite(t *testing.T) {
 	previousDB := model.DB
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
@@ -89,18 +85,10 @@ func TestSupplyChainSupplierUpdateRequiresVersionAndReplaysExactlyOnce(t *testin
 
 	missingVersion := performSupplyChainControllerRequestWithHeaders(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated"}`, map[string]string{"Idempotency-Key": "update-command"}, UpdateSupplyChainSupplier)
 	require.Equal(t, http.StatusBadRequest, missingVersion.Code)
-	missingKey := performSupplyChainControllerRequestAt(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated","expected_version":1}`, UpdateSupplyChainSupplier)
-	require.Equal(t, http.StatusBadRequest, missingKey.Code)
-
-	headers := map[string]string{"Idempotency-Key": "update-command"}
-	first := performSupplyChainControllerRequestWithHeaders(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated","expected_version":1}`, headers, UpdateSupplyChainSupplier)
+	first := performSupplyChainControllerRequestAt(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated","expected_version":1}`, UpdateSupplyChainSupplier)
 	require.Equal(t, http.StatusOK, first.Code)
 	require.Contains(t, first.Body.String(), `"row_version":2`)
-	replay := performSupplyChainControllerRequestWithHeaders(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"updated","expected_version":1}`, headers, UpdateSupplyChainSupplier)
-	require.Equal(t, http.StatusOK, replay.Code)
-	require.Equal(t, "true", replay.Header().Get("Idempotent-Replayed"))
-	require.JSONEq(t, first.Body.String(), replay.Body.String())
-	stale := performSupplyChainControllerRequestWithHeaders(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"stale","expected_version":1}`, map[string]string{"Idempotency-Key": "stale-command"}, UpdateSupplyChainSupplier)
+	stale := performSupplyChainControllerRequestAt(http.MethodPatch, "/suppliers/:id", "/suppliers/"+strconv.Itoa(supplier.Id), `{"name":"stale","expected_version":1}`, UpdateSupplyChainSupplier)
 	require.Equal(t, http.StatusConflict, stale.Code)
 }
 
@@ -117,28 +105,6 @@ func TestSupplyChainBindingWritesRequireObservedState(t *testing.T) {
 
 	unbind := performSupplyChainControllerRequestAt(http.MethodDelete, "/channel-bindings/:channel_id", "/channel-bindings/4", "", UnbindSupplyChainChannel)
 	require.Equal(t, http.StatusBadRequest, unbind.Code)
-}
-
-func TestSupplyChainAppendWritesRequireIdempotencyKey(t *testing.T) {
-	supplier := performSupplyChainControllerRequest(http.MethodPost, "/suppliers", `{"name":"upstream"}`, CreateSupplyChainSupplier)
-	require.Equal(t, http.StatusBadRequest, supplier.Code)
-	require.Contains(t, supplier.Body.String(), "Idempotency-Key")
-
-	contract := performSupplyChainControllerRequest(http.MethodPost, "/contracts", `{"supplier_id":1,"name":"contract","contract_no":"C-1"}`, CreateSupplyChainContract)
-	require.Equal(t, http.StatusBadRequest, contract.Code)
-	require.Contains(t, contract.Body.String(), "Idempotency-Key")
-
-	rate := performSupplyChainControllerRequestAt(http.MethodPost, "/contracts/:id/rates", "/contracts/4/rates", `{"procurement_multiplier_ppm":650000}`, CreateSupplyChainRateVersion)
-	require.Equal(t, http.StatusBadRequest, rate.Code)
-	require.Contains(t, rate.Body.String(), "Idempotency-Key")
-
-	inventory := performSupplyChainControllerRequestAt(http.MethodPost, "/contracts/:id/inventory", "/contracts/4/inventory", `{"delta_micro_usd":200000000000,"type":"replenishment"}`, CreateSupplyChainInventoryAdjustment)
-	require.Equal(t, http.StatusBadRequest, inventory.Code)
-	require.Contains(t, inventory.Body.String(), "Idempotency-Key")
-
-	exclusion := performSupplyChainControllerRequest(http.MethodPost, "/exclusions", `{"user_id":9,"action":"exclude"}`, CreateSupplyChainExclusionRule)
-	require.Equal(t, http.StatusBadRequest, exclusion.Code)
-	require.Contains(t, exclusion.Body.String(), "Idempotency-Key")
 }
 
 func TestSupplyChainIntegerValidationRejectsInvalidRateAndZeroMoney(t *testing.T) {
@@ -167,57 +133,6 @@ func TestSupplyChainModelErrorUsesSemanticStatus(t *testing.T) {
 	notFound := httptest.NewRecorder()
 	supplyChainModelError(testGinContext(notFound), gorm.ErrRecordNotFound)
 	require.Equal(t, http.StatusNotFound, notFound.Code)
-}
-
-func TestGetSupplyChainCommandResultContract(t *testing.T) {
-	previousDB := model.DB
-	db, err := gorm.Open(sqlite.Open("file:supply-chain-command-result-controller?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierStatisticsExclusionRule{}))
-	setupSupplyChainControllerAdminLedger(t, db)
-	model.DB = db
-	t.Cleanup(func() { model.DB = previousDB })
-
-	created, replayed, err := model.CreateUpstreamSupplierIdempotentForActor(&model.UpstreamSupplier{Name: "controller lookup"}, "controller-lookup-key", 7)
-	require.NoError(t, err)
-	require.False(t, replayed)
-
-	found := performSupplyChainControllerRequestWithHeaders(http.MethodGet, "/commands/result", "/commands/result?scope=supplier.create", "", map[string]string{"Idempotency-Key": "controller-lookup-key"}, GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusOK, found.Code)
-	require.Contains(t, found.Body.String(), `"scope":"supplier.create"`)
-	require.Contains(t, found.Body.String(), `"resource_type":"supplier"`)
-	require.Contains(t, found.Body.String(), `"resource_id":`+strconv.Itoa(created.Id))
-
-	missing := performSupplyChainControllerRequestWithHeaders(http.MethodGet, "/commands/result", "/commands/result?scope=supplier.create", "", map[string]string{"Idempotency-Key": "missing-key"}, GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusNotFound, missing.Code)
-	scopeMismatch := performSupplyChainControllerRequestWithHeaders(http.MethodGet, "/commands/result", "/commands/result?scope=supplier_contract.create", "", map[string]string{"Idempotency-Key": "controller-lookup-key"}, GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusNotFound, scopeMismatch.Code)
-
-	_, _, err = model.CreateUpstreamSupplierIdempotentForActor(&model.UpstreamSupplier{Name: "other actor lookup"}, "other-actor-key", 8)
-	require.NoError(t, err)
-	actorMismatch := performSupplyChainControllerRequestWithHeaders(http.MethodGet, "/commands/result", "/commands/result?scope=supplier.create", "", map[string]string{"Idempotency-Key": "other-actor-key"}, GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusNotFound, actorMismatch.Code)
-
-	contract := model.SupplierContract{SupplierId: created.Id, Name: "lookup contract", ContractNo: "lookup-contract"}
-	require.NoError(t, db.Create(&contract).Error)
-	adjustment := &model.SupplierInventoryAdjustment{ContractId: contract.Id, DeltaMicroUsd: 1, Type: model.SupplierInventoryAdjustmentTypeCorrection, IdempotencyKey: "inventory-controller-key", CreatedBy: 7}
-	require.NoError(t, db.Create(adjustment).Error)
-	inventory := performSupplyChainControllerRequestWithHeaders(http.MethodGet, "/commands/result", "/commands/result?scope="+model.SupplierInventoryCommandScope(contract.Id), "", map[string]string{"Idempotency-Key": "inventory-controller-key"}, GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusOK, inventory.Code)
-	require.Contains(t, inventory.Body.String(), `"resource_id":`+strconv.Itoa(adjustment.Id))
-
-	rule, err := model.CreateSupplierStatisticsExclusionRule(91, model.SupplierStatisticsActionExclude, 7, "company account", "exclusion-controller-key")
-	require.NoError(t, err)
-	exclusion := performSupplyChainControllerRequestWithHeaders(http.MethodGet, "/commands/result", "/commands/result?scope="+model.SupplierAdminCommandScopeCreateExclusion, "", map[string]string{"Idempotency-Key": "exclusion-controller-key"}, GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusOK, exclusion.Code)
-	require.Contains(t, exclusion.Body.String(), `"resource_id":`+strconv.Itoa(rule.Id))
-
-	badScope := performSupplyChainControllerRequestWithHeaders(http.MethodGet, "/commands/result", "/commands/result?scope=supplier.invalid", "", map[string]string{"Idempotency-Key": "controller-lookup-key"}, GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusBadRequest, badScope.Code)
-	badKey := performSupplyChainControllerRequest(http.MethodGet, "/commands/result?scope=supplier.create", "", GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusBadRequest, badKey.Code)
-	longKey := performSupplyChainControllerRequestWithHeaders(http.MethodGet, "/commands/result", "/commands/result?scope=supplier.create", "", map[string]string{"Idempotency-Key": strings.Repeat("k", 129)}, GetSupplyChainCommandResult)
-	require.Equal(t, http.StatusBadRequest, longKey.Code)
 }
 
 func testGinContext(recorder *httptest.ResponseRecorder) *gin.Context {
