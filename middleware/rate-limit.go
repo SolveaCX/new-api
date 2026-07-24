@@ -137,6 +137,14 @@ func RegistrationEmailVerificationStatusRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(60, 20*60, "EVS")
 }
 
+func CliDeviceAuthorizationCreateRateLimit() func(c *gin.Context) {
+	return rateLimitFactory(30, 10*60, "CLIA_CREATE")
+}
+
+func CliDeviceAuthorizationPollRateLimit() func(c *gin.Context) {
+	return rateLimitFactory(120, 10*60, "CLIA_POLL")
+}
+
 func DownloadRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(common.DownloadRateLimitNum, common.DownloadRateLimitDuration, "DW")
 }
