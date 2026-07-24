@@ -258,6 +258,10 @@ func migrateDB() error {
 		&Token{},
 		&CliDeviceAuthorization{},
 		&User{},
+		&RecallCampaign{},
+		&RecallRecipient{},
+		&RecallMessage{},
+		&RecallEvent{},
 		&RegistrationDomainState{},
 		&RegistrationDomainBlock{},
 		&RegistrationDomainBlockUser{},
@@ -300,6 +304,7 @@ func migrateDB() error {
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		&PerfMetricAvailability{},
 		&DingTalkAlertCooldownRecord{},
 		&ModelAvailabilityState{},
 		&CodexModelGovernanceRecord{},
@@ -318,6 +323,9 @@ func migrateDB() error {
 		&AdsPilotMeta{},
 	)
 	if err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(StatusCenterModels()...); err != nil {
 		return err
 	}
 	if common.UsingSQLite {
@@ -342,6 +350,10 @@ func migrateDBFast() error {
 		{&Token{}, "Token"},
 		{&CliDeviceAuthorization{}, "CliDeviceAuthorization"},
 		{&User{}, "User"},
+		{&RecallCampaign{}, "RecallCampaign"},
+		{&RecallRecipient{}, "RecallRecipient"},
+		{&RecallMessage{}, "RecallMessage"},
+		{&RecallEvent{}, "RecallEvent"},
 		{&RegistrationDomainState{}, "RegistrationDomainState"},
 		{&RegistrationDomainBlock{}, "RegistrationDomainBlock"},
 		{&RegistrationDomainBlockUser{}, "RegistrationDomainBlockUser"},
@@ -382,6 +394,7 @@ func migrateDBFast() error {
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},
+		{&PerfMetricAvailability{}, "PerfMetricAvailability"},
 		{&DingTalkAlertCooldownRecord{}, "DingTalkAlertCooldownRecord"},
 		{&ModelAvailabilityState{}, "ModelAvailabilityState"},
 		{&CodexModelGovernanceRecord{}, "CodexModelGovernanceRecord"},

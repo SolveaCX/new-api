@@ -42,6 +42,20 @@ describe('buildSidebarData', () => {
     ])
   })
 
+  test('keeps recall campaigns in the admin navigation', () => {
+    const adminGroup = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'admin'
+    )
+    const recallItem = adminGroup?.items.find(
+      (item) => 'url' in item && item.url === '/recall-campaigns'
+    )
+
+    expect(recallItem).toMatchObject({
+      title: 'Recall Campaigns',
+      url: '/recall-campaigns',
+    })
+  })
+
   test('highlights the invitation entry with the configured badge', () => {
     const personalGroup = buildSidebarData(t, {
       inviteBadge: '+$10',

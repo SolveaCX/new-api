@@ -50,6 +50,10 @@ import {
   normalizeSelfSubscriptionData,
 } from '../lib/subscription-plan-lifecycle'
 import type { TopupInfo } from '../types'
+import type {
+  StripeCheckoutOpenResult,
+  StripeCheckoutPresentation,
+} from '../hooks/use-payment'
 import { CurrentPlanCard } from './current-plan-card'
 import { PlanPurchaseDialog } from './plan-purchase-dialog'
 
@@ -58,6 +62,10 @@ interface SubscriptionPlansCardProps {
   onAvailabilityChange?: (available: boolean) => void
   userQuota?: number
   onPurchaseSuccess?: () => void | Promise<void>
+  onOpenStripeCheckout?: (
+    data: FlexiblePurchaseResponse,
+    presentation?: StripeCheckoutPresentation
+  ) => StripeCheckoutOpenResult
   initialPlans?: LifecyclePlanRecord[]
   initialSelfData?: WalletSelfSubscriptionData
   initialLoading?: boolean
@@ -164,13 +172,14 @@ function getPlanEntitlements(plan: PlanRecord['plan'], t: Translate) {
   ]
 }
 
-function resolveRedirectUrl(data: FlexiblePurchaseResponse): string {
-  return data.checkout_url || data.hosted_invoice_url || ''
-}
-
 export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
   const { t } = useTranslation()
-  const { topupInfo, onAvailabilityChange, onPurchaseSuccess } = props
+  const {
+    topupInfo,
+    onAvailabilityChange,
+    onPurchaseSuccess,
+    onOpenStripeCheckout,
+  } = props
   const [plans, setPlans] = useState<LifecyclePlanRecord[]>(
     () => props.initialPlans ?? []
   )
@@ -318,14 +327,21 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         return
       }
       setPurchaseProjection(res.data)
-      const redirectUrl = resolveRedirectUrl(res.data)
       if (
-        (res.data.status === 'checkout_required' ||
-          res.data.status === 'payment_action_required') &&
-        redirectUrl
+        res.data.status === 'checkout_required' ||
+        res.data.status === 'payment_action_required'
       ) {
         rememberExternalSubscriptionReturn()
-        window.location.assign(redirectUrl)
+        setPurchaseTarget(null)
+        setPurchaseProjection(null)
+        const opened = onOpenStripeCheckout?.(res.data, {
+          title: t('Confirm Payment'),
+          description: t('Payment is processed securely by Stripe.'),
+        })
+        if (opened) {
+          return
+        }
+        toast.error(t('Payment request failed'))
         return
       }
       toast.success(t('Updated successfully'))

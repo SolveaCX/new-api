@@ -12,10 +12,12 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/prommetrics"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 )
@@ -480,5 +482,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Other:            other,
 	})
 	perfmetrics.RecordChannelTokens(relayInfo, int64(summary.PromptTokens), int64(summary.CompletionTokens))
-	perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens), nil)
+	gopool.Go(func() {
+		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens), nil)
+		prommetrics.RecordRelaySample(relayInfo, true, 200, int64(summary.CompletionTokens))
+	})
 }

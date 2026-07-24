@@ -29,6 +29,7 @@ import {
   Key,
   LayoutDashboard,
   ListTodo,
+  MailCheck,
   MessageSquare,
   Radio,
   Settings,
@@ -177,6 +178,11 @@ export function buildSidebarData(
             icon: CalendarRange,
           },
           {
+            title: t('statusCenter.title'),
+            url: '/status-center',
+            icon: Activity,
+          },
+          {
             title: t('Redemption Codes'),
             url: '/redemption-codes',
             icon: Ticket,
@@ -185,6 +191,11 @@ export function buildSidebarData(
             title: t('Subscription Management'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('Recall Campaigns'),
+            url: '/recall-campaigns',
+            icon: MailCheck,
           },
           {
             title: t('System Settings'),

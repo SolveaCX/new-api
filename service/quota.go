@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/prommetrics"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -371,7 +372,10 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		Other:            other,
 	})
 	perfmetrics.RecordChannelTokens(relayInfo, int64(usage.PromptTokens), int64(usage.CompletionTokens))
-	perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens), nil)
+	gopool.Go(func() {
+		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens), nil)
+		prommetrics.RecordRelaySample(relayInfo, true, 200, int64(usage.CompletionTokens))
+	})
 }
 
 // ErrInsufficientTokenQuota marks a genuine token-quota-exhausted condition

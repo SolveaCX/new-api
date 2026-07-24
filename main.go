@@ -145,6 +145,9 @@ func main() {
 	service.StartSubscriptionQuotaResetTask()
 	service.StartStripeSubscriptionReconciliationTask()
 
+	// Stripe user win-back campaign scheduler (master node, default-off)
+	service.StartRecallCampaignTasks()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		a := relay.GetTaskAdaptor(platform)
@@ -159,6 +162,13 @@ func main() {
 
 	// Model official availability detection task
 	controller.StartModelAvailabilityDetectionTask()
+
+	// Native public status evaluation reuses the minimal model probe adapter.
+	if service.IsStatusCenterEnabled() {
+		service.SetStatusModelProbeAdapter(controller.NewStatusModelProbeAdapter())
+		service.SetStatusModelAvailabilityWriter(controller.WriteStatusModelAvailability)
+	}
+	service.StartStatusCenterTasks()
 
 	// Codex subscription model governance task
 	controller.StartCodexModelGovernanceTask()

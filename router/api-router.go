@@ -25,6 +25,51 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
+		statusRoute := apiRouter.Group("/status")
+		{
+			statusPublicRoute := statusRoute.Group("")
+			statusPublicRoute.Use(controller.RequireStatusCenterPublic)
+			{
+				statusPublicRoute.GET("/summary", controller.GetPublicStatusSummary)
+				statusPublicRoute.GET("/components", controller.GetPublicStatusComponents)
+				statusPublicRoute.GET("/components/:slug", controller.GetPublicStatusComponent)
+				statusPublicRoute.GET("/components/:slug/history", controller.GetPublicStatusComponentHistory)
+				statusPublicRoute.GET("/incidents", controller.GetPublicStatusIncidents)
+				statusPublicRoute.GET("/incidents/:id", controller.GetPublicStatusIncident)
+				statusPublicRoute.GET("/maintenance", controller.GetPublicStatusMaintenance)
+				statusPublicRoute.POST("/subscriptions", controller.RequireStatusCenterNotifications, middleware.CriticalRateLimit(), controller.CreatePublicStatusSubscription)
+				statusPublicRoute.GET("/subscriptions/verify", middleware.CriticalRateLimit(), controller.VerifyPublicStatusSubscription)
+				statusPublicRoute.GET("/subscriptions/unsubscribe", middleware.CriticalRateLimit(), controller.PreviewPublicStatusUnsubscribe)
+				statusPublicRoute.POST("/subscriptions/unsubscribe", middleware.CriticalRateLimit(), controller.UnsubscribePublicStatus)
+			}
+
+			statusAdminRoute := statusRoute.Group("/admin")
+			statusAdminRoute.Use(middleware.AdminAuth())
+			{
+				statusAdminRoute.GET("/components", controller.ListAdminStatusComponents)
+				statusAdminRoute.GET("/incidents", controller.ListAdminStatusIncidents)
+				statusAdminRoute.GET("/incidents/:id", controller.GetAdminStatusIncident)
+				statusAdminRoute.POST("/incidents/:id/publish", controller.PublishAdminStatusIncident)
+				statusAdminRoute.GET("/maintenance", controller.ListAdminStatusMaintenance)
+				statusAdminRoute.POST("/maintenance", controller.CreateAdminStatusMaintenance)
+				statusAdminRoute.POST("/maintenance/:id/reconcile", controller.ReconcileAdminStatusMaintenance)
+				statusAdminRoute.POST("/overrides", controller.CreateAdminStatusOverride)
+				statusAdminRoute.GET("/settings", controller.ListAdminStatusSettings)
+				statusAdminRoute.GET("/subscribers", controller.ListAdminStatusSubscribers)
+				statusAdminRoute.GET("/deliveries", controller.ListAdminStatusDeliveries)
+				statusAdminRoute.GET("/audit", controller.ListAdminStatusAudit)
+			}
+
+			statusRootRoute := statusRoute.Group("/admin")
+			statusRootRoute.Use(middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.SecureVerificationRequired(), middleware.OptionalSecureVerification())
+			{
+				statusRootRoute.POST("/overrides/force-green", controller.CreateAdminStatusForceGreen)
+				statusRootRoute.PUT("/settings/discord", controller.ConfigureAdminStatusDiscord)
+				statusRootRoute.PUT("/settings/:key", controller.UpdateAdminStatusSetting)
+				statusRootRoute.POST("/discord/test", controller.TestAdminStatusDiscord)
+				statusRootRoute.POST("/deliveries/:id/retry", controller.RetryAdminStatusDelivery)
+			}
+		}
 		registrationDomainRiskRoute := apiRouter.Group("/registration-domain-risk")
 		registrationDomainRiskRoute.Use(middleware.AdminAuth())
 		{
@@ -82,6 +127,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
 		apiRouter.POST("/waffo/webhook", anonymousRequestBodyLimit, controller.WaffoWebhook)
+		apiRouter.GET("/recall/unsubscribe", controller.UnsubscribeRecallEmail)
 		// :env separates test vs prod URLs so the operator can register each
 		// in Pancake's matching webhook slot; handler enforces env match.
 		apiRouter.POST("/waffo-pancake/webhook/:env", anonymousRequestBodyLimit, controller.WaffoPancakeWebhook)
@@ -144,6 +190,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/paddle/status", controller.GetPaddleTopUpStatus)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
+				selfRoute.POST("/recall/claim/validate", controller.ValidateRecallClaim)
 
 				// 2FA routes
 				selfRoute.GET("/2fa/status", controller.Get2FAStatus)
@@ -185,6 +232,27 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
+		}
+
+		recallCampaignRoute := apiRouter.Group("/recall-campaigns")
+		recallCampaignRoute.Use(middleware.AdminAuth())
+		{
+			recallCampaignRoute.GET("/", controller.ListRecallCampaigns)
+			recallCampaignRoute.POST("/", controller.CreateRecallCampaign)
+			recallCampaignRoute.POST("/stripe/validate", controller.ValidateRecallStripeConfig)
+			recallCampaignRoute.GET("/:id", controller.GetRecallCampaign)
+			recallCampaignRoute.PUT("/:id", controller.UpdateRecallCampaign)
+			recallCampaignRoute.POST("/:id/preview", controller.PreviewRecallCampaign)
+			recallCampaignRoute.POST("/:id/activate", controller.ActivateRecallCampaign)
+			recallCampaignRoute.POST("/:id/pause", controller.PauseRecallCampaign)
+			recallCampaignRoute.POST("/:id/resume", controller.ResumeRecallCampaign)
+			recallCampaignRoute.POST("/:id/cancel", controller.CancelRecallCampaign)
+			recallCampaignRoute.POST("/:id/complete", controller.CompleteRecallCampaign)
+			recallCampaignRoute.GET("/:id/recipients", controller.ListRecallRecipients)
+			recallCampaignRoute.GET("/:id/events", controller.ListRecallEvents)
+			recallCampaignRoute.GET("/:id/metrics", controller.GetRecallCampaignMetrics)
+			recallCampaignRoute.GET("/:id/export", controller.ExportRecallCampaign)
+			recallCampaignRoute.POST("/:id/recipients/:rid/retry", controller.RetryRecallRecipient)
 		}
 
 		// Subscription billing (plans, purchase, admin management)

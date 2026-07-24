@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
@@ -45,16 +46,24 @@ var prometheusChannelDurationBucketsSeconds = []float64{
 const seriesSchema = "dbcd0a3c01b55203"
 
 func Init() {
+	statusAvailabilityEnabled.Store(common.GetEnvOrDefaultBool("STATUS_CENTER_ENABLED", false))
 	go flushLoop()
+	if statusAvailabilityEnabled.Load() {
+		go flushAvailabilityLoop()
+	}
 }
 
 func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64, relayErr *types.NewAPIError) {
-	if info == nil {
+	if info == nil || (!perf_metrics_setting.GetSetting().Enabled && !statusAvailabilityEnabled.Load()) {
 		return
 	}
 	finalSuccess := success && relayErr == nil
 	if finalSuccess && info.IsStream && info.StreamStatus != nil {
 		finalSuccess = info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors()
+	}
+	availability := ClassifyAvailabilityOutcome(finalSuccess, relayErr)
+	if info.IsStream && info.StreamStatus != nil && info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {
+		availability = AvailabilityExcluded
 	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
@@ -81,6 +90,7 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		Success:      finalSuccess,
 		OutputTokens: outputTokens,
 		GenerationMs: generationMs,
+		Availability: availability,
 	})
 }
 
@@ -235,7 +245,8 @@ func classifyChannelError(relayErr *types.NewAPIError) (string, string) {
 
 func Record(sample Sample) {
 	setting := perf_metrics_setting.GetSetting()
-	if !setting.Enabled || sample.Model == "" {
+	availabilityEnabled := statusAvailabilityEnabled.Load()
+	if (!setting.Enabled && !availabilityEnabled) || sample.Model == "" {
 		return
 	}
 	if sample.Group == "" {
@@ -243,6 +254,12 @@ func Record(sample Sample) {
 	}
 	if sample.LatencyMs < 0 {
 		sample.LatencyMs = 0
+	}
+	if availabilityEnabled {
+		recordAvailabilityAt(sample, time.Now().Unix())
+	}
+	if !setting.Enabled {
+		return
 	}
 
 	key := bucketKey{
@@ -291,13 +308,15 @@ func Query(params QueryParams) (QueryResult, error) {
 			group:    row.Group,
 			bucketTs: row.BucketTs,
 		}, counters{
-			requestCount:   row.RequestCount,
-			successCount:   row.SuccessCount,
-			totalLatencyMs: row.TotalLatencyMs,
-			ttftSumMs:      row.TtftSumMs,
-			ttftCount:      row.TtftCount,
-			outputTokens:   row.OutputTokens,
-			generationMs:   row.GenerationMs,
+			requestCount:              row.RequestCount,
+			successCount:              row.SuccessCount,
+			totalLatencyMs:            row.TotalLatencyMs,
+			ttftSumMs:                 row.TtftSumMs,
+			ttftCount:                 row.TtftCount,
+			outputTokens:              row.OutputTokens,
+			generationMs:              row.GenerationMs,
+			availabilityEligibleCount: row.AvailabilityEligibleCount,
+			availabilitySuccessCount:  row.AvailabilitySuccessCount,
 		})
 	}
 
@@ -344,13 +363,15 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 	totals := map[string]counters{}
 	for _, row := range rows {
 		totals[row.ModelName] = counters{
-			requestCount:   row.RequestCount,
-			successCount:   row.SuccessCount,
-			totalLatencyMs: row.TotalLatencyMs,
-			ttftSumMs:      row.TtftSumMs,
-			ttftCount:      row.TtftCount,
-			outputTokens:   row.OutputTokens,
-			generationMs:   row.GenerationMs,
+			requestCount:              row.RequestCount,
+			successCount:              row.SuccessCount,
+			totalLatencyMs:            row.TotalLatencyMs,
+			ttftSumMs:                 row.TtftSumMs,
+			ttftCount:                 row.TtftCount,
+			outputTokens:              row.OutputTokens,
+			generationMs:              row.GenerationMs,
+			availabilityEligibleCount: row.AvailabilityEligibleCount,
+			availabilitySuccessCount:  row.AvailabilitySuccessCount,
 		}
 	}
 

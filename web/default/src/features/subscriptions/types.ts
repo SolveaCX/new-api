@@ -139,6 +139,7 @@ export interface PlanPayload {
 export interface SubscriptionPayRequest {
   plan_id: number
   payment_method?: string
+  recall_claim?: string
 }
 
 export interface SubscriptionPayResponse {
@@ -185,6 +186,7 @@ export interface FlexiblePurchaseRequest {
   request_id: string
   quote_id?: string
   order_id?: string
+  ui_mode?: 'embedded'
 }
 
 export interface FlexiblePurchaseResponse {
@@ -193,6 +195,8 @@ export interface FlexiblePurchaseResponse {
   intent?: SubscriptionPendingChange
   checkout_url?: string
   hosted_invoice_url?: string
+  client_secret?: string
+  publishable_key?: string
   start_time?: number
   end_time?: number
   remaining_days?: number

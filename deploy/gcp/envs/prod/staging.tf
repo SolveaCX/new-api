@@ -137,6 +137,16 @@ resource "google_secret_manager_secret_version" "staging_crypto_secret" {
   secret_data = random_password.staging_crypto_secret[0].result
 }
 
+// Operator-populated status notification keyring; no key material is stored in Terraform state.
+resource "google_secret_manager_secret" "staging_status_secret_keys" {
+  count     = var.enable_staging ? 1 : 0
+  project   = var.project_id
+  secret_id = "newapi-staging-status-secret-keys"
+  replication {
+    auto {}
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 独立 runtime SA（用户要求：与生产 newapi-runtime 身份隔离）
 // ---------------------------------------------------------------------------
@@ -181,6 +191,7 @@ locals {
     google_secret_manager_secret.staging_sql_dsn[0].secret_id,
     google_secret_manager_secret.staging_session_secret[0].secret_id,
     google_secret_manager_secret.staging_crypto_secret[0].secret_id,
+    google_secret_manager_secret.staging_status_secret_keys[0].secret_id,
   ] : []
 }
 
@@ -322,6 +333,34 @@ resource "google_cloud_run_v2_service" "staging" {
       env {
         name  = "APP_CONSOLE_ORIGIN"
         value = var.staging_console_origin
+      }
+      env {
+        name  = "ROUTER_ORIGIN"
+        value = var.staging_router_origin
+      }
+      env {
+        name  = "NODE_TYPE"
+        value = "master"
+      }
+      env {
+        name  = "APP_ROLE"
+        value = "console"
+      }
+      env {
+        name  = "STATUS_CENTER_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "STATUS_CENTER_PUBLIC_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "STATUS_CENTER_NOTIFICATIONS_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "STATUS_CENTER_SHADOW_MODE"
+        value = "false"
       }
       // Live staging env is owned by CI because env is lifecycle-ignored below; keep deploy workflows mirrored.
       env {

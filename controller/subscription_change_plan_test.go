@@ -166,9 +166,12 @@ func TestStableSubscriptionRequestIDRequiresCanonicalUUID(t *testing.T) {
 	require.False(t, isStableSubscriptionRequestID("{550e8400-e29b-41d4-a716-446655440000}"))
 }
 
-func TestSubscriptionStripePayReturnsUnsupportedWithoutLegacyState(t *testing.T) {
+func TestLegacySubscriptionStripePayWithoutRequestIDIsBlockedBeforeStateCreation(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
+	originalGate := common.SubscriptionSingleContractEnabled
+	common.SubscriptionSingleContractEnabled = true
+	t.Cleanup(func() { common.SubscriptionSingleContractEnabled = originalGate })
 	rank := 1
 	require.NoError(t, model.DB.Create(&model.User{
 		Id:       902,
@@ -195,7 +198,7 @@ func TestSubscriptionStripePayReturnsUnsupportedWithoutLegacyState(t *testing.T)
 	ctx.Request = httptest.NewRequest(
 		http.MethodPost,
 		"/api/subscription/stripe/pay",
-		strings.NewReader(`{"plan_id":9902,"request_id":"stripe-request-1"}`),
+		strings.NewReader(`{"plan_id":9902}`),
 	)
 	ctx.Request.Header.Set("Content-Type", "application/json")
 
@@ -204,6 +207,9 @@ func TestSubscriptionStripePayReturnsUnsupportedWithoutLegacyState(t *testing.T)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), `"success":false`)
 	require.Contains(t, recorder.Body.String(), "pending migration")
+	var contractCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("user_id = ?", 902).Count(&contractCount).Error)
+	require.Zero(t, contractCount)
 	var orderCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 902).Count(&orderCount).Error)
 	require.Zero(t, orderCount)

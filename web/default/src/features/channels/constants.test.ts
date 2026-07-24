@@ -32,3 +32,9 @@ test('BytePlus channel is selectable with its regional Ark base URL', () => {
   expect(MODEL_FETCHABLE_TYPES.has(107)).toBe(false)
   expect(getDefaultBaseUrl(107)).toBe('https://ark.ap-southeast.bytepluses.com')
 })
+
+test('Codex model discovery is limited to channel creation', () => {
+  expect(CHANNEL_TYPES[57]).toBe('Codex')
+  expect(CREATE_MODEL_FETCHABLE_TYPES.has(57)).toBe(true)
+  expect(MODEL_FETCHABLE_TYPES.has(57)).toBe(false)
+})

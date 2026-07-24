@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,61 +23,11 @@ var (
 		expiresAt time.Time
 	}{}
 	buildWebsitePricingPayload = buildWebsitePricingPayloadDefault
+	getWebsitePublicPricing    = model.GetPricing
 )
 
-func getSortedUsableGroupNames(usableGroup map[string]string) []string {
-	groups := make([]string, 0, len(usableGroup))
-	for group := range usableGroup {
-		if group != "" {
-			groups = append(groups, group)
-		}
-	}
-	sort.Strings(groups)
-	return groups
-}
-
-func filterEnableGroupsByUsableGroups(enableGroups []string, usableGroup map[string]string, usableGroupNames []string) []string {
-	if common.StringsContains(enableGroups, "all") {
-		return append([]string(nil), usableGroupNames...)
-	}
-
-	groups := make([]string, 0, len(enableGroups))
-	seen := make(map[string]struct{}, len(enableGroups))
-	for _, group := range enableGroups {
-		if group == "" {
-			continue
-		}
-		if _, ok := seen[group]; ok {
-			continue
-		}
-		if _, ok := usableGroup[group]; !ok {
-			continue
-		}
-		seen[group] = struct{}{}
-		groups = append(groups, group)
-	}
-	return groups
-}
-
 func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string]string) []model.Pricing {
-	if len(pricing) == 0 {
-		return pricing
-	}
-	if len(usableGroup) == 0 {
-		return []model.Pricing{}
-	}
-
-	usableGroupNames := getSortedUsableGroupNames(usableGroup)
-	filtered := make([]model.Pricing, 0, len(pricing))
-	for _, item := range pricing {
-		enableGroups := filterEnableGroupsByUsableGroups(item.EnableGroup, usableGroup, usableGroupNames)
-		if len(enableGroups) == 0 {
-			continue
-		}
-		item.EnableGroup = enableGroups
-		filtered = append(filtered, item)
-	}
-	return filtered
+	return service.FilterPricingByUsableGroups(pricing, usableGroup)
 }
 
 func filterGroupModelRatioByUsableGroupsAndModels(source map[string]map[string]float64, usableGroup map[string]string, pricing []model.Pricing) map[string]map[string]float64 {
@@ -177,7 +126,7 @@ func GetWebsitePricing(c *gin.Context) {
 		}
 
 		body, err := common.Marshal(buildWebsitePublicGroupPricingPayload(
-			model.GetPricing(),
+			getWebsitePublicPricing(),
 			model.GetVendors(),
 			model.GetSupportedEndpointMap(),
 			service.GetUserAutoGroup(""),
@@ -280,7 +229,7 @@ func buildWebsitePublicGroupPricingPayload(
 
 	return gin.H{
 		"success":            true,
-		"data":               filterPricingByUsableGroups(pricing, usableGroup),
+		"data":               service.FilterWebsiteVisiblePricing(pricing),
 		"vendors":            vendors,
 		"group_ratio":        map[string]float64{group: ratio},
 		"usable_group":       usableGroup,
