@@ -259,6 +259,10 @@ performance.disk_cache_cleared: "O cache de disco inativo foi limpo"
 performance.stats_reset: "As estatísticas foram redefinidas"
 performance.gc_executed: "GC foi executado"
 
+# Model health messages
+model_health.invalid_hours: "O período em horas deve ser 24, 168 ou 720"
+model_health.model_required: "O modelo é obrigatório"
+
 # Ability messages
 ability.db_corrupted: "A consistência do banco de dados foi comprometida"
 ability.repair_running: "Uma tarefa de reparo já está em execução, tente novamente mais tarde"

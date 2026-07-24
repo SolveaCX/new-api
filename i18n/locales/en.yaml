@@ -258,6 +258,10 @@ performance.disk_cache_cleared: "Inactive disk cache has been cleared"
 performance.stats_reset: "Statistics have been reset"
 performance.gc_executed: "GC has been executed"
 
+# Model health messages
+model_health.invalid_hours: "Hours must be one of 24, 168, or 720"
+model_health.model_required: "Model is required"
+
 # Ability messages
 ability.db_corrupted: "Database consistency has been compromised"
 ability.repair_running: "A repair task is already running, please try again later"

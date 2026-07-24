@@ -593,6 +593,11 @@ export const STATIC_I18N_KEYS = [
   'No models available in this category',
   'Copied: {{model}}',
 
+  // Model health window labels (dynamic windowLabelKey)
+  '24h',
+  '7d',
+  '30d',
+
   // Grok settings
   'Grok Settings',
   'Enable violation deduction',

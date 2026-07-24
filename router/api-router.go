@@ -403,6 +403,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/ops_report_ads", middleware.AdminAuth(), controller.GetOpsAdsPilotReport)
 		dataRoute.GET("/ops_report_ads_daily", middleware.AdminAuth(), controller.GetOpsAdsDailyReport)
 		dataRoute.GET("/ops_report_landing_thumb", middleware.AdminAuth(), controller.GetOpsAdsLandingThumb)
+		dataRoute.GET("/model_health", middleware.AdminAuth(), controller.GetModelHealthOverview)
+		dataRoute.GET("/model_health/detail", middleware.AdminAuth(), controller.GetModelHealthDetail)
 
 		adsPilotRoute := apiRouter.Group("/ads_pilot")
 		adsPilotRoute.Use(middleware.AdminAuth())
