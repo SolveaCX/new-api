@@ -579,6 +579,11 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 // session, so retrying the endpoint cannot double-charge the customer.
 func ResumeStripeTopUpCheckout(c *gin.Context) {
 	tradeNo := strings.TrimSpace(c.Param("trade_no"))
+	if subscriptionOrder := model.GetSubscriptionOrderByTradeNo(tradeNo); subscriptionOrder != nil {
+		resumeStripeSubscriptionCheckout(c, subscriptionOrder)
+		return
+	}
+
 	topUp := model.GetTopUpByTradeNo(tradeNo)
 	if topUp == nil || topUp.UserId != c.GetInt("id") || topUp.PaymentProvider != model.PaymentProviderStripe {
 		common.ApiErrorI18n(c, i18n.MsgTopupOrderNotExists)
@@ -616,6 +621,9 @@ func ResumeStripeTopUpCheckout(c *gin.Context) {
 	if secret := strings.TrimSpace(checkoutSession.ClientSecret); secret != "" && strings.TrimSpace(setting.StripePublishableKey) != "" {
 		data["client_secret"] = secret
 		data["publishable_key"] = setting.StripePublishableKey
+		if payLink := strings.TrimSpace(checkoutSession.URL); payLink != "" {
+			data["pay_link"] = payLink
+		}
 		data["topup_summary"] = gin.H{
 			"pay_amount":    topUp.Amount,
 			"bonus_amount":  topUp.BonusAmount,
@@ -623,6 +631,63 @@ func ResumeStripeTopUpCheckout(c *gin.Context) {
 			"show_amounts":  operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(topUp.PaymentCurrency, "USD"),
 		}
 	} else if payLink := strings.TrimSpace(checkoutSession.URL); payLink != "" {
+		data["pay_link"] = payLink
+	} else {
+		common.ApiErrorI18n(c, i18n.MsgPaymentStartFailed)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "success", "data": data})
+}
+
+func resumeStripeSubscriptionCheckout(c *gin.Context, order *model.SubscriptionOrder) {
+	if order == nil || order.UserId != c.GetInt("id") || order.PaymentProvider != model.PaymentProviderStripe {
+		common.ApiErrorI18n(c, i18n.MsgTopupOrderNotExists)
+		return
+	}
+	if order.Status != common.TopUpStatusPending {
+		common.ApiErrorI18n(c, i18n.MsgTopupOrderStatus)
+		return
+	}
+	sessionID := strings.TrimSpace(order.ProviderSessionId)
+	if sessionID == "" {
+		if payLink := strings.TrimSpace(order.ProviderSessionURL); payLink != "" {
+			c.JSON(http.StatusOK, gin.H{"success": true, "message": "success", "data": gin.H{"pay_link": payLink}})
+			return
+		}
+		common.ApiErrorI18n(c, i18n.MsgPaymentStartFailed)
+		return
+	}
+	if err := ensureStripeKey(); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgPaymentStripeNotConfig)
+		return
+	}
+	checkoutSession, err := stripeCheckoutSessionGetter(sessionID, nil)
+	if err != nil || checkoutSession == nil || strings.TrimSpace(checkoutSession.ID) != sessionID {
+		common.ApiErrorI18n(c, i18n.MsgPaymentStartFailed)
+		return
+	}
+	if string(checkoutSession.Status) == "expired" || (checkoutSession.ExpiresAt > 0 && checkoutSession.ExpiresAt <= time.Now().Unix()) {
+		_ = model.ExpireSubscriptionOrder(order.TradeNo, model.PaymentProviderStripe)
+		_ = model.SyncSubscriptionOrderTopUpHistory(order.TradeNo)
+		common.ApiErrorI18n(c, i18n.MsgTopupOrderStatus)
+		return
+	}
+	if string(checkoutSession.PaymentStatus) == "paid" || string(checkoutSession.Status) == "complete" {
+		common.ApiErrorI18n(c, i18n.MsgTopupOrderStatus)
+		return
+	}
+
+	data := gin.H{}
+	if secret := strings.TrimSpace(checkoutSession.ClientSecret); secret != "" && strings.TrimSpace(setting.StripePublishableKey) != "" {
+		data["client_secret"] = secret
+		data["publishable_key"] = setting.StripePublishableKey
+		if payLink := strings.TrimSpace(checkoutSession.URL); payLink != "" {
+			data["pay_link"] = payLink
+		}
+	} else if payLink := strings.TrimSpace(checkoutSession.URL); payLink != "" {
+		data["pay_link"] = payLink
+	} else if payLink := strings.TrimSpace(order.ProviderSessionURL); payLink != "" {
 		data["pay_link"] = payLink
 	} else {
 		common.ApiErrorI18n(c, i18n.MsgPaymentStartFailed)

@@ -504,6 +504,57 @@ func TestResumeStripeTopUpCheckoutReturnsExistingHostedSession(t *testing.T) {
 	require.JSONEq(t, `{"success":true,"message":"success","data":{"pay_link":"https://checkout.stripe.test/resume"}}`, recorder.Body.String())
 }
 
+func TestResumeStripeTopUpCheckoutReturnsSubscriptionEmbeddedSession(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalSecret := setting.StripeApiSecret
+	originalPublishableKey := setting.StripePublishableKey
+	originalKey := stripe.Key
+	originalGetter := stripeCheckoutSessionGetter
+	t.Cleanup(func() {
+		setting.StripeApiSecret = originalSecret
+		setting.StripePublishableKey = originalPublishableKey
+		stripe.Key = originalKey
+		stripeCheckoutSessionGetter = originalGetter
+	})
+	setting.StripeApiSecret = "sk_test_resume"
+	setting.StripePublishableKey = "pk_test_resume"
+	insertStripeFulfillmentSubscriptionPlan(t, 1001)
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:            41,
+		PlanId:            1001,
+		Money:             30,
+		TradeNo:           "SUBSTR_resume_embedded",
+		PaymentMethod:     model.PaymentMethodStripe,
+		PaymentProvider:   model.PaymentProviderStripe,
+		Status:            common.TopUpStatusPending,
+		CreateTime:        time.Now().Unix(),
+		ProviderSessionId: "cs_resume_subscription",
+	}).Error)
+	stripeCheckoutSessionGetter = func(id string, _ *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		require.Equal(t, "cs_resume_subscription", id)
+		return &stripe.CheckoutSession{
+			ID:            "cs_resume_subscription",
+			Status:        stripe.CheckoutSessionStatusOpen,
+			PaymentStatus: stripe.CheckoutSessionPaymentStatusUnpaid,
+			ClientSecret:  "cs_secret_subscription",
+			URL:           "https://checkout.stripe.test/subscription/resume",
+		}, nil
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/user/topup/:trade_no/resume", func(c *gin.Context) {
+		c.Set("id", 41)
+		ResumeStripeTopUpCheckout(c)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/user/topup/SUBSTR_resume_embedded/resume", nil)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{"success":true,"message":"success","data":{"client_secret":"cs_secret_subscription","publishable_key":"pk_test_resume","pay_link":"https://checkout.stripe.test/subscription/resume"}}`, recorder.Body.String())
+}
+
 func TestResumeStripeTopUpCheckoutRejectsAnotherUsersOrderBeforeStripeLookup(t *testing.T) {
 	setupStripeFulfillmentTestDB(t)
 	originalGetter := stripeCheckoutSessionGetter
