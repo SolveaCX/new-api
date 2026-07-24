@@ -2616,7 +2616,7 @@
     "Mint a fresh pair below — or pick an existing one further down. Click Save when ready.": "下で新しいペアを作成するか、さらに下で既存のものを選択してください。準備ができたら保存をクリックします。",
     "Minute": "分",
     "minutes": "分",
-    "Missing code": "コードが不足しています",
+    "Missing code": "コードがありません",
     "Missing Models": "不足しているモデル",
     "Missing user data from Passkey login response": "パスキーログイン応答からユーザーデータが欠落しています",
     "Mistral": "Mistral",
@@ -5919,6 +5919,22 @@
     "{{success}} successful final requests": "成功した最終リクエスト {{success}} 件",
     "{{value}} ms": "{{value}} ミリ秒",
     "{{value}}%": "{{value}}%",
-    "{{value}}% healthy threshold": "正常しきい値 {{value}}%"
+    "{{value}}% healthy threshold": "正常しきい値 {{value}}%",
+    "Not included": "含まれていません",
+    "Flatkey CLI wants to connect": "Flatkey CLI が接続を要求しています",
+    "Approve terminal login": "ターミナルログインを承認",
+    "This will create or reuse a Flatkey API key for this device. Future CLI requests spend credits from this account.": "このデバイス用の Flatkey API キーを作成または再利用します。今後の CLI リクエストはこのアカウントの credits を消費します。",
+    "Signed in as": "ログイン中のアカウント",
+    "Request code": "リクエストコード",
+    "Client": "クライアント",
+    "Loading authorization request": "認可リクエストを読み込み中",
+    "Missing authorization code.": "認可コードがありません。",
+    "Authorization request not found or expired.": "認可リクエストが見つからないか期限切れです。",
+    "Approved. You can return to the terminal.": "承認しました。ターミナルに戻れます。",
+    "Denied. You can close this page.": "拒否しました。このページを閉じられます。",
+    "Expired. Restart login from the terminal.": "期限切れです。ターミナルからログインをやり直してください。",
+    "Deny": "拒否",
+    "CLI authorization approved": "CLI 認可を承認しました",
+    "CLI authorization denied": "CLI 認可を拒否しました"
   }
 }

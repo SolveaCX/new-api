@@ -235,6 +235,11 @@ func buildTokenForInsert(c *gin.Context, token model.Token, key string) (model.T
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		Source:             token.Source,
+		DeviceIdHash:       token.DeviceIdHash,
+		ClientName:         token.ClientName,
+		ClientVersion:      token.ClientVersion,
+		LastUsedClientAt:   token.LastUsedClientAt,
 	}, nil
 }
 
