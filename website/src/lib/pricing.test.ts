@@ -6,6 +6,8 @@ import {
   getAvailableGroups,
   getPricingData,
   publicPricingUrl,
+  publicPricingV2Url,
+  formatModelPrice,
   sortPricingModelsBySeries,
   type PricingModel,
 } from "./pricing";
@@ -23,7 +25,7 @@ describe("publicPricingUrl", () => {
     expect(publicPricingUrl("https://console.flatkey.ai", "plg")).toBe("https://console.flatkey.ai/api/website/pricing?group=plg");
   });
 
-  test("fetches pricing without Next response caching", async () => {
+  test("fetches the display-ready PLG contract with a short server cache", async () => {
     const originalFetch = globalThis.fetch;
     let fetchInput: RequestInfo | URL | undefined;
     let fetchInit: RequestInit | undefined;
@@ -31,14 +33,165 @@ describe("publicPricingUrl", () => {
       globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
         fetchInput = _input;
         fetchInit = init;
-        return Promise.resolve(new Response(JSON.stringify({ success: true, data: [] }), { status: 200 }));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              schema_version: "website-public-plg-v2",
+              group: "plg",
+              generated_at: 100,
+              models: [],
+            }),
+            { status: 200 }
+          )
+        );
       }) as typeof fetch;
 
       await getPricingData("plg");
 
-      expect(String(fetchInput)).toBe("https://console.flatkey.ai/api/website/pricing?group=plg");
-      expect(fetchInit?.cache).toBe("no-store");
+      expect(String(fetchInput)).toBe("https://console.flatkey.ai/api/website/pricing/v2?group=plg");
+      expect((fetchInit as RequestInit & { next?: { revalidate?: number } })?.next?.revalidate).toBe(60);
       expect((fetchInit?.headers as Record<string, string>)?.accept).toBe("application/json");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("builds the v2 URL without changing the legacy public endpoint", () => {
+    expect(publicPricingV2Url("https://console.flatkey.ai")).toBe(
+      "https://console.flatkey.ai/api/website/pricing/v2?group=plg"
+    );
+    expect(publicPricingUrl("https://console.flatkey.ai", "plg")).toBe(
+      "https://console.flatkey.ai/api/website/pricing?group=plg"
+    );
+  });
+
+  test("uses server-computed prices without receiving billing ratios or expressions", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              schema_version: "website-public-plg-v2",
+              group: "plg",
+              generated_at: 100,
+              models: [
+                {
+                  model_name: "gpt-dynamic",
+                  quota_type: 0,
+                  enable_groups: ["plg"],
+                  supported_endpoint_types: ["openai"],
+                  billing_kind: "token_ratio",
+                  effective_group_ratio: "0.5",
+                  ratio_source: "group_model",
+                  prices: {
+                    input: { configured: "4", plg: "2" },
+                    output: { configured: "12", plg: "6" },
+                    cache: null,
+                    cache_creation: null,
+                    image: null,
+                    audio_input: null,
+                    audio_output: null,
+                    request: null,
+                  },
+                },
+              ],
+              vendors: [],
+            }),
+            { status: 200 }
+          )
+        )) as typeof fetch;
+
+      const data = await getPricingData("plg");
+      expect(data.models).toHaveLength(1);
+      expect(data.models[0]?.model_ratio).toBe(0);
+      expect(formatModelPrice(data.models[0]!, "input")).toBe("$2");
+      expect(formatModelPrice(data.models[0]!, "output")).toBe("$6");
+      expect(formatGroupTokenPrice(data.models[0]!, "plg", { plg: 99 }, "input")).toBe("$2");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("fails closed when one display price is invalid", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              schema_version: "website-public-plg-v2",
+              group: "plg",
+              generated_at: 100,
+              models: [
+                {
+                  model_name: "broken",
+                  quota_type: 0,
+                  enable_groups: ["plg"],
+                  supported_endpoint_types: [],
+                  billing_kind: "token_ratio",
+                  effective_group_ratio: "1",
+                  ratio_source: "group",
+                  prices: {
+                    input: { configured: "4", plg: "not-a-price" },
+                    output: null,
+                    cache: null,
+                    cache_creation: null,
+                    image: null,
+                    audio_input: null,
+                    audio_output: null,
+                    request: null,
+                  },
+                },
+              ],
+            }),
+            { status: 200 }
+          )
+        )) as typeof fetch;
+
+      expect((await getPricingData("plg")).models).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("fails closed when the display-price object is incomplete", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              schema_version: "website-public-plg-v2",
+              group: "plg",
+              generated_at: 100,
+              models: [
+                {
+                  model_name: "incomplete",
+                  quota_type: 0,
+                  enable_groups: ["plg"],
+                  supported_endpoint_types: [],
+                  billing_kind: "token_ratio",
+                  effective_group_ratio: "1",
+                  ratio_source: "group",
+                  prices: {
+                    input: { configured: "4", plg: "2" },
+                    output: null,
+                  },
+                },
+              ],
+            }),
+            { status: 200 }
+          )
+        )) as typeof fetch;
+
+      const data = await getPricingData("plg");
+      expect(data.models).toEqual([]);
+      expect(data.pricingAvailable).toBe(false);
     } finally {
       globalThis.fetch = originalFetch;
     }

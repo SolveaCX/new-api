@@ -27,6 +27,7 @@ type PricingExplorerProps = {
   usableGroup: Record<string, string>;
   endpointMap: Record<string, unknown>;
   autoGroups: string[];
+  pricingAvailable: boolean;
   initialSearch?: PricingSearch;
 };
 
@@ -205,8 +206,12 @@ export function PricingExplorer(props: PricingExplorerProps) {
           ) : (
             <div className="border-border bg-card flex min-h-64 flex-col items-center justify-center rounded-3xl border px-6 py-14 text-center">
               <Boxes className="text-muted-foreground size-10" />
-              <h2 className="mt-4 text-lg font-semibold">{copy(props.locale, "noModels")}</h2>
-              <p className="text-muted-foreground mt-2 max-w-md text-sm">{copy(props.locale, "noModelsHint")}</p>
+              <h2 className="mt-4 text-lg font-semibold">
+                {copy(props.locale, props.pricingAvailable ? "noModels" : "pricingUnavailable")}
+              </h2>
+              <p className="text-muted-foreground mt-2 max-w-md text-sm">
+                {copy(props.locale, props.pricingAvailable ? "noModelsHint" : "pricingUnavailableHint")}
+              </p>
             </div>
           )}
         </section>
@@ -305,6 +310,8 @@ const COPY: Record<string, Record<string, string>> = {
     models: "models",
     noModels: "No Models Found",
     noModelsHint: "No models match your current filters.",
+    pricingUnavailable: "Pricing temporarily unavailable",
+    pricingUnavailableHint: "Live model prices could not be loaded. Please try again shortly.",
   },
   zh: {
     enabledModels: "本站当前已启用 {{count}} 个模型",
@@ -324,6 +331,8 @@ const COPY: Record<string, Record<string, string>> = {
     models: "个模型",
     noModels: "未找到模型",
     noModelsHint: "没有模型匹配当前筛选条件。",
+    pricingUnavailable: "价格暂时不可用",
+    pricingUnavailableHint: "暂时无法加载实时模型价格，请稍后重试。",
   },
   es: {
     enabledModels: "Este sitio tiene {{count}} modelos habilitados",
@@ -343,6 +352,8 @@ const COPY: Record<string, Record<string, string>> = {
     models: "modelos",
     noModels: "No se encontraron modelos",
     noModelsHint: "Ningún modelo coincide con los filtros actuales.",
+    pricingUnavailable: "Precios temporalmente no disponibles",
+    pricingUnavailableHint: "No se pudieron cargar los precios en vivo. Inténtalo de nuevo en breve.",
   },
   fr: {
     enabledModels: "Ce site a actuellement {{count}} modèles activés",
@@ -362,6 +373,8 @@ const COPY: Record<string, Record<string, string>> = {
     models: "modèles",
     noModels: "Aucun modèle trouvé",
     noModelsHint: "Aucun modèle ne correspond aux filtres actuels.",
+    pricingUnavailable: "Tarifs temporairement indisponibles",
+    pricingUnavailableHint: "Impossible de charger les tarifs en direct. Réessayez dans quelques instants.",
   },
   pt: {
     enabledModels: "Este site tem {{count}} modelos habilitados",
@@ -381,6 +394,8 @@ const COPY: Record<string, Record<string, string>> = {
     models: "modelos",
     noModels: "Nenhum modelo encontrado",
     noModelsHint: "Nenhum modelo corresponde aos filtros atuais.",
+    pricingUnavailable: "Preços temporariamente indisponíveis",
+    pricingUnavailableHint: "Não foi possível carregar os preços ao vivo. Tente novamente em instantes.",
   },
   ru: {
     enabledModels: "На сайте сейчас включено {{count}} моделей",
@@ -400,6 +415,8 @@ const COPY: Record<string, Record<string, string>> = {
     models: "моделей",
     noModels: "Модели не найдены",
     noModelsHint: "Ни одна модель не соответствует текущим фильтрам.",
+    pricingUnavailable: "Цены временно недоступны",
+    pricingUnavailableHint: "Не удалось загрузить актуальные цены. Повторите попытку чуть позже.",
   },
   ja: {
     enabledModels: "このサイトでは現在 {{count}} 個のモデルが有効です",
@@ -419,6 +436,8 @@ const COPY: Record<string, Record<string, string>> = {
     models: "モデル",
     noModels: "モデルが見つかりません",
     noModelsHint: "現在のフィルターに一致するモデルはありません。",
+    pricingUnavailable: "料金情報を一時的に利用できません",
+    pricingUnavailableHint: "最新のモデル料金を読み込めませんでした。しばらくしてから再度お試しください。",
   },
   vi: {
     enabledModels: "Site này hiện có {{count}} mô hình được bật",
@@ -438,6 +457,12 @@ const COPY: Record<string, Record<string, string>> = {
     models: "mô hình",
     noModels: "Không tìm thấy mô hình",
     noModelsHint: "Không có mô hình nào khớp với bộ lọc hiện tại.",
+    pricingUnavailable: "Giá tạm thời không khả dụng",
+    pricingUnavailableHint: "Không thể tải giá mô hình trực tiếp. Vui lòng thử lại sau ít phút.",
+  },
+  de: {
+    pricingUnavailable: "Preise vorübergehend nicht verfügbar",
+    pricingUnavailableHint: "Die aktuellen Modellpreise konnten nicht geladen werden. Bitte versuchen Sie es gleich erneut.",
   },
 };
 
