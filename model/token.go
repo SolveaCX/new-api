@@ -33,6 +33,11 @@ type Token struct {
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	Source             string         `json:"source" gorm:"index;default:''"`
+	DeviceIdHash       string         `json:"device_id_hash" gorm:"index;default:''"`
+	ClientName         string         `json:"client_name" gorm:"default:''"`
+	ClientVersion      string         `json:"client_version" gorm:"default:''"`
+	LastUsedClientAt   int64          `json:"last_used_client_at" gorm:"bigint;default:0"`
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
@@ -129,7 +134,7 @@ func sanitizeLikePattern(input string) (string, error) {
 
 const searchHardLimit = 100
 
-func SearchUserTokens(userId int, keyword string, token string, offset int, limit int) (tokens []*Token, total int64, err error) {
+func SearchUserTokens(userId int, keyword string, token string, status int, offset int, limit int) (tokens []*Token, total int64, err error) {
 	// model 层强制截断
 	if limit <= 0 || limit > searchHardLimit {
 		limit = searchHardLimit
@@ -172,6 +177,10 @@ func SearchUserTokens(userId int, keyword string, token string, offset int, limi
 			return nil, 0, err
 		}
 		baseQuery = baseQuery.Where(commonKeyCol+" LIKE ? ESCAPE '!'", tokenPattern)
+	}
+	if status != 0 {
+		condition, args := effectiveTokenStatusCondition(status, common.GetTimestamp())
+		baseQuery = baseQuery.Where(condition, args...)
 	}
 
 	// 先查匹配总数（用于分页，受 maxTokens 上限保护，避免全表 COUNT）
@@ -336,6 +345,8 @@ func CreateUserTokenWithInviteReward(userId int, token *Token, maxTokens int, tr
 	})
 	return err
 }
+
+const TokenSourceCLI = "cli"
 
 func createUserTokenInTx(tx *gorm.DB, userId int, token *Token, maxTokens int) error {
 	var user User
@@ -695,45 +706,72 @@ func GetEffectiveTokenStatus(token *Token, now int64) int {
 	return common.TokenStatusEnabled
 }
 
+func effectiveTokenStatusCondition(status int, now int64) (string, []any) {
+	switch status {
+	case common.TokenStatusEnabled:
+		return `((status = ? OR (status = ? AND unlimited_quota = ?))
+			AND (expired_time = -1 OR expired_time >= ?)
+			AND (unlimited_quota = ? OR remain_quota > 0))`, []any{
+				common.TokenStatusEnabled,
+				common.TokenStatusExhausted,
+				true,
+				now,
+				true,
+			}
+	case common.TokenStatusDisabled:
+		return `(status NOT IN (?, ?, ?))`, []any{
+			common.TokenStatusEnabled,
+			common.TokenStatusExpired,
+			common.TokenStatusExhausted,
+		}
+	case common.TokenStatusExpired:
+		return `(status = ?
+			OR ((status = ? OR (status = ? AND unlimited_quota = ?))
+				AND expired_time != -1 AND expired_time < ?))`, []any{
+				common.TokenStatusExpired,
+				common.TokenStatusEnabled,
+				common.TokenStatusExhausted,
+				true,
+				now,
+			}
+	case common.TokenStatusExhausted:
+		return `((status = ? AND unlimited_quota = ?)
+			OR (status = ?
+				AND (expired_time = -1 OR expired_time >= ?)
+				AND unlimited_quota = ? AND remain_quota <= 0))`, []any{
+				common.TokenStatusExhausted,
+				false,
+				common.TokenStatusEnabled,
+				now,
+				false,
+			}
+	default:
+		return "1 = 0", nil
+	}
+}
+
 // GetUserTokenStats returns account-wide effective status counts for one user.
 func GetUserTokenStats(userId int) (UserTokenStats, error) {
 	now := common.GetTimestamp()
+	enabledCondition, enabledArgs := effectiveTokenStatusCondition(common.TokenStatusEnabled, now)
+	expiredCondition, expiredArgs := effectiveTokenStatusCondition(common.TokenStatusExpired, now)
+	exhaustedCondition, exhaustedArgs := effectiveTokenStatusCondition(common.TokenStatusExhausted, now)
+	queryArgs := make([]any, 0, len(enabledArgs)+len(expiredArgs)+len(exhaustedArgs))
+	queryArgs = append(queryArgs, enabledArgs...)
+	queryArgs = append(queryArgs, expiredArgs...)
+	queryArgs = append(queryArgs, exhaustedArgs...)
+
 	var stats UserTokenStats
 	err := DB.Model(&Token{}).
-		Select(`
+		Select(fmt.Sprintf(`
 			COUNT(*) AS total,
-			COALESCE(SUM(CASE
-				WHEN (status = ? OR (status = ? AND unlimited_quota = ?))
-					AND (expired_time = -1 OR expired_time >= ?)
-					AND (unlimited_quota = ? OR remain_quota > 0)
-				THEN 1 ELSE 0 END), 0) AS enabled,
-			COALESCE(SUM(CASE
-				WHEN status = ?
-					OR ((status = ? OR (status = ? AND unlimited_quota = ?))
-						AND expired_time != -1 AND expired_time < ?)
-				THEN 1 ELSE 0 END), 0) AS expired,
-			COALESCE(SUM(CASE
-				WHEN (status = ? AND unlimited_quota = ?)
-					OR (status = ?
-						AND (expired_time = -1 OR expired_time >= ?)
-						AND unlimited_quota = ? AND remain_quota <= 0)
-				THEN 1 ELSE 0 END), 0) AS exhausted`,
-			common.TokenStatusEnabled,
-			common.TokenStatusExhausted,
-			true,
-			now,
-			true,
-			common.TokenStatusExpired,
-			common.TokenStatusEnabled,
-			common.TokenStatusExhausted,
-			true,
-			now,
-			common.TokenStatusExhausted,
-			false,
-			common.TokenStatusEnabled,
-			now,
-			false,
-		).
+			COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS enabled,
+			COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS expired,
+			COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS exhausted`,
+			enabledCondition,
+			expiredCondition,
+			exhaustedCondition,
+		), queryArgs...).
 		Where("user_id = ?", userId).
 		Scan(&stats).Error
 	if err != nil {

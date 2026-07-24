@@ -167,6 +167,11 @@ func tokenCacheFields(token Token) []interface{} {
 		"UsedQuota", token.UsedQuota,
 		"Group", token.Group,
 		"CrossGroupRetry", strconv.FormatBool(token.CrossGroupRetry),
+		"Source", token.Source,
+		"DeviceIdHash", token.DeviceIdHash,
+		"ClientName", token.ClientName,
+		"ClientVersion", token.ClientVersion,
+		"LastUsedClientAt", token.LastUsedClientAt,
 		tokenCacheCompleteField, "1",
 	}
 }
@@ -190,6 +195,11 @@ func tokenUpdateCacheFields(token Token) []interface{} {
 		"AllowIps", tokenCacheAllowIps(token),
 		"Group", token.Group,
 		"CrossGroupRetry", strconv.FormatBool(token.CrossGroupRetry),
+		"Source", token.Source,
+		"DeviceIdHash", token.DeviceIdHash,
+		"ClientName", token.ClientName,
+		"ClientVersion", token.ClientVersion,
+		"LastUsedClientAt", token.LastUsedClientAt,
 	}
 }
 

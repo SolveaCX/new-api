@@ -132,6 +132,9 @@ jobs:
       RUN_SERVICE: newapi-console
       NODE_TYPE: master
       APP_ROLE: console
+      # The production rollout is complete; keep the console capability on for
+      # every subsequent revision. Router is not the owner of this UI feature.
+      TOKEN_BATCH_GROUP_ENABLED: "true"
       ROUTER_ORIGIN: https://router.flatkey.ai
       STATUS_CENTER_ENABLED: ${{ vars.STATUS_CENTER_ENABLED || 'false' }}
       STATUS_CENTER_PUBLIC_ENABLED: ${{ vars.STATUS_CENTER_PUBLIC_ENABLED || 'false' }}
@@ -195,7 +198,7 @@ jobs:
             ROUTER_ORIGIN \
             STATUS_CENTER_ENABLED STATUS_CENTER_PUBLIC_ENABLED STATUS_CENTER_NOTIFICATIONS_ENABLED STATUS_CENTER_SHADOW_MODE \
             STATUS_SECRET_ACTIVE_KEY_ID \
-            NODE_TYPE APP_ROLE; do
+            NODE_TYPE APP_ROLE TOKEN_BATCH_GROUP_ENABLED; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then
               env_vars+=("${name}=${value}")

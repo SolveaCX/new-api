@@ -30,6 +30,7 @@ import { Route as ModelsGptApiRouteImport } from './routes/models/gpt-api'
 import { Route as ModelsClaudeApiRouteImport } from './routes/models/claude-api'
 import { Route as ConsoleTopupRouteImport } from './routes/console/topup'
 import { Route as ConsoleLogRouteImport } from './routes/console/log'
+import { Route as CliAuthorizeRouteImport } from './routes/cli/authorize'
 import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
 import { Route as AuthenticatedQuickstartRouteImport } from './routes/_authenticated/quickstart'
 import { Route as AuthenticatedChat2linkRouteImport } from './routes/_authenticated/chat2link'
@@ -208,6 +209,11 @@ const ConsoleTopupRoute = ConsoleTopupRouteImport.update({
 const ConsoleLogRoute = ConsoleLogRouteImport.update({
   id: '/console/log',
   path: '/console/log',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CliAuthorizeRoute = CliAuthorizeRouteImport.update({
+  id: '/cli/authorize',
+  path: '/cli/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BlogSlugRoute = BlogSlugRouteImport.update({
@@ -662,6 +668,7 @@ export interface FileRoutesByFullPath {
   '/chat2link': typeof AuthenticatedChat2linkRoute
   '/quickstart': typeof AuthenticatedQuickstartRoute
   '/blog/$slug': typeof BlogSlugRoute
+  '/cli/authorize': typeof CliAuthorizeRoute
   '/console/log': typeof ConsoleLogRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/models/claude-api': typeof ModelsClaudeApiRoute
@@ -758,6 +765,7 @@ export interface FileRoutesByTo {
   '/chat2link': typeof AuthenticatedChat2linkRoute
   '/quickstart': typeof AuthenticatedQuickstartRoute
   '/blog/$slug': typeof BlogSlugRoute
+  '/cli/authorize': typeof CliAuthorizeRoute
   '/console/log': typeof ConsoleLogRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/models/claude-api': typeof ModelsClaudeApiRoute
@@ -858,6 +866,7 @@ export interface FileRoutesById {
   '/_authenticated/chat2link': typeof AuthenticatedChat2linkRoute
   '/_authenticated/quickstart': typeof AuthenticatedQuickstartRoute
   '/blog/$slug': typeof BlogSlugRoute
+  '/cli/authorize': typeof CliAuthorizeRoute
   '/console/log': typeof ConsoleLogRoute
   '/console/topup': typeof ConsoleTopupRoute
   '/models/claude-api': typeof ModelsClaudeApiRoute
@@ -957,6 +966,7 @@ export interface FileRouteTypes {
     | '/chat2link'
     | '/quickstart'
     | '/blog/$slug'
+    | '/cli/authorize'
     | '/console/log'
     | '/console/topup'
     | '/models/claude-api'
@@ -1053,6 +1063,7 @@ export interface FileRouteTypes {
     | '/chat2link'
     | '/quickstart'
     | '/blog/$slug'
+    | '/cli/authorize'
     | '/console/log'
     | '/console/topup'
     | '/models/claude-api'
@@ -1152,6 +1163,7 @@ export interface FileRouteTypes {
     | '/_authenticated/chat2link'
     | '/_authenticated/quickstart'
     | '/blog/$slug'
+    | '/cli/authorize'
     | '/console/log'
     | '/console/topup'
     | '/models/claude-api'
@@ -1242,6 +1254,7 @@ export interface RootRouteChildren {
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
   BlogSlugRoute: typeof BlogSlugRoute
+  CliAuthorizeRoute: typeof CliAuthorizeRoute
   ConsoleLogRoute: typeof ConsoleLogRoute
   ConsoleTopupRoute: typeof ConsoleTopupRoute
   ModelsClaudeApiRoute: typeof ModelsClaudeApiRoute
@@ -1413,6 +1426,13 @@ declare module '@tanstack/react-router' {
       path: '/console/log'
       fullPath: '/console/log'
       preLoaderRoute: typeof ConsoleLogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cli/authorize': {
+      id: '/cli/authorize'
+      path: '/cli/authorize'
+      fullPath: '/cli/authorize'
+      preLoaderRoute: typeof CliAuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/blog/$slug': {
@@ -2131,6 +2151,7 @@ const rootRouteChildren: RootRouteChildren = {
   errors500Route: errors500Route,
   errors503Route: errors503Route,
   BlogSlugRoute: BlogSlugRoute,
+  CliAuthorizeRoute: CliAuthorizeRoute,
   ConsoleLogRoute: ConsoleLogRoute,
   ConsoleTopupRoute: ConsoleTopupRoute,
   ModelsClaudeApiRoute: ModelsClaudeApiRoute,

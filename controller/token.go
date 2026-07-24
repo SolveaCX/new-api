@@ -61,10 +61,19 @@ func SearchTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	keyword := c.Query("keyword")
 	token := c.Query("token")
+	status := 0
+	if rawStatus := c.Query("status"); rawStatus != "" {
+		parsedStatus, err := strconv.Atoi(rawStatus)
+		if err != nil {
+			status = -1
+		} else {
+			status = parsedStatus
+		}
+	}
 
 	pageInfo := common.GetPageQuery(c)
 
-	tokens, total, err := model.SearchUserTokens(userId, keyword, token, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	tokens, total, err := model.SearchUserTokens(userId, keyword, token, status, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -225,6 +234,11 @@ func buildTokenForInsert(c *gin.Context, token model.Token, key string) (model.T
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		Source:             token.Source,
+		DeviceIdHash:       token.DeviceIdHash,
+		ClientName:         token.ClientName,
+		ClientVersion:      token.ClientVersion,
+		LastUsedClientAt:   token.LastUsedClientAt,
 	}, nil
 }
 

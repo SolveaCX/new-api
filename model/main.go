@@ -256,6 +256,7 @@ func migrateDB() error {
 	err := DB.AutoMigrate(
 		&Channel{},
 		&Token{},
+		&CliDeviceAuthorization{},
 		&User{},
 		&RecallCampaign{},
 		&RecallRecipient{},
@@ -347,6 +348,7 @@ func migrateDBFast() error {
 	}{
 		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
+		{&CliDeviceAuthorization{}, "CliDeviceAuthorization"},
 		{&User{}, "User"},
 		{&RecallCampaign{}, "RecallCampaign"},
 		{&RecallRecipient{}, "RecallRecipient"},

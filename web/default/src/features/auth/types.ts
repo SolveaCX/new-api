@@ -84,6 +84,14 @@ export interface ApiResponse {
   data?: unknown
 }
 
+export interface CliDeviceAuthorization {
+  status: 'pending' | 'approved' | 'denied' | 'expired'
+  client_name?: string
+  client_version?: string
+  expires_at?: number
+  approved_at?: number
+}
+
 export interface RegistrationEmailVerificationResponse extends ApiResponse {
   data?: {
     verified?: boolean
