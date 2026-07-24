@@ -686,6 +686,15 @@ func resumeStripeSubscriptionCheckout(c *gin.Context, order *model.SubscriptionO
 	}
 	checkoutSession, err := stripeCheckoutSessionGetter(sessionID, nil)
 	if err != nil || checkoutSession == nil || strings.TrimSpace(checkoutSession.ID) != sessionID {
+		if err != nil {
+			logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe subscription checkout resume lookup failed trade_no=%s session_id=%s error=%q", order.TradeNo, sessionID, err.Error()))
+		} else {
+			logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe subscription checkout resume lookup returned invalid session trade_no=%s session_id=%s", order.TradeNo, sessionID))
+		}
+		if payLink := strings.TrimSpace(order.ProviderSessionURL); payLink != "" {
+			c.JSON(http.StatusOK, gin.H{"success": true, "message": "success", "data": gin.H{"pay_link": payLink}})
+			return
+		}
 		common.ApiErrorI18n(c, i18n.MsgPaymentStartFailed)
 		return
 	}

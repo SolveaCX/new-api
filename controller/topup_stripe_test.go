@@ -733,6 +733,49 @@ func TestResumeStripeTopUpCheckoutReturnsSubscriptionEmbeddedSession(t *testing.
 	require.JSONEq(t, `{"success":true,"message":"success","data":{"client_secret":"cs_secret_subscription","publishable_key":"pk_test_resume","pay_link":"https://checkout.stripe.test/subscription/resume"}}`, recorder.Body.String())
 }
 
+func TestResumeStripeTopUpCheckoutFallsBackToSubscriptionHostedURL(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalSecret := setting.StripeApiSecret
+	originalKey := stripe.Key
+	originalGetter := stripeCheckoutSessionGetter
+	t.Cleanup(func() {
+		setting.StripeApiSecret = originalSecret
+		stripe.Key = originalKey
+		stripeCheckoutSessionGetter = originalGetter
+	})
+	setting.StripeApiSecret = "sk_test_resume"
+	insertStripeFulfillmentSubscriptionPlan(t, 1002)
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:             41,
+		PlanId:             1002,
+		Money:              30,
+		TradeNo:            "SUBSTR_resume_hosted_fallback",
+		PaymentMethod:      model.PaymentMethodStripe,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         time.Now().Unix(),
+		ProviderSessionId:  "cs_resume_subscription_missing",
+		ProviderSessionURL: "https://checkout.stripe.test/subscription/fallback",
+	}).Error)
+	stripeCheckoutSessionGetter = func(id string, _ *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		require.Equal(t, "cs_resume_subscription_missing", id)
+		return nil, errors.New("stripe session unavailable")
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/user/topup/:trade_no/resume", func(c *gin.Context) {
+		c.Set("id", 41)
+		ResumeStripeTopUpCheckout(c)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/user/topup/SUBSTR_resume_hosted_fallback/resume", nil)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{"success":true,"message":"success","data":{"pay_link":"https://checkout.stripe.test/subscription/fallback"}}`, recorder.Body.String())
+}
+
 func TestResumeStripeTopUpCheckoutRejectsAnotherUsersOrderBeforeStripeLookup(t *testing.T) {
 	setupStripeFulfillmentTestDB(t)
 	originalGetter := stripeCheckoutSessionGetter
