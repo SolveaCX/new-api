@@ -117,7 +117,7 @@ function validateLegacyAudience(
   validateAudienceGroups(audience, context)
 }
 
-function validateRegisteredOnlyAudience(
+function validateRegistrationTimeRangeAudience(
   audience: z.infer<typeof audienceSchema>,
   context: z.RefinementCtx
 ): void {
@@ -144,6 +144,13 @@ function validateRegisteredOnlyAudience(
       message: 'Registration end must be on or after start',
     })
   }
+}
+
+function validateRegisteredOnlyAudience(
+  audience: z.infer<typeof audienceSchema>,
+  context: z.RefinementCtx
+): void {
+  validateRegistrationTimeRangeAudience(audience, context)
   validateAudienceGroups(audience, context)
 }
 
@@ -429,6 +436,7 @@ export const recallCampaignDraftSchema = z
       'lapsed_payer',
       'expired_subscription',
       'registered_only',
+      'registration_time_range',
       'specified_users',
     ]),
     audience_config: audienceSchema,
@@ -457,6 +465,9 @@ export const recallCampaignDraftSchema = z
     }
     if (draft.audience_template === 'registered_only') {
       validateRegisteredOnlyAudience(draft.audience_config, context)
+    }
+    if (draft.audience_template === 'registration_time_range') {
+      validateRegistrationTimeRangeAudience(draft.audience_config, context)
     }
     if (draft.audience_template === 'specified_users') {
       validateSpecifiedUsersAudience(draft.audience_config, context)
