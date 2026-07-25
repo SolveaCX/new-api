@@ -214,6 +214,7 @@ const audienceFields: Record<
 
 function createRecallCampaignDefaults(): RecallCampaignDraft {
   return {
+    campaign_type: 'promotion',
     name: '',
     audience_template: 'first_purchase',
     audience_config: {
