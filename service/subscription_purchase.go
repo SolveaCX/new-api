@@ -488,22 +488,26 @@ func createPendingOneTimePurchaseOrderTx(tx *gorm.DB, user *model.User, contract
 	}
 	now := common.GetTimestamp()
 	order := &model.SubscriptionOrder{
-		UserId:             user.Id,
-		PlanId:             plan.Id,
-		Money:              quote.Total,
-		TradeNo:            subscriptionPurchaseTradeNo(user.Id, intent.Id),
-		PaymentMethod:      cmd.PaymentChoice,
-		PaymentProvider:    paymentProviderForPurchaseChoice(cmd.PaymentChoice),
-		Status:             common.TopUpStatusPending,
-		CreateTime:         now,
-		PurchaseMonths:     cmd.Months,
-		UnitPrice:          quote.UnitPrice,
-		PaymentCurrency:    quote.Currency,
-		PaymentAmountMinor: quote.PaymentAmountMinor,
-		PlanSnapshot:       snapshot,
-		PurchaseIntent:     intent.Kind,
-		ProviderPayload:    fmt.Sprintf("choice=%s;months=%d;contract_id=%d;change_intent_id=%d", cmd.PaymentChoice, cmd.Months, contract.Id, intent.Id),
-		ChangeIntentId:     intent.Id,
+		UserId:                    user.Id,
+		PlanId:                    plan.Id,
+		Money:                     quote.Total,
+		TradeNo:                   subscriptionPurchaseTradeNo(user.Id, intent.Id),
+		PaymentMethod:             cmd.PaymentChoice,
+		PaymentProvider:           paymentProviderForPurchaseChoice(cmd.PaymentChoice),
+		Status:                    common.TopUpStatusPending,
+		CreateTime:                now,
+		PurchaseMonths:            cmd.Months,
+		UnitPrice:                 quote.UnitPrice,
+		PaymentCurrency:           quote.Currency,
+		PaymentAmountMinor:        quote.PaymentAmountMinor,
+		PlanSnapshot:              snapshot,
+		PurchaseIntent:            intent.Kind,
+		RecallCampaignId:          quote.RecallCampaignID,
+		RecallRecipientId:         quote.RecallRecipientID,
+		RecallPromotionCodeId:     quote.RecallPromotionCodeID,
+		RecallDiscountAmountMinor: quote.DiscountAmountMinor,
+		ProviderPayload:           fmt.Sprintf("choice=%s;months=%d;contract_id=%d;change_intent_id=%d", cmd.PaymentChoice, cmd.Months, contract.Id, intent.Id),
+		ChangeIntentId:            intent.Id,
 	}
 	if err := tx.Create(order).Error; err != nil {
 		return nil, err
@@ -539,27 +543,63 @@ func applyBalancePrepaidPurchaseTx(tx *gorm.DB, user *model.User, contract *mode
 	}
 	now := common.GetTimestamp()
 	order := &model.SubscriptionOrder{
-		UserId:             user.Id,
-		PlanId:             plan.Id,
-		Money:              quote.Total,
-		TradeNo:            subscriptionPurchaseTradeNo(user.Id, intent.Id),
-		PaymentMethod:      model.PaymentMethodBalance,
-		PaymentProvider:    model.PaymentProviderBalance,
-		Status:             common.TopUpStatusSuccess,
-		CreateTime:         now,
-		CompleteTime:       now,
-		PurchaseMonths:     cmd.Months,
-		UnitPrice:          quote.UnitPrice,
-		PaymentCurrency:    quote.Currency,
-		PaymentAmountMinor: quote.PaymentAmountMinor,
-		PlanSnapshot:       snapshot,
-		PurchaseIntent:     intent.Kind,
-		RenewalSource:      model.SubscriptionRenewalSourceWallet,
-		ProviderPayload:    fmt.Sprintf("charged_quota=%d;refunded_quota=%d;choice=%s;months=%d;contract_id=%d;change_intent_id=%d", requiredQuota, refundQuota, cmd.PaymentChoice, cmd.Months, contract.Id, intent.Id),
-		ChangeIntentId:     intent.Id,
+		UserId:                    user.Id,
+		PlanId:                    plan.Id,
+		Money:                     quote.Total,
+		TradeNo:                   subscriptionPurchaseTradeNo(user.Id, intent.Id),
+		PaymentMethod:             model.PaymentMethodBalance,
+		PaymentProvider:           model.PaymentProviderBalance,
+		Status:                    common.TopUpStatusSuccess,
+		CreateTime:                now,
+		CompleteTime:              now,
+		PurchaseMonths:            cmd.Months,
+		UnitPrice:                 quote.UnitPrice,
+		PaymentCurrency:           quote.Currency,
+		PaymentAmountMinor:        quote.PaymentAmountMinor,
+		PlanSnapshot:              snapshot,
+		PurchaseIntent:            intent.Kind,
+		RenewalSource:             model.SubscriptionRenewalSourceWallet,
+		RecallCampaignId:          quote.RecallCampaignID,
+		RecallRecipientId:         quote.RecallRecipientID,
+		RecallPromotionCodeId:     quote.RecallPromotionCodeID,
+		RecallDiscountAmountMinor: quote.DiscountAmountMinor,
+		ProviderPayload:           fmt.Sprintf("charged_quota=%d;refunded_quota=%d;choice=%s;months=%d;contract_id=%d;change_intent_id=%d", requiredQuota, refundQuota, cmd.PaymentChoice, cmd.Months, contract.Id, intent.Id),
+		ChangeIntentId:            intent.Id,
 	}
 	if err := tx.Create(order).Error; err != nil {
 		return nil, nil, err
+	}
+	if quote.DiscountAmountMinor > 0 {
+		eventData, err := common.Marshal(map[string]any{
+			"trade_no":        order.TradeNo,
+			"conversion_kind": model.RecallConversionDirect,
+			"currency":        strings.ToUpper(strings.TrimSpace(quote.Currency)),
+			"amount_total":    quote.PaymentAmountMinor,
+			"discount_amount": quote.DiscountAmountMinor,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		converted, err := model.RecordRecallConversionTx(tx, model.RecallConversionRecord{
+			RecipientId:    quote.RecallRecipientID,
+			CampaignId:     quote.RecallCampaignID,
+			UserId:         user.Id,
+			Kind:           model.RecallConversionDirect,
+			TradeNo:        order.TradeNo,
+			Currency:       strings.ToUpper(strings.TrimSpace(quote.Currency)),
+			Amount:         quote.PaymentAmountMinor,
+			DiscountAmount: quote.DiscountAmountMinor,
+			Source:         "balance",
+			SourceEventId:  "balance:" + order.TradeNo,
+			EventData:      string(eventData),
+			ConvertedAt:    now,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		if !converted {
+			return nil, nil, ErrRecallClaimConverted
+		}
 	}
 	if requiredQuota > 0 {
 		if err := tx.Create(&model.WalletLedgerEntry{
@@ -948,7 +988,8 @@ func validateSubscriptionPurchaseQuoteForChoice(quote SubscriptionPurchaseQuote,
 		if quote.RecallCampaignID <= 0 || quote.RecallRecipientID <= 0 {
 			return SubscriptionPurchaseQuote{}, errors.New("subscription purchase recall identity is required")
 		}
-	} else if quote.RecallCampaignID != 0 || quote.RecallRecipientID != 0 {
+		quote.RecallPromotionCodeID = strings.TrimSpace(quote.RecallPromotionCodeID)
+	} else if quote.RecallCampaignID != 0 || quote.RecallRecipientID != 0 || strings.TrimSpace(quote.RecallPromotionCodeID) != "" {
 		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase recall identity requires discount")
 	}
 	switch choice {
