@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -161,6 +162,37 @@ const (
 	LogTypeError   = 5
 	LogTypeRefund  = 6
 )
+
+func FindRecentlyActiveRecallUserIDs(userIDs []int, since int64, batchSize int) (map[int]struct{}, error) {
+	return FindRecentlyActiveRecallUserIDsWithContext(context.Background(), userIDs, since, batchSize)
+}
+
+func FindRecentlyActiveRecallUserIDsWithContext(ctx context.Context, userIDs []int, since int64, batchSize int) (map[int]struct{}, error) {
+	active := make(map[int]struct{})
+	if len(userIDs) == 0 {
+		return active, nil
+	}
+	if batchSize <= 0 {
+		return nil, fmt.Errorf("recall log batch size must be positive")
+	}
+	for start := 0; start < len(userIDs); start += batchSize {
+		end := start + batchSize
+		if end > len(userIDs) {
+			end = len(userIDs)
+		}
+		var batchActive []int
+		if err := LOG_DB.WithContext(ctx).Model(&Log{}).
+			Where("type = ? AND created_at >= ? AND user_id IN ?", LogTypeConsume, since, userIDs[start:end]).
+			Distinct().
+			Pluck("user_id", &batchActive).Error; err != nil {
+			return nil, err
+		}
+		for _, userID := range batchActive {
+			active[userID] = struct{}{}
+		}
+	}
+	return active, nil
+}
 
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
@@ -342,6 +374,7 @@ type RecordConsumeLogParams struct {
 // variable set by the service layer at init to avoid an import cycle (model must not
 // import service). Keep the callback cheap; it runs on the settlement path.
 var TemporaryChannelSpendHook func(channelId int, modelName string, quota int)
+var adsActivationSeen sync.Map
 
 type SupplierAccountingConsumeLogWriteOutcome string
 
@@ -494,6 +527,14 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			logger.LogError(c, "failed to record log: "+createErr.Error())
 		} else {
 			maybeRecordLogRequestSample(c, userId, params, log)
+			if _, loaded := adsActivationSeen.LoadOrStore(userId, struct{}{}); !loaded {
+				occurredAt := time.Unix(log.CreatedAt, 0)
+				gopool.Go(func() {
+					if err := EnqueueAdsActivation(userId, occurredAt); err != nil {
+						adsActivationSeen.Delete(userId)
+					}
+				})
+			}
 		}
 	} else {
 		logger.LogError(c, "failed to serialize supplier accounting consume log envelope: "+supplierOnlyMarshalErr.Error())

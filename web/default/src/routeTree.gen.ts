@@ -61,6 +61,7 @@ import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_
 import { Route as AuthenticatedSupplyChainIndexRouteImport } from './routes/_authenticated/supply-chain/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
+import { Route as AuthenticatedRecallCampaignsIndexRouteImport } from './routes/_authenticated/recall-campaigns/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedOpsReportIndexRouteImport } from './routes/_authenticated/ops-report/index'
@@ -79,6 +80,7 @@ import { Route as LocaleBlogIndexRouteImport } from './routes/$locale/blog/index
 import { Route as LocaleAboutIndexRouteImport } from './routes/$locale/about/index'
 import { Route as BlogCategorySlugRouteImport } from './routes/blog/category/$slug'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
+import { Route as AuthenticatedRecallCampaignsCampaignIdRouteImport } from './routes/_authenticated/recall-campaigns/$campaignId'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
@@ -371,6 +373,12 @@ const AuthenticatedRedemptionCodesIndexRoute =
     path: '/redemption-codes/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedRecallCampaignsIndexRoute =
+  AuthenticatedRecallCampaignsIndexRouteImport.update({
+    id: '/recall-campaigns/',
+    path: '/recall-campaigns/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProfileIndexRoute =
   AuthenticatedProfileIndexRouteImport.update({
     id: '/profile/',
@@ -471,6 +479,12 @@ const AuthenticatedUsageLogsSectionRoute =
   AuthenticatedUsageLogsSectionRouteImport.update({
     id: '/usage-logs/$section',
     path: '/usage-logs/$section',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRecallCampaignsCampaignIdRoute =
+  AuthenticatedRecallCampaignsCampaignIdRouteImport.update({
+    id: '/recall-campaigns/$campaignId',
+    path: '/recall-campaigns/$campaignId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedModelsSectionRoute =
@@ -675,6 +689,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/recall-campaigns/$campaignId': typeof AuthenticatedRecallCampaignsCampaignIdRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/blog/category/$slug': typeof BlogCategorySlugRoute
   '/$locale/about/': typeof LocaleAboutIndexRoute
@@ -693,6 +708,7 @@ export interface FileRoutesByFullPath {
   '/ops-report/': typeof AuthenticatedOpsReportIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
+  '/recall-campaigns/': typeof AuthenticatedRecallCampaignsIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/supply-chain/': typeof AuthenticatedSupplyChainIndexRoute
@@ -770,6 +786,7 @@ export interface FileRoutesByTo {
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/recall-campaigns/$campaignId': typeof AuthenticatedRecallCampaignsCampaignIdRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/blog/category/$slug': typeof BlogCategorySlugRoute
   '/$locale/about': typeof LocaleAboutIndexRoute
@@ -788,6 +805,7 @@ export interface FileRoutesByTo {
   '/ops-report': typeof AuthenticatedOpsReportIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
+  '/recall-campaigns': typeof AuthenticatedRecallCampaignsIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
   '/supply-chain': typeof AuthenticatedSupplyChainIndexRoute
@@ -869,6 +887,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/_authenticated/recall-campaigns/$campaignId': typeof AuthenticatedRecallCampaignsCampaignIdRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/blog/category/$slug': typeof BlogCategorySlugRoute
   '/$locale/about/': typeof LocaleAboutIndexRoute
@@ -887,6 +906,7 @@ export interface FileRoutesById {
   '/_authenticated/ops-report/': typeof AuthenticatedOpsReportIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
+  '/_authenticated/recall-campaigns/': typeof AuthenticatedRecallCampaignsIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
   '/_authenticated/supply-chain/': typeof AuthenticatedSupplyChainIndexRoute
@@ -967,6 +987,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/errors/$error'
     | '/models/$section'
+    | '/recall-campaigns/$campaignId'
     | '/usage-logs/$section'
     | '/blog/category/$slug'
     | '/$locale/about/'
@@ -985,6 +1006,7 @@ export interface FileRouteTypes {
     | '/ops-report/'
     | '/playground/'
     | '/profile/'
+    | '/recall-campaigns/'
     | '/redemption-codes/'
     | '/subscriptions/'
     | '/supply-chain/'
@@ -1062,6 +1084,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/errors/$error'
     | '/models/$section'
+    | '/recall-campaigns/$campaignId'
     | '/usage-logs/$section'
     | '/blog/category/$slug'
     | '/$locale/about'
@@ -1080,6 +1103,7 @@ export interface FileRouteTypes {
     | '/ops-report'
     | '/playground'
     | '/profile'
+    | '/recall-campaigns'
     | '/redemption-codes'
     | '/subscriptions'
     | '/supply-chain'
@@ -1160,6 +1184,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
     | '/_authenticated/models/$section'
+    | '/_authenticated/recall-campaigns/$campaignId'
     | '/_authenticated/usage-logs/$section'
     | '/blog/category/$slug'
     | '/$locale/about/'
@@ -1178,6 +1203,7 @@ export interface FileRouteTypes {
     | '/_authenticated/ops-report/'
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
+    | '/_authenticated/recall-campaigns/'
     | '/_authenticated/redemption-codes/'
     | '/_authenticated/subscriptions/'
     | '/_authenticated/supply-chain/'
@@ -1619,6 +1645,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRedemptionCodesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/recall-campaigns/': {
+      id: '/_authenticated/recall-campaigns/'
+      path: '/recall-campaigns'
+      fullPath: '/recall-campaigns/'
+      preLoaderRoute: typeof AuthenticatedRecallCampaignsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/profile/': {
       id: '/_authenticated/profile/'
       path: '/profile'
@@ -1743,6 +1776,13 @@ declare module '@tanstack/react-router' {
       path: '/usage-logs/$section'
       fullPath: '/usage-logs/$section'
       preLoaderRoute: typeof AuthenticatedUsageLogsSectionRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/recall-campaigns/$campaignId': {
+      id: '/_authenticated/recall-campaigns/$campaignId'
+      path: '/recall-campaigns/$campaignId'
+      fullPath: '/recall-campaigns/$campaignId'
+      preLoaderRoute: typeof AuthenticatedRecallCampaignsCampaignIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/models/$section': {
@@ -2023,6 +2063,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardSectionRoute: typeof AuthenticatedDashboardSectionRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
+  AuthenticatedRecallCampaignsCampaignIdRoute: typeof AuthenticatedRecallCampaignsCampaignIdRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedAvailableModelsIndexRoute: typeof AuthenticatedAvailableModelsIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
@@ -2036,6 +2077,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpsReportIndexRoute: typeof AuthenticatedOpsReportIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
+  AuthenticatedRecallCampaignsIndexRoute: typeof AuthenticatedRecallCampaignsIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
   AuthenticatedSupplyChainIndexRoute: typeof AuthenticatedSupplyChainIndexRoute
@@ -2054,6 +2096,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardSectionRoute: AuthenticatedDashboardSectionRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
+  AuthenticatedRecallCampaignsCampaignIdRoute:
+    AuthenticatedRecallCampaignsCampaignIdRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedAvailableModelsIndexRoute:
     AuthenticatedAvailableModelsIndexRoute,
@@ -2069,6 +2113,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpsReportIndexRoute: AuthenticatedOpsReportIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,
+  AuthenticatedRecallCampaignsIndexRoute:
+    AuthenticatedRecallCampaignsIndexRoute,
   AuthenticatedRedemptionCodesIndexRoute:
     AuthenticatedRedemptionCodesIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,

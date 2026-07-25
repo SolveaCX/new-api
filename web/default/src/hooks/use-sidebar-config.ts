@@ -64,6 +64,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     user: true,
     setting: true,
     subscription: true,
+    recall_campaigns: true,
   },
 }
 
@@ -120,6 +121,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/supply-chain': { section: 'admin', module: 'supply_chain' },
   '/redemption-codes': { section: 'admin', module: 'redemption' },
   '/subscriptions': { section: 'admin', module: 'subscription' },
+  '/recall-campaigns': { section: 'admin', module: 'recall_campaigns' },
   '/system-settings': { section: 'admin', module: 'setting' },
   '/system-settings/site': { section: 'admin', module: 'setting' },
 }
@@ -262,6 +264,22 @@ function filterNavItems(
     .filter((item) => isNavItemVisible(item, adminConfig, userConfig))
 }
 
+export function filterSidebarGroups(
+  navGroups: NavGroup[],
+  adminValue: string | null | undefined,
+  userValue: string | null | undefined,
+  applyUserOverlay = true
+): NavGroup[] {
+  const adminConfig = parseSidebarConfig(adminValue)
+  const userConfig = applyUserOverlay ? parseUserSidebarConfig(userValue) : null
+  return navGroups
+    .map((group) => ({
+      ...group,
+      items: filterNavItems(group.items, adminConfig, userConfig),
+    }))
+    .filter((group) => group.items.length > 0)
+}
+
 /**
  * Filter sidebar navigation groups by admin × user sidebar_modules config.
  *
@@ -305,16 +323,12 @@ export function filterSidebarNavGroupsForConfig(
   userConfigValue: string | null | undefined,
   userCanConfigure: boolean
 ): NavGroup[] {
-  const adminConfig = parseSidebarConfig(adminConfigValue)
   // Root and other accounts without sidebar settings must not be narrowed by
   // a stale historical user preference they cannot change in the product.
-  const userConfig = userCanConfigure
-    ? parseUserSidebarConfig(userConfigValue)
-    : null
-  return navGroups
-    .map((group) => ({
-      ...group,
-      items: filterNavItems(group.items, adminConfig, userConfig),
-    }))
-    .filter((group) => group.items.length > 0)
+  return filterSidebarGroups(
+    navGroups,
+    adminConfigValue,
+    userConfigValue,
+    userCanConfigure
+  )
 }

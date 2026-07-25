@@ -61,7 +61,7 @@ const invitationKeys = [
   'Share by email',
   'Share on X',
   'Share on LinkedIn',
-  'Join NewAPI with my referral link. Referral rewards are processed after your first successful top-up.',
+  'Join Flatkey with my referral link. Referral rewards are processed after your first successful top-up.',
   'How it works',
   'Share your referral link',
   'Send your unique referral link to a friend.',
@@ -194,8 +194,8 @@ describe('invitation i18n', () => {
     const literalKeys = {
       'Share on X': ['X'],
       'Share on LinkedIn': ['LinkedIn'],
-      'Join NewAPI with my referral link. Referral rewards are processed after your first successful top-up.':
-        ['NewAPI'],
+      'Join Flatkey with my referral link. Referral rewards are processed after your first successful top-up.':
+        ['Flatkey'],
       'Referral rewards are granted only after your friend completes their first successful top-up. Registration, creating an API key, and making an API call do not grant a reward.':
         ['API'],
       'Referral rewards are added automatically to your API balance and used for API requests.':

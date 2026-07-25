@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/types"
@@ -115,6 +116,41 @@ func TestRecordConsumeLogSupplierAccountingObserverSuccessAfterCreate(t *testing
 	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
 	require.EqualValues(t, 1, count)
 	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteSuccess}}, *observations)
+}
+
+func TestRecordConsumeLogPreservesSupplierEnvelopeAndEnqueuesAdsActivation(t *testing.T) {
+	mainDB := setupAdsAttributionOutboxTestDB(t)
+	require.NoError(t, mainDB.AutoMigrate(&User{}))
+	const userID = 918273
+	require.NoError(t, mainDB.Create(&User{
+		Id:             userID,
+		Username:       "supplier-ads-activation",
+		AdsAttribution: `{"gclid":"supplier-activation-click"}`,
+	}).Error)
+	logDB := useSupplierAccountingObserverLogDB(t)
+	originalEnabled := common.LogConsumeEnabled
+	common.LogConsumeEnabled = true
+	adsActivationSeen.Delete(userID)
+	t.Cleanup(func() {
+		common.LogConsumeEnabled = originalEnabled
+		adsActivationSeen.Delete(userID)
+	})
+
+	RecordConsumeLog(
+		supplierAccountingObserverTestContext(),
+		userID,
+		supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope()),
+	)
+
+	var persisted Log
+	require.NoError(t, logDB.First(&persisted).Error)
+	requireSupplierAccountingEnvelopePersisted(t, persisted.Other)
+	require.Eventually(t, func() bool {
+		var count int64
+		return mainDB.Model(&AdsAttributionOutbox{}).
+			Where("event_id = ?", "flatkey:activation:918273:first_api_success").
+			Count(&count).Error == nil && count == 1
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestRecordConsumeLogRedactsSupplierAccountingFromDiagnosticLog(t *testing.T) {
