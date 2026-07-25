@@ -100,12 +100,31 @@ func insertPurchaseServicePlan(t *testing.T, id int, rank int, price float64, to
 }
 
 func purchaseBalanceCommand(userID int, planID int, months int, requestID string) PurchaseSubscriptionCommand {
+	plan := model.SubscriptionPlan{}
+	if model.DB != nil {
+		_ = model.DB.Where("id = ?", planID).First(&plan).Error
+	}
 	return PurchaseSubscriptionCommand{
 		UserID:        userID,
 		PlanID:        planID,
 		PaymentChoice: SubscriptionPaymentChoiceBalance,
 		Months:        months,
 		RequestID:     requestID,
+		VerifiedQuote: subscriptionPurchaseTestQuote("USD", plan.PriceAmount, months),
+	}
+}
+
+func subscriptionPurchaseTestQuote(currency string, unitPrice float64, months int) *SubscriptionPurchaseQuote {
+	unitMinor := subscriptionPurchaseMinorAmount(unitPrice)
+	totalMinor := unitMinor * int64(months)
+	return &SubscriptionPurchaseQuote{
+		Currency:                 currency,
+		UnitPrice:                float64(unitMinor) / 100,
+		UnitAmountMinor:          unitMinor,
+		OriginalTotal:            float64(totalMinor) / 100,
+		OriginalTotalAmountMinor: totalMinor,
+		Total:                    float64(totalMinor) / 100,
+		PaymentAmountMinor:       totalMinor,
 	}
 }
 
@@ -1240,6 +1259,7 @@ func TestPurchaseSubscriptionPixPersistsConfiguredBRLQuote(t *testing.T) {
 		PaymentChoice: SubscriptionPaymentChoicePix,
 		Months:        2,
 		RequestID:     "pix-brl",
+		VerifiedQuote: subscriptionPurchaseTestQuote("BRL", 11, 2),
 	})
 
 	require.NoError(t, err)
@@ -1251,7 +1271,7 @@ func TestPurchaseSubscriptionPixPersistsConfiguredBRLQuote(t *testing.T) {
 	require.Equal(t, float64(22), result.Order.Money)
 }
 
-func TestPurchaseSubscriptionOneTimeUsesVerifiedQuoteWithoutReResolving(t *testing.T) {
+func TestPurchaseSubscriptionOneTimeRejectsVerifiedQuoteThatDoesNotMatchRequote(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	insertPurchaseServiceUser(t, 7315, 1000)
 	plan := insertPurchaseServicePlan(t, 7418, 1, 2, 200)
@@ -1266,7 +1286,7 @@ func TestPurchaseSubscriptionOneTimeUsesVerifiedQuoteWithoutReResolving(t *testi
 		}, nil
 	}
 
-	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+	_, err := PurchaseSubscription(PurchaseSubscriptionCommand{
 		UserID:        7315,
 		PlanID:        plan.Id,
 		PaymentChoice: SubscriptionPaymentChoicePix,
@@ -1280,18 +1300,19 @@ func TestPurchaseSubscriptionOneTimeUsesVerifiedQuoteWithoutReResolving(t *testi
 		},
 	})
 
-	require.NoError(t, err)
-	require.Equal(t, SubscriptionPaymentChoicePix, result.Order.PaymentMethod)
-	require.Equal(t, "BRL", result.Order.PaymentCurrency)
-	require.Equal(t, float64(49.90), result.Order.UnitPrice)
-	require.Equal(t, float64(99.80), result.Order.Money)
-	require.Equal(t, int64(9980), result.Order.PaymentAmountMinor)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "quote")
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 7315).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
 }
 
 func TestPurchaseSubscriptionRejectsQuoteNotDerivedFromRoundedMonthlyMinorAmount(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	insertPurchaseServiceUser(t, 7316, 1000)
 	plan := insertPurchaseServicePlan(t, 7419, 1, 2, 200)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).
+		Update("pix_price_brl", 49.90).Error)
 
 	_, err := PurchaseSubscription(PurchaseSubscriptionCommand{
 		UserID:        7316,
@@ -1308,7 +1329,7 @@ func TestPurchaseSubscriptionRejectsQuoteNotDerivedFromRoundedMonthlyMinorAmount
 	})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "monthly minor amount")
+	require.Contains(t, err.Error(), "total")
 	var orderCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 7316).Count(&orderCount).Error)
 	require.Zero(t, orderCount)
@@ -1318,6 +1339,8 @@ func TestPurchaseSubscriptionNormalizesVerifiedQuoteDisplayAmountsToMinorUnits(t
 	setupSubscriptionPurchaseServiceTestDB(t)
 	insertPurchaseServiceUser(t, 7317, 1000)
 	plan := insertPurchaseServicePlan(t, 7420, 1, 2, 200)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).
+		Update("pix_price_brl", 49.904999).Error)
 
 	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
 		UserID:        7317,
@@ -1360,6 +1383,7 @@ func TestPurchaseSubscriptionUPIPersistsConfiguredINRQuote(t *testing.T) {
 		PaymentChoice: SubscriptionPaymentChoiceUPI,
 		Months:        3,
 		RequestID:     "upi-inr",
+		VerifiedQuote: subscriptionPurchaseTestQuote("INR", 180, 3),
 	})
 
 	require.NoError(t, err)
@@ -1406,6 +1430,7 @@ func TestPurchaseSubscriptionOneTimeChoicesUseStripeProvider(t *testing.T) {
 				PaymentChoice: test.choice,
 				Months:        1,
 				RequestID:     "stripe-provider-" + test.name,
+				VerifiedQuote: subscriptionPurchaseTestQuote(test.currency, test.price, 1),
 			})
 
 			require.NoError(t, err)
