@@ -177,7 +177,19 @@ func stripeSubscriptionAuthoritativeMetadata(tradeNo string, userID int, planID 
 }
 
 func consoleSubscriptionReturnPath() string {
-	return strings.TrimRight(system_setting.ServerAddress, "/") + "/console/subscription"
+	// After Stripe checkout the buyer must land on a page that actually exists in
+	// the deployed console theme AND that a normal (non-admin) user can open.
+	// "/console/subscription" is the ADMIN subscriptions page: it 404s in the
+	// default theme (no such route — only /subscriptions and the compat
+	// /console/topup→/wallet redirect exist) and is admin-gated in classic.
+	// Route to the wallet/top-up page instead, exactly like consolePaymentReturnPath
+	// in controller/return_path.go (ThemeAwarePath rewrites /console/topup→/wallet
+	// under the default theme). The plan the buyer just subscribed to shows there.
+	base, err := system_setting.NormalizeAppConsoleOrigin(system_setting.GetAppConsoleSettings().Origin)
+	if err != nil || base == "" {
+		base = strings.TrimRight(system_setting.ServerAddress, "/")
+	}
+	return base + common.ThemeAwarePath("/console/topup")
 }
 
 func ensureStripeSecretForSubscription() error {
