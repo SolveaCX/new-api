@@ -35,6 +35,7 @@ type ChangePlanCommand struct {
 	PaymentMode string
 	RequestID   string
 	UIMode      string
+	RecallClaim string
 }
 
 type ChangePlanResult struct {
@@ -690,6 +691,7 @@ func (cmd *ChangePlanCommand) normalize() {
 	cmd.PaymentMode = strings.TrimSpace(cmd.PaymentMode)
 	cmd.RequestID = strings.TrimSpace(cmd.RequestID)
 	cmd.UIMode = strings.ToLower(strings.TrimSpace(cmd.UIMode))
+	cmd.RecallClaim = strings.TrimSpace(cmd.RecallClaim)
 }
 
 func (cmd ChangePlanCommand) validate() error {

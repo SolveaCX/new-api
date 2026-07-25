@@ -31,6 +31,7 @@ type PurchaseSubscriptionCommand struct {
 	RequestID     string
 	VerifiedQuote *SubscriptionPurchaseQuote
 	UIMode        string
+	RecallClaim   string
 }
 
 type PurchaseSubscriptionResult struct {
@@ -188,6 +189,7 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 			PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
 			RequestID:   cmd.RequestID,
 			UIMode:      cmd.UIMode,
+			RecallClaim: cmd.RecallClaim,
 		})
 		if err != nil {
 			return nil, err
@@ -354,6 +356,7 @@ func (cmd *PurchaseSubscriptionCommand) normalize() {
 	cmd.PaymentChoice = strings.TrimSpace(cmd.PaymentChoice)
 	cmd.RequestID = strings.TrimSpace(cmd.RequestID)
 	cmd.UIMode = strings.ToLower(strings.TrimSpace(cmd.UIMode))
+	cmd.RecallClaim = strings.TrimSpace(cmd.RecallClaim)
 }
 
 func (cmd PurchaseSubscriptionCommand) validate() error {
