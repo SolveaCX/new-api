@@ -1,5 +1,12 @@
 package service
 
+import (
+	"fmt"
+	"strings"
+
+	"github.com/QuantumNous/new-api/model"
+)
+
 const (
 	RecallPurchaseKindTopUp        = "topup"
 	RecallPurchaseKindSubscription = "subscription"
@@ -12,6 +19,7 @@ type RecallCheckoutDiscount struct {
 }
 
 type RecallCampaignDraft struct {
+	CampaignType          string               `json:"campaign_type"`
 	Name                  string               `json:"name"`
 	AudienceTemplate      string               `json:"audience_template"`
 	Audience              RecallAudienceConfig `json:"audience_config"`
@@ -88,7 +96,8 @@ type RecallEmailTemplate struct {
 }
 
 type RecallEmailPreviewRequest struct {
-	Template RecallEmailTemplate `json:"template"`
+	CampaignType string              `json:"campaign_type"`
+	Template     RecallEmailTemplate `json:"template"`
 }
 
 type RecallEmailPreviewResponse struct {
@@ -97,7 +106,11 @@ type RecallEmailPreviewResponse struct {
 }
 
 func PreviewRecallEmail(request RecallEmailPreviewRequest) (RecallEmailPreviewResponse, error) {
-	stages, err := normalizeRecallEmailStages([]RecallEmailStage{{
+	campaignType, err := normalizeRecallCampaignType(request.CampaignType)
+	if err != nil {
+		return RecallEmailPreviewResponse{}, err
+	}
+	stages, err := normalizeRecallEmailStages(campaignType, []RecallEmailStage{{
 		StageNo:      1,
 		DelaySeconds: 0,
 		Templates: map[string]RecallEmailTemplate{
@@ -108,6 +121,7 @@ func PreviewRecallEmail(request RecallEmailPreviewRequest) (RecallEmailPreviewRe
 		return RecallEmailPreviewResponse{}, err
 	}
 	subject, bodyHTML, err := RenderRecallEmail(RecallEmailRenderInput{
+		CampaignType:        campaignType,
 		Language:            "en",
 		Template:            stages[0].Templates["en"],
 		RecipientName:       "Ada",
@@ -121,6 +135,25 @@ func PreviewRecallEmail(request RecallEmailPreviewRequest) (RecallEmailPreviewRe
 		return RecallEmailPreviewResponse{}, err
 	}
 	return RecallEmailPreviewResponse{Subject: subject, BodyHTML: bodyHTML}, nil
+}
+
+func normalizeRecallCampaignType(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", model.RecallCampaignTypePromotion:
+		return model.RecallCampaignTypePromotion, nil
+	case model.RecallCampaignTypeContentOnly:
+		return model.RecallCampaignTypeContentOnly, nil
+	default:
+		return "", fmt.Errorf("unsupported recall campaign type %q", value)
+	}
+}
+
+func normalizedRecallCampaignTypeForOutput(value string) string {
+	campaignType, err := normalizeRecallCampaignType(value)
+	if err != nil {
+		return model.RecallCampaignTypePromotion
+	}
+	return campaignType
 }
 
 type RecallClaimView struct {
