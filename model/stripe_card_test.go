@@ -160,9 +160,9 @@ func TestHasRecentStripeAutoCharge(t *testing.T) {
 	}
 }
 
-// TestRecordStripeAutoChargeAttemptTriggersCooldown verifies a FAILED attempt also makes
+// TestFailedAutoTopUpClaimTriggersCooldown verifies a FAILED episode claim also makes
 // the persistent cooldown fire, so a declined card can't be retried on every request.
-func TestRecordStripeAutoChargeAttemptTriggersCooldown(t *testing.T) {
+func TestFailedAutoTopUpClaimTriggersCooldown(t *testing.T) {
 	truncateTables(t)
 	DB.Exec("DELETE FROM top_ups")
 
@@ -174,9 +174,15 @@ func TestRecordStripeAutoChargeAttemptTriggersCooldown(t *testing.T) {
 		t.Fatalf("expected no cooldown before any attempt")
 	}
 
-	RecordStripeAutoChargeAttempt(userId, 20, "9001_t1")
+	order, claimed, err := ClaimStripeAutoTopUpEpisode(userId, "20260714", 2, window, 20, 20)
+	if err != nil || !claimed {
+		t.Fatalf("expected claim to succeed, claimed=%t err=%v", claimed, err)
+	}
+	if err := MarkStripeAutoTopUpOrderFailed(order.TradeNo, ""); err != nil {
+		t.Fatalf("mark failed errored: %v", err)
+	}
 
-	recent, err := HasRecentStripeAutoCharge(userId, window)
+	recent, err = HasRecentStripeAutoCharge(userId, window)
 	if err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
