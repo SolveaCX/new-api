@@ -274,6 +274,11 @@ func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, clai
 	if err := common.Unmarshal([]byte(record.Campaign.ProductScope), &products); err != nil {
 		return nil, nil, fmt.Errorf("%w: products", ErrRecallClaimInvalidConfig)
 	}
+	subscriptionPlanIDs, err := resolveRecallSubscriptionPlanIDs(ctx, products.SubscriptionPriceIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	products.SubscriptionPlanIDs = subscriptionPlanIDs
 	if bindNeeded {
 		bound, _, err := model.BindRecallRecipientUserWithContext(ctx, record.Recipient.Id, userID, bindRecipientEmail)
 		if err != nil {
