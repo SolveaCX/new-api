@@ -51,6 +51,13 @@ token.status_unavailable: "该令牌状态不可用"
 token.db_error: "无效的令牌，数据库查询出错，请联系管理员"
 token.batch_group_cache_sync_pending: "令牌分组已更新，但缓存同步尚未完成，请使用相同请求重试。"
 
+# Temporary media messages
+temp_media.file_required: "缺少图片文件"
+temp_media.image_too_large: "图片文件过大"
+temp_media.unsupported_image: "不支持的图片类型"
+temp_media.not_configured: "临时媒体存储未配置"
+temp_media.upload_failed: "上传图片失败"
+
 # Redemption messages
 redemption.name_length: "兑换码名称长度必须在1-20之间"
 redemption.count_positive: "兑换码个数必须大于0"

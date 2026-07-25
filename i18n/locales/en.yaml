@@ -50,6 +50,13 @@ token.status_unavailable: "This token status is unavailable"
 token.db_error: "Invalid token, database query error, please contact administrator"
 token.batch_group_cache_sync_pending: "Token groups were updated, but cache synchronization is pending. Retry the same request."
 
+# Temporary media messages
+temp_media.file_required: "Image file is required"
+temp_media.image_too_large: "Image file is too large"
+temp_media.unsupported_image: "Unsupported image type"
+temp_media.not_configured: "Temporary media storage is not configured"
+temp_media.upload_failed: "Failed to upload image"
+
 # Redemption messages
 redemption.name_length: "Redemption code name length must be between 1-20"
 redemption.count_positive: "Redemption code count must be greater than 0"

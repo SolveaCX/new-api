@@ -51,6 +51,13 @@ token.status_unavailable: "O status deste token está indisponível"
 token.db_error: "Token inválido: erro de consulta ao banco de dados, entre em contato com o administrador"
 token.batch_group_cache_sync_pending: "Os grupos de tokens foram atualizados, mas a sincronização do cache está pendente. Repita a mesma solicitação."
 
+# Temporary media messages
+temp_media.file_required: "Arquivo de imagem é obrigatório"
+temp_media.image_too_large: "O arquivo de imagem é muito grande"
+temp_media.unsupported_image: "Tipo de imagem não compatível"
+temp_media.not_configured: "O armazenamento temporário de mídia não está configurado"
+temp_media.upload_failed: "Falha ao enviar imagem"
+
 # Redemption messages
 redemption.name_length: "O nome do código de resgate deve ter entre 1 e 20 caracteres"
 redemption.count_positive: "A quantidade de códigos de resgate deve ser maior que 0"
