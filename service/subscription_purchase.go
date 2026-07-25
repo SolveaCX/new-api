@@ -65,6 +65,7 @@ type PrepaidTermAllocation struct {
 }
 
 var subscriptionPurchaseQuoteResolver = defaultSubscriptionPurchaseQuote
+var subscriptionPurchaseAfterQuoteValidationHook func()
 
 var ErrSubscriptionPurchaseQuoteUnavailable = errors.New("subscription purchase quote unavailable")
 
@@ -272,6 +273,9 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 		}
 		if cmd.PaymentChoice == SubscriptionPaymentChoiceBalance && plan.AllowBalancePay != nil && !*plan.AllowBalancePay {
 			return errors.New("subscription plan does not allow balance payment")
+		}
+		if err := validateSubscriptionPurchaseQuoteMatchesPlan(*plan, cmd, validatedQuote); err != nil {
+			return err
 		}
 		if err := enforceMaxPurchasePerUserTx(tx, cmd.UserID, plan); err != nil {
 			return err
