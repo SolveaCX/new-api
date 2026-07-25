@@ -245,6 +245,91 @@ export interface IdempotentMutationVariables<T> {
   idempotencyKey: string
 }
 
+export type SupplierHistoricalImportStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+
+export interface SupplierHistoricalChannelMapping {
+  channel_id: number
+  supplier_id: number
+  contract_id: number
+  rate_version_id: number
+  procurement_multiplier_ppm: number
+}
+
+export interface SupplierHistoricalImportCommand {
+  start_date: string
+  end_date: string
+  quota_per_unit: string
+  excluded_user_ids: number[]
+  channel_mappings: SupplierHistoricalChannelMapping[]
+  reason: string
+  method?: 'log_estimate_v1'
+}
+
+export interface SupplierHistoricalImport {
+  id: number
+  command_hash: string
+  idempotency_key: string
+  created_by: number
+  method: 'log_estimate_v1'
+  reason: string
+  start_date: string
+  end_date: string
+  quota_per_unit: string
+  status: SupplierHistoricalImportStatus
+  source_max_log_id: number
+  candidate_count: number
+  processed_count: number
+  summary_count: number
+  error_message: string
+  started_at: number | null
+  completed_at: number | null
+  created_at: number
+  updated_at: number
+  command: SupplierHistoricalImportCommand
+  estimate_only: true
+  coverage_scope: 'historical_consume_logs_v1'
+  assumptions: string[]
+}
+
+export interface SupplierHistoricalSeriesCursor {
+  date: string
+  statistics_scope: 'business' | 'internal'
+  supplier_id: number
+}
+
+export interface SupplierHistoricalSeriesPoint {
+  date: string
+  bucket_start: number
+  statistics_scope: 'business' | 'internal'
+  supplier_id: number
+  data_quality: 'estimated'
+  source_request_count: number
+  unassigned_request_count: number
+  official_list_known_count: number
+  official_list_unknown_count: number
+  official_list_micro_usd: MicroUsd
+  sales_known_count: number
+  sales_unknown_count: number
+  sales_micro_usd: MicroUsd
+  procurement_cost_known_count: number
+  procurement_cost_unknown_count: number
+  procurement_cost_micro_usd: MicroUsd
+  gross_profit_known_count: number
+  gross_profit_unknown_count: number
+  gross_profit_micro_usd: MicroUsd
+}
+
+export interface SupplierHistoricalSeriesPage {
+  items: SupplierHistoricalSeriesPoint[]
+  limit: number
+  has_more: boolean
+  next_cursor: SupplierHistoricalSeriesCursor | null
+}
+
 interface SupplierReportMonthRange {
   month: string
   startDate?: never

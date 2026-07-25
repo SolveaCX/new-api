@@ -361,11 +361,13 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	}
 
 	info.IsStream = true
+	info.StreamStatus = relaycommon.NewStreamStatus()
 	clientConn := info.ClientWs
 	targetConn := info.TargetWs
 
 	clientClosed := make(chan struct{})
 	targetClosed := make(chan struct{})
+	stopping := make(chan struct{})
 	sendChan := make(chan []byte, 100)
 	receiveChan := make(chan []byte, 100)
 	errChan := make(chan error, 2)
@@ -379,6 +381,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 
 	gopool.Go(func() {
 		defer readers.Done()
+		defer close(clientClosed)
 		defer func() {
 			if r := recover(); r != nil {
 				errChan <- fmt.Errorf("panic in client reader: %v", r)
@@ -391,16 +394,24 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 			default:
 				_, message, err := clientConn.ReadMessage()
 				if err != nil {
+					select {
+					case <-stopping:
+						return
+					default:
+					}
+					if !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+						info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
+					}
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						errChan <- fmt.Errorf("error reading from client: %v", err)
 					}
-					close(clientClosed)
 					return
 				}
 
 				realtimeEvent := &dto.RealtimeEvent{}
 				err = common.Unmarshal(message, realtimeEvent)
 				if err != nil {
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 					errChan <- fmt.Errorf("error unmarshalling message: %v", err)
 					return
 				}
@@ -417,6 +428,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				textToken, audioToken, err := service.CountTokenRealtime(info, *realtimeEvent, info.UpstreamModelName)
 				if err != nil {
 					usageMu.Unlock()
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 					errChan <- fmt.Errorf("error counting text token: %v", err)
 					return
 				}
@@ -430,6 +442,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 
 				err = helper.WssString(c, targetConn, string(message))
 				if err != nil {
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 					errChan <- fmt.Errorf("error writing to target: %v", err)
 					return
 				}
@@ -444,6 +457,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 
 	gopool.Go(func() {
 		defer readers.Done()
+		defer close(targetClosed)
 		defer func() {
 			if r := recover(); r != nil {
 				errChan <- fmt.Errorf("panic in target reader: %v", r)
@@ -456,16 +470,24 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 			default:
 				_, message, err := targetConn.ReadMessage()
 				if err != nil {
+					select {
+					case <-stopping:
+						return
+					default:
+					}
+					if !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+						info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+					}
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						errChan <- fmt.Errorf("error reading from target: %v", err)
 					}
-					close(targetClosed)
 					return
 				}
 				info.SetFirstResponseTime()
 				realtimeEvent := &dto.RealtimeEvent{}
 				err = common.Unmarshal(message, realtimeEvent)
 				if err != nil {
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 					errChan <- fmt.Errorf("error unmarshalling message: %v", err)
 					return
 				}
@@ -551,6 +573,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 
 				err = helper.WssString(c, clientConn, string(message))
 				if err != nil {
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
 					errChan <- fmt.Errorf("error writing to client: %v", err)
 					return
 				}
@@ -569,21 +592,24 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	case <-targetClosed:
 	case err := <-errChan:
 		realtimeErr = err
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 	case <-c.Done():
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Err())
 	}
+	close(stopping)
 	_ = clientConn.Close()
 	_ = targetConn.Close()
 	readers.Wait()
 	if realtimeErr != nil {
 		logger.LogError(c, "realtime error: "+realtimeErr.Error())
 	}
-
 	usageMu.Lock()
 	pendingUsage := usage
 	pendingLocalUsage := localUsage
 	usage = &dto.RealtimeUsage{}
 	localUsage = &dto.RealtimeUsage{}
 	usageMu.Unlock()
+	hadPendingUsage := pendingUsage.TotalTokens != 0 || pendingLocalUsage.TotalTokens != 0
 
 	if pendingUsage.TotalTokens != 0 {
 		_ = preConsumeUsage(c, info, pendingUsage, sumUsage)
@@ -591,6 +617,16 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 
 	if pendingLocalUsage.TotalTokens != 0 {
 		_ = preConsumeUsage(c, info, pendingLocalUsage, sumUsage)
+	}
+
+	if info.StreamStatus.EndReason == relaycommon.StreamEndReasonNone &&
+		sumUsage.FinalResponseCount > 0 && !hadPendingUsage {
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+	}
+	if info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors() {
+		logger.LogInfo(c, "realtime ended: "+info.StreamStatus.Summary())
+	} else {
+		logger.LogError(c, "realtime ended: "+info.StreamStatus.Summary())
 	}
 
 	// check usage total tokens, if 0, use local usage

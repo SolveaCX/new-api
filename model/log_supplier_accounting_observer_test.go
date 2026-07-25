@@ -3,8 +3,6 @@ package model
 import (
 	"bytes"
 	"net/http/httptest"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,29 +14,11 @@ import (
 	"gorm.io/gorm"
 )
 
-type supplierAccountingWriteObservation struct {
-	disposition types.SupplierAccountingDisposition
-	outcome     SupplierAccountingConsumeLogWriteOutcome
-}
-
-func installSupplierAccountingObserverForTest(t *testing.T) *[]supplierAccountingWriteObservation {
-	t.Helper()
-	original := supplierAccountingConsumeLogWriteObserver.Load()
-	supplierAccountingConsumeLogWriteObserver.Store(nil)
-	observations := make([]supplierAccountingWriteObservation, 0, 1)
-	require.True(t, InstallSupplierAccountingConsumeLogWriteObserver(func(disposition types.SupplierAccountingDisposition, outcome SupplierAccountingConsumeLogWriteOutcome) {
-		observations = append(observations, supplierAccountingWriteObservation{disposition: disposition, outcome: outcome})
-	}))
-	require.False(t, InstallSupplierAccountingConsumeLogWriteObserver(func(types.SupplierAccountingDisposition, SupplierAccountingConsumeLogWriteOutcome) {}))
-	t.Cleanup(func() { supplierAccountingConsumeLogWriteObserver.Store(original) })
-	return &observations
-}
-
-func supplierAccountingObserverTestParams(envelope any) RecordConsumeLogParams {
+func supplierAccountingLogTestParams(envelope any) RecordConsumeLogParams {
 	return RecordConsumeLogParams{Other: map[string]any{types.SupplierAccountingEnvelopeKeyV1: envelope}}
 }
 
-func supplierAccountingObserverTestEnvelope() types.SupplierAccountingEnvelopeV1 {
+func supplierAccountingLogTestEnvelope() types.SupplierAccountingEnvelopeV1 {
 	officialListMicroUSD := int64(10)
 	procurementMultiplierPPM := int64(400_000)
 	procurementCostMicroUSD := int64(4)
@@ -75,13 +55,13 @@ func supplierAccountingObserverTestEnvelope() types.SupplierAccountingEnvelopeV1
 	}
 }
 
-func supplierAccountingObserverTestContext() *gin.Context {
+func supplierAccountingLogTestContext() *gin.Context {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	return ctx
 }
 
-func useSupplierAccountingObserverLogDB(t *testing.T) *gorm.DB {
+func useSupplierAccountingLogDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
@@ -90,6 +70,20 @@ func useSupplierAccountingObserverLogDB(t *testing.T) *gorm.DB {
 	LOG_DB = db
 	t.Cleanup(func() { LOG_DB = original })
 	return db
+}
+
+func setConsumeLogEnabledForTest(t *testing.T, enabled bool) {
+	t.Helper()
+	original := common.LogConsumeEnabled
+	common.LogConsumeEnabled = enabled
+	t.Cleanup(func() { common.LogConsumeEnabled = original })
+}
+
+func decodePersistedLogOther(t *testing.T, other string) map[string]any {
+	t.Helper()
+	var decoded map[string]any
+	require.NoError(t, common.Unmarshal([]byte(other), &decoded))
+	return decoded
 }
 
 func requireSupplierAccountingEnvelopePersisted(t *testing.T, other string) {
@@ -103,19 +97,19 @@ func requireSupplierAccountingEnvelopePersisted(t *testing.T, other string) {
 	require.Equal(t, types.SupplierAccountingDispositionCaptured, envelope.Disposition)
 }
 
-func TestRecordConsumeLogSupplierAccountingObserverSuccessAfterCreate(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	db := useSupplierAccountingObserverLogDB(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
+func TestRecordConsumeLogPreservesValidSupplierAccountingEnvelope(t *testing.T) {
+	db := useSupplierAccountingLogDB(t)
+	setConsumeLogEnabledForTest(t, true)
+	params := supplierAccountingLogTestParams(supplierAccountingLogTestEnvelope())
+	params.Other["ordinary"] = "visible"
 
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope()))
+	RecordConsumeLog(supplierAccountingLogTestContext(), 0, params)
 
-	var count int64
-	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
-	require.EqualValues(t, 1, count)
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteSuccess}}, *observations)
+	var persisted Log
+	require.NoError(t, db.First(&persisted).Error)
+	decoded := decodePersistedLogOther(t, persisted.Other)
+	require.Equal(t, "visible", decoded["ordinary"])
+	require.Contains(t, decoded, types.SupplierAccountingEnvelopeKeyV1)
 }
 
 func TestRecordConsumeLogPreservesSupplierEnvelopeAndEnqueuesAdsActivation(t *testing.T) {
@@ -127,24 +121,21 @@ func TestRecordConsumeLogPreservesSupplierEnvelopeAndEnqueuesAdsActivation(t *te
 		Username:       "supplier-ads-activation",
 		AdsAttribution: `{"gclid":"supplier-activation-click"}`,
 	}).Error)
-	logDB := useSupplierAccountingObserverLogDB(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
+	logDB := useSupplierAccountingLogDB(t)
+	setConsumeLogEnabledForTest(t, true)
 	adsActivationSeen.Delete(userID)
-	t.Cleanup(func() {
-		common.LogConsumeEnabled = originalEnabled
-		adsActivationSeen.Delete(userID)
-	})
+	t.Cleanup(func() { adsActivationSeen.Delete(userID) })
 
 	RecordConsumeLog(
-		supplierAccountingObserverTestContext(),
+		supplierAccountingLogTestContext(),
 		userID,
-		supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope()),
+		supplierAccountingLogTestParams(supplierAccountingLogTestEnvelope()),
 	)
 
 	var persisted Log
 	require.NoError(t, logDB.First(&persisted).Error)
-	requireSupplierAccountingEnvelopePersisted(t, persisted.Other)
+	decoded := decodePersistedLogOther(t, persisted.Other)
+	require.Contains(t, decoded, types.SupplierAccountingEnvelopeKeyV1)
 	require.Eventually(t, func() bool {
 		var count int64
 		return mainDB.Model(&AdsAttributionOutbox{}).
@@ -153,261 +144,188 @@ func TestRecordConsumeLogPreservesSupplierEnvelopeAndEnqueuesAdsActivation(t *te
 	}, time.Second, 10*time.Millisecond)
 }
 
-func TestRecordConsumeLogRedactsSupplierAccountingFromDiagnosticLog(t *testing.T) {
-	db := useSupplierAccountingObserverLogDB(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
+func TestRecordConsumeLogPersistsAttemptIDAndScrubsItFromNonRootViews(t *testing.T) {
+	db := useSupplierAccountingLogDB(t)
+	setConsumeLogEnabledForTest(t, true)
+	params := supplierAccountingLogTestParams(supplierAccountingLogTestEnvelope())
+	ctx := supplierAccountingLogTestContext()
+	ctx.Set(types.SupplierAccountingAttemptIDKeyV1, "018f843e-7e3a-7f61-a0a0-000000000777")
 
-	var output bytes.Buffer
-	common.LogWriterMu.Lock()
-	originalWriter := gin.DefaultWriter
-	gin.DefaultWriter = &output
-	common.LogWriterMu.Unlock()
-	t.Cleanup(func() {
-		common.LogWriterMu.Lock()
-		gin.DefaultWriter = originalWriter
-		common.LogWriterMu.Unlock()
-	})
-
-	params := supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope())
-	params.Other["ordinary"] = "visible"
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, params)
-
-	require.NotContains(t, output.String(), types.SupplierAccountingEnvelopeKeyV1)
-	require.Contains(t, output.String(), `"ordinary":"visible"`)
+	RecordConsumeLog(ctx, 0, params)
 	var persisted Log
 	require.NoError(t, db.First(&persisted).Error)
-	require.Contains(t, persisted.Other, types.SupplierAccountingEnvelopeKeyV1)
+	decoded := decodePersistedLogOther(t, persisted.Other)
+	require.Equal(t, "018f843e-7e3a-7f61-a0a0-000000000777", decoded[types.SupplierAccountingAttemptIDKeyV1])
+
+	adminLog := persisted
+	RedactSupplierAccountingFromLogs([]*Log{&adminLog})
+	require.NotContains(t, adminLog.Other, types.SupplierAccountingAttemptIDKeyV1)
+	require.NotContains(t, adminLog.Other, types.SupplierAccountingEnvelopeKeyV1)
+	userLog := persisted
+	formatUserLogs([]*Log{&userLog}, 0)
+	require.NotContains(t, userLog.Other, types.SupplierAccountingAttemptIDKeyV1)
+	require.NotContains(t, userLog.Other, types.SupplierAccountingEnvelopeKeyV1)
 }
 
-func TestRecordConsumeLogSupplierAccountingObserverRunsAfterSuccessfulCreate(t *testing.T) {
-	db := useSupplierAccountingObserverLogDB(t)
-	originalObserver := supplierAccountingConsumeLogWriteObserver.Load()
-	supplierAccountingConsumeLogWriteObserver.Store(nil)
-	observedPersistedCount := int64(-1)
-	require.True(t, InstallSupplierAccountingConsumeLogWriteObserver(func(types.SupplierAccountingDisposition, SupplierAccountingConsumeLogWriteOutcome) {
-		require.NoError(t, db.Model(&Log{}).Count(&observedPersistedCount).Error)
-	}))
-	t.Cleanup(func() { supplierAccountingConsumeLogWriteObserver.Store(originalObserver) })
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope()))
-
-	require.EqualValues(t, 1, observedPersistedCount)
-}
-
-func TestRecordConsumeLogSupplierAccountingObserverFailureAfterCreate(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	db := useSupplierAccountingObserverLogDB(t)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	require.NoError(t, sqlDB.Close())
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope()))
-
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteFailure}}, *observations)
-}
-
-func TestRecordConsumeLogSupplierAccountingObserverFailureWhenOtherSerializationFails(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	db := useSupplierAccountingObserverLogDB(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-	params := supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope())
+func TestRecordConsumeLogPreservesEnvelopeWhenUnrelatedOtherCannotSerialize(t *testing.T) {
+	db := useSupplierAccountingLogDB(t)
+	setConsumeLogEnabledForTest(t, true)
+	params := supplierAccountingLogTestParams(supplierAccountingLogTestEnvelope())
 	params.Other["unserializable"] = make(chan struct{})
 
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, params)
+	RecordConsumeLog(supplierAccountingLogTestContext(), 0, params)
 
-	var logs []Log
-	require.NoError(t, db.Find(&logs).Error)
-	require.Len(t, logs, 1, "ordinary consume log persistence must survive Other serialization failure")
-	requireSupplierAccountingEnvelopePersisted(t, logs[0].Other)
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteFailure}}, *observations)
-}
-
-func TestRecordConsumeLogSupplierAccountingObserverOmitsInvalidEnvelopeAndPersistsOrdinaryLog(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	db := useSupplierAccountingObserverLogDB(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-	envelope := supplierAccountingObserverTestEnvelope()
-	envelope.Captured = nil
-
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(envelope))
-
-	var count int64
-	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
-	require.EqualValues(t, 1, count)
 	var persisted Log
 	require.NoError(t, db.First(&persisted).Error)
-	require.NotContains(t, persisted.Other, types.SupplierAccountingEnvelopeKeyV1)
-	require.Empty(t, *observations)
+	requireSupplierAccountingEnvelopePersisted(t, persisted.Other)
 }
 
-func TestRecordConsumeLogSupplierAccountingObserverDisabled(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = false
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope()))
-
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteDisabled}}, *observations)
-}
-
-func TestRecordConsumeLogSupplierAccountingObserverIgnoresMissingInvalidAndNonV1(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = false
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, RecordConsumeLogParams{})
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(map[string]any{"d": "captured"}))
-	nonV1 := supplierAccountingObserverTestEnvelope()
-	nonV1.EnvelopeSchemaVersion++
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(nonV1))
-	invalidDisposition := supplierAccountingObserverTestEnvelope()
-	invalidDisposition.Disposition = "request-controlled"
-	RecordConsumeLog(supplierAccountingObserverTestContext(), 0, supplierAccountingObserverTestParams(invalidDisposition))
-
-	require.Empty(t, *observations)
-}
-
-func TestRecordTaskBillingLogSupplierAccountingObserverOnlyConsume(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	useSupplierAccountingObserverLogDB(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-	other := map[string]any{types.SupplierAccountingEnvelopeKeyV1: supplierAccountingObserverTestEnvelope()}
-
-	RecordTaskBillingLog(RecordTaskBillingLogParams{LogType: LogTypeRefund, Other: other})
-	require.Empty(t, *observations, "refund rows are outside supplier consume-log write metrics")
-	RecordTaskBillingLog(RecordTaskBillingLogParams{LogType: LogTypeConsume, Other: other})
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteSuccess}}, *observations)
-}
-
-func TestRecordTaskBillingLogSupplierAccountingObserverLeavesRefundSerializationBehaviorUnchanged(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	db := useSupplierAccountingObserverLogDB(t)
-	other := map[string]any{
-		types.SupplierAccountingEnvelopeKeyV1: supplierAccountingObserverTestEnvelope(),
-		"unserializable":                      make(chan struct{}),
-	}
-
-	RecordTaskBillingLog(RecordTaskBillingLogParams{LogType: LogTypeRefund, Other: other})
-
-	var logs []Log
-	require.NoError(t, db.Find(&logs).Error)
-	require.Len(t, logs, 1)
-	require.Empty(t, logs[0].Other, "refund rows retain the legacy serialization fallback")
-	require.Empty(t, *observations, "refund rows remain outside supplier consume-log write metrics")
-}
-
-func TestRecordTaskBillingLogSupplierAccountingObserverFailureAfterCreate(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	db := useSupplierAccountingObserverLogDB(t)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	require.NoError(t, sqlDB.Close())
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-
-	RecordTaskBillingLog(RecordTaskBillingLogParams{
-		LogType: LogTypeConsume,
-		Other:   map[string]any{types.SupplierAccountingEnvelopeKeyV1: supplierAccountingObserverTestEnvelope()},
-	})
-
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteFailure}}, *observations)
-}
-
-func TestRecordTaskBillingLogSupplierAccountingObserverDisabled(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = false
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-
-	RecordTaskBillingLog(RecordTaskBillingLogParams{
-		LogType: LogTypeConsume,
-		Other:   map[string]any{types.SupplierAccountingEnvelopeKeyV1: supplierAccountingObserverTestEnvelope()},
-	})
-
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteDisabled}}, *observations)
-}
-
-func TestRecordTaskBillingLogSupplierAccountingObserverFailureWhenOtherSerializationFails(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	db := useSupplierAccountingObserverLogDB(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-	other := map[string]any{
-		types.SupplierAccountingEnvelopeKeyV1: supplierAccountingObserverTestEnvelope(),
-		"unserializable":                      make(chan struct{}),
-	}
-
-	RecordTaskBillingLog(RecordTaskBillingLogParams{LogType: LogTypeConsume, Other: other})
-
-	var logs []Log
-	require.NoError(t, db.Find(&logs).Error)
-	require.Len(t, logs, 1, "ordinary task billing log persistence must survive Other serialization failure")
-	requireSupplierAccountingEnvelopePersisted(t, logs[0].Other)
-	require.Equal(t, []supplierAccountingWriteObservation{{types.SupplierAccountingDispositionCaptured, SupplierAccountingConsumeLogWriteFailure}}, *observations)
-}
-
-func TestRecordTaskBillingLogSupplierAccountingObserverOmitsInvalidEnvelopeAndPersistsOrdinaryLog(t *testing.T) {
-	observations := installSupplierAccountingObserverForTest(t)
-	db := useSupplierAccountingObserverLogDB(t)
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = true
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
-	envelope := supplierAccountingObserverTestEnvelope()
+func TestRecordConsumeLogOmitsInvalidSupplierAccountingEnvelope(t *testing.T) {
+	db := useSupplierAccountingLogDB(t)
+	setConsumeLogEnabledForTest(t, true)
+	envelope := supplierAccountingLogTestEnvelope()
 	envelope.Captured = nil
+	params := supplierAccountingLogTestParams(envelope)
+	params.Other["ordinary"] = "visible"
 
-	RecordTaskBillingLog(RecordTaskBillingLogParams{
-		LogType: LogTypeConsume,
-		Other:   map[string]any{types.SupplierAccountingEnvelopeKeyV1: envelope},
-	})
+	RecordConsumeLog(supplierAccountingLogTestContext(), 0, params)
 
-	var count int64
-	require.NoError(t, db.Model(&Log{}).Count(&count).Error)
-	require.EqualValues(t, 1, count)
 	var persisted Log
 	require.NoError(t, db.First(&persisted).Error)
-	require.NotContains(t, persisted.Other, types.SupplierAccountingEnvelopeKeyV1)
-	require.Empty(t, *observations)
+	decoded := decodePersistedLogOther(t, persisted.Other)
+	require.Equal(t, "visible", decoded["ordinary"])
+	require.NotContains(t, decoded, types.SupplierAccountingEnvelopeKeyV1)
 }
 
-func TestRecordConsumeLogSupplierAccountingObserverConcurrentDisabled(t *testing.T) {
-	originalObserver := supplierAccountingConsumeLogWriteObserver.Load()
-	supplierAccountingConsumeLogWriteObserver.Store(nil)
-	var observed atomic.Int64
-	require.True(t, InstallSupplierAccountingConsumeLogWriteObserver(func(types.SupplierAccountingDisposition, SupplierAccountingConsumeLogWriteOutcome) {
-		observed.Add(1)
-	}))
-	t.Cleanup(func() { supplierAccountingConsumeLogWriteObserver.Store(originalObserver) })
-	originalEnabled := common.LogConsumeEnabled
-	common.LogConsumeEnabled = false
-	t.Cleanup(func() { common.LogConsumeEnabled = originalEnabled })
+func TestRecordConsumeLogKeepsOrdinaryDisabledAndDiagnosticSemantics(t *testing.T) {
+	t.Run("ordinary other persists", func(t *testing.T) {
+		db := useSupplierAccountingLogDB(t)
+		setConsumeLogEnabledForTest(t, true)
 
-	const callers = 32
-	var wait sync.WaitGroup
-	for index := 0; index < callers; index++ {
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
-			RecordConsumeLog(nil, 0, supplierAccountingObserverTestParams(supplierAccountingObserverTestEnvelope()))
-		}()
-	}
-	wait.Wait()
-	require.EqualValues(t, callers, observed.Load())
+		RecordConsumeLog(supplierAccountingLogTestContext(), 0, RecordConsumeLogParams{Other: map[string]any{"ordinary": "visible"}})
+
+		var persisted Log
+		require.NoError(t, db.First(&persisted).Error)
+		require.Equal(t, "visible", decodePersistedLogOther(t, persisted.Other)["ordinary"])
+	})
+
+	t.Run("disabled consume log writes nothing", func(t *testing.T) {
+		db := useSupplierAccountingLogDB(t)
+		setConsumeLogEnabledForTest(t, false)
+
+		RecordConsumeLog(supplierAccountingLogTestContext(), 0, supplierAccountingLogTestParams(supplierAccountingLogTestEnvelope()))
+
+		var count int64
+		require.NoError(t, db.Model(&Log{}).Count(&count).Error)
+		require.Zero(t, count)
+	})
+
+	t.Run("diagnostic output redacts supplier envelope", func(t *testing.T) {
+		db := useSupplierAccountingLogDB(t)
+		setConsumeLogEnabledForTest(t, true)
+		var output bytes.Buffer
+		common.LogWriterMu.Lock()
+		originalWriter := gin.DefaultWriter
+		gin.DefaultWriter = &output
+		common.LogWriterMu.Unlock()
+		t.Cleanup(func() {
+			common.LogWriterMu.Lock()
+			gin.DefaultWriter = originalWriter
+			common.LogWriterMu.Unlock()
+		})
+		params := supplierAccountingLogTestParams(supplierAccountingLogTestEnvelope())
+		params.Other["ordinary"] = "visible"
+
+		RecordConsumeLog(supplierAccountingLogTestContext(), 0, params)
+
+		require.NotContains(t, output.String(), types.SupplierAccountingEnvelopeKeyV1)
+		require.Contains(t, output.String(), `"ordinary":"visible"`)
+		var persisted Log
+		require.NoError(t, db.First(&persisted).Error)
+		require.Contains(t, persisted.Other, types.SupplierAccountingEnvelopeKeyV1)
+	})
+}
+
+func TestRecordTaskBillingLogPreservesOnlyValidConsumeEnvelope(t *testing.T) {
+	t.Run("valid envelope survives unrelated serialization failure", func(t *testing.T) {
+		db := useSupplierAccountingLogDB(t)
+		setConsumeLogEnabledForTest(t, true)
+		other := map[string]any{
+			types.SupplierAccountingEnvelopeKeyV1: supplierAccountingLogTestEnvelope(),
+			"unserializable":                      make(chan struct{}),
+		}
+
+		RecordTaskBillingLog(RecordTaskBillingLogParams{LogType: LogTypeConsume, Other: other})
+
+		var persisted Log
+		require.NoError(t, db.First(&persisted).Error)
+		requireSupplierAccountingEnvelopePersisted(t, persisted.Other)
+	})
+
+	t.Run("invalid envelope is omitted", func(t *testing.T) {
+		db := useSupplierAccountingLogDB(t)
+		setConsumeLogEnabledForTest(t, true)
+		envelope := supplierAccountingLogTestEnvelope()
+		envelope.Captured = nil
+
+		RecordTaskBillingLog(RecordTaskBillingLogParams{
+			LogType: LogTypeConsume,
+			Other: map[string]any{
+				types.SupplierAccountingEnvelopeKeyV1: envelope,
+				"ordinary":                            "visible",
+			},
+		})
+
+		var persisted Log
+		require.NoError(t, db.First(&persisted).Error)
+		decoded := decodePersistedLogOther(t, persisted.Other)
+		require.Equal(t, "visible", decoded["ordinary"])
+		require.NotContains(t, decoded, types.SupplierAccountingEnvelopeKeyV1)
+	})
+}
+
+func TestRecordTaskBillingLogKeepsDisabledAndRefundSemantics(t *testing.T) {
+	t.Run("disabled consume log writes nothing", func(t *testing.T) {
+		db := useSupplierAccountingLogDB(t)
+		setConsumeLogEnabledForTest(t, false)
+
+		RecordTaskBillingLog(RecordTaskBillingLogParams{
+			LogType: LogTypeConsume,
+			Other:   map[string]any{types.SupplierAccountingEnvelopeKeyV1: supplierAccountingLogTestEnvelope()},
+		})
+
+		var count int64
+		require.NoError(t, db.Model(&Log{}).Count(&count).Error)
+		require.Zero(t, count)
+	})
+
+	t.Run("refund omits supplier envelope and preserves ordinary other", func(t *testing.T) {
+		db := useSupplierAccountingLogDB(t)
+		other := map[string]any{
+			types.SupplierAccountingEnvelopeKeyV1: supplierAccountingLogTestEnvelope(),
+			"ordinary":                            "visible",
+		}
+
+		RecordTaskBillingLog(RecordTaskBillingLogParams{LogType: LogTypeRefund, Other: other})
+
+		var persisted Log
+		require.NoError(t, db.First(&persisted).Error)
+		decoded := decodePersistedLogOther(t, persisted.Other)
+		require.Equal(t, "visible", decoded["ordinary"])
+		require.NotContains(t, decoded, types.SupplierAccountingEnvelopeKeyV1)
+	})
+
+	t.Run("refund keeps legacy serialization failure fallback", func(t *testing.T) {
+		db := useSupplierAccountingLogDB(t)
+		other := map[string]any{
+			types.SupplierAccountingEnvelopeKeyV1: supplierAccountingLogTestEnvelope(),
+			"unserializable":                      make(chan struct{}),
+		}
+
+		RecordTaskBillingLog(RecordTaskBillingLogParams{LogType: LogTypeRefund, Other: other})
+
+		var persisted Log
+		require.NoError(t, db.First(&persisted).Error)
+		require.Empty(t, persisted.Other)
+	})
 }

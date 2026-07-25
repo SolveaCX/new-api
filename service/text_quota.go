@@ -671,7 +671,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 			(summary.SupplierTieredParams.ImgO > 0 && usedVars["img_o"])
 	}
 	toolPricingApplied := summary.WebSearchCallCount > 0 || summary.ClaudeWebSearchCallCount > 0 || summary.FileSearchCallCount > 0
-	InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
+	supplierEnvelope := InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
 		RelayInfo:             relayInfo,
 		Settlement:            settlement,
 		HasPositiveFinalUsage: supplierTextHasPositiveFinalUsage(summary, settlement),
@@ -686,6 +686,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 			UnknownOfficialAmountCount: unknownOfficialAmountCount,
 		},
 	})
+	if err := FinalizeSupplierAccountingAttempt(ctx, relayInfo, supplierEnvelope); err != nil {
+		logger.LogError(ctx, "error finalizing supplier accounting fact: "+err.Error())
+	}
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

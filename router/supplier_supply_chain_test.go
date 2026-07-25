@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	backendi18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
@@ -29,16 +31,20 @@ func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&model.Option{}, &model.Channel{},
+		&model.Option{}, &model.Channel{}, &model.Log{},
 		&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierContractRateVersion{},
 		&model.SupplierChannelBindingVersion{}, &model.SupplierInventoryAdjustment{}, &model.SupplierStatisticsExclusionRule{},
 		&model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{},
 	))
+	require.NoError(t, model.EnsureSupplierAccountingFactSchema(db))
 	previousDB := model.DB
+	previousLogDB := model.LOG_DB
 	model.DB = db
+	model.LOG_DB = db
 	t.Cleanup(func() {
 		common.GlobalApiRateLimitEnable = previousRateLimit
 		model.DB = previousDB
+		model.LOG_DB = previousLogDB
 		sqlDB, _ := db.DB()
 		_ = sqlDB.Close()
 	})
@@ -61,6 +67,34 @@ func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
 	})
 	SetApiRouter(engine)
 	return engine
+}
+
+func TestPendingAccountingFactRoutesRequireRootAndSecureMutation(t *testing.T) {
+	engine := newSupplyChainRouteTestEngine(t)
+	location, err := time.LoadLocation("Asia/Shanghai")
+	require.NoError(t, err)
+	day := time.Now().In(location).Format("2006-01-02")
+	path := "/api/supply-chain/accounting-facts/pending?date=" + day + "&limit=10"
+
+	admin := performSupplyChainRouteTestRequestAt(engine, supplyChainRouteTestCookies(t, engine, common.RoleAdminUser), http.MethodGet, path, "")
+	require.Equal(t, http.StatusForbidden, admin.Code)
+	rootCookies := supplyChainRouteTestCookies(t, engine, common.RoleRootUser)
+	root := performSupplyChainRouteTestRequestAt(engine, rootCookies, http.MethodGet, path, "")
+	require.Equal(t, http.StatusOK, root.Code)
+	require.Contains(t, root.Body.String(), `"items"`)
+
+	fact, err := model.PrepareSupplierAccountingFact(context.Background(), model.LOG_DB, model.SupplierAccountingFactPrepare{
+		ParentRequestId: "req-route-resolve", SupplierId: 1, ContractId: 2, BindingVersionId: 3, RateVersionId: 4,
+		ChannelId: 5, ModelName: "gpt-test", CoverageScope: string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1), CutoverAt: 1,
+	})
+	require.NoError(t, err)
+	resolvePath := "/api/supply-chain/accounting-facts/" + fact.AttemptId + "/resolve"
+	body := `{"action":"void","reason":"verified rejection","evidence":"ticket-route"}`
+	unverified := performSupplyChainRouteTestRequestAt(engine, rootCookies, http.MethodPost, resolvePath, body)
+	require.Equal(t, http.StatusForbidden, unverified.Code)
+	verifiedCookies := supplyChainRouteTestCookiesWithVerification(t, engine, common.RoleRootUser, true)
+	resolved := performSupplyChainRouteTestRequestAt(engine, verifiedCookies, http.MethodPost, resolvePath, body)
+	require.Equal(t, http.StatusOK, resolved.Code)
 }
 
 func supplyChainRouteTestCookies(t *testing.T, engine *gin.Engine, role int) []*http.Cookie {
@@ -93,7 +127,7 @@ func TestSupplyChainRoutesRequireFinanceAccess(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, performSupplyChainRouteTestRequestAt(engine, nil, http.MethodGet, path, "").Code)
 	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser} {
 		response := performSupplyChainRouteTestRequestAt(engine, supplyChainRouteTestCookies(t, engine, role), http.MethodGet, path, "")
-		require.Equal(t, http.StatusOK, response.Code)
+		require.Equal(t, http.StatusForbidden, response.Code)
 		require.Contains(t, response.Body.String(), `"success":false`)
 	}
 	root := performSupplyChainRouteTestRequestAt(engine, supplyChainRouteTestCookies(t, engine, common.RoleRootUser), http.MethodGet, path, "")

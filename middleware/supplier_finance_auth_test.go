@@ -56,7 +56,7 @@ func TestSupplierFinanceAuthAllowsOnlyRoot(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, request(nil).Code)
 	admin := common.RoleAdminUser
-	require.Equal(t, http.StatusOK, request(&admin).Code)
+	require.Equal(t, http.StatusForbidden, request(&admin).Code)
 	require.Zero(t, calls)
 	root := common.RoleRootUser
 	require.Equal(t, http.StatusNoContent, request(&root).Code)

@@ -39,6 +39,87 @@ type supplierAccountingEnvelopeJSONV1 struct {
 	Captured              string                        `json:"s,omitempty"`
 }
 
+// SupplierAccountingLogProjectionV1 is the readable Root-only API projection
+// of the compact snapshot persisted in logs.other.
+type SupplierAccountingLogProjectionV1 struct {
+	BindingVersionId         int                                    `json:"binding_version_id"`
+	SupplierId               int                                    `json:"supplier_id"`
+	ContractId               int                                    `json:"contract_id"`
+	RateVersionId            int                                    `json:"rate_version_id"`
+	ProcurementMultiplierPpm int64                                  `json:"procurement_multiplier_ppm"`
+	SalesMultiplierPpm       *int64                                 `json:"sales_multiplier_ppm,omitempty"`
+	OfficialListMicroUsd     *int64                                 `json:"official_list_micro_usd,omitempty,string"`
+	SalesMicroUsd            *int64                                 `json:"sales_micro_usd,omitempty,string"`
+	ProcurementCostMicroUsd  *int64                                 `json:"procurement_cost_micro_usd,omitempty,string"`
+	GrossProfitMicroUsd      *int64                                 `json:"gross_profit_micro_usd,omitempty,string"`
+	StatisticsScope          string                                 `json:"statistics_scope"`
+	ExclusionDecision        string                                 `json:"exclusion_decision"`
+	ExclusionRuleId          *int                                   `json:"exclusion_rule_id,omitempty"`
+	FinanciallyCommittedAt   int64                                  `json:"financially_committed_at"`
+	PricingEvidence          *SupplierAccountingPricingProjectionV1 `json:"pricing_evidence,omitempty"`
+}
+
+type SupplierAccountingPricingProjectionV1 struct {
+	Mode                  SupplierPricingModeV1 `json:"mode"`
+	ModelRatioPpm         *int64                `json:"model_ratio_ppm,omitempty"`
+	GroupMultiplierPpm    *int64                `json:"group_multiplier_ppm,omitempty"`
+	Source                string                `json:"source,omitempty"`
+	Key                   string                `json:"key,omitempty"`
+	ExpressionVersion     *int64                `json:"expression_version,omitempty"`
+	ExpressionFingerprint string                `json:"expression_fingerprint,omitempty"`
+	Dimensions            []string              `json:"dimensions,omitempty"`
+}
+
+func NewSupplierAccountingLogProjectionV1(snapshot *SupplierAccountingLogSnapshotV1) (*SupplierAccountingLogProjectionV1, error) {
+	if _, err := supplierAccountingCapturedEncodingPlanV1(snapshot); err != nil {
+		return nil, err
+	}
+	projection := &SupplierAccountingLogProjectionV1{
+		BindingVersionId: snapshot.BindingVersionId, SupplierId: snapshot.SupplierId, ContractId: snapshot.ContractId,
+		RateVersionId: snapshot.RateVersionId, ProcurementMultiplierPpm: snapshot.ProcurementMultiplierPpm,
+		SalesMultiplierPpm: snapshot.SalesMultiplierPpm, OfficialListMicroUsd: snapshot.OfficialListMicroUsd,
+		SalesMicroUsd: snapshot.SalesMicroUsd, ProcurementCostMicroUsd: snapshot.ProcurementCostMicroUsd,
+		GrossProfitMicroUsd: snapshot.GrossProfitMicroUsd, StatisticsScope: snapshot.StatisticsScope,
+		ExclusionDecision: snapshot.ExclusionDecision, ExclusionRuleId: snapshot.ExclusionRuleId,
+		FinanciallyCommittedAt: snapshot.FinanciallyCommittedAt,
+	}
+	if snapshot.PricingProvenance != nil {
+		projection.PricingEvidence = supplierAccountingPricingProjectionV1(snapshot.PricingProvenance)
+	}
+	return projection, nil
+}
+
+func supplierAccountingPricingProjectionV1(provenance *SupplierPricingProvenanceV1) *SupplierAccountingPricingProjectionV1 {
+	projection := &SupplierAccountingPricingProjectionV1{}
+	if provenance.Ratio != nil {
+		projection.Mode = SupplierPricingModeRatio
+		projection.ModelRatioPpm = &provenance.Ratio.ModelRatioPpm
+		projection.GroupMultiplierPpm = &provenance.Ratio.GroupRatioPpm
+	} else if provenance.Fixed != nil {
+		projection.Mode = SupplierPricingModeFixed
+		projection.Source = provenance.Fixed.Source
+		projection.Key = provenance.Fixed.Key
+		projection.GroupMultiplierPpm = &provenance.Fixed.GroupMultiplierPpm
+	} else if provenance.Tiered != nil {
+		projection.Mode = SupplierPricingModeTiered
+		projection.ExpressionVersion = &provenance.Tiered.ExpressionVersion
+		projection.ExpressionFingerprint = fmt.Sprintf("%016x%012x", provenance.Tiered.ExpressionFingerprint, provenance.Tiered.ExpressionFingerprintTail)
+		projection.GroupMultiplierPpm = &provenance.Tiered.GroupMultiplierPpm
+	}
+	if provenance.Dimensions != nil {
+		if provenance.Dimensions.Audio {
+			projection.Dimensions = append(projection.Dimensions, "audio")
+		}
+		if provenance.Dimensions.Tool {
+			projection.Dimensions = append(projection.Dimensions, "tool")
+		}
+		if provenance.Dimensions.Image {
+			projection.Dimensions = append(projection.Dimensions, "image")
+		}
+	}
+	return projection
+}
+
 // MarshalJSON keeps the envelope metadata readable while encoding the
 // captured numeric snapshot as a schema-versioned, fixed-width binary
 // payload. Raw URL base64 is canonical and avoids padding variance.

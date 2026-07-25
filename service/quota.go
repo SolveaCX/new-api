@@ -313,7 +313,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if !officialKnown {
 		unknownOfficialAmountCount = 1
 	}
-	InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
+	supplierEnvelope := InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
 		RelayInfo:             relayInfo,
 		Settlement:            settlement,
 		HasPositiveFinalUsage: supplierAudioHasPositiveFinalUsage(totalTokens, settlement),
@@ -326,6 +326,9 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 			UnknownOfficialAmountCount: unknownOfficialAmountCount,
 		},
 	})
+	if err := FinalizeSupplierAccountingAttempt(ctx, relayInfo, supplierEnvelope); err != nil {
+		logger.LogError(ctx, "error finalizing supplier accounting fact: "+err.Error())
+	}
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.InputTokens,
@@ -467,7 +470,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if !officialKnown {
 		unknownOfficialAmountCount = 1
 	}
-	InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
+	supplierEnvelope := InjectSupplierAccountingEnvelopeV1(other, SupplierAccountingEnvelopeInputV1{
 		RelayInfo:             relayInfo,
 		Settlement:            settlement,
 		HasPositiveFinalUsage: supplierAudioHasPositiveFinalUsage(totalTokens, settlement),
@@ -480,6 +483,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 			UnknownOfficialAmountCount: unknownOfficialAmountCount,
 		},
 	})
+	if err := FinalizeSupplierAccountingAttempt(ctx, relayInfo, supplierEnvelope); err != nil {
+		logger.LogError(ctx, "error finalizing supplier accounting fact: "+err.Error())
+	}
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,

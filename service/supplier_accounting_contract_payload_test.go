@@ -47,7 +47,7 @@ func TestSupplierAccountingEnvelopeGoldenPayloadBudgets(t *testing.T) {
 		envelope     types.SupplierAccountingEnvelopeV1
 		expectedJSON string
 	}{
-		{name: "unsupported", envelope: InjectUnsupportedSupplierAccountingEnvelopeV1(nil), expectedJSON: `{"v":1,"d":"unsupported_path"}`},
+		{name: "unsupported", envelope: newSupplierAccountingDispositionEnvelope(types.SupplierAccountingDispositionUnsupportedPath), expectedJSON: `{"v":1,"d":"unsupported_path"}`},
 		{name: "not_financially_committed", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{}), expectedJSON: `{"v":1,"d":"not_financially_committed"}`},
 		{name: "zero_usage", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{Settlement: types.BillingSettlementResult{FinanciallyCommitted: true, FinanciallyCommittedAt: 1}}), expectedJSON: `{"v":1,"d":"zero_usage"}`},
 		{name: "unbound", envelope: BuildSupplierAccountingEnvelopeV1(SupplierAccountingEnvelopeInputV1{RelayInfo: &relaycommon.RelayInfo{}, Settlement: types.BillingSettlementResult{FinanciallyCommitted: true, FinanciallyCommittedAt: 1}, HasPositiveFinalUsage: true}), expectedJSON: `{"v":1,"d":"unbound"}`},

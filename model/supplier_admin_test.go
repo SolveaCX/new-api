@@ -49,6 +49,70 @@ func intPointerForSupplierAdminTest(value int) *int {
 	return &value
 }
 
+func TestSupplierAdminMetadataAndInventoryCommandsDoNotReloadRuntimeCache(t *testing.T) {
+	db := setupSupplierTestDB(t, "supplier-admin-no-runtime-cache-reload")
+	require.NoError(t, RefreshSupplierCache())
+	assertCacheUnchanged := func(t *testing.T, before *supplierRuntimeIndex) {
+		t.Helper()
+		require.Same(t, before, supplierRuntimeIndexPointer.Load())
+	}
+
+	before := supplierRuntimeIndexPointer.Load()
+	supplier := UpstreamSupplier{Name: "no reload supplier"}
+	require.NoError(t, CreateUpstreamSupplier(&supplier))
+	assertCacheUnchanged(t, before)
+
+	updatedSupplierName := "renamed supplier"
+	before = supplierRuntimeIndexPointer.Load()
+	updatedSupplier, err := UpdateUpstreamSupplier(supplier.Id, UpdateUpstreamSupplierInput{
+		Name:            &updatedSupplierName,
+		ExpectedVersion: supplier.RowVersion,
+	})
+	require.NoError(t, err)
+	assertCacheUnchanged(t, before)
+
+	before = supplierRuntimeIndexPointer.Load()
+	contract := SupplierContract{SupplierId: supplier.Id, Name: "no reload contract", ContractNo: "no-reload-1"}
+	require.NoError(t, CreateSupplierContract(&contract))
+	assertCacheUnchanged(t, before)
+
+	updatedContractName := "renamed contract"
+	before = supplierRuntimeIndexPointer.Load()
+	updatedContract, err := UpdateSupplierContract(contract.Id, UpdateSupplierContractInput{
+		Name:            &updatedContractName,
+		ExpectedVersion: contract.RowVersion,
+	})
+	require.NoError(t, err)
+	assertCacheUnchanged(t, before)
+
+	_, err = CreateAndActivateSupplierContractRateVersion(contract.Id, 650_000, 1, "initial")
+	require.NoError(t, err)
+	require.NoError(t, db.First(updatedContract, contract.Id).Error)
+	before = supplierRuntimeIndexPointer.Load()
+	_, err = CreateSupplierInventoryAdjustment(&SupplierInventoryAdjustment{
+		ContractId:     contract.Id,
+		DeltaMicroUsd:  200_000_000,
+		Type:           SupplierInventoryAdjustmentTypeReplenishment,
+		Reason:         "inventory only",
+		IdempotencyKey: "no-reload-inventory",
+		CreatedBy:      1,
+	})
+	require.NoError(t, err)
+	assertCacheUnchanged(t, before)
+
+	before = supplierRuntimeIndexPointer.Load()
+	require.NoError(t, InactivateSupplierContractCAS(contract.Id, updatedContract.RowVersion))
+	assertCacheUnchanged(t, before)
+
+	before = supplierRuntimeIndexPointer.Load()
+	require.NoError(t, InactivateUpstreamSupplierCAS(supplier.Id, updatedSupplier.RowVersion))
+	assertCacheUnchanged(t, before)
+
+	var adjustmentCount int64
+	require.NoError(t, db.Model(&SupplierInventoryAdjustment{}).Count(&adjustmentCount).Error)
+	require.EqualValues(t, 1, adjustmentCount)
+}
+
 func TestSupplierAdminBindingAndInactivationInvariants(t *testing.T) {
 	db := setupSupplierTestDB(t, "supplier-admin-binding-inactivation")
 	contract := createSupplierContractFixture(t, db, "binding-supplier", "binding-contract")

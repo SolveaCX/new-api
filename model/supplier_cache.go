@@ -208,9 +208,7 @@ func loadSupplierRuntimeIndex(db *gorm.DB) (*supplierRuntimeIndex, *SupplierCach
 		channelCosts[binding.Id] = types.SupplierCostSnapshot{
 			BindingVersionId:         binding.BindingVersionId,
 			SupplierId:               supplier.Id,
-			SupplierName:             supplier.Name,
 			ContractId:               contract.Id,
-			ContractName:             contract.Name,
 			RateVersionId:            rate.Id,
 			ProcurementMultiplierPpm: rate.ProcurementMultiplierPpm,
 		}

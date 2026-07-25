@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"net/http/httptest"
@@ -217,14 +218,22 @@ func TestFinalRetrySupplierAndGroupPersistIntoConsumeLogAndDailySummary(t *testi
 		Type: model.LogTypeConsume, CreatedAt: day.Add(time.Hour).Unix(), ChannelId: 99,
 		ModelName: "retry-model", Other: string(other),
 	}).Error)
+	fact, err := model.PrepareSupplierAccountingFact(context.Background(), logDB, model.SupplierAccountingFactPrepare{
+		AttemptId: "018f843e-7e3a-7f61-a0a0-000000000301", ParentRequestId: "req-final-retry", RetryIndex: 1,
+		SupplierId: 21, ContractId: 22, BindingVersionId: 201, RateVersionId: 23,
+		ChannelId: 99, ModelName: "retry-model", CoverageScope: string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1),
+	})
+	require.NoError(t, err)
+	setSupplierDailyFactPreparedAt(t, logDB, &fact, day.Add(time.Hour))
+	require.NoError(t, model.FinalizeSupplierAccountingFactCaptured(context.Background(), logDB, fact.AttemptId, envelope, day.Add(time.Hour).Unix()))
 	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "node-final", day.AddDate(0, 0, 2)))
 
 	var persisted model.Log
 	require.NoError(t, logDB.First(&persisted).Error)
-	var persistedEnvelope supplierAccountingLogEnvelope
+	var persistedEnvelope map[string]json.RawMessage
 	require.NoError(t, common.Unmarshal([]byte(persisted.Other), &persistedEnvelope))
 	var persistedSnapshot types.SupplierAccountingLogSnapshotV1
-	require.NoError(t, common.Unmarshal(persistedEnvelope.SupplierAccountingV1, &envelope))
+	require.NoError(t, common.Unmarshal(persistedEnvelope[types.SupplierAccountingEnvelopeKeyV1], &envelope))
 	require.NotNil(t, envelope.Captured)
 	persistedSnapshot = *envelope.Captured
 	require.Equal(t, 201, persistedSnapshot.BindingVersionId)

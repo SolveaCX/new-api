@@ -61,7 +61,9 @@ func GetAllLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if c.GetInt("role") < common.RoleRootUser {
+	if c.GetInt("role") >= common.RoleRootUser {
+		model.ProjectSupplierAccountingForRootLogs(logs)
+	} else {
 		model.RedactSupplierAccountingFromLogs(logs)
 	}
 	pageInfo.SetTotal(int(total))

@@ -35,6 +35,39 @@ type supplierAccountingProviderMatrixFixture struct {
 	audioOutput TokenDetails
 }
 
+func TestSupplierAudioHasPositiveFinalUsage(t *testing.T) {
+	committed := types.BillingSettlementResult{FinanciallyCommitted: true}
+	committedWithSalesQuota := types.BillingSettlementResult{FinanciallyCommitted: true, FinalSalesQuota: 1}
+	notCommitted := types.BillingSettlementResult{}
+
+	require.False(t, supplierAudioHasPositiveFinalUsage(1, notCommitted), "uncommitted usage must remain ineligible despite token evidence")
+	require.False(t, supplierAudioHasPositiveFinalUsage(0, committed), "fixed/price mode alone must not establish positive usage")
+	require.True(t, supplierAudioHasPositiveFinalUsage(1, committed))
+	require.True(t, supplierAudioHasPositiveFinalUsage(0, committedWithSalesQuota))
+}
+
+func TestSupplierTextHasPositiveFinalUsage(t *testing.T) {
+	committed := types.BillingSettlementResult{FinanciallyCommitted: true}
+	committedWithSalesQuota := types.BillingSettlementResult{FinanciallyCommitted: true, FinalSalesQuota: 1}
+	notCommitted := types.BillingSettlementResult{}
+	allEvidence := textQuotaSummary{
+		TotalTokens:                1,
+		WebSearchCallCount:         1,
+		ClaudeWebSearchCallCount:   1,
+		FileSearchCallCount:        1,
+		ImageGenerationCallApplied: true,
+	}
+
+	require.False(t, supplierTextHasPositiveFinalUsage(allEvidence, notCommitted), "uncommitted usage must remain ineligible despite explicit evidence")
+	require.False(t, supplierTextHasPositiveFinalUsage(textQuotaSummary{}, committed), "fixed/price mode alone must not establish positive usage")
+	require.True(t, supplierTextHasPositiveFinalUsage(textQuotaSummary{TotalTokens: 1}, committed))
+	require.True(t, supplierTextHasPositiveFinalUsage(textQuotaSummary{}, committedWithSalesQuota))
+	require.True(t, supplierTextHasPositiveFinalUsage(textQuotaSummary{WebSearchCallCount: 1}, committed))
+	require.True(t, supplierTextHasPositiveFinalUsage(textQuotaSummary{ClaudeWebSearchCallCount: 1}, committed))
+	require.True(t, supplierTextHasPositiveFinalUsage(textQuotaSummary{FileSearchCallCount: 1}, committed))
+	require.True(t, supplierTextHasPositiveFinalUsage(textQuotaSummary{ImageGenerationCallApplied: true}, committed))
+}
+
 func TestSupplierAccountingProviderNamedFieldMatrix(t *testing.T) {
 	testCases := []supplierAccountingProviderMatrixCase{
 		{
@@ -116,8 +149,6 @@ func TestSupplierAccountingProviderNamedFieldMatrix(t *testing.T) {
 			payload, err := common.Marshal(envelope)
 			require.NoError(t, err)
 			require.NotContains(t, string(payload), testCase.model)
-			require.NotContains(t, string(payload), testCase.provider+" upstream supplier")
-			require.NotContains(t, string(payload), testCase.provider+" procurement contract")
 
 			if testCase.scope == types.SupplierStatisticsScopeBusiness {
 				require.Equal(t, "included", envelope.Captured.ExclusionDecision)
@@ -327,9 +358,7 @@ func supplierAccountingProviderMatrixProductionFixture(t *testing.T, testCase su
 		SupplierCostSnapshot: types.SupplierCostSnapshot{
 			BindingVersionId:         101,
 			SupplierId:               102,
-			SupplierName:             testCase.provider + " upstream supplier",
 			ContractId:               103,
-			ContractName:             testCase.provider + " procurement contract",
 			RateVersionId:            104,
 			ProcurementMultiplierPpm: 650_000,
 		},
@@ -655,7 +684,7 @@ func requireSupplierAccountingProviderDimensions(t *testing.T, dimension string,
 func requireSupplierAccountingProviderBusinessAggregation(t *testing.T, testCase supplierAccountingProviderMatrixCase, snapshot types.SupplierAccountingLogSnapshotV1) {
 	t.Helper()
 	accumulators := make(map[string]*model.SupplierUsageDailySummary)
-	err := addSupplierDailySnapshot(accumulators, "2026-07-23", 1_784_764_800, model.SupplierAccountingLogRow{
+	err := addSupplierDailySnapshot(accumulators, "2026-07-23", 1_784_764_800, model.SupplierAccountingFactRow{
 		ChannelId: 11, ModelName: testCase.model,
 	}, snapshot)
 	require.NoError(t, err)
@@ -672,7 +701,7 @@ func requireSupplierAccountingProviderBusinessAggregation(t *testing.T, testCase
 func requireSupplierAccountingProviderInternalAggregation(t *testing.T, testCase supplierAccountingProviderMatrixCase, snapshot types.SupplierAccountingLogSnapshotV1) {
 	t.Helper()
 	accumulators := make(map[string]*model.SupplierUsageDailySummary)
-	err := addSupplierDailySnapshot(accumulators, "2026-07-23", 1_784_764_800, model.SupplierAccountingLogRow{
+	err := addSupplierDailySnapshot(accumulators, "2026-07-23", 1_784_764_800, model.SupplierAccountingFactRow{
 		ChannelId: 11, ModelName: testCase.model,
 	}, snapshot)
 	require.NoError(t, err)

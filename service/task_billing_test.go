@@ -250,6 +250,7 @@ func TestLogTaskConsumptionIncludesGroupModelRatioSource(t *testing.T) {
 	require.Equal(t, 0.3, other["group_model_ratio"])
 	require.Equal(t, "plg", other["group_model_ratio_group"])
 	require.Equal(t, "gpt-5.5", other["group_model_ratio_model"])
+	require.Nil(t, taskBillingSupplierEnvelope(t, log.Other), "unsupported task logs must not persist a supplier marker")
 }
 
 // ===========================================================================
@@ -392,6 +393,7 @@ func TestRecalculate_PositiveDelta(t *testing.T) {
 	require.NotNil(t, log)
 	assert.Equal(t, model.LogTypeConsume, log.Type)
 	assert.Equal(t, actualQuota-preConsumed, log.Quota)
+	require.Nil(t, taskBillingSupplierEnvelope(t, log.Other), "unsupported task accounting must not persist a supplier marker")
 }
 
 func TestRecalculate_NegativeDelta(t *testing.T) {
@@ -425,6 +427,16 @@ func TestRecalculate_NegativeDelta(t *testing.T) {
 	require.NotNil(t, log)
 	assert.Equal(t, model.LogTypeRefund, log.Type)
 	assert.Equal(t, preConsumed-actualQuota, log.Quota)
+	require.Nil(t, taskBillingSupplierEnvelope(t, log.Other), "refund rows must remain unchanged")
+}
+
+func taskBillingSupplierEnvelope(t *testing.T, other string) *types.SupplierAccountingEnvelopeV1 {
+	t.Helper()
+	var payload struct {
+		Envelope *types.SupplierAccountingEnvelopeV1 `json:"supplier_accounting_v1"`
+	}
+	require.NoError(t, common.UnmarshalJsonStr(other, &payload))
+	return payload.Envelope
 }
 
 func TestRecalculate_ZeroDelta(t *testing.T) {

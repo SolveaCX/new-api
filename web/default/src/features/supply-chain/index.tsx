@@ -26,6 +26,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { ChannelBindingManagement } from './components/channel-binding-management'
 import { ContractManagement } from './components/contract-management'
 import { ExclusionManagement } from './components/exclusion-management'
+import { HistoricalImportManagement } from './components/historical-import-management'
 import { ReportBreakdownTable } from './components/report-breakdown-table'
 import { ReportChannelTable } from './components/report-channel-table'
 import { ReportContractTable } from './components/report-contract-table'
@@ -149,6 +150,9 @@ function SupplyChainContent(props: SupplyChainManagementProps) {
             <TabsTrigger value='channel-bindings'>
               {t('Channel bindings')}
             </TabsTrigger>
+            <TabsTrigger value='historical-imports'>
+              {t('Historical estimates')}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value='report' className='flex flex-col gap-4 pt-2'>
@@ -225,6 +229,9 @@ function SupplyChainContent(props: SupplyChainManagementProps) {
           </TabsContent>
           <TabsContent value='channel-bindings' className='pt-2'>
             <ChannelBindingManagement {...props} />
+          </TabsContent>
+          <TabsContent value='historical-imports' className='pt-2'>
+            <HistoricalImportManagement {...props} />
           </TabsContent>
         </Tabs>
       </SectionPageLayout.Content>

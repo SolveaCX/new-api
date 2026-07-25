@@ -24,6 +24,7 @@ export const SUPPLY_CHAIN_TABS = [
   'contracts',
   'exclusions',
   'channel-bindings',
+  'historical-imports',
 ] as const
 
 export type SupplyChainTab = (typeof SUPPLY_CHAIN_TABS)[number]

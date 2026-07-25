@@ -69,6 +69,64 @@ export const channelBindingFormSchema = z.object({
   contract_id: positiveInteger,
 })
 
+const jsonIntegerArray = z.string().refine((value) => {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return (
+      Array.isArray(parsed) &&
+      parsed.every((item) => Number.isInteger(item) && item > 0)
+    )
+  } catch {
+    return false
+  }
+}, 'Enter a JSON array of positive integers')
+
+const historicalMappings = z.string().refine((value) => {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return (
+      Array.isArray(parsed) &&
+      parsed.every((item) => {
+        if (!item || typeof item !== 'object') return false
+        const mapping = item as Record<string, unknown>
+        return (
+          Number.isInteger(mapping.channel_id) &&
+          Number(mapping.channel_id) > 0 &&
+          Number.isInteger(mapping.supplier_id) &&
+          Number(mapping.supplier_id) > 0 &&
+          Number.isInteger(mapping.contract_id) &&
+          Number(mapping.contract_id) > 0 &&
+          Number.isInteger(mapping.rate_version_id) &&
+          Number(mapping.rate_version_id) > 0 &&
+          Number.isInteger(mapping.procurement_multiplier_ppm) &&
+          Number(mapping.procurement_multiplier_ppm) >= 0 &&
+          Number(mapping.procurement_multiplier_ppm) <= 1_000_000
+        )
+      })
+    )
+  } catch {
+    return false
+  }
+}, 'Enter a valid channel mapping JSON array')
+
+export const historicalImportFormSchema = z
+  .object({
+    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid date'),
+    end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid date'),
+    quota_per_unit: z
+      .string()
+      .trim()
+      .regex(/^\d+(?:\.\d+)?$/, 'Enter a positive quota per unit')
+      .refine((value) => Number(value) > 0, 'Enter a positive quota per unit'),
+    excluded_user_ids_json: jsonIntegerArray,
+    channel_mappings_json: historicalMappings,
+    reason: requiredText,
+  })
+  .refine((value) => value.start_date < value.end_date, {
+    path: ['end_date'],
+    message: 'End date must be after start date',
+  })
+
 export type SupplierFormValues = z.infer<typeof supplierFormSchema>
 export type ContractFormValues = z.infer<typeof contractFormSchema>
 export type RateVersionFormValues = z.infer<typeof rateVersionFormSchema>
@@ -77,3 +135,6 @@ export type InventoryAdjustmentFormValues = z.infer<
 >
 export type ExclusionFormValues = z.infer<typeof exclusionFormSchema>
 export type ChannelBindingFormValues = z.infer<typeof channelBindingFormSchema>
+export type HistoricalImportFormValues = z.infer<
+  typeof historicalImportFormSchema
+>

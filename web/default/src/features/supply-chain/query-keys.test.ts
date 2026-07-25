@@ -33,6 +33,10 @@ describe('supplyChainQueryKeys', () => {
       'supply-chain',
       'channel-bindings',
     ])
+    expect(supplyChainQueryKeys.historicalImports.all()).toEqual([
+      'supply-chain',
+      'historical-imports',
+    ])
   })
 
   it('separates report resources and includes complete query input', () => {

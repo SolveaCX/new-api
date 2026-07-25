@@ -148,6 +148,148 @@ func TestOpenaiRealtimeHandlerJoinsPeerReaderBeforeFinalUsage(t *testing.T) {
 	writers.Wait()
 }
 
+func TestOpenaiRealtimeHandlerNormalCloseWithoutResponseDoneRemainsIncomplete(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clientHandler, _ := newRealtimeWebsocketPair(t)
+	targetHandler, targetPeer := newRealtimeWebsocketPair(t)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	info := &relaycommon.RelayInfo{
+		ClientWs: clientHandler, TargetWs: targetHandler, UsePrice: true,
+		ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "realtime-tail-test"},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = OpenaiRealtimeHandler(ctx, info)
+		close(done)
+	}()
+	require.NoError(t, targetPeer.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "complete"),
+		time.Now().Add(time.Second),
+	))
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("realtime handler did not finish after normal close")
+	}
+	require.NotNil(t, info.StreamStatus)
+	require.False(t, info.StreamStatus.IsNormalEnd())
+}
+
+func TestOpenaiRealtimeHandlerResponseDoneWithoutTailMarksComplete(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clientHandler, clientPeer := newRealtimeWebsocketPair(t)
+	targetHandler, targetPeer := newRealtimeWebsocketPair(t)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	info := &relaycommon.RelayInfo{ClientWs: clientHandler, TargetWs: targetHandler, UsePrice: true}
+
+	done := make(chan *dto.RealtimeUsage, 1)
+	go func() {
+		_, usage := OpenaiRealtimeHandler(ctx, info)
+		done <- usage
+	}()
+	payload, err := common.Marshal(dto.RealtimeEvent{Type: dto.RealtimeEventTypeResponseDone, Response: &dto.RealtimeResponse{Usage: &dto.RealtimeUsage{TotalTokens: 1, InputTokens: 1}}})
+	require.NoError(t, err)
+	require.NoError(t, targetPeer.WriteMessage(websocket.TextMessage, payload))
+	require.NoError(t, clientPeer.SetReadDeadline(time.Now().Add(3*time.Second)))
+	_, _, err = clientPeer.ReadMessage()
+	require.NoError(t, err)
+	require.NoError(t, targetPeer.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "complete"), time.Now().Add(time.Second)))
+
+	select {
+	case usage := <-done:
+		require.Equal(t, 1, usage.FinalResponseCount)
+	case <-time.After(3 * time.Second):
+		t.Fatal("realtime handler did not finish")
+	}
+	require.True(t, info.StreamStatus.IsNormalEnd())
+}
+
+func TestOpenaiRealtimeHandlerResponseDoneWithTrailingUsageRemainsIncomplete(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clientHandler, clientPeer := newRealtimeWebsocketPair(t)
+	targetHandler, targetPeer := newRealtimeWebsocketPair(t)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	info := &relaycommon.RelayInfo{
+		ClientWs: clientHandler, TargetWs: targetHandler, UsePrice: true,
+		ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "realtime-tail-test"},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = OpenaiRealtimeHandler(ctx, info)
+		close(done)
+	}()
+	donePayload, err := common.Marshal(dto.RealtimeEvent{Type: dto.RealtimeEventTypeResponseDone, Response: &dto.RealtimeResponse{Usage: &dto.RealtimeUsage{TotalTokens: 1, InputTokens: 1}}})
+	require.NoError(t, err)
+	tailPayload, err := common.Marshal(dto.RealtimeEvent{Type: dto.RealtimeEventResponseFunctionCallArgumentsDelta, Delta: "tail usage"})
+	require.NoError(t, err)
+	require.NoError(t, targetPeer.WriteMessage(websocket.TextMessage, donePayload))
+	require.NoError(t, targetPeer.WriteMessage(websocket.TextMessage, tailPayload))
+	for range 2 {
+		require.NoError(t, clientPeer.SetReadDeadline(time.Now().Add(3*time.Second)))
+		_, _, err = clientPeer.ReadMessage()
+		require.NoError(t, err)
+	}
+	require.NoError(t, targetPeer.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "complete"), time.Now().Add(time.Second)))
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("realtime handler did not finish")
+	}
+	require.False(t, info.StreamStatus.IsNormalEnd())
+}
+
+func TestOpenaiRealtimeHandlerTargetErrorWinsClientCloseRace(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clientHandler, clientPeer := newRealtimeWebsocketPair(t)
+	targetHandler, targetPeer := newRealtimeWebsocketPair(t)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	info := &relaycommon.RelayInfo{ClientWs: clientHandler, TargetWs: targetHandler}
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = OpenaiRealtimeHandler(ctx, info)
+		close(done)
+	}()
+	require.NoError(t, targetPeer.Close())
+	_ = clientPeer.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "client done"), time.Now().Add(time.Second))
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("realtime handler did not finish")
+	}
+	require.False(t, info.StreamStatus.IsNormalEnd())
+}
+
+func TestOpenaiRealtimeHandlerMarksAbruptDisconnectUnknown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clientHandler, _ := newRealtimeWebsocketPair(t)
+	targetHandler, targetPeer := newRealtimeWebsocketPair(t)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	info := &relaycommon.RelayInfo{ClientWs: clientHandler, TargetWs: targetHandler}
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = OpenaiRealtimeHandler(ctx, info)
+		close(done)
+	}()
+	require.NoError(t, targetPeer.Close())
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("realtime handler did not finish after abrupt disconnect")
+	}
+	require.NotNil(t, info.StreamStatus)
+	require.False(t, info.StreamStatus.IsNormalEnd())
+}
+
 func newRealtimeWebsocketPair(t *testing.T) (*websocket.Conn, *websocket.Conn) {
 	t.Helper()
 	accepted := make(chan *websocket.Conn, 1)

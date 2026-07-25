@@ -382,14 +382,6 @@ func InjectSupplierAccountingEnvelopeV1(other map[string]any, input SupplierAcco
 	return envelope
 }
 
-func InjectUnsupportedSupplierAccountingEnvelopeV1(other map[string]any) types.SupplierAccountingEnvelopeV1 {
-	envelope := newSupplierAccountingDispositionEnvelope(types.SupplierAccountingDispositionUnsupportedPath)
-	if other != nil {
-		delete(other, types.SupplierAccountingEnvelopeKeyV1)
-	}
-	return envelope
-}
-
 func newSupplierAccountingDispositionEnvelope(disposition types.SupplierAccountingDisposition) types.SupplierAccountingEnvelopeV1 {
 	return types.SupplierAccountingEnvelopeV1{
 		EnvelopeSchemaVersion: types.SupplierAccountingEnvelopeSchemaVersionV1,

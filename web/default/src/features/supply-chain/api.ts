@@ -38,6 +38,9 @@ import type {
   SupplierInventoryAdjustment,
   SupplierInventoryAdjustmentCreateRequest,
   SupplierInactivateRequest,
+  SupplierHistoricalImport,
+  SupplierHistoricalImportCommand,
+  SupplierHistoricalSeriesPage,
   SupplierListParams,
   SupplierRateVersionCreateRequest,
   SupplierReportBreakdownList,
@@ -340,5 +343,55 @@ export async function listReportBreakdown(
   const response = await api.get(`${SUPPLY_CHAIN_API}/reports/breakdown`, {
     params: buildSupplierReportQueryParams(query),
   })
+  return response.data
+}
+
+export async function createHistoricalImport(
+  variables: IdempotentMutationVariables<SupplierHistoricalImportCommand>
+): Promise<SupplyChainApiResponse<SupplierHistoricalImport>> {
+  const response = await api.post(
+    `${SUPPLY_CHAIN_API}/historical-imports`,
+    variables.data,
+    { headers: idempotencyHeaders(variables.idempotencyKey) }
+  )
+  return response.data
+}
+
+export async function listHistoricalImports(params: {
+  p: number
+  page_size: number
+}): Promise<
+  SupplyChainApiResponse<SupplyChainAdminPage<SupplierHistoricalImport>>
+> {
+  const response = await api.get(`${SUPPLY_CHAIN_API}/historical-imports`, {
+    params,
+  })
+  return normalizeAdminPageResponse(response.data)
+}
+
+export async function getHistoricalImport(
+  importId: number
+): Promise<SupplyChainApiResponse<SupplierHistoricalImport>> {
+  const response = await api.get(
+    `${SUPPLY_CHAIN_API}/historical-imports/${importId}`
+  )
+  return response.data
+}
+
+export async function listHistoricalImportSummaries(
+  importId: number,
+  params?: {
+    start_date?: string
+    end_date?: string
+    limit?: number
+    after_date?: string
+    after_scope?: string
+    after_supplier_id?: number
+  }
+): Promise<SupplyChainApiResponse<SupplierHistoricalSeriesPage>> {
+  const response = await api.get(
+    `${SUPPLY_CHAIN_API}/historical-imports/${importId}/summaries`,
+    { params }
+  )
   return response.data
 }

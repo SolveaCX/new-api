@@ -39,9 +39,7 @@ type SupplierCostSnapshot struct {
 	CacheUnavailable         bool
 	BindingVersionId         int
 	SupplierId               int
-	SupplierName             string
 	ContractId               int
-	ContractName             string
 	RateVersionId            int
 	ProcurementMultiplierPpm int64
 }

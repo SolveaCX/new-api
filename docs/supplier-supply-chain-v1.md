@@ -1,196 +1,164 @@
 # 上游供应链与利润核算 V1
 
-本文档定义供应商利润核算 V1 的最小交付范围。日常检查、故障处理和自动历史 catch-up 见[供应商日结运维手册](./supplier-accounting-operations.md)。
+本文档是供应商供应链、权威利润核算和历史估算的设计基线。发布、日常核对、故障恢复、留存和历史导入操作见[供应商核算运维手册](./supplier-accounting-operations.md)。
 
-## 1. 目标
+## 1. 目标与金额口径
 
-V1 管理“供应商—合同—采购折扣—渠道”的关系，并基于请求成功时冻结的事实回答：
+V1 管理“供应商—合同—采购折扣版本—渠道绑定版本”，并回答：
 
-- 业务用户产生的销售额、采购成本、毛利润和毛利率；
-- 业务用户与排除的内部用户分别消耗了多少官方原价库存；
-- 每份合同累计入库、累计消耗和剩余库存；
-- 指定供应商、合同、渠道、模型和日期范围的管理报表。
+- 业务用户的销售额、采购成本、毛利润和毛利率；
+- 被显式排除的内部用户消耗的官方原价库存及采购成本；
+- 合同累计入库、官方原价消耗、剩余库存及是否超卖；
+- 按自然日、供应商、合同、渠道和模型查询权威报表；
+- 对上线前少量历史消费日志发起独立、明确标注的估算导入。
 
-金额统一使用整数 micro-USD（`1 USD = 1,000,000 micro-USD`）。采购折扣使用 PPM，例如 6.5 折记为 `650000`。
-
-```mermaid
-flowchart LR
-    A[供应商与合同配置] --> B[渠道选择时冻结版本]
-    B --> C{最终请求是否符合核算条件}
-    C -->|是| D[写入现有 logs.other]
-    C -->|否| E[不写供应商核算标记]
-    D --> F[Console Master 的 T+1 ticker]
-    F --> G[数据库租约与 fence]
-    G --> H[日报与库存报表]
-```
-
-## 2. V1 范围边界
-
-V1 只新增供应商配置、请求成功快照、T+1 日汇总、管理报表和自动历史 catch-up。
-
-V1 不新增：
-
-- Redis 队列、分布式队列或供应商专用缓存协议；
-- Cloud Run Job、Cloud Scheduler 或独立批处理进程；
-- GitHub Actions 工作流、构建清单、容量准入门槛或发布激活流程；
-- Terraform、WIF、服务账号或 Secret Manager 资源；
-- 控制面状态机、mutation gate、activation、coverage gap 或已完成日期 rerun；
-- Prometheus 指标、告警规则或监控 sidecar 配置。
-
-供应商核算随现有 Go 应用部署。Router 负责在成功结算日志中保存快照；Console/Master 负责日结、管理接口和报表。
-
-## 3. 请求级核算
-
-### 3.1 生成快照的唯一条件
-
-只有同时满足以下条件的请求才在现有 `logs.other` 中写入 `supplier_accounting_v1`：
-
-1. 最终请求成功并完成现有客户计费结算；
-2. 最终成功尝试使用的渠道在请求选择时已绑定有效供应商合同；
-3. 请求路径已支持供应商官方价核算；
-4. 最终用量或最终销售额度为正，能够证明发生了实际消费；
-5. 消费日志成功持久化。
-
-以下情况不写任何供应商核算标记或占位对象：
-
-- 请求失败、退款或未完成最终结算；
-- 最终用量与最终销售额度均为零；
-- 最终成功渠道没有供应商合同绑定；
-- 当前不支持的同步或异步计费路径；
-- 无法安全计算官方原价、采购成本或销售额。
-
-因此，V1 日报的事实全集是“带有效 `supplier_accounting_v1` 快照的成功消费日志”。没有标记表示不属于 V1 可核算事实，不能被日结任务推断为零金额、失败类别或缺失金额。
-
-### 3.2 冻结时机
-
-渠道选定时，从供应商运行时配置中按值复制：
-
-- 供应商 ID；
-- 合同 ID；
-- 渠道绑定版本 ID；
-- 采购折扣版本 ID；
-- 采购折扣 PPM；
-- 用户是否命中显式统计排除规则及规则 ID。
-
-如果请求发生渠道重试，以最终成功渠道对应的冻结配置为准。后续修改合同、折扣、绑定或排除规则，不改变已经写入日志的历史事实。
-
-### 3.3 金额口径
+所有金额使用整数 micro-USD（`1 USD = 1,000,000 micro-USD`）。采购折扣使用 PPM，例如 6.5 折为 `650000`。
 
 ```text
 procurement_cost_micro_usd =
   ROUND_HALF_UP(official_list_micro_usd × procurement_multiplier_ppm / 1,000,000)
-
-sales_micro_usd =
-  按现有结算链路的最终销售 Quota 和请求时 quota_per_unit 换算
 
 gross_profit_micro_usd = sales_micro_usd - procurement_cost_micro_usd
 
 gross_margin = gross_profit_micro_usd / sales_micro_usd
 ```
 
-- `official_list_micro_usd` 复用请求发生时的官方模型定价输入和实际用量证据，不乘用户分组倍率；
-- ratio、固定价、阶梯表达式、音频、图片和工具调用均沿用现有计费模式，不能统一简化为“单价 × token”；
-- 计算过程使用十进制定点语义，最终只舍入一次；
-- 中间结果溢出、字段不完整或公式校验失败时，不写快照；
-- 毛利率只在销售额为正且销售额、采购成本均已知时计算。
+官方原价直接复用请求发生时的模型定价配置和最终用量，不乘用户分组倍率。ratio、固定价、阶梯表达式、音频、图片和工具调用沿用现有计费模式，使用十进制定点语义并在最终结果只舍入一次。
 
-### 3.4 业务用户与内部用户
+## 2. 三条相互隔离的数据链路
 
-统计排除规则按显式 `user_id` 配置，不按 root、admin 等角色动态推断。
+```mermaid
+flowchart LR
+    A[供应商配置与版本] --> B[Router 请求尝试]
+    B --> C[LOG_DB supplier_accounting_facts]
+    C --> D[Console/Master T+1 日结]
+    D --> E[权威日报与库存报表]
 
-| 范围 | `logs.other` 快照 | 日报用途 |
+    B -.审计镜像.-> F[logs.other supplier_accounting_v1]
+    F --> G[Root 手工恢复 pending fact]
+
+    H[历史 consume logs] --> I[历史估算导入]
+    I --> J[estimate-only 日序列]
+    J -.禁止进入.-> E
+```
+
+### 2.1 权威事实链路
+
+权威日结的唯一请求级数据源是 `LOG_DB.supplier_accounting_facts`，不是通用 `logs` 表：
+
+1. Router 在已绑定的同步上游尝试发出前创建 `pending` fact；
+2. 最终成功、用量完整且金额校验通过时写为 `captured`；
+3. 明确没有财务消费的尝试写为 `void`；
+4. 响应不完整、生产者错误或终态不明确时保持 `pending`，阻止对应自然日关账；
+5. Root 可审计后将 pending 置为 void，或从匹配的通用消费日志恢复 captured。
+
+每个 fact 绑定唯一 attempt ID，并冻结供应商、合同、绑定版本、折扣版本、渠道、模型、覆盖口径和 captured payload hash。渠道重试以每次真实上游尝试为单位建 fact；日结只扫描 `captured`。
+
+### 2.2 通用日志镜像
+
+现有 `logs` 表不增加供应商专用列或索引。成功消费日志的 `other` 可保存 `supplier_accounting_v1` 及 attempt ID，作用是请求审计、日志详情展示和 pending fact 的人工恢复证据。
+
+通用日志不是权威日结源；日志缺失不能让已 captured fact 消失，日志存在也不能绕过 fact 终态和日结发布门。Root 可查看完整财务对象，Admin 和普通用户的日志响应必须删除该对象。
+
+### 2.3 历史估算链路
+
+历史估算只用于上线前没有权威 fact 的少量消费日志：
+
+- Root 在控制台“历史估算”独立页创建不可变命令；
+- 命令冻结北京时间 `[start_date, end_date)`、quota-per-unit、排除用户 ID、渠道到供应商/合同/折扣版本的显式映射及原因；
+- 后台 worker 首次取得 lease 时冻结 `LOG_DB` 最大日志 ID 和候选条数；后续接管与重试复用首次冻结值，并只按 `(created_at, id)` keyset 扫描该范围；
+- 只统计最终成功的 consume 日志；销售额由 quota 和冻结 QPU 估算，官方原价还要求日志中存在有效 group ratio，采购成本还要求显式渠道映射；
+- 完成前必须重新核对 `verified_count == processed_count == candidate_count`；运行中或失败的部分金额不发布；
+- 结果永久标记 `estimate_only`，只写历史估算表，权威日报和库存永远不读取。
+
+同一时间范围已有 pending、running 或 completed 导入时拒绝重复创建；failed 导入可修正命令后重建。调度器每分钟最多推进一页，不新增 Redis、队列或独立 goroutine。
+
+## 3. 统计范围
+
+统计排除按显式 `user_id` 版本规则判断，不按 root/admin 角色动态推断。
+
+| 范围 | 权威 captured payload | 日报用途 |
 | --- | --- | --- |
-| 业务用户 | 完整保存供应商/合同/版本、官方原价、采购成本、销售额、毛利润和报表维度 | 销售、成本、利润、毛利率和库存 |
-| 排除的内部用户 | 紧凑保存供应商/合同/版本、排除规则、官方原价库存消耗及对应采购成本 | 只进入内部库存与成本，不进入销售额、毛利润或业务高维明细 |
+| 业务用户 | 供应商/合同/版本、官方原价、销售额、采购成本、毛利润及定价证据 | 销售、成本、利润、毛利率和库存 |
+| 内部排除用户 | 供应商/合同/版本、排除规则、官方原价和采购成本 | 只进入内部成本和库存，不进入业务销售或利润 |
 
-内部快照不保存销售额、销售倍率或毛利润。日报也不得通过其他日志字段反推这些值。
+无法安全计算、字段不完整、金额溢出或定价证据不一致时不得伪造 captured。此类已准备尝试保持 pending，交由审计解决。
 
-`supplier_accounting_v1` 属于 Root 财务数据。Root 可通过供应链报表和通用日志查看完整快照；Admin 与普通用户的日志响应必须删除该对象，同时保留与供应链无关的日志元数据。该脱敏只作用于响应，不改写持久化日志。
+## 4. 数据模型：共 11 张供应商表
 
-## 4. 数据模型
-
-V1 新增恰好八张表：
+### 4.1 主库 10 张
 
 | 表 | 职责 |
 | --- | --- |
 | `upstream_suppliers` | 供应商主体及状态 |
-| `supplier_contracts` | 供应商合同、展示信息和容量备注 |
-| `supplier_contract_rate_versions` | 追加式采购折扣版本；历史版本不可改写 |
-| `supplier_channel_binding_versions` | 追加式渠道—合同绑定与解绑历史 |
-| `supplier_inventory_adjustments` | 追加式库存入库、冲正和人工调整台账 |
-| `supplier_statistics_exclusion_rules` | 显式用户统计排除/恢复版本 |
-| `supplier_usage_daily_summaries` | 按日期与业务维度聚合的日报事实 |
-| `supplier_usage_daily_batch_runs` | 每个核算日的状态、游标、数据库租约、fence 和发布版本 |
+| `supplier_contracts` | 合同、容量信息和状态 |
+| `supplier_contract_rate_versions` | 追加式采购折扣版本 |
+| `supplier_channel_binding_versions` | 追加式渠道绑定/解绑版本 |
+| `supplier_inventory_adjustments` | 追加式库存入库、冲正和调整台账 |
+| `supplier_statistics_exclusion_rules` | 显式用户排除/恢复版本 |
+| `supplier_usage_daily_summaries` | 按发布 fence 隔离的权威日汇总 |
+| `supplier_usage_daily_batch_runs` | 自然日租约、游标、水位、fence 和发布状态 |
+| `supplier_historical_imports` | 不可变历史估算命令、冻结水位、租约和进度 |
+| `supplier_historical_daily_summaries` | estimate-only 历史日序列 |
 
-现有 `logs` 表不新增供应商专用物理列或索引。不可变请求事实写入已有 `other` 字段；日结从 `LOG_DB` 读取消费日志并向主库写入两张日结表。未配置独立日志库时，`LOG_DB` 与主库相同。
+### 4.2 LOG_DB 1 张
 
-供应商、合同、折扣、绑定、库存调整和排除规则均保存在主库。所有数据库访问必须同时兼容 SQLite、MySQL 5.7.8+ 和 PostgreSQL 9.6+。
+| 表 | 职责 |
+| --- | --- |
+| `supplier_accounting_facts` | 每个真实同步上游尝试的 durable pending/captured/void 权威生命周期 |
 
-## 5. T+1 日结
+未配置独立 `LOG_SQL_DSN` 时 LOG_DB 与主库共享物理数据库，此时 11 张表位于同一数据库，但职责边界不变。所有迁移和查询同时支持 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+。
 
-### 5.1 调度
+## 5. T+1 日结与多节点安全
 
-日结复用现有 Master 定时任务模式：Console/Master 进程在启动后创建进程内 ticker，Router/Slave 不启动任务。时区固定为 `Asia/Shanghai`，每日 02:00 关账缓冲结束后，ticker 尝试处理最早一个尚未完成的 D-1 或更早自然日。
+Console/Master 复用现有每分钟 ticker；Router/Slave 不执行日结。时区固定 `Asia/Shanghai`，02:00 关账缓冲后每次最多处理一个最早未完成自然日。
 
-每次调用最多推进一个自然日。仍有积压时由后续 ticker 继续推进，避免一次运行无界扫描历史日志。
+每个自然日的流程：
 
-### 5.2 扫描与发布
+1. 主库获取 batch lease 并递增 fence；
+2. LOG_DB 冻结该日 `source_max_fact_id` 和覆盖口径；
+3. 若水位内仍有 pending fact，批次失败且不发布；
+4. 按 fact ID keyset 分页扫描 captured payload；
+5. 每页汇总写入与游标推进在同一主库事务内校验 owner、fence 和旧游标；
+6. 结束时再次验证 fact 水位和 pending 状态；
+7. 只有当前 fence 可发布，报表只读取 published fence。
 
-- 只扫描目标北京时间自然日内的成功消费日志；
-- 使用 `(created_at, id)` keyset 分页，每页有固定上限；
-- 只解析存在且有效的 `supplier_accounting_v1` 快照；
-- 业务快照按供应商、合同、渠道、模型、版本和定价维度汇总；
-- 内部快照只按库存核算所需的低维字段汇总；
-- 候选 generation 完整结束后才发布；报表只读取已发布 fence；
-- 扫描或写入失败时保留上一已发布 generation，不展示部分结果。
+多个 Console 实例、Cloud Run 重叠修订和实例重启都可能同时触发 ticker。进程内标记只减少本进程重入，正确性依赖数据库租约、唯一约束、CAS 游标和 fence；不依赖 Redis 或单实例顺序。
 
-日报归属日取消费日志 `created_at` 所在的 `Asia/Shanghai` 自然日，不使用请求开始时间或财务确认时间替代。
+## 6. 报表和库存
 
-### 5.3 多节点安全
+权威报表提供概览、趋势、合同、渠道和明细视图，并遵守：
 
-所有 Console/Master 实例都可能启动 ticker，因此进程内 `sync.Once` 或运行标记只负责单进程去重，不能承担全局正确性。全局串行化依赖主库：
+- 只读取 completed batch 的 published fence；
+- pending、running、failed 批次不可暴露部分汇总；
+- 缺失或未完成日期不能当作零消费；
+- 业务与内部范围严格隔离；
+- 合同余额 = 库存调整累计值 − 业务与内部官方原价累计消耗；
+- 按渠道筛选导致内部维度不可完整归属时返回未知，不以业务小计冒充总计；
+- 历史估算结果不参与任何权威利润或库存计算。
 
-- 每个核算日只有一条 batch run；
-- 使用数据库时间判断租约有效期；
-- 获取或接管租约时递增 fence token；
-- 每页写入与游标推进在事务中校验 owner、fence 和旧游标；
-- 只有当前 fence 可以发布；过期 owner 不能覆盖新 owner；
-- 唯一约束和幂等聚合保证重复 ticker、进程重启和响应丢失不会重复记账。
+## 7. Cutover、catch-up 与留存
 
-V1 不依赖 Redis 锁或单实例部署假设。
+`SUPPLIER_ACCOUNTING_CUTOVER_AT` 是 Unix 秒，必须对应 `Asia/Shanghai 00:00:00`。未配置时 Router 不创建 fact，Console 也不从历史日期启动权威 catch-up。配置后：
 
-Router/Slave 不执行数据库迁移。若新 Router 修订早于 Console/Master 的加法迁移启动，Router 必须保持供应商缓存 blocking、跳过供应商快照并继续提供原有 API 服务；迁移完成后由现有缓存刷新循环自动恢复，不要求重启 Router。
+- cutover 前的请求不创建 fact；
+- cutover 起，已绑定同步 relay 尝试进入 durable fact 协议；
+- Console 从 cutover 自然日开始逐日处理，不能从通用日志推断或补造权威事实；
+- 任一天存在 pending fact 时必须先审计解决，不能强行发布。
 
-## 6. 管理报表与自动历史 catch-up
+`SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS` 未设置或为 `0` 时不删除事实。大于零时，Console 只对已完成且超过保留期的自然日，按已发布 `source_max_fact_id` 每次最多删除 5000 条 captured/void fact；pending 永不由留存任务删除。日汇总、批次水位和通用日志不受该任务影响。
 
-管理端提供概览、趋势、合同、渠道和明细视图。日期范围有固定上限，列表接口分页，并支持按供应商、合同和渠道筛选。按渠道筛选时无法完整归属内部账号消耗，因此 `internal_dimension_available=false`，内部维度与包含内部成本的 `total_estimated_procurement_cost` 必须显示为未知（API 返回 `null`），不得把业务侧小计伪装成合计或将未知值显示为 0。
+## 8. V1 非目标
 
-报表必须保持以下口径：
+V1 不新增 Redis 队列、Cloud Run Job、Cloud Scheduler、供应商专用 runner、Terraform 资源、GitHub Actions 工作流、Prometheus sidecar 或自动超卖拦截。库存第一版只展示和人工核对，不改变路由或售卖行为。
 
-- 业务用户展示完整销售额、采购成本、毛利润和毛利率；
-- 内部用户只展示官方原价库存消耗及对应采购成本；
-- 合同库存余额 = 库存调整累计值 − 业务与内部官方原价累计消耗；
-- 只读取已发布的日报 generation；运行中或失败的候选数据不可见；
-- 报表明确显示最新完成日期和批次状态，不能把缺失日期当作零消费。
+## 9. 验收标准
 
-历史 catch-up 只用于处理“快照功能上线后、尚未生成汇总”的历史日期：
-
-- V1 不提供手动回填、日报重跑 HTTP 接口或前端入口；
-- Console/Master ticker 自动选择最早未完成日期，每次只推进一天；
-- 配置 `SUPPLIER_ACCOUNTING_CUTOVER_AT` 时从该时间所在的北京时间自然日开始逐日 catch-up；未配置时从 D-1 开始；
-- 与日常 ticker 共用数据库租约、fence、分页和发布逻辑；
-- 只消费日志中已经存在的快照，不回写日志、不推断无标记日志；
-- 已完成日期不提供任意 rerun；修正基础事实应通过追加库存调整或后续明确版本处理。
-
-## 7. 验收标准
-
-V1 完成必须至少证明：
-
-1. 迁移只新增上述八张表，且 SQLite、MySQL、PostgreSQL 均可启动和读写；
-2. 业务成功请求写完整快照，内部排除请求写紧凑库存快照；
-3. 失败、零用量、未绑定和不支持路径均不写供应商标记；
-4. 折扣、绑定和排除规则在请求期间变更时，历史日志仍使用冻结版本；
-5. T+1 ticker 只在 Master/Console 启动，并在多节点竞争、租约过期和旧 owner 恢复时保持 fence 安全；
-6. 日结同时支持共享库与独立 `LOG_DB`，分页不会漏读或重复读取；
-7. 管理报表只读取已发布数据，业务与内部口径严格隔离；
-8. 自动历史 catch-up 每次只推进一天，且不会重建无标记历史事实。
+1. 11 张表在共享库和独立 LOG_DB 拓扑下均可迁移，并在真实 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+ 实例完成迁移与状态机验收；
+2. cutover 前协议关闭，cutover 后每个已绑定同步尝试都有 durable 终态或明确 pending；
+3. T+1 仅扫描 captured facts，并在 pending、水位变化或 fence 丢失时拒绝发布；
+4. 多 Console 竞争、租约接管和旧 owner 恢复不会重复或覆盖日报；
+5. Root 能审计 pending，并从严格匹配的日志证据恢复或作废；
+6. 权威报表、内部范围和库存公式核对一致；
+7. 历史估算冻结命令与源水位，完成门有效，且无法进入权威报表/库存；
+8. 留存只清理达到条件的 terminal facts，绝不删除 pending 或未完成日期事实。

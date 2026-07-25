@@ -346,6 +346,13 @@ func SetApiRouter(router *gin.Engine) {
 		supplyChainRoute := apiRouter.Group("/supply-chain")
 		supplyChainRoute.Use(middleware.FinanceAuth())
 		{
+			supplyChainRoute.GET("/accounting-facts/pending", controller.ListPendingSupplyChainAccountingFacts)
+			supplyChainRoute.POST("/accounting-facts/:attempt_id/resolve", supplierSupplyChainMutation(controller.ResolvePendingSupplyChainAccountingFact)...)
+			supplyChainRoute.POST("/historical-imports", supplierSupplyChainMutation(controller.CreateSupplierHistoricalEstimateImport)...)
+			supplyChainRoute.GET("/historical-imports", controller.ListSupplierHistoricalEstimateImports)
+			supplyChainRoute.GET("/historical-imports/:id", controller.GetSupplierHistoricalEstimateImport)
+			supplyChainRoute.GET("/historical-imports/:id/summaries", controller.ListSupplierHistoricalEstimateSummaries)
+
 			supplyChainRoute.GET("/suppliers", controller.ListSupplyChainSuppliers)
 			supplyChainRoute.GET("/suppliers/:id", controller.GetSupplyChainSupplier)
 			supplyChainRoute.POST("/suppliers", supplierSupplyChainMutation(controller.CreateSupplyChainSupplier)...)
@@ -448,7 +455,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		logRoute := apiRouter.Group("/log")
 		logRoute.GET("/", middleware.AdminAuth(), controller.GetAllLogs)
-		logRoute.DELETE("/", middleware.AdminAuth(), controller.DeleteHistoryLogs)
+		logRoute.DELETE("/", middleware.FinanceAuth(), middleware.CriticalRateLimit(), middleware.SecureVerificationRequired(), controller.DeleteHistoryLogs)
 		logRoute.GET("/request_samples", middleware.RootAuth(), controller.GetLogRequestSamples)
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)

@@ -41,7 +41,11 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
-import type { UsageLog } from '../../data/schema'
+import {
+  formatMicroUsd,
+  formatPpmPercent,
+} from '@/features/supply-chain/lib/format'
+import type { SupplierAccountingProjection, UsageLog } from '../../data/schema'
 import {
   parseLogOther,
   getParamOverrideActionLabel,
@@ -128,6 +132,164 @@ function DetailSection(props: {
 function formatRatio(ratio: number | undefined): string {
   if (ratio == null) return '-'
   return ratio.toFixed(4)
+}
+
+function supplierPricingModeLabel(
+  mode: 'ratio' | 'fixed' | 'tiered',
+  t: (key: string) => string
+): string {
+  if (mode === 'ratio') return t('Ratio')
+  if (mode === 'fixed') return t('Fixed price')
+  return t('Tiered')
+}
+
+function SupplierAccountingDetails(props: {
+  accounting: SupplierAccountingProjection
+  channelId: number
+}) {
+  const { t } = useTranslation()
+  const accounting = props.accounting
+  const evidence = accounting.pricing_evidence
+  const unknown = t('Unknown')
+  const dimensionLabels = evidence?.dimensions?.map((dimension) => {
+    if (dimension === 'audio') return t('Audio')
+    if (dimension === 'tool') return t('Tools')
+    return t('Image')
+  })
+
+  return (
+    <DetailSection label={t('Supplier Accounting')}>
+      <DetailRow label={t('Supplier')} value={accounting.supplier_id} mono />
+      <DetailRow label={t('Contract')} value={accounting.contract_id} mono />
+      <DetailRow label={t('Channel ID')} value={props.channelId} mono />
+      <DetailRow
+        label={t('Binding version')}
+        value={accounting.binding_version_id}
+        mono
+      />
+      <DetailRow
+        label={t('Rate version')}
+        value={accounting.rate_version_id}
+        mono
+      />
+      <DetailRow
+        label={t('Official list price')}
+        value={formatMicroUsd(accounting.official_list_micro_usd, unknown)}
+        mono
+      />
+      <DetailRow
+        label={t('Procurement multiplier')}
+        value={formatPpmPercent(accounting.procurement_multiplier_ppm, unknown)}
+        mono
+      />
+      <DetailRow
+        label={t('Procurement cost')}
+        value={formatMicroUsd(accounting.procurement_cost_micro_usd, unknown)}
+        mono
+      />
+      {accounting.sales_multiplier_ppm != null && (
+        <DetailRow
+          label={t('Sales multiplier')}
+          value={formatPpmPercent(accounting.sales_multiplier_ppm, unknown)}
+          mono
+        />
+      )}
+      {accounting.sales_micro_usd != null && (
+        <DetailRow
+          label={t('Sales')}
+          value={formatMicroUsd(accounting.sales_micro_usd, unknown)}
+          mono
+        />
+      )}
+      {accounting.gross_profit_micro_usd != null && (
+        <DetailRow
+          label={t('Gross profit')}
+          value={formatMicroUsd(accounting.gross_profit_micro_usd, unknown)}
+          mono
+        />
+      )}
+      <DetailRow
+        label={t('Statistics scope')}
+        value={
+          accounting.statistics_scope === 'business'
+            ? t('Business')
+            : t('Internal')
+        }
+      />
+      <DetailRow
+        label={t('Exclusion decision')}
+        value={
+          accounting.exclusion_decision === 'included'
+            ? t('Included')
+            : t('Excluded')
+        }
+      />
+      {accounting.exclusion_rule_id != null && (
+        <DetailRow
+          label={t('Exclusion rule')}
+          value={accounting.exclusion_rule_id}
+          mono
+        />
+      )}
+      <DetailRow
+        label={t('Financially committed at')}
+        value={new Date(
+          accounting.financially_committed_at * 1000
+        ).toLocaleString()}
+      />
+      {evidence && (
+        <>
+          <DetailRow
+            label={t('Pricing mode')}
+            value={supplierPricingModeLabel(evidence.mode, t)}
+          />
+          {evidence.model_ratio_ppm != null && (
+            <DetailRow
+              label={t('Model ratio')}
+              value={formatPpmPercent(evidence.model_ratio_ppm, unknown)}
+              mono
+            />
+          )}
+          {evidence.group_multiplier_ppm != null && (
+            <DetailRow
+              label={t('Group multiplier')}
+              value={formatPpmPercent(evidence.group_multiplier_ppm, unknown)}
+              mono
+            />
+          )}
+          {(evidence.source || evidence.key) && (
+            <DetailRow
+              label={t('Pricing evidence')}
+              value={[evidence.source, evidence.key]
+                .filter(Boolean)
+                .join(' · ')}
+              mono
+            />
+          )}
+          {evidence.expression_version != null && (
+            <DetailRow
+              label={t('Expression version')}
+              value={evidence.expression_version}
+              mono
+            />
+          )}
+          {evidence.expression_fingerprint && (
+            <DetailRow
+              label={t('Expression fingerprint')}
+              value={evidence.expression_fingerprint}
+              mono
+            />
+          )}
+          {dimensionLabels && dimensionLabels.length > 0 && (
+            <DetailRow
+              label={t('Dimensions')}
+              value={dimensionLabels.join(' · ')}
+            />
+          )}
+        </>
+      )}
+    </DetailSection>
+  )
 }
 
 function BillingBreakdown(props: {
@@ -853,6 +1015,13 @@ export function DetailsDialog(props: DetailsDialogProps) {
                 mono
               />
             </DetailSection>
+          )}
+
+          {props.log.supplier_accounting && (
+            <SupplierAccountingDetails
+              accounting={props.log.supplier_accounting}
+              channelId={props.log.channel}
+            />
           )}
 
           {/* Token breakdown (for consume/error types with token data) */}

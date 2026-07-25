@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/types"
 	"gorm.io/gorm"
@@ -28,10 +26,6 @@ const (
 	SupplierDataQualityUnattributed  = "unattributed"
 )
 
-type supplierAccountingLogEnvelope struct {
-	SupplierAccountingV1 json.RawMessage `json:"supplier_accounting_v1"`
-}
-
 type SupplierDailyBatchCatchUpResult struct {
 	ProcessedDays int    `json:"processed_days"`
 	RemainingWork bool   `json:"remaining_work"`
@@ -42,6 +36,11 @@ func CatchUpSupplierDailyBatches(ctx context.Context, mainDB, logDB *gorm.DB, ow
 	result := SupplierDailyBatchCatchUpResult{}
 	if mainDB == nil || logDB == nil || strings.TrimSpace(owner) == "" {
 		return result, model.ErrDatabase
+	}
+	if _, configured, err := configuredSupplierAccountingCutover(); err != nil {
+		return result, err
+	} else if !configured {
+		return result, nil
 	}
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	if err != nil {
@@ -102,7 +101,7 @@ func nextSupplierDailyBatchDate(ctx context.Context, mainDB *gorm.DB, target tim
 	} else if ok {
 		return beginningOfSupplierDay(time.Unix(cutover, 0).In(location)), nil
 	}
-	return target, nil
+	return target.AddDate(0, 0, 1), nil
 }
 
 func configuredSupplierAccountingCutover() (int64, bool, error) {
@@ -113,6 +112,14 @@ func configuredSupplierAccountingCutover() (int64, bool, error) {
 	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || value <= 0 {
 		return 0, false, fmt.Errorf("invalid SUPPLIER_ACCOUNTING_CUTOVER_AT %q", raw)
+	}
+	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
+	if err != nil {
+		return 0, false, err
+	}
+	local := time.Unix(value, 0).In(location)
+	if !local.Equal(beginningOfSupplierDay(local)) {
+		return 0, false, fmt.Errorf("invalid SUPPLIER_ACCOUNTING_CUTOVER_AT %q: must be Asia/Shanghai 00:00:00", raw)
 	}
 	return value, true, nil
 }
@@ -131,7 +138,21 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 	if err != nil || lease.AlreadyDone {
 		return err
 	}
+	watermark, err := model.FreezeSupplierAccountingFactDay(ctx, logDB, batchDate)
+	if err != nil {
+		_ = model.FailSupplierDailyBatch(context.Background(), mainDB, lease, err)
+		return err
+	}
+	if err := model.AttachSupplierDailyBatchSource(ctx, mainDB, &lease, watermark.SourceMaxFactId,
+		string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1)); err != nil {
+		_ = model.FailSupplierDailyBatch(context.Background(), mainDB, lease, err)
+		return err
+	}
 	if err := scanSupplierDailyBatch(ctx, mainDB, logDB, lease, day); err != nil {
+		_ = model.FailSupplierDailyBatch(context.Background(), mainDB, lease, err)
+		return err
+	}
+	if err := model.VerifySupplierAccountingFactDayClosed(ctx, logDB, batchDate, lease.SourceMaxFactId); err != nil {
 		_ = model.FailSupplierDailyBatch(context.Background(), mainDB, lease, err)
 		return err
 	}
@@ -143,11 +164,13 @@ func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDat
 }
 
 func scanSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, lease model.SupplierDailyBatchLease, day time.Time) error {
-	dayEnd := day.AddDate(0, 0, 1)
+	if lease.SourceMaxFactId == 0 {
+		return nil
+	}
 	for {
-		rows, err := model.ScanSupplierAccountingLogPage(ctx, logDB, day.Unix(), dayEnd.Unix(), lease.CursorCreatedAt, lease.CursorId, model.SupplierDailyLogPageSize)
+		rows, err := model.ScanCapturedSupplierAccountingFactPage(ctx, logDB, lease.BatchDate, lease.SourceMaxFactId, lease.CursorId, model.SupplierAccountingFactPageSize)
 		if err != nil {
-			return fmt.Errorf("scan supplier accounting logs: %w", err)
+			return fmt.Errorf("scan supplier accounting facts: %w", err)
 		}
 		if len(rows) == 0 {
 			return nil
@@ -155,12 +178,13 @@ func scanSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, lease m
 		accumulators := make(map[string]*model.SupplierUsageDailySummary, len(rows))
 		var snapshotCount int64
 		for _, logRow := range rows {
-			snapshot, captured, err := parseSupplierAccountingLog(logRow.Other)
-			if err != nil {
-				return fmt.Errorf("parse supplier accounting log %d: %w", logRow.Id, err)
+			digest := sha256.Sum256([]byte(logRow.Payload))
+			if logRow.PayloadHash != hex.EncodeToString(digest[:]) {
+				return fmt.Errorf("supplier accounting fact %d payload hash mismatch", logRow.Id)
 			}
-			if !captured {
-				continue
+			snapshot, err := parseSupplierAccountingFactPayload(logRow.Payload)
+			if err != nil {
+				return fmt.Errorf("parse supplier accounting fact %d: %w", logRow.Id, err)
 			}
 			if err := addSupplierDailySnapshot(accumulators, lease.BatchDate, day.Unix(), logRow, snapshot); err != nil {
 				return fmt.Errorf("aggregate supplier accounting log %d: %w", logRow.Id, err)
@@ -172,42 +196,34 @@ func scanSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, lease m
 			summaries = append(summaries, *summary)
 		}
 		last := rows[len(rows)-1]
-		if err := model.PersistSupplierDailyBatchPage(ctx, mainDB, lease, summaries, last.CreatedAt, last.Id, int64(len(rows)), snapshotCount, supplierDailyLeaseDuration); err != nil {
+		if err := model.PersistSupplierDailyBatchPage(ctx, mainDB, lease, summaries, last.Id, int64(len(rows)), snapshotCount, supplierDailyLeaseDuration); err != nil {
 			return err
 		}
-		lease.CursorCreatedAt = last.CreatedAt
 		lease.CursorId = last.Id
-		if len(rows) < model.SupplierDailyLogPageSize {
+		if last.Id == lease.SourceMaxFactId || len(rows) < model.SupplierAccountingFactPageSize {
 			return nil
 		}
 	}
 }
 
-func parseSupplierAccountingLog(other string) (types.SupplierAccountingLogSnapshotV1, bool, error) {
-	if strings.TrimSpace(other) == "" || !strings.Contains(other, `"supplier_accounting_v1"`) {
-		return types.SupplierAccountingLogSnapshotV1{}, false, nil
+func parseSupplierAccountingFactPayload(payload string) (types.SupplierAccountingLogSnapshotV1, error) {
+	if strings.TrimSpace(payload) == "" {
+		return types.SupplierAccountingLogSnapshotV1{}, errors.New("empty captured supplier accounting fact payload")
 	}
-	var envelope supplierAccountingLogEnvelope
-	if err := common.Unmarshal([]byte(other), &envelope); err != nil {
-		return types.SupplierAccountingLogSnapshotV1{}, false, err
-	}
-	if len(envelope.SupplierAccountingV1) == 0 || string(envelope.SupplierAccountingV1) == "null" {
-		return types.SupplierAccountingLogSnapshotV1{}, false, nil
-	}
-	parsed, err := types.ParseSupplierAccountingEnvelopeV1JSON(envelope.SupplierAccountingV1)
+	parsed, err := types.ParseSupplierAccountingEnvelopeV1JSON([]byte(payload))
 	if err != nil {
-		return types.SupplierAccountingLogSnapshotV1{}, false, err
+		return types.SupplierAccountingLogSnapshotV1{}, err
 	}
 	if err := ValidateSupplierAccountingEnvelopeV1(parsed); err != nil {
-		return types.SupplierAccountingLogSnapshotV1{}, false, err
+		return types.SupplierAccountingLogSnapshotV1{}, err
 	}
 	if parsed.Disposition != types.SupplierAccountingDispositionCaptured || parsed.Captured == nil {
-		return types.SupplierAccountingLogSnapshotV1{}, false, nil
+		return types.SupplierAccountingLogSnapshotV1{}, errors.New("non-captured supplier accounting fact payload")
 	}
-	return *parsed.Captured, true, nil
+	return *parsed.Captured, nil
 }
 
-func addSupplierDailySnapshot(accumulators map[string]*model.SupplierUsageDailySummary, batchDate string, bucketStart int64, logRow model.SupplierAccountingLogRow, snapshot types.SupplierAccountingLogSnapshotV1) error {
+func addSupplierDailySnapshot(accumulators map[string]*model.SupplierUsageDailySummary, batchDate string, bucketStart int64, logRow model.SupplierAccountingFactRow, snapshot types.SupplierAccountingLogSnapshotV1) error {
 	quality := SupplierDataQualityAuthoritative
 	if strings.TrimSpace(snapshot.QualityReason) != "" {
 		quality = SupplierDataQualityUnattributed

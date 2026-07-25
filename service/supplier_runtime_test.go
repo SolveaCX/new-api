@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -30,17 +33,8 @@ func supplierDailyTestDBs(t *testing.T) (*gorm.DB, *gorm.DB) {
 	logDB := supplierDailyTestDB(t, t.Name()+"-log")
 	require.NoError(t, mainDB.AutoMigrate(&model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{}))
 	require.NoError(t, logDB.AutoMigrate(&model.Log{}))
+	require.NoError(t, model.EnsureSupplierAccountingFactSchema(logDB))
 	return mainDB, logDB
-}
-
-func supplierDailyLogOther(t *testing.T, snapshot types.SupplierAccountingLogSnapshotV1) string {
-	t.Helper()
-	payload, err := common.Marshal(map[string]any{types.SupplierAccountingEnvelopeKeyV1: types.SupplierAccountingEnvelopeV1{
-		EnvelopeSchemaVersion: types.SupplierAccountingEnvelopeSchemaVersionV1,
-		Disposition:           types.SupplierAccountingDispositionCaptured, Captured: &snapshot,
-	}})
-	require.NoError(t, err)
-	return string(payload)
 }
 
 func supplierDailySnapshot(day time.Time, multiplier int64) types.SupplierAccountingLogSnapshotV1 {
@@ -58,15 +52,30 @@ func supplierDailySnapshot(day time.Time, multiplier int64) types.SupplierAccoun
 	}
 }
 
+func setSupplierDailyFactPreparedAt(t *testing.T, db *gorm.DB, fact *model.SupplierAccountingFact, preparedAt time.Time) {
+	t.Helper()
+	preparedDay := preparedAt.In(preparedAt.Location()).Format("2006-01-02")
+	require.NoError(t, db.Model(&model.SupplierAccountingFact{}).Where("id = ?", fact.Id).
+		Updates(map[string]any{"prepared_at": preparedAt.Unix(), "prepared_day": preparedDay}).Error)
+	fact.PreparedAt = preparedAt.Unix()
+	fact.PreparedDay = preparedDay
+}
+
 func TestRunSupplierDailyBatchAggregatesCapturedSnapshot(t *testing.T) {
 	mainDB, logDB := supplierDailyTestDBs(t)
 	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
 	require.NoError(t, err)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
-	require.NoError(t, logDB.Create(&model.Log{
-		Type: model.LogTypeConsume, CreatedAt: day.Add(time.Hour).Unix(), ChannelId: 4, ModelName: "gpt-test",
-		Other: supplierDailyLogOther(t, supplierDailySnapshot(day, 1_500_000)),
-	}).Error)
+	fact, err := model.PrepareSupplierAccountingFact(context.Background(), logDB, model.SupplierAccountingFactPrepare{
+		AttemptId: "018f843e-7e3a-7f61-a0a0-000000000101", ParentRequestId: "req-1", RetryIndex: 0,
+		SupplierId: 1, ContractId: 2, BindingVersionId: 8, RateVersionId: 3, ChannelId: 4, ModelName: "gpt-test",
+		CoverageScope: string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1),
+	})
+	require.NoError(t, err)
+	setSupplierDailyFactPreparedAt(t, logDB, &fact, day.Add(time.Hour))
+	require.NoError(t, model.FinalizeSupplierAccountingFactCaptured(context.Background(), logDB, fact.AttemptId,
+		types.SupplierAccountingEnvelopeV1{EnvelopeSchemaVersion: types.SupplierAccountingEnvelopeSchemaVersionV1,
+			Disposition: types.SupplierAccountingDispositionCaptured, Captured: ptrSupplierDailySnapshot(supplierDailySnapshot(day, 1_500_000))}, day.Add(time.Hour).Unix()))
 
 	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2)))
 	var summary model.SupplierUsageDailySummary
@@ -76,6 +85,81 @@ func TestRunSupplierDailyBatchAggregatesCapturedSnapshot(t *testing.T) {
 	var run model.SupplierUsageDailyBatchRun
 	require.NoError(t, mainDB.First(&run).Error)
 	require.Equal(t, run.FenceToken, run.PublishedFenceToken)
+	require.Equal(t, fact.Id, run.SourceMaxFactId)
+	require.Equal(t, string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1), run.CoverageScope)
+}
+
+func ptrSupplierDailySnapshot(snapshot types.SupplierAccountingLogSnapshotV1) *types.SupplierAccountingLogSnapshotV1 {
+	return &snapshot
+}
+
+func TestRunSupplierDailyBatchDoesNotPublishPendingOrLateFacts(t *testing.T) {
+	mainDB, logDB := supplierDailyTestDBs(t)
+	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
+	require.NoError(t, err)
+	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
+	fact, err := model.PrepareSupplierAccountingFact(context.Background(), logDB, model.SupplierAccountingFactPrepare{
+		AttemptId: "018f843e-7e3a-7f61-a0a0-000000000102", ParentRequestId: "req-pending", ChannelId: 4,
+		SupplierId: 1, ContractId: 2, BindingVersionId: 8, RateVersionId: 3, ModelName: "gpt-test",
+		CoverageScope: string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1),
+	})
+	require.NoError(t, err)
+	setSupplierDailyFactPreparedAt(t, logDB, &fact, day.Add(time.Hour))
+
+	err = RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2))
+	require.ErrorIs(t, err, model.ErrSupplierAccountingFactsPending)
+	var run model.SupplierUsageDailyBatchRun
+	require.NoError(t, mainDB.First(&run).Error)
+	require.Zero(t, run.PublishedFenceToken)
+
+	require.NoError(t, model.FinalizeSupplierAccountingFactVoid(context.Background(), logDB, fact.AttemptId, day.Add(2*time.Hour).Unix()))
+	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2)))
+	require.NoError(t, mainDB.First(&run).Error)
+	require.NotZero(t, run.PublishedFenceToken)
+}
+
+func TestRunSupplierDailyBatchClosesExactCapturedPageAndTrailingVoid(t *testing.T) {
+	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
+	require.NoError(t, err)
+	day := time.Date(2026, 7, 20, 0, 0, 0, 0, location)
+	payload, err := common.Marshal(types.SupplierAccountingEnvelopeV1{
+		EnvelopeSchemaVersion: types.SupplierAccountingEnvelopeSchemaVersionV1,
+		Disposition:           types.SupplierAccountingDispositionCaptured,
+		Captured:              ptrSupplierDailySnapshot(supplierDailySnapshot(day, 1_500_000)),
+	})
+	require.NoError(t, err)
+	payloadDigest := sha256.Sum256(payload)
+	payloadHash := hex.EncodeToString(payloadDigest[:])
+	for _, trailingVoid := range []bool{false, true} {
+		t.Run(fmt.Sprintf("trailing_void_%t", trailingVoid), func(t *testing.T) {
+			mainDB, logDB := supplierDailyTestDBs(t)
+			facts := make([]model.SupplierAccountingFact, model.SupplierAccountingFactPageSize)
+			for index := range facts {
+				terminalAt := day.Add(time.Hour).Unix()
+				facts[index] = model.SupplierAccountingFact{
+					AttemptId: fmt.Sprintf("%036d", index+1), ParentRequestId: "page-boundary", PreparedAt: terminalAt,
+					PreparedDay: day.Format("2006-01-02"), SupplierId: 1, ContractId: 2, BindingVersionId: 8, RateVersionId: 3,
+					ChannelId: 4, ModelName: "gpt-test", CoverageScope: string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1),
+					Status: model.SupplierAccountingFactStatusCaptured, Payload: string(payload), PayloadHash: payloadHash, TerminalAt: &terminalAt,
+				}
+			}
+			require.NoError(t, logDB.CreateInBatches(&facts, 500).Error)
+			if trailingVoid {
+				terminalAt := day.Add(2 * time.Hour).Unix()
+				require.NoError(t, logDB.Create(&model.SupplierAccountingFact{
+					AttemptId: fmt.Sprintf("%036d", len(facts)+1), ParentRequestId: "trailing-void", PreparedAt: terminalAt,
+					PreparedDay: day.Format("2006-01-02"), SupplierId: 1, ContractId: 2, BindingVersionId: 8, RateVersionId: 3,
+					ChannelId: 4, ModelName: "gpt-test", CoverageScope: string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1),
+					Status: model.SupplierAccountingFactStatusVoid, TerminalAt: &terminalAt,
+				}).Error)
+			}
+			require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2)))
+			var run model.SupplierUsageDailyBatchRun
+			require.NoError(t, mainDB.First(&run).Error)
+			require.EqualValues(t, model.SupplierAccountingFactPageSize, run.SnapshotCount)
+			require.NotZero(t, run.PublishedFenceToken)
+		})
+	}
 }
 
 func TestRunSupplierDailyBatchNeutralizesInternalCustomerAndRoutingDimensions(t *testing.T) {
@@ -96,10 +180,17 @@ func TestRunSupplierDailyBatchNeutralizesInternalCustomerAndRoutingDimensions(t 
 		snapshot.SalesMicroUsd = nil
 		snapshot.GrossProfitMicroUsd = nil
 		snapshot.PricingProvenance = nil
-		require.NoError(t, logDB.Create(&model.Log{
-			Type: model.LogTypeConsume, CreatedAt: day.Add(time.Duration(index+1) * time.Hour).Unix(),
-			ChannelId: channelID, ModelName: "internal-model-" + strconv.Itoa(index), Other: supplierDailyLogOther(t, snapshot),
-		}).Error)
+		fact, err := model.PrepareSupplierAccountingFact(context.Background(), logDB, model.SupplierAccountingFactPrepare{
+			AttemptId: "018f843e-7e3a-7f61-a0a0-00000000020" + strconv.Itoa(index), ParentRequestId: "internal-" + strconv.Itoa(index),
+			SupplierId: snapshot.SupplierId, ContractId: snapshot.ContractId, BindingVersionId: snapshot.BindingVersionId,
+			RateVersionId: snapshot.RateVersionId, ChannelId: channelID, ModelName: "internal-model-" + strconv.Itoa(index),
+			CoverageScope: string(types.SupplierAccountingCoverageScopeBoundSupplierSynchronousRelayV1),
+		})
+		require.NoError(t, err)
+		setSupplierDailyFactPreparedAt(t, logDB, &fact, day.Add(time.Duration(index+1)*time.Hour))
+		require.NoError(t, model.FinalizeSupplierAccountingFactCaptured(context.Background(), logDB, fact.AttemptId,
+			types.SupplierAccountingEnvelopeV1{EnvelopeSchemaVersion: types.SupplierAccountingEnvelopeSchemaVersionV1,
+				Disposition: types.SupplierAccountingDispositionCaptured, Captured: &snapshot}, day.Add(time.Duration(index+1)*time.Hour).Unix()))
 	}
 
 	require.NoError(t, RunSupplierDailyBatch(context.Background(), mainDB, logDB, day.Format("2006-01-02"), "console", day.AddDate(0, 0, 2)))
@@ -139,6 +230,47 @@ func TestCatchUpSupplierDailyBatchesWaitsForCloseGrace(t *testing.T) {
 	result, err = CatchUpSupplierDailyBatches(context.Background(), mainDB, logDB, "console", today.Add(SupplierDailyCloseGrace))
 	require.NoError(t, err)
 	require.Equal(t, SupplierDailyBatchCatchUpResult{ProcessedDays: 1}, result)
+}
+
+func TestCatchUpSupplierDailyBatchesIsDisabledWithoutCutover(t *testing.T) {
+	mainDB, logDB := supplierDailyTestDBs(t)
+	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", "")
+	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
+	require.NoError(t, err)
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, location)
+
+	result, err := CatchUpSupplierDailyBatches(context.Background(), mainDB, logDB, "console", now)
+	require.NoError(t, err)
+	require.Equal(t, SupplierDailyBatchCatchUpResult{}, result)
+	var count int64
+	require.NoError(t, mainDB.Model(&model.SupplierUsageDailyBatchRun{}).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestSupplierAccountingCutoverRejectsPartialShanghaiDay(t *testing.T) {
+	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
+	require.NoError(t, err)
+	nonMidnight := time.Date(2026, 7, 25, 0, 0, 1, 0, location)
+	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", strconv.FormatInt(nonMidnight.Unix(), 10))
+
+	_, configured, err := configuredSupplierAccountingCutover()
+	require.Error(t, err)
+	require.False(t, configured)
+}
+
+func TestCatchUpSupplierDailyBatchesStartsAtCutoverDayOnlyAfterTPlusOne(t *testing.T) {
+	mainDB, logDB := supplierDailyTestDBs(t)
+	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
+	require.NoError(t, err)
+	cutover := time.Date(2026, 7, 25, 0, 0, 0, 0, location)
+	t.Setenv("SUPPLIER_ACCOUNTING_CUTOVER_AT", strconv.FormatInt(cutover.Unix(), 10))
+
+	result, err := CatchUpSupplierDailyBatches(context.Background(), mainDB, logDB, "console", cutover.Add(SupplierDailyCloseGrace))
+	require.NoError(t, err)
+	require.Equal(t, SupplierDailyBatchCatchUpResult{}, result)
+	result, err = CatchUpSupplierDailyBatches(context.Background(), mainDB, logDB, "console", cutover.AddDate(0, 0, 1).Add(SupplierDailyCloseGrace))
+	require.NoError(t, err)
+	require.Equal(t, 1, result.ProcessedDays)
 }
 
 func TestSupplierDailyBatchLeaseUsesDatabaseTimeAndFencesStaleOwner(t *testing.T) {

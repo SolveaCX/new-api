@@ -68,7 +68,6 @@ func CreateUpstreamSupplier(supplier *UpstreamSupplier) error {
 		return err
 	}
 	*supplier = created
-	refreshLocalChannelCacheAndPublishChanged()
 	return nil
 }
 
@@ -145,7 +144,6 @@ func UpdateUpstreamSupplier(id int, input UpdateUpstreamSupplierInput) (*Upstrea
 	}); err != nil {
 		return nil, err
 	}
-	refreshLocalChannelCacheAndPublishChanged()
 	return &supplier, nil
 }
 
@@ -213,7 +211,6 @@ func InactivateUpstreamSupplierCAS(id int, expectedVersion int64) error {
 	if err != nil {
 		return err
 	}
-	refreshLocalChannelCacheAndPublishChanged()
 	return nil
 }
 
@@ -247,7 +244,6 @@ func CreateSupplierContract(contract *SupplierContract) error {
 		return err
 	}
 	*contract = created
-	refreshLocalChannelCacheAndPublishChanged()
 	return nil
 }
 
@@ -352,7 +348,6 @@ func UpdateSupplierContract(id int, input UpdateSupplierContractInput) (*Supplie
 	}); err != nil {
 		return nil, err
 	}
-	refreshLocalChannelCacheAndPublishChanged()
 	return &contract, nil
 }
 
@@ -418,7 +413,6 @@ func InactivateSupplierContractCAS(id int, expectedVersion int64) error {
 	if err != nil {
 		return err
 	}
-	refreshLocalChannelCacheAndPublishChanged()
 	return nil
 }
 
@@ -448,7 +442,6 @@ func CreateSupplierInventoryAdjustment(adjustment *SupplierInventoryAdjustment) 
 	}
 	adjustment.Id = 0
 	adjustment.CreatedAt = 0
-	created := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if _, _, _, err := lockActiveSupplierContractChain(tx, adjustment.ContractId, true); err != nil {
 			return err
@@ -460,7 +453,6 @@ func CreateSupplierInventoryAdjustment(adjustment *SupplierInventoryAdjustment) 
 		if result.Error != nil {
 			return result.Error
 		}
-		created = result.RowsAffected == 1 && adjustment.Id > 0
 		var existing SupplierInventoryAdjustment
 		if err := tx.Where("contract_id = ? AND created_by = ? AND idempotency_key = ?", adjustment.ContractId, adjustment.CreatedBy, strings.TrimSpace(adjustment.IdempotencyKey)).First(&existing).Error; err != nil {
 			return err
@@ -473,9 +465,6 @@ func CreateSupplierInventoryAdjustment(adjustment *SupplierInventoryAdjustment) 
 	})
 	if err != nil {
 		return nil, err
-	}
-	if created {
-		refreshLocalChannelCacheAndPublishChanged()
 	}
 	return adjustment, nil
 }

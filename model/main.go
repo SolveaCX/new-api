@@ -334,9 +334,16 @@ func migrateDB() error {
 		&SupplierStatisticsExclusionRule{},
 		&SupplierUsageDailySummary{},
 		&SupplierUsageDailyBatchRun{},
+		&SupplierHistoricalImport{},
+		&SupplierHistoricalDailySummary{},
 	)
 	if err != nil {
 		return err
+	}
+	if os.Getenv("LOG_SQL_DSN") == "" {
+		if err := EnsureSupplierAccountingFactSchema(DB); err != nil {
+			return err
+		}
 	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
@@ -422,6 +429,8 @@ func migrateDBFast() error {
 		{&SupplierStatisticsExclusionRule{}, "SupplierStatisticsExclusionRule"},
 		{&SupplierUsageDailySummary{}, "SupplierUsageDailySummary"},
 		{&SupplierUsageDailyBatchRun{}, "SupplierUsageDailyBatchRun"},
+		{&SupplierHistoricalImport{}, "SupplierHistoricalImport"},
+		{&SupplierHistoricalDailySummary{}, "SupplierHistoricalDailySummary"},
 		{&ComputeNode{}, "ComputeNode"},
 	}
 	// GORM also migrates associations, so parallel AutoMigrate calls can race
@@ -429,6 +438,11 @@ func migrateDBFast() error {
 	for _, m := range migrations {
 		if err := DB.AutoMigrate(m.model); err != nil {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
+		}
+	}
+	if os.Getenv("LOG_SQL_DSN") == "" {
+		if err := EnsureSupplierAccountingFactSchema(DB); err != nil {
+			return err
 		}
 	}
 	if common.UsingSQLite {
@@ -587,7 +601,7 @@ func migrateLOGDB() error {
 	if err = LOG_DB.AutoMigrate(&Log{}, &LogRequestSample{}); err != nil {
 		return err
 	}
-	return nil
+	return EnsureSupplierAccountingFactSchema(LOG_DB)
 }
 
 type sqliteColumnDef struct {

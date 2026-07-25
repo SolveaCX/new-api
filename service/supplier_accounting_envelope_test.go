@@ -44,12 +44,6 @@ func supplierEnvelopeTestInput() SupplierAccountingEnvelopeInputV1 {
 }
 
 func TestSupplierAccountingEnvelopeDispositionOrder(t *testing.T) {
-	other := map[string]any{}
-	unsupported := InjectUnsupportedSupplierAccountingEnvelopeV1(other)
-	require.Equal(t, types.SupplierAccountingDispositionUnsupportedPath, unsupported.Disposition)
-	require.Nil(t, unsupported.Captured)
-	require.NotContains(t, other, types.SupplierAccountingEnvelopeKeyV1)
-
 	uncommittedInput := supplierEnvelopeTestInput()
 	uncommittedInput.Settlement.FinanciallyCommitted = false
 	uncommittedInput.HasPositiveFinalUsage = false

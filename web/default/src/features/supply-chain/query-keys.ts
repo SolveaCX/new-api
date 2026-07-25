@@ -64,6 +64,30 @@ export const supplyChainQueryKeys = {
         params,
       ] as const,
   },
+  historicalImports: {
+    all: () => [...supplyChainQueryKeys.all, 'historical-imports'] as const,
+    list: (params: { p: number; page_size: number }) =>
+      [
+        ...supplyChainQueryKeys.all,
+        'historical-imports',
+        'list',
+        params,
+      ] as const,
+    detail: (importId: number) =>
+      [
+        ...supplyChainQueryKeys.all,
+        'historical-imports',
+        'detail',
+        importId,
+      ] as const,
+    series: (importId: number) =>
+      [
+        ...supplyChainQueryKeys.all,
+        'historical-imports',
+        'series',
+        importId,
+      ] as const,
+  },
   reports: {
     all: () => [...supplyChainQueryKeys.all, 'reports'] as const,
     overview: (query: SupplierReportQuery) =>

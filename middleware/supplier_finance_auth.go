@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"net/http"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-gonic/gin"
 )
@@ -11,6 +13,6 @@ import (
 // surface contract.
 func FinanceAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHelper(c, common.RoleRootUser)
+		authHelperWithInsufficientRoleStatus(c, common.RoleRootUser, http.StatusForbidden)
 	}
 }

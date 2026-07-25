@@ -25,7 +25,6 @@ const (
 
 type supplierLogWriterExpectation struct {
 	Classification    string
-	RequireConsumeIf  bool
 	ControlFlowAnchor string
 }
 
@@ -49,7 +48,7 @@ func (s supplierLogWriterCallSite) stableKey() string {
 	return fmt.Sprintf("%s|flow=%s", s.identityKey(), s.ControlFlowAnchor)
 }
 
-func TestSupplierAccountingProductionConsumeWritersInjectExactlyOnce(t *testing.T) {
+func TestSupplierAccountingProductionWritersFollowExplicitClassification(t *testing.T) {
 	expected := map[string]supplierLogWriterExpectation{
 		"controller/channel-test.go|testChannelWithOptions|RecordConsumeLog|0": {
 			Classification:    supplierWriterUnsupportedPath,
@@ -85,7 +84,6 @@ func TestSupplierAccountingProductionConsumeWritersInjectExactlyOnce(t *testing.
 		},
 		"service/task_billing.go|RecalculateTaskQuota|RecordTaskBillingLog|0": {
 			Classification:    supplierWriterUnsupportedPath,
-			RequireConsumeIf:  true,
 			ControlFlowAnchor: `body`,
 		},
 		"service/text_quota.go|PostTextConsumeQuota|RecordConsumeLog|0": {
@@ -130,89 +128,77 @@ func TestSupplierConsumeWriterASTDominanceMutations(t *testing.T) {
 		wantErrorContain string
 	}{
 		{
-			name: "valid same block",
+			name: "valid dynamic same block",
 			body: `
-				InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+				InjectSupplierAccountingEnvelopeV1(other, input)
 				noop()
 				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 			`,
 			writer:      "RecordConsumeLog",
-			expectation: supplierLogWriterExpectation{Classification: supplierWriterUnsupportedPath},
+			expectation: supplierLogWriterExpectation{Classification: supplierWriterDynamic},
 		},
 		{
 			name: "if false does not dominate",
 			body: `
 				if false {
-					InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+					InjectSupplierAccountingEnvelopeV1(other, input)
 				}
 				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 			`,
 			writer:           "RecordConsumeLog",
-			expectation:      supplierLogWriterExpectation{Classification: supplierWriterUnsupportedPath},
+			expectation:      supplierLogWriterExpectation{Classification: supplierWriterDynamic},
 			wantErrorContain: "same executable block",
 		},
 		{
 			name: "sibling branch does not dominate",
 			body: `
 				if cond {
-					InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+					InjectSupplierAccountingEnvelopeV1(other, input)
 				} else {
 					model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 				}
 			`,
 			writer:           "RecordConsumeLog",
-			expectation:      supplierLogWriterExpectation{Classification: supplierWriterUnsupportedPath},
+			expectation:      supplierLogWriterExpectation{Classification: supplierWriterDynamic},
 			wantErrorContain: "same executable block",
 		},
 		{
 			name: "injection after writer",
 			body: `
 				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
-				InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+				InjectSupplierAccountingEnvelopeV1(other, input)
 			`,
 			writer:           "RecordConsumeLog",
-			expectation:      supplierLogWriterExpectation{Classification: supplierWriterUnsupportedPath},
+			expectation:      supplierLogWriterExpectation{Classification: supplierWriterDynamic},
 			wantErrorContain: "before the durable writer",
 		},
 		{
 			name: "wrong Other map",
 			body: `
-				InjectUnsupportedSupplierAccountingEnvelopeV1(wrong)
+				InjectSupplierAccountingEnvelopeV1(wrong, input)
+				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
+			`,
+			writer:           "RecordConsumeLog",
+			expectation:      supplierLogWriterExpectation{Classification: supplierWriterDynamic},
+			wantErrorContain: "exactly one supplier envelope",
+		},
+		{
+			name: "unsupported path has zero injection",
+			body: `
+				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
+			`,
+			writer:      "RecordConsumeLog",
+			expectation: supplierLogWriterExpectation{Classification: supplierWriterUnsupportedPath},
+		},
+		{
+			name: "unsupported path rejects dynamic injection",
+			body: `
+				InjectSupplierAccountingEnvelopeV1(other, input)
 				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 			`,
 			writer:           "RecordConsumeLog",
 			expectation:      supplierLogWriterExpectation{Classification: supplierWriterUnsupportedPath},
-			wantErrorContain: "exactly one supplier envelope",
-		},
-		{
-			name: "valid consume-only task guard",
-			body: `
-				if logType == model.LogTypeConsume {
-					InjectUnsupportedSupplierAccountingEnvelopeV1(other)
-				}
-				model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{LogType: logType, Other: other})
-			`,
-			writer: "RecordTaskBillingLog",
-			expectation: supplierLogWriterExpectation{
-				Classification:   supplierWriterUnsupportedPath,
-				RequireConsumeIf: true,
-			},
-		},
-		{
-			name: "consume guard must be adjacent",
-			body: `
-				if logType == model.LogTypeConsume {
-					InjectUnsupportedSupplierAccountingEnvelopeV1(other)
-				}
-				noop()
-				model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{LogType: logType, Other: other})
-			`,
-			writer: "RecordTaskBillingLog",
-			expectation: supplierLogWriterExpectation{
-				Classification:   supplierWriterUnsupportedPath,
-				RequireConsumeIf: true,
-			},
-			wantErrorContain: "immediately precede",
+			wantErrorContain: "must not inject",
 		},
 	}
 
@@ -233,31 +219,31 @@ func TestSupplierConsumeWriterASTDominanceMutations(t *testing.T) {
 
 func TestSupplierWriterStableKeyDetectsControlFlowMoves(t *testing.T) {
 	directBody := `
-		InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+		InjectSupplierAccountingEnvelopeV1(other, input)
 		model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 	`
 	direct := supplierSyntheticWriterSite(t, directBody, "RecordConsumeLog")
 	directParams := supplierWriterParamsLiteral(t, direct)
-	require.NoError(t, supplierConsumeWriterContractError(direct, directParams, supplierLogWriterExpectation{Classification: supplierWriterUnsupportedPath}))
+	require.NoError(t, supplierConsumeWriterContractError(direct, directParams, supplierLogWriterExpectation{Classification: supplierWriterDynamic}))
 
 	movedBodies := map[string]string{
 		"if branch": `
 			if cond {
 				noop()
 			} else {
-				InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+				InjectSupplierAccountingEnvelopeV1(other, input)
 				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 			}
 		`,
 		"defer closure": `
 			defer func() {
-				InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+				InjectSupplierAccountingEnvelopeV1(other, input)
 				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 			}()
 		`,
 		"function literal": `
 			func() {
-				InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+				InjectSupplierAccountingEnvelopeV1(other, input)
 				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 			}()
 		`,
@@ -265,14 +251,14 @@ func TestSupplierWriterStableKeyDetectsControlFlowMoves(t *testing.T) {
 			switch {
 			case cond:
 				{
-					InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+					InjectSupplierAccountingEnvelopeV1(other, input)
 					model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 				}
 			}
 		`,
 		"loop body": `
 			for cond {
-				InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+				InjectSupplierAccountingEnvelopeV1(other, input)
 				model.RecordConsumeLog(nil, 1, model.RecordConsumeLogParams{Other: other})
 			}
 		`,
@@ -282,7 +268,7 @@ func TestSupplierWriterStableKeyDetectsControlFlowMoves(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			moved := supplierSyntheticWriterSite(t, body, "RecordConsumeLog")
 			params := supplierWriterParamsLiteral(t, moved)
-			require.NoError(t, supplierConsumeWriterContractError(moved, params, supplierLogWriterExpectation{Classification: supplierWriterUnsupportedPath}),
+			require.NoError(t, supplierConsumeWriterContractError(moved, params, supplierLogWriterExpectation{Classification: supplierWriterDynamic}),
 				"the injection still dominates after this move; the stable allow-list must catch the structural relocation")
 			require.Equal(t, direct.identityKey(), moved.identityKey())
 			require.NotEqual(t, direct.ControlFlowAnchor, moved.ControlFlowAnchor,
@@ -302,7 +288,7 @@ func TestSupplierRefundWriterRejectsEnvelopeInjection(t *testing.T) {
 	require.NoError(t, supplierRefundWriterContractError(valid, supplierWriterParamsLiteral(t, valid)))
 
 	invalid := supplierSyntheticWriterSite(t, `
-		InjectUnsupportedSupplierAccountingEnvelopeV1(other)
+		InjectSupplierAccountingEnvelopeV1(other, input)
 		model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 			LogType: model.LogTypeRefund,
 			Other: other,
@@ -477,15 +463,20 @@ func supplierConsumeWriterContractError(site supplierLogWriterCallSite, params *
 	}
 
 	injections := supplierEnvelopeInjectionsForMap(site.functionDecl, otherIdentifier.Name)
-	if len(injections) != 1 {
-		return fmt.Errorf("consume writer must inject exactly one supplier envelope into the same Other map; found %d", len(injections))
-	}
-	expectedInjection := "InjectSupplierAccountingEnvelopeV1"
 	if expectation.Classification == supplierWriterUnsupportedPath {
-		expectedInjection = "InjectUnsupportedSupplierAccountingEnvelopeV1"
+		if len(injections) != 0 {
+			return fmt.Errorf("unsupported consume writer must not inject a supplier envelope; found %d", len(injections))
+		}
+		return nil
 	}
-	if actual := supplierCallName(injections[0]); actual != expectedInjection {
-		return fmt.Errorf("supplier envelope disposition mismatch: got %s, want %s", actual, expectedInjection)
+	if expectation.Classification != supplierWriterDynamic {
+		return fmt.Errorf("unknown supplier writer classification %q", expectation.Classification)
+	}
+	if len(injections) != 1 {
+		return fmt.Errorf("dynamic consume writer must inject exactly one supplier envelope into the same Other map; found %d", len(injections))
+	}
+	if actual := supplierCallName(injections[0]); actual != "InjectSupplierAccountingEnvelopeV1" {
+		return fmt.Errorf("supplier envelope disposition mismatch: got %s, want InjectSupplierAccountingEnvelopeV1", actual)
 	}
 
 	if site.Writer == "RecordTaskBillingLog" {
@@ -493,9 +484,6 @@ func supplierConsumeWriterContractError(site supplierLogWriterCallSite, params *
 		if !supplierIsIdentifier(logType, "logType") {
 			return fmt.Errorf("conditional task writer must persist the branch-selected logType")
 		}
-	}
-	if expectation.RequireConsumeIf {
-		return supplierRequireConsumeGuardDominance(site, injections[0])
 	}
 	return supplierRequireSameBlockDominance(site, injections[0])
 }
@@ -514,38 +502,6 @@ func supplierRequireSameBlockDominance(site supplierLogWriterCallSite, injection
 	}
 	if injectionLocation.Index >= writerLocation.Index {
 		return fmt.Errorf("supplier envelope injection must execute before the durable writer")
-	}
-	return nil
-}
-
-func supplierRequireConsumeGuardDominance(site supplierLogWriterCallSite, injection *ast.CallExpr) error {
-	injectionLocation, ok := supplierDirectCallStatementLocation(site.functionDecl, injection)
-	if !ok {
-		return fmt.Errorf("task consume injection must be a direct call statement in the consume guard body")
-	}
-	writerLocation, ok := supplierDirectCallStatementLocation(site.functionDecl, site.call)
-	if !ok {
-		return fmt.Errorf("conditional task writer must be a direct call statement in an executable block")
-	}
-
-	var guard *ast.IfStmt
-	for _, node := range supplierNodeAncestry(site.functionDecl.Body, injection) {
-		if candidate, isIf := node.(*ast.IfStmt); isIf && candidate.Body == injectionLocation.Block {
-			guard = candidate
-		}
-	}
-	if guard == nil {
-		return fmt.Errorf("task consume injection must be directly inside an if logType == model.LogTypeConsume body")
-	}
-	if guard.Init != nil || guard.Else != nil || !supplierIsConsumeLogTypeCondition(guard.Cond, site.modelAliases) {
-		return fmt.Errorf("task consume injection guard must be exactly if logType == model.LogTypeConsume")
-	}
-	guardIndex := supplierStatementIndex(writerLocation.Block, guard)
-	if guardIndex < 0 {
-		return fmt.Errorf("task consume guard and durable writer must have the same parent block")
-	}
-	if guardIndex != writerLocation.Index-1 {
-		return fmt.Errorf("task consume guard must immediately precede the durable writer")
 	}
 	return nil
 }
@@ -591,15 +547,25 @@ func supplierCompositeField(literal *ast.CompositeLit, field string) ast.Expr {
 
 type supplierCallStatementLocation struct {
 	Block     *ast.BlockStmt
-	Statement *ast.ExprStmt
+	Statement ast.Stmt
 	Index     int
 }
 
 func supplierDirectCallStatementLocation(function *ast.FuncDecl, target *ast.CallExpr) (supplierCallStatementLocation, bool) {
 	ancestry := supplierNodeAncestry(function.Body, target)
 	for nodeIndex := len(ancestry) - 1; nodeIndex >= 0; nodeIndex-- {
-		expressionStatement, ok := ancestry[nodeIndex].(*ast.ExprStmt)
-		if !ok || expressionStatement.X != target {
+		var statement ast.Stmt
+		switch candidate := ancestry[nodeIndex].(type) {
+		case *ast.ExprStmt:
+			if candidate.X == target {
+				statement = candidate
+			}
+		case *ast.AssignStmt:
+			if len(candidate.Rhs) == 1 && candidate.Rhs[0] == target {
+				statement = candidate
+			}
+		}
+		if statement == nil {
 			continue
 		}
 		for parentIndex := nodeIndex - 1; parentIndex >= 0; parentIndex-- {
@@ -607,9 +573,9 @@ func supplierDirectCallStatementLocation(function *ast.FuncDecl, target *ast.Cal
 			if !isBlock {
 				continue
 			}
-			statementIndex := supplierStatementIndex(block, expressionStatement)
+			statementIndex := supplierStatementIndex(block, statement)
 			if statementIndex >= 0 {
-				return supplierCallStatementLocation{Block: block, Statement: expressionStatement, Index: statementIndex}, true
+				return supplierCallStatementLocation{Block: block, Statement: statement, Index: statementIndex}, true
 			}
 		}
 		return supplierCallStatementLocation{}, false
@@ -637,7 +603,7 @@ func supplierEnvelopeInjectionsForMap(function *ast.FuncDecl, mapName string) []
 			return true
 		}
 		name := supplierCallName(call)
-		if name != "InjectSupplierAccountingEnvelopeV1" && name != "InjectUnsupportedSupplierAccountingEnvelopeV1" {
+		if name != "InjectSupplierAccountingEnvelopeV1" {
 			return true
 		}
 		if len(call.Args) > 0 && supplierIsIdentifier(call.Args[0], mapName) {

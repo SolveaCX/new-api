@@ -19,9 +19,7 @@ func TestRelayInfoInitChannelMetaCopiesAndClearsSupplierSnapshots(t *testing.T) 
 
 	cost := types.SupplierCostSnapshot{
 		SupplierId:               1,
-		SupplierName:             "supplier",
 		ContractId:               2,
-		ContractName:             "contract",
 		RateVersionId:            3,
 		ProcurementMultiplierPpm: 650_000,
 	}

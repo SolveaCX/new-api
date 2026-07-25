@@ -51,9 +51,21 @@ func runSupplierDailyAggregationOnce() {
 	result, err := CatchUpSupplierDailyBatches(context.Background(), model.DB, model.LOG_DB, owner, time.Now())
 	if err != nil {
 		logger.LogWarn(context.Background(), fmt.Sprintf("supplier daily aggregation failed: %v", err))
-		return
-	}
-	if common.DebugEnabled && result.ProcessedDays > 0 {
+	} else if common.DebugEnabled && result.ProcessedDays > 0 {
 		logger.LogDebug(context.Background(), "supplier daily aggregation completed: processed_days=%d, remaining=%t", result.ProcessedDays, result.RemainingWork)
+	}
+	historical, historicalErr := RunSupplierHistoricalEstimatePage(context.Background(), model.DB, model.LOG_DB, owner, 2*time.Minute)
+	if historicalErr != nil {
+		logger.LogWarn(context.Background(), fmt.Sprintf("supplier historical estimate import failed: %v", historicalErr))
+	} else if common.DebugEnabled && !historical.NoWork {
+		logger.LogDebug(context.Background(), "supplier historical estimate import advanced: import_id=%d processed=%d completed=%t", historical.ImportId, historical.Processed, historical.Completed)
+	}
+	if err == nil {
+		deleted, retentionErr := RunSupplierAccountingFactRetentionOnce(context.Background(), model.DB, model.LOG_DB)
+		if retentionErr != nil {
+			logger.LogWarn(context.Background(), fmt.Sprintf("supplier accounting fact retention failed: %v", retentionErr))
+		} else if common.DebugEnabled && deleted > 0 {
+			logger.LogDebug(context.Background(), "supplier accounting fact retention completed: deleted=%d", deleted)
+		}
 	}
 }

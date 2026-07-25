@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -19,6 +18,8 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
+
+var ErrLogNotFound = errors.New("log not found")
 
 func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm.DB, error) {
 	if value == "" {
@@ -129,27 +130,28 @@ func applyLogUsernameFilter(tx *gorm.DB, usernameColumn string, userIDColumn str
 }
 
 type Log struct {
-	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2;index:idx_logs_channel_type_created_id,priority:4"`
-	UserId            int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type;index:idx_type_created_at_quota,priority:2;index:idx_logs_channel_type_created_id,priority:3"`
-	Type              int    `json:"type" gorm:"index:idx_created_at_type;index:idx_type_created_at_quota,priority:1;index:idx_logs_channel_type_created_id,priority:2"`
-	Content           string `json:"content"`
-	Username          string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
-	TokenName         string `json:"token_name" gorm:"index;default:''"`
-	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
-	Quota             int    `json:"quota" gorm:"default:0;index:idx_type_created_at_quota,priority:3"`
-	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
-	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
-	UseTime           int    `json:"use_time" gorm:"default:0"`
-	IsStream          bool   `json:"is_stream"`
-	ChannelId         int    `json:"channel" gorm:"index;index:idx_logs_channel_type_created_id,priority:1"`
-	ChannelName       string `json:"channel_name" gorm:"->"`
-	TokenId           int    `json:"token_id" gorm:"default:0;index"`
-	Group             string `json:"group" gorm:"index"`
-	Ip                string `json:"ip" gorm:"index;default:''"`
-	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
-	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
-	Other             string `json:"other"`
+	Id                 int                                      `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2;index:idx_logs_channel_type_created_id,priority:4"`
+	UserId             int                                      `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	CreatedAt          int64                                    `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type;index:idx_type_created_at_quota,priority:2;index:idx_logs_channel_type_created_id,priority:3"`
+	Type               int                                      `json:"type" gorm:"index:idx_created_at_type;index:idx_type_created_at_quota,priority:1;index:idx_logs_channel_type_created_id,priority:2"`
+	Content            string                                   `json:"content"`
+	Username           string                                   `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
+	TokenName          string                                   `json:"token_name" gorm:"index;default:''"`
+	ModelName          string                                   `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	Quota              int                                      `json:"quota" gorm:"default:0;index:idx_type_created_at_quota,priority:3"`
+	PromptTokens       int                                      `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens   int                                      `json:"completion_tokens" gorm:"default:0"`
+	UseTime            int                                      `json:"use_time" gorm:"default:0"`
+	IsStream           bool                                     `json:"is_stream"`
+	ChannelId          int                                      `json:"channel" gorm:"index;index:idx_logs_channel_type_created_id,priority:1"`
+	ChannelName        string                                   `json:"channel_name" gorm:"->"`
+	TokenId            int                                      `json:"token_id" gorm:"default:0;index"`
+	Group              string                                   `json:"group" gorm:"index"`
+	Ip                 string                                   `json:"ip" gorm:"index;default:''"`
+	RequestId          string                                   `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
+	UpstreamRequestId  string                                   `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
+	Other              string                                   `json:"other"`
+	SupplierAccounting *types.SupplierAccountingLogProjectionV1 `json:"supplier_accounting,omitempty" gorm:"-"`
 }
 
 // don't use iota, avoid change log type value
@@ -196,6 +198,7 @@ func FindRecentlyActiveRecallUserIDsWithContext(ctx context.Context, userIDs []i
 
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
+		logs[i].SupplierAccounting = nil
 		logs[i].ChannelName = ""
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
@@ -203,6 +206,7 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
 			delete(otherMap, "supplier_accounting_v1")
+			delete(otherMap, types.SupplierAccountingAttemptIDKeyV1)
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
 		}
@@ -219,15 +223,41 @@ func RedactSupplierAccountingFromLogs(logs []*Log) {
 		if log == nil {
 			continue
 		}
+		log.SupplierAccounting = nil
 		otherMap, err := common.StrToMap(log.Other)
 		if err != nil || otherMap == nil {
 			continue
 		}
-		if _, exists := otherMap["supplier_accounting_v1"]; !exists {
+		_, hasEnvelope := otherMap[types.SupplierAccountingEnvelopeKeyV1]
+		_, hasAttempt := otherMap[types.SupplierAccountingAttemptIDKeyV1]
+		if !hasEnvelope && !hasAttempt {
 			continue
 		}
-		delete(otherMap, "supplier_accounting_v1")
+		delete(otherMap, types.SupplierAccountingEnvelopeKeyV1)
+		delete(otherMap, types.SupplierAccountingAttemptIDKeyV1)
 		log.Other = common.MapToJsonStr(otherMap)
+	}
+}
+
+// ProjectSupplierAccountingForRootLogs decodes the compact persisted envelope
+// into a readable, non-persisted API field. Invalid legacy payloads are ignored
+// so one malformed row cannot fail the log list.
+func ProjectSupplierAccountingForRootLogs(logs []*Log) {
+	for _, log := range logs {
+		if log == nil || !strings.Contains(log.Other, `"`+types.SupplierAccountingEnvelopeKeyV1+`"`) {
+			continue
+		}
+		var payload struct {
+			Envelope *types.SupplierAccountingEnvelopeV1 `json:"supplier_accounting_v1"`
+		}
+		if err := common.UnmarshalJsonStr(log.Other, &payload); err != nil || payload.Envelope == nil ||
+			payload.Envelope.Disposition != types.SupplierAccountingDispositionCaptured || payload.Envelope.Captured == nil {
+			continue
+		}
+		projection, err := types.NewSupplierAccountingLogProjectionV1(payload.Envelope.Captured)
+		if err == nil {
+			log.SupplierAccounting = projection
+		}
 	}
 }
 
@@ -235,6 +265,22 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order("id desc").Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)
 	return logs, err
+}
+
+func GetLogByID(ctx context.Context, db *gorm.DB, logID int) (Log, error) {
+	var log Log
+	if db == nil {
+		return log, ErrDatabase
+	}
+	if logID <= 0 {
+		return log, ErrLogNotFound
+	}
+	if err := db.WithContext(ctx).First(&log, logID).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		return Log{}, ErrLogNotFound
+	} else if err != nil {
+		return Log{}, err
+	}
+	return log, nil
 }
 
 func RecordLog(userId int, logType int, content string) {
@@ -376,38 +422,13 @@ type RecordConsumeLogParams struct {
 var TemporaryChannelSpendHook func(channelId int, modelName string, quota int)
 var adsActivationSeen sync.Map
 
-type SupplierAccountingConsumeLogWriteOutcome string
-
-const (
-	SupplierAccountingConsumeLogWriteSuccess  SupplierAccountingConsumeLogWriteOutcome = "success"
-	SupplierAccountingConsumeLogWriteFailure  SupplierAccountingConsumeLogWriteOutcome = "failure"
-	SupplierAccountingConsumeLogWriteDisabled SupplierAccountingConsumeLogWriteOutcome = "disabled"
-)
-
-type SupplierAccountingConsumeLogWriteObserver func(types.SupplierAccountingDisposition, SupplierAccountingConsumeLogWriteOutcome)
-
-type supplierAccountingConsumeLogWriteObserverHolder struct {
-	observe SupplierAccountingConsumeLogWriteObserver
-}
-
-var supplierAccountingConsumeLogWriteObserver atomic.Pointer[supplierAccountingConsumeLogWriteObserverHolder]
-
-// InstallSupplierAccountingConsumeLogWriteObserver installs the process-wide
-// observer exactly once. RecordConsumeLog reads it lock-free on the hot path.
-func InstallSupplierAccountingConsumeLogWriteObserver(observer SupplierAccountingConsumeLogWriteObserver) bool {
-	if observer == nil {
-		return false
-	}
-	return supplierAccountingConsumeLogWriteObserver.CompareAndSwap(nil, &supplierAccountingConsumeLogWriteObserverHolder{observe: observer})
-}
-
-func supplierAccountingConsumeLogDisposition(other map[string]interface{}) (types.SupplierAccountingDisposition, bool) {
+func hasValidSupplierAccountingEnvelope(other map[string]interface{}) bool {
 	if other == nil {
-		return "", false
+		return false
 	}
 	raw, ok := other[types.SupplierAccountingEnvelopeKeyV1]
 	if !ok {
-		return "", false
+		return false
 	}
 	var envelope types.SupplierAccountingEnvelopeV1
 	switch value := raw.(type) {
@@ -415,25 +436,35 @@ func supplierAccountingConsumeLogDisposition(other map[string]interface{}) (type
 		envelope = value
 	case *types.SupplierAccountingEnvelopeV1:
 		if value == nil {
-			return "", false
+			return false
 		}
 		envelope = *value
 	default:
-		return "", false
+		return false
 	}
 	if envelope.EnvelopeSchemaVersion != types.SupplierAccountingEnvelopeSchemaVersionV1 {
-		return "", false
+		return false
 	}
-	if envelope.Disposition != types.SupplierAccountingDispositionCaptured || envelope.Captured == nil {
-		return "", false
-	}
-	return envelope.Disposition, true
+	return envelope.Disposition == types.SupplierAccountingDispositionCaptured && envelope.Captured != nil
 }
 
-func observeSupplierAccountingConsumeLogWrite(disposition types.SupplierAccountingDisposition, outcome SupplierAccountingConsumeLogWriteOutcome) {
-	if observer := supplierAccountingConsumeLogWriteObserver.Load(); observer != nil {
-		observer.observe(disposition, outcome)
+func attachSupplierAccountingAttemptID(c *gin.Context, other map[string]interface{}) bool {
+	if other == nil {
+		return false
 	}
+	delete(other, types.SupplierAccountingAttemptIDKeyV1)
+	if !hasValidSupplierAccountingEnvelope(other) {
+		return false
+	}
+	if c == nil {
+		return true
+	}
+	attemptID := strings.TrimSpace(c.GetString(types.SupplierAccountingAttemptIDKeyV1))
+	if attemptID == "" {
+		return true
+	}
+	other[types.SupplierAccountingAttemptIDKeyV1] = attemptID
+	return true
 }
 
 func marshalLogOther(other map[string]interface{}, preserveSupplierEnvelope bool) (string, error, error) {
@@ -450,9 +481,11 @@ func marshalLogOther(other map[string]interface{}, preserveSupplierEnvelope bool
 	if err == nil || !preserveSupplierEnvelope {
 		return string(otherJSON), err, nil
 	}
-	supplierOnlyJSON, supplierOnlyErr := common.Marshal(map[string]interface{}{
-		types.SupplierAccountingEnvelopeKeyV1: other[types.SupplierAccountingEnvelopeKeyV1],
-	})
+	supplierOnly := map[string]interface{}{types.SupplierAccountingEnvelopeKeyV1: other[types.SupplierAccountingEnvelopeKeyV1]}
+	if attemptID, ok := other[types.SupplierAccountingAttemptIDKeyV1]; ok {
+		supplierOnly[types.SupplierAccountingAttemptIDKeyV1] = attemptID
+	}
+	supplierOnlyJSON, supplierOnlyErr := common.Marshal(supplierOnly)
 	return string(supplierOnlyJSON), err, supplierOnlyErr
 }
 
@@ -463,7 +496,7 @@ func consumeLogDiagnosticParams(params RecordConsumeLogParams) RecordConsumeLogP
 	}
 	diagnostic.Other = make(map[string]interface{}, len(params.Other))
 	for key, value := range params.Other {
-		if key != types.SupplierAccountingEnvelopeKeyV1 {
+		if key != types.SupplierAccountingEnvelopeKeyV1 && key != types.SupplierAccountingAttemptIDKeyV1 {
 			diagnostic.Other[key] = value
 		}
 	}
@@ -471,22 +504,19 @@ func consumeLogDiagnosticParams(params RecordConsumeLogParams) RecordConsumeLogP
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
-	disposition, observeSupplierWrite := supplierAccountingConsumeLogDisposition(params.Other)
 	if !common.LogConsumeEnabled {
-		if observeSupplierWrite {
-			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteDisabled)
-		}
 		return
 	}
 	if TemporaryChannelSpendHook != nil {
 		TemporaryChannelSpendHook(params.ChannelId, params.ModelName, params.Quota)
 	}
+	preserveSupplierEnvelope := attachSupplierAccountingAttemptID(c, params.Other)
 	diagnosticParams := consumeLogDiagnosticParams(params)
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(diagnosticParams)))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
-	otherStr, otherMarshalErr, supplierOnlyMarshalErr := marshalLogOther(params.Other, observeSupplierWrite)
+	otherStr, otherMarshalErr, supplierOnlyMarshalErr := marshalLogOther(params.Other, preserveSupplierEnvelope)
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -520,11 +550,9 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
-	var createErr error
 	if supplierOnlyMarshalErr == nil {
-		createErr = LOG_DB.Create(log).Error
-		if createErr != nil {
-			logger.LogError(c, "failed to record log: "+createErr.Error())
+		if err := LOG_DB.Create(log).Error; err != nil {
+			logger.LogError(c, "failed to record log: "+err.Error())
 		} else {
 			maybeRecordLogRequestSample(c, userId, params, log)
 			if _, loaded := adsActivationSeen.LoadOrStore(userId, struct{}{}); !loaded {
@@ -541,13 +569,6 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	if otherMarshalErr != nil {
 		logger.LogError(c, "failed to serialize consume log other: "+otherMarshalErr.Error())
-	}
-	if observeSupplierWrite {
-		if createErr != nil || otherMarshalErr != nil || supplierOnlyMarshalErr != nil {
-			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteFailure)
-		} else {
-			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteSuccess)
-		}
 	}
 	if common.DataExportEnabled {
 		gopool.Go(func() {
@@ -576,11 +597,7 @@ type RecordTaskBillingLogParams struct {
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
-	disposition, observeSupplierWrite := supplierAccountingConsumeLogDisposition(params.Other)
 	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled {
-		if observeSupplierWrite {
-			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteDisabled)
-		}
 		return
 	}
 	username, _ := GetUsernameById(params.UserId, false)
@@ -590,7 +607,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 			tokenName = token.Name
 		}
 	}
-	preserveSupplierEnvelope := params.LogType == LogTypeConsume && observeSupplierWrite
+	validSupplierEnvelope := attachSupplierAccountingAttemptID(nil, params.Other)
+	preserveSupplierEnvelope := params.LogType == LogTypeConsume && validSupplierEnvelope
 	otherStr, otherMarshalErr, supplierOnlyMarshalErr := marshalLogOther(params.Other, preserveSupplierEnvelope)
 	log := &Log{
 		UserId:    params.UserId,
@@ -606,24 +624,15 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		Group:     params.Group,
 		Other:     otherStr,
 	}
-	var createErr error
 	if supplierOnlyMarshalErr == nil {
-		createErr = LOG_DB.Create(log).Error
-		if createErr != nil {
-			common.SysLog("failed to record task billing log: " + createErr.Error())
+		if err := LOG_DB.Create(log).Error; err != nil {
+			common.SysLog("failed to record task billing log: " + err.Error())
 		}
 	} else {
 		common.SysLog("failed to serialize supplier accounting task billing log envelope: " + supplierOnlyMarshalErr.Error())
 	}
 	if otherMarshalErr != nil {
 		common.SysLog("failed to serialize task billing log other: " + otherMarshalErr.Error())
-	}
-	if params.LogType == LogTypeConsume && observeSupplierWrite {
-		if createErr != nil || otherMarshalErr != nil || supplierOnlyMarshalErr != nil {
-			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteFailure)
-		} else {
-			observeSupplierAccountingConsumeLogWrite(disposition, SupplierAccountingConsumeLogWriteSuccess)
-		}
 	}
 }
 
