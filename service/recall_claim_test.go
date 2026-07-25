@@ -185,6 +185,58 @@ func TestRecallClaimValidateFindsAnyStageHashAndRecordsOneObservedClick(t *testi
 	require.Len(t, events, 1)
 }
 
+func TestRecallClaimValidateReturnsInternalSubscriptionPlanIDs(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Unix(1_721_000_000, 0).UTC()
+	disabledPlan := model.SubscriptionPlan{
+		Id:            70,
+		Title:         "Go retired",
+		Enabled:       false,
+		StripePriceId: "price_subscription",
+	}
+	firstPlan := model.SubscriptionPlan{
+		Id:            71,
+		Title:         "Go",
+		Enabled:       true,
+		StripePriceId: "price_subscription",
+	}
+	secondPlan := model.SubscriptionPlan{
+		Id:            72,
+		Title:         "Go legacy",
+		Enabled:       true,
+		StripePriceId: "price_subscription",
+	}
+	require.NoError(t, db.Create(&[]model.SubscriptionPlan{secondPlan, disabledPlan, firstPlan}).Error)
+	require.NoError(t, db.Model(&model.SubscriptionPlan{}).Where("id = ?", disabledPlan.Id).Update("enabled", false).Error)
+	fixture := createRecallClaimFixture(t, now)
+	claimService := NewRecallClaimService()
+	claimService.now = func() time.Time { return now }
+
+	view, err := claimService.ValidateClaim(context.Background(), fixture.recipient.UserId, fixture.claim)
+
+	require.NoError(t, err)
+	require.Equal(t, []int{firstPlan.Id, secondPlan.Id}, view.Products.SubscriptionPlanIDs)
+	require.Equal(t, []string{"price_subscription"}, view.Products.SubscriptionPriceIDs)
+}
+
+func TestRecallContentOnlyClaimValidationFailsClosedWithoutClick(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Unix(1_721_000_000, 0).UTC()
+	fixture := createRecallClaimFixture(t, now)
+	require.NoError(t, db.Model(&model.RecallCampaign{}).Where("id = ?", fixture.campaign.Id).Update("campaign_type", model.RecallCampaignTypeContentOnly).Error)
+	claimService := NewRecallClaimService()
+	claimService.now = func() time.Time { return now }
+
+	_, err := claimService.ValidateClaim(context.Background(), fixture.recipient.UserId, fixture.claim)
+
+	require.ErrorIs(t, err, ErrRecallClaimPromotionInvalid)
+	var eventCount int64
+	require.NoError(t, db.Model(&model.RecallEvent{}).Where("recipient_id = ? AND event_type = ?", fixture.recipient.Id, "observed_click").Count(&eventCount).Error)
+	require.Zero(t, eventCount)
+}
+
 func TestRecallClaimValidateAcceptsStageOneRecipientLookupAfterMessageAcceptance(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)
