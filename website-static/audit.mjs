@@ -24,7 +24,7 @@ for (const file of files) {
   const viewports = [...html.matchAll(/<meta\s+name="viewport"\s+content="([^"]+)"/gi)];
   if (viewports.length !== 1) fail(file, `expected one viewport meta, found ${viewports.length}`);
   else if (!viewports[0][1].includes("width=device-width")) fail(file, `non-responsive viewport: ${viewports[0][1]}`);
-  const cssVersion = "726c";
+  const cssVersion = "726d";
   if (!html.includes(`fk2.css?v=${cssVersion}`)) fail(file, "missing the current shared CSS cache version");
   if (/\bid=""/.test(html)) fail(file, "contains an empty id");
   if (/<script\b[^>]*\bsrc=""/i.test(html)) fail(file, "contains an empty script src");
@@ -32,7 +32,7 @@ for (const file of files) {
   if (/\bdata-i18n(?:-ph)?=/.test(html) && !/assets\/i18n\.js\?v=/.test(html)) {
     fail(file, "uses i18n keys without loading assets/i18n.js");
   }
-  const i18nScript = html.indexOf("assets/i18n.js?v=726a");
+  const i18nScript = html.indexOf("assets/i18n.js?v=726b");
   const shellScript = html.indexOf("assets/site-shell.js?v=720a");
   const trackScript = html.indexOf("assets/track.js?v=721a");
   if (i18nScript === -1) fail(file, "missing the current locale-routing script version");
