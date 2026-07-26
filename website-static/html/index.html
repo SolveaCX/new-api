@@ -114,6 +114,7 @@ body:has(> header.hero.heroUnified)>header.hero.heroUnified,.tools-intro,.tool-u
 .tools-kicker{display:flex;align-items:center;gap:13px;color:#4d49ff;font:500 12px/1.4 "JetBrains Mono",monospace;letter-spacing:.04em}
 .tools-kicker:before{content:"";width:28px;height:2px;background:#706aff}
 .tools-title{margin:27px 0 0;max-width:700px;font-family:var(--disp);font-size:clamp(58px,6vw,94px);line-height:1.02;font-weight:700;letter-spacing:-.065em}
+.tools-title-line{white-space:nowrap}
 .tools-copy{max-width:690px;margin:30px 0 0;color:#615b64;font-size:18px;line-height:1.7}
 .agent-label{display:flex;align-items:center;gap:8px;margin-top:30px;font-size:12px;font-weight:700}
 .agent-marks{display:flex;margin-left:auto;gap:5px}
@@ -183,6 +184,15 @@ body:has(> header.hero.heroUnified)>header.hero.heroUnified,.tools-intro,.tool-u
 .provider-icon.voc-mark{background:#111;color:#fff;border-radius:11px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
 .provider-icon.voc-mark span{margin:0;color:#fff;font:800 10px/1 "JetBrains Mono",monospace;letter-spacing:-.05em}
 .provider-card>div{min-width:0}.provider-card b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.2}.provider-card div>span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:5px;color:#8d8591;font:400 8.3px/1.3 "JetBrains Mono",monospace}
+.provider-card.more-card{overflow:hidden;border-color:#d7c9e8;background:linear-gradient(135deg,rgba(255,255,255,.98),rgba(246,240,255,.98));color:#17131c;text-decoration:none;box-shadow:0 16px 36px -28px rgba(82,32,137,.48)}
+.provider-card.more-card:after{content:"↗";position:absolute;right:15px;top:50%;transform:translateY(-50%);color:#7340ac;font:600 15px/1 var(--mono);transition:transform .2s ease}
+.provider-card.more-card:hover{border-color:#bca0dc;box-shadow:0 21px 42px -28px rgba(82,32,137,.58)}
+.provider-card.more-card:hover:after{transform:translate(2px,-2px)}
+.more-icon{position:relative;overflow:visible;background:linear-gradient(145deg,#22172e,#7933c5);box-shadow:0 8px 20px -10px rgba(81,25,143,.72)}
+.more-icon:before,.more-icon:after,.more-icon span{content:"";position:absolute;width:13px;height:13px;border:1px solid rgba(255,255,255,.72);border-radius:4px;background:rgba(255,255,255,.14);box-shadow:0 3px 8px rgba(27,11,41,.15)}
+.more-icon:before{left:7px;top:7px}.more-icon span{left:17px;top:11px}.more-icon:after{left:11px;top:19px}
+.more-card.tools-more .more-icon{background:linear-gradient(145deg,#3b2451,#9b58e3)}
+.more-card b em{font-style:normal;color:#6c2bad}
 .tool-values{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:22px;border:1px solid #e2dce4;background:#e2dce4;border-radius:14px;overflow:hidden}
 .tool-value{background:#fff;padding:21px;text-align:left}.tool-value small{color:#6f27c4;font:600 9px/1 "JetBrains Mono",monospace;letter-spacing:.08em}.tool-value b{display:block;margin-top:15px;font-size:14px}.tool-value p{margin:7px 0 0;color:#78717b;font-size:11px;line-height:1.55}
 .tools-kicker,.agent-mark,.agent-command,.copy-toast,.agent-note,.terminal-head,.terminal-body,.hub-brand-copy span,.hub-live,.hub-metric b,.hub-metric small,.provider-icon.voc-mark span,.provider-card div>span,.tool-value small{font-family:var(--mono)}
@@ -197,7 +207,7 @@ body:has(> header.hero.heroUnified)>header.hero.heroUnified,.tools-intro,.tool-u
 }
 @media(max-width:700px){
   .tools-intro-inner{padding:64px 20px}
-  .tools-title{font-size:49px}.tools-copy{font-size:15.5px}
+  .tools-title{font-size:clamp(39px,11.2vw,49px)}.tools-copy{font-size:15.5px}
   .agent-marks{display:none}.agent-command{font-size:10px;padding:14px}.copy-label{display:none}.copy-state{min-width:24px}
   .terminal-body{min-height:430px;padding:20px 17px;font-size:10px}
   .term-summary{grid-template-columns:1fr}
@@ -285,7 +295,7 @@ body:has(> header.hero.heroUnified)>header.hero.heroUnified,.tools-intro,.tool-u
   <div class="tools-intro-inner">
     <div>
       <div class="tools-kicker">SDK · CLI · API · 1,000+ TOOLS</div>
-      <h2 class="tools-title">One key, one bill,<br>1,000+ tools.</h2>
+      <h2 class="tools-title"><span class="tools-title-line">One key, one bill,</span><br>1,000+ tools.</h2>
       <p class="tools-copy">Build with Claude Code, Codex, OpenClaw, or any app. Flatkey runs search, browsers, enrichment, media generation, and actions through one balance—then bills only successful calls.</p>
       <div class="agent-label">Give this to your agent<div class="agent-marks"><span class="agent-mark openai">AI</span><span class="agent-mark claude">C</span><span class="agent-mark codex">⌘</span><span class="agent-mark more">+ more</span></div></div>
       <button class="agent-command" id="copy-flatkey-setup" type="button" data-action="copy-flatkey-setup" aria-label="Copy Flatkey setup prompt" data-copy="Set up Flatkey from https://flatkey.ai/SKILL.md">
@@ -384,6 +394,8 @@ body:has(> header.hero.heroUnified)>header.hero.heroUnified,.tools-intro,.tool-u
           <article class="provider-card"><i class="provider-icon"><img src="assets/tools/wokelo.png" alt="Wokelo"></i><div><b>Wokelo</b><span>private markets</span></div></article>
           <article class="provider-card"><i class="provider-icon"><img src="assets/tools/saperly.png" alt="Saperly"></i><div><b>Saperly</b><span>agent phone</span></div></article>
           <article class="provider-card"><i class="provider-icon"><img src="assets/tools/openweather.svg" alt="OpenWeather"></i><div><b>OpenWeather</b><span>real-time signals</span></div></article>
+          <a class="provider-card more-card models-more" href="/models" aria-label="Explore more than 300 official AI models"><i class="provider-icon more-icon" aria-hidden="true"><span></span></i><div><b><em>More</em> models</b><span>300+ official models</span></div></a>
+          <a class="provider-card more-card tools-more" href="https://docs.flatkey.ai/" target="_blank" rel="noopener noreferrer" aria-label="Explore more than 1,000 AI tools"><i class="provider-icon more-icon" aria-hidden="true"><span></span></i><div><b><em>More</em> tools</b><span>1,000+ available</span></div></a>
         </div>
       </div>
     </div>
@@ -451,13 +463,14 @@ body:has(> header.hero.heroUnified)>header.hero.heroUnified,.tools-intro,.tool-u
         </div>
       </div>
       <div class="wcard dark">
-        <h3 data-i18n="why.c3h">One SDK, every modality</h3>
-        <p data-i18n="why.c3p">Text, video, audio and image behind the same OpenAI-compatible gateway — and an Anthropic-shaped API for Claude Code.</p>
-        <pre class="wcode">client = OpenAI(
-  base_url=<span>"https://router.flatkey.ai/v1"</span>)
-client.chat.completions.create(
-  model=<span>"doubao/doubao-seedance-2-0-260128"</span>,
-  messages=[…])  <em># video, same SDK</em></pre>
+        <h3 data-i18n="why.c3h">CLI-native. Powered by SKILL.md.</h3>
+        <p data-i18n="why.c3p">Point Codex, Claude Code, OpenClaw, or any agent CLI at Flatkey’s SKILL.md. It learns how to discover and call 300+ official models and 1,000+ pay-per-call tools with one key.</p>
+        <pre class="wcode"><span>$</span> codex <em>"Set up Flatkey from</em>
+  <em>https://flatkey.ai/SKILL.md"</em>
+
+<span>✓</span> 300+ official models connected
+<span>✓</span> 1,000+ tools discovered
+<span>✓</span> one key · one balance</pre>
       </div>
       <div class="wcard">
         <h3 data-i18n="why.c4h">Enterprise-grade governance</h3>
@@ -468,27 +481,6 @@ client.chat.completions.create(
       </div>
     </div>
   </div>
-</section>
-
-<section class="v" id="trust">
-  <div class="pxgrid" data-seed="41" data-cell="24" data-cols="12" data-rows="6" data-n="20" data-colors="#7C3AED66,#8B5CF64D,#A78BFA59" data-accent="#22C55E" style="right:34px;top:48px;z-index:1"></div>
-  <div class="bgv"><div class="radar"><i></i><i></i><i></i><i></i><div class="sweep"></div>
-    <div class="blip" style="left:32%;top:38%"></div><div class="blip" style="left:58%;top:26%;animation-delay:.7s"></div><div class="blip" style="left:47%;top:62%;animation-delay:1.3s"></div><div class="blip" style="left:70%;top:52%;animation-delay:.4s"></div>
-  </div></div>
-  <div class="shade"></div>
-  <div class="in">
-    <div class="kick" data-i18n="trust.kick">TRUST · HOURLY MODEL-AUTHENTICITY PROBES</div>
-    <h2 class="big" data-i18n="trust.h2">0 model swaps. <em>Ever.</em><br>And we prove it.</h2>
-    <p class="d" data-i18n="trust.p">Every hour, every model is probed against its official API fingerprint — logits, tokenizer, refusal shape. The log is public. Cheap gateways ask for trust; flatkey shows receipts.</p>
-    <div class="rows">
-      <div><span class="t">14:00</span><b>claude-opus-4-8</b> fingerprint ✓ · official anthropic · 388ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>gpt-5.5</b> fingerprint ✓ · official openai · 412ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>glm-5.2</b> fingerprint ✓ · official zhipu · 241ms<span class="ok">PASS</span></div>
-      <div><span class="t">14:00</span><b>seedance-2.0</b> fingerprint ✓ · official bytedance · video<span class="ok">PASS</span></div>
-      <div><span class="t">13:00</span>300+ models probed hourly · 30-day log public<span class="ok">PASS</span></div>
-    </div>
-  </div>
-  <div class="vtag"><span class="p">▶</span>BACKGROUND VIDEO · hourly-probe radar · 12s loop</div>
 </section>
 
 <section class="v" id="compliance">

@@ -32,8 +32,8 @@ model's advertised protocol and modality.
 
 Use the smallest surface that completes the task:
 
-1. **SDK or HTTP API** for application code and deterministic requests.
-2. **CLI** for terminal work, Codex CLI, Claude Code, and quick tests.
+1. **CLI + this SKILL.md** for Codex CLI, Claude Code, OpenClaw, and agent work.
+2. **HTTP API** for application code and deterministic requests.
 3. **Responses + MCP** when a supported model must call a remote MCP server.
 4. **Flatkey Tools** for catalog discovery and metered external capabilities
    after the Tools runtime is available in the current environment.
@@ -206,18 +206,23 @@ curl -fsS https://router.flatkey.ai/v1/responses/compact \
 
 ### One-line installer
 
-The installer configures either Claude Code or Codex CLI:
+Download, inspect, and run the installer. It configures either Claude Code or
+an isolated Codex CLI profile without replacing existing client configuration:
 
 ```bash
-curl -fsSL https://flatkey.ai/install.sh | bash
+curl -fsSLo /tmp/flatkey-install.sh https://flatkey.ai/install.sh
+less /tmp/flatkey-install.sh
+bash /tmp/flatkey-install.sh
 ```
 
-It prompts for the target client and stores the Flatkey endpoint in that
-client's standard configuration.
+It prompts for the target client, verifies the key before changing
+configuration, stores the key in `~/.config/flatkey/env` with mode `600`, and
+adds one guarded environment-loader block to the user's shell profile.
 
 ### Codex CLI
 
-The installer writes this provider configuration:
+The installer writes this isolated profile to
+`~/.codex/flatkey.config.toml`, leaving `~/.codex/config.toml` untouched:
 
 ```toml
 model_provider = "flatkey"
@@ -227,12 +232,13 @@ model = "gpt-5.5"
 name = "Flatkey"
 base_url = "https://router.flatkey.ai/v1"
 env_key = "FLATKEY_API_KEY"
+wire_api = "responses"
 ```
 
-Then start Codex:
+Then start Codex with the Flatkey profile:
 
 ```bash
-codex
+codex -p flatkey
 ```
 
 ### Claude Code
