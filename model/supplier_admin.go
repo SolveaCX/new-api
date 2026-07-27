@@ -36,10 +36,11 @@ type UpdateSupplierContractInput struct {
 }
 
 type SupplierChannelBinding struct {
-	ChannelId          int    `json:"channel_id"`
-	ChannelName        string `json:"channel_name"`
-	ChannelStatus      int    `json:"channel_status"`
-	SupplierContractId *int   `json:"supplier_contract_id"`
+	ChannelId              int    `json:"channel_id"`
+	ChannelName            string `json:"channel_name"`
+	ChannelStatus          int    `json:"channel_status"`
+	SupplierContractId     *int   `json:"supplier_contract_id"`
+	SkipInternalAccounting bool   `json:"skip_internal_accounting"`
 }
 
 func normalizeSupplierPage(page SupplierPage) SupplierPage {
@@ -507,34 +508,26 @@ func ListSupplierStatisticsExclusionRules(userId int, page SupplierPage) ([]Supp
 }
 
 func BindChannelSupplierContract(channelId int, contractId int) error {
-	if DB == nil {
-		return fmt.Errorf("bind channel supplier contract: %w", ErrDatabase)
-	}
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		if _, _, _, err := lockActiveSupplierContractChain(tx, contractId, true); err != nil {
-			return err
-		}
-		var channel Channel
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "supplier_contract_id").First(&channel, channelId).Error; err != nil {
-			return err
-		}
-		if channel.SupplierContractId != nil && *channel.SupplierContractId == contractId {
-			return nil
-		}
-		if err := tx.Model(&Channel{}).Where("id = ?", channelId).UpdateColumn("supplier_contract_id", contractId).Error; err != nil {
-			return err
-		}
-		return tx.Create(&SupplierChannelBindingVersion{
-			ChannelId:                  channelId,
-			PreviousSupplierContractId: channel.SupplierContractId,
-			SupplierContractId:         &contractId,
-		}).Error
-	})
+	binding, err := GetChannelSupplierContractBinding(channelId)
 	if err != nil {
 		return err
 	}
-	refreshLocalChannelCacheAndPublishChanged()
-	return nil
+	expectedContractId := 0
+	desiredSkipInternalAccounting := false
+	if binding.SupplierContractId != nil {
+		expectedContractId = *binding.SupplierContractId
+		if expectedContractId == contractId {
+			desiredSkipInternalAccounting = binding.SkipInternalAccounting
+		}
+	}
+	return SetChannelSupplierContractPolicyCASForActor(
+		channelId,
+		expectedContractId,
+		binding.SkipInternalAccounting,
+		&contractId,
+		desiredSkipInternalAccounting,
+		0,
+	)
 }
 
 func GetChannelSupplierContractBinding(channelId int) (*SupplierChannelBinding, error) {
@@ -548,6 +541,11 @@ func GetChannelSupplierContractBinding(channelId int) (*SupplierChannelBinding, 
 		First(&binding).Error; err != nil {
 		return nil, err
 	}
+	skipInternalAccounting, err := latestSupplierChannelBindingPolicy(DB, binding.ChannelId, binding.SupplierContractId)
+	if err != nil {
+		return nil, err
+	}
+	binding.SkipInternalAccounting = skipInternalAccounting
 	return &binding, nil
 }
 
@@ -574,62 +572,21 @@ func ListSupplierChannelBindings(contractId int, page SupplierPage) ([]SupplierC
 }
 
 func UnbindChannelSupplierContract(channelId int) error {
-	if DB == nil {
-		return fmt.Errorf("unbind channel supplier contract: %w", ErrDatabase)
-	}
-	var preliminary supplierChannelBindingRow
-	if err := DB.Model(&Channel{}).Select("id", "supplier_contract_id").First(&preliminary, channelId).Error; err != nil {
-		return err
-	}
-	if preliminary.SupplierContractId == nil {
-		return nil
-	}
-	contractId := *preliminary.SupplierContractId
-	var preliminaryContract SupplierContract
-	if err := DB.Select("id", "supplier_id").First(&preliminaryContract, contractId).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
-	}
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		if preliminaryContract.SupplierId > 0 {
-			var supplier UpstreamSupplier
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&supplier, preliminaryContract.SupplierId).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			var contract SupplierContract
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&contract, contractId).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			if contract.CurrentRateVersionId != nil {
-				var rate SupplierContractRateVersion
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&rate, *contract.CurrentRateVersionId).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-					return err
-				}
-			}
-		}
-		var channel Channel
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "supplier_contract_id").First(&channel, channelId).Error; err != nil {
-			return err
-		}
-		if channel.SupplierContractId == nil {
-			return nil
-		}
-		if *channel.SupplierContractId != contractId {
-			return ErrSupplierBindingChanged
-		}
-		if err := tx.Model(&Channel{}).Where("id = ? AND supplier_contract_id = ?", channelId, contractId).UpdateColumn("supplier_contract_id", nil).Error; err != nil {
-			return err
-		}
-		return tx.Create(&SupplierChannelBindingVersion{
-			ChannelId:                  channelId,
-			PreviousSupplierContractId: &contractId,
-			SupplierContractId:         nil,
-		}).Error
-	})
+	binding, err := GetChannelSupplierContractBinding(channelId)
 	if err != nil {
 		return err
 	}
-	refreshLocalChannelCacheAndPublishChanged()
-	return nil
+	if binding.SupplierContractId == nil {
+		return nil
+	}
+	return SetChannelSupplierContractPolicyCASForActor(
+		channelId,
+		*binding.SupplierContractId,
+		binding.SkipInternalAccounting,
+		nil,
+		false,
+		0,
+	)
 }
 
 func lockActiveSupplierContractChain(tx *gorm.DB, contractId int, requireCurrentRate bool) (SupplierContract, UpstreamSupplier, *SupplierContractRateVersion, error) {

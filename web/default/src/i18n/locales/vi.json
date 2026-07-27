@@ -5947,6 +5947,7 @@
     "Configured inventory": "Tồn kho đã cấu hình",
     "Consumed inventory": "Tồn kho đã tiêu thụ",
     "Contract": "Hợp đồng",
+    "Contracts without a current procurement rate cannot be bound. Create a rate first.": "Không thể liên kết hợp đồng chưa có tỷ lệ mua hàng hiện tại. Hãy tạo tỷ lệ trước.",
     "Contract ledger": "Sổ hợp đồng",
     "Contract management is being connected": "Đang kết nối quản lý hợp đồng",
     "Contract rates and inventory adjustments will appear here when the current management implementation is connected.": "Tỷ lệ hợp đồng và điều chỉnh tồn kho sẽ xuất hiện tại đây sau khi kết nối chức năng quản lý.",
@@ -6041,6 +6042,7 @@
     "Contract inactivated": "Hợp đồng bị vô hiệu hóa",
     "Contract number": "Số hợp đồng",
     "Contract updated": "Đã cập nhật hợp đồng",
+    "Rate required": "Cần tỷ lệ",
     "Correction": "Sửa chữa",
     "Create contract": "Tạo hợp đồng",
     "Create supplier": "Tạo nhà cung cấp",
@@ -6432,6 +6434,13 @@
     "They are isolated from authoritative profit reports and inventory. Use them only for explicitly reviewed historical analysis.": "Chúng được tách biệt khỏi báo cáo lợi nhuận chính thức và tồn kho. Chỉ dùng cho phân tích lịch sử đã được xét duyệt rõ ràng.",
     "This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.": "Bản nhập này bao gồm các nhật ký tiêu thụ thành công cuối cùng trong phạm vi LOG_DB đã cố định và không ghi dữ kiện kế toán chính thức.",
     "Unable to create historical estimate import": "Không thể tạo bản nhập ước tính lịch sử",
-    "Use the quota-per-unit value that was active for the source logs being estimated.": "Dùng giá trị hạn mức trên mỗi đơn vị đã có hiệu lực đối với các nhật ký nguồn đang được ước tính."
+    "Use the quota-per-unit value that was active for the source logs being estimated.": "Dùng giá trị hạn mức trên mỗi đơn vị đã có hiệu lực đối với các nhật ký nguồn đang được ước tính.",
+    "Internal request accounting": "Hạch toán yêu cầu nội bộ",
+    "Record internal costs": "Ghi nhận chi phí nội bộ",
+    "Skip completely": "Bỏ qua hoàn toàn",
+    "This policy applies only to requests from accounts excluded from supplier statistics.": "Chính sách này chỉ áp dụng cho các yêu cầu từ tài khoản bị loại khỏi thống kê nhà cung cấp.",
+    "Internal request data will not be recorded": "Dữ liệu yêu cầu nội bộ sẽ không được ghi nhận",
+    "Supplier accounting facts will not be created, so internal procurement costs and inventory consumption cannot be recovered later.": "Dữ liệu hạch toán nhà cung cấp sẽ không được tạo, vì vậy không thể khôi phục chi phí thu mua nội bộ và mức tiêu hao tồn kho sau này.",
+    "Record costs": "Ghi nhận chi phí"
   }
 }

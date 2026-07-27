@@ -79,6 +79,7 @@ func createSupplierCacheFixture(t *testing.T, db *gorm.DB) (SupplierContract, Su
 func TestSupplierCacheMultipleChannelsUnboundAndLatestExclusion(t *testing.T) {
 	db := setupSupplierCacheTestDB(t, "supplier-cache-bindings")
 	contract, rate, channels := createSupplierCacheFixture(t, db)
+	require.NoError(t, SetChannelSupplierContractPolicyCASForActor(channels[0].Id, contract.Id, false, &contract.Id, true, 2))
 	rules := []SupplierStatisticsExclusionRule{
 		{UserId: 101, Action: SupplierStatisticsActionExclude, IdempotencyKey: "101-exclude", CreatedBy: 1},
 		{UserId: 101, Action: SupplierStatisticsActionInclude, IdempotencyKey: "101-include", CreatedBy: 1},
@@ -93,7 +94,7 @@ func TestSupplierCacheMultipleChannelsUnboundAndLatestExclusion(t *testing.T) {
 
 	require.NoError(t, RefreshSupplierCache())
 	require.False(t, GetSupplierCacheHealth().Blocking)
-	for _, channel := range channels[:2] {
+	for index, channel := range channels[:2] {
 		snapshot, ok := GetSupplierCostSnapshot(channel.Id)
 		require.True(t, ok)
 		var bindingVersion SupplierChannelBindingVersion
@@ -102,6 +103,7 @@ func TestSupplierCacheMultipleChannelsUnboundAndLatestExclusion(t *testing.T) {
 		require.Equal(t, contract.Id, snapshot.ContractId)
 		require.Equal(t, rate.Id, snapshot.RateVersionId)
 		require.Equal(t, int64(650_000), snapshot.ProcurementMultiplierPpm)
+		require.Equal(t, index == 0, snapshot.SkipInternalAccounting)
 	}
 	_, ok := GetSupplierCostSnapshot(channels[2].Id)
 	require.False(t, ok)

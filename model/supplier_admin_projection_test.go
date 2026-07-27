@@ -76,6 +76,57 @@ func TestSetChannelSupplierContractCASPreventsStaleWritesAndKeepsRetriesIdempote
 	}
 }
 
+func TestSetChannelSupplierContractPolicyCASVersionsPolicyOnlyChanges(t *testing.T) {
+	db := setupSupplierAdminProjectionTestDB(t)
+	contract := createSupplierContractFixture(t, db, "policy-cas", "policy-cas")
+	_, err := CreateAndActivateSupplierContractRateVersion(contract.Id, 650_000, 1, "initial")
+	require.NoError(t, err)
+	channel := Channel{Name: "policy cas channel", Key: "policy-key", Status: common.ChannelStatusEnabled}
+	require.NoError(t, db.Create(&channel).Error)
+
+	require.NoError(t, SetChannelSupplierContractPolicyCASForActor(channel.Id, 0, false, &contract.Id, false, 7))
+	require.NoError(t, SetChannelSupplierContractPolicyCASForActor(channel.Id, contract.Id, false, &contract.Id, true, 8))
+	require.ErrorIs(t, SetChannelSupplierContractPolicyCASForActor(channel.Id, contract.Id, false, &contract.Id, false, 9), ErrSupplierBindingChanged)
+
+	binding, err := GetChannelSupplierContractBinding(channel.Id)
+	require.NoError(t, err)
+	require.Equal(t, &contract.Id, binding.SupplierContractId)
+	require.True(t, binding.SkipInternalAccounting)
+
+	rows, total, err := ListSupplierChannelBindingAdminRows(SupplierChannelBindingAdminListFilter{
+		Page: SupplierPage{Limit: 10}, Keyword: "policy cas channel",
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
+	require.True(t, rows[0].SkipInternalAccounting)
+
+	versions, total, err := ListSupplierChannelBindingVersions(channel.Id, SupplierPage{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, versions, 2)
+	require.Equal(t, contract.Id, *versions[0].SupplierContractId)
+	require.Equal(t, contract.Id, *versions[0].PreviousSupplierContractId)
+	require.False(t, versions[0].PreviousSkipInternalAccounting)
+	require.True(t, versions[0].SkipInternalAccounting)
+	require.Equal(t, 8, versions[0].CreatedBy)
+
+	require.NoError(t, BindChannelSupplierContract(channel.Id, contract.Id), "legacy bind delegates without resetting the current policy")
+	binding, err = GetChannelSupplierContractBinding(channel.Id)
+	require.NoError(t, err)
+	require.True(t, binding.SkipInternalAccounting)
+	require.NoError(t, UnbindChannelSupplierContract(channel.Id), "legacy unbind delegates with the observed policy CAS token")
+	binding, err = GetChannelSupplierContractBinding(channel.Id)
+	require.NoError(t, err)
+	require.Nil(t, binding.SupplierContractId)
+	require.False(t, binding.SkipInternalAccounting)
+	versions, total, err = ListSupplierChannelBindingVersions(channel.Id, SupplierPage{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.True(t, versions[0].PreviousSkipInternalAccounting)
+	require.False(t, versions[0].SkipInternalAccounting)
+}
+
 func TestSetChannelSupplierContractCASAllowsOnlyOneConcurrentUnboundWriter(t *testing.T) {
 	db := setupSupplierAdminProjectionTestDB(t)
 	first := createSupplierContractFixture(t, db, "cas-concurrent-first", "cas-concurrent-first")
@@ -108,6 +159,41 @@ func TestSetChannelSupplierContractCASAllowsOnlyOneConcurrentUnboundWriter(t *te
 			conflicts++
 		} else {
 			t.Fatalf("unexpected concurrent CAS result: %v", result)
+		}
+	}
+	require.Equal(t, 1, successes)
+	require.Equal(t, 1, conflicts)
+}
+
+func TestSetChannelSupplierContractPolicyCASAllowsOnlyOneConcurrentPolicyWriter(t *testing.T) {
+	db := setupSupplierAdminProjectionTestDB(t)
+	contract := createSupplierContractFixture(t, db, "policy-concurrent", "policy-concurrent")
+	_, err := CreateAndActivateSupplierContractRateVersion(contract.Id, 650_000, 1, "initial")
+	require.NoError(t, err)
+	channel := Channel{Name: "concurrent policy channel", Key: "policy-key", Status: common.ChannelStatusEnabled}
+	require.NoError(t, db.Create(&channel).Error)
+	require.NoError(t, SetChannelSupplierContractPolicyCASForActor(channel.Id, 0, false, &contract.Id, false, 1))
+
+	results := make([]error, 2)
+	var wait sync.WaitGroup
+	for index := range results {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			results[index] = SetChannelSupplierContractPolicyCASForActor(channel.Id, contract.Id, false, &contract.Id, true, index+2)
+		}(index)
+	}
+	wait.Wait()
+
+	successes := 0
+	conflicts := 0
+	for _, result := range results {
+		if result == nil {
+			successes++
+		} else if result == ErrSupplierBindingChanged {
+			conflicts++
+		} else {
+			t.Fatalf("unexpected concurrent policy CAS result: %v", result)
 		}
 	}
 	require.Equal(t, 1, successes)
@@ -262,7 +348,7 @@ func TestSupplierAdminProjectionQueryCountsAndPaginationAreBounded(t *testing.T)
 	bindings, _, err := ListSupplierChannelBindingAdminRows(SupplierChannelBindingAdminListFilter{Page: SupplierPage{Limit: 100}})
 	require.NoError(t, err)
 	require.NotEmpty(t, bindings)
-	require.Equal(t, int64(2), counter.count.Load())
+	require.Equal(t, int64(3), counter.count.Load(), "count, page, and one bounded binding-version projection query")
 
 	counter.count.Store(0)
 	effective, _, err := ListSupplierEffectiveExclusions(SupplierExclusionAdminListFilter{Page: SupplierPage{Limit: 100}})

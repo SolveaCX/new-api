@@ -5947,6 +5947,7 @@
     "Configured inventory": "設定在庫",
     "Consumed inventory": "消費済み在庫",
     "Contract": "契約",
+    "Contracts without a current procurement rate cannot be bound. Create a rate first.": "現在の調達レートがない契約は紐付けできません。先にレートを作成してください。",
     "Contract ledger": "契約台帳",
     "Contract management is being connected": "契約管理を接続中です",
     "Contract rates and inventory adjustments will appear here when the current management implementation is connected.": "管理機能の接続後、契約レートと在庫調整がここに表示されます。",
@@ -6041,6 +6042,7 @@
     "Contract inactivated": "契約が無効化されました",
     "Contract number": "契約番号",
     "Contract updated": "契約が更新されました",
+    "Rate required": "レート必須",
     "Correction": "修正",
     "Create contract": "契約書の作成",
     "Create supplier": "サプライヤーの作成",
@@ -6432,6 +6434,13 @@
     "They are isolated from authoritative profit reports and inventory. Use them only for explicitly reviewed historical analysis.": "正式な利益レポートおよび在庫から分離されています。明示的に確認された履歴分析にのみ使用してください。",
     "This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.": "このインポートは固定された LOG_DB 範囲内で最終的に成功した消費ログを対象とし、正式な会計ファクトには書き込みません。",
     "Unable to create historical estimate import": "履歴推定インポートを作成できません",
-    "Use the quota-per-unit value that was active for the source logs being estimated.": "推定対象のソースログで当時有効だった単位あたりクォータ値を使用してください。"
+    "Use the quota-per-unit value that was active for the source logs being estimated.": "推定対象のソースログで当時有効だった単位あたりクォータ値を使用してください。",
+    "Internal request accounting": "社内リクエストの会計処理",
+    "Record internal costs": "社内コストを記録",
+    "Skip completely": "完全にスキップ",
+    "This policy applies only to requests from accounts excluded from supplier statistics.": "このポリシーは、サプライヤー統計から除外されたアカウントのリクエストにのみ適用されます。",
+    "Internal request data will not be recorded": "社内リクエストのデータは記録されません",
+    "Supplier accounting facts will not be created, so internal procurement costs and inventory consumption cannot be recovered later.": "サプライヤー会計ファクトが作成されないため、社内調達コストと在庫消費を後から復元することはできません。",
+    "Record costs": "コストを記録"
   }
 }

@@ -5947,6 +5947,7 @@
     "Configured inventory": "配置库存",
     "Consumed inventory": "已消耗库存",
     "Contract": "合同",
+    "Contracts without a current procurement rate cannot be bound. Create a rate first.": "没有当前采购费率的合同无法绑定。请先创建费率。",
     "Contract ledger": "合同台账",
     "Contract management is being connected": "正在接入合同管理",
     "Contract rates and inventory adjustments will appear here when the current management implementation is connected.": "当前管理功能接入后，合同费率和库存调整将在此显示。",
@@ -6041,6 +6042,7 @@
     "Contract inactivated": "合约已失效",
     "Contract number": "合同号",
     "Contract updated": "合同已更新",
+    "Rate required": "需要费率",
     "Correction": "更正",
     "Create contract": "创建合同",
     "Create supplier": "创建供应商",
@@ -6432,6 +6434,13 @@
     "They are isolated from authoritative profit reports and inventory. Use them only for explicitly reviewed historical analysis.": "历史估算与权威利润报表和库存隔离，仅用于经过明确审核的历史分析。",
     "This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.": "此导入覆盖冻结 LOG_DB 范围内最终成功的消费日志，不会写入权威会计事实。",
     "Unable to create historical estimate import": "无法创建历史估算导入",
-    "Use the quota-per-unit value that was active for the source logs being estimated.": "使用待估算源日志当时生效的每单位额度值。"
+    "Use the quota-per-unit value that was active for the source logs being estimated.": "使用待估算源日志当时生效的每单位额度值。",
+    "Internal request accounting": "内部请求核算",
+    "Record internal costs": "记录内部成本",
+    "Skip completely": "完全跳过",
+    "This policy applies only to requests from accounts excluded from supplier statistics.": "此策略仅适用于被排除在供应商统计之外的账号请求。",
+    "Internal request data will not be recorded": "不会记录内部请求数据",
+    "Supplier accounting facts will not be created, so internal procurement costs and inventory consumption cannot be recovered later.": "不会创建供应商核算事实，因此之后无法恢复内部采购成本和库存消耗。",
+    "Record costs": "记录成本"
   }
 }

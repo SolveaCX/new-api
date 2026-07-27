@@ -5947,6 +5947,7 @@
     "Configured inventory": "Stock configuré",
     "Consumed inventory": "Stock consommé",
     "Contract": "Contrat",
+    "Contracts without a current procurement rate cannot be bound. Create a rate first.": "Les contrats sans tarif d’approvisionnement actuel ne peuvent pas être liés. Créez d’abord un tarif.",
     "Contract ledger": "Registre des contrats",
     "Contract management is being connected": "La gestion des contrats est en cours d’intégration",
     "Contract rates and inventory adjustments will appear here when the current management implementation is connected.": "Les tarifs contractuels et ajustements de stock apparaîtront ici après l’intégration de la gestion.",
@@ -6041,6 +6042,7 @@
     "Contract inactivated": "Contrat inactivé",
     "Contract number": "Numéro de contrat",
     "Contract updated": "Contrat mis à jour",
+    "Rate required": "Tarif requis",
     "Correction": "Correction",
     "Create contract": "Créer un contrat",
     "Create supplier": "Créer un fournisseur",
@@ -6432,6 +6434,13 @@
     "They are isolated from authoritative profit reports and inventory. Use them only for explicitly reviewed historical analysis.": "Elles sont isolées des rapports de bénéfice officiels et du stock. Utilisez-les uniquement pour une analyse historique explicitement validée.",
     "This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.": "Cette importation couvre les journaux de consommation définitivement réussis dans la plage LOG_DB figée. Elle n’écrit aucun fait comptable officiel.",
     "Unable to create historical estimate import": "Impossible de créer l’importation d’estimation historique",
-    "Use the quota-per-unit value that was active for the source logs being estimated.": "Utilisez la valeur de quota par unité qui était active pour les journaux sources estimés."
+    "Use the quota-per-unit value that was active for the source logs being estimated.": "Utilisez la valeur de quota par unité qui était active pour les journaux sources estimés.",
+    "Internal request accounting": "Comptabilisation des requêtes internes",
+    "Record internal costs": "Enregistrer les coûts internes",
+    "Skip completely": "Ignorer complètement",
+    "This policy applies only to requests from accounts excluded from supplier statistics.": "Cette stratégie s’applique uniquement aux requêtes provenant de comptes exclus des statistiques fournisseurs.",
+    "Internal request data will not be recorded": "Les données des requêtes internes ne seront pas enregistrées",
+    "Supplier accounting facts will not be created, so internal procurement costs and inventory consumption cannot be recovered later.": "Aucun fait de comptabilisation fournisseur ne sera créé ; les coûts d’approvisionnement internes et la consommation de stock ne pourront donc pas être récupérés ultérieurement.",
+    "Record costs": "Enregistrer les coûts"
   }
 }

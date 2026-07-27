@@ -5947,6 +5947,7 @@
     "Configured inventory": "Configured inventory",
     "Consumed inventory": "Consumed inventory",
     "Contract": "Contract",
+    "Contracts without a current procurement rate cannot be bound. Create a rate first.": "Contracts without a current procurement rate cannot be bound. Create a rate first.",
     "Contract ledger": "Contract ledger",
     "Contract management is being connected": "Contract management is being connected",
     "Contract rates and inventory adjustments will appear here when the current management implementation is connected.": "Contract rates and inventory adjustments will appear here when the current management implementation is connected.",
@@ -6041,6 +6042,7 @@
     "Contract inactivated": "Contract inactivated",
     "Contract number": "Contract number",
     "Contract updated": "Contract updated",
+    "Rate required": "Rate required",
     "Correction": "Correction",
     "Create contract": "Create contract",
     "Create supplier": "Create supplier",
@@ -6432,6 +6434,13 @@
     "They are isolated from authoritative profit reports and inventory. Use them only for explicitly reviewed historical analysis.": "They are isolated from authoritative profit reports and inventory. Use them only for explicitly reviewed historical analysis.",
     "This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.": "This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.",
     "Unable to create historical estimate import": "Unable to create historical estimate import",
-    "Use the quota-per-unit value that was active for the source logs being estimated.": "Use the quota-per-unit value that was active for the source logs being estimated."
+    "Use the quota-per-unit value that was active for the source logs being estimated.": "Use the quota-per-unit value that was active for the source logs being estimated.",
+    "Internal request accounting": "Internal request accounting",
+    "Record internal costs": "Record internal costs",
+    "Skip completely": "Skip completely",
+    "This policy applies only to requests from accounts excluded from supplier statistics.": "This policy applies only to requests from accounts excluded from supplier statistics.",
+    "Internal request data will not be recorded": "Internal request data will not be recorded",
+    "Supplier accounting facts will not be created, so internal procurement costs and inventory consumption cannot be recovered later.": "Supplier accounting facts will not be created, so internal procurement costs and inventory consumption cannot be recovered later.",
+    "Record costs": "Record costs"
   }
 }

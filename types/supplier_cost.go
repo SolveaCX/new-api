@@ -37,6 +37,7 @@ const (
 // requests already in flight.
 type SupplierCostSnapshot struct {
 	CacheUnavailable         bool
+	SkipInternalAccounting   bool
 	BindingVersionId         int
 	SupplierId               int
 	ContractId               int

@@ -66,6 +66,8 @@ type SupplierExclusionRuleCreateRequest struct {
 // SupplierChannelBindingRequest is the only JSON surface that can change a
 // channel's supplier contract. The generic Channel DTO remains unchanged.
 type SupplierChannelBindingRequest struct {
-	ContractId         *int `json:"contract_id"`
-	ExpectedContractId *int `json:"expected_contract_id"`
+	ContractId                     *int  `json:"contract_id"`
+	ExpectedContractId             *int  `json:"expected_contract_id"`
+	SkipInternalAccounting         *bool `json:"skip_internal_accounting"`
+	ExpectedSkipInternalAccounting *bool `json:"expected_skip_internal_accounting"`
 }

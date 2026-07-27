@@ -39,8 +39,17 @@ describe('supply-chain management schemas', () => {
       }).success
     ).toBeFalse()
     expect(
-      channelBindingFormSchema.safeParse({ contract_id: 0 }).success
+      channelBindingFormSchema.safeParse({
+        contract_id: 0,
+        skip_internal_accounting: false,
+      }).success
     ).toBeFalse()
+    expect(
+      channelBindingFormSchema.safeParse({
+        contract_id: 1,
+        skip_internal_accounting: true,
+      }).success
+    ).toBeTrue()
   })
 
   test('returns field-level errors for every invalid contract capacity limit', () => {

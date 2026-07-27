@@ -141,17 +141,20 @@ type SupplierContractRateVersion struct {
 // supplier-contract assignment at a point in time. Channel.SupplierContractId
 // remains the current-state projection used by routing and admin queries.
 type SupplierChannelBindingVersion struct {
-	Id                         int   `json:"id" gorm:"index:idx_supplier_channel_binding_history,priority:3"`
-	ChannelId                  int   `json:"channel_id" gorm:"not null;index:idx_supplier_channel_binding_history,priority:1"`
-	PreviousSupplierContractId *int  `json:"previous_supplier_contract_id"`
-	SupplierContractId         *int  `json:"supplier_contract_id"`
-	EffectiveAt                int64 `json:"effective_at" gorm:"not null;index:idx_supplier_channel_binding_history,priority:2"`
-	CreatedBy                  int   `json:"created_by" gorm:"not null;default:0"`
-	CreatedAt                  int64 `json:"created_at" gorm:"autoCreateTime"`
+	Id                             int   `json:"id" gorm:"index:idx_supplier_channel_binding_history,priority:3"`
+	ChannelId                      int   `json:"channel_id" gorm:"not null;index:idx_supplier_channel_binding_history,priority:1"`
+	PreviousSupplierContractId     *int  `json:"previous_supplier_contract_id"`
+	SupplierContractId             *int  `json:"supplier_contract_id"`
+	PreviousSkipInternalAccounting bool  `json:"previous_skip_internal_accounting" gorm:"not null;default:false"`
+	SkipInternalAccounting         bool  `json:"skip_internal_accounting" gorm:"not null;default:false"`
+	EffectiveAt                    int64 `json:"effective_at" gorm:"not null;index:idx_supplier_channel_binding_history,priority:2"`
+	CreatedBy                      int   `json:"created_by" gorm:"not null;default:0"`
+	CreatedAt                      int64 `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (v *SupplierChannelBindingVersion) BeforeCreate(tx *gorm.DB) error {
-	if v.ChannelId <= 0 || supplierContractIdsEqual(v.PreviousSupplierContractId, v.SupplierContractId) {
+	if v.ChannelId <= 0 || (supplierContractIdsEqual(v.PreviousSupplierContractId, v.SupplierContractId) &&
+		v.PreviousSkipInternalAccounting == v.SkipInternalAccounting) {
 		return ErrSupplierInvalidContract
 	}
 	effectiveAt, err := getSupplierDBTimestamp(tx)

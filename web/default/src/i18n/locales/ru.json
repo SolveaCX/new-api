@@ -5947,6 +5947,7 @@
     "Configured inventory": "Настроенный запас",
     "Consumed inventory": "Израсходованный запас",
     "Contract": "Контракт",
+    "Contracts without a current procurement rate cannot be bound. Create a rate first.": "Контракты без текущего закупочного тарифа нельзя привязать. Сначала создайте тариф.",
     "Contract ledger": "Реестр контрактов",
     "Contract management is being connected": "Подключается управление контрактами",
     "Contract rates and inventory adjustments will appear here when the current management implementation is connected.": "Тарифы контрактов и корректировки запасов появятся здесь после подключения управления.",
@@ -6041,6 +6042,7 @@
     "Contract inactivated": "Контракт деактивирован",
     "Contract number": "Номер контракта",
     "Contract updated": "Контракт обновлен",
+    "Rate required": "Требуется тариф",
     "Correction": "Коррекция",
     "Create contract": "Создать контракт",
     "Create supplier": "Создать поставщика",
@@ -6432,6 +6434,13 @@
     "They are isolated from authoritative profit reports and inventory. Use them only for explicitly reviewed historical analysis.": "Они изолированы от официальных отчётов о прибыли и запасов. Используйте их только для явно проверенного исторического анализа.",
     "This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.": "Этот импорт охватывает окончательно успешные журналы потребления в зафиксированном диапазоне LOG_DB и не записывает официальные бухгалтерские факты.",
     "Unable to create historical estimate import": "Не удалось создать импорт исторической оценки",
-    "Use the quota-per-unit value that was active for the source logs being estimated.": "Используйте значение квоты на единицу, действовавшее для оцениваемых исходных журналов."
+    "Use the quota-per-unit value that was active for the source logs being estimated.": "Используйте значение квоты на единицу, действовавшее для оцениваемых исходных журналов.",
+    "Internal request accounting": "Учет внутренних запросов",
+    "Record internal costs": "Учитывать внутренние затраты",
+    "Skip completely": "Полностью пропускать",
+    "This policy applies only to requests from accounts excluded from supplier statistics.": "Эта политика применяется только к запросам от учетных записей, исключенных из статистики поставщиков.",
+    "Internal request data will not be recorded": "Данные внутренних запросов не будут записываться",
+    "Supplier accounting facts will not be created, so internal procurement costs and inventory consumption cannot be recovered later.": "Факты учета поставщиков создаваться не будут, поэтому внутренние закупочные затраты и расход запасов нельзя будет восстановить позднее.",
+    "Record costs": "Учитывать затраты"
   }
 }

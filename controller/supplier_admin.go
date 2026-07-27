@@ -394,11 +394,19 @@ func BindSupplyChainChannel(c *gin.Context) {
 		return
 	}
 	var request dto.SupplierChannelBindingRequest
-	if c.ShouldBindJSON(&request) != nil || request.ContractId == nil || *request.ContractId <= 0 || request.ExpectedContractId == nil || *request.ExpectedContractId < 0 {
+	if c.ShouldBindJSON(&request) != nil || request.ContractId == nil || *request.ContractId <= 0 || request.ExpectedContractId == nil || *request.ExpectedContractId < 0 ||
+		request.SkipInternalAccounting == nil || request.ExpectedSkipInternalAccounting == nil {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 		return
 	}
-	if err := model.SetChannelSupplierContractCASForActor(channelID, *request.ExpectedContractId, request.ContractId, c.GetInt("id")); err != nil {
+	if err := model.SetChannelSupplierContractPolicyCASForActor(
+		channelID,
+		*request.ExpectedContractId,
+		*request.ExpectedSkipInternalAccounting,
+		request.ContractId,
+		*request.SkipInternalAccounting,
+		c.GetInt("id"),
+	); err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
@@ -419,7 +427,11 @@ func UnbindSupplyChainChannel(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := model.SetChannelSupplierContractCASForActor(channelID, expectedContractID, nil, c.GetInt("id")); err != nil {
+	expectedSkipInternalAccounting, ok := supplyChainRequiredBoolQuery(c, "expected_skip_internal_accounting")
+	if !ok {
+		return
+	}
+	if err := model.SetChannelSupplierContractPolicyCASForActor(channelID, expectedContractID, expectedSkipInternalAccounting, nil, false, c.GetInt("id")); err != nil {
 		supplyChainModelError(c, err)
 		return
 	}
@@ -444,6 +456,20 @@ func supplyChainOptionalBoolQuery(c *gin.Context, name string) (bool, bool) {
 	raw := strings.TrimSpace(c.Query(name))
 	if raw == "" {
 		return false, true
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
+		return false, false
+	}
+	return value, true
+}
+
+func supplyChainRequiredBoolQuery(c *gin.Context, name string) (bool, bool) {
+	raw := strings.TrimSpace(c.Query(name))
+	if raw == "" {
+		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
+		return false, false
 	}
 	value, err := strconv.ParseBool(raw)
 	if err != nil {
@@ -502,11 +528,13 @@ func supplyChainModelError(c *gin.Context, err error) {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 	case errors.Is(err, model.ErrSupplierInactive), errors.Is(err, model.ErrSupplierContractInactive),
 		errors.Is(err, model.ErrSupplierContractBound), errors.Is(err, model.ErrSupplierHasActiveContracts),
-		errors.Is(err, model.ErrSupplierHasChannelBindings), errors.Is(err, model.ErrSupplierCurrentRateRequired),
+		errors.Is(err, model.ErrSupplierHasChannelBindings),
 		errors.Is(err, model.ErrSupplierBindingChanged), errors.Is(err, model.ErrSupplierIdempotencyConflict),
 		errors.Is(err, model.ErrSupplierVersionConflict),
 		errors.Is(err, model.ErrSupplierImmutableField), errors.Is(err, model.ErrSupplierAppendOnly), errors.Is(err, gorm.ErrDuplicatedKey):
 		supplyChainError(c, http.StatusConflict, i18n.MsgSupplyChainConflict)
+	case errors.Is(err, model.ErrSupplierCurrentRateRequired):
+		supplyChainError(c, http.StatusConflict, i18n.MsgSupplyChainCurrentRateRequired)
 	default:
 		logger.LogError(c.Request.Context(), fmt.Sprintf("supplier admin request failed: %v", err))
 		supplyChainError(c, http.StatusInternalServerError, i18n.MsgSupplyChainInternalError)

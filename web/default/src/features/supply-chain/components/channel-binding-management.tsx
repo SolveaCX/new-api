@@ -7,12 +7,14 @@ published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 import { useEffect, useState } from 'react'
+import { AxiosError } from 'axios'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,6 +28,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -61,6 +64,14 @@ import {
 } from './management-common'
 import { ProgressiveList } from './progressive-list'
 
+function bindingErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof AxiosError) {
+    const message = error.response?.data?.message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return fallback
+}
+
 function BindingDialog(props: { binding: SupplierChannelBinding }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -70,25 +81,46 @@ function BindingDialog(props: { binding: SupplierChannelBinding }) {
   )
   const form = useForm<ChannelBindingFormValues>({
     resolver: zodResolver(channelBindingFormSchema),
-    defaultValues: { contract_id: props.binding.supplier_contract_id ?? 0 },
+    defaultValues: {
+      contract_id: props.binding.supplier_contract_id ?? 0,
+      skip_internal_accounting:
+        props.binding.skip_internal_accounting ?? false,
+    },
   })
   const mutation = useSupplyChainAdminMutation<ChannelBindingFormValues>({
     mutationFn: (values) =>
       bindChannel(props.binding.channel_id, {
         contract_id: values.contract_id,
         expected_contract_id: props.binding.supplier_contract_id ?? 0,
+        skip_internal_accounting: values.skip_internal_accounting,
+        expected_skip_internal_accounting:
+          props.binding.skip_internal_accounting ?? false,
       }),
     invalidate: [
       supplyChainQueryKeys.channelBindings.all(),
       supplyChainQueryKeys.contracts.all(),
       supplyChainQueryKeys.suppliers.all(),
     ],
+    onError: (error) =>
+      toast.error(
+        bindingErrorMessage(error, t('Unable to update channel binding'))
+      ),
   })
 
   useEffect(() => {
-    if (open)
-      form.reset({ contract_id: props.binding.supplier_contract_id ?? 0 })
-  }, [form, open, props.binding.supplier_contract_id])
+    if (open) {
+      form.reset({
+        contract_id: props.binding.supplier_contract_id ?? 0,
+        skip_internal_accounting:
+          props.binding.skip_internal_accounting ?? false,
+      })
+    }
+  }, [
+    form,
+    open,
+    props.binding.skip_internal_accounting,
+    props.binding.supplier_contract_id,
+  ])
 
   function finishBinding(): void {
     toast.success(t('Channel binding updated'))
@@ -100,7 +132,7 @@ function BindingDialog(props: { binding: SupplierChannelBinding }) {
       await mutation.mutateAsync(values)
       finishBinding()
     } catch {
-      toast.error(t('Unable to update channel binding'))
+      return
     }
   }
 
@@ -152,19 +184,91 @@ function BindingDialog(props: { binding: SupplierChannelBinding }) {
                     {t('Select contract')}
                   </NativeSelectOption>
                   {contracts.data?.items.map((contract) => (
-                    <NativeSelectOption key={contract.id} value={contract.id}>
+                    <NativeSelectOption
+                      key={contract.id}
+                      value={contract.id}
+                      disabled={contract.current_rate_version_id === null}
+                    >
                       {contract.supplier_name} · {contract.name} ·{' '}
                       {contract.contract_no}
+                      {contract.current_rate_version_id === null
+                        ? ` · ${t('Rate required')}`
+                        : null}
                     </NativeSelectOption>
                   ))}
                 </NativeSelect>
               </ProgressiveList>
+              <FieldDescription>
+                {t(
+                  'Contracts without a current procurement rate cannot be bound. Create a rate first.'
+                )}
+              </FieldDescription>
               <FieldError>
                 {form.formState.errors.contract_id
                   ? t(form.formState.errors.contract_id.message ?? '')
                   : null}
               </FieldError>
             </Field>
+            <Field
+              data-invalid={Boolean(
+                form.formState.errors.skip_internal_accounting
+              )}
+            >
+              <FieldLabel
+                htmlFor={`binding-internal-policy-${props.binding.channel_id}`}
+              >
+                {t('Internal request accounting')}
+              </FieldLabel>
+              <NativeSelect
+                id={`binding-internal-policy-${props.binding.channel_id}`}
+                className='w-full'
+                aria-invalid={Boolean(
+                  form.formState.errors.skip_internal_accounting
+                )}
+                value={
+                  form.watch('skip_internal_accounting') ? 'skip' : 'record'
+                }
+                onChange={(event) =>
+                  form.setValue(
+                    'skip_internal_accounting',
+                    event.target.value === 'skip',
+                    { shouldValidate: true }
+                  )
+                }
+              >
+                <NativeSelectOption value='record'>
+                  {t('Record internal costs')}
+                </NativeSelectOption>
+                <NativeSelectOption value='skip'>
+                  {t('Skip completely')}
+                </NativeSelectOption>
+              </NativeSelect>
+              <FieldDescription>
+                {t(
+                  'This policy applies only to requests from accounts excluded from supplier statistics.'
+                )}
+              </FieldDescription>
+              <FieldError>
+                {form.formState.errors.skip_internal_accounting
+                  ? t(
+                      form.formState.errors.skip_internal_accounting.message ??
+                        ''
+                    )
+                  : null}
+              </FieldError>
+            </Field>
+            {form.watch('skip_internal_accounting') ? (
+              <Alert variant='destructive'>
+                <AlertTitle>
+                  {t('Internal request data will not be recorded')}
+                </AlertTitle>
+                <AlertDescription>
+                  {t(
+                    'Supplier accounting facts will not be created, so internal procurement costs and inventory consumption cannot be recovered later.'
+                  )}
+                </AlertDescription>
+              </Alert>
+            ) : null}
           </FieldGroup>
         </form>
         <DialogFooter showCloseButton>
@@ -188,6 +292,8 @@ function UnbindAction(props: { binding: SupplierChannelBinding }) {
     mutationFn: () =>
       unbindChannel(props.binding.channel_id, {
         expectedContractId: props.binding.supplier_contract_id ?? 0,
+        expectedSkipInternalAccounting:
+          props.binding.skip_internal_accounting ?? false,
       }),
     invalidate: [
       supplyChainQueryKeys.channelBindings.all(),
@@ -291,6 +397,7 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
                 <TableHead>{t('Supplier')}</TableHead>
                 <TableHead>{t('Contract')}</TableHead>
                 <TableHead>{t('Procurement multiplier')}</TableHead>
+                <TableHead>{t('Internal requests')}</TableHead>
                 <TableHead className='text-right'>{t('Actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -331,6 +438,23 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
                     {formatPpmPercent(
                       binding.current_procurement_multiplier_ppm,
                       t('Unknown')
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {binding.supplier_contract_id ? (
+                      <Badge
+                        variant={
+                          binding.skip_internal_accounting
+                            ? 'destructive'
+                            : 'secondary'
+                        }
+                      >
+                        {binding.skip_internal_accounting
+                          ? t('Skip completely')
+                          : t('Record costs')}
+                      </Badge>
+                    ) : (
+                      '—'
                     )}
                   </TableCell>
                   <TableCell>
