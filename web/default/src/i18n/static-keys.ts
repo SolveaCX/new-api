@@ -683,8 +683,8 @@ export const STATIC_I18N_KEYS = [
   'Enter a non-zero USD amount with up to 6 decimal places',
 
   // Supply-chain enum labels rendered through typed label-key maps
-  'Exclude',
-  'Include',
+  'Marked internal',
+  'Restored as business',
   'Initial',
   'Replenishment',
   'Correction',
