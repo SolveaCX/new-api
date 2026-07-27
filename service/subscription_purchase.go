@@ -1297,33 +1297,8 @@ func validateSubscriptionPurchaseQuoteMatchesPlan(plan model.SubscriptionPlan, c
 }
 
 func applyRecallFirstMonthDiscount(ctx context.Context, userID int, claim string, plan model.SubscriptionPlan, quote SubscriptionPurchaseQuote) (SubscriptionPurchaseQuote, error) {
-	claim = strings.TrimSpace(claim)
+	RecordRecallClaimAttribution(ctx, userID, claim)
 	if !operation_setting.IsRecallCampaignEnabled() || strings.TrimSpace(plan.StripePriceId) == "" {
-		return quote, nil
-	}
-	if claim != "" {
-		discount, err := GetRecallRuntime().Claims.BuildFirstMonthPurchaseDiscount(
-			ctx,
-			userID,
-			claim,
-			RecallPurchaseKindSubscription,
-			strings.TrimSpace(plan.StripePriceId),
-			quote.Currency,
-			quote.UnitAmountMinor,
-		)
-		if err != nil {
-			return SubscriptionPurchaseQuote{}, err
-		}
-		if discount == nil || discount.DiscountAmountMinor <= 0 {
-			return quote, nil
-		}
-		quote.DiscountAmountMinor = discount.DiscountAmountMinor
-		quote.DiscountAmount = subscriptionPurchaseAmountFromMinor(discount.DiscountAmountMinor, quote.Currency)
-		quote.PaymentAmountMinor = quote.OriginalTotalAmountMinor - discount.DiscountAmountMinor
-		quote.Total = subscriptionPurchaseAmountFromMinor(quote.PaymentAmountMinor, quote.Currency)
-		quote.RecallCampaignID = discount.CampaignID
-		quote.RecallRecipientID = discount.RecipientID
-		quote.RecallPromotionCodeID = discount.PromotionCodeID
 		return quote, nil
 	}
 	offer, err := GetRecallRuntime().Claims.ResolveBestRecallOffer(
