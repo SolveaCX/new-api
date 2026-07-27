@@ -42,6 +42,7 @@ import {
   requiresLocalCurrencyQuote,
   requiresSignedCheckoutQuote,
 } from '../lib/subscription-plan-lifecycle'
+import type { RecallPriceDiscount } from '../lib/recall-claim'
 
 type PlanPurchaseDialogProps = {
   open: boolean
@@ -57,6 +58,7 @@ type PlanPurchaseDialogProps = {
   projectedRemainingDays?: number
   refundableNotStartedValue?: number
   isQuoteLoading?: boolean
+  recallDiscount?: RecallPriceDiscount | null
   onOpenChange: (open: boolean) => void
   onConfirm: (choice: FlexiblePaymentChoice, months: number) => void
   onQuoteRequest?: (choice: FlexiblePaymentChoice, months: number) => void
@@ -190,6 +192,19 @@ export function PlanPurchaseDialogContent(props: PlanPurchaseDialogContentProps)
     requiresLocalCurrencyQuote(selectedChoice) && selectedQuoteReadinessReason
     ? '—'
     : formatPlanPrice(totalPrice, selectedQuote?.currency)
+  const stripeRecallDiscount =
+    selectedChoice === 'stripe_recurring' ? props.recallDiscount : null
+  const quoteDiscount =
+    selectedChoice !== 'stripe_recurring' &&
+    selectedQuote &&
+    Number(selectedQuote.discount_amount || 0) > 0 &&
+    Number(selectedQuote.original_total || 0) > Number(selectedQuote.total)
+      ? {
+          originalTotal: Number(selectedQuote.original_total),
+          total: Number(selectedQuote.total),
+          currency: selectedQuote.currency,
+        }
+      : null
 
   return (
     <>
@@ -268,9 +283,38 @@ export function PlanPurchaseDialogContent(props: PlanPurchaseDialogContentProps)
         <div className='rounded-lg border p-3 text-sm'>
           <div className='flex items-center justify-between gap-3'>
             <span className='text-muted-foreground'>{t('Total price')}</span>
-            <span className='font-semibold tabular-nums'>
-              {totalPriceLabel}
-            </span>
+            {stripeRecallDiscount ? (
+              <span className='flex items-baseline gap-2 tabular-nums'>
+                <span className='text-muted-foreground text-xs line-through'>
+                  {formatPlanPrice(
+                    stripeRecallDiscount.originalAmount,
+                    stripeRecallDiscount.currency
+                  )}
+                </span>
+                <span className='font-semibold'>
+                  {formatPlanPrice(
+                    stripeRecallDiscount.discountedAmount,
+                    stripeRecallDiscount.currency
+                  )}
+                </span>
+              </span>
+            ) : quoteDiscount ? (
+              <span className='flex items-baseline gap-2 tabular-nums'>
+                <span className='text-muted-foreground text-xs line-through'>
+                  {formatPlanPrice(
+                    quoteDiscount.originalTotal,
+                    quoteDiscount.currency
+                  )}
+                </span>
+                <span className='font-semibold'>
+                  {formatPlanPrice(quoteDiscount.total, quoteDiscount.currency)}
+                </span>
+              </span>
+            ) : (
+              <span className='font-semibold tabular-nums'>
+                {totalPriceLabel}
+              </span>
+            )}
           </div>
           <div className='mt-2 grid gap-1 text-xs'>
             {selectedQuote ? (

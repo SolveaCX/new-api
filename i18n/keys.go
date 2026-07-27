@@ -73,6 +73,15 @@ const (
 	MsgCliAuthorizationTokenCreateFail = "cli.authorization_token_create_failed"
 )
 
+// Temporary media messages
+const (
+	MsgTempMediaFileRequired     = "temp_media.file_required"
+	MsgTempMediaImageTooLarge    = "temp_media.image_too_large"
+	MsgTempMediaUnsupportedImage = "temp_media.unsupported_image"
+	MsgTempMediaNotConfigured    = "temp_media.not_configured"
+	MsgTempMediaUploadFailed     = "temp_media.upload_failed"
+)
+
 // Redemption related messages
 const (
 	MsgRedemptionNameLength        = "redemption.name_length"
@@ -171,17 +180,18 @@ const (
 
 // Payment related messages
 const (
-	MsgPaymentNotConfigured      = "payment.not_configured"
-	MsgPaymentMethodNotExists    = "payment.method_not_exists"
-	MsgPaymentCallbackError      = "payment.callback_error"
-	MsgPaymentCreateFailed       = "payment.create_failed"
-	MsgPaymentStartFailed        = "payment.start_failed"
-	MsgPaymentAmountTooLow       = "payment.amount_too_low"
-	MsgPaymentStripeNotConfig    = "payment.stripe_not_configured"
-	MsgPaymentWebhookNotConfig   = "payment.webhook_not_configured"
-	MsgPaymentPriceIdNotConfig   = "payment.price_id_not_configured"
-	MsgPaymentCreemNotConfig     = "payment.creem_not_configured"
-	MsgPaymentComplianceRequired = "payment.compliance_required"
+	MsgPaymentNotConfigured          = "payment.not_configured"
+	MsgPaymentMethodNotExists        = "payment.method_not_exists"
+	MsgPaymentCallbackError          = "payment.callback_error"
+	MsgPaymentCreateFailed           = "payment.create_failed"
+	MsgPaymentStartFailed            = "payment.start_failed"
+	MsgPaymentAmountTooLow           = "payment.amount_too_low"
+	MsgPaymentStripeNotConfig        = "payment.stripe_not_configured"
+	MsgPaymentWebhookNotConfig       = "payment.webhook_not_configured"
+	MsgPaymentPriceIdNotConfig       = "payment.price_id_not_configured"
+	MsgPaymentCreemNotConfig         = "payment.creem_not_configured"
+	MsgPaymentComplianceRequired     = "payment.compliance_required"
+	MsgPaymentRecallClaimUnavailable = "payment.recall_claim_unavailable"
 )
 
 // Topup related messages

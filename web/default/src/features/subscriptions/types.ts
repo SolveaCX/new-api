@@ -139,6 +139,7 @@ export interface PlanPayload {
 export interface SubscriptionPayRequest {
   plan_id: number
   payment_method?: string
+  recall_claim?: string
 }
 
 export interface SubscriptionPayResponse {
@@ -185,6 +186,7 @@ export interface FlexiblePurchaseRequest {
   request_id: string
   quote_id?: string
   order_id?: string
+  recall_claim?: string
   ui_mode?: 'embedded'
 }
 
@@ -208,6 +210,8 @@ export interface SubscriptionPaymentQuote {
   months: number
   unit_price: number
   total: number
+  original_total?: number
+  discount_amount?: number
   quote_id?: string
   order_id?: string
   expires_at?: number

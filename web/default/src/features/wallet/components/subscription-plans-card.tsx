@@ -33,6 +33,7 @@ import {
   purchaseSubscriptionPlanFlexible,
   quoteSubscriptionPlanFlexible,
 } from '@/features/subscriptions/api'
+import { useRecallClaimContext } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import {
   type FlexiblePaymentChoice,
   type FlexiblePurchaseResponse,
@@ -49,6 +50,11 @@ import {
   mergeFlexibleQuoteProjection,
   normalizeSelfSubscriptionData,
 } from '../lib/subscription-plan-lifecycle'
+import {
+  getRecallPriceDiscount,
+  isRecallPriceEligible,
+  type RecallPriceDiscount,
+} from '../lib/recall-claim'
 import type { TopupInfo } from '../types'
 import type {
   StripeCheckoutOpenResult,
@@ -99,6 +105,18 @@ function getPlanDisplayOrder(title: string): number {
 
 function formatPlanPrice(amount: number): string {
   return `$${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(2)}`
+}
+
+function getRecallDiscountLabel(
+  discount: RecallPriceDiscount,
+  percentOff: number,
+  t: Translate
+): string {
+  if (discount.type === 'percent') return `${percentOff}% OFF`
+  return t('{{amount}} {{currency}} off', {
+    amount: discount.discountAmount.toFixed(2),
+    currency: discount.currency,
+  }).toUpperCase()
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
@@ -203,6 +221,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     requestId: string
   } | null>(null)
   const [quoteLoading, setQuoteLoading] = useState(false)
+  const recallClaim = useRecallClaimContext()
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -312,6 +331,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         purchaseProjection?.payment_quotes ?? selfData.payment_quotes,
         months
       )
+      const eligibleRecallClaim =
+        recallClaim.claim &&
+        isRecallPriceEligible(
+          recallClaim.view,
+          purchaseTarget.plan.plan.id,
+          'subscription'
+        )
+          ? recallClaim.claim
+          : undefined
       const res = await purchaseSubscriptionPlanFlexible({
         ...buildFlexiblePurchaseRequest({
           planId: purchaseTarget.plan.plan.id,
@@ -320,6 +348,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
           requestId: purchaseTarget.requestId,
           quoteId: selectedQuote?.quote_id,
           orderId: selectedQuote?.order_id,
+          recallClaim: eligibleRecallClaim,
         }),
       })
       if (!res.success || !res.data) {
@@ -366,6 +395,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
       paymentChoice,
       months,
       requestId: purchaseTarget.requestId,
+      recallClaim:
+        recallClaim.claim &&
+        isRecallPriceEligible(
+          recallClaim.view,
+          purchaseTarget.plan.plan.id,
+          'subscription'
+        )
+          ? recallClaim.claim
+          : undefined,
     })
     const sequence = quoteRequestSequenceRef.current + 1
     quoteRequestSequenceRef.current = sequence
@@ -450,6 +488,13 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
             {orderedPlans.map((item) => {
               const plan = item.plan
               const price = formatPlanPrice(Number(plan.price_amount || 0))
+              const recallDiscount = getRecallPriceDiscount(
+                recallClaim.view,
+                plan.id,
+                'subscription',
+                Number(plan.price_amount || 0),
+                plan.currency || 'USD'
+              )
               const isRecommended =
                 plan.title.trim().toLowerCase() === 'go' &&
                 orderedPlans.length > 1
@@ -460,6 +505,13 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 currentPlanId,
                 relation: item.relation,
               })
+              // A live Stripe recurring subscription renews itself — showing
+              // "Repurchase now" on the buyer's own plan reads like the plan is
+              // inactive. Label it as the current subscription instead.
+              // One-time purchases (Alipay/Pix/balance) keep the repurchase CTA.
+              const isCurrentRecurring =
+                action === 'repurchase' &&
+                selfData.contract?.payment_mode === 'stripe_recurring'
               const entitlements = getPlanEntitlements(plan, t)
 
               return (
@@ -484,18 +536,36 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                           </p>
                         ) : null}
                       </div>
-                      {isRecommended ? (
-                        <span className='inline-flex shrink-0 items-center gap-1 rounded-full bg-[#f0ebfa] px-2 py-1 text-[11px] font-semibold text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'>
-                          <Sparkles className='h-3 w-3' />
-                          {t('Recommended')}
-                        </span>
-                      ) : null}
+                      <div className='flex shrink-0 flex-col items-end gap-1'>
+                        {recallDiscount ? (
+                          <span className='inline-flex rounded-full bg-[#dcfce7] px-2 py-1 text-[11px] font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'>
+                            {getRecallDiscountLabel(
+                              recallDiscount,
+                              Number(recallClaim.view?.discount.percent_off || 0),
+                              t
+                            )}
+                          </span>
+                        ) : null}
+                        {isRecommended ? (
+                          <span className='inline-flex items-center gap-1 rounded-full bg-[#f0ebfa] px-2 py-1 text-[11px] font-semibold text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'>
+                            <Sparkles className='h-3 w-3' />
+                            {t('Recommended')}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div className='mt-6 flex items-end gap-2'>
                       <span className='text-5xl font-semibold tracking-tight tabular-nums'>
-                        {price}
+                        {recallDiscount
+                          ? formatPlanPrice(recallDiscount.discountedAmount)
+                          : price}
                       </span>
+                      {recallDiscount ? (
+                        <span className='text-muted-foreground mb-2 text-sm line-through tabular-nums'>
+                          {price}
+                        </span>
+                      ) : null}
                       <span className='text-muted-foreground mb-1 text-sm'>
                         {t('per month')}
                       </span>
@@ -521,6 +591,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                           'bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black dark:hover:bg-[#ddd6fe]'
                       )}
                       variant={action === 'switch' ? 'outline' : 'default'}
+                      disabled={isCurrentRecurring}
                       onClick={() => {
                         setPurchaseProjection(null)
                         latestQuoteRequestRef.current = null
@@ -531,7 +602,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         })
                       }}
                     >
-                      {getActionLabel(action, t)}
+                      {isCurrentRecurring
+                        ? t('Current subscription')
+                        : getActionLabel(action, t)}
                     </Button>
                   </CardContent>
                 </Card>
@@ -566,6 +639,17 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         projectedRemainingDays={purchaseProjection?.remaining_days}
         paymentQuotes={
           purchaseProjection?.payment_quotes ?? selfData.payment_quotes
+        }
+        recallDiscount={
+          purchaseTarget
+            ? getRecallPriceDiscount(
+                recallClaim.view,
+                purchaseTarget.plan.plan.id,
+                'subscription',
+                Number(purchaseTarget.plan.plan.price_amount || 0),
+                purchaseTarget.plan.plan.currency || 'USD'
+              )
+            : null
         }
         onConfirm={handleConfirmPurchase}
         onQuoteRequest={handleQuoteRequest}
