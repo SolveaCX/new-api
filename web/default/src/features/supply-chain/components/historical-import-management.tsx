@@ -5,6 +5,12 @@ import { PlusSignIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,7 +45,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { createHistoricalImport } from '../api'
+import { createHistoricalImport, listAllBoundChannelBindings } from '../api'
 import type { SupplyChainManagementProps } from '../contracts'
 import { useIdempotentIntent } from '../hooks/use-idempotent-intent'
 import { useSupplyChainAdminMutation } from '../hooks/use-supply-chain-admin'
@@ -47,11 +53,15 @@ import {
   useCompletedHistoricalSeries,
   useHistoricalImportList,
 } from '../hooks/use-supply-chain-historical-imports'
-import { formatMicroUsd } from '../lib/format'
+import { formatMicroUsd, formatPpmPercent } from '../lib/format'
 import {
   historicalImportProgress,
   rollupHistoricalSeries,
 } from '../lib/historical-import'
+import {
+  buildHistoricalMappings,
+  parseHistoricalMappings,
+} from '../lib/historical-mapping'
 import {
   historicalImportFormSchema,
   type HistoricalImportFormValues,
@@ -59,6 +69,8 @@ import {
 import { formatTime } from '../lib/time'
 import { supplyChainQueryKeys } from '../query-keys'
 import type {
+  SupplierChannelBinding,
+  SupplierHistoricalChannelMapping,
   SupplierHistoricalImport,
   SupplierHistoricalImportCommand,
 } from '../types'
@@ -109,9 +121,110 @@ function HistoricalStatusBadge(props: {
   )
 }
 
+function HistoricalMappingTable(props: {
+  mappings: SupplierHistoricalChannelMapping[]
+  bindings: SupplierChannelBinding[]
+}) {
+  const { t } = useTranslation()
+  const bindingByChannel = useMemo(
+    () =>
+      new Map(props.bindings.map((binding) => [binding.channel_id, binding])),
+    [props.bindings]
+  )
+
+  if (props.mappings.length === 0) {
+    return (
+      <Alert>
+        <AlertTitle>{t('No channel mappings configured')}</AlertTitle>
+        <AlertDescription>
+          {t(
+            'Unmapped channels are still counted, but procurement cost and gross profit remain unknown.'
+          )}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  return (
+    <div className='overflow-hidden rounded-xl border'>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('Channel')}</TableHead>
+            <TableHead>{t('Supplier')}</TableHead>
+            <TableHead>{t('Contract')}</TableHead>
+            <TableHead>{t('Rate version')}</TableHead>
+            <TableHead>{t('Procurement rate')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {props.mappings.map((mapping) => {
+            const source = bindingByChannel.get(mapping.channel_id)
+            const binding =
+              source?.supplier_id === mapping.supplier_id &&
+              source.supplier_contract_id === mapping.contract_id &&
+              source.current_rate_version_id === mapping.rate_version_id &&
+              source.current_procurement_multiplier_ppm ===
+                mapping.procurement_multiplier_ppm
+                ? source
+                : undefined
+            return (
+              <TableRow key={mapping.channel_id}>
+                <TableCell>
+                  <div className='font-medium'>
+                    {binding?.channel_name ?? `#${mapping.channel_id}`}
+                  </div>
+                  {binding ? (
+                    <div className='text-muted-foreground'>
+                      #{mapping.channel_id}
+                    </div>
+                  ) : null}
+                </TableCell>
+                <TableCell>
+                  <div className='font-medium'>
+                    {binding?.supplier_name ?? `#${mapping.supplier_id}`}
+                  </div>
+                  {binding ? (
+                    <div className='text-muted-foreground'>
+                      #{mapping.supplier_id}
+                    </div>
+                  ) : null}
+                </TableCell>
+                <TableCell>
+                  <div className='font-medium'>
+                    {binding?.contract_name ?? `#${mapping.contract_id}`}
+                  </div>
+                  {binding ? (
+                    <div className='text-muted-foreground'>
+                      {binding.contract_no
+                        ? `${binding.contract_no} · #${mapping.contract_id}`
+                        : `#${mapping.contract_id}`}
+                    </div>
+                  ) : null}
+                </TableCell>
+                <TableCell>#{mapping.rate_version_id}</TableCell>
+                <TableCell>
+                  {formatPpmPercent(
+                    mapping.procurement_multiplier_ppm,
+                    t('Unknown')
+                  )}
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
 function HistoricalImportForm() {
   const { t } = useTranslation()
   const intent = useIdempotentIntent()
+  const [mappingSources, setMappingSources] = useState<
+    SupplierChannelBinding[]
+  >([])
+  const [generatingMappings, setGeneratingMappings] = useState(false)
   const form = useForm<HistoricalImportFormValues>({
     resolver: zodResolver(historicalImportFormSchema),
     defaultValues: DEFAULT_FORM,
@@ -124,6 +237,37 @@ function HistoricalImportForm() {
       createHistoricalImport({ data: command, idempotencyKey: key }),
     invalidate: [supplyChainQueryKeys.historicalImports.all()],
   })
+  const mappingsJSON = form.watch('channel_mappings_json')
+  const mappings = useMemo(
+    () => parseHistoricalMappings(mappingsJSON),
+    [mappingsJSON]
+  )
+
+  async function generateMappings(): Promise<void> {
+    setGeneratingMappings(true)
+    try {
+      const bindings = await listAllBoundChannelBindings()
+      const generated = buildHistoricalMappings(bindings)
+      setMappingSources(bindings)
+      form.setValue(
+        'channel_mappings_json',
+        JSON.stringify(generated, null, 2),
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        }
+      )
+      toast.success(
+        t('Generated {{count}} channel mappings from current bindings', {
+          count: generated.length,
+        })
+      )
+    } catch {
+      toast.error(t('Unable to load current channel bindings'))
+    } finally {
+      setGeneratingMappings(false)
+    }
+  }
 
   async function submit(values: HistoricalImportFormValues): Promise<void> {
     const command: SupplierHistoricalImportCommand = {
@@ -244,22 +388,115 @@ function HistoricalImportForm() {
                 form.formState.errors.channel_mappings_json
               )}
             >
-              <FieldLabel htmlFor='historical-channel-mappings'>
-                {t('Channel mappings (JSON)')}
-              </FieldLabel>
-              <Textarea
-                id='historical-channel-mappings'
-                rows={7}
-                aria-invalid={Boolean(
-                  form.formState.errors.channel_mappings_json
-                )}
-                {...form.register('channel_mappings_json')}
-              />
+              <div className='flex flex-wrap items-center justify-between gap-2'>
+                <FieldLabel htmlFor='historical-channel-mappings'>
+                  {t('Channel mappings')}
+                </FieldLabel>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant='outline'
+                  disabled={generatingMappings}
+                  onClick={() => void generateMappings()}
+                >
+                  {generatingMappings ? (
+                    <Spinner data-icon='inline-start' />
+                  ) : null}
+                  {t('Generate from current channel bindings')}
+                </Button>
+              </div>
               <FieldDescription>
                 {t(
-                  'Each row must freeze channel_id, supplier_id, contract_id, rate_version_id, and procurement_multiplier_ppm.'
+                  'Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.'
                 )}
               </FieldDescription>
+              <HistoricalMappingTable
+                mappings={mappings}
+                bindings={mappingSources}
+              />
+              <Accordion className='rounded-lg border px-3'>
+                <AccordionItem value='field-reference'>
+                  <AccordionTrigger>
+                    {t('Field descriptions and data sources')}
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <dl className='text-muted-foreground flex flex-col gap-3'>
+                      <div>
+                        <dt className='text-foreground font-medium'>
+                          <code>channel_id</code>
+                        </dt>
+                        <dd>
+                          {t(
+                            'Channel ID from the current channel binding list and historical consume logs.'
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className='text-foreground font-medium'>
+                          <code>supplier_id</code>
+                        </dt>
+                        <dd>
+                          {t('Supplier ID attached to the channel binding.')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className='text-foreground font-medium'>
+                          <code>contract_id</code>
+                        </dt>
+                        <dd>
+                          {t(
+                            'Contract ID from supplier_contract_id on the channel binding.'
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className='text-foreground font-medium'>
+                          <code>rate_version_id</code>
+                        </dt>
+                        <dd>
+                          {t(
+                            'Procurement rate version ID. The generator uses current_rate_version_id; historical versions come from contract history.'
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className='text-foreground font-medium'>
+                          <code>procurement_multiplier_ppm</code>
+                        </dt>
+                        <dd>
+                          {t(
+                            'Procurement multiplier in parts per million. For example, 600000 means 60%.'
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </AccordionContent>
+                </AccordionItem>
+                <AccordionItem value='advanced-json'>
+                  <AccordionTrigger>
+                    {t('Advanced JSON editor')}
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <Textarea
+                      id='historical-channel-mappings'
+                      rows={10}
+                      aria-label={t('Channel mappings JSON')}
+                      aria-invalid={Boolean(
+                        form.formState.errors.channel_mappings_json
+                      )}
+                      {...form.register('channel_mappings_json')}
+                    />
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+              <Alert>
+                <AlertTitle>{t('Check historical rate changes')}</AlertTitle>
+                <AlertDescription>
+                  {t(
+                    'The generator uses current bindings. If a binding or procurement rate changed during the selected period, split the import at its effective time and select the corresponding historical rate version.'
+                  )}
+                </AlertDescription>
+              </Alert>
               <FieldError>
                 {form.formState.errors.channel_mappings_json
                   ? t(form.formState.errors.channel_mappings_json.message ?? '')

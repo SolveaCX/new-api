@@ -6678,6 +6678,23 @@
     "The global guard is off. Channel bindings cannot enable complete skip.": "The global guard is off. Channel bindings cannot enable complete skip.",
     "This switch is a manual deployment confirmation, not an automatic Router health check.": "This switch is a manual deployment confirmation, not an automatic Router health check.",
     "Unable to load accounting policy": "Unable to load accounting policy",
-    "Unable to update accounting policy": "Unable to update accounting policy"
+    "Unable to update accounting policy": "Unable to update accounting policy",
+    "No channel mappings configured": "No channel mappings configured",
+    "Unmapped channels are still counted, but procurement cost and gross profit remain unknown.": "Unmapped channels are still counted, but procurement cost and gross profit remain unknown.",
+    "Channel mappings": "Channel mappings",
+    "Generate from current channel bindings": "Generate from current channel bindings",
+    "Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.": "Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.",
+    "Generated {{count}} channel mappings from current bindings": "Generated {{count}} channel mappings from current bindings",
+    "Unable to load current channel bindings": "Unable to load current channel bindings",
+    "Field descriptions and data sources": "Field descriptions and data sources",
+    "Channel ID from the current channel binding list and historical consume logs.": "Channel ID from the current channel binding list and historical consume logs.",
+    "Supplier ID attached to the channel binding.": "Supplier ID attached to the channel binding.",
+    "Contract ID from supplier_contract_id on the channel binding.": "Contract ID from supplier_contract_id on the channel binding.",
+    "Procurement rate version ID. The generator uses current_rate_version_id; historical versions come from contract history.": "Procurement rate version ID. The generator uses current_rate_version_id; historical versions come from contract history.",
+    "Procurement multiplier in parts per million. For example, 600000 means 60%.": "Procurement multiplier in parts per million. For example, 600000 means 60%.",
+    "Advanced JSON editor": "Advanced JSON editor",
+    "Channel mappings JSON": "Channel mappings JSON",
+    "Check historical rate changes": "Check historical rate changes",
+    "The generator uses current bindings. If a binding or procurement rate changed during the selected period, split the import at its effective time and select the corresponding historical rate version.": "The generator uses current bindings. If a binding or procurement rate changed during the selected period, split the import at its effective time and select the corresponding historical rate version."
   }
 }

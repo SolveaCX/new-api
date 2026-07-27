@@ -6678,6 +6678,23 @@
     "The global guard is off. Channel bindings cannot enable complete skip.": "Глобальный переключатель выключен. Привязки каналов не могут включить полный пропуск.",
     "This switch is a manual deployment confirmation, not an automatic Router health check.": "Этот переключатель является ручным подтверждением развёртывания, а не автоматической проверкой состояния Router.",
     "Unable to load accounting policy": "Не удалось загрузить политику учёта",
-    "Unable to update accounting policy": "Не удалось обновить политику учёта"
+    "Unable to update accounting policy": "Не удалось обновить политику учёта",
+    "No channel mappings configured": "Сопоставления каналов не настроены",
+    "Unmapped channels are still counted, but procurement cost and gross profit remain unknown.": "Несопоставленные каналы по-прежнему учитываются, но закупочная стоимость и валовая прибыль остаются неизвестными.",
+    "Channel mappings": "Сопоставления каналов",
+    "Generate from current channel bindings": "Создать из текущих привязок каналов",
+    "Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.": "Каждое сопоставление фиксирует канал, поставщика, контракт и версию закупочного тарифа. Последующие изменения не влияют на эту оценку.",
+    "Generated {{count}} channel mappings from current bindings": "Из текущих привязок создано сопоставлений каналов: {{count}}",
+    "Unable to load current channel bindings": "Не удалось загрузить текущие привязки каналов",
+    "Field descriptions and data sources": "Описание полей и источники данных",
+    "Channel ID from the current channel binding list and historical consume logs.": "ID канала из текущего списка привязок и исторических журналов потребления.",
+    "Supplier ID attached to the channel binding.": "ID поставщика, связанного с привязкой канала.",
+    "Contract ID from supplier_contract_id on the channel binding.": "ID контракта из поля supplier_contract_id в привязке канала.",
+    "Procurement rate version ID. The generator uses current_rate_version_id; historical versions come from contract history.": "ID версии закупочного тарифа. Генератор использует current_rate_version_id; исторические версии берутся из истории контракта.",
+    "Procurement multiplier in parts per million. For example, 600000 means 60%.": "Закупочный множитель в миллионных долях. Например, 600000 означает 60 %.",
+    "Advanced JSON editor": "Расширенный редактор JSON",
+    "Channel mappings JSON": "JSON сопоставлений каналов",
+    "Check historical rate changes": "Проверьте исторические изменения тарифа",
+    "The generator uses current bindings. If a binding or procurement rate changed during the selected period, split the import at its effective time and select the corresponding historical rate version.": "Генератор использует текущие привязки. Если в выбранный период изменилась привязка или закупочный тариф, разделите импорт по времени вступления изменения в силу и выберите соответствующую историческую версию тарифа."
   }
 }

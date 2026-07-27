@@ -295,6 +295,27 @@ export async function listChannelBindings(
   return normalized
 }
 
+export async function listAllBoundChannelBindings(): Promise<
+  SupplierChannelBinding[]
+> {
+  const pageSize = 100
+  const bindings: SupplierChannelBinding[] = []
+  for (let page = 1; ; page += 1) {
+    const response = await listChannelBindings({
+      p: page,
+      page_size: pageSize,
+      bound_state: 'bound',
+    })
+    bindings.push(...response.data.items)
+    if (
+      bindings.length >= response.data.total ||
+      response.data.items.length === 0
+    ) {
+      return bindings
+    }
+  }
+}
+
 export async function getAccountingPolicyCapability(): Promise<
   SupplyChainApiResponse<SupplierAccountingPolicyCapability>
 > {
