@@ -283,7 +283,8 @@ export async function bindChannel(
 ): Promise<SupplyChainApiResponse<SupplierChannelBinding>> {
   const response = await api.put(
     `${SUPPLY_CHAIN_API}/channel-bindings/${channelId}`,
-    data
+    data,
+    { skipErrorHandler: true }
   )
   return response.data
 }
@@ -295,7 +296,11 @@ export async function unbindChannel(
   const response = await api.delete(
     `${SUPPLY_CHAIN_API}/channel-bindings/${channelId}`,
     {
-      params: { expected_contract_id: variables.expectedContractId },
+      params: {
+        expected_contract_id: variables.expectedContractId,
+        expected_skip_internal_accounting:
+          variables.expectedSkipInternalAccounting,
+      },
     }
   )
   return response.data

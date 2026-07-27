@@ -151,15 +151,19 @@ export function useChannelBindingAdminList(
 export function useSupplyChainAdminMutation<TVariables>(options: {
   mutationFn: (variables: TVariables) => Promise<unknown>
   invalidate: readonly (readonly unknown[])[]
+  onError?: (error: unknown) => void
 }) {
   const queryClient = useQueryClient()
-  return useMutation(createSupplyChainAdminMutationOptions(options, queryClient))
+  return useMutation(
+    createSupplyChainAdminMutationOptions(options, queryClient)
+  )
 }
 
 export function createSupplyChainAdminMutationOptions<TVariables>(
   options: {
     mutationFn: (variables: TVariables) => Promise<unknown>
     invalidate: readonly (readonly unknown[])[]
+    onError?: (error: unknown) => void
   },
   queryClient: Pick<QueryClient, 'invalidateQueries'>
 ) {
@@ -173,5 +177,6 @@ export function createSupplyChainAdminMutationOptions<TVariables>(
         )
       )
     },
+    ...(options.onError ? { onError: options.onError } : {}),
   }
 }

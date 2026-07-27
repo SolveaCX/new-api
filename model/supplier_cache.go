@@ -118,9 +118,10 @@ func IsSupplierCacheBlocking() bool {
 }
 
 type supplierChannelBindingRow struct {
-	Id                 int
-	SupplierContractId *int
-	BindingVersionId   int
+	Id                     int
+	SupplierContractId     *int
+	BindingVersionId       int
+	SkipInternalAccounting bool
 }
 
 func loadSupplierRuntimeIndex(db *gorm.DB) (*supplierRuntimeIndex, *SupplierCacheHealth, error) {
@@ -207,6 +208,7 @@ func loadSupplierRuntimeIndex(db *gorm.DB) (*supplierRuntimeIndex, *SupplierCach
 		}
 		channelCosts[binding.Id] = types.SupplierCostSnapshot{
 			BindingVersionId:         binding.BindingVersionId,
+			SkipInternalAccounting:   binding.SkipInternalAccounting,
 			SupplierId:               supplier.Id,
 			ContractId:               contract.Id,
 			RateVersionId:            rate.Id,
@@ -261,22 +263,70 @@ func attachLatestSupplierChannelBindingVersions(db *gorm.DB, bindings []supplier
 			channelIds = append(channelIds, bindings[index].Id)
 			bindingIndexes[bindings[index].Id] = index
 		}
-		var versions []SupplierChannelBindingVersion
-		if err := db.Table("supplier_channel_binding_versions AS version").
-			Select("version.*").
-			Joins(`LEFT JOIN supplier_channel_binding_versions AS newer
-				ON newer.channel_id = version.channel_id
-				AND (newer.effective_at > version.effective_at
-					OR (newer.effective_at = version.effective_at AND newer.id > version.id))`).
-			Where("version.channel_id IN ? AND newer.id IS NULL", channelIds).
-			Scan(&versions).Error; err != nil {
-			return fmt.Errorf("load latest supplier channel binding versions: %w", err)
+		versions, err := latestSupplierChannelBindingVersions(db, channelIds)
+		if err != nil {
+			return err
 		}
-		for _, version := range versions {
-			index, ok := bindingIndexes[version.ChannelId]
+		for channelId, version := range versions {
+			index, ok := bindingIndexes[channelId]
 			if ok && supplierContractIdsEqual(bindings[index].SupplierContractId, version.SupplierContractId) {
 				bindings[index].BindingVersionId = version.Id
+				bindings[index].SkipInternalAccounting = version.SkipInternalAccounting
 			}
+		}
+	}
+	return nil
+}
+
+func latestSupplierChannelBindingVersions(db *gorm.DB, channelIds []int) (map[int]SupplierChannelBindingVersion, error) {
+	versionsByChannel := make(map[int]SupplierChannelBindingVersion, len(channelIds))
+	if len(channelIds) == 0 {
+		return versionsByChannel, nil
+	}
+	var versions []SupplierChannelBindingVersion
+	if err := db.Table("supplier_channel_binding_versions AS version").
+		Select("version.*").
+		Joins(`LEFT JOIN supplier_channel_binding_versions AS newer
+			ON newer.channel_id = version.channel_id
+			AND (newer.effective_at > version.effective_at
+				OR (newer.effective_at = version.effective_at AND newer.id > version.id))`).
+		Where("version.channel_id IN ? AND newer.id IS NULL", channelIds).
+		Scan(&versions).Error; err != nil {
+		return nil, fmt.Errorf("load latest supplier channel binding versions: %w", err)
+	}
+	for _, version := range versions {
+		versionsByChannel[version.ChannelId] = version
+	}
+	return versionsByChannel, nil
+}
+
+func latestSupplierChannelBindingPolicy(db *gorm.DB, channelId int, contractId *int) (bool, error) {
+	versions, err := latestSupplierChannelBindingVersions(db, []int{channelId})
+	if err != nil {
+		return false, err
+	}
+	version, ok := versions[channelId]
+	if !ok || !supplierContractIdsEqual(contractId, version.SupplierContractId) {
+		return false, nil
+	}
+	return version.SkipInternalAccounting, nil
+}
+
+func attachLatestSupplierChannelBindingVersionsToAdminRows(db *gorm.DB, rows []SupplierChannelBindingAdminRow) error {
+	channelIds := make([]int, 0, len(rows))
+	rowIndexes := make(map[int]int, len(rows))
+	for index := range rows {
+		channelIds = append(channelIds, rows[index].ChannelId)
+		rowIndexes[rows[index].ChannelId] = index
+	}
+	versions, err := latestSupplierChannelBindingVersions(db, channelIds)
+	if err != nil {
+		return err
+	}
+	for channelId, version := range versions {
+		index := rowIndexes[channelId]
+		if supplierContractIdsEqual(rows[index].SupplierContractId, version.SupplierContractId) {
+			rows[index].SkipInternalAccounting = version.SkipInternalAccounting
 		}
 	}
 	return nil

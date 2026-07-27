@@ -69,8 +69,13 @@ describe('supply-chain versioned mutation API', () => {
     await bindChannel(11, {
       contract_id: 7,
       expected_contract_id: 0,
+      skip_internal_accounting: true,
+      expected_skip_internal_accounting: false,
     })
-    await unbindChannel(11, { expectedContractId: 7 })
+    await unbindChannel(11, {
+      expectedContractId: 7,
+      expectedSkipInternalAccounting: true,
+    })
 
     expect(requests).toHaveLength(9)
     for (const request of requests) {
@@ -93,8 +98,13 @@ describe('supply-chain versioned mutation API', () => {
     expect(JSON.parse(String(requests[7]?.data))).toEqual({
       contract_id: 7,
       expected_contract_id: 0,
+      skip_internal_accounting: true,
+      expected_skip_internal_accounting: false,
     })
-    expect(requests[8]?.params).toEqual({ expected_contract_id: 7 })
+    expect(requests[8]?.params).toEqual({
+      expected_contract_id: 7,
+      expected_skip_internal_accounting: true,
+    })
   })
 
   test('sends stable caller-owned keys only to supported append endpoints', async () => {

@@ -94,9 +94,11 @@ func TestSupplyChainSupplierUpdateRequiresVersionAndRejectsStaleWrite(t *testing
 
 func TestSupplierChannelBindingRequestHasCASAllowlistedFields(t *testing.T) {
 	typeOf := reflect.TypeOf(dto.SupplierChannelBindingRequest{})
-	require.Equal(t, 2, typeOf.NumField())
+	require.Equal(t, 4, typeOf.NumField())
 	require.Equal(t, "contract_id", strings.Split(typeOf.Field(0).Tag.Get("json"), ",")[0])
 	require.Equal(t, "expected_contract_id", strings.Split(typeOf.Field(1).Tag.Get("json"), ",")[0])
+	require.Equal(t, "skip_internal_accounting", strings.Split(typeOf.Field(2).Tag.Get("json"), ",")[0])
+	require.Equal(t, "expected_skip_internal_accounting", strings.Split(typeOf.Field(3).Tag.Get("json"), ",")[0])
 }
 
 func TestSupplyChainBindingWritesRequireObservedState(t *testing.T) {
@@ -129,6 +131,11 @@ func TestSupplyChainModelErrorUsesSemanticStatus(t *testing.T) {
 	conflict := httptest.NewRecorder()
 	supplyChainModelError(testGinContext(conflict), model.ErrSupplierInactive)
 	require.Equal(t, http.StatusConflict, conflict.Code)
+
+	missingRate := httptest.NewRecorder()
+	supplyChainModelError(testGinContext(missingRate), model.ErrSupplierCurrentRateRequired)
+	require.Equal(t, http.StatusConflict, missingRate.Code)
+	require.Contains(t, missingRate.Body.String(), "A current procurement rate is required before this contract can be bound")
 
 	notFound := httptest.NewRecorder()
 	supplyChainModelError(testGinContext(notFound), gorm.ErrRecordNotFound)

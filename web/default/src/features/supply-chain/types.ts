@@ -224,11 +224,14 @@ export interface SupplierChannelBinding {
   supplier_name: string | null
   current_rate_version_id: number | null
   current_procurement_multiplier_ppm: number | null
+  skip_internal_accounting: boolean
 }
 
 export interface SupplierChannelBindingRequest {
   contract_id: number
   expected_contract_id: number
+  skip_internal_accounting: boolean
+  expected_skip_internal_accounting: boolean
 }
 
 export interface SupplierChannelUnbindResult {
@@ -238,6 +241,7 @@ export interface SupplierChannelUnbindResult {
 
 export interface SupplierChannelUnbindVariables {
   expectedContractId: number
+  expectedSkipInternalAccounting: boolean
 }
 
 export interface IdempotentMutationVariables<T> {

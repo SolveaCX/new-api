@@ -67,6 +67,7 @@ export const exclusionFormSchema = z.object({
 
 export const channelBindingFormSchema = z.object({
   contract_id: positiveInteger,
+  skip_internal_accounting: z.boolean(),
 })
 
 const jsonIntegerArray = z.string().refine((value) => {

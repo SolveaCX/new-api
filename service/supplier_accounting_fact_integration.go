@@ -42,7 +42,6 @@ func PrepareSupplierAccountingAttempt(c *gin.Context, relayInfo *relaycommon.Rel
 		clearSupplierAccountingAttempt(c)
 		return nil
 	}
-
 	snapshot := relayInfo.SupplierCostSnapshot
 	if snapshot.CacheUnavailable {
 		clearSupplierAccountingAttempt(c)
@@ -70,6 +69,10 @@ func PrepareSupplierAccountingAttempt(c *gin.Context, relayInfo *relaycommon.Rel
 			return nil
 		}
 		return ErrSupplierAccountingAttemptBindingInvalid
+	}
+	if snapshot.SkipInternalAccounting && relayInfo.SupplierStatisticsScopeSnapshot.Scope == types.SupplierStatisticsScopeInternal {
+		clearSupplierAccountingAttempt(c)
+		return nil
 	}
 
 	state := &supplierAccountingAttemptState{attemptID: uuid.NewString()}

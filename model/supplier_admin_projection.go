@@ -85,6 +85,7 @@ type SupplierChannelBindingAdminRow struct {
 	SupplierName                    *string `json:"supplier_name"`
 	CurrentRateVersionId            *int    `json:"current_rate_version_id"`
 	CurrentProcurementMultiplierPpm *int64  `json:"current_procurement_multiplier_ppm"`
+	SkipInternalAccounting          bool    `json:"skip_internal_accounting"`
 }
 
 type SupplierEffectiveExclusionRow struct {
@@ -312,6 +313,9 @@ func ListSupplierChannelBindingAdminRows(filter SupplierChannelBindingAdminListF
 		Order("channel.id DESC").Offset(filter.Page.Offset).Limit(filter.Page.Limit).Scan(&rows).Error; err != nil {
 		return nil, 0, err
 	}
+	if err := attachLatestSupplierChannelBindingVersionsToAdminRows(DB, rows); err != nil {
+		return nil, 0, err
+	}
 	return rows, total, nil
 }
 
@@ -403,16 +407,36 @@ func SetChannelSupplierContractCAS(channelId int, expectedContractId int, desire
 }
 
 func SetChannelSupplierContractCASForActor(channelId int, expectedContractId int, desiredContractId *int, createdBy int) error {
+	return SetChannelSupplierContractPolicyCASForActor(channelId, expectedContractId, false, desiredContractId, false, createdBy)
+}
+
+func SetChannelSupplierContractPolicyCASForActor(
+	channelId int,
+	expectedContractId int,
+	expectedSkipInternalAccounting bool,
+	desiredContractId *int,
+	desiredSkipInternalAccounting bool,
+	createdBy int,
+) error {
 	if DB == nil {
 		return fmt.Errorf("set channel supplier contract CAS: %w", ErrDatabase)
 	}
-	if channelId <= 0 || expectedContractId < 0 || createdBy < 0 || (desiredContractId != nil && *desiredContractId <= 0) {
+	if channelId <= 0 || expectedContractId < 0 || createdBy < 0 || (desiredContractId != nil && *desiredContractId <= 0) ||
+		(desiredContractId == nil && desiredSkipInternalAccounting) {
 		return ErrSupplierInvalidContract
 	}
 	changed := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var err error
-		changed, err = setChannelSupplierContractCASTx(tx, channelId, expectedContractId, desiredContractId, createdBy)
+		changed, err = setChannelSupplierContractPolicyCASTx(
+			tx,
+			channelId,
+			expectedContractId,
+			expectedSkipInternalAccounting,
+			desiredContractId,
+			desiredSkipInternalAccounting,
+			createdBy,
+		)
 		return err
 	})
 	if err != nil {
@@ -424,7 +448,15 @@ func SetChannelSupplierContractCASForActor(channelId int, expectedContractId int
 	return nil
 }
 
-func setChannelSupplierContractCASTx(tx *gorm.DB, channelId int, expectedContractId int, desiredContractId *int, createdBy int) (bool, error) {
+func setChannelSupplierContractPolicyCASTx(
+	tx *gorm.DB,
+	channelId int,
+	expectedContractId int,
+	expectedSkipInternalAccounting bool,
+	desiredContractId *int,
+	desiredSkipInternalAccounting bool,
+	createdBy int,
+) (bool, error) {
 	if tx == nil {
 		return false, ErrDatabase
 	}
@@ -446,30 +478,38 @@ func setChannelSupplierContractCASTx(tx *gorm.DB, channelId int, expectedContrac
 		if !supplierContractIdMatchesExpected(channel.SupplierContractId, expectedContractId) {
 			return ErrSupplierBindingChanged
 		}
-		if desiredContractId != nil && channel.SupplierContractId != nil && *channel.SupplierContractId == *desiredContractId {
-			return nil
+		currentSkipInternalAccounting, err := latestSupplierChannelBindingPolicyForUpdate(tx, channel.Id, channel.SupplierContractId)
+		if err != nil {
+			return err
 		}
-		if desiredContractId == nil && channel.SupplierContractId == nil {
-			return nil
-		}
-		query := tx.Model(&Channel{}).Where("id = ?", channelId)
-		if expectedContractId == 0 {
-			query = query.Where("supplier_contract_id IS NULL")
-		} else {
-			query = query.Where("supplier_contract_id = ?", expectedContractId)
-		}
-		result := query.UpdateColumn("supplier_contract_id", desiredContractId)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
+		if currentSkipInternalAccounting != expectedSkipInternalAccounting {
 			return ErrSupplierBindingChanged
 		}
+		if supplierContractIdsEqual(channel.SupplierContractId, desiredContractId) && currentSkipInternalAccounting == desiredSkipInternalAccounting {
+			return nil
+		}
+		if !supplierContractIdsEqual(channel.SupplierContractId, desiredContractId) {
+			query := tx.Model(&Channel{}).Where("id = ?", channelId)
+			if expectedContractId == 0 {
+				query = query.Where("supplier_contract_id IS NULL")
+			} else {
+				query = query.Where("supplier_contract_id = ?", expectedContractId)
+			}
+			result := query.UpdateColumn("supplier_contract_id", desiredContractId)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return ErrSupplierBindingChanged
+			}
+		}
 		version := SupplierChannelBindingVersion{
-			ChannelId:                  channelId,
-			PreviousSupplierContractId: channel.SupplierContractId,
-			SupplierContractId:         desiredContractId,
-			CreatedBy:                  createdBy,
+			ChannelId:                      channelId,
+			PreviousSupplierContractId:     channel.SupplierContractId,
+			SupplierContractId:             desiredContractId,
+			PreviousSkipInternalAccounting: currentSkipInternalAccounting,
+			SkipInternalAccounting:         desiredSkipInternalAccounting,
+			CreatedBy:                      createdBy,
 		}
 		if err := tx.Create(&version).Error; err != nil {
 			return err
@@ -478,6 +518,24 @@ func setChannelSupplierContractCASTx(tx *gorm.DB, channelId int, expectedContrac
 		return nil
 	}()
 	return changed, err
+}
+
+func latestSupplierChannelBindingPolicyForUpdate(tx *gorm.DB, channelId int, contractId *int) (bool, error) {
+	var version SupplierChannelBindingVersion
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("channel_id = ?", channelId).
+		Order("effective_at DESC, id DESC").
+		First(&version).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !supplierContractIdsEqual(contractId, version.SupplierContractId) {
+		return false, nil
+	}
+	return version.SkipInternalAccounting, nil
 }
 
 func ListSupplierChannelBindingVersions(channelId int, page SupplierPage) ([]SupplierChannelBindingVersion, int64, error) {
