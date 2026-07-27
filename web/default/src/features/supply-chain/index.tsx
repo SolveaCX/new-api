@@ -143,9 +143,7 @@ function SupplyChainContent(props: SupplyChainManagementProps) {
             <TabsTrigger value='report'>{t('Reports')}</TabsTrigger>
             <TabsTrigger value='suppliers'>{t('Suppliers')}</TabsTrigger>
             <TabsTrigger value='contracts'>{t('Contracts')}</TabsTrigger>
-            <TabsTrigger value='exclusions'>
-              {t('Excluded accounts')}
-            </TabsTrigger>
+            <TabsTrigger value='exclusions'>{t('Account scope')}</TabsTrigger>
             <TabsTrigger value='channel-bindings'>
               {t('Channel bindings')}
             </TabsTrigger>

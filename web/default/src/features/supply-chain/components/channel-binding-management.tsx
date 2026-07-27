@@ -80,6 +80,8 @@ function bindingErrorMessage(error: unknown, fallback: string): string {
 function BindingDialog(props: {
   binding: SupplierChannelBinding
   policyConfigurable: boolean
+  policyActive: boolean
+  policyStatusAvailable: boolean
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -140,6 +142,26 @@ function BindingDialog(props: {
       finishBinding()
     } catch {
       return
+    }
+  }
+
+  const skipInternalAccounting = form.watch('skip_internal_accounting')
+  let policyDescription = t(
+    'Internal accounts record procurement cost and inventory consumption, but are excluded from sales and profit.'
+  )
+  if (skipInternalAccounting) {
+    if (!props.policyStatusAvailable) {
+      policyDescription = t(
+        'The saved skip setting cannot be verified because the global policy status is unavailable.'
+      )
+    } else if (props.policyActive) {
+      policyDescription = t(
+        'Internal accounts will not create supplier accounting facts on this channel. Business accounts remain fully accounted.'
+      )
+    } else {
+      policyDescription = t(
+        'The channel is configured to skip, but internal costs continue to be recorded until the global policy becomes active.'
+      )
     }
   }
 
@@ -232,9 +254,7 @@ function BindingDialog(props: {
                 aria-invalid={Boolean(
                   form.formState.errors.skip_internal_accounting
                 )}
-                value={
-                  form.watch('skip_internal_accounting') ? 'skip' : 'record'
-                }
+                value={skipInternalAccounting ? 'skip' : 'record'}
                 onChange={(event) =>
                   form.setValue(
                     'skip_internal_accounting',
@@ -244,24 +264,16 @@ function BindingDialog(props: {
                 }
               >
                 <NativeSelectOption value='record'>
-                  {t('Record internal costs')}
+                  {t('Record internal procurement cost and inventory')}
                 </NativeSelectOption>
                 <NativeSelectOption
                   value='skip'
                   disabled={!props.policyConfigurable}
                 >
-                  {t('Skip completely')}
+                  {t('Do not create internal supplier accounting facts')}
                 </NativeSelectOption>
               </NativeSelect>
-              <FieldDescription>
-                {props.policyConfigurable
-                  ? t(
-                      'This policy applies only to requests from accounts excluded from supplier statistics.'
-                    )
-                  : t(
-                      'Activate the global policy before selecting complete skip.'
-                    )}
-              </FieldDescription>
+              <FieldDescription>{policyDescription}</FieldDescription>
               <FieldError>
                 {form.formState.errors.skip_internal_accounting
                   ? t(
@@ -271,10 +283,10 @@ function BindingDialog(props: {
                   : null}
               </FieldError>
             </Field>
-            {form.watch('skip_internal_accounting') ? (
+            {skipInternalAccounting ? (
               <Alert variant='destructive'>
                 <AlertTitle>
-                  {t('Internal request data will not be recorded')}
+                  {t('Internal supplier accounting facts will not be created')}
                 </AlertTitle>
                 <AlertDescription>
                   {t(
@@ -297,6 +309,48 @@ function BindingDialog(props: {
       </DialogContent>
     </Dialog>
   )
+}
+
+function internalAccountingStatus(
+  configuredSkip: boolean,
+  policyActive: boolean,
+  policyLoading: boolean,
+  policyUnavailable: boolean,
+  translate: (key: string) => string
+): {
+  label: string
+  variant: 'destructive' | 'outline' | 'secondary'
+} {
+  if (!configuredSkip) {
+    return {
+      label: translate('Record internal procurement cost and inventory'),
+      variant: 'secondary',
+    }
+  }
+  if (policyLoading) {
+    return {
+      label: translate('Configured to skip; checking policy status'),
+      variant: 'outline',
+    }
+  }
+  if (policyUnavailable) {
+    return {
+      label: translate('Configured to skip; policy status unavailable'),
+      variant: 'outline',
+    }
+  }
+  if (!policyActive) {
+    return {
+      label: translate(
+        'Configured to skip; currently recording internal costs'
+      ),
+      variant: 'outline',
+    }
+  }
+  return {
+    label: translate('Do not create internal supplier accounting facts'),
+    variant: 'destructive',
+  }
 }
 
 function UnbindAction(props: { binding: SupplierChannelBinding }) {
@@ -423,79 +477,84 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
                 <TableHead>{t('Supplier')}</TableHead>
                 <TableHead>{t('Contract')}</TableHead>
                 <TableHead>{t('Procurement multiplier')}</TableHead>
-                <TableHead>{t('Internal requests')}</TableHead>
+                <TableHead>{t('Internal account handling')}</TableHead>
                 <TableHead className='text-right'>{t('Actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {query.data?.items.map((binding) => (
-                <TableRow key={binding.channel_id}>
-                  <TableCell>
-                    <div className='font-medium'>{binding.channel_name}</div>
-                    <div className='text-muted-foreground'>
-                      #{binding.channel_id}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        binding.channel_status === 1 ? 'default' : 'secondary'
-                      }
-                    >
-                      {binding.channel_status === 1
-                        ? t('Enabled')
-                        : t('Disabled')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{binding.supplier_name ?? '—'}</TableCell>
-                  <TableCell>
-                    {binding.contract_name ? (
-                      <>
-                        <div>{binding.contract_name}</div>
-                        <div className='text-muted-foreground'>
-                          {binding.contract_no}
-                        </div>
-                      </>
-                    ) : (
-                      <Badge variant='outline'>{t('Unbound')}</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {formatPpmPercent(
-                      binding.current_procurement_multiplier_ppm,
-                      t('Unknown')
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {binding.supplier_contract_id ? (
+              {query.data?.items.map((binding) => {
+                const accountingStatus = internalAccountingStatus(
+                  binding.skip_internal_accounting,
+                  policy.data?.active === true,
+                  policy.isLoading,
+                  policy.isError,
+                  t
+                )
+                return (
+                  <TableRow key={binding.channel_id}>
+                    <TableCell>
+                      <div className='font-medium'>{binding.channel_name}</div>
+                      <div className='text-muted-foreground'>
+                        #{binding.channel_id}
+                      </div>
+                    </TableCell>
+                    <TableCell>
                       <Badge
                         variant={
-                          binding.skip_internal_accounting
-                            ? 'destructive'
-                            : 'secondary'
+                          binding.channel_status === 1 ? 'default' : 'secondary'
                         }
                       >
-                        {binding.skip_internal_accounting
-                          ? t('Skip completely')
-                          : t('Record costs')}
+                        {binding.channel_status === 1
+                          ? t('Enabled')
+                          : t('Disabled')}
                       </Badge>
-                    ) : (
-                      '—'
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className='flex justify-end gap-1'>
-                      <BindingDialog
-                        binding={binding}
-                        policyConfigurable={policyConfigurable}
-                      />
+                    </TableCell>
+                    <TableCell>{binding.supplier_name ?? '—'}</TableCell>
+                    <TableCell>
+                      {binding.contract_name ? (
+                        <>
+                          <div>{binding.contract_name}</div>
+                          <div className='text-muted-foreground'>
+                            {binding.contract_no}
+                          </div>
+                        </>
+                      ) : (
+                        <Badge variant='outline'>{t('Unbound')}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {formatPpmPercent(
+                        binding.current_procurement_multiplier_ppm,
+                        t('Unknown')
+                      )}
+                    </TableCell>
+                    <TableCell>
                       {binding.supplier_contract_id ? (
-                        <UnbindAction binding={binding} />
-                      ) : null}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                        <Badge variant={accountingStatus.variant}>
+                          {accountingStatus.label}
+                        </Badge>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className='flex justify-end gap-1'>
+                        <BindingDialog
+                          binding={binding}
+                          policyConfigurable={policyConfigurable}
+                          policyActive={policy.data?.active === true}
+                          policyStatusAvailable={
+                            policy.data !== undefined && !policy.isError
+                          }
+                        />
+                        {binding.supplier_contract_id ? (
+                          <UnbindAction binding={binding} />
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </div>

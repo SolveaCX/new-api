@@ -53,11 +53,12 @@ describe('supply-chain form accessibility', () => {
 
     for (const id of [
       "exclusion-user-${props.row?.user_id ?? 'new'}",
-      "exclusion-action-${props.row?.user_id ?? 'new'}",
       "exclusion-reason-${props.row?.user_id ?? 'new'}",
     ]) {
       expectLabelAssociation(exclusion, id)
     }
+    expect(exclusion).not.toContain("form.register('action')")
+    expect(exclusion).toContain("return row?.excluded ? 'include' : 'exclude'")
 
     expectLabelAssociation(
       binding,
@@ -104,7 +105,10 @@ describe('supply-chain form accessibility', () => {
     expect(binding).toContain('disabled={!props.policyConfigurable}')
     expect(binding).toContain('isAccountingPolicyConfigurable(')
     expect(binding).toContain(
-      'Activate the global policy before selecting complete skip.'
+      'The saved skip setting cannot be verified because the global policy status is unavailable.'
+    )
+    expect(binding).toContain(
+      'Configured to skip; currently recording internal costs'
     )
   })
 })

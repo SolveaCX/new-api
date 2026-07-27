@@ -173,6 +173,10 @@ describe('supply-chain management presentation', () => {
     expect(html).toContain('Identity unavailable')
     expect(html).toContain('User ID: 99')
     expect(html).toContain('internal traffic')
+    expect(html).toContain('Internal account')
+    expect(html).toContain('Add internal account')
+    expect(html).toContain('Restore as business account')
+    expect(html).not.toContain('Include in profit statistics')
     expect(html).not.toContain('@')
   })
 
@@ -202,6 +206,7 @@ describe('supply-chain management presentation', () => {
           supplier_name: 'Provider A',
           current_rate_version_id: 7,
           current_procurement_multiplier_ppm: 650_000,
+          skip_internal_accounting: true,
         },
       ],
     })
@@ -227,6 +232,9 @@ describe('supply-chain management presentation', () => {
     expect(html).toContain('Internal request skip policy')
     expect(html).toContain('Inactive')
     expect(html).toContain('manual deployment confirmation')
+    expect(html).toContain(
+      'Configured to skip; currently recording internal costs'
+    )
   })
 
   test('shows the accounting policy propagation state and effective time', () => {
