@@ -6468,6 +6468,23 @@
     "The global guard is off. Channel bindings cannot enable complete skip.": "全局开关尚未启用，渠道绑定不能选择完全跳过。",
     "This switch is a manual deployment confirmation, not an automatic Router health check.": "此开关是人工部署确认，不会自动检测 Router 健康状态。",
     "Unable to load accounting policy": "无法加载核算策略",
-    "Unable to update accounting policy": "无法更新核算策略"
+    "Unable to update accounting policy": "无法更新核算策略",
+    "No channel mappings configured": "未配置渠道映射",
+    "Unmapped channels are still counted, but procurement cost and gross profit remain unknown.": "未映射渠道仍会计入统计，但采购成本和毛利保持未知。",
+    "Channel mappings": "渠道映射",
+    "Generate from current channel bindings": "从当前渠道绑定生成",
+    "Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.": "每条映射会将渠道与其供应商、合同和采购费率版本一同冻结。后续绑定或费率变更不会影响本次估算。",
+    "Generated {{count}} channel mappings from current bindings": "已根据当前绑定生成 {{count}} 条渠道映射",
+    "Unable to load current channel bindings": "无法加载当前渠道绑定",
+    "Field descriptions and data sources": "字段说明和数据来源",
+    "Channel ID from the current channel binding list and historical consume logs.": "渠道 ID，来源于当前渠道绑定列表及历史消费日志。",
+    "Supplier ID attached to the channel binding.": "渠道绑定对应的供应商 ID。",
+    "Contract ID from supplier_contract_id on the channel binding.": "渠道绑定中 supplier_contract_id 对应的合同 ID。",
+    "Procurement rate version ID. The generator uses current_rate_version_id; historical versions come from contract history.": "采购费率版本 ID。自动生成时使用 current_rate_version_id；历史版本可在合同历史中查看。",
+    "Procurement multiplier in parts per million. For example, 600000 means 60%.": "采购倍率的百万分比。例如 600000 表示 60%。",
+    "Advanced JSON editor": "高级 JSON 编辑",
+    "Channel mappings JSON": "渠道映射 JSON",
+    "Check historical rate changes": "检查历史费率变更",
+    "The generator uses current bindings. If a binding or procurement rate changed during the selected period, split the import at its effective time and select the corresponding historical rate version.": "自动生成使用当前绑定。如果所选期间内渠道绑定或采购费率发生过变化，请按生效时间拆分导入任务，并选择相应的历史费率版本。"
   }
 }

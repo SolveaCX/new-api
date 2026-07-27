@@ -6468,6 +6468,23 @@
     "The global guard is off. Channel bindings cannot enable complete skip.": "Công tắc toàn cục đang tắt. Liên kết kênh không thể bật chế độ bỏ qua hoàn toàn.",
     "This switch is a manual deployment confirmation, not an automatic Router health check.": "Công tắc này là xác nhận triển khai thủ công, không phải kiểm tra tình trạng Router tự động.",
     "Unable to load accounting policy": "Không thể tải chính sách kế toán",
-    "Unable to update accounting policy": "Không thể cập nhật chính sách kế toán"
+    "Unable to update accounting policy": "Không thể cập nhật chính sách kế toán",
+    "No channel mappings configured": "Chưa cấu hình ánh xạ kênh",
+    "Unmapped channels are still counted, but procurement cost and gross profit remain unknown.": "Các kênh chưa ánh xạ vẫn được tính, nhưng chi phí thu mua và lợi nhuận gộp sẽ không xác định.",
+    "Channel mappings": "Ánh xạ kênh",
+    "Generate from current channel bindings": "Tạo từ liên kết kênh hiện tại",
+    "Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.": "Mỗi ánh xạ sẽ cố định kênh với nhà cung cấp, hợp đồng và phiên bản giá thu mua. Các thay đổi sau đó không ảnh hưởng đến ước tính này.",
+    "Generated {{count}} channel mappings from current bindings": "Đã tạo {{count}} ánh xạ kênh từ các liên kết hiện tại",
+    "Unable to load current channel bindings": "Không thể tải các liên kết kênh hiện tại",
+    "Field descriptions and data sources": "Mô tả trường và nguồn dữ liệu",
+    "Channel ID from the current channel binding list and historical consume logs.": "ID kênh từ danh sách liên kết kênh hiện tại và nhật ký tiêu thụ lịch sử.",
+    "Supplier ID attached to the channel binding.": "ID nhà cung cấp gắn với liên kết kênh.",
+    "Contract ID from supplier_contract_id on the channel binding.": "ID hợp đồng từ supplier_contract_id trong liên kết kênh.",
+    "Procurement rate version ID. The generator uses current_rate_version_id; historical versions come from contract history.": "ID phiên bản giá thu mua. Trình tạo dùng current_rate_version_id; các phiên bản lịch sử lấy từ lịch sử hợp đồng.",
+    "Procurement multiplier in parts per million. For example, 600000 means 60%.": "Hệ số thu mua theo phần triệu. Ví dụ, 600000 nghĩa là 60%.",
+    "Advanced JSON editor": "Trình chỉnh sửa JSON nâng cao",
+    "Channel mappings JSON": "JSON ánh xạ kênh",
+    "Check historical rate changes": "Kiểm tra thay đổi giá trong lịch sử",
+    "The generator uses current bindings. If a binding or procurement rate changed during the selected period, split the import at its effective time and select the corresponding historical rate version.": "Trình tạo sử dụng các liên kết hiện tại. Nếu liên kết hoặc giá thu mua thay đổi trong khoảng đã chọn, hãy tách lần nhập tại thời điểm có hiệu lực và chọn phiên bản giá lịch sử tương ứng."
   }
 }

@@ -24,6 +24,7 @@ import { supplyChainQueryKeys } from '../query-keys'
 import { ChannelBindingManagement } from './channel-binding-management'
 import { ContractManagement } from './contract-management'
 import { ExclusionManagement } from './exclusion-management'
+import { HistoricalImportManagement } from './historical-import-management'
 
 const testI18n = createInstance()
 const originalAdapter = api.defaults.adapter
@@ -58,6 +59,26 @@ function renderWithQuery(queryClient: QueryClient, element: ReactNode): string {
 }
 
 describe('supply-chain management presentation', () => {
+  test('explains historical channel mappings without requiring raw JSON', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(
+      supplyChainQueryKeys.historicalImports.list({ p: 1, page_size: 20 }),
+      { page: 1, page_size: 20, total: 0, items: [] }
+    )
+
+    const html = renderWithQuery(
+      queryClient,
+      <HistoricalImportManagement
+        search={{ ...search, tab: 'historical-imports' }}
+        onSearchChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('Generate from current channel bindings')
+    expect(html).toContain('No channel mappings configured')
+    expect(html).toContain('Advanced JSON editor')
+  })
+
   test('renders empty contract and sibling tabs when the Go page contains items null', async () => {
     api.defaults.adapter = async (config: InternalAxiosRequestConfig) => ({
       data: {

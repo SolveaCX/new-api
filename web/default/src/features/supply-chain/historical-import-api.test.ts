@@ -12,6 +12,7 @@ import { api } from '@/lib/api'
 import {
   createHistoricalImport,
   getHistoricalImport,
+  listAllBoundChannelBindings,
   listHistoricalImportSummaries,
   listHistoricalImports,
 } from './api'
@@ -70,5 +71,64 @@ describe('supplier historical estimate API', () => {
       'historical-command'
     )
     expect(JSON.parse(String(requests[0]?.data)).quota_per_unit).toBe('500000')
+  })
+
+  test('loads every bound channel page for mapping generation', async () => {
+    const requestedPages: number[] = []
+    api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
+      const page = Number(config.params?.p)
+      requestedPages.push(page)
+      return {
+        data: {
+          success: true,
+          data: {
+            page,
+            page_size: 100,
+            total: 2,
+            items:
+              page === 1
+                ? [
+                    {
+                      channel_id: 11,
+                      channel_name: 'Codex',
+                      channel_status: 1,
+                      supplier_contract_id: 3,
+                      contract_name: 'Flatkey contract',
+                      contract_no: 'FK-1',
+                      supplier_id: 2,
+                      supplier_name: 'Flatkey',
+                      current_rate_version_id: 5,
+                      current_procurement_multiplier_ppm: 600000,
+                      skip_internal_accounting: false,
+                    },
+                  ]
+                : [
+                    {
+                      channel_id: 12,
+                      channel_name: 'OpenAI',
+                      channel_status: 1,
+                      supplier_contract_id: 4,
+                      contract_name: 'OpenAI contract',
+                      contract_no: 'OA-1',
+                      supplier_id: 3,
+                      supplier_name: 'OpenAI',
+                      current_rate_version_id: 6,
+                      current_procurement_multiplier_ppm: 650000,
+                      skip_internal_accounting: false,
+                    },
+                  ],
+          },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: new AxiosHeaders(),
+        config,
+      }
+    }
+
+    const bindings = await listAllBoundChannelBindings()
+
+    expect(requestedPages).toEqual([1, 2])
+    expect(bindings.map((binding) => binding.channel_id)).toEqual([11, 12])
   })
 })

@@ -6468,6 +6468,23 @@
     "The global guard is off. Channel bindings cannot enable complete skip.": "グローバルスイッチは無効です。チャネルバインドで完全スキップを有効にできません。",
     "This switch is a manual deployment confirmation, not an automatic Router health check.": "このスイッチは手動のデプロイ確認であり、Router の自動ヘルスチェックではありません。",
     "Unable to load accounting policy": "会計ポリシーを読み込めません",
-    "Unable to update accounting policy": "会計ポリシーを更新できません"
+    "Unable to update accounting policy": "会計ポリシーを更新できません",
+    "No channel mappings configured": "チャネルマッピングが設定されていません",
+    "Unmapped channels are still counted, but procurement cost and gross profit remain unknown.": "未マッピングのチャネルも集計されますが、調達コストと粗利益は不明のままです。",
+    "Channel mappings": "チャネルマッピング",
+    "Generate from current channel bindings": "現在のチャネルバインドから生成",
+    "Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.": "各マッピングは、チャネル、サプライヤー、契約、調達レートのバージョンを固定します。後の変更はこの見積もりに影響しません。",
+    "Generated {{count}} channel mappings from current bindings": "現在のバインドから {{count}} 件のチャネルマッピングを生成しました",
+    "Unable to load current channel bindings": "現在のチャネルバインドを読み込めません",
+    "Field descriptions and data sources": "フィールド説明とデータソース",
+    "Channel ID from the current channel binding list and historical consume logs.": "現在のチャネルバインド一覧と過去の消費ログにあるチャネル ID。",
+    "Supplier ID attached to the channel binding.": "チャネルバインドに関連付けられたサプライヤー ID。",
+    "Contract ID from supplier_contract_id on the channel binding.": "チャネルバインドの supplier_contract_id にある契約 ID。",
+    "Procurement rate version ID. The generator uses current_rate_version_id; historical versions come from contract history.": "調達レートバージョン ID。自動生成では current_rate_version_id を使用し、過去のバージョンは契約履歴から取得します。",
+    "Procurement multiplier in parts per million. For example, 600000 means 60%.": "百万分率で表す調達倍率です。たとえば 600000 は 60% を意味します。",
+    "Advanced JSON editor": "高度な JSON エディター",
+    "Channel mappings JSON": "チャネルマッピング JSON",
+    "Check historical rate changes": "過去のレート変更を確認",
+    "The generator uses current bindings. If a binding or procurement rate changed during the selected period, split the import at its effective time and select the corresponding historical rate version.": "自動生成では現在のバインドを使用します。選択期間中にバインドまたは調達レートが変更された場合は、発効時刻でインポートを分割し、対応する過去のレートバージョンを選択してください。"
   }
 }

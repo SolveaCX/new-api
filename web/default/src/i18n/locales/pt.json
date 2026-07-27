@@ -6468,6 +6468,23 @@
     "The global guard is off. Channel bindings cannot enable complete skip.": "O controle global está desativado. As vinculações de canais não podem habilitar a omissão completa.",
     "This switch is a manual deployment confirmation, not an automatic Router health check.": "Este interruptor é uma confirmação manual da implantação, não uma verificação automática da integridade dos Router.",
     "Unable to load accounting policy": "Não foi possível carregar a política contábil",
-    "Unable to update accounting policy": "Não foi possível atualizar a política contábil"
+    "Unable to update accounting policy": "Não foi possível atualizar a política contábil",
+    "No channel mappings configured": "Nenhum mapeamento de canal configurado",
+    "Unmapped channels are still counted, but procurement cost and gross profit remain unknown.": "Os canais não mapeados continuam sendo contabilizados, mas o custo de aquisição e o lucro bruto permanecem desconhecidos.",
+    "Channel mappings": "Mapeamentos de canais",
+    "Generate from current channel bindings": "Gerar a partir dos vínculos de canais atuais",
+    "Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.": "Cada mapeamento fixa o canal, fornecedor, contrato e versão da taxa de aquisição. Alterações posteriores não modificam esta estimativa.",
+    "Generated {{count}} channel mappings from current bindings": "Foram gerados {{count}} mapeamentos de canais a partir dos vínculos atuais",
+    "Unable to load current channel bindings": "Não foi possível carregar os vínculos de canais atuais",
+    "Field descriptions and data sources": "Descrição dos campos e fontes de dados",
+    "Channel ID from the current channel binding list and historical consume logs.": "ID do canal obtido da lista atual de vínculos e dos registros históricos de consumo.",
+    "Supplier ID attached to the channel binding.": "ID do fornecedor associado ao vínculo do canal.",
+    "Contract ID from supplier_contract_id on the channel binding.": "ID do contrato obtido de supplier_contract_id no vínculo do canal.",
+    "Procurement rate version ID. The generator uses current_rate_version_id; historical versions come from contract history.": "ID da versão da taxa de aquisição. O gerador usa current_rate_version_id; as versões históricas vêm do histórico do contrato.",
+    "Procurement multiplier in parts per million. For example, 600000 means 60%.": "Multiplicador de aquisição em partes por milhão. Por exemplo, 600000 significa 60%.",
+    "Advanced JSON editor": "Editor JSON avançado",
+    "Channel mappings JSON": "JSON de mapeamentos de canais",
+    "Check historical rate changes": "Verificar alterações históricas da taxa",
+    "The generator uses current bindings. If a binding or procurement rate changed during the selected period, split the import at its effective time and select the corresponding historical rate version.": "O gerador usa os vínculos atuais. Se um vínculo ou uma taxa de aquisição mudou durante o período selecionado, divida a importação no momento de vigência e escolha a versão histórica correspondente."
   }
 }
