@@ -33,7 +33,6 @@ import { ReportContractTable } from './components/report-contract-table'
 import { ReportOverview } from './components/report-overview'
 import { ReportTrend } from './components/report-trend'
 import { SupplierManagement } from './components/supplier-management'
-import { SupplyChainSecureVerificationProvider } from './components/supply-chain-secure-verification'
 import {
   SUPPLY_CHAIN_TABS,
   type SupplyChainManagementProps,
@@ -240,9 +239,5 @@ function SupplyChainContent(props: SupplyChainManagementProps) {
 }
 
 export function SupplyChain(props: SupplyChainManagementProps) {
-  return (
-    <SupplyChainSecureVerificationProvider>
-      <SupplyChainContent {...props} />
-    </SupplyChainSecureVerificationProvider>
-  )
+  return <SupplyChainContent {...props} />
 }

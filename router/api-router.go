@@ -620,7 +620,6 @@ func SetApiRouter(router *gin.Engine) {
 func supplierSupplyChainMutation(handler gin.HandlerFunc) []gin.HandlerFunc {
 	return []gin.HandlerFunc{
 		middleware.CriticalRateLimit(),
-		middleware.SecureVerificationRequired(),
 		handler,
 	}
 }
