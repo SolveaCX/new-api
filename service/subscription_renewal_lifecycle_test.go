@@ -378,7 +378,7 @@ func TestResumeCurrentSubscriptionRenewalStripeRejectsProviderFailureWithoutPseu
 	require.Equal(t, model.SubscriptionRenewalStatusEnabled, storedContract.RenewalStatus)
 }
 
-func TestCancelCurrentSubscriptionRenewalReturnsConfirmedRemoteStateAfterLocalSyncFailure(t *testing.T) {
+func TestCancelCurrentSubscriptionRenewalPersistsConfirmedRemoteStateAfterLocalSyncFailure(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	contract, binding, _ := seedStripeRenewalLifecycleContract(t, 7946, false, "sub_unified_cancel_sync_failure")
 	originalCancel := cancelCurrentStripeRecurringSubscription
@@ -412,10 +412,14 @@ func TestCancelCurrentSubscriptionRenewalReturnsConfirmedRemoteStateAfterLocalSy
 	require.False(t, result.CanCancel)
 	require.True(t, result.CanResume)
 	require.True(t, result.CancelAtPeriodEnd)
-	require.True(t, result.SyncPending)
+	require.False(t, result.SyncPending)
+	var storedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&storedBinding, binding.Id).Error)
+	require.True(t, storedBinding.CancelAtPeriodEnd)
+	require.Greater(t, storedBinding.LifecycleActionSeq, binding.LifecycleActionSeq)
 }
 
-func TestResumeCurrentSubscriptionRenewalReturnsConfirmedRemoteStateAfterLocalSyncFailure(t *testing.T) {
+func TestResumeCurrentSubscriptionRenewalPersistsConfirmedRemoteStateAfterLocalSyncFailure(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	contract, binding, _ := seedStripeRenewalLifecycleContract(t, 7947, true, "sub_unified_resume_sync_failure")
 	originalResume := resumeCurrentStripeRecurringSubscription
@@ -449,7 +453,11 @@ func TestResumeCurrentSubscriptionRenewalReturnsConfirmedRemoteStateAfterLocalSy
 	require.True(t, result.CanCancel)
 	require.False(t, result.CanResume)
 	require.False(t, result.CancelAtPeriodEnd)
-	require.True(t, result.SyncPending)
+	require.False(t, result.SyncPending)
+	var storedBinding model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&storedBinding, binding.Id).Error)
+	require.False(t, storedBinding.CancelAtPeriodEnd)
+	require.Greater(t, storedBinding.LifecycleActionSeq, binding.LifecycleActionSeq)
 }
 
 func TestCancelCurrentSubscriptionRenewalDoesNotConfirmLifecycleConflictFromProviderSnapshot(t *testing.T) {
