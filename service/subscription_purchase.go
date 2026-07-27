@@ -1052,9 +1052,6 @@ func validateSubscriptionPurchaseQuoteForChoice(quote SubscriptionPurchaseQuote,
 	if unitAmountMinor > math.MaxInt64/int64(months) || originalTotalMinor != unitAmountMinor*int64(months) {
 		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote total does not match rounded monthly minor amount")
 	}
-	if quote.DiscountAmountMinor > unitAmountMinor {
-		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote discount exceeds first month")
-	}
 	if quote.PaymentAmountMinor != originalTotalMinor-quote.DiscountAmountMinor {
 		return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote discounted total does not match original total")
 	}
@@ -1073,12 +1070,18 @@ func validateSubscriptionPurchaseQuoteForChoice(quote SubscriptionPurchaseQuote,
 			return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote discount kind is invalid")
 		}
 	case SubscriptionDiscountKindInvitation:
+		if quote.DiscountAmountMinor > originalTotalMinor {
+			return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote discount exceeds original total")
+		}
 		if quote.RecallCampaignID != 0 || quote.RecallRecipientID != 0 || strings.TrimSpace(quote.RecallPromotionCodeID) != "" {
 			return SubscriptionPurchaseQuote{}, errors.New("subscription purchase invitation discount cannot carry recall identity")
 		}
 	case SubscriptionDiscountKindRecall:
 		if quote.DiscountAmountMinor <= 0 {
 			return SubscriptionPurchaseQuote{}, errors.New("subscription purchase recall discount requires discount")
+		}
+		if quote.DiscountAmountMinor > unitAmountMinor {
+			return SubscriptionPurchaseQuote{}, errors.New("subscription purchase quote discount exceeds first month")
 		}
 		if quote.RecallCampaignID <= 0 || quote.RecallRecipientID <= 0 {
 			return SubscriptionPurchaseQuote{}, errors.New("subscription purchase recall identity is required")
