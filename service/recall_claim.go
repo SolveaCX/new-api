@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 
@@ -94,6 +96,98 @@ func (s *RecallClaimService) ValidateClaimForPurchase(ctx context.Context, userI
 		return nil, ErrRecallClaimWrongPrice
 	}
 	return view, nil
+}
+
+func (s *RecallClaimService) ListOffers(ctx context.Context, userID int) ([]RecallOfferView, error) {
+	offers := make([]RecallOfferView, 0)
+	if !operation_setting.IsRecallCampaignEnabled() {
+		return offers, nil
+	}
+	user, ok, err := recallEnabledUserIdentity(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return offers, nil
+	}
+	candidates, err := model.ListRecallOfferCandidatesForUserWithContext(ctx, user.Id, strings.ToLower(strings.TrimSpace(user.Email)), s.now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range candidates {
+		offer, err := s.recallOfferFromCandidate(ctx, candidate)
+		if err != nil {
+			logRecallOfferCandidateSkip(candidate, err)
+			continue
+		}
+		offers = append(offers, offer.View)
+	}
+	sort.SliceStable(offers, func(i, j int) bool {
+		if offers[i].IssuedAt != offers[j].IssuedAt {
+			return offers[i].IssuedAt > offers[j].IssuedAt
+		}
+		return offers[i].RecipientID < offers[j].RecipientID
+	})
+	return offers, nil
+}
+
+func (s *RecallClaimService) ResolveBestRecallOffer(ctx context.Context, userID int, purchaseKind string, priceID string, currency string, subtotalMinor int64) (*RecallResolvedOffer, error) {
+	purchaseKind = strings.TrimSpace(purchaseKind)
+	priceID = strings.TrimSpace(priceID)
+	currency = strings.TrimSpace(currency)
+	if purchaseKind != RecallPurchaseKindTopUp && purchaseKind != RecallPurchaseKindSubscription {
+		return nil, ErrRecallClaimPurchaseKind
+	}
+	if priceID == "" {
+		return nil, ErrRecallClaimWrongPrice
+	}
+	if currency == "" || subtotalMinor <= 0 {
+		return nil, fmt.Errorf("recall offer purchase facts are invalid")
+	}
+	if !operation_setting.IsRecallCampaignEnabled() {
+		return nil, nil
+	}
+	user, ok, err := recallEnabledUserIdentity(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	candidates, err := model.ListRecallOfferCandidatesForUserWithContext(ctx, user.Id, strings.ToLower(strings.TrimSpace(user.Email)), s.now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	resolved := make([]RecallResolvedOffer, 0, len(candidates))
+	for _, candidate := range candidates {
+		offer, err := s.recallOfferFromCandidate(ctx, candidate)
+		if err != nil {
+			logRecallOfferCandidateSkip(candidate, err)
+			continue
+		}
+		if !recallOfferAppliesToPrice(offer.View.Products, purchaseKind, priceID) {
+			continue
+		}
+		discountMinor := calculateRecallActualDiscountAmountMinor(offer.View.Discount, currency, subtotalMinor)
+		if discountMinor <= 0 {
+			continue
+		}
+		offer.DiscountMinor = discountMinor
+		resolved = append(resolved, *offer)
+	}
+	if len(resolved) == 0 {
+		return nil, nil
+	}
+	sort.SliceStable(resolved, func(i, j int) bool {
+		if resolved[i].DiscountMinor != resolved[j].DiscountMinor {
+			return resolved[i].DiscountMinor > resolved[j].DiscountMinor
+		}
+		if resolved[i].View.IssuedAt != resolved[j].View.IssuedAt {
+			return resolved[i].View.IssuedAt > resolved[j].View.IssuedAt
+		}
+		return resolved[i].View.RecipientID < resolved[j].View.RecipientID
+	})
+	return &resolved[0], nil
 }
 
 func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, claim string) (*model.RecallClaimRecord, *RecallClaimView, error) {
@@ -204,6 +298,110 @@ func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, clai
 		Redeemed:            false,
 	}
 	return record, view, nil
+}
+
+func recallEnabledUserIdentity(ctx context.Context, userID int) (*model.User, bool, error) {
+	user, found, err := model.GetRecallClaimUserWithContext(ctx, userID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found || user.Status != common.UserStatusEnabled {
+		return nil, false, nil
+	}
+	if _, ok := normalizeRecallClaimEmail(user.Email); !ok {
+		return nil, false, nil
+	}
+	return user, true, nil
+}
+
+func (s *RecallClaimService) recallOfferFromCandidate(ctx context.Context, candidate model.RecallOfferCandidate) (*RecallResolvedOffer, error) {
+	if candidate.Campaign.Id != candidate.Recipient.CampaignId || !activeRecallCampaignStatus(candidate.Campaign.Status) {
+		return nil, ErrRecallClaimInactive
+	}
+	if candidate.Recipient.ConvertedAt != 0 || candidate.Recipient.State == model.RecallRecipientConverted {
+		return nil, ErrRecallClaimConverted
+	}
+	if candidate.Recipient.State == model.RecallRecipientSuppressed {
+		return nil, ErrRecallClaimSuppressed
+	}
+	if !activeRecallRecipientState(candidate.Recipient.State) {
+		return nil, ErrRecallClaimInactive
+	}
+	promotionCodeID := ""
+	if candidate.Recipient.StripePromotionCodeId != nil {
+		promotionCodeID = strings.TrimSpace(*candidate.Recipient.StripePromotionCodeId)
+	}
+	if promotionCodeID == "" || strings.TrimSpace(candidate.Recipient.PromotionCode) == "" {
+		return nil, ErrRecallClaimPromotionInvalid
+	}
+	if candidate.Recipient.PromotionExpiresAt <= s.now().Unix() {
+		return nil, ErrRecallClaimExpired
+	}
+	discount := RecallDiscountConfig{}
+	if err := common.Unmarshal([]byte(candidate.Campaign.DiscountConfig), &discount); err != nil {
+		return nil, fmt.Errorf("%w: discount", ErrRecallClaimInvalidConfig)
+	}
+	products := RecallProductScope{}
+	if err := common.Unmarshal([]byte(candidate.Campaign.ProductScope), &products); err != nil {
+		return nil, fmt.Errorf("%w: products", ErrRecallClaimInvalidConfig)
+	}
+	products.TopUpPriceIDs = normalizeRecallStripeIDs(products.TopUpPriceIDs)
+	products.SubscriptionPriceIDs = normalizeRecallStripeIDs(products.SubscriptionPriceIDs)
+	if len(products.TopUpPriceIDs)+len(products.SubscriptionPriceIDs) == 0 {
+		return nil, fmt.Errorf("%w: products", ErrRecallClaimInvalidConfig)
+	}
+	subscriptionPlanIDs, err := resolveRecallSubscriptionPlanIDs(ctx, products.SubscriptionPriceIDs)
+	if err != nil {
+		return nil, err
+	}
+	products.SubscriptionPlanIDs = subscriptionPlanIDs
+	view := RecallOfferView{
+		RecallClaimView: RecallClaimView{
+			CampaignID:          candidate.Campaign.Id,
+			RecipientID:         candidate.Recipient.Id,
+			CampaignName:        candidate.Campaign.Name,
+			PromotionCodeMasked: model.MaskPromotionCode(candidate.Recipient.PromotionCode),
+			ExpiresAt:           candidate.Recipient.PromotionExpiresAt,
+			Discount:            discount,
+			Products:            products,
+			Redeemed:            false,
+		},
+		IssuedAt: candidate.EffectiveIssuedAt(),
+	}
+	return &RecallResolvedOffer{
+		View:            view,
+		PromotionCodeID: promotionCodeID,
+	}, nil
+}
+
+func resolveRecallSubscriptionPlanIDs(ctx context.Context, rawPriceIDs []string) ([]int, error) {
+	priceIDs := normalizeRecallStripeIDs(rawPriceIDs)
+	if len(priceIDs) == 0 {
+		return []int{}, nil
+	}
+	plans, err := model.ListRecallSubscriptionPlansByStripePriceIDsWithContext(ctx, priceIDs)
+	if err != nil {
+		return nil, err
+	}
+	planIDsByPriceID := make(map[string][]int, len(plans))
+	for _, plan := range plans {
+		priceID := strings.TrimSpace(plan.StripePriceId)
+		if priceID != "" && plan.Id > 0 && plan.Enabled {
+			planIDsByPriceID[priceID] = append(planIDsByPriceID[priceID], plan.Id)
+		}
+	}
+	planIDs := make([]int, 0, len(plans))
+	seen := make(map[int]struct{}, len(priceIDs))
+	for _, priceID := range priceIDs {
+		for _, planID := range planIDsByPriceID[priceID] {
+			if _, exists := seen[planID]; exists {
+				continue
+			}
+			seen[planID] = struct{}{}
+			planIDs = append(planIDs, planID)
+		}
+	}
+	return planIDs, nil
 }
 
 func (s *RecallClaimService) BuildCheckoutDiscount(ctx context.Context, userID int, claim string, purchaseKind string, priceID string) (*RecallCheckoutDiscount, error) {
@@ -378,7 +576,6 @@ func activeRecallCampaignStatus(status string) bool {
 	case model.RecallCampaignScheduled,
 		model.RecallCampaignRunning,
 		model.RecallCampaignPaused,
-		model.RecallCampaignCancelled,
 		model.RecallCampaignCompleted:
 		return true
 	default:
@@ -403,4 +600,115 @@ func containsRecallPriceID(priceIDs []string, selected string) bool {
 		}
 	}
 	return false
+}
+
+func recallOfferAppliesToPrice(products RecallProductScope, purchaseKind string, priceID string) bool {
+	switch purchaseKind {
+	case RecallPurchaseKindTopUp:
+		return containsRecallPriceID(products.TopUpPriceIDs, priceID)
+	case RecallPurchaseKindSubscription:
+		return containsRecallPriceID(products.SubscriptionPriceIDs, priceID)
+	default:
+		return false
+	}
+}
+
+func logRecallOfferCandidateSkip(candidate model.RecallOfferCandidate, err error) {
+	if err == nil {
+		return
+	}
+	common.SysLog(fmt.Sprintf(
+		"recall_offer_candidate_skipped campaign_id=%d recipient_id=%d reason=%s",
+		candidate.Campaign.Id,
+		candidate.Recipient.Id,
+		sanitizeRecallOfferSkipReason(err),
+	))
+}
+
+func sanitizeRecallOfferSkipReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch {
+	case errors.Is(err, ErrRecallClaimInactive):
+		return "inactive"
+	case errors.Is(err, ErrRecallClaimConverted):
+		return "converted"
+	case errors.Is(err, ErrRecallClaimSuppressed):
+		return "suppressed"
+	case errors.Is(err, ErrRecallClaimPromotionInvalid):
+		return "promotion_invalid"
+	case errors.Is(err, ErrRecallClaimExpired):
+		return "expired"
+	case errors.Is(err, ErrRecallClaimInvalidConfig):
+		return "invalid_config"
+	default:
+		return "error"
+	}
+}
+
+func calculateRecallFirstMonthDiscountAmountMinor(discount RecallDiscountConfig, currency string, unitAmountMinor int64) int64 {
+	return calculateRecallDiscountAmountMinor(discount, currency, unitAmountMinor, false)
+}
+
+func calculateRecallActualDiscountAmountMinor(discount RecallDiscountConfig, currency string, subtotalMinor int64) int64 {
+	return calculateRecallDiscountAmountMinor(discount, currency, subtotalMinor, true)
+}
+
+func calculateRecallDiscountAmountMinor(discount RecallDiscountConfig, currency string, unitAmountMinor int64, exactCurrency bool) int64 {
+	if unitAmountMinor <= 0 {
+		return 0
+	}
+	currency = strings.TrimSpace(currency)
+	currencyMatches := func(configured string) bool {
+		configured = strings.TrimSpace(configured)
+		if exactCurrency {
+			return configured == currency
+		}
+		return strings.EqualFold(configured, currency)
+	}
+	if discount.MinimumAmount > 0 {
+		if !currencyMatches(discount.MinimumAmountCurrency) || unitAmountMinor < discount.MinimumAmount {
+			return 0
+		}
+	}
+	var amount int64
+	switch strings.ToLower(strings.TrimSpace(discount.Type)) {
+	case "percent":
+		if discount.PercentOff <= 0 {
+			return 0
+		}
+		if discount.PercentOff >= 100 {
+			return unitAmountMinor
+		}
+		raw := math.Round(float64(unitAmountMinor) * discount.PercentOff / 100)
+		if raw >= float64(unitAmountMinor) {
+			return unitAmountMinor
+		}
+		amount = int64(raw)
+	case "fixed":
+		found := false
+		for optionCurrency, optionAmount := range discount.CurrencyOptions {
+			if currencyMatches(optionCurrency) {
+				amount = optionAmount
+				found = true
+				break
+			}
+		}
+		if !found {
+			if !currencyMatches(discount.Currency) {
+				return 0
+			}
+			amount = discount.AmountOff
+		}
+	default:
+		return 0
+	}
+	if amount < 0 {
+		return 0
+	}
+	if amount > unitAmountMinor {
+		return unitAmountMinor
+	}
+	return amount
 }
