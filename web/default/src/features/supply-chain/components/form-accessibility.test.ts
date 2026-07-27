@@ -32,6 +32,7 @@ describe('supply-chain form accessibility', () => {
     const contract = await readComponent('contract-management.tsx')
     const exclusion = await readComponent('exclusion-management.tsx')
     const binding = await readComponent('channel-binding-management.tsx')
+    const policy = await readComponent('accounting-policy-activation.tsx')
 
     for (const id of [
       "contract-supplier-${props.contract?.id ?? 'new'}",
@@ -62,6 +63,8 @@ describe('supply-chain form accessibility', () => {
       binding,
       'binding-contract-${props.binding.channel_id}'
     )
+    expect(policy).toContain("htmlFor='supplier-accounting-policy-activation'")
+    expect(policy).toContain("id='supplier-accounting-policy-activation'")
   })
 
   test('wires validation state to contract capacity controls and messages', async () => {
@@ -93,5 +96,15 @@ describe('supply-chain form accessibility', () => {
       const validatedControls = source.match(/aria-invalid=/g)?.length ?? 0
       expect(validatedControls).toBe(validatedFields)
     }
+  })
+
+  test('disables complete skip until the global policy is configurable', async () => {
+    const binding = await readComponent('channel-binding-management.tsx')
+
+    expect(binding).toContain('disabled={!props.policyConfigurable}')
+    expect(binding).toContain('isAccountingPolicyConfigurable(')
+    expect(binding).toContain(
+      'Activate the global policy before selecting complete skip.'
+    )
   })
 })

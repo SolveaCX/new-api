@@ -45,6 +45,10 @@ import {
 import { bindChannel, unbindChannel } from '../api'
 import type { SupplyChainManagementProps } from '../contracts'
 import {
+  isAccountingPolicyConfigurable,
+  useAccountingPolicyCapability,
+} from '../hooks/use-accounting-policy-capability'
+import {
   useChannelBindingAdminList,
   useContractAdminInfiniteList,
   useSupplyChainAdminMutation,
@@ -56,6 +60,7 @@ import {
 } from '../lib/schemas'
 import { supplyChainQueryKeys } from '../query-keys'
 import type { SupplierChannelBinding } from '../types'
+import { AccountingPolicyActivation } from './accounting-policy-activation'
 import {
   ConfirmAction,
   ManagementPagination,
@@ -72,7 +77,10 @@ function bindingErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function BindingDialog(props: { binding: SupplierChannelBinding }) {
+function BindingDialog(props: {
+  binding: SupplierChannelBinding
+  policyConfigurable: boolean
+}) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const contracts = useContractAdminInfiniteList(
@@ -238,14 +246,21 @@ function BindingDialog(props: { binding: SupplierChannelBinding }) {
                 <NativeSelectOption value='record'>
                   {t('Record internal costs')}
                 </NativeSelectOption>
-                <NativeSelectOption value='skip'>
+                <NativeSelectOption
+                  value='skip'
+                  disabled={!props.policyConfigurable}
+                >
                   {t('Skip completely')}
                 </NativeSelectOption>
               </NativeSelect>
               <FieldDescription>
-                {t(
-                  'This policy applies only to requests from accounts excluded from supplier statistics.'
-                )}
+                {props.policyConfigurable
+                  ? t(
+                      'This policy applies only to requests from accounts excluded from supplier statistics.'
+                    )
+                  : t(
+                      'Activate the global policy before selecting complete skip.'
+                    )}
               </FieldDescription>
               <FieldError>
                 {form.formState.errors.skip_internal_accounting
@@ -352,6 +367,11 @@ function UnbindAction(props: { binding: SupplierChannelBinding }) {
 export function ChannelBindingManagement(props: SupplyChainManagementProps) {
   const { t } = useTranslation()
   const [boundState, setBoundState] = useState<'bound' | 'unbound' | ''>('')
+  const policy = useAccountingPolicyCapability()
+  const policyConfigurable = isAccountingPolicyConfigurable(
+    policy.data,
+    policy.isError
+  )
   const query = useChannelBindingAdminList({
     p: props.search.page,
     page_size: props.search.pageSize,
@@ -362,6 +382,11 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
 
   return (
     <div className='flex flex-col gap-3'>
+      <AccountingPolicyActivation
+        capability={policy.data}
+        isLoading={policy.isLoading}
+        isError={policy.isError}
+      />
       <ManagementToolbar
         search={props.search}
         onSearchChange={props.onSearchChange}
@@ -460,7 +485,10 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
                   </TableCell>
                   <TableCell>
                     <div className='flex justify-end gap-1'>
-                      <BindingDialog binding={binding} />
+                      <BindingDialog
+                        binding={binding}
+                        policyConfigurable={policyConfigurable}
+                      />
                       {binding.supplier_contract_id ? (
                         <UnbindAction binding={binding} />
                       ) : null}
