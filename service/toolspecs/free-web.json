@@ -1,0 +1,344 @@
+[
+  {
+    "id": "web.hn.search",
+    "name": "Hacker News Search",
+    "provider": "hackernews",
+    "mode": "native",
+    "categories": ["search", "social", "tech"],
+    "description": "Search Hacker News stories and comments by keyword, sorted by relevance or recency. Returns title, url, points, author and comment count.",
+    "keywords": ["hackernews", "ycombinator", "tech news", "startup discussion"],
+    "input": {
+      "type": "object",
+      "properties": {
+        "query": { "type": "string", "description": "Search keywords.", "example": "mcp server" },
+        "tags": { "type": "string", "description": "Filter by type.", "enum": ["story", "comment", "poll", "show_hn", "ask_hn", "front_page"], "default": "story" },
+        "hitsPerPage": { "type": "number", "description": "Results to return, 1-100.", "default": 20 }
+      },
+      "required": ["query"]
+    },
+    "output": { "description": "Array of hits with title, url, points, num_comments, author, created_at." },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://hn.algolia.com/api/v1/search",
+      "auth": { "type": "none" },
+      "query": { "query": "{{query}}", "tags": "{{tags}}", "hitsPerPage": "{{hitsPerPage}}" },
+      "resultPath": "hits"
+    },
+    "docsUrl": "https://hn.algolia.com/api"
+  },
+  {
+    "id": "web.github.repo_search",
+    "name": "GitHub Repository Search",
+    "provider": "github",
+    "mode": "native",
+    "categories": ["search", "tech", "developer"],
+    "description": "Search public GitHub repositories by keyword, language or stars. Returns name, description, stars, language and URL.",
+    "keywords": ["github", "open source", "repository", "stars"],
+    "input": {
+      "type": "object",
+      "properties": {
+        "q": { "type": "string", "description": "GitHub search qualifiers, e.g. \"mcp server language:python stars:>100\".", "example": "model context protocol" },
+        "sort": { "type": "string", "enum": ["stars", "forks", "updated"], "default": "stars" },
+        "per_page": { "type": "number", "default": 20 }
+      },
+      "required": ["q"]
+    },
+    "output": { "description": "Array of repositories with full_name, description, stargazers_count, language, html_url." },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://api.github.com/search/repositories",
+      "auth": { "type": "none" },
+      "headers": { "user-agent": "voc-tools-hub", "accept": "application/vnd.github+json" },
+      "query": { "q": "{{q}}", "sort": "{{sort}}", "per_page": "{{per_page}}" },
+      "resultPath": "items"
+    },
+    "docsUrl": "https://docs.github.com/rest/search"
+  },
+  {
+    "id": "web.github.repo_info",
+    "name": "GitHub Repository Detail",
+    "provider": "github",
+    "mode": "native",
+    "categories": ["tech", "developer"],
+    "description": "Full metadata for one GitHub repository: stars, forks, open issues, licence, topics, last push.",
+    "keywords": ["github repo", "stars", "forks", "license"],
+    "input": {
+      "type": "object",
+      "properties": {
+        "owner": { "type": "string", "example": "anthropics" },
+        "repo": { "type": "string", "example": "anthropic-sdk-python" }
+      },
+      "required": ["owner", "repo"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://api.github.com/repos/{{owner}}/{{repo}}",
+      "auth": { "type": "none" },
+      "headers": { "user-agent": "voc-tools-hub", "accept": "application/vnd.github+json" }
+    }
+  },
+  {
+    "id": "web.wikipedia.search",
+    "name": "Wikipedia Search",
+    "provider": "wikipedia",
+    "mode": "native",
+    "categories": ["search", "reference"],
+    "description": "Search English Wikipedia article titles and snippets by keyword.",
+    "keywords": ["wikipedia", "encyclopedia", "reference", "definition"],
+    "input": {
+      "type": "object",
+      "properties": {
+        "srsearch": { "type": "string", "description": "Search terms.", "example": "voice of the customer" },
+        "srlimit": { "type": "number", "default": 10 }
+      },
+      "required": ["srsearch"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://en.wikipedia.org/w/api.php",
+      "auth": { "type": "none" },
+      "headers": { "user-agent": "voc-tools-hub" },
+      "query": { "action": "query", "list": "search", "srsearch": "{{srsearch}}", "srlimit": "{{srlimit}}", "format": "json" },
+      "resultPath": "query.search"
+    }
+  },
+  {
+    "id": "web.wikipedia.summary",
+    "name": "Wikipedia Article Summary",
+    "provider": "wikipedia",
+    "mode": "native",
+    "categories": ["reference"],
+    "description": "Plain-text lead summary, thumbnail and canonical URL for one Wikipedia article title.",
+    "keywords": ["wikipedia summary", "extract", "definition"],
+    "input": {
+      "type": "object",
+      "properties": { "title": { "type": "string", "description": "Exact article title.", "example": "Amazon (company)" } },
+      "required": ["title"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://en.wikipedia.org/api/rest_v1/page/summary/{{title}}",
+      "auth": { "type": "none" },
+      "headers": { "user-agent": "voc-tools-hub" }
+    }
+  },
+  {
+    "id": "web.npm.package",
+    "name": "npm Package Metadata",
+    "provider": "npm",
+    "mode": "native",
+    "categories": ["developer", "tech"],
+    "description": "Registry metadata for an npm package: versions, latest, licence, repository, maintainers.",
+    "keywords": ["npm", "node package", "javascript library"],
+    "input": {
+      "type": "object",
+      "properties": { "package": { "type": "string", "example": "next" } },
+      "required": ["package"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": { "kind": "http", "method": "GET", "url": "https://registry.npmjs.org/{{package}}", "auth": { "type": "none" } }
+  },
+  {
+    "id": "web.pypi.package",
+    "name": "PyPI Package Metadata",
+    "provider": "pypi",
+    "mode": "native",
+    "categories": ["developer", "tech"],
+    "description": "PyPI metadata for a Python package: latest version, summary, licence, project URLs, requires.",
+    "keywords": ["pypi", "python package", "pip"],
+    "input": {
+      "type": "object",
+      "properties": { "package": { "type": "string", "example": "anthropic" } },
+      "required": ["package"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": { "kind": "http", "method": "GET", "url": "https://pypi.org/pypi/{{package}}/json", "auth": { "type": "none" }, "resultPath": "info" }
+  },
+  {
+    "id": "web.crossref.works",
+    "name": "Academic Paper Search (Crossref)",
+    "provider": "crossref",
+    "mode": "native",
+    "categories": ["research", "search"],
+    "description": "Search 150M+ scholarly works by title, author or keyword. Returns DOI, title, authors, journal, publication date and citation count.",
+    "keywords": ["paper", "academic", "doi", "citation", "journal", "research"],
+    "input": {
+      "type": "object",
+      "properties": {
+        "query": { "type": "string", "example": "voice of the customer analytics" },
+        "rows": { "type": "number", "default": 10 }
+      },
+      "required": ["query"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://api.crossref.org/works",
+      "auth": { "type": "none" },
+      "headers": { "user-agent": "voc-tools-hub (mailto:support@voc.ai)" },
+      "query": { "query": "{{query}}", "rows": "{{rows}}" },
+      "resultPath": "message.items"
+    }
+  },
+  {
+    "id": "web.openfoodfacts.product",
+    "name": "Product Lookup by Barcode",
+    "provider": "openfoodfacts",
+    "mode": "native",
+    "categories": ["ecommerce", "product"],
+    "description": "Look up a consumer product by EAN/UPC barcode: brand, name, categories, ingredients, nutrition, images.",
+    "keywords": ["barcode", "ean", "upc", "product data", "ingredients", "cpg"],
+    "input": {
+      "type": "object",
+      "properties": { "barcode": { "type": "string", "description": "EAN-13 or UPC.", "example": "3017624010701" } },
+      "required": ["barcode"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://world.openfoodfacts.org/api/v2/product/{{barcode}}.json",
+      "auth": { "type": "none" },
+      "headers": { "user-agent": "voc-tools-hub" },
+      "resultPath": "product"
+    }
+  },
+  {
+    "id": "web.fx.rates",
+    "name": "Foreign Exchange Rates",
+    "provider": "frankfurter",
+    "mode": "native",
+    "categories": ["finance", "reference"],
+    "description": "Current or historical ECB reference exchange rates between any two currencies.",
+    "keywords": ["fx", "exchange rate", "currency", "usd", "eur", "conversion"],
+    "input": {
+      "type": "object",
+      "properties": {
+        "from": { "type": "string", "description": "Base currency code.", "default": "USD", "example": "USD" },
+        "to": { "type": "string", "description": "Comma-separated target codes.", "default": "EUR,GBP,JPY,CNY" },
+        "date": { "type": "string", "description": "YYYY-MM-DD for a historical rate. Omit for latest." }
+      },
+      "required": ["from"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://api.frankfurter.app/latest",
+      "auth": { "type": "none" },
+      "query": { "from": "{{from}}", "to": "{{to}}" }
+    }
+  },
+  {
+    "id": "web.geocode.search",
+    "name": "Geocode an Address",
+    "provider": "openstreetmap",
+    "mode": "native",
+    "categories": ["location", "reference"],
+    "description": "Convert a place name or address into coordinates, with the matched administrative hierarchy and bounding box.",
+    "keywords": ["geocode", "address", "latitude", "longitude", "maps", "location"],
+    "input": {
+      "type": "object",
+      "properties": {
+        "q": { "type": "string", "example": "160 E Tasman Dr, San Jose, CA" },
+        "limit": { "type": "number", "default": 5 }
+      },
+      "required": ["q"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://nominatim.openstreetmap.org/search",
+      "auth": { "type": "none" },
+      "headers": { "user-agent": "voc-tools-hub/0.1 (support@voc.ai)" },
+      "query": { "q": "{{q}}", "format": "json", "limit": "{{limit}}", "addressdetails": "1" }
+    }
+  },
+  {
+    "id": "web.weather.forecast",
+    "name": "Weather Forecast by Coordinates",
+    "provider": "openmeteo",
+    "mode": "native",
+    "categories": ["location", "reference"],
+    "description": "Current conditions and daily forecast for a latitude/longitude. Useful for seasonality and demand analysis.",
+    "keywords": ["weather", "forecast", "temperature", "climate", "seasonality"],
+    "input": {
+      "type": "object",
+      "properties": {
+        "latitude": { "type": "number", "example": 37.41 },
+        "longitude": { "type": "number", "example": -121.94 },
+        "forecast_days": { "type": "number", "default": 3 }
+      },
+      "required": ["latitude", "longitude"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://api.open-meteo.com/v1/forecast",
+      "auth": { "type": "none" },
+      "query": {
+        "latitude": "{{latitude}}",
+        "longitude": "{{longitude}}",
+        "forecast_days": "{{forecast_days}}",
+        "current": "temperature_2m,precipitation,weather_code",
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum"
+      }
+    }
+  },
+  {
+    "id": "web.country.info",
+    "name": "Country Profile",
+    "provider": "restcountries",
+    "mode": "native",
+    "categories": ["reference", "market"],
+    "description": "Population, currencies, languages, region, timezones and calling codes for a country. Useful for market sizing and localisation.",
+    "keywords": ["country", "population", "currency", "market", "locale", "timezone"],
+    "input": {
+      "type": "object",
+      "properties": { "name": { "type": "string", "example": "Brazil" } },
+      "required": ["name"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://restcountries.com/v3.1/name/{{name}}",
+      "auth": { "type": "none" },
+      "query": { "fields": "name,cca2,population,currencies,languages,region,timezones,idd,flag" }
+    }
+  },
+  {
+    "id": "web.dictionary.define",
+    "name": "English Dictionary Lookup",
+    "provider": "dictionaryapi",
+    "mode": "native",
+    "categories": ["reference", "language"],
+    "description": "Definitions, phonetics, part of speech, synonyms and examples for an English word.",
+    "keywords": ["dictionary", "define", "meaning", "synonym", "phonetic"],
+    "input": {
+      "type": "object",
+      "properties": { "word": { "type": "string", "example": "churn" } },
+      "required": ["word"]
+    },
+    "pricing": { "model": "free", "amount": 0, "cost": 0 },
+    "adapter": {
+      "kind": "http",
+      "method": "GET",
+      "url": "https://api.dictionaryapi.dev/api/v2/entries/en/{{word}}",
+      "auth": { "type": "none" }
+    }
+  }
+]

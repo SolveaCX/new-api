@@ -326,6 +326,8 @@ func migrateDB() error {
 		&AdsPilotAction{},
 		&AdsPilotProposal{},
 		&AdsPilotMeta{},
+
+		&ToolCall{},
 	)
 	if err != nil {
 		return err

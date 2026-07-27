@@ -1,0 +1,218 @@
+[
+  {
+    "id": "voc.amazon_reviews_fetch_realtime",
+    "name": "Amazon Reviews Fetch Realtime",
+    "provider": "voc:amazon",
+    "mode": "native",
+    "categories": [
+      "ecommerce",
+      "reviews",
+      "amazon"
+    ],
+    "description": "Fetch latest Amazon reviews for an ASIN by triggering a real-time crawl. Submits a task and polls until done (≤10 min). Cost: 5 Credits per ASIN, including variants.",
+    "keywords": [
+      "voc",
+      "amazon",
+      "reviews",
+      "fetch",
+      "realtime",
+      "asin",
+      "ecommerce"
+    ],
+    "input": {
+      "type": "object",
+      "properties": {
+        "asin": {
+          "type": "string",
+          "description": "10-char Amazon Standard Identification Number",
+          "example": "B08N5WRWNW"
+        },
+        "market": {
+          "type": "string",
+          "description": "Market code",
+          "enum": [
+            "US",
+            "GB",
+            "DE",
+            "FR",
+            "JP",
+            "IT",
+            "ES",
+            "CA",
+            "MX",
+            "AU"
+          ],
+          "default": "US"
+        },
+        "max_page": {
+          "type": "number",
+          "description": "Max pages to crawl (Amazon limit 10)",
+          "default": 10
+        }
+      },
+      "required": [
+        "asin"
+      ]
+    },
+    "pricing": {
+      "model": "per_call",
+      "amount": 0.0015,
+      "cost": 0.001,
+      "payOnMatch": true
+    },
+    "adapter": {
+      "kind": "mcp",
+      "url": "https://open.voc.ai/mcp-server",
+      "toolName": "amazon_reviews_fetch_realtime",
+      "auth": {
+        "type": "header",
+        "name": "X-API-Key",
+        "envKey": "VOC_API_KEY"
+      }
+    }
+  },
+  {
+    "id": "voc.amazon_reviews_fetch_history",
+    "name": "Amazon Reviews Fetch History",
+    "provider": "voc:amazon",
+    "mode": "native",
+    "categories": [
+      "ecommerce",
+      "reviews",
+      "amazon"
+    ],
+    "description": "Fetch historical Amazon reviews for an ASIN from cached inventory. Cost: 5 Credits per ASIN, including variants.",
+    "keywords": [
+      "voc",
+      "amazon",
+      "reviews",
+      "fetch",
+      "history",
+      "asin",
+      "ecommerce"
+    ],
+    "input": {
+      "type": "object",
+      "properties": {
+        "asin": {
+          "type": "string",
+          "description": "10-char ASIN",
+          "example": "B08N5WRWNW"
+        },
+        "market": {
+          "type": "string",
+          "description": "Amazon marketplace code",
+          "enum": [
+            "US",
+            "GB",
+            "DE",
+            "FR",
+            "JP",
+            "IT",
+            "ES",
+            "CA",
+            "MX",
+            "AU"
+          ],
+          "default": "US"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Max reviews to return (MCP hard cap 200, less than InvQry01 native 500)",
+          "default": 100
+        }
+      },
+      "required": [
+        "asin"
+      ]
+    },
+    "pricing": {
+      "model": "per_call",
+      "amount": 0.0015,
+      "cost": 0.001,
+      "payOnMatch": true
+    },
+    "adapter": {
+      "kind": "mcp",
+      "url": "https://open.voc.ai/mcp-server",
+      "toolName": "amazon_reviews_fetch_history",
+      "auth": {
+        "type": "header",
+        "name": "X-API-Key",
+        "envKey": "VOC_API_KEY"
+      }
+    }
+  },
+  {
+    "id": "voc.amazon_reviews_analyze",
+    "name": "Amazon Reviews Analyze",
+    "provider": "voc:amazon",
+    "mode": "native",
+    "categories": [
+      "ecommerce",
+      "reviews",
+      "amazon"
+    ],
+    "description": "Analyze Amazon reviews: sentiment distribution, top pain points, and themes. Powered by qwen-plus (LLM cost absorbed by platform).",
+    "keywords": [
+      "voc",
+      "amazon",
+      "reviews",
+      "analyze",
+      "asin",
+      "ecommerce"
+    ],
+    "input": {
+      "type": "object",
+      "properties": {
+        "reviews": {
+          "type": "array",
+          "description": "Reviews to analyze (max 1000). If absent, asin must be provided to auto-fetch."
+        },
+        "asin": {
+          "type": "string",
+          "description": "10-char Amazon ASIN (used only if reviews not provided, to auto-fetch first)"
+        },
+        "market": {
+          "type": "string",
+          "description": "Amazon marketplace code (US/GB/DE/FR/JP/IT/ES/CA/MX/AU)",
+          "default": "US"
+        },
+        "source": {
+          "type": "string",
+          "description": "Data source when auto-fetching: 'realtime' triggers live crawl, 'history' reads cached inventory",
+          "enum": [
+            "realtime",
+            "history"
+          ],
+          "default": "realtime"
+        },
+        "max_page": {
+          "type": "number",
+          "description": "Pages to crawl when source=realtime (1-10, Amazon hard limit)"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Reviews to read when source=history (1-200)"
+        }
+      },
+      "required": []
+    },
+    "pricing": {
+      "model": "per_call",
+      "amount": 0.0015,
+      "cost": 0.001,
+      "payOnMatch": true
+    },
+    "adapter": {
+      "kind": "mcp",
+      "url": "https://open.voc.ai/mcp-server",
+      "toolName": "amazon_reviews_analyze",
+      "auth": {
+        "type": "header",
+        "name": "X-API-Key",
+        "envKey": "VOC_API_KEY"
+      }
+    }
+  }
+]

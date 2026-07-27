@@ -172,6 +172,11 @@ jobs:
           APP_CONSOLE_ORIGIN: ${{ secrets.APP_CONSOLE_ORIGIN }}
           COOKIE_SESSION_DOMAIN: ${{ secrets.COOKIE_SESSION_DOMAIN }}
           SESSION_COOKIE_SECURE: ${{ secrets.SESSION_COOKIE_SECURE }}
+          # Upstream credentials for the data-tool catalogue served over
+          # /api/mcp. Absent, the catalogue still lists and inspects; run
+          # reports a missing credential instead of calling upstream.
+          TIKHUB_API_KEY: ${{ secrets.TIKHUB_API_KEY }}
+          VOC_API_KEY: ${{ secrets.VOC_API_KEY }}
         run: |
           set -euo pipefail
           revision_suffix="$(date -u +%Y%m%d-%H%M%S)-${{ needs.build.outputs.short_sha }}"
@@ -184,6 +189,7 @@ jobs:
             PADDLE_LIVE_API_KEY PADDLE_LIVE_CLIENT_TOKEN PADDLE_LIVE_WEBHOOK_SECRET \
             GA_MEASURE_PROTOCOL_API_SECRET GA_MESSUREMENT_ID \
             OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE \
+            TIKHUB_API_KEY VOC_API_KEY \
             NODE_TYPE APP_ROLE TOKEN_BATCH_GROUP_ENABLED; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then
@@ -319,6 +325,11 @@ jobs:
           APP_CONSOLE_ORIGIN: ${{ secrets.APP_CONSOLE_ORIGIN }}
           COOKIE_SESSION_DOMAIN: ${{ secrets.COOKIE_SESSION_DOMAIN }}
           SESSION_COOKIE_SECURE: ${{ secrets.SESSION_COOKIE_SECURE }}
+          # Upstream credentials for the data-tool catalogue served over
+          # /api/mcp. Absent, the catalogue still lists and inspects; run
+          # reports a missing credential instead of calling upstream.
+          TIKHUB_API_KEY: ${{ secrets.TIKHUB_API_KEY }}
+          VOC_API_KEY: ${{ secrets.VOC_API_KEY }}
         run: |
           set -euo pipefail
           revision_suffix="$(date -u +%Y%m%d-%H%M%S)-${{ needs.build.outputs.short_sha }}"
@@ -331,6 +342,7 @@ jobs:
             PADDLE_LIVE_API_KEY PADDLE_LIVE_CLIENT_TOKEN PADDLE_LIVE_WEBHOOK_SECRET \
             GA_MEASURE_PROTOCOL_API_SECRET GA_MESSUREMENT_ID \
             OFFICIAL_WEBSITE_ORIGIN APP_CONSOLE_ORIGIN COOKIE_SESSION_DOMAIN SESSION_COOKIE_SECURE \
+            TIKHUB_API_KEY VOC_API_KEY \
             NODE_TYPE APP_ROLE; do
             value="${!name:-}"
             if [[ -n "${value}" ]]; then

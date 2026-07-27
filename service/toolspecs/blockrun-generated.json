@@ -1,0 +1,4422 @@
+[
+ {
+  "id": "blockrun.chat.completions",
+  "name": "Chat Completions",
+  "provider": "blockrun:chat",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "chat"
+  ],
+  "description": "Access 66 frontier LLMs with OpenAI-compatible API. Price depends on model and token usage.",
+  "keywords": [
+   "blockrun",
+   "chat",
+   "completions"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "description": "Model ID to use for completion"
+    },
+    "messages": {
+     "type": "array",
+     "description": "Array of chat messages"
+    },
+    "max_tokens": {
+     "type": "number",
+     "description": "Maximum tokens to generate"
+    },
+    "temperature": {
+     "type": "number",
+     "description": "Sampling temperature (0-2)"
+    },
+    "stream": {
+     "type": "boolean",
+     "description": "Enable streaming responses"
+    }
+   },
+   "required": [
+    "model",
+    "messages"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/chat/completions",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "messages": "{{messages}}",
+    "max_tokens": "{{max_tokens}}",
+    "temperature": "{{temperature}}",
+    "stream": "{{stream}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.messages.messages",
+  "name": "Anthropic Messages",
+  "provider": "blockrun:messages",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "messages"
+  ],
+  "description": "Anthropic-shaped Messages API. Send Claude-style requests (system + messages array, tools, tool_choice) and BlockRun routes them through the right upstream provider. Token-priced like /chat/completions.",
+  "keywords": [
+   "blockrun",
+   "messages",
+   "messages"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "description": "Anthropic model id (or any BlockRun-routable Anthropic alias).",
+     "enum": [
+      "anthropic/claude-haiku-4.5",
+      "anthropic/claude-sonnet-5",
+      "anthropic/claude-sonnet-4.6",
+      "anthropic/claude-sonnet-4.5",
+      "anthropic/claude-opus-4.5",
+      "anthropic/claude-opus-4.7",
+      "anthropic/claude-fable-5",
+      "anthropic/claude-opus-4.8",
+      "anthropic/claude-opus-5"
+     ]
+    },
+    "messages": {
+     "type": "array"
+    },
+    "system": {
+     "type": "string",
+     "description": "System prompt — string, or array of { type: 'text', text }."
+    },
+    "max_tokens": {
+     "type": "number",
+     "description": "Maximum tokens to generate."
+    },
+    "temperature": {
+     "type": "number"
+    },
+    "top_p": {
+     "type": "number"
+    },
+    "top_k": {
+     "type": "number"
+    },
+    "stop_sequences": {
+     "type": "array"
+    },
+    "stream": {
+     "type": "boolean",
+     "description": "Server-Sent Events stream of Anthropic-style deltas."
+    },
+    "tools": {
+     "type": "array",
+     "description": "Anthropic tool definitions."
+    },
+    "tool_choice": {
+     "type": "object",
+     "description": "Anthropic tool_choice spec."
+    },
+    "metadata": {
+     "type": "object"
+    }
+   },
+   "required": [
+    "model",
+    "messages",
+    "max_tokens"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/messages",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "messages": "{{messages}}",
+    "system": "{{system}}",
+    "max_tokens": "{{max_tokens}}",
+    "temperature": "{{temperature}}",
+    "top_p": "{{top_p}}",
+    "top_k": "{{top_k}}",
+    "stop_sequences": "{{stop_sequences}}",
+    "stream": "{{stream}}",
+    "tools": "{{tools}}",
+    "tool_choice": "{{tool_choice}}",
+    "metadata": "{{metadata}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.responses.responses",
+  "name": "OpenAI Responses API",
+  "provider": "blockrun:responses",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "responses"
+  ],
+  "description": "OpenAI-shaped Responses API — the native protocol for Codex CLI and agents that need tools + reasoning on gpt-5.x. Same body shape as api.openai.com/v1/responses; token-priced like /chat/completions. Stateless gateway: store:false is enforced and previous_response_id / conversation / background are rejected — resend full context per call and use include: [\"reasoning.encrypted_content\"] for reasoning continuity.",
+  "keywords": [
+   "blockrun",
+   "responses",
+   "responses"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "description": "OpenAI model id (gpt-5.x, o-series, codex; with or without the openai/ prefix).",
+     "enum": [
+      "openai/gpt-5.6-sol",
+      "openai/gpt-5.6-terra",
+      "openai/gpt-5.6-luna",
+      "openai/gpt-5.5",
+      "openai/gpt-5.5-pro",
+      "openai/chat-latest",
+      "openai/gpt-5.4",
+      "openai/gpt-5.4-pro",
+      "openai/gpt-5.3",
+      "openai/gpt-5.2",
+      "openai/gpt-5.4-mini",
+      "openai/gpt-5-mini",
+      "openai/gpt-5.4-nano",
+      "openai/gpt-5.2-pro",
+      "openai/gpt-5.3-codex",
+      "openai/gpt-4.1",
+      "openai/gpt-4.1-mini",
+      "openai/gpt-4.1-nano",
+      "openai/gpt-4o",
+      "openai/gpt-4o-mini",
+      "openai/o1",
+      "openai/o3",
+      "openai/o3-mini",
+      "openai/o4-mini"
+     ]
+    },
+    "input": {
+     "type": "string",
+     "description": "String, or array of Responses input items (messages, function_call_output, reasoning replays, …)."
+    },
+    "instructions": {
+     "type": "string",
+     "description": "System/developer instructions."
+    },
+    "max_output_tokens": {
+     "type": "number",
+     "description": "Maximum tokens to generate (bounds the x402 quote)."
+    },
+    "stream": {
+     "type": "boolean",
+     "description": "Server-Sent Events stream of native Responses events."
+    },
+    "tools": {
+     "type": "array",
+     "description": "Responses tool definitions (function, web_search, …)."
+    },
+    "tool_choice": {
+     "type": "string",
+     "description": "Responses tool_choice spec."
+    },
+    "reasoning": {
+     "type": "object",
+     "description": "Reasoning config, e.g. { effort: \"high\" }."
+    },
+    "include": {
+     "type": "array",
+     "description": "Extra output fields, e.g. reasoning.encrypted_content."
+    },
+    "text": {
+     "type": "object",
+     "description": "Text/format options (json_object, json_schema, verbosity)."
+    },
+    "temperature": {
+     "type": "number"
+    },
+    "top_p": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "model",
+    "input"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/responses",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "input": "{{input}}",
+    "instructions": "{{instructions}}",
+    "max_output_tokens": "{{max_output_tokens}}",
+    "stream": "{{stream}}",
+    "tools": "{{tools}}",
+    "tool_choice": "{{tool_choice}}",
+    "reasoning": "{{reasoning}}",
+    "include": "{{include}}",
+    "text": "{{text}}",
+    "temperature": "{{temperature}}",
+    "top_p": "{{top_p}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.search.search",
+  "name": "Grok Live Search",
+  "provider": "blockrun:search",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "search"
+  ],
+  "description": "Real-time web and news search powered by xAI Grok with live data access.",
+  "keywords": [
+   "blockrun",
+   "search",
+   "search"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string",
+     "description": "Search query"
+    },
+    "sources": {
+     "type": "array",
+     "description": "Data sources to search",
+     "enum": [
+      "x",
+      "web",
+      "news"
+     ]
+    },
+    "max_results": {
+     "type": "number",
+     "description": "Maximum number of results per source",
+     "default": 10
+    }
+   },
+   "required": [
+    "query"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/search",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "query": "{{query}}",
+    "sources": "{{sources}}",
+    "max_results": "{{max_results}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.images.generations",
+  "name": "Image Generation",
+  "provider": "blockrun:images",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "images"
+  ],
+  "description": "Generate images with GPT Image 1, ChatGPT Images 2.0, Nano Banana, or Grok Imagine.",
+  "keywords": [
+   "blockrun",
+   "images",
+   "generations"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "description": "Image model to use",
+     "enum": [
+      "openai/gpt-image-1",
+      "openai/gpt-image-2",
+      "google/nano-banana",
+      "zai/cogview-4",
+      "xai/grok-imagine-image"
+     ]
+    },
+    "prompt": {
+     "type": "string",
+     "description": "Text description of the image to generate"
+    },
+    "size": {
+     "type": "string",
+     "description": "Image dimensions",
+     "enum": [
+      "1024x1024",
+      "1792x1024",
+      "1024x1792"
+     ],
+     "default": "1024x1024"
+    },
+    "n": {
+     "type": "number",
+     "description": "Number of images to generate",
+     "default": 1
+    }
+   },
+   "required": [
+    "prompt"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/images/generations",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "prompt": "{{prompt}}",
+    "size": "{{size}}",
+    "n": "{{n}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.images.image2image",
+  "name": "Image-to-Image Edit",
+  "provider": "blockrun:images",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "images"
+  ],
+  "description": "Edit or vary an existing image with a text prompt. Send the source image (and optional mask) as a base64 data URI. OpenAI gpt-image-1 / gpt-image-2 support mask-based inpainting; Google nano-banana / nano-banana-pro do prompt-only edits (mask not supported).",
+  "keywords": [
+   "blockrun",
+   "images",
+   "image2image"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "enum": [
+      "openai/gpt-image-1",
+      "openai/gpt-image-2",
+      "google/nano-banana",
+      "google/nano-banana-pro"
+     ],
+     "default": "openai/gpt-image-2"
+    },
+    "prompt": {
+     "type": "string",
+     "description": "Edit instructions for the image."
+    },
+    "image": {
+     "type": "string",
+     "description": "Source image(s) as base64 data URI(s). Pass a single string, or an array (OpenAI-compatible image[]) to fuse multiple sources — e.g. a reference image + a brand logo. Max 4 for OpenAI, 3 for Google. Multi-image cannot be combined with mask."
+    },
+    "mask": {
+     "type": "string",
+     "description": "Optional mask as base64 data URI; transparent pixels mark the editable region. OpenAI models only — rejected for Google models."
+    },
+    "size": {
+     "type": "string",
+     "enum": [
+      "1024x1024",
+      "1792x1024",
+      "1024x1792"
+     ],
+     "default": "1024x1024"
+    },
+    "n": {
+     "type": "number",
+     "default": 1
+    }
+   },
+   "required": [
+    "prompt",
+    "image"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/images/image2image",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "prompt": "{{prompt}}",
+    "image": "{{image}}",
+    "mask": "{{mask}}",
+    "size": "{{size}}",
+    "n": "{{n}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.audio.generations",
+  "name": "Music Generation",
+  "provider": "blockrun:audio",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "audio"
+  ],
+  "description": "Generate music tracks with Minimax Music 2.5 / 2.5+. Provide a text prompt describing the song; optionally supply lyrics or set instrumental=true. Price scales with duration.",
+  "keywords": [
+   "blockrun",
+   "audio",
+   "generations"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "enum": [
+      "minimax/music-2.5+"
+     ],
+     "default": "minimax/music-2.5+"
+    },
+    "prompt": {
+     "type": "string",
+     "description": "High-level description of the song (genre, mood, instrumentation)."
+    },
+    "lyrics": {
+     "type": "string",
+     "description": "Optional song lyrics. Ignored when instrumental=true."
+    },
+    "instrumental": {
+     "type": "boolean",
+     "description": "If true, generate an instrumental track.",
+     "default": false
+    },
+    "duration_seconds": {
+     "type": "number",
+     "default": 30
+    }
+   },
+   "required": [
+    "prompt"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/audio/generations",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "prompt": "{{prompt}}",
+    "lyrics": "{{lyrics}}",
+    "instrumental": "{{instrumental}}",
+    "duration_seconds": "{{duration_seconds}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.audio.speech",
+  "name": "Text-to-Speech (ElevenLabs)",
+  "provider": "blockrun:audio",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "audio"
+  ],
+  "description": "Synthesize speech from text with ElevenLabs (Flash v2.5 for real-time agents, Multilingual v2 / Eleven v3 for narration). Billed per input character; the exact price is quoted in the 402. Returns a hosted MP3 URL.",
+  "keywords": [
+   "blockrun",
+   "audio",
+   "speech"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "enum": [
+      "elevenlabs/flash-v2.5",
+      "elevenlabs/turbo-v2.5",
+      "elevenlabs/multilingual-v2",
+      "elevenlabs/v3"
+     ],
+     "default": "elevenlabs/flash-v2.5"
+    },
+    "input": {
+     "type": "string",
+     "description": "Text to synthesize into speech."
+    },
+    "voice": {
+     "type": "string",
+     "description": "Voice alias (e.g. sarah, george) or raw ElevenLabs voice_id.",
+     "default": "sarah"
+    },
+    "response_format": {
+     "type": "string",
+     "enum": [
+      "mp3",
+      "opus",
+      "pcm",
+      "wav"
+     ],
+     "default": "mp3"
+    },
+    "speed": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "input"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/audio/speech",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "input": "{{input}}",
+    "voice": "{{voice}}",
+    "response_format": "{{response_format}}",
+    "speed": "{{speed}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.audio.sound-effects",
+  "name": "Sound Effects (ElevenLabs)",
+  "provider": "blockrun:audio",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "audio"
+  ],
+  "description": "Generate a cinematic sound effect from a text prompt (up to 22s). Flat price per generation.",
+  "keywords": [
+   "blockrun",
+   "audio",
+   "sound-effects"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "enum": [
+      "elevenlabs/sound-effects"
+     ],
+     "default": "elevenlabs/sound-effects"
+    },
+    "text": {
+     "type": "string",
+     "description": "Description of the sound effect."
+    },
+    "duration_seconds": {
+     "type": "number"
+    },
+    "prompt_influence": {
+     "type": "number"
+    },
+    "response_format": {
+     "type": "string",
+     "enum": [
+      "mp3",
+      "opus",
+      "pcm",
+      "wav"
+     ],
+     "default": "mp3"
+    }
+   },
+   "required": [
+    "text"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/audio/sound-effects",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "text": "{{text}}",
+    "duration_seconds": "{{duration_seconds}}",
+    "prompt_influence": "{{prompt_influence}}",
+    "response_format": "{{response_format}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.audio.voices",
+  "name": "List Voices (free)",
+  "provider": "blockrun:audio",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "audio"
+  ],
+  "description": "List available ElevenLabs voices and their aliases for use with /v1/audio/speech. Free.",
+  "keywords": [
+   "blockrun",
+   "audio",
+   "voices"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/audio/voices",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.videos.generations",
+  "name": "Submit Video Generation Job",
+  "provider": "blockrun:videos",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "videos"
+  ],
+  "description": "Submit an async video generation job with OpenAI Sora 2 (via Azure AI Foundry), xAI Grok Imagine, or ByteDance Seedance (1.5 Pro / 2.0 Fast / 2.0 Pro). Billed per second. Returns `{ id, poll_url }` in ~3-20s with payment verified but NOT settled. Poll GET /api/v1/videos/generations/{id} with the same x-payment header until status=completed — settlement fires on that poll. If upstream fails or you never poll, you are not charged.",
+  "keywords": [
+   "blockrun",
+   "videos",
+   "generations"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "description": "Video model to use",
+     "enum": [
+      "azure/sora-2",
+      "xai/grok-imagine-video",
+      "bytedance/seedance-1.5-pro",
+      "bytedance/seedance-2.0-fast",
+      "bytedance/seedance-2.0"
+     ],
+     "default": "xai/grok-imagine-video"
+    },
+    "prompt": {
+     "type": "string",
+     "description": "Text description of the video to generate"
+    },
+    "image_url": {
+     "type": "string",
+     "description": "Optional seed image URL for image-to-video. Mutually exclusive with real_face_asset_id."
+    },
+    "real_face_asset_id": {
+     "type": "string",
+     "description": "Optional BytePlus RealFace asset id (format `ta_xxxxxxxx`) for consistent real-person character video. Only Seedance 2.0 / 2.0-fast support it. Get the id from the RealFace enrollment flow (see /docs/video/real-person-ip). Mutually exclusive with image_url."
+    },
+    "last_frame_url": {
+     "type": "string",
+     "description": "Optional final-frame seed image for first-and-last-frame interpolation. Requires image_url and a Seedance model."
+    },
+    "reference_image_urls": {
+     "type": "array",
+     "description": "Optional Seedance 2.0 omni / multi-reference images. Mutually exclusive with image_url, last_frame_url, and real_face_asset_id."
+    },
+    "input_type": {
+     "type": "string",
+     "description": "Optional explicit mode assertion. If provided, it must match the seed fields: text=no seed inputs, image=image_url or real_face_asset_id, first_last_frame=image_url+last_frame_url, reference=reference_image_urls.",
+     "enum": [
+      "text",
+      "image",
+      "first_last_frame",
+      "reference"
+     ]
+    },
+    "reference_videos": {
+     "type": "array",
+     "description": "Optional Seedance 2.0 reference-to-video (r2v / multimodal_reference): up to 3 reference video clips that condition the generation. Its own mode — mutually exclusive with image_url, last_frame_url, reference_image_urls, and real_face_asset_id."
+    },
+    "reference_audios": {
+     "type": "array",
+     "description": "Optional Seedance 2.0 reference audio (multimodal_reference): up to 3 reference audio clips, each ≤15.2s. Same mode as reference_videos."
+    },
+    "duration_seconds": {
+     "type": "number",
+     "description": "Duration billed for (defaults to model default)"
+    }
+   },
+   "required": [
+    "prompt"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/videos/generations",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "model": "{{model}}",
+    "prompt": "{{prompt}}",
+    "image_url": "{{image_url}}",
+    "real_face_asset_id": "{{real_face_asset_id}}",
+    "last_frame_url": "{{last_frame_url}}",
+    "reference_image_urls": "{{reference_image_urls}}",
+    "input_type": "{{input_type}}",
+    "reference_videos": "{{reference_videos}}",
+    "reference_audios": "{{reference_audios}}",
+    "duration_seconds": "{{duration_seconds}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.exa.search",
+  "name": "Exa Web Search",
+  "provider": "blockrun:exa",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "exa"
+  ],
+  "description": "Neural and keyword web search powered by Exa. Optional category filter: company, research paper, news, pdf, github, tweet, personal site, linkedin profile, financial report.",
+  "keywords": [
+   "blockrun",
+   "exa",
+   "search"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string",
+     "description": "Search query."
+    },
+    "type": {
+     "type": "string",
+     "enum": [
+      "neural",
+      "keyword",
+      "auto"
+     ],
+     "default": "auto"
+    },
+    "numResults": {
+     "type": "number",
+     "default": 10
+    },
+    "category": {
+     "type": "string",
+     "description": "Optional category filter (company, research paper, news, pdf, github, tweet, personal site, linkedin profile, financial report)."
+    },
+    "includeDomains": {
+     "type": "array"
+    },
+    "excludeDomains": {
+     "type": "array"
+    },
+    "startPublishedDate": {
+     "type": "string",
+     "description": "ISO-8601 date."
+    },
+    "endPublishedDate": {
+     "type": "string",
+     "description": "ISO-8601 date."
+    }
+   },
+   "required": [
+    "query"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/exa/search",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "query": "{{query}}",
+    "type": "{{type}}",
+    "numResults": "{{numResults}}",
+    "category": "{{category}}",
+    "includeDomains": "{{includeDomains}}",
+    "excludeDomains": "{{excludeDomains}}",
+    "startPublishedDate": "{{startPublishedDate}}",
+    "endPublishedDate": "{{endPublishedDate}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.exa.find-similar",
+  "name": "Exa Find Similar",
+  "provider": "blockrun:exa",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "exa"
+  ],
+  "description": "Find pages semantically similar to a given URL.",
+  "keywords": [
+   "blockrun",
+   "exa",
+   "find-similar"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "url": {
+     "type": "string",
+     "description": "Source URL to find pages similar to."
+    },
+    "numResults": {
+     "type": "number",
+     "default": 10
+    },
+    "excludeSourceDomain": {
+     "type": "boolean",
+     "default": true
+    }
+   },
+   "required": [
+    "url"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/exa/find-similar",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "url": "{{url}}",
+    "numResults": "{{numResults}}",
+    "excludeSourceDomain": "{{excludeSourceDomain}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.rpc.ethereum",
+  "name": "Multi-chain RPC",
+  "provider": "blockrun:rpc",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "rpc"
+  ],
+  "description": "JSON-RPC 2.0 passthrough across 40+ chains (powered by Tatum). Swap `ethereum` in the path for any network — base, solana, polygon, bsc, arbitrum, optimism, avalanche, bitcoin, sui, and more: POST /api/v1/rpc/{network}. One endpoint, every chain, no API key. $0.004 per call; a JSON-RPC batch is priced per element.",
+  "keywords": [
+   "blockrun",
+   "rpc",
+   "ethereum"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "jsonrpc": {
+     "type": "string",
+     "description": "\"2.0\"",
+     "enum": [
+      "2.0"
+     ]
+    },
+    "method": {
+     "type": "string",
+     "description": "Chain RPC method — e.g. eth_blockNumber, eth_call, eth_getBalance (EVM) or getSlot, getAccountInfo (Solana)."
+    },
+    "params": {
+     "type": "array",
+     "description": "Method-specific params."
+    },
+    "id": {
+     "type": "number",
+     "description": "JSON-RPC id.",
+     "default": 1
+    }
+   },
+   "required": [
+    "jsonrpc",
+    "method",
+    "id"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/rpc/ethereum",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "jsonrpc": "{{jsonrpc}}",
+    "method": "{{method}}",
+    "params": "{{params}}",
+    "id": "{{id}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.exa.contents",
+  "name": "Exa Contents",
+  "provider": "blockrun:exa",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "exa"
+  ],
+  "description": "Extract full text content from one or more URLs. Priced per URL ($0.002 each).",
+  "keywords": [
+   "blockrun",
+   "exa",
+   "contents"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "urls": {
+     "type": "array",
+     "description": "List of URLs to extract content from. Price scales linearly: $0.002 × number of URLs."
+    },
+    "text": {
+     "type": "boolean",
+     "description": "Include extracted text.",
+     "default": true
+    },
+    "highlights": {
+     "type": "object",
+     "description": "Exa highlights config."
+    },
+    "summary": {
+     "type": "object",
+     "description": "Exa summary config."
+    }
+   },
+   "required": [
+    "urls"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/exa/contents",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "urls": "{{urls}}",
+    "text": "{{text}}",
+    "highlights": "{{highlights}}",
+    "summary": "{{summary}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.exa.answer",
+  "name": "Exa Answer",
+  "provider": "blockrun:exa",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "exa"
+  ],
+  "description": "Get an AI-generated answer to a question grounded in live web search results.",
+  "keywords": [
+   "blockrun",
+   "exa",
+   "answer"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string",
+     "description": "Question to answer with grounded search."
+    },
+    "text": {
+     "type": "boolean",
+     "description": "Include full text of cited pages in response.",
+     "default": false
+    }
+   },
+   "required": [
+    "query"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/exa/answer",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "query": "{{query}}",
+    "text": "{{text}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.modal.create",
+  "name": "Create Modal Sandbox",
+  "provider": "blockrun:modal",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "modal"
+  ],
+  "description": "Create a managed Python 3.11 sandbox with bounded CPU, memory, and lifetime limits. GPU sandboxes (T4/L4/A10G/A100/H100) upgrade to per-type pricing — see `/pricing`.",
+  "keywords": [
+   "blockrun",
+   "modal",
+   "create"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "image": {
+     "type": "string",
+     "description": "Managed image. Only python:3.11 is currently available.",
+     "enum": [
+      "python:3.11"
+     ],
+     "default": "python:3.11"
+    },
+    "timeout": {
+     "type": "number",
+     "description": "Sandbox lifetime in seconds.",
+     "default": 300
+    },
+    "cpu": {
+     "type": "number",
+     "description": "CPU cores. CPU-only max is 1; GPU sandboxes can request up to 8.",
+     "default": 1
+    },
+    "memory": {
+     "type": "number",
+     "description": "Memory in MB. CPU-only max is 1024; GPU sandboxes can request up to 16384.",
+     "default": 512
+    },
+    "gpu": {
+     "type": "string",
+     "description": "Optional GPU type. Pricing replaces the CPU base price for the full sandbox lifetime.",
+     "enum": [
+      "T4",
+      "L4",
+      "A10G",
+      "A100",
+      "H100"
+     ]
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/modal/sandbox/create",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "image": "{{image}}",
+    "timeout": "{{timeout}}",
+    "cpu": "{{cpu}}",
+    "memory": "{{memory}}",
+    "gpu": "{{gpu}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.modal.exec",
+  "name": "Execute In Modal Sandbox",
+  "provider": "blockrun:modal",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "modal"
+  ],
+  "description": "Execute a command inside an existing managed Modal sandbox.",
+  "keywords": [
+   "blockrun",
+   "modal",
+   "exec"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "sandbox_id": {
+     "type": "string",
+     "description": "Sandbox ID returned by /api/v1/modal/sandbox/create"
+    },
+    "command": {
+     "type": "array",
+     "description": "Command segments to execute, e.g. ['python', '-c', 'print(1)']"
+    },
+    "timeout": {
+     "type": "number",
+     "description": "Execution timeout in seconds.",
+     "default": 60
+    }
+   },
+   "required": [
+    "sandbox_id",
+    "command"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/modal/sandbox/exec",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "sandbox_id": "{{sandbox_id}}",
+    "command": "{{command}}",
+    "timeout": "{{timeout}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.modal.status",
+  "name": "Check Modal Sandbox Status",
+  "provider": "blockrun:modal",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "modal"
+  ],
+  "description": "Check whether a sandbox is still running or has terminated.",
+  "keywords": [
+   "blockrun",
+   "modal",
+   "status"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "sandbox_id": {
+     "type": "string",
+     "description": "Sandbox ID returned by /api/v1/modal/sandbox/create"
+    }
+   },
+   "required": [
+    "sandbox_id"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/modal/sandbox/status",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "sandbox_id": "{{sandbox_id}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.modal.terminate",
+  "name": "Terminate Modal Sandbox",
+  "provider": "blockrun:modal",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "modal"
+  ],
+  "description": "Terminate a running sandbox and release its resources.",
+  "keywords": [
+   "blockrun",
+   "modal",
+   "terminate"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "sandbox_id": {
+     "type": "string",
+     "description": "Sandbox ID returned by /api/v1/modal/sandbox/create"
+    }
+   },
+   "required": [
+    "sandbox_id"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/modal/sandbox/terminate",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "sandbox_id": "{{sandbox_id}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.voice.call",
+  "name": "Initiate AI Voice Call",
+  "provider": "blockrun:voice",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "voice"
+  ],
+  "description": "Place an outbound AI conversation call via Bland.ai. The agent calls the recipient and converses based on `task` (natural-language instructions). Requires `from` — a wallet-owned phone number provisioned via /api/v1/phone/numbers/buy. Returns a call_id immediately; poll GET /api/v1/voice/call/{call_id} for status, transcript, and recording.",
+  "keywords": [
+   "blockrun",
+   "voice",
+   "call"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "to": {
+     "type": "string",
+     "description": "Destination phone number in E.164 format, e.g. +14155552671."
+    },
+    "task": {
+     "type": "string",
+     "description": "Natural-language description of what the AI agent should do on the call."
+    },
+    "from": {
+     "type": "string",
+     "description": "Wallet-owned phone number used as caller ID (E.164). Required — purchase one via /api/v1/phone/numbers/buy first."
+    },
+    "voice": {
+     "type": "string",
+     "description": "Voice preset: nat, josh, maya, june, paige, derek, florian — or a Bland.ai voice ID."
+    },
+    "max_duration": {
+     "type": "number",
+     "description": "Maximum call length in minutes.",
+     "default": 5
+    },
+    "language": {
+     "type": "string",
+     "description": "Language code for STT/TTS.",
+     "default": "en-US"
+    },
+    "first_sentence": {
+     "type": "string",
+     "description": "Optional fixed opening line spoken before the AI takes over."
+    },
+    "wait_for_greeting": {
+     "type": "boolean",
+     "description": "If true, AI waits for the recipient to speak first."
+    },
+    "interruption_threshold": {
+     "type": "number",
+     "description": "How aggressive the AI is about interrupting (ms)."
+    },
+    "model": {
+     "type": "string",
+     "description": "Bland conversation model tier.",
+     "enum": [
+      "base",
+      "enhanced",
+      "turbo"
+     ]
+    }
+   },
+   "required": [
+    "to",
+    "task",
+    "from"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/voice/call",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "to": "{{to}}",
+    "task": "{{task}}",
+    "from": "{{from}}",
+    "voice": "{{voice}}",
+    "max_duration": "{{max_duration}}",
+    "language": "{{language}}",
+    "first_sentence": "{{first_sentence}}",
+    "wait_for_greeting": "{{wait_for_greeting}}",
+    "interruption_threshold": "{{interruption_threshold}}",
+    "model": "{{model}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.phone.buy",
+  "name": "Provision Phone Number (30-day lease)",
+  "provider": "blockrun:phone",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "phone"
+  ],
+  "description": "Lease a US or Canadian phone number for 30 days, wallet-bound. Auto-registered with Bland on purchase so it can be used as outbound caller-ID via /api/v1/voice/call. Twilio purchase runs before settlement — failed Twilio purchases are not charged.",
+  "keywords": [
+   "blockrun",
+   "phone",
+   "buy"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "country": {
+     "type": "string",
+     "description": "ISO country code: US or CA.",
+     "enum": [
+      "US",
+      "CA"
+     ],
+     "default": "US"
+    },
+    "areaCode": {
+     "type": "string",
+     "description": "Optional preferred 3-digit area code (availability not guaranteed)."
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/phone/numbers/buy",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "country": "{{country}}",
+    "areaCode": "{{areaCode}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.phone.renew",
+  "name": "Renew Phone Number Lease",
+  "provider": "blockrun:phone",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "phone"
+  ],
+  "description": "Extend an existing wallet-owned number lease by 30 days.",
+  "keywords": [
+   "blockrun",
+   "phone",
+   "renew"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "phoneNumber": {
+     "type": "string",
+     "description": "Number to renew (E.164, must be owned by the calling wallet)."
+    }
+   },
+   "required": [
+    "phoneNumber"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/phone/numbers/renew",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "phoneNumber": "{{phoneNumber}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.phone.list",
+  "name": "List Wallet-Owned Phone Numbers",
+  "provider": "blockrun:phone",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "phone"
+  ],
+  "description": "Return all active numbers leased to the calling wallet. Tiny x402 charge confirms wallet identity.",
+  "keywords": [
+   "blockrun",
+   "phone",
+   "list"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/phone/numbers/list",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.phone.release",
+  "name": "Release Phone Number",
+  "provider": "blockrun:phone",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "phone"
+  ],
+  "description": "Release a wallet-owned number back to the Twilio pool. Free, but still goes through x402 so the wallet identity is verified.",
+  "keywords": [
+   "blockrun",
+   "phone",
+   "release"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "phoneNumber": {
+     "type": "string",
+     "description": "Number to release (E.164, must be owned by the calling wallet)."
+    }
+   },
+   "required": [
+    "phoneNumber"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/phone/numbers/release",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "phoneNumber": "{{phoneNumber}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.phone.lookup",
+  "name": "Phone Number Carrier Lookup",
+  "provider": "blockrun:phone",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "phone"
+  ],
+  "description": "Look up carrier and line type (landline / mobile / VoIP) for any phone number via Twilio Lookup.",
+  "keywords": [
+   "blockrun",
+   "phone",
+   "lookup"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "phoneNumber": {
+     "type": "string",
+     "description": "Phone number to look up (E.164)."
+    }
+   },
+   "required": [
+    "phoneNumber"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/phone/lookup",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "phoneNumber": "{{phoneNumber}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.phone.fraud",
+  "name": "Phone Number Fraud Lookup",
+  "provider": "blockrun:phone",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "phone"
+  ],
+  "description": "Carrier + fraud signals (SIM swap, call forwarding) via Twilio Lookup. Useful for KYC and account-takeover defenses.",
+  "keywords": [
+   "blockrun",
+   "phone",
+   "fraud"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "phoneNumber": {
+     "type": "string",
+     "description": "Phone number to look up (E.164)."
+    }
+   },
+   "required": [
+    "phoneNumber"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/phone/lookup/fraud",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "phoneNumber": "{{phoneNumber}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.price",
+  "name": "Surf — CEX Ticker Price",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Live ticker price for a CEX trading pair (Binance, OKX, Bybit, Coinbase, …).",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "price"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/exchange/price",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.klines",
+  "name": "Surf — CEX OHLCV Candlesticks",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "OHLCV candlesticks for a CEX pair at any interval.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "klines"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/exchange/klines",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.funding-history",
+  "name": "Surf — Perp Funding Rate History",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Funding rate history for a perpetual contract.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "funding-history"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/exchange/funding-history",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.ranking",
+  "name": "Surf — Token Rankings",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Token rankings by market cap, volume, or change.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "ranking"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/market/ranking",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.fear-greed",
+  "name": "Surf — Fear & Greed Index History",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Daily Fear & Greed index history.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "fear-greed"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/market/fear-greed",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.etf",
+  "name": "Surf — Spot ETF Flow History",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "BTC/ETH spot ETF flow history (daily inflows / outflows).",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "etf"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/market/etf",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.onchain-indicator",
+  "name": "Surf — On-Chain Indicator",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "NUPL, SOPR, MVRV, Puell Multiple, NVT.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "onchain-indicator"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/market/onchain-indicator",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.gas-price",
+  "name": "Surf — Current Gas Price",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Current gas price across supported chains.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "gas-price"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/onchain/gas-price",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.tx",
+  "name": "Surf — Transaction Details by Hash",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Transaction details by hash.",
+  "keywords": [
+   "blockrun",
+   "surf"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/onchain/tx",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.sql",
+  "name": "Surf — Raw SQL on Blockchain Tables",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Raw SQL query against 80+ analyst-ready ClickHouse tables (DEX trades, transfers, lending, staking, bridges). Sub-second.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "sql"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "sql": {
+     "type": "string",
+     "description": "ClickHouse SQL — see /api/v1/surf/onchain/schema for tables."
+    }
+   },
+   "required": [
+    "sql"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/surf/onchain/sql",
+   "auth": {
+    "type": "none"
+   },
+   "body": {
+    "sql": "{{sql}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.detail",
+  "name": "Surf — Aggregated Wallet Profile",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Cross-chain wallet profile + labels + balances.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "detail"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/wallet/detail",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.batch",
+  "name": "Surf — Batch Wallet Labels",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Batch lookup wallet labels (CEX, Whale, Bridge, MEV, Bot, Fund) across 13 chains. 100M+ labeled addresses.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "batch"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/wallet/labels/batch",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.mindshare",
+  "name": "Surf — Project Mindshare Time Series",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Project mindshare on Crypto Twitter over time.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "mindshare"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/social/mindshare",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.feed",
+  "name": "Surf — AI-Curated News Feed",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "AI-curated crypto news feed aggregated from 30+ sources.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "feed"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/news/feed",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.markets",
+  "name": "Surf — Polymarket Markets",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Polymarket markets list. Cross-platform with /prediction-market/kalshi/* for arbitrage.",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "markets"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/prediction-market/polymarket/markets",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.surf.wallet",
+  "name": "Surf — Wallet Search",
+  "provider": "blockrun:surf",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "surf"
+  ],
+  "description": "Wallet search by address, ENS, or label (CEX, Whale, etc.).",
+  "keywords": [
+   "blockrun",
+   "surf",
+   "wallet"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/surf/search/wallet",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.defillama.protocols",
+  "name": "DefiLlama Protocols — list",
+  "provider": "blockrun:defillama",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "defillama"
+  ],
+  "description": "List of every DeFi protocol DefiLlama tracks, with current and historical TVL across chains. DefiLlama is open Apache 2.0; this endpoint is a paid wrapper that adds metering and reliability.",
+  "keywords": [
+   "blockrun",
+   "defillama",
+   "protocols"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/defillama/protocols",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.defillama.slug",
+  "name": "DefiLlama Protocol — single",
+  "provider": "blockrun:defillama",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "defillama"
+  ],
+  "description": "Detailed TVL + breakdown for a single protocol identified by DefiLlama slug.",
+  "keywords": [
+   "blockrun",
+   "defillama",
+   "slug"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "slug": {
+     "type": "string",
+     "description": "DefiLlama protocol slug, e.g. `aave`, `uniswap`, `lido`."
+    }
+   },
+   "required": [
+    "slug"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/defillama/protocol/{{slug}}",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.defillama.chains",
+  "name": "DefiLlama Chains — TVL by chain",
+  "provider": "blockrun:defillama",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "defillama"
+  ],
+  "description": "TVL for every chain DefiLlama tracks.",
+  "keywords": [
+   "blockrun",
+   "defillama",
+   "chains"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/defillama/chains",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.defillama.yields",
+  "name": "DefiLlama Yields — pools",
+  "provider": "blockrun:defillama",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "defillama"
+  ],
+  "description": "Every tracked DeFi yield pool (lending / LP / staking / vaults) with current APY and TVL.",
+  "keywords": [
+   "blockrun",
+   "defillama",
+   "yields"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/defillama/yields",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.defillama.coins",
+  "name": "DefiLlama Prices — token price lookup",
+  "provider": "blockrun:defillama",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "defillama"
+  ],
+  "description": "Token price lookup. `coins` accepts comma-separated identifiers in DefiLlama's coin syntax (e.g. `coingecko:bitcoin`, `ethereum:0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2`, `solana:So11111111111111111111111111111111111111112`).",
+  "keywords": [
+   "blockrun",
+   "defillama",
+   "coins"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "coins": {
+     "type": "string",
+     "description": "Comma-separated coin identifiers."
+    }
+   },
+   "required": [
+    "coins"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/defillama/prices/{{coins}}",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.markets",
+  "name": "Query Polymarket markets with filtering, sorting, and pagination",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Query Polymarket markets with filtering, sorting, and pagination Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "markets"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "status": {
+     "type": "string",
+     "description": "Filter by market status (e.g. \"open\", \"closed\")."
+    },
+    "min_price": {
+     "type": "number"
+    },
+    "max_price": {
+     "type": "number"
+    },
+    "min_open_interest": {
+     "type": "number"
+    },
+    "min_volume": {
+     "type": "number"
+    },
+    "tags": {
+     "type": "array",
+     "description": "Filter by Polymarket tag(s)."
+    },
+    "event_slug": {
+     "type": "array",
+     "description": "Event slug(s). The slug filter for /markets is `event_slug` (or `market_slug`), NOT `slug`."
+    },
+    "search": {
+     "type": "string",
+     "description": "Free-text search over market/question text (min 3 chars). Note: this param is `search` here, NOT `q` — only /markets/search uses `q`."
+    },
+    "condition_id": {
+     "type": "array",
+     "description": "Polymarket condition ID(s)."
+    },
+    "question_id": {
+     "type": "array"
+    },
+    "market_id": {
+     "type": "array"
+    },
+    "market_slug": {
+     "type": "array",
+     "description": "Market slug(s)."
+    },
+    "token_id": {
+     "type": "array"
+    },
+    "predexon_id": {
+     "type": "array",
+     "description": "Canonical cross-venue Predexon ID(s)."
+    },
+    "end_after": {
+     "type": "number",
+     "description": "Only markets ending after this unix timestamp (seconds)."
+    },
+    "end_before": {
+     "type": "number",
+     "description": "Only markets ending before this unix timestamp (seconds)."
+    },
+    "sort": {
+     "type": "string",
+     "description": "Sort order for results."
+    },
+    "limit": {
+     "type": "number",
+     "description": "Max results to return (default 20, max 100)."
+    },
+    "pagination_key": {
+     "type": "string",
+     "description": "Opaque cursor from a prior response for keyset pagination."
+    },
+    "offset": {
+     "type": "number",
+     "description": "Deprecated — use pagination_key."
+    },
+    "min_volume_1d": {
+     "type": "number"
+    },
+    "min_volume_7d": {
+     "type": "number"
+    },
+    "min_volume_30d": {
+     "type": "number"
+    },
+    "min_trades_1d": {
+     "type": "number"
+    },
+    "min_trades_7d": {
+     "type": "number"
+    },
+    "min_trades_30d": {
+     "type": "number"
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/markets",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "status": "{{status}}",
+    "min_price": "{{min_price}}",
+    "max_price": "{{max_price}}",
+    "min_open_interest": "{{min_open_interest}}",
+    "min_volume": "{{min_volume}}",
+    "tags": "{{tags}}",
+    "event_slug": "{{event_slug}}",
+    "search": "{{search}}",
+    "condition_id": "{{condition_id}}",
+    "question_id": "{{question_id}}",
+    "market_id": "{{market_id}}",
+    "market_slug": "{{market_slug}}",
+    "token_id": "{{token_id}}",
+    "predexon_id": "{{predexon_id}}",
+    "end_after": "{{end_after}}",
+    "end_before": "{{end_before}}",
+    "sort": "{{sort}}",
+    "limit": "{{limit}}",
+    "pagination_key": "{{pagination_key}}",
+    "offset": "{{offset}}",
+    "min_volume_1d": "{{min_volume_1d}}",
+    "min_volume_7d": "{{min_volume_7d}}",
+    "min_volume_30d": "{{min_volume_30d}}",
+    "min_trades_1d": "{{min_trades_1d}}",
+    "min_trades_7d": "{{min_trades_7d}}",
+    "min_trades_30d": "{{min_trades_30d}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.keyset",
+  "name": "List Polymarket markets with cursor-based keyset pagination (same filters as /polymarket/m",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "List Polymarket markets with cursor-based keyset pagination (same filters as /polymarket/markets) Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "keyset"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "status": {
+     "type": "string",
+     "description": "Filter by market status (e.g. \"open\", \"closed\")."
+    },
+    "min_price": {
+     "type": "number"
+    },
+    "max_price": {
+     "type": "number"
+    },
+    "min_open_interest": {
+     "type": "number"
+    },
+    "min_volume": {
+     "type": "number"
+    },
+    "tags": {
+     "type": "array",
+     "description": "Filter by Polymarket tag(s)."
+    },
+    "event_slug": {
+     "type": "array",
+     "description": "Event slug(s). The slug filter for /markets is `event_slug` (or `market_slug`), NOT `slug`."
+    },
+    "search": {
+     "type": "string",
+     "description": "Free-text search over market/question text (min 3 chars). Note: this param is `search` here, NOT `q` — only /markets/search uses `q`."
+    },
+    "condition_id": {
+     "type": "array",
+     "description": "Polymarket condition ID(s)."
+    },
+    "question_id": {
+     "type": "array"
+    },
+    "market_id": {
+     "type": "array"
+    },
+    "market_slug": {
+     "type": "array",
+     "description": "Market slug(s)."
+    },
+    "token_id": {
+     "type": "array"
+    },
+    "predexon_id": {
+     "type": "array",
+     "description": "Canonical cross-venue Predexon ID(s)."
+    },
+    "end_after": {
+     "type": "number",
+     "description": "Only markets ending after this unix timestamp (seconds)."
+    },
+    "end_before": {
+     "type": "number",
+     "description": "Only markets ending before this unix timestamp (seconds)."
+    },
+    "sort": {
+     "type": "string",
+     "description": "Sort order for results."
+    },
+    "limit": {
+     "type": "number",
+     "description": "Max results to return (default 20, max 100)."
+    },
+    "pagination_key": {
+     "type": "string",
+     "description": "Opaque cursor from a prior response for keyset pagination."
+    },
+    "offset": {
+     "type": "number",
+     "description": "Deprecated — use pagination_key."
+    },
+    "min_volume_1d": {
+     "type": "number"
+    },
+    "min_volume_7d": {
+     "type": "number"
+    },
+    "min_volume_30d": {
+     "type": "number"
+    },
+    "min_trades_1d": {
+     "type": "number"
+    },
+    "min_trades_7d": {
+     "type": "number"
+    },
+    "min_trades_30d": {
+     "type": "number"
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/markets/keyset",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "status": "{{status}}",
+    "min_price": "{{min_price}}",
+    "max_price": "{{max_price}}",
+    "min_open_interest": "{{min_open_interest}}",
+    "min_volume": "{{min_volume}}",
+    "tags": "{{tags}}",
+    "event_slug": "{{event_slug}}",
+    "search": "{{search}}",
+    "condition_id": "{{condition_id}}",
+    "question_id": "{{question_id}}",
+    "market_id": "{{market_id}}",
+    "market_slug": "{{market_slug}}",
+    "token_id": "{{token_id}}",
+    "predexon_id": "{{predexon_id}}",
+    "end_after": "{{end_after}}",
+    "end_before": "{{end_before}}",
+    "sort": "{{sort}}",
+    "limit": "{{limit}}",
+    "pagination_key": "{{pagination_key}}",
+    "offset": "{{offset}}",
+    "min_volume_1d": "{{min_volume_1d}}",
+    "min_volume_7d": "{{min_volume_7d}}",
+    "min_volume_30d": "{{min_volume_30d}}",
+    "min_trades_1d": "{{min_trades_1d}}",
+    "min_trades_7d": "{{min_trades_7d}}",
+    "min_trades_30d": "{{min_trades_30d}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.events",
+  "name": "List Polymarket events with filtering and sorting",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "List Polymarket events with filtering and sorting Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "events"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "status": {
+     "type": "string",
+     "description": "Filter by market status (e.g. \"open\", \"closed\")."
+    },
+    "category": {
+     "type": "string"
+    },
+    "search": {
+     "type": "string",
+     "description": "Free-text search over market/question text (min 3 chars). Note: this param is `search` here, NOT `q` — only /markets/search uses `q`."
+    },
+    "id": {
+     "type": "array",
+     "description": "Event ID(s)."
+    },
+    "slug": {
+     "type": "array",
+     "description": "Event slug(s). On /events the slug filter IS `slug` (unlike /markets, which uses `event_slug`)."
+    },
+    "tag": {
+     "type": "array"
+    },
+    "sort": {
+     "type": "string",
+     "description": "Sort order for results."
+    },
+    "limit": {
+     "type": "number",
+     "description": "Max results to return (default 20, max 100)."
+    },
+    "pagination_key": {
+     "type": "string",
+     "description": "Opaque cursor from a prior response for keyset pagination."
+    },
+    "offset": {
+     "type": "number",
+     "description": "Deprecated — use pagination_key."
+    },
+    "include_markets": {
+     "type": "boolean",
+     "description": "Embed child markets in each event."
+    },
+    "markets_per_event": {
+     "type": "number"
+    },
+    "min_volume": {
+     "type": "number"
+    },
+    "min_open_interest": {
+     "type": "number"
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/events",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "status": "{{status}}",
+    "category": "{{category}}",
+    "search": "{{search}}",
+    "id": "{{id}}",
+    "slug": "{{slug}}",
+    "tag": "{{tag}}",
+    "sort": "{{sort}}",
+    "limit": "{{limit}}",
+    "pagination_key": "{{pagination_key}}",
+    "offset": "{{offset}}",
+    "include_markets": "{{include_markets}}",
+    "markets_per_event": "{{markets_per_event}}",
+    "min_volume": "{{min_volume}}",
+    "min_open_interest": "{{min_open_interest}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.crypto-updown",
+  "name": "List crypto up/down prediction markets",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "List crypto up/down prediction markets Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "crypto-updown"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "asset": {
+     "type": "string",
+     "description": "Underlying asset (e.g. BTC, ETH)."
+    },
+    "timeframe": {
+     "type": "string"
+    },
+    "status": {
+     "type": "string",
+     "description": "Filter by market status (e.g. \"open\", \"closed\")."
+    },
+    "end_after": {
+     "type": "number"
+    },
+    "end_before": {
+     "type": "number"
+    },
+    "sort": {
+     "type": "string",
+     "description": "Sort order for results."
+    },
+    "limit": {
+     "type": "number",
+     "description": "Max results to return (default 20, max 100)."
+    },
+    "offset": {
+     "type": "number"
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/crypto-updown",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "asset": "{{asset}}",
+    "timeframe": "{{timeframe}}",
+    "status": "{{status}}",
+    "end_after": "{{end_after}}",
+    "end_before": "{{end_before}}",
+    "sort": "{{sort}}",
+    "limit": "{{limit}}",
+    "offset": "{{offset}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.orderbooks",
+  "name": "Get historical orderbook snapshots for a token",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Get historical orderbook snapshots for a token Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "orderbooks"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/orderbooks",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.trades",
+  "name": "Query historical Polymarket trade data with flexible filtering",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Query historical Polymarket trade data with flexible filtering Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "trades"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/trades",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.activity",
+  "name": "Fetch trading activity (merges, splits, redeems) for a user",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Fetch trading activity (merges, splits, redeems) for a user Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "activity"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/activity",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.positions",
+  "name": "Fetch all user positions with filtering and pagination",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Fetch all user positions with filtering and pagination Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "positions"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/positions",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.leaderboard",
+  "name": "Get the global leaderboard of smart wallets",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Get the global leaderboard of smart wallets Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "leaderboard"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/leaderboard",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.stats",
+  "name": "Compare performance across trading style cohorts",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Compare performance across trading style cohorts Provider: Predexon (polymarket). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "stats"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/cohorts/stats",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.profiles",
+  "name": "Batch retrieve wallet profiles for multiple addresses",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Batch retrieve wallet profiles for multiple addresses Provider: Predexon (polymarket). Tier 2 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "profiles"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/wallets/profiles",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.filter",
+  "name": "Filter wallets by market trades with AND/OR logic",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Filter wallets by market trades with AND/OR logic Provider: Predexon (polymarket). Tier 2 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "filter"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/wallets/filter",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.smart-activity",
+  "name": "Discover markets where high-performing wallets are active",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Discover markets where high-performing wallets are active Provider: Predexon (polymarket). Tier 2 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "smart-activity"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/markets/smart-activity",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.matching-markets",
+  "name": "Find equivalent markets across Polymarket and Kalshi",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Find equivalent markets across Polymarket and Kalshi Provider: Predexon (matching). Tier 2 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "matching-markets"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "polymarket_condition_id": {
+     "type": "string"
+    },
+    "polymarket_market_slug": {
+     "type": "string"
+    },
+    "polymarket_market_id": {
+     "type": "string"
+    },
+    "kalshi_market_ticker": {
+     "type": "string"
+    },
+    "limitless_slug": {
+     "type": "string"
+    },
+    "predict_market_id": {
+     "type": "string"
+    },
+    "predict_condition_id": {
+     "type": "string"
+    },
+    "predict_token_id": {
+     "type": "string"
+    },
+    "opinion_market_id": {
+     "type": "string"
+    },
+    "opinion_condition_id": {
+     "type": "string"
+    },
+    "opinion_token_id": {
+     "type": "string"
+    },
+    "match_type": {
+     "type": "string",
+     "description": "Restrict to a specific match type (e.g. exact)."
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/matching-markets",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "polymarket_condition_id": "{{polymarket_condition_id}}",
+    "polymarket_market_slug": "{{polymarket_market_slug}}",
+    "polymarket_market_id": "{{polymarket_market_id}}",
+    "kalshi_market_ticker": "{{kalshi_market_ticker}}",
+    "limitless_slug": "{{limitless_slug}}",
+    "predict_market_id": "{{predict_market_id}}",
+    "predict_condition_id": "{{predict_condition_id}}",
+    "predict_token_id": "{{predict_token_id}}",
+    "opinion_market_id": "{{opinion_market_id}}",
+    "opinion_condition_id": "{{opinion_condition_id}}",
+    "opinion_token_id": "{{opinion_token_id}}",
+    "match_type": "{{match_type}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.pairs",
+  "name": "Get all active exact-matched market pairs",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Get all active exact-matched market pairs Provider: Predexon (matching). Tier 2 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "pairs"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "active_only": {
+     "type": "boolean"
+    },
+    "min_similarity": {
+     "type": "number"
+    },
+    "sort_by": {
+     "type": "string"
+    },
+    "sort_order": {
+     "type": "string"
+    },
+    "expires_after": {
+     "type": "number"
+    },
+    "expires_before": {
+     "type": "number"
+    },
+    "venue": {
+     "type": "string"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Max results to return (default 20, max 100)."
+    },
+    "pagination_key": {
+     "type": "string",
+     "description": "Opaque cursor from a prior response for keyset pagination."
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/matching-markets/pairs",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "active_only": "{{active_only}}",
+    "min_similarity": "{{min_similarity}}",
+    "sort_by": "{{sort_by}}",
+    "sort_order": "{{sort_order}}",
+    "expires_after": "{{expires_after}}",
+    "expires_before": "{{expires_before}}",
+    "venue": "{{venue}}",
+    "limit": "{{limit}}",
+    "pagination_key": "{{pagination_key}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.search",
+  "name": "Search markets across Polymarket, Kalshi, Limitless, Opinion, and Predict.Fun in a single ",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Search markets across Polymarket, Kalshi, Limitless, Opinion, and Predict.Fun in a single call Provider: Predexon (matching). Tier 2 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "search"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "description": "Search term (required). NB: this endpoint uses `q`; every other list endpoint uses `search`."
+    },
+    "status": {
+     "type": "string",
+     "description": "Filter by market status (e.g. \"open\", \"closed\")."
+    },
+    "venue": {
+     "type": "string",
+     "description": "Filter by venue (polymarket, kalshi, …)."
+    },
+    "limit": {
+     "type": "number",
+     "description": "Max results to return (default 20, max 100)."
+    }
+   },
+   "required": [
+    "q"
+   ]
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/markets/search",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "q": "{{q}}",
+    "status": "{{status}}",
+    "venue": "{{venue}}",
+    "limit": "{{limit}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.identities",
+  "name": "Bulk identity lookup for up to 200 wallet addresses (POST body: {addresses: [..]})",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "Bulk identity lookup for up to 200 wallet addresses (POST body: {addresses: [..]}) Provider: Predexon (wallet). Tier 2 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "identities"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "POST",
+   "url": "https://blockrun.ai/api/v1/pm/polymarket/wallet/identities",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.listings",
+  "name": "List venue-native executable listings flattened across canonical markets",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "List venue-native executable listings flattened across canonical markets Provider: Predexon (matching). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "listings"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "event_id": {
+     "type": "string",
+     "description": "Filter by canonical event ID."
+    },
+    "category": {
+     "type": "string"
+    },
+    "league": {
+     "type": "string",
+     "description": "Filter by league (e.g. nba, nfl)."
+    },
+    "status": {
+     "type": "string",
+     "description": "Filter by market status (e.g. \"open\", \"closed\")."
+    },
+    "venue": {
+     "type": "string",
+     "description": "Filter by venue (polymarket, kalshi, limitless, opinion, predictfun)."
+    },
+    "search": {
+     "type": "string",
+     "description": "Free-text search over market/question text (min 3 chars). Note: this param is `search` here, NOT `q` — only /markets/search uses `q`."
+    },
+    "routable_only": {
+     "type": "boolean",
+     "description": "Only markets with an executable venue listing."
+    },
+    "limit": {
+     "type": "number",
+     "description": "Max results to return (default 20, max 100)."
+    },
+    "pagination_key": {
+     "type": "string",
+     "description": "Opaque cursor from a prior response for keyset pagination."
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/markets/listings",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "event_id": "{{event_id}}",
+    "category": "{{category}}",
+    "league": "{{league}}",
+    "status": "{{status}}",
+    "venue": "{{venue}}",
+    "search": "{{search}}",
+    "routable_only": "{{routable_only}}",
+    "limit": "{{limit}}",
+    "pagination_key": "{{pagination_key}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.pm.categories",
+  "name": "List available sports categories",
+  "provider": "blockrun:pm",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "pm"
+  ],
+  "description": "List available sports categories Provider: Predexon (sports). Tier 1 pricing — payment goes directly to the Predexon recipient wallet.",
+  "keywords": [
+   "blockrun",
+   "pm",
+   "categories"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/pm/sports/categories",
+   "auth": {
+    "type": "none"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.crypto.list",
+  "name": "List Crypto Symbols",
+  "provider": "blockrun:crypto",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "crypto"
+  ],
+  "description": "List available Crypto symbols from Pyth feeds. Free discovery endpoint. Supports `q` (search) and `limit` (max 2000) query params.",
+  "keywords": [
+   "blockrun",
+   "crypto",
+   "list"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "description": "Optional substring filter on symbol or display name."
+    },
+    "limit": {
+     "type": "number",
+     "default": 100
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/crypto/list",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "q": "{{q}}",
+    "limit": "{{limit}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.crypto.BTC-USD",
+  "name": "Crypto Spot Price",
+  "provider": "blockrun:crypto",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "crypto"
+  ],
+  "description": "Current spot price for one Crypto symbol from Pyth Network. Symbol format: Crypto pair `BASE-QUOTE` (e.g. BTC-USD, ETH-USD, SOL-USD). Example: `BTC-USD`. Substitute the path tail with any valid symbol from /list.",
+  "keywords": [
+   "blockrun",
+   "crypto",
+   "BTC-USD"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "description": "Trading session hint.",
+     "enum": [
+      "regular",
+      "extended"
+     ]
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/crypto/price/BTC-USD",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "session": "{{session}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.fx.list",
+  "name": "List FX Symbols",
+  "provider": "blockrun:fx",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "fx"
+  ],
+  "description": "List available FX symbols from Pyth feeds. Free discovery endpoint. Supports `q` (search) and `limit` (max 2000) query params.",
+  "keywords": [
+   "blockrun",
+   "fx",
+   "list"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "description": "Optional substring filter on symbol or display name."
+    },
+    "limit": {
+     "type": "number",
+     "default": 100
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/fx/list",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "q": "{{q}}",
+    "limit": "{{limit}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.fx.EUR-USD",
+  "name": "FX Spot Price",
+  "provider": "blockrun:fx",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "fx"
+  ],
+  "description": "Current spot price for one FX symbol from Pyth Network. Symbol format: Currency pair `BASE-QUOTE` (e.g. EUR-USD, GBP-USD, JPY-USD). Example: `EUR-USD`. Substitute the path tail with any valid symbol from /list.",
+  "keywords": [
+   "blockrun",
+   "fx",
+   "EUR-USD"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "description": "Trading session hint.",
+     "enum": [
+      "regular",
+      "extended"
+     ]
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/fx/price/EUR-USD",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "session": "{{session}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.commodity.list",
+  "name": "List Commodity Symbols",
+  "provider": "blockrun:commodity",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "commodity"
+  ],
+  "description": "List available Commodity symbols from Pyth feeds. Free discovery endpoint. Supports `q` (search) and `limit` (max 2000) query params.",
+  "keywords": [
+   "blockrun",
+   "commodity",
+   "list"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "description": "Optional substring filter on symbol or display name."
+    },
+    "limit": {
+     "type": "number",
+     "default": 100
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/commodity/list",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "q": "{{q}}",
+    "limit": "{{limit}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.commodity.XAU-USD",
+  "name": "Commodity Spot Price",
+  "provider": "blockrun:commodity",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "commodity"
+  ],
+  "description": "Current spot price for one Commodity symbol from Pyth Network. Symbol format: Commodity ticker `BASE-QUOTE` (e.g. XAU-USD for gold, WTI-USD for oil). Example: `XAU-USD`. Substitute the path tail with any valid symbol from /list.",
+  "keywords": [
+   "blockrun",
+   "commodity",
+   "XAU-USD"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "description": "Trading session hint.",
+     "enum": [
+      "regular",
+      "extended"
+     ]
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/commodity/price/XAU-USD",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "session": "{{session}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.usstock.list",
+  "name": "List US Stock Symbols",
+  "provider": "blockrun:usstock",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "usstock"
+  ],
+  "description": "List available US Stock symbols from Pyth feeds. Free discovery endpoint. Supports `q` (search) and `limit` (max 2000) query params.",
+  "keywords": [
+   "blockrun",
+   "usstock",
+   "list"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "description": "Optional substring filter on symbol or display name."
+    },
+    "limit": {
+     "type": "number",
+     "default": 100
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/usstock/list",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "q": "{{q}}",
+    "limit": "{{limit}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.usstock.AAPL",
+  "name": "US Stock Spot Price",
+  "provider": "blockrun:usstock",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "usstock"
+  ],
+  "description": "Current spot price for one US Stock symbol from Pyth Network. Symbol format: US ticker (e.g. AAPL, TSLA, NVDA, SPY). Example: `AAPL`. Substitute the path tail with any valid symbol from /list.",
+  "keywords": [
+   "blockrun",
+   "usstock",
+   "AAPL"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "description": "Trading session hint.",
+     "enum": [
+      "regular",
+      "extended"
+     ]
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/usstock/price/AAPL",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "session": "{{session}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.stocks.list",
+  "name": "List Global Stock Symbols",
+  "provider": "blockrun:stocks",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "stocks"
+  ],
+  "description": "List available Global Stock symbols from Pyth feeds. Free discovery endpoint. Supports `q` (search) and `limit` (max 2000) query params.",
+  "keywords": [
+   "blockrun",
+   "stocks",
+   "list"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "q": {
+     "type": "string",
+     "description": "Optional substring filter on symbol or display name."
+    },
+    "limit": {
+     "type": "number",
+     "default": 100
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/stocks/us/list",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "q": "{{q}}",
+    "limit": "{{limit}}"
+   }
+  },
+  "settlement": "x402"
+ },
+ {
+  "id": "blockrun.stocks.AAPL",
+  "name": "Global Stock Spot Price",
+  "provider": "blockrun:stocks",
+  "mode": "native",
+  "categories": [
+   "crypto",
+   "markets",
+   "onchain",
+   "stocks"
+  ],
+  "description": "Current spot price for one Global Stock symbol from Pyth Network. Symbol format: Ticker matching the chosen market (HKEX -HK suffix, TSE 4-digit, KRX 6-digit, LSE/XETRA/Euronext alpha). Example: `AAPL`. Substitute the path tail with any valid symbol from /list.",
+  "keywords": [
+   "blockrun",
+   "stocks",
+   "AAPL"
+  ],
+  "input": {
+   "type": "object",
+   "properties": {
+    "session": {
+     "type": "string",
+     "description": "Trading session hint.",
+     "enum": [
+      "regular",
+      "extended"
+     ]
+    }
+   },
+   "required": []
+  },
+  "pricing": {
+   "model": "per_call",
+   "amount": 0.0125,
+   "cost": 0.01,
+   "payOnMatch": true
+  },
+  "adapter": {
+   "kind": "http",
+   "method": "GET",
+   "url": "https://blockrun.ai/api/v1/stocks/us/price/AAPL",
+   "auth": {
+    "type": "none"
+   },
+   "query": {
+    "session": "{{session}}"
+   }
+  },
+  "settlement": "x402"
+ }
+]

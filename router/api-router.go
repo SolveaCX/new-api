@@ -218,6 +218,27 @@ func SetApiRouter(router *gin.Engine) {
 			recallCampaignRoute.POST("/:id/recipients/:rid/retry", controller.RetryRecallRecipient)
 		}
 
+		// MCP server. Agents authenticate with the same API key they use for
+		// model calls (TokenAuth), not a console session, because an agent has
+		// no cookie jar. Stateless Streamable HTTP: no session to pin a request
+		// to one node.
+		apiRouter.POST("/mcp", middleware.TokenAuth(), controller.HandleMCP)
+
+		// Data-tool marketplace. The same key and quota that buy model tokens buy
+		// tool calls, so these sit behind normal user auth, not a second credential.
+		dataToolRoute := apiRouter.Group("/tools")
+		dataToolRoute.Use(middleware.UserAuth())
+		{
+			dataToolRoute.GET("/catalogue", controller.GetDataToolCatalogue)
+			dataToolRoute.GET("/discover", controller.SearchDataTools)
+			dataToolRoute.POST("/discover", controller.SearchDataTools)
+			dataToolRoute.GET("/inspect", controller.InspectDataTool)
+			dataToolRoute.POST("/inspect", controller.InspectDataTool)
+			dataToolRoute.POST("/run", middleware.CriticalRateLimit(), controller.RunDataTool)
+			dataToolRoute.GET("/runs", controller.GetDataToolRuns)
+			dataToolRoute.GET("/stats", controller.GetDataToolStats)
+		}
+
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")
 		subscriptionRoute.Use(middleware.UserAuth())
