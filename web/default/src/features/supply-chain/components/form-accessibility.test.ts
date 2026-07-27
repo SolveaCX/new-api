@@ -32,6 +32,7 @@ describe('supply-chain form accessibility', () => {
     const contract = await readComponent('contract-management.tsx')
     const exclusion = await readComponent('exclusion-management.tsx')
     const binding = await readComponent('channel-binding-management.tsx')
+    const batchBinding = await readComponent('channel-batch-binding-dialog.tsx')
     const policy = await readComponent('accounting-policy-activation.tsx')
 
     for (const id of [
@@ -64,6 +65,10 @@ describe('supply-chain form accessibility', () => {
       binding,
       'binding-contract-${props.binding.channel_id}'
     )
+    expect(batchBinding).toContain("htmlFor='channel-batch-binding-contract'")
+    expect(batchBinding).toContain("id='channel-batch-binding-contract'")
+    expect(batchBinding).toContain("htmlFor='channel-batch-binding-policy'")
+    expect(batchBinding).toContain("id='channel-batch-binding-policy'")
     expect(policy).toContain("htmlFor='supplier-accounting-policy-activation'")
     expect(policy).toContain("id='supplier-accounting-policy-activation'")
   })
@@ -90,6 +95,7 @@ describe('supply-chain form accessibility', () => {
       readComponent('contract-management.tsx'),
       readComponent('exclusion-management.tsx'),
       readComponent('channel-binding-management.tsx'),
+      readComponent('channel-batch-binding-dialog.tsx'),
     ])
 
     for (const source of sources) {
@@ -101,8 +107,10 @@ describe('supply-chain form accessibility', () => {
 
   test('disables complete skip until the global policy is configurable', async () => {
     const binding = await readComponent('channel-binding-management.tsx')
+    const batchBinding = await readComponent('channel-batch-binding-dialog.tsx')
 
     expect(binding).toContain('disabled={!props.policyConfigurable}')
+    expect(batchBinding).toContain('disabled={!props.policyConfigurable}')
     expect(binding).toContain('isAccountingPolicyConfigurable(')
     expect(binding).toContain(
       'The saved skip setting cannot be verified because the global policy status is unavailable.'
