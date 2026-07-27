@@ -79,6 +79,145 @@ describe('supply-chain management presentation', () => {
     expect(html).toContain('Advanced JSON editor')
   })
 
+  test('shows publication and replacement actions for a completed historical estimate', () => {
+    const queryClient = new QueryClient()
+    const item = {
+      id: 9,
+      command_hash: 'hash',
+      idempotency_key: 'history-9',
+      created_by: 1,
+      method: 'log_estimate_v1' as const,
+      reason: 'legacy estimate',
+      start_date: '2026-01-01',
+      end_date: '2026-02-01',
+      quota_per_unit: '500000',
+      status: 'completed' as const,
+      source_max_log_id: 99,
+      candidate_count: 10,
+      processed_count: 10,
+      summary_count: 1,
+      error_message: '',
+      started_at: 1,
+      completed_at: 2,
+      published_at: null,
+      published_by: 0,
+      summary_schema_version: 1,
+      superseded_at: null,
+      supersedes_import_id: null,
+      superseded_by_import_id: null,
+      created_at: 1,
+      updated_at: 2,
+      command: {
+        start_date: '2026-01-01',
+        end_date: '2026-02-01',
+        quota_per_unit: '500000',
+        excluded_user_ids: [1],
+        channel_mappings: [],
+        reason: 'legacy estimate',
+        method: 'log_estimate_v1' as const,
+      },
+      estimate_only: true as const,
+      affects_inventory: false as const,
+      publication_status: 'draft' as const,
+      publication_ready: true,
+      coverage_scope: 'historical_consume_logs_v1' as const,
+      assumptions: [],
+    }
+    queryClient.setQueryData(
+      supplyChainQueryKeys.historicalImports.list({ p: 1, page_size: 20 }),
+      { page: 1, page_size: 20, total: 1, items: [item] }
+    )
+    queryClient.setQueryData(
+      supplyChainQueryKeys.historicalImports.series(item.id),
+      {
+        pages: [{ items: [], limit: 200, has_more: false, next_cursor: null }],
+        pageParams: [null],
+      }
+    )
+
+    const html = renderWithQuery(
+      queryClient,
+      <HistoricalImportManagement
+        search={{ ...search, tab: 'historical-imports' }}
+        onSearchChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('Publish to reports')
+    expect(html).toContain('Re-estimate')
+    expect(html).toContain('Inventory is not affected')
+    expect(html).toContain('Historical estimates require explicit publication')
+  })
+
+  test('requires re-estimation before publishing an older historical estimate', () => {
+    const queryClient = new QueryClient()
+    const item = {
+      id: 10,
+      command_hash: 'legacy-hash',
+      idempotency_key: 'history-10',
+      created_by: 1,
+      method: 'log_estimate_v1' as const,
+      reason: 'older estimate',
+      start_date: '2026-01-01',
+      end_date: '2026-02-01',
+      quota_per_unit: '500000',
+      status: 'completed' as const,
+      source_max_log_id: 99,
+      candidate_count: 10,
+      processed_count: 10,
+      summary_count: 1,
+      error_message: '',
+      started_at: 1,
+      completed_at: 2,
+      published_at: null,
+      published_by: 0,
+      summary_schema_version: 0,
+      superseded_at: null,
+      supersedes_import_id: null,
+      superseded_by_import_id: null,
+      created_at: 1,
+      updated_at: 2,
+      command: {
+        start_date: '2026-01-01',
+        end_date: '2026-02-01',
+        quota_per_unit: '500000',
+        excluded_user_ids: [1],
+        channel_mappings: [],
+        reason: 'older estimate',
+        method: 'log_estimate_v1' as const,
+      },
+      estimate_only: true as const,
+      affects_inventory: false as const,
+      publication_status: 'draft' as const,
+      publication_ready: false,
+      coverage_scope: 'historical_consume_logs_v1' as const,
+      assumptions: [],
+    }
+    queryClient.setQueryData(
+      supplyChainQueryKeys.historicalImports.list({ p: 1, page_size: 20 }),
+      { page: 1, page_size: 20, total: 1, items: [item] }
+    )
+    queryClient.setQueryData(
+      supplyChainQueryKeys.historicalImports.series(item.id),
+      {
+        pages: [{ items: [], limit: 200, has_more: false, next_cursor: null }],
+        pageParams: [null],
+      }
+    )
+
+    const html = renderWithQuery(
+      queryClient,
+      <HistoricalImportManagement
+        search={{ ...search, tab: 'historical-imports' }}
+        onSearchChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('Re-estimation required')
+    expect(html).toContain('Re-estimate')
+    expect(html).not.toContain('Publish to reports')
+  })
+
   test('renders empty contract and sibling tabs when the Go page contains items null', async () => {
     api.defaults.adapter = async (config: InternalAxiosRequestConfig) => ({
       data: {

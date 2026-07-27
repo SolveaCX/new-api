@@ -20,7 +20,7 @@ func supplierHistoricalEstimateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}))
+	require.NoError(t, db.AutoMigrate(&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalPublishedDay{}))
 	return db
 }
 
@@ -201,6 +201,155 @@ func TestSupplierHistoricalFailedImportDoesNotBlockReplacementRange(t *testing.T
 	require.NoError(t, err)
 }
 
+func TestSupplierHistoricalPublicationAtomicallyReplacesCurrentVersion(t *testing.T) {
+	db := supplierHistoricalEstimateTestDB(t)
+	ctx := context.Background()
+	base := SupplierHistoricalImportCreate{
+		CommandHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CommandJSON: `{}`,
+		IdempotencyKey: "published-v1", CreatedBy: 7, Method: SupplierHistoricalMethodLogEstimateV1, Reason: "published v1",
+		StartDate: "2026-01-01", EndDate: "2026-01-03", DayStart: 1767196800, DayEnd: 1767369600,
+		QuotaPerUnit: "500000", ExcludedUserIdsJSON: `[]`, ChannelMappingsJSON: `[]`,
+	}
+	first, err := CreateSupplierHistoricalImport(ctx, db, base)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&SupplierHistoricalImport{}).Where("id = ?", first.Id).Update("status", SupplierHistoricalImportStatusCompleted).Error)
+	published, err := PublishSupplierHistoricalImport(ctx, db, first.Id, 9)
+	require.NoError(t, err)
+	require.NotNil(t, published.PublishedAt)
+	require.Equal(t, 9, published.PublishedBy)
+
+	var days []SupplierHistoricalPublishedDay
+	require.NoError(t, db.Order("day_start ASC").Find(&days).Error)
+	require.Len(t, days, 2)
+	for _, day := range days {
+		require.Equal(t, first.Id, day.ImportId)
+	}
+
+	replacementInput := base
+	replacementInput.CommandHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	replacementInput.IdempotencyKey = "published-v2"
+	replacementInput.Reason = "published v2"
+	replacementInput.SupersedesImportId = &first.Id
+	replacement, err := CreateSupplierHistoricalImport(ctx, db, replacementInput)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&SupplierHistoricalImport{}).Where("id = ?", replacement.Id).Update("status", SupplierHistoricalImportStatusCompleted).Error)
+	replacement, err = PublishSupplierHistoricalImport(ctx, db, replacement.Id, 10)
+	require.NoError(t, err)
+	require.NotNil(t, replacement.PublishedAt)
+
+	require.NoError(t, db.Order("day_start ASC").Find(&days).Error)
+	require.Len(t, days, 2)
+	for _, day := range days {
+		require.Equal(t, replacement.Id, day.ImportId)
+	}
+	var superseded SupplierHistoricalImport
+	require.NoError(t, db.First(&superseded, first.Id).Error)
+	require.NotNil(t, superseded.SupersededAt)
+	require.Equal(t, replacement.Id, *superseded.SupersededByImportId)
+	_, err = PublishSupplierHistoricalImport(ctx, db, first.Id, 9)
+	require.ErrorIs(t, err, ErrSupplierHistoricalPublicationConflict)
+
+	thirdInput := base
+	thirdInput.CommandHash = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	thirdInput.IdempotencyKey = "published-v3"
+	thirdInput.Reason = "published v3"
+	thirdInput.SupersedesImportId = &replacement.Id
+	_, err = CreateSupplierHistoricalImport(ctx, db, thirdInput)
+	require.NoError(t, err, "a superseded ancestor must not block the next version")
+}
+
+func TestSupplierHistoricalPublicationRequiresCurrentSummarySchema(t *testing.T) {
+	db := supplierHistoricalEstimateTestDB(t)
+	ctx := context.Background()
+	legacy, err := CreateSupplierHistoricalImport(ctx, db, SupplierHistoricalImportCreate{
+		CommandHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CommandJSON: `{}`,
+		IdempotencyKey: "legacy-summary", CreatedBy: 7, Method: SupplierHistoricalMethodLogEstimateV1, Reason: "legacy summary",
+		StartDate: "2026-01-01", EndDate: "2026-01-02", DayStart: 1767196800, DayEnd: 1767283200,
+		QuotaPerUnit: "500000", ExcludedUserIdsJSON: `[]`, ChannelMappingsJSON: `[]`,
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Model(&SupplierHistoricalImport{}).Where("id = ?", legacy.Id).
+		Updates(map[string]any{"status": SupplierHistoricalImportStatusCompleted, "summary_schema_version": 0}).Error)
+
+	_, err = PublishSupplierHistoricalImport(ctx, db, legacy.Id, 9)
+	require.ErrorIs(t, err, ErrSupplierHistoricalPublicationNeedsReestimate)
+	var publishedDays int64
+	require.NoError(t, db.Model(&SupplierHistoricalPublishedDay{}).Count(&publishedDays).Error)
+	require.Zero(t, publishedDays)
+
+	replacementInput := SupplierHistoricalImportCreate{
+		CommandHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", CommandJSON: `{}`,
+		IdempotencyKey: "legacy-summary-v2", CreatedBy: 7, Method: SupplierHistoricalMethodLogEstimateV1, Reason: "re-estimated summary",
+		StartDate: legacy.StartDate, EndDate: legacy.EndDate, DayStart: legacy.DayStart, DayEnd: legacy.DayEnd,
+		QuotaPerUnit: "500000", ExcludedUserIdsJSON: `[]`, ChannelMappingsJSON: `[]`, SupersedesImportId: &legacy.Id,
+	}
+	_, err = CreateSupplierHistoricalImport(ctx, db, replacementInput)
+	require.NoError(t, err, "legacy completed imports must remain replaceable")
+}
+
+func TestSupplierHistoricalConcurrentPublicationKeepsOneCurrentVersion(t *testing.T) {
+	db := supplierHistoricalEstimateTestDB(t)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(2)
+	ctx := context.Background()
+	target := SupplierHistoricalImport{
+		CommandHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CommandJSON: `{}`,
+		IdempotencyKey: "concurrent-published", CreatedBy: 7, Method: SupplierHistoricalMethodLogEstimateV1, Reason: "current",
+		StartDate: "2026-01-01", EndDate: "2026-01-02", DayStart: 1767196800, DayEnd: 1767283200,
+		QuotaPerUnit: "500000", ExcludedUserIdsJSON: `[]`, ChannelMappingsJSON: `[]`, SummarySchemaVersion: SupplierHistoricalSummarySchemaVersion, Status: SupplierHistoricalImportStatusCompleted,
+	}
+	require.NoError(t, db.Create(&target).Error)
+	_, err = PublishSupplierHistoricalImport(ctx, db, target.Id, 7)
+	require.NoError(t, err)
+	replacements := []SupplierHistoricalImport{
+		{
+			CommandHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", CommandJSON: `{}`,
+			IdempotencyKey: "concurrent-replacement-a", CreatedBy: 7, Method: SupplierHistoricalMethodLogEstimateV1, Reason: "replacement a",
+			StartDate: target.StartDate, EndDate: target.EndDate, DayStart: target.DayStart, DayEnd: target.DayEnd,
+			QuotaPerUnit: "500000", ExcludedUserIdsJSON: `[]`, ChannelMappingsJSON: `[]`, SummarySchemaVersion: SupplierHistoricalSummarySchemaVersion, Status: SupplierHistoricalImportStatusCompleted, SupersedesImportId: &target.Id,
+		},
+		{
+			CommandHash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", CommandJSON: `{}`,
+			IdempotencyKey: "concurrent-replacement-b", CreatedBy: 8, Method: SupplierHistoricalMethodLogEstimateV1, Reason: "replacement b",
+			StartDate: target.StartDate, EndDate: target.EndDate, DayStart: target.DayStart, DayEnd: target.DayEnd,
+			QuotaPerUnit: "500000", ExcludedUserIdsJSON: `[]`, ChannelMappingsJSON: `[]`, SummarySchemaVersion: SupplierHistoricalSummarySchemaVersion, Status: SupplierHistoricalImportStatusCompleted, SupersedesImportId: &target.Id,
+		},
+	}
+	require.NoError(t, db.Create(&replacements).Error)
+	start := make(chan struct{})
+	results := make(chan error, len(replacements))
+	var workers sync.WaitGroup
+	for _, replacement := range replacements {
+		replacement := replacement
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			_, publishErr := PublishSupplierHistoricalImport(context.Background(), db, replacement.Id, replacement.CreatedBy)
+			results <- publishErr
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+	var succeeded, conflicted int
+	for publishErr := range results {
+		if publishErr == nil {
+			succeeded++
+		} else if errors.Is(publishErr, ErrSupplierHistoricalPublicationConflict) || errors.Is(publishErr, ErrSupplierHistoricalReplacementInvalid) {
+			conflicted++
+		} else {
+			require.NoError(t, publishErr)
+		}
+	}
+	require.Equal(t, 1, succeeded)
+	require.Equal(t, 1, conflicted)
+	var publishedDay SupplierHistoricalPublishedDay
+	require.NoError(t, db.First(&publishedDay, "date = ?", target.StartDate).Error)
+	require.Contains(t, []int64{replacements[0].Id, replacements[1].Id}, publishedDay.ImportId)
+}
+
 func TestSupplierHistoricalPageMergeRejectsCrossPageMoneyOverflow(t *testing.T) {
 	db := supplierHistoricalEstimateTestDB(t)
 	ctx := context.Background()
@@ -256,6 +405,17 @@ func TestSupplierHistoricalSchemaIndexesAcrossSupportedDialects(t *testing.T) {
 				}
 			}
 			require.Equal(t, []string{"import_id", "date", "dimension_key"}, uniqueColumns)
+			publishedStatement := &gorm.Statement{DB: db}
+			require.NoError(t, publishedStatement.Parse(&SupplierHistoricalPublishedDay{}))
+			var publishedDateColumns []string
+			for _, index := range publishedStatement.Schema.ParseIndexes() {
+				if index.Name == "ux_supplier_historical_published_day_date" {
+					for _, field := range index.Fields {
+						publishedDateColumns = append(publishedDateColumns, field.DBName)
+					}
+				}
+			}
+			require.Equal(t, []string{"date"}, publishedDateColumns)
 		})
 	}
 }

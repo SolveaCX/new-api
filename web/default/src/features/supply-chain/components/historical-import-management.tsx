@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { PlusSignIcon } from '@hugeicons/core-free-icons'
@@ -45,7 +45,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { createHistoricalImport, listAllBoundChannelBindings } from '../api'
+import {
+  createHistoricalImport,
+  listAllBoundChannelBindings,
+  publishHistoricalImport,
+} from '../api'
 import type { SupplyChainManagementProps } from '../contracts'
 import { useIdempotentIntent } from '../hooks/use-idempotent-intent'
 import { useSupplyChainAdminMutation } from '../hooks/use-supply-chain-admin'
@@ -74,7 +78,11 @@ import type {
   SupplierHistoricalImport,
   SupplierHistoricalImportCommand,
 } from '../types'
-import { ManagementPagination, ManagementStatus } from './management-common'
+import {
+  ConfirmAction,
+  ManagementPagination,
+  ManagementStatus,
+} from './management-common'
 
 const DEFAULT_FORM: HistoricalImportFormValues = {
   start_date: '',
@@ -92,8 +100,10 @@ const ASSUMPTION_LABELS: Record<string, string> = {
     'Official list amount requires a valid group ratio saved on each source log.',
   procurement_cost_requires_explicit_channel_mapping:
     'Procurement cost requires an explicit frozen channel mapping.',
-  authoritative_reports_and_inventory_are_unchanged:
-    'Authoritative reports and inventory are not changed by this estimate.',
+  published_estimates_enter_reports_but_not_inventory:
+    'Published estimates enter financial reports but never change inventory.',
+  authoritative_daily_data_overrides_same_day_estimates:
+    'Authoritative daily data replaces the estimate for the same date.',
 }
 
 function historicalStatusVariant(
@@ -218,7 +228,10 @@ function HistoricalMappingTable(props: {
   )
 }
 
-function HistoricalImportForm() {
+function HistoricalImportForm(props: {
+  replacement: SupplierHistoricalImport | undefined
+  onReplacementCleared: () => void
+}) {
   const { t } = useTranslation()
   const intent = useIdempotentIntent()
   const [mappingSources, setMappingSources] = useState<
@@ -229,6 +242,26 @@ function HistoricalImportForm() {
     resolver: zodResolver(historicalImportFormSchema),
     defaultValues: DEFAULT_FORM,
   })
+  useEffect(() => {
+    if (!props.replacement) return
+    form.reset({
+      start_date: props.replacement.command.start_date,
+      end_date: props.replacement.command.end_date,
+      quota_per_unit: props.replacement.command.quota_per_unit,
+      excluded_user_ids_json: JSON.stringify(
+        props.replacement.command.excluded_user_ids,
+        null,
+        2
+      ),
+      channel_mappings_json: JSON.stringify(
+        props.replacement.command.channel_mappings,
+        null,
+        2
+      ),
+      reason: props.replacement.command.reason,
+    })
+    setMappingSources([])
+  }, [form, props.replacement])
   const mutation = useSupplyChainAdminMutation<{
     command: SupplierHistoricalImportCommand
     key: string
@@ -277,6 +310,9 @@ function HistoricalImportForm() {
       excluded_user_ids: JSON.parse(values.excluded_user_ids_json),
       channel_mappings: JSON.parse(values.channel_mappings_json),
       reason: values.reason.trim(),
+      ...(props.replacement
+        ? { supersedes_import_id: props.replacement.id }
+        : {}),
     }
     const result = await intent.run({
       execute: (key) => mutation.mutateAsync({ command, key }),
@@ -284,9 +320,17 @@ function HistoricalImportForm() {
     if (result === 'success') {
       toast.success(t('Historical estimate import created'))
       form.reset(DEFAULT_FORM)
+      props.onReplacementCleared()
     } else if (result !== 'blocked') {
       toast.error(t('Unable to create historical estimate import'))
     }
+  }
+
+  function cancelReplacement(): void {
+    form.reset(DEFAULT_FORM)
+    setMappingSources([])
+    intent.clearIntent()
+    props.onReplacementCleared()
   }
 
   const pending = mutation.isPending || intent.isSubmitting
@@ -302,6 +346,28 @@ function HistoricalImportForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {props.replacement ? (
+            <Alert className='mb-4'>
+              <AlertTitle>
+                {t('Re-estimating import #{{id}}', {
+                  id: props.replacement.id,
+                })}
+              </AlertTitle>
+              <AlertDescription>
+                {t(
+                  'The new version keeps the same date range. It replaces the current report version only after calculation and publication both succeed.'
+                )}
+              </AlertDescription>
+              <Button
+                type='button'
+                variant='link'
+                className='h-auto px-0 pt-2'
+                onClick={cancelReplacement}
+              >
+                {t('Cancel re-estimation')}
+              </Button>
+            </Alert>
+          ) : null}
           <FieldGroup>
             <Field data-invalid={Boolean(form.formState.errors.start_date)}>
               <FieldLabel htmlFor='historical-start-date'>
@@ -310,6 +376,7 @@ function HistoricalImportForm() {
               <Input
                 id='historical-start-date'
                 type='date'
+                readOnly={Boolean(props.replacement)}
                 aria-invalid={Boolean(form.formState.errors.start_date)}
                 {...form.register('start_date')}
               />
@@ -326,6 +393,7 @@ function HistoricalImportForm() {
               <Input
                 id='historical-end-date'
                 type='date'
+                readOnly={Boolean(props.replacement)}
                 aria-invalid={Boolean(form.formState.errors.end_date)}
                 {...form.register('end_date')}
               />
@@ -540,8 +608,17 @@ function HistoricalImportForm() {
 
 function HistoricalImportDetails(props: {
   item: SupplierHistoricalImport | undefined
+  onReestimate: (item: SupplierHistoricalImport) => void
 }) {
   const { t } = useTranslation()
+  const [confirmPublish, setConfirmPublish] = useState(false)
+  const publishMutation = useSupplyChainAdminMutation<number>({
+    mutationFn: publishHistoricalImport,
+    invalidate: [
+      supplyChainQueryKeys.historicalImports.all(),
+      supplyChainQueryKeys.reports.all(),
+    ],
+  })
   const series = useCompletedHistoricalSeries(props.item)
   const points = useMemo(
     () => series.data?.pages.flatMap((page) => page.items) ?? [],
@@ -551,156 +628,229 @@ function HistoricalImportDetails(props: {
 
   if (!props.item) return null
   const item = props.item
+  async function publish(): Promise<void> {
+    try {
+      await publishMutation.mutateAsync(item.id)
+      toast.success(t('Historical estimate published to reports'))
+      setConfirmPublish(false)
+    } catch {
+      toast.error(t('Unable to publish historical estimate'))
+    }
+  }
+  let publicationStatusLabel = t('Not published')
+  if (item.publication_status === 'published') {
+    publicationStatusLabel = t('Published to reports')
+  } else if (item.publication_status === 'superseded') {
+    publicationStatusLabel = t('Superseded')
+  }
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          {t('Import #{{id}}', { id: item.id })}{' '}
-          <HistoricalStatusBadge status={item.status} />
-        </CardTitle>
-        <CardDescription>
-          {item.start_date} → {item.end_date} · {item.reason}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className='flex flex-col gap-4'>
-        <Alert>
-          <AlertTitle>{t('Estimate coverage')}</AlertTitle>
-          <AlertDescription>
-            {t(
-              'This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.'
-            )}
-          </AlertDescription>
-        </Alert>
-        <div className='flex flex-col gap-2'>
-          <div className='font-medium'>{t('Frozen assumptions')}</div>
-          <ul className='text-muted-foreground list-disc ps-5 text-sm'>
-            {item.assumptions.map((assumption) => (
-              <li key={assumption}>
-                {t(ASSUMPTION_LABELS[assumption] ?? assumption)}
-              </li>
-            ))}
-          </ul>
-        </div>
-        {item.status === 'failed' ? (
-          <Alert variant='destructive'>
-            <AlertTitle>{t('Historical import failed')}</AlertTitle>
-            <AlertDescription>
-              {item.error_message || t('No error details are available.')}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {item.status !== 'completed' ? (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            {t('Import #{{id}}', { id: item.id })}{' '}
+            <HistoricalStatusBadge status={item.status} />{' '}
+            <Badge
+              variant={
+                item.publication_status === 'published'
+                  ? 'default'
+                  : 'secondary'
+              }
+            >
+              {publicationStatusLabel}
+            </Badge>
+          </CardTitle>
+          <CardDescription>
+            {item.start_date} → {item.end_date} · {item.reason}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className='flex flex-col gap-4'>
           <Alert>
-            <AlertTitle>
-              {t('Financial estimates are not published yet')}
-            </AlertTitle>
+            <AlertTitle>{t('Estimate coverage')}</AlertTitle>
             <AlertDescription>
               {t(
-                'Amounts are shown only after the frozen source count is fully verified. Partial running or failed totals remain hidden.'
+                'This import covers final successful consume logs in the frozen LOG_DB range. It does not write authoritative accounting facts.'
               )}
             </AlertDescription>
           </Alert>
-        ) : (
-          <ManagementStatus
-            isLoading={series.isLoading}
-            isError={series.isError}
-            isEmpty={!rollups.length}
-          >
-            <div className='flex flex-col gap-3'>
-              {series.hasNextPage ? (
-                <Alert>
-                  <AlertTitle>
-                    {t('Load all pages before viewing complete daily totals.')}
-                  </AlertTitle>
-                </Alert>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('Date')}</TableHead>
-                      <TableHead>{t('Requests')}</TableHead>
-                      <TableHead>{t('Unknown')}</TableHead>
-                      <TableHead>{t('Unassigned')}</TableHead>
-                      <TableHead>{t('Sales')}</TableHead>
-                      <TableHead>{t('Procurement cost')}</TableHead>
-                      <TableHead>{t('Gross profit')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rollups.map((row) => (
-                      <TableRow key={row.date}>
-                        <TableCell>{row.date}</TableCell>
-                        <TableCell>
-                          {row.sourceCount.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          {row.unknownCount.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          {row.unassignedCount.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          {formatMicroUsd(row.salesMicroUsd, t('Unknown'))}
-                          {row.salesUnknownCount > 0 ? (
-                            <div className='text-muted-foreground text-xs'>
-                              {t('Unknown')}:{' '}
-                              {row.salesUnknownCount.toLocaleString()}
-                            </div>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>
-                          {formatMicroUsd(row.costMicroUsd, t('Unknown'))}
-                          {row.costUnknownCount > 0 ? (
-                            <div className='text-muted-foreground text-xs'>
-                              {t('Unknown')}:{' '}
-                              {row.costUnknownCount.toLocaleString()}
-                            </div>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>
-                          {formatMicroUsd(row.grossMicroUsd, t('Unknown'))}
-                          {row.grossUnknownCount > 0 ? (
-                            <div className='text-muted-foreground text-xs'>
-                              {t('Unknown')}:{' '}
-                              {row.grossUnknownCount.toLocaleString()}
-                            </div>
-                          ) : null}
-                        </TableCell>
+          <div className='flex flex-col gap-2'>
+            <div className='font-medium'>{t('Frozen assumptions')}</div>
+            <ul className='text-muted-foreground list-disc ps-5 text-sm'>
+              {item.assumptions.map((assumption) => (
+                <li key={assumption}>
+                  {t(ASSUMPTION_LABELS[assumption] ?? assumption)}
+                </li>
+              ))}
+            </ul>
+          </div>
+          {item.status === 'failed' ? (
+            <Alert variant='destructive'>
+              <AlertTitle>{t('Historical import failed')}</AlertTitle>
+              <AlertDescription>
+                {item.error_message || t('No error details are available.')}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {item.status === 'completed' &&
+          item.publication_status === 'draft' &&
+          !item.publication_ready ? (
+            <Alert>
+              <AlertTitle>{t('Re-estimation required')}</AlertTitle>
+              <AlertDescription>
+                {t(
+                  'This estimate was calculated by an older version. Re-estimate it before publishing.'
+                )}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {item.status !== 'completed' ? (
+            <Alert>
+              <AlertTitle>
+                {t('Financial estimates are not published yet')}
+              </AlertTitle>
+              <AlertDescription>
+                {t(
+                  'Amounts are shown only after the frozen source count is fully verified. Partial running or failed totals remain hidden.'
+                )}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <ManagementStatus
+              isLoading={series.isLoading}
+              isError={series.isError}
+              isEmpty={!rollups.length}
+            >
+              <div className='flex flex-col gap-3'>
+                {series.hasNextPage ? (
+                  <Alert>
+                    <AlertTitle>
+                      {t(
+                        'Load all pages before viewing complete daily totals.'
+                      )}
+                    </AlertTitle>
+                  </Alert>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('Date')}</TableHead>
+                        <TableHead>{t('Requests')}</TableHead>
+                        <TableHead>{t('Unknown')}</TableHead>
+                        <TableHead>{t('Unassigned')}</TableHead>
+                        <TableHead>{t('Sales')}</TableHead>
+                        <TableHead>{t('Procurement cost')}</TableHead>
+                        <TableHead>{t('Gross profit')}</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-              {series.hasNextPage ? (
-                <Button
-                  type='button'
-                  variant='outline'
-                  disabled={series.isFetchingNextPage}
-                  onClick={() => void series.fetchNextPage()}
-                >
-                  {series.isFetchingNextPage ? <Spinner /> : null}
-                  {t('Load more')}
-                </Button>
-              ) : null}
-            </div>
-          </ManagementStatus>
+                    </TableHeader>
+                    <TableBody>
+                      {rollups.map((row) => (
+                        <TableRow key={row.date}>
+                          <TableCell>{row.date}</TableCell>
+                          <TableCell>
+                            {row.sourceCount.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            {row.unknownCount.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            {row.unassignedCount.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            {formatMicroUsd(row.salesMicroUsd, t('Unknown'))}
+                            {row.salesUnknownCount > 0 ? (
+                              <div className='text-muted-foreground text-xs'>
+                                {t('Unknown')}:{' '}
+                                {row.salesUnknownCount.toLocaleString()}
+                              </div>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>
+                            {formatMicroUsd(row.costMicroUsd, t('Unknown'))}
+                            {row.costUnknownCount > 0 ? (
+                              <div className='text-muted-foreground text-xs'>
+                                {t('Unknown')}:{' '}
+                                {row.costUnknownCount.toLocaleString()}
+                              </div>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>
+                            {formatMicroUsd(row.grossMicroUsd, t('Unknown'))}
+                            {row.grossUnknownCount > 0 ? (
+                              <div className='text-muted-foreground text-xs'>
+                                {t('Unknown')}:{' '}
+                                {row.grossUnknownCount.toLocaleString()}
+                              </div>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+                {series.hasNextPage ? (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={series.isFetchingNextPage}
+                    onClick={() => void series.fetchNextPage()}
+                  >
+                    {series.isFetchingNextPage ? <Spinner /> : null}
+                    {t('Load more')}
+                  </Button>
+                ) : null}
+              </div>
+            </ManagementStatus>
+          )}
+        </CardContent>
+        <CardFooter className='flex-wrap justify-between gap-3'>
+          <div className='text-muted-foreground flex flex-wrap gap-3 text-xs'>
+            <span>
+              {t('Coverage scope')}: {item.coverage_scope}
+            </span>
+            <span>
+              {t('Quota per unit')}: {item.quota_per_unit}
+            </span>
+            <span>{t('Inventory is not affected')}</span>
+          </div>
+          <div className='flex gap-2'>
+            {item.status === 'completed' &&
+            item.publication_status !== 'superseded' ? (
+              <Button
+                type='button'
+                variant='outline'
+                onClick={() => props.onReestimate(item)}
+              >
+                {t('Re-estimate')}
+              </Button>
+            ) : null}
+            {item.status === 'completed' &&
+            item.publication_ready ? (
+              <Button type='button' onClick={() => setConfirmPublish(true)}>
+                {t('Publish to reports')}
+              </Button>
+            ) : null}
+          </div>
+        </CardFooter>
+      </Card>
+      <ConfirmAction
+        open={confirmPublish}
+        onOpenChange={setConfirmPublish}
+        title={t('Publish historical estimate to reports?')}
+        description={t(
+          'The estimate will appear in cost, profit, trend, contract, channel, and breakdown reports. It will not change inventory, and authoritative daily data will override the same date.'
         )}
-      </CardContent>
-      <CardFooter className='text-muted-foreground flex-wrap gap-3 text-xs'>
-        <span>
-          {t('Coverage scope')}: {item.coverage_scope}
-        </span>
-        <span>
-          {t('Quota per unit')}: {item.quota_per_unit}
-        </span>
-      </CardFooter>
-    </Card>
+        confirmLabel={t('Publish to reports')}
+        pending={publishMutation.isPending}
+        onConfirm={() => void publish()}
+      />
+    </>
   )
 }
 
 export function HistoricalImportManagement(props: SupplyChainManagementProps) {
   const { t } = useTranslation()
   const [selectedId, setSelectedId] = useState<number>()
+  const [replacement, setReplacement] = useState<SupplierHistoricalImport>()
   const query = useHistoricalImportList(
     props.search.page,
     props.search.pageSize
@@ -709,17 +859,20 @@ export function HistoricalImportManagement(props: SupplyChainManagementProps) {
   const selected = items.find((item) => item.id === selectedId) ?? items[0]
   return (
     <div className='flex flex-col gap-4'>
-      <Alert variant='destructive'>
+      <Alert>
         <AlertTitle>
-          {t('Historical estimates are non-authoritative')}
+          {t('Historical estimates require explicit publication')}
         </AlertTitle>
         <AlertDescription>
           {t(
-            'They are isolated from authoritative profit reports and inventory. Use them only for explicitly reviewed historical analysis.'
+            'Completed estimates remain previews until published. Published estimates enter financial reports, never inventory, and are replaced by authoritative data for the same date.'
           )}
         </AlertDescription>
       </Alert>
-      <HistoricalImportForm />
+      <HistoricalImportForm
+        replacement={replacement}
+        onReplacementCleared={() => setReplacement(undefined)}
+      />
       <Card>
         <CardHeader>
           <CardTitle>{t('Historical estimate imports')}</CardTitle>
@@ -741,6 +894,7 @@ export function HistoricalImportManagement(props: SupplyChainManagementProps) {
                   <TableHead>{t('Import')}</TableHead>
                   <TableHead>{t('Range')}</TableHead>
                   <TableHead>{t('Status')}</TableHead>
+                  <TableHead>{t('Report publication')}</TableHead>
                   <TableHead>{t('Progress')}</TableHead>
                   <TableHead>{t('Created at')}</TableHead>
                   <TableHead>{t('Actions')}</TableHead>
@@ -763,6 +917,13 @@ export function HistoricalImportManagement(props: SupplyChainManagementProps) {
                       </TableCell>
                       <TableCell>
                         <HistoricalStatusBadge status={item.status} />
+                      </TableCell>
+                      <TableCell>
+                        {item.publication_status === 'published'
+                          ? t('Published')
+                          : item.publication_status === 'superseded'
+                            ? t('Superseded')
+                            : t('Not published')}
                       </TableCell>
                       <TableCell className='min-w-48'>
                         <Progress value={progress}>
@@ -804,7 +965,10 @@ export function HistoricalImportManagement(props: SupplyChainManagementProps) {
           />
         </CardFooter>
       </Card>
-      <HistoricalImportDetails item={selected} />
+      <HistoricalImportDetails
+        item={selected}
+        onReestimate={(item) => setReplacement(item)}
+      />
     </div>
   )
 }

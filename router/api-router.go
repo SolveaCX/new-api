@@ -402,6 +402,7 @@ func SetApiRouter(router *gin.Engine) {
 			supplyChainRoute.POST("/historical-imports", supplierSupplyChainMutation(controller.CreateSupplierHistoricalEstimateImport)...)
 			supplyChainRoute.GET("/historical-imports", controller.ListSupplierHistoricalEstimateImports)
 			supplyChainRoute.GET("/historical-imports/:id", controller.GetSupplierHistoricalEstimateImport)
+			supplyChainRoute.POST("/historical-imports/:id/publish", supplierSupplyChainMutation(controller.PublishSupplierHistoricalEstimateImport)...)
 			supplyChainRoute.GET("/historical-imports/:id/summaries", controller.ListSupplierHistoricalEstimateSummaries)
 
 			supplyChainRoute.GET("/suppliers", controller.ListSupplyChainSuppliers)

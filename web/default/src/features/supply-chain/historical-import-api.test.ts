@@ -15,6 +15,7 @@ import {
   listAllBoundChannelBindings,
   listHistoricalImportSummaries,
   listHistoricalImports,
+  publishHistoricalImport,
 } from './api'
 
 const originalAdapter = api.defaults.adapter
@@ -60,12 +61,14 @@ describe('supplier historical estimate API', () => {
     await listHistoricalImports({ p: 1, page_size: 20 })
     await getHistoricalImport(9)
     await listHistoricalImportSummaries(9)
+    await publishHistoricalImport(9)
 
     expect(requests.map((request) => request.url)).toEqual([
       '/api/supply-chain/historical-imports',
       '/api/supply-chain/historical-imports',
       '/api/supply-chain/historical-imports/9',
       '/api/supply-chain/historical-imports/9/summaries',
+      '/api/supply-chain/historical-imports/9/publish',
     ])
     expect(requests[0]?.headers.get('Idempotency-Key')).toBe(
       'historical-command'

@@ -22,11 +22,13 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import type {
   SupplierReportContractList,
+  SupplierReportChannelList,
   SupplierReportMetrics,
   SupplierReportOverview,
   SupplierReportTrend,
 } from '../types'
 import { ReportContractTable } from './report-contract-table'
+import { ReportChannelTable } from './report-channel-table'
 import { ReportOverview } from './report-overview'
 import { ReportTrend } from './report-trend'
 
@@ -71,6 +73,7 @@ describe('supply-chain unavailable financial dimensions', () => {
       official_list_consumed_micro_usd: '0',
       remaining_inventory_micro_usd: '0',
       internal_dimension_available: false,
+      has_estimates: false,
     }
 
     const html = render(<ReportOverview data={data} />)
@@ -107,6 +110,7 @@ describe('supply-chain unavailable financial dimensions', () => {
           internal: null,
           total_estimated_procurement_cost: null,
           internal_dimension_available: false,
+          has_estimates: false,
         },
       ],
       limit: 20,
@@ -129,16 +133,74 @@ describe('supply-chain unavailable financial dimensions', () => {
           business: emptyMetrics,
           internal: null,
           internal_dimension_available: false,
+          data_quality: 'authoritative',
         },
       ],
       day_statuses: [{ date: '2026-07-20', status: 'completed' }],
       latest_completed_date: '2026-07-20',
       has_incomplete_days: false,
       incomplete_day_count: 0,
+      has_estimates: false,
     }
 
     const html = render(<ReportTrend data={data} />)
 
     expect(html).toContain('Internal / test: Unavailable')
+  })
+
+  test('labels published historical estimates across financial reports', () => {
+    const overview: SupplierReportOverview = {
+      range: { start_at: 1, end_at: 2, timezone: 'Asia/Shanghai' },
+      business: emptyMetrics,
+      internal: null,
+      total_estimated_procurement_cost: null,
+      total_inventory_micro_usd: '0',
+      official_list_consumed_micro_usd: '0',
+      remaining_inventory_micro_usd: '0',
+      internal_dimension_available: false,
+      has_estimates: true,
+    }
+    const trend: SupplierReportTrend = {
+      range: overview.range,
+      points: [
+        {
+          bucket_start: 1,
+          date: '2026-07-20',
+          business: emptyMetrics,
+          internal: null,
+          internal_dimension_available: false,
+          data_quality: 'estimated',
+        },
+      ],
+      day_statuses: [{ date: '2026-07-20', status: 'estimated' }],
+      latest_completed_date: '2026-07-20',
+      has_incomplete_days: false,
+      incomplete_day_count: 0,
+      has_estimates: true,
+    }
+    const channels: SupplierReportChannelList = {
+      range: overview.range,
+      items: [
+        {
+          channel_id: 4,
+          channel_name: 'Historical channel',
+          channel_status: 1,
+          contract_id: 7,
+          business: emptyMetrics,
+          has_estimates: true,
+        },
+      ],
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    }
+
+    expect(render(<ReportOverview data={overview} />)).toContain(
+      'Includes historical estimates'
+    )
+    expect(render(<ReportTrend data={trend} />)).toContain(
+      'Estimated dates: 2026-07-20.'
+    )
+    expect(render(<ReportChannelTable data={channels} />)).toContain('Estimated')
   })
 })

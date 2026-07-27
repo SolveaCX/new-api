@@ -22,6 +22,7 @@ func newSupplierReportTestDB(t *testing.T) *gorm.DB {
 		&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierContractRateVersion{},
 		&model.SupplierInventoryAdjustment{}, &model.Channel{},
 		&model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{},
+		&model.SupplierHistoricalImport{}, &model.SupplierHistoricalDailySummary{}, &model.SupplierHistoricalPublishedDay{},
 	))
 	return db
 }
@@ -95,6 +96,55 @@ func TestSupplierReportServiceComposedReadsStayInsideSnapshot(t *testing.T) {
 			require.False(t, escapedSnapshot, "every composed query must use the snapshot transaction")
 		})
 	}
+}
+
+func TestSupplierReportTrendIncludesPublishedHistoricalEstimate(t *testing.T) {
+	db := newSupplierReportTestDB(t)
+	location, err := time.LoadLocation(SupplierReportTimezone)
+	require.NoError(t, err)
+	dayStart := time.Date(2026, 1, 1, 0, 0, 0, 0, location).Unix()
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.UpstreamSupplier{Id: 1, Name: "supplier", Status: model.SupplierStatusActive}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.SupplierContract{Id: 2, SupplierId: 1, Name: "contract", ContractNo: "C-1", Status: model.SupplierContractStatusActive}).Error)
+	contractID := 2
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&model.Channel{Id: 4, Name: "channel", Status: 1, SupplierContractId: &contractID}).Error)
+	require.NoError(t, db.Create(&model.SupplierHistoricalPublishedDay{
+		Date: "2026-01-01", DayStart: dayStart, ImportId: 1, PublishedBy: 7, PublishedAt: dayStart + 86_400,
+	}).Error)
+	require.NoError(t, db.Create(&model.SupplierHistoricalDailySummary{
+		ImportId: 1, Date: "2026-01-01", DimensionKey: "estimated", BucketStart: dayStart,
+		SupplierId: 1, ContractId: 2, ChannelId: 4, StatisticsScope: "business", DataQuality: model.SupplierHistoricalDataQualityEstimated,
+		SourceRequestCount: 2, SalesKnownCount: 2, SalesMicroUsd: 600,
+	}).Error)
+
+	reports := NewSupplierReportService(model.NewSupplierReportStore(db))
+	query := SupplierReportQuery{
+		StartDate: "2026-01-01", EndDate: "2026-01-01",
+	}
+	report, err := reports.GetTrend(context.Background(), query)
+	require.NoError(t, err)
+	require.False(t, report.HasIncompleteDays)
+	require.True(t, report.HasEstimates)
+	require.Equal(t, []SupplierReportDayStatus{{Date: "2026-01-01", Status: model.SupplierHistoricalDataQualityEstimated}}, report.DayStatuses)
+	require.Len(t, report.Points, 1)
+	require.Equal(t, int64(2), report.Points[0].Business.RequestCount)
+	require.Equal(t, model.SupplierHistoricalDataQualityEstimated, report.Points[0].DataQuality)
+
+	overview, err := reports.GetOverview(context.Background(), query)
+	require.NoError(t, err)
+	require.True(t, overview.HasEstimates)
+	filteredQuery := query
+	filteredQuery.SupplierIds = []int{999}
+	filteredOverview, err := reports.GetOverview(context.Background(), filteredQuery)
+	require.NoError(t, err)
+	require.False(t, filteredOverview.HasEstimates, "estimates outside the report filter must not trigger the warning")
+	contracts, err := reports.ListContracts(context.Background(), query, model.SupplierReportPage{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, contracts.Items, 1)
+	require.True(t, contracts.Items[0].HasEstimates)
+	channels, err := reports.ListChannels(context.Background(), query, model.SupplierReportPage{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, channels.Items, 1)
+	require.True(t, channels.Items[0].HasEstimates)
 }
 
 func TestSupplierReportTrendDistinguishesPublishedZeroFromIncompleteDays(t *testing.T) {

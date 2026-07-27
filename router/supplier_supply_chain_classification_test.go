@@ -15,6 +15,7 @@ func TestSupplyChainRouteRegistryMatchesCurrentCRUDAndReportSurface(t *testing.T
 		"POST /api/supply-chain/historical-imports":                       true,
 		"GET /api/supply-chain/historical-imports":                        true,
 		"GET /api/supply-chain/historical-imports/:id":                    true,
+		"POST /api/supply-chain/historical-imports/:id/publish":           true,
 		"GET /api/supply-chain/historical-imports/:id/summaries":          true,
 		"GET /api/supply-chain/suppliers":                                 true,
 		"GET /api/supply-chain/suppliers/:id":                             true,

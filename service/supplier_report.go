@@ -114,6 +114,7 @@ type SupplierReportOverview struct {
 	OfficialListConsumedMicroUsd int64                  `json:"official_list_consumed_micro_usd,string"`
 	RemainingInventoryMicroUsd   int64                  `json:"remaining_inventory_micro_usd,string"`
 	InternalDimensionAvailable   bool                   `json:"internal_dimension_available"`
+	HasEstimates                 bool                   `json:"has_estimates"`
 }
 
 type SupplierReportTrendPoint struct {
@@ -122,6 +123,7 @@ type SupplierReportTrendPoint struct {
 	Business                   SupplierReportMetrics  `json:"business"`
 	Internal                   *SupplierReportMetrics `json:"internal"`
 	InternalDimensionAvailable bool                   `json:"internal_dimension_available"`
+	DataQuality                string                 `json:"data_quality"`
 }
 type SupplierReportDayStatus struct {
 	Date   string `json:"date"`
@@ -134,6 +136,7 @@ type SupplierReportTrend struct {
 	LatestCompletedDate *string                    `json:"latest_completed_date"`
 	HasIncompleteDays   bool                       `json:"has_incomplete_days"`
 	IncompleteDayCount  int                        `json:"incomplete_day_count"`
+	HasEstimates        bool                       `json:"has_estimates"`
 }
 
 type SupplierReportContractRow struct {
@@ -160,6 +163,7 @@ type SupplierReportContractRow struct {
 	Internal                     *SupplierReportMetrics `json:"internal"`
 	TotalProcurementCost         *SupplierReportMoney   `json:"total_estimated_procurement_cost"`
 	InternalDimensionAvailable   bool                   `json:"internal_dimension_available"`
+	HasEstimates                 bool                   `json:"has_estimates"`
 }
 type SupplierReportContractList struct {
 	Range   SupplierReportRange         `json:"range"`
@@ -192,6 +196,7 @@ type SupplierReportChannelRow struct {
 	ChannelStatus int                   `json:"channel_status"`
 	ContractId    int                   `json:"contract_id"`
 	Business      SupplierReportMetrics `json:"business"`
+	HasEstimates  bool                  `json:"has_estimates"`
 }
 type SupplierReportChannelList struct {
 	Range   SupplierReportRange        `json:"range"`
@@ -277,7 +282,10 @@ func (s *SupplierReportService) getOverview(ctx context.Context, query SupplierR
 	if err != nil {
 		return SupplierReportOverview{}, err
 	}
-	result := SupplierReportOverview{Range: reportRange, Business: usage.business.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0}
+	result := SupplierReportOverview{
+		Range: reportRange, Business: usage.business.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0,
+		HasEstimates: usage.business.hasEstimates || usage.internal.hasEstimates,
+	}
 	if result.InternalDimensionAvailable {
 		internal := usage.internal.metrics()
 		result.Internal = &internal
@@ -343,8 +351,12 @@ func (s *SupplierReportService) getTrend(ctx context.Context, query SupplierRepo
 		date := local.Format("2006-01-02")
 		status, found := statusByDay[day]
 		dayStatus := "missing"
-		published := found && status.PublishedFenceToken > 0
-		if published {
+		estimated := found && status.DataQuality == model.SupplierHistoricalDataQualityEstimated
+		published := found && (status.PublishedFenceToken > 0 || estimated)
+		if estimated {
+			dayStatus = model.SupplierHistoricalDataQualityEstimated
+			result.HasEstimates = true
+		} else if published {
 			dayStatus = model.SupplierDailyBatchStatusCompleted
 		} else if found && (status.Status == model.SupplierDailyBatchStatusRunning || status.Status == model.SupplierDailyBatchStatusFailed) {
 			dayStatus = status.Status
@@ -355,7 +367,11 @@ func (s *SupplierReportService) getTrend(ctx context.Context, query SupplierRepo
 			if item == nil {
 				item = &usageAccumulator{}
 			}
-			point := SupplierReportTrendPoint{BucketStart: day, Date: date, Business: item.business.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0}
+			dataQuality := "authoritative"
+			if estimated {
+				dataQuality = model.SupplierHistoricalDataQualityEstimated
+			}
+			point := SupplierReportTrendPoint{BucketStart: day, Date: date, Business: item.business.metrics(), InternalDimensionAvailable: len(query.ChannelIds) == 0, DataQuality: dataQuality}
 			if point.InternalDimensionAvailable {
 				internal := item.internal.metrics()
 				point.Internal = &internal
@@ -499,7 +515,7 @@ func (s *SupplierReportService) listChannels(ctx context.Context, query Supplier
 		if item == nil {
 			item = &metricAccumulator{}
 		}
-		result.Items = append(result.Items, SupplierReportChannelRow{ChannelId: row.ChannelId, ChannelName: row.ChannelName, ChannelStatus: row.ChannelStatus, ContractId: row.SupplierContractId, Business: item.metrics()})
+		result.Items = append(result.Items, SupplierReportChannelRow{ChannelId: row.ChannelId, ChannelName: row.ChannelName, ChannelStatus: row.ChannelStatus, ContractId: row.SupplierContractId, Business: item.metrics(), HasEstimates: item.hasEstimates})
 	}
 	return result, nil
 }
@@ -590,7 +606,11 @@ func (s *SupplierReportService) loadInventory(ctx context.Context, catalog []mod
 	return result, nil
 }
 
-type metricAccumulator struct{ requests, unattributed, officialKnown, official, salesKnown, sales, procurementKnown, procurement, grossKnown, gross, eligibleCount, eligibleSales int64 }
+type metricAccumulator struct {
+	requests, unattributed, officialKnown, official, salesKnown, sales             int64
+	procurementKnown, procurement, grossKnown, gross, eligibleCount, eligibleSales int64
+	hasEstimates                                                                   bool
+}
 
 func (a *metricAccumulator) add(values ...int64) error {
 	targets := []*int64{&a.requests, &a.unattributed, &a.officialKnown, &a.official, &a.salesKnown, &a.sales, &a.procurementKnown, &a.procurement, &a.grossKnown, &a.gross, &a.eligibleCount, &a.eligibleSales}
@@ -607,15 +627,19 @@ func (a *metricAccumulator) add(values ...int64) error {
 	return nil
 }
 func (a *metricAccumulator) addBusiness(row model.SupplierReportBusinessUsageRow) error {
+	a.hasEstimates = a.hasEstimates || row.EstimatedRowCount > 0
 	return a.add(row.BusinessRequestCount, row.UnattributedRequestCount, row.OfficialListKnownCount, row.OfficialListMicroUsd, row.SalesKnownCount, row.SalesMicroUsd, row.ProcurementCostKnownCount, row.ProcurementCostMicroUsd, row.GrossProfitKnownCount, row.GrossProfitMicroUsd, row.GrossMarginEligibleCount, row.GrossMarginEligibleSalesMicroUsd)
 }
 func (a *metricAccumulator) addChannel(row model.SupplierReportChannelUsageRow) error {
+	a.hasEstimates = a.hasEstimates || row.DataQuality == model.SupplierHistoricalDataQualityEstimated
 	return a.add(row.BusinessRequestCount, row.UnattributedRequestCount, row.OfficialListKnownCount, row.OfficialListMicroUsd, row.SalesKnownCount, row.SalesMicroUsd, row.ProcurementCostKnownCount, row.ProcurementCostMicroUsd, row.GrossProfitKnownCount, row.GrossProfitMicroUsd, row.GrossMarginEligibleCount, row.GrossMarginEligibleSalesMicroUsd)
 }
 func (a *metricAccumulator) addBusinessRow(row model.SupplierReportBreakdownRow) error {
+	a.hasEstimates = a.hasEstimates || row.DataQuality == model.SupplierHistoricalDataQualityEstimated
 	return a.add(row.BusinessRequestCount, row.UnattributedRequestCount, row.OfficialListKnownCount, row.OfficialListMicroUsd, row.SalesKnownCount, row.SalesMicroUsd, row.ProcurementCostKnownCount, row.ProcurementCostMicroUsd, row.GrossProfitKnownCount, row.GrossProfitMicroUsd, row.GrossMarginEligibleCount, row.GrossMarginEligibleSalesMicroUsd)
 }
 func (a *metricAccumulator) addInternal(row model.SupplierReportInternalUsageRow) error {
+	a.hasEstimates = a.hasEstimates || row.EstimatedRowCount > 0
 	return a.add(row.InternalRequestCount, row.UnattributedRequestCount, row.OfficialListKnownCount, row.OfficialListMicroUsd, 0, 0, row.ProcurementCostKnownCount, row.ProcurementCostMicroUsd, 0, 0, 0, 0)
 }
 func (a metricAccumulator) metrics() SupplierReportMetrics {
@@ -718,7 +742,7 @@ func buildContractRow(c model.SupplierReportContractCatalogRow, r contractRuntim
 	if err != nil {
 		return SupplierReportContractRow{}, err
 	}
-	row := SupplierReportContractRow{ContractId: c.ContractId, SupplierId: c.SupplierId, SupplierName: c.SupplierName, SupplierStatus: c.SupplierStatus, ContractName: c.ContractName, ContractNo: c.ContractNo, ContractStatus: c.ContractStatus, Remark: c.Remark, CurrentRateVersionId: c.CurrentRateVersionId, ProcurementMultiplierPpm: c.ProcurementMultiplierPpm, RpmLimit: c.RpmLimit, TpmLimit: c.TpmLimit, MaxConcurrency: c.MaxConcurrency, LinkedChannelCount: r.channelCount, TotalInventoryMicroUsd: r.inventory, OfficialListConsumedMicroUsd: r.consumed, RemainingInventoryMicroUsd: remaining, UtilizationRate: ratioString(r.consumed, r.inventory), Oversold: remaining < 0, Business: u.business.metrics(), InternalDimensionAvailable: internalDimensionAvailable}
+	row := SupplierReportContractRow{ContractId: c.ContractId, SupplierId: c.SupplierId, SupplierName: c.SupplierName, SupplierStatus: c.SupplierStatus, ContractName: c.ContractName, ContractNo: c.ContractNo, ContractStatus: c.ContractStatus, Remark: c.Remark, CurrentRateVersionId: c.CurrentRateVersionId, ProcurementMultiplierPpm: c.ProcurementMultiplierPpm, RpmLimit: c.RpmLimit, TpmLimit: c.TpmLimit, MaxConcurrency: c.MaxConcurrency, LinkedChannelCount: r.channelCount, TotalInventoryMicroUsd: r.inventory, OfficialListConsumedMicroUsd: r.consumed, RemainingInventoryMicroUsd: remaining, UtilizationRate: ratioString(r.consumed, r.inventory), Oversold: remaining < 0, Business: u.business.metrics(), InternalDimensionAvailable: internalDimensionAvailable, HasEstimates: u.business.hasEstimates || u.internal.hasEstimates}
 	if internalDimensionAvailable {
 		internal := u.internal.metrics()
 		row.Internal = &internal

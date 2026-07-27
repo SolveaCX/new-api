@@ -336,6 +336,7 @@ func migrateDB() error {
 		&SupplierUsageDailyBatchRun{},
 		&SupplierHistoricalImport{},
 		&SupplierHistoricalDailySummary{},
+		&SupplierHistoricalPublishedDay{},
 	)
 	if err != nil {
 		return err
@@ -437,6 +438,7 @@ func migrateDBFast() error {
 		{&SupplierUsageDailyBatchRun{}, "SupplierUsageDailyBatchRun"},
 		{&SupplierHistoricalImport{}, "SupplierHistoricalImport"},
 		{&SupplierHistoricalDailySummary{}, "SupplierHistoricalDailySummary"},
+		{&SupplierHistoricalPublishedDay{}, "SupplierHistoricalPublishedDay"},
 		{&ComputeNode{}, "ComputeNode"},
 	}
 	// GORM also migrates associations, so parallel AutoMigrate calls can race

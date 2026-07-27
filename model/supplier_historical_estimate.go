@@ -13,7 +13,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const supplierHistoricalImportCreateMaxAttempts = 5
+const (
+	supplierHistoricalImportCreateMaxAttempts = 5
+	SupplierHistoricalSummarySchemaVersion    = 1
+)
 
 const (
 	SupplierHistoricalMethodLogEstimateV1  = "log_estimate_v1"
@@ -26,47 +29,56 @@ const (
 )
 
 var (
-	ErrSupplierHistoricalImportInvalid             = errors.New("invalid supplier historical import")
-	ErrSupplierHistoricalImportImmutable           = errors.New("supplier historical import command is immutable")
-	ErrSupplierHistoricalImportIdempotencyConflict = errors.New("supplier historical import idempotency conflict")
-	ErrSupplierHistoricalImportBusy                = errors.New("supplier historical import is leased")
-	ErrSupplierHistoricalImportFenceLost           = errors.New("supplier historical import lease fence lost")
-	ErrSupplierHistoricalImportOverlap             = errors.New("supplier historical import overlaps a started import")
-	ErrSupplierHistoricalImportSourceChanged       = errors.New("supplier historical import source count changed")
-	ErrSupplierHistoricalMoneyOverflow             = errors.New("supplier historical estimate money overflow")
+	ErrSupplierHistoricalImportInvalid              = errors.New("invalid supplier historical import")
+	ErrSupplierHistoricalImportImmutable            = errors.New("supplier historical import command is immutable")
+	ErrSupplierHistoricalImportIdempotencyConflict  = errors.New("supplier historical import idempotency conflict")
+	ErrSupplierHistoricalImportBusy                 = errors.New("supplier historical import is leased")
+	ErrSupplierHistoricalImportFenceLost            = errors.New("supplier historical import lease fence lost")
+	ErrSupplierHistoricalImportOverlap              = errors.New("supplier historical import overlaps a started import")
+	ErrSupplierHistoricalImportSourceChanged        = errors.New("supplier historical import source count changed")
+	ErrSupplierHistoricalReplacementInvalid         = errors.New("supplier historical replacement is invalid")
+	ErrSupplierHistoricalPublicationConflict        = errors.New("supplier historical publication conflicts with the current version")
+	ErrSupplierHistoricalPublicationNeedsReestimate = errors.New("supplier historical publication requires re-estimation")
+	ErrSupplierHistoricalMoneyOverflow              = errors.New("supplier historical estimate money overflow")
 )
 
 type SupplierHistoricalImport struct {
-	Id                  int64  `json:"id"`
-	CommandHash         string `json:"command_hash" gorm:"type:varchar(64);not null"`
-	CommandJSON         string `json:"command_json" gorm:"type:text;not null"`
-	IdempotencyKey      string `json:"idempotency_key" gorm:"type:varchar(128);not null;uniqueIndex:ux_supplier_historical_import_actor_key,priority:2"`
-	CreatedBy           int    `json:"created_by" gorm:"not null;uniqueIndex:ux_supplier_historical_import_actor_key,priority:1"`
-	Method              string `json:"method" gorm:"type:varchar(32);not null"`
-	Reason              string `json:"reason" gorm:"type:text;not null"`
-	StartDate           string `json:"start_date" gorm:"type:varchar(10);not null;index:idx_supplier_historical_import_range,priority:1"`
-	EndDate             string `json:"end_date" gorm:"type:varchar(10);not null;index:idx_supplier_historical_import_range,priority:2"`
-	DayStart            int64  `json:"day_start" gorm:"not null"`
-	DayEnd              int64  `json:"day_end" gorm:"not null"`
-	QuotaPerUnit        string `json:"quota_per_unit" gorm:"type:varchar(64);not null"`
-	ExcludedUserIdsJSON string `json:"excluded_user_ids_json" gorm:"type:text;not null"`
-	ChannelMappingsJSON string `json:"channel_mappings_json" gorm:"type:text;not null"`
-	Status              string `json:"status" gorm:"type:varchar(16);not null;index"`
-	SourceMaxLogId      int64  `json:"source_max_log_id" gorm:"not null;default:0"`
-	CandidateCount      int64  `json:"candidate_count" gorm:"not null;default:0"`
-	LeaseOwner          string `json:"lease_owner" gorm:"type:varchar(128);not null;default:''"`
-	FenceToken          int64  `json:"fence_token" gorm:"not null;default:0"`
-	ActiveLeaseSlot     *int   `json:"-" gorm:"uniqueIndex:ux_supplier_historical_import_active_slot"`
-	LockedUntil         int64  `json:"locked_until" gorm:"not null;default:0"`
-	CursorCreatedAt     int64  `json:"cursor_created_at" gorm:"not null;default:0"`
-	CursorId            int64  `json:"cursor_id" gorm:"not null;default:0"`
-	ProcessedCount      int64  `json:"processed_count" gorm:"not null;default:0"`
-	SummaryCount        int64  `json:"summary_count" gorm:"not null;default:0"`
-	ErrorMessage        string `json:"error_message" gorm:"type:text;not null"`
-	StartedAt           *int64 `json:"started_at"`
-	CompletedAt         *int64 `json:"completed_at"`
-	CreatedAt           int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt           int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	Id                   int64  `json:"id"`
+	CommandHash          string `json:"command_hash" gorm:"type:varchar(64);not null"`
+	CommandJSON          string `json:"command_json" gorm:"type:text;not null"`
+	IdempotencyKey       string `json:"idempotency_key" gorm:"type:varchar(128);not null;uniqueIndex:ux_supplier_historical_import_actor_key,priority:2"`
+	CreatedBy            int    `json:"created_by" gorm:"not null;uniqueIndex:ux_supplier_historical_import_actor_key,priority:1"`
+	Method               string `json:"method" gorm:"type:varchar(32);not null"`
+	Reason               string `json:"reason" gorm:"type:text;not null"`
+	StartDate            string `json:"start_date" gorm:"type:varchar(10);not null;index:idx_supplier_historical_import_range,priority:1"`
+	EndDate              string `json:"end_date" gorm:"type:varchar(10);not null;index:idx_supplier_historical_import_range,priority:2"`
+	DayStart             int64  `json:"day_start" gorm:"not null"`
+	DayEnd               int64  `json:"day_end" gorm:"not null"`
+	QuotaPerUnit         string `json:"quota_per_unit" gorm:"type:varchar(64);not null"`
+	ExcludedUserIdsJSON  string `json:"excluded_user_ids_json" gorm:"type:text;not null"`
+	ChannelMappingsJSON  string `json:"channel_mappings_json" gorm:"type:text;not null"`
+	SummarySchemaVersion int    `json:"summary_schema_version" gorm:"not null;default:0"`
+	SupersedesImportId   *int64 `json:"supersedes_import_id" gorm:"index"`
+	SupersededByImportId *int64 `json:"superseded_by_import_id" gorm:"index"`
+	Status               string `json:"status" gorm:"type:varchar(16);not null;index"`
+	SourceMaxLogId       int64  `json:"source_max_log_id" gorm:"not null;default:0"`
+	CandidateCount       int64  `json:"candidate_count" gorm:"not null;default:0"`
+	LeaseOwner           string `json:"lease_owner" gorm:"type:varchar(128);not null;default:''"`
+	FenceToken           int64  `json:"fence_token" gorm:"not null;default:0"`
+	ActiveLeaseSlot      *int   `json:"-" gorm:"uniqueIndex:ux_supplier_historical_import_active_slot"`
+	LockedUntil          int64  `json:"locked_until" gorm:"not null;default:0"`
+	CursorCreatedAt      int64  `json:"cursor_created_at" gorm:"not null;default:0"`
+	CursorId             int64  `json:"cursor_id" gorm:"not null;default:0"`
+	ProcessedCount       int64  `json:"processed_count" gorm:"not null;default:0"`
+	SummaryCount         int64  `json:"summary_count" gorm:"not null;default:0"`
+	ErrorMessage         string `json:"error_message" gorm:"type:text;not null"`
+	StartedAt            *int64 `json:"started_at"`
+	CompletedAt          *int64 `json:"completed_at"`
+	PublishedAt          *int64 `json:"published_at"`
+	PublishedBy          int    `json:"published_by" gorm:"not null;default:0"`
+	SupersededAt         *int64 `json:"superseded_at"`
+	CreatedAt            int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (i *SupplierHistoricalImport) BeforeCreate(_ *gorm.DB) error {
@@ -76,7 +88,8 @@ func (i *SupplierHistoricalImport) BeforeCreate(_ *gorm.DB) error {
 	i.Reason = strings.TrimSpace(i.Reason)
 	if len(i.CommandHash) != 64 || i.CommandJSON == "" || i.IdempotencyKey == "" || i.CreatedBy <= 0 ||
 		i.Method != SupplierHistoricalMethodLogEstimateV1 || i.Reason == "" || i.DayStart <= 0 || i.DayEnd <= i.DayStart ||
-		i.StartDate == "" || i.EndDate == "" || i.QuotaPerUnit == "" || i.ExcludedUserIdsJSON == "" || i.ChannelMappingsJSON == "" {
+		i.StartDate == "" || i.EndDate == "" || i.QuotaPerUnit == "" || i.ExcludedUserIdsJSON == "" || i.ChannelMappingsJSON == "" ||
+		(i.SupersedesImportId != nil && *i.SupersedesImportId <= 0) {
 		return ErrSupplierHistoricalImportInvalid
 	}
 	if i.Status == "" {
@@ -86,7 +99,7 @@ func (i *SupplierHistoricalImport) BeforeCreate(_ *gorm.DB) error {
 }
 
 func (i *SupplierHistoricalImport) BeforeUpdate(tx *gorm.DB) error {
-	if tx.Statement.Changed("CommandHash", "CommandJSON", "IdempotencyKey", "CreatedBy", "Method", "Reason", "StartDate", "EndDate", "DayStart", "DayEnd", "QuotaPerUnit", "ExcludedUserIdsJSON", "ChannelMappingsJSON") {
+	if tx.Statement.Changed("CommandHash", "CommandJSON", "IdempotencyKey", "CreatedBy", "Method", "Reason", "StartDate", "EndDate", "DayStart", "DayEnd", "QuotaPerUnit", "ExcludedUserIdsJSON", "ChannelMappingsJSON", "SummarySchemaVersion", "SupersedesImportId") {
 		return ErrSupplierHistoricalImportImmutable
 	}
 	return nil
@@ -97,35 +110,45 @@ func (i *SupplierHistoricalImport) BeforeDelete(_ *gorm.DB) error {
 }
 
 type SupplierHistoricalDailySummary struct {
-	Id                          int64  `json:"id"`
-	ImportId                    int64  `json:"import_id" gorm:"not null;uniqueIndex:ux_supplier_historical_daily_dimension,priority:1;index:idx_supplier_historical_daily_import_date,priority:1"`
-	Date                        string `json:"date" gorm:"type:varchar(10);not null;uniqueIndex:ux_supplier_historical_daily_dimension,priority:2;index:idx_supplier_historical_daily_import_date,priority:2"`
-	DimensionKey                string `json:"dimension_key" gorm:"type:varchar(64);not null;uniqueIndex:ux_supplier_historical_daily_dimension,priority:3"`
-	BucketStart                 int64  `json:"bucket_start" gorm:"not null"`
-	StatisticsScope             string `json:"statistics_scope" gorm:"type:varchar(16);not null"`
-	SupplierId                  int    `json:"supplier_id" gorm:"not null;default:0"`
-	ContractId                  int    `json:"contract_id" gorm:"not null;default:0"`
-	RateVersionId               int    `json:"rate_version_id" gorm:"not null;default:0"`
-	ChannelId                   int    `json:"channel_id" gorm:"not null;default:0"`
-	ModelName                   string `json:"model_name" gorm:"type:varchar(191);not null;default:''"`
-	ProcurementMultiplierPpm    *int64 `json:"procurement_multiplier_ppm"`
-	DataQuality                 string `json:"data_quality" gorm:"type:varchar(16);not null"`
-	SourceRequestCount          int64  `json:"source_request_count" gorm:"not null;default:0"`
-	UnassignedRequestCount      int64  `json:"unassigned_request_count" gorm:"not null;default:0"`
-	OfficialListKnownCount      int64  `json:"official_list_known_count" gorm:"not null;default:0"`
-	OfficialListUnknownCount    int64  `json:"official_list_unknown_count" gorm:"not null;default:0"`
-	OfficialListMicroUsd        int64  `json:"official_list_micro_usd,string" gorm:"not null;default:0"`
-	SalesKnownCount             int64  `json:"sales_known_count" gorm:"not null;default:0"`
-	SalesUnknownCount           int64  `json:"sales_unknown_count" gorm:"not null;default:0"`
-	SalesMicroUsd               int64  `json:"sales_micro_usd,string" gorm:"not null;default:0"`
-	ProcurementCostKnownCount   int64  `json:"procurement_cost_known_count" gorm:"not null;default:0"`
-	ProcurementCostUnknownCount int64  `json:"procurement_cost_unknown_count" gorm:"not null;default:0"`
-	ProcurementCostMicroUsd     int64  `json:"procurement_cost_micro_usd,string" gorm:"not null;default:0"`
-	GrossProfitKnownCount       int64  `json:"gross_profit_known_count" gorm:"not null;default:0"`
-	GrossProfitUnknownCount     int64  `json:"gross_profit_unknown_count" gorm:"not null;default:0"`
-	GrossProfitMicroUsd         int64  `json:"gross_profit_micro_usd,string" gorm:"not null;default:0"`
-	CreatedAt                   int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt                   int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	Id                               int64  `json:"id"`
+	ImportId                         int64  `json:"import_id" gorm:"not null;uniqueIndex:ux_supplier_historical_daily_dimension,priority:1;index:idx_supplier_historical_daily_import_date,priority:1"`
+	Date                             string `json:"date" gorm:"type:varchar(10);not null;uniqueIndex:ux_supplier_historical_daily_dimension,priority:2;index:idx_supplier_historical_daily_import_date,priority:2"`
+	DimensionKey                     string `json:"dimension_key" gorm:"type:varchar(64);not null;uniqueIndex:ux_supplier_historical_daily_dimension,priority:3"`
+	BucketStart                      int64  `json:"bucket_start" gorm:"not null"`
+	StatisticsScope                  string `json:"statistics_scope" gorm:"type:varchar(16);not null"`
+	SupplierId                       int    `json:"supplier_id" gorm:"not null;default:0"`
+	ContractId                       int    `json:"contract_id" gorm:"not null;default:0"`
+	RateVersionId                    int    `json:"rate_version_id" gorm:"not null;default:0"`
+	ChannelId                        int    `json:"channel_id" gorm:"not null;default:0"`
+	ModelName                        string `json:"model_name" gorm:"type:varchar(191);not null;default:''"`
+	ProcurementMultiplierPpm         *int64 `json:"procurement_multiplier_ppm"`
+	DataQuality                      string `json:"data_quality" gorm:"type:varchar(16);not null"`
+	SourceRequestCount               int64  `json:"source_request_count" gorm:"not null;default:0"`
+	UnassignedRequestCount           int64  `json:"unassigned_request_count" gorm:"not null;default:0"`
+	OfficialListKnownCount           int64  `json:"official_list_known_count" gorm:"not null;default:0"`
+	OfficialListUnknownCount         int64  `json:"official_list_unknown_count" gorm:"not null;default:0"`
+	OfficialListMicroUsd             int64  `json:"official_list_micro_usd,string" gorm:"not null;default:0"`
+	SalesKnownCount                  int64  `json:"sales_known_count" gorm:"not null;default:0"`
+	SalesUnknownCount                int64  `json:"sales_unknown_count" gorm:"not null;default:0"`
+	SalesMicroUsd                    int64  `json:"sales_micro_usd,string" gorm:"not null;default:0"`
+	ProcurementCostKnownCount        int64  `json:"procurement_cost_known_count" gorm:"not null;default:0"`
+	ProcurementCostUnknownCount      int64  `json:"procurement_cost_unknown_count" gorm:"not null;default:0"`
+	ProcurementCostMicroUsd          int64  `json:"procurement_cost_micro_usd,string" gorm:"not null;default:0"`
+	GrossProfitKnownCount            int64  `json:"gross_profit_known_count" gorm:"not null;default:0"`
+	GrossProfitUnknownCount          int64  `json:"gross_profit_unknown_count" gorm:"not null;default:0"`
+	GrossProfitMicroUsd              int64  `json:"gross_profit_micro_usd,string" gorm:"not null;default:0"`
+	GrossMarginEligibleCount         int64  `json:"gross_margin_eligible_count" gorm:"not null;default:0"`
+	GrossMarginEligibleSalesMicroUsd int64  `json:"gross_margin_eligible_sales_micro_usd,string" gorm:"not null;default:0"`
+	CreatedAt                        int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                        int64  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+type SupplierHistoricalPublishedDay struct {
+	Date        string `json:"date" gorm:"type:varchar(10);not null;uniqueIndex:ux_supplier_historical_published_day_date"`
+	DayStart    int64  `json:"day_start" gorm:"not null;index"`
+	ImportId    int64  `json:"import_id" gorm:"not null;index"`
+	PublishedBy int    `json:"published_by" gorm:"not null"`
+	PublishedAt int64  `json:"published_at" gorm:"not null"`
 }
 
 type SupplierHistoricalImportCreate struct {
@@ -134,6 +157,7 @@ type SupplierHistoricalImportCreate struct {
 	StartDate, EndDate, QuotaPerUnit                         string
 	DayStart, DayEnd                                         int64
 	ExcludedUserIdsJSON, ChannelMappingsJSON                 string
+	SupersedesImportId                                       *int64
 }
 
 type SupplierHistoricalImportLease struct {
@@ -215,11 +239,24 @@ func CreateSupplierHistoricalImport(ctx context.Context, db *gorm.DB, input Supp
 			if !errors.Is(existingErr, gorm.ErrRecordNotFound) {
 				return existingErr
 			}
+			if input.SupersedesImportId != nil {
+				var target SupplierHistoricalImport
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, *input.SupersedesImportId).Error; err != nil {
+					return err
+				}
+				if target.Status != SupplierHistoricalImportStatusCompleted || target.StartDate != input.StartDate || target.EndDate != input.EndDate ||
+					target.DayStart != input.DayStart || target.DayEnd != input.DayEnd || target.SupersededByImportId != nil {
+					return ErrSupplierHistoricalReplacementInvalid
+				}
+			}
 			var overlaps int64
-			if err := tx.Model(&SupplierHistoricalImport{}).
-				Where("day_start < ? AND day_end > ? AND status IN ?", input.DayEnd, input.DayStart,
-					[]string{SupplierHistoricalImportStatusPending, SupplierHistoricalImportStatusRunning, SupplierHistoricalImportStatusCompleted}).
-				Count(&overlaps).Error; err != nil {
+			overlapQuery := tx.Model(&SupplierHistoricalImport{}).
+				Where("day_start < ? AND day_end > ? AND (status IN ? OR (status = ? AND superseded_at IS NULL))", input.DayEnd, input.DayStart,
+					[]string{SupplierHistoricalImportStatusPending, SupplierHistoricalImportStatusRunning}, SupplierHistoricalImportStatusCompleted)
+			if input.SupersedesImportId != nil {
+				overlapQuery = overlapQuery.Where("id <> ?", *input.SupersedesImportId)
+			}
+			if err := overlapQuery.Count(&overlaps).Error; err != nil {
 				return err
 			}
 			if overlaps > 0 {
@@ -270,7 +307,9 @@ func newSupplierHistoricalImport(input SupplierHistoricalImportCreate) SupplierH
 		CreatedBy: input.CreatedBy, Method: input.Method, Reason: input.Reason, StartDate: input.StartDate, EndDate: input.EndDate,
 		DayStart: input.DayStart, DayEnd: input.DayEnd, QuotaPerUnit: input.QuotaPerUnit,
 		ExcludedUserIdsJSON: input.ExcludedUserIdsJSON, ChannelMappingsJSON: input.ChannelMappingsJSON,
-		Status: SupplierHistoricalImportStatusPending,
+		SupersedesImportId:   input.SupersedesImportId,
+		SummarySchemaVersion: SupplierHistoricalSummarySchemaVersion,
+		Status:               SupplierHistoricalImportStatusPending,
 	}
 }
 
@@ -325,11 +364,14 @@ func AcquireSupplierHistoricalImport(ctx context.Context, db *gorm.DB, importId 
 			}
 			if item.StartedAt == nil {
 				var overlaps int64
-				if err := tx.Model(&SupplierHistoricalImport{}).
-					Where("id <> ? AND day_start < ? AND day_end > ? AND (status IN ? OR (status = ? AND id < ?))",
+				overlapQuery := tx.Model(&SupplierHistoricalImport{}).
+					Where("id <> ? AND day_start < ? AND day_end > ? AND (status = ? OR (status = ? AND superseded_at IS NULL) OR (status = ? AND id < ?))",
 						item.Id, item.DayEnd, item.DayStart,
-						[]string{SupplierHistoricalImportStatusRunning, SupplierHistoricalImportStatusCompleted}, SupplierHistoricalImportStatusPending, item.Id).
-					Count(&overlaps).Error; err != nil {
+						SupplierHistoricalImportStatusRunning, SupplierHistoricalImportStatusCompleted, SupplierHistoricalImportStatusPending, item.Id)
+				if item.SupersedesImportId != nil {
+					overlapQuery = overlapQuery.Where("id <> ?", *item.SupersedesImportId)
+				}
+				if err := overlapQuery.Count(&overlaps).Error; err != nil {
 					return err
 				}
 				if overlaps > 0 {
@@ -432,6 +474,7 @@ func upsertSupplierHistoricalDailySummaries(tx *gorm.DB, summaries []SupplierHis
 		"source_request_count", "unassigned_request_count", "official_list_known_count", "official_list_unknown_count", "official_list_micro_usd",
 		"sales_known_count", "sales_unknown_count", "sales_micro_usd", "procurement_cost_known_count", "procurement_cost_unknown_count",
 		"procurement_cost_micro_usd", "gross_profit_known_count", "gross_profit_unknown_count", "gross_profit_micro_usd",
+		"gross_margin_eligible_count", "gross_margin_eligible_sales_micro_usd",
 	}
 	dimensionKeys := make([]string, 0, len(summaries))
 	for index := range summaries {
@@ -469,6 +512,7 @@ func mergeSupplierHistoricalSummary(target *SupplierHistoricalDailySummary, exis
 		{&target.ProcurementCostKnownCount, &existing.ProcurementCostKnownCount}, {&target.ProcurementCostUnknownCount, &existing.ProcurementCostUnknownCount},
 		{&target.ProcurementCostMicroUsd, &existing.ProcurementCostMicroUsd}, {&target.GrossProfitKnownCount, &existing.GrossProfitKnownCount},
 		{&target.GrossProfitUnknownCount, &existing.GrossProfitUnknownCount}, {&target.GrossProfitMicroUsd, &existing.GrossProfitMicroUsd},
+		{&target.GrossMarginEligibleCount, &existing.GrossMarginEligibleCount}, {&target.GrossMarginEligibleSalesMicroUsd, &existing.GrossMarginEligibleSalesMicroUsd},
 	}
 	for _, pair := range pairs {
 		value, ok := supplierHistoricalCheckedAdd(*pair[0], *pair[1])
@@ -533,6 +577,126 @@ func CompleteSupplierHistoricalImport(ctx context.Context, db *gorm.DB, lease Su
 		}
 		return nil
 	})
+}
+
+func PublishSupplierHistoricalImport(ctx context.Context, db *gorm.DB, importId int64, actor int) (SupplierHistoricalImport, error) {
+	if db == nil || importId <= 0 || actor <= 0 {
+		return SupplierHistoricalImport{}, ErrSupplierHistoricalImportInvalid
+	}
+	var published SupplierHistoricalImport
+	for attempt := 0; attempt < supplierHistoricalImportCreateMaxAttempts; attempt++ {
+		err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var item SupplierHistoricalImport
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, importId).Error; err != nil {
+				return err
+			}
+			if item.Status != SupplierHistoricalImportStatusCompleted {
+				return ErrSupplierHistoricalPublicationConflict
+			}
+			if item.SummarySchemaVersion != SupplierHistoricalSummarySchemaVersion {
+				return ErrSupplierHistoricalPublicationNeedsReestimate
+			}
+			if item.PublishedAt != nil && item.SupersededAt == nil {
+				published = item
+				return nil
+			}
+			if item.SupersededAt != nil {
+				return ErrSupplierHistoricalPublicationConflict
+			}
+			var current []SupplierHistoricalPublishedDay
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("day_start >= ? AND day_start < ?", item.DayStart, item.DayEnd).Order("day_start ASC").Find(&current).Error; err != nil {
+				return err
+			}
+			var target *SupplierHistoricalImport
+			if item.SupersedesImportId == nil {
+				if len(current) > 0 {
+					return ErrSupplierHistoricalPublicationConflict
+				}
+			} else {
+				var previous SupplierHistoricalImport
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&previous, *item.SupersedesImportId).Error; err != nil {
+					return err
+				}
+				if previous.Status != SupplierHistoricalImportStatusCompleted || previous.StartDate != item.StartDate || previous.EndDate != item.EndDate ||
+					previous.DayStart != item.DayStart || previous.DayEnd != item.DayEnd ||
+					(previous.SupersededByImportId != nil && *previous.SupersededByImportId != item.Id) {
+					return ErrSupplierHistoricalReplacementInvalid
+				}
+				for _, day := range current {
+					if day.ImportId != previous.Id {
+						return ErrSupplierHistoricalPublicationConflict
+					}
+				}
+				target = &previous
+			}
+			now, err := supplierDBUnix(ctx, tx)
+			if err != nil {
+				return err
+			}
+			days := supplierHistoricalPublicationDays(item, actor, now)
+			if target == nil {
+				result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "date"}}, DoNothing: true}).CreateInBatches(days, 100)
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected != int64(len(days)) {
+					return ErrSupplierHistoricalPublicationConflict
+				}
+			} else {
+				if target.PublishedAt != nil && len(current) != len(days) {
+					return ErrSupplierHistoricalPublicationConflict
+				}
+				if err := tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "date"}},
+					DoUpdates: clause.AssignmentColumns([]string{"day_start", "import_id", "published_by", "published_at"}),
+				}).CreateInBatches(days, 100).Error; err != nil {
+					return err
+				}
+				result := tx.Model(&SupplierHistoricalImport{}).Where("id = ? AND superseded_by_import_id IS NULL", target.Id).
+					Updates(map[string]any{"superseded_by_import_id": item.Id, "superseded_at": now})
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected != 1 {
+					return ErrSupplierHistoricalPublicationConflict
+				}
+			}
+			result := tx.Model(&SupplierHistoricalImport{}).Where("id = ? AND published_at IS NULL AND superseded_at IS NULL", item.Id).
+				Updates(map[string]any{"published_at": now, "published_by": actor})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return ErrSupplierHistoricalPublicationConflict
+			}
+			return tx.First(&published, item.Id).Error
+		}, &sql.TxOptions{Isolation: sql.LevelSerializable})
+		if err == nil {
+			return published, nil
+		}
+		if !isSupplierHistoricalImportCreateRace(err) || attempt+1 == supplierHistoricalImportCreateMaxAttempts {
+			return SupplierHistoricalImport{}, err
+		}
+		select {
+		case <-ctx.Done():
+			return SupplierHistoricalImport{}, ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 5 * time.Millisecond):
+		}
+	}
+	return SupplierHistoricalImport{}, ErrDatabase
+}
+
+func supplierHistoricalPublicationDays(item SupplierHistoricalImport, actor int, publishedAt int64) []SupplierHistoricalPublishedDay {
+	count := int((item.DayEnd - item.DayStart) / 86_400)
+	days := make([]SupplierHistoricalPublishedDay, 0, count)
+	location := time.FixedZone("Asia/Shanghai", 8*60*60)
+	for dayStart := item.DayStart; dayStart < item.DayEnd; dayStart += 86_400 {
+		days = append(days, SupplierHistoricalPublishedDay{
+			Date: time.Unix(dayStart, 0).In(location).Format("2006-01-02"), DayStart: dayStart,
+			ImportId: item.Id, PublishedBy: actor, PublishedAt: publishedAt,
+		})
+	}
+	return days
 }
 
 func FailSupplierHistoricalImport(ctx context.Context, db *gorm.DB, lease SupplierHistoricalImportLease, failure error) error {

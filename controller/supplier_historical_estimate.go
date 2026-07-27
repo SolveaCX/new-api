@@ -76,6 +76,24 @@ func GetSupplierHistoricalEstimateImport(c *gin.Context) {
 	common.ApiSuccess(c, view)
 }
 
+func PublishSupplierHistoricalEstimateImport(c *gin.Context) {
+	id, ok := supplierHistoricalEstimateID(c)
+	if !ok {
+		return
+	}
+	item, err := service.PublishSupplierHistoricalEstimate(c.Request.Context(), model.DB, id, c.GetInt("id"))
+	if err != nil {
+		supplierHistoricalEstimateError(c, err)
+		return
+	}
+	view, err := service.BuildSupplierHistoricalImportView(item)
+	if err != nil {
+		supplierHistoricalEstimateError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
+}
+
 func ListSupplierHistoricalEstimateSummaries(c *gin.Context) {
 	id, ok := supplierHistoricalEstimateID(c)
 	if !ok {
@@ -147,6 +165,8 @@ func supplierHistoricalEstimateError(c *gin.Context, err error) {
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 	case errors.Is(err, model.ErrSupplierHistoricalImportIdempotencyConflict), errors.Is(err, model.ErrSupplierHistoricalImportOverlap),
 		errors.Is(err, model.ErrSupplierHistoricalImportBusy), errors.Is(err, model.ErrSupplierHistoricalImportFenceLost),
+		errors.Is(err, model.ErrSupplierHistoricalReplacementInvalid), errors.Is(err, model.ErrSupplierHistoricalPublicationConflict),
+		errors.Is(err, model.ErrSupplierHistoricalPublicationNeedsReestimate),
 		errors.Is(err, service.ErrSupplierHistoricalImportNotReady):
 		supplyChainError(c, http.StatusConflict, i18n.MsgSupplyChainConflict)
 	case errors.Is(err, gorm.ErrRecordNotFound):

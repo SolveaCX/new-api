@@ -11,6 +11,11 @@ import (
 	"gorm.io/gorm"
 )
 
+func migrateSupplierReportHistoricalSchema(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalPublishedDay{}))
+}
+
 func TestSupplierReportReadTxOptions(t *testing.T) {
 	require.Nil(t, supplierReportReadTxOptions("sqlite"))
 	for _, dialect := range []string{"mysql", "postgres"} {
@@ -21,10 +26,67 @@ func TestSupplierReportReadTxOptions(t *testing.T) {
 	}
 }
 
+func TestPublishedHistoricalBaselineEntersReportsAndAuthoritativeDayOverridesIt(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	migrateSupplierReportHistoricalSchema(t, db)
+	const dayStart = int64(1_767_196_800)
+	const dayEnd = dayStart + 86_400
+	require.NoError(t, db.Create(&SupplierHistoricalPublishedDay{Date: "2026-01-01", DayStart: dayStart, ImportId: 11, PublishedBy: 7, PublishedAt: dayEnd}).Error)
+	require.NoError(t, db.Create(&SupplierHistoricalDailySummary{
+		ImportId: 11, Date: "2026-01-01", DimensionKey: "historical", BucketStart: dayStart,
+		SupplierId: 1, ContractId: 2, RateVersionId: 3, ChannelId: 4, ModelName: "legacy",
+		StatisticsScope: "business", DataQuality: SupplierHistoricalDataQualityEstimated,
+		SourceRequestCount: 2, OfficialListKnownCount: 2, OfficialListMicroUsd: 1_000,
+		SalesKnownCount: 2, SalesMicroUsd: 600, ProcurementCostKnownCount: 2, ProcurementCostMicroUsd: 500,
+		GrossProfitKnownCount: 2, GrossProfitMicroUsd: 100, GrossMarginEligibleCount: 2, GrossMarginEligibleSalesMicroUsd: 600,
+	}).Error)
+	store := NewSupplierReportStore(db)
+	filter := SupplierReportFilter{StartAt: dayStart, EndAt: dayEnd}
+	rows, err := store.QueryBusinessUsage(context.Background(), filter, true)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, int64(2), rows[0].BusinessRequestCount)
+	require.Equal(t, int64(100), rows[0].GrossProfitMicroUsd)
+	consumption, err := store.QueryInventoryConsumption(context.Background(), nil, dayEnd)
+	require.NoError(t, err)
+	require.Empty(t, consumption, "historical publication must not consume inventory")
+	statuses, err := store.ListDayStatuses(context.Background(), dayStart, dayEnd)
+	require.NoError(t, err)
+	require.Equal(t, SupplierHistoricalDataQualityEstimated, statuses[0].DataQuality)
+
+	publishedAt := dayEnd
+	require.NoError(t, db.Create(&SupplierUsageDailyBatchRun{
+		BatchDate: "2026-01-01", DayStart: dayStart, DayEnd: dayEnd, Status: SupplierDailyBatchStatusCompleted,
+		FenceToken: 5, PublishedFenceToken: 5, PublishedAt: &publishedAt,
+	}).Error)
+	require.NoError(t, db.Create(&SupplierUsageDailySummary{
+		BatchDate: "2026-01-01", BatchFenceToken: 5, DimensionKey: "authoritative", BucketStart: dayStart,
+		SupplierId: 1, ContractId: 2, RateVersionId: 3, ChannelId: 4, ModelName: "live",
+		StatisticsScope: "business", DataQuality: "authoritative", RequestCount: 3,
+		OfficialListKnownCount: 3, OfficialListMicroUsd: 2_000, SalesKnownCount: 3, SalesMicroUsd: 1_400,
+		ProcurementCostKnownCount: 3, ProcurementCostMicroUsd: 900, GrossProfitKnownCount: 3, GrossProfitMicroUsd: 500,
+		GrossMarginEligibleCount: 3, GrossMarginEligibleSalesMicroUsd: 1_400,
+	}).Error)
+	rows, err = store.QueryBusinessUsage(context.Background(), filter, true)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, int64(3), rows[0].BusinessRequestCount)
+	require.Equal(t, int64(500), rows[0].GrossProfitMicroUsd)
+	consumption, err = store.QueryInventoryConsumption(context.Background(), nil, dayEnd)
+	require.NoError(t, err)
+	require.Equal(t, int64(2_000), consumption[0].InventoryAffectingOfficialListMicroUsd)
+	statuses, err = store.ListDayStatuses(context.Background(), dayStart, dayEnd)
+	require.NoError(t, err)
+	require.Equal(t, "authoritative", statuses[0].DataQuality)
+}
+
 func TestListChannelCatalogDatabasePaginationAndPublishedGeneration(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&Option{}, &Channel{}, &SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	migrateSupplierReportHistoricalSchema(t, db)
 
 	const (
 		publishedFence = int64(7)
@@ -130,6 +192,7 @@ func TestQueryBreakdownPaginationOrdersEveryGroupedDimension(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	migrateSupplierReportHistoricalSchema(t, db)
 	const (
 		dayStart = int64(1_774_281_600)
 		dayEnd   = dayStart + 86_400
@@ -187,6 +250,7 @@ func TestQueryChannelUsageBoundsAggregationToCatalogPairs(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	migrateSupplierReportHistoricalSchema(t, db)
 	const (
 		dayStart = int64(1_774_281_600)
 		dayEnd   = dayStart + 86_400
@@ -230,6 +294,7 @@ func TestSupplierReportStoreBoundsCatalogHistoryAndInventoryAtClosedEnd(t *testi
 		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{}, &SupplierInventoryAdjustment{},
 		&Channel{}, &SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
 	))
+	migrateSupplierReportHistoricalSchema(t, db)
 	const (
 		closedStart = int64(1_784_044_800) // 2026-07-15 00:00:00 Asia/Shanghai
 		closedEnd   = closedStart + 86_400
@@ -296,6 +361,7 @@ func TestSupplierReportUsageAggregationDropsContractAndQualityDimensions(t *test
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	migrateSupplierReportHistoricalSchema(t, db)
 	const dayStart = int64(1_784_044_800)
 	for dayOffset := 0; dayOffset < 2; dayOffset++ {
 		start := dayStart + int64(dayOffset)*86_400
@@ -342,6 +408,7 @@ func TestQueryOverviewInventoryIncludesContractsBeyondCatalogHardLimit(t *testin
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&SupplierContract{}, &SupplierInventoryAdjustment{}, &SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	migrateSupplierReportHistoricalSchema(t, db)
 	const contractCount = SupplierReportMaxContractRows + 1
 	contracts := make([]SupplierContract, 0, contractCount)
 	adjustments := make([]SupplierInventoryAdjustment, 0, contractCount)
@@ -361,6 +428,7 @@ func TestListChannelCatalogCurrentBindingsHonorSupplierFilter(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&SupplierContract{}, &Channel{}, &SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{}))
+	migrateSupplierReportHistoricalSchema(t, db)
 	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]SupplierContract{
 		{Id: 1, SupplierId: 1, Name: "wanted", ContractNo: "C-1", Status: SupplierContractStatusActive},
 		{Id: 2, SupplierId: 2, Name: "other", ContractNo: "C-2", Status: SupplierContractStatusActive},
@@ -375,4 +443,63 @@ func TestListChannelCatalogCurrentBindingsHonorSupplierFilter(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, hasMore)
 	require.Equal(t, []SupplierReportChannelCatalogRow{{ChannelId: 11, ChannelName: "wanted-no-usage", ChannelStatus: 1, SupplierContractId: 1}}, rows)
+}
+
+func TestPublishedHistoricalFiltersBindUnionArgumentsInSQLOrder(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{}, &SupplierInventoryAdjustment{}, &Channel{},
+		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
+	))
+	migrateSupplierReportHistoricalSchema(t, db)
+
+	const (
+		dayStart = int64(1_788_105_600)
+		dayEnd   = dayStart + 86_400
+	)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]UpstreamSupplier{
+		{Id: 1, Name: "wanted", Status: SupplierStatusActive},
+		{Id: 2, Name: "other", Status: SupplierStatusActive},
+	}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]SupplierContract{
+		{Id: 1, SupplierId: 1, Name: "wanted", ContractNo: "C-1", Status: SupplierContractStatusActive},
+		{Id: 2, SupplierId: 2, Name: "other", ContractNo: "C-2", Status: SupplierContractStatusActive},
+	}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]Channel{
+		{Id: 10, Name: "wanted-history"},
+		{Id: 20, Name: "other-history"},
+	}).Error)
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Create(&[]SupplierInventoryAdjustment{
+		{ContractId: 1, DeltaMicroUsd: 100, Type: SupplierInventoryAdjustmentTypeInitial, IdempotencyKey: "wanted", CreatedBy: 1, CreatedAt: dayStart},
+		{ContractId: 2, DeltaMicroUsd: 200, Type: SupplierInventoryAdjustmentTypeInitial, IdempotencyKey: "other", CreatedBy: 1, CreatedAt: dayStart},
+	}).Error)
+	require.NoError(t, db.Create(&SupplierHistoricalPublishedDay{
+		Date: "2026-08-31", DayStart: dayStart, ImportId: 11, PublishedBy: 1, PublishedAt: dayEnd,
+	}).Error)
+	require.NoError(t, db.Create(&[]SupplierHistoricalDailySummary{
+		{ImportId: 11, Date: "2026-08-31", DimensionKey: "wanted", BucketStart: dayStart, SupplierId: 1, ContractId: 1, ChannelId: 10, StatisticsScope: "business", DataQuality: SupplierHistoricalDataQualityEstimated, SourceRequestCount: 3},
+		{ImportId: 11, Date: "2026-08-31", DimensionKey: "other", BucketStart: dayStart, SupplierId: 2, ContractId: 2, ChannelId: 20, StatisticsScope: "business", DataQuality: SupplierHistoricalDataQualityEstimated, SourceRequestCount: 7},
+	}).Error)
+
+	store := NewSupplierReportStore(db)
+	filter := SupplierReportFilter{StartAt: dayStart, EndAt: dayEnd, SupplierIds: []int{1}, ContractIds: []int{1}, ChannelIds: []int{10}}
+	contracts, _, err := store.ListContractCatalog(context.Background(), filter, nil)
+	require.NoError(t, err)
+	require.Len(t, contracts, 1)
+	require.Equal(t, 1, contracts[0].ContractId)
+
+	channels, _, err := store.ListChannelCatalog(context.Background(), filter, &SupplierReportPage{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, []SupplierReportChannelCatalogRow{{ChannelId: 10, ChannelName: "wanted-history", ChannelStatus: 1, SupplierContractId: 1}}, channels)
+
+	usage, err := store.QueryBusinessUsage(context.Background(), filter, false)
+	require.NoError(t, err)
+	require.Len(t, usage, 1)
+	require.Equal(t, int64(3), usage[0].BusinessRequestCount)
+
+	inventory, err := store.QueryOverviewInventory(context.Background(), filter)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), inventory.TotalInventoryMicroUsd)
+	require.Zero(t, inventory.OfficialListConsumedMicroUsd)
 }

@@ -128,6 +128,9 @@ export function ReportContractTable(props: ReportContractTableProps) {
                         t
                       )}
                     </Badge>
+                    {item.has_estimates ? (
+                      <Badge variant='secondary'>{t('Estimated')}</Badge>
+                    ) : null}
                   </div>
                   <span className='text-muted-foreground text-xs'>
                     {item.supplier_name} · {item.contract_no}

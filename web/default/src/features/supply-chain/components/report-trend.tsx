@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import {
   Card,
@@ -115,6 +116,10 @@ export function ReportTrend(props: ReportTrendProps) {
       (point) => point.internal_dimension_available && point.internal !== null
     )
   )
+  const estimatedDates =
+    props.data?.points
+      .filter((point) => point.data_quality === 'estimated')
+      .map((point) => point.date) ?? []
   const visibleMode =
     mode === 'internal' && !hasInternalSeries ? 'business' : mode
 
@@ -147,6 +152,17 @@ export function ReportTrend(props: ReportTrendProps) {
       </CardHeader>
       <CardContent className='flex flex-col gap-4'>
         {props.isError ? <ReportQueryError hasData /> : null}
+        {props.data?.has_estimates ? (
+          <Alert>
+            <AlertTitle>{t('Includes historical estimates')}</AlertTitle>
+            <AlertDescription>
+              {t(
+                'Estimated dates: {{dates}}. Authoritative daily data overrides estimates for the same date.',
+                { dates: estimatedDates.join(', ') }
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <Tabs
           value={visibleMode}
           onValueChange={(value) => {

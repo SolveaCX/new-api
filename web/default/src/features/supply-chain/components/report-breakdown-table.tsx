@@ -67,6 +67,7 @@ function dataQualityLabel(
   translate: TFunction
 ): string {
   if (value === 'authoritative') return translate('Authoritative')
+  if (value === 'estimated') return translate('Historical estimate')
   return translate('Unattributed')
 }
 

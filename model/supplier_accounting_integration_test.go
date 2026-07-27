@@ -104,6 +104,10 @@ func TestSupplierAccountingRealDatabaseIntegration(t *testing.T) {
 				testSupplierAccountingIntegrationHistoricalOverlap(t, db, database.name)
 			})
 
+			t.Run("publishes and replaces historical report baselines", func(t *testing.T) {
+				testSupplierAccountingIntegrationHistoricalPublication(t, db, database.name)
+			})
+
 			t.Run("serializes concurrent channel policy writers", func(t *testing.T) {
 				testSupplierAccountingIntegrationPolicyCAS(t, db)
 			})
@@ -150,7 +154,7 @@ func migrateSupplierAccountingIntegrationSchema(t *testing.T, db *gorm.DB) {
 		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{},
 		&SupplierChannelBindingVersion{}, &SupplierInventoryAdjustment{}, &SupplierStatisticsExclusionRule{},
 		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
-		&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{},
+		&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalPublishedDay{},
 	))
 	require.NoError(t, EnsureSupplierAccountingFactSchema(db))
 	require.NoError(t, EnsureSupplierUsageGenerationSchema(db))
@@ -159,7 +163,7 @@ func migrateSupplierAccountingIntegrationSchema(t *testing.T, db *gorm.DB) {
 func dropSupplierAccountingIntegrationSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	require.NoError(t, db.Migrator().DropTable(
-		&SupplierHistoricalDailySummary{}, &SupplierHistoricalImport{},
+		&SupplierHistoricalPublishedDay{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalImport{},
 		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
 		&SupplierAccountingFact{}, &SupplierStatisticsExclusionRule{}, &SupplierInventoryAdjustment{},
 		&SupplierChannelBindingVersion{}, &SupplierContractRateVersion{}, &SupplierContract{}, &UpstreamSupplier{},
@@ -177,6 +181,7 @@ func supplierAccountingIntegrationTableNames() []string {
 		"supplier_contracts",
 		"supplier_historical_daily_summaries",
 		"supplier_historical_imports",
+		"supplier_historical_published_days",
 		"supplier_inventory_adjustments",
 		"supplier_statistics_exclusion_rules",
 		"supplier_usage_daily_batch_runs",
@@ -341,6 +346,98 @@ func testSupplierAccountingIntegrationHistoricalOverlap(t *testing.T, db *gorm.D
 	}
 	require.Equal(t, 1, accepted)
 	require.Equal(t, 1, rejected)
+}
+
+func testSupplierAccountingIntegrationHistoricalPublication(t *testing.T, db *gorm.DB, dialect string) {
+	t.Helper()
+	ctx := context.Background()
+	const (
+		dayStart = int64(4_075_027_200)
+		dayEnd   = dayStart + 86_400
+	)
+	baseInput := supplierAccountingIntegrationHistoricalInput(dialect+"-published", dayStart, dayEnd)
+	baseInput.StartDate = "2099-02-18"
+	baseInput.EndDate = "2099-02-19"
+	base, err := CreateSupplierHistoricalImport(ctx, db, baseInput)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&SupplierHistoricalImport{}).Where("id = ?", base.Id).UpdateColumn("status", SupplierHistoricalImportStatusCompleted).Error)
+	require.NoError(t, db.Create(&SupplierHistoricalDailySummary{
+		ImportId: base.Id, Date: base.StartDate, DimensionKey: "integration-published", BucketStart: dayStart,
+		SupplierId: 12, ContractId: 13, RateVersionId: 14, ChannelId: 15, ModelName: "historical",
+		StatisticsScope: string(types.SupplierStatisticsScopeBusiness), DataQuality: SupplierHistoricalDataQualityEstimated,
+		SourceRequestCount: 2, SalesKnownCount: 2, SalesMicroUsd: 700, ProcurementCostKnownCount: 2,
+		ProcurementCostMicroUsd: 650, GrossProfitKnownCount: 2, GrossProfitMicroUsd: 50,
+		GrossMarginEligibleCount: 2, GrossMarginEligibleSalesMicroUsd: 700,
+	}).Error)
+
+	initialResults := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, publishErr := PublishSupplierHistoricalImport(ctx, db, base.Id, 700)
+			initialResults <- publishErr
+		}()
+	}
+	for range 2 {
+		require.NoError(t, <-initialResults)
+	}
+
+	replacements := make([]SupplierHistoricalImport, 2)
+	for index := range replacements {
+		replacements[index] = newSupplierHistoricalImport(baseInput)
+		replacements[index].CommandHash = strings.Repeat(strconv.Itoa(index+2), 64)
+		replacements[index].IdempotencyKey = fmt.Sprintf("%s-replacement-%d", dialect, index)
+		replacements[index].Reason = "concurrent replacement"
+		replacements[index].Status = SupplierHistoricalImportStatusCompleted
+		replacements[index].SupersedesImportId = &base.Id
+	}
+	require.NoError(t, db.Create(&replacements).Error)
+
+	replacementResults := make(chan error, len(replacements))
+	for index := range replacements {
+		item := replacements[index]
+		go func() {
+			_, publishErr := PublishSupplierHistoricalImport(ctx, db, item.Id, item.CreatedBy)
+			replacementResults <- publishErr
+		}()
+	}
+	var publishedReplacement int64
+	for range replacements {
+		publishErr := <-replacementResults
+		if publishErr == nil {
+			continue
+		}
+		require.True(t, errors.Is(publishErr, ErrSupplierHistoricalPublicationConflict) || errors.Is(publishErr, ErrSupplierHistoricalReplacementInvalid), publishErr)
+	}
+	var publishedDay SupplierHistoricalPublishedDay
+	require.NoError(t, db.First(&publishedDay, "date = ?", base.StartDate).Error)
+	publishedReplacement = publishedDay.ImportId
+	require.Contains(t, []int64{replacements[0].Id, replacements[1].Id}, publishedReplacement)
+
+	require.NoError(t, db.Create(&SupplierHistoricalDailySummary{
+		ImportId: publishedReplacement, Date: base.StartDate, DimensionKey: "replacement", BucketStart: dayStart,
+		SupplierId: 12, ContractId: 13, RateVersionId: 14, ChannelId: 15, ModelName: "historical-v2",
+		StatisticsScope: string(types.SupplierStatisticsScopeBusiness), DataQuality: SupplierHistoricalDataQualityEstimated,
+		SourceRequestCount: 3, GrossMarginEligibleCount: 3,
+	}).Error)
+	store := NewSupplierReportStore(db)
+	filter := SupplierReportFilter{StartAt: dayStart, EndAt: dayEnd}
+	usage, err := store.QueryBusinessUsage(ctx, filter, false)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), usage[0].BusinessRequestCount)
+
+	publishedAt := dayEnd
+	require.NoError(t, db.Create(&SupplierUsageDailyBatchRun{
+		BatchDate: base.StartDate, DayStart: dayStart, DayEnd: dayEnd, Status: SupplierDailyBatchStatusCompleted,
+		FenceToken: 9, PublishedFenceToken: 9, PublishedAt: &publishedAt,
+	}).Error)
+	require.NoError(t, db.Create(&SupplierUsageDailySummary{
+		BatchDate: base.StartDate, BatchFenceToken: 9, DimensionKey: "authoritative", BucketStart: dayStart,
+		SupplierId: 12, ContractId: 13, RateVersionId: 14, ChannelId: 15, ModelName: "authoritative",
+		StatisticsScope: string(types.SupplierStatisticsScopeBusiness), DataQuality: "authoritative", RequestCount: 5,
+	}).Error)
+	usage, err = store.QueryBusinessUsage(ctx, filter, false)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), usage[0].BusinessRequestCount)
 }
 
 func supplierAccountingIntegrationHistoricalInput(key string, dayStart, dayEnd int64) SupplierHistoricalImportCreate {

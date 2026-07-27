@@ -54,6 +54,7 @@ describe('ratio formatting', () => {
   it('maps 650000 PPM to both 65% and 6.5 discount units', () => {
     expect(formatPpmPercent(650_000, 'unknown')).toBe('65%')
     expect(formatPpmDiscount(650_000, '折', 'unknown')).toBe('6.5折')
+    expect(formatPpmDiscount(550_000, '折', 'unknown')).toBe('5.5折')
   })
 })
 

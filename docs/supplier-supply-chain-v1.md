@@ -39,7 +39,8 @@ flowchart LR
 
     H[历史 consume logs] --> I[历史估算导入]
     I --> J[estimate-only 日序列]
-    J -.禁止进入.-> E
+    J --> K[显式发布的历史报表基线]
+    K -.同日权威日结覆盖.-> E
 ```
 
 ### 2.1 权威事实链路
@@ -69,9 +70,11 @@ flowchart LR
 - 后台 worker 首次取得 lease 时冻结 `LOG_DB` 最大日志 ID 和候选条数；后续接管与重试复用首次冻结值，并只按 `(created_at, id)` keyset 扫描该范围；
 - 只统计最终成功的 consume 日志；销售额由 quota 和冻结 QPU 估算，官方原价还要求日志中存在有效 group ratio，采购成本还要求显式渠道映射；
 - 完成前必须重新核对 `verified_count == processed_count == candidate_count`；运行中或失败的部分金额不发布；
-- 结果永久标记 `estimate_only`，只写历史估算表，权威日报和库存永远不读取。
+- 结果永久标记 `estimate_only`，只写历史估算表；完成后由 Root 显式发布，才进入成本、利润、趋势、合同、渠道和明细报表；库存永远不读取历史估算；
+- 已发布版本按日期写入发布指针。重新估算必须保持相同日期范围，新版本完成并发布后在一个事务内替代旧指针，旧版本保留审计记录；
+- 同一天只要存在已发布权威日结，报表完全忽略该日历史估算。旧摘要结构缺少当前财务分母时禁止直接发布，必须重新估算。
 
-同一时间范围已有 pending、running 或 completed 导入时拒绝重复创建；failed 导入可修正命令后重建。调度器每分钟最多推进一页，不新增 Redis、队列或独立 goroutine。
+同一时间范围已有 pending、running 或未被替代的 completed 导入时拒绝普通重复创建；failed 导入可修正命令后重建，completed 导入可通过显式“重新估算”创建同范围替代版本。调度器每分钟最多推进一页，不新增 Redis、队列或独立 goroutine。
 
 ## 3. 统计范围
 
@@ -86,9 +89,9 @@ flowchart LR
 
 渠道绑定版本同时冻结内部请求核算策略。`记录内部成本` 为默认值；选择 `完全跳过` 后，仅被排除账号通过该渠道发起的请求不创建 `supplier_accounting_facts`，普通账号请求仍正常记录。该策略随渠道运行时缓存发布，请求链路不增加数据库或 Redis 查询。
 
-## 4. 数据模型：共 11 张供应商表
+## 4. 数据模型：共 12 张供应商表
 
-### 4.1 主库 10 张
+### 4.1 主库 11 张
 
 | 表 | 职责 |
 | --- | --- |
@@ -102,6 +105,7 @@ flowchart LR
 | `supplier_usage_daily_batch_runs` | 自然日租约、游标、水位、fence 和发布状态 |
 | `supplier_historical_imports` | 不可变历史估算命令、冻结水位、租约和进度 |
 | `supplier_historical_daily_summaries` | estimate-only 历史日序列 |
+| `supplier_historical_published_days` | 每个自然日当前生效的历史估算版本指针及发布审计 |
 
 ### 4.2 LOG_DB 1 张
 
@@ -109,7 +113,7 @@ flowchart LR
 | --- | --- |
 | `supplier_accounting_facts` | 每个真实同步上游尝试的 durable pending/captured/void 权威生命周期 |
 
-未配置独立 `LOG_SQL_DSN` 时 LOG_DB 与主库共享物理数据库，此时 11 张表位于同一数据库，但职责边界不变。所有迁移和查询同时支持 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+。
+未配置独立 `LOG_SQL_DSN` 时 LOG_DB 与主库共享物理数据库，此时 12 张表位于同一数据库，但职责边界不变。所有迁移和查询同时支持 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+。
 
 ## 5. T+1 日结与多节点安全
 
@@ -137,7 +141,8 @@ Console/Master 复用现有每分钟 ticker；Router/Slave 不执行日结。时
 - 业务与内部范围严格隔离；
 - 合同余额 = 库存调整累计值 − 业务与内部官方原价累计消耗；
 - 按渠道筛选导致内部维度不可完整归属时返回未知，不以业务小计冒充总计；
-- 历史估算结果不参与任何权威利润或库存计算。
+- 未发布历史估算不进入报表；已发布历史估算作为上线前报表基线，并明确标记为 `estimated`；
+- 同日权威 published fence 优先于历史估算；历史估算不参与库存消耗，库存始终只读取权威日结。
 
 ## 7. Cutover、catch-up 与留存
 
@@ -156,11 +161,11 @@ V1 不新增 Redis 队列、Cloud Run Job、Cloud Scheduler、供应商专用 ru
 
 ## 9. 验收标准
 
-1. 11 张表在共享库和独立 LOG_DB 拓扑下均可迁移，并在真实 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+ 实例完成迁移与状态机验收；
+1. 12 张表在共享库和独立 LOG_DB 拓扑下均可迁移，并在真实 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+ 实例完成迁移与状态机验收；
 2. cutover 前协议关闭，cutover 后每个已绑定同步尝试都有 durable 终态或明确 pending；
 3. T+1 仅扫描 captured facts，并在 pending、水位变化或 fence 丢失时拒绝发布；
 4. 多 Console 竞争、租约接管和旧 owner 恢复不会重复或覆盖日报；
 5. Root 能审计 pending，并从严格匹配的日志证据恢复或作废；
 6. 权威报表、内部范围和库存公式核对一致；
-7. 历史估算冻结命令与源水位，完成门有效，且无法进入权威报表/库存；
+7. 历史估算冻结命令与源水位，完成门有效；只有显式发布版本进入报表，重新估算可原子替代旧版本，同日权威数据覆盖估算，且历史估算永不影响库存；
 8. 留存只清理达到条件的 terminal facts，绝不删除 pending 或未完成日期事实。
