@@ -5567,6 +5567,7 @@
             "type": "string",
             "enum": [
               "stripe_recurring",
+              "prepaid",
               "balance_one_period",
               "external_one_period"
             ]

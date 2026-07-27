@@ -154,4 +154,14 @@ func TestSubscriptionSelfOpenAPIUsesSelfSpecificSchemas(t *testing.T) {
 		require.NotContains(t, schemaProperties, "current_provider_binding_id", schemaName)
 		require.NotContains(t, schemaProperties, "provider_binding_id", schemaName)
 	}
+
+	selfContract := schemas["SubscriptionSelfContract"].(map[string]any)
+	selfContractProperties := selfContract["properties"].(map[string]any)
+	paymentMode := selfContractProperties["payment_mode"].(map[string]any)
+	require.ElementsMatch(t, []any{
+		"stripe_recurring",
+		"prepaid",
+		"balance_one_period",
+		"external_one_period",
+	}, paymentMode["enum"])
 }
