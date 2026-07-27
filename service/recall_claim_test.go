@@ -185,6 +185,41 @@ func TestRecallClaimValidateFindsAnyStageHashAndRecordsOneObservedClick(t *testi
 	require.Len(t, events, 1)
 }
 
+func TestRecallClaimValidateReturnsInternalSubscriptionPlanIDs(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Unix(1_721_000_000, 0).UTC()
+	disabledPlan := model.SubscriptionPlan{
+		Id:            70,
+		Title:         "Go retired",
+		Enabled:       false,
+		StripePriceId: "price_subscription",
+	}
+	firstPlan := model.SubscriptionPlan{
+		Id:            71,
+		Title:         "Go",
+		Enabled:       true,
+		StripePriceId: "price_subscription",
+	}
+	secondPlan := model.SubscriptionPlan{
+		Id:            72,
+		Title:         "Go legacy",
+		Enabled:       true,
+		StripePriceId: "price_subscription",
+	}
+	require.NoError(t, db.Create(&[]model.SubscriptionPlan{secondPlan, disabledPlan, firstPlan}).Error)
+	require.NoError(t, db.Model(&model.SubscriptionPlan{}).Where("id = ?", disabledPlan.Id).Update("enabled", false).Error)
+	fixture := createRecallClaimFixture(t, now)
+	claimService := NewRecallClaimService()
+	claimService.now = func() time.Time { return now }
+
+	view, err := claimService.ValidateClaim(context.Background(), fixture.recipient.UserId, fixture.claim)
+
+	require.NoError(t, err)
+	require.Equal(t, []int{firstPlan.Id, secondPlan.Id}, view.Products.SubscriptionPlanIDs)
+	require.Equal(t, []string{"price_subscription"}, view.Products.SubscriptionPriceIDs)
+}
+
 func TestRecallClaimValidateAcceptsStageOneRecipientLookupAfterMessageAcceptance(t *testing.T) {
 	setupRecallCampaignTestDB(t)
 	setRecallCampaignEnabled(t, true)
@@ -495,6 +530,109 @@ func TestRecallClaimDisabledAndEmptyCheckoutClaim(t *testing.T) {
 	require.ErrorIs(t, err, ErrRecallDisabled)
 	_, err = claimService.BuildCheckoutDiscount(context.Background(), 7, strings.Repeat("c", 48), RecallPurchaseKindTopUp, "price_topup")
 	require.ErrorIs(t, err, ErrRecallDisabled)
+}
+
+func TestRecallFirstMonthDiscountAmountMinor(t *testing.T) {
+	tests := []struct {
+		name     string
+		discount RecallDiscountConfig
+		currency string
+		unit     int64
+		want     int64
+	}{
+		{
+			name:     "percent rounds positive minor units",
+			discount: RecallDiscountConfig{Type: "percent", PercentOff: 12.5},
+			currency: "BRL",
+			unit:     999,
+			want:     125,
+		},
+		{
+			name: "fixed prefers currency options case insensitively",
+			discount: RecallDiscountConfig{
+				Type:            "fixed",
+				AmountOff:       500,
+				Currency:        "brl",
+				CurrencyOptions: map[string]int64{"InR": 45000, "BRL": 2500},
+			},
+			currency: "brl",
+			unit:     10000,
+			want:     2500,
+		},
+		{
+			name:     "fixed falls back to primary currency",
+			discount: RecallDiscountConfig{Type: "fixed", AmountOff: 500, Currency: "USD"},
+			currency: "usd",
+			unit:     10000,
+			want:     500,
+		},
+		{
+			name:     "fixed ignores primary currency mismatch",
+			discount: RecallDiscountConfig{Type: "fixed", AmountOff: 500, Currency: "USD"},
+			currency: "BRL",
+			unit:     10000,
+			want:     0,
+		},
+		{
+			name: "minimum allows matching currency at threshold",
+			discount: RecallDiscountConfig{
+				Type:                  "fixed",
+				AmountOff:             500,
+				Currency:              "usd",
+				MinimumAmount:         10000,
+				MinimumAmountCurrency: "USD",
+			},
+			currency: "usd",
+			unit:     10000,
+			want:     500,
+		},
+		{
+			name: "minimum rejects amount below threshold",
+			discount: RecallDiscountConfig{
+				Type:                  "fixed",
+				AmountOff:             500,
+				Currency:              "usd",
+				MinimumAmount:         10001,
+				MinimumAmountCurrency: "usd",
+			},
+			currency: "usd",
+			unit:     10000,
+			want:     0,
+		},
+		{
+			name: "minimum rejects currency mismatch",
+			discount: RecallDiscountConfig{
+				Type:                  "fixed",
+				AmountOff:             500,
+				Currency:              "usd",
+				MinimumAmount:         10000,
+				MinimumAmountCurrency: "eur",
+			},
+			currency: "usd",
+			unit:     10000,
+			want:     0,
+		},
+		{
+			name:     "percent clamps to unit",
+			discount: RecallDiscountConfig{Type: "percent", PercentOff: 150},
+			currency: "USD",
+			unit:     10000,
+			want:     10000,
+		},
+		{
+			name:     "fixed clamps negative to zero",
+			discount: RecallDiscountConfig{Type: "fixed", AmountOff: -500, Currency: "USD"},
+			currency: "USD",
+			unit:     10000,
+			want:     0,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := calculateRecallFirstMonthDiscountAmountMinor(test.discount, test.currency, test.unit)
+			require.Equal(t, test.want, got)
+		})
+	}
 }
 
 func TestRecallClaimAPITypesDoNotExposeSecrets(t *testing.T) {

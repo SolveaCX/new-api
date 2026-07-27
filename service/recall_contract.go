@@ -11,6 +11,13 @@ type RecallCheckoutDiscount struct {
 	RecipientID     int64  `json:"recipient_id"`
 }
 
+type RecallPurchaseDiscount struct {
+	PromotionCodeID     string
+	CampaignID          int64
+	RecipientID         int64
+	DiscountAmountMinor int64
+}
+
 type RecallCampaignDraft struct {
 	Name                  string               `json:"name"`
 	AudienceTemplate      string               `json:"audience_template"`
@@ -70,6 +77,7 @@ type RecallDiscountConfig struct {
 type RecallProductScope struct {
 	TopUpPriceIDs                []string `json:"topup_price_ids"`
 	SubscriptionPriceIDs         []string `json:"subscription_price_ids"`
+	SubscriptionPlanIDs          []int    `json:"subscription_plan_ids,omitempty"`
 	TopUpDisplaySnapshots        []string `json:"topup_display_snapshots,omitempty"`
 	SubscriptionDisplaySnapshots []string `json:"subscription_display_snapshots,omitempty"`
 }

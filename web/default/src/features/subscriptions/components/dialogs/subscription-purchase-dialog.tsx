@@ -98,12 +98,16 @@ export function RecallClaimProvider(props: RecallClaimProviderProps) {
   )
 }
 
+export function useRecallClaimContext(): RecallClaimContextValue {
+  return useContext(RecallClaimContext)
+}
+
 export function SubscriptionPurchaseDialog(props: Props) {
   const { t } = useTranslation()
   const { currency } = useSystemConfig()
   const [paying, setPaying] = useState(false)
   const [selectedEpayMethod, setSelectedEpayMethod] = useState('')
-  const recallClaim = useContext(RecallClaimContext)
+  const recallClaim = useRecallClaimContext()
 
   useEffect(() => {
     if (props.open && props.epayMethods && props.epayMethods.length > 0) {
@@ -119,7 +123,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
   const hasStripe = props.enableStripe && !!plan.stripe_price_id
   const recallPlanEligible = isRecallPriceEligible(
     recallClaim.view,
-    plan.stripe_price_id,
+    plan.id,
     'subscription'
   )
   const hasCreem = props.enableCreem && !!plan.creem_product_id

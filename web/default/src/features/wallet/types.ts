@@ -96,6 +96,7 @@ export interface RecallDiscountConfig {
   percent_off: number
   amount_off: number
   currency: string
+  currency_options?: Record<string, number>
   minimum_amount: number
   minimum_amount_currency: string
   coupon_redeem_by: number
@@ -104,6 +105,7 @@ export interface RecallDiscountConfig {
 export interface RecallProductScope {
   topup_price_ids: string[]
   subscription_price_ids: string[]
+  subscription_plan_ids?: number[]
 }
 
 export interface RecallClaimView {

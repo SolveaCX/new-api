@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'bun:test'
 import type { RecallClaimView } from '../types'
 import {
+  getRecallPriceDiscount,
   getTopupStripePriceId,
   isRecallPriceEligible,
   normalizeRecallClaim,
@@ -43,6 +44,7 @@ const claimView: RecallClaimView = {
   products: {
     topup_price_ids: ['price_topup_20'],
     subscription_price_ids: ['price_subscription_monthly'],
+    subscription_plan_ids: [1],
   },
   redeemed: false,
 }
@@ -96,17 +98,9 @@ describe('isRecallPriceEligible', () => {
     ).toBe(false)
   })
 
-  test('uses the subscription Stripe Price allowlist for subscriptions', () => {
-    expect(
-      isRecallPriceEligible(
-        claimView,
-        'price_subscription_monthly',
-        'subscription'
-      )
-    ).toBe(true)
-    expect(
-      isRecallPriceEligible(claimView, 'price_topup_20', 'subscription')
-    ).toBe(false)
+  test('uses the internal plan ID allowlist for subscriptions', () => {
+    expect(isRecallPriceEligible(claimView, 1, 'subscription')).toBe(true)
+    expect(isRecallPriceEligible(claimView, 2, 'subscription')).toBe(false)
   })
 
   test('rejects a missing Stripe Price ID', () => {
@@ -117,10 +111,131 @@ describe('isRecallPriceEligible', () => {
     expect(
       isRecallPriceEligible(
         claimView,
-        'price_subscription_monthly',
+        1,
         'subscription',
         claimView.expires_at + 1
       )
     ).toBe(false)
+  })
+})
+
+describe('getRecallPriceDiscount', () => {
+  test('previews a percent subscription discount in minor units', () => {
+    expect(
+      getRecallPriceDiscount(
+        {
+          ...claimView,
+          discount: { ...claimView.discount, type: 'percent', percent_off: 20 },
+        },
+        1,
+        'subscription',
+        10,
+        'USD',
+        1_700_000_000
+      )
+    ).toMatchObject({
+      type: 'percent',
+      originalAmount: 10,
+      discountAmount: 2,
+      discountedAmount: 8,
+      currency: 'USD',
+    })
+  })
+
+  test('previews a fixed subscription discount for matching currency', () => {
+    expect(
+      getRecallPriceDiscount(
+        {
+          ...claimView,
+          discount: {
+            ...claimView.discount,
+            type: 'fixed',
+            amount_off: 200,
+            currency: 'USD',
+          },
+        },
+        1,
+        'subscription',
+        10,
+        'USD',
+        1_700_000_000
+      )
+    ).toMatchObject({
+      type: 'fixed',
+      originalAmount: 10,
+      discountAmount: 2,
+      discountedAmount: 8,
+      currency: 'USD',
+    })
+  })
+
+  test('rejects fixed discounts with mismatched currency', () => {
+    expect(
+      getRecallPriceDiscount(
+        {
+          ...claimView,
+          discount: {
+            ...claimView.discount,
+            type: 'fixed',
+            amount_off: 200,
+            currency: 'EUR',
+          },
+        },
+        1,
+        'subscription',
+        10,
+        'USD',
+        1_700_000_000
+      )
+    ).toBeNull()
+  })
+
+  test('rejects fixed discounts below the minimum amount restriction', () => {
+    expect(
+      getRecallPriceDiscount(
+        {
+          ...claimView,
+          discount: {
+            ...claimView.discount,
+            type: 'fixed',
+            amount_off: 200,
+            currency: 'USD',
+            minimum_amount: 1500,
+            minimum_amount_currency: 'USD',
+          },
+        },
+        1,
+        'subscription',
+        10,
+        'USD',
+        1_700_000_000
+      )
+    ).toBeNull()
+  })
+
+  test('floors a fixed discount at zero when amount off exceeds price', () => {
+    expect(
+      getRecallPriceDiscount(
+        {
+          ...claimView,
+          discount: {
+            ...claimView.discount,
+            type: 'fixed',
+            amount_off: 1200,
+            currency: 'USD',
+          },
+        },
+        1,
+        'subscription',
+        10,
+        'USD',
+        1_700_000_000
+      )
+    ).toMatchObject({
+      originalAmount: 10,
+      discountAmount: 10,
+      discountedAmount: 0,
+      currency: 'USD',
+    })
   })
 })

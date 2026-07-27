@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/mail"
 	"strings"
 	"time"
@@ -164,6 +165,11 @@ func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, clai
 	if err := common.Unmarshal([]byte(record.Campaign.ProductScope), &products); err != nil {
 		return nil, nil, fmt.Errorf("%w: products", ErrRecallClaimInvalidConfig)
 	}
+	subscriptionPlanIDs, err := resolveRecallSubscriptionPlanIDs(ctx, products.SubscriptionPriceIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	products.SubscriptionPlanIDs = subscriptionPlanIDs
 	if bindNeeded {
 		bound, _, err := model.BindRecallRecipientUserWithContext(ctx, record.Recipient.Id, userID, bindRecipientEmail)
 		if err != nil {
@@ -199,6 +205,36 @@ func (s *RecallClaimService) validateClaim(ctx context.Context, userID int, clai
 	return record, view, nil
 }
 
+func resolveRecallSubscriptionPlanIDs(ctx context.Context, rawPriceIDs []string) ([]int, error) {
+	priceIDs := normalizeRecallStripeIDs(rawPriceIDs)
+	if len(priceIDs) == 0 {
+		return []int{}, nil
+	}
+	plans, err := model.ListRecallSubscriptionPlansByStripePriceIDsWithContext(ctx, priceIDs)
+	if err != nil {
+		return nil, err
+	}
+	planIDsByPriceID := make(map[string][]int, len(plans))
+	for _, plan := range plans {
+		priceID := strings.TrimSpace(plan.StripePriceId)
+		if priceID != "" && plan.Id > 0 && plan.Enabled {
+			planIDsByPriceID[priceID] = append(planIDsByPriceID[priceID], plan.Id)
+		}
+	}
+	planIDs := make([]int, 0, len(plans))
+	seen := make(map[int]struct{}, len(priceIDs))
+	for _, priceID := range priceIDs {
+		for _, planID := range planIDsByPriceID[priceID] {
+			if _, exists := seen[planID]; exists {
+				continue
+			}
+			seen[planID] = struct{}{}
+			planIDs = append(planIDs, planID)
+		}
+	}
+	return planIDs, nil
+}
+
 func (s *RecallClaimService) BuildCheckoutDiscount(ctx context.Context, userID int, claim string, purchaseKind string, priceID string) (*RecallCheckoutDiscount, error) {
 	if strings.TrimSpace(claim) == "" {
 		return nil, nil
@@ -223,6 +259,42 @@ func (s *RecallClaimService) BuildCheckoutDiscount(ctx context.Context, userID i
 		PromotionCodeID: strings.TrimSpace(*record.Recipient.StripePromotionCodeId),
 		CampaignID:      view.CampaignID,
 		RecipientID:     view.RecipientID,
+	}, nil
+}
+
+func (s *RecallClaimService) BuildFirstMonthPurchaseDiscount(ctx context.Context, userID int, claim string, purchaseKind string, priceID string, currency string, unitAmountMinor int64) (*RecallPurchaseDiscount, error) {
+	if strings.TrimSpace(claim) == "" {
+		return nil, nil
+	}
+	record, view, err := s.validateClaim(ctx, userID, claim)
+	if err != nil {
+		return nil, err
+	}
+	var allowedPrices []string
+	switch purchaseKind {
+	case RecallPurchaseKindTopUp:
+		allowedPrices = view.Products.TopUpPriceIDs
+	case RecallPurchaseKindSubscription:
+		allowedPrices = view.Products.SubscriptionPriceIDs
+	default:
+		return nil, ErrRecallClaimPurchaseKind
+	}
+	if !containsRecallPriceID(allowedPrices, priceID) {
+		return nil, ErrRecallClaimWrongPrice
+	}
+	discountMinor := calculateRecallFirstMonthDiscountAmountMinor(view.Discount, currency, unitAmountMinor)
+	if discountMinor <= 0 {
+		return &RecallPurchaseDiscount{}, nil
+	}
+	promotionCodeID := strings.TrimSpace(*record.Recipient.StripePromotionCodeId)
+	if promotionCodeID == "" || view.CampaignID <= 0 || view.RecipientID <= 0 {
+		return nil, ErrRecallClaimPromotionInvalid
+	}
+	return &RecallPurchaseDiscount{
+		PromotionCodeID:     promotionCodeID,
+		CampaignID:          view.CampaignID,
+		RecipientID:         view.RecipientID,
+		DiscountAmountMinor: discountMinor,
 	}, nil
 }
 
@@ -396,4 +468,55 @@ func containsRecallPriceID(priceIDs []string, selected string) bool {
 		}
 	}
 	return false
+}
+
+func calculateRecallFirstMonthDiscountAmountMinor(discount RecallDiscountConfig, currency string, unitAmountMinor int64) int64 {
+	if unitAmountMinor <= 0 {
+		return 0
+	}
+	currency = strings.TrimSpace(currency)
+	if discount.MinimumAmount > 0 {
+		if !strings.EqualFold(strings.TrimSpace(discount.MinimumAmountCurrency), currency) || unitAmountMinor < discount.MinimumAmount {
+			return 0
+		}
+	}
+	var amount int64
+	switch strings.ToLower(strings.TrimSpace(discount.Type)) {
+	case "percent":
+		if discount.PercentOff <= 0 {
+			return 0
+		}
+		if discount.PercentOff >= 100 {
+			return unitAmountMinor
+		}
+		raw := math.Round(float64(unitAmountMinor) * discount.PercentOff / 100)
+		if raw >= float64(unitAmountMinor) {
+			return unitAmountMinor
+		}
+		amount = int64(raw)
+	case "fixed":
+		found := false
+		for optionCurrency, optionAmount := range discount.CurrencyOptions {
+			if strings.EqualFold(strings.TrimSpace(optionCurrency), currency) {
+				amount = optionAmount
+				found = true
+				break
+			}
+		}
+		if !found {
+			if !strings.EqualFold(strings.TrimSpace(discount.Currency), currency) {
+				return 0
+			}
+			amount = discount.AmountOff
+		}
+	default:
+		return 0
+	}
+	if amount < 0 {
+		return 0
+	}
+	if amount > unitAmountMinor {
+		return unitAmountMinor
+	}
+	return amount
 }
