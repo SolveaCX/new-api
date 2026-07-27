@@ -364,7 +364,7 @@ func migrateDB() error {
 			return err
 		}
 	}
-	return MigrateLegacyAffQuotaToQuota()
+	return MigrateLegacyInvitationValueToSubscriptionDiscount()
 }
 
 func migrateDBFast() error {
@@ -471,7 +471,7 @@ func migrateDBFast() error {
 			return err
 		}
 	}
-	if err := MigrateLegacyAffQuotaToQuota(); err != nil {
+	if err := MigrateLegacyInvitationValueToSubscriptionDiscount(); err != nil {
 		return err
 	}
 	common.SysLog("database migrated")
