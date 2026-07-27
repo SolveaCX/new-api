@@ -5665,6 +5665,7 @@
     "Subscription renewal resumed": "Đã tiếp tục gia hạn gói đăng ký",
     "Subscription Stripe Price IDs": "ID Stripe Price cho gói đăng ký",
     "Subscription updated, but failed to refresh status": "Gói đăng ký đã được cập nhật nhưng không thể làm mới trạng thái",
+    "Subscription updated; renewal status is still syncing": "Gói đăng ký đã được cập nhật; trạng thái gia hạn vẫn đang được đồng bộ",
     "Subtract": "Trừ",
     "Succeeded": "Thành công",
     "Success": "Thành công",

@@ -5665,6 +5665,7 @@
     "Subscription renewal resumed": "Renovación de la suscripción reanudada",
     "Subscription Stripe Price IDs": "ID de precios Stripe para suscripciones",
     "Subscription updated, but failed to refresh status": "La suscripción se actualizó, pero no se pudo actualizar el estado",
+    "Subscription updated; renewal status is still syncing": "La suscripción se actualizó; el estado de renovación aún se está sincronizando",
     "Subtract": "Subtract",
     "Succeeded": "Exitosos",
     "Success": "Success",

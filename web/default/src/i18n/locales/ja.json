@@ -5665,6 +5665,7 @@
     "Subscription renewal resumed": "サブスクリプションの更新を再開しました",
     "Subscription Stripe Price IDs": "サブスクリプション用 Stripe Price ID",
     "Subscription updated, but failed to refresh status": "サブスクリプションは更新されましたが、ステータスの更新に失敗しました",
+    "Subscription updated; renewal status is still syncing": "サブスクリプションは更新されました。更新ステータスはまだ同期中です",
     "Subtract": "減算",
     "Succeeded": "成功",
     "Success": "成功",
