@@ -38,6 +38,9 @@ const (
 	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey               ContextKey = "channel_key"
 	ContextKeyChannelConcurrencyLease  ContextKey = "channel_concurrency_lease"
+	ContextKeySupplierCostSnapshot     ContextKey = "supplier_cost_snapshot"
+	ContextKeySupplierStatsScope       ContextKey = "supplier_statistics_scope_snapshot"
+	ContextKeySupplierUsageDraft       ContextKey = "supplier_usage_draft"
 
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"

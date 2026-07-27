@@ -62,6 +62,10 @@ func validUserInfo(username string, role int) bool {
 }
 
 func authHelper(c *gin.Context, minRole int) {
+	authHelperWithInsufficientRoleStatus(c, minRole, http.StatusOK)
+}
+
+func authHelperWithInsufficientRoleStatus(c *gin.Context, minRole int, insufficientRoleStatus int) {
 	session := sessions.Default(c)
 	username := session.Get("username")
 	role := session.Get("role")
@@ -157,7 +161,7 @@ func authHelper(c *gin.Context, minRole int) {
 		return
 	}
 	if role.(int) < minRole {
-		c.JSON(http.StatusOK, gin.H{
+		c.JSON(insufficientRoleStatus, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
 		})

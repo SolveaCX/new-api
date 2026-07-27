@@ -24,10 +24,38 @@ import { ROLE } from '@/lib/roles'
 import { resolveSidebarView } from '@/components/layout/lib/sidebar-view-registry'
 import type { NavGroup, ResolvedSidebarView } from '@/components/layout/types'
 import { useSidebarConfig } from './use-sidebar-config'
-import { useSidebarData } from './use-sidebar-data'
+import { getSidebarItemMinimumRole, useSidebarData } from './use-sidebar-data'
 
 /** Sentinel key used for the root navigation in animation `key=` props */
 const ROOT_VIEW_KEY = '__root'
+
+function isSidebarItemVisibleForRole(
+  item: NavGroup['items'][number],
+  userRole?: number
+): boolean {
+  const minimumRole = getSidebarItemMinimumRole(item)
+  return (
+    minimumRole === undefined ||
+    (userRole !== undefined && userRole >= minimumRole)
+  )
+}
+
+export function filterRootNavGroupsByRole(
+  navGroups: NavGroup[],
+  userRole?: number
+): NavGroup[] {
+  const isAdmin = userRole !== undefined && userRole >= ROLE.ADMIN
+  return navGroups
+    .filter((group) => (group.id === 'admin' ? isAdmin : true))
+    .map((group) => {
+      return {
+        ...group,
+        items: group.items.filter((item) =>
+          isSidebarItemVisibleForRole(item, userRole)
+        ),
+      }
+    })
+}
 
 /**
  * Resolve the active sidebar view for the current location.
@@ -50,10 +78,7 @@ export function useSidebarView(): ResolvedSidebarView {
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
-    const isAdmin = userRole !== undefined && userRole >= ROLE.ADMIN
-    return configFilteredRoot.filter((group) =>
-      group.id === 'admin' ? isAdmin : true
-    )
+    return filterRootNavGroupsByRole(configFilteredRoot, userRole)
   }, [configFilteredRoot, userRole])
 
   const view = resolveSidebarView(pathname)

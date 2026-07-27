@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/alicebob/miniredis/v2"
@@ -228,6 +229,74 @@ func TestGetChannelSkipsCoolingDownChannel(t *testing.T) {
 	require.Equal(t, fallbackChannel.Id, selected.Id)
 }
 
+func TestGetChannelRetryFreezesSupplierPricingWhenUnboundAttemptMovesToBoundChannel(t *testing.T) {
+	restoreRuntime := useControllerMemoryChannelConcurrencyForTest(t)
+	defer restoreRuntime()
+	restoreDB := useControllerChannelSelectionDBForTest(t)
+	defer restoreDB()
+
+	highPriority := int64(10)
+	lowPriority := int64(0)
+	weight := uint(1)
+	unboundChannel := &model.Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "sk-unbound", Status: common.ChannelStatusEnabled,
+		Name: "unbound", Group: "default", Models: "gpt-retry-supplier", Priority: &highPriority, Weight: &weight,
+	}
+	boundChannel := &model.Channel{
+		Type: constant.ChannelTypeOpenAI, Key: "sk-bound", Status: common.ChannelStatusEnabled,
+		Name: "bound", Group: "default", Models: "gpt-retry-supplier", Priority: &lowPriority, Weight: &weight,
+	}
+	require.NoError(t, model.DB.Create(unboundChannel).Error)
+	require.NoError(t, unboundChannel.AddAbilities(nil))
+	require.NoError(t, model.DB.Create(boundChannel).Error)
+	require.NoError(t, boundChannel.AddAbilities(nil))
+	model.InitChannelCache()
+	boundChannel.SupplierCostSnapshot = types.SupplierCostSnapshot{
+		SupplierId: 11, ContractId: 22, RateVersionId: 33, ProcurementMultiplierPpm: 650_000,
+	}
+	boundChannel.SupplierCostSnapshotLoaded = true
+	model.CacheUpdateChannel(boundChannel)
+
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	common.SetContextKey(c, constant.ContextKeyUserId, 501)
+	common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+
+	info := &relaycommon.RelayInfo{
+		TokenGroup:      "default",
+		OriginModelName: "gpt-retry-supplier",
+		UsingGroup:      "default",
+		UserGroup:       "default",
+		ChannelMeta:     &relaycommon.ChannelMeta{},
+		PriceData: types.PriceData{
+			ModelRatio:      2,
+			CompletionRatio: 3,
+			GroupRatioInfo:  helper.HandleGroupRatio(c, &relaycommon.RelayInfo{OriginModelName: "gpt-retry-supplier", UsingGroup: "default", UserGroup: "default"}),
+		},
+	}
+	initialPriceData := info.PriceData
+	helper.FreezeSupplierOfficialPricingSnapshot(info, info.PriceData)
+	require.False(t, info.SupplierOfficialPricingSnapshot.Loaded, "the initial unbound attempt must not create supplier accounting")
+
+	retry := 1
+	selected, channelErr := getChannel(c, info, &service.RetryParam{
+		Ctx: c, TokenGroup: "default", ModelName: "gpt-retry-supplier", Retry: &retry,
+	})
+	t.Cleanup(func() { require.NoError(t, service.ReleaseChannelConcurrencyForContext(c)) })
+
+	require.Nil(t, channelErr)
+	require.NotNil(t, selected)
+	require.Equal(t, boundChannel.Id, selected.Id)
+	require.True(t, info.SupplierCostSnapshot.IsBound())
+	require.Equal(t, 11, info.SupplierCostSnapshot.SupplierId)
+	require.Equal(t, 22, info.SupplierCostSnapshot.ContractId)
+	require.Equal(t, 33, info.SupplierCostSnapshot.RateVersionId)
+	require.True(t, info.SupplierOfficialPricingSnapshot.Loaded)
+	require.Equal(t, initialPriceData, info.PriceData, "retry supplier accounting must not change customer pricing")
+	require.Equal(t, initialPriceData, info.SupplierOfficialPricingSnapshot.PriceData, "supplier pricing must use the request-time customer pricing snapshot")
+}
+
 func useControllerMemoryChannelConcurrencyForTest(t *testing.T) func() {
 	t.Helper()
 	prevRDB := common.RDB
@@ -250,7 +319,15 @@ func useControllerChannelSelectionDBForTest(t *testing.T) func() {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.Channel{},
+		&model.Ability{},
+		&model.UpstreamSupplier{},
+		&model.SupplierContract{},
+		&model.SupplierContractRateVersion{},
+		&model.SupplierChannelBindingVersion{},
+		&model.SupplierStatisticsExclusionRule{},
+	))
 	model.DB = db
 	common.MemoryCacheEnabled = true
 	common.UsingSQLite = true

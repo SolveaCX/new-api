@@ -64,6 +64,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     setting: true,
     subscription: true,
     recall_campaigns: true,
+    supply_chain: true,
   },
 }
 
@@ -117,6 +118,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/models/metadata': { section: 'admin', module: 'models' },
   '/models/deployments': { section: 'admin', module: 'models' },
   '/users': { section: 'admin', module: 'user' },
+  '/supply-chain': { section: 'admin', module: 'supply_chain' },
   '/redemption-codes': { section: 'admin', module: 'redemption' },
   '/subscriptions': { section: 'admin', module: 'subscription' },
   '/recall-campaigns': { section: 'admin', module: 'recall_campaigns' },
@@ -315,4 +317,18 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
   )
 
   return filteredNavGroups
+}
+
+export function filterSidebarNavGroupsForConfig(
+  navGroups: NavGroup[],
+  adminConfigValue: string | null | undefined,
+  userConfigValue: string | null | undefined,
+  userCanConfigure: boolean
+): NavGroup[] {
+  return filterSidebarGroups(
+    navGroups,
+    adminConfigValue,
+    userConfigValue,
+    userCanConfigure
+  )
 }
