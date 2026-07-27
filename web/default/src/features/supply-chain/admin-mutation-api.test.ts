@@ -16,9 +16,11 @@ import {
   createInventoryAdjustment,
   createRateVersion,
   createSupplier,
+  getAccountingPolicyCapability,
   inactivateContract,
   inactivateSupplier,
   unbindChannel,
+  updateAccountingPolicyCapability,
   updateContract,
   updateSupplier,
 } from './api'
@@ -30,6 +32,39 @@ afterEach(() => {
 })
 
 describe('supply-chain versioned mutation API', () => {
+  test('reads and updates the explicit accounting policy capability', async () => {
+    const requests: InternalAxiosRequestConfig[] = []
+    api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
+      requests.push(config)
+      return {
+        data: {
+          success: true,
+          data: {
+            protocol_version: 1,
+            activated: config.method === 'put',
+            active: false,
+            effective_at: 1_785_000_000,
+          },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: new AxiosHeaders(),
+        config,
+      }
+    }
+
+    const current = await getAccountingPolicyCapability()
+    const updated = await updateAccountingPolicyCapability({ activated: true })
+
+    expect(current.data.activated).toBe(false)
+    expect(updated.data.activated).toBe(true)
+    expect(requests.map((request) => request.method)).toEqual(['get', 'put'])
+    expect(requests[0]?.url).toEndWith('/channel-binding-policy-v1')
+    expect(requests[1]?.url).toEndWith('/channel-binding-policy-v1')
+    expect(JSON.parse(String(requests[1]?.data))).toEqual({ activated: true })
+    expect(requests[1]?.skipErrorHandler).toBe(true)
+  })
+
   test('does not claim idempotency for unsupported admin mutations', async () => {
     const requests: InternalAxiosRequestConfig[] = []
     api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {

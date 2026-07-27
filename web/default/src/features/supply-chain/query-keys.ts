@@ -28,6 +28,11 @@ import type {
 
 export const supplyChainQueryKeys = {
   all: ['supply-chain'] as const,
+  accountingPolicy: {
+    all: () => [...supplyChainQueryKeys.all, 'accounting-policy'] as const,
+    capability: () =>
+      [...supplyChainQueryKeys.all, 'accounting-policy', 'capability'] as const,
+  },
   suppliers: {
     all: () => [...supplyChainQueryKeys.all, 'suppliers'] as const,
     list: (params: SupplierListParams) =>

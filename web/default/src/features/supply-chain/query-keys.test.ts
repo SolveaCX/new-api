@@ -37,6 +37,11 @@ describe('supplyChainQueryKeys', () => {
       'supply-chain',
       'historical-imports',
     ])
+    expect(supplyChainQueryKeys.accountingPolicy.capability()).toEqual([
+      'supply-chain',
+      'accounting-policy',
+      'capability',
+    ])
   })
 
   it('separates report resources and includes complete query input', () => {

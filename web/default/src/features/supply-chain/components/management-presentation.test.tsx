@@ -52,9 +52,7 @@ const search: SupplyChainManagementProps['search'] = {
 function renderWithQuery(queryClient: QueryClient, element: ReactNode): string {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
-      <QueryClientProvider client={queryClient}>
-        {element}
-      </QueryClientProvider>
+      <QueryClientProvider client={queryClient}>{element}</QueryClientProvider>
     </I18nextProvider>
   )
 }
@@ -207,6 +205,12 @@ describe('supply-chain management presentation', () => {
         },
       ],
     })
+    client.setQueryData(supplyChainQueryKeys.accountingPolicy.capability(), {
+      protocol_version: 1,
+      activated: false,
+      active: false,
+      effective_at: 0,
+    })
 
     const html = renderWithQuery(
       client,
@@ -220,5 +224,44 @@ describe('supply-chain management presentation', () => {
     expect(html).toContain('FRAME-2026')
     expect(html).toContain('65%')
     expect(html).toContain('Rebind')
+    expect(html).toContain('Internal request skip policy')
+    expect(html).toContain('Inactive')
+    expect(html).toContain('manual deployment confirmation')
+  })
+
+  test('shows the accounting policy propagation state and effective time', () => {
+    const client = new QueryClient()
+    const bindingSearch = { ...search, tab: 'channel-bindings' as const }
+    const params = {
+      p: 1,
+      page_size: 20,
+      contract_id: undefined,
+      keyword: undefined,
+      bound_state: undefined,
+    }
+    client.setQueryData(supplyChainQueryKeys.channelBindings.list(params), {
+      page: 1,
+      page_size: 20,
+      total: 0,
+      items: [],
+    })
+    client.setQueryData(supplyChainQueryKeys.accountingPolicy.capability(), {
+      protocol_version: 1,
+      activated: true,
+      active: false,
+      effective_at: 1_785_000_000,
+    })
+
+    const html = renderWithQuery(
+      client,
+      <ChannelBindingManagement
+        search={bindingSearch}
+        onSearchChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('Activation pending')
+    expect(html).toContain('Effective at')
+    expect(html).toContain('Routers keep the previous behavior until then.')
   })
 })
