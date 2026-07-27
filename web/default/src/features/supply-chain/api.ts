@@ -22,8 +22,9 @@ import type {
   SupplierChannelBinding,
   SupplierChannelBindingListParams,
   SupplierChannelBindingRequest,
-  SupplierChannelUnbindResult,
   SupplierChannelUnbindVariables,
+  SupplierAccountingPolicyActivationRequest,
+  SupplierAccountingPolicyCapability,
   SupplierContract,
   SupplierContractChildListParams,
   SupplierContractCreateRequest,
@@ -77,6 +78,17 @@ function normalizeAdminPageResponse<T>(
     ...response,
     data: { ...response.data, items: [] },
   }
+}
+
+function assertChannelBindingPolicySupport(
+  binding: SupplierChannelBinding
+): SupplierChannelBinding {
+  if (typeof binding.skip_internal_accounting !== 'boolean') {
+    throw new TypeError(
+      'The connected console does not support supplier accounting policy v1'
+    )
+  }
+  return binding
 }
 
 function appendCsv(
@@ -274,7 +286,33 @@ export async function listChannelBindings(
   const response = await api.get(`${SUPPLY_CHAIN_API}/channel-bindings`, {
     params,
   })
-  return normalizeAdminPageResponse(response.data)
+  const normalized = normalizeAdminPageResponse<SupplierChannelBinding>(
+    response.data
+  )
+  for (const binding of normalized.data.items) {
+    assertChannelBindingPolicySupport(binding)
+  }
+  return normalized
+}
+
+export async function getAccountingPolicyCapability(): Promise<
+  SupplyChainApiResponse<SupplierAccountingPolicyCapability>
+> {
+  const response = await api.get(
+    `${SUPPLY_CHAIN_API}/channel-binding-policy-v1`
+  )
+  return response.data
+}
+
+export async function updateAccountingPolicyCapability(
+  data: SupplierAccountingPolicyActivationRequest
+): Promise<SupplyChainApiResponse<SupplierAccountingPolicyCapability>> {
+  const response = await api.put(
+    `${SUPPLY_CHAIN_API}/channel-binding-policy-v1`,
+    data,
+    { skipErrorHandler: true }
+  )
+  return response.data
 }
 
 export async function bindChannel(
@@ -282,27 +320,30 @@ export async function bindChannel(
   data: SupplierChannelBindingRequest
 ): Promise<SupplyChainApiResponse<SupplierChannelBinding>> {
   const response = await api.put(
-    `${SUPPLY_CHAIN_API}/channel-bindings/${channelId}`,
+    `${SUPPLY_CHAIN_API}/channel-bindings/${channelId}/policy-v1`,
     data,
     { skipErrorHandler: true }
   )
+  assertChannelBindingPolicySupport(response.data.data)
   return response.data
 }
 
 export async function unbindChannel(
   channelId: number,
   variables: SupplierChannelUnbindVariables
-): Promise<SupplyChainApiResponse<SupplierChannelUnbindResult>> {
+): Promise<SupplyChainApiResponse<SupplierChannelBinding>> {
   const response = await api.delete(
-    `${SUPPLY_CHAIN_API}/channel-bindings/${channelId}`,
+    `${SUPPLY_CHAIN_API}/channel-bindings/${channelId}/policy-v1`,
     {
       params: {
         expected_contract_id: variables.expectedContractId,
         expected_skip_internal_accounting:
           variables.expectedSkipInternalAccounting,
       },
+      skipErrorHandler: true,
     }
   )
+  assertChannelBindingPolicySupport(response.data.data)
   return response.data
 }
 

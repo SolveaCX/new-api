@@ -1,8 +1,10 @@
 package model
 
 import (
+	"database/sql"
 	"fmt"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,8 +22,17 @@ type supplierRuntimeIndex struct {
 	excludedUserRuleId map[int]int
 }
 
-var supplierRuntimeIndexPointer atomic.Pointer[supplierRuntimeIndex]
-var supplierCacheHealthPointer atomic.Pointer[SupplierCacheHealth]
+type supplierRuntimeGeneration struct {
+	index  *supplierRuntimeIndex
+	health *SupplierCacheHealth
+}
+
+type SupplierAccountingRuntimeSnapshot struct {
+	generation *supplierRuntimeGeneration
+}
+
+var supplierRuntimeGenerationPointer atomic.Pointer[supplierRuntimeGeneration]
+var supplierCacheRefreshMutex sync.Mutex
 
 type SupplierCacheIssue struct {
 	ChannelId  int    `json:"channel_id"`
@@ -46,34 +57,100 @@ func emptySupplierRuntimeIndex() *supplierRuntimeIndex {
 }
 
 func currentSupplierRuntimeIndex() *supplierRuntimeIndex {
-	index := supplierRuntimeIndexPointer.Load()
-	if index == nil {
+	generation := supplierRuntimeGenerationPointer.Load()
+	if generation == nil || generation.index == nil {
 		return emptySupplierRuntimeIndex()
 	}
-	return index
+	return generation.index
+}
+
+func CaptureSupplierAccountingRuntimeSnapshot() *SupplierAccountingRuntimeSnapshot {
+	return &SupplierAccountingRuntimeSnapshot{generation: supplierRuntimeGenerationPointer.Load()}
+}
+
+func (snapshot *SupplierAccountingRuntimeSnapshot) CacheUnavailable() bool {
+	return snapshot == nil || snapshot.generation == nil || snapshot.generation.health == nil || snapshot.generation.health.Blocking
+}
+
+func (snapshot *SupplierAccountingRuntimeSnapshot) CostForChannel(channelId int) (types.SupplierCostSnapshot, bool) {
+	if snapshot == nil || snapshot.generation == nil || snapshot.generation.index == nil {
+		return types.SupplierCostSnapshot{}, false
+	}
+	cost, ok := snapshot.generation.index.channelCosts[channelId]
+	return cost, ok
+}
+
+func (snapshot *SupplierAccountingRuntimeSnapshot) StatisticsScopeForUser(userId int) types.SupplierStatisticsScopeSnapshot {
+	if snapshot != nil && snapshot.generation != nil && snapshot.generation.index != nil {
+		if ruleId, ok := snapshot.generation.index.excludedUserRuleId[userId]; ok {
+			return types.SupplierStatisticsScopeSnapshot{
+				Scope:           types.SupplierStatisticsScopeInternal,
+				ExclusionRuleId: ruleId,
+			}
+		}
+	}
+	return types.BusinessSupplierStatisticsScopeSnapshot()
 }
 
 // RefreshSupplierCache builds a complete immutable index and publishes it with
 // one atomic pointer swap. On any query or consistency error the previous index
 // remains authoritative.
 func RefreshSupplierCache() error {
-	index, health, err := loadSupplierRuntimeIndex(DB)
+	return refreshSupplierCache(DB, loadSupplierRuntimeIndexSnapshot)
+}
+
+type supplierRuntimeIndexLoader func(*gorm.DB) (*supplierRuntimeIndex, *SupplierCacheHealth, error)
+
+func refreshSupplierCache(db *gorm.DB, loader supplierRuntimeIndexLoader) error {
+	supplierCacheRefreshMutex.Lock()
+	defer supplierCacheRefreshMutex.Unlock()
+
+	index, health, err := loader(db)
 	if err != nil {
 		previous := GetSupplierCacheHealth()
 		previous.Blocking = true
 		previous.RefreshError = err.Error()
-		supplierCacheHealthPointer.Store(&previous)
+		supplierRuntimeGenerationPointer.Store(&supplierRuntimeGeneration{
+			index:  currentSupplierRuntimeIndex(),
+			health: &previous,
+		})
 		return err
 	}
 	if health.Blocking {
 		err = fmt.Errorf("supplier cache integrity check failed: %d illegal binding(s)", health.IllegalBindingCount)
 		health.RefreshError = err.Error()
-		supplierCacheHealthPointer.Store(health)
+		supplierRuntimeGenerationPointer.Store(&supplierRuntimeGeneration{
+			index:  currentSupplierRuntimeIndex(),
+			health: health,
+		})
 		return err
 	}
-	supplierRuntimeIndexPointer.Store(index)
-	supplierCacheHealthPointer.Store(health)
+	supplierRuntimeGenerationPointer.Store(&supplierRuntimeGeneration{index: index, health: health})
 	return nil
+}
+
+func loadSupplierRuntimeIndexSnapshot(db *gorm.DB) (*supplierRuntimeIndex, *SupplierCacheHealth, error) {
+	if db == nil {
+		return nil, nil, fmt.Errorf("load supplier cache snapshot: %w", ErrDatabase)
+	}
+	var index *supplierRuntimeIndex
+	var health *SupplierCacheHealth
+	load := func(tx *gorm.DB) error {
+		var err error
+		index, health, err = loadSupplierRuntimeIndex(tx)
+		return err
+	}
+	var err error
+	switch db.Dialector.Name() {
+	case "mysql", "postgres":
+		err = db.Transaction(load, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	default:
+		err = db.Transaction(load)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return index, health, nil
 }
 
 func SyncSupplierCache(frequency int) {
@@ -91,20 +168,15 @@ func GetSupplierCostSnapshot(channelId int) (types.SupplierCostSnapshot, bool) {
 }
 
 func GetSupplierStatisticsScopeSnapshot(userId int) types.SupplierStatisticsScopeSnapshot {
-	if ruleId, ok := currentSupplierRuntimeIndex().excludedUserRuleId[userId]; ok {
-		return types.SupplierStatisticsScopeSnapshot{
-			Scope:           types.SupplierStatisticsScopeInternal,
-			ExclusionRuleId: ruleId,
-		}
-	}
-	return types.BusinessSupplierStatisticsScopeSnapshot()
+	return CaptureSupplierAccountingRuntimeSnapshot().StatisticsScopeForUser(userId)
 }
 
 func GetSupplierCacheHealth() SupplierCacheHealth {
-	health := supplierCacheHealthPointer.Load()
-	if health == nil {
+	generation := supplierRuntimeGenerationPointer.Load()
+	if generation == nil || generation.health == nil {
 		return SupplierCacheHealth{Blocking: true, RefreshError: "supplier cache has not completed an initial load"}
 	}
+	health := generation.health
 	copyHealth := *health
 	copyHealth.Issues = append([]SupplierCacheIssue(nil), health.Issues...)
 	return copyHealth
@@ -113,8 +185,8 @@ func GetSupplierCacheHealth() SupplierCacheHealth {
 // IsSupplierCacheBlocking is the request-path health check. It is an O(1)
 // atomic read and fails closed until the first successful refresh.
 func IsSupplierCacheBlocking() bool {
-	health := supplierCacheHealthPointer.Load()
-	return health == nil || health.Blocking
+	generation := supplierRuntimeGenerationPointer.Load()
+	return generation == nil || generation.health == nil || generation.health.Blocking
 }
 
 type supplierChannelBindingRow struct {

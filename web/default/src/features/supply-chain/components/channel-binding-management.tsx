@@ -83,8 +83,7 @@ function BindingDialog(props: { binding: SupplierChannelBinding }) {
     resolver: zodResolver(channelBindingFormSchema),
     defaultValues: {
       contract_id: props.binding.supplier_contract_id ?? 0,
-      skip_internal_accounting:
-        props.binding.skip_internal_accounting ?? false,
+      skip_internal_accounting: props.binding.skip_internal_accounting ?? false,
     },
   })
   const mutation = useSupplyChainAdminMutation<ChannelBindingFormValues>({
@@ -300,6 +299,8 @@ function UnbindAction(props: { binding: SupplierChannelBinding }) {
       supplyChainQueryKeys.contracts.all(),
       supplyChainQueryKeys.suppliers.all(),
     ],
+    onError: (error) =>
+      toast.error(bindingErrorMessage(error, t('Unable to unbind channel'))),
   })
 
   function finishUnbind(): void {
@@ -312,7 +313,7 @@ function UnbindAction(props: { binding: SupplierChannelBinding }) {
       await mutation.mutateAsync()
       finishUnbind()
     } catch {
-      toast.error(t('Unable to unbind channel'))
+      return
     }
   }
 

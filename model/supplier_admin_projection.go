@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 const SupplierAdminMaxPageSize = 100
+const supplierChannelPolicyCASMaxAttempts = 5
 
 type SupplierAdminListFilter struct {
 	Page    SupplierPage
@@ -425,20 +427,18 @@ func SetChannelSupplierContractPolicyCASForActor(
 		(desiredContractId == nil && desiredSkipInternalAccounting) {
 		return ErrSupplierInvalidContract
 	}
-	changed := false
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		var err error
-		changed, err = setChannelSupplierContractPolicyCASTx(
-			tx,
-			channelId,
-			expectedContractId,
-			expectedSkipInternalAccounting,
-			desiredContractId,
-			desiredSkipInternalAccounting,
-			createdBy,
-		)
-		return err
-	})
+	if desiredSkipInternalAccounting && !CanConfigureSupplierSkipInternalAccounting() {
+		return ErrSupplierAccountingPolicyInactive
+	}
+	changed, err := setChannelSupplierContractPolicyCASWithRetry(
+		DB,
+		channelId,
+		expectedContractId,
+		expectedSkipInternalAccounting,
+		desiredContractId,
+		desiredSkipInternalAccounting,
+		createdBy,
+	)
 	if err != nil {
 		return err
 	}
@@ -446,6 +446,56 @@ func SetChannelSupplierContractPolicyCASForActor(
 		refreshLocalChannelCacheAndPublishChanged()
 	}
 	return nil
+}
+
+func setChannelSupplierContractPolicyCASWithRetry(
+	db *gorm.DB,
+	channelId int,
+	expectedContractId int,
+	expectedSkipInternalAccounting bool,
+	desiredContractId *int,
+	desiredSkipInternalAccounting bool,
+	createdBy int,
+) (bool, error) {
+	changed := false
+	var err error
+	for attempt := 0; attempt < supplierChannelPolicyCASMaxAttempts; attempt++ {
+		changed = false
+		err = db.Transaction(func(tx *gorm.DB) error {
+			var transactionErr error
+			changed, transactionErr = setChannelSupplierContractPolicyCASTx(
+				tx,
+				channelId,
+				expectedContractId,
+				expectedSkipInternalAccounting,
+				desiredContractId,
+				desiredSkipInternalAccounting,
+				createdBy,
+			)
+			return transactionErr
+		})
+		if err == nil || !isSupplierChannelPolicyCASRetryable(err) || attempt+1 == supplierChannelPolicyCASMaxAttempts {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * 5 * time.Millisecond)
+	}
+	if err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
+func isSupplierChannelPolicyCASRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, fragment := range []string{"serialization failure", "could not serialize", "deadlock", "database is locked", "database table is locked", "lock wait timeout", "sqlite_busy"} {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 func setChannelSupplierContractPolicyCASTx(

@@ -1,12 +1,14 @@
 package service
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -15,6 +17,32 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func setSupplierAccountingPolicyActiveForTest(t *testing.T, active bool) {
+	t.Helper()
+	common.OptionMapRWMutex.Lock()
+	previous, existed := common.OptionMap[model.OptionKeySupplierSkipInternalAccountingActive]
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMap[model.OptionKeySupplierSkipInternalAccountingActive] = fmt.Sprintf(
+		`{"protocol_version":1,"previous_active":%t,"activated":%t,"effective_at":1}`,
+		active,
+		active,
+	)
+	common.OptionMapRWMutex.Unlock()
+	model.RefreshSupplierAccountingPolicyCapability()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		if existed {
+			common.OptionMap[model.OptionKeySupplierSkipInternalAccountingActive] = previous
+		} else {
+			delete(common.OptionMap, model.OptionKeySupplierSkipInternalAccountingActive)
+		}
+		common.OptionMapRWMutex.Unlock()
+		model.RefreshSupplierAccountingPolicyCapability()
+	})
+}
 
 func TestPrepareSupplierAccountingAttemptUsesSingleDatabaseStatement(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -61,12 +89,14 @@ func TestPrepareSupplierAccountingAttemptUsesSingleDatabaseStatement(t *testing.
 func TestPrepareSupplierAccountingAttemptUsesChannelPolicyForInternalTraffic(t *testing.T) {
 	tests := []struct {
 		name                   string
+		policyActive           bool
 		skipInternalAccounting bool
 		scope                  types.SupplierStatisticsScopeSnapshot
 		wantFacts              int64
 	}{
 		{
 			name:                   "internal traffic with skip policy",
+			policyActive:           true,
 			skipInternalAccounting: true,
 			scope: types.SupplierStatisticsScopeSnapshot{
 				Scope:           types.SupplierStatisticsScopeInternal,
@@ -76,12 +106,14 @@ func TestPrepareSupplierAccountingAttemptUsesChannelPolicyForInternalTraffic(t *
 		},
 		{
 			name:                   "business traffic with skip policy",
+			policyActive:           true,
 			skipInternalAccounting: true,
 			scope:                  types.BusinessSupplierStatisticsScopeSnapshot(),
 			wantFacts:              1,
 		},
 		{
 			name:                   "internal traffic with record policy",
+			policyActive:           true,
 			skipInternalAccounting: false,
 			scope: types.SupplierStatisticsScopeSnapshot{
 				Scope:           types.SupplierStatisticsScopeInternal,
@@ -89,10 +121,21 @@ func TestPrepareSupplierAccountingAttemptUsesChannelPolicyForInternalTraffic(t *
 			},
 			wantFacts: 1,
 		},
+		{
+			name:                   "inactive rollout gate records internal traffic",
+			policyActive:           false,
+			skipInternalAccounting: true,
+			scope: types.SupplierStatisticsScopeSnapshot{
+				Scope:           types.SupplierStatisticsScopeInternal,
+				ExclusionRuleId: 93,
+			},
+			wantFacts: 1,
+		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			setSupplierAccountingPolicyActiveForTest(t, testCase.policyActive)
 			db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "-")+"?mode=memory&cache=shared"), &gorm.Config{})
 			require.NoError(t, err)
 			require.NoError(t, model.EnsureSupplierAccountingFactSchema(db))

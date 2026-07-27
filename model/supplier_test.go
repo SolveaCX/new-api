@@ -16,14 +16,29 @@ func setupSupplierTestDB(t *testing.T, name string) *gorm.DB {
 	originalDB := DB
 	originalUsingSQLite := common.UsingSQLite
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
-	originalSupplierIndex := supplierRuntimeIndexPointer.Load()
-	originalSupplierHealth := supplierCacheHealthPointer.Load()
+	originalSupplierGeneration := supplierRuntimeGenerationPointer.Load()
+	originalPolicyState := supplierAccountingPolicyStatePointer.Load()
+	common.OptionMapRWMutex.Lock()
+	originalPolicyActivation, hadPolicyActivation := common.OptionMap[OptionKeySupplierSkipInternalAccountingActive]
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMap[OptionKeySupplierSkipInternalAccountingActive] = "false"
+	common.OptionMapRWMutex.Unlock()
+	RefreshSupplierAccountingPolicyCapability()
 	t.Cleanup(func() {
 		DB = originalDB
 		common.UsingSQLite = originalUsingSQLite
 		common.MemoryCacheEnabled = originalMemoryCacheEnabled
-		supplierRuntimeIndexPointer.Store(originalSupplierIndex)
-		supplierCacheHealthPointer.Store(originalSupplierHealth)
+		supplierRuntimeGenerationPointer.Store(originalSupplierGeneration)
+		supplierAccountingPolicyStatePointer.Store(originalPolicyState)
+		common.OptionMapRWMutex.Lock()
+		if hadPolicyActivation {
+			common.OptionMap[OptionKeySupplierSkipInternalAccountingActive] = originalPolicyActivation
+		} else {
+			delete(common.OptionMap, OptionKeySupplierSkipInternalAccountingActive)
+		}
+		common.OptionMapRWMutex.Unlock()
 	})
 
 	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -45,8 +60,7 @@ func setupSupplierTestDB(t *testing.T, name string) *gorm.DB {
 	DB = db
 	common.UsingSQLite = true
 	common.MemoryCacheEnabled = false
-	supplierRuntimeIndexPointer.Store(emptySupplierRuntimeIndex())
-	supplierCacheHealthPointer.Store(nil)
+	supplierRuntimeGenerationPointer.Store(nil)
 	return db
 }
 

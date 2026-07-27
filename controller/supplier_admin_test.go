@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	backendi18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
@@ -109,6 +110,46 @@ func TestSupplyChainBindingWritesRequireObservedState(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, unbind.Code)
 }
 
+func TestSupplyChainAccountingPolicyCapabilityIsExplicitlyActivated(t *testing.T) {
+	previousDB := model.DB
+	common.OptionMapRWMutex.Lock()
+	previousValue, existed := common.OptionMap[model.OptionKeySupplierSkipInternalAccountingActive]
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMap[model.OptionKeySupplierSkipInternalAccountingActive] = "false"
+	common.OptionMapRWMutex.Unlock()
+	model.RefreshSupplierAccountingPolicyCapability()
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	model.DB = db
+	t.Cleanup(func() {
+		model.DB = previousDB
+		common.OptionMapRWMutex.Lock()
+		if existed {
+			common.OptionMap[model.OptionKeySupplierSkipInternalAccountingActive] = previousValue
+		} else {
+			delete(common.OptionMap, model.OptionKeySupplierSkipInternalAccountingActive)
+		}
+		common.OptionMapRWMutex.Unlock()
+		model.RefreshSupplierAccountingPolicyCapability()
+	})
+
+	get := performSupplyChainControllerRequest(http.MethodGet, "/channel-binding-policy-v1", "", GetSupplyChainAccountingPolicyCapability)
+	require.Equal(t, http.StatusOK, get.Code)
+	require.Contains(t, get.Body.String(), `"protocol_version":1`)
+	require.Contains(t, get.Body.String(), `"activated":false`)
+
+	activate := performSupplyChainControllerRequest(http.MethodPut, "/channel-binding-policy-v1", `{"activated":true}`, UpdateSupplyChainAccountingPolicyCapability)
+	require.Equal(t, http.StatusOK, activate.Code)
+	require.Contains(t, activate.Body.String(), `"activated":true`)
+	require.Contains(t, activate.Body.String(), `"active":false`)
+
+	missing := performSupplyChainControllerRequest(http.MethodPut, "/channel-binding-policy-v1", `{}`, UpdateSupplyChainAccountingPolicyCapability)
+	require.Equal(t, http.StatusBadRequest, missing.Code)
+}
+
 func TestSupplyChainIntegerValidationRejectsInvalidRateAndZeroMoney(t *testing.T) {
 	rate := performSupplyChainControllerRequestWithHeaders(http.MethodPost, "/contracts/:id/rates", "/contracts/4/rates", `{"procurement_multiplier_ppm":1000001}`, map[string]string{"Idempotency-Key": "invalid-rate"}, CreateSupplyChainRateVersion)
 	require.Equal(t, http.StatusBadRequest, rate.Code)
@@ -136,6 +177,11 @@ func TestSupplyChainModelErrorUsesSemanticStatus(t *testing.T) {
 	supplyChainModelError(testGinContext(missingRate), model.ErrSupplierCurrentRateRequired)
 	require.Equal(t, http.StatusConflict, missingRate.Code)
 	require.Contains(t, missingRate.Body.String(), "A current procurement rate is required before this contract can be bound")
+
+	inactivePolicy := httptest.NewRecorder()
+	supplyChainModelError(testGinContext(inactivePolicy), model.ErrSupplierAccountingPolicyInactive)
+	require.Equal(t, http.StatusConflict, inactivePolicy.Code)
+	require.Contains(t, inactivePolicy.Body.String(), "after all router nodes are upgraded")
 
 	notFound := httptest.NewRecorder()
 	supplyChainModelError(testGinContext(notFound), gorm.ErrRecordNotFound)

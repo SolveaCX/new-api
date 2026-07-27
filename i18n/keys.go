@@ -278,17 +278,18 @@ const (
 
 // Supply chain management and reporting messages.
 const (
-	MsgSupplyChainInvalidInput           = "supply_chain.invalid_input"
-	MsgSupplyChainInvalidRate            = "supply_chain.invalid_rate"
-	MsgSupplyChainInvalidMoney           = "supply_chain.invalid_money"
-	MsgSupplyChainIdempotencyKeyRequired = "supply_chain.idempotency_key_required"
-	MsgSupplyChainNotFound               = "supply_chain.not_found"
-	MsgSupplyChainConflict               = "supply_chain.conflict"
-	MsgSupplyChainCurrentRateRequired    = "supply_chain.current_rate_required"
-	MsgSupplyChainInternalError          = "supply_chain.internal_error"
-	MsgSupplyChainInvalidReportRange     = "supply_chain.invalid_report_range"
-	MsgSupplyChainInvalidReportFilter    = "supply_chain.invalid_report_filter"
-	MsgSupplyChainReportUnavailable      = "supply_chain.report_unavailable"
+	MsgSupplyChainInvalidInput             = "supply_chain.invalid_input"
+	MsgSupplyChainInvalidRate              = "supply_chain.invalid_rate"
+	MsgSupplyChainInvalidMoney             = "supply_chain.invalid_money"
+	MsgSupplyChainIdempotencyKeyRequired   = "supply_chain.idempotency_key_required"
+	MsgSupplyChainNotFound                 = "supply_chain.not_found"
+	MsgSupplyChainConflict                 = "supply_chain.conflict"
+	MsgSupplyChainCurrentRateRequired      = "supply_chain.current_rate_required"
+	MsgSupplyChainAccountingPolicyInactive = "supply_chain.accounting_policy_inactive"
+	MsgSupplyChainInternalError            = "supply_chain.internal_error"
+	MsgSupplyChainInvalidReportRange       = "supply_chain.invalid_report_range"
+	MsgSupplyChainInvalidReportFilter      = "supply_chain.invalid_report_filter"
+	MsgSupplyChainReportUnavailable        = "supply_chain.report_unavailable"
 )
 
 // Deployment related messages (io.net)

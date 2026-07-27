@@ -353,6 +353,7 @@ supply_chain.idempotency_key_required: "必須提供有效的 Idempotency-Key �
 supply_chain.not_found: "找不到指定的供應鏈資源"
 supply_chain.conflict: "此操作與目前的供應鏈狀態衝突"
 supply_chain.current_rate_required: "綁定此合約前必須先建立目前的採購費率"
+supply_chain.accounting_policy_inactive: "必須確認所有 Router 節點均已升級後，才能啟用內部請求略過核算"
 supply_chain.internal_error: "供應鏈服務暫時無法使用"
 supply_chain.invalid_report_range: "請選擇一個北京時間自然月，或不超過 366 天的有效日期範圍"
 supply_chain.invalid_report_filter: "一個或多個供應鏈報表篩選條件無效"

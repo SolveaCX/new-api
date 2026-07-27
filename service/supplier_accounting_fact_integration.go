@@ -70,7 +70,7 @@ func PrepareSupplierAccountingAttempt(c *gin.Context, relayInfo *relaycommon.Rel
 		}
 		return ErrSupplierAccountingAttemptBindingInvalid
 	}
-	if snapshot.SkipInternalAccounting && relayInfo.SupplierStatisticsScopeSnapshot.Scope == types.SupplierStatisticsScopeInternal {
+	if snapshot.SkipInternalAccounting && model.IsSupplierSkipInternalAccountingActive() && relayInfo.SupplierStatisticsScopeSnapshot.Scope == types.SupplierStatisticsScopeInternal {
 		clearSupplierAccountingAttempt(c)
 		return nil
 	}
