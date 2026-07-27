@@ -322,6 +322,9 @@ func recallEnabledUserIdentity(ctx context.Context, userID int) (*model.User, bo
 	if !found || user.Status != common.UserStatusEnabled {
 		return nil, false, nil
 	}
+	if _, ok := normalizeRecallClaimEmail(user.Email); !ok {
+		return nil, false, nil
+	}
 	return user, true, nil
 }
 
