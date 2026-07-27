@@ -311,6 +311,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const specifiedEmails = form.watch('audience_config.specified_emails')
   const topUpPrices = form.watch('product_scope.topup_price_ids')
   const subscriptionPrices = form.watch('product_scope.subscription_price_ids')
+  const isDirty = form.formState.isDirty
   const immutable = Boolean(props.status && props.status !== 'draft')
   const automaticFixed =
     couponSource === 'automatic' && discountType === 'fixed'
@@ -399,8 +400,12 @@ export function CampaignEditor(props: CampaignEditorProps) {
     notifySaved: boolean
   ): Promise<{ id: number; configRevision: number } | null> => {
     const normalizedDraft = prepareRecallCampaignSubmitDraft(draft)
-    const response = props.campaignId
-      ? await mutations.update.mutateAsync(normalizedDraft)
+    const campaignID = persistedCampaignID || props.campaignId
+    const response = campaignID
+      ? await mutations.update.mutateAsync({
+          id: campaignID,
+          draft: normalizedDraft,
+        })
       : await mutations.create.mutateAsync(normalizedDraft)
     if (!response.success || !response.data) return null
     const result = {
@@ -412,7 +417,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
     setPersistedConfigRevision(result.configRevision)
     if (notifySaved) {
       toast.success(
-        props.campaignId ? t('Campaign updated') : t('Campaign created')
+        campaignID ? t('Campaign updated') : t('Campaign created')
       )
       props.onSaved?.(result.id)
     }
@@ -426,7 +431,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
   const generateTranslations = async () => {
     let campaignID = persistedCampaignID
     let configRevision = persistedConfigRevision
-    if (!campaignID || form.formState.isDirty) {
+    if (!campaignID || isDirty) {
       const valid = await form.trigger()
       if (!valid) throw new Error('Please correct the highlighted fields.')
       const saved = await persistDraft(form.getValues(), false)

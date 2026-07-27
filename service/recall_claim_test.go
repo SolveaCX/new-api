@@ -805,7 +805,6 @@ func TestRecallResolveBestOfferRejectsInvalidFactsAndProductEligibility(t *testi
 		{name: "unknown kind", kind: "other", priceID: "price_topup", currency: "USD", subtotal: 1000},
 		{name: "empty price", kind: RecallPurchaseKindTopUp, priceID: "", currency: "USD", subtotal: 1000},
 		{name: "empty currency", kind: RecallPurchaseKindTopUp, priceID: "price_topup", currency: "", subtotal: 1000},
-		{name: "zero subtotal", kind: RecallPurchaseKindTopUp, priceID: "price_topup", currency: "USD", subtotal: 0},
 		{name: "negative subtotal", kind: RecallPurchaseKindTopUp, priceID: "price_topup", currency: "USD", subtotal: -1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -813,6 +812,10 @@ func TestRecallResolveBestOfferRejectsInvalidFactsAndProductEligibility(t *testi
 			require.Error(t, err)
 		})
 	}
+
+	zeroSubtotal, err := claimService.ResolveBestRecallOffer(context.Background(), user.Id, RecallPurchaseKindSubscription, "price_subscription", "USD", 0)
+	require.NoError(t, err)
+	require.Nil(t, zeroSubtotal)
 
 	wrongPrice, err := claimService.ResolveBestRecallOffer(context.Background(), user.Id, RecallPurchaseKindTopUp, "price_subscription", "USD", 1000)
 	require.NoError(t, err)
@@ -1072,7 +1075,7 @@ func TestRecallClaimAPITypesDoNotExposeSecrets(t *testing.T) {
 	require.NoError(t, err)
 	var checkoutJSON map[string]any
 	require.NoError(t, common.Unmarshal(checkoutRaw, &checkoutJSON))
-	require.ElementsMatch(t, []string{"promotion_code_id", "campaign_id", "recipient_id"}, recallAudienceJSONKeys(checkoutJSON))
+	require.ElementsMatch(t, []string{"promotion_code_id", "campaign_id", "recipient_id", "discount_amount_minor"}, recallAudienceJSONKeys(checkoutJSON))
 	require.NotContains(t, string(checkoutRaw), "FKSECRET234")
 	require.NotContains(t, string(checkoutRaw), hash)
 }
