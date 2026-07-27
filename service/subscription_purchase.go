@@ -200,7 +200,22 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 			ClientSecret:     change.ClientSecret,
 		}, nil
 	}
-
+	if replay, found, err := replayExistingSubscriptionPurchase(cmd); err != nil {
+		return nil, err
+	} else if found {
+		return replay, nil
+	}
+	if err := rejectConvertedRecallClaimQuoteReuse(context.Background(), cmd); err != nil {
+		return nil, err
+	}
+	validatedQuote, err := validateAuthoritativeSubscriptionPurchaseQuote(context.Background(), cmd)
+	if err != nil {
+		return nil, err
+	}
+	cmd.VerifiedQuote = &validatedQuote
+	if subscriptionPurchaseAfterQuoteValidationHook != nil {
+		subscriptionPurchaseAfterQuoteValidationHook()
+	}
 	var supersededCheckouts []supersededStripeCheckout
 	if cmd.PaymentChoice == SubscriptionPaymentChoiceAlipay || cmd.PaymentChoice == SubscriptionPaymentChoicePix || cmd.PaymentChoice == SubscriptionPaymentChoiceUPI || cmd.PaymentChoice == SubscriptionPaymentChoiceBalance {
 		var err error
@@ -794,6 +809,23 @@ func validateAuthoritativeSubscriptionPurchaseQuote(ctx context.Context, cmd Pur
 		return SubscriptionPurchaseQuote{}, err
 	}
 	return expected, nil
+}
+
+func rejectConvertedRecallClaimQuoteReuse(ctx context.Context, cmd PurchaseSubscriptionCommand) error {
+	claim := strings.TrimSpace(cmd.RecallClaim)
+	if claim == "" || cmd.VerifiedQuote == nil || cmd.VerifiedQuote.DiscountAmountMinor <= 0 {
+		return nil
+	}
+	record, found, err := model.FindRecallClaimByHashWithContext(ctx, recallClaimTokenHash(claim))
+	if err != nil || !found {
+		return nil
+	}
+	if record.Recipient.State == model.RecallRecipientConverted &&
+		cmd.VerifiedQuote.RecallCampaignID == record.Campaign.Id &&
+		cmd.VerifiedQuote.RecallRecipientID == record.Recipient.Id {
+		return ErrRecallClaimConverted
+	}
+	return nil
 }
 
 func validateSubscriptionPurchaseQuoteMatchesPlan(plan model.SubscriptionPlan, cmd PurchaseSubscriptionCommand, quote SubscriptionPurchaseQuote) error {
