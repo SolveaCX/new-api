@@ -929,8 +929,32 @@ func TestGenerateRecallEmailTranslationsUpdatesEveryStageAtomically(t *testing.T
 	require.Equal(t, 2, response.Emails[1].TemplateVersion, "new target content must bump the version once")
 }
 
+func TestGenerateRecallEmailTranslationsHonorsGlobalFeatureGate(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
+	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
+	translator := &recallCampaignFakeEmailTranslator{}
+	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
+	service.now = func() time.Time { return now }
+	draft := englishOnlyRecallCampaignDraft(now)
+	draft.DeferLocalization = true
+	campaign, err := service.SaveDraft(context.Background(), 7, draft)
+	require.NoError(t, err)
+	setRecallCampaignEnabled(t, false)
+
+	_, err = service.GenerateEmailTranslations(context.Background(), 7, campaign.Id, RecallEmailGenerationRequest{
+		ConfigRevision: campaign.ConfigRevision,
+		Name:           campaign.Name,
+		Emails:         draft.Emails,
+	})
+
+	require.ErrorIs(t, err, ErrRecallDisabled)
+	require.Zero(t, translator.callCount())
+}
+
 func TestGenerateRecallEmailTranslationsRejectsStaleRevisionBeforeTranslation(t *testing.T) {
 	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
 	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
 	translator := &recallCampaignFakeEmailTranslator{}
 	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
@@ -952,6 +976,7 @@ func TestGenerateRecallEmailTranslationsRejectsStaleRevisionBeforeTranslation(t 
 
 func TestGenerateRecallEmailTranslationsFailurePersistsNothing(t *testing.T) {
 	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
 	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
 	translator := &recallCampaignFakeEmailTranslator{err: errors.New("translation unavailable")}
 	service := NewRecallCampaignServiceWithTranslator(NewRecallAudienceSelector(), nil, translator)
@@ -977,6 +1002,7 @@ func TestGenerateRecallEmailTranslationsFailurePersistsNothing(t *testing.T) {
 
 func TestGenerateRecallEmailTranslationsPropagatesProtectedContentValidation(t *testing.T) {
 	setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
 	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
 	translator := &recallCampaignFakeEmailTranslator{}
 	translator.translateFn = func(stages []RecallEmailStage) (map[int]map[string]RecallEmailTemplate, error) {
@@ -1010,6 +1036,7 @@ func TestGenerateRecallEmailTranslationsPropagatesProtectedContentValidation(t *
 
 func TestGenerateRecallEmailTranslationsRejectsConcurrentRevisionWithoutPartialWrite(t *testing.T) {
 	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
 	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
 	draft := englishOnlyRecallCampaignDraft(now)
 	draft.DeferLocalization = true
@@ -1038,6 +1065,7 @@ func TestGenerateRecallEmailTranslationsRejectsConcurrentRevisionWithoutPartialW
 
 func TestGenerateRecallEmailTranslationsRejectsConcurrentStatusChangeWithoutPartialWrite(t *testing.T) {
 	db := setupRecallCampaignTestDB(t)
+	setRecallCampaignEnabled(t, true)
 	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
 	draft := englishOnlyRecallCampaignDraft(now)
 	draft.DeferLocalization = true
