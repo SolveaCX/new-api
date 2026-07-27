@@ -31,7 +31,6 @@ import {
   FieldLabel,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import {
   Table,
   TableBody,
@@ -67,7 +66,6 @@ import { ProgressiveList } from './progressive-list'
 
 function ExclusionRuleDialog(props: {
   row?: SupplierEffectiveExclusion
-  defaultAction?: SupplierStatisticsAction
   onSaved: () => void
 }) {
   const { t } = useTranslation()
@@ -80,7 +78,7 @@ function ExclusionRuleDialog(props: {
     resolver: zodResolver(exclusionFormSchema),
     defaultValues: {
       user_id: props.row?.user_id ?? 0,
-      action: props.defaultAction ?? 'exclude',
+      action: exclusionActionFor(props.row),
       reason: '',
     },
   })
@@ -97,12 +95,11 @@ function ExclusionRuleDialog(props: {
     if (open) {
       form.reset({
         user_id: props.row?.user_id ?? 0,
-        action:
-          props.defaultAction ?? (props.row?.excluded ? 'include' : 'exclude'),
+        action: exclusionActionFor(props.row),
         reason: '',
       })
     }
-  }, [form, open, props.defaultAction, props.row])
+  }, [form, open, props.row])
 
   function finishAppend(): void {
     toast.success(t('Exclusion rule appended'))
@@ -124,6 +121,24 @@ function ExclusionRuleDialog(props: {
   }
 
   const oldAction = props.row?.action
+  const action = exclusionActionFor(props.row)
+  const restoringBusinessAccount = action === 'include'
+  let triggerLabel = t('Add internal account')
+  let dialogTitle = t('Mark account as internal')
+  let dialogDescription = t(
+    'Future successful requests from this account will be treated as internal. Sales and profit will be excluded, while each channel decides whether to record internal procurement costs and inventory.'
+  )
+  if (props.row) {
+    if (restoringBusinessAccount) {
+      triggerLabel = t('Restore as business account')
+      dialogTitle = t('Restore account as business')
+      dialogDescription = t(
+        'Future successful requests from this account will return to full business accounting. Historical request classifications remain unchanged.'
+      )
+    } else {
+      triggerLabel = t('Mark as internal account')
+    }
+  }
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -138,20 +153,12 @@ function ExclusionRuleDialog(props: {
           {!props.row ? (
             <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />
           ) : null}
-          {props.row
-            ? props.row.excluded
-              ? t('Include')
-              : t('Exclude')
-            : t('Add exclusion rule')}
+          {triggerLabel}
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('Append account statistics rule')}</DialogTitle>
-            <DialogDescription>
-              {t(
-                'Only final successful settlements are classified. This rule changes future statistics and keeps history intact.'
-              )}
-            </DialogDescription>
+            <DialogTitle>{dialogTitle}</DialogTitle>
+            <DialogDescription>{dialogDescription}</DialogDescription>
           </DialogHeader>
           <form
             id={`exclusion-form-${props.row?.user_id ?? 'new'}`}
@@ -175,31 +182,6 @@ function ExclusionRuleDialog(props: {
                 <FieldError>
                   {form.formState.errors.user_id
                     ? t(form.formState.errors.user_id.message ?? '')
-                    : null}
-                </FieldError>
-              </Field>
-              <Field data-invalid={Boolean(form.formState.errors.action)}>
-                <FieldLabel
-                  htmlFor={`exclusion-action-${props.row?.user_id ?? 'new'}`}
-                >
-                  {t('Action')}
-                </FieldLabel>
-                <NativeSelect
-                  id={`exclusion-action-${props.row?.user_id ?? 'new'}`}
-                  className='w-full'
-                  aria-invalid={Boolean(form.formState.errors.action)}
-                  {...form.register('action')}
-                >
-                  <NativeSelectOption value='exclude'>
-                    {t('Exclude from profit statistics')}
-                  </NativeSelectOption>
-                  <NativeSelectOption value='include'>
-                    {t('Include in profit statistics')}
-                  </NativeSelectOption>
-                </NativeSelect>
-                <FieldError>
-                  {form.formState.errors.action
-                    ? t(form.formState.errors.action.message ?? '')
                     : null}
                 </FieldError>
               </Field>
@@ -237,7 +219,7 @@ function ExclusionRuleDialog(props: {
         onOpenChange={(next) => {
           if (!next) setConfirmation(null)
         }}
-        title={t('Append exclusion rule')}
+        title={t('Review account scope change')}
         description={
           <span>
             {t('User ID')}: {confirmation?.user_id}. {t('Current')}:{' '}
@@ -251,12 +233,18 @@ function ExclusionRuleDialog(props: {
             . {t('This append-only record cannot be edited later.')}
           </span>
         }
-        confirmLabel={t('Append rule')}
+        confirmLabel={t('Save account scope')}
         pending={mutation.isPending || intent.isSubmitting}
         onConfirm={confirm}
       />
     </>
   )
+}
+
+function exclusionActionFor(
+  row?: SupplierEffectiveExclusion
+): SupplierStatisticsAction {
+  return row?.excluded ? 'include' : 'exclude'
 }
 
 function ExclusionHistoryDialog(props: { row: SupplierEffectiveExclusion }) {
@@ -273,7 +261,7 @@ function ExclusionHistoryDialog(props: { row: SupplierEffectiveExclusion }) {
       </DialogTrigger>
       <DialogContent className='max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl'>
         <DialogHeader>
-          <DialogTitle>{t('Exclusion rule history')}</DialogTitle>
+          <DialogTitle>{t('Account scope history')}</DialogTitle>
           <DialogDescription>
             {t('User ID')}: {props.row.user_id}
           </DialogDescription>
@@ -353,7 +341,7 @@ export function ExclusionManagement(props: SupplyChainManagementProps) {
                 <TableHead>{t('Account')}</TableHead>
                 <TableHead>{t('Role')}</TableHead>
                 <TableHead>{t('Account status')}</TableHead>
-                <TableHead>{t('Statistics')}</TableHead>
+                <TableHead>{t('Account scope')}</TableHead>
                 <TableHead>{t('Effective at')}</TableHead>
                 <TableHead>{t('Reason')}</TableHead>
                 <TableHead className='text-right'>{t('Actions')}</TableHead>
@@ -385,7 +373,9 @@ export function ExclusionManagement(props: SupplyChainManagementProps) {
                   </TableCell>
                   <TableCell>
                     <Badge variant={row.excluded ? 'destructive' : 'secondary'}>
-                      {row.excluded ? t('Excluded') : t('Included')}
+                      {row.excluded
+                        ? t('Internal account')
+                        : t('Business account')}
                     </Badge>
                   </TableCell>
                   <TableCell>{formatTime(row.effective_at)}</TableCell>
@@ -397,7 +387,6 @@ export function ExclusionManagement(props: SupplyChainManagementProps) {
                       <ExclusionHistoryDialog row={row} />
                       <ExclusionRuleDialog
                         row={row}
-                        defaultAction={row.excluded ? 'include' : 'exclude'}
                         onSaved={() => query.refetch()}
                       />
                     </div>

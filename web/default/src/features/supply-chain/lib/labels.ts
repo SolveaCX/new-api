@@ -13,10 +13,10 @@ import type {
 
 export const STATISTICS_ACTION_LABEL_KEYS: Record<
   SupplierStatisticsAction,
-  'Exclude' | 'Include'
+  'Marked internal' | 'Restored as business'
 > = {
-  exclude: 'Exclude',
-  include: 'Include',
+  exclude: 'Marked internal',
+  include: 'Restored as business',
 }
 
 export const INVENTORY_ADJUSTMENT_LABEL_KEYS: Record<
