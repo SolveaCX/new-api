@@ -195,6 +195,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/paddle/status", controller.GetPaddleTopUpStatus)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
+				selfRoute.GET("/recall/offers", controller.ListRecallOffers)
 				selfRoute.POST("/recall/claim/validate", controller.ValidateRecallClaim)
 
 				// 2FA routes
