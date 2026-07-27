@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -61,6 +62,7 @@ import {
 import { supplyChainQueryKeys } from '../query-keys'
 import type { SupplierChannelBinding } from '../types'
 import { AccountingPolicyActivation } from './accounting-policy-activation'
+import { ChannelBatchBindingDialog } from './channel-batch-binding-dialog'
 import {
   ConfirmAction,
   ManagementPagination,
@@ -421,6 +423,9 @@ function UnbindAction(props: { binding: SupplierChannelBinding }) {
 export function ChannelBindingManagement(props: SupplyChainManagementProps) {
   const { t } = useTranslation()
   const [boundState, setBoundState] = useState<'bound' | 'unbound' | ''>('')
+  const [selectedChannelIds, setSelectedChannelIds] = useState<Set<number>>(
+    new Set()
+  )
   const policy = useAccountingPolicyCapability()
   const policyConfigurable = isAccountingPolicyConfigurable(
     policy.data,
@@ -433,6 +438,31 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
     keyword: props.search.filter || undefined,
     bound_state: boundState || undefined,
   })
+  const visibleBindings = query.data?.items ?? []
+  const selectedBindings = visibleBindings.filter((binding) =>
+    selectedChannelIds.has(binding.channel_id)
+  )
+  const allVisibleSelected =
+    visibleBindings.length > 0 &&
+    selectedBindings.length === visibleBindings.length
+  const someVisibleSelected = selectedBindings.length > 0 && !allVisibleSelected
+
+  function toggleAllVisible(checked: boolean): void {
+    setSelectedChannelIds(
+      checked
+        ? new Set(visibleBindings.map((binding) => binding.channel_id))
+        : new Set()
+    )
+  }
+
+  function toggleChannel(channelId: number, checked: boolean): void {
+    setSelectedChannelIds((current) => {
+      const next = new Set(current)
+      if (checked) next.add(channelId)
+      else next.delete(channelId)
+      return next
+    })
+  }
 
   return (
     <div className='flex flex-col gap-3'>
@@ -443,13 +473,28 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
       />
       <ManagementToolbar
         search={props.search}
-        onSearchChange={props.onSearchChange}
+        onSearchChange={(nextSearch) => {
+          setSelectedChannelIds(new Set())
+          props.onSearchChange(nextSearch)
+        }}
+        actions={
+          <ChannelBatchBindingDialog
+            bindings={selectedBindings}
+            policyConfigurable={policyConfigurable}
+            policyActive={policy.data?.active === true}
+            policyStatusAvailable={policy.data !== undefined && !policy.isError}
+            onFinished={(failedChannelIds) =>
+              setSelectedChannelIds(new Set(failedChannelIds))
+            }
+          />
+        }
         filters={
           <NativeSelect
             aria-label={t('Binding state')}
             value={boundState}
             onChange={(event) => {
               setBoundState(event.target.value as '' | 'bound' | 'unbound')
+              setSelectedChannelIds(new Set())
               props.onSearchChange({ page: 1 })
             }}
           >
@@ -472,6 +517,14 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className='w-10'>
+                  <Checkbox
+                    checked={allVisibleSelected}
+                    indeterminate={someVisibleSelected}
+                    onCheckedChange={toggleAllVisible}
+                    aria-label={t('Select all')}
+                  />
+                </TableHead>
                 <TableHead>{t('Channel')}</TableHead>
                 <TableHead>{t('Channel status')}</TableHead>
                 <TableHead>{t('Supplier')}</TableHead>
@@ -492,6 +545,15 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
                 )
                 return (
                   <TableRow key={binding.channel_id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedChannelIds.has(binding.channel_id)}
+                        onCheckedChange={(checked) =>
+                          toggleChannel(binding.channel_id, checked)
+                        }
+                        aria-label={t('Select row')}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className='font-medium'>{binding.channel_name}</div>
                       <div className='text-muted-foreground'>
@@ -563,7 +625,10 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
         page={props.search.page}
         pageSize={props.search.pageSize}
         total={query.data?.total ?? 0}
-        onSearchChange={props.onSearchChange}
+        onSearchChange={(nextSearch) => {
+          setSelectedChannelIds(new Set())
+          props.onSearchChange(nextSearch)
+        }}
       />
     </div>
   )
