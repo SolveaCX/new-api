@@ -40,6 +40,7 @@ const (
 	ContextKeyChannelConcurrencyLease  ContextKey = "channel_concurrency_lease"
 	ContextKeySupplierCostSnapshot     ContextKey = "supplier_cost_snapshot"
 	ContextKeySupplierStatsScope       ContextKey = "supplier_statistics_scope_snapshot"
+	ContextKeySupplierRuntimeSnapshot  ContextKey = "supplier_runtime_snapshot"
 	ContextKeySupplierUsageDraft       ContextKey = "supplier_usage_draft"
 
 	ContextKeyAutoGroup           ContextKey = "auto_group"

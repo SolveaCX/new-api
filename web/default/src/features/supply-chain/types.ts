@@ -234,9 +234,15 @@ export interface SupplierChannelBindingRequest {
   expected_skip_internal_accounting: boolean
 }
 
-export interface SupplierChannelUnbindResult {
-  channel_id: number
-  supplier_contract_id: null
+export interface SupplierAccountingPolicyCapability {
+  protocol_version: number
+  activated: boolean
+  active: boolean
+  effective_at: number
+}
+
+export interface SupplierAccountingPolicyActivationRequest {
+  activated: boolean
 }
 
 export interface SupplierChannelUnbindVariables {

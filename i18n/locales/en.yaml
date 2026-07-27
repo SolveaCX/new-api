@@ -364,6 +364,7 @@ supply_chain.idempotency_key_required: "A valid Idempotency-Key header is requir
 supply_chain.not_found: "The requested supply chain resource was not found"
 supply_chain.conflict: "The operation conflicts with the current supply chain state"
 supply_chain.current_rate_required: "A current procurement rate is required before this contract can be bound"
+supply_chain.accounting_policy_inactive: "Internal accounting skip must be activated after all router nodes are upgraded"
 supply_chain.internal_error: "The supply chain service is temporarily unavailable"
 supply_chain.invalid_report_range: "Use either one Asia/Shanghai month or a valid date range of at most 366 days"
 supply_chain.invalid_report_filter: "One or more supply chain report filters are invalid"

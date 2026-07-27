@@ -568,6 +568,22 @@ func ListSupplierChannelBindings(contractId int, page SupplierPage) ([]SupplierC
 		Order("id DESC").Offset(page.Offset).Limit(page.Limit).Find(&bindings).Error; err != nil {
 		return nil, 0, err
 	}
+	channelIds := make([]int, 0, len(bindings))
+	bindingIndexes := make(map[int]int, len(bindings))
+	for index := range bindings {
+		channelIds = append(channelIds, bindings[index].ChannelId)
+		bindingIndexes[bindings[index].ChannelId] = index
+	}
+	versions, err := latestSupplierChannelBindingVersions(DB, channelIds)
+	if err != nil {
+		return nil, 0, err
+	}
+	for channelId, version := range versions {
+		index := bindingIndexes[channelId]
+		if supplierContractIdsEqual(bindings[index].SupplierContractId, version.SupplierContractId) {
+			bindings[index].SkipInternalAccounting = version.SkipInternalAccounting
+		}
+	}
 	return bindings, total, nil
 }
 

@@ -250,12 +250,13 @@ func TestGetChannelRetryFreezesSupplierPricingWhenUnboundAttemptMovesToBoundChan
 	require.NoError(t, unboundChannel.AddAbilities(nil))
 	require.NoError(t, model.DB.Create(boundChannel).Error)
 	require.NoError(t, boundChannel.AddAbilities(nil))
-	model.InitChannelCache()
-	boundChannel.SupplierCostSnapshot = types.SupplierCostSnapshot{
-		SupplierId: 11, ContractId: 22, RateVersionId: 33, ProcurementMultiplierPpm: 650_000,
-	}
-	boundChannel.SupplierCostSnapshotLoaded = true
-	model.CacheUpdateChannel(boundChannel)
+	supplier := model.UpstreamSupplier{Name: "retry supplier"}
+	require.NoError(t, model.CreateUpstreamSupplier(&supplier))
+	contract := model.SupplierContract{SupplierId: supplier.Id, Name: "retry contract", ContractNo: "retry-contract"}
+	require.NoError(t, model.CreateSupplierContract(&contract))
+	rate, err := model.CreateAndActivateSupplierContractRateVersion(contract.Id, 650_000, 1, "retry pricing")
+	require.NoError(t, err)
+	require.NoError(t, model.SetChannelSupplierContractCASForActor(boundChannel.Id, 0, &contract.Id, 1))
 
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -289,9 +290,9 @@ func TestGetChannelRetryFreezesSupplierPricingWhenUnboundAttemptMovesToBoundChan
 	require.NotNil(t, selected)
 	require.Equal(t, boundChannel.Id, selected.Id)
 	require.True(t, info.SupplierCostSnapshot.IsBound())
-	require.Equal(t, 11, info.SupplierCostSnapshot.SupplierId)
-	require.Equal(t, 22, info.SupplierCostSnapshot.ContractId)
-	require.Equal(t, 33, info.SupplierCostSnapshot.RateVersionId)
+	require.Equal(t, supplier.Id, info.SupplierCostSnapshot.SupplierId)
+	require.Equal(t, contract.Id, info.SupplierCostSnapshot.ContractId)
+	require.Equal(t, rate.Id, info.SupplierCostSnapshot.RateVersionId)
 	require.True(t, info.SupplierOfficialPricingSnapshot.Loaded)
 	require.Equal(t, initialPriceData, info.PriceData, "retry supplier accounting must not change customer pricing")
 	require.Equal(t, initialPriceData, info.SupplierOfficialPricingSnapshot.PriceData, "supplier pricing must use the request-time customer pricing snapshot")

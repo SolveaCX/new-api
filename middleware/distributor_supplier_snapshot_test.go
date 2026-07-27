@@ -104,7 +104,7 @@ func TestSetupContextProjectsImmutableSupplierSnapshotAndRetryClearsCost(t *test
 }
 
 func TestSetupContextSupplierStatisticsScopeFreezesAcrossRetryRefresh(t *testing.T) {
-	db, bound, unbound := setupDistributorSupplierSnapshotTest(t, "distributor-supplier-scope-freeze")
+	db, bound, _ := setupDistributorSupplierSnapshotTest(t, "distributor-supplier-scope-freeze")
 	exclude := model.SupplierStatisticsExclusionRule{
 		UserId: 202, Action: model.SupplierStatisticsActionExclude,
 		IdempotencyKey: "exclude-202", CreatedBy: 1,
@@ -124,14 +124,34 @@ func TestSetupContextSupplierStatisticsScopeFreezesAcrossRetryRefresh(t *testing
 		IdempotencyKey: "include-202", CreatedBy: 1,
 	}
 	require.NoError(t, db.Create(&include).Error)
+	updatedRate := model.SupplierContractRateVersion{
+		ContractId:               *bound.SupplierContractId,
+		ProcurementMultiplierPpm: 700_000,
+		CreatedBy:                1,
+	}
+	require.NoError(t, db.Create(&updatedRate).Error)
+	require.NoError(t, db.Model(&model.SupplierContract{}).
+		Where("id = ?", *bound.SupplierContractId).
+		UpdateColumn("current_rate_version_id", updatedRate.Id).Error)
 	require.NoError(t, model.RefreshSupplierCache())
 	require.Equal(t, types.SupplierStatisticsScopeBusiness, model.GetSupplierStatisticsScopeSnapshot(202).Scope)
 
-	unbound.SupplierCostSnapshotLoaded = true
-	require.Nil(t, SetupContextForSelectedChannel(c, unbound, "model-a"))
+	require.Nil(t, SetupContextForSelectedChannel(c, bound, "model-a"))
 	afterRetry, ok := common.GetContextKeyType[types.SupplierStatisticsScopeSnapshot](c, constant.ContextKeySupplierStatsScope)
 	require.True(t, ok)
 	require.Equal(t, frozen, afterRetry)
+	retryCost, ok := common.GetContextKeyType[types.SupplierCostSnapshot](c, constant.ContextKeySupplierCostSnapshot)
+	require.True(t, ok)
+	require.Equal(t, int64(650_000), retryCost.ProcurementMultiplierPpm)
+
+	newRequest := newDistributorSupplierContext(202)
+	require.Nil(t, SetupContextForSelectedChannel(newRequest, bound, "model-a"))
+	newRequestCost, ok := common.GetContextKeyType[types.SupplierCostSnapshot](newRequest, constant.ContextKeySupplierCostSnapshot)
+	require.True(t, ok)
+	require.Equal(t, int64(700_000), newRequestCost.ProcurementMultiplierPpm)
+	newRequestScope, ok := common.GetContextKeyType[types.SupplierStatisticsScopeSnapshot](newRequest, constant.ContextKeySupplierStatsScope)
+	require.True(t, ok)
+	require.Equal(t, types.SupplierStatisticsScopeBusiness, newRequestScope.Scope)
 }
 
 func TestSetupContextSupplierSnapshotsPerformNoDatabaseQueries(t *testing.T) {
@@ -223,9 +243,18 @@ func TestSetupContextSupplierCacheFailureFailsClosedAndRecovers(t *testing.T) {
 	model.DB = failedDB
 	require.Error(t, model.RefreshSupplierCache())
 
+	// A request that already captured a complete healthy generation keeps it
+	// across retries, even if a later refresh fails.
 	require.Nil(t, SetupContextForSelectedChannel(c, bound, "model-a"))
+	stillHealthy := &relaycommon.RelayInfo{}
+	stillHealthy.InitSupplierSnapshots(c)
+	require.False(t, stillHealthy.SupplierCostSnapshot.CacheUnavailable)
+	require.Equal(t, int64(650_000), stillHealthy.SupplierCostSnapshot.ProcurementMultiplierPpm)
+
+	failedContext := newDistributorSupplierContext(205)
+	require.Nil(t, SetupContextForSelectedChannel(failedContext, bound, "model-a"))
 	unavailable := &relaycommon.RelayInfo{}
-	unavailable.InitSupplierSnapshots(c)
+	unavailable.InitSupplierSnapshots(failedContext)
 	require.True(t, unavailable.SupplierCostSnapshot.CacheUnavailable)
 	envelope := service.BuildSupplierAccountingEnvelopeV1(service.SupplierAccountingEnvelopeInputV1{
 		RelayInfo: unavailable,
@@ -240,9 +269,9 @@ func TestSetupContextSupplierCacheFailureFailsClosedAndRecovers(t *testing.T) {
 
 	model.DB = db
 	require.NoError(t, model.RefreshSupplierCache())
-	require.Nil(t, SetupContextForSelectedChannel(c, bound, "model-a"))
+	require.Nil(t, SetupContextForSelectedChannel(failedContext, bound, "model-a"))
 	stillUnavailable := &relaycommon.RelayInfo{}
-	stillUnavailable.InitSupplierSnapshots(c)
+	stillUnavailable.InitSupplierSnapshots(failedContext)
 	require.True(t, stillUnavailable.SupplierCostSnapshot.CacheUnavailable, "a request that observed blocking must remain fail-closed across retries")
 
 	recoveredContext := newDistributorSupplierContext(205)

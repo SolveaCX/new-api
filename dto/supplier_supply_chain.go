@@ -71,3 +71,7 @@ type SupplierChannelBindingRequest struct {
 	SkipInternalAccounting         *bool `json:"skip_internal_accounting"`
 	ExpectedSkipInternalAccounting *bool `json:"expected_skip_internal_accounting"`
 }
+
+type SupplierAccountingPolicyActivationRequest struct {
+	Activated *bool `json:"activated"`
+}

@@ -78,6 +78,7 @@ func TestSetChannelSupplierContractCASPreventsStaleWritesAndKeepsRetriesIdempote
 
 func TestSetChannelSupplierContractPolicyCASVersionsPolicyOnlyChanges(t *testing.T) {
 	db := setupSupplierAdminProjectionTestDB(t)
+	require.NoError(t, SetSupplierSkipInternalAccountingActive(true))
 	contract := createSupplierContractFixture(t, db, "policy-cas", "policy-cas")
 	_, err := CreateAndActivateSupplierContractRateVersion(contract.Id, 650_000, 1, "initial")
 	require.NoError(t, err)
@@ -100,6 +101,11 @@ func TestSetChannelSupplierContractPolicyCASVersionsPolicyOnlyChanges(t *testing
 	require.Equal(t, int64(1), total)
 	require.Len(t, rows, 1)
 	require.True(t, rows[0].SkipInternalAccounting)
+	legacyRows, total, err := ListSupplierChannelBindings(contract.Id, SupplierPage{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, legacyRows, 1)
+	require.True(t, legacyRows[0].SkipInternalAccounting)
 
 	versions, total, err := ListSupplierChannelBindingVersions(channel.Id, SupplierPage{Limit: 10})
 	require.NoError(t, err)
@@ -125,6 +131,65 @@ func TestSetChannelSupplierContractPolicyCASVersionsPolicyOnlyChanges(t *testing
 	require.Equal(t, int64(3), total)
 	require.True(t, versions[0].PreviousSkipInternalAccounting)
 	require.False(t, versions[0].SkipInternalAccounting)
+}
+
+func TestSetChannelSupplierContractPolicyCASRequiresRolloutActivation(t *testing.T) {
+	db := setupSupplierAdminProjectionTestDB(t)
+	contract := createSupplierContractFixture(t, db, "policy-gate", "policy-gate")
+	_, err := CreateAndActivateSupplierContractRateVersion(contract.Id, 650_000, 1, "initial")
+	require.NoError(t, err)
+	channel := Channel{Name: "policy gate channel", Key: "policy-gate-key", Status: common.ChannelStatusEnabled}
+	require.NoError(t, db.Create(&channel).Error)
+	require.NoError(t, SetChannelSupplierContractPolicyCASForActor(channel.Id, 0, false, &contract.Id, false, 1))
+
+	require.ErrorIs(
+		t,
+		SetChannelSupplierContractPolicyCASForActor(channel.Id, contract.Id, false, &contract.Id, true, 2),
+		ErrSupplierAccountingPolicyInactive,
+	)
+	require.NoError(t, SetSupplierSkipInternalAccountingActive(true))
+	require.NoError(t, SetChannelSupplierContractPolicyCASForActor(channel.Id, contract.Id, false, &contract.Id, true, 2))
+}
+
+func TestSupplierAccountingPolicyActivationDefaultsOffAndPersists(t *testing.T) {
+	db := setupSupplierAdminProjectionTestDB(t)
+	require.Equal(t, SupplierAccountingPolicyProtocolVersion, GetSupplierAccountingPolicyCapability().ProtocolVersion)
+	require.False(t, GetSupplierAccountingPolicyCapability().Activated)
+
+	require.NoError(t, SetSupplierSkipInternalAccountingActive(true))
+	capability := GetSupplierAccountingPolicyCapability()
+	require.True(t, capability.Activated)
+	require.False(t, capability.Active)
+	require.Greater(t, capability.EffectiveAt, common.GetTimestamp())
+	var option Option
+	require.NoError(t, db.First(&option, "key = ?", OptionKeySupplierSkipInternalAccountingActive).Error)
+	require.Contains(t, option.Value, `"activated":true`)
+}
+
+func TestSupplierAccountingPolicyActivationUsesScheduledFleetTransition(t *testing.T) {
+	setupSupplierAdminProjectionTestDB(t)
+	setState := func(previousActive bool, activated bool, effectiveAt int64) {
+		value, err := common.Marshal(supplierAccountingPolicyState{
+			ProtocolVersion: SupplierAccountingPolicyProtocolVersion,
+			PreviousActive:  previousActive,
+			Activated:       activated,
+			EffectiveAt:     effectiveAt,
+		})
+		require.NoError(t, err)
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap[OptionKeySupplierSkipInternalAccountingActive] = string(value)
+		common.OptionMapRWMutex.Unlock()
+		RefreshSupplierAccountingPolicyCapability()
+	}
+
+	now := common.GetTimestamp()
+	setState(true, false, now+120)
+	capability := GetSupplierAccountingPolicyCapability()
+	require.False(t, capability.Activated)
+	require.True(t, capability.Active, "deactivation remains active until every node has had time to observe it")
+
+	setState(true, false, now-1)
+	require.False(t, GetSupplierAccountingPolicyCapability().Active)
 }
 
 func TestSetChannelSupplierContractCASAllowsOnlyOneConcurrentUnboundWriter(t *testing.T) {
@@ -167,6 +232,7 @@ func TestSetChannelSupplierContractCASAllowsOnlyOneConcurrentUnboundWriter(t *te
 
 func TestSetChannelSupplierContractPolicyCASAllowsOnlyOneConcurrentPolicyWriter(t *testing.T) {
 	db := setupSupplierAdminProjectionTestDB(t)
+	require.NoError(t, SetSupplierSkipInternalAccountingActive(true))
 	contract := createSupplierContractFixture(t, db, "policy-concurrent", "policy-concurrent")
 	_, err := CreateAndActivateSupplierContractRateVersion(contract.Id, 650_000, 1, "initial")
 	require.NoError(t, err)

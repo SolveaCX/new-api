@@ -16,6 +16,7 @@ func TestSupplyChainMessagesExistInCompleteLocales(t *testing.T) {
 		MsgSupplyChainNotFound,
 		MsgSupplyChainConflict,
 		MsgSupplyChainCurrentRateRequired,
+		MsgSupplyChainAccountingPolicyInactive,
 		MsgSupplyChainInternalError,
 		MsgSupplyChainInvalidReportRange,
 		MsgSupplyChainInvalidReportFilter,

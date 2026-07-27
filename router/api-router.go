@@ -378,8 +378,10 @@ func SetApiRouter(router *gin.Engine) {
 			supplyChainRoute.POST("/exclusions", supplierSupplyChainMutation(controller.CreateSupplyChainExclusionRule)...)
 			supplyChainRoute.GET("/channel-bindings", controller.ListSupplyChainChannelBindings)
 			supplyChainRoute.GET("/channel-bindings/:channel_id", controller.GetSupplyChainChannelBinding)
-			supplyChainRoute.PUT("/channel-bindings/:channel_id", supplierSupplyChainMutation(controller.BindSupplyChainChannel)...)
-			supplyChainRoute.DELETE("/channel-bindings/:channel_id", supplierSupplyChainMutation(controller.UnbindSupplyChainChannel)...)
+			supplyChainRoute.GET("/channel-binding-policy-v1", controller.GetSupplyChainAccountingPolicyCapability)
+			supplyChainRoute.PUT("/channel-binding-policy-v1", supplierSupplyChainMutation(controller.UpdateSupplyChainAccountingPolicyCapability)...)
+			supplyChainRoute.PUT("/channel-bindings/:channel_id/policy-v1", supplierSupplyChainMutation(controller.BindSupplyChainChannel)...)
+			supplyChainRoute.DELETE("/channel-bindings/:channel_id/policy-v1", supplierSupplyChainMutation(controller.UnbindSupplyChainChannel)...)
 
 			supplyChainRoute.GET("/reports/overview", controller.GetSupplyChainReportOverview)
 			supplyChainRoute.GET("/reports/trend", controller.GetSupplyChainReportTrend)

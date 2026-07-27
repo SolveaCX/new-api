@@ -365,6 +365,7 @@ supply_chain.idempotency_key_required: "必须提供有效的 Idempotency-Key �
 supply_chain.not_found: "未找到指定的供应链资源"
 supply_chain.conflict: "该操作与当前供应链状态冲突"
 supply_chain.current_rate_required: "绑定该合同前必须先创建当前采购费率"
+supply_chain.accounting_policy_inactive: "必须确认所有 Router 节点已升级后，才能启用内部请求跳过核算"
 supply_chain.internal_error: "供应链服务暂时不可用"
 supply_chain.invalid_report_range: "请选择一个北京时间自然月，或不超过 366 天的有效日期范围"
 supply_chain.invalid_report_filter: "一个或多个供应链报表筛选条件无效"

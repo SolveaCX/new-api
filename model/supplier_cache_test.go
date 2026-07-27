@@ -2,8 +2,10 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/types"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -15,14 +17,29 @@ func setupSupplierCacheTestDB(t *testing.T, name string) *gorm.DB {
 	originalDB := DB
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	originalUsingSQLite := common.UsingSQLite
-	originalIndex := supplierRuntimeIndexPointer.Load()
-	originalHealth := supplierCacheHealthPointer.Load()
+	originalGeneration := supplierRuntimeGenerationPointer.Load()
+	originalPolicyState := supplierAccountingPolicyStatePointer.Load()
+	common.OptionMapRWMutex.Lock()
+	originalPolicyActivation, hadPolicyActivation := common.OptionMap[OptionKeySupplierSkipInternalAccountingActive]
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMap[OptionKeySupplierSkipInternalAccountingActive] = "false"
+	common.OptionMapRWMutex.Unlock()
+	RefreshSupplierAccountingPolicyCapability()
 	t.Cleanup(func() {
 		DB = originalDB
 		common.MemoryCacheEnabled = originalMemoryCacheEnabled
 		common.UsingSQLite = originalUsingSQLite
-		supplierRuntimeIndexPointer.Store(originalIndex)
-		supplierCacheHealthPointer.Store(originalHealth)
+		supplierRuntimeGenerationPointer.Store(originalGeneration)
+		supplierAccountingPolicyStatePointer.Store(originalPolicyState)
+		common.OptionMapRWMutex.Lock()
+		if hadPolicyActivation {
+			common.OptionMap[OptionKeySupplierSkipInternalAccountingActive] = originalPolicyActivation
+		} else {
+			delete(common.OptionMap, OptionKeySupplierSkipInternalAccountingActive)
+		}
+		common.OptionMapRWMutex.Unlock()
 	})
 
 	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -31,6 +48,7 @@ func setupSupplierCacheTestDB(t *testing.T, name string) *gorm.DB {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
+		&Option{},
 		&Channel{},
 		&Ability{},
 		&UpstreamSupplier{},
@@ -42,8 +60,7 @@ func setupSupplierCacheTestDB(t *testing.T, name string) *gorm.DB {
 	DB = db
 	common.UsingSQLite = true
 	common.MemoryCacheEnabled = false
-	supplierRuntimeIndexPointer.Store(emptySupplierRuntimeIndex())
-	supplierCacheHealthPointer.Store(nil)
+	supplierRuntimeGenerationPointer.Store(nil)
 	return db
 }
 
@@ -78,6 +95,7 @@ func createSupplierCacheFixture(t *testing.T, db *gorm.DB) (SupplierContract, Su
 
 func TestSupplierCacheMultipleChannelsUnboundAndLatestExclusion(t *testing.T) {
 	db := setupSupplierCacheTestDB(t, "supplier-cache-bindings")
+	require.NoError(t, SetSupplierSkipInternalAccountingActive(true))
 	contract, rate, channels := createSupplierCacheFixture(t, db)
 	require.NoError(t, SetChannelSupplierContractPolicyCASForActor(channels[0].Id, contract.Id, false, &contract.Id, true, 2))
 	rules := []SupplierStatisticsExclusionRule{
@@ -157,6 +175,90 @@ func TestSupplierCacheRefreshIsImmutableAndFailureRetainsPreviousIndex(t *testin
 	DB = db
 	require.NoError(t, RefreshSupplierCache())
 	require.False(t, IsSupplierCacheBlocking())
+}
+
+func TestSupplierAccountingRuntimeSnapshotFreezesOneGeneration(t *testing.T) {
+	setupSupplierCacheTestDB(t, "supplier-cache-request-generation")
+	supplierRuntimeGenerationPointer.Store(&supplierRuntimeGeneration{
+		index: &supplierRuntimeIndex{
+			channelCosts: map[int]types.SupplierCostSnapshot{
+				1: {BindingVersionId: 11, SkipInternalAccounting: true},
+			},
+			excludedUserRuleId: map[int]int{99: 7},
+		},
+		health: &SupplierCacheHealth{LoadedAt: 1},
+	})
+
+	requestSnapshot := CaptureSupplierAccountingRuntimeSnapshot()
+	supplierRuntimeGenerationPointer.Store(&supplierRuntimeGeneration{
+		index: &supplierRuntimeIndex{
+			channelCosts: map[int]types.SupplierCostSnapshot{
+				1: {BindingVersionId: 22},
+			},
+			excludedUserRuleId: map[int]int{},
+		},
+		health: &SupplierCacheHealth{LoadedAt: 2},
+	})
+
+	frozenCost, ok := requestSnapshot.CostForChannel(1)
+	require.True(t, ok)
+	require.Equal(t, 11, frozenCost.BindingVersionId)
+	require.True(t, frozenCost.SkipInternalAccounting)
+	require.Equal(t, types.SupplierStatisticsScopeInternal, requestSnapshot.StatisticsScopeForUser(99).Scope)
+	require.Equal(t, 7, requestSnapshot.StatisticsScopeForUser(99).ExclusionRuleId)
+
+	current := CaptureSupplierAccountingRuntimeSnapshot()
+	currentCost, ok := current.CostForChannel(1)
+	require.True(t, ok)
+	require.Equal(t, 22, currentCost.BindingVersionId)
+	require.False(t, currentCost.SkipInternalAccounting)
+	require.Equal(t, types.SupplierStatisticsScopeBusiness, current.StatisticsScopeForUser(99).Scope)
+}
+
+func TestSupplierCacheRefreshSerializesOverlappingPublications(t *testing.T) {
+	setupSupplierCacheTestDB(t, "supplier-cache-serialized-refresh")
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondAttempted := make(chan struct{})
+	secondEntered := make(chan struct{})
+	results := make(chan error, 2)
+	health := func() *SupplierCacheHealth {
+		return &SupplierCacheHealth{LoadedAt: time.Now().UTC().Unix(), Issues: []SupplierCacheIssue{}}
+	}
+	go func() {
+		results <- refreshSupplierCache(DB, func(*gorm.DB) (*supplierRuntimeIndex, *SupplierCacheHealth, error) {
+			close(firstEntered)
+			<-releaseFirst
+			return &supplierRuntimeIndex{
+				channelCosts:       map[int]types.SupplierCostSnapshot{1: {BindingVersionId: 1}},
+				excludedUserRuleId: map[int]int{},
+			}, health(), nil
+		})
+	}()
+	<-firstEntered
+	go func() {
+		close(secondAttempted)
+		results <- refreshSupplierCache(DB, func(*gorm.DB) (*supplierRuntimeIndex, *SupplierCacheHealth, error) {
+			close(secondEntered)
+			return &supplierRuntimeIndex{
+				channelCosts:       map[int]types.SupplierCostSnapshot{1: {BindingVersionId: 2}},
+				excludedUserRuleId: map[int]int{},
+			}, health(), nil
+		})
+	}()
+	<-secondAttempted
+	select {
+	case <-secondEntered:
+		t.Fatal("second refresh entered before the first refresh completed")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(releaseFirst)
+	require.NoError(t, <-results)
+	require.NoError(t, <-results)
+	<-secondEntered
+	snapshot, ok := GetSupplierCostSnapshot(1)
+	require.True(t, ok)
+	require.Equal(t, 2, snapshot.BindingVersionId)
 }
 
 func TestSupplierCacheGettersPerformNoDatabaseWorkAfterRefresh(t *testing.T) {

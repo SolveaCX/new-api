@@ -565,31 +565,33 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	c.Set("original_model", modelName) // for retry
 	// Channel cost follows the selected channel and must be overwritten on every
 	// attempt. Statistics scope is request-scoped and freezes on first selection.
+	runtimeSnapshot, runtimeSnapshotExists := common.GetContextKeyType[*model.SupplierAccountingRuntimeSnapshot](c, constant.ContextKeySupplierRuntimeSnapshot)
+	if !runtimeSnapshotExists {
+		runtimeSnapshot = model.CaptureSupplierAccountingRuntimeSnapshot()
+		common.SetContextKey(c, constant.ContextKeySupplierRuntimeSnapshot, runtimeSnapshot)
+	}
 	existingSupplierCost, _ := common.GetContextKeyType[types.SupplierCostSnapshot](c, constant.ContextKeySupplierCostSnapshot)
-	supplierCacheUnavailable := existingSupplierCost.CacheUnavailable || model.IsSupplierCacheBlocking()
+	supplierCacheUnavailable := existingSupplierCost.CacheUnavailable || runtimeSnapshot.CacheUnavailable()
 	if supplierCacheUnavailable {
 		common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, types.SupplierCostSnapshot{CacheUnavailable: true})
 		common.SetContextKey(c, constant.ContextKeySupplierStatsScope, types.BusinessSupplierStatisticsScopeSnapshot())
 	} else {
 		common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, types.SupplierCostSnapshot{})
 		if _, exists := common.GetContextKey(c, constant.ContextKeySupplierStatsScope); !exists {
-			common.SetContextKey(c, constant.ContextKeySupplierStatsScope, model.GetSupplierStatisticsScopeSnapshot(common.GetContextKeyInt(c, constant.ContextKeyUserId)))
+			common.SetContextKey(c, constant.ContextKeySupplierStatsScope, runtimeSnapshot.StatisticsScopeForUser(common.GetContextKeyInt(c, constant.ContextKeyUserId)))
 		}
 	}
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
-	// Memory-cache channels carry the frozen snapshot directly. DB-loaded
-	// channels cannot because these fields are gorm:-, so project from the same
-	// immutable runtime index with one O(1) map lookup. Neither path performs
-	// request-level supplier DB or Redis I/O.
+	// Cost and scope must come from the same request-frozen supplier generation.
+	// The channel cache can be rebuilt independently, so its embedded cost copy
+	// is never authoritative for accounting decisions.
 	if supplierCacheUnavailable {
 		// Preserve the explicit fail-closed marker for this request. A later retry
 		// must not capture supplier accounting from a cache that was unavailable
 		// when any attempt was selected.
-	} else if channel.SupplierCostSnapshotLoaded {
-		common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, channel.SupplierCostSnapshot)
-	} else if snapshot, ok := model.GetSupplierCostSnapshot(channel.Id); ok {
+	} else if snapshot, ok := runtimeSnapshot.CostForChannel(channel.Id); ok {
 		common.SetContextKey(c, constant.ContextKeySupplierCostSnapshot, snapshot)
 	}
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)

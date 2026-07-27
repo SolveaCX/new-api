@@ -34,8 +34,16 @@ describe('supply-chain versioned mutation API', () => {
     const requests: InternalAxiosRequestConfig[] = []
     api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
       requests.push(config)
+      const isBindingPolicyRequest = config.url?.includes(
+        '/channel-bindings/11/policy-v1'
+      )
       return {
-        data: { success: true, data: {} },
+        data: {
+          success: true,
+          data: isBindingPolicyRequest
+            ? { skip_internal_accounting: config.method !== 'delete' }
+            : {},
+        },
         status: 200,
         statusText: 'OK',
         headers: new AxiosHeaders(),
@@ -105,6 +113,28 @@ describe('supply-chain versioned mutation API', () => {
       expected_contract_id: 7,
       expected_skip_internal_accounting: true,
     })
+    expect(requests[7]?.url).toEndWith('/channel-bindings/11/policy-v1')
+    expect(requests[8]?.url).toEndWith('/channel-bindings/11/policy-v1')
+    expect(requests[8]?.skipErrorHandler).toBe(true)
+  })
+
+  test('rejects a mutation response from a console without policy v1 support', async () => {
+    api.defaults.adapter = async (config: InternalAxiosRequestConfig) => ({
+      data: { success: true, data: {} },
+      status: 200,
+      statusText: 'OK',
+      headers: new AxiosHeaders(),
+      config,
+    })
+
+    await expect(
+      bindChannel(11, {
+        contract_id: 7,
+        expected_contract_id: 0,
+        skip_internal_accounting: true,
+        expected_skip_internal_accounting: false,
+      })
+    ).rejects.toThrow('supplier accounting policy v1')
   })
 
   test('sends stable caller-owned keys only to supported append endpoints', async () => {

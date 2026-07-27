@@ -52,18 +52,18 @@ func intPointerForSupplierAdminTest(value int) *int {
 func TestSupplierAdminMetadataAndInventoryCommandsDoNotReloadRuntimeCache(t *testing.T) {
 	db := setupSupplierTestDB(t, "supplier-admin-no-runtime-cache-reload")
 	require.NoError(t, RefreshSupplierCache())
-	assertCacheUnchanged := func(t *testing.T, before *supplierRuntimeIndex) {
+	assertCacheUnchanged := func(t *testing.T, before *supplierRuntimeGeneration) {
 		t.Helper()
-		require.Same(t, before, supplierRuntimeIndexPointer.Load())
+		require.Same(t, before, supplierRuntimeGenerationPointer.Load())
 	}
 
-	before := supplierRuntimeIndexPointer.Load()
+	before := supplierRuntimeGenerationPointer.Load()
 	supplier := UpstreamSupplier{Name: "no reload supplier"}
 	require.NoError(t, CreateUpstreamSupplier(&supplier))
 	assertCacheUnchanged(t, before)
 
 	updatedSupplierName := "renamed supplier"
-	before = supplierRuntimeIndexPointer.Load()
+	before = supplierRuntimeGenerationPointer.Load()
 	updatedSupplier, err := UpdateUpstreamSupplier(supplier.Id, UpdateUpstreamSupplierInput{
 		Name:            &updatedSupplierName,
 		ExpectedVersion: supplier.RowVersion,
@@ -71,13 +71,13 @@ func TestSupplierAdminMetadataAndInventoryCommandsDoNotReloadRuntimeCache(t *tes
 	require.NoError(t, err)
 	assertCacheUnchanged(t, before)
 
-	before = supplierRuntimeIndexPointer.Load()
+	before = supplierRuntimeGenerationPointer.Load()
 	contract := SupplierContract{SupplierId: supplier.Id, Name: "no reload contract", ContractNo: "no-reload-1"}
 	require.NoError(t, CreateSupplierContract(&contract))
 	assertCacheUnchanged(t, before)
 
 	updatedContractName := "renamed contract"
-	before = supplierRuntimeIndexPointer.Load()
+	before = supplierRuntimeGenerationPointer.Load()
 	updatedContract, err := UpdateSupplierContract(contract.Id, UpdateSupplierContractInput{
 		Name:            &updatedContractName,
 		ExpectedVersion: contract.RowVersion,
@@ -88,7 +88,7 @@ func TestSupplierAdminMetadataAndInventoryCommandsDoNotReloadRuntimeCache(t *tes
 	_, err = CreateAndActivateSupplierContractRateVersion(contract.Id, 650_000, 1, "initial")
 	require.NoError(t, err)
 	require.NoError(t, db.First(updatedContract, contract.Id).Error)
-	before = supplierRuntimeIndexPointer.Load()
+	before = supplierRuntimeGenerationPointer.Load()
 	_, err = CreateSupplierInventoryAdjustment(&SupplierInventoryAdjustment{
 		ContractId:     contract.Id,
 		DeltaMicroUsd:  200_000_000,
@@ -100,11 +100,11 @@ func TestSupplierAdminMetadataAndInventoryCommandsDoNotReloadRuntimeCache(t *tes
 	require.NoError(t, err)
 	assertCacheUnchanged(t, before)
 
-	before = supplierRuntimeIndexPointer.Load()
+	before = supplierRuntimeGenerationPointer.Load()
 	require.NoError(t, InactivateSupplierContractCAS(contract.Id, updatedContract.RowVersion))
 	assertCacheUnchanged(t, before)
 
-	before = supplierRuntimeIndexPointer.Load()
+	before = supplierRuntimeGenerationPointer.Load()
 	require.NoError(t, InactivateUpstreamSupplierCAS(supplier.Id, updatedSupplier.RowVersion))
 	assertCacheUnchanged(t, before)
 

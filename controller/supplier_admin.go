@@ -388,6 +388,23 @@ func GetSupplyChainChannelBinding(c *gin.Context) {
 	common.ApiSuccess(c, item)
 }
 
+func GetSupplyChainAccountingPolicyCapability(c *gin.Context) {
+	common.ApiSuccess(c, model.GetSupplierAccountingPolicyCapability())
+}
+
+func UpdateSupplyChainAccountingPolicyCapability(c *gin.Context) {
+	var request dto.SupplierAccountingPolicyActivationRequest
+	if c.ShouldBindJSON(&request) != nil || request.Activated == nil {
+		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
+		return
+	}
+	if err := model.SetSupplierSkipInternalAccountingActive(*request.Activated); err != nil {
+		supplyChainModelError(c, err)
+		return
+	}
+	common.ApiSuccess(c, model.GetSupplierAccountingPolicyCapability())
+}
+
 func BindSupplyChainChannel(c *gin.Context) {
 	channelID, ok := supplyChainPositivePathInt(c, "channel_id")
 	if !ok {
@@ -535,6 +552,8 @@ func supplyChainModelError(c *gin.Context, err error) {
 		supplyChainError(c, http.StatusConflict, i18n.MsgSupplyChainConflict)
 	case errors.Is(err, model.ErrSupplierCurrentRateRequired):
 		supplyChainError(c, http.StatusConflict, i18n.MsgSupplyChainCurrentRateRequired)
+	case errors.Is(err, model.ErrSupplierAccountingPolicyInactive):
+		supplyChainError(c, http.StatusConflict, i18n.MsgSupplyChainAccountingPolicyInactive)
 	default:
 		logger.LogError(c.Request.Context(), fmt.Sprintf("supplier admin request failed: %v", err))
 		supplyChainError(c, http.StatusInternalServerError, i18n.MsgSupplyChainInternalError)

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -50,7 +51,13 @@ func TestSupplierAccountingRealDatabaseIntegration(t *testing.T) {
 		{
 			name:   "sqlite",
 			dsnEnv: "TEST_SUPPLIER_ACCOUNTING_SQLITE_DSN",
-			open:   func(dsn string) gorm.Dialector { return sqlite.Open(dsn) },
+			open: func(dsn string) gorm.Dialector {
+				separator := "?"
+				if strings.Contains(dsn, "?") {
+					separator = "&"
+				}
+				return sqlite.Open(dsn + separator + "_pragma=busy_timeout(30000)")
+			},
 		},
 	}
 
@@ -96,6 +103,10 @@ func TestSupplierAccountingRealDatabaseIntegration(t *testing.T) {
 			t.Run("serializes concurrent overlapping historical imports", func(t *testing.T) {
 				testSupplierAccountingIntegrationHistoricalOverlap(t, db, database.name)
 			})
+
+			t.Run("serializes concurrent channel policy writers", func(t *testing.T) {
+				testSupplierAccountingIntegrationPolicyCAS(t, db)
+			})
 		})
 	}
 }
@@ -135,6 +146,7 @@ func assertSupplierAccountingIntegrationDatabaseIsEmpty(t *testing.T, db *gorm.D
 func migrateSupplierAccountingIntegrationSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	require.NoError(t, db.AutoMigrate(
+		&Option{}, &Channel{},
 		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{},
 		&SupplierChannelBindingVersion{}, &SupplierInventoryAdjustment{}, &SupplierStatisticsExclusionRule{},
 		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
@@ -151,11 +163,14 @@ func dropSupplierAccountingIntegrationSchema(t *testing.T, db *gorm.DB) {
 		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
 		&SupplierAccountingFact{}, &SupplierStatisticsExclusionRule{}, &SupplierInventoryAdjustment{},
 		&SupplierChannelBindingVersion{}, &SupplierContractRateVersion{}, &SupplierContract{}, &UpstreamSupplier{},
+		&Channel{}, &Option{},
 	))
 }
 
 func supplierAccountingIntegrationTableNames() []string {
 	return []string{
+		"channels",
+		"options",
 		"supplier_accounting_facts",
 		"supplier_channel_binding_versions",
 		"supplier_contract_rate_versions",
@@ -168,6 +183,49 @@ func supplierAccountingIntegrationTableNames() []string {
 		"supplier_usage_daily_summaries",
 		"upstream_suppliers",
 	}
+}
+
+func testSupplierAccountingIntegrationPolicyCAS(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	supplier := UpstreamSupplier{Name: "integration policy supplier"}
+	require.NoError(t, db.Create(&supplier).Error)
+	contract := SupplierContract{SupplierId: supplier.Id, Name: "integration policy contract", ContractNo: "integration-policy"}
+	require.NoError(t, db.Create(&contract).Error)
+	rate := SupplierContractRateVersion{ContractId: contract.Id, ProcurementMultiplierPpm: 650_000, CreatedBy: 1}
+	require.NoError(t, db.Create(&rate).Error)
+	require.NoError(t, db.Model(&contract).UpdateColumn("current_rate_version_id", rate.Id).Error)
+	channel := Channel{Name: "integration policy channel", Key: "integration-policy-key", Status: common.ChannelStatusEnabled}
+	require.NoError(t, db.Create(&channel).Error)
+	_, err := setChannelSupplierContractPolicyCASWithRetry(db, channel.Id, 0, false, &contract.Id, false, 1)
+	require.NoError(t, err)
+
+	results := make(chan error, 2)
+	for actor := 2; actor <= 3; actor++ {
+		actor := actor
+		go func() {
+			_, err := setChannelSupplierContractPolicyCASWithRetry(db, channel.Id, contract.Id, false, &contract.Id, true, actor)
+			results <- err
+		}()
+	}
+	successes, conflicts := 0, 0
+	for range 2 {
+		err := <-results
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrSupplierBindingChanged):
+			conflicts++
+		default:
+			t.Fatalf("unexpected concurrent policy CAS result: %v", err)
+		}
+	}
+	require.Equal(t, 1, successes)
+	require.Equal(t, 1, conflicts)
+
+	index, health, err := loadSupplierRuntimeIndexSnapshot(db)
+	require.NoError(t, err)
+	require.False(t, health.Blocking)
+	require.True(t, index.channelCosts[channel.Id].SkipInternalAccounting)
 }
 
 func testSupplierAccountingIntegrationFactLifecycle(t *testing.T, db *gorm.DB, dialect string) {

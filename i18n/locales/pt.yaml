@@ -365,6 +365,7 @@ supply_chain.idempotency_key_required: "É obrigatório fornecer um cabeçalho I
 supply_chain.not_found: "O recurso solicitado da cadeia de fornecimento não foi encontrado"
 supply_chain.conflict: "A operação entra em conflito com o estado atual da cadeia de fornecimento"
 supply_chain.current_rate_required: "É necessária uma taxa de aquisição atual antes de vincular este contrato"
+supply_chain.accounting_policy_inactive: "A omissão da contabilidade interna só pode ser ativada depois que todos os nós Router forem atualizados"
 supply_chain.internal_error: "O serviço da cadeia de fornecimento está temporariamente indisponível"
 supply_chain.invalid_report_range: "Use um mês no fuso horário da Ásia/Xangai ou um intervalo válido de até 366 dias"
 supply_chain.invalid_report_filter: "Um ou mais filtros do relatório da cadeia de fornecimento são inválidos"
