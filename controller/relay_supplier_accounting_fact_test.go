@@ -91,33 +91,110 @@ func relaySupplierAccountingUpstreamError() *types.NewAPIError {
 	return types.NewError(errors.New("upstream failed"), types.ErrorCodeDoRequestFailed)
 }
 
-func TestSynchronousRelaySupplierAccountingPrepareFailurePreventsHandler(t *testing.T) {
-	original := model.LOG_DB
-	model.LOG_DB = nil
-	t.Cleanup(func() { model.LOG_DB = original })
+func TestSynchronousRelaySupplierAccountingPreparePersistenceFailureDoesNotBlockHandler(t *testing.T) {
+	db := useRelaySupplierAccountingFactDB(t)
+	sqlDB, sqlErr := db.DB()
+	require.NoError(t, sqlErr)
+	require.NoError(t, sqlDB.Close())
 
 	called := false
 	err := runSynchronousRelayAttempt(relaySupplierAccountingContext(), relaySupplierAccountingInfo(t), 15, types.RelayFormatOpenAI, func() *types.NewAPIError {
 		called = true
 		return nil
 	})
-	require.NotNil(t, err)
-	require.False(t, called)
-	require.Equal(t, types.ErrorCodeUpdateDataError, err.GetErrorCode())
+	require.Nil(t, err)
+	require.True(t, called)
 }
 
-func TestRealtimeSupplierAccountingPrepareFailurePreventsHandler(t *testing.T) {
-	original := model.LOG_DB
-	model.LOG_DB = nil
-	t.Cleanup(func() { model.LOG_DB = original })
+func TestRealtimeSupplierAccountingPreparePersistenceFailureDoesNotBlockHandler(t *testing.T) {
+	db := useRelaySupplierAccountingFactDB(t)
+	sqlDB, sqlErr := db.DB()
+	require.NoError(t, sqlErr)
+	require.NoError(t, sqlDB.Close())
 
 	called := false
 	err := runSynchronousRelayAttempt(relaySupplierAccountingContext(), relaySupplierAccountingInfo(t), 15, types.RelayFormatOpenAIRealtime, func() *types.NewAPIError {
 		called = true
 		return nil
 	})
+	require.Nil(t, err)
+	require.True(t, called)
+}
+
+func TestSynchronousRelaySupplierAccountingCapturePersistenceFailureDoesNotReplaceSuccess(t *testing.T) {
+	db := useRelaySupplierAccountingFactDB(t)
+	c := relaySupplierAccountingContext()
+	info := relaySupplierAccountingInfo(t)
+
+	err := runSynchronousRelayAttempt(c, info, 15, types.RelayFormatOpenAI, func() *types.NewAPIError {
+		sqlDB, sqlErr := db.DB()
+		require.NoError(t, sqlErr)
+		require.NoError(t, sqlDB.Close())
+		finalizeErr := service.FinalizeSupplierAccountingAttempt(c, info, relaySupplierAccountingEnvelope())
+		require.ErrorIs(t, finalizeErr, service.ErrSupplierAccountingFactPersistence)
+		return nil
+	})
+	require.Nil(t, err)
+}
+
+func TestSynchronousRelaySupplierAccountingVoidPersistenceFailurePreservesOriginalError(t *testing.T) {
+	db := useRelaySupplierAccountingFactDB(t)
+	originalErr := types.NewError(errors.New("invalid converted request"), types.ErrorCodeConvertRequestFailed)
+
+	err := runSynchronousRelayAttempt(relaySupplierAccountingContext(), relaySupplierAccountingInfo(t), 15, types.RelayFormatOpenAI, func() *types.NewAPIError {
+		sqlDB, sqlErr := db.DB()
+		require.NoError(t, sqlErr)
+		require.NoError(t, sqlDB.Close())
+		return originalErr
+	})
+	require.Same(t, originalErr, err)
+}
+
+func TestSynchronousRelaySupplierAccountingInvalidPrepareIdentityRemainsFailClosed(t *testing.T) {
+	useRelaySupplierAccountingFactDB(t)
+	info := relaySupplierAccountingInfo(t)
+	info.RequestId = ""
+	called := false
+
+	err := runSynchronousRelayAttempt(relaySupplierAccountingContext(), info, 15, types.RelayFormatOpenAI, func() *types.NewAPIError {
+		called = true
+		return nil
+	})
 	require.NotNil(t, err)
+	require.ErrorIs(t, err, model.ErrSupplierAccountingFactResolutionInvalid)
 	require.False(t, called)
+}
+
+func TestSynchronousRelaySupplierAccountingMissingFactRemainsFailClosed(t *testing.T) {
+	db := useRelaySupplierAccountingFactDB(t)
+	c := relaySupplierAccountingContext()
+	info := relaySupplierAccountingInfo(t)
+
+	err := runSynchronousRelayAttempt(c, info, 15, types.RelayFormatOpenAI, func() *types.NewAPIError {
+		require.NoError(t, db.Where("attempt_id = ?", c.GetString(types.SupplierAccountingAttemptIDKeyV1)).Delete(&model.SupplierAccountingFact{}).Error)
+		finalizeErr := service.FinalizeSupplierAccountingAttempt(c, info, relaySupplierAccountingEnvelope())
+		require.ErrorIs(t, finalizeErr, model.ErrSupplierAccountingFactNotFound)
+		return nil
+	})
+	require.NotNil(t, err)
+	require.ErrorIs(t, err, model.ErrSupplierAccountingFactNotFound)
+}
+
+func TestSynchronousRelaySupplierAccountingTerminalConflictRemainsFailClosed(t *testing.T) {
+	db := useRelaySupplierAccountingFactDB(t)
+	c := relaySupplierAccountingContext()
+	info := relaySupplierAccountingInfo(t)
+
+	err := runSynchronousRelayAttempt(c, info, 15, types.RelayFormatOpenAI, func() *types.NewAPIError {
+		require.NoError(t, db.Model(&model.SupplierAccountingFact{}).
+			Where("attempt_id = ?", c.GetString(types.SupplierAccountingAttemptIDKeyV1)).
+			Update("status", model.SupplierAccountingFactStatusVoid).Error)
+		finalizeErr := service.FinalizeSupplierAccountingAttempt(c, info, relaySupplierAccountingEnvelope())
+		require.ErrorIs(t, finalizeErr, model.ErrSupplierAccountingFactTerminalConflict)
+		return nil
+	})
+	require.NotNil(t, err)
+	require.ErrorIs(t, err, model.ErrSupplierAccountingFactTerminalConflict)
 }
 
 func TestSupplierAccountingMalformedClaimedBindingPreventsHandler(t *testing.T) {

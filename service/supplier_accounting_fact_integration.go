@@ -19,6 +19,7 @@ const supplierAccountingAttemptContextKey = "supplier_accounting_attempt"
 var (
 	ErrSupplierAccountingAttemptBindingInvalid    = errors.New("supplier accounting attempt binding snapshot is invalid")
 	ErrSupplierAccountingAttemptTerminalAmbiguous = errors.New("supplier accounting attempt terminal outcome is ambiguous")
+	ErrSupplierAccountingFactPersistence          = errors.New("supplier accounting fact persistence failed")
 )
 
 type supplierAccountingAttemptState struct {
@@ -95,7 +96,7 @@ func PrepareSupplierAccountingAttempt(c *gin.Context, relayInfo *relaycommon.Rel
 	}
 	if err != nil {
 		clearSupplierAccountingAttempt(c)
-		return err
+		return classifySupplierAccountingFactError("prepare", err)
 	}
 	c.Set(supplierAccountingAttemptContextKey, state)
 	c.Set(types.SupplierAccountingAttemptIDKeyV1, state.attemptID)
@@ -131,7 +132,7 @@ func FinalizeSupplierAccountingAttempt(c *gin.Context, relayInfo *relaycommon.Re
 			return setSupplierAccountingTerminalError(state, err)
 		}
 		if err := model.FinalizeSupplierAccountingFactCaptured(c.Request.Context(), model.LOG_DB, state.attemptID, envelope, time.Now().Unix()); err != nil {
-			return setSupplierAccountingTerminalError(state, err)
+			return setSupplierAccountingTerminalError(state, classifySupplierAccountingFactError("capture", err))
 		}
 		return nil
 	case types.SupplierAccountingDispositionZeroUsage:
@@ -153,10 +154,23 @@ func FinalizeSupplierAccountingAttemptVoid(c *gin.Context) error {
 		return nil
 	}
 	if err := model.FinalizeSupplierAccountingFactVoid(c.Request.Context(), model.LOG_DB, state.attemptID, time.Now().Unix()); err != nil {
+		err = classifySupplierAccountingFactError("void", err)
 		state.terminalErr = err
 		return err
 	}
 	return nil
+}
+
+func classifySupplierAccountingFactError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, model.ErrSupplierAccountingFactResolutionInvalid) ||
+		errors.Is(err, model.ErrSupplierAccountingFactNotFound) ||
+		errors.Is(err, model.ErrSupplierAccountingFactTerminalConflict) {
+		return err
+	}
+	return fmt.Errorf("%w: %s: %w", ErrSupplierAccountingFactPersistence, operation, err)
 }
 
 func SupplierAccountingAttemptTerminalError(c *gin.Context) error {
