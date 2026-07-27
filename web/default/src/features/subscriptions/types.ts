@@ -383,6 +383,7 @@ export interface SubscriptionRenewalLifecycleResult {
   can_cancel: boolean
   can_resume: boolean
   is_cancel_at_period_end: boolean
+  sync_pending: boolean
 }
 
 // ============================================================================

@@ -305,8 +305,8 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     }
   }
 
-  const refreshAfterRenewal = async () => {
-    let refreshFailed = !(await fetchSelfSubscription())
+  const refreshAfterRenewal = async (syncPending: boolean) => {
+    let refreshFailed = syncPending || !(await fetchSelfSubscription())
     try {
       await onPurchaseSuccess?.()
     } catch {
@@ -330,7 +330,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         throw new Error(RENEWAL_FAILURE_TOAST_SHOWN)
       }
       toast.success(t('Subscription renewal canceled'))
-      await refreshAfterRenewal()
+      await refreshAfterRenewal(res.data?.sync_pending === true)
     } catch (error) {
       if (
         !(error instanceof Error) ||
@@ -358,7 +358,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         throw new Error(RENEWAL_FAILURE_TOAST_SHOWN)
       }
       toast.success(t('Subscription renewal resumed'))
-      await refreshAfterRenewal()
+      await refreshAfterRenewal(res.data?.sync_pending === true)
     } catch (error) {
       if (
         !(error instanceof Error) ||
