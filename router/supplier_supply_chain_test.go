@@ -69,7 +69,7 @@ func newSupplyChainRouteTestEngine(t *testing.T) *gin.Engine {
 	return engine
 }
 
-func TestPendingAccountingFactRoutesRequireRootAndSecureMutation(t *testing.T) {
+func TestPendingAccountingFactRoutesRequireRoot(t *testing.T) {
 	engine := newSupplyChainRouteTestEngine(t)
 	location, err := time.LoadLocation("Asia/Shanghai")
 	require.NoError(t, err)
@@ -90,10 +90,7 @@ func TestPendingAccountingFactRoutesRequireRootAndSecureMutation(t *testing.T) {
 	require.NoError(t, err)
 	resolvePath := "/api/supply-chain/accounting-facts/" + fact.AttemptId + "/resolve"
 	body := `{"action":"void","reason":"verified rejection","evidence":"ticket-route"}`
-	unverified := performSupplyChainRouteTestRequestAt(engine, rootCookies, http.MethodPost, resolvePath, body)
-	require.Equal(t, http.StatusForbidden, unverified.Code)
-	verifiedCookies := supplyChainRouteTestCookiesWithVerification(t, engine, common.RoleRootUser, true)
-	resolved := performSupplyChainRouteTestRequestAt(engine, verifiedCookies, http.MethodPost, resolvePath, body)
+	resolved := performSupplyChainRouteTestRequestAt(engine, rootCookies, http.MethodPost, resolvePath, body)
 	require.Equal(t, http.StatusOK, resolved.Code)
 }
 
@@ -159,7 +156,7 @@ func TestSupplyChainWriteRoutesUseCriticalRateLimit(t *testing.T) {
 	})
 
 	engine := newSupplyChainRouteTestEngine(t)
-	cookies := supplyChainRouteTestCookiesWithVerification(t, engine, common.RoleRootUser, true)
+	cookies := supplyChainRouteTestCookies(t, engine, common.RoleRootUser)
 	statuses := make([]int, 0, 2)
 	for range 2 {
 		recorder := httptest.NewRecorder()

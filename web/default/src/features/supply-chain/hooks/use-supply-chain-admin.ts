@@ -23,10 +23,6 @@ import {
   listSuppliers,
 } from '../api'
 import { getNextAdminPage, mergeAdminPages } from '../lib/pagination'
-import {
-  type RunSecureMutation,
-  useSupplyChainSecureMutation,
-} from '../lib/secure-mutation-context'
 import { supplyChainQueryKeys } from '../query-keys'
 import type {
   SupplierChannelBindingListParams,
@@ -157,14 +153,7 @@ export function useSupplyChainAdminMutation<TVariables>(options: {
   invalidate: readonly (readonly unknown[])[]
 }) {
   const queryClient = useQueryClient()
-  const runSecureMutation = useSupplyChainSecureMutation()
-  return useMutation(
-    createSupplyChainAdminMutationOptions(
-      options,
-      queryClient,
-      runSecureMutation
-    )
-  )
+  return useMutation(createSupplyChainAdminMutationOptions(options, queryClient))
 }
 
 export function createSupplyChainAdminMutationOptions<TVariables>(
@@ -172,12 +161,10 @@ export function createSupplyChainAdminMutationOptions<TVariables>(
     mutationFn: (variables: TVariables) => Promise<unknown>
     invalidate: readonly (readonly unknown[])[]
   },
-  queryClient: Pick<QueryClient, 'invalidateQueries'>,
-  runSecureMutation: RunSecureMutation
+  queryClient: Pick<QueryClient, 'invalidateQueries'>
 ) {
   return {
-    mutationFn: (variables: TVariables) =>
-      runSecureMutation(() => options.mutationFn(variables)),
+    mutationFn: options.mutationFn,
     retry: false as const,
     onSuccess: async () => {
       await Promise.all(
