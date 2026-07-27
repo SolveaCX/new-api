@@ -30,8 +30,10 @@ import { TitledCard } from '@/components/ui/titled-card'
 import {
   getPublicPlans,
   getSelfSubscriptionFull,
+  cancelSubscriptionRenewal,
   purchaseSubscriptionPlanFlexible,
   quoteSubscriptionPlanFlexible,
+  resumeSubscriptionRenewal,
 } from '@/features/subscriptions/api'
 import {
   type FlexiblePaymentChoice,
@@ -39,6 +41,10 @@ import {
   type PlanRecord,
   type SubscriptionPaymentAvailability,
 } from '@/features/subscriptions/types'
+import type {
+  StripeCheckoutOpenResult,
+  StripeCheckoutPresentation,
+} from '../hooks/use-payment'
 import {
   type LifecyclePlanRecord,
   type WalletSelfSubscriptionData,
@@ -50,10 +56,6 @@ import {
   normalizeSelfSubscriptionData,
 } from '../lib/subscription-plan-lifecycle'
 import type { TopupInfo } from '../types'
-import type {
-  StripeCheckoutOpenResult,
-  StripeCheckoutPresentation,
-} from '../hooks/use-payment'
 import { CurrentPlanCard } from './current-plan-card'
 import { PlanPurchaseDialog } from './plan-purchase-dialog'
 
@@ -72,6 +74,9 @@ interface SubscriptionPlansCardProps {
 }
 
 const EXTERNAL_RETURN_POLL_KEY = 'new-api:subscription-change-return-pending'
+const RENEWAL_FAILURE_TOAST_SHOWN = 'renewal failure toast shown'
+const RENEWAL_MUTATION_ALREADY_IN_FLIGHT =
+  'renewal mutation already in flight'
 
 const PLAN_DISPLAY_ORDER: Record<string, number> = {
   go: 0,
@@ -203,6 +208,8 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     requestId: string
   } | null>(null)
   const [quoteLoading, setQuoteLoading] = useState(false)
+  const [renewalMutationPending, setRenewalMutationPending] = useState(false)
+  const renewalMutationInFlightRef = useRef(false)
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -213,14 +220,16 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     }
   }, [])
 
-  const fetchSelfSubscription = useCallback(async () => {
+  const fetchSelfSubscription = useCallback(async (): Promise<boolean> => {
     try {
       const res = await getSelfSubscriptionFull()
       setSelfData(
         normalizeSelfSubscriptionData(res.success ? res.data : undefined)
       )
+      return res.success
     } catch {
       setSelfData(normalizeSelfSubscriptionData(undefined))
+      return false
     }
   }, [])
 
@@ -293,6 +302,74 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
       await Promise.all([fetchPlans(), fetchSelfSubscription()])
     } finally {
       setRefreshing(false)
+    }
+  }
+
+  const refreshAfterRenewal = async () => {
+    let refreshFailed = !(await fetchSelfSubscription())
+    try {
+      await onPurchaseSuccess?.()
+    } catch {
+      refreshFailed = true
+    }
+    if (refreshFailed) {
+      toast.error(t('Subscription updated, but failed to refresh status'))
+    }
+  }
+
+  const handleCancelRenewal = async () => {
+    if (renewalMutationInFlightRef.current) {
+      throw new Error(RENEWAL_MUTATION_ALREADY_IN_FLIGHT)
+    }
+    renewalMutationInFlightRef.current = true
+    setRenewalMutationPending(true)
+    try {
+      const res = await cancelSubscriptionRenewal()
+      if (!res.success) {
+        toast.error(res.message || t('Payment request failed'))
+        throw new Error(RENEWAL_FAILURE_TOAST_SHOWN)
+      }
+      toast.success(t('Subscription renewal canceled'))
+      await refreshAfterRenewal()
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== RENEWAL_FAILURE_TOAST_SHOWN
+      ) {
+        toast.error(t('Payment request failed'))
+      }
+      throw error
+    } finally {
+      renewalMutationInFlightRef.current = false
+      setRenewalMutationPending(false)
+    }
+  }
+
+  const handleResumeRenewal = async () => {
+    if (renewalMutationInFlightRef.current) {
+      throw new Error(RENEWAL_MUTATION_ALREADY_IN_FLIGHT)
+    }
+    renewalMutationInFlightRef.current = true
+    setRenewalMutationPending(true)
+    try {
+      const res = await resumeSubscriptionRenewal()
+      if (!res.success) {
+        toast.error(res.message || t('Payment request failed'))
+        throw new Error(RENEWAL_FAILURE_TOAST_SHOWN)
+      }
+      toast.success(t('Subscription renewal resumed'))
+      await refreshAfterRenewal()
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== RENEWAL_FAILURE_TOAST_SHOWN
+      ) {
+        toast.error(t('Payment request failed'))
+      }
+      throw error
+    } finally {
+      renewalMutationInFlightRef.current = false
+      setRenewalMutationPending(false)
     }
   }
 
@@ -442,7 +519,13 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         }
       >
         {hasActivePlan && currentPlan ? (
-          <CurrentPlanCard plan={currentPlan} selfData={selfData} />
+          <CurrentPlanCard
+            plan={currentPlan}
+            selfData={selfData}
+            renewalMutationPending={renewalMutationPending}
+            onCancelRenewal={handleCancelRenewal}
+            onResumeRenewal={handleResumeRenewal}
+          />
         ) : null}
 
         {plans.length > 0 ? (

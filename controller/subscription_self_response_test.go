@@ -166,7 +166,7 @@ func TestGetSubscriptionSelfReturnsCanonicalContractWithoutProviderIDs(t *testin
 	require.Equal(t, false, capabilities["can_cancel"])
 	require.Equal(t, false, capabilities["can_change_plan"])
 	require.Equal(t, true, capabilities["has_pending_intent"])
-	require.Equal(t, true, capabilities["is_cancel_at_period_end"])
+	require.Equal(t, false, capabilities["is_cancel_at_period_end"])
 	require.Equal(t, false, capabilities["can_use_balance_one_period"])
 
 	migration := data["migration"].(map[string]any)
@@ -212,12 +212,14 @@ func TestGetSubscriptionSelfReturnsProviderNeutralRecurringReviewShape(t *testin
 	require.NoError(t, model.DB.Create(&contract).Error)
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("contract_id", contract.Id).Error)
 	grantKey := "grant_self_should_not_leak"
+	currentSlot := 1
 	entitlement := model.UserSubscription{
 		UserId:            918,
 		PlanId:            9932,
 		ContractId:        contract.Id,
 		ProviderBindingId: binding.Id,
 		GrantKey:          &grantKey,
+		CurrentSlot:       &currentSlot,
 		AmountTotal:       1000,
 		StartTime:         now - 60,
 		EndTime:           now + 3600,
@@ -255,7 +257,7 @@ func TestGetSubscriptionSelfReturnsProviderNeutralRecurringReviewShape(t *testin
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
 	data := envelope["data"].(map[string]any)
 	require.Equal(t, model.SubscriptionRenewalSourceProvider, data["renewal_source"])
-	require.Equal(t, model.SubscriptionRenewalStatusEnabled, data["renewal_status"])
+	require.Equal(t, model.SubscriptionRenewalStatusCancelledByUser, data["renewal_status"])
 
 	contractDTO := data["contract"].(map[string]any)
 	require.NotContains(t, contractDTO, "current_provider_binding_id")
@@ -265,7 +267,7 @@ func TestGetSubscriptionSelfReturnsProviderNeutralRecurringReviewShape(t *testin
 	require.NotContains(t, pendingDTO, "provider_binding_id")
 	capabilities := data["capabilities"].(map[string]any)
 	require.Equal(t, false, capabilities["can_cancel"])
-	require.Equal(t, false, capabilities["can_resume"])
+	require.Equal(t, true, capabilities["can_resume"])
 
 	recurring := data["recurring_subscriptions"].([]any)
 	require.Len(t, recurring, 1)
@@ -337,20 +339,22 @@ func TestGetSubscriptionSelfFallsBackRecurringRenewalForLegacyBindingWithoutCont
 func TestSubscriptionSelfRenewalStateDoesNotEnableTerminalRecurringState(t *testing.T) {
 	now := common.GetTimestamp()
 	activeContract := model.UserSubscriptionContract{
-		Id:                   1,
-		Status:               model.SubscriptionContractStatusActive,
-		PaymentMode:          model.SubscriptionPaymentModeStripeRecurring,
-		CurrentPlanId:        9935,
-		CurrentEntitlementId: 2,
-		CurrentPeriodEnd:     now + 3600,
+		Id:                       1,
+		Status:                   model.SubscriptionContractStatusActive,
+		PaymentMode:              model.SubscriptionPaymentModeStripeRecurring,
+		CurrentPlanId:            9935,
+		CurrentEntitlementId:     2,
+		CurrentProviderBindingId: 3,
+		CurrentPeriodEnd:         now + 3600,
 	}
 	activeEntitlement := model.UserSubscription{
-		Id:            2,
-		PlanId:        9935,
-		Status:        model.SubscriptionEntitlementStatusActive,
-		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
-		EndTime:       now + 3600,
-		AccessEndTime: now + 3600,
+		Id:                2,
+		PlanId:            9935,
+		Status:            model.SubscriptionEntitlementStatusActive,
+		PaymentMode:       model.SubscriptionPaymentModeStripeRecurring,
+		ProviderBindingId: 3,
+		EndTime:           now + 3600,
+		AccessEndTime:     now + 3600,
 	}
 	activeBinding := RecurringSubscriptionDTO{
 		BindingId:        3,
@@ -437,12 +441,13 @@ func TestSubscriptionSelfRenewalStateDoesNotEnableTerminalRecurringState(t *test
 func TestSubscriptionSelfRenewalStateSafelyDerivesPartialStoredPair(t *testing.T) {
 	now := common.GetTimestamp()
 	activeEntitlement := &model.UserSubscription{
-		Id:            2,
-		PlanId:        9936,
-		Status:        model.SubscriptionEntitlementStatusActive,
-		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
-		EndTime:       now + 3600,
-		AccessEndTime: now + 3600,
+		Id:                2,
+		PlanId:            9936,
+		Status:            model.SubscriptionEntitlementStatusActive,
+		PaymentMode:       model.SubscriptionPaymentModeStripeRecurring,
+		ProviderBindingId: 3,
+		EndTime:           now + 3600,
+		AccessEndTime:     now + 3600,
 	}
 	activeBinding := []RecurringSubscriptionDTO{{
 		BindingId:        3,
@@ -462,12 +467,13 @@ func TestSubscriptionSelfRenewalStateSafelyDerivesPartialStoredPair(t *testing.T
 		{
 			name: "provider source without status derives active recurring pair",
 			contract: model.UserSubscriptionContract{
-				Id:               1,
-				Status:           model.SubscriptionContractStatusActive,
-				PaymentMode:      model.SubscriptionPaymentModeStripeRecurring,
-				CurrentPlanId:    9936,
-				CurrentPeriodEnd: now + 3600,
-				RenewalSource:    model.SubscriptionRenewalSourceProvider,
+				Id:                       1,
+				Status:                   model.SubscriptionContractStatusActive,
+				PaymentMode:              model.SubscriptionPaymentModeStripeRecurring,
+				CurrentPlanId:            9936,
+				CurrentProviderBindingId: 3,
+				CurrentPeriodEnd:         now + 3600,
+				RenewalSource:            model.SubscriptionRenewalSourceProvider,
 			},
 			bindings:   activeBinding,
 			wantSource: model.SubscriptionRenewalSourceProvider,
@@ -476,12 +482,13 @@ func TestSubscriptionSelfRenewalStateSafelyDerivesPartialStoredPair(t *testing.T
 		{
 			name: "enabled status without source derives active recurring pair",
 			contract: model.UserSubscriptionContract{
-				Id:               1,
-				Status:           model.SubscriptionContractStatusActive,
-				PaymentMode:      model.SubscriptionPaymentModeStripeRecurring,
-				CurrentPlanId:    9936,
-				CurrentPeriodEnd: now + 3600,
-				RenewalStatus:    model.SubscriptionRenewalStatusEnabled,
+				Id:                       1,
+				Status:                   model.SubscriptionContractStatusActive,
+				PaymentMode:              model.SubscriptionPaymentModeStripeRecurring,
+				CurrentPlanId:            9936,
+				CurrentProviderBindingId: 3,
+				CurrentPeriodEnd:         now + 3600,
+				RenewalStatus:            model.SubscriptionRenewalStatusEnabled,
 			},
 			bindings:   activeBinding,
 			wantSource: model.SubscriptionRenewalSourceProvider,
@@ -519,6 +526,258 @@ func TestSubscriptionSelfRenewalStateSafelyDerivesPartialStoredPair(t *testing.T
 			source, status := subscriptionSelfRenewalState(&testCase.contract, activeEntitlement, testCase.bindings)
 			require.Equal(t, testCase.wantSource, source)
 			require.Equal(t, testCase.wantStatus, status)
+		})
+	}
+}
+
+func TestSubscriptionSelfRenewalCanonicalProjectionAndCapabilities(t *testing.T) {
+	setupSubscriptionControllerTestDB(t)
+	now := common.GetTimestamp()
+	currentSlot := 1
+	activeContract := model.UserSubscriptionContract{
+		Id:                       1,
+		Status:                   model.SubscriptionContractStatusActive,
+		PaymentMode:              model.SubscriptionPaymentModeStripeRecurring,
+		CurrentPlanId:            9937,
+		CurrentEntitlementId:     2,
+		CurrentProviderBindingId: 3,
+		CurrentPeriodStart:       now - 3600,
+		CurrentPeriodEnd:         now + 3600,
+	}
+	activeEntitlement := model.UserSubscription{
+		Id:                2,
+		PlanId:            9937,
+		Status:            model.SubscriptionEntitlementStatusActive,
+		PaymentMode:       model.SubscriptionPaymentModeStripeRecurring,
+		ProviderBindingId: 3,
+		StartTime:         now - 3600,
+		EndTime:           now + 3600,
+		AccessEndTime:     now + 3600,
+		CurrentSlot:       &currentSlot,
+	}
+	activeBinding := RecurringSubscriptionDTO{
+		BindingId:        3,
+		Provider:         model.PaymentProviderStripe,
+		PlanId:           9937,
+		ProviderStatus:   "active",
+		CurrentPeriodEnd: now + 3600,
+	}
+
+	testCases := []struct {
+		name            string
+		contract        model.UserSubscriptionContract
+		entitlement     model.UserSubscription
+		bindings        []RecurringSubscriptionDTO
+		migration       SubscriptionMigrationDTO
+		wantSource      string
+		wantStatus      string
+		wantCanCancel   bool
+		wantCanResume   bool
+		wantCancelAtEnd bool
+		wantSupport     bool
+	}{
+		{
+			name:          "stripe active enabled",
+			contract:      activeContract,
+			entitlement:   activeEntitlement,
+			bindings:      []RecurringSubscriptionDTO{activeBinding},
+			wantSource:    model.SubscriptionRenewalSourceProvider,
+			wantStatus:    model.SubscriptionRenewalStatusEnabled,
+			wantCanCancel: true,
+		},
+		{
+			name: "same-plan stripe binding without current contract binding requires support",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.CurrentProviderBindingId = 0
+				return contract
+			}(),
+			entitlement: activeEntitlement,
+			bindings:    []RecurringSubscriptionDTO{activeBinding},
+			wantSupport: true,
+		},
+		{
+			name: "stripe active cancelled by provider flag",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.CurrentProviderBindingId = activeBinding.BindingId
+				return contract
+			}(),
+			entitlement: activeEntitlement,
+			bindings: []RecurringSubscriptionDTO{func() RecurringSubscriptionDTO {
+				binding := activeBinding
+				binding.CancelAtPeriodEnd = true
+				return binding
+			}()},
+			wantSource:      model.SubscriptionRenewalSourceProvider,
+			wantStatus:      model.SubscriptionRenewalStatusCancelledByUser,
+			wantCanResume:   true,
+			wantCancelAtEnd: true,
+		},
+		{
+			name: "wallet enabled",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.PaymentMode = model.SubscriptionPaymentModeBalanceOnePeriod
+				contract.RenewalSource = model.SubscriptionRenewalSourceWallet
+				contract.RenewalStatus = model.SubscriptionRenewalStatusEnabled
+				return contract
+			}(),
+			entitlement: func() model.UserSubscription {
+				entitlement := activeEntitlement
+				entitlement.PaymentMode = model.SubscriptionPaymentModeBalanceOnePeriod
+				entitlement.Source = model.PaymentMethodBalance
+				return entitlement
+			}(),
+			wantSource:    model.SubscriptionRenewalSourceWallet,
+			wantStatus:    model.SubscriptionRenewalStatusEnabled,
+			wantCanCancel: true,
+		},
+		{
+			name: "wallet cancelled persists",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.PaymentMode = model.SubscriptionPaymentModeBalanceOnePeriod
+				contract.RenewalSource = model.SubscriptionRenewalSourceWallet
+				contract.RenewalStatus = model.SubscriptionRenewalStatusCancelledByUser
+				return contract
+			}(),
+			entitlement: func() model.UserSubscription {
+				entitlement := activeEntitlement
+				entitlement.PaymentMode = model.SubscriptionPaymentModeBalanceOnePeriod
+				entitlement.Source = model.PaymentMethodBalance
+				return entitlement
+			}(),
+			wantSource:      model.SubscriptionRenewalSourceWallet,
+			wantStatus:      model.SubscriptionRenewalStatusCancelledByUser,
+			wantCanResume:   true,
+			wantCancelAtEnd: true,
+		},
+		{
+			name: "one-time pix does not inherit legacy wallet renewal state",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.PaymentMode = model.SubscriptionPaymentModePrepaid
+				contract.RenewalSource = model.SubscriptionRenewalSourceWallet
+				contract.RenewalStatus = model.SubscriptionRenewalStatusEnabled
+				return contract
+			}(),
+			entitlement: func() model.UserSubscription {
+				entitlement := activeEntitlement
+				entitlement.PaymentMode = model.SubscriptionPaymentModePrepaid
+				entitlement.Source = model.SubscriptionPaymentMethodPix
+				return entitlement
+			}(),
+		},
+		{
+			name: "wallet access extension outside renewal period has no lifecycle action",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.PaymentMode = model.SubscriptionPaymentModePrepaid
+				contract.RenewalSource = model.SubscriptionRenewalSourceWallet
+				contract.RenewalStatus = model.SubscriptionRenewalStatusEnabled
+				contract.CurrentPeriodEnd = now - 1
+				return contract
+			}(),
+			entitlement: func() model.UserSubscription {
+				entitlement := activeEntitlement
+				entitlement.PaymentMode = model.SubscriptionPaymentModePrepaid
+				entitlement.Source = model.PaymentMethodBalance
+				entitlement.EndTime = now - 1
+				entitlement.AccessEndTime = now + 3600
+				return entitlement
+			}(),
+			wantSource: model.SubscriptionRenewalSourceWallet,
+			wantStatus: model.SubscriptionRenewalStatusEnabled,
+		},
+		{
+			name:        "empty one period stays empty",
+			contract:    model.UserSubscriptionContract{Id: 1, Status: model.SubscriptionContractStatusActive, PaymentMode: model.SubscriptionPaymentModeBalanceOnePeriod, CurrentPeriodEnd: now + 3600},
+			entitlement: model.UserSubscription{Id: 2, Status: model.SubscriptionEntitlementStatusActive, PaymentMode: model.SubscriptionPaymentModeBalanceOnePeriod, EndTime: now + 3600, AccessEndTime: now + 3600},
+		},
+		{
+			name: "incomplete stripe binding requires support",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.CurrentProviderBindingId = activeBinding.BindingId
+				return contract
+			}(),
+			entitlement: activeEntitlement,
+			bindings: []RecurringSubscriptionDTO{func() RecurringSubscriptionDTO {
+				binding := activeBinding
+				binding.CancelAtPeriodEnd = true
+				binding.RequiresSupport = true
+				return binding
+			}()},
+			wantSupport: true,
+		},
+		{
+			name: "incomplete stripe provider status requires support",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.CurrentProviderBindingId = activeBinding.BindingId
+				return contract
+			}(),
+			entitlement: activeEntitlement,
+			bindings: recurringSubscriptionDTOs([]model.SubscriptionProviderBinding{{
+				Id:                     activeBinding.BindingId,
+				Provider:               model.PaymentProviderStripe,
+				PlanId:                 activeBinding.PlanId,
+				ProviderSubscriptionId: "sub_incomplete_requires_support",
+				ProviderStatus:         "incomplete",
+				CancelAtPeriodEnd:      true,
+				CurrentPeriodEnd:       now + 3600,
+			}}),
+			wantSupport: true,
+		},
+		{
+			name: "mismatched stripe binding requires support",
+			contract: func() model.UserSubscriptionContract {
+				contract := activeContract
+				contract.CurrentProviderBindingId = activeBinding.BindingId + 100
+				return contract
+			}(),
+			entitlement: activeEntitlement,
+			bindings: []RecurringSubscriptionDTO{func() RecurringSubscriptionDTO {
+				binding := activeBinding
+				binding.CancelAtPeriodEnd = true
+				return binding
+			}()},
+			wantSupport: true,
+		},
+		{
+			name:        "ambiguous migration conflict requires support",
+			contract:    activeContract,
+			entitlement: activeEntitlement,
+			bindings: []RecurringSubscriptionDTO{func() RecurringSubscriptionDTO {
+				binding := activeBinding
+				binding.CancelAtPeriodEnd = true
+				return binding
+			}()},
+			migration:   SubscriptionMigrationDTO{RequiresAdminReview: true},
+			wantSupport: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			response := buildSubscriptionSelfResponse(
+				"subscription_first",
+				&testCase.contract,
+				&testCase.entitlement,
+				nil,
+				testCase.migration,
+				nil,
+				nil,
+				testCase.bindings,
+			)
+
+			require.Equal(t, testCase.wantSource, response.RenewalSource)
+			require.Equal(t, testCase.wantStatus, response.RenewalStatus)
+			require.Equal(t, testCase.wantCanCancel, response.Capabilities.CanCancel)
+			require.Equal(t, testCase.wantCanResume, response.Capabilities.CanResume)
+			require.Equal(t, testCase.wantCancelAtEnd, response.Capabilities.IsCancelAtPeriodEnd)
+			require.Equal(t, testCase.wantSupport, response.Capabilities.RequiresSupport)
 		})
 	}
 }
@@ -572,6 +831,7 @@ func TestGetSubscriptionSelfReturnsCurrentEntitlementQuotaReadModel(t *testing.T
 		AccessEndTime:     now + 49*3600 + 1,
 		Status:            model.SubscriptionEntitlementStatusActive,
 		PaymentMode:       model.SubscriptionPaymentModeBalanceOnePeriod,
+		Source:            model.PaymentMethodBalance,
 		NextResetTime:     now + 3600,
 	}
 	require.NoError(t, model.DB.Create(&entitlement).Error)

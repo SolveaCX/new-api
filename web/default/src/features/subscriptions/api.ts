@@ -32,6 +32,7 @@ import type {
   FlexiblePurchaseRequest,
   FlexiblePurchaseResponse,
   SubscriptionPaymentQuotes,
+  SubscriptionRenewalLifecycleResult,
 } from './types'
 
 // ============================================================================
@@ -237,6 +238,26 @@ export async function updateBillingPreference(
 ): Promise<ApiResponse<{ billing_preference?: string }>> {
   const res = await api.put('/api/subscription/self/preference', {
     billing_preference: preference,
+  })
+  return res.data
+}
+
+export async function cancelSubscriptionRenewal(): Promise<
+  ApiResponse<SubscriptionRenewalLifecycleResult>
+> {
+  const res = await api.post('/api/subscription/self/renewal/cancel', undefined, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
+  return res.data
+}
+
+export async function resumeSubscriptionRenewal(): Promise<
+  ApiResponse<SubscriptionRenewalLifecycleResult>
+> {
+  const res = await api.post('/api/subscription/self/renewal/resume', undefined, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
   })
   return res.data
 }

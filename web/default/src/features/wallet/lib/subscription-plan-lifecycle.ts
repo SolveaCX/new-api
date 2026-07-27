@@ -27,6 +27,8 @@ import type {
   SubscriptionPaymentAvailability,
   SubscriptionPaymentQuote,
   SubscriptionPaymentQuotes,
+  SubscriptionRenewalSource,
+  SubscriptionRenewalStatus,
   SubscriptionUsageWindow,
   SubscriptionContract,
   SubscriptionCurrentPeriod,
@@ -109,8 +111,8 @@ export type WalletSelfSubscriptionData = Omit<
   window_7d?: SubscriptionUsageWindow
   media_credits?: SubscriptionUsageWindow
   remaining_days?: number
-  renewal_source?: string
-  renewal_status?: string
+  renewal_source?: SubscriptionRenewalSource
+  renewal_status?: SubscriptionRenewalStatus
   payment_availability?: SubscriptionPaymentAvailability
   payment_quotes?: SubscriptionPaymentQuotes
   capabilities: WalletSubscriptionCapabilities
@@ -163,6 +165,29 @@ const DEFAULT_MIGRATION: WalletSelfSubscriptionData['migration'] = {
   requires_admin_review: true,
   classification: 'unknown',
   reason: '',
+}
+
+function normalizeRenewalSource(
+  source: unknown
+): SubscriptionRenewalSource | undefined {
+  if (source === 'provider_recurring' || source === 'wallet_auto') {
+    return source
+  }
+  return undefined
+}
+
+function normalizeRenewalStatus(
+  status: unknown
+): SubscriptionRenewalStatus | undefined {
+  if (
+    status === 'enabled' ||
+    status === 'cancelled_by_user' ||
+    status === 'paused_insufficient_balance' ||
+    status === 'paused_plan_unavailable'
+  ) {
+    return status
+  }
+  return undefined
 }
 
 function normalizeMigration(
@@ -239,8 +264,8 @@ export function normalizeSelfSubscriptionData(
     window_7d: data?.window_7d ?? EMPTY_USAGE_WINDOW,
     media_credits: normalizeMediaUsageWindow(data?.media_credits),
     remaining_days: data?.remaining_days,
-    renewal_source: data?.renewal_source,
-    renewal_status: data?.renewal_status,
+    renewal_source: normalizeRenewalSource(data?.renewal_source),
+    renewal_status: normalizeRenewalStatus(data?.renewal_status),
     payment_availability: data?.payment_availability ?? {},
     payment_quotes: data?.payment_quotes ?? {},
     pending_change: data?.pending_change ?? null,
@@ -347,7 +372,10 @@ export function getMatchingPaymentQuote(
   if (quote.months !== normalizeFlexibleMonths(paymentChoice, months)) {
     return undefined
   }
-  if (typeof quote.quote_id !== 'string' || quote.quote_id.trim().length === 0) {
+  if (
+    typeof quote.quote_id !== 'string' ||
+    quote.quote_id.trim().length === 0
+  ) {
     return undefined
   }
   if (

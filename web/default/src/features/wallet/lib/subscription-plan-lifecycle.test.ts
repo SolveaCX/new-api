@@ -95,6 +95,12 @@ function createBackendSelfData(
   }
 }
 
+function rawSelfSubscriptionResponse(
+  data: unknown
+): SelfSubscriptionDataResponse {
+  return data as SelfSubscriptionDataResponse
+}
+
 function createCanonicalLifecycleWithContract(
   paymentMode: SubscriptionPaymentMode
 ): WalletSelfSubscriptionData {
@@ -261,6 +267,85 @@ describe('normalizeSelfSubscriptionData', () => {
     expect(normalized.window_7d?.unlimited).toBe(true)
     expect(normalized.media_credits?.total).toBe(0)
     expect(normalized.media_credits?.unlimited).toBe(false)
+  })
+
+  test('preserves canonical provider recurring renewal lifecycle fields', () => {
+    const normalized = normalizeSelfSubscriptionData({
+      ...createBackendSelfData(false, false),
+      renewal_source: 'provider_recurring',
+      renewal_status: 'enabled',
+      capabilities: {
+        can_cancel: true,
+        can_resume: false,
+        is_cancel_at_period_end: false,
+      },
+    })
+
+    expect(normalized.renewal_source).toBe('provider_recurring')
+    expect(normalized.renewal_status).toBe('enabled')
+    expect(normalized.capabilities.can_cancel).toBe(true)
+    expect(normalized.capabilities.can_resume).toBe(false)
+    expect(normalized.capabilities.is_cancel_at_period_end).toBe(false)
+  })
+
+  test('preserves canonical wallet auto renewal cancellation fields', () => {
+    const normalized = normalizeSelfSubscriptionData({
+      ...createBackendSelfData(false, false),
+      renewal_source: 'wallet_auto',
+      renewal_status: 'cancelled_by_user',
+      capabilities: {
+        can_cancel: false,
+        can_resume: true,
+        is_cancel_at_period_end: true,
+      },
+    })
+
+    expect(normalized.renewal_source).toBe('wallet_auto')
+    expect(normalized.renewal_status).toBe('cancelled_by_user')
+    expect(normalized.capabilities.can_cancel).toBe(false)
+    expect(normalized.capabilities.can_resume).toBe(true)
+    expect(normalized.capabilities.is_cancel_at_period_end).toBe(true)
+  })
+
+  test('keeps one-period balance contracts without canonical renewal state empty', () => {
+    const normalized =
+      createCanonicalLifecycleWithContract('balance_one_period')
+
+    expect(normalized.renewal_source).toBeUndefined()
+    expect(normalized.renewal_status).toBeUndefined()
+    expect(normalized.capabilities.can_cancel).toBe(false)
+    expect(normalized.capabilities.can_resume).toBe(false)
+  })
+
+  test('normalizes raw empty and legacy renewal state to absent wallet state', () => {
+    const emptyState = normalizeSelfSubscriptionData(
+      rawSelfSubscriptionResponse({
+        ...createBackendSelfData(false, false),
+        renewal_source: '',
+        renewal_status: '',
+      })
+    )
+    const legacyState = normalizeSelfSubscriptionData(
+      rawSelfSubscriptionResponse({
+        ...createBackendSelfData(false, false),
+        renewal_source: 'balance',
+        renewal_status: 'enabled',
+      })
+    )
+    const unknownState = normalizeSelfSubscriptionData(
+      rawSelfSubscriptionResponse({
+        ...createBackendSelfData(false, false),
+        renewal_source: 'provider_balance',
+        renewal_status: 'unknown',
+      })
+    )
+
+    expect(emptyState.renewal_source).toBeUndefined()
+    expect(emptyState.renewal_status).toBeUndefined()
+    expect(legacyState.renewal_source).toBeUndefined()
+    expect(legacyState.renewal_status).toBe('enabled')
+    expect(unknownState.renewal_source).toBeUndefined()
+    expect(unknownState.renewal_status).toBeUndefined()
   })
 })
 
