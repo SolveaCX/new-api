@@ -229,17 +229,16 @@ func confirmStripeRenewalMutationAfterError(
 	if snapshot.CancelAtPeriodEnd != targetCancelAtPeriodEnd {
 		return nil, false
 	}
-	confirmedBinding, err := model.ApplyProviderSubscriptionLifecycleSnapshot(
-		binding.Id,
-		binding.LifecycleActionSeq,
-		snapshot,
-	)
-	if err != nil {
+	updated, applyErr := model.ApplyProviderSubscriptionLifecycleSnapshotStrict(binding.Id, binding.LifecycleActionSeq, snapshot)
+	if applyErr != nil {
 		return nil, false
 	}
-	result := buildStripeSubscriptionRenewalLifecycleResult(confirmedBinding)
+	result := buildStripeSubscriptionRenewalLifecycleResult(updated)
+	if result.RenewalStatus == "" {
+		return nil, false
+	}
 	common.SysError(fmt.Sprintf(
-		"Stripe renewal mutation confirmed and persisted after local lifecycle failure: user_id=%d binding_id=%d cancel_at_period_end=%t err=%v",
+		"Stripe renewal mutation persisted after local lifecycle failure: user_id=%d binding_id=%d cancel_at_period_end=%t err=%v",
 		binding.UserId,
 		binding.Id,
 		snapshot.CancelAtPeriodEnd,
