@@ -54,6 +54,12 @@ const activityConfigurationKeys = [
   'Back to Activity Configuration',
 ] as const
 
+const campaignTypeSelectorKeys = [
+  'Campaign type',
+  'Promotion',
+  'Content only',
+] as const
+
 const exactAudienceControlKeys = [
   'Registered only',
   'Specified users',
@@ -114,6 +120,7 @@ const recallHelpKeys = [
   'No configured user groups are available.',
   'Choose Allow or Block, then select the user groups to include or exclude. With no group filter, eligible users from every group are included.',
   ...activityConfigurationKeys,
+  ...campaignTypeSelectorKeys,
   ...exactAudienceControlKeys,
   ...dynamicAudienceTemplateValueKeys,
   ...specifiedUsersSelectorKeys,
