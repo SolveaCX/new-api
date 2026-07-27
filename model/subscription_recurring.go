@@ -242,6 +242,10 @@ func applyProviderSubscriptionSnapshot(bindingID int64, expectedLifecycleActionS
 			}
 			return nil
 		}
+		if expectedLifecycleActionSeq != nil &&
+			(snapshot.EndedAt > 0 || isTerminalProviderSubscriptionStatus(snapshot.ProviderStatus)) {
+			return ErrSubscriptionProviderLifecycleConflict
+		}
 		if expectedLifecycleActionSeq != nil && binding.LifecycleActionSeq != *expectedLifecycleActionSeq {
 			if binding.CancelAtPeriodEnd == snapshot.CancelAtPeriodEnd {
 				lifecycleSameTargetRetry = true
