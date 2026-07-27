@@ -108,6 +108,9 @@ export function ReportChannelTable(props: ReportChannelTableProps) {
                   >
                     {item.channel_status === 1 ? t('Enabled') : t('Disabled')}
                   </Badge>
+                  {item.has_estimates ? (
+                    <Badge variant='secondary'>{t('Estimated')}</Badge>
+                  ) : null}
                 </div>
               </TableCell>
               <TableCell className='tabular-nums'>

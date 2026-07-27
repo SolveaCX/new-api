@@ -445,6 +445,17 @@ export async function getHistoricalImport(
   return response.data
 }
 
+export async function publishHistoricalImport(
+  importId: number
+): Promise<SupplyChainApiResponse<SupplierHistoricalImport>> {
+  const response = await api.post(
+    `${SUPPLY_CHAIN_API}/historical-imports/${importId}/publish`,
+    undefined,
+    { skipErrorHandler: true }
+  )
+  return response.data
+}
+
 export async function listHistoricalImportSummaries(
   importId: number,
   params?: {

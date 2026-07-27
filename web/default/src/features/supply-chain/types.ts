@@ -23,7 +23,7 @@ export type SupplierInventoryAdjustmentType =
   | 'correction'
   | 'reversal'
 export type SupplierStatisticsAction = 'exclude' | 'include'
-export type SupplierDataQuality = 'authoritative' | 'unattributed'
+export type SupplierDataQuality = 'authoritative' | 'unattributed' | 'estimated'
 export type NullableRatio = string | null
 export type MicroUsd = string | number
 
@@ -277,6 +277,7 @@ export interface SupplierHistoricalImportCommand {
   channel_mappings: SupplierHistoricalChannelMapping[]
   reason: string
   method?: 'log_estimate_v1'
+  supersedes_import_id?: number
 }
 
 export interface SupplierHistoricalImport {
@@ -297,10 +298,19 @@ export interface SupplierHistoricalImport {
   error_message: string
   started_at: number | null
   completed_at: number | null
+  published_at: number | null
+  published_by: number
+  summary_schema_version: number
+  superseded_at: number | null
+  supersedes_import_id: number | null
+  superseded_by_import_id: number | null
   created_at: number
   updated_at: number
   command: SupplierHistoricalImportCommand
   estimate_only: true
+  affects_inventory: false
+  publication_status: 'draft' | 'published' | 'superseded'
+  publication_ready: boolean
   coverage_scope: 'historical_consume_logs_v1'
   assumptions: string[]
 }
@@ -404,6 +414,7 @@ export interface SupplierReportOverview {
   official_list_consumed_micro_usd: MicroUsd
   remaining_inventory_micro_usd: MicroUsd
   internal_dimension_available: boolean
+  has_estimates: boolean
 }
 
 interface SupplierReportTrendPoint {
@@ -412,6 +423,7 @@ interface SupplierReportTrendPoint {
   business: SupplierReportMetrics
   internal: SupplierReportMetrics | null
   internal_dimension_available: boolean
+  data_quality: 'authoritative' | 'estimated'
 }
 
 export interface SupplierReportTrend {
@@ -421,9 +433,15 @@ export interface SupplierReportTrend {
   latest_completed_date: string | null
   has_incomplete_days: boolean
   incomplete_day_count: number
+  has_estimates: boolean
 }
 
-type SupplierReportDayStatus = 'completed' | 'running' | 'failed' | 'missing'
+type SupplierReportDayStatus =
+  | 'completed'
+  | 'running'
+  | 'failed'
+  | 'missing'
+  | 'estimated'
 
 interface SupplierReportDayState {
   date: string
@@ -454,6 +472,7 @@ interface SupplierReportContractRow {
   internal: SupplierReportMetrics | null
   total_estimated_procurement_cost: SupplierReportMoney | null
   internal_dimension_available: boolean
+  has_estimates: boolean
 }
 
 export interface SupplierReportContractList {
@@ -470,6 +489,7 @@ interface SupplierReportChannelRow {
   channel_status: number
   contract_id: number
   business: SupplierReportMetrics
+  has_estimates: boolean
 }
 
 export interface SupplierReportChannelList {

@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSupplierV1SchemaHasExactlyElevenTables(t *testing.T) {
+func TestSupplierV1SchemaHasExactlyTwelveTables(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
@@ -18,7 +18,7 @@ func TestSupplierV1SchemaHasExactlyElevenTables(t *testing.T) {
 		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{},
 		&SupplierChannelBindingVersion{}, &SupplierInventoryAdjustment{}, &SupplierStatisticsExclusionRule{},
 		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
-		&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{},
+		&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalPublishedDay{},
 	))
 	require.NoError(t, EnsureSupplierAccountingFactSchema(db))
 	var names []string
@@ -31,6 +31,7 @@ func TestSupplierV1SchemaHasExactlyElevenTables(t *testing.T) {
 		"supplier_contracts",
 		"supplier_historical_daily_summaries",
 		"supplier_historical_imports",
+		"supplier_historical_published_days",
 		"supplier_inventory_adjustments",
 		"supplier_statistics_exclusion_rules",
 		"supplier_usage_daily_batch_runs",

@@ -17,7 +17,7 @@ func setupSupplierHistoricalControllerDB(t *testing.T) (*gorm.DB, int, int, int)
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierContractRateVersion{},
-		&model.SupplierHistoricalImport{}, &model.SupplierHistoricalDailySummary{},
+		&model.SupplierHistoricalImport{}, &model.SupplierHistoricalDailySummary{}, &model.SupplierHistoricalPublishedDay{},
 	))
 	supplier := model.UpstreamSupplier{Name: "controller historical supplier"}
 	require.NoError(t, db.Create(&supplier).Error)
@@ -71,4 +71,11 @@ func TestSupplierHistoricalEstimateImportListGetAndSeries(t *testing.T) {
 	series := performSupplyChainControllerRequestAt(http.MethodGet, "/historical-imports/:id/summaries", "/historical-imports/"+strconv.FormatInt(item.Id, 10)+"/summaries", "", ListSupplierHistoricalEstimateSummaries)
 	require.Equal(t, http.StatusOK, series.Code)
 	require.Contains(t, series.Body.String(), `"data_quality":"estimated"`)
+	published := performSupplyChainControllerRequestAt(http.MethodPost, "/historical-imports/:id/publish", "/historical-imports/"+strconv.FormatInt(item.Id, 10)+"/publish", "", PublishSupplierHistoricalEstimateImport)
+	require.Equal(t, http.StatusOK, published.Code)
+	require.Contains(t, published.Body.String(), `"publication_status":"published"`)
+	require.Contains(t, published.Body.String(), `"affects_inventory":false`)
+	var publishedDays int64
+	require.NoError(t, db.Model(&model.SupplierHistoricalPublishedDay{}).Where("import_id = ?", item.Id).Count(&publishedDays).Error)
+	require.Equal(t, int64(1), publishedDays)
 }

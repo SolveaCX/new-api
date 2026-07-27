@@ -1,6 +1,6 @@
 # 供应商核算运维手册
 
-本文档用于发布和运维[上游供应链与利润核算 V1](./supplier-supply-chain-v1.md)。权威链路以 `supplier_accounting_facts` 为源；通用日志只作审计镜像；历史估算独立且永不进入权威报表或库存。
+本文档用于发布和运维[上游供应链与利润核算 V1](./supplier-supply-chain-v1.md)。权威链路以 `supplier_accounting_facts` 为源；通用日志只作审计镜像；历史估算只有显式发布后才作为报表基线，且永不影响库存。
 
 ## 1. 运行拓扑
 
@@ -10,20 +10,20 @@
 | `newapi-router` | Slave | 已绑定同步 relay 尝试的 fact prepare/finalize；成功日志写审计镜像；不运行 ticker |
 | `newapi-web` | Website | 无供应商核算职责 |
 
-`supplier_accounting_facts` 位于 LOG_DB；其余 10 张供应商表位于主库。没有独立 `LOG_SQL_DSN` 时两者共享物理数据库。多实例正确性由数据库租约、CAS 和 fence 保证，不依赖 Redis。
+`supplier_accounting_facts` 位于 LOG_DB；其余 11 张供应商表位于主库。没有独立 `LOG_SQL_DSN` 时两者共享物理数据库。多实例正确性由数据库租约、CAS、唯一日期发布指针和 fence 保证，不依赖 Redis。
 
 ## 2. 发布前检查
 
 ### 2.1 数据库与配置
 
-- 主库能够创建 10 张供应商表；LOG_DB 能够创建 `supplier_accounting_facts` 及唯一/日状态索引；
+- 主库能够创建 11 张供应商表；LOG_DB 能够创建 `supplier_accounting_facts` 及唯一/日状态索引；
 - 在真实 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+ 实例执行迁移、fact CAS、lease/fence、重叠导入和汇总 upsert 验收；DryRun schema 检查不能替代真实数据库执行；
 - Router 和 Console 指向同一个 LOG_DB 事实源；
 - `SUPPLIER_ACCOUNTING_CUTOVER_AT` 在所有 Go 服务中保持一致，值为未来某个北京时间零点的 Unix 秒；
 - `SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS` 首次发布建议不设置，完成账实核对后再配置；
 - 不在 staging 复制生产 OAuth、支付、回调、域名或数据库凭据。
 
-真实数据库验收使用 `TestSupplierAccountingRealDatabaseIntegration`。测试默认 skip，DSN 必须指向零表、可丢弃的隔离数据库，并显式设置 `TEST_SUPPLIER_ACCOUNTING_ALLOW_SCHEMA_MUTATION=isolated-empty-database`；MySQL/PostgreSQL DSN 分别通过 `TEST_SUPPLIER_ACCOUNTING_MYSQL_DSN`、`TEST_SUPPLIER_ACCOUNTING_POSTGRES_DSN` 提供。测试会拒绝非空 schema，并覆盖 11 表迁移、fact CAS、日报 upsert、historical lease/fence 和并发重叠创建。
+真实数据库验收使用 `TestSupplierAccountingRealDatabaseIntegration`。测试默认 skip，DSN 必须指向零表、可丢弃的隔离数据库，并显式设置 `TEST_SUPPLIER_ACCOUNTING_ALLOW_SCHEMA_MUTATION=isolated-empty-database`；MySQL/PostgreSQL DSN 分别通过 `TEST_SUPPLIER_ACCOUNTING_MYSQL_DSN`、`TEST_SUPPLIER_ACCOUNTING_POSTGRES_DSN` 提供。测试会拒绝非空 schema，并覆盖 12 表迁移、fact CAS、日报 upsert、historical lease/fence、历史发布/替代和权威日结覆盖。
 
 ### 2.2 热路径容量门禁
 
@@ -54,9 +54,9 @@
 
 禁止先让 Router 在缺少 fact 表或配置不一致时进入 fail-closed 区间。推荐流程：
 
-1. 保持 `SUPPLIER_ACCOUNTING_CUTOVER_AT` 未配置，先部署 Console；确认主库 10 张表和 LOG_DB fact 表创建完成。
+1. 保持 `SUPPLIER_ACCOUNTING_CUTOVER_AT` 未配置，先部署 Console；确认主库 11 张表和 LOG_DB fact 表创建完成。
 2. 仍保持 cutover 未配置，部署全部 Router；此时新代码已在位但不会创建 fact。
-3. 检查 Console 管理页、11 张表、LOG_DB 连通性和 Router 健康状态。
+3. 检查 Console 管理页、12 张表、LOG_DB 连通性和 Router 健康状态。
 4. 选择未来一个 `Asia/Shanghai 00:00:00`，把相同 cutover Unix 秒配置到 Console、Router 和 legacy `newapi`（若仍承载流量）。
 5. 在 cutover 前完成所有修订切换；cutover 后抽样确认 bound attempt 先 pending、再 captured/void。
 6. 次日 02:00 后核对首个 completed batch 和权威报表。
@@ -71,13 +71,14 @@ staging 从远端 `staging` 分支自动部署：后端工作流为 `.github/wor
 
 在 staging 使用独立数据库与域名，并执行：
 
-1. cutover 未配置时启动，确认 11 张表创建且普通 relay 不产生 fact；
+1. cutover 未配置时启动，确认 12 张表创建且普通 relay 不产生 fact；
 2. 将 cutover 设为未来北京时间零点，重发修订并确认各节点配置一致；
 3. cutover 后发送已绑定成功、零用量、失败、重试和流式请求；
 4. 验证 captured/void/pending 终态和 pending 管理接口；
 5. 人工解决测试 pending，确认日结冻结水位后才能 completed；
-6. 验证业务/内部报表、库存公式以及历史估算与权威报表隔离；
-7. 验证历史导入 pending/running/failed 不展示金额，completed 后才读取序列。
+6. 验证业务/内部报表、库存公式，以及历史估算发布后进入报表但不影响库存；
+7. 验证历史导入 pending/running/failed 不展示金额，completed 后可预览；显式发布后报表显示估算标记，同日权威日结覆盖估算；
+8. 对同范围执行重新估算，确认新版本发布时原子替代旧版本，旧版本仍可审计。
 
 ## 5. 每日检查
 
@@ -139,9 +140,11 @@ staging 从远端 `staging` 分支自动部署：后端工作流为 `.github/wor
 4. 后台 worker 首次取得该任务 lease 时冻结 LOG_DB 最大日志 ID 和候选条数；排队期间任务仍未冻结，后续接管和重试必须复用首次冻结值；
 5. 每分钟 ticker 最多推进一页，可在列表查看进度；
 6. completed 前金额保持隐藏；完成后查看按日 sales/cost/gross 及 unknown/unassigned 覆盖；
-7. failed 可修正配置后重新创建，同范围 pending/running/completed 不允许重复。
+7. completed 后先核对预览，再显式“发布到报表”；发布不改变库存；
+8. 需要修正映射、折扣或污染数据时，对 completed 任务执行“重新估算”；日期范围必须一致，新版本完成并发布后原子替代旧版本；
+9. 旧结构任务若页面提示“需要重新估算”，不得直接修改数据库绕过版本门。
 
-历史结果只用于人工分析。不得把 `supplier_historical_daily_summaries` 合并、复制或回填到权威日报、库存或 `supplier_accounting_facts`。
+历史结果不得复制或回填到 `supplier_accounting_facts`，也不得用于库存扣减。报表通过 `supplier_historical_published_days` 读取当前发布版本；同日存在权威 published fence 时必须忽略历史估算。
 
 ## 10. Fact 留存
 
@@ -159,7 +162,7 @@ staging 从远端 `staging` 分支自动部署：后端工作流为 `.github/wor
 
 多个 Console 同时触发 ticker 属于正常场景；只有获得主库 lease/fence 的 owner 可以推进。旧 owner 恢复后必须因 fence 不匹配停止。
 
-应用回滚不删除 11 张表、不改 fact 终态、不删除日报和历史估算：
+应用回滚不删除 12 张表、不改 fact 终态、不删除日报和历史估算：
 
 - Router 回滚到不支持 fact 的版本会在 cutover 后造成权威覆盖缺口，必须立即停止扩大流量并恢复兼容修订；
 - Console 回滚会停止日结、管理和留存，但已发布 fence 保持不变；
@@ -168,13 +171,13 @@ staging 从远端 `staging` 分支自动部署：后端工作流为 `.github/wor
 
 ## 12. 发布验证清单
 
-- [ ] 主库 10 表、LOG_DB 1 表已在真实 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+ 实例完成迁移与状态机验证；
+- [ ] 主库 11 表、LOG_DB 1 表已在真实 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+ 实例完成迁移与状态机验证；
 - [ ] 生产峰值模型 DB 压测、p95/p99、连接池等待、故障恢复和账实核对通过；若共享主库不达标，已切换并复测独立 LOG_DB；
 - [ ] Console 先于 Router 完成迁移，所有流量节点在 cutover 前就绪；
 - [ ] staging 使用独立配置完成 captured/void/pending 测试；
 - [ ] pending 审计、secure mutation 和日结阻断生效；
 - [ ] 多 Console 竞争、接管和旧 owner 恢复测试通过；
 - [ ] 报表只读 published fence，业务/内部/库存口径一致；
-- [ ] 历史估算完成门和权威隔离通过；
+- [ ] 历史估算完成门、显式发布、重新估算原子替代、估算标记、同日权威覆盖和库存隔离通过；
 - [ ] 留存关闭态验证通过；启用时只删除符合条件的 terminal facts；
 - [ ] Router deploy: required；Console/legacy 流量节点部署范围已确认；网站、Terraform、Cloudflare 无变更。

@@ -36,13 +36,14 @@ type SupplierHistoricalChannelMapping struct {
 }
 
 type SupplierHistoricalImportCommand struct {
-	StartDate       string                             `json:"start_date"`
-	EndDate         string                             `json:"end_date"`
-	QuotaPerUnit    string                             `json:"quota_per_unit"`
-	ExcludedUserIds []int                              `json:"excluded_user_ids"`
-	ChannelMappings []SupplierHistoricalChannelMapping `json:"channel_mappings"`
-	Reason          string                             `json:"reason"`
-	Method          string                             `json:"method"`
+	StartDate          string                             `json:"start_date"`
+	EndDate            string                             `json:"end_date"`
+	QuotaPerUnit       string                             `json:"quota_per_unit"`
+	ExcludedUserIds    []int                              `json:"excluded_user_ids"`
+	ChannelMappings    []SupplierHistoricalChannelMapping `json:"channel_mappings"`
+	Reason             string                             `json:"reason"`
+	Method             string                             `json:"method"`
+	SupersedesImportId *int64                             `json:"supersedes_import_id,omitempty"`
 }
 
 type SupplierHistoricalRunResult struct {
@@ -54,10 +55,13 @@ type SupplierHistoricalRunResult struct {
 
 type SupplierHistoricalImportView struct {
 	model.SupplierHistoricalImport
-	Command       SupplierHistoricalImportCommand `json:"command"`
-	EstimateOnly  bool                            `json:"estimate_only"`
-	CoverageScope string                          `json:"coverage_scope"`
-	Assumptions   []string                        `json:"assumptions"`
+	Command           SupplierHistoricalImportCommand `json:"command"`
+	EstimateOnly      bool                            `json:"estimate_only"`
+	AffectsInventory  bool                            `json:"affects_inventory"`
+	PublicationStatus string                          `json:"publication_status"`
+	PublicationReady  bool                            `json:"publication_ready"`
+	CoverageScope     string                          `json:"coverage_scope"`
+	Assumptions       []string                        `json:"assumptions"`
 }
 
 func BuildSupplierHistoricalImportView(item model.SupplierHistoricalImport) (SupplierHistoricalImportView, error) {
@@ -65,16 +69,26 @@ func BuildSupplierHistoricalImportView(item model.SupplierHistoricalImport) (Sup
 	if err != nil {
 		return SupplierHistoricalImportView{}, err
 	}
+	publicationStatus := "draft"
+	if item.SupersededAt != nil {
+		publicationStatus = "superseded"
+	} else if item.PublishedAt != nil {
+		publicationStatus = "published"
+	}
 	return SupplierHistoricalImportView{
 		SupplierHistoricalImport: item,
 		Command:                  command,
 		EstimateOnly:             true,
+		AffectsInventory:         false,
+		PublicationStatus:        publicationStatus,
+		PublicationReady:         item.Status == model.SupplierHistoricalImportStatusCompleted && item.SummarySchemaVersion == model.SupplierHistoricalSummarySchemaVersion && item.PublishedAt == nil && item.SupersededAt == nil,
 		CoverageScope:            "historical_consume_logs_v1",
 		Assumptions: []string{
 			"sales_equals_quota_divided_by_frozen_quota_per_unit",
 			"official_list_requires_valid_logged_group_ratio",
 			"procurement_cost_requires_explicit_channel_mapping",
-			"authoritative_reports_and_inventory_are_unchanged",
+			"published_estimates_enter_reports_but_not_inventory",
+			"authoritative_daily_data_overrides_same_day_estimates",
 		},
 	}, nil
 }
@@ -116,7 +130,12 @@ func CreateSupplierHistoricalEstimate(ctx context.Context, mainDB *gorm.DB, comm
 		CreatedBy: actor, Method: canonical.Method, Reason: canonical.Reason, StartDate: canonical.StartDate, EndDate: canonical.EndDate,
 		DayStart: dayStart, DayEnd: dayEnd, QuotaPerUnit: canonical.QuotaPerUnit,
 		ExcludedUserIdsJSON: string(excludedJSON), ChannelMappingsJSON: string(mappingsJSON),
+		SupersedesImportId: canonical.SupersedesImportId,
 	})
+}
+
+func PublishSupplierHistoricalEstimate(ctx context.Context, mainDB *gorm.DB, importId int64, actor int) (model.SupplierHistoricalImport, error) {
+	return model.PublishSupplierHistoricalImport(ctx, mainDB, importId, actor)
 }
 
 func canonicalizeSupplierHistoricalCommand(command SupplierHistoricalImportCommand) (SupplierHistoricalImportCommand, int64, int64, error) {
@@ -138,6 +157,9 @@ func canonicalizeSupplierHistoricalCommand(command SupplierHistoricalImportComma
 	}
 	reason := strings.TrimSpace(command.Reason)
 	if reason == "" {
+		return command, 0, 0, ErrSupplierHistoricalCommandInvalid
+	}
+	if command.SupersedesImportId != nil && *command.SupersedesImportId <= 0 {
 		return command, 0, 0, ErrSupplierHistoricalCommandInvalid
 	}
 	excludedSet := make(map[int]struct{}, len(command.ExcludedUserIds))
@@ -164,6 +186,7 @@ func canonicalizeSupplierHistoricalCommand(command SupplierHistoricalImportComma
 	return SupplierHistoricalImportCommand{
 		StartDate: start.Format("2006-01-02"), EndDate: end.Format("2006-01-02"), QuotaPerUnit: qpu.String(),
 		ExcludedUserIds: excluded, ChannelMappings: mappings, Reason: reason, Method: model.SupplierHistoricalMethodLogEstimateV1,
+		SupersedesImportId: command.SupersedesImportId,
 	}, start.Unix(), end.Unix(), nil
 }
 
@@ -411,6 +434,12 @@ func accumulateSupplierHistoricalMoney(summary *model.SupplierHistoricalDailySum
 	}
 	if !internal && salesKnown && costKnown {
 		summary.GrossProfitKnownCount++
+		summary.GrossMarginEligibleCount++
+		if value, ok := supplierHistoricalCheckedAdd(summary.GrossMarginEligibleSalesMicroUsd, sales); ok {
+			summary.GrossMarginEligibleSalesMicroUsd = value
+		} else {
+			return ErrSupplierHistoricalMoneyOverflow
+		}
 		gross, ok := supplierHistoricalCheckedAdd(sales, -cost)
 		if !ok {
 			return ErrSupplierHistoricalMoneyOverflow

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import {
   Card,
@@ -139,6 +140,16 @@ export function ReportOverview(props: ReportOverviewProps) {
       </CardHeader>
       <CardContent className='flex flex-col gap-4'>
         {props.isError ? <ReportQueryError hasData /> : null}
+        {props.data.has_estimates ? (
+          <Alert>
+            <AlertTitle>{t('Includes historical estimates')}</AlertTitle>
+            <AlertDescription>
+              {t(
+                'Some values are published historical estimates. Authoritative daily data overrides estimates for the same date.'
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <div className='grid gap-6 lg:grid-cols-3'>
           <section aria-labelledby='supply-inventory-heading'>
             <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
