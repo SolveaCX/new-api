@@ -258,13 +258,17 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 func runSynchronousRelayAttempt(c *gin.Context, relayInfo *relaycommon.RelayInfo, channelID int, relayFormat types.RelayFormat, handler func() *types.NewAPIError) *types.NewAPIError {
 	if err := service.PrepareSupplierAccountingAttempt(c, relayInfo, channelID); err != nil {
 		logger.LogError(c, fmt.Sprintf("prepare supplier accounting attempt failed: %s", err.Error()))
-		return supplierAccountingRelayError("prepare", err)
+		if !errors.Is(err, service.ErrSupplierAccountingFactPersistence) {
+			return supplierAccountingRelayError("prepare", err)
+		}
 	}
 
 	relayErr := handler()
 	if terminalErr := service.SupplierAccountingAttemptTerminalError(c); terminalErr != nil {
 		logger.LogError(c, fmt.Sprintf("finalize supplier accounting attempt failed: %s", terminalErr.Error()))
-		return supplierAccountingRelayError("finalize", terminalErr)
+		if !errors.Is(terminalErr, service.ErrSupplierAccountingFactPersistence) {
+			return supplierAccountingRelayError("finalize", terminalErr)
+		}
 	}
 	if relayErr == nil || supplierAccountingAttemptOutcomeUnknown(c, relayInfo, relayFormat) ||
 		!supplierAccountingPreDispatchFailure(relayErr) {
@@ -272,7 +276,9 @@ func runSynchronousRelayAttempt(c *gin.Context, relayInfo *relaycommon.RelayInfo
 	}
 	if err := service.FinalizeSupplierAccountingAttemptVoid(c); err != nil {
 		logger.LogError(c, fmt.Sprintf("void supplier accounting attempt failed: %s", err.Error()))
-		return supplierAccountingRelayError("void", err)
+		if !errors.Is(err, service.ErrSupplierAccountingFactPersistence) {
+			return supplierAccountingRelayError("void", err)
+		}
 	}
 	return relayErr
 }
