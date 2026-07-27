@@ -240,6 +240,7 @@ func ListRecallOfferCandidatesForUserWithContext(ctx context.Context, userID int
 		Model(&RecallRecipient{}).
 		Select("recall_recipients.*").
 		Joins("JOIN recall_campaigns ON recall_campaigns.id = recall_recipients.campaign_id").
+		Where("recall_campaigns.campaign_type = ?", RecallCampaignTypePromotion).
 		Where("recall_campaigns.status IN ?", usableStatuses).
 		Where("(recall_recipients.user_id = ? OR (recall_recipients.user_id = 0 AND LOWER(recall_recipients.email_snapshot) = ?))", userID, email)
 	query = applyRecallOfferRecipientFilters(query, "recall_recipients", now)
@@ -278,6 +279,7 @@ func ListRecallOfferCandidatesForUserWithContext(ctx context.Context, userID int
 			Select("recall_recipients.*").
 			Joins("JOIN recall_campaigns ON recall_campaigns.id = recall_recipients.campaign_id").
 			Where("recall_recipients.id IN ? AND recall_recipients.user_id = ?", recipientIDs[start:end], userID).
+			Where("recall_campaigns.campaign_type = ?", RecallCampaignTypePromotion).
 			Where("recall_campaigns.status IN ?", usableStatuses)
 		finalQuery = applyRecallOfferRecipientFilters(finalQuery, "recall_recipients", now)
 		if err := finalQuery.Order("recall_recipients.id ASC").Find(&batch).Error; err != nil {
@@ -306,7 +308,7 @@ func ListRecallOfferCandidatesForUserWithContext(ctx context.Context, userID int
 		}
 		var batch []RecallCampaign
 		if err := DB.WithContext(ctx).
-			Where("id IN ? AND status IN ?", campaignIDs[start:end], usableStatuses).
+			Where("id IN ? AND campaign_type = ? AND status IN ?", campaignIDs[start:end], RecallCampaignTypePromotion, usableStatuses).
 			Find(&batch).Error; err != nil {
 			return nil, err
 		}
@@ -368,7 +370,8 @@ func bindRecallOfferCandidateRecipientUserWithContext(ctx context.Context, recip
 	query := DB.WithContext(ctx).Model(&RecallRecipient{}).
 		Where("id = ? AND user_id = 0 AND LOWER(email_snapshot) = ?", recipientID, email).
 		Where(
-			"EXISTS (SELECT 1 FROM recall_campaigns WHERE recall_campaigns.id = recall_recipients.campaign_id AND recall_campaigns.status IN ?)",
+			"EXISTS (SELECT 1 FROM recall_campaigns WHERE recall_campaigns.id = recall_recipients.campaign_id AND recall_campaigns.campaign_type = ? AND recall_campaigns.status IN ?)",
+			RecallCampaignTypePromotion,
 			recallOfferUsableCampaignStatuses(),
 		)
 	query = applyRecallOfferRecipientFilters(query, "", now)
