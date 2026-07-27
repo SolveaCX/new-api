@@ -220,6 +220,8 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 					CustomerID:     strings.TrimSpace(user.StripeCustomer),
 					Email:          strings.TrimSpace(user.Email),
 					PriceID:        strings.TrimSpace(plan.StripePriceId),
+					Currency:       strings.ToUpper(strings.TrimSpace(plan.Currency)),
+					SubtotalMinor:  subscriptionPurchaseMinorAmount(plan.PriceAmount),
 					IdempotencyKey: existing.ProviderIdempotencyKey,
 					Presentation:   ResolveStripeCheckoutPresentation(cmd.UIMode),
 				}
@@ -508,6 +510,20 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 		}
 	}
 	if checkoutInput != nil {
+		RecordRecallClaimAttribution(context.Background(), cmd.UserID, cmd.RecallClaim)
+		offer, err := GetRecallRuntime().Claims.ResolveBestRecallOffer(
+			context.Background(),
+			cmd.UserID,
+			RecallPurchaseKindSubscription,
+			checkoutInput.PriceID,
+			checkoutInput.Currency,
+			checkoutInput.SubtotalMinor,
+		)
+		if err != nil {
+			_ = TerminatePendingStripePurchase(context.Background(), checkoutInput.TradeNo, model.SubscriptionChangeIntentStatusFailed)
+			return nil, err
+		}
+		checkoutInput.RecallDiscount = RecallCheckoutDiscountFromResolvedOffer(offer)
 		checkout, err := stripeSubscriptionCheckoutCreator(context.Background(), *checkoutInput)
 		if err != nil {
 			_ = TerminatePendingStripePurchase(context.Background(), checkoutInput.TradeNo, model.SubscriptionChangeIntentStatusFailed)
@@ -1115,6 +1131,8 @@ func prepareStripeSubscriptionCheckoutPaymentTx(tx *gorm.DB, user *model.User, c
 		CustomerID:     strings.TrimSpace(user.StripeCustomer),
 		Email:          strings.TrimSpace(user.Email),
 		PriceID:        strings.TrimSpace(plan.StripePriceId),
+		Currency:       strings.ToUpper(strings.TrimSpace(plan.Currency)),
+		SubtotalMinor:  subscriptionPurchaseMinorAmount(plan.PriceAmount),
 		IdempotencyKey: idempotencyKey,
 		Presentation:   ResolveStripeCheckoutPresentation(""),
 	}, nil
