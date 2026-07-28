@@ -17,8 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { api } from '@/lib/api'
-import { cancelSubscriptionRenewal, resumeSubscriptionRenewal } from './api'
+import { api, type ApiRequestConfig } from '@/lib/api'
+import {
+  cancelSubscriptionRenewal,
+  getSelfSubscriptionFull,
+  resumeSubscriptionRenewal,
+} from './api'
 
 afterEach(() => {
   mock.restore()
@@ -28,18 +32,38 @@ describe('subscription renewal lifecycle API', () => {
   test.each([
     ['cancel', cancelSubscriptionRenewal],
     ['resume', resumeSubscriptionRenewal],
-  ] as const)('%s keeps renewal error toasts owned by the caller', async (action, request) => {
-    const response = { success: false, message: `${action} failed` }
-    const post = spyOn(api, 'post').mockResolvedValue({ data: response } as never)
+  ] as const)(
+    '%s keeps renewal error toasts owned by the caller',
+    async (action, request) => {
+      const response = { success: false, message: `${action} failed` }
+      const post = spyOn(api, 'post').mockResolvedValue({
+        data: response,
+      } as never)
 
-    await expect(request()).resolves.toEqual(response)
-    expect(post).toHaveBeenCalledWith(
-      `/api/subscription/self/renewal/${action}`,
-      undefined,
-      {
-        skipBusinessError: true,
-        skipErrorHandler: true,
-      }
-    )
+      await expect(request()).resolves.toEqual(response)
+      expect(post).toHaveBeenCalledWith(
+        `/api/subscription/self/renewal/${action}`,
+        undefined,
+        {
+          skipBusinessError: true,
+          skipErrorHandler: true,
+        }
+      )
+    }
+  )
+})
+
+describe('getSelfSubscriptionFull', () => {
+  test('passes request config through to the self-subscription request', async () => {
+    const config: ApiRequestConfig = {
+      skipBusinessError: true,
+      skipErrorHandler: true,
+    }
+    const response = { success: true, data: {} }
+    spyOn(api, 'get').mockResolvedValue({ data: response } as never)
+
+    await expect(getSelfSubscriptionFull(config)).resolves.toBe(response)
+
+    expect(api.get).toHaveBeenCalledWith('/api/subscription/self', config)
   })
 })
