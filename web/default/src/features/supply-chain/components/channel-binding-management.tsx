@@ -62,6 +62,7 @@ import {
 import { supplyChainQueryKeys } from '../query-keys'
 import type { SupplierChannelBinding } from '../types'
 import { AccountingPolicyActivation } from './accounting-policy-activation'
+import { AccountingRuntimeSettings } from './accounting-runtime-settings'
 import { ChannelBatchBindingDialog } from './channel-batch-binding-dialog'
 import {
   ConfirmAction,
@@ -466,6 +467,7 @@ export function ChannelBindingManagement(props: SupplyChainManagementProps) {
 
   return (
     <div className='flex flex-col gap-3'>
+      <AccountingRuntimeSettings />
       <AccountingPolicyActivation
         capability={policy.data}
         isLoading={policy.isLoading}

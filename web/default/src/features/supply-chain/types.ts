@@ -245,6 +245,26 @@ export interface SupplierAccountingPolicyActivationRequest {
   activated: boolean
 }
 
+export type SupplierAccountingRuntimeSettingsSource =
+  | 'database'
+  | 'environment'
+  | 'default'
+
+export interface SupplierAccountingRuntimeSettings {
+  protocol_version: number
+  revision: number
+  cutover_at: number
+  retention_days: number
+  source: SupplierAccountingRuntimeSettingsSource
+  cutover_locked: boolean
+}
+
+export interface SupplierAccountingRuntimeSettingsRequest {
+  expected_revision: number
+  cutover_at: number
+  retention_days: number
+}
+
 export interface SupplierChannelUnbindVariables {
   expectedContractId: number
   expectedSkipInternalAccounting: boolean

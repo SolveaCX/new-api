@@ -25,6 +25,8 @@ import type {
   SupplierChannelUnbindVariables,
   SupplierAccountingPolicyActivationRequest,
   SupplierAccountingPolicyCapability,
+  SupplierAccountingRuntimeSettings,
+  SupplierAccountingRuntimeSettingsRequest,
   SupplierContract,
   SupplierContractChildListParams,
   SupplierContractCreateRequest,
@@ -351,6 +353,24 @@ export async function updateAccountingPolicyCapability(
 ): Promise<SupplyChainApiResponse<SupplierAccountingPolicyCapability>> {
   const response = await api.put(
     `${SUPPLY_CHAIN_API}/channel-binding-policy-v1`,
+    data,
+    { skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function getAccountingRuntimeSettings(): Promise<
+  SupplyChainApiResponse<SupplierAccountingRuntimeSettings>
+> {
+  const response = await api.get(`${SUPPLY_CHAIN_API}/runtime-settings-v1`)
+  return response.data
+}
+
+export async function updateAccountingRuntimeSettings(
+  data: SupplierAccountingRuntimeSettingsRequest
+): Promise<SupplyChainApiResponse<SupplierAccountingRuntimeSettings>> {
+  const response = await api.put(
+    `${SUPPLY_CHAIN_API}/runtime-settings-v1`,
     data,
     { skipErrorHandler: true }
   )

@@ -146,14 +146,16 @@ Console/Master 复用现有每分钟 ticker；Router/Slave 不执行日结。时
 
 ## 7. Cutover、catch-up 与留存
 
-`SUPPLIER_ACCOUNTING_CUTOVER_AT` 是 Unix 秒，必须对应 `Asia/Shanghai 00:00:00`。未配置时 Router 不创建 fact，Console 也不从历史日期启动权威 catch-up。配置后：
+权威核算启用日期由 Root 在供应链运行设置页面配置，并按 `Asia/Shanghai 00:00:00` 生效。未配置时 Router 不创建 fact，Console 也不从历史日期启动权威 catch-up。配置后：
 
 - cutover 前的请求不创建 fact；
 - cutover 起，已绑定同步 relay 尝试进入 durable fact 协议；
 - Console 从 cutover 自然日开始逐日处理，不能从通用日志推断或补造权威事实；
 - 任一天存在 pending fact 时必须先审计解决，不能强行发布。
 
-`SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS` 未设置或为 `0` 时不删除事实。大于零时，Console 只对已完成且超过保留期的自然日，按已发布 `source_max_fact_id` 每次最多删除 5000 条 captured/void fact；pending 永不由留存任务删除。日汇总、批次水位和通用日志不受该任务影响。
+页面中的 fact 保留天数为 `0` 时不删除事实。大于零时，Console 只对已完成且超过保留期的自然日，按已发布 `source_max_fact_id` 每次最多删除 5000 条 captured/void fact；pending 永不由留存任务删除。日汇总、批次水位和通用日志不受该任务影响。
+
+旧环境变量 `SUPPLIER_ACCOUNTING_CUTOVER_AT` 和 `SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS` 仅用于升级迁移：数据库尚无运行设置时作为兼容来源，Root 页面首次保存后由共享数据库配置接管。Router 请求路径从内存快照读取，不执行配置数据库查询。
 
 ## 8. V1 非目标
 

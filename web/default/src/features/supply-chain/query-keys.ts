@@ -33,6 +33,11 @@ export const supplyChainQueryKeys = {
     capability: () =>
       [...supplyChainQueryKeys.all, 'accounting-policy', 'capability'] as const,
   },
+  runtimeSettings: {
+    all: () => [...supplyChainQueryKeys.all, 'runtime-settings'] as const,
+    detail: () =>
+      [...supplyChainQueryKeys.all, 'runtime-settings', 'detail'] as const,
+  },
   suppliers: {
     all: () => [...supplyChainQueryKeys.all, 'suppliers'] as const,
     list: (params: SupplierListParams) =>

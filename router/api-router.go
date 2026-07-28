@@ -431,6 +431,8 @@ func SetApiRouter(router *gin.Engine) {
 			supplyChainRoute.GET("/channel-bindings/:channel_id", controller.GetSupplyChainChannelBinding)
 			supplyChainRoute.GET("/channel-binding-policy-v1", controller.GetSupplyChainAccountingPolicyCapability)
 			supplyChainRoute.PUT("/channel-binding-policy-v1", supplierSupplyChainMutation(controller.UpdateSupplyChainAccountingPolicyCapability)...)
+			supplyChainRoute.GET("/runtime-settings-v1", controller.GetSupplyChainAccountingRuntimeSettings)
+			supplyChainRoute.PUT("/runtime-settings-v1", supplierSupplyChainMutation(controller.UpdateSupplyChainAccountingRuntimeSettings)...)
 			supplyChainRoute.PUT("/channel-bindings/:channel_id/policy-v1", supplierSupplyChainMutation(controller.BindSupplyChainChannel)...)
 			supplyChainRoute.DELETE("/channel-bindings/:channel_id/policy-v1", supplierSupplyChainMutation(controller.UnbindSupplyChainChannel)...)
 
