@@ -26,10 +26,13 @@ import type { TopupInfo } from '../types'
 import {
   type WalletSelfSubscriptionData,
   buildFlexiblePurchaseRequest,
+  buildFlexibleQuoteRequest,
+  getMatchingPaymentQuote,
   getFlexiblePlanAction,
   getDisplayedPlanAction,
   getAllowedPaymentModes,
   normalizeSelfSubscriptionData,
+  requiresSignedCheckoutQuote,
 } from './subscription-plan-lifecycle'
 
 const stripeTopupInfo = {
@@ -686,16 +689,12 @@ describe('buildFlexiblePurchaseRequest', () => {
         paymentChoice: 'stripe_recurring',
         months: 1,
         requestId: 'request-stripe-recall',
+        quoteId: 'quote-stripe-recall',
         recallClaim: 'signed-recall-claim',
       })
     ).toMatchObject({ recall_claim: 'signed-recall-claim' })
 
-    for (const paymentChoice of [
-      'pix',
-      'upi',
-      'alipay',
-      'balance',
-    ] as const) {
+    for (const paymentChoice of ['pix', 'upi', 'alipay', 'balance'] as const) {
       expect(
         buildFlexiblePurchaseRequest({
           planId: 2,

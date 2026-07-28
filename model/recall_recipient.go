@@ -218,19 +218,19 @@ func ListRecallOfferCandidatesForUserWithContext(ctx context.Context, userID int
 	if userID <= 0 {
 		return candidates, nil
 	}
-	email, ok := normalizeRecallRecipientEmail(normalizedEmail)
-	if !ok {
-		return candidates, nil
-	}
+	email, hasEmail := normalizeRecallRecipientEmail(normalizedEmail)
 	var user User
 	result := DB.WithContext(ctx).
-		Where("id = ? AND status = ? AND LOWER(email) = ?", userID, common.UserStatusEnabled, email).
+		Where("id = ? AND status = ?", userID, common.UserStatusEnabled).
 		Limit(1).
 		Find(&user)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
+		return candidates, nil
+	}
+	if hasEmail && strings.ToLower(strings.TrimSpace(user.Email)) != email {
 		return candidates, nil
 	}
 
@@ -241,8 +241,12 @@ func ListRecallOfferCandidatesForUserWithContext(ctx context.Context, userID int
 		Select("recall_recipients.*").
 		Joins("JOIN recall_campaigns ON recall_campaigns.id = recall_recipients.campaign_id").
 		Where("recall_campaigns.campaign_type = ?", RecallCampaignTypePromotion).
-		Where("recall_campaigns.status IN ?", usableStatuses).
-		Where("(recall_recipients.user_id = ? OR (recall_recipients.user_id = 0 AND LOWER(recall_recipients.email_snapshot) = ?))", userID, email)
+		Where("recall_campaigns.status IN ?", usableStatuses)
+	if hasEmail {
+		query = query.Where("(recall_recipients.user_id = ? OR (recall_recipients.user_id = 0 AND LOWER(recall_recipients.email_snapshot) = ?))", userID, email)
+	} else {
+		query = query.Where("recall_recipients.user_id = ?", userID)
+	}
 	query = applyRecallOfferRecipientFilters(query, "recall_recipients", now)
 	err := query.
 		Order("recall_recipients.id ASC").
@@ -253,6 +257,9 @@ func ListRecallOfferCandidatesForUserWithContext(ctx context.Context, userID int
 	recipientIDs := make([]int64, 0, len(recipients))
 	for _, recipient := range recipients {
 		if recipient.UserId == 0 {
+			if !hasEmail {
+				continue
+			}
 			_, _, bindErr := bindRecallOfferCandidateRecipientUserWithContext(ctx, recipient.Id, userID, email, now)
 			if bindErr != nil {
 				if errors.Is(bindErr, ErrRecallRecipientBindingConflict) || errors.Is(bindErr, gorm.ErrRecordNotFound) {

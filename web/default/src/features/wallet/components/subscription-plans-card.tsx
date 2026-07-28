@@ -28,10 +28,12 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
 import {
+  cancelSubscriptionRenewal,
   getPublicPlans,
   getSelfSubscriptionFull,
   purchaseSubscriptionPlanFlexible,
   quoteSubscriptionPlanFlexible,
+  resumeSubscriptionRenewal,
 } from '@/features/subscriptions/api'
 import { useRecallClaimContext } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import {
@@ -44,7 +46,6 @@ import type {
   StripeCheckoutOpenResult,
   StripeCheckoutPresentation,
 } from '../hooks/use-payment'
-import { getRecallPriceDiscount } from '../lib/recall-claim'
 import {
   type LifecyclePlanRecord,
   type WalletSelfSubscriptionData,
@@ -74,6 +75,8 @@ interface SubscriptionPlansCardProps {
 }
 
 const EXTERNAL_RETURN_POLL_KEY = 'new-api:subscription-change-return-pending'
+const RENEWAL_FAILURE_TOAST_SHOWN = 'renewal failure toast shown'
+const RENEWAL_MUTATION_ALREADY_IN_FLIGHT = 'renewal mutation already in flight'
 
 const PLAN_DISPLAY_ORDER: Record<string, number> = {
   go: 0,
@@ -206,6 +209,8 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     requestId: string
   } | null>(null)
   const [quoteLoading, setQuoteLoading] = useState(false)
+  const [renewalMutationPending, setRenewalMutationPending] = useState(false)
+  const renewalMutationInFlightRef = useRef(false)
   const recallClaim = useRecallClaimContext()
 
   const fetchPlans = useCallback(async () => {
@@ -217,16 +222,27 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     }
   }, [])
 
-  const fetchSelfSubscription = useCallback(async () => {
-    try {
-      const res = await getSelfSubscriptionFull()
-      setSelfData(
-        normalizeSelfSubscriptionData(res.success ? res.data : undefined)
-      )
-    } catch {
-      setSelfData(normalizeSelfSubscriptionData(undefined))
-    }
-  }, [])
+  const fetchSelfSubscription = useCallback(
+    async (options: { preserveOnFailure?: boolean } = {}): Promise<boolean> => {
+      try {
+        const res = await getSelfSubscriptionFull()
+        if (res.success) {
+          setSelfData(normalizeSelfSubscriptionData(res.data))
+          return true
+        }
+        if (!options.preserveOnFailure) {
+          setSelfData(normalizeSelfSubscriptionData(undefined))
+        }
+        return false
+      } catch {
+        if (!options.preserveOnFailure) {
+          setSelfData(normalizeSelfSubscriptionData(undefined))
+        }
+        return false
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     if (props.initialLoading === false) return
@@ -300,6 +316,78 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     }
   }
 
+  const refreshAfterRenewal = async (syncPending: boolean) => {
+    let refreshFailed = !(await fetchSelfSubscription({
+      preserveOnFailure: true,
+    }))
+    try {
+      await onPurchaseSuccess?.()
+    } catch {
+      refreshFailed = true
+    }
+    if (refreshFailed) {
+      toast.error(t('Subscription updated, but failed to refresh status'))
+    } else if (syncPending) {
+      toast.info(t('Subscription updated; renewal status is still syncing'))
+    }
+  }
+
+  const handleCancelRenewal = async () => {
+    if (renewalMutationInFlightRef.current) {
+      throw new Error(RENEWAL_MUTATION_ALREADY_IN_FLIGHT)
+    }
+    renewalMutationInFlightRef.current = true
+    setRenewalMutationPending(true)
+    try {
+      const res = await cancelSubscriptionRenewal()
+      if (!res.success) {
+        toast.error(res.message || t('Payment request failed'))
+        throw new Error(RENEWAL_FAILURE_TOAST_SHOWN)
+      }
+      toast.success(t('Subscription renewal canceled'))
+      await refreshAfterRenewal(res.data?.sync_pending === true)
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== RENEWAL_FAILURE_TOAST_SHOWN
+      ) {
+        toast.error(t('Payment request failed'))
+      }
+      throw error
+    } finally {
+      renewalMutationInFlightRef.current = false
+      setRenewalMutationPending(false)
+    }
+  }
+
+  const handleResumeRenewal = async () => {
+    if (renewalMutationInFlightRef.current) {
+      throw new Error(RENEWAL_MUTATION_ALREADY_IN_FLIGHT)
+    }
+    renewalMutationInFlightRef.current = true
+    setRenewalMutationPending(true)
+    try {
+      const res = await resumeSubscriptionRenewal()
+      if (!res.success) {
+        toast.error(res.message || t('Payment request failed'))
+        throw new Error(RENEWAL_FAILURE_TOAST_SHOWN)
+      }
+      toast.success(t('Subscription renewal resumed'))
+      await refreshAfterRenewal(res.data?.sync_pending === true)
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== RENEWAL_FAILURE_TOAST_SHOWN
+      ) {
+        toast.error(t('Payment request failed'))
+      }
+      throw error
+    } finally {
+      renewalMutationInFlightRef.current = false
+      setRenewalMutationPending(false)
+    }
+  }
+
   const handleConfirmPurchase = async (
     paymentChoice: FlexiblePaymentChoice,
     months: number
@@ -320,17 +408,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     }
     setPurchasing(true)
     try {
-      const selectedRecallDiscount = getRecallPriceDiscount(
-        recallClaim.view,
-        purchaseTarget.plan.plan.id,
-        'subscription',
-        Number(purchaseTarget.plan.plan.price_amount || 0),
-        purchaseTarget.plan.plan.currency || 'USD'
-      )
-      const eligibleRecallClaim =
-        recallClaim.claim && selectedRecallDiscount
-          ? recallClaim.claim
-          : undefined
       const res = await purchaseSubscriptionPlanFlexible({
         ...buildFlexiblePurchaseRequest({
           planId: purchaseTarget.plan.plan.id,
@@ -339,7 +416,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
           requestId: purchaseTarget.requestId,
           quoteId: selectedQuote.quote_id,
           orderId: selectedQuote?.order_id,
-          recallClaim: eligibleRecallClaim,
+          recallClaim: recallClaim.claim,
         }),
       })
       if (!res.success || !res.data) {
@@ -390,17 +467,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         paymentChoice,
         months,
         requestId: target.requestId,
-        recallClaim:
-          recallClaim.claim &&
-          getRecallPriceDiscount(
-            recallClaim.view,
-            target.plan.plan.id,
-            'subscription',
-            Number(target.plan.plan.price_amount || 0),
-            target.plan.plan.currency || 'USD'
-          )
-            ? recallClaim.claim
-            : undefined,
+        recallClaim: recallClaim.claim,
       })
       const sequence = quoteRequestSequenceRef.current + 1
       quoteRequestSequenceRef.current = sequence
@@ -440,7 +507,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         }
       }
     },
-    [recallClaim.claim, recallClaim.view]
+    [recallClaim.claim]
   )
 
   const handleQuoteRequest = async (
@@ -493,7 +560,13 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         }
       >
         {hasActivePlan && currentPlan ? (
-          <CurrentPlanCard plan={currentPlan} selfData={selfData} />
+          <CurrentPlanCard
+            plan={currentPlan}
+            selfData={selfData}
+            renewalMutationPending={renewalMutationPending}
+            onCancelRenewal={handleCancelRenewal}
+            onResumeRenewal={handleResumeRenewal}
+          />
         ) : null}
 
         {plans.length > 0 ? (
