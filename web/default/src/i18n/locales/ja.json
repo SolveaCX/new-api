@@ -6915,6 +6915,13 @@
     "Find the TikTok videos trending for #skincare this week, and tell me which three have the strongest engagement.": "今週 #skincare でトレンドの TikTok 動画を探し、エンゲージメントが最も高い3本を教えてください。",
     "Pull an Instagram creator profile and their recent posts, then report follower growth and top themes.": "Instagram クリエイターのプロフィールと最近の投稿を取得し、フォロワー増加と主要テーマを分析してください。",
     "Fetch the latest Amazon reviews for ASIN B08N5WRWNW, then summarize sentiment and repeated complaints.": "ASIN B08N5WRWNW の最新 Amazon レビューを取得し、感情傾向と繰り返される不満を要約してください。",
-    "Or browse all endpoints": "またはすべてのエンドポイントを見る"
+    "Or browse all endpoints": "またはすべてのエンドポイントを見る",
+    "Activity sender address": "アクティビティ送信者アドレス",
+    "Default SMTP sender ({{email}})": "デフォルトの SMTP 送信者（{{email}}）",
+    "All Activity Configuration campaigns share this sender. Other system emails are unaffected.": "「アクティビティ設定」の全キャンペーンでこの送信者を共有します。他のシステムメールには影響しません。",
+    "Save sender address": "送信者アドレスを保存",
+    "Failed to load sender addresses.": "送信者アドレスを読み込めませんでした。",
+    "Failed to update sender address.": "送信者アドレスを更新できませんでした。",
+    "Sender address choices changed. Review and save again.": "送信者アドレスの選択肢が変更されました。確認してから再度保存してください。"
   }
 }

@@ -6915,6 +6915,13 @@
     "Find the TikTok videos trending for #skincare this week, and tell me which three have the strongest engagement.": "Найди популярные за эту неделю видео TikTok по теме #skincare и назови три с самой высокой вовлечённостью.",
     "Pull an Instagram creator profile and their recent posts, then report follower growth and top themes.": "Получи профиль автора Instagram и его последние публикации, затем проанализируй рост подписчиков и основные темы.",
     "Fetch the latest Amazon reviews for ASIN B08N5WRWNW, then summarize sentiment and repeated complaints.": "Получи последние отзывы Amazon для ASIN B08N5WRWNW, затем обобщи тональность и повторяющиеся жалобы.",
-    "Or browse all endpoints": "Или просмотреть все эндпоинты"
+    "Or browse all endpoints": "Или просмотреть все эндпоинты",
+    "Activity sender address": "Адрес отправителя активности",
+    "Default SMTP sender ({{email}})": "Отправитель SMTP по умолчанию ({{email}})",
+    "All Activity Configuration campaigns share this sender. Other system emails are unaffected.": "Все кампании в разделе «Настройка активностей» используют этого отправителя. Другие системные письма не затрагиваются.",
+    "Save sender address": "Сохранить адрес отправителя",
+    "Failed to load sender addresses.": "Не удалось загрузить адреса отправителей.",
+    "Failed to update sender address.": "Не удалось обновить адрес отправителя.",
+    "Sender address choices changed. Review and save again.": "Варианты адреса отправителя изменились. Проверьте и сохраните еще раз."
   }
 }

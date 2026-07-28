@@ -6915,6 +6915,13 @@
     "Find the TikTok videos trending for #skincare this week, and tell me which three have the strongest engagement.": "查找本周 #skincare 话题下的 TikTok 热门视频，并告诉我互动最强的三条。",
     "Pull an Instagram creator profile and their recent posts, then report follower growth and top themes.": "读取一位 Instagram 创作者的主页和近期帖子，然后分析粉丝增长与主要内容主题。",
     "Fetch the latest Amazon reviews for ASIN B08N5WRWNW, then summarize sentiment and repeated complaints.": "获取 ASIN B08N5WRWNW 的最新 Amazon 评论，然后总结情感倾向和反复出现的投诉。",
-    "Or browse all endpoints": "或浏览全部接口"
+    "Or browse all endpoints": "或浏览全部接口",
+    "Activity sender address": "活动发件人地址",
+    "Default SMTP sender ({{email}})": "默认 SMTP 发件人（{{email}}）",
+    "All Activity Configuration campaigns share this sender. Other system emails are unaffected.": "所有“活动配置”中的活动共用此发件人，不影响系统其他邮件。",
+    "Save sender address": "保存发件人地址",
+    "Failed to load sender addresses.": "加载发件人地址失败。",
+    "Failed to update sender address.": "更新发件人地址失败。",
+    "Sender address choices changed. Review and save again.": "发件人地址选项已变化，请检查后重新保存。"
   }
 }

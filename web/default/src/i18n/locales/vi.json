@@ -6915,6 +6915,13 @@
     "Find the TikTok videos trending for #skincare this week, and tell me which three have the strongest engagement.": "Tìm các video TikTok thịnh hành về #skincare trong tuần này và cho tôi biết ba video có tương tác cao nhất.",
     "Pull an Instagram creator profile and their recent posts, then report follower growth and top themes.": "Lấy hồ sơ của một nhà sáng tạo Instagram cùng các bài đăng gần đây, rồi phân tích tăng trưởng người theo dõi và các chủ đề chính.",
     "Fetch the latest Amazon reviews for ASIN B08N5WRWNW, then summarize sentiment and repeated complaints.": "Lấy các đánh giá Amazon mới nhất cho ASIN B08N5WRWNW, sau đó tóm tắt cảm xúc và các khiếu nại lặp lại.",
-    "Or browse all endpoints": "Hoặc duyệt tất cả endpoint"
+    "Or browse all endpoints": "Hoặc duyệt tất cả endpoint",
+    "Activity sender address": "Địa chỉ người gửi hoạt động",
+    "Default SMTP sender ({{email}})": "Người gửi SMTP mặc định ({{email}})",
+    "All Activity Configuration campaigns share this sender. Other system emails are unaffected.": "Tất cả chiến dịch trong Cấu hình hoạt động dùng chung người gửi này. Các email hệ thống khác không bị ảnh hưởng.",
+    "Save sender address": "Lưu địa chỉ người gửi",
+    "Failed to load sender addresses.": "Không thể tải địa chỉ người gửi.",
+    "Failed to update sender address.": "Không thể cập nhật địa chỉ người gửi.",
+    "Sender address choices changed. Review and save again.": "Các lựa chọn địa chỉ người gửi đã thay đổi. Hãy kiểm tra và lưu lại."
   }
 }

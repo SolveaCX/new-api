@@ -6915,6 +6915,13 @@
     "Find the TikTok videos trending for #skincare this week, and tell me which three have the strongest engagement.": "Encuentra los vídeos de TikTok en tendencia para #skincare esta semana y dime cuáles son los tres con mayor interacción.",
     "Pull an Instagram creator profile and their recent posts, then report follower growth and top themes.": "Obtén el perfil de un creador de Instagram y sus publicaciones recientes, y analiza el crecimiento de seguidores y los temas principales.",
     "Fetch the latest Amazon reviews for ASIN B08N5WRWNW, then summarize sentiment and repeated complaints.": "Obtén las últimas reseñas de Amazon del ASIN B08N5WRWNW y resume el sentimiento y las quejas recurrentes.",
-    "Or browse all endpoints": "O explorar todos los endpoints"
+    "Or browse all endpoints": "O explorar todos los endpoints",
+    "Activity sender address": "Dirección de remitente de la actividad",
+    "Default SMTP sender ({{email}})": "Remitente SMTP predeterminado ({{email}})",
+    "All Activity Configuration campaigns share this sender. Other system emails are unaffected.": "Todas las campañas de Configuración de actividades comparten este remitente. Los demás correos del sistema no se ven afectados.",
+    "Save sender address": "Guardar dirección de remitente",
+    "Failed to load sender addresses.": "No se pudieron cargar las direcciones de remitente.",
+    "Failed to update sender address.": "No se pudo actualizar la dirección de remitente.",
+    "Sender address choices changed. Review and save again.": "Las opciones de dirección de remitente cambiaron. Revísalas y vuelve a guardar."
   }
 }
