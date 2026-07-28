@@ -6796,6 +6796,8 @@
     "Quota resets at {{time}}.": "La cuota se restablece a las {{time}}.",
     "Hourly limit must be between 1 and 100000.": "El límite horario debe estar entre 1 y 100000.",
     "Failed to load email quota.": "No se pudo cargar la cuota de correo electrónico.",
-    "Save hourly limit": "Guardar límite horario"
+    "Save hourly limit": "Guardar límite horario",
+    "Balance can be used to purchase plans directly.": "El saldo se puede usar para comprar planes directamente.",
+    "After plan quota is exhausted, balance is used automatically for API usage billing.": "Cuando se agota la cuota del plan, el saldo se usa automáticamente para facturar según el uso de la API."
   }
 }

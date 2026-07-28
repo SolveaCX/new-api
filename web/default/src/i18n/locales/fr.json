@@ -6796,6 +6796,8 @@
     "Quota resets at {{time}}.": "Le quota est réinitialisé à {{time}}.",
     "Hourly limit must be between 1 and 100000.": "La limite horaire doit être comprise entre 1 et 100000.",
     "Failed to load email quota.": "Échec du chargement du quota d’e-mails.",
-    "Save hourly limit": "Enregistrer la limite horaire"
+    "Save hourly limit": "Enregistrer la limite horaire",
+    "Balance can be used to purchase plans directly.": "Le solde peut être utilisé pour acheter directement des forfaits.",
+    "After plan quota is exhausted, balance is used automatically for API usage billing.": "Une fois le quota du forfait épuisé, le solde est automatiquement utilisé pour la facturation selon l’utilisation de l’API."
   }
 }

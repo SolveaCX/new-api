@@ -6796,6 +6796,8 @@
     "Quota resets at {{time}}.": "Лимит сбросится в {{time}}.",
     "Hourly limit must be between 1 and 100000.": "Почасовой лимит должен быть от 1 до 100000.",
     "Failed to load email quota.": "Не удалось загрузить лимит писем.",
-    "Save hourly limit": "Сохранить почасовой лимит"
+    "Save hourly limit": "Сохранить почасовой лимит",
+    "Balance can be used to purchase plans directly.": "Баланс можно использовать для прямой покупки тарифов.",
+    "After plan quota is exhausted, balance is used automatically for API usage billing.": "После исчерпания квоты тарифа баланс автоматически используется для оплаты по объёму использования API."
   }
 }

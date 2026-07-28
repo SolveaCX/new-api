@@ -6796,6 +6796,8 @@
     "Quota resets at {{time}}.": "额度于 {{time}} 重置。",
     "Hourly limit must be between 1 and 100000.": "每小时上限必须介于 1 到 100000。",
     "Failed to load email quota.": "无法加载邮件额度。",
-    "Save hourly limit": "保存每小时上限"
+    "Save hourly limit": "保存每小时上限",
+    "Balance can be used to purchase plans directly.": "余额可直接购买套餐。",
+    "After plan quota is exhausted, balance is used automatically for API usage billing.": "套餐配额用尽后，将自动使用余额按 API 用量计费。"
   }
 }

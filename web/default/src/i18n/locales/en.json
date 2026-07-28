@@ -6796,6 +6796,8 @@
     "Quota resets at {{time}}.": "Quota resets at {{time}}.",
     "Hourly limit must be between 1 and 100000.": "Hourly limit must be between 1 and 100000.",
     "Failed to load email quota.": "Failed to load email quota.",
-    "Save hourly limit": "Save hourly limit"
+    "Save hourly limit": "Save hourly limit",
+    "Balance can be used to purchase plans directly.": "Balance can be used to purchase plans directly.",
+    "After plan quota is exhausted, balance is used automatically for API usage billing.": "After plan quota is exhausted, balance is used automatically for API usage billing."
   }
 }
