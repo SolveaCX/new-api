@@ -235,7 +235,7 @@ func RunSupplierHistoricalEstimatePage(ctx context.Context, mainDB, logDB *gorm.
 		if statsErr != nil {
 			return SupplierHistoricalRunResult{}, statsErr
 		}
-		if err := model.FreezeSupplierHistoricalImport(ctx, mainDB, lease, stats.SourceMaxLogId, stats.CandidateCount); err != nil {
+		if err := model.FreezeSupplierHistoricalImport(ctx, mainDB, lease, stats.SourceMaxLogId, stats.CandidateCount, stats.ExcludedSystemTestCount); err != nil {
 			return SupplierHistoricalRunResult{}, err
 		}
 		lease.Started = true

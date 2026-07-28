@@ -306,8 +306,8 @@ func testSupplierAccountingIntegrationHistoricalFence(t *testing.T, db *gorm.DB,
 	current, err := AcquireSupplierHistoricalImport(ctx, db, item.Id, "node-b", time.Minute)
 	require.NoError(t, err)
 	require.Greater(t, current.FenceToken, stale.FenceToken)
-	require.ErrorIs(t, FreezeSupplierHistoricalImport(ctx, db, stale, 10, 2), ErrSupplierHistoricalImportFenceLost)
-	require.NoError(t, FreezeSupplierHistoricalImport(ctx, db, current, 10, 2))
+	require.ErrorIs(t, FreezeSupplierHistoricalImport(ctx, db, stale, 10, 2, 0), ErrSupplierHistoricalImportFenceLost)
+	require.NoError(t, FreezeSupplierHistoricalImport(ctx, db, current, 10, 2, 0))
 }
 
 func testSupplierAccountingIntegrationHistoricalOverlap(t *testing.T, db *gorm.DB, dialect string) {

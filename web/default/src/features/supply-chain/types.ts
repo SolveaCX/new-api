@@ -293,6 +293,7 @@ export interface SupplierHistoricalImport {
   status: SupplierHistoricalImportStatus
   source_max_log_id: number
   candidate_count: number
+  excluded_system_test_count: number
   processed_count: number
   summary_count: number
   error_message: string

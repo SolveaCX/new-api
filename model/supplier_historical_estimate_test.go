@@ -144,7 +144,7 @@ func TestSupplierHistoricalImportLeaseFencesStaleWorkersAndRejectsOverlap(t *tes
 	require.NoError(t, err)
 	lease, err := AcquireSupplierHistoricalImport(ctx, db, first.Id, "node-a", time.Minute)
 	require.NoError(t, err)
-	require.NoError(t, FreezeSupplierHistoricalImport(ctx, db, lease, 90, 12))
+	require.NoError(t, FreezeSupplierHistoricalImport(ctx, db, lease, 90, 12, 0))
 
 	second := SupplierHistoricalImport{
 		CommandHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", CommandJSON: `{}`,
@@ -187,7 +187,7 @@ func TestSupplierHistoricalFailedImportDoesNotBlockReplacementRange(t *testing.T
 	require.NoError(t, err)
 	lease, err := AcquireSupplierHistoricalImport(ctx, db, first.Id, "node-a", time.Minute)
 	require.NoError(t, err)
-	require.NoError(t, FreezeSupplierHistoricalImport(ctx, db, lease, 1, 1))
+	require.NoError(t, FreezeSupplierHistoricalImport(ctx, db, lease, 1, 1, 0))
 	require.NoError(t, FailSupplierHistoricalImport(ctx, db, lease, ErrSupplierHistoricalImportSourceChanged))
 
 	second, err := CreateSupplierHistoricalImport(ctx, db, SupplierHistoricalImportCreate{
@@ -269,7 +269,7 @@ func TestSupplierHistoricalPublicationRequiresCurrentSummarySchema(t *testing.T)
 	})
 	require.NoError(t, err)
 	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Model(&SupplierHistoricalImport{}).Where("id = ?", legacy.Id).
-		Updates(map[string]any{"status": SupplierHistoricalImportStatusCompleted, "summary_schema_version": 0}).Error)
+		Updates(map[string]any{"status": SupplierHistoricalImportStatusCompleted, "summary_schema_version": 1}).Error)
 
 	_, err = PublishSupplierHistoricalImport(ctx, db, legacy.Id, 9)
 	require.ErrorIs(t, err, ErrSupplierHistoricalPublicationNeedsReestimate)
@@ -362,7 +362,7 @@ func TestSupplierHistoricalPageMergeRejectsCrossPageMoneyOverflow(t *testing.T) 
 	require.NoError(t, err)
 	lease, err := AcquireSupplierHistoricalImport(ctx, db, item.Id, "node-a", time.Minute)
 	require.NoError(t, err)
-	require.NoError(t, FreezeSupplierHistoricalImport(ctx, db, lease, 2, 2))
+	require.NoError(t, FreezeSupplierHistoricalImport(ctx, db, lease, 2, 2, 0))
 	require.NoError(t, db.Create(&SupplierHistoricalDailySummary{
 		ImportId: item.Id, Date: "2026-01-01", DimensionKey: "same", DataQuality: SupplierHistoricalDataQualityEstimated,
 		SourceRequestCount: 1, SalesKnownCount: 1, SalesMicroUsd: math.MaxInt64,
@@ -444,6 +444,47 @@ func TestSupplierHistoricalSeriesAggregatesDimensionsAndEnforcesKeysetLimit(t *t
 	require.Len(t, second, 50)
 	_, _, err = ListSupplierHistoricalSeries(context.Background(), db, 1, "2026-01-01", "2026-01-02", SupplierHistoricalSeriesCursor{}, 501)
 	require.ErrorIs(t, err, ErrSupplierHistoricalImportInvalid)
+}
+
+func TestSupplierHistoricalSourceQueriesExcludeSystemModelTests(t *testing.T) {
+	db := supplierHistoricalEstimateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&Log{}))
+	require.NoError(t, db.Create([]Log{
+		{Id: 1, Type: LogTypeConsume, CreatedAt: 110, TokenId: 9, TokenName: "business", Content: "request", ChannelId: 1},
+		{Id: 2, Type: LogTypeConsume, CreatedAt: 120, TokenId: SystemChannelTestTokenId, TokenName: "模型测试", Content: "模型测试", ChannelId: 15},
+		{Id: 3, Type: LogTypeConsume, CreatedAt: 130, TokenId: 0, TokenName: "模型测试", Content: "模型测试", ChannelId: 15},
+		{Id: 4, Type: LogTypeConsume, CreatedAt: 140, TokenId: 0, TokenName: "模型测试", Content: "manual request", ChannelId: 1},
+		{Id: 5, Type: LogTypeManage, CreatedAt: 150, TokenId: SystemChannelTestTokenId, TokenName: "模型测试", Content: "模型测试", ChannelId: 15},
+	}).Error)
+	require.NoError(t, db.Exec("INSERT INTO logs (id, type, created_at, token_id, token_name, content, channel_id) VALUES (?, ?, ?, ?, ?, NULL, ?)", 6, LogTypeConsume, 160, 0, "模型测试", 1).Error)
+
+	stats, err := FreezeSupplierHistoricalSourceStats(context.Background(), db, 100, 200)
+	require.NoError(t, err)
+	require.Equal(t, int64(6), stats.SourceMaxLogId)
+	require.Equal(t, int64(3), stats.CandidateCount)
+	require.Equal(t, int64(2), stats.ExcludedSystemTestCount)
+
+	rows, err := ListSupplierHistoricalSourcePage(context.Background(), db, 100, 200, stats.SourceMaxLogId, 0, 0, 5000)
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 4, 6}, []int64{rows[0].Id, rows[1].Id, rows[2].Id})
+
+	count, err := CountSupplierHistoricalFrozenSource(context.Background(), db, 100, 200, stats.SourceMaxLogId)
+	require.NoError(t, err)
+	require.Equal(t, stats.CandidateCount, count)
+
+	item, err := CreateSupplierHistoricalImport(context.Background(), db, SupplierHistoricalImportCreate{
+		CommandHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CommandJSON: `{}`,
+		IdempotencyKey: "system-test-filter", CreatedBy: 7, Method: SupplierHistoricalMethodLogEstimateV1, Reason: "filter tests",
+		StartDate: "2026-01-01", EndDate: "2026-01-02", DayStart: 100, DayEnd: 200,
+		QuotaPerUnit: "500000", ExcludedUserIdsJSON: `[]`, ChannelMappingsJSON: `[]`,
+	})
+	require.NoError(t, err)
+	lease, err := AcquireSupplierHistoricalImport(context.Background(), db, item.Id, "node-a", time.Minute)
+	require.NoError(t, err)
+	require.NoError(t, FreezeSupplierHistoricalImport(context.Background(), db, lease, stats.SourceMaxLogId, stats.CandidateCount, stats.ExcludedSystemTestCount))
+	stored, err := GetSupplierHistoricalImport(context.Background(), db, item.Id)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), stored.ExcludedSystemTestCount)
 }
 
 func TestSupplierHistoricalQuarantinesConflictingPendingAndClaimsNextImport(t *testing.T) {
