@@ -6849,6 +6849,13 @@
     "Save runtime settings": "Salvar configurações operacionais",
     "Confirm runtime settings": "Confirmar configurações operacionais",
     "These values are shared by all Console and Router nodes. Enabling retention may permanently delete published fact rows.": "Esses valores são compartilhados por todos os nós Console e Router. Ativar a retenção pode excluir permanentemente linhas de fatos publicadas.",
-    "Save settings": "Salvar configurações"
+    "Save settings": "Salvar configurações",
+    "Set minimum spend": "Definir gasto m?nimo",
+    "{{currency}} minimum spend": "Gasto m?nimo em {{currency}}",
+    "Enter the minimum spend in each checkout currency. Amounts are not converted automatically.": "Informe o gasto m?nimo em cada moeda de checkout. Os valores n?o s?o convertidos automaticamente.",
+    "USD minimum spend is required": "O gasto m?nimo em USD ? obrigat?rio",
+    "INR minimum spend is required": "O gasto m?nimo em INR ? obrigat?rio",
+    "BRL minimum spend is required": "O gasto m?nimo em BRL ? obrigat?rio",
+    "JPY minimum spend is required": "O gasto m?nimo em JPY ? obrigat?rio"
   }
 }

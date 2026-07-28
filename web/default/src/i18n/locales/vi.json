@@ -6849,6 +6849,13 @@
     "Save runtime settings": "Lưu cài đặt vận hành",
     "Confirm runtime settings": "Xác nhận cài đặt vận hành",
     "These values are shared by all Console and Router nodes. Enabling retention may permanently delete published fact rows.": "Các giá trị này dùng chung cho mọi nút Console và Router. Bật lưu giữ có thể xóa vĩnh viễn các dòng dữ liệu đã xuất bản.",
-    "Save settings": "Lưu cài đặt"
+    "Save settings": "Lưu cài đặt",
+    "Set minimum spend": "??t m?c chi ti?u t?i thi?u",
+    "{{currency}} minimum spend": "Chi ti?u t?i thi?u b?ng {{currency}}",
+    "Enter the minimum spend in each checkout currency. Amounts are not converted automatically.": "Nh?p m?c chi ti?u t?i thi?u cho t?ng ??n v? ti?n t? khi thanh to?n. S? ti?n kh?ng ???c t? ??ng quy ??i.",
+    "USD minimum spend is required": "B?t bu?c nh?p m?c chi ti?u t?i thi?u b?ng USD",
+    "INR minimum spend is required": "B?t bu?c nh?p m?c chi ti?u t?i thi?u b?ng INR",
+    "BRL minimum spend is required": "B?t bu?c nh?p m?c chi ti?u t?i thi?u b?ng BRL",
+    "JPY minimum spend is required": "B?t bu?c nh?p m?c chi ti?u t?i thi?u b?ng JPY"
   }
 }

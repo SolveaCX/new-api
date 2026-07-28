@@ -6849,6 +6849,13 @@
     "Save runtime settings": "保存运行设置",
     "Confirm runtime settings": "确认运行设置",
     "These values are shared by all Console and Router nodes. Enabling retention may permanently delete published fact rows.": "这些设置由所有 Console 和 Router 节点共享。启用保留期限后，已发布日报对应的事实行可能被永久删除。",
-    "Save settings": "保存设置"
+    "Save settings": "保存设置",
+    "Set minimum spend": "??????",
+    "{{currency}} minimum spend": "{{currency}} ????",
+    "Enter the minimum spend in each checkout currency. Amounts are not converted automatically.": "??????????????????????????",
+    "USD minimum spend is required": "???? USD ????",
+    "INR minimum spend is required": "???? INR ????",
+    "BRL minimum spend is required": "???? BRL ????",
+    "JPY minimum spend is required": "???? JPY ????"
   }
 }

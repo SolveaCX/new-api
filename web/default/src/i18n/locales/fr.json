@@ -6849,6 +6849,13 @@
     "Save runtime settings": "Enregistrer les paramètres d’exécution",
     "Confirm runtime settings": "Confirmer les paramètres d’exécution",
     "These values are shared by all Console and Router nodes. Enabling retention may permanently delete published fact rows.": "Ces valeurs sont partagées par tous les nœuds Console et Router. La conservation peut supprimer définitivement des lignes de faits publiées.",
-    "Save settings": "Enregistrer les paramètres"
+    "Save settings": "Enregistrer les paramètres",
+    "Set minimum spend": "D?finir un minimum de d?pense",
+    "{{currency}} minimum spend": "Minimum de d?pense en {{currency}}",
+    "Enter the minimum spend in each checkout currency. Amounts are not converted automatically.": "Saisissez le minimum de d?pense dans chaque devise de paiement. Les montants ne sont pas convertis automatiquement.",
+    "USD minimum spend is required": "Le minimum de d?pense en USD est requis",
+    "INR minimum spend is required": "Le minimum de d?pense en INR est requis",
+    "BRL minimum spend is required": "Le minimum de d?pense en BRL est requis",
+    "JPY minimum spend is required": "Le minimum de d?pense en JPY est requis"
   }
 }
