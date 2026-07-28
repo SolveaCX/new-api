@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -105,23 +104,11 @@ func nextSupplierDailyBatchDate(ctx context.Context, mainDB *gorm.DB, target tim
 }
 
 func configuredSupplierAccountingCutover() (int64, bool, error) {
-	raw := strings.TrimSpace(os.Getenv("SUPPLIER_ACCOUNTING_CUTOVER_AT"))
-	if raw == "" {
-		return 0, false, nil
-	}
-	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || value <= 0 {
-		return 0, false, fmt.Errorf("invalid SUPPLIER_ACCOUNTING_CUTOVER_AT %q", raw)
-	}
-	location, err := time.LoadLocation(SupplierDailyBatchTimezone)
+	settings, err := model.GetSupplierAccountingRuntimeSettings()
 	if err != nil {
 		return 0, false, err
 	}
-	local := time.Unix(value, 0).In(location)
-	if !local.Equal(beginningOfSupplierDay(local)) {
-		return 0, false, fmt.Errorf("invalid SUPPLIER_ACCOUNTING_CUTOVER_AT %q: must be Asia/Shanghai 00:00:00", raw)
-	}
-	return value, true, nil
+	return settings.CutoverAt, settings.CutoverAt > 0, nil
 }
 
 func RunSupplierDailyBatch(ctx context.Context, mainDB, logDB *gorm.DB, batchDate, owner string, now time.Time) error {

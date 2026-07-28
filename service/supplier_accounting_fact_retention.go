@@ -2,10 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/QuantumNous/new-api/model"
@@ -20,15 +16,11 @@ var (
 // The cursor only avoids rescanning already-empty days. All deletion safety is
 // enforced by database predicates, so independent nodes and restarts are safe.
 func configuredSupplierAccountingFactRetentionDays() (int, bool, error) {
-	raw := strings.TrimSpace(os.Getenv("SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS"))
-	if raw == "" {
-		return 0, false, nil
+	settings, err := model.GetSupplierAccountingRuntimeSettings()
+	if err != nil {
+		return 0, false, err
 	}
-	days, err := strconv.Atoi(raw)
-	if err != nil || days < 0 {
-		return 0, false, fmt.Errorf("invalid SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS %q: must be a non-negative integer", raw)
-	}
-	return days, days > 0, nil
+	return settings.RetentionDays, settings.RetentionDays > 0, nil
 }
 
 func RunSupplierAccountingFactRetentionOnce(ctx context.Context, mainDB, logDB *gorm.DB) (int64, error) {

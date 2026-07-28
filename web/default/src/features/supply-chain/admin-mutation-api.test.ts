@@ -17,10 +17,12 @@ import {
   createRateVersion,
   createSupplier,
   getAccountingPolicyCapability,
+  getAccountingRuntimeSettings,
   inactivateContract,
   inactivateSupplier,
   unbindChannel,
   updateAccountingPolicyCapability,
+  updateAccountingRuntimeSettings,
   updateContract,
   updateSupplier,
 } from './api'
@@ -62,6 +64,48 @@ describe('supply-chain versioned mutation API', () => {
     expect(requests[0]?.url).toEndWith('/channel-binding-policy-v1')
     expect(requests[1]?.url).toEndWith('/channel-binding-policy-v1')
     expect(JSON.parse(String(requests[1]?.data))).toEqual({ activated: true })
+    expect(requests[1]?.skipErrorHandler).toBe(true)
+  })
+
+  test('reads and updates shared supplier accounting runtime settings', async () => {
+    const requests: InternalAxiosRequestConfig[] = []
+    api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
+      requests.push(config)
+      return {
+        data: {
+          success: true,
+          data: {
+            protocol_version: 1,
+            revision: config.method === 'put' ? 2 : 1,
+            cutover_at: 1_785_254_400,
+            retention_days: config.method === 'put' ? 30 : 0,
+            source: 'database',
+            cutover_locked: false,
+          },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: new AxiosHeaders(),
+        config,
+      }
+    }
+
+    await getAccountingRuntimeSettings()
+    const updated = await updateAccountingRuntimeSettings({
+      expected_revision: 1,
+      cutover_at: 1_785_254_400,
+      retention_days: 30,
+    })
+
+    expect(updated.data.revision).toBe(2)
+    expect(requests.map((request) => request.method)).toEqual(['get', 'put'])
+    expect(requests[0]?.url).toEndWith('/runtime-settings-v1')
+    expect(requests[1]?.url).toEndWith('/runtime-settings-v1')
+    expect(JSON.parse(String(requests[1]?.data))).toEqual({
+      expected_revision: 1,
+      cutover_at: 1_785_254_400,
+      retention_days: 30,
+    })
     expect(requests[1]?.skipErrorHandler).toBe(true)
   })
 

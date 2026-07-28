@@ -75,3 +75,9 @@ type SupplierChannelBindingRequest struct {
 type SupplierAccountingPolicyActivationRequest struct {
 	Activated *bool `json:"activated"`
 }
+
+type SupplierAccountingRuntimeSettingsRequest struct {
+	ExpectedRevision *int64 `json:"expected_revision"`
+	CutoverAt        *int64 `json:"cutover_at"`
+	RetentionDays    *int   `json:"retention_days"`
+}

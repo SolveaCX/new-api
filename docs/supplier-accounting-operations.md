@@ -19,8 +19,8 @@
 - 主库能够创建 11 张供应商表；LOG_DB 能够创建 `supplier_accounting_facts` 及唯一/日状态索引；
 - 在真实 SQLite、MySQL 5.7.8+、PostgreSQL 9.6+ 实例执行迁移、fact CAS、lease/fence、重叠导入和汇总 upsert 验收；DryRun schema 检查不能替代真实数据库执行；
 - Router 和 Console 指向同一个 LOG_DB 事实源；
-- `SUPPLIER_ACCOUNTING_CUTOVER_AT` 在所有 Go 服务中保持一致，值为未来某个北京时间零点的 Unix 秒；
-- `SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS` 首次发布建议不设置，完成账实核对后再配置；
+- Root 在“供应链 → 渠道与合约 → 供应商核算运行设置”中统一配置权威核算启用日期和 fact 保留天数；配置写入共享数据库并同步到所有 Go 节点；
+- `SUPPLIER_ACCOUNTING_CUTOVER_AT` 与 `SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS` 仅用于旧版本迁移兼容：数据库尚无页面配置时读取，页面首次保存后不再生效；
 - 不在 staging 复制生产 OAuth、支付、回调、域名或数据库凭据。
 
 真实数据库验收使用 `TestSupplierAccountingRealDatabaseIntegration`。测试默认 skip，DSN 必须指向零表、可丢弃的隔离数据库，并显式设置 `TEST_SUPPLIER_ACCOUNTING_ALLOW_SCHEMA_MUTATION=isolated-empty-database`；MySQL/PostgreSQL DSN 分别通过 `TEST_SUPPLIER_ACCOUNTING_MYSQL_DSN`、`TEST_SUPPLIER_ACCOUNTING_POSTGRES_DSN` 提供。测试会拒绝非空 schema，并覆盖 12 表迁移、fact CAS、日报 upsert、historical lease/fence、历史发布/替代和权威日结覆盖。
@@ -54,10 +54,10 @@
 
 禁止先让 Router 在缺少 fact 表或配置不一致时进入 fail-closed 区间。推荐流程：
 
-1. 保持 `SUPPLIER_ACCOUNTING_CUTOVER_AT` 未配置，先部署 Console；确认主库 11 张表和 LOG_DB fact 表创建完成。
+1. 保持页面中的权威核算启用日期未配置，先部署 Console；确认主库 11 张表和 LOG_DB fact 表创建完成。
 2. 仍保持 cutover 未配置，部署全部 Router；此时新代码已在位但不会创建 fact。
 3. 检查 Console 管理页、12 张表、LOG_DB 连通性和 Router 健康状态。
-4. 选择未来一个 `Asia/Shanghai 00:00:00`，把相同 cutover Unix 秒配置到 Console、Router 和 legacy `newapi`（若仍承载流量）。
+4. 选择未来一个日期，在 Root 页面保存权威核算启用日期；共享配置会同步到 Console、Router 和 legacy `newapi`（若仍承载流量）。
 5. 在 cutover 前完成所有修订切换；cutover 后抽样确认 bound attempt 先 pending、再 captured/void。
 6. 次日 02:00 后核对首个 completed batch 和权威报表。
 
@@ -71,8 +71,8 @@ staging 从远端 `staging` 分支自动部署：后端工作流为 `.github/wor
 
 在 staging 使用独立数据库与域名，并执行：
 
-1. cutover 未配置时启动，确认 12 张表创建且普通 relay 不产生 fact；
-2. 将 cutover 设为未来北京时间零点，重发修订并确认各节点配置一致；
+1. 权威核算启用日期未配置时启动，确认 12 张表创建且普通 relay 不产生 fact；
+2. 在 Root 页面把启用日期设为未来日期，确认页面显示“等待启用”以及共享页面配置来源；
 3. cutover 后发送已绑定成功、零用量、失败、重试和流式请求；
 4. 验证 captured/void/pending 终态和 pending 管理接口；
 5. 人工解决测试 pending，确认日结冻结水位后才能 completed；
@@ -122,7 +122,7 @@ staging 从远端 `staging` 分支自动部署：后端工作流为 `.github/wor
 
 ## 8. 权威 catch-up 与 cutover
 
-`SUPPLIER_ACCOUNTING_CUTOVER_AT` 必须是北京时间零点。Console 从 cutover 自然日寻找最早未完成日，每个 ticker 最多推进一天。
+页面中的权威核算启用日期按北京时间零点生效。Console 从 cutover 自然日寻找最早未完成日，每个 ticker 最多推进一天。日期生效后页面会锁定该字段，保留天数仍可调整。
 
 - cutover 前无 fact，不做权威回填；
 - cutover 后只读取 durable facts，不从通用 logs 合成；
@@ -148,9 +148,9 @@ staging 从远端 `staging` 分支自动部署：后端工作流为 `.github/wor
 
 ## 10. Fact 留存
 
-`SUPPLIER_ACCOUNTING_FACT_RETENTION_DAYS`：
+页面中的 fact 保留天数：
 
-- 未设置或 `0`：关闭删除；
+- `0`：关闭删除；
 - 正整数：只选择已经 completed 且早于保留边界的自然日；
 - 每次 ticker 最多删除 5000 条 `captured`/`void`，并限制 `id <= source_max_fact_id`；
 - pending facts 永不删除；未完成日期、超出已发布水位的事实也不删除；

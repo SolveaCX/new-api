@@ -37,6 +37,8 @@ func TestSupplyChainRouteRegistryMatchesCurrentCRUDAndReportSurface(t *testing.T
 		"GET /api/supply-chain/channel-bindings/:channel_id":              true,
 		"GET /api/supply-chain/channel-binding-policy-v1":                 true,
 		"PUT /api/supply-chain/channel-binding-policy-v1":                 true,
+		"GET /api/supply-chain/runtime-settings-v1":                       true,
+		"PUT /api/supply-chain/runtime-settings-v1":                       true,
 		"PUT /api/supply-chain/channel-bindings/:channel_id/policy-v1":    true,
 		"DELETE /api/supply-chain/channel-bindings/:channel_id/policy-v1": true,
 		"GET /api/supply-chain/reports/overview":                          true,

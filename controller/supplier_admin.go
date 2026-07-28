@@ -405,6 +405,33 @@ func UpdateSupplyChainAccountingPolicyCapability(c *gin.Context) {
 	common.ApiSuccess(c, model.GetSupplierAccountingPolicyCapability())
 }
 
+func GetSupplyChainAccountingRuntimeSettings(c *gin.Context) {
+	settings, err := model.GetSupplierAccountingRuntimeSettings()
+	if err != nil {
+		supplyChainModelError(c, err)
+		return
+	}
+	common.ApiSuccess(c, settings)
+}
+
+func UpdateSupplyChainAccountingRuntimeSettings(c *gin.Context) {
+	var request dto.SupplierAccountingRuntimeSettingsRequest
+	if c.ShouldBindJSON(&request) != nil || request.ExpectedRevision == nil || request.CutoverAt == nil || request.RetentionDays == nil {
+		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
+		return
+	}
+	settings, err := model.SetSupplierAccountingRuntimeSettings(model.SupplierAccountingRuntimeSettingsUpdate{
+		ExpectedRevision: *request.ExpectedRevision,
+		CutoverAt:        *request.CutoverAt,
+		RetentionDays:    *request.RetentionDays,
+	})
+	if err != nil {
+		supplyChainModelError(c, err)
+		return
+	}
+	common.ApiSuccess(c, settings)
+}
+
 func BindSupplyChainChannel(c *gin.Context) {
 	channelID, ok := supplyChainPositivePathInt(c, "channel_id")
 	if !ok {
@@ -541,13 +568,14 @@ func supplyChainModelError(c *gin.Context, err error) {
 		supplyChainError(c, http.StatusNotFound, i18n.MsgSupplyChainNotFound)
 	case errors.Is(err, model.ErrSupplierInvalidStatus), errors.Is(err, model.ErrSupplierInvalidContract),
 		errors.Is(err, model.ErrSupplierInvalidRate), errors.Is(err, model.ErrSupplierInvalidInventory),
-		errors.Is(err, model.ErrSupplierInvalidStatsRule):
+		errors.Is(err, model.ErrSupplierInvalidStatsRule), errors.Is(err, model.ErrSupplierAccountingRuntimeSettingsInvalid):
 		supplyChainError(c, http.StatusBadRequest, i18n.MsgSupplyChainInvalidInput)
 	case errors.Is(err, model.ErrSupplierInactive), errors.Is(err, model.ErrSupplierContractInactive),
 		errors.Is(err, model.ErrSupplierContractBound), errors.Is(err, model.ErrSupplierHasActiveContracts),
 		errors.Is(err, model.ErrSupplierHasChannelBindings),
 		errors.Is(err, model.ErrSupplierBindingChanged), errors.Is(err, model.ErrSupplierIdempotencyConflict),
 		errors.Is(err, model.ErrSupplierVersionConflict),
+		errors.Is(err, model.ErrSupplierAccountingRuntimeSettingsConflict), errors.Is(err, model.ErrSupplierAccountingCutoverLocked),
 		errors.Is(err, model.ErrSupplierImmutableField), errors.Is(err, model.ErrSupplierAppendOnly), errors.Is(err, gorm.ErrDuplicatedKey):
 		supplyChainError(c, http.StatusConflict, i18n.MsgSupplyChainConflict)
 	case errors.Is(err, model.ErrSupplierCurrentRateRequired):
