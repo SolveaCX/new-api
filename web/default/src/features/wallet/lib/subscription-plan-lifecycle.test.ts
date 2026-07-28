@@ -569,6 +569,7 @@ describe('buildFlexiblePurchaseRequest', () => {
           paymentChoice,
           months: 3,
           requestId: 'request-embedded',
+          quoteId: `quote-${paymentChoice}-3`,
         }).ui_mode
       ).toBe('embedded')
     }
@@ -579,20 +580,103 @@ describe('buildFlexiblePurchaseRequest', () => {
         paymentChoice: 'balance',
         months: 3,
         requestId: 'request-balance',
+        quoteId: 'quote-balance-3',
       })
     ).not.toHaveProperty('ui_mode')
   })
 
+  test('rejects missing signed quote ids for every payment choice', () => {
+    for (const paymentChoice of [
+      'stripe_recurring',
+      'alipay',
+      'pix',
+      'upi',
+      'balance',
+    ] as const) {
+      expect(() =>
+        buildFlexiblePurchaseRequest({
+          planId: 2,
+          paymentChoice,
+          months: 3,
+          requestId: `request-${paymentChoice}`,
+        })
+      ).toThrow('quote_id is required')
+    }
+  })
+
   test('forces Stripe recurring to one month while preserving the quote id', () => {
+    const request = buildFlexiblePurchaseRequest({
+      planId: 2,
+      paymentChoice: 'stripe_recurring',
+      months: 6,
+      requestId: 'request-2',
+      quoteId: 'quote-stripe',
+    })
+
+    expect(request.months).toBe(1)
+    expect(request.quote_id).toBe('quote-stripe')
+  })
+
+  test('requires a future signed Stripe recurring quote before purchase', () => {
+    const now = 4_000_000_000
+    const validStripeQuote = {
+      currency: 'USD',
+      months: 1,
+      unit_price: 20,
+      total: 20,
+      quote_id: 'quote-stripe-1',
+      expires_at: now + 60,
+    }
+
+    expect(requiresSignedCheckoutQuote('stripe_recurring')).toBe(true)
     expect(
-      buildFlexiblePurchaseRequest({
+      getMatchingPaymentQuote(
+        'stripe_recurring',
+        { stripe_recurring: validStripeQuote },
+        12,
+        now
+      )?.quote_id
+    ).toBe('quote-stripe-1')
+    expect(
+      getMatchingPaymentQuote(
+        'stripe_recurring',
+        { stripe_recurring: { ...validStripeQuote, quote_id: '' } },
+        1,
+        now
+      )
+    ).toBeUndefined()
+    expect(
+      getMatchingPaymentQuote(
+        'stripe_recurring',
+        { stripe_recurring: { ...validStripeQuote, expires_at: now } },
+        1,
+        now
+      )
+    ).toBeUndefined()
+    expect(
+      getMatchingPaymentQuote(
+        'stripe_recurring',
+        { stripe_recurring: { ...validStripeQuote, months: 2 } },
+        1,
+        now
+      )
+    ).toBeUndefined()
+  })
+
+  test('normalizes Stripe recurring quote requests to one month', () => {
+    expect(
+      buildFlexibleQuoteRequest({
         planId: 2,
         paymentChoice: 'stripe_recurring',
         months: 6,
-        requestId: 'request-2',
-        quoteId: 'quote-stripe',
-      }).months
-    ).toBe(1)
+        requestId: 'request-stripe-quote',
+      })
+    ).toEqual({
+      plan_id: 2,
+      payment_choice: 'stripe_recurring',
+      months: 1,
+      request_id: 'request-stripe-quote',
+    })
   })
 
   test('adds recall claim only to Stripe recurring flexible purchases', () => {
@@ -618,6 +702,7 @@ describe('buildFlexiblePurchaseRequest', () => {
           paymentChoice,
           months: 3,
           requestId: `request-${paymentChoice}-recall`,
+          quoteId: `quote-${paymentChoice}-3`,
           recallClaim: 'signed-recall-claim',
         })
       ).not.toHaveProperty('recall_claim')

@@ -1207,10 +1207,17 @@ func stripeSubscriptionCheckoutInputFromOrder(order *model.SubscriptionOrder, us
 		return nil
 	}
 	priceID := strings.TrimSpace(plan.StripePriceId)
-	if snapshot, err := recurringPlanSnapshotFromOrder(order); err == nil && snapshot.Found && strings.TrimSpace(snapshot.Snapshot.StripePriceID) != "" {
-		priceID = strings.TrimSpace(snapshot.Snapshot.StripePriceID)
-	}
 	currency := strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
+	priceAmount := plan.PriceAmount
+	if snapshot, err := recurringPlanSnapshotFromOrder(order); err == nil && snapshot.Found {
+		if strings.TrimSpace(snapshot.Snapshot.StripePriceID) != "" {
+			priceID = strings.TrimSpace(snapshot.Snapshot.StripePriceID)
+		}
+		if strings.TrimSpace(snapshot.Snapshot.Currency) != "" && currency == "" {
+			currency = strings.ToUpper(strings.TrimSpace(snapshot.Snapshot.Currency))
+		}
+		priceAmount = snapshot.Snapshot.PriceAmount
+	}
 	if currency == "" {
 		currency = strings.ToUpper(strings.TrimSpace(plan.Currency))
 	}
@@ -1221,7 +1228,7 @@ func stripeSubscriptionCheckoutInputFromOrder(order *model.SubscriptionOrder, us
 		subtotalMinor += order.RecallDiscountAmountMinor
 	}
 	if subtotalMinor <= 0 {
-		if amount, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, currency); err == nil {
+		if amount, err := stripeMinorUnitAmountForSubscription(priceAmount, currency); err == nil {
 			subtotalMinor = amount
 		}
 	}
