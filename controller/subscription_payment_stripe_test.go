@@ -50,6 +50,13 @@ func setupSubscriptionStripeRecordingBackend(t *testing.T) *subscriptionStripeRe
 	return backend
 }
 
+func TestBuildStripeSubscriptionCheckoutSessionParamsUsesReferenceIdempotency(t *testing.T) {
+	params := buildStripeSubscriptionCheckoutSessionParams("sub_ref_ordinary", "", "buyer@example.com", "price_subscription", 7, 11)
+
+	require.NotNil(t, params.IdempotencyKey)
+	require.Equal(t, "subscription-stripe:sub_ref_ordinary", *params.IdempotencyKey)
+}
+
 func TestSubscriptionStripeWrongScopePromotionClaimStopsBeforeCheckout(t *testing.T) {
 	for _, tc := range []struct {
 		language string

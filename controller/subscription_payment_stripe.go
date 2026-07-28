@@ -196,6 +196,7 @@ func buildStripeSubscriptionCheckoutSessionParams(referenceId string, customerId
 			},
 		},
 	}
+	params.SetIdempotencyKey("subscription-stripe:" + strings.TrimSpace(referenceId))
 	if "" == customerId {
 		if "" != email {
 			params.CustomerEmail = stripe.String(email)
