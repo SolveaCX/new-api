@@ -69,10 +69,8 @@ import {
 import { openPaddleCheckoutForTransaction } from './lib/paddle-checkout'
 import {
   getTopupStripePriceId,
-  listRecallOffers,
   normalizeRecallClaim,
   removeRecallClaimFromSearch,
-  validateRecallClaim,
 } from './lib/recall-claim'
 import type {
   UserWalletData,
@@ -81,6 +79,11 @@ import type {
   RecallOfferView,
   TopupRecord,
 } from './types'
+import {
+  refreshWalletRecallOffers,
+  validateWalletRecallClaimAndRefresh,
+  type WalletRecallClaimStatus,
+} from './wallet-recall-offers'
 
 interface WalletProps {
   initialShowHistory?: boolean
@@ -103,8 +106,6 @@ type PaddleStatusPollParams = {
   transactionId?: string
   orderId?: string
 }
-
-type RecallClaimStatus = 'idle' | 'loading' | 'active' | 'expired' | 'invalid' | 'unavailable'
 
 const PADDLE_STATUS_POLL_INTERVAL_MS = 2000
 const PADDLE_STATUS_POLL_ATTEMPTS = 15
@@ -147,9 +148,8 @@ export function Wallet(props: WalletProps) {
   const [recallClaim] = useState(() =>
     normalizeRecallClaim(props.initialRecallClaim)
   )
-  const [recallClaimStatus, setRecallClaimStatus] = useState<RecallClaimStatus>(
-    recallClaim ? 'loading' : 'idle'
-  )
+  const [recallClaimStatus, setRecallClaimStatus] =
+    useState<WalletRecallClaimStatus>(recallClaim ? 'loading' : 'idle')
   const [recallClaimView, setRecallClaimView] =
     useState<RecallClaimView | null>(null)
   const [recallOffers, setRecallOffers] = useState<RecallOfferView[]>([])
@@ -243,15 +243,10 @@ export function Wallet(props: WalletProps) {
   }, [])
 
   const fetchRecallOffers = useCallback(async () => {
-    try {
-      setRecallOffersLoading(true)
-      const response = await listRecallOffers()
-      setRecallOffers(response.success && response.data ? response.data : [])
-    } catch {
-      setRecallOffers([])
-    } finally {
-      setRecallOffersLoading(false)
-    }
+    await refreshWalletRecallOffers({
+      setLoading: setRecallOffersLoading,
+      setOffers: setRecallOffers,
+    })
   }, [])
 
   const pollPaddleTopUpStatus = useCallback(
@@ -370,33 +365,14 @@ export function Wallet(props: WalletProps) {
 
     let cancelled = false
 
-    void validateRecallClaim({ claim: recallClaim })
-      .then((response) => {
-        if (cancelled) {
-          return
-        }
-        if (response.success && response.data) {
-          setRecallClaimView(response.data)
-          setRecallClaimStatus('active')
-          return
-        }
-
-        const message = response.message?.toLowerCase() || ''
-        consumePendingPostLoginRedirect()
-        setRecallClaimStatus(
-          message.includes('expired') ? 'expired' : 'invalid'
-        )
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRecallClaimStatus('unavailable')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          void fetchRecallOffers()
-        }
-      })
+    void validateWalletRecallClaimAndRefresh({
+      claim: recallClaim,
+      isCancelled: () => cancelled,
+      onInvalidClaim: consumePendingPostLoginRedirect,
+      refreshOffers: fetchRecallOffers,
+      setStatus: setRecallClaimStatus,
+      setView: setRecallClaimView,
+    })
 
     return () => {
       cancelled = true
