@@ -118,7 +118,10 @@ func TestBuildOneTimePlanCheckoutRecallMetadataUsesDiscountedOrderWithoutRawClai
 	params, err := buildOneTimePlanCheckoutSessionParams(order, &model.User{Id: 501, Email: "buyer@example.com"})
 
 	require.NoError(t, err)
-	require.EqualValues(t, 280, *params.LineItems[0].PriceData.UnitAmount)
+	require.EqualValues(t, 300, *params.LineItems[0].PriceData.UnitAmount)
+	require.Len(t, params.Discounts, 1)
+	require.NotNil(t, params.Discounts[0].PromotionCode)
+	require.Equal(t, "promo_local", *params.Discounts[0].PromotionCode)
 	require.Equal(t, "41", params.Metadata["recall_campaign_id"])
 	require.Equal(t, "82", params.Metadata["recall_recipient_id"])
 	require.Equal(t, "promo_local", params.Metadata["recall_promotion_code_id"])
@@ -128,6 +131,65 @@ func TestBuildOneTimePlanCheckoutRecallMetadataUsesDiscountedOrderWithoutRawClai
 		require.NotContains(t, strings.ToLower(key), "claim")
 		require.NotContains(t, strings.ToLower(value), "claim")
 		require.NotContains(t, value, "FKSECRET234")
+	}
+}
+
+func TestBuildOneTimePlanCheckoutFullyDiscountedRecallUsesOriginalAmountAndPromotion(t *testing.T) {
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 0, 1)
+	order.RecallCampaignId = 41
+	order.RecallRecipientId = 82
+	order.RecallPromotionCodeId = "promo_full_discount"
+	order.RecallDiscountAmountMinor = 1234
+
+	params, err := buildOneTimePlanCheckoutSessionParams(order, &model.User{Id: 501, Email: "buyer@example.com"})
+
+	require.NoError(t, err)
+	require.EqualValues(t, 1234, *params.LineItems[0].PriceData.UnitAmount)
+	require.Len(t, params.Discounts, 1)
+	require.NotNil(t, params.Discounts[0].PromotionCode)
+	require.Equal(t, "promo_full_discount", *params.Discounts[0].PromotionCode)
+}
+
+func TestBuildOneTimePlanCheckoutRejectsIncompleteRecallAttributionTuple(t *testing.T) {
+	testCases := []struct {
+		name   string
+		mutate func(*model.SubscriptionOrder)
+	}{
+		{name: "discount missing campaign", mutate: func(order *model.SubscriptionOrder) {
+			order.RecallRecipientId = 82
+			order.RecallPromotionCodeId = "promo_local"
+			order.RecallDiscountAmountMinor = 20
+		}},
+		{name: "discount missing recipient", mutate: func(order *model.SubscriptionOrder) {
+			order.RecallCampaignId = 41
+			order.RecallPromotionCodeId = "promo_local"
+			order.RecallDiscountAmountMinor = 20
+		}},
+		{name: "discount missing promotion", mutate: func(order *model.SubscriptionOrder) {
+			order.RecallCampaignId = 41
+			order.RecallRecipientId = 82
+			order.RecallDiscountAmountMinor = 20
+		}},
+		{name: "zero discount with campaign", mutate: func(order *model.SubscriptionOrder) {
+			order.RecallCampaignId = 41
+		}},
+		{name: "zero discount with recipient", mutate: func(order *model.SubscriptionOrder) {
+			order.RecallRecipientId = 82
+		}},
+		{name: "zero discount with promotion", mutate: func(order *model.SubscriptionOrder) {
+			order.RecallPromotionCodeId = "promo_local"
+		}},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 280, 3)
+			tc.mutate(order)
+
+			_, err := buildOneTimePlanCheckoutSessionParams(order, &model.User{Id: 501, Email: "buyer@example.com"})
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "recall attribution tuple")
+		})
 	}
 }
 
@@ -449,25 +511,32 @@ func TestOneTimePlanPaidWebhookDoesNotFulfillSupersededCheckout(t *testing.T) {
 
 func oneTimeStripePaidSessionObject(order *model.SubscriptionOrder) map[string]interface{} {
 	quote, _ := oneTimePlanQuoteFromOrder(order)
+	metadata := map[string]interface{}{
+		"trade_no":         order.TradeNo,
+		"user_id":          strconv.Itoa(order.UserId),
+		"plan_id":          strconv.Itoa(order.PlanId),
+		"change_intent_id": strconv.FormatInt(order.ChangeIntentId, 10),
+		"purchase_intent":  order.PurchaseIntent,
+		"payment_method":   order.PaymentMethod,
+		"purchase_months":  strconv.Itoa(order.PurchaseMonths),
+	}
+	if order.RecallDiscountAmountMinor > 0 {
+		metadata["recall_campaign_id"] = strconv.FormatInt(order.RecallCampaignId, 10)
+		metadata["recall_recipient_id"] = strconv.FormatInt(order.RecallRecipientId, 10)
+		metadata["recall_promotion_code_id"] = strings.TrimSpace(order.RecallPromotionCodeId)
+		metadata["recall_discount_amount_minor"] = strconv.FormatInt(order.RecallDiscountAmountMinor, 10)
+	}
 	return map[string]interface{}{
 		"id":                   order.ProviderSessionId,
 		"mode":                 string(stripe.CheckoutSessionModePayment),
 		"status":               "complete",
 		"payment_status":       "paid",
 		"client_reference_id":  order.TradeNo,
-		"amount_total":         float64(quote.TotalAmountMinor),
-		"currency":             strings.ToLower(quote.Currency),
+		"amount_total":         float64(quote.CheckoutAmountMinor),
+		"currency":             strings.ToLower(strings.TrimSpace(order.PaymentCurrency)),
 		"livemode":             false,
 		"payment_method_types": []interface{}{order.PaymentMethod},
-		"metadata": map[string]interface{}{
-			"trade_no":         order.TradeNo,
-			"user_id":          strconv.Itoa(order.UserId),
-			"plan_id":          strconv.Itoa(order.PlanId),
-			"change_intent_id": strconv.FormatInt(order.ChangeIntentId, 10),
-			"purchase_intent":  order.PurchaseIntent,
-			"payment_method":   order.PaymentMethod,
-			"purchase_months":  strconv.Itoa(order.PurchaseMonths),
-		},
+		"metadata":             metadata,
 	}
 }
 

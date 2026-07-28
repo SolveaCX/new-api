@@ -41,11 +41,13 @@ import {
   type FlexiblePurchaseResponse,
   type PlanRecord,
   type SubscriptionPaymentAvailability,
+  type SubscriptionRenewalLifecycleResult,
 } from '@/features/subscriptions/types'
 import type {
   StripeCheckoutOpenResult,
   StripeCheckoutPresentation,
 } from '../hooks/use-payment'
+import { isRecallPriceEligible } from '../lib/recall-claim'
 import {
   getRecallPriceDiscount,
   selectBestRecallOffer,
@@ -54,6 +56,7 @@ import {
 import {
   type LifecyclePlanRecord,
   type WalletSelfSubscriptionData,
+  applyRenewalLifecycleResultToSelfData,
   getFlexiblePlanAction,
   buildFlexibleQuoteRequest,
   buildFlexiblePurchaseRequest,
@@ -128,6 +131,7 @@ function formatPlanPrice(amount: number, currency = 'USD'): string {
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
+type SelfSubscriptionRefreshResult = 'applied' | 'superseded' | 'failed'
 
 function getRecallDiscountLabel(
   discount: RecallPriceDiscount,
@@ -244,6 +248,10 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
   const [quoteLoading, setQuoteLoading] = useState(false)
   const [renewalMutationPending, setRenewalMutationPending] = useState(false)
   const renewalMutationInFlightRef = useRef(false)
+  // A later failed /self refresh must not erase the last successful canonical
+  // subscription snapshot; only the initial no-data failure can show empty state.
+  const selfSubscriptionRequestSequenceRef = useRef(0)
+  const selfSubscriptionAppliedSequenceRef = useRef(0)
   const recallClaim = useRecallClaimContext()
 
   const fetchPlans = useCallback(async () => {
@@ -256,22 +264,47 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
   }, [])
 
   const fetchSelfSubscription = useCallback(
-    async (options: { preserveOnFailure?: boolean } = {}): Promise<boolean> => {
+    async (
+      options: { preserveOnFailure?: boolean } = {}
+    ): Promise<SelfSubscriptionRefreshResult> => {
+      const requestSequence = ++selfSubscriptionRequestSequenceRef.current
       try {
         const res = await getSelfSubscriptionFull()
+        if (requestSequence < selfSubscriptionAppliedSequenceRef.current) {
+          return 'superseded'
+        }
+        if (
+          requestSequence !== selfSubscriptionRequestSequenceRef.current &&
+          selfSubscriptionAppliedSequenceRef.current > 0
+        ) {
+          return 'superseded'
+        }
         if (res.success) {
+          selfSubscriptionAppliedSequenceRef.current = requestSequence
           setSelfData(normalizeSelfSubscriptionData(res.data))
-          return true
+          return 'applied'
         }
-        if (!options.preserveOnFailure) {
+        if (
+          !options.preserveOnFailure &&
+          selfSubscriptionAppliedSequenceRef.current === 0
+        ) {
           setSelfData(normalizeSelfSubscriptionData(undefined))
         }
-        return false
+        return 'failed'
       } catch {
-        if (!options.preserveOnFailure) {
+        if (requestSequence < selfSubscriptionAppliedSequenceRef.current) {
+          return 'superseded'
+        }
+        if (requestSequence !== selfSubscriptionRequestSequenceRef.current) {
+          return 'superseded'
+        }
+        if (
+          !options.preserveOnFailure &&
+          selfSubscriptionAppliedSequenceRef.current === 0
+        ) {
           setSelfData(normalizeSelfSubscriptionData(undefined))
         }
-        return false
+        return 'failed'
       }
     },
     []
@@ -349,19 +382,22 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     }
   }
 
-  const refreshAfterRenewal = async (syncPending: boolean) => {
-    let refreshFailed = !(await fetchSelfSubscription({
+  const refreshAfterRenewal = async (
+    result: SubscriptionRenewalLifecycleResult | undefined
+  ) => {
+    const selfRefreshResult = await fetchSelfSubscription({
       preserveOnFailure: true,
-    }))
+    })
+    if (result?.sync_pending === true && selfRefreshResult === 'applied') {
+      toast.info(t('Subscription updated; renewal status is still syncing'))
+    }
+    if (selfRefreshResult === 'failed') {
+      toast.error(t('Subscription updated, but failed to refresh status'))
+    }
     try {
       await onPurchaseSuccess?.()
     } catch {
-      refreshFailed = true
-    }
-    if (refreshFailed) {
-      toast.error(t('Subscription updated, but failed to refresh status'))
-    } else if (syncPending) {
-      toast.info(t('Subscription updated; renewal status is still syncing'))
+      // onPurchaseSuccess is best-effort and must not affect renewal reconciliation.
     }
   }
 
@@ -371,14 +407,27 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     }
     renewalMutationInFlightRef.current = true
     setRenewalMutationPending(true)
+    const renewalContractId = selfData.contract?.id ?? null
     try {
       const res = await cancelSubscriptionRenewal()
       if (!res.success) {
         toast.error(res.message || t('Payment request failed'))
         throw new Error(RENEWAL_FAILURE_TOAST_SHOWN)
       }
+      const optimisticSequence = ++selfSubscriptionRequestSequenceRef.current
+      setSelfData((current) => {
+        const next = applyRenewalLifecycleResultToSelfData(
+          current,
+          res.data,
+          renewalContractId
+        )
+        if (next !== current) {
+          selfSubscriptionAppliedSequenceRef.current = optimisticSequence
+        }
+        return next
+      })
       toast.success(t('Subscription renewal canceled'))
-      await refreshAfterRenewal(res.data?.sync_pending === true)
+      await refreshAfterRenewal(res.data)
     } catch (error) {
       if (
         !(error instanceof Error) ||
@@ -399,14 +448,27 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     }
     renewalMutationInFlightRef.current = true
     setRenewalMutationPending(true)
+    const renewalContractId = selfData.contract?.id ?? null
     try {
       const res = await resumeSubscriptionRenewal()
       if (!res.success) {
         toast.error(res.message || t('Payment request failed'))
         throw new Error(RENEWAL_FAILURE_TOAST_SHOWN)
       }
+      const optimisticSequence = ++selfSubscriptionRequestSequenceRef.current
+      setSelfData((current) => {
+        const next = applyRenewalLifecycleResultToSelfData(
+          current,
+          res.data,
+          renewalContractId
+        )
+        if (next !== current) {
+          selfSubscriptionAppliedSequenceRef.current = optimisticSequence
+        }
+        return next
+      })
       toast.success(t('Subscription renewal resumed'))
-      await refreshAfterRenewal(res.data?.sync_pending === true)
+      await refreshAfterRenewal(res.data)
     } catch (error) {
       if (
         !(error instanceof Error) ||
@@ -439,6 +501,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
       toast.error(t('Payment quote is unavailable.'))
       return
     }
+    const eligibleRecallClaim =
+      recallClaim.claim &&
+      isRecallPriceEligible(
+        recallClaim.view,
+        purchaseTarget.plan.plan.id,
+        'subscription'
+      )
+        ? recallClaim.claim
+        : undefined
     setPurchasing(true)
     try {
       const res = await purchaseSubscriptionPlanFlexible({
@@ -449,6 +520,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
           requestId: purchaseTarget.requestId,
           quoteId: selectedQuote.quote_id,
           orderId: selectedQuote?.order_id,
+          recallClaim: eligibleRecallClaim,
         }),
       })
       if (!res.success || !res.data) {
@@ -499,6 +571,11 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         paymentChoice,
         months,
         requestId: target.requestId,
+        recallClaim:
+          recallClaim.claim &&
+          isRecallPriceEligible(recallClaim.view, target.plan.plan.id, 'subscription')
+            ? recallClaim.claim
+            : undefined,
       })
       const sequence = quoteRequestSequenceRef.current + 1
       quoteRequestSequenceRef.current = sequence
@@ -538,7 +615,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         }
       }
     },
-    []
+    [recallClaim.claim, recallClaim.view]
   )
 
   const handleQuoteRequest = async (
@@ -784,7 +861,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         projectedStart={purchaseProjection?.start_time}
         projectedEnd={purchaseProjection?.end_time}
         projectedRemainingDays={purchaseProjection?.remaining_days}
-        paymentQuotes={quoteError ? {} : purchaseProjection?.payment_quotes}
+        paymentQuotes={
+          quoteError ? {} : purchaseProjection?.payment_quotes
+        }
         onConfirm={handleConfirmPurchase}
         onQuoteRequest={handleQuoteRequest}
       />

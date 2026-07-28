@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,7 +12,11 @@ import (
 // GetDBTimestamp returns a UNIX timestamp from database time.
 // Falls back to application time on error.
 func GetDBTimestamp() int64 {
-	ts, err := GetDBTimestampWithContext(context.Background())
+	return getDBTimestampTx(DB)
+}
+
+func getDBTimestampTx(tx *gorm.DB) int64 {
+	ts, err := getDBTimestampTxStrict(tx)
 	if err != nil {
 		return common.GetTimestamp()
 	}
@@ -35,33 +40,48 @@ func getDBTimestamp(db *gorm.DB) (int64, error) {
 	if db == nil || db.Dialector == nil {
 		return 0, fmt.Errorf("database is not initialized")
 	}
-	var ts int64
-	var err error
-	dialect := db.Dialector.Name()
-	switch dialect {
-	case "postgres":
-		err = db.Raw("SELECT EXTRACT(EPOCH FROM NOW())::bigint").Scan(&ts).Error
-	case "sqlite":
-		err = db.Raw("SELECT strftime('%s','now')").Scan(&ts).Error
-	case "mysql":
-		err = db.Raw("SELECT UNIX_TIMESTAMP()").Scan(&ts).Error
-	default:
-		switch {
-		case common.UsingPostgreSQL:
-			err = db.Raw("SELECT EXTRACT(EPOCH FROM NOW())::bigint").Scan(&ts).Error
-		case common.UsingSQLite:
-			err = db.Raw("SELECT strftime('%s','now')").Scan(&ts).Error
-		case common.UsingMySQL:
-			err = db.Raw("SELECT UNIX_TIMESTAMP()").Scan(&ts).Error
-		default:
-			return 0, fmt.Errorf("unsupported database dialect %q", dialect)
-		}
+	return scanDBTimestamp(db, dbTimestampQueryForDB(db))
+}
+
+func getDBTimestampTxStrict(tx *gorm.DB) (int64, error) {
+	if tx == nil {
+		return 0, errors.New("database handle is nil")
 	}
+	return scanDBTimestamp(tx, dbTimestampQuery())
+}
+
+func scanDBTimestamp(tx *gorm.DB, query string) (int64, error) {
+	var ts int64
+	err := tx.Raw(query).Scan(&ts).Error
 	if err != nil {
 		return 0, err
 	}
 	if ts <= 0 {
-		return 0, fmt.Errorf("database returned invalid timestamp %d", ts)
+		return 0, fmt.Errorf("database timestamp query returned non-positive timestamp: %d", ts)
 	}
 	return ts, nil
+}
+
+func dbTimestampQuery() string {
+	switch {
+	case common.UsingPostgreSQL:
+		return "SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()))::bigint"
+	case common.UsingSQLite:
+		return "SELECT strftime('%s','now')"
+	default:
+		return "SELECT UNIX_TIMESTAMP()"
+	}
+}
+
+func dbTimestampQueryForDB(db *gorm.DB) string {
+	switch db.Dialector.Name() {
+	case "postgres":
+		return "SELECT FLOOR(EXTRACT(EPOCH FROM clock_timestamp()))::bigint"
+	case "sqlite":
+		return "SELECT strftime('%s','now')"
+	case "mysql":
+		return "SELECT UNIX_TIMESTAMP()"
+	default:
+		return dbTimestampQuery()
+	}
 }

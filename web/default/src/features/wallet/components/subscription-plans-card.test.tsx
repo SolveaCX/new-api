@@ -25,6 +25,7 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { RecallClaimProvider } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import type {
   PlanRecord,
+  SelfSubscriptionDataResponse,
   SubscriptionPaymentQuote,
 } from '@/features/subscriptions/types'
 import {
@@ -37,6 +38,10 @@ import {
   requiresSignedCheckoutQuote,
 } from '../lib/subscription-plan-lifecycle'
 import type { RecallClaimView, TopupInfo } from '../types'
+import {
+  CurrentPlanCard,
+  CurrentPlanRenewalDialogContent,
+} from './current-plan-card'
 import { PlanPurchaseDialogContent } from './plan-purchase-dialog'
 import { SubscriptionPlansCard } from './subscription-plans-card'
 
@@ -171,6 +176,12 @@ function renderWalletCard(selfData = normalizeSelfSubscriptionData(undefined)) {
       />
     </I18nextProvider>
   )
+}
+
+function rawSelfSubscriptionResponse(
+  data: unknown
+): SelfSubscriptionDataResponse {
+  return data as SelfSubscriptionDataResponse
 }
 
 const subscriptionRecallClaim: RecallClaimView = {
@@ -392,6 +403,434 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('Active')
     expect(html).not.toContain('Auto-renew enabled')
+    expect(html).toContain('Auto-renew on')
+    expect(html).toContain('Cancel subscription')
+  })
+
+  test('shows wallet auto-renew off and resume action from canonical state', () => {
+    const html = renderWalletCard(
+      normalizeSelfSubscriptionData({
+        contract: {
+          contract_id: 18,
+          id: 18,
+          status: 'active',
+          payment_mode: 'balance_one_period',
+          current_plan_id: 2,
+          current_entitlement_id: 20,
+          current_provider_binding_id: 0,
+          latest_change_intent_id: 0,
+          pending_plan_id: 0,
+          pending_effective_at: 0,
+          current_period_start: 1717200000,
+          current_period_end: 1719792000,
+          grace_period_end: 0,
+          change_version: 1,
+        },
+        renewal_source: 'wallet_auto',
+        renewal_status: 'cancelled_by_user',
+        capabilities: {
+          can_cancel: false,
+          can_resume: true,
+          requires_support: false,
+        },
+      })
+    )
+
+    expect(html).toContain('Auto-renew off')
+    expect(html).toContain('Resume subscription')
+    expect(html).not.toContain('Cancel subscription')
+  })
+
+  test('shows Stripe auto-renew off and resume action from canonical state', () => {
+    const html = renderWalletCard(
+      normalizeSelfSubscriptionData({
+        contract: {
+          contract_id: 19,
+          id: 19,
+          status: 'active',
+          payment_mode: 'stripe_recurring',
+          current_plan_id: 2,
+          current_entitlement_id: 20,
+          current_provider_binding_id: 88,
+          latest_change_intent_id: 0,
+          pending_plan_id: 0,
+          pending_effective_at: 0,
+          current_period_start: 1717200000,
+          current_period_end: 1719792000,
+          grace_period_end: 0,
+          change_version: 1,
+        },
+        renewal_source: 'provider_recurring',
+        renewal_status: 'cancelled_by_user',
+        capabilities: {
+          can_cancel: false,
+          can_resume: true,
+          requires_support: false,
+        },
+      })
+    )
+
+    expect(html).toContain('Auto-renew off')
+    expect(html).toContain('Resume subscription')
+    expect(html).not.toContain('Cancel subscription')
+  })
+
+  test('hides renewal badge and action for one-time or unsupported states', () => {
+    const html = renderWalletCard(
+      normalizeSelfSubscriptionData({
+        contract: {
+          contract_id: 20,
+          id: 20,
+          status: 'active',
+          payment_mode: 'balance_one_period',
+          current_plan_id: 2,
+          current_entitlement_id: 20,
+          current_provider_binding_id: 0,
+          latest_change_intent_id: 0,
+          pending_plan_id: 0,
+          pending_effective_at: 0,
+          current_period_start: 1717200000,
+          current_period_end: 1719792000,
+          grace_period_end: 0,
+          change_version: 1,
+        },
+        renewal_source: 'wallet_auto',
+        renewal_status: 'enabled',
+        capabilities: {
+          can_cancel: true,
+          can_resume: false,
+          requires_support: true,
+        },
+      })
+    )
+
+    expect(html).not.toContain('Auto-renew on')
+    expect(html).not.toContain('Auto-renew off')
+    expect(html).not.toContain('Cancel subscription')
+    expect(html).not.toContain('Resume subscription')
+  })
+
+  test('renders provider-specific renewal dialog copy and access end date', () => {
+    const stripeCancel = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <CurrentPlanRenewalDialogContent
+          action='cancel'
+          renewalSource='provider_recurring'
+          endTimestamp={1719792000}
+          pending={false}
+          plain
+          onConfirm={() => undefined}
+        />
+      </I18nextProvider>
+    )
+    const walletCancel = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <CurrentPlanRenewalDialogContent
+          action='cancel'
+          renewalSource='wallet_auto'
+          endTimestamp={1719792000}
+          pending={false}
+          plain
+          onConfirm={() => undefined}
+        />
+      </I18nextProvider>
+    )
+    const stripeResume = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <CurrentPlanRenewalDialogContent
+          action='resume'
+          renewalSource='provider_recurring'
+          endTimestamp={1719792000}
+          pending={false}
+          plain
+          onConfirm={() => undefined}
+        />
+      </I18nextProvider>
+    )
+
+    expect(stripeCancel).toContain('Cancel automatic renewal?')
+    expect(stripeCancel).toContain(
+      'Future Stripe subscription charges stop after the current paid period.'
+    )
+    expect(walletCancel).toContain(
+      'Future deductions from your Flatkey wallet balance stop after the current paid period.'
+    )
+    expect(stripeResume).toContain('Resume automatic renewal?')
+    expect(stripeResume).toContain('Confirm resume')
+    expect(stripeCancel).toContain(
+      'Your current access and benefits continue through 2024-07-01 00:00:00.'
+    )
+  })
+
+  test('omits the access end sentence when the renewal period end is unavailable', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <CurrentPlanRenewalDialogContent
+          action='cancel'
+          renewalSource='provider_recurring'
+          pending={false}
+          plain
+          onConfirm={() => undefined}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).not.toContain(
+      'Your current access and benefits continue through'
+    )
+  })
+
+  test('wires current plan renewal callbacks through the card props', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <CurrentPlanCard
+          plan={plans[1].plan}
+          selfData={normalizeSelfSubscriptionData({
+            contract: {
+              contract_id: 21,
+              id: 21,
+              status: 'active',
+              payment_mode: 'balance_one_period',
+              current_plan_id: 2,
+              current_entitlement_id: 20,
+              current_provider_binding_id: 0,
+              latest_change_intent_id: 0,
+              pending_plan_id: 0,
+              pending_effective_at: 0,
+              current_period_start: 1717200000,
+              current_period_end: 1719792000,
+              grace_period_end: 0,
+              change_version: 1,
+            },
+            renewal_source: 'wallet_auto',
+            renewal_status: 'enabled',
+            capabilities: {
+              can_cancel: true,
+              can_resume: false,
+              requires_support: false,
+            },
+          })}
+          renewalMutationPending
+          onCancelRenewal={async () => undefined}
+          onResumeRenewal={async () => undefined}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain('disabled=""')
+    expect(html).toContain('Cancel subscription')
+  })
+
+  test('uses parameterless renewal helpers and keeps a successful canonical refresh authoritative', () => {
+    const cardSource = readFileSync(
+      new URL('./subscription-plans-card.tsx', import.meta.url),
+      'utf8'
+    )
+
+    expect(cardSource).toContain('cancelSubscriptionRenewal()')
+    expect(cardSource).toContain('resumeSubscriptionRenewal()')
+    expect(cardSource).toContain(
+      "toast.success(t('Subscription renewal canceled'))"
+    )
+    expect(cardSource).toContain(
+      "toast.success(t('Subscription renewal resumed'))"
+    )
+    expect(cardSource).toContain('await fetchSelfSubscription()')
+    expect(cardSource).toMatch(
+      /const refreshAfterRenewal = async \(\s*result: SubscriptionRenewalLifecycleResult \| undefined\s*\) =>/
+    )
+    expect(cardSource).toContain('await refreshAfterRenewal(res.data)')
+    expect(cardSource).toContain('const selfRefreshResult =')
+    expect(cardSource).toMatch(
+      /try \{\s*await onPurchaseSuccess\?\.\(\)\s*\} catch \{\s*\/\/ onPurchaseSuccess is best-effort/
+    )
+    expect(cardSource).not.toContain('callbackFailed')
+    expect(cardSource).not.toContain('if (callbackFailed) return')
+    expect(cardSource).not.toContain('if (selfRefreshSucceeded && result)')
+    expect(cardSource).toContain(
+      "if (result?.sync_pending === true && selfRefreshResult === 'applied')"
+    )
+    expect(cardSource).not.toContain(
+      "if (result?.sync_pending === true && selfRefreshResult !== 'applied')"
+    )
+    expect(cardSource).not.toContain('else if (result?.sync_pending === true)')
+    const syncPendingInfoIndex = cardSource.indexOf(
+      "if (result?.sync_pending === true && selfRefreshResult === 'applied')"
+    )
+    const selfRefreshFailureIndex = cardSource.indexOf(
+      "if (selfRefreshResult === 'failed')"
+    )
+    const callbackIndex = cardSource.indexOf('await onPurchaseSuccess?.()')
+    expect(syncPendingInfoIndex).toBeGreaterThan(-1)
+    expect(selfRefreshFailureIndex).toBeGreaterThan(syncPendingInfoIndex)
+    expect(callbackIndex).toBeGreaterThan(selfRefreshFailureIndex)
+    expect(cardSource).not.toContain(
+      'applyRenewalLifecycleResultToSelfData(current, result)'
+    )
+    expect(
+      cardSource.match(
+        /const renewalContractId = selfData\.contract\?\.id \?\? null/g
+      )
+    ).toHaveLength(2)
+    expect(
+      cardSource.match(
+        /applyRenewalLifecycleResultToSelfData\(\s*current,\s*res\.data,\s*renewalContractId\s*\)/g
+      )
+    ).toHaveLength(2)
+    expect(cardSource).toContain(
+      "toast.error(t('Subscription updated, but failed to refresh status'))"
+    )
+    expect(cardSource).toContain(
+      "toast.info(t('Subscription updated; renewal status is still syncing'))"
+    )
+    expect(cardSource).toMatch(
+      /await fetchSelfSubscription\(\{\s*preserveOnFailure: true,\s*\}\)/
+    )
+    expect(
+      cardSource.match(/selfSubscriptionAppliedSequenceRef\.current === 0/g)
+    ).toHaveLength(2)
+    expect(cardSource).not.toContain(
+      'let refreshFailed = !(await fetchSelfSubscription())'
+    )
+    expect(cardSource).not.toContain(
+      'let refreshFailed = syncPending || !(await fetchSelfSubscription())'
+    )
+    expect(cardSource).not.toContain('refreshFailed = true')
+    expect(cardSource).toContain(
+      'const selfSubscriptionRequestSequenceRef = useRef(0)'
+    )
+    expect(cardSource).toContain(
+      'const selfSubscriptionAppliedSequenceRef = useRef(0)'
+    )
+    expect(cardSource).toContain(
+      'const requestSequence = ++selfSubscriptionRequestSequenceRef.current'
+    )
+    expect(cardSource).toContain(
+      'if (requestSequence < selfSubscriptionAppliedSequenceRef.current)'
+    )
+    expect(
+      cardSource.match(
+        /if \(requestSequence !== selfSubscriptionRequestSequenceRef\.current\)/g
+      )
+    ).toHaveLength(1)
+    expect(cardSource).toContain(
+      'requestSequence !== selfSubscriptionRequestSequenceRef.current &&\n' +
+        '          selfSubscriptionAppliedSequenceRef.current > 0'
+    )
+    expect(cardSource).not.toContain(
+      'selfSubscriptionAppliedSequenceRef.current > requestSequence'
+    )
+    expect(cardSource).toContain(
+      'selfSubscriptionAppliedSequenceRef.current = requestSequence'
+    )
+    expect(cardSource).toContain(
+      "type SelfSubscriptionRefreshResult = 'applied' | 'superseded' | 'failed'"
+    )
+    expect(cardSource).toContain("return 'superseded'")
+    expect(cardSource).not.toContain('return true\n        }')
+    expect(cardSource).toContain("selfRefreshResult === 'applied'")
+    expect(cardSource).toContain("selfRefreshResult === 'failed'")
+    expect(
+      cardSource.match(
+        /const optimisticSequence = \+\+selfSubscriptionRequestSequenceRef\.current/g
+      )
+    ).toHaveLength(2)
+    expect(
+      cardSource.match(
+        /selfSubscriptionAppliedSequenceRef\.current = optimisticSequence/g
+      )
+    ).toHaveLength(2)
+    expect(cardSource.match(/if \(next !== current\) \{/g)).toHaveLength(2)
+    expect(
+      cardSource.match(/if \(renewalMutationInFlightRef\.current\) \{/g)
+    ).toHaveLength(2)
+    expect(
+      cardSource.match(/throw new Error\(RENEWAL_MUTATION_ALREADY_IN_FLIGHT\)/g)
+    ).toHaveLength(2)
+    expect(
+      cardSource.match(/renewalMutationInFlightRef\.current = true/g)
+    ).toHaveLength(2)
+    expect(
+      cardSource.match(/renewalMutationInFlightRef\.current = false/g)
+    ).toHaveLength(2)
+    expect(cardSource).not.toContain('cancelRecurringSubscription')
+    expect(cardSource).not.toContain('resumeRecurringSubscription')
+    expect(cardSource).not.toContain('current_provider_binding_id')
+  })
+
+  test('localizes renewal refresh and reconciliation warnings in every wallet locale', () => {
+    for (const localeCode of ['en', 'zh', 'fr', 'ru', 'ja', 'vi', 'es', 'pt']) {
+      const locale = JSON.parse(
+        readFileSync(
+          new URL(`../../../i18n/locales/${localeCode}.json`, import.meta.url),
+          'utf8'
+        )
+      ) as { translation: Record<string, string> }
+
+      expect(
+        locale.translation['Subscription updated, but failed to refresh status']
+      ).toBeTruthy()
+      expect(
+        locale.translation[
+          'Subscription updated; renewal status is still syncing'
+        ]
+      ).toBeTruthy()
+    }
+  })
+
+  test('does not infer wallet auto-renew from a balance one-period contract without canonical renewal state', () => {
+    const html = renderWalletCard(
+      normalizeSelfSubscriptionData({
+        contract: {
+          contract_id: 15,
+          id: 15,
+          status: 'active',
+          payment_mode: 'balance_one_period',
+          current_plan_id: 2,
+          current_entitlement_id: 20,
+          current_provider_binding_id: 0,
+          latest_change_intent_id: 0,
+          pending_plan_id: 0,
+          pending_effective_at: 0,
+          current_period_start: 1717200000,
+          current_period_end: 1719792000,
+          grace_period_end: 0,
+          change_version: 1,
+        },
+      })
+    )
+
+    expect(html).toContain('Active')
+    expect(html).not.toContain('Auto-renew on')
+  })
+
+  test('does not infer wallet auto-renew from the legacy balance renewal source', () => {
+    const html = renderWalletCard(
+      normalizeSelfSubscriptionData(
+        rawSelfSubscriptionResponse({
+          contract: {
+            contract_id: 16,
+            id: 16,
+            status: 'active',
+            payment_mode: 'prepaid',
+            current_plan_id: 2,
+            current_entitlement_id: 20,
+            current_provider_binding_id: 0,
+            latest_change_intent_id: 0,
+            pending_plan_id: 0,
+            pending_effective_at: 0,
+            current_period_start: 1717200000,
+            current_period_end: 1719792000,
+            grace_period_end: 0,
+            change_version: 1,
+          },
+          renewal_source: 'balance',
+          renewal_status: 'enabled',
+        })
+      )
+    )
+
+    expect(html).toContain('Active')
     expect(html).not.toContain('Auto-renew on')
   })
 
