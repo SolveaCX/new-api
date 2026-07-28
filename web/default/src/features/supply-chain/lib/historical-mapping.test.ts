@@ -3,6 +3,7 @@ import type { SupplierChannelBinding } from '../types'
 import {
   buildHistoricalMappings,
   parseHistoricalMappings,
+  replaceHistoricalMappingRateVersion,
 } from './historical-mapping'
 
 function binding(
@@ -54,5 +55,45 @@ describe('historical channel mapping presentation', () => {
     expect(parseHistoricalMappings('{')).toEqual([])
     expect(parseHistoricalMappings('{}')).toEqual([])
     expect(parseHistoricalMappings('[{"channel_id": 1}]')).toEqual([])
+  })
+
+  test('replaces the frozen rate version and multiplier together', () => {
+    const mappings = buildHistoricalMappings([binding({ channel_id: 9 })])
+
+    expect(
+      replaceHistoricalMappingRateVersion(mappings, 9, {
+        id: 8,
+        contract_id: 3,
+        procurement_multiplier_ppm: 550_000,
+        effective_at: 1_790_000_000,
+        created_by: 1,
+        reason: 'correct historical procurement rate',
+        created_at: 1_790_000_000,
+      })
+    ).toEqual([
+      {
+        channel_id: 9,
+        supplier_id: 2,
+        contract_id: 3,
+        rate_version_id: 8,
+        procurement_multiplier_ppm: 550_000,
+      },
+    ])
+  })
+
+  test('does not apply a rate version from a different contract', () => {
+    const mappings = buildHistoricalMappings([binding({ channel_id: 9 })])
+
+    expect(
+      replaceHistoricalMappingRateVersion(mappings, 9, {
+        id: 8,
+        contract_id: 99,
+        procurement_multiplier_ppm: 550_000,
+        effective_at: 1_790_000_000,
+        created_by: 1,
+        reason: 'wrong contract',
+        created_at: 1_790_000_000,
+      })
+    ).toEqual(mappings)
   })
 })

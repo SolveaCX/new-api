@@ -13,6 +13,7 @@ import {
   createHistoricalImport,
   getHistoricalImport,
   listAllBoundChannelBindings,
+  listAllRateVersions,
   listHistoricalImportSummaries,
   listHistoricalImports,
   publishHistoricalImport,
@@ -133,5 +134,45 @@ describe('supplier historical estimate API', () => {
 
     expect(requestedPages).toEqual([1, 2])
     expect(bindings.map((binding) => binding.channel_id)).toEqual([11, 12])
+  })
+
+  test('loads every contract rate page for historical selection', async () => {
+    const requestedPages: number[] = []
+    api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
+      const page = Number(config.params?.p)
+      requestedPages.push(page)
+      return {
+        data: {
+          success: true,
+          data: {
+            page,
+            page_size: 100,
+            total: 2,
+            items: [
+              {
+                id: page === 1 ? 2 : 3,
+                contract_id: 3,
+                procurement_multiplier_ppm: page === 1 ? 600_000 : 550_000,
+                effective_at: page,
+                created_by: 1,
+                reason: page === 1 ? 'old rate' : 'corrected rate',
+                created_at: page,
+              },
+            ],
+          },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: new AxiosHeaders(),
+        config,
+      }
+    }
+
+    const rates = await listAllRateVersions(3)
+
+    expect(requestedPages).toEqual([1, 2])
+    expect(rates.map((rate) => rate.procurement_multiplier_ppm)).toEqual([
+      600_000, 550_000,
+    ])
   })
 })

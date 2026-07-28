@@ -212,6 +212,27 @@ export async function listRateVersions(
   return normalizeAdminPageResponse(response.data)
 }
 
+export async function listAllRateVersions(
+  contractId: number
+): Promise<SupplierContractRateVersion[]> {
+  const pageSize = 100
+  const versions: SupplierContractRateVersion[] = []
+  for (let page = 1; ; page += 1) {
+    const response = await listRateVersions({
+      contract_id: contractId,
+      p: page,
+      page_size: pageSize,
+    })
+    versions.push(...response.data.items)
+    if (
+      versions.length >= response.data.total ||
+      response.data.items.length === 0
+    ) {
+      return versions
+    }
+  }
+}
+
 export async function createRateVersion(
   contractId: number,
   data: SupplierRateVersionCreateRequest
