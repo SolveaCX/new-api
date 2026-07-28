@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQueries } from '@tanstack/react-query'
 import { PlusSignIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
@@ -35,6 +36,14 @@ import {
   ProgressLabel,
   ProgressValue,
 } from '@/components/ui/progress'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import {
   Table,
@@ -48,6 +57,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   createHistoricalImport,
   listAllBoundChannelBindings,
+  listAllRateVersions,
   publishHistoricalImport,
 } from '../api'
 import type { SupplyChainManagementProps } from '../contracts'
@@ -65,6 +75,7 @@ import {
 import {
   buildHistoricalMappings,
   parseHistoricalMappings,
+  replaceHistoricalMappingRateVersion,
 } from '../lib/historical-mapping'
 import {
   historicalImportFormSchema,
@@ -74,6 +85,7 @@ import { formatTime } from '../lib/time'
 import { supplyChainQueryKeys } from '../query-keys'
 import type {
   SupplierChannelBinding,
+  SupplierContractRateVersion,
   SupplierHistoricalChannelMapping,
   SupplierHistoricalImport,
   SupplierHistoricalImportCommand,
@@ -131,9 +143,53 @@ function HistoricalStatusBadge(props: {
   )
 }
 
+function useHistoricalRateVersions(
+  mappings: SupplierHistoricalChannelMapping[]
+): {
+  byContract: ReadonlyMap<number, SupplierContractRateVersion[]>
+  loadingContracts: ReadonlySet<number>
+  hasError: boolean
+} {
+  const contractIds = useMemo(
+    () =>
+      Array.from(new Set(mappings.map((mapping) => mapping.contract_id))).sort(
+        (left, right) => left - right
+      ),
+    [mappings]
+  )
+  const queries = useQueries({
+    queries: contractIds.map((contractId) => ({
+      queryKey: [
+        ...supplyChainQueryKeys.contracts.all(),
+        'historical-rate-options',
+        contractId,
+      ],
+      queryFn: () => listAllRateVersions(contractId),
+      staleTime: 60_000,
+    })),
+  })
+  const byContract = new Map<number, SupplierContractRateVersion[]>()
+  const loadingContracts = new Set<number>()
+  contractIds.forEach((contractId, index) => {
+    byContract.set(contractId, queries[index]?.data ?? [])
+    if (queries[index]?.isPending) loadingContracts.add(contractId)
+  })
+  return {
+    byContract,
+    loadingContracts,
+    hasError: queries.some((query) => query.isError),
+  }
+}
+
 function HistoricalMappingTable(props: {
   mappings: SupplierHistoricalChannelMapping[]
   bindings: SupplierChannelBinding[]
+  rateVersionsByContract: ReadonlyMap<number, SupplierContractRateVersion[]>
+  loadingContracts: ReadonlySet<number>
+  onRateVersionChange: (
+    channelId: number,
+    rateVersion: SupplierContractRateVersion
+  ) => void
 }) {
   const { t } = useTranslation()
   const bindingByChannel = useMemo(
@@ -172,12 +228,18 @@ function HistoricalMappingTable(props: {
             const source = bindingByChannel.get(mapping.channel_id)
             const binding =
               source?.supplier_id === mapping.supplier_id &&
-              source.supplier_contract_id === mapping.contract_id &&
-              source.current_rate_version_id === mapping.rate_version_id &&
-              source.current_procurement_multiplier_ppm ===
-                mapping.procurement_multiplier_ppm
+              source.supplier_contract_id === mapping.contract_id
                 ? source
                 : undefined
+            const rateVersions =
+              props.rateVersionsByContract.get(mapping.contract_id) ?? []
+            const rateItems = rateVersions.map((rateVersion) => ({
+              value: String(rateVersion.id),
+              label: `#${rateVersion.id} · ${formatPpmPercent(
+                rateVersion.procurement_multiplier_ppm,
+                t('Unknown')
+              )}`,
+            }))
             return (
               <TableRow key={mapping.channel_id}>
                 <TableCell>
@@ -212,7 +274,63 @@ function HistoricalMappingTable(props: {
                     </div>
                   ) : null}
                 </TableCell>
-                <TableCell>#{mapping.rate_version_id}</TableCell>
+                <TableCell>
+                  {props.loadingContracts.has(mapping.contract_id) ||
+                  rateVersions.length === 0 ? (
+                    <div className='flex items-center gap-2'>
+                      {props.loadingContracts.has(mapping.contract_id) ? (
+                        <Spinner />
+                      ) : null}
+                      <span>#{mapping.rate_version_id}</span>
+                    </div>
+                  ) : (
+                    <Select
+                      items={rateItems}
+                      value={String(mapping.rate_version_id)}
+                      onValueChange={(value) => {
+                        const selected = rateVersions.find(
+                          (rateVersion) => String(rateVersion.id) === value
+                        )
+                        if (selected) {
+                          props.onRateVersionChange(
+                            mapping.channel_id,
+                            selected
+                          )
+                        }
+                      }}
+                    >
+                      <SelectTrigger
+                        className='min-w-48'
+                        aria-label={`${t('Rate version')} #${mapping.channel_id}`}
+                      >
+                        <SelectValue placeholder={t('Select rate version')} />
+                      </SelectTrigger>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          {rateVersions.map((rateVersion) => (
+                            <SelectItem
+                              key={rateVersion.id}
+                              value={String(rateVersion.id)}
+                            >
+                              <span>#{rateVersion.id}</span>
+                              <span>
+                                {formatPpmPercent(
+                                  rateVersion.procurement_multiplier_ppm,
+                                  t('Unknown')
+                                )}
+                              </span>
+                              <span className='text-muted-foreground'>
+                                {t('Effective at {{time}}', {
+                                  time: formatTime(rateVersion.effective_at),
+                                })}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </TableCell>
                 <TableCell>
                   {formatPpmPercent(
                     mapping.procurement_multiplier_ppm,
@@ -275,6 +393,7 @@ function HistoricalImportForm(props: {
     () => parseHistoricalMappings(mappingsJSON),
     [mappingsJSON]
   )
+  const rateVersions = useHistoricalRateVersions(mappings)
 
   async function generateMappings(): Promise<void> {
     setGeneratingMappings(true)
@@ -300,6 +419,21 @@ function HistoricalImportForm(props: {
     } finally {
       setGeneratingMappings(false)
     }
+  }
+
+  function changeRateVersion(
+    channelId: number,
+    rateVersion: SupplierContractRateVersion
+  ): void {
+    form.setValue(
+      'channel_mappings_json',
+      JSON.stringify(
+        replaceHistoricalMappingRateVersion(mappings, channelId, rateVersion),
+        null,
+        2
+      ),
+      { shouldDirty: true, shouldValidate: true }
+    )
   }
 
   async function submit(values: HistoricalImportFormValues): Promise<void> {
@@ -475,13 +609,23 @@ function HistoricalImportForm(props: {
               </div>
               <FieldDescription>
                 {t(
-                  'Each mapping freezes a channel to its supplier, contract, and procurement rate version. Later binding or rate changes do not alter this estimate.'
+                  'Choose a procurement rate version for each channel. The selected version and rate are frozen together for this estimate. If the required rate is not listed, append it to the contract rate history first.'
                 )}
               </FieldDescription>
               <HistoricalMappingTable
                 mappings={mappings}
                 bindings={mappingSources}
+                rateVersionsByContract={rateVersions.byContract}
+                loadingContracts={rateVersions.loadingContracts}
+                onRateVersionChange={changeRateVersion}
               />
+              {rateVersions.hasError ? (
+                <Alert variant='destructive'>
+                  <AlertTitle>
+                    {t('Unable to load procurement rate versions')}
+                  </AlertTitle>
+                </Alert>
+              ) : null}
               <Accordion className='rounded-lg border px-3'>
                 <AccordionItem value='field-reference'>
                   <AccordionTrigger>
@@ -721,6 +865,16 @@ function HistoricalImportDetails(props: {
               isEmpty={!rollups.length}
             >
               <div className='flex flex-col gap-3'>
+                <Alert>
+                  <AlertTitle>
+                    {t('How to read unavailable requests')}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'Official price unavailable means the consume log has no valid group ratio, so the official list price cannot be reconstructed. Unmapped channel means the import has no supplier, contract, and procurement rate mapping for that channel. The note below each amount is the number of requests whose amount could not be calculated.'
+                    )}
+                  </AlertDescription>
+                </Alert>
                 {series.hasNextPage ? (
                   <Alert>
                     <AlertTitle>
@@ -735,8 +889,10 @@ function HistoricalImportDetails(props: {
                       <TableRow>
                         <TableHead>{t('Date')}</TableHead>
                         <TableHead>{t('Requests')}</TableHead>
-                        <TableHead>{t('Unknown')}</TableHead>
-                        <TableHead>{t('Unassigned')}</TableHead>
+                        <TableHead>
+                          {t('Official price unavailable requests')}
+                        </TableHead>
+                        <TableHead>{t('Unmapped channel requests')}</TableHead>
                         <TableHead>{t('Sales')}</TableHead>
                         <TableHead>{t('Procurement cost')}</TableHead>
                         <TableHead>{t('Gross profit')}</TableHead>
@@ -759,8 +915,13 @@ function HistoricalImportDetails(props: {
                             {formatMicroUsd(row.salesMicroUsd, t('Unknown'))}
                             {row.salesUnknownCount > 0 ? (
                               <div className='text-muted-foreground text-xs'>
-                                {t('Unknown')}:{' '}
-                                {row.salesUnknownCount.toLocaleString()}
+                                {t(
+                                  'Amount unavailable for {{count}} requests',
+                                  {
+                                    count:
+                                      row.salesUnknownCount.toLocaleString(),
+                                  }
+                                )}
                               </div>
                             ) : null}
                           </TableCell>
@@ -768,8 +929,13 @@ function HistoricalImportDetails(props: {
                             {formatMicroUsd(row.costMicroUsd, t('Unknown'))}
                             {row.costUnknownCount > 0 ? (
                               <div className='text-muted-foreground text-xs'>
-                                {t('Unknown')}:{' '}
-                                {row.costUnknownCount.toLocaleString()}
+                                {t(
+                                  'Amount unavailable for {{count}} requests',
+                                  {
+                                    count:
+                                      row.costUnknownCount.toLocaleString(),
+                                  }
+                                )}
                               </div>
                             ) : null}
                           </TableCell>
@@ -777,8 +943,13 @@ function HistoricalImportDetails(props: {
                             {formatMicroUsd(row.grossMicroUsd, t('Unknown'))}
                             {row.grossUnknownCount > 0 ? (
                               <div className='text-muted-foreground text-xs'>
-                                {t('Unknown')}:{' '}
-                                {row.grossUnknownCount.toLocaleString()}
+                                {t(
+                                  'Amount unavailable for {{count}} requests',
+                                  {
+                                    count:
+                                      row.grossUnknownCount.toLocaleString(),
+                                  }
+                                )}
                               </div>
                             ) : null}
                           </TableCell>
@@ -823,8 +994,7 @@ function HistoricalImportDetails(props: {
                 {t('Re-estimate')}
               </Button>
             ) : null}
-            {item.status === 'completed' &&
-            item.publication_ready ? (
+            {item.status === 'completed' && item.publication_ready ? (
               <Button type='button' onClick={() => setConfirmPublish(true)}>
                 {t('Publish to reports')}
               </Button>

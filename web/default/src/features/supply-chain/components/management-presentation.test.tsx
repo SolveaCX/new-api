@@ -130,7 +130,34 @@ describe('supply-chain management presentation', () => {
     queryClient.setQueryData(
       supplyChainQueryKeys.historicalImports.series(item.id),
       {
-        pages: [{ items: [], limit: 200, has_more: false, next_cursor: null }],
+        pages: [
+          {
+            items: [
+              {
+                date: '2026-01-01',
+                source_request_count: 10,
+                unassigned_request_count: 4,
+                official_list_known_count: 6,
+                official_list_unknown_count: 4,
+                official_list_micro_usd: '1000000',
+                sales_known_count: 10,
+                sales_unknown_count: 0,
+                sales_micro_usd: '1200000',
+                procurement_cost_known_count: 6,
+                procurement_cost_unknown_count: 4,
+                procurement_cost_micro_usd: '600000',
+                gross_profit_known_count: 6,
+                gross_profit_unknown_count: 4,
+                gross_profit_micro_usd: '100000',
+                gross_margin_eligible_count: 6,
+                gross_margin_eligible_sales_micro_usd: '700000',
+              },
+            ],
+            limit: 200,
+            has_more: false,
+            next_cursor: null,
+          },
+        ],
         pageParams: [null],
       }
     )
@@ -147,6 +174,9 @@ describe('supply-chain management presentation', () => {
     expect(html).toContain('Re-estimate')
     expect(html).toContain('Inventory is not affected')
     expect(html).toContain('Historical estimates require explicit publication')
+    expect(html).toContain('Official price unavailable requests')
+    expect(html).toContain('Unmapped channel requests')
+    expect(html).toContain('Amount unavailable for 4 requests')
   })
 
   test('requires re-estimation before publishing an older historical estimate', () => {

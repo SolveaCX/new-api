@@ -1,5 +1,6 @@
 import type {
   SupplierChannelBinding,
+  SupplierContractRateVersion,
   SupplierHistoricalChannelMapping,
 } from '../types'
 
@@ -50,4 +51,24 @@ export function parseHistoricalMappings(
   } catch {
     return []
   }
+}
+
+export function replaceHistoricalMappingRateVersion(
+  mappings: SupplierHistoricalChannelMapping[],
+  channelId: number,
+  rateVersion: SupplierContractRateVersion
+): SupplierHistoricalChannelMapping[] {
+  return mappings.map((mapping) => {
+    if (
+      mapping.channel_id !== channelId ||
+      mapping.contract_id !== rateVersion.contract_id
+    ) {
+      return mapping
+    }
+    return {
+      ...mapping,
+      rate_version_id: rateVersion.id,
+      procurement_multiplier_ppm: rateVersion.procurement_multiplier_ppm,
+    }
+  })
 }
