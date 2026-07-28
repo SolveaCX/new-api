@@ -28,7 +28,7 @@ import type {
   SubscriptionPaymentQuote,
 } from '@/features/subscriptions/types'
 import { RecallClaimProvider } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
-import type { RecallClaimView } from '../types'
+import type { RecallClaimView, TopupInfo } from '../types'
 import {
   buildFlexiblePurchaseRequest,
   buildFlexibleQuoteRequest,
@@ -37,7 +37,6 @@ import {
   normalizeSelfSubscriptionData,
   requiresSignedCheckoutQuote,
 } from '../lib/subscription-plan-lifecycle'
-import type { TopupInfo } from '../types'
 import {
   CurrentPlanCard,
   CurrentPlanRenewalDialogContent,
