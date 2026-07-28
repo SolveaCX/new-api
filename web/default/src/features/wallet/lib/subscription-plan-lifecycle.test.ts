@@ -212,6 +212,12 @@ describe('normalizeSelfSubscriptionData', () => {
         amount_remaining: 3500,
         unlimited: false,
       },
+      monthly_bucket: {
+        total: 900,
+        used: 225,
+        remaining: 675,
+        unlimited: false,
+      },
       pending_change: {
         intent_id: 13,
         kind: 'downgrade',
@@ -227,6 +233,12 @@ describe('normalizeSelfSubscriptionData', () => {
     expect(normalized.current_entitlement?.entitlement_id).toBe(11)
     expect(normalized.current_period?.end).toBe(2000)
     expect(normalized.quota?.amount_remaining).toBe(3500)
+    expect(normalized.monthly_bucket).toEqual({
+      total: 900,
+      used: 225,
+      remaining: 675,
+      unlimited: false,
+    })
     expect(normalized.pending_change?.to_plan_id).toBe(2)
     expect(normalized.contract?.id).toBe(10)
     expect(normalized.contract?.current_period_end).toBe(2000)
@@ -237,9 +249,10 @@ describe('normalizeSelfSubscriptionData', () => {
     const normalized = normalizeSelfSubscriptionData({
       ...createBackendSelfData(false, false),
       monthly_bucket: {
-        amount_total: 0,
-        amount_used: 0,
-        amount_remaining: 0,
+        used: 0,
+        total: 0,
+        remaining: 0,
+        reset_at: 0,
         unlimited: true,
       },
       window_5h: {
@@ -349,6 +362,26 @@ describe('normalizeSelfSubscriptionData', () => {
     expect(legacyState.renewal_status).toBe('enabled')
     expect(unknownState.renewal_source).toBeUndefined()
     expect(unknownState.renewal_status).toBeUndefined()
+  })
+
+  test('uses an unlimited empty usage window when monthly bucket data is missing', () => {
+    const normalized = normalizeSelfSubscriptionData({
+      ...createBackendSelfData(false, false),
+      quota: {
+        amount_total: 5000,
+        amount_used: 1500,
+        amount_remaining: 3500,
+        unlimited: false,
+      },
+    } as SelfSubscriptionDataResponse)
+
+    expect(normalized.monthly_bucket).toEqual({
+      used: 0,
+      total: 0,
+      remaining: 0,
+      reset_at: 0,
+      unlimited: true,
+    })
   })
 })
 
