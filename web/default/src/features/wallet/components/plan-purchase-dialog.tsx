@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState } from 'react'
+import { Wallet } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatTimestampToDate } from '@/lib/format'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -81,6 +82,60 @@ export function normalizePurchaseMonths(value: number | string): number {
   const parsed = Math.floor(Number(value))
   if (!Number.isFinite(parsed)) return 1
   return Math.min(12, Math.max(1, parsed))
+}
+
+// Compact brand marks so buyers can spot their payment rail at a glance.
+// Brand color + simplified glyph (not the full trademarked lockups) keeps
+// them license-safe and legible at 24px; decorative only, hence aria-hidden.
+function PaymentChoiceLogo({ choice }: { choice: FlexiblePaymentChoice }) {
+  const base =
+    'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md'
+  switch (choice) {
+    case 'stripe_recurring':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-[#635BFF] text-[15px] font-bold text-white`}
+        >
+          S
+        </span>
+      )
+    case 'alipay':
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-[#1677FF] text-[13px] font-bold text-white`}
+        >
+          支
+        </span>
+      )
+    case 'pix':
+      return (
+        <span aria-hidden className={`${base} bg-[#32BCAD]`}>
+          <svg viewBox='0 0 24 24' className='size-4 fill-white'>
+            <path d='M12 2.4 7 7.4a2.6 2.6 0 0 0 0 3.7l1.6 1.6 3.4-3.4 3.4 3.4 1.6-1.6a2.6 2.6 0 0 0 0-3.7l-5-5Zm-3.4 10.9L7 14.9a2.6 2.6 0 0 0 0 3.7l5 5 5-5a2.6 2.6 0 0 0 0-3.7l-1.6-1.6-3.4 3.4-3.4-3.4Z' />
+          </svg>
+        </span>
+      )
+    case 'upi':
+      return (
+        <span
+          aria-hidden
+          className={`${base} ring-border bg-white ring-1 dark:bg-white`}
+        >
+          <svg viewBox='0 0 24 24' className='size-4'>
+            <path d='M13.2 3.2 19 12l-5.8 8.8-1.4-1.4L16.6 12l-4.8-7.4 1.4-1.4Z' fill='#097939' />
+            <path d='M8.6 3.2 14.4 12l-5.8 8.8-1.4-1.4L12 12 7.2 4.6l1.4-1.4Z' fill='#ed752e' />
+          </svg>
+        </span>
+      )
+    case 'balance':
+      return (
+        <span aria-hidden className={`${base} bg-[#8b5cf6]`}>
+          <Wallet className='size-4 text-white' />
+        </span>
+      )
+  }
 }
 
 function getPaymentChoiceLabel(
@@ -233,6 +288,7 @@ export function PlanPurchaseDialogContent(props: PlanPurchaseDialogContentProps)
                   }}
                   className='mt-1'
                 />
+                <PaymentChoiceLogo choice={paymentChoice} />
                 <span className='min-w-0'>
                   <span className='block font-medium'>
                     {getPaymentChoiceLabel(paymentChoice, t)}
