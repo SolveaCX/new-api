@@ -18,6 +18,7 @@ import (
 	"github.com/stripe/stripe-go/v86/checkout/session"
 	stripecoupon "github.com/stripe/stripe-go/v86/coupon"
 	stripeinvoice "github.com/stripe/stripe-go/v86/invoice"
+	stripeinvoiceitem "github.com/stripe/stripe-go/v86/invoiceitem"
 	stripesubscription "github.com/stripe/stripe-go/v86/subscription"
 	"gorm.io/gorm"
 )
@@ -92,6 +93,9 @@ func IsPermanentPaidInvoiceError(err error) bool {
 
 var stripeInvoiceGetter = getStripeInvoiceForReconcile
 var stripeInvoiceVoider = voidStripeInvoiceForReconcile
+var stripeSubscriptionInvoiceUpdater = updateStripeSubscriptionInvoice
+var stripeSubscriptionInvoiceItemCreator = createStripeSubscriptionInvoiceItem
+var stripeSubscriptionInvoiceItemLister = listStripeSubscriptionInvoiceItems
 var stripeSubscriptionGetter = getStripeSubscriptionForReconcile
 var stripeSubscriptionCheckoutCreator = createStripeSubscriptionCheckout
 var stripeSubscriptionCouponCreator = createStripeSubscriptionCoupon
@@ -166,6 +170,38 @@ func voidStripeInvoiceForReconcile(ctx context.Context, invoiceID string, idempo
 		params.SetIdempotencyKey(strings.TrimSpace(idempotencyKey))
 	}
 	return stripeinvoice.VoidInvoice(strings.TrimSpace(invoiceID), params)
+}
+
+func updateStripeSubscriptionInvoice(ctx context.Context, invoiceID string, params *stripe.InvoiceParams) (*stripe.Invoice, error) {
+	if err := ensureStripeSecretForSubscription(); err != nil {
+		return nil, err
+	}
+	stripe.Key = setting.StripeApiSecret
+	return stripeinvoice.Update(strings.TrimSpace(invoiceID), params)
+}
+
+func createStripeSubscriptionInvoiceItem(ctx context.Context, params *stripe.InvoiceItemParams) (*stripe.InvoiceItem, error) {
+	if err := ensureStripeSecretForSubscription(); err != nil {
+		return nil, err
+	}
+	stripe.Key = setting.StripeApiSecret
+	return stripeinvoiceitem.New(params)
+}
+
+func listStripeSubscriptionInvoiceItems(ctx context.Context, params *stripe.InvoiceItemListParams) ([]*stripe.InvoiceItem, error) {
+	if err := ensureStripeSecretForSubscription(); err != nil {
+		return nil, err
+	}
+	stripe.Key = setting.StripeApiSecret
+	iter := stripeinvoiceitem.List(params)
+	items := make([]*stripe.InvoiceItem, 0)
+	for iter.Next() {
+		items = append(items, iter.InvoiceItem())
+	}
+	if err := iter.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func getStripeSubscriptionForReconcile(ctx context.Context, subscriptionID string) (*stripe.Subscription, error) {
@@ -535,7 +571,7 @@ func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
 		if err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
-		if err := validateRenewalInvoiceFacts(facts, binding, contract, plan, user, planSnapshot); err != nil {
+		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot); err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
 		var entitlement model.UserSubscription
@@ -1296,11 +1332,14 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	if err != nil {
 		return PermanentPaidInvoiceError(err)
 	}
-	if err := validateRenewalInvoiceFacts(commonFacts, binding, contract, plan, user, planSnapshot); err != nil {
+	if err := validateRenewalInvoiceFactsTx(tx, commonFacts, binding, contract, plan, user, planSnapshot); err != nil {
 		return PermanentPaidInvoiceError(err)
 	}
 	if !canApplyPaidRenewalInvoiceToBinding(commonFacts, binding, contract) {
 		return nil
+	}
+	if _, err := commitStripeSubscriptionDiscountInvoiceForPaidRenewalTx(tx, facts.InvoiceID); err != nil {
+		return err
 	}
 	grant, err := model.RotateCurrentEntitlementTx(tx, model.GrantEntitlementInput{
 		ContractId:           contract.Id,
@@ -1433,7 +1472,7 @@ func lockRenewalBindingFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts) (*mo
 	return &binding, &contract, &plan, &user, nil
 }
 
-func validateRenewalInvoiceFacts(facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot) error {
+func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot) error {
 	if binding.ContractId <= 0 || contract.Id != binding.ContractId || contract.UserId != binding.UserId {
 		return errors.New("local contract ownership mismatch")
 	}
@@ -1480,10 +1519,43 @@ func validateRenewalInvoiceFacts(facts stripeInvoiceCommonFacts, binding *model.
 	if err != nil {
 		return err
 	}
+	if snapshotExpected, found, err := stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx, facts.InvoiceID); err != nil {
+		return err
+	} else if found {
+		expectedMinor = snapshotExpected
+	}
 	if expectedMinor != facts.Amount {
 		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.Amount)
 	}
 	return nil
+}
+
+func stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx *gorm.DB, invoiceID string) (int64, bool, error) {
+	if tx == nil || strings.TrimSpace(invoiceID) == "" {
+		return 0, false, nil
+	}
+	var reserve model.SubscriptionDiscountEntry
+	err := tx.Where("idempotency_key = ? AND entry_type = ?",
+		stripeSubscriptionDiscountInvoiceReservationKey(invoiceID),
+		model.SubscriptionDiscountEntryTypeReserve,
+	).First(&reserve).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	snapshot, err := parseStripeSubscriptionDiscountInvoiceSnapshot(reserve.PricingSnapshot)
+	if err != nil {
+		return 0, true, err
+	}
+	if snapshot.InvoiceID != strings.TrimSpace(invoiceID) ||
+		snapshot.ReservationKey != stripeSubscriptionDiscountInvoiceReservationKey(invoiceID) ||
+		snapshot.ExpectedFinalPaymentMinor < 0 ||
+		snapshot.IncrementalItemMinor != reserve.AppliedAmountMinor {
+		return 0, true, errors.New("subscription discount invoice snapshot mismatch")
+	}
+	return snapshot.ExpectedFinalPaymentMinor, true, nil
 }
 
 func resolveExpectedRenewalPlanTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, currentPlan *model.SubscriptionPlan) (*model.SubscriptionPlan, bool, error) {
