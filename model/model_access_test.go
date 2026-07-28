@@ -80,6 +80,29 @@ func TestGetModelAccessRowsForGroupsNormalizesAndFilters(t *testing.T) {
 	require.Zero(t, queryCount.Load(), "empty normalized input must not hit the database")
 }
 
+func TestGetDeclaredModelAccessRowsForGroupsIncludesDisabledCapabilities(t *testing.T) {
+	db, queryCount := setupModelAccessDB(t)
+	priority := int64(0)
+	weight := uint(100)
+	require.NoError(t, db.Create(&[]Channel{
+		{Id: 11, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusManuallyDisabled, Key: "disabled", Models: "disabled-channel", Group: "default", Priority: &priority, Weight: &weight},
+		{Id: 12, Type: constant.ChannelTypeAnthropic, Status: common.ChannelStatusEnabled, Key: "enabled", Models: "disabled-ability", Group: "vip", Priority: &priority, Weight: &weight},
+	}).Error)
+	require.NoError(t, db.Create(&[]Ability{
+		{Group: "default", Model: "disabled-channel", ChannelId: 11, Enabled: true, Priority: &priority, Weight: weight},
+		{Group: "vip", Model: "disabled-ability", ChannelId: 12, Enabled: false, Priority: &priority, Weight: weight},
+	}).Error)
+
+	queryCount.Store(0)
+	rows, err := GetDeclaredModelAccessRowsForGroups([]string{"vip", "default"})
+	require.NoError(t, err)
+	require.Equal(t, []ModelAccessRow{
+		{GroupName: "default", Model: "disabled-channel", ChannelType: constant.ChannelTypeOpenAI},
+		{GroupName: "vip", Model: "disabled-ability", ChannelType: constant.ChannelTypeAnthropic},
+	}, rows)
+	require.Equal(t, int64(1), queryCount.Load())
+}
+
 func TestGetPublicModelMetadataMapUsesPublicVendorAndNilFallback(t *testing.T) {
 	db, _ := setupModelAccessDB(t)
 	vendor := Vendor{Name: "Public Vendor", Icon: "public", Status: 1}

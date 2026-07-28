@@ -12,12 +12,7 @@ import (
 )
 
 func resolveTokenModelAccessFromContext(c *gin.Context) (*service.ResolvedTokenModelAccess, error) {
-	modelLimits := map[string]bool{}
-	if value, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit); ok {
-		if limits, valid := value.(map[string]bool); valid {
-			modelLimits = limits
-		}
-	}
+	modelLimits := tokenModelLimitsFromContext(c)
 
 	userSetting, _ := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting)
 	return service.ResolveTokenModelAccess(service.TokenModelAccessInput{
@@ -27,6 +22,15 @@ func resolveTokenModelAccessFromContext(c *gin.Context) (*service.ResolvedTokenM
 		ModelLimitsEnabled: common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled),
 		ModelLimits:        modelLimits,
 	})
+}
+
+func tokenModelLimitsFromContext(c *gin.Context) map[string]bool {
+	if value, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit); ok {
+		if limits, valid := value.(map[string]bool); valid {
+			return limits
+		}
+	}
+	return map[string]bool{}
 }
 
 func GetUserModelAccess(c *gin.Context) {
@@ -40,5 +44,6 @@ func GetUserModelAccess(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	appendAutoModelToUserAccess(access, loadAutoModelDiscoveryState())
 	common.ApiSuccess(c, access)
 }

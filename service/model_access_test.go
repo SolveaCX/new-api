@@ -205,6 +205,24 @@ func TestResolveTokenModelAccessOrdinaryAutoPLGAndAllowlist(t *testing.T) {
 	require.Empty(t, empty.ModelIDs)
 }
 
+func TestResolveTokenModelAccessByGroupUsesDeclaredCapabilitiesInOneBatch(t *testing.T) {
+	db, queryCount := setupServiceModelAccessDB(t)
+	seedModelAccessScope(t, db, 111, "default", constant.ChannelTypeOpenAI, "declared-default")
+	seedModelAccessScope(t, db, 112, "vip", constant.ChannelTypeAnthropic, "declared-vip")
+	require.NoError(t, db.Model(&model.Channel{}).Where("id IN ?", []int{111, 112}).Update("status", common.ChannelStatusManuallyDisabled).Error)
+	require.NoError(t, db.Model(&model.Ability{}).Where("channel_id = ?", 112).Update("enabled", false).Error)
+	setModelAccessBilling(t, map[string]float64{"declared-default": 1, "declared-vip": 1}, nil, nil)
+
+	queryCount.Store(0)
+	access, err := ResolveTokenModelAccessByGroup(TokenModelAccessInput{IdentityGroup: "default"}, []string{"default", "vip"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"declared-default"}, access.ModelIDsByGroup["default"])
+	require.Equal(t, []string{"declared-vip"}, access.ModelIDsByGroup["vip"])
+	require.Contains(t, access.ModelsByGroup["default"][0].SupportedEndpointTypes, constant.EndpointTypeOpenAI)
+	require.Contains(t, access.ModelsByGroup["vip"][0].SupportedEndpointTypes, constant.EndpointTypeAnthropic)
+	require.LessOrEqual(t, queryCount.Load(), int64(4), "group count must not multiply metadata queries")
+}
+
 func TestResolveStrictModelAccessBillingVisibilityVendorAndStableDedup(t *testing.T) {
 	db, _ := setupServiceModelAccessDB(t)
 	seedModelAccessScope(t, db, 201, "default", constant.ChannelTypeOpenAI,

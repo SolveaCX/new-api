@@ -43,6 +43,12 @@ const (
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"
 	ContextKeyAutoGroupRetryIndex ContextKey = "auto_group_retry_index"
 
+	ContextKeyAutoModelProtocol            ContextKey = "auto_model_protocol"
+	ContextKeyAutoModelRoute               ContextKey = "auto_model_route"
+	ContextKeyAutoModelDecisionSource      ContextKey = "auto_model_decision_source"
+	ContextKeyAutoModelClassifierLatencyMS ContextKey = "auto_model_classifier_latency_ms"
+	ContextKeyAutoModelSelectedModel       ContextKey = "auto_model_selected_model"
+
 	/* user related keys */
 	ContextKeyUserId      ContextKey = "id"
 	ContextKeyUserSetting ContextKey = "user_setting"

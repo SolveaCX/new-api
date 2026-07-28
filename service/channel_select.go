@@ -205,6 +205,15 @@ func ChannelSupportsRequestEndpoint(c *gin.Context, channel *model.Channel, mode
 	return channelSupportsRequestedEndpoint(channel, modelName, endpointType)
 }
 
+// ChannelSupportsEndpointType performs endpoint capability filtering without
+// changing the endpoint semantics of existing non-Auto relay paths.
+func ChannelSupportsEndpointType(channel *model.Channel, modelName string, endpointType constant.EndpointType) bool {
+	if endpointType == "" {
+		return false
+	}
+	return channelSupportsRequestedEndpoint(channel, modelName, endpointType)
+}
+
 func requestedEndpointType(c *gin.Context) constant.EndpointType {
 	if c == nil || c.Request == nil || c.Request.URL == nil {
 		return ""

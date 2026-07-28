@@ -47,6 +47,32 @@ func GetModelAccessRowsForGroups(groups []string) ([]ModelAccessRow, error) {
 	return rows, nil
 }
 
+// GetDeclaredModelAccessRowsForGroups returns configured group/model/channel
+// capabilities regardless of the current ability or channel enabled state.
+// Auto Model uses this for static policy checks before a separate dynamic
+// readiness check against the live channel cache.
+func GetDeclaredModelAccessRowsForGroups(groups []string) ([]ModelAccessRow, error) {
+	groups = normalizeLookupValues(groups)
+	if len(groups) == 0 {
+		return []ModelAccessRow{}, nil
+	}
+
+	var rows []ModelAccessRow
+	err := DB.Table("abilities").
+		Select("abilities."+commonGroupCol+" as group_name, abilities.model as model, channels.type as channel_type").
+		Joins("JOIN channels ON channels.id = abilities.channel_id").
+		Where("abilities."+commonGroupCol+" IN ?", groups).
+		Distinct().
+		Order("abilities." + commonGroupCol + " ASC").
+		Order("abilities.model ASC").
+		Order("channels.type ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // GetPublicModelMetadataMap loads ModelMeta rules and their referenced Vendors
 // in two batched queries, then applies the same exact/prefix/suffix/contains
 // precedence used by pricing metadata resolution.

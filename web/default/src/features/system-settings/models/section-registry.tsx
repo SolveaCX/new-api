@@ -20,10 +20,15 @@ import { ChannelAffinitySection } from '../general/channel-affinity'
 import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment-settings-section'
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { AutoModelSettingsCard } from './auto-model-settings-card'
 import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+
+export type AutoModelSettings = ModelSettings & {
+  'auto_model.config': string
+}
 
 function formatJsonForEditor(value: string, fallback: string) {
   const raw = (value ?? '').toString().trim()
@@ -36,6 +41,13 @@ function formatJsonForEditor(value: string, fallback: string) {
 }
 
 const MODELS_SECTIONS = [
+  {
+    id: 'auto-model',
+    titleKey: 'Auto Model',
+    build: (settings: AutoModelSettings) => (
+      <AutoModelSettingsCard config={settings['auto_model.config']} />
+    ),
+  },
   {
     id: 'global',
     titleKey: 'Global Model Configuration',
@@ -158,12 +170,14 @@ const MODELS_SECTIONS = [
 
 export type ModelSectionId = (typeof MODELS_SECTIONS)[number]['id']
 
-const modelsRegistry = createSectionRegistry<ModelSectionId, ModelSettings>({
-  sections: MODELS_SECTIONS,
-  defaultSection: 'global',
-  basePath: '/system-settings/models',
-  urlStyle: 'path',
-})
+const modelsRegistry = createSectionRegistry<ModelSectionId, AutoModelSettings>(
+  {
+    sections: MODELS_SECTIONS,
+    defaultSection: 'global',
+    basePath: '/system-settings/models',
+    urlStyle: 'path',
+  }
+)
 
 export const MODELS_SECTION_IDS = modelsRegistry.sectionIds
 export const MODELS_DEFAULT_SECTION = modelsRegistry.defaultSection

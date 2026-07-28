@@ -17,6 +17,7 @@ import (
 
 var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
+var hasRealAutoModelConflict bool
 var channelSyncLock sync.RWMutex
 var channelCacheMissLogMu sync.Mutex
 var channelCacheMissLastLogged = make(map[string]time.Time)
@@ -34,15 +35,25 @@ func InitChannelCache() {
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
+	newHasRealAutoModelConflict := false
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
+		for _, modelName := range strings.Split(channel.Models, ",") {
+			if strings.TrimSpace(modelName) == "auto" {
+				newHasRealAutoModelConflict = true
+				break
+			}
+		}
 	}
 	newGroup2model2channels := make(map[string]map[string][]int)
 	var abilities []*Ability
 	DB.Find(&abilities)
 	for _, ability := range abilities {
+		if strings.TrimSpace(ability.Model) == "auto" {
+			newHasRealAutoModelConflict = true
+		}
 		if !ability.Enabled {
 			continue
 		}
@@ -73,6 +84,7 @@ func InitChannelCache() {
 
 	channelSyncLock.Lock()
 	group2model2channels = newGroup2model2channels
+	hasRealAutoModelConflict = newHasRealAutoModelConflict
 	//channelsIDM = newChannelId2channel
 	for i, channel := range newChannelId2channel {
 		if channel.ChannelInfo.IsMultiKey {

@@ -213,6 +213,10 @@ model.id_missing: "Model ID is missing"
 model.get_list_failed: "Failed to get model list, please try again later"
 model.get_failed: "Failed to get upstream models"
 model.reset_success: "Model ratio reset successful"
+auto_model.disabled: "Auto Model is disabled"
+auto_model.unsupported_request: "This request is not supported by Auto Model"
+auto_model.no_eligible_candidate: "No eligible model is available for this request"
+auto_model.config_invalid: "Auto Model configuration is invalid"
 
 # Vendor messages
 vendor.name_empty: "Vendor name cannot be empty"

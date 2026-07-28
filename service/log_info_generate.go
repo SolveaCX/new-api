@@ -81,7 +81,35 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
 	appendBlockRunSettlementInfo(ctx, other)
+	appendAutoModelInfo(ctx, other)
 	return other
+}
+
+func appendAutoModelInfo(ctx *gin.Context, other map[string]interface{}) {
+	if ctx == nil || other == nil {
+		return
+	}
+	selectedModel := common.GetContextKeyString(ctx, constant.ContextKeyAutoModelSelectedModel)
+	if selectedModel == "" {
+		return
+	}
+	info := map[string]interface{}{
+		"requested":      "auto",
+		"selected_model": selectedModel,
+	}
+	if protocol := common.GetContextKeyString(ctx, constant.ContextKeyAutoModelProtocol); protocol != "" {
+		info["protocol"] = protocol
+	}
+	if route := common.GetContextKeyString(ctx, constant.ContextKeyAutoModelRoute); route != "" {
+		info["route"] = route
+	}
+	if source := common.GetContextKeyString(ctx, constant.ContextKeyAutoModelDecisionSource); source != "" {
+		info["decision"] = source
+	}
+	if latencyMS := common.GetContextKeyInt(ctx, constant.ContextKeyAutoModelClassifierLatencyMS); latencyMS > 0 {
+		info["classifier_ms"] = latencyMS
+	}
+	other["auto_model"] = info
 }
 
 func appendParamOverrideInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {

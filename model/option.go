@@ -2,7 +2,10 @@ package model
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,11 +14,13 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Option struct {
@@ -24,6 +29,8 @@ type Option struct {
 }
 
 const OptionKeyPlaygroundDefaultModel = "PlaygroundDefaultModel"
+
+var ErrAutoModelOptionsRequireBulkUpdate = errors.New("auto model configuration must be saved through the dedicated bulk endpoint")
 
 var (
 	optionReloadHooksMu sync.RWMutex
@@ -255,6 +262,9 @@ func LoadOptionsFromDatabase() {
 	setting.ApplyPaddleEnvOverrides()
 	syncPaddleOptionMap()
 	InvalidatePricingCache()
+	if err := reloadAutoModelSnapshotFromOptionMap(); err != nil {
+		common.SysError("failed to reload auto model snapshot: " + err.Error())
+	}
 	runOptionReloadHooks()
 }
 
@@ -281,6 +291,9 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	if isAutoModelOptionKey(key) {
+		return ErrAutoModelOptionsRequireBulkUpdate
+	}
 	normalizedValue, err := validateAndNormalizeOptionValue(key, value)
 	if err != nil {
 		return err
@@ -321,6 +334,11 @@ func UpdateOption(key string, value string) error {
 func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
+	}
+	for key := range values {
+		if isAutoModelOptionKey(key) {
+			return ErrAutoModelOptionsRequireBulkUpdate
+		}
 	}
 	normalizedValues := make(map[string]string, len(values))
 	var incomingAmountBonus map[int]int64
@@ -379,6 +397,223 @@ func UpdateOptionsBulk(values map[string]string) error {
 		common.SysError("pubsub: failed to publish options change: " + pubErr.Error())
 	}
 	return nil
+}
+
+// UpdateAutoModelOptions atomically persists the complete Auto Model config
+// and credential version pair. values must contain auto_model.config; the
+// classifier API key is optional and, when omitted, empty, or masked, reuses
+// the currently stored secret.
+func UpdateAutoModelOptions(values map[string]string) error {
+	configRaw, ok := values[model_setting.AutoModelConfigOptionKey]
+	if !ok {
+		return errors.New("auto model config is required")
+	}
+	for key := range values {
+		if !isAutoModelOptionKey(key) {
+			return fmt.Errorf("unsupported auto model option key %q", key)
+		}
+	}
+
+	cfg, _, err := model_setting.NormalizeAutoModelConfig(configRaw)
+	if err != nil {
+		return err
+	}
+	if cfg.Enabled {
+		conflict, err := HasRealAutoModelConflict()
+		if err != nil {
+			return fmt.Errorf("check real auto model conflict: %w", err)
+		}
+		if conflict {
+			return errors.New("auto model conflicts with an existing real model named auto")
+		}
+	}
+	incomingAPIKey := values[model_setting.AutoModelClassifierAPIKeyOptionKey]
+
+	var persisted map[string]string
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		seed := []Option{
+			{Key: model_setting.AutoModelConfigOptionKey, Value: ""},
+			{Key: model_setting.AutoModelClassifierAPIKeyOptionKey, Value: ""},
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&seed).Error; err != nil {
+			return err
+		}
+
+		var rows []Option
+		query := tx.Where("key IN ?", []string{
+			model_setting.AutoModelClassifierAPIKeyOptionKey,
+			model_setting.AutoModelConfigOptionKey,
+		}).Order("key")
+		if !common.UsingSQLite {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.Find(&rows).Error; err != nil {
+			return err
+		}
+		storedValues := make(map[string]string, len(rows))
+		for _, row := range rows {
+			storedValues[row.Key] = row.Value
+		}
+
+		apiKey := strings.TrimSpace(incomingAPIKey)
+		storedCredentialRaw := storedValues[model_setting.AutoModelClassifierAPIKeyOptionKey]
+		if model_setting.IsAutoModelAPIKeyPlaceholder(apiKey) {
+			credential, err := model_setting.ParseAutoModelCredential(storedCredentialRaw)
+			if err != nil {
+				return err
+			}
+			apiKey = credential.APIKey
+		}
+		if strings.ContainsAny(apiKey, "\r\n") {
+			return errors.New("auto model classifier API key contains a line break")
+		}
+		if cfg.Enabled && apiKey == "" {
+			return errors.New("auto model classifier API key is required")
+		}
+		if !cfg.Enabled {
+			credentialRaw := storedCredentialRaw
+			if strings.TrimSpace(incomingAPIKey) != "" && !model_setting.IsAutoModelAPIKeyPlaceholder(incomingAPIKey) {
+				version, err := newAutoModelCredentialVersion()
+				if err != nil {
+					return err
+				}
+				credentialRaw, err = model_setting.MarshalAutoModelCredential(model_setting.AutoModelCredential{
+					Version: version,
+					APIKey:  apiKey,
+				})
+				if err != nil {
+					return err
+				}
+			}
+			credential, err := model_setting.ParseAutoModelCredential(credentialRaw)
+			if err != nil {
+				return err
+			}
+			cfg.CredentialVersion = credential.Version
+			configBytes, err := common.Marshal(cfg)
+			if err != nil {
+				return err
+			}
+			persisted = map[string]string{
+				model_setting.AutoModelConfigOptionKey:           string(configBytes),
+				model_setting.AutoModelClassifierAPIKeyOptionKey: credentialRaw,
+			}
+			for key, value := range persisted {
+				if err := tx.Model(&Option{}).Where("key = ?", key).Update("value", value).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		version, err := newAutoModelCredentialVersion()
+		if err != nil {
+			return err
+		}
+		cfg.CredentialVersion = version
+		configBytes, err := common.Marshal(cfg)
+		if err != nil {
+			return err
+		}
+		credentialRaw, err := model_setting.MarshalAutoModelCredential(model_setting.AutoModelCredential{
+			Version: version,
+			APIKey:  apiKey,
+		})
+		if err != nil {
+			return err
+		}
+		persisted = map[string]string{
+			model_setting.AutoModelConfigOptionKey:           string(configBytes),
+			model_setting.AutoModelClassifierAPIKeyOptionKey: credentialRaw,
+		}
+		for key, value := range persisted {
+			if err := tx.Model(&Option{}).Where("key = ?", key).Update("value", value).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	common.OptionMapRWMutex.Lock()
+	for key, value := range persisted {
+		common.OptionMap[key] = value
+	}
+	common.OptionMapRWMutex.Unlock()
+	if err := model_setting.ReloadAutoModelSnapshot(
+		persisted[model_setting.AutoModelConfigOptionKey],
+		persisted[model_setting.AutoModelClassifierAPIKeyOptionKey],
+	); err != nil {
+		return err
+	}
+	runOptionReloadHooks()
+	if pubErr := common.PublishConfigChanged(context.Background(), common.ConfigScopeOptions); pubErr != nil {
+		common.SysError("pubsub: failed to publish options change: " + pubErr.Error())
+	}
+	return nil
+}
+
+// HasRealAutoModelConflict reports whether the shared database contains a
+// real channel capability named exactly "auto". It intentionally reads the
+// database rather than process-local channel caches so every replica observes
+// the same committed source of truth.
+func HasRealAutoModelConflict() (bool, error) {
+	var abilityCount int64
+	if err := DB.Model(&Ability{}).Where("model = ?", "auto").Limit(1).Count(&abilityCount).Error; err != nil {
+		return false, err
+	}
+	if abilityCount > 0 {
+		return true, nil
+	}
+
+	var modelLists []string
+	if err := DB.Model(&Channel{}).Pluck("models", &modelLists).Error; err != nil {
+		return false, err
+	}
+	for _, modelList := range modelLists {
+		for _, modelName := range strings.Split(modelList, ",") {
+			if strings.TrimSpace(modelName) == "auto" {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// HasCachedRealAutoModelConflict checks all declared channel models and
+// abilities, including disabled rows. With the channel cache enabled this is
+// an in-memory read that converges via the existing channel Pub/Sub reload and
+// 60-second database sync. The no-cache path reads the shared database.
+func HasCachedRealAutoModelConflict() (bool, error) {
+	if common.MemoryCacheEnabled {
+		channelSyncLock.RLock()
+		defer channelSyncLock.RUnlock()
+		return hasRealAutoModelConflict, nil
+	}
+	return HasRealAutoModelConflict()
+}
+
+func isAutoModelOptionKey(key string) bool {
+	return key == model_setting.AutoModelConfigOptionKey ||
+		key == model_setting.AutoModelClassifierAPIKeyOptionKey
+}
+
+func newAutoModelCredentialVersion() (string, error) {
+	var bytes [16]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return "", fmt.Errorf("generate auto model credential version: %w", err)
+	}
+	return hex.EncodeToString(bytes[:]), nil
+}
+
+func reloadAutoModelSnapshotFromOptionMap() error {
+	common.OptionMapRWMutex.RLock()
+	configRaw := common.OptionMap[model_setting.AutoModelConfigOptionKey]
+	credentialRaw := common.OptionMap[model_setting.AutoModelClassifierAPIKeyOptionKey]
+	common.OptionMapRWMutex.RUnlock()
+	return model_setting.ReloadAutoModelSnapshot(configRaw, credentialRaw)
 }
 
 func validateAndNormalizeOptionValue(key string, value string) (string, error) {

@@ -17,14 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { SettingsPage } from '../components/settings-page'
-import type { ModelSettings } from '../types'
 import {
   MODELS_DEFAULT_SECTION,
   getModelsSectionContent,
   getModelsSectionMeta,
+  type AutoModelSettings,
 } from './section-registry.tsx'
 
-const defaultModelSettings: ModelSettings = {
+const defaultModelSettings: AutoModelSettings = {
+  'auto_model.config': '',
   'global.pass_through_request_enabled': false,
   'global.thinking_model_blacklist': '[]',
   'global.chat_completions_to_responses_policy': '{}',
