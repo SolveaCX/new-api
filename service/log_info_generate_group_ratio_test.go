@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -36,6 +38,32 @@ func TestGenerateTextOtherInfoIncludesGroupModelRatioSource(t *testing.T) {
 	require.Equal(t, 0.3, other["group_model_ratio"])
 	require.Equal(t, "plg", other["group_model_ratio_group"])
 	require.Equal(t, "gpt-5.5", other["group_model_ratio_model"])
+}
+
+func TestGenerateTextOtherInfoIncludesBoundedAutoModelDecision(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyAutoModelProtocol, "responses")
+	common.SetContextKey(ctx, constant.ContextKeyAutoModelRoute, "coding")
+	common.SetContextKey(ctx, constant.ContextKeyAutoModelDecisionSource, "classifier")
+	common.SetContextKey(ctx, constant.ContextKeyAutoModelClassifierLatencyMS, 37)
+	common.SetContextKey(ctx, constant.ContextKeyAutoModelSelectedModel, "gpt-5-mini")
+
+	now := time.Now()
+	other := GenerateTextOtherInfo(ctx, &relaycommon.RelayInfo{
+		StartTime:         now,
+		FirstResponseTime: now.Add(time.Second),
+		ChannelMeta:       &relaycommon.ChannelMeta{},
+	}, 1, 1, 1, 0, 0, -1, -1)
+
+	require.Equal(t, map[string]interface{}{
+		"requested":      "auto",
+		"protocol":       "responses",
+		"route":          "coding",
+		"decision":       "classifier",
+		"classifier_ms":  37,
+		"selected_model": "gpt-5-mini",
+	}, other["auto_model"])
 }
 
 func TestGenerateMjOtherInfoIncludesGroupModelRatioSource(t *testing.T) {

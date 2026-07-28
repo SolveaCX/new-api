@@ -193,6 +193,10 @@ model.id_missing: "缺少模型 ID"
 model.get_list_failed: "獲取模型列表失敗，請稍後重試"
 model.get_failed: "獲取上游模型失敗"
 model.reset_success: "重置模型倍率成功"
+auto_model.disabled: "Auto Model 未啟用"
+auto_model.unsupported_request: "Auto Model 不支援該請求"
+auto_model.no_eligible_candidate: "目前請求沒有可用的候選模型"
+auto_model.config_invalid: "Auto Model 設定無效"
 
 # Vendor messages
 vendor.name_empty: "供應商名稱不能為空"

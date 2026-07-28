@@ -70,6 +70,13 @@ type ResolvedTokenModelAccess struct {
 	Models   []ModelAccessModel
 }
 
+type ResolvedTokenModelAccessByGroup struct {
+	Models                      []ModelAccessModel
+	ModelIDsByGroup             map[string][]string
+	ModelsByGroup               map[string][]ModelAccessModel
+	ChannelTypesByGroupAndModel map[string]map[string][]int
+}
+
 // AllowlistMatchKey exposes the server-side canonical matching key without
 // requiring clients to duplicate FormatMatchingModelName.
 func AllowlistMatchKey(modelName string) string {
@@ -101,6 +108,109 @@ func ResolveTokenModelAccess(input TokenModelAccessInput) (*ResolvedTokenModelAc
 		})
 	}
 	return &ResolvedTokenModelAccess{ModelIDs: access.modelIDs, Models: access.models}, nil
+}
+
+// ResolveTokenModelAccessByGroup resolves declared capabilities for an
+// already-authorized concrete group set with one database read. Unlike the
+// ordinary discovery resolver, it intentionally does not require the ability
+// or channel to be currently enabled; callers perform dynamic readiness as a
+// separate step.
+func ResolveTokenModelAccessByGroup(input TokenModelAccessInput, groups []string) (*ResolvedTokenModelAccessByGroup, error) {
+	groups = normalizedStrings(groups)
+	allowedGroups := make([]string, 0, len(groups))
+	for _, group := range groups {
+		if input.IdentityGroup == modelAccessPLGGroup {
+			if group == modelAccessPLGGroup {
+				allowedGroups = append(allowedGroups, group)
+			}
+			continue
+		}
+		if group == input.IdentityGroup || GroupInUserUsableGroups(input.IdentityGroup, group) {
+			allowedGroups = append(allowedGroups, group)
+		}
+	}
+	rows, err := model.GetDeclaredModelAccessRowsForGroups(allowedGroups)
+	if err != nil {
+		return nil, err
+	}
+	channelTypesByGroupModel := make(map[string]map[string]map[int]struct{}, len(allowedGroups))
+	allModelSet := make(map[string]struct{})
+	for _, group := range allowedGroups {
+		channelTypesByGroupModel[group] = make(map[string]map[int]struct{})
+	}
+	for _, row := range rows {
+		if !modelHasVisibleBilling(row.Model, input.AcceptUnpriced) || (input.ModelLimitsEnabled && !TokenAllowsModel(input.ModelLimits, row.Model)) {
+			continue
+		}
+		if _, ok := channelTypesByGroupModel[row.GroupName]; !ok {
+			channelTypesByGroupModel[row.GroupName] = make(map[string]map[int]struct{})
+		}
+		if _, ok := channelTypesByGroupModel[row.GroupName][row.Model]; !ok {
+			channelTypesByGroupModel[row.GroupName][row.Model] = make(map[int]struct{})
+		}
+		channelTypesByGroupModel[row.GroupName][row.Model][row.ChannelType] = struct{}{}
+		allModelSet[row.Model] = struct{}{}
+	}
+	allModelIDs := sortedSetItems(allModelSet)
+	metadataByModel, err := model.GetPublicModelMetadataMap(allModelIDs)
+	if err != nil {
+		return nil, err
+	}
+	availabilityByModel, err := model.GetModelAvailabilityStateMap(allModelIDs)
+	if err != nil {
+		return nil, err
+	}
+	modelsByGroup := make(map[string][]ModelAccessModel, len(allowedGroups))
+	modelIDsByGroup := make(map[string][]string, len(allowedGroups))
+	channelTypesByGroupAndModel := make(map[string]map[string][]int, len(allowedGroups))
+	globalModels := make(map[string]ModelAccessModel, len(allModelIDs))
+	for _, group := range allowedGroups {
+		modelNames := make([]string, 0, len(channelTypesByGroupModel[group]))
+		for modelName := range channelTypesByGroupModel[group] {
+			modelNames = append(modelNames, modelName)
+		}
+		sort.Strings(modelNames)
+		modelIDsByGroup[group] = append([]string(nil), modelNames...)
+		channelTypesByGroupAndModel[group] = make(map[string][]int, len(modelNames))
+		groupModels := make([]ModelAccessModel, 0, len(modelNames))
+		for _, modelName := range modelNames {
+			channelTypes := make([]int, 0, len(channelTypesByGroupModel[group][modelName]))
+			for channelType := range channelTypesByGroupModel[group][modelName] {
+				channelTypes = append(channelTypes, channelType)
+			}
+			sort.Ints(channelTypes)
+			channelTypesByGroupAndModel[group][modelName] = channelTypes
+			metadata := metadataByModel[modelName]
+			availability := ModelAvailabilityUnknown
+			if state, ok := availabilityByModel[modelName]; ok && strings.TrimSpace(state.Status) != "" {
+				availability = state.Status
+			}
+			item := ModelAccessModel{
+				ID:                     modelName,
+				AllowlistMatchKey:      AllowlistMatchKey(modelName),
+				Vendor:                 publicVendor(metadata.Vendor),
+				SupportedEndpointTypes: publicEndpointTypes(modelName, channelTypesByGroupModel[group][modelName], metadata.Endpoints),
+				AvailabilityStatus:     availability,
+			}
+			groupModels = append(groupModels, item)
+			if _, exists := globalModels[modelName]; !exists {
+				globalModels[modelName] = item
+			}
+		}
+		modelsByGroup[group] = groupModels
+	}
+	models := make([]ModelAccessModel, 0, len(allModelIDs))
+	for _, modelName := range allModelIDs {
+		if item, ok := globalModels[modelName]; ok {
+			models = append(models, item)
+		}
+	}
+	return &ResolvedTokenModelAccessByGroup{
+		Models:                      models,
+		ModelIDsByGroup:             modelIDsByGroup,
+		ModelsByGroup:               modelsByGroup,
+		ChannelTypesByGroupAndModel: channelTypesByGroupAndModel,
+	}, nil
 }
 
 func ResolveUserModelAccess(user *model.UserBase) (*UserModelAccess, error) {

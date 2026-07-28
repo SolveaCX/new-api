@@ -195,12 +195,16 @@ const (
 
 // Model related messages
 const (
-	MsgModelNameEmpty     = "model.name_empty"
-	MsgModelNameExists    = "model.name_exists"
-	MsgModelIdMissing     = "model.id_missing"
-	MsgModelGetListFailed = "model.get_list_failed"
-	MsgModelGetFailed     = "model.get_failed"
-	MsgModelResetSuccess  = "model.reset_success"
+	MsgModelNameEmpty               = "model.name_empty"
+	MsgModelNameExists              = "model.name_exists"
+	MsgModelIdMissing               = "model.id_missing"
+	MsgModelGetListFailed           = "model.get_list_failed"
+	MsgModelGetFailed               = "model.get_failed"
+	MsgModelResetSuccess            = "model.reset_success"
+	MsgAutoModelDisabled            = "auto_model.disabled"
+	MsgAutoModelUnsupportedRequest  = "auto_model.unsupported_request"
+	MsgAutoModelNoEligibleCandidate = "auto_model.no_eligible_candidate"
+	MsgAutoModelConfigInvalid       = "auto_model.config_invalid"
 )
 
 // Vendor related messages

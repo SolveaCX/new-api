@@ -206,6 +206,7 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 }
 
 func ListModels(c *gin.Context, modelType int) {
+	autoState := loadAutoModelDiscoveryState()
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
 	if !acceptUnsetRatioModel {
 		userId := c.GetInt("id")
@@ -268,6 +269,28 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 
+	filteredModelNames := userModelNames[:0]
+	for _, modelName := range userModelNames {
+		if modelName == autoModelID && !autoState.realNameConflict {
+			continue
+		}
+		filteredModelNames = append(filteredModelNames, modelName)
+	}
+	userModelNames = filteredModelNames
+
+	virtualAutoVisible := false
+	if modelType != constant.ChannelTypeGemini && autoState.snapshot != nil {
+		access, resolveErr := resolveTokenModelAccessFromContext(c)
+		if resolveErr == nil {
+			virtualAutoVisible = autoModelTokenVisible(
+				access.Models,
+				autoState,
+				common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled),
+				tokenModelLimitsFromContext(c),
+			)
+		}
+	}
+
 	ownerByModel := map[string]string{}
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
@@ -275,6 +298,15 @@ func ListModels(c *gin.Context, modelType int) {
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
 	for _, modelName := range userModelNames {
 		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+	}
+	if virtualAutoVisible {
+		userOpenAiModels = append(userOpenAiModels, dto.OpenAIModels{
+			Id:                     autoModelID,
+			Object:                 "model",
+			Created:                1626777600,
+			OwnedBy:                "new-api",
+			SupportedEndpointTypes: append([]constant.EndpointType(nil), autoModelSupportedEndpointTypes...),
+		})
 	}
 
 	switch modelType {
@@ -288,11 +320,16 @@ func ListModels(c *gin.Context, modelType int) {
 				Type:        "model",
 			}
 		}
+		firstID, lastID := "", ""
+		if len(useranthropicModels) > 0 {
+			firstID = useranthropicModels[0].ID
+			lastID = useranthropicModels[len(useranthropicModels)-1].ID
+		}
 		c.JSON(200, gin.H{
 			"data":     useranthropicModels,
-			"first_id": useranthropicModels[0].ID,
+			"first_id": firstID,
 			"has_more": false,
-			"last_id":  useranthropicModels[len(useranthropicModels)-1].ID,
+			"last_id":  lastID,
 		})
 	case constant.ChannelTypeGemini:
 		userGeminiModels := make([]dto.GeminiModel, len(userOpenAiModels))
@@ -340,6 +377,21 @@ func AvailableModels(c *gin.Context) {
 			SupportedEndpointTypes: accessModel.SupportedEndpointTypes,
 		})
 	}
+	autoState := loadAutoModelDiscoveryState()
+	if autoModelTokenVisible(
+		access.Models,
+		autoState,
+		common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled),
+		tokenModelLimitsFromContext(c),
+	) {
+		availableModels = append(availableModels, dto.OpenAIModels{
+			Id:                     autoModelID,
+			Object:                 "model",
+			Created:                1626777600,
+			OwnedBy:                "new-api",
+			SupportedEndpointTypes: append([]constant.EndpointType(nil), autoModelSupportedEndpointTypes...),
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -371,6 +423,33 @@ func EnabledListModels(c *gin.Context) {
 
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
+	if modelId == autoModelID && modelType != constant.ChannelTypeGemini {
+		autoState := loadAutoModelDiscoveryState()
+		if access, err := resolveTokenModelAccessFromContext(c); err == nil && autoModelTokenVisible(
+			access.Models,
+			autoState,
+			common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled),
+			tokenModelLimitsFromContext(c),
+		) {
+			if modelType == constant.ChannelTypeAnthropic {
+				c.JSON(200, dto.AnthropicModel{
+					ID:          autoModelID,
+					CreatedAt:   time.Unix(1626777600, 0).UTC().Format(time.RFC3339),
+					DisplayName: autoModelID,
+					Type:        "model",
+				})
+			} else {
+				c.JSON(200, dto.OpenAIModels{
+					Id:                     autoModelID,
+					Object:                 "model",
+					Created:                1626777600,
+					OwnedBy:                "new-api",
+					SupportedEndpointTypes: append([]constant.EndpointType(nil), autoModelSupportedEndpointTypes...),
+				})
+			}
+			return
+		}
+	}
 	if aiModel, ok := openAIModelsMap[modelId]; ok {
 		switch modelType {
 		case constant.ChannelTypeAnthropic:

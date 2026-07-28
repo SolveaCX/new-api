@@ -193,6 +193,10 @@ model.id_missing: "ID do modelo ausente"
 model.get_list_failed: "Falha ao obter lista de modelos, tente novamente mais tarde"
 model.get_failed: "Falha ao obter modelos upstream"
 model.reset_success: "Relação do modelo redefinida com sucesso"
+auto_model.disabled: "O Auto Model está desativado"
+auto_model.unsupported_request: "Esta solicitação não é compatível com o Auto Model"
+auto_model.no_eligible_candidate: "Nenhum modelo elegível está disponível para esta solicitação"
+auto_model.config_invalid: "A configuração do Auto Model é inválida"
 
 # Vendor messages
 vendor.name_empty: "O nome do fornecedor não pode ficar vazio"

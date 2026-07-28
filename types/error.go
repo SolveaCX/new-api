@@ -63,9 +63,13 @@ const (
 	ErrorCodeChannelResponseTimeExceeded  ErrorCode = "channel:response_time_exceeded"
 
 	// client request error
-	ErrorCodeReadRequestBodyFailed ErrorCode = "read_request_body_failed"
-	ErrorCodeConvertRequestFailed  ErrorCode = "convert_request_failed"
-	ErrorCodeAccessDenied          ErrorCode = "access_denied"
+	ErrorCodeReadRequestBodyFailed        ErrorCode = "read_request_body_failed"
+	ErrorCodeConvertRequestFailed         ErrorCode = "convert_request_failed"
+	ErrorCodeAccessDenied                 ErrorCode = "access_denied"
+	ErrorCodeAutoModelDisabled            ErrorCode = "auto_model_disabled"
+	ErrorCodeAutoModelUnsupportedRequest  ErrorCode = "auto_model_unsupported_request"
+	ErrorCodeAutoModelNoEligibleCandidate ErrorCode = "auto_model_no_eligible_candidate"
+	ErrorCodeAutoModelConfigInvalid       ErrorCode = "auto_model_config_invalid"
 
 	// request error
 	ErrorCodeBadRequestBody ErrorCode = "bad_request_body"

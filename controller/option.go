@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -250,7 +251,9 @@ func isBulkOptionUpdateKey(key string) bool {
 		return true
 	}
 	switch key {
-	case "SidebarModulesAdmin", model.OptionKeyPlaygroundDefaultModel:
+	case "SidebarModulesAdmin", model.OptionKeyPlaygroundDefaultModel,
+		model_setting.AutoModelConfigOptionKey,
+		model_setting.AutoModelClassifierAPIKeyOptionKey:
 		return true
 	default:
 		return false
@@ -530,6 +533,10 @@ func UpdateOption(c *gin.Context) {
 		})
 		return
 	}
+	if option.Key == model_setting.AutoModelConfigOptionKey || option.Key == model_setting.AutoModelClassifierAPIKeyOptionKey {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
 	if !prepareOptionUpdate(c, &option) {
 		return
 	}
@@ -557,6 +564,41 @@ func UpdateOptions(c *gin.Context) {
 	}
 	if len(request.Options) > 100 {
 		common.ApiErrorI18n(c, i18n.MsgBatchTooMany, map[string]any{"Max": 100})
+		return
+	}
+	containsAutoModelOption := false
+	for _, option := range request.Options {
+		if option.Key == model_setting.AutoModelConfigOptionKey || option.Key == model_setting.AutoModelClassifierAPIKeyOptionKey {
+			containsAutoModelOption = true
+			break
+		}
+	}
+	if containsAutoModelOption {
+		values := make(map[string]string, len(request.Options))
+		for _, option := range request.Options {
+			if option.Key != model_setting.AutoModelConfigOptionKey && option.Key != model_setting.AutoModelClassifierAPIKeyOptionKey {
+				common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+				return
+			}
+			if _, exists := values[option.Key]; exists {
+				common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+				return
+			}
+			value, ok := option.Value.(string)
+			if !ok {
+				common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+				return
+			}
+			values[option.Key] = value
+		}
+		if err := model.UpdateAutoModelOptions(values); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+		})
 		return
 	}
 

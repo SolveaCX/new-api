@@ -71,6 +71,8 @@ func friendlyJSONType(t reflect.Type) string {
 const KeyRequestBody = "key_request_body"
 const KeyBodyStorage = "key_body_storage"
 
+var createReplacementBodyStorage = CreateBodyStorage
+
 var ErrRequestBodyTooLarge = errors.New("request body too large")
 
 func IsRequestBodyTooLargeError(err error) bool {
@@ -144,6 +146,34 @@ func GetBodyStorage(c *gin.Context) (BodyStorage, error) {
 		return nil, errors.New("unexpected body storage type")
 	}
 	return bs, nil
+}
+
+// ReplaceRequestBody atomically publishes a new reusable request body. Relay
+// handlers and billing-expression readers use the BodyStorage cache, so
+// replacing only http.Request.Body would leave them reading stale data.
+func ReplaceRequestBody(c *gin.Context, data []byte) error {
+	storage, err := createReplacementBodyStorage(data)
+	if err != nil {
+		return err
+	}
+
+	oldStorageValue, hasOldStorage := c.Get(KeyBodyStorage)
+	oldBody := c.Request.Body
+
+	c.Set(KeyBodyStorage, storage)
+	c.Set(KeyRequestBody, nil)
+	c.Request.Body = io.NopCloser(storage)
+	c.Request.ContentLength = int64(len(data))
+
+	if oldBody != nil {
+		_ = oldBody.Close()
+	}
+	if hasOldStorage && oldStorageValue != nil {
+		if oldStorage, ok := oldStorageValue.(BodyStorage); ok && oldStorage != storage {
+			_ = oldStorage.Close()
+		}
+	}
+	return nil
 }
 
 // CleanupBodyStorage 清理请求体存储（应在请求结束时调用）

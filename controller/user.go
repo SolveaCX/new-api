@@ -780,6 +780,7 @@ func generateDefaultSidebarConfig(userRole int) string {
 }
 
 func GetUserModels(c *gin.Context) {
+	autoState := loadAutoModelDiscoveryState()
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		id = c.GetInt("id")
@@ -812,14 +813,15 @@ func GetUserModels(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
 				"message": "",
-				"data":    models,
+				"data":    appendAutoModelToUserModels(user, group, models, autoState),
 			})
 			return
 		}
+		models := model.GetGroupEnabledModels(group)
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "",
-			"data":    model.GetGroupEnabledModels(group),
+			"data":    appendAutoModelToUserModels(user, group, models, autoState),
 		})
 		return
 	}
@@ -834,7 +836,7 @@ func GetUserModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    models,
+		"data":    appendAutoModelToUserModels(user, "", models, autoState),
 	})
 	return
 }

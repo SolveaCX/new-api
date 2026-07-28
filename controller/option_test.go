@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -53,8 +54,8 @@ func setupOptionControllerTestDB(t *testing.T) *gorm.DB {
 	}
 	model.DB = db
 	model.LOG_DB = db
-	if err := db.AutoMigrate(&model.Option{}); err != nil {
-		t.Fatalf("failed to migrate option table: %v", err)
+	if err := db.AutoMigrate(&model.Option{}, &model.Channel{}, &model.Ability{}); err != nil {
+		t.Fatalf("failed to migrate option and Auto Model conflict tables: %v", err)
 	}
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()
@@ -77,6 +78,30 @@ func newOptionRequestContext(t *testing.T, body any) (*gin.Context, *httptest.Re
 	ctx.Request = httptest.NewRequest(http.MethodPut, "/api/option/bulk", bytes.NewReader(payload))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 	return ctx, recorder
+}
+
+func autoModelControllerConfigRaw(t *testing.T) string {
+	t.Helper()
+	cfg := model_setting.AutoModelConfig{
+		Version:                 model_setting.AutoModelConfigVersion,
+		Enabled:                 true,
+		ClassifierBaseURL:       "https://classifier.example.com/v1",
+		ClassifierModel:         "router-mini",
+		ClassifierTimeoutMS:     800,
+		ClassifierInputMaxChars: 8000,
+		DefaultModel:            "model-a",
+		Routes: map[string][]string{
+			"general":     {"model-a", "model-b"},
+			"coding":      {"model-c"},
+			"reasoning":   {"model-d"},
+			"translation": {"model-e"},
+		},
+	}
+	raw, err := common.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("failed to marshal auto model config: %v", err)
+	}
+	return string(raw)
 }
 
 func TestUpdateOptionsBulkPersistsSidebarAndPlaygroundModelAtomically(t *testing.T) {
@@ -166,6 +191,106 @@ func TestUpdateOptionsBulkRejectsNonStringValuesWithoutPartialWrite(t *testing.T
 	}
 	if count != 0 {
 		t.Fatalf("expected no partial sidebar option write, got %d rows", count)
+	}
+}
+
+func TestUpdateOptionRejectsAutoModelKeys(t *testing.T) {
+	db := setupOptionControllerTestDB(t)
+	t.Cleanup(func() { _ = model_setting.ReloadAutoModelSnapshot("", "") })
+
+	for _, key := range []string{
+		model_setting.AutoModelConfigOptionKey,
+		model_setting.AutoModelClassifierAPIKeyOptionKey,
+	} {
+		ctx, recorder := newOptionRequestContext(t, map[string]any{
+			"key":   key,
+			"value": "value",
+		})
+		UpdateOption(ctx)
+		response := decodeAPIResponse(t, recorder)
+		if response.Success {
+			t.Fatalf("expected single update for %s to fail", key)
+		}
+	}
+
+	var count int64
+	if err := db.Model(&model.Option{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count options: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no auto model option writes, got %d", count)
+	}
+}
+
+func TestAutoModelBulkAllowlistUsesExactKeys(t *testing.T) {
+	if !isBulkOptionUpdateKey(model_setting.AutoModelConfigOptionKey) || !isBulkOptionUpdateKey(model_setting.AutoModelClassifierAPIKeyOptionKey) {
+		t.Fatal("expected exact Auto Model option keys to be allowed")
+	}
+	if isBulkOptionUpdateKey("auto_model.unexpected") {
+		t.Fatal("unexpected auto_model prefix key was allowed")
+	}
+}
+
+func TestUpdateOptionsRoutesAutoModelPairToDedicatedWriter(t *testing.T) {
+	db := setupOptionControllerTestDB(t)
+	t.Cleanup(func() { _ = model_setting.ReloadAutoModelSnapshot("", "") })
+
+	ctx, recorder := newOptionRequestContext(t, map[string]any{
+		"options": []map[string]any{
+			{"key": model_setting.AutoModelConfigOptionKey, "value": autoModelControllerConfigRaw(t)},
+			{"key": model_setting.AutoModelClassifierAPIKeyOptionKey, "value": "sk-controller-secret"},
+		},
+	})
+	UpdateOptions(ctx)
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected auto model bulk update to succeed, got %s", response.Message)
+	}
+	if strings.Contains(recorder.Body.String(), "sk-controller-secret") {
+		t.Fatal("bulk update response leaked classifier API key")
+	}
+
+	var credentialOption model.Option
+	if err := db.First(&credentialOption, "key = ?", model_setting.AutoModelClassifierAPIKeyOptionKey).Error; err != nil {
+		t.Fatalf("failed to load stored credential: %v", err)
+	}
+	credential, err := model_setting.ParseAutoModelCredential(credentialOption.Value)
+	if err != nil {
+		t.Fatalf("failed to parse stored credential: %v", err)
+	}
+	if credential.APIKey != "sk-controller-secret" || credential.Version == "" {
+		t.Fatalf("unexpected stored credential: %+v", credential)
+	}
+
+	getRecorder := httptest.NewRecorder()
+	getCtx, _ := gin.CreateTestContext(getRecorder)
+	GetOptions(getCtx)
+	if strings.Contains(getRecorder.Body.String(), "sk-controller-secret") || strings.Contains(getRecorder.Body.String(), model_setting.AutoModelClassifierAPIKeyOptionKey) {
+		t.Fatal("GetOptions exposed the classifier credential")
+	}
+}
+
+func TestUpdateOptionsRejectsMixedAutoModelAndGeneralKeys(t *testing.T) {
+	db := setupOptionControllerTestDB(t)
+	t.Cleanup(func() { _ = model_setting.ReloadAutoModelSnapshot("", "") })
+
+	ctx, recorder := newOptionRequestContext(t, map[string]any{
+		"options": []map[string]any{
+			{"key": model_setting.AutoModelConfigOptionKey, "value": autoModelControllerConfigRaw(t)},
+			{"key": "SidebarModulesAdmin", "value": `{}`},
+		},
+	})
+	UpdateOptions(ctx)
+	response := decodeAPIResponse(t, recorder)
+	if response.Success {
+		t.Fatal("expected mixed auto/general bulk update to fail")
+	}
+	var count int64
+	if err := db.Model(&model.Option{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count options: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no partial option writes, got %d", count)
 	}
 }
 

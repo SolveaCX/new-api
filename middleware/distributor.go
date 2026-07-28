@@ -86,7 +86,35 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 				return
 			}
-		} else {
+		}
+
+		if shouldSelectChannel && modelRequest.Model == "auto" {
+			storage, bodyErr := common.GetBodyStorage(c)
+			if bodyErr != nil {
+				abortWithAutoModelError(c, autoModelProtocolForError(c.Request), types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry()))
+				return
+			}
+			raw, bodyErr := storage.Bytes()
+			if bodyErr != nil {
+				abortWithAutoModelError(c, autoModelProtocolForError(c.Request), types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry()))
+				return
+			}
+			resolution, virtual, autoErr := resolveAutoModel(c, raw, channel)
+			if virtual {
+				if autoErr != nil {
+					abortWithAutoModelError(c, autoModelProtocolForError(c.Request), autoErr)
+					return
+				}
+				if autoErr = applyAutoModelResolution(c, modelRequest, raw, resolution); autoErr != nil {
+					abortWithAutoModelError(c, resolution.protocol, autoErr)
+					return
+				}
+			} else if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") {
+				modelRequest.Model = ratio_setting.WithCompactModelSuffix(modelRequest.Model)
+			}
+		}
+
+		if !ok {
 			// Select a channel for the user
 			// check token model mapping
 			modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
@@ -140,7 +168,14 @@ func Distribute() func(c *gin.Context) {
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
-							for _, g := range autoGroups {
+							startIndex := 0
+							if index, exists := common.GetContextKey(c, constant.ContextKeyAutoGroupIndex); exists {
+								if value, valid := index.(int); valid && value >= 0 && value <= len(autoGroups) {
+									startIndex = value
+								}
+							}
+							for groupIndex := startIndex; groupIndex < len(autoGroups); groupIndex++ {
+								g := autoGroups[groupIndex]
 								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
 									if service.ChannelSupportsRequestEndpoint(c, preferred, modelRequest.Model) {
 										ok, acquireErr := service.AcquireChannelConcurrencyWithWaitForContext(c, preferred)
@@ -158,6 +193,7 @@ func Distribute() func(c *gin.Context) {
 										}
 										selectGroup = g
 										common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
+										common.SetContextKey(c, constant.ContextKeyAutoGroupIndex, groupIndex)
 										channel = preferred
 										affinityUsable = true
 										service.MarkChannelAffinityUsed(c, g, preferred.Id)
@@ -530,7 +566,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
 	}
 
-	if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") && modelRequest.Model != "" {
+	if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") && modelRequest.Model != "" && modelRequest.Model != "auto" {
 		modelRequest.Model = ratio_setting.WithCompactModelSuffix(modelRequest.Model)
 	}
 	return &modelRequest, shouldSelectChannel, nil
