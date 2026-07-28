@@ -15,7 +15,8 @@ import (
 
 const (
 	supplierHistoricalImportCreateMaxAttempts = 5
-	SupplierHistoricalSummarySchemaVersion    = 1
+	SupplierHistoricalSummarySchemaVersion    = 2
+	supplierHistoricalLegacyTestLabel         = "模型测试"
 )
 
 const (
@@ -43,42 +44,43 @@ var (
 )
 
 type SupplierHistoricalImport struct {
-	Id                   int64  `json:"id"`
-	CommandHash          string `json:"command_hash" gorm:"type:varchar(64);not null"`
-	CommandJSON          string `json:"command_json" gorm:"type:text;not null"`
-	IdempotencyKey       string `json:"idempotency_key" gorm:"type:varchar(128);not null;uniqueIndex:ux_supplier_historical_import_actor_key,priority:2"`
-	CreatedBy            int    `json:"created_by" gorm:"not null;uniqueIndex:ux_supplier_historical_import_actor_key,priority:1"`
-	Method               string `json:"method" gorm:"type:varchar(32);not null"`
-	Reason               string `json:"reason" gorm:"type:text;not null"`
-	StartDate            string `json:"start_date" gorm:"type:varchar(10);not null;index:idx_supplier_historical_import_range,priority:1"`
-	EndDate              string `json:"end_date" gorm:"type:varchar(10);not null;index:idx_supplier_historical_import_range,priority:2"`
-	DayStart             int64  `json:"day_start" gorm:"not null"`
-	DayEnd               int64  `json:"day_end" gorm:"not null"`
-	QuotaPerUnit         string `json:"quota_per_unit" gorm:"type:varchar(64);not null"`
-	ExcludedUserIdsJSON  string `json:"excluded_user_ids_json" gorm:"type:text;not null"`
-	ChannelMappingsJSON  string `json:"channel_mappings_json" gorm:"type:text;not null"`
-	SummarySchemaVersion int    `json:"summary_schema_version" gorm:"not null;default:0"`
-	SupersedesImportId   *int64 `json:"supersedes_import_id" gorm:"index"`
-	SupersededByImportId *int64 `json:"superseded_by_import_id" gorm:"index"`
-	Status               string `json:"status" gorm:"type:varchar(16);not null;index"`
-	SourceMaxLogId       int64  `json:"source_max_log_id" gorm:"not null;default:0"`
-	CandidateCount       int64  `json:"candidate_count" gorm:"not null;default:0"`
-	LeaseOwner           string `json:"lease_owner" gorm:"type:varchar(128);not null;default:''"`
-	FenceToken           int64  `json:"fence_token" gorm:"not null;default:0"`
-	ActiveLeaseSlot      *int   `json:"-" gorm:"uniqueIndex:ux_supplier_historical_import_active_slot"`
-	LockedUntil          int64  `json:"locked_until" gorm:"not null;default:0"`
-	CursorCreatedAt      int64  `json:"cursor_created_at" gorm:"not null;default:0"`
-	CursorId             int64  `json:"cursor_id" gorm:"not null;default:0"`
-	ProcessedCount       int64  `json:"processed_count" gorm:"not null;default:0"`
-	SummaryCount         int64  `json:"summary_count" gorm:"not null;default:0"`
-	ErrorMessage         string `json:"error_message" gorm:"type:text;not null"`
-	StartedAt            *int64 `json:"started_at"`
-	CompletedAt          *int64 `json:"completed_at"`
-	PublishedAt          *int64 `json:"published_at"`
-	PublishedBy          int    `json:"published_by" gorm:"not null;default:0"`
-	SupersededAt         *int64 `json:"superseded_at"`
-	CreatedAt            int64  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt            int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	Id                      int64  `json:"id"`
+	CommandHash             string `json:"command_hash" gorm:"type:varchar(64);not null"`
+	CommandJSON             string `json:"command_json" gorm:"type:text;not null"`
+	IdempotencyKey          string `json:"idempotency_key" gorm:"type:varchar(128);not null;uniqueIndex:ux_supplier_historical_import_actor_key,priority:2"`
+	CreatedBy               int    `json:"created_by" gorm:"not null;uniqueIndex:ux_supplier_historical_import_actor_key,priority:1"`
+	Method                  string `json:"method" gorm:"type:varchar(32);not null"`
+	Reason                  string `json:"reason" gorm:"type:text;not null"`
+	StartDate               string `json:"start_date" gorm:"type:varchar(10);not null;index:idx_supplier_historical_import_range,priority:1"`
+	EndDate                 string `json:"end_date" gorm:"type:varchar(10);not null;index:idx_supplier_historical_import_range,priority:2"`
+	DayStart                int64  `json:"day_start" gorm:"not null"`
+	DayEnd                  int64  `json:"day_end" gorm:"not null"`
+	QuotaPerUnit            string `json:"quota_per_unit" gorm:"type:varchar(64);not null"`
+	ExcludedUserIdsJSON     string `json:"excluded_user_ids_json" gorm:"type:text;not null"`
+	ChannelMappingsJSON     string `json:"channel_mappings_json" gorm:"type:text;not null"`
+	SummarySchemaVersion    int    `json:"summary_schema_version" gorm:"not null;default:0"`
+	SupersedesImportId      *int64 `json:"supersedes_import_id" gorm:"index"`
+	SupersededByImportId    *int64 `json:"superseded_by_import_id" gorm:"index"`
+	Status                  string `json:"status" gorm:"type:varchar(16);not null;index"`
+	SourceMaxLogId          int64  `json:"source_max_log_id" gorm:"not null;default:0"`
+	CandidateCount          int64  `json:"candidate_count" gorm:"not null;default:0"`
+	ExcludedSystemTestCount int64  `json:"excluded_system_test_count" gorm:"not null;default:0"`
+	LeaseOwner              string `json:"lease_owner" gorm:"type:varchar(128);not null;default:''"`
+	FenceToken              int64  `json:"fence_token" gorm:"not null;default:0"`
+	ActiveLeaseSlot         *int   `json:"-" gorm:"uniqueIndex:ux_supplier_historical_import_active_slot"`
+	LockedUntil             int64  `json:"locked_until" gorm:"not null;default:0"`
+	CursorCreatedAt         int64  `json:"cursor_created_at" gorm:"not null;default:0"`
+	CursorId                int64  `json:"cursor_id" gorm:"not null;default:0"`
+	ProcessedCount          int64  `json:"processed_count" gorm:"not null;default:0"`
+	SummaryCount            int64  `json:"summary_count" gorm:"not null;default:0"`
+	ErrorMessage            string `json:"error_message" gorm:"type:text;not null"`
+	StartedAt               *int64 `json:"started_at"`
+	CompletedAt             *int64 `json:"completed_at"`
+	PublishedAt             *int64 `json:"published_at"`
+	PublishedBy             int    `json:"published_by" gorm:"not null;default:0"`
+	SupersededAt            *int64 `json:"superseded_at"`
+	CreatedAt               int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt               int64  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (i *SupplierHistoricalImport) BeforeCreate(_ *gorm.DB) error {
@@ -169,8 +171,9 @@ type SupplierHistoricalImportLease struct {
 }
 
 type SupplierHistoricalSourceStats struct {
-	SourceMaxLogId int64 `gorm:"column:source_max_log_id"`
-	CandidateCount int64 `gorm:"column:candidate_count"`
+	SourceMaxLogId          int64 `gorm:"column:source_max_log_id"`
+	CandidateCount          int64 `gorm:"column:candidate_count"`
+	ExcludedSystemTestCount int64 `gorm:"column:excluded_system_test_count"`
 }
 
 type SupplierHistoricalSourceLog struct {
@@ -417,8 +420,8 @@ func AcquireSupplierHistoricalImport(ctx context.Context, db *gorm.DB, importId 
 	return lease, nil
 }
 
-func FreezeSupplierHistoricalImport(ctx context.Context, db *gorm.DB, lease SupplierHistoricalImportLease, sourceMaxLogId, candidateCount int64) error {
-	if db == nil || lease.ImportId <= 0 || lease.FenceToken <= 0 || sourceMaxLogId < 0 || candidateCount < 0 {
+func FreezeSupplierHistoricalImport(ctx context.Context, db *gorm.DB, lease SupplierHistoricalImportLease, sourceMaxLogId, candidateCount, excludedSystemTestCount int64) error {
+	if db == nil || lease.ImportId <= 0 || lease.FenceToken <= 0 || sourceMaxLogId < 0 || candidateCount < 0 || excludedSystemTestCount < 0 {
 		return ErrSupplierHistoricalImportInvalid
 	}
 	now, err := supplierDBUnix(ctx, db)
@@ -427,7 +430,7 @@ func FreezeSupplierHistoricalImport(ctx context.Context, db *gorm.DB, lease Supp
 	}
 	result := db.WithContext(ctx).Model(&SupplierHistoricalImport{}).
 		Where("id = ? AND status = ? AND started_at IS NULL AND lease_owner = ? AND fence_token = ? AND locked_until >= ?", lease.ImportId, SupplierHistoricalImportStatusPending, lease.Owner, lease.FenceToken, now).
-		Updates(map[string]any{"status": SupplierHistoricalImportStatusRunning, "source_max_log_id": sourceMaxLogId, "candidate_count": candidateCount, "started_at": now, "error_message": ""})
+		Updates(map[string]any{"status": SupplierHistoricalImportStatusRunning, "source_max_log_id": sourceMaxLogId, "candidate_count": candidateCount, "excluded_system_test_count": excludedSystemTestCount, "started_at": now, "error_message": ""})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -782,11 +785,26 @@ func FreezeSupplierHistoricalSourceStats(ctx context.Context, logDB *gorm.DB, da
 	if logDB == nil || dayStart <= 0 || dayEnd <= dayStart {
 		return stats, ErrSupplierHistoricalImportInvalid
 	}
+	predicate, args := supplierHistoricalSystemTestPredicate()
 	err := logDB.WithContext(ctx).Table("logs").
-		Select("COALESCE(MAX(id), 0) AS source_max_log_id, COUNT(*) AS candidate_count").
+		Select(`COALESCE(MAX(id), 0) AS source_max_log_id,
+COALESCE(SUM(CASE WHEN `+predicate+` THEN 0 ELSE 1 END), 0) AS candidate_count,
+COALESCE(SUM(CASE WHEN `+predicate+` THEN 1 ELSE 0 END), 0) AS excluded_system_test_count`, append(args, args...)...).
 		Where("type = ? AND created_at >= ? AND created_at < ?", LogTypeConsume, dayStart, dayEnd).
 		Scan(&stats).Error
 	return stats, err
+}
+
+func supplierHistoricalSystemTestPredicate() (string, []any) {
+	return `COALESCE(token_id, 0) = ? OR (COALESCE(token_id, 0) = 0 AND COALESCE(token_name, '') = ? AND COALESCE(content, '') = ?)`,
+		[]any{SystemChannelTestTokenId, supplierHistoricalLegacyTestLabel, supplierHistoricalLegacyTestLabel}
+}
+
+func supplierHistoricalSourceQuery(ctx context.Context, logDB *gorm.DB, dayStart, dayEnd, sourceMaxLogId int64) *gorm.DB {
+	predicate, args := supplierHistoricalSystemTestPredicate()
+	return logDB.WithContext(ctx).Table("logs").
+		Where("type = ? AND created_at >= ? AND created_at < ? AND id <= ?", LogTypeConsume, dayStart, dayEnd, sourceMaxLogId).
+		Where("NOT ("+predicate+")", args...)
 }
 
 func ListSupplierHistoricalSourcePage(ctx context.Context, logDB *gorm.DB, dayStart, dayEnd, sourceMaxLogId, cursorCreatedAt, cursorId int64, limit int) ([]SupplierHistoricalSourceLog, error) {
@@ -794,8 +812,8 @@ func ListSupplierHistoricalSourcePage(ctx context.Context, logDB *gorm.DB, daySt
 		return nil, ErrSupplierHistoricalImportInvalid
 	}
 	var rows []SupplierHistoricalSourceLog
-	query := logDB.WithContext(ctx).Table("logs").Select("id, user_id, created_at, channel_id, model_name, quota, other").
-		Where("type = ? AND created_at >= ? AND created_at < ? AND id <= ?", LogTypeConsume, dayStart, dayEnd, sourceMaxLogId)
+	query := supplierHistoricalSourceQuery(ctx, logDB, dayStart, dayEnd, sourceMaxLogId).
+		Select("id, user_id, created_at, channel_id, model_name, quota, other")
 	if cursorCreatedAt > 0 || cursorId > 0 {
 		query = query.Where("created_at > ? OR (created_at = ? AND id > ?)", cursorCreatedAt, cursorCreatedAt, cursorId)
 	}
@@ -808,7 +826,7 @@ func CountSupplierHistoricalFrozenSource(ctx context.Context, logDB *gorm.DB, da
 		return 0, ErrSupplierHistoricalImportInvalid
 	}
 	var count int64
-	err := logDB.WithContext(ctx).Table("logs").Where("type = ? AND created_at >= ? AND created_at < ? AND id <= ?", LogTypeConsume, dayStart, dayEnd, sourceMaxLogId).Count(&count).Error
+	err := supplierHistoricalSourceQuery(ctx, logDB, dayStart, dayEnd, sourceMaxLogId).Count(&count).Error
 	return count, err
 }
 

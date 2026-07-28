@@ -1066,6 +1066,7 @@ export function HistoricalImportManagement(props: SupplyChainManagementProps) {
                   <TableHead>{t('Status')}</TableHead>
                   <TableHead>{t('Report publication')}</TableHead>
                   <TableHead>{t('Progress')}</TableHead>
+                  <TableHead>{t('Excluded system model tests')}</TableHead>
                   <TableHead>{t('Created at')}</TableHead>
                   <TableHead>{t('Actions')}</TableHead>
                 </TableRow>
@@ -1105,6 +1106,9 @@ export function HistoricalImportManagement(props: SupplyChainManagementProps) {
                             {() => `${Math.round(progress)}%`}
                           </ProgressValue>
                         </Progress>
+                      </TableCell>
+                      <TableCell>
+                        {item.excluded_system_test_count.toLocaleString()}
                       </TableCell>
                       <TableCell>{formatTime(item.created_at)}</TableCell>
                       <TableCell>

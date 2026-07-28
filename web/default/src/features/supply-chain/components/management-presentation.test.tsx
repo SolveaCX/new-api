@@ -94,6 +94,7 @@ describe('supply-chain management presentation', () => {
       status: 'completed' as const,
       source_max_log_id: 99,
       candidate_count: 10,
+      excluded_system_test_count: 49,
       processed_count: 10,
       summary_count: 1,
       error_message: '',
@@ -101,7 +102,7 @@ describe('supply-chain management presentation', () => {
       completed_at: 2,
       published_at: null,
       published_by: 0,
-      summary_schema_version: 1,
+      summary_schema_version: 2,
       superseded_at: null,
       supersedes_import_id: null,
       superseded_by_import_id: null,
@@ -171,6 +172,8 @@ describe('supply-chain management presentation', () => {
     )
 
     expect(html).toContain('Publish to reports')
+    expect(html).toContain('Excluded system model tests')
+    expect(html).toContain('49')
     expect(html).toContain('Re-estimate')
     expect(html).toContain('Inventory is not affected')
     expect(html).toContain('Historical estimates require explicit publication')
@@ -194,6 +197,7 @@ describe('supply-chain management presentation', () => {
       status: 'completed' as const,
       source_max_log_id: 99,
       candidate_count: 10,
+      excluded_system_test_count: 0,
       processed_count: 10,
       summary_count: 1,
       error_message: '',
@@ -201,7 +205,7 @@ describe('supply-chain management presentation', () => {
       completed_at: 2,
       published_at: null,
       published_by: 0,
-      summary_schema_version: 0,
+      summary_schema_version: 1,
       superseded_at: null,
       supersedes_import_id: null,
       superseded_by_import_id: null,
