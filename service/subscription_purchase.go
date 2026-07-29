@@ -1394,7 +1394,8 @@ func validateAuthoritativeSubscriptionPurchaseQuote(ctx context.Context, cmd Pur
 	if err != nil {
 		return SubscriptionPurchaseQuote{}, err
 	}
-	expected, err = applySubscriptionPurchaseDiscounts(ctx, cmd.UserID, cmd.RecallClaim, *plan, expected, account.AvailableUSDMinor, cmd.Months)
+	claimForQuote := recallClaimForAuthoritativeSubscriptionQuote(ctx, cmd)
+	expected, err = applySubscriptionPurchaseDiscounts(ctx, cmd.UserID, claimForQuote, *plan, expected, account.AvailableUSDMinor, cmd.Months)
 	if err != nil {
 		return SubscriptionPurchaseQuote{}, err
 	}
@@ -1414,6 +1415,22 @@ func validateAuthoritativeSubscriptionPurchaseQuote(ctx context.Context, cmd Pur
 		return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: subscription purchase quote mismatch", ErrSubscriptionPurchaseQuoteInvalid)
 	}
 	return expected, nil
+}
+
+func recallClaimForAuthoritativeSubscriptionQuote(ctx context.Context, cmd PurchaseSubscriptionCommand) string {
+	claim := strings.TrimSpace(cmd.RecallClaim)
+	if claim == "" || cmd.VerifiedQuote == nil {
+		return claim
+	}
+	record, found, err := model.FindRecallClaimByHashWithContext(ctx, recallClaimTokenHash(claim))
+	if err != nil || !found {
+		return claim
+	}
+	if cmd.VerifiedQuote.RecallCampaignID != record.Campaign.Id ||
+		cmd.VerifiedQuote.RecallRecipientID != record.Recipient.Id {
+		return ""
+	}
+	return claim
 }
 
 func rejectConvertedRecallClaimQuoteReuse(ctx context.Context, cmd PurchaseSubscriptionCommand) error {
