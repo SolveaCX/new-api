@@ -435,10 +435,11 @@ func TestStripeUpgradeUpdatesExistingItemAndKeepsOldEntitlementDuring3DS(t *test
 	}
 
 	result, err := ChangeSubscriptionPlan(ChangePlanCommand{
-		UserID:      7131,
-		PlanID:      targetPlan.Id,
-		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
-		RequestID:   "stripe-upgrade-3ds",
+		UserID:        7131,
+		PlanID:        targetPlan.Id,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:     "stripe-upgrade-3ds",
+		VerifiedQuote: verifiedRecurringQuoteForTest("USD", 25, 2500),
 	})
 
 	require.NoError(t, err)

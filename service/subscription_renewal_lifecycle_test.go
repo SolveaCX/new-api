@@ -1956,7 +1956,7 @@ func TestCancelCurrentSubscriptionRenewalDoesNotConfirmTerminalSnapshotWithoutTe
 		stripeSubscriptionSnapshotGetter = originalGet
 	})
 	localSyncErr := errors.New("local subscription termination apply failed")
-	cancelCurrentStripeRecurringSubscription = func(userID int, bindingID int64) (*model.SubscriptionProviderBinding, error) {
+	cancelCurrentStripeRecurringSubscription = func(userID int, bindingID int64, _ *currentStripeRenewalLifecycleMutationGuard) (*model.SubscriptionProviderBinding, error) {
 		require.Equal(t, contract.UserId, userID)
 		require.Equal(t, binding.Id, bindingID)
 		return nil, localSyncErr
@@ -1974,7 +1974,7 @@ func TestCancelCurrentSubscriptionRenewalDoesNotConfirmTerminalSnapshotWithoutTe
 		}, nil
 	}
 
-	result, err := CancelCurrentSubscriptionRenewal(contract.UserId)
+	result, err := CancelCurrentSubscriptionRenewal(contract.UserId, renewalLifecyclePrecondition(contract, model.SubscriptionRenewalStatusEnabled))
 
 	require.ErrorIs(t, err, localSyncErr)
 	require.Nil(t, result)
@@ -2356,10 +2356,11 @@ func TestCancelCurrentSubscriptionRenewalReservationBlocksConcurrentFreshStripeP
 	}
 
 	changeResult, changeErr := ChangeSubscriptionPlan(ChangePlanCommand{
-		UserID:      contract.UserId,
-		PlanID:      targetPlan.Id,
-		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
-		RequestID:   "fresh-plan-change-during-cancel",
+		UserID:        contract.UserId,
+		PlanID:        targetPlan.Id,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:     "fresh-plan-change-during-cancel",
+		VerifiedQuote: verifiedRecurringQuoteForTest("USD", 14, 1400),
 	})
 
 	close(releaseDelegate)

@@ -1356,7 +1356,9 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		if applied != nil {
 			result.Binding = binding
 			result.Entitlement = applied
-			return nil
+			if reservation == nil {
+				return nil
+			}
 		}
 	}
 	plan, pendingDowngrade, err := resolveExpectedRenewalPlanTx(tx, commonFacts, binding, contract, plan)
@@ -2019,8 +2021,10 @@ func validateOneTimeLocalOrderFacts(order *model.SubscriptionOrder, intent *mode
 	}
 	if strings.TrimSpace(order.PaymentCurrency) == "" || order.PaymentAmountMinor < 0 ||
 		order.RecallDiscountAmountMinor < 0 ||
+		order.SubscriptionDiscountAmountMinor < 0 ||
 		order.PaymentAmountMinor > math.MaxInt64-order.RecallDiscountAmountMinor ||
-		order.PaymentAmountMinor+order.RecallDiscountAmountMinor <= 0 {
+		order.PaymentAmountMinor+order.RecallDiscountAmountMinor > math.MaxInt64-order.SubscriptionDiscountAmountMinor ||
+		order.PaymentAmountMinor+order.RecallDiscountAmountMinor+order.SubscriptionDiscountAmountMinor <= 0 {
 		return errors.New("local one-time subscription payment quote is missing")
 	}
 	if order.RecallDiscountAmountMinor > 0 {

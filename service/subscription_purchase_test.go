@@ -3215,6 +3215,7 @@ func TestPurchaseSubscriptionOneTimeChoicesUseStripeProvider(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, common.TopUpStatusPending, result.Order.Status)
 			require.Equal(t, model.PaymentProviderStripe, result.Order.PaymentProvider)
+			require.Empty(t, result.Order.RenewalSource)
 		})
 	}
 }

@@ -42,9 +42,9 @@ func TestStripeDowngradeLatestSelectionSupersedesPreviousAndKeepsOnlyLatestPendi
 		}, nil
 	}
 
-	first, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7150, PlanID: firstTarget.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-latest-1"})
+	first, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7150, PlanID: firstTarget.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-latest-1", VerifiedQuote: verifiedRecurringQuoteForTest("USD", 20, 2000)})
 	require.NoError(t, err)
-	second, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7150, PlanID: secondTarget.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-latest-2"})
+	second, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7150, PlanID: secondTarget.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-latest-2", VerifiedQuote: verifiedRecurringQuoteForTest("USD", 10, 1000)})
 	require.NoError(t, err)
 
 	require.Equal(t, ChangePlanStatusScheduled, second.Status)
@@ -505,9 +505,9 @@ func TestStripeDowngradeSameRequestReplayDoesNotCreateAnotherSchedule(t *testing
 		return &StripeSubscriptionDowngradeResult{Status: model.SubscriptionChangeIntentStatusScheduled, ProviderScheduleID: "sched_down_replay", Snapshot: model.ProviderSubscriptionSnapshot{ProviderSubscriptionId: input.ProviderSubscriptionID, ProviderSubscriptionItemId: input.ProviderSubscriptionItemID, ProviderPriceId: input.CurrentPriceID, ProviderScheduleId: "sched_down_replay", ProviderScheduleIdObserved: true, ProviderStatus: "active", CurrentPeriodStart: 1000, CurrentPeriodEnd: 2000}}, nil
 	}
 
-	first, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7153, PlanID: targetPlan.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-replay"})
+	first, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7153, PlanID: targetPlan.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-replay", VerifiedQuote: verifiedRecurringQuoteForTest("USD", 10, 1000)})
 	require.NoError(t, err)
-	second, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7153, PlanID: targetPlan.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-replay"})
+	second, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7153, PlanID: targetPlan.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-replay", VerifiedQuote: verifiedRecurringQuoteForTest("USD", 10, 1000)})
 	require.NoError(t, err)
 
 	require.Equal(t, first.Intent.Id, second.Intent.Id)
@@ -630,7 +630,7 @@ func TestStripeDowngradeDoesNotSwitchEntitlementBeforePaidTargetInvoice(t *testi
 		return &StripeSubscriptionDowngradeResult{Status: model.SubscriptionChangeIntentStatusScheduled, ProviderScheduleID: "sched_down_unpaid", Snapshot: model.ProviderSubscriptionSnapshot{ProviderSubscriptionId: input.ProviderSubscriptionID, ProviderSubscriptionItemId: input.ProviderSubscriptionItemID, ProviderPriceId: input.CurrentPriceID, ProviderScheduleId: "sched_down_unpaid", ProviderScheduleIdObserved: true, ProviderStatus: "active", CurrentPeriodStart: 1000, CurrentPeriodEnd: 2000}}, nil
 	}
 
-	result, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7154, PlanID: targetPlan.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-unpaid"})
+	result, err := ChangeSubscriptionPlan(ChangePlanCommand{UserID: 7154, PlanID: targetPlan.Id, PaymentMode: model.SubscriptionPaymentModeStripeRecurring, RequestID: "down-unpaid", VerifiedQuote: verifiedRecurringQuoteForTest("USD", 10, 1000)})
 
 	require.NoError(t, err)
 	require.Equal(t, ChangePlanStatusScheduled, result.Status)

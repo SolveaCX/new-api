@@ -57,7 +57,7 @@ func TestBuildStripeSubscriptionCheckoutSessionParamsUsesReferenceIdempotency(t 
 	require.Equal(t, "subscription-stripe:sub_ref_ordinary", *params.IdempotencyKey)
 }
 
-func TestSubscriptionStripeEmailRecallClaimLookupFailureFallsBackToOriginalPrice(t *testing.T) {
+func TestSubscriptionStripeEmailRecallClaimLookupFailureStopsBeforeCheckout(t *testing.T) {
 	require.NoError(t, i18n.Init())
 	backend := setupSubscriptionStripeRecordingBackend(t)
 	setupSubscriptionRecallClaimDB(t)
@@ -112,14 +112,14 @@ func TestSubscriptionStripeEmailRecallClaimLookupFailureFallsBackToOriginalPrice
 
 	SubscriptionRequestStripePay(ctx)
 
-	require.Contains(t, recorder.Body.String(), `"message":"success"`)
-	require.Len(t, backend.params, 1)
-	require.Empty(t, backend.params[0].Discounts)
-	var order model.SubscriptionOrder
-	require.NoError(t, model.DB.First(&order, "user_id = ?", userID).Error)
-	require.Zero(t, order.RecallCampaignId)
-	require.Zero(t, order.RecallRecipientId)
-	require.Zero(t, order.RecallDiscountAmountMinor)
+	require.Empty(t, backend.params)
+	responseBody := recorder.Body.String()
+	require.Contains(t, responseBody, `"message":"error"`)
+	require.Contains(t, responseBody, i18n.T(ctx, i18n.MsgPaymentRecallClaimUnavailable))
+	require.NotContains(t, responseBody, "no such table")
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", userID).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
 }
 
 func TestSubscriptionStripeWrongScopePromotionClaimStopsBeforeCheckout(t *testing.T) {

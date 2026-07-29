@@ -397,6 +397,11 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         },
         renewal_source: 'provider_recurring',
         renewal_status: 'enabled',
+        capabilities: {
+          can_cancel: true,
+          can_resume: false,
+          requires_support: false,
+        },
       })
     )
 

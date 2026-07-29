@@ -2011,10 +2011,11 @@ func TestStripeDowngradeRequestSupersedesPendingDowngradeStripeCheckout(t *testi
 	}
 
 	result, err := ChangeSubscriptionPlan(ChangePlanCommand{
-		UserID:      8108,
-		PlanID:      newTarget.Id,
-		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
-		RequestID:   "new-downgrade-replaces-checkout",
+		UserID:        8108,
+		PlanID:        newTarget.Id,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:     "new-downgrade-replaces-checkout",
+		VerifiedQuote: verifiedRecurringQuoteForTest("USD", 10, 1000),
 	})
 
 	require.NoError(t, err)

@@ -61,6 +61,8 @@ func setupSubscriptionContractServiceTestDB(t *testing.T) {
 		&model.SubscriptionProviderBinding{},
 		&model.UserSubscriptionContract{},
 		&model.SubscriptionChangeIntent{},
+		&model.SubscriptionDiscountAccount{},
+		&model.SubscriptionDiscountEntry{},
 	))
 }
 
@@ -676,10 +678,11 @@ func TestFreshStripeRecurringPlanChangeRejectsActiveProviderLifecycleReservation
 	}
 
 	result, err := ChangeSubscriptionPlan(ChangePlanCommand{
-		UserID:      contract.UserId,
-		PlanID:      targetPlan.Id,
-		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
-		RequestID:   "fresh-plan-change-active-reservation",
+		UserID:        contract.UserId,
+		PlanID:        targetPlan.Id,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:     "fresh-plan-change-active-reservation",
+		VerifiedQuote: verifiedRecurringQuoteForTest("USD", 3, 300),
 	})
 
 	require.ErrorIs(t, err, ErrSubscriptionChangeInProgress)

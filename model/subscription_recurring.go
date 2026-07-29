@@ -221,9 +221,6 @@ func GetRecurringSubscriptionBindingsForUser(userID int) ([]SubscriptionProvider
 }
 
 func ApplyProviderSubscriptionSnapshot(bindingID int64, snapshot ProviderSubscriptionSnapshot) (*SubscriptionProviderBinding, error) {
-	if snapshot.EndedAt > 0 || isTerminalProviderSubscriptionStatus(snapshot.ProviderStatus) {
-		return ApplyProviderSubscriptionTermination(bindingID, snapshot)
-	}
 	return applyProviderSubscriptionSnapshot(bindingID, nil, nil, snapshot, false, false)
 }
 

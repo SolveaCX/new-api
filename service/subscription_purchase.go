@@ -810,7 +810,6 @@ func createPendingOneTimePurchaseOrderTx(tx *gorm.DB, user *model.User, contract
 		PaymentAmountMinor:        quote.PaymentAmountMinor,
 		PlanSnapshot:              snapshot,
 		PurchaseIntent:            intent.Kind,
-		RenewalSource:             model.SubscriptionRenewalSourceWallet,
 		RecallCampaignId:          recallCampaignID,
 		RecallRecipientId:         recallRecipientID,
 		RecallPromotionCodeId:     recallPromotionCodeID,

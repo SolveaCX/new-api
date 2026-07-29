@@ -1322,6 +1322,7 @@ func TestSessionCompletedFulfillsNoPaymentRequiredSubscriptionOnce(t *testing.T)
 
 	object := oneTimeStripePaidSessionObject(order)
 	object["payment_status"] = string(stripe.CheckoutSessionPaymentStatusNoPaymentRequired)
+	object["amount_total"] = float64(0)
 	event := stripeRecallWebhookEvent(
 		"evt_no_payment_required_subscription",
 		order.ProviderSessionId,

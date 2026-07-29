@@ -82,6 +82,8 @@ interface Props {
 interface RecallClaimContextValue {
   offers: RecallOfferView[]
   loading: boolean
+  claim?: string
+  view?: RecallClaimView
 }
 
 const RecallClaimContext = createContext<RecallClaimContextValue>({
@@ -104,7 +106,12 @@ export function RecallClaimProvider(props: RecallClaimProviderProps) {
 
   return (
     <RecallClaimContext.Provider
-      value={{ offers, loading: props.loading === true }}
+      value={{
+        offers,
+        loading: props.loading === true,
+        claim: props.claim,
+        view: props.view,
+      }}
     >
       {props.children}
     </RecallClaimContext.Provider>

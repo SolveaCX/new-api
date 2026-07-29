@@ -102,10 +102,11 @@ func TestStripeUpgradeReplayReturnsHostedInvoiceWithoutReexecutingUpgrade(t *tes
 	}
 
 	cmd := ChangePlanCommand{
-		UserID:      7135,
-		PlanID:      targetPlan.Id,
-		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
-		RequestID:   "stripe-upgrade-replay",
+		UserID:        7135,
+		PlanID:        targetPlan.Id,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:     "stripe-upgrade-replay",
+		VerifiedQuote: verifiedRecurringQuoteForTest("USD", 25, 2500),
 	}
 	first, err := ChangeSubscriptionPlan(cmd)
 	require.NoError(t, err)

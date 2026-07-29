@@ -111,10 +111,11 @@ func TestSubscriptionPlanChangeRejectsActiveProviderLifecycleReservationBeforeEx
 	}
 
 	_, err = ChangeSubscriptionPlan(ChangePlanCommand{
-		UserID:      contract.UserId,
-		PlanID:      targetPlan.Id,
-		PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
-		RequestID:   "stripe-upgrade-lifecycle-reservation",
+		UserID:        contract.UserId,
+		PlanID:        targetPlan.Id,
+		PaymentMode:   model.SubscriptionPaymentModeStripeRecurring,
+		RequestID:     "stripe-upgrade-lifecycle-reservation",
+		VerifiedQuote: verifiedRecurringQuoteForTest("USD", 25, 2500),
 	})
 
 	require.ErrorIs(t, err, ErrSubscriptionChangeInProgress)

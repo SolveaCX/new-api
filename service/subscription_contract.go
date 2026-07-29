@@ -245,13 +245,6 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 		if err != nil {
 			return err
 		}
-		contract, err := getOrCreateContractForUserTx(tx, cmd.UserID)
-		if err != nil {
-			return err
-		}
-		if err := validatePrelockedStripePlanChangeBindingForContract(prelockedCurrentBinding, contract, true); err != nil {
-			return err
-		}
 
 		plan, err := loadEnabledSubscriptionPlanTx(tx, cmd.PlanID)
 		if err != nil {
@@ -268,6 +261,9 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 		// Lock order for new recurring checkouts: user -> plan/current quote facts -> contract/intent -> discount account reservation.
 		contract, err := getOrCreateContractForUserTx(tx, cmd.UserID)
 		if err != nil {
+			return err
+		}
+		if err := validatePrelockedStripePlanChangeBindingForContract(prelockedCurrentBinding, contract, true); err != nil {
 			return err
 		}
 
@@ -688,7 +684,11 @@ func resolveOrReuseStripeSubscriptionRecallDiscount(
 		updates["recall_campaign_id"] = resolved.CampaignID
 		updates["recall_recipient_id"] = resolved.RecipientID
 		updates["recall_promotion_code_id"] = strings.TrimSpace(resolved.PromotionCodeID)
-		updates["recall_discount_amount_minor"] = resolved.DiscountAmountMinor
+		discountAmountMinor := resolved.DiscountAmountMinor
+		if discountAmountMinor == 0 {
+			discountAmountMinor = stored.RecallDiscountAmountMinor
+		}
+		updates["recall_discount_amount_minor"] = discountAmountMinor
 	}
 	result := model.DB.WithContext(ctx).Model(&model.SubscriptionOrder{}).
 		Where("trade_no = ? AND recall_offer_resolved = ?", tradeNo, false).

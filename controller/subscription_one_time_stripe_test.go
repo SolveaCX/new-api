@@ -532,7 +532,7 @@ func oneTimeStripePaidSessionObject(order *model.SubscriptionOrder) map[string]i
 		"status":               "complete",
 		"payment_status":       "paid",
 		"client_reference_id":  order.TradeNo,
-		"amount_total":         float64(quote.CheckoutAmountMinor),
+		"amount_total":         float64(quote.TotalAmountMinor),
 		"currency":             strings.ToLower(strings.TrimSpace(order.PaymentCurrency)),
 		"livemode":             false,
 		"payment_method_types": []interface{}{order.PaymentMethod},

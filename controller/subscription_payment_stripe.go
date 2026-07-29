@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -93,6 +94,21 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	if user == nil {
 		common.ApiErrorMsg(c, "user does not exist")
 		return
+	}
+
+	if strings.TrimSpace(req.RecallClaim) != "" {
+		if _, err := service.GetRecallRuntime().Claims.ValidateClaimForPurchase(
+			c.Request.Context(),
+			userId,
+			req.RecallClaim,
+			service.RecallPurchaseKindSubscription,
+			strings.TrimSpace(plan.StripePriceId),
+		); err != nil {
+			logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe subscription recall claim rejected user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
+			c.JSON(http.StatusOK, gin.H{"message": "error", "data": i18n.T(c, i18n.MsgPaymentRecallClaimUnavailable)})
+			return
+		}
+		req.RecallClaim = ""
 	}
 
 	result, err := requestStripeRecurringSubscriptionViaPurchasePath(userId, plan, req)
