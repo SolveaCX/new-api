@@ -35,7 +35,6 @@ import {
   quoteSubscriptionPlanFlexible,
   resumeSubscriptionRenewal,
 } from '@/features/subscriptions/api'
-import { useRecallClaimContext } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import {
   type FlexiblePaymentChoice,
   type FlexiblePurchaseResponse,
@@ -46,11 +45,6 @@ import type {
   StripeCheckoutOpenResult,
   StripeCheckoutPresentation,
 } from '../hooks/use-payment'
-import {
-  getRecallPriceDiscount,
-  selectBestRecallOffer,
-  type RecallPriceDiscount,
-} from '../lib/recall-claim'
 import {
   type LifecyclePlanRecord,
   type WalletSelfSubscriptionData,
@@ -112,18 +106,6 @@ function formatPlanPrice(amount: number): string {
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
-
-function getRecallDiscountLabel(
-  discount: RecallPriceDiscount,
-  percentOff: number,
-  t: Translate
-): string {
-  if (discount.type === 'percent') return `${percentOff}% OFF`
-  return t('{{amount}} {{currency}} off', {
-    amount: discount.discountAmount.toFixed(2),
-    currency: discount.currency,
-  }).toUpperCase()
-}
 
 function getPlanAudience(title: string, t: Translate): string {
   switch (title.trim().toLowerCase()) {
@@ -228,8 +210,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
   const [quoteLoading, setQuoteLoading] = useState(false)
   const [renewalMutationPending, setRenewalMutationPending] = useState(false)
   const renewalMutationInFlightRef = useRef(false)
-  const recallClaim = useRecallClaimContext()
-
   const fetchPlans = useCallback(async () => {
     try {
       const res = await getPublicPlans()
@@ -589,19 +569,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
             {orderedPlans.map((item) => {
               const plan = item.plan
               const price = formatPlanPrice(Number(plan.price_amount || 0))
-              const recallOffer = selectBestRecallOffer(recallClaim.offers, {
-                purchaseKind: 'subscription',
-                productId: plan.stripe_price_id || plan.id,
-                amountMajor: Number(plan.price_amount || 0),
-                currency: plan.currency || 'USD',
-              })
-              const recallDiscount = getRecallPriceDiscount(
-                recallOffer,
-                plan.stripe_price_id || plan.id,
-                'subscription',
-                Number(plan.price_amount || 0),
-                plan.currency || 'USD'
-              )
               const isRecommended =
                 plan.title.trim().toLowerCase() === 'go' &&
                 orderedPlans.length > 1
@@ -644,15 +611,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         ) : null}
                       </div>
                       <div className='flex shrink-0 flex-col items-end gap-1'>
-                        {recallDiscount ? (
-                          <span className='inline-flex rounded-full bg-[#dcfce7] px-2 py-1 text-[11px] font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'>
-                            {getRecallDiscountLabel(
-                              recallDiscount,
-                              Number(recallOffer?.discount.percent_off || 0),
-                              t
-                            )}
-                          </span>
-                        ) : null}
                         {isRecommended ? (
                           <span className='inline-flex items-center gap-1 rounded-full bg-[#f0ebfa] px-2 py-1 text-[11px] font-semibold text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'>
                             <Sparkles className='h-3 w-3' />
@@ -664,15 +622,8 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
 
                     <div className='mt-6 flex items-end gap-2'>
                       <span className='text-5xl font-semibold tracking-tight tabular-nums'>
-                        {recallDiscount
-                          ? formatPlanPrice(recallDiscount.discountedAmount)
-                          : price}
+                        {price}
                       </span>
-                      {recallDiscount ? (
-                        <span className='text-muted-foreground mb-2 text-sm tabular-nums line-through'>
-                          {price}
-                        </span>
-                      ) : null}
                       <span className='text-muted-foreground mb-1 text-sm'>
                         {t('per month')}
                       </span>
@@ -753,27 +704,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         projectedEnd={purchaseProjection?.end_time}
         projectedRemainingDays={purchaseProjection?.remaining_days}
         paymentQuotes={quoteError ? {} : purchaseProjection?.payment_quotes}
-        recallDiscount={
-          purchaseTarget
-            ? getRecallPriceDiscount(
-                selectBestRecallOffer(recallClaim.offers, {
-                  purchaseKind: 'subscription',
-                  productId:
-                    purchaseTarget.plan.plan.stripe_price_id ||
-                    purchaseTarget.plan.plan.id,
-                  amountMajor: Number(
-                    purchaseTarget.plan.plan.price_amount || 0
-                  ),
-                  currency: purchaseTarget.plan.plan.currency || 'USD',
-                }),
-                purchaseTarget.plan.plan.stripe_price_id ||
-                  purchaseTarget.plan.plan.id,
-                'subscription',
-                Number(purchaseTarget.plan.plan.price_amount || 0),
-                purchaseTarget.plan.plan.currency || 'USD'
-              )
-            : null
-        }
         onConfirm={handleConfirmPurchase}
         onQuoteRequest={handleQuoteRequest}
       />

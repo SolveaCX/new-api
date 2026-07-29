@@ -826,7 +826,7 @@ export function Wallet(props: WalletProps) {
           ? t('wallet top-ups')
           : '',
         recallClaimView.products.subscription_price_ids.length > 0 ||
-        recallClaimView.products.subscription_plan_ids.length > 0
+        (recallClaimView.products.subscription_plan_ids?.length ?? 0) > 0
           ? t('subscription plans')
           : '',
       ]

@@ -61,16 +61,6 @@ export class RecallApiError<T = unknown> extends Error {
   }
 }
 
-export class RecallApiError<T = unknown> extends Error {
-  data?: T
-
-  constructor(message: string, data?: T) {
-    super(message)
-    this.name = 'RecallApiError'
-    this.data = data
-  }
-}
-
 function requireRecallSuccess<T>(response: ApiResponse<T>): ApiResponse<T> {
   if (response?.success !== true) {
     throw new RecallApiError(

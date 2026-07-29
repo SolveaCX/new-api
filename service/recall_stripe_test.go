@@ -31,6 +31,13 @@ type recallStripeFakeClient struct {
 	getCheckoutSessionFn  func(context.Context, string, ...string) (*stripe.CheckoutSession, error)
 }
 
+func recallTestCouponPromotion(couponID string) *stripe.PromotionCodePromotion {
+	return &stripe.PromotionCodePromotion{
+		Coupon: &stripe.Coupon{ID: couponID},
+		Type:   stripe.PromotionCodePromotionTypeCoupon,
+	}
+}
+
 type recallStripeRecordingBackend struct {
 	stripe.Backend
 	keys []string

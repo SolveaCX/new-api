@@ -36,7 +36,7 @@ import {
   normalizeSelfSubscriptionData,
   requiresSignedCheckoutQuote,
 } from '../lib/subscription-plan-lifecycle'
-import type { RecallClaimView, RecallOfferView, TopupInfo } from '../types'
+import type { RecallClaimView, TopupInfo } from '../types'
 import { PlanPurchaseDialogContent } from './plan-purchase-dialog'
 import { SubscriptionPlansCard } from './subscription-plans-card'
 
@@ -202,22 +202,6 @@ function renderWalletCardWithRecall(
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
       <RecallClaimProvider claim='signed-recall-claim' view={recallView}>
-        <SubscriptionPlansCard
-          topupInfo={topupInfo}
-          initialPlans={plans}
-          initialSelfData={normalizeSelfSubscriptionData(undefined)}
-          initialLoading={false}
-          userQuota={12345}
-        />
-      </RecallClaimProvider>
-    </I18nextProvider>
-  )
-}
-
-function renderWalletCardWithRecallOffers(recallOffers: RecallOfferView[]) {
-  return renderToStaticMarkup(
-    <I18nextProvider i18n={testI18n}>
-      <RecallClaimProvider offers={recallOffers}>
         <SubscriptionPlansCard
           topupInfo={topupInfo}
           initialPlans={plans}
@@ -592,51 +576,24 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('next period')
   })
 
-  test('shows recall discounts on plan cards without exposing the claim code', () => {
+  test('does not locally discount plan card prices for recall offers', () => {
     const html = renderWalletCardWithRecall()
     const goStart = html.indexOf('Go')
     const proStart = html.indexOf('Pro', goStart)
+    const maxStart = html.indexOf('Max', proStart)
     const goSlice = html.slice(goStart, proStart)
+    const proSlice = html.slice(proStart, maxStart)
+    const maxSlice = html.slice(maxStart)
 
-    expect(goSlice).toContain('$8')
-    expect(goSlice).toContain('20% OFF')
-    expect(goSlice).toContain('line-through')
-    expect(html).not.toContain('signed-recall-claim')
-    expect(html).not.toContain('FKSE')
+    expect(goSlice).toContain('$10')
+    expect(goSlice).not.toContain('20% OFF')
+    expect(goSlice).not.toContain('line-through')
+    expect(goSlice).not.toContain('$8')
+    expect(proSlice).not.toContain('20% OFF')
+    expect(maxSlice).not.toContain('20% OFF')
   })
 
-  test('shows the strongest account recall offer without a link claim', () => {
-    const html = renderWalletCardWithRecallOffers([
-      {
-        ...subscriptionRecallClaim,
-        recipient_id: 101,
-        issued_at: 1_700_000_001,
-        discount: {
-          ...subscriptionRecallClaim.discount,
-          percent_off: 20,
-        },
-      },
-      {
-        ...subscriptionRecallClaim,
-        recipient_id: 102,
-        issued_at: 1_700_000_002,
-        discount: {
-          ...subscriptionRecallClaim.discount,
-          percent_off: 50,
-        },
-      },
-    ])
-    const goStart = html.indexOf('Go')
-    const proStart = html.indexOf('Pro', goStart)
-    const goSlice = html.slice(goStart, proStart)
-
-    expect(goSlice).toContain('50% OFF')
-    expect(goSlice).toContain('$5')
-    expect(html).not.toContain('signed-recall-claim')
-    expect(html).not.toContain('FKSE')
-  })
-
-  test('shows a fixed recall discount as an exact currency reduction', () => {
+  test('does not locally render fixed recall discount labels on plan cards', () => {
     const html = renderWalletCardWithRecall({
       ...subscriptionRecallClaim,
       discount: {
@@ -648,7 +605,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       },
     })
 
-    expect(html).toContain('2.00 USD OFF')
+    expect(html).not.toContain('2.00 USD OFF')
     expect(html).not.toContain('$2 USD OFF')
   })
 })
