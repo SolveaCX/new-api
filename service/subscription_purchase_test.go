@@ -76,6 +76,7 @@ func insertPurchaseServiceUser(t *testing.T, id int, quota int) {
 	require.NoError(t, model.DB.Create(&model.User{
 		Id:       id,
 		Username: "purchase_user_" + t.Name(),
+		Email:    "purchase_user_" + strings.ReplaceAll(t.Name(), "/", "_") + "@example.com",
 		Status:   common.UserStatusEnabled,
 		Quota:    quota,
 		Group:    "plg",
@@ -1675,8 +1676,20 @@ func TestPurchaseSubscriptionReplacementQueriesOldCheckoutBeforeContract(t *test
 	)
 	t.Cleanup(restoreStripeAccessors)
 	var queriedTables []string
+	recordProviderExpiredQueries := false
+	originalHook := subscriptionPurchaseAfterProviderExpirationHook
+	t.Cleanup(func() { subscriptionPurchaseAfterProviderExpirationHook = originalHook })
+	subscriptionPurchaseAfterProviderExpirationHook = func() {
+		if originalHook != nil {
+			originalHook()
+		}
+		recordProviderExpiredQueries = true
+	}
 	callbackName := "test_purchase_replacement_lock_order"
 	require.NoError(t, model.DB.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if !recordProviderExpiredQueries {
+			return
+		}
 		queriedTables = append(queriedTables, tx.Statement.Table)
 	}))
 	t.Cleanup(func() {
@@ -2371,10 +2384,13 @@ func TestPurchaseSubscriptionRecallBalanceConversionRollsBackWithLaterTransactio
 
 func discountedRecallPurchaseQuote(fixture recallClaimFixture, unitPrice float64, months int, discountMinor int64) *SubscriptionPurchaseQuote {
 	quote := subscriptionPurchaseTestQuote("USD", unitPrice, months)
+	quote.DiscountKind = SubscriptionDiscountKindRecall
 	quote.DiscountAmountMinor = discountMinor
 	quote.DiscountAmount = float64(discountMinor) / 100
 	quote.PaymentAmountMinor = quote.OriginalTotalAmountMinor - discountMinor
 	quote.Total = float64(quote.PaymentAmountMinor) / 100
+	quote.OtherDiscountKind = SubscriptionDiscountKindRecall
+	quote.OtherDiscountAmountMinor = discountMinor
 	quote.RecallCampaignID = fixture.campaign.Id
 	quote.RecallRecipientID = fixture.recipient.Id
 	quote.RecallPromotionCodeID = "promo_recall"
@@ -2881,19 +2897,7 @@ func TestPurchaseSubscriptionRecallReplayIgnoresDiscountChangedAfterOriginalOrde
 		Months:        3,
 		RequestID:     "recall-replay-discount-change",
 		RecallClaim:   fixture.claim,
-		VerifiedQuote: &SubscriptionPurchaseQuote{
-			Currency:                 "USD",
-			UnitPrice:                1,
-			UnitAmountMinor:          100,
-			OriginalTotal:            3,
-			OriginalTotalAmountMinor: 300,
-			DiscountAmount:           0.20,
-			DiscountAmountMinor:      20,
-			Total:                    2.80,
-			PaymentAmountMinor:       280,
-			RecallCampaignID:         fixture.campaign.Id,
-			RecallRecipientID:        fixture.recipient.Id,
-		},
+		VerifiedQuote: discountedRecallPurchaseQuote(fixture, 1, 3, 20),
 	}
 
 	first, err := PurchaseSubscription(original)

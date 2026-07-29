@@ -100,7 +100,7 @@ func createRecallClaimFixture(t *testing.T, now time.Time) recallClaimFixture {
 	})
 	require.NoError(t, err)
 	campaign := model.RecallCampaign{
-		Name: "win-back", Status: model.RecallCampaignRunning, AudienceTemplate: "first_purchase",
+		Name: "win-back", Status: model.RecallCampaignRunning, CampaignType: model.RecallCampaignTypePromotion, AudienceTemplate: "first_purchase",
 		AudienceConfig: `{}`, ExecutionMode: "manual", CouponSource: "automatic",
 		DiscountConfig: string(discountJSON), ProductScope: string(productsJSON), EmailSequenceConfig: `[]`,
 	}
@@ -132,7 +132,7 @@ func createRecallEmailOnlyClaimFixture(t *testing.T, now time.Time, email string
 	})
 	require.NoError(t, err)
 	campaign := model.RecallCampaign{
-		Name: "email-only win-back", Status: model.RecallCampaignRunning, AudienceTemplate: "specified_users",
+		Name: "email-only win-back", Status: model.RecallCampaignRunning, CampaignType: model.RecallCampaignTypePromotion, AudienceTemplate: "specified_users",
 		AudienceConfig: `{}`, ExecutionMode: "manual", CouponSource: "automatic",
 		DiscountConfig: string(discountJSON), ProductScope: string(productsJSON), EmailSequenceConfig: `[]`,
 	}
@@ -161,7 +161,7 @@ func createRecallOfferFixture(t *testing.T, user model.User, now time.Time, name
 	productsJSON, err := common.Marshal(products)
 	require.NoError(t, err)
 	campaign := model.RecallCampaign{
-		Name: name, Status: status, AudienceTemplate: "specified_users",
+		Name: name, Status: status, CampaignType: model.RecallCampaignTypePromotion, AudienceTemplate: "specified_users",
 		AudienceConfig: `{}`, ExecutionMode: "manual", CouponSource: "automatic",
 		DiscountConfig: string(discountJSON), ProductScope: string(productsJSON), EmailSequenceConfig: `[]`,
 	}
