@@ -277,6 +277,7 @@ func TestRecallOfferCandidatesApplyLimitOrderAndBindOnlySelectedEmailRows(t *tes
 	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("email", user.Email).Error)
 
 	promotionID := func(value string) *string { return &value }
+	recipientIDs := make([]int64, 0, wantLimit+5)
 	for i := 0; i < wantLimit+5; i++ {
 		campaign := newRecallRepositoryCampaign(fmt.Sprintf("offer-limit-%03d", i))
 		campaign.Status = RecallCampaignRunning
@@ -299,12 +300,17 @@ func TestRecallOfferCandidatesApplyLimitOrderAndBindOnlySelectedEmailRows(t *tes
 			recipient.PromotionIssuedAt = 0
 			recipient.CreatedAt = now + 100
 		}
+		if i >= wantLimit+3 {
+			recipient.PromotionIssuedAt = now + 200 + int64(i)
+		}
 		require.NoError(t, DB.Create(&recipient).Error)
+		recipientIDs = append(recipientIDs, recipient.Id)
 	}
 
 	candidates, err := ListRecallOfferCandidatesForUserWithContext(context.Background(), user.Id, user.Email, now)
 	require.NoError(t, err)
 	require.Len(t, candidates, wantLimit)
+	candidateIDs := make([]int64, 0, len(candidates))
 	for i := 1; i < len(candidates); i++ {
 		prev := candidates[i-1]
 		next := candidates[i]
@@ -316,7 +322,11 @@ func TestRecallOfferCandidatesApplyLimitOrderAndBindOnlySelectedEmailRows(t *tes
 	}
 	for _, candidate := range candidates {
 		require.Equal(t, user.Id, candidate.Recipient.UserId)
+		candidateIDs = append(candidateIDs, candidate.Recipient.Id)
 	}
+	require.Contains(t, candidateIDs, recipientIDs[wantLimit+3], "latest high-id offer must be considered before the cap")
+	require.Contains(t, candidateIDs, recipientIDs[wantLimit+4], "latest high-id offer must be considered before the cap")
+	require.NotContains(t, candidateIDs, recipientIDs[wantLimit+2], "only the top 100 selected offers should bind")
 
 	var bound int64
 	require.NoError(t, DB.Model(&RecallRecipient{}).Where("user_id = ?", user.Id).Count(&bound).Error)
@@ -1082,12 +1092,13 @@ func TestListRecallOfferCandidatesUsesSetBasedFinalLoad(t *testing.T) {
 	require.LessOrEqual(t, queryCount, 4, "candidate loading must not add recipient and campaign queries per offer")
 }
 
-func TestListRecallOfferCandidatesChunksLargeSetBasedFinalLoads(t *testing.T) {
+func TestListRecallOfferCandidatesCapsLargeSetBasedFinalLoad(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 
 	const (
 		now            int64 = 1_800_000_000
-		candidateCount       = 501
+		candidateCount       = 105
+		wantLimit            = 100
 	)
 	user := User{
 		Username: "recall-offer-chunk-user", Password: "password", Status: common.UserStatusEnabled,
@@ -1125,9 +1136,9 @@ func TestListRecallOfferCandidatesChunksLargeSetBasedFinalLoads(t *testing.T) {
 	candidates, err := ListRecallOfferCandidatesForUserWithContext(context.Background(), user.Id, strings.ToLower(user.Email), now)
 
 	require.NoError(t, err)
-	require.Len(t, candidates, candidateCount)
-	require.Equal(t, 4, queryCounts["RecallRecipient"], "two bounded cursor scans plus two bounded final recipient loads")
-	require.Equal(t, 2, queryCounts["RecallCampaign"], "campaign hydration must use the same bounded batching")
+	require.Len(t, candidates, wantLimit)
+	require.LessOrEqual(t, queryCounts["RecallRecipient"], 2, "candidate and final recipient loading must stay set-based")
+	require.LessOrEqual(t, queryCounts["RecallCampaign"], 1, "campaign hydration must stay set-based")
 }
 
 func TestListRecallOfferCandidatePageForUserUsesCursorWithoutOmittingLaterOffers(t *testing.T) {

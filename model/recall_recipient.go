@@ -239,28 +239,19 @@ func BindRecallRecipientUserWithContext(ctx context.Context, recipientID int64, 
 }
 
 func ListRecallOfferCandidatesForUserWithContext(ctx context.Context, userID int, normalizedEmail string, now int64) ([]RecallOfferCandidate, error) {
-	candidates := make([]RecallOfferCandidate, 0)
-	afterRecipientID := int64(0)
-	for {
-		remaining := recallOfferCandidateLimit - len(candidates)
-		if remaining <= 0 {
-			sortRecallOfferCandidates(candidates)
-			return candidates, nil
-		}
-		page, err := ListRecallOfferCandidatePageForUserWithContext(ctx, userID, normalizedEmail, now, afterRecipientID, remaining)
-		if err != nil {
-			return nil, err
-		}
-		candidates = append(candidates, page.Candidates...)
-		if !page.HasMore {
-			sortRecallOfferCandidates(candidates)
-			return candidates, nil
-		}
-		afterRecipientID = page.NextAfterRecipientID
+	page, err := listRecallOfferCandidatePageForUserWithContext(ctx, userID, normalizedEmail, now, 0, recallOfferCandidateLimit, recallOfferCandidateOrderClause("recall_recipients"), false)
+	if err != nil {
+		return nil, err
 	}
+	sortRecallOfferCandidates(page.Candidates)
+	return page.Candidates, nil
 }
 
 func ListRecallOfferCandidatePageForUserWithContext(ctx context.Context, userID int, normalizedEmail string, now int64, afterRecipientID int64, limit int) (RecallOfferCandidatePage, error) {
+	return listRecallOfferCandidatePageForUserWithContext(ctx, userID, normalizedEmail, now, afterRecipientID, limit, "recall_recipients.id ASC", true)
+}
+
+func listRecallOfferCandidatePageForUserWithContext(ctx context.Context, userID int, normalizedEmail string, now int64, afterRecipientID int64, limit int, orderClause string, allowPaging bool) (RecallOfferCandidatePage, error) {
 	page := RecallOfferCandidatePage{Candidates: make([]RecallOfferCandidate, 0)}
 	if err := ctx.Err(); err != nil {
 		return page, err
@@ -275,7 +266,7 @@ func ListRecallOfferCandidatePageForUserWithContext(ctx context.Context, userID 
 	if limit > recallOfferCandidateIDBatchSize {
 		limit = recallOfferCandidateIDBatchSize
 	}
-	allowMorePages := limit < recallOfferCandidateLimit
+	allowMorePages := allowPaging && limit < recallOfferCandidateLimit
 	if limit > recallOfferCandidateLimit {
 		limit = recallOfferCandidateLimit
 	}
@@ -312,7 +303,7 @@ func ListRecallOfferCandidatePageForUserWithContext(ctx context.Context, userID 
 	}
 	query = applyRecallOfferRecipientFilters(query, "recall_recipients", now)
 	err := query.
-		Order("recall_recipients.id ASC").
+		Order(orderClause).
 		Limit(limit).
 		Find(&recipients).Error
 	if err != nil {
