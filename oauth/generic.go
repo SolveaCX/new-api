@@ -22,6 +22,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"gorm.io/gorm"
 )
 
 // AuthStyle defines how to send client credentials
@@ -290,13 +291,16 @@ func (p *GenericOAuthProvider) GetUserInfo(ctx context.Context, token *OAuthToke
 	}, nil
 }
 
-func (p *GenericOAuthProvider) IsUserIDTaken(providerUserID string) bool {
+func (p *GenericOAuthProvider) IsUserIDTaken(providerUserID string) (bool, error) {
 	return model.IsProviderUserIdTaken(p.config.Id, providerUserID)
 }
 
 func (p *GenericOAuthProvider) FillUserByProviderID(user *model.User, providerUserID string) error {
 	foundUser, err := model.GetUserByOAuthBinding(p.config.Id, providerUserID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
 		return err
 	}
 	*user = *foundUser

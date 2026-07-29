@@ -225,7 +225,7 @@ func googleUsernameFromEmail(email string) string {
 	return "google_" + local
 }
 
-func (p *GoogleProvider) IsUserIDTaken(providerUserID string) bool {
+func (p *GoogleProvider) IsUserIDTaken(providerUserID string) (bool, error) {
 	return model.IsGoogleIdAlreadyTaken(providerUserID)
 }
 

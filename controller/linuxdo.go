@@ -48,7 +48,12 @@ func LinuxDoBind(c *gin.Context) {
 		LinuxDOId: strconv.Itoa(linuxdoUser.Id),
 	}
 
-	if model.IsLinuxDOIdAlreadyTaken(user.LinuxDOId) {
+	isTaken, err := model.IsLinuxDOIdAlreadyTaken(user.LinuxDOId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if isTaken {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "该 Linux DO 账户已被绑定",
@@ -204,7 +209,12 @@ func LinuxdoOAuth(c *gin.Context) {
 	}
 
 	// Check if user exists
-	if model.IsLinuxDOIdAlreadyTaken(user.LinuxDOId) {
+	isTaken, err := model.IsLinuxDOIdAlreadyTaken(user.LinuxDOId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if isTaken {
 		err := user.FillUserByLinuxDOId()
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
