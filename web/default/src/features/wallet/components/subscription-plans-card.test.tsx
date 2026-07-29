@@ -2085,6 +2085,20 @@ describe('flexible payment quote interaction helpers', () => {
 })
 
 describe('subscription embedded checkout invariants', () => {
+  test('passes only an active live wallet recall claim into subscription checkout context', () => {
+    const walletSource = readFileSync(
+      new URL('../index.tsx', import.meta.url),
+      'utf8'
+    )
+    const providerStart = walletSource.indexOf('<RecallClaimProvider')
+    const providerEnd = walletSource.indexOf('>', providerStart)
+    const providerOpeningTag = walletSource.slice(providerStart, providerEnd)
+
+    expect(providerOpeningTag).toContain('claim={')
+    expect(providerOpeningTag).toContain("recallClaimStatus === 'active'")
+    expect(providerOpeningTag).toContain('recallClaim')
+  })
+
   test('keeps Stripe Embedded Checkout lifecycle only in the existing dialog', () => {
     const walletRoot = new URL('../', import.meta.url)
     const filesToScan = (directory: URL): string[] =>

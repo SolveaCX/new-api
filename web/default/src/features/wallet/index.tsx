@@ -920,6 +920,11 @@ export function Wallet(props: WalletProps) {
             <RecallClaimProvider
               offers={recallOffers}
               loading={recallOffersLoading}
+              claim={
+                recallClaimStatus === 'active'
+                  ? recallClaim || undefined
+                  : undefined
+              }
               view={
                 recallClaimStatus === 'active'
                   ? recallClaimView || undefined

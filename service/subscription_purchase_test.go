@@ -347,11 +347,82 @@ func TestPurchaseSubscriptionStripeRecurringResolvesRecallPromotionCode(t *testi
 	require.Equal(t, ChangePlanStatusCheckoutRequired, result.Status)
 }
 
-func TestPurchaseSubscriptionStripeRecurringUsesJPYMinorUnitsForRecallSelection(t *testing.T) {
+func TestPurchaseSubscriptionStripeRecurringUsesSubmittedRecallClaimInsteadOfBestOffer(t *testing.T) {
 	setupSubscriptionRecallPurchaseTestDB(t)
 	now := time.Now().UTC()
 	user := model.User{
 		Id:       742601,
+		Username: "purchase_exact_recall_user",
+		Email:    "purchase-exact-recall@example.com",
+		Status:   common.UserStatusEnabled,
+		Group:    "plg",
+		AffCode:  "purchase_exact_recall_aff",
+	}
+	require.NoError(t, model.DB.Create(&user).Error)
+	weakClaim := strings.Repeat("w", 48)
+	weakHash := recallClaimHash(weakClaim)
+	weak := createRecallOfferFixture(t, user, now.Add(-time.Minute), "exact weak", model.RecallCampaignRunning,
+		RecallDiscountConfig{Type: "percent", PercentOff: 10},
+		RecallProductScope{SubscriptionPriceIDs: []string{"price_subscription_exact"}}, func(recipient *model.RecallRecipient) {
+			recipient.ClaimTokenHash = &weakHash
+		})
+	strongClaim := strings.Repeat("s", 48)
+	strongHash := recallClaimHash(strongClaim)
+	strong := createRecallOfferFixture(t, user, now, "exact strong", model.RecallCampaignRunning,
+		RecallDiscountConfig{Type: "percent", PercentOff: 50},
+		RecallProductScope{SubscriptionPriceIDs: []string{"price_subscription_exact"}}, func(recipient *model.RecallRecipient) {
+			recipient.ClaimTokenHash = &strongHash
+		})
+	require.NotEqual(t, weak.recipient.Id, strong.recipient.Id)
+	plan := insertPurchaseServicePlan(t, 7427, 1, 10, 100)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).
+		Update("stripe_price_id", "price_subscription_exact").Error)
+	originalCreator := stripeSubscriptionCheckoutCreator
+	t.Cleanup(func() { stripeSubscriptionCheckoutCreator = originalCreator })
+	stripeSubscriptionCheckoutCreator = func(_ context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+		require.NotNil(t, input.RecallDiscount)
+		require.Equal(t, "promo_exact_weak", input.RecallDiscount.PromotionCodeID)
+		require.Equal(t, weak.campaign.Id, input.RecallDiscount.CampaignID)
+		require.Equal(t, weak.recipient.Id, input.RecallDiscount.RecipientID)
+		return &StripeSubscriptionCheckoutSession{
+			ID:  "cs_purchase_exact_recall",
+			URL: "https://checkout.stripe.test/purchase-exact-recall",
+		}, nil
+	}
+
+	quoteResult, err := QuoteSubscriptionPurchase(PurchaseSubscriptionCommand{
+		UserID:        user.Id,
+		PlanID:        plan.Id,
+		PaymentChoice: SubscriptionPaymentChoiceStripeRecurring,
+		Months:        1,
+		RecallClaim:   weakClaim,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountKindRecall, quoteResult.DiscountKind)
+	require.Equal(t, int64(100), quoteResult.DiscountAmountMinor)
+	require.Equal(t, weak.campaign.Id, quoteResult.RecallCampaignID)
+	require.Equal(t, weak.recipient.Id, quoteResult.RecallRecipientID)
+	require.Equal(t, "promo_exact_weak", quoteResult.RecallPromotionCodeID)
+
+	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+		UserID:        user.Id,
+		PlanID:        plan.Id,
+		PaymentChoice: SubscriptionPaymentChoiceStripeRecurring,
+		Months:        1,
+		RequestID:     "stripe-purchase-exact-recall",
+		RecallClaim:   weakClaim,
+		VerifiedQuote: purchaseQuoteFromResult(quoteResult),
+	})
+	require.NoError(t, err)
+	require.Equal(t, ChangePlanStatusCheckoutRequired, result.Status)
+}
+
+func TestPurchaseSubscriptionStripeRecurringUsesJPYMinorUnitsForRecallSelection(t *testing.T) {
+	setupSubscriptionRecallPurchaseTestDB(t)
+	now := time.Now().UTC()
+	user := model.User{
+		Id:       742602,
 		Username: "purchase_jpy_recall_user",
 		Email:    "purchase-jpy-recall@example.com",
 		Status:   common.UserStatusEnabled,

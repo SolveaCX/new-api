@@ -108,7 +108,6 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"message": "error", "data": i18n.T(c, i18n.MsgPaymentRecallClaimUnavailable)})
 			return
 		}
-		req.RecallClaim = ""
 	}
 
 	result, err := requestStripeRecurringSubscriptionViaPurchasePath(userId, plan, req)
