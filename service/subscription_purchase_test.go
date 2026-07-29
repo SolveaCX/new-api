@@ -280,6 +280,7 @@ func TestPurchaseSubscriptionStripeRecurringResolvesRecallPromotionCode(t *testi
 	require.NoError(t, model.DB.Create(&model.User{
 		Id:       fixture.recipient.UserId,
 		Username: "purchase_recall_user",
+		Email:    "user@example.com",
 		Status:   common.UserStatusEnabled,
 		Group:    "plg",
 		AffCode:  "purchase_recall_aff",
