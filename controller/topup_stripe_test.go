@@ -2635,7 +2635,7 @@ func TestFulfillSubscriptionOrderBindsCheckoutSubscriptionOnce(t *testing.T) {
 	require.EqualValues(t, 1, subCount)
 }
 
-func TestStripeSubscriptionWebhookUpdatedAppliesPassiveSnapshotOnceWithoutChangingRenewalDecision(t *testing.T) {
+func TestStripeSubscriptionWebhookUpdatedAppliesPassiveSnapshotOnceWithoutOverwritingLifecycle(t *testing.T) {
 	setupStripeFulfillmentTestDB(t)
 	binding := insertStripeFulfillmentSubscriptionBinding(t, 703, "sub_webhook_update", "active", false)
 	originalSnapshot := stripeSubscriptionSnapshotFromSubscriptionEvent
