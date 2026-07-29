@@ -576,7 +576,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('next period')
   })
 
-  test('does not locally discount plan card prices for recall offers', () => {
+  test('shows a recall subscription discount only on eligible Stripe plans', () => {
     const html = renderWalletCardWithRecall()
     const goStart = html.indexOf('Go')
     const proStart = html.indexOf('Pro', goStart)
@@ -586,14 +586,18 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     const maxSlice = html.slice(maxStart)
 
     expect(goSlice).toContain('$10')
-    expect(goSlice).not.toContain('20% OFF')
-    expect(goSlice).not.toContain('line-through')
-    expect(goSlice).not.toContain('$8')
+    expect(goSlice).toContain('20% OFF')
+    expect(goSlice).toContain('line-through')
+    expect(goSlice).toContain('$8')
+    expect(goSlice).toContain('Save $2')
+    expect(goSlice.indexOf('20% OFF')).toBeLessThan(
+      goSlice.indexOf('Recommended')
+    )
     expect(proSlice).not.toContain('20% OFF')
     expect(maxSlice).not.toContain('20% OFF')
   })
 
-  test('does not locally render fixed recall discount labels on plan cards', () => {
+  test('shows a fixed recall discount as an exact currency reduction', () => {
     const html = renderWalletCardWithRecall({
       ...subscriptionRecallClaim,
       discount: {
@@ -605,7 +609,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       },
     })
 
-    expect(html).not.toContain('2.00 USD OFF')
+    expect(html).toContain('2.00 USD OFF')
+    expect(html).toContain('Save $2')
     expect(html).not.toContain('$2 USD OFF')
   })
 })
@@ -1568,13 +1573,13 @@ describe('subscription embedded checkout invariants', () => {
     expect(cardSource).toContain('quoteError')
   })
 
-  test('does not compute subscription card recall prices locally', () => {
+  test('keeps local recall pricing limited to the plan card preview', () => {
     const cardSource = readFileSync(
       new URL('./subscription-plans-card.tsx', import.meta.url),
       'utf8'
     )
 
-    expect(cardSource).not.toContain('getRecallPriceDiscount')
-    expect(cardSource).not.toContain('discountedAmount')
+    expect(cardSource).toContain('getRecallPriceDiscount')
+    expect(cardSource).toContain('discountedAmount')
   })
 })
