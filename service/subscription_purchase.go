@@ -441,7 +441,7 @@ func ReplaySubscriptionPurchase(cmd PurchaseSubscriptionCommand) (*PurchaseSubsc
 		if err != nil || !found {
 			return nil, found, err
 		}
-		if existing.ToPlanId != cmd.PlanID {
+		if existing.ToPlanId != cmd.PlanID || existing.PaymentMode != model.SubscriptionPaymentModeStripeRecurring {
 			return nil, false, errors.New("subscription purchase idempotency conflict")
 		}
 		change, err := ChangeSubscriptionPlan(ChangePlanCommand{
