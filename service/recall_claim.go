@@ -428,14 +428,14 @@ func resolveRecallSubscriptionPlanIDs(ctx context.Context, rawPriceIDs []string)
 
 func resolveRecallSubscriptionPlanIDsByPriceID(ctx context.Context, rawPriceIDs []string) (map[string][]int, error) {
 	priceIDs := normalizeRecallStripeIDs(rawPriceIDs)
+	planIDsByPriceID := make(map[string][]int, len(priceIDs))
 	if len(priceIDs) == 0 {
-		return map[string][]int{}, nil
+		return planIDsByPriceID, nil
 	}
 	plans, err := model.ListRecallSubscriptionPlansByStripePriceIDsWithContext(ctx, priceIDs)
 	if err != nil {
 		return nil, err
 	}
-	planIDsByPriceID := make(map[string][]int, len(plans))
 	for _, plan := range plans {
 		priceID := strings.TrimSpace(plan.StripePriceId)
 		if priceID != "" && plan.Id > 0 && plan.Enabled {

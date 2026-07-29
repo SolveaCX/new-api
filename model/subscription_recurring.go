@@ -623,6 +623,7 @@ func CompleteSubscriptionOrderWithProviderBinding(tradeNo string, providerPayloa
 	var logMoney float64
 	var logPaymentMethod string
 	var upgradeGroup string
+	var rewardTradeNo string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order SubscriptionOrder
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
@@ -636,6 +637,7 @@ func CompleteSubscriptionOrderWithProviderBinding(tradeNo string, providerPayloa
 			return err
 		}
 		result = binding
+		rewardTradeNo = order.TradeNo
 		if order.Status == common.TopUpStatusSuccess {
 			return nil
 		}
@@ -664,9 +666,6 @@ func CompleteSubscriptionOrderWithProviderBinding(tradeNo string, providerPayloa
 		if err := tx.Save(&order).Error; err != nil {
 			return err
 		}
-		if err := GrantInviteSubscriptionDiscountAfterPaidOrderTx(tx, &order); err != nil {
-			return err
-		}
 		logUserId = order.UserId
 		logPlanTitle = plan.Title
 		logMoney = order.Money
@@ -676,6 +675,7 @@ func CompleteSubscriptionOrderWithProviderBinding(tradeNo string, providerPayloa
 	if err != nil {
 		return nil, err
 	}
+	deliverInviteSubscriptionRewardBestEffort(rewardTradeNo)
 	if upgradeGroup != "" && logUserId > 0 {
 		_ = UpdateUserGroupCache(logUserId, upgradeGroup)
 	}

@@ -1051,6 +1051,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	var logMoney float64
 	var logPaymentMethod string
 	var upgradeGroup string
+	var rewardTradeNo string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order SubscriptionOrder
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
@@ -1059,6 +1060,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if expectedPaymentProvider != "" && order.PaymentProvider != expectedPaymentProvider {
 			return ErrPaymentMethodMismatch
 		}
+		rewardTradeNo = order.TradeNo
 		if order.Status == common.TopUpStatusSuccess {
 			return nil
 		}
@@ -1091,9 +1093,6 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err := tx.Save(&order).Error; err != nil {
 			return err
 		}
-		if err := GrantInviteSubscriptionDiscountAfterPaidOrderTx(tx, &order); err != nil {
-			return err
-		}
 		logUserId = order.UserId
 		logPlanTitle = plan.Title
 		logMoney = order.Money
@@ -1103,6 +1102,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 	if err != nil {
 		return err
 	}
+	deliverInviteSubscriptionRewardBestEffort(rewardTradeNo)
 	if upgradeGroup != "" && logUserId > 0 {
 		_ = UpdateUserGroupCache(logUserId, upgradeGroup)
 	}
@@ -1322,6 +1322,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	var logMoney float64
 	var chargedQuota int
 	var upgradeGroup string
+	var rewardTradeNo string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		plan, err := getSubscriptionPlanByIdTx(tx, planId)
 		if err != nil {
@@ -1393,20 +1394,19 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		if err := upsertSubscriptionTopUpTx(tx, order); err != nil {
 			return err
 		}
-		if err := GrantInviteSubscriptionDiscountAfterPaidOrderTx(tx, order); err != nil {
-			return err
-		}
 
 		logPlanTitle = plan.Title
 		logMoney = chargedPrice
 		chargedQuota = requiredQuota
 		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
+		rewardTradeNo = order.TradeNo
 		return nil
 	})
 	if err != nil {
 		return err
 	}
 
+	deliverInviteSubscriptionRewardBestEffort(rewardTradeNo)
 	if chargedQuota > 0 {
 		if err := cacheDecrUserQuota(userId, int64(chargedQuota)); err != nil {
 			common.SysLog("failed to decrease user quota cache after subscription balance purchase: " + err.Error())
@@ -1418,6 +1418,15 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 	msg := fmt.Sprintf("使用余额购买订阅成功，套餐: %s，支付金额: %.2f，扣除额度: %d", logPlanTitle, logMoney, chargedQuota)
 	RecordLog(userId, LogTypeTopup, msg)
 	return nil
+}
+
+func deliverInviteSubscriptionRewardBestEffort(tradeNo string) {
+	if strings.TrimSpace(tradeNo) == "" || !common.InviteRewardSubscriptionMode {
+		return
+	}
+	if err := TryGrantInviteSubscriptionRewardAfterOrderCompleted(tradeNo); err != nil {
+		common.SysError(fmt.Sprintf("invite subscription reward delivery failed trade_no=%s error=%q", tradeNo, err.Error()))
+	}
 }
 
 // GetAllActiveUserSubscriptions returns all active subscriptions for a user.

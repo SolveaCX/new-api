@@ -150,6 +150,7 @@ func main() {
 	service.StartSubscriptionQuotaResetTask()
 	service.StartStripeSubscriptionReconciliationTask()
 	service.StartSupplierDailyAggregationTask()
+	service.StartInviteSubscriptionRewardReconciliationTask()
 
 	// Stripe user win-back campaign scheduler (master node, default-off)
 	service.StartRecallCampaignTasks()
