@@ -357,6 +357,51 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/upstream_updates/detect", controller.DetectChannelUpstreamModelUpdates)
 			channelRoute.POST("/upstream_updates/detect_all", controller.DetectAllChannelUpstreamModelUpdates)
 		}
+		supplyChainRoute := apiRouter.Group("/supply-chain")
+		supplyChainRoute.Use(middleware.FinanceAuth())
+		{
+			supplyChainRoute.GET("/accounting-facts/pending", controller.ListPendingSupplyChainAccountingFacts)
+			supplyChainRoute.POST("/accounting-facts/:attempt_id/resolve", supplierSupplyChainMutation(controller.ResolvePendingSupplyChainAccountingFact)...)
+			supplyChainRoute.POST("/historical-imports", supplierSupplyChainMutation(controller.CreateSupplierHistoricalEstimateImport)...)
+			supplyChainRoute.GET("/historical-imports", controller.ListSupplierHistoricalEstimateImports)
+			supplyChainRoute.GET("/historical-imports/:id", controller.GetSupplierHistoricalEstimateImport)
+			supplyChainRoute.POST("/historical-imports/:id/publish", supplierSupplyChainMutation(controller.PublishSupplierHistoricalEstimateImport)...)
+			supplyChainRoute.GET("/historical-imports/:id/summaries", controller.ListSupplierHistoricalEstimateSummaries)
+
+			supplyChainRoute.GET("/suppliers", controller.ListSupplyChainSuppliers)
+			supplyChainRoute.GET("/suppliers/:id", controller.GetSupplyChainSupplier)
+			supplyChainRoute.POST("/suppliers", supplierSupplyChainMutation(controller.CreateSupplyChainSupplier)...)
+			supplyChainRoute.PATCH("/suppliers/:id", supplierSupplyChainMutation(controller.UpdateSupplyChainSupplier)...)
+			supplyChainRoute.POST("/suppliers/:id/inactivate", supplierSupplyChainMutation(controller.InactivateSupplyChainSupplier)...)
+
+			supplyChainRoute.GET("/contracts", controller.ListSupplyChainContracts)
+			supplyChainRoute.GET("/contracts/:id", controller.GetSupplyChainContract)
+			supplyChainRoute.POST("/contracts", supplierSupplyChainMutation(controller.CreateSupplyChainContract)...)
+			supplyChainRoute.PATCH("/contracts/:id", supplierSupplyChainMutation(controller.UpdateSupplyChainContract)...)
+			supplyChainRoute.POST("/contracts/:id/inactivate", supplierSupplyChainMutation(controller.InactivateSupplyChainContract)...)
+			supplyChainRoute.GET("/contracts/:id/rates", controller.ListSupplyChainRateVersions)
+			supplyChainRoute.POST("/contracts/:id/rates", supplierSupplyChainMutation(controller.CreateSupplyChainRateVersion)...)
+			supplyChainRoute.GET("/contracts/:id/inventory-adjustments", controller.ListSupplyChainInventoryAdjustments)
+			supplyChainRoute.POST("/contracts/:id/inventory-adjustments", supplierSupplyChainMutation(controller.CreateSupplyChainInventoryAdjustment)...)
+
+			supplyChainRoute.GET("/exclusions", controller.ListSupplyChainExclusionRules)
+			supplyChainRoute.POST("/exclusions", supplierSupplyChainMutation(controller.CreateSupplyChainExclusionRule)...)
+			supplyChainRoute.GET("/channel-bindings", controller.ListSupplyChainChannelBindings)
+			supplyChainRoute.GET("/channel-bindings/:channel_id", controller.GetSupplyChainChannelBinding)
+			supplyChainRoute.GET("/channel-binding-policy-v1", controller.GetSupplyChainAccountingPolicyCapability)
+			supplyChainRoute.PUT("/channel-binding-policy-v1", supplierSupplyChainMutation(controller.UpdateSupplyChainAccountingPolicyCapability)...)
+			supplyChainRoute.GET("/runtime-settings-v1", controller.GetSupplyChainAccountingRuntimeSettings)
+			supplyChainRoute.PUT("/runtime-settings-v1", supplierSupplyChainMutation(controller.UpdateSupplyChainAccountingRuntimeSettings)...)
+			supplyChainRoute.PUT("/channel-bindings/:channel_id/policy-v1", supplierSupplyChainMutation(controller.BindSupplyChainChannel)...)
+			supplyChainRoute.DELETE("/channel-bindings/:channel_id/policy-v1", supplierSupplyChainMutation(controller.UnbindSupplyChainChannel)...)
+
+			supplyChainRoute.GET("/reports/overview", controller.GetSupplyChainReportOverview)
+			supplyChainRoute.GET("/reports/trend", controller.GetSupplyChainReportTrend)
+			supplyChainRoute.GET("/reports/contracts", controller.ListSupplyChainReportContracts)
+			supplyChainRoute.GET("/reports/contracts/:id", controller.GetSupplyChainReportContract)
+			supplyChainRoute.GET("/reports/channels", controller.ListSupplyChainReportChannels)
+			supplyChainRoute.GET("/reports/breakdown", controller.ListSupplyChainReportBreakdown)
+		}
 		codexModelGovernanceRoute := apiRouter.Group("/codex_model_governance")
 		codexModelGovernanceRoute.Use(middleware.AdminAuth())
 		{
@@ -429,7 +474,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		logRoute := apiRouter.Group("/log")
 		logRoute.GET("/", middleware.AdminAuth(), controller.GetAllLogs)
-		logRoute.DELETE("/", middleware.AdminAuth(), controller.DeleteHistoryLogs)
+		logRoute.DELETE("/", middleware.FinanceAuth(), middleware.CriticalRateLimit(), middleware.SecureVerificationRequired(), controller.DeleteHistoryLogs)
 		logRoute.GET("/request_samples", middleware.RootAuth(), controller.GetLogRequestSamples)
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
@@ -540,5 +585,12 @@ func SetApiRouter(router *gin.Engine) {
 			deploymentsRoute.POST("/:id/extend", controller.ExtendDeployment)
 			deploymentsRoute.DELETE("/:id", controller.DeleteDeployment)
 		}
+	}
+}
+
+func supplierSupplyChainMutation(handler gin.HandlerFunc) []gin.HandlerFunc {
+	return []gin.HandlerFunc{
+		middleware.CriticalRateLimit(),
+		handler,
 	}
 }

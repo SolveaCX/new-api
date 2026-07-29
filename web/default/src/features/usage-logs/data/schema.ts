@@ -22,6 +22,35 @@ For commercial licensing, please contact support@quantumnous.com
  */
 import { z } from 'zod'
 
+export const supplierAccountingPricingEvidenceSchema = z.object({
+  mode: z.enum(['ratio', 'fixed', 'tiered']),
+  model_ratio_ppm: z.number().optional(),
+  group_multiplier_ppm: z.number().optional(),
+  source: z.string().optional(),
+  key: z.string().optional(),
+  expression_version: z.number().optional(),
+  expression_fingerprint: z.string().optional(),
+  dimensions: z.array(z.enum(['audio', 'tool', 'image'])).optional(),
+})
+
+export const supplierAccountingProjectionSchema = z.object({
+  binding_version_id: z.number(),
+  supplier_id: z.number(),
+  contract_id: z.number(),
+  rate_version_id: z.number(),
+  procurement_multiplier_ppm: z.number(),
+  sales_multiplier_ppm: z.number().optional(),
+  official_list_micro_usd: z.string().optional(),
+  sales_micro_usd: z.string().optional(),
+  procurement_cost_micro_usd: z.string().optional(),
+  gross_profit_micro_usd: z.string().optional(),
+  statistics_scope: z.enum(['business', 'internal']),
+  exclusion_decision: z.enum(['included', 'excluded']),
+  exclusion_rule_id: z.number().optional(),
+  financially_committed_at: z.number(),
+  pricing_evidence: supplierAccountingPricingEvidenceSchema.optional(),
+})
+
 // Usage log schema
 export const usageLogSchema = z.object({
   id: z.number(),
@@ -45,6 +74,10 @@ export const usageLogSchema = z.object({
   other: z.string().default(''),
   request_id: z.string().default(''),
   upstream_request_id: z.string().default(''),
+  supplier_accounting: supplierAccountingProjectionSchema.optional(),
 })
 
 export type UsageLog = z.infer<typeof usageLogSchema>
+export type SupplierAccountingProjection = z.infer<
+  typeof supplierAccountingProjectionSchema
+>

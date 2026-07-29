@@ -58,6 +58,7 @@ import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
+import { Route as AuthenticatedSupplyChainIndexRouteImport } from './routes/_authenticated/supply-chain/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
 import { Route as AuthenticatedRecallCampaignsIndexRouteImport } from './routes/_authenticated/recall-campaigns/index'
@@ -354,6 +355,12 @@ const AuthenticatedSystemSettingsIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
+  } as any)
+const AuthenticatedSupplyChainIndexRoute =
+  AuthenticatedSupplyChainIndexRouteImport.update({
+    id: '/supply-chain/',
+    path: '/supply-chain/',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSubscriptionsIndexRoute =
   AuthenticatedSubscriptionsIndexRouteImport.update({
@@ -712,6 +719,7 @@ export interface FileRoutesByFullPath {
   '/recall-campaigns/': typeof AuthenticatedRecallCampaignsIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
+  '/supply-chain/': typeof AuthenticatedSupplyChainIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
@@ -809,6 +817,7 @@ export interface FileRoutesByTo {
   '/recall-campaigns': typeof AuthenticatedRecallCampaignsIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
+  '/supply-chain': typeof AuthenticatedSupplyChainIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
@@ -910,6 +919,7 @@ export interface FileRoutesById {
   '/_authenticated/recall-campaigns/': typeof AuthenticatedRecallCampaignsIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
+  '/_authenticated/supply-chain/': typeof AuthenticatedSupplyChainIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
@@ -1010,6 +1020,7 @@ export interface FileRouteTypes {
     | '/recall-campaigns/'
     | '/redemption-codes/'
     | '/subscriptions/'
+    | '/supply-chain/'
     | '/system-settings/'
     | '/usage-logs/'
     | '/users/'
@@ -1107,6 +1118,7 @@ export interface FileRouteTypes {
     | '/recall-campaigns'
     | '/redemption-codes'
     | '/subscriptions'
+    | '/supply-chain'
     | '/system-settings'
     | '/usage-logs'
     | '/users'
@@ -1207,6 +1219,7 @@ export interface FileRouteTypes {
     | '/_authenticated/recall-campaigns/'
     | '/_authenticated/redemption-codes/'
     | '/_authenticated/subscriptions/'
+    | '/_authenticated/supply-chain/'
     | '/_authenticated/system-settings/'
     | '/_authenticated/usage-logs/'
     | '/_authenticated/users/'
@@ -1623,6 +1636,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/system-settings/'
       preLoaderRoute: typeof AuthenticatedSystemSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
+    }
+    '/_authenticated/supply-chain/': {
+      id: '/_authenticated/supply-chain/'
+      path: '/supply-chain'
+      fullPath: '/supply-chain/'
+      preLoaderRoute: typeof AuthenticatedSupplyChainIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/subscriptions/': {
       id: '/_authenticated/subscriptions/'
@@ -2081,6 +2101,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRecallCampaignsIndexRoute: typeof AuthenticatedRecallCampaignsIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
+  AuthenticatedSupplyChainIndexRoute: typeof AuthenticatedSupplyChainIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
@@ -2119,6 +2140,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRedemptionCodesIndexRoute:
     AuthenticatedRedemptionCodesIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
+  AuthenticatedSupplyChainIndexRoute: AuthenticatedSupplyChainIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,

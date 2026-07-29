@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -29,9 +30,14 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 // SettleBilling — 后结算辅助函数
 // ---------------------------------------------------------------------------
 
-// SettleBilling 执行计费结算。如果 RelayInfo 上有 BillingSession 则通过 session 结算，
-// 否则回退到旧的 PostConsumeQuota 路径（兼容按次计费等场景）。
+// SettleBilling 执行计费结算并保留旧的 error 返回约定。
 func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
+	return SettleBillingResult(ctx, relayInfo, actualQuota).Err
+}
+
+// SettleBillingResult 执行计费结算并同步返回资金提交状态。如果 RelayInfo 上有
+// BillingSession 则通过 session 结算，否则回退到旧的 PostConsumeQuota 路径。
+func SettleBillingResult(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) types.BillingSettlementResult {
 	if relayInfo.Billing != nil {
 		preConsumed := relayInfo.Billing.GetPreConsumedQuota()
 		delta := actualQuota - preConsumed
@@ -54,8 +60,22 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 			))
 		}
 
-		if err := relayInfo.Billing.Settle(actualQuota); err != nil {
-			return err
+		var result types.BillingSettlementResult
+		if settler, ok := relayInfo.Billing.(interface {
+			SettleWithResult(actualQuota int) types.BillingSettlementResult
+		}); ok {
+			result = settler.SettleWithResult(actualQuota)
+		} else if err := relayInfo.Billing.Settle(actualQuota); err != nil {
+			result = types.BillingSettlementResult{FinalSalesQuota: actualQuota, Err: err}
+		} else {
+			result = types.BillingSettlementResult{
+				FinanciallyCommitted:   true,
+				FinanciallyCommittedAt: common.GetTimestamp(),
+				FinalSalesQuota:        actualQuota,
+			}
+		}
+		if result.Err != nil {
+			return result
 		}
 
 		// 发送额度通知（订阅计费使用订阅剩余额度）
@@ -66,13 +86,26 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 				checkAndSendQuotaNotify(relayInfo, actualQuota-preConsumed, preConsumed)
 			}
 		}
-		return nil
+		return result
 	}
 
 	// 回退：无 BillingSession 时使用旧路径
 	quotaDelta := actualQuota - relayInfo.FinalPreConsumedQuota
-	if quotaDelta != 0 {
-		return PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
+	if quotaDelta == 0 {
+		return types.BillingSettlementResult{
+			FinanciallyCommitted:   true,
+			FinanciallyCommittedAt: common.GetTimestamp(),
+			FinalSalesQuota:        actualQuota,
+		}
 	}
-	return nil
+	result := postConsumeQuotaWithResult(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
+	if !result.FundingCommitted {
+		return types.BillingSettlementResult{FinalSalesQuota: actualQuota, Err: result.Err}
+	}
+	return types.BillingSettlementResult{
+		FinanciallyCommitted:   true,
+		FinanciallyCommittedAt: common.GetTimestamp(),
+		FinalSalesQuota:        actualQuota,
+		Err:                    result.Err,
+	}
 }

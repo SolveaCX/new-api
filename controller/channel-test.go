@@ -553,6 +553,7 @@ func testChannelWithOptions(channel *model.Channel, testUserID int, testModel st
 			CompletionTokens: usage.CompletionTokens,
 			ModelName:        info.OriginModelName,
 			TokenName:        tokenName,
+			TokenId:          model.SystemChannelTestTokenId,
 			Quota:            quota,
 			Content:          logContent,
 			UseTimeSeconds:   int(consumedTime),

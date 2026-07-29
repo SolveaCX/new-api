@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -12,8 +13,174 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
+
+func freezeSupplierOfficialPricingForTest(info *relaycommon.RelayInfo) {
+	info.SupplierOfficialPricingSnapshot = types.SupplierOfficialPricingSnapshot{
+		Loaded:                                true,
+		QuotaPerUnit:                          "500000",
+		PriceData:                             info.PriceData,
+		TieredBillingSnapshot:                 info.TieredBillingSnapshot,
+		BillingRequestInput:                   info.BillingRequestInput,
+		WebSearchPreviewPricePerThousandCalls: 10,
+		ClaudeWebSearchPricePerThousandCalls:  10,
+		FileSearchPricePerThousandCalls:       2.5,
+		GeminiInputAudioPricePerMillionTokens: 1,
+		ImageGenerationCallPrices: types.SupplierImageGenerationCallPrices{
+			Low1024x1024:  0.011,
+			High1024x1024: 0.167,
+		},
+	}
+}
+
+func TestCalculateTextQuotaSummaryMarksContextLocalEstimate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyLocalCountTokens, true)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "local-estimate-model",
+		PriceData: types.PriceData{
+			ModelRatio:      2,
+			CompletionRatio: 4,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 0.7},
+		},
+		StartTime: time.Now(),
+	}
+	freezeSupplierOfficialPricingForTest(info)
+
+	summary := calculateTextQuotaSummary(ctx, info, &dto.Usage{
+		PromptTokens:     100,
+		CompletionTokens: 20,
+		TotalTokens:      120,
+	})
+
+	require.True(t, summary.OfficialListUSDKnown)
+	require.Contains(t, summary.OfficialEvidenceReason, "supplier_accounting.usage.local_estimate")
+}
+
+func TestCalculateTextQuotaSummaryOfficialListUSDRatioVectors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name       string
+		groupRatio float64
+		wantQuota  int
+	}{
+		{name: "zero sales ratio", groupRatio: 0, wantQuota: 0},
+		{name: "sixty seven percent sales ratio", groupRatio: 0.67, wantQuota: 49731},
+		{name: "seventy percent sales ratio", groupRatio: 0.70, wantQuota: 51958},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(w)
+			ctx.Set("claude_web_search_requests", 1)
+			ctx.Set("image_generation_call", true)
+			ctx.Set("image_generation_call_quality", "low")
+			ctx.Set("image_generation_call_size", "1024x1024")
+
+			relayInfo := &relaycommon.RelayInfo{
+				OriginModelName: "gemini-2.5-flash",
+				PriceData: types.PriceData{
+					ModelRatio:         4,
+					CompletionRatio:    2,
+					CacheRatio:         0.2,
+					CacheCreationRatio: 1.5,
+					ImageRatio:         3,
+					OtherRatios: map[string]float64{
+						"first":  1.25,
+						"second": 2,
+					},
+					GroupRatioInfo: types.GroupRatioInfo{GroupRatio: tt.groupRatio},
+				},
+				ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{
+					BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
+						dto.BuildInToolWebSearchPreview: {CallCount: 2},
+						dto.BuildInToolFileSearch:       {CallCount: 3},
+					},
+				},
+				StartTime: time.Now(),
+			}
+			freezeSupplierOfficialPricingForTest(relayInfo)
+			usage := &dto.Usage{
+				PromptTokens:     1000,
+				CompletionTokens: 200,
+				PromptTokensDetails: dto.InputTokenDetails{
+					CachedTokens:         100,
+					CachedCreationTokens: 50,
+					ImageTokens:          25,
+					AudioTokens:          40,
+				},
+			}
+
+			summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+			require.Equal(t, tt.wantQuota, summary.Quota)
+			require.Equal(t, "ratio", summary.PricingMode)
+			require.True(t, summary.OfficialListUSDKnown)
+			require.True(t, summary.OfficialListUSD.Equal(decimal.RequireFromString("0.14845")), summary.OfficialListUSD.String())
+		})
+	}
+}
+
+func TestCalculateTextQuotaSummaryOfficialListUSDUsePriceVectors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name       string
+		groupRatio float64
+		wantQuota  int
+	}{
+		{name: "zero sales ratio", groupRatio: 0, wantQuota: 0},
+		{name: "sixty seven percent sales ratio", groupRatio: 0.67, wantQuota: 73365},
+		{name: "seventy percent sales ratio", groupRatio: 0.70, wantQuota: 76650},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(w)
+			ctx.Set("image_generation_call", true)
+			ctx.Set("image_generation_call_quality", "low")
+			ctx.Set("image_generation_call_size", "1024x1024")
+
+			relayInfo := &relaycommon.RelayInfo{
+				OriginModelName: "gemini-2.5-flash",
+				PriceData: types.PriceData{
+					UsePrice:   true,
+					ModelPrice: 0.125,
+					OtherRatios: map[string]float64{
+						"batch": 1.5,
+					},
+					GroupRatioInfo: types.GroupRatioInfo{GroupRatio: tt.groupRatio},
+				},
+				ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{
+					BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
+						dto.BuildInToolWebSearchPreview: {CallCount: 1},
+					},
+				},
+				StartTime: time.Now(),
+			}
+			freezeSupplierOfficialPricingForTest(relayInfo)
+			usage := &dto.Usage{
+				PromptTokens: 100,
+				PromptTokensDetails: dto.InputTokenDetails{
+					AudioTokens: 40,
+				},
+			}
+
+			summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+			require.Equal(t, tt.wantQuota, summary.Quota)
+			require.Equal(t, "price", summary.PricingMode)
+			require.True(t, summary.OfficialListUSDKnown)
+			require.True(t, summary.OfficialListUSD.Equal(decimal.RequireFromString("0.21906")), summary.OfficialListUSD.String())
+		})
+	}
+}
 
 func TestCalculateTextQuotaSummaryBillsOpenAICacheWriteTokens(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -125,6 +292,7 @@ func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.
 		},
 		StartTime: time.Now(),
 	}
+	freezeSupplierOfficialPricingForTest(relayInfo)
 
 	usage := &dto.Usage{
 		PromptTokens:     100,
@@ -140,6 +308,7 @@ func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.
 
 	// 100 + remaining(5)*1 + 2*2 + 3*3 = 118
 	require.Equal(t, 118, summary.Quota)
+	require.True(t, summary.OfficialListUSD.Equal(decimal.RequireFromString("0.000236")), summary.OfficialListUSD.String())
 }
 
 func TestCalculateTextQuotaSummaryUsesAnthropicUsageSemanticFromUpstreamUsage(t *testing.T) {
@@ -163,6 +332,7 @@ func TestCalculateTextQuotaSummaryUsesAnthropicUsageSemanticFromUpstreamUsage(t 
 		},
 		StartTime: time.Now(),
 	}
+	freezeSupplierOfficialPricingForTest(relayInfo)
 
 	usage := &dto.Usage{
 		PromptTokens:     1000,
@@ -393,7 +563,7 @@ func TestComposeTieredTextQuotaKeepsToolCallSurcharges(t *testing.T) {
 	}
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
-	quota := composeTieredTextQuota(relayInfo, summary, 1000, &billingexpr.TieredResult{
+	quota := composeTieredTextQuota(relayInfo, &summary, 1000, &billingexpr.TieredResult{
 		ActualQuotaBeforeGroup: 1000,
 		ActualQuotaAfterGroup:  1000,
 	})
@@ -430,7 +600,7 @@ func TestComposeTieredTextQuotaFallbackKeepsToolCallSurcharges(t *testing.T) {
 	}
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
-	quota := composeTieredTextQuota(relayInfo, summary, 1250, nil)
+	quota := composeTieredTextQuota(relayInfo, &summary, 1250, nil)
 
 	require.Equal(t, int64(12500), summary.ToolCallSurchargeQuota.Round(0).IntPart())
 	require.Equal(t, 13750, quota)
@@ -469,8 +639,57 @@ func TestComposeTieredTextQuotaErrorFallbackUsesPreConsumedQuota(t *testing.T) {
 	// falls back to FinalPreConsumedQuota (2000), which differs from
 	// EstimatedQuotaBeforeGroup * GroupRatio (1250).
 	preConsumedFallback := 2000
-	quota := composeTieredTextQuota(relayInfo, summary, preConsumedFallback, nil)
+	quota := composeTieredTextQuota(relayInfo, &summary, preConsumedFallback, nil)
 
 	require.Equal(t, int64(12500), summary.ToolCallSurchargeQuota.Round(0).IntPart())
 	require.Equal(t, 14500, quota)
+}
+
+func TestComposeTieredTextQuotaFreezesOfficialListUSDFromActualPreGroupQuota(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Set("image_generation_call", true)
+	ctx.Set("image_generation_call_quality", "low")
+	ctx.Set("image_generation_call_size", "1024x1024")
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gemini-2.5-flash",
+		PriceData: types.PriceData{
+			ModelRatio:     99,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 0.67},
+		},
+		ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{
+			BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
+				dto.BuildInToolWebSearchPreview: {CallCount: 1},
+			},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:  "tiered_expr",
+			ExprString:   `tier("base", p * 50)`,
+			GroupRatio:   0.67,
+			QuotaPerUnit: 500_000,
+		},
+		StartTime: time.Now(),
+	}
+	freezeSupplierOfficialPricingForTest(relayInfo)
+	usage := &dto.Usage{
+		PromptTokens: 100,
+		PromptTokensDetails: dto.InputTokenDetails{
+			AudioTokens: 100,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	quota := composeTieredTextQuota(relayInfo, &summary, 1675, &billingexpr.TieredResult{
+		ActualQuotaBeforeGroup: 2500,
+		ActualQuotaAfterGroup:  1675,
+	})
+
+	// Existing sales settlement is 2500*0.67 plus the two external tool
+	// surcharges. Audio is assumed to be priced by the tiered expression.
+	require.Equal(t, 8710, quota)
+	require.Equal(t, "tiered_expr", summary.PricingMode)
+	require.True(t, summary.OfficialListUSDKnown)
+	require.True(t, summary.OfficialListUSD.Equal(decimal.RequireFromString("0.026")), summary.OfficialListUSD.String())
 }

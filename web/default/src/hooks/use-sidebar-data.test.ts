@@ -18,8 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
 import { type TFunction } from 'i18next'
+import { ROLE } from '@/lib/roles'
 import { filterSidebarGroups } from './use-sidebar-config'
-import { buildSidebarData } from './use-sidebar-data'
+import { buildSidebarData, getSidebarItemMinimumRole } from './use-sidebar-data'
 
 const t = ((key: string) => key) as TFunction
 
@@ -119,6 +120,26 @@ describe('buildSidebarData', () => {
         .some((item) => 'url' in item && item.url === '/model-health')
     ).toBe(false)
   })
+  test('places the supply chain workspace beside operational reporting', () => {
+    const adminGroup = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'admin'
+    )
+    const urls = adminGroup?.items.flatMap((item) =>
+      'url' in item && item.url ? [item.url] : []
+    )
+
+    expect(urls).toContain('/supply-chain')
+    expect(urls?.indexOf('/supply-chain')).toBe(
+      (urls?.indexOf('/ops-report') ?? -2) + 1
+    )
+    const supplyChainItem = adminGroup?.items.find(
+      (item) => 'url' in item && item.url === '/supply-chain'
+    )
+    expect(supplyChainItem && getSidebarItemMinimumRole(supplyChainItem)).toBe(
+      ROLE.SUPER_ADMIN
+    )
+  })
+
   test('shows Activity Configuration by default', () => {
     const admin = buildSidebarData(t).navGroups.find(
       (group) => group.id === 'admin'

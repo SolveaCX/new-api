@@ -59,6 +59,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     channel: true,
     models: true,
     codex_governance: true,
+    supply_chain: true,
     redemption: true,
     user: true,
     setting: true,
@@ -117,6 +118,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/models/metadata': { section: 'admin', module: 'models' },
   '/models/deployments': { section: 'admin', module: 'models' },
   '/users': { section: 'admin', module: 'user' },
+  '/supply-chain': { section: 'admin', module: 'supply_chain' },
   '/redemption-codes': { section: 'admin', module: 'redemption' },
   '/subscriptions': { section: 'admin', module: 'subscription' },
   '/recall-campaigns': { section: 'admin', module: 'recall_campaigns' },
@@ -298,9 +300,9 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
   const { status } = useStatus()
   const { auth } = useAuthStore()
 
-  const filteredNavGroups = useMemo(
+  return useMemo(
     () =>
-      filterSidebarGroups(
+      filterSidebarNavGroupsForConfig(
         navGroups,
         status?.SidebarModulesAdmin as string | null | undefined,
         auth?.user?.sidebar_modules,
@@ -313,6 +315,20 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
       auth?.user?.permissions?.sidebar_settings,
     ]
   )
+}
 
-  return filteredNavGroups
+export function filterSidebarNavGroupsForConfig(
+  navGroups: NavGroup[],
+  adminConfigValue: string | null | undefined,
+  userConfigValue: string | null | undefined,
+  userCanConfigure: boolean
+): NavGroup[] {
+  // Root and other accounts without sidebar settings must not be narrowed by
+  // a stale historical user preference they cannot change in the product.
+  return filterSidebarGroups(
+    navGroups,
+    adminConfigValue,
+    userConfigValue,
+    userCanConfigure
+  )
 }

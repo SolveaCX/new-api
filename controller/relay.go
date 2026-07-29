@@ -215,16 +215,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		c.Request.Body = io.NopCloser(bodyStorage)
 
 		attemptStartedAt := time.Now()
-		switch relayFormat {
-		case types.RelayFormatOpenAIRealtime:
-			newAPIError = relay.WssHelper(c, relayInfo)
-		case types.RelayFormatClaude:
-			newAPIError = relay.ClaudeHelper(c, relayInfo)
-		case types.RelayFormatGemini:
-			newAPIError = geminiRelayHandler(c, relayInfo)
-		default:
-			newAPIError = relayHandler(c, relayInfo)
-		}
+		newAPIError = runSynchronousRelayAttempt(c, relayInfo, channel.Id, relayFormat, func() *types.NewAPIError {
+			switch relayFormat {
+			case types.RelayFormatOpenAIRealtime:
+				return relay.WssHelper(c, relayInfo)
+			case types.RelayFormatClaude:
+				return relay.ClaudeHelper(c, relayInfo)
+			case types.RelayFormatGemini:
+				return geminiRelayHandler(c, relayInfo)
+			default:
+				return relayHandler(c, relayInfo)
+			}
+		})
 
 		releaseChannelConcurrencyForRequest(c)
 		perfmetrics.RecordChannelAttempt(relayInfo, channel.Id, channel.Name, attemptStartedAt, newAPIError)
@@ -251,6 +253,65 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if newAPIError != nil {
 		perfmetrics.RecordRelaySample(relayInfo, false, 0, newAPIError)
 	}
+}
+
+func runSynchronousRelayAttempt(c *gin.Context, relayInfo *relaycommon.RelayInfo, channelID int, relayFormat types.RelayFormat, handler func() *types.NewAPIError) *types.NewAPIError {
+	if err := service.PrepareSupplierAccountingAttempt(c, relayInfo, channelID); err != nil {
+		logger.LogError(c, fmt.Sprintf("prepare supplier accounting attempt failed: %s", err.Error()))
+		if !errors.Is(err, service.ErrSupplierAccountingFactPersistence) {
+			return supplierAccountingRelayError("prepare", err)
+		}
+	}
+
+	relayErr := handler()
+	if terminalErr := service.SupplierAccountingAttemptTerminalError(c); terminalErr != nil {
+		logger.LogError(c, fmt.Sprintf("finalize supplier accounting attempt failed: %s", terminalErr.Error()))
+		if !errors.Is(terminalErr, service.ErrSupplierAccountingFactPersistence) {
+			return supplierAccountingRelayError("finalize", terminalErr)
+		}
+	}
+	if relayErr == nil || supplierAccountingAttemptOutcomeUnknown(c, relayInfo, relayFormat) ||
+		!supplierAccountingPreDispatchFailure(relayErr) {
+		return relayErr
+	}
+	if err := service.FinalizeSupplierAccountingAttemptVoid(c); err != nil {
+		logger.LogError(c, fmt.Sprintf("void supplier accounting attempt failed: %s", err.Error()))
+		if !errors.Is(err, service.ErrSupplierAccountingFactPersistence) {
+			return supplierAccountingRelayError("void", err)
+		}
+	}
+	return relayErr
+}
+
+func supplierAccountingPreDispatchFailure(relayErr *types.NewAPIError) bool {
+	if relayErr == nil {
+		return false
+	}
+	switch relayErr.GetErrorCode() {
+	case types.ErrorCodeReadRequestBodyFailed,
+		types.ErrorCodeChannelModelMappedError,
+		types.ErrorCodeConvertRequestFailed,
+		types.ErrorCodeChannelParamOverrideInvalid:
+		return true
+	default:
+		return false
+	}
+}
+
+func supplierAccountingAttemptOutcomeUnknown(c *gin.Context, relayInfo *relaycommon.RelayInfo, relayFormat types.RelayFormat) bool {
+	if relayFormat == types.RelayFormatOpenAIRealtime {
+		return relayInfo != nil && (relayInfo.TargetWs != nil || relayInfo.HasSendResponse())
+	}
+	return c.Writer.Written()
+}
+
+func supplierAccountingRelayError(operation string, err error) *types.NewAPIError {
+	return types.NewErrorWithStatusCode(
+		fmt.Errorf("%s supplier accounting attempt: %w", operation, err),
+		types.ErrorCodeUpdateDataError,
+		http.StatusInternalServerError,
+		types.ErrOptionWithSkipRetry(),
+	)
 }
 
 func writeRelayError(c *gin.Context, relayFormat types.RelayFormat, ws *websocket.Conn, apiErr *types.NewAPIError) {
@@ -361,7 +422,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 
-	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
+	helper.ApplyResolvedGroupRatio(info, helper.HandleGroupRatio(c, info))
 
 	if err != nil {
 		if errors.Is(err, service.ErrChannelConcurrencyLimit) {
@@ -378,6 +439,8 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		releaseChannelConcurrencyForRequest(c)
 		return nil, newAPIError
 	}
+	info.InitSupplierSnapshots(c)
+	helper.FreezeSupplierOfficialPricingSnapshot(info, info.PriceData)
 	return channel, nil
 }
 

@@ -31,9 +31,7 @@ func publishChannelsChanged() {
 }
 
 func refreshLocalChannelCacheAndPublishChanged() {
-	if common.MemoryCacheEnabled {
-		InitChannelCache()
-	}
+	InitChannelCache()
 	publishChannelsChanged()
 }
 
@@ -59,22 +57,25 @@ type Channel struct {
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
-	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
-	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
-	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
-	OtherInfo         string  `json:"other_info"`
-	Tag               *string `json:"tag" gorm:"index"`
-	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
-	ParamOverride     *string `json:"param_override" gorm:"type:text"`
-	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	StatusCodeMapping  *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
+	Priority           *int64  `json:"priority" gorm:"bigint;default:0"`
+	AutoBan            *int    `json:"auto_ban" gorm:"default:1"`
+	OtherInfo          string  `json:"other_info"`
+	Tag                *string `json:"tag" gorm:"index"`
+	Setting            *string `json:"setting" gorm:"type:text"` // 渠道额外设置
+	ParamOverride      *string `json:"param_override" gorm:"type:text"`
+	HeaderOverride     *string `json:"header_override" gorm:"type:text"`
+	Remark             *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	SupplierContractId *int    `json:"-" gorm:"index"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
 	// cache info
-	Keys []string `json:"-" gorm:"-"`
+	Keys                       []string                   `json:"-" gorm:"-"`
+	SupplierCostSnapshot       types.SupplierCostSnapshot `json:"-" gorm:"-"`
+	SupplierCostSnapshotLoaded bool                       `json:"-" gorm:"-"`
 }
 
 type ChannelInfo struct {
@@ -918,10 +919,11 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 // 采用与 EditChannelByTag 相同的非事务模式：DB.Updates 先提交，再用 GetChannelsByIds
 // 读已提交的新值重建 abilities。不包外层事务——GetChannelsByIds 走全局 DB 独立连接，
 // 事务内读不到未提交写入，生产 MySQL/PG 会用旧 models/group/priority/weight 重建 abilities。
-// - models / group 变更 → 全量重建 abilities（delete+insert，因模型集合变了）；
-// - 仅 priority / weight 变更 → 走 UpdateAbilityByIds 定向 UPDATE（无需重建，效率与
-//   EditChannelByTag 的 UpdateAbilityByTag 路径对齐）；
-// - model_mapping 单独变更不影响 abilities。
+//   - models / group 变更 → 全量重建 abilities（delete+insert，因模型集合变了）；
+//   - 仅 priority / weight 变更 → 走 UpdateAbilityByIds 定向 UPDATE（无需重建，效率与
+//     EditChannelByTag 的 UpdateAbilityByTag 路径对齐）；
+//   - model_mapping 单独变更不影响 abilities。
+//
 // 重建失败仅记日志、不回滚（与 EditChannelByTag 一致）。
 func EditChannelsByIds(ids []int, modelMapping, models, group *string, priority *int64, weight *uint) error {
 	if len(ids) == 0 {

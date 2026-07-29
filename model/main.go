@@ -327,9 +327,25 @@ func migrateDB() error {
 		&AdsPilotAction{},
 		&AdsPilotProposal{},
 		&AdsPilotMeta{},
+		&UpstreamSupplier{},
+		&SupplierContract{},
+		&SupplierContractRateVersion{},
+		&SupplierChannelBindingVersion{},
+		&SupplierInventoryAdjustment{},
+		&SupplierStatisticsExclusionRule{},
+		&SupplierUsageDailySummary{},
+		&SupplierUsageDailyBatchRun{},
+		&SupplierHistoricalImport{},
+		&SupplierHistoricalDailySummary{},
+		&SupplierHistoricalPublishedDay{},
 	)
 	if err != nil {
 		return err
+	}
+	if os.Getenv("LOG_SQL_DSN") == "" {
+		if err := EnsureSupplierAccountingFactSchema(DB); err != nil {
+			return err
+		}
 	}
 	if err := migrateRecallCampaignTypes(); err != nil {
 		return err
@@ -410,6 +426,17 @@ func migrateDBFast() error {
 		{&CodexModelGovernanceProbeState{}, "CodexModelGovernanceProbeState"},
 		{&CodexModelGovernanceAlertCooldownRecord{}, "CodexModelGovernanceAlertCooldownRecord"},
 		{&TemporaryChannelModelSpend{}, "TemporaryChannelModelSpend"},
+		{&UpstreamSupplier{}, "UpstreamSupplier"},
+		{&SupplierContract{}, "SupplierContract"},
+		{&SupplierContractRateVersion{}, "SupplierContractRateVersion"},
+		{&SupplierChannelBindingVersion{}, "SupplierChannelBindingVersion"},
+		{&SupplierInventoryAdjustment{}, "SupplierInventoryAdjustment"},
+		{&SupplierStatisticsExclusionRule{}, "SupplierStatisticsExclusionRule"},
+		{&SupplierUsageDailySummary{}, "SupplierUsageDailySummary"},
+		{&SupplierUsageDailyBatchRun{}, "SupplierUsageDailyBatchRun"},
+		{&SupplierHistoricalImport{}, "SupplierHistoricalImport"},
+		{&SupplierHistoricalDailySummary{}, "SupplierHistoricalDailySummary"},
+		{&SupplierHistoricalPublishedDay{}, "SupplierHistoricalPublishedDay"},
 		{&ComputeNode{}, "ComputeNode"},
 		{&DataToolCall{}, "DataToolCall"},
 	}
@@ -418,6 +445,11 @@ func migrateDBFast() error {
 	for _, m := range migrations {
 		if err := DB.AutoMigrate(m.model); err != nil {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
+		}
+	}
+	if os.Getenv("LOG_SQL_DSN") == "" {
+		if err := EnsureSupplierAccountingFactSchema(DB); err != nil {
+			return err
 		}
 	}
 	if err := migrateRecallCampaignTypes(); err != nil {
@@ -593,7 +625,7 @@ func migrateLOGDB() error {
 	if err = LOG_DB.AutoMigrate(&Log{}, &LogRequestSample{}); err != nil {
 		return err
 	}
-	return nil
+	return EnsureSupplierAccountingFactSchema(LOG_DB)
 }
 
 type sqliteColumnDef struct {

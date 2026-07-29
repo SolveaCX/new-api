@@ -179,7 +179,10 @@ type RelayInfo struct {
 	RequestConversionChain []types.RelayFormat
 	// 最终请求到上游的格式。可由 adaptor 显式设置；
 	// 若为空，调用 GetFinalRequestRelayFormat 会回退到 RequestConversionChain 的最后一项或 RelayFormat。
-	FinalRequestRelayFormat types.RelayFormat
+	FinalRequestRelayFormat         types.RelayFormat
+	SupplierCostSnapshot            types.SupplierCostSnapshot
+	SupplierStatisticsScopeSnapshot types.SupplierStatisticsScopeSnapshot
+	SupplierOfficialPricingSnapshot types.SupplierOfficialPricingSnapshot
 
 	StreamStatus *StreamStatus
 
@@ -193,6 +196,7 @@ type RelayInfo struct {
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
+	info.InitSupplierSnapshots(c)
 	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)
 	paramOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelParamOverride)
 	headerOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelHeaderOverride)
@@ -242,6 +246,29 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	// 重置某些字段，例如模型名称等
 	if info.Request != nil {
 		info.Request.SetModelName(info.OriginModelName)
+	}
+}
+
+// InitSupplierSnapshots copies immutable request-side supplier state from Gin.
+// It performs no database or Redis lookup and may be called after a retry picks
+// another channel.
+func (info *RelayInfo) InitSupplierSnapshots(c *gin.Context) {
+	if info == nil {
+		return
+	}
+	info.SupplierCostSnapshot = types.SupplierCostSnapshot{}
+	info.SupplierStatisticsScopeSnapshot = types.BusinessSupplierStatisticsScopeSnapshot()
+	if c == nil {
+		return
+	}
+	if snapshot, ok := common.GetContextKeyType[types.SupplierCostSnapshot](c, constant.ContextKeySupplierCostSnapshot); ok {
+		info.SupplierCostSnapshot = snapshot
+	}
+	if snapshot, ok := common.GetContextKeyType[types.SupplierStatisticsScopeSnapshot](c, constant.ContextKeySupplierStatsScope); ok {
+		if snapshot.Scope == "" {
+			snapshot.Scope = types.SupplierStatisticsScopeBusiness
+		}
+		info.SupplierStatisticsScopeSnapshot = snapshot
 	}
 }
 
@@ -503,6 +530,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 	if info.RelayMode == relayconstant.RelayModeUnknown {
 		info.RelayMode = c.GetInt("relay_mode")
 	}
+	info.InitSupplierSnapshots(c)
 
 	if strings.HasPrefix(c.Request.URL.Path, "/pg") {
 		info.IsPlayground = true
