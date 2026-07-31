@@ -2,6 +2,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -60,6 +61,9 @@ class RecordingTreeTerminator:
         self.killed.append(child)
         child.kill()
 
+    def close(self):
+        return None
+
 
 class SlowWriter:
     def __init__(self):
@@ -84,6 +88,14 @@ def call_frame(identifier):
 
 
 class WrapperContractTests(unittest.TestCase):
+    def make_wrapper(self, runtime_dir, child, *, clock=None, terminator=None):
+        return mcp_budget_wrapper.BudgetedMcpWrapper(
+            runtime_dir,
+            child=child,
+            clock=clock or FakeClock(),
+            tree_terminator=terminator or RecordingTreeTerminator(),
+        )
+
     def test_child_command_is_fixed_no_shell_and_file_output_limited_to_runtime_dir(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
             command = mcp_budget_wrapper.playwright_child_command(runtime_dir)
@@ -116,7 +128,7 @@ class WrapperContractTests(unittest.TestCase):
             client_output = io.StringIO()
 
             mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "replay_checkpoint"})
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=clock)
+            wrapper = self.make_wrapper(runtime_dir, child, clock=clock)
             wrapper.proxy_client_requests(
                 client_input,
                 client_output,
@@ -143,7 +155,7 @@ class WrapperContractTests(unittest.TestCase):
             child = FakeChild()
             output = io.StringIO()
 
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=clock)
+            wrapper = self.make_wrapper(runtime_dir, child, clock=clock)
             wrapper.proxy_client_requests(io.StringIO(call_frame("late-first-action")), output)
 
             self.assertEqual(json.loads(output.getvalue().splitlines()[0])["error"]["code"], -32001)
@@ -158,7 +170,7 @@ class WrapperContractTests(unittest.TestCase):
                 for _ in range(35)
             )
 
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+            wrapper = self.make_wrapper(runtime_dir, child)
             output = io.StringIO()
             wrapper.proxy_client_requests(io.StringIO(notifications), output)
 
@@ -177,7 +189,7 @@ class WrapperContractTests(unittest.TestCase):
             ]
             client_input = io.StringIO("".join(frame(payload) for payload in payloads) + "".join(call_frame(i) for i in range(1, 31)))
 
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=clock)
+            wrapper = self.make_wrapper(runtime_dir, child, clock=clock)
             wrapper.proxy_client_requests(client_input, io.StringIO())
 
             forwarded = child.stdin.getvalue().splitlines()
@@ -189,7 +201,7 @@ class WrapperContractTests(unittest.TestCase):
         child = FakeChild()
         with tempfile.TemporaryDirectory() as runtime_dir:
             mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": clock.monotonic()})
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=clock)
+            wrapper = self.make_wrapper(runtime_dir, child, clock=clock)
             wrapper.proxy_client_requests(io.StringIO(call_frame("start")), io.StringIO())
             clock.advance(301)
             child = FakeChild()
@@ -204,7 +216,7 @@ class WrapperContractTests(unittest.TestCase):
             with open(os.path.join(runtime_dir, "control_state.json"), "w", encoding="utf-8") as state_file:
                 state_file.write("{partial")
             child = FakeChild()
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+            wrapper = self.make_wrapper(runtime_dir, child)
             output = io.StringIO()
             wrapper.proxy_client_requests(io.StringIO(call_frame("bad-state")), output)
             self.assertEqual(json.loads(output.getvalue().splitlines()[0])["error"]["code"], -32001)
@@ -212,7 +224,7 @@ class WrapperContractTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as runtime_dir:
             child = FakeChild()
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+            wrapper = self.make_wrapper(runtime_dir, child)
             output = io.StringIO()
             wrapper.proxy_client_requests(io.StringIO("{bad-json}\n"), output)
             self.assertEqual(json.loads(output.getvalue().splitlines()[0])["error"]["code"], -32700)
@@ -222,7 +234,7 @@ class WrapperContractTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 with tempfile.TemporaryDirectory() as runtime_dir:
                     child = FakeChild()
-                    wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+                    wrapper = self.make_wrapper(runtime_dir, child)
                     output = io.StringIO()
                     wrapper.proxy_client_requests(io.StringIO(payload + "\n"), output)
                     self.assertEqual(json.loads(output.getvalue().splitlines()[0])["error"]["code"], -32600)
@@ -235,7 +247,7 @@ class WrapperContractTests(unittest.TestCase):
                 with self.subTest(child_stdout=line):
                     child = FakeChild()
                     child.stdout = io.StringIO(line + "\n")
-                    wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+                    wrapper = self.make_wrapper(runtime_dir, child)
                     output = io.StringIO()
                     wrapper.proxy_child_stdout(output)
                     self.assertEqual(output.getvalue(), "")
@@ -244,7 +256,7 @@ class WrapperContractTests(unittest.TestCase):
     def test_eof_terminates_child_without_orphan(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
             child = FakeChild()
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+            wrapper = self.make_wrapper(runtime_dir, child)
             wrapper.proxy_client_requests(io.StringIO(""), io.StringIO())
             self.assertTrue(child.terminated)
             self.assertTrue(child.waited)
@@ -252,7 +264,7 @@ class WrapperContractTests(unittest.TestCase):
     def test_parent_signal_terminates_child_without_orphan(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
             child = FakeChild()
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+            wrapper = self.make_wrapper(runtime_dir, child)
 
             with self.assertRaises(SystemExit):
                 wrapper.handle_parent_signal("TERM", None)
@@ -264,7 +276,7 @@ class WrapperContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as runtime_dir:
             child = FakeChild(wait_timeout_once=True)
             terminator = RecordingTreeTerminator()
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock(), tree_terminator=terminator)
+            wrapper = self.make_wrapper(runtime_dir, child, terminator=terminator)
 
             wrapper.terminate_child()
 
@@ -280,7 +292,7 @@ class WrapperContractTests(unittest.TestCase):
             child = FakeChild()
             child.stdout = io.StringIO(frame({"jsonrpc": "2.0", "id": "child", "result": {"ok": True}}))
             writer = SlowWriter()
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+            wrapper = self.make_wrapper(runtime_dir, child)
 
             stdout_thread = threading.Thread(target=wrapper.proxy_child_stdout, args=(writer,))
             stdout_thread.start()
@@ -290,6 +302,113 @@ class WrapperContractTests(unittest.TestCase):
             lines = writer.value.splitlines()
             self.assertEqual(len(lines), 2)
             self.assertTrue(all(json.loads(line)["jsonrpc"] == "2.0" for line in lines))
+
+    def test_posix_containment_uses_saved_pgid_after_parent_exits(self):
+        if os.name != "posix":
+            self.skipTest("POSIX process-group regression")
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            pid_file = os.path.join(runtime_dir, "grandchild.pid")
+            code = (
+                "import subprocess, sys, time; "
+                f"p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+                f"open({pid_file!r}, 'w').write(str(p.pid)); "
+                "sys.exit(0)"
+            )
+            parent = subprocess.Popen([sys.executable, "-c", code], start_new_session=True)
+            terminator = mcp_budget_wrapper.ProcessTreeTerminator.attach(parent)
+            parent.wait(timeout=10)
+            for _ in range(50):
+                if os.path.exists(pid_file):
+                    break
+                time.sleep(0.1)
+            with open(pid_file, encoding="utf-8") as handle:
+                grandchild_pid = int(handle.read())
+
+            terminator.terminate_tree(parent)
+            deadline = time.time() + 10
+            while time.time() < deadline and _pid_exists(grandchild_pid):
+                time.sleep(0.1)
+            if _pid_exists(grandchild_pid):
+                terminator.kill_tree(parent)
+
+            self.assertFalse(_pid_exists(grandchild_pid))
+
+    def test_posix_containment_saves_pgid_before_shutdown(self):
+        if os.name != "posix":
+            self.skipTest("POSIX process-group contract")
+        child = type("Child", (), {"pid": 4242})()
+        original_getpgid = mcp_budget_wrapper.os.getpgid
+        original_killpg = mcp_budget_wrapper.os.killpg
+        calls = []
+        try:
+            mcp_budget_wrapper.os.getpgid = lambda pid: 4242
+            terminator = mcp_budget_wrapper.ProcessTreeTerminator.attach(child)
+            mcp_budget_wrapper.os.getpgid = lambda pid: (_ for _ in ()).throw(ProcessLookupError())
+            mcp_budget_wrapper.os.killpg = lambda pgid, sig: calls.append((pgid, sig))
+
+            terminator.terminate_tree(child)
+            terminator.kill_tree(child)
+        finally:
+            mcp_budget_wrapper.os.getpgid = original_getpgid
+            mcp_budget_wrapper.os.killpg = original_killpg
+
+        self.assertEqual(calls, [(4242, mcp_budget_wrapper.signal.SIGTERM), (4242, mcp_budget_wrapper.signal.SIGKILL)])
+
+    def test_windows_job_object_contract_assigns_and_closes_job(self):
+        child = type("Child", (), {"_handle": 555})()
+        kernel32 = FakeKernel32()
+
+        containment = mcp_budget_wrapper.WindowsJobProcessContainment.attach(child, kernel32=kernel32)
+        containment.terminate_tree(child)
+        containment.kill_tree(child)
+
+        self.assertEqual(kernel32.created, 1)
+        self.assertEqual(kernel32.assigned, [(1001, 555)])
+        self.assertEqual(kernel32.closed, [1001])
+
+    def test_windows_job_object_assignment_failure_fails_closed(self):
+        child = type("Child", (), {"_handle": 555})()
+        kernel32 = FakeKernel32(assign_result=0)
+
+        with self.assertRaises(RuntimeError):
+            mcp_budget_wrapper.WindowsJobProcessContainment.attach(child, kernel32=kernel32)
+
+
+class FakeKernel32:
+    def __init__(self, *, assign_result=1):
+        self.assign_result = assign_result
+        self.created = 0
+        self.assigned = []
+        self.closed = []
+        self.last_error = 5
+
+    def CreateJobObjectW(self, _security, _name):
+        self.created += 1
+        return 1001
+
+    def SetInformationJobObject(self, _job, _info_class, _info, _length):
+        return 1
+
+    def AssignProcessToJobObject(self, job, process_handle):
+        self.assigned.append((job, process_handle))
+        return self.assign_result
+
+    def CloseHandle(self, handle):
+        self.closed.append(handle)
+        return 1
+
+    def GetLastError(self):
+        return self.last_error
+
+
+def _pid_exists(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 if __name__ == "__main__":

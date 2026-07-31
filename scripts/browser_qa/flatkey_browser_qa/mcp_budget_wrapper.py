@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+import ctypes
 
 from .budget import BudgetExceeded
 from .budget import ExplorationBudget
@@ -41,7 +42,12 @@ def main():
         start_new_session=(os.name != "nt"),
         creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
     )
-    wrapper = BudgetedMcpWrapper(runtime_dir, child=child)
+    try:
+        wrapper = BudgetedMcpWrapper(runtime_dir, child=child)
+    except Exception:
+        child.kill()
+        child.wait(timeout=5)
+        raise
     signal.signal(signal.SIGTERM, wrapper.handle_parent_signal)
     signal.signal(signal.SIGINT, wrapper.handle_parent_signal)
     stdout_thread = threading.Thread(target=wrapper.proxy_child_stdout, args=(sys.stdout,), daemon=True)
@@ -52,31 +58,71 @@ def main():
 
 
 class ProcessTreeTerminator:
-    def terminate_tree(self, child):
+    @classmethod
+    def attach(cls, child):
         if os.name == "nt":
-            pid = getattr(child, "pid", None)
-            if pid is None:
-                child.terminate()
-                return
-            subprocess.run(["taskkill", "/PID", str(pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=False, check=False)
-            return
-        try:
-            os.killpg(os.getpgid(child.pid), signal.SIGTERM)
-        except Exception:
-            child.terminate()
+            return WindowsJobProcessContainment.attach(child)
+        return PosixProcessGroupContainment.attach(child)
 
-    def kill_tree(self, child):
-        if os.name == "nt":
-            pid = getattr(child, "pid", None)
-            if pid is None:
-                child.kill()
-                return
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=False, check=False)
-            return
+
+class PosixProcessGroupContainment:
+    def __init__(self, pgid):
+        self.pgid = pgid
+
+    @classmethod
+    def attach(cls, child):
+        pid = getattr(child, "pid", None)
+        if not isinstance(pid, int) or pid <= 0:
+            raise RuntimeError("child pid unavailable for process-group containment")
+        return cls(pid)
+
+    def terminate_tree(self, _child):
+        os.killpg(self.pgid, signal.SIGTERM)
+
+    def kill_tree(self, _child):
+        os.killpg(self.pgid, signal.SIGKILL)
+
+    def close(self):
+        return None
+
+
+class WindowsJobProcessContainment:
+    def __init__(self, job_handle, kernel32):
+        self.job_handle = job_handle
+        self.kernel32 = kernel32
+
+    @classmethod
+    def attach(cls, child, *, kernel32=None):
+        selected_kernel32 = kernel32 or ctypes.WinDLL("kernel32", use_last_error=True)
+        job = selected_kernel32.CreateJobObjectW(None, None)
+        if not job:
+            raise RuntimeError("windows job creation failed")
         try:
-            os.killpg(os.getpgid(child.pid), signal.SIGKILL)
+            info = _job_kill_on_close_info()
+            if not selected_kernel32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+                raise RuntimeError("windows job limit configuration failed")
+            process_handle = getattr(child, "_handle", None)
+            if process_handle is None:
+                raise RuntimeError("child process handle unavailable for job containment")
+            if not selected_kernel32.AssignProcessToJobObject(job, process_handle):
+                code = _kernel_last_error(selected_kernel32)
+                raise RuntimeError(f"windows job assignment failed: {code}")
         except Exception:
-            child.kill()
+            selected_kernel32.CloseHandle(job)
+            raise
+        return cls(job, selected_kernel32)
+
+    def terminate_tree(self, _child):
+        self.close()
+
+    def kill_tree(self, _child):
+        self.close()
+
+    def close(self):
+        if self.job_handle:
+            handle = self.job_handle
+            self.job_handle = None
+            self.kernel32.CloseHandle(handle)
 
 
 class BudgetedMcpWrapper:
@@ -84,7 +130,7 @@ class BudgetedMcpWrapper:
         self.runtime_dir = _runtime_dir(runtime_dir)
         self.child = child
         self.clock = clock or time
-        self.tree_terminator = tree_terminator or ProcessTreeTerminator()
+        self.tree_terminator = tree_terminator or ProcessTreeTerminator.attach(child)
         self.output_lock = output_lock or threading.Lock()
         self.exploration_budget = None
         self._closed = False
@@ -140,6 +186,10 @@ class BudgetedMcpWrapper:
                 self.child.wait(timeout=5)
             except Exception:
                 pass
+        except Exception:
+            pass
+        try:
+            self.tree_terminator.close()
         except Exception:
             pass
 
@@ -258,6 +308,55 @@ def _write_error(stdout, request_id, code, message, *, lock=None):
     else:
         with lock:
             write()
+
+
+def _kernel_last_error(kernel32):
+    try:
+        return kernel32.GetLastError()
+    except AttributeError:
+        return ctypes.get_last_error()
+
+
+def _job_kill_on_close_info():
+    info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    info.BasicLimitInformation.LimitFlags = 0x00002000
+    return info
+
+
+class IO_COUNTERS(ctypes.Structure):
+    _fields_ = [
+        ("ReadOperationCount", ctypes.c_uint64),
+        ("WriteOperationCount", ctypes.c_uint64),
+        ("OtherOperationCount", ctypes.c_uint64),
+        ("ReadTransferCount", ctypes.c_uint64),
+        ("WriteTransferCount", ctypes.c_uint64),
+        ("OtherTransferCount", ctypes.c_uint64),
+    ]
+
+
+class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("PerProcessUserTimeLimit", ctypes.c_int64),
+        ("PerJobUserTimeLimit", ctypes.c_int64),
+        ("LimitFlags", ctypes.c_uint32),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", ctypes.c_uint32),
+        ("Affinity", ctypes.c_size_t),
+        ("PriorityClass", ctypes.c_uint32),
+        ("SchedulingClass", ctypes.c_uint32),
+    ]
+
+
+class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+        ("IoInfo", IO_COUNTERS),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
 
 
 if __name__ == "__main__":
