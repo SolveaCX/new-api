@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import ctypes
 from ctypes import wintypes
 
@@ -20,9 +21,18 @@ SUBPROCESS_SHELL = False
 EXPLORATION_MAX_ACTIONS = 30
 EXPLORATION_SECONDS = 300
 PLAYWRIGHT_MCP_EXECUTABLE = "/usr/local/bin/playwright-mcp"
+MAX_CLIENT_LINE_BYTES = 1024 * 1024
+MAX_CHILD_STDOUT_LINE_BYTES = 1024 * 1024
+MAX_CHILD_STDERR_LINE_BYTES = 256 * 1024
+ALIAS_RESTRICTION_MARKER = "\u7ba1\u7406\u5458\u5df2\u542f\u7528\u90ae\u7bb1\u5730\u5740\u522b\u540d\u9650\u5236\uff0c\u60a8\u7684\u90ae\u7bb1\u5730\u5740\u7531\u4e8e\u5305\u542b\u7279\u6b8a\u7b26\u53f7\u800c\u88ab\u62d2\u7edd\u3002"
 
 
 def playwright_child_command(runtime_dir, proxy_url=None, *, executable=PLAYWRIGHT_MCP_EXECUTABLE):
+    """Build Playwright MCP with ``--proxy-bypass <-loopback>``.
+
+    Chromium implicitly bypasses loopback addresses. The ``<-loopback>`` token
+    removes that exception so all browser traffic follows the QA proxy policy.
+    """
     if not proxy_url:
         raise RuntimeError("proxy url is required")
     directory = _runtime_dir(runtime_dir)
@@ -110,7 +120,12 @@ def launch_wrapper(
         _best_effort_kill_launch_tree(child, subprocess_run=subprocess_run, killpg=killpg)
         _bounded_wait(child)
         raise
-    return BudgetedMcpWrapper(runtime_dir, child=child, tree_terminator=terminator)
+    return BudgetedMcpWrapper(
+        runtime_dir,
+        child=child,
+        tree_terminator=terminator,
+        runtime_evidence_url=(parent_env or os.environ).get("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"),
+    )
 
 
 class ProcessTreeTerminator:
@@ -182,46 +197,57 @@ class WindowsJobProcessContainment:
 
 
 class BudgetedMcpWrapper:
-    def __init__(self, runtime_dir, *, child, clock=None, tree_terminator=None, output_lock=None):
+    def __init__(self, runtime_dir, *, child, clock=None, tree_terminator=None, output_lock=None, runtime_evidence_url=None):
         self.runtime_dir = _runtime_dir(runtime_dir)
         self.child = child
         self.clock = clock or time
         self.tree_terminator = tree_terminator or ProcessTreeTerminator.attach(child)
         self.output_lock = output_lock or threading.Lock()
+        self.runtime_evidence_url = runtime_evidence_url
         self.exploration_budget = None
         self._closed = False
 
     def proxy_client_requests(self, client_input, client_output, *, after_first_request=None):
         try:
-            for index, line in enumerate(client_input):
-                request = self._parse_client_line(line, client_output)
-                if request is None:
-                    break
-                if self._is_counted_tool_call(request):
-                    if not self._allow_action(request, client_output):
+            try:
+                for index, line in enumerate(_iter_bounded_lines(client_input, MAX_CLIENT_LINE_BYTES)):
+                    request = self._parse_client_line(line, client_output)
+                    if request is None:
                         break
-                self._write_child_stdin(line)
-                if index == 0 and after_first_request:
-                    after_first_request()
+                    if self._is_counted_tool_call(request):
+                        if not self._allow_action(request, client_output):
+                            break
+                    self._write_child_stdin(line)
+                    if index == 0 and after_first_request:
+                        after_first_request()
+            except RuntimeError:
+                pass
         finally:
             self.terminate_child()
 
     def proxy_child_stdout(self, client_output):
-        for line in self.child.stdout:
-            try:
-                response = json.loads(line)
-            except json.JSONDecodeError:
-                self.terminate_child()
-                break
-            if not _is_jsonrpc_frame(response):
-                self.terminate_child()
-                break
-            self._write_client_line(client_output, line)
+        try:
+            for line in _iter_bounded_lines(self.child.stdout, MAX_CHILD_STDOUT_LINE_BYTES):
+                try:
+                    response = json.loads(line)
+                except json.JSONDecodeError:
+                    self.terminate_child()
+                    break
+                if not _is_jsonrpc_frame(response):
+                    self.terminate_child()
+                    break
+                self._post_alias_restriction_evidence(response)
+                self._write_client_line(client_output, line)
+        except RuntimeError:
+            self.terminate_child()
 
     def proxy_child_stderr(self, diagnostic_output):
-        for line in self.child.stderr:
-            diagnostic_output.write(line)
-            diagnostic_output.flush()
+        try:
+            for line in _iter_bounded_lines(self.child.stderr, MAX_CHILD_STDERR_LINE_BYTES):
+                diagnostic_output.write(line)
+                diagnostic_output.flush()
+        except RuntimeError:
+            self.terminate_child()
 
     def terminate_child(self):
         if self._closed:
@@ -306,6 +332,65 @@ class BudgetedMcpWrapper:
         with self.output_lock:
             stdout.write(line)
             stdout.flush()
+
+    def _post_alias_restriction_evidence(self, response):
+        if not self.runtime_evidence_url or not _is_failed_alias_restriction_response(response):
+            return
+        payload = json.dumps(
+            {"type": "alias_restriction", "failed": True, "text": ALIAS_RESTRICTION_MARKER},
+            sort_keys=True,
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            self.runtime_evidence_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(request, timeout=2).close()
+        except Exception:
+            return
+
+
+def _iter_bounded_lines(stream, max_line_bytes):
+    pending = ""
+    while True:
+        chunk = stream.read(4096)
+        if chunk == "":
+            if pending:
+                _ensure_line_within_limit(pending, max_line_bytes)
+                yield pending
+            return
+        pending += chunk
+        while True:
+            newline_index = pending.find("\n")
+            if newline_index < 0:
+                _ensure_line_within_limit(pending, max_line_bytes)
+                break
+            line = pending[: newline_index + 1]
+            pending = pending[newline_index + 1 :]
+            _ensure_line_within_limit(line, max_line_bytes)
+            yield line
+
+
+def _ensure_line_within_limit(line, max_line_bytes):
+    if len(line.encode("utf-8", "replace")) > max_line_bytes:
+        raise RuntimeError("mcp stream line exceeded limit")
+
+
+def _is_failed_alias_restriction_response(response):
+    result = response.get("result") if isinstance(response, dict) else None
+    if not isinstance(result, dict) or result.get("isError") is not True:
+        return False
+    content = result.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and isinstance(item.get("text"), str)
+        and ALIAS_RESTRICTION_MARKER in item["text"]
+        for item in content
+    )
 
 
 def _read_phase(runtime_dir):

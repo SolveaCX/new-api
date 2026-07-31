@@ -2,9 +2,11 @@ import json
 import os
 import signal
 import subprocess
+import socket
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import io
 import urllib.request
 
@@ -44,11 +46,13 @@ class FakeProcess:
         self.communicated_input = None
         self.stdin = ReadableAfterCloseStringIO()
         self.wait_calls = 0
+        self.wait_timeouts = []
 
     def poll(self):
         return self.returncode if self.wait_calls >= self.finish_after else None
 
     def wait(self, timeout=None):
+        self.wait_timeouts.append(timeout)
         self.wait_calls += 1
         if self.wait_calls >= self.finish_after:
             return self.returncode
@@ -69,6 +73,31 @@ class FakeProcess:
             self.on_communicate()
         if self.write_result:
             self.write_result()
+
+
+class RecordingThread:
+    join_timeouts = []
+    clock = None
+    elapsed = 0.0
+
+    def __init__(self, target):
+        self.target = target
+        self.started = False
+        self._alive = False
+
+    def start(self):
+        self.started = True
+        self._alive = True
+
+    def join(self, timeout=None):
+        self.join_timeouts.append(timeout)
+        if isinstance(timeout, (int, float)):
+            self.elapsed += timeout
+            if self.clock is not None:
+                self.clock.advance(timeout)
+
+    def is_alive(self):
+        return self._alive
 
 
 class FakeSubprocess:
@@ -159,6 +188,20 @@ class FakeProxy:
         self.stopped = True
 
 
+class StopFailEvidenceSink:
+    runtime_classification = None
+    url = "http://127.0.0.1:1/runtime-evidence"
+
+    def __init__(self, _redactor):
+        self.started = False
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        raise RuntimeError("evidence sink stop failed")
+
+
 def env():
     return {
         "CODEX_API_KEY": "sk-parentSECRET",
@@ -209,8 +252,11 @@ class SupervisorTests(unittest.TestCase):
         ]:
             self.assertIn(required.lower(), prompt.lower())
 
-    def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None):
+    def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None):
         tmp = tempfile.mkdtemp()
+        supervisor_kwargs = {}
+        if thread_factory is not None:
+            supervisor_kwargs["thread_factory"] = thread_factory
         sup = supervisor.Supervisor(
             env=input_env or env(),
             runtime_root=tmp,
@@ -220,6 +266,7 @@ class SupervisorTests(unittest.TestCase):
             proxy_factory=lambda: FakeProxy(),
             preflight=preflight or (lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}}),
             clock=clock or FakeClock(),
+            **supervisor_kwargs,
         )
         outcome = sup.run(initial_result=result_payload)
         return outcome, sup
@@ -286,6 +333,10 @@ class SupervisorTests(unittest.TestCase):
         self.assertNotIn("disable_response_storage", config_text)
         self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_DIR", config_text)
         self.assertIn("FLATKEY_BROWSER_QA_BROKER_URL", config_text)
+        playwright_env = config_text.split("[mcp_servers.playwright.env]", 1)[1].split("[mcp_servers.broker]", 1)[0]
+        broker_env = config_text.split("[mcp_servers.broker.env]", 1)[1].split("[mcp_servers.control]", 1)[0]
+        self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL", playwright_env)
+        self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL", broker_env)
         self.assertIn("PATH", config_text)
         self.assertIn("PYTHONPATH", config_text)
         self.assertNotIn("${FLATKEY_BROWSER_QA_RUN_ID}", config_text)
@@ -315,6 +366,30 @@ class SupervisorTests(unittest.TestCase):
         outcome, sup = self.run_supervisor(FakeProcess(7), result_payload=valid_result(), cleanup=cleanup)
         self.assertEqual(outcome.status, "cleanup_failed")
         self.assertEqual(len(sup.uploader.uploaded), 1)
+
+    def test_teardown_and_proxy_construction_failures_do_not_skip_cleanup(self):
+        cleanup = FakeCleanup()
+        with mock.patch.object(supervisor, "RuntimeEvidenceSink", StopFailEvidenceSink):
+            outcome, sup = self.run_supervisor(FakeProcess(0), result_payload=valid_result(), cleanup=cleanup)
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(len(cleanup.calls), 1)
+        self.assertTrue(any(event["kind"] == "evidence_sink_stop_failed" for event in sup.events))
+
+        cleanup = FakeCleanup()
+        with tempfile.TemporaryDirectory() as runtime_root:
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=runtime_root,
+                subprocess_runner=FakeSubprocess(FakeProcess(0)),
+                uploader=FakeUploader(),
+                cleanup_runner=cleanup,
+                proxy_factory=lambda: (_ for _ in ()).throw(RuntimeError("proxy construction failed")),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+            )
+            outcome = sup.run(initial_result=valid_result())
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(len(cleanup.calls), 1)
 
     def test_preflight_and_alias_restriction_classification_are_precise(self):
         bad_status = lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": False, "turnstile_check": False}}
@@ -424,6 +499,29 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(outcome.status, "infrastructure_failed")
         self.assertTrue(process.terminated)
 
+        process = FakeProcess(0, stdout="x" * (supervisor.MAX_CODEX_STDOUT_LINE_BYTES + 1))
+        outcome, _sup = self.run_supervisor(process)
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertTrue(process.terminated)
+
+        process = FakeProcess(0, stderr="x" * (supervisor.MAX_CODEX_STDERR_LINE_BYTES + 1))
+        outcome, _sup = self.run_supervisor(process, result_payload=valid_result())
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertTrue(process.terminated)
+
+    def test_wait_for_codex_uses_one_shared_deadline_for_streams_and_process_wait(self):
+        process = FakeProcess(0, finish_after=100)
+        clock = FakeClock()
+        RecordingThread.join_timeouts = []
+        RecordingThread.elapsed = 0.0
+        RecordingThread.clock = clock
+        outcome, _sup = self.run_supervisor(process, result_payload=valid_result(), clock=clock, thread_factory=RecordingThread)
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertTrue(process.terminated)
+        self.assertTrue(RecordingThread.join_timeouts)
+        self.assertLessEqual(RecordingThread.elapsed, supervisor.INTERNAL_DEADLINE_SECONDS + 2)
+
         process = FakeProcess(0, stdout=("x" * (supervisor.MAX_CODEX_STDOUT_LINE_BYTES + 1)) + "\n")
         outcome, _sup = self.run_supervisor(process)
         self.assertEqual(outcome.status, "infrastructure_failed")
@@ -478,7 +576,8 @@ class SupervisorTests(unittest.TestCase):
                 bucket="browser-qa-bucket",
                 run_id="run-1",
                 execution_id="exec-1",
-                access_token="access-token",
+                runtime_root=tmp,
+                token_provider=lambda: "access-token",
                 upload_func=upload,
             )
             uploader.upload(manifest_path, [result_path, events_path, manifest_path])
@@ -488,6 +587,134 @@ class SupervisorTests(unittest.TestCase):
             "runs/run-1/main/exec-1/codex-events.jsonl",
             "runs/run-1/main/exec-1/manifest.json",
         ])
+
+    def test_gcs_uploader_rejects_unsafe_artifacts_and_lazy_token_failure_happens_after_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result_path = os.path.join(tmp, "result.json")
+            manifest_path = os.path.join(tmp, "manifest.json")
+            outside = os.path.join(tempfile.gettempdir(), "outside-browser-qa-artifact.txt")
+            for path in [result_path, manifest_path, outside]:
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("{}")
+            uploader = supervisor.GcsArtifactUploader(
+                bucket="browser-qa-bucket",
+                run_id="run-1",
+                execution_id="exec/../bad",
+                runtime_root=tmp,
+                token_provider=lambda: "access-token",
+                upload_func=lambda *_args, **_kwargs: {},
+            )
+            with self.assertRaises(ValueError):
+                uploader.upload(manifest_path, [result_path, manifest_path])
+
+            duplicate_dir = os.path.join(tmp, "duplicate")
+            os.mkdir(duplicate_dir)
+            duplicate_result_path = os.path.join(duplicate_dir, "result.json")
+            with open(duplicate_result_path, "w", encoding="utf-8") as handle:
+                handle.write("{}")
+            uploader = supervisor.GcsArtifactUploader(
+                bucket="browser-qa-bucket",
+                run_id="run-1",
+                execution_id="exec-1",
+                runtime_root=tmp,
+                token_provider=lambda: "access-token",
+                upload_func=lambda *_args, **_kwargs: {},
+            )
+            try:
+                with self.assertRaises(ValueError):
+                    uploader.upload(manifest_path, [result_path, outside, manifest_path])
+
+                unexpected_path = os.path.join(tmp, "unexpected.txt")
+                with open(unexpected_path, "w", encoding="utf-8") as handle:
+                    handle.write("unexpected")
+                with self.assertRaises(ValueError):
+                    uploader.upload(manifest_path, [result_path, unexpected_path, manifest_path])
+
+                with self.assertRaises(ValueError):
+                    uploader.upload(manifest_path, [result_path, duplicate_result_path, manifest_path])
+
+                if hasattr(os, "symlink"):
+                    symlink_path = os.path.join(tmp, "codex-stderr.txt")
+                    try:
+                        os.symlink(result_path, symlink_path)
+                    except (OSError, NotImplementedError):
+                        symlink_path = None
+                    if symlink_path is not None:
+                        with self.assertRaises(ValueError):
+                            uploader.upload(manifest_path, [result_path, symlink_path, manifest_path])
+
+                small_limit_uploader = supervisor.GcsArtifactUploader(
+                    bucket="browser-qa-bucket",
+                    run_id="run-1",
+                    execution_id="exec-1",
+                    runtime_root=tmp,
+                    token_provider=lambda: "access-token",
+                    upload_func=lambda *_args, **_kwargs: {},
+                    max_total_bytes=1,
+                )
+                with self.assertRaises(ValueError):
+                    small_limit_uploader.upload(manifest_path, [result_path, manifest_path])
+            finally:
+                try:
+                    os.remove(outside)
+                except FileNotFoundError:
+                    pass
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            process = FakeProcess(0)
+            cleanup = FakeCleanup()
+            lazy_uploader = supervisor.GcsArtifactUploader(
+                bucket="browser-qa-bucket",
+                run_id="run-1",
+                execution_id="exec-1",
+                runtime_root=runtime_root,
+                token_provider=lambda: (_ for _ in ()).throw(RuntimeError("lazy token unavailable")),
+                upload_func=lambda *_args, **_kwargs: {},
+            )
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=runtime_root,
+                subprocess_runner=FakeSubprocess(process),
+                uploader=lazy_uploader,
+                cleanup_runner=cleanup,
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+            )
+            outcome = sup.run(initial_result=valid_result())
+            self.assertEqual(outcome.status, "infrastructure_failed")
+            self.assertEqual(len(cleanup.calls), 1)
+
+    def test_main_defers_gcp_access_token_until_after_supervisor_construction(self):
+        calls = []
+
+        class FakeGcp:
+            def access_token(self):
+                calls.append("access_token")
+                return "access-token"
+
+        class FakeSupervisor:
+            def __init__(self, **kwargs):
+                calls.append("supervisor_init")
+                self.kwargs = kwargs
+
+            def run(self):
+                calls.append("run")
+                return supervisor.Outcome("passed", "manifest.json", [])
+
+        fake_env = env()
+        fake_env.update({
+            "FLATKEY_BROWSER_QA_GCS_BUCKET": "browser-qa-bucket",
+            "FLATKEY_BROWSER_QA_EXECUTION_ID": "exec-1",
+        })
+        with mock.patch.object(supervisor, "GcpClient", return_value=FakeGcp()), \
+            mock.patch.object(supervisor, "Supervisor", FakeSupervisor), \
+            mock.patch.object(supervisor, "CleanupRunner", lambda _client: FakeCleanup()), \
+            mock.patch.object(supervisor, "StagingApiClient", lambda _origin: object()), \
+            mock.patch.object(supervisor.os, "environ", fake_env):
+            self.assertEqual(supervisor.main([]), 0)
+
+        self.assertEqual(calls, ["supervisor_init", "run"])
 
     def test_runtime_evidence_sink_registers_exact_code_and_rejects_bad_events(self):
         redactor = supervisor.Redactor(email="owner+flatkey-qa-1-x@gmail.com")
@@ -526,6 +753,35 @@ class SupervisorTests(unittest.TestCase):
             with urllib.request.urlopen(alias, timeout=2) as response:
                 self.assertEqual(response.status, 204)
             self.assertEqual(sink.runtime_classification, "alias_restriction")
+
+            wrong_path = urllib.request.Request(
+                sink.url.replace("/runtime-evidence", "/wrong"),
+                data=json.dumps({"type": "verification_code", "code": "111111"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError):
+                urllib.request.urlopen(wrong_path, timeout=2)
+
+            with socket.create_connection((sink.host, sink.port), timeout=2) as sock:
+                sock.sendall(
+                    b"POST /runtime-evidence HTTP/1.1\r\n"
+                    b"Host: 127.0.0.1\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Transfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+                )
+                self.assertIn(b"400", sock.recv(256))
+
+            body = json.dumps({"type": "verification_code", "code": "222222"}).encode("utf-8")
+            with socket.create_connection((sink.host, sink.port), timeout=2) as sock:
+                sock.sendall(
+                    b"POST /runtime-evidence HTTP/1.1\r\n"
+                    b"Host: 127.0.0.1\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Content-Length: 1\r\n"
+                    b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
+                )
+                self.assertIn(b"400", sock.recv(256))
         finally:
             sink.stop()
 

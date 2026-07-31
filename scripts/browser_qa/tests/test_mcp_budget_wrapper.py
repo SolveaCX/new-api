@@ -13,6 +13,7 @@ import unittest
 
 from scripts.browser_qa.flatkey_browser_qa.budget import ExplorationBudget
 from scripts.browser_qa.flatkey_browser_qa import mcp_budget_wrapper
+from scripts.browser_qa.flatkey_browser_qa import supervisor
 
 
 class FakeClock:
@@ -82,6 +83,22 @@ class SlowWriter:
         return None
 
 
+class NoNewlineStream:
+    def __init__(self, text):
+        self.text = text
+        self.offset = 0
+
+    def read(self, size=-1):
+        if self.offset >= len(self.text):
+            return ""
+        if size is None or size < 0:
+            size = len(self.text) - self.offset
+        end = min(len(self.text), self.offset + size)
+        chunk = self.text[self.offset:end]
+        self.offset = end
+        return chunk
+
+
 def frame(payload):
     return json.dumps(payload) + "\n"
 
@@ -116,6 +133,7 @@ class WrapperContractTests(unittest.TestCase):
             self.assertIn("http://127.0.0.1:4567", command)
             self.assertIn("--proxy-bypass", command)
             self.assertEqual(command[command.index("--proxy-bypass") + 1], "<-loopback>")
+            self.assertIn("<-loopback>", mcp_budget_wrapper.playwright_child_command.__doc__)
             self.assertIn("--block-service-workers", command)
             self.assertIn("--config", command)
             output_dir = command[command.index("--output-dir") + 1]
@@ -267,6 +285,14 @@ class WrapperContractTests(unittest.TestCase):
                     self.assertTrue(child.terminated)
 
         with tempfile.TemporaryDirectory() as runtime_dir:
+            child = FakeChild()
+            wrapper = self.make_wrapper(runtime_dir, child)
+            output = io.StringIO()
+            wrapper.proxy_client_requests(NoNewlineStream("x" * (mcp_budget_wrapper.MAX_CLIENT_LINE_BYTES + 1)), output)
+            self.assertEqual(child.stdin.getvalue(), "")
+            self.assertTrue(child.terminated)
+
+        with tempfile.TemporaryDirectory() as runtime_dir:
             bad_child_frames = ["non-json", "\"string\"", "[]", "{}", "{\"jsonrpc\":\"1.0\",\"id\":1}"]
             for line in bad_child_frames:
                 with self.subTest(child_stdout=line):
@@ -277,6 +303,47 @@ class WrapperContractTests(unittest.TestCase):
                     wrapper.proxy_child_stdout(output)
                     self.assertEqual(output.getvalue(), "")
                     self.assertTrue(child.terminated)
+
+            child = FakeChild()
+            child.stdout = NoNewlineStream("x" * (mcp_budget_wrapper.MAX_CHILD_STDOUT_LINE_BYTES + 1))
+            wrapper = self.make_wrapper(runtime_dir, child)
+            output = io.StringIO()
+            wrapper.proxy_child_stdout(output)
+            self.assertEqual(output.getvalue(), "")
+            self.assertTrue(child.terminated)
+
+            child = FakeChild()
+            child.stderr = NoNewlineStream("x" * (mcp_budget_wrapper.MAX_CHILD_STDERR_LINE_BYTES + 1))
+            wrapper = self.make_wrapper(runtime_dir, child)
+            output = io.StringIO()
+            wrapper.proxy_child_stderr(output)
+            self.assertEqual(output.getvalue(), "")
+            self.assertTrue(child.terminated)
+
+    def test_wrapper_posts_alias_restriction_only_from_failed_child_tool_response(self):
+        marker = "管理员已启用邮箱地址别名限制，您的邮箱地址由于包含特殊符号而被拒绝。"
+        redactor = supervisor.Redactor(email="owner+flatkey-qa-1-x@gmail.com")
+        sink = supervisor.RuntimeEvidenceSink(redactor)
+        sink.start()
+        try:
+            cases = [
+                ({"jsonrpc": "2.0", "id": 1, "result": {"isError": True, "content": [{"type": "text", "text": marker}]}}, "alias_restriction"),
+                ({"jsonrpc": "2.0", "id": 2, "result": {"isError": False, "content": [{"type": "text", "text": marker}]}}, None),
+                ({"jsonrpc": "2.0", "id": 3, "result": {"isError": True, "content": [{"type": "text", "text": "arbitrary alias_restriction"}]}}, None),
+            ]
+            for payload, expected in cases:
+                with self.subTest(expected=expected):
+                    sink.runtime_classification = None
+                    child = FakeChild()
+                    child.stdout = io.StringIO(frame(payload))
+                    with tempfile.TemporaryDirectory() as runtime_dir:
+                        wrapper = self.make_wrapper(runtime_dir, child)
+                        wrapper.runtime_evidence_url = sink.url
+                        output = io.StringIO()
+                        wrapper.proxy_child_stdout(output)
+                    self.assertEqual(sink.runtime_classification, expected)
+        finally:
+            sink.stop()
 
     def test_eof_terminates_child_without_orphan(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
@@ -461,7 +528,7 @@ class WrapperContractTests(unittest.TestCase):
                 calls.append((args, kwargs))
                 return child
 
-            mcp_budget_wrapper.launch_wrapper(
+            wrapper = mcp_budget_wrapper.launch_wrapper(
                 runtime_dir,
                 popen_factory=popen_factory,
                 tree_attach=lambda _child: RecordingTreeTerminator(),
@@ -476,6 +543,7 @@ class WrapperContractTests(unittest.TestCase):
 
             child_env = calls[0][1]["env"]
             self.assertEqual(child_env, {"PATH": "/bin"})
+            self.assertEqual(wrapper.runtime_evidence_url, "http://127.0.0.1:1/runtime-evidence")
 
 
 class FakeKernel32:

@@ -1,6 +1,7 @@
 import json
 import http.server
 import os
+import re
 import signal
 import shutil
 import socketserver
@@ -26,8 +27,12 @@ from .redaction import Redactor
 INTERNAL_DEADLINE_SECONDS = 840
 MAX_CODEX_STDOUT_LINE_BYTES = 1024 * 1024
 MAX_CODEX_STDOUT_TOTAL_BYTES = 8 * 1024 * 1024
+MAX_CODEX_STDERR_LINE_BYTES = 256 * 1024
 MAX_CODEX_STDERR_TOTAL_BYTES = 1024 * 1024
 MAX_CODEX_EVENTS = 10000
+MAX_GCS_ARTIFACT_TOTAL_BYTES = 16 * 1024 * 1024
+GCS_ARTIFACT_NAMES = frozenset({"result.json", "codex-events.jsonl", "codex-stderr.txt", "manifest.json"})
+SAFE_GCS_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "qa-prompt.md")
 POLICY_PATH = ".agents/skills/flatkey-new-user-onboarding/references/staging-cloud-qa-policy.md"
 SKILL_NAME = "flatkey-new-user-onboarding"
@@ -60,6 +65,7 @@ class Supervisor:
         preflight=None,
         clock,
         signal_module=signal,
+        thread_factory=None,
     ):
         self.env = dict(env)
         self.runtime_root = runtime_root
@@ -70,6 +76,7 @@ class Supervisor:
         self.preflight = preflight
         self.clock = clock
         self.signal_module = signal_module
+        self.thread_factory = thread_factory or threading.Thread
         self.events = []
         self.codex_home = None
         self.home_dir = None
@@ -99,8 +106,8 @@ class Supervisor:
         codex_events_path = os.path.join(self.runtime_root, "codex-events.jsonl")
         codex_stderr_path = os.path.join(self.runtime_root, "codex-stderr.txt")
         artifact_paths = [result_path, codex_events_path, codex_stderr_path, manifest_path]
-        proxy = self.proxy_factory()
-        evidence_sink = RuntimeEvidenceSink(redactor)
+        proxy = None
+        evidence_sink = None
         cleanup_result = CleanupResult(0, False, False, True, "cleanup was not attempted")
         upload_failed = False
         invalid_result = False
@@ -116,6 +123,8 @@ class Supervisor:
                 runtime_classification = "preflight_failed"
                 invalid_result = False
             else:
+                proxy = self.proxy_factory()
+                evidence_sink = RuntimeEvidenceSink(redactor)
                 evidence_sink.start()
                 self._evidence_url = evidence_sink.url
                 proxy.start()
@@ -154,11 +163,20 @@ class Supervisor:
             self._event("infrastructure_error", str(exc), redactor)
             invalid_result = True
         finally:
-            evidence_sink.stop()
-            try:
-                proxy.stop()
-            except Exception as exc:
-                self._event("proxy_stop_failed", str(exc), redactor)
+            if evidence_sink is not None:
+                try:
+                    evidence_sink.stop()
+                except Exception as exc:
+                    self._event("evidence_sink_stop_failed", str(exc), redactor)
+                    runtime_classification = runtime_classification or "invalid_result"
+                    invalid_result = True
+            if proxy is not None:
+                try:
+                    proxy.stop()
+                except Exception as exc:
+                    self._event("proxy_stop_failed", str(exc), redactor)
+                    runtime_classification = runtime_classification or "invalid_result"
+                    invalid_result = True
             try:
                 cleanup_result = self.cleanup_runner.run(identity)
             except Exception as exc:
@@ -265,14 +283,15 @@ class Supervisor:
 
         state = {"payload": None, "error": None}
         stderr_state = {"total": 0, "error": None}
+        deadline = self.clock.monotonic() + INTERNAL_DEADLINE_SECONDS
 
         def stdout_reader():
             total = 0
             try:
                 with _private_text_writer(codex_events_path) as events_file:
-                    for line in process.stdout:
+                    for line in _iter_bounded_lines(process.stdout, MAX_CODEX_STDOUT_LINE_BYTES):
                         total += len(line.encode("utf-8", "replace"))
-                        if len(line.encode("utf-8", "replace")) > MAX_CODEX_STDOUT_LINE_BYTES or total > MAX_CODEX_STDOUT_TOTAL_BYTES:
+                        if total > MAX_CODEX_STDOUT_TOTAL_BYTES:
                             raise RuntimeError("codex stdout exceeded limit")
                         try:
                             event = json.loads(line)
@@ -291,7 +310,7 @@ class Supervisor:
         def stderr_reader():
             try:
                 with _private_text_writer(codex_stderr_path) as stderr_file:
-                    for line in process.stderr:
+                    for line in _iter_bounded_lines(process.stderr, MAX_CODEX_STDERR_LINE_BYTES):
                         stderr_state["total"] += len(line.encode("utf-8", "replace"))
                         if stderr_state["total"] > MAX_CODEX_STDERR_TOTAL_BYTES:
                             raise RuntimeError("codex stderr exceeded limit")
@@ -300,18 +319,19 @@ class Supervisor:
                 stderr_state["error"] = exc
                 _terminate_process(process)
 
-        threads = [threading.Thread(target=stdout_reader), threading.Thread(target=stderr_reader)]
+        threads = [self.thread_factory(target=stdout_reader), self.thread_factory(target=stderr_reader)]
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join(timeout=INTERNAL_DEADLINE_SECONDS)
+            if thread.is_alive():
+                thread.join(timeout=_remaining_deadline_seconds(self.clock, deadline))
         if any(thread.is_alive() for thread in threads):
             _terminate_process(process)
             raise TimeoutError("codex internal deadline exceeded")
         if state["error"] or stderr_state["error"]:
             raise RuntimeError("codex stream invalid")
         try:
-            process.wait(timeout=0)
+            process.wait(timeout=_remaining_deadline_seconds(self.clock, deadline))
         except Exception as exc:
             _terminate_process(process)
             raise TimeoutError("codex internal deadline exceeded") from exc
@@ -381,6 +401,7 @@ PYTHONPATH = "{escaped_repo_root}"
 PATH = "{_toml_escape(os.environ.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
 FLATKEY_BROWSER_QA_PROXY_URL = "http://{proxy.host}:{proxy.port}"
+FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"])}"
 
 [mcp_servers.broker]
 command = "{_toml_escape(sys.executable)}"
@@ -439,6 +460,36 @@ def _private_text_writer(path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     return os.fdopen(fd, "w", encoding="utf-8")
+
+
+def _remaining_deadline_seconds(clock, deadline):
+    return max(0.0, deadline - clock.monotonic())
+
+
+def _iter_bounded_lines(stream, max_line_bytes):
+    pending = ""
+    while True:
+        chunk = stream.read(4096)
+        if chunk == "":
+            if pending:
+                _ensure_line_within_limit(pending, max_line_bytes)
+                yield pending
+            return
+        pending += chunk
+        while True:
+            newline_index = pending.find("\n")
+            if newline_index < 0:
+                _ensure_line_within_limit(pending, max_line_bytes)
+                break
+            line = pending[: newline_index + 1]
+            pending = pending[newline_index + 1 :]
+            _ensure_line_within_limit(line, max_line_bytes)
+            yield line
+
+
+def _ensure_line_within_limit(line, max_line_bytes):
+    if len(line.encode("utf-8", "replace")) > max_line_bytes:
+        raise RuntimeError("stream line exceeded limit")
 
 
 def _is_final_agent_message(event):
@@ -584,11 +635,21 @@ class RuntimeEvidenceSink:
                 if self.client_address[0] not in {"127.0.0.1", "::1"}:
                     self.send_error(403)
                     return
+                if self.path != "/runtime-evidence":
+                    self.send_error(404)
+                    return
+                if self.headers.get("Transfer-Encoding") is not None:
+                    self.send_error(400)
+                    return
                 if self.headers.get("Content-Type") != "application/json":
                     self.send_error(415)
                     return
+                lengths = self.headers.get_all("Content-Length", [])
+                if len(lengths) != 1:
+                    self.send_error(400)
+                    return
                 try:
-                    length = int(self.headers.get("Content-Length", ""))
+                    length = int(lengths[0])
                 except ValueError:
                     self.send_error(411)
                     return
@@ -647,21 +708,35 @@ class _ThreadingHttpServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 def _is_alias_restriction_evidence(event):
     text = event.get("text")
     failed = event.get("failed")
-    marker = "管理员已启用邮箱地址别名限制，您的邮箱地址由于包含特殊符号而被拒绝。"
+    marker = "\u7ba1\u7406\u5458\u5df2\u542f\u7528\u90ae\u7bb1\u5730\u5740\u522b\u540d\u9650\u5236\uff0c\u60a8\u7684\u90ae\u7bb1\u5730\u5740\u7531\u4e8e\u5305\u542b\u7279\u6b8a\u7b26\u53f7\u800c\u88ab\u62d2\u7edd\u3002"
     return failed is True and isinstance(text, str) and marker in text
 
 
 class GcsArtifactUploader:
-    def __init__(self, *, bucket, run_id, execution_id, access_token, upload_func=upload_gcs_object):
+    def __init__(
+        self,
+        *,
+        bucket,
+        run_id,
+        execution_id,
+        runtime_root,
+        token_provider,
+        upload_func=upload_gcs_object,
+        max_total_bytes=MAX_GCS_ARTIFACT_TOTAL_BYTES,
+    ):
         self.bucket = bucket
         self.run_id = run_id
         self.execution_id = execution_id
-        self.access_token = access_token
+        self.runtime_root = os.path.realpath(runtime_root)
+        self.token_provider = token_provider
         self.upload_func = upload_func
+        self.max_total_bytes = max_total_bytes
 
     def upload(self, manifest_path, artifact_paths):
-        ordered = [path for path in artifact_paths if os.path.abspath(path) != os.path.abspath(manifest_path)]
-        ordered.append(manifest_path)
+        if not _safe_gcs_component(self.run_id) or not _safe_gcs_component(self.execution_id):
+            raise ValueError("unsafe gcs object prefix")
+        ordered = self._validated_artifacts(manifest_path, artifact_paths)
+        access_token = self.token_provider()
         uploaded = []
         for path in ordered:
             name = os.path.basename(path)
@@ -670,9 +745,51 @@ class GcsArtifactUploader:
                 data = handle.read()
             content_type = "application/json" if name.endswith(".json") or name.endswith(".jsonl") else "text/plain"
             uploaded.append(
-                self.upload_func(self.bucket, object_name, data, content_type, self.access_token)
+                self.upload_func(self.bucket, object_name, data, content_type, access_token)
             )
         return {"uploaded": uploaded}
+
+    def _validated_artifacts(self, manifest_path, artifact_paths):
+        manifest_real = _validated_artifact_path(self.runtime_root, manifest_path)
+        ordered = []
+        seen_names = set()
+        total = 0
+        for path in artifact_paths:
+            real = _validated_artifact_path(self.runtime_root, path)
+            if real == manifest_real:
+                continue
+            name = os.path.basename(real)
+            if name in seen_names:
+                raise ValueError("duplicate artifact basename")
+            seen_names.add(name)
+            total += os.path.getsize(real)
+            ordered.append(real)
+        manifest_name = os.path.basename(manifest_real)
+        if manifest_name in seen_names:
+            raise ValueError("duplicate artifact basename")
+        total += os.path.getsize(manifest_real)
+        if total > self.max_total_bytes:
+            raise ValueError("artifact upload too large")
+        ordered.append(manifest_real)
+        return ordered
+
+
+def _safe_gcs_component(value):
+    return isinstance(value, str) and SAFE_GCS_COMPONENT.fullmatch(value) is not None and ".." not in value
+
+
+def _validated_artifact_path(runtime_root, path):
+    real = os.path.realpath(path)
+    if not (real == runtime_root or real.startswith(runtime_root + os.sep)):
+        raise ValueError("artifact outside runtime root")
+    name = os.path.basename(real)
+    if name not in GCS_ARTIFACT_NAMES:
+        raise ValueError("unexpected artifact name")
+    if os.path.islink(path):
+        raise ValueError("artifact symlink rejected")
+    if not os.path.isfile(real):
+        raise ValueError("artifact must be a regular file")
+    return real
 
 
 def main(argv=None):
@@ -689,7 +806,8 @@ def main(argv=None):
         bucket=bucket,
         run_id=run_id,
         execution_id=execution_id,
-        access_token=gcp.access_token(),
+        runtime_root=runtime_root,
+        token_provider=gcp.access_token,
     )
     sup = Supervisor(
         env=env,
