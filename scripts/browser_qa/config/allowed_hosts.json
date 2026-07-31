@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "hosts": [
+    "staging-website.flatkey.ai",
+    "staging-console.flatkey.ai",
+    "docs.flatkey.ai"
+  ]
+}

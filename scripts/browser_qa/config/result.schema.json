@@ -1,0 +1,62 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["replay", "exploration", "budgets", "findings"],
+  "properties": {
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checkpoint_reached"],
+      "properties": {
+        "status": {"type": "string", "enum": ["passed", "failed"]},
+        "checkpoint_reached": {"type": "boolean"}
+      }
+    },
+    "exploration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "actions_used"],
+      "properties": {
+        "status": {"type": "string", "enum": ["passed", "failed", "not_started"]},
+        "actions_used": {"type": "integer", "minimum": 0}
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replay_seconds", "exploration_seconds", "max_actions"],
+      "properties": {
+        "replay_seconds": {"type": "integer", "minimum": 1},
+        "exploration_seconds": {"type": "integer", "minimum": 1},
+        "max_actions": {"type": "integer", "minimum": 1}
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "title", "target_url", "steps", "expected", "actual", "evidence_paths", "confidence"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+          "title": {"type": "string"},
+          "target_url": {"type": "string"},
+          "steps": {"type": "array", "items": {"type": "string"}},
+          "expected": {"type": "string"},
+          "actual": {"type": "string"},
+          "evidence_paths": {"type": "array", "items": {"type": "string"}},
+          "confidence": {"type": "string", "enum": ["low", "medium", "high"]}
+        }
+      }
+    },
+    "infrastructure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"type": "string", "enum": ["failed"]},
+        "classification": {"type": "string", "enum": ["alias_restriction", "preflight_failed", "codex_timeout", "upload_failed", "invalid_result"]}
+      }
+    }
+  }
+}
