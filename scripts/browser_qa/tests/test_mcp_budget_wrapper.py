@@ -103,7 +103,10 @@ class WrapperContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as runtime_dir:
             command = mcp_budget_wrapper.playwright_child_command(runtime_dir, proxy_url="http://127.0.0.1:4567")
 
-            self.assertEqual(command[:3], ["npx", "-y", "@playwright/mcp@0.0.78"])
+            self.assertEqual(command[0], "/usr/local/bin/playwright-mcp")
+            self.assertNotIn("npx", command)
+            self.assertNotIn("-y", command)
+            self.assertTrue(all("@playwright/mcp" not in item for item in command))
             self.assertIn("--browser", command)
             self.assertIn("chromium", command)
             self.assertIn("--headless", command)
@@ -111,9 +114,10 @@ class WrapperContractTests(unittest.TestCase):
             self.assertIn("file", command)
             self.assertIn("--proxy-server", command)
             self.assertIn("http://127.0.0.1:4567", command)
+            self.assertIn("--proxy-bypass", command)
+            self.assertEqual(command[command.index("--proxy-bypass") + 1], "<-loopback>")
             self.assertIn("--block-service-workers", command)
             self.assertIn("--config", command)
-            self.assertNotIn("--proxy-bypass-list", command)
             output_dir = command[command.index("--output-dir") + 1]
             config_path = command[command.index("--config") + 1]
             self.assertTrue(os.path.realpath(output_dir).startswith(os.path.realpath(runtime_dir) + os.sep))
@@ -126,6 +130,18 @@ class WrapperContractTests(unittest.TestCase):
             )
             self.assertNotIn("@latest", command)
             self.assertIs(mcp_budget_wrapper.SUBPROCESS_SHELL, False)
+
+    def test_child_command_requires_proxy_and_accepts_explicit_test_executable_only(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            with self.assertRaises(RuntimeError):
+                mcp_budget_wrapper.playwright_child_command(runtime_dir)
+
+            command = mcp_budget_wrapper.playwright_child_command(
+                runtime_dir,
+                proxy_url="http://127.0.0.1:4567",
+                executable="/tmp/fake-playwright-mcp",
+            )
+            self.assertEqual(command[0], "/tmp/fake-playwright-mcp")
 
     def test_wrapper_forwards_calls_before_marker_and_exactly_thirty_after_marker(self):
         clock = FakeClock()
@@ -426,6 +442,7 @@ class WrapperContractTests(unittest.TestCase):
                     tree_attach=fail_attach,
                     subprocess_run=fake_run,
                     killpg=fake_killpg,
+                    proxy_url="http://127.0.0.1:4567",
                 )
 
             if os.name == "nt":
@@ -433,6 +450,32 @@ class WrapperContractTests(unittest.TestCase):
                 self.assertFalse(child.killed)
             else:
                 self.assertEqual(killpg_calls, [(4321, signal.SIGKILL)])
+
+    def test_playwright_child_popen_uses_minimal_env_without_codex_or_runtime_evidence(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            child = FakeChild()
+            child.pid = 1234
+            calls = []
+
+            def popen_factory(*args, **kwargs):
+                calls.append((args, kwargs))
+                return child
+
+            mcp_budget_wrapper.launch_wrapper(
+                runtime_dir,
+                popen_factory=popen_factory,
+                tree_attach=lambda _child: RecordingTreeTerminator(),
+                proxy_url="http://127.0.0.1:4567",
+                parent_env={
+                    "PATH": "/bin",
+                    "CODEX_API_KEY": "sk-secretSECRET",
+                    "FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL": "http://127.0.0.1:1/runtime-evidence",
+                    "HTTP_PROXY": "http://proxy.invalid",
+                },
+            )
+
+            child_env = calls[0][1]["env"]
+            self.assertEqual(child_env, {"PATH": "/bin"})
 
 
 class FakeKernel32:

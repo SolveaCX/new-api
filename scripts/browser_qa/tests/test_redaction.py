@@ -61,6 +61,14 @@ class RedactionTests(unittest.TestCase):
 
         self.assertEqual(cleaned, "created [REDACTED_API_KEY]")
 
+    def test_redactor_only_masks_exact_registered_verification_codes(self):
+        redactor = Redactor(email="owner+flatkey-qa-1-x@gmail.com")
+
+        self.assertEqual(redactor.clean("ticket 123456 remains"), "ticket 123456 remains")
+
+        redactor.register_code("654321")
+        self.assertEqual(redactor.clean("ticket 123456 code 654321"), "ticket 123456 code [REDACTED_CODE]")
+
     def test_redactor_masks_credential_query_values_inside_nested_text(self):
         redactor = Redactor(email="owner+flatkey-qa-1-x@gmail.com", code="123456")
         raw = {

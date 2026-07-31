@@ -86,10 +86,17 @@ class BrokerMcpTests(unittest.TestCase):
             "FLATKEY_BROWSER_QA_BROKER_URL": "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app/",
         }
 
-    def run_server(self, requests, opener=None, clock=None, env=None):
+    def run_server(self, requests, opener=None, clock=None, env=None, evidence_notifier=None):
         stdin = io.StringIO(frames(*requests))
         stdout = io.StringIO()
-        broker_mcp.run(stdin, stdout, env=env or self.env(), opener=opener or RecordingOpener([]), clock=clock or FakeClock())
+        broker_mcp.run(
+            stdin,
+            stdout,
+            env=env or self.env(),
+            opener=opener or RecordingOpener([]),
+            clock=clock or FakeClock(),
+            evidence_notifier=evidence_notifier,
+        )
         return decode_frames(stdout.getvalue())
 
     def test_initialize_lifecycle_tool_list_and_notifications(self):
@@ -192,6 +199,31 @@ class BrokerMcpTests(unittest.TestCase):
         self.assertEqual(body["run_id"], "1700000000")
         self.assertEqual(body["email_tag"], "flatkey-qa-1700000000-abc123def4")
         self.assertEqual(body["start_time"], 1700000000)
+
+    def test_broker_notifies_actual_code_before_returning_it_to_codex(self):
+        opener = RecordingOpener(
+            [
+                FakeResponse(200, b"id-token", {"Metadata-Flavor": "Google"}),
+                FakeResponse(200, {"status": "ready", "code": "654321"}),
+            ]
+        )
+        notifications = []
+
+        responses = self.run_server(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": "call",
+                    "method": "tools/call",
+                    "params": {"name": "get_current_verification_code", "arguments": {}},
+                }
+            ],
+            opener=opener,
+            evidence_notifier=lambda event: notifications.append(event),
+        )
+
+        self.assertEqual(notifications, [{"type": "verification_code", "code": "654321"}])
+        self.assertEqual(json.loads(responses[0]["result"]["content"][0]["text"])["code"], "654321")
 
     def test_broker_env_redirect_and_deadline_fail_closed_without_secrets(self):
         bad_env = dict(self.env(), FLATKEY_BROWSER_QA_BROKER_URL="https://example.com/")

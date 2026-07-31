@@ -15,7 +15,7 @@ CONFIDENCE = {"low", "medium", "high"}
 
 
 def validate_result(payload):
-    _require_object(payload, {"replay", "exploration", "budgets", "findings"}, {"infrastructure"})
+    _require_object(payload, {"replay", "exploration", "budgets", "findings"}, set())
     _require_object(payload["replay"], {"status", "checkpoint_reached"}, set())
     _enum(payload["replay"]["status"], {"passed", "failed"}, "replay.status")
     _boolean(payload["replay"]["checkpoint_reached"], "replay.checkpoint_reached")
@@ -33,22 +33,13 @@ def validate_result(payload):
     for index, item in enumerate(payload["findings"]):
         _validate_finding(item, index)
 
-    if "infrastructure" in payload:
-        _require_object(payload["infrastructure"], {"status"}, {"classification"})
-        _enum(payload["infrastructure"]["status"], {"failed"}, "infrastructure.status")
-        if "classification" in payload["infrastructure"]:
-            _enum(
-                payload["infrastructure"]["classification"],
-                {"alias_restriction", "preflight_failed", "codex_timeout", "codex_nonzero", "codex_signal", "upload_failed", "invalid_result"},
-                "infrastructure.classification",
-            )
     return payload
 
 
-def classify_status(payload, *, cleanup_result=None, codex_returncode=0, upload_failed=False, invalid_result=False):
+def classify_status(payload, *, cleanup_result=None, codex_returncode=0, upload_failed=False, invalid_result=False, runtime_classification=None):
     if cleanup_result is not None and cleanup_result.cleanup_failed:
         return "cleanup_failed"
-    if codex_returncode != 0 or upload_failed or invalid_result or payload.get("infrastructure", {}).get("status") == "failed":
+    if codex_returncode != 0 or upload_failed or invalid_result or runtime_classification:
         return "infrastructure_failed"
     if payload["replay"]["status"] == "failed" or not payload["replay"]["checkpoint_reached"]:
         return "replay_failed"
@@ -57,21 +48,30 @@ def classify_status(payload, *, cleanup_result=None, codex_returncode=0, upload_
     return "passed"
 
 
-def build_manifest(payload, *, cleanup_result, redactor=None, model_manifest=None, codex_returncode=0, upload_failed=False, invalid_result=False):
+def build_manifest(payload, *, cleanup_result, redactor=None, model_manifest=None, codex_returncode=0, upload_failed=False, invalid_result=False, runtime_classification=None):
     redactor = redactor or Redactor()
     validate_result(payload)
     cleanup = _cleanup_to_dict(cleanup_result)
-    status = classify_status(payload, cleanup_result=cleanup_result, codex_returncode=codex_returncode, upload_failed=upload_failed, invalid_result=invalid_result)
+    status = classify_status(
+        payload,
+        cleanup_result=cleanup_result,
+        codex_returncode=codex_returncode,
+        upload_failed=upload_failed,
+        invalid_result=invalid_result,
+        runtime_classification=runtime_classification,
+    )
     manifest = {
         "status": status,
         "created_at": int(time.time()),
         "result": redactor.clean(payload),
         "cleanup": redactor.clean(cleanup),
     }
+    if runtime_classification:
+        manifest["infrastructure"] = {"status": "failed", "classification": runtime_classification}
     return manifest
 
 
-def write_report(result_path, manifest_path, *, cleanup_result, redactor=None, codex_returncode=0, upload_failed=False, invalid_result=False):
+def write_report(result_path, manifest_path, *, cleanup_result, redactor=None, codex_returncode=0, upload_failed=False, invalid_result=False, runtime_classification=None):
     with open(result_path, encoding="utf-8") as handle:
         payload = json.load(handle)
     manifest = build_manifest(
@@ -81,6 +81,7 @@ def write_report(result_path, manifest_path, *, cleanup_result, redactor=None, c
         codex_returncode=codex_returncode,
         upload_failed=upload_failed,
         invalid_result=invalid_result,
+        runtime_classification=runtime_classification,
     )
     os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
     _write_json_private(manifest_path, manifest)

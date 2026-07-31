@@ -13,8 +13,8 @@ class FakeConnector:
     def __init__(self):
         self.calls = []
 
-    def __call__(self, sockaddr, timeout):
-        self.calls.append((sockaddr, timeout))
+    def __call__(self, resolved, timeout):
+        self.calls.append((resolved, timeout))
         raise OSError("connect stopped by test")
 
 
@@ -98,6 +98,41 @@ class EgressPolicyTests(unittest.TestCase):
         finally:
             proxy.stop()
 
+    def test_verified_socket_uses_resolved_family_socktype_proto_and_sockaddr_for_ipv4_and_ipv6(self):
+        class FakeSocket:
+            def __init__(self, family, socktype, proto):
+                self.family = family
+                self.socktype = socktype
+                self.proto = proto
+                self.timeout = None
+                self.connected = None
+
+            def settimeout(self, timeout):
+                self.timeout = timeout
+
+            def connect(self, sockaddr):
+                self.connected = sockaddr
+
+        created = []
+
+        def socket_factory(family, socktype, proto):
+            sock = FakeSocket(family, socktype, proto)
+            created.append(sock)
+            return sock
+
+        for target in [
+            egress_proxy.ResolvedTarget(socket.AF_INET, socket.SOCK_STREAM, 6, ("93.184.216.34", 443)),
+            egress_proxy.ResolvedTarget(socket.AF_INET6, socket.SOCK_STREAM, 6, ("2606:2800:220:1:248:1893:25c8:1946", 443, 0, 0)),
+        ]:
+            with self.subTest(family=target.family):
+                sock = egress_proxy.open_verified_socket(target, 3, socket_factory=socket_factory)
+                self.assertIs(sock, created[-1])
+                self.assertEqual(sock.family, target.family)
+                self.assertEqual(sock.socktype, target.socktype)
+                self.assertEqual(sock.proto, target.proto)
+                self.assertEqual(sock.timeout, 3)
+                self.assertEqual(sock.connected, target.sockaddr)
+
     def test_redirect_target_is_rechecked_and_non_http_methods_are_blocked(self):
         policy = egress_proxy.EgressPolicy({"staging-console.flatkey.ai"})
         self.assertEqual(policy.check_url("http://staging-console.flatkey.ai/login").host, "staging-console.flatkey.ai")
@@ -134,8 +169,8 @@ class EgressPolicyTests(unittest.TestCase):
             resolver_calls.append((host, resolved_port))
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", resolved_port))]
 
-        def connector(sockaddr, timeout):
-            self.assertEqual(sockaddr, ("93.184.216.34", 80))
+        def connector(resolved, timeout):
+            self.assertEqual(resolved.sockaddr, ("93.184.216.34", 80))
             return socket.create_connection(("127.0.0.1", port), timeout=timeout)
 
         proxy = egress_proxy.EgressProxy(
@@ -161,6 +196,67 @@ class EgressPolicyTests(unittest.TestCase):
             self.assertEqual(resolver_calls, [("staging-console.flatkey.ai", 80), ("staging-console.flatkey.ai", 80)])
         finally:
             proxy.stop()
+
+    def test_http_response_body_over_budget_fails_closed(self):
+        class LargeHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = b"x" * 16
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format, *args):
+                return
+
+        upstream = ThreadedServer(("127.0.0.1", 0), LargeHandler)
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        thread.start()
+        port = upstream.server_address[1]
+        proxy = egress_proxy.EgressProxy(
+            policy=egress_proxy.EgressPolicy({"staging-console.flatkey.ai"}),
+            resolver=lambda host, resolved_port, *_: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", resolved_port))],
+            connector=lambda _resolved, timeout: socket.create_connection(("127.0.0.1", port), timeout=timeout),
+            max_body_bytes=8,
+        )
+        proxy.start()
+        try:
+            conn = http.client.HTTPConnection(proxy.host, proxy.port, timeout=2)
+            conn.request("GET", "http://staging-console.flatkey.ai/")
+            response = conn.getresponse()
+            self.assertEqual(response.status, 502)
+        finally:
+            conn.close()
+            proxy.stop()
+            upstream.shutdown()
+            upstream.server_close()
+
+    def test_connect_tunnel_has_independent_byte_budgets_per_direction(self):
+        class EchoHandler(socketserver.BaseRequestHandler):
+            def handle(self):
+                self.request.sendall(b"y" * 16)
+
+        upstream = socketserver.TCPServer(("127.0.0.1", 0), EchoHandler)
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        thread.start()
+        port = upstream.server_address[1]
+        proxy = egress_proxy.EgressProxy(
+            policy=egress_proxy.EgressPolicy({"staging-console.flatkey.ai"}),
+            resolver=lambda host, resolved_port, *_: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", resolved_port))],
+            connector=lambda _resolved, timeout: socket.create_connection(("127.0.0.1", port), timeout=timeout),
+            max_tunnel_bytes=8,
+        )
+        proxy.start()
+        try:
+            with socket.create_connection((proxy.host, proxy.port), timeout=2) as sock:
+                sock.sendall(b"CONNECT staging-console.flatkey.ai:443 HTTP/1.1\r\nHost: staging-console.flatkey.ai\r\n\r\n")
+                self.assertIn(b"200", sock.recv(256))
+                data = sock.recv(64)
+                self.assertLessEqual(len(data), 8)
+        finally:
+            proxy.stop()
+            upstream.shutdown()
+            upstream.server_close()
             upstream.shutdown()
             upstream.server_close()
 

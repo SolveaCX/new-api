@@ -32,23 +32,24 @@ def _default_opener():
     return urllib.request.build_opener(_NoRedirectHandler(), urllib.request.ProxyHandler({}))
 
 
-def run(stdin=None, stdout=None, *, env=None, opener=None, clock=None, max_line_bytes=1024 * 1024):
+def run(stdin=None, stdout=None, *, env=None, opener=None, clock=None, max_line_bytes=1024 * 1024, evidence_notifier=None):
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     env = env or os.environ
     clock = clock or time
     server = McpServer(
         "flatkey-browser-qa-broker",
-        [Tool("get_current_verification_code", "Return the verification code for this QA run.", _BrokerTool(env, opener, clock))],
+        [Tool("get_current_verification_code", "Return the verification code for this QA run.", _BrokerTool(env, opener, clock, evidence_notifier))],
     )
     run_jsonrpc_server(stdin, stdout, server, max_line_bytes=max_line_bytes)
 
 
 class _BrokerTool:
-    def __init__(self, env, opener, clock):
+    def __init__(self, env, opener, clock, evidence_notifier=None):
         self.env = env
         self.opener = opener or _default_opener()
         self.clock = clock
+        self.evidence_notifier = evidence_notifier or _evidence_notifier_from_env(env)
 
     def __call__(self):
         config = _load_env(self.env)
@@ -68,6 +69,7 @@ class _BrokerTool:
                 code = response.get("code")
                 if not isinstance(code, str) or not code:
                     raise ToolExecutionError("broker response malformed")
+                self.evidence_notifier({"type": "verification_code", "code": code})
                 return {"status": "ready", "code": code}
             if status == "error":
                 raise ToolExecutionError("broker returned error")
@@ -152,6 +154,20 @@ def _post_current_code(opener, config, token, *, timeout):
     if not isinstance(decoded, dict):
         raise ToolExecutionError("broker response malformed")
     return decoded
+
+
+def _evidence_notifier_from_env(env):
+    url = env.get("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL")
+    if not url:
+        return lambda _event: None
+
+    def notify(event):
+        raw = json.dumps(event, separators=(",", ":")).encode("utf-8")
+        request = urllib.request.Request(url, data=raw, headers={"Content-Type": "application/json"}, method="POST")
+        with _default_opener().open(request, timeout=2):
+            return None
+
+    return notify
 
 
 if __name__ == "__main__":

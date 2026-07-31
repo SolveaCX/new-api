@@ -1,4 +1,5 @@
 import re
+import threading
 from dataclasses import dataclass, field
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
@@ -18,7 +19,6 @@ _SECRET_KEYS = {
 _QUERY_SECRET_KEYS = _SECRET_KEYS | {"code"}
 _API_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+")
-_SIX_DIGIT_CODE_RE = re.compile(r"\b\d{6}\b")
 
 
 @dataclass(repr=False)
@@ -29,6 +29,7 @@ class Redactor:
     extra_secrets: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self):
+        self._lock = threading.RLock()
         self._text_replacements = []
         if self.email:
             local, _, domain = self.email.partition("@")
@@ -84,12 +85,21 @@ class Redactor:
     def _clean_text(self, text):
         cleaned = self._clean_url_query(text)
         cleaned = _API_KEY_RE.sub("[REDACTED_API_KEY]", cleaned)
-        cleaned = _SIX_DIGIT_CODE_RE.sub("[REDACTED_CODE]", cleaned)
         if self._email_alias_re is not None:
             cleaned = self._email_alias_re.sub("[REDACTED_EMAIL]", cleaned)
-        for secret, replacement in self._text_replacements:
+        with self._lock:
+            replacements = list(self._text_replacements)
+        for secret, replacement in replacements:
             cleaned = cleaned.replace(secret, replacement)
         return cleaned
+
+    def register_code(self, code):
+        if not isinstance(code, str) or not code.isdecimal() or len(code) != 6:
+            raise ValueError("verification code must be exactly six digits")
+        with self._lock:
+            marker = (code, "[REDACTED_CODE]")
+            if marker not in self._text_replacements:
+                self._text_replacements.append(marker)
 
     def _clean_url_query(self, text):
         if not text.startswith(("http://", "https://")):

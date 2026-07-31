@@ -48,15 +48,6 @@
           "confidence": {"type": "string", "enum": ["low", "medium", "high"]}
         }
       }
-    },
-    "infrastructure": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["status"],
-      "properties": {
-        "status": {"type": "string", "enum": ["failed"]},
-        "classification": {"type": "string", "enum": ["alias_restriction", "preflight_failed", "codex_timeout", "codex_nonzero", "codex_signal", "upload_failed", "invalid_result"]}
-      }
     }
   }
 }

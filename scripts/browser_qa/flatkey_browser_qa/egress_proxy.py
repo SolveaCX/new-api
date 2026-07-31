@@ -116,20 +116,22 @@ class EgressProxy:
         *,
         policy=None,
         resolver=socket.getaddrinfo,
-        connector=socket.create_connection,
+        connector=None,
         host="127.0.0.1",
         port=0,
         max_header_bytes=16384,
         max_body_bytes=1048576,
+        max_tunnel_bytes=1048576,
         timeout=5,
     ):
         self.policy = policy or EgressPolicy.from_file()
         self.resolver = resolver
-        self.connector = connector
+        self.connector = connector or open_verified_socket
         self.host = host
         self.port = port
         self.max_header_bytes = max_header_bytes
         self.max_body_bytes = max_body_bytes
+        self.max_tunnel_bytes = max_tunnel_bytes
         self.timeout = timeout
         self.events = []
         self._server = None
@@ -189,7 +191,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             return
         try:
             resolved = self.proxy.policy.resolve(host, port, resolver=self.proxy.resolver)[0]
-            upstream = self.proxy.connector(resolved.sockaddr, self.proxy.timeout)
+            upstream = self.proxy.connector(resolved, self.proxy.timeout)
         except Exception:
             self._simple_error(502, "connect failed")
             return
@@ -239,7 +241,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else b""
         try:
             resolved = self.proxy.policy.resolve(checked.host, checked.port, resolver=self.proxy.resolver)[0]
-            with self.proxy.connector(resolved.sockaddr, self.proxy.timeout) as upstream:
+            with self.proxy.connector(resolved, self.proxy.timeout) as upstream:
                 upstream.settimeout(self.proxy.timeout)
                 self._send_upstream_request(upstream, checked, body)
                 self._forward_upstream_response(upstream)
@@ -295,15 +297,26 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
             return
+        for key, value in filtered.headers:
+            if key.lower() == "content-length":
+                try:
+                    if int(value) > self.proxy.max_body_bytes:
+                        raise ProxyError("upstream response body too large")
+                except ValueError as exc:
+                    raise ProxyError("malformed content length") from exc
         self.send_response(status)
         for key, value in filtered.headers:
             self.send_header(key, value)
         self.send_header("Connection", "close")
         self.end_headers()
+        forwarded = 0
         while True:
             chunk = fileobj.read(8192)
             if not chunk:
                 break
+            forwarded += len(chunk)
+            if forwarded > self.proxy.max_body_bytes:
+                raise ProxyError("upstream response body too large")
             self.wfile.write(chunk)
 
     def _simple_error(self, status, message):
@@ -318,6 +331,8 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def _tunnel(self, upstream):
         sockets = [self.connection, upstream]
+        client_to_upstream = 0
+        upstream_to_client = 0
         try:
             while True:
                 readable, _, _ = select.select(sockets, [], [], self.proxy.timeout)
@@ -328,6 +343,16 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
                     if not data:
                         return
                     target = upstream if source is self.connection else self.connection
+                    if source is self.connection:
+                        client_to_upstream += len(data)
+                        if client_to_upstream > self.proxy.max_tunnel_bytes:
+                            return
+                    else:
+                        upstream_to_client += len(data)
+                        if upstream_to_client > self.proxy.max_tunnel_bytes:
+                            data = data[: max(0, self.proxy.max_tunnel_bytes - (upstream_to_client - len(data)))]
+                            if not data:
+                                return
                     target.sendall(data)
         finally:
             upstream.close()
@@ -384,3 +409,17 @@ def _is_forbidden_ip(ip):
         or ip.is_reserved
         or ip.is_multicast
     )
+
+
+def open_verified_socket(resolved, timeout, *, socket_factory=socket.socket):
+    sock = socket_factory(resolved.family, resolved.socktype, resolved.proto)
+    try:
+        sock.settimeout(timeout)
+        sock.connect(resolved.sockaddr)
+        return sock
+    except Exception:
+        try:
+            sock.close()
+        except Exception:
+            pass
+        raise

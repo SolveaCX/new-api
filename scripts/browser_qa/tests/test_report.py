@@ -58,7 +58,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report.classify_status(valid_result(findings=[finding(severity="info")])), "passed")
         self.assertEqual(report.classify_status(valid_result(findings=[finding(severity="low")])), "findings_detected")
         self.assertEqual(report.classify_status(valid_result(replay={"status": "failed", "checkpoint_reached": False})), "replay_failed")
-        self.assertEqual(report.classify_status(valid_result(infrastructure={"status": "failed"})), "infrastructure_failed")
+        self.assertEqual(report.classify_status(valid_result(), runtime_classification="codex_nonzero"), "infrastructure_failed")
 
         cleanup = CleanupResult(1, True, True, True, "token cleanup failed")
         manifest = report.build_manifest(valid_result(), cleanup_result=cleanup, model_manifest={"cleanup": {"cleanup_failed": False}})
@@ -66,6 +66,12 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "cleanup_failed")
         self.assertEqual(manifest["cleanup"]["cleanup_failed"], True)
         self.assertEqual(manifest["cleanup"]["reason"], "token cleanup failed")
+
+    def test_model_result_schema_rejects_infrastructure_and_alias_restriction_self_report(self):
+        with self.assertRaises(report.ResultValidationError):
+            report.validate_result(valid_result(infrastructure={"status": "failed"}))
+        with self.assertRaises(report.ResultValidationError):
+            report.validate_result(valid_result(alias_restriction=True))
 
     def test_writes_strict_redacted_report_and_schema_file_is_loadable(self):
         with tempfile.TemporaryDirectory() as tmp:

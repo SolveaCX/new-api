@@ -19,18 +19,19 @@ from .control_mcp import write_control_state
 SUBPROCESS_SHELL = False
 EXPLORATION_MAX_ACTIONS = 30
 EXPLORATION_SECONDS = 300
+PLAYWRIGHT_MCP_EXECUTABLE = "/usr/local/bin/playwright-mcp"
 
 
-def playwright_child_command(runtime_dir, proxy_url=None):
+def playwright_child_command(runtime_dir, proxy_url=None, *, executable=PLAYWRIGHT_MCP_EXECUTABLE):
+    if not proxy_url:
+        raise RuntimeError("proxy url is required")
     directory = _runtime_dir(runtime_dir)
     output_dir = os.path.join(directory, "playwright-output")
     os.makedirs(output_dir, exist_ok=True)
     config_path = os.path.join(directory, "playwright-mcp-config.json")
     _write_playwright_config(config_path)
     command = [
-        "npx",
-        "-y",
-        "@playwright/mcp@0.0.78",
+        executable,
         "--browser",
         "chromium",
         "--headless",
@@ -41,9 +42,11 @@ def playwright_child_command(runtime_dir, proxy_url=None):
         "--block-service-workers",
         "--config",
         config_path,
+        "--proxy-server",
+        proxy_url,
+        "--proxy-bypass",
+        "<-loopback>",
     ]
-    if proxy_url:
-        command.extend(["--proxy-server", proxy_url])
     return command
 
 
@@ -65,7 +68,8 @@ def _write_playwright_config(path):
 
 def main():
     runtime_dir = os.environ["FLATKEY_BROWSER_QA_RUNTIME_DIR"]
-    wrapper = launch_wrapper(runtime_dir)
+    proxy_url = os.environ["FLATKEY_BROWSER_QA_PROXY_URL"]
+    wrapper = launch_wrapper(runtime_dir, proxy_url=proxy_url)
     signal.signal(signal.SIGTERM, wrapper.handle_parent_signal)
     signal.signal(signal.SIGINT, wrapper.handle_parent_signal)
     stdout_thread = threading.Thread(target=wrapper.proxy_child_stdout, args=(sys.stdout,), daemon=True)
@@ -82,10 +86,12 @@ def launch_wrapper(
     tree_attach=None,
     subprocess_run=subprocess.run,
     killpg=os.killpg if hasattr(os, "killpg") else None,
+    proxy_url=None,
+    parent_env=None,
 ):
     selected_tree_attach = tree_attach or ProcessTreeTerminator.attach
     child = popen_factory(
-        playwright_child_command(runtime_dir, proxy_url=os.environ.get("FLATKEY_BROWSER_QA_PROXY_URL")),
+        playwright_child_command(runtime_dir, proxy_url=proxy_url or os.environ.get("FLATKEY_BROWSER_QA_PROXY_URL")),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -96,6 +102,7 @@ def launch_wrapper(
         shell=SUBPROCESS_SHELL,
         start_new_session=(os.name != "nt"),
         creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
+        env=_minimal_child_env(parent_env or os.environ),
     )
     try:
         terminator = selected_tree_attach(child)
@@ -382,6 +389,15 @@ def _bounded_wait(child):
         child.wait(timeout=5)
     except Exception:
         pass
+
+
+def _minimal_child_env(parent_env):
+    child_env = {}
+    if parent_env.get("PATH"):
+        child_env["PATH"] = parent_env["PATH"]
+    if os.name == "nt" and parent_env.get("SystemRoot"):
+        child_env["SystemRoot"] = parent_env["SystemRoot"]
+    return child_env
 
 
 def _kernel32():

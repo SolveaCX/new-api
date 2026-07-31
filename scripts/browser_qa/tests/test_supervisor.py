@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import io
+import urllib.request
 
 from scripts.browser_qa.flatkey_browser_qa.cleanup import CleanupResult
 from scripts.browser_qa.flatkey_browser_qa import supervisor
@@ -24,17 +26,23 @@ class FakeClock:
         self.now += seconds
 
 
+class ReadableAfterCloseStringIO(io.StringIO):
+    def close(self):
+        self.closed_flag = True
+
+
 class FakeProcess:
     def __init__(self, returncode=0, stdout="", stderr="", finish_after=0, write_result=None, on_communicate=None):
         self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+        self.stdout = io.StringIO(stdout)
+        self.stderr = io.StringIO(stderr)
         self.finish_after = finish_after
         self.write_result = write_result
         self.on_communicate = on_communicate
         self.terminated = False
         self.killed = False
         self.communicated_input = None
+        self.stdin = ReadableAfterCloseStringIO()
         self.wait_calls = 0
 
     def poll(self):
@@ -54,12 +62,13 @@ class FakeProcess:
         self.killed = True
 
     def communicate(self, input=None, timeout=None):
-        self.communicated_input = input
+        raise AssertionError("supervisor must stream stdout/stderr instead of communicate()")
+
+    def finish_streams(self):
         if self.on_communicate:
             self.on_communicate()
         if self.write_result:
             self.write_result()
-        return self.stdout, self.stderr
 
 
 class FakeSubprocess:
@@ -224,9 +233,12 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(len(sup.uploader.uploaded), 1)
         args, kwargs = sup.subprocess_runner.calls[0]
         self.assertIn("--strict-config", args)
+        self.assertIn("--skip-git-repo-check", args)
         self.assertIn("--profile", args)
         self.assertIn("qa", args)
         self.assertIn("--output-schema", args)
+        self.assertNotIn("--output-last-message", args)
+        self.assertNotIn("--ignore-user-config", args)
         self.assertIn("--sandbox", args)
         self.assertIn("workspace-write", args)
         self.assertIn("--model", args)
@@ -236,14 +248,21 @@ class SupervisorTests(unittest.TestCase):
         self.assertNotIn("HTTPS_PROXY", kwargs["env"])
         self.assertNotIn("ALL_PROXY", kwargs["env"])
         self.assertIs(kwargs["stdin"], subprocess.PIPE)
-        self.assertIn("$flatkey-new-user-onboarding", process.communicated_input)
-        self.assertIn("staging-cloud-qa-policy.md", process.communicated_input)
-        self.assertIn("Run ID: 12345", process.communicated_input)
-        self.assertIn("Disposable email:", process.communicated_input)
-        self.assertIn("Disposable password:", process.communicated_input)
-        self.assertNotIn("CODEX_API_KEY", process.communicated_input)
+        prompt = process.stdin.getvalue()
+        self.assertIn("$flatkey-new-user-onboarding", prompt)
+        self.assertIn("staging-cloud-qa-policy.md", prompt)
+        self.assertIn("Run ID: 12345", prompt)
+        self.assertIn("Disposable email:", prompt)
+        self.assertIn("Disposable password:", prompt)
+        self.assertNotIn("CODEX_API_KEY", prompt)
         self.assertNotIn("owner@gmail.com", config_text if "config_text" in locals() else "")
         self.assertNotIn("CODEX_API_KEY", sup.env)
+        self.assertEqual(kwargs["env"]["HOME"], sup.home_dir)
+        if os.name == "nt":
+            self.assertEqual(kwargs["env"]["USERPROFILE"], sup.home_dir)
+        skill_dir = os.path.join(sup.home_dir, ".agents", "skills", "flatkey-new-user-onboarding")
+        self.assertTrue(os.path.isdir(skill_dir))
+        self.assertFalse(os.path.realpath(skill_dir).startswith(os.path.realpath(kwargs["cwd"]) + os.sep))
         if os.name != "nt":
             self.assertEqual(oct(os.stat(sup.codex_home).st_mode & 0o777), "0o700")
         else:
@@ -282,7 +301,7 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(self.run_supervisor(FakeProcess(0), result_payload={"bad": "shape"})[0].status, "infrastructure_failed")
 
         clock = FakeClock()
-        process = FakeProcess(0, on_communicate=lambda: (_ for _ in ()).throw(subprocess.TimeoutExpired("codex", 840)))
+        process = FakeProcess(0, finish_after=100)
         outcome, sup = self.run_supervisor(process, result_payload=valid_result(), clock=clock)
         self.assertEqual(outcome.status, "infrastructure_failed")
         self.assertTrue(process.terminated)
@@ -301,11 +320,11 @@ class SupervisorTests(unittest.TestCase):
         bad_status = lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": False, "turnstile_check": False}}
         self.assertEqual(self.run_supervisor(FakeProcess(0), result_payload=valid_result(), preflight=bad_status)[0].status, "infrastructure_failed")
 
-        alias_failure = valid_result(
+        alias_self_report = valid_result(
             replay={"status": "failed", "checkpoint_reached": False},
-            infrastructure={"classification": "alias_restriction", "status": "failed"},
+            alias_restriction=True,
         )
-        self.assertEqual(self.run_supervisor(FakeProcess(0), result_payload=alias_failure)[0].status, "infrastructure_failed")
+        self.assertEqual(self.run_supervisor(FakeProcess(0), result_payload=alias_self_report)[0].status, "infrastructure_failed")
 
         missing_broker_env = env()
         del missing_broker_env["FLATKEY_BROWSER_QA_BROKER_URL"]
@@ -331,37 +350,50 @@ class SupervisorTests(unittest.TestCase):
             )()
 
     def test_stdout_stderr_artifacts_and_outcome_do_not_leak_secrets(self):
-        process = FakeProcess(1, stdout="owner@gmail.com+flatkey password sk-parentSECRET 654321", stderr="Cookie: secret Authorization: Bearer sk-xSECRET")
+        process = FakeProcess(
+            1,
+            stdout=json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(valid_result())}}) + "\n",
+            stderr="Cookie: secret Authorization: Bearer sk-xSECRET\n",
+        )
         outcome, sup = self.run_supervisor(process, result_payload=valid_result())
         rendered = json.dumps(outcome.to_dict()) + json.dumps(sup.events)
 
-        for secret in ["owner@gmail.com", "password", "sk-parentSECRET", "sk-xSECRET", "654321", "Cookie: secret", "Authorization: Bearer"]:
+        for secret in ["owner@gmail.com", "password", "sk-parentSECRET", "sk-xSECRET", "Cookie: secret", "Authorization: Bearer"]:
             self.assertNotIn(secret, rendered)
+        artifact_names = {os.path.basename(path) for _manifest, paths in sup.uploader.uploaded for path in paths}
+        self.assertIn("codex-events.jsonl", artifact_names)
+        self.assertIn("codex-stderr.txt", artifact_names)
 
-    def test_quarantine_result_is_redacted_validated_atomically_written_and_not_uploaded(self):
+    def test_final_result_is_extracted_from_jsonl_redacted_and_no_raw_quarantine_is_written(self):
         raw_alias = "owner+flatkey-qa-12345-secret@gmail.com"
         code = "654321"
 
         with tempfile.TemporaryDirectory() as tmp:
             process_holder = {}
+            raw_result = valid_result(findings=[{
+                "severity": "low",
+                "title": "leak",
+                "target_url": "https://staging-console.flatkey.ai",
+                "steps": [raw_alias],
+                "expected": "no leak",
+                "actual": code,
+                "evidence_paths": ["artifact.txt"],
+                "confidence": "high",
+            }])
+            def notify_code():
+                request = urllib.request.Request(
+                    process_holder["sup"]._evidence_url,
+                    data=json.dumps({"type": "verification_code", "code": code}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                urllib.request.urlopen(request, timeout=2).close()
 
-            def write_raw_result():
-                args, _kwargs = process_holder["sup"].subprocess_runner.calls[0]
-                raw_path = args[args.index("--output-last-message") + 1]
-                raw_password = process_holder["sup"]._identity.password
-                with open(raw_path, "w", encoding="utf-8") as handle:
-                    json.dump(valid_result(findings=[{
-                        "severity": "low",
-                        "title": "leak",
-                        "target_url": "https://staging-console.flatkey.ai",
-                        "steps": [raw_alias],
-                        "expected": "no leak",
-                        "actual": raw_password + " " + code,
-                        "evidence_paths": ["artifact.txt"],
-                        "confidence": "high",
-                    }]), handle)
-
-            process = FakeProcess(0, write_result=write_raw_result)
+            process = FakeProcess(
+                0,
+                stdout=json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(raw_result)}}) + "\n",
+                on_communicate=notify_code,
+            )
             uploader = FakeUploader()
             sup = supervisor.Supervisor(
                 env=env(),
@@ -385,6 +417,17 @@ class SupervisorTests(unittest.TestCase):
             for secret in [raw_alias, sup._identity.password, code, "owner@gmail.com", "flatkey-qa-12345-secret"]:
                 self.assertNotIn(secret, rendered)
             self.assertFalse(os.path.exists(os.path.join(tmp, "quarantine-result.json")))
+
+    def test_invalid_or_oversized_codex_jsonl_is_infrastructure_and_kills_process(self):
+        process = FakeProcess(0, stdout="{bad-json}\n")
+        outcome, _sup = self.run_supervisor(process)
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertTrue(process.terminated)
+
+        process = FakeProcess(0, stdout=("x" * (supervisor.MAX_CODEX_STDOUT_LINE_BYTES + 1)) + "\n")
+        outcome, _sup = self.run_supervisor(process)
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertTrue(process.terminated)
 
     def test_signal_handler_terminates_active_codex_then_cleanup_upload_and_restores_handlers(self):
         signals = FakeSignals()
@@ -411,6 +454,80 @@ class SupervisorTests(unittest.TestCase):
             self.assertEqual(len(uploader.uploaded), 1)
             self.assertEqual(signals.handlers[signal.SIGTERM], "previous")
             self.assertEqual(signals.handlers[signal.SIGINT], "previous")
+
+    def test_main_rejects_arguments(self):
+        with self.assertRaises(SystemExit):
+            supervisor.main(["--unexpected"])
+
+    def test_gcs_uploader_uses_run_execution_prefix_and_manifest_last(self):
+        calls = []
+
+        def upload(bucket, object_name, data, content_type, token, **_kwargs):
+            calls.append((bucket, object_name, data, content_type, token))
+            return {"name": object_name}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result_path = os.path.join(tmp, "result.json")
+            events_path = os.path.join(tmp, "codex-events.jsonl")
+            manifest_path = os.path.join(tmp, "manifest.json")
+            for path in [result_path, events_path, manifest_path]:
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("{}")
+
+            uploader = supervisor.GcsArtifactUploader(
+                bucket="browser-qa-bucket",
+                run_id="run-1",
+                execution_id="exec-1",
+                access_token="access-token",
+                upload_func=upload,
+            )
+            uploader.upload(manifest_path, [result_path, events_path, manifest_path])
+
+        self.assertEqual([call[1] for call in calls], [
+            "runs/run-1/main/exec-1/result.json",
+            "runs/run-1/main/exec-1/codex-events.jsonl",
+            "runs/run-1/main/exec-1/manifest.json",
+        ])
+
+    def test_runtime_evidence_sink_registers_exact_code_and_rejects_bad_events(self):
+        redactor = supervisor.Redactor(email="owner+flatkey-qa-1-x@gmail.com")
+        sink = supervisor.RuntimeEvidenceSink(redactor)
+        sink.start()
+        try:
+            request = urllib.request.Request(
+                sink.url,
+                data=json.dumps({"type": "verification_code", "code": "654321"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=2) as response:
+                self.assertEqual(response.status, 204)
+            self.assertEqual(redactor.clean("123456 654321"), "123456 [REDACTED_CODE]")
+
+            bad = urllib.request.Request(
+                sink.url,
+                data=json.dumps({"type": "verification_code", "code": "12345"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError):
+                urllib.request.urlopen(bad, timeout=2)
+
+            alias = urllib.request.Request(
+                sink.url,
+                data=json.dumps({
+                    "type": "alias_restriction",
+                    "failed": True,
+                    "text": "管理员已启用邮箱地址别名限制，您的邮箱地址由于包含特殊符号而被拒绝。",
+                }).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(alias, timeout=2) as response:
+                self.assertEqual(response.status, 204)
+            self.assertEqual(sink.runtime_classification, "alias_restriction")
+        finally:
+            sink.stop()
 
 
 if __name__ == "__main__":
