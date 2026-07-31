@@ -1,9 +1,11 @@
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 
+from scripts.browser_qa.flatkey_browser_qa.budget import ExplorationBudget
 from scripts.browser_qa.flatkey_browser_qa import mcp_budget_wrapper
 
 
@@ -19,19 +21,28 @@ class FakeClock:
 
 
 class FakeChild:
-    def __init__(self):
+    def __init__(self, *, wait_timeout_once=False):
         self.stdin = io.StringIO()
         self.stdout = io.StringIO()
         self.stderr = io.StringIO()
         self.terminated = False
+        self.killed = False
         self.waited = False
+        self.wait_timeout_once = wait_timeout_once
+        self.wait_calls = 0
 
     def terminate(self):
         self.terminated = True
 
     def wait(self, timeout=None):
+        self.wait_calls += 1
         self.waited = True
+        if self.wait_timeout_once and self.wait_calls == 1:
+            raise subprocess.TimeoutExpired("fake-child", timeout)
         return 0
+
+    def kill(self):
+        self.killed = True
 
 
 def frame(payload):
@@ -76,6 +87,8 @@ class WrapperContractTests(unittest.TestCase):
             budget_response = json.loads(client_output.getvalue().splitlines()[0])
             self.assertEqual(budget_response["id"], 31)
             self.assertEqual(budget_response["error"]["code"], -32001)
+            self.assertIsInstance(wrapper.exploration_budget, ExplorationBudget)
+            self.assertEqual(wrapper.exploration_budget.actions_consumed, 30)
 
     def test_initialize_list_responses_and_notifications_do_not_consume_action_budget(self):
         clock = FakeClock()
@@ -96,7 +109,7 @@ class WrapperContractTests(unittest.TestCase):
             self.assertEqual(len(forwarded), 33)
             self.assertEqual(json.loads(forwarded[-1])["id"], 30)
 
-    def test_time_cutoff_state_parse_failure_client_parse_failure_and_child_stdout_parse_failure_fail_closed(self):
+    def test_time_cutoff_state_parse_failure_client_parse_failure_and_child_protocol_parse_failure_fail_closed(self):
         clock = FakeClock()
         child = FakeChild()
         with tempfile.TemporaryDirectory() as runtime_dir:
@@ -130,14 +143,28 @@ class WrapperContractTests(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue().splitlines()[0])["error"]["code"], -32700)
             self.assertTrue(child.terminated)
 
+        for payload in ["\"string\"", "[]", "{\"jsonrpc\":\"1.0\",\"id\":1,\"method\":\"tools/list\"}", "{\"id\":1,\"method\":\"tools/list\"}"]:
+            with self.subTest(payload=payload):
+                with tempfile.TemporaryDirectory() as runtime_dir:
+                    child = FakeChild()
+                    wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+                    output = io.StringIO()
+                    wrapper.proxy_client_requests(io.StringIO(payload + "\n"), output)
+                    self.assertEqual(json.loads(output.getvalue().splitlines()[0])["error"]["code"], -32600)
+                    self.assertEqual(child.stdin.getvalue(), "")
+                    self.assertTrue(child.terminated)
+
         with tempfile.TemporaryDirectory() as runtime_dir:
-            child = FakeChild()
-            child.stdout = io.StringIO("non-json\n")
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
-            output = io.StringIO()
-            wrapper.proxy_child_stdout(output)
-            self.assertEqual(output.getvalue(), "")
-            self.assertTrue(child.terminated)
+            bad_child_frames = ["non-json", "\"string\"", "[]", "{}", "{\"jsonrpc\":\"1.0\",\"id\":1}"]
+            for line in bad_child_frames:
+                with self.subTest(child_stdout=line):
+                    child = FakeChild()
+                    child.stdout = io.StringIO(line + "\n")
+                    wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+                    output = io.StringIO()
+                    wrapper.proxy_child_stdout(output)
+                    self.assertEqual(output.getvalue(), "")
+                    self.assertTrue(child.terminated)
 
     def test_eof_terminates_child_without_orphan(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
@@ -157,6 +184,17 @@ class WrapperContractTests(unittest.TestCase):
 
             self.assertTrue(child.terminated)
             self.assertTrue(child.waited)
+
+    def test_terminate_kills_child_when_terminate_is_ignored(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            child = FakeChild(wait_timeout_once=True)
+            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+
+            wrapper.terminate_child()
+
+            self.assertTrue(child.terminated)
+            self.assertTrue(child.killed)
+            self.assertEqual(child.wait_calls, 2)
 
 
 if __name__ == "__main__":

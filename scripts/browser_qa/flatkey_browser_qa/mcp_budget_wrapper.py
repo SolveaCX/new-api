@@ -6,13 +6,16 @@ import sys
 import threading
 import time
 
+from .budget import BudgetExceeded
+from .budget import ExplorationBudget
+from .budget import ReplayBudget
 from .control_mcp import STATE_FILE_NAME
 from .control_mcp import write_control_state
 
 
 SUBPROCESS_SHELL = False
-_MAX_ACTIONS = 30
-_MAX_SECONDS = 300
+EXPLORATION_MAX_ACTIONS = 30
+EXPLORATION_SECONDS = 300
 
 
 def playwright_child_command(runtime_dir):
@@ -50,8 +53,7 @@ class BudgetedMcpWrapper:
         self.runtime_dir = _runtime_dir(runtime_dir)
         self.child = child
         self.clock = clock or time
-        self._exploration_started_at = None
-        self._actions = 0
+        self.exploration_budget = None
         self._closed = False
 
     def proxy_client_requests(self, client_input, client_output, *, after_first_request=None):
@@ -72,8 +74,11 @@ class BudgetedMcpWrapper:
     def proxy_child_stdout(self, client_output):
         for line in self.child.stdout:
             try:
-                json.loads(line)
+                response = json.loads(line)
             except json.JSONDecodeError:
+                self.terminate_child()
+                break
+            if not _is_jsonrpc_frame(response):
                 self.terminate_child()
                 break
             client_output.write(line)
@@ -94,6 +99,15 @@ class BudgetedMcpWrapper:
             pass
         try:
             self.child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                self.child.kill()
+            except Exception:
+                pass
+            try:
+                self.child.wait(timeout=5)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -103,11 +117,17 @@ class BudgetedMcpWrapper:
 
     def _parse_client_line(self, line, client_output):
         try:
-            return json.loads(line)
+            request = json.loads(line)
         except json.JSONDecodeError:
             _write_error(client_output, None, -32700, "parse error")
             self.terminate_child()
             return None
+        if not _is_jsonrpc_frame(request):
+            request_id = request.get("id") if isinstance(request, dict) else None
+            _write_error(client_output, request_id, -32600, "invalid request")
+            self.terminate_child()
+            return None
+        return request
 
     def _is_counted_tool_call(self, request):
         return isinstance(request, dict) and request.get("method") == "tools/call" and "id" in request
@@ -120,15 +140,16 @@ class BudgetedMcpWrapper:
             return False
         if phase != "exploration":
             return True
-        if self._exploration_started_at is None:
-            self._exploration_started_at = self.clock.monotonic()
-        if self.clock.monotonic() > self._exploration_started_at + _MAX_SECONDS:
+        if self.exploration_budget is None:
+            replay_budget = ReplayBudget(EXPLORATION_SECONDS, self.clock)
+            replay_budget.mark_checkpoint()
+            self.exploration_budget = ExplorationBudget(EXPLORATION_SECONDS, EXPLORATION_MAX_ACTIONS, self.clock)
+            self.exploration_budget.start(replay_budget)
+        try:
+            self.exploration_budget.consume_action()
+        except BudgetExceeded:
             _write_error(client_output, request.get("id"), -32001, "exploration budget exceeded")
             return False
-        if self._actions >= _MAX_ACTIONS:
-            _write_error(client_output, request.get("id"), -32001, "exploration budget exceeded")
-            return False
-        self._actions += 1
         return True
 
     def _write_child_stdin(self, line):
@@ -160,6 +181,10 @@ def _runtime_dir(runtime_dir):
     if not os.path.isdir(real):
         raise RuntimeError("runtime dir invalid")
     return real
+
+
+def _is_jsonrpc_frame(payload):
+    return isinstance(payload, dict) and payload.get("jsonrpc") == "2.0"
 
 
 def _write_error(stdout, request_id, code, message):
