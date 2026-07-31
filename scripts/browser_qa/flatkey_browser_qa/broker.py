@@ -1,11 +1,17 @@
 import json
 import os
 import re
+import socket
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .gmail import GmailConfigError
+from .gmail import GmailError
+from .gmail import GmailInvalidGrant
+from .gmail import GmailPermanentError
+from .gmail import GmailTransientError
 from .gmail import VerificationSearch
 
 
@@ -23,6 +29,7 @@ class BrokerConfig:
     subject_marker: str
     max_age_seconds: int = 900
     max_future_seconds: int = 60
+    request_timeout_seconds: float = 5.0
     now: object = time.time
     log: object = _default_log
 
@@ -72,6 +79,10 @@ def make_handler(broker: VerificationBroker):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(float(broker.config.request_timeout_seconds))
+
         def log_message(self, *_):
             return
 
@@ -115,9 +126,16 @@ def make_handler(broker: VerificationBroker):
                     length = int(length_header)
                 except ValueError as exc:
                     raise BrokerRequestError(HTTPStatus.LENGTH_REQUIRED, "length_required") from exc
+                if length < 0:
+                    raise BrokerRequestError(HTTPStatus.BAD_REQUEST, "invalid_content_length")
                 if length > _MAX_BODY_BYTES:
                     raise BrokerRequestError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "body_too_large")
-                raw = self.rfile.read(length)
+                try:
+                    raw = self.rfile.read(length)
+                except socket.timeout as exc:
+                    raise BrokerRequestError(HTTPStatus.REQUEST_TIMEOUT, "request_timeout") from exc
+                if len(raw) != length:
+                    raise BrokerRequestError(HTTPStatus.REQUEST_TIMEOUT, "request_timeout")
                 try:
                     payload = json.loads(raw.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -128,7 +146,19 @@ def make_handler(broker: VerificationBroker):
                 status_text = response["status"]
                 self._write_json(HTTPStatus.OK, response)
             except BrokerRequestError as exc:
+                if exc.code == "request_timeout":
+                    self.close_connection = True
                 self._write_error(exc.status, exc.code)
+            except GmailInvalidGrant:
+                self._write_error(HTTPStatus.SERVICE_UNAVAILABLE, "gmail_invalid_grant")
+            except GmailTransientError:
+                self._write_error(HTTPStatus.SERVICE_UNAVAILABLE, "gmail_transient_failure")
+            except GmailConfigError:
+                self._write_error(HTTPStatus.INTERNAL_SERVER_ERROR, "gmail_config_error")
+            except GmailPermanentError:
+                self._write_error(HTTPStatus.BAD_GATEWAY, "gmail_request_failed")
+            except GmailError:
+                self._write_error(HTTPStatus.BAD_GATEWAY, "gmail_request_failed")
             finally:
                 self._log(run_id, status_text, started)
 

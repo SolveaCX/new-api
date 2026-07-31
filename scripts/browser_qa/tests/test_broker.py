@@ -1,24 +1,31 @@
 import http.client
 import json
+import socket
 import threading
 import time
 import unittest
+from contextlib import redirect_stderr
 from contextlib import redirect_stdout
 from http.server import ThreadingHTTPServer
 from io import StringIO
 
 from scripts.browser_qa.flatkey_browser_qa.broker import BrokerConfig, VerificationBroker, make_handler
+from scripts.browser_qa.flatkey_browser_qa.gmail import GmailInvalidGrant
+from scripts.browser_qa.flatkey_browser_qa.gmail import GmailPermanentError
 
 
 class FakeGmail:
     base_address = "owner@gmail.com"
 
-    def __init__(self, code=None):
+    def __init__(self, code=None, error=None):
         self.code = code
+        self.error = error
         self.searches = []
 
     def find_verification_code(self, search):
         self.searches.append(search)
+        if self.error is not None:
+            raise self.error
         return self.code
 
 
@@ -27,6 +34,7 @@ class BrokerTests(unittest.TestCase):
         kwargs = {
             "sender": "noreply@flatkey.ai",
             "subject_marker": "Flatkey Email Verification",
+            "request_timeout_seconds": 0.2,
             "now": lambda: 1800000060,
         }
         if log == "default":
@@ -48,6 +56,25 @@ class BrokerTests(unittest.TestCase):
         payload = response.read()
         conn.close()
         return response.status, json.loads(payload.decode("utf-8"))
+
+    def raw_request(self, server, data, *, timeout=3):
+        host, port = server.server_address
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            sock.sendall(data)
+            chunks = []
+            while b"\r\n\r\n" not in b"".join(chunks):
+                chunks.append(sock.recv(4096))
+            head, _, rest = b"".join(chunks).partition(b"\r\n\r\n")
+            length = 0
+            for line in head.decode("iso-8859-1").split("\r\n"):
+                if line.lower().startswith("content-length:"):
+                    length = int(line.split(":", 1)[1].strip())
+            body = rest
+            while len(body) < length:
+                body += sock.recv(4096)
+            status = int(head.split(b" ", 2)[1])
+            return status, json.loads(body.decode("utf-8"))
 
     def test_returns_ready_or_pending_only_for_valid_current_code_request(self):
         gmail = FakeGmail("123456")
@@ -171,6 +198,112 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(chunked, (411, {"error": "length_required"}))
         self.assertEqual(oversized, (413, {"error": "body_too_large"}))
         self.assertEqual(invalid[1], {"error": "invalid_json"})
+
+    def test_rejects_negative_content_length_without_reading_unbounded_body(self):
+        server, thread = self.start_broker(FakeGmail())
+        try:
+            status, payload = self.raw_request(
+                server,
+                b"POST /v1/current-code HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: -1\r\n"
+                b"\r\n",
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertEqual(status, 400)
+        self.assertEqual(payload, {"error": "invalid_content_length"})
+
+    def test_slow_body_read_timeout_returns_stable_error(self):
+        server, thread = self.start_broker(FakeGmail())
+        host, port = server.server_address
+        try:
+            with socket.create_connection((host, port), timeout=3) as sock:
+                sock.settimeout(3)
+                sock.sendall(
+                    b"POST /v1/current-code HTTP/1.1\r\n"
+                    b"Host: localhost\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Content-Length: 20\r\n"
+                    b"\r\n"
+                    b"{"
+                )
+                chunks = []
+                while b"\r\n\r\n" not in b"".join(chunks):
+                    chunks.append(sock.recv(4096))
+                head, _, rest = b"".join(chunks).partition(b"\r\n\r\n")
+                length = 0
+                for line in head.decode("iso-8859-1").split("\r\n"):
+                    if line.lower().startswith("content-length:"):
+                        length = int(line.split(":", 1)[1].strip())
+                body = rest
+                while len(body) < length:
+                    body += sock.recv(4096)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertEqual(int(head.split(b" ", 2)[1]), 408)
+        self.assertEqual(json.loads(body.decode("utf-8")), {"error": "request_timeout"})
+
+    def test_gmail_invalid_grant_returns_stable_json_without_secret_logs(self):
+        stderr = StringIO()
+        logs = []
+        server, thread = self.start_broker(
+            FakeGmail(error=GmailInvalidGrant("refresh-secret invalid_grant owner@gmail.com")),
+            log=logs.append,
+        )
+        try:
+            with redirect_stderr(stderr):
+                status, payload = self.request(
+                    server,
+                    "POST",
+                    "/v1/current-code",
+                    {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000000},
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertEqual(status, 503)
+        self.assertEqual(payload, {"error": "gmail_invalid_grant"})
+        combined = stderr.getvalue() + json.dumps(logs)
+        for secret in ["refresh-secret", "owner", "gmail", "abcdefghij", "flatkey-qa"]:
+            self.assertNotIn(secret, combined)
+        self.assertNotIn("Traceback", combined)
+
+    def test_general_gmail_failure_returns_stable_json_without_exception_text(self):
+        stderr = StringIO()
+        logs = []
+        server, thread = self.start_broker(
+            FakeGmail(error=GmailPermanentError("access-secret message body leaked")),
+            log=logs.append,
+        )
+        try:
+            with redirect_stderr(stderr):
+                status, payload = self.request(
+                    server,
+                    "POST",
+                    "/v1/current-code",
+                    {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000000},
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertEqual(status, 502)
+        self.assertEqual(payload, {"error": "gmail_request_failed"})
+        combined = stderr.getvalue() + json.dumps(logs)
+        for secret in ["access-secret", "message body", "abcdefghij", "flatkey-qa"]:
+            self.assertNotIn(secret, combined)
+        self.assertNotIn("Traceback", combined)
 
     def test_access_logs_and_structured_logs_do_not_include_secrets(self):
         stdout = StringIO()
