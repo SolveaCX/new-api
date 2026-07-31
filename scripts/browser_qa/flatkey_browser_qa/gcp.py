@@ -10,6 +10,9 @@ METADATA_ORIGIN = "http://metadata.google.internal"
 STORAGE_ORIGIN = "https://storage.googleapis.com"
 _MAX_RESPONSE_BYTES = 256 * 1024
 _BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$")
+_DNS_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_LEGACY_RUN_APP_RE = re.compile(rf"{_DNS_LABEL}(?:-{_DNS_LABEL}){{2}}\.a\.run\.app")
+_REGIONAL_RUN_APP_RE = re.compile(rf"{_DNS_LABEL}-[0-9]+\.{_DNS_LABEL}\.run\.app")
 
 
 class GcpError(Exception):
@@ -192,18 +195,20 @@ def _request_bytes(
 
 def _validate_cloud_run_service_url(value):
     parsed = urllib.parse.urlparse(value)
+    hostname = parsed.hostname or ""
     if (
         parsed.scheme != "https"
         or not parsed.netloc
+        or parsed.netloc != hostname
         or parsed.username
         or parsed.password
         or parsed.query
         or parsed.fragment
         or parsed.path not in ("", "/")
-        or not re.fullmatch(r"[a-z0-9][a-z0-9-]*-[a-z0-9]+-[a-z0-9-]+\.a\.run\.app", parsed.netloc)
+        or not (_LEGACY_RUN_APP_RE.fullmatch(hostname) or _REGIONAL_RUN_APP_RE.fullmatch(hostname))
     ):
         raise GcpConfigError("audience must be a canonical Cloud Run service root URL")
-    return urllib.parse.urlunsplit(("https", parsed.netloc, "", "", ""))
+    return urllib.parse.urlunsplit(("https", hostname, "", "", ""))
 
 
 def _validate_bucket(bucket):

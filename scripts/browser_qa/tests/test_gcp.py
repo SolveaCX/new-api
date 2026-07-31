@@ -44,28 +44,42 @@ class RecordingOpener:
 
 class GcpTests(unittest.TestCase):
     def test_metadata_identity_token_uses_exact_host_path_header_and_https_audience(self):
-        opener = RecordingOpener([FakeResponse(200, b"id-token", {"Metadata-Flavor": "Google"})])
+        opener = RecordingOpener(
+            [
+                FakeResponse(200, b"legacy-id-token", {"Metadata-Flavor": "Google"}),
+                FakeResponse(200, b"regional-id-token", {"Metadata-Flavor": "Google"}),
+            ]
+        )
         client = GcpClient(opener=opener, retry_base_delay=0)
 
         token = client.identity_token("https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app/")
+        regional_token = client.identity_token("https://blogger-api-528088078482.us-central1.run.app/")
 
-        self.assertEqual(token, "id-token")
+        self.assertEqual(token, "legacy-id-token")
+        self.assertEqual(regional_token, "regional-id-token")
         request, timeout = opener.requests[0]
         self.assertEqual(request.host, "metadata.google.internal")
         self.assertEqual(request.selector.split("?", 1)[0], "/computeMetadata/v1/instance/service-accounts/default/identity")
         self.assertIn("audience=https%3A%2F%2Fflatkey-staging-browser-qa-broker-abc-uw.a.run.app", request.selector)
         self.assertEqual(request.headers["Metadata-flavor"], "Google")
         self.assertEqual(timeout, 5)
+        regional_request, regional_timeout = opener.requests[1]
+        self.assertEqual(regional_request.host, "metadata.google.internal")
+        self.assertIn("audience=https%3A%2F%2Fblogger-api-528088078482.us-central1.run.app", regional_request.selector)
+        self.assertNotIn("blogger-api-528088078482.us-central1.run.app%2F", regional_request.selector)
+        self.assertEqual(regional_timeout, 5)
 
     def test_metadata_rejects_non_canonical_cloud_run_audience_and_retries_transient_only(self):
         client = GcpClient(opener=RecordingOpener([]), retry_base_delay=0)
         for audience in [
             "http://flatkey-staging-browser-qa-broker-abc-uw.a.run.app",
             "https://user:pass@flatkey-staging-browser-qa-broker-abc-uw.a.run.app",
+            "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app:443",
             "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app/path",
             "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app?x=1",
             "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app#frag",
             "https://example.com",
+            "https://bad_label_528088078482.us-central1.run.app",
         ]:
             with self.subTest(audience=audience):
                 with self.assertRaises(GcpConfigError):
