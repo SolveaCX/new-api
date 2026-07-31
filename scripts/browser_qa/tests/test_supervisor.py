@@ -264,6 +264,7 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn("web_search = \"disabled\"", config_text)
         self.assertNotIn("[profiles.qa]", config_text)
         self.assertNotIn("config = \"qa.config.toml\"", config_text)
+        self.assertNotIn("disable_response_storage", config_text)
         self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_DIR", config_text)
         self.assertIn("FLATKEY_BROWSER_QA_BROKER_URL", config_text)
         self.assertIn("PATH", config_text)

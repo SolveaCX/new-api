@@ -270,8 +270,7 @@ inherit = "none"
 def _qa_config(proxy, runtime_dir, child_env):
     escaped_runtime_dir = _toml_escape(runtime_dir)
     escaped_repo_root = _toml_escape(_repo_root())
-    return f"""disable_response_storage = true
-model = "gpt-5.4"
+    return f"""model = "gpt-5.4"
 approval_policy = "never"
 web_search = "disabled"
 
