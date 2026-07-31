@@ -39,7 +39,7 @@ def validate_result(payload):
         if "classification" in payload["infrastructure"]:
             _enum(
                 payload["infrastructure"]["classification"],
-                {"alias_restriction", "preflight_failed", "codex_timeout", "upload_failed", "invalid_result"},
+                {"alias_restriction", "preflight_failed", "codex_timeout", "codex_nonzero", "codex_signal", "upload_failed", "invalid_result"},
                 "infrastructure.classification",
             )
     return payload
@@ -48,9 +48,9 @@ def validate_result(payload):
 def classify_status(payload, *, cleanup_result=None, codex_returncode=0, upload_failed=False, invalid_result=False):
     if cleanup_result is not None and cleanup_result.cleanup_failed:
         return "cleanup_failed"
-    if upload_failed or invalid_result or payload.get("infrastructure", {}).get("status") == "failed":
+    if codex_returncode != 0 or upload_failed or invalid_result or payload.get("infrastructure", {}).get("status") == "failed":
         return "infrastructure_failed"
-    if codex_returncode != 0 or payload["replay"]["status"] == "failed" or not payload["replay"]["checkpoint_reached"]:
+    if payload["replay"]["status"] == "failed" or not payload["replay"]["checkpoint_reached"]:
         return "replay_failed"
     if any(item["severity"] != "info" for item in payload["findings"]):
         return "findings_detected"

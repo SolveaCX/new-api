@@ -63,16 +63,20 @@ class EgressPolicy:
 
     def check_url(self, url):
         parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        if parsed.scheme != "http" or not parsed.hostname or parsed.username or parsed.password:
             raise PolicyDenied("only http and https proxy egress is allowed")
         host = _normalize_host(parsed.hostname)
         if not self.is_allowed_host(host):
             raise PolicyDenied("host is outside browser qa allowlist")
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        port = parsed.port or 80
+        if port != 80:
+            raise PolicyDenied("http proxy egress must use port 80")
         return CheckedUrl(url, parsed.scheme, host, port)
 
     def check_connect_host(self, authority):
         host, port = _split_authority(authority, default_port=443)
+        if port != 443:
+            raise PolicyDenied("connect egress must use port 443")
         if not self.is_allowed_host(host):
             raise PolicyDenied("connect host is outside browser qa allowlist")
         return host, port
@@ -92,12 +96,12 @@ class EgressPolicy:
         return resolved
 
 
-def filter_response_headers(status, headers, policy):
+def filter_response_headers(status, headers, policy, *, base_url=None):
     cleaned = []
     for key, value in headers:
         if key.lower() == "location" and 300 <= status <= 399:
             try:
-                policy.check_url(value)
+                policy.check_url(urllib.parse.urljoin(base_url, value) if base_url else value)
             except PolicyDenied:
                 return FilteredHeaders(502, [])
         if key.lower() in {"connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade"}:
@@ -203,6 +207,12 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
         self._http_request()
 
+    def do_PUT(self):
+        self._simple_error(405, "method not allowed")
+
+    def do_DELETE(self):
+        self._simple_error(405, "method not allowed")
+
     def _http_request(self):
         try:
             checked = self.proxy.policy.check_url(self.path)
@@ -210,11 +220,19 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.proxy.log({"action": self.command, "host": self.headers.get("Host", ""), "status": 403, "reason": "denied"})
             self._simple_error(403, "blocked by browser qa egress policy")
             return
+        lengths = self.headers.get_all("Content-Length") or []
+        if self.headers.get("Transfer-Encoding"):
+            self._simple_error(400, "transfer encoding is not allowed")
+            return
         try:
-            length = int(self.headers.get("Content-Length", "0") or "0")
+            parsed_lengths = {int(value) for value in lengths} if lengths else {0}
         except ValueError:
             self._simple_error(400, "invalid content length")
             return
+        if len(parsed_lengths) != 1:
+            self._simple_error(400, "ambiguous content length")
+            return
+        length = parsed_lengths.pop()
         if length > self.proxy.max_body_bytes:
             self._simple_error(413, "request body too large")
             return
@@ -270,7 +288,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             if not separator:
                 raise ProxyError("malformed upstream header")
             headers.append((key.strip(), value.strip()))
-        filtered = filter_response_headers(status, headers, self.proxy.policy)
+        filtered = filter_response_headers(status, headers, self.proxy.policy, base_url=self.path)
         if filtered.status != status:
             self.send_response(filtered.status)
             self.send_header("Content-Length", "0")

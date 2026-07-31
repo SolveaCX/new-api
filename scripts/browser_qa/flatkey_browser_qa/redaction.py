@@ -18,6 +18,7 @@ _SECRET_KEYS = {
 _QUERY_SECRET_KEYS = _SECRET_KEYS | {"code"}
 _API_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+")
+_SIX_DIGIT_CODE_RE = re.compile(r"\b\d{6}\b")
 
 
 @dataclass(repr=False)
@@ -34,7 +35,12 @@ class Redactor:
             base_local = local.split("+", 1)[0]
             if base_local and domain:
                 self._text_replacements.append((f"{base_local}@{domain}", "[REDACTED_EMAIL]"))
+                self._email_alias_re = re.compile(rf"\b{re.escape(base_local)}\+[A-Za-z0-9._%+-]+@{re.escape(domain)}\b")
+            else:
+                self._email_alias_re = None
             self._text_replacements.append((self.email, "[REDACTED_EMAIL]"))
+        else:
+            self._email_alias_re = None
         if self.password:
             self._text_replacements.append((self.password, "[REDACTED_PASSWORD]"))
         if self.code:
@@ -78,6 +84,9 @@ class Redactor:
     def _clean_text(self, text):
         cleaned = self._clean_url_query(text)
         cleaned = _API_KEY_RE.sub("[REDACTED_API_KEY]", cleaned)
+        cleaned = _SIX_DIGIT_CODE_RE.sub("[REDACTED_CODE]", cleaned)
+        if self._email_alias_re is not None:
+            cleaned = self._email_alias_re.sub("[REDACTED_EMAIL]", cleaned)
         for secret, replacement in self._text_replacements:
             cleaned = cleaned.replace(secret, replacement)
         return cleaned

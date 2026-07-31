@@ -21,11 +21,46 @@ EXPLORATION_MAX_ACTIONS = 30
 EXPLORATION_SECONDS = 300
 
 
-def playwright_child_command(runtime_dir):
+def playwright_child_command(runtime_dir, proxy_url=None):
     directory = _runtime_dir(runtime_dir)
     output_dir = os.path.join(directory, "playwright-output")
     os.makedirs(output_dir, exist_ok=True)
-    return ["npx", "-y", "@playwright/mcp@0.0.78", "--headless", "--output-mode", "file", "--output-dir", output_dir]
+    config_path = os.path.join(directory, "playwright-mcp-config.json")
+    _write_playwright_config(config_path)
+    command = [
+        "npx",
+        "-y",
+        "@playwright/mcp@0.0.78",
+        "--browser",
+        "chromium",
+        "--headless",
+        "--output-mode",
+        "file",
+        "--output-dir",
+        output_dir,
+        "--block-service-workers",
+        "--config",
+        config_path,
+    ]
+    if proxy_url:
+        command.extend(["--proxy-server", proxy_url])
+    return command
+
+
+def _write_playwright_config(path):
+    payload = {
+        "browser": {
+            "launchOptions": {
+                "args": [
+                    "--disable-quic",
+                    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                ]
+            }
+        }
+    }
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, sort_keys=True)
 
 
 def main():
@@ -50,7 +85,7 @@ def launch_wrapper(
 ):
     selected_tree_attach = tree_attach or ProcessTreeTerminator.attach
     child = popen_factory(
-        playwright_child_command(runtime_dir),
+        playwright_child_command(runtime_dir, proxy_url=os.environ.get("FLATKEY_BROWSER_QA_PROXY_URL")),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

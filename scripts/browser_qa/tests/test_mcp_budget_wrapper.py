@@ -101,23 +101,29 @@ class WrapperContractTests(unittest.TestCase):
 
     def test_child_command_is_fixed_no_shell_and_file_output_limited_to_runtime_dir(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
-            command = mcp_budget_wrapper.playwright_child_command(runtime_dir)
+            command = mcp_budget_wrapper.playwright_child_command(runtime_dir, proxy_url="http://127.0.0.1:4567")
 
-            self.assertEqual(
-                command,
-                [
-                    "npx",
-                    "-y",
-                    "@playwright/mcp@0.0.78",
-                    "--headless",
-                    "--output-mode",
-                    "file",
-                    "--output-dir",
-                    command[-1],
-                ],
-            )
+            self.assertEqual(command[:3], ["npx", "-y", "@playwright/mcp@0.0.78"])
+            self.assertIn("--browser", command)
+            self.assertIn("chromium", command)
+            self.assertIn("--headless", command)
+            self.assertIn("--output-mode", command)
+            self.assertIn("file", command)
+            self.assertIn("--proxy-server", command)
+            self.assertIn("http://127.0.0.1:4567", command)
+            self.assertIn("--block-service-workers", command)
+            self.assertIn("--config", command)
+            self.assertNotIn("--proxy-bypass-list", command)
             output_dir = command[command.index("--output-dir") + 1]
+            config_path = command[command.index("--config") + 1]
             self.assertTrue(os.path.realpath(output_dir).startswith(os.path.realpath(runtime_dir) + os.sep))
+            self.assertTrue(os.path.realpath(config_path).startswith(os.path.realpath(runtime_dir) + os.sep))
+            with open(config_path, encoding="utf-8") as handle:
+                config = json.load(handle)
+            self.assertEqual(
+                config["browser"]["launchOptions"]["args"],
+                ["--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+            )
             self.assertNotIn("@latest", command)
             self.assertIs(mcp_budget_wrapper.SUBPROCESS_SHELL, False)
 

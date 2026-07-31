@@ -33,6 +33,12 @@ class RedirectHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if self.path == "/relative-redirect":
+            self.send_response(302)
+            self.send_header("Location", "/safe-target")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", "7")
@@ -94,7 +100,7 @@ class EgressPolicyTests(unittest.TestCase):
 
     def test_redirect_target_is_rechecked_and_non_http_methods_are_blocked(self):
         policy = egress_proxy.EgressPolicy({"staging-console.flatkey.ai"})
-        self.assertEqual(policy.check_url("https://staging-console.flatkey.ai/login").host, "staging-console.flatkey.ai")
+        self.assertEqual(policy.check_url("http://staging-console.flatkey.ai/login").host, "staging-console.flatkey.ai")
         with self.assertRaises(egress_proxy.PolicyDenied):
             policy.check_url("https://flatkey.ai/login")
         with self.assertRaises(egress_proxy.PolicyDenied):
@@ -104,9 +110,18 @@ class EgressPolicyTests(unittest.TestCase):
             302,
             [("Location", "https://flatkey.ai/blocked"), ("Content-Length", "0")],
             policy,
+            base_url="http://staging-console.flatkey.ai/start",
         )
         self.assertEqual(response.status, 502)
         self.assertEqual(response.headers, [])
+
+        response = egress_proxy.filter_response_headers(
+            302,
+            [("Location", "/safe-target"), ("Content-Length", "0")],
+            policy,
+            base_url="http://staging-console.flatkey.ai/start",
+        )
+        self.assertEqual(response.status, 302)
 
     def test_allowed_http_is_forwarded_to_verified_sockaddr_and_redirect_is_rechecked(self):
         upstream = ThreadedServer(("127.0.0.1", 0), RedirectHandler)
@@ -181,6 +196,44 @@ class EgressPolicyTests(unittest.TestCase):
             for thread in threads:
                 thread.join()
             self.assertEqual(results.count(403), 2)
+        finally:
+            proxy.stop()
+
+    def test_proxy_rejects_ports_methods_userinfo_ambiguous_length_and_transfer_encoding(self):
+        policy = egress_proxy.EgressPolicy({"staging-console.flatkey.ai"})
+        with self.assertRaises(egress_proxy.PolicyDenied):
+            policy.check_url("https://staging-console.flatkey.ai/")
+        with self.assertRaises(egress_proxy.PolicyDenied):
+            policy.check_url("http://staging-console.flatkey.ai:81/")
+        with self.assertRaises(egress_proxy.PolicyDenied):
+            policy.check_url("http://user@staging-console.flatkey.ai/")
+        with self.assertRaises(egress_proxy.PolicyDenied):
+            policy.check_connect_host("staging-console.flatkey.ai:444")
+
+        proxy = egress_proxy.EgressProxy(policy=policy)
+        proxy.start()
+        try:
+            conn = http.client.HTTPConnection(proxy.host, proxy.port, timeout=2)
+            conn.request("PUT", "http://staging-console.flatkey.ai/")
+            self.assertEqual(conn.getresponse().status, 405)
+            conn.close()
+
+            with socket.create_connection((proxy.host, proxy.port), timeout=2) as sock:
+                sock.sendall(
+                    b"POST http://staging-console.flatkey.ai/ HTTP/1.1\r\n"
+                    b"Host: staging-console.flatkey.ai\r\n"
+                    b"Content-Length: 1\r\n"
+                    b"Content-Length: 2\r\n\r\nx"
+                )
+                self.assertIn(b"400", sock.recv(256))
+
+            with socket.create_connection((proxy.host, proxy.port), timeout=2) as sock:
+                sock.sendall(
+                    b"POST http://staging-console.flatkey.ai/ HTTP/1.1\r\n"
+                    b"Host: staging-console.flatkey.ai\r\n"
+                    b"Transfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+                )
+                self.assertIn(b"400", sock.recv(256))
         finally:
             proxy.stop()
 
