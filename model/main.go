@@ -291,8 +291,6 @@ func migrateDB() error {
 		&QuotaData{},
 		&QuotaDataToken{},
 		&Task{},
-		&TaskBillingSettlement{},
-		&TaskBillingLogDelivery{},
 		&Model{},
 		&Vendor{},
 		&PrefillGroup{},
@@ -410,8 +408,6 @@ func migrateDBFast() error {
 		{&QuotaData{}, "QuotaData"},
 		{&QuotaDataToken{}, "QuotaDataToken"},
 		{&Task{}, "Task"},
-		{&TaskBillingSettlement{}, "TaskBillingSettlement"},
-		{&TaskBillingLogDelivery{}, "TaskBillingLogDelivery"},
 		{&Model{}, "Model"},
 		{&Vendor{}, "Vendor"},
 		{&PrefillGroup{}, "PrefillGroup"},
@@ -667,7 +663,7 @@ func hasActiveRecallMigrationLeases(nowUnix int64) (bool, error) {
 
 func migrateLOGDB() error {
 	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}, &LogRequestSample{}, &TaskBillingLogDelivery{}); err != nil {
+	if err = LOG_DB.AutoMigrate(&Log{}, &LogRequestSample{}); err != nil {
 		return err
 	}
 	return EnsureSupplierAccountingFactSchema(LOG_DB)
