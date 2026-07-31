@@ -3,6 +3,7 @@ import json
 import os
 import unittest
 import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -13,6 +14,7 @@ from scripts.browser_qa.flatkey_browser_qa.gmail import (
     GmailTransientError,
     OAuthCredentials,
     VerificationSearch,
+    _default_opener,
     parse_verification_code,
 )
 
@@ -26,10 +28,10 @@ def load_message():
 
 
 class FakeResponse:
-    def __init__(self, status, payload):
+    def __init__(self, status, payload, headers=None):
         self.status = status
         self.payload = payload
-        self.headers = {}
+        self.headers = headers or {}
 
     def read(self, _limit=-1):
         if isinstance(self.payload, bytes):
@@ -85,6 +87,30 @@ class GmailParserTests(unittest.TestCase):
         )
 
         self.assertEqual(code, "654321")
+
+    def test_html_codes_in_links_scripts_styles_noscript_and_template_are_ignored(self):
+        for html in [
+            '<a href="https://example.test/verify?code=654321">verify</a>',
+            "<script>var code = 654321;</script>",
+            "<style>.code:before{content:'654321'}</style>",
+            "<noscript>654321</noscript>",
+            "<template>654321</template>",
+        ]:
+            message = load_message()
+            message["payload"]["mimeType"] = "text/html"
+            message["payload"]["parts"] = []
+            message["payload"]["body"] = {"data": b64url(html)}
+            with self.subTest(html=html):
+                self.assertIsNone(
+                    parse_verification_code(
+                        message,
+                        alias=ALIAS,
+                        sender="noreply@flatkey.ai",
+                        subject_marker="Flatkey Email Verification",
+                        run_start_epoch=1800000000,
+                        now_epoch=1800000030,
+                    )
+                )
 
     def test_rejects_wrong_alias_old_time_sender_subject_and_unrelated_mail(self):
         cases = []
@@ -146,6 +172,60 @@ class GmailParserTests(unittest.TestCase):
                 )
             )
 
+    def test_rejects_deep_mime_tree_part_bomb_and_inline_attachment_codes(self):
+        deep = load_message()
+        node = deep["payload"]
+        node["parts"] = []
+        for _ in range(20):
+            child = {"mimeType": "multipart/mixed", "headers": [], "parts": []}
+            node["parts"] = [child]
+            node = child
+        node["parts"] = [{"mimeType": "text/plain", "body": {"data": b64url("654321")}}]
+
+        bomb = load_message()
+        bomb["payload"]["parts"] = [
+            {"mimeType": "text/plain", "body": {"data": b64url("no code")}}
+            for _ in range(100)
+        ]
+        bomb["payload"]["parts"].append({"mimeType": "text/plain", "body": {"data": b64url("654321")}})
+
+        inline_attachment = load_message()
+        inline_attachment["payload"]["parts"] = [
+            {
+                "mimeType": "text/plain",
+                "filename": "code.txt",
+                "headers": [{"name": "Content-Disposition", "value": "inline; filename=code.txt"}],
+                "body": {"data": b64url("654321"), "attachmentId": "att-1"},
+            }
+        ]
+
+        for message in [deep, bomb, inline_attachment]:
+            self.assertIsNone(
+                parse_verification_code(
+                    message,
+                    alias=ALIAS,
+                    sender="noreply@flatkey.ai",
+                    subject_marker="Flatkey Email Verification",
+                    run_start_epoch=1800000000,
+                    now_epoch=1800000030,
+                )
+            )
+
+    def test_sender_header_must_contain_exactly_one_configured_address(self):
+        message = load_message()
+        message["payload"]["headers"][0]["value"] = "Flatkey <noreply@flatkey.ai>, Other <other@example.com>"
+
+        self.assertIsNone(
+            parse_verification_code(
+                message,
+                alias=ALIAS,
+                sender="noreply@flatkey.ai",
+                subject_marker="Flatkey Email Verification",
+                run_start_epoch=1800000000,
+                now_epoch=1800000030,
+            )
+        )
+
 
 class GmailOAuthAndClientTests(unittest.TestCase):
     def valid_oauth_json(self):
@@ -189,6 +269,34 @@ class GmailOAuthAndClientTests(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"GMAIL_OAUTH_JSON": json.dumps(value)}, clear=True):
                     with self.assertRaises(GmailConfigError):
                         OAuthCredentials.from_env()
+
+    def test_oauth_credential_values_must_be_non_empty_strings(self):
+        for key in ["refresh_token", "token_uri", "client_id", "client_secret"]:
+            payload = json.loads(self.valid_oauth_json())
+            payload[key] = 123
+            with self.subTest(key=key):
+                with self.assertRaises(GmailConfigError):
+                    OAuthCredentials.from_json(json.dumps(payload))
+
+        payload = json.loads(self.valid_oauth_json())
+        payload["client_id"] = " "
+        with self.assertRaises(GmailConfigError):
+            OAuthCredentials.from_json(json.dumps(payload))
+
+    def test_default_opener_disables_environment_proxies(self):
+        captured = []
+
+        def fake_build_opener(*handlers):
+            captured.extend(handlers)
+            return object()
+
+        with mock.patch.dict(os.environ, {"HTTPS_PROXY": "http://proxy.invalid:8080", "HTTP_PROXY": "http://proxy.invalid:8080"}):
+            with mock.patch.object(urllib.request, "build_opener", fake_build_opener):
+                _default_opener()
+
+        proxy_handlers = [handler for handler in captured if isinstance(handler, urllib.request.ProxyHandler)]
+        self.assertEqual(len(proxy_handlers), 1)
+        self.assertEqual(proxy_handlers[0].proxies, {})
 
     def test_refresh_posts_form_data_and_classifies_invalid_grant_without_retry(self):
         opener = RecordingOpener(
@@ -261,6 +369,76 @@ class GmailOAuthAndClientTests(unittest.TestCase):
         for request, _ in opener.requests[1:]:
             self.assertEqual(request.headers["Authorization"], "Bearer access-secret")
 
+    def test_expired_access_token_refreshes_for_long_lived_client(self):
+        opener = RecordingOpener(
+            [
+                FakeResponse(200, {"access_token": "first-token", "expires_in": 100, "token_type": "Bearer"}),
+                FakeResponse(200, {"emailAddress": "owner@gmail.com"}),
+                FakeResponse(200, {"messages": []}),
+                FakeResponse(200, {"access_token": "second-token", "expires_in": 100, "token_type": "Bearer"}),
+                FakeResponse(200, {"messages": []}),
+            ]
+        )
+        now = [1000]
+        client = GmailClient(
+            OAuthCredentials.from_json(self.valid_oauth_json()),
+            opener=opener,
+            retry_base_delay=0,
+            now=lambda: now[0],
+        )
+
+        search = VerificationSearch(
+            email_tag="flatkey-qa-123456789-abc123def4",
+            run_start_epoch=1800000000,
+            sender="noreply@flatkey.ai",
+            subject_marker="Flatkey Email Verification",
+            now_epoch=1800000030,
+        )
+        client.find_verification_code(search)
+        now[0] = 1200
+        client.find_verification_code(search)
+
+        auth_headers = [request.headers.get("Authorization") for request, _ in opener.requests if "gmail.googleapis.com" in request.full_url]
+        self.assertIn("Bearer first-token", auth_headers)
+        self.assertIn("Bearer second-token", auth_headers)
+
+    def test_first_gmail_401_clears_token_and_refreshes_once(self):
+        opener = RecordingOpener(
+            [
+                FakeResponse(200, {"access_token": "first-token", "expires_in": 3600, "token_type": "Bearer"}),
+                urllib.error.HTTPError("https://gmail.googleapis.com/gmail/v1/users/me/profile", 401, "unauthorized", {}, io_bytes({})),
+                FakeResponse(200, {"access_token": "second-token", "expires_in": 3600, "token_type": "Bearer"}),
+                FakeResponse(200, {"emailAddress": "owner@gmail.com"}),
+                FakeResponse(200, {"messages": []}),
+            ]
+        )
+        client = GmailClient(OAuthCredentials.from_json(self.valid_oauth_json()), opener=opener, retry_base_delay=0)
+
+        client.find_verification_code(
+            VerificationSearch(
+                email_tag="flatkey-qa-123456789-abc123def4",
+                run_start_epoch=1800000000,
+                sender="noreply@flatkey.ai",
+                subject_marker="Flatkey Email Verification",
+                now_epoch=1800000030,
+            )
+        )
+
+        self.assertEqual(len([request for request, _ in opener.requests if request.full_url == "https://oauth2.googleapis.com/token"]), 2)
+
+    def test_profile_base_email_rejects_plus_whitespace_and_missing_local_or_domain(self):
+        for email_address in ["owner+qa@gmail.com", "owner @gmail.com", "@gmail.com", "owner@"]:
+            opener = RecordingOpener(
+                [
+                    FakeResponse(200, {"access_token": "access-secret", "expires_in": 3600, "token_type": "Bearer"}),
+                    FakeResponse(200, {"emailAddress": email_address}),
+                ]
+            )
+            client = GmailClient(OAuthCredentials.from_json(self.valid_oauth_json()), opener=opener, retry_base_delay=0)
+            with self.subTest(email=email_address):
+                with self.assertRaises(GmailConfigError):
+                    client.get_profile_email()
+
 
 def io_bytes(payload):
     class Body:
@@ -271,6 +449,10 @@ def io_bytes(payload):
             return None
 
     return Body()
+
+
+def b64url(text):
+    return __import__("base64").urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
 
 
 if __name__ == "__main__":

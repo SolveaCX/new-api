@@ -24,6 +24,14 @@ class GcpTransientError(GcpError):
     pass
 
 
+class GcsObjectAlreadyExists(GcpError):
+    pass
+
+
+class GcsUploadUncertain(GcpError):
+    pass
+
+
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -42,9 +50,9 @@ class GcpClient:
         return "GcpClient()"
 
     def identity_token(self, audience):
-        _validate_https_url(audience, "audience")
+        normalized_audience = _validate_cloud_run_service_url(audience)
         path = "/computeMetadata/v1/instance/service-accounts/default/identity"
-        query = urllib.parse.urlencode({"audience": audience, "format": "full"})
+        query = urllib.parse.urlencode({"audience": normalized_audience, "format": "full"})
         return self._metadata_text(path + "?" + query)
 
     def access_token(self):
@@ -75,6 +83,7 @@ class GcpClient:
             headers={"Metadata-Flavor": "Google"},
             timeout=5,
             retry_base_delay=self.retry_base_delay,
+            require_metadata_flavor=True,
         ).decode("utf-8")
 
 
@@ -105,6 +114,7 @@ def upload_gcs_object(bucket, object_name, data, content_type, access_token, *, 
         headers={"Authorization": f"Bearer {access_token}", "Content-Type": content_type},
         timeout=15,
         retry_base_delay=retry_base_delay,
+        classify_gcs_precondition=True,
     )
     try:
         decoded = json.loads(payload.decode("utf-8")) if payload else {}
@@ -115,7 +125,19 @@ def upload_gcs_object(bucket, object_name, data, content_type, access_token, *, 
     return decoded
 
 
-def _request_bytes(opener, method, url, *, data=None, headers=None, timeout=10, retry_base_delay=0.2, max_attempts=3):
+def _request_bytes(
+    opener,
+    method,
+    url,
+    *,
+    data=None,
+    headers=None,
+    timeout=10,
+    retry_base_delay=0.2,
+    max_attempts=3,
+    require_metadata_flavor=False,
+    classify_gcs_precondition=False,
+):
     parsed = urllib.parse.urlparse(url)
     if parsed.netloc == "metadata.google.internal":
         if parsed.scheme != "http":
@@ -125,15 +147,22 @@ def _request_bytes(opener, method, url, *, data=None, headers=None, timeout=10, 
             raise GcpConfigError("storage origin must be exact")
     else:
         raise GcpConfigError("google request origin must be exact")
+    uncertain_previous_attempt = False
     for attempt in range(1, max_attempts + 1):
         request = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
         try:
             with opener.open(request, timeout=timeout) as response:
                 status = response.status
+                if require_metadata_flavor and response.headers.get("Metadata-Flavor") != "Google":
+                    raise GcpConfigError("metadata response missing Google flavor")
                 raw = response.read(_MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
             if 300 <= exc.code <= 399:
                 raise GcpConfigError("google redirect blocked") from exc
+            if classify_gcs_precondition and exc.code == 412:
+                if uncertain_previous_attempt:
+                    raise GcsUploadUncertain("gcs upload may have succeeded before precondition failure") from exc
+                raise GcsObjectAlreadyExists("gcs object already exists") from exc
             if exc.code in (429,) or 500 <= exc.code <= 599:
                 if attempt < max_attempts:
                     _sleep(retry_base_delay, attempt)
@@ -142,6 +171,7 @@ def _request_bytes(opener, method, url, *, data=None, headers=None, timeout=10, 
             raise GcpConfigError("google request failed") from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             if attempt < max_attempts:
+                uncertain_previous_attempt = True
                 _sleep(retry_base_delay, attempt)
                 continue
             raise GcpTransientError("google connection failed") from exc
@@ -160,19 +190,33 @@ def _request_bytes(opener, method, url, *, data=None, headers=None, timeout=10, 
     raise GcpTransientError("google retry attempts exhausted")
 
 
-def _validate_https_url(value, label):
+def _validate_cloud_run_service_url(value):
     parsed = urllib.parse.urlparse(value)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.fragment:
-        raise GcpConfigError(f"{label} must be an exact https url")
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in ("", "/")
+        or not re.fullmatch(r"[a-z0-9][a-z0-9-]*-[a-z0-9]+-[a-z0-9-]+\.a\.run\.app", parsed.netloc)
+    ):
+        raise GcpConfigError("audience must be a canonical Cloud Run service root URL")
+    return urllib.parse.urlunsplit(("https", parsed.netloc, "", "", ""))
 
 
 def _validate_bucket(bucket):
-    if not isinstance(bucket, str) or not _BUCKET_RE.fullmatch(bucket) or ".." in bucket:
+    if not isinstance(bucket, str) or not 3 <= len(bucket) <= 63 or not _BUCKET_RE.fullmatch(bucket) or ".." in bucket:
         raise GcpConfigError("invalid gcs bucket")
 
 
 def _validate_object_name(name):
     if not isinstance(name, str) or not name or name.startswith("/") or "\\" in name:
+        raise GcpConfigError("invalid gcs object")
+    if any(ord(char) < 32 or ord(char) == 127 for char in name):
+        raise GcpConfigError("invalid gcs object")
+    if len(name.encode("utf-8")) > 1024:
         raise GcpConfigError("invalid gcs object")
     parts = name.split("/")
     if any(part in {"", ".", ".."} for part in parts):

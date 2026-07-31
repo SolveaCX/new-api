@@ -2,6 +2,7 @@ import json
 import unittest
 import urllib.error
 
+from scripts.browser_qa.flatkey_browser_qa import gcp
 from scripts.browser_qa.flatkey_browser_qa.gcp import (
     GcpClient,
     GcpConfigError,
@@ -11,9 +12,10 @@ from scripts.browser_qa.flatkey_browser_qa.gcp import (
 
 
 class FakeResponse:
-    def __init__(self, status, payload):
+    def __init__(self, status, payload, headers=None):
         self.status = status
         self.payload = payload
+        self.headers = headers or {}
 
     def read(self, _limit=-1):
         if isinstance(self.payload, bytes):
@@ -42,10 +44,10 @@ class RecordingOpener:
 
 class GcpTests(unittest.TestCase):
     def test_metadata_identity_token_uses_exact_host_path_header_and_https_audience(self):
-        opener = RecordingOpener([FakeResponse(200, b"id-token")])
+        opener = RecordingOpener([FakeResponse(200, b"id-token", {"Metadata-Flavor": "Google"})])
         client = GcpClient(opener=opener, retry_base_delay=0)
 
-        token = client.identity_token("https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app")
+        token = client.identity_token("https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app/")
 
         self.assertEqual(token, "id-token")
         request, timeout = opener.requests[0]
@@ -55,10 +57,19 @@ class GcpTests(unittest.TestCase):
         self.assertEqual(request.headers["Metadata-flavor"], "Google")
         self.assertEqual(timeout, 5)
 
-    def test_metadata_rejects_non_https_audience_and_retries_transient_only(self):
+    def test_metadata_rejects_non_canonical_cloud_run_audience_and_retries_transient_only(self):
         client = GcpClient(opener=RecordingOpener([]), retry_base_delay=0)
-        with self.assertRaises(GcpConfigError):
-            client.identity_token("http://service")
+        for audience in [
+            "http://flatkey-staging-browser-qa-broker-abc-uw.a.run.app",
+            "https://user:pass@flatkey-staging-browser-qa-broker-abc-uw.a.run.app",
+            "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app/path",
+            "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app?x=1",
+            "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app#frag",
+            "https://example.com",
+        ]:
+            with self.subTest(audience=audience):
+                with self.assertRaises(GcpConfigError):
+                    client.identity_token(audience)
 
         opener = RecordingOpener(
             [
@@ -75,7 +86,7 @@ class GcpTests(unittest.TestCase):
     def test_access_token_and_gcs_upload_use_bounded_google_origins_without_secret_repr(self):
         opener = RecordingOpener(
             [
-                FakeResponse(200, {"access_token": "access-secret", "expires_in": 3600}),
+                FakeResponse(200, {"access_token": "access-secret", "expires_in": 3600}, {"Metadata-Flavor": "Google"}),
                 FakeResponse(200, {"name": "reports/run/result.json"}),
             ]
         )
@@ -100,9 +111,26 @@ class GcpTests(unittest.TestCase):
         self.assertEqual(upload_request.headers["Authorization"], "Bearer access-secret")
         self.assertEqual(upload_request.headers["Content-type"], "application/json")
 
+    def test_metadata_response_must_include_google_flavor_header(self):
+        for headers in [{}, {"Metadata-Flavor": "NotGoogle"}]:
+            opener = RecordingOpener([FakeResponse(200, {"access_token": "access-secret"}, headers)])
+            client = GcpClient(opener=opener, retry_base_delay=0)
+            with self.subTest(headers=headers):
+                with self.assertRaises(GcpConfigError):
+                    client.access_token()
+
     def test_gcs_upload_validates_bucket_object_and_rejects_redirects(self):
         token = "access-secret"
-        for bucket, name in [("Bad_Bucket", "x"), ("ok-bucket", "/absolute"), ("ok-bucket", "../escape")]:
+        too_long_name = "a" * 1025
+        for bucket, name in [
+            ("ab", "x"),
+            ("a" * 64, "x"),
+            ("Bad_Bucket", "x"),
+            ("ok-bucket", "/absolute"),
+            ("ok-bucket", "../escape"),
+            ("ok-bucket", "bad\u0001name"),
+            ("ok-bucket", too_long_name),
+        ]:
             with self.subTest(bucket=bucket, name=name):
                 with self.assertRaises(GcpConfigError):
                     upload_gcs_object(bucket, name, b"x", "text/plain", token, opener=RecordingOpener([]))
@@ -110,6 +138,22 @@ class GcpTests(unittest.TestCase):
         opener = RecordingOpener([urllib.error.HTTPError("https://storage.googleapis.com/x", 302, "redirect", {}, io_bytes({}))])
         with self.assertRaises(GcpConfigError):
             upload_gcs_object("ok-bucket", "reports/x", b"x", "text/plain", token, opener=opener)
+
+    def test_gcs_412_has_distinct_classification_for_first_attempt_and_lost_response_retry(self):
+        first_exists = RecordingOpener(
+            [urllib.error.HTTPError("https://storage.googleapis.com/x", 412, "precondition", {}, io_bytes({}))]
+        )
+        with self.assertRaises(gcp.GcsObjectAlreadyExists):
+            upload_gcs_object("ok-bucket", "reports/x", b"x", "text/plain", "access-secret", opener=first_exists)
+
+        lost_then_exists = RecordingOpener(
+            [
+                urllib.error.URLError("connection lost"),
+                urllib.error.HTTPError("https://storage.googleapis.com/x", 412, "precondition", {}, io_bytes({})),
+            ]
+        )
+        with self.assertRaises(gcp.GcsUploadUncertain):
+            upload_gcs_object("ok-bucket", "reports/x", b"x", "text/plain", "access-secret", opener=lost_then_exists)
 
 
 def io_bytes(payload):

@@ -1,8 +1,10 @@
 import base64
 import email.utils
+import html.parser
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -15,8 +17,12 @@ GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _MAX_PART_BYTES = 64 * 1024
+_MAX_MIME_PARTS = 50
+_MAX_MIME_DEPTH = 12
+_MAX_TEXT_BYTES = 128 * 1024
 _MAX_CANDIDATES = 10
 _CODE_RE = re.compile(r"(?<!\d)\d{6}(?!\d)")
+_BASE_EMAIL_RE = re.compile(r"^[^@\s+]+@[^@\s@]+$")
 
 
 class GmailError(Exception):
@@ -45,7 +51,7 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def _default_opener():
-    return urllib.request.build_opener(_NoRedirectHandler())
+    return urllib.request.build_opener(_NoRedirectHandler(), urllib.request.ProxyHandler({}))
 
 
 @dataclass(frozen=True, repr=False)
@@ -78,6 +84,9 @@ class OAuthCredentials:
         required = ["refresh_token", "token_uri", "client_id", "client_secret", "scopes"]
         if any(not payload.get(key) for key in required):
             raise GmailConfigError("oauth json missing required fields")
+        for key in ["refresh_token", "token_uri", "client_id", "client_secret"]:
+            if not isinstance(payload[key], str) or not payload[key].strip():
+                raise GmailConfigError("oauth credential fields must be non-empty strings")
         scopes = payload["scopes"]
         if isinstance(scopes, str):
             scopes = tuple(scopes.split())
@@ -108,11 +117,14 @@ class VerificationSearch:
 
 
 class GmailClient:
-    def __init__(self, credentials: OAuthCredentials, *, opener=None, retry_base_delay=0.2):
+    def __init__(self, credentials: OAuthCredentials, *, opener=None, retry_base_delay=0.2, now=None):
         self.credentials = credentials
         self.opener = opener or _default_opener()
         self.retry_base_delay = retry_base_delay
+        self._now = now or time.time
+        self._token_lock = threading.RLock()
         self._access_token = None
+        self._access_token_expires_at = 0
         self._base_address = None
 
     def __repr__(self):
@@ -125,6 +137,10 @@ class GmailClient:
         return self._base_address
 
     def refresh_access_token(self):
+        with self._token_lock:
+            return self._refresh_access_token_unlocked()
+
+    def _refresh_access_token_unlocked(self):
         body = urllib.parse.urlencode(
             {
                 "client_id": self.credentials.client_id,
@@ -138,14 +154,18 @@ class GmailClient:
         token = payload.get("access_token")
         if not isinstance(token, str) or not token:
             raise GmailPermanentError("oauth token response missing access token")
+        expires_in = payload.get("expires_in")
+        if not isinstance(expires_in, int) or isinstance(expires_in, bool) or expires_in <= 0:
+            raise GmailPermanentError("oauth token response missing expiry")
         self._access_token = token
+        self._access_token_expires_at = self._now() + max(expires_in - 60, 0)
         return token
 
     def get_profile_email(self):
         payload = self._gmail_json("GET", "/gmail/v1/users/me/profile")
         email_address = payload.get("emailAddress")
-        if not isinstance(email_address, str) or "@" not in email_address:
-            raise GmailPermanentError("gmail profile missing email address")
+        if not isinstance(email_address, str) or not _BASE_EMAIL_RE.fullmatch(email_address):
+            raise GmailConfigError("gmail profile missing email address")
         return email_address.lower()
 
     def find_verification_code(self, search: VerificationSearch):
@@ -196,17 +216,16 @@ class GmailClient:
         return self._request_json(method, url, headers={"Accept": "application/json"}, auth=True)
 
     def _request_json(self, method, url, *, data=None, headers=None, auth=True, max_attempts=3):
-        if auth and not self._access_token:
-            self.refresh_access_token()
         parsed = urllib.parse.urlparse(url)
         if url == self.credentials.token_uri:
             pass
         elif parsed.scheme != "https" or parsed.netloc != "gmail.googleapis.com":
             raise GmailConfigError("request target is not an allowed Google API origin")
         request_headers = dict(headers or {})
-        if auth:
-            request_headers["Authorization"] = f"Bearer {self._access_token}"
+        refreshed_after_401 = False
         for attempt in range(1, max_attempts + 1):
+            if auth:
+                request_headers["Authorization"] = f"Bearer {self._ensure_access_token()}"
             request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
             try:
                 with self.opener.open(request, timeout=10) as response:
@@ -217,6 +236,11 @@ class GmailClient:
                 body = _read_error_body(exc)
                 if url == self.credentials.token_uri and _is_invalid_grant(body):
                     raise GmailInvalidGrant("oauth invalid_grant") from exc
+                if auth and status == 401 and not refreshed_after_401:
+                    self._clear_access_token()
+                    self.refresh_access_token()
+                    refreshed_after_401 = True
+                    continue
                 if status in (429,) or 500 <= status <= 599:
                     if attempt < max_attempts:
                         self._sleep(attempt)
@@ -250,6 +274,17 @@ class GmailClient:
             return payload
         raise GmailTransientError("google api retry attempts exhausted")
 
+    def _ensure_access_token(self):
+        with self._token_lock:
+            if self._access_token and self._now() < self._access_token_expires_at:
+                return self._access_token
+            return self._refresh_access_token_unlocked()
+
+    def _clear_access_token(self):
+        with self._token_lock:
+            self._access_token = None
+            self._access_token_expires_at = 0
+
     def _sleep(self, attempt):
         if self.retry_base_delay <= 0:
             return
@@ -274,11 +309,14 @@ def parse_verification_code(message, *, alias, sender, subject_marker, run_start
     headers = _headers(payload)
     if not _alias_matches(headers, alias):
         return None
-    if _address(headers.get("from")) != sender.lower():
+    if _single_address(headers.get("from")) != sender.lower():
         return None
     if subject_marker not in headers.get("subject", ""):
         return None
-    text = "\n".join(_walk_text_parts(payload))
+    parts = _collect_text_parts(payload)
+    if parts is None:
+        return None
+    text = "\n".join(parts)
     if not text:
         return None
     codes = set(_CODE_RE.findall(text))
@@ -307,24 +345,59 @@ def _alias_matches(headers, alias):
     return False
 
 
-def _address(value):
+def _single_address(value):
     if not value:
         return ""
     parsed = email.utils.getaddresses([value])
-    return parsed[0][1].lower() if parsed else ""
+    if len(parsed) != 1 or not parsed[0][1]:
+        return ""
+    return parsed[0][1].lower()
 
 
-def _walk_text_parts(part):
-    mime_type = str(part.get("mimeType", "")).lower()
+def _collect_text_parts(root):
+    stack = [(root, 0)]
+    seen_parts = 0
+    total_bytes = 0
+    texts = []
+    while stack:
+        part, depth = stack.pop()
+        if not isinstance(part, dict):
+            return None
+        seen_parts += 1
+        if seen_parts > _MAX_MIME_PARTS or depth > _MAX_MIME_DEPTH:
+            return None
+        children = part.get("parts", []) or []
+        if not isinstance(children, list):
+            return None
+        for child in reversed(children):
+            stack.append((child, depth + 1))
+        if _is_attachment_part(part):
+            continue
+        mime_type = str(part.get("mimeType", "")).lower()
+        body = part.get("body") if isinstance(part.get("body"), dict) else {}
+        data = body.get("data")
+        if mime_type in {"text/plain", "text/html"} and isinstance(data, str):
+            decoded = _decode_base64url(data)
+            if decoded is None:
+                return None
+            if mime_type == "text/html":
+                decoded = _html_visible_text(decoded)
+            total_bytes += len(decoded.encode("utf-8"))
+            if total_bytes > _MAX_TEXT_BYTES:
+                return None
+            texts.append(decoded)
+    return texts
+
+
+def _is_attachment_part(part):
+    if part.get("filename"):
+        return True
     body = part.get("body") if isinstance(part.get("body"), dict) else {}
-    data = body.get("data")
-    if mime_type in {"text/plain", "text/html"} and isinstance(data, str):
-        decoded = _decode_base64url(data)
-        if decoded is not None:
-            yield decoded
-    for child in part.get("parts", []) or []:
-        if isinstance(child, dict):
-            yield from _walk_text_parts(child)
+    if body.get("attachmentId"):
+        return True
+    headers = _headers(part)
+    disposition = headers.get("content-disposition", "").lower()
+    return "attachment" in disposition or "filename=" in disposition
 
 
 def _decode_base64url(data):
@@ -340,6 +413,34 @@ def _decode_base64url(data):
         return raw.decode("utf-8")
     except UnicodeDecodeError:
         return None
+
+
+class _VisibleTextParser(html.parser.HTMLParser):
+    _SKIP_TAGS = {"script", "style", "noscript", "template"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self._skip_depth = 0
+        self.chunks = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in self._SKIP_TAGS:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag):
+        if tag.lower() in self._SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+
+    def handle_data(self, data):
+        if not self._skip_depth:
+            self.chunks.append(data)
+
+
+def _html_visible_text(html):
+    parser = _VisibleTextParser()
+    parser.feed(html)
+    parser.close()
+    return " ".join(parser.chunks)
 
 
 def _read_error_body(exc):
