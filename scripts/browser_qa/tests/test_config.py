@@ -2,6 +2,7 @@ import base64
 import unittest
 
 from scripts.browser_qa.flatkey_browser_qa.config import load_config
+from scripts.browser_qa.flatkey_browser_qa.config import load_cleanup_config
 
 
 def valid_env():
@@ -69,6 +70,33 @@ class ConfigTests(unittest.TestCase):
         env["FLATKEY_QA_CONSOLE_ORIGIN"] = "https://staging-console.flatkey.ai:444"
         with self.assertRaises(ValueError):
             load_config(env)
+
+    def test_load_cleanup_config_requires_only_cleanup_secrets_and_console_origin(self):
+        env = {
+            "FLATKEY_QA_RUN_ID": "123456789",
+            "FLATKEY_QA_IDENTITY_SEED_B64": base64.b64encode(b"seed-with-32-bytes-minimum-value").decode("ascii"),
+            "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai",
+        }
+
+        cfg = load_cleanup_config(env)
+
+        self.assertEqual(cfg.run_id, "123456789")
+        self.assertEqual(cfg.console_origin, "https://staging-console.flatkey.ai")
+        self.assertNotIn("seed", repr(cfg))
+
+    def test_load_cleanup_config_rejects_unknown_cleanup_env_and_non_exact_origin(self):
+        env = {
+            "FLATKEY_QA_RUN_ID": "123456789",
+            "FLATKEY_QA_IDENTITY_SEED_B64": base64.b64encode(b"seed-with-32-bytes-minimum-value").decode("ascii"),
+            "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai/",
+        }
+        with self.assertRaises(ValueError):
+            load_cleanup_config(env)
+
+        env["FLATKEY_QA_CONSOLE_ORIGIN"] = "https://staging-console.flatkey.ai"
+        env["FLATKEY_QA_GMAIL_BASE"] = "owner@gmail.com"
+        with self.assertRaises(ValueError):
+            load_cleanup_config(env)
 
 
 if __name__ == "__main__":
