@@ -99,6 +99,30 @@ class ReportTests(unittest.TestCase):
             schema = json.load(handle)
         self.assertFalse(schema["additionalProperties"])
 
+    def test_schema_declares_same_non_empty_contract_as_python_validator(self):
+        schema_path = os.path.join(os.path.dirname(__file__), "..", "config", "result.schema.json")
+        with open(schema_path, encoding="utf-8") as handle:
+            schema = json.load(handle)
+        finding_schema = schema["properties"]["findings"]["items"]["properties"]
+
+        for field in ["title", "target_url", "expected", "actual", "confidence", "severity"]:
+            with self.subTest(field=field):
+                self.assertEqual(finding_schema[field].get("minLength"), 1)
+
+        for field in ["steps", "evidence_paths"]:
+            with self.subTest(field=field):
+                self.assertEqual(finding_schema[field].get("minItems"), 1)
+                self.assertEqual(finding_schema[field]["items"].get("minLength"), 1)
+
+        for bad_payload in [
+            valid_result(findings=[finding(title="")]),
+            valid_result(findings=[finding(steps=[])]),
+            valid_result(findings=[finding(evidence_paths=[""])]),
+        ]:
+            with self.subTest(payload=bad_payload):
+                with self.assertRaises(report.ResultValidationError):
+                    report.validate_result(bad_payload)
+
 
 if __name__ == "__main__":
     unittest.main()

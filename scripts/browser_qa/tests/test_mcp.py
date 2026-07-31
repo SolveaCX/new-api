@@ -7,6 +7,7 @@ import urllib.error
 
 from scripts.browser_qa.flatkey_browser_qa import broker_mcp
 from scripts.browser_qa.flatkey_browser_qa import control_mcp
+from scripts.browser_qa.flatkey_browser_qa import mcp
 
 
 class FakeResponse:
@@ -38,6 +39,24 @@ class RecordingOpener:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class NoNewlineStream:
+    def __init__(self, text):
+        self.text = text
+        self.offset = 0
+        self.read_sizes = []
+
+    def read(self, size=-1):
+        self.read_sizes.append(size)
+        if self.offset >= len(self.text):
+            return ""
+        if size is None or size < 0:
+            size = len(self.text) - self.offset
+        end = min(len(self.text), self.offset + size)
+        chunk = self.text[self.offset:end]
+        self.offset = end
+        return chunk
 
 
 class FakeClock:
@@ -161,6 +180,16 @@ class BrokerMcpTests(unittest.TestCase):
         broker_mcp.run(stdin, stdout, env=self.env(), opener=RecordingOpener([]), clock=FakeClock(), max_line_bytes=1024)
         oversized = decode_frames(stdout.getvalue())
         self.assertEqual(oversized[0]["error"]["code"], -32700)
+
+    def test_jsonrpc_server_rejects_no_newline_oversized_input_without_unbounded_read(self):
+        stdin = NoNewlineStream("x" * 1025)
+        stdout = io.StringIO()
+        server = mcp.McpServer("test", [])
+
+        mcp.run_jsonrpc_server(stdin, stdout, server, max_line_bytes=1024)
+
+        self.assertEqual(decode_frames(stdout.getvalue())[0]["error"]["code"], -32700)
+        self.assertLessEqual(max(stdin.read_sizes), 1025)
 
     def test_broker_env_http_metadata_and_polling_contract(self):
         opener = RecordingOpener(

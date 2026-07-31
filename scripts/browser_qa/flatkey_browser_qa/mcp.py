@@ -72,8 +72,8 @@ def tool_result(value, *, is_error=False):
 
 
 def run_jsonrpc_server(stdin, stdout, server, *, max_line_bytes=1024 * 1024):
-    for line in stdin:
-        if len(line.encode("utf-8", "replace")) > max_line_bytes:
+    for line in _iter_bounded_lines(stdin, max_line_bytes):
+        if line is None:
             _write_response(stdout, None, error=(-32700, "parse error"))
             break
         try:
@@ -99,6 +99,27 @@ def run_jsonrpc_server(stdin, stdout, server, *, max_line_bytes=1024 * 1024):
             _write_response(stdout, request_id, error=(-32603, "internal error"))
         else:
             _write_response(stdout, request_id, result=result)
+
+
+def _iter_bounded_lines(stream, max_line_bytes):
+    pending = ""
+    while True:
+        chunk = stream.read(max_line_bytes + 1)
+        if chunk == "":
+            if pending:
+                yield pending if len(pending.encode("utf-8", "replace")) <= max_line_bytes else None
+            return
+        pending += chunk
+        if len(pending.encode("utf-8", "replace")) > max_line_bytes:
+            yield None
+            return
+        while True:
+            newline_index = pending.find("\n")
+            if newline_index < 0:
+                break
+            line = pending[: newline_index + 1]
+            pending = pending[newline_index + 1 :]
+            yield line
 
 
 def _write_response(stdout, request_id, *, result=None, error=None):

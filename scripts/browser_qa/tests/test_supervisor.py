@@ -11,6 +11,7 @@ import io
 import urllib.request
 
 from scripts.browser_qa.flatkey_browser_qa.cleanup import CleanupResult
+from scripts.browser_qa.flatkey_browser_qa import control_mcp
 from scripts.browser_qa.flatkey_browser_qa import supervisor
 
 
@@ -454,8 +455,12 @@ class SupervisorTests(unittest.TestCase):
                 "actual": code,
                 "evidence_paths": ["artifact.txt"],
                 "confidence": "high",
-            }])
+            }], exploration={"status": "passed", "actions_used": 999})
             def notify_code():
+                control_mcp.write_control_state(
+                    tmp,
+                    {"phase": "exploration", "monotonic_started_at": 100.0, "actions_used": 7},
+                )
                 request = urllib.request.Request(
                     process_holder["sup"]._evidence_url,
                     data=json.dumps({"type": "verification_code", "code": code}).encode("utf-8"),
@@ -491,6 +496,10 @@ class SupervisorTests(unittest.TestCase):
             rendered = json.dumps(final_result) + json.dumps(outcome.to_dict())
             for secret in [raw_alias, sup._identity.password, code, "owner@gmail.com", "flatkey-qa-12345-secret"]:
                 self.assertNotIn(secret, rendered)
+            self.assertEqual(final_result["exploration"]["actions_used"], 7)
+            with open(os.path.join(tmp, "manifest.json"), encoding="utf-8") as handle:
+                manifest = json.load(handle)
+            self.assertEqual(manifest["result"]["exploration"]["actions_used"], 7)
             self.assertFalse(os.path.exists(os.path.join(tmp, "quarantine-result.json")))
 
     def test_invalid_or_oversized_codex_jsonl_is_infrastructure_and_kills_process(self):

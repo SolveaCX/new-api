@@ -181,6 +181,7 @@ class Supervisor:
                 cleanup_result = self.cleanup_runner.run(identity)
             except Exception as exc:
                 cleanup_result = CleanupResult(0, False, False, True, redactor.clean(str(exc)))
+            payload = _with_trusted_runtime_state(payload, self.runtime_root)
             try:
                 report.validate_result(payload)
             except Exception:
@@ -373,6 +374,25 @@ def _empty_result():
         "budgets": {"replay_seconds": 300, "exploration_seconds": 300, "max_actions": 30},
         "findings": [],
     }
+
+
+def _with_trusted_runtime_state(payload, runtime_root):
+    if not isinstance(payload, dict):
+        return payload
+    state_path = os.path.join(runtime_root, "control_state.json")
+    try:
+        with open(state_path, encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return payload
+    actions_used = state.get("actions_used") if isinstance(state, dict) else None
+    if not isinstance(actions_used, int) or isinstance(actions_used, bool) or actions_used < 0:
+        return payload
+    updated = dict(payload)
+    exploration = dict(updated.get("exploration", {}))
+    exploration["actions_used"] = actions_used
+    updated["exploration"] = exploration
+    return updated
 
 
 def _codex_config(_proxy):

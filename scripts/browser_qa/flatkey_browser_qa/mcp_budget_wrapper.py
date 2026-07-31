@@ -315,6 +315,7 @@ class BudgetedMcpWrapper:
             return False
         try:
             self.exploration_budget.consume_action()
+            _write_actions_used(self.runtime_dir, self.exploration_budget.actions_consumed)
         except BudgetExceeded:
             if "id" in request:
                 self._write_error(client_output, request.get("id"), -32001, "exploration budget exceeded")
@@ -424,6 +425,19 @@ def _marker_started_at(runtime_dir, clock):
     if marker < 0 or marker > now + 1:
         raise RuntimeError("control state unavailable")
     return float(marker)
+
+
+def _write_actions_used(runtime_dir, actions_used):
+    path = os.path.join(runtime_dir, STATE_FILE_NAME)
+    try:
+        with open(path, encoding="utf-8") as state_file:
+            payload = json.load(state_file)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("control state unavailable") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("control state unavailable")
+    payload["actions_used"] = actions_used
+    write_control_state(runtime_dir, payload)
 
 
 def _runtime_dir(runtime_dir):

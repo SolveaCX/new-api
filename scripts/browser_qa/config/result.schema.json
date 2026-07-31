@@ -38,14 +38,14 @@
         "additionalProperties": false,
         "required": ["severity", "title", "target_url", "steps", "expected", "actual", "evidence_paths", "confidence"],
         "properties": {
-          "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
-          "title": {"type": "string"},
-          "target_url": {"type": "string"},
-          "steps": {"type": "array", "items": {"type": "string"}},
-          "expected": {"type": "string"},
-          "actual": {"type": "string"},
-          "evidence_paths": {"type": "array", "items": {"type": "string"}},
-          "confidence": {"type": "string", "enum": ["low", "medium", "high"]}
+          "severity": {"type": "string", "minLength": 1, "enum": ["critical", "high", "medium", "low", "info"]},
+          "title": {"type": "string", "minLength": 1},
+          "target_url": {"type": "string", "minLength": 1},
+          "steps": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "expected": {"type": "string", "minLength": 1},
+          "actual": {"type": "string", "minLength": 1},
+          "evidence_paths": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "confidence": {"type": "string", "minLength": 1, "enum": ["low", "medium", "high"]}
         }
       }
     }

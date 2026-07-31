@@ -184,6 +184,9 @@ class WrapperContractTests(unittest.TestCase):
             self.assertEqual(len(forwarded), 31)
             self.assertEqual(json.loads(forwarded[0])["id"], "before")
             self.assertEqual(json.loads(forwarded[-1])["id"], 30)
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as handle:
+                state = json.load(handle)
+            self.assertEqual(state["actions_used"], 30)
             budget_response = json.loads(client_output.getvalue().splitlines()[0])
             self.assertEqual(budget_response["id"], 31)
             self.assertEqual(budget_response["error"]["code"], -32001)
