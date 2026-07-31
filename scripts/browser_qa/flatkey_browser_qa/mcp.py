@@ -84,6 +84,10 @@ def run_jsonrpc_server(stdin, stdout, server, *, max_line_bytes=1024 * 1024):
         if not isinstance(request, dict):
             _write_response(stdout, None, error=(-32600, "invalid request"))
             break
+        if request.get("jsonrpc") != "2.0":
+            if "id" in request:
+                _write_response(stdout, request.get("id"), error=(-32600, "invalid request"))
+            break
         if "id" not in request:
             continue
         request_id = request.get("id")

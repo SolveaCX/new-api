@@ -3,6 +3,8 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 
 from scripts.browser_qa.flatkey_browser_qa.budget import ExplorationBudget
@@ -45,6 +47,34 @@ class FakeChild:
         self.killed = True
 
 
+class RecordingTreeTerminator:
+    def __init__(self):
+        self.terminated = []
+        self.killed = []
+
+    def terminate_tree(self, child):
+        self.terminated.append(child)
+        child.terminate()
+
+    def kill_tree(self, child):
+        self.killed.append(child)
+        child.kill()
+
+
+class SlowWriter:
+    def __init__(self):
+        self.value = ""
+
+    def write(self, text):
+        for char in text:
+            current = self.value
+            time.sleep(0.001)
+            self.value = current + char
+
+    def flush(self):
+        return None
+
+
 def frame(payload):
     return json.dumps(payload) + "\n"
 
@@ -58,10 +88,19 @@ class WrapperContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as runtime_dir:
             command = mcp_budget_wrapper.playwright_child_command(runtime_dir)
 
-            self.assertEqual(command[:3], ["npx", "-y", "@playwright/mcp@0.0.78"])
-            self.assertIn("--output-mode", command)
-            self.assertIn("file", command)
-            self.assertIn("--output-dir", command)
+            self.assertEqual(
+                command,
+                [
+                    "npx",
+                    "-y",
+                    "@playwright/mcp@0.0.78",
+                    "--headless",
+                    "--output-mode",
+                    "file",
+                    "--output-dir",
+                    command[-1],
+                ],
+            )
             output_dir = command[command.index("--output-dir") + 1]
             self.assertTrue(os.path.realpath(output_dir).startswith(os.path.realpath(runtime_dir) + os.sep))
             self.assertNotIn("@latest", command)
@@ -78,7 +117,13 @@ class WrapperContractTests(unittest.TestCase):
 
             mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "replay_checkpoint"})
             wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=clock)
-            wrapper.proxy_client_requests(client_input, client_output, after_first_request=lambda: mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration"}))
+            wrapper.proxy_client_requests(
+                client_input,
+                client_output,
+                after_first_request=lambda: mcp_budget_wrapper.write_control_state(
+                    runtime_dir, {"phase": "exploration", "monotonic_started_at": clock.monotonic()}
+                ),
+            )
 
             forwarded = child.stdin.getvalue().splitlines()
             self.assertEqual(len(forwarded), 31)
@@ -90,11 +135,41 @@ class WrapperContractTests(unittest.TestCase):
             self.assertIsInstance(wrapper.exploration_budget, ExplorationBudget)
             self.assertEqual(wrapper.exploration_budget.actions_consumed, 30)
 
+    def test_marker_time_not_first_action_starts_exploration_budget(self):
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": clock.monotonic()})
+            clock.advance(301)
+            child = FakeChild()
+            output = io.StringIO()
+
+            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=clock)
+            wrapper.proxy_client_requests(io.StringIO(call_frame("late-first-action")), output)
+
+            self.assertEqual(json.loads(output.getvalue().splitlines()[0])["error"]["code"], -32001)
+            self.assertEqual(child.stdin.getvalue(), "")
+
+    def test_tools_call_notifications_count_and_over_budget_notification_is_not_forwarded(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": 100.0})
+            child = FakeChild()
+            notifications = "".join(
+                frame({"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "browser_click", "arguments": {}}})
+                for _ in range(35)
+            )
+
+            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+            output = io.StringIO()
+            wrapper.proxy_client_requests(io.StringIO(notifications), output)
+
+            self.assertEqual(len(child.stdin.getvalue().splitlines()), 30)
+            self.assertEqual(output.getvalue(), "")
+
     def test_initialize_list_responses_and_notifications_do_not_consume_action_budget(self):
         clock = FakeClock()
         child = FakeChild()
         with tempfile.TemporaryDirectory() as runtime_dir:
-            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration"})
+            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": clock.monotonic()})
             payloads = [
                 {"jsonrpc": "2.0", "id": "init", "method": "initialize"},
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -113,7 +188,7 @@ class WrapperContractTests(unittest.TestCase):
         clock = FakeClock()
         child = FakeChild()
         with tempfile.TemporaryDirectory() as runtime_dir:
-            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration"})
+            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": clock.monotonic()})
             wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=clock)
             wrapper.proxy_client_requests(io.StringIO(call_frame("start")), io.StringIO())
             clock.advance(301)
@@ -188,13 +263,33 @@ class WrapperContractTests(unittest.TestCase):
     def test_terminate_kills_child_when_terminate_is_ignored(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
             child = FakeChild(wait_timeout_once=True)
-            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+            terminator = RecordingTreeTerminator()
+            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock(), tree_terminator=terminator)
 
             wrapper.terminate_child()
 
             self.assertTrue(child.terminated)
             self.assertTrue(child.killed)
             self.assertEqual(child.wait_calls, 2)
+            self.assertEqual(terminator.terminated, [child])
+            self.assertEqual(terminator.killed, [child])
+
+    def test_client_stdout_writes_are_serialized_between_child_forward_and_budget_error(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": 100.0})
+            child = FakeChild()
+            child.stdout = io.StringIO(frame({"jsonrpc": "2.0", "id": "child", "result": {"ok": True}}))
+            writer = SlowWriter()
+            wrapper = mcp_budget_wrapper.BudgetedMcpWrapper(runtime_dir, child=child, clock=FakeClock())
+
+            stdout_thread = threading.Thread(target=wrapper.proxy_child_stdout, args=(writer,))
+            stdout_thread.start()
+            wrapper.proxy_client_requests(io.StringIO("".join(call_frame(i) for i in range(31))), writer)
+            stdout_thread.join(timeout=2)
+
+            lines = writer.value.splitlines()
+            self.assertEqual(len(lines), 2)
+            self.assertTrue(all(json.loads(line)["jsonrpc"] == "2.0" for line in lines))
 
 
 if __name__ == "__main__":

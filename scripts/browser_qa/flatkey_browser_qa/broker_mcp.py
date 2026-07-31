@@ -55,8 +55,12 @@ class _BrokerTool:
         deadline = self.clock.monotonic() + _DEADLINE_SECONDS
         while True:
             try:
-                token = GcpClient(opener=self.opener, retry_base_delay=0).identity_token(config["broker_url"])
-                response = _post_current_code(self.opener, config, token)
+                token = GcpClient(opener=self.opener, retry_base_delay=0).identity_token(
+                    config["broker_url"], timeout=_remaining(deadline, self.clock), max_attempts=1
+                )
+                _ensure_remaining(deadline, self.clock)
+                response = _post_current_code(self.opener, config, token, timeout=_remaining(deadline, self.clock))
+                _ensure_remaining(deadline, self.clock)
             except GcpError as exc:
                 raise ToolExecutionError("broker identity unavailable") from exc
             status = response.get("status") if isinstance(response, dict) else None
@@ -102,7 +106,19 @@ def _canonical_root_url(url):
     return urllib.parse.urlunsplit(("https", hostname, "", "", ""))
 
 
-def _post_current_code(opener, config, token):
+def _remaining(deadline, clock):
+    remaining = deadline - clock.monotonic()
+    if remaining <= 0:
+        raise ToolExecutionError("verification code deadline exceeded")
+    return min(5, remaining)
+
+
+def _ensure_remaining(deadline, clock):
+    if clock.monotonic() > deadline:
+        raise ToolExecutionError("verification code deadline exceeded")
+
+
+def _post_current_code(opener, config, token, *, timeout):
     target = config["broker_url"] + "/v1/current-code"
     payload = json.dumps(
         {"run_id": config["run_id"], "email_tag": config["email_tag"], "start_time": config["start_time"]},
@@ -115,7 +131,7 @@ def _post_current_code(opener, config, token):
         method="POST",
     )
     try:
-        with opener.open(request, timeout=5) as response:
+        with opener.open(request, timeout=timeout) as response:
             if 300 <= response.status <= 399:
                 raise ToolExecutionError("broker redirect blocked")
             if not 200 <= response.status <= 299:

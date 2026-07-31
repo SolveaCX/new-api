@@ -52,11 +52,11 @@ class GcpClient:
     def __repr__(self):
         return "GcpClient()"
 
-    def identity_token(self, audience):
+    def identity_token(self, audience, *, timeout=5, max_attempts=3):
         normalized_audience = _validate_cloud_run_service_url(audience)
         path = "/computeMetadata/v1/instance/service-accounts/default/identity"
         query = urllib.parse.urlencode({"audience": normalized_audience, "format": "full"})
-        return self._metadata_text(path + "?" + query)
+        return self._metadata_text(path + "?" + query, timeout=timeout, max_attempts=max_attempts)
 
     def access_token(self):
         payload = self._metadata_json("/computeMetadata/v1/instance/service-accounts/default/token")
@@ -75,7 +75,7 @@ class GcpClient:
             raise GcpConfigError("metadata json response malformed")
         return payload
 
-    def _metadata_text(self, selector):
+    def _metadata_text(self, selector, *, timeout=5, max_attempts=3):
         if not selector.startswith("/computeMetadata/v1/instance/service-accounts/default/"):
             raise GcpConfigError("metadata path outside service-account contract")
         url = METADATA_ORIGIN + selector
@@ -84,8 +84,9 @@ class GcpClient:
             "GET",
             url,
             headers={"Metadata-Flavor": "Google"},
-            timeout=5,
+            timeout=timeout,
             retry_base_delay=self.retry_base_delay,
+            max_attempts=max_attempts,
             require_metadata_flavor=True,
         ).decode("utf-8")
 

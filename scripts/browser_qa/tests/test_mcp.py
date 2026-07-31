@@ -52,6 +52,20 @@ class FakeClock:
         self.sleeps.append(seconds)
         self.now += seconds
 
+    def advance(self, seconds):
+        self.now += seconds
+
+
+class ControlClock:
+    def __init__(self):
+        self.now = 500.25
+
+    def monotonic(self):
+        return self.now
+
+    def time(self):
+        return 1700000000
+
 
 def frames(*payloads):
     return "".join(json.dumps(payload) + "\n" for payload in payloads)
@@ -95,6 +109,19 @@ class BrokerMcpTests(unittest.TestCase):
             tools[0]["inputSchema"],
             {"type": "object", "properties": {}, "additionalProperties": False},
         )
+
+    def test_mcp_rejects_missing_or_wrong_jsonrpc_version_for_requests_and_notifications(self):
+        responses = self.run_server(
+            [
+                {"id": 1, "method": "tools/list"},
+                {"jsonrpc": "1.0", "id": 2, "method": "tools/list"},
+                {"method": "notifications/initialized"},
+            ]
+        )
+
+        self.assertEqual(len(responses), 1)
+        self.assertEqual(responses[0]["id"], 1)
+        self.assertEqual(responses[0]["error"]["code"], -32600)
 
     def test_broker_tool_rejects_any_arguments_missing_unknown_or_malformed_requests(self):
         responses = self.run_server(
@@ -222,12 +249,47 @@ class BrokerMcpTests(unittest.TestCase):
         self.assertTrue(responses[0]["result"]["isError"])
         self.assertIn("deadline", responses[0]["result"]["content"][0]["text"])
 
+    def test_broker_deadline_includes_metadata_and_http_in_flight_time(self):
+        class SlowPendingOpener:
+            def __init__(self, clock):
+                self.clock = clock
+                self.requests = []
+
+            def open(self, request, timeout=0):
+                remaining = 220.0 - self.clock.monotonic()
+                self.requests.append((request.full_url, timeout, remaining))
+                self.clock.advance(min(4, timeout))
+                if request.host == "metadata.google.internal":
+                    return FakeResponse(200, b"id-token", {"Metadata-Flavor": "Google"})
+                return FakeResponse(200, {"status": "pending"})
+
+        clock = FakeClock()
+        opener = SlowPendingOpener(clock)
+        responses = self.run_server(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": "deadline",
+                    "method": "tools/call",
+                    "params": {"name": "get_current_verification_code", "arguments": {}},
+                }
+            ],
+            opener=opener,
+            clock=clock,
+        )
+
+        self.assertTrue(responses[0]["result"]["isError"])
+        self.assertLessEqual(clock.monotonic(), 220.0)
+        for _url, timeout, remaining in opener.requests:
+            self.assertGreater(remaining, 0)
+            self.assertLessEqual(timeout, remaining)
+
 
 class ControlMcpTests(unittest.TestCase):
-    def run_server(self, requests, runtime_dir):
+    def run_server(self, requests, runtime_dir, clock=None):
         stdin = io.StringIO(frames(*requests))
         stdout = io.StringIO()
-        control_mcp.run(stdin, stdout, env={"FLATKEY_BROWSER_QA_RUNTIME_DIR": runtime_dir})
+        control_mcp.run(stdin, stdout, env={"FLATKEY_BROWSER_QA_RUNTIME_DIR": runtime_dir}, clock=clock)
         return decode_frames(stdout.getvalue())
 
     def test_control_exposes_only_checkpoint_and_exploration_and_writes_atomic_state(self):
@@ -258,8 +320,30 @@ class ControlMcpTests(unittest.TestCase):
             with open(state_path, encoding="utf-8") as state_file:
                 state = json.load(state_file)
             self.assertEqual(state["phase"], "exploration")
+            self.assertIsInstance(state["monotonic_started_at"], float)
             leftovers = [name for name in os.listdir(runtime_dir) if name.startswith(".control_state.")]
             self.assertEqual(leftovers, [])
+
+    def test_control_exploration_state_uses_monotonic_marker_timestamp(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            clock = ControlClock()
+            self.run_server(
+                [
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": "qa_start_exploration", "arguments": {}},
+                    }
+                ],
+                runtime_dir,
+                clock=clock,
+            )
+
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as state_file:
+                state = json.load(state_file)
+            self.assertEqual(state["updated_at"], 1700000000)
+            self.assertEqual(state["monotonic_started_at"], 500.25)
 
     def test_control_state_path_stays_in_runtime_dir_and_fails_closed_on_symlink_or_bad_env(self):
         responses = self.run_server(

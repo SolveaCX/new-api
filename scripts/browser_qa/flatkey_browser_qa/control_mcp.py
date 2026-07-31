@@ -14,23 +14,27 @@ STATE_FILE_NAME = "control_state.json"
 _ENV_RUNTIME_DIR = "FLATKEY_BROWSER_QA_RUNTIME_DIR"
 
 
-def run(stdin=None, stdout=None, *, env=None, max_line_bytes=1024 * 1024):
+def run(stdin=None, stdout=None, *, env=None, clock=None, max_line_bytes=1024 * 1024):
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     env = env or os.environ
+    clock = clock or time
     runtime_dir = env.get(_ENV_RUNTIME_DIR)
     server = McpServer(
         "flatkey-browser-qa-control",
         [
-            Tool("qa_replay_checkpoint", "Mark the replay checkpoint as complete.", lambda: _mark(runtime_dir, "replay_checkpoint")),
-            Tool("qa_start_exploration", "Start the limited exploration phase.", lambda: _mark(runtime_dir, "exploration")),
+            Tool("qa_replay_checkpoint", "Mark the replay checkpoint as complete.", lambda: _mark(runtime_dir, "replay_checkpoint", clock)),
+            Tool("qa_start_exploration", "Start the limited exploration phase.", lambda: _mark(runtime_dir, "exploration", clock)),
         ],
     )
     run_jsonrpc_server(stdin, stdout, server, max_line_bytes=max_line_bytes)
 
 
-def _mark(runtime_dir, phase):
-    write_control_state(runtime_dir, {"phase": phase, "updated_at": int(time.time())})
+def _mark(runtime_dir, phase, clock):
+    state = {"phase": phase, "updated_at": int(clock.time())}
+    if phase == "exploration":
+        state["monotonic_started_at"] = float(clock.monotonic())
+    write_control_state(runtime_dir, state)
     return {"status": "ok", "phase": phase}
 
 

@@ -1,4 +1,5 @@
 import time
+import math
 from dataclasses import dataclass
 
 
@@ -57,13 +58,16 @@ class ExplorationBudget:
     def actions_consumed(self):
         return self._actions
 
-    def start(self, replay_budget):
+    def start(self, replay_budget, *, started_at=None):
         if not isinstance(replay_budget, ReplayBudget):
             raise TypeError("replay_budget must be a ReplayBudget")
         if not replay_budget.can_start_exploration:
             raise BudgetExceeded("replay checkpoint is required before exploration")
         if self._deadline is None:
-            self._deadline = self.clock.monotonic() + self.seconds
+            marker = self.clock.monotonic() if started_at is None else started_at
+            if not isinstance(marker, (int, float)) or isinstance(marker, bool) or not math.isfinite(marker):
+                raise ValueError("exploration start time must be finite")
+            self._deadline = float(marker) + self.seconds
 
     def consume_action(self):
         self._ensure_active()

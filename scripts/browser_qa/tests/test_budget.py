@@ -71,6 +71,17 @@ class BudgetTests(unittest.TestCase):
         with self.assertRaises(BudgetExceeded):
             budget.consume_action()
 
+    def test_exploration_can_start_from_explicit_monotonic_marker_time(self):
+        clock = FakeClock()
+        replay = ReplayBudget(900, clock)
+        replay.mark_checkpoint()
+        budget = ExplorationBudget(300, 30, clock)
+        budget.start(replay, started_at=clock.monotonic())
+        clock.advance(301)
+
+        with self.assertRaises(BudgetExceeded):
+            budget.consume_action()
+
     def test_replay_checkpoint_must_happen_before_exploration(self):
         replay = ReplayBudget(900, FakeClock())
 
