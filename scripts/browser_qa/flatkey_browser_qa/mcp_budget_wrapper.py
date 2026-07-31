@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import ctypes
+from ctypes import wintypes
 
 from .budget import BudgetExceeded
 from .budget import ExplorationBudget
@@ -29,7 +30,26 @@ def playwright_child_command(runtime_dir):
 
 def main():
     runtime_dir = os.environ["FLATKEY_BROWSER_QA_RUNTIME_DIR"]
-    child = subprocess.Popen(
+    wrapper = launch_wrapper(runtime_dir)
+    signal.signal(signal.SIGTERM, wrapper.handle_parent_signal)
+    signal.signal(signal.SIGINT, wrapper.handle_parent_signal)
+    stdout_thread = threading.Thread(target=wrapper.proxy_child_stdout, args=(sys.stdout,), daemon=True)
+    stderr_thread = threading.Thread(target=wrapper.proxy_child_stderr, args=(sys.stderr,), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+    wrapper.proxy_client_requests(sys.stdin, sys.stdout)
+
+
+def launch_wrapper(
+    runtime_dir,
+    *,
+    popen_factory=subprocess.Popen,
+    tree_attach=None,
+    subprocess_run=subprocess.run,
+    killpg=os.killpg if hasattr(os, "killpg") else None,
+):
+    selected_tree_attach = tree_attach or ProcessTreeTerminator.attach
+    child = popen_factory(
         playwright_child_command(runtime_dir),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -43,18 +63,12 @@ def main():
         creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
     )
     try:
-        wrapper = BudgetedMcpWrapper(runtime_dir, child=child)
+        terminator = selected_tree_attach(child)
     except Exception:
-        child.kill()
-        child.wait(timeout=5)
+        _best_effort_kill_launch_tree(child, subprocess_run=subprocess_run, killpg=killpg)
+        _bounded_wait(child)
         raise
-    signal.signal(signal.SIGTERM, wrapper.handle_parent_signal)
-    signal.signal(signal.SIGINT, wrapper.handle_parent_signal)
-    stdout_thread = threading.Thread(target=wrapper.proxy_child_stdout, args=(sys.stdout,), daemon=True)
-    stderr_thread = threading.Thread(target=wrapper.proxy_child_stderr, args=(sys.stderr,), daemon=True)
-    stdout_thread.start()
-    stderr_thread.start()
-    wrapper.proxy_client_requests(sys.stdin, sys.stdout)
+    return BudgetedMcpWrapper(runtime_dir, child=child, tree_terminator=terminator)
 
 
 class ProcessTreeTerminator:
@@ -93,7 +107,7 @@ class WindowsJobProcessContainment:
 
     @classmethod
     def attach(cls, child, *, kernel32=None):
-        selected_kernel32 = kernel32 or ctypes.WinDLL("kernel32", use_last_error=True)
+        selected_kernel32 = kernel32 or _kernel32()
         job = selected_kernel32.CreateJobObjectW(None, None)
         if not job:
             raise RuntimeError("windows job creation failed")
@@ -308,6 +322,53 @@ def _write_error(stdout, request_id, code, message, *, lock=None):
     else:
         with lock:
             write()
+
+
+def _best_effort_kill_launch_tree(child, *, subprocess_run=subprocess.run, killpg=None):
+    pid = getattr(child, "pid", None)
+    if isinstance(pid, int) and pid > 0:
+        if os.name == "nt":
+            subprocess_run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=False,
+                check=False,
+            )
+            return
+        if killpg is not None:
+            killpg(pid, signal.SIGKILL)
+            return
+    child.kill()
+
+
+def _bounded_wait(child):
+    try:
+        child.wait(timeout=5)
+    except Exception:
+        pass
+
+
+def _kernel32():
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _declare_kernel32_job_prototypes(kernel32)
+    return kernel32
+
+
+def _declare_kernel32_job_prototypes(kernel32):
+    _set_prototype(kernel32.CreateJobObjectW, [wintypes.LPVOID, wintypes.LPCWSTR], wintypes.HANDLE)
+    _set_prototype(kernel32.SetInformationJobObject, [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD], wintypes.BOOL)
+    _set_prototype(kernel32.AssignProcessToJobObject, [wintypes.HANDLE, wintypes.HANDLE], wintypes.BOOL)
+    _set_prototype(kernel32.CloseHandle, [wintypes.HANDLE], wintypes.BOOL)
+    _set_prototype(kernel32.GetLastError, [], wintypes.DWORD)
+
+
+def _set_prototype(function, argtypes, restype):
+    try:
+        function.argtypes = argtypes
+        function.restype = restype
+    except AttributeError:
+        pass
 
 
 def _kernel_last_error(kernel32):

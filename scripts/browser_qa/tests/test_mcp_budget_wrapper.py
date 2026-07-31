@@ -2,10 +2,13 @@ import io
 import json
 import os
 import subprocess
+import signal
 import sys
 import tempfile
 import threading
 import time
+import ctypes
+from ctypes import wintypes
 import unittest
 
 from scripts.browser_qa.flatkey_browser_qa.budget import ExplorationBudget
@@ -372,6 +375,58 @@ class WrapperContractTests(unittest.TestCase):
 
         with self.assertRaises(RuntimeError):
             mcp_budget_wrapper.WindowsJobProcessContainment.attach(child, kernel32=kernel32)
+
+    def test_real_windows_kernel32_job_prototypes_are_declared(self):
+        if os.name != "nt":
+            self.skipTest("Windows kernel32 ABI contract")
+
+        kernel32 = mcp_budget_wrapper._kernel32()
+
+        self.assertEqual(kernel32.CreateJobObjectW.argtypes, [wintypes.LPVOID, wintypes.LPCWSTR])
+        self.assertEqual(kernel32.CreateJobObjectW.restype, wintypes.HANDLE)
+        self.assertEqual(kernel32.SetInformationJobObject.argtypes, [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD])
+        self.assertEqual(kernel32.SetInformationJobObject.restype, wintypes.BOOL)
+        self.assertEqual(kernel32.AssignProcessToJobObject.argtypes, [wintypes.HANDLE, wintypes.HANDLE])
+        self.assertEqual(kernel32.AssignProcessToJobObject.restype, wintypes.BOOL)
+        self.assertEqual(kernel32.CloseHandle.argtypes, [wintypes.HANDLE])
+        self.assertEqual(kernel32.CloseHandle.restype, wintypes.BOOL)
+        self.assertEqual(kernel32.GetLastError.argtypes, [])
+        self.assertEqual(kernel32.GetLastError.restype, wintypes.DWORD)
+
+    def test_launch_wrapper_attach_failure_uses_tree_fallback_before_raise(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            child = FakeChild()
+            child.pid = 4321
+            taskkill_calls = []
+            killpg_calls = []
+
+            def popen_factory(*_args, **_kwargs):
+                return child
+
+            def fail_attach(_child):
+                raise RuntimeError("attach failed")
+
+            def fake_run(command, **kwargs):
+                taskkill_calls.append((command, kwargs))
+                return subprocess.CompletedProcess(command, 0)
+
+            def fake_killpg(pgid, sig):
+                killpg_calls.append((pgid, sig))
+
+            with self.assertRaises(RuntimeError):
+                mcp_budget_wrapper.launch_wrapper(
+                    runtime_dir,
+                    popen_factory=popen_factory,
+                    tree_attach=fail_attach,
+                    subprocess_run=fake_run,
+                    killpg=fake_killpg,
+                )
+
+            if os.name == "nt":
+                self.assertEqual(taskkill_calls[0][0], ["taskkill", "/PID", "4321", "/T", "/F"])
+                self.assertFalse(child.killed)
+            else:
+                self.assertEqual(killpg_calls, [(4321, signal.SIGKILL)])
 
 
 class FakeKernel32:
