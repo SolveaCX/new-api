@@ -1152,6 +1152,9 @@ class CleanupTests(unittest.TestCase):
             main_manifest(kind="cleanup"),
             main_manifest(execution_id="other-main"),
             {**main_manifest(), "extra": "bad"},
+            main_manifest(provenance={**valid_provenance(), "skill_content_sha256": "A" * 64}),
+            main_manifest(provenance={**valid_provenance(), "model_config": {"model": "gpt-5.4", "sandbox": "workspace-write"}}),
+            main_manifest(provenance={k: v for k, v in valid_provenance().items() if k != "chromium_version"}),
         ]:
             with self.subTest(manifest=manifest):
                 with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (manifest, 1)):
@@ -1412,6 +1415,25 @@ def main_manifest(**overrides):
         "created_at": 1,
         "result": valid_main_result(),
         "cleanup": {},
+        "provenance": valid_provenance(),
+    }
+    payload.update(overrides)
+    return payload
+
+
+def valid_provenance(**overrides):
+    payload = {
+        "skill_name": "flatkey-new-user-onboarding",
+        "skill_content_sha256": "a" * 64,
+        "codex_version": "codex 1.2.3",
+        "model_config": {
+            "model": "gpt-5.4",
+            "sandbox": "workspace-write",
+            "network_access": False,
+        },
+        "playwright_mcp_version": "playwright-mcp 1.0.0",
+        "playwright_package_version": "1.50.0",
+        "chromium_version": "Chromium 123.0.0.0",
     }
     payload.update(overrides)
     return payload

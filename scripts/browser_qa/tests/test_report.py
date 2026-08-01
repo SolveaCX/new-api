@@ -33,6 +33,24 @@ def finding(**overrides):
     return payload
 
 
+def valid_provenance(**overrides):
+    payload = {
+        "skill_name": "flatkey-new-user-onboarding",
+        "skill_content_sha256": "a" * 64,
+        "codex_version": "codex 1.2.3",
+        "model_config": {
+            "model": "gpt-5.4",
+            "sandbox": "workspace-write",
+            "network_access": False,
+        },
+        "playwright_mcp_version": "playwright-mcp 1.0.0",
+        "playwright_package_version": "1.50.0",
+        "chromium_version": "Chromium 123.0.0.0",
+    }
+    payload.update(overrides)
+    return payload
+
+
 class ReportTests(unittest.TestCase):
     def test_schema_rejects_missing_extra_invalid_type_enum_and_finding_shape(self):
         with self.assertRaises(report.ResultValidationError):
@@ -64,7 +82,7 @@ class ReportTests(unittest.TestCase):
         manifest = report.build_manifest(
             valid_result(),
             cleanup_result=cleanup,
-            model_manifest={"cleanup": {"cleanup_failed": False}},
+            provenance=valid_provenance(),
             run_id="123456789",
             execution_id="main-001",
         )
@@ -93,6 +111,7 @@ class ReportTests(unittest.TestCase):
                 redactor=report.Redactor(extra_secrets=("sk-secretSECRET",)),
                 run_id="123456789",
                 execution_id="main-001",
+                provenance=valid_provenance(),
             )
 
             with open(manifest_path, encoding="utf-8") as handle:
@@ -126,6 +145,7 @@ class ReportTests(unittest.TestCase):
                         cleanup_result=cleanup,
                         run_id=run_id,
                         execution_id=execution_id,
+                        provenance=valid_provenance(),
                     )
 
         schema_path = os.path.join(os.path.dirname(__file__), "..", "config", "result.schema.json")
@@ -156,6 +176,51 @@ class ReportTests(unittest.TestCase):
             with self.subTest(payload=bad_payload):
                 with self.assertRaises(report.ResultValidationError):
                     report.validate_result(bad_payload)
+
+    def test_main_manifest_requires_strict_runtime_provenance(self):
+        cleanup = CleanupResult(0, False, False, False, "not needed")
+        manifest = report.build_manifest(
+            valid_result(),
+            cleanup_result=cleanup,
+            run_id="123456789",
+            execution_id="main-001",
+            provenance=valid_provenance(),
+        )
+
+        self.assertEqual(manifest["provenance"], valid_provenance())
+
+        with self.assertRaises(TypeError):
+            report.build_manifest(
+                valid_result(),
+                cleanup_result=cleanup,
+                run_id="123456789",
+                execution_id="main-001",
+                model_manifest=valid_provenance(),
+            )
+
+        malformed_cases = [
+            None,
+            {**valid_provenance(), "extra": "bad"},
+            {k: v for k, v in valid_provenance().items() if k != "skill_content_sha256"},
+            valid_provenance(skill_content_sha256="A" * 64),
+            valid_provenance(skill_content_sha256="a" * 63),
+            valid_provenance(model_config={"model": "gpt-5.4", "sandbox": "workspace-write"}),
+            valid_provenance(model_config={"model": "gpt-5.4", "sandbox": "workspace-write", "network_access": True}),
+            valid_provenance(codex_version=""),
+            valid_provenance(playwright_mcp_version="bad\nversion"),
+            valid_provenance(playwright_package_version=""),
+            valid_provenance(chromium_version=""),
+        ]
+        for provenance in malformed_cases:
+            with self.subTest(provenance=provenance):
+                with self.assertRaises(report.ResultValidationError):
+                    report.build_manifest(
+                        valid_result(),
+                        cleanup_result=cleanup,
+                        run_id="123456789",
+                        execution_id="main-001",
+                        provenance=provenance,
+                    )
 
 
 if __name__ == "__main__":

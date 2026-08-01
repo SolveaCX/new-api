@@ -15,6 +15,17 @@ SEVERITIES = {"critical", "high", "medium", "low", "info"}
 CONFIDENCE = {"low", "medium", "high"}
 MANIFEST_SCHEMA_VERSION = 1
 _SAFE_GCS_COMPONENT = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+_PROVENANCE_FIELDS = {
+    "skill_name",
+    "skill_content_sha256",
+    "codex_version",
+    "model_config",
+    "playwright_mcp_version",
+    "playwright_package_version",
+    "chromium_version",
+}
+_MODEL_CONFIG = {"model": "gpt-5.4", "sandbox": "workspace-write", "network_access": False}
 
 
 def validate_result(payload):
@@ -57,8 +68,8 @@ def build_manifest(
     cleanup_result,
     run_id,
     execution_id,
+    provenance,
     redactor=None,
-    model_manifest=None,
     codex_returncode=0,
     upload_failed=False,
     invalid_result=False,
@@ -66,6 +77,7 @@ def build_manifest(
 ):
     redactor = redactor or Redactor()
     validate_result(payload)
+    validate_provenance(provenance)
     cleanup = _cleanup_to_dict(cleanup_result)
     status = classify_status(
         payload,
@@ -84,6 +96,7 @@ def build_manifest(
         "created_at": int(time.time()),
         "result": redactor.clean(payload),
         "cleanup": redactor.clean(cleanup),
+        "provenance": redactor.clean(provenance),
     }
     _validate_manifest_identity(run_id, execution_id)
     if runtime_classification:
@@ -98,6 +111,7 @@ def write_report(
     cleanup_result,
     run_id,
     execution_id,
+    provenance,
     redactor=None,
     codex_returncode=0,
     upload_failed=False,
@@ -111,6 +125,7 @@ def write_report(
         cleanup_result=cleanup_result,
         run_id=run_id,
         execution_id=execution_id,
+        provenance=provenance,
         redactor=redactor,
         codex_returncode=codex_returncode,
         upload_failed=upload_failed,
@@ -120,6 +135,22 @@ def write_report(
     os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
     _write_json_private(manifest_path, manifest)
     return manifest
+
+
+def validate_provenance(provenance):
+    _require_object(provenance, _PROVENANCE_FIELDS, set(), path="provenance")
+    if provenance["skill_name"] != "flatkey-new-user-onboarding":
+        raise ResultValidationError("provenance.skill_name has invalid value")
+    if not isinstance(provenance["skill_content_sha256"], str) or not _SHA256_HEX.fullmatch(provenance["skill_content_sha256"]):
+        raise ResultValidationError("provenance.skill_content_sha256 must be lowercase sha256 hex")
+    _version_string(provenance["codex_version"], "provenance.codex_version")
+    _version_string(provenance["playwright_mcp_version"], "provenance.playwright_mcp_version")
+    _version_string(provenance["playwright_package_version"], "provenance.playwright_package_version")
+    _version_string(provenance["chromium_version"], "provenance.chromium_version")
+    model_config = provenance["model_config"]
+    if not isinstance(model_config, dict) or model_config != _MODEL_CONFIG:
+        raise ResultValidationError("provenance.model_config has invalid value")
+    return provenance
 
 
 def _cleanup_to_dict(cleanup_result):
@@ -184,6 +215,13 @@ def _integer(value, path, *, minimum):
 def _boolean(value, path):
     if not isinstance(value, bool):
         raise ResultValidationError(f"{path} must be boolean")
+
+
+def _version_string(value, path):
+    if not isinstance(value, str) or not value or "\n" in value or "\r" in value:
+        raise ResultValidationError(f"{path} must be a non-empty single-line string")
+    if len(value.encode("utf-8", "replace")) > 256:
+        raise ResultValidationError(f"{path} must be at most 256 bytes")
 
 
 def _write_json_private(path, payload):

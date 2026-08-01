@@ -328,7 +328,18 @@ def _validate_record(record, run_id):
 def _validate_main_manifest(manifest, run_id, execution_id):
     if not isinstance(manifest, dict):
         raise ValueError("main manifest must be an object")
-    allowed = {"schema_version", "kind", "run_id", "execution_id", "status", "created_at", "result", "cleanup", "infrastructure"}
+    allowed = {
+        "schema_version",
+        "kind",
+        "run_id",
+        "execution_id",
+        "status",
+        "created_at",
+        "result",
+        "cleanup",
+        "provenance",
+        "infrastructure",
+    }
     required = allowed - {"infrastructure"}
     if set(manifest) - allowed or required - set(manifest):
         raise ValueError("main manifest fields are invalid")
@@ -346,8 +357,9 @@ def _validate_main_manifest(manifest, run_id, execution_id):
         raise ValueError("main manifest payload is invalid")
     try:
         report.validate_result(manifest["result"])
+        report.validate_provenance(manifest["provenance"])
     except report.ResultValidationError as exc:
-        raise ValueError("main manifest result is invalid") from exc
+        raise ValueError("main manifest payload is invalid") from exc
     if "infrastructure" in manifest and not isinstance(manifest["infrastructure"], dict):
         raise ValueError("main manifest infrastructure is invalid")
 

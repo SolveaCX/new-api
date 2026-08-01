@@ -1,4 +1,5 @@
 import json
+import importlib.metadata
 import os
 import signal
 import subprocess
@@ -105,21 +106,65 @@ class FakeSubprocess:
     def __init__(self, process):
         self.process = process
         self.calls = []
+        self.run_calls = []
 
     def popen(self, args, **kwargs):
         self.calls.append((args, kwargs))
         return self.process
 
+    def run(self, args, **kwargs):
+        self.run_calls.append((args, kwargs))
+        executable = os.path.basename(args[0])
+        return FakeVersionProcess(f"{executable} 1.0.0\n")
+
+
+class FakeVersionProcess:
+    def __init__(self, text):
+        self.stdout = text
+        self.stderr = ""
+        self.returncode = 0
+
+
+class FakeVersionRunner:
+    PIPE = subprocess.PIPE
+    DEVNULL = subprocess.DEVNULL
+
+    def __init__(self, process, versions=None):
+        self.process = process
+        self.calls = []
+        self.run_calls = []
+        self.versions = versions or {}
+
+    def popen(self, args, **kwargs):
+        self.calls.append((args, kwargs))
+        return self.process
+
+    def run(self, args, **kwargs):
+        self.run_calls.append((args, kwargs))
+        key = tuple(args)
+        value = self.versions.get(key)
+        if isinstance(value, BaseException):
+            raise value
+        if value is None:
+            value = f"{os.path.basename(args[0])} 1.0.0"
+        return FakeVersionProcess(value)
+
 
 class RecordingPopenFactory:
     def __init__(self):
         self.calls = []
+        self.run_calls = []
 
     def __call__(self, args, **kwargs):
         self.calls.append((args, kwargs))
         process = FakeProcess(0)
         process.pid = 4321 + len(self.calls)
         return process
+
+    def run(self, args, **kwargs):
+        self.run_calls.append((args, kwargs))
+        executable = os.path.basename(args[0])
+        return FakeVersionProcess(f"{executable} 1.0.0\n")
 
 
 class FakeSignals:
@@ -305,6 +350,17 @@ def valid_result(**overrides):
 
 
 class SupervisorTests(unittest.TestCase):
+    def setUp(self):
+        self._playwright_runtime = tempfile.TemporaryDirectory()
+        self.addCleanup(self._playwright_runtime.cleanup)
+        package_dir = os.path.join(self._playwright_runtime.name, "node_modules", "playwright")
+        os.makedirs(package_dir)
+        with open(os.path.join(package_dir, "package.json"), "w", encoding="utf-8") as handle:
+            json.dump({"name": "playwright", "version": "1.50.0"}, handle)
+        self._playwright_root_patch = mock.patch.object(supervisor, "PLAYWRIGHT_RUNTIME_ROOT", self._playwright_runtime.name)
+        self._playwright_root_patch.start()
+        self.addCleanup(self._playwright_root_patch.stop)
+
     def test_prompt_file_declares_skill_policy_runtime_contract_and_forbidden_scope(self):
         prompt_path = os.path.join(os.path.dirname(__file__), "..", "config", "qa-prompt.md")
         with open(prompt_path, encoding="utf-8") as handle:
@@ -330,7 +386,7 @@ class SupervisorTests(unittest.TestCase):
         ]:
             self.assertIn(required.lower(), prompt.lower())
 
-    def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None, proxy_factory=None):
+    def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None, proxy_factory=None, subprocess_runner=None):
         tmp = tempfile.mkdtemp()
         supervisor_kwargs = {}
         if thread_factory is not None:
@@ -344,7 +400,7 @@ class SupervisorTests(unittest.TestCase):
         sup = supervisor.Supervisor(
             env=input_env or env(),
             runtime_root=tmp,
-            subprocess_runner=FakeSubprocess(process),
+            subprocess_runner=subprocess_runner or FakeSubprocess(process),
             uploader=uploader or FakeUploader(),
             cleanup_runner=cleanup or FakeCleanup(),
             proxy_factory=proxy_factory or (lambda policy=None: FakeProxy()),
@@ -354,6 +410,168 @@ class SupervisorTests(unittest.TestCase):
         )
         outcome = sup.run(initial_result=result_payload)
         return outcome, sup
+
+    def test_supervisor_hashes_installed_skill_and_passes_same_runtime_provenance_to_all_report_writes(self):
+        calls = []
+        version_runner = FakeVersionRunner(
+            FakeProcess(0),
+            versions={
+                ("codex", "--version"): "codex 9.9.9\n",
+                ("playwright-mcp", "--version"): "playwright-mcp 1.2.3\n",
+                ("chromium", "--version"): "Chromium 123.0.0.0\n",
+            },
+        )
+
+        def recording_write_report(*args, **kwargs):
+            calls.append(kwargs)
+            return original_write_report(*args, **kwargs)
+
+        original_write_report = supervisor.report.write_report
+        with mock.patch.object(supervisor.report, "write_report", recording_write_report), \
+            mock.patch.object(supervisor.shutil, "which", lambda name, path=None: name):
+            _outcome, sup = self.run_supervisor(
+                FakeProcess(0),
+                result_payload=valid_result(),
+                uploader=FakeUploader(fail=True),
+                input_env={**env(), "PATH": "C:\\tools"},
+                proxy_factory=lambda policy=None: FakeProxy(),
+                subprocess_runner=version_runner,
+            )
+
+        self.assertEqual(len(calls), 2)
+        first = calls[0]["provenance"]
+        self.assertIs(first, calls[1]["provenance"])
+        self.assertEqual(first["skill_name"], "flatkey-new-user-onboarding")
+        self.assertRegex(first["skill_content_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(first["skill_content_sha256"], supervisor._hash_skill_tree(os.path.join(sup.home_dir, ".agents", "skills", "flatkey-new-user-onboarding")))
+        self.assertEqual(first["model_config"], {"model": "gpt-5.4", "sandbox": "workspace-write", "network_access": False})
+        self.assertEqual(first["codex_version"], "codex 9.9.9")
+        self.assertEqual(first["playwright_mcp_version"], "playwright-mcp 1.2.3")
+        self.assertEqual(first["playwright_package_version"], "1.50.0")
+        self.assertEqual(first["chromium_version"], "Chromium 123.0.0.0")
+        self.assertEqual([tuple(call[0]) for call in version_runner.run_calls], [
+            ("codex", "--version"),
+            ("playwright-mcp", "--version"),
+            ("chromium", "--version"),
+        ])
+
+    def test_version_collection_uses_fixed_argv_bounded_env_and_failure_still_cleans_up_as_infrastructure(self):
+        cleanup = FakeCleanup()
+        version_runner = FakeVersionRunner(
+            FakeProcess(0),
+            versions={("codex", "--version"): RuntimeError("probe failed")},
+        )
+        calls = []
+
+        def recording_write_report(*args, **kwargs):
+            calls.append(kwargs)
+            return original_write_report(*args, **kwargs)
+
+        original_write_report = supervisor.report.write_report
+        with mock.patch.object(supervisor.report, "write_report", recording_write_report), \
+            mock.patch.object(supervisor.shutil, "which", lambda name, path=None: name):
+            outcome, sup = self.run_supervisor(
+                FakeProcess(0),
+                result_payload=valid_result(),
+                cleanup=cleanup,
+                input_env={**env(), "PATH": "C:\\tools"},
+                subprocess_runner=version_runner,
+            )
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(len(cleanup.calls), 1)
+        self.assertEqual(calls[0]["runtime_classification"], "provenance_failed")
+        for args, kwargs in version_runner.run_calls:
+            self.assertIn(tuple(args), {("codex", "--version"), ("playwright-mcp", "--version"), ("chromium", "--version")})
+            self.assertEqual(kwargs["timeout"], supervisor.PROVENANCE_VERSION_TIMEOUT_SECONDS)
+            self.assertEqual(kwargs["env"], {"PATH": "C:\\tools"})
+            self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
+            self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+
+    def test_playwright_package_version_reads_fixed_npm_package_json_when_python_distribution_is_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package_dir = os.path.join(tmp, "node_modules", "playwright")
+            os.makedirs(package_dir)
+            with open(os.path.join(package_dir, "package.json"), "w", encoding="utf-8") as handle:
+                json.dump({"name": "playwright", "version": "1.62.0-alpha-1783623505000"}, handle)
+
+            self.assertEqual(
+                supervisor._playwright_package_version(runtime_root=tmp),
+                "1.62.0-alpha-1783623505000",
+            )
+
+    def test_playwright_package_version_ignores_ambient_python_distribution_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package_dir = os.path.join(tmp, "node_modules", "playwright")
+            os.makedirs(package_dir)
+            with open(os.path.join(package_dir, "package.json"), "w", encoding="utf-8") as handle:
+                json.dump({"name": "playwright", "version": "1.62.0-alpha-1783623505000"}, handle)
+
+            with mock.patch.object(importlib.metadata, "version", return_value="999.0.0") as metadata_version:
+                self.assertEqual(
+                    supervisor._playwright_package_version(runtime_root=tmp),
+                    "1.62.0-alpha-1783623505000",
+                )
+            metadata_version.assert_not_called()
+
+    def test_playwright_package_version_rejects_malformed_fixed_package_json_without_unrelated_fallbacks(self):
+        cases = []
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_root = tmp
+            unrelated = os.path.join(tmp, "node_modules", "@playwright", "test")
+            os.makedirs(unrelated)
+            with open(os.path.join(unrelated, "package.json"), "w", encoding="utf-8") as handle:
+                json.dump({"version": "9.9.9"}, handle)
+            cases.append(missing_root)
+
+            for payload in [
+                {"name": "playwright", "version": ""},
+                {"name": "playwright", "version": "bad\nversion"},
+                {"name": "playwright", "version": "x" * (supervisor.MAX_PROVENANCE_VERSION_BYTES + 1)},
+                {"name": "not-playwright", "version": "1.0.0"},
+                {"version": "1.0.0"},
+            ]:
+                root = tempfile.mkdtemp()
+                package_dir = os.path.join(root, "node_modules", "playwright")
+                os.makedirs(package_dir)
+                with open(os.path.join(package_dir, "package.json"), "w", encoding="utf-8") as handle:
+                    json.dump(payload, handle)
+                cases.append(root)
+
+            bad_json_root = tempfile.mkdtemp()
+            os.makedirs(os.path.join(bad_json_root, "node_modules", "playwright"))
+            with open(os.path.join(bad_json_root, "node_modules", "playwright", "package.json"), "w", encoding="utf-8") as handle:
+                handle.write("{not json")
+            cases.append(bad_json_root)
+
+            too_large_root = tempfile.mkdtemp()
+            os.makedirs(os.path.join(too_large_root, "node_modules", "playwright"))
+            with open(os.path.join(too_large_root, "node_modules", "playwright", "package.json"), "w", encoding="utf-8") as handle:
+                handle.write(" " * 65537)
+            cases.append(too_large_root)
+
+            directory_root = tempfile.mkdtemp()
+            os.makedirs(os.path.join(directory_root, "node_modules", "playwright", "package.json"))
+            cases.append(directory_root)
+
+            if hasattr(os, "symlink"):
+                symlink_root = tempfile.mkdtemp()
+                package_dir = os.path.join(symlink_root, "node_modules", "playwright")
+                os.makedirs(package_dir)
+                target = os.path.join(symlink_root, "target.json")
+                with open(target, "w", encoding="utf-8") as handle:
+                    json.dump({"name": "playwright", "version": "1.0.0"}, handle)
+                try:
+                    os.symlink(target, os.path.join(package_dir, "package.json"))
+                except (OSError, NotImplementedError):
+                    symlink_root = None
+                if symlink_root is not None:
+                    cases.append(symlink_root)
+
+            for root in cases:
+                with self.subTest(root=root):
+                    with self.assertRaises(RuntimeError):
+                        supervisor._playwright_package_version(runtime_root=root)
 
     def test_normal_run_uses_owner_only_codex_home_profile_schema_proxy_cleanup_upload_and_pops_api_key(self):
         process = FakeProcess(0)
@@ -660,11 +878,19 @@ class SupervisorTests(unittest.TestCase):
                 ordering.append("browser-stop")
                 super().stop()
 
+        class Runner:
+            def popen(self, args, **kwargs):
+                return popen_factory(args, **kwargs)
+
+            def run(self, args, **kwargs):
+                executable = os.path.basename(args[0])
+                return FakeVersionProcess(f"{executable} 1.0.0\n")
+
         with tempfile.TemporaryDirectory() as runtime_root, mock.patch.object(supervisor, "RuntimeEvidenceSink", OrderedEvidenceSink):
             sup = supervisor.Supervisor(
                 env=env(),
                 runtime_root=runtime_root,
-                subprocess_runner=type("Runner", (), {"popen": popen_factory})(),
+                subprocess_runner=Runner(),
                 uploader=FakeUploader(),
                 cleanup_runner=FakeCleanup(),
                 proxy_factory=lambda policy=None: FakeProxy(),

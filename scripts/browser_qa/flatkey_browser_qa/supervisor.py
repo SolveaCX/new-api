@@ -1,4 +1,5 @@
 import json
+import hashlib
 import http.server
 import os
 import queue
@@ -38,6 +39,7 @@ MAX_BROWSER_EVIDENCE_EVENTS = 1000
 MAX_BROWSER_EVIDENCE_EVENT_BYTES = 64 * 1024
 MAX_BROWSER_EVIDENCE_TOTAL_BYTES = 2 * 1024 * 1024
 MAX_BROWSER_HELPER_FRAME_BYTES = 256 * 1024
+MAX_PLAYWRIGHT_PACKAGE_JSON_BYTES = 65536
 ROOT_GCS_ARTIFACT_NAMES = frozenset({"result.json", "codex-events.jsonl", "codex-stderr.txt", "manifest.json"})
 EXACT_NESTED_GCS_ARTIFACT_NAMES = frozenset({"browser/console.jsonl", "browser/network.jsonl"})
 SAFE_GCS_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -45,6 +47,10 @@ SAFE_SCREENSHOT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.png$")
 PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "qa-prompt.md")
 POLICY_PATH = ".agents/skills/flatkey-new-user-onboarding/references/staging-cloud-qa-policy.md"
 SKILL_NAME = "flatkey-new-user-onboarding"
+PLAYWRIGHT_RUNTIME_ROOT = "/opt/flatkey-browser-qa"
+PROVENANCE_VERSION_TIMEOUT_SECONDS = 2
+MAX_PROVENANCE_VERSION_BYTES = 256
+PROVENANCE_MODEL_CONFIG = {"model": "gpt-5.4", "sandbox": "workspace-write", "network_access": False}
 
 
 class _SignalAbort(RuntimeError):
@@ -135,6 +141,7 @@ class Supervisor:
         upload_failed = False
         invalid_result = False
         codex_returncode = 0
+        provenance = None
 
         payload = initial_result if initial_result is not None else _empty_result()
         runtime_classification = None if initial_result is not None else "invalid_result"
@@ -253,6 +260,18 @@ class Supervisor:
                 cleanup_result = self.cleanup_runner.run(identity)
             except Exception as exc:
                 cleanup_result = CleanupResult(0, False, False, True, redactor.clean(str(exc)))
+            try:
+                provenance = collect_runtime_provenance(
+                    subprocess_runner=self.subprocess_runner,
+                    env=self.env,
+                    chromium_executable=getattr(browser, "executable", None) if browser is not None else None,
+                    skill_dir=_fixed_skill_source(),
+                )
+            except Exception as exc:
+                provenance = _failed_runtime_provenance()
+                runtime_classification = runtime_classification or "provenance_failed"
+                invalid_result = True
+                self._event("provenance_failed", str(exc), redactor)
             payload = _with_trusted_runtime_state(payload, self.runtime_root)
             try:
                 report.validate_result(payload)
@@ -280,6 +299,7 @@ class Supervisor:
                 cleanup_result=cleanup_result,
                 run_id=cfg.run_id,
                 execution_id=execution_id,
+                provenance=provenance,
                 redactor=redactor,
                 codex_returncode=codex_returncode,
                 upload_failed=upload_failed,
@@ -297,6 +317,7 @@ class Supervisor:
                     cleanup_result=cleanup_result,
                     run_id=cfg.run_id,
                     execution_id=execution_id,
+                    provenance=provenance,
                     redactor=redactor,
                     codex_returncode=codex_returncode,
                     upload_failed=True,
@@ -704,9 +725,7 @@ def _parse_output_last_message_file(path, redactor):
 
 
 def _install_fixed_skill(home_dir):
-    source = os.path.join(_repo_root(), ".agents", "skills", SKILL_NAME)
-    if not os.path.isdir(source):
-        source = os.path.join(os.path.dirname(os.path.dirname(__file__)), "skills", SKILL_NAME)
+    source = _fixed_skill_source()
     if not os.path.isdir(source):
         raise RuntimeError("fixed skill source missing")
     target_parent = os.path.join(home_dir, ".agents", "skills")
@@ -730,6 +749,159 @@ def _install_fixed_skill(home_dir):
                 os.chmod(os.path.join(root, name), 0o500)
             except OSError:
                 pass
+
+
+def collect_runtime_provenance(*, subprocess_runner, env, chromium_executable=None, skill_dir=None):
+    path = env.get("PATH", "") if isinstance(env, dict) else ""
+    probe_env = {"PATH": path}
+    codex = _probe_version(subprocess_runner, ["codex", "--version"], probe_env)
+    playwright_mcp = _probe_version(subprocess_runner, ["playwright-mcp", "--version"], probe_env)
+    chromium = _probe_version(subprocess_runner, [chromium_executable or "chromium", "--version"], probe_env)
+    provenance = {
+        "skill_name": SKILL_NAME,
+        "skill_content_sha256": _hash_skill_tree(skill_dir or _fixed_skill_source()),
+        "codex_version": codex,
+        "model_config": dict(PROVENANCE_MODEL_CONFIG),
+        "playwright_mcp_version": playwright_mcp,
+        "playwright_package_version": _playwright_package_version(),
+        "chromium_version": chromium,
+    }
+    report.validate_provenance(provenance)
+    return provenance
+
+
+def _failed_runtime_provenance():
+    return {
+        "skill_name": SKILL_NAME,
+        "skill_content_sha256": "0" * 64,
+        "codex_version": "unavailable",
+        "model_config": dict(PROVENANCE_MODEL_CONFIG),
+        "playwright_mcp_version": "unavailable",
+        "playwright_package_version": "unavailable",
+        "chromium_version": "unavailable",
+    }
+
+
+def _probe_version(subprocess_runner, args, env):
+    runner = getattr(subprocess_runner, "run", subprocess.run)
+    completed = runner(
+        list(args),
+        env=dict(env),
+        cwd=_repo_root(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=PROVENANCE_VERSION_TIMEOUT_SECONDS,
+    )
+    if getattr(completed, "returncode", 1) != 0:
+        raise RuntimeError(f"version probe failed: {args[0]}")
+    output = getattr(completed, "stdout", "")
+    if not isinstance(output, str):
+        raise RuntimeError("version probe output invalid")
+    if len(output.encode("utf-8", "replace")) > MAX_PROVENANCE_VERSION_BYTES:
+        raise RuntimeError("version probe output too large")
+    lines = output.splitlines()
+    if len(lines) != 1 or not lines[0]:
+        raise RuntimeError("version probe output must be one non-empty line")
+    return lines[0]
+
+
+def _playwright_package_version(*, runtime_root=None):
+    return _read_playwright_package_json_version(runtime_root or PLAYWRIGHT_RUNTIME_ROOT)
+
+
+def _read_playwright_package_json_version(runtime_root):
+    root = os.path.realpath(runtime_root)
+    package_path = os.path.join(root, "node_modules", "playwright", "package.json")
+    _reject_symlinked_existing_path(root, ("node_modules", "playwright", "package.json"))
+    real = os.path.realpath(package_path)
+    if real != package_path or not real.startswith(root + os.sep):
+        raise RuntimeError("playwright package path invalid")
+    try:
+        stat_result = os.stat(real)
+    except OSError as exc:
+        raise RuntimeError("playwright package.json unavailable") from exc
+    if not os.path.isfile(real):
+        raise RuntimeError("playwright package.json must be a regular file")
+    if stat_result.st_size < 1 or stat_result.st_size > MAX_PLAYWRIGHT_PACKAGE_JSON_BYTES:
+        raise RuntimeError("playwright package.json size invalid")
+    try:
+        with open(real, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("playwright package.json invalid") from exc
+    if not isinstance(payload, dict) or payload.get("name") != "playwright":
+        raise RuntimeError("playwright package.json identity invalid")
+    version = payload.get("version")
+    if not _valid_single_line_version(version):
+        raise RuntimeError("playwright package version invalid")
+    return version
+
+
+def _reject_symlinked_existing_path(root, parts):
+    current = root
+    for part in parts:
+        current = os.path.join(current, part)
+        try:
+            os.lstat(current)
+        except OSError as exc:
+            raise RuntimeError("playwright package path unavailable") from exc
+        if os.path.islink(current):
+            raise RuntimeError("playwright package symlink rejected")
+
+
+def _valid_single_line_version(value):
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and "\n" not in value
+        and "\r" not in value
+        and len(value.encode("utf-8", "replace")) <= MAX_PROVENANCE_VERSION_BYTES
+    )
+
+
+def _fixed_skill_source():
+    candidates = [
+        os.path.join(_repo_root(), ".agents", "skills", SKILL_NAME),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "skills", SKILL_NAME),
+    ]
+    for source in candidates:
+        if os.path.isdir(source) and not os.path.islink(source):
+            return source
+    raise RuntimeError("fixed skill source missing")
+
+
+def _hash_skill_tree(skill_dir):
+    root = os.path.realpath(skill_dir)
+    if os.path.islink(skill_dir) or not os.path.isdir(root):
+        raise RuntimeError("skill source invalid")
+    entries = []
+    for current, dirs, files in os.walk(root):
+        for name in list(dirs):
+            path = os.path.join(current, name)
+            if os.path.islink(path):
+                raise RuntimeError("skill symlink rejected")
+        for name in files:
+            path = os.path.join(current, name)
+            if os.path.islink(path):
+                raise RuntimeError("skill symlink rejected")
+            real = os.path.realpath(path)
+            if not real.startswith(root + os.sep):
+                raise RuntimeError("skill path escaped root")
+            rel = os.path.relpath(real, root).replace(os.sep, "/")
+            entries.append((rel, real))
+    digest = hashlib.sha256()
+    for rel, path in sorted(entries):
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def build_prompt(cfg, identity):
@@ -881,6 +1053,7 @@ class ChromiumRuntime:
         except OSError:
             pass
         executable = self.executable or _chromium_executable()
+        self.executable = executable
         args = [
             executable,
             "--remote-debugging-port=0",
