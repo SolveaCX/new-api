@@ -3237,9 +3237,12 @@ func TestRecallRunIdempotencyCommitsLargeSnapshotsInBoundedBatches(t *testing.T)
 		require.NoError(t, DB.Model(table).Count(&count).Error)
 		require.EqualValues(t, total, count)
 	}
-	var eventCount int64
-	require.NoError(t, DB.Model(&RecallEvent{}).Count(&eventCount).Error)
-	require.EqualValues(t, 1, eventCount)
+	var runEventCount int64
+	require.NoError(t, DB.Model(&RecallEvent{}).Where("event_type = ?", "campaign_run").Count(&runEventCount).Error)
+	require.EqualValues(t, 1, runEventCount)
+	var messageEventCount int64
+	require.NoError(t, DB.Model(&RecallEvent{}).Where("event_type = ?", "message_state_changed").Count(&messageEventCount).Error)
+	require.EqualValues(t, total, messageEventCount)
 }
 
 func TestRecallRunIdempotencyRejectsAmbiguousMessageMapping(t *testing.T) {
