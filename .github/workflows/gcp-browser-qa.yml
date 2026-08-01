@@ -49,6 +49,7 @@ jobs:
           DISPATCH_MODE: ${{ inputs.mode }}
           DISPATCH_ORIGINAL_RUN_ID: ${{ inputs.original_run_id }}
           TRUSTED_GITHUB_RUN_ID: ${{ github.run_id }}
+          QA_GMAIL_BASE: ${{ vars.GCP_BROWSER_QA_GMAIL_BASE }}
         run: |
           set -euo pipefail
           case "${DISPATCH_MODE}" in
@@ -70,6 +71,14 @@ jobs:
             fi
             EFFECTIVE_RUN_ID="${DISPATCH_ORIGINAL_RUN_ID}"
           else
+            if [[ -z "${QA_GMAIL_BASE}" ]]; then
+              echo "GCP_BROWSER_QA_GMAIL_BASE is required for normal/core browser QA" >&2
+              exit 2
+            fi
+            if [[ "${QA_GMAIL_BASE}" == *+* || "${QA_GMAIL_BASE}" == *,* || "${QA_GMAIL_BASE}" == *$'\r'* || "${QA_GMAIL_BASE}" == *$'\n'* || ! "${QA_GMAIL_BASE}" =~ ^[A-Za-z0-9._%-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+              echo "GCP_BROWSER_QA_GMAIL_BASE must be a safe base email without plus tag, comma, CR, or LF" >&2
+              exit 2
+            fi
             EFFECTIVE_RUN_ID="${TRUSTED_GITHUB_RUN_ID}"
           fi
           if [[ ! "${EFFECTIVE_RUN_ID}" =~ ^[0-9]+$ ]]; then
@@ -218,13 +227,15 @@ jobs:
         continue-on-error: true
         timeout-minutes: 90
         shell: bash
+        env:
+          QA_GMAIL_BASE: ${{ vars.GCP_BROWSER_QA_GMAIL_BASE }}
         run: |
           set +e
           gcloud run jobs execute "${QA_MAIN_JOB}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --args=main \
-            --update-env-vars="FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID},FLATKEY_BROWSER_QA_MODE=${BROWSER_QA_MODE},FLATKEY_BROWSER_QA_EXECUTION_ID=${MAIN_EXECUTION_ID},FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}" \
+            --update-env-vars="FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID},FLATKEY_QA_GMAIL_BASE=${QA_GMAIL_BASE},FLATKEY_BROWSER_QA_MODE=${BROWSER_QA_MODE},FLATKEY_BROWSER_QA_EXECUTION_ID=${MAIN_EXECUTION_ID},FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}" \
             --wait \
             --quiet
           main_status=$?

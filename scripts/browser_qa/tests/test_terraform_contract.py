@@ -159,6 +159,10 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         self.assertEqual(_resource_blocks("google_secret_manager_secret_version"), {})
         self.assertNotRegex(self.clean_browser_qa, r"secret_data|codex_api_key_value|gmail_oauth_value|identity_seed_value")
 
+    def test_gmail_base_is_not_committed_or_managed_by_terraform(self):
+        self.assertNotIn("FLATKEY_QA_GMAIL_BASE", self.clean_browser_qa)
+        self.assertNotRegex(self.clean_browser_qa, r"@gmail\.com\b")
+
     def test_private_broker_service_and_private_jobs_have_expected_shape(self):
         services = _resource_blocks("google_cloud_run_v2_service")
         self.assertEqual(set(services), {"browser_qa_broker"})

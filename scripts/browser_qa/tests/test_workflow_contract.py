@@ -211,6 +211,46 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertIn("FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID}", cleanup)
         self.assertIn("FLATKEY_BROWSER_QA_MODE=${BROWSER_QA_MODE}", main)
 
+    def test_gmail_base_is_runtime_var_only_for_validation_and_main_execution(self):
+        text = workflow_text()
+        validate = step_block(text, "Validate dispatch inputs")
+        main = step_block(text, "Execute main browser QA job")
+        cleanup = step_block(text, "Execute cleanup browser QA job")
+
+        self.assertNotRegex(text, r"@gmail\.com\b")
+        self.assertNotIn("${{ secrets.", text)
+        self.assertNotRegex(text, r"(?m)^  QA_GMAIL_BASE:")
+        self.assertRegex(validate, r"(?m)^          QA_GMAIL_BASE: \$\{\{ vars\.GCP_BROWSER_QA_GMAIL_BASE \}\}$")
+        self.assertRegex(main, r"(?m)^          QA_GMAIL_BASE: \$\{\{ vars\.GCP_BROWSER_QA_GMAIL_BASE \}\}$")
+        self.assertNotIn("QA_GMAIL_BASE", cleanup)
+
+        validate_run = re.search(r"(?ms)^        run: \|\n(?P<body>.*?)(?=^      - name: |\Z)", validate).group("body")
+        cleanup_branch = re.search(r"(?ms)if \[\[ \"\$\{DISPATCH_MODE\}\" == \"cleanup-only\" \]\]; then(?P<body>.*?)else", validate_run)
+        self.assertIsNotNone(cleanup_branch)
+        self.assertNotIn("QA_GMAIL_BASE", cleanup_branch.group("body"))
+        self.assertRegex(validate_run, r"if \[\[ -z \"\$\{QA_GMAIL_BASE\}\" \]\]; then[\s\S]*GCP_BROWSER_QA_GMAIL_BASE")
+        self.assertIn('"${QA_GMAIL_BASE}" =~ ^[A-Za-z0-9._%-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$', validate_run)
+        for forbidden_pattern in [
+            '"${QA_GMAIL_BASE}" == *+*',
+            '"${QA_GMAIL_BASE}" == *,*',
+            '"${QA_GMAIL_BASE}" == *$\'\\r\'*',
+            '"${QA_GMAIL_BASE}" == *$\'\\n\'*',
+        ]:
+            self.assertIn(forbidden_pattern, validate_run)
+        self.assertNotRegex(validate_run, r"echo[^\n]*\$\{QA_GMAIL_BASE\}")
+
+        self.assertIn("FLATKEY_QA_GMAIL_BASE=${QA_GMAIL_BASE}", main)
+        self.assertNotIn("FLATKEY_QA_GMAIL_BASE", cleanup)
+        for step in [
+            "Build browser QA image",
+            "Smoke test browser QA image",
+            "Push browser QA image",
+            "Update browser QA Cloud Run resources",
+            "Fetch sanitized manifest and write summary",
+            "Fail standalone workflow for actionable QA states",
+        ]:
+            self.assertNotIn("QA_GMAIL_BASE", step_block(text, step))
+
     def test_fetches_only_sanitized_root_manifest_and_summary_stays_non_secret(self):
         text = workflow_text()
         summary = step_block(text, "Fetch sanitized manifest and write summary")

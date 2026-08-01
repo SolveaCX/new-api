@@ -260,10 +260,6 @@ resource "google_cloud_run_v2_job" "browser_qa_main" {
           }
         }
         env {
-          name  = "FLATKEY_QA_GMAIL_BASE"
-          value = "flatkey.browser.qa@gmail.com"
-        }
-        env {
           name  = "FLATKEY_QA_WEBSITE_ORIGIN"
           value = "https://staging-website.flatkey.ai"
         }
