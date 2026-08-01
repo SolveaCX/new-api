@@ -290,6 +290,50 @@ class WrapperContractTests(unittest.TestCase):
             self.assertEqual(len(forwarded), 33)
             self.assertEqual(json.loads(forwarded[-1])["id"], 30)
 
+    def test_tools_list_appends_docs_reader_and_docs_call_consumes_budget_without_forwarding(self):
+        class DocsWrapper(mcp_budget_wrapper.BudgetedMcpWrapper):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.docs_calls = []
+
+            def _request_docs_read(self, arguments):
+                self.docs_calls.append(arguments)
+                return {"url": arguments["url"], "status": 200, "text": "hello docs"}
+
+        child = FakeChild()
+        child.stdout = io.StringIO(frame({"jsonrpc": "2.0", "id": "list", "result": {"tools": [{"name": "browser_click"}]}}))
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": 100.0})
+            wrapper = DocsWrapper(
+                runtime_dir,
+                child=child,
+                clock=FakeClock(),
+                tree_terminator=RecordingTreeTerminator(),
+                runtime_evidence_url="http://127.0.0.1:1/runtime-evidence",
+            )
+            output = io.StringIO()
+            wrapper.proxy_child_stdout(output)
+            tools = json.loads(output.getvalue())["result"]["tools"]
+            self.assertIn("qa_read_docs", [tool["name"] for tool in tools])
+
+            output = io.StringIO()
+            request = frame({
+                "jsonrpc": "2.0",
+                "id": "docs",
+                "method": "tools/call",
+                "params": {"name": "qa_read_docs", "arguments": {"url": "https://docs.flatkey.ai/quickstart"}},
+            })
+            wrapper._closed = False
+            wrapper.proxy_client_requests(io.StringIO(request), output)
+
+            self.assertEqual(child.stdin.getvalue(), "")
+            response = json.loads(output.getvalue())
+            self.assertEqual(response["id"], "docs")
+            self.assertIn("hello docs", response["result"]["content"][0]["text"])
+            self.assertEqual(wrapper.docs_calls, [{"url": "https://docs.flatkey.ai/quickstart"}])
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as handle:
+                self.assertEqual(json.load(handle)["actions_used"], 1)
+
     def test_time_cutoff_state_parse_failure_client_parse_failure_and_child_protocol_parse_failure_fail_closed(self):
         clock = FakeClock()
         child = FakeChild()

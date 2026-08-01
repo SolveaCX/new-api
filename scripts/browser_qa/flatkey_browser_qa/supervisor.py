@@ -18,10 +18,12 @@ from .api import StagingApiClient
 from .cleanup import CleanupResult
 from .cleanup import CleanupRunner
 from .config import load_config
+from .egress_proxy import EgressPolicy
 from .egress_proxy import EgressProxy
 from .gcp import GcpClient
 from .gcp import upload_gcs_object
 from .identity import derive_identity
+from .mcp_budget_wrapper import ProcessTreeTerminator
 from .redaction import Redactor
 
 
@@ -93,6 +95,7 @@ class Supervisor:
         self.home_dir = None
         self._active_process = None
         self._evidence_url = None
+        self._codex_output_last_message_path = None
 
     def run(self, *, initial_result=None):
         os.makedirs(self.runtime_root, exist_ok=True)
@@ -119,6 +122,7 @@ class Supervisor:
         codex_stderr_path = os.path.join(self.runtime_root, "codex-stderr.txt")
         execution_id = getattr(self.uploader, "execution_id", None) or self.env.get("FLATKEY_BROWSER_QA_EXECUTION_ID")
         proxy = None
+        docs_proxy = None
         browser = None
         evidence_helper = None
         evidence_sink = None
@@ -140,6 +144,8 @@ class Supervisor:
             else:
                 proxy = self.proxy_factory()
                 proxy.start()
+                docs_proxy = _build_docs_proxy(self.proxy_factory)
+                docs_proxy.start()
                 browser = self.browser_factory(runtime_root=self.runtime_root, proxy=proxy, popen_factory=self.subprocess_runner.popen)
                 try:
                     browser.start()
@@ -156,6 +162,7 @@ class Supervisor:
                     runtime_root=self.runtime_root,
                     redactor=redactor,
                     popen_factory=self.subprocess_runner.popen,
+                    docs_proxy_url=f"http://{docs_proxy.host}:{docs_proxy.port}",
                 ).start()
                 evidence_sink = RuntimeEvidenceSink(redactor, evidence_helper=evidence_helper)
                 evidence_sink.start()
@@ -170,6 +177,7 @@ class Supervisor:
                         prompt,
                         codex_events_path=codex_events_path,
                         codex_stderr_path=codex_stderr_path,
+                        output_last_message_path=self._codex_output_last_message_path,
                     )
                 finally:
                     self._restore_signal_handlers(previous_handlers)
@@ -228,6 +236,13 @@ class Supervisor:
                     proxy.stop()
                 except Exception as exc:
                     self._event("proxy_stop_failed", str(exc), redactor)
+                    runtime_classification = runtime_classification or "invalid_result"
+                    invalid_result = True
+            if docs_proxy is not None:
+                try:
+                    docs_proxy.stop()
+                except Exception as exc:
+                    self._event("docs_proxy_stop_failed", str(exc), redactor)
                     runtime_classification = runtime_classification or "invalid_result"
                     invalid_result = True
             try:
@@ -296,6 +311,7 @@ class Supervisor:
         _install_fixed_skill(self.home_dir)
         config_path = os.path.join(self.codex_home, "config.toml")
         qa_config_path = os.path.join(self.codex_home, "qa.config.toml")
+        self._codex_output_last_message_path = os.path.join(self.runtime_root, "codex-last-message.json")
         _write_private_text(config_path, _codex_config(proxy))
         runtime_dir = os.path.realpath(self.runtime_root)
         empty_workspace = tempfile.mkdtemp(prefix="empty-workspace-", dir=self.runtime_root)
@@ -326,11 +342,14 @@ class Supervisor:
             shutil.which("codex", path=child_env.get("PATH")) or "codex",
             "exec",
             "--strict-config",
+            "--ignore-user-config",
             "--ignore-rules",
             "--profile",
             "qa",
             "--ephemeral",
             "--json",
+            "--output-last-message",
+            self._codex_output_last_message_path,
             "--output-schema",
             os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "result.schema.json"),
             "--sandbox",
@@ -346,7 +365,7 @@ class Supervisor:
         self._active_process = process
         return process
 
-    def _wait_for_codex(self, process, redactor, prompt, *, codex_events_path, codex_stderr_path):
+    def _wait_for_codex(self, process, redactor, prompt, *, codex_events_path, codex_stderr_path, output_last_message_path=None):
         process.stdin.write(prompt)
         process.stdin.close()
         if hasattr(process, "finish_streams"):
@@ -396,16 +415,25 @@ class Supervisor:
         for thread in threads:
             if thread.is_alive():
                 thread.join(timeout=_remaining_deadline_seconds(self.clock, deadline))
-        if any(thread.is_alive() for thread in threads):
-            _terminate_process(process)
-            raise TimeoutError("codex internal deadline exceeded")
-        if state["error"] or stderr_state["error"]:
-            raise RuntimeError("codex stream invalid")
         try:
-            process.wait(timeout=_remaining_deadline_seconds(self.clock, deadline))
-        except Exception as exc:
-            _terminate_process(process)
-            raise TimeoutError("codex internal deadline exceeded") from exc
+            if any(thread.is_alive() for thread in threads):
+                _terminate_process(process)
+                raise TimeoutError("codex internal deadline exceeded")
+            if state["error"] or stderr_state["error"]:
+                raise RuntimeError("codex stream invalid")
+            try:
+                process.wait(timeout=_remaining_deadline_seconds(self.clock, deadline))
+            except Exception as exc:
+                _terminate_process(process)
+                raise TimeoutError("codex internal deadline exceeded") from exc
+            if output_last_message_path and os.path.exists(output_last_message_path):
+                state["payload"] = _parse_output_last_message_file(output_last_message_path, redactor)
+        finally:
+            if output_last_message_path:
+                try:
+                    os.remove(output_last_message_path)
+                except FileNotFoundError:
+                    pass
         return process.returncode, state["payload"]
 
     def _install_signal_handlers(self, process):
@@ -466,12 +494,7 @@ def _with_trusted_runtime_state(payload, runtime_root):
 
 
 def _codex_config(_proxy):
-    return f"""[sandbox_workspace_write]
-network_access = false
-
-[shell_environment_policy]
-inherit = "none"
-"""
+    return ""
 
 
 def _qa_config(proxy, runtime_dir, child_env):
@@ -485,7 +508,7 @@ web_search = "disabled"
 command = "{_toml_escape(sys.executable)}"
 args = ["-m", "scripts.browser_qa.flatkey_browser_qa.mcp_budget_wrapper"]
 required = true
-enabled_tools = ["browser_navigate", "browser_navigate_back", "browser_tabs", "browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_snapshot", "browser_find", "browser_wait_for", "browser_console_messages", "browser_network_requests", "browser_network_request"]
+enabled_tools = ["browser_navigate", "browser_navigate_back", "browser_tabs", "browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_snapshot", "browser_find", "browser_wait_for", "browser_console_messages", "browser_network_requests", "browser_network_request", "qa_read_docs"]
 [mcp_servers.playwright.env]
 PYTHONPATH = "{escaped_repo_root}"
 PATH = "{_toml_escape(child_env.get("PATH", ""))}"
@@ -529,6 +552,12 @@ enabled_tools = ["qa_replay_checkpoint", "qa_start_exploration"]
 PYTHONPATH = "{escaped_repo_root}"
 PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
+
+[sandbox_workspace_write]
+network_access = false
+
+[shell_environment_policy]
+inherit = "none"
 """
 
 
@@ -617,6 +646,25 @@ def _parse_agent_message_result(event):
     return payload
 
 
+def _parse_output_last_message_file(path, redactor):
+    try:
+        if os.path.getsize(path) > MAX_CODEX_STDOUT_LINE_BYTES:
+            raise RuntimeError("codex last message exceeded limit")
+        with open(path, encoding="utf-8") as handle:
+            raw = handle.read(MAX_CODEX_STDOUT_LINE_BYTES + 1)
+    except OSError as exc:
+        raise RuntimeError("codex last message unavailable") from exc
+    if len(raw.encode("utf-8", "replace")) > MAX_CODEX_STDOUT_LINE_BYTES:
+        raise RuntimeError("codex last message exceeded limit")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("codex last message is not json") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("codex last message is not an object")
+    return redactor.clean(payload)
+
+
 def _install_fixed_skill(home_dir):
     source = os.path.join(_repo_root(), ".agents", "skills", SKILL_NAME)
     if not os.path.isdir(source):
@@ -684,6 +732,61 @@ def _terminate_process(process):
             pass
 
 
+class _DirectProcessTerminator:
+    def terminate_tree(self, child):
+        child.terminate()
+
+    def kill_tree(self, child):
+        child.kill()
+
+    def close(self):
+        return None
+
+
+def _attach_process_tree_or_direct(process):
+    if isinstance(getattr(process, "pid", None), int) and process.pid > 0:
+        return ProcessTreeTerminator.attach(process)
+    return _DirectProcessTerminator()
+
+
+def _build_docs_proxy(proxy_factory):
+    try:
+        return proxy_factory(policy=EgressPolicy.from_file(mode="read_only"))
+    except TypeError:
+        return proxy_factory()
+
+
+def _start_new_tree_popen_kwargs():
+    return {
+        "start_new_session": os.name != "nt",
+        "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+    }
+
+
+def _terminate_process_tree(process, terminator):
+    try:
+        terminator.terminate_tree(process)
+    except Exception:
+        try:
+            process.terminate()
+        except Exception:
+            pass
+    try:
+        process.wait(timeout=2)
+    except Exception:
+        try:
+            terminator.kill_tree(process)
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+    try:
+        terminator.close()
+    except Exception:
+        pass
+
+
 def _repo_root():
     return os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
@@ -726,6 +829,7 @@ class ChromiumRuntime:
         self.timeout_seconds = timeout_seconds
         self.user_data_dir = os.path.join(self.runtime_root, "chromium-profile")
         self.process = None
+        self.tree_terminator = None
         self.cdp_endpoint = None
 
     def start(self):
@@ -747,8 +851,16 @@ class ChromiumRuntime:
             "--disable-gpu",
             "about:blank",
         ]
-        self.process = self.popen_factory(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=False)
         try:
+            self.process = self.popen_factory(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                text=False,
+                **_start_new_tree_popen_kwargs(),
+            )
+            self.tree_terminator = _attach_process_tree_or_direct(self.process)
             self.cdp_endpoint = self._wait_for_devtools_endpoint()
         except Exception:
             self.stop()
@@ -758,7 +870,9 @@ class ChromiumRuntime:
     def stop(self):
         if self.process is None:
             return
-        _terminate_process(self.process)
+        _terminate_process_tree(self.process, self.tree_terminator or _DirectProcessTerminator())
+        self.process = None
+        self.tree_terminator = None
 
     def _wait_for_devtools_endpoint(self):
         active_port_path = os.path.realpath(os.path.join(self.user_data_dir, "DevToolsActivePort"))
@@ -776,39 +890,44 @@ class ChromiumRuntime:
 
 
 class BrowserEvidenceHelperProcess:
-    def __init__(self, *, browser, runtime_root, redactor, popen_factory=subprocess.Popen, response_timeout_seconds=30):
+    def __init__(self, *, browser, runtime_root, redactor, popen_factory=subprocess.Popen, response_timeout_seconds=30, docs_proxy_url=None):
         self.browser = browser
         self.runtime_root = os.path.realpath(runtime_root)
         self.redactor = redactor
         self.popen_factory = popen_factory
         self.response_timeout_seconds = response_timeout_seconds
+        self.docs_proxy_url = docs_proxy_url
         self.process = None
+        self.tree_terminator = None
         self._next_id = 0
         self._lock = threading.Lock()
 
     def start(self):
         script = os.path.join(os.path.dirname(__file__), "browser_evidence_helper.cjs")
-        self.process = self.popen_factory(
-            ["node", script],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            bufsize=1,
-        )
         try:
+            self.process = self.popen_factory(
+                ["node", script],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+                bufsize=1,
+                **_start_new_tree_popen_kwargs(),
+            )
+            self.tree_terminator = _attach_process_tree_or_direct(self.process)
             self._request(
                 "init",
                 {
                     "runtimeDir": self.runtime_root,
                     "cdpEndpoint": self.browser.cdp_endpoint,
                     "sensitiveValues": self._protocol_secrets(),
+                    "docsProxyUrl": self.docs_proxy_url,
                 },
             )
         except Exception:
-            _terminate_process(self.process)
+            _terminate_process_tree(self.process, self.tree_terminator or _DirectProcessTerminator())
             raise
         return self
 
@@ -830,6 +949,12 @@ class BrowserEvidenceHelperProcess:
             raise RuntimeError("browser helper evidence response invalid")
         return response
 
+    def read_docs(self, url):
+        response = self._request("readDocs", {"url": url})
+        if not isinstance(response, dict) or not isinstance(response.get("url"), str) or not isinstance(response.get("text"), str):
+            raise RuntimeError("browser helper docs response invalid")
+        return response
+
     def stop(self):
         if self.process is None:
             return
@@ -837,7 +962,9 @@ class BrowserEvidenceHelperProcess:
             self._request("close", {})
         except Exception:
             pass
-        _terminate_process(self.process)
+        _terminate_process_tree(self.process, self.tree_terminator or _DirectProcessTerminator())
+        self.process = None
+        self.tree_terminator = None
 
     def _request(self, command, params):
         if self.process is None:
@@ -1040,6 +1167,22 @@ class RuntimeEvidenceSink:
                             raise ValueError("invalid screenshot request")
                         logical_path = owner.evidence_helper.capture_screenshot(name)
                         response = json.dumps({"path": logical_path}, sort_keys=True).encode("utf-8")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(response)))
+                        self.end_headers()
+                        self.wfile.write(response)
+                        return
+                    elif event_type == "docs_read":
+                        if owner.evidence_helper is None:
+                            raise ValueError("browser evidence helper unavailable")
+                        url = event.get("url")
+                        if not isinstance(url, str):
+                            raise ValueError("invalid docs request")
+                        result = owner.evidence_helper.read_docs(url)
+                        response = json.dumps(result, sort_keys=True).encode("utf-8")
+                        if len(response) > 65536:
+                            raise ValueError("docs response too large")
                         self.send_response(200)
                         self.send_header("Content-Type", "application/json")
                         self.send_header("Content-Length", str(len(response)))

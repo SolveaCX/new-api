@@ -13,6 +13,36 @@ from scripts.browser_qa.flatkey_browser_qa import supervisor
 
 
 class BrowserEvidenceTests(unittest.TestCase):
+    def test_evidence_mcp_initialize_list_call_and_unknown_method_are_jsonrpc_compliant(self):
+        stdin = io.StringIO(
+            "\n".join([
+                json.dumps({"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}),
+                json.dumps({"jsonrpc": "2.0", "id": "list", "method": "tools/list"}),
+                json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": "call",
+                    "method": "tools/call",
+                    "params": {"name": "qa_capture_screenshot", "arguments": {"name": "checkpoint"}},
+                }),
+                json.dumps({"jsonrpc": "2.0", "id": "missing", "method": "missing/method"}),
+            ])
+            + "\n"
+        )
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, {"FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL": "http://127.0.0.1:1/runtime-evidence"}, clear=True), \
+            mock.patch.object(sys, "stdin", stdin), \
+            mock.patch.object(sys, "stdout", stdout), \
+            mock.patch.object(browser_evidence_mcp, "_request_capture", return_value="screenshots/checkpoint.png"):
+            browser_evidence_mcp.main()
+
+        responses = [json.loads(line) for line in stdout.getvalue().splitlines()]
+        self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-06-18")
+        self.assertEqual(responses[0]["result"]["capabilities"], {"tools": {}})
+        self.assertEqual(responses[0]["result"]["serverInfo"]["name"], "flatkey-browser-evidence")
+        self.assertEqual([tool["name"] for tool in responses[1]["result"]["tools"]], ["qa_capture_screenshot"])
+        self.assertEqual(responses[2]["result"]["content"][0]["text"], "screenshots/checkpoint.png")
+        self.assertEqual(responses[3]["error"]["code"], -32601)
+
     def test_evidence_mcp_rejects_invalid_frames_and_extra_screenshot_arguments(self):
         stdin = io.StringIO(
             "\n".join([
@@ -183,6 +213,7 @@ class BrowserEvidenceTests(unittest.TestCase):
     def test_browser_evidence_helper_start_failure_terminates_launched_node(self):
         class FailingInitProcess:
             def __init__(self):
+                self.pid = 2468
                 self.stdin = io.StringIO()
                 self.stdout = io.StringIO("")
                 self.terminated = False
@@ -200,8 +231,10 @@ class BrowserEvidenceTests(unittest.TestCase):
                 self.killed = True
 
         launched = []
+        popen_calls = []
 
-        def popen_factory(*_args, **_kwargs):
+        def popen_factory(*args, **kwargs):
+            popen_calls.append((args, kwargs))
             process = FailingInitProcess()
             launched.append(process)
             return process
@@ -218,6 +251,12 @@ class BrowserEvidenceTests(unittest.TestCase):
         self.assertEqual(len(launched), 1)
         self.assertTrue(launched[0].terminated)
         self.assertTrue(launched[0].waited)
+        if os.name == "nt":
+            self.assertEqual(popen_calls[0][1]["creationflags"], subprocess.CREATE_NEW_PROCESS_GROUP)
+            self.assertFalse(popen_calls[0][1]["start_new_session"])
+        else:
+            self.assertEqual(popen_calls[0][1]["creationflags"], 0)
+            self.assertTrue(popen_calls[0][1]["start_new_session"])
 
     def test_browser_evidence_helper_hung_init_times_out_and_terminates_launched_node(self):
         class BlockingStdout:

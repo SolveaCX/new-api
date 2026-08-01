@@ -96,7 +96,7 @@ function projectNetworkEvent(event, sensitiveValues = []) {
 }
 
 class BrowserEvidenceSession {
-  constructor({ browser, runtimeDir, sensitiveValues = [], maxEvents = MAX_EVENTS, maxEventBytes = MAX_EVENT_BYTES, maxTotalBytes = MAX_TOTAL_BYTES }) {
+  constructor({ browser, runtimeDir, sensitiveValues = [], maxEvents = MAX_EVENTS, maxEventBytes = MAX_EVENT_BYTES, maxTotalBytes = MAX_TOTAL_BYTES, docsProxyUrl = null }) {
     this.browser = browser;
     this.runtimeDir = runtimeDir;
     this.sensitiveValues = Array.isArray(sensitiveValues) ? sensitiveValues.filter((value) => typeof value === "string" && value.length > 0) : [];
@@ -109,6 +109,7 @@ class BrowserEvidenceSession {
     this.network = [];
     this.context = null;
     this.page = null;
+    this.docsProxyUrl = docsProxyUrl;
     this.pageSetupPromises = new Set();
     this.pageSetupError = null;
   }
@@ -275,6 +276,47 @@ class BrowserEvidenceSession {
     return payload;
   }
 
+  async readDocs(url) {
+    const target = validateDocsUrl(url);
+    if (!this.docsProxyUrl) {
+      throw new Error("docs proxy unavailable");
+    }
+    if (!this.browser || typeof this.browser.newContext !== "function") {
+      throw new Error("docs context unavailable");
+    }
+    const context = await this.browser.newContext({
+      proxy: { server: this.docsProxyUrl },
+      serviceWorkers: "block",
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      await context.route("**/*", async (route) => {
+        const request = route.request();
+        const requestUrl = typeof request.url === "function" ? request.url() : "";
+        const method = typeof request.method === "function" ? request.method() : "";
+        if (!isAllowedDocsRequest(requestUrl, method)) {
+          await route.abort();
+          return;
+        }
+        await route.continue({ headers: stripSensitiveRequestHeaders(request.headers()) });
+      });
+      const page = await context.newPage();
+      try {
+        await page.goto(target.href, { waitUntil: "domcontentloaded", timeout: 30000 });
+      } catch (error) {
+        throw new Error("docs read failed");
+      }
+      const finalUrl = typeof page.url === "function" ? page.url() : target.href;
+      if (!isAllowedDocsRequest(finalUrl, "GET")) {
+        throw new Error("docs redirect blocked");
+      }
+      const html = typeof page.content === "function" ? await page.content() : "";
+      return { url: finalUrl, status: 200, text: textFromHtml(html) };
+    } finally {
+      await context.close();
+    }
+  }
+
   async stop() {
     if (this.browser && typeof this.browser.close === "function") {
       await this.browser.close();
@@ -330,6 +372,7 @@ async function runProtocol({ input = process.stdin, output = process.stdout, con
           browser,
           runtimeDir: params.runtimeDir,
           sensitiveValues: params.sensitiveValues,
+          docsProxyUrl: params.docsProxyUrl,
         }).start();
       } else if (request.command === "captureScreenshot") {
         requireSession(session);
@@ -340,6 +383,9 @@ async function runProtocol({ input = process.stdin, output = process.stdout, con
       } else if (request.command === "flush") {
         requireSession(session);
         result = await session.flush();
+      } else if (request.command === "readDocs") {
+        requireSession(session);
+        result = await session.readDocs(params.url);
       } else if (request.command === "close") {
         if (session) {
           await session.stop();
@@ -367,6 +413,53 @@ async function defaultConnectOverCDP(endpoint) {
   return chromium.connectOverCDP(endpoint);
 }
 
+function validateDocsUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (_error) {
+    throw new Error("docs url blocked");
+  }
+  if (parsed.protocol !== "https:" || parsed.origin !== "https://docs.flatkey.ai" || parsed.username || parsed.password) {
+    throw new Error("docs url blocked");
+  }
+  return parsed;
+}
+
+function isAllowedDocsRequest(value, method) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (_error) {
+    return false;
+  }
+  return parsed.protocol === "https:" && parsed.origin === "https://docs.flatkey.ai" && (method === "GET" || method === "HEAD");
+}
+
+function stripSensitiveRequestHeaders(headers = {}) {
+  const cleaned = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    const lower = key.toLowerCase();
+    if (lower === "cookie" || lower === "authorization" || lower === "proxy-authorization") {
+      continue;
+    }
+    cleaned[key] = value;
+  }
+  return cleaned;
+}
+
+function textFromHtml(html) {
+  if (typeof html !== "string") {
+    return "";
+  }
+  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60000);
+}
+
 function redactText(value, sensitiveValues = []) {
   if (typeof value !== "string") {
     return value;
@@ -388,6 +481,8 @@ module.exports = {
   projectNetworkEvent,
   runProtocol,
   safeScreenshotPath,
+  stripSensitiveRequestHeaders,
+  validateDocsUrl,
 };
 
 if (require.main === module) {

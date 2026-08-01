@@ -242,11 +242,12 @@ class StopFailEvidenceSink:
 
 
 class FakeBrowserEvidenceHelper:
-    def __init__(self, *, browser, runtime_root, redactor, popen_factory):
+    def __init__(self, *, browser, runtime_root, redactor, popen_factory, docs_proxy_url=None):
         self.browser = browser
         self.runtime_root = runtime_root
         self.redactor = redactor
         self.popen_factory = popen_factory
+        self.docs_proxy_url = docs_proxy_url
         self.started = False
         self.stopped = False
         self.flushed = False
@@ -366,9 +367,12 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn("--skip-git-repo-check", args)
         self.assertIn("--profile", args)
         self.assertIn("qa", args)
+        self.assertIn("--ignore-user-config", args)
+        self.assertIn("--output-last-message", args)
+        last_message_path = args[args.index("--output-last-message") + 1]
+        self.assertTrue(os.path.realpath(last_message_path).startswith(os.path.realpath(sup.runtime_root) + os.sep))
+        self.assertFalse(os.path.exists(last_message_path))
         self.assertIn("--output-schema", args)
-        self.assertNotIn("--output-last-message", args)
-        self.assertNotIn("--ignore-user-config", args)
         self.assertIn("--sandbox", args)
         self.assertIn("workspace-write", args)
         self.assertIn("--model", args)
@@ -407,7 +411,11 @@ class SupervisorTests(unittest.TestCase):
                 data = handle.read()
             config_text += data
         self.assertNotIn("proxy_bypass", config_text)
-        self.assertIn("network_access = false", config_text)
+        with open(os.path.join(sup.codex_home, "config.toml"), encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "")
+        with open(os.path.join(sup.codex_home, "qa.config.toml"), encoding="utf-8") as handle:
+            qa_config_text = handle.read()
+        self.assertIn("network_access = false", qa_config_text)
         self.assertIn("[shell_environment_policy]", config_text)
         self.assertIn("inherit = \"none\"", config_text)
         self.assertIn("web_search = \"disabled\"", config_text)
@@ -420,6 +428,7 @@ class SupervisorTests(unittest.TestCase):
         broker_env = config_text.split("[mcp_servers.broker.env]", 1)[1].split("[mcp_servers.control]", 1)[0]
         self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL", playwright_env)
         self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL", broker_env)
+        self.assertIn("qa_read_docs", config_text)
         self.assertIn("PATH", config_text)
         self.assertIn("PYTHONPATH", config_text)
         self.assertNotIn("${FLATKEY_BROWSER_QA_RUN_ID}", config_text)
@@ -474,6 +483,61 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn("[mcp_servers.evidence]", config_text)
         self.assertIn("qa_capture_screenshot", config_text)
 
+    def test_output_last_message_file_is_private_parsed_and_removed_on_success_and_invalid_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            valid_payload = valid_result()
+
+            def write_last_message():
+                args, _kwargs = sup.subprocess_runner.calls[0]
+                path = args[args.index("--output-last-message") + 1]
+                with open(path, "w", encoding="utf-8") as handle:
+                    json.dump(valid_payload, handle)
+
+            process = FakeProcess(0, write_result=write_last_message)
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=tmp,
+                subprocess_runner=FakeSubprocess(process),
+                uploader=FakeUploader(),
+                cleanup_runner=FakeCleanup(),
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
+                browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
+            )
+            outcome = sup.run()
+
+            self.assertEqual(outcome.status, "passed")
+            args, _kwargs = sup.subprocess_runner.calls[0]
+            self.assertFalse(os.path.exists(args[args.index("--output-last-message") + 1]))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            def write_bad_last_message():
+                args, _kwargs = sup.subprocess_runner.calls[0]
+                path = args[args.index("--output-last-message") + 1]
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("{bad")
+
+            process = FakeProcess(0, write_result=write_bad_last_message)
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=tmp,
+                subprocess_runner=FakeSubprocess(process),
+                uploader=FakeUploader(),
+                cleanup_runner=FakeCleanup(),
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
+                browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
+            )
+            outcome = sup.run()
+
+            self.assertEqual(outcome.status, "infrastructure_failed")
+            args, _kwargs = sup.subprocess_runner.calls[0]
+            self.assertFalse(os.path.exists(args[args.index("--output-last-message") + 1]))
+
     def test_supervisor_starts_chromium_with_proxy_cdp_runtime_profile_then_stops_after_evidence(self):
         browser_process = RecordingBrowserProcess()
         popen_factory = RecordingPopenFactory()
@@ -527,12 +591,19 @@ class SupervisorTests(unittest.TestCase):
 
             self.assertEqual(outcome.status, "passed")
             browser_args = popen_factory.calls[0][0]
+            browser_kwargs = popen_factory.calls[0][1]
             self.assertIn("--remote-debugging-port=0", browser_args)
             self.assertIn("--headless=new", browser_args)
             self.assertIn("--disable-quic", browser_args)
             self.assertIn("--force-webrtc-ip-handling-policy=disable_non_proxied_udp", browser_args)
             self.assertIn("--proxy-server=http://127.0.0.1:4567", browser_args)
             self.assertIn("--proxy-bypass-list=<-loopback>", browser_args)
+            if os.name == "nt":
+                self.assertEqual(browser_kwargs["creationflags"], subprocess.CREATE_NEW_PROCESS_GROUP)
+                self.assertFalse(browser_kwargs["start_new_session"])
+            else:
+                self.assertEqual(browser_kwargs["creationflags"], 0)
+                self.assertTrue(browser_kwargs["start_new_session"])
             user_arg = next(arg for arg in browser_args if arg.startswith("--user-data-dir="))
             self.assertTrue(os.path.realpath(user_arg.split("=", 1)[1]).startswith(os.path.realpath(runtime_root) + os.sep))
             codex_config = os.path.join(sup.codex_home, "qa.config.toml")

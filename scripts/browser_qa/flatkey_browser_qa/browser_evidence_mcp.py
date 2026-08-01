@@ -4,6 +4,16 @@ import sys
 import urllib.request
 from urllib.parse import urlsplit
 
+from . import mcp
+
+
+SCREENSHOT_SCHEMA = {
+    "type": "object",
+    "properties": {"name": {"type": "string"}},
+    "required": ["name"],
+    "additionalProperties": False,
+}
+
 
 def main():
     evidence_url = os.environ["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"]
@@ -17,22 +27,28 @@ def main():
             _write_error(None, -32600, "invalid request")
             continue
         request_id = request.get("id") if isinstance(request, dict) else None
-        if request.get("method") == "tools/list":
+        method = request.get("method")
+        if method == "initialize":
+            _write_result(
+                request_id,
+                {
+                    "protocolVersion": mcp.PROTOCOL_VERSION,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "flatkey-browser-evidence", "version": "1.0.0"},
+                },
+            )
+        elif method == "tools/list":
             _write_result(
                 request_id,
                 {
                     "tools": [{
                         "name": "qa_capture_screenshot",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {"name": {"type": "string"}},
-                            "required": ["name"],
-                            "additionalProperties": False,
-                        },
+                        "description": "Capture a redacted screenshot into the private QA runtime evidence area.",
+                        "inputSchema": SCREENSHOT_SCHEMA,
                     }]
                 },
             )
-        elif request.get("method") == "tools/call":
+        elif method == "tools/call":
             params = request.get("params") if isinstance(request, dict) else None
             arguments = params.get("arguments") if isinstance(params, dict) else None
             name = arguments.get("name") if isinstance(arguments, dict) else None
@@ -52,7 +68,7 @@ def main():
                 continue
             _write_result(request_id, {"content": [{"type": "text", "text": logical}]})
         else:
-            _write_result(request_id, {})
+            _write_error(request_id, -32601, "method not found")
 
 
 def _request_capture(evidence_url, name, *, opener=None):

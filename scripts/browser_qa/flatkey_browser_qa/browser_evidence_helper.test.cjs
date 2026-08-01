@@ -178,6 +178,105 @@ test("long lived helper fails closed when service worker bypass cannot be applie
   await assert.rejects(() => session.start(), /service worker bypass unavailable/);
 });
 
+test("docs reader uses fresh cookie-free docs proxy context, strips sensitive headers, and closes on success", async () => {
+  const calls = [];
+  const context = fakeDocsContext(calls, {
+    async goto(url) {
+      calls.push(["goto", url]);
+    },
+    async content() {
+      return "<html><body>hello docs</body></html>";
+    },
+    url() {
+      return "https://docs.flatkey.ai/quickstart";
+    },
+  });
+  const browser = {
+    async newContext(options) {
+      calls.push(["newContext", options]);
+      return context;
+    },
+  };
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), docsProxyUrl: "http://127.0.0.1:4568" });
+
+  const result = await session.readDocs("https://docs.flatkey.ai/quickstart");
+  const routeHandler = calls.find((call) => call[0] === "route")[2];
+  const continued = [];
+  await routeHandler({
+    request: () => ({
+      url: () => "https://docs.flatkey.ai/quickstart",
+      method: () => "GET",
+      headers: () => ({ Cookie: "secret=value", Authorization: "Bearer secret", Accept: "text/html" }),
+    }),
+    continue: async (options) => continued.push(options),
+    abort: async () => calls.push(["abort"]),
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.url, "https://docs.flatkey.ai/quickstart");
+  assert.match(result.text, /hello docs/);
+  assert.deepEqual(calls[0][1].storageState, { cookies: [], origins: [] });
+  assert.equal(calls[0][1].serviceWorkers, "block");
+  assert.equal(calls[0][1].proxy.server, "http://127.0.0.1:4568");
+  assert.equal(continued[0].headers.Cookie, undefined);
+  assert.equal(continued[0].headers.Authorization, undefined);
+  assert.deepEqual(calls.at(-1), ["close"]);
+});
+
+test("docs reader blocks cookies, writes, cross-origin redirects, and closes on failure", async () => {
+  const blockedRequests = [
+    ["https://docs.flatkey.ai/quickstart", "POST"],
+    ["https://console.flatkey.ai/", "GET"],
+  ];
+  for (const [url, method] of blockedRequests) {
+    const calls = [];
+    const context = fakeDocsContext(calls, {
+      async goto() {
+        throw new Error("blocked");
+      },
+      url() {
+        return "https://docs.flatkey.ai/quickstart";
+      },
+    });
+    const browser = { async newContext() { return context; } };
+    const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), docsProxyUrl: "http://127.0.0.1:4568" });
+    await assert.rejects(() => session.readDocs("https://docs.flatkey.ai/quickstart"), /docs read failed/);
+    const routeHandler = calls.find((call) => call[0] === "route")[2];
+    await routeHandler({
+      request: () => ({ url: () => url, method: () => method, headers: () => ({}) }),
+      continue: async () => calls.push(["continue"]),
+      abort: async () => calls.push(["abort"]),
+    });
+    assert.ok(calls.some((call) => call[0] === "abort"));
+    assert.deepEqual(calls.at(-1), ["abort"]);
+  }
+
+  const rejectedBeforeContext = new helper.BrowserEvidenceSession({
+    browser: { async newContext() { throw new Error("must not create docs context"); } },
+    runtimeDir: os.tmpdir(),
+    docsProxyUrl: "http://127.0.0.1:4568",
+  });
+  await assert.rejects(() => rejectedBeforeContext.readDocs("http://169.254.169.254/latest"), /docs url blocked/);
+
+  const calls = [];
+  const context = fakeDocsContext(calls, {
+    async goto() {},
+    async content() {
+      return "bad redirect";
+    },
+    url() {
+      return "https://staging-console.flatkey.ai/login";
+    },
+  });
+  const session = new helper.BrowserEvidenceSession({
+    browser: { async newContext() { return context; } },
+    runtimeDir: os.tmpdir(),
+    docsProxyUrl: "http://127.0.0.1:4568",
+  });
+  await assert.rejects(() => session.readDocs("https://docs.flatkey.ai/redirect"), /docs redirect blocked/);
+  assert.deepEqual(calls.at(-1), ["close"]);
+});
+
 test("long lived helper fails closed on event count and byte overflow", async () => {
   const session = new helper.BrowserEvidenceSession({
     browser: { contexts: () => [] },
@@ -389,6 +488,21 @@ function fakeScreenshotPage() {
         text: () => text,
         location: () => ({ url: "https://staging-console.flatkey.ai", lineNumber: 1 }),
       });
+    },
+  };
+}
+
+function fakeDocsContext(calls, page) {
+  return {
+    async route(pattern, handler) {
+      calls.push(["route", pattern, handler]);
+    },
+    async newPage() {
+      calls.push(["newPage"]);
+      return page;
+    },
+    async close() {
+      calls.push(["close"]);
     },
   };
 }

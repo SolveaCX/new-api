@@ -1,8 +1,12 @@
 {
   "version": 1,
-  "hosts": [
-    "staging-website.flatkey.ai",
-    "staging-console.flatkey.ai",
-    "docs.flatkey.ai"
-  ]
+  "modes": {
+    "writable": [
+      "staging-website.flatkey.ai",
+      "staging-console.flatkey.ai"
+    ],
+    "read_only": [
+      "docs.flatkey.ai"
+    ]
+  }
 }

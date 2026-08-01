@@ -44,14 +44,22 @@ class EgressPolicy:
         self.allowed_hosts = frozenset(_normalize_host(host) for host in allowed_hosts)
 
     @classmethod
-    def from_file(cls, path=None):
+    def from_file(cls, path=None, *, mode="writable"):
         if path is None:
             path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "allowed_hosts.json")
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
-        if payload.get("version") != 1 or not isinstance(payload.get("hosts"), list):
+        if payload.get("version") != 1:
             raise ValueError("allowed host file is malformed")
-        return cls(payload["hosts"])
+        modes = payload.get("modes")
+        if isinstance(modes, dict):
+            hosts = modes.get(mode)
+            if not isinstance(hosts, list):
+                raise ValueError("allowed host file is malformed")
+            return cls(hosts)
+        if mode == "writable" and isinstance(payload.get("hosts"), list):
+            return cls(payload["hosts"])
+        raise ValueError("allowed host file is malformed")
 
     def is_allowed_host(self, host):
         try:

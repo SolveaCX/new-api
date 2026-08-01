@@ -26,6 +26,16 @@ MAX_CLIENT_LINE_BYTES = 1024 * 1024
 MAX_CHILD_STDOUT_LINE_BYTES = 1024 * 1024
 MAX_CHILD_STDERR_LINE_BYTES = 256 * 1024
 ALIAS_RESTRICTION_MARKER = "\u7ba1\u7406\u5458\u5df2\u542f\u7528\u90ae\u7bb1\u5730\u5740\u522b\u540d\u9650\u5236\uff0c\u60a8\u7684\u90ae\u7bb1\u5730\u5740\u7531\u4e8e\u5305\u542b\u7279\u6b8a\u7b26\u53f7\u800c\u88ab\u62d2\u7edd\u3002"
+QA_READ_DOCS_TOOL = {
+    "name": "qa_read_docs",
+    "description": "Read one docs.flatkey.ai page through a fresh cookie-free docs-only browser context.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {"url": {"type": "string"}},
+        "required": ["url"],
+        "additionalProperties": False,
+    },
+}
 
 
 FILENAME_BLOCKED_TOOLS = frozenset({
@@ -203,6 +213,9 @@ class BudgetedMcpWrapper:
                     if self._is_counted_tool_call(request):
                         if not self._allow_action(request, client_output):
                             break
+                    if _is_docs_read_request(request):
+                        self._handle_docs_read_request(request, client_output)
+                        continue
                     self._write_child_stdin(line)
                     if index == 0 and after_first_request:
                         after_first_request()
@@ -223,6 +236,8 @@ class BudgetedMcpWrapper:
                     self.terminate_child()
                     break
                 self._post_alias_restriction_evidence(response)
+                response = _with_docs_tool(response)
+                line = json.dumps(response, sort_keys=True) + "\n"
                 self._write_client_line(client_output, line)
         except RuntimeError:
             self.terminate_child()
@@ -340,6 +355,48 @@ class BudgetedMcpWrapper:
             urllib.request.urlopen(request, timeout=2).close()
         except Exception:
             return
+
+    def _handle_docs_read_request(self, request, client_output):
+        try:
+            params = request.get("params")
+            arguments = params.get("arguments") if isinstance(params, dict) else None
+            result = self._request_docs_read(arguments)
+        except Exception as exc:
+            self._write_error(client_output, request.get("id"), -32000, str(exc))
+            return
+        self._write_client_line(
+            client_output,
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request.get("id"),
+                    "result": {"content": [{"type": "text", "text": json.dumps(result, sort_keys=True)}], "isError": False},
+                },
+                sort_keys=True,
+            )
+            + "\n",
+        )
+
+    def _request_docs_read(self, arguments):
+        if not isinstance(arguments, dict) or set(arguments) != {"url"} or not isinstance(arguments.get("url"), str):
+            raise RuntimeError("invalid docs request")
+        if not self.runtime_evidence_url:
+            raise RuntimeError("runtime evidence endpoint unavailable")
+        payload = json.dumps({"type": "docs_read", "url": arguments["url"]}, sort_keys=True).encode("utf-8")
+        request = urllib.request.Request(
+            self.runtime_evidence_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read(65537)
+        if len(raw) > 65536:
+            raise RuntimeError("docs response too large")
+        parsed = json.loads(raw.decode("utf-8"))
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("url"), str) or not isinstance(parsed.get("text"), str):
+            raise RuntimeError("docs response invalid")
+        return parsed
 
 
 def _iter_bounded_lines(stream, max_line_bytes):
@@ -472,6 +529,27 @@ def _is_forbidden_filename_request(request):
         return False
     arguments = params.get("arguments")
     return isinstance(arguments, dict) and "filename" in arguments
+
+
+def _is_docs_read_request(request):
+    params = request.get("params") if isinstance(request, dict) else None
+    return request.get("method") == "tools/call" and isinstance(params, dict) and params.get("name") == "qa_read_docs"
+
+
+def _with_docs_tool(response):
+    if not isinstance(response, dict) or "result" not in response:
+        return response
+    result = response.get("result")
+    tools = result.get("tools") if isinstance(result, dict) else None
+    if not isinstance(tools, list):
+        return response
+    if any(isinstance(tool, dict) and tool.get("name") == "qa_read_docs" for tool in tools):
+        return response
+    updated = dict(response)
+    updated_result = dict(result)
+    updated_result["tools"] = tools + [QA_READ_DOCS_TOOL]
+    updated["result"] = updated_result
+    return updated
 
 
 def _is_jsonrpc_frame(payload):

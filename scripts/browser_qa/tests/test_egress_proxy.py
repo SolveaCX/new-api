@@ -55,7 +55,9 @@ class EgressPolicyTests(unittest.TestCase):
 
         self.assertTrue(policy.is_allowed_host("staging-website.flatkey.ai"))
         self.assertTrue(policy.is_allowed_host("staging-console.flatkey.ai"))
-        self.assertTrue(policy.is_allowed_host("docs.flatkey.ai"))
+        self.assertFalse(policy.is_allowed_host("docs.flatkey.ai"))
+        self.assertTrue(egress_proxy.EgressPolicy.from_file(mode="read_only").is_allowed_host("docs.flatkey.ai"))
+        self.assertFalse(egress_proxy.EgressPolicy.from_file(mode="read_only").is_allowed_host("staging-console.flatkey.ai"))
         self.assertFalse(policy.is_allowed_host("flatkey.ai"))
         self.assertFalse(policy.is_allowed_host("assets.example.com"))
         self.assertFalse(policy.is_allowed_host("localhost"))
