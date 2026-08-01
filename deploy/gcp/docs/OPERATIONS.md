@@ -679,7 +679,7 @@ Abort if the negative-control identity is the operator Owner, runtime, broker, o
 
 Run `core` first. It exercises the onboarding replay and stops before the five-minute exploration phase. Run `normal` only after `core` finishes and cleanup succeeds; `normal` performs core replay plus the bounded exploration phase, capped by the implementation at five minutes or thirty browser actions.
 
-Use this helper for both modes. It captures the UTC dispatch timestamp and exact `staging` head SHA before dispatch, then polls `workflow_dispatch` runs by `databaseId`, `createdAt`, `headSha`, `status`, and `url`. It prints `ORIGINAL_GITHUB_RUN_ID` only when exactly one post-dispatch run matches the captured SHA.
+Use this helper for both modes. GitHub's [February 19, 2026 changelog](https://github.blog/changelog/2026-02-19-workflow-dispatch-api-now-returns-run-ids/) and [workflow dispatch REST docs](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event) document that the endpoint accepts top-level `return_run_details: true`; with that field it returns `200` JSON containing `workflow_run_id`, `run_url`, and `html_url`, while omitting it keeps the legacy empty `204` response. The helper posts the dispatch body directly, validates that exact response, and prints `ORIGINAL_GITHUB_RUN_ID` from `workflow_run_id`. It does not rediscover the run with timestamp/SHA correlation.
 
 ```bash
 # Mutating; operator review required. Starts a GitHub Actions run on the staging ref.
@@ -693,66 +693,65 @@ dispatch_browser_qa() {
     *) echo "mode must be core or normal" >&2; return 2 ;;
   esac
 
-  DISPATCHED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  STAGING_HEAD_SHA="$(gh api repos/SolveaCX/new-api/git/ref/heads/staging --jq '.object.sha')"
-
-  gh workflow run gcp-browser-qa.yml \
-    --repo SolveaCX/new-api \
-    --ref staging \
-    -f mode="$mode"
-
-  python3 - "$DISPATCHED_AT_UTC" "$STAGING_HEAD_SHA" <<'PY'
-import datetime as dt
+  request_body="$(python3 - "$mode" <<'PY'
 import json
-import subprocess
 import sys
-import time
 
-created_after = dt.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
-head_sha = sys.argv[2]
-deadline = time.time() + 120
+mode = sys.argv[1]
+if mode not in {"core", "normal"}:
+    raise SystemExit("mode must be core or normal")
+print(json.dumps({
+    "ref": "staging",
+    "inputs": {"mode": mode},
+    "return_run_details": True,
+}, separators=(",", ":")))
+PY
+)"
 
-while True:
-    raw = subprocess.check_output(
-        [
-            "gh",
-            "run",
-            "list",
-            "--repo",
-            "SolveaCX/new-api",
-            "--workflow",
-            "gcp-browser-qa.yml",
-            "--branch",
-            "staging",
-            "--event",
-            "workflow_dispatch",
-            "--limit",
-            "20",
-            "--json",
-            "databaseId,createdAt,headSha,status,url",
-        ],
-        text=True,
+  response="$(printf '%s' "$request_body" | gh api -X POST \
+    "repos/SolveaCX/new-api/actions/workflows/gcp-browser-qa.yml/dispatches" \
+    -H "Accept: application/vnd.github+json" \
+    -H "Content-Type: application/json" \
+    -H "X-GitHub-Api-Version: 2026-03-10" \
+    --input -)"
+
+  python3 - "$response" <<'PY'
+import json
+import sys
+
+raw = sys.argv[1]
+if not raw.strip():
+    raise SystemExit(
+        "ABORT: workflow dispatch returned an empty response. Do not redispatch blindly; "
+        "recover the exact run from the GitHub UI or Actions API."
     )
-    runs = json.loads(raw)
-    matches = []
-    for run in runs:
-        created = dt.datetime.fromisoformat(run["createdAt"].replace("Z", "+00:00"))
-        if created >= created_after and run["headSha"] == head_sha:
-            matches.append(run)
-    if len(matches) == 1:
-        run = matches[0]
-        print(f"ORIGINAL_GITHUB_RUN_ID={run['databaseId']}")
-        print(f"RUN_STATUS={run['status']}")
-        print(f"RUN_URL={run['url']}")
-        break
-    if len(matches) > 1:
-        print("ABORT: multiple workflow_dispatch runs match the dispatch timestamp and staging SHA", file=sys.stderr)
-        for run in matches:
-            print(f"  {run['databaseId']} {run['createdAt']} {run['headSha']} {run['status']} {run['url']}", file=sys.stderr)
-        raise SystemExit(1)
-    if time.time() > deadline:
-        raise SystemExit("ABORT: no matching workflow_dispatch run found; use GitHub UI for manual disambiguation")
-    time.sleep(5)
+try:
+    payload = json.loads(raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit(
+        "ABORT: workflow dispatch returned non-JSON output. Do not redispatch blindly; "
+        "recover the exact run from the GitHub UI or Actions API."
+    )
+if not isinstance(payload, dict):
+    raise SystemExit("ABORT: workflow dispatch response must be a JSON object")
+
+run_id = payload.get("workflow_run_id")
+if not isinstance(run_id, int) or run_id <= 0:
+    raise SystemExit(
+        "ABORT: workflow dispatch response missing positive workflow_run_id. "
+        "Do not redispatch blindly; recover the exact run from the GitHub UI or Actions API."
+    )
+for name in ("run_url", "html_url"):
+    value = payload.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise SystemExit(
+            f"ABORT: workflow dispatch response missing string {name}. "
+            "Do not redispatch blindly; recover the exact run from the GitHub UI or Actions API."
+        )
+
+print(f"ORIGINAL_GITHUB_RUN_ID={run_id}")
+print(f"RUN_API_URL={payload['run_url']}")
+print(f"RUN_URL={payload['html_url']}")
 PY
 }
 
@@ -763,7 +762,7 @@ dispatch_browser_qa core
 # dispatch_browser_qa normal
 ```
 
-Record `ORIGINAL_GITHUB_RUN_ID` from `databaseId` for the specific `core` or `normal` run. Do not use a workflow attempt number. If the matcher finds zero or multiple runs, abort and disambiguate manually in GitHub Actions before any cleanup-only dispatch.
+Record `ORIGINAL_GITHUB_RUN_ID` from the dispatch response's `workflow_run_id` for the specific `core` or `normal` run. Do not use a workflow attempt number. If the response is empty, missing `workflow_run_id`, or has malformed URLs, do not redispatch blindly; recover the exact run from the GitHub UI or Actions API before any cleanup-only dispatch.
 
 The GitHub summary must show only status, replay status, exploration status/actions, finding count, cleanup status, and the private GCS URI. Abort and redact the run if a secret, full Gmail address, full plus alias, verification code, password, Cookie, Authorization header, or full API key appears in the summary.
 
