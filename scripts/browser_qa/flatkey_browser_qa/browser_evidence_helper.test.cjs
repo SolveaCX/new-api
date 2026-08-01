@@ -251,6 +251,11 @@ test("new page setup pending blocks capture and flush until service worker bypas
   await session.flush();
 });
 
+test("new page setup drain includes pages opened while evidence operation is waiting", async () => {
+  await assertNewPagesOpenedDuringSetupWaitAreDrained("capture", (session) => session.captureScreenshot("during-drain"));
+  await assertNewPagesOpenedDuringSetupWaitAreDrained("flush", (session) => session.flush());
+});
+
 test("new page setup rejection makes capture and flush fail closed", async () => {
   const runtime = fs.mkdtempSync(path.join(os.tmpdir(), "browser-evidence-rejected-page-"));
   const oldPage = fakeScreenshotPage();
@@ -315,6 +320,52 @@ test("new page setup success attaches listeners and keeps evidence usable", asyn
   assert.equal(flushed.console.length, 1);
   assert.equal(flushed.console[0].text, "new page ready");
 });
+
+async function assertNewPagesOpenedDuringSetupWaitAreDrained(operationName, startOperation) {
+  const runtime = fs.mkdtempSync(path.join(os.tmpdir(), `browser-evidence-drain-${operationName}-`));
+  const oldPage = fakeScreenshotPage();
+  const page1 = fakeScreenshotPage();
+  const page2 = fakeScreenshotPage();
+  const page1Ready = createDeferred();
+  const page2Ready = createDeferred();
+  let pageHandler;
+  const context = {
+    pages: () => [oldPage],
+    async addInitScript() {},
+    serviceWorkers: () => [],
+    async newCDPSession(page) {
+      if (page === page1) {
+        await page1Ready.promise;
+      } else if (page === page2) {
+        await page2Ready.promise;
+      }
+      return { send: async () => {} };
+    },
+    on(name, handler) {
+      if (name === "page") {
+        pageHandler = handler;
+      }
+    },
+  };
+  const session = new helper.BrowserEvidenceSession({ browser: { contexts: () => [context] }, runtimeDir: runtime });
+  await session.start();
+
+  pageHandler(page1);
+  let operationSettled = false;
+  const operation = startOperation(session).finally(() => {
+    operationSettled = true;
+  });
+  await delay(20);
+  assert.equal(operationSettled, false, `${operationName} settled before page1 setup completed`);
+
+  pageHandler(page2);
+  page1Ready.resolve();
+  await delay(20);
+  assert.equal(operationSettled, false, `${operationName} settled before page2 setup completed`);
+
+  page2Ready.resolve();
+  await operation;
+}
 
 function fakeScreenshotPage() {
   const listeners = {};

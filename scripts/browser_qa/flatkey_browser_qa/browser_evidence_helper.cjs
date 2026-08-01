@@ -222,9 +222,12 @@ class BrowserEvidenceSession {
   }
 
   async _awaitPageSetups() {
-    const pendingSetups = Array.from(this.pageSetupPromises);
-    if (pendingSetups.length > 0) {
+    while (this.pageSetupPromises.size > 0) {
+      const pendingSetups = Array.from(this.pageSetupPromises);
       await Promise.allSettled(pendingSetups);
+      if (this.pageSetupError) {
+        throw new Error("browser page setup failed");
+      }
     }
     if (this.pageSetupError) {
       throw new Error("browser page setup failed");
