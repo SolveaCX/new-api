@@ -37,6 +37,19 @@ function isIanaTimezone(value: string): boolean {
   }
 }
 
+function validateScheduledTimezone(
+  timezone: string,
+  context: z.RefinementCtx
+): void {
+  if (!isIanaTimezone(timezone)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['schedule', 'timezone'],
+      message: 'IANA timezone is required',
+    })
+  }
+}
+
 const audienceSchema = z
   .object({
     registration_age_days: integer,
@@ -724,12 +737,16 @@ export const recallCampaignDraftSchema = z
         message: 'Coupon redeem-by must be after the scheduled run time',
       })
     }
+    if (draft.execution_mode === 'scheduled_once') {
+      validateScheduledTimezone(draft.schedule.timezone, context)
+    }
     if (draft.execution_mode === 'recurring') {
-      if (!isIanaTimezone(draft.schedule.timezone)) {
+      validateScheduledTimezone(draft.schedule.timezone, context)
+      if (draft.schedule.scheduled_at <= 0) {
         context.addIssue({
           code: 'custom',
-          path: ['schedule', 'timezone'],
-          message: 'IANA timezone is required',
+          path: ['schedule', 'scheduled_at'],
+          message: 'Recurring start boundary is required',
         })
       }
       if (
