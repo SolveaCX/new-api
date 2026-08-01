@@ -1,5 +1,6 @@
 import pathlib
 import re
+import subprocess
 import unittest
 
 
@@ -23,6 +24,10 @@ PINNED_NPM_PACKAGES = {
 
 def read(path):
     return path.read_text(encoding="utf-8")
+
+
+def read_bytes(path):
+    return path.read_bytes()
 
 
 def significant_docker_lines():
@@ -106,11 +111,26 @@ class ContainerContractTests(unittest.TestCase):
         self.assertNotIn("broker_mcp", text)
         self.assertRegex(text, r"\*\)\s*\n\s*echo .*unknown.*>&2\s*\n\s*exit 2", re.S)
 
+    def test_entrypoint_blob_is_lf_only_for_linux_shebang(self):
+        raw = read_bytes(ENTRYPOINT)
+        self.assertTrue(raw.startswith(b"#!/bin/sh\n"))
+        self.assertNotIn(b"\r\n", raw)
+        indexed = subprocess.check_output(["git", "show", ":scripts/browser_qa/entrypoint.sh"], cwd=REPO_ROOT)
+        self.assertTrue(indexed.startswith(b"#!/bin/sh\n"))
+        self.assertNotIn(b"\r\n", indexed)
+
     def test_dockerfile_uses_entrypoint_with_executable_permission_contract(self):
         text = read(DOCKERFILE)
         self.assertIn("COPY --chmod=0755 scripts/browser_qa/entrypoint.sh /usr/local/bin/flatkey-browser-qa-entrypoint", text)
         self.assertIn('ENTRYPOINT ["/usr/local/bin/flatkey-browser-qa-entrypoint"]', text)
         self.assertIn('CMD ["main"]', text)
+
+    def test_dockerfile_provides_top_level_tests_path_without_duplicate_copy(self):
+        text = read(DOCKERFILE)
+        self.assertIn("ln -s /opt/flatkey-browser-qa/scripts/browser_qa/tests /opt/flatkey-browser-qa/tests", text)
+        self.assertLess(text.index("ln -s /opt/flatkey-browser-qa/scripts/browser_qa/tests"), text.index("USER flatkeyqa"))
+        self.assertEqual(text.count("COPY scripts/browser_qa/tests scripts/browser_qa/tests"), 1)
+        self.assertNotIn("COPY scripts/browser_qa/tests tests", text)
 
     def test_dockerignore_allows_only_the_selected_markdown_skill_exception(self):
         lines = [line.strip() for line in read(DOCKERIGNORE).splitlines() if line.strip()]

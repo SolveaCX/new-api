@@ -43,6 +43,7 @@ COPY .agents/skills/flatkey-new-user-onboarding/tests .agents/skills/flatkey-new
 COPY --chmod=0755 scripts/browser_qa/entrypoint.sh /usr/local/bin/flatkey-browser-qa-entrypoint
 
 RUN useradd --create-home --home-dir /home/flatkeyqa --shell /usr/sbin/nologin flatkeyqa \
+    && ln -s /opt/flatkey-browser-qa/scripts/browser_qa/tests /opt/flatkey-browser-qa/tests \
     && chown -R flatkeyqa:flatkeyqa /opt/flatkey-browser-qa
 
 USER flatkeyqa
