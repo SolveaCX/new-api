@@ -1,6 +1,7 @@
 import json
 import http.server
 import os
+import queue
 import re
 import signal
 import shutil
@@ -34,6 +35,7 @@ MAX_GCS_ARTIFACT_TOTAL_BYTES = 16 * 1024 * 1024
 MAX_BROWSER_EVIDENCE_EVENTS = 1000
 MAX_BROWSER_EVIDENCE_EVENT_BYTES = 64 * 1024
 MAX_BROWSER_EVIDENCE_TOTAL_BYTES = 2 * 1024 * 1024
+MAX_BROWSER_HELPER_FRAME_BYTES = 256 * 1024
 ROOT_GCS_ARTIFACT_NAMES = frozenset({"result.json", "codex-events.jsonl", "codex-stderr.txt", "manifest.json"})
 EXACT_NESTED_GCS_ARTIFACT_NAMES = frozenset({"browser/console.jsonl", "browser/network.jsonl"})
 SAFE_GCS_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -72,6 +74,7 @@ class Supervisor:
         signal_module=signal,
         thread_factory=None,
         browser_factory=None,
+        evidence_helper_factory=None,
     ):
         self.env = dict(env)
         self.runtime_root = runtime_root
@@ -84,6 +87,7 @@ class Supervisor:
         self.signal_module = signal_module
         self.thread_factory = thread_factory or threading.Thread
         self.browser_factory = browser_factory or ChromiumRuntime
+        self.evidence_helper_factory = evidence_helper_factory or BrowserEvidenceHelperProcess
         self.events = []
         self.codex_home = None
         self.home_dir = None
@@ -100,6 +104,7 @@ class Supervisor:
             extra_secrets=(
                 self.env.get("CODEX_API_KEY", ""),
                 cfg.gmail_base,
+                identity.username,
                 identity.email_tag,
                 "password",
                 "Cookie: secret",
@@ -115,7 +120,9 @@ class Supervisor:
         execution_id = getattr(self.uploader, "execution_id", None) or self.env.get("FLATKEY_BROWSER_QA_EXECUTION_ID")
         proxy = None
         browser = None
+        evidence_helper = None
         evidence_sink = None
+        browser_evidence = {"console": [], "network": []}
         cleanup_result = CleanupResult(0, False, False, True, "cleanup was not attempted")
         upload_failed = False
         invalid_result = False
@@ -132,11 +139,27 @@ class Supervisor:
                 invalid_result = False
             else:
                 proxy = self.proxy_factory()
-                evidence_sink = RuntimeEvidenceSink(redactor)
+                proxy.start()
+                browser = self.browser_factory(runtime_root=self.runtime_root, proxy=proxy, popen_factory=self.subprocess_runner.popen)
+                try:
+                    browser.start()
+                except Exception:
+                    if getattr(browser, "process", None) is not None:
+                        try:
+                            browser.stop()
+                        except Exception:
+                            pass
+                    browser = None
+                    raise
+                evidence_helper = self.evidence_helper_factory(
+                    browser=browser,
+                    runtime_root=self.runtime_root,
+                    redactor=redactor,
+                    popen_factory=self.subprocess_runner.popen,
+                ).start()
+                evidence_sink = RuntimeEvidenceSink(redactor, evidence_helper=evidence_helper)
                 evidence_sink.start()
                 self._evidence_url = evidence_sink.url
-                proxy.start()
-                browser = self.browser_factory(runtime_root=self.runtime_root, proxy=proxy, popen_factory=self.subprocess_runner.popen).start()
                 process = self._start_codex(proxy, browser.cdp_endpoint)
                 prompt = build_prompt(cfg, identity)
                 previous_handlers = self._install_signal_handlers(process)
@@ -172,11 +195,25 @@ class Supervisor:
             self._event("infrastructure_error", str(exc), redactor)
             invalid_result = True
         finally:
+            if evidence_helper is not None:
+                try:
+                    browser_evidence = evidence_helper.flush()
+                except Exception as exc:
+                    self._event("browser_evidence_flush_failed", str(exc), redactor)
+                    runtime_classification = runtime_classification or "invalid_result"
+                    invalid_result = True
             if evidence_sink is not None:
                 try:
                     evidence_sink.stop()
                 except Exception as exc:
                     self._event("evidence_sink_stop_failed", str(exc), redactor)
+                    runtime_classification = runtime_classification or "invalid_result"
+                    invalid_result = True
+            if evidence_helper is not None:
+                try:
+                    evidence_helper.stop()
+                except Exception as exc:
+                    self._event("browser_evidence_helper_stop_failed", str(exc), redactor)
                     runtime_classification = runtime_classification or "invalid_result"
                     invalid_result = True
             if browser is not None:
@@ -207,7 +244,7 @@ class Supervisor:
             _write_private_json(result_path, redactor.clean(payload))
             self._write_events_artifacts(codex_events_path, codex_stderr_path, redactor)
             try:
-                write_browser_evidence_artifacts(self.runtime_root, {"console": [], "network": []}, redactor)
+                write_browser_evidence_artifacts(self.runtime_root, browser_evidence, redactor)
             except Exception as exc:
                 self._event("browser_evidence_failed", str(exc), redactor)
                 runtime_classification = runtime_classification or "invalid_result"
@@ -466,7 +503,7 @@ enabled_tools = ["qa_capture_screenshot"]
 PYTHONPATH = "{escaped_repo_root}"
 PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
-FLATKEY_BROWSER_QA_CDP_ENDPOINT = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_CDP_ENDPOINT"])}"
+FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"])}"
 
 [mcp_servers.broker]
 command = "{_toml_escape(sys.executable)}"
@@ -711,7 +748,11 @@ class ChromiumRuntime:
             "about:blank",
         ]
         self.process = self.popen_factory(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=False)
-        self.cdp_endpoint = self._wait_for_devtools_endpoint()
+        try:
+            self.cdp_endpoint = self._wait_for_devtools_endpoint()
+        except Exception:
+            self.stop()
+            raise
         return self
 
     def stop(self):
@@ -732,6 +773,161 @@ class ChromiumRuntime:
                 raise RuntimeError("chromium exited before cdp endpoint was ready")
             time.sleep(0.05)
         raise TimeoutError("chromium cdp endpoint timed out")
+
+
+class BrowserEvidenceHelperProcess:
+    def __init__(self, *, browser, runtime_root, redactor, popen_factory=subprocess.Popen, response_timeout_seconds=30):
+        self.browser = browser
+        self.runtime_root = os.path.realpath(runtime_root)
+        self.redactor = redactor
+        self.popen_factory = popen_factory
+        self.response_timeout_seconds = response_timeout_seconds
+        self.process = None
+        self._next_id = 0
+        self._lock = threading.Lock()
+
+    def start(self):
+        script = os.path.join(os.path.dirname(__file__), "browser_evidence_helper.cjs")
+        self.process = self.popen_factory(
+            ["node", script],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            bufsize=1,
+        )
+        try:
+            self._request(
+                "init",
+                {
+                    "runtimeDir": self.runtime_root,
+                    "cdpEndpoint": self.browser.cdp_endpoint,
+                    "sensitiveValues": self._protocol_secrets(),
+                },
+            )
+        except Exception:
+            _terminate_process(self.process)
+            raise
+        return self
+
+    def capture_screenshot(self, name):
+        response = self._request("captureScreenshot", {"name": name})
+        path = response.get("path") if isinstance(response, dict) else None
+        if not isinstance(path, str) or not path.startswith("screenshots/"):
+            raise RuntimeError("browser helper screenshot response invalid")
+        return path
+
+    def register_sensitive_value(self, value):
+        if not isinstance(value, str) or not value:
+            return
+        self._request("addSensitiveValues", {"values": [value]})
+
+    def flush(self):
+        response = self._request("flush", {})
+        if not isinstance(response, dict):
+            raise RuntimeError("browser helper evidence response invalid")
+        return response
+
+    def stop(self):
+        if self.process is None:
+            return
+        try:
+            self._request("close", {})
+        except Exception:
+            pass
+        _terminate_process(self.process)
+
+    def _request(self, command, params):
+        if self.process is None:
+            raise RuntimeError("browser helper not started")
+        with self._lock:
+            self._next_id += 1
+            frame = {"id": self._next_id, "command": command, "params": params}
+            encoded = json.dumps(frame, sort_keys=True)
+            if len(encoded.encode("utf-8")) > MAX_BROWSER_HELPER_FRAME_BYTES:
+                raise RuntimeError("browser helper request too large")
+            self.process.stdin.write(encoded + "\n")
+            self.process.stdin.flush()
+            line = self._read_response_line()
+            payload = self._validate_response(line)
+            if payload.get("id") != self._next_id:
+                raise RuntimeError("browser helper response id mismatch")
+            if payload.get("ok") is not True:
+                raise RuntimeError("browser helper command failed")
+            return payload.get("result", {})
+
+    def _read_response_line(self):
+        result_queue = queue.Queue(maxsize=1)
+
+        def read_line():
+            try:
+                result_queue.put(("line", self.process.stdout.readline()), block=False)
+            except Exception as exc:
+                try:
+                    result_queue.put(("error", exc), block=False)
+                except queue.Full:
+                    pass
+
+        thread = threading.Thread(target=read_line, daemon=True)
+        thread.start()
+        try:
+            kind, value = result_queue.get(timeout=self.response_timeout_seconds)
+        except queue.Empty as exc:
+            _terminate_process(self.process)
+            raise TimeoutError("browser helper response timed out") from exc
+        if kind == "error":
+            raise RuntimeError("browser helper response read failed") from value
+        return value
+
+    def _validate_response(self, line):
+        if not isinstance(line, str) or line == "":
+            raise RuntimeError("browser helper response missing")
+        if len(line.encode("utf-8", "replace")) > MAX_BROWSER_HELPER_FRAME_BYTES:
+            raise RuntimeError("browser helper response too large")
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("browser helper response malformed") from exc
+        if not isinstance(payload, dict) or set(payload) - {"id", "ok", "result", "error"}:
+            raise RuntimeError("browser helper response malformed")
+        if not isinstance(payload.get("id"), int) or not isinstance(payload.get("ok"), bool):
+            raise RuntimeError("browser helper response malformed")
+        if payload.get("ok") is True and "error" in payload:
+            raise RuntimeError("browser helper response malformed")
+        if payload.get("ok") is False and "result" in payload:
+            raise RuntimeError("browser helper response malformed")
+        return payload
+
+    def _protocol_secrets(self):
+        values = []
+        email = getattr(self.redactor, "email", None)
+        if email:
+            values.append(email)
+            local, _, domain = email.partition("@")
+            base_local, plus, tag = local.partition("+")
+            if base_local and domain:
+                values.append(f"{base_local}@{domain}")
+            if plus and tag:
+                values.append(tag)
+        password = getattr(self.redactor, "password", None)
+        if password:
+            values.append(password)
+        for secret in getattr(self.redactor, "extra_secrets", ()):
+            if secret:
+                values.append(secret)
+        return _dedupe_strings(values)
+
+
+def _dedupe_strings(values):
+    seen = set()
+    result = []
+    for value in values:
+        if isinstance(value, str) and value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
 
 
 def _chromium_executable():
@@ -766,8 +962,9 @@ def _read_devtools_endpoint(path):
 
 
 class RuntimeEvidenceSink:
-    def __init__(self, redactor, *, host="127.0.0.1", port=0, max_bytes=1024):
+    def __init__(self, redactor, *, evidence_helper=None, host="127.0.0.1", port=0, max_bytes=1024):
         self.redactor = redactor
+        self.evidence_helper = evidence_helper
         self.host = host
         self.port = port
         self.max_bytes = max_bytes
@@ -819,28 +1016,59 @@ class RuntimeEvidenceSink:
                 event_type = event.get("type")
                 try:
                     if event_type == "verification_code":
-                        owner.redactor.register_code(event.get("code"))
+                        code = event.get("code")
+                        owner.redactor.register_code(code)
+                        if owner.evidence_helper is not None:
+                            owner.evidence_helper.register_sensitive_value(code)
+                        self.send_response(204)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
                     elif event_type == "alias_restriction":
                         if not _is_alias_restriction_evidence(event):
                             raise ValueError("invalid alias restriction evidence")
                         owner.runtime_classification = "alias_restriction"
+                        self.send_response(204)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                    elif event_type == "screenshot":
+                        if owner.evidence_helper is None:
+                            raise ValueError("browser evidence helper unavailable")
+                        name = event.get("name")
+                        if not isinstance(name, str):
+                            raise ValueError("invalid screenshot request")
+                        logical_path = owner.evidence_helper.capture_screenshot(name)
+                        response = json.dumps({"path": logical_path}, sort_keys=True).encode("utf-8")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(response)))
+                        self.end_headers()
+                        self.wfile.write(response)
+                        return
                     else:
                         raise ValueError("invalid event type")
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, RuntimeError):
                     self.send_error(400)
                     return
-                self.send_response(204)
-                self.send_header("Content-Length", "0")
-                self.end_headers()
 
             def log_message(self, _format, *args):
                 return
 
-        self._server = _ThreadingHttpServer((self.host, self.port), Handler)
-        self.host, self.port = self._server.server_address[:2]
-        self.url = f"http://{self.host}:{self.port}/runtime-evidence"
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        self._thread.start()
+        try:
+            self._server = _ThreadingHttpServer((self.host, self.port), Handler)
+            self.host, self.port = self._server.server_address[:2]
+            self.url = f"http://{self.host}:{self.port}/runtime-evidence"
+            self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+            self._thread.start()
+        except Exception:
+            if self._server is not None:
+                try:
+                    self._server.shutdown()
+                except Exception:
+                    pass
+                self._server.server_close()
+            raise
         return self
 
     def stop(self):
@@ -916,11 +1144,23 @@ def _cleanup_runtime_child_dir(runtime_root, name):
     if name in ("", ".", "..") or os.path.sep in name or (os.path.altsep and os.path.altsep in name):
         raise RuntimeError("unsafe runtime child name")
     runtime_real = os.path.realpath(runtime_root)
-    target = os.path.realpath(os.path.join(runtime_real, name))
+    child_path = os.path.join(runtime_real, name)
+    if os.path.exists(child_path):
+        try:
+            child_stat = os.lstat(child_path)
+        except OSError as exc:
+            raise RuntimeError("runtime cleanup child unavailable") from exc
+        if os.path.islink(child_path) or _is_reparse_point(child_stat):
+            raise RuntimeError("runtime cleanup symlink rejected")
+    target = os.path.realpath(child_path)
     if not target.startswith(runtime_real + os.sep):
         raise RuntimeError("runtime cleanup path escaped root")
     if os.path.exists(target):
         shutil.rmtree(target)
+
+
+def _is_reparse_point(stat_result):
+    return bool(getattr(stat_result, "st_file_attributes", 0) & getattr(os.stat_result, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
 
 
 def _collect_artifact_paths(runtime_root):
@@ -1008,15 +1248,26 @@ def _validated_artifact_path(runtime_root, path):
     if not _allowed_artifact_logical_path(logical):
         raise ValueError("unexpected artifact name")
     runtime_real = os.path.realpath(runtime_root)
+    _reject_symlinked_artifact_components(runtime_real, logical)
     filesystem_path = os.path.join(runtime_real, *logical.split("/"))
-    if os.path.islink(filesystem_path):
-        raise ValueError("artifact symlink rejected")
     real = os.path.realpath(filesystem_path)
     if not real.startswith(runtime_real + os.sep):
         raise ValueError("artifact outside runtime root")
     if not os.path.isfile(real):
         raise ValueError("artifact must be a regular file")
     return logical, real, _artifact_content_type(logical)
+
+
+def _reject_symlinked_artifact_components(runtime_root, logical):
+    current = runtime_root
+    for part in logical.split("/"):
+        current = os.path.join(current, part)
+        try:
+            os.lstat(current)
+        except FileNotFoundError as exc:
+            raise ValueError("artifact must exist") from exc
+        if os.path.islink(current):
+            raise ValueError("artifact symlink rejected")
 
 
 def _normalize_artifact_logical_path(path):

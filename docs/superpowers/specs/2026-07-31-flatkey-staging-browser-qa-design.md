@@ -70,7 +70,7 @@ GitHub workflow_dispatch
        │
        ├─ QA supervisor
        │    ├─ 生成一次性 username / Gmail plus alias / password
-       │    ├─ 启动 Playwright MCP（headless Chromium）
+       │    ├─ 启动 supervisor-owned Chromium；Playwright MCP 仅通过 CDP attach
        │    ├─ 调用非交互 codex exec
        │    ├─ 约束阶段、时间、操作与 origin
        │    ├─ 收集并脱敏证据
@@ -193,10 +193,10 @@ Codex 显式调用 `$flatkey-new-user-onboarding`，但以目标结果而非坐�
 
 ## 9. 浏览器和网络控制
 
-- Chromium is supervisor-owned and launched with `--remote-debugging-port=0`, a runtime-local user data directory, the supervisor proxy, loopback proxy bypass removal, QUIC disabled, and non-proxied WebRTC disabled. Playwright MCP is fixed to `/usr/local/bin/playwright-mcp` and is invoked only with CDP attach arguments (`--cdp-endpoint`, timeout, and per-run output directory). MCP launch/browser/proxy flags are not trusted for the already-running browser.
+- Chromium is supervisor-owned and launched with `--remote-debugging-port=0`, a runtime-local user data directory, the supervisor proxy, loopback proxy bypass removal, QUIC disabled, and non-proxied WebRTC disabled. Playwright MCP is fixed to `/usr/local/bin/playwright-mcp` and is invoked only with CDP attach arguments (`--cdp-endpoint`, timeout, and per-run output directory). MCP launch/browser/proxy/headless flags are not trusted for the already-running browser.
 - Codex does not receive `browser_take_screenshot`. It receives `qa_capture_screenshot`, a restricted evidence MCP tool that accepts only a logical screenshot name. A supervisor-owned Node helper connects to the same CDP browser, masks inputs, textareas, contenteditable fields, verification-code fields, and known in-memory sensitive values, receives the Playwright screenshot as a Buffer, and writes the masked PNG privately under `screenshots/` with exclusive create semantics. The model cannot set paths, selectors, filenames, or disable masking.
 - The same helper keeps bounded console and network event buffers in memory. Raw browser events and Playwright MCP `playwright-output` are temporary only; before artifact upload, supervisor writes redacted `browser/console.jsonl` and projected `browser/network.jsonl` and then removes `playwright-output` in `finally`.
-- 使用固定版本 Playwright/Chromium，MCP 显式 `--headless`；运行时不执行 `npx ...@latest`。
+- 使用固定版本 Playwright/Chromium；Chromium 由 supervisor 启动，MCP 不携带 launch/headless flags，运行时不执行 `npx ...@latest`。
 - `codex exec` 使用非交互、ephemeral、JSON 事件流和最终 output schema；忽略本机用户配置，Skill、模型名和 QA policy 均来自镜像中的版本化配置，workflow 不接受任意模型输入。模型变更必须通过 PR，并记录在报告中。
 - Codex shell 保持 workspace-write 且禁用 shell 子进程网络；启动自检必须证明 shell 对任意外部 URL 和 Cloud metadata 均无法直连。Codex 主进程只保留调用 OpenAI 所需连接，页面操作通过 Playwright MCP 完成。
 - 顶层导航只允许两个 staging origin 和只读 docs origin。
@@ -273,7 +273,7 @@ finding 至少包含 severity（`critical|high|medium|low|info`）、标题、�
 
 ### 容器和工作流测试
 
-- 容器内 `codex --version`、Playwright/Chromium 和 MCP headless smoke test。
+- 容器内 `codex --version`、Playwright/Chromium 和 MCP CDP attach smoke test。
 - 镜像以非 root 用户运行，且不包含本机 OAuth 文件、`auth.json` 或 Secret 值。
 - workflow lint；确认只有 `workflow_dispatch`，主/cleanup 执行命令都包含 `--wait`，cleanup 使用 `if: always()`，并发为 1。
 - egress smoke：shell 直连、生产 origin、metadata、popup、redirect、service worker、websocket 和绕过 proxy 的连接均被拒绝；staging 与无 Cookie docs 仍可用。
@@ -313,7 +313,7 @@ finding 至少包含 severity（`critical|high|medium|low|info`）、标题、�
 
 - [OpenAI Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode) 与 [authentication](https://learn.chatgpt.com/docs/auth)：`codex exec`、ephemeral、JSON/schema output 和 CI API-key auth。
 - [OpenAI Codex skills](https://learn.chatgpt.com/docs/build-skills)：当前仓库级 Skill 发现路径为 `.agents/skills`。
-- [Playwright MCP](https://playwright.dev/docs/getting-started-mcp)、[Docker](https://playwright.dev/docs/docker) 与 [CI](https://playwright.dev/docs/ci)：Linux 容器固定浏览器依赖，MCP 显式 headless。
+- [Playwright MCP](https://playwright.dev/docs/getting-started-mcp)、[Docker](https://playwright.dev/docs/docker) 与 [CI](https://playwright.dev/docs/ci)：Linux 容器固定浏览器依赖，MCP 仅 attach 到 supervisor-owned Chromium。
 - [Google Cloud Run Jobs execute](https://docs.cloud.google.com/run/docs/execute/jobs) 与 [container contract](https://docs.cloud.google.com/run/docs/container-contract)：`execute --wait`、任务成功语义和容器 exit code。
 - [Google OAuth 2.0](https://developers.google.com/identity/protocols/oauth2)：External/Testing refresh token 的七天限制和常规撤销/过期条件。
 

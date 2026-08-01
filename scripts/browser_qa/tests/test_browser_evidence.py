@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 import io
+import time
 
 from scripts.browser_qa.flatkey_browser_qa import browser_evidence_mcp
 from scripts.browser_qa.flatkey_browser_qa import supervisor
@@ -32,10 +33,10 @@ class BrowserEvidenceTests(unittest.TestCase):
             + "\n"
         )
         stdout = io.StringIO()
-        with mock.patch.dict(os.environ, {"FLATKEY_BROWSER_QA_RUNTIME_DIR": "runtime", "FLATKEY_BROWSER_QA_CDP_ENDPOINT": "http://127.0.0.1:9222"}, clear=True), \
+        with mock.patch.dict(os.environ, {"FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL": "http://127.0.0.1:1/runtime-evidence"}, clear=True), \
             mock.patch.object(sys, "stdin", stdin), \
             mock.patch.object(sys, "stdout", stdout), \
-            mock.patch.object(browser_evidence_mcp, "_capture_with_node", return_value="screenshots/checkpoint.png") as capture:
+            mock.patch.object(browser_evidence_mcp, "_request_capture", return_value="screenshots/checkpoint.png") as capture:
             browser_evidence_mcp.main()
 
         responses = [json.loads(line) for line in stdout.getvalue().splitlines()]
@@ -44,7 +45,76 @@ class BrowserEvidenceTests(unittest.TestCase):
         self.assertEqual(responses[1]["error"]["code"], -32602)
         self.assertEqual(responses[2]["id"], "ok")
         self.assertEqual(responses[2]["result"]["content"][0]["text"], "screenshots/checkpoint.png")
-        capture.assert_called_once_with("runtime", "http://127.0.0.1:9222", "checkpoint")
+        capture.assert_called_once_with("http://127.0.0.1:1/runtime-evidence", "checkpoint")
+
+    def test_evidence_mcp_uses_runtime_control_url_not_cdp_or_secret_argv(self):
+        stdout = io.StringIO()
+        stdin = io.StringIO(json.dumps({
+            "jsonrpc": "2.0",
+            "id": "shot",
+            "method": "tools/call",
+            "params": {"name": "qa_capture_screenshot", "arguments": {"name": "checkpoint"}},
+        }) + "\n")
+        calls = []
+
+        def fake_request(url, name):
+            calls.append((url, name))
+            return "screenshots/checkpoint.png"
+
+        with mock.patch.dict(os.environ, {
+            "FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL": "http://127.0.0.1:7777/runtime-evidence",
+            "FLATKEY_BROWSER_QA_CDP_ENDPOINT": "http://127.0.0.1:9222",
+            "FLATKEY_BROWSER_QA_EMAIL": "owner+secret@gmail.com",
+            "FLATKEY_BROWSER_QA_PASSWORD": "pw-secret",
+        }, clear=True), \
+            mock.patch.object(sys, "stdin", stdin), \
+            mock.patch.object(sys, "stdout", stdout), \
+            mock.patch.object(browser_evidence_mcp, "_request_capture", fake_request):
+            browser_evidence_mcp.main()
+
+        self.assertEqual(calls, [("http://127.0.0.1:7777/runtime-evidence", "checkpoint")])
+        self.assertNotIn("9222", stdout.getvalue())
+        self.assertNotIn("pw-secret", stdout.getvalue())
+
+    def test_evidence_mcp_request_capture_uses_strict_loopback_url_and_no_proxy_opener(self):
+        class FakeResponse:
+            def read(self, _limit=-1):
+                return b'{"path":"screenshots/checkpoint.png"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        class FakeOpener:
+            def __init__(self):
+                self.requests = []
+
+            def open(self, request, timeout=0):
+                self.requests.append((request, timeout))
+                return FakeResponse()
+
+        opener = FakeOpener()
+        self.assertEqual(
+            browser_evidence_mcp._request_capture("http://127.0.0.1:7777/runtime-evidence", "checkpoint", opener=opener),
+            "screenshots/checkpoint.png",
+        )
+        self.assertEqual(opener.requests[0][0].full_url, "http://127.0.0.1:7777/runtime-evidence")
+
+        for bad in [
+            "https://127.0.0.1:7777/runtime-evidence",
+            "http://localhost:7777/runtime-evidence",
+            "http://127.0.0.1/runtime-evidence",
+            "http://127.0.0.1:0/runtime-evidence",
+            "http://127.0.0.1:7777/runtime-evidence/extra",
+            "http://127.0.0.1:7777/x/runtime-evidence",
+            "http://user:pass@127.0.0.1:7777/runtime-evidence",
+            "http://127.0.0.1:7777/runtime-evidence?proxy=1",
+        ]:
+            with self.subTest(bad=bad):
+                with self.assertRaises(RuntimeError):
+                    browser_evidence_mcp._request_capture(bad, "checkpoint", opener=opener)
 
     def test_node_helper_contract_rejects_paths_masks_buffer_screenshot_and_projects_events(self):
         helper_test = os.path.join(
@@ -91,6 +161,143 @@ class BrowserEvidenceTests(unittest.TestCase):
             too_many = {"console": [{"text": "x"}] * (supervisor.MAX_BROWSER_EVIDENCE_EVENTS + 1), "network": []}
             with self.assertRaises(RuntimeError):
                 supervisor.write_browser_evidence_artifacts(runtime_root, too_many, redactor)
+
+    def test_browser_evidence_helper_protocol_rejects_malformed_and_oversized_frames(self):
+        helper = supervisor.BrowserEvidenceHelperProcess(
+            browser=type("Browser", (), {"cdp_endpoint": "http://127.0.0.1:9222"})(),
+            runtime_root="runtime",
+            redactor=supervisor.Redactor(email="owner+alias@gmail.com", password="pw-secret"),
+            popen_factory=lambda *_args, **_kwargs: None,
+        )
+        self.assertEqual(helper._protocol_secrets(), [
+            "owner+alias@gmail.com",
+            "owner@gmail.com",
+            "alias",
+            "pw-secret",
+        ])
+        with self.assertRaises(RuntimeError):
+            helper._validate_response("x" * (supervisor.MAX_BROWSER_HELPER_FRAME_BYTES + 1))
+        with self.assertRaises(RuntimeError):
+            helper._validate_response(json.dumps({"ok": True, "extra": "bad"}))
+
+    def test_browser_evidence_helper_start_failure_terminates_launched_node(self):
+        class FailingInitProcess:
+            def __init__(self):
+                self.stdin = io.StringIO()
+                self.stdout = io.StringIO("")
+                self.terminated = False
+                self.killed = False
+                self.waited = False
+
+            def terminate(self):
+                self.terminated = True
+
+            def wait(self, timeout=None):
+                self.waited = True
+                return 0
+
+            def kill(self):
+                self.killed = True
+
+        launched = []
+
+        def popen_factory(*_args, **_kwargs):
+            process = FailingInitProcess()
+            launched.append(process)
+            return process
+
+        helper = supervisor.BrowserEvidenceHelperProcess(
+            browser=type("Browser", (), {"cdp_endpoint": "http://127.0.0.1:9222"})(),
+            runtime_root="runtime",
+            redactor=supervisor.Redactor(email="owner+alias@gmail.com", password="pw-secret"),
+            popen_factory=popen_factory,
+        )
+        with self.assertRaises(RuntimeError):
+            helper.start()
+
+        self.assertEqual(len(launched), 1)
+        self.assertTrue(launched[0].terminated)
+        self.assertTrue(launched[0].waited)
+
+    def test_browser_evidence_helper_hung_init_times_out_and_terminates_launched_node(self):
+        class BlockingStdout:
+            def readline(self):
+                time.sleep(5)
+                return ""
+
+        class HungInitProcess:
+            def __init__(self):
+                self.stdin = io.StringIO()
+                self.stdout = BlockingStdout()
+                self.terminated = False
+                self.waited = False
+                self.killed = False
+
+            def terminate(self):
+                self.terminated = True
+
+            def wait(self, timeout=None):
+                self.waited = True
+                return 0
+
+            def kill(self):
+                self.killed = True
+
+        launched = []
+
+        def popen_factory(*_args, **_kwargs):
+            process = HungInitProcess()
+            launched.append(process)
+            return process
+
+        helper = supervisor.BrowserEvidenceHelperProcess(
+            browser=type("Browser", (), {"cdp_endpoint": "http://127.0.0.1:9222"})(),
+            runtime_root="runtime",
+            redactor=supervisor.Redactor(),
+            popen_factory=popen_factory,
+            response_timeout_seconds=0.01,
+        )
+        with self.assertRaises(TimeoutError):
+            helper.start()
+
+        self.assertEqual(len(launched), 1)
+        self.assertTrue(launched[0].terminated)
+        self.assertTrue(launched[0].waited)
+
+    def test_runtime_evidence_sink_start_failure_closes_bound_server(self):
+        class FakeServer:
+            server_address = ("127.0.0.1", 8123)
+
+            def __init__(self):
+                self.shutdown_called = False
+                self.closed = False
+
+            def serve_forever(self):
+                return None
+
+            def shutdown(self):
+                self.shutdown_called = True
+
+            def server_close(self):
+                self.closed = True
+
+        class FailingThread:
+            def __init__(self, target, daemon=False):
+                self.target = target
+                self.daemon = daemon
+
+            def start(self):
+                raise RuntimeError("thread failed")
+
+        fake_server = FakeServer()
+        with mock.patch.object(supervisor, "_ThreadingHttpServer", lambda *_args, **_kwargs: fake_server), \
+            mock.patch.object(supervisor.threading, "Thread", FailingThread):
+            sink = supervisor.RuntimeEvidenceSink(supervisor.Redactor())
+            with self.assertRaises(RuntimeError):
+                sink.start()
+
+        self.assertTrue(fake_server.shutdown_called)
+        self.assertTrue(fake_server.closed)
 
 
 if __name__ == "__main__":

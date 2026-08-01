@@ -231,7 +231,7 @@ class StopFailEvidenceSink:
     runtime_classification = None
     url = "http://127.0.0.1:1/runtime-evidence"
 
-    def __init__(self, _redactor):
+    def __init__(self, _redactor, **_kwargs):
         self.started = False
 
     def start(self):
@@ -239,6 +239,43 @@ class StopFailEvidenceSink:
 
     def stop(self):
         raise RuntimeError("evidence sink stop failed")
+
+
+class FakeBrowserEvidenceHelper:
+    def __init__(self, *, browser, runtime_root, redactor, popen_factory):
+        self.browser = browser
+        self.runtime_root = runtime_root
+        self.redactor = redactor
+        self.popen_factory = popen_factory
+        self.started = False
+        self.stopped = False
+        self.flushed = False
+
+    def start(self):
+        self.started = True
+        return self
+
+    def capture_screenshot(self, name):
+        return f"screenshots/{name}.png"
+
+    def register_sensitive_value(self, value):
+        self.redactor.register_code(value)
+
+    def flush(self):
+        self.flushed = True
+        return {
+            "console": [{"type": "log", "text": "console secret sk-12345678"}],
+            "network": [{
+                "url": "https://staging-console.flatkey.ai/api?token=network-secret",
+                "method": "POST",
+                "status": 200,
+                "timing": {"startTime": 1},
+                "headers": {"cookie": "raw-cookie"},
+            }],
+        }
+
+    def stop(self):
+        self.stopped = True
 
 
 def env():
@@ -297,6 +334,7 @@ class SupervisorTests(unittest.TestCase):
         supervisor_kwargs = {}
         if thread_factory is not None:
             supervisor_kwargs["thread_factory"] = thread_factory
+        supervisor_kwargs["evidence_helper_factory"] = FakeBrowserEvidenceHelper
         supervisor_kwargs["browser_factory"] = lambda **_kwargs: type(
             "FakeBrowser",
             (),
@@ -445,7 +483,7 @@ class SupervisorTests(unittest.TestCase):
             runtime_classification = None
             url = "http://127.0.0.1:1/runtime-evidence"
 
-            def __init__(self, _redactor):
+            def __init__(self, _redactor, **_kwargs):
                 pass
 
             def start(self):
@@ -482,6 +520,7 @@ class SupervisorTests(unittest.TestCase):
                 proxy_factory=lambda: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
                 browser_factory=lambda **kwargs: OrderedBrowser(**{**kwargs, "popen_factory": browser_popen, "executable": "chromium", "clock": FakeClock()}),
             )
             outcome = sup.run(initial_result=valid_result())
@@ -500,8 +539,44 @@ class SupervisorTests(unittest.TestCase):
             with open(codex_config, encoding="utf-8") as handle:
                 config_text = handle.read()
             self.assertIn('FLATKEY_BROWSER_QA_CDP_ENDPOINT = "http://127.0.0.1:9222"', config_text)
-            self.assertEqual(ordering, ["evidence-start", "browser-start", "evidence-stop", "browser-stop"])
+            self.assertEqual(ordering, ["browser-start", "evidence-start", "evidence-stop", "browser-stop"])
             self.assertTrue(browser_process.terminated)
+
+    def test_browser_start_timeout_after_launch_terminates_browser_cleanup_runs_and_codex_never_starts(self):
+        browser_process = RecordingBrowserProcess()
+
+        def browser_popen(args, **kwargs):
+            return browser_process
+
+        class TimeoutClock(FakeClock):
+            def monotonic(self):
+                self.now += 1
+                return self.now
+
+        cleanup = FakeCleanup()
+        with tempfile.TemporaryDirectory() as runtime_root:
+            runner = FakeSubprocess(FakeProcess(0))
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=runtime_root,
+                subprocess_runner=runner,
+                uploader=FakeUploader(),
+                cleanup_runner=cleanup,
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
+                browser_factory=lambda **kwargs: supervisor.ChromiumRuntime(
+                    **{**kwargs, "popen_factory": browser_popen, "executable": "chromium", "clock": TimeoutClock(), "timeout_seconds": 0}
+                ),
+            )
+            outcome = sup.run(initial_result=valid_result())
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(len(cleanup.calls), 1)
+        self.assertTrue(browser_process.terminated)
+        self.assertGreaterEqual(browser_process.wait_calls, 1)
 
     def test_browser_start_failure_still_runs_cleanup_and_does_not_start_codex(self):
         class FailingBrowser:
@@ -547,6 +622,7 @@ class SupervisorTests(unittest.TestCase):
                 proxy_factory=lambda: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
                 browser_factory=lambda **_kwargs: type("StartedBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
             )
             outcome = sup.run(initial_result=valid_result())
@@ -555,6 +631,89 @@ class SupervisorTests(unittest.TestCase):
         self.assertFalse(os.path.exists(output_dir))
         uploaded = [path for _manifest, paths in uploader.uploaded for path in paths]
         self.assertTrue(all("playwright-output" not in path for path in uploaded))
+
+    def test_cleanup_runtime_child_dir_rejects_symlink_without_deleting_target(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("symlink creation unavailable")
+        with tempfile.TemporaryDirectory() as runtime_root:
+            target = os.path.join(runtime_root, "screenshots")
+            os.mkdir(target)
+            marker = os.path.join(target, "keep.txt")
+            with open(marker, "w", encoding="utf-8") as handle:
+                handle.write("keep")
+            link = os.path.join(runtime_root, "playwright-output")
+            try:
+                os.symlink(target, link, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink creation unavailable")
+
+            with self.assertRaises(RuntimeError):
+                supervisor._cleanup_runtime_child_dir(runtime_root, "playwright-output")
+
+            self.assertTrue(os.path.exists(marker))
+            self.assertTrue(os.path.islink(link))
+
+    def test_cleanup_runtime_child_dir_lstats_and_rejects_symlink_before_rmtree(self):
+        with tempfile.TemporaryDirectory() as runtime_root:
+            target = os.path.join(runtime_root, "playwright-output")
+            os.mkdir(target)
+            with mock.patch.object(supervisor.os.path, "islink", return_value=True), \
+                mock.patch.object(supervisor.shutil, "rmtree") as rmtree:
+                with self.assertRaises(RuntimeError):
+                    supervisor._cleanup_runtime_child_dir(runtime_root, "playwright-output")
+            rmtree.assert_not_called()
+
+    def test_supervisor_writes_flushed_browser_evidence_buffers_not_empty_placeholders(self):
+        with tempfile.TemporaryDirectory() as runtime_root:
+            process = FakeProcess(0)
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=runtime_root,
+                subprocess_runner=FakeSubprocess(process),
+                uploader=FakeUploader(),
+                cleanup_runner=FakeCleanup(),
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
+                browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
+            )
+            outcome = sup.run(initial_result=valid_result())
+
+            with open(os.path.join(runtime_root, "browser", "console.jsonl"), encoding="utf-8") as handle:
+                console_lines = [json.loads(line) for line in handle]
+            with open(os.path.join(runtime_root, "browser", "network.jsonl"), encoding="utf-8") as handle:
+                network_lines = [json.loads(line) for line in handle]
+
+        self.assertEqual(outcome.status, "passed")
+        self.assertEqual(console_lines[0]["text"], "console secret [REDACTED_API_KEY]")
+        self.assertEqual(set(network_lines[0]), {"url", "method", "status", "timing"})
+        self.assertNotIn("network-secret", json.dumps(network_lines))
+
+    def test_browser_evidence_flush_timeout_marks_infrastructure_and_cleanup_still_runs(self):
+        class TimeoutFlushHelper(FakeBrowserEvidenceHelper):
+            def flush(self):
+                raise TimeoutError("browser helper response timed out")
+
+        cleanup = FakeCleanup()
+        with tempfile.TemporaryDirectory() as runtime_root:
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=runtime_root,
+                subprocess_runner=FakeSubprocess(FakeProcess(0)),
+                uploader=FakeUploader(),
+                cleanup_runner=cleanup,
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                evidence_helper_factory=TimeoutFlushHelper,
+                browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
+            )
+            outcome = sup.run(initial_result=valid_result())
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(len(cleanup.calls), 1)
+        self.assertTrue(any(event["kind"] == "browser_evidence_flush_failed" for event in sup.events))
 
     def test_nonzero_invalid_timeout_sigterm_upload_and_cleanup_failures_still_cleanup_then_upload_with_priority(self):
         self.assertEqual(self.run_supervisor(FakeProcess(7), result_payload=valid_result())[0].status, "infrastructure_failed")
@@ -701,6 +860,7 @@ class SupervisorTests(unittest.TestCase):
                 proxy_factory=lambda: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
                 browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
             )
             process_holder["sup"] = sup
@@ -769,6 +929,7 @@ class SupervisorTests(unittest.TestCase):
                 proxy_factory=lambda: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
                 signal_module=signals,
                 browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
             )
@@ -895,6 +1056,21 @@ class SupervisorTests(unittest.TestCase):
                 if symlink_path is not None:
                     with self.assertRaises(ValueError):
                         uploader.upload("manifest.json", ["screenshots/link.png", "manifest.json"])
+                linked_parent = os.path.join(tmp, "linked-screenshots")
+                try:
+                    os.symlink(screenshot_dir, linked_parent)
+                except (OSError, NotImplementedError):
+                    linked_parent = None
+                if linked_parent is not None:
+                    original = uploader.runtime_root
+                    try:
+                        uploader.runtime_root = tmp
+                        os.rename(screenshot_dir, os.path.join(tmp, "screenshots-real"))
+                        os.rename(linked_parent, screenshot_dir)
+                        with self.assertRaises(ValueError):
+                            uploader.upload("manifest.json", ["screenshots/safe.png", "manifest.json"])
+                    finally:
+                        uploader.runtime_root = original
 
     def test_gcs_uploader_rejects_unsafe_artifacts_and_lazy_token_failure_happens_after_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:

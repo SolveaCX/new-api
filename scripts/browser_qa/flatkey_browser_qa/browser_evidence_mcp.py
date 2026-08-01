@@ -1,12 +1,12 @@
 import json
 import os
-import subprocess
 import sys
+import urllib.request
+from urllib.parse import urlsplit
 
 
 def main():
-    runtime_dir = os.environ["FLATKEY_BROWSER_QA_RUNTIME_DIR"]
-    cdp_endpoint = os.environ["FLATKEY_BROWSER_QA_CDP_ENDPOINT"]
+    evidence_url = os.environ["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"]
     for line in sys.stdin:
         try:
             request = json.loads(line)
@@ -46,7 +46,7 @@ def main():
                 _write_error(request_id, -32602, "invalid screenshot request")
                 continue
             try:
-                logical = _capture_with_node(runtime_dir, cdp_endpoint, name)
+                logical = _request_capture(evidence_url, name)
             except Exception as exc:
                 _write_error(request_id, -32000, str(exc))
                 continue
@@ -55,19 +55,51 @@ def main():
             _write_result(request_id, {})
 
 
-def _capture_with_node(runtime_dir, cdp_endpoint, name):
-    script = os.path.join(os.path.dirname(__file__), "browser_evidence_mcp_capture.cjs")
-    result = subprocess.run(
-        ["node", script, runtime_dir, cdp_endpoint, name],
-        text=True,
-        capture_output=True,
-        timeout=30,
-        check=False,
+def _request_capture(evidence_url, name, *, opener=None):
+    endpoint = _validate_evidence_url(evidence_url)
+    selected_opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    body = json.dumps({"type": "screenshot", "name": name}, sort_keys=True).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
-    if result.returncode != 0:
-        raise RuntimeError("screenshot capture failed")
-    payload = json.loads(result.stdout)
-    return payload["path"]
+    with selected_opener.open(request, timeout=30) as response:
+        raw = response.read(4097)
+    if len(raw) > 4096:
+        raise RuntimeError("screenshot response too large")
+    payload = json.loads(raw.decode("utf-8"))
+    path = payload.get("path") if isinstance(payload, dict) else None
+    if not isinstance(path, str) or not path.startswith("screenshots/"):
+        raise RuntimeError("screenshot response invalid")
+    return path
+
+
+def _validate_evidence_url(evidence_url):
+    if not isinstance(evidence_url, str) or not evidence_url:
+        raise RuntimeError("runtime evidence endpoint invalid")
+    try:
+        parsed = urlsplit(evidence_url)
+    except ValueError as exc:
+        raise RuntimeError("runtime evidence endpoint invalid") from exc
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path != "/runtime-evidence"
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError("runtime evidence endpoint invalid")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("runtime evidence endpoint invalid") from exc
+    if not isinstance(port, int) or port <= 0 or port > 65535:
+        raise RuntimeError("runtime evidence endpoint invalid")
+    return f"http://127.0.0.1:{port}/runtime-evidence"
 
 
 def _write_result(request_id, result):
