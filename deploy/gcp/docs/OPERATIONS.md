@@ -401,20 +401,36 @@ Apply only from the same review shell before the `EXIT` trap removes `plan_path`
 
 Terraform creates only the Secret Manager containers. Secret versions are operator-owned.
 
-Generate a random 32-byte identity seed as base64 and pipe it directly to Secret Manager:
+Generate a random 32-byte identity seed as base64, validate that it decodes to exactly 32 bytes, and only then launch `gcloud` with the payload on stdin:
 
 ```bash
 # Mutating; operator review required. No secret value appears in argv.
 set -euo pipefail
 set +x
 
-python3 - <<'PY' | gcloud secrets versions add flatkey-browser-qa-identity-seed \
-  --project=vocai-gemini-prod \
-  --data-file=-
+python3 - <<'PY'
 import base64
 import os
-import sys
-sys.stdout.write(base64.b64encode(os.urandom(32)).decode("ascii"))
+import subprocess
+
+payload = base64.b64encode(os.urandom(32))
+decoded = base64.b64decode(payload, validate=True)
+if len(decoded) != 32:
+    raise SystemExit("identity seed must decode to exactly 32 bytes")
+
+subprocess.run(
+    [
+        "gcloud",
+        "secrets",
+        "versions",
+        "add",
+        "flatkey-browser-qa-identity-seed",
+        "--project=vocai-gemini-prod",
+        "--data-file=-",
+    ],
+    input=payload,
+    check=True,
+)
 PY
 ```
 
@@ -425,15 +441,32 @@ Add the dedicated Codex API key through non-echoing stdin:
 set -euo pipefail
 set +x
 
-IFS= read -rsp "Dedicated Codex API key: " CODEX_API_KEY
-printf '\n'
-printf '%s' "$CODEX_API_KEY" | gcloud secrets versions add flatkey-browser-qa-codex-api-key \
-  --project=vocai-gemini-prod \
-  --data-file=-
-unset CODEX_API_KEY
+python3 - <<'PY'
+import getpass
+import subprocess
+
+secret = getpass.getpass("Dedicated Codex API key: ")
+if not secret or not secret.strip():
+    raise SystemExit("Codex API key must be non-empty")
+payload = secret.encode("utf-8")
+
+subprocess.run(
+    [
+        "gcloud",
+        "secrets",
+        "versions",
+        "add",
+        "flatkey-browser-qa-codex-api-key",
+        "--project=vocai-gemini-prod",
+        "--data-file=-",
+    ],
+    input=payload,
+    check=True,
+)
+PY
 ```
 
-Transform the existing local Gmail OAuth credential JSON in memory and pipe only the canonical broker payload to Secret Manager. Do not copy the source file, do not print the transformed JSON, and do not commit either file.
+Transform the existing local post-consent Gmail OAuth credential JSON in memory and pass only the canonical broker payload to Secret Manager. Do not copy the source file, do not print the transformed JSON, and do not commit either file.
 
 ```bash
 # Mutating; operator review required. Set GMAIL_OAUTH_SOURCE to the local credential file path.
@@ -444,39 +477,84 @@ IFS= read -rsp "Local Gmail OAuth credential JSON path: " GMAIL_OAUTH_SOURCE
 printf '\n'
 export GMAIL_OAUTH_SOURCE
 
-python3 - <<'PY' | gcloud secrets versions add flatkey-browser-qa-gmail-oauth \
-  --project=vocai-gemini-prod \
-  --data-file=-
+python3 - <<'PY'
 import json
 import os
-import sys
+import subprocess
+
+GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly"
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 source = os.environ["GMAIL_OAUTH_SOURCE"]
+if not source.strip():
+    raise SystemExit("GMAIL_OAUTH_SOURCE must be non-empty")
 with open(source, encoding="utf-8") as handle:
     raw = json.load(handle)
+if not isinstance(raw, dict):
+    raise SystemExit("OAuth credential JSON must be an object")
 
 client = raw.get("installed") or raw.get("web") or raw
-scopes = raw.get("scopes") or raw.get("scope") or ["https://www.googleapis.com/auth/gmail.readonly"]
+if not isinstance(client, dict):
+    raise SystemExit("OAuth client fields must be an object")
+
+missing = []
+if not isinstance(raw.get("refresh_token"), str) or not raw["refresh_token"].strip():
+    missing.append("refresh_token")
+for name in ("client_id", "client_secret"):
+    if not isinstance(client.get(name), str) or not client[name].strip():
+        missing.append(name)
+if missing:
+    raise SystemExit("OAuth credential JSON missing required post-consent field(s): " + ", ".join(sorted(missing)))
+
+token_uri = client.get("token_uri") or raw.get("token_uri")
+if token_uri != GOOGLE_TOKEN_URI:
+    raise SystemExit("OAuth token_uri must be exactly https://oauth2.googleapis.com/token")
+
+if "scopes" in raw:
+    scopes = raw["scopes"]
+elif "scope" in raw:
+    scopes = raw["scope"]
+else:
+    raise SystemExit("OAuth credential JSON must explicitly contain scope or scopes")
 if isinstance(scopes, str):
     scopes = scopes.split()
+elif isinstance(scopes, list) and all(isinstance(item, str) for item in scopes):
+    scopes = list(scopes)
+else:
+    raise SystemExit("OAuth scopes must be a string or list of strings")
+if scopes != [GMAIL_READONLY]:
+    raise SystemExit("OAuth scopes must be exactly the singleton gmail.readonly scope")
 
 payload = {
     "refresh_token": raw["refresh_token"],
-    "token_uri": client.get("token_uri") or raw.get("token_uri") or "https://oauth2.googleapis.com/token",
+    "token_uri": token_uri,
     "client_id": client["client_id"],
     "client_secret": client["client_secret"],
     "scopes": scopes,
 }
-if set(payload["scopes"]) != {"https://www.googleapis.com/auth/gmail.readonly"}:
-    raise SystemExit("OAuth scopes must be exactly gmail.readonly")
+payload_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
-json.dump(payload, sys.stdout, separators=(",", ":"))
+subprocess.run(
+    [
+        "gcloud",
+        "secrets",
+        "versions",
+        "add",
+        "flatkey-browser-qa-gmail-oauth",
+        "--project=vocai-gemini-prod",
+        "--data-file=-",
+    ],
+    input=payload_bytes,
+    check=True,
+)
 PY
 
 unset GMAIL_OAUTH_SOURCE
 ```
 
-The source OAuth file must contain a `refresh_token`. If it does not, use the Google OAuth app's existing client to perform a one-time local authorization outside the repo with `access_type=offline`, `prompt=consent`, and exactly `https://www.googleapis.com/auth/gmail.readonly`; save the resulting credential JSON only in an operator-owned `0600` local path, then rerun the transform above. Do not use a broad Gmail scope, do not use a production mailbox other than the approved base mailbox, and do not copy the credential JSON into the repository.
+The originally downloaded Google OAuth client-secret JSON is insufficient by itself: it normally contains `installed` or `web` client metadata, but no `refresh_token` and no granted `scopes`. The source for the transform must be a post-consent credential JSON containing `refresh_token` plus explicit `scope` or `scopes`. If it does not, use the Google OAuth app's existing client to perform a one-time local authorization outside the repo with `access_type=offline`, `prompt=consent`, and exactly `https://www.googleapis.com/auth/gmail.readonly`; save the resulting credential JSON only in an operator-owned `0600` local path, then rerun the transform above. Do not use a broad Gmail scope, do not use a production mailbox other than the approved base mailbox, and do not copy the credential JSON into the repository.
+
+Reviewer-only self-check for the rewritten snippets: each snippet constructs and validates `payload` or `payload_bytes` before `subprocess.run(...)`; every `raise SystemExit(...)` path occurs before the `gcloud` process is launched, so parse/validation failure cannot create an empty or malformed Secret Manager version. Static syntax validation can be done locally without invoking `gcloud` by extracting the Python heredocs from this file and running `ast.parse` on each snippet.
 
 ### 3. Set the GitHub repository variable
 
@@ -516,7 +594,7 @@ Repeatability is accepted only after all three steps are complete:
 
 ### 5. Verify broker IAM denial
 
-The broker must deny unauthenticated calls and calls from an identity that is not `flatkey-browser-qa-runtime`. Use the Terraform output for the broker URI; do not hardcode the generated `run.app` URL.
+The broker must deny unauthenticated calls and calls from an explicitly reviewed identity that is not `flatkey-browser-qa-runtime`. Use the Terraform output for the broker URI; do not hardcode the generated `run.app` URL.
 
 ```bash
 # Read-only verification example.
@@ -525,6 +603,44 @@ set +x
 
 cd deploy/gcp/envs/prod
 BROKER_URI="$(terraform output -raw browser_qa_broker_uri)"
+NEGATIVE_PROBE_SA="flatkey-browser-qa-cleanup@vocai-gemini-prod.iam.gserviceaccount.com"
+
+case "$NEGATIVE_PROBE_SA" in
+  flatkey-browser-qa-runtime@vocai-gemini-prod.iam.gserviceaccount.com|\
+  flatkey-browser-qa-broker@vocai-gemini-prod.iam.gserviceaccount.com|\
+  flatkey-browser-qa-deployer@vocai-gemini-prod.iam.gserviceaccount.com)
+    echo "negative probe must not be runtime, broker, or deployer" >&2
+    exit 1
+    ;;
+esac
+
+echo "Before using this negative-control SA, review org/project/service IAM and confirm it has no roles/run.invoker on ${BROKER_URI}."
+echo "The operator must have impersonation authority, such as roles/iam.serviceAccountTokenCreator, on ${NEGATIVE_PROBE_SA}."
+
+service_invoker_binding="$(gcloud run services get-iam-policy flatkey-staging-browser-qa-broker \
+  --project=vocai-gemini-prod \
+  --region=us-west1 \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/run.invoker AND bindings.members=serviceAccount:${NEGATIVE_PROBE_SA}" \
+  --format='value(bindings.role)')"
+test -z "$service_invoker_binding"
+
+project_invoker_binding="$(gcloud projects get-iam-policy vocai-gemini-prod \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/run.invoker AND bindings.members=serviceAccount:${NEGATIVE_PROBE_SA}" \
+  --format='value(bindings.role)')"
+test -z "$project_invoker_binding"
+
+ORG_ID="<gcp-org-id>"
+if [ "$ORG_ID" = "<gcp-org-id>" ]; then
+  echo "Set ORG_ID and check organization IAM for roles/run.invoker before continuing." >&2
+  exit 1
+fi
+org_invoker_binding="$(gcloud organizations get-iam-policy "$ORG_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/run.invoker AND bindings.members=serviceAccount:${NEGATIVE_PROBE_SA}" \
+  --format='value(bindings.role)')"
+test -z "$org_invoker_binding"
 
 status="$(curl -sS -o /dev/null -w '%{http_code}' \
   -X POST \
@@ -537,7 +653,10 @@ token_file="$(mktemp)"
 header_file="$(mktemp)"
 chmod 600 "$token_file" "$header_file"
 trap 'rm -f "$token_file" "$header_file"' EXIT
-gcloud auth print-identity-token --audiences="$BROKER_URI" > "$token_file"
+gcloud auth print-identity-token \
+  --audiences="$BROKER_URI" \
+  --impersonate-service-account="$NEGATIVE_PROBE_SA" \
+  > "$token_file"
 { printf 'Authorization: Bearer '; cat "$token_file"; printf '\n'; } > "$header_file"
 status="$(curl -sS -o /dev/null -w '%{http_code}' \
   -X POST \
@@ -548,43 +667,101 @@ status="$(curl -sS -o /dev/null -w '%{http_code}' \
 test "$status" = "401" -o "$status" = "403"
 ```
 
-Abort if either request reaches application-level validation, returns `200`, or returns a broker JSON error such as `invalid_fields`. That means IAM is not enforcing the private broker boundary.
+Abort if the negative-control identity is the operator Owner, runtime, broker, or deployer identity; if IAM review shows it has `roles/run.invoker` at org/project/service scope; or if the operator lacks impersonation authority for that service account. Abort if either request reaches application-level validation, returns `200`, or returns a broker JSON error such as `invalid_fields`. That means IAM is not enforcing the private broker boundary.
 
-### 6. First core replay
+### 6. Dispatch core or normal and capture the exact run id
 
-Run `core` first. It exercises the onboarding replay and stops before the five-minute exploration phase.
+Run `core` first. It exercises the onboarding replay and stops before the five-minute exploration phase. Run `normal` only after `core` finishes and cleanup succeeds; `normal` performs core replay plus the bounded exploration phase, capped by the implementation at five minutes or thirty browser actions.
+
+Use this helper for both modes. It captures the UTC dispatch timestamp and exact `staging` head SHA before dispatch, then polls `workflow_dispatch` runs by `databaseId`, `createdAt`, `headSha`, `status`, and `url`. It prints `ORIGINAL_GITHUB_RUN_ID` only when exactly one post-dispatch run matches the captured SHA.
 
 ```bash
 # Mutating; operator review required. Starts a GitHub Actions run on the staging ref.
-gh workflow run gcp-browser-qa.yml \
-  --repo SolveaCX/new-api \
-  --ref staging \
-  -f mode=core
+set -euo pipefail
+set +x
 
-gh run list \
-  --repo SolveaCX/new-api \
-  --workflow gcp-browser-qa.yml \
-  --branch staging \
-  --limit 1
+dispatch_browser_qa() {
+  mode="$1"
+  case "$mode" in
+    core|normal) ;;
+    *) echo "mode must be core or normal" >&2; return 2 ;;
+  esac
+
+  DISPATCHED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  STAGING_HEAD_SHA="$(gh api repos/SolveaCX/new-api/git/ref/heads/staging --jq '.object.sha')"
+
+  gh workflow run gcp-browser-qa.yml \
+    --repo SolveaCX/new-api \
+    --ref staging \
+    -f mode="$mode"
+
+  python3 - "$DISPATCHED_AT_UTC" "$STAGING_HEAD_SHA" <<'PY'
+import datetime as dt
+import json
+import subprocess
+import sys
+import time
+
+created_after = dt.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+head_sha = sys.argv[2]
+deadline = time.time() + 120
+
+while True:
+    raw = subprocess.check_output(
+        [
+            "gh",
+            "run",
+            "list",
+            "--repo",
+            "SolveaCX/new-api",
+            "--workflow",
+            "gcp-browser-qa.yml",
+            "--branch",
+            "staging",
+            "--event",
+            "workflow_dispatch",
+            "--limit",
+            "20",
+            "--json",
+            "databaseId,createdAt,headSha,status,url",
+        ],
+        text=True,
+    )
+    runs = json.loads(raw)
+    matches = []
+    for run in runs:
+        created = dt.datetime.fromisoformat(run["createdAt"].replace("Z", "+00:00"))
+        if created >= created_after and run["headSha"] == head_sha:
+            matches.append(run)
+    if len(matches) == 1:
+        run = matches[0]
+        print(f"ORIGINAL_GITHUB_RUN_ID={run['databaseId']}")
+        print(f"RUN_STATUS={run['status']}")
+        print(f"RUN_URL={run['url']}")
+        break
+    if len(matches) > 1:
+        print("ABORT: multiple workflow_dispatch runs match the dispatch timestamp and staging SHA", file=sys.stderr)
+        for run in matches:
+            print(f"  {run['databaseId']} {run['createdAt']} {run['headSha']} {run['status']} {run['url']}", file=sys.stderr)
+        raise SystemExit(1)
+    if time.time() > deadline:
+        raise SystemExit("ABORT: no matching workflow_dispatch run found; use GitHub UI for manual disambiguation")
+    time.sleep(5)
+PY
+}
+
+# First run:
+dispatch_browser_qa core
+
+# After core passes and cleanup succeeds, run:
+# dispatch_browser_qa normal
 ```
 
-Record the GitHub run id from the run list or UI. Do not use a workflow attempt number as the run id.
-
-### 7. Normal five-minute / thirty-action exploration
-
-Run `normal` only after `core` finishes and cleanup succeeds. `normal` performs core replay plus the bounded exploration phase, capped by the implementation at five minutes or thirty browser actions.
-
-```bash
-# Mutating; operator review required. Starts a full browser QA run on the staging ref.
-gh workflow run gcp-browser-qa.yml \
-  --repo SolveaCX/new-api \
-  --ref staging \
-  -f mode=normal
-```
+Record `ORIGINAL_GITHUB_RUN_ID` from `databaseId` for the specific `core` or `normal` run. Do not use a workflow attempt number. If the matcher finds zero or multiple runs, abort and disambiguate manually in GitHub Actions before any cleanup-only dispatch.
 
 The GitHub summary must show only status, replay status, exploration status/actions, finding count, cleanup status, and the private GCS URI. Abort and redact the run if a secret, full Gmail address, full plus alias, verification code, password, Cookie, Authorization header, or full API key appears in the summary.
 
-### 8. Private GCS report lookup
+### 7. Private GCS report lookup
 
 Use the GitHub Summary `gcs_uri`, or derive the manifest path from the original GitHub run id:
 
@@ -608,7 +785,7 @@ python3 -m json.tool "$report_dir/manifest.json"
 
 Report objects are private and expire by bucket lifecycle after 14 days. Do not upload report downloads to issues, PR comments, tickets, or chat unless they have been manually redacted again.
 
-### 9. Cleanup-only with the original GitHub run id
+### 8. Cleanup-only with the original GitHub run id
 
 Use `cleanup-only` when the main run was cancelled, the platform interrupted the workflow before cleanup completed, or cleanup needs to be retried. Always use the original GitHub run id for the run that created the staging identity.
 
@@ -625,7 +802,7 @@ gh workflow run gcp-browser-qa.yml \
 
 Abort if `original_run_id` is unknown. Do not substitute the cleanup workflow's new run id; that would derive a different identity and leave the original account unproven.
 
-### 10. `invalid_grant` recovery
+### 9. `invalid_grant` recovery
 
 `gmail_invalid_grant` from the broker is an infrastructure failure, not a retryable app failure.
 
@@ -640,7 +817,7 @@ Recovery:
 
 Abort if the new OAuth grant requires a broader Gmail scope, if the base Gmail profile is not the expected base mailbox, or if `gmail_invalid_grant` repeats after publication and secret rotation.
 
-### 11. Gmail plus-alias restriction failure
+### 10. Gmail plus-alias restriction failure
 
 Browser QA requires staging to accept Gmail plus aliases generated as `+flatkey-qa-<run-id>-<nonce>`. If the workflow fails before account creation with an alias restriction error, classify it as staging configuration failure.
 
