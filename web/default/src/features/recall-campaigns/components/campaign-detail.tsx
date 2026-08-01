@@ -38,6 +38,8 @@ import type {
 } from '../types'
 import { CampaignActionDialog } from './campaign-action-dialog'
 import { CampaignEditor } from './campaign-editor'
+import { CampaignExclusionDialog } from './campaign-exclusion-dialog'
+import { CampaignMetricCardSection } from './campaign-metric-drawer'
 import { CampaignPreviewDialog } from './campaign-preview-dialog'
 
 const DETAIL_PAGE_SIZE = 100
@@ -101,6 +103,7 @@ interface CampaignDetailProps {
 export function CampaignDetail(props: CampaignDetailProps) {
   const { t } = useTranslation()
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [exclusionsOpen, setExclusionsOpen] = useState(false)
   const [recipientPage, setRecipientPage] = useState(1)
   const [eventPage, setEventPage] = useState(1)
   const [focusBlocker, setFocusBlocker] =
@@ -191,6 +194,9 @@ export function CampaignDetail(props: CampaignDetailProps) {
         <Button variant='outline' onClick={() => setPreviewOpen(true)}>
           {t('Preview')}
         </Button>
+        <Button variant='outline' onClick={() => setExclusionsOpen(true)}>
+          {t('Manage exclusions')}
+        </Button>
         <Button variant='outline' onClick={downloadExport}>
           {t('Export CSV')}
         </Button>
@@ -232,32 +238,10 @@ export function CampaignDetail(props: CampaignDetailProps) {
             <CardContent>
               {metrics ? (
                 <>
-                  <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
-                    {[
-                      ['Candidates', metrics.candidate_count],
-                      ['Enrolled', metrics.enrolled_count],
-                      ['Excluded', metrics.excluded_count],
-                      ['Observed clicks', metrics.observed_click_count],
-                      ...(isPromotion
-                        ? [
-                            ['Direct conversions', metrics.direct_count],
-                            ['Assisted conversions', metrics.assisted_count],
-                            ['No-coupon conversions', metrics.no_coupon_count],
-                          ]
-                        : []),
-                      ['Accepted messages', metrics.messages_accepted_count],
-                    ].map(([label, value]) => (
-                      <div
-                        className='rounded-lg border p-3'
-                        key={String(label)}
-                      >
-                        <div className='text-muted-foreground text-xs'>
-                          {t(String(label))}
-                        </div>
-                        <div className='text-xl font-semibold'>{value}</div>
-                      </div>
-                    ))}
-                  </div>
+                  <CampaignMetricCardSection
+                    campaignId={props.campaignId}
+                    metricCards={metrics.metric_cards}
+                  />
                   {isPromotion ? (
                     <div className='mt-4 grid gap-3 md:grid-cols-2'>
                       {metrics.currency_metrics.map((currency) => (
@@ -496,6 +480,11 @@ export function CampaignDetail(props: CampaignDetailProps) {
           campaignId={props.campaignId}
           open={previewOpen}
           onOpenChange={setPreviewOpen}
+        />
+        <CampaignExclusionDialog
+          campaignId={props.campaignId}
+          open={exclusionsOpen}
+          onOpenChange={setExclusionsOpen}
         />
         {dialog ? (
           <CampaignActionDialog
