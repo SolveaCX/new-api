@@ -21,9 +21,20 @@ class ConfigTests(unittest.TestCase):
         cfg = load_config(valid_env())
 
         self.assertEqual(cfg.run_id, "123456789")
+        self.assertEqual(cfg.mode, "normal")
         self.assertNotIn("seed", repr(cfg))
         self.assertNotIn("owner", repr(cfg))
         self.assertNotIn("gmail", repr(cfg).lower())
+
+    def test_load_config_accepts_core_mode_and_rejects_unknown_modes(self):
+        core = valid_env()
+        core["FLATKEY_BROWSER_QA_MODE"] = "core"
+        self.assertEqual(load_config(core).mode, "core")
+
+        invalid = valid_env()
+        invalid["FLATKEY_BROWSER_QA_MODE"] = "explore"
+        with self.assertRaises(ValueError):
+            load_config(invalid)
 
     def test_load_config_rejects_missing_and_unknown_flatkey_env(self):
         missing = valid_env()

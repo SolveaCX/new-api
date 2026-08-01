@@ -347,10 +347,13 @@ class BrokerMcpTests(unittest.TestCase):
 
 
 class ControlMcpTests(unittest.TestCase):
-    def run_server(self, requests, runtime_dir, clock=None):
+    def run_server(self, requests, runtime_dir, clock=None, mode=None):
         stdin = io.StringIO(frames(*requests))
         stdout = io.StringIO()
-        control_mcp.run(stdin, stdout, env={"FLATKEY_BROWSER_QA_RUNTIME_DIR": runtime_dir}, clock=clock)
+        env = {"FLATKEY_BROWSER_QA_RUNTIME_DIR": runtime_dir}
+        if mode is not None:
+            env["FLATKEY_BROWSER_QA_MODE"] = mode
+        control_mcp.run(stdin, stdout, env=env, clock=clock)
         return decode_frames(stdout.getvalue())
 
     def test_control_exposes_only_checkpoint_and_exploration_and_writes_atomic_state(self):
@@ -438,6 +441,35 @@ class ControlMcpTests(unittest.TestCase):
                 runtime_dir,
             )
             self.assertTrue(responses[0]["result"]["isError"])
+
+    def test_control_core_mode_rejects_exploration_without_writing_exploration_state(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            responses = self.run_server(
+                [
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": "qa_replay_checkpoint", "arguments": {}},
+                    },
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "tools/call",
+                        "params": {"name": "qa_start_exploration", "arguments": {}},
+                    },
+                ],
+                runtime_dir,
+                mode="core",
+            )
+
+            self.assertFalse(responses[0]["result"]["isError"])
+            self.assertTrue(responses[1]["result"]["isError"])
+            self.assertIn("core", responses[1]["result"]["content"][0]["text"])
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as state_file:
+                state = json.load(state_file)
+            self.assertEqual(state["phase"], "replay_checkpoint")
+            self.assertNotIn("monotonic_started_at", state)
 
 
 if __name__ == "__main__":

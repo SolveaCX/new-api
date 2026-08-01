@@ -12,6 +12,7 @@ from .mcp import run_jsonrpc_server
 
 STATE_FILE_NAME = "control_state.json"
 _ENV_RUNTIME_DIR = "FLATKEY_BROWSER_QA_RUNTIME_DIR"
+_ENV_MODE = "FLATKEY_BROWSER_QA_MODE"
 
 
 def run(stdin=None, stdout=None, *, env=None, clock=None, max_line_bytes=1024 * 1024):
@@ -20,14 +21,23 @@ def run(stdin=None, stdout=None, *, env=None, clock=None, max_line_bytes=1024 * 
     env = env or os.environ
     clock = clock or time
     runtime_dir = env.get(_ENV_RUNTIME_DIR)
+    mode = env.get(_ENV_MODE, "normal")
     server = McpServer(
         "flatkey-browser-qa-control",
         [
             Tool("qa_replay_checkpoint", "Mark the replay checkpoint as complete.", lambda: _mark(runtime_dir, "replay_checkpoint", clock)),
-            Tool("qa_start_exploration", "Start the limited exploration phase.", lambda: _mark(runtime_dir, "exploration", clock)),
+            Tool("qa_start_exploration", "Start the limited exploration phase.", lambda: _start_exploration(runtime_dir, clock, mode)),
         ],
     )
     run_jsonrpc_server(stdin, stdout, server, max_line_bytes=max_line_bytes)
+
+
+def _start_exploration(runtime_dir, clock, mode):
+    if mode == "core":
+        raise ToolExecutionError("core mode forbids exploration")
+    if mode != "normal":
+        raise ToolExecutionError("control mode unavailable")
+    return _mark(runtime_dir, "exploration", clock)
 
 
 def _mark(runtime_dir, phase, clock):

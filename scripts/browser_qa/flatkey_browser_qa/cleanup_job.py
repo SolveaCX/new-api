@@ -8,6 +8,7 @@ from .cleanup import CleanupRunner
 from .config import load_cleanup_config
 from .gcp import GcpClient, GcsObjectAlreadyExists, GcsUploadUncertain, read_gcs_json_object, upload_gcs_object
 from .identity import derive_identity
+from . import report
 
 
 ROOT_MANIFEST_SCHEMA_VERSION = 1
@@ -52,6 +53,7 @@ def _persist_cleanup(cfg, cleanup_payload):
         cleanup_object,
         cleanup_payload["status"],
         cleanup_payload["created_at"],
+        summary=_cleanup_summary(cleanup_payload),
     )
     for _attempt in range(3):
         root, generation = _read_root_or_bootstrap(cfg, access_token)
@@ -134,17 +136,30 @@ def _main_record(cfg, access_token):
     object_name = f"runs/{cfg.run_id}/main/{cfg.main_execution_id}/manifest.json"
     manifest, _generation = read_gcs_json_object(cfg.gcs_bucket, object_name, access_token)
     _validate_main_manifest(manifest, cfg.run_id, cfg.main_execution_id)
+    summary = _main_summary(manifest["result"])
     status = manifest.get("status")
     created_at = manifest.get("created_at", 0)
-    return _execution_record("main", cfg.main_execution_id, object_name, status, created_at)
+    return _execution_record("main", cfg.main_execution_id, object_name, status, created_at, summary=summary)
 
 
 def _append_or_validate_record(records, record):
+    updated = []
+    changed = False
     for existing in records:
         if existing["kind"] == record["kind"] and existing["execution_id"] == record["execution_id"]:
             if existing != record:
+                legacy_record = dict(record)
+                legacy_record.pop("summary", None)
+                if existing == legacy_record:
+                    updated.append(record)
+                    changed = True
+                    continue
                 raise ValueError("conflicting execution record")
-            return records
+            updated.append(existing)
+        else:
+            updated.append(existing)
+    if changed:
+        return updated
     return [*records, record]
 
 
@@ -189,14 +204,17 @@ def _build_cleanup_payload(cfg, result, created_at):
     }
 
 
-def _execution_record(kind, execution_id, manifest, status, created_at):
-    return {
+def _execution_record(kind, execution_id, manifest, status, created_at, *, summary=None):
+    record = {
         "kind": kind,
         "execution_id": execution_id,
         "manifest": manifest,
         "status": status,
         "created_at": created_at,
     }
+    if summary is not None:
+        record["summary"] = summary
+    return record
 
 
 def _validate_root_manifest(root, run_id):
@@ -239,7 +257,9 @@ def _validate_root_manifest(root, run_id):
 def _validate_record(record, run_id):
     if not isinstance(record, dict):
         raise ValueError("execution record must be an object")
-    if set(record) != {"kind", "execution_id", "manifest", "status", "created_at"}:
+    if not {"kind", "execution_id", "manifest", "status", "created_at"} <= set(record):
+        raise ValueError("execution record fields are invalid")
+    if set(record) - {"kind", "execution_id", "manifest", "status", "created_at", "summary"}:
         raise ValueError("execution record fields are invalid")
     if record["kind"] not in {"main", "cleanup"}:
         raise ValueError("execution record kind is invalid")
@@ -253,6 +273,8 @@ def _validate_record(record, run_id):
         raise ValueError("execution record status is invalid")
     if not isinstance(record["created_at"], int) or isinstance(record["created_at"], bool) or record["created_at"] < 0:
         raise ValueError("execution record created_at is invalid")
+    if "summary" in record:
+        _validate_record_summary(record["kind"], record["summary"])
 
 
 def _validate_main_manifest(manifest, run_id, execution_id):
@@ -274,8 +296,47 @@ def _validate_main_manifest(manifest, run_id, execution_id):
         raise ValueError("main manifest created_at is invalid")
     if not isinstance(manifest["result"], dict) or not isinstance(manifest["cleanup"], dict):
         raise ValueError("main manifest payload is invalid")
+    try:
+        report.validate_result(manifest["result"])
+    except report.ResultValidationError as exc:
+        raise ValueError("main manifest result is invalid") from exc
     if "infrastructure" in manifest and not isinstance(manifest["infrastructure"], dict):
         raise ValueError("main manifest infrastructure is invalid")
+
+
+def _main_summary(result):
+    try:
+        validated = report.validate_result(result)
+    except report.ResultValidationError as exc:
+        raise ValueError("main manifest result is invalid") from exc
+    return {
+        "replay_status": validated["replay"]["status"],
+        "exploration_status": validated["exploration"]["status"],
+        "exploration_actions": validated["exploration"]["actions_used"],
+        "finding_count": len(validated["findings"]),
+    }
+
+
+def _cleanup_summary(cleanup_payload):
+    return {"cleanup_failed": cleanup_payload["cleaned"]["cleanup_failed"]}
+
+
+def _validate_record_summary(kind, summary):
+    if not isinstance(summary, dict):
+        raise ValueError("execution record summary is invalid")
+    if kind == "main":
+        if set(summary) != {"replay_status", "exploration_status", "exploration_actions", "finding_count"}:
+            raise ValueError("main execution summary fields are invalid")
+        if summary["replay_status"] not in {"passed", "failed"}:
+            raise ValueError("main execution replay summary is invalid")
+        if summary["exploration_status"] not in {"passed", "failed", "not_started"}:
+            raise ValueError("main execution exploration summary is invalid")
+        for key in ("exploration_actions", "finding_count"):
+            if not isinstance(summary[key], int) or isinstance(summary[key], bool) or summary[key] < 0:
+                raise ValueError("main execution summary count is invalid")
+        return
+    if set(summary) != {"cleanup_failed"} or not isinstance(summary["cleanup_failed"], bool):
+        raise ValueError("cleanup execution summary is invalid")
 
 
 def _validate_cleanup_manifest(manifest, cfg):

@@ -72,14 +72,21 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         text = workflow_text()
         smoke = step_block(text, "Smoke test browser QA image")
         self.assertIn("docker inspect --format='{{.Config.User}}'", smoke)
+        self.assertIn("docker run --rm --entrypoint sh", smoke)
+        self.assertIn("id -u", smoke)
         self.assertIn("--entrypoint codex", smoke)
         self.assertIn("--version", smoke)
         self.assertIn("--entrypoint playwright-mcp", smoke)
         self.assertIn("--entrypoint python3", smoke)
         self.assertIn("-m unittest discover -s /opt/flatkey-browser-qa/tests -v", smoke)
-        self.assertIn("chromium.launchServer", smoke)
-        self.assertIn('request(rl, child, 1, "initialize"', smoke)
-        self.assertIn('request(rl, child, 2, "tools/list"', smoke)
+        self.assertIn("docker run --rm -i --entrypoint python3", smoke)
+        self.assertIn("ChromiumRuntime", smoke)
+        self.assertIn("playwright_child_command", smoke)
+        self.assertIn("communicate", smoke)
+        self.assertIn("timeout=", smoke)
+        self.assertIn('"method": "initialize"', smoke)
+        self.assertIn('"method": "tools/list"', smoke)
+        self.assertNotIn("chromium.launchServer", smoke)
         for step in [
             "Build browser QA image",
             "Smoke test browser QA image",
@@ -90,19 +97,32 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             block = step_block(text, step)
             self.assertRegex(block, r"(?m)^        if: inputs\.mode != 'cleanup-only'$")
 
+    def test_resource_update_step_only_updates_images_without_persistent_env_secret_or_args_mutation(self):
+        text = workflow_text()
+        update = step_block(text, "Update browser QA Cloud Run resources")
+        self.assertNotIn("--update-secrets", update)
+        self.assertNotIn("--update-env-vars", update)
+        self.assertNotIn("--args=", update)
+        self.assertEqual(update.count("gcloud run services update"), 1)
+        self.assertEqual(update.count("gcloud run jobs update"), 2)
+        for command in re.findall(r"gcloud run (?:services|jobs) update[\s\S]*?(?=\n          gcloud run |\Z)", update):
+            self.assertIn("--image=\"${IMAGE_URI}\"", command)
+            self.assertNotRegex(command, r"--(update-secrets|update-env-vars|args)=")
+
     def test_main_and_cleanup_execute_with_wait_and_cleanup_is_unconditional(self):
         text = workflow_text()
         main = step_block(text, "Execute main browser QA job")
         cleanup = step_block(text, "Execute cleanup browser QA job")
         self.assertRegex(main, r"gcloud run jobs execute \"\$\{QA_MAIN_JOB\}\"[\s\S]*--wait")
         self.assertRegex(cleanup, r"gcloud run jobs execute \"\$\{QA_CLEANUP_JOB\}\"[\s\S]*--wait")
-        self.assertRegex(cleanup, r"(?m)^        if: always\(\)$")
+        self.assertRegex(cleanup, r"(?m)^        if: \${\{ always\(\) && steps\.qa\.outcome == 'success' \}\}$")
         self.assertIn("MAIN_STATUS", main)
         self.assertIn("main_status", main)
         self.assertIn("EFFECTIVE_RUN_ID", main)
         self.assertIn("EFFECTIVE_RUN_ID", cleanup)
         self.assertIn("FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID}", main)
         self.assertIn("FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID}", cleanup)
+        self.assertIn("FLATKEY_BROWSER_QA_MODE=${{ inputs.mode }}", main)
 
     def test_fetches_only_sanitized_root_manifest_and_summary_stays_non_secret(self):
         text = workflow_text()
@@ -115,6 +135,19 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         for safe_field in ["replay", "exploration", "finding", "cleanup", "status", "gcs_uri"]:
             self.assertIn(safe_field, summary)
         self.assertNotRegex(summary, r"(?i)email|password|cookie|authorization|api[_-]?key|token|verification")
+        self.assertIn("latest.main_execution_id", summary)
+        self.assertIn("summary", summary)
+        self.assertIn("validate_root_manifest", summary)
+        self.assertNotIn("main_record.get(\"result\"", summary)
+
+    def test_summary_status_priority_keeps_cleanup_failure_stronger_than_root_status(self):
+        text = workflow_text()
+        summary = step_block(text, "Fetch sanitized manifest and write summary")
+        self.assertIn("cleanup_outcome", summary)
+        self.assertIn("main_outcome", summary)
+        self.assertRegex(summary, r"if cleanup_outcome != \"success\"[\s\S]*status = \"cleanup_failed\"")
+        self.assertRegex(summary, r"elif manifest_error is not None[\s\S]*status = \"infrastructure_failed\"")
+        self.assertRegex(summary, r"elif main_outcome == \"failure\"[\s\S]*status = \"infrastructure_failed\"")
 
     def test_standalone_failures_cover_cleanup_infra_replay_and_findings_states(self):
         text = workflow_text()

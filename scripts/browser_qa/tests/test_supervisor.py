@@ -483,6 +483,29 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn("[mcp_servers.evidence]", config_text)
         self.assertIn("qa_capture_screenshot", config_text)
 
+    def test_core_mode_prompt_and_mcp_env_require_replay_only_without_exploration(self):
+        input_env = env()
+        input_env["FLATKEY_BROWSER_QA_MODE"] = "core"
+
+        outcome, sup = self.run_supervisor(
+            FakeProcess(0),
+            result_payload=valid_result(exploration={"status": "not_started", "actions_used": 0}),
+            input_env=input_env,
+        )
+
+        self.assertEqual(outcome.status, "passed")
+        prompt = sup.subprocess_runner.process.stdin.getvalue()
+        self.assertIn("Core mode", prompt)
+        self.assertIn("qa_replay_checkpoint", prompt)
+        self.assertIn("must not call qa_start_exploration", prompt)
+        self.assertIn('"exploration": {"status": "not_started", "actions_used": 0}', prompt)
+        with open(os.path.join(sup.codex_home, "qa.config.toml"), encoding="utf-8") as handle:
+            config_text = handle.read()
+        playwright_env = config_text.split("[mcp_servers.playwright.env]", 1)[1].split("[mcp_servers.evidence]", 1)[0]
+        control_env = config_text.split("[mcp_servers.control.env]", 1)[1].split("[sandbox_workspace_write]", 1)[0]
+        self.assertIn('FLATKEY_BROWSER_QA_MODE = "core"', playwright_env)
+        self.assertIn('FLATKEY_BROWSER_QA_MODE = "core"', control_env)
+
     def test_output_last_message_file_is_private_parsed_and_removed_on_success_and_invalid_result(self):
         with tempfile.TemporaryDirectory() as tmp:
             valid_payload = valid_result()

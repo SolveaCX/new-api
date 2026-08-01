@@ -32,14 +32,9 @@ env:
   QA_WIF_PROVIDER: ${{ vars.GCP_BROWSER_QA_WIF_PROVIDER }}
   QA_DEPLOYER_SA: ${{ vars.GCP_BROWSER_QA_DEPLOYER_SA }}
   QA_GCS_BUCKET: ${{ vars.GCP_BROWSER_QA_GCS_BUCKET }}
-  QA_IDENTITY_SEED_SECRET_ID: ${{ vars.GCP_BROWSER_QA_IDENTITY_SEED_SECRET_ID }}
-  QA_GMAIL_BASE: ${{ vars.GCP_BROWSER_QA_GMAIL_BASE }}
   QA_BROKER_SERVICE: flatkey-staging-browser-qa-broker
   QA_MAIN_JOB: flatkey-staging-browser-qa
   QA_CLEANUP_JOB: flatkey-staging-browser-qa-cleanup
-  QA_WEBSITE_ORIGIN: https://staging-website.flatkey.ai
-  QA_CONSOLE_ORIGIN: https://staging-console.flatkey.ai
-  QA_DOCS_ORIGIN: https://docs.flatkey.ai
   IMAGE_URI: ${{ vars.GCP_BROWSER_QA_AR_REPO_URL }}/browser-qa:${{ github.sha }}-${{ github.run_attempt }}
 
 jobs:
@@ -120,62 +115,56 @@ jobs:
             echo "image runtime user must be non-root" >&2
             exit 1
           fi
+          docker run --rm --entrypoint sh "${IMAGE_URI}" -c 'test "$(id -u)" != "0"'
           docker run --rm --entrypoint codex "${IMAGE_URI}" --version
           docker run --rm --entrypoint playwright-mcp "${IMAGE_URI}" --version
           docker run --rm --entrypoint python3 "${IMAGE_URI}" -m unittest discover -s /opt/flatkey-browser-qa/tests -v
-          docker run --rm --entrypoint node "${IMAGE_URI}" - <<'NODE'
-          const { chromium } = require("playwright-core");
-          const { spawn } = require("node:child_process");
-          const readline = require("node:readline");
+          docker run --rm -i --entrypoint python3 "${IMAGE_URI}" - <<'PY'
+          import json
+          import os
+          import subprocess
+          import tempfile
+          from types import SimpleNamespace
 
-          function request(rl, child, id, method, params = {}) {
-            child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-            return new Promise((resolve, reject) => {
-              const timeout = setTimeout(() => reject(new Error(`${method} timed out`)), 15000);
-              rl.once("line", (line) => {
-                clearTimeout(timeout);
-                const parsed = JSON.parse(line);
-                if (parsed.error) {
-                  reject(new Error(parsed.error.message || method));
-                } else {
-                  resolve(parsed.result);
-                }
-              });
-            });
-          }
+          from scripts.browser_qa.flatkey_browser_qa.supervisor import ChromiumRuntime
+          from scripts.browser_qa.flatkey_browser_qa.mcp_budget_wrapper import playwright_child_command
 
-          (async () => {
-            const server = await chromium.launchServer({
-              headless: true,
-              executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
-              args: ["--no-sandbox"],
-            });
-            const cdpEndpoint = server.wsEndpoint().replace(/^ws:/, "http:").replace(/\/[^/]+$/, "");
-            const child = spawn("playwright-mcp", ["--cdp-endpoint", cdpEndpoint, "--output-dir", "/tmp/browser-qa-mcp"], {
-              stdio: ["pipe", "pipe", "inherit"],
-              env: process.env,
-            });
-            const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
-            try {
-              await request(rl, child, 1, "initialize", {
-                protocolVersion: "2024-11-05",
-                capabilities: {},
-                clientInfo: { name: "browser-qa-workflow-smoke", version: "1" },
-              });
-              child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
-              const tools = await request(rl, child, 2, "tools/list");
-              if (!tools || !Array.isArray(tools.tools) || tools.tools.length === 0) {
-                throw new Error("tools/list returned no tools");
-              }
-            } finally {
-              child.kill("SIGTERM");
-              await server.close();
-            }
-          })().catch((error) => {
-            console.error(error && error.message ? error.message : error);
-            process.exit(1);
-          });
-          NODE
+          runtime_root = tempfile.mkdtemp(prefix="browser-qa-smoke-")
+          chromium = ChromiumRuntime(
+              runtime_root=runtime_root,
+              proxy=SimpleNamespace(host="127.0.0.1", port=9),
+              popen_factory=subprocess.Popen,
+              timeout_seconds=20,
+          )
+          child = None
+          try:
+              chromium.start()
+              command = playwright_child_command(runtime_root, cdp_endpoint=chromium.cdp_endpoint)
+              child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+              requests = [
+                  {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "browser-qa-workflow-smoke", "version": "1"}}},
+                  {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                  {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+              ]
+              stdout, stderr = child.communicate("".join(json.dumps(item) + "\n" for item in requests), timeout=20)
+              if child.returncode != 0:
+                  raise RuntimeError(f"playwright MCP failed: {stderr[-400:]}")
+              responses = [json.loads(line) for line in stdout.splitlines() if line.strip()]
+              by_id = {item.get("id"): item for item in responses}
+              if "result" not in by_id.get(1, {}):
+                  raise RuntimeError("initialize response missing")
+              tools = by_id.get(2, {}).get("result", {}).get("tools", [])
+              if not isinstance(tools, list) or not tools:
+                  raise RuntimeError("tools/list response missing tools")
+          finally:
+              if child is not None and child.poll() is None:
+                  child.terminate()
+                  try:
+                      child.wait(timeout=5)
+                  except subprocess.TimeoutExpired:
+                      child.kill()
+              chromium.stop()
+          PY
 
       - name: Push browser QA image
         if: inputs.mode != 'cleanup-only'
@@ -189,47 +178,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          common_main_env=(
-            "FLATKEY_QA_GMAIL_BASE=${QA_GMAIL_BASE}"
-            "FLATKEY_QA_WEBSITE_ORIGIN=${QA_WEBSITE_ORIGIN}"
-            "FLATKEY_QA_CONSOLE_ORIGIN=${QA_CONSOLE_ORIGIN}"
-            "FLATKEY_QA_DOCS_ORIGIN=${QA_DOCS_ORIGIN}"
-          )
-          main_job_env=(
-            "${common_main_env[@]}"
-            "FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}"
-          )
-          cleanup_job_env=(
-            "FLATKEY_QA_CONSOLE_ORIGIN=${QA_CONSOLE_ORIGIN}"
-            "FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}"
-          )
-          IFS=,
-          common_main_env_arg="${common_main_env[*]}"
-          main_job_env_arg="${main_job_env[*]}"
-          cleanup_job_env_arg="${cleanup_job_env[*]}"
-          unset IFS
           gcloud run services update "${QA_BROKER_SERVICE}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${IMAGE_URI}" \
-            --update-env-vars="${common_main_env_arg}" \
-            --update-secrets="FLATKEY_QA_IDENTITY_SEED_B64=${QA_IDENTITY_SEED_SECRET_ID}:latest" \
             --quiet
           gcloud run jobs update "${QA_MAIN_JOB}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${IMAGE_URI}" \
-            --args=main \
-            --update-env-vars="${main_job_env_arg}" \
-            --update-secrets="FLATKEY_QA_IDENTITY_SEED_B64=${QA_IDENTITY_SEED_SECRET_ID}:latest" \
             --quiet
           gcloud run jobs update "${QA_CLEANUP_JOB}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${IMAGE_URI}" \
-            --args=cleanup \
-            --update-env-vars="${cleanup_job_env_arg}" \
-            --update-secrets="FLATKEY_QA_IDENTITY_SEED_B64=${QA_IDENTITY_SEED_SECRET_ID}:latest" \
             --quiet
 
       - name: Execute main browser QA job
@@ -244,7 +206,7 @@ jobs:
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --args=main \
-            --update-env-vars="FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID},FLATKEY_BROWSER_QA_EXECUTION_ID=${MAIN_EXECUTION_ID},FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}" \
+            --update-env-vars="FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID},FLATKEY_BROWSER_QA_MODE=${{ inputs.mode }},FLATKEY_BROWSER_QA_EXECUTION_ID=${MAIN_EXECUTION_ID},FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}" \
             --wait \
             --quiet
           main_status=$?
@@ -255,7 +217,7 @@ jobs:
 
       - name: Execute cleanup browser QA job
         id: cleanup
-        if: always()
+        if: ${{ always() && steps.qa.outcome == 'success' }}
         continue-on-error: true
         timeout-minutes: 20
         shell: bash
@@ -283,15 +245,21 @@ jobs:
           manifest_path="${RUNNER_TEMP}/browser-qa-manifest.json"
           root_object="runs/${EFFECTIVE_RUN_ID}/manifest.json"
           gcs_uri="gs://${QA_GCS_BUCKET}/${root_object}"
+          cleanup_outcome="${{ steps.cleanup.outcome || 'skipped' }}"
           set +e
           gcloud storage cp "${gcs_uri}" "${manifest_path}" --quiet
           fetch_status=$?
           set -e
           if [[ "${fetch_status}" -ne 0 ]]; then
-            echo "manifest_status=infrastructure_failed" >> "$GITHUB_OUTPUT"
+            if [[ "${cleanup_outcome}" != "success" ]]; then
+              manifest_status="cleanup_failed"
+            else
+              manifest_status="infrastructure_failed"
+            fi
+            echo "manifest_status=${manifest_status}" >> "$GITHUB_OUTPUT"
             {
               echo "### Browser QA"
-              echo "- status: infrastructure_failed"
+              echo "- status: ${manifest_status}"
               echo "- replay status: unknown"
               echo "- exploration actions: 0"
               echo "- finding count: 0"
@@ -300,32 +268,74 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          python3 - "${manifest_path}" "${gcs_uri}" "${{ steps.main.outputs.main_status || 'skipped' }}" "${{ steps.cleanup.outputs.cleanup_status || 'missing' }}" <<'PY'
+          python3 - "${manifest_path}" "${gcs_uri}" "${{ steps.main.outcome || 'skipped' }}" "${cleanup_outcome}" <<'PY'
           import json
           import os
           import sys
 
-          manifest_path, gcs_uri, main_status, cleanup_status = sys.argv[1:5]
-          with open(manifest_path, encoding="utf-8") as handle:
-              manifest = json.load(handle)
-          status = manifest.get("status", "infrastructure_failed")
-          executions = manifest.get("executions", [])
-          main_record = next((item for item in reversed(executions) if item.get("kind") == "main"), {})
-          cleanup_record = next((item for item in reversed(executions) if item.get("kind") == "cleanup"), {})
-          result = main_record.get("result", {}) if isinstance(main_record.get("result", {}), dict) else {}
-          replay = result.get("replay", {}) if isinstance(result.get("replay", {}), dict) else {}
-          exploration = result.get("exploration", {}) if isinstance(result.get("exploration", {}), dict) else {}
-          findings = result.get("findings", []) if isinstance(result.get("findings", []), list) else []
-          if cleanup_status not in ("0", "skipped") and status == "passed":
+          ALLOWED_ROOT_STATUS = {"passed", "findings_detected", "replay_failed", "infrastructure_failed", "cleanup_failed"}
+          ALLOWED_REPLAY = {"passed", "failed"}
+          ALLOWED_EXPLORATION = {"passed", "failed", "not_started"}
+
+          def validate_root_manifest(manifest, run_id):
+              if not isinstance(manifest, dict) or manifest.get("run_id") != run_id or manifest.get("schema_version") != 1:
+                  raise ValueError("root manifest identity invalid")
+              status = manifest.get("status")
+              if status not in ALLOWED_ROOT_STATUS:
+                  raise ValueError("root manifest status invalid")
+              latest = manifest.get("latest")
+              if not isinstance(latest, dict) or not isinstance(latest.get("main_execution_id"), str):
+                  raise ValueError("latest.main_execution_id missing")
+              executions = manifest.get("executions")
+              if not isinstance(executions, list):
+                  raise ValueError("root manifest executions invalid")
+              main = next((item for item in executions if item.get("kind") == "main" and item.get("execution_id") == latest["main_execution_id"]), None)
+              if not isinstance(main, dict):
+                  raise ValueError("latest.main_execution_id record missing")
+              summary = main.get("summary")
+              if not isinstance(summary, dict) or set(summary) != {"replay_status", "exploration_status", "exploration_actions", "finding_count"}:
+                  raise ValueError("main summary invalid")
+              if summary["replay_status"] not in ALLOWED_REPLAY or summary["exploration_status"] not in ALLOWED_EXPLORATION:
+                  raise ValueError("main summary status invalid")
+              if any(not isinstance(summary[name], int) or isinstance(summary[name], bool) or summary[name] < 0 for name in ["exploration_actions", "finding_count"]):
+                  raise ValueError("main summary count invalid")
+              cleanup = None
+              cleanup_id = latest.get("cleanup_execution_id")
+              if cleanup_id is not None:
+                  cleanup = next((item for item in executions if item.get("kind") == "cleanup" and item.get("execution_id") == cleanup_id), None)
+                  if not isinstance(cleanup, dict):
+                      raise ValueError("latest cleanup record missing")
+              return status, summary, cleanup or {}
+
+          manifest_path, gcs_uri, main_outcome, cleanup_outcome = sys.argv[1:5]
+          manifest_error = None
+          root_status = "infrastructure_failed"
+          main_summary = {"replay_status": "unknown", "exploration_status": "unknown", "exploration_actions": 0, "finding_count": 0}
+          cleanup_record = {}
+          try:
+              with open(manifest_path, encoding="utf-8") as handle:
+                  manifest = json.load(handle)
+              run_id = os.environ["EFFECTIVE_RUN_ID"]
+              root_status, main_summary, cleanup_record = validate_root_manifest(manifest, run_id)
+          except Exception as exc:
+              manifest_error = type(exc).__name__
+          if cleanup_outcome != "success":
               status = "cleanup_failed"
-          if main_status not in ("0", "skipped") and status == "passed":
+          elif manifest_error is not None:
               status = "infrastructure_failed"
+          elif main_outcome == "failure":
+              status = "infrastructure_failed"
+          elif main_outcome not in ("success", "skipped"):
+              status = "infrastructure_failed"
+          else:
+              status = root_status
           summary = [
               "### Browser QA",
               f"- status: {status}",
-              f"- replay status: {replay.get('status', main_record.get('status', 'unknown'))}",
-              f"- exploration actions: {exploration.get('actions_used', 0)}",
-              f"- finding count: {len(findings)}",
+              f"- replay status: {main_summary['replay_status']}",
+              f"- exploration status: {main_summary['exploration_status']}",
+              f"- exploration actions: {main_summary['exploration_actions']}",
+              f"- finding count: {main_summary['finding_count']}",
               f"- cleanup status: {cleanup_record.get('status', 'unknown')}",
               f"- gcs_uri: {gcs_uri}",
           ]

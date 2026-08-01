@@ -35,6 +35,7 @@ _GCS_BUCKET = re.compile(r"^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$")
 @dataclass(frozen=True, repr=False)
 class RuntimeConfig:
     run_id: str
+    mode: str
     identity_seed: bytes
     gmail_base: str
     website_origin: str
@@ -70,6 +71,7 @@ def load_config(env=None):
         raise ValueError(f"unknown FLATKEY_QA_ environment variables: {', '.join(extras)}")
 
     run_id = _validate_run_id(env["FLATKEY_QA_RUN_ID"])
+    mode = _validate_mode(env.get("FLATKEY_BROWSER_QA_MODE", "normal"))
 
     origins = {name: env[name] for name in _ALLOWED_ORIGINS}
     for name, expected in _ALLOWED_ORIGINS.items():
@@ -88,6 +90,7 @@ def load_config(env=None):
 
     return RuntimeConfig(
         run_id=run_id,
+        mode=mode,
         identity_seed=seed,
         gmail_base=env["FLATKEY_QA_GMAIL_BASE"],
         website_origin=origins["FLATKEY_QA_WEBSITE_ORIGIN"],
@@ -134,6 +137,12 @@ def _validate_run_id(run_id):
     if not run_id.isascii() or not run_id.isdecimal():
         raise ValueError("FLATKEY_QA_RUN_ID must contain only ASCII decimal digits")
     return run_id
+
+
+def _validate_mode(mode):
+    if mode not in {"normal", "core"}:
+        raise ValueError("FLATKEY_BROWSER_QA_MODE must be normal or core")
+    return mode
 
 
 def _decode_identity_seed(value):

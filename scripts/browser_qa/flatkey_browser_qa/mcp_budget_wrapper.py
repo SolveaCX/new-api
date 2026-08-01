@@ -22,6 +22,7 @@ SUBPROCESS_SHELL = False
 EXPLORATION_MAX_ACTIONS = 30
 EXPLORATION_SECONDS = 300
 PLAYWRIGHT_MCP_EXECUTABLE = "/usr/local/bin/playwright-mcp"
+MODE_ENV = "FLATKEY_BROWSER_QA_MODE"
 MAX_CLIENT_LINE_BYTES = 1024 * 1024
 MAX_CHILD_STDOUT_LINE_BYTES = 1024 * 1024
 MAX_CHILD_STDERR_LINE_BYTES = 256 * 1024
@@ -121,6 +122,7 @@ def launch_wrapper(
         child=child,
         tree_terminator=terminator,
         runtime_evidence_url=(parent_env or os.environ).get("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"),
+        mode=(parent_env or os.environ).get(MODE_ENV, "normal"),
     )
 
 
@@ -193,13 +195,14 @@ class WindowsJobProcessContainment:
 
 
 class BudgetedMcpWrapper:
-    def __init__(self, runtime_dir, *, child, clock=None, tree_terminator=None, output_lock=None, runtime_evidence_url=None):
+    def __init__(self, runtime_dir, *, child, clock=None, tree_terminator=None, output_lock=None, runtime_evidence_url=None, mode="normal"):
         self.runtime_dir = _runtime_dir(runtime_dir)
         self.child = child
         self.clock = clock or time
         self.tree_terminator = tree_terminator or ProcessTreeTerminator.attach(child)
         self.output_lock = output_lock or threading.Lock()
         self.runtime_evidence_url = runtime_evidence_url
+        self.mode = mode
         self.exploration_budget = None
         self._closed = False
 
@@ -311,6 +314,12 @@ class BudgetedMcpWrapper:
             phase = _read_phase(self.runtime_dir)
         except RuntimeError:
             self._write_error(client_output, request.get("id"), -32001, "exploration budget unavailable")
+            return False
+        if self.mode == "core" and phase == "replay_checkpoint":
+            self._write_error(client_output, request.get("id"), -32001, "core mode forbids browser actions after replay checkpoint")
+            return False
+        if self.mode not in ("normal", "core"):
+            self._write_error(client_output, request.get("id"), -32001, "browser QA mode unavailable")
             return False
         if phase != "exploration":
             return True

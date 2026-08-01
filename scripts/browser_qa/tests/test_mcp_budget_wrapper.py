@@ -108,12 +108,13 @@ def call_frame(identifier):
 
 
 class WrapperContractTests(unittest.TestCase):
-    def make_wrapper(self, runtime_dir, child, *, clock=None, terminator=None):
+    def make_wrapper(self, runtime_dir, child, *, clock=None, terminator=None, mode="normal"):
         return mcp_budget_wrapper.BudgetedMcpWrapper(
             runtime_dir,
             child=child,
             clock=clock or FakeClock(),
             tree_terminator=terminator or RecordingTreeTerminator(),
+            mode=mode,
         )
 
     def test_child_command_attaches_to_supervisor_cdp_endpoint_and_keeps_temp_output_in_runtime(self):
@@ -240,6 +241,29 @@ class WrapperContractTests(unittest.TestCase):
             self.assertEqual(budget_response["error"]["code"], -32001)
             self.assertIsInstance(wrapper.exploration_budget, ExplorationBudget)
             self.assertEqual(wrapper.exploration_budget.actions_consumed, 30)
+
+    def test_core_mode_allows_browser_before_checkpoint_and_rejects_after_without_exploration_state(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            child = FakeChild()
+            wrapper = self.make_wrapper(runtime_dir, child, mode="core")
+            wrapper.proxy_client_requests(io.StringIO(call_frame("before-checkpoint")), io.StringIO())
+            self.assertEqual(json.loads(child.stdin.getvalue())["id"], "before-checkpoint")
+
+            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "replay_checkpoint"})
+            child = FakeChild()
+            output = io.StringIO()
+            wrapper = self.make_wrapper(runtime_dir, child, mode="core")
+            wrapper.proxy_client_requests(io.StringIO(call_frame("after-checkpoint")), output)
+
+            self.assertEqual(child.stdin.getvalue(), "")
+            response = json.loads(output.getvalue().splitlines()[0])
+            self.assertEqual(response["id"], "after-checkpoint")
+            self.assertEqual(response["error"]["code"], -32001)
+            self.assertIn("core", response["error"]["message"])
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as state_file:
+                state = json.load(state_file)
+            self.assertEqual(state["phase"], "replay_checkpoint")
+            self.assertNotIn("actions_used", state)
 
     def test_marker_time_not_first_action_starts_exploration_budget(self):
         clock = FakeClock()

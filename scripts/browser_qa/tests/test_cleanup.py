@@ -1043,8 +1043,85 @@ class CleanupTests(unittest.TestCase):
         with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(), 1)):
             self.assertEqual(
                 cleanup_job._main_record(cfg, "access-secret"),
-                execution_record("main", "main-001", IDENTITY.run_id),
+                execution_record("main", "main-001", IDENTITY.run_id, summary=main_summary()),
             )
+
+    def test_main_record_summary_uses_validated_main_result_counts_and_status(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+        )
+        manifest = main_manifest(
+            status="findings_detected",
+            result=valid_main_result(
+                replay={"status": "passed", "checkpoint_reached": True},
+                exploration={"status": "passed", "actions_used": 7},
+                findings=[
+                    {
+                        "severity": "high",
+                        "title": "Unsafe redirect",
+                        "target_url": "https://staging-console.flatkey.ai/",
+                        "steps": ["open page"],
+                        "expected": "safe",
+                        "actual": "unsafe",
+                        "evidence_paths": ["screenshots/safe.png"],
+                        "confidence": "high",
+                    },
+                    {
+                        "severity": "info",
+                        "title": "Info",
+                        "target_url": "https://staging-console.flatkey.ai/",
+                        "steps": ["observe"],
+                        "expected": "noted",
+                        "actual": "noted",
+                        "evidence_paths": ["screenshots/info.png"],
+                        "confidence": "medium",
+                    },
+                ],
+            ),
+        )
+
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (manifest, 1)):
+            record = cleanup_job._main_record(cfg, "access-secret")
+
+        self.assertEqual(record["summary"], {
+            "replay_status": "passed",
+            "exploration_status": "passed",
+            "exploration_actions": 7,
+            "finding_count": 2,
+        })
+
+    def test_main_record_rejects_malformed_result_before_summary_extraction(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+        )
+        invalid_results = [
+            {"replay": {"status": "passed"}},
+            valid_main_result(exploration={"status": "passed", "actions_used": -1}),
+            valid_main_result(findings=[{"title": "missing fields"}]),
+        ]
+        for result in invalid_results:
+            with self.subTest(result=result):
+                with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(result=result), 1)):
+                    with self.assertRaises(ValueError):
+                        cleanup_job._main_record(cfg, "access-secret")
+
+    def test_root_manifest_accepts_legacy_records_without_summary_but_rejects_malformed_summaries(self):
+        cleanup_job._validate_root_manifest(root_manifest(), IDENTITY.run_id)
+
+        for summary in [
+            {"replay_status": "passed", "exploration_status": "passed", "exploration_actions": -1, "finding_count": 0},
+            {"replay_status": "maybe", "exploration_status": "passed", "exploration_actions": 0, "finding_count": 0},
+            {"replay_status": "passed", "exploration_status": "passed", "exploration_actions": 0, "finding_count": 0, "email": "owner@gmail.com"},
+            {"cleanup_failed": "false"},
+        ]:
+            bad = root_manifest(executions=[execution_record("main", "main-001", IDENTITY.run_id, summary=summary)])
+            with self.subTest(summary=summary):
+                with self.assertRaises(ValueError):
+                    cleanup_job._validate_root_manifest(bad, IDENTITY.run_id)
 
     def test_merge_root_manifest_keeps_latest_main_and_cleanup_append_monotonic(self):
         cfg = SimpleNamespace(
@@ -1136,8 +1213,30 @@ def main_manifest(**overrides):
         "execution_id": "main-001",
         "status": "passed",
         "created_at": 1,
-        "result": {},
+        "result": valid_main_result(),
         "cleanup": {},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def valid_main_result(**overrides):
+    payload = {
+        "replay": {"status": "passed", "checkpoint_reached": True},
+        "exploration": {"status": "not_started", "actions_used": 0},
+        "budgets": {"replay_seconds": 300, "exploration_seconds": 300, "max_actions": 30},
+        "findings": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def main_summary(**overrides):
+    payload = {
+        "replay_status": "passed",
+        "exploration_status": "not_started",
+        "exploration_actions": 0,
+        "finding_count": 0,
     }
     payload.update(overrides)
     return payload

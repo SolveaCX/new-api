@@ -99,7 +99,11 @@ class Supervisor:
 
     def run(self, *, initial_result=None):
         os.makedirs(self.runtime_root, exist_ok=True)
-        cfg = load_config({key: value for key, value in self.env.items() if key.startswith("FLATKEY_QA_")})
+        cfg = load_config({
+            key: value
+            for key, value in self.env.items()
+            if key.startswith("FLATKEY_QA_") or key == "FLATKEY_BROWSER_QA_MODE"
+        })
         identity = derive_identity(cfg.identity_seed, cfg.run_id)
         redactor = Redactor(
             email=f"{cfg.gmail_base.split('@', 1)[0]}+{identity.email_tag}@{cfg.gmail_base.split('@', 1)[1]}",
@@ -167,7 +171,7 @@ class Supervisor:
                 evidence_sink = RuntimeEvidenceSink(redactor, evidence_helper=evidence_helper)
                 evidence_sink.start()
                 self._evidence_url = evidence_sink.url
-                process = self._start_codex(proxy, browser.cdp_endpoint)
+                process = self._start_codex(proxy, browser.cdp_endpoint, cfg.mode)
                 prompt = build_prompt(cfg, identity)
                 previous_handlers = self._install_signal_handlers(process)
                 try:
@@ -301,7 +305,7 @@ class Supervisor:
                 )
         return Outcome(manifest["status"], manifest_path, self.events)
 
-    def _start_codex(self, proxy, cdp_endpoint):
+    def _start_codex(self, proxy, cdp_endpoint, mode):
         self.codex_home = os.path.join(self.runtime_root, "codex-home")
         self.home_dir = os.path.join(self.runtime_root, "home")
         os.makedirs(self.codex_home, mode=0o700, exist_ok=True)
@@ -330,6 +334,7 @@ class Supervisor:
             "FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL": self._evidence_url,
             "FLATKEY_BROWSER_QA_PROXY_URL": f"http://{proxy.host}:{proxy.port}",
             "FLATKEY_BROWSER_QA_CDP_ENDPOINT": cdp_endpoint,
+            "FLATKEY_BROWSER_QA_MODE": mode,
         }
         if os.name == "nt":
             child_env["USERPROFILE"] = self.home_dir
@@ -518,6 +523,7 @@ FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
 FLATKEY_BROWSER_QA_PROXY_URL = "http://{proxy.host}:{proxy.port}"
 FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"])}"
 FLATKEY_BROWSER_QA_CDP_ENDPOINT = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_CDP_ENDPOINT"])}"
+FLATKEY_BROWSER_QA_MODE = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_MODE"])}"
 
 [mcp_servers.evidence]
 command = "{_toml_escape(sys.executable)}"
@@ -528,6 +534,7 @@ enabled_tools = ["qa_capture_screenshot"]
 PYTHONPATH = "{escaped_repo_root}"
 PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
+FLATKEY_BROWSER_QA_MODE = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_MODE"])}"
 FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"])}"
 
 [mcp_servers.broker]
@@ -554,6 +561,7 @@ enabled_tools = ["qa_replay_checkpoint", "qa_start_exploration"]
 PYTHONPATH = "{escaped_repo_root}"
 PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
+FLATKEY_BROWSER_QA_MODE = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_MODE"])}"
 
 [sandbox_workspace_write]
 network_access = false
@@ -727,6 +735,12 @@ def _install_fixed_skill(home_dir):
 def build_prompt(cfg, identity):
     with open(PROMPT_PATH, encoding="utf-8") as handle:
         prompt = handle.read()
+    mode_contract = ""
+    if cfg.mode == "core":
+        mode_contract = (
+            "Core mode: after the replay checkpoint, stop. You must not call qa_start_exploration. "
+            'The final result must set "exploration": {"status": "not_started", "actions_used": 0}.\n'
+        )
     return (
         prompt
         + "\n\nSkill: $flatkey-new-user-onboarding\n"
@@ -735,6 +749,7 @@ def build_prompt(cfg, identity):
         + f"Disposable username: {identity.username}\n"
         + f"Disposable email: {cfg.gmail_base.split('@', 1)[0]}+{identity.email_tag}@{cfg.gmail_base.split('@', 1)[1]}\n"
         + f"Disposable password: {identity.password}\n"
+        + mode_contract
         + "The runtime owns verification code, cleanup, result redaction, and upload.\n"
     )
 
