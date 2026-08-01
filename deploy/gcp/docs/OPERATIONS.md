@@ -272,6 +272,405 @@ To use Proxied for depth-3 names would require Total TLS ($10/mo) — previously
 
 ---
 
+## Flatkey staging browser QA first-run and recovery runbook
+
+This runbook is for the isolated staging browser QA surface managed by `deploy/gcp/envs/prod/browser_qa.tf` and `.github/workflows/gcp-browser-qa.yml`. It is separate from the production deploy path.
+
+Operator rules:
+
+- Treat every command in this section as an example until the operator has reviewed the current branch, account, project, and target resource names.
+- Do not run these commands from an agent session. The human operator runs them from an authenticated terminal.
+- Keep `set -x` disabled. Do not paste secret values into argv, Terraform variables, Terraform state, GitHub output, GitHub summaries, committed files, or shell history.
+- Use stdin for secret values. Use `printf`, `read -s`, and pipes; do not use `echo` for secrets.
+- Keep temporary files under `mktemp -d`, remove them on exit, and never commit Terraform plans, JSON plan exports, OAuth material, or report downloads.
+- Do not manually run `gcloud run jobs execute ... --update-env-vars=FLATKEY_QA_GMAIL_BASE=...`; the workflow owns runtime injection from the repository variable.
+
+### Resource names to verify before touching anything
+
+These names are the implementation contract as of this Terraform root:
+
+| Purpose | Name |
+|---|---|
+| Terraform root | `deploy/gcp/envs/prod/` |
+| Project | `vocai-gemini-prod` |
+| Region | `us-west1` |
+| Browser QA toggle | `enable_browser_qa = true` |
+| Artifact Registry repository | `flatkey-staging-browser-qa` |
+| Broker Cloud Run service | `flatkey-staging-browser-qa-broker` |
+| Main Cloud Run job | `flatkey-staging-browser-qa` |
+| Cleanup Cloud Run job | `flatkey-staging-browser-qa-cleanup` |
+| Codex API key secret | `flatkey-browser-qa-codex-api-key` |
+| Identity seed secret | `flatkey-browser-qa-identity-seed` |
+| Gmail OAuth secret | `flatkey-browser-qa-gmail-oauth` |
+| Report bucket | `vocai-gemini-prod-flatkey-browser-qa-reports` |
+| Runtime service accounts | `flatkey-browser-qa-runtime`, `flatkey-browser-qa-broker`, `flatkey-browser-qa-cleanup`, `flatkey-browser-qa-deployer` |
+| GitHub workflow | `.github/workflows/gcp-browser-qa.yml` |
+| Workflow modes | `core`, `normal`, `cleanup-only` |
+| Non-committed GitHub variable | `GCP_BROWSER_QA_GMAIL_BASE` |
+
+### 1. Authenticated refreshing Terraform plan review
+
+Do not trust PR plan comments for this apply. They use `-refresh=false` and cannot prove live drift is absent. Use Owner-capable ADC locally and save the exact plan that will be applied.
+
+```bash
+# Example review commands. Non-mutating until the final terraform apply.
+set -euo pipefail
+set +x
+
+cd deploy/gcp/envs/prod
+gcloud auth application-default login
+terraform init
+
+review_dir="$(mktemp -d)"
+trap 'rm -rf "$review_dir"' EXIT
+plan_path="$review_dir/browser-qa.tfplan"
+plan_json="$review_dir/browser-qa.tfplan.json"
+
+terraform plan -out="$plan_path"
+terraform show -json "$plan_path" > "$plan_json"
+terraform show -no-color "$plan_path" > "$review_dir/browser-qa.tfplan.txt"
+
+python3 - "$plan_json" <<'PY'
+import json
+import sys
+
+plan = json.load(open(sys.argv[1], encoding="utf-8"))
+changes = []
+for change in plan.get("resource_changes", []):
+    actions = change.get("change", {}).get("actions", [])
+    if actions and actions != ["no-op"]:
+        changes.append((change.get("address", ""), actions))
+
+if not changes:
+    raise SystemExit("ABORT: saved plan has no resource changes; do not apply")
+
+bad = [(address, actions) for address, actions in changes if "browser_qa" not in address]
+if bad:
+    print("ABORT: non-browser-QA resource changes found:")
+    for address, actions in bad:
+        print(f"  {address}: {actions}")
+    raise SystemExit(1)
+
+forbidden = (
+    "module.cloud_run",
+    "module.cloud_lb",
+    "google_compute_",
+    "google_dns_",
+    "cloudflare_",
+    "newapi-web",
+    "newapi-console",
+    "newapi-router",
+    "newapi-urlmap",
+    "ssl_certificate",
+    "certificate",
+    "traffic",
+)
+hits = [(address, actions) for address, actions in changes if any(term in address for term in forbidden)]
+if hits:
+    print("ABORT: existing service/LB/cert/DNS/traffic diff found:")
+    for address, actions in hits:
+        print(f"  {address}: {actions}")
+    raise SystemExit(1)
+
+outputs = plan.get("output_changes", {})
+bad_outputs = [name for name, change in outputs.items() if change.get("actions") != ["no-op"] and not name.startswith("browser_qa_")]
+if bad_outputs:
+    print("ABORT: unrelated output changes found:", ", ".join(sorted(bad_outputs)))
+    raise SystemExit(1)
+
+print("OK: saved plan is limited to dedicated browser-QA addresses.")
+for address, actions in changes:
+    print(f"  {address}: {actions}")
+PY
+```
+
+Abort immediately if the saved plan contains any existing Cloud Run service, load balancer, URL map, certificate, DNS, traffic, or unrelated IAM/resource diff. A plan is applyable only when every resource change address is dedicated browser-QA Terraform, such as `google_cloud_run_v2_job.browser_qa_main[0]` or `google_secret_manager_secret.browser_qa_gmail_oauth[0]`.
+
+Only after that review, apply the same saved plan object:
+
+```bash
+# Mutating; operator review required. Applies only the saved plan reviewed above.
+terraform apply "$plan_path"
+```
+
+Never replace this with an unsaved `terraform apply`, `-refresh=false`, or `-target`.
+
+### 2. Add Secret Manager versions without leaking values
+
+Terraform creates only the Secret Manager containers. Secret versions are operator-owned.
+
+Generate a random 32-byte identity seed as base64 and pipe it directly to Secret Manager:
+
+```bash
+# Mutating; operator review required. No secret value appears in argv.
+set -euo pipefail
+set +x
+
+python3 - <<'PY' | gcloud secrets versions add flatkey-browser-qa-identity-seed \
+  --project=vocai-gemini-prod \
+  --data-file=-
+import base64
+import os
+import sys
+sys.stdout.write(base64.b64encode(os.urandom(32)).decode("ascii"))
+PY
+```
+
+Add the dedicated Codex API key through non-echoing stdin:
+
+```bash
+# Mutating; operator review required. The key is read silently and never placed in argv.
+set -euo pipefail
+set +x
+
+IFS= read -rsp "Dedicated Codex API key: " CODEX_API_KEY
+printf '\n'
+printf '%s' "$CODEX_API_KEY" | gcloud secrets versions add flatkey-browser-qa-codex-api-key \
+  --project=vocai-gemini-prod \
+  --data-file=-
+unset CODEX_API_KEY
+```
+
+Transform the existing local Gmail OAuth credential JSON in memory and pipe only the canonical broker payload to Secret Manager. Do not copy the source file, do not print the transformed JSON, and do not commit either file.
+
+```bash
+# Mutating; operator review required. Set GMAIL_OAUTH_SOURCE to the local credential file path.
+set -euo pipefail
+set +x
+
+IFS= read -rsp "Local Gmail OAuth credential JSON path: " GMAIL_OAUTH_SOURCE
+printf '\n'
+export GMAIL_OAUTH_SOURCE
+
+python3 - <<'PY' | gcloud secrets versions add flatkey-browser-qa-gmail-oauth \
+  --project=vocai-gemini-prod \
+  --data-file=-
+import json
+import os
+import sys
+
+source = os.environ["GMAIL_OAUTH_SOURCE"]
+with open(source, encoding="utf-8") as handle:
+    raw = json.load(handle)
+
+client = raw.get("installed") or raw.get("web") or raw
+scopes = raw.get("scopes") or raw.get("scope") or ["https://www.googleapis.com/auth/gmail.readonly"]
+if isinstance(scopes, str):
+    scopes = scopes.split()
+
+payload = {
+    "refresh_token": raw["refresh_token"],
+    "token_uri": client.get("token_uri") or raw.get("token_uri") or "https://oauth2.googleapis.com/token",
+    "client_id": client["client_id"],
+    "client_secret": client["client_secret"],
+    "scopes": scopes,
+}
+if set(payload["scopes"]) != {"https://www.googleapis.com/auth/gmail.readonly"}:
+    raise SystemExit("OAuth scopes must be exactly gmail.readonly")
+
+json.dump(payload, sys.stdout, separators=(",", ":"))
+PY
+
+unset GMAIL_OAUTH_SOURCE
+```
+
+If the OAuth file does not contain a `refresh_token`, reauthorize the Gmail OAuth client for exactly `https://www.googleapis.com/auth/gmail.readonly`, then rerun the transform. Do not broaden scope.
+
+### 3. Set the GitHub repository variable
+
+`GCP_BROWSER_QA_GMAIL_BASE` is a repository variable, not a committed file and not a Terraform variable. It must be the base Gmail address only, with no plus tag, comma, CR, or LF. Use the GitHub repository UI if possible so the value does not enter CLI argv or shell history.
+
+If policy requires CLI, do not put the value in the command line. Use a locked temporary file and remove it immediately after `gh` reads it:
+
+```bash
+# Mutating; operator review required. Prefer the GitHub UI if your gh version cannot read variables from stdin.
+set -euo pipefail
+set +x
+
+tmp_var="$(mktemp)"
+chmod 600 "$tmp_var"
+trap 'rm -f "$tmp_var"' EXIT
+IFS= read -rsp "Base Gmail address without plus tag: " GCP_BROWSER_QA_GMAIL_BASE
+printf '\n'
+printf '%s' "$GCP_BROWSER_QA_GMAIL_BASE" > "$tmp_var"
+unset GCP_BROWSER_QA_GMAIL_BASE
+
+gh variable set GCP_BROWSER_QA_GMAIL_BASE \
+  --repo SolveaCX/new-api \
+  < "$tmp_var"
+```
+
+Abort if the installed `gh variable set` cannot read from stdin; use the GitHub UI instead. Do not fall back to `--body "$GCP_BROWSER_QA_GMAIL_BASE"`.
+
+### 4. OAuth publication, bootstrap, and repeatability rule
+
+A token issued while the OAuth app Publishing status is `Testing` proves bootstrap only. External Testing refresh tokens can expire quickly, so one successful run with a Testing token is not repeatability evidence.
+
+Repeatability is accepted only after all three steps are complete:
+
+1. Publish the OAuth app as `In production`.
+2. Reauthorize exactly `gmail.readonly`.
+3. Rotate `flatkey-browser-qa-gmail-oauth` with the new refresh token and complete a second successful full `normal` run.
+
+### 5. Verify broker IAM denial
+
+The broker must deny unauthenticated calls and calls from an identity that is not `flatkey-browser-qa-runtime`. Use the Terraform output for the broker URI; do not hardcode the generated `run.app` URL.
+
+```bash
+# Read-only verification example.
+set -euo pipefail
+set +x
+
+cd deploy/gcp/envs/prod
+BROKER_URI="$(terraform output -raw browser_qa_broker_uri)"
+
+status="$(curl -sS -o /dev/null -w '%{http_code}' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  --data '{"run_id":"0","email_tag":"flatkey-qa-0-0000000000","start_time":0}' \
+  "${BROKER_URI}/v1/current-code")"
+test "$status" = "401" -o "$status" = "403"
+
+token_file="$(mktemp)"
+header_file="$(mktemp)"
+chmod 600 "$token_file" "$header_file"
+trap 'rm -f "$token_file" "$header_file"' EXIT
+gcloud auth print-identity-token --audiences="$BROKER_URI" > "$token_file"
+{ printf 'Authorization: Bearer '; cat "$token_file"; printf '\n'; } > "$header_file"
+status="$(curl -sS -o /dev/null -w '%{http_code}' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H @"$header_file" \
+  --data '{"run_id":"0","email_tag":"flatkey-qa-0-0000000000","start_time":0}' \
+  "${BROKER_URI}/v1/current-code")"
+test "$status" = "401" -o "$status" = "403"
+```
+
+Abort if either request reaches application-level validation, returns `200`, or returns a broker JSON error such as `invalid_fields`. That means IAM is not enforcing the private broker boundary.
+
+### 6. First core replay
+
+Run `core` first. It exercises the onboarding replay and stops before the five-minute exploration phase.
+
+```bash
+# Mutating; operator review required. Starts a GitHub Actions run on the staging ref.
+gh workflow run gcp-browser-qa.yml \
+  --repo SolveaCX/new-api \
+  --ref staging \
+  -f mode=core
+
+gh run list \
+  --repo SolveaCX/new-api \
+  --workflow gcp-browser-qa.yml \
+  --branch staging \
+  --limit 1
+```
+
+Record the GitHub run id from the run list or UI. Do not use a workflow attempt number as the run id.
+
+### 7. Normal five-minute / thirty-action exploration
+
+Run `normal` only after `core` finishes and cleanup succeeds. `normal` performs core replay plus the bounded exploration phase, capped by the implementation at five minutes or thirty browser actions.
+
+```bash
+# Mutating; operator review required. Starts a full browser QA run on the staging ref.
+gh workflow run gcp-browser-qa.yml \
+  --repo SolveaCX/new-api \
+  --ref staging \
+  -f mode=normal
+```
+
+The GitHub summary must show only status, replay status, exploration status/actions, finding count, cleanup status, and the private GCS URI. Abort and redact the run if a secret, full Gmail address, full plus alias, verification code, password, Cookie, Authorization header, or full API key appears in the summary.
+
+### 8. Private GCS report lookup
+
+Use the GitHub Summary `gcs_uri`, or derive the manifest path from the original GitHub run id:
+
+```bash
+# Read-only report lookup example.
+set -euo pipefail
+set +x
+
+GITHUB_RUN_ID="<original-github-run-id>"
+GCP_BROWSER_QA_GCS_BUCKET="$(terraform -chdir=deploy/gcp/envs/prod output -raw browser_qa_report_bucket)"
+report_dir="$(mktemp -d)"
+trap 'rm -rf "$report_dir"' EXIT
+
+gcloud storage cp \
+  "gs://${GCP_BROWSER_QA_GCS_BUCKET}/runs/${GITHUB_RUN_ID}/manifest.json" \
+  "$report_dir/manifest.json" \
+  --quiet
+
+python3 -m json.tool "$report_dir/manifest.json"
+```
+
+Report objects are private and expire by bucket lifecycle after 14 days. Do not upload report downloads to issues, PR comments, tickets, or chat unless they have been manually redacted again.
+
+### 9. Cleanup-only with the original GitHub run id
+
+Use `cleanup-only` when the main run was cancelled, the platform interrupted the workflow before cleanup completed, or cleanup needs to be retried. Always use the original GitHub run id for the run that created the staging identity.
+
+```bash
+# Mutating; operator review required. Recomputes the same QA identity from the original run id.
+ORIGINAL_GITHUB_RUN_ID="<original-github-run-id>"
+
+gh workflow run gcp-browser-qa.yml \
+  --repo SolveaCX/new-api \
+  --ref staging \
+  -f mode=cleanup-only \
+  -f original_run_id="$ORIGINAL_GITHUB_RUN_ID"
+```
+
+Abort if `original_run_id` is unknown. Do not substitute the cleanup workflow's new run id; that would derive a different identity and leave the original account unproven.
+
+### 10. `invalid_grant` recovery
+
+`gmail_invalid_grant` from the broker is an infrastructure failure, not a retryable app failure.
+
+Recovery:
+
+1. Stop rerunning `normal`; repeated runs will consume cleanup capacity and produce the same failure.
+2. Publish the OAuth app as `In production` if it is still `Testing`.
+3. Reauthorize the OAuth client for exactly `https://www.googleapis.com/auth/gmail.readonly`.
+4. Rotate `flatkey-browser-qa-gmail-oauth` using the in-memory transform above.
+5. Run `core`.
+6. If `core` passes and cleanup succeeds, run `normal`.
+
+Abort if the new OAuth grant requires a broader Gmail scope, if the base Gmail profile is not the expected base mailbox, or if `gmail_invalid_grant` repeats after publication and secret rotation.
+
+### 11. Gmail plus-alias restriction failure
+
+Browser QA requires staging to accept Gmail plus aliases generated as `+flatkey-qa-<run-id>-<nonce>`. If the workflow fails before account creation with an alias restriction error, classify it as staging configuration failure.
+
+Recovery:
+
+1. Verify staging has `EmailAliasRestrictionEnabled=false`.
+2. Do not switch to a non-plus personal mailbox, disposable domain, or committed static test address.
+3. Run `cleanup-only` with the original run id if the report or logs show that account creation may have started.
+4. Rerun `core` after the staging setting is fixed.
+
+Abort if staging policy intentionally forbids plus aliases; the current QA design depends on deterministic plus-alias derivation and must be redesigned before use.
+
+### Recovery and abort rules
+
+| Condition | Required action |
+|---|---|
+| Terraform plan contains any non-`browser_qa` resource change | Abort; do not apply. |
+| Plan touches existing Cloud Run services, LB, URL map, cert, DNS, traffic, or unrelated IAM | Abort; investigate drift or lifecycle ownership. |
+| Secret command would put a secret in argv, history, Terraform state, GitHub output, or a committed file | Abort; use stdin/UI/in-memory transform instead. |
+| Broker unauthenticated or bad-identity call returns `200` or broker JSON validation | Abort; IAM boundary failed. |
+| `core` fails and cleanup succeeds | Triage replay failure from private report; do not run `normal` yet. |
+| `normal` returns `findings_detected` and cleanup succeeds | Treat as actionable QA finding; production deploy path remains unchanged. |
+| Any run returns `cleanup_failed` | Run `cleanup-only` with the original GitHub run id; manually inspect staging if it repeats. |
+| Manifest is missing and cleanup failed or skipped | Run `cleanup-only` with the original GitHub run id before further testing. |
+| Manifest is missing but cleanup succeeded | Classify as `infrastructure_failed`; inspect GCS/report upload path. |
+| OAuth app is `Testing` and the run passed | Count it as bootstrap only; publish In production, rotate, and rerun before claiming repeatability. |
+| `gmail_invalid_grant` | Publish/reauthorize/rotate; do not blind-retry. |
+| Gmail plus-alias restriction | Fix staging alias policy or stop; do not change identity strategy ad hoc. |
+| Unknown original run id for cleanup | Stop and recover the run id from GitHub Actions before attempting cleanup. |
+
+---
+
 ## CI/CD constraints
 
 - Workflow: `.github/workflows/deploy.yml` (GitHub Actions), uses Workload Identity Federation — no static keys.

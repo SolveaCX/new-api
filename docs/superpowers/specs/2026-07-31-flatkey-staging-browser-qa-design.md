@@ -2,7 +2,7 @@
 
 **日期：** 2026-07-31
 **状态：** 已批准，实施中
-**实施计划：** `docs/superpowers/plans/2026-07-31-flatkey-staging-browser-qa.md`
+**实施计划：** [docs/superpowers/plans/2026-07-31-flatkey-staging-browser-qa.md](../plans/2026-07-31-flatkey-staging-browser-qa.md)
 **范围：** 将 Mac Record & Replay 生成的 onboarding Skill 运行在 Google Cloud，对 Flatkey staging 做一次可重复的语义回放和有边界的 AI 发散测试
 
 ## 1. 目标
