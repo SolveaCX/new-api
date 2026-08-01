@@ -74,6 +74,9 @@ test("long lived helper masks known values, blocks service workers, buffers evid
     async addInitScript(source) {
       calls.push(["init-script", source]);
     },
+    async routeWebSocket(pattern, handler) {
+      calls.push(["routeWebSocket", pattern, handler]);
+    },
     async newCDPSession(selectedPage) {
       calls.push(["cdp-session", selectedPage === page]);
       return {
@@ -105,6 +108,14 @@ test("long lived helper masks known values, blocks service workers, buffers evid
   const browser = {
     contexts() {
       return [context];
+    },
+    async newBrowserCDPSession() {
+      calls.push(["browser-cdp-session"]);
+      return {
+        async send(method, params) {
+          calls.push(["browser-cdp-send", method, params]);
+        },
+      };
     },
     async close() {
       calls.push(["close"]);
@@ -143,6 +154,92 @@ test("long lived helper masks known values, blocks service workers, buffers evid
   assert.deepEqual(calls.at(-1), ["close"]);
 });
 
+test("long lived helper installs websocket and download denial before observing pages", async () => {
+  const calls = [];
+  const page = fakeScreenshotPage();
+  const context = {
+    pages() {
+      calls.push(["pages"]);
+      return [page];
+    },
+    async addInitScript() {
+      calls.push(["init-script"]);
+    },
+    serviceWorkers() {
+      return [];
+    },
+    async routeWebSocket(pattern, handler) {
+      calls.push(["routeWebSocket", pattern, handler]);
+    },
+    async newCDPSession(selectedPage) {
+      calls.push(["page-cdp", selectedPage === page]);
+      return { send: async (method, params) => calls.push(["page-cdp-send", method, params]) };
+    },
+    on() {},
+  };
+  const browser = {
+    contexts() {
+      return [context];
+    },
+    async newBrowserCDPSession() {
+      calls.push(["browser-cdp"]);
+      return { send: async (method, params) => calls.push(["browser-cdp-send", method, params]) };
+    },
+  };
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
+
+  await session.start();
+  const wsHandler = calls.find((call) => call[0] === "routeWebSocket")[2];
+  const sockets = [];
+  await wsHandler({ close: async () => sockets.push("closed") });
+
+  const pagesIndex = calls.findIndex((call) => call[0] === "pages");
+  const wsIndex = calls.findIndex((call) => call[0] === "routeWebSocket");
+  const downloadIndex = calls.findIndex((call) => call[0] === "browser-cdp-send" && call[1] === "Browser.setDownloadBehavior");
+  assert.ok(wsIndex >= 0 && wsIndex < pagesIndex);
+  assert.ok(downloadIndex >= 0 && downloadIndex < pagesIndex);
+  assert.deepEqual(calls[downloadIndex][2], { behavior: "deny" });
+  assert.deepEqual(sockets, ["closed"]);
+});
+
+test("long lived helper fails closed when websocket blocking cannot be applied", async () => {
+  const context = fakeSecureStartContext();
+  delete context.routeWebSocket;
+  const browser = fakeSecureStartBrowser(context);
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
+  await assert.rejects(() => session.start(), /websocket blocking unavailable/);
+});
+
+test("long lived helper fails closed when websocket blocking registration fails", async () => {
+  const context = fakeSecureStartContext();
+  context.routeWebSocket = async () => {
+    throw new Error("route failed");
+  };
+  const browser = fakeSecureStartBrowser(context);
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
+  await assert.rejects(() => session.start(), /websocket blocking unavailable/);
+});
+
+test("long lived helper fails closed when download denial cannot be applied", async () => {
+  const context = fakeSecureStartContext();
+  const browser = fakeSecureStartBrowser(context);
+  delete browser.newBrowserCDPSession;
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
+  await assert.rejects(() => session.start(), /download blocking unavailable/);
+});
+
+test("long lived helper fails closed when download denial command fails", async () => {
+  const context = fakeSecureStartContext();
+  const browser = fakeSecureStartBrowser(context);
+  browser.newBrowserCDPSession = async () => ({
+    send: async () => {
+      throw new Error("cdp failed");
+    },
+  });
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
+  await assert.rejects(() => session.start(), /download blocking unavailable/);
+});
+
 test("long lived helper fails closed when service worker blocking cannot be applied", async () => {
   const browser = {
     contexts() {
@@ -150,7 +247,11 @@ test("long lived helper fails closed when service worker blocking cannot be appl
         pages() {
           return [];
         },
+        async routeWebSocket() {},
       }];
+    },
+    async newBrowserCDPSession() {
+      return { send: async () => {} };
     },
   };
   const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
@@ -168,10 +269,14 @@ test("long lived helper fails closed when service worker bypass cannot be applie
           return [page];
         },
         async addInitScript() {},
+        async routeWebSocket() {},
         serviceWorkers() {
           return [];
         },
       }];
+    },
+    async newBrowserCDPSession() {
+      return { send: async () => {} };
     },
   };
   const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
@@ -218,6 +323,7 @@ test("docs reader uses fresh cookie-free docs proxy context, strips sensitive he
   assert.deepEqual(calls[0][1].storageState, { cookies: [], origins: [] });
   assert.equal(calls[0][1].serviceWorkers, "block");
   assert.equal(calls[0][1].javaScriptEnabled, false);
+  assert.equal(calls[0][1].acceptDownloads, false);
   assert.equal(calls[0][1].proxy.server, "http://127.0.0.1:4568");
   assert.equal(continued[0].headers.Cookie, undefined);
   assert.equal(continued[0].headers.Authorization, undefined);
@@ -356,6 +462,7 @@ test("new page setup pending blocks capture and flush until service worker bypas
   const context = {
     pages: () => [oldPage],
     async addInitScript() {},
+    async routeWebSocket() {},
     serviceWorkers: () => [],
     async newCDPSession(page) {
       if (page === newPage) {
@@ -369,7 +476,7 @@ test("new page setup pending blocks capture and flush until service worker bypas
       }
     },
   };
-  const session = new helper.BrowserEvidenceSession({ browser: { contexts: () => [context] }, runtimeDir: runtime });
+  const session = new helper.BrowserEvidenceSession({ browser: fakeSecureStartBrowser(context), runtimeDir: runtime });
   await session.start();
 
   pageHandler(newPage);
@@ -398,6 +505,7 @@ test("new page setup rejection makes capture and flush fail closed", async () =>
   const context = {
     pages: () => [oldPage],
     async addInitScript() {},
+    async routeWebSocket() {},
     serviceWorkers: () => [],
     async newCDPSession(page) {
       if (page === newPage) {
@@ -411,7 +519,7 @@ test("new page setup rejection makes capture and flush fail closed", async () =>
       }
     },
   };
-  const session = new helper.BrowserEvidenceSession({ browser: { contexts: () => [context] }, runtimeDir: runtime });
+  const session = new helper.BrowserEvidenceSession({ browser: fakeSecureStartBrowser(context), runtimeDir: runtime });
   await session.start();
 
   pageHandler(newPage);
@@ -430,6 +538,7 @@ test("new page setup success attaches listeners and keeps evidence usable", asyn
   const context = {
     pages: () => [oldPage],
     async addInitScript() {},
+    async routeWebSocket() {},
     serviceWorkers: () => [],
     async newCDPSession(page) {
       calls.push(["cdp", page === newPage ? "new" : "old"]);
@@ -441,7 +550,7 @@ test("new page setup success attaches listeners and keeps evidence usable", asyn
       }
     },
   };
-  const session = new helper.BrowserEvidenceSession({ browser: { contexts: () => [context] }, runtimeDir: runtime });
+  const session = new helper.BrowserEvidenceSession({ browser: fakeSecureStartBrowser(context), runtimeDir: runtime });
   await session.start();
 
   pageHandler(newPage);
@@ -466,6 +575,7 @@ async function assertNewPagesOpenedDuringSetupWaitAreDrained(operationName, star
   const context = {
     pages: () => [oldPage],
     async addInitScript() {},
+    async routeWebSocket() {},
     serviceWorkers: () => [],
     async newCDPSession(page) {
       if (page === page1) {
@@ -481,7 +591,7 @@ async function assertNewPagesOpenedDuringSetupWaitAreDrained(operationName, star
       }
     },
   };
-  const session = new helper.BrowserEvidenceSession({ browser: { contexts: () => [context] }, runtimeDir: runtime });
+  const session = new helper.BrowserEvidenceSession({ browser: fakeSecureStartBrowser(context), runtimeDir: runtime });
   await session.start();
 
   pageHandler(page1);
@@ -523,6 +633,36 @@ function fakeScreenshotPage() {
         text: () => text,
         location: () => ({ url: "https://staging-console.flatkey.ai", lineNumber: 1 }),
       });
+    },
+  };
+}
+
+function fakeSecureStartContext(page = fakeScreenshotPage()) {
+  return {
+    pages() {
+      return [page];
+    },
+    async addInitScript() {},
+    serviceWorkers() {
+      return [];
+    },
+    async routeWebSocket(_pattern, handler) {
+      this.wsHandler = handler;
+    },
+    async newCDPSession() {
+      return { send: async () => {} };
+    },
+    on() {},
+  };
+}
+
+function fakeSecureStartBrowser(context = fakeSecureStartContext()) {
+  return {
+    contexts() {
+      return [context];
+    },
+    async newBrowserCDPSession() {
+      return { send: async () => {} };
     },
   };
 }

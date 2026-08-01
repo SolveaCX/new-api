@@ -120,6 +120,8 @@ class BrowserEvidenceSession {
     if (!this.context) {
       throw new Error("default browser context unavailable");
     }
+    await this._blockWebSockets();
+    await this._denyDownloads();
     await this._blockServiceWorkers();
     this._attachContextListeners();
     const pages = typeof this.context.pages === "function" ? this.context.pages() : [];
@@ -134,6 +136,41 @@ class BrowserEvidenceSession {
       });
     }
     return this;
+  }
+
+  async _blockWebSockets() {
+    if (typeof this.context.routeWebSocket !== "function") {
+      throw new Error("websocket blocking unavailable");
+    }
+    try {
+      await this.context.routeWebSocket("**/*", async (socket) => {
+        if (socket && typeof socket.close === "function") {
+          await socket.close();
+        }
+      });
+    } catch (_error) {
+      throw new Error("websocket blocking unavailable");
+    }
+  }
+
+  async _denyDownloads() {
+    if (!this.browser || typeof this.browser.newBrowserCDPSession !== "function") {
+      throw new Error("download blocking unavailable");
+    }
+    let session;
+    try {
+      session = await this.browser.newBrowserCDPSession();
+      if (!session || typeof session.send !== "function") {
+        throw new Error("download blocking unavailable");
+      }
+      await session.send("Browser.setDownloadBehavior", { behavior: "deny" });
+    } catch (_error) {
+      throw new Error("download blocking unavailable");
+    } finally {
+      if (session && typeof session.detach === "function") {
+        await session.detach().catch(() => {});
+      }
+    }
   }
 
   async _blockServiceWorkers() {
@@ -288,6 +325,7 @@ class BrowserEvidenceSession {
       proxy: { server: this.docsProxyUrl },
       javaScriptEnabled: false,
       serviceWorkers: "block",
+      acceptDownloads: false,
       storageState: { cookies: [], origins: [] },
     });
     try {
