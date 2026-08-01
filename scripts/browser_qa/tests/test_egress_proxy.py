@@ -23,6 +23,27 @@ class ThreadedServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
+class ChunkedSocket:
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+
+    def recv(self, _size):
+        if not self.chunks:
+            raise socket.timeout("no more data")
+        return self.chunks.pop(0)
+
+
+def _read_connect_response(sock):
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = sock.recv(256)
+        if not chunk:
+            break
+        data += chunk
+    header, separator, remainder = data.partition(b"\r\n\r\n")
+    return header + separator, remainder
+
+
 class RedirectHandler(http.server.BaseHTTPRequestHandler):
     redirect_to = "https://flatkey.ai/blocked"
 
@@ -233,6 +254,14 @@ class EgressPolicyTests(unittest.TestCase):
             upstream.shutdown()
             upstream.server_close()
 
+    def test_connect_response_reader_preserves_payload_arriving_with_header(self):
+        response, remainder = _read_connect_response(
+            ChunkedSocket([b"HTTP/1.1 200 Connection Established\r\n\r\nyyyyyyyy"])
+        )
+
+        self.assertIn(b"200", response)
+        self.assertEqual(remainder, b"y" * 8)
+
     def test_connect_tunnel_has_independent_byte_budgets_per_direction(self):
         class EchoHandler(socketserver.BaseRequestHandler):
             def handle(self):
@@ -252,13 +281,16 @@ class EgressPolicyTests(unittest.TestCase):
         try:
             with socket.create_connection((proxy.host, proxy.port), timeout=2) as sock:
                 sock.sendall(b"CONNECT staging-console.flatkey.ai:443 HTTP/1.1\r\nHost: staging-console.flatkey.ai\r\n\r\n")
-                self.assertIn(b"200", sock.recv(256))
-                data = sock.recv(64)
-                self.assertLessEqual(len(data), 8)
+                response, data = _read_connect_response(sock)
+                self.assertIn(b"200", response)
+                while len(data) < 8:
+                    chunk = sock.recv(8 - len(data))
+                    if not chunk:
+                        break
+                    data += chunk
+                self.assertEqual(data, b"y" * 8)
         finally:
             proxy.stop()
-            upstream.shutdown()
-            upstream.server_close()
             upstream.shutdown()
             upstream.server_close()
 
