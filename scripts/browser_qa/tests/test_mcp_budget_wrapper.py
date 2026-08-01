@@ -255,7 +255,7 @@ class WrapperContractTests(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue().splitlines()[0])["error"]["code"], -32001)
             self.assertEqual(child.stdin.getvalue(), "")
 
-    def test_tools_call_notifications_count_and_over_budget_notification_is_not_forwarded(self):
+    def test_tools_call_notifications_are_silent_without_budget_or_forwarding_side_effects(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
             mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": 100.0})
             child = FakeChild()
@@ -268,8 +268,10 @@ class WrapperContractTests(unittest.TestCase):
             output = io.StringIO()
             wrapper.proxy_client_requests(io.StringIO(notifications), output)
 
-            self.assertEqual(len(child.stdin.getvalue().splitlines()), 30)
+            self.assertEqual(child.stdin.getvalue(), "")
             self.assertEqual(output.getvalue(), "")
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as handle:
+                self.assertEqual(json.load(handle).get("actions_used", 0), 0)
 
     def test_initialize_list_responses_and_notifications_do_not_consume_action_budget(self):
         clock = FakeClock()
@@ -333,6 +335,40 @@ class WrapperContractTests(unittest.TestCase):
             self.assertEqual(wrapper.docs_calls, [{"url": "https://docs.flatkey.ai/quickstart"}])
             with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as handle:
                 self.assertEqual(json.load(handle)["actions_used"], 1)
+
+    def test_no_id_docs_tool_call_notification_is_silent_and_has_no_side_effects(self):
+        class DocsWrapper(mcp_budget_wrapper.BudgetedMcpWrapper):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.docs_calls = []
+
+            def _request_docs_read(self, arguments):
+                self.docs_calls.append(arguments)
+                return {"url": arguments["url"], "status": 200, "text": "hello docs"}
+
+        child = FakeChild()
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            mcp_budget_wrapper.write_control_state(runtime_dir, {"phase": "exploration", "monotonic_started_at": 100.0})
+            wrapper = DocsWrapper(
+                runtime_dir,
+                child=child,
+                clock=FakeClock(),
+                tree_terminator=RecordingTreeTerminator(),
+                runtime_evidence_url="http://127.0.0.1:1/runtime-evidence",
+            )
+            output = io.StringIO()
+            request = frame({
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {"name": "qa_read_docs", "arguments": {"url": "https://docs.flatkey.ai/quickstart"}},
+            })
+            wrapper.proxy_client_requests(io.StringIO(request), output)
+
+            self.assertEqual(output.getvalue(), "")
+            self.assertEqual(child.stdin.getvalue(), "")
+            self.assertEqual(wrapper.docs_calls, [])
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as handle:
+                self.assertEqual(json.load(handle).get("actions_used", 0), 0)
 
     def test_time_cutoff_state_parse_failure_client_parse_failure_and_child_protocol_parse_failure_fail_closed(self):
         clock = FakeClock()

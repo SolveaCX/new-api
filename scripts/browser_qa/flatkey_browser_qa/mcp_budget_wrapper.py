@@ -210,6 +210,12 @@ class BudgetedMcpWrapper:
                     request = self._parse_client_line(line, client_output)
                     if request is None:
                         break
+                    if "id" not in request:
+                        if _is_lifecycle_notification(request):
+                            self._write_child_stdin(line)
+                            if index == 0 and after_first_request:
+                                after_first_request()
+                        continue
                     if self._is_counted_tool_call(request):
                         if not self._allow_action(request, client_output):
                             break
@@ -534,6 +540,10 @@ def _is_forbidden_filename_request(request):
 def _is_docs_read_request(request):
     params = request.get("params") if isinstance(request, dict) else None
     return request.get("method") == "tools/call" and isinstance(params, dict) and params.get("name") == "qa_read_docs"
+
+
+def _is_lifecycle_notification(request):
+    return isinstance(request, dict) and request.get("method") == "notifications/initialized"
 
 
 def _with_docs_tool(response):
