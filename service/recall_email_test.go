@@ -566,14 +566,14 @@ func TestRecallEmailLanguageUsesExactSnapshotThenFallsBackToEnglish(t *testing.T
 	}
 }
 
-func TestRecallEmailDefinitePreAcceptFailureRetriesWithNewClaimHash(t *testing.T) {
+func TestRecallEmailTypedSMTPPreDataFailureRetriesWithNewClaimHash(t *testing.T) {
 	calls := 0
 	messageIDs := make([]string, 0, 2)
 	fixture := newRecallEmailFixture(t, 1, func(_, subject, receiver, content, messageID string) error {
 		calls++
 		messageIDs = append(messageIDs, messageID)
 		if calls == 1 {
-			return errors.New("temporary MAIL FROM rejection")
+			return &textproto.Error{Code: 421, Msg: "temporary MAIL FROM rejection"}
 		}
 		return nil
 	})
@@ -1305,7 +1305,7 @@ func TestRecallEmailWorkerRetryAndUncertainSendReserveNewSlots(t *testing.T) {
 	fixture := newRecallEmailFixture(t, 1, func(_, subject, receiver, content, messageID string) error {
 		calls++
 		if calls == 1 {
-			return errors.New("temporary MAIL FROM rejection")
+			return &textproto.Error{Code: 421, Msg: "temporary MAIL FROM rejection"}
 		}
 		return uncertainErr
 	})
