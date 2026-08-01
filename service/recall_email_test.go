@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/textproto"
 	"net/url"
 	"regexp"
 	"strings"
@@ -606,15 +607,18 @@ func TestRecallEmailRetryDelayIsBoundedExponential(t *testing.T) {
 	require.Equal(t, 30*time.Second, recallEmailRetryDelay(1))
 	require.Equal(t, 60*time.Second, recallEmailRetryDelay(2))
 	require.Equal(t, 120*time.Second, recallEmailRetryDelay(3))
-	require.Equal(t, time.Hour, recallEmailRetryDelay(20))
+	require.Equal(t, 240*time.Second, recallEmailRetryDelay(4))
+	require.Equal(t, time.Duration(0), recallEmailRetryDelay(5))
+	require.Equal(t, time.Duration(0), recallEmailRetryDelay(20))
 }
 
-func TestRecallEmailDefiniteFailureStopsAfterBoundedAttempts(t *testing.T) {
+func TestRecallEmailRetryableSMTPFailureSchedulesExactDelaySlotsThenStops(t *testing.T) {
 	fixture := newRecallEmailFixture(t, 1, func(_, subject, receiver, content, messageID string) error {
-		return errors.New("temporary pre-accept rejection")
+		return &textproto.Error{Code: 421, Msg: "service temporarily unavailable"}
 	})
 	messageID := fixture.message.Id
 	for attempt := 1; attempt <= recallEmailMaxAttempts; attempt++ {
+		attemptStartedAt := fixture.now.Unix()
 		require.NoError(t, fixture.worker.ProcessLeased(context.Background(), messageID))
 		stored := loadRecallEmailMessageByID(t, messageID)
 		require.Equal(t, attempt, stored.AttemptCount)
@@ -624,6 +628,7 @@ func TestRecallEmailDefiniteFailureStopsAfterBoundedAttempts(t *testing.T) {
 			break
 		}
 		require.Equal(t, model.RecallMessageRetryWait, stored.State)
+		require.Equal(t, attemptStartedAt+int64(recallSMTPRetryDelays[attempt-1]/time.Second), stored.NextAttemptAt)
 		*fixture.now = time.Unix(stored.NextAttemptAt, 0).UTC()
 		won, err := model.LeaseRecallMessage(stored.Id, fixture.worker.owner, fixture.now.Unix(), fixture.now.Unix()+recallEmailLeaseSeconds)
 		require.NoError(t, err)
@@ -632,6 +637,24 @@ func TestRecallEmailDefiniteFailureStopsAfterBoundedAttempts(t *testing.T) {
 	due, err := model.ListDueRecallMessageIDs(fixture.now.Add(24*time.Hour).Unix(), 10)
 	require.NoError(t, err)
 	require.NotContains(t, due, messageID)
+}
+
+func TestRecallEmailPermanentSMTPFailureStopsImmediately(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, func(_, subject, receiver, content, messageID string) error {
+		return &textproto.Error{Code: 550, Msg: "mailbox unavailable snapshot@example.com"}
+	})
+
+	require.NoError(t, fixture.worker.ProcessLeased(context.Background(), fixture.message.Id))
+
+	stored := loadRecallEmailMessageByID(t, fixture.message.Id)
+	require.Equal(t, model.RecallMessageFailed, stored.State)
+	require.Equal(t, 1, stored.AttemptCount)
+	require.Zero(t, stored.NextAttemptAt)
+	require.Equal(t, RecallActivitySMTPSendFailedCode, stored.LastErrorCode)
+	require.Equal(t, RecallActivitySMTPSendFailedMessage, stored.LastErrorMessage)
+	due, err := model.ListDueRecallMessageIDs(recallEmailTestNow+24*3600, 10)
+	require.NoError(t, err)
+	require.NotContains(t, due, stored.Id)
 }
 
 func TestRecallEmailUncertainOutcomeIsNeverAutomaticallyRetried(t *testing.T) {
