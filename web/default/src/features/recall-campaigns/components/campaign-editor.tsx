@@ -442,12 +442,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
     if (!response.success || !response.data) {
       throw new Error('Translation generation failed')
     }
-    setPersistedConfigRevision(response.data.config_revision)
-    form.reset({
-      ...draft,
-      email_sequence: response.data.email_sequence,
-      defer_localization: true,
-    })
+    setPersistedConfigRevision(response.data.requested_config_revision)
   }
 
   const setCouponSource = (value: RecallCampaignDraft['coupon_source']) => {
@@ -1024,10 +1019,7 @@ export function CampaignEditor(props: CampaignEditorProps) {
                 }
                 immutable={immutable}
               />
-              <CampaignOfferValidityFields
-                form={form}
-                immutable={immutable}
-              />
+              <CampaignOfferValidityFields form={form} immutable={immutable} />
             </>
           ) : (
             <div className='space-y-2'>
