@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import urllib.request
+from urllib.parse import urlsplit
 import ctypes
 from ctypes import wintypes
 
@@ -27,59 +28,39 @@ MAX_CHILD_STDERR_LINE_BYTES = 256 * 1024
 ALIAS_RESTRICTION_MARKER = "\u7ba1\u7406\u5458\u5df2\u542f\u7528\u90ae\u7bb1\u5730\u5740\u522b\u540d\u9650\u5236\uff0c\u60a8\u7684\u90ae\u7bb1\u5730\u5740\u7531\u4e8e\u5305\u542b\u7279\u6b8a\u7b26\u53f7\u800c\u88ab\u62d2\u7edd\u3002"
 
 
-def playwright_child_command(runtime_dir, proxy_url=None, *, executable=PLAYWRIGHT_MCP_EXECUTABLE):
-    """Build Playwright MCP with ``--proxy-bypass <-loopback>``.
+FILENAME_BLOCKED_TOOLS = frozenset({
+    "browser_snapshot",
+    "browser_console_messages",
+    "browser_network_requests",
+    "browser_network_request",
+})
 
-    Chromium implicitly bypasses loopback addresses. The ``<-loopback>`` token
-    removes that exception so all browser traffic follows the QA proxy policy.
-    """
-    if not proxy_url:
-        raise RuntimeError("proxy url is required")
+
+def playwright_child_command(runtime_dir, proxy_url=None, *, cdp_endpoint=None, executable=PLAYWRIGHT_MCP_EXECUTABLE):
+    """Build Playwright MCP so it attaches to the supervisor-owned browser."""
+    if cdp_endpoint is None:
+        cdp_endpoint = os.environ.get("FLATKEY_BROWSER_QA_CDP_ENDPOINT")
+    endpoint = _validate_cdp_endpoint(cdp_endpoint)
     directory = _runtime_dir(runtime_dir)
     output_dir = os.path.join(directory, "playwright-output")
     os.makedirs(output_dir, exist_ok=True)
-    config_path = os.path.join(directory, "playwright-mcp-config.json")
-    _write_playwright_config(config_path)
     command = [
         executable,
-        "--browser",
-        "chromium",
-        "--headless",
-        "--output-mode",
-        "file",
+        "--cdp-endpoint",
+        endpoint,
+        "--cdp-timeout",
+        "30000",
         "--output-dir",
         output_dir,
-        "--block-service-workers",
-        "--config",
-        config_path,
-        "--proxy-server",
-        proxy_url,
-        "--proxy-bypass",
-        "<-loopback>",
     ]
     return command
-
-
-def _write_playwright_config(path):
-    payload = {
-        "browser": {
-            "launchOptions": {
-                "args": [
-                    "--disable-quic",
-                    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-                ]
-            }
-        }
-    }
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, sort_keys=True)
 
 
 def main():
     runtime_dir = os.environ["FLATKEY_BROWSER_QA_RUNTIME_DIR"]
     proxy_url = os.environ["FLATKEY_BROWSER_QA_PROXY_URL"]
-    wrapper = launch_wrapper(runtime_dir, proxy_url=proxy_url)
+    cdp_endpoint = os.environ["FLATKEY_BROWSER_QA_CDP_ENDPOINT"]
+    wrapper = launch_wrapper(runtime_dir, proxy_url=proxy_url, cdp_endpoint=cdp_endpoint)
     signal.signal(signal.SIGTERM, wrapper.handle_parent_signal)
     signal.signal(signal.SIGINT, wrapper.handle_parent_signal)
     stdout_thread = threading.Thread(target=wrapper.proxy_child_stdout, args=(sys.stdout,), daemon=True)
@@ -97,11 +78,16 @@ def launch_wrapper(
     subprocess_run=subprocess.run,
     killpg=os.killpg if hasattr(os, "killpg") else None,
     proxy_url=None,
+    cdp_endpoint=None,
     parent_env=None,
 ):
     selected_tree_attach = tree_attach or ProcessTreeTerminator.attach
     child = popen_factory(
-        playwright_child_command(runtime_dir, proxy_url=proxy_url or os.environ.get("FLATKEY_BROWSER_QA_PROXY_URL")),
+        playwright_child_command(
+            runtime_dir,
+            proxy_url=proxy_url or os.environ.get("FLATKEY_BROWSER_QA_PROXY_URL"),
+            cdp_endpoint=cdp_endpoint or os.environ.get("FLATKEY_BROWSER_QA_CDP_ENDPOINT"),
+        ),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -291,6 +277,9 @@ class BudgetedMcpWrapper:
             self._write_error(client_output, request_id, -32600, "invalid request")
             self.terminate_child()
             return None
+        if _is_forbidden_filename_request(request):
+            self._write_error(client_output, request.get("id"), -32602, "filename is not allowed for browser evidence tools")
+            return None
         return request
 
     def _is_counted_tool_call(self, request):
@@ -447,6 +436,42 @@ def _runtime_dir(runtime_dir):
     if not os.path.isdir(real):
         raise RuntimeError("runtime dir invalid")
     return real
+
+
+def _validate_cdp_endpoint(endpoint):
+    if not isinstance(endpoint, str) or not endpoint:
+        raise RuntimeError("cdp endpoint is required")
+    try:
+        parsed = urlsplit(endpoint)
+    except ValueError as exc:
+        raise RuntimeError("cdp endpoint invalid") from exc
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError("cdp endpoint must be loopback http without credentials or path")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("cdp endpoint port invalid") from exc
+    if not isinstance(port, int) or port <= 0 or port > 65535:
+        raise RuntimeError("cdp endpoint port invalid")
+    return f"http://127.0.0.1:{port}"
+
+
+def _is_forbidden_filename_request(request):
+    if request.get("method") != "tools/call":
+        return False
+    params = request.get("params")
+    if not isinstance(params, dict) or params.get("name") not in FILENAME_BLOCKED_TOOLS:
+        return False
+    arguments = params.get("arguments")
+    return isinstance(arguments, dict) and "filename" in arguments
 
 
 def _is_jsonrpc_frame(payload):

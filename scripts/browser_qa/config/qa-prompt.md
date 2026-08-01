@@ -6,4 +6,8 @@ First replay the required registration flow. Call `qa_replay_checkpoint` only af
 
 Runtime cleanup is owned by the runtime after Codex exits. Do not attempt account, token, cookie, or artifact cleanup yourself.
 
+Screenshots must use only `qa_capture_screenshot` with a short logical name. Do not call `browser_take_screenshot`, do not provide filenames or paths to any browser tool, and do not choose selectors or output locations for screenshots.
+
+Use console and network tools only without `filename` arguments. Browser evidence, screenshot masking, raw MCP output cleanup, redaction, upload, account cleanup, and API key cleanup are owned by the runtime.
+
 Cookie-free docs access must not reuse a staging session. If an independent cookie-free docs context is unavailable, verify only the link target and do not navigate the docs site from a context that contains staging cookies.

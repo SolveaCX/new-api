@@ -111,6 +111,17 @@ class FakeSubprocess:
         return self.process
 
 
+class RecordingPopenFactory:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, args, **kwargs):
+        self.calls.append((args, kwargs))
+        process = FakeProcess(0)
+        process.pid = 4321 + len(self.calls)
+        return process
+
+
 class FakeSignals:
     SIGTERM = signal.SIGTERM
     SIGINT = signal.SIGINT
@@ -199,6 +210,23 @@ class FakeProxy:
         self.stopped = True
 
 
+class RecordingBrowserProcess:
+    def __init__(self):
+        self.terminated = False
+        self.killed = False
+        self.wait_calls = 0
+
+    def wait(self, timeout=None):
+        self.wait_calls += 1
+        return 0
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.killed = True
+
+
 class StopFailEvidenceSink:
     runtime_classification = None
     url = "http://127.0.0.1:1/runtime-evidence"
@@ -269,6 +297,11 @@ class SupervisorTests(unittest.TestCase):
         supervisor_kwargs = {}
         if thread_factory is not None:
             supervisor_kwargs["thread_factory"] = thread_factory
+        supervisor_kwargs["browser_factory"] = lambda **_kwargs: type(
+            "FakeBrowser",
+            (),
+            {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None},
+        )()
         sup = supervisor.Supervisor(
             env=input_env or env(),
             runtime_root=tmp,
@@ -392,6 +425,136 @@ class SupervisorTests(unittest.TestCase):
                 config_text += handle.read()
         self.assertIn('PATH = "C:\\\\explicit-tools"', config_text)
         self.assertNotIn("poison-tools", config_text)
+
+    def test_qa_config_removes_builtin_screenshot_and_exposes_restricted_evidence_mcp(self):
+        outcome, sup = self.run_supervisor(FakeProcess(0), result_payload=valid_result())
+
+        self.assertEqual(outcome.status, "passed")
+        with open(os.path.join(sup.codex_home, "qa.config.toml"), encoding="utf-8") as handle:
+            config_text = handle.read()
+        self.assertNotIn("browser_take_screenshot", config_text)
+        self.assertIn("[mcp_servers.evidence]", config_text)
+        self.assertIn("qa_capture_screenshot", config_text)
+
+    def test_supervisor_starts_chromium_with_proxy_cdp_runtime_profile_then_stops_after_evidence(self):
+        browser_process = RecordingBrowserProcess()
+        popen_factory = RecordingPopenFactory()
+        ordering = []
+
+        class OrderedEvidenceSink:
+            runtime_classification = None
+            url = "http://127.0.0.1:1/runtime-evidence"
+
+            def __init__(self, _redactor):
+                pass
+
+            def start(self):
+                ordering.append("evidence-start")
+
+            def stop(self):
+                ordering.append("evidence-stop")
+
+        def browser_popen(args, **kwargs):
+            popen_factory(args, **kwargs)
+            user_arg = next(arg for arg in args if arg.startswith("--user-data-dir="))
+            profile_dir = user_arg.split("=", 1)[1]
+            os.makedirs(profile_dir, exist_ok=True)
+            with open(os.path.join(profile_dir, "DevToolsActivePort"), "w", encoding="utf-8") as handle:
+                handle.write("9222\n/devtools/browser/id\n")
+            return browser_process
+
+        class OrderedBrowser(supervisor.ChromiumRuntime):
+            def start(self):
+                ordering.append("browser-start")
+                return super().start()
+
+            def stop(self):
+                ordering.append("browser-stop")
+                super().stop()
+
+        with tempfile.TemporaryDirectory() as runtime_root, mock.patch.object(supervisor, "RuntimeEvidenceSink", OrderedEvidenceSink):
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=runtime_root,
+                subprocess_runner=type("Runner", (), {"popen": popen_factory})(),
+                uploader=FakeUploader(),
+                cleanup_runner=FakeCleanup(),
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                browser_factory=lambda **kwargs: OrderedBrowser(**{**kwargs, "popen_factory": browser_popen, "executable": "chromium", "clock": FakeClock()}),
+            )
+            outcome = sup.run(initial_result=valid_result())
+
+            self.assertEqual(outcome.status, "passed")
+            browser_args = popen_factory.calls[0][0]
+            self.assertIn("--remote-debugging-port=0", browser_args)
+            self.assertIn("--headless=new", browser_args)
+            self.assertIn("--disable-quic", browser_args)
+            self.assertIn("--force-webrtc-ip-handling-policy=disable_non_proxied_udp", browser_args)
+            self.assertIn("--proxy-server=http://127.0.0.1:4567", browser_args)
+            self.assertIn("--proxy-bypass-list=<-loopback>", browser_args)
+            user_arg = next(arg for arg in browser_args if arg.startswith("--user-data-dir="))
+            self.assertTrue(os.path.realpath(user_arg.split("=", 1)[1]).startswith(os.path.realpath(runtime_root) + os.sep))
+            codex_config = os.path.join(sup.codex_home, "qa.config.toml")
+            with open(codex_config, encoding="utf-8") as handle:
+                config_text = handle.read()
+            self.assertIn('FLATKEY_BROWSER_QA_CDP_ENDPOINT = "http://127.0.0.1:9222"', config_text)
+            self.assertEqual(ordering, ["evidence-start", "browser-start", "evidence-stop", "browser-stop"])
+            self.assertTrue(browser_process.terminated)
+
+    def test_browser_start_failure_still_runs_cleanup_and_does_not_start_codex(self):
+        class FailingBrowser:
+            def start(self):
+                raise RuntimeError("chromium missing")
+
+            def stop(self):
+                raise AssertionError("browser stop should not be required before start")
+
+        cleanup = FakeCleanup()
+        with tempfile.TemporaryDirectory() as runtime_root:
+            runner = FakeSubprocess(FakeProcess(0))
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=runtime_root,
+                subprocess_runner=runner,
+                uploader=FakeUploader(),
+                cleanup_runner=cleanup,
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                browser_factory=lambda **_kwargs: FailingBrowser(),
+            )
+            outcome = sup.run(initial_result=valid_result())
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(len(cleanup.calls), 1)
+        self.assertEqual(runner.calls, [])
+
+    def test_playwright_output_is_cleaned_and_not_uploaded(self):
+        with tempfile.TemporaryDirectory() as runtime_root:
+            output_dir = os.path.join(runtime_root, "playwright-output")
+            os.makedirs(output_dir)
+            with open(os.path.join(output_dir, "raw-secret.txt"), "w", encoding="utf-8") as handle:
+                handle.write("Cookie: secret")
+            uploader = FakeUploader()
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=runtime_root,
+                subprocess_runner=FakeSubprocess(FakeProcess(0)),
+                uploader=uploader,
+                cleanup_runner=FakeCleanup(),
+                proxy_factory=lambda: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                browser_factory=lambda **_kwargs: type("StartedBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
+            )
+            outcome = sup.run(initial_result=valid_result())
+
+        self.assertEqual(outcome.status, "passed")
+        self.assertFalse(os.path.exists(output_dir))
+        uploaded = [path for _manifest, paths in uploader.uploaded for path in paths]
+        self.assertTrue(all("playwright-output" not in path for path in uploaded))
 
     def test_nonzero_invalid_timeout_sigterm_upload_and_cleanup_failures_still_cleanup_then_upload_with_priority(self):
         self.assertEqual(self.run_supervisor(FakeProcess(7), result_payload=valid_result())[0].status, "infrastructure_failed")
@@ -538,6 +701,7 @@ class SupervisorTests(unittest.TestCase):
                 proxy_factory=lambda: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
+                browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
             )
             process_holder["sup"] = sup
             outcome = sup.run()
@@ -606,6 +770,7 @@ class SupervisorTests(unittest.TestCase):
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 signal_module=signals,
+                browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
             )
             outcome = sup.run(initial_result=valid_result())
 
@@ -630,10 +795,25 @@ class SupervisorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result_path = os.path.join(tmp, "result.json")
             events_path = os.path.join(tmp, "codex-events.jsonl")
+            screenshot_dir = os.path.join(tmp, "screenshots")
+            browser_dir = os.path.join(tmp, "browser")
+            os.mkdir(screenshot_dir)
+            os.mkdir(browser_dir)
+            screenshot_path = os.path.join(screenshot_dir, "checkpoint.png")
+            console_path = os.path.join(browser_dir, "console.jsonl")
+            network_path = os.path.join(browser_dir, "network.jsonl")
             manifest_path = os.path.join(tmp, "manifest.json")
-            for path in [result_path, events_path, manifest_path]:
-                with open(path, "w", encoding="utf-8") as handle:
-                    handle.write("{}")
+            for path, data in [
+                (result_path, "{}"),
+                (events_path, "{}\n"),
+                (screenshot_path, b"\x89PNG\r\n\x1a\n"),
+                (console_path, "{}\n"),
+                (network_path, "{}\n"),
+                (manifest_path, "{}"),
+            ]:
+                mode = "wb" if isinstance(data, bytes) else "w"
+                with open(path, mode, encoding=None if isinstance(data, bytes) else "utf-8") as handle:
+                    handle.write(data)
 
             uploader = supervisor.GcsArtifactUploader(
                 bucket="browser-qa-bucket",
@@ -643,13 +823,78 @@ class SupervisorTests(unittest.TestCase):
                 token_provider=lambda: "access-token",
                 upload_func=upload,
             )
-            uploader.upload(manifest_path, [result_path, events_path, manifest_path])
+            uploader.upload("manifest.json", [
+                "result.json",
+                "codex-events.jsonl",
+                "screenshots/checkpoint.png",
+                "browser/console.jsonl",
+                "browser/network.jsonl",
+                "manifest.json",
+            ])
 
         self.assertEqual([call[1] for call in calls], [
             "runs/run-1/main/exec-1/result.json",
             "runs/run-1/main/exec-1/codex-events.jsonl",
+            "runs/run-1/main/exec-1/screenshots/checkpoint.png",
+            "runs/run-1/main/exec-1/browser/console.jsonl",
+            "runs/run-1/main/exec-1/browser/network.jsonl",
             "runs/run-1/main/exec-1/manifest.json",
         ])
+        self.assertEqual([call[3] for call in calls], [
+            "application/json",
+            "application/x-ndjson",
+            "image/png",
+            "application/x-ndjson",
+            "application/x-ndjson",
+            "application/json",
+        ])
+
+    def test_gcs_uploader_rejects_bad_nested_artifacts_absolute_dotdot_symlink_bad_ext_and_duplicates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result_path = os.path.join(tmp, "result.json")
+            manifest_path = os.path.join(tmp, "manifest.json")
+            screenshot_dir = os.path.join(tmp, "screenshots")
+            browser_dir = os.path.join(tmp, "browser")
+            os.mkdir(screenshot_dir)
+            os.mkdir(browser_dir)
+            screenshot_path = os.path.join(screenshot_dir, "safe.png")
+            duplicate_path = os.path.join(screenshot_dir, "copy.png")
+            bad_ext = os.path.join(screenshot_dir, "safe.jpg")
+            console_path = os.path.join(browser_dir, "console.jsonl")
+            for path in [result_path, manifest_path, screenshot_path, duplicate_path, bad_ext, console_path]:
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("{}")
+            uploader = supervisor.GcsArtifactUploader(
+                bucket="browser-qa-bucket",
+                run_id="run-1",
+                execution_id="exec-1",
+                runtime_root=tmp,
+                token_provider=lambda: "access-token",
+                upload_func=lambda *_args, **_kwargs: {},
+            )
+
+            for artifact in [
+                os.path.abspath(os.path.join(tmp, "screenshots", "..", "result.json")),
+                "screenshots\\safe.png",
+                "screenshots/../result.json",
+                "screenshots/./safe.png",
+                "screenshots/safe.jpg",
+                "browser/bad.jsonl",
+            ]:
+                with self.subTest(artifact=artifact):
+                    with self.assertRaises(ValueError):
+                        uploader.upload("manifest.json", [artifact, "manifest.json"])
+            with self.assertRaises(ValueError):
+                uploader.upload("manifest.json", ["screenshots/safe.png", "screenshots/safe.png", "manifest.json"])
+            if hasattr(os, "symlink"):
+                symlink_path = os.path.join(screenshot_dir, "link.png")
+                try:
+                    os.symlink(screenshot_path, symlink_path)
+                except (OSError, NotImplementedError):
+                    symlink_path = None
+                if symlink_path is not None:
+                    with self.assertRaises(ValueError):
+                        uploader.upload("manifest.json", ["screenshots/link.png", "manifest.json"])
 
     def test_gcs_uploader_rejects_unsafe_artifacts_and_lazy_token_failure_happens_after_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -668,7 +913,7 @@ class SupervisorTests(unittest.TestCase):
                 upload_func=lambda *_args, **_kwargs: {},
             )
             with self.assertRaises(ValueError):
-                uploader.upload(manifest_path, [result_path, manifest_path])
+                uploader.upload("manifest.json", ["result.json", "manifest.json"])
 
             duplicate_dir = os.path.join(tmp, "duplicate")
             os.mkdir(duplicate_dir)
@@ -685,16 +930,16 @@ class SupervisorTests(unittest.TestCase):
             )
             try:
                 with self.assertRaises(ValueError):
-                    uploader.upload(manifest_path, [result_path, outside, manifest_path])
+                    uploader.upload("manifest.json", ["result.json", outside, "manifest.json"])
 
                 unexpected_path = os.path.join(tmp, "unexpected.txt")
                 with open(unexpected_path, "w", encoding="utf-8") as handle:
                     handle.write("unexpected")
                 with self.assertRaises(ValueError):
-                    uploader.upload(manifest_path, [result_path, unexpected_path, manifest_path])
+                    uploader.upload("manifest.json", ["result.json", "unexpected.txt", "manifest.json"])
 
                 with self.assertRaises(ValueError):
-                    uploader.upload(manifest_path, [result_path, duplicate_result_path, manifest_path])
+                    uploader.upload("manifest.json", ["result.json", "duplicate/result.json", "manifest.json"])
 
                 if hasattr(os, "symlink"):
                     symlink_path = os.path.join(tmp, "codex-stderr.txt")
@@ -704,7 +949,7 @@ class SupervisorTests(unittest.TestCase):
                         symlink_path = None
                     if symlink_path is not None:
                         with self.assertRaises(ValueError):
-                            uploader.upload(manifest_path, [result_path, symlink_path, manifest_path])
+                            uploader.upload("manifest.json", ["result.json", "codex-stderr.txt", "manifest.json"])
 
                 small_limit_uploader = supervisor.GcsArtifactUploader(
                     bucket="browser-qa-bucket",
@@ -716,7 +961,7 @@ class SupervisorTests(unittest.TestCase):
                     max_total_bytes=1,
                 )
                 with self.assertRaises(ValueError):
-                    small_limit_uploader.upload(manifest_path, [result_path, manifest_path])
+                    small_limit_uploader.upload("manifest.json", ["result.json", "manifest.json"])
             finally:
                 try:
                     os.remove(outside)

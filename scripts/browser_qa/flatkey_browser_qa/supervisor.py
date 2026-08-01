@@ -31,8 +31,13 @@ MAX_CODEX_STDERR_LINE_BYTES = 256 * 1024
 MAX_CODEX_STDERR_TOTAL_BYTES = 1024 * 1024
 MAX_CODEX_EVENTS = 10000
 MAX_GCS_ARTIFACT_TOTAL_BYTES = 16 * 1024 * 1024
-GCS_ARTIFACT_NAMES = frozenset({"result.json", "codex-events.jsonl", "codex-stderr.txt", "manifest.json"})
+MAX_BROWSER_EVIDENCE_EVENTS = 1000
+MAX_BROWSER_EVIDENCE_EVENT_BYTES = 64 * 1024
+MAX_BROWSER_EVIDENCE_TOTAL_BYTES = 2 * 1024 * 1024
+ROOT_GCS_ARTIFACT_NAMES = frozenset({"result.json", "codex-events.jsonl", "codex-stderr.txt", "manifest.json"})
+EXACT_NESTED_GCS_ARTIFACT_NAMES = frozenset({"browser/console.jsonl", "browser/network.jsonl"})
 SAFE_GCS_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SAFE_SCREENSHOT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.png$")
 PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "qa-prompt.md")
 POLICY_PATH = ".agents/skills/flatkey-new-user-onboarding/references/staging-cloud-qa-policy.md"
 SKILL_NAME = "flatkey-new-user-onboarding"
@@ -66,6 +71,7 @@ class Supervisor:
         clock,
         signal_module=signal,
         thread_factory=None,
+        browser_factory=None,
     ):
         self.env = dict(env)
         self.runtime_root = runtime_root
@@ -77,6 +83,7 @@ class Supervisor:
         self.clock = clock
         self.signal_module = signal_module
         self.thread_factory = thread_factory or threading.Thread
+        self.browser_factory = browser_factory or ChromiumRuntime
         self.events = []
         self.codex_home = None
         self.home_dir = None
@@ -105,9 +112,9 @@ class Supervisor:
         manifest_path = os.path.join(self.runtime_root, "manifest.json")
         codex_events_path = os.path.join(self.runtime_root, "codex-events.jsonl")
         codex_stderr_path = os.path.join(self.runtime_root, "codex-stderr.txt")
-        artifact_paths = [result_path, codex_events_path, codex_stderr_path, manifest_path]
         execution_id = getattr(self.uploader, "execution_id", None) or self.env.get("FLATKEY_BROWSER_QA_EXECUTION_ID")
         proxy = None
+        browser = None
         evidence_sink = None
         cleanup_result = CleanupResult(0, False, False, True, "cleanup was not attempted")
         upload_failed = False
@@ -129,7 +136,8 @@ class Supervisor:
                 evidence_sink.start()
                 self._evidence_url = evidence_sink.url
                 proxy.start()
-                process = self._start_codex(proxy)
+                browser = self.browser_factory(runtime_root=self.runtime_root, proxy=proxy, popen_factory=self.subprocess_runner.popen).start()
+                process = self._start_codex(proxy, browser.cdp_endpoint)
                 prompt = build_prompt(cfg, identity)
                 previous_handlers = self._install_signal_handlers(process)
                 try:
@@ -171,6 +179,13 @@ class Supervisor:
                     self._event("evidence_sink_stop_failed", str(exc), redactor)
                     runtime_classification = runtime_classification or "invalid_result"
                     invalid_result = True
+            if browser is not None:
+                try:
+                    browser.stop()
+                except Exception as exc:
+                    self._event("browser_stop_failed", str(exc), redactor)
+                    runtime_classification = runtime_classification or "invalid_result"
+                    invalid_result = True
             if proxy is not None:
                 try:
                     proxy.stop()
@@ -191,6 +206,18 @@ class Supervisor:
                 invalid_result = True
             _write_private_json(result_path, redactor.clean(payload))
             self._write_events_artifacts(codex_events_path, codex_stderr_path, redactor)
+            try:
+                write_browser_evidence_artifacts(self.runtime_root, {"console": [], "network": []}, redactor)
+            except Exception as exc:
+                self._event("browser_evidence_failed", str(exc), redactor)
+                runtime_classification = runtime_classification or "invalid_result"
+                invalid_result = True
+            try:
+                _cleanup_runtime_child_dir(self.runtime_root, "playwright-output")
+            except Exception as exc:
+                self._event("playwright_output_cleanup_failed", str(exc), redactor)
+                runtime_classification = runtime_classification or "invalid_result"
+                invalid_result = True
             manifest = report.write_report(
                 result_path,
                 manifest_path,
@@ -204,7 +231,7 @@ class Supervisor:
                 runtime_classification=runtime_classification,
             )
             try:
-                self.uploader.upload(manifest_path, artifact_paths)
+                self.uploader.upload("manifest.json", _collect_artifact_paths(self.runtime_root))
             except Exception as exc:
                 upload_failed = True
                 self._event("upload_failed", str(exc), redactor)
@@ -222,7 +249,7 @@ class Supervisor:
                 )
         return Outcome(manifest["status"], manifest_path, self.events)
 
-    def _start_codex(self, proxy):
+    def _start_codex(self, proxy, cdp_endpoint):
         self.codex_home = os.path.join(self.runtime_root, "codex-home")
         self.home_dir = os.path.join(self.runtime_root, "home")
         os.makedirs(self.codex_home, mode=0o700, exist_ok=True)
@@ -249,6 +276,7 @@ class Supervisor:
             "FLATKEY_BROWSER_QA_BROKER_URL": self.env["FLATKEY_BROWSER_QA_BROKER_URL"],
             "FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL": self._evidence_url,
             "FLATKEY_BROWSER_QA_PROXY_URL": f"http://{proxy.host}:{proxy.port}",
+            "FLATKEY_BROWSER_QA_CDP_ENDPOINT": cdp_endpoint,
         }
         if os.name == "nt":
             child_env["USERPROFILE"] = self.home_dir
@@ -420,13 +448,25 @@ web_search = "disabled"
 command = "{_toml_escape(sys.executable)}"
 args = ["-m", "scripts.browser_qa.flatkey_browser_qa.mcp_budget_wrapper"]
 required = true
-enabled_tools = ["browser_navigate", "browser_navigate_back", "browser_tabs", "browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_snapshot", "browser_find", "browser_wait_for", "browser_take_screenshot", "browser_console_messages", "browser_network_requests", "browser_network_request"]
+enabled_tools = ["browser_navigate", "browser_navigate_back", "browser_tabs", "browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_snapshot", "browser_find", "browser_wait_for", "browser_console_messages", "browser_network_requests", "browser_network_request"]
 [mcp_servers.playwright.env]
 PYTHONPATH = "{escaped_repo_root}"
 PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
 FLATKEY_BROWSER_QA_PROXY_URL = "http://{proxy.host}:{proxy.port}"
 FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"])}"
+FLATKEY_BROWSER_QA_CDP_ENDPOINT = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_CDP_ENDPOINT"])}"
+
+[mcp_servers.evidence]
+command = "{_toml_escape(sys.executable)}"
+args = ["-m", "scripts.browser_qa.flatkey_browser_qa.browser_evidence_mcp"]
+required = true
+enabled_tools = ["qa_capture_screenshot"]
+[mcp_servers.evidence.env]
+PYTHONPATH = "{escaped_repo_root}"
+PATH = "{_toml_escape(child_env.get("PATH", ""))}"
+FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
+FLATKEY_BROWSER_QA_CDP_ENDPOINT = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_CDP_ENDPOINT"])}"
 
 [mcp_servers.broker]
 command = "{_toml_escape(sys.executable)}"
@@ -639,6 +679,92 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None
 
 
+class ChromiumRuntime:
+    def __init__(self, *, runtime_root, proxy, popen_factory=subprocess.Popen, executable=None, clock=time, timeout_seconds=10):
+        self.runtime_root = os.path.realpath(runtime_root)
+        self.proxy = proxy
+        self.popen_factory = popen_factory
+        self.executable = executable
+        self.clock = clock
+        self.timeout_seconds = timeout_seconds
+        self.user_data_dir = os.path.join(self.runtime_root, "chromium-profile")
+        self.process = None
+        self.cdp_endpoint = None
+
+    def start(self):
+        os.makedirs(self.user_data_dir, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(self.user_data_dir, 0o700)
+        except OSError:
+            pass
+        executable = self.executable or _chromium_executable()
+        args = [
+            executable,
+            "--remote-debugging-port=0",
+            f"--user-data-dir={self.user_data_dir}",
+            f"--proxy-server=http://{self.proxy.host}:{self.proxy.port}",
+            "--proxy-bypass-list=<-loopback>",
+            "--disable-quic",
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+            "--headless=new",
+            "--disable-gpu",
+            "about:blank",
+        ]
+        self.process = self.popen_factory(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=False)
+        self.cdp_endpoint = self._wait_for_devtools_endpoint()
+        return self
+
+    def stop(self):
+        if self.process is None:
+            return
+        _terminate_process(self.process)
+
+    def _wait_for_devtools_endpoint(self):
+        active_port_path = os.path.realpath(os.path.join(self.user_data_dir, "DevToolsActivePort"))
+        if not active_port_path.startswith(os.path.realpath(self.user_data_dir) + os.sep):
+            raise RuntimeError("devtools active port path escaped profile")
+        deadline = self.clock.monotonic() + self.timeout_seconds
+        while self.clock.monotonic() <= deadline:
+            if os.path.exists(active_port_path):
+                return _read_devtools_endpoint(active_port_path)
+            poll = getattr(self.process, "poll", None)
+            if poll is not None and poll() is not None:
+                raise RuntimeError("chromium exited before cdp endpoint was ready")
+            time.sleep(0.05)
+        raise TimeoutError("chromium cdp endpoint timed out")
+
+
+def _chromium_executable():
+    candidates = [
+        os.environ.get("CHROMIUM_PATH"),
+        shutil.which("chromium"),
+        shutil.which("chromium-browser"),
+        shutil.which("google-chrome"),
+        shutil.which("google-chrome-stable"),
+        shutil.which("msedge"),
+    ]
+    for candidate in candidates:
+        if candidate:
+            return candidate
+    raise RuntimeError("chromium executable not found")
+
+
+def _read_devtools_endpoint(path):
+    if os.path.islink(path):
+        raise RuntimeError("devtools active port symlink rejected")
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read(256).splitlines()
+    if len(lines) < 1:
+        raise RuntimeError("devtools active port missing port")
+    try:
+        port = int(lines[0])
+    except ValueError as exc:
+        raise RuntimeError("devtools port invalid") from exc
+    if port <= 0 or port > 65535:
+        raise RuntimeError("devtools port invalid")
+    return f"http://127.0.0.1:{port}"
+
+
 class RuntimeEvidenceSink:
     def __init__(self, redactor, *, host="127.0.0.1", port=0, max_bytes=1024):
         self.redactor = redactor
@@ -737,6 +863,82 @@ def _is_alias_restriction_evidence(event):
     return failed is True and isinstance(text, str) and marker in text
 
 
+def write_browser_evidence_artifacts(runtime_root, raw_events, redactor):
+    if not isinstance(raw_events, dict):
+        raise RuntimeError("browser evidence must be an object")
+    console = raw_events.get("console", [])
+    network = raw_events.get("network", [])
+    if not isinstance(console, list) or not isinstance(network, list):
+        raise RuntimeError("browser evidence streams must be arrays")
+    if len(console) + len(network) > MAX_BROWSER_EVIDENCE_EVENTS:
+        raise RuntimeError("browser evidence exceeded event limit")
+    browser_dir = os.path.join(runtime_root, "browser")
+    os.makedirs(browser_dir, mode=0o700, exist_ok=True)
+    _write_jsonl_private(os.path.join(browser_dir, "console.jsonl"), (_project_console_event(item, redactor) for item in console))
+    _write_jsonl_private(os.path.join(browser_dir, "network.jsonl"), (_project_network_event(item, redactor) for item in network))
+
+
+def _write_jsonl_private(path, items):
+    total = 0
+    with _private_text_writer(path) as handle:
+        for item in items:
+            line = json.dumps(item, sort_keys=True) + "\n"
+            size = len(line.encode("utf-8"))
+            if size > MAX_BROWSER_EVIDENCE_EVENT_BYTES:
+                raise RuntimeError("browser evidence event exceeded limit")
+            total += size
+            if total > MAX_BROWSER_EVIDENCE_TOTAL_BYTES:
+                raise RuntimeError("browser evidence exceeded total limit")
+            handle.write(line)
+
+
+def _project_console_event(item, redactor):
+    if not isinstance(item, dict):
+        raise RuntimeError("browser console event invalid")
+    projected = {}
+    for key in ("type", "text", "location"):
+        if key in item:
+            projected[key] = item[key]
+    return redactor.clean(projected)
+
+
+def _project_network_event(item, redactor):
+    if not isinstance(item, dict):
+        raise RuntimeError("browser network event invalid")
+    projected = {}
+    for key in ("url", "method", "status", "timing", "error"):
+        if key in item:
+            projected[key] = item[key]
+    return redactor.clean(projected)
+
+
+def _cleanup_runtime_child_dir(runtime_root, name):
+    if name in ("", ".", "..") or os.path.sep in name or (os.path.altsep and os.path.altsep in name):
+        raise RuntimeError("unsafe runtime child name")
+    runtime_real = os.path.realpath(runtime_root)
+    target = os.path.realpath(os.path.join(runtime_real, name))
+    if not target.startswith(runtime_real + os.sep):
+        raise RuntimeError("runtime cleanup path escaped root")
+    if os.path.exists(target):
+        shutil.rmtree(target)
+
+
+def _collect_artifact_paths(runtime_root):
+    candidates = [
+        "result.json",
+        "codex-events.jsonl",
+        "codex-stderr.txt",
+        "browser/console.jsonl",
+        "browser/network.jsonl",
+    ]
+    screenshots_dir = os.path.join(runtime_root, "screenshots")
+    if os.path.isdir(screenshots_dir) and not os.path.islink(screenshots_dir):
+        for name in sorted(os.listdir(screenshots_dir)):
+            candidates.append(f"screenshots/{name}")
+    candidates.append("manifest.json")
+    return [item for item in candidates if os.path.exists(os.path.join(runtime_root, item.replace("/", os.sep)))]
+
+
 class GcsArtifactUploader:
     def __init__(
         self,
@@ -763,39 +965,37 @@ class GcsArtifactUploader:
         ordered = self._validated_artifacts(manifest_path, artifact_paths)
         access_token = self.token_provider()
         uploaded = []
-        for path in ordered:
-            name = os.path.basename(path)
-            object_name = f"runs/{self.run_id}/main/{self.execution_id}/{name}"
-            with open(path, "rb") as handle:
+        for logical_path, real_path, content_type in ordered:
+            object_name = f"runs/{self.run_id}/main/{self.execution_id}/{logical_path}"
+            with open(real_path, "rb") as handle:
                 data = handle.read()
-            content_type = "application/json" if name.endswith(".json") or name.endswith(".jsonl") else "text/plain"
             uploaded.append(
                 self.upload_func(self.bucket, object_name, data, content_type, access_token)
             )
         return {"uploaded": uploaded}
 
     def _validated_artifacts(self, manifest_path, artifact_paths):
-        manifest_real = _validated_artifact_path(self.runtime_root, manifest_path)
+        manifest = _validated_artifact_path(self.runtime_root, manifest_path)
         ordered = []
-        seen_names = set()
+        seen_logical = set()
+        seen_real = set()
         total = 0
         for path in artifact_paths:
-            real = _validated_artifact_path(self.runtime_root, path)
-            if real == manifest_real:
+            logical, real, content_type = _validated_artifact_path(self.runtime_root, path)
+            if logical == manifest[0]:
                 continue
-            name = os.path.basename(real)
-            if name in seen_names:
-                raise ValueError("duplicate artifact basename")
-            seen_names.add(name)
+            if logical in seen_logical or real in seen_real:
+                raise ValueError("duplicate artifact path")
+            seen_logical.add(logical)
+            seen_real.add(real)
             total += os.path.getsize(real)
-            ordered.append(real)
-        manifest_name = os.path.basename(manifest_real)
-        if manifest_name in seen_names:
-            raise ValueError("duplicate artifact basename")
-        total += os.path.getsize(manifest_real)
+            ordered.append((logical, real, content_type))
+        if manifest[0] in seen_logical or manifest[1] in seen_real:
+            raise ValueError("duplicate artifact path")
+        total += os.path.getsize(manifest[1])
         if total > self.max_total_bytes:
             raise ValueError("artifact upload too large")
-        ordered.append(manifest_real)
+        ordered.append(manifest)
         return ordered
 
 
@@ -804,17 +1004,48 @@ def _safe_gcs_component(value):
 
 
 def _validated_artifact_path(runtime_root, path):
-    real = os.path.realpath(path)
-    if not (real == runtime_root or real.startswith(runtime_root + os.sep)):
-        raise ValueError("artifact outside runtime root")
-    name = os.path.basename(real)
-    if name not in GCS_ARTIFACT_NAMES:
+    logical = _normalize_artifact_logical_path(path)
+    if not _allowed_artifact_logical_path(logical):
         raise ValueError("unexpected artifact name")
-    if os.path.islink(path):
+    runtime_real = os.path.realpath(runtime_root)
+    filesystem_path = os.path.join(runtime_real, *logical.split("/"))
+    if os.path.islink(filesystem_path):
         raise ValueError("artifact symlink rejected")
+    real = os.path.realpath(filesystem_path)
+    if not real.startswith(runtime_real + os.sep):
+        raise ValueError("artifact outside runtime root")
     if not os.path.isfile(real):
         raise ValueError("artifact must be a regular file")
-    return real
+    return logical, real, _artifact_content_type(logical)
+
+
+def _normalize_artifact_logical_path(path):
+    if not isinstance(path, str) or not path:
+        raise ValueError("artifact path invalid")
+    if os.path.isabs(path) or "\\" in path or path.startswith("/") or path.startswith("//"):
+        raise ValueError("artifact path must be relative POSIX")
+    parts = path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError("artifact path must be relative POSIX")
+    return "/".join(parts)
+
+
+def _allowed_artifact_logical_path(logical):
+    if logical in ROOT_GCS_ARTIFACT_NAMES or logical in EXACT_NESTED_GCS_ARTIFACT_NAMES:
+        return True
+    if logical.startswith("screenshots/") and logical.count("/") == 1:
+        return SAFE_SCREENSHOT_NAME.fullmatch(logical.split("/", 1)[1]) is not None
+    return False
+
+
+def _artifact_content_type(logical):
+    if logical.endswith(".png"):
+        return "image/png"
+    if logical.endswith(".jsonl"):
+        return "application/x-ndjson"
+    if logical.endswith(".json"):
+        return "application/json"
+    return "text/plain"
 
 
 def main(argv=None):

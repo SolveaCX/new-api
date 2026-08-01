@@ -116,50 +116,98 @@ class WrapperContractTests(unittest.TestCase):
             tree_terminator=terminator or RecordingTreeTerminator(),
         )
 
-    def test_child_command_is_fixed_no_shell_and_file_output_limited_to_runtime_dir(self):
+    def test_child_command_attaches_to_supervisor_cdp_endpoint_and_keeps_temp_output_in_runtime(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
-            command = mcp_budget_wrapper.playwright_child_command(runtime_dir, proxy_url="http://127.0.0.1:4567")
+            command = mcp_budget_wrapper.playwright_child_command(runtime_dir, cdp_endpoint="http://127.0.0.1:9222")
 
             self.assertEqual(command[0], "/usr/local/bin/playwright-mcp")
             self.assertNotIn("npx", command)
             self.assertNotIn("-y", command)
             self.assertTrue(all("@playwright/mcp" not in item for item in command))
-            self.assertIn("--browser", command)
-            self.assertIn("chromium", command)
-            self.assertIn("--headless", command)
-            self.assertIn("--output-mode", command)
-            self.assertIn("file", command)
-            self.assertIn("--proxy-server", command)
-            self.assertIn("http://127.0.0.1:4567", command)
-            self.assertIn("--proxy-bypass", command)
-            self.assertEqual(command[command.index("--proxy-bypass") + 1], "<-loopback>")
-            self.assertIn("<-loopback>", mcp_budget_wrapper.playwright_child_command.__doc__)
-            self.assertIn("--block-service-workers", command)
-            self.assertIn("--config", command)
+            self.assertNotIn("--browser", command)
+            self.assertNotIn("chromium", command)
+            self.assertNotIn("--headless", command)
+            self.assertIn("--cdp-timeout", command)
+            self.assertEqual(command[command.index("--cdp-timeout") + 1], "30000")
+            self.assertIn("--cdp-endpoint", command)
+            self.assertEqual(command[command.index("--cdp-endpoint") + 1], "http://127.0.0.1:9222")
+            self.assertNotIn("--proxy-server", command)
+            self.assertNotIn("--proxy-bypass", command)
+            self.assertNotIn("--block-service-workers", command)
+            self.assertNotIn("--config", command)
+            self.assertNotIn("--endpoint", command)
+            self.assertNotIn("--extension", command)
+            self.assertNotIn("--device", command)
+            self.assertNotIn("--mobile", command)
             output_dir = command[command.index("--output-dir") + 1]
-            config_path = command[command.index("--config") + 1]
             self.assertTrue(os.path.realpath(output_dir).startswith(os.path.realpath(runtime_dir) + os.sep))
-            self.assertTrue(os.path.realpath(config_path).startswith(os.path.realpath(runtime_dir) + os.sep))
-            with open(config_path, encoding="utf-8") as handle:
-                config = json.load(handle)
-            self.assertEqual(
-                config["browser"]["launchOptions"]["args"],
-                ["--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
-            )
             self.assertNotIn("@latest", command)
             self.assertIs(mcp_budget_wrapper.SUBPROCESS_SHELL, False)
 
-    def test_child_command_requires_proxy_and_accepts_explicit_test_executable_only(self):
+    def test_child_command_requires_strict_loopback_http_cdp_endpoint_and_accepts_explicit_test_executable_only(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
             with self.assertRaises(RuntimeError):
                 mcp_budget_wrapper.playwright_child_command(runtime_dir)
+            for cdp_endpoint in [
+                "https://127.0.0.1:9222",
+                "http://localhost:9222",
+                "http://127.0.0.1",
+                "http://127.0.0.1:0",
+                "http://127.0.0.1:65536",
+                "http://user:pass@127.0.0.1:9222",
+                "http://127.0.0.1:9222/json",
+                "http://127.0.0.1:9222?x=1",
+                "http://127.0.0.1:9222#devtools",
+            ]:
+                with self.subTest(cdp_endpoint=cdp_endpoint):
+                    with self.assertRaises(RuntimeError):
+                        mcp_budget_wrapper.playwright_child_command(runtime_dir, cdp_endpoint=cdp_endpoint)
 
             command = mcp_budget_wrapper.playwright_child_command(
                 runtime_dir,
-                proxy_url="http://127.0.0.1:4567",
+                cdp_endpoint="http://127.0.0.1:9222",
                 executable="/tmp/fake-playwright-mcp",
             )
             self.assertEqual(command[0], "/tmp/fake-playwright-mcp")
+
+    def test_filename_arguments_for_readonly_browser_tools_are_rejected_without_forwarding(self):
+        blocked_names = [
+            "browser_snapshot",
+            "browser_console_messages",
+            "browser_network_requests",
+            "browser_network_request",
+        ]
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            for name in blocked_names:
+                with self.subTest(name=name):
+                    child = FakeChild()
+                    output = io.StringIO()
+                    request = frame({
+                        "jsonrpc": "2.0",
+                        "id": name,
+                        "method": "tools/call",
+                        "params": {"name": name, "arguments": {"filename": "leak.txt"}},
+                    })
+                    wrapper = self.make_wrapper(runtime_dir, child)
+                    wrapper.proxy_client_requests(io.StringIO(request), output)
+
+                    self.assertEqual(child.stdin.getvalue(), "")
+                    response = json.loads(output.getvalue().splitlines()[0])
+                    self.assertEqual(response["id"], name)
+                    self.assertEqual(response["error"]["code"], -32602)
+
+            child = FakeChild()
+            output = io.StringIO()
+            allowed = frame({
+                "jsonrpc": "2.0",
+                "id": "safe",
+                "method": "tools/call",
+                "params": {"name": "browser_snapshot", "arguments": {}},
+            })
+            wrapper = self.make_wrapper(runtime_dir, child)
+            wrapper.proxy_client_requests(io.StringIO(allowed), output)
+            self.assertEqual(json.loads(child.stdin.getvalue())["id"], "safe")
+            self.assertEqual(output.getvalue(), "")
 
     def test_wrapper_forwards_calls_before_marker_and_exactly_thirty_after_marker(self):
         clock = FakeClock()
@@ -509,11 +557,12 @@ class WrapperContractTests(unittest.TestCase):
                 mcp_budget_wrapper.launch_wrapper(
                     runtime_dir,
                     popen_factory=popen_factory,
-                    tree_attach=fail_attach,
-                    subprocess_run=fake_run,
-                    killpg=fake_killpg,
-                    proxy_url="http://127.0.0.1:4567",
-                )
+                tree_attach=fail_attach,
+                subprocess_run=fake_run,
+                killpg=fake_killpg,
+                proxy_url="http://127.0.0.1:4567",
+                cdp_endpoint="http://127.0.0.1:9222",
+            )
 
             if os.name == "nt":
                 self.assertEqual(taskkill_calls[0][0], ["taskkill", "/PID", "4321", "/T", "/F"])
@@ -535,7 +584,7 @@ class WrapperContractTests(unittest.TestCase):
                 runtime_dir,
                 popen_factory=popen_factory,
                 tree_attach=lambda _child: RecordingTreeTerminator(),
-                proxy_url="http://127.0.0.1:4567",
+                cdp_endpoint="http://127.0.0.1:9222",
                 parent_env={
                     "PATH": "/bin",
                     "CODEX_API_KEY": "sk-secretSECRET",

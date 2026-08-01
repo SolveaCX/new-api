@@ -58,6 +58,8 @@ GitHub Actions 只负责构建、更新三个 QA runtime 的镜像、启动 Jobs
 
 ## 4. 总体架构
 
+Task 6 browser ownership update: the QA supervisor owns the single Chromium process for the run. It starts Chromium after preflight through the deny-by-default proxy, exposes only a loopback `http://127.0.0.1:<port>` CDP endpoint from the private runtime profile, and then starts Codex. Playwright MCP attaches to that endpoint; it does not launch its own browser.
+
 ```text
 GitHub workflow_dispatch
   ├─ WIF 登录 Google Cloud
@@ -191,6 +193,9 @@ Codex 显式调用 `$flatkey-new-user-onboarding`，但以目标结果而非坐�
 
 ## 9. 浏览器和网络控制
 
+- Chromium is supervisor-owned and launched with `--remote-debugging-port=0`, a runtime-local user data directory, the supervisor proxy, loopback proxy bypass removal, QUIC disabled, and non-proxied WebRTC disabled. Playwright MCP is fixed to `/usr/local/bin/playwright-mcp` and is invoked only with CDP attach arguments (`--cdp-endpoint`, timeout, and per-run output directory). MCP launch/browser/proxy flags are not trusted for the already-running browser.
+- Codex does not receive `browser_take_screenshot`. It receives `qa_capture_screenshot`, a restricted evidence MCP tool that accepts only a logical screenshot name. A supervisor-owned Node helper connects to the same CDP browser, masks inputs, textareas, contenteditable fields, verification-code fields, and known in-memory sensitive values, receives the Playwright screenshot as a Buffer, and writes the masked PNG privately under `screenshots/` with exclusive create semantics. The model cannot set paths, selectors, filenames, or disable masking.
+- The same helper keeps bounded console and network event buffers in memory. Raw browser events and Playwright MCP `playwright-output` are temporary only; before artifact upload, supervisor writes redacted `browser/console.jsonl` and projected `browser/network.jsonl` and then removes `playwright-output` in `finally`.
 - 使用固定版本 Playwright/Chromium，MCP 显式 `--headless`；运行时不执行 `npx ...@latest`。
 - `codex exec` 使用非交互、ephemeral、JSON 事件流和最终 output schema；忽略本机用户配置，Skill、模型名和 QA policy 均来自镜像中的版本化配置，workflow 不接受任意模型输入。模型变更必须通过 PR，并记录在报告中。
 - Codex shell 保持 workspace-write 且禁用 shell 子进程网络；启动自检必须证明 shell 对任意外部 URL 和 Cloud metadata 均无法直连。Codex 主进程只保留调用 OpenAI 所需连接，页面操作通过 Playwright MCP 完成。
@@ -217,6 +222,8 @@ Codex 显式调用 `$flatkey-new-user-onboarding`，但以目标结果而非坐�
 当前自助删除是产品定义的账号删除语义，底层可能保留软删除审计行；数据库级 hard purge 和管理员 janitor 不属于首版。若 staging 长期高频运行导致软删除数据积累，再单独设计前缀受限的 janitor。
 
 ## 11. 报告和告警
+
+Artifact upload is allowlisted by runtime-root relative POSIX paths only: root `result.json`, `codex-events.jsonl`, `codex-stderr.txt`, and `manifest.json`; one-level `screenshots/*.png`; and exact `browser/console.jsonl` plus `browser/network.jsonl`. Object names preserve those nested paths, content types are exact, symlinks and duplicate logical/real paths are rejected, and `manifest.json` is uploaded last. The temporary `playwright-output` directory is never uploaded and is deleted after Codex/MCP shutdown on success, nonzero exit, timeout, signal, and exception paths.
 
 每次 workflow 使用根前缀 `runs/<github-run-id>/`。主 Job 写入 `main/<execution-id>/`，cleanup Job 写入 `cleanup/<execution-id>/cleanup.json`，并在根前缀创建或更新最终 `manifest.json`；cleanup-only 重跑会保留新的 execution 记录并刷新最终 manifest：
 
