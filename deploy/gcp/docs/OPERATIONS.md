@@ -382,18 +382,20 @@ print("OK: saved plan is limited to dedicated browser-QA addresses.")
 for address, actions in changes:
     print(f"  {address}: {actions}")
 PY
+
+printf '\nReview the human-readable plan before applying:\n  %s\n' "$review_dir/browser-qa.tfplan.txt"
+printf 'If approved, apply before this shell exits so the exact saved plan still exists.\n'
+IFS= read -r -p "Type APPLY_BROWSER_QA_SAVED_PLAN to apply this exact saved plan: " APPLY_CONFIRM
+if [ "$APPLY_CONFIRM" = "APPLY_BROWSER_QA_SAVED_PLAN" ]; then
+  terraform apply "$plan_path"
+else
+  printf 'Skipped apply; temp plan will be removed by the EXIT trap.\n'
+fi
 ```
 
 Abort immediately if the saved plan contains any existing Cloud Run service, load balancer, URL map, certificate, DNS, traffic, or unrelated IAM/resource diff. A plan is applyable only when every resource change address is dedicated browser-QA Terraform, such as `google_cloud_run_v2_job.browser_qa_main[0]` or `google_secret_manager_secret.browser_qa_gmail_oauth[0]`.
 
-Only after that review, apply the same saved plan object:
-
-```bash
-# Mutating; operator review required. Applies only the saved plan reviewed above.
-terraform apply "$plan_path"
-```
-
-Never replace this with an unsaved `terraform apply`, `-refresh=false`, or `-target`.
+Apply only from the same review shell before the `EXIT` trap removes `plan_path`. Never replace this with an unsaved `terraform apply`, `-refresh=false`, or `-target`.
 
 ### 2. Add Secret Manager versions without leaking values
 
@@ -474,7 +476,7 @@ PY
 unset GMAIL_OAUTH_SOURCE
 ```
 
-If the OAuth file does not contain a `refresh_token`, reauthorize the Gmail OAuth client for exactly `https://www.googleapis.com/auth/gmail.readonly`, then rerun the transform. Do not broaden scope.
+The source OAuth file must contain a `refresh_token`. If it does not, use the Google OAuth app's existing client to perform a one-time local authorization outside the repo with `access_type=offline`, `prompt=consent`, and exactly `https://www.googleapis.com/auth/gmail.readonly`; save the resulting credential JSON only in an operator-owned `0600` local path, then rerun the transform above. Do not use a broad Gmail scope, do not use a production mailbox other than the approved base mailbox, and do not copy the credential JSON into the repository.
 
 ### 3. Set the GitHub repository variable
 
