@@ -2,12 +2,15 @@ import json
 import os
 import re
 import socket
+import sys
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .gmail import GmailClient
 from .gmail import GmailConfigError
+from .gmail import OAuthCredentials
 from .gmail import GmailError
 from .gmail import GmailInvalidGrant
 from .gmail import GmailPermanentError
@@ -171,6 +174,22 @@ def serve_forever(gmail_client, config: BrokerConfig, port=None):
     server.serve_forever()
 
 
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv:
+        raise SystemExit("broker does not accept command line arguments")
+    credentials = OAuthCredentials.from_env()
+    gmail_client = GmailClient(credentials)
+    serve_forever(
+        gmail_client,
+        BrokerConfig(
+            sender="noreply@flatkey.ai",
+            subject_marker="Flatkey Email Verification",
+        ),
+    )
+    return 0
+
+
 def _validate_payload_shape(payload):
     if not isinstance(payload, dict):
         raise BrokerRequestError(HTTPStatus.BAD_REQUEST, "invalid_json")
@@ -181,3 +200,7 @@ def _validate_payload_shape(payload):
 
 def _ascii_decimal(value):
     return isinstance(value, str) and value.isascii() and value.isdecimal()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

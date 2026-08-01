@@ -8,7 +8,9 @@ from contextlib import redirect_stderr
 from contextlib import redirect_stdout
 from http.server import ThreadingHTTPServer
 from io import StringIO
+from unittest import mock
 
+from scripts.browser_qa.flatkey_browser_qa import broker
 from scripts.browser_qa.flatkey_browser_qa.broker import BrokerConfig, VerificationBroker, make_handler
 from scripts.browser_qa.flatkey_browser_qa.gmail import GmailInvalidGrant
 from scripts.browser_qa.flatkey_browser_qa.gmail import GmailPermanentError
@@ -325,6 +327,32 @@ class BrokerTests(unittest.TestCase):
         self.assertIn('"run_id": "123"', output)
         for secret in ["owner", "gmail", "abcdefghij", "123456", "flatkey-qa"]:
             self.assertNotIn(secret, output)
+
+    def test_main_rejects_arguments_and_serves_http_broker_not_stdio_mcp(self):
+        with self.assertRaises(SystemExit) as extra_arg:
+            broker.main(["broker_mcp"])
+        self.assertNotEqual(extra_arg.exception.code, 0)
+
+        with (
+            mock.patch.dict("os.environ", {"PORT": "8080"}, clear=True),
+            mock.patch.object(broker, "OAuthCredentials") as credentials,
+            mock.patch.object(broker, "GmailClient") as gmail_client,
+            mock.patch.object(broker, "serve_forever") as serve_forever,
+            mock.patch("scripts.browser_qa.flatkey_browser_qa.broker_mcp.run") as broker_mcp_run,
+        ):
+            credentials.from_env.return_value = object()
+            gmail_client.return_value = object()
+            result = broker.main([])
+
+        self.assertEqual(result, 0)
+        credentials.from_env.assert_called_once()
+        gmail_client.assert_called_once_with(credentials.from_env.return_value)
+        serve_forever.assert_called_once()
+        self.assertIs(serve_forever.call_args.args[0], gmail_client.return_value)
+        self.assertEqual(serve_forever.call_args.args[1].sender, "noreply@flatkey.ai")
+        self.assertEqual(serve_forever.call_args.args[1].subject_marker, "Flatkey Email Verification")
+        self.assertEqual(serve_forever.call_args.kwargs, {})
+        broker_mcp_run.assert_not_called()
 
 
 if __name__ == "__main__":
