@@ -145,8 +145,10 @@ def _main_record(cfg, access_token):
 def _append_or_validate_record(records, record):
     updated = []
     changed = False
+    found = False
     for existing in records:
         if existing["kind"] == record["kind"] and existing["execution_id"] == record["execution_id"]:
+            found = True
             if existing != record:
                 legacy_record = dict(record)
                 legacy_record.pop("summary", None)
@@ -158,7 +160,7 @@ def _append_or_validate_record(records, record):
             updated.append(existing)
         else:
             updated.append(existing)
-    if changed:
+    if found:
         return updated
     return [*records, record]
 

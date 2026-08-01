@@ -323,9 +323,9 @@ jobs:
               status = "cleanup_failed"
           elif manifest_error is not None:
               status = "infrastructure_failed"
-          elif main_outcome == "failure":
+          elif main_outcome not in ("success", "failure", "skipped"):
               status = "infrastructure_failed"
-          elif main_outcome not in ("success", "skipped"):
+          elif main_outcome == "failure" and root_status == "passed":
               status = "infrastructure_failed"
           else:
               status = root_status

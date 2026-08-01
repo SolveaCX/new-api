@@ -1123,6 +1123,42 @@ class CleanupTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     cleanup_job._validate_root_manifest(bad, IDENTITY.run_id)
 
+    def test_merge_root_manifest_reentry_deduplicates_summarized_records_and_upgrades_legacy_records(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+            cleanup_execution_id="cleanup-001",
+        )
+        summarized_main = execution_record("main", "main-001", IDENTITY.run_id, summary=main_summary())
+        summarized_cleanup = execution_record("cleanup", "cleanup-001", IDENTITY.run_id, created_at=2, summary={"cleanup_failed": False})
+        summarized_root = root_manifest(
+            latest={"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-001"},
+            executions=[summarized_main, summarized_cleanup],
+        )
+
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(), 1)):
+            reentered = cleanup_job._merge_root_manifest(summarized_root, cfg, summarized_cleanup, "access-secret")
+
+        self.assertEqual(len(reentered["executions"]), 2)
+        self.assertEqual(reentered["executions"], [summarized_main, summarized_cleanup])
+        cleanup_job._validate_root_manifest(reentered, IDENTITY.run_id)
+
+        legacy_root = root_manifest(
+            latest={"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-001"},
+            executions=[
+                execution_record("main", "main-001", IDENTITY.run_id),
+                execution_record("cleanup", "cleanup-001", IDENTITY.run_id, created_at=2),
+            ],
+        )
+
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(), 1)):
+            upgraded = cleanup_job._merge_root_manifest(legacy_root, cfg, summarized_cleanup, "access-secret")
+
+        self.assertEqual(len(upgraded["executions"]), 2)
+        self.assertEqual(upgraded["executions"], [summarized_main, summarized_cleanup])
+        cleanup_job._validate_root_manifest(upgraded, IDENTITY.run_id)
+
     def test_merge_root_manifest_keeps_latest_main_and_cleanup_append_monotonic(self):
         cfg = SimpleNamespace(
             run_id=IDENTITY.run_id,

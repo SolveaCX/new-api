@@ -1,5 +1,9 @@
+import json
 import pathlib
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -23,6 +27,76 @@ def step_block(text, name):
     if not match:
         raise AssertionError(f"step not found: {name}")
     return match.group("body")
+
+
+def summary_python_script():
+    block = step_block(workflow_text(), "Fetch sanitized manifest and write summary")
+    match = re.search(r"(?ms)<<'PY'\n(?P<script>.*?)^          PY\s*$", block)
+    if not match:
+        raise AssertionError("summary python heredoc not found")
+    return re.sub(r"(?m)^          ", "", match.group("script"))
+
+
+def run_summary_python(manifest, *, main_outcome="success", cleanup_outcome="success"):
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        manifest_path = root / "manifest.json"
+        output_path = root / "github-output.txt"
+        summary_path = root / "github-summary.md"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        output_path.write_text("", encoding="utf-8")
+        summary_path.write_text("", encoding="utf-8")
+        env = {
+            "EFFECTIVE_RUN_ID": "12345",
+            "GITHUB_OUTPUT": str(output_path),
+            "GITHUB_STEP_SUMMARY": str(summary_path),
+        }
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                summary_python_script(),
+                str(manifest_path),
+                "gs://flatkey-browser-qa-reports/runs/12345/manifest.json",
+                main_outcome,
+                cleanup_outcome,
+            ],
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output = output_path.read_text(encoding="utf-8")
+        match = re.search(r"(?m)^manifest_status=(?P<status>.+)$", output)
+        if not match:
+            raise AssertionError(f"manifest_status missing; stdout={completed.stdout!r} stderr={completed.stderr!r}")
+        return match.group("status"), summary_path.read_text(encoding="utf-8")
+
+
+def summarized_root_manifest(status, *, summary=None):
+    if summary is None:
+        summary = {
+            "replay_status": "passed",
+            "exploration_status": "not_started",
+            "exploration_actions": 0,
+            "finding_count": 0,
+        }
+    return {
+        "schema_version": 1,
+        "run_id": "12345",
+        "status": status,
+        "latest": {"main_execution_id": "main-001", "cleanup_execution_id": None},
+        "executions": [
+            {
+                "kind": "main",
+                "execution_id": "main-001",
+                "manifest": "runs/12345/main/main-001/manifest.json",
+                "status": status,
+                "created_at": 1,
+                "summary": summary,
+            }
+        ],
+    }
 
 
 class BrowserQaWorkflowContractTests(unittest.TestCase):
@@ -147,7 +221,34 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertIn("main_outcome", summary)
         self.assertRegex(summary, r"if cleanup_outcome != \"success\"[\s\S]*status = \"cleanup_failed\"")
         self.assertRegex(summary, r"elif manifest_error is not None[\s\S]*status = \"infrastructure_failed\"")
-        self.assertRegex(summary, r"elif main_outcome == \"failure\"[\s\S]*status = \"infrastructure_failed\"")
+        self.assertRegex(summary, r"elif main_outcome == \"failure\" and root_status == \"passed\"[\s\S]*status = \"infrastructure_failed\"")
+
+    def test_summary_python_preserves_trusted_root_status_for_intentional_main_failures(self):
+        cases = [
+            ("replay_failed", "failure", "success", "replay_failed"),
+            ("findings_detected", "failure", "success", "findings_detected"),
+            ("passed", "failure", "success", "infrastructure_failed"),
+            ("replay_failed", "failure", "failure", "cleanup_failed"),
+            ("infrastructure_failed", "failure", "success", "infrastructure_failed"),
+            ("replay_failed", "cancelled", "success", "infrastructure_failed"),
+        ]
+        for root_status, main_outcome, cleanup_outcome, expected in cases:
+            with self.subTest(root_status=root_status, main_outcome=main_outcome, cleanup_outcome=cleanup_outcome):
+                status, rendered = run_summary_python(
+                    summarized_root_manifest(root_status),
+                    main_outcome=main_outcome,
+                    cleanup_outcome=cleanup_outcome,
+                )
+                self.assertEqual(status, expected)
+                self.assertIn(f"- status: {expected}", rendered)
+
+        status, rendered = run_summary_python(
+            {**summarized_root_manifest("passed"), "schema_version": 99},
+            main_outcome="success",
+            cleanup_outcome="success",
+        )
+        self.assertEqual(status, "infrastructure_failed")
+        self.assertIn("- replay status: unknown", rendered)
 
     def test_standalone_failures_cover_cleanup_infra_replay_and_findings_states(self):
         text = workflow_text()
