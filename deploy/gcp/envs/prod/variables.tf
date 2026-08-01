@@ -91,6 +91,12 @@ variable "enable_usage_recon_token" {
   default     = false
 }
 
+variable "enable_browser_qa" {
+  type        = bool
+  description = "Create isolated staging browser QA Artifact Registry, Cloud Run, Secret Manager, GCS report, WIF, and least-privilege IAM resources. Defaults false so the QA surface is opt-in."
+  default     = false
+}
+
 // --- Go app runtime split (router.flatkey.ai / console.flatkey.ai) ---
 
 variable "enable_runtime_split" {

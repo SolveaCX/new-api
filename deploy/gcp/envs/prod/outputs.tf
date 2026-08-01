@@ -48,3 +48,28 @@ output "placeholder_secrets_to_fill" {
     "newapi-stripe-secret-key",
   ]
 }
+
+output "browser_qa_artifact_registry_url" {
+  description = "Set this as the GH Actions variable GCP_BROWSER_QA_AR_REPO_URL"
+  value       = var.enable_browser_qa ? "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.browser_qa[0].repository_id}" : null
+}
+
+output "browser_qa_wif_provider" {
+  description = "Set this as the GH Actions variable GCP_BROWSER_QA_WIF_PROVIDER"
+  value       = var.enable_browser_qa ? google_iam_workload_identity_pool_provider.browser_qa_github[0].name : null
+}
+
+output "browser_qa_deployer_sa_email" {
+  description = "Set this as the GH Actions variable GCP_BROWSER_QA_DEPLOYER_SA"
+  value       = var.enable_browser_qa ? google_service_account.browser_qa_deployer[0].email : null
+}
+
+output "browser_qa_report_bucket" {
+  description = "Set this as the GH Actions variable GCP_BROWSER_QA_GCS_BUCKET"
+  value       = var.enable_browser_qa ? google_storage_bucket.browser_qa_reports[0].name : null
+}
+
+output "browser_qa_broker_uri" {
+  description = "Private broker service URI used by the browser QA runtime"
+  value       = var.enable_browser_qa ? google_cloud_run_v2_service.browser_qa_broker[0].uri : null
+}
