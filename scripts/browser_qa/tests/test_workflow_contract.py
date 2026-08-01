@@ -29,6 +29,10 @@ def step_block(text, name):
     return match.group("body")
 
 
+def run_blocks(text):
+    return re.findall(r"(?ms)^        run: \|\n(?P<body>.*?)(?=^      - name: |\Z)", text)
+
+
 def summary_python_script():
     block = step_block(workflow_text(), "Fetch sanitized manifest and write summary")
     match = re.search(r"(?ms)<<'PY'\n(?P<script>.*?)^          PY\s*$", block)
@@ -114,7 +118,16 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         text = workflow_text()
         self.assertRegex(text, r"(?ms)^      mode:\n        .*?type: choice\n        .*?options:\n          - normal\n          - core\n          - cleanup-only")
         self.assertRegex(text, r"(?ms)^      original_run_id:\n        .*?description: .*cleanup-only.*original.*run.*id")
-        self.assertRegex(text, r"(?m)^\s*if \[\[ \"\$\{\{ inputs.mode \}\}\" == \"cleanup-only\" && -z \"\$\{\{ inputs.original_run_id \}\}\" \]\]; then")
+        validate = step_block(text, "Validate dispatch inputs")
+        self.assertIn("DISPATCH_MODE", validate)
+        self.assertIn("DISPATCH_ORIGINAL_RUN_ID", validate)
+        self.assertRegex(validate, r"case \"\$\{DISPATCH_MODE\}\" in[\s\S]*normal\|core\|cleanup-only")
+        self.assertRegex(validate, r"if \[\[ ! \"\$\{DISPATCH_ORIGINAL_RUN_ID\}\" =~ \^\[0-9\]\+\$ \]\]; then")
+
+    def test_dispatch_inputs_are_not_interpolated_inside_shell_run_blocks(self):
+        for index, block in enumerate(run_blocks(workflow_text())):
+            with self.subTest(run_block=index):
+                self.assertNotIn("${{ inputs.", block)
 
     def test_workflow_uses_dedicated_qa_identity_and_never_names_production_environment(self):
         text = workflow_text()
@@ -196,7 +209,7 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertIn("EFFECTIVE_RUN_ID", cleanup)
         self.assertIn("FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID}", main)
         self.assertIn("FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID}", cleanup)
-        self.assertIn("FLATKEY_BROWSER_QA_MODE=${{ inputs.mode }}", main)
+        self.assertIn("FLATKEY_BROWSER_QA_MODE=${BROWSER_QA_MODE}", main)
 
     def test_fetches_only_sanitized_root_manifest_and_summary_stays_non_secret(self):
         text = workflow_text()

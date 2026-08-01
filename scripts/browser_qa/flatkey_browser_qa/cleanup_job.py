@@ -117,8 +117,15 @@ def _read_root_or_bootstrap(cfg, access_token):
 
 
 def _merge_root_manifest(root, cfg, cleanup_record, access_token):
-    main_record = _main_record(cfg, access_token)
     records = list(root["executions"])
+    existing_main = _find_execution_record(records, "main", cfg.main_execution_id)
+    try:
+        main_record = _main_record(cfg, access_token)
+    except FileNotFoundError:
+        if existing_main is not None and not _is_missing_main_placeholder(existing_main):
+            main_record = existing_main
+        else:
+            main_record = _missing_main_record(cfg)
     records = _append_or_validate_record(records, main_record)
     records = _append_or_validate_record(records, cleanup_record)
     status = _aggregate_status(records)
@@ -142,19 +149,58 @@ def _main_record(cfg, access_token):
     return _execution_record("main", cfg.main_execution_id, object_name, status, created_at, summary=summary)
 
 
+def _missing_main_record(cfg):
+    return _execution_record(
+        "main",
+        cfg.main_execution_id,
+        f"runs/{cfg.run_id}/main/{cfg.main_execution_id}/manifest.json",
+        "infrastructure_failed",
+        0,
+        summary={
+            "replay_status": "failed",
+            "exploration_status": "not_started",
+            "exploration_actions": 0,
+            "finding_count": 0,
+        },
+    )
+
+
+def _find_execution_record(records, kind, execution_id):
+    for record in records:
+        if record["kind"] == kind and record["execution_id"] == execution_id:
+            return record
+    return None
+
+
+def _is_missing_main_placeholder(record):
+    return (
+        record.get("kind") == "main"
+        and record.get("status") == "infrastructure_failed"
+        and record.get("created_at") == 0
+        and record.get("summary")
+        == {
+            "replay_status": "failed",
+            "exploration_status": "not_started",
+            "exploration_actions": 0,
+            "finding_count": 0,
+        }
+    )
+
+
 def _append_or_validate_record(records, record):
     updated = []
-    changed = False
     found = False
     for existing in records:
         if existing["kind"] == record["kind"] and existing["execution_id"] == record["execution_id"]:
             found = True
             if existing != record:
+                if _is_missing_main_placeholder(existing) and record["kind"] == "main":
+                    updated.append(record)
+                    continue
                 legacy_record = dict(record)
                 legacy_record.pop("summary", None)
                 if existing == legacy_record:
                     updated.append(record)
-                    changed = True
                     continue
                 raise ValueError("conflicting execution record")
             updated.append(existing)

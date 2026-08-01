@@ -45,21 +45,38 @@ jobs:
       - name: Validate dispatch inputs
         id: qa
         shell: bash
+        env:
+          DISPATCH_MODE: ${{ inputs.mode }}
+          DISPATCH_ORIGINAL_RUN_ID: ${{ inputs.original_run_id }}
+          TRUSTED_GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          if [[ "${{ inputs.mode }}" == "cleanup-only" && -z "${{ inputs.original_run_id }}" ]]; then
-            echo "cleanup-only requires original_run_id" >&2
-            exit 2
-          fi
-          if [[ "${{ inputs.mode }}" == "cleanup-only" ]]; then
-            EFFECTIVE_RUN_ID="${{ inputs.original_run_id }}"
+          case "${DISPATCH_MODE}" in
+            normal|core|cleanup-only)
+              ;;
+            *)
+              echo "mode must be normal, core, or cleanup-only" >&2
+              exit 2
+              ;;
+          esac
+          if [[ "${DISPATCH_MODE}" == "cleanup-only" ]]; then
+            if [[ -z "${DISPATCH_ORIGINAL_RUN_ID}" ]]; then
+              echo "cleanup-only requires original_run_id" >&2
+              exit 2
+            fi
+            if [[ ! "${DISPATCH_ORIGINAL_RUN_ID}" =~ ^[0-9]+$ ]]; then
+              echo "original_run_id must contain only digits" >&2
+              exit 2
+            fi
+            EFFECTIVE_RUN_ID="${DISPATCH_ORIGINAL_RUN_ID}"
           else
-            EFFECTIVE_RUN_ID="${{ github.run_id }}"
+            EFFECTIVE_RUN_ID="${TRUSTED_GITHUB_RUN_ID}"
           fi
           if [[ ! "${EFFECTIVE_RUN_ID}" =~ ^[0-9]+$ ]]; then
             echo "run id must contain only digits" >&2
             exit 2
           fi
+          BROWSER_QA_MODE="${DISPATCH_MODE}"
           MAIN_EXECUTION_ID="main-${EFFECTIVE_RUN_ID}"
           CLEANUP_EXECUTION_ID="cleanup-${EFFECTIVE_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "effective_run_id=${EFFECTIVE_RUN_ID}" >> "$GITHUB_OUTPUT"
@@ -67,6 +84,7 @@ jobs:
           echo "cleanup_execution_id=${CLEANUP_EXECUTION_ID}" >> "$GITHUB_OUTPUT"
           {
             echo "EFFECTIVE_RUN_ID=${EFFECTIVE_RUN_ID}"
+            echo "BROWSER_QA_MODE=${BROWSER_QA_MODE}"
             echo "MAIN_EXECUTION_ID=${MAIN_EXECUTION_ID}"
             echo "CLEANUP_EXECUTION_ID=${CLEANUP_EXECUTION_ID}"
           } >> "$GITHUB_ENV"
@@ -206,7 +224,7 @@ jobs:
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --args=main \
-            --update-env-vars="FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID},FLATKEY_BROWSER_QA_MODE=${{ inputs.mode }},FLATKEY_BROWSER_QA_EXECUTION_ID=${MAIN_EXECUTION_ID},FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}" \
+            --update-env-vars="FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID},FLATKEY_BROWSER_QA_MODE=${BROWSER_QA_MODE},FLATKEY_BROWSER_QA_EXECUTION_ID=${MAIN_EXECUTION_ID},FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}" \
             --wait \
             --quiet
           main_status=$?
