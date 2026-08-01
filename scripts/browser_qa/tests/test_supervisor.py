@@ -330,7 +330,7 @@ class SupervisorTests(unittest.TestCase):
         ]:
             self.assertIn(required.lower(), prompt.lower())
 
-    def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None):
+    def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None, proxy_factory=None):
         tmp = tempfile.mkdtemp()
         supervisor_kwargs = {}
         if thread_factory is not None:
@@ -347,7 +347,7 @@ class SupervisorTests(unittest.TestCase):
             subprocess_runner=FakeSubprocess(process),
             uploader=uploader or FakeUploader(),
             cleanup_runner=cleanup or FakeCleanup(),
-            proxy_factory=lambda: FakeProxy(),
+            proxy_factory=proxy_factory or (lambda policy=None: FakeProxy()),
             preflight=preflight or (lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}}),
             clock=clock or FakeClock(),
             **supervisor_kwargs,
@@ -500,7 +500,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(process),
                 uploader=FakeUploader(),
                 cleanup_runner=FakeCleanup(),
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=FakeBrowserEvidenceHelper,
@@ -526,7 +526,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(process),
                 uploader=FakeUploader(),
                 cleanup_runner=FakeCleanup(),
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=FakeBrowserEvidenceHelper,
@@ -537,6 +537,69 @@ class SupervisorTests(unittest.TestCase):
             self.assertEqual(outcome.status, "infrastructure_failed")
             args, _kwargs = sup.subprocess_runner.calls[0]
             self.assertFalse(os.path.exists(args[args.index("--output-last-message") + 1]))
+
+    def test_output_last_message_path_is_precreated_private_before_codex_launch(self):
+        checks = []
+        outer = self
+
+        class CheckingSubprocess(FakeSubprocess):
+            def popen(self, args, **kwargs):
+                path = args[args.index("--output-last-message") + 1]
+                parent = os.path.dirname(path)
+                checks.append((path, parent, os.path.exists(path), os.path.isdir(parent)))
+                self.assert_private_path(path, parent)
+                return super().popen(args, **kwargs)
+
+            def assert_private_path(self, path, parent):
+                outer.assertTrue(os.path.realpath(parent).startswith(os.path.realpath(tmp) + os.sep))
+                outer.assertNotEqual(os.path.realpath(parent), os.path.realpath(tmp))
+                outer.assertTrue(os.path.exists(path))
+                if os.name != "nt":
+                    outer.assertEqual(oct(os.stat(parent).st_mode & 0o777), "0o700")
+                    outer.assertEqual(oct(os.stat(path).st_mode & 0o777), "0o600")
+                else:
+                    outer.assertTrue(os.path.basename(parent))
+                    outer.assertTrue(os.path.isfile(path))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            process = FakeProcess(0)
+            runner = CheckingSubprocess(process)
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=tmp,
+                subprocess_runner=runner,
+                uploader=FakeUploader(),
+                cleanup_runner=FakeCleanup(),
+                proxy_factory=lambda policy=None: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+                evidence_helper_factory=FakeBrowserEvidenceHelper,
+                browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
+            )
+            outcome = sup.run(initial_result=valid_result())
+
+            self.assertEqual(outcome.status, "passed")
+            self.assertTrue(checks)
+            self.assertFalse(os.path.exists(checks[0][0]))
+
+    def test_docs_proxy_factory_type_error_fails_closed_without_writable_fallback(self):
+        calls = []
+
+        def proxy_factory(policy=None):
+            calls.append(policy)
+            if policy is not None:
+                raise TypeError("internal docs proxy construction failure")
+            return FakeProxy()
+
+        outcome, _sup = self.run_supervisor(
+            FakeProcess(0),
+            result_payload=valid_result(),
+            proxy_factory=proxy_factory,
+        )
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(len(calls), 2)
+        self.assertIsNotNone(calls[1])
 
     def test_supervisor_starts_chromium_with_proxy_cdp_runtime_profile_then_stops_after_evidence(self):
         browser_process = RecordingBrowserProcess()
@@ -581,7 +644,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=type("Runner", (), {"popen": popen_factory})(),
                 uploader=FakeUploader(),
                 cleanup_runner=FakeCleanup(),
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=FakeBrowserEvidenceHelper,
@@ -633,7 +696,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=runner,
                 uploader=FakeUploader(),
                 cleanup_runner=cleanup,
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=FakeBrowserEvidenceHelper,
@@ -666,7 +729,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=runner,
                 uploader=FakeUploader(),
                 cleanup_runner=cleanup,
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 browser_factory=lambda **_kwargs: FailingBrowser(),
@@ -690,7 +753,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(FakeProcess(0)),
                 uploader=uploader,
                 cleanup_runner=FakeCleanup(),
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=FakeBrowserEvidenceHelper,
@@ -743,7 +806,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(process),
                 uploader=FakeUploader(),
                 cleanup_runner=FakeCleanup(),
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=FakeBrowserEvidenceHelper,
@@ -774,7 +837,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(FakeProcess(0)),
                 uploader=FakeUploader(),
                 cleanup_runner=cleanup,
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=TimeoutFlushHelper,
@@ -831,7 +894,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(FakeProcess(0)),
                 uploader=FakeUploader(),
                 cleanup_runner=cleanup,
-                proxy_factory=lambda: (_ for _ in ()).throw(RuntimeError("proxy construction failed")),
+                proxy_factory=lambda policy=None: (_ for _ in ()).throw(RuntimeError("proxy construction failed")),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
             )
@@ -928,7 +991,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(process),
                 uploader=uploader,
                 cleanup_runner=FakeCleanup(),
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=FakeBrowserEvidenceHelper,
@@ -997,7 +1060,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(process),
                 uploader=uploader,
                 cleanup_runner=cleanup,
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
                 evidence_helper_factory=FakeBrowserEvidenceHelper,
@@ -1232,7 +1295,7 @@ class SupervisorTests(unittest.TestCase):
                 subprocess_runner=FakeSubprocess(process),
                 uploader=lazy_uploader,
                 cleanup_runner=cleanup,
-                proxy_factory=lambda: FakeProxy(),
+                proxy_factory=lambda policy=None: FakeProxy(),
                 preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
                 clock=FakeClock(),
             )

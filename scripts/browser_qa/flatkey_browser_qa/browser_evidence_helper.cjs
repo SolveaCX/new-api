@@ -286,10 +286,18 @@ class BrowserEvidenceSession {
     }
     const context = await this.browser.newContext({
       proxy: { server: this.docsProxyUrl },
+      javaScriptEnabled: false,
       serviceWorkers: "block",
       storageState: { cookies: [], origins: [] },
     });
     try {
+      if (typeof context.routeWebSocket === "function") {
+        await context.routeWebSocket("**/*", async (socket) => {
+          if (socket && typeof socket.close === "function") {
+            await socket.close();
+          }
+        });
+      }
       await context.route("**/*", async (route) => {
         const request = route.request();
         const requestUrl = typeof request.url === "function" ? request.url() : "";

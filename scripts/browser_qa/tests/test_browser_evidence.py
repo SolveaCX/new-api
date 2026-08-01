@@ -43,6 +43,29 @@ class BrowserEvidenceTests(unittest.TestCase):
         self.assertEqual(responses[2]["result"]["content"][0]["text"], "screenshots/checkpoint.png")
         self.assertEqual(responses[3]["error"]["code"], -32601)
 
+    def test_evidence_mcp_silences_notifications_and_no_id_requests_without_side_effects(self):
+        stdin = io.StringIO(
+            "\n".join([
+                json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+                json.dumps({"jsonrpc": "2.0", "method": "unknown/method"}),
+                json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": "tools/call",
+                    "params": {"name": "qa_capture_screenshot", "arguments": {"name": "checkpoint"}},
+                }),
+            ])
+            + "\n"
+        )
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, {"FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL": "http://127.0.0.1:1/runtime-evidence"}, clear=True), \
+            mock.patch.object(sys, "stdin", stdin), \
+            mock.patch.object(sys, "stdout", stdout), \
+            mock.patch.object(browser_evidence_mcp, "_request_capture", return_value="screenshots/checkpoint.png") as capture:
+            browser_evidence_mcp.main()
+
+        self.assertEqual(stdout.getvalue(), "")
+        capture.assert_not_called()
+
     def test_evidence_mcp_rejects_invalid_frames_and_extra_screenshot_arguments(self):
         stdin = io.StringIO(
             "\n".join([

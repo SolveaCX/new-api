@@ -26,6 +26,8 @@ def main():
         if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
             _write_error(None, -32600, "invalid request")
             continue
+        if "id" not in request:
+            continue
         request_id = request.get("id") if isinstance(request, dict) else None
         method = request.get("method")
         if method == "initialize":

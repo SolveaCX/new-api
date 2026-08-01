@@ -217,10 +217,45 @@ test("docs reader uses fresh cookie-free docs proxy context, strips sensitive he
   assert.match(result.text, /hello docs/);
   assert.deepEqual(calls[0][1].storageState, { cookies: [], origins: [] });
   assert.equal(calls[0][1].serviceWorkers, "block");
+  assert.equal(calls[0][1].javaScriptEnabled, false);
   assert.equal(calls[0][1].proxy.server, "http://127.0.0.1:4568");
   assert.equal(continued[0].headers.Cookie, undefined);
   assert.equal(continued[0].headers.Authorization, undefined);
   assert.deepEqual(calls.at(-1), ["close"]);
+});
+
+test("docs reader disables scripts and closes routed websockets when Playwright supports them", async () => {
+  const calls = [];
+  const context = fakeDocsContext(calls, {
+    async goto(url) {
+      calls.push(["goto", url]);
+    },
+    async content() {
+      return "<html><body>docs without script</body></html>";
+    },
+    url() {
+      return "https://docs.flatkey.ai/ws-page";
+    },
+  });
+  context.routeWebSocket = async (pattern, handler) => {
+    calls.push(["routeWebSocket", pattern, handler]);
+  };
+  const browser = {
+    async newContext(options) {
+      calls.push(["newContext", options]);
+      return context;
+    },
+  };
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), docsProxyUrl: "http://127.0.0.1:4568" });
+
+  await session.readDocs("https://docs.flatkey.ai/ws-page");
+  const wsHandler = calls.find((call) => call[0] === "routeWebSocket")[2];
+  const sockets = [];
+  await wsHandler({ url: () => "wss://docs.flatkey.ai/socket", close: () => sockets.push("closed") });
+  await wsHandler({ url: () => "wss://staging-console.flatkey.ai/socket", close: () => sockets.push("closed") });
+
+  assert.equal(calls[0][1].javaScriptEnabled, false);
+  assert.deepEqual(sockets, ["closed", "closed"]);
 });
 
 test("docs reader blocks cookies, writes, cross-origin redirects, and closes on failure", async () => {

@@ -311,7 +311,7 @@ class Supervisor:
         _install_fixed_skill(self.home_dir)
         config_path = os.path.join(self.codex_home, "config.toml")
         qa_config_path = os.path.join(self.codex_home, "qa.config.toml")
-        self._codex_output_last_message_path = os.path.join(self.runtime_root, "codex-last-message.json")
+        self._codex_output_last_message_path = _prepare_output_last_message_path(self.runtime_root)
         _write_private_text(config_path, _codex_config(proxy))
         runtime_dir = os.path.realpath(self.runtime_root)
         empty_workspace = tempfile.mkdtemp(prefix="empty-workspace-", dir=self.runtime_root)
@@ -427,7 +427,9 @@ class Supervisor:
                 _terminate_process(process)
                 raise TimeoutError("codex internal deadline exceeded") from exc
             if output_last_message_path and os.path.exists(output_last_message_path):
-                state["payload"] = _parse_output_last_message_file(output_last_message_path, redactor)
+                output_payload = _parse_output_last_message_file(output_last_message_path, redactor)
+                if output_payload is not None:
+                    state["payload"] = output_payload
         finally:
             if output_last_message_path:
                 try:
@@ -587,6 +589,30 @@ def _write_private_text(path, text):
         handle.write(text)
 
 
+def _prepare_output_last_message_path(runtime_root):
+    directory = os.path.join(os.path.realpath(runtime_root), "codex-last-message")
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    _ensure_owner_only_directory(directory)
+    path = os.path.join(directory, "codex-last-message.json")
+    _write_private_text(path, "")
+    _ensure_owner_only_file(path)
+    return path
+
+
+def _ensure_owner_only_directory(path):
+    if os.name != "nt":
+        os.chmod(path, 0o700)
+    elif not os.path.isdir(path):
+        raise RuntimeError("private runtime directory unavailable")
+
+
+def _ensure_owner_only_file(path):
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+    elif not os.path.isfile(path):
+        raise RuntimeError("private runtime file unavailable")
+
+
 def _private_text_writer(path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -648,7 +674,11 @@ def _parse_agent_message_result(event):
 
 def _parse_output_last_message_file(path, redactor):
     try:
-        if os.path.getsize(path) > MAX_CODEX_STDOUT_LINE_BYTES:
+        _ensure_owner_only_file(path)
+        size = os.path.getsize(path)
+        if size == 0:
+            return None
+        if size > MAX_CODEX_STDOUT_LINE_BYTES:
             raise RuntimeError("codex last message exceeded limit")
         with open(path, encoding="utf-8") as handle:
             raw = handle.read(MAX_CODEX_STDOUT_LINE_BYTES + 1)
@@ -750,10 +780,7 @@ def _attach_process_tree_or_direct(process):
 
 
 def _build_docs_proxy(proxy_factory):
-    try:
-        return proxy_factory(policy=EgressPolicy.from_file(mode="read_only"))
-    except TypeError:
-        return proxy_factory()
+    return proxy_factory(policy=EgressPolicy.from_file(mode="read_only"))
 
 
 def _start_new_tree_popen_kwargs():
