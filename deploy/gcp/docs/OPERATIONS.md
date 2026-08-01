@@ -594,7 +594,7 @@ Repeatability is accepted only after all three steps are complete:
 
 ### 5. Verify broker IAM denial
 
-The broker must deny unauthenticated calls and calls from an explicitly reviewed identity that is not `flatkey-browser-qa-runtime`. Use the Terraform output for the broker URI; do not hardcode the generated `run.app` URL.
+The broker must deny unauthenticated calls and calls from an explicitly reviewed known-unauthorized identity that is not the active operator Owner identity, runtime SA, broker SA, or deployer SA. The cleanup SA below is only a candidate negative-control identity; use it only after reviewing effective org, project, and service IAM and confirming it has no broker invoker path. Use the Terraform output for the broker URI; do not hardcode the generated `run.app` URL.
 
 ```bash
 # Read-only verification example.
@@ -604,17 +604,23 @@ set +x
 cd deploy/gcp/envs/prod
 BROKER_URI="$(terraform output -raw browser_qa_broker_uri)"
 NEGATIVE_PROBE_SA="flatkey-browser-qa-cleanup@vocai-gemini-prod.iam.gserviceaccount.com"
+ACTIVE_OWNER_IDENTITY="<active-owner-service-account-or-user>"
+
+if [ "$NEGATIVE_PROBE_SA" = "$ACTIVE_OWNER_IDENTITY" ]; then
+  echo "negative probe must not be the active Owner identity" >&2
+  exit 1
+fi
 
 case "$NEGATIVE_PROBE_SA" in
   flatkey-browser-qa-runtime@vocai-gemini-prod.iam.gserviceaccount.com|\
   flatkey-browser-qa-broker@vocai-gemini-prod.iam.gserviceaccount.com|\
   flatkey-browser-qa-deployer@vocai-gemini-prod.iam.gserviceaccount.com)
-    echo "negative probe must not be runtime, broker, or deployer" >&2
+    echo "negative probe must not be the active Owner, runtime, broker, or deployer identity" >&2
     exit 1
     ;;
 esac
 
-echo "Before using this negative-control SA, review org/project/service IAM and confirm it has no roles/run.invoker on ${BROKER_URI}."
+echo "Before using this negative-control SA, review effective org/project/service IAM and confirm it has no roles/run.invoker path to ${BROKER_URI}."
 echo "The operator must have impersonation authority, such as roles/iam.serviceAccountTokenCreator, on ${NEGATIVE_PROBE_SA}."
 
 service_invoker_binding="$(gcloud run services get-iam-policy flatkey-staging-browser-qa-broker \
