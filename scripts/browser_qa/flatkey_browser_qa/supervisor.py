@@ -1152,14 +1152,8 @@ class RuntimeEvidenceSink:
                 if self.client_address[0] not in {"127.0.0.1", "::1"}:
                     self.send_error(403)
                     return
-                if self.path != "/runtime-evidence":
-                    self.send_error(404)
-                    return
                 if self.headers.get("Transfer-Encoding") is not None:
                     self.send_error(400)
-                    return
-                if self.headers.get("Content-Type") != "application/json":
-                    self.send_error(415)
                     return
                 lengths = self.headers.get_all("Content-Length", [])
                 if len(lengths) != 1:
@@ -1174,6 +1168,12 @@ class RuntimeEvidenceSink:
                     self.send_error(413)
                     return
                 raw = self.rfile.read(length)
+                if self.path != "/runtime-evidence":
+                    self.send_error(404)
+                    return
+                if self.headers.get("Content-Type") != "application/json":
+                    self.send_error(415)
+                    return
                 try:
                     event = json.loads(raw.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError):

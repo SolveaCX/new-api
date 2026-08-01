@@ -1426,6 +1426,37 @@ class SupervisorTests(unittest.TestCase):
         finally:
             sink.stop()
 
+    def test_runtime_evidence_sink_wrong_path_consumes_bounded_body_before_404(self):
+        redactor = supervisor.Redactor(email="owner+flatkey-qa-1-x@gmail.com")
+        sink = supervisor.RuntimeEvidenceSink(redactor)
+        sink.start()
+        try:
+            body = json.dumps({
+                "type": "verification_code",
+                "code": "333333",
+                "padding": "x" * (sink.max_bytes - 75),
+            }).encode("utf-8")
+            self.assertGreaterEqual(len(body), sink.max_bytes - 16)
+            self.assertLessEqual(len(body), sink.max_bytes)
+
+            for attempt in range(100):
+                request = urllib.request.Request(
+                    sink.url.replace("/runtime-evidence", "/wrong"),
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urllib.request.urlopen(request, timeout=2).close()
+                except urllib.error.HTTPError as exc:
+                    self.assertEqual(exc.code, 404, f"attempt {attempt}")
+                except ConnectionAbortedError as exc:
+                    self.fail(f"attempt {attempt} aborted instead of returning HTTP 404: {exc!r}")
+                else:
+                    self.fail(f"attempt {attempt} unexpectedly succeeded")
+        finally:
+            sink.stop()
+
 
 if __name__ == "__main__":
     unittest.main()
