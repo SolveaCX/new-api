@@ -109,6 +109,8 @@ class BrowserEvidenceSession {
     this.network = [];
     this.context = null;
     this.page = null;
+    this.pageSetupPromises = new Set();
+    this.pageSetupError = null;
   }
 
   async start() {
@@ -124,12 +126,10 @@ class BrowserEvidenceSession {
     if (!this.page) {
       throw new Error("browser page unavailable");
     }
-    await this._bypassServiceWorkerForPage(this.page);
-    this._attachPage(this.page);
+    await this._setupPage(this.page);
     if (typeof this.context.on === "function") {
-      this.context.on("page", async (page) => {
-        await this._bypassServiceWorkerForPage(page);
-        this._attachPage(page);
+      this.context.on("page", (page) => {
+        this._trackPageSetup(page);
       });
     }
     return this;
@@ -199,6 +199,38 @@ class BrowserEvidenceSession {
     await session.send("Network.setBypassServiceWorker", { bypass: true });
   }
 
+  async _setupPage(page) {
+    await this._bypassServiceWorkerForPage(page);
+    this._attachPage(page);
+  }
+
+  _trackPageSetup(page) {
+    let setupPromise;
+    setupPromise = this._setupPage(page)
+      .catch((error) => {
+        if (!this.pageSetupError) {
+          this.pageSetupError = error;
+        }
+        throw error;
+      })
+      .finally(() => {
+        this.pageSetupPromises.delete(setupPromise);
+      });
+    this.pageSetupPromises.add(setupPromise);
+    setupPromise.catch(() => {});
+    return setupPromise;
+  }
+
+  async _awaitPageSetups() {
+    const pendingSetups = Array.from(this.pageSetupPromises);
+    if (pendingSetups.length > 0) {
+      await Promise.allSettled(pendingSetups);
+    }
+    if (this.pageSetupError) {
+      throw new Error("browser page setup failed");
+    }
+  }
+
   _attachPage(page) {
     if (!page || typeof page.on !== "function") {
       return;
@@ -224,10 +256,12 @@ class BrowserEvidenceSession {
   }
 
   async captureScreenshot(name) {
+    await this._awaitPageSetups();
     return captureScreenshot(this.page, this.runtimeDir, name, this.sensitiveValues);
   }
 
-  flush() {
+  async flush() {
+    await this._awaitPageSetups();
     if (this.overflowError) {
       throw new Error("browser evidence overflow");
     }
@@ -302,7 +336,7 @@ async function runProtocol({ input = process.stdin, output = process.stdout, con
         session.addSensitiveValues(params.values);
       } else if (request.command === "flush") {
         requireSession(session);
-        result = session.flush();
+        result = await session.flush();
       } else if (request.command === "close") {
         if (session) {
           await session.stop();
