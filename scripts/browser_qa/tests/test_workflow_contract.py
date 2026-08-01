@@ -1,0 +1,135 @@
+import pathlib
+import re
+import unittest
+
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-browser-qa.yml"
+
+
+def workflow_text():
+    return WORKFLOW.read_text(encoding="utf-8")
+
+
+def strip_comments(text):
+    return "\n".join(line.split("#", 1)[0].rstrip() for line in text.splitlines())
+
+
+def step_block(text, name):
+    match = re.search(
+        rf"(?ms)^      - name: {re.escape(name)}\n(?P<body>.*?)(?=^      - name: |\Z)",
+        text,
+    )
+    if not match:
+        raise AssertionError(f"step not found: {name}")
+    return match.group("body")
+
+
+class BrowserQaWorkflowContractTests(unittest.TestCase):
+    def test_workflow_is_manual_only_with_minimal_permissions_and_serial_concurrency(self):
+        text = workflow_text()
+        uncommented = strip_comments(text)
+
+        self.assertRegex(uncommented, r"(?m)^on:\n  workflow_dispatch:\n")
+        self.assertNotRegex(uncommented, r"(?m)^  (push|pull_request|schedule|workflow_call):\s*$")
+        self.assertRegex(uncommented, r"(?ms)^permissions:\n  contents: read\n  id-token: write\b")
+        self.assertEqual(len(re.findall(r"(?m)^concurrency:\s*$", uncommented)), 1)
+        self.assertRegex(uncommented, r"(?ms)^concurrency:\n  group: .+\n  cancel-in-progress: false\b")
+
+    def test_dispatch_inputs_cover_normal_core_and_cleanup_only_with_original_run_id(self):
+        text = workflow_text()
+        self.assertRegex(text, r"(?ms)^      mode:\n        .*?type: choice\n        .*?options:\n          - normal\n          - core\n          - cleanup-only")
+        self.assertRegex(text, r"(?ms)^      original_run_id:\n        .*?description: .*cleanup-only.*original.*run.*id")
+        self.assertRegex(text, r"(?m)^\s*if \[\[ \"\$\{\{ inputs.mode \}\}\" == \"cleanup-only\" && -z \"\$\{\{ inputs.original_run_id \}\}\" \]\]; then")
+
+    def test_workflow_uses_dedicated_qa_identity_and_never_names_production_environment(self):
+        text = workflow_text()
+        self.assertIn("GCP_BROWSER_QA_WIF_PROVIDER", text)
+        self.assertIn("GCP_BROWSER_QA_DEPLOYER_SA", text)
+        self.assertNotIn("vars.GCP_WIF_PROVIDER", text)
+        self.assertNotIn("vars.GCP_DEPLOYER_SA", text)
+        self.assertNotRegex(text, r"(?mi)^\s*environment:\s*(production|prod|staging)\b")
+        self.assertNotRegex(text, r"(?i)\bproduction\b|\bprod\b")
+
+    def test_image_is_sha_bound_and_only_qa_resources_are_mutated(self):
+        text = workflow_text()
+        self.assertRegex(text, r"browser-qa:\$\{\{ github\.sha \}\}-\$\{\{ github\.run_attempt \}\}")
+        self.assertNotRegex(text, r"browser-qa:(latest|\$\{\{ github\.ref_name \}\})")
+        self.assertIn("flatkey-staging-browser-qa-broker", text)
+        self.assertIn("flatkey-staging-browser-qa", text)
+        self.assertIn("flatkey-staging-browser-qa-cleanup", text)
+        names = sorted(set(re.findall(r"(?:QA_\w+): (flatkey-[A-Za-z0-9-]+)", text)))
+        self.assertEqual(
+            names,
+            [
+                "flatkey-staging-browser-qa",
+                "flatkey-staging-browser-qa-broker",
+                "flatkey-staging-browser-qa-cleanup",
+            ],
+        )
+
+    def test_normal_path_smokes_image_before_push_and_skips_mutation_for_cleanup_only(self):
+        text = workflow_text()
+        smoke = step_block(text, "Smoke test browser QA image")
+        self.assertIn("docker inspect --format='{{.Config.User}}'", smoke)
+        self.assertIn("--entrypoint codex", smoke)
+        self.assertIn("--version", smoke)
+        self.assertIn("--entrypoint playwright-mcp", smoke)
+        self.assertIn("--entrypoint python3", smoke)
+        self.assertIn("-m unittest discover -s /opt/flatkey-browser-qa/tests -v", smoke)
+        self.assertIn("chromium.launchServer", smoke)
+        self.assertIn('request(rl, child, 1, "initialize"', smoke)
+        self.assertIn('request(rl, child, 2, "tools/list"', smoke)
+        for step in [
+            "Build browser QA image",
+            "Smoke test browser QA image",
+            "Push browser QA image",
+            "Update browser QA Cloud Run resources",
+            "Execute main browser QA job",
+        ]:
+            block = step_block(text, step)
+            self.assertRegex(block, r"(?m)^        if: inputs\.mode != 'cleanup-only'$")
+
+    def test_main_and_cleanup_execute_with_wait_and_cleanup_is_unconditional(self):
+        text = workflow_text()
+        main = step_block(text, "Execute main browser QA job")
+        cleanup = step_block(text, "Execute cleanup browser QA job")
+        self.assertRegex(main, r"gcloud run jobs execute \"\$\{QA_MAIN_JOB\}\"[\s\S]*--wait")
+        self.assertRegex(cleanup, r"gcloud run jobs execute \"\$\{QA_CLEANUP_JOB\}\"[\s\S]*--wait")
+        self.assertRegex(cleanup, r"(?m)^        if: always\(\)$")
+        self.assertIn("MAIN_STATUS", main)
+        self.assertIn("main_status", main)
+        self.assertIn("EFFECTIVE_RUN_ID", main)
+        self.assertIn("EFFECTIVE_RUN_ID", cleanup)
+        self.assertIn("FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID}", main)
+        self.assertIn("FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID}", cleanup)
+
+    def test_fetches_only_sanitized_root_manifest_and_summary_stays_non_secret(self):
+        text = workflow_text()
+        summary = step_block(text, "Fetch sanitized manifest and write summary")
+        self.assertIn("runs/${EFFECTIVE_RUN_ID}/manifest.json", summary)
+        self.assertNotIn("result.json", summary)
+        self.assertNotIn("codex-events.jsonl", summary)
+        self.assertNotIn("codex-stderr.txt", summary)
+        self.assertNotIn("screenshots", summary)
+        for safe_field in ["replay", "exploration", "finding", "cleanup", "status", "gcs_uri"]:
+            self.assertIn(safe_field, summary)
+        self.assertNotRegex(summary, r"(?i)email|password|cookie|authorization|api[_-]?key|token|verification")
+
+    def test_standalone_failures_cover_cleanup_infra_replay_and_findings_states(self):
+        text = workflow_text()
+        gate = step_block(text, "Fail standalone workflow for actionable QA states")
+        for state in ["cleanup_failed", "infrastructure_failed", "replay_failed", "findings_detected"]:
+            self.assertIn(state, gate)
+        self.assertNotRegex(text, r"(?i)release gate|needs: .*deploy|environment:")
+
+    def test_no_secret_value_is_placed_in_arguments_outputs_inputs_or_summary(self):
+        text = workflow_text()
+        self.assertNotIn("${{ secrets.", text)
+        self.assertNotRegex(text, r"(?i)--(set-env-vars|args|update-env-vars)=[^\n]*(password|cookie|authorization|api[_-]?key|token|secret)")
+        self.assertNotRegex(text, r"(?i)GITHUB_OUTPUT[^\n]*(password|cookie|authorization|api[_-]?key|token|secret)")
+        self.assertNotRegex(text, r"(?i)GITHUB_STEP_SUMMARY[^\n]*(password|cookie|authorization|api[_-]?key|token|secret|email)")
+
+
+if __name__ == "__main__":
+    unittest.main()

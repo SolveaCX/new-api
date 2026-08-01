@@ -1,0 +1,356 @@
+name: GCP Browser QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Browser QA mode to run"
+        required: true
+        default: normal
+        type: choice
+        options:
+          - normal
+          - core
+          - cleanup-only
+      original_run_id:
+        description: "Required cleanup-only original run id"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gcp-browser-qa-manual
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+  QA_AR_REPO_URL: ${{ vars.GCP_BROWSER_QA_AR_REPO_URL }}
+  QA_WIF_PROVIDER: ${{ vars.GCP_BROWSER_QA_WIF_PROVIDER }}
+  QA_DEPLOYER_SA: ${{ vars.GCP_BROWSER_QA_DEPLOYER_SA }}
+  QA_GCS_BUCKET: ${{ vars.GCP_BROWSER_QA_GCS_BUCKET }}
+  QA_IDENTITY_SEED_SECRET_ID: ${{ vars.GCP_BROWSER_QA_IDENTITY_SEED_SECRET_ID }}
+  QA_GMAIL_BASE: ${{ vars.GCP_BROWSER_QA_GMAIL_BASE }}
+  QA_BROKER_SERVICE: flatkey-staging-browser-qa-broker
+  QA_MAIN_JOB: flatkey-staging-browser-qa
+  QA_CLEANUP_JOB: flatkey-staging-browser-qa-cleanup
+  QA_WEBSITE_ORIGIN: https://staging-website.flatkey.ai
+  QA_CONSOLE_ORIGIN: https://staging-console.flatkey.ai
+  QA_DOCS_ORIGIN: https://docs.flatkey.ai
+  IMAGE_URI: ${{ vars.GCP_BROWSER_QA_AR_REPO_URL }}/browser-qa:${{ github.sha }}-${{ github.run_attempt }}
+
+jobs:
+  browser-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Validate dispatch inputs
+        id: qa
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.mode }}" == "cleanup-only" && -z "${{ inputs.original_run_id }}" ]]; then
+            echo "cleanup-only requires original_run_id" >&2
+            exit 2
+          fi
+          if [[ "${{ inputs.mode }}" == "cleanup-only" ]]; then
+            EFFECTIVE_RUN_ID="${{ inputs.original_run_id }}"
+          else
+            EFFECTIVE_RUN_ID="${{ github.run_id }}"
+          fi
+          if [[ ! "${EFFECTIVE_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            echo "run id must contain only digits" >&2
+            exit 2
+          fi
+          MAIN_EXECUTION_ID="main-${EFFECTIVE_RUN_ID}"
+          CLEANUP_EXECUTION_ID="cleanup-${EFFECTIVE_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "effective_run_id=${EFFECTIVE_RUN_ID}" >> "$GITHUB_OUTPUT"
+          echo "main_execution_id=${MAIN_EXECUTION_ID}" >> "$GITHUB_OUTPUT"
+          echo "cleanup_execution_id=${CLEANUP_EXECUTION_ID}" >> "$GITHUB_OUTPUT"
+          {
+            echo "EFFECTIVE_RUN_ID=${EFFECTIVE_RUN_ID}"
+            echo "MAIN_EXECUTION_ID=${MAIN_EXECUTION_ID}"
+            echo "CLEANUP_EXECUTION_ID=${CLEANUP_EXECUTION_ID}"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout
+        if: inputs.mode != 'cleanup-only'
+        uses: actions/checkout@v4
+
+      - name: Auth to GCP via QA WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.QA_WIF_PROVIDER }}
+          service_account: ${{ env.QA_DEPLOYER_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for Artifact Registry
+        if: inputs.mode != 'cleanup-only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker buildx
+        if: inputs.mode != 'cleanup-only'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build browser QA image
+        if: inputs.mode != 'cleanup-only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --file scripts/browser_qa/Dockerfile \
+            --tag "${IMAGE_URI}" \
+            .
+
+      - name: Smoke test browser QA image
+        if: inputs.mode != 'cleanup-only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_user="$(docker inspect --format='{{.Config.User}}' "${IMAGE_URI}")"
+          if [[ -z "${runtime_user}" || "${runtime_user}" == "root" || "${runtime_user}" == "0" ]]; then
+            echo "image runtime user must be non-root" >&2
+            exit 1
+          fi
+          docker run --rm --entrypoint codex "${IMAGE_URI}" --version
+          docker run --rm --entrypoint playwright-mcp "${IMAGE_URI}" --version
+          docker run --rm --entrypoint python3 "${IMAGE_URI}" -m unittest discover -s /opt/flatkey-browser-qa/tests -v
+          docker run --rm --entrypoint node "${IMAGE_URI}" - <<'NODE'
+          const { chromium } = require("playwright-core");
+          const { spawn } = require("node:child_process");
+          const readline = require("node:readline");
+
+          function request(rl, child, id, method, params = {}) {
+            child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+            return new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => reject(new Error(`${method} timed out`)), 15000);
+              rl.once("line", (line) => {
+                clearTimeout(timeout);
+                const parsed = JSON.parse(line);
+                if (parsed.error) {
+                  reject(new Error(parsed.error.message || method));
+                } else {
+                  resolve(parsed.result);
+                }
+              });
+            });
+          }
+
+          (async () => {
+            const server = await chromium.launchServer({
+              headless: true,
+              executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
+              args: ["--no-sandbox"],
+            });
+            const cdpEndpoint = server.wsEndpoint().replace(/^ws:/, "http:").replace(/\/[^/]+$/, "");
+            const child = spawn("playwright-mcp", ["--cdp-endpoint", cdpEndpoint, "--output-dir", "/tmp/browser-qa-mcp"], {
+              stdio: ["pipe", "pipe", "inherit"],
+              env: process.env,
+            });
+            const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+            try {
+              await request(rl, child, 1, "initialize", {
+                protocolVersion: "2024-11-05",
+                capabilities: {},
+                clientInfo: { name: "browser-qa-workflow-smoke", version: "1" },
+              });
+              child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+              const tools = await request(rl, child, 2, "tools/list");
+              if (!tools || !Array.isArray(tools.tools) || tools.tools.length === 0) {
+                throw new Error("tools/list returned no tools");
+              }
+            } finally {
+              child.kill("SIGTERM");
+              await server.close();
+            }
+          })().catch((error) => {
+            console.error(error && error.message ? error.message : error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Push browser QA image
+        if: inputs.mode != 'cleanup-only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${IMAGE_URI}"
+
+      - name: Update browser QA Cloud Run resources
+        if: inputs.mode != 'cleanup-only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          common_main_env=(
+            "FLATKEY_QA_GMAIL_BASE=${QA_GMAIL_BASE}"
+            "FLATKEY_QA_WEBSITE_ORIGIN=${QA_WEBSITE_ORIGIN}"
+            "FLATKEY_QA_CONSOLE_ORIGIN=${QA_CONSOLE_ORIGIN}"
+            "FLATKEY_QA_DOCS_ORIGIN=${QA_DOCS_ORIGIN}"
+          )
+          main_job_env=(
+            "${common_main_env[@]}"
+            "FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}"
+          )
+          cleanup_job_env=(
+            "FLATKEY_QA_CONSOLE_ORIGIN=${QA_CONSOLE_ORIGIN}"
+            "FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}"
+          )
+          IFS=,
+          common_main_env_arg="${common_main_env[*]}"
+          main_job_env_arg="${main_job_env[*]}"
+          cleanup_job_env_arg="${cleanup_job_env[*]}"
+          unset IFS
+          gcloud run services update "${QA_BROKER_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE_URI}" \
+            --update-env-vars="${common_main_env_arg}" \
+            --update-secrets="FLATKEY_QA_IDENTITY_SEED_B64=${QA_IDENTITY_SEED_SECRET_ID}:latest" \
+            --quiet
+          gcloud run jobs update "${QA_MAIN_JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE_URI}" \
+            --args=main \
+            --update-env-vars="${main_job_env_arg}" \
+            --update-secrets="FLATKEY_QA_IDENTITY_SEED_B64=${QA_IDENTITY_SEED_SECRET_ID}:latest" \
+            --quiet
+          gcloud run jobs update "${QA_CLEANUP_JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE_URI}" \
+            --args=cleanup \
+            --update-env-vars="${cleanup_job_env_arg}" \
+            --update-secrets="FLATKEY_QA_IDENTITY_SEED_B64=${QA_IDENTITY_SEED_SECRET_ID}:latest" \
+            --quiet
+
+      - name: Execute main browser QA job
+        id: main
+        if: inputs.mode != 'cleanup-only'
+        continue-on-error: true
+        timeout-minutes: 90
+        shell: bash
+        run: |
+          set +e
+          gcloud run jobs execute "${QA_MAIN_JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --args=main \
+            --update-env-vars="FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID},FLATKEY_BROWSER_QA_EXECUTION_ID=${MAIN_EXECUTION_ID},FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}" \
+            --wait \
+            --quiet
+          main_status=$?
+          set -e
+          echo "main_status=${main_status}" >> "$GITHUB_OUTPUT"
+          echo "MAIN_STATUS=${main_status}" >> "$GITHUB_ENV"
+          exit "${main_status}"
+
+      - name: Execute cleanup browser QA job
+        id: cleanup
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set +e
+          gcloud run jobs execute "${QA_CLEANUP_JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --args=cleanup \
+            --update-env-vars="FLATKEY_QA_RUN_ID=${EFFECTIVE_RUN_ID},FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID=${MAIN_EXECUTION_ID},FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID=${CLEANUP_EXECUTION_ID},FLATKEY_BROWSER_QA_GCS_BUCKET=${QA_GCS_BUCKET}" \
+            --wait \
+            --quiet
+          cleanup_status=$?
+          set -e
+          echo "cleanup_status=${cleanup_status}" >> "$GITHUB_OUTPUT"
+          echo "CLEANUP_STATUS=${cleanup_status}" >> "$GITHUB_ENV"
+          exit "${cleanup_status}"
+
+      - name: Fetch sanitized manifest and write summary
+        id: manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest_path="${RUNNER_TEMP}/browser-qa-manifest.json"
+          root_object="runs/${EFFECTIVE_RUN_ID}/manifest.json"
+          gcs_uri="gs://${QA_GCS_BUCKET}/${root_object}"
+          set +e
+          gcloud storage cp "${gcs_uri}" "${manifest_path}" --quiet
+          fetch_status=$?
+          set -e
+          if [[ "${fetch_status}" -ne 0 ]]; then
+            echo "manifest_status=infrastructure_failed" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Browser QA"
+              echo "- status: infrastructure_failed"
+              echo "- replay status: unknown"
+              echo "- exploration actions: 0"
+              echo "- finding count: 0"
+              echo "- cleanup status: ${{ steps.cleanup.outputs.cleanup_status || 'missing' }}"
+              echo "- gcs_uri: ${gcs_uri}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 - "${manifest_path}" "${gcs_uri}" "${{ steps.main.outputs.main_status || 'skipped' }}" "${{ steps.cleanup.outputs.cleanup_status || 'missing' }}" <<'PY'
+          import json
+          import os
+          import sys
+
+          manifest_path, gcs_uri, main_status, cleanup_status = sys.argv[1:5]
+          with open(manifest_path, encoding="utf-8") as handle:
+              manifest = json.load(handle)
+          status = manifest.get("status", "infrastructure_failed")
+          executions = manifest.get("executions", [])
+          main_record = next((item for item in reversed(executions) if item.get("kind") == "main"), {})
+          cleanup_record = next((item for item in reversed(executions) if item.get("kind") == "cleanup"), {})
+          result = main_record.get("result", {}) if isinstance(main_record.get("result", {}), dict) else {}
+          replay = result.get("replay", {}) if isinstance(result.get("replay", {}), dict) else {}
+          exploration = result.get("exploration", {}) if isinstance(result.get("exploration", {}), dict) else {}
+          findings = result.get("findings", []) if isinstance(result.get("findings", []), list) else []
+          if cleanup_status not in ("0", "skipped") and status == "passed":
+              status = "cleanup_failed"
+          if main_status not in ("0", "skipped") and status == "passed":
+              status = "infrastructure_failed"
+          summary = [
+              "### Browser QA",
+              f"- status: {status}",
+              f"- replay status: {replay.get('status', main_record.get('status', 'unknown'))}",
+              f"- exploration actions: {exploration.get('actions_used', 0)}",
+              f"- finding count: {len(findings)}",
+              f"- cleanup status: {cleanup_record.get('status', 'unknown')}",
+              f"- gcs_uri: {gcs_uri}",
+          ]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"manifest_status={status}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              output.write("\n".join(summary) + "\n")
+          PY
+
+      - name: Fail standalone workflow for actionable QA states
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          final_status="${{ steps.manifest.outputs.manifest_status || 'infrastructure_failed' }}"
+          case "${final_status}" in
+            passed)
+              exit 0
+              ;;
+            cleanup_failed|infrastructure_failed|replay_failed|findings_detected)
+              echo "Browser QA completed with ${final_status}" >&2
+              exit 1
+              ;;
+            *)
+              echo "Browser QA completed with unknown status: ${final_status}" >&2
+              exit 1
+              ;;
+          esac
