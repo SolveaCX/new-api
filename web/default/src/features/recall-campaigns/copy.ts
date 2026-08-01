@@ -18,6 +18,29 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { RecallAudienceTemplate } from './types'
 
+export const recallTranslationTaskErrorCopyByCode: Record<string, string> = {
+  translation_failed: 'Translation generation failed',
+  translation_superseded:
+    'Translation request was replaced by a newer request.',
+}
+
+export const recallTranslationTaskErrorCopyByKey: Record<string, string> = {
+  'recall.translation.error.translation_failed':
+    recallTranslationTaskErrorCopyByCode.translation_failed,
+  'recall.translation.error.translation_superseded':
+    recallTranslationTaskErrorCopyByCode.translation_superseded,
+}
+
+export function getRecallTranslationTaskErrorCopyKey(value: unknown): string {
+  if (typeof value !== 'string')
+    return recallTranslationTaskErrorCopyByCode.translation_failed
+  const normalized = value.trim()
+  return (
+    recallTranslationTaskErrorCopyByCode[normalized] ??
+    recallTranslationTaskErrorCopyByKey[normalized] ??
+    recallTranslationTaskErrorCopyByCode.translation_failed
+  )
+}
 export const audienceTemplateDescriptionKeys: Record<
   RecallAudienceTemplate,
   string
