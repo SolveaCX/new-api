@@ -73,3 +73,18 @@ output "browser_qa_broker_uri" {
   description = "Private broker service URI used by the browser QA runtime"
   value       = var.enable_browser_qa ? google_cloud_run_v2_service.browser_qa_broker[0].uri : null
 }
+
+output "browser_qa_broker_service_name" {
+  description = "Cloud Run service name matching the GCP Browser QA workflow QA_BROKER_SERVICE env"
+  value       = var.enable_browser_qa ? google_cloud_run_v2_service.browser_qa_broker[0].name : null
+}
+
+output "browser_qa_main_job_name" {
+  description = "Cloud Run job name matching the GCP Browser QA workflow QA_MAIN_JOB env"
+  value       = var.enable_browser_qa ? google_cloud_run_v2_job.browser_qa_main[0].name : null
+}
+
+output "browser_qa_cleanup_job_name" {
+  description = "Cloud Run job name matching the GCP Browser QA workflow QA_CLEANUP_JOB env"
+  value       = var.enable_browser_qa ? google_cloud_run_v2_job.browser_qa_cleanup[0].name : null
+}

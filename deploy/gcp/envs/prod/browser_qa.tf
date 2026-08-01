@@ -176,7 +176,7 @@ resource "google_cloud_run_v2_service" "browser_qa_broker" {
   name     = local.browser_qa_broker_service_name
   location = var.region
 
-  ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  ingress             = "INGRESS_TRAFFIC_ALL"
   deletion_protection = false
 
   template {
@@ -191,6 +191,7 @@ resource "google_cloud_run_v2_service" "browser_qa_broker" {
 
     containers {
       image = local.browser_qa_placeholder_image
+      args  = ["broker"]
 
       ports {
         container_port = 8080

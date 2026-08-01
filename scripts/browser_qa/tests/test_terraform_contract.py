@@ -166,9 +166,10 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         _assert_count_gated(self, broker)
         self.assertRegex(self.clean_browser_qa, r'\bbrowser_qa_broker_service_name\s*=\s*"flatkey-staging-browser-qa-broker"')
         self.assertRegex(broker.body, r"\bname\s*=\s*local\.browser_qa_broker_service_name\b")
-        self.assertRegex(broker.body, r'\bingress\s*=\s*"INGRESS_TRAFFIC_INTERNAL_ONLY"')
+        self.assertRegex(broker.body, r'\bingress\s*=\s*"INGRESS_TRAFFIC_ALL"')
         self.assertRegex(broker.body, r'\bservice_account\s*=\s*google_service_account\.browser_qa_broker\[0\]\.email\b')
         self.assertRegex(broker.body, r'\bimage\s*=\s*local\.browser_qa_placeholder_image\b')
+        self.assertRegex(broker.body, r'\bargs\s*=\s*\[\s*"broker"\s*\]')
         self.assertRegex(broker.body, r"ignore_changes\s*=\s*\[[^\]]*template\[0\]\.containers\[0\]\.image")
         self.assertRegex(broker.body, r'\bsecret\s*=\s*google_secret_manager_secret\.browser_qa_gmail_oauth\[0\]\.secret_id\b[\s\S]*\bversion\s*=\s*"latest"')
         self.assertNotIn("allUsers", broker.body)
@@ -236,10 +237,21 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
             "browser_qa_deployer_sa_email",
             "browser_qa_report_bucket",
             "browser_qa_broker_uri",
+            "browser_qa_broker_service_name",
+            "browser_qa_main_job_name",
+            "browser_qa_cleanup_job_name",
         ]:
             matches = [block for block in _blocks(outputs, "output") if block.name == output_name]
             self.assertEqual(len(matches), 1, output_name)
             self.assertRegex(matches[0].body, r"var\.enable_browser_qa\s*\?")
+        expected_output_values = {
+            "browser_qa_broker_service_name": r"google_cloud_run_v2_service\.browser_qa_broker\[0\]\.name",
+            "browser_qa_main_job_name": r"google_cloud_run_v2_job\.browser_qa_main\[0\]\.name",
+            "browser_qa_cleanup_job_name": r"google_cloud_run_v2_job\.browser_qa_cleanup\[0\]\.name",
+        }
+        for output_name, value_pattern in expected_output_values.items():
+            [block] = [block for block in _blocks(outputs, "output") if block.name == output_name]
+            self.assertRegex(block.body, value_pattern)
 
     def test_least_privilege_iam_is_resource_scoped(self):
         service_iam = _resource_blocks("google_cloud_run_v2_service_iam_member")
