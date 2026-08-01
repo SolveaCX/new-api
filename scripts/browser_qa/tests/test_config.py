@@ -76,12 +76,18 @@ class ConfigTests(unittest.TestCase):
             "FLATKEY_QA_RUN_ID": "123456789",
             "FLATKEY_QA_IDENTITY_SEED_B64": base64.b64encode(b"seed-with-32-bytes-minimum-value").decode("ascii"),
             "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai",
+            "FLATKEY_BROWSER_QA_GCS_BUCKET": "flatkey-browser-qa-reports",
+            "FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID": "main-001",
+            "FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID": "cleanup-001",
         }
 
         cfg = load_cleanup_config(env)
 
         self.assertEqual(cfg.run_id, "123456789")
         self.assertEqual(cfg.console_origin, "https://staging-console.flatkey.ai")
+        self.assertEqual(cfg.gcs_bucket, "flatkey-browser-qa-reports")
+        self.assertEqual(cfg.main_execution_id, "main-001")
+        self.assertEqual(cfg.cleanup_execution_id, "cleanup-001")
         self.assertNotIn("seed", repr(cfg))
 
     def test_load_cleanup_config_rejects_unknown_cleanup_env_and_non_exact_origin(self):
@@ -89,6 +95,9 @@ class ConfigTests(unittest.TestCase):
             "FLATKEY_QA_RUN_ID": "123456789",
             "FLATKEY_QA_IDENTITY_SEED_B64": base64.b64encode(b"seed-with-32-bytes-minimum-value").decode("ascii"),
             "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai/",
+            "FLATKEY_BROWSER_QA_GCS_BUCKET": "flatkey-browser-qa-reports",
+            "FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID": "main-001",
+            "FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID": "cleanup-001",
         }
         with self.assertRaises(ValueError):
             load_cleanup_config(env)
@@ -97,6 +106,52 @@ class ConfigTests(unittest.TestCase):
         env["FLATKEY_QA_GMAIL_BASE"] = "owner@gmail.com"
         with self.assertRaises(ValueError):
             load_cleanup_config(env)
+
+    def test_load_cleanup_config_unknown_env_diagnostic_names_both_allowed_scopes(self):
+        env = {
+            "FLATKEY_QA_RUN_ID": "123456789",
+            "FLATKEY_QA_IDENTITY_SEED_B64": base64.b64encode(b"seed-with-32-bytes-minimum-value").decode("ascii"),
+            "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai",
+            "FLATKEY_BROWSER_QA_GCS_BUCKET": "flatkey-browser-qa-reports",
+            "FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID": "main-001",
+            "FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID": "cleanup-001",
+            "FLATKEY_BROWSER_QA_EXTRA": "nope",
+        }
+
+        with self.assertRaisesRegex(ValueError, "unknown FLATKEY_QA_ or FLATKEY_BROWSER_QA_ environment variables"):
+            load_cleanup_config(env)
+
+    def test_load_cleanup_config_requires_and_validates_gcs_components(self):
+        env = {
+            "FLATKEY_QA_RUN_ID": "123456789",
+            "FLATKEY_QA_IDENTITY_SEED_B64": base64.b64encode(b"seed-with-32-bytes-minimum-value").decode("ascii"),
+            "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai",
+            "FLATKEY_BROWSER_QA_GCS_BUCKET": "flatkey-browser-qa-reports",
+            "FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID": "main-001",
+            "FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID": "cleanup-001",
+        }
+        for required in [
+            "FLATKEY_BROWSER_QA_GCS_BUCKET",
+            "FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID",
+            "FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID",
+        ]:
+            missing = dict(env)
+            del missing[required]
+            with self.subTest(required=required):
+                with self.assertRaises(ValueError):
+                    load_cleanup_config(missing)
+
+        for name, value in [
+            ("FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID", "../main"),
+            ("FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID", "main/001"),
+            ("FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID", ""),
+            ("FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID", "cleanup 001"),
+        ]:
+            invalid = dict(env)
+            invalid[name] = value
+            with self.subTest(name=name, value=value):
+                with self.assertRaises(ValueError):
+                    load_cleanup_config(invalid)
 
 
 if __name__ == "__main__":

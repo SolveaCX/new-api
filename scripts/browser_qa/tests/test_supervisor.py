@@ -138,6 +138,16 @@ class FakeUploader:
         return {"uploaded": True}
 
 
+class DefiniteFailUploader:
+    def __init__(self):
+        self.attempted = []
+        self.cloud_objects = []
+
+    def upload(self, manifest_path, artifact_paths):
+        self.attempted.append((manifest_path, list(artifact_paths)))
+        raise RuntimeError("definite manifest upload failure")
+
+
 class FakeStatusResponse:
     status = 200
 
@@ -213,6 +223,7 @@ def env():
         "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai",
         "FLATKEY_QA_DOCS_ORIGIN": "https://docs.flatkey.ai",
         "FLATKEY_BROWSER_QA_BROKER_URL": "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app/",
+        "FLATKEY_BROWSER_QA_EXECUTION_ID": "exec-1",
     }
 
 
@@ -348,6 +359,40 @@ class SupervisorTests(unittest.TestCase):
             self.assertNotIn("browser_evaluate", data)
             self.assertNotIn("plugins = false", data)
 
+    def test_supervisor_passes_explicit_manifest_identity_to_report_writer(self):
+        original_write_report = supervisor.report.write_report
+        calls = []
+
+        def recording_write_report(*args, **kwargs):
+            calls.append(kwargs)
+            return original_write_report(*args, **kwargs)
+
+        with mock.patch.object(supervisor.report, "write_report", recording_write_report):
+            self.run_supervisor(FakeProcess(0), result_payload=valid_result())
+
+        self.assertEqual(calls[0]["run_id"], "12345")
+        self.assertEqual(calls[0]["execution_id"], "exec-1")
+
+    def test_qa_config_uses_explicit_child_path_not_ambient_path(self):
+        input_env = env()
+        input_env["PATH"] = "C:\\explicit-tools"
+        input_env["SystemRoot"] = "C:\\explicit-windows"
+
+        with mock.patch.dict(supervisor.os.environ, {"PATH": "C:\\poison-tools", "SystemRoot": "C:\\poison-windows"}, clear=True):
+            outcome, sup = self.run_supervisor(FakeProcess(0), result_payload=valid_result(), input_env=input_env)
+
+        self.assertEqual(outcome.status, "passed")
+        popen_env = sup.subprocess_runner.calls[0][1]["env"]
+        self.assertEqual(popen_env["PATH"], "C:\\explicit-tools")
+        self.assertEqual(popen_env["SystemRoot"], "C:\\explicit-windows")
+
+        config_text = ""
+        for path in [os.path.join(sup.codex_home, "config.toml"), os.path.join(sup.codex_home, "qa.config.toml")]:
+            with open(path, encoding="utf-8") as handle:
+                config_text += handle.read()
+        self.assertIn('PATH = "C:\\\\explicit-tools"', config_text)
+        self.assertNotIn("poison-tools", config_text)
+
     def test_nonzero_invalid_timeout_sigterm_upload_and_cleanup_failures_still_cleanup_then_upload_with_priority(self):
         self.assertEqual(self.run_supervisor(FakeProcess(7), result_payload=valid_result())[0].status, "infrastructure_failed")
         self.assertEqual(self.run_supervisor(FakeProcess(0), result_payload={"bad": "shape"})[0].status, "infrastructure_failed")
@@ -367,6 +412,15 @@ class SupervisorTests(unittest.TestCase):
         outcome, sup = self.run_supervisor(FakeProcess(7), result_payload=valid_result(), cleanup=cleanup)
         self.assertEqual(outcome.status, "cleanup_failed")
         self.assertEqual(len(sup.uploader.uploaded), 1)
+
+    def test_definite_manifest_upload_failure_creates_no_cloud_main_manifest_and_cannot_report_passed(self):
+        uploader = DefiniteFailUploader()
+        outcome, sup = self.run_supervisor(FakeProcess(0), result_payload=valid_result(), uploader=uploader)
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(len(uploader.attempted), 1)
+        self.assertEqual(uploader.cloud_objects, [])
+        self.assertEqual(len(sup.cleanup_runner.calls), 1)
 
     def test_teardown_and_proxy_construction_failures_do_not_skip_cleanup(self):
         cleanup = FakeCleanup()

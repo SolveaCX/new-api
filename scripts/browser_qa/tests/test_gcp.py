@@ -7,6 +7,8 @@ from scripts.browser_qa.flatkey_browser_qa.gcp import (
     GcpClient,
     GcpConfigError,
     GcpTransientError,
+    GcsObjectAlreadyExists,
+    read_gcs_json_object,
     upload_gcs_object,
 )
 
@@ -124,6 +126,71 @@ class GcpTests(unittest.TestCase):
         self.assertIn("ifGenerationMatch=0", upload_request.selector)
         self.assertEqual(upload_request.headers["Authorization"], "Bearer access-secret")
         self.assertEqual(upload_request.headers["Content-type"], "application/json")
+
+    def test_gcs_upload_accepts_explicit_generation_precondition(self):
+        opener = RecordingOpener([FakeResponse(200, {"name": "reports/run/result.json"})])
+
+        upload_gcs_object(
+            "flatkey-browser-qa-reports",
+            "reports/123/result.json",
+            b"{}",
+            "application/json",
+            "access-secret",
+            opener=opener,
+            if_generation_match=123,
+        )
+
+        request = opener.requests[0][0]
+        self.assertIn("ifGenerationMatch=123", request.selector)
+
+    def test_read_gcs_json_object_returns_payload_and_generation(self):
+        opener = RecordingOpener([FakeResponse(200, {"status": "passed"}, {"x-goog-generation": "456"})])
+
+        payload, generation = read_gcs_json_object(
+            "flatkey-browser-qa-reports",
+            "runs/123/manifest.json",
+            "access-secret",
+            opener=opener,
+        )
+
+        self.assertEqual(payload, {"status": "passed"})
+        self.assertEqual(generation, 456)
+        request = opener.requests[0][0]
+        self.assertEqual(request.get_method(), "GET")
+        self.assertEqual(request.host, "storage.googleapis.com")
+        self.assertIn("/storage/v1/b/flatkey-browser-qa-reports/o/runs%2F123%2Fmanifest.json", request.selector)
+
+    def test_read_gcs_json_object_distinguishes_missing_precondition_and_invalid_body(self):
+        missing = RecordingOpener([urllib.error.HTTPError("https://storage.googleapis.com/x", 404, "missing", {}, io_bytes({}))])
+        with self.assertRaises(FileNotFoundError):
+            read_gcs_json_object("ok-bucket", "runs/123/manifest.json", "access-secret", opener=missing)
+
+        precondition = RecordingOpener([urllib.error.HTTPError("https://storage.googleapis.com/x", 412, "precondition", {}, io_bytes({}))])
+        with self.assertRaises(GcsObjectAlreadyExists):
+            read_gcs_json_object("ok-bucket", "runs/123/manifest.json", "access-secret", opener=precondition)
+
+        invalid = RecordingOpener([FakeResponse(200, b"not json", {"x-goog-generation": "1"})])
+        with self.assertRaises(GcpConfigError):
+            read_gcs_json_object("ok-bucket", "runs/123/manifest.json", "access-secret", opener=invalid)
+
+        no_generation = RecordingOpener([FakeResponse(200, {}, {})])
+        with self.assertRaises(GcpConfigError):
+            read_gcs_json_object("ok-bucket", "runs/123/manifest.json", "access-secret", opener=no_generation)
+
+        negative_generation = RecordingOpener([FakeResponse(200, {}, {"x-goog-generation": "-1"})])
+        with self.assertRaises(GcpConfigError):
+            read_gcs_json_object("ok-bucket", "runs/123/manifest.json", "access-secret", opener=negative_generation)
+
+        bool_generation = RecordingOpener([FakeResponse(200, {}, {"x-goog-generation": "True"})])
+        with self.assertRaises(GcpConfigError):
+            read_gcs_json_object("ok-bucket", "runs/123/manifest.json", "access-secret", opener=bool_generation)
+
+    def test_read_gcs_json_object_rejects_oversized_json(self):
+        oversized = b'{"data":"' + (b"a" * (256 * 1024)) + b'"}'
+        opener = RecordingOpener([FakeResponse(200, oversized, {"x-goog-generation": "1"})])
+
+        with self.assertRaises(GcpConfigError):
+            read_gcs_json_object("ok-bucket", "runs/123/manifest.json", "access-secret", opener=opener)
 
     def test_metadata_response_must_include_google_flavor_header(self):
         for headers in [{}, {"Metadata-Flavor": "NotGoogle"}]:

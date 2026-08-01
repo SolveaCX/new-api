@@ -91,7 +91,17 @@ class GcpClient:
         ).decode("utf-8")
 
 
-def upload_gcs_object(bucket, object_name, data, content_type, access_token, *, opener=None, retry_base_delay=0.2):
+def upload_gcs_object(
+    bucket,
+    object_name,
+    data,
+    content_type,
+    access_token,
+    *,
+    opener=None,
+    retry_base_delay=0.2,
+    if_generation_match=0,
+):
     _validate_bucket(bucket)
     _validate_object_name(object_name)
     if not isinstance(data, bytes):
@@ -106,7 +116,7 @@ def upload_gcs_object(bucket, object_name, data, content_type, access_token, *, 
         {
             "uploadType": "media",
             "name": object_name,
-            "ifGenerationMatch": "0",
+            "ifGenerationMatch": str(_validate_generation(if_generation_match)),
         }
     )
     url = STORAGE_ORIGIN + path + "?" + query
@@ -129,6 +139,38 @@ def upload_gcs_object(bucket, object_name, data, content_type, access_token, *, 
     return decoded
 
 
+def read_gcs_json_object(bucket, object_name, access_token, *, opener=None, retry_base_delay=0.2):
+    _validate_bucket(bucket)
+    _validate_object_name(object_name)
+    if not isinstance(access_token, str) or not access_token:
+        raise GcpConfigError("access token is required")
+    selected_opener = opener or _default_opener()
+    path = f"/storage/v1/b/{urllib.parse.quote(bucket, safe='')}/o/{urllib.parse.quote(object_name, safe='')}"
+    url = STORAGE_ORIGIN + path + "?alt=media"
+    payload, headers = _request_bytes_with_headers(
+        selected_opener,
+        "GET",
+        url,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=15,
+        retry_base_delay=retry_base_delay,
+        classify_gcs_read=True,
+    )
+    generation = headers.get("x-goog-generation") or headers.get("X-Goog-Generation")
+    try:
+        generation = int(generation)
+    except (TypeError, ValueError) as exc:
+        raise GcpConfigError("gcs generation header malformed") from exc
+    _validate_generation(generation)
+    try:
+        decoded = json.loads(payload.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise GcpConfigError("gcs json response malformed") from exc
+    if not isinstance(decoded, dict):
+        raise GcpConfigError("gcs json response malformed")
+    return decoded, generation
+
+
 def _request_bytes(
     opener,
     method,
@@ -141,6 +183,37 @@ def _request_bytes(
     max_attempts=3,
     require_metadata_flavor=False,
     classify_gcs_precondition=False,
+    classify_gcs_read=False,
+):
+    payload, _headers = _request_bytes_with_headers(
+        opener,
+        method,
+        url,
+        data=data,
+        headers=headers,
+        timeout=timeout,
+        retry_base_delay=retry_base_delay,
+        max_attempts=max_attempts,
+        require_metadata_flavor=require_metadata_flavor,
+        classify_gcs_precondition=classify_gcs_precondition,
+        classify_gcs_read=classify_gcs_read,
+    )
+    return payload
+
+
+def _request_bytes_with_headers(
+    opener,
+    method,
+    url,
+    *,
+    data=None,
+    headers=None,
+    timeout=10,
+    retry_base_delay=0.2,
+    max_attempts=3,
+    require_metadata_flavor=False,
+    classify_gcs_precondition=False,
+    classify_gcs_read=False,
 ):
     parsed = urllib.parse.urlparse(url)
     if parsed.netloc == "metadata.google.internal":
@@ -163,6 +236,10 @@ def _request_bytes(
         except urllib.error.HTTPError as exc:
             if 300 <= exc.code <= 399:
                 raise GcpConfigError("google redirect blocked") from exc
+            if classify_gcs_read and exc.code == 404:
+                raise FileNotFoundError("gcs object not found") from exc
+            if classify_gcs_read and exc.code == 412:
+                raise GcsObjectAlreadyExists("gcs generation precondition failed") from exc
             if classify_gcs_precondition and exc.code == 412:
                 if uncertain_previous_attempt:
                     raise GcsUploadUncertain("gcs upload may have succeeded before precondition failure") from exc
@@ -190,7 +267,7 @@ def _request_bytes(
             raise GcpConfigError("google request failed")
         if len(raw) > _MAX_RESPONSE_BYTES:
             raise GcpConfigError("google response too large")
-        return raw
+        return raw, response.headers
     raise GcpTransientError("google retry attempts exhausted")
 
 
@@ -227,6 +304,12 @@ def _validate_object_name(name):
     parts = name.split("/")
     if any(part in {"", ".", ".."} for part in parts):
         raise GcpConfigError("invalid gcs object")
+
+
+def _validate_generation(value):
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise GcpConfigError("invalid gcs generation precondition")
+    return value
 
 
 def _sleep(base, attempt):

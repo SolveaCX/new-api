@@ -61,7 +61,13 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report.classify_status(valid_result(), runtime_classification="codex_nonzero"), "infrastructure_failed")
 
         cleanup = CleanupResult(1, True, True, True, "token cleanup failed")
-        manifest = report.build_manifest(valid_result(), cleanup_result=cleanup, model_manifest={"cleanup": {"cleanup_failed": False}})
+        manifest = report.build_manifest(
+            valid_result(),
+            cleanup_result=cleanup,
+            model_manifest={"cleanup": {"cleanup_failed": False}},
+            run_id="123456789",
+            execution_id="main-001",
+        )
 
         self.assertEqual(manifest["status"], "cleanup_failed")
         self.assertEqual(manifest["cleanup"]["cleanup_failed"], True)
@@ -85,6 +91,8 @@ class ReportTests(unittest.TestCase):
                 manifest_path,
                 cleanup_result=CleanupResult(0, False, False, False, "not needed"),
                 redactor=report.Redactor(extra_secrets=("sk-secretSECRET",)),
+                run_id="123456789",
+                execution_id="main-001",
             )
 
             with open(manifest_path, encoding="utf-8") as handle:
@@ -93,6 +101,32 @@ class ReportTests(unittest.TestCase):
             rendered = json.dumps(written)
             self.assertNotIn("sk-secretSECRET", rendered)
             self.assertEqual(written["status"], "findings_detected")
+            self.assertEqual(written["schema_version"], 1)
+            self.assertEqual(written["kind"], "main")
+            self.assertEqual(written["run_id"], "123456789")
+            self.assertEqual(written["execution_id"], "main-001")
+
+    def test_report_manifest_identity_is_explicit_and_validated(self):
+        cleanup = CleanupResult(0, False, False, False, "not needed")
+
+        with self.assertRaises(TypeError):
+            report.build_manifest(valid_result(), cleanup_result=cleanup)
+
+        for run_id, execution_id in [
+            ("", "main-001"),
+            ("not-decimal", "main-001"),
+            ("123456789", ""),
+            ("123456789", "../main"),
+            ("123456789", "main/001"),
+        ]:
+            with self.subTest(run_id=run_id, execution_id=execution_id):
+                with self.assertRaises(report.ResultValidationError):
+                    report.build_manifest(
+                        valid_result(),
+                        cleanup_result=cleanup,
+                        run_id=run_id,
+                        execution_id=execution_id,
+                    )
 
         schema_path = os.path.join(os.path.dirname(__file__), "..", "config", "result.schema.json")
         with open(schema_path, encoding="utf-8") as handle:

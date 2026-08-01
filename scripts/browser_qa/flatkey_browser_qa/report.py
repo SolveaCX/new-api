@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 
 from .cleanup import CleanupResult
@@ -12,6 +13,8 @@ class ResultValidationError(ValueError):
 
 SEVERITIES = {"critical", "high", "medium", "low", "info"}
 CONFIDENCE = {"low", "medium", "high"}
+MANIFEST_SCHEMA_VERSION = 1
+_SAFE_GCS_COMPONENT = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
 def validate_result(payload):
@@ -48,7 +51,19 @@ def classify_status(payload, *, cleanup_result=None, codex_returncode=0, upload_
     return "passed"
 
 
-def build_manifest(payload, *, cleanup_result, redactor=None, model_manifest=None, codex_returncode=0, upload_failed=False, invalid_result=False, runtime_classification=None):
+def build_manifest(
+    payload,
+    *,
+    cleanup_result,
+    run_id,
+    execution_id,
+    redactor=None,
+    model_manifest=None,
+    codex_returncode=0,
+    upload_failed=False,
+    invalid_result=False,
+    runtime_classification=None,
+):
     redactor = redactor or Redactor()
     validate_result(payload)
     cleanup = _cleanup_to_dict(cleanup_result)
@@ -61,22 +76,41 @@ def build_manifest(payload, *, cleanup_result, redactor=None, model_manifest=Non
         runtime_classification=runtime_classification,
     )
     manifest = {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "kind": "main",
+        "run_id": run_id,
+        "execution_id": execution_id,
         "status": status,
         "created_at": int(time.time()),
         "result": redactor.clean(payload),
         "cleanup": redactor.clean(cleanup),
     }
+    _validate_manifest_identity(run_id, execution_id)
     if runtime_classification:
         manifest["infrastructure"] = {"status": "failed", "classification": runtime_classification}
     return manifest
 
 
-def write_report(result_path, manifest_path, *, cleanup_result, redactor=None, codex_returncode=0, upload_failed=False, invalid_result=False, runtime_classification=None):
+def write_report(
+    result_path,
+    manifest_path,
+    *,
+    cleanup_result,
+    run_id,
+    execution_id,
+    redactor=None,
+    codex_returncode=0,
+    upload_failed=False,
+    invalid_result=False,
+    runtime_classification=None,
+):
     with open(result_path, encoding="utf-8") as handle:
         payload = json.load(handle)
     manifest = build_manifest(
         payload,
         cleanup_result=cleanup_result,
+        run_id=run_id,
+        execution_id=execution_id,
         redactor=redactor,
         codex_returncode=codex_returncode,
         upload_failed=upload_failed,
@@ -157,3 +191,17 @@ def _write_json_private(path, payload):
     fd = os.open(path, flags, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, sort_keys=True)
+
+
+def _validate_manifest_identity(run_id, execution_id):
+    if not isinstance(run_id, str) or not run_id.isascii() or not run_id.isdecimal():
+        raise ResultValidationError("FLATKEY_QA_RUN_ID must contain only ASCII decimal digits")
+    if (
+        not isinstance(execution_id, str)
+        or not _SAFE_GCS_COMPONENT.fullmatch(execution_id)
+        or execution_id in {".", ".."}
+        or ".." in execution_id
+        or "/" in execution_id
+        or "\\" in execution_id
+    ):
+        raise ResultValidationError("FLATKEY_BROWSER_QA_EXECUTION_ID must be a safe GCS object path component")

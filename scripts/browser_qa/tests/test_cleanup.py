@@ -6,6 +6,7 @@ import threading
 import unittest
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
@@ -14,6 +15,7 @@ from scripts.browser_qa.flatkey_browser_qa.cleanup import CleanupRunner
 from scripts.browser_qa.flatkey_browser_qa.cleanup import CleanupResult
 from scripts.browser_qa.flatkey_browser_qa.api import LoginResult
 from scripts.browser_qa.flatkey_browser_qa.api import StagingApiClient
+from scripts.browser_qa.flatkey_browser_qa.gcp import GcsUploadUncertain
 from scripts.browser_qa.flatkey_browser_qa.identity import DerivedIdentity
 
 
@@ -593,6 +595,9 @@ class CleanupTests(unittest.TestCase):
             "FLATKEY_QA_RUN_ID": IDENTITY.run_id,
             "FLATKEY_QA_IDENTITY_SEED_B64": base64.b64encode(seed).decode("ascii"),
             "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai",
+            "FLATKEY_BROWSER_QA_GCS_BUCKET": "flatkey-browser-qa-reports",
+            "FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID": "main-001",
+            "FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID": "cleanup-001",
         }
 
         class FakeRunner:
@@ -603,16 +608,585 @@ class CleanupTests(unittest.TestCase):
                 return CleanupResult(3, True, True, False, "cleanup verified")
 
         stdout = io.StringIO()
+        def fake_read(bucket, object_name, token):
+            if object_name.endswith("/manifest.json") and "/main/" in object_name:
+                return main_manifest(), 1
+            raise FileNotFoundError(object_name)
+
         with mock.patch.dict("os.environ", env, clear=True):
             with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
                 with mock.patch.object(cleanup_job, "CleanupRunner", FakeRunner):
-                    with contextlib.redirect_stdout(stdout):
-                        exit_code = cleanup_job.main([])
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", lambda *_args, **_kwargs: {}):
+                                with contextlib.redirect_stdout(stdout):
+                                    exit_code = cleanup_job.main([])
 
         output = stdout.getvalue()
         self.assertEqual(exit_code, 0)
         for secret in [IDENTITY.username, IDENTITY.password, "owner", "gmail", "seed-with"]:
             self.assertNotIn(secret, output)
+
+    def test_cleanup_job_bootstraps_root_manifest_from_explicit_main_execution_id(self):
+        seed = b"seed-with-32-bytes-minimum-value"
+        env = cleanup_env(seed, main_execution_id="main-001", cleanup_execution_id="cleanup-001")
+        uploads = []
+        reads = []
+
+        class FakeRunner:
+            def __init__(self, _client):
+                pass
+
+            def run(self, _identity):
+                return CleanupResult(2, True, True, False, "cleanup verified")
+
+        def fake_read(bucket, object_name, token):
+            reads.append((bucket, object_name, token))
+            if object_name == f"runs/{IDENTITY.run_id}/main/main-001/manifest.json":
+                return main_manifest(), 11
+            raise FileNotFoundError(object_name)
+
+        def fake_upload(bucket, object_name, data, content_type, token, *, if_generation_match=0):
+            uploads.append(
+                {
+                    "bucket": bucket,
+                    "object_name": object_name,
+                    "payload": json.loads(data.decode("utf-8")),
+                    "content_type": content_type,
+                    "token": token,
+                    "if_generation_match": if_generation_match,
+                }
+            )
+            return {"name": object_name}
+
+        stdout = io.StringIO()
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
+                with mock.patch.object(cleanup_job, "CleanupRunner", FakeRunner):
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", fake_upload):
+                                with contextlib.redirect_stdout(stdout):
+                                    exit_code = cleanup_job.main([])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            reads,
+            [
+                ("flatkey-browser-qa-reports", f"runs/{IDENTITY.run_id}/manifest.json", "access-secret"),
+                ("flatkey-browser-qa-reports", f"runs/{IDENTITY.run_id}/main/main-001/manifest.json", "access-secret"),
+            ],
+        )
+        self.assertEqual([item["object_name"] for item in uploads], [
+            f"runs/{IDENTITY.run_id}/cleanup/cleanup-001/cleanup.json",
+            f"runs/{IDENTITY.run_id}/manifest.json",
+        ])
+        cleanup_upload, root_upload = uploads
+        self.assertEqual(cleanup_upload["if_generation_match"], 0)
+        self.assertEqual(root_upload["if_generation_match"], 0)
+        self.assertEqual(cleanup_upload["payload"]["kind"], "cleanup")
+        self.assertEqual(cleanup_upload["payload"]["main_execution_id"], "main-001")
+        self.assertNotIn("username", json.dumps(cleanup_upload["payload"]).lower())
+        root = root_upload["payload"]
+        self.assertEqual(root["schema_version"], 1)
+        self.assertEqual(root["run_id"], IDENTITY.run_id)
+        self.assertEqual(root["status"], "passed")
+        self.assertEqual(root["latest"], {"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-001"})
+        self.assertEqual([item["kind"] for item in root["executions"]], ["main", "cleanup"])
+        self.assertEqual(root["executions"][1]["manifest"], f"runs/{IDENTITY.run_id}/cleanup/cleanup-001/cleanup.json")
+
+    def test_cleanup_job_preserves_history_and_retries_412_manifest_race(self):
+        seed = b"seed-with-32-bytes-minimum-value"
+        env = cleanup_env(seed, main_execution_id="main-001", cleanup_execution_id="cleanup-002")
+        existing = {
+            "schema_version": 1,
+            "run_id": IDENTITY.run_id,
+            "status": "passed",
+            "latest": {"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-001"},
+            "executions": [
+                {
+                    "kind": "main",
+                    "execution_id": "main-001",
+                    "manifest": f"runs/{IDENTITY.run_id}/main/main-001/manifest.json",
+                    "status": "passed",
+                    "created_at": 1,
+                },
+                {
+                    "kind": "cleanup",
+                    "execution_id": "cleanup-001",
+                    "manifest": f"runs/{IDENTITY.run_id}/cleanup/cleanup-001/cleanup.json",
+                    "status": "passed",
+                    "created_at": 2,
+                },
+            ],
+        }
+        reads = [
+            (existing, 7),
+            (main_manifest(), 11),
+            (existing, 8),
+            (main_manifest(), 11),
+        ]
+        uploads = []
+
+        class FakeRunner:
+            def __init__(self, _client):
+                pass
+
+            def run(self, _identity):
+                return CleanupResult(0, False, True, False, "account already absent")
+
+        def fake_read(_bucket, _object_name, _token):
+            return reads.pop(0)
+
+        def fake_upload(bucket, object_name, data, content_type, token, *, if_generation_match=0):
+            uploads.append((object_name, json.loads(data.decode("utf-8")), if_generation_match))
+            if object_name.endswith("/manifest.json") and if_generation_match == 7:
+                raise cleanup_job.GcsObjectAlreadyExists("race")
+            return {"name": object_name}
+
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
+                with mock.patch.object(cleanup_job, "CleanupRunner", FakeRunner):
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", fake_upload):
+                                with contextlib.redirect_stdout(io.StringIO()):
+                                    exit_code = cleanup_job.main([])
+
+        self.assertEqual(exit_code, 0)
+        root_attempts = [item for item in uploads if item[0].endswith("/manifest.json")]
+        self.assertEqual([item[2] for item in root_attempts], [7, 8])
+        final_root = root_attempts[-1][1]
+        self.assertEqual([item["execution_id"] for item in final_root["executions"]], ["main-001", "cleanup-001", "cleanup-002"])
+        self.assertEqual(final_root["latest"]["cleanup_execution_id"], "cleanup-002")
+
+    def test_cleanup_job_reenters_existing_cleanup_artifact_and_repairs_root_without_overwrite(self):
+        seed = b"seed-with-32-bytes-minimum-value"
+        env = cleanup_env(seed, main_execution_id="main-001", cleanup_execution_id="cleanup-001")
+        cleanup_object = f"runs/{IDENTITY.run_id}/cleanup/cleanup-001/cleanup.json"
+        root_object = f"runs/{IDENTITY.run_id}/manifest.json"
+        persisted_cleanup = cleanup_manifest(execution_id="cleanup-001", main_execution_id="main-001", created_at=20)
+        uploads = []
+
+        class FakeRunner:
+            def __init__(self, _client):
+                pass
+
+            def run(self, _identity):
+                return CleanupResult(0, False, True, False, "account already absent on rerun")
+
+        def fake_read(_bucket, object_name, _token):
+            if object_name == cleanup_object:
+                return persisted_cleanup, 5
+            if object_name == f"runs/{IDENTITY.run_id}/main/main-001/manifest.json":
+                return main_manifest(created_at=10), 11
+            if object_name == root_object:
+                raise FileNotFoundError(object_name)
+            raise AssertionError(object_name)
+
+        def fake_upload(_bucket, object_name, data, _content_type, _token, *, if_generation_match=0):
+            uploads.append((object_name, json.loads(data.decode("utf-8")), if_generation_match))
+            if object_name == cleanup_object:
+                raise cleanup_job.GcsObjectAlreadyExists("already persisted")
+            return {"name": object_name}
+
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
+                with mock.patch.object(cleanup_job, "CleanupRunner", FakeRunner):
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", fake_upload):
+                                with contextlib.redirect_stdout(io.StringIO()):
+                                    exit_code = cleanup_job.main([])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual([item[0] for item in uploads], [cleanup_object, root_object])
+        repaired_root = uploads[-1][1]
+        self.assertEqual(repaired_root["executions"][1]["created_at"], 20)
+        self.assertEqual(repaired_root["executions"][1]["manifest"], cleanup_object)
+
+    def test_cleanup_job_reentry_exit_status_uses_immutable_persisted_cleanup_status(self):
+        seed = b"seed-with-32-bytes-minimum-value"
+        env = cleanup_env(seed, main_execution_id="main-001", cleanup_execution_id="cleanup-001")
+        cleanup_object = f"runs/{IDENTITY.run_id}/cleanup/cleanup-001/cleanup.json"
+        root_object = f"runs/{IDENTITY.run_id}/manifest.json"
+        persisted_cleanup = cleanup_manifest(
+            status="cleanup_failed",
+            cleaned={
+                "cleanup_failed": True,
+                "deleted_token_count": 0,
+                "account_deleted": False,
+                "login_rejected_after_delete": False,
+                "reason": "previous cleanup failed",
+            },
+        )
+        uploaded_roots = []
+
+        class FakeRunner:
+            def __init__(self, _client):
+                pass
+
+            def run(self, _identity):
+                return CleanupResult(0, False, True, False, "account absent on rerun")
+
+        def fake_read(_bucket, object_name, _token):
+            if object_name == cleanup_object:
+                return persisted_cleanup, 5
+            if object_name == f"runs/{IDENTITY.run_id}/main/main-001/manifest.json":
+                return main_manifest(created_at=10), 11
+            if object_name == root_object:
+                raise FileNotFoundError(object_name)
+            raise AssertionError(object_name)
+
+        def fake_upload(_bucket, object_name, data, _content_type, _token, *, if_generation_match=0):
+            if object_name == cleanup_object:
+                raise cleanup_job.GcsObjectAlreadyExists("already persisted")
+            uploaded_roots.append(json.loads(data.decode("utf-8")))
+            return {"name": object_name}
+
+        stdout = io.StringIO()
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
+                with mock.patch.object(cleanup_job, "CleanupRunner", FakeRunner):
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", fake_upload):
+                                with contextlib.redirect_stdout(stdout):
+                                    exit_code = cleanup_job.main([])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("previous cleanup failed", stdout.getvalue())
+        self.assertEqual(uploaded_roots[-1]["status"], "cleanup_failed")
+
+    def test_cleanup_job_uncertain_cleanup_upload_fails_closed_when_existing_artifact_invalid(self):
+        seed = b"seed-with-32-bytes-minimum-value"
+        env = cleanup_env(seed, main_execution_id="main-001", cleanup_execution_id="cleanup-001")
+        cleanup_object = f"runs/{IDENTITY.run_id}/cleanup/cleanup-001/cleanup.json"
+
+        class FakeRunner:
+            def __init__(self, _client):
+                pass
+
+            def run(self, _identity):
+                return CleanupResult(0, False, True, False, "account already absent")
+
+        def fake_read(_bucket, object_name, _token):
+            if object_name == cleanup_object:
+                return {**cleanup_manifest(), "status": "passed", "cleaned": {"cleanup_failed": True}}, 5
+            raise FileNotFoundError(object_name)
+
+        def fake_upload(_bucket, object_name, _data, _content_type, _token, *, if_generation_match=0):
+            if object_name == cleanup_object:
+                raise GcsUploadUncertain("lost response")
+            return {"name": object_name}
+
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
+                with mock.patch.object(cleanup_job, "CleanupRunner", FakeRunner):
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", fake_upload):
+                                with contextlib.redirect_stdout(io.StringIO()):
+                                    exit_code = cleanup_job.main([])
+
+        self.assertEqual(exit_code, 1)
+
+    def test_cleanup_job_recovers_uncertain_root_cas_when_desired_state_was_persisted(self):
+        seed = b"seed-with-32-bytes-minimum-value"
+        env = cleanup_env(seed, main_execution_id="main-001", cleanup_execution_id="cleanup-001")
+        root_object = f"runs/{IDENTITY.run_id}/manifest.json"
+        persisted_root = None
+        reads = []
+
+        class FakeRunner:
+            def __init__(self, _client):
+                pass
+
+            def run(self, _identity):
+                return CleanupResult(0, False, True, False, "account already absent")
+
+        def fake_read(_bucket, object_name, _token):
+            reads.append(object_name)
+            if object_name == f"runs/{IDENTITY.run_id}/main/main-001/manifest.json":
+                return main_manifest(created_at=10), 11
+            if object_name == root_object and persisted_root is not None:
+                return persisted_root, 8
+            if object_name == root_object:
+                raise FileNotFoundError(object_name)
+            raise AssertionError(object_name)
+
+        def fake_upload(_bucket, object_name, data, _content_type, _token, *, if_generation_match=0):
+            nonlocal persisted_root
+            if object_name == root_object:
+                persisted_root = json.loads(data.decode("utf-8"))
+                raise GcsUploadUncertain("lost response")
+            return {"name": object_name}
+
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
+                with mock.patch.object(cleanup_job, "CleanupRunner", FakeRunner):
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", fake_upload):
+                                with contextlib.redirect_stdout(io.StringIO()):
+                                    exit_code = cleanup_job.main([])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(persisted_root["latest"], {"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-001"})
+        self.assertEqual(reads.count(root_object), 2)
+
+    def test_cleanup_job_persists_failed_cleanup_and_returns_nonzero_on_persistence_failure(self):
+        seed = b"seed-with-32-bytes-minimum-value"
+        env = cleanup_env(seed, main_execution_id="main-001", cleanup_execution_id="cleanup-003")
+        uploaded = []
+        def fake_read(_bucket, object_name, _token):
+            if "/main/" in object_name:
+                return main_manifest(), 11
+            raise FileNotFoundError(object_name)
+
+        class FailedRunner:
+            def __init__(self, _client):
+                pass
+
+            def run(self, _identity):
+                return CleanupResult(0, False, False, True, "token cleanup failed")
+
+        def fake_upload(bucket, object_name, data, content_type, token, *, if_generation_match=0):
+            uploaded.append((object_name, json.loads(data.decode("utf-8"))))
+            return {"name": object_name}
+
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
+                with mock.patch.object(cleanup_job, "CleanupRunner", FailedRunner):
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", fake_upload):
+                                with contextlib.redirect_stdout(io.StringIO()):
+                                    failed_cleanup_code = cleanup_job.main([])
+
+        self.assertEqual(failed_cleanup_code, 1)
+        self.assertEqual(uploaded[-1][1]["status"], "cleanup_failed")
+
+        class SuccessRunner:
+            def __init__(self, _client):
+                pass
+
+            def run(self, _identity):
+                return CleanupResult(0, False, True, False, "account already absent")
+
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch.object(cleanup_job, "StagingApiClient", lambda _origin: object()):
+                with mock.patch.object(cleanup_job, "CleanupRunner", SuccessRunner):
+                    with mock.patch.object(cleanup_job, "GcpClient", lambda: FakeGcpClient("access-secret")):
+                        with mock.patch.object(cleanup_job, "read_gcs_json_object", fake_read):
+                            with mock.patch.object(cleanup_job, "upload_gcs_object", mock.Mock(side_effect=RuntimeError("gcs down"))):
+                                with contextlib.redirect_stdout(io.StringIO()):
+                                    persistence_failure_code = cleanup_job.main([])
+
+        self.assertEqual(persistence_failure_code, 1)
+
+    def test_root_manifest_rejects_malformed_latest_and_duplicate_records(self):
+        valid = root_manifest()
+
+        for latest in [
+            {"main_execution_id": "main-001"},
+            {"main_execution_id": "main-001", "cleanup_execution_id": None, "extra": "bad"},
+            {"main_execution_id": "../escape", "cleanup_execution_id": None},
+            {"main_execution_id": "main-001", "cleanup_execution_id": "cleanup/001"},
+        ]:
+            bad = dict(valid)
+            bad["latest"] = latest
+            with self.subTest(latest=latest):
+                with self.assertRaises(ValueError):
+                    cleanup_job._validate_root_manifest(bad, IDENTITY.run_id)
+
+        duplicate = root_manifest(
+            executions=[
+                execution_record("cleanup", "cleanup-001", IDENTITY.run_id),
+                execution_record("cleanup", "cleanup-001", IDENTITY.run_id),
+            ]
+        )
+        with self.assertRaises(ValueError):
+            cleanup_job._validate_root_manifest(duplicate, IDENTITY.run_id)
+
+    def test_root_manifest_rejects_unsafe_cross_run_and_noncanonical_record_paths(self):
+        for record in [
+            execution_record("main", "../escape", IDENTITY.run_id),
+            {**execution_record("main", "main-001", IDENTITY.run_id), "manifest": "../escape"},
+            {**execution_record("main", "main-001", IDENTITY.run_id), "manifest": f"runs/other-run/main/main-001/manifest.json"},
+            {**execution_record("cleanup", "cleanup-001", IDENTITY.run_id), "manifest": f"runs/{IDENTITY.run_id}/main/cleanup-001/manifest.json"},
+            {**execution_record("cleanup", "cleanup-001", IDENTITY.run_id), "extra": "bad"},
+        ]:
+            bad = root_manifest(executions=[record])
+            with self.subTest(record=record):
+                with self.assertRaises(ValueError):
+                    cleanup_job._validate_root_manifest(bad, IDENTITY.run_id)
+
+    def test_main_record_requires_versioned_main_manifest_identity(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+        )
+        for manifest in [
+            {"status": "passed", "created_at": 1},
+            main_manifest(run_id="other-run"),
+            main_manifest(kind="cleanup"),
+            main_manifest(execution_id="other-main"),
+            {**main_manifest(), "extra": "bad"},
+        ]:
+            with self.subTest(manifest=manifest):
+                with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (manifest, 1)):
+                    with self.assertRaises(ValueError):
+                        cleanup_job._main_record(cfg, "access-secret")
+
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(), 1)):
+            self.assertEqual(
+                cleanup_job._main_record(cfg, "access-secret"),
+                execution_record("main", "main-001", IDENTITY.run_id),
+            )
+
+    def test_merge_root_manifest_keeps_latest_main_and_cleanup_append_monotonic(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+            cleanup_execution_id="cleanup-010",
+        )
+        existing = root_manifest(
+            latest={"main_execution_id": "main-099", "cleanup_execution_id": "cleanup-009"},
+            executions=[
+                execution_record("main", "main-001", IDENTITY.run_id, created_at=100),
+                execution_record("main", "main-099", IDENTITY.run_id, created_at=200),
+                execution_record("cleanup", "cleanup-009", IDENTITY.run_id, created_at=300),
+            ],
+        )
+        cleanup_record = execution_record("cleanup", "cleanup-010", IDENTITY.run_id, created_at=250)
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(created_at=100), 1)):
+            merged = cleanup_job._merge_root_manifest(existing, cfg, cleanup_record, "access-secret")
+
+        self.assertEqual(merged["latest"], {"main_execution_id": "main-099", "cleanup_execution_id": "cleanup-009"})
+
+    def test_merge_root_manifest_tie_breaks_latest_by_execution_id(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+            cleanup_execution_id="cleanup-010",
+        )
+        existing = root_manifest(
+            latest={"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-009"},
+            executions=[
+                execution_record("main", "main-001", IDENTITY.run_id, created_at=100),
+                execution_record("cleanup", "cleanup-009", IDENTITY.run_id, created_at=250),
+            ],
+        )
+        cleanup_record = execution_record("cleanup", "cleanup-010", IDENTITY.run_id, created_at=250)
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(created_at=100), 1)):
+            merged = cleanup_job._merge_root_manifest(existing, cfg, cleanup_record, "access-secret")
+
+        self.assertEqual(merged["latest"], {"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-010"})
+
+    def test_cleanup_root_preserves_infrastructure_failed_main_status_proven_by_present_manifest(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+            cleanup_execution_id="cleanup-001",
+        )
+        cleanup_record = execution_record("cleanup", "cleanup-001", IDENTITY.run_id, created_at=20)
+        main = main_manifest(status="infrastructure_failed", created_at=10)
+
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main, 1)):
+            merged = cleanup_job._merge_root_manifest(
+                root_manifest(executions=[], latest={"main_execution_id": "main-001", "cleanup_execution_id": None}),
+                cfg,
+                cleanup_record,
+                "access-secret",
+            )
+
+        self.assertEqual(merged["status"], "infrastructure_failed")
+        self.assertEqual(merged["executions"][0]["status"], "infrastructure_failed")
+
+
+class FakeGcpClient:
+    def __init__(self, token):
+        self.token = token
+
+    def access_token(self):
+        return self.token
+
+
+def cleanup_env(seed, *, main_execution_id, cleanup_execution_id):
+    return {
+        "FLATKEY_QA_RUN_ID": IDENTITY.run_id,
+        "FLATKEY_QA_IDENTITY_SEED_B64": base64.b64encode(seed).decode("ascii"),
+        "FLATKEY_QA_CONSOLE_ORIGIN": "https://staging-console.flatkey.ai",
+        "FLATKEY_BROWSER_QA_GCS_BUCKET": "flatkey-browser-qa-reports",
+        "FLATKEY_BROWSER_QA_MAIN_EXECUTION_ID": main_execution_id,
+        "FLATKEY_BROWSER_QA_CLEANUP_EXECUTION_ID": cleanup_execution_id,
+    }
+
+
+def main_manifest(**overrides):
+    payload = {
+        "schema_version": 1,
+        "kind": "main",
+        "run_id": IDENTITY.run_id,
+        "execution_id": "main-001",
+        "status": "passed",
+        "created_at": 1,
+        "result": {},
+        "cleanup": {},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def root_manifest(**overrides):
+    payload = {
+        "schema_version": 1,
+        "run_id": IDENTITY.run_id,
+        "status": "passed",
+        "latest": {"main_execution_id": "main-001", "cleanup_execution_id": None},
+        "executions": [execution_record("main", "main-001", IDENTITY.run_id)],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def cleanup_manifest(**overrides):
+    payload = {
+        "schema_version": 1,
+        "kind": "cleanup",
+        "run_id": IDENTITY.run_id,
+        "execution_id": "cleanup-001",
+        "main_execution_id": "main-001",
+        "created_at": 2,
+        "status": "passed",
+        "cleaned": {
+            "cleanup_failed": False,
+            "deleted_token_count": 0,
+            "account_deleted": False,
+            "login_rejected_after_delete": True,
+            "reason": "account already absent",
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def execution_record(kind, execution_id, run_id, **overrides):
+    filename = "cleanup.json" if kind == "cleanup" else "manifest.json"
+    payload = {
+        "kind": kind,
+        "execution_id": execution_id,
+        "manifest": f"runs/{run_id}/{kind}/{execution_id}/{filename}",
+        "status": "passed",
+        "created_at": 1,
+    }
+    payload.update(overrides)
+    return payload
 
 
 if __name__ == "__main__":

@@ -106,6 +106,7 @@ class Supervisor:
         codex_events_path = os.path.join(self.runtime_root, "codex-events.jsonl")
         codex_stderr_path = os.path.join(self.runtime_root, "codex-stderr.txt")
         artifact_paths = [result_path, codex_events_path, codex_stderr_path, manifest_path]
+        execution_id = getattr(self.uploader, "execution_id", None) or self.env.get("FLATKEY_BROWSER_QA_EXECUTION_ID")
         proxy = None
         evidence_sink = None
         cleanup_result = CleanupResult(0, False, False, True, "cleanup was not attempted")
@@ -194,6 +195,8 @@ class Supervisor:
                 result_path,
                 manifest_path,
                 cleanup_result=cleanup_result,
+                run_id=cfg.run_id,
+                execution_id=execution_id,
                 redactor=redactor,
                 codex_returncode=codex_returncode,
                 upload_failed=upload_failed,
@@ -209,6 +212,8 @@ class Supervisor:
                     result_path,
                     manifest_path,
                     cleanup_result=cleanup_result,
+                    run_id=cfg.run_id,
+                    execution_id=execution_id,
                     redactor=redactor,
                     codex_returncode=codex_returncode,
                     upload_failed=True,
@@ -247,13 +252,13 @@ class Supervisor:
         }
         if os.name == "nt":
             child_env["USERPROFILE"] = self.home_dir
-        if os.environ.get("SystemRoot"):
-            child_env["SystemRoot"] = os.environ["SystemRoot"]
-        if os.environ.get("PATH"):
-            child_env["PATH"] = os.environ["PATH"]
+        if self.env.get("SystemRoot"):
+            child_env["SystemRoot"] = self.env["SystemRoot"]
+        if self.env.get("PATH"):
+            child_env["PATH"] = self.env["PATH"]
         _write_private_text(qa_config_path, _qa_config(proxy, runtime_dir, child_env))
         args = [
-            shutil.which("codex") or "codex",
+            shutil.which("codex", path=child_env.get("PATH")) or "codex",
             "exec",
             "--strict-config",
             "--ignore-rules",
@@ -418,7 +423,7 @@ required = true
 enabled_tools = ["browser_navigate", "browser_navigate_back", "browser_tabs", "browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_snapshot", "browser_find", "browser_wait_for", "browser_take_screenshot", "browser_console_messages", "browser_network_requests", "browser_network_request"]
 [mcp_servers.playwright.env]
 PYTHONPATH = "{escaped_repo_root}"
-PATH = "{_toml_escape(os.environ.get("PATH", ""))}"
+PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
 FLATKEY_BROWSER_QA_PROXY_URL = "http://{proxy.host}:{proxy.port}"
 FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"])}"
@@ -430,7 +435,7 @@ required = true
 enabled_tools = ["get_current_verification_code"]
 [mcp_servers.broker.env]
 PYTHONPATH = "{escaped_repo_root}"
-PATH = "{_toml_escape(os.environ.get("PATH", ""))}"
+PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
 FLATKEY_BROWSER_QA_RUN_ID = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_RUN_ID"])}"
 FLATKEY_BROWSER_QA_EMAIL_TAG = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_EMAIL_TAG"])}"
@@ -445,7 +450,7 @@ required = true
 enabled_tools = ["qa_replay_checkpoint", "qa_start_exploration"]
 [mcp_servers.control.env]
 PYTHONPATH = "{escaped_repo_root}"
-PATH = "{_toml_escape(os.environ.get("PATH", ""))}"
+PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
 """
 
