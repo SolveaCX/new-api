@@ -68,6 +68,8 @@ class Redactor:
         return value
 
     def _redact_by_key(self, key, value):
+        if key == "deleted_token_count" and isinstance(value, int) and not isinstance(value, bool):
+            return value
         normalized = _normalize_key(key)
         if any(marker in normalized for marker in _SECRET_KEYS):
             return self._placeholder_for_key(normalized)

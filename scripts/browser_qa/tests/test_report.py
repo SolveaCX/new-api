@@ -91,6 +91,28 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(manifest["cleanup"]["cleanup_failed"], True)
         self.assertEqual(manifest["cleanup"]["reason"], "token cleanup failed")
 
+    def test_manifest_preserves_deleted_token_count_integer_without_leaking_unsafe_values(self):
+        redactor = report.Redactor(extra_secrets=("unsafe-token-count",))
+        manifest = report.build_manifest(
+            valid_result(),
+            cleanup_result=CleanupResult(205, True, True, False, "cleanup verified"),
+            provenance=valid_provenance(),
+            run_id="123456789",
+            execution_id="main-001",
+            redactor=redactor,
+        )
+
+        self.assertEqual(manifest["cleanup"]["deleted_token_count"], 205)
+        self.assertIs(type(manifest["cleanup"]["deleted_token_count"]), int)
+        self.assertEqual(
+            redactor.clean({"deleted_token_count": "unsafe-token-count"}),
+            {"deleted_token_count": "[REDACTED_SECRET]"},
+        )
+        self.assertEqual(
+            redactor.clean({"deleted-token-count": 205}),
+            {"deleted-token-count": "[REDACTED_SECRET]"},
+        )
+
     def test_model_result_schema_rejects_infrastructure_and_alias_restriction_self_report(self):
         with self.assertRaises(report.ResultValidationError):
             report.validate_result(valid_result(infrastructure={"status": "failed"}))
