@@ -97,6 +97,9 @@ def _meaningful_resource_changes(plan):
             raise PlanValidationError(f"duplicate resource change: {address}")
         seen_keys.add(key)
 
+        if address not in ALLOWED_RESOURCE_ADDRESSES:
+            raise PlanValidationError(f"unexpected resource: {address}")
+
         actions = _validated_actions(resource_change.get("change"), "resource")
         if actions == ("no-op",):
             continue

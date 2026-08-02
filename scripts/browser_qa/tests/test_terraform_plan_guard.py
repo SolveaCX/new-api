@@ -188,11 +188,23 @@ class TerraformPlanGuardTest(unittest.TestCase):
 
         assert_rejected(self, plan, "bootstrap plan is not create-only")
 
-    def test_well_formed_resource_no_op_is_ignored_but_cannot_bypass_duplicates(self):
+    def test_non_qa_resource_no_op_is_rejected_as_unexpected(self):
         plan = valid_plan()
         plan["resource_changes"].append(
             {
-                "address": "google_project_iam_member.shared_unrelated",
+                "address": "google_sql_database_instance.main",
+                "change": {"actions": ["no-op"]},
+            }
+        )
+
+        assert_rejected(self, plan, "unexpected resource")
+
+    def test_well_formed_allowed_resource_no_op_is_ignored_but_cannot_bypass_duplicates(self):
+        plan = valid_plan()
+        first_address = sorted(ALLOWED_RESOURCE_ADDRESSES)[0]
+        plan["resource_changes"].append(
+            {
+                "address": first_address,
                 "deposed": "deadbeef",
                 "change": {"actions": ["no-op"]},
             }
@@ -202,7 +214,6 @@ class TerraformPlanGuardTest(unittest.TestCase):
         self.assertEqual(set(changes), ALLOWED_RESOURCE_ADDRESSES)
 
         plan = valid_plan()
-        first_address = sorted(ALLOWED_RESOURCE_ADDRESSES)[0]
         plan["resource_changes"].append(
             {"address": first_address, "change": {"actions": ["no-op"]}}
         )
@@ -234,7 +245,9 @@ class TerraformPlanGuardTest(unittest.TestCase):
         assert_rejected(
             self,
             {
-                "resource_changes": [{"address": "ignored", "change": {"actions": ["no-op"]}}],
+                "resource_changes": [
+                    {"address": sorted(ALLOWED_RESOURCE_ADDRESSES)[0], "change": {"actions": ["no-op"]}}
+                ],
                 "output_changes": {},
             },
             "saved plan has no resource changes",
