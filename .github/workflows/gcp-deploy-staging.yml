@@ -222,3 +222,12 @@ jobs:
           echo "- Revision: \`${{ steps.deploy.outputs.new_revision }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Image:    \`${{ needs.build.outputs.image_uri }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- URL:      ${url}" >> "$GITHUB_STEP_SUMMARY"
+
+  browser-qa-core:
+    needs: deploy
+    uses: ./.github/workflows/gcp-browser-qa.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      mode: core

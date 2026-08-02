@@ -274,7 +274,7 @@ To use Proxied for depth-3 names would require Total TLS ($10/mo) — previously
 
 ## Flatkey staging browser QA first-run and recovery runbook
 
-This runbook is for the isolated staging browser QA surface managed by `deploy/gcp/envs/prod/browser_qa.tf` and `.github/workflows/gcp-browser-qa.yml`. It is separate from the production deploy path.
+This runbook is for the isolated staging browser QA surface managed by `deploy/gcp/envs/prod/browser_qa.tf` and `.github/workflows/gcp-browser-qa.yml`. It is separate from the production deploy path. Backend staging deploys call the same-commit reusable Browser QA workflow in `core` mode after the deploy job and health check pass; QA failures turn the Actions run red and leave the completed staging deployment unchanged.
 
 Operator rules:
 

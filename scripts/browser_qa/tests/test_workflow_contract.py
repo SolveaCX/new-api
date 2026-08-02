@@ -9,10 +9,15 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-browser-qa.yml"
+STAGING_DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-deploy-staging.yml"
 
 
 def workflow_text():
     return WORKFLOW.read_text(encoding="utf-8")
+
+
+def staging_deploy_workflow_text():
+    return STAGING_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
 
 def strip_comments(text):
@@ -31,6 +36,35 @@ def step_block(text, name):
 
 def run_blocks(text):
     return re.findall(r"(?ms)^        run: \|\n(?P<body>.*?)(?=^      - name: |\Z)", text)
+
+
+def job_block(text, name):
+    match = re.search(
+        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        text,
+    )
+    if not match:
+        raise AssertionError(f"job not found: {name}")
+    return match.group("body")
+
+
+def qa_dependent_rollback_jobs(text):
+    rollback = re.compile(r"(?i)\b(rollback|restore|update-traffic|traffic restoration)\b")
+    offenders = []
+    for match in re.finditer(
+        r"(?ms)^  (?P<name>[A-Za-z0-9_-]+):\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        text,
+    ):
+        body = match.group("body")
+        needs = re.search(
+            r"(?ms)^    needs:(?P<inline>[^\n]*)(?P<block>(?:\n      [^\n]*)*)",
+            body,
+        )
+        if needs and re.search(r"\bbrowser-qa-core\b", needs.group(0)):
+            job = f"{match.group('name')}\n{body}"
+            if rollback.search(job):
+                offenders.append(match.group("name"))
+    return offenders
 
 
 def summary_python_script():
@@ -104,15 +138,18 @@ def summarized_root_manifest(status, *, summary=None):
 
 
 class BrowserQaWorkflowContractTests(unittest.TestCase):
-    def test_workflow_is_manual_only_with_minimal_permissions_and_serial_concurrency(self):
+    def test_workflow_supports_manual_dispatch_and_reusable_call_with_minimal_permissions_and_serial_concurrency(self):
         text = workflow_text()
         uncommented = strip_comments(text)
 
         self.assertRegex(uncommented, r"(?m)^on:\n  workflow_dispatch:\n")
-        self.assertNotRegex(uncommented, r"(?m)^  (push|pull_request|schedule|workflow_call):\s*$")
+        self.assertRegex(uncommented, r"(?m)^  workflow_call:\n")
+        self.assertNotRegex(uncommented, r"(?m)^  (push|pull_request|schedule):\s*$")
+        self.assertRegex(uncommented, r"(?ms)^  workflow_call:\n    inputs:\n      mode:\n        .*?required: true\n        .*?type: string\b")
+        self.assertRegex(uncommented, r"(?ms)^  workflow_call:\n    inputs:\n.*?      original_run_id:\n        .*?required: false\n        .*?type: string\b")
         self.assertRegex(uncommented, r"(?ms)^permissions:\n  contents: read\n  id-token: write\b")
         self.assertEqual(len(re.findall(r"(?m)^concurrency:\s*$", uncommented)), 1)
-        self.assertRegex(uncommented, r"(?ms)^concurrency:\n  group: .+\n  cancel-in-progress: false\b")
+        self.assertRegex(uncommented, r"(?ms)^concurrency:\n  group: .+\n  queue: max\n  cancel-in-progress: false\b")
 
     def test_dispatch_inputs_cover_normal_core_and_cleanup_only_with_original_run_id(self):
         text = workflow_text()
@@ -316,6 +353,39 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertNotRegex(text, r"(?i)--(set-env-vars|args|update-env-vars)=[^\n]*(password|cookie|authorization|api[_-]?key|token|secret)")
         self.assertNotRegex(text, r"(?i)GITHUB_OUTPUT[^\n]*(password|cookie|authorization|api[_-]?key|token|secret)")
         self.assertNotRegex(text, r"(?i)GITHUB_STEP_SUMMARY[^\n]*(password|cookie|authorization|api[_-]?key|token|secret|email)")
+
+    def test_staging_deploy_calls_same_commit_browser_qa_core_after_successful_deploy(self):
+        text = staging_deploy_workflow_text()
+        qa = job_block(text, "browser-qa-core")
+
+        self.assertRegex(qa, r"(?m)^    needs: deploy$")
+        self.assertRegex(qa, r"(?m)^    uses: \./\.github/workflows/gcp-browser-qa\.yml$")
+        self.assertRegex(qa, r"(?ms)^    with:\n      mode: core\b")
+        self.assertNotRegex(qa, r"(?m)^    if: .*(always|failure|cancelled)\(")
+        self.assertNotIn("continue-on-error", qa)
+        self.assertNotRegex(qa, r"(?i)\b(rollback|restore|update-traffic|traffic restoration)\b")
+
+    def test_staging_browser_qa_failure_is_alert_only_without_rollback_or_secret_summary(self):
+        text = staging_deploy_workflow_text()
+        uncommented = strip_comments(text)
+        qa = job_block(text, "browser-qa-core")
+
+        self.assertNotRegex(qa, r"(?i)\b(rollback|restore|update-traffic|gcloud run services update-traffic)\b")
+        self.assertEqual(qa_dependent_rollback_jobs(text), [])
+        self.assertNotRegex(uncommented, r"(?i)browser-qa[\s\S]{0,400}continue-on-error")
+        self.assertNotRegex(uncommented, r"(?i)(GITHUB_STEP_SUMMARY|summary)[^\n]*(password|cookie|authorization|api[_-]?key|token|secret|email)")
+
+    def test_staging_qa_contract_detects_downstream_rollback_jobs(self):
+        text = staging_deploy_workflow_text() + """
+
+  rollback-on-qa-failure:
+    needs: browser-qa-core
+    if: ${{ failure() }}
+    steps:
+      - run: gcloud run services update-traffic newapi-staging --to-revisions previous=100
+"""
+
+        self.assertEqual(qa_dependent_rollback_jobs(text), ["rollback-on-qa-failure"])
 
 
 if __name__ == "__main__":

@@ -16,6 +16,16 @@ on:
         description: "Required cleanup-only original run id"
         required: false
         type: string
+  workflow_call:
+    inputs:
+      mode:
+        description: "Browser QA mode to run"
+        required: true
+        type: string
+      original_run_id:
+        description: "Required cleanup-only original run id"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,6 +33,7 @@ permissions:
 
 concurrency:
   group: gcp-browser-qa-manual
+  queue: max
   cancel-in-progress: false
 
 env:
