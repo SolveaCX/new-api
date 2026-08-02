@@ -223,19 +223,73 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
         self.assertIn("Stop and design an import/migration before creating Browser QA resources", section)
         self.assertIn("Do not use -target", section)
 
-    def test_live_absence_preflight_probes_ambiguous_names_with_specific_describes(self):
+    def test_live_absence_preflight_binds_each_resource_to_exact_describe(self):
         section = browser_qa_section()
 
         specific_probes = [
-            r"gcloud artifacts repositories describe flatkey-staging-browser-qa\s+\\\s+--project=\"\$project_id\" --location=\"\$region\"",
-            r"gcloud run jobs describe flatkey-staging-browser-qa\s+\\\s+--project=\"\$project_id\" --region=\"\$region\"",
-            r"gcloud run jobs describe flatkey-staging-browser-qa-cleanup\s+\\\s+--project=\"\$project_id\" --region=\"\$region\"",
-            r"gcloud iam workload-identity-pools describe flatkey-browser-qa-github\s+\\\s+--project=\"\$project_id\" --location=global",
-            r"gcloud iam workload-identity-pools providers describe staging\s+\\\s+--project=\"\$project_id\" --location=global --workload-identity-pool=flatkey-browser-qa-github",
+            (
+                "Artifact Registry repository flatkey-staging-browser-qa",
+                r"gcloud artifacts repositories describe flatkey-staging-browser-qa\s+\\\s+--project=\"\$project_id\" --location=\"\$region\"",
+            ),
+            (
+                "Cloud Run broker service flatkey-staging-browser-qa-broker",
+                r"gcloud run services describe flatkey-staging-browser-qa-broker\s+\\\s+--project=\"\$project_id\" --region=\"\$region\"",
+            ),
+            (
+                "Cloud Run job flatkey-staging-browser-qa",
+                r"gcloud run jobs describe flatkey-staging-browser-qa\s+\\\s+--project=\"\$project_id\" --region=\"\$region\"",
+            ),
+            (
+                "Cloud Run job flatkey-staging-browser-qa-cleanup",
+                r"gcloud run jobs describe flatkey-staging-browser-qa-cleanup\s+\\\s+--project=\"\$project_id\" --region=\"\$region\"",
+            ),
+            (
+                "runtime service account flatkey-browser-qa-runtime@vocai-gemini-prod.iam.gserviceaccount.com",
+                r"gcloud iam service-accounts describe flatkey-browser-qa-runtime@vocai-gemini-prod\.iam\.gserviceaccount\.com\s+\\\s+--project=\"\$project_id\"",
+            ),
+            (
+                "broker service account flatkey-browser-qa-broker@vocai-gemini-prod.iam.gserviceaccount.com",
+                r"gcloud iam service-accounts describe flatkey-browser-qa-broker@vocai-gemini-prod\.iam\.gserviceaccount\.com\s+\\\s+--project=\"\$project_id\"",
+            ),
+            (
+                "cleanup service account flatkey-browser-qa-cleanup@vocai-gemini-prod.iam.gserviceaccount.com",
+                r"gcloud iam service-accounts describe flatkey-browser-qa-cleanup@vocai-gemini-prod\.iam\.gserviceaccount\.com\s+\\\s+--project=\"\$project_id\"",
+            ),
+            (
+                "deployer service account flatkey-browser-qa-deployer@vocai-gemini-prod.iam.gserviceaccount.com",
+                r"gcloud iam service-accounts describe flatkey-browser-qa-deployer@vocai-gemini-prod\.iam\.gserviceaccount\.com\s+\\\s+--project=\"\$project_id\"",
+            ),
+            (
+                "Secret container flatkey-browser-qa-codex-api-key",
+                r"gcloud secrets describe flatkey-browser-qa-codex-api-key\s+\\\s+--project=\"\$project_id\"",
+            ),
+            (
+                "Secret container flatkey-browser-qa-identity-seed",
+                r"gcloud secrets describe flatkey-browser-qa-identity-seed\s+\\\s+--project=\"\$project_id\"",
+            ),
+            (
+                "Secret container flatkey-browser-qa-gmail-oauth",
+                r"gcloud secrets describe flatkey-browser-qa-gmail-oauth\s+\\\s+--project=\"\$project_id\"",
+            ),
+            (
+                "GCS bucket gs://vocai-gemini-prod-flatkey-browser-qa-reports",
+                r"gcloud storage buckets describe gs://vocai-gemini-prod-flatkey-browser-qa-reports\s+\\\s+--project=\"\$project_id\"",
+            ),
+            (
+                "WIF pool flatkey-browser-qa-github",
+                r"gcloud iam workload-identity-pools describe flatkey-browser-qa-github\s+\\\s+--project=\"\$project_id\" --location=global",
+            ),
+            (
+                "WIF provider staging",
+                r"gcloud iam workload-identity-pools providers describe staging\s+\\\s+--project=\"\$project_id\" --location=global --workload-identity-pool=flatkey-browser-qa-github",
+            ),
         ]
-        for probe in specific_probes:
-            with self.subTest(probe=probe):
-                self.assertRegex(section, probe)
+        for label, command_pattern in specific_probes:
+            with self.subTest(label=label):
+                self.assertRegex(
+                    section,
+                    rf'describe_absent "{re.escape(label)}"\s+\\\s+{command_pattern}',
+                )
 
     def test_plan_guard_uses_versioned_guard_before_review_and_apply_confirmation(self):
         section = browser_qa_section()
