@@ -165,13 +165,13 @@ class BrowserQaTerraformStateIsolationContractTest(unittest.TestCase):
     def test_prod_root_does_not_own_browser_qa_resources_or_switches(self):
         self.assertFalse(PROD_ROOT.joinpath("browser_qa.tf").exists())
 
-        prod_variables = _read(PROD_ROOT / "variables.tf")
-        prod_tfvars = _read(PROD_ROOT / "terraform.tfvars")
-        prod_outputs = _read(PROD_ROOT / "outputs.tf")
-
-        self.assertNotRegex(prod_variables, r"\benable_browser_qa\b")
-        self.assertNotRegex(prod_tfvars, r"\benable_browser_qa\b")
-        self.assertNotRegex(prod_outputs, r'(?m)^\s*output\s+"browser_qa_[^"]+"\s*\{')
+        prod_tf_files = sorted(PROD_ROOT.glob("*.tf"))
+        self.assertTrue(prod_tf_files, "prod root must contain Terraform files")
+        for path in prod_tf_files:
+            with self.subTest(path=path.relative_to(REPO_ROOT).as_posix()):
+                text = _read(path)
+                self.assertNotRegex(text, r"browser_qa")
+                self.assertNotRegex(text, r"\benable_browser_qa\b")
 
     def test_browser_qa_root_is_unconditional_and_independent(self):
         browser_qa_tf = _read(QA_ROOT / "browser_qa.tf")
@@ -180,7 +180,7 @@ class BrowserQaTerraformStateIsolationContractTest(unittest.TestCase):
         self.assertNotRegex(clean, r"\benable_browser_qa\b")
         self.assertNotRegex(clean, r"(?m)^\s*count\s*=")
         self.assertNotRegex(clean, r"\bmodule\.apis\b")
-        self.assertNotRegex(clean, r"\bbrowser_qa_[a-z0-9_]+\[0\]\b")
+        self.assertNotRegex(clean, r"\bbrowser_qa_[a-z0-9_]+\[0\](?![A-Za-z0-9_])")
 
 
 if __name__ == "__main__":
