@@ -88,6 +88,15 @@ def _named_blocks(text, kind):
     return blocks
 
 
+def _block_body(text, block_pattern):
+    clean = _strip_comments(text)
+    match = re.search(block_pattern, clean)
+    if not match:
+        raise AssertionError(f"HCL block not found: {block_pattern}")
+    close = _find_matching_brace(clean, match.end() - 1)
+    return clean[match.end():close]
+
+
 def _assigned_strings(text):
     clean = _strip_comments(text)
     return dict(re.findall(r'(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"\s*$', clean))
@@ -124,6 +133,23 @@ class BrowserQaTerraformStateIsolationContractTest(unittest.TestCase):
                 self.assertRegex(body, r"\berror_message\s*=\s*\"[^\"]+\"")
 
         self.assertNotRegex(variables, r"(?i)\b(secret|token|oauth|gmail|api_key)\b")
+
+    def test_versions_lock_google_provider_boundary(self):
+        versions = _read(QA_ROOT / "versions.tf")
+        clean = _strip_comments(versions)
+
+        self.assertEqual(re.findall(r'\brequired_version\s*=\s*"([^"]+)"', clean), [">= 1.5.0"])
+
+        required_providers = _block_body(clean, r"(?m)^\s*required_providers\s*\{")
+        provider_names = re.findall(r'(?m)^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*\{', required_providers)
+        self.assertEqual(provider_names, ["google"])
+        google_provider = _block_body(required_providers, r"(?m)^\s*google\s*=\s*\{")
+        self.assertEqual(_assigned_strings(google_provider), {"source": "hashicorp/google", "version": "~> 6.13"})
+
+        provider_blocks = _named_blocks(versions, "provider")
+        self.assertEqual(set(provider_blocks), {"google"})
+        self.assertRegex(provider_blocks["google"], r"(?m)^\s*project\s*=\s*var\.project_id\s*$")
+        self.assertRegex(provider_blocks["google"], r"(?m)^\s*region\s*=\s*var\.region\s*$")
 
     def test_tfvars_contains_only_fixed_project_and_region_values(self):
         tfvars = _read(QA_ROOT / "terraform.tfvars")
