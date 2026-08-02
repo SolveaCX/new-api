@@ -35,11 +35,19 @@ BROWSER_QA_LIVE_RESOURCES = {
     "flatkey-browser-qa-github",
     "staging",
 }
-ABSENCE_ONLY_DIAGNOSTICS = {"404", "NOT_FOUND", "does\\ not\\ exist"}
+ABSENCE_ONLY_DIAGNOSTICS = {
+    "404",
+    "NOT_FOUND",
+    "does\\ not\\ exist",
+    "Cannot\\ find\\ service\\ \\[",
+    "Cannot\\ find\\ job\\ \\[",
+}
 UNKNOWN_ABSENCE_DIAGNOSTICS = {
     "PERMISSION_DENIED",
     "UNAUTHENTICATED",
     "UNAVAILABLE",
+    "Cannot\\ find",
+    "Cannot\\ find\\ project",
     '""',
 }
 UNKNOWN_STATE_DIAGNOSTICS = UNKNOWN_ABSENCE_DIAGNOSTICS - {'""'}
@@ -310,7 +318,7 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
                 self.assertIn(diagnostic, case_body)
         for diagnostic in UNKNOWN_ABSENCE_DIAGNOSTICS:
             with self.subTest(diagnostic=diagnostic):
-                self.assertNotIn(diagnostic, case_body)
+                self.assertNotIn(f"*{diagnostic}*", case_body)
         self.assertIn('*)', case_body)
         self.assertIn("ABORT: unable to prove", case_body)
 

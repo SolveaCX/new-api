@@ -427,7 +427,7 @@ describe_absent() {
   fi
   diagnostic="$(cat "$probe_stderr" "$probe_stdout")"
   case "$diagnostic" in
-    *404*|*NOT_FOUND*|*does\ not\ exist*) ;;
+    *404*|*NOT_FOUND*|*does\ not\ exist*|*Cannot\ find\ service\ \[*|*Cannot\ find\ job\ \[*) ;;
     *)
       echo "ABORT: unable to prove ${label} is absent" >&2
       printf '%s\n' "$diagnostic" >&2
