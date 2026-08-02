@@ -306,6 +306,10 @@ These names are the implementation contract as of this Terraform root:
 | Runtime service accounts | `flatkey-browser-qa-runtime`, `flatkey-browser-qa-broker`, `flatkey-browser-qa-cleanup`, `flatkey-browser-qa-deployer` |
 | GitHub workflow | `.github/workflows/gcp-browser-qa.yml` |
 | Workflow modes | `core`, `normal`, `cleanup-only` |
+| Non-committed GitHub variable | `GCP_BROWSER_QA_AR_REPO_URL` |
+| Non-committed GitHub variable | `GCP_BROWSER_QA_WIF_PROVIDER` |
+| Non-committed GitHub variable | `GCP_BROWSER_QA_DEPLOYER_SA` |
+| Non-committed GitHub variable | `GCP_BROWSER_QA_GCS_BUCKET` |
 | Non-committed GitHub variable | `GCP_BROWSER_QA_GMAIL_BASE` |
 
 ### 1. Authenticated refreshing Terraform plan review
@@ -397,7 +401,55 @@ Abort immediately if the saved plan contains any existing Cloud Run service, loa
 
 Apply only from the same review shell before the `EXIT` trap removes `plan_path`. Never replace this with an unsaved `terraform apply`, `-refresh=false`, or `-target`.
 
-### 2. Add Secret Manager versions without leaking values
+### 2. Set output-backed GitHub repository variables
+
+After the browser-QA Terraform apply succeeds, set the four non-secret repository variables that the GitHub workflow reads from `vars.*`. These values come directly from Terraform outputs and are not committed files, Terraform variables, or Secret Manager secrets:
+
+| GitHub variable | Terraform output |
+|---|---|
+| `GCP_BROWSER_QA_AR_REPO_URL` | `browser_qa_artifact_registry_url` |
+| `GCP_BROWSER_QA_WIF_PROVIDER` | `browser_qa_wif_provider` |
+| `GCP_BROWSER_QA_DEPLOYER_SA` | `browser_qa_deployer_sa_email` |
+| `GCP_BROWSER_QA_GCS_BUCKET` | `browser_qa_report_bucket` |
+
+Use stdin for `gh variable set` so the values are not placed in argv. Do not use `--body`, do not print the values, and do not set or change `GCP_BROWSER_QA_GMAIL_BASE` in this step. The GitHub variable writes are sequential and non-atomic; if a partial `gh` failure occurs after some variables were written, fix the failure and rerun the whole block. The block is safe to rerun because it overwrites the same four repository variables from the current Terraform outputs.
+
+```bash
+# Mutating; operator review required. Sets non-secret repo variables from Terraform outputs.
+set -euo pipefail
+set +x
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root/deploy/gcp/envs/prod"
+
+GCP_BROWSER_QA_AR_REPO_URL="$(terraform output -raw browser_qa_artifact_registry_url)"
+GCP_BROWSER_QA_WIF_PROVIDER="$(terraform output -raw browser_qa_wif_provider)"
+GCP_BROWSER_QA_DEPLOYER_SA="$(terraform output -raw browser_qa_deployer_sa_email)"
+GCP_BROWSER_QA_GCS_BUCKET="$(terraform output -raw browser_qa_report_bucket)"
+
+test -n "${GCP_BROWSER_QA_AR_REPO_URL}"
+test "${GCP_BROWSER_QA_AR_REPO_URL}" != "null"
+test -n "${GCP_BROWSER_QA_WIF_PROVIDER}"
+test "${GCP_BROWSER_QA_WIF_PROVIDER}" != "null"
+test -n "${GCP_BROWSER_QA_DEPLOYER_SA}"
+test "${GCP_BROWSER_QA_DEPLOYER_SA}" != "null"
+test -n "${GCP_BROWSER_QA_GCS_BUCKET}"
+test "${GCP_BROWSER_QA_GCS_BUCKET}" != "null"
+
+printf '%s' "${GCP_BROWSER_QA_AR_REPO_URL}" | gh variable set GCP_BROWSER_QA_AR_REPO_URL --repo SolveaCX/new-api
+printf '%s' "${GCP_BROWSER_QA_WIF_PROVIDER}" | gh variable set GCP_BROWSER_QA_WIF_PROVIDER --repo SolveaCX/new-api
+printf '%s' "${GCP_BROWSER_QA_DEPLOYER_SA}" | gh variable set GCP_BROWSER_QA_DEPLOYER_SA --repo SolveaCX/new-api
+printf '%s' "${GCP_BROWSER_QA_GCS_BUCKET}" | gh variable set GCP_BROWSER_QA_GCS_BUCKET --repo SolveaCX/new-api
+
+unset GCP_BROWSER_QA_AR_REPO_URL
+unset GCP_BROWSER_QA_WIF_PROVIDER
+unset GCP_BROWSER_QA_DEPLOYER_SA
+unset GCP_BROWSER_QA_GCS_BUCKET
+```
+
+Abort if any output is empty or `null`, or if the installed `gh variable set` cannot read from stdin. Do not fall back to passing values through command-line arguments.
+
+### 3. Add Secret Manager versions without leaking values
 
 Terraform creates only the Secret Manager containers. Secret versions are operator-owned.
 
@@ -556,7 +608,7 @@ The originally downloaded Google OAuth client-secret JSON is insufficient by its
 
 Reviewer-only self-check for the rewritten snippets: each snippet constructs and validates `payload` or `payload_bytes` before `subprocess.run(...)`; every `raise SystemExit(...)` path occurs before the `gcloud` process is launched, so parse/validation failure cannot create an empty or malformed Secret Manager version. Static syntax validation can be done locally without invoking `gcloud` by extracting the Python heredocs from this file and running `ast.parse` on each snippet.
 
-### 3. Set the GitHub repository variable
+### 4. Set the Gmail GitHub repository variable
 
 `GCP_BROWSER_QA_GMAIL_BASE` is a repository variable, not a committed file and not a Terraform variable. It must be the base Gmail address only, with no plus tag, comma, CR, or LF. Use the GitHub repository UI if possible so the value does not enter CLI argv or shell history.
 
@@ -582,7 +634,7 @@ gh variable set GCP_BROWSER_QA_GMAIL_BASE \
 
 Abort if the installed `gh variable set` cannot read from stdin; use the GitHub UI instead. Do not fall back to `--body "$GCP_BROWSER_QA_GMAIL_BASE"`.
 
-### 4. OAuth publication, bootstrap, and repeatability rule
+### 5. OAuth publication, bootstrap, and repeatability rule
 
 A token issued while the OAuth app Publishing status is `Testing` proves bootstrap only. External Testing refresh tokens can expire quickly, so one successful run with a Testing token is not repeatability evidence.
 
@@ -592,7 +644,7 @@ Repeatability is accepted only after all three steps are complete:
 2. Reauthorize exactly `gmail.readonly`.
 3. Rotate `flatkey-browser-qa-gmail-oauth` with the new refresh token and complete a second successful full `normal` run.
 
-### 5. Verify broker IAM denial
+### 6. Verify broker IAM denial
 
 The broker must deny unauthenticated calls and calls from an explicitly reviewed known-unauthorized identity that is not the active operator Owner identity, runtime SA, broker SA, or deployer SA. The cleanup SA below is only a candidate negative-control identity; use it only after reviewing effective org, project, and service IAM and confirming it has no broker invoker path. Use the Terraform output for the broker URI; do not hardcode the generated `run.app` URL.
 
@@ -675,7 +727,7 @@ test "$status" = "401" -o "$status" = "403"
 
 Abort if the negative-control identity is the operator Owner, runtime, broker, or deployer identity; if IAM review shows it has `roles/run.invoker` at org/project/service scope; or if the operator lacks impersonation authority for that service account. Abort if either request reaches application-level validation, returns `200`, or returns a broker JSON error such as `invalid_fields`. That means IAM is not enforcing the private broker boundary.
 
-### 6. Dispatch core or normal and capture the exact run id
+### 7. Dispatch core or normal and capture the exact run id
 
 Run `core` first. It exercises the onboarding replay and stops before the five-minute exploration phase. Run `normal` only after `core` finishes and cleanup succeeds; `normal` performs core replay plus the bounded exploration phase, capped by the implementation at five minutes or thirty browser actions.
 
@@ -766,7 +818,7 @@ Record `ORIGINAL_GITHUB_RUN_ID` from the dispatch response's `workflow_run_id` f
 
 The GitHub summary must show only status, replay status, exploration status/actions, finding count, cleanup status, and the private GCS URI. Abort and redact the run if a secret, full Gmail address, full plus alias, verification code, password, Cookie, Authorization header, or full API key appears in the summary.
 
-### 7. Private GCS report lookup
+### 8. Private GCS report lookup
 
 Use the GitHub Summary `gcs_uri`, or derive the manifest path from the original GitHub run id:
 
@@ -790,7 +842,7 @@ python3 -m json.tool "$report_dir/manifest.json"
 
 Report objects are private and expire by bucket lifecycle after 14 days. Do not upload report downloads to issues, PR comments, tickets, or chat unless they have been manually redacted again.
 
-### 8. Cleanup-only with the original GitHub run id
+### 9. Cleanup-only with the original GitHub run id
 
 Use `cleanup-only` when the main run was cancelled, the platform interrupted the workflow before cleanup completed, or cleanup needs to be retried. Always use the original GitHub run id for the run that created the staging identity.
 
@@ -807,7 +859,7 @@ gh workflow run gcp-browser-qa.yml \
 
 Abort if `original_run_id` is unknown. Do not substitute the cleanup workflow's new run id; that would derive a different identity and leave the original account unproven.
 
-### 9. `invalid_grant` recovery
+### 10. `invalid_grant` recovery
 
 `gmail_invalid_grant` from the broker is an infrastructure failure, not a retryable app failure.
 
@@ -822,7 +874,7 @@ Recovery:
 
 Abort if the new OAuth grant requires a broader Gmail scope, if the base Gmail profile is not the expected base mailbox, or if `gmail_invalid_grant` repeats after publication and secret rotation.
 
-### 10. Gmail plus-alias restriction failure
+### 11. Gmail plus-alias restriction failure
 
 Browser QA requires staging to accept Gmail plus aliases generated as `+flatkey-qa-<run-id>-<nonce>`. If the workflow fails before account creation with an alias restriction error, classify it as staging configuration failure.
 
