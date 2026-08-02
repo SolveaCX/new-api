@@ -62,31 +62,60 @@ class PlanValidationError(ValueError):
     pass
 
 
-def _actions(change):
+def _validated_actions(change, context):
     if not isinstance(change, dict):
-        return None
+        raise PlanValidationError(f"{context} change must be an object")
     actions = change.get("actions")
-    if actions is None:
-        return None
+    if not isinstance(actions, list):
+        raise PlanValidationError(f"{context} actions must be a list of strings")
+    if not all(isinstance(action, str) for action in actions):
+        raise PlanValidationError(f"{context} actions must be a list of strings")
     return tuple(actions)
 
 
 def _meaningful_resource_changes(plan):
-    changes = {}
-    for resource_change in plan.get("resource_changes") or []:
-        actions = _actions(resource_change.get("change", {}))
-        if actions in (None, (), ("no-op",)):
+    resource_changes = plan.get("resource_changes")
+    if not isinstance(resource_changes, list):
+        raise PlanValidationError("resource_changes must be a list")
+
+    changes = []
+    seen_keys = set()
+    for resource_change in resource_changes:
+        if not isinstance(resource_change, dict):
+            raise PlanValidationError("resource change must be an object")
+
+        address = resource_change.get("address")
+        if not isinstance(address, str) or not address.strip():
+            raise PlanValidationError("resource change address must be a non-empty string")
+
+        deposed = resource_change.get("deposed")
+        if deposed is not None and (not isinstance(deposed, str) or not deposed.strip()):
+            raise PlanValidationError("resource change deposed must be a non-empty string")
+
+        key = (address, deposed)
+        if key in seen_keys:
+            raise PlanValidationError(f"duplicate resource change: {address}")
+        seen_keys.add(key)
+
+        actions = _validated_actions(resource_change.get("change"), "resource")
+        if actions == ("no-op",):
             continue
-        changes[resource_change.get("address")] = actions
+        if actions == ("create",) and deposed is not None:
+            raise PlanValidationError(f"bootstrap plan is not create-only: {address}")
+        changes.append((address, deposed, actions))
     return changes
 
 
 def _meaningful_output_changes(plan):
+    output_changes = plan.get("output_changes")
+    if not isinstance(output_changes, dict):
+        raise PlanValidationError("output_changes must be an object")
+
     changes = {}
-    for name, output_change in (plan.get("output_changes") or {}).items():
-        actions = _actions(output_change)
-        if actions in (None, (), ("no-op",)):
-            continue
+    for name, output_change in output_changes.items():
+        if not isinstance(name, str) or not name.strip():
+            raise PlanValidationError("output change name must be a non-empty string")
+        actions = _validated_actions(output_change, "output")
         changes[name] = actions
     return changes
 
@@ -96,11 +125,16 @@ def _first_sorted(values):
 
 
 def validate_bootstrap_plan(plan):
+    if not isinstance(plan, dict):
+        raise PlanValidationError("saved plan must be an object")
+
     changes = _meaningful_resource_changes(plan)
+    output_changes = _meaningful_output_changes(plan)
+
     if not changes:
         raise PlanValidationError("saved plan has no resource changes")
 
-    resource_addresses = frozenset(changes)
+    resource_addresses = frozenset(address for address, _deposed, _actions in changes)
     unexpected_resources = resource_addresses - ALLOWED_RESOURCE_ADDRESSES
     if unexpected_resources:
         raise PlanValidationError(f"unexpected resource: {_first_sorted(unexpected_resources)}")
@@ -109,11 +143,10 @@ def validate_bootstrap_plan(plan):
     if missing_resources:
         raise PlanValidationError(f"missing resource: {_first_sorted(missing_resources)}")
 
-    for address in sorted(changes):
-        if changes[address] != ("create",):
+    for address, deposed, actions in sorted(changes, key=lambda item: (item[0], item[1] or "")):
+        if actions != ("create",) or deposed is not None:
             raise PlanValidationError(f"bootstrap plan is not create-only: {address}")
 
-    output_changes = _meaningful_output_changes(plan)
     output_names = frozenset(output_changes)
     unexpected_outputs = output_names - ALLOWED_OUTPUTS
     if unexpected_outputs:
@@ -127,18 +160,27 @@ def validate_bootstrap_plan(plan):
         if output_changes[output] != ("create",):
             raise PlanValidationError(f"output changes are not create-only: {output}")
 
-    return changes
+    return {address: actions for address, _deposed, actions in changes}
+
+
+def _reject_duplicate_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise PlanValidationError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Validate an exact Browser QA Terraform bootstrap saved plan JSON."
     )
-    parser.add_argument("plan_json", type=Path)
+    parser.add_argument("plan_json", type=Path, help="Path produced by terraform show -json")
     args = parser.parse_args(argv)
 
     try:
-        plan = json.loads(args.plan_json.read_text(encoding="utf-8"))
+        plan = json.loads(args.plan_json.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys)
         changes = validate_bootstrap_plan(plan)
     except (OSError, json.JSONDecodeError, PlanValidationError) as exc:
         print(f"ABORT: {exc}", file=sys.stderr)
