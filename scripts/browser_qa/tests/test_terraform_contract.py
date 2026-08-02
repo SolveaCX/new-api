@@ -11,6 +11,17 @@ VARIABLES_TF = QA_DIR / "variables.tf"
 TFVARS = QA_DIR / "terraform.tfvars"
 OUTPUTS_TF = QA_DIR / "outputs.tf"
 
+EXPECTED_OUTPUTS = {
+    "browser_qa_artifact_registry_url",
+    "browser_qa_wif_provider",
+    "browser_qa_deployer_sa_email",
+    "browser_qa_report_bucket",
+    "browser_qa_broker_uri",
+    "browser_qa_broker_service_name",
+    "browser_qa_main_job_name",
+    "browser_qa_cleanup_job_name",
+}
+
 
 @dataclass(frozen=True)
 class Block:
@@ -213,17 +224,10 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         self.assertRegex(binding.body, r"/subject/repo:SolveaCX/new-api:ref:refs/heads/staging")
         self.assertNotRegex(binding.body, r"/attribute\.repository/SolveaCX/new-api\"\s*$")
 
+        output_blocks = _blocks(OUTPUTS_TF.read_text(encoding="utf-8"), "output")
+        self.assertEqual({block.name for block in output_blocks}, EXPECTED_OUTPUTS)
         outputs = _strip_comments(OUTPUTS_TF.read_text(encoding="utf-8"))
-        for output_name in [
-            "browser_qa_artifact_registry_url",
-            "browser_qa_wif_provider",
-            "browser_qa_deployer_sa_email",
-            "browser_qa_report_bucket",
-            "browser_qa_broker_uri",
-            "browser_qa_broker_service_name",
-            "browser_qa_main_job_name",
-            "browser_qa_cleanup_job_name",
-        ]:
+        for output_name in EXPECTED_OUTPUTS:
             matches = [block for block in _blocks(outputs, "output") if block.name == output_name]
             self.assertEqual(len(matches), 1, output_name)
         expected_output_values = {
@@ -302,6 +306,7 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
             "google_cloud_run_domain_mapping",
         }
         resources = _blocks(self.browser_qa, "resource")
+        self.assertEqual(len(resources), 35)
         self.assertTrue(forbidden_types.isdisjoint({block.type_name for block in resources}))
         self.assertNotRegex(self.clean_browser_qa, r"\b(newapi|newapi-web|newapi-console|newapi-router)\b")
         self.assertNotRegex(self.clean_browser_qa, r"\btraffic\s*\{")
