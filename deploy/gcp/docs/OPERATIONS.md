@@ -10,8 +10,11 @@ This is the AI-facing operations playbook. Architecture inventory is in `INFRAST
 
 - **GCP project**: `vocai-gemini-prod` (project number `528088078482`)
 - **Region**: `us-west1` (Oregon)
-- **Terraform working directory**: `deploy/gcp/envs/prod/`
-- **Terraform state**: GCS backend, bucket `vocai-gemini-prod-newapi-tfstate`, prefix `envs/prod` (versioning enabled — recoverable)
+- **Production Terraform root**: `deploy/gcp/envs/prod/`
+- **Production Terraform state**: GCS backend, bucket `vocai-gemini-prod-newapi-tfstate`, prefix `envs/prod` (versioning enabled)
+- **Browser QA staging Terraform root**: `deploy/gcp/envs/browser-qa-staging/`
+- **Browser QA staging Terraform state**: GCS backend, bucket `vocai-gemini-prod-newapi-tfstate`, prefix `envs/browser-qa-staging` (independent from production)
+- **Shared infrastructure ownership**: the production root still owns shared project APIs and application/production/staging infrastructure; the Browser QA staging root owns only the isolated Browser QA resources.
 - **Sole approver / human-in-loop**: `slZhong` (manual deploy gate in GitHub Actions)
 
 ---
@@ -274,7 +277,7 @@ To use Proxied for depth-3 names would require Total TLS ($10/mo) — previously
 
 ## Flatkey staging browser QA first-run and recovery runbook
 
-This runbook is for the isolated staging browser QA surface managed by `deploy/gcp/envs/prod/browser_qa.tf` and `.github/workflows/gcp-browser-qa.yml`. It is separate from the production deploy path. Backend staging deploys call the same-commit reusable Browser QA workflow in `core` mode after the deploy job and health check pass; QA failures turn the Actions run red and leave the completed staging deployment unchanged.
+This runbook is for the isolated staging browser QA surface managed by `deploy/gcp/envs/browser-qa-staging` and `.github/workflows/gcp-browser-qa.yml`. It is separate from the production deploy path. Backend staging deploys call the same-commit reusable Browser QA workflow in `core` mode after the deploy job and health check pass; QA failures turn the Actions run red and leave the completed staging deployment unchanged.
 
 Operator rules:
 
@@ -291,10 +294,10 @@ These names are the implementation contract as of this Terraform root:
 
 | Purpose | Name |
 |---|---|
-| Terraform root | `deploy/gcp/envs/prod/` |
+| Terraform root | `deploy/gcp/envs/browser-qa-staging/` |
+| Backend prefix | `envs/browser-qa-staging` |
 | Project | `vocai-gemini-prod` |
 | Region | `us-west1` |
-| Browser QA toggle | `enable_browser_qa = true` |
 | Artifact Registry repository | `flatkey-staging-browser-qa` |
 | Broker Cloud Run service | `flatkey-staging-browser-qa-broker` |
 | Main Cloud Run job | `flatkey-staging-browser-qa` |
@@ -302,8 +305,9 @@ These names are the implementation contract as of this Terraform root:
 | Codex API key secret | `flatkey-browser-qa-codex-api-key` |
 | Identity seed secret | `flatkey-browser-qa-identity-seed` |
 | Gmail OAuth secret | `flatkey-browser-qa-gmail-oauth` |
-| Report bucket | `vocai-gemini-prod-flatkey-browser-qa-reports` |
-| Runtime service accounts | `flatkey-browser-qa-runtime`, `flatkey-browser-qa-broker`, `flatkey-browser-qa-cleanup`, `flatkey-browser-qa-deployer` |
+| Report bucket | `gs://vocai-gemini-prod-flatkey-browser-qa-reports` |
+| Runtime service accounts | `flatkey-browser-qa-runtime@vocai-gemini-prod.iam.gserviceaccount.com`, `flatkey-browser-qa-broker@vocai-gemini-prod.iam.gserviceaccount.com`, `flatkey-browser-qa-cleanup@vocai-gemini-prod.iam.gserviceaccount.com`, `flatkey-browser-qa-deployer@vocai-gemini-prod.iam.gserviceaccount.com` |
+| Workload Identity Federation pool/provider | `flatkey-browser-qa-github` / `staging` (global) |
 | GitHub workflow | `.github/workflows/gcp-browser-qa.yml` |
 | Workflow modes | `core`, `normal`, `cleanup-only` |
 | Non-committed GitHub variable | `GCP_BROWSER_QA_AR_REPO_URL` |
@@ -314,19 +318,141 @@ These names are the implementation contract as of this Terraform root:
 
 ### 1. Authenticated refreshing Terraform plan review
 
-Do not trust PR plan comments for this apply. They use `-refresh=false` and cannot prove live drift is absent. Use Owner-capable ADC locally and save the exact plan that will be applied.
+Do not trust PR plan comments for this apply. They use `-refresh=false` and cannot prove live drift is absent. Use Owner-capable user CLI auth plus ADC locally, then save the exact plan that will be applied.
 
 ```bash
-# Example review commands. Non-mutating until the final terraform apply.
+# Human-only review commands. Non-mutating until the final saved-plan apply.
 set -euo pipefail
 set +x
 
-cd deploy/gcp/envs/prod
+repo_root="$(git rev-parse --show-toplevel)"
+qa_root="$repo_root/deploy/gcp/envs/browser-qa-staging"
+project_id="vocai-gemini-prod"
+region="us-west1"
+
+gcloud auth login
 gcloud auth application-default login
-terraform init
+
+active_project="$(gcloud config get-value project 2>/dev/null)"
+if [ "$active_project" != "$project_id" ]; then
+  echo "ABORT: active GCP project must be vocai-gemini-prod; got ${active_project:-<unset>}" >&2
+  exit 1
+fi
+
+active_region="$(gcloud config get-value run/region 2>/dev/null)"
+if [ "$active_region" != "$region" ]; then
+  echo "ABORT: active run region must be us-west1; got ${active_region:-<unset>}" >&2
+  exit 1
+fi
 
 review_dir="$(mktemp -d)"
 trap 'rm -rf "$review_dir"' EXIT
+required_apis="$review_dir/required-apis.txt"
+enabled_apis="$review_dir/enabled-apis.txt"
+missing_apis="$review_dir/missing-apis.txt"
+probe_stdout="$review_dir/probe.stdout"
+probe_stderr="$review_dir/probe.stderr"
+
+cat > "$required_apis" <<'EOF_APIS'
+artifactregistry.googleapis.com
+cloudresourcemanager.googleapis.com
+iam.googleapis.com
+iamcredentials.googleapis.com
+logging.googleapis.com
+run.googleapis.com
+secretmanager.googleapis.com
+serviceusage.googleapis.com
+sts.googleapis.com
+storage.googleapis.com
+EOF_APIS
+
+gcloud services list --enabled \
+  --project="$project_id" \
+  --format='value(config.name)' \
+  | LC_ALL=C sort -u > "$enabled_apis"
+LC_ALL=C sort -u "$required_apis" -o "$required_apis"
+comm -23 "$required_apis" "$enabled_apis" > "$missing_apis"
+if [ -s "$missing_apis" ]; then
+  echo "ABORT: required APIs are not enabled:" >&2
+  cat "$missing_apis" >&2
+  exit 1
+fi
+
+cd "$qa_root"
+terraform init -reconfigure
+
+state_addresses="$(terraform state list)"
+if [ -n "$state_addresses" ]; then
+  echo "ABORT: independent Browser QA state is not empty" >&2
+  printf '%s\n' "$state_addresses" >&2
+  echo "Stop and design an import/migration before creating Browser QA resources. Do not use -target." >&2
+  exit 1
+fi
+
+describe_absent() {
+  label="$1"
+  shift
+  : > "$probe_stdout"
+  : > "$probe_stderr"
+  if "$@" >"$probe_stdout" 2>"$probe_stderr"; then
+    echo "ABORT: ${label} already exists. Stop and design an import/migration before creating Browser QA resources." >&2
+    cat "$probe_stdout" >&2
+    exit 1
+  fi
+  diagnostic="$(cat "$probe_stderr" "$probe_stdout")"
+  case "$diagnostic" in
+    *404*|*NOT_FOUND*|*does\ not\ exist*) ;;
+    *)
+      echo "ABORT: unable to prove ${label} is absent" >&2
+      printf '%s\n' "$diagnostic" >&2
+      exit 1
+      ;;
+  esac
+}
+
+describe_absent "Artifact Registry repository flatkey-staging-browser-qa" \
+  gcloud artifacts repositories describe flatkey-staging-browser-qa \
+    --project="$project_id" --location="$region"
+describe_absent "Cloud Run broker service flatkey-staging-browser-qa-broker" \
+  gcloud run services describe flatkey-staging-browser-qa-broker \
+    --project="$project_id" --region="$region"
+describe_absent "Cloud Run job flatkey-staging-browser-qa" \
+  gcloud run jobs describe flatkey-staging-browser-qa \
+    --project="$project_id" --region="$region"
+describe_absent "Cloud Run job flatkey-staging-browser-qa-cleanup" \
+  gcloud run jobs describe flatkey-staging-browser-qa-cleanup \
+    --project="$project_id" --region="$region"
+describe_absent "runtime service account flatkey-browser-qa-runtime@vocai-gemini-prod.iam.gserviceaccount.com" \
+  gcloud iam service-accounts describe flatkey-browser-qa-runtime@vocai-gemini-prod.iam.gserviceaccount.com \
+    --project="$project_id"
+describe_absent "broker service account flatkey-browser-qa-broker@vocai-gemini-prod.iam.gserviceaccount.com" \
+  gcloud iam service-accounts describe flatkey-browser-qa-broker@vocai-gemini-prod.iam.gserviceaccount.com \
+    --project="$project_id"
+describe_absent "cleanup service account flatkey-browser-qa-cleanup@vocai-gemini-prod.iam.gserviceaccount.com" \
+  gcloud iam service-accounts describe flatkey-browser-qa-cleanup@vocai-gemini-prod.iam.gserviceaccount.com \
+    --project="$project_id"
+describe_absent "deployer service account flatkey-browser-qa-deployer@vocai-gemini-prod.iam.gserviceaccount.com" \
+  gcloud iam service-accounts describe flatkey-browser-qa-deployer@vocai-gemini-prod.iam.gserviceaccount.com \
+    --project="$project_id"
+describe_absent "Secret container flatkey-browser-qa-codex-api-key" \
+  gcloud secrets describe flatkey-browser-qa-codex-api-key \
+    --project="$project_id"
+describe_absent "Secret container flatkey-browser-qa-identity-seed" \
+  gcloud secrets describe flatkey-browser-qa-identity-seed \
+    --project="$project_id"
+describe_absent "Secret container flatkey-browser-qa-gmail-oauth" \
+  gcloud secrets describe flatkey-browser-qa-gmail-oauth \
+    --project="$project_id"
+describe_absent "GCS bucket gs://vocai-gemini-prod-flatkey-browser-qa-reports" \
+  gcloud storage buckets describe gs://vocai-gemini-prod-flatkey-browser-qa-reports \
+    --project="$project_id"
+describe_absent "WIF pool flatkey-browser-qa-github" \
+  gcloud iam workload-identity-pools describe flatkey-browser-qa-github \
+    --project="$project_id" --location=global
+describe_absent "WIF provider staging" \
+  gcloud iam workload-identity-pools providers describe staging \
+    --project="$project_id" --location=global --workload-identity-pool=flatkey-browser-qa-github
+
 plan_path="$review_dir/browser-qa.tfplan"
 plan_json="$review_dir/browser-qa.tfplan.json"
 
@@ -334,60 +460,9 @@ terraform plan -out="$plan_path"
 terraform show -json "$plan_path" > "$plan_json"
 terraform show -no-color "$plan_path" > "$review_dir/browser-qa.tfplan.txt"
 
-python3 - "$plan_json" <<'PY'
-import json
-import sys
+python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" "$plan_json"
 
-plan = json.load(open(sys.argv[1], encoding="utf-8"))
-changes = []
-for change in plan.get("resource_changes", []):
-    actions = change.get("change", {}).get("actions", [])
-    if actions and actions != ["no-op"]:
-        changes.append((change.get("address", ""), actions))
-
-if not changes:
-    raise SystemExit("ABORT: saved plan has no resource changes; do not apply")
-
-bad = [(address, actions) for address, actions in changes if "browser_qa" not in address]
-if bad:
-    print("ABORT: non-browser-QA resource changes found:")
-    for address, actions in bad:
-        print(f"  {address}: {actions}")
-    raise SystemExit(1)
-
-forbidden = (
-    "module.cloud_run",
-    "module.cloud_lb",
-    "google_compute_",
-    "google_dns_",
-    "cloudflare_",
-    "newapi-web",
-    "newapi-console",
-    "newapi-router",
-    "newapi-urlmap",
-    "ssl_certificate",
-    "certificate",
-    "traffic",
-)
-hits = [(address, actions) for address, actions in changes if any(term in address for term in forbidden)]
-if hits:
-    print("ABORT: existing service/LB/cert/DNS/traffic diff found:")
-    for address, actions in hits:
-        print(f"  {address}: {actions}")
-    raise SystemExit(1)
-
-outputs = plan.get("output_changes", {})
-bad_outputs = [name for name, change in outputs.items() if change.get("actions") != ["no-op"] and not name.startswith("browser_qa_")]
-if bad_outputs:
-    print("ABORT: unrelated output changes found:", ", ".join(sorted(bad_outputs)))
-    raise SystemExit(1)
-
-print("OK: saved plan is limited to dedicated browser-QA addresses.")
-for address, actions in changes:
-    print(f"  {address}: {actions}")
-PY
-
-printf '\nReview the human-readable plan before applying:\n  %s\n' "$review_dir/browser-qa.tfplan.txt"
+printf '\nHuman-readable plan review:\n  %s\n' "$review_dir/browser-qa.tfplan.txt"
 printf 'If approved, apply before this shell exits so the exact saved plan still exists.\n'
 IFS= read -r -p "Type APPLY_BROWSER_QA_SAVED_PLAN to apply this exact saved plan: " APPLY_CONFIRM
 if [ "$APPLY_CONFIRM" = "APPLY_BROWSER_QA_SAVED_PLAN" ]; then
@@ -397,7 +472,7 @@ else
 fi
 ```
 
-Abort immediately if the saved plan contains any existing Cloud Run service, load balancer, URL map, certificate, DNS, traffic, or unrelated IAM/resource diff. A plan is applyable only when every resource change address is dedicated browser-QA Terraform, such as `google_cloud_run_v2_job.browser_qa_main[0]` or `google_secret_manager_secret.browser_qa_gmail_oauth[0]`.
+Abort immediately if active project/region checks fail, any required API is missing, the independent Browser QA state is non-empty, any live resource already exists, or the versioned Terraform plan guard reports an out-of-contract diff. Any state/live hit means the operator must stop and design an import/migration before creating Browser QA resources. Do not automatically import, do not continue create, and do not use `-target`.
 
 Apply only from the same review shell before the `EXIT` trap removes `plan_path`. Never replace this with an unsaved `terraform apply`, `-refresh=false`, or `-target`.
 
@@ -420,7 +495,7 @@ set -euo pipefail
 set +x
 
 repo_root="$(git rev-parse --show-toplevel)"
-cd "$repo_root/deploy/gcp/envs/prod"
+cd "$repo_root/deploy/gcp/envs/browser-qa-staging"
 
 GCP_BROWSER_QA_AR_REPO_URL="$(terraform output -raw browser_qa_artifact_registry_url)"
 GCP_BROWSER_QA_WIF_PROVIDER="$(terraform output -raw browser_qa_wif_provider)"
@@ -653,7 +728,8 @@ The broker must deny unauthenticated calls and calls from an explicitly reviewed
 set -euo pipefail
 set +x
 
-cd deploy/gcp/envs/prod
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root/deploy/gcp/envs/browser-qa-staging"
 BROKER_URI="$(terraform output -raw browser_qa_broker_uri)"
 NEGATIVE_PROBE_SA="flatkey-browser-qa-cleanup@vocai-gemini-prod.iam.gserviceaccount.com"
 ACTIVE_OWNER_IDENTITY="<active-owner-service-account-or-user>"
@@ -827,8 +903,9 @@ Use the GitHub Summary `gcs_uri`, or derive the manifest path from the original 
 set -euo pipefail
 set +x
 
+repo_root="$(git rev-parse --show-toplevel)"
 GITHUB_RUN_ID="<original-github-run-id>"
-GCP_BROWSER_QA_GCS_BUCKET="$(terraform -chdir=deploy/gcp/envs/prod output -raw browser_qa_report_bucket)"
+GCP_BROWSER_QA_GCS_BUCKET="$(terraform -chdir="$repo_root/deploy/gcp/envs/browser-qa-staging" output -raw browser_qa_report_bucket)"
 report_dir="$(mktemp -d)"
 trap 'rm -rf "$report_dir"' EXIT
 
@@ -891,7 +968,8 @@ Abort if staging policy intentionally forbids plus aliases; the current QA desig
 
 | Condition | Required action |
 |---|---|
-| Terraform plan contains any non-`browser_qa` resource change | Abort; do not apply. |
+| versioned Terraform plan guard fails | Abort; do not apply; inspect the exact guard finding before changing infrastructure. |
+| state/live preflight finds non-empty state or an existing Browser QA resource | Stop and design an import/migration before creating resources; do not continue create and do not use `-target`. |
 | Plan touches existing Cloud Run services, LB, URL map, cert, DNS, traffic, or unrelated IAM | Abort; investigate drift or lifecycle ownership. |
 | Secret command would put a secret in argv, history, Terraform state, GitHub output, or a committed file | Abort; use stdin/UI/in-memory transform instead. |
 | Broker unauthenticated or bad-identity call returns `200` or broker JSON validation | Abort; IAM boundary failed. |
