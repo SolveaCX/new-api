@@ -51,6 +51,12 @@ UNKNOWN_ABSENCE_DIAGNOSTICS = {
     '""',
 }
 UNKNOWN_STATE_DIAGNOSTICS = UNKNOWN_ABSENCE_DIAGNOSTICS - {'""'}
+DENY_FIRST_ABSENCE_DIAGNOSTICS = {
+    "PERMISSION_DENIED",
+    "UNAUTHENTICATED",
+    "UNAVAILABLE",
+    "Cannot\\ find\\ project",
+}
 
 
 OUTPUT_BACKED_VARIABLES = {
@@ -312,15 +318,41 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
         if not case_match:
             raise AssertionError("describe_absent diagnostic case not found")
         case_body = case_match.group("body")
+        allow_branch = next(
+            (line for line in case_body.splitlines() if "absence_verified=true" in line),
+            "",
+        )
 
         for diagnostic in ABSENCE_ONLY_DIAGNOSTICS:
             with self.subTest(diagnostic=diagnostic):
-                self.assertIn(diagnostic, case_body)
+                self.assertIn(diagnostic, allow_branch)
         for diagnostic in UNKNOWN_ABSENCE_DIAGNOSTICS:
             with self.subTest(diagnostic=diagnostic):
-                self.assertNotIn(f"*{diagnostic}*", case_body)
+                self.assertNotIn(f"*{diagnostic}*", allow_branch)
         self.assertIn('*)', case_body)
-        self.assertIn("ABORT: unable to prove", case_body)
+        self.assertIn("ABORT: unable to prove", function_body)
+
+    def test_live_absence_probe_denies_unknown_markers_before_absence_diagnostics(self):
+        block = plan_review_command_block()
+        describe_function = re.search(
+            r"(?ms)^describe_absent\(\) \{\n(?P<body>.*?)^\}\n\n",
+            block,
+        )
+        if not describe_function:
+            raise AssertionError("describe_absent function not found")
+        function_body = describe_function.group("body")
+        case_match = re.search(r"(?ms)case \"\$diagnostic\" in(?P<body>.*?)esac", function_body)
+        if not case_match:
+            raise AssertionError("describe_absent diagnostic case not found")
+        case_body = case_match.group("body")
+
+        for denied in DENY_FIRST_ABSENCE_DIAGNOSTICS:
+            with self.subTest(denied=denied):
+                self.assertIn(f"*{denied}*", case_body)
+                self.assertLess(case_body.index(f"*{denied}*"), case_body.index("*404*"))
+                self.assertLess(case_body.index(f"*{denied}*"), case_body.index("*Cannot\\ find\\ service\\ \\[*"))
+                self.assertLess(case_body.index(f"*{denied}*"), case_body.index("*Cannot\\ find\\ job\\ \\[*"))
+        self.assertEqual(function_body.count("ABORT: unable to prove"), 1)
 
     def test_live_absence_preflight_binds_each_resource_to_exact_describe(self):
         section = browser_qa_section()

@@ -426,14 +426,17 @@ describe_absent() {
     exit 1
   fi
   diagnostic="$(cat "$probe_stderr" "$probe_stdout")"
+  absence_verified=false
   case "$diagnostic" in
-    *404*|*NOT_FOUND*|*does\ not\ exist*|*Cannot\ find\ service\ \[*|*Cannot\ find\ job\ \[*) ;;
-    *)
-      echo "ABORT: unable to prove ${label} is absent" >&2
-      printf '%s\n' "$diagnostic" >&2
-      exit 1
-      ;;
+    *PERMISSION_DENIED*|*UNAUTHENTICATED*|*UNAVAILABLE*|*Cannot\ find\ project*) ;;
+    *404*|*NOT_FOUND*|*does\ not\ exist*|*Cannot\ find\ service\ \[*|*Cannot\ find\ job\ \[*) absence_verified=true ;;
+    *) ;;
   esac
+  if [ "$absence_verified" != "true" ]; then
+    echo "ABORT: unable to prove ${label} is absent" >&2
+    printf '%s\n' "$diagnostic" >&2
+    exit 1
+  fi
 }
 
 describe_absent "Artifact Registry repository flatkey-staging-browser-qa" \
