@@ -47,9 +47,6 @@ alert_emails = [
 // otherwise a future `terraform apply` would strip the env. Keep this true.
 enable_usage_recon_token = true
 
-// Isolated staging browser QA resources consumed by .github/workflows/gcp-browser-qa.yml.
-enable_browser_qa = true
-
 // Staging resources already exist in Terraform state. Keep these explicit so
 // any prod-env plan preserves staging instead of planning count-based destroys.
 enable_staging         = true

@@ -5,11 +5,11 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PROD_DIR = REPO_ROOT / "deploy" / "gcp" / "envs" / "prod"
-BROWSER_QA_TF = PROD_DIR / "browser_qa.tf"
-VARIABLES_TF = PROD_DIR / "variables.tf"
-TFVARS = PROD_DIR / "terraform.tfvars"
-OUTPUTS_TF = PROD_DIR / "outputs.tf"
+QA_DIR = REPO_ROOT / "deploy" / "gcp" / "envs" / "browser-qa-staging"
+BROWSER_QA_TF = QA_DIR / "browser_qa.tf"
+VARIABLES_TF = QA_DIR / "variables.tf"
+TFVARS = QA_DIR / "terraform.tfvars"
+OUTPUTS_TF = QA_DIR / "outputs.tf"
 
 
 @dataclass(frozen=True)
@@ -102,29 +102,15 @@ def _resource_blocks(resource_type):
     return {block.name: block for block in _blocks(BROWSER_QA_TF.read_text(encoding="utf-8"), "resource", resource_type)}
 
 
-def _assert_count_gated(testcase, block):
-    testcase.assertRegex(block.body, r"\bcount\s*=\s*var\.enable_browser_qa\s*\?\s*1\s*:\s*0\b")
-
-
 class BrowserQaTerraformContractTest(unittest.TestCase):
     def setUp(self):
-        self.assertTrue(BROWSER_QA_TF.exists(), "deploy/gcp/envs/prod/browser_qa.tf must exist")
+        self.assertTrue(BROWSER_QA_TF.exists(), "deploy/gcp/envs/browser-qa-staging/browser_qa.tf must exist")
         self.browser_qa = BROWSER_QA_TF.read_text(encoding="utf-8")
         self.clean_browser_qa = _strip_comments(self.browser_qa)
-
-    def test_opt_in_variable_and_enabled_tfvars(self):
-        variables = _strip_comments(VARIABLES_TF.read_text(encoding="utf-8"))
-        matches = [block for block in _blocks(variables, "variable") if block.name == "enable_browser_qa"]
-        self.assertEqual(len(matches), 1)
-        self.assertRegex(matches[0].body, r"\btype\s*=\s*bool\b")
-        self.assertRegex(matches[0].body, r"\bdefault\s*=\s*false\b")
-        self.assertRegex(matches[0].body, r"\bdescription\s*=")
-        self.assertRegex(_strip_comments(TFVARS.read_text(encoding="utf-8")), r"(?m)^\s*enable_browser_qa\s*=\s*true\s*$")
 
     def test_defines_dedicated_artifact_registry_and_service_accounts(self):
         repos = _resource_blocks("google_artifact_registry_repository")
         self.assertIn("browser_qa", repos)
-        _assert_count_gated(self, repos["browser_qa"])
         self.assertRegex(self.clean_browser_qa, r'\bbrowser_qa_artifact_repository_id\s*=\s*"flatkey-staging-browser-qa"')
         self.assertRegex(repos["browser_qa"].body, r"\brepository_id\s*=\s*local\.browser_qa_artifact_repository_id\b")
         self.assertRegex(repos["browser_qa"].body, r'\bformat\s*=\s*"DOCKER"')
@@ -138,7 +124,6 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         }
         for name, account_id in expected.items():
             self.assertIn(name, service_accounts)
-            _assert_count_gated(self, service_accounts[name])
             self.assertRegex(service_accounts[name].body, rf'\baccount_id\s*=\s*"{account_id}"')
 
     def test_secret_metadata_has_exact_expected_containers_and_no_versions(self):
@@ -147,7 +132,6 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         for name, block in secrets.items():
             if "flatkey-browser-qa-" in block.body:
                 qa_secret_ids[name] = re.search(r'\bsecret_id\s*=\s*"([^"]+)"', block.body).group(1)
-                _assert_count_gated(self, block)
         self.assertEqual(
             set(qa_secret_ids.values()),
             {
@@ -167,15 +151,14 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         services = _resource_blocks("google_cloud_run_v2_service")
         self.assertEqual(set(services), {"browser_qa_broker"})
         broker = services["browser_qa_broker"]
-        _assert_count_gated(self, broker)
         self.assertRegex(self.clean_browser_qa, r'\bbrowser_qa_broker_service_name\s*=\s*"flatkey-staging-browser-qa-broker"')
         self.assertRegex(broker.body, r"\bname\s*=\s*local\.browser_qa_broker_service_name\b")
         self.assertRegex(broker.body, r'\bingress\s*=\s*"INGRESS_TRAFFIC_ALL"')
-        self.assertRegex(broker.body, r'\bservice_account\s*=\s*google_service_account\.browser_qa_broker\[0\]\.email\b')
+        self.assertRegex(broker.body, r'\bservice_account\s*=\s*google_service_account\.browser_qa_broker\.email\b')
         self.assertRegex(broker.body, r'\bimage\s*=\s*local\.browser_qa_placeholder_image\b')
         self.assertRegex(broker.body, r'\bargs\s*=\s*\[\s*"broker"\s*\]')
         self.assertRegex(broker.body, r"ignore_changes\s*=\s*\[[^\]]*template\[0\]\.containers\[0\]\.image")
-        self.assertRegex(broker.body, r'\bsecret\s*=\s*google_secret_manager_secret\.browser_qa_gmail_oauth\[0\]\.secret_id\b[\s\S]*\bversion\s*=\s*"latest"')
+        self.assertRegex(broker.body, r'\bsecret\s*=\s*google_secret_manager_secret\.browser_qa_gmail_oauth\.secret_id\b[\s\S]*\bversion\s*=\s*"latest"')
         self.assertNotIn("allUsers", broker.body)
         self.assertNotRegex(broker.body, r"traffic\s*\{")
 
@@ -187,10 +170,9 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         }
         for name, (job_name, sa_name, timeout) in expected.items():
             job = jobs[name]
-            _assert_count_gated(self, job)
             self.assertRegex(self.clean_browser_qa, rf'"{job_name}"')
             self.assertRegex(job.body, r"\bname\s*=\s*local\.browser_qa_(main|cleanup)_job_name\b")
-            self.assertRegex(job.body, rf'\bservice_account\s*=\s*google_service_account\.{sa_name}\[0\]\.email\b')
+            self.assertRegex(job.body, rf'\bservice_account\s*=\s*google_service_account\.{sa_name}\.email\b')
             self.assertRegex(job.body, r"\btask_count\s*=\s*1\b")
             self.assertRegex(job.body, r"\bparallelism\s*=\s*1\b")
             self.assertRegex(job.body, r"\bmax_retries\s*=\s*0\b")
@@ -202,7 +184,6 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         buckets = _resource_blocks("google_storage_bucket")
         self.assertIn("browser_qa_reports", buckets)
         bucket = buckets["browser_qa_reports"]
-        _assert_count_gated(self, bucket)
         self.assertRegex(bucket.body, r"\buniform_bucket_level_access\s*=\s*true\b")
         self.assertRegex(bucket.body, r'\bpublic_access_prevention\s*=\s*"enforced"')
         self.assertRegex(bucket.body, r"lifecycle_rule\s*\{[\s\S]*action\s*\{[\s\S]*type\s*=\s*\"Delete\"[\s\S]*condition\s*\{[\s\S]*age\s*=\s*14")
@@ -219,8 +200,6 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         providers = _resource_blocks("google_iam_workload_identity_pool_provider")
         self.assertIn("browser_qa_github", pools)
         self.assertIn("browser_qa_github", providers)
-        _assert_count_gated(self, pools["browser_qa_github"])
-        _assert_count_gated(self, providers["browser_qa_github"])
         provider = providers["browser_qa_github"]
         self.assertRegex(provider.body, r'"google\.subject"\s*=\s*"assertion\.sub"')
         self.assertRegex(provider.body, r'"attribute\.repository"\s*=\s*"assertion\.repository"')
@@ -247,11 +226,15 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         ]:
             matches = [block for block in _blocks(outputs, "output") if block.name == output_name]
             self.assertEqual(len(matches), 1, output_name)
-            self.assertRegex(matches[0].body, r"var\.enable_browser_qa\s*\?")
         expected_output_values = {
-            "browser_qa_broker_service_name": r"google_cloud_run_v2_service\.browser_qa_broker\[0\]\.name",
-            "browser_qa_main_job_name": r"google_cloud_run_v2_job\.browser_qa_main\[0\]\.name",
-            "browser_qa_cleanup_job_name": r"google_cloud_run_v2_job\.browser_qa_cleanup\[0\]\.name",
+            "browser_qa_artifact_registry_url": r'value\s*=\s*"\$\{var\.region\}-docker\.pkg\.dev/\$\{var\.project_id\}/\$\{google_artifact_registry_repository\.browser_qa\.repository_id\}"',
+            "browser_qa_wif_provider": r"value\s*=\s*google_iam_workload_identity_pool_provider\.browser_qa_github\.name",
+            "browser_qa_deployer_sa_email": r"value\s*=\s*google_service_account\.browser_qa_deployer\.email",
+            "browser_qa_report_bucket": r"value\s*=\s*google_storage_bucket\.browser_qa_reports\.name",
+            "browser_qa_broker_uri": r"value\s*=\s*google_cloud_run_v2_service\.browser_qa_broker\.uri",
+            "browser_qa_broker_service_name": r"google_cloud_run_v2_service\.browser_qa_broker\.name",
+            "browser_qa_main_job_name": r"google_cloud_run_v2_job\.browser_qa_main\.name",
+            "browser_qa_cleanup_job_name": r"google_cloud_run_v2_job\.browser_qa_cleanup\.name",
         }
         for output_name, value_pattern in expected_output_values.items():
             [block] = [block for block in _blocks(outputs, "output") if block.name == output_name]
@@ -262,11 +245,11 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         self.assertEqual(set(service_iam), {"browser_qa_broker_invoker", "browser_qa_broker_deployer_developer"})
         broker_invoker = service_iam["browser_qa_broker_invoker"]
         self.assertRegex(broker_invoker.body, r'\brole\s*=\s*"roles/run\.invoker"')
-        self.assertRegex(broker_invoker.body, r"google_service_account\.browser_qa_runtime\[0\]\.email")
+        self.assertRegex(broker_invoker.body, r"google_service_account\.browser_qa_runtime\.email")
         self.assertNotIn("allUsers", broker_invoker.body)
         broker_developer = service_iam["browser_qa_broker_deployer_developer"]
         self.assertRegex(broker_developer.body, r'\brole\s*=\s*"roles/run\.developer"')
-        self.assertRegex(broker_developer.body, r"google_service_account\.browser_qa_deployer\[0\]\.email")
+        self.assertRegex(broker_developer.body, r"google_service_account\.browser_qa_deployer\.email")
 
         job_iam = _resource_blocks("google_cloud_run_v2_job_iam_member")
         job_bodies = "\n".join(block.body for block in job_iam.values())
@@ -290,15 +273,15 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         sa_user = _resource_blocks("google_service_account_iam_member")
         sa_user_body = "\n".join(block.body for block in sa_user.values())
         for runtime in ("browser_qa_runtime", "browser_qa_broker", "browser_qa_cleanup"):
-            self.assertRegex(sa_user_body, rf'{runtime}\[0\]\.name[\s\S]*role\s*=\s*"roles/iam\.serviceAccountUser"')
-        self.assertRegex(sa_user_body, r"member\s*=\s*\"serviceAccount:\$\{google_service_account\.browser_qa_deployer\[0\]\.email\}\"")
+            self.assertRegex(sa_user_body, rf'{runtime}\.name[\s\S]*role\s*=\s*"roles/iam\.serviceAccountUser"')
+        self.assertRegex(sa_user_body, r"member\s*=\s*\"serviceAccount:\$\{google_service_account\.browser_qa_deployer\.email\}\"")
 
     def test_secret_access_is_limited_to_intended_identities(self):
         secret_iam = _resource_blocks("google_secret_manager_secret_iam_member")
         access = {}
         for block in secret_iam.values():
-            secret_match = re.search(r"secret_id\s*=\s*google_secret_manager_secret\.([a-z0-9_]+)\[0\]\.secret_id", block.body)
-            member_match = re.search(r"member\s*=\s*\"serviceAccount:\$\{google_service_account\.([a-z0-9_]+)\[0\]\.email\}\"", block.body)
+            secret_match = re.search(r"secret_id\s*=\s*google_secret_manager_secret\.([a-z0-9_]+)\.secret_id", block.body)
+            member_match = re.search(r"member\s*=\s*\"serviceAccount:\$\{google_service_account\.([a-z0-9_]+)\.email\}\"", block.body)
             role_match = re.search(r'role\s*=\s*"roles/secretmanager\.secretAccessor"', block.body)
             if secret_match and member_match and role_match:
                 access.setdefault(secret_match.group(1), set()).add(member_match.group(1))

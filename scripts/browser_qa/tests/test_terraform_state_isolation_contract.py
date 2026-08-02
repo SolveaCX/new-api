@@ -162,6 +162,26 @@ class BrowserQaTerraformStateIsolationContractTest(unittest.TestCase):
         self.assertNotRegex(self.all_tf, r'\bresource\s+"google_project_service"\b')
         self.assertNotRegex(self.all_tf, r'\bmodule\s+"apis"\b')
 
+    def test_prod_root_does_not_own_browser_qa_resources_or_switches(self):
+        self.assertFalse(PROD_ROOT.joinpath("browser_qa.tf").exists())
+
+        prod_variables = _read(PROD_ROOT / "variables.tf")
+        prod_tfvars = _read(PROD_ROOT / "terraform.tfvars")
+        prod_outputs = _read(PROD_ROOT / "outputs.tf")
+
+        self.assertNotRegex(prod_variables, r"\benable_browser_qa\b")
+        self.assertNotRegex(prod_tfvars, r"\benable_browser_qa\b")
+        self.assertNotRegex(prod_outputs, r'(?m)^\s*output\s+"browser_qa_[^"]+"\s*\{')
+
+    def test_browser_qa_root_is_unconditional_and_independent(self):
+        browser_qa_tf = _read(QA_ROOT / "browser_qa.tf")
+        clean = _strip_comments(browser_qa_tf)
+
+        self.assertNotRegex(clean, r"\benable_browser_qa\b")
+        self.assertNotRegex(clean, r"(?m)^\s*count\s*=")
+        self.assertNotRegex(clean, r"\bmodule\.apis\b")
+        self.assertNotRegex(clean, r"\bbrowser_qa_[a-z0-9_]+\[0\]\b")
+
 
 if __name__ == "__main__":
     unittest.main()
