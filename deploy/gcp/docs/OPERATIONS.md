@@ -350,6 +350,8 @@ trap 'rm -rf "$review_dir"' EXIT
 required_apis="$review_dir/required-apis.txt"
 enabled_apis="$review_dir/enabled-apis.txt"
 missing_apis="$review_dir/missing-apis.txt"
+state_stdout="$review_dir/state-list.stdout"
+state_stderr="$review_dir/state-list.stderr"
 probe_stdout="$review_dir/probe.stdout"
 probe_stderr="$review_dir/probe.stderr"
 
@@ -381,7 +383,31 @@ fi
 cd "$qa_root"
 terraform init -reconfigure
 
-state_addresses="$(terraform state list)"
+if terraform state list >"$state_stdout" 2>"$state_stderr"; then
+  state_status=0
+  state_addresses="$(cat "$state_stdout")"
+else
+  state_status="$?"
+  state_addresses=""
+fi
+state_diagnostic="$(cat "$state_stderr" "$state_stdout")"
+if [ "$state_status" -ne 0 ]; then
+  case "$state_diagnostic" in
+    *"No state file was found!"*)
+      if [ -s "$state_stdout" ]; then
+        echo "ABORT: unable to read independent Browser QA state" >&2
+        printf '%s\n' "$state_diagnostic" >&2
+        exit 1
+      fi
+      state_addresses=""
+      ;;
+    *)
+      echo "ABORT: unable to read independent Browser QA state" >&2
+      printf '%s\n' "$state_diagnostic" >&2
+      exit 1
+      ;;
+  esac
+fi
 if [ -n "$state_addresses" ]; then
   echo "ABORT: independent Browser QA state is not empty" >&2
   printf '%s\n' "$state_addresses" >&2

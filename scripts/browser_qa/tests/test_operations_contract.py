@@ -35,6 +35,14 @@ BROWSER_QA_LIVE_RESOURCES = {
     "flatkey-browser-qa-github",
     "staging",
 }
+ABSENCE_ONLY_DIAGNOSTICS = {"404", "NOT_FOUND", "does\\ not\\ exist"}
+UNKNOWN_ABSENCE_DIAGNOSTICS = {
+    "PERMISSION_DENIED",
+    "UNAUTHENTICATED",
+    "UNAVAILABLE",
+    '""',
+}
+UNKNOWN_STATE_DIAGNOSTICS = UNKNOWN_ABSENCE_DIAGNOSTICS - {'""'}
 
 
 OUTPUT_BACKED_VARIABLES = {
@@ -83,6 +91,14 @@ def output_backed_command_block():
     blocks = fenced_blocks(output_backed_section())
     if len(blocks) != 1:
         raise AssertionError(f"expected one output-backed command block, found {len(blocks)}")
+    return blocks[0]
+
+
+def plan_review_command_block():
+    section = heading_section(browser_qa_section(), "1. Authenticated refreshing Terraform plan review")
+    blocks = fenced_blocks(section)
+    if len(blocks) != 1:
+        raise AssertionError(f"expected one plan review command block, found {len(blocks)}")
     return blocks[0]
 
 
@@ -200,6 +216,58 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
         self.assertIn("ABORT: independent Browser QA state is not empty", section)
         self.assertLess(section.index("terraform state list"), section.index('describe_absent "Artifact Registry repository'))
 
+    def test_state_gate_handles_absent_state_without_masking_unknown_read_errors(self):
+        block = plan_review_command_block()
+
+        self.assertIn('state_stdout="$review_dir/state-list.stdout"', block)
+        self.assertIn('state_stderr="$review_dir/state-list.stderr"', block)
+        self.assertIn('if terraform state list >"$state_stdout" 2>"$state_stderr"; then', block)
+        self.assertIn("state_status=0", block)
+        self.assertRegex(block, r"else\s+state_status=\"\$\?\"")
+        self.assertNotIn("if ! terraform state list", block)
+        self.assertIn('state_addresses="$(cat "$state_stdout")"', block)
+        self.assertIn('state_diagnostic="$(cat "$state_stderr" "$state_stdout")"', block)
+        self.assertIn("No state file was found!", block)
+        self.assertIn("ABORT: unable to read independent Browser QA state", block)
+        self.assertIn("ABORT: independent Browser QA state is not empty", block)
+        self.assertLess(block.index("terraform state list"), block.index('describe_absent "Artifact Registry repository'))
+        self.assertLess(block.index("No state file was found!"), block.index('describe_absent "Artifact Registry repository'))
+
+    def test_absent_state_requires_empty_stdout_before_accepting_no_state_diagnostic(self):
+        block = plan_review_command_block()
+
+        self.assertRegex(
+            block,
+            r'(?ms)if terraform state list >"\$state_stdout" 2>"\$state_stderr"; then\s+'
+            r"state_status=0\s+"
+            r'state_addresses="\$\(cat "\$state_stdout"\)"',
+        )
+        self.assertRegex(
+            block,
+            r'(?ms)\*"No state file was found!"\*\)\s+'
+            r'if \[ -s "\$state_stdout" \]; then\s+'
+            r'echo "ABORT: unable to read independent Browser QA state" >&2\s+'
+            r'printf \'%s\\n\' "\$state_diagnostic" >&2\s+'
+            r"exit 1\s+"
+            r"fi\s+"
+            r'state_addresses=""',
+        )
+
+    def test_state_gate_only_allows_exact_terraform_no_state_diagnostic(self):
+        block = plan_review_command_block()
+        no_state_case = re.search(
+            r"(?ms)case \"\$state_diagnostic\" in(?P<body>.*?)esac",
+            block,
+        )
+        if not no_state_case:
+            raise AssertionError("state diagnostic case block not found")
+        body = no_state_case.group("body")
+
+        self.assertIn("No state file was found!", body)
+        for diagnostic in UNKNOWN_STATE_DIAGNOSTICS:
+            with self.subTest(diagnostic=diagnostic):
+                self.assertNotIn(diagnostic, body)
+
     def test_live_absence_preflight_lists_resources_and_fails_closed_on_unknown_errors(self):
         section = browser_qa_section()
 
@@ -222,6 +290,29 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
         self.assertRegex(section, r"404|NOT_FOUND|does not exist")
         self.assertIn("Stop and design an import/migration before creating Browser QA resources", section)
         self.assertIn("Do not use -target", section)
+
+    def test_live_absence_probe_allows_only_absence_diagnostics(self):
+        block = plan_review_command_block()
+        describe_function = re.search(
+            r"(?ms)^describe_absent\(\) \{\n(?P<body>.*?)^\}\n\n",
+            block,
+        )
+        if not describe_function:
+            raise AssertionError("describe_absent function not found")
+        function_body = describe_function.group("body")
+        case_match = re.search(r"(?ms)case \"\$diagnostic\" in(?P<body>.*?)esac", function_body)
+        if not case_match:
+            raise AssertionError("describe_absent diagnostic case not found")
+        case_body = case_match.group("body")
+
+        for diagnostic in ABSENCE_ONLY_DIAGNOSTICS:
+            with self.subTest(diagnostic=diagnostic):
+                self.assertIn(diagnostic, case_body)
+        for diagnostic in UNKNOWN_ABSENCE_DIAGNOSTICS:
+            with self.subTest(diagnostic=diagnostic):
+                self.assertNotIn(diagnostic, case_body)
+        self.assertIn('*)', case_body)
+        self.assertIn("ABORT: unable to prove", case_body)
 
     def test_live_absence_preflight_binds_each_resource_to_exact_describe(self):
         section = browser_qa_section()
