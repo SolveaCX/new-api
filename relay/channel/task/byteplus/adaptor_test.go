@@ -151,6 +151,59 @@ func TestIdentityAndModelList(t *testing.T) {
 	}
 }
 
+func TestEstimateBillingUsesPublicModelPricingAcrossEndpointMappings(t *testing.T) {
+	tests := []struct {
+		name       string
+		model      string
+		resolution string
+		hasVideo   bool
+		want       float64
+		wantRatio  bool
+	}{
+		{name: "2.0 720p video", model: "seedance-2.0", resolution: "720p", hasVideo: true, want: 28.0 / 46.0, wantRatio: true},
+		{name: "2.0 1080p no video", model: "seedance-2.0", resolution: "1080p", want: 51.0 / 46.0, wantRatio: true},
+		{name: "2.0 1080p video", model: "seedance-2.0", resolution: "1080p", hasVideo: true, want: 31.0 / 46.0, wantRatio: true},
+		{name: "2.0 4k no video", model: "seedance-2.0", resolution: "4K", want: 26.0 / 46.0, wantRatio: true},
+		{name: "2.0 4k video", model: "seedance-2.0", resolution: "4K", hasVideo: true, want: 16.0 / 46.0, wantRatio: true},
+		{name: "fast video", model: "seedance-2.0-fast", resolution: "4K", hasVideo: true, want: 22.0 / 37.0, wantRatio: true},
+		{name: "mini video", model: "seedance-2.0-mini", resolution: "1080p", hasVideo: true, want: 14.0 / 23.0, wantRatio: true},
+		{name: "mini baseline", model: "seedance-2.0-mini", resolution: "4K"},
+		{name: "unknown model", model: "seedance-unknown", resolution: "720p", hasVideo: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := `[{"type":"text","text":"hello"}]`
+			if tt.hasVideo {
+				content = `[{"type":"text","text":"hello"},{"type":"video_url","video_url":{"url":"https://example.com/input.mp4"}}]`
+			}
+			c := newTestContext(`{"model":"` + tt.model + `","resolution":"` + tt.resolution + `","content":` + content + `}`)
+			info := newTestRelayInfo("https://ark.example", "test-key")
+			info.OriginModelName = tt.model
+			info.UpstreamModelName = "ep-private-endpoint"
+
+			a := &TaskAdaptor{}
+			if taskErr := a.ValidateRequestAndSetAction(c, info); taskErr != nil {
+				t.Fatalf("ValidateRequestAndSetAction error: %+v", taskErr)
+			}
+			ratios := a.EstimateBilling(c, info)
+			got, ok := ratios["video_input"]
+			if !tt.wantRatio {
+				if ok {
+					t.Fatalf("video_input ratio = %v, want no ratio", got)
+				}
+				return
+			}
+			if !ok {
+				t.Fatal("video_input ratio missing")
+			}
+			if got != tt.want {
+				t.Fatalf("video_input ratio = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDoRequestEnforcesModerationSkipHeader(t *testing.T) {
 	service.InitHttpClient()
 	var moderationHeader, authorizationHeader string
@@ -289,6 +342,45 @@ func TestBuildRequestBodyRewritesResolvedAssetURIsOnly(t *testing.T) {
 	}
 	if original.Content[1].ImageURL.URL != "asset://ast_1234567890abcdefABCDEF1234567890" {
 		t.Fatalf("reusable body was mutated: %+v", original.Content[1].ImageURL)
+	}
+}
+
+func TestBytePlusAssetRealPersonBuildRequestBodyRewritesTwoMediaReferencesAndPreservesTextMentions(t *testing.T) {
+	a := &TaskAdaptor{}
+	info := newTestRelayInfo("https://ark.example", "test-key")
+	c := newTestContext(`{
+		"model":"seedance-2.0",
+		"content":[
+			{"type":"text","text":"plain asset://ast_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb mention"},
+			{"type":"image_url","image_url":{"url":"asset://ast_1234567890abcdefABCDEF1234567890"},"role":"reference_image"},
+			{"type":"audio_url","audio_url":{"url":"asset://ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"role":"reference_audio"},
+			{"type":"video_url","video_url":{"url":"https://example.com/input.mp4"},"role":"reference_video"}
+		]
+	}`)
+	common.SetContextKey(c, constant.ContextKeyBytePlusAssetRewriteMap, map[string]string{
+		"asset://ast_1234567890abcdefABCDEF1234567890": "asset://upstream-image",
+		"asset://ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "asset://upstream-audio",
+	})
+
+	body, err := a.BuildRequestBody(c, info)
+	if err != nil {
+		t.Fatalf("BuildRequestBody error: %v", err)
+	}
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !strings.Contains(string(raw), `"url":"asset://upstream-image"`) {
+		t.Fatalf("rewritten body missing image upstream asset URI: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"url":"asset://upstream-audio"`) {
+		t.Fatalf("rewritten body missing audio upstream asset URI: %s", raw)
+	}
+	if !strings.Contains(string(raw), `plain asset://ast_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb mention`) {
+		t.Fatalf("text mention changed: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"url":"https://example.com/input.mp4"`) {
+		t.Fatalf("ordinary https video URL changed or missing: %s", raw)
 	}
 }
 
