@@ -527,12 +527,6 @@ export function getRecallRecipientRetry(
   allowed: boolean
   acknowledgeUncertain: boolean
 } {
-  if (
-    recipient.state === 'failed' ||
-    recipient.messages.some((message) => message.state === 'failed')
-  ) {
-    return { allowed: true, acknowledgeUncertain: false }
-  }
   if (recipient.messages.some((message) => message.state === 'uncertain')) {
     return { allowed: true, acknowledgeUncertain: true }
   }
@@ -545,6 +539,12 @@ export function getRecallRecipientRetry(
     )
   ) {
     return { allowed: true, acknowledgeUncertain: true }
+  }
+  if (
+    recipient.state === 'failed' ||
+    recipient.messages.some((message) => message.state === 'failed')
+  ) {
+    return { allowed: true, acknowledgeUncertain: false }
   }
   return { allowed: false, acknowledgeUncertain: false }
 }
