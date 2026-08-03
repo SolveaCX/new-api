@@ -1,8 +1,8 @@
 # Browser QA Phase A Partial-Apply Recovery Design
 
-**Date:** 2026-08-03  
-**Status:** Approved, implementation in progress  
-**Environment:** Flatkey staging resources in `vocai-gemini-prod`  
+**Date:** 2026-08-03
+**Status:** Approved, implementation in progress
+**Environment:** Flatkey staging resources in `vocai-gemini-prod`
 **Predecessor:** [Browser QA Two-Phase Secret Bootstrap Design](./2026-08-03-browser-qa-two-phase-secret-bootstrap-design.md)
 
 ## Outcome
