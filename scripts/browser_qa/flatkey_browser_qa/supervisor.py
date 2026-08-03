@@ -1153,7 +1153,10 @@ class ChromiumRuntime:
         deadline = self.clock.monotonic() + self.timeout_seconds
         while self.clock.monotonic() <= deadline:
             if os.path.exists(active_port_path):
-                return _read_devtools_endpoint(active_port_path)
+                try:
+                    return _read_devtools_endpoint(active_port_path)
+                except _DevtoolsActivePortNotReady:
+                    pass
             poll = getattr(self.process, "poll", None)
             if poll is not None:
                 returncode = poll()
@@ -1418,13 +1421,17 @@ def _chromium_executable():
     raise RuntimeError("chromium executable not found")
 
 
+class _DevtoolsActivePortNotReady(RuntimeError):
+    pass
+
+
 def _read_devtools_endpoint(path):
     if os.path.islink(path):
         raise RuntimeError("devtools active port symlink rejected")
     with open(path, encoding="utf-8") as handle:
         lines = handle.read(256).splitlines()
     if len(lines) < 1:
-        raise RuntimeError("devtools active port missing port")
+        raise _DevtoolsActivePortNotReady("devtools active port missing port")
     try:
         port = int(lines[0])
     except ValueError as exc:

@@ -994,6 +994,41 @@ class SupervisorTests(unittest.TestCase):
         self.assertTrue(browser_process.terminated)
         self.assertGreaterEqual(browser_process.wait_calls, 1)
 
+    def test_browser_start_waits_for_devtools_active_port_file_contents(self):
+        browser_process = RecordingBrowserProcess()
+        active_port_path = None
+
+        def browser_popen(args, **_kwargs):
+            nonlocal active_port_path
+            user_arg = next(arg for arg in args if arg.startswith("--user-data-dir="))
+            profile_dir = user_arg.split("=", 1)[1]
+            os.makedirs(profile_dir, exist_ok=True)
+            active_port_path = os.path.join(profile_dir, "DevToolsActivePort")
+            with open(active_port_path, "w", encoding="utf-8"):
+                pass
+            return browser_process
+
+        def finish_devtools_active_port(_seconds):
+            with open(active_port_path, "w", encoding="utf-8") as handle:
+                handle.write("9222\n/devtools/browser/id\n")
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            runtime = supervisor.ChromiumRuntime(
+                runtime_root=runtime_root,
+                proxy=FakeProxy(),
+                popen_factory=browser_popen,
+                executable="chromium",
+                clock=FakeClock(),
+                timeout_seconds=1,
+            )
+
+            with mock.patch.object(supervisor.time, "sleep", side_effect=finish_devtools_active_port) as sleep:
+                runtime.start()
+
+            self.assertEqual(runtime.cdp_endpoint, "http://127.0.0.1:9222")
+            sleep.assert_called_once_with(0.05)
+            runtime.stop()
+
     def test_browser_start_failure_can_report_bounded_sanitized_chromium_stderr_tail(self):
         noisy_stderr = (
             b"first line\n"
