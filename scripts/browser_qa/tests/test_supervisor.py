@@ -35,6 +35,15 @@ class ReadableAfterCloseStringIO(io.StringIO):
         self.closed_flag = True
 
 
+class BrokenPipeOnWriteStringIO(io.StringIO):
+    def __init__(self, message):
+        super().__init__()
+        self.message = message
+
+    def write(self, _value):
+        raise BrokenPipeError(self.message)
+
+
 class FakeProcess:
     def __init__(self, returncode=0, stdout="", stderr="", finish_after=0, write_result=None, on_communicate=None):
         self.returncode = returncode
@@ -518,6 +527,30 @@ class SupervisorTests(unittest.TestCase):
             self.assertEqual(kwargs["env"], {"PATH": "C:\\tools"})
             self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
             self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+
+    def test_runtime_provenance_preserves_path_from_os_environ_mapping(self):
+        runner = FakeVersionRunner(
+            FakeProcess(0),
+            versions={
+                ("codex", "--version"): "codex 9.9.9\n",
+                ("playwright-mcp", "--version"): "playwright-mcp 1.2.3\n",
+                ("chromium", "--version"): "Chromium 123.0.0.0\n",
+            },
+        )
+        with tempfile.TemporaryDirectory() as skill_dir, \
+            mock.patch.dict(supervisor.os.environ, {"PATH": "C:\\tools"}, clear=True):
+            with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as handle:
+                handle.write("# Skill\n")
+
+            provenance = supervisor.collect_runtime_provenance(
+                subprocess_runner=runner,
+                env=supervisor.os.environ,
+                skill_dir=skill_dir,
+            )
+
+        self.assertEqual(provenance["codex_version"], "codex 9.9.9")
+        for _args, kwargs in runner.run_calls:
+            self.assertEqual(kwargs["env"], {"PATH": "C:\\tools"})
 
     def test_playwright_package_version_reads_fixed_npm_package_json_when_python_distribution_is_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1366,6 +1399,89 @@ class SupervisorTests(unittest.TestCase):
         artifact_names = {os.path.basename(path) for _manifest, paths in sup.uploader.uploaded for path in paths}
         self.assertIn("codex-events.jsonl", artifact_names)
         self.assertIn("codex-stderr.txt", artifact_names)
+
+    def test_early_broken_pipe_preserves_codex_stderr_returncode_and_classification(self):
+        process = FakeProcess(
+            42,
+            stderr="startup failed Authorization: Bearer sk-xSECRET\n",
+        )
+        process.stdin = BrokenPipeOnWriteStringIO("cannot write prompt sk-parentSECRET")
+        calls = []
+
+        def recording_write_report(*args, **kwargs):
+            calls.append(kwargs)
+            return original_write_report(*args, **kwargs)
+
+        original_write_report = supervisor.report.write_report
+        with mock.patch.object(supervisor.report, "write_report", recording_write_report):
+            outcome, sup = self.run_supervisor(process, result_payload=valid_result())
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(calls[0]["codex_returncode"], 42)
+        self.assertEqual(calls[0]["runtime_classification"], "codex_nonzero")
+        with open(os.path.join(sup.runtime_root, "codex-stderr.txt"), encoding="utf-8") as handle:
+            stderr = handle.read()
+        self.assertIn("startup failed", stderr)
+        self.assertNotIn("sk-xSECRET", stderr)
+        self.assertNotIn("Authorization: Bearer", stderr)
+
+    def test_events_artifact_appends_supervisor_diagnostics_without_duplicating_codex_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sup = supervisor.Supervisor(
+                env=env(),
+                runtime_root=tmp,
+                subprocess_runner=FakeSubprocess(FakeProcess(0)),
+                uploader=FakeUploader(),
+                cleanup_runner=FakeCleanup(),
+                proxy_factory=lambda policy=None: FakeProxy(),
+                preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+                clock=FakeClock(),
+            )
+            codex_events_path = os.path.join(tmp, "codex-events.jsonl")
+            codex_stderr_path = os.path.join(tmp, "codex-stderr.txt")
+            with open(codex_events_path, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"type": "item.completed", "text": "from codex"}) + "\n")
+            sup.events = [
+                {"kind": "codex_event", "text": {"type": "item.completed", "text": "from codex"}},
+                {"kind": "infrastructure_error", "text": "failed sk-parentSECRET"},
+                {"kind": "provenance_failed", "text": "missing codex"},
+            ]
+
+            sup._write_events_artifacts(
+                codex_events_path,
+                codex_stderr_path,
+                supervisor.Redactor(extra_secrets=("sk-parentSECRET",)),
+            )
+
+            with open(codex_events_path, encoding="utf-8") as handle:
+                lines = [json.loads(line) for line in handle]
+
+        self.assertEqual(len(lines), 3)
+        self.assertEqual(lines[0], {"type": "item.completed", "text": "from codex"})
+        self.assertEqual(lines[1]["kind"], "infrastructure_error")
+        self.assertEqual(lines[1]["text"], "failed [REDACTED_API_KEY]")
+        self.assertEqual(lines[2]["kind"], "provenance_failed")
+
+    def test_events_artifact_includes_diagnostics_from_late_local_artifact_failures(self):
+        with mock.patch.object(
+            supervisor,
+            "write_browser_evidence_artifacts",
+            side_effect=RuntimeError("evidence failed sk-parentSECRET"),
+        ), mock.patch.object(
+            supervisor,
+            "_cleanup_runtime_child_dir",
+            side_effect=RuntimeError("cleanup failed sk-parentSECRET"),
+        ):
+            outcome, sup = self.run_supervisor(FakeProcess(0), result_payload=valid_result())
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        with open(os.path.join(sup.runtime_root, "codex-events.jsonl"), encoding="utf-8") as handle:
+            events = [json.loads(line) for line in handle]
+        self.assertEqual(
+            [event["kind"] for event in events],
+            ["browser_evidence_failed", "playwright_output_cleanup_failed"],
+        )
+        self.assertNotIn("sk-parentSECRET", json.dumps(events))
 
     def test_final_result_is_extracted_from_jsonl_redacted_and_no_raw_quarantine_is_written(self):
         raw_alias = "owner+flatkey-qa-12345-secret@gmail.com"

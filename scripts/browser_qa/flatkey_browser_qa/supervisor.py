@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import urllib.request
+from collections.abc import Mapping
 
 from . import report
 from .api import StagingApiClient
@@ -290,7 +291,6 @@ class Supervisor:
                 runtime_classification = runtime_classification or "invalid_result"
                 invalid_result = True
             _write_private_json(result_path, redactor.clean(payload))
-            self._write_events_artifacts(codex_events_path, codex_stderr_path, redactor)
             try:
                 write_browser_evidence_artifacts(self.runtime_root, browser_evidence, redactor)
             except Exception as exc:
@@ -303,6 +303,7 @@ class Supervisor:
                 self._event("playwright_output_cleanup_failed", str(exc), redactor)
                 runtime_classification = runtime_classification or "invalid_result"
                 invalid_result = True
+            self._write_events_artifacts(codex_events_path, codex_stderr_path, redactor)
             manifest = report.write_report(
                 result_path,
                 manifest_path,
@@ -402,11 +403,6 @@ class Supervisor:
         return process
 
     def _wait_for_codex(self, process, redactor, prompt, *, codex_events_path, codex_stderr_path, output_last_message_path=None):
-        process.stdin.write(prompt)
-        process.stdin.close()
-        if hasattr(process, "finish_streams"):
-            process.finish_streams()
-
         state = {"payload": None, "error": None}
         stderr_state = {"total": 0, "error": None}
         deadline = self.clock.monotonic() + INTERNAL_DEADLINE_SECONDS
@@ -445,9 +441,22 @@ class Supervisor:
                 stderr_state["error"] = exc
                 _terminate_process(process)
 
-        threads = [self.thread_factory(target=stdout_reader), self.thread_factory(target=stderr_reader)]
-        for thread in threads:
-            thread.start()
+        stdout_thread = self.thread_factory(target=stdout_reader)
+        stderr_thread = self.thread_factory(target=stderr_reader)
+        stderr_thread.start()
+        prompt_error = None
+        try:
+            process.stdin.write(prompt)
+        except OSError as exc:
+            prompt_error = exc
+        try:
+            process.stdin.close()
+        except OSError as exc:
+            prompt_error = prompt_error or exc
+        if hasattr(process, "finish_streams"):
+            process.finish_streams()
+        stdout_thread.start()
+        threads = [stdout_thread, stderr_thread]
         for thread in threads:
             if thread.is_alive():
                 thread.join(timeout=_remaining_deadline_seconds(self.clock, deadline))
@@ -466,6 +475,8 @@ class Supervisor:
                 output_payload = _parse_output_last_message_file(output_last_message_path, redactor)
                 if output_payload is not None:
                     state["payload"] = output_payload
+            if prompt_error is not None and process.returncode == 0:
+                raise RuntimeError("codex prompt delivery failed") from prompt_error
         finally:
             if output_last_message_path:
                 try:
@@ -495,7 +506,13 @@ class Supervisor:
         self.events.append({"kind": kind, "text": cleaner.clean(str(text))})
 
     def _write_events_artifacts(self, codex_events_path, codex_stderr_path, redactor):
-        if not os.path.exists(codex_events_path):
+        diagnostics = [redactor.clean(event) for event in self.events if event.get("kind") != "codex_event"]
+        if diagnostics:
+            fd = os.open(codex_events_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as events_file:
+                for event in diagnostics:
+                    events_file.write(json.dumps(event, sort_keys=True) + "\n")
+        elif not os.path.exists(codex_events_path):
             with _private_text_writer(codex_events_path):
                 pass
         if not os.path.exists(codex_stderr_path):
@@ -762,7 +779,7 @@ def _install_fixed_skill(home_dir):
 
 
 def collect_runtime_provenance(*, subprocess_runner, env, chromium_executable=None, skill_dir=None):
-    path = env.get("PATH", "") if isinstance(env, dict) else ""
+    path = env.get("PATH", "") if isinstance(env, Mapping) else ""
     probe_env = {"PATH": path}
     codex = _probe_version(subprocess_runner, ["codex", "--version"], probe_env)
     playwright_mcp = _probe_version(subprocess_runner, ["playwright-mcp", "--version"], probe_env)
