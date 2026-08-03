@@ -22,8 +22,9 @@ func newSupplierReportTestDB(t *testing.T) *gorm.DB {
 		&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierContractRateVersion{},
 		&model.SupplierInventoryAdjustment{}, &model.Channel{},
 		&model.SupplierUsageDailySummary{}, &model.SupplierUsageDailyBatchRun{},
-		&model.SupplierHistoricalImport{}, &model.SupplierHistoricalDailySummary{}, &model.SupplierHistoricalPublishedDay{},
+		&model.SupplierHistoricalImport{}, &model.SupplierHistoricalDailySummary{},
 	))
+	require.NoError(t, model.MigrateSupplierHistoricalPublishedDaySchema(db))
 	return db
 }
 

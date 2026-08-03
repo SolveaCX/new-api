@@ -17,8 +17,9 @@ func setupSupplierHistoricalControllerDB(t *testing.T) (*gorm.DB, int, int, int)
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&model.UpstreamSupplier{}, &model.SupplierContract{}, &model.SupplierContractRateVersion{},
-		&model.SupplierHistoricalImport{}, &model.SupplierHistoricalDailySummary{}, &model.SupplierHistoricalPublishedDay{},
+		&model.SupplierHistoricalImport{}, &model.SupplierHistoricalDailySummary{},
 	))
+	require.NoError(t, model.MigrateSupplierHistoricalPublishedDaySchema(db))
 	supplier := model.UpstreamSupplier{Name: "controller historical supplier"}
 	require.NoError(t, db.Create(&supplier).Error)
 	contract := model.SupplierContract{SupplierId: supplier.Id, Name: "controller historical contract", ContractNo: "HC-1"}

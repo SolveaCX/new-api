@@ -348,9 +348,11 @@ func migrateDB() error {
 		&SupplierUsageDailyBatchRun{},
 		&SupplierHistoricalImport{},
 		&SupplierHistoricalDailySummary{},
-		&SupplierHistoricalPublishedDay{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := MigrateSupplierHistoricalPublishedDaySchema(DB); err != nil {
 		return err
 	}
 	if err = DB.AutoMigrate(StatusCenterModels()...); err != nil {
@@ -459,7 +461,6 @@ func migrateDBFast() error {
 		{&SupplierUsageDailyBatchRun{}, "SupplierUsageDailyBatchRun"},
 		{&SupplierHistoricalImport{}, "SupplierHistoricalImport"},
 		{&SupplierHistoricalDailySummary{}, "SupplierHistoricalDailySummary"},
-		{&SupplierHistoricalPublishedDay{}, "SupplierHistoricalPublishedDay"},
 		{&ComputeNode{}, "ComputeNode"},
 		{&BytePlusAssetGroup{}, "BytePlusAssetGroup"},
 		{&BytePlusRealPersonProfile{}, "BytePlusRealPersonProfile"},
@@ -474,6 +475,9 @@ func migrateDBFast() error {
 		if err := DB.AutoMigrate(m.model); err != nil {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
 		}
+	}
+	if err := MigrateSupplierHistoricalPublishedDaySchema(DB); err != nil {
+		return fmt.Errorf("failed to migrate SupplierHistoricalPublishedDay: %w", err)
 	}
 	if os.Getenv("LOG_SQL_DSN") == "" {
 		if err := EnsureSupplierAccountingFactSchema(DB); err != nil {

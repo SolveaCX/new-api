@@ -20,7 +20,8 @@ func supplierHistoricalEstimateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalPublishedDay{}))
+	require.NoError(t, db.AutoMigrate(&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}))
+	require.NoError(t, MigrateSupplierHistoricalPublishedDaySchema(db))
 	return db
 }
 

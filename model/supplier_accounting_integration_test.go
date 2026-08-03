@@ -154,8 +154,9 @@ func migrateSupplierAccountingIntegrationSchema(t *testing.T, db *gorm.DB) {
 		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{},
 		&SupplierChannelBindingVersion{}, &SupplierInventoryAdjustment{}, &SupplierStatisticsExclusionRule{},
 		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
-		&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalPublishedDay{},
+		&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{},
 	))
+	require.NoError(t, MigrateSupplierHistoricalPublishedDaySchema(db))
 	require.NoError(t, EnsureSupplierAccountingFactSchema(db))
 	require.NoError(t, EnsureSupplierUsageGenerationSchema(db))
 }

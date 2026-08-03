@@ -18,8 +18,9 @@ func TestSupplierV1SchemaHasExactlyTwelveTables(t *testing.T) {
 		&UpstreamSupplier{}, &SupplierContract{}, &SupplierContractRateVersion{},
 		&SupplierChannelBindingVersion{}, &SupplierInventoryAdjustment{}, &SupplierStatisticsExclusionRule{},
 		&SupplierUsageDailySummary{}, &SupplierUsageDailyBatchRun{},
-		&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalPublishedDay{},
+		&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{},
 	))
+	require.NoError(t, MigrateSupplierHistoricalPublishedDaySchema(db))
 	require.NoError(t, EnsureSupplierAccountingFactSchema(db))
 	var names []string
 	require.NoError(t, db.Raw(`SELECT name FROM sqlite_master WHERE type = 'table' AND (name = 'upstream_suppliers' OR name LIKE 'supplier_%')`).Scan(&names).Error)

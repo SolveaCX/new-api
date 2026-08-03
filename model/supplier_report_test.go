@@ -13,7 +13,8 @@ import (
 
 func migrateSupplierReportHistoricalSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	require.NoError(t, db.AutoMigrate(&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}, &SupplierHistoricalPublishedDay{}))
+	require.NoError(t, db.AutoMigrate(&SupplierHistoricalImport{}, &SupplierHistoricalDailySummary{}))
+	require.NoError(t, MigrateSupplierHistoricalPublishedDaySchema(db))
 }
 
 func TestSupplierReportReadTxOptions(t *testing.T) {

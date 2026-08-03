@@ -162,9 +162,16 @@ func TestMigrateDBFastRegistersSupplierModels(t *testing.T) {
 		&SupplierStatisticsExclusionRule{},
 		&SupplierUsageDailySummary{},
 		&SupplierUsageDailyBatchRun{},
+		&SupplierHistoricalImport{},
+		&SupplierHistoricalDailySummary{},
+		&SupplierHistoricalPublishedDay{},
 	} {
 		require.True(t, db.Migrator().HasTable(model))
 	}
+	definition, found, err := supplierHistoricalPublishedDayCanonicalIndex(db)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, definition.isExactUniqueDateIndex())
 	require.True(t, db.Migrator().HasColumn(&Channel{}, "SupplierContractId"))
 }
 
