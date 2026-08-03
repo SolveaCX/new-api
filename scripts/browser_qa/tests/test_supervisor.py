@@ -361,6 +361,18 @@ class SupervisorTests(unittest.TestCase):
         self._playwright_root_patch.start()
         self.addCleanup(self._playwright_root_patch.stop)
 
+    def test_chromium_executable_uses_container_env_path_before_path_lookup(self):
+        with tempfile.TemporaryDirectory() as runtime_root:
+            executable = os.path.join(runtime_root, "chrome")
+            with open(executable, "w", encoding="utf-8") as handle:
+                handle.write("#!/bin/sh\n")
+            os.chmod(executable, 0o755)
+            with (
+                mock.patch.dict(supervisor.os.environ, {"CHROMIUM_EXECUTABLE_PATH": executable}, clear=True),
+                mock.patch.object(supervisor.shutil, "which", return_value=None),
+            ):
+                self.assertEqual(supervisor._chromium_executable(), executable)
+
     def test_prompt_file_declares_skill_policy_runtime_contract_and_forbidden_scope(self):
         prompt_path = os.path.join(os.path.dirname(__file__), "..", "config", "qa-prompt.md")
         with open(prompt_path, encoding="utf-8") as handle:

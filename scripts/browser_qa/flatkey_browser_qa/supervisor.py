@@ -1274,6 +1274,7 @@ def _dedupe_strings(values):
 
 def _chromium_executable():
     candidates = [
+        os.environ.get("CHROMIUM_EXECUTABLE_PATH"),
         os.environ.get("CHROMIUM_PATH"),
         shutil.which("chromium"),
         shutil.which("chromium-browser"),
@@ -1282,7 +1283,7 @@ def _chromium_executable():
         shutil.which("msedge"),
     ]
     for candidate in candidates:
-        if candidate:
+        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
     raise RuntimeError("chromium executable not found")
 
