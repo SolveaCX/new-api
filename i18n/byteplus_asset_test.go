@@ -17,19 +17,6 @@ func TestBytePlusAssetLocaleCoverage(t *testing.T) {
 		MsgAssetGroupInitializing,
 		MsgAssetUpstreamError,
 		MsgAssetStorageError,
-		MsgRealPersonInvalidRequest,
-		MsgRealPersonNotFound,
-		MsgRealPersonNotActive,
-		MsgRealPersonChannelUnavailable,
-		MsgRealPersonStorageError,
-		MsgVerificationInProgress,
-		MsgVerificationUpstreamError,
-		MsgIdempotencyConflict,
-		MsgIdempotencyOutcomeUnknown,
-		MsgAssetProfileConflict,
-		MsgAssetFileTooLarge,
-		MsgAssetMediaUnsupported,
-		MsgAssetUploadFailed,
 	}
 	langs := []string{LangEn, LangZhCN, LangZhTW, LangPt}
 

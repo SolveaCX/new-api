@@ -322,10 +322,6 @@ func migrateDB() error {
 		&ComputeNode{},
 		&DataToolCall{},
 		&BytePlusAssetGroup{},
-		&BytePlusRealPersonProfile{},
-		&BytePlusVisualValidationSession{},
-		&APIIdempotencyRecord{},
-		&BytePlusAssetTempObject{},
 		&BytePlusAsset{},
 		&AdsSpendDaily{},
 		&AdsDailyKeyword{},
@@ -425,10 +421,6 @@ func migrateDBFast() error {
 		{&ComputeNode{}, "ComputeNode"},
 		{&DataToolCall{}, "DataToolCall"},
 		{&BytePlusAssetGroup{}, "BytePlusAssetGroup"},
-		{&BytePlusRealPersonProfile{}, "BytePlusRealPersonProfile"},
-		{&BytePlusVisualValidationSession{}, "BytePlusVisualValidationSession"},
-		{&APIIdempotencyRecord{}, "APIIdempotencyRecord"},
-		{&BytePlusAssetTempObject{}, "BytePlusAssetTempObject"},
 		{&BytePlusAsset{}, "BytePlusAsset"},
 	}
 	// GORM also migrates associations, so parallel AutoMigrate calls can race

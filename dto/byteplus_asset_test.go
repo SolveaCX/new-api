@@ -13,6 +13,9 @@ func TestBytePlusAssetResponseOmitsPrivateFields(t *testing.T) {
 		Object:    "asset",
 		AssetType: "Video",
 		Status:    "Processing",
+		Moderation: BytePlusAssetModeration{
+			Strategy: "Default",
+		},
 		CreatedAt: 1785292000,
 	}
 
