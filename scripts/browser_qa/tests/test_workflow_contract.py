@@ -192,6 +192,17 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             ],
         )
 
+    def test_repo_tests_run_from_checkout_before_the_runtime_image_is_built(self):
+        text = workflow_text()
+        test_step_name = "Run browser QA unit and contract tests"
+        test_step = step_block(text, test_step_name)
+        self.assertIn("if: inputs.mode != 'cleanup-only'", test_step)
+        self.assertIn(
+            "python3 -B -m unittest discover -s scripts/browser_qa/tests -v",
+            test_step,
+        )
+        self.assertLess(text.index(f"- name: {test_step_name}"), text.index("- name: Build browser QA image"))
+
     def test_normal_path_smokes_image_before_push_and_skips_mutation_for_cleanup_only(self):
         text = workflow_text()
         smoke = step_block(text, "Smoke test browser QA image")
@@ -203,35 +214,9 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertIn("--entrypoint playwright-mcp", smoke)
         self.assertIn("--entrypoint python3", smoke)
         self.assertNotIn("-m unittest discover -s /opt/flatkey-browser-qa/tests -v", smoke)
-        self.assertIn("runtime_test_modules", smoke)
-        self.assertIn('"/opt/flatkey-browser-qa/tests"', smoke)
-        for module in [
-            "test_broker",
-            "test_browser_evidence",
-            "test_budget",
-            "test_cleanup",
-            "test_config",
-            "test_egress_proxy",
-            "test_gcp",
-            "test_gmail",
-            "test_identity",
-            "test_mcp",
-            "test_mcp_budget_wrapper",
-            "test_origin_policy",
-            "test_redaction",
-            "test_report",
-            "test_supervisor",
-        ]:
-            self.assertIn(f'"{module}"', smoke)
-        for repo_contract_module in [
-            "test_container_contract",
-            "test_operations_contract",
-            "test_terraform_contract",
-            "test_terraform_plan_guard",
-            "test_terraform_state_isolation_contract",
-            "test_workflow_contract",
-        ]:
-            self.assertNotIn(f'"{repo_contract_module}"', smoke)
+        self.assertNotIn("unittest", smoke)
+        self.assertNotIn("runtime_test_modules", smoke)
+        self.assertNotIn("/opt/flatkey-browser-qa/tests", smoke)
         self.assertIn("docker run --rm -i --entrypoint python3", smoke)
         self.assertIn("ChromiumRuntime", smoke)
         self.assertIn("playwright_child_command", smoke)

@@ -133,6 +133,13 @@ jobs:
         if: inputs.mode != 'cleanup-only'
         uses: docker/setup-buildx-action@v3
 
+      - name: Run browser QA unit and contract tests
+        if: inputs.mode != 'cleanup-only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s scripts/browser_qa/tests -v
+
       - name: Build browser QA image
         if: inputs.mode != 'cleanup-only'
         shell: bash
@@ -156,35 +163,6 @@ jobs:
           docker run --rm --entrypoint sh "${IMAGE_URI}" -c 'test "$(id -u)" != "0"'
           docker run --rm --entrypoint codex "${IMAGE_URI}" --version
           docker run --rm --entrypoint playwright-mcp "${IMAGE_URI}" --version
-          docker run --rm -i --entrypoint python3 "${IMAGE_URI}" - <<'PY'
-          import sys
-          import unittest
-
-          sys.path.insert(0, "/opt/flatkey-browser-qa/tests")
-          runtime_test_modules = [
-              "test_broker",
-              "test_browser_evidence",
-              "test_budget",
-              "test_cleanup",
-              "test_config",
-              "test_egress_proxy",
-              "test_gcp",
-              "test_gmail",
-              "test_identity",
-              "test_mcp",
-              "test_mcp_budget_wrapper",
-              "test_origin_policy",
-              "test_redaction",
-              "test_report",
-              "test_supervisor",
-          ]
-          loader = unittest.defaultTestLoader
-          suite = unittest.TestSuite()
-          for module in runtime_test_modules:
-              suite.addTests(loader.loadTestsFromName(module))
-          result = unittest.TextTestRunner(verbosity=2).run(suite)
-          raise SystemExit(0 if result.wasSuccessful() else 1)
-          PY
           docker run --rm -i --entrypoint python3 "${IMAGE_URI}" - <<'PY'
           import json
           import os
