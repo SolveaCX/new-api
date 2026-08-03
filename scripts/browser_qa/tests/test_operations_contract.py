@@ -63,6 +63,11 @@ PHASE_A_STATE_ADDRESSES = {
     "google_storage_bucket_iam_member.browser_qa_deployer_report_viewer",
     "google_storage_bucket_iam_member.browser_qa_runtime_report_creator",
 }
+RECOVERY_ADDRESSES = {
+    "google_storage_bucket_iam_member.browser_qa_cleanup_report_admin",
+    "google_storage_bucket_iam_member.browser_qa_deployer_report_viewer",
+    "google_storage_bucket_iam_member.browser_qa_runtime_report_creator",
+}
 ABSENCE_ONLY_DIAGNOSTICS = {
     "404",
     "NOT_FOUND",
@@ -117,12 +122,26 @@ def fenced_blocks(text):
 
 def heading_section(text, heading):
     match = re.search(
-        rf"(?ms)^### {re.escape(heading)}\n(?P<body>.*?)(?=^### \d+\. |\Z)",
+        rf"(?ms)^### {re.escape(heading)}\n(?P<body>.*?)(?=^### [^\n]+\n|\Z)",
         text,
     )
     if not match:
         raise AssertionError(f"section not found: {heading}")
     return match.group("body")
+
+
+def phase_a_recovery_section():
+    return heading_section(
+        browser_qa_section(),
+        "1A. Recover the interrupted Phase A bucket IAM apply",
+    )
+
+
+def phase_a_recovery_command_block():
+    blocks = fenced_blocks(phase_a_recovery_section())
+    if len(blocks) != 1:
+        raise AssertionError(f"expected one Phase A recovery command block, found {len(blocks)}")
+    return blocks[0]
 
 
 def output_backed_section():
@@ -159,6 +178,17 @@ def phase_b_command_block():
     if len(blocks) != 1:
         raise AssertionError(f"expected one Phase B command block, found {len(blocks)}")
     return blocks[0]
+
+
+def heredoc_lines(block, target, marker):
+    match = re.search(
+        rf"(?ms)^cat > \"\$review_dir/{re.escape(target)}\" <<'{re.escape(marker)}'\n"
+        rf"(?P<body>.*?)\n{re.escape(marker)}$",
+        block,
+    )
+    if not match:
+        raise AssertionError(f"heredoc not found: {target}")
+    return match.group("body").splitlines()
 
 
 def describe_absent_classifier_parts(block):
@@ -558,6 +588,136 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
         section = browser_qa_section()
         self.assertNotIn('if "browser_qa" not in address', section)
         self.assertNotRegex(section, r"(?m)^\s*terraform\s+(?:plan|apply)\b[^\n]*\s-target(?:=|\s)")
+
+    def test_phase_a_recovery_section_sits_between_phase_a_and_output_setup(self):
+        text = browser_qa_section()
+        phase_a_heading = "### 1. Phase A: authenticated refreshing infrastructure plan review"
+        recovery_heading = "### 1A. Recover the interrupted Phase A bucket IAM apply"
+        output_heading = "### 2. Set output-backed GitHub repository variables"
+
+        for marker in [phase_a_heading, recovery_heading, output_heading]:
+            self.assertIn(marker, text)
+
+        self.assertLess(text.index(phase_a_heading), text.index(recovery_heading))
+        self.assertLess(text.index(recovery_heading), text.index(output_heading))
+        self.assertNotIn(recovery_heading, plan_review_command_block())
+
+    def test_phase_a_recovery_documents_old_saved_plan_is_permanently_invalid(self):
+        section = phase_a_recovery_section()
+
+        self.assertRegex(section, r"(?i)old saved plan")
+        self.assertRegex(section, r"(?i)permanently invalid")
+        self.assertRegex(section, r"(?i)must not be rerun|do not rerun|never rerun")
+        self.assertIn("APPLY_BROWSER_QA_INFRA_RECOVERY_SAVED_PLAN", section)
+
+    def test_phase_a_recovery_checks_active_context_before_state_or_plan(self):
+        block = phase_a_recovery_command_block()
+
+        context_markers = [
+            'active_account="$(gcloud auth list --filter=status:ACTIVE --format=\'value(account)\' 2>/dev/null | head -n 1)"',
+            'active_project="$(gcloud config get-value project 2>/dev/null)"',
+            'active_region="$(gcloud config get-value run/region 2>/dev/null)"',
+            'ABORT: active GCP account is required',
+            'ABORT: active GCP project must be vocai-gemini-prod',
+            'ABORT: active run region must be us-west1',
+        ]
+        gated_markers = [
+            "terraform init -reconfigure",
+            'terraform state list | LC_ALL=C sort > "$actual_pre_recovery_state"',
+            'terraform plan -var=\'create_workloads=false\' -out="$recovery_plan_path"',
+        ]
+
+        for marker in context_markers + gated_markers:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, block)
+
+        first_state_or_plan = min(block.index(marker) for marker in gated_markers)
+        for marker in context_markers:
+            with self.subTest(marker=marker):
+                self.assertLess(block.index(marker), first_state_or_plan)
+
+    def test_phase_a_recovery_uses_exact_pre_and_post_state_sets(self):
+        block = phase_a_recovery_command_block()
+        expected_pre_recovery = sorted(PHASE_A_STATE_ADDRESSES - RECOVERY_ADDRESSES)
+        expected_full_phase_a = sorted(PHASE_A_STATE_ADDRESSES)
+
+        self.assertEqual(len(expected_pre_recovery), 23)
+        self.assertEqual(len(expected_full_phase_a), 26)
+        self.assertEqual(
+            heredoc_lines(block, "expected-pre-recovery-state.txt", "EOF_PRE_RECOVERY_STATE"),
+            expected_pre_recovery,
+        )
+        self.assertEqual(
+            heredoc_lines(block, "expected-full-phase-a-state.txt", "EOF_FULL_PHASE_A_STATE"),
+            expected_full_phase_a,
+        )
+
+        for target in [
+            "actual-pre-recovery-state.txt",
+            "actual-full-phase-a-state.txt",
+        ]:
+            with self.subTest(target=target):
+                self.assertIn(f'terraform state list | LC_ALL=C sort > "$review_dir/{target}"', block)
+
+        self.assertIn('diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"', block)
+        self.assertIn('diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"', block)
+        self.assertLess(
+            block.index('diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"'),
+            block.index("terraform plan -var='create_workloads=false'"),
+        )
+        self.assertLess(
+            block.index('terraform apply "$recovery_plan_path"'),
+            block.index('diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"'),
+        )
+
+    def test_phase_a_recovery_plan_guard_confirmation_and_apply_contract(self):
+        block = phase_a_recovery_command_block()
+        ordered_markers = [
+            'recovery_plan_path="$review_dir/browser-qa-infra-recovery.tfplan"',
+            'recovery_plan_json="$review_dir/browser-qa-infra-recovery.tfplan.json"',
+            'recovery_plan_text="$review_dir/browser-qa-infra-recovery.tfplan.txt"',
+            'terraform plan -var=\'create_workloads=false\' -out="$recovery_plan_path"',
+            'terraform show -json "$recovery_plan_path" > "$recovery_plan_json"',
+            'terraform show -no-color "$recovery_plan_path" > "$recovery_plan_text"',
+            'python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" --phase infra-recovery "$recovery_plan_json"',
+            'Plan: 3 to add, 0 to change, 0 to destroy.',
+            'Type APPLY_BROWSER_QA_INFRA_RECOVERY_SAVED_PLAN to apply this exact saved plan:',
+            'if [ "$APPLY_CONFIRM" = "APPLY_BROWSER_QA_INFRA_RECOVERY_SAVED_PLAN" ]; then',
+            'terraform apply "$recovery_plan_path"',
+        ]
+
+        for marker in ordered_markers:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, block)
+        for before, after in zip(ordered_markers, ordered_markers[1:]):
+            with self.subTest(before=before, after=after):
+                self.assertLess(block.index(before), block.index(after))
+
+        apply_index = block.index('terraform apply "$recovery_plan_path"')
+        nonzero_index = block.index("ABORT: recovery saved plan apply exited non-zero; the plan is invalid.")
+        self.assertLess(apply_index, nonzero_index)
+
+    def test_phase_a_recovery_forbids_unsafe_recovery_commands(self):
+        block = phase_a_recovery_command_block()
+
+        self.assertNotRegex(block, r"(?m)^\s*terraform\s+(?:plan|apply)\b[^\n]*\s-target(?:=|\s)")
+        self.assertNotRegex(block, r"(?m)^\s*terraform\s+plan\b[^\n]*\s-refresh=false\b")
+        self.assertNotRegex(block, r"(?m)^\s*terraform\s+import\b")
+        self.assertNotRegex(block, r"(?m)^\s*terraform\s+state\s+rm\b")
+
+    def test_phase_a_recovery_hands_off_to_remaining_runbook_and_temporary_iam_cleanup(self):
+        section = phase_a_recovery_section()
+        block = phase_a_recovery_command_block()
+
+        self.assertIn("outputs", section)
+        self.assertIn("GitHub Variables", section)
+        self.assertIn("Secret versions", section)
+        self.assertIn("Phase B", section)
+        self.assertIn("user:liu1124789567@gmail.com", section)
+        self.assertIn("roles/storage.admin", section)
+        self.assertIn("resourcemanager.projects.setIamPolicy", section)
+        self.assertRegex(section, r"(?i)remove")
+        self.assertNotIn("gcloud projects remove-iam-policy-binding", block)
 
     def test_phase_b_requires_exact_phase_a_state_and_enabled_latest_secrets(self):
         block = phase_b_command_block()

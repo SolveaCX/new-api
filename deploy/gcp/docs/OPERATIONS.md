@@ -505,6 +505,149 @@ Abort immediately if active project/region checks fail, any required API is miss
 
 Apply only from the same review shell before the `EXIT` trap removes `infra_plan_path`. Never replace this with an unsaved `terraform apply`, `-refresh=false`, or `-target`.
 
+### 1A. Recover the interrupted Phase A bucket IAM apply
+
+Use this only for the known interrupted Phase A where the first 23 non-bucket-IAM infrastructure resources reached Terraform state and the three report-bucket IAM members are still missing. The old saved plan is permanently invalid after that partial apply and must not be rerun. Generate, guard, and apply a new recovery saved plan from the refreshed current state.
+
+```bash
+# Human-only recovery commands. Non-mutating until the final saved-plan apply.
+set -euo pipefail
+set +x
+
+repo_root="$(git rev-parse --show-toplevel)"
+qa_root="$repo_root/deploy/gcp/envs/browser-qa-staging"
+expected_project="vocai-gemini-prod"
+region="us-west1"
+
+active_account="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | head -n 1)"
+if [ -z "$active_account" ]; then
+  echo "ABORT: active GCP account is required" >&2
+  exit 1
+fi
+
+active_project="$(gcloud config get-value project 2>/dev/null)"
+if [ "$active_project" != "$expected_project" ]; then
+  echo "ABORT: active GCP project must be vocai-gemini-prod; got ${active_project:-<unset>}" >&2
+  exit 1
+fi
+
+active_region="$(gcloud config get-value run/region 2>/dev/null)"
+if [ "$active_region" != "$region" ]; then
+  echo "ABORT: active run region must be us-west1; got ${active_region:-<unset>}" >&2
+  exit 1
+fi
+
+review_dir="$(mktemp -d)"
+trap 'rm -rf "$review_dir"' EXIT
+expected_pre_recovery_state="$review_dir/expected-pre-recovery-state.txt"
+actual_pre_recovery_state="$review_dir/actual-pre-recovery-state.txt"
+expected_full_phase_a_state="$review_dir/expected-full-phase-a-state.txt"
+actual_full_phase_a_state="$review_dir/actual-full-phase-a-state.txt"
+recovery_plan_path="$review_dir/browser-qa-infra-recovery.tfplan"
+recovery_plan_json="$review_dir/browser-qa-infra-recovery.tfplan.json"
+recovery_plan_text="$review_dir/browser-qa-infra-recovery.tfplan.txt"
+
+cd "$qa_root"
+terraform init -reconfigure
+
+cat > "$review_dir/expected-pre-recovery-state.txt" <<'EOF_PRE_RECOVERY_STATE'
+google_artifact_registry_repository.browser_qa
+google_artifact_registry_repository_iam_member.browser_qa_deployer_writer
+google_iam_workload_identity_pool.browser_qa_github
+google_iam_workload_identity_pool_provider.browser_qa_github
+google_project_iam_member.browser_qa_broker_log_writer
+google_project_iam_member.browser_qa_cleanup_log_writer
+google_project_iam_member.browser_qa_runtime_log_writer
+google_secret_manager_secret.browser_qa_codex_api_key
+google_secret_manager_secret.browser_qa_gmail_oauth
+google_secret_manager_secret.browser_qa_identity_seed
+google_secret_manager_secret_iam_member.browser_qa_broker_gmail_oauth
+google_secret_manager_secret_iam_member.browser_qa_cleanup_identity_seed
+google_secret_manager_secret_iam_member.browser_qa_runtime_codex_api_key
+google_secret_manager_secret_iam_member.browser_qa_runtime_identity_seed
+google_service_account.browser_qa_broker
+google_service_account.browser_qa_cleanup
+google_service_account.browser_qa_deployer
+google_service_account.browser_qa_runtime
+google_service_account_iam_member.browser_qa_broker_user
+google_service_account_iam_member.browser_qa_cleanup_user
+google_service_account_iam_member.browser_qa_runtime_user
+google_service_account_iam_member.browser_qa_wif_deployer
+google_storage_bucket.browser_qa_reports
+EOF_PRE_RECOVERY_STATE
+
+# Equivalent resolved path: terraform state list | LC_ALL=C sort > "$review_dir/actual-pre-recovery-state.txt"
+terraform state list | LC_ALL=C sort > "$actual_pre_recovery_state"
+if ! diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"; then
+  echo "ABORT: recovery must start from the exact 23-address pre-recovery Phase A state." >&2
+  exit 1
+fi
+
+terraform plan -var='create_workloads=false' -out="$recovery_plan_path"
+terraform show -json "$recovery_plan_path" > "$recovery_plan_json"
+terraform show -no-color "$recovery_plan_path" > "$recovery_plan_text"
+
+python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" --phase infra-recovery "$recovery_plan_json"
+
+if ! grep -F "Plan: 3 to add, 0 to change, 0 to destroy." "$recovery_plan_text" >/dev/null; then
+  echo "ABORT: recovery plan text must prove exactly: Plan: 3 to add, 0 to change, 0 to destroy." >&2
+  exit 1
+fi
+
+printf '\nHuman-readable Phase A recovery plan review:\n  %s\n' "$recovery_plan_text"
+printf 'If approved, apply before this shell exits so the exact recovery saved plan still exists.\n'
+IFS= read -r -p "Type APPLY_BROWSER_QA_INFRA_RECOVERY_SAVED_PLAN to apply this exact saved plan: " APPLY_CONFIRM
+if [ "$APPLY_CONFIRM" = "APPLY_BROWSER_QA_INFRA_RECOVERY_SAVED_PLAN" ]; then
+  if terraform apply "$recovery_plan_path"; then
+    :
+  else
+    echo "ABORT: recovery saved plan apply exited non-zero; the plan is invalid." >&2
+    exit 1
+  fi
+else
+  printf 'Skipped apply; temp recovery plan will be removed by the EXIT trap.\n'
+  exit 0
+fi
+
+cat > "$review_dir/expected-full-phase-a-state.txt" <<'EOF_FULL_PHASE_A_STATE'
+google_artifact_registry_repository.browser_qa
+google_artifact_registry_repository_iam_member.browser_qa_deployer_writer
+google_iam_workload_identity_pool.browser_qa_github
+google_iam_workload_identity_pool_provider.browser_qa_github
+google_project_iam_member.browser_qa_broker_log_writer
+google_project_iam_member.browser_qa_cleanup_log_writer
+google_project_iam_member.browser_qa_runtime_log_writer
+google_secret_manager_secret.browser_qa_codex_api_key
+google_secret_manager_secret.browser_qa_gmail_oauth
+google_secret_manager_secret.browser_qa_identity_seed
+google_secret_manager_secret_iam_member.browser_qa_broker_gmail_oauth
+google_secret_manager_secret_iam_member.browser_qa_cleanup_identity_seed
+google_secret_manager_secret_iam_member.browser_qa_runtime_codex_api_key
+google_secret_manager_secret_iam_member.browser_qa_runtime_identity_seed
+google_service_account.browser_qa_broker
+google_service_account.browser_qa_cleanup
+google_service_account.browser_qa_deployer
+google_service_account.browser_qa_runtime
+google_service_account_iam_member.browser_qa_broker_user
+google_service_account_iam_member.browser_qa_cleanup_user
+google_service_account_iam_member.browser_qa_runtime_user
+google_service_account_iam_member.browser_qa_wif_deployer
+google_storage_bucket.browser_qa_reports
+google_storage_bucket_iam_member.browser_qa_cleanup_report_admin
+google_storage_bucket_iam_member.browser_qa_deployer_report_viewer
+google_storage_bucket_iam_member.browser_qa_runtime_report_creator
+EOF_FULL_PHASE_A_STATE
+
+# Equivalent resolved path: terraform state list | LC_ALL=C sort > "$review_dir/actual-full-phase-a-state.txt"
+terraform state list | LC_ALL=C sort > "$actual_full_phase_a_state"
+if ! diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"; then
+  echo "ABORT: recovery apply completed but Phase A state does not exactly match the 26 expected infrastructure addresses." >&2
+  exit 1
+fi
+```
+
+After recovery succeeds, continue with outputs, GitHub Variables, Secret versions, and Phase B. After Browser QA is fully accepted, the project IAM administrator should remove the temporary project-level grant `user:liu1124789567@gmail.com -> roles/storage.admin`. Do not automate that removal in this recovery block; Storage Admin by itself does not guarantee `resourcemanager.projects.setIamPolicy`.
+
 ### 2. Set output-backed GitHub repository variables
 
 After the browser-QA Terraform apply succeeds, set the four non-secret repository variables that the GitHub workflow reads from `vars.*`. These values come directly from Terraform outputs and are not committed files, Terraform variables, or Secret Manager secrets:
