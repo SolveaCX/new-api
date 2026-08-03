@@ -144,6 +144,12 @@ def phase_a_recovery_command_block():
     return blocks[0]
 
 
+def executable_block(block):
+    return "\n".join(
+        line for line in block.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 def output_backed_section():
     return heading_section(browser_qa_section(), "2. Set output-backed GitHub repository variables")
 
@@ -656,6 +662,7 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
 
     def test_phase_a_recovery_uses_exact_pre_and_post_state_sets(self):
         block = phase_a_recovery_command_block()
+        executable = executable_block(block)
         expected_pre_recovery = sorted(PHASE_A_STATE_ADDRESSES - RECOVERY_ADDRESSES)
         expected_full_phase_a = sorted(PHASE_A_STATE_ADDRESSES)
 
@@ -670,26 +677,39 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
             expected_full_phase_a,
         )
 
-        for target in [
-            "actual-pre-recovery-state.txt",
-            "actual-full-phase-a-state.txt",
-        ]:
-            with self.subTest(target=target):
-                self.assertIn(f'terraform state list | LC_ALL=C sort > "$review_dir/{target}"', block)
+        state_markers = [
+            'actual_pre_recovery_state="$review_dir/actual-pre-recovery-state.txt"',
+            'terraform state list | LC_ALL=C sort > "$actual_pre_recovery_state"',
+            'diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"',
+            'actual_full_phase_a_state="$review_dir/actual-full-phase-a-state.txt"',
+            'terraform state list | LC_ALL=C sort > "$actual_full_phase_a_state"',
+            'diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"',
+        ]
+        for marker in state_markers:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, executable)
 
-        self.assertIn('diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"', block)
-        self.assertIn('diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"', block)
         self.assertLess(
-            block.index('diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"'),
-            block.index("terraform plan -var='create_workloads=false'"),
+            executable.index('terraform state list | LC_ALL=C sort > "$actual_pre_recovery_state"'),
+            executable.index('diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"'),
         )
         self.assertLess(
-            block.index('terraform apply "$recovery_plan_path"'),
-            block.index('diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"'),
+            executable.index('diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"'),
+            executable.index("terraform plan -var='create_workloads=false'"),
+        )
+        self.assertLess(
+            executable.index('terraform apply "$recovery_plan_path"'),
+            executable.index('terraform state list | LC_ALL=C sort > "$actual_full_phase_a_state"'),
+        )
+        self.assertLess(
+            executable.index('terraform state list | LC_ALL=C sort > "$actual_full_phase_a_state"'),
+            executable.index('diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"'),
         )
 
     def test_phase_a_recovery_plan_guard_confirmation_and_apply_contract(self):
         block = phase_a_recovery_command_block()
+        executable = executable_block(block)
+        exact_summary_grep = 'grep -Fx -- "Plan: 3 to add, 0 to change, 0 to destroy." "$recovery_plan_text"'
         ordered_markers = [
             'recovery_plan_path="$review_dir/browser-qa-infra-recovery.tfplan"',
             'recovery_plan_json="$review_dir/browser-qa-infra-recovery.tfplan.json"',
@@ -698,7 +718,7 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
             'terraform show -json "$recovery_plan_path" > "$recovery_plan_json"',
             'terraform show -no-color "$recovery_plan_path" > "$recovery_plan_text"',
             'python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" --phase infra-recovery "$recovery_plan_json"',
-            'Plan: 3 to add, 0 to change, 0 to destroy.',
+            exact_summary_grep,
             'Type APPLY_BROWSER_QA_INFRA_RECOVERY_SAVED_PLAN to apply this exact saved plan:',
             'if [ "$APPLY_CONFIRM" = "APPLY_BROWSER_QA_INFRA_RECOVERY_SAVED_PLAN" ]; then',
             'terraform apply "$recovery_plan_path"',
@@ -706,13 +726,13 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
 
         for marker in ordered_markers:
             with self.subTest(marker=marker):
-                self.assertIn(marker, block)
+                self.assertIn(marker, executable)
         for before, after in zip(ordered_markers, ordered_markers[1:]):
             with self.subTest(before=before, after=after):
-                self.assertLess(block.index(before), block.index(after))
+                self.assertLess(executable.index(before), executable.index(after))
 
-        apply_index = block.index('terraform apply "$recovery_plan_path"')
-        nonzero_index = block.index("ABORT: recovery saved plan apply exited non-zero; the plan is invalid.")
+        apply_index = executable.index('terraform apply "$recovery_plan_path"')
+        nonzero_index = executable.index("ABORT: recovery saved plan apply exited non-zero; the plan is invalid.")
         self.assertLess(apply_index, nonzero_index)
 
     def test_phase_a_recovery_forbids_unsafe_recovery_commands(self):

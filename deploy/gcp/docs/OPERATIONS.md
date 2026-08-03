@@ -577,7 +577,6 @@ google_service_account_iam_member.browser_qa_wif_deployer
 google_storage_bucket.browser_qa_reports
 EOF_PRE_RECOVERY_STATE
 
-# Equivalent resolved path: terraform state list | LC_ALL=C sort > "$review_dir/actual-pre-recovery-state.txt"
 terraform state list | LC_ALL=C sort > "$actual_pre_recovery_state"
 if ! diff -u "$expected_pre_recovery_state" "$actual_pre_recovery_state"; then
   echo "ABORT: recovery must start from the exact 23-address pre-recovery Phase A state." >&2
@@ -590,7 +589,7 @@ terraform show -no-color "$recovery_plan_path" > "$recovery_plan_text"
 
 python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" --phase infra-recovery "$recovery_plan_json"
 
-if ! grep -F "Plan: 3 to add, 0 to change, 0 to destroy." "$recovery_plan_text" >/dev/null; then
+if ! grep -Fx -- "Plan: 3 to add, 0 to change, 0 to destroy." "$recovery_plan_text" >/dev/null; then
   echo "ABORT: recovery plan text must prove exactly: Plan: 3 to add, 0 to change, 0 to destroy." >&2
   exit 1
 fi
@@ -639,7 +638,6 @@ google_storage_bucket_iam_member.browser_qa_deployer_report_viewer
 google_storage_bucket_iam_member.browser_qa_runtime_report_creator
 EOF_FULL_PHASE_A_STATE
 
-# Equivalent resolved path: terraform state list | LC_ALL=C sort > "$review_dir/actual-full-phase-a-state.txt"
 terraform state list | LC_ALL=C sort > "$actual_full_phase_a_state"
 if ! diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"; then
   echo "ABORT: recovery apply completed but Phase A state does not exactly match the 26 expected infrastructure addresses." >&2
