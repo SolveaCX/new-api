@@ -40,6 +40,7 @@ MAX_BROWSER_EVIDENCE_EVENT_BYTES = 64 * 1024
 MAX_BROWSER_EVIDENCE_TOTAL_BYTES = 2 * 1024 * 1024
 MAX_BROWSER_HELPER_FRAME_BYTES = 256 * 1024
 MAX_PLAYWRIGHT_PACKAGE_JSON_BYTES = 65536
+MAX_CHROMIUM_STARTUP_STDERR_BYTES = 64 * 1024
 ROOT_GCS_ARTIFACT_NAMES = frozenset({"result.json", "codex-events.jsonl", "codex-stderr.txt", "manifest.json"})
 EXACT_NESTED_GCS_ARTIFACT_NAMES = frozenset({"browser/console.jsonl", "browser/network.jsonl"})
 SAFE_GCS_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -1034,17 +1035,32 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 class ChromiumRuntime:
-    def __init__(self, *, runtime_root, proxy, popen_factory=subprocess.Popen, executable=None, clock=time, timeout_seconds=10):
+    def __init__(
+        self,
+        *,
+        runtime_root,
+        proxy,
+        popen_factory=subprocess.Popen,
+        executable=None,
+        clock=time,
+        timeout_seconds=10,
+        startup_stderr_limit_bytes=0,
+    ):
         self.runtime_root = os.path.realpath(runtime_root)
         self.proxy = proxy
         self.popen_factory = popen_factory
         self.executable = executable
         self.clock = clock
         self.timeout_seconds = timeout_seconds
+        if not isinstance(startup_stderr_limit_bytes, int) or isinstance(startup_stderr_limit_bytes, bool) or startup_stderr_limit_bytes < 0:
+            raise ValueError("startup stderr limit must be a non-negative integer")
+        self.startup_stderr_limit_bytes = min(startup_stderr_limit_bytes, MAX_CHROMIUM_STARTUP_STDERR_BYTES)
         self.user_data_dir = os.path.join(self.runtime_root, "chromium-profile")
         self.process = None
         self.tree_terminator = None
         self.cdp_endpoint = None
+        self._startup_stderr_tail = None
+        self._stderr_drain_thread = None
 
     def start(self):
         os.makedirs(self.user_data_dir, mode=0o700, exist_ok=True)
@@ -1067,16 +1083,23 @@ class ChromiumRuntime:
             "about:blank",
         ]
         try:
+            stderr_target = subprocess.DEVNULL
+            if self.startup_stderr_limit_bytes > 0:
+                stderr_target = subprocess.PIPE
+                self._startup_stderr_tail = _BoundedStartupStderrTail(self.startup_stderr_limit_bytes)
             self.process = self.popen_factory(
                 args,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=stderr_target,
                 stdin=subprocess.DEVNULL,
                 text=False,
                 **_start_new_tree_popen_kwargs(),
             )
+            self._start_stderr_drain_if_enabled()
             self.tree_terminator = _attach_process_tree_or_direct(self.process)
             self.cdp_endpoint = self._wait_for_devtools_endpoint()
+            if self._startup_stderr_tail is not None:
+                self._startup_stderr_tail.discard()
         except Exception:
             self.stop()
             raise
@@ -1086,8 +1109,32 @@ class ChromiumRuntime:
         if self.process is None:
             return
         _terminate_process_tree(self.process, self.tree_terminator or _DirectProcessTerminator())
+        if self._stderr_drain_thread is not None:
+            self._stderr_drain_thread.join(timeout=2)
+            self._stderr_drain_thread = None
         self.process = None
         self.tree_terminator = None
+        self._startup_stderr_tail = None
+
+    def _start_stderr_drain_if_enabled(self):
+        stderr = getattr(self.process, "stderr", None)
+        if self._startup_stderr_tail is None or stderr is None:
+            return
+        thread = threading.Thread(target=self._drain_stderr, args=(stderr,), daemon=True)
+        thread.start()
+        self._stderr_drain_thread = thread
+
+    def _drain_stderr(self, stderr):
+        try:
+            while True:
+                chunk = stderr.read(4096)
+                if not chunk:
+                    return
+                tail = self._startup_stderr_tail
+                if tail is not None:
+                    tail.append(chunk)
+        except Exception:
+            return
 
     def _wait_for_devtools_endpoint(self):
         active_port_path = os.path.realpath(os.path.join(self.user_data_dir, "DevToolsActivePort"))
@@ -1098,10 +1145,56 @@ class ChromiumRuntime:
             if os.path.exists(active_port_path):
                 return _read_devtools_endpoint(active_port_path)
             poll = getattr(self.process, "poll", None)
-            if poll is not None and poll() is not None:
-                raise RuntimeError("chromium exited before cdp endpoint was ready")
+            if poll is not None:
+                returncode = poll()
+                if returncode is not None:
+                    raise RuntimeError(self._startup_failure_message(returncode))
             time.sleep(0.05)
         raise TimeoutError("chromium cdp endpoint timed out")
+
+    def _startup_failure_message(self, returncode):
+        message = f"chromium exited before cdp endpoint was ready (returncode={returncode})"
+        if self._stderr_drain_thread is not None:
+            self._stderr_drain_thread.join(timeout=1)
+        if self._startup_stderr_tail is not None:
+            tail = self._startup_stderr_tail.text()
+            if tail:
+                message += f"; chromium stderr tail: {tail}"
+        return message
+
+
+class _BoundedStartupStderrTail:
+    def __init__(self, limit_bytes):
+        self.limit_bytes = limit_bytes
+        self._buffer = bytearray()
+        self._enabled = True
+        self._lock = threading.Lock()
+
+    def append(self, chunk):
+        if isinstance(chunk, str):
+            chunk = chunk.encode("utf-8", "replace")
+        with self._lock:
+            if not self._enabled:
+                return
+            self._buffer.extend(chunk)
+            overflow = len(self._buffer) - self.limit_bytes
+            if overflow > 0:
+                del self._buffer[:overflow]
+
+    def discard(self):
+        with self._lock:
+            self._buffer.clear()
+            self._enabled = False
+
+    def text(self):
+        with self._lock:
+            raw = bytes(self._buffer)
+        return _sanitize_chromium_stderr_tail(raw.decode("utf-8", "replace")).strip()
+
+
+def _sanitize_chromium_stderr_tail(value):
+    value = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value)
+    return "".join(char if char in "\n\r\t" or ord(char) >= 32 else "" for char in value)
 
 
 class BrowserEvidenceHelperProcess:

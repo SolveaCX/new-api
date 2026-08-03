@@ -256,14 +256,19 @@ class FakeProxy:
 
 
 class RecordingBrowserProcess:
-    def __init__(self):
+    def __init__(self, *, returncode=None, stderr=b""):
         self.terminated = False
         self.killed = False
         self.wait_calls = 0
+        self.returncode = returncode
+        self.stderr = io.BytesIO(stderr)
+
+    def poll(self):
+        return self.returncode
 
     def wait(self, timeout=None):
         self.wait_calls += 1
-        return 0
+        return 0 if self.returncode is None else self.returncode
 
     def terminate(self):
         self.terminated = True
@@ -986,6 +991,59 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(len(cleanup.calls), 1)
         self.assertTrue(browser_process.terminated)
         self.assertGreaterEqual(browser_process.wait_calls, 1)
+
+    def test_browser_start_failure_can_report_bounded_sanitized_chromium_stderr_tail(self):
+        noisy_stderr = (
+            b"first line\n"
+            + (b"x" * 128)
+            + b"\n[123:456:ERROR:sandbox_linux.cc(377)] \x1b[31mNo usable sandbox!\x1b[0m\n"
+            + b"final reason\n"
+        )
+        browser_process = RecordingBrowserProcess(returncode=127, stderr=noisy_stderr)
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            runtime = supervisor.ChromiumRuntime(
+                runtime_root=runtime_root,
+                proxy=FakeProxy(),
+                popen_factory=lambda *_args, **_kwargs: browser_process,
+                executable="chromium",
+                clock=FakeClock(),
+                timeout_seconds=1,
+                startup_stderr_limit_bytes=96,
+            )
+
+            with self.assertRaises(RuntimeError) as caught:
+                runtime.start()
+
+        message = str(caught.exception)
+        self.assertIn("chromium exited before cdp endpoint was ready", message)
+        self.assertIn("returncode=127", message)
+        self.assertIn("chromium stderr tail:", message)
+        self.assertIn("No usable sandbox!", message)
+        self.assertIn("final reason", message)
+        self.assertNotIn("\x1b", message)
+        self.assertNotIn("first line", message)
+
+    def test_browser_start_default_stderr_capture_stays_disabled(self):
+        browser_process = RecordingBrowserProcess(returncode=127, stderr=b"No usable sandbox!\n")
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            runtime = supervisor.ChromiumRuntime(
+                runtime_root=runtime_root,
+                proxy=FakeProxy(),
+                popen_factory=lambda *_args, **_kwargs: browser_process,
+                executable="chromium",
+                clock=FakeClock(),
+                timeout_seconds=1,
+            )
+
+            with self.assertRaises(RuntimeError) as caught:
+                runtime.start()
+
+        message = str(caught.exception)
+        self.assertIn("chromium exited before cdp endpoint was ready", message)
+        self.assertNotIn("chromium stderr tail", message)
+        self.assertNotIn("No usable sandbox", message)
 
     def test_browser_start_failure_still_runs_cleanup_and_does_not_start_codex(self):
         class FailingBrowser:

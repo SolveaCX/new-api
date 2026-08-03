@@ -219,12 +219,16 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("/opt/flatkey-browser-qa/tests", smoke)
         self.assertIn("docker run --rm -i --entrypoint python3", smoke)
         self.assertIn("ChromiumRuntime", smoke)
+        self.assertIn("startup_stderr_limit_bytes=8192", smoke)
         self.assertIn("playwright_child_command", smoke)
         self.assertIn("communicate", smoke)
         self.assertIn("timeout=", smoke)
         self.assertIn('"method": "initialize"', smoke)
         self.assertIn('"method": "tools/list"', smoke)
         self.assertNotIn("chromium.launchServer", smoke)
+        self.assertNotIn("printenv", smoke)
+        self.assertNotIn("env |", smoke)
+        self.assertNotRegex(smoke, r"(?i)\becho\b[^\n]*(email|password|cookie|authorization|api[_-]?key|token|secret)")
         for step in [
             "Build browser QA image",
             "Smoke test browser QA image",

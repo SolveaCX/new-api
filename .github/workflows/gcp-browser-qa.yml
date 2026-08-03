@@ -179,6 +179,7 @@ jobs:
               proxy=SimpleNamespace(host="127.0.0.1", port=9),
               popen_factory=subprocess.Popen,
               timeout_seconds=20,
+              startup_stderr_limit_bytes=8192,
           )
           child = None
           try:
