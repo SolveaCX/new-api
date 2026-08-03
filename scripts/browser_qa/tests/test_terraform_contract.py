@@ -250,6 +250,11 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
             jobs["browser_qa_main"].body,
             r"google_cloud_run_v2_service\.browser_qa_broker\[count\.index\]\.uri",
         )
+        self.assertRegex(
+            jobs["browser_qa_main"].body,
+            r'name\s*=\s*"FLATKEY_BROWSER_QA_CHROMIUM_STARTUP_STDERR_BYTES"[\s\S]*value\s*=\s*"8192"',
+        )
+        self.assertNotIn("FLATKEY_BROWSER_QA_CHROMIUM_STARTUP_STDERR_BYTES", jobs["browser_qa_cleanup"].body)
 
     def test_private_report_bucket_and_report_iam_split(self):
         buckets = _resource_blocks("google_storage_bucket")

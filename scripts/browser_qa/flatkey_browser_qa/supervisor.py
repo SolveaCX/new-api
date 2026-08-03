@@ -84,6 +84,7 @@ class Supervisor:
         thread_factory=None,
         browser_factory=None,
         evidence_helper_factory=None,
+        chromium_startup_stderr_limit_bytes=0,
     ):
         self.env = dict(env)
         self.runtime_root = runtime_root
@@ -97,6 +98,9 @@ class Supervisor:
         self.thread_factory = thread_factory or threading.Thread
         self.browser_factory = browser_factory or ChromiumRuntime
         self.evidence_helper_factory = evidence_helper_factory or BrowserEvidenceHelperProcess
+        if not isinstance(chromium_startup_stderr_limit_bytes, int) or isinstance(chromium_startup_stderr_limit_bytes, bool) or chromium_startup_stderr_limit_bytes < 0:
+            raise ValueError("chromium startup stderr limit must be a non-negative integer")
+        self.chromium_startup_stderr_limit_bytes = chromium_startup_stderr_limit_bytes
         self.events = []
         self.codex_home = None
         self.home_dir = None
@@ -158,7 +162,12 @@ class Supervisor:
                 proxy.start()
                 docs_proxy = _build_docs_proxy(self.proxy_factory)
                 docs_proxy.start()
-                browser = self.browser_factory(runtime_root=self.runtime_root, proxy=proxy, popen_factory=self.subprocess_runner.popen)
+                browser = self.browser_factory(
+                    runtime_root=self.runtime_root,
+                    proxy=proxy,
+                    popen_factory=self.subprocess_runner.popen,
+                    startup_stderr_limit_bytes=self.chromium_startup_stderr_limit_bytes,
+                )
                 try:
                     browser.start()
                 except Exception:
@@ -1079,6 +1088,7 @@ class ChromiumRuntime:
             "--disable-quic",
             "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
             "--headless=new",
+            "--no-sandbox",
             "--disable-gpu",
             "about:blank",
         ]
@@ -1192,9 +1202,30 @@ class _BoundedStartupStderrTail:
         return _sanitize_chromium_stderr_tail(raw.decode("utf-8", "replace")).strip()
 
 
+_GENERIC_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_SENSITIVE_HEADER_RE = re.compile(r"(?im)\b(authorization|cookie|set-cookie)\s*:\s*[^\n]*")
+_BEARER_TOKEN_RE = re.compile(r"\b(Bearer)\s+(?!\[REDACTED_)[^\s,;]+")
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(password|token|access_token|refresh_token|api_key|apikey|secret|code)\s*=\s*[^\s&;]+"
+)
+
+
 def _sanitize_chromium_stderr_tail(value):
     value = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value)
-    return "".join(char if char in "\n\r\t" or ord(char) >= 32 else "" for char in value)
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    value = "".join(char if char in "\n\t" or ord(char) >= 32 else "" for char in value)
+    value = Redactor().clean(value)
+    value = _GENERIC_EMAIL_RE.sub("[REDACTED_EMAIL]", value)
+    value = _SENSITIVE_HEADER_RE.sub(_redact_stderr_header, value)
+    value = _BEARER_TOKEN_RE.sub(lambda match: f"{match.group(1)} [REDACTED_TOKEN]", value)
+    value = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}=[REDACTED_SECRET]", value)
+    return re.sub(r"(?m)^::", "[REDACTED_GITHUB_ACTION_COMMAND]", value)
+
+
+def _redact_stderr_header(match):
+    name = match.group(1)
+    placeholder = "[REDACTED_AUTHORIZATION]" if name.lower() == "authorization" else "[REDACTED_COOKIE]"
+    return f"{name}: {placeholder}"
 
 
 class BrowserEvidenceHelperProcess:
@@ -1401,6 +1432,19 @@ def _read_devtools_endpoint(path):
     if port <= 0 or port > 65535:
         raise RuntimeError("devtools port invalid")
     return f"http://127.0.0.1:{port}"
+
+
+def _chromium_startup_stderr_limit_bytes_from_env(env):
+    raw_value = env.get("FLATKEY_BROWSER_QA_CHROMIUM_STARTUP_STDERR_BYTES")
+    if raw_value is None or raw_value == "":
+        return 0
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("FLATKEY_BROWSER_QA_CHROMIUM_STARTUP_STDERR_BYTES must be a non-negative integer") from exc
+    if value < 0:
+        raise ValueError("FLATKEY_BROWSER_QA_CHROMIUM_STARTUP_STDERR_BYTES must be a non-negative integer")
+    return value
 
 
 class RuntimeEvidenceSink:
@@ -1781,6 +1825,7 @@ def main(argv=None):
         uploader=uploader,
         cleanup_runner=CleanupRunner(StagingApiClient(env["FLATKEY_QA_CONSOLE_ORIGIN"])),
         clock=time,
+        chromium_startup_stderr_limit_bytes=_chromium_startup_stderr_limit_bytes_from_env(env),
     )
     outcome = sup.run()
     return 0 if outcome.status == "passed" else 1

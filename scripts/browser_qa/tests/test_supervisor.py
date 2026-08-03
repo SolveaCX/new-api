@@ -937,6 +937,8 @@ class SupervisorTests(unittest.TestCase):
             browser_kwargs = popen_factory.calls[0][1]
             self.assertIn("--remote-debugging-port=0", browser_args)
             self.assertIn("--headless=new", browser_args)
+            self.assertIn("--no-sandbox", browser_args)
+            self.assertEqual(browser_args.count("--no-sandbox"), 1)
             self.assertIn("--disable-quic", browser_args)
             self.assertIn("--force-webrtc-ip-handling-policy=disable_non_proxied_udp", browser_args)
             self.assertIn("--proxy-server=http://127.0.0.1:4567", browser_args)
@@ -1023,6 +1025,53 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn("final reason", message)
         self.assertNotIn("\x1b", message)
         self.assertNotIn("first line", message)
+
+    def test_chromium_stderr_tail_sanitizer_removes_secrets_and_action_commands(self):
+        raw = (
+            "::warning:: owner@gmail.com\r Authorization: Bearer sk-liveSECRET123\r\n"
+            "Cookie: session=raw-cookie\r\n"
+            "Set-Cookie: sid=raw-set-cookie\r\n"
+            "plain bearer token sk-plainSECRET123\n"
+            "plain bearer Bearer opaque-token-value\n"
+            "https://example.test/path?token=query-secret&ok=value#access_token=fragment-secret\n"
+            "password=pw-secret access_token=access-secret refresh_token=refresh-secret "
+            "api_key=api-secret apikey=apikey-secret secret=secret-value code=123456\x07\n"
+        )
+
+        cleaned = supervisor._sanitize_chromium_stderr_tail(raw)
+
+        for leaked in [
+            "owner@gmail.com",
+            "Authorization: Bearer sk-liveSECRET123",
+            "session=raw-cookie",
+            "sid=raw-set-cookie",
+            "sk-plainSECRET123",
+            "Bearer opaque-token-value",
+            "query-secret",
+            "fragment-secret",
+            "pw-secret",
+            "access-secret",
+            "refresh-secret",
+            "api-secret",
+            "apikey-secret",
+            "secret-value",
+            "123456",
+        ]:
+            self.assertNotIn(leaked, cleaned)
+        self.assertIn("[REDACTED_EMAIL]", cleaned)
+        self.assertIn("Authorization: [REDACTED_AUTHORIZATION]", cleaned)
+        self.assertIn("Cookie: [REDACTED_COOKIE]", cleaned)
+        self.assertIn("Set-Cookie: [REDACTED_COOKIE]", cleaned)
+        self.assertIn("[REDACTED_API_KEY]", cleaned)
+        self.assertIn("Bearer [REDACTED_TOKEN]", cleaned)
+        self.assertIn("token=[REDACTED_SECRET]", cleaned)
+        self.assertIn("access_token=[REDACTED_SECRET]", cleaned)
+        self.assertIn("password=[REDACTED_SECRET]", cleaned)
+        self.assertIn("api_key=[REDACTED_SECRET]", cleaned)
+        self.assertIn("[REDACTED_GITHUB_ACTION_COMMAND]warning::", cleaned)
+        self.assertNotIn("\r", cleaned)
+        self.assertNotIn("\x07", cleaned)
+        self.assertFalse(cleaned.startswith("::"))
 
     def test_browser_start_default_stderr_capture_stays_disabled(self):
         browser_process = RecordingBrowserProcess(returncode=127, stderr=b"No usable sandbox!\n")
@@ -1638,6 +1687,7 @@ class SupervisorTests(unittest.TestCase):
 
     def test_main_defers_gcp_access_token_until_after_supervisor_construction(self):
         calls = []
+        instances = []
 
         class FakeGcp:
             def access_token(self):
@@ -1648,6 +1698,7 @@ class SupervisorTests(unittest.TestCase):
             def __init__(self, **kwargs):
                 calls.append("supervisor_init")
                 self.kwargs = kwargs
+                instances.append(self)
 
             def run(self):
                 calls.append("run")
@@ -1657,6 +1708,7 @@ class SupervisorTests(unittest.TestCase):
         fake_env.update({
             "FLATKEY_BROWSER_QA_GCS_BUCKET": "browser-qa-bucket",
             "FLATKEY_BROWSER_QA_EXECUTION_ID": "exec-1",
+            "FLATKEY_BROWSER_QA_CHROMIUM_STARTUP_STDERR_BYTES": "8192",
         })
         with mock.patch.object(supervisor, "GcpClient", return_value=FakeGcp()), \
             mock.patch.object(supervisor, "Supervisor", FakeSupervisor), \
@@ -1666,6 +1718,7 @@ class SupervisorTests(unittest.TestCase):
             self.assertEqual(supervisor.main([]), 0)
 
         self.assertEqual(calls, ["supervisor_init", "run"])
+        self.assertEqual(instances[0].kwargs["chromium_startup_stderr_limit_bytes"], 8192)
 
     def test_runtime_evidence_sink_registers_exact_code_and_rejects_bad_events(self):
         redactor = supervisor.Redactor(email="owner+flatkey-qa-1-x@gmail.com")

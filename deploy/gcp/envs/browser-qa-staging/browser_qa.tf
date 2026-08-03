@@ -234,6 +234,10 @@ resource "google_cloud_run_v2_job" "browser_qa_main" {
           value = "https://docs.flatkey.ai"
         }
         env {
+          name  = "FLATKEY_BROWSER_QA_CHROMIUM_STARTUP_STDERR_BYTES"
+          value = "8192"
+        }
+        env {
           name  = "FLATKEY_BROWSER_QA_BROKER_URL"
           value = google_cloud_run_v2_service.browser_qa_broker[count.index].uri
         }
