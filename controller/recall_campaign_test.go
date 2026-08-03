@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	_ "unsafe"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -29,6 +30,9 @@ import (
 )
 
 const recallControllerBoundary = int64(1_721_100_000)
+
+//go:linkname modelCommonKeyCol github.com/QuantumNous/new-api/model.commonKeyCol
+var modelCommonKeyCol string
 
 type recallControllerStripeFake struct {
 	createCoupon        int
@@ -140,8 +144,10 @@ func setupRecallControllerHarness(t *testing.T) *recallControllerHarness {
 	originalPrice := setting.StripePriceId
 	originalPrice20 := setting.StripePriceId20
 	originalPrice200 := setting.StripePriceId200
+	originalCommonKeyCol := modelCommonKeyCol
 	model.DB = db
 	model.LOG_DB = db
+	modelCommonKeyCol = "`key`"
 	common.RedisEnabled = false
 	common.CryptoSecret = "recall-controller-secret"
 	setting.StripeTopUpPriceIds = `{"10":"price_topup"}`
@@ -192,6 +198,7 @@ func setupRecallControllerHarness(t *testing.T) *recallControllerHarness {
 		setting.StripePriceId = originalPrice
 		setting.StripePriceId20 = originalPrice20
 		setting.StripePriceId200 = originalPrice200
+		modelCommonKeyCol = originalCommonKeyCol
 		_ = sqlDB.Close()
 	})
 	return harness

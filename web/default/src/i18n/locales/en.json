@@ -6962,6 +6962,7 @@
     "Start date and time": "Start date and time",
     "Absolute offset from the first SMTP accepted email.": "Absolute offset from the first SMTP accepted email.",
     "Activity SMTP delivery failed. Check the host, port, credentials, TLS mode, and sender authorization, then retry.": "Activity SMTP delivery failed. Check the host, port, credentials, TLS mode, and sender authorization, then retry.",
+    "Activity SMTP is not configured. Configure it before sending.": "Activity SMTP is not configured. Configure it before sending.",
     "Delivery status is uncertain. Check the mailbox provider before retrying.": "Delivery status is uncertain. Check the mailbox provider before retrying.",
     "Recipient status": "Recipient status",
     "Conversion amount": "Conversion amount",

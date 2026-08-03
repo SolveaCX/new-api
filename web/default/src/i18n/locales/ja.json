@@ -6962,6 +6962,7 @@
     "Start date and time": "開始日時",
     "Absolute offset from the first SMTP accepted email.": "最初に SMTP で受理されたメールからの絶対オフセット。",
     "Activity SMTP delivery failed. Check the host, port, credentials, TLS mode, and sender authorization, then retry.": "Activity SMTP の配信に失敗しました。ホスト、ポート、認証情報、TLS モード、送信者の承認を確認してから再試行してください。",
+    "Activity SMTP is not configured. Configure it before sending.": "Activity SMTP が設定されていません。送信前に設定してください。",
     "Delivery status is uncertain. Check the mailbox provider before retrying.": "配信状態が不確実です。再試行する前にメールボックスプロバイダーを確認してください。",
     "Recipient status": "受信者ステータス",
     "Conversion amount": "コンバージョン金額",

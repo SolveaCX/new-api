@@ -1480,7 +1480,11 @@ func applyRecallFirstMonthDiscount(ctx context.Context, userID int, claim string
 			quote.UnitAmountMinor,
 		)
 		if err != nil {
-			return SubscriptionPurchaseQuote{}, err
+			if isRecallPurchaseClaimBusinessError(err) {
+				return SubscriptionPurchaseQuote{}, err
+			}
+			common.SysLog(fmt.Sprintf("subscription purchase recall claim discount build failed user_id=%d plan_id=%d price_id=%s error=%q", userID, plan.Id, plan.StripePriceId, err.Error()))
+			return quote, nil
 		}
 		if discount == nil || discount.DiscountAmountMinor <= 0 {
 			return quote, nil
@@ -1519,6 +1523,23 @@ func applyRecallFirstMonthDiscount(ctx context.Context, userID int, claim string
 	quote.RecallRecipientID = offer.View.RecipientID
 	quote.RecallPromotionCodeID = offer.PromotionCodeID
 	return quote, nil
+}
+
+func isRecallPurchaseClaimBusinessError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, ErrRecallDisabled) ||
+		errors.Is(err, ErrRecallClaimUnknown) ||
+		errors.Is(err, ErrRecallClaimWrongUser) ||
+		errors.Is(err, ErrRecallClaimExpired) ||
+		errors.Is(err, ErrRecallClaimConverted) ||
+		errors.Is(err, ErrRecallClaimSuppressed) ||
+		errors.Is(err, ErrRecallClaimInactive) ||
+		errors.Is(err, ErrRecallClaimPromotionInvalid) ||
+		errors.Is(err, ErrRecallClaimWrongPrice) ||
+		errors.Is(err, ErrRecallClaimPurchaseKind) ||
+		errors.Is(err, ErrRecallClaimInvalidConfig)
 }
 
 func applySubscriptionPurchaseDiscounts(ctx context.Context, userID int, recallClaim string, plan model.SubscriptionPlan, quote SubscriptionPurchaseQuote, invitationAvailableUSDMinor int64, months int) (SubscriptionPurchaseQuote, error) {

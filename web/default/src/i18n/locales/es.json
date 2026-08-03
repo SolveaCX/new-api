@@ -6962,6 +6962,7 @@
     "Start date and time": "Fecha y hora de inicio",
     "Absolute offset from the first SMTP accepted email.": "Desfase absoluto desde el primer correo aceptado por SMTP.",
     "Activity SMTP delivery failed. Check the host, port, credentials, TLS mode, and sender authorization, then retry.": "Falló la entrega SMTP de la actividad. Revisa el host, el puerto, las credenciales, el modo TLS y la autorización del remitente, y vuelve a intentarlo.",
+    "Activity SMTP is not configured. Configure it before sending.": "El SMTP de la actividad no está configurado. Configúralo antes de enviar.",
     "Delivery status is uncertain. Check the mailbox provider before retrying.": "El estado de entrega es incierto. Consulta al proveedor de correo antes de reintentarlo.",
     "Recipient status": "Estado del destinatario",
     "Conversion amount": "Importe de la conversión",

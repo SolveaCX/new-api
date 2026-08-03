@@ -6962,6 +6962,7 @@
     "Start date and time": "Ngay va gio bat dau",
     "Absolute offset from the first SMTP accepted email.": "Do lech tuyet doi tinh tu email dau tien duoc SMTP chap nhan.",
     "Activity SMTP delivery failed. Check the host, port, credentials, TLS mode, and sender authorization, then retry.": "Gửi SMTP cho hoạt động thất bại. Hãy kiểm tra máy chủ, cổng, thông tin xác thực, chế độ TLS và ủy quyền người gửi, rồi thử lại.",
+    "Activity SMTP is not configured. Configure it before sending.": "SMTP cho hoạt động chưa được cấu hình. Hãy cấu hình trước khi gửi.",
     "Delivery status is uncertain. Check the mailbox provider before retrying.": "Trang thai phat khong chac chan. Hay kiem tra nha cung cap hop thu truoc khi thu lai.",
     "Recipient status": "Trạng thái người nhận",
     "Conversion amount": "Số tiền chuyển đổi",

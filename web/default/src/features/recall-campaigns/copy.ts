@@ -18,6 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { RecallAudienceTemplate } from './types'
 
+export const activitySMTPDeliveryFailureCopyKey =
+  'Activity SMTP delivery failed. Check the host, port, credentials, TLS mode, and sender authorization, then retry.'
+
+export const recallDeliveryErrorCopyByCode: Record<string, string> = {
+  activity_smtp_not_configured:
+    'Activity SMTP is not configured. Configure it before sending.',
+  activity_smtp_send_failed: activitySMTPDeliveryFailureCopyKey,
+  smtp_uncertain:
+    'Delivery status is uncertain. Check the mailbox provider before retrying.',
+}
+
 export const recallTranslationTaskErrorCopyByCode: Record<string, string> = {
   translation_failed: 'Translation generation failed',
   translation_superseded:
@@ -41,6 +52,14 @@ export function getRecallTranslationTaskErrorCopyKey(value: unknown): string {
     recallTranslationTaskErrorCopyByCode.translation_failed
   )
 }
+
+export function getRecallDeliveryErrorCopyKey(
+  code: unknown
+): string | undefined {
+  if (typeof code !== 'string') return undefined
+  return recallDeliveryErrorCopyByCode[code]
+}
+
 export const audienceTemplateDescriptionKeys: Record<
   RecallAudienceTemplate,
   string

@@ -22,6 +22,7 @@ import {
   listRecallRecipients,
   recallCampaignKeys,
 } from '../api'
+import { getRecallDeliveryErrorCopyKey } from '../copy'
 import {
   formatRecallCampaignType,
   formatRecallCurrencyAmount,
@@ -45,6 +46,7 @@ import { CampaignPreviewDialog } from './campaign-preview-dialog'
 
 const DETAIL_PAGE_SIZE = 100
 const activationLocales = ['en', 'zh', 'es', 'fr', 'pt', 'ru', 'ja', 'vi']
+type Translate = (key: string) => string
 
 function getRecallActivationBlockerReason(
   stage: RecallEmailStage,
@@ -56,9 +58,10 @@ function getRecallActivationBlockerReason(
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function getRecallActivationReadiness(
-  stages: RecallEmailStage[]
-): { ready: boolean; blockers: RecallEmailLocalizationBlocker[] } {
+export function getRecallActivationReadiness(stages: RecallEmailStage[]): {
+  ready: boolean
+  blockers: RecallEmailLocalizationBlocker[]
+} {
   const blockers: RecallEmailLocalizationBlocker[] = []
   const allowedLocales = new Set(activationLocales)
   for (const stage of stages) {
@@ -81,6 +84,19 @@ export function getRecallActivationReadiness(
     }
   }
   return { ready: blockers.length === 0, blockers }
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function formatRecallDeliveryErrorMessage(
+  code: string,
+  message: string,
+  t: Translate
+): string {
+  const copyKey = getRecallDeliveryErrorCopyKey(code)
+  if (copyKey) return t(copyKey)
+  if (message) return message
+  if (code) return code
+  return message
 }
 
 function formatTimestamp(value: number): string {
@@ -224,9 +240,7 @@ export function CampaignDetail(props: CampaignDetailProps) {
               <Button
                 type='button'
                 variant='outline'
-                onClick={() =>
-                  setFocusBlocker(activationReadiness.blockers[0])
-                }
+                onClick={() => setFocusBlocker(activationReadiness.blockers[0])}
               >
                 {t('Generate or fix translations')}
               </Button>
@@ -341,19 +355,27 @@ export function CampaignDetail(props: CampaignDetailProps) {
                               <div>
                                 {t('Attempts')}: {message.attempt_count}
                               </div>
-                              {message.last_error_message ? (
+                              {message.last_error_code ||
+                              message.last_error_message ? (
                                 <div className='text-destructive'>
-                                  {message.last_error_code}:{' '}
-                                  {message.last_error_message}
+                                  {formatRecallDeliveryErrorMessage(
+                                    message.last_error_code,
+                                    message.last_error_message,
+                                    t
+                                  )}
                                 </div>
                               ) : null}
                             </div>
                           ))}
                         </div>
-                        {recipient.last_error_message ? (
+                        {recipient.last_error_code ||
+                        recipient.last_error_message ? (
                           <p className='text-destructive mt-2'>
-                            {recipient.last_error_code}:{' '}
-                            {recipient.last_error_message}
+                            {formatRecallDeliveryErrorMessage(
+                              recipient.last_error_code,
+                              recipient.last_error_message,
+                              t
+                            )}
                           </p>
                         ) : null}
                       </TableCell>

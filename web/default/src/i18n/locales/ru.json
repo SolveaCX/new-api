@@ -6962,6 +6962,7 @@
     "Start date and time": "Дата и время начала",
     "Absolute offset from the first SMTP accepted email.": "Абсолютное смещение от первого письма, принятого SMTP.",
     "Activity SMTP delivery failed. Check the host, port, credentials, TLS mode, and sender authorization, then retry.": "Доставка через Activity SMTP не удалась. Проверьте хост, порт, учетные данные, режим TLS и авторизацию отправителя, затем повторите попытку.",
+    "Activity SMTP is not configured. Configure it before sending.": "SMTP для активности не настроен. Настройте его перед отправкой.",
     "Delivery status is uncertain. Check the mailbox provider before retrying.": "Статус доставки неопределен. Проверьте почтового провайдера перед повторной попыткой.",
     "Recipient status": "Статус получателя",
     "Conversion amount": "Сумма конверсии",
