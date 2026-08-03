@@ -1273,9 +1273,15 @@ def _dedupe_strings(values):
 
 
 def _chromium_executable():
+    for env_name in ("CHROMIUM_EXECUTABLE_PATH", "CHROMIUM_PATH"):
+        candidate = os.environ.get(env_name)
+        if not candidate:
+            continue
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+        raise RuntimeError(f"{env_name} does not point to an executable file")
+
     candidates = [
-        os.environ.get("CHROMIUM_EXECUTABLE_PATH"),
-        os.environ.get("CHROMIUM_PATH"),
         shutil.which("chromium"),
         shutil.which("chromium-browser"),
         shutil.which("google-chrome"),

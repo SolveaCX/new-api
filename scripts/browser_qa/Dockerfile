@@ -2,7 +2,7 @@ FROM node:22.23.2-bookworm-slim@sha256:f32b81066cde10a75dbac96646099533316d94bac
 
 ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/opt/flatkey-browser-qa/ms-playwright \
-    CHROMIUM_EXECUTABLE_PATH=/opt/flatkey-browser-qa/ms-playwright/chromium/chrome-linux/chrome \
+    CHROMIUM_EXECUTABLE_PATH=/opt/flatkey-browser-qa/ms-playwright/chromium/chrome-linux64/chrome \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/opt/flatkey-browser-qa
 

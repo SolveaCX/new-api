@@ -373,6 +373,20 @@ class SupervisorTests(unittest.TestCase):
             ):
                 self.assertEqual(supervisor._chromium_executable(), executable)
 
+    def test_chromium_executable_rejects_invalid_explicit_path_before_path_lookup(self):
+        with tempfile.TemporaryDirectory() as runtime_root:
+            fallback = os.path.join(runtime_root, "chromium")
+            with open(fallback, "w", encoding="utf-8") as handle:
+                handle.write("#!/bin/sh\n")
+            os.chmod(fallback, 0o755)
+            explicit = os.path.join(runtime_root, "missing-chrome")
+            with (
+                mock.patch.dict(supervisor.os.environ, {"CHROMIUM_EXECUTABLE_PATH": explicit}, clear=True),
+                mock.patch.object(supervisor.shutil, "which", return_value=fallback),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "CHROMIUM_EXECUTABLE_PATH"):
+                    supervisor._chromium_executable()
+
     def test_prompt_file_declares_skill_policy_runtime_contract_and_forbidden_scope(self):
         prompt_path = os.path.join(os.path.dirname(__file__), "..", "config", "qa-prompt.md")
         with open(prompt_path, encoding="utf-8") as handle:

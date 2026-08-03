@@ -57,6 +57,7 @@ class ContainerContractTests(unittest.TestCase):
         text = read(DOCKERFILE)
         self.assertIn("PLAYWRIGHT_BROWSERS_PATH=/opt/flatkey-browser-qa/ms-playwright", text)
         self.assertIn("CHROMIUM_EXECUTABLE_PATH=/opt/flatkey-browser-qa/ms-playwright/chromium", text)
+        self.assertIn("CHROMIUM_EXECUTABLE_PATH=/opt/flatkey-browser-qa/ms-playwright/chromium/chrome-linux64/chrome", text)
         self.assertIn("CHROMIUM_PATH=${CHROMIUM_EXECUTABLE_PATH}", text)
         self.assertRegex(text, r"(?m)^ENV CHROMIUM_PATH=\$\{CHROMIUM_EXECUTABLE_PATH\}$")
         self.assertLess(text.index("CHROMIUM_EXECUTABLE_PATH="), text.index("ENV CHROMIUM_PATH="))
