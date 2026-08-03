@@ -241,6 +241,108 @@ test("long lived helper fails closed when download denial command fails", async 
   await assert.rejects(() => session.start(), /download blocking unavailable/);
 });
 
+test("long lived helper requires parseable chrome-extension URLs for existing and event workers", async () => {
+  const calls = [];
+  const listeners = {};
+  const page = fakeScreenshotPage();
+  const context = {
+    pages() {
+      return [page];
+    },
+    async addInitScript(source) {
+      calls.push(["init-script", source]);
+    },
+    serviceWorkers() {
+      return [{ url: () => "chrome-extension://nkeimhogjdpnpccoofpliimaahmaaome/thunk.js" }];
+    },
+    async routeWebSocket() {},
+    async newCDPSession(selectedPage) {
+      calls.push(["page-cdp", selectedPage === page]);
+      return {
+        send: async (method, params) => calls.push(["page-cdp-send", method, params]),
+      };
+    },
+    on(name, handler) {
+      listeners[name] = handler;
+    },
+  };
+  const browser = fakeSecureStartBrowser(context);
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
+
+  await session.start();
+
+  assert.ok(calls.some((call) => call[0] === "init-script" && call[1].includes("serviceWorker")));
+  assert.ok(calls.some(
+    (call) => call[0] === "page-cdp-send"
+      && call[1] === "Network.setBypassServiceWorker"
+      && call[2].bypass === true,
+  ));
+  assert.equal(typeof listeners.serviceworker, "function");
+  assert.doesNotThrow(() => listeners.serviceworker({
+    url: () => "chrome-extension://nkeimhogjdpnpccoofpliimaahmaaome/thunk.js",
+  }));
+
+  const blockedWorkers = [
+    {},
+    { url: () => "https://staging-console.flatkey.ai/sw.js" },
+    { url: () => "chrome-extension:// host" },
+    { url: () => { throw new Error("sensitive worker URL failure"); } },
+  ];
+  for (const worker of blockedWorkers) {
+    assert.throws(() => listeners.serviceworker(worker), /service worker registration blocked/);
+
+    const blockedContext = fakeSecureStartContext();
+    blockedContext.serviceWorkers = () => [worker];
+    const blockedSession = new helper.BrowserEvidenceSession({
+      browser: fakeSecureStartBrowser(blockedContext),
+      runtimeDir: os.tmpdir(),
+      sensitiveValues: [],
+    });
+    await assert.rejects(() => blockedSession.start(), /service worker blocking unavailable/);
+  }
+});
+
+test("long lived helper closes the service worker registration window during init script setup", async () => {
+  const calls = [];
+  const page = fakeScreenshotPage();
+  const webWorker = { url: () => "https://staging-console.flatkey.ai/sw.js" };
+  let serviceWorkerScans = 0;
+  let serviceWorkerHandler;
+  const context = fakeSecureStartContext(page);
+  context.serviceWorkers = () => {
+    serviceWorkerScans += 1;
+    return serviceWorkerScans === 1 ? [] : [webWorker];
+  };
+  context.on = (name, handler) => {
+    if (name === "serviceworker") {
+      calls.push("serviceworker-listener");
+      serviceWorkerHandler = handler;
+    }
+  };
+  context.addInitScript = async () => {
+    calls.push("init-script");
+    assert.equal(typeof serviceWorkerHandler, "function");
+  };
+  const session = new helper.BrowserEvidenceSession({
+    browser: fakeSecureStartBrowser(context),
+    runtimeDir: os.tmpdir(),
+    sensitiveValues: [],
+  });
+
+  await assert.rejects(() => session.start(), /service worker blocking unavailable/);
+  assert.deepEqual(calls, ["serviceworker-listener", "init-script"]);
+  assert.equal(serviceWorkerScans, 2);
+});
+
+test("long lived helper still fails closed on preexisting web service workers", async () => {
+  const context = fakeSecureStartContext();
+  context.serviceWorkers = () => [{ url: () => "https://staging-console.flatkey.ai/sw.js" }];
+  const browser = fakeSecureStartBrowser(context);
+  const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
+
+  await assert.rejects(() => session.start(), /service worker blocking unavailable/);
+});
+
 test("long lived helper fails closed when service worker blocking cannot be applied", async () => {
   const browser = {
     contexts() {

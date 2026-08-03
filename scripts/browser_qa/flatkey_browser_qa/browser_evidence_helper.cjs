@@ -122,6 +122,18 @@ function projectNetworkEvent(event, sensitiveValues = []) {
   return projected;
 }
 
+function isChromiumInternalServiceWorker(worker) {
+  try {
+    if (typeof worker?.url !== "function") {
+      return false;
+    }
+    const workerUrl = worker.url();
+    return typeof workerUrl === "string" && new URL(workerUrl).protocol === "chrome-extension:";
+  } catch (_error) {
+    return false;
+  }
+}
+
 class BrowserEvidenceSession {
   constructor({ browser, runtimeDir, sensitiveValues = [], maxEvents = MAX_EVENTS, maxEventBytes = MAX_EVENT_BYTES, maxTotalBytes = MAX_TOTAL_BYTES, docsProxyUrl = null }) {
     this.browser = browser;
@@ -215,7 +227,17 @@ class BrowserEvidenceSession {
     if (typeof this.context.addInitScript !== "function") {
       throw new Error("service worker blocking unavailable");
     }
-    if (typeof this.context.serviceWorkers === "function" && this.context.serviceWorkers().length > 0) {
+    if (typeof this.context.on === "function") {
+      this.context.on("serviceworker", (worker) => {
+        if (!isChromiumInternalServiceWorker(worker)) {
+          throw new Error("service worker registration blocked");
+        }
+      });
+    }
+    if (
+      typeof this.context.serviceWorkers === "function"
+      && this.context.serviceWorkers().some((worker) => !isChromiumInternalServiceWorker(worker))
+    ) {
       throw new Error("service worker already registered");
     }
     await this.context.addInitScript(`
@@ -225,10 +247,11 @@ class BrowserEvidenceSession {
         };
       }
     `);
-    if (typeof this.context.on === "function") {
-      this.context.on("serviceworker", () => {
-        throw new Error("service worker registration blocked");
-      });
+    if (
+      typeof this.context.serviceWorkers === "function"
+      && this.context.serviceWorkers().some((worker) => !isChromiumInternalServiceWorker(worker))
+    ) {
+      throw new Error("service worker already registered");
     }
   }
 
