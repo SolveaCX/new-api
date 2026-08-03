@@ -743,19 +743,33 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
         self.assertNotRegex(block, r"(?m)^\s*terraform\s+import\b")
         self.assertNotRegex(block, r"(?m)^\s*terraform\s+state\s+rm\b")
 
-    def test_phase_a_recovery_hands_off_to_remaining_runbook_and_temporary_iam_cleanup(self):
+    def test_phase_a_recovery_requires_temporary_iam_cleanup_before_continuing(self):
+        browser_section = browser_qa_section()
         section = phase_a_recovery_section()
         block = phase_a_recovery_command_block()
 
-        self.assertIn("outputs", section)
-        self.assertIn("GitHub Variables", section)
-        self.assertIn("Secret versions", section)
-        self.assertIn("Phase B", section)
+        cleanup_instruction = (
+            "The project IAM administrator must remove the temporary project-level grant "
+            "`user:liu1124789567@gmail.com -> roles/storage.admin` immediately after the "
+            "3 bucket IAM recovery is applied and the exact 26-address state/bindings are verified."
+        )
+        continuation_instruction = "Only after that IAM cleanup is complete may the operator continue with outputs, GitHub Variables, Secret versions, and Phase B."
+
+        self.assertIn(cleanup_instruction, section)
+        self.assertIn(continuation_instruction, section)
         self.assertIn("user:liu1124789567@gmail.com", section)
         self.assertIn("roles/storage.admin", section)
         self.assertIn("resourcemanager.projects.setIamPolicy", section)
         self.assertRegex(section, r"(?i)remove")
+        self.assertNotRegex(section, r"(?i)fully accepted")
         self.assertNotIn("gcloud projects remove-iam-policy-binding", block)
+
+        cleanup_index = section.index(cleanup_instruction)
+        continuation_index = section.index(continuation_instruction)
+        self.assertLess(section.index('diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"'), cleanup_index)
+        self.assertLess(cleanup_index, continuation_index)
+        output_heading = "### 2. Set output-backed GitHub repository variables"
+        self.assertLess(browser_section.index(cleanup_instruction), browser_section.index(output_heading))
 
     def test_phase_b_requires_exact_phase_a_state_and_enabled_latest_secrets(self):
         block = phase_b_command_block()

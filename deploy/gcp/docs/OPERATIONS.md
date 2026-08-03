@@ -645,7 +645,7 @@ if ! diff -u "$expected_full_phase_a_state" "$actual_full_phase_a_state"; then
 fi
 ```
 
-After recovery succeeds, continue with outputs, GitHub Variables, Secret versions, and Phase B. After Browser QA is fully accepted, the project IAM administrator should remove the temporary project-level grant `user:liu1124789567@gmail.com -> roles/storage.admin`. Do not automate that removal in this recovery block; Storage Admin by itself does not guarantee `resourcemanager.projects.setIamPolicy`.
+The project IAM administrator must remove the temporary project-level grant `user:liu1124789567@gmail.com -> roles/storage.admin` immediately after the 3 bucket IAM recovery is applied and the exact 26-address state/bindings are verified. Do not automate that removal in this recovery block; Storage Admin by itself does not guarantee `resourcemanager.projects.setIamPolicy`. Only after that IAM cleanup is complete may the operator continue with outputs, GitHub Variables, Secret versions, and Phase B.
 
 ### 2. Set output-backed GitHub repository variables
 
