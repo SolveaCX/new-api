@@ -35,6 +35,34 @@ BROWSER_QA_LIVE_RESOURCES = {
     "flatkey-browser-qa-github",
     "staging",
 }
+PHASE_A_STATE_ADDRESSES = {
+    "google_artifact_registry_repository.browser_qa",
+    "google_artifact_registry_repository_iam_member.browser_qa_deployer_writer",
+    "google_iam_workload_identity_pool.browser_qa_github",
+    "google_iam_workload_identity_pool_provider.browser_qa_github",
+    "google_project_iam_member.browser_qa_broker_log_writer",
+    "google_project_iam_member.browser_qa_cleanup_log_writer",
+    "google_project_iam_member.browser_qa_runtime_log_writer",
+    "google_secret_manager_secret.browser_qa_codex_api_key",
+    "google_secret_manager_secret.browser_qa_gmail_oauth",
+    "google_secret_manager_secret.browser_qa_identity_seed",
+    "google_secret_manager_secret_iam_member.browser_qa_broker_gmail_oauth",
+    "google_secret_manager_secret_iam_member.browser_qa_cleanup_identity_seed",
+    "google_secret_manager_secret_iam_member.browser_qa_runtime_codex_api_key",
+    "google_secret_manager_secret_iam_member.browser_qa_runtime_identity_seed",
+    "google_service_account.browser_qa_broker",
+    "google_service_account.browser_qa_cleanup",
+    "google_service_account.browser_qa_deployer",
+    "google_service_account.browser_qa_runtime",
+    "google_service_account_iam_member.browser_qa_broker_user",
+    "google_service_account_iam_member.browser_qa_cleanup_user",
+    "google_service_account_iam_member.browser_qa_runtime_user",
+    "google_service_account_iam_member.browser_qa_wif_deployer",
+    "google_storage_bucket.browser_qa_reports",
+    "google_storage_bucket_iam_member.browser_qa_cleanup_report_admin",
+    "google_storage_bucket_iam_member.browser_qa_deployer_report_viewer",
+    "google_storage_bucket_iam_member.browser_qa_runtime_report_creator",
+}
 ABSENCE_ONLY_DIAGNOSTICS = {
     "404",
     "NOT_FOUND",
@@ -109,11 +137,118 @@ def output_backed_command_block():
 
 
 def plan_review_command_block():
-    section = heading_section(browser_qa_section(), "1. Authenticated refreshing Terraform plan review")
+    section = heading_section(
+        browser_qa_section(),
+        "1. Phase A: authenticated refreshing infrastructure plan review",
+    )
     blocks = fenced_blocks(section)
     if len(blocks) != 1:
         raise AssertionError(f"expected one plan review command block, found {len(blocks)}")
     return blocks[0]
+
+
+def phase_b_section():
+    return heading_section(
+        browser_qa_section(),
+        "4. Phase B: verify Secret versions and create Cloud Run workloads",
+    )
+
+
+def phase_b_command_block():
+    blocks = fenced_blocks(phase_b_section())
+    if len(blocks) != 1:
+        raise AssertionError(f"expected one Phase B command block, found {len(blocks)}")
+    return blocks[0]
+
+
+def describe_absent_classifier_parts(block):
+    describe_function = re.search(
+        r"(?ms)^describe_absent\(\) \{\n(?P<body>.*?)^\}\n\n",
+        block,
+    )
+    if not describe_function:
+        raise AssertionError("describe_absent function not found")
+    function_body = describe_function.group("body")
+    case_match = re.search(r"(?ms)case \"\$diagnostic\" in(?P<body>.*?)esac", function_body)
+    if not case_match:
+        raise AssertionError("describe_absent diagnostic case not found")
+    case_body = case_match.group("body")
+    allow_branch = next(
+        (line for line in case_body.splitlines() if "absence_verified=true" in line),
+        "",
+    )
+    return function_body, case_body, allow_branch
+
+
+def assert_describe_absent_classifier_is_deny_first(testcase, block):
+    function_body, case_body, allow_branch = describe_absent_classifier_parts(block)
+
+    testcase.assertIn("absence_verified=true", allow_branch)
+    for diagnostic in ABSENCE_ONLY_DIAGNOSTICS:
+        with testcase.subTest(diagnostic=diagnostic):
+            testcase.assertIn(diagnostic, allow_branch)
+    for diagnostic in UNKNOWN_ABSENCE_DIAGNOSTICS:
+        with testcase.subTest(diagnostic=diagnostic):
+            testcase.assertNotIn(f"*{diagnostic}*", allow_branch)
+    testcase.assertIn('*)', case_body)
+    testcase.assertIn("ABORT: unable to prove", function_body)
+
+    for denied in DENY_FIRST_ABSENCE_DIAGNOSTICS:
+        with testcase.subTest(denied=denied):
+            denied_marker = f"*{denied}*"
+            testcase.assertIn(denied_marker, case_body)
+            denied_line = next(
+                (line for line in case_body.splitlines() if denied_marker in line),
+                "",
+            )
+            testcase.assertNotIn("absence_verified=true", denied_line)
+            testcase.assertLess(case_body.index(denied_marker), case_body.index("*404*"))
+            testcase.assertLess(
+                case_body.index(denied_marker),
+                case_body.index("*Cannot\\ find\\ service\\ \\[*"),
+            )
+            testcase.assertLess(
+                case_body.index(denied_marker),
+                case_body.index("*Cannot\\ find\\ job\\ \\[*"),
+            )
+    testcase.assertEqual(function_body.count("ABORT: unable to prove"), 1)
+
+
+def assert_phase_b_active_config_gates_before_readiness(testcase, block):
+    project_gate = re.search(
+        r'(?ms)active_project="\$\(gcloud config get-value project 2>/dev/null\)"\s+'
+        r'if \[ "\$active_project" != "\$expected_project" \]; then\s+'
+        r'echo "ABORT: active GCP project must be vocai-gemini-prod; got \$\{active_project:-<unset>\}" >&2\s+'
+        r"exit 1\s+"
+        r"fi",
+        block,
+    )
+    if not project_gate:
+        raise AssertionError("Phase B active project fail-closed gate not found")
+
+    region_gate = re.search(
+        r'(?ms)active_region="\$\(gcloud config get-value run/region 2>/dev/null\)"\s+'
+        r'if \[ "\$active_region" != "\$region" \]; then\s+'
+        r'echo "ABORT: active run region must be us-west1; got \$\{active_region:-<unset>\}" >&2\s+'
+        r"exit 1\s+"
+        r"fi",
+        block,
+    )
+    if not region_gate:
+        raise AssertionError("Phase B active region fail-closed gate not found")
+
+    readiness_markers = [
+        "terraform init -reconfigure",
+        'terraform state list | LC_ALL=C sort > "$actual_infra_state"',
+        "gcloud secrets versions describe latest",
+        'describe_absent "Cloud Run broker service flatkey-staging-browser-qa-broker"',
+        "terraform plan -var='create_workloads=true'",
+    ]
+    for readiness_marker in readiness_markers:
+        with testcase.subTest(readiness_marker=readiness_marker):
+            readiness_index = block.index(readiness_marker)
+            testcase.assertLess(project_gate.end(), readiness_index)
+            testcase.assertLess(region_gate.end(), readiness_index)
 
 
 class BrowserQaOperationsContractTests(unittest.TestCase):
@@ -163,19 +298,21 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
                     rf"{variable}[\s\S]{{0,240}}{output}",
                 )
 
-    def test_output_backed_section_is_after_apply_and_before_secrets_and_dispatch(self):
+    def test_output_backed_and_secret_sections_are_between_phase_a_and_phase_b(self):
         text = operations_text()
-        apply_instruction = "Apply only from the same review shell"
+        phase_a_apply = "APPLY_BROWSER_QA_INFRA_SAVED_PLAN"
         output_heading = "### 2. Set output-backed GitHub repository variables"
         secret_heading = "### 3. Add Secret Manager versions without leaking values"
-        dispatch_heading = "### 7. Dispatch core or normal and capture the exact run id"
+        phase_b_heading = "### 4. Phase B: verify Secret versions and create Cloud Run workloads"
+        dispatch_heading = "### 8. Dispatch core or normal and capture the exact run id"
 
-        for marker in [apply_instruction, output_heading, secret_heading, dispatch_heading]:
+        for marker in [phase_a_apply, output_heading, secret_heading, phase_b_heading, dispatch_heading]:
             self.assertIn(marker, text)
 
-        self.assertLess(text.index(apply_instruction), text.index(output_heading))
+        self.assertLess(text.index(phase_a_apply), text.index(output_heading))
         self.assertLess(text.index(output_heading), text.index(secret_heading))
-        self.assertLess(text.index(output_heading), text.index(dispatch_heading))
+        self.assertLess(text.index(secret_heading), text.index(phase_b_heading))
+        self.assertLess(text.index(phase_b_heading), text.index(dispatch_heading))
         self.assertIn("Terraform output", output_backed_section())
 
     def test_output_backed_repo_variables_are_set_via_stdin_not_argv(self):
@@ -306,53 +443,21 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
         self.assertIn("Do not use -target", section)
 
     def test_live_absence_probe_allows_only_absence_diagnostics(self):
-        block = plan_review_command_block()
-        describe_function = re.search(
-            r"(?ms)^describe_absent\(\) \{\n(?P<body>.*?)^\}\n\n",
-            block,
-        )
-        if not describe_function:
-            raise AssertionError("describe_absent function not found")
-        function_body = describe_function.group("body")
-        case_match = re.search(r"(?ms)case \"\$diagnostic\" in(?P<body>.*?)esac", function_body)
-        if not case_match:
-            raise AssertionError("describe_absent diagnostic case not found")
-        case_body = case_match.group("body")
-        allow_branch = next(
-            (line for line in case_body.splitlines() if "absence_verified=true" in line),
-            "",
-        )
-
-        for diagnostic in ABSENCE_ONLY_DIAGNOSTICS:
-            with self.subTest(diagnostic=diagnostic):
-                self.assertIn(diagnostic, allow_branch)
-        for diagnostic in UNKNOWN_ABSENCE_DIAGNOSTICS:
-            with self.subTest(diagnostic=diagnostic):
-                self.assertNotIn(f"*{diagnostic}*", allow_branch)
-        self.assertIn('*)', case_body)
-        self.assertIn("ABORT: unable to prove", function_body)
+        assert_describe_absent_classifier_is_deny_first(self, plan_review_command_block())
 
     def test_live_absence_probe_denies_unknown_markers_before_absence_diagnostics(self):
-        block = plan_review_command_block()
-        describe_function = re.search(
-            r"(?ms)^describe_absent\(\) \{\n(?P<body>.*?)^\}\n\n",
-            block,
-        )
-        if not describe_function:
-            raise AssertionError("describe_absent function not found")
-        function_body = describe_function.group("body")
-        case_match = re.search(r"(?ms)case \"\$diagnostic\" in(?P<body>.*?)esac", function_body)
-        if not case_match:
-            raise AssertionError("describe_absent diagnostic case not found")
-        case_body = case_match.group("body")
+        assert_describe_absent_classifier_is_deny_first(self, plan_review_command_block())
 
-        for denied in DENY_FIRST_ABSENCE_DIAGNOSTICS:
-            with self.subTest(denied=denied):
-                self.assertIn(f"*{denied}*", case_body)
-                self.assertLess(case_body.index(f"*{denied}*"), case_body.index("*404*"))
-                self.assertLess(case_body.index(f"*{denied}*"), case_body.index("*Cannot\\ find\\ service\\ \\[*"))
-                self.assertLess(case_body.index(f"*{denied}*"), case_body.index("*Cannot\\ find\\ job\\ \\[*"))
-        self.assertEqual(function_body.count("ABORT: unable to prove"), 1)
+    def test_phase_b_live_absence_probe_uses_deny_first_classifier(self):
+        block = phase_b_command_block()
+
+        self.assertIn('workload_plan_path="$review_dir/browser-qa-workloads.tfplan"', block)
+        assert_describe_absent_classifier_is_deny_first(self, block)
+
+    def test_phase_b_checks_active_project_and_region_before_readiness_operations(self):
+        block = phase_b_command_block()
+
+        assert_phase_b_active_config_gates_before_readiness(self, block)
 
     def test_live_absence_preflight_binds_each_resource_to_exact_describe(self):
         section = browser_qa_section()
@@ -422,28 +527,77 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
                     rf'describe_absent "{re.escape(label)}"\s+\\\s+{command_pattern}',
                 )
 
-    def test_plan_guard_uses_versioned_guard_before_review_and_apply_confirmation(self):
-        section = browser_qa_section()
+    def test_each_phase_uses_its_exact_saved_plan_guard_before_confirmation(self):
+        infra = plan_review_command_block()
+        self.assertIn("infra_plan_path=", infra)
+        self.assertIn("infra_plan_json=", infra)
+        self.assertIn("terraform plan -var='create_workloads=false' -out=\"$infra_plan_path\"", infra)
+        self.assertIn('terraform show -json "$infra_plan_path" > "$infra_plan_json"', infra)
+        infra_guard = (
+            'python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" '
+            '--phase infra "$infra_plan_json"'
+        )
+        self.assertIn(infra_guard, infra)
+        self.assertLess(infra.index(infra_guard), infra.index("APPLY_BROWSER_QA_INFRA_SAVED_PLAN"))
 
-        self.assertIn('terraform plan -out="$plan_path"', section)
-        self.assertEqual(section.count('terraform plan -out="$plan_path"'), 1)
-        self.assertIn('terraform show -json "$plan_path" > "$plan_json"', section)
-        self.assertIn('terraform show -no-color "$plan_path"', section)
-        guard = f'python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" "$plan_json"'
-        self.assertIn(guard, section)
+        workloads = phase_b_command_block()
+        self.assertIn("workload_plan_path=", workloads)
+        self.assertIn("workload_plan_json=", workloads)
+        self.assertIn("terraform plan -var='create_workloads=true' -out=\"$workload_plan_path\"", workloads)
+        self.assertIn('terraform show -json "$workload_plan_path" > "$workload_plan_json"', workloads)
+        workload_guard = (
+            'python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" '
+            '--phase workloads "$workload_plan_json"'
+        )
+        self.assertIn(workload_guard, workloads)
+        self.assertLess(
+            workloads.index(workload_guard),
+            workloads.index("APPLY_BROWSER_QA_WORKLOADS_SAVED_PLAN"),
+        )
+
+        section = browser_qa_section()
         self.assertNotIn('if "browser_qa" not in address', section)
-        self.assertLess(section.index(guard), section.index("Human-readable plan review"))
-        self.assertLess(section.index(guard), section.index("APPLY_BROWSER_QA_SAVED_PLAN"))
         self.assertNotRegex(section, r"(?m)^\s*terraform\s+(?:plan|apply)\b[^\n]*\s-target(?:=|\s)")
+
+    def test_phase_b_requires_exact_phase_a_state_and_enabled_latest_secrets(self):
+        block = phase_b_command_block()
+
+        self.assertIn('expected_infra_state="$review_dir/expected-infra-state.txt"', block)
+        self.assertIn('actual_infra_state="$review_dir/actual-infra-state.txt"', block)
+        self.assertIn('terraform state list | LC_ALL=C sort > "$actual_infra_state"', block)
+        self.assertIn('diff -u "$expected_infra_state" "$actual_infra_state"', block)
+        for address in sorted(PHASE_A_STATE_ADDRESSES):
+            with self.subTest(address=address):
+                self.assertIn(address, block)
+
+        for secret in (
+            "flatkey-browser-qa-codex-api-key",
+            "flatkey-browser-qa-identity-seed",
+            "flatkey-browser-qa-gmail-oauth",
+        ):
+            with self.subTest(secret=secret):
+                self.assertIn(secret, block)
+        self.assertIn("gcloud secrets versions describe latest", block)
+        self.assertIn('--secret="$secret"', block)
+        self.assertIn("ENABLED", block)
+        self.assertNotIn("gcloud secrets versions access", block)
+
+        self.assertIn('describe_absent "Cloud Run broker service flatkey-staging-browser-qa-broker"', block)
+        self.assertIn('describe_absent "Cloud Run job flatkey-staging-browser-qa"', block)
+        self.assertIn('describe_absent "Cloud Run job flatkey-staging-browser-qa-cleanup"', block)
 
     def test_recovery_table_names_exact_guard_and_state_live_preflight(self):
         section = browser_qa_section()
         table_start = section.index("### Recovery and abort rules")
         recovery = section[table_start:]
 
-        self.assertIn("versioned Terraform plan guard", recovery)
+        self.assertIn("phase-aware Terraform plan guard", recovery)
         self.assertIn("state/live preflight", recovery)
-        self.assertNotIn("[0]", recovery)
+        self.assertIn("partial apply", recovery)
+        self.assertIn("saved plan", recovery)
+        self.assertIn("separate recovery design", recovery)
+        self.assertIn("do not retry", recovery.lower())
+        self.assertIn("do not use `-target`", recovery)
 
     def test_output_backed_values_are_all_read_and_validated_before_first_github_write(self):
         block = output_backed_command_block()

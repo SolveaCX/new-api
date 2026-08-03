@@ -9,6 +9,10 @@ from pathlib import Path
 from scripts.browser_qa.terraform_plan_guard import (
     ALLOWED_OUTPUTS,
     ALLOWED_RESOURCE_ADDRESSES,
+    INFRA_OUTPUTS,
+    INFRA_RESOURCE_ADDRESSES,
+    WORKLOAD_OUTPUTS,
+    WORKLOAD_RESOURCE_ADDRESSES,
     PlanValidationError,
     validate_bootstrap_plan,
 )
@@ -19,19 +23,10 @@ GUARD_SCRIPT = REPO_ROOT / "scripts" / "browser_qa" / "terraform_plan_guard.py"
 BROWSER_QA_TF = REPO_ROOT / "deploy" / "gcp" / "envs" / "browser-qa-staging" / "browser_qa.tf"
 OUTPUTS_TF = REPO_ROOT / "deploy" / "gcp" / "envs" / "browser-qa-staging" / "outputs.tf"
 
-EXPECTED_RESOURCE_ADDRESSES = frozenset(
+EXPECTED_INFRA_RESOURCE_ADDRESSES = frozenset(
     {
         "google_artifact_registry_repository.browser_qa",
         "google_artifact_registry_repository_iam_member.browser_qa_deployer_writer",
-        "google_cloud_run_v2_job.browser_qa_cleanup",
-        "google_cloud_run_v2_job.browser_qa_main",
-        "google_cloud_run_v2_job_iam_member.browser_qa_cleanup_deployer_developer",
-        "google_cloud_run_v2_job_iam_member.browser_qa_cleanup_deployer_invoker",
-        "google_cloud_run_v2_job_iam_member.browser_qa_main_deployer_developer",
-        "google_cloud_run_v2_job_iam_member.browser_qa_main_deployer_invoker",
-        "google_cloud_run_v2_service.browser_qa_broker",
-        "google_cloud_run_v2_service_iam_member.browser_qa_broker_deployer_developer",
-        "google_cloud_run_v2_service_iam_member.browser_qa_broker_invoker",
         "google_iam_workload_identity_pool.browser_qa_github",
         "google_iam_workload_identity_pool_provider.browser_qa_github",
         "google_project_iam_member.browser_qa_broker_log_writer",
@@ -59,21 +54,76 @@ EXPECTED_RESOURCE_ADDRESSES = frozenset(
     }
 )
 
-EXPECTED_OUTPUTS = frozenset(
+EXPECTED_WORKLOAD_RESOURCE_ADDRESSES = frozenset(
+    {
+        "google_cloud_run_v2_job.browser_qa_cleanup[0]",
+        "google_cloud_run_v2_job.browser_qa_main[0]",
+        "google_cloud_run_v2_job_iam_member.browser_qa_cleanup_deployer_developer[0]",
+        "google_cloud_run_v2_job_iam_member.browser_qa_cleanup_deployer_invoker[0]",
+        "google_cloud_run_v2_job_iam_member.browser_qa_main_deployer_developer[0]",
+        "google_cloud_run_v2_job_iam_member.browser_qa_main_deployer_invoker[0]",
+        "google_cloud_run_v2_service.browser_qa_broker[0]",
+        "google_cloud_run_v2_service_iam_member.browser_qa_broker_deployer_developer[0]",
+        "google_cloud_run_v2_service_iam_member.browser_qa_broker_invoker[0]",
+    }
+)
+
+EXPECTED_INFRA_OUTPUTS = frozenset(
     {
         "browser_qa_artifact_registry_url",
-        "browser_qa_broker_service_name",
-        "browser_qa_broker_uri",
-        "browser_qa_cleanup_job_name",
         "browser_qa_deployer_sa_email",
-        "browser_qa_main_job_name",
         "browser_qa_report_bucket",
         "browser_qa_wif_provider",
     }
 )
 
+EXPECTED_WORKLOAD_OUTPUTS = frozenset(
+    {
+        "browser_qa_broker_service_name",
+        "browser_qa_broker_uri",
+        "browser_qa_cleanup_job_name",
+        "browser_qa_main_job_name",
+    }
+)
 
-def valid_plan():
+PHASE_RESOURCES = {
+    "infra": EXPECTED_INFRA_RESOURCE_ADDRESSES,
+    "workloads": EXPECTED_WORKLOAD_RESOURCE_ADDRESSES,
+}
+PHASE_OUTPUTS = {
+    "infra": EXPECTED_INFRA_OUTPUTS,
+    "workloads": EXPECTED_WORKLOAD_OUTPUTS,
+}
+
+
+def phase_plan(phase, *, include_other_phase_no_ops=False):
+    resource_changes = [
+        {"address": address, "change": {"actions": ["create"]}}
+        for address in sorted(PHASE_RESOURCES[phase])
+    ]
+    output_changes = {
+        output: {"actions": ["create"]}
+        for output in sorted(PHASE_OUTPUTS[phase])
+    }
+    if include_other_phase_no_ops:
+        other_phase = "workloads" if phase == "infra" else "infra"
+        resource_changes.extend(
+            {"address": address, "change": {"actions": ["no-op"]}}
+            for address in sorted(PHASE_RESOURCES[other_phase])
+        )
+        output_changes.update(
+            {
+                output: {"actions": ["no-op"]}
+                for output in sorted(PHASE_OUTPUTS[other_phase])
+            }
+        )
+    return {
+        "resource_changes": resource_changes,
+        "output_changes": output_changes,
+    }
+
+
+def combined_plan():
     return {
         "resource_changes": [
             {"address": address, "change": {"actions": ["create"]}}
@@ -86,17 +136,21 @@ def valid_plan():
     }
 
 
-def assert_rejected(testcase, plan, expected_message):
+def assert_rejected(testcase, plan, phase, expected_message):
     with testcase.assertRaisesRegex(PlanValidationError, re.escape(expected_message)):
-        validate_bootstrap_plan(plan)
+        validate_bootstrap_plan(plan, phase=phase)
 
 
-def run_guard(raw_json):
+def run_guard(raw_json, *, phase=None):
     with tempfile.TemporaryDirectory() as tmp_dir:
         plan_path = Path(tmp_dir) / "plan.json"
         plan_path.write_text(raw_json, encoding="utf-8")
+        command = [sys.executable, "-B", str(GUARD_SCRIPT)]
+        if phase is not None:
+            command.extend(["--phase", phase])
+        command.append(str(plan_path))
         return subprocess.run(
-            [sys.executable, "-B", str(GUARD_SCRIPT), str(plan_path)],
+            command,
             cwd=REPO_ROOT,
             text=True,
             capture_output=True,
@@ -115,147 +169,152 @@ def run_guard_help():
 
 
 class TerraformPlanGuardTest(unittest.TestCase):
-    def test_complete_exact_create_only_plan_is_accepted(self):
-        self.assertIsInstance(ALLOWED_RESOURCE_ADDRESSES, frozenset)
-        self.assertIsInstance(ALLOWED_OUTPUTS, frozenset)
-        self.assertEqual(ALLOWED_RESOURCE_ADDRESSES, EXPECTED_RESOURCE_ADDRESSES)
-        self.assertEqual(ALLOWED_OUTPUTS, EXPECTED_OUTPUTS)
+    def test_phase_allowlists_match_exact_source_contract(self):
+        self.assertEqual(INFRA_RESOURCE_ADDRESSES, EXPECTED_INFRA_RESOURCE_ADDRESSES)
+        self.assertEqual(WORKLOAD_RESOURCE_ADDRESSES, EXPECTED_WORKLOAD_RESOURCE_ADDRESSES)
+        self.assertEqual(INFRA_OUTPUTS, EXPECTED_INFRA_OUTPUTS)
+        self.assertEqual(WORKLOAD_OUTPUTS, EXPECTED_WORKLOAD_OUTPUTS)
+        self.assertEqual(ALLOWED_RESOURCE_ADDRESSES, INFRA_RESOURCE_ADDRESSES | WORKLOAD_RESOURCE_ADDRESSES)
+        self.assertEqual(ALLOWED_OUTPUTS, INFRA_OUTPUTS | WORKLOAD_OUTPUTS)
 
-        browser_qa_resources = frozenset(
+        source_addresses = frozenset(
             ".".join(match)
             for match in re.findall(
                 r'(?m)^\s*resource\s+"([^"]+)"\s+"([^"]+)"\s*\{',
                 BROWSER_QA_TF.read_text(encoding="utf-8"),
             )
         )
-        browser_qa_outputs = frozenset(
+        expected_source_addresses = INFRA_RESOURCE_ADDRESSES | frozenset(
+            address.removesuffix("[0]") for address in WORKLOAD_RESOURCE_ADDRESSES
+        )
+        source_outputs = frozenset(
             re.findall(r'(?m)^\s*output\s+"([^"]+)"\s*\{', OUTPUTS_TF.read_text(encoding="utf-8"))
         )
-        self.assertEqual(ALLOWED_RESOURCE_ADDRESSES, browser_qa_resources)
-        self.assertEqual(ALLOWED_OUTPUTS, browser_qa_outputs)
+        self.assertEqual(source_addresses, expected_source_addresses)
+        self.assertEqual(source_outputs, ALLOWED_OUTPUTS)
 
-        changes = validate_bootstrap_plan(valid_plan())
+    def test_infra_phase_accepts_exact_26_create_only_resources_and_4_outputs(self):
+        changes = validate_bootstrap_plan(phase_plan("infra"), phase="infra")
+        self.assertEqual(set(changes), INFRA_RESOURCE_ADDRESSES)
 
-        self.assertEqual(set(changes), ALLOWED_RESOURCE_ADDRESSES)
-        for address, actions in changes.items():
-            with self.subTest(address=address):
-                self.assertEqual(actions, ("create",))
-
-    def test_extra_non_qa_resource_address_is_rejected_as_unexpected(self):
-        plan = valid_plan()
-        plan["resource_changes"].append(
-            {"address": "google_cloud_run_v2_service.newapi_console", "change": {"actions": ["create"]}}
+    def test_workload_phase_accepts_exact_9_creates_and_known_infra_no_ops(self):
+        changes = validate_bootstrap_plan(
+            phase_plan("workloads", include_other_phase_no_ops=True),
+            phase="workloads",
         )
+        self.assertEqual(set(changes), WORKLOAD_RESOURCE_ADDRESSES)
 
-        assert_rejected(self, plan, "unexpected resource")
+    def test_combined_35_resource_plan_is_rejected_for_each_phase(self):
+        for phase in PHASE_RESOURCES:
+            with self.subTest(phase=phase):
+                assert_rejected(self, combined_plan(), phase, f"unexpected resource for {phase} phase")
 
-    def test_any_resource_change_that_is_not_single_create_is_rejected(self):
-        for actions in (["update"], ["delete"], ["create", "delete"], ["delete", "create"], ["read"], ["replace"]):
+    def test_legacy_unindexed_workload_address_is_rejected(self):
+        plan = phase_plan("workloads")
+        plan["resource_changes"][0]["address"] = "google_cloud_run_v2_job.browser_qa_cleanup"
+        assert_rejected(self, plan, "workloads", "unexpected resource")
+
+    def test_extra_non_qa_resource_address_is_rejected_even_when_no_op(self):
+        for actions in (["create"], ["no-op"]):
             with self.subTest(actions=actions):
-                plan = valid_plan()
-                plan["resource_changes"][0]["change"]["actions"] = actions
-
-                assert_rejected(self, plan, "bootstrap plan is not create-only")
-
-        plan = valid_plan()
-        plan["resource_changes"][0]["deposed"] = "deadbeef"
-        assert_rejected(self, plan, "bootstrap plan is not create-only")
-
-    def test_missing_resource_is_rejected(self):
-        plan = valid_plan()
-        plan["resource_changes"].pop()
-
-        assert_rejected(self, plan, "missing resource")
-
-    def test_duplicate_resource_change_keys_are_rejected_before_create_only_checks(self):
-        first_address = sorted(ALLOWED_RESOURCE_ADDRESSES)[0]
-        for actions in (["create"], ["update"]):
-            with self.subTest(actions=actions):
-                plan = valid_plan()
+                plan = phase_plan("infra")
                 plan["resource_changes"].append(
-                    {"address": first_address, "change": {"actions": actions}}
+                    {"address": "google_cloud_run_v2_service.newapi_console", "change": {"actions": actions}}
                 )
+                assert_rejected(self, plan, "infra", "unexpected resource")
 
-                assert_rejected(self, plan, "duplicate resource change")
+    def test_any_meaningful_resource_change_that_is_not_single_create_is_rejected(self):
+        for phase in PHASE_RESOURCES:
+            for actions in (["update"], ["delete"], ["create", "delete"], ["delete", "create"], ["read"], ["replace"]):
+                with self.subTest(phase=phase, actions=actions):
+                    plan = phase_plan(phase)
+                    plan["resource_changes"][0]["change"]["actions"] = actions
+                    assert_rejected(self, plan, phase, "bootstrap plan is not create-only")
 
-        plan = valid_plan()
-        original = plan["resource_changes"].pop(0)
-        plan["resource_changes"].insert(
-            0,
-            {"address": original["address"], "deposed": "deadbeef", "change": {"actions": ["update"]}},
-        )
-        plan["resource_changes"].append(original)
+            plan = phase_plan(phase)
+            plan["resource_changes"][0]["deposed"] = "deadbeef"
+            assert_rejected(self, plan, phase, "bootstrap plan contains deposed object")
 
-        assert_rejected(self, plan, "bootstrap plan is not create-only")
-
-    def test_non_qa_resource_no_op_is_rejected_as_unexpected(self):
-        plan = valid_plan()
+    def test_deposed_no_op_resource_is_rejected_before_no_op_filter(self):
+        plan = phase_plan("infra")
         plan["resource_changes"].append(
             {
-                "address": "google_sql_database_instance.main",
-                "change": {"actions": ["no-op"]},
-            }
-        )
-
-        assert_rejected(self, plan, "unexpected resource")
-
-    def test_well_formed_allowed_resource_no_op_is_ignored_but_cannot_bypass_duplicates(self):
-        plan = valid_plan()
-        first_address = sorted(ALLOWED_RESOURCE_ADDRESSES)[0]
-        plan["resource_changes"].append(
-            {
-                "address": first_address,
+                "address": sorted(INFRA_RESOURCE_ADDRESSES)[0],
                 "deposed": "deadbeef",
                 "change": {"actions": ["no-op"]},
             }
         )
+        with self.assertRaisesRegex(PlanValidationError, "deposed"):
+            validate_bootstrap_plan(plan, phase="infra")
 
-        changes = validate_bootstrap_plan(plan)
-        self.assertEqual(set(changes), ALLOWED_RESOURCE_ADDRESSES)
+    def test_resource_set_must_be_exact_for_each_phase(self):
+        for phase in PHASE_RESOURCES:
+            with self.subTest(phase=phase):
+                plan = phase_plan(phase)
+                plan["resource_changes"].pop()
+                assert_rejected(self, plan, phase, f"missing resource for {phase} phase")
 
-        plan = valid_plan()
+    def test_duplicate_resource_change_keys_are_rejected_before_action_checks(self):
+        plan = phase_plan("infra")
+        first_address = sorted(INFRA_RESOURCE_ADDRESSES)[0]
         plan["resource_changes"].append(
             {"address": first_address, "change": {"actions": ["no-op"]}}
         )
+        assert_rejected(self, plan, "infra", "duplicate resource change")
 
-        assert_rejected(self, plan, "duplicate resource change")
+    def test_known_other_phase_no_ops_are_ignored(self):
+        for phase in PHASE_RESOURCES:
+            with self.subTest(phase=phase):
+                changes = validate_bootstrap_plan(
+                    phase_plan(phase, include_other_phase_no_ops=True),
+                    phase=phase,
+                )
+                self.assertEqual(set(changes), PHASE_RESOURCES[phase])
 
-    def test_output_set_must_be_exact(self):
-        plan = valid_plan()
-        plan["output_changes"]["browser_qa_extra"] = {"actions": ["create"]}
-        assert_rejected(self, plan, "unexpected output")
+    def test_output_set_and_actions_are_exact_for_each_phase(self):
+        for phase in PHASE_OUTPUTS:
+            with self.subTest(phase=phase, case="unexpected"):
+                plan = phase_plan(phase)
+                plan["output_changes"]["browser_qa_extra"] = {"actions": ["create"]}
+                assert_rejected(self, plan, phase, "unexpected output")
 
-        plan = valid_plan()
-        plan["output_changes"].pop(next(iter(ALLOWED_OUTPUTS)))
-        assert_rejected(self, plan, "missing output")
+            with self.subTest(phase=phase, case="missing"):
+                plan = phase_plan(phase)
+                plan["output_changes"].pop(next(iter(PHASE_OUTPUTS[phase])))
+                assert_rejected(self, plan, phase, f"missing output for {phase} phase")
 
-    def test_output_changes_must_be_create_only(self):
-        plan = valid_plan()
-        plan["output_changes"][next(iter(ALLOWED_OUTPUTS))]["actions"] = ["update"]
+            with self.subTest(phase=phase, case="update"):
+                plan = phase_plan(phase)
+                plan["output_changes"][next(iter(PHASE_OUTPUTS[phase]))]["actions"] = ["update"]
+                assert_rejected(self, plan, phase, "output changes are not create-only")
 
-        assert_rejected(self, plan, "output changes are not create-only")
-
-        plan = valid_plan()
+    def test_unknown_output_no_op_is_rejected_but_known_other_phase_no_op_is_ignored(self):
+        plan = phase_plan("workloads", include_other_phase_no_ops=True)
         plan["output_changes"]["browser_qa_extra"] = {"actions": ["no-op"]}
+        assert_rejected(self, plan, "workloads", "unexpected output")
 
-        assert_rejected(self, plan, "unexpected output")
-
-    def test_empty_plan_is_rejected_as_no_resource_changes(self):
-        assert_rejected(self, {"resource_changes": [], "output_changes": {}}, "saved plan has no resource changes")
+    def test_empty_or_no_op_only_plan_is_rejected(self):
+        assert_rejected(
+            self,
+            {"resource_changes": [], "output_changes": {}},
+            "infra",
+            "saved plan has no resource changes",
+        )
         assert_rejected(
             self,
             {
                 "resource_changes": [
-                    {"address": sorted(ALLOWED_RESOURCE_ADDRESSES)[0], "change": {"actions": ["no-op"]}}
+                    {"address": sorted(INFRA_RESOURCE_ADDRESSES)[0], "change": {"actions": ["no-op"]}}
                 ],
                 "output_changes": {},
             },
+            "infra",
             "saved plan has no resource changes",
         )
 
-    def test_malformed_plan_shapes_are_rejected_with_validation_error(self):
-        first_address = sorted(ALLOWED_RESOURCE_ADDRESSES)[0]
-        first_output = sorted(ALLOWED_OUTPUTS)[0]
+    def test_malformed_plan_shapes_and_unknown_phase_are_rejected(self):
+        first_address = sorted(INFRA_RESOURCE_ADDRESSES)[0]
+        first_output = sorted(INFRA_OUTPUTS)[0]
         malformed_plans = [
             [],
             {},
@@ -266,69 +325,100 @@ class TerraformPlanGuardTest(unittest.TestCase):
             {"resource_changes": [{"address": first_address, "change": {}}]},
             {"resource_changes": [{"address": first_address, "change": {"actions": "create"}}]},
             {"resource_changes": [{"address": first_address, "change": {"actions": [1]}}]},
-            {"resource_changes": [{"address": first_address, "deposed": "", "change": {"actions": ["no-op"]}}]},
             {"resource_changes": [], "output_changes": []},
             {"resource_changes": [], "output_changes": {first_output: []}},
             {"resource_changes": [], "output_changes": {first_output: {}}},
-            {"resource_changes": [], "output_changes": {first_output: {"actions": "create"}}},
-            {"resource_changes": [], "output_changes": {first_output: {"actions": [1]}}},
         ]
         for plan in malformed_plans:
             with self.subTest(plan=plan):
                 with self.assertRaises(PlanValidationError):
-                    validate_bootstrap_plan(plan)
+                    validate_bootstrap_plan(plan, phase="infra")
+
+        with self.assertRaisesRegex(PlanValidationError, "unknown bootstrap phase"):
+            validate_bootstrap_plan(phase_plan("infra"), phase="legacy")
 
     def test_blank_address_deposed_and_output_name_are_malformed(self):
-        first_address = sorted(ALLOWED_RESOURCE_ADDRESSES)[0]
-
-        plan = valid_plan()
+        plan = phase_plan("infra")
         plan["resource_changes"][0]["address"] = " "
-        assert_rejected(self, plan, "resource change address must be a non-empty string")
+        assert_rejected(self, plan, "infra", "resource change address must be a non-empty string")
 
-        plan = valid_plan()
+        plan = phase_plan("infra")
         plan["resource_changes"].append(
-            {"address": first_address, "deposed": " ", "change": {"actions": ["no-op"]}}
+            {
+                "address": sorted(INFRA_RESOURCE_ADDRESSES)[0],
+                "deposed": " ",
+                "change": {"actions": ["no-op"]},
+            }
         )
-        assert_rejected(self, plan, "resource change deposed must be a non-empty string")
+        assert_rejected(self, plan, "infra", "resource change deposed must be a non-empty string")
 
-        plan = valid_plan()
+        plan = phase_plan("infra")
         plan["output_changes"][" "] = {"actions": ["create"]}
-        assert_rejected(self, plan, "output change name must be a non-empty string")
+        assert_rejected(self, plan, "infra", "output change name must be a non-empty string")
 
-    def test_cli_rejects_invalid_and_wrong_json_without_traceback(self):
-        update_plan = valid_plan()
+    def test_cli_requires_valid_phase_and_rejects_bad_plan_without_traceback(self):
+        missing_phase = run_guard(json.dumps(phase_plan("infra")))
+        self.assertEqual(missing_phase.returncode, 2)
+        self.assertIn("--phase", missing_phase.stderr)
+
+        invalid_phase = run_guard(json.dumps(phase_plan("infra")), phase="legacy")
+        self.assertEqual(invalid_phase.returncode, 2)
+        self.assertIn("invalid choice", invalid_phase.stderr)
+
+        update_plan = phase_plan("infra")
         update_plan["resource_changes"][0]["change"]["actions"] = ["update"]
-
         for raw_json in ("{", "[]", "{}", json.dumps(update_plan)):
             with self.subTest(raw_json=raw_json):
-                result = run_guard(raw_json)
-
+                result = run_guard(raw_json, phase="infra")
                 self.assertEqual(result.returncode, 1)
                 self.assertTrue(result.stderr.startswith("ABORT:"), result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
 
-    def test_cli_help_describes_terraform_show_json_positional(self):
-        result = run_guard_help()
+    def test_cli_success_message_is_phase_specific(self):
+        expected = {
+            "infra": "OK: exact Browser QA infra create-only bootstrap plan",
+            "workloads": "OK: exact Browser QA workloads create-only bootstrap plan",
+        }
+        for phase, message in expected.items():
+            with self.subTest(phase=phase):
+                result = run_guard(json.dumps(phase_plan(phase)), phase=phase)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(message, result.stdout)
 
+    def test_cli_rejects_deposed_no_op_resource_without_traceback(self):
+        plan = phase_plan("infra")
+        plan["resource_changes"].append(
+            {
+                "address": sorted(INFRA_RESOURCE_ADDRESSES)[0],
+                "deposed": "deadbeef",
+                "change": {"actions": ["no-op"]},
+            }
+        )
+        result = run_guard(json.dumps(plan), phase="infra")
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue(result.stderr.startswith("ABORT:"), result.stderr)
+        self.assertIn("deposed", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_help_describes_phase_and_terraform_show_json(self):
+        result = run_guard_help()
         self.assertEqual(result.returncode, 0)
+        self.assertIn("--phase {infra,workloads}", result.stdout)
         self.assertIn("Path produced by terraform show -json", result.stdout)
 
     def test_cli_rejects_raw_duplicate_output_keys(self):
         output_entries = ",".join(
             f'"{output}": {{"actions": ["create"]}}'
-            for output in sorted(ALLOWED_OUTPUTS)
+            for output in sorted(INFRA_OUTPUTS)
         )
-        duplicate_output = sorted(ALLOWED_OUTPUTS)[0]
-        raw_json = json.dumps({"resource_changes": valid_plan()["resource_changes"]})[:-1]
-        raw_json = (
-            raw_json
-            + f', "output_changes": {{{output_entries}, '
-            + f'"{duplicate_output}": {{"actions": ["create"]}}'
-            + "}}"
+        duplicate_output = sorted(INFRA_OUTPUTS)[0]
+        raw_json = json.dumps({"resource_changes": phase_plan("infra")["resource_changes"]})[:-1]
+        raw_json += (
+            f', "output_changes": {{{output_entries}, '
+            f'"{duplicate_output}": {{"actions": ["create"]}}'
+            "}}"
         )
-
-        result = run_guard(raw_json)
-
+        result = run_guard(raw_json, phase="infra")
         self.assertEqual(result.returncode, 1)
         self.assertTrue(result.stderr.startswith("ABORT:"), result.stderr)
         self.assertNotIn("Traceback", result.stderr)

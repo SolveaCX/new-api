@@ -15,3 +15,9 @@ variable "region" {
     error_message = "region must be exactly us-west1."
   }
 }
+
+variable "create_workloads" {
+  description = "Create the Secret-dependent Browser QA Cloud Run service, jobs, and their resource IAM"
+  type        = bool
+  default     = true
+}

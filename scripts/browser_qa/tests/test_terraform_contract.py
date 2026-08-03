@@ -22,6 +22,27 @@ EXPECTED_OUTPUTS = {
     "browser_qa_cleanup_job_name",
 }
 
+INFRA_OUTPUTS = {
+    "browser_qa_artifact_registry_url",
+    "browser_qa_wif_provider",
+    "browser_qa_deployer_sa_email",
+    "browser_qa_report_bucket",
+}
+
+WORKLOAD_OUTPUTS = EXPECTED_OUTPUTS - INFRA_OUTPUTS
+
+WORKLOAD_RESOURCE_BLOCKS = {
+    ("google_cloud_run_v2_service", "browser_qa_broker"),
+    ("google_cloud_run_v2_job", "browser_qa_main"),
+    ("google_cloud_run_v2_job", "browser_qa_cleanup"),
+    ("google_cloud_run_v2_service_iam_member", "browser_qa_broker_invoker"),
+    ("google_cloud_run_v2_service_iam_member", "browser_qa_broker_deployer_developer"),
+    ("google_cloud_run_v2_job_iam_member", "browser_qa_main_deployer_developer"),
+    ("google_cloud_run_v2_job_iam_member", "browser_qa_main_deployer_invoker"),
+    ("google_cloud_run_v2_job_iam_member", "browser_qa_cleanup_deployer_developer"),
+    ("google_cloud_run_v2_job_iam_member", "browser_qa_cleanup_deployer_invoker"),
+}
+
 
 @dataclass(frozen=True)
 class Block:
@@ -119,6 +140,40 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         self.browser_qa = BROWSER_QA_TF.read_text(encoding="utf-8")
         self.clean_browser_qa = _strip_comments(self.browser_qa)
 
+    def test_create_workloads_defaults_to_committed_steady_state_true(self):
+        variables = {
+            block.name: block
+            for block in _blocks(VARIABLES_TF.read_text(encoding="utf-8"), "variable")
+        }
+        self.assertIn("create_workloads", variables)
+        self.assertRegex(variables["create_workloads"].body, r"\btype\s*=\s*bool\b")
+        self.assertRegex(variables["create_workloads"].body, r"\bdefault\s*=\s*true\b")
+
+        tfvars = _strip_comments(TFVARS.read_text(encoding="utf-8"))
+        self.assertEqual(
+            re.findall(r"(?m)^\s*create_workloads\s*=\s*(true|false)\s*$", tfvars),
+            ["true"],
+        )
+
+    def test_only_cloud_run_workloads_and_run_iam_are_phase_gated(self):
+        resources = _blocks(self.browser_qa, "resource")
+        actual_gated = set()
+        for block in resources:
+            key = (block.type_name, block.name)
+            if "create_workloads" in block.body:
+                actual_gated.add(key)
+            if key in WORKLOAD_RESOURCE_BLOCKS:
+                self.assertRegex(
+                    block.body,
+                    r"\bcount\s*=\s*var\.create_workloads\s*\?\s*1\s*:\s*0\b",
+                    key,
+                )
+            else:
+                self.assertNotIn("create_workloads", block.body, key)
+
+        self.assertEqual(actual_gated, WORKLOAD_RESOURCE_BLOCKS)
+        self.assertEqual(len(resources) - len(actual_gated), 26)
+
     def test_defines_dedicated_artifact_registry_and_service_accounts(self):
         repos = _resource_blocks("google_artifact_registry_repository")
         self.assertIn("browser_qa", repos)
@@ -191,6 +246,11 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
             self.assertRegex(job.body, r'\bimage\s*=\s*local\.browser_qa_placeholder_image\b')
             self.assertRegex(job.body, r"ignore_changes\s*=\s*\[[^\]]*template\[0\]\.template\[0\]\.containers\[0\]\.image")
 
+        self.assertRegex(
+            jobs["browser_qa_main"].body,
+            r"google_cloud_run_v2_service\.browser_qa_broker\[count\.index\]\.uri",
+        )
+
     def test_private_report_bucket_and_report_iam_split(self):
         buckets = _resource_blocks("google_storage_bucket")
         self.assertIn("browser_qa_reports", buckets)
@@ -235,14 +295,20 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
             "browser_qa_wif_provider": r"value\s*=\s*google_iam_workload_identity_pool_provider\.browser_qa_github\.name",
             "browser_qa_deployer_sa_email": r"value\s*=\s*google_service_account\.browser_qa_deployer\.email",
             "browser_qa_report_bucket": r"value\s*=\s*google_storage_bucket\.browser_qa_reports\.name",
-            "browser_qa_broker_uri": r"value\s*=\s*google_cloud_run_v2_service\.browser_qa_broker\.uri",
-            "browser_qa_broker_service_name": r"google_cloud_run_v2_service\.browser_qa_broker\.name",
-            "browser_qa_main_job_name": r"google_cloud_run_v2_job\.browser_qa_main\.name",
-            "browser_qa_cleanup_job_name": r"google_cloud_run_v2_job\.browser_qa_cleanup\.name",
+            "browser_qa_broker_uri": r"value\s*=\s*one\(google_cloud_run_v2_service\.browser_qa_broker\[\*\]\.uri\)",
+            "browser_qa_broker_service_name": r"value\s*=\s*one\(google_cloud_run_v2_service\.browser_qa_broker\[\*\]\.name\)",
+            "browser_qa_main_job_name": r"value\s*=\s*one\(google_cloud_run_v2_job\.browser_qa_main\[\*\]\.name\)",
+            "browser_qa_cleanup_job_name": r"value\s*=\s*one\(google_cloud_run_v2_job\.browser_qa_cleanup\[\*\]\.name\)",
         }
         for output_name, value_pattern in expected_output_values.items():
             [block] = [block for block in _blocks(outputs, "output") if block.name == output_name]
             self.assertRegex(block.body, value_pattern)
+
+        output_by_name = {block.name: block for block in output_blocks}
+        for output_name in INFRA_OUTPUTS:
+            self.assertNotIn("one(", output_by_name[output_name].body)
+        for output_name in WORKLOAD_OUTPUTS:
+            self.assertIn("one(", output_by_name[output_name].body)
 
     def test_least_privilege_iam_is_resource_scoped(self):
         service_iam = _resource_blocks("google_cloud_run_v2_service_iam_member")
@@ -255,12 +321,24 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         self.assertRegex(broker_developer.body, r'\brole\s*=\s*"roles/run\.developer"')
         self.assertRegex(broker_developer.body, r"google_service_account\.browser_qa_deployer\.email")
 
+        for block in service_iam.values():
+            self.assertRegex(
+                block.body,
+                r"\bname\s*=\s*google_cloud_run_v2_service\.browser_qa_broker\[count\.index\]\.name\b",
+            )
+
         job_iam = _resource_blocks("google_cloud_run_v2_job_iam_member")
         job_bodies = "\n".join(block.body for block in job_iam.values())
         self.assertRegex(job_bodies, r'browser_qa_main[\s\S]*role\s*=\s*"roles/run\.developer"')
         self.assertRegex(job_bodies, r'browser_qa_cleanup[\s\S]*role\s*=\s*"roles/run\.developer"')
         self.assertRegex(job_bodies, r'browser_qa_main[\s\S]*role\s*=\s*"roles/run\.invoker"')
         self.assertRegex(job_bodies, r'browser_qa_cleanup[\s\S]*role\s*=\s*"roles/run\.invoker"')
+        for block in job_iam.values():
+            resource_name = "browser_qa_main" if "browser_qa_main" in block.name else "browser_qa_cleanup"
+            self.assertRegex(
+                block.body,
+                rf"\bname\s*=\s*google_cloud_run_v2_job\.{resource_name}\[count\.index\]\.name\b",
+            )
 
         project_iam = _resource_blocks("google_project_iam_member")
         project_iam_body = "\n".join(block.body for block in project_iam.values())
@@ -307,6 +385,10 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         }
         resources = _blocks(self.browser_qa, "resource")
         self.assertEqual(len(resources), 35)
+        self.assertEqual(
+            {(block.type_name, block.name) for block in resources if "create_workloads" in block.body},
+            WORKLOAD_RESOURCE_BLOCKS,
+        )
         self.assertTrue(forbidden_types.isdisjoint({block.type_name for block in resources}))
         self.assertNotRegex(self.clean_browser_qa, r"\b(newapi|newapi-web|newapi-console|newapi-router)\b")
         self.assertNotRegex(self.clean_browser_qa, r"\btraffic\s*\{")

@@ -1,5 +1,7 @@
 # Browser QA Terraform State Isolation Implementation Plan
 
+> **Safety addendum:** The original single-phase 35-resource bootstrap steps are superseded by [Browser QA Two-Phase Secret Bootstrap Implementation Plan](./2026-08-03-browser-qa-two-phase-secret-bootstrap.md). State isolation remains valid; do not apply an old combined saved plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Create a dedicated Terraform root/state that can bootstrap staging Browser QA without planning or changing production-managed resources, then prepare the existing staging auto-`core` workflow for live acceptance.

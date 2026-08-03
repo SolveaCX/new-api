@@ -132,6 +132,8 @@ resource "google_secret_manager_secret_iam_member" "browser_qa_broker_gmail_oaut
 }
 
 resource "google_cloud_run_v2_service" "browser_qa_broker" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   name     = local.browser_qa_broker_service_name
   location = var.region
@@ -182,6 +184,8 @@ resource "google_cloud_run_v2_service" "browser_qa_broker" {
 }
 
 resource "google_cloud_run_v2_job" "browser_qa_main" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   name     = local.browser_qa_main_job_name
   location = var.region
@@ -231,7 +235,7 @@ resource "google_cloud_run_v2_job" "browser_qa_main" {
         }
         env {
           name  = "FLATKEY_BROWSER_QA_BROKER_URL"
-          value = google_cloud_run_v2_service.browser_qa_broker.uri
+          value = google_cloud_run_v2_service.browser_qa_broker[count.index].uri
         }
       }
     }
@@ -252,6 +256,8 @@ resource "google_cloud_run_v2_job" "browser_qa_main" {
 }
 
 resource "google_cloud_run_v2_job" "browser_qa_cleanup" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   name     = local.browser_qa_cleanup_job_name
   location = var.region
@@ -392,49 +398,61 @@ resource "google_artifact_registry_repository_iam_member" "browser_qa_deployer_w
 }
 
 resource "google_cloud_run_v2_service_iam_member" "browser_qa_broker_invoker" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   location = var.region
-  name     = google_cloud_run_v2_service.browser_qa_broker.name
+  name     = google_cloud_run_v2_service.browser_qa_broker[count.index].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.browser_qa_runtime.email}"
 }
 
 resource "google_cloud_run_v2_service_iam_member" "browser_qa_broker_deployer_developer" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   location = var.region
-  name     = google_cloud_run_v2_service.browser_qa_broker.name
+  name     = google_cloud_run_v2_service.browser_qa_broker[count.index].name
   role     = "roles/run.developer"
   member   = "serviceAccount:${google_service_account.browser_qa_deployer.email}"
 }
 
 resource "google_cloud_run_v2_job_iam_member" "browser_qa_main_deployer_developer" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   location = var.region
-  name     = google_cloud_run_v2_job.browser_qa_main.name
+  name     = google_cloud_run_v2_job.browser_qa_main[count.index].name
   role     = "roles/run.developer"
   member   = "serviceAccount:${google_service_account.browser_qa_deployer.email}"
 }
 
 resource "google_cloud_run_v2_job_iam_member" "browser_qa_main_deployer_invoker" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   location = var.region
-  name     = google_cloud_run_v2_job.browser_qa_main.name
+  name     = google_cloud_run_v2_job.browser_qa_main[count.index].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.browser_qa_deployer.email}"
 }
 
 resource "google_cloud_run_v2_job_iam_member" "browser_qa_cleanup_deployer_developer" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   location = var.region
-  name     = google_cloud_run_v2_job.browser_qa_cleanup.name
+  name     = google_cloud_run_v2_job.browser_qa_cleanup[count.index].name
   role     = "roles/run.developer"
   member   = "serviceAccount:${google_service_account.browser_qa_deployer.email}"
 }
 
 resource "google_cloud_run_v2_job_iam_member" "browser_qa_cleanup_deployer_invoker" {
+  count = var.create_workloads ? 1 : 0
+
   project  = var.project_id
   location = var.region
-  name     = google_cloud_run_v2_job.browser_qa_cleanup.name
+  name     = google_cloud_run_v2_job.browser_qa_cleanup[count.index].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.browser_qa_deployer.email}"
 }

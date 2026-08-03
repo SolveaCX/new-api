@@ -20,20 +20,20 @@ output "browser_qa_report_bucket" {
 
 output "browser_qa_broker_uri" {
   description = "Private broker service URI used by the browser QA runtime"
-  value       = google_cloud_run_v2_service.browser_qa_broker.uri
+  value       = one(google_cloud_run_v2_service.browser_qa_broker[*].uri)
 }
 
 output "browser_qa_broker_service_name" {
   description = "Cloud Run service name matching the GCP Browser QA workflow QA_BROKER_SERVICE env"
-  value       = google_cloud_run_v2_service.browser_qa_broker.name
+  value       = one(google_cloud_run_v2_service.browser_qa_broker[*].name)
 }
 
 output "browser_qa_main_job_name" {
   description = "Cloud Run job name matching the GCP Browser QA workflow QA_MAIN_JOB env"
-  value       = google_cloud_run_v2_job.browser_qa_main.name
+  value       = one(google_cloud_run_v2_job.browser_qa_main[*].name)
 }
 
 output "browser_qa_cleanup_job_name" {
   description = "Cloud Run job name matching the GCP Browser QA workflow QA_CLEANUP_JOB env"
-  value       = google_cloud_run_v2_job.browser_qa_cleanup.name
+  value       = one(google_cloud_run_v2_job.browser_qa_cleanup[*].name)
 }

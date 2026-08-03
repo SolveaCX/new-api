@@ -4,19 +4,10 @@ import sys
 from pathlib import Path
 
 
-ALLOWED_RESOURCE_ADDRESSES = frozenset(
+INFRA_RESOURCE_ADDRESSES = frozenset(
     {
         "google_artifact_registry_repository.browser_qa",
         "google_artifact_registry_repository_iam_member.browser_qa_deployer_writer",
-        "google_cloud_run_v2_job.browser_qa_cleanup",
-        "google_cloud_run_v2_job.browser_qa_main",
-        "google_cloud_run_v2_job_iam_member.browser_qa_cleanup_deployer_developer",
-        "google_cloud_run_v2_job_iam_member.browser_qa_cleanup_deployer_invoker",
-        "google_cloud_run_v2_job_iam_member.browser_qa_main_deployer_developer",
-        "google_cloud_run_v2_job_iam_member.browser_qa_main_deployer_invoker",
-        "google_cloud_run_v2_service.browser_qa_broker",
-        "google_cloud_run_v2_service_iam_member.browser_qa_broker_deployer_developer",
-        "google_cloud_run_v2_service_iam_member.browser_qa_broker_invoker",
         "google_iam_workload_identity_pool.browser_qa_github",
         "google_iam_workload_identity_pool_provider.browser_qa_github",
         "google_project_iam_member.browser_qa_broker_log_writer",
@@ -44,18 +35,45 @@ ALLOWED_RESOURCE_ADDRESSES = frozenset(
     }
 )
 
-ALLOWED_OUTPUTS = frozenset(
+WORKLOAD_RESOURCE_ADDRESSES = frozenset(
+    {
+        "google_cloud_run_v2_job.browser_qa_cleanup[0]",
+        "google_cloud_run_v2_job.browser_qa_main[0]",
+        "google_cloud_run_v2_job_iam_member.browser_qa_cleanup_deployer_developer[0]",
+        "google_cloud_run_v2_job_iam_member.browser_qa_cleanup_deployer_invoker[0]",
+        "google_cloud_run_v2_job_iam_member.browser_qa_main_deployer_developer[0]",
+        "google_cloud_run_v2_job_iam_member.browser_qa_main_deployer_invoker[0]",
+        "google_cloud_run_v2_service.browser_qa_broker[0]",
+        "google_cloud_run_v2_service_iam_member.browser_qa_broker_deployer_developer[0]",
+        "google_cloud_run_v2_service_iam_member.browser_qa_broker_invoker[0]",
+    }
+)
+
+INFRA_OUTPUTS = frozenset(
     {
         "browser_qa_artifact_registry_url",
-        "browser_qa_broker_service_name",
-        "browser_qa_broker_uri",
-        "browser_qa_cleanup_job_name",
         "browser_qa_deployer_sa_email",
-        "browser_qa_main_job_name",
         "browser_qa_report_bucket",
         "browser_qa_wif_provider",
     }
 )
+
+WORKLOAD_OUTPUTS = frozenset(
+    {
+        "browser_qa_broker_service_name",
+        "browser_qa_broker_uri",
+        "browser_qa_cleanup_job_name",
+        "browser_qa_main_job_name",
+    }
+)
+
+ALLOWED_RESOURCE_ADDRESSES = INFRA_RESOURCE_ADDRESSES | WORKLOAD_RESOURCE_ADDRESSES
+ALLOWED_OUTPUTS = INFRA_OUTPUTS | WORKLOAD_OUTPUTS
+
+_PHASE_CONTRACTS = {
+    "infra": (INFRA_RESOURCE_ADDRESSES, INFRA_OUTPUTS),
+    "workloads": (WORKLOAD_RESOURCE_ADDRESSES, WORKLOAD_OUTPUTS),
+}
 
 
 class PlanValidationError(ValueError):
@@ -101,10 +119,10 @@ def _meaningful_resource_changes(plan):
             raise PlanValidationError(f"unexpected resource: {address}")
 
         actions = _validated_actions(resource_change.get("change"), "resource")
+        if deposed is not None:
+            raise PlanValidationError(f"bootstrap plan contains deposed object: {address}")
         if actions == ("no-op",):
             continue
-        if actions == ("create",) and deposed is not None:
-            raise PlanValidationError(f"bootstrap plan is not create-only: {address}")
         changes.append((address, deposed, actions))
     return changes
 
@@ -118,7 +136,11 @@ def _meaningful_output_changes(plan):
     for name, output_change in output_changes.items():
         if not isinstance(name, str) or not name.strip():
             raise PlanValidationError("output change name must be a non-empty string")
+        if name not in ALLOWED_OUTPUTS:
+            raise PlanValidationError(f"unexpected output: {name}")
         actions = _validated_actions(output_change, "output")
+        if actions == ("no-op",):
+            continue
         changes[name] = actions
     return changes
 
@@ -127,10 +149,13 @@ def _first_sorted(values):
     return sorted(values)[0]
 
 
-def validate_bootstrap_plan(plan):
+def validate_bootstrap_plan(plan, phase):
+    if phase not in _PHASE_CONTRACTS:
+        raise PlanValidationError(f"unknown bootstrap phase: {phase}")
     if not isinstance(plan, dict):
         raise PlanValidationError("saved plan must be an object")
 
+    expected_resources, expected_outputs = _PHASE_CONTRACTS[phase]
     changes = _meaningful_resource_changes(plan)
     output_changes = _meaningful_output_changes(plan)
 
@@ -138,26 +163,34 @@ def validate_bootstrap_plan(plan):
         raise PlanValidationError("saved plan has no resource changes")
 
     resource_addresses = frozenset(address for address, _deposed, _actions in changes)
-    unexpected_resources = resource_addresses - ALLOWED_RESOURCE_ADDRESSES
+    unexpected_resources = resource_addresses - expected_resources
     if unexpected_resources:
-        raise PlanValidationError(f"unexpected resource: {_first_sorted(unexpected_resources)}")
+        raise PlanValidationError(
+            f"unexpected resource for {phase} phase: {_first_sorted(unexpected_resources)}"
+        )
 
-    missing_resources = ALLOWED_RESOURCE_ADDRESSES - resource_addresses
+    missing_resources = expected_resources - resource_addresses
     if missing_resources:
-        raise PlanValidationError(f"missing resource: {_first_sorted(missing_resources)}")
+        raise PlanValidationError(
+            f"missing resource for {phase} phase: {_first_sorted(missing_resources)}"
+        )
 
     for address, deposed, actions in sorted(changes, key=lambda item: (item[0], item[1] or "")):
         if actions != ("create",) or deposed is not None:
             raise PlanValidationError(f"bootstrap plan is not create-only: {address}")
 
     output_names = frozenset(output_changes)
-    unexpected_outputs = output_names - ALLOWED_OUTPUTS
+    unexpected_outputs = output_names - expected_outputs
     if unexpected_outputs:
-        raise PlanValidationError(f"unexpected output: {_first_sorted(unexpected_outputs)}")
+        raise PlanValidationError(
+            f"unexpected output for {phase} phase: {_first_sorted(unexpected_outputs)}"
+        )
 
-    missing_outputs = ALLOWED_OUTPUTS - output_names
+    missing_outputs = expected_outputs - output_names
     if missing_outputs:
-        raise PlanValidationError(f"missing output: {_first_sorted(missing_outputs)}")
+        raise PlanValidationError(
+            f"missing output for {phase} phase: {_first_sorted(missing_outputs)}"
+        )
 
     for output in sorted(output_changes):
         if output_changes[output] != ("create",):
@@ -177,19 +210,28 @@ def _reject_duplicate_keys(pairs):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Validate an exact Browser QA Terraform bootstrap saved plan JSON."
+        description="Validate one exact Browser QA Terraform bootstrap phase saved plan JSON."
+    )
+    parser.add_argument(
+        "--phase",
+        choices=tuple(_PHASE_CONTRACTS),
+        required=True,
+        help="Expected create-only bootstrap phase",
     )
     parser.add_argument("plan_json", type=Path, help="Path produced by terraform show -json")
     args = parser.parse_args(argv)
 
     try:
-        plan = json.loads(args.plan_json.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys)
-        changes = validate_bootstrap_plan(plan)
+        plan = json.loads(
+            args.plan_json.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_keys,
+        )
+        changes = validate_bootstrap_plan(plan, phase=args.phase)
     except (OSError, json.JSONDecodeError, PlanValidationError) as exc:
         print(f"ABORT: {exc}", file=sys.stderr)
         return 1
 
-    print("OK: exact Browser QA create-only bootstrap plan")
+    print(f"OK: exact Browser QA {args.phase} create-only bootstrap plan")
     for address in sorted(changes):
         print(f"  {address}: create")
     return 0

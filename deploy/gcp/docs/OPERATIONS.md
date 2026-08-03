@@ -316,9 +316,9 @@ These names are the implementation contract as of this Terraform root:
 | Non-committed GitHub variable | `GCP_BROWSER_QA_GCS_BUCKET` |
 | Non-committed GitHub variable | `GCP_BROWSER_QA_GMAIL_BASE` |
 
-### 1. Authenticated refreshing Terraform plan review
+### 1. Phase A: authenticated refreshing infrastructure plan review
 
-Do not trust PR plan comments for this apply. They use `-refresh=false` and cannot prove live drift is absent. Use Owner-capable user CLI auth plus ADC locally, then save the exact plan that will be applied.
+Do not trust PR plan comments for this apply. They use `-refresh=false` and cannot prove live drift is absent. Use Owner-capable user CLI auth plus ADC locally, then save the exact Phase A infrastructure plan that will be applied. Phase A uses the independent Browser QA Terraform root and must create only the non-workload infrastructure: 26 creates, 0 updates, 0 deletes, 0 replaces, and 4 infrastructure output creates.
 
 ```bash
 # Human-only review commands. Non-mutating until the final saved-plan apply.
@@ -482,28 +482,28 @@ describe_absent "WIF provider staging" \
   gcloud iam workload-identity-pools providers describe staging \
     --project="$project_id" --location=global --workload-identity-pool=flatkey-browser-qa-github
 
-plan_path="$review_dir/browser-qa.tfplan"
-plan_json="$review_dir/browser-qa.tfplan.json"
+infra_plan_path="$review_dir/browser-qa-infra.tfplan"
+infra_plan_json="$review_dir/browser-qa-infra.tfplan.json"
 
-terraform plan -out="$plan_path"
-terraform show -json "$plan_path" > "$plan_json"
-terraform show -no-color "$plan_path" > "$review_dir/browser-qa.tfplan.txt"
+terraform plan -var='create_workloads=false' -out="$infra_plan_path"
+terraform show -json "$infra_plan_path" > "$infra_plan_json"
+terraform show -no-color "$infra_plan_path" > "$review_dir/browser-qa-infra.tfplan.txt"
 
-python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" "$plan_json"
+python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" --phase infra "$infra_plan_json"
 
-printf '\nHuman-readable plan review:\n  %s\n' "$review_dir/browser-qa.tfplan.txt"
+printf '\nHuman-readable Phase A plan review:\n  %s\n' "$review_dir/browser-qa-infra.tfplan.txt"
 printf 'If approved, apply before this shell exits so the exact saved plan still exists.\n'
-IFS= read -r -p "Type APPLY_BROWSER_QA_SAVED_PLAN to apply this exact saved plan: " APPLY_CONFIRM
-if [ "$APPLY_CONFIRM" = "APPLY_BROWSER_QA_SAVED_PLAN" ]; then
-  terraform apply "$plan_path"
+IFS= read -r -p "Type APPLY_BROWSER_QA_INFRA_SAVED_PLAN to apply this exact saved plan: " APPLY_CONFIRM
+if [ "$APPLY_CONFIRM" = "APPLY_BROWSER_QA_INFRA_SAVED_PLAN" ]; then
+  terraform apply "$infra_plan_path"
 else
   printf 'Skipped apply; temp plan will be removed by the EXIT trap.\n'
 fi
 ```
 
-Abort immediately if active project/region checks fail, any required API is missing, the independent Browser QA state is non-empty, any live resource already exists, or the versioned Terraform plan guard reports an out-of-contract diff. Any state/live hit means the operator must stop and design an import/migration before creating Browser QA resources. Do not automatically import, do not continue create, and do not use `-target`.
+Abort immediately if active project/region checks fail, any required API is missing, the independent Browser QA state is non-empty, any live resource already exists, or the phase-aware Terraform plan guard reports an out-of-contract Phase A diff. Any state/live hit means the operator must stop and design an import/migration before creating Browser QA resources. Do not automatically import, do not continue create, and do not use `-target`.
 
-Apply only from the same review shell before the `EXIT` trap removes `plan_path`. Never replace this with an unsaved `terraform apply`, `-refresh=false`, or `-target`.
+Apply only from the same review shell before the `EXIT` trap removes `infra_plan_path`. Never replace this with an unsaved `terraform apply`, `-refresh=false`, or `-target`.
 
 ### 2. Set output-backed GitHub repository variables
 
@@ -712,7 +712,147 @@ The originally downloaded Google OAuth client-secret JSON is insufficient by its
 
 Reviewer-only self-check for the rewritten snippets: each snippet constructs and validates `payload` or `payload_bytes` before `subprocess.run(...)`; every `raise SystemExit(...)` path occurs before the `gcloud` process is launched, so parse/validation failure cannot create an empty or malformed Secret Manager version. Static syntax validation can be done locally without invoking `gcloud` by extracting the Python heredocs from this file and running `ast.parse` on each snippet.
 
-### 4. Set the Gmail GitHub repository variable
+### 4. Phase B: verify Secret versions and create Cloud Run workloads
+
+Phase B is allowed only after Phase A apply, output-backed GitHub variables, and all three Secret Manager versions are complete. It must create only indexed Cloud Run workload resources: 9 indexed workload creates, 0 updates, 0 deletes, 0 replaces, and 4 workload output creates. It must not read Secret payloads.
+
+```bash
+# Human-only review commands. Non-mutating until the final saved-plan apply.
+set -euo pipefail
+set +x
+
+repo_root="$(git rev-parse --show-toplevel)"
+qa_root="$repo_root/deploy/gcp/envs/browser-qa-staging"
+expected_project="vocai-gemini-prod"
+region="us-west1"
+
+active_project="$(gcloud config get-value project 2>/dev/null)"
+if [ "$active_project" != "$expected_project" ]; then
+  echo "ABORT: active GCP project must be vocai-gemini-prod; got ${active_project:-<unset>}" >&2
+  exit 1
+fi
+
+active_region="$(gcloud config get-value run/region 2>/dev/null)"
+if [ "$active_region" != "$region" ]; then
+  echo "ABORT: active run region must be us-west1; got ${active_region:-<unset>}" >&2
+  exit 1
+fi
+
+review_dir="$(mktemp -d)"
+trap 'rm -rf "$review_dir"' EXIT
+expected_infra_state="$review_dir/expected-infra-state.txt"
+actual_infra_state="$review_dir/actual-infra-state.txt"
+probe_stdout="$review_dir/probe.stdout"
+probe_stderr="$review_dir/probe.stderr"
+workload_plan_path="$review_dir/browser-qa-workloads.tfplan"
+workload_plan_json="$review_dir/browser-qa-workloads.tfplan.json"
+
+cd "$qa_root"
+terraform init -reconfigure
+
+cat > "$expected_infra_state" <<'EOF_INFRA_STATE'
+google_artifact_registry_repository.browser_qa
+google_artifact_registry_repository_iam_member.browser_qa_deployer_writer
+google_iam_workload_identity_pool.browser_qa_github
+google_iam_workload_identity_pool_provider.browser_qa_github
+google_project_iam_member.browser_qa_broker_log_writer
+google_project_iam_member.browser_qa_cleanup_log_writer
+google_project_iam_member.browser_qa_runtime_log_writer
+google_secret_manager_secret.browser_qa_codex_api_key
+google_secret_manager_secret.browser_qa_gmail_oauth
+google_secret_manager_secret.browser_qa_identity_seed
+google_secret_manager_secret_iam_member.browser_qa_broker_gmail_oauth
+google_secret_manager_secret_iam_member.browser_qa_cleanup_identity_seed
+google_secret_manager_secret_iam_member.browser_qa_runtime_codex_api_key
+google_secret_manager_secret_iam_member.browser_qa_runtime_identity_seed
+google_service_account.browser_qa_broker
+google_service_account.browser_qa_cleanup
+google_service_account.browser_qa_deployer
+google_service_account.browser_qa_runtime
+google_service_account_iam_member.browser_qa_broker_user
+google_service_account_iam_member.browser_qa_cleanup_user
+google_service_account_iam_member.browser_qa_runtime_user
+google_service_account_iam_member.browser_qa_wif_deployer
+google_storage_bucket.browser_qa_reports
+google_storage_bucket_iam_member.browser_qa_cleanup_report_admin
+google_storage_bucket_iam_member.browser_qa_deployer_report_viewer
+google_storage_bucket_iam_member.browser_qa_runtime_report_creator
+EOF_INFRA_STATE
+
+terraform state list | LC_ALL=C sort > "$actual_infra_state"
+if ! diff -u "$expected_infra_state" "$actual_infra_state"; then
+  echo "ABORT: Phase A Terraform state does not exactly match the 26 expected infrastructure addresses." >&2
+  exit 1
+fi
+
+for secret in \
+  flatkey-browser-qa-codex-api-key \
+  flatkey-browser-qa-gmail-oauth \
+  flatkey-browser-qa-identity-seed
+do
+  state="$(gcloud secrets versions describe latest \
+    --secret="$secret" \
+    --project="$expected_project" \
+    --format='value(state)')"
+  if [ "$state" != "ENABLED" ]; then
+    echo "ABORT: latest version for ${secret} must be ENABLED; got ${state:-<empty>}" >&2
+    exit 1
+  fi
+done
+
+describe_absent() {
+  label="$1"
+  shift
+  : > "$probe_stdout"
+  : > "$probe_stderr"
+  if "$@" >"$probe_stdout" 2>"$probe_stderr"; then
+    echo "ABORT: ${label} already exists. Stop and design an import/migration before creating Browser QA workloads." >&2
+    cat "$probe_stdout" >&2
+    exit 1
+  fi
+  diagnostic="$(cat "$probe_stderr" "$probe_stdout")"
+  absence_verified=false
+  case "$diagnostic" in
+    *PERMISSION_DENIED*|*UNAUTHENTICATED*|*UNAVAILABLE*|*Cannot\ find\ project*) ;;
+    *404*|*NOT_FOUND*|*does\ not\ exist*|*Cannot\ find\ service\ \[*|*Cannot\ find\ job\ \[*) absence_verified=true ;;
+    *) ;;
+  esac
+  if [ "$absence_verified" != "true" ]; then
+    echo "ABORT: unable to prove ${label} is absent" >&2
+    printf '%s\n' "$diagnostic" >&2
+    exit 1
+  fi
+}
+
+describe_absent "Cloud Run broker service flatkey-staging-browser-qa-broker" \
+  gcloud run services describe flatkey-staging-browser-qa-broker \
+    --project="$expected_project" --region="$region"
+describe_absent "Cloud Run job flatkey-staging-browser-qa" \
+  gcloud run jobs describe flatkey-staging-browser-qa \
+    --project="$expected_project" --region="$region"
+describe_absent "Cloud Run job flatkey-staging-browser-qa-cleanup" \
+  gcloud run jobs describe flatkey-staging-browser-qa-cleanup \
+    --project="$expected_project" --region="$region"
+
+terraform plan -var='create_workloads=true' -out="$workload_plan_path"
+terraform show -json "$workload_plan_path" > "$workload_plan_json"
+terraform show -no-color "$workload_plan_path" > "$review_dir/browser-qa-workloads.tfplan.txt"
+
+python3 "$repo_root/scripts/browser_qa/terraform_plan_guard.py" --phase workloads "$workload_plan_json"
+
+printf '\nHuman-readable Phase B plan review:\n  %s\n' "$review_dir/browser-qa-workloads.tfplan.txt"
+printf 'If approved, apply before this shell exits so the exact saved plan still exists.\n'
+IFS= read -r -p "Type APPLY_BROWSER_QA_WORKLOADS_SAVED_PLAN to apply this exact saved plan: " APPLY_CONFIRM
+if [ "$APPLY_CONFIRM" = "APPLY_BROWSER_QA_WORKLOADS_SAVED_PLAN" ]; then
+  terraform apply "$workload_plan_path"
+else
+  printf 'Skipped apply; temp plan will be removed by the EXIT trap.\n'
+fi
+```
+
+Abort if the active project/region checks fail, the independent state is not exactly the 26 Phase A addresses, any latest Secret version is not `ENABLED`, any workload already exists, or the phase-aware Terraform plan guard reports an out-of-contract Phase B diff. Do not access Secret payloads, do not continue with partial state, and do not use `-target`.
+
+### 5. Set the Gmail GitHub repository variable
 
 `GCP_BROWSER_QA_GMAIL_BASE` is a repository variable, not a committed file and not a Terraform variable. It must be the base Gmail address only, with no plus tag, comma, CR, or LF. Use the GitHub repository UI if possible so the value does not enter CLI argv or shell history.
 
@@ -738,7 +878,7 @@ gh variable set GCP_BROWSER_QA_GMAIL_BASE \
 
 Abort if the installed `gh variable set` cannot read from stdin; use the GitHub UI instead. Do not fall back to `--body "$GCP_BROWSER_QA_GMAIL_BASE"`.
 
-### 5. OAuth publication, bootstrap, and repeatability rule
+### 6. OAuth publication, bootstrap, and repeatability rule
 
 A token issued while the OAuth app Publishing status is `Testing` proves bootstrap only. External Testing refresh tokens can expire quickly, so one successful run with a Testing token is not repeatability evidence.
 
@@ -748,7 +888,7 @@ Repeatability is accepted only after all three steps are complete:
 2. Reauthorize exactly `gmail.readonly`.
 3. Rotate `flatkey-browser-qa-gmail-oauth` with the new refresh token and complete a second successful full `normal` run.
 
-### 6. Verify broker IAM denial
+### 7. Verify broker IAM denial
 
 The broker must deny unauthenticated calls and calls from an explicitly reviewed known-unauthorized identity that is not the active operator Owner identity, runtime SA, broker SA, or deployer SA. The cleanup SA below is only a candidate negative-control identity; use it only after reviewing effective org, project, and service IAM and confirming it has no broker invoker path. Use the Terraform output for the broker URI; do not hardcode the generated `run.app` URL.
 
@@ -832,7 +972,7 @@ test "$status" = "401" -o "$status" = "403"
 
 Abort if the negative-control identity is the operator Owner, runtime, broker, or deployer identity; if IAM review shows it has `roles/run.invoker` at org/project/service scope; or if the operator lacks impersonation authority for that service account. Abort if either request reaches application-level validation, returns `200`, or returns a broker JSON error such as `invalid_fields`. That means IAM is not enforcing the private broker boundary.
 
-### 7. Dispatch core or normal and capture the exact run id
+### 8. Dispatch core or normal and capture the exact run id
 
 Run `core` first. It exercises the onboarding replay and stops before the five-minute exploration phase. Run `normal` only after `core` finishes and cleanup succeeds; `normal` performs core replay plus the bounded exploration phase, capped by the implementation at five minutes or thirty browser actions.
 
@@ -923,7 +1063,7 @@ Record `ORIGINAL_GITHUB_RUN_ID` from the dispatch response's `workflow_run_id` f
 
 The GitHub summary must show only status, replay status, exploration status/actions, finding count, cleanup status, and the private GCS URI. Abort and redact the run if a secret, full Gmail address, full plus alias, verification code, password, Cookie, Authorization header, or full API key appears in the summary.
 
-### 8. Private GCS report lookup
+### 9. Private GCS report lookup
 
 Use the GitHub Summary `gcs_uri`, or derive the manifest path from the original GitHub run id:
 
@@ -948,7 +1088,7 @@ python3 -m json.tool "$report_dir/manifest.json"
 
 Report objects are private and expire by bucket lifecycle after 14 days. Do not upload report downloads to issues, PR comments, tickets, or chat unless they have been manually redacted again.
 
-### 9. Cleanup-only with the original GitHub run id
+### 10. Cleanup-only with the original GitHub run id
 
 Use `cleanup-only` when the main run was cancelled, the platform interrupted the workflow before cleanup completed, or cleanup needs to be retried. Always use the original GitHub run id for the run that created the staging identity.
 
@@ -965,7 +1105,7 @@ gh workflow run gcp-browser-qa.yml \
 
 Abort if `original_run_id` is unknown. Do not substitute the cleanup workflow's new run id; that would derive a different identity and leave the original account unproven.
 
-### 10. `invalid_grant` recovery
+### 11. `invalid_grant` recovery
 
 `gmail_invalid_grant` from the broker is an infrastructure failure, not a retryable app failure.
 
@@ -980,7 +1120,7 @@ Recovery:
 
 Abort if the new OAuth grant requires a broader Gmail scope, if the base Gmail profile is not the expected base mailbox, or if `gmail_invalid_grant` repeats after publication and secret rotation.
 
-### 11. Gmail plus-alias restriction failure
+### 12. Gmail plus-alias restriction failure
 
 Browser QA requires staging to accept Gmail plus aliases generated as `+flatkey-qa-<run-id>-<nonce>`. If the workflow fails before account creation with an alias restriction error, classify it as staging configuration failure.
 
@@ -997,8 +1137,9 @@ Abort if staging policy intentionally forbids plus aliases; the current QA desig
 
 | Condition | Required action |
 |---|---|
-| versioned Terraform plan guard fails | Abort; do not apply; inspect the exact guard finding before changing infrastructure. |
+| phase-aware Terraform plan guard fails | Abort; do not apply; inspect the exact guard finding before changing infrastructure. |
 | state/live preflight finds non-empty state or an existing Browser QA resource | Stop and design an import/migration before creating resources; do not continue create and do not use `-target`. |
+| Phase A or Phase B saved-plan apply exits non-zero | Treat the corresponding saved plan as invalid; do not retry that plan. If partial apply is detected, stop, write a separate recovery design, then generate and guard a new plan. Do not use `-target`, manual deletion, or import guessing as recovery. |
 | Plan touches existing Cloud Run services, LB, URL map, cert, DNS, traffic, or unrelated IAM | Abort; investigate drift or lifecycle ownership. |
 | Secret command would put a secret in argv, history, Terraform state, GitHub output, or a committed file | Abort; use stdin/UI/in-memory transform instead. |
 | Broker unauthenticated or bad-identity call returns `200` or broker JSON validation | Abort; IAM boundary failed. |

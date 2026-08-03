@@ -1,5 +1,7 @@
 # Browser QA Terraform State 隔离设计
 
+> **Bootstrap 安全补充：** 本文原有的单阶段 35-resource bootstrap 顺序已被 [两阶段 Secret Bootstrap 设计](./2026-08-03-browser-qa-two-phase-secret-bootstrap-design.md) 取代。独立 root/state 结论不变；首次创建必须按 Phase A → Secret versions → Phase B 执行。
+
 **日期：** 2026-08-03
 
 **状态：** 待书面审阅
