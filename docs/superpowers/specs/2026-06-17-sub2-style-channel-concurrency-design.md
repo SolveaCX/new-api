@@ -2,6 +2,8 @@
 
 Date: 2026-06-17
 
+> Historical design. The phase-A Redis failure policy and production-safety scope are superseded by `2026-07-13-channel-concurrency-redis-safety-core-design.md`. In particular, Redis acquire and wait operations are now intentionally fail-closed for multi-node correctness; the fail-open text below is no longer authoritative.
+
 ## Context
 
 The current branch already introduces channel-level `max_concurrency` and a lease-based limiter around channel selection and relay execution. The next iteration should make that limiter behave more like the `sub2api` scheduler: use Redis as the shared concurrency source of truth, prefer low-load channels, wait briefly when capacity is saturated, and cool down channels that are actively overloaded by upstream.

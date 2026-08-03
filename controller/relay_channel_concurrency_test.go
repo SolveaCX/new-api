@@ -109,9 +109,9 @@ func TestProcessChannelErrorMarksCooldownOnTooManyRequests(t *testing.T) {
 		types.NewOpenAIError(errors.New("upstream rate limited"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests),
 	)
 
-	loads, err := service.GetChannelConcurrencyLoads(context.Background(), []*model.Channel{{Id: channelID, MaxConcurrency: 1}})
+	coolingDown, err := service.IsChannelConcurrencyCoolingDown(context.Background(), channelID)
 	require.NoError(t, err)
-	require.True(t, loads[channelID].CoolingDown)
+	require.True(t, coolingDown)
 }
 
 func TestProcessChannelErrorMarksRedisCooldownWithCanceledRequestContext(t *testing.T) {
@@ -145,9 +145,9 @@ func TestProcessChannelErrorMarksRedisCooldownWithCanceledRequestContext(t *test
 		types.NewOpenAIError(errors.New("rate limit exceeded"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests),
 	)
 
-	loads, err := service.GetChannelConcurrencyLoads(context.Background(), []*model.Channel{{Id: channelID, MaxConcurrency: 1}})
+	coolingDown, err := service.IsChannelConcurrencyCoolingDown(context.Background(), channelID)
 	require.NoError(t, err)
-	require.True(t, loads[channelID].CoolingDown)
+	require.True(t, coolingDown)
 }
 
 func TestShouldMarkChannelConcurrencyCooldownExcludesQuota429(t *testing.T) {
