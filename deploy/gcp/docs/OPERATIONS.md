@@ -516,12 +516,13 @@ set +x
 
 repo_root="$(git rev-parse --show-toplevel)"
 qa_root="$repo_root/deploy/gcp/envs/browser-qa-staging"
+expected_account="liu1124789567@gmail.com"
 expected_project="vocai-gemini-prod"
 region="us-west1"
 
 active_account="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | head -n 1)"
-if [ -z "$active_account" ]; then
-  echo "ABORT: active GCP account is required" >&2
+if [ "$active_account" != "$expected_account" ]; then
+  echo "ABORT: active GCP account must be liu1124789567@gmail.com; got ${active_account:-<unset>}" >&2
   exit 1
 fi
 

@@ -613,11 +613,28 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
     def test_phase_a_recovery_checks_active_context_before_state_or_plan(self):
         block = phase_a_recovery_command_block()
 
+        account_gate = (
+            'expected_account="liu1124789567@gmail.com"\n'
+            'expected_project="vocai-gemini-prod"\n'
+            'region="us-west1"\n'
+            '\n'
+            'active_account="$(gcloud auth list --filter=status:ACTIVE --format=\'value(account)\' 2>/dev/null | head -n 1)"\n'
+            'if [ "$active_account" != "$expected_account" ]; then\n'
+            '  echo "ABORT: active GCP account must be liu1124789567@gmail.com; got ${active_account:-<unset>}" >&2\n'
+            '  exit 1\n'
+            'fi'
+        )
+        account_gate_index = block.find(account_gate)
+        if account_gate_index == -1:
+            raise AssertionError("Phase A recovery active account fail-closed gate not found")
+
         context_markers = [
+            'expected_account="liu1124789567@gmail.com"',
             'active_account="$(gcloud auth list --filter=status:ACTIVE --format=\'value(account)\' 2>/dev/null | head -n 1)"',
+            'if [ "$active_account" != "$expected_account" ]; then',
             'active_project="$(gcloud config get-value project 2>/dev/null)"',
             'active_region="$(gcloud config get-value run/region 2>/dev/null)"',
-            'ABORT: active GCP account is required',
+            'ABORT: active GCP account must be liu1124789567@gmail.com; got ${active_account:-<unset>}',
             'ABORT: active GCP project must be vocai-gemini-prod',
             'ABORT: active run region must be us-west1',
         ]
@@ -632,6 +649,7 @@ class BrowserQaOperationsContractTests(unittest.TestCase):
                 self.assertIn(marker, block)
 
         first_state_or_plan = min(block.index(marker) for marker in gated_markers)
+        self.assertLess(account_gate_index + len(account_gate), first_state_or_plan)
         for marker in context_markers:
             with self.subTest(marker=marker):
                 self.assertLess(block.index(marker), first_state_or_plan)
