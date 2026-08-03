@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Token struct {
@@ -78,10 +79,13 @@ func (token *Token) GetIpLimits() []string {
 	return ipLimits
 }
 
-func GetAllUserTokens(userId int, startIdx int, num int) ([]*Token, error) {
+func GetAllUserTokens(userId int, startIdx int, num int, group string) ([]*Token, error) {
 	var tokens []*Token
-	var err error
-	err = DB.Where("user_id = ?", userId).Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
+	query := DB.Where("user_id = ?", userId)
+	if group != "" {
+		query = query.Where(&Token{Group: group})
+	}
+	err := query.Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
 	return tokens, err
 }
 
@@ -124,7 +128,7 @@ func sanitizeLikePattern(input string) (string, error) {
 
 const searchHardLimit = 100
 
-func SearchUserTokens(userId int, keyword string, token string, offset int, limit int) (tokens []*Token, total int64, err error) {
+func SearchUserTokens(userId int, keyword string, token string, group string, offset int, limit int) (tokens []*Token, total int64, err error) {
 	// model 层强制截断
 	if limit <= 0 || limit > searchHardLimit {
 		limit = searchHardLimit
@@ -152,6 +156,9 @@ func SearchUserTokens(userId int, keyword string, token string, offset int, limi
 	}
 
 	baseQuery := DB.Model(&Token{}).Where("user_id = ?", userId)
+	if group != "" {
+		baseQuery = baseQuery.Where(&Token{Group: group})
+	}
 
 	// 非空才加 LIKE 条件，空则跳过（不过滤该字段）
 	if keyword != "" {
@@ -443,7 +450,131 @@ func CountUserTokens(userId int) (int64, error) {
 	return total, err
 }
 
+func CountUserTokensByGroup(userId int, group string) (int64, error) {
+	if group == "" {
+		return CountUserTokens(userId)
+	}
+	var total int64
+	err := DB.Model(&Token{}).
+		Where("user_id = ?", userId).
+		Where(&Token{Group: group}).
+		Count(&total).Error
+	return total, err
+}
+
 // BatchDeleteTokens 删除指定用户的一组令牌，返回成功删除数量
+
+// ErrTokenBatchInvalid reports an invalid or unauthorized batch update.
+var ErrTokenBatchInvalid = errors.New("invalid token batch update")
+
+// ErrTokenBatchCacheInvalidation reports a committed update whose cache cleanup must be retried.
+var ErrTokenBatchCacheInvalidation = errors.New("token batch updated but cache invalidation failed; retry the request")
+
+var deleteTokenCacheForBatch = cacheDeleteToken
+
+type BatchUpdateTokensParams struct {
+	Ids                []int
+	UserId             int
+	Group              *string
+	RemainQuota        *int
+	ModelLimitsEnabled *bool
+	ModelLimits        *string
+}
+
+func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
+	if len(params.Ids) == 0 || len(params.Ids) > 100 || params.UserId <= 0 {
+		return 0, ErrTokenBatchInvalid
+	}
+	modelLimitsProvided := params.ModelLimitsEnabled != nil || params.ModelLimits != nil
+	if (params.Group == nil && params.RemainQuota == nil && !modelLimitsProvided) ||
+		(params.ModelLimitsEnabled == nil) != (params.ModelLimits == nil) {
+		return 0, ErrTokenBatchInvalid
+	}
+	if params.Group != nil && *params.Group == "" {
+		return 0, ErrTokenBatchInvalid
+	}
+	if params.RemainQuota != nil {
+		maxQuotaValue := int(1000000000 * common.QuotaPerUnit)
+		if *params.RemainQuota < 0 || *params.RemainQuota > maxQuotaValue {
+			return 0, ErrTokenBatchInvalid
+		}
+	}
+	if params.ModelLimitsEnabled != nil && !*params.ModelLimitsEnabled {
+		emptyLimits := ""
+		params.ModelLimits = &emptyLimits
+	}
+	seen := make(map[int]struct{}, len(params.Ids))
+	for _, id := range params.Ids {
+		if id <= 0 {
+			return 0, ErrTokenBatchInvalid
+		}
+		if _, exists := seen[id]; exists {
+			return 0, ErrTokenBatchInvalid
+		}
+		seen[id] = struct{}{}
+	}
+
+	var tokenKeys []string
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var tokens []Token
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "key").
+			Where("user_id = ? AND id IN ?", params.UserId, params.Ids).
+			Find(&tokens).Error; err != nil {
+			return err
+		}
+		if len(tokens) != len(params.Ids) {
+			return ErrTokenBatchInvalid
+		}
+
+		tokenKeys = make([]string, 0, len(tokens))
+		for _, token := range tokens {
+			tokenKeys = append(tokenKeys, token.Key)
+		}
+		updates := make(map[string]interface{}, 4)
+		if params.Group != nil {
+			updates["group"] = *params.Group
+		}
+		if params.ModelLimitsEnabled != nil {
+			updates["model_limits_enabled"] = *params.ModelLimitsEnabled
+			updates["model_limits"] = *params.ModelLimits
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&Token{}).
+				Where("user_id = ? AND id IN ?", params.UserId, params.Ids).
+				Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if params.RemainQuota != nil {
+			if err := tx.Model(&Token{}).
+				Where("user_id = ? AND id IN ? AND unlimited_quota = ?", params.UserId, params.Ids, false).
+				Update("remain_quota", *params.RemainQuota).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	if common.RedisEnabled {
+		var firstErr error
+		for _, key := range tokenKeys {
+			if err := deleteTokenCacheForBatch(key); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		if firstErr != nil {
+			common.SysLog(fmt.Sprintf("failed to invalidate one or more token caches after batch update: %v", firstErr))
+			return len(params.Ids), ErrTokenBatchCacheInvalidation
+		}
+	}
+	return len(params.Ids), nil
+}
+
+// BatchDeleteTokens deletes tokens owned by the user and returns the count.
 func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	if len(ids) == 0 {
 		return 0, errors.New("ids 不能为空！")

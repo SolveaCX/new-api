@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import {
@@ -34,6 +34,7 @@ import { useDebounce } from '@/hooks'
 import { Database } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { getUserGroups } from '@/lib/api'
 import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
@@ -195,6 +196,20 @@ export function ApiKeysTable() {
   const [rowSelection, setRowSelection] = useState({})
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+  const { data: groupsData } = useQuery({
+    queryKey: ['user-groups'],
+    queryFn: getUserGroups,
+    staleTime: 5 * 60 * 1000,
+  })
+  const groupFilterOptions = useMemo(
+    () =>
+      Object.entries(groupsData?.data ?? {}).map(([value, info]) => ({
+        value,
+        label: value,
+        description: info.desc || value,
+      })),
+    [groupsData?.data]
+  )
 
   const {
     globalFilter,
@@ -212,6 +227,7 @@ export function ApiKeysTable() {
     columnFilters: [
       { columnId: 'status', searchKey: 'status', type: 'array' },
       { columnId: '_tokenSearch', searchKey: 'token', type: 'string' },
+      { columnId: 'group', searchKey: 'keyGroup', type: 'array' },
     ],
   })
 
@@ -236,6 +252,10 @@ export function ApiKeysTable() {
   }, [debouncedTokenFilter, tokenFilterFromUrl, onColumnFiltersChange])
 
   const tokenFilter = tokenFilterFromUrl
+  const groupFilter =
+    ((columnFilters.find((filter) => filter.id === 'group')?.value as
+      | string[]
+      | undefined) ?? [])[0] || ''
   const shouldSearch = Boolean(globalFilter?.trim() || tokenFilter.trim())
 
   // Fetch data with React Query
@@ -247,6 +267,7 @@ export function ApiKeysTable() {
       pagination.pageSize,
       globalFilter,
       tokenFilter,
+      groupFilter,
       refreshTrigger,
     ],
     queryFn: async () => {
@@ -254,10 +275,12 @@ export function ApiKeysTable() {
         ? await searchApiKeys({
             keyword: globalFilter,
             token: tokenFilter,
+            group: groupFilter,
             p: pagination.pageIndex + 1,
             size: pagination.pageSize,
           })
         : await getApiKeys({
+            group: groupFilter,
             p: pagination.pageIndex + 1,
             size: pagination.pageSize,
           })
@@ -347,6 +370,16 @@ export function ApiKeysTable() {
             options: API_KEY_STATUS_OPTIONS,
             singleSelect: true,
           },
+          ...(groupFilterOptions.length > 0
+            ? [
+                {
+                  columnId: 'group',
+                  title: t('Group'),
+                  options: groupFilterOptions,
+                  singleSelect: true,
+                },
+              ]
+            : []),
         ],
       }}
       mobile={<ApiKeysMobileList table={table} isLoading={isLoading} />}

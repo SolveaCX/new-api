@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useCallback } from 'react'
 import { type Table } from '@tanstack/react-table'
-import { Copy, Trash2, Loader2 } from 'lucide-react'
+import { Copy, Loader2, Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/tooltip'
 import { DataTableBulkActions as BulkActionsToolbar } from '@/components/data-table'
 import { type ApiKey } from '../types'
+import { ApiKeysBatchEditDialog } from './api-keys-batch-group-dialog'
 import { ApiKeysMultiDeleteDialog } from './api-keys-multi-delete-dialog'
 import { useApiKeys } from './api-keys-provider'
 
@@ -42,6 +43,7 @@ export function DataTableBulkActions<TData>({
 }: DataTableBulkActionsProps<TData>) {
   const { t } = useTranslation()
   const { resolveRealKeysBatch } = useApiKeys()
+  const [showBatchEdit, setShowBatchEdit] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
   const selectedRows = table.getFilteredSelectedRowModel().rows
@@ -88,6 +90,25 @@ export function DataTableBulkActions<TData>({
                 variant='outline'
                 size='icon'
                 className='size-8'
+                onClick={() => setShowBatchEdit(true)}
+                aria-label={t('Edit selected API keys')}
+              />
+            }
+          >
+            <Pencil className='size-4' />
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t('Edit selected API keys')}</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='outline'
+                size='icon'
+                className='size-8'
                 onClick={handleBatchCopy}
                 disabled={isCopying}
                 aria-label={t('Copy selected keys')}
@@ -125,6 +146,12 @@ export function DataTableBulkActions<TData>({
           </TooltipContent>
         </Tooltip>
       </BulkActionsToolbar>
+
+      <ApiKeysBatchEditDialog
+        open={showBatchEdit}
+        onOpenChange={setShowBatchEdit}
+        table={table}
+      />
 
       <ApiKeysMultiDeleteDialog
         open={showDeleteConfirm}

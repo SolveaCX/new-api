@@ -3563,6 +3563,86 @@
             "Combination1243": []
           }
         ]
+      },
+      "put": {
+        "summary": "Batch edit API keys",
+        "deprecated": false,
+        "description": "Updates one or more fields for 1-100 API keys owned by the authenticated user. model_limits_enabled and model_limits must be provided together. Disabling the allowlist clears model_limits. Any missing or foreign id rejects the entire transaction.",
+        "tags": [
+          "令牌管理"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "group": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "remain_quota": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "model_limits_enabled": {
+                    "type": "boolean"
+                  },
+                  "model_limits": {
+                    "type": "string"
+                  }
+                },
+                "anyOf": [
+                  {
+                    "required": [
+                      "group"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "remain_quota"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "model_limits_enabled",
+                      "model_limits"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch update result",
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "Combination343": []
+          },
+          {
+            "Combination1243": []
+          }
+        ]
       }
     },
     "/api/usage/token/": {
