@@ -146,7 +146,7 @@ type SupplierHistoricalDailySummary struct {
 }
 
 type SupplierHistoricalPublishedDay struct {
-	Date        string `json:"date" gorm:"type:varchar(10);not null;uniqueIndex:ux_supplier_historical_published_day_date"`
+	Date        string `json:"date" gorm:"type:varchar(10);not null"`
 	DayStart    int64  `json:"day_start" gorm:"not null;index"`
 	ImportId    int64  `json:"import_id" gorm:"not null;index"`
 	PublishedBy int    `json:"published_by" gorm:"not null"`

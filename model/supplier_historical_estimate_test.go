@@ -407,15 +407,18 @@ func TestSupplierHistoricalSchemaIndexesAcrossSupportedDialects(t *testing.T) {
 			require.Equal(t, []string{"import_id", "date", "dimension_key"}, uniqueColumns)
 			publishedStatement := &gorm.Statement{DB: db}
 			require.NoError(t, publishedStatement.Parse(&SupplierHistoricalPublishedDay{}))
+			publishedDateField := publishedStatement.Schema.LookUpField("date")
+			require.NotNil(t, publishedDateField)
+			require.False(t, publishedDateField.Unique)
 			var publishedDateColumns []string
 			for _, index := range publishedStatement.Schema.ParseIndexes() {
-				if index.Name == "ux_supplier_historical_published_day_date" {
+				if index.Name == supplierHistoricalPublishedDayDateIndexName {
 					for _, field := range index.Fields {
 						publishedDateColumns = append(publishedDateColumns, field.DBName)
 					}
 				}
 			}
-			require.Equal(t, []string{"date"}, publishedDateColumns)
+			require.Empty(t, publishedDateColumns)
 		})
 	}
 }
