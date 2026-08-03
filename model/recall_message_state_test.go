@@ -544,6 +544,27 @@ func TestRecallMessageBaselineConcurrentExactEventDoesNotCountReconciled(t *test
 	requireRecallMessageStateEventCount(t, 1)
 }
 
+func TestRecallMessageBaselineRejectsExactEventFromDifferentCampaign(t *testing.T) {
+	setupRecallRepositoryTestDB(t)
+
+	message := seedRecallMessage(t, RecallMessageAccepted, 3)
+	campaignID := firstCampaignIDForMessageState(t, message.Id)
+	conflictingEvent, err := recallMessageStateEvent(recallMessageWithCampaign{
+		RecallMessage: message,
+		CampaignID:    campaignID + 1,
+	}, "", message.State, message.StateVersion, 1_721_000_000)
+	require.NoError(t, err)
+	require.NoError(t, DB.Create(&conflictingEvent).Error)
+
+	count, err := CountUnbaselinedRecallMessagesForCampaign(context.Background(), campaignID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, count)
+
+	reconciled, err := ReconcileRecallMessageStateEventBaseline(context.Background(), 10)
+	require.ErrorContains(t, err, "baseline event was not inserted")
+	require.Zero(t, reconciled)
+}
+
 func TestRecallMessageBaselineMissingStateEventSubqueryCorrelatesCampaign(t *testing.T) {
 	setupRecallRepositoryTestDB(t)
 

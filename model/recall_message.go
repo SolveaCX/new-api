@@ -604,7 +604,7 @@ func insertRecallMessageStateEvent(tx *gorm.DB, event *RecallEvent) (bool, error
 func recallMessageStateEventExists(tx *gorm.DB, event RecallEvent) (bool, error) {
 	var count int64
 	err := tx.Model(&RecallEvent{}).
-		Where("event_type = ? AND source = ? AND message_id = ? AND source_event_id = ?", event.EventType, event.Source, event.MessageId, event.SourceEventId).
+		Where("campaign_id = ? AND event_type = ? AND source = ? AND message_id = ? AND source_event_id = ?", event.CampaignId, event.EventType, event.Source, event.MessageId, event.SourceEventId).
 		Count(&count).Error
 	if err != nil {
 		return false, err
