@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { Readable, Writable } = require("node:stream");
 const test = require("node:test");
 const helper = require("./browser_evidence_helper.cjs");
 
@@ -281,6 +282,74 @@ test("long lived helper fails closed when service worker bypass cannot be applie
   };
   const session = new helper.BrowserEvidenceSession({ browser, runtimeDir: os.tmpdir(), sensitiveValues: [] });
   await assert.rejects(() => session.start(), /service worker bypass unavailable/);
+});
+
+test("protocol reports only fixed bounded init failure codes without exposing exception text", async () => {
+  const secret = "owner+alias@gmail.com pw-secret sk-12345678 654321";
+  const cases = [
+    {
+      expected: "init_connect_failed",
+      connectOverCDP: async () => {
+        throw new Error(`connect rejected ${secret}`);
+      },
+    },
+    {
+      expected: "init_context_failed",
+      connectOverCDP: async () => ({ contexts: () => [] }),
+    },
+    {
+      expected: "init_websocket_block_failed",
+      connectOverCDP: async () => {
+        const context = fakeSecureStartContext();
+        delete context.routeWebSocket;
+        return fakeSecureStartBrowser(context);
+      },
+    },
+    {
+      expected: "init_download_block_failed",
+      connectOverCDP: async () => {
+        const browser = fakeSecureStartBrowser();
+        delete browser.newBrowserCDPSession;
+        return browser;
+      },
+    },
+    {
+      expected: "init_service_worker_block_failed",
+      connectOverCDP: async () => {
+        const context = fakeSecureStartContext();
+        delete context.addInitScript;
+        return fakeSecureStartBrowser(context);
+      },
+    },
+    {
+      expected: "init_page_failed",
+      connectOverCDP: async () => {
+        const context = fakeSecureStartContext();
+        context.pages = () => [];
+        delete context.newPage;
+        return fakeSecureStartBrowser(context);
+      },
+    },
+    {
+      expected: "init_service_worker_bypass_failed",
+      connectOverCDP: async () => {
+        const context = fakeSecureStartContext();
+        delete context.newCDPSession;
+        return fakeSecureStartBrowser(context);
+      },
+    },
+  ];
+
+  for (const testCase of cases) {
+    const response = await runSingleProtocolRequest(testCase.connectOverCDP);
+    assert.deepEqual(response, { id: 17, ok: false, error: testCase.expected });
+    assert.ok(response.error.length <= 64);
+    assert.ok(!JSON.stringify(response).includes(secret));
+    assert.ok(!JSON.stringify(response).includes("owner+alias@gmail.com"));
+    assert.ok(!JSON.stringify(response).includes("pw-secret"));
+    assert.ok(!JSON.stringify(response).includes("sk-12345678"));
+    assert.ok(!JSON.stringify(response).includes("654321"));
+  }
 });
 
 test("docs reader uses fresh cookie-free docs proxy context, strips sensitive headers, and closes on success", async () => {
@@ -680,6 +749,27 @@ function fakeDocsContext(calls, page) {
       calls.push(["close"]);
     },
   };
+}
+
+async function runSingleProtocolRequest(connectOverCDP) {
+  const request = JSON.stringify({
+    id: 17,
+    command: "init",
+    params: {
+      cdpEndpoint: "http://127.0.0.1:9222",
+      runtimeDir: os.tmpdir(),
+      sensitiveValues: [],
+    },
+  }) + "\n";
+  let response = "";
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      response += chunk.toString("utf8");
+      callback();
+    },
+  });
+  await helper.runProtocol({ input: Readable.from([request]), output, connectOverCDP });
+  return JSON.parse(response.trim());
 }
 
 function createDeferred() {

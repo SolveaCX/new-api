@@ -7,6 +7,33 @@ const API_KEY_PATTERN = /\bsk-[A-Za-z0-9_-]{8,}\b/g;
 const MAX_EVENTS = 1000;
 const MAX_EVENT_BYTES = 64 * 1024;
 const MAX_TOTAL_BYTES = 2 * 1024 * 1024;
+const INIT_FAILURE_MESSAGES = Object.freeze({
+  init_connect_failed: "browser connection failed",
+  init_context_failed: "default browser context unavailable",
+  init_websocket_block_failed: "websocket blocking unavailable",
+  init_download_block_failed: "download blocking unavailable",
+  init_service_worker_block_failed: "service worker blocking unavailable",
+  init_page_failed: "browser page unavailable",
+  init_service_worker_bypass_failed: "service worker bypass unavailable",
+  init_failed: "browser evidence initialization failed",
+});
+const SAFE_PROTOCOL_ERROR_CODES = new Set([...Object.keys(INIT_FAILURE_MESSAGES), "command_failed"]);
+
+class BrowserEvidenceHelperError extends Error {
+  constructor(code) {
+    super(INIT_FAILURE_MESSAGES[code] || "browser evidence helper failed");
+    this.name = "BrowserEvidenceHelperError";
+    this.code = SAFE_PROTOCOL_ERROR_CODES.has(code) ? code : "command_failed";
+  }
+}
+
+async function runInitStage(code, operation) {
+  try {
+    return await operation();
+  } catch (_error) {
+    throw new BrowserEvidenceHelperError(code);
+  }
+}
 
 function safeScreenshotPath(runtimeDir, logicalName) {
   if (typeof logicalName !== "string" || !SAFE_LOGICAL_NAME.test(logicalName)) {
@@ -115,24 +142,35 @@ class BrowserEvidenceSession {
   }
 
   async start() {
-    const contexts = typeof this.browser.contexts === "function" ? this.browser.contexts() : [];
+    const contexts = await runInitStage(
+      "init_context_failed",
+      async () => typeof this.browser.contexts === "function" ? this.browser.contexts() : [],
+    );
     this.context = contexts[0];
     if (!this.context) {
-      throw new Error("default browser context unavailable");
+      throw new BrowserEvidenceHelperError("init_context_failed");
     }
-    await this._blockWebSockets();
-    await this._denyDownloads();
-    await this._blockServiceWorkers();
-    this._attachContextListeners();
-    const pages = typeof this.context.pages === "function" ? this.context.pages() : [];
-    this.page = pages[0] || (typeof this.context.newPage === "function" ? await this.context.newPage() : null);
+    await runInitStage("init_websocket_block_failed", () => this._blockWebSockets());
+    await runInitStage("init_download_block_failed", () => this._denyDownloads());
+    await runInitStage("init_service_worker_block_failed", () => this._blockServiceWorkers());
+    await runInitStage("init_context_failed", async () => this._attachContextListeners());
+    const pages = await runInitStage(
+      "init_page_failed",
+      async () => typeof this.context.pages === "function" ? this.context.pages() : [],
+    );
+    this.page = pages[0] || await runInitStage(
+      "init_page_failed",
+      async () => typeof this.context.newPage === "function" ? this.context.newPage() : null,
+    );
     if (!this.page) {
-      throw new Error("browser page unavailable");
+      throw new BrowserEvidenceHelperError("init_page_failed");
     }
-    await this._setupPage(this.page);
+    await runInitStage("init_service_worker_bypass_failed", () => this._setupPage(this.page));
     if (typeof this.context.on === "function") {
-      this.context.on("page", (page) => {
-        this._trackPageSetup(page);
+      await runInitStage("init_context_failed", async () => {
+        this.context.on("page", (page) => {
+          this._trackPageSetup(page);
+        });
       });
     }
     return this;
@@ -413,13 +451,20 @@ async function runProtocol({ input = process.stdin, output = process.stdout, con
       const params = request.params && typeof request.params === "object" ? request.params : {};
       let result = {};
       if (request.command === "init") {
-        const browser = await selectedConnect(params.cdpEndpoint);
-        session = await new BrowserEvidenceSession({
-          browser,
-          runtimeDir: params.runtimeDir,
-          sensitiveValues: params.sensitiveValues,
-          docsProxyUrl: params.docsProxyUrl,
-        }).start();
+        try {
+          const browser = await runInitStage("init_connect_failed", () => selectedConnect(params.cdpEndpoint));
+          session = await new BrowserEvidenceSession({
+            browser,
+            runtimeDir: params.runtimeDir,
+            sensitiveValues: params.sensitiveValues,
+            docsProxyUrl: params.docsProxyUrl,
+          }).start();
+        } catch (error) {
+          if (error instanceof BrowserEvidenceHelperError) {
+            throw error;
+          }
+          throw new BrowserEvidenceHelperError("init_failed");
+        }
       } else if (request.command === "captureScreenshot") {
         requireSession(session);
         result = await session.captureScreenshot(params.name);
@@ -443,7 +488,11 @@ async function runProtocol({ input = process.stdin, output = process.stdout, con
       output.write(JSON.stringify({ id: request.id, ok: true, result }) + "\n");
     } catch (error) {
       const id = request && typeof request.id === "number" ? request.id : 0;
-      output.write(JSON.stringify({ id, ok: false, error: "browser evidence helper failed" }) + "\n");
+      const fallback = request && request.command === "init" ? "init_failed" : "command_failed";
+      const errorCode = error instanceof BrowserEvidenceHelperError && SAFE_PROTOCOL_ERROR_CODES.has(error.code)
+        ? error.code
+        : fallback;
+      output.write(JSON.stringify({ id, ok: false, error: errorCode }) + "\n");
     }
   }
 }

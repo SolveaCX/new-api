@@ -40,6 +40,18 @@ MAX_BROWSER_EVIDENCE_EVENTS = 1000
 MAX_BROWSER_EVIDENCE_EVENT_BYTES = 64 * 1024
 MAX_BROWSER_EVIDENCE_TOTAL_BYTES = 2 * 1024 * 1024
 MAX_BROWSER_HELPER_FRAME_BYTES = 256 * 1024
+BROWSER_HELPER_COMMANDS = frozenset({"init", "captureScreenshot", "addSensitiveValues", "flush", "readDocs", "close"})
+BROWSER_HELPER_ERROR_CODES = frozenset({
+    "init_connect_failed",
+    "init_context_failed",
+    "init_websocket_block_failed",
+    "init_download_block_failed",
+    "init_service_worker_block_failed",
+    "init_page_failed",
+    "init_service_worker_bypass_failed",
+    "init_failed",
+    "command_failed",
+})
 MAX_PLAYWRIGHT_PACKAGE_JSON_BYTES = 65536
 MAX_CHROMIUM_STARTUP_STDERR_BYTES = 64 * 1024
 ROOT_GCS_ARTIFACT_NAMES = frozenset({"result.json", "codex-events.jsonl", "codex-stderr.txt", "manifest.json"})
@@ -1344,7 +1356,8 @@ class BrowserEvidenceHelperProcess:
             if payload.get("id") != self._next_id:
                 raise RuntimeError("browser helper response id mismatch")
             if payload.get("ok") is not True:
-                raise RuntimeError("browser helper command failed")
+                command_label = command if command in BROWSER_HELPER_COMMANDS else "command"
+                raise RuntimeError(f"browser helper {command_label} failed: {payload['error']}")
             return payload.get("result", {})
 
     def _read_response_line(self):
@@ -1385,8 +1398,12 @@ class BrowserEvidenceHelperProcess:
             raise RuntimeError("browser helper response malformed")
         if payload.get("ok") is True and "error" in payload:
             raise RuntimeError("browser helper response malformed")
-        if payload.get("ok") is False and "result" in payload:
-            raise RuntimeError("browser helper response malformed")
+        if payload.get("ok") is False:
+            if "result" in payload or set(payload) != {"id", "ok", "error"}:
+                raise RuntimeError("browser helper response malformed")
+            error_code = payload.get("error")
+            if not isinstance(error_code, str) or error_code not in BROWSER_HELPER_ERROR_CODES:
+                raise RuntimeError("browser helper response malformed")
         return payload
 
     def _protocol_secrets(self):

@@ -233,6 +233,63 @@ class BrowserEvidenceTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             helper._validate_response(json.dumps({"ok": True, "extra": "bad"}))
 
+        for error in (None, {}, [], "untrusted owner+alias@gmail.com pw-secret sk-12345678 654321"):
+            with self.subTest(error=error), self.assertRaisesRegex(RuntimeError, "response malformed"):
+                helper._validate_response(json.dumps({"id": 1, "ok": False, "error": error}))
+
+        with self.assertRaisesRegex(RuntimeError, "response malformed"):
+            helper._validate_response(json.dumps({"id": 1, "ok": False}))
+
+        expected_error_codes = {
+            "init_connect_failed",
+            "init_context_failed",
+            "init_websocket_block_failed",
+            "init_download_block_failed",
+            "init_service_worker_block_failed",
+            "init_page_failed",
+            "init_service_worker_bypass_failed",
+            "init_failed",
+            "command_failed",
+        }
+        self.assertEqual(supervisor.BROWSER_HELPER_ERROR_CODES, expected_error_codes)
+        for error_code in expected_error_codes:
+            with self.subTest(error_code=error_code):
+                payload = helper._validate_response(json.dumps({
+                    "id": 1,
+                    "ok": False,
+                    "error": error_code,
+                }))
+                self.assertEqual(payload["error"], error_code)
+
+    def test_browser_evidence_helper_failed_response_preserves_only_actionable_fixed_code(self):
+        class FailedResponseProcess:
+            def __init__(self):
+                self.stdin = io.StringIO()
+                self.stdout = io.StringIO(json.dumps({
+                    "id": 1,
+                    "ok": False,
+                    "error": "init_download_block_failed",
+                }) + "\n")
+
+        helper = supervisor.BrowserEvidenceHelperProcess(
+            browser=type("Browser", (), {"cdp_endpoint": "http://127.0.0.1:9222"})(),
+            runtime_root="runtime",
+            redactor=supervisor.Redactor(email="owner+alias@gmail.com", password="pw-secret"),
+            popen_factory=lambda *_args, **_kwargs: None,
+        )
+        helper.process = FailedResponseProcess()
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^browser helper init failed: init_download_block_failed$",
+        ) as raised:
+            helper._request("init", {})
+
+        message = str(raised.exception)
+        self.assertLessEqual(len(message), 128)
+        for secret in ("owner+alias@gmail.com", "owner@gmail.com", "alias", "pw-secret", "sk-12345678", "654321"):
+            self.assertNotIn(secret, message)
+
     def test_browser_evidence_helper_start_failure_terminates_launched_node(self):
         class FailingInitProcess:
             def __init__(self):
