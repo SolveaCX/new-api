@@ -1,10 +1,10 @@
 {
-  "base": "es.json",
+  "base": "en.json",
   "locales": {
     "en": {
       "file": "en.json",
-      "missingCount": 59,
-      "extrasCount": 6,
+      "missingCount": 0,
+      "extrasCount": 0,
       "untranslatedCount": 0
     },
     "es": {

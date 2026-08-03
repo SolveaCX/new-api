@@ -158,7 +158,6 @@ func TestApplyRecallFirstMonthDiscountFailOpenWhenLookupDegraded(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, quote, result)
 }
-
 func grantPurchaseServiceInvitationDiscount(t *testing.T, userID int, amountUSDMinor int64, key string) {
 	t.Helper()
 	require.NoError(t, model.DB.Transaction(func(tx *gorm.DB) error {

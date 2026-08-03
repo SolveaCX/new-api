@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/mail"
 	"net/smtp"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -125,10 +126,9 @@ func SendEmailFromWithMessageID(from string, subject string, receiver string, co
 	if SMTPPort == 465 || SMTPSSLEnabled {
 		return sendEmailTLS(addr, sender, recipients, auth, message)
 	}
-	if err := smtp.SendMail(addr, auth, sender, recipients, message); err != nil {
-		wrapped := &emailSendError{Uncertain: true, Err: err}
-		SysError(fmt.Sprintf("failed to send email to %s: %v", receiver, wrapped))
-		return wrapped
+	if err := sendEmailSMTP(addr, sender, recipients, auth, message); err != nil {
+		SysError(fmt.Sprintf("failed to send email to %s: %v", receiver, err))
+		return err
 	}
 	return nil
 }
@@ -215,10 +215,7 @@ func containsEmailHeaderBreak(value string) bool {
 }
 
 func sendEmailTLS(addr string, sender string, recipients []string, auth smtp.Auth, message []byte) error {
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		ServerName:         SMTPServer,
-	}
+	tlsConfig := smtpTLSConfig()
 	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
 		return &emailSendError{Err: err}
@@ -232,6 +229,50 @@ func sendEmailTLS(addr string, sender string, recipients []string, auth smtp.Aut
 	if err := client.Auth(auth); err != nil {
 		return &emailSendError{Err: err}
 	}
+	return sendEmailSMTPWithClient(client, sender, recipients, message)
+}
+
+func sendEmailSMTP(addr string, sender string, recipients []string, auth smtp.Auth, message []byte) error {
+	client, err := smtp.Dial(addr)
+	if err != nil {
+		return &emailSendError{Err: err}
+	}
+	defer client.Close()
+	if err := client.Hello("localhost"); err != nil {
+		return &emailSendError{Err: err}
+	}
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(smtpTLSConfig()); err != nil {
+			return &emailSendError{Err: err}
+		}
+	}
+	if auth != nil && smtpClientHasExtensions(client) {
+		if ok, _ := client.Extension("AUTH"); !ok {
+			return &emailSendError{Err: errors.New("smtp: server doesn't support AUTH")}
+		}
+		if err := client.Auth(auth); err != nil {
+			return &emailSendError{Err: err}
+		}
+	}
+	return sendEmailSMTPWithClient(client, sender, recipients, message)
+}
+
+func smtpTLSConfig() *tls.Config {
+	return &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         SMTPServer,
+	}
+}
+
+func smtpClientHasExtensions(client *smtp.Client) bool {
+	if client == nil {
+		return false
+	}
+	ext := reflect.ValueOf(client).Elem().FieldByName("ext")
+	return ext.IsValid() && ext.Kind() == reflect.Map && !ext.IsNil()
+}
+
+func sendEmailSMTPWithClient(client *smtp.Client, sender string, recipients []string, message []byte) error {
 	if err := client.Mail(sender); err != nil {
 		return &emailSendError{Err: err}
 	}
@@ -252,5 +293,6 @@ func sendEmailTLS(addr string, sender string, recipients []string, auth smtp.Aut
 	if err := w.Close(); err != nil {
 		return &emailSendError{Uncertain: true, Err: err}
 	}
+	_ = client.Quit()
 	return nil
 }

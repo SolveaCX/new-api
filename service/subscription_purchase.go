@@ -892,11 +892,12 @@ func applyBalancePrepaidPurchaseTx(tx *gorm.DB, user *model.User, contract *mode
 	}
 	if quote.DiscountKind == SubscriptionDiscountKindRecall && quote.DiscountAmountMinor > 0 {
 		eventData, err := common.Marshal(map[string]any{
-			"trade_no":        order.TradeNo,
-			"conversion_kind": model.RecallConversionDirect,
-			"currency":        strings.ToUpper(strings.TrimSpace(quote.Currency)),
-			"amount_total":    quote.PaymentAmountMinor,
-			"discount_amount": quote.DiscountAmountMinor,
+			"trade_no":         order.TradeNo,
+			"conversion_kind":  model.RecallConversionDirect,
+			"currency":         strings.ToUpper(strings.TrimSpace(quote.Currency)),
+			"amount_total":     quote.PaymentAmountMinor,
+			"discount_amount":  quote.DiscountAmountMinor,
+			"payment_category": model.RecallRevenueCategoryBalanceSubscription,
 		})
 		if err != nil {
 			return nil, nil, err
@@ -1464,34 +1465,9 @@ func validateSubscriptionPurchaseQuoteMatchesPlan(plan model.SubscriptionPlan, c
 }
 
 func applyRecallFirstMonthDiscount(ctx context.Context, userID int, claim string, plan model.SubscriptionPlan, quote SubscriptionPurchaseQuote) (SubscriptionPurchaseQuote, error) {
-	if !operation_setting.IsRecallCampaignEnabled() || strings.TrimSpace(plan.StripePriceId) == "" {
-		return quote, nil
-	}
 	claim = strings.TrimSpace(claim)
-	if claim != "" {
-		discount, err := GetRecallRuntime().Claims.BuildFirstMonthPurchaseDiscount(
-			ctx,
-			userID,
-			claim,
-			RecallPurchaseKindSubscription,
-			strings.TrimSpace(plan.StripePriceId),
-			quote.Currency,
-			quote.UnitAmountMinor,
-		)
-		if err != nil {
-			return SubscriptionPurchaseQuote{}, err
-		}
-		if discount == nil || discount.DiscountAmountMinor <= 0 {
-			return quote, nil
-		}
-		discountMinor := discount.DiscountAmountMinor
-		quote.DiscountAmountMinor = discountMinor
-		quote.DiscountAmount = subscriptionPurchaseAmountFromMinor(discountMinor, quote.Currency)
-		quote.PaymentAmountMinor = quote.OriginalTotalAmountMinor - discountMinor
-		quote.Total = subscriptionPurchaseAmountFromMinor(quote.PaymentAmountMinor, quote.Currency)
-		quote.RecallCampaignID = discount.CampaignID
-		quote.RecallRecipientID = discount.RecipientID
-		quote.RecallPromotionCodeID = discount.PromotionCodeID
+	RecordRecallClaimAttribution(ctx, userID, claim)
+	if !operation_setting.IsRecallCampaignEnabled() || strings.TrimSpace(plan.StripePriceId) == "" {
 		return quote, nil
 	}
 	offer, err := GetRecallRuntime().Claims.ResolveBestRecallOffer(
