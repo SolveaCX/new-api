@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser QA / Record-Replay 自动测试技术实现</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --surface: #ffffff;
+      --ink: #17202a;
+      --muted: #5f6b7a;
+      --line: #d9e1ea;
+      --accent: #116a8c;
+      --accent-2: #2d6a4f;
+      --warn: #9a5b00;
+      --danger: #9b2226;
+      --code-bg: #101820;
+      --code-ink: #e8f0f7;
+      --badge-bg: #e8f5f1;
+      --shadow: 0 8px 30px rgba(23, 32, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
+    }
+    a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    header {
+      background: linear-gradient(180deg, #ffffff 0%, #eef5f8 100%);
+      border-bottom: 1px solid var(--line);
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+    .hero { padding: 42px 0 28px; }
+    h1 { margin: 0 0 14px; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1.12; letter-spacing: 0; }
+    .subtitle { max-width: 860px; margin: 0; color: var(--muted); font-size: 1.05rem; }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      font-size: .86rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge.ok { color: #114d38; background: var(--badge-bg); border-color: #b7dfcf; }
+    .badge.todo { color: #6b4700; background: #fff3d6; border-color: #ecd189; }
+    .badge.risk { color: #751a1d; background: #fde8e8; border-color: #efb6b8; }
+    .badge.info { color: #17456b; background: #e8f2fb; border-color: #b9d5ee; }
+    main { padding: 26px 0 56px; }
+    .grid { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 28px; align-items: start; }
+    nav.toc {
+      position: sticky;
+      top: 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    nav.toc h2 { margin: 0 0 10px; font-size: 1rem; }
+    nav.toc ol { margin: 0; padding-left: 20px; }
+    nav.toc li { margin: 5px 0; color: var(--muted); }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 18px;
+      box-shadow: var(--shadow);
+    }
+    h2 { margin: 0 0 14px; font-size: 1.45rem; line-height: 1.28; letter-spacing: 0; }
+    h3 { margin: 22px 0 10px; font-size: 1.08rem; letter-spacing: 0; }
+    p { margin: 10px 0; }
+    ul, ol { margin: 10px 0 10px 1.4rem; padding: 0; }
+    li { margin: 6px 0; }
+    .note, .warning, .fact {
+      border-left: 4px solid var(--accent);
+      background: #eef7fa;
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin: 14px 0;
+    }
+    .warning { border-left-color: var(--warn); background: #fff7e6; }
+    .fact { border-left-color: var(--accent-2); background: #edf7f1; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: .95rem; }
+    th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; }
+    code { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: .92em; background: #edf2f7; padding: 1px 5px; border-radius: 4px; }
+    pre {
+      overflow: auto;
+      background: var(--code-bg);
+      color: var(--code-ink);
+      padding: 14px 16px;
+      border-radius: 8px;
+      line-height: 1.5;
+      font-size: .88rem;
+    }
+    pre code { background: transparent; color: inherit; padding: 0; border-radius: 0; }
+    .diagram {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 10px;
+      margin: 14px 0;
+    }
+    .diagram svg { min-width: 760px; max-width: 100%; height: auto; display: block; }
+    .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .mini {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfdff;
+    }
+    .mini h3 { margin-top: 0; }
+    footer { color: var(--muted); padding: 16px 0 42px; }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      nav.toc { position: static; }
+      .cols { grid-template-columns: 1fr; }
+      .wrap { padding: 0 16px; }
+      section { padding: 18px; }
+    }
+    @media print {
+      body { background: #fff; color: #000; font-size: 12pt; }
+      header { background: #fff; border-bottom: 1px solid #999; }
+      .grid { display: block; }
+      nav.toc, section { box-shadow: none; break-inside: avoid; }
+      nav.toc { position: static; margin-bottom: 14px; }
+      a { color: #000; text-decoration: none; }
+      pre { white-space: pre-wrap; background: #f5f5f5; color: #000; border: 1px solid #bbb; }
+      .badge { border-color: #777; color: #000; background: #fff; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <h1>Browser QA / Record-Replay 自动测试技术实现</h1>
+      <p class="subtitle">本文说明仓库中 Browser QA 的当前技术实现：如何把录制的 onboarding Skill 放到 Google Cloud 上严格回放，如何通过受控的 GitHub Actions、Cloud Run、Secret Manager、GCS 和 Terraform 两阶段 bootstrap 建立 staging-only 的自动化验收链路。</p>
+      <div class="badges">
+        <span class="badge ok">代码已实现：workflow / runtime / Terraform root</span>
+        <span class="badge info">目标环境：Flatkey staging</span>
+        <span class="badge todo">实时部署状态：本文未连接云端验证</span>
+        <span class="badge risk">禁止：真实 Secret / token / OAuth JSON</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap grid">
+    <nav class="toc" aria-label="目录">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#scope">目标与范围</a></li>
+        <li><a href="#status">状态边界</a></li>
+        <li><a href="#architecture">总体架构</a></li>
+        <li><a href="#record-replay">Record/Replay Skill</a></li>
+        <li><a href="#trigger-chain">Staging Merge 触发链</a></li>
+        <li><a href="#actions-wif">GitHub Actions / WIF</a></li>
+        <li><a href="#cloud-run">Cloud Run 三个运行面</a></li>
+        <li><a href="#terraform">Terraform 与两阶段合约</a></li>
+        <li><a href="#secrets">Secret 与身份</a></li>
+        <li><a href="#evidence">GCS Evidence / Report</a></li>
+        <li><a href="#security">安全与 Egress</a></li>
+        <li><a href="#guard">Plan Guard / Hash / INVALID 恢复</a></li>
+        <li><a href="#observability">可观测性与告警</a></li>
+        <li><a href="#operations">本地与 Staging 操作</a></li>
+        <li><a href="#troubleshooting">故障处理</a></li>
+        <li><a href="#limits">已知限制</a></li>
+      </ol>
+    </nav>
+
+    <article>
+      <section id="scope">
+        <h2>1. 目标与范围</h2>
+        <p>Browser QA 的目标是在 staging 环境中自动复现新用户 onboarding 主路径，并在主路径成功后执行有边界的 UI / console / network 探索。它不改变生产发布链路，不访问 production Flatkey origin，不做付费、订阅、邀请、真实模型调用或管理员操作。</p>
+        <table>
+          <thead><tr><th scope="col">范围内</th><th scope="col">范围外</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>staging website、staging console、只读 docs 入口、邮箱验证码、API Key 页面、报告和 cleanup。</td>
+              <td>生产站点、生产发布 gate、数据库级 hard purge、真实付费或会产生不可逆费用的行为。</td>
+            </tr>
+            <tr>
+              <td>GitHub Actions 构建固定 QA 镜像，更新 QA broker/main/cleanup Cloud Run 资源并等待执行完成。</td>
+              <td>把个人 OAuth 文件、OpenAI API key、refresh token、验证码或完整 Flatkey API key 写入仓库、日志、Terraform state 或报告。</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>主要落点：<code>.github/workflows/gcp-browser-qa.yml</code>、<code>.github/workflows/gcp-deploy-staging.yml</code>、<code>scripts/browser_qa/</code>、<code>deploy/gcp/envs/browser-qa-staging/</code>、<code>deploy/gcp/docs/OPERATIONS.md</code>。</p>
+      </section>
+
+      <section id="status">
+        <h2>2. 状态边界：代码事实 vs 实时部署</h2>
+        <div class="fact">
+          <strong>代码已实现：</strong>仓库中已有 reusable Browser QA workflow、staging deploy 后自动调用 <code>mode: core</code>、QA 容器入口、supervisor、broker、cleanup、evidence upload、独立 Terraform root、phase-aware plan guard 和相关 contract tests。
+        </div>
+        <div class="warning">
+          <strong>实时部署状态未验证：</strong>本文没有运行 <code>gcloud</code>、<code>terraform</code>、GitHub workflow dispatch，也没有读取任何云端 state、Secret version 或 GCS manifest。因此不能声称 Phase B 已完成，也不能声称 staging 自动 replay 已真实跑通。
+        </div>
+        <p>Operations runbook 记录了一个 incident-specific 的 Phase A recovery 路径：已知场景是 Phase A 前 23 个非 bucket-IAM 资源进入独立 state，剩余 3 个 report bucket IAM member 需要通过 <code>--phase infra-recovery</code> 的新 saved plan 恢复。该记录是 runbook/设计状态，不等同于本文实时确认云端已经处在该状态。</p>
+      </section>
+
+      <section id="architecture">
+        <h2>3. 总体架构</h2>
+        <p>GitHub Actions 是编排面；Cloud Run service/job 是执行面；supervisor 拥有浏览器、Codex 进程、MCP 配置、egress proxy、证据采集、脱敏、上传和进程内 cleanup；独立 cleanup job 作为第二层回收保障。</p>
+        <div class="diagram" role="img" aria-label="Browser QA 总体架构图">
+          <svg viewBox="0 0 980 480" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#47606f"/>
+              </marker>
+              <style>
+                .box{fill:#fff;stroke:#93a4b3;stroke-width:1.4;rx:8}
+                .cloud{fill:#eef7f1;stroke:#7ab893;stroke-width:1.4;rx:8}
+                .guard{fill:#fff4dd;stroke:#d89b2b;stroke-width:1.4;rx:8}
+                .text{font:14px sans-serif;fill:#17202a}
+                .small{font:12px sans-serif;fill:#536271}
+                .line{stroke:#47606f;stroke-width:1.6;fill:none;marker-end:url(#arrow)}
+              </style>
+            </defs>
+            <rect class="box" x="30" y="40" width="190" height="74"/>
+            <text class="text" x="52" y="72">staging push / dispatch</text>
+            <text class="small" x="52" y="94">GitHub Actions</text>
+            <rect class="cloud" x="280" y="34" width="210" height="86"/>
+            <text class="text" x="304" y="66">WIF + deployer SA</text>
+            <text class="small" x="304" y="90">build, smoke, push image</text>
+            <rect class="cloud" x="560" y="34" width="360" height="86"/>
+            <text class="text" x="584" y="66">Artifact Registry + Cloud Run update</text>
+            <text class="small" x="584" y="90">broker service, main job, cleanup job</text>
+
+            <rect class="cloud" x="70" y="190" width="250" height="110"/>
+            <text class="text" x="96" y="222">Main Cloud Run Job</text>
+            <text class="small" x="96" y="246">supervisor + Codex exec</text>
+            <text class="small" x="96" y="268">Chromium + Playwright MCP</text>
+            <rect class="guard" x="370" y="180" width="240" height="130"/>
+            <text class="text" x="392" y="213">Private Broker Service</text>
+            <text class="small" x="392" y="237">Gmail readonly OAuth</text>
+            <text class="small" x="392" y="259">only current alias code</text>
+            <rect class="cloud" x="660" y="190" width="250" height="110"/>
+            <text class="text" x="690" y="222">Cleanup Cloud Run Job</text>
+            <text class="small" x="690" y="246">rederive identity</text>
+            <text class="small" x="690" y="268">delete tokens + account</text>
+
+            <rect class="box" x="70" y="365" width="250" height="72"/>
+            <text class="text" x="96" y="395">Secret Manager</text>
+            <text class="small" x="96" y="417">API key, identity seed, OAuth</text>
+            <rect class="box" x="370" y="365" width="240" height="72"/>
+            <text class="text" x="394" y="395">GCS Report Bucket</text>
+            <text class="small" x="394" y="417">manifest, result, screenshots, logs</text>
+            <rect class="box" x="660" y="365" width="250" height="72"/>
+            <text class="text" x="690" y="395">GitHub Summary</text>
+            <text class="small" x="690" y="417">status and private GCS URI</text>
+
+            <path class="line" d="M220 77 H280"/>
+            <path class="line" d="M490 77 H560"/>
+            <path class="line" d="M740 120 V190"/>
+            <path class="line" d="M195 190 V115"/>
+            <path class="line" d="M320 245 H370"/>
+            <path class="line" d="M610 245 H660"/>
+            <path class="line" d="M195 300 V365"/>
+            <path class="line" d="M490 310 V365"/>
+            <path class="line" d="M785 300 V365"/>
+          </svg>
+        </div>
+      </section>
+
+      <section id="record-replay">
+        <h2>4. Record/Replay Skill 与 AI 发散边界</h2>
+        <p>当前实现加载固定 Skill：<code>.agents/skills/flatkey-new-user-onboarding</code>。运行时 prompt 要求先执行严格 replay，只有 replay 到达 checkpoint 后才允许调用 <code>qa_replay_checkpoint</code>。<code>core</code> 模式在 checkpoint 后必须停止，不能调用 <code>qa_start_exploration</code>；<code>normal</code> 模式才允许进入探索。</p>
+        <pre><code>Core mode: after the replay checkpoint, stop.
+Final result: "exploration": {"status": "not_started", "actions_used": 0}
+
+Normal mode:
+1. replay onboarding
+2. call qa_replay_checkpoint
+3. call qa_start_exploration
+4. explore up to 300 seconds or 30 browser actions</code></pre>
+        <table>
+          <thead><tr><th scope="col">阶段</th><th scope="col">边界</th><th scope="col">实现位置</th></tr></thead>
+          <tbody>
+            <tr><td>Replay</td><td>语义回放 onboarding，允许小幅定位恢复；不创建第二个账号，不绕过 CAPTCHA。</td><td><code>scripts/browser_qa/config/qa-prompt.md</code>、<code>supervisor.py</code></td></tr>
+            <tr><td>Core</td><td>到 checkpoint 后停止；禁止后续浏览器 action。</td><td><code>control_mcp.py</code>、<code>mcp_budget_wrapper.py</code></td></tr>
+            <tr><td>Normal exploration</td><td>最多 5 分钟或 30 个 browser tool action；发现 UI、console、network、恢复路径问题。</td><td><code>budget.py</code>、<code>mcp_budget_wrapper.py</code></td></tr>
+            <tr><td>未来发散</td><td>可以扩大假设队列和告警接入，但仍必须守住 origin、预算、费用和 cleanup 边界。</td><td>需新 PR 和更新 policy / tests</td></tr>
+          </tbody>
+        </table>
+        <p>结果必须符合 <code>scripts/browser_qa/config/result.schema.json</code>：包含 <code>replay</code>、<code>exploration</code>、<code>budgets</code>、<code>findings</code>。非 <code>info</code> finding 会让 manifest 进入 <code>findings_detected</code>。</p>
+      </section>
+
+      <section id="trigger-chain">
+        <h2>5. Staging Merge 触发链</h2>
+        <p><code>.github/workflows/gcp-deploy-staging.yml</code> 在 <code>staging</code> 分支 push 后构建并部署 <code>newapi-staging</code>。deploy job 完成 Cloud Run 更新并通过 <code>/api/status</code> 健康检查后，workflow 内的 <code>browser-qa-core</code> job 调用同仓 reusable workflow <code>.github/workflows/gcp-browser-qa.yml</code>，传入 <code>mode: core</code>。</p>
+        <div class="diagram" role="img" aria-label="Staging 到 Browser QA 流程图">
+          <svg viewBox="0 0 900 290" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#47606f"/>
+              </marker>
+              <style>
+                .node{fill:#fff;stroke:#8ca0ae;stroke-width:1.4;rx:8}
+                .ok{fill:#edf7f1;stroke:#71ad8a;stroke-width:1.4;rx:8}
+                .warn{fill:#fff4dd;stroke:#d69c2f;stroke-width:1.4;rx:8}
+                .text{font:14px sans-serif;fill:#17202a}
+                .small{font:12px sans-serif;fill:#536271}
+                .line{stroke:#47606f;stroke-width:1.6;fill:none;marker-end:url(#arrow2)}
+              </style>
+            </defs>
+            <rect class="node" x="24" y="46" width="155" height="74"/>
+            <text class="text" x="48" y="78">push staging</text>
+            <text class="small" x="48" y="100">paths-ignore website</text>
+            <rect class="node" x="230" y="46" width="155" height="74"/>
+            <text class="text" x="258" y="78">build image</text>
+            <text class="small" x="258" y="100">server staging tag</text>
+            <rect class="ok" x="436" y="46" width="170" height="74"/>
+            <text class="text" x="464" y="78">deploy staging</text>
+            <text class="small" x="464" y="100">100% direct traffic</text>
+            <rect class="ok" x="658" y="46" width="170" height="74"/>
+            <text class="text" x="682" y="78">health check</text>
+            <text class="small" x="682" y="100">/api/status == 200</text>
+            <rect class="warn" x="322" y="178" width="255" height="74"/>
+            <text class="text" x="350" y="210">browser-qa-core</text>
+            <text class="small" x="350" y="232">reusable workflow, mode: core</text>
+            <rect class="warn" x="628" y="178" width="220" height="74"/>
+            <text class="text" x="654" y="210">QA red / green</text>
+            <text class="small" x="654" y="232">alert only, no rollback</text>
+            <path class="line" d="M179 83 H230"/>
+            <path class="line" d="M385 83 H436"/>
+            <path class="line" d="M606 83 H658"/>
+            <path class="line" d="M743 120 C743 156 620 184 577 210"/>
+            <path class="line" d="M577 215 H628"/>
+          </svg>
+        </div>
+        <p>QA 失败会让 Actions run 变红用于告警和排查，但 workflow 没有回滚已经完成的 staging 部署，也不触发 production 或 main 发布路径。</p>
+      </section>
+
+      <section id="actions-wif">
+        <h2>6. GitHub Actions / Workload Identity Federation</h2>
+        <p><code>gcp-browser-qa.yml</code> 支持 <code>workflow_dispatch</code> 与 <code>workflow_call</code>，输入模式为 <code>normal</code>、<code>core</code>、<code>cleanup-only</code>。权限最小化为 <code>contents: read</code> 和 <code>id-token: write</code>，通过 QA 专用 WIF provider 和 deployer service account 访问 GCP。</p>
+        <pre><code>permissions:
+  contents: read
+  id-token: write
+
+env:
+  QA_AR_REPO_URL: ${{ vars.GCP_BROWSER_QA_AR_REPO_URL }}
+  QA_WIF_PROVIDER: ${{ vars.GCP_BROWSER_QA_WIF_PROVIDER }}
+  QA_DEPLOYER_SA: ${{ vars.GCP_BROWSER_QA_DEPLOYER_SA }}
+  QA_GCS_BUCKET: ${{ vars.GCP_BROWSER_QA_GCS_BUCKET }}</code></pre>
+        <p>workflow 会先校验输入：<code>cleanup-only</code> 必须提供纯数字 <code>original_run_id</code>；<code>normal</code>/<code>core</code> 必须存在安全的 <code>GCP_BROWSER_QA_GMAIL_BASE</code>，且不能含 plus tag、逗号、CR 或 LF。</p>
+      </section>
+
+      <section id="cloud-run">
+        <h2>7. Cloud Run Broker / Main / Cleanup</h2>
+        <p>同一个容器镜像由 <code>scripts/browser_qa/entrypoint.sh</code> 根据参数分派为三种模式：</p>
+        <pre><code>main    -&gt; python3 -m scripts.browser_qa.flatkey_browser_qa.supervisor
+cleanup -&gt; python3 -m scripts.browser_qa.flatkey_browser_qa.cleanup_job
+broker  -&gt; python3 -m scripts.browser_qa.flatkey_browser_qa.broker</code></pre>
+        <table>
+          <thead><tr><th scope="col">运行面</th><th scope="col">职责</th><th scope="col">Secret / IAM 边界</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Broker service</td>
+              <td>读取 Gmail readonly OAuth，按当前 run id、email tag、时间窗查询验证码，只返回匹配的六位验证码或 pending。</td>
+              <td>只有 broker SA 读 Gmail OAuth secret；只有 QA runtime SA invoke broker。</td>
+            </tr>
+            <tr>
+              <td>Main job</td>
+              <td>生成一次性身份，启动受控 Chromium、egress proxy、Codex exec、MCP server，写 main manifest 与证据。</td>
+              <td>runtime SA 读 Codex API key 和 identity seed；写 GCS object；不读 Gmail OAuth。</td>
+            </tr>
+            <tr>
+              <td>Cleanup job</td>
+              <td>用同一 run id 重新派生身份，分页删除 API Key，删除账号，验证账号不能再登录，合并 root manifest。</td>
+              <td>cleanup SA 读 identity seed；对专用 QA bucket 有 object admin；不读 Codex API key 或 Gmail OAuth。</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>容器镜像固定 Node/Codex/Playwright/Chromium 版本，以非 root 用户运行。workflow 在 push 镜像前执行容器 smoke test，包括非 root 检查、<code>codex --version</code>、<code>playwright-mcp --version</code>、Python unittest 和 CDP attach smoke。</p>
+      </section>
+
+      <section id="terraform">
+        <h2>8. Terraform 独立 State 与 Phase A + Phase B 合约</h2>
+        <p>Browser QA 的 Terraform root 是 <code>deploy/gcp/envs/browser-qa-staging/</code>，GCS backend prefix 是 <code>envs/browser-qa-staging</code>。它与 production root 共享 state bucket 但不共享 state prefix；它只声明 Browser QA 专属资源和 <code>browser_qa_*</code> outputs。</p>
+        <table>
+          <thead><tr><th scope="col">阶段</th><th scope="col">资源</th><th scope="col">Outputs</th><th scope="col">Guard phase</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Phase A</td>
+              <td>26 个非 workload 基础资源：Artifact Registry、4 个 SA、logging IAM、3 个 Secret container、Secret accessor IAM、SA user/WIF IAM、report bucket 与 bucket IAM、WIF pool/provider。</td>
+              <td>4 个基础 outputs：AR repo URL、WIF provider、deployer SA、report bucket。</td>
+              <td><code>--phase infra</code></td>
+            </tr>
+            <tr>
+              <td>Phase B</td>
+              <td>9 个 indexed workload 资源：broker service、main job、cleanup job、6 个 resource-level Run IAM member。</td>
+              <td>4 个 workload outputs：broker URI、broker service name、main job name、cleanup job name。</td>
+              <td><code>--phase workloads</code></td>
+            </tr>
+            <tr>
+              <td>合计</td>
+              <td><strong>26 + 9 = 35</strong> 个 Terraform resources。</td>
+              <td>8 个 <code>browser_qa_*</code> outputs。</td>
+              <td>旧 35-resource 单阶段 saved plan 会被两个 phase 拒绝。</td>
+            </tr>
+          </tbody>
+        </table>
+        <p><code>variables.tf</code> 中 <code>create_workloads</code> 默认 <code>true</code>，<code>terraform.tfvars</code> 也保存 steady state 的 <code>true</code>。Phase A 只通过命令行临时覆盖 <code>-var='create_workloads=false'</code>，防止首次创建时 Cloud Run 引用尚未写入 version 的 <code>latest</code> Secret。</p>
+      </section>
+
+      <section id="secrets">
+        <h2>9. Secret Manager / Gmail OAuth / API Key / Identity Seed</h2>
+        <p>Terraform 只创建 Secret Manager 容器和 IAM，不创建 <code>google_secret_manager_secret_version</code>，也不接收 Secret payload 作为变量。三个 Secret version 由人工 operator 在 Phase A 后写入：</p>
+        <ul>
+          <li><code>flatkey-browser-qa-codex-api-key</code>：只注入 main job 的 <code>CODEX_API_KEY</code>。</li>
+          <li><code>flatkey-browser-qa-identity-seed</code>：main 和 cleanup 用来通过 HMAC 派生 run-scoped username、email tag、password、API key name。</li>
+          <li><code>flatkey-browser-qa-gmail-oauth</code>：只注入 broker service 的 <code>GMAIL_OAUTH_JSON</code>，scope 必须是 Gmail readonly。</li>
+        </ul>
+        <pre><code>{
+  "refresh_token": "&lt;operator-owned-oauth-refresh-token&gt;",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "client_id": "&lt;oauth-client-id&gt;",
+  "client_secret": "&lt;oauth-client-secret&gt;",
+  "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
+}</code></pre>
+        <p>上面的 JSON 是形状示例，不是可用凭据。实际值不得进入仓库、聊天、GitHub logs、Terraform state、镜像层或报告。</p>
+      </section>
+
+      <section id="evidence">
+        <h2>10. GCS Evidence / Report</h2>
+        <p>报告写入私有 bucket：<code>gs://vocai-gemini-prod-flatkey-browser-qa-reports</code>。bucket 启用 uniform access、public access prevention 和 14 天生命周期删除。对象前缀按 GitHub run id 分组：</p>
+        <pre><code>runs/&lt;github-run-id&gt;/
+  manifest.json
+  main/&lt;main-execution-id&gt;/
+    manifest.json
+    result.json
+    codex-events.jsonl
+    codex-stderr.txt
+    browser/console.jsonl
+    browser/network.jsonl
+    screenshots/*.png
+  cleanup/&lt;cleanup-execution-id&gt;/
+    cleanup.json</code></pre>
+        <p>上传白名单只允许 runtime-root 相对 POSIX 路径：根级 JSON/JSONL/TXT、<code>browser/console.jsonl</code>、<code>browser/network.jsonl</code> 和一级 <code>screenshots/*.png</code>。symlink、重复逻辑路径、路径逃逸和超大小 artifact 都会失败。<code>manifest.json</code> 最后上传。</p>
+        <p>supervisor 在落盘前脱敏 Gmail base、plus alias、password、验证码、Cookie、Authorization、完整 API key 等敏感值。浏览器截图只能通过 <code>qa_capture_screenshot</code>，模型不能传路径、selector 或关闭遮罩。</p>
+      </section>
+
+      <section id="security">
+        <h2>11. 安全边界与 Egress</h2>
+        <div class="cols">
+          <div class="mini">
+            <h3>浏览器与 MCP</h3>
+            <p>Chromium 由 supervisor 启动，CDP endpoint 只在 loopback。Playwright MCP 只能 attach 到该 endpoint，不负责 launch 浏览器。</p>
+          </div>
+          <div class="mini">
+            <h3>Codex 沙箱</h3>
+            <p><code>codex exec</code> 使用 ephemeral、strict config、output schema、<code>workspace-write</code>，配置中 <code>network_access = false</code>。</p>
+          </div>
+          <div class="mini">
+            <h3>Egress allowlist</h3>
+            <p>可写浏览仅允许 <code>staging-website.flatkey.ai</code> 和 <code>staging-console.flatkey.ai</code>；docs 通过 cookie-free docs-only context 只读访问 <code>docs.flatkey.ai</code>。</p>
+          </div>
+          <div class="mini">
+            <h3>拒绝目标</h3>
+            <p>生产 Flatkey origin、localhost、GCP metadata、link-local、RFC1918、literal IP、非 HTTP(S)、不可信 redirect、绕过 proxy 的路径均拒绝。</p>
+          </div>
+        </div>
+        <p>页面内容被视为不可信输入，不能覆盖 QA policy、origin 限制、预算、清理和上传规则。broker MCP client 固定 run id、email tag、start time 和 broker URL；模型不能查询任意邮箱或传入任意 alias。</p>
+      </section>
+
+      <section id="guard">
+        <h2>12. Plan Guard / Hash / INVALID 恢复</h2>
+        <p><code>scripts/browser_qa/terraform_plan_guard.py</code> 对 Terraform plan JSON 做精确白名单校验。它按完整 resource address 匹配，不使用子串判断；所有 meaningful change 必须是 <code>create</code>；未知 resource/output 即使是 <code>no-op</code> 也会失败；update、delete、replace、deposed object、重复 JSON key 和空 plan 都会失败。</p>
+        <pre><code>python3 scripts/browser_qa/terraform_plan_guard.py --phase infra &lt;plan.json&gt;
+python3 scripts/browser_qa/terraform_plan_guard.py --phase infra-recovery &lt;plan.json&gt;
+python3 scripts/browser_qa/terraform_plan_guard.py --phase workloads &lt;plan.json&gt;</code></pre>
+        <p>Hash 边界来自 runtime provenance：main manifest 中记录 <code>skill_content_sha256</code>、Codex 版本、model config、Playwright MCP 版本、Playwright package 版本和 Chromium 版本，用来证明本次 replay 使用的是固定 Skill 内容和固定运行工具链。</p>
+        <p>INVALID 恢复规则：任何 Phase A 或 Phase B saved-plan apply 非零退出后，原 saved plan 立即作废；不能重放旧 plan，不能切到 <code>-target</code>，不能手工删除或猜测 import。已实现的 incident recovery 是 <code>infra-recovery</code>：只接受 3 个 report bucket IAM member create，恢复后 state 应精确等于 26 个 Phase A 地址。Phase B 失败不回滚 Phase A，也不影响已有 staging 应用服务。</p>
+      </section>
+
+      <section id="observability">
+        <h2>13. 可观测性与仅告警策略</h2>
+        <p>最终状态优先级由代码定义：<code>cleanup_failed</code> &gt; <code>infrastructure_failed</code> &gt; <code>replay_failed</code> &gt; <code>findings_detected</code> &gt; <code>passed</code>。GitHub Summary 展示状态、replay/exploration 摘要、finding 数量、cleanup 状态和私有 GCS URI。</p>
+        <p>首版告警载体只有 GitHub Actions 红/绿状态和 Job Summary。它不接生产审批，不发邮件/Slack/钉钉，不自动 rollback staging，不阻塞 main/production 发布。后续可以把同一个 manifest 接入通知系统，但需要保持“只告警，不自动生产变更”的边界。</p>
+      </section>
+
+      <section id="operations">
+        <h2>14. 本地与 Staging 操作</h2>
+        <h3>本地只读/单元验证</h3>
+        <p>本地适合运行单元测试、contract tests、HTML 文档验证、敏感模式扫描。本文未运行 Terraform 或 GCP 命令。</p>
+        <pre><code>python -m unittest discover -s scripts/browser_qa/tests -v
+python scripts/browser_qa/terraform_plan_guard.py --help</code></pre>
+        <h3>Staging runbook 摘要</h3>
+        <ol>
+          <li>Phase A：operator 在独立 root 中生成 refreshing saved plan，导出 JSON/文本，运行 <code>--phase infra</code>，人工确认后 apply 同一个 saved plan。</li>
+          <li>写入四个 output-backed GitHub repository variables，再安全写入 <code>GCP_BROWSER_QA_GMAIL_BASE</code>。</li>
+          <li>写入三个 Secret Manager version，不读取或打印 payload。</li>
+          <li>Phase B：确认 26 个 Phase A address、三个 Secret latest version 均 ENABLED、workload 不存在，再运行 <code>--phase workloads</code> 并 apply 同一个 saved plan。</li>
+          <li>先运行 <code>core</code>；core 和 cleanup 成功后再运行 <code>normal</code>。</li>
+          <li>如 cleanup 中断或需重跑，用原始 GitHub run id 执行 <code>cleanup-only</code>。</li>
+        </ol>
+        <p>不要把上述摘要替代 <code>deploy/gcp/docs/OPERATIONS.md</code>。实际云端操作必须按 runbook 的 fail-closed gates 执行。</p>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>15. 故障处理</h2>
+        <table>
+          <thead><tr><th scope="col">现象</th><th scope="col">处理</th></tr></thead>
+          <tbody>
+            <tr><td>plan guard 失败</td><td>停止；读取 guard 的 exact finding；不要 apply、不要 <code>-target</code>。</td></tr>
+            <tr><td>Phase A / Phase B apply 非零退出</td><td>标记 saved plan invalid；按实际残留状态写恢复设计和新 guard/plan；不要重放旧 plan。</td></tr>
+            <tr><td><code>gmail_invalid_grant</code></td><td>这是基础设施失败；发布/重新授权/旋转 Gmail OAuth 后先跑 <code>core</code>。</td></tr>
+            <tr><td>Gmail plus alias 被禁</td><td>修复 staging alias policy 或停止；不要临时改变身份策略。</td></tr>
+            <tr><td><code>core</code> 失败但 cleanup 成功</td><td>读取私有报告定位 replay；不要直接跑 <code>normal</code>。</td></tr>
+            <tr><td><code>cleanup_failed</code></td><td>用原始 run id 运行 <code>cleanup-only</code>；若重复失败，人工检查 staging 残留。</td></tr>
+            <tr><td>manifest 缺失且 cleanup 失败/跳过</td><td>先执行 <code>cleanup-only</code>，再继续排查基础设施或报告上传问题。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="limits">
+        <h2>16. 已知限制</h2>
+        <ul>
+          <li>本文不证明云端 Phase B 已完成，不证明真实 staging <code>core</code>/<code>normal</code> 已跑通。</li>
+          <li>当前自动接线只在 staging deploy 成功后跑 <code>core</code>；<code>normal</code> 仍是手动验收入口。</li>
+          <li>Gmail OAuth 外部 Testing token 可能过期；runbook 要求发布 OAuth app、重新授权并旋转 Secret 后再证明长期可重复。</li>
+          <li>cleanup 依赖产品现有自助删除语义，不做数据库级 hard purge。</li>
+          <li>探索预算固定为 5 分钟或 30 个 browser action；更广泛 AI 发散需要更新 policy、tests 和告警边界。</li>
+          <li>Browser QA 仅针对 staging onboarding，不覆盖付费、订阅、邀请、管理员、生产数据或真实模型调用。</li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="wrap">
+    <p>依据仓库路径：<code>.github/workflows/gcp-browser-qa.yml</code>、<code>.github/workflows/gcp-deploy-staging.yml</code>、<code>scripts/browser_qa/</code>、<code>deploy/gcp/envs/browser-qa-staging/</code>、<code>deploy/gcp/docs/OPERATIONS.md</code>、<code>docs/superpowers/specs/</code>。</p>
+  </footer>
+</body>
+</html>
