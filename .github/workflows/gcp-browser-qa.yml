@@ -156,7 +156,35 @@ jobs:
           docker run --rm --entrypoint sh "${IMAGE_URI}" -c 'test "$(id -u)" != "0"'
           docker run --rm --entrypoint codex "${IMAGE_URI}" --version
           docker run --rm --entrypoint playwright-mcp "${IMAGE_URI}" --version
-          docker run --rm --entrypoint python3 "${IMAGE_URI}" -m unittest discover -s /opt/flatkey-browser-qa/tests -v
+          docker run --rm -i --entrypoint python3 "${IMAGE_URI}" - <<'PY'
+          import sys
+          import unittest
+
+          sys.path.insert(0, "/opt/flatkey-browser-qa/tests")
+          runtime_test_modules = [
+              "test_broker",
+              "test_browser_evidence",
+              "test_budget",
+              "test_cleanup",
+              "test_config",
+              "test_egress_proxy",
+              "test_gcp",
+              "test_gmail",
+              "test_identity",
+              "test_mcp",
+              "test_mcp_budget_wrapper",
+              "test_origin_policy",
+              "test_redaction",
+              "test_report",
+              "test_supervisor",
+          ]
+          loader = unittest.defaultTestLoader
+          suite = unittest.TestSuite()
+          for module in runtime_test_modules:
+              suite.addTests(loader.loadTestsFromName(module))
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
           docker run --rm -i --entrypoint python3 "${IMAGE_URI}" - <<'PY'
           import json
           import os

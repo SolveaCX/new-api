@@ -202,7 +202,36 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertIn("--version", smoke)
         self.assertIn("--entrypoint playwright-mcp", smoke)
         self.assertIn("--entrypoint python3", smoke)
-        self.assertIn("-m unittest discover -s /opt/flatkey-browser-qa/tests -v", smoke)
+        self.assertNotIn("-m unittest discover -s /opt/flatkey-browser-qa/tests -v", smoke)
+        self.assertIn("runtime_test_modules", smoke)
+        self.assertIn('"/opt/flatkey-browser-qa/tests"', smoke)
+        for module in [
+            "test_broker",
+            "test_browser_evidence",
+            "test_budget",
+            "test_cleanup",
+            "test_config",
+            "test_egress_proxy",
+            "test_gcp",
+            "test_gmail",
+            "test_identity",
+            "test_mcp",
+            "test_mcp_budget_wrapper",
+            "test_origin_policy",
+            "test_redaction",
+            "test_report",
+            "test_supervisor",
+        ]:
+            self.assertIn(f'"{module}"', smoke)
+        for repo_contract_module in [
+            "test_container_contract",
+            "test_operations_contract",
+            "test_terraform_contract",
+            "test_terraform_plan_guard",
+            "test_terraform_state_isolation_contract",
+            "test_workflow_contract",
+        ]:
+            self.assertNotIn(f'"{repo_contract_module}"', smoke)
         self.assertIn("docker run --rm -i --entrypoint python3", smoke)
         self.assertIn("ChromiumRuntime", smoke)
         self.assertIn("playwright_child_command", smoke)
