@@ -735,6 +735,34 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(calls[0]["run_id"], "12345")
         self.assertEqual(calls[0]["execution_id"], "exec-1")
 
+    def test_supervisor_accepts_stdlib_style_subprocess_runner_with_capital_popen(self):
+        process = FakeProcess(0)
+
+        class StdlibStyleRunner:
+            def __init__(self):
+                self.calls = []
+                self.run_calls = []
+
+            def Popen(self, args, **kwargs):
+                self.calls.append((args, kwargs))
+                return process
+
+            def run(self, args, **kwargs):
+                self.run_calls.append((args, kwargs))
+                executable = os.path.basename(args[0])
+                return FakeVersionProcess(f"{executable} 1.0.0\n")
+
+        runner = StdlibStyleRunner()
+        outcome, _sup = self.run_supervisor(
+            process,
+            result_payload=valid_result(),
+            subprocess_runner=runner,
+        )
+
+        self.assertEqual(outcome.status, "passed")
+        self.assertEqual(len(runner.calls), 1)
+        self.assertEqual(runner.calls[0][0][1], "exec")
+
     def test_qa_config_uses_explicit_child_path_not_ambient_path(self):
         input_env = env()
         input_env["PATH"] = "C:\\explicit-tools"

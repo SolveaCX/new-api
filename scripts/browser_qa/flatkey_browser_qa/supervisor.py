@@ -90,6 +90,9 @@ class Supervisor:
         self.env = dict(env)
         self.runtime_root = runtime_root
         self.subprocess_runner = subprocess_runner
+        self.popen_factory = getattr(subprocess_runner, "popen", None) or getattr(subprocess_runner, "Popen", None)
+        if not callable(self.popen_factory):
+            raise TypeError("subprocess runner must provide popen or Popen")
         self.uploader = uploader
         self.cleanup_runner = cleanup_runner
         self.proxy_factory = proxy_factory
@@ -166,7 +169,7 @@ class Supervisor:
                 browser = self.browser_factory(
                     runtime_root=self.runtime_root,
                     proxy=proxy,
-                    popen_factory=self.subprocess_runner.popen,
+                    popen_factory=self.popen_factory,
                     startup_stderr_limit_bytes=self.chromium_startup_stderr_limit_bytes,
                 )
                 try:
@@ -183,7 +186,7 @@ class Supervisor:
                     browser=browser,
                     runtime_root=self.runtime_root,
                     redactor=redactor,
-                    popen_factory=self.subprocess_runner.popen,
+                    popen_factory=self.popen_factory,
                     docs_proxy_url=f"http://{docs_proxy.host}:{docs_proxy.port}",
                 ).start()
                 evidence_sink = RuntimeEvidenceSink(redactor, evidence_helper=evidence_helper)
@@ -398,7 +401,7 @@ class Supervisor:
             empty_workspace,
             "-",
         ]
-        process = self.subprocess_runner.popen(args, env=child_env, cwd=repo_root, stdin=subprocess.PIPE, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = self.popen_factory(args, env=child_env, cwd=repo_root, stdin=subprocess.PIPE, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self._active_process = process
         return process
 
