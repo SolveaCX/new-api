@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import scripts.browser_qa.terraform_plan_guard as terraform_plan_guard
 from scripts.browser_qa.terraform_plan_guard import (
     ALLOWED_OUTPUTS,
     ALLOWED_RESOURCE_ADDRESSES,
@@ -54,6 +55,14 @@ EXPECTED_INFRA_RESOURCE_ADDRESSES = frozenset(
     }
 )
 
+EXPECTED_INFRA_RECOVERY_RESOURCE_ADDRESSES = frozenset(
+    {
+        "google_storage_bucket_iam_member.browser_qa_cleanup_report_admin",
+        "google_storage_bucket_iam_member.browser_qa_deployer_report_viewer",
+        "google_storage_bucket_iam_member.browser_qa_runtime_report_creator",
+    }
+)
+
 EXPECTED_WORKLOAD_RESOURCE_ADDRESSES = frozenset(
     {
         "google_cloud_run_v2_job.browser_qa_cleanup[0]",
@@ -88,10 +97,12 @@ EXPECTED_WORKLOAD_OUTPUTS = frozenset(
 
 PHASE_RESOURCES = {
     "infra": EXPECTED_INFRA_RESOURCE_ADDRESSES,
+    "infra-recovery": EXPECTED_INFRA_RECOVERY_RESOURCE_ADDRESSES,
     "workloads": EXPECTED_WORKLOAD_RESOURCE_ADDRESSES,
 }
 PHASE_OUTPUTS = {
     "infra": EXPECTED_INFRA_OUTPUTS,
+    "infra-recovery": frozenset(),
     "workloads": EXPECTED_WORKLOAD_OUTPUTS,
 }
 
@@ -105,18 +116,34 @@ def phase_plan(phase, *, include_other_phase_no_ops=False):
         output: {"actions": ["create"]}
         for output in sorted(PHASE_OUTPUTS[phase])
     }
-    if include_other_phase_no_ops:
-        other_phase = "workloads" if phase == "infra" else "infra"
+    if phase == "infra-recovery":
         resource_changes.extend(
             {"address": address, "change": {"actions": ["no-op"]}}
-            for address in sorted(PHASE_RESOURCES[other_phase])
+            for address in sorted(EXPECTED_INFRA_RESOURCE_ADDRESSES - PHASE_RESOURCES[phase])
         )
         output_changes.update(
             {
                 output: {"actions": ["no-op"]}
-                for output in sorted(PHASE_OUTPUTS[other_phase])
+                for output in sorted(EXPECTED_INFRA_OUTPUTS)
             }
         )
+    if include_other_phase_no_ops:
+        included_addresses = {change["address"] for change in resource_changes}
+        for other_phase in PHASE_RESOURCES:
+            if other_phase == phase:
+                continue
+            other_addresses = PHASE_RESOURCES[other_phase] - included_addresses
+            resource_changes.extend(
+                {"address": address, "change": {"actions": ["no-op"]}}
+                for address in sorted(other_addresses)
+            )
+            included_addresses.update(other_addresses)
+            output_changes.update(
+                {
+                    output: {"actions": ["no-op"]}
+                    for output in sorted(PHASE_OUTPUTS[other_phase])
+                }
+            )
     return {
         "resource_changes": resource_changes,
         "output_changes": output_changes,
@@ -171,6 +198,10 @@ def run_guard_help():
 class TerraformPlanGuardTest(unittest.TestCase):
     def test_phase_allowlists_match_exact_source_contract(self):
         self.assertEqual(INFRA_RESOURCE_ADDRESSES, EXPECTED_INFRA_RESOURCE_ADDRESSES)
+        self.assertEqual(
+            terraform_plan_guard.INFRA_RECOVERY_RESOURCE_ADDRESSES,
+            EXPECTED_INFRA_RECOVERY_RESOURCE_ADDRESSES,
+        )
         self.assertEqual(WORKLOAD_RESOURCE_ADDRESSES, EXPECTED_WORKLOAD_RESOURCE_ADDRESSES)
         self.assertEqual(INFRA_OUTPUTS, EXPECTED_INFRA_OUTPUTS)
         self.assertEqual(WORKLOAD_OUTPUTS, EXPECTED_WORKLOAD_OUTPUTS)
@@ -204,6 +235,10 @@ class TerraformPlanGuardTest(unittest.TestCase):
         )
         self.assertEqual(set(changes), WORKLOAD_RESOURCE_ADDRESSES)
 
+    def test_infra_recovery_phase_accepts_exact_3_creates_with_infra_no_ops(self):
+        changes = validate_bootstrap_plan(phase_plan("infra-recovery"), phase="infra-recovery")
+        self.assertEqual(set(changes), EXPECTED_INFRA_RECOVERY_RESOURCE_ADDRESSES)
+
     def test_combined_35_resource_plan_is_rejected_for_each_phase(self):
         for phase in PHASE_RESOURCES:
             with self.subTest(phase=phase):
@@ -222,6 +257,23 @@ class TerraformPlanGuardTest(unittest.TestCase):
                     {"address": "google_cloud_run_v2_service.newapi_console", "change": {"actions": actions}}
                 )
                 assert_rejected(self, plan, "infra", "unexpected resource")
+
+    def test_infra_recovery_rejects_missing_and_extra_create(self):
+        plan = phase_plan("infra-recovery")
+        plan["resource_changes"] = [
+            change
+            for change in plan["resource_changes"]
+            if change["address"] != sorted(EXPECTED_INFRA_RECOVERY_RESOURCE_ADDRESSES)[0]
+        ]
+        assert_rejected(self, plan, "infra-recovery", "missing resource for infra-recovery phase")
+
+        plan = phase_plan("infra-recovery")
+        infra_no_op = sorted(EXPECTED_INFRA_RESOURCE_ADDRESSES - EXPECTED_INFRA_RECOVERY_RESOURCE_ADDRESSES)[0]
+        for change in plan["resource_changes"]:
+            if change["address"] == infra_no_op:
+                change["change"]["actions"] = ["create"]
+                break
+        assert_rejected(self, plan, "infra-recovery", "unexpected resource for infra-recovery phase")
 
     def test_any_meaningful_resource_change_that_is_not_single_create_is_rejected(self):
         for phase in PHASE_RESOURCES:
@@ -251,7 +303,12 @@ class TerraformPlanGuardTest(unittest.TestCase):
         for phase in PHASE_RESOURCES:
             with self.subTest(phase=phase):
                 plan = phase_plan(phase)
-                plan["resource_changes"].pop()
+                missing_address = sorted(PHASE_RESOURCES[phase])[0]
+                plan["resource_changes"] = [
+                    change
+                    for change in plan["resource_changes"]
+                    if change["address"] != missing_address
+                ]
                 assert_rejected(self, plan, phase, f"missing resource for {phase} phase")
 
     def test_duplicate_resource_change_keys_are_rejected_before_action_checks(self):
@@ -280,13 +337,21 @@ class TerraformPlanGuardTest(unittest.TestCase):
 
             with self.subTest(phase=phase, case="missing"):
                 plan = phase_plan(phase)
-                plan["output_changes"].pop(next(iter(PHASE_OUTPUTS[phase])))
-                assert_rejected(self, plan, phase, f"missing output for {phase} phase")
+                if PHASE_OUTPUTS[phase]:
+                    plan["output_changes"].pop(next(iter(PHASE_OUTPUTS[phase])))
+                    assert_rejected(self, plan, phase, f"missing output for {phase} phase")
+                else:
+                    plan["output_changes"][next(iter(EXPECTED_INFRA_OUTPUTS))]["actions"] = ["create"]
+                    assert_rejected(self, plan, phase, f"unexpected output for {phase} phase")
 
             with self.subTest(phase=phase, case="update"):
                 plan = phase_plan(phase)
-                plan["output_changes"][next(iter(PHASE_OUTPUTS[phase]))]["actions"] = ["update"]
-                assert_rejected(self, plan, phase, "output changes are not create-only")
+                if PHASE_OUTPUTS[phase]:
+                    plan["output_changes"][next(iter(PHASE_OUTPUTS[phase]))]["actions"] = ["update"]
+                    assert_rejected(self, plan, phase, "output changes are not create-only")
+                else:
+                    plan["output_changes"][next(iter(EXPECTED_INFRA_OUTPUTS))]["actions"] = ["update"]
+                    assert_rejected(self, plan, phase, f"unexpected output for {phase} phase")
 
     def test_unknown_output_no_op_is_rejected_but_known_other_phase_no_op_is_ignored(self):
         plan = phase_plan("workloads", include_other_phase_no_ops=True)
@@ -377,6 +442,7 @@ class TerraformPlanGuardTest(unittest.TestCase):
     def test_cli_success_message_is_phase_specific(self):
         expected = {
             "infra": "OK: exact Browser QA infra create-only bootstrap plan",
+            "infra-recovery": "OK: exact Browser QA infra-recovery create-only bootstrap plan",
             "workloads": "OK: exact Browser QA workloads create-only bootstrap plan",
         }
         for phase, message in expected.items():
@@ -403,7 +469,7 @@ class TerraformPlanGuardTest(unittest.TestCase):
     def test_cli_help_describes_phase_and_terraform_show_json(self):
         result = run_guard_help()
         self.assertEqual(result.returncode, 0)
-        self.assertIn("--phase {infra,workloads}", result.stdout)
+        self.assertIn("--phase {infra,infra-recovery,workloads}", result.stdout)
         self.assertIn("Path produced by terraform show -json", result.stdout)
 
     def test_cli_rejects_raw_duplicate_output_keys(self):

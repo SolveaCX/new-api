@@ -35,6 +35,14 @@ INFRA_RESOURCE_ADDRESSES = frozenset(
     }
 )
 
+INFRA_RECOVERY_RESOURCE_ADDRESSES = frozenset(
+    {
+        "google_storage_bucket_iam_member.browser_qa_cleanup_report_admin",
+        "google_storage_bucket_iam_member.browser_qa_deployer_report_viewer",
+        "google_storage_bucket_iam_member.browser_qa_runtime_report_creator",
+    }
+)
+
 WORKLOAD_RESOURCE_ADDRESSES = frozenset(
     {
         "google_cloud_run_v2_job.browser_qa_cleanup[0]",
@@ -72,6 +80,7 @@ ALLOWED_OUTPUTS = INFRA_OUTPUTS | WORKLOAD_OUTPUTS
 
 _PHASE_CONTRACTS = {
     "infra": (INFRA_RESOURCE_ADDRESSES, INFRA_OUTPUTS),
+    "infra-recovery": (INFRA_RECOVERY_RESOURCE_ADDRESSES, frozenset()),
     "workloads": (WORKLOAD_RESOURCE_ADDRESSES, WORKLOAD_OUTPUTS),
 }
 
