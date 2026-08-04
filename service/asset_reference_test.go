@@ -129,6 +129,51 @@ func TestAssetReferenceSetAllowsLegacyAndSourceUnavailableOnlyOnActiveOriginalBi
 	require.Equal(t, AssetReadinessIneligible, readiness)
 }
 
+func TestAssetReferenceSetMixesRecoverableGeneralizedSourceWithLegacyBinding(t *testing.T) {
+	newAssetReferenceDB(t)
+	assetNow = func() time.Time { return time.Unix(100, 0) }
+	t.Cleanup(func() { assetNow = time.Now })
+	insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_1234567890abcdefABCDEF1234567890", AssetType: "Image", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200})
+	insertLegacyAssetReferenceAsset(t, 7, 131, "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "legacy-upstream", model.BytePlusAssetStatusActive)
+
+	refs, apiErr := ResolveAssetReferences(newAssetReferenceContext(), 7, &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{
+		imageAssetItem("ast_1234567890abcdefABCDEF1234567890"),
+		imageAssetItem("ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+	}})
+	require.Nil(t, apiErr)
+
+	readiness, ok := refs.ReadinessForChannel(&model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus})
+	require.True(t, ok)
+	require.Equal(t, AssetReadinessPartialBound, readiness)
+	require.Equal(t, map[string]string{
+		"asset://ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "asset://legacy-upstream",
+	}, refs.RewriteMapForChannel(131))
+
+	readiness, ok = refs.ReadinessForChannel(&model.Channel{Id: 132, Type: constant.ChannelTypeBytePlus})
+	require.False(t, ok)
+	require.Equal(t, AssetReadinessIneligible, readiness)
+	require.Nil(t, refs.RewriteMapForChannel(132))
+}
+
+func TestAssetReferenceSetRejectsMixedSourceUnavailableBindingsOnDifferentChannels(t *testing.T) {
+	newAssetReferenceDB(t)
+	insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_1234567890abcdefABCDEF1234567890", AssetType: "Image", SourceStatus: model.AssetSourceStatusUnavailable, BindingChannelID: 131, UpstreamID: "generalized-upstream", BindingStatus: model.AssetStatusActive})
+	insertLegacyAssetReferenceAsset(t, 7, 132, "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "legacy-upstream", model.BytePlusAssetStatusActive)
+
+	refs, apiErr := ResolveAssetReferences(newAssetReferenceContext(), 7, &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{
+		imageAssetItem("ast_1234567890abcdefABCDEF1234567890"),
+		imageAssetItem("ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+	}})
+	require.Nil(t, apiErr)
+
+	readiness, ok := refs.ReadinessForChannel(&model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus})
+	require.False(t, ok)
+	require.Equal(t, AssetReadinessIneligible, readiness)
+	readiness, ok = refs.ReadinessForChannel(&model.Channel{Id: 132, Type: constant.ChannelTypeBytePlus})
+	require.False(t, ok)
+	require.Equal(t, AssetReadinessIneligible, readiness)
+}
+
 func TestAssetReferenceSetRequiresOneChannelToConsumeEveryReferencedAsset(t *testing.T) {
 	newAssetReferenceDB(t)
 	assetNow = func() time.Time { return time.Unix(100, 0) }

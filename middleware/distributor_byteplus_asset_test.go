@@ -526,6 +526,41 @@ func TestAssetReferenceGeneralizedRowOutranksCoexistingLegacyPin(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 }
 
+func TestAssetReferenceMixedRecoverableGeneralizedAndLegacyBindingSelectsPartialChannel(t *testing.T) {
+	restoreDB := useMiddlewareBytePlusAssetDBForTest(t)
+	defer restoreDB()
+	insertMiddlewareBytePlusAssetChannel(t, 131, "default", common.ChannelStatusEnabled, 1, 1)
+	insertMiddlewareBytePlusAssetChannel(t, 132, "default", common.ChannelStatusEnabled, 100, 1000)
+	recoverableID := "ast_1234567890abcdefABCDEF1234567890"
+	legacyID := "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	insertMiddlewareGeneralizedAsset(t, 7, recoverableID, "Image", model.AssetSourceStatusAvailable, time.Now().Add(time.Hour).Unix())
+	insertMiddlewareBytePlusAsset(t, 7, 131, legacyID, "legacy-upstream", model.BytePlusAssetStatusActive)
+	model.InitChannelCache()
+
+	router := newBytePlusAssetDistributorRouter(func(c *gin.Context) {
+		require.Equal(t, 131, common.GetContextKeyInt(c, constant.ContextKeyChannelId))
+		rewriteMap, ok := common.GetContextKeyType[map[string]string](c, constant.ContextKeyAssetRewriteMap)
+		require.True(t, ok)
+		require.Equal(t, map[string]string{
+			"asset://" + legacyID: "asset://legacy-upstream",
+		}, rewriteMap)
+		legacyMap, ok := common.GetContextKeyType[map[string]string](c, constant.ContextKeyBytePlusAssetRewriteMap)
+		require.True(t, ok)
+		require.Equal(t, rewriteMap, legacyMap)
+		require.NotContains(t, fmt.Sprintf("%#v", rewriteMap), recoverableID)
+		c.Status(http.StatusOK)
+	})
+
+	recorder := performBytePlusAssetDistributorRequest(router, "", `{
+		"model":"seedance-2.0",
+		"content":[
+			{"type":"image_url","image_url":{"url":"asset://ast_1234567890abcdefABCDEF1234567890"},"role":"reference_image"},
+			{"type":"image_url","image_url":{"url":"asset://ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"role":"reference_image"}
+		]
+	}`)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+}
+
 func newBytePlusAssetDistributorRouter(handler gin.HandlerFunc) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
