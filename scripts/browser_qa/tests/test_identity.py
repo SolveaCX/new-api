@@ -11,7 +11,7 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertRegex(first.username, r"^qa[0-9]{8}[a-z0-9]{8}$")
         self.assertRegex(first.email_tag, r"^flatkey-qa-123456789-[a-z0-9]{10}$")
-        self.assertEqual(len(first.password), 30)
+        self.assertEqual(len(first.password), 20)
         self.assertEqual(first.key_name, "cloud-qa-123456789")
         self.assertNotIn("seed", repr(first))
 

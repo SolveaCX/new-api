@@ -82,10 +82,10 @@ def _encode_alphabet(data: bytes, alphabet: str, length: int) -> str:
 
 def _derive_password(seed: bytes, run_id: str) -> str:
     raw = _expand(seed, "password", run_id, 96)
-    chars = [_PASSWORD_ALPHABET[byte % len(_PASSWORD_ALPHABET)] for byte in raw[:30]]
-    positions = list(range(30))
+    chars = [_PASSWORD_ALPHABET[byte % len(_PASSWORD_ALPHABET)] for byte in raw[:20]]
+    positions = list(range(20))
     for index, char_class in enumerate(_PASSWORD_CLASSES):
-        pick = raw[30 + index] % len(positions)
+        pick = raw[20 + index] % len(positions)
         position = positions.pop(pick)
-        chars[position] = char_class[raw[34 + index] % len(char_class)]
+        chars[position] = char_class[raw[24 + index] % len(char_class)]
     return "".join(chars)
