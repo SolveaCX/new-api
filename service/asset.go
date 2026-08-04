@@ -347,13 +347,14 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
 		return nil, ErrAssetUploadValidation
 	}
+	activationNow := assetNow()
 	completed, err := model.CompleteAssetUploadCAS(upload.UploadId, request.Owner, model.AssetUploadCompletion{
 		ContentType:      detected,
 		SizeBytes:        size,
 		SHA256:           sha,
 		ObjectGeneration: attrs.Generation,
-		SourceExpiresAt:  now.Add(cfg.SourceRetention).Unix(),
-		Now:              now.Unix(),
+		SourceExpiresAt:  activationNow.Add(cfg.SourceRetention).Unix(),
+		Now:              activationNow.Unix(),
 	})
 	if err != nil {
 		return nil, err

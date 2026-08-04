@@ -225,6 +225,63 @@ func TestCompleteAssetUploadFailsWhenExactGenerationDisappearsBeforeRead(t *test
 	require.Equal(t, model.AssetStatusFailed, asset.Status)
 }
 
+func TestCompleteAssetUploadCannotActivateAfterCleanupClaimedAndDeletedObject(t *testing.T) {
+	newAssetServiceTestDB(t)
+	baseStore := installAssetServiceTestDeps(t)
+	store := &raceAssetObjectStore{fakeAssetObjectStore: baseStore}
+	assetObjectStore = store
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 23}
+
+	start := assetNow()
+	afterExpiry := time.Unix(session.ExpiresAt+1, 0).UTC()
+	current := start
+	assetNow = func() time.Time { return current }
+	store.afterRead = func() {
+		current = afterExpiry
+		claimed, err := model.ClaimExpiredPendingAssetUploads("cleanup-a", current.Unix(), current.Add(assetCleanupLeaseTTL).Unix(), 10)
+		require.NoError(t, err)
+		require.Len(t, claimed, 1)
+		require.Equal(t, model.AssetUploadStatusCleaning, claimed[0].Upload.Status)
+		err = store.fakeAssetObjectStore.Delete(context.Background(), claimed[0].Upload.StorageBucket, claimed[0].Upload.ObjectKey, 23)
+		require.NoError(t, err)
+	}
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetUploadNotFound)
+	require.Equal(t, []fakeAssetOpen{{key: "asset-test-bucket/" + session.ObjectKey, generation: 23}}, store.opens)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 23}}, store.deletes)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusCleaning, upload.Status)
+	require.Equal(t, "cleanup-a", upload.CleanupLeaseOwner)
+	require.NotEqual(t, model.AssetUploadStatusComplete, upload.Status)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusCreating, asset.Status)
+	require.Equal(t, model.AssetSourceStatusUnavailable, asset.SourceStatus)
+
+	ok, err := model.MarkExpiredPendingAssetUploadIfCleanupLease(session.UploadID, "cleanup-a", upload.CleanupGeneration, 23, current.Unix())
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusExpired, upload.Status)
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusExpired, asset.Status)
+	require.Equal(t, model.AssetSourceStatusExpired, asset.SourceStatus)
+	require.Empty(t, asset.ObjectKey)
+}
+
 func TestSignAssetSourceURLBindsStoredGeneration(t *testing.T) {
 	store := installAssetServiceTestDeps(t)
 	asset := model.Asset{
@@ -633,4 +690,34 @@ func (r *chunkGuardReader) Read(p []byte) (int, error) {
 		r.chunks = r.chunks[1:]
 	}
 	return n, nil
+}
+
+type raceAssetObjectStore struct {
+	*fakeAssetObjectStore
+	afterRead func()
+}
+
+func (f *raceAssetObjectStore) Open(ctx context.Context, bucket, objectKey string, generation int64) (io.ReadCloser, error) {
+	reader, err := f.fakeAssetObjectStore.Open(ctx, bucket, objectKey, generation)
+	if err != nil {
+		return nil, err
+	}
+	return &afterEOFReadCloser{ReadCloser: reader, afterEOF: f.afterRead}, nil
+}
+
+type afterEOFReadCloser struct {
+	io.ReadCloser
+	afterEOF func()
+	called   bool
+}
+
+func (r *afterEOFReadCloser) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if errors.Is(err, io.EOF) && !r.called {
+		r.called = true
+		if r.afterEOF != nil {
+			r.afterEOF()
+		}
+	}
+	return n, err
 }

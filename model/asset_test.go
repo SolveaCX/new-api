@@ -565,6 +565,137 @@ func TestAssetCleanupLeaseClaimAndGenerationFencing(t *testing.T) {
 	require.Equal(t, AssetStatusExpired, stored.Status)
 }
 
+func TestAssetUploadCleanupClaimMovesUploadToCleaningBeforeExternalDelete(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetUpload{})
+	asset, err := CreateAssetWithUploadSession(Asset{
+		PublicId:       "ast_upload_cleanup_claim",
+		UserId:         10,
+		AssetType:      "Image",
+		Status:         AssetStatusCreating,
+		SourceStatus:   AssetSourceStatusUnavailable,
+		StorageBackend: "gcs",
+		StorageBucket:  "bucket",
+		ObjectKey:      "objects/upload-cleanup.png",
+		ContentType:    "image/png",
+		SizeBytes:      123,
+		CreatedAt:      100,
+		UpdatedAt:      100,
+	}, AssetUpload{
+		UploadId:    "upl_cleanup_claim",
+		Owner:       "owner-a",
+		UserId:      10,
+		PublicId:    "ast_upload_cleanup_claim",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   123,
+		ExpiresAt:   150,
+		Status:      AssetUploadStatusPending,
+		CreatedAt:   100,
+		UpdatedAt:   100,
+	})
+	require.NoError(t, err)
+
+	claimed, err := ClaimExpiredPendingAssetUploads("cleanup-a", 200, 260, 10)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.Equal(t, "upl_cleanup_claim", claimed[0].Upload.UploadId)
+	require.Equal(t, AssetUploadStatusCleaning, claimed[0].Upload.Status)
+	require.Equal(t, "cleanup-a", claimed[0].Upload.CleanupLeaseOwner)
+	require.EqualValues(t, 260, claimed[0].Upload.CleanupLeaseUntil)
+	require.EqualValues(t, 1, claimed[0].Upload.CleanupGeneration)
+	require.Equal(t, "cleanup-a", claimed[0].Asset.CleanupLeaseOwner)
+	require.EqualValues(t, 260, claimed[0].Asset.CleanupLeaseUntil)
+	require.EqualValues(t, 1, claimed[0].Asset.CleanupGeneration)
+
+	completed, err := CompleteAssetUploadCAS("upl_cleanup_claim", "owner-a", AssetUploadCompletion{
+		ContentType:      "image/png",
+		SizeBytes:        123,
+		SHA256:           "abababababababababababababababababababababababababababababababab",
+		ObjectGeneration: 9,
+		SourceExpiresAt:  400,
+		Now:              210,
+	})
+	require.NoError(t, err)
+	require.False(t, completed, "cleanup-owned upload must never be activated after claim")
+
+	ok, err := MarkExpiredPendingAssetUploadIfCleanupLease("upl_cleanup_claim", "cleanup-a", 1, 9, 220)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var upload AssetUpload
+	require.NoError(t, DB.First(&upload, "upload_id = ?", "upl_cleanup_claim").Error)
+	require.Equal(t, AssetUploadStatusExpired, upload.Status)
+	require.EqualValues(t, 9, upload.ObjectGeneration)
+	require.Equal(t, "cleanup-a", upload.CleanupLeaseOwner)
+	var stored Asset
+	require.NoError(t, DB.First(&stored, asset.Id).Error)
+	require.Equal(t, AssetStatusExpired, stored.Status)
+	require.Equal(t, AssetSourceStatusExpired, stored.SourceStatus)
+	require.Empty(t, stored.ObjectKey)
+	require.Zero(t, stored.ObjectGeneration)
+}
+
+func TestAssetUploadCleanupLeaseTakeoverAndGenerationFencing(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetUpload{})
+	asset, err := CreateAssetWithUploadSession(Asset{
+		PublicId:          "ast_upload_cleanup_takeover",
+		UserId:            10,
+		AssetType:         "Image",
+		Status:            AssetStatusCreating,
+		SourceStatus:      AssetSourceStatusUnavailable,
+		StorageBackend:    "gcs",
+		StorageBucket:     "bucket",
+		ObjectKey:         "objects/upload-takeover.png",
+		ContentType:       "image/png",
+		SizeBytes:         123,
+		CleanupLeaseOwner: "stale-cleanup",
+		CleanupLeaseUntil: 190,
+		CleanupGeneration: 2,
+		CreatedAt:         100,
+		UpdatedAt:         100,
+	}, AssetUpload{
+		UploadId:          "upl_cleanup_takeover",
+		Owner:             "owner-a",
+		UserId:            10,
+		PublicId:          "ast_upload_cleanup_takeover",
+		AssetType:         "Image",
+		ContentType:       "image/png",
+		SizeBytes:         123,
+		ExpiresAt:         150,
+		Status:            AssetUploadStatusCleaning,
+		CleanupLeaseOwner: "stale-cleanup",
+		CleanupLeaseUntil: 190,
+		CleanupGeneration: 2,
+		CreatedAt:         100,
+		UpdatedAt:         100,
+	})
+	require.NoError(t, err)
+
+	claimed, err := ClaimExpiredPendingAssetUploads("cleanup-b", 200, 260, 10)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.EqualValues(t, 3, claimed[0].Upload.CleanupGeneration)
+	require.EqualValues(t, 3, claimed[0].Asset.CleanupGeneration)
+
+	ok, err := MarkExpiredPendingAssetUploadIfCleanupLease("upl_cleanup_takeover", "stale-cleanup", 2, 8, 210)
+	require.NoError(t, err)
+	require.False(t, ok, "stale cleanup owner/generation must be fenced after takeover")
+
+	ok, err = MarkExpiredPendingAssetUploadIfCleanupLease("upl_cleanup_takeover", "cleanup-b", 3, 9, 220)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var upload AssetUpload
+	require.NoError(t, DB.First(&upload, "upload_id = ?", "upl_cleanup_takeover").Error)
+	require.Equal(t, AssetUploadStatusExpired, upload.Status)
+	require.EqualValues(t, 9, upload.ObjectGeneration)
+	require.Equal(t, "cleanup-b", upload.CleanupLeaseOwner)
+	var stored Asset
+	require.NoError(t, DB.First(&stored, asset.Id).Error)
+	require.Equal(t, AssetSourceStatusExpired, stored.SourceStatus)
+	require.EqualValues(t, asset.Id, stored.Id)
+}
+
 func newAssetTestDB(t *testing.T, models ...interface{}) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
