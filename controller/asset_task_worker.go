@@ -213,6 +213,26 @@ func RunAssetTaskWorkerOnce(ctx context.Context, owner string, limit int) (int, 
 			logger.LogError(ctx, fmt.Sprintf("asset task %s preparation failed: %s", task.TaskID, err.Error()))
 		}
 	}
+	now = assetTaskWorkerNowUnix()
+	accountingTasks, err := model.GetAcceptedAccountingTasks(now, limit)
+	if err != nil {
+		return processed, err
+	}
+	for _, task := range accountingTasks {
+		now = assetTaskWorkerNowUnix()
+		leaseExpiresAt := now + assetTaskPreparationLeaseSeconds
+		won, err := model.ClaimAcceptedAccountingLease(task.TaskID, owner, now, leaseExpiresAt)
+		if err != nil {
+			return processed, err
+		}
+		if !won {
+			continue
+		}
+		processed++
+		if err := runAcceptedTaskAccounting(ctx, task.TaskID, owner, leaseExpiresAt); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("asset task %s accepted accounting failed: %s", task.TaskID, err.Error()))
+		}
+	}
 	return processed, nil
 }
 
@@ -351,9 +371,83 @@ func acceptAssetTask(c *gin.Context, info *relaycommon.RelayInfo, task *model.Ta
 		info.ChannelMeta.ChannelId = channel.Id
 		info.ChannelMeta.ChannelType = channel.Type
 		info.PriceData.Quota = result.Quota
-		finalizeTaskSubmissionBilling(c, info, task, result.Quota)
+	}
+	accountingLeaseExpiresAt := now + assetTaskPreparationLeaseSeconds
+	accountingWon, err := model.ClaimAcceptedAccountingLease(task.TaskID, owner, now, accountingLeaseExpiresAt)
+	if err != nil {
+		return err
+	}
+	if !accountingWon {
+		return nil
+	}
+	return runAcceptedTaskAccounting(c, task.TaskID, owner, accountingLeaseExpiresAt)
+}
+
+func runAcceptedTaskAccounting(ctx context.Context, taskID string, owner string, leaseExpiresAt int64) error {
+	task, ok, err := model.GetByOnlyTaskId(taskID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("task not found")
+	}
+	if !acceptedAccountingLeaseCurrent(task, owner, leaseExpiresAt, assetTaskWorkerNowUnix()) {
+		return fmt.Errorf("accepted accounting lease lost")
+	}
+	actualQuota := task.AcceptedAccountingActualQuota
+	if actualQuota == 0 {
+		actualQuota = task.Quota
+	}
+	if err := service.SettleAcceptedTaskFundingOnce(ctx, task, actualQuota); err != nil {
+		return markAcceptedAccountingRetryable(ctx, taskID, owner, leaseExpiresAt, err)
+	}
+	task, ok, err = model.GetByOnlyTaskId(taskID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("task not found")
+	}
+	if !acceptedAccountingLeaseCurrent(task, owner, leaseExpiresAt, assetTaskWorkerNowUnix()) {
+		return fmt.Errorf("accepted accounting lease lost")
+	}
+	if err := service.LogAcceptedTaskConsumptionOnce(ctx, task); err != nil {
+		return markAcceptedAccountingRetryable(ctx, taskID, owner, leaseExpiresAt, err)
+	}
+	now := assetTaskWorkerNowUnix()
+	won, err := model.MarkAcceptedAccountingDone(taskID, owner, leaseExpiresAt, now)
+	if err != nil {
+		return err
+	}
+	if !won {
+		return fmt.Errorf("accepted accounting lease lost")
 	}
 	return nil
+}
+
+func acceptedAccountingLeaseCurrent(task *model.Task, owner string, leaseExpiresAt int64, now int64) bool {
+	return task != nil &&
+		task.Status == model.TaskStatusSubmitted &&
+		task.AcceptedAccountingStatus == model.TaskAcceptedAccountingProcessing &&
+		task.AcceptedAccountingLeaseOwner == owner &&
+		task.AcceptedAccountingLeaseExpiresAt == leaseExpiresAt &&
+		task.AcceptedAccountingLeaseExpiresAt > now
+}
+
+func markAcceptedAccountingRetryable(ctx context.Context, taskID string, owner string, leaseExpiresAt int64, cause error) error {
+	now := assetTaskWorkerNowUnix()
+	reason := "accepted accounting failed"
+	if cause != nil && strings.TrimSpace(cause.Error()) != "" {
+		reason = cause.Error()
+	}
+	won, err := model.MarkAcceptedAccountingRetryable(taskID, owner, leaseExpiresAt, reason, now)
+	if err != nil {
+		return err
+	}
+	if !won {
+		logger.LogWarn(ctx, fmt.Sprintf("accepted accounting failure for task %s lost lease fence", taskID))
+	}
+	return cause
 }
 
 func extractStrictAssetPublicIDsFromPayload(payload []byte) []string {

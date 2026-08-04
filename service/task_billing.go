@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // LogTaskConsumption 记录任务消费日志和统计信息（仅记录，不涉及实际扣费）。
@@ -253,6 +254,222 @@ func SettlePreparedTaskQuota(ctx context.Context, task *model.Task, actualQuota 
 	taskAdjustTokenQuota(ctx, task, quotaDelta)
 	task.Quota = actualQuota
 	return nil
+}
+
+func SettleAcceptedTaskFundingOnce(ctx context.Context, task *model.Task, actualQuota int) error {
+	if task == nil {
+		return nil
+	}
+	if actualQuota <= 0 {
+		actualQuota = task.AcceptedAccountingActualQuota
+	}
+	reservedQuota := task.AcceptedAccountingReservedQuota
+	if reservedQuota == 0 {
+		reservedQuota = task.Quota
+	}
+	delta := actualQuota - reservedQuota
+	return runAcceptedAccountingStepOnce(task.TaskID, model.TaskAcceptedAccountingStepFunding, func(tx *gorm.DB) error {
+		if delta == 0 {
+			return nil
+		}
+		if taskIsSubscription(task) {
+			weightedDelta := taskSubscriptionWeighted(task, int64(actualQuota)) - taskSubscriptionWeighted(task, int64(reservedQuota))
+			if weightedDelta != 0 {
+				if err := adjustSubscriptionFundingTx(tx, task.PrivateData.SubscriptionId, weightedDelta); err != nil {
+					return err
+				}
+				if bc := task.PrivateData.BillingContext; bc != nil && bc.SubscriptionWindow != nil {
+					if _, err := AdjustSubscriptionWindowFromSnapshot(bc.SubscriptionWindow, weightedDelta); err != nil {
+						common.SysLog(fmt.Sprintf("task %s subscription window compensation failed (tolerated): %v", task.TaskID, err))
+					}
+				}
+			}
+		} else {
+			if err := adjustWalletFundingTx(tx, task.UserId, delta); err != nil {
+				return err
+			}
+		}
+		if err := adjustTokenQuotaTx(tx, task.PrivateData.TokenId, delta); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func LogAcceptedTaskConsumptionOnce(ctx context.Context, task *model.Task) error {
+	if task == nil {
+		return nil
+	}
+	actualQuota := task.AcceptedAccountingActualQuota
+	if actualQuota == 0 {
+		actualQuota = task.Quota
+	}
+	return runAcceptedAccountingStepOnce(task.TaskID, model.TaskAcceptedAccountingStepLogStats, func(tx *gorm.DB) error {
+		now := common.GetTimestamp()
+		tokenName := ""
+		if task.PrivateData.TokenId > 0 {
+			var token model.Token
+			if err := tx.Select("name").Where("id = ?", task.PrivateData.TokenId).First(&token).Error; err == nil {
+				tokenName = token.Name
+			}
+		}
+		if common.LogConsumeEnabled {
+			other := taskBillingOther(task)
+			other["is_task"] = true
+			other["task_id"] = task.TaskID
+			other["pre_consumed_quota"] = task.AcceptedAccountingReservedQuota
+			other["actual_quota"] = actualQuota
+			otherStr := ""
+			if b, err := common.Marshal(other); err == nil {
+				otherStr = string(b)
+			}
+			if model.TemporaryChannelSpendHook != nil {
+				model.TemporaryChannelSpendHook(task.ChannelId, taskModelName(task), actualQuota)
+			}
+			log := &model.Log{
+				UserId:    task.UserId,
+				CreatedAt: now,
+				Type:      model.LogTypeConsume,
+				Content:   fmt.Sprintf("操作 %s", task.Action),
+				TokenName: tokenName,
+				ModelName: taskModelName(task),
+				Quota:     actualQuota,
+				ChannelId: task.ChannelId,
+				TokenId:   task.PrivateData.TokenId,
+				Group:     task.Group,
+				RequestId: acceptedAccountingRequestID(task.TaskID),
+				Other:     otherStr,
+			}
+			logDB := tx
+			if model.LOG_DB != model.DB {
+				logDB = model.LOG_DB
+			}
+			if err := logDB.Create(log).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&model.User{}).Where("id = ?", task.UserId).Updates(map[string]any{
+			"used_quota":    gorm.Expr("used_quota + ?", actualQuota),
+			"request_count": gorm.Expr("request_count + ?", 1),
+		}).Error; err != nil {
+			return err
+		}
+		if task.ChannelId > 0 {
+			if err := tx.Model(&model.Channel{}).Where("id = ?", task.ChannelId).Update("used_quota", gorm.Expr("used_quota + ?", actualQuota)).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func runAcceptedAccountingStepOnce(taskID string, step string, apply func(tx *gorm.DB) error) error {
+	if taskID == "" || step == "" {
+		return nil
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var existing int64
+		if err := tx.Model(&model.TaskAcceptedAccountingLedger{}).Where("task_id = ? AND step = ?", taskID, step).Count(&existing).Error; err != nil {
+			return err
+		}
+		if existing > 0 {
+			return nil
+		}
+		now := common.GetTimestamp()
+		ledger := &model.TaskAcceptedAccountingLedger{
+			TaskID:    taskID,
+			Step:      step,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := tx.Create(ledger).Error; err != nil {
+			if isAcceptedAccountingDuplicate(err) {
+				return nil
+			}
+			return err
+		}
+		return apply(tx)
+	})
+}
+
+func adjustWalletFundingTx(tx *gorm.DB, userID int, delta int) error {
+	if delta == 0 {
+		return nil
+	}
+	expr := gorm.Expr("quota - ?", delta)
+	if delta < 0 {
+		expr = gorm.Expr("quota + ?", -delta)
+	}
+	result := tx.Model(&model.User{}).Where("id = ?", userID).Update("quota", expr)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("user %d not found for accepted accounting", userID)
+	}
+	return nil
+}
+
+func adjustSubscriptionFundingTx(tx *gorm.DB, subscriptionID int, weightedDelta int64) error {
+	if subscriptionID <= 0 {
+		return fmt.Errorf("invalid subscription id")
+	}
+	if weightedDelta == 0 {
+		return nil
+	}
+	var sub model.UserSubscription
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", subscriptionID).First(&sub).Error; err != nil {
+		return err
+	}
+	next := sub.AmountUsed + weightedDelta
+	if next < 0 {
+		next = 0
+	}
+	if sub.AmountTotal > 0 && next > sub.AmountTotal {
+		return fmt.Errorf("subscription used exceeds total, used=%d total=%d", next, sub.AmountTotal)
+	}
+	sub.AmountUsed = next
+	return tx.Save(&sub).Error
+}
+
+func adjustTokenQuotaTx(tx *gorm.DB, tokenID int, delta int) error {
+	if tokenID <= 0 || delta == 0 {
+		return nil
+	}
+	updates := map[string]any{
+		"accessed_time": common.GetTimestamp(),
+	}
+	if delta > 0 {
+		updates["remain_quota"] = gorm.Expr("remain_quota - ?", delta)
+		updates["used_quota"] = gorm.Expr("used_quota + ?", delta)
+	} else {
+		updates["remain_quota"] = gorm.Expr("remain_quota + ?", -delta)
+		updates["used_quota"] = gorm.Expr("used_quota - ?", -delta)
+	}
+	result := tx.Model(&model.Token{}).Where("id = ?", tokenID).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("token %d not found for accepted accounting", tokenID)
+	}
+	return nil
+}
+
+func acceptedAccountingRequestID(taskID string) string {
+	const prefix = "accepted-accounting:"
+	if len(prefix)+len(taskID) <= 64 {
+		return prefix + taskID
+	}
+	return prefix + taskID[len(taskID)-(64-len(prefix)):]
+}
+
+func isAcceptedAccountingDuplicate(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique constraint") || strings.Contains(msg, "duplicated")
 }
 
 // RecalculateTaskQuota 通用的异步差额结算。

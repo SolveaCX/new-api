@@ -50,6 +50,16 @@ const (
 	TaskPreparationStatusFailed          = "FAILED"
 )
 
+const (
+	TaskAcceptedAccountingPending         = "pending"
+	TaskAcceptedAccountingProcessing      = "processing"
+	TaskAcceptedAccountingDone            = "done"
+	TaskAcceptedAccountingFailedRetryable = "failed_retryable"
+
+	TaskAcceptedAccountingStepFunding  = "funding"
+	TaskAcceptedAccountingStepLogStats = "log_stats"
+)
+
 type Task struct {
 	ID         int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
 	CreatedAt  int64                 `json:"created_at" gorm:"index"`
@@ -77,6 +87,23 @@ type Task struct {
 	PreparationLeaseOwner     string          `json:"-" gorm:"type:varchar(64);index"`
 	PreparationLeaseExpiresAt int64           `json:"-" gorm:"index"`
 	PreparationAttemptCount   int             `json:"-"`
+
+	AcceptedAccountingStatus         string `json:"-" gorm:"type:varchar(24);index"`
+	AcceptedAccountingLeaseOwner     string `json:"-" gorm:"type:varchar(64);index"`
+	AcceptedAccountingLeaseExpiresAt int64  `json:"-" gorm:"index"`
+	AcceptedAccountingAttemptCount   int    `json:"-"`
+	AcceptedAccountingReservedQuota  int    `json:"-"`
+	AcceptedAccountingActualQuota    int    `json:"-"`
+	AcceptedAccountingFailReason     string `json:"-"`
+	AcceptedAccountingDoneAt         int64  `json:"-" gorm:"index"`
+}
+
+type TaskAcceptedAccountingLedger struct {
+	ID        int64  `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
+	CreatedAt int64  `json:"created_at" gorm:"index"`
+	UpdatedAt int64  `json:"updated_at"`
+	TaskID    string `json:"task_id" gorm:"type:varchar(191);uniqueIndex:idx_task_accepted_accounting_step,priority:1"`
+	Step      string `json:"step" gorm:"type:varchar(64);uniqueIndex:idx_task_accepted_accounting_step,priority:2"`
 }
 
 func (t *Task) SetData(data any) {
@@ -385,6 +412,22 @@ func GetQueuedAssetPreparationTasks(now int64, limit int) ([]*Task, error) {
 	return tasks, err
 }
 
+func GetAcceptedAccountingTasks(now int64, limit int) ([]*Task, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	var tasks []*Task
+	err := DB.Where("status = ? AND ((accepted_accounting_status IN ?) OR (accepted_accounting_status = ? AND accepted_accounting_lease_expires_at <= ?))",
+		TaskStatusSubmitted,
+		[]string{TaskAcceptedAccountingPending, TaskAcceptedAccountingFailedRetryable},
+		TaskAcceptedAccountingProcessing,
+		now).
+		Order("id ASC").
+		Limit(limit).
+		Find(&tasks).Error
+	return tasks, err
+}
+
 func GetByOnlyTaskId(taskId string) (*Task, bool, error) {
 	if taskId == "" {
 		return nil, false, nil
@@ -533,7 +576,7 @@ func MarkQueuedTaskAccepted(taskID string, owner string, expectedLeaseExpiresAt 
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		privateDataExpr := gorm.Expr("private_data")
 		var current Task
-		if err := tx.Select("private_data", "user_id").Where("task_id = ?", taskID).First(&current).Error; err == nil {
+		if err := tx.Select("private_data", "user_id", "quota").Where("task_id = ?", taskID).First(&current).Error; err == nil {
 			current.PrivateData.UpstreamTaskID = upstreamTaskID
 			privateDataExpr = gorm.Expr("?", current.PrivateData)
 		} else {
@@ -543,17 +586,22 @@ func MarkQueuedTaskAccepted(taskID string, owner string, expectedLeaseExpiresAt 
 			Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
 			Where("preparation_lease_owner = ? AND preparation_lease_expires_at = ? AND preparation_lease_expires_at > ?", owner, expectedLeaseExpiresAt, now).
 			Updates(map[string]any{
-				"status":                       TaskStatusSubmitted,
-				"preparation_status":           TaskPreparationStatusReady,
-				"preparation_lease_owner":      "",
-				"preparation_lease_expires_at": 0,
-				"submit_time":                  submitTime,
-				"updated_at":                   now,
-				"channel_id":                   channelID,
-				"platform":                     platform,
-				"quota":                        quota,
-				"data":                         json.RawMessage(taskData),
-				"private_data":                 privateDataExpr,
+				"status":                               TaskStatusSubmitted,
+				"preparation_status":                   TaskPreparationStatusReady,
+				"preparation_lease_owner":              "",
+				"preparation_lease_expires_at":         0,
+				"submit_time":                          submitTime,
+				"updated_at":                           now,
+				"channel_id":                           channelID,
+				"platform":                             platform,
+				"data":                                 json.RawMessage(taskData),
+				"private_data":                         privateDataExpr,
+				"accepted_accounting_status":           TaskAcceptedAccountingPending,
+				"accepted_accounting_lease_owner":      "",
+				"accepted_accounting_lease_expires_at": 0,
+				"accepted_accounting_reserved_quota":   current.Quota,
+				"accepted_accounting_actual_quota":     quota,
+				"accepted_accounting_fail_reason":      "",
 			})
 		if result.Error != nil {
 			return result.Error
@@ -568,6 +616,65 @@ func MarkQueuedTaskAccepted(taskID string, owner string, expectedLeaseExpiresAt 
 		return false, err
 	}
 	return accepted, nil
+}
+
+func ClaimAcceptedAccountingLease(taskID string, owner string, now int64, leaseExpiresAt int64) (bool, error) {
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusSubmitted).
+		Where("((accepted_accounting_status IN ?) OR (accepted_accounting_status = ? AND accepted_accounting_lease_expires_at <= ?) OR (accepted_accounting_status = ? AND accepted_accounting_lease_owner = ?))",
+			[]string{TaskAcceptedAccountingPending, TaskAcceptedAccountingFailedRetryable},
+			TaskAcceptedAccountingProcessing, now,
+			TaskAcceptedAccountingProcessing, owner).
+		Updates(map[string]any{
+			"accepted_accounting_status":           TaskAcceptedAccountingProcessing,
+			"accepted_accounting_lease_owner":      owner,
+			"accepted_accounting_lease_expires_at": leaseExpiresAt,
+			"accepted_accounting_attempt_count":    gorm.Expr("accepted_accounting_attempt_count + ?", 1),
+			"accepted_accounting_fail_reason":      "",
+			"updated_at":                           now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func MarkAcceptedAccountingDone(taskID string, owner string, expectedLeaseExpiresAt int64, now int64) (bool, error) {
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusSubmitted).
+		Where("accepted_accounting_status = ? AND accepted_accounting_lease_owner = ? AND accepted_accounting_lease_expires_at = ? AND accepted_accounting_lease_expires_at > ?",
+			TaskAcceptedAccountingProcessing, owner, expectedLeaseExpiresAt, now).
+		Updates(map[string]any{
+			"accepted_accounting_status":           TaskAcceptedAccountingDone,
+			"accepted_accounting_lease_owner":      "",
+			"accepted_accounting_lease_expires_at": 0,
+			"accepted_accounting_done_at":          now,
+			"accepted_accounting_fail_reason":      "",
+			"quota":                                gorm.Expr("accepted_accounting_actual_quota"),
+			"updated_at":                           now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func MarkAcceptedAccountingRetryable(taskID string, owner string, expectedLeaseExpiresAt int64, reason string, now int64) (bool, error) {
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusSubmitted).
+		Where("accepted_accounting_status = ? AND accepted_accounting_lease_owner = ? AND accepted_accounting_lease_expires_at = ? AND accepted_accounting_lease_expires_at > ?",
+			TaskAcceptedAccountingProcessing, owner, expectedLeaseExpiresAt, now).
+		Updates(map[string]any{
+			"accepted_accounting_status":           TaskAcceptedAccountingFailedRetryable,
+			"accepted_accounting_lease_owner":      "",
+			"accepted_accounting_lease_expires_at": 0,
+			"accepted_accounting_fail_reason":      reason,
+			"updated_at":                           now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func extendAcceptedAssetRetentionTx(tx *gorm.DB, userID int, publicIDs []string, lastUsedAt int64, retentionUntil int64) error {

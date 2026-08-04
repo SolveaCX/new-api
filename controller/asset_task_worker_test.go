@@ -382,6 +382,177 @@ func TestAssetTaskWorkerAcceptedWinnerSettlesAndLogsOnce(t *testing.T) {
 	require.EqualValues(t, 1, consumeLogs, "late worker must not settle or log after losing acceptance CAS")
 }
 
+func TestAssetTaskWorkerRecoversPendingAcceptedAccountingAfterCrash(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-recover")
+	task := seedControllerQueuedAssetTask(t, "task_accounting_recover", model.TaskPreparationStatusPreparing, "node-a", 2000)
+	task.ChannelId = 0
+	task.Quota = 123
+	require.NoError(t, model.DB.Save(task).Error)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 7).Update("quota", 10000-task.Quota).Error)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", 11).Updates(map[string]any{
+		"remain_quota": 10000 - task.Quota,
+		"used_quota":   task.Quota,
+	}).Error)
+
+	assetTaskWorkerTestNow = 1000
+	won, err := model.MarkQueuedTaskAccepted("task_accounting_recover", "node-a", 2000, 1000, 1000, 131, constant.TaskPlatform("107"), 246, "upstream-recover", []byte(`{"id":"upstream-recover"}`), nil, 1000, 2000)
+	require.NoError(t, err)
+	require.True(t, won)
+
+	var accepted model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_accounting_recover").First(&accepted).Error)
+	require.Equal(t, model.TaskAcceptedAccountingPending, accepted.AcceptedAccountingStatus)
+	require.Equal(t, 123, accepted.AcceptedAccountingReservedQuota)
+	require.Equal(t, 246, accepted.AcceptedAccountingActualQuota)
+	require.Equal(t, 10000-123, getControllerUserQuota(t, 7))
+	require.Zero(t, countControllerConsumeLogs(t))
+
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 10000-246, getControllerUserQuota(t, 7))
+	require.Equal(t, 10000-246, getControllerTokenRemain(t, 11))
+	require.EqualValues(t, 1, countControllerConsumeLogs(t))
+	require.EqualValues(t, 1, countControllerAccountingLedgers(t, "task_accounting_recover", model.TaskAcceptedAccountingStepFunding))
+	require.EqualValues(t, 1, countControllerAccountingLedgers(t, "task_accounting_recover", model.TaskAcceptedAccountingStepLogStats))
+
+	processed, err = RunAssetTaskWorkerOnce(context.Background(), "node-c", 10)
+	require.NoError(t, err)
+	require.Zero(t, processed)
+	require.Equal(t, 10000-246, getControllerUserQuota(t, 7))
+	require.EqualValues(t, 1, countControllerConsumeLogs(t))
+}
+
+func TestAssetTaskAcceptedAccountingReentryAfterFundingLedgerDoesNotDoubleCharge(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-reentry")
+	task := seedControllerQueuedAssetTask(t, "task_accounting_reentry", model.TaskPreparationStatusReady, "", 0)
+	task.Status = model.TaskStatusSubmitted
+	task.ChannelId = 131
+	task.Quota = 123
+	task.AcceptedAccountingStatus = model.TaskAcceptedAccountingPending
+	task.AcceptedAccountingReservedQuota = 123
+	task.AcceptedAccountingActualQuota = 246
+	task.PrivateData.UpstreamTaskID = "upstream-reentry"
+	require.NoError(t, model.DB.Save(task).Error)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 7).Update("quota", 10000-task.Quota).Error)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", 11).Updates(map[string]any{
+		"remain_quota": 10000 - task.Quota,
+		"used_quota":   task.Quota,
+	}).Error)
+
+	assetTaskWorkerTestNow = 1000
+	won, err := model.ClaimAcceptedAccountingLease("task_accounting_reentry", "node-a", 1000, 1100)
+	require.NoError(t, err)
+	require.True(t, won)
+	stored, ok, err := model.GetByOnlyTaskId("task_accounting_reentry")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, service.SettleAcceptedTaskFundingOnce(context.Background(), stored, 246))
+	require.Equal(t, 10000-246, getControllerUserQuota(t, 7))
+	require.Equal(t, 10000-246, getControllerTokenRemain(t, 11))
+
+	assetTaskWorkerTestNow = 1101
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 10000-246, getControllerUserQuota(t, 7))
+	require.Equal(t, 10000-246, getControllerTokenRemain(t, 11))
+	require.EqualValues(t, 1, countControllerConsumeLogs(t))
+	require.EqualValues(t, 1, countControllerAccountingLedgers(t, "task_accounting_reentry", model.TaskAcceptedAccountingStepFunding))
+	require.EqualValues(t, 1, countControllerAccountingLedgers(t, "task_accounting_reentry", model.TaskAcceptedAccountingStepLogStats))
+}
+
+func TestAssetTaskAcceptedAccountingLeaseTakeoverFencesOldOwner(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-lease")
+	task := seedControllerQueuedAssetTask(t, "task_accounting_lease", model.TaskPreparationStatusReady, "", 0)
+	task.Status = model.TaskStatusSubmitted
+	task.ChannelId = 131
+	task.Quota = 123
+	task.AcceptedAccountingStatus = model.TaskAcceptedAccountingPending
+	task.AcceptedAccountingReservedQuota = 123
+	task.AcceptedAccountingActualQuota = 246
+	require.NoError(t, model.DB.Save(task).Error)
+
+	assetTaskWorkerTestNow = 1000
+	won, err := model.ClaimAcceptedAccountingLease("task_accounting_lease", "node-a", 1000, 1100)
+	require.NoError(t, err)
+	require.True(t, won)
+	won, err = model.ClaimAcceptedAccountingLease("task_accounting_lease", "node-b", 1050, 1150)
+	require.NoError(t, err)
+	require.False(t, won)
+	won, err = model.ClaimAcceptedAccountingLease("task_accounting_lease", "node-b", 1101, 1201)
+	require.NoError(t, err)
+	require.True(t, won)
+	won, err = model.MarkAcceptedAccountingDone("task_accounting_lease", "node-a", 1100, 1110)
+	require.NoError(t, err)
+	require.False(t, won)
+	won, err = model.MarkAcceptedAccountingRetryable("task_accounting_lease", "node-a", 1100, "late failure", 1110)
+	require.NoError(t, err)
+	require.False(t, won)
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_accounting_lease").First(&stored).Error)
+	require.Equal(t, model.TaskAcceptedAccountingProcessing, stored.AcceptedAccountingStatus)
+	require.Equal(t, "node-b", stored.AcceptedAccountingLeaseOwner)
+}
+
+func TestAssetTaskAcceptedAccountingRetryableFailureDoesNotLogStats(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-retryable")
+	task := seedControllerQueuedAssetTask(t, "task_accounting_retryable", model.TaskPreparationStatusReady, "", 0)
+	task.Status = model.TaskStatusSubmitted
+	task.ChannelId = 131
+	task.Quota = 123
+	task.AcceptedAccountingStatus = model.TaskAcceptedAccountingPending
+	task.AcceptedAccountingReservedQuota = 123
+	task.AcceptedAccountingActualQuota = 246
+	task.PrivateData.TokenId = 9999
+	require.NoError(t, model.DB.Save(task).Error)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 7).Update("quota", 10000-task.Quota).Error)
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 10000-123, getControllerUserQuota(t, 7))
+	require.Zero(t, countControllerConsumeLogs(t))
+	var failed model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_accounting_retryable").First(&failed).Error)
+	require.Equal(t, model.TaskAcceptedAccountingFailedRetryable, failed.AcceptedAccountingStatus)
+
+	failed.PrivateData.TokenId = 11
+	require.NoError(t, model.DB.Save(&failed).Error)
+	assetTaskWorkerTestNow = 1001
+	processed, err = RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, 10000-246, getControllerUserQuota(t, 7))
+	require.EqualValues(t, 1, countControllerConsumeLogs(t))
+}
+
 func TestAssetTaskWorkerAcceptedSubscriptionUsesSnapshotForSettlement(t *testing.T) {
 	restoreDB := useControllerAssetTaskDBForTest(t)
 	defer restoreDB()
@@ -761,7 +932,7 @@ func useControllerAssetTaskDBForTest(t *testing.T) func() {
 	oldCommonKeyCol := controllerAssetTaskModelCommonKeyCol
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Asset{}, &model.AssetBinding{}, &model.Ability{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.SubscriptionPlan{}, &model.UserSubscription{}, &model.UserSubscriptionContract{}, &model.SubscriptionPreConsumeRecord{}, &model.SubscriptionDiscountAccount{}, &model.SubscriptionDiscountEntry{}))
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskAcceptedAccountingLedger{}, &model.Asset{}, &model.AssetBinding{}, &model.Ability{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.SubscriptionPlan{}, &model.UserSubscription{}, &model.UserSubscriptionContract{}, &model.SubscriptionPreConsumeRecord{}, &model.SubscriptionDiscountAccount{}, &model.SubscriptionDiscountEntry{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	model.DB = db
@@ -889,6 +1060,34 @@ func getControllerSubscriptionUsed(t *testing.T, subscriptionID int) int64 {
 	var sub model.UserSubscription
 	require.NoError(t, model.DB.Select("amount_used").Where("id = ?", subscriptionID).First(&sub).Error)
 	return sub.AmountUsed
+}
+
+func getControllerUserQuota(t *testing.T, userID int) int {
+	t.Helper()
+	var user model.User
+	require.NoError(t, model.DB.Select("quota").Where("id = ?", userID).First(&user).Error)
+	return user.Quota
+}
+
+func getControllerTokenRemain(t *testing.T, tokenID int) int {
+	t.Helper()
+	var token model.Token
+	require.NoError(t, model.DB.Select("remain_quota").Where("id = ?", tokenID).First(&token).Error)
+	return token.RemainQuota
+}
+
+func countControllerConsumeLogs(t *testing.T) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&count).Error)
+	return count
+}
+
+func countControllerAccountingLedgers(t *testing.T, taskID string, step string) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, model.DB.Model(&model.TaskAcceptedAccountingLedger{}).Where("task_id = ? AND step = ?", taskID, step).Count(&count).Error)
+	return count
 }
 
 func seedControllerTaskChannel(t *testing.T, id int, key string) {
