@@ -74,6 +74,36 @@ func TestResolveBytePlusAssetReferencesPrefersGeneralizedAssetsOverLegacyRows(t 
 	}
 }
 
+func TestResolveBytePlusAssetReferencesPinsCommonChannelAcrossMultipleBindings(t *testing.T) {
+	newBytePlusAssetReferenceDB(t)
+	a := insertGeneralizedBytePlusReferenceAsset(t, 7, 131, "ast_1234567890abcdefABCDEF1234567890", "upstream-a-131", model.BytePlusAssetStatusActive, model.AssetSourceStatusAvailable)
+	insertGeneralizedBytePlusReferenceBinding(t, a.Id, 132, "upstream-a-132", model.BytePlusAssetStatusActive)
+	b := insertGeneralizedBytePlusReferenceAsset(t, 7, 132, "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "upstream-b-132", model.BytePlusAssetStatusActive, model.AssetSourceStatusAvailable)
+
+	c := newAssetReferenceContext()
+	req := &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{
+		{Type: dto.SeedanceContentImage, ImageURL: &dto.SeedanceURLObject{URL: "asset://" + a.PublicId}},
+		{Type: dto.SeedanceContentImage, ImageURL: &dto.SeedanceURLObject{URL: "asset://" + b.PublicId}},
+	}}
+
+	resolution, apiErr := ResolveBytePlusAssetReferences(c, 7, req)
+	if apiErr != nil {
+		t.Fatalf("ResolveBytePlusAssetReferences error: %v", apiErr)
+	}
+	if resolution.PinnedChannelID != 132 {
+		t.Fatalf("PinnedChannelID = %d, want 132", resolution.PinnedChannelID)
+	}
+	if got := resolution.RewriteMap["asset://"+a.PublicId]; got != "asset://upstream-a-132" {
+		t.Fatalf("rewrite A = %q, want asset://upstream-a-132", got)
+	}
+	if got := resolution.RewriteMap["asset://"+b.PublicId]; got != "asset://upstream-b-132" {
+		t.Fatalf("rewrite B = %q, want asset://upstream-b-132", got)
+	}
+	if got := common.GetContextKeyInt(c, constant.ContextKeyBytePlusAssetPinnedChannelID); got != 132 {
+		t.Fatalf("stored pinned channel id = %d, want 132", got)
+	}
+}
+
 func TestResolveBytePlusAssetReferencesDoesNotFallbackForGeneralizedAssetWithoutBinding(t *testing.T) {
 	newBytePlusAssetReferenceDB(t)
 	publicID := "ast_1234567890abcdefABCDEF1234567890"
@@ -676,8 +706,14 @@ func insertGeneralizedBytePlusReferenceAsset(t *testing.T, userID, channelID int
 	if err := model.DB.Create(&asset).Error; err != nil {
 		t.Fatalf("insert generalized asset: %v", err)
 	}
+	insertGeneralizedBytePlusReferenceBinding(t, asset.Id, channelID, upstreamID, status)
+	return asset
+}
+
+func insertGeneralizedBytePlusReferenceBinding(t *testing.T, assetID int64, channelID int, upstreamID, status string) model.AssetBinding {
+	t.Helper()
 	binding := model.AssetBinding{
-		AssetId:         asset.Id,
+		AssetId:         assetID,
 		ChannelId:       channelID,
 		UpstreamGroupId: "generalized-group",
 		UpstreamAssetId: upstreamID,
@@ -688,7 +724,7 @@ func insertGeneralizedBytePlusReferenceAsset(t *testing.T, userID, channelID int
 	if err := model.DB.Create(&binding).Error; err != nil {
 		t.Fatalf("insert generalized asset binding: %v", err)
 	}
-	return asset
+	return binding
 }
 
 func newAssetReferenceContext() *gin.Context {

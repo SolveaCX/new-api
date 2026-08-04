@@ -81,8 +81,9 @@ type AssetUpload struct {
 }
 
 type AssetWithBinding struct {
-	Asset   Asset
-	Binding *AssetBinding
+	Asset    Asset
+	Binding  *AssetBinding
+	Bindings []AssetBinding
 }
 
 func CreateAssetBindingIfAbsent(assetID int64, channelID int, now int64) (*AssetBinding, bool, error) {
@@ -134,22 +135,20 @@ func GetAssetsWithBindingsByPublicIDsForUser(userID int, publicIDs []string) (ma
 		assetIDs = append(assetIDs, asset.Id)
 	}
 	var bindings []AssetBinding
-	if err := DB.Where("asset_id IN ?", assetIDs).Order("asset_id ASC, id ASC").Find(&bindings).Error; err != nil {
+	if err := DB.Where("asset_id IN ?", assetIDs).Order("asset_id ASC, channel_id ASC, id ASC").Find(&bindings).Error; err != nil {
 		return nil, err
 	}
-	bindingByAssetID := make(map[int64]AssetBinding, len(bindings))
+	bindingsByAssetID := make(map[int64][]AssetBinding, len(bindings))
 	for _, binding := range bindings {
-		if _, ok := bindingByAssetID[binding.AssetId]; ok {
-			continue
-		}
-		bindingByAssetID[binding.AssetId] = binding
+		bindingsByAssetID[binding.AssetId] = append(bindingsByAssetID[binding.AssetId], binding)
 	}
 
 	byPublicID := make(map[string]AssetWithBinding, len(assets))
 	for _, asset := range assets {
 		item := AssetWithBinding{Asset: asset}
-		if binding, ok := bindingByAssetID[asset.Id]; ok {
-			bindingCopy := binding
+		if assetBindings := bindingsByAssetID[asset.Id]; len(assetBindings) > 0 {
+			item.Bindings = append([]AssetBinding(nil), assetBindings...)
+			bindingCopy := assetBindings[0]
 			item.Binding = &bindingCopy
 		}
 		byPublicID[asset.PublicId] = item
