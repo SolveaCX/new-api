@@ -123,7 +123,7 @@ func putTempMediaObjectToGCS(ctx context.Context, cfg TempMediaConfig, objectKey
 }
 
 func signTempMediaObjectWithIAM(ctx context.Context, cfg TempMediaConfig, objectKey string, method string) (string, error) {
-	return assetObjectStore.SignURL(ctx, cfg.Bucket, objectKey, AssetSignedURLRequest{Method: method, TTL: cfg.SignedURLTTL})
+	return assetObjectStore.SignURL(ctx, cfg.Bucket, objectKey, AssetSignedURLRequest{Method: method, TTL: cfg.SignedURLTTL, ServiceAccountEmail: cfg.ServiceAccountEmail})
 }
 
 func normalizeTempMediaImageType(contentType string) (string, string) {

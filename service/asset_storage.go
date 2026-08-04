@@ -43,9 +43,10 @@ type AssetObjectAttrs struct {
 }
 
 type AssetSignedURLRequest struct {
-	Method      string
-	TTL         time.Duration
-	ContentType string
+	Method              string
+	TTL                 time.Duration
+	ContentType         string
+	ServiceAccountEmail string
 }
 
 type AssetStorageConfig struct {
@@ -169,7 +170,10 @@ func (gcsAssetObjectStore) Delete(ctx context.Context, bucket, objectKey string,
 }
 
 func (gcsAssetObjectStore) SignURL(ctx context.Context, bucket, objectKey string, request AssetSignedURLRequest) (string, error) {
-	serviceAccountEmail := strings.TrimSpace(os.Getenv("ASSET_SERVICE_ACCOUNT_EMAIL"))
+	serviceAccountEmail := strings.TrimSpace(request.ServiceAccountEmail)
+	if serviceAccountEmail == "" {
+		serviceAccountEmail = strings.TrimSpace(os.Getenv("ASSET_SERVICE_ACCOUNT_EMAIL"))
+	}
 	if serviceAccountEmail == "" {
 		var err error
 		serviceAccountEmail, err = assetServiceAccountEmail(ctx)

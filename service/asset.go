@@ -256,7 +256,7 @@ func CreateAssetUploadSession(ctx context.Context, request AssetUploadSessionReq
 	if err != nil {
 		return nil, err
 	}
-	signedURL, err := assetObjectStore.SignURL(ctx, cfg.Bucket, objectKey, AssetSignedURLRequest{Method: http.MethodPut, TTL: cfg.SignedURLTTL, ContentType: contentType})
+	signedURL, err := assetObjectStore.SignURL(ctx, cfg.Bucket, objectKey, AssetSignedURLRequest{Method: http.MethodPut, TTL: cfg.SignedURLTTL, ContentType: contentType, ServiceAccountEmail: cfg.ServiceAccountEmail})
 	if err != nil {
 		return nil, err
 	}

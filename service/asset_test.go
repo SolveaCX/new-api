@@ -103,6 +103,7 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	newAssetServiceTestDB(t)
 	store := installAssetServiceTestDeps(t)
 	t.Setenv("ASSET_SIGNED_URL_TTL_SECONDS", "3600")
+	t.Setenv("ASSET_SERVICE_ACCOUNT_EMAIL", "asset-signer@example.iam.gserviceaccount.com")
 	png := tinyPNG()
 
 	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
@@ -121,6 +122,7 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	require.Equal(t, http.MethodPut, store.signed[0].Method)
 	require.Equal(t, time.Hour, store.signed[0].TTL)
 	require.Equal(t, "image/png", store.signed[0].ContentType)
+	require.Equal(t, "asset-signer@example.iam.gserviceaccount.com", store.signed[0].ServiceAccountEmail)
 
 	store.objects["asset-test-bucket/"+session.ObjectKey] = png
 	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 9}

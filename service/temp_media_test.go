@@ -72,6 +72,24 @@ func TestUploadTempMediaImageStoresAndSignsObject(t *testing.T) {
 	require.Equal(t, "image/png", result.ContentType)
 }
 
+func TestSignTempMediaObjectPassesConfiguredServiceAccountToSharedStore(t *testing.T) {
+	store := &fakeAssetObjectStore{}
+	originalStore := assetObjectStore
+	t.Cleanup(func() {
+		assetObjectStore = originalStore
+	})
+	assetObjectStore = store
+
+	t.Setenv("TEMP_MEDIA_SERVICE_ACCOUNT_EMAIL", " temp-media-signer@example.iam.gserviceaccount.com ")
+	cfg := CurrentTempMediaConfig()
+
+	_, err := signTempMediaObjectWithIAM(context.Background(), cfg, "temp-media/1/file.png", "GET")
+
+	require.NoError(t, err)
+	require.Len(t, store.signed, 1)
+	require.Equal(t, "temp-media-signer@example.iam.gserviceaccount.com", store.signed[0].ServiceAccountEmail)
+}
+
 func TestUploadTempMediaImageRejectsOversizedImage(t *testing.T) {
 	t.Setenv("TEMP_MEDIA_MAX_IMAGE_BYTES", "3")
 
