@@ -427,6 +427,20 @@ class SupervisorTests(unittest.TestCase):
         ]:
             self.assertIn(required.lower(), prompt.lower())
 
+    def test_runtime_prompt_injects_only_authorized_staging_origins_and_read_only_docs_origin(self):
+        process = FakeProcess(0)
+
+        self.run_supervisor(process, result_payload=valid_result())
+
+        prompt = process.stdin.getvalue()
+        self.assertIn("Authorized staging website origin: https://staging-website.flatkey.ai", prompt)
+        self.assertIn("Authorized staging console origin: https://staging-console.flatkey.ai", prompt)
+        self.assertIn("Read-only cookie-free docs origin: https://docs.flatkey.ai", prompt)
+        self.assertIn("Begin replay by navigating to the authorized staging website origin.", prompt)
+        self.assertNotIn("https://flatkey.ai", prompt)
+        self.assertNotIn("https://console.flatkey.ai", prompt)
+        self.assertNotIn("https://router.flatkey.ai", prompt)
+
     def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None, proxy_factory=None, subprocess_runner=None):
         tmp = tempfile.mkdtemp()
         supervisor_kwargs = {}
