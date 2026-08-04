@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +31,9 @@ const (
 	assetPublicIDRandomLen = 32
 	assetRedirectLimit     = 5
 	assetCleanupLeaseTTL   = 5 * time.Minute
+	assetFetchDialTimeout  = 10 * time.Second
+	assetFetchTLSHandshake = 10 * time.Second
+	assetFetchHeaderWait   = 30 * time.Second
 )
 
 var (
@@ -45,6 +51,22 @@ var (
 	assetUploadID                = func() (string, error) { return randomAssetID(assetUploadIDPrefix) }
 	assetRandomSuffix            = func() (string, error) { return common.GenerateRandomCharsKey(24) }
 )
+
+type assetFetchResolver interface {
+	LookupIP(ctx context.Context, host string) ([]net.IP, error)
+}
+
+type assetFetchResolverFunc func(ctx context.Context, host string) ([]net.IP, error)
+
+func (f assetFetchResolverFunc) LookupIP(ctx context.Context, host string) ([]net.IP, error) {
+	return f(ctx, host)
+}
+
+type assetFetchHTTPClientConfig struct {
+	Timeout     time.Duration
+	Resolver    assetFetchResolver
+	DialContext func(ctx context.Context, network, address string) (net.Conn, error)
+}
 
 type AssetFromURLRequest struct {
 	UserID    int
@@ -230,6 +252,10 @@ func CreateAssetUploadSession(ctx context.Context, request AssetUploadSessionReq
 		return nil, err
 	}
 	now := assetNow()
+	signedURL, err := assetObjectStore.SignURL(ctx, cfg.Bucket, objectKey, AssetSignedURLRequest{Method: http.MethodPut, TTL: cfg.SignedURLTTL, ContentType: contentType, ServiceAccountEmail: cfg.ServiceAccountEmail})
+	if err != nil {
+		return nil, err
+	}
 	asset, err := model.CreateAssetWithUploadSession(model.Asset{
 		PublicId:       publicID,
 		UserId:         request.UserID,
@@ -253,10 +279,6 @@ func CreateAssetUploadSession(ctx context.Context, request AssetUploadSessionReq
 		CreatedAt:   now.Unix(),
 		UpdatedAt:   now.Unix(),
 	})
-	if err != nil {
-		return nil, err
-	}
-	signedURL, err := assetObjectStore.SignURL(ctx, cfg.Bucket, objectKey, AssetSignedURLRequest{Method: http.MethodPut, TTL: cfg.SignedURLTTL, ContentType: contentType, ServiceAccountEmail: cfg.ServiceAccountEmail})
 	if err != nil {
 		return nil, err
 	}
@@ -287,22 +309,27 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 	}
 	attrs, err := assetObjectStore.Attrs(ctx, upload.StorageBucket, upload.ObjectKey)
 	if err != nil {
-		return nil, err
+		_ = failAssetUploadValidation(ctx, upload, 0)
+		return nil, ErrAssetUploadValidation
 	}
 	if attrs.Size != upload.SizeBytes {
+		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
 		return nil, ErrAssetUploadValidation
 	}
 	reader, err := assetObjectStore.Open(ctx, upload.StorageBucket, upload.ObjectKey)
 	if err != nil {
-		return nil, err
+		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
+		return nil, ErrAssetUploadValidation
 	}
 	defer reader.Close()
 	cfg := CurrentAssetStorageConfig()
 	detected, sha, size, err := hashAndValidateAssetMedia(reader, upload.AssetType, cfg.TypeLimits[upload.AssetType])
 	if err != nil {
-		return nil, err
+		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
+		return nil, ErrAssetUploadValidation
 	}
 	if size != attrs.Size || detected != upload.ContentType || detected != attrs.ContentType {
+		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
 		return nil, ErrAssetUploadValidation
 	}
 	completed, err := model.CompleteAssetUploadCAS(upload.UploadId, request.Owner, model.AssetUploadCompletion{
@@ -326,6 +353,24 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 	return resultFromAsset(asset), nil
 }
 
+func failAssetUploadValidation(ctx context.Context, upload *model.AssetUpload, generation int64) error {
+	clearStorage := true
+	sourceStatus := model.AssetSourceStatusUnavailable
+	if generation > 0 {
+		if err := assetObjectStore.Delete(ctx, upload.StorageBucket, upload.ObjectKey, generation); err != nil && !isAssetObjectNotFound(err) {
+			clearStorage = false
+			sourceStatus = model.AssetSourceStatusCleanupPending
+		}
+	}
+	_, err := model.FailAssetUploadCAS(upload.UploadId, upload.Owner, model.AssetUploadFailure{
+		SourceStatus:     sourceStatus,
+		ObjectGeneration: generation,
+		ClearStorage:     clearStorage,
+		Now:              assetNow().Unix(),
+	})
+	return err
+}
+
 func CleanupExpiredAssetSources(ctx context.Context, request CleanupExpiredAssetSourcesRequest) (CleanupExpiredAssetSourcesResult, error) {
 	now := assetNow()
 	claimed, err := model.ClaimExpiredAssetSources(request.Owner, now.Unix(), now.Add(assetCleanupLeaseTTL).Unix(), request.Limit)
@@ -346,6 +391,29 @@ func CleanupExpiredAssetSources(ctx context.Context, request CleanupExpiredAsset
 			result.Deleted++
 		}
 	}
+	pending, err := model.ClaimExpiredPendingAssetUploads(request.Owner, now.Unix(), now.Add(assetCleanupLeaseTTL).Unix(), request.Limit)
+	if err != nil {
+		return result, err
+	}
+	result.Claimed += len(pending)
+	for _, candidate := range pending {
+		generation := int64(0)
+		attrs, err := assetObjectStore.Attrs(ctx, candidate.Upload.StorageBucket, candidate.Upload.ObjectKey)
+		if err == nil {
+			generation = attrs.Generation
+			err = assetObjectStore.Delete(ctx, candidate.Upload.StorageBucket, candidate.Upload.ObjectKey, generation)
+		}
+		if err != nil && !isAssetObjectNotFound(err) {
+			continue
+		}
+		ok, err := model.MarkExpiredPendingAssetUploadIfCleanupLease(candidate.Upload.UploadId, request.Owner, candidate.Asset.CleanupGeneration, generation, now.Unix())
+		if err != nil {
+			return result, err
+		}
+		if ok {
+			result.Deleted++
+		}
+	}
 	return result, nil
 }
 
@@ -353,7 +421,12 @@ func fetchAssetSource(ctx context.Context, rawURL string) (*http.Response, error
 	if err := validateAssetSourceURL(rawURL); err != nil {
 		return nil, err
 	}
-	client := *assetHTTPClient
+	baseClient := assetHTTPClient
+	if baseClient == nil || baseClient == http.DefaultClient {
+		cfg := CurrentAssetStorageConfig()
+		baseClient = newAssetFetchHTTPClient(assetFetchHTTPClientConfig{Timeout: cfg.FetchTimeout})
+	}
+	client := *baseClient
 	redirects := 0
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		redirects++
@@ -375,6 +448,82 @@ func fetchAssetSource(ctx context.Context, rawURL string) (*http.Response, error
 		return nil, fmt.Errorf("asset source returned status %d", resp.StatusCode)
 	}
 	return resp, nil
+}
+
+func newAssetFetchHTTPClient(cfg assetFetchHTTPClientConfig) *http.Client {
+	timeout := cfg.Timeout
+	if timeout <= 0 || timeout > maxAssetFetchTimeout {
+		timeout = defaultAssetFetchTimeout
+	}
+	resolver := cfg.Resolver
+	if resolver == nil {
+		resolver = assetFetchResolverFunc(func(ctx context.Context, host string) ([]net.IP, error) {
+			return net.DefaultResolver.LookupIP(ctx, "ip", host)
+		})
+	}
+	dialContext := cfg.DialContext
+	if dialContext == nil {
+		dialer := &net.Dialer{Timeout: assetFetchDialTimeout}
+		dialContext = dialer.DialContext
+	}
+	transport := &http.Transport{
+		Proxy:                 func(*http.Request) (*url.URL, error) { return nil, nil },
+		DialContext:           assetFetchDialContext(resolver, dialContext),
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSHandshakeTimeout:   assetFetchTLSHandshake,
+		ResponseHeaderTimeout: assetFetchHeaderWait,
+		ExpectContinueTimeout: time.Second,
+		ForceAttemptHTTP2:     true,
+	}
+	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
+func assetFetchDialContext(resolver assetFetchResolver, dialContext func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, ErrAssetInvalidSourceURL
+		}
+		ips, err := resolver.LookupIP(ctx, strings.TrimSuffix(host, "."))
+		if err != nil {
+			return nil, ErrAssetInvalidSourceURL
+		}
+		for _, ip := range ips {
+			if ip == nil {
+				continue
+			}
+			if err := validateAssetDialIP(ip, port); err != nil {
+				return nil, err
+			}
+			conn, err := dialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+		}
+		return nil, ErrAssetInvalidSourceURL
+	}
+}
+
+func validateAssetDialIP(ip net.IP, port string) error {
+	if parsedPort, err := strconv.Atoi(port); err != nil || parsedPort <= 0 || parsedPort > 65535 {
+		return ErrAssetInvalidSourceURL
+	}
+	fetchSetting := system_setting.GetFetchSetting()
+	rawURL := "https://" + net.JoinHostPort(ip.String(), port)
+	if err := common.ValidateURLWithFetchSetting(
+		rawURL,
+		true,
+		false,
+		false,
+		fetchSetting.IpFilterMode,
+		nil,
+		fetchSetting.IpList,
+		fetchSetting.AllowedPorts,
+		true,
+	); err != nil {
+		return ErrAssetInvalidSourceURL
+	}
+	return nil
 }
 
 func validateAssetSourceURL(rawURL string) error {

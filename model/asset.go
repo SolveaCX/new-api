@@ -15,9 +15,10 @@ const (
 	AssetStatusFailed     = "Failed"
 	AssetStatusExpired    = "Expired"
 
-	AssetSourceStatusAvailable   = "Available"
-	AssetSourceStatusUnavailable = "Unavailable"
-	AssetSourceStatusExpired     = "Expired"
+	AssetSourceStatusAvailable      = "Available"
+	AssetSourceStatusUnavailable    = "Unavailable"
+	AssetSourceStatusCleanupPending = "CleanupPending"
+	AssetSourceStatusExpired        = "Expired"
 
 	AssetBindingStatusPending = "PENDING"
 	AssetBindingStatusLeased  = "LEASED"
@@ -25,6 +26,7 @@ const (
 	AssetUploadStatusPending  = "PENDING"
 	AssetUploadStatusComplete = "COMPLETE"
 	AssetUploadStatusExpired  = "EXPIRED"
+	AssetUploadStatusFailed   = "FAILED"
 )
 
 const legacyBytePlusAssetMigrationPageSize = 500
@@ -103,6 +105,27 @@ type AssetUploadCompletion struct {
 	Now              int64
 }
 
+type AssetUploadFailure struct {
+	SourceStatus     string
+	ObjectGeneration int64
+	ClearStorage     bool
+	Now              int64
+}
+
+type AssetBindingActivation struct {
+	AssetID         int64
+	ChannelID       int
+	LeaseOwner      string
+	UpstreamGroupID string
+	UpstreamAssetID string
+	Now             int64
+}
+
+type ExpiredAssetUploadCleanupCandidate struct {
+	Asset  Asset
+	Upload AssetUpload
+}
+
 func CreateAsset(asset Asset) (*Asset, error) {
 	if err := DB.Create(&asset).Error; err != nil {
 		return nil, err
@@ -137,10 +160,14 @@ func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploa
 	completed := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var upload AssetUpload
-		if err := tx.Where("upload_id = ? AND owner = ? AND status = ?", uploadID, owner, AssetUploadStatusPending).First(&upload).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("upload_id = ? AND owner = ? AND status = ?", uploadID, owner, AssetUploadStatusPending).First(&upload).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
+			return err
+		}
+		var asset Asset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", upload.AssetId, upload.UserId).First(&asset).Error; err != nil {
 			return err
 		}
 		if upload.ExpiresAt <= completion.Now {
@@ -181,13 +208,109 @@ func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploa
 			"updated_at":        completion.Now,
 		}
 		if err := tx.Model(&Asset{}).
-			Where("id = ? AND user_id = ?", upload.AssetId, upload.UserId).
+			Where("id = ? AND user_id = ? AND status = ?", asset.Id, upload.UserId, AssetStatusCreating).
 			Updates(assetUpdates).Error; err != nil {
 			return err
 		}
 		return nil
 	})
 	return completed, err
+}
+
+func FailAssetUploadCAS(uploadID string, owner string, failure AssetUploadFailure) (bool, error) {
+	failed := false
+	sourceStatus := failure.SourceStatus
+	if sourceStatus == "" {
+		sourceStatus = AssetSourceStatusUnavailable
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var upload AssetUpload
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("upload_id = ? AND owner = ? AND status = ?", uploadID, owner, AssetUploadStatusPending).
+			First(&upload).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		var asset Asset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", upload.AssetId, upload.UserId).
+			First(&asset).Error; err != nil {
+			return err
+		}
+		uploadUpdates := map[string]any{
+			"status":            AssetUploadStatusFailed,
+			"object_generation": failure.ObjectGeneration,
+			"updated_at":        failure.Now,
+		}
+		result := tx.Model(&AssetUpload{}).
+			Where("id = ? AND owner = ? AND status = ?", upload.Id, owner, AssetUploadStatusPending).
+			Updates(uploadUpdates)
+		if result.Error != nil {
+			return result.Error
+		}
+		failed = result.RowsAffected == 1
+		if !failed {
+			return nil
+		}
+		assetUpdates := map[string]any{
+			"status":            AssetStatusFailed,
+			"source_status":     sourceStatus,
+			"object_generation": failure.ObjectGeneration,
+			"updated_at":        failure.Now,
+		}
+		if failure.ClearStorage {
+			assetUpdates["storage_backend"] = ""
+			assetUpdates["storage_bucket"] = ""
+			assetUpdates["object_key"] = ""
+			assetUpdates["object_generation"] = int64(0)
+		}
+		return tx.Model(&Asset{}).
+			Where("id = ? AND user_id = ? AND status = ?", asset.Id, upload.UserId, AssetStatusCreating).
+			Updates(assetUpdates).Error
+	})
+	return failed, err
+}
+
+func ActivateAssetBindingWithAssetCAS(activation AssetBindingActivation) (bool, error) {
+	activated := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var asset Asset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", activation.AssetID).
+			First(&asset).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		query := tx.Model(&AssetBinding{}).
+			Where("asset_id = ? AND channel_id = ?", activation.AssetID, activation.ChannelID).
+			Where("status IN ?", []string{AssetBindingStatusPending, AssetBindingStatusLeased})
+		if activation.LeaseOwner != "" {
+			query = query.Where("lease_owner = ?", activation.LeaseOwner)
+		}
+		result := query.Updates(map[string]any{
+			"status":            AssetStatusActive,
+			"upstream_group_id": activation.UpstreamGroupID,
+			"upstream_asset_id": activation.UpstreamAssetID,
+			"lease_owner":       "",
+			"lease_expires_at":  int64(0),
+			"updated_at":        activation.Now,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		activated = result.RowsAffected == 1
+		if !activated {
+			return nil
+		}
+		return tx.Model(&Asset{}).
+			Where("id = ?", asset.Id).
+			Update("status", AssetStatusActive).Error
+	})
+	return activated, err
 }
 
 func CreateAssetBindingIfAbsent(assetID int64, channelID int, now int64) (*AssetBinding, bool, error) {
@@ -395,7 +518,7 @@ func ClaimExpiredAssetSources(owner string, now int64, leaseUntil int64, limit i
 		limit = 100
 	}
 	var candidates []Asset
-	if err := DB.Where("source_status = ? AND source_expires_at > 0 AND source_expires_at <= ?", AssetSourceStatusAvailable, now).
+	if err := DB.Where("(source_status = ? AND source_expires_at > 0 AND source_expires_at <= ?) OR source_status = ?", AssetSourceStatusAvailable, now, AssetSourceStatusCleanupPending).
 		Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
 		Order("source_expires_at ASC, id ASC").
 		Limit(limit).
@@ -407,7 +530,7 @@ func ClaimExpiredAssetSources(owner string, now int64, leaseUntil int64, limit i
 		nextGeneration := candidate.CleanupGeneration + 1
 		result := DB.Model(&Asset{}).
 			Where("id = ? AND cleanup_generation = ?", candidate.Id, candidate.CleanupGeneration).
-			Where("source_status = ? AND source_expires_at > 0 AND source_expires_at <= ?", AssetSourceStatusAvailable, now).
+			Where("(source_status = ? AND source_expires_at > 0 AND source_expires_at <= ?) OR source_status = ?", AssetSourceStatusAvailable, now, AssetSourceStatusCleanupPending).
 			Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
 			Updates(map[string]any{
 				"cleanup_lease_owner": owner,
@@ -428,32 +551,156 @@ func ClaimExpiredAssetSources(owner string, now int64, leaseUntil int64, limit i
 	return claimed, nil
 }
 
-func MarkAssetSourceExpiredIfCleanupLease(assetID int64, owner string, generation int64, now int64) (bool, error) {
-	nextStatus := AssetStatusExpired
-	var activeBindings int64
-	if err := DB.Model(&AssetBinding{}).
-		Where("asset_id = ? AND status = ?", assetID, AssetStatusActive).
-		Count(&activeBindings).Error; err != nil {
-		return false, err
+func ClaimExpiredPendingAssetUploads(owner string, now int64, leaseUntil int64, limit int) ([]ExpiredAssetUploadCleanupCandidate, error) {
+	if limit <= 0 {
+		limit = 100
 	}
-	if activeBindings > 0 {
-		nextStatus = AssetStatusActive
+	var uploads []AssetUpload
+	if err := DB.Where("status = ? AND expires_at > 0 AND expires_at <= ?", AssetUploadStatusPending, now).
+		Order("expires_at ASC, id ASC").
+		Limit(limit).
+		Find(&uploads).Error; err != nil {
+		return nil, err
 	}
-	result := DB.Model(&Asset{}).
-		Where("id = ? AND cleanup_lease_owner = ? AND cleanup_generation = ?", assetID, owner, generation).
-		Where("source_status = ?", AssetSourceStatusAvailable).
-		Updates(map[string]any{
-			"source_status":       AssetSourceStatusExpired,
-			"status":              nextStatus,
-			"storage_backend":     "",
-			"storage_bucket":      "",
-			"object_key":          "",
-			"cleanup_lease_owner": "",
-			"cleanup_lease_until": int64(0),
-			"updated_at":          now,
+	claimed := make([]ExpiredAssetUploadCleanupCandidate, 0, len(uploads))
+	for _, upload := range uploads {
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			var asset Asset
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND user_id = ? AND status = ? AND source_status = ?", upload.AssetId, upload.UserId, AssetStatusCreating, AssetSourceStatusUnavailable).
+				Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
+				First(&asset).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return err
+			}
+			nextGeneration := asset.CleanupGeneration + 1
+			result := tx.Model(&Asset{}).
+				Where("id = ? AND cleanup_generation = ?", asset.Id, asset.CleanupGeneration).
+				Where("status = ? AND source_status = ?", AssetStatusCreating, AssetSourceStatusUnavailable).
+				Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
+				Updates(map[string]any{
+					"cleanup_lease_owner": owner,
+					"cleanup_lease_until": leaseUntil,
+					"cleanup_generation":  nextGeneration,
+					"updated_at":          now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return nil
+			}
+			asset.CleanupLeaseOwner = owner
+			asset.CleanupLeaseUntil = leaseUntil
+			asset.CleanupGeneration = nextGeneration
+			claimed = append(claimed, ExpiredAssetUploadCleanupCandidate{Asset: asset, Upload: upload})
+			return nil
 		})
-	if result.Error != nil {
-		return false, result.Error
+		if err != nil {
+			return nil, err
+		}
 	}
-	return result.RowsAffected == 1, nil
+	return claimed, nil
+}
+
+func MarkAssetSourceExpiredIfCleanupLease(assetID int64, owner string, generation int64, now int64) (bool, error) {
+	expired := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var asset Asset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND cleanup_lease_owner = ? AND cleanup_generation = ?", assetID, owner, generation).
+			Where("source_status IN ?", []string{AssetSourceStatusAvailable, AssetSourceStatusCleanupPending}).
+			First(&asset).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		nextStatus := AssetStatusExpired
+		var activeBindings int64
+		if err := tx.Model(&AssetBinding{}).
+			Where("asset_id = ? AND status = ?", assetID, AssetStatusActive).
+			Count(&activeBindings).Error; err != nil {
+			return err
+		}
+		if activeBindings > 0 {
+			nextStatus = AssetStatusActive
+		}
+		result := tx.Model(&Asset{}).
+			Where("id = ? AND cleanup_lease_owner = ? AND cleanup_generation = ?", asset.Id, owner, generation).
+			Where("source_status IN ?", []string{AssetSourceStatusAvailable, AssetSourceStatusCleanupPending}).
+			Updates(map[string]any{
+				"source_status":       AssetSourceStatusExpired,
+				"status":              nextStatus,
+				"storage_backend":     "",
+				"storage_bucket":      "",
+				"object_key":          "",
+				"object_generation":   int64(0),
+				"cleanup_lease_owner": "",
+				"cleanup_lease_until": int64(0),
+				"updated_at":          now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		expired = result.RowsAffected == 1
+		return nil
+	})
+	return expired, err
+}
+
+func MarkExpiredPendingAssetUploadIfCleanupLease(uploadID string, owner string, cleanupGeneration int64, objectGeneration int64, now int64) (bool, error) {
+	expired := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var upload AssetUpload
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("upload_id = ? AND status = ?", uploadID, AssetUploadStatusPending).
+			First(&upload).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		var asset Asset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ? AND cleanup_lease_owner = ? AND cleanup_generation = ?", upload.AssetId, upload.UserId, owner, cleanupGeneration).
+			Where("status = ? AND source_status = ?", AssetStatusCreating, AssetSourceStatusUnavailable).
+			First(&asset).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if err := tx.Model(&AssetUpload{}).
+			Where("id = ? AND status = ?", upload.Id, AssetUploadStatusPending).
+			Updates(map[string]any{
+				"status":            AssetUploadStatusExpired,
+				"object_generation": objectGeneration,
+				"updated_at":        now,
+			}).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&Asset{}).
+			Where("id = ? AND cleanup_lease_owner = ? AND cleanup_generation = ?", asset.Id, owner, cleanupGeneration).
+			Where("status = ? AND source_status = ?", AssetStatusCreating, AssetSourceStatusUnavailable).
+			Updates(map[string]any{
+				"status":              AssetStatusExpired,
+				"source_status":       AssetSourceStatusExpired,
+				"storage_backend":     "",
+				"storage_bucket":      "",
+				"object_key":          "",
+				"object_generation":   int64(0),
+				"cleanup_lease_owner": "",
+				"cleanup_lease_until": int64(0),
+				"updated_at":          now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		expired = result.RowsAffected == 1
+		return nil
+	})
+	return expired, err
 }

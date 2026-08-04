@@ -397,6 +397,114 @@ func TestAssetUploadCompletionRejectsExpiredAndLoserDoesNotMutateAsset(t *testin
 	require.EqualValues(t, 400, stored.SourceExpiresAt)
 }
 
+func TestAssetUploadFailureMarksUploadAndAssetTerminalOnce(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetUpload{})
+	asset, err := CreateAssetWithUploadSession(Asset{
+		PublicId:       "ast_failed_upload",
+		UserId:         10,
+		AssetType:      "Image",
+		Status:         AssetStatusCreating,
+		SourceStatus:   AssetSourceStatusUnavailable,
+		StorageBackend: "gcs",
+		StorageBucket:  "bucket",
+		ObjectKey:      "objects/failed.png",
+		CreatedAt:      100,
+		UpdatedAt:      100,
+	}, AssetUpload{
+		UploadId:  "upl_failed",
+		Owner:     "owner-a",
+		ExpiresAt: 200,
+		Status:    AssetUploadStatusPending,
+		CreatedAt: 100,
+		UpdatedAt: 100,
+	})
+	require.NoError(t, err)
+
+	failed, err := FailAssetUploadCAS("upl_failed", "owner-b", AssetUploadFailure{
+		Now:              150,
+		SourceStatus:     AssetSourceStatusUnavailable,
+		ObjectGeneration: 77,
+		ClearStorage:     true,
+	})
+	require.NoError(t, err)
+	require.False(t, failed)
+
+	failed, err = FailAssetUploadCAS("upl_failed", "owner-a", AssetUploadFailure{
+		Now:              150,
+		SourceStatus:     AssetSourceStatusUnavailable,
+		ObjectGeneration: 77,
+		ClearStorage:     true,
+	})
+	require.NoError(t, err)
+	require.True(t, failed)
+
+	failed, err = FailAssetUploadCAS("upl_failed", "owner-a", AssetUploadFailure{
+		Now:              151,
+		SourceStatus:     AssetSourceStatusCleanupPending,
+		ObjectGeneration: 88,
+	})
+	require.NoError(t, err)
+	require.False(t, failed)
+
+	var upload AssetUpload
+	require.NoError(t, DB.First(&upload, "upload_id = ?", "upl_failed").Error)
+	require.Equal(t, AssetUploadStatusFailed, upload.Status)
+	require.EqualValues(t, 77, upload.ObjectGeneration)
+	var stored Asset
+	require.NoError(t, DB.First(&stored, asset.Id).Error)
+	require.Equal(t, AssetStatusFailed, stored.Status)
+	require.Equal(t, AssetSourceStatusUnavailable, stored.SourceStatus)
+	require.Empty(t, stored.ObjectKey)
+	require.Zero(t, stored.ObjectGeneration)
+}
+
+func TestAssetBindingActivationLocksAssetAndDoesNotLoseActivation(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	asset := insertAssetForAssetTest(t, "asset_binding_activate")
+	require.NoError(t, DB.Model(&Asset{}).Where("id = ?", asset.Id).Updates(map[string]any{
+		"status":        AssetStatusActive,
+		"source_status": AssetSourceStatusAvailable,
+	}).Error)
+	binding := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       131,
+		UpstreamAssetId: "upstream-a",
+		Status:          AssetBindingStatusLeased,
+		LeaseOwner:      "node-a",
+		LeaseExpiresAt:  200,
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}
+	require.NoError(t, DB.Create(&binding).Error)
+	require.NoError(t, DB.Model(&Asset{}).Where("id = ?", asset.Id).Updates(map[string]any{
+		"cleanup_lease_owner": "cleanup",
+		"cleanup_generation":  int64(3),
+	}).Error)
+
+	activated, err := ActivateAssetBindingWithAssetCAS(AssetBindingActivation{
+		AssetID:         asset.Id,
+		ChannelID:       131,
+		LeaseOwner:      "node-a",
+		UpstreamGroupID: "group-a",
+		UpstreamAssetID: "upstream-a",
+		Now:             160,
+	})
+	require.NoError(t, err)
+	require.True(t, activated)
+
+	ok, err := MarkAssetSourceExpiredIfCleanupLease(asset.Id, "cleanup", 3, 170)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var stored Asset
+	require.NoError(t, DB.First(&stored, asset.Id).Error)
+	require.Equal(t, AssetStatusActive, stored.Status)
+	require.Equal(t, AssetSourceStatusExpired, stored.SourceStatus)
+	var storedBinding AssetBinding
+	require.NoError(t, DB.First(&storedBinding, binding.Id).Error)
+	require.Equal(t, AssetStatusActive, storedBinding.Status)
+}
+
 func TestAssetCleanupLeaseClaimAndGenerationFencing(t *testing.T) {
 	newAssetTestDB(t, &Asset{}, &AssetBinding{})
 	asset := insertAssetForAssetTest(t, "asset_cleanup_lease")

@@ -22,6 +22,8 @@ const (
 	defaultAssetStorageBackend       = "gcs"
 	defaultAssetSignedURLTTL         = time.Hour
 	defaultAssetSourceRetention      = 30 * 24 * time.Hour
+	defaultAssetFetchTimeout         = 10 * time.Minute
+	maxAssetFetchTimeout             = 30 * time.Minute
 	defaultAssetMultipartMaxBytes    = int64(30 << 20)
 	defaultAssetImageMaxBytes        = int64(20 << 20)
 	defaultAssetVideoMaxBytes        = int64(500 << 20)
@@ -55,6 +57,7 @@ type AssetStorageConfig struct {
 	KeyPrefix           string
 	SignedURLTTL        time.Duration
 	SourceRetention     time.Duration
+	FetchTimeout        time.Duration
 	MultipartMaxBytes   int64
 	TypeLimits          map[string]int64
 }
@@ -72,6 +75,10 @@ func CurrentAssetStorageConfig() AssetStorageConfig {
 	} else if ttl > defaultAssetSignedURLTTL {
 		ttl = defaultAssetSignedURLTTL
 	}
+	fetchTimeout := time.Duration(getEnvInt("ASSET_FETCH_TIMEOUT_SECONDS", int(defaultAssetFetchTimeout.Seconds()))) * time.Second
+	if fetchTimeout <= 0 || fetchTimeout > maxAssetFetchTimeout {
+		fetchTimeout = defaultAssetFetchTimeout
+	}
 	retentionDays := getEnvInt("ASSET_SOURCE_RETENTION_DAYS", int(defaultAssetSourceRetention.Hours()/24))
 	if retentionDays <= 0 {
 		retentionDays = int(defaultAssetSourceRetention.Hours() / 24)
@@ -86,6 +93,7 @@ func CurrentAssetStorageConfig() AssetStorageConfig {
 		KeyPrefix:           firstNonEmptyTempMediaValue(strings.TrimSpace(os.Getenv("ASSET_KEY_PREFIX")), defaultAssetKeyPrefix),
 		SignedURLTTL:        ttl,
 		SourceRetention:     time.Duration(retentionDays) * 24 * time.Hour,
+		FetchTimeout:        fetchTimeout,
 		MultipartMaxBytes:   int64(multipartMax),
 		TypeLimits: map[string]int64{
 			"Image": getPositiveEnvInt64("ASSET_IMAGE_MAX_BYTES", defaultAssetImageMaxBytes),

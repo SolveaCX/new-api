@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,6 +80,55 @@ func TestCreateAssetFromURLRejectsPrivateAddressAndCredentialRedirect(t *testing
 	require.ErrorIs(t, err, ErrAssetInvalidSourceURL)
 }
 
+func TestAssetFetchRejectsDialTimeDNSRebindAndDoesNotDialPrivateIP(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	dialed := false
+	client := newAssetFetchHTTPClient(assetFetchHTTPClientConfig{
+		Timeout: 2 * time.Second,
+		Resolver: assetFetchResolverFunc(func(ctx context.Context, host string) ([]net.IP, error) {
+			require.Equal(t, "asset.example", host)
+			return []net.IP{net.ParseIP("127.0.0.1")}, nil
+		}),
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			dialed = true
+			return nil, errors.New("dial should not be reached")
+		},
+	})
+	oldHTTP := assetHTTPClient
+	assetHTTPClient = client
+	t.Cleanup(func() { assetHTTPClient = oldHTTP })
+
+	_, err := fetchAssetSource(context.Background(), "https://asset.example/image.png")
+
+	require.ErrorIs(t, err, ErrAssetInvalidSourceURL)
+	require.False(t, dialed)
+}
+
+func TestAssetFetchIgnoresProxyEnvironment(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+	client := newAssetFetchHTTPClient(assetFetchHTTPClientConfig{
+		Timeout: 2 * time.Second,
+		Resolver: assetFetchResolverFunc(func(ctx context.Context, host string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("93.184.216.34")}, nil
+		}),
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return nil, errors.New("stop after hardened direct dial")
+		},
+	})
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+
+	req, err := http.NewRequest(http.MethodGet, "https://asset.example/image.png", nil)
+	require.NoError(t, err)
+	proxyURL, err := transport.Proxy(req)
+
+	require.NoError(t, err)
+	require.Nil(t, proxyURL)
+}
+
 func TestUploadAssetEnforcesMultipartCapTypeLimitsAndMediaMIME(t *testing.T) {
 	newAssetServiceTestDB(t)
 	store := installAssetServiceTestDeps(t)
@@ -141,6 +191,132 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
 	require.Equal(t, model.AssetUploadStatusComplete, upload.Status)
 	require.EqualValues(t, 9, upload.ObjectGeneration)
+}
+
+func TestCreateAssetUploadSessionSignFailureLeavesNoRows(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	store.signErr = errFakeAssetStore
+	png := tinyPNG()
+
+	_, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+
+	require.ErrorIs(t, err, errFakeAssetStore)
+	var assetCount int64
+	require.NoError(t, model.DB.Model(&model.Asset{}).Count(&assetCount).Error)
+	require.Zero(t, assetCount)
+	var uploadCount int64
+	require.NoError(t, model.DB.Model(&model.AssetUpload{}).Count(&uploadCount).Error)
+	require.Zero(t, uploadCount)
+}
+
+func TestCompleteAssetUploadValidationFailureDeletesAndMarksTerminal(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = append(png, 'x')
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png) + 1), Generation: 17}
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 17}}, store.deletes)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusFailed, upload.Status)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusFailed, asset.Status)
+	require.Equal(t, model.AssetSourceStatusUnavailable, asset.SourceStatus)
+	require.Empty(t, asset.ObjectKey)
+	require.Zero(t, asset.ObjectGeneration)
+}
+
+func TestCompleteAssetUploadDeleteFailureMarksCleanupPendingForRetry(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	store.deleteErr = errFakeAssetStore
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = append(png, 'x')
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png) + 1), Generation: 18}
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 18}}, store.deletes)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusFailed, upload.Status)
+	require.EqualValues(t, 18, upload.ObjectGeneration)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusFailed, asset.Status)
+	require.Equal(t, model.AssetSourceStatusCleanupPending, asset.SourceStatus)
+	require.EqualValues(t, 18, asset.ObjectGeneration)
+
+	store.deleteErr = nil
+	result, err := CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Claimed)
+	require.Equal(t, 1, result.Deleted)
+	require.Len(t, store.deletes, 2)
+	require.Equal(t, fakeAssetDelete{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 18}, store.deletes[1])
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetSourceStatusExpired, asset.SourceStatus)
+}
+
+func TestCleanupExpiredAssetSourcesExpiresNeverCompletedUploadSession(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.AssetUpload{}).Where("upload_id = ?", session.UploadID).Update("expires_at", int64(1000)).Error)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 19}
+
+	result, err := CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Claimed)
+	require.Equal(t, 1, result.Deleted)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 19}}, store.deletes)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusExpired, upload.Status)
+	require.EqualValues(t, 19, upload.ObjectGeneration)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusExpired, asset.Status)
+	require.Equal(t, model.AssetSourceStatusExpired, asset.SourceStatus)
 }
 
 func TestCleanupExpiredAssetSourcesIsIdempotentAndUsesLeaseFencing(t *testing.T) {

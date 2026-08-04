@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -45,6 +46,20 @@ func TestAssetStorageConfigDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, time.Hour, cfg.SignedURLTTL, "asset signed URL TTL must be clamped to the one hour GCS V4 upload window")
 }
 
+func TestAssetStorageConfigClampsFetchTimeout(t *testing.T) {
+	t.Setenv("ASSET_FETCH_TIMEOUT_SECONDS", "0")
+	cfg := CurrentAssetStorageConfig()
+	require.Equal(t, defaultAssetFetchTimeout, cfg.FetchTimeout)
+
+	t.Setenv("ASSET_FETCH_TIMEOUT_SECONDS", "9999")
+	cfg = CurrentAssetStorageConfig()
+	require.Equal(t, defaultAssetFetchTimeout, cfg.FetchTimeout)
+
+	t.Setenv("ASSET_FETCH_TIMEOUT_SECONDS", "120")
+	cfg = CurrentAssetStorageConfig()
+	require.Equal(t, 2*time.Minute, cfg.FetchTimeout)
+}
+
 func TestAssetStorageSignerUsesV4MethodTTLAndContentType(t *testing.T) {
 	store := &fakeAssetObjectStore{}
 	cfg := AssetStorageConfig{Bucket: "bucket", SignedURLTTL: time.Hour}
@@ -68,6 +83,9 @@ type fakeAssetObjectStore struct {
 	signed    []AssetSignedURLRequest
 	deletes   []fakeAssetDelete
 	opens     int
+	signErr   error
+	openErr   error
+	attrsErr  error
 	deleteErr error
 	objects   map[string][]byte
 	attrs     map[string]AssetObjectAttrs
@@ -100,10 +118,16 @@ func (f *fakeAssetObjectStore) Put(_ context.Context, bucket, objectKey string, 
 
 func (f *fakeAssetObjectStore) Open(_ context.Context, bucket, objectKey string) (io.ReadCloser, error) {
 	f.opens++
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
 	return io.NopCloser(strings.NewReader(string(f.objects[bucket+"/"+objectKey]))), nil
 }
 
 func (f *fakeAssetObjectStore) Attrs(_ context.Context, bucket, objectKey string) (AssetObjectAttrs, error) {
+	if f.attrsErr != nil {
+		return AssetObjectAttrs{}, f.attrsErr
+	}
 	if f.attrs != nil {
 		if attrs, ok := f.attrs[bucket+"/"+objectKey]; ok {
 			return attrs, nil
@@ -124,5 +148,10 @@ func (f *fakeAssetObjectStore) Delete(_ context.Context, bucket, objectKey strin
 
 func (f *fakeAssetObjectStore) SignURL(_ context.Context, _ string, objectKey string, request AssetSignedURLRequest) (string, error) {
 	f.signed = append(f.signed, request)
+	if f.signErr != nil {
+		return "", f.signErr
+	}
 	return "https://signed.example/" + objectKey, nil
 }
+
+var errFakeAssetStore = errors.New("fake asset store error")
