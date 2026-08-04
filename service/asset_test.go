@@ -196,19 +196,29 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	require.EqualValues(t, 9, upload.ObjectGeneration)
 }
 
-func TestCreateAssetUploadSessionEnforcesMultipartMaxBytesCap(t *testing.T) {
+func TestCreateAssetUploadSessionUsesTypeLimitInsteadOfMultipartCap(t *testing.T) {
 	newAssetServiceTestDB(t)
 	installAssetServiceTestDeps(t)
 	t.Setenv("ASSET_MULTIPART_MAX_BYTES", "8")
+	t.Setenv("ASSET_VIDEO_MAX_BYTES", "10")
 
-	_, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
 		UserID:      7,
 		Owner:       "user-7",
 		AssetType:   "Video",
 		ContentType: "video/mp4",
 		SizeBytes:   9,
 	})
+	require.NoError(t, err)
+	require.NotNil(t, session)
 
+	_, err = CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Video",
+		ContentType: "video/mp4",
+		SizeBytes:   11,
+	})
 	require.ErrorIs(t, err, ErrAssetTooLarge)
 }
 

@@ -16,6 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const assetMultipartEnvelopeMaxBytes = int64(1 << 20)
+
 var (
 	createAssetFromURL       = service.CreateAssetFromURL
 	uploadAsset              = service.UploadAsset
@@ -44,7 +46,7 @@ func CreateAsset(c *gin.Context) {
 
 func UploadAsset(c *gin.Context) {
 	cfg := service.CurrentAssetStorageConfig()
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, cfg.MultipartMaxBytes)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, cfg.MultipartMaxBytes+assetMultipartEnvelopeMaxBytes)
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
 		status := http.StatusBadRequest

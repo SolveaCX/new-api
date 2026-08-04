@@ -235,9 +235,6 @@ func CreateAssetUploadSession(ctx context.Context, request AssetUploadSessionReq
 	if !ok {
 		return nil, ErrAssetUnsupportedMediaType
 	}
-	if cfg.MultipartMaxBytes < limit {
-		limit = cfg.MultipartMaxBytes
-	}
 	if request.SizeBytes <= 0 || request.SizeBytes > limit {
 		return nil, ErrAssetTooLarge
 	}

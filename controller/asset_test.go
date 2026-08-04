@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -83,7 +84,7 @@ func TestCreateAssetOptionalModelAllowListAllowedDeniedAndOmitted(t *testing.T) 
 	require.Equal(t, 2, calls)
 }
 
-func TestUploadAssetInfersTypeCapsBodyAndMapsErrors(t *testing.T) {
+func TestUploadAssetInfersTypeAndMapsMissingFile(t *testing.T) {
 	originalUpload := uploadAsset
 	t.Cleanup(func() { uploadAsset = originalUpload })
 
@@ -110,12 +111,41 @@ func TestUploadAssetInfersTypeCapsBodyAndMapsErrors(t *testing.T) {
 	UploadAsset(missing)
 	require.Equal(t, http.StatusBadRequest, missingRecorder.Code)
 	requireAssetError(t, missingRecorder.Body.Bytes(), "invalid_asset_request")
+}
 
-	oversize, oversizeRecorder := newAssetMultipartContext(t, map[string]string{"asset_type": "Image"}, "file", "big.png", "image/png", bytes.Repeat([]byte("x"), int(service.CurrentAssetStorageConfig().MultipartMaxBytes)+1))
-	setAssetTokenContext(oversize, 123)
-	UploadAsset(oversize)
-	require.Equal(t, http.StatusRequestEntityTooLarge, oversizeRecorder.Code)
-	requireAssetError(t, oversizeRecorder.Body.Bytes(), "invalid_asset_request")
+func TestUploadAssetAllowsMultipartEnvelopeAndUsesServiceFileCap(t *testing.T) {
+	originalUpload := uploadAsset
+	t.Cleanup(func() { uploadAsset = originalUpload })
+
+	exactFile := serviceTestTinyMP3()
+	t.Setenv("ASSET_MULTIPART_MAX_BYTES", strconv.Itoa(len(exactFile)))
+	t.Setenv("ASSET_AUDIO_MAX_BYTES", strconv.Itoa(len(exactFile)+8))
+
+	serviceCalls := 0
+	uploadAsset = func(ctx context.Context, request service.AssetUploadRequest) (*service.AssetResult, error) {
+		serviceCalls++
+		if request.Filename == "exact.mp3" {
+			body, err := io.ReadAll(request.Body)
+			require.NoError(t, err)
+			require.Equal(t, exactFile, body)
+			return &service.AssetResult{PublicID: "ast_exact", AssetType: request.AssetType, Status: model.AssetStatusActive}, nil
+		}
+		return service.UploadAsset(ctx, request)
+	}
+
+	exact, exactRecorder := newAssetMultipartContext(t, nil, "file", "exact.mp3", "audio/mpeg", exactFile)
+	setAssetTokenContext(exact, 123)
+	UploadAsset(exact)
+	require.Equal(t, http.StatusOK, exactRecorder.Code, exactRecorder.Body.String())
+	require.Equal(t, 1, serviceCalls)
+
+	overFile := append(append([]byte(nil), exactFile...), 'x')
+	over, overRecorder := newAssetMultipartContext(t, nil, "file", "over.mp3", "audio/mpeg", overFile)
+	setAssetTokenContext(over, 123)
+	UploadAsset(over)
+	require.Equal(t, http.StatusRequestEntityTooLarge, overRecorder.Code, overRecorder.Body.String())
+	require.Equal(t, 2, serviceCalls, "over-limit file must reach service.UploadAsset validation")
+	requireAssetError(t, overRecorder.Body.Bytes(), "invalid_asset_request")
 }
 
 func TestDirectUploadSessionDerivesOwnerAndReturnsRequiredHeadersOnly(t *testing.T) {
