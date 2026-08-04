@@ -164,6 +164,20 @@ func TestModelUnfinishedQueriesExcludePreparingAssetTasks(t *testing.T) {
 		SubmitTime:        old,
 		Progress:          "0%",
 	}).Error)
+	require.NoError(t, model.DB.Create(&model.Task{
+		TaskID:            "submitting_query",
+		Status:            model.TaskStatusQueued,
+		PreparationStatus: model.TaskPreparationStatusSubmitting,
+		SubmitTime:        old,
+		Progress:          "0%",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.Task{
+		TaskID:            "unknown_outcome_query",
+		Status:            model.TaskStatusUnknown,
+		PreparationStatus: model.TaskPreparationStatusUnknownOutcome,
+		SubmitTime:        old,
+		Progress:          "0%",
+	}).Error)
 
 	timedOut := model.GetTimedOutUnfinishedTasks(time.Now().Unix(), 10)
 	unfinished := model.GetAllUnFinishSyncTasks(10)

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -38,6 +39,106 @@ type AssetTaskWorkerConfig struct {
 	Owner    string
 	Interval time.Duration
 	Limit    int
+}
+
+type taskPreparationLease struct {
+	taskID       string
+	owner        string
+	attemptCount int
+	ttlSeconds   int64
+	stopOnce     sync.Once
+	stopRenewal  chan struct{}
+	renewalDone  chan struct{}
+	cancel       context.CancelFunc
+	mu           sync.RWMutex
+	expiresAt    int64
+	renewalError error
+}
+
+func startTaskPreparationLease(parent context.Context, taskID string, owner string, attemptCount int, leaseExpiresAt int64) (context.Context, *taskPreparationLease) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	lease := &taskPreparationLease{
+		taskID:       taskID,
+		owner:        owner,
+		attemptCount: attemptCount,
+		ttlSeconds:   assetTaskPreparationLeaseSeconds,
+		stopRenewal:  make(chan struct{}),
+		renewalDone:  make(chan struct{}),
+		cancel:       cancel,
+		expiresAt:    leaseExpiresAt,
+	}
+	go lease.runHeartbeat(ctx)
+	return ctx, lease
+}
+
+func (l *taskPreparationLease) runHeartbeat(ctx context.Context) {
+	defer close(l.renewalDone)
+	interval := time.Duration(l.ttlSeconds) * time.Second / 3
+	if interval < 100*time.Millisecond {
+		interval = 100 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-l.stopRenewal:
+			return
+		case <-ticker.C:
+			currentExpiresAt, _ := l.snapshot()
+			now := assetTaskWorkerNowUnix()
+			nextExpiresAt := now + l.ttlSeconds
+			if nextExpiresAt <= currentExpiresAt {
+				continue
+			}
+			won, err := model.RenewTaskPreparationLease(l.taskID, l.owner, currentExpiresAt, now, nextExpiresAt)
+			if err != nil {
+				l.lose(fmt.Errorf("renew task preparation lease: %w", err))
+				return
+			}
+			if !won {
+				l.lose(fmt.Errorf("task preparation lease lost"))
+				return
+			}
+			l.setExpiresAt(nextExpiresAt)
+		}
+	}
+}
+
+func (l *taskPreparationLease) setExpiresAt(expiresAt int64) {
+	l.mu.Lock()
+	l.expiresAt = expiresAt
+	l.mu.Unlock()
+}
+
+func (l *taskPreparationLease) lose(err error) {
+	l.mu.Lock()
+	if l.renewalError == nil {
+		l.renewalError = err
+	}
+	l.mu.Unlock()
+	l.cancel()
+}
+
+func (l *taskPreparationLease) snapshot() (int64, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.expiresAt, l.renewalError
+}
+
+func (l *taskPreparationLease) freeze() (int64, error) {
+	l.stopOnce.Do(func() { close(l.stopRenewal) })
+	<-l.renewalDone
+	return l.snapshot()
+}
+
+func (l *taskPreparationLease) shutdown() {
+	_, _ = l.freeze()
+	l.cancel()
 }
 
 func hasQueuedAssetReferences(c *gin.Context) bool {
@@ -192,16 +293,43 @@ func assetTaskWorkerOwner(configured string) string {
 }
 
 func RunAssetTaskWorkerOnce(ctx context.Context, owner string, limit int) (int, error) {
+	if limit <= 0 {
+		limit = assetTaskWorkerBatchSize
+	}
 	now := assetTaskWorkerNowUnix()
-	tasks, err := model.GetQueuedAssetPreparationTasks(now, limit)
+	expiredFences, err := model.GetExpiredAssetTaskSubmissionFences(now, limit)
 	if err != nil {
 		return 0, err
 	}
 	processed := 0
+	for _, task := range expiredFences {
+		now = assetTaskWorkerNowUnix()
+		publicIDs := extractStrictAssetPublicIDsFromPayload(task.NormalizedRequestPayload)
+		retentionUntil := now + int64(service.CurrentAssetStorageConfig().SourceRetention.Seconds())
+		won, err := model.MarkExpiredAssetTaskSubmissionUnknown(task.TaskID, task.PreparationLeaseOwner, task.PreparationLeaseExpiresAt, task.PreparationAttemptCount, now, publicIDs, retentionUntil)
+		if err != nil {
+			return processed, err
+		}
+		if won {
+			processed++
+		}
+	}
+
+	remaining := limit - processed
+	if remaining <= 0 {
+		remaining = 0
+	}
+	tasks := make([]*model.Task, 0)
+	if remaining > 0 {
+		tasks, err = model.GetQueuedAssetPreparationTasks(assetTaskWorkerNowUnix(), remaining)
+		if err != nil {
+			return processed, err
+		}
+	}
 	for _, task := range tasks {
 		now = assetTaskWorkerNowUnix()
 		leaseExpiresAt := now + assetTaskPreparationLeaseSeconds
-		won, err := model.ClaimTaskPreparationLease(task.TaskID, owner, now, leaseExpiresAt)
+		won, err := model.ClaimTaskPreparationLease(task.TaskID, owner, task.PreparationAttemptCount, now, leaseExpiresAt)
 		if err != nil {
 			return processed, err
 		}
@@ -209,8 +337,11 @@ func RunAssetTaskWorkerOnce(ctx context.Context, owner string, limit int) (int, 
 			continue
 		}
 		processed++
-		if err := runLeasedAssetTaskFunc(ctx, task.TaskID, owner, leaseExpiresAt); err != nil {
-			logger.LogError(ctx, fmt.Sprintf("asset task %s preparation failed: %s", task.TaskID, err.Error()))
+		leaseCtx, lease := startTaskPreparationLease(ctx, task.TaskID, owner, task.PreparationAttemptCount+1, leaseExpiresAt)
+		runErr := runLeasedAssetTaskFunc(leaseCtx, task.TaskID, owner, lease)
+		lease.shutdown()
+		if runErr != nil {
+			logger.LogError(ctx, fmt.Sprintf("asset task %s preparation failed: %s", task.TaskID, runErr.Error()))
 		}
 	}
 	now = assetTaskWorkerNowUnix()
@@ -236,7 +367,7 @@ func RunAssetTaskWorkerOnce(ctx context.Context, owner string, limit int) (int, 
 	return processed, nil
 }
 
-func runLeasedAssetTask(ctx context.Context, taskID string, owner string, leaseExpiresAt int64) error {
+func runLeasedAssetTask(ctx context.Context, taskID string, owner string, lease *taskPreparationLease) error {
 	task, ok, err := model.GetByOnlyTaskId(taskID)
 	if err != nil {
 		return err
@@ -244,10 +375,14 @@ func runLeasedAssetTask(ctx context.Context, taskID string, owner string, leaseE
 	if !ok {
 		return fmt.Errorf("task not found")
 	}
+	if task.Status != model.TaskStatusQueued || task.PreparationLeaseOwner != owner || task.PreparationAttemptCount != lease.attemptCount {
+		return fmt.Errorf("task preparation lease lost")
+	}
 	c, info, err := rebuildAssetTaskContext(task)
 	if err != nil {
-		return failAssetTaskPreparation(ctx, task, owner, leaseExpiresAt, err)
+		return failLeasedAssetTaskPreparation(ctx, task, owner, lease, err)
 	}
+	c.Request = c.Request.WithContext(ctx)
 	retryParam := &service.RetryParam{
 		Ctx:        c,
 		TokenGroup: task.Group,
@@ -256,8 +391,14 @@ func runLeasedAssetTask(ctx context.Context, taskID string, owner string, leaseE
 	}
 	var lastErr error
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		channel, channelErr := getChannel(c, info, retryParam)
 		if channelErr != nil {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			lastErr = channelErr.Err
 			break
 		}
@@ -268,11 +409,41 @@ func runLeasedAssetTask(ctx context.Context, taskID string, owner string, leaseE
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
-		preflight := &relay.TaskPreflightResult{Platform: task.Platform, Quota: task.Quota}
-		result, taskErr := relay.ExecutePreparedTaskSubmit(c, info, preflight)
+		preflight, taskErr := relay.PrepareTaskAttempt(c, info)
+		submitAttempted := false
+		var result *relay.TaskSubmitResult
+		if taskErr == nil {
+			if err := ctx.Err(); err != nil {
+				releaseChannelConcurrencyForRequest(c)
+				return err
+			}
+			fenced, fenceErr := model.MarkQueuedTaskSubmitting(task.TaskID, owner, lease.attemptCount, assetTaskWorkerNowUnix(), channel.Id, preflight.Platform, preflight.Quota)
+			if fenceErr != nil {
+				releaseChannelConcurrencyForRequest(c)
+				return fmt.Errorf("mark task submission fence: %w", fenceErr)
+			}
+			if !fenced {
+				releaseChannelConcurrencyForRequest(c)
+				return fmt.Errorf("task preparation lease lost before provider submit")
+			}
+			submitAttempted = true
+			result, taskErr = relay.ExecutePreparedTaskSubmit(c, info, preflight)
+		}
 		releaseChannelConcurrencyForRequest(c)
 		if taskErr == nil {
-			return acceptAssetTask(c, info, task, owner, leaseExpiresAt, channel, result)
+			return acceptLeasedAssetTask(c, info, task, owner, lease, channel, result)
+		}
+		if result != nil && result.OutcomeMayBeUnknown {
+			return quarantineLeasedAssetTaskSubmissionUnknown(task, lease, channel, result, taskErr.Error)
+		}
+		if err := ctx.Err(); err != nil {
+			if submitAttempted {
+				return quarantineLeasedAssetTaskSubmissionUnknown(task, lease, channel, &relay.TaskSubmitResult{
+					Platform: preflight.Platform,
+					Quota:    preflight.Quota,
+				}, err)
+			}
+			return err
 		}
 		lastErr = taskErr.Error
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
@@ -282,7 +453,7 @@ func runLeasedAssetTask(ctx context.Context, taskID string, owner string, leaseE
 	if lastErr == nil {
 		lastErr = fmt.Errorf("asset preparation failed")
 	}
-	return failAssetTaskPreparation(ctx, task, owner, leaseExpiresAt, lastErr)
+	return failLeasedAssetTaskPreparation(ctx, task, owner, lease, lastErr)
 }
 
 func rebuildAssetTaskContext(task *model.Task) (*gin.Context, *relaycommon.RelayInfo, error) {
@@ -353,15 +524,19 @@ func httptestRequestFromPayload(payload []byte) *http.Request {
 }
 
 func acceptAssetTask(c *gin.Context, info *relaycommon.RelayInfo, task *model.Task, owner string, leaseExpiresAt int64, channel *model.Channel, result *relay.TaskSubmitResult) error {
+	return acceptAssetTaskGeneration(c, info, task, owner, leaseExpiresAt, task.PreparationAttemptCount, channel, result)
+}
+
+func acceptAssetTaskGeneration(c *gin.Context, info *relaycommon.RelayInfo, task *model.Task, owner string, leaseExpiresAt int64, attemptCount int, channel *model.Channel, result *relay.TaskSubmitResult) error {
 	now := assetTaskWorkerNowUnix()
 	publicIDs := extractStrictAssetPublicIDsFromPayload(task.NormalizedRequestPayload)
 	retentionUntil := now + int64(service.CurrentAssetStorageConfig().SourceRetention.Seconds())
 	won, err := model.MarkQueuedTaskAccepted(task.TaskID, owner, leaseExpiresAt, now, now, channel.Id, result.Platform, result.Quota, result.UpstreamTaskID, result.TaskData, publicIDs, now, retentionUntil)
 	if err != nil {
-		return err
+		return quarantineAssetTaskSubmissionUnknown(task, attemptCount, channel, result, publicIDs, now, retentionUntil, fmt.Errorf("mark task accepted: %w", err))
 	}
 	if !won {
-		return fmt.Errorf("task preparation lease lost")
+		return quarantineAssetTaskSubmissionUnknown(task, attemptCount, channel, result, publicIDs, now, retentionUntil, fmt.Errorf("task preparation lease lost"))
 	}
 	if info != nil {
 		info.ChannelId = channel.Id
@@ -381,6 +556,42 @@ func acceptAssetTask(c *gin.Context, info *relaycommon.RelayInfo, task *model.Ta
 		return nil
 	}
 	return runAcceptedTaskAccounting(c, task.TaskID, owner, accountingLeaseExpiresAt)
+}
+
+func quarantineAssetTaskSubmissionUnknown(task *model.Task, attemptCount int, channel *model.Channel, result *relay.TaskSubmitResult, publicIDs []string, now int64, retentionUntil int64, cause error) error {
+	message := "asset task submission unknown outcome without an upstream task id"
+	if result.UpstreamTaskID != "" {
+		message = fmt.Sprintf("asset task acceptance unknown outcome for upstream task %q", result.UpstreamTaskID)
+	}
+	unknownErr := fmt.Errorf("%s: %w", message, cause)
+	quarantined, err := model.MarkQueuedTaskSubmissionUnknown(task.TaskID, attemptCount, now, now, channel.Id, result.Platform, result.Quota, result.UpstreamTaskID, result.TaskData, publicIDs, now, retentionUntil)
+	if err != nil {
+		return fmt.Errorf("%w; manual reconciliation quarantine failed: %v", unknownErr, err)
+	}
+	if !quarantined {
+		return fmt.Errorf("%w; preparation generation changed before manual reconciliation quarantine", unknownErr)
+	}
+	return fmt.Errorf("%w; task quarantined for manual reconciliation", unknownErr)
+}
+
+func quarantineLeasedAssetTaskSubmissionUnknown(task *model.Task, lease *taskPreparationLease, channel *model.Channel, result *relay.TaskSubmitResult, cause error) error {
+	_, renewalErr := lease.freeze()
+	if renewalErr != nil {
+		cause = fmt.Errorf("%w; lease renewal failed: %v", cause, renewalErr)
+	}
+	now := assetTaskWorkerNowUnix()
+	publicIDs := extractStrictAssetPublicIDsFromPayload(task.NormalizedRequestPayload)
+	retentionUntil := now + int64(service.CurrentAssetStorageConfig().SourceRetention.Seconds())
+	return quarantineAssetTaskSubmissionUnknown(task, lease.attemptCount, channel, result, publicIDs, now, retentionUntil, cause)
+}
+
+func acceptLeasedAssetTask(c *gin.Context, info *relaycommon.RelayInfo, task *model.Task, owner string, lease *taskPreparationLease, channel *model.Channel, result *relay.TaskSubmitResult) error {
+	leaseExpiresAt, renewalErr := lease.freeze()
+	acceptErr := acceptAssetTaskGeneration(c, info, task, owner, leaseExpiresAt, lease.attemptCount, channel, result)
+	if acceptErr != nil && renewalErr != nil {
+		return fmt.Errorf("lease renewal failed before final acceptance: %v; %w", renewalErr, acceptErr)
+	}
+	return acceptErr
 }
 
 func runAcceptedTaskAccounting(ctx context.Context, taskID string, owner string, leaseExpiresAt int64) error {
@@ -505,4 +716,15 @@ func failAssetTaskPreparation(ctx context.Context, task *model.Task, owner strin
 		service.RefundTaskQuota(ctx, task, reason)
 	}
 	return cause
+}
+
+func failLeasedAssetTaskPreparation(ctx context.Context, task *model.Task, owner string, lease *taskPreparationLease, cause error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	leaseExpiresAt, err := lease.freeze()
+	if err != nil {
+		return err
+	}
+	return failAssetTaskPreparation(ctx, task, owner, leaseExpiresAt, cause)
 }

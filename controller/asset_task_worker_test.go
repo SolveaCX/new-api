@@ -257,7 +257,7 @@ func TestAssetTaskWorkerFallbackBeforeAcceptancePinsWinningChannel(t *testing.T)
 	defer restoreMaterializer()
 	adaptor := &controllerFakeTaskAdaptor{
 		upstreamTaskID:    "upstream-channel-b",
-		failHTTPByChannel: map[int]int{131: http.StatusInternalServerError},
+		failHTTPByChannel: map[int]int{131: http.StatusTooManyRequests},
 	}
 	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
 	defer restoreAdaptor()
@@ -308,6 +308,151 @@ func TestAssetTaskWorkerFallbackBeforeAcceptancePinsWinningChannel(t *testing.T)
 	require.Equal(t, winnerExpires, assetAfterLate.SourceExpiresAt)
 }
 
+func TestAssetTaskWorkerCrossTypeFallbackUsesSelectedAdaptorAndPricing(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+	oldRetryTimes := common.RetryTimes
+	common.RetryTimes = 1
+	defer func() { common.RetryTimes = oldRetryTimes }()
+
+	var materializerCalls atomic.Int32
+	restoreBytePlusMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreBytePlusMaterializer()
+	restoreViduMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeVidu, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreViduMaterializer()
+
+	bytePlusAdaptor := &controllerFakeTaskAdaptor{failHTTPByChannel: map[int]int{131: http.StatusTooManyRequests}}
+	restoreBytePlusAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), bytePlusAdaptor)
+	defer restoreBytePlusAdaptor()
+	viduAdaptor := &controllerFakeTaskAdaptor{estimatedRatios: map[string]float64{"provider": 2}}
+	restoreViduAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeVidu)), viduAdaptor)
+	defer restoreViduAdaptor()
+
+	publicID := "ast_5234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannelTypeWithPriority(t, 131, constant.ChannelTypeBytePlus, "sk-provider-byteplus", 100, 1)
+	seedControllerTaskChannelTypeWithPriority(t, 132, constant.ChannelTypeVidu, "sk-provider-vidu", 90, 1)
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_worker_cross_type_fallback", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.ChannelId = 0
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+	model.InitChannelCache()
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	require.Equal(t, []int{131}, bytePlusAdaptor.channelsSeen)
+	require.Equal(t, []int{132}, viduAdaptor.channelsSeen)
+	require.EqualValues(t, 1, bytePlusAdaptor.estimateCalls.Load())
+	require.EqualValues(t, 1, viduAdaptor.estimateCalls.Load())
+	require.EqualValues(t, 2, materializerCalls.Load())
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
+	require.Equal(t, 132, stored.ChannelId)
+	require.Equal(t, constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeVidu)), stored.Platform)
+	expectedQuota := int(0.001 * float64(common.QuotaPerUnit) * 2)
+	require.Equal(t, expectedQuota, stored.Quota)
+}
+
+func TestAssetTaskTransportFailureAfterSubmitQuarantinesBeforeFallback(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+	oldRetryTimes := common.RetryTimes
+	common.RetryTimes = 1
+	defer func() { common.RetryTimes = oldRetryTimes }()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	adaptor := &controllerFakeTaskAdaptor{failByChannel: map[int]error{131: assertErr("connection reset after request write")}}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_8234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannelWithPriority(t, 131, "sk-provider-transport-a", 100, 1)
+	seedControllerTaskChannelWithPriority(t, 132, "sk-provider-transport-b", 90, 1)
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_transport_unknown", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.ChannelId = 0
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+	model.InitChannelCache()
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, []int{131}, adaptor.channelsSeen)
+	require.EqualValues(t, 1, adaptor.providerCalls.Load())
+	require.EqualValues(t, 1, materializerCalls.Load())
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusUnknown, stored.Status)
+	require.Equal(t, model.TaskPreparationStatusUnknownOutcome, stored.PreparationStatus)
+	require.Equal(t, 131, stored.ChannelId)
+	require.Empty(t, stored.PrivateData.UpstreamTaskID)
+}
+
+func TestAssetTaskServerFailureAfterSubmitQuarantinesBeforeFallback(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+	oldRetryTimes := common.RetryTimes
+	common.RetryTimes = 1
+	defer func() { common.RetryTimes = oldRetryTimes }()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	adaptor := &controllerFakeTaskAdaptor{failHTTPByChannel: map[int]int{131: http.StatusInternalServerError}}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_9234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannelWithPriority(t, 131, "sk-provider-server-a", 100, 1)
+	seedControllerTaskChannelWithPriority(t, 132, "sk-provider-server-b", 90, 1)
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_server_unknown", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.ChannelId = 0
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+	model.InitChannelCache()
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, []int{131}, adaptor.channelsSeen)
+	require.EqualValues(t, 1, adaptor.providerCalls.Load())
+	require.EqualValues(t, 1, materializerCalls.Load())
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusUnknown, stored.Status)
+	require.Equal(t, model.TaskPreparationStatusUnknownOutcome, stored.PreparationStatus)
+	require.Equal(t, 131, stored.ChannelId)
+	require.Empty(t, stored.PrivateData.UpstreamTaskID)
+}
+
 func TestAssetTaskWorkerAcceptedWinnerSettlesAndLogsOnce(t *testing.T) {
 	restoreDB := useControllerAssetTaskDBForTest(t)
 	defer restoreDB()
@@ -341,6 +486,7 @@ func TestAssetTaskWorkerAcceptedWinnerSettlesAndLogsOnce(t *testing.T) {
 		"used_quota":   task.Quota,
 	}).Error)
 	model.InitChannelCache()
+	expectedQuota := int(0.001 * float64(common.QuotaPerUnit) * 2)
 
 	assetTaskWorkerTestNow = 1000
 	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
@@ -350,22 +496,22 @@ func TestAssetTaskWorkerAcceptedWinnerSettlesAndLogsOnce(t *testing.T) {
 	var stored model.Task
 	require.NoError(t, model.DB.Where("task_id = ?", "task_worker_accounting").First(&stored).Error)
 	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
-	require.Equal(t, 246, stored.Quota)
+	require.Equal(t, expectedQuota, stored.Quota)
 	require.Equal(t, 131, stored.ChannelId)
 	require.Equal(t, "upstream-accounted", stored.PrivateData.UpstreamTaskID)
 
 	var user model.User
 	require.NoError(t, model.DB.First(&user, 7).Error)
-	require.Equal(t, 10000-246, user.Quota)
-	require.EqualValues(t, 246, user.UsedQuota)
+	require.Equal(t, 10000-expectedQuota, user.Quota)
+	require.EqualValues(t, expectedQuota, user.UsedQuota)
 	require.Equal(t, 1, user.RequestCount)
 	var token model.Token
 	require.NoError(t, model.DB.First(&token, 11).Error)
-	require.Equal(t, 10000-246, token.RemainQuota)
-	require.Equal(t, 246, token.UsedQuota)
+	require.Equal(t, 10000-expectedQuota, token.RemainQuota)
+	require.Equal(t, expectedQuota, token.UsedQuota)
 	var channel model.Channel
 	require.NoError(t, model.DB.First(&channel, 131).Error)
-	require.EqualValues(t, 246, channel.UsedQuota)
+	require.EqualValues(t, expectedQuota, channel.UsedQuota)
 	var consumeLogs int64
 	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&consumeLogs).Error)
 	require.EqualValues(t, 1, consumeLogs)
@@ -378,8 +524,8 @@ func TestAssetTaskWorkerAcceptedWinnerSettlesAndLogsOnce(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.NoError(t, model.DB.First(&user, 7).Error)
-	require.Equal(t, 10000-246, user.Quota)
-	require.EqualValues(t, 246, user.UsedQuota)
+	require.Equal(t, 10000-expectedQuota, user.Quota)
+	require.EqualValues(t, expectedQuota, user.UsedQuota)
 	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&consumeLogs).Error)
 	require.EqualValues(t, 1, consumeLogs, "late worker must not settle or log after losing acceptance CAS")
 }
@@ -804,6 +950,7 @@ func TestAssetTaskWorkerAcceptedSubscriptionUsesSnapshotForSettlement(t *testing
 		"used_quota":   100,
 	}).Error)
 	model.InitChannelCache()
+	expectedQuota := int(0.001 * float64(common.QuotaPerUnit) * 2)
 
 	assetTaskWorkerTestNow = 1000
 	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
@@ -813,13 +960,13 @@ func TestAssetTaskWorkerAcceptedSubscriptionUsesSnapshotForSettlement(t *testing
 	var stored model.Task
 	require.NoError(t, model.DB.Where("task_id = ?", "task_worker_subscription_accounting").First(&stored).Error)
 	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
-	require.Equal(t, 200, stored.Quota)
+	require.Equal(t, expectedQuota, stored.Quota)
 	require.Equal(t, "upstream-sub-accounted", stored.PrivateData.UpstreamTaskID)
-	require.Equal(t, int64(300), getControllerSubscriptionUsed(t, subID), "accepted settlement must use persisted subscription weight")
+	require.Equal(t, int64(float64(expectedQuota)*1.5), getControllerSubscriptionUsed(t, subID), "accepted settlement must use persisted subscription weight")
 	var token model.Token
 	require.NoError(t, model.DB.First(&token, tokenID).Error)
-	require.Equal(t, 9800, token.RemainQuota)
-	require.Equal(t, 200, token.UsedQuota)
+	require.Equal(t, 10000-expectedQuota, token.RemainQuota)
+	require.Equal(t, expectedQuota, token.UsedQuota)
 	var consumeLogs int64
 	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&consumeLogs).Error)
 	require.EqualValues(t, 1, consumeLogs)
@@ -974,12 +1121,12 @@ func TestAssetTaskPreparationStaleLeaseTakeoverAndLateResultFenced(t *testing.T)
 
 	task := seedControllerQueuedAssetTask(t, "task_stale_takeover", model.TaskPreparationStatusPreparingAssets, "", 0)
 	calls := make([]string, 0, 2)
-	runLeasedAssetTaskFunc = func(ctx context.Context, taskID string, owner string, leaseExpiresAt int64) error {
+	runLeasedAssetTaskFunc = func(ctx context.Context, taskID string, owner string, lease *taskPreparationLease) error {
 		calls = append(calls, owner)
 		if owner == "node-a" {
 			return nil
 		}
-		return acceptAssetTask(nil, nil, task, owner, leaseExpiresAt, &model.Channel{Id: 132}, &relay.TaskSubmitResult{
+		return acceptLeasedAssetTask(nil, nil, task, owner, lease, &model.Channel{Id: 132}, &relay.TaskSubmitResult{
 			UpstreamTaskID: "upstream-node-b",
 			TaskData:       []byte(`{"id":"upstream-node-b"}`),
 			Platform:       constant.TaskPlatform("107"),
@@ -1012,6 +1159,410 @@ func TestAssetTaskPreparationStaleLeaseTakeoverAndLateResultFenced(t *testing.T)
 	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
 	require.Equal(t, 132, stored.ChannelId)
 	require.Equal(t, "upstream-node-b", stored.PrivateData.UpstreamTaskID)
+}
+
+func TestAssetTaskPreparationHeartbeatPreventsDuplicateProviderSubmitAcrossOriginalExpiry(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	var now atomic.Int64
+	now.Store(1000)
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 2, now.Load)
+	defer restoreHooks()
+	oldRetryTimes := common.RetryTimes
+	common.RetryTimes = 0
+	defer func() { common.RetryTimes = oldRetryTimes }()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	providerEntered := make(chan int, 2)
+	providerRelease := make(chan struct{})
+	defer func() {
+		select {
+		case <-providerRelease:
+		default:
+			close(providerRelease)
+		}
+	}()
+	adaptor := &controllerFakeTaskAdaptor{
+		providerEntered: providerEntered,
+		providerRelease: providerRelease,
+	}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_6234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-heartbeat")
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_worker_heartbeat", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.ChannelId = 0
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+	model.InitChannelCache()
+
+	type workerResult struct {
+		processed int
+		err       error
+	}
+	nodeAResult := make(chan workerResult, 1)
+	go func() {
+		processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+		nodeAResult <- workerResult{processed: processed, err: err}
+	}()
+
+	select {
+	case channelID := <-providerEntered:
+		require.Equal(t, 131, channelID)
+	case <-time.After(2 * time.Second):
+		t.Fatal("node-a did not reach the provider submit")
+	}
+
+	now.Store(1001)
+	renewalDeadline := time.Now().Add(2 * time.Second)
+	for {
+		var leased model.Task
+		require.NoError(t, model.DB.Select("preparation_lease_expires_at").Where("task_id = ?", task.TaskID).First(&leased).Error)
+		if leased.PreparationLeaseExpiresAt > 1002 {
+			break
+		}
+		if time.Now().After(renewalDeadline) {
+			t.Fatal("node-a did not renew the task preparation lease")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	now.Store(1002)
+	nodeBResult := make(chan workerResult, 1)
+	go func() {
+		processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+		nodeBResult <- workerResult{processed: processed, err: err}
+	}()
+
+	select {
+	case <-providerEntered:
+	case <-time.After(500 * time.Millisecond):
+	}
+	close(providerRelease)
+
+	nodeA := <-nodeAResult
+	require.NoError(t, nodeA.err)
+	require.Equal(t, 1, nodeA.processed)
+	var nodeB workerResult
+	select {
+	case nodeB = <-nodeBResult:
+	case <-time.After(2 * time.Second):
+		t.Fatal("node-b did not complete")
+	}
+	require.NoError(t, nodeB.err)
+	require.EqualValues(t, 1, adaptor.providerCalls.Load(), "a live worker must renew before the original lease expiry so a takeover cannot duplicate the upstream write")
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
+	require.Equal(t, 131, stored.ChannelId)
+}
+
+func TestAssetTaskSubmitFencePreventsExpiredTakeoverAndPreservesLateUpstreamEvidence(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	var now atomic.Int64
+	now.Store(1000)
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, now.Load)
+	defer restoreHooks()
+	oldRetryTimes := common.RetryTimes
+	common.RetryTimes = 0
+	defer func() { common.RetryTimes = oldRetryTimes }()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	providerEntered := make(chan int, 1)
+	providerRelease := make(chan struct{})
+	defer func() {
+		select {
+		case <-providerRelease:
+		default:
+			close(providerRelease)
+		}
+	}()
+	adaptor := &controllerFakeTaskAdaptor{
+		upstreamTaskID:  "upstream-after-expired-submit-lease",
+		providerEntered: providerEntered,
+		providerRelease: providerRelease,
+	}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_a234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-submit-fence")
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_submit_fence", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.ChannelId = 0
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+	model.InitChannelCache()
+
+	type workerResult struct {
+		processed int
+		err       error
+	}
+	nodeAResult := make(chan workerResult, 1)
+	go func() {
+		processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+		nodeAResult <- workerResult{processed: processed, err: err}
+	}()
+
+	select {
+	case channelID := <-providerEntered:
+		require.Equal(t, 131, channelID)
+	case <-time.After(2 * time.Second):
+		t.Fatal("node-a did not reach the provider submit")
+	}
+
+	now.Store(1101)
+	claimed, err := model.ClaimTaskPreparationLease(task.TaskID, "node-b", 1, 1101, 1201)
+	close(providerRelease)
+
+	nodeA := <-nodeAResult
+	require.NoError(t, err)
+	require.False(t, claimed, "a durable submit fence must block takeover after the provider write starts")
+	require.NoError(t, nodeA.err)
+	require.Equal(t, 1, nodeA.processed)
+	require.EqualValues(t, 1, adaptor.providerCalls.Load())
+	require.EqualValues(t, 1, materializerCalls.Load())
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusUnknown, stored.Status)
+	require.Equal(t, model.TaskPreparationStatusUnknownOutcome, stored.PreparationStatus)
+	require.Equal(t, "upstream-after-expired-submit-lease", stored.PrivateData.UpstreamTaskID)
+}
+
+func TestAssetTaskWorkerQuarantinesExpiredSubmitFenceWithoutProviderRetry(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	publicID := "ast_b234567890abcdefABCDEF1234567890"
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_expired_submit_fence", model.TaskPreparationStatusSubmitting, "node-crashed", 900)
+	task.PreparationAttemptCount = 3
+	task.ChannelId = 131
+	task.Platform = constant.TaskPlatform("107")
+	task.Quota = 123
+	task.AcceptedAccountingActualQuota = 246
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+
+	var providerCalls atomic.Int32
+	runLeasedAssetTaskFunc = func(context.Context, string, string, *taskPreparationLease) error {
+		providerCalls.Add(1)
+		return nil
+	}
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Zero(t, providerCalls.Load(), "an expired submit fence must be quarantined without another provider write")
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusUnknown, stored.Status)
+	require.Equal(t, model.TaskPreparationStatusUnknownOutcome, stored.PreparationStatus)
+	require.Equal(t, 131, stored.ChannelId)
+	require.Equal(t, constant.TaskPlatform("107"), stored.Platform)
+	require.Equal(t, 123, stored.AcceptedAccountingReservedQuota)
+	require.Equal(t, 246, stored.AcceptedAccountingActualQuota)
+	require.Empty(t, stored.PrivateData.UpstreamTaskID)
+
+	enriched, err := model.MarkQueuedTaskSubmissionUnknown(task.TaskID, 3, 1001, 1001, 131, constant.TaskPlatform("107"), 246, "upstream-after-crash", []byte(`{"id":"upstream-after-crash"}`), []string{publicID}, 1001, 2000)
+	require.NoError(t, err)
+	require.True(t, enriched, "the original generation must be able to append late upstream evidence")
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.Equal(t, "upstream-after-crash", stored.PrivateData.UpstreamTaskID)
+	require.JSONEq(t, `{"id":"upstream-after-crash"}`, string(stored.Data))
+}
+
+func TestAssetTaskAcceptanceStillCommitsAfterLeaseRenewalError(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	var now atomic.Int64
+	now.Store(1000)
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, now.Load)
+	defer restoreHooks()
+
+	task := seedControllerQueuedAssetTask(t, "task_accept_after_renewal_error", model.TaskPreparationStatusPreparingAssets, "", 0)
+	var providerCalls atomic.Int32
+	runLeasedAssetTaskFunc = func(ctx context.Context, taskID string, owner string, lease *taskPreparationLease) error {
+		providerCalls.Add(1)
+		lease.lose(assertErr("transient renewal database error"))
+		return acceptLeasedAssetTask(nil, nil, task, owner, lease, &model.Channel{Id: 131}, &relay.TaskSubmitResult{
+			UpstreamTaskID: "upstream-after-renewal-error",
+			TaskData:       []byte(`{"id":"upstream-after-renewal-error"}`),
+			Platform:       constant.TaskPlatform("107"),
+			Quota:          123,
+		})
+	}
+
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.EqualValues(t, 1, providerCalls.Load())
+
+	var accepted model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&accepted).Error)
+	require.EqualValues(t, model.TaskStatusSubmitted, accepted.Status)
+	require.Equal(t, "upstream-after-renewal-error", accepted.PrivateData.UpstreamTaskID)
+
+	now.Store(1101)
+	processed, err = RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Equal(t, 0, processed)
+	require.EqualValues(t, 1, providerCalls.Load(), "a committed upstream result must not be submitted again after the original lease expires")
+}
+
+func TestAssetTaskAcceptanceCASFailureQuarantinesKnownUpstreamResult(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	var now atomic.Int64
+	now.Store(1000)
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, now.Load)
+	defer restoreHooks()
+
+	task := seedControllerQueuedAssetTask(t, "task_accept_unknown_outcome", model.TaskPreparationStatusPreparing, "node-a", 1200)
+	task.PreparationAttemptCount = 3
+	require.NoError(t, model.DB.Save(task).Error)
+	renewalDone := make(chan struct{})
+	close(renewalDone)
+	lease := &taskPreparationLease{
+		attemptCount: 3,
+		stopRenewal:  make(chan struct{}),
+		renewalDone:  renewalDone,
+		cancel:       func() {},
+		expiresAt:    1100,
+		renewalError: assertErr("transient renewal database error"),
+	}
+
+	err := acceptLeasedAssetTask(nil, nil, task, "node-a", lease, &model.Channel{Id: 131}, &relay.TaskSubmitResult{
+		UpstreamTaskID: "upstream-unknown-outcome",
+		TaskData:       []byte(`{"id":"upstream-unknown-outcome"}`),
+		Platform:       constant.TaskPlatform("107"),
+		Quota:          123,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown outcome")
+	require.Contains(t, err.Error(), "upstream-unknown-outcome")
+	require.Contains(t, err.Error(), "manual reconciliation")
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusUnknown, stored.Status)
+	require.Equal(t, model.TaskPreparationStatusUnknownOutcome, stored.PreparationStatus)
+	require.Empty(t, stored.PreparationLeaseOwner)
+	require.Zero(t, stored.PreparationLeaseExpiresAt)
+	require.Equal(t, 131, stored.ChannelId)
+	require.Equal(t, "upstream-unknown-outcome", stored.PrivateData.UpstreamTaskID)
+	require.JSONEq(t, `{"id":"upstream-unknown-outcome"}`, string(stored.Data))
+
+	var providerCalls atomic.Int32
+	runLeasedAssetTaskFunc = func(ctx context.Context, taskID string, owner string, lease *taskPreparationLease) error {
+		providerCalls.Add(1)
+		return nil
+	}
+	now.Store(1300)
+	processed, runErr := RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, runErr)
+	require.Equal(t, 0, processed)
+	require.Zero(t, providerCalls.Load(), "an unknown upstream result must never be submitted again automatically")
+}
+
+func TestAssetTaskSubmitCancellationQuarantinesBeforeAutomaticRetry(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	var now atomic.Int64
+	now.Store(1000)
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, now.Load)
+	defer restoreHooks()
+	oldRetryTimes := common.RetryTimes
+	common.RetryTimes = 0
+	defer func() { common.RetryTimes = oldRetryTimes }()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	providerEntered := make(chan int, 1)
+	providerRelease := make(chan struct{})
+	defer close(providerRelease)
+	adaptor := &controllerFakeTaskAdaptor{
+		providerEntered: providerEntered,
+		providerRelease: providerRelease,
+	}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_7234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-cancel")
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_submit_canceled", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.ChannelId = 0
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+	model.InitChannelCache()
+
+	workerCtx, cancelWorker := context.WithCancel(context.Background())
+	type workerResult struct {
+		processed int
+		err       error
+	}
+	workerDone := make(chan workerResult, 1)
+	go func() {
+		processed, err := RunAssetTaskWorkerOnce(workerCtx, "node-a", 10)
+		workerDone <- workerResult{processed: processed, err: err}
+	}()
+
+	select {
+	case channelID := <-providerEntered:
+		require.Equal(t, 131, channelID)
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not enter provider submit")
+	}
+	cancelWorker()
+
+	select {
+	case result := <-workerDone:
+		require.NoError(t, result.err)
+		require.Equal(t, 1, result.processed)
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not stop after submit cancellation")
+	}
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusUnknown, stored.Status)
+	require.Equal(t, model.TaskPreparationStatusUnknownOutcome, stored.PreparationStatus)
+	require.Empty(t, stored.PrivateData.UpstreamTaskID)
+	require.Equal(t, 131, stored.ChannelId)
+	require.Equal(t, constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), stored.Platform)
+	require.Equal(t, 123, stored.Quota)
+	require.Equal(t, 123, stored.AcceptedAccountingReservedQuota)
+	require.Equal(t, int(0.001*float64(common.QuotaPerUnit)), stored.AcceptedAccountingActualQuota)
+	require.JSONEq(t, `{}`, string(stored.Data))
+	require.EqualValues(t, 1, adaptor.providerCalls.Load())
+
+	now.Store(1200)
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Equal(t, 0, processed)
+	require.EqualValues(t, 1, adaptor.providerCalls.Load(), "a canceled in-flight submit must not be attempted again automatically")
 }
 
 func TestAssetTaskAcceptedWinnerExtendsRetentionAndLateWorkerDoesNot(t *testing.T) {
@@ -1063,11 +1614,11 @@ func TestAssetTaskWorkerPreparationFailureRefundsOnceForLateResult(t *testing.T)
 	require.NoError(t, model.DB.Create(&model.Channel{Id: 131, Name: "task-worker-refund", Key: "sk-channel", Status: common.ChannelStatusEnabled}).Error)
 
 	task := seedControllerQueuedAssetTask(t, "task_worker_refund_once", model.TaskPreparationStatusPreparingAssets, "", 0)
-	runLeasedAssetTaskFunc = func(ctx context.Context, taskID string, owner string, leaseExpiresAt int64) error {
+	runLeasedAssetTaskFunc = func(ctx context.Context, taskID string, owner string, lease *taskPreparationLease) error {
 		stored, ok, err := model.GetByOnlyTaskId(taskID)
 		require.NoError(t, err)
 		require.True(t, ok)
-		return failAssetTaskPreparation(ctx, stored, owner, leaseExpiresAt, assertErr("materialize failed"))
+		return failLeasedAssetTaskPreparation(ctx, stored, owner, lease, assertErr("materialize failed"))
 	}
 
 	assetTaskWorkerTestNow = 1000
@@ -1296,13 +1847,17 @@ func seedControllerTaskChannel(t *testing.T, id int, key string) {
 }
 
 func seedControllerTaskChannelWithPriority(t *testing.T, id int, key string, priority int64, weight uint) {
+	seedControllerTaskChannelTypeWithPriority(t, id, constant.ChannelTypeBytePlus, key, priority, weight)
+}
+
+func seedControllerTaskChannelTypeWithPriority(t *testing.T, id int, channelType int, key string, priority int64, weight uint) {
 	t.Helper()
 	channel := &model.Channel{
 		Id:       id,
-		Type:     constant.ChannelTypeBytePlus,
+		Type:     channelType,
 		Key:      key,
 		Status:   common.ChannelStatusEnabled,
-		Name:     fmt.Sprintf("byteplus-task-%d", id),
+		Name:     fmt.Sprintf("asset-task-%d", id),
 		Group:    "default",
 		Models:   "seedance-2.0",
 		Priority: &priority,
@@ -1343,10 +1898,13 @@ type controllerFakeTaskAdaptor struct {
 	estimateCalls     atomic.Int32
 	providerCalls     atomic.Int32
 	upstreamTaskID    string
+	estimatedRatios   map[string]float64
 	adjustedRatios    map[string]float64
 	failByChannel     map[int]error
 	failHTTPByChannel map[int]int
 	channelsSeen      []int
+	providerEntered   chan<- int
+	providerRelease   <-chan struct{}
 }
 
 var _ channel.TaskAdaptor = (*controllerFakeTaskAdaptor)(nil)
@@ -1366,7 +1924,7 @@ func (a *controllerFakeTaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, 
 
 func (a *controllerFakeTaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	a.estimateCalls.Add(1)
-	return nil
+	return a.estimatedRatios
 }
 
 func (a *controllerFakeTaskAdaptor) AdjustBillingOnSubmit(info *relaycommon.RelayInfo, taskData []byte) map[string]float64 {
@@ -1397,6 +1955,16 @@ func (a *controllerFakeTaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.
 	a.providerCalls.Add(1)
 	channelID := common.GetContextKeyInt(c, constant.ContextKeyChannelId)
 	a.channelsSeen = append(a.channelsSeen, channelID)
+	if a.providerEntered != nil {
+		a.providerEntered <- channelID
+	}
+	if a.providerRelease != nil {
+		select {
+		case <-a.providerRelease:
+		case <-c.Request.Context().Done():
+			return nil, c.Request.Context().Err()
+		}
+	}
 	if status := a.failHTTPByChannel[channelID]; status > 0 {
 		return &http.Response{
 			StatusCode: status,

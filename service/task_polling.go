@@ -31,6 +31,17 @@ type TaskPollingAdaptor interface {
 	AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int
 }
 
+type contextTaskPollingAdaptor interface {
+	FetchTaskWithContext(ctx context.Context, baseURL string, key string, body map[string]any, proxy string) (*http.Response, error)
+}
+
+func FetchTaskWithContext(ctx context.Context, adaptor TaskPollingAdaptor, baseURL string, key string, body map[string]any, proxy string) (*http.Response, error) {
+	if contextAdaptor, ok := adaptor.(contextTaskPollingAdaptor); ok {
+		return contextAdaptor.FetchTaskWithContext(ctx, baseURL, key, body, proxy)
+	}
+	return adaptor.FetchTask(baseURL, key, body, proxy)
+}
+
 // GetTaskAdaptorFunc 由 main 包注入，用于获取指定平台的任务适配器。
 // 打破 service -> relay -> relay/channel -> service 的循环依赖。
 var GetTaskAdaptorFunc func(platform constant.TaskPlatform) TaskPollingAdaptor
@@ -195,7 +206,7 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		return errors.New("adaptor not found")
 	}
 	proxy := ch.GetSetting().Proxy
-	resp, err := adaptor.FetchTask(*ch.BaseURL, ch.Key, map[string]any{
+	resp, err := FetchTaskWithContext(ctx, adaptor, *ch.BaseURL, ch.Key, map[string]any{
 		"ids": taskIds,
 	}, proxy)
 	if err != nil {
@@ -362,7 +373,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if privateData.Key != "" {
 		key = privateData.Key
 	}
-	resp, err := adaptor.FetchTask(baseURL, key, map[string]any{
+	resp, err := FetchTaskWithContext(ctx, adaptor, baseURL, key, map[string]any{
 		"task_id": task.GetUpstreamTaskID(),
 		"action":  task.Action,
 	}, proxy)

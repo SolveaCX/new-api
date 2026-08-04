@@ -46,8 +46,10 @@ const (
 	TaskPreparationStatusPending         = "PENDING"
 	TaskPreparationStatusPreparing       = "PREPARING"
 	TaskPreparationStatusPreparingAssets = "preparing_assets"
+	TaskPreparationStatusSubmitting      = "SUBMITTING"
 	TaskPreparationStatusReady           = "READY"
 	TaskPreparationStatusFailed          = "FAILED"
+	TaskPreparationStatusUnknownOutcome  = "UNKNOWN_OUTCOME"
 )
 
 const (
@@ -407,6 +409,8 @@ func excludePreparingAssetTasks(db *gorm.DB) *gorm.DB {
 	return db.Where("(preparation_status IS NULL OR preparation_status = '' OR preparation_status NOT IN ?)", []string{
 		TaskPreparationStatusPreparingAssets,
 		TaskPreparationStatusPreparing,
+		TaskPreparationStatusSubmitting,
+		TaskPreparationStatusUnknownOutcome,
 	})
 }
 
@@ -417,6 +421,19 @@ func GetQueuedAssetPreparationTasks(now int64, limit int) ([]*Task, error) {
 	var tasks []*Task
 	err := DB.Where("status = ? AND ((preparation_status = ?) OR (preparation_status = ? AND preparation_lease_expires_at <= ?))",
 		TaskStatusQueued, TaskPreparationStatusPreparingAssets, TaskPreparationStatusPreparing, now).
+		Order("id ASC").
+		Limit(limit).
+		Find(&tasks).Error
+	return tasks, err
+}
+
+func GetExpiredAssetTaskSubmissionFences(now int64, limit int) ([]*Task, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	var tasks []*Task
+	err := DB.Where("status = ? AND preparation_status = ? AND preparation_lease_expires_at <= ?",
+		TaskStatusQueued, TaskPreparationStatusSubmitting, now).
 		Order("id ASC").
 		Limit(limit).
 		Find(&tasks).Error
@@ -547,15 +564,48 @@ func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
 	return result.RowsAffected > 0, nil
 }
 
-func ClaimTaskPreparationLease(taskID string, owner string, now int64, leaseExpiresAt int64) (bool, error) {
+func ClaimTaskPreparationLease(taskID string, owner string, expectedAttemptCount int, now int64, leaseExpiresAt int64) (bool, error) {
 	result := DB.Model(&Task{}).
 		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
-		Where("(preparation_lease_owner = ? OR preparation_lease_expires_at <= ?)", owner, now).
+		Where("(preparation_status IS NULL OR preparation_status = '' OR preparation_status IN ?)", []string{TaskPreparationStatusPending, TaskPreparationStatusPreparingAssets, TaskPreparationStatusPreparing}).
+		Where("preparation_attempt_count = ? AND preparation_lease_expires_at <= ?", expectedAttemptCount, now).
 		Updates(map[string]any{
 			"preparation_status":           TaskPreparationStatusPreparing,
 			"preparation_lease_owner":      owner,
 			"preparation_lease_expires_at": leaseExpiresAt,
 			"preparation_attempt_count":    gorm.Expr("preparation_attempt_count + ?", 1),
+			"updated_at":                   now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func MarkQueuedTaskSubmitting(taskID string, owner string, expectedAttemptCount int, now int64, channelID int, platform constant.TaskPlatform, quota int) (bool, error) {
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
+		Where("preparation_status IN ?", []string{TaskPreparationStatusPreparing, TaskPreparationStatusSubmitting}).
+		Where("preparation_lease_owner = ? AND preparation_attempt_count = ? AND preparation_lease_expires_at > ?", owner, expectedAttemptCount, now).
+		Updates(map[string]any{
+			"preparation_status":               TaskPreparationStatusSubmitting,
+			"channel_id":                       channelID,
+			"platform":                         platform,
+			"accepted_accounting_actual_quota": quota,
+			"updated_at":                       now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func RenewTaskPreparationLease(taskID string, owner string, expectedLeaseExpiresAt int64, now int64, leaseExpiresAt int64) (bool, error) {
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
+		Where("preparation_lease_owner = ? AND preparation_lease_expires_at = ? AND preparation_lease_expires_at > ?", owner, expectedLeaseExpiresAt, now).
+		Updates(map[string]any{
+			"preparation_lease_expires_at": leaseExpiresAt,
 			"updated_at":                   now,
 		})
 	if result.Error != nil {
@@ -627,6 +677,88 @@ func MarkQueuedTaskAccepted(taskID string, owner string, expectedLeaseExpiresAt 
 		return false, err
 	}
 	return accepted, nil
+}
+
+func MarkQueuedTaskSubmissionUnknown(taskID string, expectedAttemptCount int, now int64, submitTime int64, channelID int, platform constant.TaskPlatform, quota int, upstreamTaskID string, taskData []byte, publicIDs []string, lastUsedAt int64, retentionUntil int64) (bool, error) {
+	quarantined := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var current Task
+		if err := tx.Select("private_data", "user_id", "quota").Where("task_id = ?", taskID).First(&current).Error; err != nil {
+			return err
+		}
+		if upstreamTaskID != "" {
+			current.PrivateData.UpstreamTaskID = upstreamTaskID
+		}
+		updates := map[string]any{
+			"status":                             TaskStatusUnknown,
+			"preparation_status":                 TaskPreparationStatusUnknownOutcome,
+			"preparation_lease_owner":            "",
+			"preparation_lease_expires_at":       0,
+			"submit_time":                        submitTime,
+			"updated_at":                         now,
+			"channel_id":                         channelID,
+			"platform":                           platform,
+			"private_data":                       current.PrivateData,
+			"fail_reason":                        "upstream submission outcome requires manual reconciliation",
+			"accepted_accounting_reserved_quota": current.Quota,
+			"accepted_accounting_actual_quota":   quota,
+		}
+		if taskData != nil {
+			updates["data"] = json.RawMessage(taskData)
+		}
+		result := tx.Model(&Task{}).
+			Where("task_id = ? AND preparation_attempt_count = ?", taskID, expectedAttemptCount).
+			Where("(status = ? OR (status = ? AND preparation_status = ?))", TaskStatusQueued, TaskStatusUnknown, TaskPreparationStatusUnknownOutcome).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		quarantined = true
+		return extendAcceptedAssetRetentionTx(tx, current.UserId, publicIDs, lastUsedAt, retentionUntil)
+	})
+	if err != nil {
+		return false, err
+	}
+	return quarantined, nil
+}
+
+func MarkExpiredAssetTaskSubmissionUnknown(taskID string, expectedOwner string, expectedLeaseExpiresAt int64, expectedAttemptCount int, now int64, publicIDs []string, retentionUntil int64) (bool, error) {
+	quarantined := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&Task{}).
+			Where("task_id = ? AND status = ? AND preparation_status = ?", taskID, TaskStatusQueued, TaskPreparationStatusSubmitting).
+			Where("preparation_lease_owner = ? AND preparation_lease_expires_at = ? AND preparation_lease_expires_at <= ?", expectedOwner, expectedLeaseExpiresAt, now).
+			Where("preparation_attempt_count = ?", expectedAttemptCount).
+			Updates(map[string]any{
+				"status":                             TaskStatusUnknown,
+				"preparation_status":                 TaskPreparationStatusUnknownOutcome,
+				"preparation_lease_owner":            "",
+				"preparation_lease_expires_at":       0,
+				"submit_time":                        gorm.Expr("CASE WHEN submit_time > 0 THEN submit_time ELSE ? END", now),
+				"updated_at":                         now,
+				"fail_reason":                        "upstream submission outcome requires manual reconciliation",
+				"accepted_accounting_reserved_quota": gorm.Expr("quota"),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		quarantined = true
+		var current Task
+		if err := tx.Select("user_id").Where("task_id = ?", taskID).First(&current).Error; err != nil {
+			return err
+		}
+		return extendAcceptedAssetRetentionTx(tx, current.UserId, publicIDs, now, retentionUntil)
+	})
+	if err != nil {
+		return false, err
+	}
+	return quarantined, nil
 }
 
 func ClaimAcceptedAccountingLease(taskID string, owner string, now int64, leaseExpiresAt int64) (bool, error) {

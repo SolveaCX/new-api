@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -406,27 +407,43 @@ func TestTaskPreparationLeaseTakeover(t *testing.T) {
 	}
 	insertTask(t, task)
 
-	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 100, 160)
+	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 0, 100, 160)
 	require.NoError(t, err)
 	require.True(t, claimed)
 
-	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-b", 120, 180)
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-b", 0, 120, 180)
 	require.NoError(t, err)
 	require.False(t, claimed, "fresh foreign preparation lease must not be stolen")
 
-	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 130, 190)
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 1, 130, 190)
 	require.NoError(t, err)
-	require.True(t, claimed, "same preparation owner may renew before expiry")
+	require.False(t, claimed, "a fresh preparation lease must not be claimed again even by the same owner")
 
-	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-b", 191, 250)
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-b", 0, 191, 250)
+	require.NoError(t, err)
+	require.False(t, claimed, "a stale scan must not claim a newer expired preparation generation")
+
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-b", 1, 191, 250)
 	require.NoError(t, err)
 	require.True(t, claimed, "expired preparation lease can be taken over")
+
+	fenced, err := MarkQueuedTaskSubmitting(task.TaskID, "node-b", 2, 192, 131, constant.TaskPlatform("107"), 246)
+	require.NoError(t, err)
+	require.True(t, fenced)
+
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-c", 2, 251, 310)
+	require.NoError(t, err)
+	require.False(t, claimed, "a provider submit fence must never be taken over automatically")
 
 	var stored Task
 	require.NoError(t, DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
 	require.Equal(t, "node-b", stored.PreparationLeaseOwner)
 	require.EqualValues(t, 250, stored.PreparationLeaseExpiresAt)
-	require.EqualValues(t, 3, stored.PreparationAttemptCount)
+	require.EqualValues(t, 2, stored.PreparationAttemptCount)
+	require.Equal(t, TaskPreparationStatusSubmitting, stored.PreparationStatus)
+	require.Equal(t, 131, stored.ChannelId)
+	require.Equal(t, constant.TaskPlatform("107"), stored.Platform)
+	require.Equal(t, 246, stored.AcceptedAccountingActualQuota)
 	require.JSONEq(t, `{"model":"seedance"}`, string(stored.NormalizedRequestPayload))
 }
 
@@ -513,19 +530,19 @@ func TestTaskPreparationLeaseGenerationFencesSubmittedCompletion(t *testing.T) {
 	}
 	insertTask(t, task)
 
-	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 100, 160)
+	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 0, 100, 160)
 	require.NoError(t, err)
 	require.True(t, claimed)
 
-	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 120, 220)
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 1, 161, 220)
 	require.NoError(t, err)
 	require.True(t, claimed)
 
-	updated, err := MarkQueuedTaskSubmitted(task.TaskID, "node-a", 160, 130, 140)
+	updated, err := MarkQueuedTaskSubmitted(task.TaskID, "node-a", 160, 170, 180)
 	require.NoError(t, err)
 	require.False(t, updated, "a stale same-owner lease generation must not submit")
 
-	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 220, 130, 140)
+	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 220, 170, 180)
 	require.NoError(t, err)
 	require.True(t, updated, "the latest lease generation may submit")
 }
@@ -542,23 +559,67 @@ func TestTaskPreparationLeaseGenerationFencesFailureCompletion(t *testing.T) {
 	}
 	insertTask(t, task)
 
-	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 100, 160)
+	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 0, 100, 160)
 	require.NoError(t, err)
 	require.True(t, claimed)
 
-	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 120, 220)
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 1, 161, 220)
 	require.NoError(t, err)
 	require.True(t, claimed)
 
-	updated, err := MarkQueuedTaskFailed(task.TaskID, "node-a", 160, "stale failure", 130)
+	updated, err := MarkQueuedTaskFailed(task.TaskID, "node-a", 160, "stale failure", 170)
 	require.NoError(t, err)
 	require.False(t, updated, "a stale same-owner lease generation must not fail the task")
 
-	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", 220, "latest failure", 130)
+	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", 220, "latest failure", 170)
 	require.NoError(t, err)
 	require.True(t, updated, "the latest lease generation may fail the task")
 
 	var stored Task
 	require.NoError(t, DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
 	require.Equal(t, "latest failure", stored.FailReason)
+}
+
+func TestTaskSubmissionUnknownOutcomeUsesPreparationAttemptGenerationFence(t *testing.T) {
+	truncateTables(t)
+
+	task := &Task{
+		TaskID:                    "task_prepare_unknown_outcome",
+		Status:                    TaskStatusQueued,
+		PreparationStatus:         TaskPreparationStatusPreparing,
+		PreparationLeaseOwner:     "node-a",
+		PreparationLeaseExpiresAt: 220,
+		PreparationAttemptCount:   2,
+		Quota:                     100,
+		Data:                      json.RawMessage(`{}`),
+		PrivateData:               TaskPrivateData{TokenId: 11},
+	}
+	insertTask(t, task)
+
+	updated, err := MarkQueuedTaskSubmissionUnknown(task.TaskID, 1, 130, 130, 131, constant.TaskPlatform("107"), 246, "upstream-stale", []byte(`{"id":"upstream-stale"}`), nil, 130, 500)
+	require.NoError(t, err)
+	require.False(t, updated, "a stale preparation generation must not quarantine a newer attempt")
+
+	updated, err = MarkQueuedTaskSubmissionUnknown(task.TaskID, 2, 130, 130, 132, constant.TaskPlatform("108"), 246, "upstream-unknown", []byte(`{"id":"upstream-unknown"}`), nil, 130, 500)
+	require.NoError(t, err)
+	require.True(t, updated)
+
+	var stored Task
+	require.NoError(t, DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, TaskStatusUnknown, stored.Status)
+	require.Equal(t, TaskPreparationStatusUnknownOutcome, stored.PreparationStatus)
+	require.Empty(t, stored.PreparationLeaseOwner)
+	require.Zero(t, stored.PreparationLeaseExpiresAt)
+	require.Equal(t, 132, stored.ChannelId)
+	require.Equal(t, constant.TaskPlatform("108"), stored.Platform)
+	require.Equal(t, 100, stored.Quota)
+	require.Equal(t, 100, stored.AcceptedAccountingReservedQuota)
+	require.Equal(t, 246, stored.AcceptedAccountingActualQuota)
+	require.Equal(t, "upstream-unknown", stored.PrivateData.UpstreamTaskID)
+	require.Equal(t, 11, stored.PrivateData.TokenId)
+	require.JSONEq(t, `{"id":"upstream-unknown"}`, string(stored.Data))
+
+	lateAccepted, err := MarkQueuedTaskAccepted(task.TaskID, "node-a", 220, 131, 131, 131, constant.TaskPlatform("107"), 100, "upstream-late", []byte(`{"id":"upstream-late"}`), nil, 131, 500)
+	require.NoError(t, err)
+	require.False(t, lateAccepted, "a quarantined task must not regress to normal acceptance")
 }
