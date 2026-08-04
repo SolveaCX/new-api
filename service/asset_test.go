@@ -222,6 +222,55 @@ func TestCreateAssetUploadSessionUsesTypeLimitInsteadOfMultipartCap(t *testing.T
 	require.ErrorIs(t, err, ErrAssetTooLarge)
 }
 
+func TestCreateAssetUploadSessionRejectsDeclaredTypeContentTypeMismatch(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+
+	_, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "video/mp4",
+		SizeBytes:   9,
+	})
+
+	require.ErrorIs(t, err, ErrAssetTypeMismatch)
+}
+
+func TestCreateAssetFromURLRejectsDetectedCategoryMismatch(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write(tinyMP3())
+	}))
+	t.Cleanup(server.Close)
+	assetHTTPClient = server.Client()
+
+	_, err := CreateAssetFromURL(context.Background(), AssetFromURLRequest{
+		UserID:    7,
+		AssetType: "Image",
+		URL:       server.URL + "/voice.mp3",
+	})
+
+	require.ErrorIs(t, err, ErrAssetTypeMismatch)
+}
+
+func TestUploadAssetRejectsDetectedCategoryMismatch(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	t.Setenv("ASSET_IMAGE_MAX_BYTES", "99")
+
+	_, err := UploadAsset(context.Background(), AssetUploadRequest{
+		UserID:    7,
+		AssetType: "Image",
+		Filename:  "voice.mp3",
+		Body:      bytes.NewReader(tinyMP3()),
+	})
+
+	require.ErrorIs(t, err, ErrAssetTypeMismatch)
+}
+
 func TestCompleteAssetUploadFailsWhenExactGenerationDisappearsBeforeRead(t *testing.T) {
 	newAssetServiceTestDB(t)
 	store := installAssetServiceTestDeps(t)
@@ -334,7 +383,7 @@ func TestCompleteAssetUploadLateExpiryDeletesExactGenerationAndExpiresAsset(t *t
 
 	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
 
-	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.ErrorIs(t, err, ErrAssetExpired)
 	require.Equal(t, []fakeAssetOpen{{key: "asset-test-bucket/" + session.ObjectKey, generation: 29}}, store.opens)
 	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 29}}, store.deletes)
 	var upload model.AssetUpload
@@ -395,7 +444,7 @@ func TestCompleteAssetUploadLateExpiryLosesTerminalCASAfterCleanupClaim(t *testi
 
 	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
 
-	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.ErrorIs(t, err, ErrAssetExpired)
 	require.True(t, cleanupClaimed)
 	var upload model.AssetUpload
 	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
@@ -556,6 +605,30 @@ func TestCompleteAssetUploadValidationFailureDeletesAndMarksTerminal(t *testing.
 	require.Equal(t, model.AssetSourceStatusUnavailable, asset.SourceStatus)
 	require.Empty(t, asset.ObjectKey)
 	require.Zero(t, asset.ObjectGeneration)
+}
+
+func TestCompleteAssetUploadRejectsDetectedOrMetadataTypeMismatch(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "video/mp4", Size: int64(len(png)), Generation: 17}
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetTypeMismatch)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 17}}, store.deletes)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusFailed, upload.Status)
 }
 
 func TestCompleteAssetUploadDeleteFailureMarksCleanupPendingForRetry(t *testing.T) {
@@ -739,7 +812,7 @@ func TestCompleteAssetUploadRejectsExpiredUploadAndDoesNotReadObject(t *testing.
 
 	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
 
-	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.ErrorIs(t, err, ErrAssetExpired)
 	require.Empty(t, store.opens)
 	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 9}}, store.deletes)
 	var upload model.AssetUpload
@@ -757,6 +830,35 @@ func TestCompleteAssetUploadRejectsExpiredUploadAndDoesNotReadObject(t *testing.
 	require.Empty(t, asset.StorageBucket)
 	require.Empty(t, asset.ObjectKey)
 	require.Zero(t, asset.ObjectGeneration)
+}
+
+func TestCompleteAssetUploadAlreadyExpiredRowReturnsExpiredButOtherTerminalStatesStayValidation(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.AssetUpload{}).Where("upload_id = ?", session.UploadID).Update("status", model.AssetUploadStatusExpired).Error)
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetExpired)
+	require.Empty(t, store.opens)
+	require.Empty(t, store.deletes)
+
+	for _, status := range []string{model.AssetUploadStatusComplete, model.AssetUploadStatusFailed, model.AssetUploadStatusCleaning} {
+		require.NoError(t, model.DB.Model(&model.AssetUpload{}).Where("upload_id = ?", session.UploadID).Update("status", status).Error)
+
+		_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+		require.ErrorIs(t, err, ErrAssetUploadValidation)
+	}
 }
 
 func TestCompleteAssetUploadExpiredDeleteFailureMarksCleanupPendingForRetry(t *testing.T) {
@@ -778,7 +880,7 @@ func TestCompleteAssetUploadExpiredDeleteFailureMarksCleanupPendingForRetry(t *t
 
 	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
 
-	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.ErrorIs(t, err, ErrAssetExpired)
 	require.Empty(t, store.opens)
 	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 11}}, store.deletes)
 	var upload model.AssetUpload

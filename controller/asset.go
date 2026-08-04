@@ -201,6 +201,12 @@ func writeAssetServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrAssetTooLarge):
 		status = http.StatusRequestEntityTooLarge
 		code = types.ErrorCodeInvalidAssetRequest
+	case errors.Is(err, service.ErrAssetExpired):
+		status = http.StatusGone
+		code = types.ErrorCodeAssetExpired
+	case errors.Is(err, service.ErrAssetTypeMismatch):
+		status = http.StatusBadRequest
+		code = types.ErrorCodeAssetTypeMismatch
 	case errors.Is(err, service.ErrAssetUploadNotFound):
 		status = http.StatusNotFound
 		code = types.ErrorCodeAssetNotFound

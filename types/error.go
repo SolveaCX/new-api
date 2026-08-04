@@ -80,6 +80,8 @@ const (
 	ErrorCodeAssetGroupInitializing  ErrorCode = "asset_group_initializing"
 	ErrorCodeAssetUpstreamError      ErrorCode = "asset_upstream_error"
 	ErrorCodeAssetStorageError       ErrorCode = "asset_storage_error"
+	ErrorCodeAssetExpired            ErrorCode = "asset_expired"
+	ErrorCodeAssetTypeMismatch       ErrorCode = "asset_type_mismatch"
 
 	// response error
 	ErrorCodeReadResponseBodyFailed ErrorCode = "read_response_body_failed"

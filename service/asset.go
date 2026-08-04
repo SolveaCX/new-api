@@ -44,6 +44,8 @@ var (
 	ErrAssetUploadNotFound       = errors.New("asset upload not found")
 	ErrAssetUploadValidation     = errors.New("asset upload validation failed")
 	ErrAssetFileRequired         = errors.New("asset file is required")
+	ErrAssetExpired              = errors.New("asset expired")
+	ErrAssetTypeMismatch         = errors.New("asset type mismatch")
 	assetNow                     = time.Now
 	assetHTTPClient              = http.DefaultClient
 	assetValidateURL             = validateAssetURLWithFetchSetting
@@ -240,6 +242,9 @@ func CreateAssetUploadSession(ctx context.Context, request AssetUploadSessionReq
 	}
 	contentType, ext := normalizeAssetContentType(request.AssetType, request.ContentType)
 	if contentType == "" {
+		if category := supportedAssetContentTypeCategory(request.ContentType); category != "" && category != request.AssetType {
+			return nil, ErrAssetTypeMismatch
+		}
 		return nil, ErrAssetUnsupportedMediaType
 	}
 	publicID, err := assetPublicID()
@@ -312,6 +317,9 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 		return nil, err
 	}
 	if upload.Status != model.AssetUploadStatusPending {
+		if upload.Status == model.AssetUploadStatusExpired {
+			return nil, ErrAssetExpired
+		}
 		return nil, ErrAssetUploadValidation
 	}
 	now := assetNow()
@@ -323,7 +331,7 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 		if !expired {
 			return nil, ErrAssetUploadValidation
 		}
-		return nil, ErrAssetUploadValidation
+		return nil, ErrAssetExpired
 	}
 	attrs, err := assetObjectStore.Attrs(ctx, upload.StorageBucket, upload.ObjectKey)
 	if err != nil {
@@ -344,11 +352,18 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 	detected, sha, size, err := hashAndValidateAssetMedia(reader, upload.AssetType, cfg.TypeLimits[upload.AssetType])
 	if err != nil {
 		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
+		if errors.Is(err, ErrAssetTypeMismatch) {
+			return nil, ErrAssetTypeMismatch
+		}
 		return nil, ErrAssetUploadValidation
 	}
-	if size != attrs.Size || detected != upload.ContentType || detected != attrs.ContentType {
+	if size != attrs.Size {
 		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
 		return nil, ErrAssetUploadValidation
+	}
+	if detected != upload.ContentType || detected != attrs.ContentType {
+		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
+		return nil, ErrAssetTypeMismatch
 	}
 	activationNow := assetNow()
 	completed, expired, err := model.CompleteAssetUploadCAS(upload.UploadId, request.Owner, model.AssetUploadCompletion{
@@ -367,7 +382,7 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 		if err != nil {
 			return nil, err
 		}
-		return nil, ErrAssetUploadValidation
+		return nil, ErrAssetExpired
 	}
 	if !completed {
 		return nil, ErrAssetUploadNotFound
@@ -728,6 +743,9 @@ func detectAssetMediaPrefix(reader io.Reader, assetType string, maxBytes int64) 
 		if int64(prefix.Len()) >= maxBytes && maxBytes < 512 {
 			return "", nil, ErrAssetTooLarge
 		}
+		if category := supportedAssetContentTypeCategory(contentType); category != "" && category != assetType {
+			return "", nil, ErrAssetTypeMismatch
+		}
 		return "", nil, ErrAssetUnsupportedMediaType
 	}
 	return normalized, io.MultiReader(bytes.NewReader(prefix.Bytes()), reader), nil
@@ -834,6 +852,15 @@ func normalizeAssetContentType(assetType string, contentType string) (string, st
 		}
 	}
 	return "", ""
+}
+
+func supportedAssetContentTypeCategory(contentType string) string {
+	for _, assetType := range []string{"Image", "Video", "Audio"} {
+		if normalized, _ := normalizeAssetContentType(assetType, contentType); normalized != "" {
+			return assetType
+		}
+	}
+	return ""
 }
 
 func randomAssetID(prefix string) (string, error) {

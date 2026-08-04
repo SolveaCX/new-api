@@ -195,6 +195,34 @@ func TestDirectUploadSessionOversizeReturnsStable413Envelope(t *testing.T) {
 	requireAssetError(t, recorder.Body.Bytes(), "invalid_asset_request")
 }
 
+func TestAssetControllerMapsExpiredAndTypeMismatchErrorsToStableOpenAIEnvelope(t *testing.T) {
+	originalSession := createAssetUploadSession
+	originalComplete := completeAssetUpload
+	t.Cleanup(func() {
+		createAssetUploadSession = originalSession
+		completeAssetUpload = originalComplete
+	})
+
+	createAssetUploadSession = func(context.Context, service.AssetUploadSessionRequest) (*service.AssetUploadSessionResult, error) {
+		return nil, service.ErrAssetTypeMismatch
+	}
+	sessionCtx, sessionRecorder := newAssetJSONContext(http.MethodPost, "/v1/assets/uploads", `{"asset_type":"Image","content_type":"video/mp4","size_bytes":17}`)
+	setAssetTokenContext(sessionCtx, 123)
+	CreateAssetUploadSession(sessionCtx)
+	require.Equal(t, http.StatusBadRequest, sessionRecorder.Code)
+	requireAssetError(t, sessionRecorder.Body.Bytes(), "asset_type_mismatch")
+
+	completeAssetUpload = func(context.Context, service.AssetCompleteUploadRequest) (*service.AssetResult, error) {
+		return nil, service.ErrAssetExpired
+	}
+	expiredCtx, expiredRecorder := newAssetJSONContext(http.MethodPost, "/v1/assets/uploads/upl_expired/complete", `{}`)
+	expiredCtx.Params = gin.Params{{Key: "upload_id", Value: "upl_expired"}}
+	setAssetTokenContext(expiredCtx, 123)
+	CompleteAssetUpload(expiredCtx)
+	require.Equal(t, http.StatusGone, expiredRecorder.Code)
+	requireAssetError(t, expiredRecorder.Body.Bytes(), "asset_expired")
+}
+
 func TestCompleteUploadAndOwnedGetUseUserScopedService(t *testing.T) {
 	originalComplete := completeAssetUpload
 	originalGet := getAsset
