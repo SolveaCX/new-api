@@ -1,11 +1,21 @@
 package model
 
 import (
+	"fmt"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 const (
+	AssetStatusCreating   = "Creating"
+	AssetStatusProcessing = "Processing"
+	AssetStatusActive     = "Active"
+	AssetStatusFailed     = "Failed"
+
+	AssetSourceStatusAvailable   = "Available"
+	AssetSourceStatusUnavailable = "Unavailable"
+
 	AssetBindingStatusPending = "PENDING"
 	AssetBindingStatusLeased  = "LEASED"
 
@@ -13,6 +23,8 @@ const (
 	AssetUploadStatusComplete = "COMPLETE"
 	AssetUploadStatusExpired  = "EXPIRED"
 )
+
+const legacyBytePlusAssetMigrationPageSize = 500
 
 type Asset struct {
 	Id              int64  `json:"id" gorm:"primaryKey"`
@@ -68,6 +80,11 @@ type AssetUpload struct {
 	UpdatedAt      int64  `json:"updated_at"`
 }
 
+type AssetWithBinding struct {
+	Asset   Asset
+	Binding *AssetBinding
+}
+
 func CreateAssetBindingIfAbsent(assetID int64, channelID int, now int64) (*AssetBinding, bool, error) {
 	binding := &AssetBinding{
 		AssetId:   assetID,
@@ -90,6 +107,56 @@ func CreateAssetBindingIfAbsent(assetID int64, channelID int, now int64) (*Asset
 	return &stored, false, nil
 }
 
+func GetAssetsWithBindingsByPublicIDsForUser(userID int, publicIDs []string) (map[string]AssetWithBinding, error) {
+	if len(publicIDs) == 0 || DB == nil || !DB.Migrator().HasTable(&Asset{}) || !DB.Migrator().HasTable(&AssetBinding{}) {
+		return nil, nil
+	}
+	unique := make([]string, 0, len(publicIDs))
+	seen := make(map[string]struct{}, len(publicIDs))
+	for _, id := range publicIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	var assets []Asset
+	if err := DB.Where("user_id = ? AND public_id IN ?", userID, unique).Find(&assets).Error; err != nil {
+		return nil, err
+	}
+	if len(assets) == 0 {
+		return map[string]AssetWithBinding{}, nil
+	}
+
+	assetIDs := make([]int64, 0, len(assets))
+	for _, asset := range assets {
+		assetIDs = append(assetIDs, asset.Id)
+	}
+	var bindings []AssetBinding
+	if err := DB.Where("asset_id IN ?", assetIDs).Order("asset_id ASC, id ASC").Find(&bindings).Error; err != nil {
+		return nil, err
+	}
+	bindingByAssetID := make(map[int64]AssetBinding, len(bindings))
+	for _, binding := range bindings {
+		if _, ok := bindingByAssetID[binding.AssetId]; ok {
+			continue
+		}
+		bindingByAssetID[binding.AssetId] = binding
+	}
+
+	byPublicID := make(map[string]AssetWithBinding, len(assets))
+	for _, asset := range assets {
+		item := AssetWithBinding{Asset: asset}
+		if binding, ok := bindingByAssetID[asset.Id]; ok {
+			bindingCopy := binding
+			item.Binding = &bindingCopy
+		}
+		byPublicID[asset.PublicId] = item
+	}
+	return byPublicID, nil
+}
+
 func ClaimAssetBindingLease(assetID int64, channelID int, owner string, now int64, leaseExpiresAt int64) (bool, error) {
 	result := DB.Model(&AssetBinding{}).
 		Where("asset_id = ? AND channel_id = ?", assetID, channelID).
@@ -105,6 +172,103 @@ func ClaimAssetBindingLease(assetID int64, channelID int, owner string, now int6
 		return false, result.Error
 	}
 	return result.RowsAffected == 1, nil
+}
+
+func MigrateLegacyBytePlusAssets() error {
+	if DB == nil ||
+		!DB.Migrator().HasTable(&Asset{}) ||
+		!DB.Migrator().HasTable(&AssetBinding{}) ||
+		!DB.Migrator().HasTable(&BytePlusAssetGroup{}) ||
+		!DB.Migrator().HasTable(&BytePlusAsset{}) {
+		return nil
+	}
+
+	for lastID := int64(0); ; {
+		var legacyAssets []BytePlusAsset
+		if err := DB.Where("id > ?", lastID).
+			Order("id ASC").
+			Limit(legacyBytePlusAssetMigrationPageSize).
+			Find(&legacyAssets).Error; err != nil {
+			return fmt.Errorf("failed to load legacy byteplus assets: %w", err)
+		}
+		if len(legacyAssets) == 0 {
+			break
+		}
+
+		groups, err := loadLegacyBytePlusAssetGroups(legacyAssets)
+		if err != nil {
+			return err
+		}
+		for _, legacy := range legacyAssets {
+			if err := migrateLegacyBytePlusAsset(legacy, groups[legacy.AssetGroupId]); err != nil {
+				return err
+			}
+			lastID = legacy.Id
+		}
+	}
+	return nil
+}
+
+func loadLegacyBytePlusAssetGroups(legacyAssets []BytePlusAsset) (map[int64]BytePlusAssetGroup, error) {
+	groupIDs := make([]int64, 0, len(legacyAssets))
+	seen := make(map[int64]struct{}, len(legacyAssets))
+	for _, legacy := range legacyAssets {
+		if legacy.AssetGroupId <= 0 {
+			continue
+		}
+		if _, ok := seen[legacy.AssetGroupId]; ok {
+			continue
+		}
+		seen[legacy.AssetGroupId] = struct{}{}
+		groupIDs = append(groupIDs, legacy.AssetGroupId)
+	}
+	if len(groupIDs) == 0 {
+		return nil, nil
+	}
+
+	var groups []BytePlusAssetGroup
+	if err := DB.Where("id IN ?", groupIDs).Find(&groups).Error; err != nil {
+		return nil, fmt.Errorf("failed to load legacy byteplus asset groups: %w", err)
+	}
+	byID := make(map[int64]BytePlusAssetGroup, len(groups))
+	for _, group := range groups {
+		byID[group.Id] = group
+	}
+	return byID, nil
+}
+
+func migrateLegacyBytePlusAsset(legacy BytePlusAsset, group BytePlusAssetGroup) error {
+	insertAsset := Asset{
+		PublicId:     legacy.PublicId,
+		UserId:       legacy.UserId,
+		AssetType:    legacy.AssetType,
+		Status:       legacy.Status,
+		SourceStatus: AssetSourceStatusUnavailable,
+		CreatedAt:    legacy.CreatedTime,
+		UpdatedAt:    legacy.UpdatedTime,
+	}
+	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&insertAsset).Error; err != nil {
+		return fmt.Errorf("failed to insert generalized asset for legacy byteplus asset %d: %w", legacy.Id, err)
+	}
+
+	var asset Asset
+	if err := DB.Where("public_id = ?", legacy.PublicId).First(&asset).Error; err != nil {
+		return fmt.Errorf("failed to load generalized asset for legacy byteplus asset %d: %w", legacy.Id, err)
+	}
+
+	insertBinding := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       legacy.ChannelId,
+		UpstreamGroupId: group.UpstreamGroupId,
+		UpstreamAssetId: legacy.UpstreamAssetId,
+		Status:          legacy.Status,
+		CreatedAt:       legacy.CreatedTime,
+		UpdatedAt:       legacy.UpdatedTime,
+	}
+	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&insertBinding).Error; err != nil {
+		return fmt.Errorf("failed to insert asset binding for legacy byteplus asset %d: %w", legacy.Id, err)
+	}
+	return nil
 }
 
 func GetAssetUploadForOwner(uploadID string, owner string) (*AssetUpload, error) {

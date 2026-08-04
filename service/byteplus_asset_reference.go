@@ -26,6 +26,14 @@ type bytePlusAssetReference struct {
 	ExpectedAssetType string
 }
 
+type bytePlusResolvableAsset struct {
+	PublicID        string
+	AssetType       string
+	Status          string
+	ChannelID       int
+	UpstreamAssetID string
+}
+
 func (r BytePlusAssetReferenceResolution) HasReferences() bool {
 	return len(r.RewriteMap) > 0
 }
@@ -43,13 +51,47 @@ func ResolveBytePlusAssetReferences(c *gin.Context, userID int, req *dto.Seedanc
 		publicIDs = append(publicIDs, reference.PublicID)
 	}
 
-	assets, err := model.GetBytePlusAssetsByPublicIDsForUser(userID, publicIDs)
+	generalized, err := model.GetAssetsWithBindingsByPublicIDsForUser(userID, publicIDs)
 	if err != nil {
 		return BytePlusAssetReferenceResolution{}, assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
 	}
-	byID := make(map[string]model.BytePlusAsset, len(assets))
-	for _, asset := range assets {
-		byID[asset.PublicId] = asset
+
+	missingPublicIDs := make([]string, 0, len(publicIDs))
+	for _, publicID := range publicIDs {
+		if _, ok := generalized[publicID]; !ok {
+			missingPublicIDs = append(missingPublicIDs, publicID)
+		}
+	}
+
+	legacyAssets, err := model.GetBytePlusAssetsByPublicIDsForUser(userID, missingPublicIDs)
+	if err != nil {
+		return BytePlusAssetReferenceResolution{}, assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
+	}
+
+	byID := make(map[string]bytePlusResolvableAsset, len(generalized)+len(legacyAssets))
+	for publicID, item := range generalized {
+		resolvable := bytePlusResolvableAsset{
+			PublicID:  publicID,
+			AssetType: item.Asset.AssetType,
+			Status:    item.Asset.Status,
+		}
+		if item.Binding != nil {
+			resolvable.ChannelID = item.Binding.ChannelId
+			resolvable.UpstreamAssetID = item.Binding.UpstreamAssetId
+			if item.Binding.Status != "" {
+				resolvable.Status = item.Binding.Status
+			}
+		}
+		byID[publicID] = resolvable
+	}
+	for _, asset := range legacyAssets {
+		byID[asset.PublicId] = bytePlusResolvableAsset{
+			PublicID:        asset.PublicId,
+			AssetType:       asset.AssetType,
+			Status:          asset.Status,
+			ChannelID:       asset.ChannelId,
+			UpstreamAssetID: asset.UpstreamAssetId,
+		}
 	}
 
 	rewriteMap := make(map[string]string, len(publicIDs))
@@ -61,10 +103,10 @@ func ResolveBytePlusAssetReferences(c *gin.Context, userID int, req *dto.Seedanc
 	}
 	for _, reference := range references {
 		asset := byID[reference.PublicID]
-		if asset.ChannelId > 0 {
+		if asset.ChannelID > 0 {
 			if pinnedChannelID == 0 {
-				pinnedChannelID = asset.ChannelId
-			} else if pinnedChannelID != asset.ChannelId {
+				pinnedChannelID = asset.ChannelID
+			} else if pinnedChannelID != asset.ChannelID {
 				return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset channels do not match"), types.ErrorCodeAssetChannelConflict, http.StatusConflict)
 			}
 		}
@@ -83,10 +125,10 @@ func ResolveBytePlusAssetReferences(c *gin.Context, userID int, req *dto.Seedanc
 		default:
 			return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset is not active"), types.ErrorCodeAssetNotReady, http.StatusConflict)
 		}
-		if asset.ChannelId <= 0 {
+		if asset.ChannelID <= 0 {
 			return BytePlusAssetReferenceResolution{}, assetError(errors.New("asset channel unavailable"), types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
 		}
-		upstreamAssetID := strings.TrimSpace(asset.UpstreamAssetId)
+		upstreamAssetID := strings.TrimSpace(asset.UpstreamAssetID)
 		if upstreamAssetID == "" {
 			return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset is not active"), types.ErrorCodeAssetNotReady, http.StatusConflict)
 		}

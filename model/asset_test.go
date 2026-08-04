@@ -100,6 +100,121 @@ func TestAssetBindingLeaseTakeover(t *testing.T) {
 	require.EqualValues(t, 3, stored.AttemptCount)
 }
 
+func TestMigrateLegacyBytePlusAssetsPreservesPublicIDsAndBindingsIdempotently(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{})
+
+	group := BytePlusAssetGroup{
+		UserId:          10,
+		ChannelId:       131,
+		UpstreamGroupId: "upstream-group",
+		Status:          BytePlusAssetGroupStatusActive,
+		CreatedTime:     90,
+		UpdatedTime:     100,
+	}
+	require.NoError(t, DB.Create(&group).Error)
+
+	legacy := BytePlusAsset{
+		PublicId:        "ast_1234567890abcdefABCDEF1234567890",
+		UserId:          10,
+		AssetGroupId:    group.Id,
+		ChannelId:       131,
+		UpstreamAssetId: "upstream-asset",
+		AssetType:       "Image",
+		Status:          BytePlusAssetStatusActive,
+		CreatedTime:     110,
+		UpdatedTime:     120,
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+
+	require.NoError(t, MigrateLegacyBytePlusAssets())
+	require.NoError(t, MigrateLegacyBytePlusAssets())
+
+	var assetCount int64
+	require.NoError(t, DB.Model(&Asset{}).Where("public_id = ?", legacy.PublicId).Count(&assetCount).Error)
+	require.EqualValues(t, 1, assetCount)
+
+	var asset Asset
+	require.NoError(t, DB.Where("public_id = ?", legacy.PublicId).First(&asset).Error)
+	require.Equal(t, legacy.PublicId, asset.PublicId)
+	require.Equal(t, legacy.UserId, asset.UserId)
+	require.Equal(t, legacy.AssetType, asset.AssetType)
+	require.Equal(t, legacy.Status, asset.Status)
+	require.Equal(t, AssetSourceStatusUnavailable, asset.SourceStatus)
+	require.Empty(t, asset.StorageBackend)
+	require.Empty(t, asset.StorageBucket)
+	require.Empty(t, asset.ObjectKey)
+	require.EqualValues(t, legacy.CreatedTime, asset.CreatedAt)
+	require.EqualValues(t, legacy.UpdatedTime, asset.UpdatedAt)
+
+	var bindings []AssetBinding
+	require.NoError(t, DB.Where("asset_id = ?", asset.Id).Find(&bindings).Error)
+	require.Len(t, bindings, 1)
+	require.Equal(t, legacy.ChannelId, bindings[0].ChannelId)
+	require.Equal(t, group.UpstreamGroupId, bindings[0].UpstreamGroupId)
+	require.Equal(t, legacy.UpstreamAssetId, bindings[0].UpstreamAssetId)
+	require.Equal(t, legacy.Status, bindings[0].Status)
+	require.EqualValues(t, legacy.CreatedTime, bindings[0].CreatedAt)
+	require.EqualValues(t, legacy.UpdatedTime, bindings[0].UpdatedAt)
+}
+
+func TestMigrateLegacyBytePlusAssetsDoesNotOverwriteExistingGeneralizedSource(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{})
+
+	group := BytePlusAssetGroup{
+		UserId:          10,
+		ChannelId:       131,
+		UpstreamGroupId: "upstream-group",
+		Status:          BytePlusAssetGroupStatusActive,
+		CreatedTime:     90,
+		UpdatedTime:     100,
+	}
+	require.NoError(t, DB.Create(&group).Error)
+
+	legacy := BytePlusAsset{
+		PublicId:        "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		UserId:          10,
+		AssetGroupId:    group.Id,
+		ChannelId:       131,
+		UpstreamAssetId: "upstream-asset",
+		AssetType:       "Image",
+		Status:          BytePlusAssetStatusActive,
+		CreatedTime:     110,
+		UpdatedTime:     120,
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+
+	existing := Asset{
+		PublicId:       legacy.PublicId,
+		UserId:         legacy.UserId,
+		AssetType:      legacy.AssetType,
+		Status:         AssetStatusActive,
+		SourceStatus:   AssetSourceStatusAvailable,
+		StorageBackend: "gcs",
+		StorageBucket:  "flatkey-assets",
+		ObjectKey:      "objects/existing",
+		CreatedAt:      1,
+		UpdatedAt:      2,
+	}
+	require.NoError(t, DB.Create(&existing).Error)
+
+	require.NoError(t, MigrateLegacyBytePlusAssets())
+
+	var asset Asset
+	require.NoError(t, DB.Where("public_id = ?", legacy.PublicId).First(&asset).Error)
+	require.Equal(t, AssetSourceStatusAvailable, asset.SourceStatus)
+	require.Equal(t, "gcs", asset.StorageBackend)
+	require.Equal(t, "flatkey-assets", asset.StorageBucket)
+	require.Equal(t, "objects/existing", asset.ObjectKey)
+	require.EqualValues(t, existing.CreatedAt, asset.CreatedAt)
+	require.EqualValues(t, existing.UpdatedAt, asset.UpdatedAt)
+
+	var binding AssetBinding
+	require.NoError(t, DB.Where("asset_id = ? AND channel_id = ?", asset.Id, legacy.ChannelId).First(&binding).Error)
+	require.Equal(t, group.UpstreamGroupId, binding.UpstreamGroupId)
+	require.Equal(t, legacy.UpstreamAssetId, binding.UpstreamAssetId)
+	require.Equal(t, legacy.Status, binding.Status)
+}
+
 func TestAssetUploadOwnership(t *testing.T) {
 	newAssetTestDB(t, &AssetUpload{})
 

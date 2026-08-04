@@ -51,6 +51,62 @@ func TestResolveBytePlusAssetReferencesStoresRewriteAndPinnedChannel(t *testing.
 	}
 }
 
+func TestResolveBytePlusAssetReferencesPrefersGeneralizedAssetsOverLegacyRows(t *testing.T) {
+	newBytePlusAssetReferenceDB(t)
+	publicID := "ast_1234567890abcdefABCDEF1234567890"
+	insertBytePlusReferenceAsset(t, 7, 132, publicID, "legacy-upstream", model.BytePlusAssetStatusActive)
+	insertGeneralizedBytePlusReferenceAsset(t, 7, 131, publicID, "generalized-upstream", model.BytePlusAssetStatusActive, model.AssetSourceStatusUnavailable)
+
+	c := newAssetReferenceContext()
+	req := &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{
+		{Type: dto.SeedanceContentImage, ImageURL: &dto.SeedanceURLObject{URL: "asset://" + publicID}},
+	}}
+
+	resolution, apiErr := ResolveBytePlusAssetReferences(c, 7, req)
+	if apiErr != nil {
+		t.Fatalf("ResolveBytePlusAssetReferences error: %v", apiErr)
+	}
+	if resolution.PinnedChannelID != 131 {
+		t.Fatalf("PinnedChannelID = %d, want generalized channel 131", resolution.PinnedChannelID)
+	}
+	if got := resolution.RewriteMap["asset://"+publicID]; got != "asset://generalized-upstream" {
+		t.Fatalf("rewrite = %q, want asset://generalized-upstream", got)
+	}
+}
+
+func TestResolveBytePlusAssetReferencesDoesNotFallbackForGeneralizedAssetWithoutBinding(t *testing.T) {
+	newBytePlusAssetReferenceDB(t)
+	publicID := "ast_1234567890abcdefABCDEF1234567890"
+	insertBytePlusReferenceAsset(t, 7, 132, publicID, "legacy-upstream", model.BytePlusAssetStatusActive)
+	asset := model.Asset{
+		PublicId:     publicID,
+		UserId:       7,
+		AssetType:    "Image",
+		Status:       model.AssetStatusActive,
+		SourceStatus: model.AssetSourceStatusUnavailable,
+		CreatedAt:    100,
+		UpdatedAt:    100,
+	}
+	if err := model.DB.Create(&asset).Error; err != nil {
+		t.Fatalf("insert generalized asset: %v", err)
+	}
+
+	req := &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{
+		{Type: dto.SeedanceContentImage, ImageURL: &dto.SeedanceURLObject{URL: "asset://" + publicID}},
+	}}
+
+	resolution, apiErr := ResolveBytePlusAssetReferences(newAssetReferenceContext(), 7, req)
+	if apiErr == nil {
+		t.Fatal("expected channel unavailable error")
+	}
+	if apiErr.GetErrorCode() != types.ErrorCodeAssetChannelUnavailable || apiErr.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("error code/status = %s/%d, want %s/%d", apiErr.GetErrorCode(), apiErr.StatusCode, types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
+	}
+	if resolution.HasReferences() {
+		t.Fatalf("unexpected references: %#v", resolution)
+	}
+}
+
 func TestResolveBytePlusAssetReferencesRequiresMatchingMediaType(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -584,7 +640,7 @@ func newBytePlusAssetReferenceDB(t *testing.T) *gorm.DB {
 			t.Fatalf("get sqlite handle during cleanup: %v", err)
 		}
 	})
-	if err := db.AutoMigrate(&model.BytePlusAsset{}); err != nil {
+	if err := db.AutoMigrate(&model.Asset{}, &model.AssetBinding{}, &model.BytePlusAsset{}); err != nil {
 		t.Fatalf("migrate assets: %v", err)
 	}
 	return db
@@ -602,6 +658,35 @@ func insertBytePlusReferenceAsset(t *testing.T, userID, channelID int, publicID,
 	}
 	if err := model.DB.Create(&asset).Error; err != nil {
 		t.Fatalf("insert asset: %v", err)
+	}
+	return asset
+}
+
+func insertGeneralizedBytePlusReferenceAsset(t *testing.T, userID, channelID int, publicID, upstreamID, status, sourceStatus string) model.Asset {
+	t.Helper()
+	asset := model.Asset{
+		PublicId:     publicID,
+		UserId:       userID,
+		AssetType:    "Image",
+		Status:       status,
+		SourceStatus: sourceStatus,
+		CreatedAt:    100,
+		UpdatedAt:    100,
+	}
+	if err := model.DB.Create(&asset).Error; err != nil {
+		t.Fatalf("insert generalized asset: %v", err)
+	}
+	binding := model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       channelID,
+		UpstreamGroupId: "generalized-group",
+		UpstreamAssetId: upstreamID,
+		Status:          status,
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}
+	if err := model.DB.Create(&binding).Error; err != nil {
+		t.Fatalf("insert generalized asset binding: %v", err)
 	}
 	return asset
 }
