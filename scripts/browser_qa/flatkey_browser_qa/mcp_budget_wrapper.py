@@ -415,24 +415,12 @@ class BudgetedMcpWrapper:
 
 
 def _iter_bounded_lines(stream, max_line_bytes):
-    pending = ""
     while True:
-        chunk = stream.read(4096)
-        if chunk == "":
-            if pending:
-                _ensure_line_within_limit(pending, max_line_bytes)
-                yield pending
+        line = stream.readline(max_line_bytes + 1)
+        if line == "":
             return
-        pending += chunk
-        while True:
-            newline_index = pending.find("\n")
-            if newline_index < 0:
-                _ensure_line_within_limit(pending, max_line_bytes)
-                break
-            line = pending[: newline_index + 1]
-            pending = pending[newline_index + 1 :]
-            _ensure_line_within_limit(line, max_line_bytes)
-            yield line
+        _ensure_line_within_limit(line, max_line_bytes)
+        yield line
 
 
 def _ensure_line_within_limit(line, max_line_bytes):

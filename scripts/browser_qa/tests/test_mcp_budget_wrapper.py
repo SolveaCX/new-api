@@ -83,6 +83,17 @@ class SlowWriter:
         return None
 
 
+class SignalingStringIO(io.StringIO):
+    def __init__(self):
+        super().__init__()
+        self.written = threading.Event()
+
+    def write(self, text):
+        result = super().write(text)
+        self.written.set()
+        return result
+
+
 class NoNewlineStream:
     def __init__(self, text):
         self.text = text
@@ -97,6 +108,9 @@ class NoNewlineStream:
         chunk = self.text[self.offset:end]
         self.offset = end
         return chunk
+
+    def readline(self, size=-1):
+        return self.read(size)
 
 
 def frame(payload):
@@ -144,6 +158,34 @@ class WrapperContractTests(unittest.TestCase):
             self.assertTrue(os.path.realpath(output_dir).startswith(os.path.realpath(runtime_dir) + os.sep))
             self.assertNotIn("@latest", command)
             self.assertIs(mcp_budget_wrapper.SUBPROCESS_SHELL, False)
+
+    def test_wrapper_forwards_complete_pipe_frame_before_eof(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            read_fd, write_fd = os.pipe()
+            client_input = os.fdopen(read_fd, "r", encoding="utf-8")
+            client = os.fdopen(write_fd, "w", encoding="utf-8")
+            child = FakeChild()
+            child.stdin = SignalingStringIO()
+            wrapper = self.make_wrapper(runtime_dir, child)
+            thread = threading.Thread(
+                target=wrapper.proxy_client_requests,
+                args=(client_input, io.StringIO()),
+                daemon=True,
+            )
+            thread.start()
+
+            request = frame({"jsonrpc": "2.0", "id": "live", "method": "initialize", "params": {}})
+            try:
+                client.write(request)
+                client.flush()
+                self.assertTrue(child.stdin.written.wait(timeout=1), "initialize request waited for MCP stdin EOF")
+            finally:
+                client.close()
+                thread.join(timeout=2)
+                client_input.close()
+
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(child.stdin.getvalue(), request)
 
     def test_child_command_requires_strict_loopback_http_cdp_endpoint_and_accepts_explicit_test_executable_only(self):
         with tempfile.TemporaryDirectory() as runtime_dir:

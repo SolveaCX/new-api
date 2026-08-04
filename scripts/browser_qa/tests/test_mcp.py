@@ -2,6 +2,7 @@ import io
 import json
 import os
 import tempfile
+import threading
 import unittest
 import urllib.error
 
@@ -57,6 +58,20 @@ class NoNewlineStream:
         chunk = self.text[self.offset:end]
         self.offset = end
         return chunk
+
+    def readline(self, size=-1):
+        return self.read(size)
+
+
+class SignalingWriter(io.StringIO):
+    def __init__(self):
+        super().__init__()
+        self.written = threading.Event()
+
+    def write(self, text):
+        result = super().write(text)
+        self.written.set()
+        return result
 
 
 class FakeClock:
@@ -190,6 +205,27 @@ class BrokerMcpTests(unittest.TestCase):
 
         self.assertEqual(decode_frames(stdout.getvalue())[0]["error"]["code"], -32700)
         self.assertLessEqual(max(stdin.read_sizes), 1025)
+
+    def test_jsonrpc_server_responds_to_complete_pipe_frame_before_eof(self):
+        read_fd, write_fd = os.pipe()
+        stdin = os.fdopen(read_fd, "r", encoding="utf-8")
+        client = os.fdopen(write_fd, "w", encoding="utf-8")
+        stdout = SignalingWriter()
+        server = mcp.McpServer("test", [])
+        thread = threading.Thread(target=mcp.run_jsonrpc_server, args=(stdin, stdout, server), daemon=True)
+        thread.start()
+
+        try:
+            client.write(frames({"jsonrpc": "2.0", "id": "live", "method": "initialize", "params": {}}))
+            client.flush()
+            self.assertTrue(stdout.written.wait(timeout=1), "initialize response waited for MCP stdin EOF")
+        finally:
+            client.close()
+            thread.join(timeout=2)
+            stdin.close()
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(decode_frames(stdout.getvalue())[0]["id"], "live")
 
     def test_broker_env_http_metadata_and_polling_contract(self):
         opener = RecordingOpener(

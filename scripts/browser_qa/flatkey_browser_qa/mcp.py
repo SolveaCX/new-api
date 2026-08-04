@@ -102,24 +102,14 @@ def run_jsonrpc_server(stdin, stdout, server, *, max_line_bytes=1024 * 1024):
 
 
 def _iter_bounded_lines(stream, max_line_bytes):
-    pending = ""
     while True:
-        chunk = stream.read(max_line_bytes + 1)
-        if chunk == "":
-            if pending:
-                yield pending if len(pending.encode("utf-8", "replace")) <= max_line_bytes else None
+        line = stream.readline(max_line_bytes + 1)
+        if line == "":
             return
-        pending += chunk
-        if len(pending.encode("utf-8", "replace")) > max_line_bytes:
+        if len(line.encode("utf-8", "replace")) > max_line_bytes:
             yield None
             return
-        while True:
-            newline_index = pending.find("\n")
-            if newline_index < 0:
-                break
-            line = pending[: newline_index + 1]
-            pending = pending[newline_index + 1 :]
-            yield line
+        yield line
 
 
 def _write_response(stdout, request_id, *, result=None, error=None):
