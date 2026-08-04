@@ -126,7 +126,7 @@ func taskUpstreamModelName(info *relaycommon.RelayInfo) string {
 }
 
 func taskBillingContextSnapshot(info *relaycommon.RelayInfo) *model.TaskBillingContext {
-	return &model.TaskBillingContext{
+	snapshot := &model.TaskBillingContext{
 		ModelPrice:           info.PriceData.ModelPrice,
 		GroupRatio:           info.PriceData.GroupRatioInfo.GroupRatio,
 		GroupModelRatio:      info.PriceData.GroupRatioInfo.GroupModelRatio,
@@ -137,6 +137,14 @@ func taskBillingContextSnapshot(info *relaycommon.RelayInfo) *model.TaskBillingC
 		OriginModelName:      info.OriginModelName,
 		PerCallBilling:       common.StringsContains(constant.TaskPricePatches, info.OriginModelName) || info.PriceData.UsePrice,
 	}
+	if info.BillingSource == service.BillingSourceSubscription {
+		if bs, ok := info.Billing.(*service.BillingSession); ok && bs != nil {
+			weight, window := bs.SubscriptionTaskSnapshot()
+			snapshot.SubscriptionWeight = weight
+			snapshot.SubscriptionWindow = window
+		}
+	}
+	return snapshot
 }
 
 func StartAssetTaskWorker() {
@@ -244,7 +252,7 @@ func runLeasedAssetTask(ctx context.Context, taskID string, owner string, leaseE
 		result, taskErr := relay.ExecutePreparedTaskSubmit(c, info, preflight)
 		releaseChannelConcurrencyForRequest(c)
 		if taskErr == nil {
-			return acceptAssetTask(task, owner, leaseExpiresAt, channel, result)
+			return acceptAssetTask(c, info, task, owner, leaseExpiresAt, channel, result)
 		}
 		lastErr = taskErr.Error
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
@@ -264,6 +272,25 @@ func rebuildAssetTaskContext(task *model.Task) (*gin.Context, *relaycommon.Relay
 	common.SetContextKey(c, constant.ContextKeyUserGroup, task.Group)
 	common.SetContextKey(c, constant.ContextKeyUsingGroup, task.Group)
 	common.SetContextKey(c, constant.ContextKeyAssetMaterializeEnabled, true)
+	userQuota := 0
+	userSetting := dto.UserSetting{}
+	if user, err := model.GetUserById(task.UserId, false); err == nil && user != nil {
+		userQuota = user.Quota
+		common.SetContextKey(c, constant.ContextKeyUserQuota, user.Quota)
+		common.SetContextKey(c, constant.ContextKeyUserSetting, userSetting)
+	}
+	tokenKey := ""
+	tokenName := ""
+	if task.PrivateData.TokenId > 0 {
+		if token, err := model.GetTokenById(task.PrivateData.TokenId); err == nil && token != nil {
+			tokenKey = token.Key
+			tokenName = token.Name
+			common.SetContextKey(c, constant.ContextKeyTokenKey, token.Key)
+			common.SetContextKey(c, constant.ContextKeyTokenId, token.Id)
+			common.SetContextKey(c, constant.ContextKeyTokenGroup, task.Group)
+			c.Set("token_name", token.Name)
+		}
+	}
 	var seedanceReq dto.SeedanceVideoRequest
 	if err := common.Unmarshal(task.NormalizedRequestPayload, &seedanceReq); err != nil {
 		return nil, nil, err
@@ -274,19 +301,27 @@ func rebuildAssetTaskContext(task *model.Task) (*gin.Context, *relaycommon.Relay
 	}
 	common.SetContextKey(c, constant.ContextKeyAssetReferenceSet, refs)
 	info := &relaycommon.RelayInfo{
-		UserId:          task.UserId,
-		TokenId:         task.PrivateData.TokenId,
-		UsingGroup:      task.Group,
-		TokenGroup:      task.Group,
-		OriginModelName: task.Properties.OriginModelName,
-		BillingSource:   task.PrivateData.BillingSource,
-		SubscriptionId:  task.PrivateData.SubscriptionId,
-		ChannelMeta:     &relaycommon.ChannelMeta{},
+		UserId:                task.UserId,
+		TokenId:               task.PrivateData.TokenId,
+		TokenKey:              tokenKey,
+		UsingGroup:            task.Group,
+		TokenGroup:            task.Group,
+		OriginModelName:       task.Properties.OriginModelName,
+		BillingSource:         task.PrivateData.BillingSource,
+		SubscriptionId:        task.PrivateData.SubscriptionId,
+		UserQuota:             userQuota,
+		UserSetting:           userSetting,
+		ForcePreConsume:       true,
+		FinalPreConsumedQuota: task.Quota,
+		ChannelMeta:           &relaycommon.ChannelMeta{},
 		TaskRelayInfo: &relaycommon.TaskRelayInfo{
 			Action:       task.Action,
 			PublicTaskID: task.TaskID,
 		},
 		PriceData: types.PriceData{Quota: task.Quota},
+	}
+	if tokenName != "" {
+		c.Set("token_name", tokenName)
 	}
 	return c, info, nil
 }
@@ -297,7 +332,7 @@ func httptestRequestFromPayload(payload []byte) *http.Request {
 	return req
 }
 
-func acceptAssetTask(task *model.Task, owner string, leaseExpiresAt int64, channel *model.Channel, result *relay.TaskSubmitResult) error {
+func acceptAssetTask(c *gin.Context, info *relaycommon.RelayInfo, task *model.Task, owner string, leaseExpiresAt int64, channel *model.Channel, result *relay.TaskSubmitResult) error {
 	now := assetTaskWorkerNowUnix()
 	publicIDs := extractStrictAssetPublicIDsFromPayload(task.NormalizedRequestPayload)
 	retentionUntil := now + int64(service.CurrentAssetStorageConfig().SourceRetention.Seconds())
@@ -307,6 +342,16 @@ func acceptAssetTask(task *model.Task, owner string, leaseExpiresAt int64, chann
 	}
 	if !won {
 		return fmt.Errorf("task preparation lease lost")
+	}
+	if info != nil {
+		info.ChannelId = channel.Id
+		if info.ChannelMeta == nil {
+			info.ChannelMeta = &relaycommon.ChannelMeta{}
+		}
+		info.ChannelMeta.ChannelId = channel.Id
+		info.ChannelMeta.ChannelType = channel.Type
+		info.PriceData.Quota = result.Quota
+		finalizeTaskSubmissionBilling(c, info, task, result.Quota)
 	}
 	return nil
 }

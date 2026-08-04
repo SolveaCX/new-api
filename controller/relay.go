@@ -780,10 +780,7 @@ func RelayTask(c *gin.Context) {
 
 	// ── 成功：结算 + 日志 + 插入任务 ──
 	if taskErr == nil {
-		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
-			common.SysError("settle task billing error: " + settleErr.Error())
-		}
-		service.LogTaskConsumption(c, relayInfo)
+		finalizeTaskSubmissionBilling(c, relayInfo, nil, result.Quota)
 
 		task := model.InitTask(result.Platform, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
@@ -821,6 +818,18 @@ func RelayTask(c *gin.Context) {
 	if taskErr != nil {
 		respondTaskError(c, taskErr)
 	}
+}
+
+func finalizeTaskSubmissionBilling(c *gin.Context, relayInfo *relaycommon.RelayInfo, taskSnapshot *model.Task, actualQuota int) {
+	relayInfo.PriceData.Quota = actualQuota
+	if taskSnapshot != nil && taskSnapshot.PrivateData.BillingSource == service.BillingSourceSubscription && relayInfo.Billing == nil {
+		if settleErr := service.SettlePreparedTaskQuota(c, taskSnapshot, actualQuota); settleErr != nil {
+			common.SysError("settle prepared task billing error: " + settleErr.Error())
+		}
+	} else if settleErr := service.SettleBilling(c, relayInfo, actualQuota); settleErr != nil {
+		common.SysError("settle task billing error: " + settleErr.Error())
+	}
+	service.LogTaskConsumption(c, relayInfo)
 }
 
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）

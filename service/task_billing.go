@@ -238,6 +238,23 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 	})
 }
 
+func SettlePreparedTaskQuota(ctx context.Context, task *model.Task, actualQuota int) error {
+	if task == nil {
+		return nil
+	}
+	quotaDelta := actualQuota - task.Quota
+	if quotaDelta == 0 {
+		task.Quota = actualQuota
+		return nil
+	}
+	if err := taskAdjustFunding(task, quotaDelta); err != nil {
+		return err
+	}
+	taskAdjustTokenQuota(ctx, task, quotaDelta)
+	task.Quota = actualQuota
+	return nil
+}
+
 // RecalculateTaskQuota 通用的异步差额结算。
 // actualQuota 是任务完成后的实际应扣额度，与预扣额度 (task.Quota) 做差额结算。
 // reason 用于日志记录（例如 "token重算" 或 "adaptor调整"）。

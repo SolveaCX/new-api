@@ -342,7 +342,7 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 
 func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 	var tasks []*Task
-	err := DB.Where("progress != ?", "100%").
+	err := excludePreparingAssetTasks(DB.Where("progress != ?", "100%")).
 		Where("status NOT IN ?", []string{TaskStatusFailure, TaskStatusSuccess}).
 		Where("submit_time < ?", cutoffUnix).
 		Order("submit_time").
@@ -358,11 +358,18 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	var tasks []*Task
 	var err error
 	// get all tasks progress is not 100%
-	err = DB.Where("progress != ?", "100%").Where("status != ?", TaskStatusFailure).Where("status != ?", TaskStatusSuccess).Limit(limit).Order("id").Find(&tasks).Error
+	err = excludePreparingAssetTasks(DB.Where("progress != ?", "100%")).Where("status != ?", TaskStatusFailure).Where("status != ?", TaskStatusSuccess).Limit(limit).Order("id").Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
 	return tasks
+}
+
+func excludePreparingAssetTasks(db *gorm.DB) *gorm.DB {
+	return db.Where("(preparation_status IS NULL OR preparation_status = '' OR preparation_status NOT IN ?)", []string{
+		TaskPreparationStatusPreparingAssets,
+		TaskPreparationStatusPreparing,
+	})
 }
 
 func GetQueuedAssetPreparationTasks(now int64, limit int) ([]*Task, error) {

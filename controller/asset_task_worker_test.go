@@ -21,10 +21,13 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -303,6 +306,244 @@ func TestAssetTaskWorkerFallbackBeforeAcceptancePinsWinningChannel(t *testing.T)
 	require.Equal(t, winnerExpires, assetAfterLate.SourceExpiresAt)
 }
 
+func TestAssetTaskWorkerAcceptedWinnerSettlesAndLogsOnce(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	adaptor := &controllerFakeTaskAdaptor{
+		upstreamTaskID: "upstream-accounted",
+		adjustedRatios: map[string]float64{"actual": 2},
+	}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_4234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-accounted")
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_worker_accounting", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.ChannelId = 0
+	task.Quota = 123
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 7).Update("quota", 10000-task.Quota).Error)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", 11).Updates(map[string]any{
+		"remain_quota": 10000 - task.Quota,
+		"used_quota":   task.Quota,
+	}).Error)
+	model.InitChannelCache()
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_worker_accounting").First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
+	require.Equal(t, 246, stored.Quota)
+	require.Equal(t, 131, stored.ChannelId)
+	require.Equal(t, "upstream-accounted", stored.PrivateData.UpstreamTaskID)
+
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 7).Error)
+	require.Equal(t, 10000-246, user.Quota)
+	require.EqualValues(t, 246, user.UsedQuota)
+	require.Equal(t, 1, user.RequestCount)
+	var token model.Token
+	require.NoError(t, model.DB.First(&token, 11).Error)
+	require.Equal(t, 10000-246, token.RemainQuota)
+	require.Equal(t, 246, token.UsedQuota)
+	var channel model.Channel
+	require.NoError(t, model.DB.First(&channel, 131).Error)
+	require.EqualValues(t, 246, channel.UsedQuota)
+	var consumeLogs int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&consumeLogs).Error)
+	require.EqualValues(t, 1, consumeLogs)
+
+	err = acceptAssetTask(nil, nil, task, "node-late", 1200, &model.Channel{Id: 132}, &relay.TaskSubmitResult{
+		UpstreamTaskID: "late-upstream",
+		TaskData:       []byte(`{"id":"late-upstream"}`),
+		Platform:       constant.TaskPlatform("107"),
+		Quota:          999,
+	})
+	require.Error(t, err)
+	require.NoError(t, model.DB.First(&user, 7).Error)
+	require.Equal(t, 10000-246, user.Quota)
+	require.EqualValues(t, 246, user.UsedQuota)
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&consumeLogs).Error)
+	require.EqualValues(t, 1, consumeLogs, "late worker must not settle or log after losing acceptance CAS")
+}
+
+func TestAssetTaskWorkerAcceptedSubscriptionUsesSnapshotForSettlement(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	adaptor := &controllerFakeTaskAdaptor{
+		upstreamTaskID: "upstream-sub-accounted",
+		adjustedRatios: map[string]float64{"actual": 2},
+	}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_6234567890abcdefABCDEF1234567890"
+	const userID = 17
+	const tokenID = 18
+	const subID = 19
+	seedControllerRelayUserToken(t, userID, tokenID, 0, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-sub-accounted")
+	seedControllerAsset(t, userID, publicID, time.Now().Add(time.Hour).Unix())
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		Id:          subID,
+		UserId:      userID,
+		AmountTotal: 100000,
+		AmountUsed:  150,
+		Status:      "active",
+		StartTime:   time.Now().Add(-time.Hour).Unix(),
+		EndTime:     time.Now().Add(time.Hour).Unix(),
+	}).Error)
+	task := seedControllerQueuedAssetTask(t, "task_worker_subscription_accounting", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.UserId = userID
+	task.ChannelId = 0
+	task.Quota = 100
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	task.PrivateData = model.TaskPrivateData{
+		BillingSource:  service.BillingSourceSubscription,
+		SubscriptionId: subID,
+		TokenId:        tokenID,
+		BillingContext: &model.TaskBillingContext{
+			OriginModelName:      "seedance-2.0",
+			SubscriptionWeight:   1.5,
+			SubscriptionWindow:   &model.TaskSubscriptionWindow{SubId: subID, SubStart: time.Now().Add(-time.Hour).Unix()},
+			ModelPrice:           0.001,
+			GroupRatio:           1,
+			GroupModelRatioGroup: "",
+		},
+	}
+	require.NoError(t, model.DB.Save(task).Error)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", tokenID).Updates(map[string]any{
+		"remain_quota": 9900,
+		"used_quota":   100,
+	}).Error)
+	model.InitChannelCache()
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_worker_subscription_accounting").First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
+	require.Equal(t, 200, stored.Quota)
+	require.Equal(t, "upstream-sub-accounted", stored.PrivateData.UpstreamTaskID)
+	require.Equal(t, int64(300), getControllerSubscriptionUsed(t, subID), "accepted settlement must use persisted subscription weight")
+	var token model.Token
+	require.NoError(t, model.DB.First(&token, tokenID).Error)
+	require.Equal(t, 9800, token.RemainQuota)
+	require.Equal(t, 200, token.UsedQuota)
+	var consumeLogs int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&consumeLogs).Error)
+	require.EqualValues(t, 1, consumeLogs)
+}
+
+func TestAssetTaskQueuePersistsSubscriptionBillingSnapshot(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	restoreRedis := useControllerAssetTaskRedisForTest(t)
+	defer restoreRedis()
+	originalWeights := setting.SubscriptionModelWeights2JSONString()
+	require.NoError(t, setting.UpdateSubscriptionModelWeightsByJSONString(`{"seedance-2.0":1.5}`))
+	defer func() { require.NoError(t, setting.UpdateSubscriptionModelWeightsByJSONString(originalWeights)) }()
+
+	const userID = 77
+	const tokenID = 88
+	const subID = 99
+	window5h := int64(1000)
+	windowWeek := int64(5000)
+	now := time.Now().Unix()
+	seedControllerRelayUserToken(t, userID, tokenID, 0, 10000)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
+		Id:               501,
+		Title:            "Task Snapshot Plan",
+		DurationUnit:     "month",
+		DurationValue:    1,
+		TotalAmount:      100000,
+		Window5hAmount:   window5h,
+		WindowWeekAmount: windowWeek,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		Id:               subID,
+		UserId:           userID,
+		PlanId:           501,
+		AmountTotal:      100000,
+		AmountUsed:       0,
+		Window5hAmount:   &window5h,
+		WindowWeekAmount: &windowWeek,
+		Status:           "active",
+		StartTime:        now - 60,
+		EndTime:          now + 3600,
+	}).Error)
+
+	c := newControllerAssetTaskContext(seedanceTaskBody("ast_5234567890abcdefABCDEF1234567890"))
+	common.SetContextKey(c, constant.ContextKeyUserId, userID)
+	common.SetContextKey(c, constant.ContextKeyTokenId, tokenID)
+	common.SetContextKey(c, constant.ContextKeyTokenKey, "sk-task-token-88")
+	common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{})
+	info := &relaycommon.RelayInfo{
+		UserId:          userID,
+		TokenId:         tokenID,
+		TokenKey:        "sk-task-token-88",
+		UsingGroup:      "default",
+		TokenGroup:      "default",
+		OriginModelName: "seedance-2.0",
+		RequestId:       "asset-subscription-snapshot",
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{Action: constant.TaskActionGenerate, PublicTaskID: "task_subscription_snapshot"},
+		PriceData: types.PriceData{
+			Quota:      100,
+			ModelPrice: 0.001,
+		},
+	}
+	apiErr := service.PreConsumeBilling(c, 100, info)
+	require.Nil(t, apiErr)
+	require.Equal(t, service.BillingSourceSubscription, info.BillingSource)
+
+	video, taskErr := queueAssetTaskForPreparation(c, info, &relay.TaskPreflightResult{Platform: constant.TaskPlatform("107"), Quota: 100})
+	require.Nil(t, taskErr)
+	require.Equal(t, "task_subscription_snapshot", video.TaskID)
+
+	var task model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_subscription_snapshot").First(&task).Error)
+	require.NotNil(t, task.PrivateData.BillingContext)
+	require.Equal(t, service.BillingSourceSubscription, task.PrivateData.BillingSource)
+	require.Equal(t, subID, task.PrivateData.SubscriptionId)
+	require.InDelta(t, 1.5, task.PrivateData.BillingContext.SubscriptionWeight, 0.0001)
+	require.NotNil(t, task.PrivateData.BillingContext.SubscriptionWindow)
+	require.Equal(t, subID, task.PrivateData.BillingContext.SubscriptionWindow.SubId)
+	require.Equal(t, window5h, task.PrivateData.BillingContext.SubscriptionWindow.Limit5h)
+	require.Equal(t, windowWeek, task.PrivateData.BillingContext.SubscriptionWindow.LimitWeek)
+
+	beforeRefund := getControllerSubscriptionUsed(t, subID)
+	service.RefundTaskQuota(context.Background(), &task, "restart refund")
+	require.Equal(t, beforeRefund-150, getControllerSubscriptionUsed(t, subID), "refund must use persisted non-1 subscription weight after restart")
+}
+
 func TestAssetTaskQueuePersistsQueuedTaskAndReturnsImmediately(t *testing.T) {
 	restoreDB := useControllerAssetTaskDBForTest(t)
 	defer restoreDB()
@@ -374,7 +615,7 @@ func TestAssetTaskPreparationStaleLeaseTakeoverAndLateResultFenced(t *testing.T)
 		if owner == "node-a" {
 			return nil
 		}
-		return acceptAssetTask(task, owner, leaseExpiresAt, &model.Channel{Id: 132}, &relay.TaskSubmitResult{
+		return acceptAssetTask(nil, nil, task, owner, leaseExpiresAt, &model.Channel{Id: 132}, &relay.TaskSubmitResult{
 			UpstreamTaskID: "upstream-node-b",
 			TaskData:       []byte(`{"id":"upstream-node-b"}`),
 			Platform:       constant.TaskPlatform("107"),
@@ -422,7 +663,7 @@ func TestAssetTaskAcceptedWinnerExtendsRetentionAndLateWorkerDoesNot(t *testing.
 	require.NoError(t, model.DB.Save(task).Error)
 
 	assetTaskWorkerTestNow = 1900
-	err := acceptAssetTask(task, "node-a", 2000, &model.Channel{Id: 131}, &relay.TaskSubmitResult{
+	err := acceptAssetTask(nil, nil, task, "node-a", 2000, &model.Channel{Id: 131}, &relay.TaskSubmitResult{
 		UpstreamTaskID: "upstream-accepted",
 		TaskData:       []byte(`{"id":"upstream-accepted"}`),
 		Platform:       constant.TaskPlatform("107"),
@@ -520,7 +761,7 @@ func useControllerAssetTaskDBForTest(t *testing.T) func() {
 	oldCommonKeyCol := controllerAssetTaskModelCommonKeyCol
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Asset{}, &model.AssetBinding{}, &model.Ability{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.UserSubscription{}, &model.UserSubscriptionContract{}, &model.SubscriptionPreConsumeRecord{}, &model.SubscriptionDiscountAccount{}, &model.SubscriptionDiscountEntry{}))
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Asset{}, &model.AssetBinding{}, &model.Ability{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.SubscriptionPlan{}, &model.UserSubscription{}, &model.UserSubscriptionContract{}, &model.SubscriptionPreConsumeRecord{}, &model.SubscriptionDiscountAccount{}, &model.SubscriptionDiscountEntry{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	model.DB = db
@@ -542,6 +783,21 @@ func useControllerAssetTaskDBForTest(t *testing.T) func() {
 		controllerAssetTaskModelCommonKeyCol = oldCommonKeyCol
 		model.InitChannelCache()
 		_ = sqlDB.Close()
+	}
+}
+
+func useControllerAssetTaskRedisForTest(t *testing.T) func() {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	oldRDB := common.RDB
+	oldRedisEnabled := common.RedisEnabled
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	common.RedisEnabled = true
+	return func() {
+		_ = common.RDB.Close()
+		common.RDB = oldRDB
+		common.RedisEnabled = oldRedisEnabled
+		mr.Close()
 	}
 }
 
@@ -628,6 +884,13 @@ func seedControllerRelayUserToken(t *testing.T, userID int, tokenID int, userQuo
 	require.NoError(t, model.DB.Create(&model.Token{Id: tokenID, UserId: userID, Key: fmt.Sprintf("sk-task-token-%d", tokenID), Name: "task-token", Status: common.TokenStatusEnabled, RemainQuota: tokenQuota}).Error)
 }
 
+func getControllerSubscriptionUsed(t *testing.T, subscriptionID int) int64 {
+	t.Helper()
+	var sub model.UserSubscription
+	require.NoError(t, model.DB.Select("amount_used").Where("id = ?", subscriptionID).First(&sub).Error)
+	return sub.AmountUsed
+}
+
 func seedControllerTaskChannel(t *testing.T, id int, key string) {
 	t.Helper()
 	seedControllerTaskChannelWithPriority(t, id, key, 100, 1)
@@ -681,6 +944,7 @@ type controllerFakeTaskAdaptor struct {
 	estimateCalls     atomic.Int32
 	providerCalls     atomic.Int32
 	upstreamTaskID    string
+	adjustedRatios    map[string]float64
 	failByChannel     map[int]error
 	failHTTPByChannel map[int]int
 	channelsSeen      []int
@@ -707,7 +971,7 @@ func (a *controllerFakeTaskAdaptor) EstimateBilling(c *gin.Context, info *relayc
 }
 
 func (a *controllerFakeTaskAdaptor) AdjustBillingOnSubmit(info *relaycommon.RelayInfo, taskData []byte) map[string]float64 {
-	return nil
+	return a.adjustedRatios
 }
 
 func (a *controllerFakeTaskAdaptor) AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int {
