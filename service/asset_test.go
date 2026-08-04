@@ -196,6 +196,22 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	require.EqualValues(t, 9, upload.ObjectGeneration)
 }
 
+func TestCreateAssetUploadSessionEnforcesMultipartMaxBytesCap(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	t.Setenv("ASSET_MULTIPART_MAX_BYTES", "8")
+
+	_, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Video",
+		ContentType: "video/mp4",
+		SizeBytes:   9,
+	})
+
+	require.ErrorIs(t, err, ErrAssetTooLarge)
+}
+
 func TestCompleteAssetUploadFailsWhenExactGenerationDisappearsBeforeRead(t *testing.T) {
 	newAssetServiceTestDB(t)
 	store := installAssetServiceTestDeps(t)
@@ -409,6 +425,74 @@ func TestSignAssetSourceURLBindsStoredGeneration(t *testing.T) {
 	require.Len(t, store.signed, 1)
 	require.Equal(t, http.MethodGet, store.signed[0].Method)
 	require.Equal(t, "27", store.signed[0].QueryParameters.Get("generation"))
+}
+
+func TestGetAssetReturnsOwnerScopedGeneralizedPublicProjectionWithoutSignedURL(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	require.NoError(t, model.DB.Create(&model.Asset{
+		PublicId:        "ast_owned",
+		UserId:          7,
+		AssetType:       "Image",
+		Status:          model.AssetStatusProcessing,
+		ContentType:     "image/png",
+		SizeBytes:       17,
+		SHA256:          strings.Repeat("a", 64),
+		SourceExpiresAt: 1788270901,
+		CreatedAt:       1785678901,
+		UpdatedAt:       1785678901,
+	}).Error)
+
+	_, err := GetAsset(context.Background(), 8, "ast_owned")
+	require.ErrorIs(t, err, ErrAssetUploadNotFound)
+
+	result, err := GetAsset(context.Background(), 7, "ast_owned")
+	require.NoError(t, err)
+	require.Equal(t, "ast_owned", result.PublicID)
+	require.Equal(t, "Image", result.AssetType)
+	require.Equal(t, model.AssetStatusProcessing, result.Status)
+	require.EqualValues(t, 1785678901, result.CreatedAt)
+	require.EqualValues(t, 1788270901, result.SourceExpiresAt)
+	require.Empty(t, result.SignedURL)
+	require.Empty(t, result.SHA256, "public read projection must not expose content hashes")
+}
+
+func TestGetAssetFallsBackToOwnerScopedLegacyBytePlusRowWithoutProviderFields(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	group := model.BytePlusAssetGroup{
+		UserId:          7,
+		ChannelId:       131,
+		Status:          model.BytePlusAssetGroupStatusActive,
+		UpstreamGroupId: "upstream-group",
+		CreatedTime:     1785678800,
+		UpdatedTime:     1785678800,
+	}
+	require.NoError(t, model.DB.Create(&group).Error)
+	require.NoError(t, model.DB.Create(&model.BytePlusAsset{
+		PublicId:           "ast_legacy",
+		UserId:             7,
+		AssetGroupId:       group.Id,
+		ChannelId:          131,
+		AssetType:          "Video",
+		ModerationStrategy: "Default",
+		Status:             model.BytePlusAssetStatusProcessing,
+		UpstreamAssetId:    "upstream-asset",
+		CreatedTime:        1785678901,
+		UpdatedTime:        1785678901,
+	}).Error)
+
+	_, err := GetAsset(context.Background(), 8, "ast_legacy")
+	require.ErrorIs(t, err, ErrAssetUploadNotFound)
+
+	result, err := GetAsset(context.Background(), 7, "ast_legacy")
+	require.NoError(t, err)
+	require.Equal(t, "ast_legacy", result.PublicID)
+	require.Equal(t, "Video", result.AssetType)
+	require.Equal(t, model.BytePlusAssetStatusProcessing, result.Status)
+	require.EqualValues(t, 1785678901, result.CreatedAt)
+	require.Empty(t, result.SignedURL)
+	require.Empty(t, result.SHA256)
 }
 
 func TestCreateAssetUploadSessionSignFailureLeavesNoRows(t *testing.T) {
@@ -716,7 +800,7 @@ func newAssetServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Asset{}, &model.AssetBinding{}, &model.AssetUpload{}))
+	require.NoError(t, db.AutoMigrate(&model.Asset{}, &model.AssetBinding{}, &model.AssetUpload{}, &model.BytePlusAssetGroup{}, &model.BytePlusAsset{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	oldDB := model.DB

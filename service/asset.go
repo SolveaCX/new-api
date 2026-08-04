@@ -105,12 +105,15 @@ type CleanupExpiredAssetSourcesResult struct {
 }
 
 type AssetResult struct {
-	PublicID    string
-	Status      string
-	SignedURL   string
-	ContentType string
-	SizeBytes   int64
-	SHA256      string
+	PublicID        string
+	AssetType       string
+	Status          string
+	SignedURL       string
+	ContentType     string
+	SizeBytes       int64
+	SHA256          string
+	CreatedAt       int64
+	SourceExpiresAt int64
 }
 
 type AssetUploadSessionResult struct {
@@ -231,6 +234,9 @@ func CreateAssetUploadSession(ctx context.Context, request AssetUploadSessionReq
 	limit, ok := cfg.TypeLimits[request.AssetType]
 	if !ok {
 		return nil, ErrAssetUnsupportedMediaType
+	}
+	if cfg.MultipartMaxBytes < limit {
+		limit = cfg.MultipartMaxBytes
 	}
 	if request.SizeBytes <= 0 || request.SizeBytes > limit {
 		return nil, ErrAssetTooLarge
@@ -374,6 +380,33 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 		return nil, err
 	}
 	return resultFromAsset(asset), nil
+}
+
+func GetAsset(ctx context.Context, userID int, publicID string) (*AssetResult, error) {
+	publicID = strings.TrimSpace(publicID)
+	if publicID == "" {
+		return nil, ErrAssetUploadNotFound
+	}
+	var asset model.Asset
+	if err := model.DB.Where("user_id = ? AND public_id = ?", userID, publicID).First(&asset).Error; err == nil {
+		return publicResultFromAsset(&asset), nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var legacy model.BytePlusAsset
+	if err := model.DB.Where("user_id = ? AND public_id = ?", userID, publicID).First(&legacy).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) || model.IsBytePlusAssetNotFound(err) {
+			return nil, ErrAssetUploadNotFound
+		}
+		return nil, err
+	}
+	return &AssetResult{
+		PublicID:  legacy.PublicId,
+		AssetType: legacy.AssetType,
+		Status:    legacy.Status,
+		CreatedAt: legacy.CreatedTime,
+	}, nil
 }
 
 func expireCompletedAssetUpload(ctx context.Context, upload *model.AssetUpload, now time.Time) (bool, error) {
@@ -816,12 +849,21 @@ func randomAssetID(prefix string) (string, error) {
 
 func resultFromAsset(asset *model.Asset) *AssetResult {
 	return &AssetResult{
-		PublicID:    asset.PublicId,
-		Status:      asset.Status,
-		ContentType: asset.ContentType,
-		SizeBytes:   asset.SizeBytes,
-		SHA256:      asset.SHA256,
+		PublicID:        asset.PublicId,
+		AssetType:       asset.AssetType,
+		Status:          asset.Status,
+		ContentType:     asset.ContentType,
+		SizeBytes:       asset.SizeBytes,
+		SHA256:          asset.SHA256,
+		CreatedAt:       asset.CreatedAt,
+		SourceExpiresAt: asset.SourceExpiresAt,
 	}
+}
+
+func publicResultFromAsset(asset *model.Asset) *AssetResult {
+	result := resultFromAsset(asset)
+	result.SHA256 = ""
+	return result
 }
 
 func createOnlyAssetUploadHeaders() map[string]string {
