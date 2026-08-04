@@ -23,6 +23,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/alicebob/miniredis/v2"
@@ -667,7 +668,7 @@ func TestAssetTaskAcceptedAccountingExternalStepsAreIdempotent(t *testing.T) {
 	processed, err = RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
 	require.NoError(t, err)
 	require.Zero(t, processed)
-	require.EqualValues(t, 1, temporaryHookCalls.Load())
+	require.EqualValues(t, 0, temporaryHookCalls.Load())
 	require.EqualValues(t, 1, countControllerAccountingLedgers(t, "task_accounting_external", model.TaskAcceptedAccountingStepTemporarySpend))
 	require.EqualValues(t, 1, countControllerAccountingLedgers(t, "task_accounting_external", model.TaskAcceptedAccountingStepTokenCache))
 	require.EqualValues(t, 1, countControllerAccountingLedgers(t, "task_accounting_external", model.TaskAcceptedAccountingStepSubscriptionWindow))
@@ -675,6 +676,74 @@ func TestAssetTaskAcceptedAccountingExternalStepsAreIdempotent(t *testing.T) {
 	cached, err := model.GetTokenByKey("sk-task-token-11", false)
 	require.NoError(t, err)
 	require.Equal(t, 10000-246, cached.RemainQuota)
+}
+
+func TestAssetTaskAcceptedAccountingTemporarySpendPersistsOnce(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+	prevHook := model.TemporaryChannelSpendHook
+	model.TemporaryChannelSpendHook = nil
+	defer func() { model.TemporaryChannelSpendHook = prevHook }()
+	monitor := operation_setting.GetMonitorSetting()
+	oldThreshold := monitor.TemporaryChannelSpendThresholdUSD
+	monitor.TemporaryChannelSpendThresholdUSD = 0.000001
+	defer func() { monitor.TemporaryChannelSpendThresholdUSD = oldThreshold }()
+
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	settingJSON := `{"temporary":true}`
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id:      131,
+		Type:    constant.ChannelTypeBytePlus,
+		Key:     "sk-provider-temp",
+		Status:  common.ChannelStatusEnabled,
+		Name:    "temp-channel",
+		Models:  "seedance-2.0",
+		Group:   "default",
+		Setting: &settingJSON,
+	}).Error)
+	model.InitChannelCache()
+	task := seedControllerQueuedAssetTask(t, "task_accounting_temp_spend", model.TaskPreparationStatusReady, "", 0)
+	task.Status = model.TaskStatusSubmitted
+	task.ChannelId = 131
+	task.Quota = 123
+	task.AcceptedAccountingStatus = model.TaskAcceptedAccountingPending
+	task.AcceptedAccountingReservedQuota = 123
+	task.AcceptedAccountingActualQuota = 246
+	task.PrivateData.UpstreamTaskID = "upstream-temp"
+	require.NoError(t, model.DB.Save(task).Error)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 7).Update("quota", 10000-task.Quota).Error)
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", 11).Updates(map[string]any{
+		"remain_quota": 10000 - task.Quota,
+		"used_quota":   task.Quota,
+	}).Error)
+
+	rollbackErr := model.DB.Transaction(func(tx *gorm.DB) error {
+		require.NoError(t, tx.Create(&model.TaskAcceptedAccountingLedger{
+			TaskID: "task_accounting_temp_spend",
+			Step:   model.TaskAcceptedAccountingStepTemporarySpend,
+		}).Error)
+		_, err := model.AddTemporaryChannelModelSpendTx(tx, "seedance-2.0", 246, 999)
+		require.NoError(t, err)
+		return errors.New("rollback accepted temporary spend")
+	})
+	require.Error(t, rollbackErr)
+	require.EqualValues(t, 0, countControllerAccountingLedgers(t, "task_accounting_temp_spend", model.TaskAcceptedAccountingStepTemporarySpend))
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	processed, err = RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Zero(t, processed)
+
+	var spend model.TemporaryChannelModelSpend
+	require.NoError(t, model.DB.Where("model_name = ?", "seedance-2.0").First(&spend).Error)
+	require.EqualValues(t, 246, spend.Quota)
+	require.EqualValues(t, 1, spend.Count)
+	require.EqualValues(t, 1, countControllerAccountingLedgers(t, "task_accounting_temp_spend", model.TaskAcceptedAccountingStepTemporarySpend))
 }
 
 func TestAssetTaskWorkerAcceptedSubscriptionUsesSnapshotForSettlement(t *testing.T) {
@@ -1056,7 +1125,7 @@ func useControllerAssetTaskDBForTest(t *testing.T) func() {
 	oldCommonKeyCol := controllerAssetTaskModelCommonKeyCol
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskAcceptedAccountingLedger{}, &model.TaskAcceptedAccountingLogLedger{}, &model.Asset{}, &model.AssetBinding{}, &model.Ability{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.SubscriptionPlan{}, &model.UserSubscription{}, &model.UserSubscriptionContract{}, &model.SubscriptionPreConsumeRecord{}, &model.SubscriptionDiscountAccount{}, &model.SubscriptionDiscountEntry{}))
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskAcceptedAccountingLedger{}, &model.TaskAcceptedAccountingLogLedger{}, &model.TemporaryChannelModelSpend{}, &model.Asset{}, &model.AssetBinding{}, &model.Ability{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.SubscriptionPlan{}, &model.UserSubscription{}, &model.UserSubscriptionContract{}, &model.SubscriptionPreConsumeRecord{}, &model.SubscriptionDiscountAccount{}, &model.SubscriptionDiscountEntry{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	model.DB = db

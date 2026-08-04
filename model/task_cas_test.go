@@ -76,6 +76,22 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestMainDBMigrationIncludesAcceptedAccountingLogLedger(t *testing.T) {
+	oldDB := DB
+	oldLogDB := LOG_DB
+	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	DB = db
+	LOG_DB = db
+	defer func() {
+		DB = oldDB
+		LOG_DB = oldLogDB
+	}()
+	require.NoError(t, migrateDBFast())
+	require.True(t, DB.Migrator().HasTable(&TaskAcceptedAccountingLogLedger{}), "default LOG_DB=DB startup must migrate accepted log ledger in main DB")
+	require.NoError(t, DB.Create(&TaskAcceptedAccountingLogLedger{TaskID: "task_log_ledger_migration", Step: TaskAcceptedAccountingStepLogStats, CreatedAt: 1, UpdatedAt: 1}).Error)
+}
+
 func truncateTables(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {

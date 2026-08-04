@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -386,18 +386,67 @@ func writeAcceptedTaskLogOnce(task *model.Task, actualQuota int) error {
 }
 
 func RecordAcceptedTaskTemporarySpendOnce(ctx context.Context, task *model.Task) error {
-	if task == nil || model.TemporaryChannelSpendHook == nil {
+	if task == nil {
 		return nil
 	}
 	actualQuota := task.AcceptedAccountingActualQuota
 	if actualQuota == 0 {
 		actualQuota = task.Quota
 	}
-	won, err := markAcceptedAccountingStepDone(task.TaskID, model.TaskAcceptedAccountingStepTemporarySpend)
-	if err != nil || !won {
+	modelName := taskModelName(task)
+	threshold := operation_setting.GetMonitorSetting().TemporaryChannelSpendThresholdUSD
+	shouldAccumulate := actualQuota > 0 && modelName != "" && threshold > 0 && isTemporaryChannel(task.ChannelId)
+
+	now := common.GetTimestamp()
+	var total int64
+	var accumulated bool
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		ledger := &model.TaskAcceptedAccountingLedger{
+			TaskID:    task.TaskID,
+			Step:      model.TaskAcceptedAccountingStepTemporarySpend,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(ledger)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		if !shouldAccumulate {
+			return nil
+		}
+		var e error
+		total, e = model.AddTemporaryChannelModelSpendTx(tx, modelName, int64(actualQuota), now)
+		if e != nil {
+			return e
+		}
+		accumulated = true
+		return nil
+	})
+	if err != nil {
 		return err
 	}
-	model.TemporaryChannelSpendHook(task.ChannelId, taskModelName(task), actualQuota)
+	if !accumulated {
+		return nil
+	}
+	thresholdQuota := int64(threshold * common.QuotaPerUnit)
+	if total < thresholdQuota {
+		return nil
+	}
+	cooldownMinutes := operation_setting.GetMonitorSetting().DingTalkAlertCooldownMinutes
+	if cooldownMinutes <= 0 {
+		cooldownMinutes = 60
+	}
+	claimed, err := model.TryClaimTemporaryChannelSpendAlert(modelName, int64(cooldownMinutes*60), now)
+	if err != nil {
+		common.SysError("failed to claim temporary channel spend alert for " + modelName + ": " + err.Error())
+		return nil
+	}
+	if claimed {
+		notifyTemporaryChannelSpend(modelName, float64(total)/common.QuotaPerUnit)
+	}
 	return nil
 }
 
@@ -433,18 +482,8 @@ func ApplyAcceptedTaskSubscriptionWindowOnce(ctx context.Context, task *model.Ta
 		_, err := markAcceptedAccountingStepDone(task.TaskID, model.TaskAcceptedAccountingStepSubscriptionWindow)
 		return err
 	}
-	if common.RedisEnabled && common.RDB != nil {
-		key := acceptedAccountingRedisStepKey(task.TaskID, model.TaskAcceptedAccountingStepSubscriptionWindow)
-		claimed, err := common.RDB.SetNX(context.Background(), key, "1", 30*24*time.Hour).Result()
-		if err != nil {
-			return err
-		}
-		if claimed {
-			if _, err := AdjustSubscriptionWindowFromSnapshot(bc.SubscriptionWindow, weightedDelta); err != nil {
-				_ = common.RDB.Del(context.Background(), key).Err()
-				return err
-			}
-		}
+	if _, err := AdjustSubscriptionWindowFromSnapshotOnce(bc.SubscriptionWindow, weightedDelta, task.TaskID); err != nil {
+		return err
 	}
 	_, err := markAcceptedAccountingStepDone(task.TaskID, model.TaskAcceptedAccountingStepSubscriptionWindow)
 	return err
