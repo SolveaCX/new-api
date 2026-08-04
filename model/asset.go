@@ -39,6 +39,7 @@ type Asset struct {
 	StorageBackend    string `json:"storage_backend" gorm:"type:varchar(16)"`
 	StorageBucket     string `json:"storage_bucket" gorm:"type:varchar(255)"`
 	ObjectKey         string `json:"object_key" gorm:"type:varchar(512)"`
+	ObjectGeneration  int64  `json:"-" gorm:"index"`
 	ContentType       string `json:"content_type" gorm:"type:varchar(128)"`
 	SizeBytes         int64  `json:"size_bytes"`
 	SHA256            string `json:"sha256" gorm:"type:varchar(64)"`
@@ -67,23 +68,24 @@ type AssetBinding struct {
 }
 
 type AssetUpload struct {
-	Id             int64  `json:"id" gorm:"primaryKey"`
-	UploadId       string `json:"upload_id" gorm:"type:varchar(64);uniqueIndex"`
-	Owner          string `json:"-" gorm:"type:varchar(64);index"`
-	UserId         int    `json:"user_id" gorm:"index"`
-	AssetId        int64  `json:"asset_id" gorm:"index"`
-	PublicId       string `json:"public_id" gorm:"type:varchar(64);index"`
-	AssetType      string `json:"asset_type" gorm:"type:varchar(16);index"`
-	StorageBackend string `json:"storage_backend" gorm:"type:varchar(16)"`
-	StorageBucket  string `json:"storage_bucket" gorm:"type:varchar(255)"`
-	ObjectKey      string `json:"object_key" gorm:"type:varchar(512)"`
-	ContentType    string `json:"content_type" gorm:"type:varchar(128)"`
-	SizeBytes      int64  `json:"size_bytes"`
-	SHA256         string `json:"sha256" gorm:"type:varchar(64)"`
-	ExpiresAt      int64  `json:"expires_at" gorm:"index"`
-	Status         string `json:"status" gorm:"type:varchar(24);index"`
-	CreatedAt      int64  `json:"created_at"`
-	UpdatedAt      int64  `json:"updated_at"`
+	Id               int64  `json:"id" gorm:"primaryKey"`
+	UploadId         string `json:"upload_id" gorm:"type:varchar(64);uniqueIndex"`
+	Owner            string `json:"-" gorm:"type:varchar(64);index"`
+	UserId           int    `json:"user_id" gorm:"index"`
+	AssetId          int64  `json:"asset_id" gorm:"index"`
+	PublicId         string `json:"public_id" gorm:"type:varchar(64);index"`
+	AssetType        string `json:"asset_type" gorm:"type:varchar(16);index"`
+	StorageBackend   string `json:"storage_backend" gorm:"type:varchar(16)"`
+	StorageBucket    string `json:"storage_bucket" gorm:"type:varchar(255)"`
+	ObjectKey        string `json:"object_key" gorm:"type:varchar(512)"`
+	ObjectGeneration int64  `json:"-" gorm:"index"`
+	ContentType      string `json:"content_type" gorm:"type:varchar(128)"`
+	SizeBytes        int64  `json:"size_bytes"`
+	SHA256           string `json:"sha256" gorm:"type:varchar(64)"`
+	ExpiresAt        int64  `json:"expires_at" gorm:"index"`
+	Status           string `json:"status" gorm:"type:varchar(24);index"`
+	CreatedAt        int64  `json:"created_at"`
+	UpdatedAt        int64  `json:"updated_at"`
 }
 
 type AssetWithBinding struct {
@@ -93,11 +95,12 @@ type AssetWithBinding struct {
 }
 
 type AssetUploadCompletion struct {
-	ContentType     string
-	SizeBytes       int64
-	SHA256          string
-	SourceExpiresAt int64
-	Now             int64
+	ContentType      string
+	SizeBytes        int64
+	SHA256           string
+	ObjectGeneration int64
+	SourceExpiresAt  int64
+	Now              int64
 }
 
 func CreateAsset(asset Asset) (*Asset, error) {
@@ -140,12 +143,40 @@ func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploa
 			}
 			return err
 		}
+		if upload.ExpiresAt <= completion.Now {
+			result := tx.Model(&AssetUpload{}).
+				Where("id = ? AND owner = ? AND status = ? AND expires_at <= ?", upload.Id, owner, AssetUploadStatusPending, completion.Now).
+				Updates(map[string]any{
+					"status":     AssetUploadStatusExpired,
+					"updated_at": completion.Now,
+				})
+			return result.Error
+		}
+		uploadUpdates := map[string]any{
+			"status":            AssetUploadStatusComplete,
+			"content_type":      completion.ContentType,
+			"size_bytes":        completion.SizeBytes,
+			"sha256":            completion.SHA256,
+			"object_generation": completion.ObjectGeneration,
+			"updated_at":        completion.Now,
+		}
+		result := tx.Model(&AssetUpload{}).
+			Where("id = ? AND owner = ? AND status = ? AND expires_at > ?", upload.Id, owner, AssetUploadStatusPending, completion.Now).
+			Updates(uploadUpdates)
+		if result.Error != nil {
+			return result.Error
+		}
+		completed = result.RowsAffected == 1
+		if !completed {
+			return nil
+		}
 		assetUpdates := map[string]any{
 			"status":            AssetStatusActive,
 			"source_status":     AssetSourceStatusAvailable,
 			"content_type":      completion.ContentType,
 			"size_bytes":        completion.SizeBytes,
 			"sha256":            completion.SHA256,
+			"object_generation": completion.ObjectGeneration,
 			"source_expires_at": completion.SourceExpiresAt,
 			"updated_at":        completion.Now,
 		}
@@ -154,20 +185,6 @@ func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploa
 			Updates(assetUpdates).Error; err != nil {
 			return err
 		}
-		uploadUpdates := map[string]any{
-			"status":       AssetUploadStatusComplete,
-			"content_type": completion.ContentType,
-			"size_bytes":   completion.SizeBytes,
-			"sha256":       completion.SHA256,
-			"updated_at":   completion.Now,
-		}
-		result := tx.Model(&AssetUpload{}).
-			Where("id = ? AND owner = ? AND status = ?", upload.Id, owner, AssetUploadStatusPending).
-			Updates(uploadUpdates)
-		if result.Error != nil {
-			return result.Error
-		}
-		completed = result.RowsAffected == 1
 		return nil
 	})
 	return completed, err
@@ -415,7 +432,7 @@ func MarkAssetSourceExpiredIfCleanupLease(assetID int64, owner string, generatio
 	nextStatus := AssetStatusExpired
 	var activeBindings int64
 	if err := DB.Model(&AssetBinding{}).
-		Where("asset_id = ? AND status = ?", assetID, AssetBindingStatusLeased).
+		Where("asset_id = ? AND status = ?", assetID, AssetStatusActive).
 		Count(&activeBindings).Error; err != nil {
 		return false, err
 	}

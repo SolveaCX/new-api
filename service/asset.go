@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"mime"
 	"net/http"
@@ -113,7 +114,7 @@ func CreateAssetFromURL(ctx context.Context, request AssetFromURLRequest) (*Asse
 		return nil, err
 	}
 	defer finalResp.Body.Close()
-	body, detected, sha, size, err := readAndValidateAssetMedia(finalResp.Body, request.AssetType, limit)
+	detected, prefixReader, err := detectAssetMediaPrefix(finalResp.Body, request.AssetType, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -121,28 +122,30 @@ func CreateAssetFromURL(ctx context.Context, request AssetFromURLRequest) (*Asse
 	if err != nil {
 		return nil, err
 	}
-	if err := assetObjectStore.Put(ctx, cfg.Bucket, objectKey, bytes.NewReader(body), detected); err != nil {
+	detected, sha, size, objectGeneration, err := putAndValidateAssetMedia(ctx, cfg.Bucket, objectKey, prefixReader, request.AssetType, limit)
+	if err != nil {
 		return nil, err
 	}
 	now := assetNow()
 	asset, err := model.CreateAsset(model.Asset{
-		PublicId:        publicID,
-		UserId:          request.UserID,
-		AssetType:       request.AssetType,
-		Status:          model.AssetStatusActive,
-		SourceStatus:    model.AssetSourceStatusAvailable,
-		StorageBackend:  defaultAssetStorageBackend,
-		StorageBucket:   cfg.Bucket,
-		ObjectKey:       objectKey,
-		ContentType:     detected,
-		SizeBytes:       size,
-		SHA256:          sha,
-		SourceExpiresAt: now.Add(cfg.SourceRetention).Unix(),
-		CreatedAt:       now.Unix(),
-		UpdatedAt:       now.Unix(),
+		PublicId:         publicID,
+		UserId:           request.UserID,
+		AssetType:        request.AssetType,
+		Status:           model.AssetStatusActive,
+		SourceStatus:     model.AssetSourceStatusAvailable,
+		StorageBackend:   defaultAssetStorageBackend,
+		StorageBucket:    cfg.Bucket,
+		ObjectKey:        objectKey,
+		ObjectGeneration: objectGeneration,
+		ContentType:      detected,
+		SizeBytes:        size,
+		SHA256:           sha,
+		SourceExpiresAt:  now.Add(cfg.SourceRetention).Unix(),
+		CreatedAt:        now.Unix(),
+		UpdatedAt:        now.Unix(),
 	})
 	if err != nil {
-		_ = assetObjectStore.Delete(ctx, cfg.Bucket, objectKey)
+		_ = assetObjectStore.Delete(ctx, cfg.Bucket, objectKey, objectGeneration)
 		return nil, err
 	}
 	return resultFromAsset(asset), nil
@@ -162,7 +165,7 @@ func UploadAsset(ctx context.Context, request AssetUploadRequest) (*AssetResult,
 	if cfg.MultipartMaxBytes < limit {
 		limit = cfg.MultipartMaxBytes
 	}
-	body, detected, sha, size, err := readAndValidateAssetMedia(request.Body, request.AssetType, limit)
+	detected, prefixReader, err := detectAssetMediaPrefix(request.Body, request.AssetType, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -170,28 +173,30 @@ func UploadAsset(ctx context.Context, request AssetUploadRequest) (*AssetResult,
 	if err != nil {
 		return nil, err
 	}
-	if err := assetObjectStore.Put(ctx, cfg.Bucket, objectKey, bytes.NewReader(body), detected); err != nil {
+	detected, sha, size, objectGeneration, err := putAndValidateAssetMedia(ctx, cfg.Bucket, objectKey, prefixReader, request.AssetType, limit)
+	if err != nil {
 		return nil, err
 	}
 	now := assetNow()
 	asset, err := model.CreateAsset(model.Asset{
-		PublicId:        publicID,
-		UserId:          request.UserID,
-		AssetType:       request.AssetType,
-		Status:          model.AssetStatusActive,
-		SourceStatus:    model.AssetSourceStatusAvailable,
-		StorageBackend:  defaultAssetStorageBackend,
-		StorageBucket:   cfg.Bucket,
-		ObjectKey:       objectKey,
-		ContentType:     detected,
-		SizeBytes:       size,
-		SHA256:          sha,
-		SourceExpiresAt: now.Add(cfg.SourceRetention).Unix(),
-		CreatedAt:       now.Unix(),
-		UpdatedAt:       now.Unix(),
+		PublicId:         publicID,
+		UserId:           request.UserID,
+		AssetType:        request.AssetType,
+		Status:           model.AssetStatusActive,
+		SourceStatus:     model.AssetSourceStatusAvailable,
+		StorageBackend:   defaultAssetStorageBackend,
+		StorageBucket:    cfg.Bucket,
+		ObjectKey:        objectKey,
+		ObjectGeneration: objectGeneration,
+		ContentType:      detected,
+		SizeBytes:        size,
+		SHA256:           sha,
+		SourceExpiresAt:  now.Add(cfg.SourceRetention).Unix(),
+		CreatedAt:        now.Unix(),
+		UpdatedAt:        now.Unix(),
 	})
 	if err != nil {
-		_ = assetObjectStore.Delete(ctx, cfg.Bucket, objectKey)
+		_ = assetObjectStore.Delete(ctx, cfg.Bucket, objectKey, objectGeneration)
 		return nil, err
 	}
 	return resultFromAsset(asset), nil
@@ -269,6 +274,17 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 	if upload.Status != model.AssetUploadStatusPending {
 		return nil, ErrAssetUploadValidation
 	}
+	now := assetNow()
+	if upload.ExpiresAt <= now.Unix() {
+		completed, err := model.CompleteAssetUploadCAS(upload.UploadId, request.Owner, model.AssetUploadCompletion{Now: now.Unix()})
+		if err != nil {
+			return nil, err
+		}
+		if !completed {
+			return nil, ErrAssetUploadValidation
+		}
+		return nil, ErrAssetUploadValidation
+	}
 	attrs, err := assetObjectStore.Attrs(ctx, upload.StorageBucket, upload.ObjectKey)
 	if err != nil {
 		return nil, err
@@ -282,21 +298,20 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 	}
 	defer reader.Close()
 	cfg := CurrentAssetStorageConfig()
-	body, detected, sha, size, err := readAndValidateAssetMedia(reader, upload.AssetType, cfg.TypeLimits[upload.AssetType])
-	_ = body
+	detected, sha, size, err := hashAndValidateAssetMedia(reader, upload.AssetType, cfg.TypeLimits[upload.AssetType])
 	if err != nil {
 		return nil, err
 	}
 	if size != attrs.Size || detected != upload.ContentType || detected != attrs.ContentType {
 		return nil, ErrAssetUploadValidation
 	}
-	now := assetNow()
 	completed, err := model.CompleteAssetUploadCAS(upload.UploadId, request.Owner, model.AssetUploadCompletion{
-		ContentType:     detected,
-		SizeBytes:       size,
-		SHA256:          sha,
-		SourceExpiresAt: now.Add(cfg.SourceRetention).Unix(),
-		Now:             now.Unix(),
+		ContentType:      detected,
+		SizeBytes:        size,
+		SHA256:           sha,
+		ObjectGeneration: attrs.Generation,
+		SourceExpiresAt:  now.Add(cfg.SourceRetention).Unix(),
+		Now:              now.Unix(),
 	})
 	if err != nil {
 		return nil, err
@@ -319,7 +334,7 @@ func CleanupExpiredAssetSources(ctx context.Context, request CleanupExpiredAsset
 	}
 	result := CleanupExpiredAssetSourcesResult{Claimed: len(claimed)}
 	for _, asset := range claimed {
-		err := assetObjectStore.Delete(ctx, asset.StorageBucket, asset.ObjectKey)
+		err := assetObjectStore.Delete(ctx, asset.StorageBucket, asset.ObjectKey, asset.ObjectGeneration)
 		if err != nil && !isAssetObjectNotFound(err) {
 			continue
 		}
@@ -391,25 +406,104 @@ func validateAssetURLWithFetchSetting(rawURL string) error {
 	)
 }
 
-func readAndValidateAssetMedia(reader io.Reader, assetType string, maxBytes int64) ([]byte, string, string, int64, error) {
-	if maxBytes <= 0 {
-		return nil, "", "", 0, ErrAssetTooLarge
-	}
-	limited := io.LimitReader(reader, maxBytes+1)
-	body, err := io.ReadAll(limited)
+func putAndValidateAssetMedia(ctx context.Context, bucket, objectKey string, reader io.Reader, assetType string, maxBytes int64) (string, string, int64, int64, error) {
+	detected, prefixReader, err := detectAssetMediaPrefix(reader, assetType, maxBytes)
 	if err != nil {
-		return nil, "", "", 0, err
+		return "", "", 0, 0, err
 	}
-	if int64(len(body)) > maxBytes {
-		return nil, "", "", 0, ErrAssetTooLarge
+	validator := newAssetStreamingValidator(prefixReader, maxBytes)
+	if err := assetObjectStore.Put(ctx, bucket, objectKey, validator, detected); err != nil {
+		_ = assetObjectStore.Delete(ctx, bucket, objectKey, 0)
+		return "", "", 0, 0, err
 	}
-	contentType := http.DetectContentType(body)
+	attrs, err := assetObjectStore.Attrs(ctx, bucket, objectKey)
+	if err != nil {
+		_ = assetObjectStore.Delete(ctx, bucket, objectKey, 0)
+		return "", "", 0, 0, err
+	}
+	return detected, validator.shaHex(), validator.size, attrs.Generation, nil
+}
+
+func hashAndValidateAssetMedia(reader io.Reader, assetType string, maxBytes int64) (string, string, int64, error) {
+	detected, prefixReader, err := detectAssetMediaPrefix(reader, assetType, maxBytes)
+	if err != nil {
+		return "", "", 0, err
+	}
+	validator := newAssetStreamingValidator(prefixReader, maxBytes)
+	if _, err := io.Copy(io.Discard, validator); err != nil {
+		return "", "", 0, err
+	}
+	return detected, validator.shaHex(), validator.size, nil
+}
+
+func detectAssetMediaPrefix(reader io.Reader, assetType string, maxBytes int64) (string, io.Reader, error) {
+	if maxBytes <= 0 {
+		return "", nil, ErrAssetTooLarge
+	}
+	prefixLimit := int64(512)
+	if maxBytes < prefixLimit {
+		prefixLimit = maxBytes
+	}
+	var prefix bytes.Buffer
+	scratch := make([]byte, 8)
+	for int64(prefix.Len()) < prefixLimit {
+		remaining := prefixLimit - int64(prefix.Len())
+		if int64(len(scratch)) > remaining {
+			scratch = scratch[:int(remaining)]
+		}
+		n, err := reader.Read(scratch)
+		if n > 0 {
+			_, _ = prefix.Write(scratch[:n])
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return "", nil, err
+		}
+	}
+	if prefix.Len() == 0 {
+		return "", nil, ErrAssetUnsupportedMediaType
+	}
+	contentType := http.DetectContentType(prefix.Bytes())
 	normalized, _ := normalizeAssetContentType(assetType, contentType)
 	if normalized == "" {
-		return nil, "", "", 0, ErrAssetUnsupportedMediaType
+		if int64(prefix.Len()) >= maxBytes && maxBytes < 512 {
+			return "", nil, ErrAssetTooLarge
+		}
+		return "", nil, ErrAssetUnsupportedMediaType
 	}
-	sum := sha256.Sum256(body)
-	return body, normalized, hex.EncodeToString(sum[:]), int64(len(body)), nil
+	return normalized, io.MultiReader(bytes.NewReader(prefix.Bytes()), reader), nil
+}
+
+type assetStreamingValidator struct {
+	reader   io.Reader
+	maxBytes int64
+	hash     hash.Hash
+	size     int64
+}
+
+func newAssetStreamingValidator(reader io.Reader, maxBytes int64) *assetStreamingValidator {
+	return &assetStreamingValidator{reader: reader, maxBytes: maxBytes, hash: sha256.New()}
+}
+
+func (r *assetStreamingValidator) Read(p []byte) (int, error) {
+	if len(p) > 8 {
+		p = p[:8]
+	}
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.size += int64(n)
+		if r.size > r.maxBytes {
+			return n, ErrAssetTooLarge
+		}
+		_, _ = r.hash.Write(p[:n])
+	}
+	return n, err
+}
+
+func (r *assetStreamingValidator) shaHex() string {
+	return hex.EncodeToString(r.hash.Sum(nil))
 }
 
 func newAssetObjectKey(cfg AssetStorageConfig, userID int, assetType string, contentType string) (string, string, error) {

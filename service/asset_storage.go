@@ -32,7 +32,7 @@ type AssetObjectStore interface {
 	Put(ctx context.Context, bucket, objectKey string, body io.Reader, contentType string) error
 	Open(ctx context.Context, bucket, objectKey string) (io.ReadCloser, error)
 	Attrs(ctx context.Context, bucket, objectKey string) (AssetObjectAttrs, error)
-	Delete(ctx context.Context, bucket, objectKey string) error
+	Delete(ctx context.Context, bucket, objectKey string, expectedGeneration int64) error
 	SignURL(ctx context.Context, bucket, objectKey string, request AssetSignedURLRequest) (string, error)
 }
 
@@ -67,6 +67,8 @@ var (
 func CurrentAssetStorageConfig() AssetStorageConfig {
 	ttl := time.Duration(getEnvInt("ASSET_SIGNED_URL_TTL_SECONDS", int(defaultAssetSignedURLTTL.Seconds()))) * time.Second
 	if ttl <= 0 {
+		ttl = defaultAssetSignedURLTTL
+	} else if ttl > defaultAssetSignedURLTTL {
 		ttl = defaultAssetSignedURLTTL
 	}
 	retentionDays := getEnvInt("ASSET_SOURCE_RETENTION_DAYS", int(defaultAssetSourceRetention.Hours()/24))
@@ -104,7 +106,14 @@ func (gcsAssetObjectStore) Put(ctx context.Context, bucket, objectKey string, bo
 	writer.ContentType = contentType
 	writer.CacheControl = "private, max-age=0"
 	if _, err := io.Copy(writer, body); err != nil {
-		_ = writer.Close()
+		type closeWithError interface {
+			CloseWithError(error) error
+		}
+		if closer, ok := any(writer).(closeWithError); ok {
+			_ = closer.CloseWithError(err)
+		} else {
+			_ = writer.Close()
+		}
 		return err
 	}
 	return writer.Close()
@@ -142,13 +151,17 @@ func (gcsAssetObjectStore) Attrs(ctx context.Context, bucket, objectKey string) 
 	return AssetObjectAttrs{ContentType: attrs.ContentType, Size: attrs.Size, Generation: attrs.Generation}, nil
 }
 
-func (gcsAssetObjectStore) Delete(ctx context.Context, bucket, objectKey string) error {
+func (gcsAssetObjectStore) Delete(ctx context.Context, bucket, objectKey string, expectedGeneration int64) error {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	err = client.Bucket(bucket).Object(objectKey).Delete(ctx)
+	object := client.Bucket(bucket).Object(objectKey)
+	if expectedGeneration > 0 {
+		object = object.If(storage.Conditions{GenerationMatch: expectedGeneration})
+	}
+	err = object.Delete(ctx)
 	if errors.Is(err, storage.ErrObjectNotExist) {
 		return errAssetObjectNotFound
 	}

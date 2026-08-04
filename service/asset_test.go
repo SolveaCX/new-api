@@ -59,6 +59,7 @@ func TestCreateAssetFromURLStoresOpaqueAvailableSourceWithSHAAndRevalidatesRedir
 	require.Equal(t, "asset-test-bucket", asset.StorageBucket)
 	require.Equal(t, int64(len(png)), asset.SizeBytes)
 	require.Equal(t, shaHex(png), asset.SHA256)
+	require.EqualValues(t, 1, asset.ObjectGeneration)
 	require.Equal(t, assetNow().Add(30*24*time.Hour).Unix(), asset.SourceExpiresAt)
 	require.Empty(t, result.SignedURL, "source ingestion must not return or persist signed GET URLs")
 }
@@ -132,10 +133,12 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	var asset model.Asset
 	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
 	require.Equal(t, shaHex(png), asset.SHA256)
+	require.EqualValues(t, 9, asset.ObjectGeneration)
 	require.Equal(t, model.AssetSourceStatusAvailable, asset.SourceStatus)
 	var upload model.AssetUpload
 	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
 	require.Equal(t, model.AssetUploadStatusComplete, upload.Status)
+	require.EqualValues(t, 9, upload.ObjectGeneration)
 }
 
 func TestCleanupExpiredAssetSourcesIsIdempotentAndUsesLeaseFencing(t *testing.T) {
@@ -150,6 +153,7 @@ func TestCleanupExpiredAssetSourcesIsIdempotentAndUsesLeaseFencing(t *testing.T)
 		StorageBackend:    defaultAssetStorageBackend,
 		StorageBucket:     "asset-test-bucket",
 		ObjectKey:         "assets/7/20260725/ast_cleanup/r.png",
+		ObjectGeneration:  44,
 		SourceExpiresAt:   1000,
 		CleanupLeaseOwner: "other",
 		CleanupLeaseUntil: 1001,
@@ -158,22 +162,98 @@ func TestCleanupExpiredAssetSourcesIsIdempotentAndUsesLeaseFencing(t *testing.T)
 		UpdatedAt:         900,
 	}
 	require.NoError(t, model.DB.Create(&asset).Error)
-	require.NoError(t, model.DB.Create(&model.AssetBinding{AssetId: asset.Id, ChannelId: 1, Status: model.AssetBindingStatusLeased}).Error)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{AssetId: asset.Id, ChannelId: 1, Status: model.AssetStatusActive}).Error)
 	store.objects["asset-test-bucket/"+asset.ObjectKey] = tinyPNG()
 
 	result, err := CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Claimed)
 	require.Equal(t, 1, result.Deleted)
-	require.Equal(t, []string{"asset-test-bucket/" + asset.ObjectKey}, store.deletes)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + asset.ObjectKey, expectedGeneration: 44}}, store.deletes)
 	var stored model.Asset
 	require.NoError(t, model.DB.First(&stored, asset.Id).Error)
 	require.Equal(t, model.AssetSourceStatusExpired, stored.SourceStatus)
-	require.Equal(t, model.AssetStatusActive, stored.Status, "active binding keeps public asset active")
+	require.Equal(t, model.AssetStatusActive, stored.Status, "active BytePlus binding keeps public asset active")
 
 	result, err = CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
 	require.NoError(t, err)
 	require.Zero(t, result.Claimed)
+}
+
+func TestCleanupExpiredAssetSourcesDoesNotExpireOnGenerationMismatch(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	store.deleteErr = errors.New("generation mismatch")
+	asset := model.Asset{
+		PublicId:         "ast_cleanup_mismatch",
+		UserId:           7,
+		AssetType:        "Image",
+		Status:           model.AssetStatusActive,
+		SourceStatus:     model.AssetSourceStatusAvailable,
+		StorageBackend:   defaultAssetStorageBackend,
+		StorageBucket:    "asset-test-bucket",
+		ObjectKey:        "assets/7/20260725/ast_cleanup_mismatch/r.png",
+		ObjectGeneration: 45,
+		SourceExpiresAt:  1000,
+		CreatedAt:        900,
+		UpdatedAt:        900,
+	}
+	require.NoError(t, model.DB.Create(&asset).Error)
+	store.objects["asset-test-bucket/"+asset.ObjectKey] = tinyPNG()
+
+	result, err := CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Claimed)
+	require.Zero(t, result.Deleted)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + asset.ObjectKey, expectedGeneration: 45}}, store.deletes)
+	var stored model.Asset
+	require.NoError(t, model.DB.First(&stored, asset.Id).Error)
+	require.Equal(t, model.AssetSourceStatusAvailable, stored.SourceStatus)
+	require.Equal(t, model.AssetStatusActive, stored.Status)
+}
+
+func TestUploadAssetStreamsWithoutOversizedReadAndCleansUpOverLimit(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	t.Setenv("ASSET_MULTIPART_MAX_BYTES", "16")
+	t.Setenv("ASSET_IMAGE_MAX_BYTES", "16")
+
+	_, err := UploadAsset(context.Background(), AssetUploadRequest{
+		UserID:    1,
+		AssetType: "Image",
+		Filename:  "oversize.png",
+		Body:      &chunkGuardReader{chunks: [][]byte{tinyPNG(), []byte("x")}, maxRead: 8},
+	})
+
+	require.ErrorIs(t, err, ErrAssetTooLarge)
+	require.Len(t, store.puts, 1, "bounded stream should reach the object store instead of buffering first")
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + store.puts[0].key}}, store.deletes)
+}
+
+func TestCompleteAssetUploadRejectsExpiredUploadAndDoesNotReadObject(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.AssetUpload{}).Where("upload_id = ?", session.UploadID).Update("expires_at", assetNow().Unix()).Error)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 9}
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.Zero(t, store.opens)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusExpired, upload.Status)
 }
 
 func newAssetServiceTestDB(t *testing.T) *gorm.DB {
@@ -241,3 +321,23 @@ type errReader struct{ err error }
 func (r errReader) Read([]byte) (int, error) { return 0, r.err }
 
 var _ io.Reader = errReader{err: errors.New("x")}
+
+type chunkGuardReader struct {
+	chunks  [][]byte
+	maxRead int
+}
+
+func (r *chunkGuardReader) Read(p []byte) (int, error) {
+	if len(p) > r.maxRead {
+		return 0, errors.New("oversized read")
+	}
+	if len(r.chunks) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p, r.chunks[0])
+	r.chunks[0] = r.chunks[0][n:]
+	if len(r.chunks[0]) == 0 {
+		r.chunks = r.chunks[1:]
+	}
+	return n, nil
+}

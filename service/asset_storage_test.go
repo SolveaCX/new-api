@@ -39,6 +39,10 @@ func TestAssetStorageConfigDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, int64(19), cfg.TypeLimits["Audio"])
 	require.Equal(t, int64(20), cfg.MultipartMaxBytes)
 	require.Equal(t, "custom-prefix", cfg.KeyPrefix)
+
+	t.Setenv("ASSET_SIGNED_URL_TTL_SECONDS", "7200")
+	cfg = CurrentAssetStorageConfig()
+	require.Equal(t, time.Hour, cfg.SignedURLTTL, "asset signed URL TTL must be clamped to the one hour GCS V4 upload window")
 }
 
 func TestAssetStorageSignerUsesV4MethodTTLAndContentType(t *testing.T) {
@@ -60,11 +64,13 @@ func TestAssetStorageSignerUsesV4MethodTTLAndContentType(t *testing.T) {
 }
 
 type fakeAssetObjectStore struct {
-	puts    []fakeAssetPut
-	deletes []string
-	signed  []AssetSignedURLRequest
-	objects map[string][]byte
-	attrs   map[string]AssetObjectAttrs
+	puts      []fakeAssetPut
+	signed    []AssetSignedURLRequest
+	deletes   []fakeAssetDelete
+	opens     int
+	deleteErr error
+	objects   map[string][]byte
+	attrs     map[string]AssetObjectAttrs
 }
 
 type fakeAssetPut struct {
@@ -73,7 +79,13 @@ type fakeAssetPut struct {
 	contentType string
 }
 
+type fakeAssetDelete struct {
+	key                string
+	expectedGeneration int64
+}
+
 func (f *fakeAssetObjectStore) Put(_ context.Context, bucket, objectKey string, body io.Reader, contentType string) error {
+	f.puts = append(f.puts, fakeAssetPut{key: objectKey, contentType: contentType})
 	payload, err := io.ReadAll(body)
 	if err != nil {
 		return err
@@ -82,11 +94,12 @@ func (f *fakeAssetObjectStore) Put(_ context.Context, bucket, objectKey string, 
 		f.objects = map[string][]byte{}
 	}
 	f.objects[bucket+"/"+objectKey] = append([]byte(nil), payload...)
-	f.puts = append(f.puts, fakeAssetPut{key: objectKey, body: string(payload), contentType: contentType})
+	f.puts[len(f.puts)-1].body = string(payload)
 	return nil
 }
 
 func (f *fakeAssetObjectStore) Open(_ context.Context, bucket, objectKey string) (io.ReadCloser, error) {
+	f.opens++
 	return io.NopCloser(strings.NewReader(string(f.objects[bucket+"/"+objectKey]))), nil
 }
 
@@ -100,8 +113,11 @@ func (f *fakeAssetObjectStore) Attrs(_ context.Context, bucket, objectKey string
 	return AssetObjectAttrs{ContentType: http.DetectContentType(body), Size: int64(len(body)), Generation: 1}, nil
 }
 
-func (f *fakeAssetObjectStore) Delete(_ context.Context, bucket, objectKey string) error {
-	f.deletes = append(f.deletes, bucket+"/"+objectKey)
+func (f *fakeAssetObjectStore) Delete(_ context.Context, bucket, objectKey string, expectedGeneration int64) error {
+	f.deletes = append(f.deletes, fakeAssetDelete{key: bucket + "/" + objectKey, expectedGeneration: expectedGeneration})
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
 	delete(f.objects, bucket+"/"+objectKey)
 	return nil
 }

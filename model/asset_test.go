@@ -315,6 +315,88 @@ func TestAssetCreateAvailableAndPendingUploadThenCompleteWithOwnerCAS(t *testing
 	require.Equal(t, AssetUploadStatusComplete, upload.Status)
 }
 
+func TestAssetUploadCompletionRejectsExpiredAndLoserDoesNotMutateAsset(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetUpload{})
+	asset, err := CreateAssetWithUploadSession(Asset{
+		PublicId:       "ast_pending_expired",
+		UserId:         10,
+		AssetType:      "Image",
+		Status:         AssetStatusCreating,
+		SourceStatus:   AssetSourceStatusUnavailable,
+		StorageBackend: "gcs",
+		StorageBucket:  "bucket",
+		ObjectKey:      "objects/pending.png",
+		ContentType:    "image/png",
+		SizeBytes:      123,
+		CreatedAt:      100,
+		UpdatedAt:      100,
+	}, AssetUpload{
+		UploadId:    "upl_pending_expired",
+		Owner:       "owner-a",
+		UserId:      10,
+		PublicId:    "ast_pending_expired",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   123,
+		ExpiresAt:   150,
+		Status:      AssetUploadStatusPending,
+		CreatedAt:   100,
+		UpdatedAt:   100,
+	})
+	require.NoError(t, err)
+
+	completed, err := CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
+		ContentType:      "image/png",
+		SizeBytes:        123,
+		SHA256:           "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		ObjectGeneration: 77,
+		SourceExpiresAt:  300,
+		Now:              150,
+	})
+	require.NoError(t, err)
+	require.False(t, completed)
+
+	var stored Asset
+	require.NoError(t, DB.First(&stored, asset.Id).Error)
+	require.Equal(t, AssetStatusCreating, stored.Status)
+	require.Empty(t, stored.SHA256)
+	require.Zero(t, stored.ObjectGeneration)
+
+	var upload AssetUpload
+	require.NoError(t, DB.First(&upload, "upload_id = ?", "upl_pending_expired").Error)
+	require.Equal(t, AssetUploadStatusExpired, upload.Status)
+
+	require.NoError(t, DB.Model(&AssetUpload{}).Where("upload_id = ?", "upl_pending_expired").Updates(map[string]any{
+		"status":     AssetUploadStatusPending,
+		"expires_at": int64(250),
+	}).Error)
+	completed, err = CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
+		ContentType:      "image/png",
+		SizeBytes:        123,
+		SHA256:           "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		ObjectGeneration: 88,
+		SourceExpiresAt:  400,
+		Now:              200,
+	})
+	require.NoError(t, err)
+	require.True(t, completed)
+	completed, err = CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
+		ContentType:      "image/png",
+		SizeBytes:        123,
+		SHA256:           "9999999999999999999999999999999999999999999999999999999999999999",
+		ObjectGeneration: 99,
+		SourceExpiresAt:  500,
+		Now:              201,
+	})
+	require.NoError(t, err)
+	require.False(t, completed)
+
+	require.NoError(t, DB.First(&stored, asset.Id).Error)
+	require.Equal(t, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", stored.SHA256)
+	require.EqualValues(t, 88, stored.ObjectGeneration)
+	require.EqualValues(t, 400, stored.SourceExpiresAt)
+}
+
 func TestAssetCleanupLeaseClaimAndGenerationFencing(t *testing.T) {
 	newAssetTestDB(t, &Asset{}, &AssetBinding{})
 	asset := insertAssetForAssetTest(t, "asset_cleanup_lease")
