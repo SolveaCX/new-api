@@ -771,6 +771,29 @@ class SupervisorTests(unittest.TestCase):
                 self.assertNotIn("*", server_config["enabled_tools"])
                 self.assertEqual(server_config["enabled_tools"], expected_tools[server_name])
 
+    def test_prompt_uses_installed_policy_path_readable_outside_empty_workspace(self):
+        process = FakeProcess(0)
+        _, sup = self.run_supervisor(process, result_payload=valid_result())
+
+        args, kwargs = sup.subprocess_runner.calls[0]
+        workspace = args[args.index("--cd") + 1]
+        prompt = process.stdin.getvalue()
+        self.assertEqual(
+            prompt.splitlines()[0],
+            "Use `$flatkey-new-user-onboarding`. Before taking any browser action, read and follow the absolute `staging-cloud-qa-policy.md` file supplied below exactly.",
+        )
+        policy_line = next(line for line in prompt.splitlines() if line.startswith("Policy: "))
+        policy_path = policy_line.removeprefix("Policy: ")
+
+        self.assertTrue(os.path.isabs(policy_path))
+        self.assertTrue(os.path.isfile(policy_path))
+        self.assertTrue(
+            os.path.realpath(policy_path).startswith(os.path.realpath(kwargs["env"]["HOME"]) + os.sep)
+        )
+        self.assertFalse(
+            os.path.realpath(policy_path).startswith(os.path.realpath(workspace) + os.sep)
+        )
+
     def test_supervisor_passes_explicit_manifest_identity_to_report_writer(self):
         original_write_report = supervisor.report.write_report
         calls = []

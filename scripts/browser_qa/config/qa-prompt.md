@@ -1,4 +1,4 @@
-Use `$flatkey-new-user-onboarding` and follow `.agents/skills/flatkey-new-user-onboarding/references/staging-cloud-qa-policy.md` exactly.
+Use `$flatkey-new-user-onboarding`. Before taking any browser action, read and follow the absolute `staging-cloud-qa-policy.md` file supplied below exactly.
 
 The runtime injects the run id and the disposable staging identity for this run. Use only that identity. Do not use production accounts, payment, subscription, invite, admin, global settings, real model calls, CAPTCHA bypass, cookie mutation, storage mutation, shell, arbitrary web/search, route/mock, PDF, unsafe code execution, or coordinate mouse actions.
 

@@ -211,7 +211,11 @@ class Supervisor:
                 evidence_sink.start()
                 self._evidence_url = evidence_sink.url
                 process = self._start_codex(proxy, browser.cdp_endpoint, cfg.mode)
-                prompt = build_prompt(cfg, identity)
+                prompt = build_prompt(
+                    cfg,
+                    identity,
+                    policy_path=os.path.realpath(os.path.join(self.home_dir, POLICY_PATH)),
+                )
                 previous_handlers = self._install_signal_handlers(process)
                 try:
                     codex_returncode, model_payload = self._wait_for_codex(
@@ -958,7 +962,7 @@ def _hash_skill_tree(skill_dir):
     return digest.hexdigest()
 
 
-def build_prompt(cfg, identity):
+def build_prompt(cfg, identity, *, policy_path):
     with open(PROMPT_PATH, encoding="utf-8") as handle:
         prompt = handle.read()
     mode_contract = ""
@@ -970,7 +974,7 @@ def build_prompt(cfg, identity):
     return (
         prompt
         + "\n\nSkill: $flatkey-new-user-onboarding\n"
-        + f"Policy: {POLICY_PATH}\n"
+        + f"Policy: {policy_path}\n"
         + f"Run ID: {cfg.run_id}\n"
         + f"Authorized staging website origin: {cfg.website_origin}\n"
         + f"Authorized staging console origin: {cfg.console_origin}\n"
