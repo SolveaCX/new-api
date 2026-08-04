@@ -1,4 +1,6 @@
 import base64
+import email.errors
+import email.header
 import email.utils
 import html.parser
 import json
@@ -311,7 +313,8 @@ def parse_verification_code(message, *, alias, sender, subject_marker, run_start
         return None
     if _single_address(headers.get("from")) != sender.lower():
         return None
-    if subject_marker not in headers.get("subject", ""):
+    subject = _decode_header_value(headers.get("subject", ""))
+    if subject is None or subject_marker.casefold() not in subject.casefold():
         return None
     parts = _collect_text_parts(payload)
     if parts is None:
@@ -331,6 +334,13 @@ def _headers(payload):
         if isinstance(item, dict) and isinstance(item.get("name"), str) and isinstance(item.get("value"), str):
             out[item["name"].lower()] = item["value"]
     return out
+
+
+def _decode_header_value(value):
+    try:
+        return str(email.header.make_header(email.header.decode_header(value)))
+    except (email.errors.HeaderParseError, LookupError, UnicodeError, ValueError):
+        return None
 
 
 def _alias_matches(headers, alias):

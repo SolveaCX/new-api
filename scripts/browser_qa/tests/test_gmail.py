@@ -71,6 +71,38 @@ class GmailParserTests(unittest.TestCase):
 
         self.assertEqual(code, "654321")
 
+    def test_accepts_rfc2047_encoded_localized_subject_with_system_marker(self):
+        message = load_message()
+        subject = "Flatkey \u90ae\u7bb1\u9a8c\u8bc1"
+        encoded = __import__("base64").b64encode(subject.encode("utf-8")).decode("ascii")
+        message["payload"]["headers"][2]["value"] = f"=?UTF-8?B?{encoded}?="
+
+        code = parse_verification_code(
+            message,
+            alias=ALIAS,
+            sender="noreply@flatkey.ai",
+            subject_marker="flatkey",
+            run_start_epoch=1800000000,
+            now_epoch=1800000030,
+        )
+
+        self.assertEqual(code, "654321")
+
+    def test_rejects_malformed_rfc2047_subject(self):
+        message = load_message()
+        message["payload"]["headers"][2]["value"] = "=?UTF-8?B?not-base64?="
+
+        code = parse_verification_code(
+            message,
+            alias=ALIAS,
+            sender="noreply@flatkey.ai",
+            subject_marker="flatkey",
+            run_start_epoch=1800000000,
+            now_epoch=1800000030,
+        )
+
+        self.assertIsNone(code)
+
     def test_accepts_real_html_only_email_shape(self):
         message = load_message()
         message["payload"]["mimeType"] = "text/html"

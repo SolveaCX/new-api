@@ -349,8 +349,8 @@ class BrokerTests(unittest.TestCase):
         gmail_client.assert_called_once_with(credentials.from_env.return_value)
         serve_forever.assert_called_once()
         self.assertIs(serve_forever.call_args.args[0], gmail_client.return_value)
-        self.assertEqual(serve_forever.call_args.args[1].sender, "noreply@flatkey.ai")
-        self.assertEqual(serve_forever.call_args.args[1].subject_marker, "Flatkey Email Verification")
+        self.assertEqual(serve_forever.call_args.args[1].sender, "mail@noreply.flatkey.ai")
+        self.assertEqual(serve_forever.call_args.args[1].subject_marker, "flatkey")
         self.assertEqual(serve_forever.call_args.kwargs, {})
         broker_mcp_run.assert_not_called()
 

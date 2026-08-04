@@ -183,8 +183,8 @@ def main(argv=None):
     serve_forever(
         gmail_client,
         BrokerConfig(
-            sender="noreply@flatkey.ai",
-            subject_marker="Flatkey Email Verification",
+            sender="mail@noreply.flatkey.ai",
+            subject_marker="flatkey",
         ),
     )
     return 0
