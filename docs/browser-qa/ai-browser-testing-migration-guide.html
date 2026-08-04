@@ -505,7 +505,7 @@
         </table>
         <section>
           <h3>迁移时先看这张顺序图</h3>
-          <p>Flatkey 当前实现的完整新手图见 <a href="browser-qa-technical-implementation.html#architecture">技术实现文档的总体架构</a>。迁移到新项目时，保留箭头类型和安全边界，只替换项目自己的域名、broker、模型入口、报告存储和 cleanup 逻辑。</p>
+          <p>下面用项目无关的顺序图展示最小调用链。迁移时保留箭头类型和安全边界，只替换目标项目自己的域名、broker、模型入口、报告存储和 cleanup 逻辑。</p>
           <ul class="flow-legend" aria-label="箭头类型说明">
             <li><span class="swatch"></span>控制流</li>
             <li><span class="swatch model"></span>模型 API 流</li>
@@ -513,7 +513,7 @@
             <li><span class="swatch evidence"></span>证据/报告</li>
             <li><span class="swatch cleanup"></span>always cleanup</li>
           </ul>
-          <div class="diagram" role="img" aria-label="AI 浏览器测试迁移顺序图：从 staging merge 到 CI，构建测试镜像，启动主执行器，调用模型入口，驱动 Playwright MCP 和受控 Chromium，访问 staging 应用，通过私有 broker 取验证码，上传私有报告，最后运行独立 cleanup">
+          <div class="diagram" role="img" aria-label="AI 浏览器测试迁移顺序图：从 staging 变更或 pipeline trigger 到 CI，构建测试镜像，启动主执行器，调用模型入口，驱动 Playwright MCP 和受控 Chromium，访问 staging 应用，通过私有 broker 取验证码，上传私有报告，最后运行独立 cleanup">
             <svg viewBox="0 0 960 360" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <marker id="migArrowControl" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
@@ -550,8 +550,8 @@
               </defs>
 
               <rect class="migBox" x="24" y="28" width="130" height="58"/>
-              <text class="migTitle" x="48" y="56">1 staging 合并</text>
-              <text class="migText" x="48" y="74">只测预发环境</text>
+              <text class="migTitle" x="48" y="56">1 pipeline 触发</text>
+              <text class="migText" x="48" y="74">仅针对预发环境</text>
               <rect class="migBox" x="190" y="28" width="140" height="58"/>
               <text class="migTitle" x="214" y="56">2 CI / Actions</text>
               <text class="migText" x="214" y="74">调度测试</text>
@@ -610,17 +610,17 @@
             </svg>
           </div>
           <table>
-            <thead><tr><th scope="col">Flatkey 当前值</th><th scope="col">新项目必须替换为</th></tr></thead>
+            <thead><tr><th scope="col">参考占位符</th><th scope="col">目标项目必须替换为</th></tr></thead>
             <tbody>
-              <tr><td><code>https://router.flatkey.ai/v1</code></td><td>你的模型网关公开 base URL；密钥仍从 Secret Manager 或等价 secret store 注入为环境变量。</td></tr>
-              <tr><td><code>staging-website.flatkey.ai</code> / <code>staging-console.flatkey.ai</code></td><td>你的 staging 网站和控制台；不要把 production 写路径放进 allowlist。</td></tr>
-              <tr><td>私有 Gmail verification broker</td><td>你的验证码、邮件、短信或第三方回调 broker；只返回当前 run 的最小结果。</td></tr>
-              <tr><td>GCS report bucket</td><td>你的私有对象存储；上传前脱敏，摘要只放私有 URI。</td></tr>
+              <tr><td><code>MODEL_GATEWAY_BASE_URL</code></td><td>你的模型网关公开 base URL；密钥仍从 Secret Manager 或等价 secret store 注入为环境变量。</td></tr>
+              <tr><td><code>STAGING_APP_ORIGIN</code> / <code>STAGING_CONSOLE_ORIGIN</code></td><td>你的 staging 网站和控制台；不要把 production 写路径放进 allowlist。</td></tr>
+              <tr><td>私有 verification broker</td><td>你的验证码、邮件、短信或第三方回调 broker；只返回当前 run 的最小结果。</td></tr>
+              <tr><td>私有 report bucket</td><td>你的私有对象存储；上传前脱敏，摘要只放私有 URI。</td></tr>
               <tr><td>独立 cleanup job</td><td>你的测试账号、key、订单或 workspace 删除逻辑；必须 always 运行且支持 cleanup-only。</td></tr>
             </tbody>
           </table>
           <div class="callout warn">
-            当前 Flatkey 接入范围仍是 staging strict replay；exploration 还没有开始。迁移时同样先证明 replay 和 cleanup，再打开有预算的探索。
+            建议从 staging strict replay 开始接入；先证明 replay 和 cleanup，再打开有预算的 exploration。
           </div>
         </section>
       </section>
@@ -732,6 +732,51 @@ Stop at checkpoint only after:
             <li>通过 allowlist proxy 限制 origin、阻断 metadata、内网、生产域名和非 HTTP(S) scheme。</li>
             <li>将 replay 和 exploration 的预算写入 runtime state，由 MCP wrapper 在每次 tool call 前检查。</li>
           </ul>
+        </section>
+        <section>
+          <h3>MCP 审批与工具白名单模板</h3>
+          <p>迁移到其他项目时，非交互执行器应保持全局 <code>approval_policy = "never"</code>，再对少量项目专用 MCP server 写 <code>default_tools_approval_mode = "approve"</code> 和精确 <code>enabled_tools</code>。这不是放开审批，而是把可用工具收敛到可审计白名单；禁止 wildcard、<code>yolo</code>、<code>danger-full-access</code>、任意 shell、任意文件读取或任意网络工具。</p>
+          <pre><code>approval_policy = "never"
+
+[mcp_servers.browser]
+required = true
+default_tools_approval_mode = "approve"
+enabled_tools = [
+  "browser_navigate",
+  "browser_click",
+  "browser_type",
+  "browser_snapshot",
+  "browser_console_messages",
+  "browser_network_requests",
+  "read_docs"
+]
+
+[mcp_servers.evidence]
+required = true
+default_tools_approval_mode = "approve"
+enabled_tools = ["capture_screenshot"]
+
+[mcp_servers.broker]
+required = true
+default_tools_approval_mode = "approve"
+enabled_tools = ["get_current_verification_code"]
+
+[mcp_servers.control]
+required = true
+default_tools_approval_mode = "approve"
+enabled_tools = ["replay_checkpoint", "start_exploration"]</code></pre>
+          <table>
+            <thead><tr><th scope="col">检查项</th><th scope="col">迁移要求</th></tr></thead>
+            <tbody>
+              <tr><td>浏览器 MCP</td><td>只能连接执行器已启动的浏览器；不允许模型启动第二个浏览器或绕过 proxy。</td></tr>
+              <tr><td>Evidence MCP</td><td>工具参数只允许逻辑名；不接受路径、selector、raw screenshot 或关闭遮罩选项。</td></tr>
+              <tr><td>Broker MCP</td><td>调用输入由 runtime 绑定当前 run；不允许模型传任意邮箱、alias、OAuth scope 或第三方账号。</td></tr>
+              <tr><td>Control MCP</td><td><code>core</code> 模式只回放到 checkpoint 并停止；只有 <code>normal</code> 模式才能在 checkpoint 后进入有预算探索。</td></tr>
+            </tbody>
+          </table>
+          <div class="callout warn">
+            模板中的工具名是项目占位符。落地时必须把每个工具名替换为你的 MCP 实际导出名称，并用测试证明没有 <code>*</code>、隐式工具组或危险执行权限。
+          </div>
         </section>
         <section>
           <h3>Broker</h3>
@@ -1042,7 +1087,7 @@ resource "cloud_oidc_trust" "github_actions" {}</code></pre>
         <section>
           <h3>推广阶段</h3>
           <ul class="checklist">
-            <li>连续多次 core 通过后，把 staging merge 接入只告警模式。</li>
+            <li>连续多次 core 通过后，把 staging pipeline trigger 接入只告警模式。</li>
             <li>探索 finding 先人工 triage，再转成确定性回归测试。</li>
             <li>建立 cleanup-only runbook，要求使用原始 run id。</li>
             <li>每次扩大触发范围前，复查成本、配额和误报率。</li>
@@ -1111,7 +1156,7 @@ resource "cloud_oidc_trust" "github_actions" {}</code></pre>
         <table>
           <thead><tr><th scope="col">成本杠杆</th><th scope="col">降低方法</th></tr></thead>
           <tbody>
-            <tr><td>运行次数</td><td>PR 只跑轻量 contract，staging merge 跑 core，release candidate 跑 normal。</td></tr>
+            <tr><td>运行次数</td><td>PR 只跑轻量 contract，staging pipeline 跑 core，release candidate 跑 normal。</td></tr>
             <tr><td>浏览器时间</td><td>缩短 replay 恢复次数，失败时不进入探索。</td></tr>
             <tr><td>模型费用</td><td>固定 prompt、限制 tool action、使用 schema 输出、避免重复上下文。</td></tr>
             <tr><td>日志和截图</td><td>只保存关键截图、投影日志、生命周期删除。</td></tr>
@@ -1175,7 +1220,7 @@ Do not output secrets, full email addresses, verification codes, passwords, cook
           <ul class="checklist">
             <li>HTML、JSON schema、workflow YAML 和 IaC 模板均不含真实项目号、bucket、邮箱、token、secret 值或个人路径。</li>
             <li>本地 schema 测试通过；redaction 测试能拦截代表性 secret。</li>
-            <li>容器 smoke 能证明非 root、浏览器可启动、MCP 可 attach。</li>
+            <li>容器 smoke 能证明非 root、浏览器可启动、MCP 可 attach，且每个 MCP server 都有精确 <code>enabled_tools</code>，没有 wildcard、<code>yolo</code> 或 <code>danger-full-access</code>。</li>
             <li>core 模式 replay 通过并执行 cleanup。</li>
             <li>normal 模式 exploration obey budget，并只上传脱敏报告。</li>
           </ul>
