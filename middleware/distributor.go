@@ -99,6 +99,7 @@ func Distribute() func(c *gin.Context) {
 				}
 			}
 		}
+		assetResolution, assetErr := resolveAssetReferenceSet(c, shouldSelectChannel)
 		legacyAssetResolution, legacyAssetErr := resolveLegacyBytePlusAssetResolution(c, shouldSelectChannel)
 		if legacyAssetErr != nil {
 			abortWithOpenAiMessage(c, legacyAssetErr.StatusCode, bytePlusAssetPublicMessage(legacyAssetErr.GetErrorCode()), legacyAssetErr.GetErrorCode())
@@ -119,13 +120,18 @@ func Distribute() func(c *gin.Context) {
 				}
 			}
 		}
-		assetResolution, assetErr := resolveAssetReferenceSet(c, shouldSelectChannel)
 		if assetErr != nil {
 			abortWithOpenAiMessage(c, assetErr.StatusCode, bytePlusAssetPublicMessage(assetErr.GetErrorCode()), assetErr.GetErrorCode())
 			return
 		}
 		hasAssetRefs = assetResolution.HasReferences()
 		if legacyPinnedChannel != nil {
+			if hasAssetRefs {
+				if _, eligible := assetResolution.ReadinessForChannel(legacyPinnedChannel); !eligible {
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, bytePlusAssetPublicMessage(types.ErrorCodeAssetChannelUnavailable), types.ErrorCodeAssetChannelUnavailable)
+					return
+				}
+			}
 			channel = legacyPinnedChannel
 			if legacyPinnedSelectGroup != "" {
 				common.SetContextKey(c, constant.ContextKeyTokenGroup, legacyPinnedSelectGroup)

@@ -499,6 +499,33 @@ func TestAssetReferenceRewriteMapUsesSelectedChannelOnly(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 }
 
+func TestAssetReferenceGeneralizedRowOutranksCoexistingLegacyPin(t *testing.T) {
+	restoreDB := useMiddlewareBytePlusAssetDBForTest(t)
+	defer restoreDB()
+	insertMiddlewareBytePlusAssetChannel(t, 131, "default", common.ChannelStatusEnabled, 1, 1)
+	insertMiddlewareBytePlusAssetChannel(t, 132, "default", common.ChannelStatusEnabled, 100, 1000)
+	publicID := "ast_1234567890abcdefABCDEF1234567890"
+	insertMiddlewareBytePlusAsset(t, 7, 131, publicID, "legacy-upstream", model.BytePlusAssetStatusActive)
+	asset := insertMiddlewareGeneralizedAsset(t, 7, publicID, "Image", model.AssetSourceStatusUnavailable, 0)
+	insertMiddlewareGeneralizedAssetBinding(t, asset.Id, 132, "generalized-upstream", model.AssetStatusActive)
+	model.InitChannelCache()
+
+	router := newBytePlusAssetDistributorRouter(func(c *gin.Context) {
+		require.Equal(t, 132, common.GetContextKeyInt(c, constant.ContextKeyChannelId))
+		rewriteMap, ok := common.GetContextKeyType[map[string]string](c, constant.ContextKeyAssetRewriteMap)
+		require.True(t, ok)
+		require.Equal(t, "asset://generalized-upstream", rewriteMap["asset://"+publicID])
+		require.NotContains(t, fmt.Sprintf("%#v", rewriteMap), "legacy-upstream")
+		c.Status(http.StatusOK)
+	})
+
+	recorder := performBytePlusAssetDistributorRequest(router, "", `{
+		"model":"seedance-2.0",
+		"content":[{"type":"image_url","image_url":{"url":"asset://ast_1234567890abcdefABCDEF1234567890"},"role":"reference_image"}]
+	}`)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+}
+
 func newBytePlusAssetDistributorRouter(handler gin.HandlerFunc) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

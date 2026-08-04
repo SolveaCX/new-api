@@ -230,11 +230,28 @@ func ResolveLegacyBytePlusAssetBindingReferences(userID int, req *dto.SeedanceVi
 	for _, reference := range references {
 		publicIDs = append(publicIDs, reference.PublicID)
 	}
-	legacyAssets, err := model.GetBytePlusAssetsByPublicIDsForUser(userID, publicIDs)
+	generalized, err := model.GetAssetsWithBindingsByPublicIDsForUser(userID, publicIDs)
 	if err != nil {
 		return BytePlusAssetReferenceResolution{}, assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
 	}
-	if len(legacyAssets) != len(references) {
+	fallbackReferences := make([]assetReference, 0, len(references))
+	fallbackPublicIDs := make([]string, 0, len(references))
+	for _, reference := range references {
+		if _, ok := generalized[reference.PublicID]; ok {
+			continue
+		}
+		fallbackReferences = append(fallbackReferences, reference)
+		fallbackPublicIDs = append(fallbackPublicIDs, reference.PublicID)
+	}
+	if len(fallbackReferences) == 0 {
+		return BytePlusAssetReferenceResolution{}, nil
+	}
+
+	legacyAssets, err := model.GetBytePlusAssetsByPublicIDsForUser(userID, fallbackPublicIDs)
+	if err != nil {
+		return BytePlusAssetReferenceResolution{}, assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
+	}
+	if len(legacyAssets) != len(fallbackReferences) {
 		return BytePlusAssetReferenceResolution{}, nil
 	}
 	byPublicID := make(map[string]model.BytePlusAsset, len(legacyAssets))
@@ -243,7 +260,7 @@ func ResolveLegacyBytePlusAssetBindingReferences(userID int, req *dto.SeedanceVi
 	}
 	positiveChannels := map[int]struct{}{}
 	rewriteByChannel := map[int]map[string]string{}
-	for _, reference := range references {
+	for _, reference := range fallbackReferences {
 		asset, ok := byPublicID[reference.PublicID]
 		if !ok {
 			return BytePlusAssetReferenceResolution{}, nil

@@ -74,6 +74,42 @@ func TestResolveBytePlusAssetReferencesPrefersGeneralizedAssetsOverLegacyRows(t 
 	}
 }
 
+func TestResolveBytePlusAssetReferencesIgnoresLegacyConflictWhenGeneralizedRowsExist(t *testing.T) {
+	newBytePlusAssetReferenceDB(t)
+	imageID := "ast_1234567890abcdefABCDEF1234567890"
+	videoID := "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	insertBytePlusReferenceAsset(t, 7, 132, imageID, "legacy-image", model.BytePlusAssetStatusFailed)
+	legacyVideo := insertBytePlusReferenceAsset(t, 7, 133, videoID, "legacy-video", model.BytePlusAssetStatusActive)
+	if err := model.DB.Model(&legacyVideo).Update("asset_type", "Video").Error; err != nil {
+		t.Fatalf("update legacy video asset type: %v", err)
+	}
+	insertGeneralizedBytePlusReferenceAsset(t, 7, 131, imageID, "generalized-image", model.AssetStatusActive, model.AssetSourceStatusUnavailable)
+	generalizedVideo := insertGeneralizedBytePlusReferenceAsset(t, 7, 131, videoID, "generalized-video", model.AssetStatusActive, model.AssetSourceStatusUnavailable)
+	if err := model.DB.Model(&generalizedVideo).Update("asset_type", "Video").Error; err != nil {
+		t.Fatalf("update generalized video asset type: %v", err)
+	}
+
+	c := newAssetReferenceContext()
+	req := &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{
+		{Type: dto.SeedanceContentImage, ImageURL: &dto.SeedanceURLObject{URL: "asset://" + imageID}},
+		{Type: dto.SeedanceContentVideo, VideoURL: &dto.SeedanceURLObject{URL: "asset://" + videoID}},
+	}}
+
+	resolution, apiErr := ResolveBytePlusAssetReferences(c, 7, req)
+	if apiErr != nil {
+		t.Fatalf("ResolveBytePlusAssetReferences error: %v", apiErr)
+	}
+	if resolution.PinnedChannelID != 131 {
+		t.Fatalf("PinnedChannelID = %d, want generalized channel 131", resolution.PinnedChannelID)
+	}
+	if got := resolution.RewriteMap["asset://"+imageID]; got != "asset://generalized-image" {
+		t.Fatalf("image rewrite = %q, want asset://generalized-image", got)
+	}
+	if got := resolution.RewriteMap["asset://"+videoID]; got != "asset://generalized-video" {
+		t.Fatalf("video rewrite = %q, want asset://generalized-video", got)
+	}
+}
+
 func TestResolveBytePlusAssetReferencesPinsCommonChannelAcrossMultipleBindings(t *testing.T) {
 	newBytePlusAssetReferenceDB(t)
 	a := insertGeneralizedBytePlusReferenceAsset(t, 7, 131, "ast_1234567890abcdefABCDEF1234567890", "upstream-a-131", model.BytePlusAssetStatusActive, model.AssetSourceStatusAvailable)
