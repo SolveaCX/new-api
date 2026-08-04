@@ -649,7 +649,7 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn("--skip-git-repo-check", args)
         self.assertIn("--profile", args)
         self.assertIn("qa", args)
-        self.assertIn("--ignore-user-config", args)
+        self.assertNotIn("--ignore-user-config", args)
         self.assertIn("--output-last-message", args)
         last_message_path = args[args.index("--output-last-message") + 1]
         self.assertTrue(os.path.realpath(last_message_path).startswith(os.path.realpath(sup.runtime_root) + os.sep))

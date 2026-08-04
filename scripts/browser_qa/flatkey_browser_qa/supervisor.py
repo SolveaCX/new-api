@@ -400,7 +400,6 @@ class Supervisor:
             shutil.which("codex", path=child_env.get("PATH")) or "codex",
             "exec",
             "--strict-config",
-            "--ignore-user-config",
             "--ignore-rules",
             "--profile",
             "qa",
