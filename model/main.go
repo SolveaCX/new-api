@@ -67,6 +67,8 @@ var DB *gorm.DB
 
 var LOG_DB *gorm.DB
 
+var taskIDMigrationPageSize = 500
+
 func createRootAccountIfNeed() error {
 	var user User
 	//if user.Status != common.UserStatusEnabled {
@@ -478,54 +480,128 @@ func backfillTaskIDsBeforeUniqueIndex() error {
 		PrivateData TaskPrivateData `gorm:"column:private_data"`
 	}
 
-	var rows []taskIDMigrationRow
-	if err := DB.Table("tasks").
-		Select(selectColumns).
-		Order("id ASC").
-		Find(&rows).Error; err != nil {
-		return fmt.Errorf("failed to load tasks for task_id backfill: %w", err)
-	}
-
-	seen := make(map[string]struct{}, len(rows))
-	for _, row := range rows {
-		if row.TaskID != "" {
-			seen[row.TaskID] = struct{}{}
+	for lastID := int64(0); ; {
+		var rows []taskIDMigrationRow
+		if err := DB.Table("tasks").
+			Select(selectColumns).
+			Where("task_id = ? AND id > ?", "", lastID).
+			Order("id ASC").
+			Limit(taskIDMigrationPageSize).
+			Find(&rows).Error; err != nil {
+			return fmt.Errorf("failed to load empty task_id page for backfill: %w", err)
 		}
-	}
-
-	kept := make(map[string]struct{}, len(rows))
-	for _, row := range rows {
-		oldTaskID := row.TaskID
-		_, duplicateSeen := kept[oldTaskID]
-		needsNewTaskID := oldTaskID == "" || duplicateSeen
-		if oldTaskID != "" && !duplicateSeen {
-			kept[oldTaskID] = struct{}{}
-			continue
+		if len(rows) == 0 {
+			break
 		}
-		if !needsNewTaskID {
-			continue
-		}
-
-		newTaskID := GenerateTaskID()
-		for {
-			if _, exists := seen[newTaskID]; !exists {
-				break
+		for _, row := range rows {
+			newTaskID, err := generateUniqueTaskIDForMigration()
+			if err != nil {
+				return err
 			}
-			newTaskID = GenerateTaskID()
+			if err := DB.Table("tasks").Where("id = ? AND task_id = ?", row.ID, "").Update("task_id", newTaskID).Error; err != nil {
+				return fmt.Errorf("failed to backfill empty task_id for task %d: %w", row.ID, err)
+			}
+			lastID = row.ID
 		}
-		seen[newTaskID] = struct{}{}
+	}
 
-		updates := map[string]any{"task_id": newTaskID}
-		if hasPrivateData && oldTaskID != "" && row.PrivateData.UpstreamTaskID == "" {
-			row.PrivateData.UpstreamTaskID = oldTaskID
-			updates["private_data"] = row.PrivateData
+	type taskIDDuplicateGroup struct {
+		TaskID   string `gorm:"column:task_id"`
+		MinID    int64  `gorm:"column:min_id"`
+		RowCount int64  `gorm:"column:row_count"`
+	}
+
+	for lastTaskID := ""; ; {
+		var groups []taskIDDuplicateGroup
+		if err := DB.Table("tasks").
+			Select("task_id, MIN(id) AS min_id, COUNT(*) AS row_count").
+			Where("task_id <> ? AND task_id > ?", "", lastTaskID).
+			Group("task_id").
+			Having("COUNT(*) > 1").
+			Order("task_id ASC").
+			Limit(taskIDMigrationPageSize).
+			Scan(&groups).Error; err != nil {
+			return fmt.Errorf("failed to load duplicate task_id groups for backfill: %w", err)
 		}
-
-		if err := DB.Table("tasks").Where("id = ? AND task_id = ?", row.ID, oldTaskID).Updates(updates).Error; err != nil {
-			return fmt.Errorf("failed to backfill task_id for task %d: %w", row.ID, err)
+		if len(groups) == 0 {
+			break
+		}
+		for _, group := range groups {
+			if err := backfillDuplicateTaskIDGroup(group.TaskID, group.MinID, hasPrivateData, selectColumns); err != nil {
+				return err
+			}
+			lastTaskID = group.TaskID
 		}
 	}
 	return nil
+}
+
+func backfillDuplicateTaskIDGroup(taskID string, keepID int64, hasPrivateData bool, selectColumns []string) error {
+	type taskIDMigrationRow struct {
+		ID          int64
+		TaskID      string
+		PrivateData TaskPrivateData `gorm:"column:private_data"`
+	}
+
+	for lastID := keepID; ; {
+		var rows []taskIDMigrationRow
+		if err := DB.Table("tasks").
+			Select(selectColumns).
+			Where("task_id = ? AND id > ?", taskID, lastID).
+			Order("id ASC").
+			Limit(taskIDMigrationPageSize).
+			Find(&rows).Error; err != nil {
+			return fmt.Errorf("failed to load duplicate task_id rows for %q: %w", taskID, err)
+		}
+		if len(rows) == 0 {
+			break
+		}
+		for _, row := range rows {
+			newTaskID, err := generateUniqueTaskIDForMigration()
+			if err != nil {
+				return err
+			}
+
+			updates := map[string]any{"task_id": newTaskID}
+			if hasPrivateData && row.PrivateData.UpstreamTaskID == "" {
+				row.PrivateData.UpstreamTaskID = taskID
+				updates["private_data"] = row.PrivateData
+			}
+
+			if err := DB.Table("tasks").Where("id = ? AND task_id = ?", row.ID, taskID).Updates(updates).Error; err != nil {
+				return fmt.Errorf("failed to backfill duplicate task_id for task %d: %w", row.ID, err)
+			}
+			lastID = row.ID
+		}
+	}
+	return nil
+}
+
+func generateUniqueTaskIDForMigration() (string, error) {
+	for {
+		taskID := GenerateTaskID()
+		exists, err := taskIDExistsForMigration(taskID)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return taskID, nil
+		}
+	}
+}
+
+func taskIDExistsForMigration(taskID string) (bool, error) {
+	var row struct {
+		ID int64
+	}
+	err := DB.Table("tasks").Select("id").Where("task_id = ?", taskID).Limit(1).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check generated task_id collision: %w", err)
+	}
+	return true, nil
 }
 
 func migrateStartupInvitationValue() error {

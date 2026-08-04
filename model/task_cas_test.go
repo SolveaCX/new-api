@@ -286,6 +286,12 @@ func TestTaskIDMigrationBackfillsLegacyDuplicatesAndEmptyValues(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&legacyTaskForTaskIDMigration{}))
 	require.False(t, db.Migrator().HasIndex(&Task{}, "idx_tasks_task_id_unique"))
 
+	oldTaskIDMigrationPageSize := taskIDMigrationPageSize
+	taskIDMigrationPageSize = 3
+	t.Cleanup(func() {
+		taskIDMigrationPageSize = oldTaskIDMigrationPageSize
+	})
+
 	legacyTasks := []legacyTaskForTaskIDMigration{
 		{TaskID: "upstream-duplicate", Status: TaskStatusSubmitted},
 		{TaskID: "upstream-duplicate", Status: TaskStatusSubmitted},
@@ -298,6 +304,18 @@ func TestTaskIDMigrationBackfillsLegacyDuplicatesAndEmptyValues(t *testing.T) {
 		},
 		{TaskID: "", Status: TaskStatusQueued},
 		{TaskID: "upstream-unique", Status: TaskStatusSubmitted},
+	}
+	for i := 0; i < taskIDMigrationPageSize+2; i++ {
+		legacyTasks = append(legacyTasks, legacyTaskForTaskIDMigration{
+			TaskID: "",
+			Status: TaskStatusQueued,
+		})
+	}
+	for i := 0; i < taskIDMigrationPageSize+3; i++ {
+		legacyTasks = append(legacyTasks, legacyTaskForTaskIDMigration{
+			TaskID: "upstream-paged-duplicate",
+			Status: TaskStatusSubmitted,
+		})
 	}
 	require.NoError(t, db.Create(&legacyTasks).Error)
 
@@ -333,6 +351,15 @@ func TestTaskIDMigrationBackfillsLegacyDuplicatesAndEmptyValues(t *testing.T) {
 	require.Empty(t, migrated[3].PrivateData.UpstreamTaskID, "an empty legacy ID has no upstream identity to preserve")
 	require.Equal(t, "upstream-unique", migrated[4].TaskID)
 	require.Empty(t, migrated[4].PrivateData.UpstreamTaskID)
+	require.Equal(t, "upstream-paged-duplicate", migrated[10].TaskID, "the first row from the paged duplicate group keeps its public ID")
+	for i := 5; i <= 9; i++ {
+		require.True(t, strings.HasPrefix(migrated[i].TaskID, "task_"))
+		require.Empty(t, migrated[i].PrivateData.UpstreamTaskID)
+	}
+	for i := 11; i < len(migrated); i++ {
+		require.True(t, strings.HasPrefix(migrated[i].TaskID, "task_"))
+		require.Equal(t, "upstream-paged-duplicate", migrated[i].PrivateData.UpstreamTaskID)
+	}
 
 	firstMigration := append([]legacyTaskForTaskIDMigration(nil), migrated...)
 	require.NoError(t, backfillTaskIDsBeforeUniqueIndex(), "the preflight must be idempotent")
