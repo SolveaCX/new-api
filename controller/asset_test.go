@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	backendI18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
@@ -196,6 +197,8 @@ func TestDirectUploadSessionOversizeReturnsStable413Envelope(t *testing.T) {
 }
 
 func TestAssetControllerMapsExpiredAndTypeMismatchErrorsToStableOpenAIEnvelope(t *testing.T) {
+	require.NoError(t, backendI18n.Init())
+
 	originalSession := createAssetUploadSession
 	originalComplete := completeAssetUpload
 	t.Cleanup(func() {
@@ -211,16 +214,19 @@ func TestAssetControllerMapsExpiredAndTypeMismatchErrorsToStableOpenAIEnvelope(t
 	CreateAssetUploadSession(sessionCtx)
 	require.Equal(t, http.StatusBadRequest, sessionRecorder.Code)
 	requireAssetError(t, sessionRecorder.Body.Bytes(), "asset_type_mismatch")
+	requireAssetErrorMessage(t, sessionRecorder.Body.Bytes(), "asset_type_mismatch", "Asset type does not match the uploaded media")
 
 	completeAssetUpload = func(context.Context, service.AssetCompleteUploadRequest) (*service.AssetResult, error) {
 		return nil, service.ErrAssetExpired
 	}
 	expiredCtx, expiredRecorder := newAssetJSONContext(http.MethodPost, "/v1/assets/uploads/upl_expired/complete", `{}`)
+	expiredCtx.Request.Header.Set("Accept-Language", "pt")
 	expiredCtx.Params = gin.Params{{Key: "upload_id", Value: "upl_expired"}}
 	setAssetTokenContext(expiredCtx, 123)
 	CompleteAssetUpload(expiredCtx)
 	require.Equal(t, http.StatusGone, expiredRecorder.Code)
 	requireAssetError(t, expiredRecorder.Body.Bytes(), "asset_expired")
+	requireAssetErrorMessage(t, expiredRecorder.Body.Bytes(), "asset_expired", "O upload do ativo expirou")
 }
 
 func TestCompleteUploadAndOwnedGetUseUserScopedService(t *testing.T) {
@@ -336,6 +342,17 @@ func requireAssetError(t *testing.T, body []byte, code any) {
 	require.Equal(t, code, envelope.Error.Type)
 	require.Empty(t, envelope.Error.Param)
 	require.Empty(t, envelope.Error.Metadata)
+}
+
+func requireAssetErrorMessage(t *testing.T, body []byte, code any, message string) {
+	t.Helper()
+	var envelope struct {
+		Error types.OpenAIError `json:"error"`
+	}
+	require.NoError(t, common.Unmarshal(body, &envelope))
+	require.Equal(t, code, envelope.Error.Code)
+	require.Equal(t, message, envelope.Error.Message)
+	require.NotContains(t, strings.ToLower(envelope.Error.Message), "storage")
 }
 
 func requireAssetPublicBody(t *testing.T, body string) {

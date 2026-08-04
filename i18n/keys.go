@@ -376,6 +376,8 @@ const (
 	MsgAssetChannelUnavailable = "asset.channel_unavailable"
 	MsgAssetGroupInitializing  = "asset.group_initializing"
 	MsgAssetUpstreamError      = "asset.upstream_error"
+	MsgAssetExpired            = "asset.expired"
+	MsgAssetTypeMismatch       = "asset.type_mismatch"
 	MsgAssetStorageError       = "asset.storage_error"
 )
 
