@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -12,9 +13,11 @@ const (
 	AssetStatusProcessing = "Processing"
 	AssetStatusActive     = "Active"
 	AssetStatusFailed     = "Failed"
+	AssetStatusExpired    = "Expired"
 
 	AssetSourceStatusAvailable   = "Available"
 	AssetSourceStatusUnavailable = "Unavailable"
+	AssetSourceStatusExpired     = "Expired"
 
 	AssetBindingStatusPending = "PENDING"
 	AssetBindingStatusLeased  = "LEASED"
@@ -27,22 +30,25 @@ const (
 const legacyBytePlusAssetMigrationPageSize = 500
 
 type Asset struct {
-	Id              int64  `json:"id" gorm:"primaryKey"`
-	PublicId        string `json:"public_id" gorm:"type:varchar(64);uniqueIndex"`
-	UserId          int    `json:"user_id" gorm:"index"`
-	AssetType       string `json:"asset_type" gorm:"type:varchar(16);index"`
-	Status          string `json:"status" gorm:"type:varchar(24);index"`
-	SourceStatus    string `json:"source_status" gorm:"type:varchar(24);index"`
-	StorageBackend  string `json:"storage_backend" gorm:"type:varchar(16)"`
-	StorageBucket   string `json:"storage_bucket" gorm:"type:varchar(255)"`
-	ObjectKey       string `json:"object_key" gorm:"type:varchar(512)"`
-	ContentType     string `json:"content_type" gorm:"type:varchar(128)"`
-	SizeBytes       int64  `json:"size_bytes"`
-	SHA256          string `json:"sha256" gorm:"type:varchar(64)"`
-	LastUsedAt      int64  `json:"last_used_at" gorm:"index"`
-	SourceExpiresAt int64  `json:"source_expires_at" gorm:"index"`
-	CreatedAt       int64  `json:"created_at"`
-	UpdatedAt       int64  `json:"updated_at"`
+	Id                int64  `json:"id" gorm:"primaryKey"`
+	PublicId          string `json:"public_id" gorm:"type:varchar(64);uniqueIndex"`
+	UserId            int    `json:"user_id" gorm:"index"`
+	AssetType         string `json:"asset_type" gorm:"type:varchar(16);index"`
+	Status            string `json:"status" gorm:"type:varchar(24);index"`
+	SourceStatus      string `json:"source_status" gorm:"type:varchar(24);index"`
+	StorageBackend    string `json:"storage_backend" gorm:"type:varchar(16)"`
+	StorageBucket     string `json:"storage_bucket" gorm:"type:varchar(255)"`
+	ObjectKey         string `json:"object_key" gorm:"type:varchar(512)"`
+	ContentType       string `json:"content_type" gorm:"type:varchar(128)"`
+	SizeBytes         int64  `json:"size_bytes"`
+	SHA256            string `json:"sha256" gorm:"type:varchar(64)"`
+	LastUsedAt        int64  `json:"last_used_at" gorm:"index"`
+	SourceExpiresAt   int64  `json:"source_expires_at" gorm:"index"`
+	CleanupLeaseOwner string `json:"-" gorm:"type:varchar(64);index"`
+	CleanupLeaseUntil int64  `json:"-" gorm:"index"`
+	CleanupGeneration int64  `json:"-" gorm:"index"`
+	CreatedAt         int64  `json:"created_at"`
+	UpdatedAt         int64  `json:"updated_at"`
 }
 
 type AssetBinding struct {
@@ -84,6 +90,87 @@ type AssetWithBinding struct {
 	Asset    Asset
 	Binding  *AssetBinding
 	Bindings []AssetBinding
+}
+
+type AssetUploadCompletion struct {
+	ContentType     string
+	SizeBytes       int64
+	SHA256          string
+	SourceExpiresAt int64
+	Now             int64
+}
+
+func CreateAsset(asset Asset) (*Asset, error) {
+	if err := DB.Create(&asset).Error; err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
+func CreateAssetWithUploadSession(asset Asset, upload AssetUpload) (*Asset, error) {
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&asset).Error; err != nil {
+			return err
+		}
+		upload.AssetId = asset.Id
+		upload.UserId = asset.UserId
+		upload.PublicId = asset.PublicId
+		upload.AssetType = asset.AssetType
+		upload.StorageBackend = asset.StorageBackend
+		upload.StorageBucket = asset.StorageBucket
+		upload.ObjectKey = asset.ObjectKey
+		if err := tx.Create(&upload).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
+func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploadCompletion) (bool, error) {
+	completed := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var upload AssetUpload
+		if err := tx.Where("upload_id = ? AND owner = ? AND status = ?", uploadID, owner, AssetUploadStatusPending).First(&upload).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		assetUpdates := map[string]any{
+			"status":            AssetStatusActive,
+			"source_status":     AssetSourceStatusAvailable,
+			"content_type":      completion.ContentType,
+			"size_bytes":        completion.SizeBytes,
+			"sha256":            completion.SHA256,
+			"source_expires_at": completion.SourceExpiresAt,
+			"updated_at":        completion.Now,
+		}
+		if err := tx.Model(&Asset{}).
+			Where("id = ? AND user_id = ?", upload.AssetId, upload.UserId).
+			Updates(assetUpdates).Error; err != nil {
+			return err
+		}
+		uploadUpdates := map[string]any{
+			"status":       AssetUploadStatusComplete,
+			"content_type": completion.ContentType,
+			"size_bytes":   completion.SizeBytes,
+			"sha256":       completion.SHA256,
+			"updated_at":   completion.Now,
+		}
+		result := tx.Model(&AssetUpload{}).
+			Where("id = ? AND owner = ? AND status = ?", upload.Id, owner, AssetUploadStatusPending).
+			Updates(uploadUpdates)
+		if result.Error != nil {
+			return result.Error
+		}
+		completed = result.RowsAffected == 1
+		return nil
+	})
+	return completed, err
 }
 
 func CreateAssetBindingIfAbsent(assetID int64, channelID int, now int64) (*AssetBinding, bool, error) {
@@ -276,4 +363,80 @@ func GetAssetUploadForOwner(uploadID string, owner string) (*AssetUpload, error)
 		return nil, err
 	}
 	return &upload, nil
+}
+
+func GetAssetByIDForUser(assetID int64, userID int) (*Asset, error) {
+	var asset Asset
+	if err := DB.Where("id = ? AND user_id = ?", assetID, userID).First(&asset).Error; err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
+func ClaimExpiredAssetSources(owner string, now int64, leaseUntil int64, limit int) ([]Asset, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var candidates []Asset
+	if err := DB.Where("source_status = ? AND source_expires_at > 0 AND source_expires_at <= ?", AssetSourceStatusAvailable, now).
+		Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
+		Order("source_expires_at ASC, id ASC").
+		Limit(limit).
+		Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	claimed := make([]Asset, 0, len(candidates))
+	for _, candidate := range candidates {
+		nextGeneration := candidate.CleanupGeneration + 1
+		result := DB.Model(&Asset{}).
+			Where("id = ? AND cleanup_generation = ?", candidate.Id, candidate.CleanupGeneration).
+			Where("source_status = ? AND source_expires_at > 0 AND source_expires_at <= ?", AssetSourceStatusAvailable, now).
+			Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
+			Updates(map[string]any{
+				"cleanup_lease_owner": owner,
+				"cleanup_lease_until": leaseUntil,
+				"cleanup_generation":  nextGeneration,
+				"updated_at":          now,
+			})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 1 {
+			candidate.CleanupLeaseOwner = owner
+			candidate.CleanupLeaseUntil = leaseUntil
+			candidate.CleanupGeneration = nextGeneration
+			claimed = append(claimed, candidate)
+		}
+	}
+	return claimed, nil
+}
+
+func MarkAssetSourceExpiredIfCleanupLease(assetID int64, owner string, generation int64, now int64) (bool, error) {
+	nextStatus := AssetStatusExpired
+	var activeBindings int64
+	if err := DB.Model(&AssetBinding{}).
+		Where("asset_id = ? AND status = ?", assetID, AssetBindingStatusLeased).
+		Count(&activeBindings).Error; err != nil {
+		return false, err
+	}
+	if activeBindings > 0 {
+		nextStatus = AssetStatusActive
+	}
+	result := DB.Model(&Asset{}).
+		Where("id = ? AND cleanup_lease_owner = ? AND cleanup_generation = ?", assetID, owner, generation).
+		Where("source_status = ?", AssetSourceStatusAvailable).
+		Updates(map[string]any{
+			"source_status":       AssetSourceStatusExpired,
+			"status":              nextStatus,
+			"storage_backend":     "",
+			"storage_bucket":      "",
+			"object_key":          "",
+			"cleanup_lease_owner": "",
+			"cleanup_lease_until": int64(0),
+			"updated_at":          now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }

@@ -251,6 +251,100 @@ func TestAssetUploadOwnership(t *testing.T) {
 	require.True(t, errors.Is(err, gorm.ErrRecordNotFound), "different owner must not read the upload session")
 }
 
+func TestAssetCreateAvailableAndPendingUploadThenCompleteWithOwnerCAS(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetUpload{})
+
+	asset, err := CreateAssetWithUploadSession(Asset{
+		PublicId:       "ast_pending",
+		UserId:         10,
+		AssetType:      "Image",
+		Status:         AssetStatusCreating,
+		SourceStatus:   AssetSourceStatusUnavailable,
+		StorageBackend: "gcs",
+		StorageBucket:  "bucket",
+		ObjectKey:      "objects/pending.png",
+		ContentType:    "image/png",
+		SizeBytes:      123,
+		CreatedAt:      100,
+		UpdatedAt:      100,
+	}, AssetUpload{
+		UploadId:    "upl_pending",
+		Owner:       "owner-a",
+		UserId:      10,
+		PublicId:    "ast_pending",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   123,
+		ExpiresAt:   200,
+		Status:      AssetUploadStatusPending,
+		CreatedAt:   100,
+		UpdatedAt:   100,
+	})
+	require.NoError(t, err)
+	require.NotZero(t, asset.Id)
+
+	completed, err := CompleteAssetUploadCAS("upl_pending", "owner-b", AssetUploadCompletion{
+		ContentType:     "image/png",
+		SizeBytes:       123,
+		SHA256:          "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		SourceExpiresAt: 300,
+		Now:             150,
+	})
+	require.NoError(t, err)
+	require.False(t, completed)
+
+	completed, err = CompleteAssetUploadCAS("upl_pending", "owner-a", AssetUploadCompletion{
+		ContentType:     "image/png",
+		SizeBytes:       123,
+		SHA256:          "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		SourceExpiresAt: 300,
+		Now:             150,
+	})
+	require.NoError(t, err)
+	require.True(t, completed)
+
+	var stored Asset
+	require.NoError(t, DB.First(&stored, asset.Id).Error)
+	require.Equal(t, AssetStatusActive, stored.Status)
+	require.Equal(t, AssetSourceStatusAvailable, stored.SourceStatus)
+	require.Equal(t, "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", stored.SHA256)
+	require.EqualValues(t, 300, stored.SourceExpiresAt)
+
+	var upload AssetUpload
+	require.NoError(t, DB.First(&upload, "upload_id = ?", "upl_pending").Error)
+	require.Equal(t, AssetUploadStatusComplete, upload.Status)
+}
+
+func TestAssetCleanupLeaseClaimAndGenerationFencing(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	asset := insertAssetForAssetTest(t, "asset_cleanup_lease")
+	require.NoError(t, DB.Model(&Asset{}).Where("id = ?", asset.Id).Updates(map[string]any{
+		"status":              AssetStatusActive,
+		"source_status":       AssetSourceStatusAvailable,
+		"source_expires_at":   int64(100),
+		"cleanup_lease_owner": "node-stale",
+		"cleanup_lease_until": int64(90),
+		"cleanup_generation":  int64(2),
+	}).Error)
+
+	claimed, err := ClaimExpiredAssetSources("node-a", 150, 210, 10)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.EqualValues(t, 3, claimed[0].CleanupGeneration)
+
+	ok, err := MarkAssetSourceExpiredIfCleanupLease(claimed[0].Id, "node-b", claimed[0].CleanupGeneration, 200)
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	ok, err = MarkAssetSourceExpiredIfCleanupLease(claimed[0].Id, "node-a", claimed[0].CleanupGeneration, 200)
+	require.NoError(t, err)
+	require.True(t, ok)
+	var stored Asset
+	require.NoError(t, DB.First(&stored, asset.Id).Error)
+	require.Equal(t, AssetSourceStatusExpired, stored.SourceStatus)
+	require.Equal(t, AssetStatusExpired, stored.Status)
+}
+
 func newAssetTestDB(t *testing.T, models ...interface{}) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})

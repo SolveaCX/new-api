@@ -1,0 +1,243 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/QuantumNous/new-api/model"
+	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+)
+
+func TestCreateAssetFromURLStoresOpaqueAvailableSourceWithSHAAndRevalidatesRedirects(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	png := tinyPNG()
+	redirects := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/start.png" {
+			redirects++
+			http.Redirect(w, r, "/final.png", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+	}))
+	t.Cleanup(server.Close)
+	assetHTTPClient = server.Client()
+
+	result, err := CreateAssetFromURL(context.Background(), AssetFromURLRequest{
+		UserID:    42,
+		AssetType: "Image",
+		URL:       server.URL + "/start.png",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "ast_fixed", result.PublicID)
+	require.Equal(t, model.AssetStatusActive, result.Status)
+	require.Equal(t, 1, redirects)
+	require.Len(t, store.puts, 1)
+	require.Regexp(t, `^assets/42/20260725/ast_fixed/rand_fixed\.png$`, store.puts[0].key)
+	require.NotContains(t, store.puts[0].key, "start")
+	require.NotContains(t, store.puts[0].key, "final")
+	require.Equal(t, "image/png", store.puts[0].contentType)
+
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", "ast_fixed").Error)
+	require.Equal(t, model.AssetSourceStatusAvailable, asset.SourceStatus)
+	require.Equal(t, defaultAssetStorageBackend, asset.StorageBackend)
+	require.Equal(t, "asset-test-bucket", asset.StorageBucket)
+	require.Equal(t, int64(len(png)), asset.SizeBytes)
+	require.Equal(t, shaHex(png), asset.SHA256)
+	require.Equal(t, assetNow().Add(30*24*time.Hour).Unix(), asset.SourceExpiresAt)
+	require.Empty(t, result.SignedURL, "source ingestion must not return or persist signed GET URLs")
+}
+
+func TestCreateAssetFromURLRejectsPrivateAddressAndCredentialRedirect(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	_, err := CreateAssetFromURL(context.Background(), AssetFromURLRequest{UserID: 1, AssetType: "Image", URL: "https://user:pass@example.com/a.png"})
+	require.ErrorIs(t, err, ErrAssetInvalidSourceURL)
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://user:pass@example.com/a.png", http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+	assetHTTPClient = server.Client()
+	_, err = CreateAssetFromURL(context.Background(), AssetFromURLRequest{UserID: 1, AssetType: "Image", URL: server.URL})
+	require.ErrorIs(t, err, ErrAssetInvalidSourceURL)
+}
+
+func TestUploadAssetEnforcesMultipartCapTypeLimitsAndMediaMIME(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	t.Setenv("ASSET_MULTIPART_MAX_BYTES", "8")
+	t.Setenv("ASSET_IMAGE_MAX_BYTES", "7")
+	_, err := UploadAsset(context.Background(), AssetUploadRequest{UserID: 1, AssetType: "Image", Filename: "ignored.png", Body: bytes.NewReader(append(tinyPNG(), 'x'))})
+	require.ErrorIs(t, err, ErrAssetTooLarge)
+
+	t.Setenv("ASSET_MULTIPART_MAX_BYTES", "99")
+	t.Setenv("ASSET_IMAGE_MAX_BYTES", "99")
+	_, err = UploadAsset(context.Background(), AssetUploadRequest{UserID: 1, AssetType: "Image", Filename: "ignored.txt", Body: strings.NewReader("not an image")})
+	require.ErrorIs(t, err, ErrAssetUnsupportedMediaType)
+
+	result, err := UploadAsset(context.Background(), AssetUploadRequest{UserID: 1, AssetType: "Audio", Filename: "voice.any", Body: bytes.NewReader(tinyMP3())})
+	require.NoError(t, err)
+	require.Equal(t, "ast_fixed", result.PublicID)
+	require.Equal(t, "audio/mpeg", store.puts[len(store.puts)-1].contentType)
+	require.True(t, strings.HasSuffix(store.puts[len(store.puts)-1].key, ".mp3"))
+}
+
+func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAttrsAndHash(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	t.Setenv("ASSET_SIGNED_URL_TTL_SECONDS", "3600")
+	png := tinyPNG()
+
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "upload_fixed", session.UploadID)
+	require.Equal(t, "ast_fixed", session.PublicID)
+	require.Equal(t, "https://signed.example/"+session.ObjectKey, session.SignedURL)
+	require.Equal(t, assetNow().Add(time.Hour).Unix(), session.ExpiresAt)
+	require.Len(t, store.signed, 1)
+	require.Equal(t, http.MethodPut, store.signed[0].Method)
+	require.Equal(t, time.Hour, store.signed[0].TTL)
+	require.Equal(t, "image/png", store.signed[0].ContentType)
+
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 9}
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-8"})
+	require.ErrorIs(t, err, ErrAssetUploadNotFound)
+
+	result, err := CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusActive, result.Status)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, shaHex(png), asset.SHA256)
+	require.Equal(t, model.AssetSourceStatusAvailable, asset.SourceStatus)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusComplete, upload.Status)
+}
+
+func TestCleanupExpiredAssetSourcesIsIdempotentAndUsesLeaseFencing(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := model.Asset{
+		PublicId:          "ast_cleanup",
+		UserId:            7,
+		AssetType:         "Image",
+		Status:            model.AssetStatusActive,
+		SourceStatus:      model.AssetSourceStatusAvailable,
+		StorageBackend:    defaultAssetStorageBackend,
+		StorageBucket:     "asset-test-bucket",
+		ObjectKey:         "assets/7/20260725/ast_cleanup/r.png",
+		SourceExpiresAt:   1000,
+		CleanupLeaseOwner: "other",
+		CleanupLeaseUntil: 1001,
+		CleanupGeneration: 3,
+		CreatedAt:         900,
+		UpdatedAt:         900,
+	}
+	require.NoError(t, model.DB.Create(&asset).Error)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{AssetId: asset.Id, ChannelId: 1, Status: model.AssetBindingStatusLeased}).Error)
+	store.objects["asset-test-bucket/"+asset.ObjectKey] = tinyPNG()
+
+	result, err := CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Claimed)
+	require.Equal(t, 1, result.Deleted)
+	require.Equal(t, []string{"asset-test-bucket/" + asset.ObjectKey}, store.deletes)
+	var stored model.Asset
+	require.NoError(t, model.DB.First(&stored, asset.Id).Error)
+	require.Equal(t, model.AssetSourceStatusExpired, stored.SourceStatus)
+	require.Equal(t, model.AssetStatusActive, stored.Status, "active binding keeps public asset active")
+
+	result, err = CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
+	require.NoError(t, err)
+	require.Zero(t, result.Claimed)
+}
+
+func newAssetServiceTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Asset{}, &model.AssetBinding{}, &model.AssetUpload{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	oldDB := model.DB
+	model.DB = db
+	t.Cleanup(func() {
+		model.DB = oldDB
+		_ = sqlDB.Close()
+	})
+	return db
+}
+
+func installAssetServiceTestDeps(t *testing.T) *fakeAssetObjectStore {
+	t.Helper()
+	store := &fakeAssetObjectStore{objects: map[string][]byte{}, attrs: map[string]AssetObjectAttrs{}}
+	oldStore := assetObjectStore
+	oldNow := assetNow
+	oldPublicID := assetPublicID
+	oldUploadID := assetUploadID
+	oldRandom := assetRandomSuffix
+	oldHTTP := assetHTTPClient
+	oldValidate := assetValidateURL
+	assetObjectStore = store
+	assetNow = func() time.Time { return time.Date(2026, 7, 25, 10, 11, 12, 0, time.UTC) }
+	assetPublicID = func() (string, error) { return "ast_fixed", nil }
+	assetUploadID = func() (string, error) { return "upload_fixed", nil }
+	assetRandomSuffix = func() (string, error) { return "rand_fixed", nil }
+	assetHTTPClient = http.DefaultClient
+	assetValidateURL = func(rawURL string) error { return nil }
+	t.Setenv("ASSET_STORAGE_BUCKET", "asset-test-bucket")
+	t.Setenv("ASSET_KEY_PREFIX", "assets")
+	t.Cleanup(func() {
+		assetObjectStore = oldStore
+		assetNow = oldNow
+		assetPublicID = oldPublicID
+		assetUploadID = oldUploadID
+		assetRandomSuffix = oldRandom
+		assetHTTPClient = oldHTTP
+		assetValidateURL = oldValidate
+	})
+	return store
+}
+
+func tinyPNG() []byte {
+	return []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 'I', 'H', 'D', 'R'}
+}
+
+func tinyMP3() []byte {
+	return []byte("ID3\x04\x00\x00\x00\x00\x00\x00payload")
+}
+
+func shaHex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
+var _ io.Reader = errReader{err: errors.New("x")}
