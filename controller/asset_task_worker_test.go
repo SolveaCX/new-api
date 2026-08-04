@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -78,6 +79,135 @@ func TestAssetTaskQueuePersistsQueuedTaskAndReturnsImmediately(t *testing.T) {
 	require.NotContains(t, persisted, "X-Goog-Signature")
 }
 
+func TestAssetTaskPreparationStaleLeaseTakeoverAndLateResultFenced(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	task := seedControllerQueuedAssetTask(t, "task_stale_takeover", model.TaskPreparationStatusPreparingAssets, "", 0)
+	calls := make([]string, 0, 2)
+	runLeasedAssetTaskFunc = func(ctx context.Context, taskID string, owner string, leaseExpiresAt int64) error {
+		calls = append(calls, owner)
+		if owner == "node-a" {
+			return nil
+		}
+		return acceptAssetTask(task, owner, leaseExpiresAt, &model.Channel{Id: 132}, &relay.TaskSubmitResult{
+			UpstreamTaskID: "upstream-node-b",
+			TaskData:       []byte(`{"id":"upstream-node-b"}`),
+			Platform:       constant.TaskPlatform("107"),
+			Quota:          123,
+		})
+	}
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	assetTaskWorkerTestNow = 1050
+	processed, err = RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Equal(t, 0, processed, "fresh foreign lease must not be scanned for takeover")
+
+	assetTaskWorkerTestNow = 1101
+	processed, err = RunAssetTaskWorkerOnce(context.Background(), "node-b", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed, "expired foreign lease must be claimable by another node")
+	require.Equal(t, []string{"node-a", "node-b"}, calls)
+
+	lateWon, err := model.MarkQueuedTaskAccepted("task_stale_takeover", "node-a", 1100, 1102, 1102, 131, constant.TaskPlatform("107"), 123, "late-upstream", []byte(`{"id":"late"}`), nil, 1102, 1200)
+	require.NoError(t, err)
+	require.False(t, lateWon, "old worker result must be fenced after takeover acceptance")
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_stale_takeover").First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
+	require.Equal(t, 132, stored.ChannelId)
+	require.Equal(t, "upstream-node-b", stored.PrivateData.UpstreamTaskID)
+}
+
+func TestAssetTaskAcceptedWinnerExtendsRetentionAndLateWorkerDoesNot(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	publicID := "ast_1234567890abcdefABCDEF1234567890"
+	task := seedControllerQueuedAssetTask(t, "task_retention", model.TaskPreparationStatusPreparing, "node-a", 2000)
+	seedControllerAsset(t, 7, publicID, 100)
+	task.NormalizedRequestPayload = []byte(`{"content":[{"type":"image_url","image_url":{"url":"asset://` + publicID + `"}}]}`)
+	require.NoError(t, model.DB.Save(task).Error)
+
+	assetTaskWorkerTestNow = 1900
+	err := acceptAssetTask(task, "node-a", 2000, &model.Channel{Id: 131}, &relay.TaskSubmitResult{
+		UpstreamTaskID: "upstream-accepted",
+		TaskData:       []byte(`{"id":"upstream-accepted"}`),
+		Platform:       constant.TaskPlatform("107"),
+		Quota:          123,
+	})
+	require.NoError(t, err)
+
+	var accepted model.Asset
+	require.NoError(t, model.DB.Where("public_id = ?", publicID).First(&accepted).Error)
+	require.GreaterOrEqual(t, accepted.LastUsedAt, int64(1))
+	require.Greater(t, accepted.SourceExpiresAt, int64(100))
+	winnerLastUsed := accepted.LastUsedAt
+	winnerExpires := accepted.SourceExpiresAt
+
+	lateWon, err := model.MarkQueuedTaskAccepted("task_retention", "node-b", 3000, winnerLastUsed+10, winnerLastUsed+10, 132, constant.TaskPlatform("107"), 123, "late-upstream", []byte(`{"id":"late"}`), []string{publicID}, winnerLastUsed+10, winnerExpires+1000)
+	require.NoError(t, err)
+	require.False(t, lateWon)
+
+	var afterLate model.Asset
+	require.NoError(t, model.DB.Where("public_id = ?", publicID).First(&afterLate).Error)
+	require.Equal(t, winnerLastUsed, afterLate.LastUsedAt)
+	require.Equal(t, winnerExpires, afterLate.SourceExpiresAt)
+}
+
+func TestAssetTaskWorkerPreparationFailureRefundsOnceForLateResult(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+
+	require.NoError(t, model.DB.Create(&model.User{Id: 7, Username: "task_worker_refund", Quota: 1000, Status: common.UserStatusEnabled, AffCode: "task_worker_refund"}).Error)
+	require.NoError(t, model.DB.Create(&model.Token{Id: 11, UserId: 7, Key: "sk-task-worker-refund", Name: "task-worker-refund", Status: common.TokenStatusEnabled, RemainQuota: 500}).Error)
+	require.NoError(t, model.DB.Create(&model.Channel{Id: 131, Name: "task-worker-refund", Key: "sk-channel", Status: common.ChannelStatusEnabled}).Error)
+
+	task := seedControllerQueuedAssetTask(t, "task_worker_refund_once", model.TaskPreparationStatusPreparingAssets, "", 0)
+	runLeasedAssetTaskFunc = func(ctx context.Context, taskID string, owner string, leaseExpiresAt int64) error {
+		stored, ok, err := model.GetByOnlyTaskId(taskID)
+		require.NoError(t, err)
+		require.True(t, ok)
+		return failAssetTaskPreparation(ctx, stored, owner, leaseExpiresAt, assertErr("materialize failed"))
+	}
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	lateErr := failAssetTaskPreparation(context.Background(), task, "node-b", 1100, assertErr("late materialize failed"))
+	require.Error(t, lateErr)
+
+	var user model.User
+	require.NoError(t, model.DB.Where("id = ?", 7).First(&user).Error)
+	require.Equal(t, 1123, user.Quota)
+	var token model.Token
+	require.NoError(t, model.DB.Where("id = ?", 11).First(&token).Error)
+	require.Equal(t, 623, token.RemainQuota)
+	var refundLogs int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeRefund).Count(&refundLogs).Error)
+	require.EqualValues(t, 1, refundLogs)
+}
+
+type assertErr string
+
+func (e assertErr) Error() string {
+	return string(e)
+}
+
 func newControllerAssetTaskContext(body string) *gin.Context {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -90,14 +220,79 @@ func newControllerAssetTaskContext(body string) *gin.Context {
 func useControllerAssetTaskDBForTest(t *testing.T) func() {
 	t.Helper()
 	oldDB := model.DB
+	oldLogDB := model.LOG_DB
+	oldRedisEnabled := common.RedisEnabled
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Task{}))
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Asset{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	model.DB = db
+	model.LOG_DB = db
+	common.RedisEnabled = false
 	return func() {
 		model.DB = oldDB
+		model.LOG_DB = oldLogDB
+		common.RedisEnabled = oldRedisEnabled
 		_ = sqlDB.Close()
 	}
+}
+
+var assetTaskWorkerTestNow int64
+
+func useAssetTaskWorkerHooksForTest(t *testing.T, leaseSeconds int64, now func() int64) func() {
+	t.Helper()
+	oldRunner := runLeasedAssetTaskFunc
+	oldNow := assetTaskWorkerNowUnix
+	oldLease := assetTaskPreparationLeaseSeconds
+	assetTaskWorkerNowUnix = now
+	assetTaskPreparationLeaseSeconds = leaseSeconds
+	return func() {
+		runLeasedAssetTaskFunc = oldRunner
+		assetTaskWorkerNowUnix = oldNow
+		assetTaskPreparationLeaseSeconds = oldLease
+	}
+}
+
+func seedControllerQueuedAssetTask(t *testing.T, taskID string, prepStatus string, leaseOwner string, leaseExpiresAt int64) *model.Task {
+	t.Helper()
+	task := &model.Task{
+		TaskID:                    taskID,
+		UserId:                    7,
+		Group:                     "default",
+		ChannelId:                 131,
+		Platform:                  constant.TaskPlatform("107"),
+		Quota:                     123,
+		Action:                    constant.TaskActionGenerate,
+		Status:                    model.TaskStatusQueued,
+		PreparationStatus:         prepStatus,
+		PreparationLeaseOwner:     leaseOwner,
+		PreparationLeaseExpiresAt: leaseExpiresAt,
+		NormalizedRequestPayload:  []byte(`{"model":"seedance-2.0","content":[]}`),
+		Data:                      []byte(`{}`),
+		PrivateData: model.TaskPrivateData{
+			BillingSource: service.BillingSourceWallet,
+			TokenId:       11,
+			BillingContext: &model.TaskBillingContext{
+				OriginModelName: "seedance-2.0",
+			},
+		},
+		Properties: model.Properties{OriginModelName: "seedance-2.0"},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+	return task
+}
+
+func seedControllerAsset(t *testing.T, userID int, publicID string, sourceExpiresAt int64) {
+	t.Helper()
+	require.NoError(t, model.DB.Create(&model.Asset{
+		PublicId:        publicID,
+		UserId:          userID,
+		AssetType:       "Image",
+		Status:          model.AssetStatusActive,
+		SourceStatus:    model.AssetSourceStatusAvailable,
+		SourceExpiresAt: sourceExpiresAt,
+		CreatedAt:       1,
+		UpdatedAt:       1,
+	}).Error)
 }

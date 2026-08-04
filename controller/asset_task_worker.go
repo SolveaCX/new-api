@@ -28,6 +28,12 @@ const (
 	assetTaskWorkerBatchSize    = 10
 )
 
+var (
+	assetTaskWorkerNowUnix           = func() int64 { return time.Now().Unix() }
+	assetTaskPreparationLeaseSeconds = int64(assetTaskWorkerLeaseSeconds)
+	runLeasedAssetTaskFunc           = runLeasedAssetTask
+)
+
 type AssetTaskWorkerConfig struct {
 	Owner    string
 	Interval time.Duration
@@ -178,14 +184,15 @@ func assetTaskWorkerOwner(configured string) string {
 }
 
 func RunAssetTaskWorkerOnce(ctx context.Context, owner string, limit int) (int, error) {
-	tasks, err := model.GetQueuedAssetPreparationTasks(limit)
+	now := assetTaskWorkerNowUnix()
+	tasks, err := model.GetQueuedAssetPreparationTasks(now, limit)
 	if err != nil {
 		return 0, err
 	}
 	processed := 0
 	for _, task := range tasks {
-		now := time.Now().Unix()
-		leaseExpiresAt := now + assetTaskWorkerLeaseSeconds
+		now = assetTaskWorkerNowUnix()
+		leaseExpiresAt := now + assetTaskPreparationLeaseSeconds
 		won, err := model.ClaimTaskPreparationLease(task.TaskID, owner, now, leaseExpiresAt)
 		if err != nil {
 			return processed, err
@@ -194,7 +201,7 @@ func RunAssetTaskWorkerOnce(ctx context.Context, owner string, limit int) (int, 
 			continue
 		}
 		processed++
-		if err := runLeasedAssetTask(ctx, task.TaskID, owner, leaseExpiresAt); err != nil {
+		if err := runLeasedAssetTaskFunc(ctx, task.TaskID, owner, leaseExpiresAt); err != nil {
 			logger.LogError(ctx, fmt.Sprintf("asset task %s preparation failed: %s", task.TaskID, err.Error()))
 		}
 	}
@@ -291,8 +298,10 @@ func httptestRequestFromPayload(payload []byte) *http.Request {
 }
 
 func acceptAssetTask(task *model.Task, owner string, leaseExpiresAt int64, channel *model.Channel, result *relay.TaskSubmitResult) error {
-	now := time.Now().Unix()
-	won, err := model.MarkQueuedTaskAccepted(task.TaskID, owner, leaseExpiresAt, now, now, channel.Id, result.Platform, result.Quota, result.UpstreamTaskID, result.TaskData)
+	now := assetTaskWorkerNowUnix()
+	publicIDs := extractStrictAssetPublicIDsFromPayload(task.NormalizedRequestPayload)
+	retentionUntil := now + int64(service.CurrentAssetStorageConfig().SourceRetention.Seconds())
+	won, err := model.MarkQueuedTaskAccepted(task.TaskID, owner, leaseExpiresAt, now, now, channel.Id, result.Platform, result.Quota, result.UpstreamTaskID, result.TaskData, publicIDs, now, retentionUntil)
 	if err != nil {
 		return err
 	}
@@ -302,8 +311,40 @@ func acceptAssetTask(task *model.Task, owner string, leaseExpiresAt int64, chann
 	return nil
 }
 
+func extractStrictAssetPublicIDsFromPayload(payload []byte) []string {
+	var req dto.SeedanceVideoRequest
+	if err := common.Unmarshal(payload, &req); err != nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	ids := make([]string, 0)
+	add := func(raw string) {
+		if !service.IsStrictBytePlusAssetURI(raw) || !strings.HasPrefix(raw, "asset://") {
+			return
+		}
+		publicID := strings.TrimPrefix(raw, "asset://")
+		if _, ok := seen[publicID]; ok {
+			return
+		}
+		seen[publicID] = struct{}{}
+		ids = append(ids, publicID)
+	}
+	for _, item := range req.Content {
+		if item.ImageURL != nil {
+			add(item.ImageURL.URL)
+		}
+		if item.VideoURL != nil {
+			add(item.VideoURL.URL)
+		}
+		if item.AudioURL != nil {
+			add(item.AudioURL.URL)
+		}
+	}
+	return ids
+}
+
 func failAssetTaskPreparation(ctx context.Context, task *model.Task, owner string, leaseExpiresAt int64, cause error) error {
-	now := time.Now().Unix()
+	now := assetTaskWorkerNowUnix()
 	reason := "asset preparation failed"
 	if cause != nil && strings.TrimSpace(cause.Error()) != "" {
 		reason = cause.Error()

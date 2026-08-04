@@ -365,12 +365,13 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	return tasks
 }
 
-func GetQueuedAssetPreparationTasks(limit int) ([]*Task, error) {
+func GetQueuedAssetPreparationTasks(now int64, limit int) ([]*Task, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 	var tasks []*Task
-	err := DB.Where("status = ? AND preparation_status = ?", TaskStatusQueued, TaskPreparationStatusPreparingAssets).
+	err := DB.Where("status = ? AND ((preparation_status = ?) OR (preparation_status = ? AND preparation_lease_expires_at <= ?))",
+		TaskStatusQueued, TaskPreparationStatusPreparingAssets, TaskPreparationStatusPreparing, now).
 		Order("id ASC").
 		Limit(limit).
 		Find(&tasks).Error
@@ -520,33 +521,74 @@ func MarkQueuedTaskSubmitted(taskID string, owner string, expectedLeaseExpiresAt
 	return result.RowsAffected == 1, nil
 }
 
-func MarkQueuedTaskAccepted(taskID string, owner string, expectedLeaseExpiresAt int64, now int64, submitTime int64, channelID int, platform constant.TaskPlatform, quota int, upstreamTaskID string, taskData []byte) (bool, error) {
-	privateDataExpr := gorm.Expr("private_data")
-	var current Task
-	if err := DB.Select("private_data").Where("task_id = ?", taskID).First(&current).Error; err == nil {
-		current.PrivateData.UpstreamTaskID = upstreamTaskID
-		privateDataExpr = gorm.Expr("?", current.PrivateData)
+func MarkQueuedTaskAccepted(taskID string, owner string, expectedLeaseExpiresAt int64, now int64, submitTime int64, channelID int, platform constant.TaskPlatform, quota int, upstreamTaskID string, taskData []byte, publicIDs []string, lastUsedAt int64, retentionUntil int64) (bool, error) {
+	accepted := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		privateDataExpr := gorm.Expr("private_data")
+		var current Task
+		if err := tx.Select("private_data", "user_id").Where("task_id = ?", taskID).First(&current).Error; err == nil {
+			current.PrivateData.UpstreamTaskID = upstreamTaskID
+			privateDataExpr = gorm.Expr("?", current.PrivateData)
+		} else {
+			return err
+		}
+		result := tx.Model(&Task{}).
+			Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
+			Where("preparation_lease_owner = ? AND preparation_lease_expires_at = ? AND preparation_lease_expires_at > ?", owner, expectedLeaseExpiresAt, now).
+			Updates(map[string]any{
+				"status":                       TaskStatusSubmitted,
+				"preparation_status":           TaskPreparationStatusReady,
+				"preparation_lease_owner":      "",
+				"preparation_lease_expires_at": 0,
+				"submit_time":                  submitTime,
+				"updated_at":                   now,
+				"channel_id":                   channelID,
+				"platform":                     platform,
+				"quota":                        quota,
+				"data":                         json.RawMessage(taskData),
+				"private_data":                 privateDataExpr,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		accepted = true
+		return extendAcceptedAssetRetentionTx(tx, current.UserId, publicIDs, lastUsedAt, retentionUntil)
+	})
+	if err != nil {
+		return false, err
 	}
-	result := DB.Model(&Task{}).
-		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
-		Where("preparation_lease_owner = ? AND preparation_lease_expires_at = ? AND preparation_lease_expires_at > ?", owner, expectedLeaseExpiresAt, now).
+	return accepted, nil
+}
+
+func extendAcceptedAssetRetentionTx(tx *gorm.DB, userID int, publicIDs []string, lastUsedAt int64, retentionUntil int64) error {
+	if len(publicIDs) == 0 {
+		return nil
+	}
+	unique := make([]string, 0, len(publicIDs))
+	seen := make(map[string]struct{}, len(publicIDs))
+	for _, id := range publicIDs {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+	return tx.Model(&Asset{}).
+		Where("user_id = ? AND public_id IN ?", userID, unique).
 		Updates(map[string]any{
-			"status":                       TaskStatusSubmitted,
-			"preparation_status":           TaskPreparationStatusReady,
-			"preparation_lease_owner":      "",
-			"preparation_lease_expires_at": 0,
-			"submit_time":                  submitTime,
-			"updated_at":                   now,
-			"channel_id":                   channelID,
-			"platform":                     platform,
-			"quota":                        quota,
-			"data":                         json.RawMessage(taskData),
-			"private_data":                 privateDataExpr,
-		})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected == 1, nil
+			"last_used_at":      gorm.Expr("CASE WHEN last_used_at < ? THEN ? ELSE last_used_at END", lastUsedAt, lastUsedAt),
+			"source_expires_at": gorm.Expr("CASE WHEN source_expires_at < ? THEN ? ELSE source_expires_at END", retentionUntil, retentionUntil),
+			"updated_at":        lastUsedAt,
+		}).Error
 }
 
 func MarkQueuedTaskFailed(taskID string, owner string, expectedLeaseExpiresAt int64, failReason string, now int64) (bool, error) {
