@@ -429,9 +429,69 @@ func TestCompleteAssetUploadRejectsExpiredUploadAndDoesNotReadObject(t *testing.
 
 	require.ErrorIs(t, err, ErrAssetUploadValidation)
 	require.Zero(t, store.opens)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 9}}, store.deletes)
 	var upload model.AssetUpload
 	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
 	require.Equal(t, model.AssetUploadStatusExpired, upload.Status)
+	require.Empty(t, upload.StorageBackend)
+	require.Empty(t, upload.StorageBucket)
+	require.Empty(t, upload.ObjectKey)
+	require.Zero(t, upload.ObjectGeneration)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusExpired, asset.Status)
+	require.Equal(t, model.AssetSourceStatusExpired, asset.SourceStatus)
+	require.Empty(t, asset.StorageBackend)
+	require.Empty(t, asset.StorageBucket)
+	require.Empty(t, asset.ObjectKey)
+	require.Zero(t, asset.ObjectGeneration)
+}
+
+func TestCompleteAssetUploadExpiredDeleteFailureMarksCleanupPendingForRetry(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	store.deleteErr = errFakeAssetStore
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.AssetUpload{}).Where("upload_id = ?", session.UploadID).Update("expires_at", assetNow().Unix()).Error)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 11}
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.Zero(t, store.opens)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 11}}, store.deletes)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusExpired, upload.Status)
+	require.EqualValues(t, 11, upload.ObjectGeneration)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusExpired, asset.Status)
+	require.Equal(t, model.AssetSourceStatusCleanupPending, asset.SourceStatus)
+	require.EqualValues(t, 11, asset.ObjectGeneration)
+	require.Equal(t, session.ObjectKey, asset.ObjectKey)
+
+	store.deleteErr = nil
+	result, err := CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Claimed)
+	require.Equal(t, 1, result.Deleted)
+	require.Len(t, store.deletes, 2)
+	require.Equal(t, fakeAssetDelete{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 11}, store.deletes[1])
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusExpired, asset.Status)
+	require.Equal(t, model.AssetSourceStatusExpired, asset.SourceStatus)
+	require.Empty(t, asset.ObjectKey)
+	require.Zero(t, asset.ObjectGeneration)
 }
 
 func newAssetServiceTestDB(t *testing.T) *gorm.DB {

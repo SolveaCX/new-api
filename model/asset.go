@@ -112,6 +112,13 @@ type AssetUploadFailure struct {
 	Now              int64
 }
 
+type AssetUploadExpiration struct {
+	SourceStatus     string
+	ObjectGeneration int64
+	ClearStorage     bool
+	Now              int64
+}
+
 type AssetBindingActivation struct {
 	AssetID         int64
 	ChannelID       int
@@ -271,6 +278,68 @@ func FailAssetUploadCAS(uploadID string, owner string, failure AssetUploadFailur
 			Updates(assetUpdates).Error
 	})
 	return failed, err
+}
+
+func ExpireAssetUploadCAS(uploadID string, owner string, expiration AssetUploadExpiration) (bool, error) {
+	expired := false
+	sourceStatus := expiration.SourceStatus
+	if sourceStatus == "" {
+		sourceStatus = AssetSourceStatusExpired
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var upload AssetUpload
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("upload_id = ? AND owner = ? AND status = ? AND expires_at <= ?", uploadID, owner, AssetUploadStatusPending, expiration.Now).
+			First(&upload).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		var asset Asset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", upload.AssetId, upload.UserId).
+			First(&asset).Error; err != nil {
+			return err
+		}
+		uploadUpdates := map[string]any{
+			"status":            AssetUploadStatusExpired,
+			"object_generation": expiration.ObjectGeneration,
+			"updated_at":        expiration.Now,
+		}
+		if expiration.ClearStorage {
+			uploadUpdates["storage_backend"] = ""
+			uploadUpdates["storage_bucket"] = ""
+			uploadUpdates["object_key"] = ""
+			uploadUpdates["object_generation"] = int64(0)
+		}
+		result := tx.Model(&AssetUpload{}).
+			Where("id = ? AND owner = ? AND status = ? AND expires_at <= ?", upload.Id, owner, AssetUploadStatusPending, expiration.Now).
+			Updates(uploadUpdates)
+		if result.Error != nil {
+			return result.Error
+		}
+		expired = result.RowsAffected == 1
+		if !expired {
+			return nil
+		}
+		assetUpdates := map[string]any{
+			"status":            AssetStatusExpired,
+			"source_status":     sourceStatus,
+			"object_generation": expiration.ObjectGeneration,
+			"updated_at":        expiration.Now,
+		}
+		if expiration.ClearStorage {
+			assetUpdates["storage_backend"] = ""
+			assetUpdates["storage_bucket"] = ""
+			assetUpdates["object_key"] = ""
+			assetUpdates["object_generation"] = int64(0)
+		}
+		return tx.Model(&Asset{}).
+			Where("id = ? AND user_id = ? AND status = ?", asset.Id, upload.UserId, AssetStatusCreating).
+			Updates(assetUpdates).Error
+	})
+	return expired, err
 }
 
 func ActivateAssetBindingWithAssetCAS(activation AssetBindingActivation) (bool, error) {
