@@ -129,7 +129,7 @@ class EgressProxy:
         port=0,
         max_header_bytes=16384,
         max_body_bytes=1048576,
-        max_tunnel_bytes=1048576,
+        max_tunnel_bytes=16 * 1024 * 1024,
         timeout=5,
     ):
         self.policy = policy or EgressPolicy.from_file()

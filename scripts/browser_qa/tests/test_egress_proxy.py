@@ -294,6 +294,50 @@ class EgressPolicyTests(unittest.TestCase):
             upstream.shutdown()
             upstream.server_close()
 
+    def test_default_connect_tunnel_budget_carries_current_staging_bundle_with_headroom(self):
+        expected_bytes = 6 * 1024 * 1024
+
+        class BundleHandler(socketserver.BaseRequestHandler):
+            def handle(self):
+                remaining = expected_bytes
+                chunk = b"y" * 65536
+                while remaining:
+                    payload = chunk[:remaining]
+                    try:
+                        self.request.sendall(payload)
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+                    remaining -= len(payload)
+
+        upstream = socketserver.TCPServer(("127.0.0.1", 0), BundleHandler)
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        thread.start()
+        port = upstream.server_address[1]
+        proxy = egress_proxy.EgressProxy(
+            policy=egress_proxy.EgressPolicy({"staging-console.flatkey.ai"}),
+            resolver=lambda host, resolved_port, *_: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", resolved_port))],
+            connector=lambda _resolved, timeout: socket.create_connection(("127.0.0.1", port), timeout=timeout),
+        )
+        proxy.start()
+        try:
+            with socket.create_connection((proxy.host, proxy.port), timeout=2) as sock:
+                sock.sendall(b"CONNECT staging-console.flatkey.ai:443 HTTP/1.1\r\nHost: staging-console.flatkey.ai\r\n\r\n")
+                response, data = _read_connect_response(sock)
+                self.assertIn(b"200", response)
+                while len(data) < expected_bytes:
+                    try:
+                        chunk = sock.recv(min(65536, expected_bytes - len(data)))
+                    except socket.timeout:
+                        break
+                    if not chunk:
+                        break
+                    data += chunk
+                self.assertEqual(len(data), expected_bytes)
+        finally:
+            proxy.stop()
+            upstream.shutdown()
+            upstream.server_close()
+
     def test_header_body_bounds_and_thread_local_decisions(self):
         proxy = egress_proxy.EgressProxy(policy=egress_proxy.EgressPolicy({"staging-console.flatkey.ai"}), max_header_bytes=32)
         proxy.start()
