@@ -43,6 +43,10 @@ func (r BytePlusAssetReferenceResolution) HasReferences() bool {
 	return len(r.RewriteMap) > 0
 }
 
+func (r BytePlusAssetReferenceResolution) HasPinnedReference() bool {
+	return r.PinnedChannelID > 0
+}
+
 func ResolveBytePlusAssetReferences(c *gin.Context, userID int, req *dto.SeedanceVideoRequest) (BytePlusAssetReferenceResolution, *types.NewAPIError) {
 	legacyResolution, legacyErr := ResolveLegacyBytePlusAssetBindingReferences(userID, req)
 	if legacyErr != nil {

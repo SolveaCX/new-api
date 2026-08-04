@@ -260,6 +260,7 @@ func ResolveLegacyBytePlusAssetBindingReferences(userID int, req *dto.SeedanceVi
 	}
 	positiveChannels := map[int]struct{}{}
 	rewriteByChannel := map[int]map[string]string{}
+	hasBlankUpstream := false
 	for _, reference := range fallbackReferences {
 		asset, ok := byPublicID[reference.PublicID]
 		if !ok {
@@ -275,6 +276,8 @@ func ResolveLegacyBytePlusAssetBindingReferences(userID int, req *dto.SeedanceVi
 		upstreamID := strings.TrimSpace(asset.UpstreamAssetId)
 		if upstreamID != "" {
 			rewriteByChannel[asset.ChannelId]["asset://"+reference.PublicID] = "asset://" + upstreamID
+		} else {
+			hasBlankUpstream = true
 		}
 	}
 	pinnedChannelID := lowestChannelID(positiveChannels)
@@ -283,6 +286,9 @@ func ResolveLegacyBytePlusAssetBindingReferences(userID int, req *dto.SeedanceVi
 	}
 	if len(positiveChannels) > 1 {
 		return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset channels do not match"), types.ErrorCodeAssetChannelConflict, http.StatusConflict)
+	}
+	if hasBlankUpstream {
+		return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset is not active"), types.ErrorCodeAssetNotReady, http.StatusConflict)
 	}
 	return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID, RewriteMap: rewriteByChannel[pinnedChannelID]}, nil
 }

@@ -359,6 +359,11 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		}
 		return channel, nil
 	}
+	if retryParam.ChannelRanker == nil {
+		if assetReferences, ok := common.GetContextKeyType[service.AssetReferenceSet](c, constant.ContextKeyAssetReferenceSet); ok {
+			retryParam.ChannelRanker = assetReferences.ChannelRanker()
+		}
+	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
@@ -378,6 +383,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		releaseChannelConcurrencyForRequest(c)
 		return nil, newAPIError
 	}
+	middleware.RefreshAssetRewriteMapForSelectedChannel(c, channel)
 	return channel, nil
 }
 

@@ -102,12 +102,15 @@ func Distribute() func(c *gin.Context) {
 		assetResolution, assetErr := resolveAssetReferenceSet(c, shouldSelectChannel)
 		legacyAssetResolution, legacyAssetErr := resolveLegacyBytePlusAssetResolution(c, shouldSelectChannel)
 		if legacyAssetErr != nil {
+			if abortBytePlusAssetSpecificChannelConflict(c, channelId, ok, legacyAssetResolution.PinnedChannelID) {
+				return
+			}
 			abortWithOpenAiMessage(c, legacyAssetErr.StatusCode, bytePlusAssetPublicMessage(legacyAssetErr.GetErrorCode()), legacyAssetErr.GetErrorCode())
 			return
 		}
 		var legacyPinnedChannel *model.Channel
 		legacyPinnedSelectGroup := ""
-		if legacyAssetResolution.HasReferences() {
+		if legacyAssetResolution.HasPinnedReference() {
 			if abortBytePlusAssetSpecificChannelConflict(c, channelId, ok, legacyAssetResolution.PinnedChannelID) {
 				return
 			}
@@ -125,6 +128,9 @@ func Distribute() func(c *gin.Context) {
 			return
 		}
 		hasAssetRefs = assetResolution.HasReferences()
+		if hasAssetRefs {
+			common.SetContextKey(c, constant.ContextKeyAssetReferenceSet, assetResolution)
+		}
 		if legacyPinnedChannel != nil {
 			if hasAssetRefs {
 				if _, eligible := assetResolution.ReadinessForChannel(legacyPinnedChannel); !eligible {
@@ -305,7 +311,7 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, newAPIError.StatusCode, newAPIError.Error(), newAPIError.GetErrorCode())
 				return
 			}
-			storeSelectedAssetRewriteMap(c, channel, assetResolution)
+			RefreshAssetRewriteMapForSelectedChannel(c, channel)
 			defer service.ReleaseChannelConcurrencyForContext(c)
 		}
 		c.Next()
@@ -414,16 +420,29 @@ func bytePlusAssetURLHasReference(raw string) (bool, *types.NewAPIError) {
 	return false, nil
 }
 
-func storeSelectedAssetRewriteMap(c *gin.Context, channel *model.Channel, references service.AssetReferenceSet) {
-	if c == nil || channel == nil || !references.HasReferences() {
+func RefreshAssetRewriteMapForSelectedChannel(c *gin.Context, channel *model.Channel) {
+	if c == nil || channel == nil {
+		return
+	}
+	references, ok := common.GetContextKeyType[service.AssetReferenceSet](c, constant.ContextKeyAssetReferenceSet)
+	if !ok || !references.HasReferences() {
 		return
 	}
 	rewriteMap := references.RewriteMapForChannel(channel.Id)
 	if len(rewriteMap) == 0 {
+		clearAssetRewriteMap(c)
 		return
 	}
 	common.SetContextKey(c, constant.ContextKeyAssetRewriteMap, rewriteMap)
 	common.SetContextKey(c, constant.ContextKeyBytePlusAssetRewriteMap, rewriteMap)
+}
+
+func clearAssetRewriteMap(c *gin.Context) {
+	if c == nil || c.Keys == nil {
+		return
+	}
+	delete(c.Keys, string(constant.ContextKeyAssetRewriteMap))
+	delete(c.Keys, string(constant.ContextKeyBytePlusAssetRewriteMap))
 }
 
 // BytePlus asset references are resolved before normal channel selection so

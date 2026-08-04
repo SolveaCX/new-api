@@ -131,6 +131,32 @@ func TestBytePlusAssetSpecificChannelConflictWinsOverOwnedAssetResolutionErrors(
 	}
 }
 
+func TestBytePlusAssetBlankUpstreamKeepsPinnedReferenceSemantics(t *testing.T) {
+	restoreDB := useMiddlewareBytePlusAssetDBForTest(t)
+	defer restoreDB()
+	insertMiddlewareBytePlusAssetChannel(t, 131, "default", common.ChannelStatusEnabled, 1, 1)
+	insertMiddlewareBytePlusAssetChannel(t, 132, "default", common.ChannelStatusEnabled, 1, 1)
+	insertMiddlewareBytePlusAsset(t, 7, 131, "ast_1234567890abcdefABCDEF1234567890", " \t\n ", model.BytePlusAssetStatusActive)
+	model.InitChannelCache()
+
+	router := newBytePlusAssetDistributorRouter(func(c *gin.Context) {
+		c.String(http.StatusInternalServerError, "handler should not run")
+	})
+	body := `{
+		"model":"seedance-2.0",
+		"content":[{"type":"image_url","image_url":{"url":"asset://ast_1234567890abcdefABCDEF1234567890"},"role":"reference_image"}]
+	}`
+
+	conflict := performBytePlusAssetDistributorRequest(router, "132", body)
+	require.Equal(t, http.StatusConflict, conflict.Code, conflict.Body.String())
+	require.Contains(t, conflict.Body.String(), "asset_channel_conflict")
+	require.NotContains(t, conflict.Body.String(), "asset_not_ready")
+
+	notReady := performBytePlusAssetDistributorRequest(router, "", body)
+	require.Equal(t, http.StatusConflict, notReady.Code, notReady.Body.String())
+	require.Contains(t, notReady.Body.String(), "asset_not_ready")
+}
+
 func TestBytePlusAssetPinnedChannelRequiresEnabledBytePlusAbility(t *testing.T) {
 	tests := []struct {
 		name        string

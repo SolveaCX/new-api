@@ -38,6 +38,7 @@ const (
 	ContextKeyChannelMultiKeyIndex         ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey                   ContextKey = "channel_key"
 	ContextKeyChannelConcurrencyLease      ContextKey = "channel_concurrency_lease"
+	ContextKeyAssetReferenceSet            ContextKey = "asset_reference_set"
 	ContextKeyAssetRewriteMap              ContextKey = "asset_rewrite_map"
 	ContextKeyBytePlusAssetRewriteMap      ContextKey = "byteplus_asset_rewrite_map"
 	ContextKeyBytePlusAssetPinnedChannelID ContextKey = "byteplus_asset_pinned_channel_id"
