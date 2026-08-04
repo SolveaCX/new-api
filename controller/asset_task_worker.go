@@ -73,7 +73,7 @@ func queueAssetTaskForPreparation(c *gin.Context, info *relaycommon.RelayInfo, p
 		TaskID:                    taskID,
 		UserId:                    info.UserId,
 		Group:                     info.UsingGroup,
-		ChannelId:                 common.GetContextKeyInt(c, constant.ContextKeyChannelId),
+		ChannelId:                 0,
 		Platform:                  preflight.Platform,
 		Quota:                     preflight.Quota,
 		Action:                    info.Action,

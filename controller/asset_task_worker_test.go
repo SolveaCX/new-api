@@ -2,24 +2,306 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+	_ "unsafe"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+//go:linkname controllerAssetTaskModelCommonKeyCol github.com/QuantumNous/new-api/model.commonKeyCol
+var controllerAssetTaskModelCommonKeyCol string
+
+//go:linkname registerTaskAdaptorForTest github.com/QuantumNous/new-api/relay.registerTaskAdaptorForTest
+func registerTaskAdaptorForTest(platform constant.TaskPlatform, adaptor channel.TaskAdaptor) func()
+
+func TestAssetRelayTaskQueuesBeforeProviderOrMaterializer(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	adaptor := &controllerFakeTaskAdaptor{}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_1234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-secret-queue")
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	model.InitChannelCache()
+
+	body := seedanceTaskBody(publicID)
+	c, recorder := newControllerRelayTaskContext(body)
+	c.Request.Header.Set("Authorization", "Bearer sk-user-secret")
+	common.SetContextKey(c, constant.ContextKeyUserId, 7)
+	common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyTokenId, 11)
+	common.SetContextKey(c, constant.ContextKeyTokenKey, "sk-task-token-11")
+	common.SetContextKey(c, constant.ContextKeyTokenGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+	c.Set("token_name", "task-token")
+	c.Set("token_quota", 10000)
+	common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)
+	common.SetContextKey(c, constant.ContextKeyTokenModelLimit, map[string]bool{"seedance-2.0": true})
+	common.SetContextKey(c, constant.ContextKeyChannelId, 131)
+	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeBytePlus)
+	common.SetContextKey(c, constant.ContextKeyChannelKey, "sk-provider-secret-queue")
+	common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{BillingPreference: "wallet_only"})
+
+	var req dto.SeedanceVideoRequest
+	require.NoError(t, common.Unmarshal([]byte(body), &req))
+	refs, apiErr := service.ResolveAssetReferences(c, 7, &req)
+	require.Nil(t, apiErr)
+	common.SetContextKey(c, constant.ContextKeyAssetReferenceSet, refs)
+
+	RelayTask(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.EqualValues(t, 1, adaptor.validateCalls.Load())
+	require.EqualValues(t, 1, adaptor.estimateCalls.Load())
+	require.Zero(t, adaptor.providerCalls.Load(), "queued response must not submit upstream")
+	require.Zero(t, materializerCalls.Load(), "external RelayTask must not materialize before queue response")
+
+	var response dto.OpenAIVideo
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.NotEmpty(t, response.ID)
+	require.Equal(t, response.ID, response.TaskID)
+	require.Equal(t, "seedance-2.0", response.Model)
+	require.Equal(t, dto.VideoStatusQueued, response.Status)
+	require.Equal(t, 0, response.Progress)
+	require.NotZero(t, response.CreatedAt)
+
+	var task model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", response.TaskID).First(&task).Error)
+	require.EqualValues(t, model.TaskStatusQueued, task.Status)
+	require.Equal(t, model.TaskPreparationStatusPreparingAssets, task.PreparationStatus)
+	require.Equal(t, 0, task.ChannelId, "queued asset task is not pinned before provider acceptance")
+	require.Empty(t, task.PrivateData.UpstreamTaskID)
+	require.Equal(t, response.TaskID, task.TaskID)
+	require.Equal(t, 7, task.UserId)
+	require.Equal(t, 11, task.PrivateData.TokenId)
+	require.NotNil(t, task.PrivateData.BillingContext)
+	require.Greater(t, task.Quota, 0)
+
+	var queuedCount int64
+	require.NoError(t, model.DB.Model(&model.Task{}).Where("task_id = ?", response.TaskID).Count(&queuedCount).Error)
+	require.EqualValues(t, 1, queuedCount)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 7).Error)
+	require.Equal(t, 10000-task.Quota, user.Quota, "reservation must happen exactly once")
+	var token model.Token
+	require.NoError(t, model.DB.First(&token, 11).Error)
+	require.Equal(t, 10000-task.Quota, token.RemainQuota, "token reservation must happen exactly once")
+}
+
+func TestAssetRelayTaskPersistsNoSecretsBeforeAcceptance(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	adaptor := &controllerFakeTaskAdaptor{}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_2234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, `{"api_key":"sk-provider-secret-scan","signed":"https://signed.example/path?X-Goog-Signature=abc","credentials":{"private_key":"provider-secret-json"}}`)
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	model.InitChannelCache()
+
+	body := seedanceTaskBody(publicID)
+	c, recorder := newControllerRelayTaskContext(body)
+	c.Request.Header.Set("Authorization", "Bearer sk-user-authorization-secret")
+	common.SetContextKey(c, constant.ContextKeyUserId, 7)
+	common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyTokenId, 11)
+	common.SetContextKey(c, constant.ContextKeyTokenKey, "sk-task-token-11")
+	common.SetContextKey(c, constant.ContextKeyTokenGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+	c.Set("token_name", "task-token")
+	c.Set("token_quota", 10000)
+	common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)
+	common.SetContextKey(c, constant.ContextKeyTokenModelLimit, map[string]bool{"seedance-2.0": true})
+	common.SetContextKey(c, constant.ContextKeyChannelId, 131)
+	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeBytePlus)
+	common.SetContextKey(c, constant.ContextKeyChannelKey, `{"api_key":"sk-provider-secret-scan","signed":"https://signed.example/path?X-Goog-Signature=abc","credentials":{"private_key":"provider-secret-json"}}`)
+	common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{BillingPreference: "wallet_only"})
+	var req dto.SeedanceVideoRequest
+	require.NoError(t, common.Unmarshal([]byte(body), &req))
+	refs, apiErr := service.ResolveAssetReferences(c, 7, &req)
+	require.Nil(t, apiErr)
+	common.SetContextKey(c, constant.ContextKeyAssetReferenceSet, refs)
+
+	RelayTask(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response dto.OpenAIVideo
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	var task model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", response.TaskID).First(&task).Error)
+	require.EqualValues(t, model.TaskStatusQueued, task.Status)
+	require.Equal(t, model.TaskPreparationStatusPreparingAssets, task.PreparationStatus)
+	require.Equal(t, 0, task.ChannelId)
+	require.Empty(t, task.PrivateData.UpstreamTaskID)
+
+	privateData, err := common.Marshal(task.PrivateData)
+	require.NoError(t, err)
+	scan := string(task.NormalizedRequestPayload) + "\n" + string(privateData) + "\n" + string(task.Data)
+	for _, forbidden := range []string{
+		"Authorization",
+		"sk-user-authorization-secret",
+		"sk-provider-secret-scan",
+		"provider-secret-json",
+		"signed.example",
+		"X-Goog-Signature",
+		"upstream-task-before-accept",
+		"gin.Context",
+		"ContextKeyChannelKey",
+	} {
+		require.NotContains(t, scan, forbidden)
+	}
+}
+
+func TestNonAssetRelayTaskSubmitsSynchronously(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	adaptor := &controllerFakeTaskAdaptor{upstreamTaskID: "upstream-sync"}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannel(t, 131, "sk-provider-sync")
+	model.InitChannelCache()
+
+	c, recorder := newControllerRelayTaskContext(`{"model":"seedance-2.0","content":[{"type":"text","text":"plain prompt"}]}`)
+	common.SetContextKey(c, constant.ContextKeyUserId, 7)
+	common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyTokenId, 11)
+	common.SetContextKey(c, constant.ContextKeyTokenKey, "sk-task-token-11")
+	common.SetContextKey(c, constant.ContextKeyTokenGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+	c.Set("token_name", "task-token")
+	c.Set("token_quota", 10000)
+	common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)
+	common.SetContextKey(c, constant.ContextKeyTokenModelLimit, map[string]bool{"seedance-2.0": true})
+	common.SetContextKey(c, constant.ContextKeyChannelId, 131)
+	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeBytePlus)
+	common.SetContextKey(c, constant.ContextKeyChannelKey, "sk-provider-sync")
+	common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{BillingPreference: "wallet_only"})
+
+	RelayTask(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.EqualValues(t, 1, adaptor.providerCalls.Load())
+	require.EqualValues(t, 2, adaptor.validateCalls.Load(), "sync path validates in preflight and execution")
+	var response dto.OpenAIVideo
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, "upstream-sync", response.ID)
+	require.Equal(t, dto.VideoStatusQueued, response.Status)
+
+	var queuedCount int64
+	require.NoError(t, model.DB.Model(&model.Task{}).Where("status = ? AND preparation_status = ?", model.TaskStatusQueued, model.TaskPreparationStatusPreparingAssets).Count(&queuedCount).Error)
+	require.Zero(t, queuedCount)
+	var submitted model.Task
+	require.NoError(t, model.DB.Where("json_extract(private_data, '$.upstream_task_id') = ?", "upstream-sync").First(&submitted).Error)
+	require.NotEqual(t, model.TaskStatusQueued, submitted.Status)
+	require.NotEqual(t, model.TaskPreparationStatusPreparingAssets, submitted.PreparationStatus)
+	require.Equal(t, 131, submitted.ChannelId)
+	require.Equal(t, "upstream-sync", submitted.PrivateData.UpstreamTaskID)
+}
+
+func TestAssetTaskWorkerFallbackBeforeAcceptancePinsWinningChannel(t *testing.T) {
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	restoreHooks := useAssetTaskWorkerHooksForTest(t, 100, func() int64 { return assetTaskWorkerTestNow })
+	defer restoreHooks()
+	oldRetryTimes := common.RetryTimes
+	common.RetryTimes = 1
+	defer func() { common.RetryTimes = oldRetryTimes }()
+
+	var materializerCalls atomic.Int32
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializerWithCounter{calls: &materializerCalls})
+	defer restoreMaterializer()
+	adaptor := &controllerFakeTaskAdaptor{
+		upstreamTaskID:    "upstream-channel-b",
+		failHTTPByChannel: map[int]int{131: http.StatusInternalServerError},
+	}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	publicID := "ast_3234567890abcdefABCDEF1234567890"
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	seedControllerTaskChannelWithPriority(t, 131, "sk-provider-a", 100, 1)
+	seedControllerTaskChannelWithPriority(t, 132, "sk-provider-b", 90, 1)
+	seedControllerAsset(t, 7, publicID, time.Now().Add(time.Hour).Unix())
+	task := seedControllerQueuedAssetTask(t, "task_worker_fallback", model.TaskPreparationStatusPreparingAssets, "", 0)
+	task.ChannelId = 0
+	task.NormalizedRequestPayload = []byte(seedanceTaskBody(publicID))
+	require.NoError(t, model.DB.Save(task).Error)
+	model.InitChannelCache()
+
+	assetTaskWorkerTestNow = 1000
+	processed, err := RunAssetTaskWorkerOnce(context.Background(), "node-a", 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+
+	require.Equal(t, []int{131, 132}, adaptor.channelsSeen)
+	require.EqualValues(t, 2, adaptor.providerCalls.Load())
+	require.EqualValues(t, 2, materializerCalls.Load(), "each attempted channel may prepare its own binding before acceptance")
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_worker_fallback").First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSubmitted, stored.Status)
+	require.Equal(t, 132, stored.ChannelId)
+	require.Equal(t, "upstream-channel-b", stored.PrivateData.UpstreamTaskID)
+	require.Contains(t, string(stored.Data), "upstream-channel-b")
+	require.NotContains(t, string(stored.Data), "upstream-channel-a")
+
+	var asset model.Asset
+	require.NoError(t, model.DB.Where("public_id = ?", publicID).First(&asset).Error)
+	winnerLastUsed := asset.LastUsedAt
+	winnerExpires := asset.SourceExpiresAt
+
+	assetTaskWorkerTestNow = 1100
+	lateWon, err := model.MarkQueuedTaskAccepted("task_worker_fallback", "node-late", 1200, 1100, 1100, 131, constant.TaskPlatform(fmt.Sprint(constant.ChannelTypeBytePlus)), stored.Quota, "late-upstream-a", []byte(`{"id":"late-upstream-a"}`), []string{publicID}, 1100, winnerExpires+1000)
+	require.NoError(t, err)
+	require.False(t, lateWon)
+	var afterLate model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", "task_worker_fallback").First(&afterLate).Error)
+	require.Equal(t, 132, afterLate.ChannelId)
+	require.Equal(t, "upstream-channel-b", afterLate.PrivateData.UpstreamTaskID)
+	var assetAfterLate model.Asset
+	require.NoError(t, model.DB.Where("public_id = ?", publicID).First(&assetAfterLate).Error)
+	require.Equal(t, winnerLastUsed, assetAfterLate.LastUsedAt)
+	require.Equal(t, winnerExpires, assetAfterLate.SourceExpiresAt)
+}
 
 func TestAssetTaskQueuePersistsQueuedTaskAndReturnsImmediately(t *testing.T) {
 	restoreDB := useControllerAssetTaskDBForTest(t)
@@ -217,24 +499,64 @@ func newControllerAssetTaskContext(body string) *gin.Context {
 	return c
 }
 
+func newControllerRelayTaskContext(body string) (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	return c, w
+}
+
 func useControllerAssetTaskDBForTest(t *testing.T) func() {
 	t.Helper()
 	oldDB := model.DB
 	oldLogDB := model.LOG_DB
 	oldRedisEnabled := common.RedisEnabled
+	oldMemoryCacheEnabled := common.MemoryCacheEnabled
+	oldUsingSQLite := common.UsingSQLite
+	oldUsingMySQL := common.UsingMySQL
+	oldUsingPostgreSQL := common.UsingPostgreSQL
+	oldCommonKeyCol := controllerAssetTaskModelCommonKeyCol
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Asset{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Asset{}, &model.AssetBinding{}, &model.Ability{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.UserSubscription{}, &model.UserSubscriptionContract{}, &model.SubscriptionPreConsumeRecord{}, &model.SubscriptionDiscountAccount{}, &model.SubscriptionDiscountEntry{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	model.DB = db
 	model.LOG_DB = db
 	common.RedisEnabled = false
+	common.MemoryCacheEnabled = true
+	common.UsingSQLite = true
+	common.UsingMySQL = false
+	common.UsingPostgreSQL = false
+	controllerAssetTaskModelCommonKeyCol = "`key`"
 	return func() {
 		model.DB = oldDB
 		model.LOG_DB = oldLogDB
 		common.RedisEnabled = oldRedisEnabled
+		common.MemoryCacheEnabled = oldMemoryCacheEnabled
+		common.UsingSQLite = oldUsingSQLite
+		common.UsingMySQL = oldUsingMySQL
+		common.UsingPostgreSQL = oldUsingPostgreSQL
+		controllerAssetTaskModelCommonKeyCol = oldCommonKeyCol
+		model.InitChannelCache()
 		_ = sqlDB.Close()
+	}
+}
+
+func useControllerAssetTaskPricingForTest(t *testing.T) func() {
+	t.Helper()
+	originalModelRatio := ratio_setting.ModelRatio2JSONString()
+	originalModelPrice := ratio_setting.ModelPrice2JSONString()
+	originalGroupRatio := ratio_setting.GroupRatio2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"seedance-2.0":0.001}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+	return func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatio))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalModelPrice))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatio))
 	}
 }
 
@@ -291,8 +613,174 @@ func seedControllerAsset(t *testing.T, userID int, publicID string, sourceExpire
 		AssetType:       "Image",
 		Status:          model.AssetStatusActive,
 		SourceStatus:    model.AssetSourceStatusAvailable,
+		StorageBackend:  "gcs",
+		StorageBucket:   "bucket",
+		ObjectKey:       "assets/" + publicID,
 		SourceExpiresAt: sourceExpiresAt,
 		CreatedAt:       1,
 		UpdatedAt:       1,
 	}).Error)
+}
+
+func seedControllerRelayUserToken(t *testing.T, userID int, tokenID int, userQuota int, tokenQuota int) {
+	t.Helper()
+	require.NoError(t, model.DB.Create(&model.User{Id: userID, Username: fmt.Sprintf("task-user-%d", userID), Quota: userQuota, Status: common.UserStatusEnabled, AffCode: fmt.Sprintf("task-user-%d", userID)}).Error)
+	require.NoError(t, model.DB.Create(&model.Token{Id: tokenID, UserId: userID, Key: fmt.Sprintf("sk-task-token-%d", tokenID), Name: "task-token", Status: common.TokenStatusEnabled, RemainQuota: tokenQuota}).Error)
+}
+
+func seedControllerTaskChannel(t *testing.T, id int, key string) {
+	t.Helper()
+	seedControllerTaskChannelWithPriority(t, id, key, 100, 1)
+}
+
+func seedControllerTaskChannelWithPriority(t *testing.T, id int, key string, priority int64, weight uint) {
+	t.Helper()
+	channel := &model.Channel{
+		Id:       id,
+		Type:     constant.ChannelTypeBytePlus,
+		Key:      key,
+		Status:   common.ChannelStatusEnabled,
+		Name:     fmt.Sprintf("byteplus-task-%d", id),
+		Group:    "default",
+		Models:   "seedance-2.0",
+		Priority: &priority,
+		Weight:   &weight,
+	}
+	require.NoError(t, model.DB.Create(channel).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{
+		Group:     "default",
+		Model:     "seedance-2.0",
+		ChannelId: id,
+		Enabled:   true,
+		Priority:  &priority,
+		Weight:    weight,
+	}).Error)
+}
+
+func seedanceTaskBody(publicID string) string {
+	return fmt.Sprintf(`{"model":"seedance-2.0","content":[{"type":"image_url","image_url":{"url":"asset://%s"},"role":"reference_image"}]}`, publicID)
+}
+
+type controllerAssetMaterializerWithCounter struct {
+	calls *atomic.Int32
+}
+
+func (m controllerAssetMaterializerWithCounter) CreateAsset(ctx context.Context, input service.AssetMaterializeInput) (service.AssetMaterializeResult, error) {
+	if m.calls != nil {
+		m.calls.Add(1)
+	}
+	return controllerAssetMaterializer{}.CreateAsset(ctx, input)
+}
+
+func (m controllerAssetMaterializerWithCounter) GetAsset(ctx context.Context, input service.AssetMaterializeInput, upstreamAssetID string) (service.AssetMaterializeResult, error) {
+	return controllerAssetMaterializer{}.GetAsset(ctx, input, upstreamAssetID)
+}
+
+type controllerFakeTaskAdaptor struct {
+	validateCalls     atomic.Int32
+	estimateCalls     atomic.Int32
+	providerCalls     atomic.Int32
+	upstreamTaskID    string
+	failByChannel     map[int]error
+	failHTTPByChannel map[int]int
+	channelsSeen      []int
+}
+
+var _ channel.TaskAdaptor = (*controllerFakeTaskAdaptor)(nil)
+
+func (a *controllerFakeTaskAdaptor) Init(info *relaycommon.RelayInfo) {}
+
+func (a *controllerFakeTaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError {
+	a.validateCalls.Add(1)
+	var req dto.SeedanceVideoRequest
+	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	info.Action = constant.TaskActionGenerate
+	info.OriginModelName = req.Model
+	return nil
+}
+
+func (a *controllerFakeTaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	a.estimateCalls.Add(1)
+	return nil
+}
+
+func (a *controllerFakeTaskAdaptor) AdjustBillingOnSubmit(info *relaycommon.RelayInfo, taskData []byte) map[string]float64 {
+	return nil
+}
+
+func (a *controllerFakeTaskAdaptor) AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int {
+	return 0
+}
+
+func (a *controllerFakeTaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	return "https://provider.example/tasks", nil
+}
+
+func (a *controllerFakeTaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
+	return nil
+}
+
+func (a *controllerFakeTaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
+	storage, err := common.GetBodyStorage(c)
+	if err != nil {
+		return nil, err
+	}
+	return storage, nil
+}
+
+func (a *controllerFakeTaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
+	a.providerCalls.Add(1)
+	channelID := common.GetContextKeyInt(c, constant.ContextKeyChannelId)
+	a.channelsSeen = append(a.channelsSeen, channelID)
+	if status := a.failHTTPByChannel[channelID]; status > 0 {
+		return &http.Response{
+			StatusCode: status,
+			Body:       io.NopCloser(strings.NewReader(`{"error":"retryable upstream failure"}`)),
+			Header:     make(http.Header),
+		}, nil
+	}
+	if err := a.failByChannel[channelID]; err != nil {
+		return nil, err
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"accepted":true}`)),
+		Header:     make(http.Header),
+	}, nil
+}
+
+func (a *controllerFakeTaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (string, []byte, *dto.TaskError) {
+	taskID := a.upstreamTaskID
+	if taskID == "" {
+		taskID = fmt.Sprintf("upstream-channel-%d", common.GetContextKeyInt(c, constant.ContextKeyChannelId))
+	}
+	video := dto.NewOpenAIVideo()
+	video.ID = taskID
+	video.TaskID = taskID
+	video.Model = info.OriginModelName
+	video.CreatedAt = time.Now().Unix()
+	c.JSON(http.StatusOK, video)
+	data, err := common.Marshal(video)
+	if err != nil {
+		return "", nil, service.TaskErrorWrapperLocal(err, "marshal_response_failed", http.StatusInternalServerError)
+	}
+	return taskID, data, nil
+}
+
+func (a *controllerFakeTaskAdaptor) GetModelList() []string {
+	return []string{"seedance-2.0"}
+}
+
+func (a *controllerFakeTaskAdaptor) GetChannelName() string {
+	return "fake-byteplus"
+}
+
+func (a *controllerFakeTaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy string) (*http.Response, error) {
+	return nil, nil
+}
+
+func (a *controllerFakeTaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
+	return nil, nil
 }
