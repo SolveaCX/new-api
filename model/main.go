@@ -251,6 +251,9 @@ func migrateDB() error {
 	if err := migrateRecallRecipientIdentity(); err != nil {
 		return err
 	}
+	if err := backfillTaskIDsBeforeUniqueIndex(); err != nil {
+		return err
+	}
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
 	// Migrate model_limits column from varchar to text for existing tables
@@ -358,6 +361,9 @@ func migrateDBFast() error {
 	if err := migrateRecallRecipientIdentity(); err != nil {
 		return err
 	}
+	if err := backfillTaskIDsBeforeUniqueIndex(); err != nil {
+		return err
+	}
 
 	migrations := []struct {
 		model interface{}
@@ -452,6 +458,73 @@ func migrateDBFast() error {
 		return err
 	}
 	common.SysLog("database migrated")
+	return nil
+}
+
+func backfillTaskIDsBeforeUniqueIndex() error {
+	if DB == nil || !DB.Migrator().HasTable(&Task{}) || !DB.Migrator().HasColumn(&Task{}, "task_id") {
+		return nil
+	}
+
+	hasPrivateData := DB.Migrator().HasColumn(&Task{}, "private_data")
+	selectColumns := []string{"id", "task_id"}
+	if hasPrivateData {
+		selectColumns = append(selectColumns, "private_data")
+	}
+
+	type taskIDMigrationRow struct {
+		ID          int64
+		TaskID      string
+		PrivateData TaskPrivateData `gorm:"column:private_data"`
+	}
+
+	var rows []taskIDMigrationRow
+	if err := DB.Table("tasks").
+		Select(selectColumns).
+		Order("id ASC").
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("failed to load tasks for task_id backfill: %w", err)
+	}
+
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if row.TaskID != "" {
+			seen[row.TaskID] = struct{}{}
+		}
+	}
+
+	kept := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		oldTaskID := row.TaskID
+		_, duplicateSeen := kept[oldTaskID]
+		needsNewTaskID := oldTaskID == "" || duplicateSeen
+		if oldTaskID != "" && !duplicateSeen {
+			kept[oldTaskID] = struct{}{}
+			continue
+		}
+		if !needsNewTaskID {
+			continue
+		}
+
+		newTaskID := GenerateTaskID()
+		for {
+			if _, exists := seen[newTaskID]; !exists {
+				break
+			}
+			newTaskID = GenerateTaskID()
+		}
+		seen[newTaskID] = struct{}{}
+
+		updates := map[string]any{"task_id": newTaskID}
+		if hasPrivateData && oldTaskID != "" && row.PrivateData.UpstreamTaskID == "" {
+			row.PrivateData.UpstreamTaskID = oldTaskID
+			updates["private_data"] = row.PrivateData
+		}
+
+		if err := DB.Table("tasks").Where("id = ? AND task_id = ?", row.ID, oldTaskID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("failed to backfill task_id for task %d: %w", row.ID, err)
+		}
+	}
 	return nil
 }
 

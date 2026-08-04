@@ -489,10 +489,10 @@ func ClaimTaskPreparationLease(taskID string, owner string, now int64, leaseExpi
 	return result.RowsAffected == 1, nil
 }
 
-func MarkQueuedTaskSubmitted(taskID string, owner string, now int64, submitTime int64) (bool, error) {
+func MarkQueuedTaskSubmitted(taskID string, owner string, expectedLeaseExpiresAt int64, now int64, submitTime int64) (bool, error) {
 	result := DB.Model(&Task{}).
 		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
-		Where("preparation_lease_owner = ? AND preparation_lease_expires_at > ?", owner, now).
+		Where("preparation_lease_owner = ? AND preparation_lease_expires_at = ? AND preparation_lease_expires_at > ?", owner, expectedLeaseExpiresAt, now).
 		Updates(map[string]any{
 			"status":                       TaskStatusSubmitted,
 			"preparation_status":           TaskPreparationStatusReady,
@@ -507,10 +507,10 @@ func MarkQueuedTaskSubmitted(taskID string, owner string, now int64, submitTime 
 	return result.RowsAffected == 1, nil
 }
 
-func MarkQueuedTaskFailed(taskID string, owner string, failReason string, now int64) (bool, error) {
+func MarkQueuedTaskFailed(taskID string, owner string, expectedLeaseExpiresAt int64, failReason string, now int64) (bool, error) {
 	result := DB.Model(&Task{}).
 		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
-		Where("preparation_lease_owner = ? AND preparation_lease_expires_at > ?", owner, now).
+		Where("preparation_lease_owner = ? AND preparation_lease_expires_at = ? AND preparation_lease_expires_at > ?", owner, expectedLeaseExpiresAt, now).
 		Updates(map[string]any{
 			"status":                       TaskStatusFailure,
 			"preparation_status":           TaskPreparationStatusFailed,

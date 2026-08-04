@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+type legacyTaskForTaskIDMigration struct {
+	ID          int64           `gorm:"primaryKey;autoIncrement"`
+	TaskID      string          `gorm:"type:varchar(191)"`
+	PrivateData TaskPrivateData `gorm:"column:private_data;type:json"`
+	Status      TaskStatus      `gorm:"type:varchar(20)"`
+	CreatedAt   int64
+	UpdatedAt   int64
+}
+
+func (legacyTaskForTaskIDMigration) TableName() string {
+	return "tasks"
+}
 
 func TestMain(m *testing.M) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -266,6 +280,75 @@ func TestTaskIDUniqueCAS(t *testing.T) {
 	require.Error(t, err, "task_id must be unique across router nodes")
 }
 
+func TestTaskIDMigrationBackfillsLegacyDuplicatesAndEmptyValues(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&legacyTaskForTaskIDMigration{}))
+	require.False(t, db.Migrator().HasIndex(&Task{}, "idx_tasks_task_id_unique"))
+
+	legacyTasks := []legacyTaskForTaskIDMigration{
+		{TaskID: "upstream-duplicate", Status: TaskStatusSubmitted},
+		{TaskID: "upstream-duplicate", Status: TaskStatusSubmitted},
+		{
+			TaskID: "upstream-duplicate",
+			PrivateData: TaskPrivateData{
+				UpstreamTaskID: "already-preserved",
+			},
+			Status: TaskStatusSubmitted,
+		},
+		{TaskID: "", Status: TaskStatusQueued},
+		{TaskID: "upstream-unique", Status: TaskStatusSubmitted},
+	}
+	require.NoError(t, db.Create(&legacyTasks).Error)
+
+	oldDB := DB
+	DB = db
+	t.Cleanup(func() {
+		DB = oldDB
+		sqlDB, sqlErr := db.DB()
+		if sqlErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	require.NoError(t, backfillTaskIDsBeforeUniqueIndex())
+
+	var migrated []legacyTaskForTaskIDMigration
+	require.NoError(t, db.Order("id ASC").Find(&migrated).Error)
+	require.Len(t, migrated, len(legacyTasks))
+
+	seen := make(map[string]struct{}, len(migrated))
+	for _, task := range migrated {
+		require.NotEmpty(t, task.TaskID)
+		_, duplicate := seen[task.TaskID]
+		require.False(t, duplicate, "backfilled task IDs must be unique")
+		seen[task.TaskID] = struct{}{}
+	}
+	require.Equal(t, "upstream-duplicate", migrated[0].TaskID, "the first duplicate keeps its public ID")
+	require.True(t, strings.HasPrefix(migrated[1].TaskID, "task_"))
+	require.Equal(t, "upstream-duplicate", migrated[1].PrivateData.UpstreamTaskID)
+	require.True(t, strings.HasPrefix(migrated[2].TaskID, "task_"))
+	require.Equal(t, "already-preserved", migrated[2].PrivateData.UpstreamTaskID, "existing upstream identity must not be overwritten")
+	require.True(t, strings.HasPrefix(migrated[3].TaskID, "task_"))
+	require.Empty(t, migrated[3].PrivateData.UpstreamTaskID, "an empty legacy ID has no upstream identity to preserve")
+	require.Equal(t, "upstream-unique", migrated[4].TaskID)
+	require.Empty(t, migrated[4].PrivateData.UpstreamTaskID)
+
+	firstMigration := append([]legacyTaskForTaskIDMigration(nil), migrated...)
+	require.NoError(t, backfillTaskIDsBeforeUniqueIndex(), "the preflight must be idempotent")
+	migrated = nil
+	require.NoError(t, db.Order("id ASC").Find(&migrated).Error)
+	require.Equal(t, firstMigration, migrated)
+
+	require.NoError(t, db.AutoMigrate(&Task{}))
+	require.True(t, db.Migrator().HasIndex(&Task{}, "idx_tasks_task_id_unique"))
+	require.Error(t, db.Create(&Task{
+		TaskID: "upstream-duplicate",
+		Status: TaskStatusQueued,
+		Data:   json.RawMessage(`{}`),
+	}).Error)
+}
+
 func TestTaskPreparationLeaseTakeover(t *testing.T) {
 	truncateTables(t)
 
@@ -316,15 +399,15 @@ func TestTaskQueuedTransitionCAS(t *testing.T) {
 	}
 	insertTask(t, task)
 
-	updated, err := MarkQueuedTaskSubmitted(task.TaskID, "node-b", 120, 130)
+	updated, err := MarkQueuedTaskSubmitted(task.TaskID, "node-b", 160, 120, 130)
 	require.NoError(t, err)
 	require.False(t, updated, "non-owner must not submit a queued task")
 
-	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 120, 130)
+	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 160, 120, 130)
 	require.NoError(t, err)
 	require.True(t, updated)
 
-	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", "late failure", 121)
+	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", 160, "late failure", 121)
 	require.NoError(t, err)
 	require.False(t, updated, "submitted task must not regress to failure")
 
@@ -351,15 +434,15 @@ func TestTaskQueuedFailureCAS(t *testing.T) {
 	}
 	insertTask(t, task)
 
-	updated, err := MarkQueuedTaskFailed(task.TaskID, "node-b", "wrong owner", 120)
+	updated, err := MarkQueuedTaskFailed(task.TaskID, "node-b", 160, "wrong owner", 120)
 	require.NoError(t, err)
 	require.False(t, updated, "non-owner must not fail a queued task")
 
-	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", "prepare failed", 130)
+	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", 160, "prepare failed", 130)
 	require.NoError(t, err)
 	require.True(t, updated)
 
-	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 131, 132)
+	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 160, 131, 132)
 	require.NoError(t, err)
 	require.False(t, updated, "failed task must not regress to submitted")
 
@@ -371,4 +454,66 @@ func TestTaskQueuedFailureCAS(t *testing.T) {
 	require.EqualValues(t, 130, stored.FinishTime)
 	require.Empty(t, stored.PreparationLeaseOwner)
 	require.Zero(t, stored.PreparationLeaseExpiresAt)
+}
+
+func TestTaskPreparationLeaseGenerationFencesSubmittedCompletion(t *testing.T) {
+	truncateTables(t)
+
+	task := &Task{
+		TaskID:                   "task_prepare_submit_generation",
+		Status:                   TaskStatusQueued,
+		PreparationStatus:        TaskPreparationStatusPending,
+		NormalizedRequestPayload: json.RawMessage(`{"model":"seedance"}`),
+		Data:                     json.RawMessage(`{}`),
+	}
+	insertTask(t, task)
+
+	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 100, 160)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 120, 220)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	updated, err := MarkQueuedTaskSubmitted(task.TaskID, "node-a", 160, 130, 140)
+	require.NoError(t, err)
+	require.False(t, updated, "a stale same-owner lease generation must not submit")
+
+	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 220, 130, 140)
+	require.NoError(t, err)
+	require.True(t, updated, "the latest lease generation may submit")
+}
+
+func TestTaskPreparationLeaseGenerationFencesFailureCompletion(t *testing.T) {
+	truncateTables(t)
+
+	task := &Task{
+		TaskID:                   "task_prepare_failure_generation",
+		Status:                   TaskStatusQueued,
+		PreparationStatus:        TaskPreparationStatusPending,
+		NormalizedRequestPayload: json.RawMessage(`{"model":"seedance"}`),
+		Data:                     json.RawMessage(`{}`),
+	}
+	insertTask(t, task)
+
+	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 100, 160)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 120, 220)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	updated, err := MarkQueuedTaskFailed(task.TaskID, "node-a", 160, "stale failure", 130)
+	require.NoError(t, err)
+	require.False(t, updated, "a stale same-owner lease generation must not fail the task")
+
+	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", 220, "latest failure", 130)
+	require.NoError(t, err)
+	require.True(t, updated, "the latest lease generation may fail the task")
+
+	var stored Task
+	require.NoError(t, DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.Equal(t, "latest failure", stored.FailReason)
 }
