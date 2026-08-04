@@ -23,7 +23,7 @@ _MAX_MIME_PARTS = 50
 _MAX_MIME_DEPTH = 12
 _MAX_TEXT_BYTES = 128 * 1024
 _MAX_CANDIDATES = 10
-_CODE_RE = re.compile(r"(?<!\d)\d{6}(?!\d)")
+_CODE_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9]{6}(?![A-Za-z0-9])")
 _BASE_EMAIL_RE = re.compile(r"^[^@\s+]+@[^@\s@]+$")
 
 
@@ -322,7 +322,7 @@ def parse_verification_code(message, *, alias, sender, subject_marker, run_start
     text = "\n".join(parts)
     if not text:
         return None
-    codes = set(_CODE_RE.findall(text))
+    codes = {code for code in _CODE_RE.findall(text) if any(char.isdigit() for char in code)}
     if len(codes) != 1:
         return None
     return next(iter(codes))

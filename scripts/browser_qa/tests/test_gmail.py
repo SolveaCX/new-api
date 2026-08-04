@@ -120,6 +120,23 @@ class GmailParserTests(unittest.TestCase):
 
         self.assertEqual(code, "654321")
 
+    def test_accepts_hex_registration_code_from_current_email_template(self):
+        message = load_message()
+        message["payload"]["mimeType"] = "text/html"
+        message["payload"]["parts"] = []
+        message["payload"]["body"] = {"data": b64url("<div>Verification code</div><div>f1df22</div><p>This link and code expire in 10 minutes.</p>")}
+
+        code = parse_verification_code(
+            message,
+            alias=ALIAS,
+            sender="noreply@flatkey.ai",
+            subject_marker="Flatkey Email Verification",
+            run_start_epoch=1800000000,
+            now_epoch=1800000030,
+        )
+
+        self.assertEqual(code, "f1df22")
+
     def test_html_codes_in_links_scripts_styles_noscript_and_template_are_ignored(self):
         for html in [
             '<a href="https://example.test/verify?code=654321">verify</a>',
