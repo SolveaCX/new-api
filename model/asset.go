@@ -455,6 +455,7 @@ func GetAssetsWithBindingsByPublicIDsForUser(userID int, publicIDs []string) (ma
 func ClaimAssetBindingLease(assetID int64, channelID int, owner string, now int64, leaseExpiresAt int64) (bool, error) {
 	result := DB.Model(&AssetBinding{}).
 		Where("asset_id = ? AND channel_id = ?", assetID, channelID).
+		Where("status IN ?", []string{AssetBindingStatusPending, AssetBindingStatusLeased}).
 		Where("lease_owner = ? OR lease_expires_at <= ?", owner, now).
 		Updates(map[string]any{
 			"status":           AssetBindingStatusLeased,

@@ -90,6 +90,29 @@ func TestSignTempMediaObjectPassesConfiguredServiceAccountToSharedStore(t *testi
 	require.Equal(t, "temp-media-signer@example.iam.gserviceaccount.com", store.signed[0].ServiceAccountEmail)
 }
 
+func TestSignTempMediaObjectDoesNotInheritAssetServiceAccountEmail(t *testing.T) {
+	store := &fakeAssetObjectStore{}
+	originalStore := assetObjectStore
+	originalMetadata := assetServiceAccountEmail
+	t.Cleanup(func() {
+		assetObjectStore = originalStore
+		assetServiceAccountEmail = originalMetadata
+	})
+	assetObjectStore = store
+	assetServiceAccountEmail = func(context.Context) (string, error) {
+		return "metadata-signer@example.iam.gserviceaccount.com", nil
+	}
+	t.Setenv("ASSET_SERVICE_ACCOUNT_EMAIL", "asset-signer@example.iam.gserviceaccount.com")
+	t.Setenv("TEMP_MEDIA_SERVICE_ACCOUNT_EMAIL", "")
+	cfg := CurrentTempMediaConfig()
+
+	_, err := signTempMediaObjectWithIAM(context.Background(), cfg, "temp-media/1/file.png", "GET")
+
+	require.NoError(t, err)
+	require.Len(t, store.signed, 1)
+	require.Empty(t, store.signed[0].ServiceAccountEmail)
+}
+
 func TestUploadTempMediaImageRejectsOversizedImage(t *testing.T) {
 	t.Setenv("TEMP_MEDIA_MAX_IMAGE_BYTES", "3")
 

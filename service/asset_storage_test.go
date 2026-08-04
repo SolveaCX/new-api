@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -78,11 +79,46 @@ func TestAssetStorageSignerUsesV4MethodTTLAndContentType(t *testing.T) {
 	require.Equal(t, "image/png", store.signed[0].ContentType)
 }
 
+func TestAssetStorageSignerRequestCarriesRequiredHeadersAndGenerationQuery(t *testing.T) {
+	store := &fakeAssetObjectStore{}
+	query := url.Values{}
+	query.Set("generation", "17")
+
+	_, err := store.SignURL(context.Background(), "bucket", "assets/1/o.png", AssetSignedURLRequest{
+		Method:          http.MethodGet,
+		TTL:             time.Hour,
+		Headers:         []string{"x-goog-if-generation-match:0"},
+		QueryParameters: query,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, store.signed, 1)
+	require.Equal(t, []string{"x-goog-if-generation-match:0"}, store.signed[0].Headers)
+	require.Equal(t, "17", store.signed[0].QueryParameters.Get("generation"))
+}
+
+func TestAssetStorageSignerServiceAccountResolutionIgnoresAssetEnvFallback(t *testing.T) {
+	originalMetadata := assetServiceAccountEmail
+	t.Cleanup(func() { assetServiceAccountEmail = originalMetadata })
+	t.Setenv("ASSET_SERVICE_ACCOUNT_EMAIL", "asset-signer@example.iam.gserviceaccount.com")
+	assetServiceAccountEmail = func(context.Context) (string, error) {
+		return "metadata-signer@example.iam.gserviceaccount.com", nil
+	}
+
+	email, err := resolveAssetSignerServiceAccount(context.Background(), "")
+	require.NoError(t, err)
+	require.Equal(t, "metadata-signer@example.iam.gserviceaccount.com", email)
+
+	email, err = resolveAssetSignerServiceAccount(context.Background(), "request-signer@example.iam.gserviceaccount.com")
+	require.NoError(t, err)
+	require.Equal(t, "request-signer@example.iam.gserviceaccount.com", email)
+}
+
 type fakeAssetObjectStore struct {
 	puts      []fakeAssetPut
 	signed    []AssetSignedURLRequest
 	deletes   []fakeAssetDelete
-	opens     int
+	opens     []fakeAssetOpen
 	signErr   error
 	openErr   error
 	attrsErr  error
@@ -102,6 +138,11 @@ type fakeAssetDelete struct {
 	expectedGeneration int64
 }
 
+type fakeAssetOpen struct {
+	key        string
+	generation int64
+}
+
 func (f *fakeAssetObjectStore) Put(_ context.Context, bucket, objectKey string, body io.Reader, contentType string) error {
 	f.puts = append(f.puts, fakeAssetPut{key: objectKey, contentType: contentType})
 	payload, err := io.ReadAll(body)
@@ -116,8 +157,8 @@ func (f *fakeAssetObjectStore) Put(_ context.Context, bucket, objectKey string, 
 	return nil
 }
 
-func (f *fakeAssetObjectStore) Open(_ context.Context, bucket, objectKey string) (io.ReadCloser, error) {
-	f.opens++
+func (f *fakeAssetObjectStore) Open(_ context.Context, bucket, objectKey string, generation int64) (io.ReadCloser, error) {
+	f.opens = append(f.opens, fakeAssetOpen{key: bucket + "/" + objectKey, generation: generation})
 	if f.openErr != nil {
 		return nil, f.openErr
 	}

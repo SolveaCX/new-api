@@ -173,6 +173,8 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	require.Equal(t, time.Hour, store.signed[0].TTL)
 	require.Equal(t, "image/png", store.signed[0].ContentType)
 	require.Equal(t, "asset-signer@example.iam.gserviceaccount.com", store.signed[0].ServiceAccountEmail)
+	require.Equal(t, []string{"x-goog-if-generation-match:0"}, store.signed[0].Headers)
+	require.Equal(t, map[string]string{"x-goog-if-generation-match": "0"}, session.UploadHeaders)
 
 	store.objects["asset-test-bucket/"+session.ObjectKey] = png
 	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 9}
@@ -182,6 +184,7 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	result, err := CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
 	require.NoError(t, err)
 	require.Equal(t, model.AssetStatusActive, result.Status)
+	require.Equal(t, []fakeAssetOpen{{key: "asset-test-bucket/" + session.ObjectKey, generation: 9}}, store.opens)
 	var asset model.Asset
 	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
 	require.Equal(t, shaHex(png), asset.SHA256)
@@ -191,6 +194,58 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
 	require.Equal(t, model.AssetUploadStatusComplete, upload.Status)
 	require.EqualValues(t, 9, upload.ObjectGeneration)
+}
+
+func TestCompleteAssetUploadFailsWhenExactGenerationDisappearsBeforeRead(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 9}
+	store.openErr = errAssetObjectNotFound
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.Equal(t, []fakeAssetOpen{{key: "asset-test-bucket/" + session.ObjectKey, generation: 9}}, store.opens)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 9}}, store.deletes)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusFailed, upload.Status)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusFailed, asset.Status)
+}
+
+func TestSignAssetSourceURLBindsStoredGeneration(t *testing.T) {
+	store := installAssetServiceTestDeps(t)
+	asset := model.Asset{
+		StorageBucket:    "asset-test-bucket",
+		ObjectKey:        "assets/7/20260725/ast_fixed/rand_fixed.png",
+		ObjectGeneration: 27,
+		ContentType:      "image/png",
+		StorageBackend:   defaultAssetStorageBackend,
+		SourceStatus:     model.AssetSourceStatusAvailable,
+		Status:           model.AssetStatusActive,
+		SourceExpiresAt:  assetNow().Add(time.Hour).Unix(),
+	}
+	cfg := CurrentAssetStorageConfig()
+
+	signedURL, err := SignAssetSourceURL(context.Background(), asset, cfg)
+
+	require.NoError(t, err)
+	require.Equal(t, "https://signed.example/"+asset.ObjectKey, signedURL)
+	require.Len(t, store.signed, 1)
+	require.Equal(t, http.MethodGet, store.signed[0].Method)
+	require.Equal(t, "27", store.signed[0].QueryParameters.Get("generation"))
 }
 
 func TestCreateAssetUploadSessionSignFailureLeavesNoRows(t *testing.T) {
@@ -428,7 +483,7 @@ func TestCompleteAssetUploadRejectsExpiredUploadAndDoesNotReadObject(t *testing.
 	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
 
 	require.ErrorIs(t, err, ErrAssetUploadValidation)
-	require.Zero(t, store.opens)
+	require.Empty(t, store.opens)
 	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 9}}, store.deletes)
 	var upload model.AssetUpload
 	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
@@ -467,7 +522,7 @@ func TestCompleteAssetUploadExpiredDeleteFailureMarksCleanupPendingForRetry(t *t
 	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
 
 	require.ErrorIs(t, err, ErrAssetUploadValidation)
-	require.Zero(t, store.opens)
+	require.Empty(t, store.opens)
 	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 11}}, store.deletes)
 	var upload model.AssetUpload
 	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)

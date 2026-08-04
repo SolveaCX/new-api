@@ -114,11 +114,12 @@ type AssetResult struct {
 }
 
 type AssetUploadSessionResult struct {
-	UploadID  string
-	PublicID  string
-	ObjectKey string
-	SignedURL string
-	ExpiresAt int64
+	UploadID      string
+	PublicID      string
+	ObjectKey     string
+	SignedURL     string
+	UploadHeaders map[string]string
+	ExpiresAt     int64
 }
 
 func CreateAssetFromURL(ctx context.Context, request AssetFromURLRequest) (*AssetResult, error) {
@@ -252,7 +253,14 @@ func CreateAssetUploadSession(ctx context.Context, request AssetUploadSessionReq
 		return nil, err
 	}
 	now := assetNow()
-	signedURL, err := assetObjectStore.SignURL(ctx, cfg.Bucket, objectKey, AssetSignedURLRequest{Method: http.MethodPut, TTL: cfg.SignedURLTTL, ContentType: contentType, ServiceAccountEmail: cfg.ServiceAccountEmail})
+	uploadHeaders := createOnlyAssetUploadHeaders()
+	signedURL, err := assetObjectStore.SignURL(ctx, cfg.Bucket, objectKey, AssetSignedURLRequest{
+		Method:              http.MethodPut,
+		TTL:                 cfg.SignedURLTTL,
+		ContentType:         contentType,
+		ServiceAccountEmail: cfg.ServiceAccountEmail,
+		Headers:             assetSignedHeaderLines(uploadHeaders),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +290,14 @@ func CreateAssetUploadSession(ctx context.Context, request AssetUploadSessionReq
 	if err != nil {
 		return nil, err
 	}
-	return &AssetUploadSessionResult{UploadID: uploadID, PublicID: asset.PublicId, ObjectKey: objectKey, SignedURL: signedURL, ExpiresAt: now.Add(cfg.SignedURLTTL).Unix()}, nil
+	return &AssetUploadSessionResult{
+		UploadID:      uploadID,
+		PublicID:      asset.PublicId,
+		ObjectKey:     objectKey,
+		SignedURL:     signedURL,
+		UploadHeaders: uploadHeaders,
+		ExpiresAt:     now.Add(cfg.SignedURLTTL).Unix(),
+	}, nil
 }
 
 func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest) (*AssetResult, error) {
@@ -316,7 +331,7 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
 		return nil, ErrAssetUploadValidation
 	}
-	reader, err := assetObjectStore.Open(ctx, upload.StorageBucket, upload.ObjectKey)
+	reader, err := assetObjectStore.Open(ctx, upload.StorageBucket, upload.ObjectKey, attrs.Generation)
 	if err != nil {
 		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
 		return nil, ErrAssetUploadValidation
@@ -442,6 +457,19 @@ func CleanupExpiredAssetSources(ctx context.Context, request CleanupExpiredAsset
 		}
 	}
 	return result, nil
+}
+
+func SignAssetSourceURL(ctx context.Context, asset model.Asset, cfg AssetStorageConfig) (string, error) {
+	query := url.Values{}
+	if asset.ObjectGeneration > 0 {
+		query.Set("generation", strconv.FormatInt(asset.ObjectGeneration, 10))
+	}
+	return assetObjectStore.SignURL(ctx, asset.StorageBucket, asset.ObjectKey, AssetSignedURLRequest{
+		Method:              http.MethodGet,
+		TTL:                 cfg.SignedURLTTL,
+		ServiceAccountEmail: cfg.ServiceAccountEmail,
+		QueryParameters:     query,
+	})
 }
 
 func fetchAssetSource(ctx context.Context, rawURL string) (*http.Response, error) {
@@ -771,4 +799,19 @@ func resultFromAsset(asset *model.Asset) *AssetResult {
 		SizeBytes:   asset.SizeBytes,
 		SHA256:      asset.SHA256,
 	}
+}
+
+func createOnlyAssetUploadHeaders() map[string]string {
+	return map[string]string{assetUploadGenerationMatchHeader: "0"}
+}
+
+func assetSignedHeaderLines(headers map[string]string) []string {
+	if len(headers) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(headers))
+	for name, value := range headers {
+		lines = append(lines, name+":"+value)
+	}
+	return lines
 }

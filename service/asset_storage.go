@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -28,11 +29,12 @@ const (
 	defaultAssetImageMaxBytes        = int64(20 << 20)
 	defaultAssetVideoMaxBytes        = int64(500 << 20)
 	defaultAssetAudioMaxBytes        = int64(100 << 20)
+	assetUploadGenerationMatchHeader = "x-goog-if-generation-match"
 )
 
 type AssetObjectStore interface {
 	Put(ctx context.Context, bucket, objectKey string, body io.Reader, contentType string) error
-	Open(ctx context.Context, bucket, objectKey string) (io.ReadCloser, error)
+	Open(ctx context.Context, bucket, objectKey string, generation int64) (io.ReadCloser, error)
 	Attrs(ctx context.Context, bucket, objectKey string) (AssetObjectAttrs, error)
 	Delete(ctx context.Context, bucket, objectKey string, expectedGeneration int64) error
 	SignURL(ctx context.Context, bucket, objectKey string, request AssetSignedURLRequest) (string, error)
@@ -49,6 +51,8 @@ type AssetSignedURLRequest struct {
 	TTL                 time.Duration
 	ContentType         string
 	ServiceAccountEmail string
+	Headers             []string
+	QueryParameters     url.Values
 }
 
 type AssetStorageConfig struct {
@@ -128,12 +132,16 @@ func (gcsAssetObjectStore) Put(ctx context.Context, bucket, objectKey string, bo
 	return writer.Close()
 }
 
-func (gcsAssetObjectStore) Open(ctx context.Context, bucket, objectKey string) (io.ReadCloser, error) {
+func (gcsAssetObjectStore) Open(ctx context.Context, bucket, objectKey string, generation int64) (io.ReadCloser, error) {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return nil, err
 	}
-	reader, err := client.Bucket(bucket).Object(objectKey).NewReader(ctx)
+	object := client.Bucket(bucket).Object(objectKey)
+	if generation > 0 {
+		object = object.Generation(generation)
+	}
+	reader, err := object.NewReader(ctx)
 	if err != nil {
 		_ = client.Close()
 		if errors.Is(err, storage.ErrObjectNotExist) {
@@ -178,26 +186,21 @@ func (gcsAssetObjectStore) Delete(ctx context.Context, bucket, objectKey string,
 }
 
 func (gcsAssetObjectStore) SignURL(ctx context.Context, bucket, objectKey string, request AssetSignedURLRequest) (string, error) {
-	serviceAccountEmail := strings.TrimSpace(request.ServiceAccountEmail)
-	if serviceAccountEmail == "" {
-		serviceAccountEmail = strings.TrimSpace(os.Getenv("ASSET_SERVICE_ACCOUNT_EMAIL"))
-	}
-	if serviceAccountEmail == "" {
-		var err error
-		serviceAccountEmail, err = assetServiceAccountEmail(ctx)
-		if err != nil {
-			return "", fmt.Errorf("%w: %v", ErrTempMediaServiceAccount, err)
-		}
+	serviceAccountEmail, err := resolveAssetSignerServiceAccount(ctx, request.ServiceAccountEmail)
+	if err != nil {
+		return "", err
 	}
 	signer, err := iamcredentials.NewService(ctx)
 	if err != nil {
 		return "", err
 	}
 	options := &storage.SignedURLOptions{
-		GoogleAccessID: serviceAccountEmail,
-		Method:         request.Method,
-		Expires:        assetNow().Add(request.TTL),
-		Scheme:         storage.SigningSchemeV4,
+		GoogleAccessID:  serviceAccountEmail,
+		Method:          request.Method,
+		Expires:         assetNow().Add(request.TTL),
+		Scheme:          storage.SigningSchemeV4,
+		Headers:         append([]string(nil), request.Headers...),
+		QueryParameters: cloneURLValues(request.QueryParameters),
 		SignBytes: func(payload []byte) ([]byte, error) {
 			response, err := signer.Projects.ServiceAccounts.SignBlob(
 				"projects/-/serviceAccounts/"+serviceAccountEmail,
@@ -213,6 +216,29 @@ func (gcsAssetObjectStore) SignURL(ctx context.Context, bucket, objectKey string
 		options.ContentType = request.ContentType
 	}
 	return storage.SignedURL(bucket, objectKey, options)
+}
+
+func resolveAssetSignerServiceAccount(ctx context.Context, requestedEmail string) (string, error) {
+	serviceAccountEmail := strings.TrimSpace(requestedEmail)
+	if serviceAccountEmail != "" {
+		return serviceAccountEmail, nil
+	}
+	serviceAccountEmail, err := assetServiceAccountEmail(ctx)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrTempMediaServiceAccount, err)
+	}
+	return strings.TrimSpace(serviceAccountEmail), nil
+}
+
+func cloneURLValues(values url.Values) url.Values {
+	if len(values) == 0 {
+		return nil
+	}
+	clone := make(url.Values, len(values))
+	for key, items := range values {
+		clone[key] = append([]string(nil), items...)
+	}
+	return clone
 }
 
 type assetGCSReadCloser struct {

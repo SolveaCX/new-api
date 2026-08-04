@@ -100,6 +100,36 @@ func TestAssetBindingLeaseTakeover(t *testing.T) {
 	require.EqualValues(t, 3, stored.AttemptCount)
 }
 
+func TestAssetBindingLeaseDoesNotClaimActiveBinding(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	asset := insertAssetForAssetTest(t, "asset_binding_active_nonclaimable")
+	binding := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       131,
+		UpstreamGroupId: "group-active",
+		UpstreamAssetId: "upstream-active",
+		Status:          AssetStatusActive,
+		LeaseOwner:      "completed",
+		LeaseExpiresAt:  100,
+		AttemptCount:    2,
+		CreatedAt:       90,
+		UpdatedAt:       100,
+	}
+	require.NoError(t, DB.Create(&binding).Error)
+
+	claimed, err := ClaimAssetBindingLease(asset.Id, 131, "node-a", 200, 260)
+
+	require.NoError(t, err)
+	require.False(t, claimed)
+	var stored AssetBinding
+	require.NoError(t, DB.First(&stored, binding.Id).Error)
+	require.Equal(t, AssetStatusActive, stored.Status)
+	require.Equal(t, "completed", stored.LeaseOwner)
+	require.EqualValues(t, 100, stored.LeaseExpiresAt)
+	require.EqualValues(t, 2, stored.AttemptCount)
+	require.Equal(t, "upstream-active", stored.UpstreamAssetId)
+}
+
 func TestMigrateLegacyBytePlusAssetsPreservesPublicIDsAndBindingsIdempotently(t *testing.T) {
 	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{})
 
