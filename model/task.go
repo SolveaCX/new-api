@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
+	"gorm.io/gorm"
 )
 
 type TaskStatus string
@@ -41,12 +42,19 @@ const (
 	TaskStatusUnknown               = "UNKNOWN"
 )
 
+const (
+	TaskPreparationStatusPending   = "PENDING"
+	TaskPreparationStatusPreparing = "PREPARING"
+	TaskPreparationStatusReady     = "READY"
+	TaskPreparationStatusFailed    = "FAILED"
+)
+
 type Task struct {
 	ID         int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
 	CreatedAt  int64                 `json:"created_at" gorm:"index"`
 	UpdatedAt  int64                 `json:"updated_at"`
-	TaskID     string                `json:"task_id" gorm:"type:varchar(191);index"` // 第三方id，不一定有/ song id\ Task id
-	Platform   constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"` // 平台
+	TaskID     string                `json:"task_id" gorm:"type:varchar(191);uniqueIndex:idx_tasks_task_id_unique"` // 第三方id，不一定有/ song id\ Task id
+	Platform   constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"`                                // 平台
 	UserId     int                   `json:"user_id" gorm:"index"`
 	Group      string                `json:"group" gorm:"type:varchar(50)"` // 修正计费用
 	ChannelId  int                   `json:"channel_id" gorm:"index"`
@@ -61,8 +69,13 @@ type Task struct {
 	Properties Properties            `json:"properties" gorm:"type:json"`
 	Username   string                `json:"username,omitempty" gorm:"-"`
 	// 禁止返回给用户，内部可能包含key等隐私信息
-	PrivateData TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
-	Data        json.RawMessage `json:"data" gorm:"type:json"`
+	PrivateData               TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
+	Data                      json.RawMessage `json:"data" gorm:"type:json"`
+	PreparationStatus         string          `json:"-" gorm:"type:varchar(24);index"`
+	NormalizedRequestPayload  json.RawMessage `json:"-" gorm:"type:json"`
+	PreparationLeaseOwner     string          `json:"-" gorm:"type:varchar(64);index"`
+	PreparationLeaseExpiresAt int64           `json:"-" gorm:"index"`
+	PreparationAttemptCount   int             `json:"-"`
 }
 
 func (t *Task) SetData(data any) {
@@ -230,16 +243,17 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 	}
 
 	t := &Task{
-		TaskID:      taskID,
-		UserId:      relayInfo.UserId,
-		Group:       relayInfo.UsingGroup,
-		SubmitTime:  time.Now().Unix(),
-		Status:      TaskStatusNotStart,
-		Progress:    "0%",
-		ChannelId:   relayInfo.ChannelId,
-		Platform:    platform,
-		Properties:  properties,
-		PrivateData: privateData,
+		TaskID:            taskID,
+		UserId:            relayInfo.UserId,
+		Group:             relayInfo.UsingGroup,
+		SubmitTime:        time.Now().Unix(),
+		Status:            TaskStatusNotStart,
+		PreparationStatus: TaskPreparationStatusPending,
+		Progress:          "0%",
+		ChannelId:         relayInfo.ChannelId,
+		Platform:          platform,
+		Properties:        properties,
+		PrivateData:       privateData,
 	}
 	return t
 }
@@ -456,6 +470,60 @@ func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
 		return false, result.Error
 	}
 	return result.RowsAffected > 0, nil
+}
+
+func ClaimTaskPreparationLease(taskID string, owner string, now int64, leaseExpiresAt int64) (bool, error) {
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
+		Where("preparation_lease_owner = ? OR preparation_lease_expires_at <= ?", owner, now).
+		Updates(map[string]any{
+			"preparation_status":           TaskPreparationStatusPreparing,
+			"preparation_lease_owner":      owner,
+			"preparation_lease_expires_at": leaseExpiresAt,
+			"preparation_attempt_count":    gorm.Expr("preparation_attempt_count + ?", 1),
+			"updated_at":                   now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func MarkQueuedTaskSubmitted(taskID string, owner string, now int64, submitTime int64) (bool, error) {
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
+		Where("preparation_lease_owner = ? AND preparation_lease_expires_at > ?", owner, now).
+		Updates(map[string]any{
+			"status":                       TaskStatusSubmitted,
+			"preparation_status":           TaskPreparationStatusReady,
+			"preparation_lease_owner":      "",
+			"preparation_lease_expires_at": 0,
+			"submit_time":                  submitTime,
+			"updated_at":                   now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func MarkQueuedTaskFailed(taskID string, owner string, failReason string, now int64) (bool, error) {
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
+		Where("preparation_lease_owner = ? AND preparation_lease_expires_at > ?", owner, now).
+		Updates(map[string]any{
+			"status":                       TaskStatusFailure,
+			"preparation_status":           TaskPreparationStatusFailed,
+			"preparation_lease_owner":      "",
+			"preparation_lease_expires_at": 0,
+			"fail_reason":                  failReason,
+			"finish_time":                  now,
+			"updated_at":                   now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // TaskBulkUpdate performs an unconditional bulk UPDATE by upstream task_id strings.

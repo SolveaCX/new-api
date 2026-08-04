@@ -50,6 +50,9 @@ func TestMain(m *testing.M) {
 		&UserSubscription{},
 		&PerfMetric{},
 		&QuotaDataToken{},
+		&Asset{},
+		&AssetBinding{},
+		&AssetUpload{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -75,6 +78,9 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM user_subscriptions")
 		DB.Exec("DELETE FROM perf_metrics")
 		DB.Exec("DELETE FROM quota_data_tokens")
+		DB.Exec("DELETE FROM asset_uploads")
+		DB.Exec("DELETE FROM asset_bindings")
+		DB.Exec("DELETE FROM assets")
 	})
 }
 
@@ -241,4 +247,128 @@ func TestUpdateWithStatus_ConcurrentWinner(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, winCount, "exactly one goroutine should win the CAS")
+}
+
+func TestTaskIDUniqueCAS(t *testing.T) {
+	truncateTables(t)
+
+	insertTask(t, &Task{
+		TaskID: "task_unique",
+		Status: TaskStatusQueued,
+		Data:   json.RawMessage(`{}`),
+	})
+
+	err := DB.Create(&Task{
+		TaskID: "task_unique",
+		Status: TaskStatusQueued,
+		Data:   json.RawMessage(`{}`),
+	}).Error
+	require.Error(t, err, "task_id must be unique across router nodes")
+}
+
+func TestTaskPreparationLeaseTakeover(t *testing.T) {
+	truncateTables(t)
+
+	task := &Task{
+		TaskID:                   "task_prepare_lease",
+		Status:                   TaskStatusQueued,
+		Progress:                 "0%",
+		NormalizedRequestPayload: json.RawMessage(`{"model":"seedance"}`),
+		Data:                     json.RawMessage(`{}`),
+	}
+	insertTask(t, task)
+
+	claimed, err := ClaimTaskPreparationLease(task.TaskID, "node-a", 100, 160)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-b", 120, 180)
+	require.NoError(t, err)
+	require.False(t, claimed, "fresh foreign preparation lease must not be stolen")
+
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-a", 130, 190)
+	require.NoError(t, err)
+	require.True(t, claimed, "same preparation owner may renew before expiry")
+
+	claimed, err = ClaimTaskPreparationLease(task.TaskID, "node-b", 191, 250)
+	require.NoError(t, err)
+	require.True(t, claimed, "expired preparation lease can be taken over")
+
+	var stored Task
+	require.NoError(t, DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.Equal(t, "node-b", stored.PreparationLeaseOwner)
+	require.EqualValues(t, 250, stored.PreparationLeaseExpiresAt)
+	require.EqualValues(t, 3, stored.PreparationAttemptCount)
+	require.JSONEq(t, `{"model":"seedance"}`, string(stored.NormalizedRequestPayload))
+}
+
+func TestTaskQueuedTransitionCAS(t *testing.T) {
+	truncateTables(t)
+
+	task := &Task{
+		TaskID:                    "task_queued_transition",
+		Status:                    TaskStatusQueued,
+		Progress:                  "0%",
+		PreparationStatus:         TaskPreparationStatusPreparing,
+		PreparationLeaseOwner:     "node-a",
+		PreparationLeaseExpiresAt: 160,
+		Data:                      json.RawMessage(`{}`),
+	}
+	insertTask(t, task)
+
+	updated, err := MarkQueuedTaskSubmitted(task.TaskID, "node-b", 120, 130)
+	require.NoError(t, err)
+	require.False(t, updated, "non-owner must not submit a queued task")
+
+	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 120, 130)
+	require.NoError(t, err)
+	require.True(t, updated)
+
+	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", "late failure", 121)
+	require.NoError(t, err)
+	require.False(t, updated, "submitted task must not regress to failure")
+
+	var stored Task
+	require.NoError(t, DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, TaskStatusSubmitted, stored.Status)
+	require.Equal(t, TaskPreparationStatusReady, stored.PreparationStatus)
+	require.EqualValues(t, 130, stored.SubmitTime)
+	require.Empty(t, stored.PreparationLeaseOwner)
+	require.Zero(t, stored.PreparationLeaseExpiresAt)
+}
+
+func TestTaskQueuedFailureCAS(t *testing.T) {
+	truncateTables(t)
+
+	task := &Task{
+		TaskID:                    "task_queued_failure",
+		Status:                    TaskStatusQueued,
+		Progress:                  "0%",
+		PreparationStatus:         TaskPreparationStatusPreparing,
+		PreparationLeaseOwner:     "node-a",
+		PreparationLeaseExpiresAt: 160,
+		Data:                      json.RawMessage(`{}`),
+	}
+	insertTask(t, task)
+
+	updated, err := MarkQueuedTaskFailed(task.TaskID, "node-b", "wrong owner", 120)
+	require.NoError(t, err)
+	require.False(t, updated, "non-owner must not fail a queued task")
+
+	updated, err = MarkQueuedTaskFailed(task.TaskID, "node-a", "prepare failed", 130)
+	require.NoError(t, err)
+	require.True(t, updated)
+
+	updated, err = MarkQueuedTaskSubmitted(task.TaskID, "node-a", 131, 132)
+	require.NoError(t, err)
+	require.False(t, updated, "failed task must not regress to submitted")
+
+	var stored Task
+	require.NoError(t, DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, TaskStatusFailure, stored.Status)
+	require.Equal(t, TaskPreparationStatusFailed, stored.PreparationStatus)
+	require.Equal(t, "prepare failed", stored.FailReason)
+	require.EqualValues(t, 130, stored.FinishTime)
+	require.Empty(t, stored.PreparationLeaseOwner)
+	require.Zero(t, stored.PreparationLeaseExpiresAt)
 }
