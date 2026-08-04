@@ -65,6 +65,12 @@ PLAYWRIGHT_RUNTIME_ROOT = "/opt/flatkey-browser-qa"
 PROVENANCE_VERSION_TIMEOUT_SECONDS = 2
 MAX_PROVENANCE_VERSION_BYTES = 256
 PROVENANCE_MODEL_CONFIG = {"model": "gpt-5.4", "sandbox": "workspace-write", "network_access": False}
+FLATKEY_MODEL_PROVIDER_CONFIG = """[model_providers.flatkey]
+name = "Flatkey"
+base_url = "https://router.flatkey.ai/v1"
+env_key = "CODEX_API_KEY"
+wire_api = "responses"
+supports_websockets = false"""
 
 
 class _SignalAbort(RuntimeError):
@@ -571,8 +577,11 @@ def _qa_config(proxy, runtime_dir, child_env):
     escaped_runtime_dir = _toml_escape(runtime_dir)
     escaped_repo_root = _toml_escape(_repo_root())
     return f"""model = "gpt-5.4"
+model_provider = "flatkey"
 approval_policy = "never"
 web_search = "disabled"
+
+{FLATKEY_MODEL_PROVIDER_CONFIG}
 
 [mcp_servers.playwright]
 command = "{_toml_escape(sys.executable)}"

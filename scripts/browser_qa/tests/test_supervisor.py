@@ -793,6 +793,25 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn("[mcp_servers.evidence]", config_text)
         self.assertIn("qa_capture_screenshot", config_text)
 
+    def test_qa_profile_uses_flatkey_model_provider_without_secret_or_openai_fallback(self):
+        outcome, sup = self.run_supervisor(FakeProcess(0), result_payload=valid_result())
+
+        self.assertEqual(outcome.status, "passed")
+        with open(os.path.join(sup.codex_home, "config.toml"), encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "")
+        with open(os.path.join(sup.codex_home, "qa.config.toml"), encoding="utf-8") as handle:
+            config_text = handle.read()
+        self.assertIn('model = "gpt-5.4"', config_text)
+        self.assertIn('model_provider = "flatkey"', config_text)
+        self.assertIn("[model_providers.flatkey]", config_text)
+        self.assertIn('name = "Flatkey"', config_text)
+        self.assertIn('base_url = "https://router.flatkey.ai/v1"', config_text)
+        self.assertIn('env_key = "CODEX_API_KEY"', config_text)
+        self.assertIn('wire_api = "responses"', config_text)
+        self.assertIn("supports_websockets = false", config_text)
+        self.assertNotIn("sk-parentSECRET", config_text)
+        self.assertNotIn("api.openai.com", config_text)
+
     def test_core_mode_prompt_and_mcp_env_require_replay_only_without_exploration(self):
         input_env = env()
         input_env["FLATKEY_BROWSER_QA_MODE"] = "core"
