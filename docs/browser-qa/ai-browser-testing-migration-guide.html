@@ -786,9 +786,10 @@ Content-Type: application/json
 
 {
   "run_id": "GITHUB_RUN_ID",
-  "email_tag": "qa-RUN_ID-NONCE",
+  "email_tag": "qa-RUN_ID-8CHARHMAC",
   "start_time": 123456789
 }</code></pre>
+          <p>如果目标系统也有邮箱长度校验，先把完整 plus alias 算清楚。Flatkey staging 后端的完整邮箱上限是 50 字符，因此示例使用短前缀和 8 位 HMAC 后缀，而不是更长的项目名前缀。</p>
           <p>broker 必须验证 run id、alias/tag 格式、时间窗口、调用身份和请求大小。错误只返回枚举码，例如 <code>pending</code>、<code>invalid_time_window</code>、<code>oauth_invalid_grant</code>。</p>
         </section>
         <section>

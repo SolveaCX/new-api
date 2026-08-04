@@ -627,6 +627,7 @@ broker  -&gt; python3 -m scripts.browser_qa.flatkey_browser_qa.broker</code></pr
           <li><code>flatkey-browser-qa-identity-seed</code>：main 和 cleanup 用来通过 HMAC 派生 run-scoped username、email tag、password、API key name。</li>
           <li><code>flatkey-browser-qa-gmail-oauth</code>：只注入 broker service 的 <code>GMAIL_OAUTH_JSON</code>，scope 必须是 Gmail readonly。</li>
         </ul>
+        <p>派生出的 Gmail plus tag 固定为 <code>qa-&lt;run-id&gt;-&lt;8-char-HMAC-suffix&gt;</code>。这个长度是注册链路的一部分：后端当前对完整邮箱执行 50 字符上限校验，所以 QA 身份不能恢复为更长的 <code>flatkey-qa-...</code> 前缀，也不能随意加长随机后缀。</p>
         <pre><code>{
   "refresh_token": "&lt;operator-owned-oauth-refresh-token&gt;",
   "token_uri": "https://oauth2.googleapis.com/token",

@@ -1090,7 +1090,7 @@ test -z "$org_invoker_binding"
 status="$(curl -sS -o /dev/null -w '%{http_code}' \
   -X POST \
   -H 'Content-Type: application/json' \
-  --data '{"run_id":"0","email_tag":"flatkey-qa-0-0000000000","start_time":0}' \
+  --data '{"run_id":"0","email_tag":"qa-0-00000000","start_time":0}' \
   "${BROKER_URI}/v1/current-code")"
 test "$status" = "401" -o "$status" = "403"
 
@@ -1107,7 +1107,7 @@ status="$(curl -sS -o /dev/null -w '%{http_code}' \
   -X POST \
   -H 'Content-Type: application/json' \
   -H @"$header_file" \
-  --data '{"run_id":"0","email_tag":"flatkey-qa-0-0000000000","start_time":0}' \
+  --data '{"run_id":"0","email_tag":"qa-0-00000000","start_time":0}' \
   "${BROKER_URI}/v1/current-code")"
 test "$status" = "401" -o "$status" = "403"
 ```
@@ -1264,7 +1264,7 @@ Abort if the new OAuth grant requires a broader Gmail scope, if the base Gmail p
 
 ### 12. Gmail plus-alias restriction failure
 
-Browser QA requires staging to accept Gmail plus aliases generated as `+flatkey-qa-<run-id>-<nonce>`. If the workflow fails before account creation with an alias restriction error, classify it as staging configuration failure.
+Browser QA requires staging to accept Gmail plus aliases generated as `+qa-<run-id>-<8-char-HMAC-suffix>`. The complete derived email address must stay within the backend registration validator's 50-character email limit, so do not lengthen the tag without updating tests and registration constraints. If the workflow fails before account creation with an alias restriction error, classify it as staging configuration failure.
 
 Recovery:
 
