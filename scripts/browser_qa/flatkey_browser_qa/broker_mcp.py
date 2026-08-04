@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -21,6 +22,7 @@ _ENV_BROKER_URL = "FLATKEY_BROWSER_QA_BROKER_URL"
 _POLL_INTERVAL_SECONDS = 5
 _DEADLINE_SECONDS = 120
 _MAX_RESPONSE_BYTES = 4096
+_EMAIL_TAG_RE = re.compile(r"^qa-(?P<run_id>[0-9]+)-[a-z0-9]{8}$")
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -90,7 +92,8 @@ def _load_env(env):
         raise ToolExecutionError("broker mcp configuration missing") from exc
     if not isinstance(run_id, str) or not run_id.isascii() or not run_id.isdecimal():
         raise ToolExecutionError("broker mcp configuration invalid")
-    if not isinstance(email_tag, str) or not email_tag.startswith(f"flatkey-qa-{run_id}-"):
+    match = _EMAIL_TAG_RE.fullmatch(email_tag) if isinstance(email_tag, str) else None
+    if not match or match.group("run_id") != run_id:
         raise ToolExecutionError("broker mcp configuration invalid")
     try:
         start_time = int(start_time_raw)

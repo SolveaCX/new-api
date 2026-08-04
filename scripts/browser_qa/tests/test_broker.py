@@ -86,13 +86,13 @@ class BrokerTests(unittest.TestCase):
                 server,
                 "POST",
                 "/v1/current-code",
-                {"run_id": "123456789", "email_tag": "flatkey-qa-123456789-abc123def4", "start_time": 1800000000},
+                {"run_id": "123456789", "email_tag": "qa-123456789-abc123de", "start_time": 1800000000},
             )
             pending_status, pending_payload = self.request(
                 server,
                 "POST",
                 "/v1/current-code",
-                {"run_id": "123456789", "email_tag": "flatkey-qa-123456789-abc123def4", "start_time": 1800000000},
+                {"run_id": "123456789", "email_tag": "qa-123456789-abc123de", "start_time": 1800000000},
             )
         finally:
             server.shutdown()
@@ -103,7 +103,7 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(payload, {"status": "ready", "code": "123456"})
         self.assertEqual(pending_status, 200)
         self.assertEqual(pending_payload, {"status": "ready", "code": "123456"})
-        self.assertEqual(gmail.searches[0].email_tag, "flatkey-qa-123456789-abc123def4")
+        self.assertEqual(gmail.searches[0].email_tag, "qa-123456789-abc123de")
         self.assertEqual(gmail.searches[0].run_start_epoch, 1800000000)
 
     def test_rejects_method_path_content_type_unknown_fields_and_alias_tampering(self):
@@ -114,21 +114,21 @@ class BrokerTests(unittest.TestCase):
             (
                 "POST",
                 "/v1/current-code",
-                {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000000, "base": "owner@gmail.com"},
+                {"run_id": "123", "email_tag": "qa-123-abcdefgh", "start_time": 1800000000, "base": "owner@gmail.com"},
                 {"Content-Type": "application/json"},
                 "invalid_fields",
             ),
             (
                 "POST",
                 "/v1/current-code",
-                {"run_id": "123", "email_tag": "flatkey-qa-124-abcdefghij", "start_time": 1800000000},
+                {"run_id": "123", "email_tag": "qa-124-abcdefgh", "start_time": 1800000000},
                 {"Content-Type": "application/json"},
                 "invalid_email_tag",
             ),
             (
                 "POST",
                 "/v1/current-code",
-                {"run_id": "１２３", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000000},
+                {"run_id": "１２３", "email_tag": "qa-123-abcdefgh", "start_time": 1800000000},
                 {"Content-Type": "application/json"},
                 "invalid_run_id",
             ),
@@ -153,20 +153,20 @@ class BrokerTests(unittest.TestCase):
                 server,
                 "POST",
                 "/v1/current-code",
-                {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1799990000},
+                {"run_id": "123", "email_tag": "qa-123-abcdefgh", "start_time": 1799990000},
             )
             future = self.request(
                 server,
                 "POST",
                 "/v1/current-code",
-                {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000400},
+                {"run_id": "123", "email_tag": "qa-123-abcdefgh", "start_time": 1800000400},
             )
-            bad_tag = self.request(
-                server,
-                "POST",
-                "/v1/current-code",
-                {"run_id": "123", "email_tag": "flatkey-qa-123-ABCDEF1234", "start_time": 1800000000},
-            )
+            malformed_tags = [
+                {"run_id": "123", "email_tag": "qa-123-ABCDEF12", "start_time": 1800000000},
+                {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000000},
+                {"run_id": "123", "email_tag": "qa-123-abcdefghi", "start_time": 1800000000},
+            ]
+            bad_tags = [self.request(server, "POST", "/v1/current-code", body) for body in malformed_tags]
 
             conn = http.client.HTTPConnection(host, port, timeout=5)
             conn.putrequest("POST", "/v1/current-code")
@@ -196,7 +196,7 @@ class BrokerTests(unittest.TestCase):
 
         self.assertEqual(stale[1], {"error": "invalid_time_window"})
         self.assertEqual(future[1], {"error": "invalid_time_window"})
-        self.assertEqual(bad_tag[1], {"error": "invalid_email_tag"})
+        self.assertEqual([payload for _status, payload in bad_tags], [{"error": "invalid_email_tag"}] * 3)
         self.assertEqual(chunked, (411, {"error": "length_required"}))
         self.assertEqual(oversized, (413, {"error": "body_too_large"}))
         self.assertEqual(invalid[1], {"error": "invalid_json"})
@@ -266,7 +266,7 @@ class BrokerTests(unittest.TestCase):
                     server,
                     "POST",
                     "/v1/current-code",
-                    {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000000},
+                    {"run_id": "123", "email_tag": "qa-123-abcdefgh", "start_time": 1800000000},
                 )
         finally:
             server.shutdown()
@@ -276,7 +276,7 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertEqual(payload, {"error": "gmail_invalid_grant"})
         combined = stderr.getvalue() + json.dumps(logs)
-        for secret in ["refresh-secret", "owner", "gmail", "abcdefghij", "flatkey-qa"]:
+        for secret in ["refresh-secret", "owner", "gmail", "abcdefgh", "qa-"]:
             self.assertNotIn(secret, combined)
         self.assertNotIn("Traceback", combined)
 
@@ -293,7 +293,7 @@ class BrokerTests(unittest.TestCase):
                     server,
                     "POST",
                     "/v1/current-code",
-                    {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000000},
+                    {"run_id": "123", "email_tag": "qa-123-abcdefgh", "start_time": 1800000000},
                 )
         finally:
             server.shutdown()
@@ -303,7 +303,7 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(status, 502)
         self.assertEqual(payload, {"error": "gmail_request_failed"})
         combined = stderr.getvalue() + json.dumps(logs)
-        for secret in ["access-secret", "message body", "abcdefghij", "flatkey-qa"]:
+        for secret in ["access-secret", "message body", "abcdefgh", "qa-"]:
             self.assertNotIn(secret, combined)
         self.assertNotIn("Traceback", combined)
 
@@ -316,7 +316,7 @@ class BrokerTests(unittest.TestCase):
                     server,
                     "POST",
                     "/v1/current-code",
-                    {"run_id": "123", "email_tag": "flatkey-qa-123-abcdefghij", "start_time": 1800000000},
+                    {"run_id": "123", "email_tag": "qa-123-abcdefgh", "start_time": 1800000000},
                 )
         finally:
             server.shutdown()
@@ -325,7 +325,7 @@ class BrokerTests(unittest.TestCase):
 
         output = stdout.getvalue()
         self.assertIn('"run_id": "123"', output)
-        for secret in ["owner", "gmail", "abcdefghij", "123456", "flatkey-qa"]:
+        for secret in ["owner", "gmail", "abcdefgh", "123456", "qa-"]:
             self.assertNotIn(secret, output)
 
     def test_main_rejects_arguments_and_serves_http_broker_not_stdio_mcp(self):

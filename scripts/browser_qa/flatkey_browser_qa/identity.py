@@ -34,12 +34,12 @@ def derive_identity(seed: bytes, run_id: str) -> DerivedIdentity:
 
     username_digits = int.from_bytes(username_digest[:8], "big") % 100_000_000
     username_suffix = _encode_alphabet(username_digest[8:], _LOWER_ALNUM, 8)
-    email_suffix = _encode_alphabet(email_digest, _LOWER_ALNUM, 10)
+    email_suffix = _encode_alphabet(email_digest, _LOWER_ALNUM, 8)
 
     return DerivedIdentity(
         run_id=run_id,
         username=f"qa{username_digits:08d}{username_suffix}",
-        email_tag=f"flatkey-qa-{run_id}-{email_suffix}",
+        email_tag=f"qa-{run_id}-{email_suffix}",
         password=_derive_password(seed, run_id),
         key_name=f"cloud-qa-{run_id}",
     )

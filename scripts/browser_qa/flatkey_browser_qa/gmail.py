@@ -492,4 +492,4 @@ def _is_invalid_grant(payload):
 
 
 def _valid_email_tag(value):
-    return isinstance(value, str) and re.fullmatch(r"flatkey-qa-[0-9]+-[a-z0-9]{10}", value) is not None
+    return isinstance(value, str) and re.fullmatch(r"qa-[0-9]+-[a-z0-9]{8}", value) is not None

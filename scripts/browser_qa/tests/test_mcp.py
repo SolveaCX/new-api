@@ -115,7 +115,7 @@ class BrokerMcpTests(unittest.TestCase):
     def env(self):
         return {
             "FLATKEY_BROWSER_QA_RUN_ID": "1700000000",
-            "FLATKEY_BROWSER_QA_EMAIL_TAG": "flatkey-qa-1700000000-abc123def4",
+            "FLATKEY_BROWSER_QA_EMAIL_TAG": "qa-1700000000-abc123de",
             "FLATKEY_BROWSER_QA_START_TIME": "1700000000",
             "FLATKEY_BROWSER_QA_BROKER_URL": "https://flatkey-staging-browser-qa-broker-abc-uw.a.run.app/",
         }
@@ -182,7 +182,7 @@ class BrokerMcpTests(unittest.TestCase):
         for response in responses:
             self.assertIn("error", response)
             self.assertIn(response["error"]["code"], {-32601, -32602})
-            self.assertNotIn("flatkey-qa-1700000000-abc123def4", json.dumps(response))
+            self.assertNotIn("qa-1700000000-abc123de", json.dumps(response))
 
         stdin = io.StringIO("{not-json}\n")
         stdout = io.StringIO()
@@ -262,8 +262,31 @@ class BrokerMcpTests(unittest.TestCase):
         self.assertEqual(broker_request.headers["Authorization"], "Bearer id-token")
         body = json.loads(broker_request.data.decode("utf-8"))
         self.assertEqual(body["run_id"], "1700000000")
-        self.assertEqual(body["email_tag"], "flatkey-qa-1700000000-abc123def4")
+        self.assertEqual(body["email_tag"], "qa-1700000000-abc123de")
         self.assertEqual(body["start_time"], 1700000000)
+
+    def test_broker_tool_rejects_malformed_email_tag_env(self):
+        malformed_envs = [
+            dict(self.env(), FLATKEY_BROWSER_QA_EMAIL_TAG="qa-1700000000-ABC123DE"),
+            dict(self.env(), FLATKEY_BROWSER_QA_EMAIL_TAG="qa-1700000001-abc123de"),
+            dict(self.env(), FLATKEY_BROWSER_QA_EMAIL_TAG="flatkey-qa-1700000000-abc123def4"),
+        ]
+
+        for env in malformed_envs:
+            with self.subTest(email_tag=env["FLATKEY_BROWSER_QA_EMAIL_TAG"]):
+                responses = self.run_server(
+                    [
+                        {
+                            "jsonrpc": "2.0",
+                            "id": "call",
+                            "method": "tools/call",
+                            "params": {"name": "get_current_verification_code", "arguments": {}},
+                        }
+                    ],
+                    env=env,
+                )
+
+                self.assertTrue(responses[0]["result"]["isError"])
 
     def test_broker_notifies_actual_code_before_returning_it_to_codex(self):
         opener = RecordingOpener(

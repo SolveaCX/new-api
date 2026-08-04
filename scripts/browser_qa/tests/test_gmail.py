@@ -21,7 +21,7 @@ from scripts.browser_qa.flatkey_browser_qa.gmail import (
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "gmail_flatkey_message.json"
-ALIAS = "owner+flatkey-qa-123456789-abc123def4@gmail.com"
+ALIAS = "owner+qa-123456789-abc123de@gmail.com"
 
 
 def load_message():
@@ -490,7 +490,7 @@ class GmailOAuthAndClientTests(unittest.TestCase):
 
         result = client.find_verification_code(
             VerificationSearch(
-                email_tag="flatkey-qa-123456789-abc123def4",
+                email_tag="qa-123456789-abc123de",
                 run_start_epoch=1800000000,
                 sender="noreply@flatkey.ai",
                 subject_marker="Flatkey Email Verification",
@@ -531,7 +531,7 @@ class GmailOAuthAndClientTests(unittest.TestCase):
         )
 
         search = VerificationSearch(
-            email_tag="flatkey-qa-123456789-abc123def4",
+            email_tag="qa-123456789-abc123de",
             run_start_epoch=1800000000,
             sender="noreply@flatkey.ai",
             subject_marker="Flatkey Email Verification",
@@ -559,7 +559,7 @@ class GmailOAuthAndClientTests(unittest.TestCase):
 
         client.find_verification_code(
             VerificationSearch(
-                email_tag="flatkey-qa-123456789-abc123def4",
+                email_tag="qa-123456789-abc123de",
                 run_start_epoch=1800000000,
                 sender="noreply@flatkey.ai",
                 subject_marker="Flatkey Email Verification",

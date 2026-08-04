@@ -18,7 +18,7 @@ from .gmail import GmailTransientError
 from .gmail import VerificationSearch
 
 
-_TAG_RE = re.compile(r"^flatkey-qa-(?P<run_id>[0-9]+)-[a-z0-9]{10}$")
+_TAG_RE = re.compile(r"^qa-(?P<run_id>[0-9]+)-[a-z0-9]{8}$")
 _MAX_BODY_BYTES = 4096
 
 

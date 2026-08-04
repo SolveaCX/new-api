@@ -5,7 +5,7 @@
     "mimeType": "multipart/alternative",
     "headers": [
       {"name": "From", "value": "Flatkey <noreply@flatkey.ai>"},
-      {"name": "To", "value": "Owner <owner+flatkey-qa-123456789-abc123def4@gmail.com>"},
+      {"name": "To", "value": "Owner <owner+qa-123456789-abc123de@gmail.com>"},
       {"name": "Subject", "value": "Flatkey Email Verification"}
     ],
     "parts": [
