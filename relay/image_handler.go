@@ -67,7 +67,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	codexImagePath := info.ApiType == constant.APITypeCodex
 	tempURLSupportedImageChannel := info.ApiType == constant.APITypeCodex || info.ApiType == constant.APITypeBlockRun
 	if imageReq.TempUrl != nil && *imageReq.TempUrl && !tempURLSupportedImageChannel {
-		return types.NewErrorWithStatusCode(fmt.Errorf("temp_url is only supported for codex and blockrun gpt-image channels"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		return types.NewErrorWithStatusCode(fmt.Errorf("temp_url is only supported for codex and blockrun image channels"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
 
 	if !codexImagePath && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
