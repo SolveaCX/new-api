@@ -114,6 +114,44 @@
       margin: 14px 0;
     }
     .diagram svg { min-width: 760px; max-width: 100%; height: auto; display: block; }
+    .flow-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+      padding: 0;
+      list-style: none;
+    }
+    .flow-legend li {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+      font-size: .85rem;
+      font-weight: 700;
+    }
+    .flow-legend .swatch {
+      width: 22px;
+      height: 3px;
+      border-radius: 999px;
+      background: #47606f;
+    }
+    .flow-legend .model { background: #8a4fbc; }
+    .flow-legend .browser { background: #116a8c; }
+    .flow-legend .evidence { background: #2d6a4f; }
+    .flow-legend .cleanup { background: #9b2226; }
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 18px;
+      margin-top: 12px;
+    }
+    .flow-steps li { margin: 3px 0; }
     .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .mini {
       border: 1px solid var(--line);
@@ -127,6 +165,7 @@
       .grid { grid-template-columns: 1fr; }
       nav.toc { position: static; }
       .cols { grid-template-columns: 1fr; }
+      .flow-steps { grid-template-columns: 1fr; }
       .wrap { padding: 0 16px; }
       section { padding: 18px; }
     }
@@ -272,6 +311,161 @@
             <path class="line" d="M785 300 V365"/>
           </svg>
         </div>
+        <h3>给新同学看的端到端顺序图</h3>
+        <p>下面这张图按真实执行顺序读：上面是发布和调度，左侧是主测试任务，中间是模型和浏览器，右侧是验证码、报告和清理。当前范围是 <strong>staging only</strong>，并且只做 <strong>strict replay</strong>；探索阶段还没有开始。</p>
+        <ul class="flow-legend" aria-label="箭头类型说明">
+          <li><span class="swatch"></span>控制流</li>
+          <li><span class="swatch model"></span>模型 API 流</li>
+          <li><span class="swatch browser"></span>浏览器动作</li>
+          <li><span class="swatch evidence"></span>证据/报告</li>
+          <li><span class="swatch cleanup"></span>always cleanup</li>
+        </ul>
+        <div class="diagram" role="img" aria-label="Browser QA 新手顺序图：staging merge 触发 GitHub Actions，构建 Browser QA 镜像并运行 Cloud Run main job；main job 启动 Codex CLI、Flatkey Router、Playwright MCP、Chromium、staging 网站、Gmail broker、GCS 报告和独立 cleanup job">
+          <svg viewBox="0 0 1120 700" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="seqArrowControl" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#47606f"/>
+              </marker>
+              <marker id="seqArrowModel" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#8a4fbc"/>
+              </marker>
+              <marker id="seqArrowBrowser" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#116a8c"/>
+              </marker>
+              <marker id="seqArrowEvidence" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#2d6a4f"/>
+              </marker>
+              <marker id="seqArrowCleanup" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#9b2226"/>
+              </marker>
+              <style>
+                .seqBox{fill:#fff;stroke:#93a4b3;stroke-width:1.3;rx:8}
+                .seqMain{fill:#eef7f1;stroke:#7ab893;stroke-width:1.3;rx:8}
+                .seqModel{fill:#f4edfb;stroke:#8a4fbc;stroke-width:1.3;rx:8}
+                .seqBrowser{fill:#eef7fa;stroke:#116a8c;stroke-width:1.3;rx:8}
+                .seqSecret{fill:#fff4dd;stroke:#d89b2b;stroke-width:1.3;rx:8}
+                .seqReport{fill:#edf7f1;stroke:#2d6a4f;stroke-width:1.3;rx:8}
+                .seqCleanup{fill:#fde8e8;stroke:#9b2226;stroke-width:1.3;rx:8}
+                .seqTitle{font:700 15px sans-serif;fill:#17202a}
+                .seqText{font:12px sans-serif;fill:#536271}
+                .seqNum{font:700 13px sans-serif;fill:#fff}
+                .seqLine{stroke:#47606f;stroke-width:1.8;fill:none;marker-end:url(#seqArrowControl)}
+                .seqModelLine{stroke:#8a4fbc;stroke-width:1.8;fill:none;marker-end:url(#seqArrowModel)}
+                .seqBrowserLine{stroke:#116a8c;stroke-width:1.8;fill:none;marker-end:url(#seqArrowBrowser)}
+                .seqEvidenceLine{stroke:#2d6a4f;stroke-width:1.8;fill:none;marker-end:url(#seqArrowEvidence)}
+                .seqCleanupLine{stroke:#9b2226;stroke-width:1.8;fill:none;stroke-dasharray:7 5;marker-end:url(#seqArrowCleanup)}
+                .seqLane{stroke:#d9e1ea;stroke-width:1;stroke-dasharray:4 6}
+              </style>
+            </defs>
+
+            <line class="seqLane" x1="75" y1="112" x2="75" y2="650"/>
+            <line class="seqLane" x1="280" y1="112" x2="280" y2="650"/>
+            <line class="seqLane" x1="490" y1="112" x2="490" y2="650"/>
+            <line class="seqLane" x1="700" y1="112" x2="700" y2="650"/>
+            <line class="seqLane" x1="930" y1="112" x2="930" y2="650"/>
+
+            <rect class="seqBox" x="18" y="24" width="150" height="70"/>
+            <text class="seqTitle" x="42" y="54">1 staging 合并</text>
+            <text class="seqText" x="42" y="76">只部署 staging</text>
+
+            <rect class="seqBox" x="205" y="24" width="150" height="70"/>
+            <text class="seqTitle" x="230" y="54">2 GitHub Actions</text>
+            <text class="seqText" x="230" y="76">获得 WIF 身份</text>
+
+            <rect class="seqMain" x="408" y="24" width="164" height="70"/>
+            <text class="seqTitle" x="432" y="54">3 Browser QA</text>
+            <text class="seqText" x="432" y="76">构建并推送镜像</text>
+
+            <rect class="seqMain" x="615" y="24" width="170" height="70"/>
+            <text class="seqTitle" x="638" y="54">4 Cloud Run main</text>
+            <text class="seqText" x="638" y="76">启动 supervisor</text>
+
+            <rect class="seqModel" x="820" y="24" width="210" height="70"/>
+            <text class="seqTitle" x="846" y="54">5 Codex CLI</text>
+            <text class="seqText" x="846" y="76">Flatkey base URL 已配置</text>
+
+            <path class="seqLine" d="M168 60 H205"/>
+            <path class="seqLine" d="M355 60 H408"/>
+            <path class="seqLine" d="M572 60 H615"/>
+            <path class="seqLine" d="M785 60 H820"/>
+
+            <rect class="seqSecret" x="60" y="154" width="220" height="86"/>
+            <text class="seqTitle" x="88" y="185">Secret Manager</text>
+            <text class="seqText" x="88" y="207">只注入环境变量</text>
+            <text class="seqText" x="88" y="225">token 不显示、不写日志</text>
+
+            <rect class="seqModel" x="370" y="150" width="240" height="94"/>
+            <text class="seqTitle" x="396" y="180">6 Flatkey Router</text>
+            <text class="seqText" x="396" y="202">https://router.flatkey.ai/v1</text>
+            <text class="seqText" x="396" y="222">返回模型下一步动作</text>
+
+            <rect class="seqBrowser" x="680" y="150" width="210" height="94"/>
+            <text class="seqTitle" x="706" y="180">7 Playwright MCP</text>
+            <text class="seqText" x="706" y="202">只 attach 已有浏览器</text>
+            <text class="seqText" x="706" y="222">检查 replay 预算</text>
+
+            <rect class="seqBrowser" x="830" y="286" width="230" height="86"/>
+            <text class="seqTitle" x="856" y="318">8 supervisor-owned Chromium</text>
+            <text class="seqText" x="856" y="340">浏览器由 supervisor 启动</text>
+
+            <rect class="seqBrowser" x="525" y="286" width="245" height="86"/>
+            <text class="seqTitle" x="552" y="318">9 staging 网站/控制台</text>
+            <text class="seqText" x="552" y="340">staging-website / staging-console</text>
+
+            <rect class="seqSecret" x="210" y="286" width="230" height="86"/>
+            <text class="seqTitle" x="236" y="318">10 私有 Gmail broker</text>
+            <text class="seqText" x="236" y="340">只返回本次验证码状态</text>
+
+            <rect class="seqReport" x="360" y="486" width="250" height="86"/>
+            <text class="seqTitle" x="388" y="518">11 GCS 报告</text>
+            <text class="seqText" x="388" y="540">manifest / result / 截图 / 日志</text>
+
+            <rect class="seqCleanup" x="720" y="486" width="250" height="86"/>
+            <text class="seqTitle" x="748" y="518">12 独立 cleanup job</text>
+            <text class="seqText" x="748" y="540">always 运行，可 cleanup-only 重跑</text>
+
+            <path class="seqLine" d="M670 94 C650 130 350 132 260 154"/>
+            <path class="seqModelLine" d="M900 94 C850 130 690 172 610 194"/>
+            <path class="seqModelLine" d="M610 214 C700 242 860 130 925 94"/>
+            <path class="seqBrowserLine" d="M920 94 C900 122 855 142 790 170"/>
+            <path class="seqBrowserLine" d="M795 244 C840 266 900 278 942 286"/>
+            <path class="seqBrowserLine" d="M830 330 H770"/>
+            <path class="seqBrowserLine" d="M525 328 H440"/>
+            <path class="seqEvidenceLine" d="M690 372 C655 432 570 456 500 486"/>
+            <path class="seqEvidenceLine" d="M700 372 C720 425 660 468 610 516"/>
+            <path class="seqCleanupLine" d="M700 94 C790 230 860 380 850 486"/>
+            <path class="seqCleanupLine" d="M610 530 H720"/>
+
+            <circle cx="42" cy="60" r="14" fill="#47606f"/><text class="seqNum" x="38" y="65">1</text>
+            <circle cx="230" cy="60" r="14" fill="#47606f"/><text class="seqNum" x="226" y="65">2</text>
+            <circle cx="432" cy="60" r="14" fill="#47606f"/><text class="seqNum" x="428" y="65">3</text>
+            <circle cx="638" cy="60" r="14" fill="#47606f"/><text class="seqNum" x="634" y="65">4</text>
+            <circle cx="846" cy="60" r="14" fill="#8a4fbc"/><text class="seqNum" x="842" y="65">5</text>
+            <circle cx="396" cy="182" r="14" fill="#8a4fbc"/><text class="seqNum" x="392" y="187">6</text>
+            <circle cx="706" cy="182" r="14" fill="#116a8c"/><text class="seqNum" x="702" y="187">7</text>
+            <circle cx="856" cy="320" r="14" fill="#116a8c"/><text class="seqNum" x="852" y="325">8</text>
+            <circle cx="552" cy="320" r="14" fill="#116a8c"/><text class="seqNum" x="548" y="325">9</text>
+            <circle cx="236" cy="320" r="14" fill="#d89b2b"/><text class="seqNum" x="228" y="325">10</text>
+            <circle cx="388" cy="520" r="14" fill="#2d6a4f"/><text class="seqNum" x="380" y="525">11</text>
+            <circle cx="748" cy="520" r="14" fill="#9b2226"/><text class="seqNum" x="740" y="525">12</text>
+
+            <text class="seqText" x="58" y="636">新手读法：灰色线是“谁启动谁”，紫色线是“模型请求/响应”，蓝色线是“浏览器动作”，绿色线是“证据进入报告”，红色虚线是“无论成功失败都要清理”。</text>
+          </svg>
+        </div>
+        <ol class="flow-steps">
+          <li>staging merge 或手动 dispatch 触发流程；当前只面向 staging。</li>
+          <li>GitHub Actions 用 WIF 拿到临时云身份，不需要长期云密钥。</li>
+          <li>Browser QA workflow 构建 QA 镜像，smoke test 后推送到 Artifact Registry。</li>
+          <li>Cloud Run main job 启动 supervisor，supervisor 拥有本次测试的浏览器和进程。</li>
+          <li>Codex CLI 使用 Flatkey 配置；公开 base URL 是 <code>https://router.flatkey.ai/v1</code>。</li>
+          <li>Flatkey token 从 Secret Manager 注入为环境变量，图里、日志里、配置值里都不会出现 token 内容。</li>
+          <li>Codex 通过 Flatkey Router 得到模型响应，再决定下一步受限动作。</li>
+          <li>Playwright MCP 只连接 supervisor 已启动的 Chromium，不让模型自己开新浏览器。</li>
+          <li>Chromium 只访问 staging website、staging console 和只读 docs，不访问 production。</li>
+          <li>需要邮箱验证码时，私有 Gmail broker 只返回本次 run 的最小结果。</li>
+          <li>证据脱敏后写入私有 GCS 报告：manifest、result、截图和浏览器日志。</li>
+          <li>独立 cleanup job 使用 always 语义运行；main 失败、取消或超时后仍尝试删除测试工件。</li>
+        </ol>
       </section>
 
       <section id="record-replay">

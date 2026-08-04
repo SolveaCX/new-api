@@ -252,6 +252,37 @@
       height: auto;
       display: block;
     }
+    .flow-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+      padding: 0;
+      list-style: none;
+    }
+    .flow-legend li {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .flow-legend .swatch {
+      width: 22px;
+      height: 3px;
+      border-radius: 999px;
+      background: #5b6673;
+    }
+    .flow-legend .model { background: var(--violet); }
+    .flow-legend .browser { background: var(--blue); }
+    .flow-legend .evidence { background: var(--green); }
+    .flow-legend .cleanup { background: var(--red); }
     .checklist {
       list-style: none;
       margin-left: 0;
@@ -472,6 +503,126 @@
             <tr><td>Cleanup</td><td>用同一 run identity 重新登录并幂等删除测试工件。</td><td>不依赖模型最后一句话，不把 cleanup 成功交给 AI 判断。</td></tr>
           </tbody>
         </table>
+        <section>
+          <h3>迁移时先看这张顺序图</h3>
+          <p>Flatkey 当前实现的完整新手图见 <a href="browser-qa-technical-implementation.html#architecture">技术实现文档的总体架构</a>。迁移到新项目时，保留箭头类型和安全边界，只替换项目自己的域名、broker、模型入口、报告存储和 cleanup 逻辑。</p>
+          <ul class="flow-legend" aria-label="箭头类型说明">
+            <li><span class="swatch"></span>控制流</li>
+            <li><span class="swatch model"></span>模型 API 流</li>
+            <li><span class="swatch browser"></span>浏览器动作</li>
+            <li><span class="swatch evidence"></span>证据/报告</li>
+            <li><span class="swatch cleanup"></span>always cleanup</li>
+          </ul>
+          <div class="diagram" role="img" aria-label="AI 浏览器测试迁移顺序图：从 staging merge 到 CI，构建测试镜像，启动主执行器，调用模型入口，驱动 Playwright MCP 和受控 Chromium，访问 staging 应用，通过私有 broker 取验证码，上传私有报告，最后运行独立 cleanup">
+            <svg viewBox="0 0 960 360" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="migArrowControl" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#5b6673"/>
+                </marker>
+                <marker id="migArrowModel" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#6246a8"/>
+                </marker>
+                <marker id="migArrowBrowser" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#165d9f"/>
+                </marker>
+                <marker id="migArrowEvidence" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#0f7a4f"/>
+                </marker>
+                <marker id="migArrowCleanup" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#b42318"/>
+                </marker>
+                <style>
+                  .migBox{fill:#fff;stroke:#d9e1e8;stroke-width:1.4;rx:8}
+                  .migRun{fill:#edf8f2;stroke:#0f7a4f;stroke-width:1.4;rx:8}
+                  .migModel{fill:#f3effa;stroke:#6246a8;stroke-width:1.4;rx:8}
+                  .migBrowser{fill:#eef6fd;stroke:#165d9f;stroke-width:1.4;rx:8}
+                  .migSecret{fill:#fff8e8;stroke:#8a5a00;stroke-width:1.4;rx:8}
+                  .migCleanup{fill:#fff1ef;stroke:#b42318;stroke-width:1.4;rx:8}
+                  .migTitle{font:700 14px sans-serif;fill:#16202a}
+                  .migText{font:12px sans-serif;fill:#5b6673}
+                  .migNum{font:700 12px sans-serif;fill:#fff}
+                  .migLine{stroke:#5b6673;stroke-width:1.7;fill:none;marker-end:url(#migArrowControl)}
+                  .migModelLine{stroke:#6246a8;stroke-width:1.7;fill:none;marker-end:url(#migArrowModel)}
+                  .migBrowserLine{stroke:#165d9f;stroke-width:1.7;fill:none;marker-end:url(#migArrowBrowser)}
+                  .migEvidenceLine{stroke:#0f7a4f;stroke-width:1.7;fill:none;marker-end:url(#migArrowEvidence)}
+                  .migCleanupLine{stroke:#b42318;stroke-width:1.7;fill:none;stroke-dasharray:7 5;marker-end:url(#migArrowCleanup)}
+                </style>
+              </defs>
+
+              <rect class="migBox" x="24" y="28" width="130" height="58"/>
+              <text class="migTitle" x="48" y="56">1 staging 合并</text>
+              <text class="migText" x="48" y="74">只测预发环境</text>
+              <rect class="migBox" x="190" y="28" width="140" height="58"/>
+              <text class="migTitle" x="214" y="56">2 CI / Actions</text>
+              <text class="migText" x="214" y="74">调度测试</text>
+              <rect class="migRun" x="365" y="28" width="155" height="58"/>
+              <text class="migTitle" x="388" y="56">3 构建 QA 镜像</text>
+              <text class="migText" x="388" y="74">固定浏览器工具链</text>
+              <rect class="migRun" x="555" y="28" width="155" height="58"/>
+              <text class="migTitle" x="578" y="56">4 主执行器</text>
+              <text class="migText" x="578" y="74">supervisor 拥有流程</text>
+              <rect class="migModel" x="750" y="28" width="170" height="58"/>
+              <text class="migTitle" x="774" y="56">5 模型入口</text>
+              <text class="migText" x="774" y="74">替换为你的 base URL</text>
+
+              <rect class="migSecret" x="58" y="145" width="190" height="70"/>
+              <text class="migTitle" x="84" y="174">Secret Manager</text>
+              <text class="migText" x="84" y="194">token 只注入环境变量</text>
+              <rect class="migBrowser" x="300" y="145" width="175" height="70"/>
+              <text class="migTitle" x="326" y="174">6 Playwright MCP</text>
+              <text class="migText" x="326" y="194">连接受控浏览器</text>
+              <rect class="migBrowser" x="525" y="145" width="190" height="70"/>
+              <text class="migTitle" x="552" y="174">7 staging 应用</text>
+              <text class="migText" x="552" y="194">网站 / 控制台 / docs</text>
+              <rect class="migSecret" x="760" y="145" width="160" height="70"/>
+              <text class="migTitle" x="786" y="174">8 私有 broker</text>
+              <text class="migText" x="786" y="194">验证码或回调</text>
+
+              <rect class="migRun" x="300" y="270" width="190" height="60"/>
+              <text class="migTitle" x="326" y="298">9 私有报告</text>
+              <text class="migText" x="326" y="316">脱敏后上传</text>
+              <rect class="migCleanup" x="620" y="270" width="210" height="60"/>
+              <text class="migTitle" x="646" y="298">10 独立 cleanup</text>
+              <text class="migText" x="646" y="316">always 运行</text>
+
+              <path class="migLine" d="M154 58 H190"/>
+              <path class="migLine" d="M330 58 H365"/>
+              <path class="migLine" d="M520 58 H555"/>
+              <path class="migLine" d="M710 58 H750"/>
+              <path class="migLine" d="M610 86 C540 122 300 122 200 145"/>
+              <path class="migModelLine" d="M750 68 C650 110 485 122 420 145"/>
+              <path class="migBrowserLine" d="M475 180 H525"/>
+              <path class="migBrowserLine" d="M715 180 H760"/>
+              <path class="migEvidenceLine" d="M620 215 C560 248 470 258 405 270"/>
+              <path class="migCleanupLine" d="M635 86 C720 140 750 220 735 270"/>
+              <path class="migCleanupLine" d="M490 302 H620"/>
+
+              <circle cx="48" cy="58" r="13" fill="#5b6673"/><text class="migNum" x="44" y="63">1</text>
+              <circle cx="214" cy="58" r="13" fill="#5b6673"/><text class="migNum" x="210" y="63">2</text>
+              <circle cx="388" cy="58" r="13" fill="#5b6673"/><text class="migNum" x="384" y="63">3</text>
+              <circle cx="578" cy="58" r="13" fill="#5b6673"/><text class="migNum" x="574" y="63">4</text>
+              <circle cx="774" cy="58" r="13" fill="#6246a8"/><text class="migNum" x="770" y="63">5</text>
+              <circle cx="326" cy="176" r="13" fill="#165d9f"/><text class="migNum" x="322" y="181">6</text>
+              <circle cx="552" cy="176" r="13" fill="#165d9f"/><text class="migNum" x="548" y="181">7</text>
+              <circle cx="786" cy="176" r="13" fill="#8a5a00"/><text class="migNum" x="782" y="181">8</text>
+              <circle cx="326" cy="300" r="13" fill="#0f7a4f"/><text class="migNum" x="322" y="305">9</text>
+              <circle cx="646" cy="300" r="13" fill="#b42318"/><text class="migNum" x="638" y="305">10</text>
+            </svg>
+          </div>
+          <table>
+            <thead><tr><th scope="col">Flatkey 当前值</th><th scope="col">新项目必须替换为</th></tr></thead>
+            <tbody>
+              <tr><td><code>https://router.flatkey.ai/v1</code></td><td>你的模型网关公开 base URL；密钥仍从 Secret Manager 或等价 secret store 注入为环境变量。</td></tr>
+              <tr><td><code>staging-website.flatkey.ai</code> / <code>staging-console.flatkey.ai</code></td><td>你的 staging 网站和控制台；不要把 production 写路径放进 allowlist。</td></tr>
+              <tr><td>私有 Gmail verification broker</td><td>你的验证码、邮件、短信或第三方回调 broker；只返回当前 run 的最小结果。</td></tr>
+              <tr><td>GCS report bucket</td><td>你的私有对象存储；上传前脱敏，摘要只放私有 URI。</td></tr>
+              <tr><td>独立 cleanup job</td><td>你的测试账号、key、订单或 workspace 删除逻辑；必须 always 运行且支持 cleanup-only。</td></tr>
+            </tbody>
+          </table>
+          <div class="callout warn">
+            当前 Flatkey 接入范围仍是 staging strict replay；exploration 还没有开始。迁移时同样先证明 replay 和 cleanup，再打开有预算的探索。
+          </div>
+        </section>
       </section>
 
       <section id="record">
