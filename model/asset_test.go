@@ -313,7 +313,7 @@ func TestAssetCreateAvailableAndPendingUploadThenCompleteWithOwnerCAS(t *testing
 	require.NoError(t, err)
 	require.NotZero(t, asset.Id)
 
-	completed, err := CompleteAssetUploadCAS("upl_pending", "owner-b", AssetUploadCompletion{
+	completed, expired, err := CompleteAssetUploadCAS("upl_pending", "owner-b", AssetUploadCompletion{
 		ContentType:     "image/png",
 		SizeBytes:       123,
 		SHA256:          "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
@@ -322,8 +322,9 @@ func TestAssetCreateAvailableAndPendingUploadThenCompleteWithOwnerCAS(t *testing
 	})
 	require.NoError(t, err)
 	require.False(t, completed)
+	require.False(t, expired)
 
-	completed, err = CompleteAssetUploadCAS("upl_pending", "owner-a", AssetUploadCompletion{
+	completed, expired, err = CompleteAssetUploadCAS("upl_pending", "owner-a", AssetUploadCompletion{
 		ContentType:     "image/png",
 		SizeBytes:       123,
 		SHA256:          "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
@@ -332,6 +333,7 @@ func TestAssetCreateAvailableAndPendingUploadThenCompleteWithOwnerCAS(t *testing
 	})
 	require.NoError(t, err)
 	require.True(t, completed)
+	require.False(t, expired)
 
 	var stored Asset
 	require.NoError(t, DB.First(&stored, asset.Id).Error)
@@ -375,7 +377,7 @@ func TestAssetUploadCompletionRejectsExpiredAndLoserDoesNotMutateAsset(t *testin
 	})
 	require.NoError(t, err)
 
-	completed, err := CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
+	completed, expired, err := CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
 		ContentType:      "image/png",
 		SizeBytes:        123,
 		SHA256:           "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -385,6 +387,7 @@ func TestAssetUploadCompletionRejectsExpiredAndLoserDoesNotMutateAsset(t *testin
 	})
 	require.NoError(t, err)
 	require.False(t, completed)
+	require.True(t, expired)
 
 	var stored Asset
 	require.NoError(t, DB.First(&stored, asset.Id).Error)
@@ -394,13 +397,12 @@ func TestAssetUploadCompletionRejectsExpiredAndLoserDoesNotMutateAsset(t *testin
 
 	var upload AssetUpload
 	require.NoError(t, DB.First(&upload, "upload_id = ?", "upl_pending_expired").Error)
-	require.Equal(t, AssetUploadStatusExpired, upload.Status)
+	require.Equal(t, AssetUploadStatusPending, upload.Status, "expired-at-CAS must stay claimable for generation-aware cleanup")
 
 	require.NoError(t, DB.Model(&AssetUpload{}).Where("upload_id = ?", "upl_pending_expired").Updates(map[string]any{
-		"status":     AssetUploadStatusPending,
 		"expires_at": int64(250),
 	}).Error)
-	completed, err = CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
+	completed, expired, err = CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
 		ContentType:      "image/png",
 		SizeBytes:        123,
 		SHA256:           "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -410,7 +412,8 @@ func TestAssetUploadCompletionRejectsExpiredAndLoserDoesNotMutateAsset(t *testin
 	})
 	require.NoError(t, err)
 	require.True(t, completed)
-	completed, err = CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
+	require.False(t, expired)
+	completed, expired, err = CompleteAssetUploadCAS("upl_pending_expired", "owner-a", AssetUploadCompletion{
 		ContentType:      "image/png",
 		SizeBytes:        123,
 		SHA256:           "9999999999999999999999999999999999999999999999999999999999999999",
@@ -420,6 +423,7 @@ func TestAssetUploadCompletionRejectsExpiredAndLoserDoesNotMutateAsset(t *testin
 	})
 	require.NoError(t, err)
 	require.False(t, completed)
+	require.False(t, expired)
 
 	require.NoError(t, DB.First(&stored, asset.Id).Error)
 	require.Equal(t, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", stored.SHA256)
@@ -607,7 +611,7 @@ func TestAssetUploadCleanupClaimMovesUploadToCleaningBeforeExternalDelete(t *tes
 	require.EqualValues(t, 260, claimed[0].Asset.CleanupLeaseUntil)
 	require.EqualValues(t, 1, claimed[0].Asset.CleanupGeneration)
 
-	completed, err := CompleteAssetUploadCAS("upl_cleanup_claim", "owner-a", AssetUploadCompletion{
+	completed, expired, err := CompleteAssetUploadCAS("upl_cleanup_claim", "owner-a", AssetUploadCompletion{
 		ContentType:      "image/png",
 		SizeBytes:        123,
 		SHA256:           "abababababababababababababababababababababababababababababababab",
@@ -617,6 +621,7 @@ func TestAssetUploadCleanupClaimMovesUploadToCleaningBeforeExternalDelete(t *tes
 	})
 	require.NoError(t, err)
 	require.False(t, completed, "cleanup-owned upload must never be activated after claim")
+	require.False(t, expired)
 
 	ok, err := MarkExpiredPendingAssetUploadIfCleanupLease("upl_cleanup_claim", "cleanup-a", 1, 9, 220)
 	require.NoError(t, err)

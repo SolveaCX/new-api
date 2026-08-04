@@ -348,7 +348,7 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 		return nil, ErrAssetUploadValidation
 	}
 	activationNow := assetNow()
-	completed, err := model.CompleteAssetUploadCAS(upload.UploadId, request.Owner, model.AssetUploadCompletion{
+	completed, expired, err := model.CompleteAssetUploadCAS(upload.UploadId, request.Owner, model.AssetUploadCompletion{
 		ContentType:      detected,
 		SizeBytes:        size,
 		SHA256:           sha,
@@ -358,6 +358,13 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 	})
 	if err != nil {
 		return nil, err
+	}
+	if expired {
+		_, err := expireCompletedAssetUploadGeneration(ctx, upload, attrs.Generation, activationNow)
+		if err != nil {
+			return nil, err
+		}
+		return nil, ErrAssetUploadValidation
 	}
 	if !completed {
 		return nil, ErrAssetUploadNotFound
@@ -393,6 +400,21 @@ func expireCompletedAssetUpload(ctx context.Context, upload *model.AssetUpload, 
 		SourceStatus: model.AssetSourceStatusExpired,
 		ClearStorage: true,
 		Now:          now.Unix(),
+	})
+}
+
+func expireCompletedAssetUploadGeneration(ctx context.Context, upload *model.AssetUpload, generation int64, now time.Time) (bool, error) {
+	clearStorage := true
+	sourceStatus := model.AssetSourceStatusExpired
+	if err := assetObjectStore.Delete(ctx, upload.StorageBucket, upload.ObjectKey, generation); err != nil && !isAssetObjectNotFound(err) {
+		clearStorage = false
+		sourceStatus = model.AssetSourceStatusCleanupPending
+	}
+	return model.ExpireAssetUploadCAS(upload.UploadId, upload.Owner, model.AssetUploadExpiration{
+		SourceStatus:     sourceStatus,
+		ObjectGeneration: generation,
+		ClearStorage:     clearStorage,
+		Now:              now.Unix(),
 	})
 }
 

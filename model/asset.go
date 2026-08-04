@@ -172,8 +172,9 @@ func CreateAssetWithUploadSession(asset Asset, upload AssetUpload) (*Asset, erro
 	return &asset, nil
 }
 
-func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploadCompletion) (bool, error) {
+func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploadCompletion) (bool, bool, error) {
 	completed := false
+	expired := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var upload AssetUpload
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("upload_id = ? AND owner = ? AND status = ?", uploadID, owner, AssetUploadStatusPending).First(&upload).Error; err != nil {
@@ -190,13 +191,8 @@ func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploa
 			return nil
 		}
 		if upload.ExpiresAt <= completion.Now {
-			result := tx.Model(&AssetUpload{}).
-				Where("id = ? AND owner = ? AND status = ? AND expires_at <= ?", upload.Id, owner, AssetUploadStatusPending, completion.Now).
-				Updates(map[string]any{
-					"status":     AssetUploadStatusExpired,
-					"updated_at": completion.Now,
-				})
-			return result.Error
+			expired = true
+			return nil
 		}
 		uploadUpdates := map[string]any{
 			"status":            AssetUploadStatusComplete,
@@ -239,9 +235,9 @@ func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploa
 		return nil
 	})
 	if errors.Is(err, errAssetActivationLost) {
-		return false, nil
+		return false, false, nil
 	}
-	return completed, err
+	return completed, expired, err
 }
 
 func FailAssetUploadCAS(uploadID string, owner string, failure AssetUploadFailure) (bool, error) {

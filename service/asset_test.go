@@ -282,6 +282,112 @@ func TestCompleteAssetUploadCannotActivateAfterCleanupClaimedAndDeletedObject(t 
 	require.Empty(t, asset.ObjectKey)
 }
 
+func TestCompleteAssetUploadLateExpiryDeletesExactGenerationAndExpiresAsset(t *testing.T) {
+	newAssetServiceTestDB(t)
+	baseStore := installAssetServiceTestDeps(t)
+	store := &raceAssetObjectStore{fakeAssetObjectStore: baseStore}
+	assetObjectStore = store
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 29}
+
+	current := assetNow()
+	afterExpiry := time.Unix(session.ExpiresAt+1, 0).UTC()
+	assetNow = func() time.Time { return current }
+	store.afterRead = func() {
+		current = afterExpiry
+	}
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.Equal(t, []fakeAssetOpen{{key: "asset-test-bucket/" + session.ObjectKey, generation: 29}}, store.opens)
+	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + session.ObjectKey, expectedGeneration: 29}}, store.deletes)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusExpired, upload.Status)
+	require.Zero(t, upload.ObjectGeneration)
+	require.Empty(t, upload.StorageBucket)
+	require.Empty(t, upload.ObjectKey)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusExpired, asset.Status)
+	require.Equal(t, model.AssetSourceStatusExpired, asset.SourceStatus)
+	require.Empty(t, asset.StorageBucket)
+	require.Empty(t, asset.ObjectKey)
+	require.Zero(t, asset.ObjectGeneration)
+
+	result, err := CleanupExpiredAssetSources(context.Background(), CleanupExpiredAssetSourcesRequest{Owner: "node-a", Limit: 10})
+	require.NoError(t, err)
+	require.Zero(t, result.Claimed)
+}
+
+func TestCompleteAssetUploadLateExpiryLosesTerminalCASAfterCleanupClaim(t *testing.T) {
+	newAssetServiceTestDB(t)
+	baseStore := installAssetServiceTestDeps(t)
+	store := &raceAssetObjectStore{fakeAssetObjectStore: baseStore}
+	assetObjectStore = store
+	png := tinyPNG()
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Image",
+		ContentType: "image/png",
+		SizeBytes:   int64(len(png)),
+	})
+	require.NoError(t, err)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = png
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{ContentType: "image/png", Size: int64(len(png)), Generation: 31}
+
+	current := assetNow()
+	afterExpiry := time.Unix(session.ExpiresAt+1, 0).UTC()
+	assetNow = func() time.Time { return current }
+	store.afterRead = func() {
+		current = afterExpiry
+	}
+	cleanupClaimed := false
+	store.beforeDelete = func(bucket, objectKey string, expectedGeneration int64) {
+		if cleanupClaimed {
+			return
+		}
+		cleanupClaimed = true
+		claimed, err := model.ClaimExpiredPendingAssetUploads("cleanup-a", current.Unix(), current.Add(assetCleanupLeaseTTL).Unix(), 10)
+		require.NoError(t, err)
+		require.Len(t, claimed, 1)
+		require.Equal(t, model.AssetUploadStatusCleaning, claimed[0].Upload.Status)
+		require.Equal(t, "cleanup-a", claimed[0].Upload.CleanupLeaseOwner)
+		require.EqualValues(t, 31, expectedGeneration)
+	}
+
+	_, err = CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{UploadID: session.UploadID, Owner: "user-7"})
+
+	require.ErrorIs(t, err, ErrAssetUploadValidation)
+	require.True(t, cleanupClaimed)
+	var upload model.AssetUpload
+	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
+	require.Equal(t, model.AssetUploadStatusCleaning, upload.Status)
+	require.Equal(t, "cleanup-a", upload.CleanupLeaseOwner)
+	var asset model.Asset
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusCreating, asset.Status)
+	require.Equal(t, model.AssetSourceStatusUnavailable, asset.SourceStatus)
+
+	ok, err := model.MarkExpiredPendingAssetUploadIfCleanupLease(session.UploadID, "cleanup-a", upload.CleanupGeneration, 31, current.Unix())
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, model.DB.First(&asset, "public_id = ?", session.PublicID).Error)
+	require.Equal(t, model.AssetStatusExpired, asset.Status)
+	require.Equal(t, model.AssetSourceStatusExpired, asset.SourceStatus)
+}
+
 func TestSignAssetSourceURLBindsStoredGeneration(t *testing.T) {
 	store := installAssetServiceTestDeps(t)
 	asset := model.Asset{
@@ -694,7 +800,8 @@ func (r *chunkGuardReader) Read(p []byte) (int, error) {
 
 type raceAssetObjectStore struct {
 	*fakeAssetObjectStore
-	afterRead func()
+	afterRead    func()
+	beforeDelete func(bucket, objectKey string, expectedGeneration int64)
 }
 
 func (f *raceAssetObjectStore) Open(ctx context.Context, bucket, objectKey string, generation int64) (io.ReadCloser, error) {
@@ -703,6 +810,13 @@ func (f *raceAssetObjectStore) Open(ctx context.Context, bucket, objectKey strin
 		return nil, err
 	}
 	return &afterEOFReadCloser{ReadCloser: reader, afterEOF: f.afterRead}, nil
+}
+
+func (f *raceAssetObjectStore) Delete(ctx context.Context, bucket, objectKey string, expectedGeneration int64) error {
+	if f.beforeDelete != nil {
+		f.beforeDelete(bucket, objectKey, expectedGeneration)
+	}
+	return f.fakeAssetObjectStore.Delete(ctx, bucket, objectKey, expectedGeneration)
 }
 
 type afterEOFReadCloser struct {
