@@ -294,6 +294,46 @@ class EgressPolicyTests(unittest.TestCase):
             upstream.shutdown()
             upstream.server_close()
 
+    def test_connect_tunnel_outlives_transport_timeout_while_waiting_for_signup_code(self):
+        class EchoHandler(socketserver.BaseRequestHandler):
+            def handle(self):
+                while True:
+                    data = self.request.recv(1024)
+                    if not data:
+                        return
+                    self.request.sendall(data)
+
+        upstream = socketserver.TCPServer(("127.0.0.1", 0), EchoHandler)
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        thread.start()
+        port = upstream.server_address[1]
+        proxy = egress_proxy.EgressProxy(
+            policy=egress_proxy.EgressPolicy({"staging-console.flatkey.ai"}),
+            resolver=lambda host, resolved_port, *_: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", resolved_port))],
+            connector=lambda _resolved, timeout: socket.create_connection(("127.0.0.1", port), timeout=timeout),
+            timeout=0.1,
+        )
+        proxy.start()
+        try:
+            with socket.create_connection((proxy.host, proxy.port), timeout=2) as sock:
+                sock.settimeout(2)
+                sock.sendall(b"CONNECT staging-console.flatkey.ai:443 HTTP/1.1\r\nHost: staging-console.flatkey.ai\r\n\r\n")
+                response, _data = _read_connect_response(sock)
+                self.assertIn(b"200", response)
+
+                threading.Event().wait(0.25)
+                sock.sendall(b"registration")
+
+                try:
+                    echoed = sock.recv(len(b"registration"))
+                except OSError:
+                    echoed = b""
+                self.assertEqual(echoed, b"registration")
+        finally:
+            proxy.stop()
+            upstream.shutdown()
+            upstream.server_close()
+
     def test_default_connect_tunnel_budget_carries_current_staging_bundle_with_headroom(self):
         expected_bytes = 6 * 1024 * 1024
 

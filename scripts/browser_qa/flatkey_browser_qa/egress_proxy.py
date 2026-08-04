@@ -9,6 +9,9 @@ import threading
 import urllib.parse
 
 
+DEFAULT_TUNNEL_IDLE_TIMEOUT_SECONDS = 300
+
+
 class PolicyDenied(Exception):
     pass
 
@@ -140,6 +143,7 @@ class EgressProxy:
         self.max_header_bytes = max_header_bytes
         self.max_body_bytes = max_body_bytes
         self.max_tunnel_bytes = max_tunnel_bytes
+        self.tunnel_idle_timeout = DEFAULT_TUNNEL_IDLE_TIMEOUT_SECONDS
         self.timeout = timeout
         self.events = []
         self._server = None
@@ -343,7 +347,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         upstream_to_client = 0
         try:
             while True:
-                readable, _, _ = select.select(sockets, [], [], self.proxy.timeout)
+                readable, _, _ = select.select(sockets, [], [], self.proxy.tunnel_idle_timeout)
                 if not readable:
                     return
                 for source in readable:
