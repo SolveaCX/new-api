@@ -27,6 +27,7 @@ type Option struct {
 const OptionKeyPlaygroundDefaultModel = "PlaygroundDefaultModel"
 
 const recallCampaignEmailFromOptionKey = "recall_campaign_setting.email_from"
+const stagingBrowserQaAllowEmailAliasesEnv = "STAGING_BROWSER_QA_ALLOW_EMAIL_ALIASES"
 
 var (
 	optionReloadHooksMu sync.RWMutex
@@ -264,10 +265,31 @@ func LoadOptionsFromDatabase() {
 	if err := applyOptionMapValues(optionValues); err != nil {
 		common.SysLog("failed to update option map: " + err.Error())
 	}
+	applyStagingBrowserQaOptionOverrides()
 	setting.ApplyPaddleEnvOverrides()
 	syncPaddleOptionMap()
 	InvalidatePricingCache()
 	runOptionReloadHooks()
+}
+
+func applyStagingBrowserQaOptionOverrides() {
+	if !common.GetEnvOrDefaultBool(stagingBrowserQaAllowEmailAliasesEnv, false) {
+		return
+	}
+	if strings.TrimSpace(common.GetEnvOrDefaultString("APP_ROLE", "")) != "console" {
+		return
+	}
+	origin := strings.TrimRight(strings.ToLower(strings.TrimSpace(common.GetEnvOrDefaultString("APP_CONSOLE_ORIGIN", ""))), "/")
+	if origin != "https://staging-console.flatkey.ai" {
+		return
+	}
+
+	common.OptionMapRWMutex.Lock()
+	defer common.OptionMapRWMutex.Unlock()
+	common.EmailAliasRestrictionEnabled = false
+	if common.OptionMap != nil {
+		common.OptionMap["EmailAliasRestrictionEnabled"] = "false"
+	}
 }
 
 func syncPaddleOptionMap() {

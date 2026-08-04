@@ -126,3 +126,41 @@ func TestLoadOptionsFromDatabaseIgnoresRetiredInviteRewardUnlockDelay(t *testing
 	require.NoError(t, DB.Where("key = ?", "InviteRewardUnlockDelaySeconds").First(&option).Error)
 	require.Equal(t, "1", option.Value)
 }
+
+func TestLoadOptionsFromDatabaseAllowsStagingBrowserQaEmailAliases(t *testing.T) {
+	setupOptionGroupRenameTestDB(t)
+	originalAliasRestrictionEnabled := common.EmailAliasRestrictionEnabled
+	common.EmailAliasRestrictionEnabled = false
+	common.OptionMap["EmailAliasRestrictionEnabled"] = "false"
+	t.Setenv("APP_ROLE", "console")
+	t.Setenv("APP_CONSOLE_ORIGIN", "https://staging-console.flatkey.ai")
+	t.Setenv("STAGING_BROWSER_QA_ALLOW_EMAIL_ALIASES", "true")
+	t.Cleanup(func() {
+		common.EmailAliasRestrictionEnabled = originalAliasRestrictionEnabled
+	})
+	require.NoError(t, DB.Create(&Option{Key: "EmailAliasRestrictionEnabled", Value: "true"}).Error)
+
+	LoadOptionsFromDatabase()
+
+	require.False(t, common.EmailAliasRestrictionEnabled)
+	require.Equal(t, "false", common.OptionMap["EmailAliasRestrictionEnabled"])
+}
+
+func TestLoadOptionsFromDatabaseDoesNotAllowEmailAliasesWithoutStagingBrowserQaOverride(t *testing.T) {
+	setupOptionGroupRenameTestDB(t)
+	originalAliasRestrictionEnabled := common.EmailAliasRestrictionEnabled
+	common.EmailAliasRestrictionEnabled = false
+	common.OptionMap["EmailAliasRestrictionEnabled"] = "false"
+	t.Setenv("APP_ROLE", "console")
+	t.Setenv("APP_CONSOLE_ORIGIN", "https://console.flatkey.ai")
+	t.Setenv("STAGING_BROWSER_QA_ALLOW_EMAIL_ALIASES", "true")
+	t.Cleanup(func() {
+		common.EmailAliasRestrictionEnabled = originalAliasRestrictionEnabled
+	})
+	require.NoError(t, DB.Create(&Option{Key: "EmailAliasRestrictionEnabled", Value: "true"}).Error)
+
+	LoadOptionsFromDatabase()
+
+	require.True(t, common.EmailAliasRestrictionEnabled)
+	require.Equal(t, "true", common.OptionMap["EmailAliasRestrictionEnabled"])
+}

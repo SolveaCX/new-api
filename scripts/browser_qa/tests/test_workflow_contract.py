@@ -410,6 +410,16 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertNotRegex(uncommented, r"(?i)browser-qa[\s\S]{0,400}continue-on-error")
         self.assertNotRegex(uncommented, r"(?i)(GITHUB_STEP_SUMMARY|summary)[^\n]*(password|cookie|authorization|api[_-]?key|token|secret|email)")
 
+    def test_staging_deploy_explicitly_allows_browser_qa_gmail_aliases(self):
+        text = staging_deploy_workflow_text()
+        deploy = step_block(text, "Deploy new revision without traffic")
+
+        self.assertIn("STAGING_BROWSER_QA_ALLOW_EMAIL_ALIASES: true", text)
+        self.assertIn(
+            '"STAGING_BROWSER_QA_ALLOW_EMAIL_ALIASES=${STAGING_BROWSER_QA_ALLOW_EMAIL_ALIASES}"',
+            deploy,
+        )
+
     def test_staging_qa_contract_detects_downstream_rollback_jobs(self):
         text = staging_deploy_workflow_text() + """
 
