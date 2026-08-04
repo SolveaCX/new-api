@@ -428,7 +428,11 @@ func RefreshAssetRewriteMapForSelectedChannel(c *gin.Context, channel *model.Cha
 	if !ok || !references.HasReferences() {
 		return
 	}
-	rewriteMap := references.RewriteMapForChannel(channel.Id)
+	rewriteMap, err := service.MaterializeAssetBindingsForChannel(c.Request.Context(), common.GetContextKeyInt(c, constant.ContextKeyUserId), references, channel)
+	if err != nil {
+		clearAssetRewriteMap(c)
+		return
+	}
 	if len(rewriteMap) == 0 {
 		clearAssetRewriteMap(c)
 		return

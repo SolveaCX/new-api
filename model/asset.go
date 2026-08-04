@@ -129,6 +129,7 @@ type AssetBindingActivation struct {
 	LeaseOwner      string
 	UpstreamGroupID string
 	UpstreamAssetID string
+	Status          string
 	Now             int64
 }
 
@@ -376,8 +377,12 @@ func ActivateAssetBindingWithAssetCAS(activation AssetBindingActivation) (bool, 
 		if activation.LeaseOwner != "" {
 			query = query.Where("lease_owner = ?", activation.LeaseOwner)
 		}
+		status := activation.Status
+		if status == "" {
+			status = AssetStatusActive
+		}
 		result := query.Updates(map[string]any{
-			"status":            AssetStatusActive,
+			"status":            status,
 			"upstream_group_id": activation.UpstreamGroupID,
 			"upstream_asset_id": activation.UpstreamAssetID,
 			"lease_owner":       "",
@@ -396,6 +401,26 @@ func ActivateAssetBindingWithAssetCAS(activation AssetBindingActivation) (bool, 
 			Update("status", AssetStatusActive).Error
 	})
 	return activated, err
+}
+
+func FailAssetBindingCAS(assetID int64, channelID int, leaseOwner string, errorCode string, now int64) (bool, error) {
+	query := DB.Model(&AssetBinding{}).
+		Where("asset_id = ? AND channel_id = ?", assetID, channelID).
+		Where("status = ?", AssetBindingStatusLeased)
+	if leaseOwner != "" {
+		query = query.Where("lease_owner = ?", leaseOwner)
+	}
+	result := query.Updates(map[string]any{
+		"status":           AssetStatusFailed,
+		"error_code":       errorCode,
+		"lease_owner":      "",
+		"lease_expires_at": int64(0),
+		"updated_at":       now,
+	})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func CreateAssetBindingIfAbsent(assetID int64, channelID int, now int64) (*AssetBinding, bool, error) {
@@ -418,6 +443,14 @@ func CreateAssetBindingIfAbsent(assetID int64, channelID int, now int64) (*Asset
 		return nil, false, err
 	}
 	return &stored, false, nil
+}
+
+func GetAssetBinding(assetID int64, channelID int) (*AssetBinding, error) {
+	var binding AssetBinding
+	if err := DB.Where("asset_id = ? AND channel_id = ?", assetID, channelID).First(&binding).Error; err != nil {
+		return nil, err
+	}
+	return &binding, nil
 }
 
 func GetAssetsWithBindingsByPublicIDsForUser(userID int, publicIDs []string) (map[string]AssetWithBinding, error) {
@@ -466,6 +499,14 @@ func GetAssetsWithBindingsByPublicIDsForUser(userID int, publicIDs []string) (ma
 		byPublicID[asset.PublicId] = item
 	}
 	return byPublicID, nil
+}
+
+func GetAssetByPublicIDForUser(userID int, publicID string) (*Asset, error) {
+	var asset Asset
+	if err := DB.Where("user_id = ? AND public_id = ?", userID, publicID).First(&asset).Error; err != nil {
+		return nil, err
+	}
+	return &asset, nil
 }
 
 func ClaimAssetBindingLease(assetID int64, channelID int, owner string, now int64, leaseExpiresAt int64) (bool, error) {
