@@ -251,6 +251,23 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             self.assertIn("--image=\"${IMAGE_URI}\"", command)
             self.assertNotRegex(command, r"--(update-secrets|update-env-vars|args)=")
 
+    def test_resource_update_gives_only_the_main_job_two_gibibytes_of_memory(self):
+        update = step_block(workflow_text(), "Update browser QA Cloud Run resources")
+        commands = re.findall(
+            r"gcloud run (?:services|jobs) update[\s\S]*?(?=\n          gcloud run |\Z)",
+            update,
+        )
+        self.assertEqual(len(commands), 3)
+
+        main = next(command for command in commands if '"${QA_MAIN_JOB}"' in command)
+        broker = next(command for command in commands if '"${QA_BROKER_SERVICE}"' in command)
+        cleanup = next(command for command in commands if '"${QA_CLEANUP_JOB}"' in command)
+
+        self.assertIn('--memory="2Gi"', main)
+        self.assertNotIn("--memory=", broker)
+        self.assertNotIn("--memory=", cleanup)
+        self.assertNotIn("--cpu=", update)
+
     def test_main_and_cleanup_execute_with_wait_and_cleanup_is_unconditional(self):
         text = workflow_text()
         main = step_block(text, "Execute main browser QA job")

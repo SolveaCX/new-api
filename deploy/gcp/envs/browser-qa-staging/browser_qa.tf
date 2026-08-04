@@ -203,6 +203,12 @@ resource "google_cloud_run_v2_job" "browser_qa_main" {
         image = local.browser_qa_placeholder_image
         args  = ["main"]
 
+        resources {
+          limits = {
+            memory = "2Gi"
+          }
+        }
+
         env {
           name = "CODEX_API_KEY"
           value_source {

@@ -256,6 +256,18 @@ class BrowserQaTerraformContractTest(unittest.TestCase):
         )
         self.assertNotIn("FLATKEY_BROWSER_QA_CHROMIUM_STARTUP_STDERR_BYTES", jobs["browser_qa_cleanup"].body)
 
+    def test_main_browser_qa_job_has_explicit_memory_for_chromium_and_codex(self):
+        services = _resource_blocks("google_cloud_run_v2_service")
+        jobs = _resource_blocks("google_cloud_run_v2_job")
+        main = jobs["browser_qa_main"]
+
+        self.assertRegex(
+            main.body,
+            r'\bresources\s*\{\s*limits\s*=\s*\{\s*memory\s*=\s*"2Gi"\s*\}\s*\}',
+        )
+        self.assertNotRegex(services["browser_qa_broker"].body, r"\bresources\s*\{")
+        self.assertNotRegex(jobs["browser_qa_cleanup"].body, r"\bresources\s*\{")
+
     def test_private_report_bucket_and_report_iam_split(self):
         buckets = _resource_blocks("google_storage_bucket")
         self.assertIn("browser_qa_reports", buckets)

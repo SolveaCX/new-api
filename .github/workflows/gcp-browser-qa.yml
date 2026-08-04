@@ -231,6 +231,7 @@ jobs:
           gcloud run jobs update "${QA_MAIN_JOB}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
+            --memory="2Gi" \
             --image="${IMAGE_URI}" \
             --quiet
           gcloud run jobs update "${QA_CLEANUP_JOB}" \
