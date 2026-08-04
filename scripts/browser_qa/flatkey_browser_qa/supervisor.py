@@ -586,6 +586,7 @@ web_search = "disabled"
 command = "{_toml_escape(sys.executable)}"
 args = ["-m", "scripts.browser_qa.flatkey_browser_qa.mcp_budget_wrapper"]
 required = true
+default_tools_approval_mode = "approve"
 enabled_tools = ["browser_navigate", "browser_navigate_back", "browser_tabs", "browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_snapshot", "browser_find", "browser_wait_for", "browser_console_messages", "browser_network_requests", "browser_network_request", "qa_read_docs"]
 [mcp_servers.playwright.env]
 PYTHONPATH = "{escaped_repo_root}"
@@ -600,6 +601,7 @@ FLATKEY_BROWSER_QA_MODE = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_MODE"])}"
 command = "{_toml_escape(sys.executable)}"
 args = ["-m", "scripts.browser_qa.flatkey_browser_qa.browser_evidence_mcp"]
 required = true
+default_tools_approval_mode = "approve"
 enabled_tools = ["qa_capture_screenshot"]
 [mcp_servers.evidence.env]
 PYTHONPATH = "{escaped_repo_root}"
@@ -612,6 +614,7 @@ FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROW
 command = "{_toml_escape(sys.executable)}"
 args = ["-m", "scripts.browser_qa.flatkey_browser_qa.broker_mcp"]
 required = true
+default_tools_approval_mode = "approve"
 enabled_tools = ["get_current_verification_code"]
 [mcp_servers.broker.env]
 PYTHONPATH = "{escaped_repo_root}"
@@ -627,6 +630,7 @@ FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROW
 command = "{_toml_escape(sys.executable)}"
 args = ["-m", "scripts.browser_qa.flatkey_browser_qa.control_mcp"]
 required = true
+default_tools_approval_mode = "approve"
 enabled_tools = ["qa_replay_checkpoint", "qa_start_exploration"]
 [mcp_servers.control.env]
 PYTHONPATH = "{escaped_repo_root}"

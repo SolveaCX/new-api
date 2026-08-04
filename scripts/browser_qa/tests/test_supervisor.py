@@ -6,6 +6,7 @@ import subprocess
 import socket
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest import mock
 import io
@@ -720,6 +721,41 @@ class SupervisorTests(unittest.TestCase):
         for data in [config_text]:
             self.assertNotIn("browser_evaluate", data)
             self.assertNotIn("plugins = false", data)
+
+    def test_noninteractive_qa_preapproves_each_allowlisted_mcp_server(self):
+        _, sup = self.run_supervisor(FakeProcess(0), result_payload=valid_result())
+
+        with open(os.path.join(sup.codex_home, "qa.config.toml"), "rb") as handle:
+            qa_config = tomllib.load(handle)
+
+        mcp_servers = qa_config["mcp_servers"]
+        expected_tools = {
+            "playwright": [
+                "browser_navigate",
+                "browser_navigate_back",
+                "browser_tabs",
+                "browser_click",
+                "browser_type",
+                "browser_fill_form",
+                "browser_select_option",
+                "browser_snapshot",
+                "browser_find",
+                "browser_wait_for",
+                "browser_console_messages",
+                "browser_network_requests",
+                "browser_network_request",
+                "qa_read_docs",
+            ],
+            "evidence": ["qa_capture_screenshot"],
+            "broker": ["get_current_verification_code"],
+            "control": ["qa_replay_checkpoint", "qa_start_exploration"],
+        }
+        self.assertEqual(set(mcp_servers), set(expected_tools))
+        for server_name, server_config in mcp_servers.items():
+            with self.subTest(server=server_name):
+                self.assertEqual(server_config["default_tools_approval_mode"], "approve")
+                self.assertNotIn("*", server_config["enabled_tools"])
+                self.assertEqual(server_config["enabled_tools"], expected_tools[server_name])
 
     def test_supervisor_passes_explicit_manifest_identity_to_report_writer(self):
         original_write_report = supervisor.report.write_report
