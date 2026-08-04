@@ -23,7 +23,7 @@ _MAX_MIME_PARTS = 50
 _MAX_MIME_DEPTH = 12
 _MAX_TEXT_BYTES = 128 * 1024
 _MAX_CANDIDATES = 10
-_CODE_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9]{6}(?![A-Za-z0-9])")
+_CODE_RE = re.compile(r"^[0-9a-f]{6}$")
 _BASE_EMAIL_RE = re.compile(r"^[^@\s+]+@[^@\s@]+$")
 
 
@@ -176,11 +176,15 @@ class GmailClient:
         base = self.base_address
         local, domain = base.split("@", 1)
         alias = f"{local}+{search.email_tag}@{domain}"
-        query = f"to:{alias} after:{int(search.run_start_epoch)}"
+        query = f"to:{base} from:{search.sender.lower()} after:{int(search.run_start_epoch)}"
         list_payload = self._gmail_json(
             "GET",
             "/gmail/v1/users/me/messages",
-            params={"q": query, "maxResults": str(_MAX_CANDIDATES)},
+            params={
+                "q": query,
+                "maxResults": str(_MAX_CANDIDATES),
+                "includeSpamTrash": "true",
+            },
         )
         messages = list_payload.get("messages", [])
         if messages is None:
@@ -316,13 +320,15 @@ def parse_verification_code(message, *, alias, sender, subject_marker, run_start
     subject = _decode_header_value(headers.get("subject", ""))
     if subject is None or subject_marker.casefold() not in subject.casefold():
         return None
-    parts = _collect_text_parts(payload)
-    if parts is None:
+    code_regions = _collect_verification_code_regions(payload)
+    if code_regions is None:
         return None
-    text = "\n".join(parts)
-    if not text:
-        return None
-    codes = {code for code in _CODE_RE.findall(text) if any(char.isdigit() for char in code)}
+    codes = set()
+    for region in code_regions:
+        code = region.strip()
+        if _CODE_RE.fullmatch(code) is None:
+            return None
+        codes.add(code)
     if len(codes) != 1:
         return None
     return next(iter(codes))
@@ -364,11 +370,11 @@ def _single_address(value):
     return parsed[0][1].lower()
 
 
-def _collect_text_parts(root):
+def _collect_verification_code_regions(root):
     stack = [(root, 0)]
     seen_parts = 0
     total_bytes = 0
-    texts = []
+    regions = []
     while stack:
         part, depth = stack.pop()
         if not isinstance(part, dict):
@@ -390,13 +396,12 @@ def _collect_text_parts(root):
             decoded = _decode_base64url(data)
             if decoded is None:
                 return None
-            if mime_type == "text/html":
-                decoded = _html_visible_text(decoded)
             total_bytes += len(decoded.encode("utf-8"))
             if total_bytes > _MAX_TEXT_BYTES:
                 return None
-            texts.append(decoded)
-    return texts
+            if mime_type == "text/html":
+                regions.extend(_html_verification_code_regions(decoded))
+    return regions
 
 
 def _is_attachment_part(part):
@@ -425,32 +430,53 @@ def _decode_base64url(data):
         return None
 
 
-class _VisibleTextParser(html.parser.HTMLParser):
+class _VerificationCodeRegionParser(html.parser.HTMLParser):
     _SKIP_TAGS = {"script", "style", "noscript", "template"}
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self._skip_depth = 0
-        self.chunks = []
+        self._capture_depth = 0
+        self._capture_chunks = []
+        self.regions = []
 
     def handle_starttag(self, tag, attrs):
-        if tag.lower() in self._SKIP_TAGS:
+        tag = tag.lower()
+        if tag in self._SKIP_TAGS:
             self._skip_depth += 1
+        if self._capture_depth:
+            self._capture_depth += 1
+            return
+        if not self._skip_depth and _has_html_class(attrs, "verification-code"):
+            self._capture_depth = 1
+            self._capture_chunks = []
 
     def handle_endtag(self, tag):
+        if self._capture_depth:
+            self._capture_depth -= 1
+            if not self._capture_depth:
+                self.regions.append("".join(self._capture_chunks))
+                self._capture_chunks = []
         if tag.lower() in self._SKIP_TAGS and self._skip_depth:
             self._skip_depth -= 1
 
     def handle_data(self, data):
-        if not self._skip_depth:
-            self.chunks.append(data)
+        if self._capture_depth and not self._skip_depth:
+            self._capture_chunks.append(data)
 
 
-def _html_visible_text(html):
-    parser = _VisibleTextParser()
+def _html_verification_code_regions(html):
+    parser = _VerificationCodeRegionParser()
     parser.feed(html)
     parser.close()
-    return " ".join(parser.chunks)
+    return parser.regions
+
+
+def _has_html_class(attrs, expected):
+    for name, value in attrs:
+        if name.lower() == "class" and isinstance(value, str) and expected in value.split():
+            return True
+    return False
 
 
 def _read_error_body(exc):

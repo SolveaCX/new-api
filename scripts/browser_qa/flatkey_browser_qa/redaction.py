@@ -19,6 +19,7 @@ _SECRET_KEYS = {
 _QUERY_SECRET_KEYS = _SECRET_KEYS | {"code"}
 _API_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+")
+_VERIFICATION_CODE_RE = re.compile(r"^[0-9a-f]{6}$")
 
 
 @dataclass(repr=False)
@@ -96,8 +97,8 @@ class Redactor:
         return cleaned
 
     def register_code(self, code):
-        if not isinstance(code, str) or not code.isdecimal() or len(code) != 6:
-            raise ValueError("verification code must be exactly six digits")
+        if not isinstance(code, str) or not _VERIFICATION_CODE_RE.fullmatch(code):
+            raise ValueError("verification code must be exactly six lowercase hex characters")
         with self._lock:
             marker = (code, "[REDACTED_CODE]")
             if marker not in self._text_replacements:

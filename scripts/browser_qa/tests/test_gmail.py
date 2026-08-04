@@ -3,6 +3,7 @@ import json
 import os
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from unittest import mock
@@ -24,7 +25,11 @@ ALIAS = "owner+flatkey-qa-123456789-abc123def4@gmail.com"
 
 
 def load_message():
-    return json.loads(FIXTURE.read_text(encoding="utf-8"))
+    message = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    message["payload"]["parts"][1]["body"]["data"] = b64url(
+        '<html><body><div class="verification-code">654321</div></body></html>'
+    )
+    return message
 
 
 class FakeResponse:
@@ -59,7 +64,7 @@ class RecordingOpener:
 
 
 class GmailParserTests(unittest.TestCase):
-    def test_extracts_single_code_from_matching_plain_and_html_message(self):
+    def test_extracts_single_code_from_matching_plain_and_current_template_html_message(self):
         code = parse_verification_code(
             load_message(),
             alias=ALIAS,
@@ -107,7 +112,9 @@ class GmailParserTests(unittest.TestCase):
         message = load_message()
         message["payload"]["mimeType"] = "text/html"
         message["payload"]["parts"] = []
-        message["payload"]["body"] = {"data": "PGRpdj5Zb3VyIGNvZGUgaXMgNjU0MzIxPC9kaXY-"}
+        message["payload"]["body"] = {
+            "data": b64url('<div class="verification-code">654321</div>')
+        }
 
         code = parse_verification_code(
             message,
@@ -124,7 +131,12 @@ class GmailParserTests(unittest.TestCase):
         message = load_message()
         message["payload"]["mimeType"] = "text/html"
         message["payload"]["parts"] = []
-        message["payload"]["body"] = {"data": b64url("<div>Verification code</div><div>f1df22</div><p>This link and code expire in 10 minutes.</p>")}
+        message["payload"]["body"] = {
+            "data": b64url(
+                '<div>Verification code</div><div class="verification-code">f1df22</div>'
+                "<p>This link and code expire in 10 minutes.</p>"
+            )
+        }
 
         code = parse_verification_code(
             message,
@@ -136,6 +148,83 @@ class GmailParserTests(unittest.TestCase):
         )
 
         self.assertEqual(code, "f1df22")
+
+    def test_accepts_all_letter_hex_registration_code_from_current_email_template(self):
+        message = load_message()
+        message["payload"]["mimeType"] = "text/html"
+        message["payload"]["parts"] = []
+        message["payload"]["body"] = {
+            "data": b64url('<div class="verification-code">abcdef</div>')
+        }
+
+        code = parse_verification_code(
+            message,
+            alias=ALIAS,
+            sender="noreply@flatkey.ai",
+            subject_marker="Flatkey Email Verification",
+            run_start_epoch=1800000000,
+            now_epoch=1800000030,
+        )
+
+        self.assertEqual(code, "abcdef")
+
+    def test_rejects_standalone_quarter_token_without_verification_code_markup(self):
+        message = load_message()
+        message["payload"]["mimeType"] = "text/html"
+        message["payload"]["parts"] = []
+        message["payload"]["body"] = {"data": b64url("<div>Release window: 2026Q3</div>")}
+
+        code = parse_verification_code(
+            message,
+            alias=ALIAS,
+            sender="noreply@flatkey.ai",
+            subject_marker="Flatkey Email Verification",
+            run_start_epoch=1800000000,
+            now_epoch=1800000030,
+        )
+
+        self.assertIsNone(code)
+
+    def test_rejects_plain_text_url_path_token_without_verification_code_markup(self):
+        message = load_message()
+        message["payload"]["mimeType"] = "text/plain"
+        message["payload"]["parts"] = []
+        message["payload"]["body"] = {
+            "data": b64url("Open https://example.test/reset/abc123 to continue")
+        }
+
+        code = parse_verification_code(
+            message,
+            alias=ALIAS,
+            sender="noreply@flatkey.ai",
+            subject_marker="Flatkey Email Verification",
+            run_start_epoch=1800000000,
+            now_epoch=1800000030,
+        )
+
+        self.assertIsNone(code)
+
+    def test_rejects_two_distinct_alphanumeric_verification_candidates(self):
+        message = load_message()
+        message["payload"]["mimeType"] = "text/html"
+        message["payload"]["parts"] = []
+        message["payload"]["body"] = {
+            "data": b64url(
+                '<div class="verification-code">f1df22</div>'
+                '<div class="verification-code">a1b2c3</div>'
+            )
+        }
+
+        code = parse_verification_code(
+            message,
+            alias=ALIAS,
+            sender="noreply@flatkey.ai",
+            subject_marker="Flatkey Email Verification",
+            run_start_epoch=1800000000,
+            now_epoch=1800000030,
+        )
+
+        self.assertIsNone(code)
 
     def test_html_codes_in_links_scripts_styles_noscript_and_template_are_ignored(self):
         for html in [
@@ -388,7 +477,7 @@ class GmailOAuthAndClientTests(unittest.TestCase):
 
         self.assertEqual(len(opener.requests), 3)
 
-    def test_search_uses_profile_base_alias_bounded_query_and_full_message_get(self):
+    def test_search_uses_profile_base_sender_bounded_query_including_spam(self):
         opener = RecordingOpener(
             [
                 FakeResponse(200, {"access_token": "access-secret", "expires_in": 3600, "token_type": "Bearer"}),
@@ -412,8 +501,13 @@ class GmailOAuthAndClientTests(unittest.TestCase):
         self.assertEqual(result, "654321")
         urls = [request.full_url for request, _ in opener.requests]
         self.assertIn("https://gmail.googleapis.com/gmail/v1/users/me/profile", urls[1])
-        self.assertIn("q=to%3Aowner%2Bflatkey-qa-123456789-abc123def4%40gmail.com+after%3A1800000000", urls[2])
-        self.assertIn("maxResults=10", urls[2])
+        query_params = urllib.parse.parse_qs(urllib.parse.urlparse(urls[2]).query)
+        self.assertEqual(
+            query_params["q"],
+            ["to:owner@gmail.com from:noreply@flatkey.ai after:1800000000"],
+        )
+        self.assertEqual(query_params["maxResults"], ["10"])
+        self.assertEqual(query_params["includeSpamTrash"], ["true"])
         self.assertIn("format=full", urls[3])
         for request, _ in opener.requests[1:]:
             self.assertEqual(request.headers["Authorization"], "Bearer access-secret")

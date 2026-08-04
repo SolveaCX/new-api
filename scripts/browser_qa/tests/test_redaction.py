@@ -69,6 +69,17 @@ class RedactionTests(unittest.TestCase):
         redactor.register_code("654321")
         self.assertEqual(redactor.clean("ticket 123456 code 654321"), "ticket 123456 code [REDACTED_CODE]")
 
+    def test_redactor_accepts_current_alphanumeric_verification_codes(self):
+        redactor = Redactor(email="owner+flatkey-qa-1-x@gmail.com")
+
+        redactor.register_code("f1df22")
+        redactor.register_code("abcdef")
+
+        self.assertEqual(
+            redactor.clean("ticket 123456 code f1df22 or abcdef"),
+            "ticket 123456 code [REDACTED_CODE] or [REDACTED_CODE]",
+        )
+
     def test_redactor_masks_credential_query_values_inside_nested_text(self):
         redactor = Redactor(email="owner+flatkey-qa-1-x@gmail.com", code="123456")
         raw = {
