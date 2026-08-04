@@ -575,7 +575,7 @@ func EpayNotify(c *gin.Context) {
 			if err := model.TryGrantInviteRewardAfterTopUpSucceeded(topUp.UserId, topUp.Id); err != nil {
 				logger.LogError(c.Request.Context(), fmt.Sprintf("epay invite reward grant failed trade_no=%s user_id=%d client_ip=%s error=%q", topUp.TradeNo, topUp.UserId, c.ClientIP(), err.Error()))
 			}
-			sendPaymentSuccessGA(c.Request.Context(), topUp)
+			model.EnqueuePaymentAnalyticsForTopUpBestEffort(topUp)
 		} else if topUp.Status == common.TopUpStatusSuccess {
 			if err := model.TryGrantInviteRewardAfterTopUpSucceeded(topUp.UserId, topUp.Id); err != nil {
 				logger.LogError(c.Request.Context(), fmt.Sprintf("epay invite reward retry failed trade_no=%s user_id=%d client_ip=%s error=%q", topUp.TradeNo, topUp.UserId, c.ClientIP(), err.Error()))

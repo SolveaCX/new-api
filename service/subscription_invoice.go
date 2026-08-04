@@ -1976,6 +1976,7 @@ func completeOneTimeSubscriptionPurchase(ctx context.Context, tradeNo string, pr
 		if err := model.SyncSubscriptionOrderTopUpHistory(tradeNo); err != nil {
 			return nil, err
 		}
+		model.EnqueuePaymentAnalyticsForSubscriptionBestEffort(result.Order, "Subscription")
 	}
 	return result, nil
 }

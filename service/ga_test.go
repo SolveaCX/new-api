@@ -121,7 +121,7 @@ func TestSendGAEventWithConfigAddsRequestTimeoutContext(t *testing.T) {
 		Endpoint:      "https://www.google-analytics.com/mp/collect",
 		HTTPClient:    client,
 	}, GAEvent{
-		Name:      "payment_success",
+		Name:      "test_event",
 		ClientID:  "123.456",
 		SessionID: "789",
 	})
@@ -147,7 +147,7 @@ func TestSendGAEventSkipsWhenSecretMissing(t *testing.T) {
 		Endpoint:      server.URL + "/mp/collect",
 		HTTPClient:    server.Client(),
 	}, GAEvent{
-		Name:      "payment_success",
+		Name:      "test_event",
 		ClientID:  "123.456",
 		SessionID: "789",
 	})
