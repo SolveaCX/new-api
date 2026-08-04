@@ -85,14 +85,25 @@ func init() {
 	RegisterAssetMaterializer(constant.ChannelTypeBytePlus, bytePlusAssetBindingMaterializer{})
 }
 
-func RegisterAssetMaterializer(channelType int, materializer AssetMaterializer) {
+func RegisterAssetMaterializer(channelType int, materializer AssetMaterializer) func() {
 	assetMaterializersMu.Lock()
-	defer assetMaterializersMu.Unlock()
+	old, hadOld := assetMaterializers[channelType]
 	if materializer == nil {
 		delete(assetMaterializers, channelType)
-		return
+	} else {
+		assetMaterializers[channelType] = materializer
 	}
-	assetMaterializers[channelType] = materializer
+	assetMaterializersMu.Unlock()
+
+	return func() {
+		assetMaterializersMu.Lock()
+		defer assetMaterializersMu.Unlock()
+		if hadOld {
+			assetMaterializers[channelType] = old
+		} else {
+			delete(assetMaterializers, channelType)
+		}
+	}
 }
 
 func registerAssetMaterializerForTest(t interface{ Cleanup(func()) }, channelType int, materializer AssetMaterializer) func() {
@@ -131,7 +142,6 @@ func MaterializeAssetBindingsForChannel(ctx context.Context, userID int, set Ass
 		return nil, nil
 	}
 	rewriteMap := make(map[string]string, len(set.references))
-	var materializeErr error
 	for _, reference := range set.references {
 		asset := set.assets[reference.PublicID]
 		if binding, ok := activeAssetReferenceBindingForChannel(asset.Bindings, channel.Id); ok {
@@ -149,15 +159,15 @@ func MaterializeAssetBindingsForChannel(ctx context.Context, userID int, set Ass
 			ExpectedType: reference.ExpectedAssetType,
 		})
 		if err != nil {
-			if materializeErr == nil {
-				materializeErr = err
-			}
-			continue
+			return nil, err
+		}
+		if strings.TrimSpace(result.RewriteURI) == "" {
+			return nil, ErrAssetBindingUnavailable
 		}
 		rewriteMap[result.PublicURI] = result.RewriteURI
 	}
-	if len(rewriteMap) == 0 && materializeErr != nil {
-		return nil, materializeErr
+	if len(rewriteMap) != len(set.references) {
+		return nil, ErrAssetBindingUnavailable
 	}
 	return rewriteMap, nil
 }
@@ -317,7 +327,7 @@ func sanitizeAssetBindingError(err error) error {
 	return ErrAssetBindingUnavailable
 }
 
-func assetBindingAPIError(err error) *types.NewAPIError {
+func AssetBindingAPIError(err error) *types.NewAPIError {
 	if errors.Is(err, ErrAssetBindingInitializing) {
 		return assetError(err, types.ErrorCodeAssetNotReady, http.StatusConflict)
 	}

@@ -23,6 +23,25 @@ import (
 	"gorm.io/gorm"
 )
 
+type controllerAssetMaterializer struct {
+	createErr error
+}
+
+func (m controllerAssetMaterializer) CreateAsset(ctx context.Context, input service.AssetMaterializeInput) (service.AssetMaterializeResult, error) {
+	if m.createErr != nil {
+		return service.AssetMaterializeResult{}, m.createErr
+	}
+	return service.AssetMaterializeResult{
+		UpstreamGroupID: "group",
+		UpstreamAssetID: "upstream-" + input.Asset.PublicId,
+		Status:          model.AssetStatusActive,
+	}, nil
+}
+
+func (m controllerAssetMaterializer) GetAsset(ctx context.Context, input service.AssetMaterializeInput, upstreamAssetID string) (service.AssetMaterializeResult, error) {
+	return service.AssetMaterializeResult{UpstreamAssetID: upstreamAssetID, Status: model.AssetStatusActive}, nil
+}
+
 func TestGetChannelReacquiresContextChannelConcurrency(t *testing.T) {
 	prevDB := model.DB
 	prevMemoryCacheEnabled := common.MemoryCacheEnabled
@@ -322,11 +341,13 @@ func TestGetChannelRetryUsesAssetRankerAndRefreshesRewriteMap(t *testing.T) {
 	require.Equal(t, rewriteMap, legacyMap)
 }
 
-func TestGetChannelRetryClearsStaleAssetRewriteMapWhenSelectedChannelHasNoBinding(t *testing.T) {
+func TestGetChannelRetryMaterializationFailureClearsStaleMapAndReturnsError(t *testing.T) {
 	restoreRuntime := useControllerMemoryChannelConcurrencyForTest(t)
 	defer restoreRuntime()
 	restoreDB := useControllerAssetChannelSelectionDBForTest(t)
 	defer restoreDB()
+	restoreMaterializer := service.RegisterAssetMaterializer(constant.ChannelTypeBytePlus, controllerAssetMaterializer{createErr: errors.New("BytePlus secret signed=https://signed.example/?X-Goog-Signature=abc")})
+	defer restoreMaterializer()
 
 	priority := int64(100)
 	weight := uint(1)
@@ -381,17 +402,17 @@ func TestGetChannelRetryClearsStaleAssetRewriteMapWhenSelectedChannelHasNoBindin
 		ModelName:  "seedance-2.0",
 		Retry:      &retry,
 	})
-	defer func() {
-		require.NoError(t, service.ReleaseChannelConcurrencyForContext(c))
-	}()
-
-	require.Nil(t, channelErr)
-	require.NotNil(t, selected)
-	require.Equal(t, channel.Id, selected.Id)
+	require.Nil(t, selected)
+	require.NotNil(t, channelErr)
+	require.Equal(t, http.StatusServiceUnavailable, channelErr.StatusCode)
+	require.Contains(t, channelErr.Error(), "asset channel unavailable")
+	require.NotContains(t, channelErr.Error(), "BytePlus")
+	require.NotContains(t, channelErr.Error(), "signed.example")
 	_, ok := common.GetContextKey(c, constant.ContextKeyAssetRewriteMap)
 	require.False(t, ok)
 	_, ok = common.GetContextKey(c, constant.ContextKeyBytePlusAssetRewriteMap)
 	require.False(t, ok)
+	require.NoError(t, service.ReleaseChannelConcurrencyForContext(c), "materialization failure must release the selected channel lease")
 }
 
 func useControllerMemoryChannelConcurrencyForTest(t *testing.T) func() {

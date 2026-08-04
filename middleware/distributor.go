@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -311,7 +312,11 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, newAPIError.StatusCode, newAPIError.Error(), newAPIError.GetErrorCode())
 				return
 			}
-			RefreshAssetRewriteMapForSelectedChannel(c, channel)
+			if newAPIError := RefreshAssetRewriteMapForSelectedChannel(c, channel); newAPIError != nil {
+				_ = service.ReleaseChannelConcurrencyForContext(c)
+				abortWithOpenAiMessage(c, newAPIError.StatusCode, newAPIError.Error(), newAPIError.GetErrorCode())
+				return
+			}
 			defer service.ReleaseChannelConcurrencyForContext(c)
 		}
 		c.Next()
@@ -420,25 +425,30 @@ func bytePlusAssetURLHasReference(raw string) (bool, *types.NewAPIError) {
 	return false, nil
 }
 
-func RefreshAssetRewriteMapForSelectedChannel(c *gin.Context, channel *model.Channel) {
+func RefreshAssetRewriteMapForSelectedChannel(c *gin.Context, channel *model.Channel) *types.NewAPIError {
 	if c == nil || channel == nil {
-		return
+		return nil
 	}
 	references, ok := common.GetContextKeyType[service.AssetReferenceSet](c, constant.ContextKeyAssetReferenceSet)
 	if !ok || !references.HasReferences() {
-		return
+		return nil
 	}
-	rewriteMap, err := service.MaterializeAssetBindingsForChannel(c.Request.Context(), common.GetContextKeyInt(c, constant.ContextKeyUserId), references, channel)
+	ctx := context.Background()
+	if c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	rewriteMap, err := service.MaterializeAssetBindingsForChannel(ctx, common.GetContextKeyInt(c, constant.ContextKeyUserId), references, channel)
 	if err != nil {
 		clearAssetRewriteMap(c)
-		return
+		return service.AssetBindingAPIError(err)
 	}
 	if len(rewriteMap) == 0 {
 		clearAssetRewriteMap(c)
-		return
+		return nil
 	}
 	common.SetContextKey(c, constant.ContextKeyAssetRewriteMap, rewriteMap)
 	common.SetContextKey(c, constant.ContextKeyBytePlusAssetRewriteMap, rewriteMap)
+	return nil
 }
 
 func clearAssetRewriteMap(c *gin.Context) {

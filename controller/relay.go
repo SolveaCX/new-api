@@ -383,7 +383,10 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		releaseChannelConcurrencyForRequest(c)
 		return nil, newAPIError
 	}
-	middleware.RefreshAssetRewriteMapForSelectedChannel(c, channel)
+	if newAPIError := middleware.RefreshAssetRewriteMapForSelectedChannel(c, channel); newAPIError != nil {
+		releaseChannelConcurrencyForRequest(c)
+		return nil, newAPIError
+	}
 	return channel, nil
 }
 

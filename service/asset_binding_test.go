@@ -252,6 +252,107 @@ func TestAssetBindingProviderFailureIsSanitizedAndDoesNotPersistSignedURL(t *tes
 	require.Len(t, store.signed, 1, "create attempt needs exactly one ephemeral signed GET URL")
 }
 
+func TestAssetBindingMaterializeSetRequiresEveryReferenceRewrite(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	first := insertMaterializeAsset(t, "ast_66666666666666666666666666666666")
+	second := insertMaterializeAsset(t, "ast_77777777777777777777777777777777")
+	channel := insertMaterializeChannel(t, 131)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         first.Id,
+		ChannelId:       channel.Id,
+		Status:          model.AssetStatusActive,
+		UpstreamAssetId: "upstream-first",
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}).Error)
+	materializer := &recordingAssetMaterializer{createErr: errors.New("provider secret should not leak")}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+	set := AssetReferenceSet{
+		references: []assetReference{
+			{PublicID: first.PublicId, ExpectedAssetType: "Image"},
+			{PublicID: second.PublicId, ExpectedAssetType: "Image"},
+		},
+		assets: map[string]assetReferenceAsset{
+			first.PublicId: {
+				PublicID:  first.PublicId,
+				AssetType: "Image",
+				Status:    model.AssetStatusActive,
+				Bindings: []assetReferenceBinding{{
+					ChannelID:       channel.Id,
+					Status:          model.AssetStatusActive,
+					UpstreamAssetID: "upstream-first",
+				}},
+			},
+			second.PublicId: {
+				PublicID:        second.PublicId,
+				AssetType:       "Image",
+				Status:          model.AssetStatusActive,
+				SourceStatus:    model.AssetSourceStatusAvailable,
+				StorageBackend:  defaultAssetStorageBackend,
+				StorageBucket:   second.StorageBucket,
+				ObjectKey:       second.ObjectKey,
+				SourceExpiresAt: second.SourceExpiresAt,
+			},
+		},
+	}
+
+	rewriteMap, err := MaterializeAssetBindingsForChannel(context.Background(), 7, set, channel)
+
+	require.Error(t, err)
+	assertNoAssetBindingLeak(t, err)
+	require.Nil(t, rewriteMap, "a failed member must not return a partial rewrite map")
+}
+
+func TestAssetBindingMaterializeSetCreatesRecoverableBindingsAndReturnsCompleteMap(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	first := insertMaterializeAsset(t, "ast_88888888888888888888888888888888")
+	second := insertMaterializeAsset(t, "ast_99999999999999999999999999999999")
+	channel := insertMaterializeChannel(t, 131)
+	materializer := &recordingAssetMaterializer{}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+	set := AssetReferenceSet{
+		references: []assetReference{
+			{PublicID: first.PublicId, ExpectedAssetType: "Image"},
+			{PublicID: second.PublicId, ExpectedAssetType: "Image"},
+		},
+		assets: map[string]assetReferenceAsset{
+			first.PublicId: {
+				PublicID:        first.PublicId,
+				AssetType:       "Image",
+				Status:          model.AssetStatusActive,
+				SourceStatus:    model.AssetSourceStatusAvailable,
+				StorageBackend:  defaultAssetStorageBackend,
+				StorageBucket:   first.StorageBucket,
+				ObjectKey:       first.ObjectKey,
+				SourceExpiresAt: first.SourceExpiresAt,
+			},
+			second.PublicId: {
+				PublicID:        second.PublicId,
+				AssetType:       "Image",
+				Status:          model.AssetStatusActive,
+				SourceStatus:    model.AssetSourceStatusAvailable,
+				StorageBackend:  defaultAssetStorageBackend,
+				StorageBucket:   second.StorageBucket,
+				ObjectKey:       second.ObjectKey,
+				SourceExpiresAt: second.SourceExpiresAt,
+			},
+		},
+	}
+
+	rewriteMap, err := MaterializeAssetBindingsForChannel(context.Background(), 7, set, channel)
+
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"asset://" + first.PublicId:  "asset://upstream-" + first.PublicId,
+		"asset://" + second.PublicId: "asset://upstream-" + second.PublicId,
+	}, rewriteMap)
+	require.Len(t, store.signed, 2)
+}
+
 func insertMaterializeAsset(t *testing.T, publicID string) model.Asset {
 	t.Helper()
 	asset := model.Asset{
