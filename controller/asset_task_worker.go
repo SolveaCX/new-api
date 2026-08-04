@@ -411,7 +411,16 @@ func runAcceptedTaskAccounting(ctx context.Context, taskID string, owner string,
 	if !acceptedAccountingLeaseCurrent(task, owner, leaseExpiresAt, assetTaskWorkerNowUnix()) {
 		return fmt.Errorf("accepted accounting lease lost")
 	}
+	if err := service.SyncAcceptedTaskTokenCacheOnce(ctx, task); err != nil {
+		return markAcceptedAccountingRetryable(ctx, taskID, owner, leaseExpiresAt, err)
+	}
+	if err := service.ApplyAcceptedTaskSubscriptionWindowOnce(ctx, task); err != nil {
+		return markAcceptedAccountingRetryable(ctx, taskID, owner, leaseExpiresAt, err)
+	}
 	if err := service.LogAcceptedTaskConsumptionOnce(ctx, task); err != nil {
+		return markAcceptedAccountingRetryable(ctx, taskID, owner, leaseExpiresAt, err)
+	}
+	if err := service.RecordAcceptedTaskTemporarySpendOnce(ctx, task); err != nil {
 		return markAcceptedAccountingRetryable(ctx, taskID, owner, leaseExpiresAt, err)
 	}
 	now := assetTaskWorkerNowUnix()

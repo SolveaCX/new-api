@@ -50,6 +50,8 @@ func TestMain(m *testing.M) {
 
 	if err := db.AutoMigrate(
 		&Task{},
+		&TaskAcceptedAccountingLedger{},
+		&TaskAcceptedAccountingLogLedger{},
 		&User{},
 		&Token{},
 		&Log{},

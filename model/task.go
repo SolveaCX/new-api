@@ -56,8 +56,11 @@ const (
 	TaskAcceptedAccountingDone            = "done"
 	TaskAcceptedAccountingFailedRetryable = "failed_retryable"
 
-	TaskAcceptedAccountingStepFunding  = "funding"
-	TaskAcceptedAccountingStepLogStats = "log_stats"
+	TaskAcceptedAccountingStepFunding            = "funding"
+	TaskAcceptedAccountingStepLogStats           = "log_stats"
+	TaskAcceptedAccountingStepTemporarySpend     = "temporary_spend"
+	TaskAcceptedAccountingStepSubscriptionWindow = "subscription_window"
+	TaskAcceptedAccountingStepTokenCache         = "token_cache"
 )
 
 type Task struct {
@@ -104,6 +107,14 @@ type TaskAcceptedAccountingLedger struct {
 	UpdatedAt int64  `json:"updated_at"`
 	TaskID    string `json:"task_id" gorm:"type:varchar(191);uniqueIndex:idx_task_accepted_accounting_step,priority:1"`
 	Step      string `json:"step" gorm:"type:varchar(64);uniqueIndex:idx_task_accepted_accounting_step,priority:2"`
+}
+
+type TaskAcceptedAccountingLogLedger struct {
+	ID        int64  `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
+	CreatedAt int64  `json:"created_at" gorm:"index"`
+	UpdatedAt int64  `json:"updated_at"`
+	TaskID    string `json:"task_id" gorm:"type:varchar(191);uniqueIndex:idx_task_accepted_accounting_log_step,priority:1"`
+	Step      string `json:"step" gorm:"type:varchar(64);uniqueIndex:idx_task_accepted_accounting_log_step,priority:2"`
 }
 
 func (t *Task) SetData(data any) {
