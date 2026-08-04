@@ -130,6 +130,82 @@ func TestAssetBindingLeaseDoesNotClaimActiveBinding(t *testing.T) {
 	require.Equal(t, "upstream-active", stored.UpstreamAssetId)
 }
 
+func TestAssetBindingLeaseClaimScopesExpiredLeasePredicateToTargetRow(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	target := insertAssetForAssetTest(t, "asset_binding_claim_target")
+	otherAsset := insertAssetForAssetTest(t, "asset_binding_claim_other")
+	rows := []AssetBinding{
+		{
+			AssetId:        target.Id,
+			ChannelId:      131,
+			Status:         AssetBindingStatusPending,
+			LeaseOwner:     "node-a",
+			LeaseExpiresAt: 50,
+			AttemptCount:   1,
+			CreatedAt:      40,
+			UpdatedAt:      40,
+		},
+		{
+			AssetId:         otherAsset.Id,
+			ChannelId:       131,
+			Status:          AssetStatusActive,
+			LeaseOwner:      "active-owner",
+			LeaseExpiresAt:  0,
+			AttemptCount:    2,
+			UpstreamAssetId: "upstream-active",
+			CreatedAt:       40,
+			UpdatedAt:       40,
+		},
+		{
+			AssetId:        otherAsset.Id,
+			ChannelId:      132,
+			Status:         AssetStatusFailed,
+			LeaseOwner:     "failed-owner",
+			LeaseExpiresAt: 0,
+			AttemptCount:   3,
+			ErrorCode:      "failed-before",
+			CreatedAt:      40,
+			UpdatedAt:      40,
+		},
+		{
+			AssetId:        otherAsset.Id,
+			ChannelId:      133,
+			Status:         AssetBindingStatusLeased,
+			LeaseOwner:     "stale-owner",
+			LeaseExpiresAt: 1,
+			AttemptCount:   4,
+			CreatedAt:      40,
+			UpdatedAt:      40,
+		},
+	}
+	for i := range rows {
+		require.NoError(t, DB.Create(&rows[i]).Error)
+	}
+
+	claimed, err := ClaimAssetBindingLease(target.Id, 131, "node-b", 100, 160)
+
+	require.NoError(t, err)
+	require.True(t, claimed)
+	var stored []AssetBinding
+	require.NoError(t, DB.Order("id ASC").Find(&stored).Error)
+	require.Len(t, stored, len(rows))
+	require.Equal(t, AssetBindingStatusLeased, stored[0].Status)
+	require.Equal(t, "node-b", stored[0].LeaseOwner)
+	require.EqualValues(t, 160, stored[0].LeaseExpiresAt)
+	require.EqualValues(t, 2, stored[0].AttemptCount)
+	var claimedRows int64
+	require.NoError(t, DB.Model(&AssetBinding{}).Where("lease_owner = ?", "node-b").Count(&claimedRows).Error)
+	require.EqualValues(t, 1, claimedRows)
+	for i := 1; i < len(rows); i++ {
+		require.Equal(t, rows[i].Status, stored[i].Status)
+		require.Equal(t, rows[i].LeaseOwner, stored[i].LeaseOwner)
+		require.Equal(t, rows[i].LeaseExpiresAt, stored[i].LeaseExpiresAt)
+		require.Equal(t, rows[i].AttemptCount, stored[i].AttemptCount)
+		require.Equal(t, rows[i].UpstreamAssetId, stored[i].UpstreamAssetId)
+		require.Equal(t, rows[i].ErrorCode, stored[i].ErrorCode)
+	}
+}
+
 func TestMigrateLegacyBytePlusAssetsPreservesPublicIDsAndBindingsIdempotently(t *testing.T) {
 	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{})
 

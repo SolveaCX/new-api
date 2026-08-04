@@ -17,11 +17,17 @@ import (
 )
 
 type recordingAssetMaterializer struct {
-	createCalls int64
-	getCalls    int64
-	blockCreate chan struct{}
-	createErr   error
-	getStatus   string
+	createCalls    int64
+	getCalls       int64
+	blockCreate    chan struct{}
+	createErr      error
+	getErr         error
+	createStatus   string
+	getStatus      string
+	getStatuses    []string
+	createGroupID  string
+	createAssetID  string
+	lastGetAssetID string
 }
 
 func (m *recordingAssetMaterializer) CreateAsset(ctx context.Context, input AssetMaterializeInput) (AssetMaterializeResult, error) {
@@ -41,16 +47,35 @@ func (m *recordingAssetMaterializer) CreateAsset(ctx context.Context, input Asse
 	if m.createErr != nil {
 		return AssetMaterializeResult{}, m.createErr
 	}
+	status := m.createStatus
+	if status == "" {
+		status = model.BytePlusAssetStatusActive
+	}
+	groupID := m.createGroupID
+	if groupID == "" {
+		groupID = "group-1"
+	}
+	assetID := m.createAssetID
+	if assetID == "" {
+		assetID = "upstream-" + input.Asset.PublicId
+	}
 	return AssetMaterializeResult{
-		UpstreamGroupID: "group-1",
-		UpstreamAssetID: "upstream-" + input.Asset.PublicId,
-		Status:          model.BytePlusAssetStatusActive,
+		UpstreamGroupID: groupID,
+		UpstreamAssetID: assetID,
+		Status:          status,
 	}, nil
 }
 
 func (m *recordingAssetMaterializer) GetAsset(ctx context.Context, input AssetMaterializeInput, upstreamAssetID string) (AssetMaterializeResult, error) {
-	atomic.AddInt64(&m.getCalls, 1)
+	call := atomic.AddInt64(&m.getCalls, 1)
+	m.lastGetAssetID = upstreamAssetID
+	if m.getErr != nil {
+		return AssetMaterializeResult{}, m.getErr
+	}
 	status := m.getStatus
+	if len(m.getStatuses) >= int(call) {
+		status = m.getStatuses[call-1]
+	}
 	if status == "" {
 		status = model.BytePlusAssetStatusActive
 	}
@@ -250,6 +275,248 @@ func TestAssetBindingProviderFailureIsSanitizedAndDoesNotPersistSignedURL(t *tes
 	require.Equal(t, model.AssetStatusFailed, binding.Status)
 	require.NotContains(t, binding.ErrorCode, "signed.example")
 	require.Len(t, store.signed, 1, "create attempt needs exactly one ephemeral signed GET URL")
+}
+
+func TestAssetBindingProcessingCreatePollsToActiveWithoutSecondCreate(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	channel := insertMaterializeChannel(t, 131)
+	materializer := &recordingAssetMaterializer{
+		createStatus: model.AssetStatusProcessing,
+		getStatuses:  []string{model.AssetStatusProcessing, model.AssetStatusActive},
+	}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	result, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		LeaseOwner:   "node-a",
+		PollLimit:    3,
+		PollDelay:    0,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "asset://upstream-"+asset.PublicId, result.RewriteURI)
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.createCalls))
+	require.Equal(t, int64(2), atomic.LoadInt64(&materializer.getCalls))
+	require.Len(t, store.signed, 1, "only provider create signs the recoverable source")
+	var binding model.AssetBinding
+	require.NoError(t, model.DB.First(&binding, "asset_id = ? AND channel_id = ?", asset.Id, channel.Id).Error)
+	require.Equal(t, model.AssetStatusActive, binding.Status)
+	require.Empty(t, binding.LeaseOwner)
+	require.Zero(t, binding.LeaseExpiresAt)
+}
+
+func TestAssetBindingExistingProcessingRefreshesWithGetOnly(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	channel := insertMaterializeChannel(t, 131)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       channel.Id,
+		Status:          model.AssetStatusProcessing,
+		UpstreamGroupId: "group-existing",
+		UpstreamAssetId: "upstream-existing",
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}).Error)
+	materializer := &recordingAssetMaterializer{getStatus: model.AssetStatusActive}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	result, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		LeaseOwner:   "node-a",
+		PollLimit:    2,
+		PollDelay:    0,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "asset://upstream-existing", result.RewriteURI)
+	require.Zero(t, atomic.LoadInt64(&materializer.createCalls))
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.getCalls))
+	require.Equal(t, "upstream-existing", materializer.lastGetAssetID)
+	require.Len(t, store.signed, 0, "Get-only refresh must not sign source URLs")
+}
+
+func TestAssetBindingProcessingPollTimeoutReturnsNotReady(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_cccccccccccccccccccccccccccccccc")
+	channel := insertMaterializeChannel(t, 131)
+	materializer := &recordingAssetMaterializer{
+		createStatus: model.AssetStatusProcessing,
+		getStatus:    model.AssetStatusProcessing,
+	}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	_, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		LeaseOwner:   "node-a",
+		PollLimit:    2,
+		PollDelay:    0,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.ErrorIs(t, err, ErrAssetBindingInitializing)
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.createCalls))
+	require.Equal(t, int64(2), atomic.LoadInt64(&materializer.getCalls))
+	var binding model.AssetBinding
+	require.NoError(t, model.DB.First(&binding, "asset_id = ? AND channel_id = ?", asset.Id, channel.Id).Error)
+	require.Equal(t, model.AssetStatusProcessing, binding.Status)
+}
+
+func TestAssetBindingProviderFailedStatusIsSanitized(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_dddddddddddddddddddddddddddddddd")
+	channel := insertMaterializeChannel(t, 131)
+	materializer := &recordingAssetMaterializer{
+		createStatus: model.AssetStatusProcessing,
+		getErr:       errors.New("BytePlus secret sk-live signed=https://signed.example/?X-Goog-Signature=abc"),
+	}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	_, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		LeaseOwner:   "node-a",
+		PollLimit:    1,
+		PollDelay:    0,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.Error(t, err)
+	assertNoAssetBindingLeak(t, err)
+	var binding model.AssetBinding
+	require.NoError(t, model.DB.First(&binding, "asset_id = ? AND channel_id = ?", asset.Id, channel.Id).Error)
+	require.Equal(t, model.AssetStatusFailed, binding.Status)
+	require.NotContains(t, binding.ErrorCode, "signed.example")
+}
+
+func TestAssetBindingProviderFailedResultDoesNotRetryInSameMaterializeCall(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_12121212121212121212121212121212")
+	channel := insertMaterializeChannel(t, 131)
+	materializer := &recordingAssetMaterializer{createStatus: model.AssetStatusFailed}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	_, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		LeaseOwner:   "node-a",
+		PollLimit:    3,
+		PollDelay:    0,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.Error(t, err)
+	assertNoAssetBindingLeak(t, err)
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.createCalls))
+	require.Zero(t, atomic.LoadInt64(&materializer.getCalls))
+	require.Len(t, store.signed, 1)
+	var binding model.AssetBinding
+	require.NoError(t, model.DB.First(&binding, "asset_id = ? AND channel_id = ?", asset.Id, channel.Id).Error)
+	require.Equal(t, model.AssetStatusFailed, binding.Status)
+	require.EqualValues(t, 1, binding.AttemptCount)
+}
+
+func TestAssetBindingFailedNextRequestReclaimsAndCreatesOnce(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+	channel := insertMaterializeChannel(t, 131)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:        asset.Id,
+		ChannelId:      channel.Id,
+		Status:         model.AssetStatusFailed,
+		ErrorCode:      "asset upstream error",
+		AttemptCount:   1,
+		LeaseExpiresAt: 0,
+		CreatedAt:      100,
+		UpdatedAt:      100,
+	}).Error)
+	materializer := &recordingAssetMaterializer{}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	result, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		LeaseOwner:   "node-b",
+		PollLimit:    2,
+		PollDelay:    0,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "asset://upstream-"+asset.PublicId, result.RewriteURI)
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.createCalls))
+	require.Len(t, store.signed, 1)
+	var binding model.AssetBinding
+	require.NoError(t, model.DB.First(&binding, "asset_id = ? AND channel_id = ?", asset.Id, channel.Id).Error)
+	require.Equal(t, model.AssetStatusActive, binding.Status)
+	require.EqualValues(t, 2, binding.AttemptCount)
+}
+
+func TestAssetBindingOldOwnerCASCannotOverwriteNewOwner(t *testing.T) {
+	newAssetServiceTestDB(t)
+	asset := insertMaterializeAsset(t, "ast_ffffffffffffffffffffffffffffffff")
+	channel := insertMaterializeChannel(t, 131)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:        asset.Id,
+		ChannelId:      channel.Id,
+		Status:         model.AssetBindingStatusLeased,
+		LeaseOwner:     "new-owner",
+		LeaseExpiresAt: 200,
+		CreatedAt:      100,
+		UpdatedAt:      100,
+	}).Error)
+
+	activated, err := model.ActivateAssetBindingWithAssetCAS(model.AssetBindingActivation{
+		AssetID:         asset.Id,
+		ChannelID:       channel.Id,
+		LeaseOwner:      "old-owner",
+		UpstreamGroupID: "old-group",
+		UpstreamAssetID: "old-upstream",
+		Status:          model.AssetStatusActive,
+		Now:             120,
+	})
+	require.NoError(t, err)
+	require.False(t, activated)
+	failed, err := model.FailAssetBindingCAS(asset.Id, channel.Id, "old-owner", "old-error", 121)
+	require.NoError(t, err)
+	require.False(t, failed)
+
+	var binding model.AssetBinding
+	require.NoError(t, model.DB.First(&binding, "asset_id = ? AND channel_id = ?", asset.Id, channel.Id).Error)
+	require.Equal(t, model.AssetBindingStatusLeased, binding.Status)
+	require.Equal(t, "new-owner", binding.LeaseOwner)
+	require.Equal(t, "", binding.UpstreamAssetId)
+	require.Equal(t, "", binding.ErrorCode)
 }
 
 func TestAssetBindingMaterializeSetRequiresEveryReferenceRewrite(t *testing.T) {

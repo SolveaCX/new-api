@@ -220,6 +220,9 @@ func MaterializeAssetBinding(ctx context.Context, request AssetBindingRequest) (
 	if activeAssetBinding(binding) {
 		return assetBindingResult(asset.PublicId, *binding), nil
 	}
+	if processingAssetBinding(binding) {
+		return refreshProcessingAssetBinding(ctx, asset, request.Channel, binding.UpstreamAssetId, pollLimit, pollDelay)
+	}
 	for attempt := 0; attempt < pollLimit; attempt++ {
 		now = assetBindingNow().Unix()
 		claimed, err := model.ClaimAssetBindingLease(asset.Id, request.Channel.Id, owner, now, now+int64(leaseTTL.Seconds()))
@@ -227,7 +230,7 @@ func MaterializeAssetBinding(ctx context.Context, request AssetBindingRequest) (
 			return AssetBindingResult{}, sanitizeAssetBindingError(err)
 		}
 		if claimed {
-			return createLeasedAssetBinding(ctx, asset, request.Channel, owner)
+			return createLeasedAssetBinding(ctx, asset, request.Channel, owner, pollLimit, pollDelay)
 		}
 		loaded, err := model.GetAssetBinding(asset.Id, request.Channel.Id)
 		if err != nil {
@@ -235,6 +238,9 @@ func MaterializeAssetBinding(ctx context.Context, request AssetBindingRequest) (
 		}
 		if activeAssetBinding(loaded) {
 			return assetBindingResult(asset.PublicId, *loaded), nil
+		}
+		if processingAssetBinding(loaded) {
+			return refreshProcessingAssetBinding(ctx, asset, request.Channel, loaded.UpstreamAssetId, pollLimit, pollDelay)
 		}
 		if attempt+1 < pollLimit {
 			if err := assetBindingPollSleep(ctx, pollDelay); err != nil {
@@ -245,7 +251,7 @@ func MaterializeAssetBinding(ctx context.Context, request AssetBindingRequest) (
 	return AssetBindingResult{}, ErrAssetBindingInitializing
 }
 
-func createLeasedAssetBinding(ctx context.Context, asset *model.Asset, channel *model.Channel, owner string) (AssetBindingResult, error) {
+func createLeasedAssetBinding(ctx context.Context, asset *model.Asset, channel *model.Channel, owner string, pollLimit int, pollDelay time.Duration) (AssetBindingResult, error) {
 	materializer, ok := assetMaterializerForChannel(channel.Type)
 	if !ok {
 		_, _ = model.FailAssetBindingCAS(asset.Id, channel.Id, owner, "asset channel unavailable", assetBindingNow().Unix())
@@ -269,6 +275,10 @@ func createLeasedAssetBinding(ctx context.Context, asset *model.Asset, channel *
 	if status == "" {
 		status = model.AssetStatusActive
 	}
+	if status == model.AssetStatusFailed {
+		_, _ = model.FailAssetBindingCAS(asset.Id, channel.Id, owner, assetBindingProviderErrorCode, assetBindingNow().Unix())
+		return AssetBindingResult{}, ErrAssetBindingUnavailable
+	}
 	activated, err := model.ActivateAssetBindingWithAssetCAS(model.AssetBindingActivation{
 		AssetID:         asset.Id,
 		ChannelID:       channel.Id,
@@ -284,6 +294,9 @@ func createLeasedAssetBinding(ctx context.Context, asset *model.Asset, channel *
 	if !activated {
 		return AssetBindingResult{}, ErrAssetBindingInitializing
 	}
+	if status == model.AssetStatusProcessing {
+		return refreshProcessingAssetBinding(ctx, asset, channel, result.UpstreamAssetID, pollLimit, pollDelay)
+	}
 	loaded, err := model.GetAssetBinding(asset.Id, channel.Id)
 	if err != nil {
 		return AssetBindingResult{}, sanitizeAssetBindingError(err)
@@ -297,12 +310,111 @@ func createLeasedAssetBinding(ctx context.Context, asset *model.Asset, channel *
 	return assetBindingResult(asset.PublicId, *loaded), nil
 }
 
+func refreshProcessingAssetBinding(ctx context.Context, asset *model.Asset, channel *model.Channel, upstreamAssetID string, pollLimit int, pollDelay time.Duration) (AssetBindingResult, error) {
+	if strings.TrimSpace(upstreamAssetID) == "" {
+		return AssetBindingResult{}, ErrAssetBindingUnavailable
+	}
+	materializer, ok := assetMaterializerForChannel(channel.Type)
+	if !ok {
+		return AssetBindingResult{}, ErrAssetBindingUnavailable
+	}
+	for attempt := 0; attempt < pollLimit; attempt++ {
+		result, err := materializer.GetAsset(ctx, AssetMaterializeInput{
+			UserID:  asset.UserId,
+			Asset:   *asset,
+			Channel: channel,
+		}, upstreamAssetID)
+		if err != nil {
+			_, _ = model.RefreshProcessingAssetBindingCAS(model.AssetBindingProcessingRefresh{
+				AssetID:         asset.Id,
+				ChannelID:       channel.Id,
+				UpstreamAssetID: upstreamAssetID,
+				Status:          model.AssetStatusFailed,
+				ErrorCode:       assetBindingProviderErrorCode,
+				Now:             assetBindingNow().Unix(),
+			})
+			return AssetBindingResult{}, sanitizeAssetBindingError(err)
+		}
+		status := strings.TrimSpace(result.Status)
+		if status == "" {
+			status = model.AssetStatusProcessing
+		}
+		observedUpstreamID := strings.TrimSpace(result.UpstreamAssetID)
+		if observedUpstreamID != "" && observedUpstreamID != upstreamAssetID {
+			_, _ = model.RefreshProcessingAssetBindingCAS(model.AssetBindingProcessingRefresh{
+				AssetID:         asset.Id,
+				ChannelID:       channel.Id,
+				UpstreamAssetID: upstreamAssetID,
+				Status:          model.AssetStatusFailed,
+				ErrorCode:       assetBindingProviderErrorCode,
+				Now:             assetBindingNow().Unix(),
+			})
+			return AssetBindingResult{}, ErrAssetBindingUnavailable
+		}
+		switch status {
+		case model.AssetStatusActive:
+			updated, err := model.RefreshProcessingAssetBindingCAS(model.AssetBindingProcessingRefresh{
+				AssetID:         asset.Id,
+				ChannelID:       channel.Id,
+				UpstreamAssetID: upstreamAssetID,
+				Status:          model.AssetStatusActive,
+				Now:             assetBindingNow().Unix(),
+			})
+			if err != nil {
+				return AssetBindingResult{}, sanitizeAssetBindingError(err)
+			}
+			if !updated {
+				return AssetBindingResult{}, ErrAssetBindingInitializing
+			}
+			loaded, err := model.GetAssetBinding(asset.Id, channel.Id)
+			if err != nil {
+				return AssetBindingResult{}, sanitizeAssetBindingError(err)
+			}
+			if !activeAssetBinding(loaded) {
+				return AssetBindingResult{}, ErrAssetBindingInitializing
+			}
+			return assetBindingResult(asset.PublicId, *loaded), nil
+		case model.AssetStatusFailed:
+			_, _ = model.RefreshProcessingAssetBindingCAS(model.AssetBindingProcessingRefresh{
+				AssetID:         asset.Id,
+				ChannelID:       channel.Id,
+				UpstreamAssetID: upstreamAssetID,
+				Status:          model.AssetStatusFailed,
+				ErrorCode:       assetBindingProviderErrorCode,
+				Now:             assetBindingNow().Unix(),
+			})
+			return AssetBindingResult{}, ErrAssetBindingUnavailable
+		case model.AssetStatusProcessing:
+			if attempt+1 < pollLimit {
+				if err := assetBindingPollSleep(ctx, pollDelay); err != nil {
+					return AssetBindingResult{}, sanitizeAssetBindingError(err)
+				}
+			}
+		default:
+			_, _ = model.RefreshProcessingAssetBindingCAS(model.AssetBindingProcessingRefresh{
+				AssetID:         asset.Id,
+				ChannelID:       channel.Id,
+				UpstreamAssetID: upstreamAssetID,
+				Status:          model.AssetStatusFailed,
+				ErrorCode:       assetBindingProviderErrorCode,
+				Now:             assetBindingNow().Unix(),
+			})
+			return AssetBindingResult{}, ErrAssetBindingUnavailable
+		}
+	}
+	return AssetBindingResult{}, ErrAssetBindingInitializing
+}
+
 func signAssetBindingSourceURL(ctx context.Context, asset model.Asset) (string, error) {
 	return SignAssetSourceURL(ctx, asset, CurrentAssetStorageConfig())
 }
 
 func activeAssetBinding(binding *model.AssetBinding) bool {
 	return binding != nil && binding.Status == model.AssetStatusActive && strings.TrimSpace(binding.UpstreamAssetId) != ""
+}
+
+func processingAssetBinding(binding *model.AssetBinding) bool {
+	return binding != nil && binding.Status == model.AssetStatusProcessing && strings.TrimSpace(binding.UpstreamAssetId) != ""
 }
 
 func assetBindingResult(publicID string, binding model.AssetBinding) AssetBindingResult {

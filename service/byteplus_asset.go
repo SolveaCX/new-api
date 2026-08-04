@@ -70,10 +70,21 @@ func (bytePlusAssetBindingMaterializer) CreateAsset(ctx context.Context, input A
 	if err != nil {
 		return AssetMaterializeResult{}, err
 	}
+	status, err := client.GetAsset(ctx, creds, upstreamID)
+	if err != nil {
+		return AssetMaterializeResult{}, err
+	}
+	if status.UpstreamAssetID != "" && status.UpstreamAssetID != upstreamID {
+		return AssetMaterializeResult{}, errors.New("upstream asset id mismatch")
+	}
+	upstreamStatus := strings.TrimSpace(status.Status)
+	if upstreamStatus == "" {
+		upstreamStatus = model.AssetStatusProcessing
+	}
 	return AssetMaterializeResult{
 		UpstreamGroupID: group.UpstreamGroupId,
 		UpstreamAssetID: upstreamID,
-		Status:          model.AssetStatusActive,
+		Status:          upstreamStatus,
 	}, nil
 }
 

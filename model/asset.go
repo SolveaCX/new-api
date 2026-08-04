@@ -133,6 +133,15 @@ type AssetBindingActivation struct {
 	Now             int64
 }
 
+type AssetBindingProcessingRefresh struct {
+	AssetID         int64
+	ChannelID       int
+	UpstreamAssetID string
+	Status          string
+	ErrorCode       string
+	Now             int64
+}
+
 type ExpiredAssetUploadCleanupCandidate struct {
 	Asset  Asset
 	Upload AssetUpload
@@ -224,7 +233,7 @@ func CompleteAssetUploadCAS(uploadID string, owner string, completion AssetUploa
 		}
 		assetResult := tx.Model(&Asset{}).
 			Where("id = ? AND user_id = ? AND status = ?", asset.Id, upload.UserId, AssetStatusCreating).
-			Where("cleanup_lease_owner = '' OR cleanup_lease_until <= ?", completion.Now).
+			Where("(cleanup_lease_owner = '' OR cleanup_lease_until <= ?)", completion.Now).
 			Updates(assetUpdates)
 		if assetResult.Error != nil {
 			return assetResult.Error
@@ -423,6 +432,32 @@ func FailAssetBindingCAS(assetID int64, channelID int, leaseOwner string, errorC
 	return result.RowsAffected == 1, nil
 }
 
+func RefreshProcessingAssetBindingCAS(refresh AssetBindingProcessingRefresh) (bool, error) {
+	if refresh.UpstreamAssetID == "" {
+		return false, nil
+	}
+	updates := map[string]any{
+		"status":           refresh.Status,
+		"lease_owner":      "",
+		"lease_expires_at": int64(0),
+		"updated_at":       refresh.Now,
+	}
+	if refresh.ErrorCode != "" {
+		updates["error_code"] = refresh.ErrorCode
+	} else {
+		updates["error_code"] = ""
+	}
+	result := DB.Model(&AssetBinding{}).
+		Where("asset_id = ? AND channel_id = ?", refresh.AssetID, refresh.ChannelID).
+		Where("status = ?", AssetStatusProcessing).
+		Where("upstream_asset_id = ?", refresh.UpstreamAssetID).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func CreateAssetBindingIfAbsent(assetID int64, channelID int, now int64) (*AssetBinding, bool, error) {
 	binding := &AssetBinding{
 		AssetId:   assetID,
@@ -512,12 +547,13 @@ func GetAssetByPublicIDForUser(userID int, publicID string) (*Asset, error) {
 func ClaimAssetBindingLease(assetID int64, channelID int, owner string, now int64, leaseExpiresAt int64) (bool, error) {
 	result := DB.Model(&AssetBinding{}).
 		Where("asset_id = ? AND channel_id = ?", assetID, channelID).
-		Where("status IN ?", []string{AssetBindingStatusPending, AssetBindingStatusLeased}).
-		Where("lease_owner = ? OR lease_expires_at <= ?", owner, now).
+		Where("status IN ?", []string{AssetBindingStatusPending, AssetBindingStatusLeased, AssetStatusFailed}).
+		Where("(lease_owner = ? OR lease_expires_at <= ?)", owner, now).
 		Updates(map[string]any{
 			"status":           AssetBindingStatusLeased,
 			"lease_owner":      owner,
 			"lease_expires_at": leaseExpiresAt,
+			"error_code":       "",
 			"attempt_count":    gorm.Expr("attempt_count + ?", 1),
 			"updated_at":       now,
 		})
@@ -646,7 +682,7 @@ func ClaimExpiredAssetSources(owner string, now int64, leaseUntil int64, limit i
 	}
 	var candidates []Asset
 	if err := DB.Where("(source_status = ? AND source_expires_at > 0 AND source_expires_at <= ?) OR source_status = ?", AssetSourceStatusAvailable, now, AssetSourceStatusCleanupPending).
-		Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
+		Where("(cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = '')", owner, now).
 		Order("source_expires_at ASC, id ASC").
 		Limit(limit).
 		Find(&candidates).Error; err != nil {
@@ -658,7 +694,7 @@ func ClaimExpiredAssetSources(owner string, now int64, leaseUntil int64, limit i
 		result := DB.Model(&Asset{}).
 			Where("id = ? AND cleanup_generation = ?", candidate.Id, candidate.CleanupGeneration).
 			Where("(source_status = ? AND source_expires_at > 0 AND source_expires_at <= ?) OR source_status = ?", AssetSourceStatusAvailable, now, AssetSourceStatusCleanupPending).
-			Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
+			Where("(cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = '')", owner, now).
 			Updates(map[string]any{
 				"cleanup_lease_owner": owner,
 				"cleanup_lease_until": leaseUntil,
@@ -703,7 +739,7 @@ func ClaimExpiredPendingAssetUploads(owner string, now int64, leaseUntil int64, 
 				uploadQuery = uploadQuery.Where("status = ? AND expires_at > 0 AND expires_at <= ?", AssetUploadStatusPending, now)
 			} else {
 				uploadQuery = uploadQuery.Where("status = ? AND cleanup_generation = ?", AssetUploadStatusCleaning, candidate.CleanupGeneration).
-					Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ?", owner, now)
+					Where("(cleanup_lease_owner = ? OR cleanup_lease_until <= ?)", owner, now)
 			}
 			if err := uploadQuery.First(&upload).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -714,7 +750,7 @@ func ClaimExpiredPendingAssetUploads(owner string, now int64, leaseUntil int64, 
 			var asset Asset
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Where("id = ? AND user_id = ? AND status = ? AND source_status = ?", upload.AssetId, upload.UserId, AssetStatusCreating, AssetSourceStatusUnavailable).
-				Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
+				Where("(cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = '')", owner, now).
 				First(&asset).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return nil
@@ -745,7 +781,7 @@ func ClaimExpiredPendingAssetUploads(owner string, now int64, leaseUntil int64, 
 			assetResult := tx.Model(&Asset{}).
 				Where("id = ? AND cleanup_generation = ?", asset.Id, asset.CleanupGeneration).
 				Where("status = ? AND source_status = ?", AssetStatusCreating, AssetSourceStatusUnavailable).
-				Where("cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = ''", owner, now).
+				Where("(cleanup_lease_owner = ? OR cleanup_lease_until <= ? OR cleanup_lease_owner = '')", owner, now).
 				Updates(map[string]any{
 					"cleanup_lease_owner": owner,
 					"cleanup_lease_until": leaseUntil,

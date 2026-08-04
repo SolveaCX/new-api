@@ -475,7 +475,7 @@ func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
 func ClaimTaskPreparationLease(taskID string, owner string, now int64, leaseExpiresAt int64) (bool, error) {
 	result := DB.Model(&Task{}).
 		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
-		Where("preparation_lease_owner = ? OR preparation_lease_expires_at <= ?", owner, now).
+		Where("(preparation_lease_owner = ? OR preparation_lease_expires_at <= ?)", owner, now).
 		Updates(map[string]any{
 			"preparation_status":           TaskPreparationStatusPreparing,
 			"preparation_lease_owner":      owner,

@@ -29,6 +29,7 @@ type fakeBytePlusAssetClient struct {
 	assetID     string
 	assetReqID  string
 	status      BytePlusAssetStatus
+	statuses    []BytePlusAssetStatus
 	createErr   error
 	getErr      error
 	onGetAsset  func()
@@ -67,6 +68,9 @@ func (f *fakeBytePlusAssetClient) GetAsset(ctx context.Context, creds BytePlusCr
 	}
 	if f.getErr != nil {
 		return BytePlusAssetStatus{}, f.getErr
+	}
+	if len(f.statuses) >= f.getAssetCalls {
+		return f.statuses[f.getAssetCalls-1], nil
 	}
 	return f.status, nil
 }
@@ -219,6 +223,72 @@ func TestBytePlusAssetCreateDoesNotPersistSourceURLSecrets(t *testing.T) {
 	}
 	if asset.SourceURL != "" {
 		t.Fatalf("stored source URL leaked request URL: %q", asset.SourceURL)
+	}
+}
+
+func TestBytePlusAssetBindingMaterializerCreateReturnsObservedUpstreamStatus(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	fake := &fakeBytePlusAssetClient{
+		groupID:    "upstream-group",
+		groupReqID: "req-group",
+		assetID:    "upstream-asset",
+		assetReqID: "req-asset",
+		status:     BytePlusAssetStatus{UpstreamAssetID: "upstream-asset", Status: model.AssetStatusProcessing},
+	}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+
+	result, err := bytePlusAssetBindingMaterializer{}.CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID:  7,
+		Asset:   model.Asset{PublicId: "ast_binding", AssetType: "Image"},
+		Channel: channel,
+		SignSource: func(context.Context, model.Asset) (string, error) {
+			return "https://example.com/binding.png", nil
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("CreateAsset returned error: %v", err)
+	}
+	if result.Status != model.AssetStatusProcessing || result.UpstreamGroupID != "upstream-group" || result.UpstreamAssetID != "upstream-asset" {
+		t.Fatalf("result = %+v", result)
+	}
+	if fake.createAssetCalls != 1 || fake.getAssetCalls != 1 {
+		t.Fatalf("calls create=%d get=%d", fake.createAssetCalls, fake.getAssetCalls)
+	}
+}
+
+func TestBytePlusAssetBindingMaterializerCreateReturnsActiveOnlyAfterObservedActive(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	fake := &fakeBytePlusAssetClient{
+		groupID:    "upstream-group",
+		groupReqID: "req-group",
+		assetID:    "upstream-asset",
+		assetReqID: "req-asset",
+		status:     BytePlusAssetStatus{UpstreamAssetID: "upstream-asset", Status: model.AssetStatusActive},
+	}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+
+	result, err := bytePlusAssetBindingMaterializer{}.CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID:  7,
+		Asset:   model.Asset{PublicId: "ast_binding_active", AssetType: "Image"},
+		Channel: channel,
+		SignSource: func(context.Context, model.Asset) (string, error) {
+			return "https://example.com/binding.png", nil
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("CreateAsset returned error: %v", err)
+	}
+	if result.Status != model.AssetStatusActive || result.UpstreamAssetID != "upstream-asset" {
+		t.Fatalf("result = %+v", result)
+	}
+	if fake.createAssetCalls != 1 || fake.getAssetCalls != 1 {
+		t.Fatalf("calls create=%d get=%d", fake.createAssetCalls, fake.getAssetCalls)
 	}
 }
 
