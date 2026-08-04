@@ -42,6 +42,7 @@ const (
 	ContextKeyAssetRewriteMap              ContextKey = "asset_rewrite_map"
 	ContextKeyBytePlusAssetRewriteMap      ContextKey = "byteplus_asset_rewrite_map"
 	ContextKeyBytePlusAssetPinnedChannelID ContextKey = "byteplus_asset_pinned_channel_id"
+	ContextKeyAssetMaterializeEnabled      ContextKey = "asset_materialize_enabled"
 
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"

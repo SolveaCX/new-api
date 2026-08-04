@@ -433,6 +433,16 @@ func RefreshAssetRewriteMapForSelectedChannel(c *gin.Context, channel *model.Cha
 	if !ok || !references.HasReferences() {
 		return nil
 	}
+	if !common.GetContextKeyBool(c, constant.ContextKeyAssetMaterializeEnabled) {
+		rewriteMap := references.RewriteMapForChannel(channel.Id)
+		if len(rewriteMap) == 0 {
+			clearAssetRewriteMap(c)
+			return nil
+		}
+		common.SetContextKey(c, constant.ContextKeyAssetRewriteMap, rewriteMap)
+		common.SetContextKey(c, constant.ContextKeyBytePlusAssetRewriteMap, rewriteMap)
+		return nil
+	}
 	ctx := context.Background()
 	if c.Request != nil {
 		ctx = c.Request.Context()

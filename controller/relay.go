@@ -739,7 +739,22 @@ func RelayTask(c *gin.Context) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
-		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+		if hasQueuedAssetReferences(c) {
+			preflight, preflightErr := relay.PrepareTaskSubmit(c, relayInfo)
+			if preflightErr == nil {
+				var queued *dto.OpenAIVideo
+				queued, taskErr = queueAssetTaskForPreparation(c, relayInfo, preflight)
+				if taskErr == nil {
+					releaseChannelConcurrencyForRequest(c)
+					c.JSON(http.StatusOK, queued)
+					return
+				}
+			} else {
+				taskErr = preflightErr
+			}
+		} else {
+			result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+		}
 		releaseChannelConcurrencyForRequest(c)
 		if taskErr == nil {
 			break

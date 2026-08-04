@@ -357,6 +357,44 @@ func TestRefundTaskQuota_NoToken(t *testing.T) {
 	assert.Equal(t, model.LogTypeRefund, log.Type)
 }
 
+func TestPreparationFailureRefundsOnce(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, tokenID, channelID = 40, 40, 40
+	const initQuota, preConsumed = 10000, 1500
+	const leaseExpiresAt int64 = 4102444800
+
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-preparation-refund", 2500)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_preparation_refund_once"
+	task.Status = model.TaskStatusQueued
+	task.PreparationStatus = model.TaskPreparationStatusPreparing
+	task.PreparationLeaseOwner = "worker-a"
+	task.PreparationLeaseExpiresAt = leaseExpiresAt
+	require.NoError(t, model.DB.Create(task).Error)
+
+	won, err := model.MarkQueuedTaskFailed(task.TaskID, "worker-a", leaseExpiresAt, "materialize failed", time.Now().Unix())
+	require.NoError(t, err)
+	require.True(t, won)
+	if won {
+		RefundTaskQuota(ctx, task, "materialize failed")
+	}
+
+	lateWon, err := model.MarkQueuedTaskFailed(task.TaskID, "worker-b", leaseExpiresAt, "late failure", time.Now().Unix())
+	require.NoError(t, err)
+	require.False(t, lateWon)
+	if lateWon {
+		RefundTaskQuota(ctx, task, "late failure")
+	}
+
+	assert.Equal(t, initQuota+preConsumed, getUserQuota(t, userID))
+	assert.Equal(t, int64(1), countLogs(t))
+}
+
 // ===========================================================================
 // RecalculateTaskQuota tests
 // ===========================================================================

@@ -30,6 +30,11 @@ type TaskSubmitResult struct {
 	//PerCallPrice   types.PriceData
 }
 
+type TaskPreflightResult struct {
+	Platform constant.TaskPlatform
+	Quota    int
+}
+
 // ResolveOriginTask 处理基于已有任务的提交（remix / continuation）：
 // 查找原始任务、从中提取模型名称、将渠道锁定到原始任务的渠道
 // （通过 info.LockedChannel，重试时复用同一渠道并轮换 key），
@@ -141,7 +146,7 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 // 估算计费(EstimateBilling) → 计算价格 → 预扣费（仅首次）→
 // 构建/发送/解析上游请求 → 提交后计费调整(AdjustBillingOnSubmit)。
 // 控制器负责 defer Refund 和成功后 Settle。
-func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitResult, *dto.TaskError) {
+func PrepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskPreflightResult, *dto.TaskError) {
 	info.InitChannelMeta(c)
 
 	// 1. 确定 platform → 创建适配器 → 验证请求
@@ -210,6 +215,23 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 	}
 
+	return &TaskPreflightResult{Platform: platform, Quota: info.PriceData.Quota}, nil
+}
+
+func ExecutePreparedTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, preflight *TaskPreflightResult) (*TaskSubmitResult, *dto.TaskError) {
+	if preflight == nil {
+		return nil, service.TaskErrorWrapperLocal(errors.New("task preflight is required"), "task_preflight_required", http.StatusInternalServerError)
+	}
+	platform := preflight.Platform
+	adaptor := GetTaskAdaptor(platform)
+	if adaptor == nil {
+		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid api platform: %s", platform), "invalid_api_platform", http.StatusBadRequest)
+	}
+	adaptor.Init(info)
+	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
+		return nil, taskErr
+	}
+
 	// 8. 构建请求体
 	requestBody, err := adaptor.BuildRequestBody(c, info)
 	if err != nil {
@@ -254,6 +276,14 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		Platform:       platform,
 		Quota:          finalQuota,
 	}, nil
+}
+
+func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitResult, *dto.TaskError) {
+	preflight, taskErr := PrepareTaskSubmit(c, info)
+	if taskErr != nil {
+		return nil, taskErr
+	}
+	return ExecutePreparedTaskSubmit(c, info, preflight)
 }
 
 func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) *dto.TaskError {

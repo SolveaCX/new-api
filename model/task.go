@@ -43,10 +43,11 @@ const (
 )
 
 const (
-	TaskPreparationStatusPending   = "PENDING"
-	TaskPreparationStatusPreparing = "PREPARING"
-	TaskPreparationStatusReady     = "READY"
-	TaskPreparationStatusFailed    = "FAILED"
+	TaskPreparationStatusPending         = "PENDING"
+	TaskPreparationStatusPreparing       = "PREPARING"
+	TaskPreparationStatusPreparingAssets = "preparing_assets"
+	TaskPreparationStatusReady           = "READY"
+	TaskPreparationStatusFailed          = "FAILED"
 )
 
 type Task struct {
@@ -364,6 +365,18 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	return tasks
 }
 
+func GetQueuedAssetPreparationTasks(limit int) ([]*Task, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	var tasks []*Task
+	err := DB.Where("status = ? AND preparation_status = ?", TaskStatusQueued, TaskPreparationStatusPreparingAssets).
+		Order("id ASC").
+		Limit(limit).
+		Find(&tasks).Error
+	return tasks, err
+}
+
 func GetByOnlyTaskId(taskId string) (*Task, bool, error) {
 	if taskId == "" {
 		return nil, false, nil
@@ -500,6 +513,35 @@ func MarkQueuedTaskSubmitted(taskID string, owner string, expectedLeaseExpiresAt
 			"preparation_lease_expires_at": 0,
 			"submit_time":                  submitTime,
 			"updated_at":                   now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func MarkQueuedTaskAccepted(taskID string, owner string, expectedLeaseExpiresAt int64, now int64, submitTime int64, channelID int, platform constant.TaskPlatform, quota int, upstreamTaskID string, taskData []byte) (bool, error) {
+	privateDataExpr := gorm.Expr("private_data")
+	var current Task
+	if err := DB.Select("private_data").Where("task_id = ?", taskID).First(&current).Error; err == nil {
+		current.PrivateData.UpstreamTaskID = upstreamTaskID
+		privateDataExpr = gorm.Expr("?", current.PrivateData)
+	}
+	result := DB.Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
+		Where("preparation_lease_owner = ? AND preparation_lease_expires_at = ? AND preparation_lease_expires_at > ?", owner, expectedLeaseExpiresAt, now).
+		Updates(map[string]any{
+			"status":                       TaskStatusSubmitted,
+			"preparation_status":           TaskPreparationStatusReady,
+			"preparation_lease_owner":      "",
+			"preparation_lease_expires_at": 0,
+			"submit_time":                  submitTime,
+			"updated_at":                   now,
+			"channel_id":                   channelID,
+			"platform":                     platform,
+			"quota":                        quota,
+			"data":                         json.RawMessage(taskData),
+			"private_data":                 privateDataExpr,
 		})
 	if result.Error != nil {
 		return false, result.Error
