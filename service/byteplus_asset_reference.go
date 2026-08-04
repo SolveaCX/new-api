@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -45,141 +44,24 @@ func (r BytePlusAssetReferenceResolution) HasReferences() bool {
 }
 
 func ResolveBytePlusAssetReferences(c *gin.Context, userID int, req *dto.SeedanceVideoRequest) (BytePlusAssetReferenceResolution, *types.NewAPIError) {
-	references, apiErr := extractBytePlusAssetPublicIDs(req)
+	legacyResolution, legacyErr := ResolveLegacyBytePlusAssetBindingReferences(userID, req)
+	if legacyErr != nil {
+		return legacyResolution, legacyErr
+	}
+	set, apiErr := ResolveAssetReferences(c, userID, req)
 	if apiErr != nil {
 		return BytePlusAssetReferenceResolution{}, apiErr
 	}
-	if len(references) == 0 {
+	if !set.HasReferences() {
 		return BytePlusAssetReferenceResolution{}, nil
 	}
-	publicIDs := make([]string, 0, len(references))
-	for _, reference := range references {
-		publicIDs = append(publicIDs, reference.PublicID)
+	pinnedChannelID, rewriteMap, ok := assetReferenceBestBoundChannel(set)
+	if !ok {
+		if legacyResolution.PinnedChannelID > 0 && assetReferenceSetIsLegacyBytePlusOnly(set) {
+			return BytePlusAssetReferenceResolution{PinnedChannelID: legacyResolution.PinnedChannelID}, assetError(errors.New("asset is not active"), types.ErrorCodeAssetNotReady, http.StatusConflict)
+		}
+		return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset channel unavailable"), types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
 	}
-
-	generalized, err := model.GetAssetsWithBindingsByPublicIDsForUser(userID, publicIDs)
-	if err != nil {
-		return BytePlusAssetReferenceResolution{}, assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
-	}
-
-	missingPublicIDs := make([]string, 0, len(publicIDs))
-	for _, publicID := range publicIDs {
-		if _, ok := generalized[publicID]; !ok {
-			missingPublicIDs = append(missingPublicIDs, publicID)
-		}
-	}
-
-	legacyAssets, err := model.GetBytePlusAssetsByPublicIDsForUser(userID, missingPublicIDs)
-	if err != nil {
-		return BytePlusAssetReferenceResolution{}, assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
-	}
-
-	byID := make(map[string]bytePlusResolvableAsset, len(generalized)+len(legacyAssets))
-	for publicID, item := range generalized {
-		resolvable := bytePlusResolvableAsset{
-			PublicID:   publicID,
-			AssetType:  item.Asset.AssetType,
-			Status:     item.Asset.Status,
-			Candidates: make([]bytePlusAssetBindingCandidate, 0, len(item.Bindings)),
-		}
-		for _, binding := range item.Bindings {
-			resolvable.Candidates = append(resolvable.Candidates, bytePlusAssetBindingCandidate{
-				ChannelID:       binding.ChannelId,
-				UpstreamAssetID: binding.UpstreamAssetId,
-				Status:          binding.Status,
-			})
-		}
-		if len(resolvable.Candidates) == 0 && item.Binding != nil {
-			resolvable.Candidates = append(resolvable.Candidates, bytePlusAssetBindingCandidate{
-				ChannelID:       item.Binding.ChannelId,
-				UpstreamAssetID: item.Binding.UpstreamAssetId,
-				Status:          item.Binding.Status,
-			})
-		}
-		sort.SliceStable(resolvable.Candidates, func(i, j int) bool {
-			return resolvable.Candidates[i].ChannelID < resolvable.Candidates[j].ChannelID
-		})
-		if len(resolvable.Candidates) == 1 && resolvable.Candidates[0].Status != "" {
-			resolvable.Status = resolvable.Candidates[0].Status
-		}
-		byID[publicID] = resolvable
-	}
-	for _, asset := range legacyAssets {
-		byID[asset.PublicId] = bytePlusResolvableAsset{
-			PublicID:  asset.PublicId,
-			AssetType: asset.AssetType,
-			Status:    asset.Status,
-			Candidates: []bytePlusAssetBindingCandidate{{
-				ChannelID:       asset.ChannelId,
-				UpstreamAssetID: asset.UpstreamAssetId,
-				Status:          asset.Status,
-			}},
-		}
-	}
-
-	commonChannels := map[int]struct{}{}
-	commonChannelsInitialized := false
-	for _, reference := range references {
-		asset, ok := byID[reference.PublicID]
-		if !ok {
-			return BytePlusAssetReferenceResolution{}, assetError(errors.New("asset not found"), types.ErrorCodeAssetNotFound, http.StatusNotFound)
-		}
-		channels := rawPositiveBytePlusAssetChannels(asset.Candidates)
-		if len(channels) == 0 {
-			continue
-		}
-		if !commonChannelsInitialized {
-			commonChannels = channels
-			commonChannelsInitialized = true
-			continue
-		}
-		priorPinnedChannelID := lowestChannelID(commonChannels)
-		for channelID := range commonChannels {
-			if _, ok := channels[channelID]; !ok {
-				delete(commonChannels, channelID)
-			}
-		}
-		if len(commonChannels) == 0 {
-			return BytePlusAssetReferenceResolution{PinnedChannelID: priorPinnedChannelID}, assetError(errors.New("asset channels do not match"), types.ErrorCodeAssetChannelConflict, http.StatusConflict)
-		}
-	}
-	pinnedChannelID := lowestChannelID(commonChannels)
-
-	selectedCandidatesByPublicID := make(map[string]bytePlusAssetBindingCandidate, len(byID))
-	for _, reference := range references {
-		asset := byID[reference.PublicID]
-		if asset.AssetType != reference.ExpectedAssetType {
-			return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset type does not match media type"), types.ErrorCodeInvalidAssetRequest, http.StatusBadRequest)
-		}
-		if len(asset.Candidates) == 0 {
-			return BytePlusAssetReferenceResolution{}, assetError(errors.New("asset channel unavailable"), types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
-		}
-		candidate := bytePlusAssetCandidateForPinnedChannel(asset.Candidates, pinnedChannelID)
-		if apiErr := validateBytePlusAssetLifecycle(asset.Status); apiErr != nil {
-			return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, apiErr
-		}
-		bindingStatus := candidate.Status
-		if bindingStatus == "" {
-			bindingStatus = asset.Status
-		}
-		if apiErr := validateBytePlusAssetLifecycle(bindingStatus); apiErr != nil {
-			return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, apiErr
-		}
-		if candidate.ChannelID <= 0 {
-			return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset channel unavailable"), types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
-		}
-		if strings.TrimSpace(candidate.UpstreamAssetID) == "" {
-			return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset is not active"), types.ErrorCodeAssetNotReady, http.StatusConflict)
-		}
-		selectedCandidatesByPublicID[reference.PublicID] = candidate
-	}
-
-	rewriteMap := make(map[string]string, len(publicIDs))
-	for _, reference := range references {
-		candidate := selectedCandidatesByPublicID[reference.PublicID]
-		rewriteMap["asset://"+reference.PublicID] = "asset://" + strings.TrimSpace(candidate.UpstreamAssetID)
-	}
-
 	resolution := BytePlusAssetReferenceResolution{
 		PinnedChannelID: pinnedChannelID,
 		RewriteMap:      rewriteMap,
@@ -189,6 +71,19 @@ func ResolveBytePlusAssetReferences(c *gin.Context, userID int, req *dto.Seedanc
 		common.SetContextKey(c, constant.ContextKeyBytePlusAssetPinnedChannelID, pinnedChannelID)
 	}
 	return resolution, nil
+}
+
+func assetReferenceSetIsLegacyBytePlusOnly(set AssetReferenceSet) bool {
+	if !set.HasReferences() {
+		return false
+	}
+	for _, reference := range set.references {
+		asset, ok := set.assets[reference.PublicID]
+		if !ok || !asset.LegacyBytePlus {
+			return false
+		}
+	}
+	return true
 }
 
 func rawPositiveBytePlusAssetChannels(candidates []bytePlusAssetBindingCandidate) map[int]struct{} {
