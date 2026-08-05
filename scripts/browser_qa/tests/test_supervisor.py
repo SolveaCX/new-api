@@ -406,6 +406,7 @@ class SupervisorTests(unittest.TestCase):
         prompt_path = os.path.join(os.path.dirname(__file__), "..", "config", "qa-prompt.md")
         with open(prompt_path, encoding="utf-8") as handle:
             prompt = handle.read()
+        self.assertNotIn("Before taking any browser action, read", prompt)
         for required in [
             "$flatkey-new-user-onboarding",
             "staging-cloud-qa-policy.md",
@@ -433,13 +434,14 @@ class SupervisorTests(unittest.TestCase):
         self.run_supervisor(process, result_payload=valid_result())
 
         prompt = process.stdin.getvalue()
+        runtime_prompt, _policy = prompt.split("-----BEGIN TRUSTED STAGING CLOUD QA POLICY-----", 1)
         self.assertIn("Authorized staging website origin: https://staging-website.flatkey.ai", prompt)
         self.assertIn("Authorized staging console origin: https://staging-console.flatkey.ai", prompt)
         self.assertIn("Read-only cookie-free docs origin: https://docs.flatkey.ai", prompt)
         self.assertIn("Begin replay by navigating to the authorized staging website origin.", prompt)
-        self.assertNotIn("https://flatkey.ai", prompt)
-        self.assertNotIn("https://console.flatkey.ai", prompt)
-        self.assertNotIn("https://router.flatkey.ai", prompt)
+        self.assertNotIn("https://flatkey.ai", runtime_prompt)
+        self.assertNotIn("https://console.flatkey.ai", runtime_prompt)
+        self.assertNotIn("https://router.flatkey.ai", runtime_prompt)
 
     def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None, proxy_factory=None, subprocess_runner=None):
         tmp = tempfile.mkdtemp()
@@ -771,22 +773,28 @@ class SupervisorTests(unittest.TestCase):
                 self.assertNotIn("*", server_config["enabled_tools"])
                 self.assertEqual(server_config["enabled_tools"], expected_tools[server_name])
 
-    def test_prompt_uses_installed_policy_path_readable_outside_empty_workspace(self):
+    def test_prompt_embeds_installed_policy_content_instead_of_requiring_model_file_reads(self):
         process = FakeProcess(0)
         _, sup = self.run_supervisor(process, result_payload=valid_result())
 
         args, kwargs = sup.subprocess_runner.calls[0]
         workspace = args[args.index("--cd") + 1]
         prompt = process.stdin.getvalue()
-        self.assertEqual(
-            prompt.splitlines()[0],
-            "Use `$flatkey-new-user-onboarding`. Before taking any browser action, read and follow the absolute `staging-cloud-qa-policy.md` file supplied below exactly.",
-        )
+        self.assertIn("The runtime has already loaded the exact `staging-cloud-qa-policy.md` content below;", prompt)
+        self.assertNotIn("Before taking any browser action, read", prompt)
+        self.assertNotIn("read and follow the absolute `staging-cloud-qa-policy.md` file", prompt)
         policy_line = next(line for line in prompt.splitlines() if line.startswith("Policy: "))
         policy_path = policy_line.removeprefix("Policy: ")
 
         self.assertTrue(os.path.isabs(policy_path))
         self.assertTrue(os.path.isfile(policy_path))
+        with open(policy_path, encoding="utf-8") as handle:
+            policy = handle.read()
+        self.assertIn("-----BEGIN TRUSTED STAGING CLOUD QA POLICY-----", prompt)
+        self.assertIn(policy, prompt)
+        self.assertIn("# Staging Cloud QA Policy", prompt)
+        self.assertIn("Replay the recorded signup, email verification, starting credit, API key creation", prompt)
+        self.assertIn("-----END TRUSTED STAGING CLOUD QA POLICY-----", prompt)
         self.assertTrue(
             os.path.realpath(policy_path).startswith(os.path.realpath(kwargs["env"]["HOME"]) + os.sep)
         )
