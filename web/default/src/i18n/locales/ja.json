@@ -2328,6 +2328,7 @@
     "Failed to load Passkey status": "Passkeyのステータスの読み込みに失敗しました",
     "Failed to load playground groups": "Playground グループの読み込みに失敗しました",
     "Failed to load playground models": "Playground モデルの読み込みに失敗しました",
+    "No video generation model is available": "利用可能な動画生成モデルがありません",
     "Failed to load profile": "プロファイルの読み込みに失敗しました",
     "Failed to load redemption codes": "引き換えコードの読み込みに失敗しました",
     "Failed to load refundable plan terms": "返金可能なプラン期間を読み込めませんでした",
