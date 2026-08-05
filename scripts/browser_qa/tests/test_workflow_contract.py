@@ -62,7 +62,7 @@ def qa_dependent_rollback_jobs(text):
             r"(?ms)^    needs:(?P<inline>[^\n]*)(?P<block>(?:\n      [^\n]*)*)",
             body,
         )
-        if needs and re.search(r"\bbrowser-qa-core\b", needs.group(0)):
+        if needs and re.search(r"\bbrowser-qa-(?:core|normal)\b", needs.group(0)):
             job = f"{match.group('name')}\n{body}"
             if rollback.search(job):
                 offenders.append(match.group("name"))
@@ -167,7 +167,7 @@ def canonical_finding_summaries_b64(summaries):
 
 
 class BrowserQaWorkflowContractTests(unittest.TestCase):
-    def test_normal_qualification_is_staging_manual_mode_without_wrapper_workflow(self):
+    def test_staging_default_qa_is_normal_without_temporary_qualification_surface(self):
         text = staging_deploy_workflow_text()
         uncommented = strip_comments(text)
 
@@ -175,38 +175,22 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             (REPO_ROOT / ".github" / "workflows" / "gcp-browser-qa-normal-qualification.yml").exists(),
             "temporary qualification branch-push wrapper workflow must be removed",
         )
-        self.assertRegex(
-            uncommented,
-            r"(?ms)^  workflow_dispatch:\n    inputs:\n      image_tag:\n"
-            r".*?      browser_qa_qualification_only:\n"
-            r"        description: \".*normal QA.*skip build/deploy.*\"\n"
-            r"        required: false\n"
-            r"        default: false\n"
-            r"        type: boolean\b",
-        )
+        self.assertNotIn("browser_qa_qualification_only", uncommented)
         self.assertNotRegex(uncommented, r"browser-qa-qualification/\*\*")
+        jobs_section = text.split("\njobs:\n", 1)[1]
+        self.assertNotRegex(jobs_section, r"(?m)^  browser-qa-core:\n")
+        self.assertNotRegex(jobs_section, r"(?m)^  browser-qa-normal-qualification:\n")
+        self.assertEqual(len(re.findall(r"(?m)^  browser-qa-normal:\n", jobs_section)), 1)
 
-    def test_staging_qualification_topology_skips_deploy_chain_and_runs_only_normal_qa(self):
+    def test_staging_deploy_topology_runs_single_normal_after_deploy(self):
         text = staging_deploy_workflow_text()
 
         build = job_block(text, "build")
-        self.assertRegex(
-            build,
-            r"(?m)^    if: \$\{\{ github\.event_name == 'push' \|\| "
-            r"inputs\.browser_qa_qualification_only != true \}\}$",
-        )
+        self.assertNotRegex(build, r"(?m)^    if:")
         deploy = job_block(text, "deploy")
         self.assertRegex(deploy, r"(?m)^    needs: build$")
-        core = job_block(text, "browser-qa-core")
-        self.assertRegex(core, r"(?m)^    needs: deploy$")
-
-        qa = job_block(text, "browser-qa-normal-qualification")
-        self.assertRegex(
-            qa,
-            r"(?m)^    if: \$\{\{ github\.event_name == 'workflow_dispatch' && "
-            r"inputs\.browser_qa_qualification_only == true \}\}$",
-        )
-        self.assertNotRegex(qa, r"(?m)^    needs:")
+        qa = job_block(text, "browser-qa-normal")
+        self.assertRegex(qa, r"(?m)^    needs: deploy$")
         self.assertRegex(qa, r"(?m)^    uses: \./\.github/workflows/gcp-browser-qa\.yml$")
         self.assertRegex(qa, r"(?m)^    permissions:\n      contents: read\n      id-token: write\b")
         self.assertRegex(qa, r"(?ms)^    with:\n      mode: normal\n      fail_on_findings: false\b")
@@ -218,15 +202,6 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             r"      STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET \}\}\s*$",
         )
         self.assertNotIn("secrets: inherit", qa)
-
-        jobs_section = text.split("\njobs:\n", 1)[1]
-        normal_qualification_jobs = re.findall(r"(?m)^  browser-qa-normal-qualification:\n", jobs_section)
-        self.assertEqual(len(normal_qualification_jobs), 1)
-
-    def test_staging_qualification_input_is_not_interpolated_inside_shell_run_blocks(self):
-        for index, block in enumerate(run_blocks(staging_deploy_workflow_text())):
-            with self.subTest(run_block=index):
-                self.assertNotIn("${{ inputs.browser_qa_qualification_only", block)
 
     def test_workflow_supports_manual_dispatch_and_reusable_call_with_minimal_permissions_and_serial_concurrency(self):
         text = workflow_text()
@@ -656,13 +631,13 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         )
         self.assertLess(text.index(f"- name: {notification_name}"), text.index("- name: Fail standalone workflow for actionable QA states"))
 
-    def test_staging_deploy_calls_same_commit_browser_qa_core_after_successful_deploy(self):
+    def test_staging_deploy_calls_same_commit_browser_qa_normal_after_successful_deploy(self):
         text = staging_deploy_workflow_text()
-        qa = job_block(text, "browser-qa-core")
+        qa = job_block(text, "browser-qa-normal")
 
         self.assertRegex(qa, r"(?m)^    needs: deploy$")
         self.assertRegex(qa, r"(?m)^    uses: \./\.github/workflows/gcp-browser-qa\.yml$")
-        self.assertRegex(qa, r"(?ms)^    with:\n      mode: core\n      fail_on_findings: false\b")
+        self.assertRegex(qa, r"(?ms)^    with:\n      mode: normal\n      fail_on_findings: false\b")
         self.assertRegex(
             qa,
             r"(?ms)^    secrets:\n"
@@ -696,7 +671,7 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
     def test_staging_browser_qa_failure_is_alert_only_without_rollback_or_secret_summary(self):
         text = staging_deploy_workflow_text()
         uncommented = strip_comments(text)
-        qa = job_block(text, "browser-qa-core")
+        qa = job_block(text, "browser-qa-normal")
 
         self.assertNotRegex(qa, r"(?i)\b(rollback|restore|update-traffic|gcloud run services update-traffic)\b")
         self.assertEqual(qa_dependent_rollback_jobs(text), [])
@@ -717,7 +692,7 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         text = staging_deploy_workflow_text() + """
 
   rollback-on-qa-failure:
-    needs: browser-qa-core
+    needs: browser-qa-normal
     if: ${{ failure() }}
     steps:
       - run: gcloud run services update-traffic newapi-staging --to-revisions previous=100

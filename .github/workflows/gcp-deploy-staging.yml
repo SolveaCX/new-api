@@ -17,12 +17,6 @@ on:
         description: "Existing image tag to deploy (skip build). Format: staging-sha-<commit>"
         required: false
         type: string
-      browser_qa_qualification_only:
-        description: "Run only normal QA from staging and skip build/deploy."
-        required: false
-        default: false
-        type: boolean
-
 permissions:
   contents: read
   id-token: write   # required for Workload Identity Federation
@@ -53,7 +47,6 @@ env:
 
 jobs:
   build:
-    if: ${{ github.event_name == 'push' || inputs.browser_qa_qualification_only != true }}
     runs-on: ubuntu-latest
     outputs:
       image_uri: ${{ steps.compute_image.outputs.image_uri }}
@@ -286,21 +279,8 @@ jobs:
           echo "- Image:    \`${{ needs.build.outputs.image_uri }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- URL:      ${url}" >> "$GITHUB_STEP_SUMMARY"
 
-  browser-qa-core:
+  browser-qa-normal:
     needs: deploy
-    uses: ./.github/workflows/gcp-browser-qa.yml
-    permissions:
-      contents: read
-      id-token: write
-    with:
-      mode: core
-      fail_on_findings: false
-    secrets:
-      STAGING_BROWSER_QA_DINGTALK_WEBHOOK: ${{ secrets.STAGING_BROWSER_QA_DINGTALK_WEBHOOK }}
-      STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET: ${{ secrets.STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET }}
-
-  browser-qa-normal-qualification:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_qa_qualification_only == true }}
     uses: ./.github/workflows/gcp-browser-qa.yml
     permissions:
       contents: read
