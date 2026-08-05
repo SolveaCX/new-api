@@ -21,6 +21,7 @@ const (
 	defaultStagingAssetStorageBucket = "vocai-gemini-prod-flatkey-assets-staging"
 	defaultAssetKeyPrefix            = "assets"
 	defaultAssetStorageBackend       = "gcs"
+	defaultAssetCacheControl         = "private, max-age=0"
 	defaultAssetSignedURLTTL         = time.Hour
 	defaultAssetSourceRetention      = 30 * 24 * time.Hour
 	defaultAssetFetchTimeout         = 10 * time.Minute
@@ -33,11 +34,19 @@ const (
 )
 
 type AssetObjectStore interface {
-	Put(ctx context.Context, bucket, objectKey string, body io.Reader, contentType string) error
+	Put(ctx context.Context, bucket, objectKey string, body io.Reader, options AssetObjectPutOptions) error
 	Open(ctx context.Context, bucket, objectKey string, generation int64) (io.ReadCloser, error)
 	Attrs(ctx context.Context, bucket, objectKey string) (AssetObjectAttrs, error)
 	Delete(ctx context.Context, bucket, objectKey string, expectedGeneration int64) error
 	SignURL(ctx context.Context, bucket, objectKey string, request AssetSignedURLRequest) (string, error)
+}
+
+// AssetObjectPutOptions carries per-caller object metadata. Asset sources are
+// private and never cached; temp media stays valid for its whole signed URL
+// lifetime, so each caller sets its own Cache-Control.
+type AssetObjectPutOptions struct {
+	ContentType  string
+	CacheControl string
 }
 
 type AssetObjectAttrs struct {
@@ -109,15 +118,18 @@ func CurrentAssetStorageConfig() AssetStorageConfig {
 
 type gcsAssetObjectStore struct{}
 
-func (gcsAssetObjectStore) Put(ctx context.Context, bucket, objectKey string, body io.Reader, contentType string) error {
+func (gcsAssetObjectStore) Put(ctx context.Context, bucket, objectKey string, body io.Reader, options AssetObjectPutOptions) error {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 	writer := client.Bucket(bucket).Object(objectKey).NewWriter(ctx)
-	writer.ContentType = contentType
-	writer.CacheControl = "private, max-age=0"
+	writer.ContentType = options.ContentType
+	writer.CacheControl = options.CacheControl
+	if writer.CacheControl == "" {
+		writer.CacheControl = defaultAssetCacheControl
+	}
 	if _, err := io.Copy(writer, body); err != nil {
 		type closeWithError interface {
 			CloseWithError(error) error

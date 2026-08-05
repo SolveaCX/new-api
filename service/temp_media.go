@@ -120,7 +120,11 @@ func UploadTempMediaImage(ctx context.Context, request TempMediaUploadRequest) (
 }
 
 func putTempMediaObjectToGCS(ctx context.Context, cfg TempMediaConfig, objectKey string, body io.Reader, contentType string) error {
-	return assetObjectStore.Put(ctx, cfg.Bucket, objectKey, body, contentType)
+	return assetObjectStore.Put(ctx, cfg.Bucket, objectKey, body, AssetObjectPutOptions{
+		ContentType: contentType,
+		// Temp media stays readable for the whole signed URL lifetime.
+		CacheControl: fmt.Sprintf("private, max-age=%d", int64(cfg.SignedURLTTL.Seconds())),
+	})
 }
 
 func deleteTempMediaObjectFromGCS(ctx context.Context, cfg TempMediaConfig, objectKey string) error {

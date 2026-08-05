@@ -128,9 +128,10 @@ type fakeAssetObjectStore struct {
 }
 
 type fakeAssetPut struct {
-	key         string
-	body        string
-	contentType string
+	key          string
+	body         string
+	contentType  string
+	cacheControl string
 }
 
 type fakeAssetDelete struct {
@@ -143,8 +144,8 @@ type fakeAssetOpen struct {
 	generation int64
 }
 
-func (f *fakeAssetObjectStore) Put(_ context.Context, bucket, objectKey string, body io.Reader, contentType string) error {
-	f.puts = append(f.puts, fakeAssetPut{key: objectKey, contentType: contentType})
+func (f *fakeAssetObjectStore) Put(_ context.Context, bucket, objectKey string, body io.Reader, options AssetObjectPutOptions) error {
+	f.puts = append(f.puts, fakeAssetPut{key: objectKey, contentType: options.ContentType, cacheControl: options.CacheControl})
 	payload, err := io.ReadAll(body)
 	if err != nil {
 		return err

@@ -73,9 +73,17 @@ func (bytePlusAssetBindingMaterializer) CreateAsset(ctx context.Context, input A
 	if err != nil {
 		return AssetMaterializeResult{}, err
 	}
+	// The upstream create already succeeded and is billable. A transient status
+	// lookup failure must not discard upstreamID, or the upstream asset is
+	// orphaned and a retry pays for a second one. Report it as Processing and
+	// let binding refresh polling settle the real status.
 	status, err := client.GetAsset(ctx, creds, upstreamID)
 	if err != nil {
-		return AssetMaterializeResult{}, err
+		return AssetMaterializeResult{
+			UpstreamGroupID: group.UpstreamGroupId,
+			UpstreamAssetID: upstreamID,
+			Status:          model.AssetStatusProcessing,
+		}, nil
 	}
 	if status.UpstreamAssetID != "" && status.UpstreamAssetID != upstreamID {
 		return AssetMaterializeResult{}, errors.New("upstream asset id mismatch")

@@ -3,6 +3,8 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -31,6 +33,44 @@ const (
 )
 
 const legacyBytePlusAssetMigrationPageSize = 500
+
+// legacyBytePlusAssetMigrationWatermarkKey stores the highest legacy asset id
+// already migrated. Without it every process start rescans the whole
+// byteplus_assets table and pays ~3 queries per row before serving traffic.
+const legacyBytePlusAssetMigrationWatermarkKey = "legacy_byteplus_asset_migration_watermark"
+
+func legacyBytePlusAssetMigrationWatermark() (int64, error) {
+	if !DB.Migrator().HasTable(&Option{}) {
+		return 0, nil
+	}
+	var option Option
+	err := DB.Where("`key` = ?", legacyBytePlusAssetMigrationWatermarkKey).First(&option).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to load legacy byteplus asset migration watermark: %w", err)
+	}
+	watermark, convErr := strconv.ParseInt(strings.TrimSpace(option.Value), 10, 64)
+	if convErr != nil {
+		return 0, nil
+	}
+	return watermark, nil
+}
+
+func saveLegacyBytePlusAssetMigrationWatermark(watermark int64) error {
+	if watermark <= 0 || !DB.Migrator().HasTable(&Option{}) {
+		return nil
+	}
+	value := strconv.FormatInt(watermark, 10)
+	if err := DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{"value": value}),
+	}).Create(&Option{Key: legacyBytePlusAssetMigrationWatermarkKey, Value: value}).Error; err != nil {
+		return fmt.Errorf("failed to persist legacy byteplus asset migration watermark: %w", err)
+	}
+	return nil
+}
 
 type Asset struct {
 	Id                int64  `json:"id" gorm:"primaryKey"`
@@ -572,7 +612,12 @@ func MigrateLegacyBytePlusAssets() error {
 		return nil
 	}
 
-	for lastID := int64(0); ; {
+	startID, err := legacyBytePlusAssetMigrationWatermark()
+	if err != nil {
+		return err
+	}
+
+	for lastID := startID; ; {
 		var legacyAssets []BytePlusAsset
 		if err := DB.Where("id > ?", lastID).
 			Order("id ASC").
@@ -581,7 +626,7 @@ func MigrateLegacyBytePlusAssets() error {
 			return fmt.Errorf("failed to load legacy byteplus assets: %w", err)
 		}
 		if len(legacyAssets) == 0 {
-			break
+			return saveLegacyBytePlusAssetMigrationWatermark(lastID)
 		}
 
 		groups, err := loadLegacyBytePlusAssetGroups(legacyAssets)
@@ -597,8 +642,10 @@ func MigrateLegacyBytePlusAssets() error {
 				return err
 			}
 		}
+		if err := saveLegacyBytePlusAssetMigrationWatermark(lastID); err != nil {
+			return err
+		}
 	}
-	return nil
 }
 
 func loadLegacyBytePlusAssetGroups(legacyAssets []BytePlusAsset) (map[int64]BytePlusAssetGroup, error) {

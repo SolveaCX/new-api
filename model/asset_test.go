@@ -263,6 +263,80 @@ func TestMigrateLegacyBytePlusAssetsPreservesPublicIDsAndBindingsIdempotently(t 
 	require.EqualValues(t, legacy.UpdatedTime, bindings[0].UpdatedAt)
 }
 
+func TestMigrateLegacyBytePlusAssetsDoesNotRescanAlreadyMigratedRows(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{}, &Option{})
+
+	group := BytePlusAssetGroup{
+		UserId:          10,
+		ChannelId:       131,
+		UpstreamGroupId: "upstream-group",
+		Status:          BytePlusAssetGroupStatusActive,
+		CreatedTime:     90,
+		UpdatedTime:     100,
+	}
+	require.NoError(t, DB.Create(&group).Error)
+	legacy := BytePlusAsset{
+		PublicId:        "ast_cccccccccccccccccccccccccccccccc",
+		UserId:          10,
+		AssetGroupId:    group.Id,
+		ChannelId:       131,
+		UpstreamAssetId: "upstream-asset",
+		AssetType:       "Image",
+		Status:          BytePlusAssetStatusActive,
+		CreatedTime:     110,
+		UpdatedTime:     120,
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+
+	require.NoError(t, MigrateLegacyBytePlusAssets())
+
+	// Deleting the migrated row is a proxy for "was this row read again?".
+	// A watermarked migration starts past it and leaves it alone; a full
+	// rescan would re-migrate it on every process start.
+	require.NoError(t, DB.Where("public_id = ?", legacy.PublicId).Delete(&Asset{}).Error)
+
+	require.NoError(t, MigrateLegacyBytePlusAssets())
+
+	var assetCount int64
+	require.NoError(t, DB.Model(&Asset{}).Where("public_id = ?", legacy.PublicId).Count(&assetCount).Error)
+	require.Zero(t, assetCount, "already migrated legacy rows must not be rescanned on later runs")
+}
+
+func TestMigrateLegacyBytePlusAssetsResumesFromWatermarkForNewRows(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{}, &Option{})
+
+	first := BytePlusAsset{
+		PublicId:        "ast_dddddddddddddddddddddddddddddddd",
+		UserId:          10,
+		ChannelId:       131,
+		UpstreamAssetId: "upstream-first",
+		AssetType:       "Image",
+		Status:          BytePlusAssetStatusActive,
+		CreatedTime:     110,
+		UpdatedTime:     120,
+	}
+	require.NoError(t, DB.Create(&first).Error)
+	require.NoError(t, MigrateLegacyBytePlusAssets())
+
+	second := BytePlusAsset{
+		PublicId:        "ast_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		UserId:          10,
+		ChannelId:       131,
+		UpstreamAssetId: "upstream-second",
+		AssetType:       "Image",
+		Status:          BytePlusAssetStatusActive,
+		CreatedTime:     130,
+		UpdatedTime:     140,
+	}
+	require.NoError(t, DB.Create(&second).Error)
+
+	require.NoError(t, MigrateLegacyBytePlusAssets())
+
+	var migrated int64
+	require.NoError(t, DB.Model(&Asset{}).Where("public_id = ?", second.PublicId).Count(&migrated).Error)
+	require.EqualValues(t, 1, migrated, "rows added after the watermark must still migrate")
+}
+
 func TestMigrateLegacyBytePlusAssetsSkipsRealPersonAssets(t *testing.T) {
 	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{})
 

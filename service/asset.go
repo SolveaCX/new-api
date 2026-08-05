@@ -401,7 +401,9 @@ func GetAsset(ctx context.Context, userID int, publicID string) (*AssetResult, e
 	}
 	var asset model.Asset
 	if err := model.DB.Where("user_id = ? AND public_id = ?", userID, publicID).First(&asset).Error; err == nil {
-		return publicResultFromAsset(&asset), nil
+		result := publicResultFromAsset(&asset)
+		result.Status = projectedAssetStatus(&asset)
+		return result, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
@@ -419,6 +421,34 @@ func GetAsset(ctx context.Context, userID int, publicID string) (*AssetResult, e
 		Status:    legacy.Status,
 		CreatedAt: legacy.CreatedTime,
 	}, nil
+}
+
+// projectedAssetStatus keeps the public read contract consistent with the
+// submit path: an asset whose recoverable source has lapsed is only still
+// Active while some provider binding survives. The stored row is left alone;
+// the cleanup worker owns durable status transitions.
+func projectedAssetStatus(asset *model.Asset) string {
+	if asset.Status != model.AssetStatusActive {
+		return asset.Status
+	}
+	reference := assetReferenceAsset{
+		SourceStatus:    asset.SourceStatus,
+		StorageBackend:  asset.StorageBackend,
+		StorageBucket:   asset.StorageBucket,
+		ObjectKey:       asset.ObjectKey,
+		SourceExpiresAt: asset.SourceExpiresAt,
+	}
+	if !assetReferenceSourceExpired(reference) {
+		return asset.Status
+	}
+	var activeBindings int64
+	if err := model.DB.Model(&model.AssetBinding{}).
+		Where("asset_id = ? AND status = ?", asset.Id, model.AssetStatusActive).
+		Where("upstream_asset_id <> ?", "").
+		Count(&activeBindings).Error; err != nil || activeBindings > 0 {
+		return asset.Status
+	}
+	return model.AssetStatusExpired
 }
 
 func expireCompletedAssetUpload(ctx context.Context, upload *model.AssetUpload, now time.Time) (bool, error) {
@@ -684,7 +714,7 @@ func putAndValidateAssetMedia(ctx context.Context, bucket, objectKey string, rea
 		return "", "", 0, 0, err
 	}
 	validator := newAssetStreamingValidator(prefixReader, maxBytes)
-	if err := assetObjectStore.Put(ctx, bucket, objectKey, validator, detected); err != nil {
+	if err := assetObjectStore.Put(ctx, bucket, objectKey, validator, AssetObjectPutOptions{ContentType: detected}); err != nil {
 		_ = assetObjectStore.Delete(ctx, bucket, objectKey, 0)
 		return "", "", 0, 0, err
 	}
@@ -717,7 +747,7 @@ func detectAssetMediaPrefix(reader io.Reader, assetType string, maxBytes int64) 
 		prefixLimit = maxBytes
 	}
 	var prefix bytes.Buffer
-	scratch := make([]byte, 8)
+	scratch := make([]byte, prefixLimit)
 	for int64(prefix.Len()) < prefixLimit {
 		remaining := prefixLimit - int64(prefix.Len())
 		if int64(len(scratch)) > remaining {
@@ -763,8 +793,11 @@ func newAssetStreamingValidator(reader io.Reader, maxBytes int64) *assetStreamin
 }
 
 func (r *assetStreamingValidator) Read(p []byte) (int, error) {
-	if len(p) > 8 {
-		p = p[:8]
+	// Read at most one byte past the budget so the overflow is detected on this
+	// call without shrinking the caller's buffer. Clamping every read to a few
+	// bytes would turn a 500MiB upload into tens of millions of round trips.
+	if remaining := r.maxBytes - r.size; remaining >= 0 && int64(len(p)) > remaining+1 {
+		p = p[:remaining+1]
 	}
 	n, err := r.reader.Read(p)
 	if n > 0 {

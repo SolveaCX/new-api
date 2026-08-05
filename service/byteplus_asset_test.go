@@ -328,6 +328,48 @@ func TestBytePlusAssetBindingMaterializerCreateReturnsActiveOnlyAfterObservedAct
 	}
 }
 
+func TestBytePlusAssetBindingMaterializerCreateKeepsUpstreamIDWhenStatusLookupFails(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	fake := &fakeBytePlusAssetClient{
+		groupID:    "upstream-group",
+		groupReqID: "req-group",
+		assetID:    "upstream-asset",
+		assetReqID: "req-asset",
+		getErr:     errors.New("transient upstream status failure"),
+	}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+
+	result, err := bytePlusAssetBindingMaterializer{}.CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID:  7,
+		Asset:   model.Asset{PublicId: "ast_binding_lookup_fail", AssetType: "Image"},
+		Channel: channel,
+		SignSource: func(context.Context, model.Asset) (string, error) {
+			return "https://example.com/binding.png", nil
+		},
+	})
+
+	// A transient status lookup failure after a successful paid upstream create
+	// must not discard the created upstream asset id; otherwise the upstream
+	// asset is orphaned and a retry creates a second one.
+	if err != nil {
+		t.Fatalf("CreateAsset returned error: %v", err)
+	}
+	if result.UpstreamAssetID != "upstream-asset" {
+		t.Fatalf("upstream asset id = %q, want %q", result.UpstreamAssetID, "upstream-asset")
+	}
+	if result.UpstreamGroupID != "upstream-group" {
+		t.Fatalf("upstream group id = %q, want %q", result.UpstreamGroupID, "upstream-group")
+	}
+	if result.Status != model.AssetStatusProcessing {
+		t.Fatalf("status = %q, want %q", result.Status, model.AssetStatusProcessing)
+	}
+	if fake.createAssetCalls != 1 {
+		t.Fatalf("create calls = %d, want 1", fake.createAssetCalls)
+	}
+}
+
 func TestBytePlusAssetCreateHonorsSpecificChannel(t *testing.T) {
 	newBytePlusAssetServiceTestDB(t)
 	restore := installBytePlusAssetServiceTestDeps(t, &fakeBytePlusAssetClient{groupID: "g", groupReqID: "req-g", assetID: "a", assetReqID: "req-a"})

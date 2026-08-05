@@ -516,6 +516,68 @@ func TestGetAssetReturnsOwnerScopedGeneralizedPublicProjectionWithoutSignedURL(t
 	require.Empty(t, result.SHA256, "public read projection must not expose content hashes")
 }
 
+func TestGetAssetReportsExpiredWhenSourceLapsedWithoutActiveBinding(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	lapsed := assetNow().Add(-time.Hour).Unix()
+	require.NoError(t, model.DB.Create(&model.Asset{
+		PublicId:        "ast_lapsed",
+		UserId:          7,
+		AssetType:       "Image",
+		Status:          model.AssetStatusActive,
+		SourceStatus:    model.AssetSourceStatusAvailable,
+		StorageBackend:  defaultAssetStorageBackend,
+		StorageBucket:   "asset-test-bucket",
+		ObjectKey:       "assets/7/20260725/ast_lapsed/rand.png",
+		SourceExpiresAt: lapsed,
+		CreatedAt:       1785678901,
+		UpdatedAt:       1785678901,
+	}).Error)
+
+	result, err := GetAsset(context.Background(), 7, "ast_lapsed")
+
+	// The submit path already rejects this asset with asset_expired. The read
+	// path must not keep advertising it as Active or clients see a contract
+	// that contradicts itself.
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusExpired, result.Status)
+}
+
+func TestGetAssetStaysActiveWhenSourceLapsedButBindingRemains(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	lapsed := assetNow().Add(-time.Hour).Unix()
+	asset := model.Asset{
+		PublicId:        "ast_bound",
+		UserId:          7,
+		AssetType:       "Image",
+		Status:          model.AssetStatusActive,
+		SourceStatus:    model.AssetSourceStatusAvailable,
+		StorageBackend:  defaultAssetStorageBackend,
+		StorageBucket:   "asset-test-bucket",
+		ObjectKey:       "assets/7/20260725/ast_bound/rand.png",
+		SourceExpiresAt: lapsed,
+		CreatedAt:       1785678901,
+		UpdatedAt:       1785678901,
+	}
+	require.NoError(t, model.DB.Create(&asset).Error)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       131,
+		UpstreamAssetId: "upstream-asset",
+		Status:          model.AssetStatusActive,
+		CreatedAt:       1785678901,
+		UpdatedAt:       1785678901,
+	}).Error)
+
+	result, err := GetAsset(context.Background(), 7, "ast_bound")
+
+	// An asset stays publicly usable while any provider binding survives, even
+	// once the recoverable GCS source has lapsed.
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusActive, result.Status)
+}
+
 func TestGetAssetFallsBackToOwnerScopedLegacyBytePlusRowWithoutProviderFields(t *testing.T) {
 	newAssetServiceTestDB(t)
 	installAssetServiceTestDeps(t)
@@ -786,12 +848,28 @@ func TestUploadAssetStreamsWithoutOversizedReadAndCleansUpOverLimit(t *testing.T
 		UserID:    1,
 		AssetType: "Image",
 		Filename:  "oversize.png",
-		Body:      &chunkGuardReader{chunks: [][]byte{tinyPNG(), []byte("x")}, maxRead: 8},
+		Body:      &chunkGuardReader{chunks: [][]byte{tinyPNG(), []byte("x")}, maxRead: 64 * 1024},
 	})
 
 	require.ErrorIs(t, err, ErrAssetTooLarge)
 	require.Len(t, store.puts, 1, "bounded stream should reach the object store instead of buffering first")
 	require.Equal(t, []fakeAssetDelete{{key: "asset-test-bucket/" + store.puts[0].key}}, store.deletes)
+}
+
+func TestAssetStreamingValidatorDoesNotShrinkLargeCallerBuffers(t *testing.T) {
+	payload := bytes.Repeat([]byte("a"), 256*1024)
+	recorder := &readSizeRecorder{data: append([]byte(nil), payload...)}
+	validator := newAssetStreamingValidator(recorder, int64(len(payload))*2)
+
+	_, err := io.Copy(io.Discard, validator)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(len(payload)), validator.size)
+	require.Equal(t, shaHex(payload), validator.shaHex())
+	// io.Copy offers 32KiB buffers. Shrinking them to a handful of bytes turns a
+	// 500MiB upload into tens of millions of reads and hash writes.
+	require.GreaterOrEqual(t, recorder.maxSeen, 4096,
+		"validator must not shrink caller buffers while budget remains")
 }
 
 func TestCompleteAssetUploadRejectsExpiredUploadAndDoesNotReadObject(t *testing.T) {
@@ -991,6 +1069,23 @@ func (r *chunkGuardReader) Read(p []byte) (int, error) {
 	if len(r.chunks[0]) == 0 {
 		r.chunks = r.chunks[1:]
 	}
+	return n, nil
+}
+
+type readSizeRecorder struct {
+	data    []byte
+	maxSeen int
+}
+
+func (r *readSizeRecorder) Read(p []byte) (int, error) {
+	if len(p) > r.maxSeen {
+		r.maxSeen = len(p)
+	}
+	if len(r.data) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
 	return n, nil
 }
 
