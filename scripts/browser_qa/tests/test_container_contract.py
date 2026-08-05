@@ -159,6 +159,10 @@ class ContainerContractTests(unittest.TestCase):
             "Do not explore before qa_replay_checkpoint",
             "Do not register a second account",
             "Do not create an extra API key",
+            "Post-checkpoint exploration allows only navigation, read-only inspection, and non-submitting field, dialog, or client-side validation checks",
+            "Do not submit, confirm, save, create, delete, resend, register, logout, or trigger any server state change after qa_replay_checkpoint",
+            "Recorded replay and independent runtime cleanup are the only server-write exceptions",
+            "form validation/repeat actions/loading states are limited to non-submitting client-side observation",
             "hypothesis queue",
             "5 minutes",
             "30 browser actions",
@@ -177,9 +181,12 @@ class ContainerContractTests(unittest.TestCase):
             "no-evidence claim",
             "duplicate finding",
             "same-origin 5xx with network evidence",
+            "post-checkpoint submit attempt",
+            "post-checkpoint resend attempt",
+            "post-checkpoint register attempt",
         ]:
             self.assertIn(required, scenarios)
-        for expected in ["stop", "downgrade", "dedupe", "report"]:
+        for expected in ["stop", "reject", "downgrade", "dedupe", "report"]:
             self.assertIn(expected, scenarios)
 
     def test_dockerignore_allows_only_the_selected_markdown_skill_exception(self):

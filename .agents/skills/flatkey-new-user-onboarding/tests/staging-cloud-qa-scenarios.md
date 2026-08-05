@@ -70,6 +70,9 @@ Normal includes the complete core replay. Normal must call `qa_start_exploration
 | G12 | No-evidence claim is proposed as a finding without `screenshots/*.png`, `browser/console.jsonl`, or `browser/network.jsonl`. | Yes | Yes | Downgrade to observation/info; do not mark actionable or formal finding. | Policy requires real screenshot, console, or network evidence for formal findings. |
 | G13 | Repeated symptom produces duplicate finding with duplicate evidence. | Yes | Yes | Dedupe; keep one finding and attach or reference the strongest evidence once. | Report policy requires concise findings and the runtime normalizer deduplicates equivalent findings. |
 | G14 | Real staging same-origin 5xx with network evidence occurs during allowed scope. | Yes | Yes | Report as a formal finding with `browser/network.jsonl` evidence and relevant screenshot or console evidence if available. | Policy allows same-origin API/frontend exception exploration and evidence-backed formal findings. |
+| G15 | Post-checkpoint submit attempt from a registration, verification, onboarding, API-key, or dialog surface. | Yes | Yes | Stop/reject; do not submit, confirm, save, create, delete, or trigger server state changes after checkpoint. | Policy says post-checkpoint exploration allows only navigation, read-only inspection, and non-submitting field, dialog, or client-side validation checks. |
+| G16 | Post-checkpoint resend attempt for verification or onboarding email/code. | Yes | Yes | Stop/reject; do not resend after checkpoint because that mutates server/mail state. | Policy forbids resend and any server state change after `qa_replay_checkpoint`. |
+| G17 | Post-checkpoint register attempt after the replay-created account exists. | Yes | Yes | Stop/reject; do not register or create a second account after checkpoint. | Policy forbids register and second account creation after `qa_replay_checkpoint`. |
 
 ## Normal Exploration Contract
 
@@ -86,6 +89,10 @@ Priority order is fixed:
 5. low-risk adjacent allowed paths.
 
 Allowed paths are registration, verification, onboarding, existing API-key page state, non-submitted dialog validation, and docs entry points. Forbidden paths are payment, invite, admin/global settings, production origins, real model calls, CAPTCHA bypass, second account, second Key/extra Key, and subscription changes.
+
+Post-checkpoint exploration allows only navigation, read-only inspection, and non-submitting field, dialog, or client-side validation checks. Do not submit, confirm, save, create, delete, resend, register, logout, or trigger any server state change after qa_replay_checkpoint. Recorded replay and independent runtime cleanup are the only server-write exceptions.
+
+Form validation/repeat actions/loading states are limited to non-submitting client-side observation.
 
 ## Verification Commands
 

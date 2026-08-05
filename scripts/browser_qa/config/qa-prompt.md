@@ -15,9 +15,11 @@ First replay the required registration flow through signup, verification, onboar
 
 After qa_replay_checkpoint, do not register a second account, do not create an extra API key, and do not rerun registration as open-ended exploration. Use only the temporary account created by this replay and the current API key state from that replay.
 
+Post-checkpoint exploration allows only navigation, read-only inspection, and non-submitting field, dialog, or client-side validation checks. Do not submit, confirm, save, create, delete, resend, register, logout, or trigger any server state change after qa_replay_checkpoint. Recorded replay and independent runtime cleanup are the only server-write exceptions.
+
 Bounded exploration uses a hypothesis queue. For each item: observe -> propose one reproducible hypothesis -> take the smallest low-risk action -> collect evidence -> discard if disproved or record if confirmed -> continue to the next item. Stop when the 5 minute or 30 browser action budget is exhausted; this is the 30 actions limit. Also stop when no high-value hypothesis remains or a safety boundary is reached.
 
-Exploration priority is fixed: 1 replay-adjacent recovery/navigation; 2 form validation/repeat actions/loading states; 3 same-origin API/frontend exceptions; 4 locale/empty-state/UI consistency; 5 low-risk adjacent allowed paths.
+Exploration priority is fixed: 1 replay-adjacent recovery/navigation; 2 form validation/repeat actions/loading states are limited to non-submitting client-side observation; 3 same-origin API/frontend exceptions; 4 locale/empty-state/UI consistency; 5 low-risk adjacent allowed paths.
 
 Exploration scope is limited to registration, verification, onboarding, existing API-key page state, non-submitted dialog validation, and docs entry points. Forbidden scope includes payment, subscription, invite, admin, global settings, production origins, real model calls, CAPTCHA bypass, second account, second key, and extra API key creation.
 

@@ -70,7 +70,9 @@ When this policy is active and origin checks pass, the agent is authorized to:
 - Delete the disposable staging account only as part of reaching a cleanup-ready checkpoint.
 - Read docs in an independent no-cookie context.
 
-After `qa_replay_checkpoint`, authorized normal-mode exploration may inspect only the replay-created temporary account and existing API key page state. It may use non-submitted dialog validation, repeat low-risk form actions, recovery/navigation, same-origin error checks, locale/empty-state checks, and docs entry-point checks within the exploration budget.
+After `qa_replay_checkpoint`, authorized normal-mode exploration may inspect only the replay-created temporary account and existing API key page state. Post-checkpoint exploration allows only navigation, read-only inspection, and non-submitting field, dialog, or client-side validation checks. Form validation/repeat actions/loading states are limited to non-submitting client-side observation.
+
+Do not submit, confirm, save, create, delete, resend, register, logout, or trigger any server state change after qa_replay_checkpoint. Recorded replay and independent runtime cleanup are the only server-write exceptions.
 
 These authorizations do not apply to real users, production origins, or non-staging accounts.
 
@@ -86,6 +88,7 @@ Never perform these actions under this policy:
 - Use a non-disposable or personally owned account.
 - Persist credentials beyond the run-scoped browser/session state required for QA.
 - Bypass, solve externally, outsource, or work around CAPTCHA, Cloudflare, or Turnstile challenges.
+- Submit, confirm, save, create, delete, resend, register, logout, or trigger any server state change after `qa_replay_checkpoint`, except for the recorded replay before the checkpoint and independent runtime cleanup after Codex exits.
 - Register a second account, create a second key, create an extra API key, or rerun registration as open-ended exploration after the replay checkpoint.
 
 CAPTCHA, Cloudflare, and Turnstile fail closed. If encountered, stop the run, record the blocked state with redactions, and do not proceed to account creation, key creation, exploration, or cleanup mutations.
@@ -107,6 +110,8 @@ Before exploratory browser actions, call `qa_start_exploration` with the run id,
 If replay fails before reaching a cleanup-ready state, do not enter exploration. Report the replay failure and wait for supervisor or cleanup-job direction.
 
 Do not register a second account, do not create an extra API key, and do not use exploration to create a second key. Use only the temporary account created by this replay and the current API key state from that replay.
+
+After `qa_replay_checkpoint`, do not submit, confirm, save, create, delete, resend, register, logout, or trigger any server state change. Recorded replay and independent runtime cleanup are the only server-write exceptions.
 
 ## Exploration Budget
 
@@ -135,7 +140,7 @@ Stop exploration when the budget is exhausted, no high-value hypothesis remains,
 Explore in this fixed priority order:
 
 1. replay-adjacent recovery/navigation.
-2. form validation/repeat actions/loading states.
+2. form validation/repeat actions/loading states are limited to non-submitting client-side observation.
 3. same-origin API/frontend exceptions.
 4. locale/empty-state/UI consistency.
 5. low-risk adjacent allowed paths.
