@@ -1347,7 +1347,7 @@ class CleanupTests(unittest.TestCase):
         for summary in [
             {"replay_status": "passed", "exploration_status": "passed", "exploration_actions": -1, "finding_count": 0},
             {"replay_status": "maybe", "exploration_status": "passed", "exploration_actions": 0, "finding_count": 0},
-            {**main_summary(), "email": "owner@gmail.com"},
+            {**main_summary(), "email": "owner@example.invalid"},
             {**main_summary(), "finding_summaries": "none"},
             {**main_summary(), "finding_summaries": [finding_summary(), finding_summary(), finding_summary(), finding_summary()]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "extra": "bad"}]},
