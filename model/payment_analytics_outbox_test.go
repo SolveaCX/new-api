@@ -58,6 +58,24 @@ func TestPaymentAnalyticsOutboxEnqueueIsIdempotentAndClaimsExclusively(t *testin
 	require.Equal(t, 2, recovered[0].Attempts)
 }
 
+func TestPaymentAnalyticsOutboxRejectsStaleWorkerCompletion(t *testing.T) {
+	setupPaymentAnalyticsOutboxTestDB(t)
+	EnqueuePaymentAnalyticsBestEffort(paymentAnalyticsTestEvent())
+	const firstClaimAt = int64(1_800_000_100)
+	first, err := ClaimPaymentAnalyticsOutbox(1, firstClaimAt)
+	require.NoError(t, err)
+	require.Len(t, first, 1)
+	second, err := ClaimPaymentAnalyticsOutbox(1, firstClaimAt+10*60+1)
+	require.NoError(t, err)
+	require.Len(t, second, 1)
+
+	require.NoError(t, CompletePaymentAnalyticsOutbox(first[0].Id, first[0].ClaimedAt, firstClaimAt+10*60+2))
+	var outbox PaymentAnalyticsOutbox
+	require.NoError(t, DB.First(&outbox, first[0].Id).Error)
+	require.Equal(t, PaymentAnalyticsOutboxDelivering, outbox.Status)
+	require.Equal(t, second[0].ClaimedAt, outbox.ClaimedAt)
+}
+
 func TestRechargeSucceedsWhenPaymentAnalyticsEnqueueIsUnavailable(t *testing.T) {
 	truncateTables(t)
 	insertUserForPaymentGuardTest(t, 9123, 0)

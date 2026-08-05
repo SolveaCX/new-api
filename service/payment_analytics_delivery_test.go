@@ -28,6 +28,7 @@ func TestDeliverPaymentAnalyticsEventSendsCanonicalPurchase(t *testing.T) {
 	}, model.PaymentAnalyticsOutbox{
 		TransactionId: "order-1", Value: 12.5, Currency: "USD", PaymentProvider: "stripe", PaymentMethod: "card",
 		ProductType: "top_up", ItemId: "wallet_top_up", ItemName: "Wallet top-up", ClientId: "123.456", SessionId: "789",
+		OccurredAt: 1_800_000_000,
 	})
 	require.NoError(t, err)
 
@@ -46,4 +47,11 @@ func TestDeliverPaymentAnalyticsEventSendsCanonicalPurchase(t *testing.T) {
 	require.Equal(t, "USD", payload.Events[0].Params["currency"])
 	require.Equal(t, "stripe", payload.Events[0].Params["payment_provider"])
 	require.Equal(t, "top_up", payload.Events[0].Params["product_type"])
+	require.EqualValues(t, 1_800_000_000_000_000, payload.Events[0].Params["timestamp_micros"])
+}
+
+func TestGA4DeliveryErrorClassification(t *testing.T) {
+	require.True(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusBadRequest}))
+	require.False(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusTooManyRequests}))
+	require.False(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusInternalServerError}))
 }

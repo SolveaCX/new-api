@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -189,19 +190,32 @@ func ClaimPaymentAnalyticsOutbox(limit int, now int64) ([]PaymentAnalyticsOutbox
 	return claimed, nil
 }
 
-func CompletePaymentAnalyticsOutbox(id int64, now int64) error {
-	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ?", id, PaymentAnalyticsOutboxDelivering).
+func CompletePaymentAnalyticsOutbox(id int64, claimedAt int64, now int64) error {
+	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
 		Updates(map[string]any{"status": PaymentAnalyticsOutboxDelivered, "delivered_at": now, "claimed_at": 0, "last_error": ""}).Error
 }
 
-func FailPaymentAnalyticsOutbox(id int64, attempts int, message string, now int64) error {
-	if len(message) > 512 {
-		message = message[:512]
-	}
+func FailPaymentAnalyticsOutbox(id int64, claimedAt int64, attempts int, message string, now int64) error {
+	message = truncateUTF8Bytes(message, 512)
 	status, nextAttemptAt := PaymentAnalyticsOutboxPending, now+int64(30*(1<<min(attempts, 7)))
 	if attempts >= 10 {
 		status, nextAttemptAt = PaymentAnalyticsOutboxDead, 0
 	}
-	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ?", id, PaymentAnalyticsOutboxDelivering).
+	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
 		Updates(map[string]any{"status": status, "next_attempt_at": nextAttemptAt, "claimed_at": 0, "last_error": message}).Error
+}
+
+func DeadPaymentAnalyticsOutbox(id int64, claimedAt int64, message string, now int64) error {
+	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
+		Updates(map[string]any{"status": PaymentAnalyticsOutboxDead, "next_attempt_at": 0, "claimed_at": 0, "last_error": truncateUTF8Bytes(message, 512)}).Error
+}
+
+func truncateUTF8Bytes(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	for maxBytes > 0 && !utf8.RuneStart(value[maxBytes]) {
+		maxBytes--
+	}
+	return value[:maxBytes]
 }

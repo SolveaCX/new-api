@@ -16,6 +16,10 @@ const paymentAnalyticsDeliveryBatchSize = 50
 var paymentAnalyticsDeliveryOnce sync.Once
 
 func deliverPaymentAnalyticsEvent(config GAConfig, event model.PaymentAnalyticsOutbox) error {
+	occurredAt := event.OccurredAt
+	if occurredAt <= 0 {
+		occurredAt = common.GetTimestamp()
+	}
 	items := []map[string]any{{
 		"item_id": event.ItemId, "item_name": event.ItemName,
 		"item_category": event.ProductType, "price": event.Value, "quantity": 1,
@@ -26,6 +30,7 @@ func deliverPaymentAnalyticsEvent(config GAConfig, event model.PaymentAnalyticsO
 			"transaction_id": event.TransactionId, "value": event.Value, "currency": event.Currency,
 			"items": items, "payment_provider": event.PaymentProvider,
 			"payment_method": event.PaymentMethod, "product_type": event.ProductType,
+			"timestamp_micros": occurredAt * int64(time.Second/time.Microsecond),
 		},
 	})
 }
@@ -38,11 +43,19 @@ func runPaymentAnalyticsDeliveryOnce(config GAConfig) {
 	}
 	for _, event := range events {
 		if err := deliverPaymentAnalyticsEvent(config, event); err == nil {
-			if completeErr := model.CompletePaymentAnalyticsOutbox(event.Id, common.GetTimestamp()); completeErr != nil {
+			if completeErr := model.CompletePaymentAnalyticsOutbox(event.Id, event.ClaimedAt, common.GetTimestamp()); completeErr != nil {
 				logger.LogError(context.Background(), "payment analytics outbox complete failed: "+completeErr.Error())
 			}
-		} else if failErr := model.FailPaymentAnalyticsOutbox(event.Id, event.Attempts, err.Error(), common.GetTimestamp()); failErr != nil {
-			logger.LogError(context.Background(), "payment analytics outbox retry scheduling failed: "+failErr.Error())
+		} else {
+			var failErr error
+			if IsGAPermanentDeliveryError(err) {
+				failErr = model.DeadPaymentAnalyticsOutbox(event.Id, event.ClaimedAt, err.Error(), common.GetTimestamp())
+			} else {
+				failErr = model.FailPaymentAnalyticsOutbox(event.Id, event.ClaimedAt, event.Attempts, err.Error(), common.GetTimestamp())
+			}
+			if failErr != nil {
+				logger.LogError(context.Background(), "payment analytics outbox retry scheduling failed: "+failErr.Error())
+			}
 		}
 	}
 }
