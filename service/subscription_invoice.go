@@ -1502,8 +1502,10 @@ func paymentAnalyticsEventForPaidRenewalTx(tx *gorm.DB, binding *model.Subscript
 	if err := tx.Where("id = ? AND user_id = ?", binding.InitialOrderId, binding.UserId).First(&initialOrder).Error; err != nil {
 		return nil, err
 	}
+	eventOrder := initialOrder
+	eventOrder.PlanId = plan.Id
 	return model.PaymentAnalyticsEventForSubscriptionRenewal(
-		&initialOrder, plan.Title, facts.InvoiceID, stripeMinorUnitValue(facts.AmountPaid, facts.Currency), facts.Currency, facts.PeriodStart,
+		&eventOrder, plan.Title, facts.InvoiceID, stripeMinorUnitValue(facts.AmountPaid, facts.Currency), facts.Currency, facts.PeriodStart,
 	), nil
 }
 

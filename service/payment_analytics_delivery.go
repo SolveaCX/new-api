@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -28,11 +29,11 @@ func deliverPaymentAnalyticsEvent(config GAConfig, event model.PaymentAnalyticsO
 	}}
 	return SendGAEventWithConfig(config, GAEvent{
 		Name: "purchase", ClientID: event.ClientId, SessionID: event.SessionId,
+		TimestampMicros: occurredAt * int64(time.Second/time.Microsecond),
 		Params: map[string]any{
 			"transaction_id": event.TransactionId, "value": event.Value, "currency": event.Currency,
 			"items": items, "payment_provider": event.PaymentProvider,
 			"payment_method": event.PaymentMethod, "product_type": event.ProductType,
-			"timestamp_micros": occurredAt * int64(time.Second/time.Microsecond),
 		},
 	})
 }
@@ -46,6 +47,10 @@ func runPaymentAnalyticsDeliveryOnce(config GAConfig) {
 	for _, event := range events {
 		if err := deliverPaymentAnalyticsEvent(config, event); err == nil {
 			if completeErr := model.CompletePaymentAnalyticsOutbox(event.Id, event.ClaimedAt, common.GetTimestamp()); completeErr != nil {
+				if errors.Is(completeErr, model.ErrPaymentAnalyticsOutboxLeaseLost) {
+					logger.LogDebug(context.Background(), "payment analytics outbox completion skipped after lease loss")
+					continue
+				}
 				logger.LogError(context.Background(), "payment analytics outbox complete failed: "+completeErr.Error())
 			}
 		} else {
@@ -56,6 +61,10 @@ func runPaymentAnalyticsDeliveryOnce(config GAConfig) {
 				failErr = model.FailPaymentAnalyticsOutbox(event.Id, event.ClaimedAt, event.Attempts, err.Error(), common.GetTimestamp())
 			}
 			if failErr != nil {
+				if errors.Is(failErr, model.ErrPaymentAnalyticsOutboxLeaseLost) {
+					logger.LogDebug(context.Background(), "payment analytics outbox retry scheduling skipped after lease loss")
+					continue
+				}
 				logger.LogError(context.Background(), "payment analytics outbox retry scheduling failed: "+failErr.Error())
 			}
 		}

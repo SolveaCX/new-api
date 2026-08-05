@@ -65,6 +65,16 @@ type PaymentAnalyticsOutbox struct {
 	UpdatedAt       int64   `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
+// PaymentAnalyticsEventReceipt retains an event ID after its delivered outbox
+// payload has been cleaned up, so a delayed provider replay cannot emit a
+// duplicate purchase conversion.
+type PaymentAnalyticsEventReceipt struct {
+	Id        int64  `json:"id"`
+	EventId   string `json:"event_id" gorm:"type:varchar(255);uniqueIndex"`
+	CreatedAt int64  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt int64  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
 func paymentAnalyticsEventFromTopUp(topUp *TopUp) *PaymentAnalyticsEvent {
 	if topUp == nil || topUp.Money <= 0 || topUp.PaymentProvider == PaymentProviderBalance {
 		return nil
@@ -190,7 +200,14 @@ func EnqueuePaymentAnalyticsBestEffort(event *PaymentAnalyticsEvent) {
 }
 
 var paymentAnalyticsOutboxCreate = func(outbox *PaymentAnalyticsOutbox) error {
-	return DB.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).Create(outbox).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		receipt := &PaymentAnalyticsEventReceipt{EventId: outbox.EventId}
+		result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).Create(receipt)
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "event_id"}}, DoNothing: true}).Create(outbox).Error
+	})
 }
 
 // This indirection lets payment regression tests force an outbox write failure
@@ -241,8 +258,15 @@ func ClaimPaymentAnalyticsOutbox(limit int, now int64) ([]PaymentAnalyticsOutbox
 }
 
 func CompletePaymentAnalyticsOutbox(id int64, claimedAt int64, now int64) error {
-	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
-		Updates(map[string]any{"status": PaymentAnalyticsOutboxDelivered, "delivered_at": now, "claimed_at": 0, "last_error": ""}).Error
+	result := DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
+		Updates(map[string]any{"status": PaymentAnalyticsOutboxDelivered, "delivered_at": now, "claimed_at": 0, "last_error": ""})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrPaymentAnalyticsOutboxLeaseLost
+	}
+	return nil
 }
 
 func FailPaymentAnalyticsOutbox(id int64, claimedAt int64, attempts int, message string, now int64) error {
@@ -251,13 +275,27 @@ func FailPaymentAnalyticsOutbox(id int64, claimedAt int64, attempts int, message
 	if attempts >= 10 {
 		status, nextAttemptAt = PaymentAnalyticsOutboxDead, 0
 	}
-	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
-		Updates(map[string]any{"status": status, "next_attempt_at": nextAttemptAt, "claimed_at": 0, "last_error": message}).Error
+	result := DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
+		Updates(map[string]any{"status": status, "next_attempt_at": nextAttemptAt, "claimed_at": 0, "last_error": message})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrPaymentAnalyticsOutboxLeaseLost
+	}
+	return nil
 }
 
 func DeadPaymentAnalyticsOutbox(id int64, claimedAt int64, message string, now int64) error {
-	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
-		Updates(map[string]any{"status": PaymentAnalyticsOutboxDead, "next_attempt_at": 0, "claimed_at": 0, "last_error": truncateUTF8Bytes(message, 512)}).Error
+	result := DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
+		Updates(map[string]any{"status": PaymentAnalyticsOutboxDead, "next_attempt_at": 0, "claimed_at": 0, "last_error": truncateUTF8Bytes(message, 512)})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrPaymentAnalyticsOutboxLeaseLost
+	}
+	return nil
 }
 
 func DeleteDeliveredPaymentAnalyticsOutboxBefore(now int64) error {

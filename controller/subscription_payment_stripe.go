@@ -47,6 +47,8 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		common.ApiErrorMsg(c, "request_id is required")
 		return
 	}
+	gaClientID, gaSessionID := service.ResolveGAIdentifiers(c.Request, req.GAClientID, req.GASessionID)
+	req.GAClientID, req.GASessionID = gaClientID, gaSessionID
 	replayCmd := service.PurchaseSubscriptionCommand{
 		UserID:        userId,
 		PlanID:        req.PlanId,
@@ -54,8 +56,8 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		Months:        1,
 		RequestID:     requestID,
 		RecallClaim:   strings.TrimSpace(req.RecallClaim),
-		GAClientID:    service.NormalizeGAIdentifier(req.GAClientID),
-		GASessionID:   service.NormalizeGAIdentifier(req.GASessionID),
+		GAClientID:    gaClientID,
+		GASessionID:   gaSessionID,
 	}
 	if replay, found, err := service.ReplaySubscriptionPurchase(replayCmd); err != nil {
 		common.ApiError(c, err)

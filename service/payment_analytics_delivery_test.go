@@ -35,8 +35,9 @@ func TestDeliverPaymentAnalyticsEventSendsCanonicalPurchase(t *testing.T) {
 	var payload struct {
 		ClientID string `json:"client_id"`
 		Events   []struct {
-			Name   string         `json:"name"`
-			Params map[string]any `json:"params"`
+			Name            string         `json:"name"`
+			Params          map[string]any `json:"params"`
+			TimestampMicros int64          `json:"timestamp_micros"`
 		} `json:"events"`
 	}
 	require.NoError(t, common.Unmarshal(body, &payload))
@@ -47,11 +48,15 @@ func TestDeliverPaymentAnalyticsEventSendsCanonicalPurchase(t *testing.T) {
 	require.Equal(t, "USD", payload.Events[0].Params["currency"])
 	require.Equal(t, "stripe", payload.Events[0].Params["payment_provider"])
 	require.Equal(t, "top_up", payload.Events[0].Params["product_type"])
-	require.EqualValues(t, 1_800_000_000_000_000, payload.Events[0].Params["timestamp_micros"])
+	require.EqualValues(t, 1_800_000_000_000_000, payload.Events[0].TimestampMicros)
+	require.NotContains(t, payload.Events[0].Params, "timestamp_micros")
 }
 
 func TestGA4DeliveryErrorClassification(t *testing.T) {
 	require.True(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusBadRequest}))
+	require.False(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusUnauthorized}))
+	require.False(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusForbidden}))
+	require.False(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusRequestTimeout}))
 	require.False(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusTooManyRequests}))
 	require.False(t, IsGAPermanentDeliveryError(&GAHTTPStatusError{StatusCode: http.StatusInternalServerError}))
 }

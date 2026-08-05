@@ -29,10 +29,11 @@ type GAConfig struct {
 }
 
 type GAEvent struct {
-	Name      string
-	ClientID  string
-	SessionID string
-	Params    map[string]any
+	Name            string
+	ClientID        string
+	SessionID       string
+	TimestampMicros int64
+	Params          map[string]any
 }
 
 // GAHTTPStatusError keeps the response classification without retaining the
@@ -48,9 +49,7 @@ func (err *GAHTTPStatusError) Error() string {
 func IsGAPermanentDeliveryError(err error) bool {
 	var statusErr *GAHTTPStatusError
 	return errors.As(err, &statusErr) &&
-		statusErr.StatusCode >= http.StatusBadRequest &&
-		statusErr.StatusCode < http.StatusInternalServerError &&
-		statusErr.StatusCode != http.StatusTooManyRequests
+		(statusErr.StatusCode == http.StatusBadRequest || statusErr.StatusCode == http.StatusUnprocessableEntity)
 }
 
 type gaMeasurementPayload struct {
@@ -59,8 +58,9 @@ type gaMeasurementPayload struct {
 }
 
 type gaMeasurementEvent struct {
-	Name   string         `json:"name"`
-	Params map[string]any `json:"params,omitempty"`
+	Name            string         `json:"name"`
+	Params          map[string]any `json:"params,omitempty"`
+	TimestampMicros int64          `json:"timestamp_micros,omitempty"`
 }
 
 func DefaultGAConfig() GAConfig {
@@ -211,8 +211,9 @@ func SendGAEventWithConfig(cfg GAConfig, event GAEvent) error {
 	payload := gaMeasurementPayload{
 		ClientID: event.ClientID,
 		Events: []gaMeasurementEvent{{
-			Name:   event.Name,
-			Params: params,
+			Name:            event.Name,
+			Params:          params,
+			TimestampMicros: event.TimestampMicros,
 		}},
 	}
 	body, err := common.Marshal(payload)

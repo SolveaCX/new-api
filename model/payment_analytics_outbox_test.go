@@ -18,7 +18,7 @@ func setupPaymentAnalyticsOutboxTestDB(t *testing.T) *gorm.DB {
 	originalDB := DB
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "payment-analytics.db")+"?_pragma=busy_timeout(5000)"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&PaymentAnalyticsOutbox{}))
+	require.NoError(t, db.AutoMigrate(&PaymentAnalyticsOutbox{}, &PaymentAnalyticsEventReceipt{}))
 	DB = db
 	t.Cleanup(func() {
 		DB = originalDB
@@ -71,7 +71,7 @@ func TestPaymentAnalyticsOutboxRejectsStaleWorkerCompletion(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, second, 1)
 
-	require.NoError(t, CompletePaymentAnalyticsOutbox(first[0].Id, first[0].ClaimedAt, firstClaimAt+10*60+2))
+	require.ErrorIs(t, CompletePaymentAnalyticsOutbox(first[0].Id, first[0].ClaimedAt, firstClaimAt+10*60+2), ErrPaymentAnalyticsOutboxLeaseLost)
 	var outbox PaymentAnalyticsOutbox
 	require.NoError(t, DB.First(&outbox, first[0].Id).Error)
 	require.Equal(t, PaymentAnalyticsOutboxDelivering, outbox.Status)
@@ -112,6 +112,24 @@ func TestPaymentAnalyticsOutboxCleanupRetainsDeadRows(t *testing.T) {
 	require.EqualValues(t, 1, count)
 }
 
+func TestPaymentAnalyticsOutboxCleanupRetainsReplayDeduplication(t *testing.T) {
+	db := setupPaymentAnalyticsOutboxTestDB(t)
+	event := paymentAnalyticsTestEvent()
+	EnqueuePaymentAnalyticsBestEffort(event)
+	claimed, err := ClaimPaymentAnalyticsOutbox(1, 1_800_000_100)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.NoError(t, CompletePaymentAnalyticsOutbox(claimed[0].Id, claimed[0].ClaimedAt, 1_800_000_101))
+	require.NoError(t, DeleteDeliveredPaymentAnalyticsOutboxBefore(1_800_000_101+paymentAnalyticsOutboxDeliveredRetention+1))
+
+	EnqueuePaymentAnalyticsBestEffort(event)
+	var outboxCount, receiptCount int64
+	require.NoError(t, db.Model(&PaymentAnalyticsOutbox{}).Count(&outboxCount).Error)
+	require.NoError(t, db.Model(&PaymentAnalyticsEventReceipt{}).Where("event_id = ?", event.EventID).Count(&receiptCount).Error)
+	require.Zero(t, outboxCount)
+	require.EqualValues(t, 1, receiptCount)
+}
+
 func TestPaymentAnalyticsOutboxSuppressesRecallAttributedSubscription(t *testing.T) {
 	event := paymentAnalyticsEventFromSubscriptionOrder(&SubscriptionOrder{
 		TradeNo: "recall-subscription", UserId: 7, PlanId: 3, Money: 12,
@@ -143,7 +161,7 @@ func TestPaymentAnalyticsOutboxBuildsSubscriptionRenewal(t *testing.T) {
 
 func TestRechargeSucceedsWhenPaymentAnalyticsEnqueueIsUnavailable(t *testing.T) {
 	truncateTables(t)
-	require.NoError(t, DB.AutoMigrate(&PaymentAnalyticsOutbox{}))
+	require.NoError(t, DB.AutoMigrate(&PaymentAnalyticsOutbox{}, &PaymentAnalyticsEventReceipt{}))
 	insertUserForPaymentGuardTest(t, 9123, 0)
 	topup := &TopUp{
 		UserId: 9123, Amount: 2, Money: 9.99, PaymentCurrency: "USD", TradeNo: "analytics-unavailable",
