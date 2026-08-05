@@ -43,6 +43,63 @@ type promptLibraryImportResult struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+type promptLibraryPublicItem struct {
+	Artifact       any      `json:"artifact"`
+	Category       string   `json:"category"`
+	Model          string   `json:"model"`
+	Output         any      `json:"output"`
+	Prompt         string   `json:"prompt"`
+	Slug           string   `json:"slug"`
+	Source         any      `json:"source"`
+	SourcePlatform string   `json:"source_platform"`
+	SourceURL      string   `json:"source_url"`
+	Summary        any      `json:"summary"`
+	Tags           []string `json:"tags"`
+	Title          any      `json:"title"`
+	UpdatedAt      string   `json:"updatedAt"`
+}
+
+func ListPromptLibrary(c *gin.Context) {
+	category := strings.TrimSpace(c.Query("category"))
+	if category != "" && !model.IsPromptLibraryCategoryAllowed(category) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "category is invalid"})
+		return
+	}
+	items, err := model.ListPromptLibraryItems(category, 100)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	responseItems := make([]promptLibraryPublicItem, 0, len(items))
+	for _, item := range items {
+		responseItem, err := normalizePromptLibraryPublicItem(item)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		responseItems = append(responseItems, responseItem)
+	}
+	common.ApiSuccess(c, gin.H{"items": responseItems})
+}
+
+func GetPromptLibraryItem(c *gin.Context) {
+	item, err := model.GetPromptLibraryItemBySlug(c.Param("slug"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if item == nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "prompt library item not found"})
+		return
+	}
+	responseItem, err := normalizePromptLibraryPublicItem(*item)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"item": responseItem})
+}
+
 func ImportPromptLibrary(c *gin.Context) {
 	var request promptLibraryImportRequest
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
@@ -90,6 +147,61 @@ func ImportPromptLibrary(c *gin.Context) {
 	})
 }
 
+func normalizePromptLibraryPublicItem(item model.PromptLibraryItem) (promptLibraryPublicItem, error) {
+	title, err := unmarshalPromptLibraryField(item.TitleJSON, map[string]string{})
+	if err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	summary, err := unmarshalPromptLibraryField(item.SummaryJSON, map[string]string{})
+	if err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	artifact, err := unmarshalPromptLibraryField(item.ArtifactJSON, map[string]any{})
+	if err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	source, err := unmarshalPromptLibraryField(item.SourceJSON, map[string]any{})
+	if err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	output, err := unmarshalPromptLibraryField(item.OutputJSON, map[string]any{})
+	if err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	tags := make([]string, 0)
+	if strings.TrimSpace(item.TagsJSON) != "" {
+		if err := common.UnmarshalJsonStr(item.TagsJSON, &tags); err != nil {
+			return promptLibraryPublicItem{}, err
+		}
+	}
+	return promptLibraryPublicItem{
+		Artifact:       artifact,
+		Category:       item.Category,
+		Model:          item.Model,
+		Output:         output,
+		Prompt:         item.Prompt,
+		Slug:           item.Slug,
+		Source:         source,
+		SourcePlatform: item.SourcePlatform,
+		SourceURL:      item.SourceURL,
+		Summary:        summary,
+		Tags:           tags,
+		Title:          title,
+		UpdatedAt:      item.CapturedAt,
+	}, nil
+}
+
+func unmarshalPromptLibraryField(value string, fallback any) (any, error) {
+	if strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
+	var decoded any
+	if err := common.UnmarshalJsonStr(value, &decoded); err != nil {
+		return nil, err
+	}
+	return decoded, nil
+}
+
 func normalizePromptLibraryImportItem(input promptLibraryImportItem) (model.PromptLibraryItem, error) {
 	slug := strings.TrimSpace(input.Slug)
 	category := strings.TrimSpace(input.Category)
@@ -115,7 +227,7 @@ func normalizePromptLibraryImportItem(input promptLibraryImportItem) (model.Prom
 	if sourcePlatform == "" {
 		return model.PromptLibraryItem{}, errors.New("source.platform is required")
 	}
-	if sourceURL == "" {
+	if sourceURL == "" && !isOwnedPromptLibrarySource(sourcePlatform, input.Source.Label) {
 		return model.PromptLibraryItem{}, errors.New("source.url is required")
 	}
 	titleJSON, err := marshalPromptLibraryField(input.Title)
@@ -158,6 +270,14 @@ func normalizePromptLibraryImportItem(input promptLibraryImportItem) (model.Prom
 		SourceURL:      sourceURL,
 		CapturedAt:     strings.TrimSpace(input.Source.CapturedAt),
 	}, nil
+}
+
+func isOwnedPromptLibrarySource(platform string, label string) bool {
+	value := strings.ToLower(strings.TrimSpace(platform) + " " + strings.TrimSpace(label))
+	return strings.Contains(value, "local migration") ||
+		strings.Contains(value, "flatkey generated") ||
+		strings.Contains(value, "owned") ||
+		strings.Contains(value, "自有")
 }
 
 func validatePromptArtifact(artifact map[string]any) error {

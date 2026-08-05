@@ -34,8 +34,11 @@ func setupPromptLibraryImportTest(t *testing.T) *gin.Engine {
 	t.Setenv(middleware.PromptLibraryImportTokenEnv, "secret")
 	r := gin.New()
 	g := r.Group("/api/prompt-library")
-	g.Use(middleware.PromptLibraryImportAuth())
-	g.POST("/import", ImportPromptLibrary)
+	g.GET("", ListPromptLibrary)
+	g.GET("/:slug", GetPromptLibraryItem)
+	importRoute := g.Group("")
+	importRoute.Use(middleware.PromptLibraryImportAuth())
+	importRoute.POST("/import", ImportPromptLibrary)
 	return r
 }
 
@@ -100,6 +103,104 @@ func TestImportPromptLibraryPersistsOnlyCompleteAllowedItems(t *testing.T) {
 	require.NoError(t, model.DB.First(&item, "slug = ?", "valid-image").Error)
 	require.Equal(t, "gpt-image-2", item.Model)
 	require.Equal(t, "GitHub", item.SourcePlatform)
+}
+
+func TestListPromptLibraryIsPublicAndReturnsImportedItems(t *testing.T) {
+	r := setupPromptLibraryImportTest(t)
+	title, err := common.Marshal(map[string]string{"en": "Valid image", "zh": "有效图像"})
+	require.NoError(t, err)
+	summary, err := common.Marshal(map[string]string{"en": "A complete imported prompt"})
+	require.NoError(t, err)
+	tags, err := common.Marshal([]string{"github", "image"})
+	require.NoError(t, err)
+	output, err := common.Marshal(map[string]string{"ratio": "1:1"})
+	require.NoError(t, err)
+	artifact, err := common.Marshal(map[string]any{"kind": "image", "url": "https://example.com/output.png", "alt": "output"})
+	require.NoError(t, err)
+	source, err := common.Marshal(map[string]any{"label": "GitHub", "platform": "GitHub", "url": "https://github.com/flatkey-ai/example", "captured_at": "2026-08-05"})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(&model.PromptLibraryItem{
+		Slug:           "valid-image",
+		Category:       "image",
+		Model:          "gpt-image-2",
+		Prompt:         "Create a product image",
+		TitleJSON:      string(title),
+		SummaryJSON:    string(summary),
+		TagsJSON:       string(tags),
+		OutputJSON:     string(output),
+		ArtifactJSON:   string(artifact),
+		SourceJSON:     string(source),
+		SourcePlatform: "GitHub",
+		SourceURL:      "https://github.com/flatkey-ai/example",
+		CapturedAt:     "2026-08-05",
+		UpdatedTime:    10,
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/prompt-library?category=image", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []struct {
+				Slug     string `json:"slug"`
+				Category string `json:"category"`
+				Model    string `json:"model"`
+				Source   struct {
+					URL string `json:"url"`
+				} `json:"source"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(rec.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data.Items, 1)
+	require.Equal(t, "valid-image", response.Data.Items[0].Slug)
+	require.Equal(t, "image", response.Data.Items[0].Category)
+	require.Equal(t, "gpt-image-2", response.Data.Items[0].Model)
+	require.Equal(t, "https://github.com/flatkey-ai/example", response.Data.Items[0].Source.URL)
+}
+
+func TestImportPromptLibraryAllowsOwnedSourceWithoutURL(t *testing.T) {
+	r := setupPromptLibraryImportTest(t)
+	body := []byte(`{
+		"items": [
+			{
+				"slug": "owned-image",
+				"category": "image",
+				"model": "gpt-image-2",
+				"prompt": "Create a self-owned product image",
+				"title": {"en": "Owned image"},
+				"artifact": {"kind": "image", "url": "https://example.com/owned.png"},
+				"source": {"label": "Flatkey owned", "platform": "Local migration", "captured_at": "2026-08-05"}
+			}
+		]
+	}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/prompt-library/import", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Imported int `json:"imported"`
+			Rejected int `json:"rejected"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(rec.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Equal(t, 1, response.Data.Imported)
+	require.Equal(t, 0, response.Data.Rejected)
+
+	var item model.PromptLibraryItem
+	require.NoError(t, model.DB.First(&item, "slug = ?", "owned-image").Error)
+	require.Equal(t, "Local migration", item.SourcePlatform)
+	require.Empty(t, item.SourceURL)
 }
 
 func TestImportPromptLibraryRequiresBearerToken(t *testing.T) {

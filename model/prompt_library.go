@@ -1,10 +1,12 @@
 package model
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -89,4 +91,34 @@ func UpsertPromptLibraryItems(items []PromptLibraryItem) error {
 			"updated_time",
 		}),
 	}).Create(&items).Error
+}
+
+func ListPromptLibraryItems(category string, limit int) ([]PromptLibraryItem, error) {
+	items := make([]PromptLibraryItem, 0)
+	query := DB.Model(&PromptLibraryItem{})
+	category = strings.TrimSpace(category)
+	if category != "" {
+		query = query.Where("category = ?", category)
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	err := query.Order("updated_time DESC").Order("id DESC").Limit(limit).Find(&items).Error
+	return items, err
+}
+
+func GetPromptLibraryItemBySlug(slug string) (*PromptLibraryItem, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return nil, nil
+	}
+	var item PromptLibraryItem
+	err := DB.Where("slug = ?", slug).First(&item).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &item, nil
 }

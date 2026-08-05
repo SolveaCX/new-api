@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CliPromptActionPanel } from "@/components/cli-prompt-action-panel";
 import { SiteShell } from "@/components/site-shell";
 import { CLI_IMAGE_PATH, CLI_LANDING_PATH, CLI_VIDEO_PATH } from "@/lib/cli-landing";
-import { getCliMediaPromptItem, getCliMediaPromptItems, type PromptArtifact, type PromptItem } from "@/lib/prompt-library";
+import { fetchCliMediaPromptItem, fetchCliMediaPromptItems, type PromptArtifact, type PromptItem } from "@/lib/prompt-library";
 import { type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
 
@@ -174,8 +174,8 @@ export function getCliMediaMetadata(kind: MediaKind, locale: Locale) {
   };
 }
 
-export function getCliMediaDetailMetadata(kind: MediaKind, slug: string, locale: Locale) {
-  const item = getCliMediaPromptItem(kind, slug);
+export async function getCliMediaDetailMetadata(kind: MediaKind, slug: string, locale: Locale) {
+  const item = await fetchCliMediaPromptItem(kind, slug);
   if (!item) return undefined;
   const title = item.title[locale] ?? item.title.en;
   const summary = item.summary[locale] ?? item.summary.en;
@@ -186,9 +186,9 @@ export function getCliMediaDetailMetadata(kind: MediaKind, slug: string, locale:
   };
 }
 
-export function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) {
+export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) {
   const copy = copyByLocale[props.locale][props.kind];
-  const items = getCliMediaPromptItems(props.kind);
+  const items = await fetchCliMediaPromptItems(props.kind);
   const featuredItem = items[0];
   const weeklyItems = items.slice(0, 4);
   const curatedItems = items.slice(0, 8);
@@ -261,9 +261,9 @@ export function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) 
   );
 }
 
-export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Locale; slug: string }) {
+export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Locale; slug: string }) {
   const copy = copyByLocale[props.locale][props.kind];
-  const item = getCliMediaPromptItem(props.kind, props.slug);
+  const item = await fetchCliMediaPromptItem(props.kind, props.slug);
   const keyUrl = consoleUrl("/keys", `lng=${props.locale}`);
 
   if (!item) return null;
@@ -272,7 +272,7 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
   const summary = item.summary[props.locale] ?? item.summary.en;
   const currentPath = cliMediaDetailPath(props.kind, item.slug);
   const listPath = localizePath(cliMediaPath(props.kind), props.locale);
-  const relatedItems = getCliMediaPromptItems(props.kind).filter((candidate) => candidate.slug !== item.slug).slice(0, 3);
+  const relatedItems = (await fetchCliMediaPromptItems(props.kind)).filter((candidate) => candidate.slug !== item.slug).slice(0, 3);
   const isVideo = props.kind === "video";
   const generateParams = new URLSearchParams({
     generate: props.kind,
@@ -425,7 +425,7 @@ function PromptCard(props: { copy: CliMediaCopy; item: PromptItem; keyUrl: strin
           <pre className="max-h-48 overflow-auto p-4 text-[12px] leading-6 whitespace-pre-wrap text-violet-100"><code>{props.item.prompt}</code></pre>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
-          {!isOwnedSource(props.item) ? (
+          {!isOwnedSource(props.item) && props.item.source.url ? (
             <a className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#0B0B0F14] bg-white px-3 text-sm font-semibold text-[#43434C] hover:border-violet-500/35 hover:text-[#0B0B0F]" href={props.item.source.url} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="size-4" />
               {props.copy.viewSource}
@@ -498,7 +498,7 @@ function SourceInfo(props: { copy: CliMediaCopy; item: PromptItem; locale: Local
   return (
     <div>
       <p className="text-[11px] font-bold tracking-[0.12em] text-[#62626D] uppercase">{props.copy.source}</p>
-      {isOwnedSource(props.item) ? (
+      {isOwnedSource(props.item) || !props.item.source.url ? (
         <p className="mt-1 text-sm font-semibold text-[#0B0B0F]">{label}</p>
       ) : (
         <a className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-[#5b21b6] hover:text-[#0B0B0F]" href={props.item.source.url} target="_blank" rel="noopener noreferrer">
@@ -516,7 +516,7 @@ function SourcePanel(props: { copy: CliMediaCopy; item: PromptItem; locale: Loca
     <div className="rounded-lg border border-[#0B0B0F12] bg-white p-5">
       <p className="text-xs font-black tracking-[0.12em] text-violet-600 uppercase">{props.locale === "zh" ? "归属" : "Provenance"}</p>
       <p className="mt-3 text-sm font-semibold text-[#0B0B0F]">{label}</p>
-      {isOwnedSource(props.item) ? (
+      {isOwnedSource(props.item) || !props.item.source.url ? (
         <p className="mt-1 text-sm text-[#62626D]">{props.locale === "zh" ? "Flatkey 自有迁移产物" : "Flatkey owned migrated artifact"}</p>
       ) : (
         <>
