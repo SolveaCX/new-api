@@ -58,11 +58,17 @@ jobs:
 
       - name: Compute image URI
         id: compute_image
+        env:
+          DISPATCH_IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           short_sha="${GITHUB_SHA::12}"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
-          if [[ -n "${{ inputs.image_tag }}" ]]; then
-            echo "image_uri=${AR_REPO_URL}/server:${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${DISPATCH_IMAGE_TAG}" ]]; then
+            if [[ ! "${DISPATCH_IMAGE_TAG}" =~ ^staging-sha-[0-9a-f]{12,40}$ ]]; then
+              echo "::error::Invalid image_tag. Expected empty or staging-sha-<12-40 lowercase hex>."
+              exit 1
+            fi
+            echo "image_uri=${AR_REPO_URL}/server:${DISPATCH_IMAGE_TAG}" >> "$GITHUB_OUTPUT"
             echo "SKIP_BUILD=true" >> "$GITHUB_ENV"
           else
             echo "image_uri=${AR_REPO_URL}/server:staging-sha-${short_sha}" >> "$GITHUB_OUTPUT"

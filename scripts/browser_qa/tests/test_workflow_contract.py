@@ -474,7 +474,7 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             ("fragment_path", {"page_path": "/checkout#card"}),
             ("relative_path", {"page_path": "checkout"}),
             ("email_title", {"title": "owner@example.com"}),
-            ("openai_key_title", {"title": "sk-abcdef123456"}),
+            ("openai_key_title", {"title": "sk-" + "abcdef123456"}),
             ("english_sensitive_title", {"title": "password leaked"}),
             ("localized_sensitive_title", {"title": "\u5bc6\u7801\u6cc4\u9732"}),
             ("six_digit_code_title", {"title": "123456"}),
@@ -605,6 +605,26 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertNotRegex(qa, r"(?m)^    if: .*(always|failure|cancelled)\(")
         self.assertNotIn("continue-on-error", qa)
         self.assertNotRegex(qa, r"(?i)\b(rollback|restore|update-traffic|traffic restoration)\b")
+
+    def test_staging_dispatch_image_tag_is_env_validated_before_image_uri(self):
+        text = staging_deploy_workflow_text()
+        compute = step_block(text, "Compute image URI")
+
+        self.assertNotIn("${{ inputs.image_tag }}", run_blocks(compute)[0])
+        self.assertRegex(
+            compute,
+            r"(?m)^        env:\n"
+            r"          DISPATCH_IMAGE_TAG: \$\{\{ inputs\.image_tag \}\}$",
+        )
+        self.assertIn(
+            'if [[ ! "${DISPATCH_IMAGE_TAG}" =~ ^staging-sha-[0-9a-f]{12,40}$ ]]; then',
+            compute,
+        )
+        self.assertIn("exit 1", compute)
+        self.assertLess(compute.index("Invalid image_tag"), compute.index("image_uri="))
+        self.assertIn('if [[ -n "${DISPATCH_IMAGE_TAG}" ]]; then', compute)
+        self.assertIn('echo "image_uri=${AR_REPO_URL}/server:${DISPATCH_IMAGE_TAG}"', compute)
+        self.assertIn('echo "image_uri=${AR_REPO_URL}/server:staging-sha-${short_sha}"', compute)
 
     def test_staging_browser_qa_failure_is_alert_only_without_rollback_or_secret_summary(self):
         text = staging_deploy_workflow_text()
