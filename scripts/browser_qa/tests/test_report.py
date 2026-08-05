@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts.browser_qa.flatkey_browser_qa.cleanup import CleanupResult
 from scripts.browser_qa.flatkey_browser_qa import report
@@ -52,6 +53,86 @@ def valid_provenance(**overrides):
 
 
 class ReportTests(unittest.TestCase):
+    def test_normalize_findings_does_not_downgrade_first_party_denied_target_host(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            browser_dir = os.path.join(tmp, "browser")
+            os.makedirs(browser_dir)
+            with open(os.path.join(browser_dir, "network.jsonl"), "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            first_party = finding(
+                target_url="https://staging-console.flatkey.ai/register",
+                actual="The staging console could not be reached through the QA proxy.",
+                evidence_paths=["browser/network.jsonl"],
+            )
+            third_party = finding(
+                title="analytics dependency reported blocked",
+                target_url="https://staging-console.flatkey.ai/register",
+                actual="The page reported that mixpanel.example was blocked.",
+                evidence_paths=["browser/network.jsonl"],
+            )
+
+            normalized = report.normalize_findings(
+                valid_result(findings=[first_party, third_party]),
+                runtime_root=tmp,
+                proxy_events=[
+                    {"host": "staging-console.flatkey.ai:443", "status": 403, "reason": "denied"},
+                    {"host": "mixpanel.example:443", "status": 403, "reason": "denied"},
+                ],
+            )
+
+            self.assertEqual(normalized["findings"][0]["severity"], "medium")
+            self.assertEqual(normalized["findings"][1]["severity"], "info")
+
+    def test_normalize_findings_treats_oversized_evidence_as_unusable_without_unbounded_read(self):
+        class GuardedReader:
+            def __init__(self, handle, max_read_size):
+                self.handle = handle
+                self.max_read_size = max_read_size
+
+            def __enter__(self):
+                self.handle.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.handle.__exit__(*args)
+
+            def read(self, size=-1):
+                if size < 0 or size > self.max_read_size:
+                    raise AssertionError("evidence reader attempted an unbounded read")
+                return self.handle.read(size)
+
+            def readline(self, size=-1):
+                if size < 0 or size > self.max_read_size:
+                    raise AssertionError("evidence reader attempted an unbounded line read")
+                return self.handle.readline(size)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            screenshot_dir = os.path.join(tmp, "screenshots")
+            os.makedirs(screenshot_dir)
+            screenshot_path = os.path.join(screenshot_dir, "large.png")
+            with open(screenshot_path, "wb") as handle:
+                handle.write(b"x" * 17)
+
+            original_open = open
+
+            def guarded_open(path, mode="r", *args, **kwargs):
+                handle = original_open(path, mode, *args, **kwargs)
+                if os.path.realpath(path) == os.path.realpath(screenshot_path) and "b" in mode:
+                    return GuardedReader(handle, 16)
+                return handle
+
+            with (
+                mock.patch.object(report, "MAX_EVIDENCE_FILE_BYTES", 16, create=True),
+                mock.patch("builtins.open", guarded_open),
+            ):
+                normalized = report.normalize_findings(
+                    valid_result(findings=[finding(evidence_paths=["screenshots/large.png"])]),
+                    runtime_root=tmp,
+                    proxy_events=[],
+                )
+
+            self.assertEqual(normalized["findings"][0]["severity"], "info")
+
     def test_normalize_findings_requires_existing_bounded_runtime_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             payload = valid_result(findings=[finding(evidence_paths=["screenshots/missing.png"])])

@@ -30,6 +30,8 @@ _PROVENANCE_FIELDS = {
 }
 _MODEL_CONFIG = {"model": "gpt-5.4", "sandbox": "workspace-write", "network_access": False}
 _BROWSER_EVIDENCE_PATHS = {"browser/console.jsonl", "browser/network.jsonl"}
+MAX_EVIDENCE_FILE_BYTES = 16 * 1024 * 1024
+_EVIDENCE_READ_CHUNK_BYTES = 64 * 1024
 
 
 def validate_result(payload):
@@ -230,7 +232,7 @@ def _matches_denied_proxy_host(finding, denied_hosts):
     target_host = _url_host(finding["target_url"])
     text = " ".join([finding["title"], finding["expected"], finding["actual"]]).casefold()
     for host in denied_hosts:
-        if host == target_host or _host_appears_in_text(host, text):
+        if host != target_host and _host_appears_in_text(host, text):
             return True
     return False
 
@@ -244,12 +246,50 @@ def _finding_evidence(runtime_root, paths):
         if evidence_path is None:
             usable = False
             continue
-        with open(evidence_path, "rb") as handle:
-            data = handle.read()
-        hashes.append(hashlib.sha256(data).hexdigest())
-        if path == "browser/network.jsonl":
-            network_events.extend(_read_network_events(data))
+        evidence = _read_evidence(evidence_path, parse_network=path == "browser/network.jsonl")
+        if evidence is None:
+            usable = False
+            continue
+        hashes.append(evidence["sha256"])
+        network_events.extend(evidence["network_events"])
     return {"usable": usable, "hashes": hashes, "network_events": network_events}
+
+
+def _read_evidence(path, *, parse_network):
+    digest = hashlib.sha256()
+    total = 0
+    pending = b""
+    network_events = []
+    with open(path, "rb") as handle:
+        while True:
+            read_size = (
+                min(_EVIDENCE_READ_CHUNK_BYTES, MAX_EVIDENCE_FILE_BYTES - total)
+                if total < MAX_EVIDENCE_FILE_BYTES
+                else 1
+            )
+            chunk = handle.read(read_size)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_EVIDENCE_FILE_BYTES:
+                return None
+            digest.update(chunk)
+            if parse_network:
+                pending = _parse_network_chunk(pending + chunk, network_events)
+    if parse_network and pending.strip():
+        _append_network_event(pending, network_events)
+    return {"sha256": digest.hexdigest(), "network_events": network_events}
+
+
+def _parse_network_chunk(data, events):
+    lines = data.splitlines(keepends=True)
+    if lines and not lines[-1].endswith((b"\n", b"\r")):
+        pending = lines.pop()
+    else:
+        pending = b""
+    for line in lines:
+        _append_network_event(line, events)
+    return pending
 
 
 def _resolve_evidence_path(runtime_root, logical_path):
@@ -292,18 +332,16 @@ def _allowed_evidence_logical_path(logical_path):
     return False
 
 
-def _read_network_events(data):
-    events = []
-    for line in data.decode("utf-8", "replace").splitlines():
-        if not line.strip():
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(event, dict):
-            events.append(event)
-    return events
+def _append_network_event(line, events):
+    text = line.decode("utf-8", "replace").strip()
+    if not text:
+        return
+    try:
+        event = json.loads(text)
+    except json.JSONDecodeError:
+        return
+    if isinstance(event, dict):
+        events.append(event)
 
 
 def _has_same_origin_5xx_network_evidence(finding, evidence):
