@@ -473,6 +473,12 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             ("query_path", {"page_path": "/checkout?token=secret"}),
             ("fragment_path", {"page_path": "/checkout#card"}),
             ("relative_path", {"page_path": "checkout"}),
+            ("email_title", {"title": "owner@example.com"}),
+            ("openai_key_title", {"title": "sk-abcdef123456"}),
+            ("english_sensitive_title", {"title": "password leaked"}),
+            ("localized_sensitive_title", {"title": "\u5bc6\u7801\u6cc4\u9732"}),
+            ("six_digit_code_title", {"title": "123456"}),
+            ("unicode_category_c_title", {"title": "bad\u202eformat"}),
         ]
         for name, patch in cases:
             with self.subTest(name=name):

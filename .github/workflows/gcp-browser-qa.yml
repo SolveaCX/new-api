@@ -358,13 +358,12 @@ jobs:
           import json
           import os
           import sys
-          import unicodedata
+
+          from scripts.browser_qa.flatkey_browser_qa import dingtalk
 
           ALLOWED_ROOT_STATUS = {"passed", "findings_detected", "replay_failed", "infrastructure_failed", "cleanup_failed"}
           ALLOWED_REPLAY = {"passed", "failed"}
           ALLOWED_EXPLORATION = {"passed", "failed", "not_started"}
-          ALLOWED_FINDING_SEVERITY = {"critical", "high", "medium", "low"}
-          ALLOWED_FINDING_CONFIDENCE = {"low", "medium", "high"}
           EMPTY_FINDING_SUMMARIES_B64 = "W10="
 
           def finding_summaries_b64(summaries):
@@ -372,37 +371,10 @@ jobs:
                   json.dumps(summaries, ensure_ascii=False, separators=(",", ":")).encode()
               ).decode("ascii")
 
-          def has_control_character(value):
-              return any(unicodedata.category(char).startswith("C") for char in value)
-
           def validate_finding_summaries(summaries):
-              if not isinstance(summaries, list) or len(summaries) > 3:
+              if not isinstance(summaries, list):
                   raise ValueError("main summary finding_summaries invalid")
-              for item in summaries:
-                  if not isinstance(item, dict) or set(item) != {"severity", "title", "confidence", "page_path"}:
-                      raise ValueError("main summary finding_summaries item invalid")
-                  if item["severity"] not in ALLOWED_FINDING_SEVERITY:
-                      raise ValueError("main summary finding_summaries severity invalid")
-                  if item["confidence"] not in ALLOWED_FINDING_CONFIDENCE:
-                      raise ValueError("main summary finding_summaries confidence invalid")
-                  title = item["title"]
-                  if (
-                      not isinstance(title, str)
-                      or not title
-                      or len(title) > 160
-                      or title != " ".join(title.split())
-                      or has_control_character(title)
-                  ):
-                      raise ValueError("main summary finding_summaries title invalid")
-                  page_path = item["page_path"]
-                  if (
-                      not isinstance(page_path, str)
-                      or not page_path.startswith("/")
-                      or "?" in page_path
-                      or "#" in page_path
-                      or has_control_character(page_path)
-                  ):
-                      raise ValueError("main summary finding_summaries page_path invalid")
+              dingtalk._validate_finding_summaries(tuple(summaries))
               return summaries
 
           def validate_root_manifest(manifest, run_id):
