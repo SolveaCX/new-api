@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -85,7 +86,9 @@ class DingTalkReport:
             lines.append("")
             lines.append("### Findings")
             for item in self.finding_summaries:
-                lines.append(f"- [{item['severity']}] {item['title']} ({item['confidence']}) {item['page_path']}")
+                title = _markdown_escape(item["title"])
+                page_path = _markdown_escape(item["page_path"])
+                lines.append(f"- [{item['severity']}] {title} ({item['confidence']}) {page_path}")
         return "\n".join(lines)
 
     def payload(self):
@@ -212,6 +215,8 @@ def _env_finding_summaries(name):
         raise ValueError(f"{name} is invalid")
     try:
         raw = base64.b64decode(value.encode("ascii"), altchars=b"-_", validate=True)
+        if base64.urlsafe_b64encode(raw).decode("ascii") != value:
+            raise ValueError
         payload = json.loads(raw.decode("utf-8"))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
         raise ValueError(f"{name} is invalid") from None
@@ -259,7 +264,7 @@ def _validate_finding_page_path(page_path):
 
 
 def _has_control_character(value):
-    return any(ord(char) < 32 or ord(char) == 127 for char in value)
+    return any(unicodedata.category(char).startswith("C") for char in value)
 
 
 def _is_sensitive_finding_title(title):
@@ -270,6 +275,15 @@ def _is_sensitive_finding_title(title):
         or any(term in title for term in LOCALIZED_SECRET_TERMS)
         or SIX_DIGIT_CODE.search(title) is not None
     )
+
+
+def _markdown_escape(value):
+    escaped = []
+    for char in value:
+        if char in "\\[]()<>*_`":
+            escaped.append("\\")
+        escaped.append(char)
+    return "".join(escaped)
 
 
 def _validate_webhook(webhook):

@@ -1273,6 +1273,32 @@ class CleanupTests(unittest.TestCase):
         for forbidden in ["owner@example.com", "sk-live-secret123", "验证码", "123456"]:
             self.assertNotIn(forbidden, json.dumps(summaries, ensure_ascii=False))
 
+    def test_main_record_summary_removes_unicode_category_c_from_public_fields(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+        )
+        manifest = main_manifest(
+            status="findings_detected",
+            result=valid_main_result(
+                findings=[
+                    finding(
+                        title="Unsafe\u202e redirect\u2066",
+                        target_url="https://staging-console.flatkey.ai/admin\u202e/path?token=secret#fragment",
+                    ),
+                ],
+            ),
+        )
+
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (manifest, 1)):
+            record = cleanup_job._main_record(cfg, "access-secret")
+
+        self.assertEqual(
+            record["summary"]["finding_summaries"],
+            [{"severity": "high", "title": "Unsafe redirect", "confidence": "high", "page_path": "/admin/path"}],
+        )
+
     def test_main_record_rejects_malformed_result_before_summary_extraction(self):
         cfg = SimpleNamespace(
             run_id=IDENTITY.run_id,
@@ -1302,6 +1328,7 @@ class CleanupTests(unittest.TestCase):
             {**main_summary(), "finding_summaries": [{**finding_summary(), "extra": "bad"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "severity": "info"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "bad\ncontrol"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "bad\u202eformat"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "a" * 161}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "owner@example.com"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "sk-live-secret123"}]},
@@ -1312,12 +1339,52 @@ class CleanupTests(unittest.TestCase):
             {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "relative"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "/settings?token=secret"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "/settings#secret"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "/settings\u202e"}]},
             {"cleanup_failed": "false"},
         ]:
             bad = root_manifest(executions=[execution_record("main", "main-001", IDENTITY.run_id, summary=summary)])
             with self.subTest(summary=summary):
                 with self.assertRaises(ValueError):
                     cleanup_job._validate_root_manifest(bad, IDENTITY.run_id)
+
+    def test_merge_root_manifest_upgrades_exact_legacy_four_field_main_summary(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+            cleanup_execution_id="cleanup-001",
+        )
+        legacy_summary = {
+            "replay_status": "passed",
+            "exploration_status": "not_started",
+            "exploration_actions": 0,
+            "finding_count": 0,
+        }
+        legacy_root = root_manifest(
+            latest={"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-001"},
+            executions=[
+                execution_record("main", "main-001", IDENTITY.run_id, summary=legacy_summary),
+                execution_record("cleanup", "cleanup-001", IDENTITY.run_id, created_at=2, summary={"cleanup_failed": False}),
+            ],
+        )
+        cleanup_record = legacy_root["executions"][1]
+
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(), 1)):
+            upgraded = cleanup_job._merge_root_manifest(legacy_root, cfg, cleanup_record, "access-secret")
+
+        self.assertEqual(upgraded["executions"][0]["summary"], main_summary())
+        cleanup_job._validate_root_manifest(upgraded, IDENTITY.run_id)
+
+        conflicting = root_manifest(
+            latest={"main_execution_id": "main-001", "cleanup_execution_id": "cleanup-001"},
+            executions=[
+                execution_record("main", "main-001", IDENTITY.run_id, summary={**legacy_summary, "finding_count": 1}),
+                cleanup_record,
+            ],
+        )
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (main_manifest(), 1)):
+            with self.assertRaises(ValueError):
+                cleanup_job._merge_root_manifest(conflicting, cfg, cleanup_record, "access-secret")
 
     def test_merge_root_manifest_reentry_deduplicates_summarized_records_and_upgrades_legacy_records(self):
         cfg = SimpleNamespace(

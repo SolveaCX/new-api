@@ -113,6 +113,27 @@ class DingTalkTests(unittest.TestCase):
         self.assertEqual(failed.payload()["markdown"]["title"], "Staging Browser QA FAILED")
         self.assertNotIn("### Findings", failed.markdown())
 
+    def test_report_escapes_untrusted_markdown_in_finding_text(self):
+        report = self.report(
+            final_status="findings_detected",
+            finding_count=1,
+            finding_summaries=(
+                {
+                    "severity": "high",
+                    "title": "[x](https://evil.example) <b>*_`\\",
+                    "confidence": "high",
+                    "page_path": "/docs/[x](https://evil.example)<b>*_`\\",
+                },
+            ),
+        )
+
+        markdown = report.markdown()
+
+        self.assertIn(r"\[x\]\(https://evil.example\) \<b\>\*\_\`\\", markdown)
+        self.assertIn(r"/docs/\[x\]\(https://evil.example\)\<b\>\*\_\`\\", markdown)
+        self.assertNotIn("[x](https://evil.example)", markdown)
+        self.assertNotIn("<b>", markdown)
+
     def test_report_rejects_untrusted_status_counts_and_urls(self):
         invalid_overrides = [
             {"final_status": "passed\npassword=leak"},
@@ -129,6 +150,7 @@ class DingTalkTests(unittest.TestCase):
             {"finding_summaries": tuple({"severity": "high", "title": "Leak", "confidence": "high", "page_path": f"/{index}"} for index in range(4))},
             {"finding_summaries": ({"severity": "info", "title": "Info", "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "bad\ncontrol", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "bad\u202eformat", "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "a" * 161, "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "sk-live-secret", "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "owner@example.com", "confidence": "high", "page_path": "/admin"},)},
@@ -142,6 +164,7 @@ class DingTalkTests(unittest.TestCase):
             {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "/admin?token=secret"},)},
             {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "/admin#secret"},)},
             {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "/admin\nsecret"},)},
+            {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "/admin\u202e"},)},
         ]
         for override in invalid_overrides:
             with self.subTest(override=override):
@@ -275,6 +298,7 @@ class DingTalkTests(unittest.TestCase):
     def test_main_rejects_malformed_finding_summary_env_without_echoing_input(self):
         for encoded in [
             "not+urlsafe==",
+            "__==",
             base64.urlsafe_b64encode(b'{"severity":"high"}').decode("ascii"),
             base64.urlsafe_b64encode(b'[{"severity":"high","title":"sk-live-secret","confidence":"high","page_path":"/admin"}]').decode("ascii").rstrip("="),
         ]:

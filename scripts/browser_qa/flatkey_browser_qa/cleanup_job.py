@@ -2,6 +2,7 @@ import json
 import re
 import sys
 import time
+import unicodedata
 import urllib.parse
 
 from .api import StagingApiClient
@@ -212,6 +213,9 @@ def _append_or_validate_record(records, record):
                 if _is_missing_main_placeholder(existing) and record["kind"] == "main":
                     updated.append(record)
                     continue
+                if _is_legacy_main_summary_upgrade(existing, record):
+                    updated.append(record)
+                    continue
                 legacy_record = dict(record)
                 legacy_record.pop("summary", None)
                 if existing == legacy_record:
@@ -224,6 +228,24 @@ def _append_or_validate_record(records, record):
     if found:
         return updated
     return [*records, record]
+
+
+def _is_legacy_main_summary_upgrade(existing, record):
+    if existing.get("kind") != "main" or record.get("kind") != "main":
+        return False
+    summary = existing.get("summary")
+    if not isinstance(summary, dict) or set(summary) != {
+        "replay_status",
+        "exploration_status",
+        "exploration_actions",
+        "finding_count",
+    }:
+        return False
+    upgraded = dict(existing)
+    upgraded["summary"] = record.get("summary")
+    if upgraded != record:
+        return False
+    return all(summary[key] == record["summary"].get(key) for key in summary)
 
 
 def _aggregate_status(records):
@@ -401,6 +423,9 @@ def _validate_record_summary(kind, summary):
     if not isinstance(summary, dict):
         raise ValueError("execution record summary is invalid")
     if kind == "main":
+        if set(summary) == {"replay_status", "exploration_status", "exploration_actions", "finding_count"}:
+            _validate_main_summary_counts(summary)
+            return
         if set(summary) != {
             "replay_status",
             "exploration_status",
@@ -409,17 +434,21 @@ def _validate_record_summary(kind, summary):
             "finding_summaries",
         }:
             raise ValueError("main execution summary fields are invalid")
-        if summary["replay_status"] not in {"passed", "failed"}:
-            raise ValueError("main execution replay summary is invalid")
-        if summary["exploration_status"] not in {"passed", "failed", "not_started"}:
-            raise ValueError("main execution exploration summary is invalid")
-        for key in ("exploration_actions", "finding_count"):
-            if not isinstance(summary[key], int) or isinstance(summary[key], bool) or summary[key] < 0:
-                raise ValueError("main execution summary count is invalid")
+        _validate_main_summary_counts(summary)
         _validate_finding_summaries(summary["finding_summaries"])
         return
     if set(summary) != {"cleanup_failed"} or not isinstance(summary["cleanup_failed"], bool):
         raise ValueError("cleanup execution summary is invalid")
+
+
+def _validate_main_summary_counts(summary):
+    if summary["replay_status"] not in {"passed", "failed"}:
+        raise ValueError("main execution replay summary is invalid")
+    if summary["exploration_status"] not in {"passed", "failed", "not_started"}:
+        raise ValueError("main execution exploration summary is invalid")
+    for key in ("exploration_actions", "finding_count"):
+        if not isinstance(summary[key], int) or isinstance(summary[key], bool) or summary[key] < 0:
+            raise ValueError("main execution summary count is invalid")
 
 
 def _validate_cleanup_manifest(manifest, cfg):
@@ -532,12 +561,12 @@ def _summary_title(title):
 
 
 def _summary_page_path(target_url):
-    path = urllib.parse.urlsplit(target_url).path
+    path = _strip_category_c(urllib.parse.urlsplit(target_url).path)
     return path if path.startswith("/") else "/"
 
 
 def _has_control_character(value):
-    return any(_is_control_character(char) for char in value)
+    return any(_is_category_c_character(char) for char in value)
 
 
 def _is_sensitive_finding_title(title):
@@ -550,8 +579,16 @@ def _is_sensitive_finding_title(title):
     )
 
 
+def _strip_category_c(value):
+    return "".join(char for char in value if not _is_category_c_character(char))
+
+
 def _is_control_character(char):
-    return ord(char) < 32 or ord(char) == 127
+    return _is_category_c_character(char)
+
+
+def _is_category_c_character(char):
+    return unicodedata.category(char).startswith("C")
 
 
 def _canonical_manifest_path(run_id, kind, execution_id):
