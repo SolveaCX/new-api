@@ -53,7 +53,7 @@ describe("console redirects", () => {
     });
 
     expect(response.status).toBe(301);
-    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-in?redirect=%2Fdashboard");
+    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-in?redirect=%2Fdashboard&lng=es");
   });
 
   test("preserves localized legacy login search params", async () => {
@@ -62,7 +62,7 @@ describe("console redirects", () => {
     });
 
     expect(response.status).toBe(301);
-    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-in?redirect=%2Fdashboard");
+    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-in?redirect=%2Fdashboard&lng=zh");
   });
 
   test("preserves localized sign-up search params", async () => {
@@ -71,7 +71,7 @@ describe("console redirects", () => {
     });
 
     expect(response.status).toBe(301);
-    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-up?invite=abc123");
+    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-up?invite=abc123&lng=fr");
   });
 
   test("preserves localized legacy signup search params", async () => {
@@ -80,7 +80,16 @@ describe("console redirects", () => {
     });
 
     expect(response.status).toBe(301);
-    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-up?invite=abc123");
+    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-up?invite=abc123&lng=ja");
+  });
+
+  test("localized auth redirect path language overrides stale lng query", async () => {
+    const response = await localizedLoginRedirect(new Request("https://flatkey.ai/pt/login?lng=en&redirect=%2Fdashboard"), {
+      params: Promise.resolve({ locale: "pt" }),
+    });
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe("https://console.flatkey.ai/sign-in?lng=pt&redirect=%2Fdashboard");
   });
 
   test("routes setup to sign-up with keys redirect", () => {

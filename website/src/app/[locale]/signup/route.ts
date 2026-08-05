@@ -1,19 +1,16 @@
-import { notFound } from "next/navigation";
-import { NextResponse } from "next/server";
-import { consoleUrl } from "@/lib/origins";
-import { isLocale, LOCALES } from "@/lib/locales";
+import {
+  generateLocalizedConsoleRedirectParams,
+  redirectToLocalizedConsolePath,
+} from "@/app/localized-console-redirect";
 
 type Props = {
   params: Promise<{ locale: string }>;
 };
 
 export function generateStaticParams() {
-  return LOCALES.filter((locale) => locale !== "en").map((locale) => ({ locale }));
+  return generateLocalizedConsoleRedirectParams();
 }
 
 export async function GET(request: Request, props: Props) {
-  const params = await props.params;
-  if (!isLocale(params.locale) || params.locale === "en") notFound();
-
-  return NextResponse.redirect(consoleUrl("/sign-up", new URL(request.url).search), 301);
+  return redirectToLocalizedConsolePath(request, props, "/sign-up");
 }
