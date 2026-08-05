@@ -30,11 +30,13 @@ EMAIL_ADDRESS = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
 OPENAI_SECRET_KEY = re.compile(r"\bsk-[A-Za-z0-9_-]{6,}\b")
 SECRET_TERMS = re.compile(
     r"\b("
-    r"verification|verify code|captcha|password|passcode|cookie|authorization|"
+    r"verification|verification code|verify code|captcha|password|passcode|cookie|authorization|"
     r"webhook|signing secret|secret"
     r")\b",
     re.IGNORECASE,
 )
+LOCALIZED_SECRET_TERMS = ("验证码", "密码", "口令", "授权", "签名密钥", "机器人地址")
+SIX_DIGIT_CODE = re.compile(r"(?<!\d)\d{6}(?!\d)")
 MAX_RESPONSE_BYTES = 16 * 1024
 
 
@@ -241,7 +243,7 @@ def _validate_finding_title(title):
     folded = " ".join(title.split())
     if title != folded or len(title) > 160 or _has_control_character(title):
         raise ValueError("finding title is invalid")
-    if OPENAI_SECRET_KEY.search(title) or EMAIL_ADDRESS.search(title) or SECRET_TERMS.search(title):
+    if _is_sensitive_finding_title(title):
         raise ValueError("finding title is invalid")
 
 
@@ -258,6 +260,16 @@ def _validate_finding_page_path(page_path):
 
 def _has_control_character(value):
     return any(ord(char) < 32 or ord(char) == 127 for char in value)
+
+
+def _is_sensitive_finding_title(title):
+    return (
+        OPENAI_SECRET_KEY.search(title) is not None
+        or EMAIL_ADDRESS.search(title) is not None
+        or SECRET_TERMS.search(title) is not None
+        or any(term in title for term in LOCALIZED_SECRET_TERMS)
+        or SIX_DIGIT_CODE.search(title) is not None
+    )
 
 
 def _validate_webhook(webhook):

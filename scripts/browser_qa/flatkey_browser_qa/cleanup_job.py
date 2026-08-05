@@ -14,6 +14,18 @@ from . import report
 
 ROOT_MANIFEST_SCHEMA_VERSION = 1
 _SAFE_GCS_COMPONENT = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_EMAIL_ADDRESS = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_OPENAI_SECRET_KEY = re.compile(r"\bsk-[A-Za-z0-9_-]{6,}\b")
+_SECRET_TERMS = re.compile(
+    r"\b("
+    r"verification|verification code|verify code|captcha|password|passcode|cookie|authorization|"
+    r"webhook|signing secret|secret"
+    r")\b",
+    re.IGNORECASE,
+)
+_LOCALIZED_SECRET_TERMS = ("验证码", "密码", "口令", "授权", "签名密钥", "机器人地址")
+_SIX_DIGIT_CODE = re.compile(r"(?<!\d)\d{6}(?!\d)")
+_SENSITIVE_TITLE_OMITTED = "Sensitive finding details omitted"
 _STATUS_PRIORITY = {
     "passed": 0,
     "findings_detected": 1,
@@ -497,6 +509,7 @@ def _validate_finding_summaries(summaries):
             or len(title) > 160
             or title != " ".join(title.split())
             or _has_control_character(title)
+            or _is_sensitive_finding_title(title)
         ):
             raise ValueError("main execution finding summary title is invalid")
         page_path = item["page_path"]
@@ -512,7 +525,10 @@ def _validate_finding_summaries(summaries):
 
 def _summary_title(title):
     folded = "".join(" " if _is_control_character(char) else char for char in title).split()
-    return " ".join(folded)[:160]
+    summary = " ".join(folded)[:160]
+    if _is_sensitive_finding_title(summary):
+        return _SENSITIVE_TITLE_OMITTED
+    return summary
 
 
 def _summary_page_path(target_url):
@@ -522,6 +538,16 @@ def _summary_page_path(target_url):
 
 def _has_control_character(value):
     return any(_is_control_character(char) for char in value)
+
+
+def _is_sensitive_finding_title(title):
+    return (
+        _OPENAI_SECRET_KEY.search(title) is not None
+        or _EMAIL_ADDRESS.search(title) is not None
+        or _SECRET_TERMS.search(title) is not None
+        or any(term in title for term in _LOCALIZED_SECRET_TERMS)
+        or _SIX_DIGIT_CODE.search(title) is not None
+    )
 
 
 def _is_control_character(char):

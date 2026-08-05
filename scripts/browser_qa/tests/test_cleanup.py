@@ -1237,6 +1237,42 @@ class CleanupTests(unittest.TestCase):
             ],
         })
 
+    def test_main_record_summary_omits_sensitive_model_authored_titles(self):
+        cfg = SimpleNamespace(
+            run_id=IDENTITY.run_id,
+            gcs_bucket="flatkey-browser-qa-reports",
+            main_execution_id="main-001",
+        )
+        manifest = main_manifest(
+            status="findings_detected",
+            result=valid_main_result(
+                findings=[
+                    finding(title="owner@example.com", target_url="https://staging-console.flatkey.ai/email?secret=1"),
+                    finding(title="sk-live-secret123", target_url="https://staging-console.flatkey.ai/key#secret"),
+                    finding(title="验证码 123456", target_url="https://staging-console.flatkey.ai/code"),
+                    finding(title="API Key dialog validation", target_url="https://staging-console.flatkey.ai/keys"),
+                ],
+            ),
+        )
+
+        with mock.patch.object(cleanup_job, "read_gcs_json_object", lambda *_args: (manifest, 1)):
+            record = cleanup_job._main_record(cfg, "access-secret")
+
+        summaries = record["summary"]["finding_summaries"]
+        self.assertEqual(record["summary"]["finding_count"], 4)
+        self.assertEqual(len(summaries), 3)
+        self.assertEqual(
+            [item["title"] for item in summaries],
+            [
+                "Sensitive finding details omitted",
+                "Sensitive finding details omitted",
+                "Sensitive finding details omitted",
+            ],
+        )
+        self.assertEqual([item["page_path"] for item in summaries], ["/email", "/key", "/code"])
+        for forbidden in ["owner@example.com", "sk-live-secret123", "验证码", "123456"]:
+            self.assertNotIn(forbidden, json.dumps(summaries, ensure_ascii=False))
+
     def test_main_record_rejects_malformed_result_before_summary_extraction(self):
         cfg = SimpleNamespace(
             run_id=IDENTITY.run_id,
@@ -1267,6 +1303,12 @@ class CleanupTests(unittest.TestCase):
             {**main_summary(), "finding_summaries": [{**finding_summary(), "severity": "info"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "bad\ncontrol"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "a" * 161}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "owner@example.com"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "sk-live-secret123"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "password leaked"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "验证码 123456"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "密码泄露"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "123456"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "relative"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "/settings?token=secret"}]},
             {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "/settings#secret"}]},
@@ -1478,6 +1520,21 @@ def valid_main_result(**overrides):
         "exploration": {"status": "not_started", "actions_used": 0},
         "budgets": {"replay_seconds": 300, "exploration_seconds": 300, "max_actions": 30},
         "findings": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def finding(**overrides):
+    payload = {
+        "severity": "high",
+        "title": "Unsafe redirect",
+        "target_url": "https://staging-console.flatkey.ai/admin",
+        "steps": ["open page"],
+        "expected": "safe",
+        "actual": "unsafe",
+        "evidence_paths": ["screenshots/safe.png"],
+        "confidence": "high",
     }
     payload.update(overrides)
     return payload

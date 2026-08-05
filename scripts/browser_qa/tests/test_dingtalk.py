@@ -133,6 +133,9 @@ class DingTalkTests(unittest.TestCase):
             {"finding_summaries": ({"severity": "high", "title": "sk-live-secret", "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "owner@example.com", "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "password leaked", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "验证码 123456", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "密码泄露", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "123456", "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "Authorization header leaked", "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "Webhook signing secret", "confidence": "high", "page_path": "/admin"},)},
             {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "relative"},)},
@@ -144,6 +147,33 @@ class DingTalkTests(unittest.TestCase):
             with self.subTest(override=override):
                 with self.assertRaises(ValueError):
                     self.report(**override)
+
+        allowed = self.report(
+            final_status="findings_detected",
+            finding_count=1,
+            finding_summaries=(
+                {
+                    "severity": "medium",
+                    "title": "API Key dialog validation",
+                    "confidence": "medium",
+                    "page_path": "/settings/20260806",
+                },
+            ),
+        )
+        self.assertIn("API Key dialog validation", allowed.markdown())
+
+    def test_report_rejects_sensitive_titles_without_echoing_them(self):
+        for title in ["验证码 123456", "密码泄露", "123456"]:
+            with self.subTest(title=title):
+                with self.assertRaises(ValueError) as raised:
+                    self.report(
+                        final_status="findings_detected",
+                        finding_count=1,
+                        finding_summaries=(
+                            {"severity": "high", "title": title, "confidence": "high", "page_path": "/admin"},
+                        ),
+                    )
+                self.assertNotIn(title, str(raised.exception))
 
     def test_delivery_retries_transient_failures_and_requires_errcode_zero(self):
         opener = RecordingOpener(
