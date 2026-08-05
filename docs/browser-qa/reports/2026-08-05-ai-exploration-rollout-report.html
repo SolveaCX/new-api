@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Staging Browser QA AI 探索上线报告 · 2026-08-05</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #60708a;
+      --line: #dce4ef;
+      --blue: #215cc8;
+      --green: #147a51;
+      --amber: #9b5c00;
+      --red: #b02d37;
+      --soft-blue: #eaf1ff;
+      --soft-green: #e8f7f0;
+      --soft-amber: #fff4dd;
+      --soft-red: #ffebed;
+      --shadow: 0 14px 38px rgba(27, 44, 78, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #edf3ff 0, var(--bg) 340px);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 36px auto 72px;
+    }
+
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    header {
+      padding: 34px;
+      background:
+        radial-gradient(circle at 90% 15%, rgba(33, 92, 200, 0.17), transparent 30%),
+        var(--panel);
+    }
+
+    section {
+      margin-top: 20px;
+      padding: 26px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 10px; font-size: clamp(28px, 4vw, 46px); line-height: 1.18; }
+    h2 { margin-bottom: 16px; font-size: 24px; }
+    h3 { margin-bottom: 8px; font-size: 17px; }
+    p:last-child { margin-bottom: 0; }
+    code { font-family: "Cascadia Code", Consolas, monospace; font-size: 0.92em; }
+
+    .eyebrow {
+      margin-bottom: 8px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; }
+
+    .chips, .grid, .metrics {
+      display: grid;
+      gap: 14px;
+    }
+
+    .chips {
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      margin-top: 24px;
+    }
+
+    .chip, .card, .metric {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: #fbfdff;
+    }
+
+    .chip strong, .metric strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 20px;
+    }
+
+    .chip span, .metric span, .muted { color: var(--muted); }
+    .ok { color: var(--green); }
+    .alert { color: var(--amber); }
+    .risk { color: var(--red); }
+
+    .verdict {
+      border-left: 5px solid var(--green);
+      background: var(--soft-green);
+    }
+
+    .grid { grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+    .metrics { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .flow div {
+      position: relative;
+      min-height: 94px;
+      padding: 14px;
+      border: 1px solid #c9d8f1;
+      border-radius: 12px;
+      background: var(--soft-blue);
+      font-size: 14px;
+    }
+
+    .flow div:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -14px;
+      top: 34px;
+      z-index: 2;
+      color: var(--blue);
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .flow strong { display: block; margin-bottom: 5px; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    th, td { padding: 12px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #f3f6fb; color: #43536c; font-size: 13px; }
+    tbody tr:last-child td { border-bottom: 0; }
+
+    .status {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .status.ok { background: var(--soft-green); }
+    .status.alert { background: var(--soft-amber); }
+    .status.block { background: var(--soft-red); color: var(--red); }
+
+    ul { margin: 0; padding-left: 21px; }
+    li + li { margin-top: 8px; }
+
+    .note {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--amber);
+      border-radius: 8px;
+      background: var(--soft-amber);
+    }
+
+    footer {
+      padding: 24px 4px 0;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      header, section { padding: 22px; }
+      .flow { grid-template-columns: 1fr; }
+      .flow div { min-height: auto; }
+      .flow div:not(:last-child)::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -22px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Flatkey · Browser QA · Staging Rollout</div>
+      <h1>AI 发散式浏览器测试已接入 staging 发布流程</h1>
+      <p class="lead">截至 2026-08-05，staging 每次成功部署后会自动运行一个完整 <code>normal</code> Browser QA：先执行录制回放，再到达 checkpoint，之后进行有预算的只读 AI 探索，最后清理测试身份、写脱敏报告并通知钉钉。</p>
+      <div class="chips">
+        <div class="chip"><strong class="ok">已上线</strong><span>真实 staging push 验证完成</span></div>
+        <div class="chip"><strong>1 个 QA Job</strong><span>无 core/normal 重复运行</span></div>
+        <div class="chip"><strong class="alert">Finding 只告警</strong><span>不回滚、不阻断 staging</span></div>
+        <div class="chip"><strong>0 个秘密命中</strong><span>root manifest 与提交 diff 扫描</span></div>
+      </div>
+    </header>
+
+    <section class="verdict">
+      <h2>最终结论</h2>
+      <p><strong>上线验收通过。</strong>提交 <code>ec7936c18</code> 已快进进入 <code>staging</code>。真实发布 run <code>31040775088</code> 完成 build、deploy 和唯一的 <code>browser-qa-normal</code>。回放、checkpoint、AI 探索、主清理、独立清理与钉钉通知全部完成；AI finding 按设计进入 <code>findings_detected</code>，但因 <code>fail_on_findings: false</code> 只告警。</p>
+    </section>
+
+    <section>
+      <h2>上线后的调用顺序</h2>
+      <div class="flow" aria-label="staging 发布后 Browser QA 调用顺序">
+        <div><strong>1. Build</strong>构建 staging 应用镜像</div>
+        <div><strong>2. Deploy</strong>健康检查后切换 staging 流量</div>
+        <div><strong>3. Replay</strong>注册、验证码、onboarding、Key 等录制流程</div>
+        <div><strong>4. Checkpoint</strong>确认核心流程真实走完</div>
+        <div><strong>5. AI Explore</strong>最多 5 分钟、30 个只读动作</div>
+        <div><strong>6. Cleanup + Report</strong>删测试账号、验证无法登录、钉钉通知</div>
+      </div>
+      <div class="note"><strong>包含关系：</strong><code>normal = 完整 core replay + checkpoint + bounded AI exploration + cleanup/report</code>。AI 不能跳过或替代录制回放。</div>
+    </section>
+
+    <section>
+      <h2>发布与资格运行证据</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>阶段 / Run</th>
+              <th>用途</th>
+              <th>Root 状态</th>
+              <th>Replay / Checkpoint</th>
+              <th>Exploration</th>
+              <th>Finding</th>
+              <th>Cleanup / DingTalk</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>31035370468</code></td>
+              <td>切换前 bootstrap core</td>
+              <td><span class="status ok">passed</span></td>
+              <td>passed / true</td>
+              <td>not_started / 0</td>
+              <td>0 actionable</td>
+              <td>passed / sent</td>
+            </tr>
+            <tr>
+              <td><code>31036761988</code></td>
+              <td>Normal 资格 1/3</td>
+              <td><span class="status ok">passed</span></td>
+              <td>passed / true</td>
+              <td>passed / 13 actions</td>
+              <td>2 info，0 actionable</td>
+              <td>passed / sent</td>
+            </tr>
+            <tr>
+              <td><code>31037962899</code></td>
+              <td>Normal 资格 2/3</td>
+              <td><span class="status alert">findings_detected</span></td>
+              <td>passed / true</td>
+              <td>passed / 15 actions</td>
+              <td>1 high</td>
+              <td>passed / sent</td>
+            </tr>
+            <tr>
+              <td><code>31038907799</code></td>
+              <td>Normal 资格 3/3</td>
+              <td><span class="status alert">findings_detected</span></td>
+              <td>passed / true</td>
+              <td>passed / 12 actions</td>
+              <td>1 medium + 1 low</td>
+              <td>passed / sent</td>
+            </tr>
+            <tr>
+              <td><code>31040775088</code></td>
+              <td>最终真实 staging 发布</td>
+              <td><span class="status alert">findings_detected</span></td>
+              <td>passed / true</td>
+              <td>passed / 7 actions</td>
+              <td>1 medium + 1 info</td>
+              <td>passed / sent</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>AI 实际发现的问题</h2>
+      <div class="grid">
+        <article class="card">
+          <h3 class="risk">重复发现：Sign in CTA 进入 404</h3>
+          <p>资格运行 2 与最终真实发布均独立发现：staging 网站首页的 Sign in 入口落到 404 页面。最终运行将其评为 medium、高置信度。重复出现说明它不是一次性浏览器噪声。</p>
+        </article>
+        <article class="card">
+          <h3 class="alert">Dashboard quickstart URL 可疑</h3>
+          <p>资格运行 3 发现 dashboard quickstart 的 curl 示例指向 console origin，评为 medium。该项需要产品/接口负责人确认预期 API origin。</p>
+        </article>
+        <article class="card">
+          <h3 class="alert">空 Key 名提交门禁不明显</h3>
+          <p>资格运行 3 在只读交互范围内发现 Create API Key 对话框缺少可见的空名称提交门禁，评为 low。测试没有提交或创建第二个 Key。</p>
+        </article>
+        <article class="card">
+          <h3 class="ok">第三方噪声没有误阻断</h3>
+          <p>资格运行 1 的两个 finding 与最终运行的一个 finding 被归为 <code>info</code>，没有提升成 actionable，也没有让基础设施分类失败。</p>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>安全边界与清理验证</h2>
+      <div class="metrics">
+        <div class="metric"><strong class="ok">30</strong><span>探索最大 action 数</span></div>
+        <div class="metric"><strong class="ok">5 分钟</strong><span>探索最长时间</span></div>
+        <div class="metric"><strong class="ok">0</strong><span>基础设施漂移分类</span></div>
+        <div class="metric"><strong class="ok">0</strong><span>root 敏感模式命中</span></div>
+      </div>
+      <div class="grid" style="margin-top: 14px">
+        <article class="card">
+          <h3>主任务 cleanup</h3>
+          <ul>
+            <li>测试账号删除：true</li>
+            <li>删除后登录被拒绝：true</li>
+            <li>cleanup_failed：false</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>独立 cleanup job</h3>
+          <ul>
+            <li>状态：passed</li>
+            <li>再次确认账号已不存在</li>
+            <li>再次登录仍被拒绝</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Checkpoint 后禁止写操作</h3>
+          <ul>
+            <li>禁止再次注册、重发验证码或创建第二账号</li>
+            <li>禁止提交、保存、删除或创建第二个 API Key</li>
+            <li>只允许导航、读取与不提交的客户端校验</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>实现与验证</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>代码变更</h3>
+          <ul>
+            <li>最终切换提交：<code>ec7936c18</code></li>
+            <li>staging 只保留一个 <code>browser-qa-normal</code></li>
+            <li>删除临时 qualification input、build guard 与额外 job</li>
+            <li>未修改 Terraform、IAM、Secret、production 或 main</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>本地验证</h3>
+          <ul>
+            <li>Browser QA：403 tests passed</li>
+            <li>4 skipped：均为平台条件跳过</li>
+            <li>actionlint 1.7.12：除尚未识别 <code>concurrency.queue</code> 的已知 schema 误报外，其余检查通过；真实 GitHub run 已成功解析并执行该 workflow</li>
+            <li><code>git diff --check</code>：passed</li>
+            <li>提交 diff 秘密扫描：0 命中</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>独立审查</h3>
+          <ul>
+            <li>规格审查：0 Critical / Important / Minor</li>
+            <li>质量与安全审查：0 Critical / Important / Minor</li>
+            <li>手动 image_tag 部署路径复核通过</li>
+            <li>无 downstream rollback 行为</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>剩余风险与后续处理</h2>
+      <ul>
+        <li><strong>产品问题尚未修复：</strong>Sign in CTA 404 已被重复发现，应单独建缺陷修复；本次上线只负责发现与通知。</li>
+        <li><strong>其他 finding 需产品确认：</strong>quickstart API origin 与空 Key 名校验应由对应负责人判断预期并排期。</li>
+        <li><strong>当前策略不阻断：</strong><code>findings_detected</code> 仍为告警态；replay、基础设施、cleanup 或钉钉通知失败才阻断 QA workflow。</li>
+        <li><strong>GitHub Action 运行时提醒：</strong>运行日志出现 Node.js 20 action 被强制使用 Node.js 24 的弃用提示，需要后续升级相关 action 版本。</li>
+        <li><strong>临时云权限：</strong>若人工 bootstrap 时的 operator Storage Admin 项目级授权仍存在，应由管理员专门撤销。</li>
+        <li><strong>生产未覆盖：</strong>本次只上线并验证 staging；production 与 main 未部署、未测试，也未被修改。</li>
+      </ul>
+    </section>
+
+    <footer>
+      本报告只包含脱敏状态、运行编号和 finding 摘要；不包含 webhook、API Key、邮箱、验证码、Cookie、Authorization 或私有 artifact 内容。
+    </footer>
+  </main>
+</body>
+</html>
